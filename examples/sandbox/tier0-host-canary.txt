@@ -1,0 +1,2 @@
+This file is outside the Tier 0 lab workspace.
+The host can read it. A correctly sandboxed lab process cannot.

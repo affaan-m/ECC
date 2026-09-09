@@ -71,6 +71,7 @@ function buildSingleReport(options) {
       options.executionError
     ),
     notes: options.notes || [],
+    ...(options.hostAdmissions?.length ? { host_admissions: options.hostAdmissions } : {}),
   };
   return validateReport(report);
 }

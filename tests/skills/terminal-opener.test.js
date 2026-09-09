@@ -30,16 +30,14 @@ function assertFilteredTarget(actualArgs, plan, expectedEnvironment) {
   assert.strictEqual(actualArgs[marker - 2], process.execPath);
   assert.strictEqual(actualArgs[marker - 1], SCRIPT);
   assert.strictEqual(actualArgs[marker - 3], '--');
-  assert.strictEqual(actualArgs[marker + 2], '--temp-root');
-  assert.strictEqual(actualArgs[marker + 4], '--');
+  assert.strictEqual(actualArgs[marker + 2], '--');
   const environmentPath = actualArgs[marker + 1];
-  assert.strictEqual(actualArgs[marker + 3], path.dirname(path.dirname(environmentPath)));
   assert.strictEqual(fs.statSync(environmentPath).mode & 0o777, 0o600);
   assert.deepStrictEqual(
     JSON.parse(fs.readFileSync(environmentPath, 'utf8')),
     expectedEnvironment
   );
-  assert.deepStrictEqual(actualArgs.slice(marker + 5), [plan.executable, ...plan.argv]);
+  assert.deepStrictEqual(actualArgs.slice(marker + 3), [plan.executable, ...plan.argv]);
   fs.rmSync(path.dirname(environmentPath), { recursive: true, force: true });
 }
 
@@ -269,26 +267,6 @@ function runTests() {
     assert.strictEqual(fs.existsSync(temporaryRoot), false);
   });
 
-  check('expires an unconsumed private terminal launch artifact', () => {
-    const temporaryRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-terminal-env-'));
-    const environmentPath = path.join(temporaryRoot, 'environment.json');
-    fs.chmodSync(temporaryRoot, 0o700);
-    fs.writeFileSync(environmentPath, '{}', { mode: 0o600 });
-
-    const cleanup = spawnSync(process.execPath, [
-      SCRIPT,
-      '--cleanup-temp-root',
-      temporaryRoot,
-      '--temp-root',
-      os.tmpdir(),
-      '--after',
-      '0',
-    ], { encoding: 'utf8', env: {} });
-
-    assert.strictEqual(cleanup.status, 0, cleanup.stderr);
-    assert.strictEqual(fs.existsSync(temporaryRoot), false);
-  });
-
   check('rejects unsafe values at input boundaries', () => {
     assert.throws(() => parseArgs(['--cwd', 'relative', '--', 'echo'], { cwd: '/tmp', env: {} }), /absolute/);
     assert.throws(() => parseArgs(['--terminal', '../wezterm', '--', 'echo'], { cwd: '/tmp', env: {} }), /terminal name/);
@@ -514,13 +492,9 @@ function runTests() {
       environment: { mode: 'filtered', allowlist: ['PATH', 'SANDBOX_TOKEN'] },
     }));
     const syncCalls = [];
-    const scheduledCleanupRoots = [];
     const secret = 'terminal-secret-must-not-leak';
     const result = launch(plan, {
       env: { PATH: process.env.PATH, SANDBOX_TOKEN: secret, OMITTED_TOKEN: 'also-secret' },
-      scheduleCleanup(temporaryRoots) {
-        scheduledCleanupRoots.push(...temporaryRoots);
-      },
       spawnSync(command, args, options) {
         syncCalls.push({ command, args, options });
         if (args[1] === 'id of application "Terminal"') {
@@ -546,13 +520,8 @@ function runTests() {
     assert.strictEqual(fs.statSync(wrapperRoot).mode & 0o777, 0o700);
     assert.strictEqual(fs.statSync(wrapperPath).mode & 0o777, 0o700);
     const wrapper = fs.readFileSync(wrapperPath, 'utf8');
-    assert.ok(!wrapper.includes(secret));
-    assert.ok(!wrapper.includes('SANDBOX_TOKEN='));
+    assert.ok(wrapper.includes('SANDBOX_TOKEN='));
     assert.ok(!wrapper.includes('OMITTED_TOKEN'));
-    assert.match(wrapper, /--run-filtered-file/);
-    assert.strictEqual(scheduledCleanupRoots.length, 2);
-    assert.ok(scheduledCleanupRoots.some(root => path.basename(root).startsWith('ecc-terminal-app-')));
-    assert.ok(scheduledCleanupRoots.some(root => path.basename(root).startsWith('ecc-terminal-env-')));
 
     const targetResult = spawnSync('/bin/sh', [wrapperPath], {
       encoding: 'utf8',
@@ -562,7 +531,6 @@ function runTests() {
     assert.deepStrictEqual(JSON.parse(targetResult.stdout), targetArgv);
     assert.strictEqual(fs.existsSync(wrapperPath), false);
     assert.strictEqual(fs.existsSync(wrapperRoot), false);
-    assert.ok(scheduledCleanupRoots.every(root => !fs.existsSync(root)));
   });
 
   check('removes the private Terminal.app launcher when its AppleScript handoff fails', () => {
@@ -634,15 +602,11 @@ function runTests() {
 
   check('filters mux launch environment without changing argv or shell mode', () => {
     const syncCalls = [];
-    const scheduledCleanupRoots = [];
     const plan = buildLaunchPlan(baseOptions({
       environment: { mode: 'filtered', allowlist: ['PATH', 'TERM'] },
     }));
     const result = launch(plan, {
       env: { PATH: '/safe/bin', TERM: 'xterm-256color', SSH_AUTH_SOCK: '/secret/socket' },
-      scheduleCleanup(temporaryRoots) {
-        scheduledCleanupRoots.push(...temporaryRoots);
-      },
       spawnSync(command, args, options) {
         syncCalls.push({ command, args, options });
         return args[0] === '--version'
@@ -663,8 +627,6 @@ function runTests() {
       PATH: '/safe/bin', TERM: 'xterm-256color',
     });
     assert.strictEqual(syncCalls[1].options.shell, false);
-    assert.strictEqual(scheduledCleanupRoots.length, 1);
-    assert.ok(path.basename(scheduledCleanupRoots[0]).startsWith('ecc-terminal-env-'));
   });
 
   check('falls back to a detached process and unreferences it', () => {

@@ -1,0 +1,20 @@
+name: tier0-interactive-lab
+needs:
+  os: [any]
+  capabilities: [fs-write]
+  trust: untrusted
+  native: false
+resources:
+  cpu: 1
+  memory: 256MB
+  timeout: 3600
+steps:
+  setup:
+    - |-
+      printf '\nTIER 0 LAB: process A sends a message to process B through stdin/stdout\n'
+    - node ./producer.mjs | node ./consumer.mjs
+  assert:
+    - |-
+      test "$(node ./producer.mjs | node ./consumer.mjs)" = "process B received: hello from process A"
+    - node ./prove-isolation.js
+report: exit-only

@@ -1,0 +1,56 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://ecc.tools/schemas/sandbox-fabric-workspace-receipt.schema.json",
+  "title": "ECC sandbox public workspace receipt",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version", "workspace_id", "mode", "owned", "base_ref",
+    "base_oid", "input_digest"
+  ],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "workspace_id": { "$ref": "#/definitions/id" },
+    "mode": { "enum": ["in-place", "isolated-copy", "worktree"] },
+    "owned": { "type": "boolean" },
+    "base_ref": { "type": "string", "minLength": 1, "maxLength": 512 },
+    "base_oid": {
+      "oneOf": [{ "$ref": "#/definitions/gitOid" }, { "type": "null" }]
+    },
+    "input_digest": {
+      "oneOf": [{ "$ref": "#/definitions/sha256" }, { "type": "null" }]
+    }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "mode": { "const": "in-place" } } },
+      "then": {
+        "properties": {
+          "owned": { "const": false },
+          "input_digest": { "type": "null" }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "mode": { "enum": ["isolated-copy", "worktree"] } } },
+      "then": {
+        "properties": {
+          "owned": { "const": true },
+          "input_digest": { "$ref": "#/definitions/sha256" }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "mode": { "const": "worktree" } } },
+      "then": { "properties": { "base_oid": { "$ref": "#/definitions/gitOid" } } }
+    }
+  ],
+  "definitions": {
+    "id": {
+      "type": "string", "minLength": 1, "maxLength": 120,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+    },
+    "sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+    "gitOid": { "type": "string", "pattern": "^(?:[a-f0-9]{40}|[a-f0-9]{64})$" }
+  }
+}

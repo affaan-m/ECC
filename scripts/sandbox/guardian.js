@@ -9,6 +9,8 @@ const {
   updateState,
 } = require('./session-store');
 const { processGroupMembers } = require('./stream-exec');
+const { withLumeStorage } = require('./vm-storage');
+const { limaMissingInstance } = require('./backends/lima');
 
 const TERMINAL_STATES = new Set(['completed', 'error', 'lease-expired', 'recovered']);
 const DEFAULT_RETENTION_MS = 24 * 60 * 60 * 1000;
@@ -68,6 +70,137 @@ function cleanupPodman(resource, session, run) {
     cleaned: removed.status === 0,
     kind: 'podman',
     error: removed.status === 0 ? null : String(removed.stderr || removed.stdout || '').trim(),
+  };
+}
+
+function cleanupLume(resource, session, run, signal) {
+  let commands;
+  try {
+    const pinned = Object.prototype.hasOwnProperty.call(resource, 'storage_path');
+    commands = [
+      ['get', resource.name, '--format', 'json'],
+      ['stop', resource.name],
+      ['delete', resource.name, '--force'],
+    ].map(argv => pinned ? withLumeStorage(argv, resource.storage_path) : argv);
+  } catch {
+    return { cleaned: false, kind: 'lume', error: 'VM receipt storage path is invalid; recovery requires its original storage' };
+  }
+  const inspected = run('lume', commands[0]);
+  const launcher = resource.launcher
+    ? cleanupProcess({ kind: 'process', ...resource.launcher }, session, run, signal)
+    : { cleaned: true };
+  const successful = result => result && !result.error && !result.signal && result.status === 0;
+  const absent = result => result && !result.error && !result.signal
+    && Number.isInteger(result.status) && result.status !== 0
+    && /not found|does not exist|no virtual machine/i.test(`${result.stderr || ''}\n${result.stdout || ''}`);
+  if (!successful(inspected)) {
+    const missing = Boolean(absent(inspected));
+    return {
+      cleaned: missing && launcher.cleaned,
+      absent: missing,
+      kind: 'lume',
+      error: launcher.error || (missing ? null : 'VM inspection failed'),
+    };
+  }
+  const parsed = parseJson(inspected.stdout);
+  const values = Array.isArray(parsed) ? parsed : [parsed];
+  const identityMatches = entries => entries.length === 1 && entries[0]
+    && [entries[0].name, entries[0].Name, entries[0].id].filter(value => value !== undefined).length > 0
+    && [entries[0].name, entries[0].Name, entries[0].id].filter(value => value !== undefined).every(value => value === resource.name);
+  const exact = identityMatches(values);
+  if (!exact) return { cleaned: false, kind: 'lume', error: 'VM identity does not match receipt' };
+  if (
+    resource.guest_marker?.guestAddress
+    && !values.some(value => value?.ipAddress === resource.guest_marker.guestAddress)
+  ) {
+    return { cleaned: false, kind: 'lume', error: 'VM guest marker does not match receipt' };
+  }
+  if (!launcher.cleaned) return { cleaned: false, kind: 'lume', error: launcher.error || 'Owned launcher cleanup remains unverified' };
+  run('lume', commands[1]);
+  const stopped = run('lume', commands[0]);
+  if (absent(stopped)) return { cleaned: true, absent: true, kind: 'lume' };
+  const stoppedValue = parseJson(stopped.stdout);
+  const stoppedValues = Array.isArray(stoppedValue) ? stoppedValue : [stoppedValue];
+  if (!successful(stopped) || !identityMatches(stoppedValues)
+      || !['stopped', 'halted'].includes(String(stoppedValues[0]?.status || stoppedValues[0]?.state || '').toLowerCase())) {
+    return { cleaned: false, kind: 'lume', error: 'Exact VM stopped state could not be verified; receipt retained' };
+  }
+  const removed = run('lume', commands[2]);
+  const verifiedAbsent = successful(removed) && absent(run('lume', commands[0]));
+  return {
+    cleaned: Boolean(verifiedAbsent),
+    kind: 'lume',
+    error: verifiedAbsent ? null : 'VM deletion or absence could not be verified; receipt retained',
+  };
+}
+
+const VM_NAME_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]{0,119}$/;
+
+function vmMissing(result) {
+  return /does not exist|no instance|not found|no such virtual machine/i.test(
+    `${result.stderr || ''}\n${result.stdout || ''}`
+  );
+}
+
+function cleanupLima(resource, run) {
+  if (!VM_NAME_PATTERN.test(String(resource.name || ''))) {
+    return { cleaned: false, kind: 'lima', error: 'Lima receipt VM name is invalid' };
+  }
+  const inspected = run('limactl', [
+    '--tty=false', 'list', resource.name, '--format', 'json',
+  ]);
+  if (limaMissingInstance(inspected)) return { cleaned: true, absent: true, kind: 'lima' };
+  if (inspected.status !== 0) {
+    return {
+      cleaned: false, absent: false, kind: 'lima',
+      error: 'Lima VM inspection failed',
+    };
+  }
+  const parsed = parseJson(inspected.stdout);
+  const values = Array.isArray(parsed) ? parsed : [parsed];
+  const exact = values.some(value => (
+    value && [value.name, value.Name].includes(resource.name)
+  ));
+  if (!exact) return { cleaned: false, kind: 'lima', error: 'VM identity does not match receipt' };
+  run('limactl', ['--tty=false', 'stop', '--force', resource.name]);
+  const removed = run('limactl', ['--tty=false', 'delete', '--force', resource.name]);
+  return {
+    cleaned: removed.status === 0 || vmMissing(removed),
+    kind: 'lima',
+    error: removed.status === 0 || vmMissing(removed)
+      ? null
+      : String(removed.stderr || removed.stdout || '').trim(),
+  };
+}
+
+function cleanupTart(resource, run) {
+  if (!VM_NAME_PATTERN.test(String(resource.name || ''))) {
+    return { cleaned: false, kind: 'tart', error: 'Tart receipt VM name is invalid' };
+  }
+  const inspected = run('tart', ['get', resource.name, '--format', 'json']);
+  if (inspected.status !== 0) {
+    const missing = vmMissing(inspected);
+    return {
+      cleaned: missing, absent: missing, kind: 'tart',
+      error: missing ? null : 'Tart VM inspection failed',
+    };
+  }
+  const parsed = parseJson(inspected.stdout);
+  if (!parsed || Array.isArray(parsed)) {
+    return { cleaned: false, kind: 'tart', error: 'Tart VM identity is unreadable' };
+  }
+  const reportedName = parsed.name || parsed.Name;
+  if (reportedName !== resource.name) {
+    return { cleaned: false, kind: 'tart', error: 'VM identity does not match receipt' };
+  }
+  run('tart', ['stop', '--timeout', '30', resource.name]);
+  const removed = run('tart', ['delete', resource.name]);
+  return {
+    cleaned: removed.status === 0 || vmMissing(removed),
+    kind: 'tart',
+    error: removed.status === 0 || vmMissing(removed)
+      ? null
+      : String(removed.stderr || removed.stdout || '').trim(),
   };
 }
 
@@ -134,7 +267,13 @@ function cleanupOwnedResource(runId, root, dependencies = {}) {
   for (const resource of [...resources].reverse()) {
     let result;
     if (resource.kind === 'podman') result = cleanupPodman(resource, current.session, run);
-    else if (resource.kind === 'process') {
+    else if (resource.kind === 'lume') {
+      result = cleanupLume(resource, current.session, run, dependencies.signal);
+    } else if (resource.kind === 'lima') {
+      result = cleanupLima(resource, run);
+    } else if (resource.kind === 'tart') {
+      result = cleanupTart(resource, run);
+    } else if (resource.kind === 'process' || resource.kind === 'lume-helper') {
       result = cleanupProcess(resource, current.session, run, dependencies.signal, dependencies.sleep);
     } else result = { cleaned: false, kind: resource.kind, error: 'unsupported resource receipt' };
     results.push(result);

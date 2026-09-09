@@ -1,0 +1,17 @@
+name: review-tier2-lume
+needs:
+  os: [macos]
+  arch: [arm64]
+  capabilities: ["network:*"]
+  trust: first-party
+  native: true
+resources:
+  cpu: 2
+  memory: 2GB
+  timeout: 300
+steps:
+  setup:
+    - printf 'review setup begin\n' && sleep 2 && printf 'review setup end\n'
+  assert:
+    - test "$(uname -s)" = Darwin && printf 'review assertion\n'
+report: exit-only

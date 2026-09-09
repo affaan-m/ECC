@@ -1,0 +1,63 @@
+name: Sandbox fast checks
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/sandbox-fast.yml'
+      - 'package.json'
+      - 'schemas/sandbox-*.schema.json'
+      - 'scripts/sandbox/**'
+      - 'skills/sandbox-testing/**'
+      - 'tests/sandbox/**'
+      - 'tests/skills/sandbox-testing.test.js'
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/sandbox-fast.yml'
+      - 'package.json'
+      - 'schemas/sandbox-*.schema.json'
+      - 'scripts/sandbox/**'
+      - 'skills/sandbox-testing/**'
+      - 'tests/sandbox/**'
+      - 'tests/skills/sandbox-testing.test.js'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: sandbox-fast-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  fast:
+    name: Contracts, units, and mock integration
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version: '20.x'
+
+      - name: Install validation dependencies
+        run: npm ci --ignore-scripts
+
+      - name: Run fast sandbox lane
+        run: npm run test:sandbox:fast
+
+      - name: Lint execution fabric
+        run: >-
+          npx eslint
+          scripts/sandbox/fabric.js
+          scripts/sandbox/fabric-controller.js
+          scripts/sandbox/fabric/*.js
+          tests/sandbox/fabric-host-smoke-helpers.js
+          tests/sandbox/fabric*.host.js
+          tests/sandbox/fabric*.test.js

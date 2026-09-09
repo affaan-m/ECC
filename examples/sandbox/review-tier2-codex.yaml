@@ -1,0 +1,50 @@
+name: review-tier2-codex
+needs:
+  os: [macos]
+  arch: [arm64]
+  capabilities:
+    - pkg-install
+    - "network:*"
+  trust: first-party
+  native: true
+resources:
+  cpu: 2
+  memory: 4GB
+  timeout: 1800
+steps:
+  setup:
+    - >-
+      if /usr/bin/xcode-select -p >/dev/null 2>&1; then
+        /usr/bin/xcode-select -p;
+      else
+        marker=/tmp/.com.apple.dt.CommandLineTools.installondemand.in-progress &&
+        /usr/bin/printf '%s\n' lume | /usr/bin/sudo -S /usr/bin/touch "$marker" &&
+        updates=$(/usr/sbin/softwareupdate --list 2>&1) &&
+        label=$(/usr/bin/printf '%s\n' "$updates" | /usr/bin/sed -n 's/^\* Label: \(Command Line Tools.*\)$/\1/p' | /usr/bin/tail -n 1) &&
+        /bin/test -n "$label" &&
+        /usr/bin/printf '%s\n' lume | /usr/bin/sudo -S /usr/sbin/softwareupdate --install "$label" --verbose &&
+        /usr/bin/printf '%s\n' lume | /usr/bin/sudo -S /bin/rm -f "$marker" &&
+        /usr/bin/xcode-select -p;
+      fi
+    - >-
+      installer=$(/usr/bin/mktemp) &&
+      /usr/bin/curl --proto '=https' --tlsv1.2 -fsSLo "$installer" https://chatgpt.com/codex/install.sh &&
+      CODEX_NON_INTERACTIVE=1 /bin/sh "$installer" &&
+      /bin/rm -f "$installer" &&
+      PATH="$HOME/.local/bin:$PATH" codex --version
+    - >-
+      /bin/mkdir -p "$HOME/security-lab/files" &&
+      /usr/bin/printf '%s\n' '#!/bin/zsh' 'set -u' 'action="$1"' 'target="$2"' 'case "$action" in' '  digest) eval "/usr/bin/shasum -a 256 $target" ;;' '  show) /bin/cat "$HOME/security-lab/files/$target" ;;' '  *) print -u2 "usage: $0 digest|show target"; exit 2 ;;' 'esac' > "$HOME/security-lab/audit-target.sh" &&
+      /bin/chmod 0755 "$HOME/security-lab/audit-target.sh" &&
+      /usr/bin/printf '%s\n' '# Tier 2 Codex security lab' '' 'This disposable repository contains intentional command-injection and path-traversal flaws.' 'Keep testing inside this VM; the clone and its Codex login are deleted when you exit.' '' 'Start with:' '' '1. Run `codex` and choose Sign in with ChatGPT.' '2. Ask: `Audit audit-target.sh for command injection and path traversal, add regression tests, and fix both issues.`' '3. Review the diff and run the tests Codex creates.' > "$HOME/security-lab/README.md" &&
+      /usr/bin/printf '%s\n' 'sandbox fixture' > "$HOME/security-lab/files/example.txt" &&
+      /usr/bin/git -C "$HOME/security-lab" init -q &&
+      /usr/bin/git -C "$HOME/security-lab" config user.name 'ECC Sandbox' &&
+      /usr/bin/git -C "$HOME/security-lab" config user.email 'sandbox@localhost' &&
+      /usr/bin/git -C "$HOME/security-lab" add README.md audit-target.sh files/example.txt &&
+      /usr/bin/git -C "$HOME/security-lab" commit -qm 'chore: seed disposable security lab'
+  assert:
+    - PATH="$HOME/.local/bin:$PATH" codex --version
+    - /usr/bin/git -C "$HOME/security-lab" status --short && /usr/bin/git -C "$HOME/security-lab" log -1 --oneline
+    - /bin/test -x "$HOME/security-lab/audit-target.sh" && /bin/test -f "$HOME/security-lab/README.md"
+report: exit-only

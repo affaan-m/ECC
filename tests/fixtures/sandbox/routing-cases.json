@@ -21,60 +21,277 @@
   },
   "cases": [
     {
-      "name": "benign host process uses SRT",
+      "name": "benign host process uses srt",
       "backends": { "srt": { "available": true } },
       "expected": ["srt"]
     },
     {
-      "name": "workspace write remains Tier 0",
+      "name": "filesystem write remains tier zero",
       "needs": { "capabilities": ["fs-write"] },
       "backends": { "srt": { "available": true } },
       "expected": ["srt"]
     },
     {
-      "name": "clean home routes to Podman",
-      "needs": { "os": ["linux"], "capabilities": ["clean-home"] },
-      "backends": { "podman": { "available": true } },
-      "expected": ["podman"]
-    },
-    {
-      "name": "package installation routes to Podman",
+      "name": "Linux package install uses Podman",
       "needs": { "os": ["linux"], "capabilities": ["pkg-install"] },
       "backends": { "podman": { "available": true } },
       "expected": ["podman"]
     },
     {
-      "name": "untrusted Linux uses Podman with an explicit boundary note",
-      "needs": { "os": ["linux"], "trust": "untrusted" },
-      "backends": { "podman": { "available": true } },
-      "expected": ["podman"],
-      "notePattern": "not a VM security boundary"
+      "name": "clean home skips host process",
+      "needs": { "os": ["linux"], "capabilities": ["clean-home"] },
+      "backends": { "srt": { "available": true }, "podman": { "available": true } },
+      "expected": ["podman"]
     },
     {
-      "name": "open network uses Podman with an unrestricted policy note",
-      "needs": { "os": ["linux"], "capabilities": ["network:*"] },
-      "backends": { "podman": { "available": true } },
-      "expected": ["podman"],
-      "notePattern": "network policy is unrestricted"
-    },
-    {
-      "name": "strict domain allowlist fails closed",
-      "needs": { "os": ["linux"], "capabilities": ["pkg-install", "network:npmjs.org"] },
-      "backends": { "podman": { "available": true } },
-      "expected": [null],
-      "result": "error",
-      "reasonPattern": "cannot enforce strict domain"
-    },
-    {
-      "name": "native operating system behavior is deferred",
-      "needs": { "capabilities": ["services"], "native": true },
+      "name": "other container runtime availability never satisfies Tier one",
+      "needs": { "os": ["linux"], "capabilities": ["pkg-install"] },
       "backends": {
-        "lume": { "available": true },
-        "ci": { "available": true, "targets": [{ "os": "macos", "arch": "arm64" }] }
+        "podman": {
+          "available": false,
+          "state": "unavailable",
+          "reason": "podman not found",
+          "fix": "Install Podman: brew install podman && podman machine init && podman machine start"
+        },
+        "microsandbox": { "available": true }
       },
       "expected": [null],
       "result": "error",
-      "reasonPattern": "no implemented Tier 0 or Tier 1 backend"
+      "reasonPattern": "Tier 1 requires rootless Podman: podman not found",
+      "fixPattern": "brew install podman.*podman machine init.*podman machine start"
+    },
+    {
+      "name": "stopped Podman returns the probed startup remediation",
+      "needs": { "os": ["linux"], "capabilities": ["clean-home"] },
+      "backends": {
+        "podman": {
+          "available": false,
+          "state": "stopped",
+          "reason": "Podman machine is not running",
+          "fix": "Start Podman: podman machine start"
+        }
+      },
+      "expected": [null],
+      "result": "error",
+      "reasonPattern": "Tier 1 requires rootless Podman: Podman machine is not running",
+      "fixPattern": "Start Podman: podman machine start"
+    },
+    {
+      "name": "rootful Podman returns the probed rootless remediation",
+      "needs": { "os": ["linux"], "capabilities": ["pkg-install"] },
+      "backends": {
+        "podman": {
+          "available": false,
+          "state": "unavailable",
+          "reason": "Podman machine is rootful or its rootless state cannot be verified",
+          "fix": "Use a rootless Podman machine: podman machine set --rootful=false && podman machine stop && podman machine start"
+        }
+      },
+      "expected": [null],
+      "result": "error",
+      "reasonPattern": "Tier 1 requires rootless Podman: Podman machine is rootful",
+      "fixPattern": "podman machine set --rootful=false"
+    },
+    {
+      "name": "untrusted Linux uses rootless Podman even when Microsandbox is available",
+      "needs": { "os": ["linux"], "trust": "untrusted" },
+      "backends": {
+        "podman": { "available": true },
+        "microsandbox": { "available": true }
+      },
+      "expected": ["podman"]
+    },
+    {
+      "name": "untrusted Linux uses Podman as the only Tier one runtime",
+      "needs": { "os": ["linux"], "trust": "untrusted" },
+      "backends": { "podman": { "available": true } },
+      "expected": ["podman"]
+    },
+    {
+      "name": "open network uses rootless Podman even when Microsandbox is available",
+      "needs": { "os": ["linux"], "capabilities": ["network:*"] },
+      "backends": {
+        "podman": { "available": true },
+        "microsandbox": {
+          "available": true,
+          "capabilities": ["domain-network-policy"]
+        }
+      },
+      "expected": ["podman"]
+    },
+    {
+      "name": "open network skips SRT and Microsandbox in favor of Podman",
+      "host": { "os": "linux", "arch": "arm64" },
+      "needs": { "os": ["linux"], "capabilities": ["network:*"] },
+      "backends": {
+        "srt": { "available": true },
+        "podman": { "available": true },
+        "microsandbox": { "available": true }
+      },
+      "expected": ["podman"]
+    },
+    {
+      "name": "open network Podman policy is explicit",
+      "needs": { "os": ["linux"], "capabilities": ["network:*"] },
+      "backends": { "podman": { "available": true } },
+      "expected": ["podman"],
+      "notePattern": "unrestricted"
+    },
+    {
+      "name": "Tier one domain policy fails closed even when Microsandbox is available",
+      "needs": { "os": ["linux"], "capabilities": ["pkg-install", "network:npmjs.org"] },
+      "backends": {
+        "podman": { "available": true },
+        "microsandbox": {
+          "available": true,
+          "capabilities": ["domain-network-policy"]
+        }
+      },
+      "expected": [null],
+      "result": "error",
+      "reasonPattern": "Podman cannot enforce strict domain allowlists",
+      "fixPattern": "Keep networking disabled"
+    },
+    {
+      "name": "Tier one domain policy fails closed",
+      "needs": { "os": ["linux"], "capabilities": ["pkg-install", "network:npmjs.org"] },
+      "backends": { "podman": { "available": true }, "ci": { "available": true } },
+      "expected": [null],
+      "result": "error",
+      "reasonPattern": "Podman cannot enforce strict domain allowlists",
+      "fixPattern": "Keep networking disabled"
+    },
+    {
+      "name": "Microsandbox without domain policy fails closed",
+      "needs": { "os": ["linux"], "capabilities": ["pkg-install", "network:npmjs.org"] },
+      "backends": { "microsandbox": { "available": true } },
+      "expected": [null],
+      "result": "error",
+      "reasonPattern": "Podman cannot enforce strict domain allowlists",
+      "fixPattern": "Keep networking disabled"
+    },
+    {
+      "name": "native domain policy does not recommend an unroutable Microsandbox",
+      "needs": { "capabilities": ["services", "network:npmjs.org"], "native": true },
+      "backends": {
+        "microsandbox": {
+          "available": true,
+          "capabilities": ["domain-network-policy"]
+        },
+        "lume": { "available": true },
+        "ci": { "available": true }
+      },
+      "expected": [null],
+      "result": "error",
+      "reasonPattern": "no macos/arm64 native or CI backend enforces strict domain allowlists",
+      "fixPattern": "Keep networking disabled"
+    },
+    {
+      "name": "macOS services with explicit open network use Lume",
+      "needs": { "capabilities": ["services", "network:*"] },
+      "backends": { "podman": { "available": true }, "lume": { "available": true } },
+      "expected": ["lume"]
+    },
+    {
+      "name": "Tart selection emits license notice",
+      "needs": { "capabilities": ["gui", "network:*"] },
+      "backends": { "tart": { "available": true } },
+      "expected": ["tart"],
+      "notePattern": "Fair Source 100"
+    },
+    {
+      "name": "native Linux with explicit open network on macOS uses Lima",
+      "needs": { "os": ["linux"], "capabilities": ["services", "network:*"], "native": true },
+      "backends": { "lima": { "available": true } },
+      "expected": ["lima"]
+    },
+    {
+      "name": "local VM without explicit network authorization fails closed",
+      "needs": { "capabilities": ["services"] },
+      "options": { "localOnly": true },
+      "backends": { "lume": { "available": true } },
+      "expected": [null],
+      "result": "error",
+      "reasonPattern": "cannot enforce no-network"
+    },
+    {
+      "name": "detected Windows Sandbox still redirects to CI in v1",
+      "host": { "os": "windows", "arch": "x86_64" },
+      "needs": { "os": ["windows"], "arch": ["x86_64"], "capabilities": ["network:*"], "native": true },
+      "backends": {
+        "windows-sandbox": { "available": true },
+        "ci": { "available": true, "targets": [{ "os": "windows", "arch": "x86_64" }] }
+      },
+      "expected": ["ci"]
+    },
+    {
+      "name": "unavailable Windows routes to CI",
+      "needs": { "os": ["windows"], "capabilities": ["network:*"] },
+      "backends": { "ci": { "available": true, "targets": [{ "os": "windows", "arch": "arm64" }] } },
+      "expected": ["ci"]
+    },
+    {
+      "name": "CI without explicit open network fails closed",
+      "needs": { "os": ["windows"] },
+      "backends": { "ci": { "available": true, "targets": [{ "os": "windows", "arch": "arm64" }] } },
+      "expected": [null],
+      "result": "error",
+      "reasonPattern": "cannot enforce disabled egress"
+    },
+    {
+      "name": "untrusted CI native evidence fails closed",
+      "needs": { "os": ["windows"], "capabilities": ["network:*"], "trust": "untrusted" },
+      "backends": { "ci": { "available": true, "targets": [{ "os": "windows", "arch": "arm64" }] } },
+      "expected": [null],
+      "result": "error",
+      "reasonPattern": "cannot produce trustworthy evidence"
+    },
+    {
+      "name": "all fans out independently",
+      "needs": { "os": ["all"], "capabilities": ["network:*"] },
+      "backends": {
+        "srt": { "available": true },
+        "podman": { "available": true, "targets": [{ "os": "linux", "arch": "arm64" }] },
+        "ci": {
+          "available": true,
+          "targets": [
+            { "os": "macos", "arch": "arm64" },
+            { "os": "windows", "arch": "arm64" }
+          ]
+        }
+      },
+      "expected": ["podman", "ci", "ci"]
+    },
+    {
+      "name": "iOS Simulator routes to capable macOS CI",
+      "needs": { "capabilities": ["ios-simulator", "network:*"] },
+      "backends": {
+        "lume": { "available": true },
+        "ci": {
+          "available": true,
+          "capabilities": ["ios-simulator"],
+          "targets": [{ "os": "macos", "arch": "arm64" }]
+        }
+      },
+      "expected": ["ci"]
+    },
+    {
+      "name": "local-only rejects unavailable OS",
+      "needs": { "os": ["windows"] },
+      "options": { "localOnly": true },
+      "backends": { "ci": { "available": true } },
+      "expected": [null],
+      "result": "error",
+      "reasonPattern": "no local backend"
+    },
+    {
+      "name": "architecture mismatch routes to CI",
+      "needs": { "arch": ["x86_64"], "capabilities": ["network:*"] },
+      "backends": {
+        "srt": { "available": true },
+        "ci": { "available": true, "targets": [{ "os": "macos", "arch": "x86_64" }] }
+      },
+      "expected": ["ci"]
     }
   ]
 }

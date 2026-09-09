@@ -92,11 +92,10 @@ function sampleSingleReport(overrides = {}) {
   };
 }
 
-function runCli(args, env = process.env) {
+function runCli(args) {
   return spawnSync(process.execPath, [cliPath, ...args], {
     cwd: repoRoot,
     encoding: 'utf8',
-    env,
     shell: false,
     timeout: SUBPROCESS_TIMEOUT_MS,
   });
@@ -104,13 +103,12 @@ function runCli(args, env = process.env) {
 
 console.log('\n=== ECC sandbox contracts and router tests ===\n');
 
-test('public help exposes Tier 1 controls but omits internal commands', () => {
+test('public help omits internal underscore-prefixed commands', () => {
   const result = runCli(['--help']);
   assert.strictEqual(result.status, 0, result.stderr);
   const catalog = JSON.parse(result.stdout);
+  assert.ok(catalog.commands.includes('explore'));
   assert.ok(catalog.commands.includes('launch'));
-  assert.ok(catalog.commands.includes('listen'));
-  assert.ok(catalog.commands.includes('stop'));
   assert.ok(!catalog.commands.includes('_explore'));
   assert.ok(catalog.commands.every(command => !command.startsWith('_')));
 });
@@ -153,7 +151,7 @@ test('CLI launch returns the exact Tier 1 consent proposal without provisioning'
       '--purpose', 'isolated backend feature behavior',
       '--terminal', 'terminal.app',
       '--capabilities', capabilitiesPath,
-    ], { ...process.env, XDG_STATE_HOME: path.join(temporaryRoot, 'state') });
+    ]);
     assert.strictEqual(result.status, 0, result.stderr);
     const proposal = JSON.parse(result.stdout);
     assert.strictEqual(proposal.result, 'consent-required');
@@ -259,9 +257,9 @@ test('rejects forged capability maps before routing', () => {
   );
 });
 
-test('unimplemented native and CI backends remain unroutable', () => {
+test('hard backend constraints reject impossible local target claims', () => {
   const manifest = validateManifest(buildManifest({
-    needs: { os: ['macos'], arch: ['arm64'], capabilities: ['services'] },
+    needs: { os: ['macos'], arch: ['arm64'], capabilities: ['services', 'network:*'] },
   }));
   const capabilities = {
     schema_version: 1,
@@ -272,9 +270,7 @@ test('unimplemented native and CI backends remain unroutable', () => {
     },
   };
   const decision = routeManifest(manifest, capabilities);
-  assert.strictEqual(decision.result, 'error');
-  assert.strictEqual(decision.routes[0].backend, null);
-  assert.match(decision.routes[0].reason, /no implemented Tier 0 or Tier 1 backend/);
+  assert.strictEqual(decision.routes[0].backend, 'ci');
 });
 
 test('requires an explicit macOS target for iOS Simulator', () => {
@@ -345,6 +341,9 @@ for (const testCase of routingFixtures.cases) {
     if (testCase.reasonPattern) {
       assert.match(decision.routes.map(route => route.reason).join('\n'), new RegExp(testCase.reasonPattern));
     }
+    if (testCase.fixPattern) {
+      assert.match(decision.routes.map(route => route.fix).join('\n'), new RegExp(testCase.fixPattern));
+    }
   });
 }
 
@@ -370,6 +369,34 @@ test('validates single and aggregate reports through one schema', () => {
 });
 
 test('rejects malformed reports and more than one escalation', () => {
+  assert.throws(
+    () => validateReport({
+      manifest: '/tmp/sandbox.yaml',
+      backend: 'aggregate',
+      tier: null,
+      os: 'multiple',
+      arch: 'multiple',
+      venue: 'local',
+      execution_mode: 'real',
+      started: '2026-08-08T12:00:00.000Z',
+      duration_ms: 84,
+      escalations: [],
+      children: [
+        sampleSingleReport({
+          escalations: [{ from: 'srt', reason: 'denied', to: 'podman' }],
+        }),
+        sampleSingleReport({
+          backend: 'lume',
+          tier: 2,
+          os: 'macos',
+          escalations: [{ from: 'podman', reason: 'native', to: 'lume' }],
+        }),
+      ],
+      result: 'pass',
+      notes: [],
+    }),
+    error => error instanceof ContractValidationError && /at most one escalation in total/.test(error.message)
+  );
   assert.throws(
     () => validateReport(sampleSingleReport({ unexpected: true })),
     error => error instanceof ContractValidationError && /additional properties/.test(error.message)
@@ -461,11 +488,17 @@ test('rejects malformed reports and more than one escalation', () => {
 test('CLI dry-run emits only a routable JSON decision on stdout', () => {
   const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-sandbox-contract-'));
   try {
+    const host = defaultHost();
     const capabilitiesPath = path.join(tempRoot, 'capabilities.json');
     fs.writeFileSync(capabilitiesPath, JSON.stringify({
       schema_version: 1,
-      host: defaultHost(),
-      backends: { srt: { available: true } },
+      host,
+      backends: {
+        srt: {
+          available: true,
+          targets: [{ os: host.os, arch: host.arch }],
+        },
+      },
     }));
     const result = runCli([
       'run',

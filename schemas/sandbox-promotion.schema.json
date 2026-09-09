@@ -1,0 +1,54 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://ecc.tools/schemas/sandbox-promotion.schema.json",
+  "title": "ECC sandbox promotion receipt",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version", "promotion_id", "artifact_id", "evaluation_digest",
+    "target_ref", "observed_target_oid", "base_oid", "candidate_ref",
+    "candidate_commit", "checks", "result", "created_at"
+  ],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "promotion_id": { "$ref": "#/definitions/id" },
+    "artifact_id": { "$ref": "#/definitions/id" },
+    "evaluation_digest": { "$ref": "#/definitions/sha256" },
+    "target_ref": { "type": "string", "minLength": 1, "maxLength": 512 },
+    "observed_target_oid": { "$ref": "#/definitions/gitOid" },
+    "base_oid": { "$ref": "#/definitions/gitOid" },
+    "candidate_ref": { "type": ["string", "null"], "maxLength": 512 },
+    "candidate_commit": {
+      "oneOf": [{ "$ref": "#/definitions/gitOid" }, { "type": "null" }]
+    },
+    "checks": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "evaluation_accepted", "cleanup_verified", "patch_digest_verified",
+        "target_unchanged"
+      ],
+      "properties": {
+        "evaluation_accepted": { "type": "boolean" },
+        "cleanup_verified": { "type": "boolean" },
+        "patch_digest_verified": { "type": "boolean" },
+        "target_unchanged": { "type": "boolean" }
+      }
+    },
+    "result": { "enum": ["promoted", "stale", "rejected", "error"] },
+    "error": { "type": "string", "minLength": 1, "maxLength": 4096 },
+    "created_at": { "$ref": "#/definitions/timestamp" }
+  },
+  "definitions": {
+    "id": {
+      "type": "string", "minLength": 1, "maxLength": 120,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+    },
+    "sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+    "gitOid": { "type": "string", "pattern": "^(?:[a-f0-9]{40}|[a-f0-9]{64})$" },
+    "timestamp": {
+      "type": "string",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\\.[0-9]{3})?Z$"
+    }
+  }
+}

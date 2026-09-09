@@ -6,6 +6,7 @@ const path = require('path');
 const { spawnSync } = require('child_process');
 const { buildSingleReport, normalizeStep } = require('../report');
 const { loadMockScenario, mockRunner, validateMockScenario } = require('../mock');
+const { runStreaming } = require('../stream-runner');
 
 const SRT_DENIAL_EXIT_CODE = 77;
 const MAX_EXEC_BUFFER = 1024 * 1024;
@@ -32,6 +33,7 @@ const SAFE_ENV_NAMES = new Set([
 ]);
 
 function defaultRunner(executable, argv, options) {
+  if (options.streamOutput) return runStreaming(executable, argv, options);
   return spawnSync(executable, argv, {
     ...options,
     encoding: 'utf8',
@@ -129,7 +131,7 @@ function executeSrt(manifest, options) {
   const clock = options.clock || (() => Date.now());
   const startedMs = clock();
   const started = new Date(startedMs).toISOString();
-  const deadline = startedMs + (manifest.resources.timeout * 1000);
+  let deadline = startedMs + (manifest.resources.timeout * 1000);
   const enableWeakerNestedSandbox = options.enableWeakerNestedSandbox === true;
   const tempRoot = fs.mkdtempSync(path.join(
     path.resolve(options.tempParent || os.tmpdir()),
@@ -153,8 +155,25 @@ function executeSrt(manifest, options) {
   const steps = [];
   const assertions = [];
   const notes = [];
+  const lifecycle = options.lifecycle || {};
   let denial = null;
   let executionError = false;
+  let stopRequested = false;
+
+  const notify = (name, details) => {
+    if (typeof lifecycle[name] !== 'function') return null;
+    try {
+      const response = lifecycle[name](details) || null;
+      if (Number.isFinite(response?.waited_ms) && response.waited_ms > 0) {
+        deadline += response.waited_ms;
+      }
+      return response;
+    } catch (error) {
+      executionError = true;
+      notes.push(`SRT lifecycle ${name} failed: ${error.message}`);
+      return null;
+    }
+  };
 
   if (platform === 'win32' && !windowsSrtShim && !options.mock) {
     fs.rmSync(tempRoot, { recursive: true, force: true });
@@ -180,7 +199,22 @@ function executeSrt(manifest, options) {
       flag: 'wx',
     });
 
-    const execute = (command, assertion) => {
+    const readyControl = notify('ready', {
+      backend: 'srt',
+      resource: { settings_path: settingsPath },
+      inspect: () => ({
+        backend: 'srt',
+        policy: settings,
+        owned_process: null,
+      }),
+    });
+
+    if (readyControl?.stop) {
+      executionError = true;
+      notes.push('SRT execution stopped at the ready review boundary');
+    } else {
+    const execute = (command, assertion, phase) => {
+      notify('stepStarted', { backend: 'srt', command, phase });
       const remainingMs = Math.max(1, deadline - clock());
       let executable = options.executable || 'srt';
       let argv = ['--settings', settingsPath, '-c', command];
@@ -212,11 +246,22 @@ function executeSrt(manifest, options) {
           cwd,
           env: childEnvironment,
           timeout: remainingMs,
+          ...(options.streamOutput ? {
+            streamOutput: { ...options.streamOutput, phase },
+          } : {}),
         }
       );
       const step = normalizeStep(command, execution);
       steps.push(step);
       if (assertion) assertions.push({ cmd: command, pass: step.exit === 0 });
+      const completedControl = notify('stepCompleted', {
+        backend: 'srt', command, phase, step,
+        output_streamed: Boolean(options.streamOutput),
+      });
+      if (completedControl?.stop || lifecycle.shouldStop?.()) {
+        stopRequested = true;
+        executionError = true;
+      }
       if (isSrtDenial(execution)) {
         denial = { command, installer: hasInstallerSignature(command) };
       }
@@ -226,18 +271,49 @@ function executeSrt(manifest, options) {
 
     let setupPassed = true;
     for (const command of manifest.steps.setup) {
-      if (!execute(command, false)) {
+      if (!execute(command, false, 'setup') || stopRequested) {
         setupPassed = false;
         break;
       }
     }
-    if (setupPassed) {
+    if (setupPassed && !stopRequested) {
       for (const command of manifest.steps.assert) {
-        if (!execute(command, true)) break;
+        if (!execute(command, true, 'assert') || stopRequested) break;
       }
     }
+    if (!stopRequested) notify('evidenceStarted', { backend: 'srt', report: manifest.report });
+    if (!stopRequested) {
+      const evidenceControl = notify('evidence', {
+        backend: 'srt',
+        report: manifest.report,
+        steps: [...steps],
+        assertions: [...assertions],
+        inspect: () => ({
+          backend: 'srt',
+          policy: settings,
+          steps: [...steps],
+          assertions: [...assertions],
+        }),
+      });
+      if (evidenceControl?.stop || lifecycle.shouldStop?.()) {
+        stopRequested = true;
+        executionError = true;
+        notes.push('SRT execution stopped at the evidence review boundary');
+      }
+    }
+    else notes.push('SRT execution stopped during a step; evidence collection was skipped');
+    }
   } finally {
-    fs.rmSync(tempRoot, { recursive: true, force: true });
+    notify('cleanupStarted', { backend: 'srt', resource: { settings_path: settingsPath } });
+    let cleanupPass = true;
+    try {
+      fs.rmSync(tempRoot, { recursive: true, force: true });
+    } catch (error) {
+      cleanupPass = false;
+      executionError = true;
+      notes.push(`SRT cleanup failed: ${error.message}`);
+    }
+    notify('cleanupCompleted', { backend: 'srt', pass: cleanupPass });
   }
 
   if (denial) {

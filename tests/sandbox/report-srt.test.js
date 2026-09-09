@@ -139,6 +139,22 @@ test('generates least-privilege SRT settings from the manifest', () => {
   );
 });
 
+test('a stop at the ready boundary skips every SRT manifest command', () => {
+  let invoked = 0;
+  const outcome = runDirect(manifest(), [], {
+    options: {
+      lifecycle: { ready: () => ({ stop: true, waited_ms: 10 }) },
+      run: () => {
+        invoked += 1;
+        return execution(0);
+      },
+    },
+  });
+  assert.strictEqual(invoked, 0);
+  assert.strictEqual(outcome.report.result, 'error');
+  assert.match(outcome.report.notes.join('\n'), /stopped at the ready review boundary/);
+});
+
 test('denies writes to adapter control files nested inside a writable workspace', () => {
   let settingsSeen;
   const outcome = runDirect(manifest(), [execution(0), execution(0)], {
@@ -237,6 +253,94 @@ test('runs setup and assertions through SRT and emits a passing report', () => {
   assert.deepStrictEqual(outcome.report.assertions, [{ cmd: 'printf assert', pass: true }]);
   assert.strictEqual(settingsSeen.filesystem.allowWrite.length, 1);
   assert.match(outcome.report.notes.join('\n'), /Mock SRT/);
+});
+
+test('publishes real SRT lifecycle boundaries around commands and cleanup', () => {
+  const events = [];
+  const outcome = runDirect(manifest(), [execution(0, 'setup'), execution(0, 'assert')], {
+    options: {
+      lifecycle: {
+        ready: details => events.push(['ready', details.backend]),
+        stepStarted: details => events.push(['started', details.phase, details.command]),
+        stepCompleted: details => events.push(['completed', details.phase, details.step.exit]),
+        evidence: details => events.push(['evidence', details.report]),
+        cleanupStarted: details => events.push(['cleanup-started', details.backend]),
+        cleanupCompleted: details => events.push(['cleanup-completed', details.pass]),
+      },
+    },
+  });
+  assert.strictEqual(outcome.report.result, 'pass');
+  assert.deepStrictEqual(events, [
+    ['ready', 'srt'],
+    ['started', 'setup', 'printf setup'],
+    ['completed', 'setup', 0],
+    ['started', 'assert', 'printf assert'],
+    ['completed', 'assert', 0],
+    ['evidence', 'exit-only'],
+    ['cleanup-started', 'srt'],
+    ['cleanup-completed', true],
+  ]);
+});
+
+test('a stop after an SRT setup step cancels the remaining run as an error', () => {
+  const outcome = runDirect(manifest({
+    setup: ['printf setup-one', 'printf setup-two'],
+  }), [
+    execution(0, 'setup one'),
+    execution(0, 'setup two'),
+    execution(0, 'assert'),
+  ], {
+    options: {
+      lifecycle: {
+        stepCompleted: details => (
+          details.phase === 'setup' ? { stop: true } : null
+        ),
+      },
+    },
+  });
+  assert.deepStrictEqual(outcome.report.steps.map(step => step.cmd), ['printf setup-one']);
+  assert.deepStrictEqual(outcome.report.assertions, []);
+  assert.strictEqual(outcome.report.result, 'error');
+  assert.strictEqual(outcome.exitCode, 2);
+  assert.match(outcome.report.notes.join('\n'), /evidence collection was skipped/);
+});
+
+test('a stop after an SRT assertion skips the remaining assertions', () => {
+  const outcome = runDirect(manifest({
+    assert: ['printf assert-one', 'printf assert-two'],
+  }), [
+    execution(0, 'setup'),
+    execution(0, 'assert one'),
+    execution(0, 'assert two'),
+  ], {
+    options: {
+      lifecycle: {
+        stepCompleted: details => (
+          details.phase === 'assert' ? { stop: true } : null
+        ),
+      },
+    },
+  });
+  assert.deepStrictEqual(outcome.report.steps.map(step => step.cmd), [
+    'printf setup', 'printf assert-one',
+  ]);
+  assert.deepStrictEqual(outcome.report.assertions, [
+    { cmd: 'printf assert-one', pass: true },
+  ]);
+  assert.strictEqual(outcome.report.result, 'error');
+});
+
+test('a stop at the SRT evidence boundary makes the report a truthful error', () => {
+  const outcome = runDirect(manifest(), [execution(0, 'setup'), execution(0, 'assert')], {
+    options: {
+      lifecycle: {
+        evidence: () => ({ stop: true }),
+      },
+    },
+  });
+  assert.strictEqual(outcome.report.result, 'error');
+  assert.strictEqual(outcome.exitCode, 2);
+  assert.match(outcome.report.notes.join('\n'), /stopped at the evidence review boundary/);
 });
 
 test('classifies a policy denial with the distinct escalation exit code', () => {

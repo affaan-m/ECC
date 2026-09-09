@@ -1,0 +1,145 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://ecc.tools/schemas/sandbox-trajectory.schema.json",
+  "title": "ECC sandbox execution trajectory",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version", "trajectory_id", "plan_id", "job_id", "run_id",
+    "manifest_digest", "worker", "route", "environment", "started_at",
+    "completed_at", "commands", "tests", "artifacts", "credential_lease_ids",
+    "cleanup", "timings", "cost", "redactions", "result"
+  ],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "trajectory_id": { "$ref": "#/definitions/id" },
+    "plan_id": { "$ref": "#/definitions/id" },
+    "job_id": { "$ref": "#/definitions/id" },
+    "run_id": { "$ref": "#/definitions/id" },
+    "manifest_digest": { "$ref": "#/definitions/sha256" },
+    "worker": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "harness", "model"],
+      "properties": {
+        "id": { "$ref": "#/definitions/id" },
+        "harness": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "model": { "type": "string", "minLength": 1, "maxLength": 200 }
+      }
+    },
+    "route": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["backend", "tier", "os", "arch", "policy_version"],
+      "properties": {
+        "backend": {
+          "enum": [
+            "srt", "podman", "microsandbox", "lume", "lima", "tart",
+            "windows-sandbox", "hyper-v", "dockur-windows", "ci-native"
+          ]
+        },
+        "tier": { "type": "integer", "minimum": 0, "maximum": 3 },
+        "os": { "enum": ["linux", "macos", "windows"] },
+        "arch": { "enum": ["arm64", "x86_64"] },
+        "policy_version": { "type": "string", "minLength": 1, "maxLength": 120 }
+      }
+    },
+    "environment": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["digest", "cache_key", "warm"],
+      "properties": {
+        "digest": { "$ref": "#/definitions/sha256" },
+        "cache_key": { "oneOf": [{ "$ref": "#/definitions/sha256" }, { "type": "null" }] },
+        "warm": { "type": "boolean" }
+      }
+    },
+    "started_at": { "$ref": "#/definitions/timestamp" },
+    "completed_at": { "$ref": "#/definitions/timestamp" },
+    "commands": {
+      "type": "array",
+      "maxItems": 2000,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["phase", "command", "exit_code"],
+        "properties": {
+          "phase": { "enum": ["setup", "assert", "evaluate", "promote"] },
+          "command": { "type": "string", "minLength": 1, "maxLength": 8192 },
+          "exit_code": { "type": "integer" }
+        }
+      }
+    },
+    "tests": {
+      "type": "array",
+      "maxItems": 2000,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name", "result"],
+        "properties": {
+          "name": { "type": "string", "minLength": 1, "maxLength": 512 },
+          "result": { "enum": ["pass", "fail", "error", "skipped"] }
+        }
+      }
+    },
+    "artifacts": {
+      "type": "array",
+      "maxItems": 1000,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["kind", "artifact_id", "digest"],
+        "properties": {
+          "kind": { "enum": ["report", "patch", "evaluation", "recording", "visual"] },
+          "artifact_id": { "$ref": "#/definitions/id" },
+          "digest": { "$ref": "#/definitions/sha256" }
+        }
+      }
+    },
+    "credential_lease_ids": {
+      "type": "array", "maxItems": 64, "uniqueItems": true,
+      "items": { "$ref": "#/definitions/id" }
+    },
+    "cleanup": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["verified", "owned_resources_remaining"],
+      "properties": {
+        "verified": { "type": "boolean" },
+        "owned_resources_remaining": { "type": "integer", "minimum": 0, "maximum": 10000 }
+      }
+    },
+    "timings": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["active_ms", "wall_ms"],
+      "properties": {
+        "active_ms": { "type": "integer", "minimum": 0 },
+        "wall_ms": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "cost": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["amount", "currency"],
+      "properties": {
+        "amount": { "type": "number", "minimum": 0 },
+        "currency": { "type": "string", "pattern": "^[A-Z]{3}$" }
+      }
+    },
+    "redactions": { "type": "integer", "minimum": 0 },
+    "result": { "enum": ["pass", "fail", "error", "cancelled"] }
+  },
+  "definitions": {
+    "id": {
+      "type": "string", "minLength": 1, "maxLength": 120,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+    },
+    "sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+    "timestamp": {
+      "type": "string",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\\.[0-9]{3})?Z$"
+    }
+  }
+}

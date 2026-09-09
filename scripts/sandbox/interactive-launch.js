@@ -12,10 +12,10 @@ const {
   writeJsonAtomic,
 } = require('./session-store');
 const {
+  buildProposalId,
   consentProposal,
-  consumeConsentProposal,
-  createConsentProposal,
   normalizeTerminal,
+  requireMatchingProposal,
   validateConsent,
   validateProposalId,
   validatePurpose,
@@ -126,17 +126,15 @@ function createInteractiveLaunch(options, context, dependencies = {}) {
   const route = selectedRoute(resolved);
   const originalManifest = fs.readFileSync(originalManifestPath);
   const originalManifestDigest = crypto.createHash('sha256').update(originalManifest).digest('hex');
-  const proposalDetails = {
+  const proposalId = buildProposalId({
     flow: 'launch',
     manifestDigest: originalManifestDigest,
     capabilities: resolved.capabilities,
     route,
     purpose: options.purpose,
     terminal: options.terminal,
-  };
-  const proposalId = options.consent === 'y'
-    ? consumeConsentProposal(root, options.proposalId, proposalDetails)
-    : (options.consent === 'n' ? null : createConsentProposal(root, proposalDetails));
+  });
+  requireMatchingProposal(options.proposalId, proposalId, options.consent);
   const proposal = consentProposal(
     resolved.manifest, options.purpose, options.consent, proposalId
   );
@@ -171,6 +169,15 @@ function createInteractiveLaunch(options, context, dependencies = {}) {
     if (manifestDigest !== originalManifestDigest) {
       throw new Error('sandbox manifest changed after consent and before interactive launch');
     }
+    const sealedProposalId = buildProposalId({
+      flow: 'launch',
+      manifestDigest,
+      capabilities: sealedResolved.capabilities,
+      route: sealedRoute,
+      purpose: proposal.purpose,
+      terminal: options.terminal,
+    });
+    requireMatchingProposal(proposal.consent.proposal_id, sealedProposalId, 'y');
     const capabilities = fs.readFileSync(snapshot.capabilitiesPath);
     created = createRun({
       root,

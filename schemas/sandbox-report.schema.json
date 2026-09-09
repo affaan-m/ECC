@@ -79,6 +79,184 @@
       "maxItems": 10000,
       "items": { "type": "string", "maxLength": 4096 }
     },
+    "hostAdmission": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_version",
+        "decision",
+        "code",
+        "message",
+        "checked_at",
+        "platform",
+        "memory_pressure",
+        "guest_memory_bytes",
+        "total_memory_bytes",
+        "available_memory_bytes",
+        "host_reserve_bytes",
+        "vm_overhead_bytes",
+        "required_memory_bytes",
+        "available_disk_bytes",
+        "required_disk_bytes",
+        "probe_duration_ms"
+      ],
+      "properties": {
+        "speculative_memory_bytes": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "free_memory_bytes": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "schema_version": {
+          "const": 1
+        },
+        "decision": {
+          "enum": [
+            "allow",
+            "deny"
+          ]
+        },
+        "code": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80
+        },
+        "message": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        },
+        "checked_at": {
+          "$ref": "#/definitions/timestamp"
+        },
+        "platform": {
+          "type": "string",
+          "maxLength": 32
+        },
+        "memory_pressure": {
+          "enum": [
+            "normal",
+            "warning",
+            "critical",
+            "unknown"
+          ]
+        },
+        "guest_memory_bytes": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "total_memory_bytes": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "available_memory_bytes": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "host_reserve_bytes": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "vm_overhead_bytes": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "required_memory_bytes": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "available_disk_bytes": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "required_disk_bytes": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "probe_duration_ms": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "file_backed_memory_bytes": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "file_backed_credit_bytes": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "clone_bytes": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "disk_deficit_bytes": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0,
+          "maximum": 9007199254740991
+        }
+      }
+    },
     "singleReport": {
       "type": "object",
       "additionalProperties": false,
@@ -136,7 +314,11 @@
         },
         "install_diff": { "$ref": "#/definitions/installDiff" },
         "result": { "$ref": "#/definitions/result" },
-        "notes": { "$ref": "#/definitions/stringArray" }
+        "notes": { "$ref": "#/definitions/stringArray" },
+        "host_admissions": {
+          "type": "array", "minItems": 1, "maxItems": 2,
+          "items": { "$ref": "#/definitions/hostAdmission" }
+        }
       },
       "allOf": [
         {
