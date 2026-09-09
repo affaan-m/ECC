@@ -48,12 +48,31 @@ Use this quick routing before editing:
 | Add or update a skill | `skills/<name>/`, `.agents/skills/<name>/`, `manifests/` | `node scripts/ci/validate-skills.js` |
 | Add or update a command | `commands/`, `docs/COMMAND-AGENT-MAP.md`, `COMMANDS-QUICK-REF.md` | `node scripts/ci/validate-commands.js`, `npm run command-registry:check` |
 | Add a Grok setup change | `.grok/`, `scripts/grok/`, `scripts/sync-ecc-to-grok.sh` | `node tests/scripts/sync-ecc-to-grok.test.js` |
+| Decide if the Grok overlay is still required | `scripts/lib/grok-fixture-upgrade.js`, `scripts/grok/check-grok-fixture.js` | `node scripts/grok/check-grok-fixture.js --json` |
 | Add installable content | `manifests/`, `scripts/lib/install-*`, `package.json` | `node scripts/ci/validate-install-manifests.js`, targeted install tests |
 | Add docs-only guidance | `docs/`, harness supplement files | Targeted docs test plus `markdownlint` if available |
 | Review a PR | `commands/review-pr.md`, `agents/*reviewer.md` | Diff review plus relevant tests |
 
 Keep workflow contributions skills-first. Add or update `commands/` only for
 legacy slash-entry compatibility or cross-harness parity.
+
+## Upgrade gate
+
+`ecc auto-update` classifies a Grok copied-config overlay before `git pull`:
+
+| Flow | When | What happens |
+|------|------|----------------|
+| perforated | Overlay still required, and incoming files would strip it without a Grok replacement | Snapshot overlay files, pull, restore exclusive files and any shared file that lost its Grok marker, then re-sync `~/.grok` if `config.toml` exists |
+| solved | Incoming ECC has a `grok` install target or `.grok-plugin`, or it absorbed the copied-sync plus MCP harness | Pull as-is, write `~/.grok/ecc/fixture-policy.json` `detached`, and stop gating later upgrades |
+| passthrough | Overlay still required, but this upgrade does not touch fixture paths | Pull as-is, keep the overlay, persist dest with a dest sync if `config.toml` exists |
+
+Necessity is not "are our files still on disk". Probe incoming ECC:
+
+1. `SUPPORTED_INSTALL_TARGETS` includes `grok`
+2. `.grok-plugin/plugin.json` exists
+3. `scripts/sync-ecc-to-grok.sh` plus `--harness grok` in the MCP merger
+
+The overlay is necessary only while `~/.grok` still has a dest fixture and probes 1–2 are false. Inspect with `node scripts/grok/check-grok-fixture.js --json`.
 
 ## Grok Agent Roles
 

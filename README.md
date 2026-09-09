@@ -327,6 +327,8 @@ bash scripts/sync-ecc-to-grok.sh --dry-run
 bash scripts/sync-ecc-to-grok.sh
 ```
 
+`ecc auto-update` gates Grok copied-config overlays: it probes whether upstream now ships a grok install target or plugin, then perforated-restores the overlay, detaches it, or passes through. Check necessity with `node scripts/grok/check-grok-fixture.js`.
+
 For repo navigation after that sync, read the [Grok ECC Navigation Map](docs/GROK-NAVIGATION-GUIDE.md).
 
 ### Other agents and editors

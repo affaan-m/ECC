@@ -26,3 +26,4 @@ node "$ECC_ROOT/scripts/auto-update.js" --repo-root /path/to/everything-claude-c
 - This command uses the recorded install-state request and reruns `install-apply.js` after pulling the latest repo changes.
 - Reinstall is intentional: it handles upstream renames and deletions that `repair.js` cannot safely reconstruct from stale operations alone.
 - Use `--dry-run` first if you want to see the reconstructed reinstall plan before mutating anything.
+- If `~/.grok` still has a copied-config fixture, auto-update classifies it before pull (`perforated` / `solved` / `passthrough`). Inspect with `node scripts/grok/check-grok-fixture.js`.

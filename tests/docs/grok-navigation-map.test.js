@@ -44,7 +44,9 @@ test('Grok navigation map exists and identifies canonical surfaces', () => {
     'rules/',
     'hooks/',
     'scripts/',
-    'manifests/'
+    'manifests/',
+    'Upgrade gate',
+    'check-grok-fixture.js'
   ]) {
     assert.ok(source.includes(required), `Missing canonical surface ${required}`);
   }

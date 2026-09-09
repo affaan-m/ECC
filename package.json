@@ -140,6 +140,7 @@
     "scripts/status.js",
     "scripts/sync-ecc-to-codex.sh",
     "scripts/sync-ecc-to-grok.sh",
+    "scripts/grok/check-grok-fixture.js",
     "scripts/grok/check-grok-global-state.sh",
     "scripts/grok/install-agents-skills.js",
     "scripts/grok/generate-command-file.js",
