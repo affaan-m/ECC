@@ -236,6 +236,32 @@ Regression: 3/3 passed (pass^3: 100%)
 Status: SHIP IT
 ```
 
+## Runnable Frameworks
+
+The report format above is manual. The mechanical layer under it ships in
+`scripts/lib/eval-harness/` with a CLI and an end-to-end example:
+
+```sh
+node scripts/eval-harness.js example
+node scripts/eval-harness.js gate run examples/eval-harness/gate.config.json --capsule .ecc/capsules/demo
+node scripts/eval-harness.js capsule verify .ecc/capsules/demo
+```
+
+- Capsule: append-only, hash-linked journal with plan, attempt, interaction,
+  environment, and strategy lineages. Tamper, truncation, and reordering fail
+  at the exact entry.
+- Gate: smoke, selection, and held-out stages with the checker outside the
+  candidate's sandbox, syntactic tripwires, and a promotion receipt that names
+  regressions and a rollback target.
+- Replay: declared effect class per tool, fixtures keyed by content, and a
+  fail-closed `tool.fixture_missing` path. SE3 and above are never replayed.
+- Receipt: offline verification of capsule root, artifact digest, and gate
+  receipt, with the failing check named.
+
+Use a gate receipt as the evidence line in the report above when the change
+under evaluation is a skill, hook, or agent definition. Details:
+`docs/architecture/eval-harness-frameworks.md`.
+
 ## Product Evals (v1.8)
 
 Use product evals when behavior quality cannot be captured by unit tests alone.
