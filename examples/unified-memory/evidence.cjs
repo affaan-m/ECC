@@ -28,6 +28,7 @@ function validObservation(value) {
 function validSourceFields(value) {
   return typeof value.text === 'string' && value.text.length > 0 && value.text.length <= MAX_TEXT_BYTES
     && Buffer.byteLength(value.text, 'utf8') <= MAX_TEXT_BYTES
+    // eslint-disable-next-line no-control-regex -- Intentionally reject C0 except tab/LF/CR, and DEL.
     && !/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/.test(value.text)
     && validObservation(value.observedAt) && slug(value.sessionId) && slug(value.checkpointId);
 }

@@ -87,5 +87,23 @@ test('invalid host source is not a record success', () => {
 test('invalid host context is denied before source lookup', () => {
   rejects(() => verifyEvidence(body(), catalog, { workspace: 'alpha', scope: 'all' }), 'INVALID_CONTEXT');
 });
+test('rejects forbidden C0 controls and DEL in source and recalled text', () => {
+  const codes = [...Array.from({ length: 32 }, (_, code) => code), 127]
+    .filter(code => ![9, 10, 13].includes(code));
+  for (const code of codes) {
+    const text = `Synthetic ${String.fromCodePoint(code)} content.`;
+    const invalid = new Map([[sourceRef, { ...source, text }]]);
+    rejects(() => encodeEvidence(sourceRef, invalid, context), 'INVALID_SOURCE');
+    rejects(() => verifyEvidence(edit({ text }), catalog, context), 'INVALID_ENVELOPE');
+  }
+});
+test('preserves allowed whitespace, printable boundaries and non-C0 Unicode', () => {
+  for (const code of [9, 10, 13, 32, 126, 128, 0x2028, 0x1f642]) {
+    const text = `Synthetic ${String.fromCodePoint(code)} content.`;
+    const allowed = new Map([[sourceRef, { ...source, text }]]);
+    const encoded = encodeEvidence(sourceRef, allowed, context);
+    assert.equal(verifyEvidence(encoded, allowed, context).status, 'source-content-match');
+  }
+});
 process.stdout.write(`${JSON.stringify({ status: 'passed', checks: passed,
   boundary: 'Synthetic in-memory evidence checks; no authentication or runtime-service verification.' })}\n`);
