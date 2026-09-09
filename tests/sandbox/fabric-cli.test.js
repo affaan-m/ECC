@@ -11,6 +11,7 @@ const {
   validateTrajectory,
 } = require('../../scripts/sandbox/fabric/contracts');
 const { validateReport } = require('../../scripts/sandbox/contracts');
+const { defaultHost } = require('../../scripts/sandbox/router');
 const {
   resolveRun,
   runApprovedRoute,
@@ -168,6 +169,7 @@ test('rejects manifest command, resource, and report drift before worker executi
 test('runs a Tier 0 mock through an owned worktree and rejects its empty candidate', () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-fabric-cli-'));
   try {
+    const host = defaultHost();
     git(root, 'init', '-b', 'main');
     const manifestPath = path.join(root, 'sandbox.yaml');
     const capabilitiesPath = path.join(root, 'capabilities.json');
@@ -191,8 +193,8 @@ test('runs a Tier 0 mock through an owned worktree and rejects its empty candida
     ].join('\n'));
     fs.writeFileSync(capabilitiesPath, JSON.stringify({
       schema_version: 1,
-      host: { os: 'macos', arch: 'arm64', cpus: 4, inside_container: false, virtualization: 'available' },
-      backends: { srt: { available: true, targets: [{ os: 'macos', arch: 'arm64' }] } },
+      host: { ...host, inside_container: false, virtualization: 'available' },
+      backends: { srt: { available: true, targets: [{ os: host.os, arch: host.arch }] } },
     }));
     fs.writeFileSync(mockPath, JSON.stringify({ results: [
       { status: 0, stdout: 'setup' },
@@ -242,12 +244,13 @@ test('runs a Tier 0 mock through an owned worktree and rejects its empty candida
 test('orchestrates Tier 1 and Tier 2 mock adapters through canonical trajectories', () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-fabric-tier-mocks-'));
   try {
+    const host = defaultHost();
     const tierOneCapabilities = path.join(root, 'tier1-capabilities.json');
     const tierOneMock = path.join(root, 'tier1-mock.json');
     fs.writeFileSync(tierOneCapabilities, JSON.stringify({
       schema_version: 1,
-      host: { os: 'macos', arch: 'arm64' },
-      backends: { podman: { available: true, targets: [{ os: 'linux', arch: 'arm64' }] } },
+      host,
+      backends: { podman: { available: true, targets: [{ os: 'linux', arch: host.arch }] } },
     }));
     fs.writeFileSync(tierOneMock, JSON.stringify({ results: [
       { status: 0, stdout: '{"host":{"security":{"rootless":true}}}\n' },
