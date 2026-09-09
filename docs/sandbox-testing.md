@@ -107,6 +107,12 @@ Tier 1 requires a running rootless Podman service. Docker is not a Tier 1 fallba
 The CLI verifies rootless mode and an immutable image ID before
 creating a container.
 
+On macOS, `podman machine list` is an inventory signal, not a health check.
+Readiness requires a successful `podman info` response whose
+`host.security.rootless` value is the boolean `true`. A machine that reports
+running while its API is unreachable is unavailable, and the probe reports
+that failure without calling it rootful.
+
 The source mount is read-only, all Linux capabilities are dropped, process and
 memory limits are applied, and networking defaults to disabled. A read-only
 mount protects source integrity but does not make sensitive files
@@ -141,3 +147,25 @@ ecc-sandbox launch examples/sandbox/review-tier1-claude-installer.yaml \
 
 The fixture installs only inside disposable container state and leaves the
 host checkout read-only.
+
+## Podman On macOS
+
+Use a current Podman release and keep its client and helper binaries from the
+same installation. A stale `helper_binaries_dir` can silently launch an older
+`gvproxy`, `vfkit`, or `krunkit` even when `podman version` reports a newer
+client. Verify the effective helper paths with `podman --log-level=debug
+machine start`.
+
+The local acceptance configuration is a rootless libkrun machine with 2 CPUs,
+2 GiB of memory, and a 10 GiB disk. Start it from a persistent terminal or
+service that owns the helper processes. Command runners that reap descendants
+when their session exits cannot own a long-lived Podman machine.
+
+AppleHV is not the fallback for this failure. Podman's open
+[macOS machine issue #28439](https://github.com/podman-container-tools/podman/issues/28439)
+documents the same false-success state and Ignition `ensureUsers(core)` group
+lock failure. If `podman machine start` reports success but `podman info`
+fails, stop the machine, inspect its boot log and effective helper paths, and
+use hosted rootless Podman until a supported local provider passes the health
+check. Recreating a machine deletes its container and persistent data, so do that
+only for a confirmed disposable development machine.

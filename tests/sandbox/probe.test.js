@@ -52,12 +52,27 @@ function fakeRunner(platform, installed = {}) {
       return result(installed.hyperv ? 0 : 1, installed.hyperv ? 'Enabled\n' : 'Disabled\n');
     }
     if (executable === 'podman' && argv[0] === 'machine') {
+      if (installed.podmanMachineListFails) {
+        return result(125, '', 'cannot inspect Podman machines');
+      }
+      if (installed.podmanMachineListMalformed) return result(0, '{not-json');
       return result(0, JSON.stringify([{ Running: Boolean(installed.podmanRunning) }]));
     }
     if (executable === 'podman' && argv[0] === 'info') {
+      if (installed.podmanInfoFails) {
+        return result(125, '', 'unable to connect: connection refused');
+      }
+      if (installed.podmanInfoMalformed) return result(0, '{not-json');
+      const security = installed.podmanRootlessMissing
+        ? {}
+        : {
+          rootless: Object.hasOwn(installed, 'podmanRootless')
+            ? installed.podmanRootless
+            : true,
+        };
       return installed.podmanRunning
         ? result(0, JSON.stringify({
-          host: { security: { rootless: installed.podmanRootless !== false } },
+          host: { security },
         }))
         : result(1, '', 'not ready');
     }
@@ -281,6 +296,77 @@ test('rejects a rootful Podman machine', () => {
   assert.strictEqual(capabilities.backends.podman.available, false);
   assert.match(capabilities.backends.podman.reason, /rootful/);
   assert.match(capabilities.backends.podman.fix, /rootful=false/);
+});
+
+test('reports an unreachable running Podman machine without misdiagnosing rootful mode', () => {
+  const capabilities = probeCapabilities(commonOptions('darwin', 'arm64', {
+    virtualization: true,
+    podman: true,
+    podmanRunning: true,
+    podmanInfoFails: true,
+  }));
+  assert.strictEqual(capabilities.backends.podman.available, false);
+  assert.strictEqual(capabilities.backends.podman.state, 'unavailable');
+  assert.match(capabilities.backends.podman.reason, /reports running.*API.*unreachable/i);
+  assert.match(capabilities.backends.podman.fix, /machine stop.*machine start/i);
+  assert.doesNotMatch(capabilities.backends.podman.fix, /rootful/);
+});
+
+test('reports unverifiable Podman machine inventory without initialization advice', () => {
+  for (const installed of [
+    { podmanMachineListFails: true },
+    { podmanMachineListMalformed: true },
+  ]) {
+    const capabilities = probeCapabilities(commonOptions('darwin', 'arm64', {
+      virtualization: true,
+      podman: true,
+      ...installed,
+    }));
+    assert.strictEqual(capabilities.backends.podman.available, false);
+    assert.strictEqual(capabilities.backends.podman.state, 'unknown');
+    assert.match(capabilities.backends.podman.reason, /inventory.*cannot be verified/i);
+    assert.doesNotMatch(capabilities.backends.podman.fix, /machine init|machine start/i);
+  }
+});
+
+test('reports malformed or missing Podman rootless telemetry as unknown', () => {
+  for (const installed of [
+    { podmanInfoMalformed: true },
+    { podmanRootlessMissing: true },
+    { podmanRootless: 'true' },
+  ]) {
+    const capabilities = probeCapabilities(commonOptions('darwin', 'arm64', {
+      virtualization: true,
+      podman: true,
+      podmanRunning: true,
+      ...installed,
+    }));
+    assert.strictEqual(capabilities.backends.podman.available, false);
+    assert.strictEqual(capabilities.backends.podman.state, 'unknown');
+    assert.match(capabilities.backends.podman.reason, /rootless status cannot be verified/i);
+    assert.doesNotMatch(capabilities.backends.podman.fix, /rootful=false/);
+  }
+});
+
+test('reports Linux Podman API and telemetry failures truthfully', () => {
+  const unreachable = probeCapabilities(commonOptions('linux', 'x64', {
+    virtualization: true,
+    podman: true,
+    podmanRunning: true,
+    podmanInfoFails: true,
+  }));
+  assert.strictEqual(unreachable.backends.podman.state, 'unavailable');
+  assert.match(unreachable.backends.podman.reason, /API.*unreachable/i);
+  assert.doesNotMatch(unreachable.backends.podman.fix, /rootful|system migrate/i);
+
+  const malformed = probeCapabilities(commonOptions('linux', 'x64', {
+    virtualization: true,
+    podman: true,
+    podmanRunning: true,
+    podmanInfoMalformed: true,
+  }));
+  assert.strictEqual(malformed.backends.podman.state, 'unknown');
+  assert.match(malformed.backends.podman.reason, /rootless status cannot be verified/i);
 });
 
 test('writes and reads a private schema-valid capability cache', () => {

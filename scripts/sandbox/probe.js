@@ -106,63 +106,103 @@ function detectPodman(run, platform, architecture) {
 
   if (platform === 'linux') {
     const info = run('podman', ['info', '--format', 'json']);
-    let rootless = false;
-    if (succeeded(info)) {
-      try {
-        const parsed = JSON.parse(info.stdout);
-        rootless = parsed?.host?.security?.rootless === true;
-      } catch {
-        rootless = false;
-      }
-    }
-    const ready = succeeded(info) && rootless;
-    return backend(ready, {
-      version,
-      state: ready ? 'ready' : (succeeded(info) ? 'unavailable' : 'not-configured'),
-      targets: ready ? [{ os: 'linux', arch: architecture }] : [],
-      reason: ready
-        ? 'rootless Podman is ready'
-        : (succeeded(info)
-          ? 'Podman is running as root; ECC requires rootless isolation'
-          : 'podman is installed but not usable by this user'),
-      fix: ready
-        ? undefined
-        : (succeeded(info)
-          ? "Run Podman as an unprivileged user; verify: podman info --format '{{.Host.Security.Rootless}}'"
-          : 'Configure rootless Podman: podman system migrate'),
-    });
-  }
-
-  const machines = run('podman', ['machine', 'list', '--format', 'json']);
-  let running = false;
-  let configured = false;
-  if (succeeded(machines)) {
-    try {
-      const parsedMachines = JSON.parse(machines.stdout);
-      configured = parsedMachines.length > 0;
-      running = parsedMachines.some(machine => (
-        machine.Running === true || String(machine.State || '').toLowerCase() === 'running'
-      ));
-    } catch {
-      running = false;
-    }
-  }
-  if (running) {
-    const info = run('podman', ['info', '--format', 'json']);
-    let rootless = false;
-    if (succeeded(info)) {
-      try {
-        rootless = JSON.parse(info.stdout)?.host?.security?.rootless === true;
-      } catch {
-        rootless = false;
-      }
-    }
-    if (!rootless) {
+    if (!succeeded(info)) {
       return backend(false, {
         version,
         state: 'unavailable',
         targets: [],
-        reason: 'Podman machine is rootful or its rootless state cannot be verified',
+        reason: 'Podman is installed, but its API is unreachable to this user',
+        fix: 'Inspect the selected Podman connection and service; use hosted CI until the API is reachable',
+      });
+    }
+    let rootless;
+    try {
+      rootless = JSON.parse(info.stdout)?.host?.security?.rootless;
+    } catch {
+      rootless = undefined;
+    }
+    if (typeof rootless !== 'boolean') {
+      return backend(false, {
+        version,
+        state: 'unknown',
+        targets: [],
+        reason: 'Podman rootless status cannot be verified from its API response',
+        fix: "Inspect Podman configuration and verify: podman info --format '{{.Host.Security.Rootless}}'",
+      });
+    }
+    return backend(rootless, {
+      version,
+      state: rootless ? 'ready' : 'unavailable',
+      targets: rootless ? [{ os: 'linux', arch: architecture }] : [],
+      reason: rootless
+        ? 'rootless Podman is ready'
+        : 'Podman is running as root; ECC requires rootless isolation',
+      fix: rootless
+        ? undefined
+        : "Run Podman as an unprivileged user; verify: podman info --format '{{.Host.Security.Rootless}}'",
+    });
+  }
+
+  const machines = run('podman', ['machine', 'list', '--format', 'json']);
+  if (!succeeded(machines)) {
+    return backend(false, {
+      version,
+      state: 'unknown',
+      targets: [],
+      reason: 'Podman machine inventory cannot be verified',
+      fix: 'Inspect the configured Podman connection and run: podman machine list --format json',
+    });
+  }
+  let running = false;
+  let configured = false;
+  try {
+    const parsedMachines = JSON.parse(machines.stdout);
+    if (!Array.isArray(parsedMachines)) throw new Error('machine inventory is not an array');
+    configured = parsedMachines.length > 0;
+    running = parsedMachines.some(machine => (
+      machine.Running === true || String(machine.State || '').toLowerCase() === 'running'
+    ));
+  } catch {
+    return backend(false, {
+      version,
+      state: 'unknown',
+      targets: [],
+      reason: 'Podman machine inventory cannot be verified',
+      fix: 'Inspect the configured Podman connection and run: podman machine list --format json',
+    });
+  }
+  if (running) {
+    const info = run('podman', ['info', '--format', 'json']);
+    if (!succeeded(info)) {
+      return backend(false, {
+        version,
+        state: 'unavailable',
+        targets: [],
+        reason: 'Podman machine reports running, but its API is unreachable',
+        fix: 'Restart Podman: podman machine stop && podman machine start; if it remains unreachable, use hosted CI and repair the Podman/gvproxy installation',
+      });
+    }
+    let rootless;
+    try {
+      rootless = JSON.parse(info.stdout)?.host?.security?.rootless;
+    } catch {
+      rootless = undefined;
+    }
+    if (typeof rootless !== 'boolean') {
+      return backend(false, {
+        version,
+        state: 'unknown',
+        targets: [],
+        reason: 'Podman rootless status cannot be verified from its API response',
+        fix: "Inspect Podman configuration and verify: podman info --format '{{.Host.Security.Rootless}}'",
+      });
+    }
+    if (rootless === false) {
+      return backend(false, {
+        version,
+        state: 'unavailable',
+        targets: [],
+        reason: 'Podman machine is rootful; ECC requires rootless isolation',
         fix: 'Use a rootless Podman machine: podman machine set --rootful=false && podman machine stop && podman machine start',
       });
     }

@@ -13,9 +13,9 @@ The router exposes Tier 1 only when the probe verifies a reachable rootless
 Podman service. An installed CLI or a machine that merely reports `Running`
 does not satisfy readiness.
 
-The capability schema and probe may describe later backends, but the Tier 0
-router never returns them as runnable. A backend becomes routable only in the
-separate PR that supplies its executable adapter and acceptance evidence.
+The capability schema and probe may describe later backends, but this branch
+routes only SRT and Podman. A later backend becomes routable only in the PR
+that supplies its executable adapter and acceptance evidence.
 
 ## User Path
 
@@ -37,11 +37,13 @@ coverage for rootless enforcement, containment, timeouts, cleanup, image
 identity, portable snapshots, and explicit terminal consent.
 
 Historical hosted evidence on the predecessor branch includes rootless Podman
-runs on Ubuntu x86_64 and arm64 plus Debian and Fedora x86_64. Fresh evidence
-for this rebased branch is required before merge.
+runs on Ubuntu x86_64 and arm64 plus Debian and Fedora x86_64. On 2026-09-08,
+the rebased branch passed a real local arm64 run through Podman 6.1.1 and a
+2-CPU, 2-GiB rootless libkrun machine. The schema-valid run completed both
+commands, captured a complete layer diff, and left zero containers.
 
 ## Deferred Work
 
 Escalation, hosted CI execution, native VM adapters, and execution-fabric
-orchestration belong in later PRs. Local Podman is currently unavailable until
-its machine health check succeeds; the probe must report that state directly.
+orchestration belong in later PRs. AppleHV remains unsupported for the local
+acceptance path while upstream issue #28439 is unresolved.
