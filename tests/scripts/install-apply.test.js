@@ -42,7 +42,7 @@ function run(args = [], options = {}) {
   };
 
   try {
-    const stdout = execFileSync('node', [SCRIPT, ...args], {
+    const stdout = execFileSync(process.execPath, [SCRIPT, ...args], {
       cwd: options.cwd,
       env,
       encoding: 'utf8',
