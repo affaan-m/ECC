@@ -60,7 +60,7 @@ At this baseline, Codex Lean selects 3 entries and leaves 283 routed; Full selec
 
 ## Review findings and remaining gates
 
-Independent review reproduced ancestor substitution and terminal-control issues before fixes, then rechecked the fixes and approved the read-only boundary. Source identity checks do not create an atomic filesystem snapshot, and directory listing size is not independently bounded. Dependency coverage remains explicit-declarations-only and unreviewed. Required-resource annotations need a distinct output contract before selective P2 carriers can safely omit resources.
+Independent review reproduced ancestor substitution and terminal-control issues before fixes, then rechecked the fixes and approved the read-only boundary. Source identity checks do not create an atomic filesystem snapshot. The initial checkpoint lacked an independent directory listing bound; the hosted-review follow-up below closes that gap. Dependency coverage remains explicit-declarations-only and unreviewed. Required-resource annotations need a distinct output contract before selective P2 carriers can safely omit resources.
 
 The existing js-yaml security update in contributor [PR #3032](https://github.com/affaan-m/ECC/pull/3032) must be verified and integrated before release. The new JSON-schema parsing path excludes the advisory's merge feature, but that does not clear existing default-schema parsers. See the [contract's dependency gate](context-profiles.md#contributor-integration-lanes).
 
@@ -79,3 +79,11 @@ An isolated Git archive passed `YARN_ENABLE_HARDENED_MODE=1 YARN_ENABLE_SCRIPTS=
 Hosted CI for PR #3037 at `78cbd01c` reproduced the existing js-yaml high-severity advisory in its runtime audit. The branch incorporated contributor Myles Agnew's exact commit `5674661fc30ab1d3f3fcae22d72bfb4ab3059822` from #3032 using an attributed cherry-pick (`77872972`). No contributor PR was merged or closed. A fresh dependency install resolved js-yaml 4.3.2, and `npm audit --omit=dev --audit-level=high` reports zero vulnerabilities.
 
 The local npm 11 install unexpectedly rewrote the Yarn lock into its legacy format. Only that task-induced rewrite was restored to the committed contributor bytes before subsequent validation. This is installation-tool behavior, not an intended lockfile change. The full test run started on the preceding revision overlapped the dependency update and is excluded from exact-final-head evidence; final PR checks must bind to the updated head.
+
+### Hosted review regressions
+
+The global dry-run parser regression was reproduced before implementation in `c373b7fe`: 27 CLI cases passed and 4 failed. Fix `9b5e3934` removes exact global `--dry-run` flags before command/value parsing, without mutating caller arguments or weakening other validation. All 31 CLI cases and seven independent parser probes pass. Both public entrypoints retain unobserved activation.
+
+Checkpoint `ea00894d` adds seven source-reader regressions for incremental enumeration, the exact per-directory boundary, empty-directory breadth, excluded cache names, handle cleanup and directory identity changes. The corrected reader accepts at most 10,000 names per directory and charges every directory open and enumerated entry against a 20,000-operation reader budget, allowing one lookahead to detect overflow. It retains the file, cumulative-byte and depth bounds. Focused support/registry/compiler checks pass 37/37, including the mandatory ancestor-substitution test with zero redirected file-byte reads.
+
+The source reader was split into focused helpers below 50 lines. Directory handles close in `finally`, and identities are revalidated before and after enumeration. Independent review checked that descriptor no-follow flags, identity checks before the first file byte, post-read checks and exact byte digests survive the extraction. This remains a bounded consistency check, not an atomic filesystem snapshot.
