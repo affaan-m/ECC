@@ -22,6 +22,7 @@ const {
   updateSettingsAtomic,
   validateManagedHooks,
 } = require('../../scripts/lib/install/claude-settings');
+const { sameFileIdentity } = require('../../scripts/lib/install/claude-settings-lock');
 
 function test(name, fn) {
   try {
@@ -277,6 +278,80 @@ function runTests() {
       }),
       error => error === denied
     );
+  })) passed++; else failed++;
+
+  if (test('compares file identities strictly except for missing Windows device ids', () => {
+    const originalPlatform = process.platform;
+    try {
+      Object.defineProperty(process, 'platform', { value: 'win32', configurable: true });
+      assert.strictEqual(
+        sameFileIdentity({ dev: 0, ino: 42 }, { dev: 2162558900, ino: 42 }),
+        true
+      );
+      assert.strictEqual(
+        sameFileIdentity(
+          { dev: 0n, ino: 19421773395341796n },
+          { dev: 2162558900n, ino: 19421773395341796n }
+        ),
+        true
+      );
+      assert.strictEqual(
+        sameFileIdentity(
+          { dev: 1n, ino: 9007199254740992n },
+          { dev: 1n, ino: 9007199254740993n }
+        ),
+        false
+      );
+      assert.strictEqual(
+        sameFileIdentity({ dev: 1n, ino: 42n }, { dev: 2n, ino: 42n }),
+        false
+      );
+
+      Object.defineProperty(process, 'platform', { value: 'linux', configurable: true });
+      assert.strictEqual(
+        sameFileIdentity({ dev: 0n, ino: 42n }, { dev: 2n, ino: 42n }),
+        false
+      );
+    } finally {
+      Object.defineProperty(process, 'platform', {
+        value: originalPlatform,
+        configurable: true,
+      });
+    }
+  })) passed++; else failed++;
+
+  if (test('atomic settings updates accept Windows path stats with an omitted device id', () => {
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'claude-settings-win-dev-'));
+    const settingsPath = path.join(tempDir, 'settings.json');
+    const originalLstatSync = fs.lstatSync;
+    const originalPlatform = process.platform;
+    try {
+      fs.writeFileSync(settingsPath, '{"theme":"dark"}\n');
+      Object.defineProperty(process, 'platform', { value: 'win32', configurable: true });
+      fs.lstatSync = function(...args) {
+        const stats = originalLstatSync.apply(fs, args);
+        stats.dev = typeof stats.dev === 'bigint' ? 0n : 0;
+        return stats;
+      };
+
+      updateSettingsAtomic(
+        settingsPath,
+        settings => ({ settings: { ...settings, managed: true } })
+      );
+
+      assert.deepStrictEqual(JSON.parse(fs.readFileSync(settingsPath, 'utf8')), {
+        theme: 'dark',
+        managed: true,
+      });
+      assert.ok(!fs.existsSync(`${settingsPath}.ecc.lock`));
+    } finally {
+      fs.lstatSync = originalLstatSync;
+      Object.defineProperty(process, 'platform', {
+        value: originalPlatform,
+        configurable: true,
+      });
+      fs.rmSync(tempDir, { recursive: true, force: true });
+    }
   })) passed++; else failed++;
 
   if (test('atomic settings updates retry after a concurrent change and preserve secure mode', () => {

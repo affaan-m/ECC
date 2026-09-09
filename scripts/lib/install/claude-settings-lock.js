@@ -7,7 +7,16 @@ const path = require('path');
 const INVALID_LOCK_STALE_MS = 5 * 60 * 1000;
 
 function sameFileIdentity(left, right) {
-  return left.dev === right.dev && left.ino === right.ino;
+  if (left.ino !== right.ino) {
+    return false;
+  }
+  // Node's path-based stats can omit the Windows volume serial (`dev = 0`)
+  // while fstat() on the same file handle reports it. Preserve strict device
+  // checks everywhere else, including when both Windows stats report a device.
+  if (process.platform === 'win32' && (!left.dev || !right.dev)) {
+    return true;
+  }
+  return left.dev === right.dev;
 }
 
 function createSettingsLock(lockPath) {
@@ -167,4 +176,5 @@ function runWithSettingsLock(settingsPath, callback) {
 module.exports = {
   acquireSettingsLock,
   runWithSettingsLock,
+  sameFileIdentity,
 };
