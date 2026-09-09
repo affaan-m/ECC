@@ -121,6 +121,24 @@ const tests = [
   ['global dry-run remains compatible with profile inspection', () => withFixture(run => {
     success(run(['preview', '--target', 'codex', '--dry-run', '--json']));
   })],
+  ['global dry-run is ignored at every argument position without changing parsed controls', () => {
+    const { parseArgs } = require('../../scripts/profile');
+    for (const args of [
+      ['show', 'lean@1', '--json'],
+      ['preview', 'lean@1', '--target', 'codex', '--selection', 'auto',
+        '--include', 'skill:security-review', '--exclude', 'skill:python-patterns', '--json'],
+      ['explain', 'skill:ecc-guide', '--target', 'codex', '--json'],
+    ]) {
+      const expected = parseArgs(args);
+      for (let index = 0; index <= args.length; index++) {
+        const invocation = [...args.slice(0, index), '--dry-run', ...args.slice(index)];
+        const before = [...invocation];
+        assert.deepStrictEqual(parseArgs(invocation), expected, invocation.join(' '));
+        assert.deepStrictEqual(invocation, before, 'parsing must preserve caller arguments');
+      }
+      assert.deepStrictEqual(parseArgs(['--dry-run', ...args, '--dry-run']), expected);
+    }
+  }],
   ['package includes the direct profile entrypoint and public schemas', () => {
     const { files } = require('../../package.json');
     assert.ok(files.includes('scripts/profile.js'));
@@ -130,7 +148,23 @@ const tests = [
 ];
 
 for (const args of [
+  ['show', 'lean@1', '--json'],
+  ['preview', 'lean@1', '--target', 'codex', '--selection', 'auto', '--json'],
+  ['explain', 'skill:ecc-guide', '--target', 'codex', '--json'],
+]) {
+  tests.push([`leading global dry-run preserves ${args[0]} through both CLI entrypoints`, () => withFixture(run => {
+    const expected = success(run(args));
+    for (const direct of [false, true]) {
+      const observed = success(run(['--dry-run', ...args], direct));
+      assert.deepStrictEqual(observed, expected);
+      assert.strictEqual(observed.activation, 'unobserved');
+    }
+  })]);
+}
+
+for (const args of [
   ['use', 'lean@1'],
+  ['--dry-run', 'use', 'lean@1'],
   ['show', 'unknown@1'],
   ['preview', '--target', 'unknown-host'],
   ['preview', '--selection', 'eager'],
@@ -140,6 +174,7 @@ for (const args of [
   ['preview', '--include', 'skill:missing-workflow'],
   ['preview', '--include', '../../outside'],
   ['preview', '--hooks', 'strict'],
+  ['--dry-run', 'preview', '--hooks', 'strict'],
   ['show', '--include', 'skill:security-review'],
   ['explain'],
   ['explain', 'skill:missing-workflow'],
