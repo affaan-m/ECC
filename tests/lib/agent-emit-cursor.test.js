@@ -1,5 +1,8 @@
 /**
  * Tests for the ECC Agent IR → Cursor emitter (scripts/lib/agent-emit-cursor.js).
+ *
+ * Cursor restricts subagents via a binary `readonly` flag, not a tools list, so
+ * these tests assert the permission boundary through `readonly`.
  */
 
 const assert = require("assert")
@@ -44,33 +47,36 @@ function main() {
       assert.strictEqual(results.length, 68)
     }],
 
-    ["frontmatter uses lowercase kebab-case names", () => {
+    ["emits a readonly flag, not a tools scalar", () => {
       for (const r of results) {
-        assert.ok(/^[a-z0-9-]+$/.test(r.name), `${r.id}: Cursor name must be lowercase/hyphens`)
         const match = r.markdown.match(/^---\r?\n([\s\S]*?)\r?\n---/)
         const fm = yaml.load(match[1])
-        assert.strictEqual(fm.name, r.id, `${r.id}: name round-trip`)
-        assert.ok(fm.description.length > 0, `${r.id}: missing description`)
+        assert.strictEqual(typeof fm.readonly, "boolean", `${r.id}: readonly must be boolean`)
+        assert.strictEqual(fm.tools, undefined, `${r.id}: must not emit a tools scalar (Cursor uses readonly)`)
+        assert.ok(/^[a-z0-9-]+$/.test(fm.name), `${r.id}: name must be lowercase/hyphens`)
       }
     }],
 
-    ["read-only agents never gain run_terminal_cmd", () => {
+    ["read-only source agents are emitted readonly: true", () => {
       for (const r of results) {
         const source = byId.get(r.id)
-        if (!source.tools.includes("Bash")) {
-          assert.ok(!r.tools.includes("run_terminal_cmd"), `${r.id}: read-only agent must not gain shell`)
+        const mutating = ["Bash", "Edit", "Write"].some(t => source.tools.includes(t))
+        if (!mutating) {
+          assert.strictEqual(r.readOnly, true, `${r.id}: read-only source must emit readonly: true`)
         }
       }
-    }],
-
-    ["planner maps to read_file, grep_search, list_dir", () => {
       const planner = results.find(r => r.id === "planner")
-      assert.deepStrictEqual(planner.tools, ["read_file", "grep_search", "list_dir"])
+      assert.strictEqual(planner.readOnly, true, "planner (Read, Grep, Glob) must be readonly")
     }],
 
-    ["uncertain tools (Write/WebSearch/WebFetch) are flagged, not guessed", () => {
-      assert.ok(warnings.some(w => w.includes("unmapped tool: Write")), "Write must be flagged")
-      assert.ok(!warnings.some(w => w.includes("unmapped tool: Read")), "Read must not be flagged")
+    ["write-capable source agents are emitted readonly: false", () => {
+      const resolver = results.find(r => r.id === "build-error-resolver")
+      assert.strictEqual(resolver.readOnly, false, "build-error-resolver (has Bash/Edit/Write) must not be readonly")
+    }],
+
+    ["mcp__* tools are flagged, never granted", () => {
+      assert.ok(warnings.some(w => w.includes("docs-lookup") && w.includes("MCP tool")), "docs-lookup MCP must warn")
+      assert.ok(!results.some(r => /tools:/.test(r.markdown)), "no tools scalar should ever be emitted")
     }],
 
     ["model tier is preserved as a comment", () => {

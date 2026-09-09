@@ -6,15 +6,12 @@
  *
  * Turns IR objects into OpenCode agent definitions. OpenCode agents live under
  * `.opencode/agent/*.md` and use frontmatter `name`, `description`, `mode`
- * (`subagent` for delegated agents), and `tools`. The prompt lives in the
- * document body.
+ * (`subagent` for delegated agents), and `tools` — a *mapping* from tool names
+ * to booleans, not a scalar. The prompt lives in the document body.
  *
- * v1 behavior:
- *   - `mode: subagent` marks each converted agent as a subagent.
- *   - The source model tier is preserved as a YAML comment; OpenCode selects
- *     its own model, so no `model:` field is emitted.
- *   - Unmapped tools (WebSearch, mcp__*) surface as per-agent warnings; never
- *     silently dropped.
+ * The emitted `tools` mapping is explicit about mutating tools: `bash`, `edit`,
+ * and `write` are set to `false` unless the source allowlist granted them, so a
+ * read-only Claude agent never gains write or terminal access in OpenCode.
  */
 
 const CLAUDE_TO_OPENCODE_TOOLS = Object.freeze({
@@ -25,28 +22,10 @@ const CLAUDE_TO_OPENCODE_TOOLS = Object.freeze({
   Edit: 'edit',
   Write: 'write',
   WebFetch: 'webfetch',
-  // WebSearch intentionally unmapped: OpenCode has webfetch but no separate
-  // web-search tool, so mapping it silently would over-claim capability.
 });
 
-function mapToolToOpenCode(claudeTool) {
-  const name = String(claudeTool).trim();
-  if (Object.prototype.hasOwnProperty.call(CLAUDE_TO_OPENCODE_TOOLS, name)) {
-    return { tool: CLAUDE_TO_OPENCODE_TOOLS[name], unsupported: false };
-  }
-  if (name.startsWith('mcp__')) {
-    return {
-      tool: null,
-      unsupported: true,
-      note: `MCP tool ${name} not auto-mapped (configure the MCP server explicitly)`,
-    };
-  }
-  return {
-    tool: null,
-    unsupported: true,
-    note: `unmapped tool: ${name} (no OpenCode equivalent in v1)`,
-  };
-}
+const TOOLS_ORDER = ['read', 'grep', 'glob', 'bash', 'edit', 'write', 'webfetch'];
+const MUTATING_OPENCODE_TOOLS = new Set(['bash', 'edit', 'write']);
 
 function yamlScalar(value) {
   const s = String(value);
@@ -59,17 +38,25 @@ function yamlScalar(value) {
 /** Emit an OpenCode agent definition for one IR object. */
 function emitOpenCodeAgent(ir) {
   const warnings = [];
-  const seen = new Set();
-  const tools = [];
+  const enabled = new Set();
 
   for (const sourceTool of ir.tools) {
-    const mapped = mapToolToOpenCode(sourceTool);
-    if (mapped.tool && !seen.has(mapped.tool)) {
-      seen.add(mapped.tool);
-      tools.push(mapped.tool);
+    const mapped = CLAUDE_TO_OPENCODE_TOOLS[sourceTool];
+    if (mapped) {
+      enabled.add(mapped);
+    } else if (sourceTool.startsWith('mcp__')) {
+      warnings.push(`${ir.id}: MCP tool ${sourceTool} not auto-mapped (configure the MCP server explicitly)`);
+    } else {
+      warnings.push(`${ir.id}: unmapped tool: ${sourceTool} (no OpenCode equivalent in v1)`);
     }
-    if (mapped.note) {
-      warnings.push(`${ir.id}: ${mapped.note}`);
+  }
+
+  const toolLines = [];
+  for (const tool of TOOLS_ORDER) {
+    if (enabled.has(tool)) {
+      toolLines.push(`  ${tool}: true`);
+    } else if (MUTATING_OPENCODE_TOOLS.has(tool)) {
+      toolLines.push(`  ${tool}: false`);
     }
   }
 
@@ -79,13 +66,14 @@ function emitOpenCodeAgent(ir) {
     `name: ${ir.name}`,
     `description: ${yamlScalar(ir.description)}`,
     'mode: subagent',
-    `tools: ${tools.join(', ')}`,
+    'tools:',
+    ...toolLines,
     '---',
   ];
 
   const body = (ir.body || '').replace(/^\n+/, '').trimEnd();
   const markdown = frontmatter.join('\n') + '\n\n' + body + '\n';
-  return { markdown, warnings, tools };
+  return { markdown, warnings, tools: [...enabled] };
 }
 
 /** Emit the full set of OpenCode agents, sorted by id for determinism. */
@@ -103,7 +91,8 @@ function emitAllOpenCodeAgents(irs) {
     if (ir.model) {
       modelTiers = { ...modelTiers, [ir.model]: (modelTiers[ir.model] || 0) + 1 };
     }
-    unsupported += ir.tools.filter(t => mapToolToOpenCode(t).unsupported).length;
+    unsupported += ir.tools.filter(t => !CLAUDE_TO_OPENCODE_TOOLS[t] && !t.startsWith('mcp__')).length;
+    unsupported += ir.tools.filter(t => t.startsWith('mcp__')).length;
   }
 
   const notes = [];
@@ -120,7 +109,6 @@ function emitAllOpenCodeAgents(irs) {
 
 module.exports = {
   CLAUDE_TO_OPENCODE_TOOLS,
-  mapToolToOpenCode,
   emitOpenCodeAgent,
   emitAllOpenCodeAgents,
   yamlScalar,
