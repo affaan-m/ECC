@@ -1,13 +1,21 @@
-# Skill Router (opt-in)
+# Structured task resolver (proposal-only)
 
-A discovery affordance inside an already-selected carrier. It does not decide
-what a session can do; the carrier already did that.
+A `UserPromptSubmit` hook that **suggests** up to three skills per prompt into
+context. It does not select, activate, or switch profiles, and it does not
+implement the `routed` disposition #3037's context-profile compiler assigns
+to `routedIds` — that contract stays exactly what it says: "recorded intent;
+task routing and automatic switching are not implemented." This hook proposes
+candidates for a human or the model to act on; it commits to nothing on its
+own.
 
-A `UserPromptSubmit` hook scores each prompt against the catalog the carrier
-already holds and names up to three skills that look relevant. It **suggests;
-it never loads**. The model reads a skill because it decided to, from a path
-inside the plugin — the router only shortens the distance between "I need
-something" and "it is at `on-demand/<skill>/SKILL.md`".
+It is a discovery affordance inside an already-selected carrier. It does not
+decide what a session can do; the carrier already did that.
+
+The hook scores each prompt against the catalog the carrier already holds and
+names up to three skills that look relevant. It **suggests; it never loads**.
+The model reads a skill because it decided to, from a path inside the plugin
+— the resolver only shortens the distance between "I need something" and "it
+is at `on-demand/<skill>/SKILL.md`".
 
 That boundary is what makes the feature small enough to be worth having:
 
@@ -24,6 +32,36 @@ That boundary is what makes the feature small enough to be worth having:
 
 The router changes what the model sees on every matching prompt, so it is a
 separate behavioral feature from profile carriers and is **off by default**.
+
+## Relationship to context profiles
+
+#3037's context-profile compiler (`scripts/lib/context-profiles.js`) assigns
+every catalog skill a disposition: `selected` (eager), `routed` (recorded as
+a candidate but not shipped), or `excluded`. Its own source is explicit about
+what that disposition does and does not mean:
+
+> Selection modes are recorded intent; task routing and automatic switching
+> are not implemented.
+
+and the design doc's own lane table names this hook directly:
+
+> [#2945] Task routing and automatic-selection proposals — Future structured
+> task resolver; `selectionMode: "auto"` alone implements none of this
+
+This hook is that "future structured task resolver," landing as a proposal
+step, not the routing #3037 explicitly does not implement:
+
+- **Input**: the carrier's catalog — after the carrier binds to the compiler
+  (WP-3), that catalog *is* the compiler's `routedIds` (plus the eagerly
+  selected skills), copied into `on-demand/` and listed in the receipt.
+- **Output**: suggestions only, printed to stdout for the model to read. No
+  disposition is changed, no profile is switched, no skill is activated —
+  the compiler's `selected`/`routed`/`excluded` labels for a session are
+  exactly what they were before this hook ran.
+
+Closing the gap between "recorded intent" and actual task routing — a
+disposition that changes based on what this hook suggests — is future work,
+not something landed here.
 
 ## Enabling
 

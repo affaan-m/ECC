@@ -368,6 +368,12 @@ needs a skill outside the profile, the agent reads it from inside the plugin.
 Because on-demand content is copied at generation time, a carrier reflects the
 catalog as it was when generated. Regenerate after updating ECC.
 
+An optional, opt-in **task resolver (suggestion hook)** can shorten the
+distance between a prompt and an on-demand entry: it scores the prompt
+against the carrier's catalog and suggests up to three matching skills by
+path. It never installs, activates, or switches anything — see
+[docs/SKILL-ROUTER.md](SKILL-ROUTER.md).
+
 ## Custom Selections
 
 `plan` and `generate` accept the same selection vocabulary as the installer:
