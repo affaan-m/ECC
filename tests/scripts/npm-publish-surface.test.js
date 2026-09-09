@@ -5,7 +5,8 @@
 const assert = require("assert")
 const fs = require("fs")
 const path = require("path")
-const { spawnSync } = require("child_process")
+const os = require("os")
+const { runNpm } = require("../lib/eval-harness/helpers")
 const { getNpmPackEntry } = require("../lib/npm-pack-output")
 
 function runTest(name, fn) {
@@ -43,6 +44,8 @@ function buildExpectedPublishPaths(repoRoot) {
   const extraPaths = [
     "manifests",
     "scripts/ecc.js",
+    "scripts/eval-harness.js",
+    "examples/eval-harness",
     "scripts/feedback.js",
     "scripts/catalog.js",
     "scripts/ci/scan-supply-chain-iocs.js",
@@ -141,12 +144,20 @@ function main() {
     ["package.json files align to the module graph and explicit runtime allowlist", () => {
       assert.deepStrictEqual(actualPublishPaths, expectedPublishPaths)
     }],
-    ["npm pack publishes the reduced runtime surface", () => {
-      const result = spawnSync("npm", ["pack", "--dry-run", "--json"], {
-        cwd: repoRoot,
-        encoding: "utf8",
-        shell: process.platform === "win32",
-      })
+    ["npm pack --ignore-scripts publishes the reduced runtime surface (prepack not tested)", () => {
+      const cache = fs.mkdtempSync(path.join(os.tmpdir(), "ecc-pack-surface-"))
+      let result
+      try {
+        result = runNpm(["pack", "--dry-run", "--json", "--ignore-scripts", "--offline", "--cache", cache], {
+          cwd: repoRoot,
+          encoding: "utf8",
+          timeout: 60000,
+          maxBuffer: 16 * 1024 * 1024,
+          env: { ...process.env, NODE_PATH: "", NODE_OPTIONS: "" },
+        })
+      } finally {
+        fs.rmSync(cache, { recursive: true, force: true })
+      }
       assert.strictEqual(result.status, 0, result.error?.message || result.stderr)
 
       const packOutput = JSON.parse(result.stdout)
@@ -154,6 +165,17 @@ function main() {
       const packagedPaths = new Set(packEntry?.files?.map((file) => file.path) ?? [])
 
       for (const requiredPath of [
+        "scripts/eval-harness.js",
+        "scripts/lib/eval-harness/index.js",
+        "examples/eval-harness/run-example.js",
+        "examples/eval-harness/gate.config.json",
+        "examples/eval-harness/taskset.json",
+        "examples/eval-harness/variants/baseline/run.js",
+        "examples/eval-harness/variants/baseline/variant.json",
+        "examples/eval-harness/variants/candidate/run.js",
+        "examples/eval-harness/variants/candidate/variant.json",
+        "examples/eval-harness/variants/reward-hack/run.js",
+        "examples/eval-harness/variants/reward-hack/variant.json",
         "scripts/catalog.js",
         "scripts/ci/scan-supply-chain-iocs.js",
         "scripts/ci/supply-chain-advisory-sources.js",

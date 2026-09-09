@@ -88,6 +88,7 @@
         "operator-workflows",
         "optimization-workflows",
         "prediction-market-skills",
+        "operator-desk-patterns",
         "ito-compute",
         "nasiko-control-plane",
         "social-distribution",
