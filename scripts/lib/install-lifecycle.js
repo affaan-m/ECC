@@ -33,6 +33,7 @@ const {
   validateManagedHooks,
 } = require('./install/claude-settings');
 const { adaptAntigravityAgent } = require('./install/antigravity-agent');
+const { adaptCopilotAgent } = require('./install/copilot-agent');
 const { buildInstallIndex, rewriteRelativeLinks } = require('./install/link-rewrite');
 const { getInstallTargetAdapter, listInstallTargetAdapters } = require('./install-targets/registry');
 const { resolveInvocationEnvironment } = require('./invocation-environment');
@@ -228,6 +229,9 @@ function transformCopyFileContent(operation, content) {
   }
   if (operation.contentTransform === 'antigravity-agent-frontmatter') {
     return adaptAntigravityAgent(content, operation.sourceRelativePath);
+  }
+  if (operation.contentTransform === 'copilot-agent-frontmatter') {
+    return adaptCopilotAgent(content, operation.sourceRelativePath);
   }
   throw new Error(`Unknown install content transform: ${operation.contentTransform}`);
 }

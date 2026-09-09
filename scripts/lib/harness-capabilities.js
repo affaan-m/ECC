@@ -115,6 +115,23 @@ const HARNESS_CAPABILITIES = deepFreeze([
     aliases: ['google-antigravity'],
   },
   {
+    id: 'copilot',
+    label: 'GitHub Copilot',
+    targetIds: ['copilot'],
+    channel: 'managed-project',
+    installMode: 'managed-project',
+    guidedReady: false,
+    availability: 'advanced',
+    destination: './.github',
+    scopes: [scope('project', 'copilot', './.github')],
+    hooks: hooks(
+      'not-configured',
+      false,
+      'ECC hooks target Claude Code events and are not installed for Copilot.'
+    ),
+    aliases: ['github-copilot', 'copilot-cli'],
+  },
+  {
     id: 'gemini',
     label: 'Gemini CLI',
     targetIds: ['gemini'],
