@@ -85,6 +85,7 @@ function runDirect(testManifest, results, extras = {}) {
       manifestPath: path.join(tempRoot, 'sandbox.yaml'),
       mock: true,
       os: 'macos',
+      platform: 'darwin',
       run: sequenceRunner(results, extras.inspect),
       ...(extras.nestedTemp ? { tempParent: tempRoot } : {}),
       ...(extras.options || {}),
@@ -120,11 +121,12 @@ test('normalizes output to the last 50 lines and report-schema limits', () => {
 
 test('generates least-privilege SRT settings from the manifest', () => {
   const cwd = path.resolve('/tmp/ecc-workspace');
+  const homeDir = path.resolve('/Users/tester');
   const settings = generateSrtSettings(manifest({
     capabilities: ['fs-write', 'network:npmjs.org'],
-  }), cwd, { homeDir: '/Users/tester' });
+  }), cwd, { homeDir });
   assert.deepStrictEqual(settings.filesystem.allowWrite, [cwd]);
-  assert.deepStrictEqual(settings.filesystem.denyRead, ['/Users/tester']);
+  assert.deepStrictEqual(settings.filesystem.denyRead, [homeDir]);
   assert.deepStrictEqual(settings.filesystem.allowRead, [cwd]);
   assert.deepStrictEqual(settings.network.allowedDomains, ['npmjs.org']);
   assert.strictEqual(settings.network.allowLocalBinding, false);

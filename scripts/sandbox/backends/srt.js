@@ -216,7 +216,7 @@ function executeSrt(manifest, options) {
   let denial = null;
   let executionError = false;
 
-  if (platform === 'win32' && !windowsSrtShim) {
+  if (platform === 'win32' && !windowsSrtShim && !options.mock) {
     fs.rmSync(tempRoot, { recursive: true, force: true });
     throw new Error(
       'trusted srt.cmd not found outside the workspace — npm install -g @anthropic-ai/sandbox-runtime'
@@ -258,7 +258,7 @@ function executeSrt(manifest, options) {
           '/d',
           '/s',
           '/c',
-          windowsSrtShim,
+          windowsSrtShim || 'srt.cmd',
           '--settings',
           settingsPath,
           '-c',
