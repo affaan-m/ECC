@@ -28,6 +28,12 @@ const { buildCatalogCache } = require('../lib/skill-router');
 
 const BUILD_BUDGET_MS = 2000;
 
+/**
+ * Whether the router (and therefore its cache-build hook) is opted in.
+ *
+ * @param {NodeJS.ProcessEnv} [env] Environment to read (defaults to `process.env`).
+ * @returns {boolean} True when the cache should be built.
+ */
 function isEnabled(env = process.env) {
   const raw = String(env.ECC_SKILL_ROUTER || '').trim().toLowerCase();
   return raw === '1' || raw === 'true' || raw === 'on';

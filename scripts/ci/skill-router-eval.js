@@ -33,6 +33,14 @@ const asJson = args.includes('--json');
 // comparison against NaN is false, so a malformed flag used to make the
 // gate this evaluator exists to provide silently never fail. Parsing here
 // fails fast instead.
+/**
+ * Parse a required numeric CLI flag, exiting with a usage error rather than
+ * silently coercing a missing or empty value to a threshold of 0/NaN.
+ *
+ * @param {string} name Flag name, without the leading `--`.
+ * @param {string} fallback Default raw value when the flag is not given.
+ * @returns {number} Parsed threshold.
+ */
 function parseThreshold(name, fallback) {
   const raw = flag(name, fallback);
   // Number('') and Number('   ') are 0, which is finite, so an empty flag
@@ -61,12 +69,26 @@ const { routePrompt, buildCatalogCache } = require('../lib/skill-router');
 // measured separately below.
 buildCatalogCache(repoRoot);
 
+/**
+ * Nearest-rank percentile of a sample.
+ *
+ * @param {number[]} values Sample values (need not be pre-sorted).
+ * @param {number} p Percentile as a fraction in [0, 1].
+ * @returns {number} The value at that percentile, or 0 for an empty sample.
+ */
 function percentile(values, p) {
   if (values.length === 0) return 0;
   const sorted = [...values].sort((a, b) => a - b);
   return sorted[Math.min(sorted.length - 1, Math.floor(p * sorted.length))];
 }
 
+/**
+ * Measure a fresh-process, empty-cache build+route round trip: the
+ * SessionStart cost, not the per-prompt cost.
+ *
+ * @returns {number} Elapsed milliseconds, or 0 if the child process's output
+ *   was not a number.
+ */
 function coldLatencyMs() {
   // Fresh process + empty cache. This is the SessionStart cost now, not the
   // prompt cost: the catalog scan happens in buildCatalogCache, and the
@@ -84,6 +106,12 @@ function coldLatencyMs() {
   return Number(result.stdout) || 0;
 }
 
+/**
+ * Run the evaluation: score every fixture prompt, report precision/recall
+ * and latency, and set a non-zero exit code when a threshold is missed.
+ *
+ * @returns {void}
+ */
 function main() {
   let fixture;
   try {

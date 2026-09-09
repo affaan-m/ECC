@@ -90,6 +90,16 @@ const carrierRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-skill-router-carr
 try {
   writeSkill(carrierRoot, 'coding-standards', 'Coding standards and conventions for this project');
   writeSkill(carrierRoot, 'ecc-catalog', 'Index of the full ECC skill catalog for this slim profile plugin');
+  // A real carrier always physically copies an on-demand entry to
+  // on-demand/<id>/ at generation time (carrier.js collectCopyOperations),
+  // so a fixture claiming one exists in the receipt must also materialize
+  // it -- routePrompt now verifies a catalog row's path actually resolves
+  // (see resolvesWithoutSymlink) before suggesting it.
+  fs.mkdirSync(path.join(carrierRoot, 'on-demand', 'react-patterns'), { recursive: true });
+  fs.writeFileSync(
+    path.join(carrierRoot, 'on-demand', 'react-patterns', 'SKILL.md'),
+    '---\nname: react-patterns\ndescription: React component patterns and hooks\n---\n'
+  );
   fs.writeFileSync(
     path.join(carrierRoot, PROFILE_METADATA_FILE),
     JSON.stringify({
@@ -319,6 +329,68 @@ run('a stale cache is ignored without being rebuilt on the prompt path', () => {
     assert.strictEqual(fs.statSync(cacheFile).size, sizeBefore, 'the prompt path must not rewrite the cache');
   } finally {
     fs.rmSync(staleRoot, { recursive: true, force: true });
+  }
+});
+
+run('a symlinked on-demand skill directory is refused, not suggested (Greptile P1: symlinks bypass carrier integrity)', () => {
+  // Carrier generation already refuses a symlinked *source* (plan.js
+  // collectBlockers). This is the separate runtime case: an already-
+  // installed carrier's receipt is still trusted data, and nothing on the
+  // read side re-checks that the path a catalog row names still resolves
+  // inside the carrier -- if on-demand/<id> is later replaced with a
+  // symlink (tampering, or a carrier installed from an untrusted source),
+  // the router would suggest Claude read it, and writeCatalogSkill's own
+  // claim ("Nothing outside this plugin is referenced") would be false.
+  const carrier = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-skill-router-symlink-'));
+  const outside = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-skill-router-outside-'));
+  try {
+    fs.writeFileSync(path.join(outside, 'SKILL.md'), '---\nname: react-patterns\ndescription: exfiltrated content\n---\n');
+    fs.mkdirSync(path.join(carrier, 'on-demand'), { recursive: true });
+    try {
+      fs.symlinkSync(outside, path.join(carrier, 'on-demand', 'react-patterns'), 'dir');
+    } catch {
+      console.log('    SKIP: symlink creation not permitted on this platform; nothing to assert');
+      return;
+    }
+    fs.writeFileSync(path.join(carrier, PROFILE_METADATA_FILE), JSON.stringify({
+      generatedFrom: 'everything-claude-code',
+      catalog: [
+        { id: 'react-patterns', description: 'React component patterns and hooks', path: 'on-demand/react-patterns/SKILL.md', installed: false },
+      ],
+    }));
+    const matches = routePrompt('apply react patterns when refactoring this component', { pluginRoot: carrier });
+    assert.ok(!(matches || []).some(m => m.id === 'react-patterns'),
+      'a catalog entry whose path resolves through a symlink must never be suggested');
+  } finally {
+    fs.rmSync(carrier, { recursive: true, force: true });
+    fs.rmSync(outside, { recursive: true, force: true });
+  }
+});
+
+run('a symlinked skills/ directory (installed surface) is likewise refused', () => {
+  const carrier = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-skill-router-symlink-installed-'));
+  const outside = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-skill-router-outside-installed-'));
+  try {
+    fs.writeFileSync(path.join(outside, 'SKILL.md'), '---\nname: coding-standards\ndescription: exfiltrated content\n---\n');
+    fs.mkdirSync(path.join(carrier, 'skills'), { recursive: true });
+    try {
+      fs.symlinkSync(outside, path.join(carrier, 'skills', 'coding-standards'), 'dir');
+    } catch {
+      console.log('    SKIP: symlink creation not permitted on this platform; nothing to assert');
+      return;
+    }
+    fs.writeFileSync(path.join(carrier, PROFILE_METADATA_FILE), JSON.stringify({
+      generatedFrom: 'everything-claude-code',
+      catalog: [
+        { id: 'coding-standards', description: 'Coding standards and conventions', path: 'skills/coding-standards/SKILL.md', installed: true },
+      ],
+    }));
+    const matches = routePrompt('apply coding standards to this change', { pluginRoot: carrier });
+    assert.ok(!(matches || []).some(m => m.id === 'coding-standards'),
+      'an installed-surface entry whose path resolves through a symlink must never be suggested');
+  } finally {
+    fs.rmSync(carrier, { recursive: true, force: true });
+    fs.rmSync(outside, { recursive: true, force: true });
   }
 });
 

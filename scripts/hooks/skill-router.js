@@ -1,20 +1,25 @@
 #!/usr/bin/env node
 /**
- * Skill router hook (UserPromptSubmit) - OPT-IN.
+ * Structured task resolver hook (UserPromptSubmit) - OPT-IN, proposal-only.
  *
  * Scores the submitted prompt against the skill catalog (offline token
  * matching via scripts/lib/skill-router.js) and, when skills clearly match,
- * emits a short routing note on stdout - which Claude Code injects as
+ * emits a short suggestion note on stdout - which Claude Code injects as
  * context for the turn. Installed skills are suggested directly; skills a
  * generated carrier holds on demand are suggested with their path inside the
  * plugin.
  *
- * The router injects text into every matching turn, so it is off unless
- * explicitly enabled: ECC_SKILL_ROUTER=1 (or the plugin option
- * CLAUDE_PLUGIN_OPTION_SKILL_ROUTER=1). It is also bounded: if routing takes
+ * This hook suggests; it does not select, activate, or switch a profile, and
+ * it does not implement #3037's `routed` disposition (see "Relationship to
+ * context profiles" in docs/SKILL-ROUTER.md). The strongest thing it does is
+ * put a path in front of the model; nothing here changes what is loaded.
+ *
+ * It injects text into every matching turn, so it is off unless explicitly
+ * enabled: ECC_SKILL_ROUTER=1 (or the plugin option
+ * CLAUDE_PLUGIN_OPTION_SKILL_ROUTER=1). It is also bounded: if scoring takes
  * longer than ECC_SKILL_ROUTER_BUDGET_MS (default 150), it emits nothing.
  *
- * Exit code 0 always; empty stdout means "no routing opinion".
+ * Exit code 0 always; empty stdout means "no suggestion".
  */
 
 'use strict';
@@ -27,11 +32,24 @@ const MIN_PROMPT_LENGTH = 12;
 const MAX_DESCRIPTION_CHARS = 120;
 const DEFAULT_BUDGET_MS = 150;
 
+/**
+ * Whether the router is opted in for this process, via either the raw env
+ * var or the plugin-option alias Claude Code sets for a generated carrier.
+ *
+ * @param {NodeJS.ProcessEnv} [env] Environment to read (defaults to `process.env`).
+ * @returns {boolean} True when the router should run.
+ */
 function isEnabled(env = process.env) {
   const raw = env.ECC_SKILL_ROUTER !== undefined ? env.ECC_SKILL_ROUTER : env.CLAUDE_PLUGIN_OPTION_SKILL_ROUTER;
   return ['1', 'true', 'yes', 'on'].includes(String(raw || '').trim().toLowerCase());
 }
 
+/**
+ * Resolve the routing time budget in milliseconds.
+ *
+ * @param {NodeJS.ProcessEnv} [env] Environment to read (defaults to `process.env`).
+ * @returns {number} Budget in ms; falls back to `DEFAULT_BUDGET_MS` when unset or invalid.
+ */
 function budgetMs(env = process.env) {
   const raw = Number(env.ECC_SKILL_ROUTER_BUDGET_MS);
   // 0 is a valid budget (effectively "suppress unless routing is instant"),
@@ -49,6 +67,14 @@ function sanitizeLine(text) {
   return String(text || '').replace(/[\u0000-\u001F\u007F-\u009F]+/g, ' ').replace(/\s+/g, ' ').trim();
 }
 
+/**
+ * Render the matched skills as the stdout block Claude Code injects as
+ * context. Every field pulled from catalog data is sanitized first.
+ *
+ * @param {Array<{id: string, description: string, installed: boolean, path?: string}>} matches
+ *   Scored catalog entries to render, in output order.
+ * @returns {string} Newline-terminated routing message.
+ */
 function buildMessage(matches) {
   const lines = ['[SkillRouter] Skills matching this prompt - use them if relevant:'];
   for (const match of matches) {
@@ -128,6 +154,12 @@ function run(inputOrRaw, options = {}) {
   }
 }
 
+/**
+ * CLI entrypoint: read the hook's JSON payload from stdin, route it, and
+ * write stdout/stderr exactly as `run()` returns them.
+ *
+ * @returns {void}
+ */
 function main() {
   let data = '';
   process.stdin.setEncoding('utf8');

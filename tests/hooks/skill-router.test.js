@@ -203,6 +203,11 @@ check('on-demand matches point inside the plugin, never at a source tree', () =>
   try {
     fs.mkdirSync(path.join(carrier, 'skills', 'coding-standards'), { recursive: true });
     fs.writeFileSync(path.join(carrier, 'skills', 'coding-standards', 'SKILL.md'), '---\nname: coding-standards\ndescription: Coding standards\n---\n');
+    // A real carrier always physically copies an on-demand entry (carrier.js
+    // collectCopyOperations); routePrompt now verifies a catalog row's path
+    // actually resolves (resolvesWithoutSymlink) before suggesting it.
+    fs.mkdirSync(path.join(carrier, 'on-demand', 'react-patterns'), { recursive: true });
+    fs.writeFileSync(path.join(carrier, 'on-demand', 'react-patterns', 'SKILL.md'), '---\nname: react-patterns\ndescription: React component patterns\n---\n');
     fs.writeFileSync(path.join(carrier, 'ecc-profile.json'), JSON.stringify({
       generatedFrom: 'everything-claude-code',
       catalog: [
@@ -241,6 +246,54 @@ check('routed output cannot forge extra lines via a crafted description', () => 
   } finally {
     fs.rmSync(craftedRoot, { recursive: true, force: true });
   }
+});
+
+check('Greptile P1 pin: budget suppression never happens after an unbounded catalog build (5a85111)', () => {
+  // The finding, verified directly against commit 371696d1 (5a85111's
+  // parent, via a throwaway harness -- not part of this suite): with a
+  // fresh cache and the default 150ms budget, the pre-5a85111 hot path made
+  // 287 fs.readFileSync calls against this repo's real skills/ tree -- one
+  // per SKILL.md -- before ever checking elapsed time. The budget check ran
+  // after that full synchronous walk, so it only ever decided whether to
+  // show output, never how long the hook actually blocked. 5a85111 made the
+  // hot path structurally unable to reach the directory-walking builder at
+  // all: loadCatalog -> readCatalogCache only, and buildCatalogCache is not
+  // reachable from routePrompt. This pins both halves of that: (a) an
+  // injected over-budget elapsed time (via the `now` seam at l.76-78,
+  // exactly as the existing "suppresses output" test above does) still
+  // suppresses stdout, and (b) regardless of budget outcome, not one
+  // fs.readFileSync call this path makes ever targets a SKILL.md file --
+  // which is what the 287 calls on the old code would have been.
+  const readCalls = [];
+  const realReadFileSync = fs.readFileSync;
+  fs.readFileSync = (...args) => {
+    readCalls.push(String(args[0]));
+    return realReadFileSync(...args);
+  };
+  const t0 = Date.now();
+  let calls = 0;
+  const fakeNow = () => (calls++ === 0 ? t0 : t0 + 1e9);
+  try {
+    const result = run(matchingPrompt, { pluginRoot: repoRoot, env: ON, now: fakeNow });
+    assert.strictEqual(result.stdout, '', 'an over-budget elapsed time must suppress output');
+    assert.match(result.stderr || '', /over the .*budget/);
+    const skillReads = readCalls.filter(p => p.endsWith('SKILL.md'));
+    assert.deepStrictEqual(skillReads, [], 'the routing path must never read an individual SKILL.md; that is the build path, unreachable from here');
+    assert.ok(readCalls.length <= 2, `routing must do O(1) file reads regardless of budget outcome, got ${readCalls.length}: ${readCalls.join(', ')}`);
+  } finally {
+    fs.readFileSync = realReadFileSync;
+  }
+});
+
+check('WP-5: resolver output is suggestion-only and never carries a selection or activation directive', () => {
+  // The reframe this pins: the router/resolver suggests, it never selects,
+  // activates, or switches anything. Output is at most a header line plus
+  // three bullets (docs/SKILL-ROUTER.md "Bounds"), not the 3-line cap a
+  // strict reading of "the router" alone might suggest.
+  const result = run(matchingPrompt, { pluginRoot: repoRoot, env: ON });
+  assert.doesNotMatch(result.stdout, /activate|switch profile|selected profile|enabledPlugins/i);
+  const lines = result.stdout.split('\n').filter(Boolean);
+  assert.ok(lines.length <= 4, `expected at most a header + 3 bullets, got ${lines.length}: ${result.stdout}`);
 });
 
 fs.rmSync(cacheDir, { recursive: true, force: true });

@@ -1,16 +1,20 @@
 /**
- * Skill routing for the opt-in UserPromptSubmit skill-router hook.
+ * Scoring for the opt-in UserPromptSubmit structured task resolver
+ * (proposal-only; see docs/SKILL-ROUTER.md).
  *
  * Scores the user's prompt against skill descriptions with plain offline
  * token matching and returns the best matches, marking each one as installed
- * in the active plugin or available on demand inside the plugin.
+ * in the active plugin or available on demand inside the plugin. This is
+ * suggestion scoring only: nothing here selects, activates, or switches a
+ * profile, and it does not implement #3037's `routed` disposition -- see
+ * "Relationship to context profiles" in docs/SKILL-ROUTER.md.
  *
  * Catalog sources, in order:
  *   1. The carrier receipt (`ecc-profile.json`) written by
  *      scripts/plugin-profiles.js: its `catalog` rows carry an id, a
  *      description, a carrier-relative path, and a content hash. Nothing
  *      outside the plugin is ever referenced.
- *   2. The plugin's own `skills/` directory (the full plugin routes over
+ *   2. The plugin's own `skills/` directory (the full plugin scores over
  *      itself), scanned once and cached under the user's home directory.
  */
 
@@ -43,6 +47,13 @@ const STOPWORDS = new Set([
   'know', 'still', 'now', 'currently', 'something',
 ]);
 
+/**
+ * Lowercase, split, and stem `text` into a set of routable tokens, dropping
+ * stopwords and short fragments so scoring only sees content words.
+ *
+ * @param {string} text Text to tokenize (a prompt, a skill id, or a description).
+ * @returns {Set<string>} Unique tokens, each a plural-stripped lowercase word.
+ */
 function tokenize(text) {
   const tokens = new Set();
   for (const rawToken of String(text || '').toLowerCase().split(/[^a-z0-9]+/)) {
@@ -57,6 +68,12 @@ function tokenize(text) {
   return tokens;
 }
 
+/**
+ * List the immediate subdirectory names under a `skills/` root, sorted.
+ *
+ * @param {string} skillsRoot Path to a `skills/` directory (may not exist).
+ * @returns {string[]} Skill directory names, or `[]` if `skillsRoot` is absent.
+ */
 function listSkillDirs(skillsRoot) {
   if (!fs.existsSync(skillsRoot)) {
     return [];
@@ -102,6 +119,14 @@ function readCatalog(pluginRoot, { deadlineAt } = {}) {
   return { entries, complete: true };
 }
 
+/**
+ * Cheap invalidation signature for a plugin's `skills/` tree: directory
+ * count plus mtime, not a content hash. Used to decide whether a cached
+ * catalog is still trustworthy without rescanning it.
+ *
+ * @param {string} pluginRoot Plugin root whose `skills/` signature to compute.
+ * @returns {{dirCount: number, mtimeMs: number}} Signature; zeroed when `skills/` is absent.
+ */
 function catalogSignature(pluginRoot) {
   const skillsRoot = path.join(pluginRoot, 'skills');
   try {
@@ -241,6 +266,39 @@ function writeCatalogCache(cachePath, payload) {
 }
 
 /**
+ * Whether every path segment from `pluginRoot` down through `relPath` is a
+ * plain, non-symlink entry. Carrier generation already refuses a symlinked
+ * *source* (plan.js `collectBlockers`), but a catalog row is still trusted
+ * data read at runtime: an already-installed carrier can be tampered with,
+ * or installed from an untrusted source, after generation. Suggesting a
+ * path is not the same as reading it, but it is the router steering a
+ * later read, so it fails closed the same way the source-side check does --
+ * a symlink anywhere in the path, or a missing entry, means "do not route
+ * this".
+ *
+ * @param {string} pluginRoot Plugin root the path must stay inside.
+ * @param {string} relPath Carrier-relative path (already validated shape-wise
+ *   by `SAFE_RELATIVE_PATH`, e.g. `on-demand/<id>/SKILL.md`).
+ * @returns {boolean} True when no path segment is a symlink.
+ */
+function resolvesWithoutSymlink(pluginRoot, relPath) {
+  let current = pluginRoot;
+  for (const segment of relPath.split('/')) {
+    current = path.join(current, segment);
+    let stat;
+    try {
+      stat = fs.lstatSync(current);
+    } catch {
+      return false;
+    }
+    if (stat.isSymbolicLink()) {
+      return false;
+    }
+  }
+  return true;
+}
+
+/**
  * Resolve the catalog for a plugin root: the receipt's embedded catalog when
  * the plugin is a generated carrier, otherwise the plugin's own skills.
  */
@@ -293,6 +351,12 @@ function routePrompt(prompt, options = {}) {
     if (entry.id === 'ecc-catalog') {
       continue;
     }
+    // Fail closed: a catalog row (receipt-embedded or cached) whose path no
+    // longer resolves without crossing a symlink is never suggested. See
+    // resolvesWithoutSymlink.
+    if (!resolvesWithoutSymlink(pluginRoot, entry.path)) {
+      continue;
+    }
     let score = 0;
     for (const token of tokenize(entry.id.replace(/-/g, ' '))) {
       if (promptTokens.has(token)) {
@@ -323,6 +387,7 @@ module.exports = {
   PROFILE_METADATA_FILE,
   tokenize,
   sanitizeCatalogEntries,
+  resolvesWithoutSymlink,
   resolveRouterContext,
   readCatalog,
   readCatalogCache,
