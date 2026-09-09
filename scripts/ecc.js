@@ -31,6 +31,10 @@ const COMMANDS = {
     script: 'consult.js',
     description: 'Recommend ECC components and profiles from a natural language query',
   },
+  profile: {
+    script: 'profile.js',
+    description: 'Inspect context profile definitions and read-only skill projections',
+  },
   'control-pane': {
     script: 'control-pane.js',
     description: 'Run the local ECC2 operator control pane',
@@ -112,6 +116,7 @@ const PRIMARY_COMMANDS = [
   'plan',
   'catalog',
   'consult',
+  'profile',
   'control-pane',
   'ito',
   'nasiko',
@@ -167,6 +172,7 @@ Examples:
   ecc catalog components --family language
   ecc catalog show framework:nextjs
   ecc consult "security reviews"
+  ecc profile preview lean@1 --target codex --selection auto --json
   ecc control-pane --port 8765
   ecc ito login [--no-browser]
   ecc ito logout

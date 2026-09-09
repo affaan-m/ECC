@@ -84,6 +84,14 @@ test('profile schema rejects unknown fields, duplicate IDs and missing required 
   assert.throws(() => compileContextProfile({ repoRoot: root }), /required|missing/i);
 }));
 
+test('profile descriptions reject terminal controls and normalize ordinary whitespace', () => withFixture(root => {
+  const file = 'manifests/context-profiles/lean@1.json';
+  update(root, file, value => ({ ...value, description: '\u001b]52;c;payload\u0007' }));
+  assert.throws(() => loadContextProfile('lean', { repoRoot: root }), /control|metadata/i);
+  update(root, file, value => ({ ...value, description: '  Lean\n\t discovery.  ' }));
+  assert.equal(loadContextProfile('lean', { repoRoot: root }).description, 'Lean discovery.');
+}));
+
 test('metadata ceiling blocks Lean while Full reports the estimate without certification', () => withFixture(root => {
   write(root, 'skills/ecc-guide/SKILL.md', `---\nname: ecc-guide\ndescription: ${'x'.repeat(33000)}\n---\n`);
   assert.throws(() => compileContextProfile({ repoRoot: root }), error => {
