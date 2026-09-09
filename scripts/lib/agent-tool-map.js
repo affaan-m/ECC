@@ -18,9 +18,10 @@
 const CLAUDE_TO_PI_TOOLS = Object.freeze({
   Read: 'read',
   Grep: 'anchor_grep',
-  // Read-only: Pi surfaces glob/file patterns through anchor_grep's glob
-  // filter. Mapping Glob -> bash would give read-only agents shell execution,
-  // which would weaken the permission boundary, so it is intentionally not done.
+  // Read-only approximation, documented in the conversion summary: Pi has no
+  // pure file-listing tool. anchor_grep accepts a glob filter (so it can scope
+  // searches), and mapping Glob -> bash would give read-only agents shell
+  // execution, which would weaken the permission boundary.
   Glob: 'anchor_grep',
   Bash: 'bash',
   Edit: 'replace',

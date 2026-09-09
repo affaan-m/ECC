@@ -53,14 +53,16 @@ function main() {
 
     ["retains model tier distribution (58 sonnet / 6 haiku / 4 opus)", () => {
       const agents = parseAllAgents()
-      const counts = { sonnet: 0, haiku: 0, opus: 0 }
       for (const ir of agents) {
         assert.ok(ir.model, `${ir.id}: missing model tier`)
-        counts[ir.model] += 1
       }
-      assert.strictEqual(counts.sonnet, 58, "sonnet count")
-      assert.strictEqual(counts.haiku, 6, "haiku count")
-      assert.strictEqual(counts.opus, 4, "opus count")
+      const tally = agents.reduce(
+        (acc, ir) => ({ ...acc, [ir.model]: (acc[ir.model] || 0) + 1 }),
+        {}
+      )
+      assert.strictEqual(tally.sonnet, 58, "sonnet count")
+      assert.strictEqual(tally.haiku, 6, "haiku count")
+      assert.strictEqual(tally.opus, 4, "opus count")
     }],
 
     ["retains source-only color metadata", () => {

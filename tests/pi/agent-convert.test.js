@@ -60,7 +60,7 @@ function main() {
       const files = fs.readdirSync(dir).filter(f => f.endsWith(".md"))
       assert.strictEqual(files.length, 68, "expected 68 emitted files")
       const planner = fs.readFileSync(path.join(dir, "planner.md"), "utf8")
-      assert.match(planner, /^---\nname: planner\npackage: ecc\n/m)
+      assert.match(planner, /name: planner\npackage: ecc\n/);
     }],
 
     ["--out --dry-run writes nothing", () => {

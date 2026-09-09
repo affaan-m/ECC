@@ -14,10 +14,12 @@
  * v1 behavior:
  *   - `package: ecc` namespaces agents as `ecc.<name>` to avoid collisions with
  *     Pi builtin agents (e.g. `reviewer`).
- *   - `model` is deliberately omitted: Claude tiers (`haiku`/`sonnet`/`opus`)
- *     are not valid Pi model ids, so Pi's default child model applies. The
- *     tier stays lossless in the IR.
- *   - Unmapped tools are never silently dropped; they surface in `warnings`.
+ *   - The source model tier is preserved as a YAML comment
+ *     (`# source model tier: opus`) rather than a `model:` field, because
+ *     Claude tiers are not valid Pi model ids. Pi's default child model
+ *     applies; the tier is lossless in the IR and visible in the emitted file.
+ *   - Unmapped tools are never silently dropped; they surface in `warnings`
+ *     (per-agent) and in the aggregate `summary`.
  */
 
 const { mapToolToPi } = require('./agent-tool-map');
@@ -46,12 +48,9 @@ function emitPiAgent(ir) {
     }
   }
 
-  if (ir.model) {
-    warnings.push(`${ir.id}: model tier '${ir.model}' omitted (Pi uses its default child model)`);
-  }
-
   const frontmatter = [
     '---',
+    ...(ir.model ? [`# source model tier: ${ir.model}`] : []),
     `name: ${yamlScalar(ir.name)}`,
     `package: ${PACKAGE}`,
     `description: ${yamlScalar(ir.description)}`,
@@ -69,23 +68,45 @@ function emitPiAgent(ir) {
 function yamlScalar(value) {
   const s = String(value);
   // Quote when it contains a leading/trailing space, a colon followed by a
-  // space, a leading special char, or a newline — otherwise keep it plain.
+  // space, a comment-starting hash, a leading special char, or a newline.
   if (/^\s|\s$|: |\n|\s#|^[-?*&|>#@`"'\][{}!,]/.test(s)) {
     return JSON.stringify(s);
   }
   return s;
 }
 
-/** Emit the full set of Pi agents, sorted by id for determinism. */
+/**
+ * Emit the full set of Pi agents, sorted by id for determinism, plus an
+ * aggregate summary of the deliberate (documented) lossy conversions.
+ *
+ * @param {object[]} irs
+ * @returns {{ results: object[], warnings: string[], summary: object }}
+ */
 function emitAllPiAgents(irs) {
   const results = [];
   const warnings = [];
+  const summary = {
+    total: irs.length,
+    modelTiers: {},
+    globApproximated: 0,
+    mcpDropped: 0,
+  };
+
   for (const ir of [...irs].sort((a, b) => a.id.localeCompare(b.id))) {
     const { markdown, warnings: w, tools } = emitPiAgent(ir);
     results.push({ id: ir.id, name: ir.name, tools, markdown });
     warnings.push(...w);
+
+    if (ir.model) {
+      summary.modelTiers[ir.model] = (summary.modelTiers[ir.model] || 0) + 1;
+    }
+    if (ir.tools.includes('Glob')) {
+      summary.globApproximated += 1;
+    }
+    summary.mcpDropped += ir.tools.filter(t => t.startsWith('mcp__')).length;
   }
-  return { results, warnings };
+
+  return { results, warnings, summary };
 }
 
 module.exports = {

@@ -50,9 +50,20 @@ function main() {
   let passed = 0
   let failed = 0
 
-  const irs = parseAllAgents()
-  const { results, warnings } = emitAllPiAgents(irs)
-  const byId = new Map(irs.map(ir => [ir.id, ir]))
+  let irs
+  let results
+  let warnings
+  let byId
+  try {
+    irs = parseAllAgents()
+    ;({ results, warnings } = emitAllPiAgents(irs))
+    byId = new Map(irs.map(ir => [ir.id, ir]))
+  } catch (error) {
+    console.log(`  ✗ setup failed: ${error.message}`)
+    console.log("\nPassed: 0")
+    console.log("Failed: 1")
+    process.exit(1)
+  }
 
   const tests = [
     ["emits all 68 agents", () => {
@@ -68,6 +79,13 @@ function main() {
         assert.strictEqual(fm.systemPromptMode, "replace", `${r.id}: systemPromptMode`)
         assert.strictEqual(fm.model, undefined, `${r.id}: model must be omitted (Pi default applies)`)
       }
+    }],
+
+    ["model tier is preserved as a comment in the emitted frontmatter", () => {
+      const planner = results.find(r => r.id === "planner")
+      assert.match(planner.markdown, /^---\n# source model tier: opus\n/m)
+      const haiku = results.find(r => r.id === "comment-analyzer")
+      assert.match(haiku.markdown, /^---\n# source model tier: haiku\n/m)
     }],
 
     ["tool allowlist contains only valid Pi tool names", () => {

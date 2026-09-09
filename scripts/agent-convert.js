@@ -120,7 +120,7 @@ function main() {
     process.exit(0);
   }
 
-  const { results, warnings } = emitAllPiAgents(irs);
+  const { results, warnings, summary: emitSummary } = emitAllPiAgents(irs);
 
   // Progress lines must never corrupt machine-readable stdout.
   const progress = msg => {
@@ -149,14 +149,25 @@ function main() {
     converted: results.length,
     warnings: warnings.length,
     warningsDetail: warnings,
+    emitSummary,
   };
 
   if (args.json) {
     console.log(JSON.stringify(summary, null, 2));
   } else {
     console.log(`converted ${results.length} agents (${args.from} -> ${args.to})`);
+    if (Object.keys(emitSummary.modelTiers).length) {
+      const tiers = Object.entries(emitSummary.modelTiers).map(([t, n]) => `${t} x${n}`).join(', ');
+      console.log(`  model tiers preserved as comments (${tiers}) — Pi uses its default child model`);
+    }
+    if (emitSummary.globApproximated) {
+      console.log(`  Glob approximated by anchor_grep (read-only) for ${emitSummary.globApproximated} agent(s)`);
+    }
+    if (emitSummary.mcpDropped) {
+      console.log(`  MCP tools not auto-mapped: ${emitSummary.mcpDropped} (configure the server explicitly)`);
+    }
     if (warnings.length) {
-      console.log(`\n${warnings.length} warning(s):`);
+      console.log(`\n${warnings.length} actionable warning(s):`);
       for (const w of warnings) console.log(`  - ${w}`);
     }
   }
