@@ -133,7 +133,7 @@ const ADAPTER_RECORDS = Object.freeze([
       'canonical ECC engineering rules (rules/common/) injected into the system prompt',
       'session lifecycle hook adapter',
       '/ecc-doctor diagnostics command',
-      'canonical ECC agents (agents/) portable via scripts/agent-convert.js (claude -> pi)',
+      'canonical ECC agents (agents/) portable via scripts/agent-convert.js (claude -> pi, cursor, opencode)',
     ],
     unsupported_surfaces: [
       'Agent chains, approval prompts, and persistent todos require companion Pi packages and are not part of this adapter (individual agent definitions are portable via scripts/agent-convert.js)',

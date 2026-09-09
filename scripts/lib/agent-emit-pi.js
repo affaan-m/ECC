@@ -85,12 +85,9 @@ function yamlScalar(value) {
 function emitAllPiAgents(irs) {
   const results = [];
   const warnings = [];
-  const summary = {
-    total: irs.length,
-    modelTiers: {},
-    globApproximated: 0,
-    mcpDropped: 0,
-  };
+  const modelTiers = {};
+  let globApproximated = 0;
+  let mcpDropped = 0;
 
   for (const ir of [...irs].sort((a, b) => a.id.localeCompare(b.id))) {
     const { markdown, warnings: w, tools } = emitPiAgent(ir);
@@ -98,15 +95,27 @@ function emitAllPiAgents(irs) {
     warnings.push(...w);
 
     if (ir.model) {
-      summary.modelTiers[ir.model] = (summary.modelTiers[ir.model] || 0) + 1;
+      modelTiers[ir.model] = (modelTiers[ir.model] || 0) + 1;
     }
     if (ir.tools.includes('Glob')) {
-      summary.globApproximated += 1;
+      globApproximated += 1;
     }
-    summary.mcpDropped += ir.tools.filter(t => t.startsWith('mcp__')).length;
+    mcpDropped += ir.tools.filter(t => t.startsWith('mcp__')).length;
   }
 
-  return { results, warnings, summary };
+  const notes = [];
+  if (Object.keys(modelTiers).length) {
+    const tiers = Object.entries(modelTiers).map(([t, n]) => `${t} x${n}`).join(', ');
+    notes.push(`model tiers preserved as comments (${tiers}) — Pi uses its default child model`);
+  }
+  if (globApproximated) {
+    notes.push(`Glob mapped to anchor_grep (read-only approximation; Pi has no pure file-listing tool) for ${globApproximated} agent(s)`);
+  }
+  if (mcpDropped) {
+    notes.push(`MCP tools not auto-mapped: ${mcpDropped} (configure the server explicitly)`);
+  }
+
+  return { results, warnings, notes };
 }
 
 module.exports = {

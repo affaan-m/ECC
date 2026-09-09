@@ -71,7 +71,7 @@ function main() {
     }],
 
     ["unsupported conversion exits non-zero", () => {
-      assert.throws(() => runCli(["--from", "claude", "--to", "cursor"]), /unsupported conversion/)
+      assert.throws(() => runCli(["--from", "claude", "--to", "zed"]), /unsupported conversion/);
     }],
 
     ["unknown flag exits non-zero", () => {
