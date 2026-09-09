@@ -1,0 +1,14 @@
+name: invalid-capability
+needs:
+  os: [linux]
+  capabilities: [docker-socket]
+  trust: first-party
+  native: false
+resources:
+  cpu: 2
+  memory: 2GB
+  timeout: 300
+steps:
+  setup: [node --version]
+  assert: [node --version]
+report: exit-only

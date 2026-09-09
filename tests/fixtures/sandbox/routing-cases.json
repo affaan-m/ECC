@@ -1,0 +1,62 @@
+{
+  "baseManifest": {
+    "name": "routing-fixture",
+    "needs": {
+      "os": ["macos"],
+      "arch": ["arm64"],
+      "capabilities": [],
+      "trust": "first-party",
+      "native": false
+    },
+    "resources": {
+      "cpu": 2,
+      "memory": "2GB",
+      "timeout": 300
+    },
+    "steps": {
+      "setup": ["node --version"],
+      "assert": ["node --version"]
+    },
+    "report": "exit-only"
+  },
+  "cases": [
+    {
+      "name": "benign host process uses SRT",
+      "backends": { "srt": { "available": true } },
+      "expected": ["srt"]
+    },
+    {
+      "name": "workspace write remains Tier 0",
+      "needs": { "capabilities": ["fs-write"] },
+      "backends": { "srt": { "available": true } },
+      "expected": ["srt"]
+    },
+    {
+      "name": "clean home is deferred even when Podman is detected",
+      "needs": { "os": ["linux"], "capabilities": ["clean-home"] },
+      "backends": { "podman": { "available": true } },
+      "expected": [null],
+      "result": "error",
+      "reasonPattern": "no implemented Tier 0 backend"
+    },
+    {
+      "name": "package installation is deferred to Tier 1",
+      "needs": { "os": ["linux"], "capabilities": ["pkg-install"] },
+      "backends": { "podman": { "available": true } },
+      "expected": [null],
+      "result": "error",
+      "reasonPattern": "no implemented Tier 0 backend"
+    },
+    {
+      "name": "native operating system behavior is deferred",
+      "needs": { "capabilities": ["services"], "native": true },
+      "backends": {
+        "lume": { "available": true },
+        "ci": { "available": true, "targets": [{ "os": "macos", "arch": "arm64" }] }
+      },
+      "expected": [null],
+      "result": "error",
+      "reasonPattern": "no implemented Tier 0 backend"
+    }
+  ]
+}

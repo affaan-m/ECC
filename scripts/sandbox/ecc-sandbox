@@ -1,0 +1,287 @@
+#!/usr/bin/env node
+'use strict';
+
+const fs = require('fs');
+const os = require('os');
+const path = require('path');
+const {
+  loadManifest,
+  readBoundedRegularFile,
+  validateCapabilities,
+  validateReport,
+} = require('./contracts');
+const { defaultHost, routeManifest } = require('./router');
+const {
+  probeCapabilities,
+  readCapabilityCache,
+  writeCapabilityCache,
+} = require('./probe');
+const {
+  executeSrt,
+  loadMockScenario,
+  mockRunner,
+} = require('./backends/srt');
+
+const COMMANDS = ['probe', 'run', 'report'];
+
+function writeJson(value) {
+  process.stdout.write(`${JSON.stringify(value, null, 2)}\n`);
+}
+
+function help() {
+  return {
+    name: 'ecc-sandbox',
+    usage: [
+      'ecc-sandbox probe [--refresh] [--cache <file>] [--mock <capabilities.json>]',
+      'ecc-sandbox run <sandbox.yaml> [--dry-run] [--local-only] [--capabilities <file>] [--mock <file>]',
+      'ecc-sandbox report <report.json>',
+    ],
+    commands: COMMANDS,
+  };
+}
+
+function parseRunArgs(args) {
+  const options = {
+    manifestPath: null,
+    dryRun: false,
+    localOnly: false,
+    capabilitiesPath: null,
+    mockPath: null,
+  };
+
+  for (let index = 0; index < args.length; index += 1) {
+    const arg = args[index];
+    if (arg === '--dry-run') {
+      options.dryRun = true;
+    } else if (arg === '--local-only') {
+      options.localOnly = true;
+    } else if (arg === '--capabilities' || arg === '--mock') {
+      const value = args[index + 1];
+      if (!value || value.startsWith('-')) {
+        throw new Error(`${arg} requires a JSON file path`);
+      }
+      options[arg === '--capabilities' ? 'capabilitiesPath' : 'mockPath'] = value;
+      index += 1;
+    } else if (arg.startsWith('-')) {
+      throw new Error(`Unknown run argument: ${arg}`);
+    } else if (options.manifestPath === null) {
+      options.manifestPath = arg;
+    } else {
+      throw new Error(`Unexpected run argument: ${arg}`);
+    }
+  }
+
+  if (!options.manifestPath) {
+    throw new Error('run requires a sandbox manifest path');
+  }
+  if (options.dryRun && options.mockPath) {
+    throw new Error('--mock executes an adapter and cannot be combined with --dry-run');
+  }
+  return options;
+}
+
+function parseProbeArgs(args) {
+  const options = { refresh: false, cachePath: null, mockPath: null };
+  for (let index = 0; index < args.length; index += 1) {
+    const arg = args[index];
+    if (arg === '--refresh') {
+      options.refresh = true;
+    } else if (arg === '--cache' || arg === '--mock') {
+      const value = args[index + 1];
+      if (!value || value.startsWith('-')) {
+        throw new Error(`${arg} requires a file path`);
+      }
+      options[arg === '--cache' ? 'cachePath' : 'mockPath'] = value;
+      index += 1;
+    } else {
+      throw new Error(`Unknown probe argument: ${arg}`);
+    }
+  }
+  return options;
+}
+
+function emptyCapabilityMap() {
+  return {
+    schema_version: 1,
+    host: defaultHost(),
+    backends: Object.fromEntries([
+      'srt',
+      'podman',
+      'docker',
+      'microsandbox',
+      'lume',
+      'lima',
+      'windows-sandbox',
+      'hyper-v',
+      'dockur-windows',
+      'tart',
+      'ci',
+    ].map(backend => [backend, { available: false }])),
+  };
+}
+
+function defaultCapabilityCachePath() {
+  const cacheRoot = process.env.XDG_CACHE_HOME || path.join(os.homedir(), '.cache');
+  return path.join(cacheRoot, 'ecc', 'sandbox-capabilities.json');
+}
+
+function loadCapabilities(filePath) {
+  const candidate = filePath ? path.resolve(filePath) : defaultCapabilityCachePath();
+  if (!fs.existsSync(candidate)) return emptyCapabilityMap();
+  const capabilities = validateCapabilities(JSON.parse(
+    readBoundedRegularFile(candidate, 'Capability map')
+  ));
+  const host = defaultHost();
+  if (capabilities.host.os !== host.os || capabilities.host.arch !== host.arch) {
+    throw new Error(
+      `Capability map host ${capabilities.host.os}/${capabilities.host.arch} does not match current host ${host.os}/${host.arch}; run ecc-sandbox probe --refresh`
+    );
+  }
+  return capabilities;
+}
+
+function resolveRun(options) {
+  const manifestPath = path.resolve(options.manifestPath);
+  const manifest = loadManifest(manifestPath);
+  const capabilities = loadCapabilities(options.capabilitiesPath);
+  const decision = routeManifest(manifest, capabilities, {
+    localOnly: options.localOnly,
+    manifestPath,
+  });
+  return { capabilities, decision, manifest, manifestPath };
+}
+
+function runDryRun(options) {
+  return resolveRun(options).decision;
+}
+
+function runExecution(options) {
+  const resolved = resolveRun(options);
+  if (resolved.decision.result !== 'routable') {
+    const failed = resolved.decision.routes.find(route => route.result === 'error');
+    throw new Error(`${failed.reason}. ${failed.fix}`);
+  }
+  if (resolved.decision.routes.length !== 1) {
+    throw new Error('Multiple-route execution is unavailable until the aggregate execution phase');
+  }
+  const route = resolved.decision.routes[0];
+  if (route.backend !== 'srt') {
+    throw new Error(`${route.backend} execution is unavailable until its adapter phase`);
+  }
+
+  let run;
+  let mock = false;
+  if (options.mockPath) {
+    run = mockRunner(loadMockScenario(path.resolve(options.mockPath)));
+    mock = true;
+  }
+  return executeSrt(resolved.manifest, {
+    arch: route.arch,
+    cwd: process.cwd(),
+    enableWeakerNestedSandbox: process.env.ECC_SANDBOX_ALLOW_NESTED_SRT === '1',
+    manifestPath: resolved.manifestPath,
+    mock,
+    os: route.os,
+    platform: process.platform,
+    run,
+  });
+}
+
+function runProbe(options) {
+  const cachePath = path.resolve(options.cachePath || defaultCapabilityCachePath());
+  if (options.mockPath) {
+    const mocked = readCapabilityCache(path.resolve(options.mockPath));
+    if (options.cachePath) writeCapabilityCache(cachePath, mocked);
+    return mocked;
+  }
+  if (!options.refresh && fs.existsSync(cachePath)) {
+    const cached = readCapabilityCache(cachePath);
+    const host = defaultHost();
+    if (cached.host.os !== host.os || cached.host.arch !== host.arch) {
+      throw new Error(
+        `Capability cache is for ${cached.host.os}/${cached.host.arch}; refresh it with ecc-sandbox probe --refresh`
+      );
+    }
+    return cached;
+  }
+  const capabilities = probeCapabilities();
+  writeCapabilityCache(cachePath, capabilities);
+  return capabilities;
+}
+
+function runReport(args) {
+  if (args.length !== 1) {
+    throw new Error('report requires exactly one report JSON path');
+  }
+  const reportPath = path.resolve(args[0]);
+  const report = JSON.parse(readBoundedRegularFile(reportPath, 'Sandbox report'));
+  validateReport(report);
+  return {
+    result: 'valid',
+    report: reportPath,
+    report_result: report.result,
+  };
+}
+
+function main(argv = process.argv.slice(2)) {
+  const [command, ...args] = argv;
+  if (!command || command === '--help' || command === '-h' || command === 'help') {
+    writeJson(help());
+    return 0;
+  }
+  if (!COMMANDS.includes(command)) {
+    throw new Error(`Unknown command: ${command}`);
+  }
+  if (command === 'run') {
+    const options = parseRunArgs(args);
+    if (options.dryRun) {
+      const decision = runDryRun(options);
+      writeJson(decision);
+      return decision.result === 'routable' ? 0 : 2;
+    }
+    const outcome = runExecution(options);
+    writeJson(outcome.report);
+    return outcome.exitCode;
+  }
+  if (command === 'probe') {
+    writeJson(runProbe(parseProbeArgs(args)));
+    return 0;
+  }
+  if (command === 'report') {
+    writeJson(runReport(args));
+    return 0;
+  }
+  throw new Error(`${command} is unavailable until its implementation phase`);
+}
+
+if (require.main === module) {
+  try {
+    process.exitCode = main();
+  } catch (error) {
+    writeJson({
+      result: 'error',
+      error: {
+        code: error.name === 'ContractValidationError' ? 'contract-invalid' : 'sandbox-cli-error',
+        message: error.message,
+        details: error.errors || [],
+      },
+    });
+    process.exitCode = 2;
+  }
+}
+
+module.exports = {
+  defaultCapabilityCachePath,
+  emptyCapabilityMap,
+  help,
+  loadCapabilities,
+  main,
+  parseRunArgs,
+  parseProbeArgs,
+  resolveRun,
+  runExecution,
+  runProbe,
+  runDryRun,
+  runReport,
+  writeJson,
+};
