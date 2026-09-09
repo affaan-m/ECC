@@ -69,6 +69,7 @@ function metadataFailure(meta, entries = []) {
 }
 
 function releaseOwnedLock(lockPath, fd, identity) {
+  let inspectionDenied;
   try {
     // Keep the original descriptor open while checking ownership so its inode
     // cannot be reused. Preserve a replacement detected before release; this
@@ -77,15 +78,27 @@ function releaseOwnedLock(lockPath, fd, identity) {
       let current;
       try { current = fs.lstatSync(lockPath); } catch (error) {
         if (error.code === 'ENOENT') throw new CapsuleError('capsule.lock_lost', 'append lock disappeared before release');
-        throw error;
+        if (error.code !== 'EPERM') throw error;
+        inspectionDenied = error;
       }
-      if (!current.isFile() || current.dev !== identity.dev || current.ino !== identity.ino) {
-        throw new CapsuleError('capsule.lock_lost', 'append lock ownership changed before release');
+      if (!inspectionDenied) {
+        if (!current.isFile() || current.dev !== identity.dev || current.ino !== identity.ino) {
+          throw new CapsuleError('capsule.lock_lost', 'append lock ownership changed before release');
+        }
+        fs.unlinkSync(lockPath);
       }
-      fs.unlinkSync(lockPath);
     }
   } finally {
     fs.closeSync(fd);
+  }
+  if (inspectionDenied) {
+    // Windows may deny stat while a removed file awaits its last handle close.
+    // Only confirmed absence changes the error. Never unlink after closing:
+    // the pathname could now belong to another owner, even with a reused inode.
+    try { fs.lstatSync(lockPath); } catch (error) {
+      if (error.code === 'ENOENT') throw new CapsuleError('capsule.lock_lost', 'append lock disappeared before release');
+    }
+    throw inspectionDenied;
   }
 }
 

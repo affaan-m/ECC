@@ -405,6 +405,87 @@ test('a lock removed externally is reported as lost after closing owned descript
   } finally { cleanup(dir); }
 });
 
+// Model the Windows pending-delete boundary without requiring a Windows host.
+// The pathname can remain inaccessible until the owned descriptor closes.
+for (const scenario of [
+  { name: 'pending deletion is classified only after close confirms absence', outcome: 'missing' },
+  { name: 'a present lock keeps the original permission error', outcome: 'present' },
+  { name: 'persistent permission failure keeps the original error', outcome: 'denied' },
+  { name: 'a replacement appearing on close is preserved', outcome: 'replacement' },
+  { name: 'other permission errors do not trigger a second inspection', outcome: 'present', code: 'EACCES' },
+  { name: 'a failed close is not retried or followed by pathname inspection', outcome: 'close-error' },
+]) {
+  test(`lock release: ${scenario.name}`, () => {
+    const dir = tempDir('lock-close-boundary');
+    const lock = appendLock(dir);
+    const original = { open: fs.openSync, close: fs.closeSync, stat: fs.lstatSync, unlink: fs.unlinkSync };
+    const permissionError = Object.assign(new Error('synthetic lock inspection denied'), { code: scenario.code || 'EPERM' });
+    const closeError = Object.assign(new Error('synthetic ambiguous close failure'), { code: 'EIO' });
+    let ownedFd;
+    let closed = false;
+    let closes = 0;
+    let inspections = 0;
+    let unlinks = 0;
+    try {
+      const c = capsule.Capsule.create(dir);
+      fs.openSync = function(file, ...args) {
+        const fd = original.open.call(this, file, ...args);
+        if (file === lock && args[0] === 'wx') ownedFd = fd;
+        return fd;
+      };
+      fs.lstatSync = function(file, ...args) {
+        if (file === lock) {
+          inspections += 1;
+          if (!closed) throw permissionError;
+          if (scenario.outcome === 'denied') throw Object.assign(new Error('still denied'), { code: 'EPERM' });
+        }
+        return original.stat.call(this, file, ...args);
+      };
+      fs.unlinkSync = function(file, ...args) {
+        if (file === lock) unlinks += 1;
+        return original.unlink.call(this, file, ...args);
+      };
+      fs.closeSync = function(fd) {
+        const result = original.close.call(this, fd);
+        if (fd === ownedFd && !closed) {
+          closes += 1;
+          closed = true;
+          if (scenario.outcome === 'close-error') throw closeError;
+          if (scenario.outcome === 'missing') original.unlink(lock);
+          if (scenario.outcome === 'replacement') {
+            fs.renameSync(lock, path.join(dir, 'displaced-lock'));
+            fs.writeFileSync(lock, 'replacement owner');
+          }
+        }
+        return result;
+      };
+      assert.throws(() => c.append('plan', 'owner', {}), error => {
+        if (scenario.outcome === 'missing') return error.code === 'capsule.lock_lost';
+        return error === (scenario.outcome === 'close-error' ? closeError : permissionError);
+      });
+      assert.strictEqual(closed, true, 'owned descriptor must close');
+      assert.strictEqual(closes, 1, 'never retry an ambiguous close');
+      assert.strictEqual(unlinks, 0, 'permission fallback must never unlink a pathname');
+      if (scenario.code || scenario.outcome === 'close-error') assert.strictEqual(inspections, 1);
+      fs.openSync = original.open;
+      fs.closeSync = original.close;
+      fs.lstatSync = original.stat;
+      fs.unlinkSync = original.unlink;
+      if (scenario.outcome === 'missing') assert.strictEqual(fs.existsSync(lock), false);
+      else assert.strictEqual(fs.readFileSync(lock, 'utf8'), scenario.outcome === 'replacement' ? 'replacement owner' : '');
+      // Release failure can follow a complete durable append; never infer rollback.
+      assert.strictEqual(capsule.verify(dir).entry_count, 1);
+      assert.strictEqual(capsule.verify(dir).ok, true);
+    } finally {
+      fs.openSync = original.open;
+      fs.closeSync = original.close;
+      fs.lstatSync = original.stat;
+      fs.unlinkSync = original.unlink;
+      cleanup(dir);
+    }
+  });
+}
+
 test('invalid payloads leave journal unchanged and release the append lock', () => {
   const dir = tempDir();
   try {
