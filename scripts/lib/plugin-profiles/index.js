@@ -35,6 +35,8 @@
  *   plan.js           surface expansion, dependency cover, refusals
  *   ledger.js         listing payload, measurers, budget verdict
  *   carrier.js        copy ops, staging, verification, swap, receipt
+ *   unshippable.js    omitting a command whose runtime needs an npm package
+ *                     no carrier carries, instead of shipping it broken
  *   marketplace.js    the local marketplace projection
  *
  * This file is the only public surface; nothing outside `plugin-profiles/`
@@ -52,6 +54,7 @@ const contextProfile = require('./context-profile');
 const plan = require('./plan');
 const ledger = require('./ledger');
 const carrier = require('./carrier');
+const unshippable = require('./unshippable');
 const marketplace = require('./marketplace');
 
 module.exports = {
@@ -120,11 +123,15 @@ module.exports = {
   collectSmokeTargets: carrier.collectSmokeTargets,
   reconcileLoadSmoke: carrier.reconcileLoadSmoke,
   buildStagingTree: carrier.buildStagingTree,
+  finalizeStagingTree: carrier.finalizeStagingTree,
   buildReceipt: carrier.buildReceipt,
   writeReceipt: carrier.writeReceipt,
   swapIntoPlace: carrier.swapIntoPlace,
   previewProfilePlugin: carrier.previewProfilePlugin,
   generateProfilePlugin: carrier.generateProfilePlugin,
+
+  // unshippable commands
+  pruneUnshippableCommands: unshippable.pruneUnshippableCommands,
 
   // marketplace
   writeMarketplaceManifest: marketplace.writeMarketplaceManifest,

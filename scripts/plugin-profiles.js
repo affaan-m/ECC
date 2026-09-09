@@ -288,15 +288,15 @@ function runGenerate(flags) {
 }
 
 function printExternalDependencies(receipt) {
-  const external = (receipt.dependencies && receipt.dependencies.external) || [];
-  if (external.length === 0) {
+  const omitted = (receipt.dependencies && receipt.dependencies.omittedCommands) || [];
+  if (omitted.length === 0) {
     return;
   }
-  console.warn('\nWarning:  the staged load smoke found shipped scripts that need npm packages');
-  console.warn('          no carrier carries. Those commands will fail at runtime:');
-  for (const item of external) {
-    console.warn(`            ${item.file} requires "${item.module}"`);
+  console.warn('\nWarning:  omitted commands whose runtime needs an npm package no carrier carries:');
+  for (const item of omitted) {
+    console.warn(`            ${item.commands.join(', ')} -> ${item.script} requires "${item.module}"`);
   }
+  console.warn('          Package the dependency and regenerate, or ignore until it is available.');
 }
 
 function printGenerationResult(result, { plan, outRoot, marketplaceName }) {
