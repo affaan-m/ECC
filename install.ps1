@@ -1,5 +1,5 @@
 #!/usr/bin/env pwsh
-# install.ps1 — Windows-native entrypoint for the ECC installer.
+# install.ps1 - Windows-native entrypoint for the ECC installer.
 #
 # This wrapper resolves the real repo/package root when invoked through a
 # symlinked path, then delegates to the Node-based installer runtime.
