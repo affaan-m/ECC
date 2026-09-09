@@ -85,7 +85,7 @@ function yamlScalar(value) {
 function emitAllPiAgents(irs) {
   const results = [];
   const warnings = [];
-  const modelTiers = {};
+  let modelTiers = {};
   let globApproximated = 0;
   let mcpDropped = 0;
 
@@ -95,7 +95,7 @@ function emitAllPiAgents(irs) {
     warnings.push(...w);
 
     if (ir.model) {
-      modelTiers[ir.model] = (modelTiers[ir.model] || 0) + 1;
+      modelTiers = { ...modelTiers, [ir.model]: (modelTiers[ir.model] || 0) + 1 };
     }
     if (ir.tools.includes('Glob')) {
       globApproximated += 1;

@@ -90,7 +90,7 @@ function emitCursorAgent(ir) {
 function emitAllCursorAgents(irs) {
   const results = [];
   const warnings = [];
-  const modelTiers = {};
+  let modelTiers = {};
   let unsupported = 0;
 
   for (const ir of [...irs].sort((a, b) => a.id.localeCompare(b.id))) {
@@ -99,7 +99,7 @@ function emitAllCursorAgents(irs) {
     warnings.push(...w);
 
     if (ir.model) {
-      modelTiers[ir.model] = (modelTiers[ir.model] || 0) + 1;
+      modelTiers = { ...modelTiers, [ir.model]: (modelTiers[ir.model] || 0) + 1 };
     }
     unsupported += ir.tools.filter(t => {
       const m = mapToolToCursor(t);

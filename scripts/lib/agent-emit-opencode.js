@@ -92,7 +92,7 @@ function emitOpenCodeAgent(ir) {
 function emitAllOpenCodeAgents(irs) {
   const results = [];
   const warnings = [];
-  const modelTiers = {};
+  let modelTiers = {};
   let unsupported = 0;
 
   for (const ir of [...irs].sort((a, b) => a.id.localeCompare(b.id))) {
@@ -101,7 +101,7 @@ function emitAllOpenCodeAgents(irs) {
     warnings.push(...w);
 
     if (ir.model) {
-      modelTiers[ir.model] = (modelTiers[ir.model] || 0) + 1;
+      modelTiers = { ...modelTiers, [ir.model]: (modelTiers[ir.model] || 0) + 1 };
     }
     unsupported += ir.tools.filter(t => mapToolToOpenCode(t).unsupported).length;
   }
