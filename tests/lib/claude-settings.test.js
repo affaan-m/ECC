@@ -48,6 +48,14 @@ function clone(value) {
   return JSON.parse(JSON.stringify(value));
 }
 
+// Derive a stats object with a different dev without mutating the fs.Stats
+// instance; the prototype chain keeps isFile()/isSymbolicLink() working.
+function withDev(stats, dev) {
+  // fs.rmSync probes with { throwIfNoEntry: false }, which yields undefined.
+  if (!stats) return stats;
+  return Object.create(stats, { dev: { value: dev, enumerable: true } });
+}
+
 function assertAtomicParentReplacementRejected(stage) {
   const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'claude-settings-parent-race-'));
   const targetRoot = path.join(tempDir, 'target');
@@ -463,8 +471,7 @@ function runTests() {
       fs.writeFileSync(settingsPath, '{"theme":"initial"}\n');
       fs.lstatSync = function(target, options) {
         const stats = originalLstat.call(fs, target, options);
-        stats.dev = options && options.bigint ? 0n : 0;
-        return stats;
+        return withDev(stats, options && options.bigint ? 0n : 0);
       };
       const result = updateSettingsAtomic(
         settingsPath,
@@ -488,7 +495,7 @@ function runTests() {
       fs.lstatSync = function(target, options) {
         const stats = originalLstat.call(fs, target, options);
         if (path.resolve(String(target)) === settingsPath) {
-          stats.dev = options && options.bigint ? stats.dev + 1n : stats.dev + 1;
+          return withDev(stats, options && options.bigint ? stats.dev + 1n : stats.dev + 1);
         }
         return stats;
       };
@@ -500,6 +507,59 @@ function runTests() {
         error => error.code === 'ECC_SETTINGS_CHANGED'
       );
       assert.deepStrictEqual(JSON.parse(fs.readFileSync(settingsPath, 'utf8')), { theme: 'initial' });
+    } finally {
+      fs.lstatSync = originalLstat;
+      fs.rmSync(tempDir, { recursive: true, force: true });
+    }
+  })) passed++; else failed++;
+
+  if (test('lock release refuses a quarantined lock on a different device', () => {
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'claude-settings-lock-dev-'));
+    const settingsPath = path.join(tempDir, 'settings.json');
+    const lockPath = `${settingsPath}.ecc.lock`;
+    const originalLstat = fs.lstatSync;
+    try {
+      fs.writeFileSync(settingsPath, '{"theme":"initial"}\n');
+      fs.lstatSync = function(target, options) {
+        const stats = originalLstat.call(fs, target, options);
+        if (stats && String(target).includes('.ecc.lock.release-')) {
+          return withDev(stats, options && options.bigint ? stats.dev + 1n : stats.dev + 1);
+        }
+        return stats;
+      };
+      assert.throws(
+        () => runWithSettingsLock(settingsPath, () => 'done'),
+        /Refusing to release a changed Claude settings lock/
+      );
+      assert.strictEqual(fs.existsSync(lockPath), true);
+    } finally {
+      fs.lstatSync = originalLstat;
+      fs.rmSync(tempDir, { recursive: true, force: true });
+    }
+  })) passed++; else failed++;
+
+  if (test('stale lock recovery keeps a quarantined lock on a different device', () => {
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'claude-settings-stale-dev-'));
+    const settingsPath = path.join(tempDir, 'settings.json');
+    const lockPath = `${settingsPath}.ecc.lock`;
+    const originalLstat = fs.lstatSync;
+    try {
+      fs.writeFileSync(settingsPath, '{"theme":"initial"}\n');
+      // A dead owner pid makes the lock stale, so recovery quarantines it and
+      // compares the quarantined identity with the one it inspected.
+      fs.writeFileSync(lockPath, `${JSON.stringify({ pid: 2147483647, startedAt: new Date().toISOString() })}\n`);
+      fs.lstatSync = function(target, options) {
+        const stats = originalLstat.call(fs, target, options);
+        if (stats && String(target).includes('.ecc.lock.stale-')) {
+          return withDev(stats, options && options.bigint ? stats.dev + 1n : stats.dev + 1);
+        }
+        return stats;
+      };
+      assert.throws(
+        () => runWithSettingsLock(settingsPath, () => 'done'),
+        /Another ECC process is updating Claude settings/
+      );
+      assert.strictEqual(fs.existsSync(lockPath), true);
     } finally {
       fs.lstatSync = originalLstat;
       fs.rmSync(tempDir, { recursive: true, force: true });
