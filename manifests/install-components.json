@@ -479,6 +479,14 @@
       ]
     },
     {
+      "id": "skill:plugin-profiles",
+      "family": "skill",
+      "description": "Generate, inspect, and activate slim ECC plugin carriers so a project loads only the surface it needs.",
+      "modules": [
+        "workflow-quality"
+      ]
+    },
+    {
       "id": "skill:unified-memory",
       "family": "skill",
       "description": "Cross-harness memory guidance that requires the separately installed ecc-universal CLI runtime.",

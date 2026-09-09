@@ -219,6 +219,7 @@ These lifecycle commands are also available through the `ecc` CLI.
 | `/projects` | List known projects and their instinct statistics |
 | `/project-init` | Detect a project's stack and produce a dry-run ECC onboarding plan |
 | `/harness-audit` | Audit the agent harness configuration for reliability and cost |
+| `/plugin-profiles` | Generate a slim ECC plugin carrier so a project loads only the surface it needs |
 | `/model-route` | Route a task to the right model (Haiku / Sonnet / Opus) |
 | `/pm2` | PM2 process manager initialisation |
 | `/setup-pm` | Configure package manager (npm / pnpm / yarn / bun) |

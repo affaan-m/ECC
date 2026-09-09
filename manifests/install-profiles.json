@@ -75,6 +75,7 @@
       "modules": [
         "rules-core",
         "agents-core",
+        "commands-runtime",
         "commands-core",
         "hooks-runtime",
         "platform-configs",

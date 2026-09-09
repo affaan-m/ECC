@@ -906,6 +906,15 @@ The highest-signal next implementation moves in this repo are:
    - repair and uninstall safety for non-copy operations
    - unified `ecc` CLI routing and compatibility guarantees
 
+## Claude Plugin Profile Generation
+
+The manifests above also drive the Claude Code plugin surface. The
+marketplace plugin path cannot select modules natively, so
+`scripts/plugin-profiles.js` materializes any install plan (profile, modules,
+or component selection) as a standalone slim plugin plus a local marketplace,
+chosen per project via `enabledPlugins`. See
+[PLUGIN-PROFILES.md](PLUGIN-PROFILES.md).
+
 ## Open Questions
 
 1. Should rules stay language-addressable in legacy mode forever, or only during
