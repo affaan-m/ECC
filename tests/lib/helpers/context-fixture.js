@@ -56,4 +56,8 @@ function withFixture(fn) {
   try { return fn(root); } finally { fs.rmSync(root, { recursive: true, force: true }); }
 }
 
-module.exports = { KERNEL, fixture, update, withFixture, write };
+function createDirectoryLink(source, destination, platform = process.platform) {
+  fs.symlinkSync(source, destination, platform === 'win32' ? 'junction' : 'dir');
+}
+
+module.exports = { KERNEL, createDirectoryLink, fixture, update, withFixture, write };

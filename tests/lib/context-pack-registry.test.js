@@ -7,7 +7,7 @@ const test = require('node:test');
 const { loadContextRegistry, explainContextEntry } = require('../../scripts/lib/context-pack-registry');
 const { createSourceReader } = require('../../scripts/lib/context-profile-support');
 const { SUPPORTED_INSTALL_TARGETS } = require('../../scripts/lib/install-manifests');
-const { update, withFixture, write } = require('./helpers/context-fixture');
+const { createDirectoryLink, update, withFixture, write } = require('./helpers/context-fixture');
 
 const REGISTRY = 'manifests/context-packs/skill-registry@1.json';
 
@@ -87,7 +87,6 @@ test('dependency cycles and duplicate ownership fail closed', () => withFixture(
 }));
 
 test('directory link fixtures choose unprivileged Windows junctions', context => {
-  const { createDirectoryLink } = require('./helpers/context-fixture');
   const calls = [];
   context.mock.method(fs, 'symlinkSync', (...args) => calls.push(args));
   createDirectoryLink('/source', '/destination', 'win32');
@@ -97,11 +96,35 @@ test('directory link fixtures choose unprivileged Windows junctions', context =>
   ]);
 });
 
-test('unowned skills and symlink resources fail closed', () => withFixture(root => {
+test('unowned skills fail closed', () => withFixture(root => {
   write(root, 'skills/unowned/SKILL.md', '---\nname: unowned\ndescription: Unowned.\n---\n');
   assert.throws(() => loadContextRegistry({ repoRoot: root }), /owner|unowned/i);
-  fs.rmSync(path.join(root, 'skills/unowned'), { recursive: true });
-  fs.symlinkSync(path.join(root, 'manifests/install-modules.json'), path.join(root, 'skills/feature/escape.json'));
+}));
+
+test('leaf-link detection rejects before opening source bytes without symlink privileges', context => withFixture(root => {
+  const relative = 'skills/feature/references/details.md';
+  const source = path.join(fs.realpathSync(root), relative);
+  const reader = createSourceReader(root);
+  const originalStat = fs.lstatSync;
+  let opens = 0;
+  context.mock.method(fs, 'lstatSync', (filename, ...args) => {
+    const stats = originalStat(filename, ...args);
+    return filename === source ? Object.assign(stats, { isSymbolicLink: () => true }) : stats;
+  });
+  context.mock.method(fs, 'openSync', () => { opens++; throw new Error('Unexpected open'); });
+  assert.throws(() => reader.read(relative), /symlink|symbolic/i);
+  assert.equal(opens, 0);
+  context.mock.restoreAll();
+}));
+
+test('real file symlink resources fail closed when host privileges permit', context => withFixture(root => {
+  try {
+    fs.symlinkSync(path.join(root, 'manifests/install-modules.json'), path.join(root, 'skills/feature/escape.json'));
+  } catch (error) {
+    if (process.platform !== 'win32' || !['EPERM', 'EACCES'].includes(error.code)) throw error;
+    context.skip('Windows file-symlink privilege unavailable; mandatory leaf detection and junction cases still run');
+    return;
+  }
   assert.throws(() => loadContextRegistry({ repoRoot: root }), /symlink|symbolic/i);
 }));
 
@@ -151,12 +174,12 @@ test('resource limits reject oversized files and cumulative reads', () => withFi
 
 test('symlinked skill root and manifest ancestors are rejected', () => withFixture(root => {
   fs.renameSync(path.join(root, 'skills'), path.join(root, 'real-skills'));
-  fs.symlinkSync(path.join(root, 'real-skills'), path.join(root, 'skills'), 'dir');
+  createDirectoryLink(path.join(root, 'real-skills'), path.join(root, 'skills'));
   assert.throws(() => loadContextRegistry({ repoRoot: root }), /symlink|symbolic/i);
   fs.unlinkSync(path.join(root, 'skills'));
   fs.renameSync(path.join(root, 'real-skills'), path.join(root, 'skills'));
   fs.renameSync(path.join(root, 'manifests/context-packs'), path.join(root, 'real-packs'));
-  fs.symlinkSync(path.join(root, 'real-packs'), path.join(root, 'manifests/context-packs'), 'dir');
+  createDirectoryLink(path.join(root, 'real-packs'), path.join(root, 'manifests/context-packs'));
   assert.throws(() => loadContextRegistry({ repoRoot: root }), /symlink|symbolic/i);
 }));
 
@@ -171,7 +194,7 @@ test('ancestor replacement during open fails before reading redirected resource 
   context.mock.method(fs, 'openSync', (filename, flags, ...args) => {
     if (filename === source) {
       fs.renameSync(ancestor, `${ancestor}-original`);
-      fs.symlinkSync(path.join(outside, 'skills/feature/references'), ancestor, 'dir');
+      createDirectoryLink(path.join(outside, 'skills/feature/references'), ancestor);
       redirectedDescriptor = originalOpen(filename, flags, ...args);
       return redirectedDescriptor;
     }

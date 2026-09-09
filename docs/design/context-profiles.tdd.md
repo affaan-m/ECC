@@ -65,3 +65,11 @@ Independent review reproduced ancestor substitution and terminal-control issues 
 The existing js-yaml security update in contributor [PR #3032](https://github.com/affaan-m/ECC/pull/3032) must be verified and integrated before release. The new JSON-schema parsing path excludes the advisory's merge feature, but that does not clear existing default-schema parsers. See the [contract's dependency gate](context-profiles.md#contributor-integration-lanes).
 
 Native carriers, active discovery, actual skill invocation, transactional activation, hook consent, automatic task routing, recovery, real-host token counters, broader context surfaces, cross-platform conformance, and default migration remain follow-on work. No provider calls, container or VM launches, or runtime profile changes were used to establish these results.
+
+## PR-readiness follow-up
+
+Independent exact-head review approved the read-only implementation and identified privilege-sensitive symlink fixtures. Review's original permission-denial injection produced 12 passes and 3 failures. Checkpoint `88f5a996` added a failing portable directory-link contract: 15 passes and 1 expected failure. The fix uses Windows junctions for directory cases, separates unconditional ownership and mocked leaf-link rejection from the real file-link integration case, and explicitly skips only that extra file-link case on Windows EPERM/EACCES. No runtime code changed.
+
+Final local focused checks now pass 30 library, 25 CLI, and 3 CI cases. A bounded simulation of Windows file-link denial, keeping the local temporary directory fixed and emulating directory junctions, passes 17 registry cases and explicitly skips 1 real file-link case. It is a test-policy simulation, not native Windows evidence. The source-read substitution and zero-byte-read assertions remain mandatory.
+
+An isolated Git archive passed `YARN_ENABLE_HARDENED_MODE=1 YARN_ENABLE_SCRIPTS=false yarn install --immutable --mode=skip-build`; both package manifest and Yarn lockfile remained byte-identical. The initially attempted immutable/update-lockfile combination was rejected by Yarn as incompatible before installation; the immutable skip-build run is the applicable successful CI check. Dependency declarations remain unchanged. Source-only evidence/test links in the shipped contract are now labeled explicitly.

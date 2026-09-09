@@ -150,4 +150,4 @@ P2 adds provider carriers and conformance evidence. P3 adds transactional activa
 
 The first-slice checks live in [registry tests](../../tests/lib/context-pack-registry.test.js), [profile tests](../../tests/lib/context-profiles.test.js), [CLI tests](../../tests/scripts/profile.test.js), and the [context-profile validator](../../scripts/ci/validate-context-profiles.js). They cover source and selection validation, deterministic provenance, metadata boundaries, and read-only behavior. Those fixtures do not replace native fresh-session, activation, workflow, or whole-system measurement evidence.
 
-See the [TDD evidence record](context-profiles.tdd.md) for executed checks, checkpoints, coverage, and known gaps.
+In a source checkout, see the [TDD evidence record](context-profiles.tdd.md) and test files linked above for executed checks, checkpoints, coverage, and known gaps. Test sources and the evidence record are intentionally outside the reduced npm runtime surface.
