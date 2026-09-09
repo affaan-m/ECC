@@ -1,31 +1,13 @@
 ---
-description: Render a token-usage stat card from local agent session logs and commit it to the repo.
+description: Render a token-usage stat card from local agent session logs and commit it to the repo. Invokes the token-card skill.
 argument-hint: [--out PATH] [--theme auto|light|dark] [--dry-run]
 ---
 
 # Token Card
 
-## Purpose
-
-Produce an SVG card summarising this machine's AI coding agent usage — total tokens,
-equivalent API cost, current streak, and the split across agents — and write it into the
-working tree as a file the README can reference.
-
-The card is a committed artifact rather than a hosted image, so it renders from the
-repository itself and does not depend on a third-party endpoint staying up.
-
-## Relationship to `/cost-report`
-
-They read different sources and produce different things, so both are useful:
-
-| | `/cost-report` | `/token-card` |
-|---|---|---|
-| Source | `~/.claude/metrics/costs.jsonl`, written by ECC's `stop:cost-tracker` hook | The agents' own session logs |
-| Agents | Claude Code | Claude Code, Codex, OpenCode |
-| Output | Terminal summary, optional CSV | An SVG file committed to the repo |
-
-Use `/cost-report` to answer "what did I spend this week". Use `/token-card` to put a
-current figure in a README.
+Thin compatibility shim. The workflow lives in the **token-card** skill
+(`skills/token-card/SKILL.md`), which is the canonical surface; this command exists so the
+slash-command harnesses can reach it.
 
 ## Usage
 
@@ -36,35 +18,11 @@ current figure in a README.
 /token-card --dry-run             # report what would be written, write nothing
 ```
 
-## Workflow
+## What it does
 
-1. Check whether `.tokenchit.json` exists in the repository root. If it does not, run
-   `npx -y @tokenchit/cli@latest init` to detect which agents have logs on this machine and
-   record them. That file is meant to be committed and never contains a credential.
-2. Run `npx -y @tokenchit/cli@latest sync` with any arguments the user supplied. This reads
-   only local files and makes no network request, so it is safe before deciding whether to
-   publish anything.
-3. Report the figures it prints — tokens, equivalent cost, streak, per-agent split — and the
-   path it wrote.
-4. If the repository has a README and the card is not referenced yet, offer to add the
-   image reference. Do not edit the README without asking.
+Renders an SVG card of this machine's AI coding agent usage — tokens, equivalent cost,
+streak, per-agent split — from local Claude Code, Codex and OpenCode session logs, and writes
+it into the working tree as a file the README can reference.
 
-Stop after step 3 unless the user asks to publish. `sync` is local-only; joining the public
-leaderboard is a separate `publish` command that requires an explicit opt-in, and
-`unpublish` removes the row and the account again.
-
-## Output
-
-The path of the SVG that was written, the figures it contains, and the markdown snippet for
-referencing it:
-
-```markdown
-![tokenchit](./tokenchit.svg)
-```
-
-## Notes
-
-- Requires Node.js. Nothing is installed globally; `npx` fetches the CLI per invocation.
-- Reads token counts and timestamps only. Prompts, code, and file contents are never parsed
-  or transmitted.
-- `@tokenchit/cli` is MIT licensed: <https://github.com/iyashjayesh/tokenchit>
+Follow the skill for the full workflow, including the confirmation required before the first
+registry download, the pinned CLI version, and the dry-run rules.

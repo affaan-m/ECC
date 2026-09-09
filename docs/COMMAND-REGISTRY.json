@@ -992,11 +992,13 @@
     },
     {
       "command": "token-card",
-      "description": "Render a token-usage stat card from local agent session logs and commit it to the repo.",
-      "type": "testing",
+      "description": "Render a token-usage stat card from local agent session logs and commit it to the repo. Invokes the token-card skill.",
+      "type": "general",
       "primaryAgents": [],
       "allAgents": [],
-      "skills": [],
+      "skills": [
+        "token-card"
+      ],
       "path": "commands/token-card.md"
     },
     {
@@ -1038,12 +1040,12 @@
   "statistics": {
     "byType": {
       "build": 2,
-      "general": 10,
+      "general": 11,
       "orchestration": 11,
       "planning": 2,
       "refactoring": 1,
       "review": 15,
-      "testing": 54
+      "testing": 53
     },
     "topAgents": [
       {
