@@ -29,7 +29,7 @@ function parseArgs(argv) {
   const parsed = { command: null, id: null, target: 'codex', selectionMode: 'auto',
     include: [], exclude: [], json: false, help: false };
   const seen = new Set();
-  const args = [...argv];
+  const args = argv.filter(arg => arg !== '--dry-run');
   if (!args.length) return { ...parsed, help: true };
   if (!args[0].startsWith('-')) parsed.command = args.shift();
   if (parsed.command && !COMMANDS.includes(parsed.command)) {
@@ -39,7 +39,6 @@ function parseArgs(argv) {
     const arg = args[index];
     if (['--help', '-h'].includes(arg)) parsed.help = true;
     else if (arg === '--json') parsed.json = true;
-    else if (arg === '--dry-run') continue;
     else if (VALUES.includes(arg)) {
       const value = args[++index];
       if (!value || value.startsWith('-')) throw new Error(`Missing value for ${arg}`);
