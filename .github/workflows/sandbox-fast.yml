@@ -1,8 +1,8 @@
-name: Sandbox fast checks
+name: Sandbox Tier 2 and execution fabric
 
 on:
   pull_request:
-    branches: [main]
+    branches: [main, 'feat/sandbox-tier1-podman-ux']
     paths:
       - '.github/workflows/sandbox-fast.yml'
       - 'package.json'
@@ -22,6 +22,12 @@ on:
       - 'tests/sandbox/**'
       - 'tests/skills/sandbox-testing.test.js'
   workflow_dispatch:
+    inputs:
+      run_native_tier2:
+        description: Run the required Lume smoke on the dedicated Apple Silicon host
+        required: true
+        default: false
+        type: boolean
 
 permissions:
   contents: read
@@ -61,3 +67,25 @@ jobs:
           tests/sandbox/fabric-host-smoke-helpers.js
           tests/sandbox/fabric*.host.js
           tests/sandbox/fabric*.test.js
+
+  native-tier2:
+    name: Required native Lume smoke
+    if: github.event_name == 'workflow_dispatch' && inputs.run_native_tier2
+    runs-on: [self-hosted, macOS, ARM64, ecc-sandbox-tier2]
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version: '20.x'
+
+      - name: Install validation dependencies
+        run: npm ci --ignore-scripts
+
+      - name: Run required Tier 2 host acceptance
+        run: npm run test:sandbox:host:tier2:required

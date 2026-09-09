@@ -3,7 +3,7 @@ run-name: ECC Sandbox ${{ inputs.correlation || github.event.client_payload.corr
 
 on:
   pull_request:
-    branches: [main]
+    branches: [main, 'feat/sandbox-tier1-podman-ux']
     paths:
       - '.github/workflows/sandbox-matrix.yml'
       - 'package.json'
