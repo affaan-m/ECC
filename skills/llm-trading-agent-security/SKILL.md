@@ -4,6 +4,8 @@ description: Security patterns for autonomous trading agents with wallet or tran
 metadata:
   version: "1.0.0"
   origin: ECC direct-port adaptation
+license: MIT
+compatibility: [claude-code, codex]
 ---
 
 # LLM Trading Agent Security

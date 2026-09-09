@@ -4,6 +4,8 @@ description: Instinct-based learning system that observes sessions via hooks, cr
 metadata:
   version: 2.1.0
   origin: ECC
+license: MIT
+compatibility: [claude-code, codex]
 ---
 
 # Continuous Learning v2.1 - Instinct

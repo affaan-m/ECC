@@ -4,6 +4,8 @@ description: Use this skill when inspecting Blender characters, rigs, poses, ani
 metadata:
   origin: ECC
 tools: Read, Write, Edit, Bash, Grep, Glob
+license: MIT
+compatibility: [claude-code, codex]
 ---
 
 # Blender Motion State Inspection

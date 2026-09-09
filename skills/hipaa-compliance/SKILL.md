@@ -4,6 +4,8 @@ description: HIPAA-specific entrypoint for healthcare privacy and security work.
 metadata:
   version: "1.0.0"
   origin: ECC direct-port adaptation
+license: MIT
+compatibility: [claude-code, codex]
 ---
 
 # HIPAA Compliance

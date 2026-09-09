@@ -6,6 +6,8 @@ description: >
   Use when building any interactive UI component or form.
 metadata:
   origin: community
+license: MIT
+compatibility: [claude-code, codex]
 ---
 
 # Frontend Accessibility Patterns

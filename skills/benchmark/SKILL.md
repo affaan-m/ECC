@@ -4,6 +4,7 @@ description: Use this skill to measure performance baselines, detect regressions
 license: MIT
 metadata:
   origin: ECC
+compatibility: [claude-code, codex]
 ---
 
 # Benchmark — Performance Baseline & Regression Detection

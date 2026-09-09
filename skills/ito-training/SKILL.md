@@ -4,6 +4,8 @@ description: Inspect the availability of ML training on a completed Itô compute
 metadata:
   origin: ECC
   status: scaffold
+license: MIT
+compatibility: [claude-code, codex]
 ---
 
 # Itô Training

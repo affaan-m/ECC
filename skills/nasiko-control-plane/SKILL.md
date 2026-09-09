@@ -1,6 +1,8 @@
 ---
 name: nasiko-control-plane
 description: Use the experimental Nasiko CLI lifecycle bridge for pinned installation, read-only status, and qualified uninstall with explicit consent and telemetry and secrets boundaries.
+license: MIT
+compatibility: [claude-code, codex]
 ---
 
 # Nasiko CLI Lifecycle Bridge

@@ -12,6 +12,8 @@ description: >-
   than 3 tool calls, or user says "just do it".
 metadata:
   origin: community
+license: MIT
+compatibility: [claude-code, codex]
 ---
 
 # Blueprint — Construction Plan Generator

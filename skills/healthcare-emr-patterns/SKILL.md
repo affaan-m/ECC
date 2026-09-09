@@ -4,6 +4,8 @@ description: EMR/EHR development patterns for healthcare applications. Clinical 
 metadata:
   version: "1.0.0"
   origin: Health1 Super Speciality Hospitals — contributed by Dr. Keyur Patel
+license: MIT
+compatibility: [claude-code, codex]
 ---
 
 # Healthcare EMR Development Patterns

@@ -4,6 +4,8 @@ description: Hunt for exploitable, bounty-worthy security issues in repositories
 metadata:
   version: "1.0.0"
   origin: ECC direct-port adaptation
+license: MIT
+compatibility: [claude-code, codex]
 ---
 
 # Security Bounty Hunter

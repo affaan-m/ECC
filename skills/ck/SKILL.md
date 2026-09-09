@@ -6,6 +6,8 @@ metadata:
   origin: community
 author: sreedhargs89
 repo: https://github.com/sreedhargs89/context-keeper
+license: MIT
+compatibility: [claude-code, codex]
 ---
 
 # ck — Context Keeper

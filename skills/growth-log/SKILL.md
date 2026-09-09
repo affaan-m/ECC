@@ -4,6 +4,8 @@ description: "Use after a complex task, failure, or when reviewing what was lear
 metadata:
   version: 1.1.0
   origin: ECC
+license: MIT
+compatibility: [claude-code, codex]
 ---
 
 # Growth Log Skill

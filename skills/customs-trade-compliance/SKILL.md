@@ -16,6 +16,7 @@ metadata:
   author: evos
   clawdbot:
     emoji: ""
+compatibility: [claude-code, codex]
 ---
 
 # Customs & Trade Compliance

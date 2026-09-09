@@ -4,6 +4,8 @@ description: Legacy-project style inheritance skill. Use when the user types /in
 metadata:
   origin: community
 allowed-tools: Read, Glob, Grep, Bash, Edit, Write, AskUserQuestion
+license: MIT
+compatibility: [claude-code, codex]
 ---
 
 # Inherit Legacy Style

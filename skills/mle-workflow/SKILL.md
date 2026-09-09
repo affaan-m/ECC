@@ -4,6 +4,7 @@ description: Production machine-learning engineering workflow for data contracts
 license: MIT
 metadata:
   origin: ECC
+compatibility: [claude-code, codex]
 ---
 
 # Machine Learning Engineering Workflow

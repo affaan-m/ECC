@@ -4,6 +4,8 @@ description: Protected Health Information (PHI) and Personally Identifiable Info
 metadata:
   version: "1.0.0"
   origin: Health1 Super Speciality Hospitals — contributed by Dr. Keyur Patel
+license: MIT
+compatibility: [claude-code, codex]
 ---
 
 # Healthcare PHI/PII Compliance Patterns

@@ -172,7 +172,7 @@ test("has valid discoverable frontmatter and trigger phrases", () => {
   const skill = read("skills/tasteforge-video/SKILL.md");
   assert.match(
     skill,
-    /^---\nname: tasteforge-video\ndescription: [^\n]+\nmetadata:\n {2}origin: ECC\n---\n/
+    /^---\nname: tasteforge-video\ndescription: [^\n]+\nmetadata:\n {2}origin: ECC\n/
   );
   for (const trigger of [
     /interview .*video taste|video .*taste interview/i,

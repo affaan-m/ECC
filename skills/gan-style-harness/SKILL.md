@@ -4,6 +4,8 @@ description: "GAN-inspired Generator-Evaluator agent harness for building high-q
 metadata:
   origin: ECC-community
 tools: Read, Write, Edit, Bash, Grep, Glob, Task
+license: MIT
+compatibility: [claude-code, codex]
 ---
 
 # GAN-Style Harness Skill

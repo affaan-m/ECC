@@ -6,6 +6,8 @@ category: frontend
 author: jeff
 metadata:
   version: 1.0.0
+license: MIT
+compatibility: [claude-code, codex]
 ---
 
 # Motion Patterns

@@ -4,6 +4,8 @@ description: Clinical Decision Support System (CDSS) development patterns. Drug 
 metadata:
   version: "1.0.0"
   origin: Health1 Super Speciality Hospitals — contributed by Dr. Keyur Patel
+license: MIT
+compatibility: [claude-code, codex]
 ---
 
 # Healthcare CDSS Development Patterns
