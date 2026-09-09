@@ -32,20 +32,38 @@
       "expected": ["srt"]
     },
     {
-      "name": "clean home is deferred even when Podman is detected",
+      "name": "clean home routes to Podman",
       "needs": { "os": ["linux"], "capabilities": ["clean-home"] },
       "backends": { "podman": { "available": true } },
-      "expected": [null],
-      "result": "error",
-      "reasonPattern": "no implemented Tier 0 backend"
+      "expected": ["podman"]
     },
     {
-      "name": "package installation is deferred to Tier 1",
+      "name": "package installation routes to Podman",
       "needs": { "os": ["linux"], "capabilities": ["pkg-install"] },
+      "backends": { "podman": { "available": true } },
+      "expected": ["podman"]
+    },
+    {
+      "name": "untrusted Linux uses Podman with an explicit boundary note",
+      "needs": { "os": ["linux"], "trust": "untrusted" },
+      "backends": { "podman": { "available": true } },
+      "expected": ["podman"],
+      "notePattern": "not a VM security boundary"
+    },
+    {
+      "name": "open network uses Podman with an unrestricted policy note",
+      "needs": { "os": ["linux"], "capabilities": ["network:*"] },
+      "backends": { "podman": { "available": true } },
+      "expected": ["podman"],
+      "notePattern": "network policy is unrestricted"
+    },
+    {
+      "name": "strict domain allowlist fails closed",
+      "needs": { "os": ["linux"], "capabilities": ["pkg-install", "network:npmjs.org"] },
       "backends": { "podman": { "available": true } },
       "expected": [null],
       "result": "error",
-      "reasonPattern": "no implemented Tier 0 backend"
+      "reasonPattern": "cannot enforce strict domain"
     },
     {
       "name": "native operating system behavior is deferred",
@@ -56,7 +74,7 @@
       },
       "expected": [null],
       "result": "error",
-      "reasonPattern": "no implemented Tier 0 backend"
+      "reasonPattern": "no implemented Tier 0 or Tier 1 backend"
     }
   ]
 }

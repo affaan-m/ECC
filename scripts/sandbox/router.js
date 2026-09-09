@@ -62,6 +62,7 @@ function backendSupports(capabilities, backend, shard, manifest) {
   const host = capabilities.host;
   const hardConstraints = {
     srt: shard.os === host.os && shard.arch === host.arch,
+    podman: shard.os === 'linux' && shard.arch === host.arch,
   };
   if (!hardConstraints[backend]) return false;
   if (Array.isArray(entry.targets) && !entry.targets.some(target => targetMatches(target, shard))) {
@@ -114,14 +115,45 @@ function tierZeroEligible(manifest, shard, host) {
   );
 }
 
+function tierOneEligible(manifest, shard) {
+  return (
+    shard.os === 'linux'
+    && manifest.needs.native === false
+    && !hasAny(manifest, ['services', 'gui', 'ios-simulator'])
+  );
+}
+
+function tierOneCandidates(manifest) {
+  return networkNeeds(manifest).domainAllowlist ? [] : ['podman'];
+}
+
 function firstSupported(candidates, capabilities, shard, manifest) {
   return candidates.find(backend => backendSupports(capabilities, backend, shard, manifest)) || null;
 }
 
-function missingRoute(shard) {
+function routeNotes(backend, manifest) {
+  if (backend !== 'podman') return [];
+  const notes = [];
+  const network = networkNeeds(manifest);
+  if (manifest.needs.trust === 'untrusted') {
+    notes.push('rootless Podman is container isolation, not a VM security boundary');
+  }
+  if (network.open) {
+    notes.push('Tier 1 Podman network policy is unrestricted for network:*');
+  }
+  return notes;
+}
+
+function missingRoute(shard, manifest) {
+  if (networkNeeds(manifest).domainAllowlist && tierOneEligible(manifest, shard)) {
+    return {
+      reason: 'Tier 1 Podman cannot enforce strict domain network allowlists',
+      fix: 'Use network disabled, request network:*, or defer this test to a later network-policy backend',
+    };
+  }
   return {
-    reason: `no implemented Tier 0 backend satisfies ${shard.os}/${shard.arch}`,
-    fix: 'Use a Tier 0-compatible host process claim or install the separate Tier 1 Podman feature',
+    reason: `no implemented Tier 0 or Tier 1 backend satisfies ${shard.os}/${shard.arch}`,
+    fix: 'Use a host-matching Tier 0 claim or a Linux-compatible rootless Podman Tier 1 claim',
   };
 }
 
@@ -134,6 +166,13 @@ function resolveShard(manifest, capabilities, shard, _options = {}) {
       eligible: () => tierZeroEligible(manifest, shard, host),
       candidates: () => ['srt'],
       reason: 'host-matching process isolation satisfies the declared needs',
+    },
+    {
+      id: 'tier-1-podman',
+      tier: 1,
+      eligible: () => tierOneEligible(manifest, shard),
+      candidates: () => tierOneCandidates(manifest),
+      reason: 'rootless Podman provides the requested disposable Linux environment',
     },
   ];
 
@@ -149,7 +188,7 @@ function resolveShard(manifest, capabilities, shard, _options = {}) {
       tier: rule.tier,
       rule: rule.id,
       reason: rule.reason,
-      notes: [],
+      notes: routeNotes(backend, manifest),
       result: 'routable',
     };
   }
@@ -160,7 +199,7 @@ function resolveShard(manifest, capabilities, shard, _options = {}) {
     backend: null,
     tier: null,
     rule: null,
-    ...missingRoute(shard),
+    ...missingRoute(shard, manifest),
     notes: [],
     result: 'error',
   };
@@ -188,4 +227,5 @@ module.exports = {
   normalizeOs,
   resolveShard,
   routeManifest,
+  tierOneCandidates,
 };

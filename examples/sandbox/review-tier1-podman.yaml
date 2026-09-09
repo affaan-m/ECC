@@ -1,0 +1,16 @@
+name: review-tier1-podman
+needs:
+  os: [linux]
+  capabilities: [clean-home]
+  trust: first-party
+  native: false
+resources:
+  cpu: 1
+  memory: 256MB
+  timeout: 60
+steps:
+  setup:
+    - printf 'review setup begin\n' && sleep 2 && printf 'review setup end\n'
+  assert:
+    - test "$HOME" = /home/ecc && printf 'review assertion\n'
+report: install-diff

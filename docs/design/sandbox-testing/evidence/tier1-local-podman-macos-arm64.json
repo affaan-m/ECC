@@ -1,0 +1,49 @@
+{
+  "manifest": "examples/sandbox/review-tier1-podman.yaml",
+  "backend": "podman",
+  "tier": 1,
+  "os": "linux",
+  "arch": "arm64",
+  "execution_mode": "real",
+  "started": "2026-09-09T01:22:50.068Z",
+  "duration_ms": 12860,
+  "escalations": [],
+  "steps": [
+    {
+      "cmd": "printf 'review setup begin\\n' && sleep 2 && printf 'review setup end\\n'",
+      "exit": 0,
+      "stdout_tail": "review setup begin\nreview setup end",
+      "stderr_tail": ""
+    },
+    {
+      "cmd": "test \"$HOME\" = /home/ecc && printf 'review assertion\\n'",
+      "exit": 0,
+      "stdout_tail": "review assertion",
+      "stderr_tail": ""
+    }
+  ],
+  "assertions": [
+    {
+      "cmd": "test \"$HOME\" = /home/ecc && printf 'review assertion\\n'",
+      "pass": true
+    }
+  ],
+  "install_diff": {
+    "method": "podman-layer",
+    "complete": true,
+    "files_added": ["/workspace/source"],
+    "files_changed": ["/etc", "/workspace"],
+    "files_deleted": [],
+    "path_changes": [],
+    "services_registered": [],
+    "dotfiles_touched": []
+  },
+  "result": "pass",
+  "notes": [
+    "image_ref=localhost/ecc-sandbox:ubuntu-lts",
+    "image_id=sha256:01036a01c3d1d541c1805bc379edbeb9750ad57ffcbb006379931a96b8716576",
+    "container_start_ms=115",
+    "podman diff reports changed filesystem paths, including directories",
+    "post-run podman ps -a returned an empty array"
+  ]
+}

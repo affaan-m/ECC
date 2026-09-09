@@ -1,0 +1,4 @@
+interface:
+  display_name: "Sandbox Testing"
+  short_description: "Run isolated tests with explicit Tier 1 consent"
+  default_prompt: "Use $sandbox-testing to preview a sandbox manifest and offer a consented rootless Podman session when hands-on testing would help."

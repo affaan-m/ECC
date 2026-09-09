@@ -1,0 +1,19 @@
+name: install-cowsay-clean-user
+needs:
+  os: [linux]
+  capabilities:
+    - pkg-install
+    - network:*
+  trust: first-party
+  native: false
+resources:
+  cpu: 2
+  memory: 512MB
+  timeout: 120
+steps:
+  setup:
+    - npm install --global cowsay@1.6.0 --ignore-scripts
+  assert:
+    - command -v cowsay
+    - cowsay ECC | grep -q ECC
+report: install-diff

@@ -359,8 +359,12 @@
         "skills/product-lens",
         "skills/repo-scan",
         "skills/rules-distill",
+        "skills/sandbox-testing",
+        "skills/terminal-opener",
         "skills/santa-method",
-        "skills/git-workflow"
+        "skills/git-workflow",
+        "docs/sandbox-testing.md",
+        "examples/sandbox"
       ],
       "targets": [
         "claude",
@@ -862,7 +866,6 @@
         "skills/cisco-ios-patterns",
         "skills/deployment-patterns",
         "skills/docker-patterns",
-        "skills/terminal-opener",
         "skills/homelab-network-readiness",
         "skills/homelab-network-setup",
         "skills/netmiko-ssh-automation",

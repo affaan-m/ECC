@@ -16,13 +16,16 @@ const {
   readCapabilityCache,
   writeCapabilityCache,
 } = require('./probe');
-const {
-  executeSrt,
-  loadMockScenario,
-  mockRunner,
-} = require('./backends/srt');
+const { executeSrt } = require('./backends/srt');
+const { executeContainer } = require('./backends/podman');
+const { loadMockScenario, mockRunner } = require('./mock');
+const interactiveCli = require('./interactive-cli');
 
-const COMMANDS = ['probe', 'run', 'report'];
+const COMMANDS = [
+  'probe', 'run', 'report',
+  ...interactiveCli.PUBLIC_COMMANDS,
+  '_explore', '_guard', '_watch-launch',
+];
 
 function writeJson(value) {
   process.stdout.write(`${JSON.stringify(value, null, 2)}\n`);
@@ -35,8 +38,12 @@ function help() {
       'ecc-sandbox probe [--refresh] [--cache <file>] [--mock <capabilities.json>]',
       'ecc-sandbox run <sandbox.yaml> [--dry-run] [--local-only] [--capabilities <file>] [--mock <file>]',
       'ecc-sandbox report <report.json>',
+      'ecc-sandbox launch <sandbox.yaml> --purpose <text> [--terminal wezterm|terminal.app] [--consent y|n --proposal <id>] [--capabilities <file>]',
+      'ecc-sandbox listen <run-id> [--follow] [--format jsonl]',
+      'ecc-sandbox status <run-id>',
+      'ecc-sandbox stop <run-id>',
     ],
-    commands: COMMANDS,
+    commands: COMMANDS.filter(command => !command.startsWith('_')),
   };
 }
 
@@ -107,7 +114,6 @@ function emptyCapabilityMap() {
     backends: Object.fromEntries([
       'srt',
       'podman',
-      'docker',
       'microsandbox',
       'lume',
       'lima',
@@ -165,25 +171,36 @@ function runExecution(options) {
     throw new Error('Multiple-route execution is unavailable until the aggregate execution phase');
   }
   const route = resolved.decision.routes[0];
-  if (route.backend !== 'srt') {
+  if (!['srt', 'podman'].includes(route.backend)) {
     throw new Error(`${route.backend} execution is unavailable until its adapter phase`);
   }
 
   let run;
   let mock = false;
   if (options.mockPath) {
-    run = mockRunner(loadMockScenario(path.resolve(options.mockPath)));
+    run = mockRunner(loadMockScenario(path.resolve(options.mockPath), route.backend));
     mock = true;
   }
-  return executeSrt(resolved.manifest, {
+  const executionOptions = {
     arch: route.arch,
     cwd: process.cwd(),
-    enableWeakerNestedSandbox: process.env.ECC_SANDBOX_ALLOW_NESTED_SRT === '1',
     manifestPath: resolved.manifestPath,
     mock,
-    os: route.os,
-    platform: process.platform,
+    notes: route.notes,
     run,
+  };
+  if (route.backend === 'srt') {
+    return executeSrt(resolved.manifest, {
+      ...executionOptions,
+      enableWeakerNestedSandbox: process.env.ECC_SANDBOX_ALLOW_NESTED_SRT === '1',
+      os: route.os,
+      platform: process.platform,
+    });
+  }
+  return executeContainer(resolved.manifest, {
+    ...executionOptions,
+    image: process.env.ECC_SANDBOX_IMAGE,
+    runtime: route.backend,
   });
 }
 
@@ -231,6 +248,13 @@ function main(argv = process.argv.slice(2)) {
   }
   if (!COMMANDS.includes(command)) {
     throw new Error(`Unknown command: ${command}`);
+  }
+  if (interactiveCli.handles(command)) {
+    return interactiveCli.runCommand(command, args, {
+      cliPath: path.resolve(__filename),
+      resolveRun,
+      writeJson,
+    });
   }
   if (command === 'run') {
     const options = parseRunArgs(args);
