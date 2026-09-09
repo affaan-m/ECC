@@ -1,5 +1,6 @@
 'use strict';
 
+const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
 const Ajv = require('ajv');
@@ -24,6 +25,22 @@ class ContractValidationError extends Error {
 
 function readJson(filePath) {
   return JSON.parse(fs.readFileSync(filePath, 'utf8'));
+}
+
+function canonicalContractJson(value) {
+  if (Array.isArray(value)) {
+    return `[${value.map(canonicalContractJson).join(',')}]`;
+  }
+  if (value && typeof value === 'object') {
+    return `{${Object.keys(value).sort().map(key => (
+      `${JSON.stringify(key)}:${canonicalContractJson(value[key])}`
+    )).join(',')}}`;
+  }
+  return JSON.stringify(value);
+}
+
+function contractDigest(value) {
+  return crypto.createHash('sha256').update(canonicalContractJson(value)).digest('hex');
 }
 
 function readBoundedRegularFile(filePath, label = 'contract') {
@@ -159,6 +176,13 @@ function validateReport(report) {
 function semanticReportErrors(report) {
   const errors = [];
   if (report.backend === 'aggregate') {
+    const escalationCount = report.escalations.length + report.children.reduce(
+      (total, child) => total + countReportEscalations(child),
+      0
+    );
+    if (escalationCount > 1) {
+      errors.push('/escalations aggregate reports may contain at most one escalation in total');
+    }
     report.children.forEach((child, index) => {
       for (const error of semanticReportErrors(child)) {
         errors.push(`/children/${index}${error}`);
@@ -188,6 +212,14 @@ function semanticReportErrors(report) {
     errors.push('/result pass requires successful steps and assertions');
   }
   return errors;
+}
+
+function countReportEscalations(report) {
+  return report.escalations.length + (
+    report.backend === 'aggregate'
+      ? report.children.reduce((total, child) => total + countReportEscalations(child), 0)
+      : 0
+  );
 }
 
 function parseManifestText(text, source = '<manifest>') {
@@ -237,6 +269,8 @@ function loadManifest(filePath) {
 }
 
 module.exports = {
+  canonicalContractJson,
+  contractDigest,
   ContractValidationError,
   MAX_CONTRACT_BYTES,
   formatAjvErrors,

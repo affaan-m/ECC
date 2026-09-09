@@ -1,0 +1,25 @@
+name: lume-real-native-pkg
+needs:
+  os: [macos]
+  arch: [arm64]
+  capabilities: [pkg-install, services, "network:*"]
+  trust: first-party
+  native: true
+resources:
+  cpu: 2
+  memory: 4GB
+  timeout: 1800
+steps:
+  setup:
+    - >-
+      work=$(/usr/bin/mktemp -d) &&
+      /bin/mkdir -p "$work/root/Library/LaunchDaemons" &&
+      /usr/bin/printf '%s\n' '<?xml version="1.0" encoding="UTF-8"?>' '<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">' '<plist version="1.0"><dict><key>Label</key><string>org.ecc.sandbox.phase7</string><key>ProgramArguments</key><array><string>/usr/bin/true</string></array><key>RunAtLoad</key><false/></dict></plist>' > "$work/root/Library/LaunchDaemons/org.ecc.sandbox.phase7.plist" &&
+      /usr/bin/pkgbuild --root "$work/root" --identifier org.ecc.sandbox.phase7 --version 1.0 "$work/ecc-phase7.pkg" &&
+      /usr/bin/printf '%s\n' lume | /usr/bin/sudo -S /usr/sbin/installer -pkg "$work/ecc-phase7.pkg" -target / &&
+      /bin/rm -rf "$work"
+  assert:
+    - >-
+      /bin/test -f /Library/LaunchDaemons/org.ecc.sandbox.phase7.plist &&
+      /usr/sbin/pkgutil --pkg-info org.ecc.sandbox.phase7
+report: install-diff

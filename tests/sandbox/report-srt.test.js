@@ -232,6 +232,17 @@ test('launches the Windows npm shim without exposing manifest text to cmd.exe', 
   assert.strictEqual(commandPaths.length, 2);
 });
 
+test('requires a trusted Windows SRT shim outside mock mode', () => {
+  assert.throws(() => runDirect(manifest(), [], {
+    options: {
+      env: { Path: '' },
+      fileExists: () => false,
+      mock: false,
+      platform: 'win32',
+    },
+  }), /trusted srt\.cmd not found outside the workspace/);
+});
+
 test('runs setup and assertions through SRT and emits a passing report', () => {
   let settingsSeen = null;
   const outcome = runDirect(manifest(), [
@@ -356,6 +367,7 @@ test('classifies a policy denial with the distinct escalation exit code', () => 
 
 test('marks installer/system-write denials as one-hop escalation eligible', () => {
   assert.strictEqual(hasInstallerSignature('npm install tiny-package'), true);
+  assert.strictEqual(hasInstallerSignature('install -m 0755 tool ../tool'), true);
   const outcome = runDirect(manifest({ setup: ['npm install tiny-package'] }), [
     execution(1, '', 'npm ERR! EACCES: permission denied, mkdir /usr/local/lib'),
   ]);

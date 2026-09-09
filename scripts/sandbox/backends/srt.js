@@ -11,7 +11,7 @@ const { runStreaming } = require('../stream-runner');
 const SRT_DENIAL_EXIT_CODE = 77;
 const MAX_EXEC_BUFFER = 1024 * 1024;
 const DENIAL_PATTERN = /(?:operation not permitted|permission denied|access is denied|unauthorizedaccessexception|read-only file system|\bEPERM\b|\bEACCES\b|blocked by network allowlist|sandbox(?:ed)?[^\n]*(?:deny|denied|violation))/i;
-const INSTALLER_PATTERN = /(?:^|[;&|\s])(?:apt(?:-get)?|dnf|yum|pacman|apk|brew|npm|pnpm|yarn|pip(?:3)?|gem|cargo)\s+(?:add|install|update|upgrade)|(?:^|\s)(?:systemctl|launchctl|reg(?:\.exe)?\s+add|msiexec)(?:\s|$)|(?:^|\s)(?:\/usr|\/etc|\/opt|\/Library|C:\\Program Files)[\\/]/i;
+const INSTALLER_PATTERN = /(?:^|[;&|\s])(?:apt(?:-get)?|dnf|yum|pacman|apk|brew|npm|pnpm|yarn|pip(?:3)?|gem|cargo)\s+(?:add|install|update|upgrade)|(?:^|[;&|\s])install\s+(?:-[^\s]+\s+)*|(?:^|\s)(?:systemctl|launchctl|reg(?:\.exe)?\s+add|msiexec)(?:\s|$)|(?:^|\s)(?:\/usr|\/etc|\/opt|\/Library|C:\\Program Files)[\\/]/i;
 const SAFE_ENV_NAMES = new Set([
   'COLORTERM',
   'COMSPEC',
@@ -181,6 +181,9 @@ function executeSrt(manifest, options) {
       'trusted srt.cmd not found outside the workspace — npm install -g @anthropic-ai/sandbox-runtime'
     );
   }
+  // DECISION: CONVENTIONS item 19 permits this inert mock-only fallback;
+  // real Windows runs still require a trusted absolute external shim.
+  const effectiveWindowsSrtShim = windowsSrtShim || 'srt.cmd';
 
   if (manifest.report === 'install-diff') {
     notes.push('Tier 0 does not provide install-diff evidence; install_diff.method is none');
@@ -232,7 +235,7 @@ function executeSrt(manifest, options) {
           '/d',
           '/s',
           '/c',
-          windowsSrtShim || 'srt.cmd',
+          effectiveWindowsSrtShim,
           '--settings',
           settingsPath,
           '-c',

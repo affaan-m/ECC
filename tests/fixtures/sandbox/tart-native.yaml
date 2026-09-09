@@ -1,0 +1,14 @@
+name: tart-native-service
+needs:
+  os: [macos]
+  capabilities: [services, "network:*"]
+  trust: first-party
+  native: true
+resources:
+  cpu: 2
+  memory: 2GB
+  timeout: 300
+steps:
+  setup: ["printf setup"]
+  assert: ["printf assert"]
+report: install-diff

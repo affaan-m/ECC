@@ -1,0 +1,19 @@
+name: install-ecc-clean-user
+needs:
+  os: [linux]
+  capabilities:
+    - clean-home
+    - pkg-install
+  trust: first-party
+  native: false
+resources:
+  cpu: 2
+  memory: 2GB
+  timeout: 300
+steps:
+  setup:
+    - /workspace/source/install.sh --profile minimal --target codex
+  assert:
+    - test -f /home/ecc/.codex/ecc-install-state.json
+    - test -f /home/ecc/.codex/skills/sandbox-testing/SKILL.md
+report: install-diff
