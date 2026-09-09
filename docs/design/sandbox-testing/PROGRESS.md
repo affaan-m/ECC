@@ -155,7 +155,7 @@ acceptance requires rootless Podman and does not probe or route Docker.
 | Execution fabric | real host sanity | Tier 0 SRT worktree and candidate ref, conditional Tier 1 Podman, and Tier 2 Lume through the fabric controller | Tier 0 and Tier 2 pass with verified cleanup; the earlier Tier 1 block is superseded by the fresh Podman 6.1.1 run below |
 | Execution fabric v2 | local contract and fault suite | Versioned class, placement, operator, shell-only coverage, excluded surfaces, control disclosures, bounded sampling, missing/stale telemetry, resource-limit abort, and cleanup trigger | Pass; v1 evidence remains valid, v2 claims are required on new plans/jobs, stale or over-limit samples stop, and owned workspaces are removed |
 | Podman repair | local Apple Silicon rootless Podman 6.1.1 | Fresh libkrun machine, Ubuntu image build, real `install-ecc-clean-user.yaml` run, schema validation, layer diff, empty container inventory, and safe machine stop | Pass; rootless Linux arm64 execution completed in 12.86 seconds with a complete diff, then the VM and helpers stopped |
-| Execution fabric | combined repository train | `npm test`, `npm run test:sandbox:fast`, focused ESLint, workflow YAML parse, Markdown lint, and `git diff --check` | Pending refresh on the separated PR train |
+| Execution fabric | combined repository train | `npm test`, `npm run test:sandbox:fast`, focused ESLint, workflow YAML parse, Markdown lint, and `git diff --check` | Pass; 4,797/4,797 repository tests on the final Tier 2 tree, with focused sandbox, lint, workflow-security, YAML, publish-surface, and diff gates passing across the separated Tier 0, Tier 1, and Tier 2 branches |
 
 ## Current gate
 
