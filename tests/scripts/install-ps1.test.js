@@ -49,6 +49,17 @@ function resolvePowerShellCommand() {
     });
 
     if (!result.error && result.status === 0) {
+      try {
+        const whereCmd = process.platform === 'win32' ? 'where.exe' : 'which';
+        const resolved = execFileSync(whereCmd, [candidate], { encoding: 'utf8', stdio: ['pipe', 'pipe', 'ignore'] })
+          .trim()
+          .split(/\r?\n/)[0];
+        if (resolved && fs.existsSync(resolved)) {
+          return fs.realpathSync.native ? fs.realpathSync.native(resolved) : fs.realpathSync(resolved);
+        }
+      } catch {
+        // fallback to candidate name if resolving full path fails
+      }
       return candidate;
     }
   }
@@ -62,6 +73,19 @@ function run(powerShellCommand, args = [], options = {}) {
     HOME: options.homeDir || process.env.HOME,
     USERPROFILE: options.homeDir || process.env.USERPROFILE,
   };
+
+  if (options.env) {
+    for (const [key, val] of Object.entries(options.env)) {
+      if (key.toLowerCase() === 'path') {
+        for (const k of Object.keys(env)) {
+          if (k.toLowerCase() === 'path') {
+            delete env[k];
+          }
+        }
+      }
+      env[key] = val;
+    }
+  }
 
   try {
     const stdout = execFileSync(powerShellCommand, ['-NoLogo', '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', SCRIPT, ...args], {
@@ -158,6 +182,71 @@ function runTests() {
       result.stdout.includes('claude       (default) - Install ECC into ~/.claude/'),
       'help text should describe the Claude target as a full ~/.claude install surface'
     );
+  })) passed++; else failed++;
+
+  if (!powerShellCommand) {
+    console.log('  - skipped missing Node.js preflight test; PowerShell is not available in PATH');
+  } else if (test('rejects execution when Node.js is missing from PATH with actionable message', () => {
+    const isolatedDir = createTempDir('install-ps1-no-node-');
+    try {
+      const pPath = [
+        isolatedDir,
+        process.env.SystemRoot ? path.join(process.env.SystemRoot, 'System32') : '',
+      ].filter(Boolean).join(path.delimiter);
+
+      const result = run(powerShellCommand, ['--help'], {
+        env: {
+          PATH: pPath,
+          SystemRoot: process.env.SystemRoot || 'C:\\Windows',
+        },
+      });
+
+      assert.notStrictEqual(result.code, 0, 'installer should fail when node is absent');
+      const combinedOutput = `${result.stdout}\n${result.stderr}`;
+      assert.ok(
+        combinedOutput.includes('[ECC] Node.js is required but was not found in PATH'),
+        `error output should explain missing Node.js requirement:\n${combinedOutput}`
+      );
+    } finally {
+      cleanup(isolatedDir);
+    }
+  })) passed++; else failed++;
+
+  if (!powerShellCommand) {
+    console.log('  - skipped outdated Node.js preflight test; PowerShell is not available in PATH');
+  } else if (test('rejects execution when Node.js version is older than 18', () => {
+    const mockBinDir = createTempDir('install-ps1-mock-node-');
+    try {
+      if (process.platform === 'win32') {
+        fs.writeFileSync(path.join(mockBinDir, 'node.cmd'), '@echo v16.20.0\r\n');
+      } else {
+        const mockNode = path.join(mockBinDir, 'node');
+        fs.writeFileSync(mockNode, '#!/bin/sh\necho v16.20.0\n');
+        fs.chmodSync(mockNode, 0o755);
+      }
+
+      const pPath = [
+        mockBinDir,
+        process.env.SystemRoot ? path.join(process.env.SystemRoot, 'System32') : '',
+      ].filter(Boolean).join(path.delimiter);
+
+      const result = run(powerShellCommand, ['--help'], {
+        env: {
+          PATH: pPath,
+          PATHEXT: process.env.PATHEXT || '.COM;.EXE;.BAT;.CMD',
+          SystemRoot: process.env.SystemRoot || 'C:\\Windows',
+        },
+      });
+
+      assert.notStrictEqual(result.code, 0, 'installer should fail when node version is < 18');
+      const combinedOutput = `${result.stdout}\n${result.stderr}`;
+      assert.ok(
+        combinedOutput.includes('[ECC] Node.js 18 or newer is required (found v16.20.0)'),
+        `error output should explain Node.js version requirement:\n${combinedOutput}`
+      );
+    } finally {
+      cleanup(mockBinDir);
+    }
   })) passed++; else failed++;
 
   console.log(`\nResults: Passed: ${passed}, Failed: ${failed}`);
