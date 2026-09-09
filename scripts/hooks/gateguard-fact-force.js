@@ -359,6 +359,34 @@ function quoteAwareSegments(input) {
 
 const SHELL_WRAPPERS = new Set(['sh', 'bash', 'zsh', 'dash', 'ksh']);
 
+// Interactive database clients that take a SQL statement as an argument
+// (`psql -c "..."`, `mysql -e "..."`, `sqlite3 db.sqlite "..."`). A real
+// SQL invocation is always quoted, so the generic quote-stripped scan can
+// never see it; for these executables the destructive-SQL phrases are
+// matched against the (unquoted) argument text instead.
+const SQL_CLIENTS = new Set([
+  'psql',
+  'pgcli',
+  'mysql',
+  'mariadb',
+  'mycli',
+  'sqlite3',
+  'sqlite',
+  'litecli',
+  'duckdb',
+  'usql',
+  'sqlcmd',
+  'clickhouse-client',
+  'clickhouse',
+  'cockroach',
+  'mongosh',
+  'mongo',
+  'cqlsh',
+  'trino',
+  'presto',
+  'beeline',
+]);
+
 /**
  * Quote-aware destructive check: catches quoted command words, newline
  * separators, quoted `find -exec`, and `sh -c`/`bash -c` wrappers that evade
@@ -376,6 +404,15 @@ function isDestructiveQuoteAware(raw, depth = 0) {
     if (isDestructiveGit(tokens)) return true;
     if (isDestructiveFindExec(tokens.join(' '))) return true;
     const base = commandBasename(tokens[0]);
+    // SQL passed to a database client lives inside a quoted argument, which
+    // the generic scan strips on purpose (a commit message that mentions
+    // "drop table" must not trip the gate). The tokens here carry the
+    // unquoted argument text, so test the SQL phrases on them when the
+    // executable is a known SQL client — `git commit -m "drop table ..."`
+    // still has no SQL client in argv0.
+    if (SQL_CLIENTS.has(base) && DESTRUCTIVE_SQL_DD.test(tokens.slice(1).join(' '))) {
+      return true;
+    }
     if (SHELL_WRAPPERS.has(base)) {
       const ci = tokens.indexOf('-c');
       if (ci !== -1 && tokens[ci + 1] && isDestructiveQuoteAware(tokens[ci + 1], depth + 1)) {

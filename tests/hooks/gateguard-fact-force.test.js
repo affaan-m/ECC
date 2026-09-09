@@ -1521,6 +1521,39 @@ function runTests() {
   else failed++;
 
   if (
+    test('denies destructive SQL passed to a database client in a quoted argument', () => {
+      expectDestructiveDeny('psql -c "drop table users"', 'psql -c drop table');
+      expectDestructiveDeny("psql -c 'truncate audit_log'", 'psql -c truncate');
+      expectDestructiveDeny("psql --command='truncate audit_log'", 'psql --command= truncate');
+      expectDestructiveDeny('mysql -e "delete from sessions"', 'mysql -e delete from');
+      expectDestructiveDeny('sqlite3 app.db "drop table users"', 'sqlite3 positional drop table');
+      expectDestructiveDeny('/usr/local/bin/psql -h db -U app -c "DROP TABLE users"', 'psql with path and flags');
+    })
+  )
+    passed++;
+  else failed++;
+
+  if (
+    test('denies destructive SQL to a database client behind a shell wrapper or chain', () => {
+      expectDestructiveDeny('sh -c "psql -c \'drop table users\'"', 'psql inside sh -c');
+      expectDestructiveDeny('echo migrating && mysql -e "truncate sessions"', 'mysql in second segment');
+    })
+  )
+    passed++;
+  else failed++;
+
+  if (
+    test('allows non-destructive SQL and SQL phrases outside a database client', () => {
+      expectAllow('psql -c "select count(*) from users"', 'psql select');
+      expectAllow('psql -c "delete_from_queue()"', 'psql identifier, not a phrase');
+      expectAllow('git commit -m "refactor: drop table indirection"', 'drop table in commit message');
+      expectAllow('echo "psql -c \'drop table users\'"', 'echo of a SQL command string');
+    })
+  )
+    passed++;
+  else failed++;
+
+  if (
     test('allows destructive SQL prose inside a quoted heredoc', () => {
       expectAllow(
         [
