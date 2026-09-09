@@ -250,6 +250,7 @@ commands:
   - skill-create
   - skill-health
   - test-coverage
+  - token-card
   - update-codemaps
   - update-docs
   - vue-review
