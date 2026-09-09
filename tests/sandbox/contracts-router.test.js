@@ -14,7 +14,7 @@ const {
   validateCapabilities,
   validateReport,
 } = require('../../scripts/sandbox/contracts');
-const { routeManifest } = require('../../scripts/sandbox/router');
+const { defaultHost, routeManifest } = require('../../scripts/sandbox/router');
 
 const repoRoot = path.join(__dirname, '..', '..');
 const fixtureRoot = path.join(repoRoot, 'tests', 'fixtures', 'sandbox');
@@ -392,7 +392,7 @@ test('CLI dry-run emits only a routable JSON decision on stdout', () => {
     const capabilitiesPath = path.join(tempRoot, 'capabilities.json');
     fs.writeFileSync(capabilitiesPath, JSON.stringify({
       schema_version: 1,
-      host: { os: 'macos', arch: 'arm64' },
+      host: defaultHost(),
       backends: { srt: { available: true } },
     }));
     const result = runCli([
