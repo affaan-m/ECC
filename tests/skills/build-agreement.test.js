@@ -141,13 +141,45 @@ function withOutputFixture(fn) {
 }
 
 function snapshot(directory) {
-  return fs.readdirSync(directory).sort().map(name => {
-    const target = path.join(directory, name);
-    const stat = fs.lstatSync(target);
-    if (stat.isSymbolicLink()) return [name, 'symlink', fs.readlinkSync(target)];
-    return [name, stat.isDirectory() ? snapshot(target) : fs.readFileSync(target, 'utf8')];
+  return fs.readdirSync(directory, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name)).map(entry => {
+    const target = path.join(directory, entry.name);
+    if (entry.isSymbolicLink()) return [entry.name, 'symlink', fs.readlinkSync(target)];
+    if (entry.isDirectory()) return [entry.name, snapshot(target)];
+    const flags = fs.constants.O_RDONLY | (fs.constants.O_NOFOLLOW || 0) | (fs.constants.O_NONBLOCK || 0);
+    const fd = fs.openSync(target, flags);
+    try {
+      assert.ok(fs.fstatSync(fd).isFile(), 'fixture snapshot requires a regular file');
+      return [entry.name, fs.readFileSync(fd, 'utf8')];
+    } finally {
+      fs.closeSync(fd);
+    }
   });
 }
+
+test('snapshot file reads stay on the opened file during path replacement', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-snapshot-race-'));
+  const file = path.join(root, 'file.txt');
+  const saved = path.join(root, 'saved.txt');
+  fs.writeFileSync(file, 'original fixture');
+  const read = fs.readFileSync;
+  let swapped = false;
+  fs.readFileSync = function(target, ...args) {
+    if (!swapped && (target === file || typeof target === 'number')) {
+      swapped = true;
+      fs.renameSync(file, saved);
+      fs.writeFileSync(file, 'replacement fixture');
+    }
+    return read.call(this, target, ...args);
+  };
+  try {
+    const actual = snapshot(root);
+    assert.ok(swapped, 'replacement boundary was exercised');
+    assert.deepStrictEqual(actual, [['file.txt', 'original fixture']]);
+  } finally {
+    fs.readFileSync = read;
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
 
 const invalidFiles = [
   ['parent traversal', '../escaped'], ['nested traversal', '../../escaped'],
@@ -338,12 +370,12 @@ test('preserves empty schedule semantics, finite numbers and input data', () => 
 const adversarialSchedule = [
   ['A|B', 'A\\|B', '`code|cell`', '<b>literal</b>', '&amp; &#124;', 'line1\r\nline2\rline3\nline4'],
   ['**bold** _text_', '[label](https://example.invalid)', '$x^2$ ~sub~', "\"quote\" and 'text'", 'a--b...c', '  edge  spaces  '],
-  ['{.class} @citation', '\\textbf{raw}', 'x\ty', 42, '', 'Unicode café 東京 😀'],
+  ['{.class} @citation', '\\textbf{raw}', 'x\ty', 42, '', 'Unicode café 東京 \u{1F600}'],
 ];
 const displayedSchedule = [
   ['A|B', 'A\\|B', '`code|cell`', '<b>literal</b>', '&amp; &#124;', 'line1 line2 line3 line4'],
   ['**bold** _text_', '[label](https://example.invalid)', '$x^2$ ~sub~', "\"quote\" and 'text'", 'a--b...c', '  edge  spaces  '],
-  ['{.class} @citation', '\\textbf{raw}', 'x\ty', '42', '', 'Unicode café 東京 😀'],
+  ['{.class} @citation', '\\textbf{raw}', 'x\ty', '42', '', 'Unicode café 東京 \u{1F600}'],
 ];
 
 test('encodes table syntax, normalizes line breaks and leaves input unchanged', () => {

@@ -111,7 +111,6 @@ sandbox the converter's filesystem or network access. Review those references
 and run conversion in your own appropriately restricted environment. The focused
 tests use a synthetic converter and do not certify real DOCX layout or isolation.
 
-
 ```sh
 node skills/master-agreement-generator/scripts/build-agreement.js \
   skills/master-agreement-generator/references/master-template.example.md \

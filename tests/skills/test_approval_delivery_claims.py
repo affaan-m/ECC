@@ -2,13 +2,12 @@
 
 import hashlib
 import importlib.util
-from pathlib import Path
 import sqlite3
 import tempfile
 import threading
 import unittest
 from concurrent.futures import ThreadPoolExecutor
-
+from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 REFERENCE = ROOT / 'skills/operator-approval-loop/references'

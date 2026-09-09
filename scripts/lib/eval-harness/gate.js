@@ -70,13 +70,37 @@ function listFiles(dir, base = dir, acc = []) {
   return acc;
 }
 
+/** Read the opened regular file, never reopen a previously checked pathname.
+ * No-follow/nonblocking flags reduce symlink and special-file hazards where
+ * supported. Descriptor/path identity also rejects symlinks on other hosts.
+ * This is static inspection of a caller-controlled tree, not OS containment.
+ */
+function readRegularFile(filePath, encoding) {
+  const flags = fs.constants.O_RDONLY | (fs.constants.O_NOFOLLOW || 0) | (fs.constants.O_NONBLOCK || 0);
+  let fd;
+  try {
+    fd = fs.openSync(filePath, flags);
+    const opened = fs.fstatSync(fd);
+    const current = fs.lstatSync(filePath);
+    if (!opened.isFile() || !current.isFile() || opened.dev !== current.dev || opened.ino !== current.ino) {
+      throw new GateError('gate.variant_invalid', 'inspection requires the same regular file');
+    }
+    return fs.readFileSync(fd, encoding);
+  } catch (error) {
+    if (error.code === 'ELOOP') throw new GateError('gate.variant_invalid', 'inspection refuses symbolic links');
+    throw error;
+  } finally {
+    if (fd !== undefined) fs.closeSync(fd);
+  }
+}
+
 /** Content digest of a directory tree: sorted relative paths and bytes. */
 function digestDir(dir) {
   const hash = crypto.createHash('sha256');
   for (const relative of listFiles(dir)) {
     hash.update(relative);
     hash.update('\0');
-    hash.update(fs.readFileSync(path.join(dir, relative)));
+    hash.update(readRegularFile(path.join(dir, relative)));
     hash.update('\0');
   }
   return hash.digest('hex');
@@ -85,11 +109,14 @@ function digestDir(dir) {
 function loadVariant(dir) {
   const resolved = fs.realpathSync(path.resolve(dir));
   const manifestPath = path.join(resolved, 'variant.json');
-  if (!fs.existsSync(manifestPath)) {
-    throw new GateError('gate.variant_missing', `variant.json missing in ${resolved}`);
+  let manifestBytes;
+  try {
+    manifestBytes = readRegularFile(manifestPath, 'utf8');
+  } catch (error) {
+    if (error.code === 'ENOENT') throw new GateError('gate.variant_missing', `variant.json missing in ${resolved}`);
+    throw error;
   }
-  if (!fs.lstatSync(manifestPath).isFile()) throw new GateError('gate.variant_invalid', 'variant manifest must be a regular file');
-  const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
+  const manifest = JSON.parse(manifestBytes);
   if (typeof manifest.name !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/.test(manifest.name) || !envelope.EFFECT_CLASSES.includes(manifest.effect_class)) {
     throw new GateError('gate.variant_invalid', `variant.json in ${resolved} needs name and a valid effect_class`);
   }
@@ -132,7 +159,7 @@ function scanTripwires(variant, options = {}) {
     if (!/\.(?:js|cjs|mjs|json|sh)$/.test(relative)) {
       continue;
     }
-    const lines = fs.readFileSync(path.join(variant.dir, relative), 'utf8').split(/\r?\n/);
+    const lines = readRegularFile(path.join(variant.dir, relative), 'utf8').split(/\r?\n/);
     lines.forEach((text, index) => {
       for (const rule of rules) {
         if (rule.pattern.test(text)) {

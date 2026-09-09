@@ -106,6 +106,7 @@ function buildExpectedPublishPaths(repoRoot) {
     "assets/images/community",
     "docs/CODEX-NAVIGATION-GUIDE.md",
     "docs/COMMAND-AGENT-MAP.md",
+    "docs/ROADMAP.md",
     "docs/design/ecc-memory-vault.md",
     "assets/images/sponsors",
   ]
@@ -221,6 +222,7 @@ function main() {
         "assets/images/community/heart.svg",
         "docs/CODEX-NAVIGATION-GUIDE.md",
         "docs/COMMAND-AGENT-MAP.md",
+        "docs/ROADMAP.md",
         "docs/design/ecc-memory-vault.md",
         "schemas/install-state.schema.json",
         "schemas/memory.schema.json",

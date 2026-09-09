@@ -43,7 +43,7 @@ test('key order, ordinary special names and null-prototype input are preserved',
 // Captured from pinned base5141 before changing canonical.js, not regenerated expectations.
 const baseline = {
   "mixed": {
-    "bytes": "{\"a\":{\"2\":\"two\",\"10\":\"ten\",\"a\":[1,\"snow ☃\",false],\"b\":true},\"z\":null}",
+    "bytes": "{\"a\":{\"2\":\"two\",\"10\":\"ten\",\"a\":[1,\"snow \u2603\",false],\"b\":true},\"z\":null}",
     "hash": "57371228e405924baac7878d77624cfd8a7f399eb007180b8b9fc52dcf7bca69"
   },
   "scalars": [
@@ -83,15 +83,15 @@ const baseline = {
       "hash": "cf3bae39dd692048a8bf961182e6a34dfd323eeb0748e162eaf055107f1cb873"
     },
     {
-      "value": "snow ☃",
-      "bytes": "\"snow ☃\"",
+      "value": "snow \u2603",
+      "bytes": "\"snow \u2603\"",
       "hash": "1d1d4876c8b93fbb464386c82434a3dcc2cdbf5fcd42fdbbf3a903a686215ce2"
     }
   ]
 };
 
 test('pre-fix ordinary JSON bytes and hashes remain identical', () => {
-  const mixed = { z: null, a: { '10': 'ten', '2': 'two', b: true, a: [1, 'snow ☃', false] }, omit: undefined };
+  const mixed = { z: null, a: { '10': 'ten', '2': 'two', b: true, a: [1, 'snow \u2603', false] }, omit: undefined };
   assert.strictEqual(canonicalJson(mixed), baseline.mixed.bytes);
   assert.strictEqual(hashValue(mixed), baseline.mixed.hash);
   for (const vector of baseline.scalars) {

@@ -44,4 +44,61 @@ test('malformed tasksets and missing variant manifests reject during inspection'
     assert.throws(()=>gate.loadVariant(root),e=>e.code==='gate.variant_missing');
   } finally {cleanup(root);}
 });
+test('manifest replacement after validation never changes the object read', () => {
+  const root = tempDir('manifest-race');
+  const manifest = path.join(root, 'variant.json');
+  const saved = path.join(root, 'saved.json');
+  const original = JSON.stringify({ name: 'candidate', effect_class: 'SE0' });
+  const replacement = JSON.stringify({ name: 'replacement_marker', effect_class: 'SE0' });
+  fs.writeFileSync(manifest, original);
+  fs.writeFileSync(path.join(root, 'run.js'), 'module.exports={solve:()=>1};');
+  const read = fs.readFileSync;
+  let swapped = false;
+  let observed;
+  fs.readFileSync = function(file, ...args) {
+    if (!swapped && (file === manifest || typeof file === 'number')) {
+      swapped = true;
+      fs.renameSync(manifest, saved);
+      fs.writeFileSync(manifest, replacement);
+      observed = read.call(this, file, ...args);
+      return observed;
+    }
+    return read.call(this, file, ...args);
+  };
+  try {
+    gate.loadVariant(root);
+    assert.ok(swapped, 'replacement boundary was exercised');
+    assert.strictEqual(String(observed), original, 'read must stay bound to the validated descriptor');
+  } finally {
+    fs.readFileSync = read;
+    cleanup(root);
+  }
+});
+
+test('manifest descriptors close when parsing fails', () => {
+  const root = tempDir('manifest-close');
+  fs.writeFileSync(path.join(root, 'variant.json'), '{invalid');
+  const open = fs.openSync;
+  const close = fs.closeSync;
+  const active = new Set();
+  fs.openSync = function(...args) {
+    const fd = open.apply(this, args);
+    active.add(fd);
+    return fd;
+  };
+  fs.closeSync = function(fd) {
+    const result = close.call(this, fd);
+    active.delete(fd);
+    return result;
+  };
+  try {
+    assert.throws(() => gate.loadVariant(root), SyntaxError);
+    assert.strictEqual(active.size, 0, 'failed inspection must not leak descriptors');
+  } finally {
+    fs.openSync = open;
+    fs.closeSync = close;
+    for (const fd of active) close(fd);
+    cleanup(root);
+  }
+});
 finish('gate');
