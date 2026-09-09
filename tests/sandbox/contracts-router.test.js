@@ -144,7 +144,7 @@ test('CLI launch returns the exact Tier 1 consent proposal without provisioning'
     const capabilitiesPath = path.join(temporaryRoot, 'capabilities.json');
     fs.writeFileSync(capabilitiesPath, `${JSON.stringify({
       schema_version: 1,
-      host: { os: 'macos', arch: 'arm64' },
+      host: defaultHost(),
       backends: { podman: { available: true } },
     })}\n`);
     const result = runCli([
