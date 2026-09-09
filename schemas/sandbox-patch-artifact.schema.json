@@ -1,0 +1,91 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://ecc.tools/schemas/sandbox-patch-artifact.schema.json",
+  "title": "ECC sandbox patch artifact",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version", "artifact_id", "run_id", "job_id", "worker_id",
+    "workspace_mode", "base", "candidate", "patch", "files", "findings", "created_at"
+  ],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "artifact_id": { "$ref": "#/definitions/id" },
+    "run_id": { "$ref": "#/definitions/id" },
+    "job_id": { "$ref": "#/definitions/id" },
+    "worker_id": { "$ref": "#/definitions/id" },
+    "workspace_mode": { "enum": ["isolated-copy", "worktree"] },
+    "base": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["ref", "commit", "tree_sha256"],
+      "properties": {
+        "ref": { "type": "string", "minLength": 1, "maxLength": 512 },
+        "commit": { "$ref": "#/definitions/gitOid" },
+        "tree_sha256": { "$ref": "#/definitions/sha256" }
+      }
+    },
+    "candidate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["tree_sha256", "byte_count", "file_count"],
+      "properties": {
+        "tree_sha256": { "$ref": "#/definitions/sha256" },
+        "byte_count": { "type": "integer", "minimum": 0, "maximum": 1073741824 },
+        "file_count": { "type": "integer", "minimum": 0, "maximum": 10000 }
+      }
+    },
+    "patch": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["relative_path", "sha256", "byte_count", "format"],
+      "properties": {
+        "relative_path": { "$ref": "#/definitions/relativePath" },
+        "sha256": { "$ref": "#/definitions/sha256" },
+        "byte_count": { "type": "integer", "minimum": 0, "maximum": 1073741824 },
+        "format": { "const": "git-binary-diff" }
+      }
+    },
+    "files": {
+      "type": "array",
+      "maxItems": 10000,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["path", "status", "mode_before", "mode_after", "size", "sha256"],
+        "properties": {
+          "path": { "$ref": "#/definitions/relativePath" },
+          "status": { "enum": ["added", "modified", "deleted", "renamed"] },
+          "mode_before": { "type": ["string", "null"], "pattern": "^[0-7]{6}$" },
+          "mode_after": { "type": ["string", "null"], "pattern": "^[0-7]{6}$" },
+          "size": { "type": ["integer", "null"], "minimum": 0, "maximum": 1073741824 },
+          "sha256": {
+            "oneOf": [{ "$ref": "#/definitions/sha256" }, { "type": "null" }]
+          }
+        }
+      }
+    },
+    "findings": { "$ref": "#/definitions/stringArray" },
+    "created_at": { "$ref": "#/definitions/timestamp" }
+  },
+  "definitions": {
+    "id": {
+      "type": "string", "minLength": 1, "maxLength": 120,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+    },
+    "sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+    "gitOid": { "type": "string", "pattern": "^(?:[a-f0-9]{40}|[a-f0-9]{64})$" },
+    "relativePath": {
+      "type": "string", "minLength": 1, "maxLength": 4096,
+      "pattern": "^(?![/\\\\])(?!.*(?:^|[/\\\\])\\.\\.(?:[/\\\\]|$)).+$"
+    },
+    "timestamp": {
+      "type": "string",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\\.[0-9]{3})?Z$"
+    },
+    "stringArray": {
+      "type": "array", "maxItems": 1000,
+      "items": { "type": "string", "maxLength": 4096 }
+    }
+  }
+}

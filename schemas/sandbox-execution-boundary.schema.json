@@ -1,0 +1,75 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://ecc.tools/schemas/sandbox-execution-boundary.schema.json",
+  "title": "ECC sandbox execution boundary",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version", "execution_class", "placement", "operator", "coverage",
+    "enforced_controls", "missing_controls", "evidence_limits"
+  ],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "execution_class": {
+      "enum": ["restricted-process", "disposable-container", "disposable-vm"]
+    },
+    "placement": { "enum": ["local", "self-hosted", "hosted"] },
+    "operator": {
+      "type": "string", "minLength": 1, "maxLength": 120,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+    },
+    "coverage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "scope", "complete", "contained_surfaces", "excluded_surfaces",
+        "brokered_interfaces"
+      ],
+      "properties": {
+        "scope": { "enum": ["shell-only", "whole-agent"] },
+        "complete": { "type": "boolean" },
+        "contained_surfaces": {
+          "type": "array", "maxItems": 16, "uniqueItems": true,
+          "items": { "$ref": "#/definitions/surface" }
+        },
+        "excluded_surfaces": {
+          "type": "array", "maxItems": 16, "uniqueItems": true,
+          "items": { "$ref": "#/definitions/surface" }
+        },
+        "brokered_interfaces": {
+          "type": "array", "maxItems": 32, "uniqueItems": true,
+          "items": {
+            "type": "string", "minLength": 1, "maxLength": 160,
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]*$"
+          }
+        }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "scope": { "const": "whole-agent" } } },
+          "then": {
+            "properties": {
+              "complete": { "const": true },
+              "excluded_surfaces": { "type": "array", "maxItems": 0 }
+            }
+          }
+        }
+      ]
+    },
+    "enforced_controls": { "$ref": "#/definitions/statements" },
+    "missing_controls": { "$ref": "#/definitions/statements" },
+    "evidence_limits": { "$ref": "#/definitions/statements" }
+  },
+  "definitions": {
+    "surface": {
+      "enum": [
+        "shell", "child-processes", "filesystem-tools", "hooks", "plugins",
+        "browsers", "mcp-servers", "model-api-clients", "network-clients"
+      ]
+    },
+    "statements": {
+      "type": "array", "maxItems": 32, "uniqueItems": true,
+      "items": { "type": "string", "minLength": 1, "maxLength": 240 }
+    }
+  }
+}

@@ -2,15 +2,31 @@
 'use strict';
 
 const fs = require('fs');
+const crypto = require('crypto');
 const os = require('os');
 const path = require('path');
+const { spawnSync } = require('child_process');
+const {
+  isMainThread,
+  parentPort,
+  Worker,
+  workerData,
+} = require('worker_threads');
 const {
   loadManifest,
   readBoundedRegularFile,
+  contractDigest,
   validateCapabilities,
   validateReport,
 } = require('./contracts');
-const { defaultHost, routeManifest } = require('./router');
+const {
+  defaultHost,
+  normalizeArch,
+  normalizeOs,
+  resolveRuntimeEscalation,
+  resolveTierOneFallback,
+  routeManifest,
+} = require('./router');
 const {
   probeCapabilities,
   readCapabilityCache,
@@ -18,13 +34,44 @@ const {
 } = require('./probe');
 const { executeSrt } = require('./backends/srt');
 const { executeContainer } = require('./backends/podman');
+const { executeMicrosandbox } = require('./backends/microsandbox');
+const { executeLume, LUME_DRIVER } = require('./backends/lume');
+const { executeLima, LIMA_DRIVER } = require('./backends/lima');
+const { executeTart, TART_DRIVER } = require('./backends/tart');
+const { executeCiNative } = require('./backends/ci-native');
+const { executeCi } = require('./backends/ci');
 const { loadMockScenario, mockRunner } = require('./mock');
-const interactiveCli = require('./interactive-cli');
+const { buildAggregateReport, tailOutput } = require('./report');
+const reviewCli = require('./review-cli');
+const fabricController = require('./fabric-controller');
+const { resourcePreflight } = require('./resource-preflight');
+const { withLumeStorage } = require('./vm-storage');
 
 const COMMANDS = [
-  'probe', 'run', 'report',
-  ...interactiveCli.PUBLIC_COMMANDS,
-  '_explore', '_guard', '_watch-launch',
+  'probe', 'preflight', 'run', 'fabric', 'report', 'escalate',
+  'review', 'runs', 'status', 'listen', 'inspect', 'continue', 'wait',
+  'evaluate', 'attach', 'stop', 'gc', 'video', 'explore', 'launch',
+  '_supervise', '_ui', '_guard', '_explore', '_watch-launch',
+];
+const CONTAINER_BACKENDS = new Set(['podman', 'microsandbox']);
+// DECISION: CONVENTIONS item 36 requires paired command/output evidence before
+// a cleaned-up Tier 1 attempt can consume the run's single escalation.
+const NATIVE_FAILURE_SIGNATURES = [
+  {
+    family: 'systemd',
+    command: /(?:^|[;&|\n])\s*(?:sudo\s+)?(?:\/usr\/bin\/)?systemctl(?:\s|$)/i,
+    output: /(?:system has not been booted with systemd|failed to connect to bus|running in chroot|systemd is not running)/i,
+  },
+  {
+    family: 'registry',
+    command: /(?:^|[;&|\n])\s*(?:reg(?:\.exe)?\s+(?:add|delete|import)|(?:new|set)-itemproperty\b[^\n]*(?:HKLM:|Registry::))/i,
+    output: /(?:reg(?:\.exe)?: (?:command not found|not found)|'reg(?:\.exe)?' is not recognized|registry editing has been disabled|unable to find the specified registry|access is denied)/i,
+  },
+  {
+    family: 'gui',
+    command: /(?:^|[;&|\n])\s*(?:(?:\/usr\/bin\/)?(?:open|xdg-open)|gio\s+open|start-process)\s+/i,
+    output: /(?:cannot open display|failed to (?:connect to|open) (?:the )?display|no display (?:name|server)|DISPLAY (?:is )?not set|no method available for opening|headless (?:environment|session))/i,
+  },
 ];
 
 function writeJson(value) {
@@ -36,12 +83,12 @@ function help() {
     name: 'ecc-sandbox',
     usage: [
       'ecc-sandbox probe [--refresh] [--cache <file>] [--mock <capabilities.json>]',
-      'ecc-sandbox run <sandbox.yaml> [--dry-run] [--local-only] [--capabilities <file>] [--mock <file>]',
+      'ecc-sandbox preflight <sandbox.yaml> [--local-only] [--capabilities <file>]',
+      'ecc-sandbox run <sandbox.yaml> [--dry-run] [--local-only] [--shard <os/arch>] [--capabilities <file>] [--mock <file>]',
+      'ecc-sandbox fabric <sandbox.yaml> [--workspace-mode auto|in-place|isolated-copy|worktree] [--max-parallel 1..32] [--candidate-ref refs/heads/ecc/candidates/<name>] [--plan-only] [--local-only] [--capabilities <file>] [--mock <file>]',
       'ecc-sandbox report <report.json>',
-      'ecc-sandbox launch <sandbox.yaml> --purpose <text> [--terminal wezterm|terminal.app] [--consent y|n --proposal <id>] [--capabilities <file>]',
-      'ecc-sandbox listen <run-id> [--follow] [--format jsonl]',
-      'ecc-sandbox status <run-id>',
-      'ecc-sandbox stop <run-id>',
+      'ecc-sandbox escalate <report.json> [--capabilities <file>] [--mock <file>]',
+      'ecc-sandbox launch <sandbox.yaml> --purpose <text> [--terminal wezterm|terminal.app] [--consent y|n --proposal <id>] [--local-only] [--capabilities <file>]',
     ],
     commands: COMMANDS.filter(command => !command.startsWith('_')),
   };
@@ -54,6 +101,7 @@ function parseRunArgs(args) {
     localOnly: false,
     capabilitiesPath: null,
     mockPath: null,
+    shard: null,
   };
 
   for (let index = 0; index < args.length; index += 1) {
@@ -62,12 +110,18 @@ function parseRunArgs(args) {
       options.dryRun = true;
     } else if (arg === '--local-only') {
       options.localOnly = true;
-    } else if (arg === '--capabilities' || arg === '--mock') {
+    } else if (arg === '--capabilities' || arg === '--mock' || arg === '--shard') {
       const value = args[index + 1];
       if (!value || value.startsWith('-')) {
-        throw new Error(`${arg} requires a JSON file path`);
+        throw new Error(`${arg} requires a value`);
       }
-      options[arg === '--capabilities' ? 'capabilitiesPath' : 'mockPath'] = value;
+      if (arg === '--shard') {
+        const match = value.match(/^(linux|macos|windows)\/(arm64|x86_64)$/);
+        if (!match) throw new Error('--shard must be linux|macos|windows/arm64|x86_64');
+        options.shard = { os: normalizeOs(match[1]), arch: normalizeArch(match[2]) };
+      } else {
+        options[arg === '--capabilities' ? 'capabilitiesPath' : 'mockPath'] = value;
+      }
       index += 1;
     } else if (arg.startsWith('-')) {
       throw new Error(`Unknown run argument: ${arg}`);
@@ -85,6 +139,41 @@ function parseRunArgs(args) {
     throw new Error('--mock executes an adapter and cannot be combined with --dry-run');
   }
   return options;
+}
+
+function parseFabricArgs(args) {
+  const runArgs = [];
+  const fabricOptions = {
+    workspaceMode: 'auto', planOnly: false, maxParallel: 1, candidateRef: null,
+  };
+  for (let index = 0; index < args.length; index += 1) {
+    const arg = args[index];
+    if (arg === '--plan-only') {
+      fabricOptions.planOnly = true;
+      continue;
+    }
+    if (arg === '--workspace-mode' || arg === '--max-parallel' || arg === '--candidate-ref') {
+      const value = args[index + 1];
+      if (!value || value.startsWith('-')) throw new Error(`${arg} requires a value`);
+      if (arg === '--candidate-ref') {
+        fabricOptions.candidateRef = value;
+      } else if (arg === '--workspace-mode') {
+        if (!['auto', 'in-place', 'isolated-copy', 'worktree'].includes(value)) {
+          throw new Error('--workspace-mode must be auto, in-place, isolated-copy, or worktree');
+        }
+        fabricOptions.workspaceMode = value;
+      } else {
+        if (!/^[1-9][0-9]*$/.test(value) || Number(value) > 32) {
+          throw new Error('--max-parallel must be an integer from 1 to 32');
+        }
+        fabricOptions.maxParallel = Number(value);
+      }
+      index += 1;
+      continue;
+    }
+    runArgs.push(arg);
+  }
+  return { ...parseRunArgs(runArgs), ...fabricOptions };
 }
 
 function parseProbeArgs(args) {
@@ -107,6 +196,29 @@ function parseProbeArgs(args) {
   return options;
 }
 
+function parseEscalateArgs(args) {
+  const options = { reportPath: null, capabilitiesPath: null, mockPath: null };
+  for (let index = 0; index < args.length; index += 1) {
+    const arg = args[index];
+    if (arg === '--capabilities' || arg === '--mock') {
+      const value = args[index + 1];
+      if (!value || value.startsWith('-')) {
+        throw new Error(`${arg} requires a JSON file path`);
+      }
+      options[arg === '--capabilities' ? 'capabilitiesPath' : 'mockPath'] = value;
+      index += 1;
+    } else if (arg.startsWith('-')) {
+      throw new Error(`Unknown escalate argument: ${arg}`);
+    } else if (options.reportPath === null) {
+      options.reportPath = arg;
+    } else {
+      throw new Error(`Unexpected escalate argument: ${arg}`);
+    }
+  }
+  if (!options.reportPath) throw new Error('escalate requires a sandbox report path');
+  return options;
+}
+
 function emptyCapabilityMap() {
   return {
     schema_version: 1,
@@ -121,6 +233,7 @@ function emptyCapabilityMap() {
       'hyper-v',
       'dockur-windows',
       'tart',
+      'ci-native',
       'ci',
     ].map(backend => [backend, { available: false }])),
   };
@@ -151,57 +264,1004 @@ function resolveRun(options) {
   const manifest = loadManifest(manifestPath);
   const capabilities = loadCapabilities(options.capabilitiesPath);
   const decision = routeManifest(manifest, capabilities, {
+    forceCiNative: (
+      process.env.GITHUB_ACTIONS === 'true'
+      && process.env.ECC_SANDBOX_CI_NATIVE === '1'
+      && process.env.ECC_SANDBOX_CI_FORCE_NATIVE === '1'
+    ),
     localOnly: options.localOnly,
     manifestPath,
+    shard: options.shard,
   });
   return { capabilities, decision, manifest, manifestPath };
+}
+
+function containerNativeFailure(report) {
+  if (
+    !report
+    || report.result !== 'fail'
+    || report.escalations.length !== 0
+    || !CONTAINER_BACKENDS.has(report.backend)
+  ) {
+    return null;
+  }
+  for (const step of report.steps) {
+    if (step.exit === 0) continue;
+    const output = `${step.stderr_tail}\n${step.stdout_tail}`;
+    const signature = NATIVE_FAILURE_SIGNATURES.find(candidate => (
+      candidate.command.test(step.cmd) && candidate.output.test(output)
+    ));
+    if (signature) {
+      return {
+        family: signature.family,
+        step,
+        reason: `container ${signature.family} failure requires native OS behavior`,
+      };
+    }
+  }
+  return null;
 }
 
 function runDryRun(options) {
   return resolveRun(options).decision;
 }
 
-function runExecution(options) {
-  const resolved = resolveRun(options);
-  if (resolved.decision.result !== 'routable') {
-    const failed = resolved.decision.routes.find(route => route.result === 'error');
-    throw new Error(`${failed.reason}. ${failed.fix}`);
-  }
-  if (resolved.decision.routes.length !== 1) {
-    throw new Error('Multiple-route execution is unavailable until the aggregate execution phase');
-  }
-  const route = resolved.decision.routes[0];
-  if (!['srt', 'podman'].includes(route.backend)) {
+function executeRoute(resolved, route, executionOptions) {
+  if (![
+    'srt', 'podman', 'microsandbox', 'lume', 'lima', 'tart', 'ci-native',
+  ].includes(route.backend)) {
     throw new Error(`${route.backend} execution is unavailable until its adapter phase`);
   }
-
-  let run;
-  let mock = false;
-  if (options.mockPath) {
-    run = mockRunner(loadMockScenario(path.resolve(options.mockPath), route.backend));
-    mock = true;
-  }
-  const executionOptions = {
+  const adapterOptions = {
+    ...executionOptions,
     arch: route.arch,
-    cwd: process.cwd(),
+    cwd: path.resolve(executionOptions.cwd || process.cwd()),
     manifestPath: resolved.manifestPath,
-    mock,
     notes: route.notes,
-    run,
   };
   if (route.backend === 'srt') {
     return executeSrt(resolved.manifest, {
-      ...executionOptions,
+      ...adapterOptions,
       enableWeakerNestedSandbox: process.env.ECC_SANDBOX_ALLOW_NESTED_SRT === '1',
       os: route.os,
       platform: process.platform,
     });
   }
+  if (route.backend === 'microsandbox') {
+    const microsandbox = executeMicrosandbox(resolved.manifest, {
+      ...adapterOptions,
+      image: process.env.ECC_SANDBOX_IMAGE,
+      snapshot: process.env.ECC_SANDBOX_MICROSANDBOX_SNAPSHOT,
+    });
+    if (!microsandbox.startupFailure || executionOptions.approvedRouteOnly === true) {
+      return microsandbox;
+    }
+    if (!microsandbox.cleanup.safe_for_fallback) return microsandbox;
+
+    const fallbackRoute = resolveTierOneFallback(
+      resolved.manifest,
+      resolved.capabilities,
+      { os: route.os, arch: route.arch },
+      { exclude: ['microsandbox'] }
+    );
+    if (fallbackRoute.result !== 'routable') return microsandbox;
+    const fallback = executeRoute(resolved, fallbackRoute, executionOptions);
+    fallback.report = validateReport({
+      ...fallback.report,
+      notes: [
+        ...fallback.report.notes,
+        `Microsandbox startup failed; fell back within Tier 1: ${tailOutput(microsandbox.report.notes.join('; '), 20, 3_000)}`,
+      ],
+    });
+    return fallback;
+  }
+  if (route.backend === 'ci-native') {
+    const platform = { linux: 'linux', macos: 'darwin', windows: 'win32' }[route.os];
+    return executeCiNative(resolved.manifest, {
+      ...adapterOptions,
+      env: process.env,
+      os: route.os,
+      platform,
+    });
+  }
+  if (route.backend === 'lume') {
+    return executeLume(resolved.manifest, {
+      ...adapterOptions,
+      seed: process.env.ECC_SANDBOX_LUME_SEED,
+    });
+  }
+  if (route.backend === 'lima') {
+    return executeLima(resolved.manifest, {
+      ...adapterOptions,
+      seed: process.env.ECC_SANDBOX_LIMA_SEED,
+    });
+  }
+  if (route.backend === 'tart') {
+    return executeTart(resolved.manifest, {
+      ...adapterOptions,
+      seed: process.env.ECC_SANDBOX_TART_SEED,
+    });
+  }
   return executeContainer(resolved.manifest, {
-    ...executionOptions,
+    ...adapterOptions,
     image: process.env.ECC_SANDBOX_IMAGE,
     runtime: route.backend,
   });
+}
+
+const ROUTE_IDENTITY_FIELDS = Object.freeze(['backend', 'tier', 'os', 'arch']);
+
+function sameRouteIdentity(left, right) {
+  return ROUTE_IDENTITY_FIELDS.every(field => left?.[field] === right?.[field]);
+}
+
+function assertReportMatchesApprovedRoute(report, approvedRoute) {
+  if (!report || typeof report !== 'object') {
+    throw new Error('Approved route execution did not return a sandbox report');
+  }
+  const effectiveReport = report.backend === 'aggregate'
+    && Array.isArray(report.children)
+    && report.children.length === 1
+    ? report.children[0]
+    : report;
+  if (!sameRouteIdentity(effectiveReport, approvedRoute)) {
+    const actual = ROUTE_IDENTITY_FIELDS.map(field => effectiveReport?.[field] ?? 'missing').join('/');
+    const expected = ROUTE_IDENTITY_FIELDS.map(field => approvedRoute[field]).join('/');
+    throw new Error(`Sandbox report route drift: expected ${expected}, received ${actual}`);
+  }
+  const escalations = [
+    ...(Array.isArray(report.escalations) ? report.escalations : []),
+    ...(effectiveReport !== report && Array.isArray(effectiveReport.escalations)
+      ? effectiveReport.escalations
+      : []),
+  ];
+  if (escalations.length !== 0) {
+    throw new Error('Sandbox report contains an escalation outside the approved plan route');
+  }
+  return report;
+}
+
+function runApprovedRoute(resolved, approvedRoute, executionOptions = {}) {
+  if (!Object.isFrozen(approvedRoute)) {
+    throw new Error('Approved route must be immutable');
+  }
+  const matchedRoute = resolved.decision?.routes?.find(candidate => (
+    candidate.result === 'routable' && sameRouteIdentity(candidate, approvedRoute)
+  ));
+  if (!matchedRoute) {
+    throw new Error('Approved route is not present in the resolved plan');
+  }
+  const route = Object.freeze({
+    ...matchedRoute,
+    ...Object.fromEntries(ROUTE_IDENTITY_FIELDS.map(field => [field, approvedRoute[field]])),
+  });
+  const execution = route.backend === 'ci'
+    ? executeCiRoutes(resolved, [route], { ...executionOptions, approvedRouteOnly: true })
+    : executeRoute(resolved, route, { ...executionOptions, approvedRouteOnly: true });
+  assertReportMatchesApprovedRoute(execution.report, approvedRoute);
+  return execution;
+}
+
+function runApprovedRouteFromOptions(options, approvedRoute, executionOptions = {}) {
+  const resolved = resolveRun(options);
+  assertManifestApproval(resolved.manifest, executionOptions.manifestApproval);
+  let run;
+  let mock = false;
+  if (options.mockPath) {
+    run = mockRunner(loadMockScenario(path.resolve(options.mockPath), approvedRoute.backend));
+    mock = true;
+  }
+  return runApprovedRoute(resolved, Object.freeze({ ...approvedRoute }), {
+    localOnly: options.localOnly,
+    mock,
+    run,
+    ...executionOptions,
+  });
+}
+
+function assertManifestApproval(manifest, approval) {
+  if (
+    !approval
+    || approval.schema_version !== 1
+    || !/^[a-f0-9]{64}$/.test(approval.digest || '')
+  ) {
+    throw new Error('Fabric manifest approval is missing or invalid');
+  }
+  const current = {
+    digest: contractDigest(manifest),
+    commands: manifest.steps,
+    resources: manifest.resources,
+    report: manifest.report,
+  };
+  if (
+    current.digest !== approval.digest
+    || contractDigest(current.commands) !== contractDigest(approval.commands)
+    || contractDigest(current.resources) !== contractDigest(approval.resources)
+    || current.report !== approval.report
+  ) {
+    throw new Error('Fabric manifest approval drift detected before worker execution');
+  }
+}
+
+function workerOptions(options, resolved) {
+  return {
+    manifestPath: resolved.manifestPath,
+    dryRun: false,
+    localOnly: options.localOnly === true,
+    capabilitiesPath: options.capabilitiesPath
+      ? path.resolve(options.capabilitiesPath)
+      : null,
+    mockPath: options.mockPath ? path.resolve(options.mockPath) : null,
+    shard: options.shard || null,
+  };
+}
+
+function validateOwnershipReceipt(receipt) {
+  if (!receipt || typeof receipt !== 'object') {
+    throw new Error('Fabric backend ownership receipt is required');
+  }
+  if (!/^run_[a-f0-9]{32}$/.test(receipt.run_id || '')) {
+    throw new Error('Fabric backend ownership receipt has an invalid run ID');
+  }
+  if (!/^[A-Za-z0-9][A-Za-z0-9._:-]{0,119}$/.test(receipt.job_id || '')) {
+    throw new Error('Fabric backend ownership receipt has an invalid job ID');
+  }
+  if (!/^[a-f0-9]{64}$/.test(receipt.owner_label || '')) {
+    throw new Error('Fabric backend ownership receipt has an invalid owner label');
+  }
+  if (!['podman', 'lume', 'lima', 'tart'].includes(receipt.backend)) {
+    throw new Error('Fabric backend ownership receipt has an unsupported backend');
+  }
+  const identity = crypto.createHash('sha256')
+    .update(`${receipt.owner_label}\0${receipt.run_id}\0${receipt.job_id}\0${receipt.backend}`)
+    .digest('hex')
+    .slice(0, 24);
+  if (receipt.resource_name !== `ecc-fabric-${receipt.backend}-${identity}`) {
+    throw new Error('Fabric backend ownership receipt has an invalid resource name');
+  }
+  if (receipt.process_receipt !== undefined) {
+    if (
+      receipt.backend !== 'lume'
+      || !path.isAbsolute(receipt.process_receipt?.path || '')
+      || path.basename(receipt.process_receipt.path) !== '.lume-process-receipts.jsonl'
+      || !/^[a-f0-9]{64}$/.test(receipt.process_receipt?.key || '')
+    ) {
+      throw new Error('Fabric backend ownership receipt has an invalid process receipt');
+    }
+  }
+  return receipt;
+}
+
+function processReceiptPayload(kind, processIdentity) {
+  if (kind === 'storage') {
+    const storagePath = processIdentity?.storage_path;
+    withLumeStorage(['get', 'validated-storage'], storagePath);
+    if (storagePath.length > 4096) throw new Error('Fabric storage receipt path is too long');
+    return { kind, storage_path: storagePath };
+  }
+  if (!['launcher', 'helper'].includes(kind)) {
+    throw new Error('Fabric process receipt has an invalid kind');
+  }
+  const payload = {
+    kind,
+    pid: processIdentity?.pid,
+    pgid: processIdentity?.pgid,
+    started: processIdentity?.started,
+    command: processIdentity?.command,
+  };
+  if (
+    !Number.isSafeInteger(payload.pid) || payload.pid < 1
+    || !Number.isSafeInteger(payload.pgid) || payload.pgid < 1
+    || typeof payload.started !== 'string' || payload.started.length > 64
+    || !/^\S+\s+\S+\s+\d{1,2}\s+\d{2}:\d{2}:\d{2}\s+\d{4}$/.test(payload.started)
+    || typeof payload.command !== 'string' || payload.command.length < 1
+    || payload.command.length > 4_096 || /[\r\n]/.test(payload.command)
+  ) {
+    throw new Error('Fabric process receipt has an invalid process identity');
+  }
+  return payload;
+}
+
+function processReceiptMac(payload, key) {
+  return crypto.createHmac('sha256', key)
+    .update(JSON.stringify(payload))
+    .digest('hex');
+}
+
+function assertPrivateReceiptFile(receiptPath) {
+  const details = fs.lstatSync(receiptPath);
+  const wrongOwner = typeof process.getuid === 'function' && details.uid !== process.getuid();
+  if (
+    !details.isFile()
+    || details.isSymbolicLink()
+    || wrongOwner
+    || (details.mode & 0o077) !== 0
+  ) {
+    throw new Error('Fabric process receipt file is not private and regular');
+  }
+  if (details.size > 64 * 1024) {
+    throw new Error('Fabric process receipt file exceeds its bounded size');
+  }
+}
+
+function appendProcessReceipt(receipt, kind, processIdentity) {
+  const validated = validateOwnershipReceipt(receipt);
+  if (!validated.process_receipt) {
+    throw new Error('Fabric process receipt storage is unavailable');
+  }
+  const payload = processReceiptPayload(kind, processIdentity);
+  assertPrivateReceiptFile(validated.process_receipt.path);
+  const record = {
+    ...payload,
+    mac: processReceiptMac(payload, validated.process_receipt.key),
+  };
+  const flags = fs.constants.O_WRONLY | fs.constants.O_APPEND
+    | (fs.constants.O_NOFOLLOW || 0);
+  const descriptor = fs.openSync(validated.process_receipt.path, flags);
+  try {
+    const details = fs.fstatSync(descriptor);
+    const wrongOwner = typeof process.getuid === 'function' && details.uid !== process.getuid();
+    if (!details.isFile() || wrongOwner || (details.mode & 0o077) !== 0) {
+      throw new Error('Fabric process receipt descriptor is not private and regular');
+    }
+    fs.writeFileSync(descriptor, `${JSON.stringify(record)}\n`, { encoding: 'utf8' });
+    fs.fsyncSync(descriptor);
+  } finally {
+    fs.closeSync(descriptor);
+  }
+}
+
+function createFabricWorkerLifecycle(receipt) {
+  if (!receipt?.process_receipt) return {};
+  let storagePath;
+  const persistStorage = (details, resource = null) => {
+    if (details?.backend !== receipt.backend || (resource && resource.vm !== receipt.resource_name)) {
+      throw new Error('Fabric storage receipt VM identity does not match');
+    }
+    const candidate = resource ? resource.storage_path : details.storage_path;
+    const payload = processReceiptPayload('storage', { storage_path: candidate });
+    if (storagePath !== undefined) {
+      if (storagePath !== payload.storage_path) throw new Error('Fabric VM storage changed during execution');
+      return;
+    }
+    appendProcessReceipt(receipt, 'storage', payload);
+    storagePath = payload.storage_path;
+  };
+  return {
+    resourceAdmission: details => persistStorage(details),
+    resourceCreated: details => {
+      // Mock adapters publish resource-created callbacks but never admission.
+      // They must not create a record claiming real host storage verification.
+      if (details?.resource?.storage_path === undefined) return;
+      persistStorage(details, details.resource);
+    },
+    processCreated: details => appendProcessReceipt(
+      receipt,
+      'launcher',
+      details?.resource?.process
+    ),
+    helperCreated: details => appendProcessReceipt(
+      receipt,
+      'helper',
+      details?.resource?.process
+    ),
+  };
+}
+
+function readProcessReceipts(receipt) {
+  if (!receipt.process_receipt) return [];
+  assertPrivateReceiptFile(receipt.process_receipt.path);
+  const flags = fs.constants.O_RDONLY | (fs.constants.O_NOFOLLOW || 0);
+  const descriptor = fs.openSync(receipt.process_receipt.path, flags);
+  let text;
+  try {
+    const details = fs.fstatSync(descriptor);
+    const wrongOwner = typeof process.getuid === 'function' && details.uid !== process.getuid();
+    if (!details.isFile() || wrongOwner || (details.mode & 0o077) !== 0 || details.size > 64 * 1024) {
+      throw new Error('Fabric process receipt descriptor failed validation');
+    }
+    text = fs.readFileSync(descriptor, 'utf8');
+  } finally {
+    fs.closeSync(descriptor);
+  }
+  const records = text.split(/\r?\n/).filter(Boolean).map(line => {
+    let record;
+    try { record = JSON.parse(line); } catch {
+      throw new Error('Fabric process receipt contains malformed JSON');
+    }
+    const payload = processReceiptPayload(record.kind, record);
+    if (record.mac !== processReceiptMac(payload, receipt.process_receipt.key)) {
+      throw new Error('Fabric process receipt authentication failed');
+    }
+    return payload;
+  });
+  const identities = new Map();
+  for (const record of records) {
+    const key = record.kind === 'storage' ? 'storage' : record.pid;
+    const previous = identities.get(key);
+    if (previous && contractDigest(previous) !== contractDigest(record)) {
+      throw new Error('Fabric process or storage receipt changed an immutable identity');
+    }
+    identities.set(key, record);
+  }
+  return [...identities.values()];
+}
+
+function cleanupCommand(run, executable, argv) {
+  return run(executable, argv, {
+    encoding: 'utf8',
+    shell: false,
+    windowsHide: true,
+    timeout: 30_000,
+    maxBuffer: 1024 * 1024,
+  });
+}
+
+function commandSucceeded(result) {
+  return !result?.error && result?.status === 0;
+}
+
+function podmanContainerAbsent(resourceName, run) {
+  const result = cleanupCommand(
+    run,
+    'podman',
+    ['container', 'exists', '--external', resourceName]
+  );
+  return !result?.error && !result?.signal && result?.status === 1;
+}
+
+function cleanupOwnedPodman(receipt, run) {
+  const inspectArgs = [
+    'inspect', '--format', '{{json .Config.Labels}}', receipt.resource_name,
+  ];
+  const before = cleanupCommand(run, 'podman', inspectArgs);
+  if (!commandSucceeded(before)) {
+    const verified = podmanContainerAbsent(receipt.resource_name, run);
+    return { attempted: false, pass: verified, verified };
+  }
+  let labels;
+  try {
+    labels = JSON.parse(String(before.stdout || '').trim());
+  } catch {
+    return { attempted: false, pass: false, verified: false };
+  }
+  if (
+    labels?.['io.ecc.sandbox.run'] !== receipt.run_id
+    || labels?.['io.ecc.sandbox.owner'] !== receipt.owner_label
+  ) {
+    return { attempted: false, pass: false, verified: false };
+  }
+  const removal = cleanupCommand(
+    run,
+    'podman',
+    ['rm', '--force', '--time', '0', receipt.resource_name]
+  );
+  const verified = podmanContainerAbsent(receipt.resource_name, run);
+  return { attempted: true, pass: commandSucceeded(removal) && verified, verified };
+}
+
+function vmDriver(backend) {
+  return { lume: LUME_DRIVER, lima: LIMA_DRIVER, tart: TART_DRIVER }[backend] || null;
+}
+
+function vmResourceMissing(driver, result) {
+  if (driver.missingInstance(result)) return true;
+  const output = String(result?.stdout || '').trim();
+  if (driver.backend === 'lima' && commandSucceeded(result)) {
+    try {
+      const parsed = JSON.parse(output || '[]');
+      return (Array.isArray(parsed) && parsed.length === 0) || parsed === null;
+    } catch {
+      return false;
+    }
+  }
+  return false;
+}
+
+function parseInspectionJson(value) {
+  const text = String(value || '').trim();
+  const candidates = [text];
+  const lines = text.split(/\r?\n/);
+  for (let index = 1; index < lines.length; index += 1) {
+    const candidate = lines.slice(index).join('\n').trim();
+    if (candidate.startsWith('{') || candidate.startsWith('[')) candidates.push(candidate);
+  }
+  for (const candidate of candidates) {
+    try { return JSON.parse(candidate); } catch { /* try bounded log prefixes */ }
+  }
+  return null;
+}
+
+function vmInspectionMatches(driver, result, resourceName) {
+  const parsed = parseInspectionJson(result.stdout);
+  const values = Array.isArray(parsed)
+    ? parsed
+    : (Array.isArray(parsed?.vms) ? parsed.vms : [parsed]);
+  if (values.length !== 1 || !values[0] || typeof values[0] !== 'object') return false;
+  const identityFields = {
+    lume: ['name', 'Name', 'id'],
+    lima: ['name', 'Name'],
+    tart: ['name', 'Name'],
+  }[driver.backend];
+  const reportedNames = identityFields
+    .map(field => values[0][field])
+    .filter(value => typeof value === 'string');
+  return reportedNames.length > 0 && reportedNames.every(value => value === resourceName);
+}
+
+function inspectOwnedProcess(processIdentity, run) {
+  const result = cleanupCommand(run, '/bin/ps', [
+    '-p', String(processIdentity.pid), '-o', 'pgid=', '-o', 'lstart=', '-o', 'command=',
+  ]);
+  if (result?.error) return { state: 'unknown' };
+  if (result?.status !== 0) return { state: 'absent' };
+  const match = String(result.stdout || '').trim().match(
+    /^(\d+)\s+(\S+\s+\S+\s+\d{1,2}\s+\d{2}:\d{2}:\d{2}\s+\d{4})\s+(.+)$/
+  );
+  if (!match) return { state: 'unknown' };
+  const current = {
+    pgid: Number(match[1]),
+    started: match[2],
+    command: match[3],
+  };
+  return current.pgid === processIdentity.pgid
+    && current.started === processIdentity.started
+    && current.command === processIdentity.command
+    ? { state: 'owned' }
+    : { state: 'different' };
+}
+
+function cleanupOwnedProcesses(receipt, dependencies) {
+  if (!receipt.process_receipt) return { pass: true, verified: true };
+  let records;
+  try { records = readProcessReceipts(receipt); } catch {
+    return { pass: false, verified: false };
+  }
+  const run = dependencies.run || spawnSync;
+  const signalProcess = dependencies.signalProcess || process.kill.bind(process);
+  const ordered = [
+    ...records.filter(record => record.kind === 'helper').reverse(),
+    ...records.filter(record => record.kind === 'launcher').reverse(),
+  ];
+  for (const record of ordered) {
+    const before = inspectOwnedProcess(record, run);
+    if (before.state === 'absent') continue;
+    if (before.state !== 'owned') return { pass: false, verified: false };
+    const target = record.kind === 'launcher' && record.pgid === record.pid
+      ? -record.pgid
+      : record.pid;
+    try { signalProcess(target, 'SIGTERM'); } catch (error) {
+      if (error?.code !== 'ESRCH') return { pass: false, verified: false };
+    }
+    let after = inspectOwnedProcess(record, run);
+    if (after.state === 'owned') {
+      try { signalProcess(target, 'SIGKILL'); } catch (error) {
+        if (error?.code !== 'ESRCH') return { pass: false, verified: false };
+      }
+      after = inspectOwnedProcess(record, run);
+    }
+    if (after.state !== 'absent') return { pass: false, verified: false };
+  }
+  return { pass: true, verified: true };
+}
+
+function cleanupOwnedVm(receipt, dependencies) {
+  const driver = vmDriver(receipt.backend);
+  const run = dependencies.run || spawnSync;
+  const processCleanup = cleanupOwnedProcesses(receipt, dependencies);
+  if (!processCleanup.pass || !processCleanup.verified) {
+    return { attempted: false, pass: false, verified: false };
+  }
+  let storagePath;
+  if (driver.backend === 'lume' && receipt.process_receipt) {
+    try {
+      storagePath = readProcessReceipts(receipt).find(record => record.kind === 'storage')?.storage_path;
+      withLumeStorage(['get', receipt.resource_name], storagePath);
+    } catch {
+      return { attempted: false, pass: false, verified: false };
+    }
+  }
+  const bindStorage = argv => storagePath === undefined ? argv : withLumeStorage(argv, storagePath);
+  const inspect = () => cleanupCommand(
+    run,
+    driver.binary,
+    bindStorage(driver.seedCheckArgs(receipt.resource_name))
+  );
+  const before = inspect();
+  if (vmResourceMissing(driver, before)) {
+    return { attempted: false, pass: true, verified: true };
+  }
+  if (!commandSucceeded(before)) {
+    return { attempted: false, pass: false, verified: false };
+  }
+  if (!vmInspectionMatches(driver, before, receipt.resource_name)) {
+    return { attempted: false, pass: false, verified: false };
+  }
+  const stop = cleanupCommand(run, driver.binary, bindStorage(driver.stopArgs(receipt.resource_name)));
+  if (!commandSucceeded(stop)) {
+    return { attempted: true, pass: false, verified: false };
+  }
+  const afterStop = inspect();
+  if (vmResourceMissing(driver, afterStop)) {
+    return { attempted: true, pass: true, verified: true };
+  }
+  if (
+    !commandSucceeded(afterStop)
+    || !vmInspectionMatches(driver, afterStop, receipt.resource_name)
+  ) {
+    return { attempted: true, pass: false, verified: false };
+  }
+  const removal = cleanupCommand(run, driver.binary, bindStorage(driver.deleteArgs(receipt.resource_name)));
+  const verified = vmResourceMissing(driver, inspect());
+  return { attempted: true, pass: commandSucceeded(removal) && verified, verified };
+}
+
+function cleanupApprovedRouteOwnership(receipt, dependencies = {}) {
+  const validated = validateOwnershipReceipt(receipt);
+  const run = dependencies.run || spawnSync;
+  return validated.backend === 'podman'
+    ? cleanupOwnedPodman(validated, run)
+    : cleanupOwnedVm(validated, dependencies);
+}
+
+function routeWorkerDeadlineError(deadlineAt) {
+  const error = new Error('Fabric approved-route worker exceeded its controller-owned deadline');
+  error.name = 'FabricJobDeadlineError';
+  error.code = 'FABRIC_JOB_DEADLINE_EXCEEDED';
+  error.deadlineAt = deadlineAt;
+  return error;
+}
+
+function routeWorkerAbortError(signal) {
+  if (signal?.reason instanceof Error) return signal.reason;
+  const error = new Error('Fabric approved-route worker was aborted');
+  error.name = 'AbortError';
+  error.code = 'FABRIC_JOB_ABORTED';
+  return error;
+}
+
+function superviseApprovedRouteWorker(worker, executionOptions = {}) {
+  const signal = executionOptions.signal;
+  const deadlineAt = executionOptions.deadlineAt;
+  if (signal !== undefined && (!signal || typeof signal.addEventListener !== 'function')) {
+    return Promise.reject(new Error('Fabric route worker signal must be an AbortSignal'));
+  }
+  if (deadlineAt !== undefined && (!Number.isSafeInteger(deadlineAt) || deadlineAt <= 0)) {
+    return Promise.reject(new Error('Fabric route worker deadline must be a positive integer'));
+  }
+  return new Promise((resolve, reject) => {
+    let settled = false;
+    let deadlineTimer;
+    const cleanup = () => {
+      clearTimeout(deadlineTimer);
+      signal?.removeEventListener('abort', onAbort);
+      worker.removeListener('message', onMessage);
+      worker.removeListener('error', onError);
+      worker.removeListener('exit', onExit);
+    };
+    const finish = (callback, value) => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      callback(value);
+    };
+    const terminateAndReject = error => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      Promise.resolve().then(async () => {
+        const failures = [error];
+        try {
+          await worker.terminate();
+        } catch (terminationError) {
+          failures.push(terminationError);
+        }
+        if (executionOptions.ownershipReceipt) {
+          try {
+            if (typeof executionOptions.cleanupOwnership !== 'function') {
+              throw new Error('Fabric route worker ownership cleanup is unavailable');
+            }
+            const result = await executionOptions.cleanupOwnership(
+              executionOptions.ownershipReceipt
+            );
+            if (result?.pass !== true || result?.verified !== true) {
+              throw new Error('Fabric route worker ownership cleanup was not verified');
+            }
+          } catch (cleanupError) {
+            failures.push(cleanupError);
+          }
+        }
+        if (failures.length === 1) {
+          reject(error);
+          return;
+        }
+        const cleanupFailed = failures.some(candidate => (
+          /ownership cleanup/i.test(candidate.message || '')
+        ));
+        reject(new AggregateError(
+          failures,
+          cleanupFailed
+            ? 'Fabric route worker ownership cleanup was not verified'
+            : 'Fabric route worker termination failed'
+        ));
+      });
+    };
+    const onMessage = message => {
+      if (message?.ok) {
+        if (
+          executionOptions.ownershipReceipt
+          && message.execution?.cleanup?.pass !== true
+        ) {
+          terminateAndReject(new Error(
+            'Fabric approved-route worker did not verify backend cleanup'
+          ));
+          return;
+        }
+        finish(resolve, message.execution);
+        return;
+      }
+      const error = new Error(message?.error?.message || 'Fabric route worker failed');
+      if (message?.error?.stack) error.stack = message.error.stack;
+      if (executionOptions.ownershipReceipt) terminateAndReject(error);
+      else finish(reject, error);
+    };
+    const onError = error => {
+      if (executionOptions.ownershipReceipt) terminateAndReject(error);
+      else finish(reject, error);
+    };
+    const onExit = code => {
+      const error = code !== 0
+        ? new Error(`Fabric route worker exited with code ${code}`)
+        : new Error('Fabric route worker exited without an execution result');
+      if (executionOptions.ownershipReceipt) terminateAndReject(error);
+      else finish(reject, error);
+    };
+    const onAbort = () => terminateAndReject(routeWorkerAbortError(signal));
+
+    worker.once('message', onMessage);
+    worker.once('error', onError);
+    worker.once('exit', onExit);
+    signal?.addEventListener('abort', onAbort, { once: true });
+    if (signal?.aborted) {
+      onAbort();
+      return;
+    }
+    if (deadlineAt !== undefined) {
+      const expire = () => terminateAndReject(routeWorkerDeadlineError(deadlineAt));
+      const remainingMs = deadlineAt - Date.now();
+      if (remainingMs <= 0) expire();
+      else deadlineTimer = setTimeout(expire, remainingMs);
+    }
+  });
+}
+
+function runApprovedRouteWorker(options, resolved, approvedRoute, executionOptions = {}) {
+  if (executionOptions.signal?.aborted) {
+    return Promise.reject(routeWorkerAbortError(executionOptions.signal));
+  }
+  const worker = new Worker(__filename, {
+    workerData: {
+      kind: 'ecc.sandbox.fabric-approved-route',
+      options: workerOptions(options, resolved),
+      approvedRoute: { ...approvedRoute },
+      cwd: executionOptions.cwd,
+      deadlineAt: executionOptions.deadlineAt,
+      runId: executionOptions.runId,
+      ownerToken: executionOptions.ownerToken,
+      jobId: executionOptions.jobId,
+      manifestApproval: executionOptions.manifestApproval,
+      ownershipReceipt: executionOptions.ownershipReceipt,
+      containerName: executionOptions.containerName,
+      vmName: executionOptions.vmName,
+    },
+  });
+  const cleanupOwnership = executionOptions.cleanupOwnership
+    || (options.mockPath
+      ? async () => ({ attempted: false, pass: true, verified: true })
+      : cleanupApprovedRouteOwnership);
+  const supervised = superviseApprovedRouteWorker(worker, {
+    ...executionOptions,
+    cleanupOwnership,
+  });
+  if (executionOptions.ownershipReceipt) {
+    Object.defineProperty(supervised, 'ownedCleanupHandshake', { value: true });
+  }
+  return supervised;
+}
+
+function addEscalation(initial, destination, options = {}) {
+  const failedStep = options.failedStep
+    || initial.report.steps.find(step => step.exit !== 0);
+  const initialEvidence = failedStep
+    ? tailOutput(failedStep.stderr_tail || failedStep.stdout_tail, 10, 2_000)
+    : 'policy denial detected without bounded step output';
+  const from = options.from || 'srt';
+  const reason = options.reason || 'installer or system-write policy denial';
+  const to = options.to || destination.report.backend;
+  const notePrefix = options.notePrefix || 'Initial SRT attempt denied before one-hop escalation';
+  destination.report = validateReport({
+    ...destination.report,
+    started: initial.report.started,
+    duration_ms: initial.report.duration_ms + destination.report.duration_ms,
+    escalations: [{
+      from,
+      reason,
+      to,
+    }],
+    notes: [
+      ...destination.report.notes,
+      `${notePrefix}: ${initialEvidence}`,
+    ],
+  });
+  return destination;
+}
+
+function executeCiRoutes(resolved, routes, executionOptions = {}) {
+  return executeCi(resolved.manifest, routes, {
+    mock: executionOptions.mock,
+    run: executionOptions.run,
+    artifactDirectory: process.env.ECC_SANDBOX_CI_ARTIFACT_DIR,
+    cwd: path.resolve(executionOptions.cwd || process.cwd()),
+    gitRoot: process.env.ECC_SANDBOX_CI_GIT_ROOT,
+    manifestPath: resolved.manifestPath,
+    ref: process.env.ECC_SANDBOX_CI_REF,
+    repository: process.env.ECC_SANDBOX_CI_REPO,
+    ...(executionOptions.ciOptions || {}),
+    requireNoEscalations: true,
+  });
+}
+
+function executeWithEscalation(resolved, route, executionOptions) {
+  const initial = executeRoute(resolved, route, executionOptions);
+  const escalationBudget = executionOptions.escalationBudget || { remaining: 1 };
+  if (route.backend === 'srt' && initial.denial?.installer) {
+    const escalationRoute = resolveRuntimeEscalation(
+      resolved.manifest,
+      resolved.capabilities,
+      route
+    );
+    if (escalationRoute.result !== 'routable') {
+      initial.report = validateReport({
+        ...initial.report,
+        notes: [
+          ...initial.report.notes,
+          `Automatic escalation unavailable: ${escalationRoute.reason}. ${escalationRoute.fix}`,
+        ],
+      });
+      return initial;
+    }
+    if (escalationBudget.remaining < 1) {
+      initial.report = validateReport({
+        ...initial.report,
+        notes: [
+          ...initial.report.notes,
+          'Automatic escalation skipped: the run-wide one-escalation budget is already consumed',
+        ],
+      });
+      return initial;
+    }
+    escalationBudget.remaining -= 1;
+    return addEscalation(
+      initial,
+      executeRoute(resolved, escalationRoute, executionOptions)
+    );
+  }
+
+  const nativeFailure = containerNativeFailure(initial.report);
+  if (!nativeFailure || initial.cleanup?.pass !== true) return initial;
+  const escalationRoute = resolveRuntimeEscalation(
+    resolved.manifest,
+    resolved.capabilities,
+    { ...route, backend: initial.report.backend },
+    { localOnly: executionOptions.localOnly === true }
+  );
+  if (escalationRoute.result !== 'routable') {
+    initial.report = validateReport({
+      ...initial.report,
+      notes: [
+        ...initial.report.notes,
+        `Automatic native escalation unavailable: ${escalationRoute.reason}. ${escalationRoute.fix}`,
+      ],
+    });
+    return initial;
+  }
+  if (escalationBudget.remaining < 1) {
+    initial.report = validateReport({
+      ...initial.report,
+      notes: [
+        ...initial.report.notes,
+        'Automatic native escalation skipped: the run-wide one-escalation budget is already consumed',
+      ],
+    });
+    return initial;
+  }
+  escalationBudget.remaining -= 1;
+  const destination = escalationRoute.backend === 'ci'
+    ? executeCiRoutes(resolved, [escalationRoute], executionOptions)
+    : executeRoute(resolved, escalationRoute, executionOptions);
+  return addEscalation(
+    initial,
+    destination,
+    {
+      failedStep: nativeFailure.step,
+      from: initial.report.backend,
+      reason: nativeFailure.reason,
+      to: escalationRoute.backend,
+      notePrefix: `Initial Tier 1 ${nativeFailure.family} failure before one-hop escalation`,
+    }
+  );
+}
+
+function appendExecutionReport(report, aggregate) {
+  if (report.backend === 'aggregate') {
+    aggregate.children.push(...report.children);
+    aggregate.escalations.push(...report.escalations);
+    aggregate.notes.push(...report.notes);
+    aggregate.usedCi ||= ['ci', 'mixed'].includes(report.venue);
+    return;
+  }
+  aggregate.children.push(report);
+}
+
+function runExecution(options, overrides = {}) {
+  const resolved = resolveRun(options);
+  if (resolved.decision.result !== 'routable') {
+    const failed = resolved.decision.routes.find(route => route.result === 'error');
+    throw new Error(`${failed.reason}. ${failed.fix}`);
+  }
+  let run;
+  let mock = false;
+  if (options.mockPath) {
+    run = mockRunner(loadMockScenario(path.resolve(options.mockPath), 'sandbox'));
+    mock = true;
+  }
+  const executionOptions = {
+    escalationBudget: { remaining: 1 },
+    localOnly: options.localOnly,
+    mock,
+    run,
+    ...overrides,
+  };
+  const ciRoutes = resolved.decision.routes.filter(route => route.backend === 'ci');
+  const localRoutes = resolved.decision.routes.filter(route => route.backend !== 'ci');
+  if (ciRoutes.length === 0 && localRoutes.length === 1) {
+    return executeWithEscalation(resolved, localRoutes[0], executionOptions);
+  }
+
+  const orchestrationStartedMs = Date.now();
+  const started = new Date(orchestrationStartedMs).toISOString();
+  const aggregate = {
+    children: [],
+    escalations: [],
+    notes: [],
+    usedCi: ciRoutes.length > 0,
+  };
+  for (const route of localRoutes) {
+    appendExecutionReport(
+      executeWithEscalation(resolved, route, executionOptions).report,
+      aggregate
+    );
+  }
+  if (ciRoutes.length > 0) {
+    const ci = executeCiRoutes(resolved, ciRoutes, executionOptions);
+    appendExecutionReport(ci.report, aggregate);
+  }
+  const venue = aggregate.usedCi
+    ? (localRoutes.length === 0 ? 'ci' : 'mixed')
+    : 'local';
+  const report = buildAggregateReport({
+    manifest: resolved.manifestPath,
+    venue,
+    started,
+    durationMs: Date.now() - orchestrationStartedMs,
+    children: aggregate.children,
+    escalations: aggregate.escalations,
+    notes: aggregate.notes,
+  });
+  return {
+    report,
+    exitCode: report.result === 'pass' ? 0 : (report.result === 'fail' ? 1 : 2),
+  };
 }
 
 function runProbe(options) {
@@ -240,6 +1300,56 @@ function runReport(args) {
   };
 }
 
+function runEscalation(options) {
+  const reportPath = path.resolve(options.reportPath);
+  const sourceReport = validateReport(JSON.parse(
+    readBoundedRegularFile(reportPath, 'Sandbox report')
+  ));
+  if (sourceReport.backend !== 'srt' || sourceReport.tier !== 0) {
+    throw new Error('escalate accepts only a Tier 0 SRT report');
+  }
+  if (sourceReport.escalations.length !== 0) {
+    throw new Error('this report already contains its one permitted escalation');
+  }
+  if (
+    sourceReport.result === 'pass'
+    || !sourceReport.notes.some(note => (
+      note.includes('installer or system-write command is eligible for one-hop escalation')
+    ))
+  ) {
+    throw new Error('the SRT report does not record an eligible installer or system-write denial');
+  }
+
+  const manifestPath = path.isAbsolute(sourceReport.manifest)
+    ? sourceReport.manifest
+    : path.resolve(path.dirname(reportPath), sourceReport.manifest);
+  const resolved = {
+    capabilities: loadCapabilities(options.capabilitiesPath),
+    manifest: loadManifest(manifestPath),
+    manifestPath,
+  };
+  const route = resolveRuntimeEscalation(
+    resolved.manifest,
+    resolved.capabilities,
+    { backend: 'srt', os: sourceReport.os, arch: sourceReport.arch }
+  );
+  if (route.result !== 'routable') {
+    throw new Error(`${route.reason}. ${route.fix}`);
+  }
+  let run;
+  let mock = false;
+  if (options.mockPath) {
+    run = mockRunner(loadMockScenario(path.resolve(options.mockPath), route.backend));
+    mock = true;
+  }
+  // DECISION: CONVENTIONS item 24 makes manual escalation consume the prior
+  // denial report and execute only the one destination attempt.
+  return addEscalation(
+    { report: sourceReport },
+    executeRoute(resolved, route, { mock, run })
+  );
+}
+
 function main(argv = process.argv.slice(2)) {
   const [command, ...args] = argv;
   if (!command || command === '--help' || command === '-h' || command === 'help') {
@@ -249,10 +1359,11 @@ function main(argv = process.argv.slice(2)) {
   if (!COMMANDS.includes(command)) {
     throw new Error(`Unknown command: ${command}`);
   }
-  if (interactiveCli.handles(command)) {
-    return interactiveCli.runCommand(command, args, {
+  if (reviewCli.handles(command)) {
+    return reviewCli.runCommand(command, args, {
       cliPath: path.resolve(__filename),
       resolveRun,
+      runExecution,
       writeJson,
     });
   }
@@ -267,6 +1378,30 @@ function main(argv = process.argv.slice(2)) {
     writeJson(outcome.report);
     return outcome.exitCode;
   }
+  if (command === 'preflight') {
+    const options = parseRunArgs(args);
+    if (options.mockPath || options.dryRun || options.shard) {
+      throw new Error('preflight requires a live host resource snapshot; --mock, --dry-run, and --shard are unsupported');
+    }
+    const preview = resourcePreflight(resolveRun(options));
+    writeJson(preview);
+    return preview.result === 'ready' ? 0 : 2;
+  }
+  if (command === 'fabric') {
+    const options = parseFabricArgs(args);
+    return fabricController.runFabric(options, {
+      resolveRun,
+      runApprovedRoute: (resolved, approvedRoute, executionOptions) => (
+        runApprovedRouteWorker(options, resolved, approvedRoute, executionOptions)
+      ),
+      verifyApprovedRouteOwnership: options.mockPath
+        ? async () => ({ attempted: false, pass: true, verified: true })
+        : cleanupApprovedRouteOwnership,
+    }).then(outcome => {
+      writeJson(outcome);
+      return ['planned', 'pass'].includes(outcome.result) ? 0 : 1;
+    });
+  }
   if (command === 'probe') {
     writeJson(runProbe(parseProbeArgs(args)));
     return 0;
@@ -275,22 +1410,58 @@ function main(argv = process.argv.slice(2)) {
     writeJson(runReport(args));
     return 0;
   }
-  throw new Error(`${command} is unavailable until its implementation phase`);
+  const outcome = runEscalation(parseEscalateArgs(args));
+  writeJson(outcome.report);
+  return outcome.exitCode;
 }
 
-if (require.main === module) {
+function writeCliError(error) {
+  writeJson({
+    result: 'error',
+    error: {
+      code: error.name === 'ContractValidationError' ? 'contract-invalid' : 'sandbox-cli-error',
+      message: error.message,
+      details: error.errors || [],
+    },
+  });
+  process.exitCode = 2;
+}
+
+if (!isMainThread && workerData?.kind === 'ecc.sandbox.fabric-approved-route') {
   try {
-    process.exitCode = main();
+    const execution = runApprovedRouteFromOptions(
+      workerData.options,
+      workerData.approvedRoute,
+      {
+        cwd: workerData.cwd,
+        deadlineAt: workerData.deadlineAt,
+        lifecycle: createFabricWorkerLifecycle(workerData.ownershipReceipt),
+        manifestApproval: workerData.manifestApproval,
+        runId: workerData.runId,
+        ownerToken: workerData.ownerToken,
+        jobId: workerData.jobId,
+        ownershipReceipt: workerData.ownershipReceipt,
+        containerName: workerData.containerName,
+        vmName: workerData.vmName,
+      }
+    );
+    parentPort.postMessage({ ok: true, execution });
   } catch (error) {
-    writeJson({
-      result: 'error',
-      error: {
-        code: error.name === 'ContractValidationError' ? 'contract-invalid' : 'sandbox-cli-error',
-        message: error.message,
-        details: error.errors || [],
-      },
+    parentPort.postMessage({
+      ok: false,
+      error: { message: error.message, stack: error.stack },
     });
-    process.exitCode = 2;
+  }
+} else if (require.main === module) {
+  try {
+    const result = main();
+    if (result && typeof result.then === 'function') {
+      result.then(code => { process.exitCode = code; }).catch(writeCliError);
+    } else {
+      process.exitCode = result;
+    }
+  } catch (error) {
+    writeCliError(error);
   }
 }
 
@@ -300,12 +1471,29 @@ module.exports = {
   help,
   loadCapabilities,
   main,
+  parseEscalateArgs,
+  parseFabricArgs,
   parseRunArgs,
   parseProbeArgs,
   resolveRun,
   runExecution,
+  runApprovedRoute,
+  runApprovedRouteFromOptions,
+  runApprovedRouteWorker,
+  superviseApprovedRouteWorker,
+  cleanupApprovedRouteOwnership,
+  createFabricWorkerLifecycle,
   runProbe,
   runDryRun,
+  runEscalation,
   runReport,
+  executeRoute,
+  executeCiRoutes,
+  executeWithEscalation,
+  assertReportMatchesApprovedRoute,
+  assertManifestApproval,
+  addEscalation,
+  appendExecutionReport,
+  containerNativeFailure,
   writeJson,
 };

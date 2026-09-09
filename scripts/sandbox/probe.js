@@ -10,6 +10,10 @@ const { resolveWindowsSrtShim } = require('./backends/srt');
 
 const PROBE_TIMEOUT_MS = 5_000;
 const MAX_PROBE_BUFFER = 1024 * 1024;
+const MICROSANDBOX_VERSION = '0.6.8';
+const LUME_VERSION = '0.5.1';
+const LIMA_VERSION = '2.2.0';
+const TART_VERSION = '2.32.1';
 
 function runCommand(executable, argv = []) {
   return spawnSync(executable, argv, {
@@ -34,6 +38,13 @@ function commandVersion(run, executable, argv = ['--version']) {
   return succeeded(result) ? firstLine(result.stdout || result.stderr) : null;
 }
 
+function reportsVersion(value, expected) {
+  const escaped = expected.replace(/\./g, '\\.');
+  return new RegExp(`(?:^|[^0-9A-Za-z.+-])v?${escaped}(?:$|[^0-9A-Za-z.+-])`).test(
+    value || ''
+  );
+}
+
 function backend(available, values = {}) {
   return Object.fromEntries(Object.entries({
     available: Boolean(available),
@@ -49,9 +60,9 @@ function installFix(tool, platform) {
       windows: 'Install Podman: winget install --exact --id RedHat.Podman && podman machine init && podman machine start',
     },
     microsandbox: {
-      linux: 'Install microsandbox: curl -fsSL https://install.microsandbox.dev | sh',
-      macos: 'Install microsandbox: curl -fsSL https://install.microsandbox.dev | sh',
-      windows: 'Install microsandbox from https://github.com/superradcompany/microsandbox/releases',
+      linux: `Install pinned Microsandbox: cargo install microsandbox-cli --version ${MICROSANDBOX_VERSION} --locked`,
+      macos: `Install pinned Microsandbox: cargo install microsandbox-cli --version ${MICROSANDBOX_VERSION} --locked`,
+      windows: `Install pinned Microsandbox: cargo install microsandbox-cli --version ${MICROSANDBOX_VERSION} --locked`,
     },
     lima: {
       linux: 'Install Lima from https://lima-vm.io/docs/installation/',
@@ -241,10 +252,67 @@ function detectCi(run, platform) {
       { os: 'macos', arch: 'x86_64' },
       { os: 'macos', arch: 'arm64' },
       { os: 'windows', arch: 'x86_64' },
+      { os: 'windows', arch: 'arm64' },
     ] : [],
     capabilities: available ? ['ios-simulator'] : [],
     reason: available ? 'GitHub CLI authentication is ready' : 'GitHub CLI is not authenticated',
     fix: available ? undefined : 'Authenticate GitHub CLI: gh auth login',
+  });
+}
+
+function detectMicrosandbox(run, platform, architecture, virtualization) {
+  const version = commandVersion(run, 'msb');
+  if (!version) {
+    return backend(false, {
+      version: null,
+      state: 'unavailable',
+      targets: [],
+      reason: 'microsandbox not found',
+      fix: installFix('microsandbox', platform),
+    });
+  }
+  if (!new RegExp(`(?:^|\\s)${MICROSANDBOX_VERSION.replace(/\./g, '\\.')}\\b`).test(version)) {
+    return backend(false, {
+      version,
+      state: 'unavailable',
+      targets: [],
+      reason: `microsandbox ${version} is outside ECC's pinned ${MICROSANDBOX_VERSION} adapter contract`,
+      fix: installFix('microsandbox', platform),
+    });
+  }
+  if (!virtualization) {
+    return backend(false, {
+      version,
+      state: 'unavailable',
+      targets: [],
+      reason: 'microsandbox needs hardware virtualization',
+      fix: 'Enable KVM, Apple Virtualization.framework, or Windows Hypervisor Platform, then run: msb doctor',
+    });
+  }
+  const doctor = run('msb', ['doctor']);
+  const ready = succeeded(doctor);
+  return backend(ready, {
+    version,
+    state: ready ? 'ready' : 'not-configured',
+    targets: ready ? [{ os: 'linux', arch: architecture }] : [],
+    capabilities: ready ? ['domain-network-policy'] : [],
+    reason: ready ? 'microsandbox doctor passed' : 'microsandbox doctor reported an unavailable runtime dependency',
+    fix: ready ? undefined : 'Repair the checks reported by: msb doctor',
+  });
+}
+
+function detectCiNative(platform, architecture, environment) {
+  const ready = environment.GITHUB_ACTIONS === 'true'
+    && environment.ECC_SANDBOX_CI_NATIVE === '1';
+  return backend(ready, {
+    version: null,
+    state: ready ? 'ready' : 'unavailable',
+    targets: ready ? [{ os: platform, arch: architecture }] : [],
+    capabilities: ready && platform === 'macos' ? ['ios-simulator'] : [],
+    reason: ready
+      ? 'explicit GitHub-hosted native runner mode is enabled'
+      : 'ci-native is available only inside the sandbox matrix workflow',
+    fix: ready ? undefined : 'Dispatch through ecc-sandbox with an authenticated GitHub CLI: gh auth login',
   });
 }
 
@@ -320,19 +388,23 @@ function detectWindowsFeatures(run, architecture) {
   ]);
   const hypervReady = succeeded(hyperv) && /enabled/i.test(hyperv.stdout);
   return {
-    'windows-sandbox': backend(Boolean(wsbVersion), {
+    'windows-sandbox': backend(false, {
       version: wsbVersion,
-      state: wsbVersion ? 'ready' : 'unavailable',
-      targets: wsbVersion ? [{ os: 'windows', arch: architecture }] : [],
-      reason: wsbVersion ? 'Windows Sandbox CLI is ready' : 'Windows Sandbox CLI is unavailable',
-      fix: wsbVersion ? undefined : 'Enable Windows Sandbox: Enable-WindowsOptionalFeature -Online -FeatureName Containers-DisposableClientVM -All',
+      state: wsbVersion ? 'detected-redirect' : 'unavailable',
+      targets: [],
+      reason: wsbVersion
+        ? `Windows Sandbox CLI was detected for ${architecture}, but local Windows guest execution redirects to CI in v1`
+        : 'Windows Sandbox CLI is unavailable; local Windows guest execution redirects to CI in v1',
+      fix: 'Run without --local-only with GitHub authentication: gh auth login',
     }),
-    'hyper-v': backend(hypervReady, {
+    'hyper-v': backend(false, {
       version: null,
-      state: hypervReady ? 'ready' : 'unavailable',
-      targets: hypervReady ? [{ os: 'windows', arch: architecture }] : [],
-      reason: hypervReady ? 'Hyper-V is enabled' : 'Hyper-V is not enabled',
-      fix: hypervReady ? undefined : 'Enable Hyper-V: Enable-WindowsOptionalFeature -Online -FeatureName Microsoft-Hyper-V-All -All',
+      state: hypervReady ? 'detected-redirect' : 'unavailable',
+      targets: [],
+      reason: hypervReady
+        ? 'Hyper-V is enabled, but ECC v1 redirects Windows guest execution to CI'
+        : 'Hyper-V is not enabled; ECC v1 redirects Windows guest execution to CI',
+      fix: 'Run without --local-only with GitHub authentication: gh auth login',
     }),
   };
 }
@@ -362,7 +434,6 @@ function probeCapabilities(options = {}) {
     || probeEnv.ECC_SANDBOX_ALLOW_NESTED_SRT === '1';
   const virtualization = detectVirtualization(platform, architecture, run, canAccess);
   const target = [{ os: 'linux', arch: architecture }];
-  const microsandboxVersion = commandVersion(run, 'msb');
   const lumeVersion = commandVersion(run, 'lume');
   const limaVersion = commandVersion(run, 'limactl');
   const tartVersion = commandVersion(run, 'tart');
@@ -372,14 +443,17 @@ function probeCapabilities(options = {}) {
       'windows-sandbox': backend(false, { state: 'unavailable', reason: 'requires a Windows host' }),
       'hyper-v': backend(false, { state: 'unavailable', reason: 'requires a Windows host' }),
     };
+  const lumeVersionReady = reportsVersion(lumeVersion, LUME_VERSION);
+  const limaVersionReady = reportsVersion(limaVersion, LIMA_VERSION);
+  const tartVersionReady = reportsVersion(tartVersion, TART_VERSION);
   const lumeReady = Boolean(
-    lumeVersion && platform === 'macos' && architecture === 'arm64' && virtualization
+    lumeVersionReady && platform === 'macos' && architecture === 'arm64' && virtualization
   );
   const tartReady = Boolean(
-    tartVersion && platform === 'macos' && architecture === 'arm64' && virtualization
+    tartVersionReady && platform === 'macos' && architecture === 'arm64' && virtualization
   );
   const limaReady = Boolean(
-    limaVersion && ['macos', 'linux'].includes(platform) && virtualization
+    limaVersionReady && ['macos', 'linux'].includes(platform) && virtualization
   );
 
   const capabilities = {
@@ -399,25 +473,20 @@ function probeCapabilities(options = {}) {
         fileExists,
       }),
       podman: detectPodman(run, platform, architecture),
-      microsandbox: backend(Boolean(microsandboxVersion) && Boolean(virtualization), {
-        version: microsandboxVersion,
-        state: microsandboxVersion && virtualization ? 'ready' : 'unavailable',
-        targets: microsandboxVersion && virtualization ? target : [],
-        capabilities: microsandboxVersion && virtualization ? ['domain-network-policy'] : [],
-        reason: microsandboxVersion
-          ? (virtualization ? 'microsandbox is ready' : 'microsandbox needs hardware virtualization')
-          : 'microsandbox not found',
-        fix: microsandboxVersion ? undefined : installFix('microsandbox', platform),
-      }),
+      microsandbox: detectMicrosandbox(run, platform, architecture, virtualization),
       lume: backend(lumeReady, {
         version: lumeVersion,
         state: lumeReady ? 'ready' : 'unavailable',
         targets: lumeReady ? [{ os: 'macos', arch: 'arm64' }] : [],
         reason: platform === 'macos' && architecture === 'arm64'
-          ? (lumeVersion ? 'Lume requires hardware virtualization' : 'Lume not found')
+          ? (lumeVersion
+            ? (lumeVersionReady
+              ? (virtualization ? 'Lume is ready for macOS guests' : 'Lume requires hardware virtualization')
+              : `Lume ${lumeVersion} is outside ECC's pinned ${LUME_VERSION} adapter contract`)
+            : 'Lume not found')
           : 'Lume requires an Apple Silicon macOS host',
-        fix: !lumeVersion && platform === 'macos' && architecture === 'arm64'
-          ? '/bin/bash -c "$(curl -fsSL https://cua.ai/lume/install.sh)"'
+        fix: !lumeReady && platform === 'macos' && architecture === 'arm64'
+          ? `LUME_VERSION=${LUME_VERSION} /bin/bash -c "$(curl -fsSL https://cua.ai/lume/install.sh)" -- --no-background-service`
           : undefined,
       }),
       lima: backend(limaReady, {
@@ -426,23 +495,34 @@ function probeCapabilities(options = {}) {
         targets: limaReady ? target : [],
         reason: ['macos', 'linux'].includes(platform)
           ? (limaVersion
-            ? (virtualization ? 'Lima is ready for Linux guests' : 'Lima needs hardware virtualization')
+            ? (limaVersionReady
+              ? (virtualization ? 'Lima is ready for Linux guests' : 'Lima needs hardware virtualization')
+              : `Lima ${limaVersion} is outside ECC's pinned ${LIMA_VERSION} adapter contract`)
             : 'Lima not found')
           : 'Lima requires a macOS or Linux host',
-        fix: limaVersion ? undefined : installFix('lima', platform),
+        fix: limaReady ? undefined : installFix('lima', platform),
       }),
       tart: backend(tartReady, {
         version: tartVersion,
         state: tartReady ? 'ready' : 'unavailable',
         targets: tartReady ? [{ os: 'macos', arch: 'arm64' }] : [],
-        reason: tartVersion ? 'Optional Fair Source Tart backend detected' : 'Optional Tart backend not installed',
+        reason: platform === 'macos' && architecture === 'arm64'
+          ? (tartVersion
+            ? (tartVersionReady
+              ? (virtualization
+                ? 'Optional Fair Source Tart backend is ready'
+                : 'Tart requires hardware virtualization')
+              : `Tart ${tartVersion} is outside ECC's pinned ${TART_VERSION} adapter contract`)
+            : 'Optional Tart backend not installed')
+          : 'Tart requires an Apple Silicon macOS host',
       }),
       ...windows,
       'dockur-windows': backend(false, {
         version: null,
         state: 'not-configured',
-        reason: 'dockur/windows is detection-only in v1; use Windows Sandbox or CI',
+        reason: 'dockur/windows is detection-only in v1; use hosted CI',
       }),
+      'ci-native': detectCiNative(platform, architecture, probeEnv),
       ci: detectCi(run, platform),
     },
   };
@@ -469,15 +549,20 @@ function readCapabilityCache(filePath) {
 }
 
 module.exports = {
+  LIMA_VERSION,
+  LUME_VERSION,
+  TART_VERSION,
   MAX_PROBE_BUFFER,
   PROBE_TIMEOUT_MS,
   commandVersion,
   detectInsideContainer,
+  detectCiNative,
   detectPodman,
   detectSrt,
   detectVirtualization,
   probeCapabilities,
   readCapabilityCache,
+  reportsVersion,
   runCommand,
   writeCapabilityCache,
 };

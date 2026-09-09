@@ -1,0 +1,290 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://ecc.tools/schemas/sandbox-fabric-run.schema.json",
+  "title": "ECC sandbox fabric run envelope",
+  "oneOf": [
+    { "$ref": "#/definitions/singleRun" },
+    { "$ref": "#/definitions/multiRun" }
+  ],
+  "definitions": {
+    "id": {
+      "type": "string", "minLength": 1, "maxLength": 120,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+    },
+    "sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+    "path": { "type": "string", "minLength": 1, "maxLength": 4096 },
+    "cleanup": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["attempted", "pass", "retained"],
+      "properties": {
+        "attempted": { "type": "boolean" },
+        "pass": { "type": "boolean" },
+        "retained": { "type": "boolean" },
+        "error": { "type": "string", "minLength": 1, "maxLength": 4096 }
+      }
+    },
+    "singleRun": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_version", "kind", "run_id", "job_id", "result", "run_directory",
+        "plan", "report", "workspace", "artifact", "evaluation", "promotion",
+        "trajectory", "trajectory_digest", "cleanup"
+      ],
+      "allOf": [
+        {
+          "if": { "properties": { "schema_version": { "const": 2 } } },
+          "then": {
+            "type": "object",
+            "required": ["execution", "resource_monitoring"],
+            "properties": { "execution": {}, "resource_monitoring": {} }
+          },
+          "else": {
+            "not": {
+              "anyOf": [
+                {
+                  "type": "object", "required": ["execution"],
+                  "properties": { "execution": {} }
+                },
+                {
+                  "type": "object", "required": ["resource_monitoring"],
+                  "properties": { "resource_monitoring": {} }
+                }
+              ]
+            }
+          }
+        }
+      ],
+      "properties": {
+        "schema_version": { "enum": [1, 2] },
+        "kind": { "const": "ecc.sandbox.fabric-run" },
+        "run_id": { "$ref": "#/definitions/id" },
+        "job_id": { "$ref": "#/definitions/id" },
+        "result": { "enum": ["pass", "fail"] },
+        "run_directory": { "$ref": "#/definitions/path" },
+        "plan": { "$ref": "https://ecc.tools/schemas/sandbox-execution-plan.schema.json" },
+        "report": { "$ref": "https://ecc.tools/schemas/sandbox-report.schema.json" },
+        "workspace": {
+          "$ref": "https://ecc.tools/schemas/sandbox-fabric-workspace-receipt.schema.json"
+        },
+        "artifact": {
+          "oneOf": [
+            { "$ref": "https://ecc.tools/schemas/sandbox-patch-artifact.schema.json" },
+            { "type": "null" }
+          ]
+        },
+        "evaluation": {
+          "oneOf": [
+            { "$ref": "https://ecc.tools/schemas/sandbox-evaluation.schema.json" },
+            { "type": "null" }
+          ]
+        },
+        "promotion": {
+          "oneOf": [
+            { "$ref": "https://ecc.tools/schemas/sandbox-promotion.schema.json" },
+            { "type": "null" }
+          ]
+        },
+        "trajectory": { "$ref": "https://ecc.tools/schemas/sandbox-trajectory.schema.json" },
+        "trajectory_digest": { "$ref": "#/definitions/sha256" },
+        "cleanup": { "$ref": "#/definitions/cleanup" },
+        "execution": {
+          "$ref": "https://ecc.tools/schemas/sandbox-execution-boundary.schema.json"
+        },
+        "resource_monitoring": {
+          "$ref": "https://ecc.tools/schemas/sandbox-resource-monitoring.schema.json"
+        }
+      }
+    },
+    "multiRun": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_version", "kind", "run_id", "result", "run_directory", "plan",
+        "report", "jobs", "scheduler"
+      ],
+      "properties": {
+        "schema_version": { "enum": [1, 2] },
+        "kind": { "const": "ecc.sandbox.fabric-run" },
+        "run_id": { "$ref": "#/definitions/id" },
+        "result": { "enum": ["pass", "fail"] },
+        "run_directory": { "$ref": "#/definitions/path" },
+        "plan": { "$ref": "https://ecc.tools/schemas/sandbox-execution-plan.schema.json" },
+        "report": { "$ref": "https://ecc.tools/schemas/sandbox-report.schema.json" },
+        "jobs": {
+          "type": "array", "minItems": 2, "maxItems": 128,
+          "items": { "$ref": "https://ecc.tools/schemas/sandbox-fabric-job.schema.json" }
+        },
+        "scheduler": { "$ref": "#/definitions/scheduler" }
+      }
+    },
+    "scheduler": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["state", "events"],
+      "properties": {
+        "state": { "$ref": "#/definitions/schedulerState" },
+        "events": {
+          "type": "array", "maxItems": 10000,
+          "items": { "$ref": "#/definitions/schedulerEvent" }
+        }
+      }
+    },
+    "schedulerState": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_version", "created_ms", "updated_ms", "event_count", "cancelled",
+        "cancellation_reason", "policy", "tasks", "reservations"
+      ],
+      "properties": {
+        "schema_version": { "const": 1 },
+        "created_ms": { "type": "integer", "minimum": 0 },
+        "updated_ms": { "type": "integer", "minimum": 0 },
+        "event_count": { "type": "integer", "minimum": 0 },
+        "cancelled": { "type": "boolean" },
+        "cancellation_reason": {
+          "type": ["string", "null"], "minLength": 1, "maxLength": 4096
+        },
+        "policy": { "$ref": "#/definitions/schedulerPolicy" },
+        "tasks": {
+          "type": "object",
+          "propertyNames": { "$ref": "#/definitions/id" },
+          "patternProperties": {
+            "^[A-Za-z0-9][A-Za-z0-9._:-]*$": { "$ref": "#/definitions/schedulerTask" }
+          },
+          "additionalProperties": false,
+          "minProperties": 2,
+          "maxProperties": 128
+        },
+        "reservations": { "$ref": "#/definitions/reservations" }
+      }
+    },
+    "schedulerPolicy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["max_parallel", "cpu", "memory_mb", "lease_ms", "per_tier"],
+      "properties": {
+        "max_parallel": { "type": "integer", "minimum": 1, "maximum": 32 },
+        "cpu": { "type": "integer", "minimum": 1 },
+        "memory_mb": { "type": "integer", "minimum": 1 },
+        "lease_ms": { "type": "integer", "minimum": 1 },
+        "per_tier": { "$ref": "#/definitions/tierCounts" }
+      }
+    },
+    "schedulerTask": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id", "tier", "cpu", "memory_mb", "depends_on", "priority", "status",
+        "attempt", "lease_id", "lease_expires_ms", "result", "reason", "started_ms",
+        "finished_ms"
+      ],
+      "properties": {
+        "id": { "$ref": "#/definitions/id" },
+        "tier": { "type": "integer", "minimum": 0, "maximum": 3 },
+        "cpu": { "type": "integer", "minimum": 1 },
+        "memory_mb": { "type": "integer", "minimum": 0 },
+        "depends_on": {
+          "type": "array", "maxItems": 127, "uniqueItems": true,
+          "items": { "$ref": "#/definitions/id" }
+        },
+        "priority": { "type": "integer", "minimum": 0 },
+        "status": { "enum": ["pending", "running", "passed", "failed", "cancelled"] },
+        "attempt": { "type": "integer", "minimum": 0 },
+        "lease_id": { "type": ["string", "null"], "minLength": 1, "maxLength": 256 },
+        "lease_expires_ms": { "type": ["integer", "null"], "minimum": 0 },
+        "result": { "enum": ["pass", "fail", "error", null] },
+        "reason": { "type": ["string", "null"], "minLength": 1, "maxLength": 4096 },
+        "started_ms": { "type": ["integer", "null"], "minimum": 0 },
+        "finished_ms": { "type": ["integer", "null"], "minimum": 0 }
+      }
+    },
+    "reservations": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["running", "cpu", "memory_mb", "by_tier"],
+      "properties": {
+        "running": { "type": "integer", "minimum": 0 },
+        "cpu": { "type": "integer", "minimum": 0 },
+        "memory_mb": { "type": "integer", "minimum": 0 },
+        "by_tier": { "$ref": "#/definitions/tierCounts" }
+      }
+    },
+    "tierCounts": {
+      "type": "object",
+      "patternProperties": { "^[0-3]$": { "type": "integer", "minimum": 0 } },
+      "additionalProperties": false,
+      "maxProperties": 4
+    },
+    "schedulerEvent": {
+      "oneOf": [
+        { "$ref": "#/definitions/taskStarted" },
+        { "$ref": "#/definitions/taskLeaseRenewed" },
+        { "$ref": "#/definitions/taskLeaseExpired" },
+        { "$ref": "#/definitions/taskCompleted" },
+        { "$ref": "#/definitions/taskCancelled" },
+        { "$ref": "#/definitions/schedulerCancelled" }
+      ]
+    },
+    "taskStarted": {
+      "type": "object", "additionalProperties": false,
+      "required": ["type", "task_id", "lease_id", "lease_expires_ms", "now_ms"],
+      "properties": {
+        "type": { "const": "task.started" }, "task_id": { "$ref": "#/definitions/id" },
+        "lease_id": { "type": "string", "minLength": 1, "maxLength": 256 },
+        "lease_expires_ms": { "type": "integer", "minimum": 1 },
+        "now_ms": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "taskLeaseRenewed": {
+      "type": "object", "additionalProperties": false,
+      "required": ["type", "task_id", "lease_id", "lease_expires_ms", "now_ms"],
+      "properties": {
+        "type": { "const": "task.lease_renewed" }, "task_id": { "$ref": "#/definitions/id" },
+        "lease_id": { "type": "string", "minLength": 1, "maxLength": 256 },
+        "lease_expires_ms": { "type": "integer", "minimum": 1 },
+        "now_ms": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "taskLeaseExpired": {
+      "type": "object", "additionalProperties": false,
+      "required": ["type", "task_id", "lease_id", "now_ms"],
+      "properties": {
+        "type": { "const": "task.lease_expired" }, "task_id": { "$ref": "#/definitions/id" },
+        "lease_id": { "type": "string", "minLength": 1, "maxLength": 256 },
+        "now_ms": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "taskCompleted": {
+      "type": "object", "additionalProperties": false,
+      "required": ["type", "task_id", "lease_id", "result", "reason", "now_ms"],
+      "properties": {
+        "type": { "const": "task.completed" }, "task_id": { "$ref": "#/definitions/id" },
+        "lease_id": { "type": "string", "minLength": 1, "maxLength": 256 },
+        "result": { "enum": ["pass", "fail", "error"] },
+        "reason": { "type": ["string", "null"], "minLength": 1, "maxLength": 4096 },
+        "now_ms": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "taskCancelled": {
+      "type": "object", "additionalProperties": false,
+      "required": ["type", "task_id", "reason", "now_ms"],
+      "properties": {
+        "type": { "const": "task.cancelled" }, "task_id": { "$ref": "#/definitions/id" },
+        "reason": { "type": "string", "minLength": 1, "maxLength": 4096 },
+        "now_ms": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "schedulerCancelled": {
+      "type": "object", "additionalProperties": false,
+      "required": ["type", "reason", "now_ms"],
+      "properties": {
+        "type": { "const": "scheduler.cancelled" },
+        "reason": { "type": "string", "minLength": 1, "maxLength": 4096 },
+        "now_ms": { "type": "integer", "minimum": 0 }
+      }
+    }
+  }
+}

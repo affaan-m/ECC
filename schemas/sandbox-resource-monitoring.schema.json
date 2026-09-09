@@ -1,0 +1,105 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://ecc.tools/schemas/sandbox-resource-monitoring.schema.json",
+  "title": "ECC sandbox resource monitoring receipt",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version", "status", "started_at", "completed_at",
+    "sample_interval_ms", "limits", "controls", "telemetry", "samples",
+    "warnings", "stop_reason", "cleanup_triggered"
+  ],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "status": { "enum": ["pass", "warn", "stopped"] },
+    "started_at": { "$ref": "#/definitions/timestamp" },
+    "completed_at": { "$ref": "#/definitions/timestamp" },
+    "sample_interval_ms": { "type": "integer", "minimum": 50, "maximum": 60000 },
+    "limits": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "cpu_cores", "memory_bytes", "processes", "storage_growth_bytes",
+        "output_bytes", "runtime_ms", "spend"
+      ],
+      "properties": {
+        "cpu_cores": { "type": "number", "exclusiveMinimum": 0 },
+        "memory_bytes": { "type": "integer", "minimum": 1 },
+        "processes": { "type": "integer", "minimum": 1 },
+        "storage_growth_bytes": { "type": "integer", "minimum": 1 },
+        "output_bytes": { "type": "integer", "minimum": 1 },
+        "runtime_ms": { "type": "integer", "minimum": 1 },
+        "spend": { "$ref": "#/definitions/money" }
+      }
+    },
+    "controls": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["cpu", "memory", "processes", "storage", "output", "runtime", "spend"],
+      "properties": {
+        "cpu": { "$ref": "#/definitions/control" },
+        "memory": { "$ref": "#/definitions/control" },
+        "processes": { "$ref": "#/definitions/control" },
+        "storage": { "$ref": "#/definitions/control" },
+        "output": { "$ref": "#/definitions/control" },
+        "runtime": { "$ref": "#/definitions/control" },
+        "spend": { "$ref": "#/definitions/control" }
+      }
+    },
+    "telemetry": { "enum": ["complete", "partial", "missing", "stale"] },
+    "samples": {
+      "type": "array", "minItems": 1, "maxItems": 10000,
+      "items": { "$ref": "#/definitions/sample" }
+    },
+    "warnings": {
+      "type": "array", "maxItems": 64, "uniqueItems": true,
+      "items": { "type": "string", "minLength": 1, "maxLength": 240 }
+    },
+    "stop_reason": { "type": ["string", "null"], "minLength": 1, "maxLength": 240 },
+    "cleanup_triggered": { "type": "boolean" }
+  },
+  "definitions": {
+    "timestamp": {
+      "type": "string",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\\.[0-9]{3})?Z$"
+    },
+    "control": { "enum": ["hard-limit", "monitored", "reported", "unavailable", "local-zero"] },
+    "money": {
+      "type": "object", "additionalProperties": false,
+      "required": ["amount", "currency"],
+      "properties": {
+        "amount": { "type": "number", "minimum": 0 },
+        "currency": { "const": "USD" }
+      }
+    },
+    "sample": {
+      "type": "object", "additionalProperties": false,
+      "required": [
+        "sequence", "phase", "recorded_at", "observed_at", "telemetry",
+        "cpu_cores", "memory_bytes", "processes", "storage_growth_bytes",
+        "output_bytes", "elapsed_ms", "spend", "decision", "reasons"
+      ],
+      "properties": {
+        "sequence": { "type": "integer", "minimum": 0 },
+        "phase": { "enum": ["initial", "interval", "final"] },
+        "recorded_at": { "$ref": "#/definitions/timestamp" },
+        "observed_at": { "$ref": "#/definitions/timestamp" },
+        "telemetry": { "enum": ["complete", "partial", "missing", "stale"] },
+        "cpu_cores": { "type": ["number", "null"], "minimum": 0 },
+        "memory_bytes": { "type": ["integer", "null"], "minimum": 0 },
+        "processes": { "type": ["integer", "null"], "minimum": 0 },
+        "storage_growth_bytes": { "type": ["integer", "null"], "minimum": 0 },
+        "output_bytes": { "type": ["integer", "null"], "minimum": 0 },
+        "elapsed_ms": { "type": "integer", "minimum": 0 },
+        "spend": {
+          "oneOf": [{ "$ref": "#/definitions/money" }, { "type": "null" }]
+        },
+        "decision": { "enum": ["continue", "warn", "stop"] },
+        "reasons": {
+          "type": "array", "maxItems": 16, "uniqueItems": true,
+          "items": { "type": "string", "minLength": 1, "maxLength": 240 }
+        }
+      }
+    }
+  }
+}

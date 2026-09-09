@@ -1,0 +1,66 @@
+{
+  "manifest": "sandbox.yaml",
+  "backend": "podman",
+  "tier": 1,
+  "os": "linux",
+  "arch": "x86_64",
+  "execution_mode": "real",
+  "started": "2026-08-08T12:00:00.000Z",
+  "duration_ms": 1842,
+  "escalations": [
+    {
+      "from": "srt",
+      "reason": "pkg-install denial",
+      "to": "podman"
+    }
+  ],
+  "steps": [
+    {
+      "cmd": "npm install --global acme-cli@3.1.4",
+      "exit": 0,
+      "stdout_tail": "added 8 packages",
+      "stderr_tail": ""
+    },
+    {
+      "cmd": "command -v acme",
+      "exit": 0,
+      "stdout_tail": "/home/ecc/.local/bin/acme",
+      "stderr_tail": ""
+    },
+    {
+      "cmd": "acme --version | grep -q '^3.1.4$'",
+      "exit": 1,
+      "stdout_tail": "",
+      "stderr_tail": ""
+    }
+  ],
+  "assertions": [
+    {
+      "cmd": "command -v acme",
+      "pass": true
+    },
+    {
+      "cmd": "acme --version | grep -q '^3.1.4$'",
+      "pass": false
+    }
+  ],
+  "install_diff": {
+    "method": "podman-layer",
+    "complete": true,
+    "files_added": [
+      "/home/ecc/.local/bin/acme"
+    ],
+    "files_changed": [],
+    "files_deleted": [],
+    "path_changes": [
+      "/home/ecc/.local/bin/acme"
+    ],
+    "services_registered": [],
+    "dotfiles_touched": []
+  },
+  "result": "fail",
+  "notes": [
+    "microsandbox unavailable; using documented degraded Podman isolation",
+    "Tier 1 container v1 network policy is unrestricted for network:*"
+  ]
+}

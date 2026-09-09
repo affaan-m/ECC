@@ -1,0 +1,94 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://ecc.tools/schemas/sandbox-fabric-job.schema.json",
+  "title": "ECC sandbox fabric job envelope",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version", "kind", "run_id", "job_id", "result", "run_directory",
+    "report", "workspace", "artifact", "evaluation", "promotion", "trajectory",
+    "trajectory_digest", "cleanup"
+  ],
+  "allOf": [
+    {
+      "if": { "properties": { "schema_version": { "const": 2 } } },
+      "then": {
+        "type": "object",
+        "required": ["execution", "resource_monitoring"],
+        "properties": { "execution": {}, "resource_monitoring": {} }
+      },
+      "else": {
+        "not": {
+          "anyOf": [
+            {
+              "type": "object", "required": ["execution"],
+              "properties": { "execution": {} }
+            },
+            {
+              "type": "object", "required": ["resource_monitoring"],
+              "properties": { "resource_monitoring": {} }
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "properties": {
+    "schema_version": { "enum": [1, 2] },
+    "kind": { "const": "ecc.sandbox.fabric-job" },
+    "run_id": { "$ref": "#/definitions/id" },
+    "job_id": { "$ref": "#/definitions/id" },
+    "result": { "enum": ["pass", "fail"] },
+    "run_directory": { "$ref": "#/definitions/path" },
+    "report": { "$ref": "https://ecc.tools/schemas/sandbox-report.schema.json" },
+    "workspace": {
+      "$ref": "https://ecc.tools/schemas/sandbox-fabric-workspace-receipt.schema.json"
+    },
+    "artifact": {
+      "oneOf": [
+        { "$ref": "https://ecc.tools/schemas/sandbox-patch-artifact.schema.json" },
+        { "type": "null" }
+      ]
+    },
+    "evaluation": {
+      "oneOf": [
+        { "$ref": "https://ecc.tools/schemas/sandbox-evaluation.schema.json" },
+        { "type": "null" }
+      ]
+    },
+    "promotion": {
+      "oneOf": [
+        { "$ref": "https://ecc.tools/schemas/sandbox-promotion.schema.json" },
+        { "type": "null" }
+      ]
+    },
+    "trajectory": { "$ref": "https://ecc.tools/schemas/sandbox-trajectory.schema.json" },
+    "trajectory_digest": { "$ref": "#/definitions/sha256" },
+    "cleanup": { "$ref": "#/definitions/cleanup" },
+    "execution": {
+      "$ref": "https://ecc.tools/schemas/sandbox-execution-boundary.schema.json"
+    },
+    "resource_monitoring": {
+      "$ref": "https://ecc.tools/schemas/sandbox-resource-monitoring.schema.json"
+    }
+  },
+  "definitions": {
+    "id": {
+      "type": "string", "minLength": 1, "maxLength": 120,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+    },
+    "sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+    "path": { "type": "string", "minLength": 1, "maxLength": 4096 },
+    "cleanup": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["attempted", "pass", "retained"],
+      "properties": {
+        "attempted": { "type": "boolean" },
+        "pass": { "type": "boolean" },
+        "retained": { "type": "boolean" },
+        "error": { "type": "string", "minLength": 1, "maxLength": 4096 }
+      }
+    }
+  }
+}

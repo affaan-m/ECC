@@ -1,0 +1,16 @@
+name: review-tier0-srt
+needs:
+  os: [any]
+  capabilities: []
+  trust: first-party
+  native: false
+resources:
+  cpu: 1
+  memory: 256MB
+  timeout: 30
+steps:
+  setup:
+    - printf 'review setup begin\n' && sleep 2 && printf 'review setup end\n'
+  assert:
+    - printf 'review assertion\n'
+report: exit-only

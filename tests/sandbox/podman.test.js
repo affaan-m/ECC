@@ -82,6 +82,7 @@ function runDirect(results, extras = {}) {
     notes: extras.notes,
     run: sequenceRunner(runtimeResults, calls),
     runtime,
+    lifecycle: extras.lifecycle,
   });
   return { outcome, calls };
 }
@@ -100,7 +101,7 @@ test('ships three digest-pinned non-root Linux snapshot definitions', () => {
   }
 });
 
-test('normalizes Podman and Docker image IDs to one digest form', () => {
+test('normalizes Podman image IDs to one digest form', () => {
   const digest = 'a'.repeat(64);
   assert.strictEqual(normalizeImageId(`${digest}\n`), `sha256:${digest}`);
   assert.strictEqual(normalizeImageId(`SHA256:${digest.toUpperCase()}`), `sha256:${digest}`);
@@ -112,6 +113,8 @@ test('builds a bounded rootless create command with network off by default', () 
     containerName: 'ecc-sandbox-test',
     cwd: repoRoot,
     image: DEFAULT_IMAGE,
+    runId: 'run_1234567890abcdef1234567890abcdef',
+    ownerToken: 'owner-token',
   });
   assert.deepStrictEqual(args.slice(0, 3), ['create', '--name', 'ecc-sandbox-test']);
   assert.ok(args.includes('--cap-drop'));
@@ -120,6 +123,8 @@ test('builds a bounded rootless create command with network off by default', () 
   assert.ok(args.includes('--network'));
   assert.ok(args.includes('none'));
   assert.ok(args.includes(`${repoRoot}:/workspace/source:ro`));
+  assert.ok(args.includes('io.ecc.sandbox.run=run_1234567890abcdef1234567890abcdef'));
+  assert.ok(args.includes('io.ecc.sandbox.owner=owner-token'));
   assert.deepStrictEqual(args.slice(-3), [DEFAULT_IMAGE, 'sleep', 'infinity']);
 
   const untrusted = buildCreateArgs(manifest({
@@ -133,6 +138,42 @@ test('builds a bounded rootless create command with network off by default', () 
     containerName: 'ecc-sandbox-test', cwd: repoRoot, image: DEFAULT_IMAGE,
   });
   assert.strictEqual(open.includes('--network'), false);
+});
+
+test('aborts before start and removes the container when receipt registration fails', () => {
+  const { outcome, calls } = runDirect([
+    result(0, `${MOCK_IMAGE_ID}\n`),
+    result(0, `${'b'.repeat(64)}\n`),
+    result(0),
+  ], {
+    lifecycle: {
+      resourceCreated() { throw new Error('state disk unavailable'); },
+    },
+  });
+  assert.strictEqual(outcome.report.result, 'error');
+  assert.deepStrictEqual(calls.map(call => call.argv[0]), ['info', 'image', 'create', 'rm']);
+  assert.match(outcome.report.notes.join('\n'), /aborted before start/);
+});
+
+test('a stop at the ready boundary skips commands and still removes the exact container', () => {
+  const calls = [];
+  const outcome = executeContainer(manifest({ report: 'exit-only' }), {
+    arch: 'arm64',
+    clock: () => 1_700_000_000_000,
+    containerName: 'ecc-sandbox-stop-test',
+    cwd: repoRoot,
+    manifestPath: path.join(repoRoot, 'sandbox.yaml'),
+    mock: true,
+    run: sequenceRunner([
+      result(0, '{"host":{"security":{"rootless":true}}}'),
+      result(0, `${MOCK_IMAGE_ID}\n`), result(0), result(0), result(0),
+    ], calls),
+    runtime: 'podman',
+    lifecycle: { ready: () => ({ stop: true, waited_ms: 5 }) },
+  });
+  assert.strictEqual(outcome.report.result, 'error');
+  assert.deepStrictEqual(calls.map(call => call.argv[0]), ['info', 'image', 'create', 'start', 'rm']);
+  assert.match(outcome.report.notes.join('\n'), /stopped at the ready review boundary/);
 });
 
 test('normalizes Podman diff paths into install evidence', () => {
@@ -158,6 +199,18 @@ test('normalizes Podman diff paths into install evidence', () => {
   assert.ok(parsed.diff.dotfiles_touched.includes('/home/ecc/.config'));
 });
 
+test('keeps a representative full ECC install diff complete above 1,000 paths', () => {
+  const output = Array.from(
+    { length: 1_500 },
+    (_, index) => `A /home/ecc/.claude/skills/example-${index}/SKILL.md`
+  ).join('\n');
+  const parsed = parseContainerDiff(`${output}\n`);
+  assert.strictEqual(parsed.truncated, false);
+  assert.strictEqual(parsed.diff.complete, true);
+  assert.strictEqual(parsed.diff.files_added.length, 1_500);
+  assert.deepStrictEqual(parsed.diff.dotfiles_touched, ['/home/ecc/.claude']);
+});
+
 test('executes create-start-steps-diff-remove and emits a valid report', () => {
   const { outcome, calls } = runDirect([
     result(0, `${MOCK_IMAGE_ID}\n`),
@@ -181,6 +234,100 @@ test('executes create-start-steps-diff-remove and emits a valid report', () => {
   assert.ok(outcome.report.notes.includes(`image_id=${MOCK_IMAGE_ID}`));
   const createCall = calls.find(call => call.argv[0] === 'create');
   assert.deepStrictEqual(createCall.argv.slice(-3), [MOCK_IMAGE_ID, 'sleep', 'infinity']);
+});
+
+test('publishes real Podman boundaries and fixed read-only inspection', () => {
+  const lifecycleEvents = [];
+  let inspection;
+  const { outcome, calls } = runDirect([
+    result(0, `${MOCK_IMAGE_ID}\n`), result(0), result(0),
+    result(0, '{"Id":"owned"}\n'), result(0, 'PID CMD\n'), result(0, '{}\n'),
+    result(0, 'setup'), result(0, 'assert'), result(0, ''), result(0),
+  ], {
+    lifecycle: {
+      resourceCreated: details => lifecycleEvents.push(`created:${details.resource.container}`),
+      ready: details => {
+        lifecycleEvents.push('ready');
+        assert.strictEqual(details.resource.id, 'b'.repeat(64));
+        inspection = details.inspect();
+      },
+      stepStarted: details => lifecycleEvents.push(`start:${details.phase}`),
+      stepCompleted: details => lifecycleEvents.push(`end:${details.phase}:${details.step.exit}`),
+      evidence: () => lifecycleEvents.push('evidence'),
+      cleanupStarted: () => lifecycleEvents.push('cleanup-started'),
+      cleanupCompleted: details => lifecycleEvents.push(`cleanup-completed:${details.pass}`),
+    },
+  });
+  assert.strictEqual(outcome.report.result, 'pass');
+  assert.deepStrictEqual(inspection.commands.map(entry => entry.argv[0]), ['inspect', 'top', 'stats']);
+  assert.deepStrictEqual(lifecycleEvents, [
+    'created:ecc-sandbox-test', 'ready', 'start:setup', 'end:setup:0', 'start:assert', 'end:assert:0',
+    'evidence', 'cleanup-started', 'cleanup-completed:true',
+  ]);
+  assert.deepStrictEqual(calls.slice(4, 7).map(call => call.argv[0]), ['inspect', 'top', 'stats']);
+});
+
+test('a stop after a Podman setup step cancels the remaining run as an error', () => {
+  const { outcome, calls } = runDirect([
+    result(0, `${MOCK_IMAGE_ID}\n`), result(0), result(0),
+    result(0, 'setup one'), result(0, 'setup two'), result(0),
+  ], {
+    manifest: manifest({
+      report: 'exit-only',
+      setup: ['printf setup-one', 'printf setup-two'],
+    }),
+    lifecycle: {
+      stepCompleted: details => (
+        details.phase === 'setup' ? { stop: true } : null
+      ),
+    },
+  });
+  assert.deepStrictEqual(outcome.report.steps.map(step => step.cmd), ['printf setup-one']);
+  assert.deepStrictEqual(outcome.report.assertions, []);
+  assert.strictEqual(outcome.report.result, 'error');
+  assert.strictEqual(outcome.exitCode, 2);
+  assert.strictEqual(calls.filter(call => call.argv[0] === 'exec').length, 1);
+  assert.match(outcome.report.notes.join('\n'), /evidence collection was skipped/);
+});
+
+test('a stop after a Podman assertion skips the remaining assertions', () => {
+  const { outcome, calls } = runDirect([
+    result(0, `${MOCK_IMAGE_ID}\n`), result(0), result(0),
+    result(0, 'setup'), result(0, 'assert one'), result(0, 'assert two'), result(0),
+  ], {
+    manifest: manifest({
+      report: 'exit-only',
+      assert: ['printf assert-one', 'printf assert-two'],
+    }),
+    lifecycle: {
+      stepCompleted: details => (
+        details.phase === 'assert' ? { stop: true } : null
+      ),
+    },
+  });
+  assert.deepStrictEqual(outcome.report.steps.map(step => step.cmd), [
+    'npm install --global cowsay@1.6.0 --ignore-scripts', 'printf assert-one',
+  ]);
+  assert.deepStrictEqual(outcome.report.assertions, [
+    { cmd: 'printf assert-one', pass: true },
+  ]);
+  assert.strictEqual(outcome.report.result, 'error');
+  assert.strictEqual(calls.filter(call => call.argv[0] === 'exec').length, 2);
+});
+
+test('a stop at the Podman evidence boundary makes the report a truthful error', () => {
+  const { outcome } = runDirect([
+    result(0, `${MOCK_IMAGE_ID}\n`), result(0), result(0),
+    result(0, 'setup'), result(0, 'assert'), result(0),
+  ], {
+    manifest: manifest({ report: 'exit-only' }),
+    lifecycle: {
+      evidence: () => ({ stop: true }),
+    },
+  });
+  assert.strictEqual(outcome.report.result, 'error');
+  assert.strictEqual(outcome.exitCode, 2);
+  assert.match(outcome.report.notes.join('\n'), /stopped at the evidence review boundary/);
 });
 
 test('still captures diff and removes the container after a failed step', () => {

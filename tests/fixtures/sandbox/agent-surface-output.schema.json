@@ -1,0 +1,45 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["manifest_yaml", "interpretation"],
+  "properties": {
+    "manifest_yaml": {
+      "type": "string",
+      "minLength": 1
+    },
+    "interpretation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "result",
+        "backend",
+        "tier",
+        "execution_mode",
+        "first_failure",
+        "escalation",
+        "install_diff_complete",
+        "evidence_claim"
+      ],
+      "properties": {
+        "result": { "type": "string", "const": "fail" },
+        "backend": { "type": "string", "const": "podman" },
+        "tier": { "type": "integer", "const": 1 },
+        "execution_mode": { "type": "string", "const": "real" },
+        "first_failure": {
+          "type": "string",
+          "pattern": "acme --version"
+        },
+        "escalation": {
+          "type": "string",
+          "pattern": "srt.*podman"
+        },
+        "install_diff_complete": { "type": "boolean", "const": true },
+        "evidence_claim": {
+          "type": "string",
+          "pattern": "degraded"
+        }
+      }
+    }
+  }
+}

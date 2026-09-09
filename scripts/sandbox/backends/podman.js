@@ -9,14 +9,16 @@ const {
   normalizeStep,
   tailOutput,
 } = require('../report');
+const { runStreaming } = require('../stream-runner');
 
 const DEFAULT_IMAGE = 'localhost/ecc-sandbox:ubuntu-lts';
 const MAX_EXEC_BUFFER = 1024 * 1024;
 const MAX_DIFF_BUFFER = 16 * 1024 * 1024;
-const MAX_DIFF_ITEMS = 1_000;
+const MAX_DIFF_ITEMS = 5_000;
 const CLEANUP_TIMEOUT_MS = 30_000;
 
 function defaultRunner(executable, argv, options = {}) {
+  if (options.streamOutput) return runStreaming(executable, argv, options);
   return spawnSync(executable, argv, {
     ...options,
     encoding: 'utf8',
@@ -174,7 +176,7 @@ function executeContainer(manifest, options = {}) {
   const clock = options.clock || (() => Date.now());
   const startedMs = clock();
   const started = new Date(startedMs).toISOString();
-  const deadline = startedMs + (manifest.resources.timeout * 1000);
+  let deadline = startedMs + (manifest.resources.timeout * 1000);
   const steps = [];
   const assertions = [];
   const notes = [...(options.notes || [])];
@@ -184,11 +186,31 @@ function executeContainer(manifest, options = {}) {
   let executionError = false;
   let cleanupSucceeded = false;
   let unsafeToDiff = false;
+  let stopRequested = false;
+  let containerId = null;
+  const lifecycle = options.lifecycle || {};
 
-  const invoke = (argv, maxBuffer = MAX_EXEC_BUFFER, timeout) => run(runtime, argv, {
+  const notify = (name, details) => {
+    if (typeof lifecycle[name] !== 'function') return null;
+    try {
+      const response = lifecycle[name](details) || null;
+      if (Number.isFinite(response?.waited_ms) && response.waited_ms > 0) {
+        deadline += response.waited_ms;
+      }
+      return response;
+    } catch (error) {
+      executionError = true;
+      notes.push(`${runtime} lifecycle ${name} failed: ${error.message}`);
+      if (name === 'resourceCreated') throw error;
+      return null;
+    }
+  };
+
+  const invoke = (argv, maxBuffer = MAX_EXEC_BUFFER, timeout, streamOutput) => run(runtime, argv, {
     cwd,
     timeout: timeout || Math.max(1, deadline - clock()),
     maxBuffer,
+    ...(streamOutput ? { streamOutput } : {}),
   });
 
   let runtimeReady = true;
@@ -221,6 +243,8 @@ function executeContainer(manifest, options = {}) {
     const createResult = invoke(buildCreateArgs(manifest, {
       containerName,
       cwd,
+      runId: options.runId,
+      ownerToken: options.ownerToken,
       // Use the inspected immutable ID, not the mutable reference, so the
       // evidence and executed snapshot cannot diverge through a retag race.
       image: imageId,
@@ -230,25 +254,85 @@ function executeContainer(manifest, options = {}) {
       notes.push(`${runtime} create failed: ${resultDetail(createResult) || 'unknown error'}`);
     } else {
       created = true;
+      containerId = firstLine(createResult.stdout);
+      if (options.mock && !/^[a-f0-9]{64}$/i.test(containerId || '')) {
+        containerId = 'b'.repeat(64);
+      }
+      if (!/^[a-f0-9]{64}$/i.test(containerId || '')) {
+        const identity = invoke(['inspect', '--format', '{{.Id}}', containerName]);
+        containerId = firstLine(identity.stdout);
+      }
+      try {
+        if (!/^[a-f0-9]{64}$/i.test(containerId || '')) {
+          throw new Error('Podman did not return an immutable container ID');
+        }
+        notify('resourceCreated', {
+          backend: runtime,
+          resource: { container: containerName, id: containerId },
+        });
+      } catch (error) {
+        executionError = true;
+        notes.push(`${runtime} resource receipt failed; execution was aborted before start: ${error.message}`);
+      }
+      if (!containerId || executionError) {
+        // The common cleanup path below removes the unstarted container.
+      } else {
       const startMs = clock();
-      const startResult = invoke(['start', containerName]);
+      const startResult = invoke(['start', containerId]);
       const containerStartMs = Math.max(0, clock() - startMs);
       notes.push(`container_start_ms=${containerStartMs}`);
       if (!succeeded(startResult)) {
         executionError = true;
         notes.push(`${runtime} start failed: ${resultDetail(startResult) || 'unknown error'}`);
       } else {
-        const execute = (command, assertion) => {
+        const readyControl = notify('ready', {
+          backend: runtime,
+          resource: { container: containerName, id: containerId },
+          inspect: () => ({
+            backend: runtime,
+            resource: { container: containerName, id: containerId },
+            commands: [
+              ['inspect', '--format', '{{json .State}}', containerId],
+              ['top', containerId, 'pid,user,comm,args'],
+              ['stats', '--no-stream', '--format', 'json', containerId],
+            ].map(argv => {
+              const inspected = invoke(argv, MAX_EXEC_BUFFER, CLEANUP_TIMEOUT_MS);
+              return {
+                argv,
+                status: Number.isInteger(inspected.status) ? inspected.status : -1,
+                stdout_tail: tailOutput(inspected.stdout),
+                stderr_tail: resultDetail({ stderr: inspected.stderr, error: inspected.error }),
+              };
+            }),
+          }),
+        });
+
+        if (readyControl?.stop) {
+          executionError = true;
+          notes.push(`${runtime} execution stopped at the ready review boundary`);
+        } else {
+        const execute = (command, assertion, phase) => {
+          notify('stepStarted', { backend: runtime, command, phase });
           const execution = invoke([
             'exec',
-            containerName,
+            containerId,
             '/bin/bash',
             '-lc',
             command,
-          ]);
+          ], MAX_EXEC_BUFFER, undefined, options.streamOutput
+            ? { ...options.streamOutput, phase }
+            : null);
           const step = normalizeStep(command, execution);
           steps.push(step);
           if (assertion) assertions.push({ cmd: command, pass: step.exit === 0 });
+          const completedControl = notify('stepCompleted', {
+            backend: runtime, command, phase, step,
+            output_streamed: Boolean(options.streamOutput),
+          });
+          if (completedControl?.stop || lifecycle.shouldStop?.()) {
+            stopRequested = true;
+            executionError = true;
+          }
           if (execution.error || execution.status === null) {
             executionError = true;
             const stop = invoke(
@@ -268,18 +352,19 @@ function executeContainer(manifest, options = {}) {
 
         let setupPassed = true;
         for (const command of manifest.steps.setup) {
-          if (!execute(command, false)) {
+          if (!execute(command, false, 'setup') || stopRequested) {
             setupPassed = false;
             break;
           }
         }
-        if (setupPassed) {
+        if (setupPassed && !stopRequested) {
           for (const command of manifest.steps.assert) {
-            if (!execute(command, true)) break;
+            if (!execute(command, true, 'assert') || stopRequested) break;
           }
         }
 
-        if (manifest.report === 'install-diff' && !unsafeToDiff) {
+        if (!stopRequested) notify('evidenceStarted', { backend: runtime, report: manifest.report });
+        if (!stopRequested && manifest.report === 'install-diff' && !unsafeToDiff) {
           const diffResult = invoke(
             ['diff', containerName],
             MAX_DIFF_BUFFER,
@@ -297,13 +382,39 @@ function executeContainer(manifest, options = {}) {
             notes.push(`${runtime} diff failed: ${resultDetail(diffResult) || 'unknown error'}`);
           }
         }
+        if (!stopRequested) {
+          const evidenceControl = notify('evidence', {
+            backend: runtime,
+            report: manifest.report,
+            install_diff: installDiff,
+            steps: [...steps],
+            assertions: [...assertions],
+            inspect: () => ({
+              backend: runtime,
+              resource: { container: containerName },
+              install_diff: installDiff,
+            }),
+          });
+          if (evidenceControl?.stop || lifecycle.shouldStop?.()) {
+            stopRequested = true;
+            executionError = true;
+            notes.push(`${runtime} execution stopped at the evidence review boundary`);
+          }
+        }
+        else notes.push(`${runtime} execution stopped during a step; evidence collection was skipped`);
+        }
+      }
       }
     }
   }
 
+  notify('cleanupStarted', {
+    backend: runtime,
+    resource: createAttempted ? { container: containerName } : null,
+  });
   if (createAttempted) {
     const cleanup = invoke(
-      ['rm', '--force', containerName],
+      ['rm', '--force', '--time', '0', containerId || containerName],
       MAX_EXEC_BUFFER,
       CLEANUP_TIMEOUT_MS
     );
@@ -315,6 +426,11 @@ function executeContainer(manifest, options = {}) {
       );
     }
   }
+  notify('cleanupCompleted', {
+    backend: runtime,
+    pass: createAttempted ? cleanupSucceeded : true,
+    resource: createAttempted ? { container: containerName } : null,
+  });
   if (options.mock) notes.push(`Mock ${runtime} execution: no container was created`);
 
   const report = buildSingleReport({

@@ -31,13 +31,6 @@ const TERMINAL_APP_LAUNCH_SCRIPT = Object.freeze([
 const MAX_FILTERED_ENVIRONMENT_BYTES = 256 * 1024;
 const MAX_FILTERED_ENVIRONMENT_ENTRIES = 128;
 const FILTERED_ENVIRONMENT_PREFIX = 'ecc-terminal-env-';
-const TERMINAL_APP_PREFIX = 'ecc-terminal-app-';
-const TEMPORARY_LAUNCH_TTL_MS = 2 * 60 * 1000;
-const TEMPORARY_CLEANUP_POLL_MS = 250;
-const TEMPORARY_LAUNCH_FILES = new Map([
-  [FILTERED_ENVIRONMENT_PREFIX, 'environment.json'],
-  [TERMINAL_APP_PREFIX, 'launch.command'],
-]);
 
 function usage() {
   return `Open an executable and its argument array in a visible terminal.
@@ -183,15 +176,13 @@ function validateDecodedEnvironment(parsed) {
   return Object.fromEntries(entries);
 }
 
-function buildFilteredTargetArgs(plan, environmentPath, temporaryRoot = os.tmpdir()) {
+function buildFilteredTargetArgs(plan, environmentPath) {
   const targetArgs = [plan.executable, ...plan.argv];
   return [
     process.execPath,
     __filename,
     '--run-filtered-file',
     environmentPath,
-    '--temp-root',
-    temporaryRoot,
     '--',
     ...targetArgs,
   ];
@@ -201,15 +192,20 @@ function shellQuote(value) {
   return `'${String(value).replace(/'/g, "'\\''")}'`;
 }
 
-function buildTerminalAppScript(plan, targetArgs = [plan.executable, ...plan.argv]) {
-  const commandArgs = targetArgs.map(shellQuote).join(' ');
+function buildTerminalAppScript(plan, spawnEnvironment) {
+  const commandArgs = [plan.executable, ...plan.argv].map(shellQuote).join(' ');
+  const environmentPrefix = spawnEnvironment === undefined
+    ? 'exec'
+    : `exec /usr/bin/env -i ${Object.entries(spawnEnvironment).map(([name, value]) => (
+        `${name}=${shellQuote(value)}`
+      )).join(' ')}`;
   return [
     '#!/bin/sh',
     'wrapper_path=$0',
     'rm -f "$wrapper_path"',
     'rmdir "$(dirname "$wrapper_path")" 2>/dev/null || true',
     `cd ${shellQuote(plan.cwd)} || exit $?`,
-    `exec ${commandArgs}`,
+    `${environmentPrefix} ${commandArgs}`,
     '',
   ].join('\n');
 }
@@ -219,92 +215,6 @@ function removeTerminalAppLauncher(temporaryRoot, fsImpl) {
     fsImpl.rmSync(temporaryRoot, { recursive: true, force: true });
   } catch {
     // Cleanup is best effort after the launcher has already failed.
-  }
-}
-
-function validateTemporaryLaunchRoot(temporaryRoot, dependencies = {}) {
-  const fsImpl = dependencies.fs || fs;
-  const resolved = path.resolve(String(temporaryRoot || ''));
-  if (!fsImpl.existsSync(resolved)) return null;
-  const basename = path.basename(resolved);
-  const entry = [...TEMPORARY_LAUNCH_FILES.entries()].find(([prefix]) => (
-    basename.startsWith(prefix)
-  ));
-  const realpath = fsImpl.realpathSync.native || fsImpl.realpathSync;
-  const stat = fsImpl.lstatSync(resolved);
-  const ownerMatches = typeof process.getuid !== 'function' || stat.uid === process.getuid();
-  if (
-    !entry
-    || realpath(path.dirname(resolved)) !== realpath(dependencies.temporaryRoot || os.tmpdir())
-    || !stat.isDirectory()
-    || stat.isSymbolicLink()
-    || (stat.mode & 0o077) !== 0
-    || !ownerMatches
-    || fsImpl.readdirSync(resolved).some(name => name !== entry[1])
-  ) {
-    throw new Error('Temporary terminal launch directory failed private-directory validation.');
-  }
-  return resolved;
-}
-
-function cleanupTemporaryLaunchRoot(temporaryRoot, dependencies = {}) {
-  const fsImpl = dependencies.fs || fs;
-  const validated = validateTemporaryLaunchRoot(temporaryRoot, dependencies);
-  if (validated) removeTerminalAppLauncher(validated, fsImpl);
-}
-
-function watchTemporaryLaunchRoot(temporaryRoot, delayMs, dependencies = {}) {
-  const fsImpl = dependencies.fs || fs;
-  const now = dependencies.now || Date.now;
-  const setIntervalImpl = dependencies.setInterval || setInterval;
-  const clearIntervalImpl = dependencies.clearInterval || clearInterval;
-  const boundedDelay = Number.isSafeInteger(delayMs) && delayMs >= 0
-    ? Math.min(delayMs, TEMPORARY_LAUNCH_TTL_MS)
-    : TEMPORARY_LAUNCH_TTL_MS;
-  const expiresAt = now() + boundedDelay;
-  let timer;
-  const inspect = () => {
-    if (!fsImpl.existsSync(temporaryRoot)) {
-      if (timer) clearIntervalImpl(timer);
-      return;
-    }
-    if (now() >= expiresAt) {
-      cleanupTemporaryLaunchRoot(temporaryRoot, dependencies);
-      if (timer) clearIntervalImpl(timer);
-    }
-  };
-  if (boundedDelay === 0) {
-    inspect();
-    return;
-  }
-  timer = setIntervalImpl(inspect, Math.min(TEMPORARY_CLEANUP_POLL_MS, boundedDelay));
-}
-
-function scheduleTemporaryCleanup(temporaryRoots, dependencies = {}) {
-  const roots = [...new Set(temporaryRoots.filter(Boolean))];
-  if (roots.length === 0) return;
-  if (dependencies.scheduleCleanup) {
-    dependencies.scheduleCleanup([...roots]);
-    return;
-  }
-  const spawnCleanup = dependencies.spawnCleanup || childProcess.spawn;
-  for (const temporaryRoot of roots) {
-    const child = spawnCleanup(process.execPath, [
-      __filename,
-      '--cleanup-temp-root',
-      temporaryRoot,
-      '--temp-root',
-      os.tmpdir(),
-      '--after',
-      String(TEMPORARY_LAUNCH_TTL_MS),
-    ], {
-      detached: true,
-      env: {},
-      shell: false,
-      stdio: 'ignore',
-    });
-    child?.once?.('error', () => cleanupTemporaryLaunchRoot(temporaryRoot));
-    child?.unref?.();
   }
 }
 
@@ -331,8 +241,6 @@ function materializeFilteredEnvironment(environment, dependencies = {}) {
   }
   return {
     path: environmentPath,
-    root: temporaryRoot,
-    temporaryBase: path.dirname(temporaryRoot),
     cleanup: () => removeTerminalAppLauncher(temporaryRoot, fsImpl),
   };
 }
@@ -342,7 +250,7 @@ function readFilteredEnvironmentFile(environmentPath, dependencies = {}) {
   const resolved = path.resolve(environmentPath);
   const directory = path.dirname(resolved);
   const realpath = fsImpl.realpathSync.native || fsImpl.realpathSync;
-  const temporaryRoot = realpath(dependencies.temporaryRoot || os.tmpdir());
+  const temporaryRoot = realpath(os.tmpdir());
   const canonicalParent = realpath(path.dirname(directory));
   const directoryStat = fsImpl.lstatSync(directory);
   const fileStat = fsImpl.lstatSync(resolved);
@@ -415,29 +323,17 @@ function materializeTerminalAppLaunch(plan, spawnEnvironment, dependencies = {})
 
   const fsImpl = dependencies.fs || fs;
   const mkdtempSync = dependencies.mkdtempSync || fsImpl.mkdtempSync?.bind(fsImpl) || fs.mkdtempSync;
-  const temporaryRoot = mkdtempSync(path.join(os.tmpdir(), TERMINAL_APP_PREFIX));
+  const temporaryRoot = mkdtempSync(path.join(os.tmpdir(), 'ecc-terminal-app-'));
   const wrapperPath = path.join(temporaryRoot, 'launch.command');
-  let materializedEnvironment;
   try {
-    if (spawnEnvironment !== undefined) {
-      materializedEnvironment = materializeFilteredEnvironment(spawnEnvironment, dependencies);
-    }
-    const targetArgs = materializedEnvironment
-      ? buildFilteredTargetArgs(
-          plan,
-          materializedEnvironment.path,
-          materializedEnvironment.temporaryBase
-        )
-      : [plan.executable, ...plan.argv];
     fsImpl.chmodSync(temporaryRoot, 0o700);
-    fsImpl.writeFileSync(wrapperPath, buildTerminalAppScript(plan, targetArgs), {
+    fsImpl.writeFileSync(wrapperPath, buildTerminalAppScript(plan, spawnEnvironment), {
       encoding: 'utf8',
       mode: 0o700,
       flag: 'wx',
     });
     fsImpl.chmodSync(wrapperPath, 0o700);
   } catch (error) {
-    materializedEnvironment?.cleanup();
     removeTerminalAppLauncher(temporaryRoot, fsImpl);
     throw error;
   }
@@ -445,15 +341,11 @@ function materializeTerminalAppLaunch(plan, spawnEnvironment, dependencies = {})
     args: plan.args.map(argument => (
       argument === TERMINAL_WRAPPER_TOKEN ? wrapperPath : argument
     )),
-    temporaryRoots: [temporaryRoot, materializedEnvironment?.root].filter(Boolean),
-    cleanup: () => {
-      materializedEnvironment?.cleanup();
-      removeTerminalAppLauncher(temporaryRoot, fsImpl);
-    },
+    cleanup: () => removeTerminalAppLauncher(temporaryRoot, fsImpl),
   };
 }
 
-function materializeTerminalArgs(plan, args, environmentPath, temporaryRoot) {
+function materializeTerminalArgs(plan, args, environmentPath) {
   if (!environmentPath) return [...args];
   const targetArgs = [plan.executable, ...plan.argv];
   const targetStart = args.length - targetArgs.length;
@@ -466,24 +358,18 @@ function materializeTerminalArgs(plan, args, environmentPath, temporaryRoot) {
   }
   return [
     ...args.slice(0, targetStart),
-    ...buildFilteredTargetArgs(plan, environmentPath, temporaryRoot),
+    ...buildFilteredTargetArgs(plan, environmentPath),
   ];
 }
 
 function prepareTerminalArgs(plan, args, spawnEnvironment, dependencies) {
   if (spawnEnvironment === undefined) {
-    return { args: [...args], temporaryRoots: [], cleanup() {} };
+    return { args: [...args], cleanup() {} };
   }
   const materialized = materializeFilteredEnvironment(spawnEnvironment, dependencies);
   try {
     return {
-      args: materializeTerminalArgs(
-        plan,
-        args,
-        materialized.path,
-        materialized.temporaryBase
-      ),
-      temporaryRoots: [materialized.root],
+      args: materializeTerminalArgs(plan, args, materialized.path),
       cleanup: materialized.cleanup,
     };
   } catch (error) {
@@ -815,7 +701,6 @@ function launch(plan, dependencies = {}) {
         ).trim()}`
       );
     }
-    scheduleTemporaryCleanup(materialized.temporaryRoots, dependencies);
     return { strategy: 'terminal-app', capability };
   }
 
@@ -835,7 +720,6 @@ function launch(plan, dependencies = {}) {
       primary.cleanup();
       throw error;
     }
-    scheduleTemporaryCleanup(primary.temporaryRoots, dependencies);
     return { strategy: 'detached-recover', capability };
   }
 
@@ -854,7 +738,6 @@ function launch(plan, dependencies = {}) {
     throw error;
   }
   if (!muxResult.error && muxResult.status === 0) {
-    scheduleTemporaryCleanup(primary.temporaryRoots, dependencies);
     return { strategy: 'mux', capability };
   }
   primary.cleanup();
@@ -881,7 +764,6 @@ function launch(plan, dependencies = {}) {
     fallback.cleanup();
     throw error;
   }
-  scheduleTemporaryCleanup(fallback.temporaryRoots, dependencies);
   return { strategy: 'detached-fallback', capability, muxFailure };
 }
 
@@ -923,33 +805,12 @@ function printCapability(capability, json) {
 function main() {
   try {
     const argv = process.argv.slice(2);
-    if (argv[0] === '--cleanup-temp-root') {
-      if (
-        argv[2] !== '--temp-root'
-        || !argv[3]
-        || argv[4] !== '--after'
-        || argv.length !== 6
-        || !/^\d+$/.test(argv[5])
-      ) {
-        throw new Error('Temporary launch cleanup requires a root and bounded delay.');
-      }
-      watchTemporaryLaunchRoot(argv[1], Number(argv[5]), { temporaryRoot: argv[3] });
-      return;
-    }
     if (argv[0] === '--run-filtered-file') {
-      const boundary = argv.indexOf('--', 4);
-      if (
-        !argv[1]
-        || argv[2] !== '--temp-root'
-        || !argv[3]
-        || boundary < 0
-        || boundary === argv.length - 1
-      ) {
+      const boundary = argv.indexOf('--', 2);
+      if (!argv[1] || boundary < 0 || boundary === argv.length - 1) {
         throw new Error('Filtered launch requires a private environment file and executable argv.');
       }
-      process.exitCode = runFilteredCommandFile(argv[1], argv.slice(boundary + 1), {
-        temporaryRoot: argv[3],
-      });
+      process.exitCode = runFilteredCommandFile(argv[1], argv.slice(boundary + 1));
       return;
     }
     const options = parseArgs(argv);
@@ -984,14 +845,11 @@ module.exports = {
   buildLaunchPlan,
   buildSpawnEnvironment,
   buildTerminalAppScript,
-  cleanupTemporaryLaunchRoot,
   detectTerminalCapability,
   formatLaunchResult,
   launch,
   parseArgs,
   runFilteredCommand,
   runFilteredCommandFile,
-  scheduleTemporaryCleanup,
   usage,
-  watchTemporaryLaunchRoot,
 };
