@@ -105,6 +105,24 @@ test('body changes alter provenance without being charged to discovery metadata'
   assert.notEqual(before.planDigest, after.planDigest);
 }));
 
+test('exact 8000 estimate passes and 8001 blocks while provider totals remain unknown', () => withFixture(root => {
+  const before = compileContextProfile({ repoRoot: root });
+  const file = path.join(root, 'skills/ecc-guide/SKILL.md');
+  const source = fs.readFileSync(file, 'utf8');
+  const padding = 'x'.repeat(4 * (8000 - before.estimate.estimatedTokens));
+  fs.writeFileSync(file, source.replace('description: ', `description: ${padding}`));
+  const boundary = compileContextProfile({ repoRoot: root });
+  assert.equal(boundary.estimate.estimatedTokens, 8000);
+  assert.equal(boundary.estimate.wholeScopeTokens, null);
+  fs.writeFileSync(file, source.replace('description: ', `description: ${padding}xxxx`));
+  assert.throws(() => compileContextProfile({ repoRoot: root }), error => {
+    assert.equal(error.code, 'CONTEXT_PROFILE_BUDGET_EXCEEDED');
+    assert.equal(error.plan.estimate.estimatedTokens, 8001);
+    assert.equal(error.plan.estimate.wrapperTokens, null);
+    return true;
+  });
+}));
+
 test('every target projects the same explicit profile selection with unobserved native support', () => withFixture(root => {
   const { loadContextRegistry } = require('../../scripts/lib/context-pack-registry');
   for (const target of loadContextRegistry({ repoRoot: root }).targets) {
