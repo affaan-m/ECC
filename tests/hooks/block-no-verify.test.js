@@ -219,6 +219,274 @@ if (test('still allows -tn (n is the -t template path, not a flag)', () => {
   assert.strictEqual(r.code, 0, `expected exit 0, got ${r.code}: ${r.stderr}`);
 })) passed++; else failed++;
 
+// --- --config-env: the second spelling of -c ---
+//
+// `git --config-env=<name>=<envvar>` reads a config value out of the
+// environment, so it sets core.hooksPath exactly as `-c` does:
+//   MYVAR=/dev/null git --config-env=core.hooksPath=MYVAR commit -m x
+// Verified against git 2.51: both the `=` and space-separated forms are
+// accepted and skip the hooks. (An abbreviation of the option itself,
+// `--config-en=`, is rejected by git, so exact matching is sufficient.)
+
+if (test('blocks --config-env=core.hooksPath override', () => {
+  const r = runHook({ tool_input: { command: 'git --config-env=core.hooksPath=MYVAR commit -m "msg"' } });
+  assert.strictEqual(r.code, 2, `expected exit 2, got ${r.code}`);
+  assert.ok(/core\.hookspath/i.test(r.stderr), `stderr should mention core.hooksPath: ${r.stderr}`);
+})) passed++; else failed++;
+
+if (test('blocks --config-env core.hooksPath override (space-separated)', () => {
+  const r = runHook({ tool_input: { command: 'git --config-env core.hooksPath=MYVAR commit -m "msg"' } });
+  assert.strictEqual(r.code, 2, `expected exit 2, got ${r.code}`);
+})) passed++; else failed++;
+
+if (test('blocks --config-env core.HOOKSPATH override (case-variant key)', () => {
+  const r = runHook({ tool_input: { command: 'git --config-env=core.HOOKSPATH=MYVAR commit -m "msg"' } });
+  assert.strictEqual(r.code, 2, `expected exit 2, got ${r.code}`);
+})) passed++; else failed++;
+
+if (test('blocks --config-env core.hooksPath override on git push', () => {
+  const r = runHook({ tool_input: { command: 'git --config-env core.hooksPath=MYVAR push origin main' } });
+  assert.strictEqual(r.code, 2, `expected exit 2, got ${r.code}`);
+})) passed++; else failed++;
+
+// An unrecognised value-taking global option used to blind the subcommand
+// scanner: its value token looked like a bare word, so the `commit` after it
+// was rejected as the subcommand and the guard stopped inspecting the command
+// entirely -- letting even an explicit --no-verify through.
+if (test('sees --no-verify past a --config-env that sets an unrelated key', () => {
+  const r = runHook({ tool_input: { command: 'git --config-env other.key=MYVAR commit --no-verify -m "msg"' } });
+  assert.strictEqual(r.code, 2, `expected exit 2, got ${r.code}`);
+  assert.ok(/no-verify/i.test(r.stderr), `stderr should mention --no-verify: ${r.stderr}`);
+})) passed++; else failed++;
+
+if (test('still allows --config-env that sets an unrelated key', () => {
+  const r = runHook({ tool_input: { command: 'git --config-env=other.key=MYVAR commit -m "msg"' } });
+  assert.strictEqual(r.code, 0, `expected exit 0, got ${r.code}: ${r.stderr}`);
+})) passed++; else failed++;
+
+// Quoting is transparent to the shell but was not to the guard: detectGitCommand
+// split raw text on whitespace, so `"--config-env=core.hooksPath=MYVAR"` kept its
+// quotes, failed the `startsWith('-')` flag check and landed in subcommand position
+// -- the whole command then escaped inspection. The same hole covered `-c`, which
+// predates --config-env, and a quoted subcommand. Verified against git 2.51: the
+// shell strips these quotes, so git receives the option and skips the hooks.
+// (`git "-c core.hooksPath=..."` as ONE argv is not covered because git itself
+// rejects it: "unknown option: -c core.hooksPath=...", exit 129.)
+
+if (test('blocks a quoted --config-env=core.hooksPath override', () => {
+  const r = runHook({ tool_input: { command: 'git "--config-env=core.hooksPath=MYVAR" commit -m "msg"' } });
+  assert.strictEqual(r.code, 2, `expected exit 2, got ${r.code}`);
+  assert.ok(/core\.hookspath/i.test(r.stderr), `stderr should mention core.hooksPath: ${r.stderr}`);
+})) passed++; else failed++;
+
+if (test('blocks a quoted space-separated --config-env override', () => {
+  const r = runHook({ tool_input: { command: 'git "--config-env" "core.hooksPath=MYVAR" commit -m "msg"' } });
+  assert.strictEqual(r.code, 2, `expected exit 2, got ${r.code}`);
+})) passed++; else failed++;
+
+if (test('blocks a single-quoted --config-env override', () => {
+  const r = runHook({ tool_input: { command: "git '--config-env=core.hooksPath=MYVAR' commit -m 'msg'" } });
+  assert.strictEqual(r.code, 2, `expected exit 2, got ${r.code}`);
+})) passed++; else failed++;
+
+if (test('blocks a quoted -c core.hooksPath override', () => {
+  const r = runHook({ tool_input: { command: 'git "-c" "core.hooksPath=/dev/null" commit -m "msg"' } });
+  assert.strictEqual(r.code, 2, `expected exit 2, got ${r.code}`);
+})) passed++; else failed++;
+
+if (test('sees --no-verify past a quoted global option', () => {
+  const r = runHook({ tool_input: { command: 'git "--config-env=other.key=MYVAR" commit --no-verify -m "msg"' } });
+  assert.strictEqual(r.code, 2, `expected exit 2, got ${r.code}`);
+  assert.ok(/no-verify/i.test(r.stderr), `stderr should mention --no-verify: ${r.stderr}`);
+})) passed++; else failed++;
+
+if (test('sees --no-verify past a quoted subcommand', () => {
+  const r = runHook({ tool_input: { command: 'git "commit" --no-verify -m "msg"' } });
+  assert.strictEqual(r.code, 2, `expected exit 2, got ${r.code}`);
+})) passed++; else failed++;
+
+if (test('still allows a quoted global option that sets an unrelated key', () => {
+  const r = runHook({ tool_input: { command: 'git "--config-env=other.key=MYVAR" commit -m "msg"' } });
+  assert.strictEqual(r.code, 0, `expected exit 0, got ${r.code}: ${r.stderr}`);
+})) passed++; else failed++;
+
+// core.hooksPath is not the only key that moves the hooks. `include.path` makes
+// git read another config file and apply everything in it -- core.hooksPath
+// included -- so it is the same bypass one level of indirection away.
+// Verified against git 2.51, in a repo whose pre-commit hook echoes a marker:
+//   git -c include.path=evil.conf commit -m x   -> commit succeeds, marker absent
+//   git --config-env=include.path=EVIL config --get core.hooksPath
+//                                              -> prints the redirected path
+// includeIf.<condition>.path is covered as the same capability, not as a
+// reproduction: on git 2.51 a command-line conditional include never matched in
+// testing, so it may be inert there.
+
+if (test('blocks -c include.path, which can redirect core.hooksPath', () => {
+  const r = runHook({ tool_input: { command: 'git -c include.path=/tmp/evil.conf commit -m "msg"' } });
+  assert.strictEqual(r.code, 2, `expected exit 2, got ${r.code}`);
+  assert.ok(/include\.path/i.test(r.stderr), `stderr should mention include.path: ${r.stderr}`);
+})) passed++; else failed++;
+
+if (test('blocks a quoted -c include.path override', () => {
+  const r = runHook({ tool_input: { command: 'git "-c" "include.path=/tmp/evil.conf" commit -m "msg"' } });
+  assert.strictEqual(r.code, 2, `expected exit 2, got ${r.code}`);
+})) passed++; else failed++;
+
+if (test('blocks --config-env=include.path', () => {
+  const r = runHook({ tool_input: { command: 'git --config-env=include.path=EVIL commit -m "msg"' } });
+  assert.strictEqual(r.code, 2, `expected exit 2, got ${r.code}`);
+})) passed++; else failed++;
+
+if (test('blocks --config-env include.path (space-separated)', () => {
+  const r = runHook({ tool_input: { command: 'git --config-env include.path=EVIL commit -m "msg"' } });
+  assert.strictEqual(r.code, 2, `expected exit 2, got ${r.code}`);
+})) passed++; else failed++;
+
+if (test('blocks INCLUDE.PATH (config keys are case-insensitive)', () => {
+  const r = runHook({ tool_input: { command: 'git -c INCLUDE.PATH=/tmp/evil.conf commit -m "msg"' } });
+  assert.strictEqual(r.code, 2, `expected exit 2, got ${r.code}`);
+})) passed++; else failed++;
+
+if (test('blocks includeIf.<condition>.path', () => {
+  const r = runHook({ tool_input: { command: 'git -c includeIf.gitdir:/x/.path=/tmp/evil.conf commit -m "msg"' } });
+  assert.strictEqual(r.code, 2, `expected exit 2, got ${r.code}`);
+})) passed++; else failed++;
+
+if (test('blocks -c include.path on git push', () => {
+  const r = runHook({ tool_input: { command: 'git -c include.path=/tmp/evil.conf push origin main' } });
+  assert.strictEqual(r.code, 2, `expected exit 2, got ${r.code}`);
+})) passed++; else failed++;
+
+if (test('still allows an unrelated -c setting', () => {
+  const r = runHook({ tool_input: { command: 'git -c user.name=x commit -m "msg"' } });
+  assert.strictEqual(r.code, 0, `expected exit 0, got ${r.code}: ${r.stderr}`);
+})) passed++; else failed++;
+
+if (test('still allows a key that merely ends in .path', () => {
+  const r = runHook({ tool_input: { command: 'git -c diff.external.path=/usr/bin/diff commit -m "msg"' } });
+  assert.strictEqual(r.code, 0, `expected exit 0, got ${r.code}: ${r.stderr}`);
+})) passed++; else failed++;
+
+// tokenizeShellWords strips quotes but does not run the shell, so `$(printf commit)`
+// arrived verbatim while the shell handed git a plain `commit`. Same for the config
+// key: `-c "$(printf core.hooksPath=/dev/null)"` did not match any known key.
+// Both predate this PR -- verified ALLOWED against the merge base d8409a4b too.
+//
+// Failing closed here is deliberately narrow. A dynamic subcommand does not block on
+// its own: the guard keeps inspecting and blocks only if --no-verify or a hook
+// redirect is also present, so `git $CMD status` is fine. For `-c`, only the KEY half
+// is treated as opaque -- an expanded VALUE cannot turn user.name into core.hooksPath.
+
+if (test('blocks --no-verify behind a command-substituted subcommand', () => {
+  const r = runHook({ tool_input: { command: 'git "$(printf commit)" --no-verify -m "msg"' } });
+  assert.strictEqual(r.code, 2, `expected exit 2, got ${r.code}`);
+})) passed++; else failed++;
+
+if (test('blocks --no-verify behind a backticked subcommand', () => {
+  const r = runHook({ tool_input: { command: 'git `echo commit` --no-verify -m "msg"' } });
+  assert.strictEqual(r.code, 2, `expected exit 2, got ${r.code}`);
+})) passed++; else failed++;
+
+if (test('blocks --no-verify behind a variable subcommand', () => {
+  const r = runHook({ tool_input: { command: 'git $SUB --no-verify -m "msg"' } });
+  assert.strictEqual(r.code, 2, `expected exit 2, got ${r.code}`);
+})) passed++; else failed++;
+
+if (test('blocks --no-verify behind a braced variable subcommand', () => {
+  const r = runHook({ tool_input: { command: 'git ${SUB} --no-verify -m "msg"' } });
+  assert.strictEqual(r.code, 2, `expected exit 2, got ${r.code}`);
+})) passed++; else failed++;
+
+if (test('blocks a command-substituted config key', () => {
+  const r = runHook({ tool_input: { command: 'git -c "$(printf core.hooksPath=/dev/null)" commit -m "msg"' } });
+  assert.strictEqual(r.code, 2, `expected exit 2, got ${r.code}`);
+})) passed++; else failed++;
+
+if (test('blocks a config key hidden in a variable', () => {
+  const r = runHook({ tool_input: { command: 'git -c $CFG commit -m "msg"' } });
+  assert.strictEqual(r.code, 2, `expected exit 2, got ${r.code}`);
+})) passed++; else failed++;
+
+if (test('still allows a command substitution in the commit message', () => {
+  const r = runHook({ tool_input: { command: 'git commit -m "$(cat msg.txt)"' } });
+  assert.strictEqual(r.code, 0, `expected exit 0, got ${r.code}: ${r.stderr}`);
+})) passed++; else failed++;
+
+if (test('still allows a backtick inside the commit message', () => {
+  const r = runHook({ tool_input: { command: 'git commit -m "see `date`"' } });
+  assert.strictEqual(r.code, 0, `expected exit 0, got ${r.code}: ${r.stderr}`);
+})) passed++; else failed++;
+
+if (test('still allows an expanded VALUE on a literal config key', () => {
+  const r = runHook({ tool_input: { command: 'git -c user.email=$EMAIL commit -m "msg"' } });
+  assert.strictEqual(r.code, 0, `expected exit 0, got ${r.code}: ${r.stderr}`);
+})) passed++; else failed++;
+
+if (test('still allows a command-substituted config VALUE', () => {
+  const r = runHook({ tool_input: { command: 'git -c user.name="$(whoami)" commit -m "msg"' } });
+  assert.strictEqual(r.code, 0, `expected exit 0, got ${r.code}: ${r.stderr}`);
+})) passed++; else failed++;
+
+if (test('still allows a dynamic subcommand with no bypass flag', () => {
+  const r = runHook({ tool_input: { command: 'git $CMD status' } });
+  assert.strictEqual(r.code, 0, `expected exit 0, got ${r.code}: ${r.stderr}`);
+})) passed++; else failed++;
+
+if (test('still allows a dynamic branch name on push', () => {
+  const r = runHook({ tool_input: { command: 'git push origin $BRANCH' } });
+  assert.strictEqual(r.code, 0, `expected exit 0, got ${r.code}: ${r.stderr}`);
+})) passed++; else failed++;
+
+// `-n` is --no-verify to git commit but "max count" to log/show/diff, so behind a
+// shell-expanded subcommand it is ambiguous. Only the ATTACHED spelling is exempt,
+// because git commit refuses it outright (git 2.51):
+//   git log -n5      ok          git commit -n5   error: unknown switch `5'
+//
+// The split form is NOT exempt. git commit reads that token as a pathspec, and two
+// verified bypasses came out of trying to decide it from the string, both committing
+// with the pre-commit hook never running:
+//   file `1` present          git commit -n 1 -m x  -> [main 326cf0b] x
+//   `7` staged as a DELETION  git commit -n 7 -m x  -> [main 7e7d466] x
+// The second is why an existsSync test is not enough: git takes a staged deletion as
+// a pathspec while the file is absent from disk. Failing closed costs
+// `git $SUB -n 5`; `git $SUB -n5` and `git $SUB --max-count=5` still work.
+
+if (test('blocks split -n <count> behind an expanded subcommand', () => {
+  const r = runHook({ tool_input: { command: 'git $SUB -n 5' } });
+  assert.strictEqual(r.code, 2, `expected exit 2, got ${r.code}`);
+})) passed++; else failed++;
+
+if (test('blocks the staged-deletion shape that defeated a filesystem check', () => {
+  const r = runHook({ tool_input: { command: 'git $SUB -m "msg" -n 7' } });
+  assert.strictEqual(r.code, 2, `expected exit 2, got ${r.code}`);
+})) passed++; else failed++;
+
+if (test('allows the attached -n<count>, which git commit rejects outright', () => {
+  const r = runHook({ tool_input: { command: 'git $SUB -n5' } });
+  assert.strictEqual(r.code, 0, `expected exit 0, got ${r.code}: ${r.stderr}`);
+})) passed++; else failed++;
+
+if (test('allows --max-count behind an expanded subcommand', () => {
+  const r = runHook({ tool_input: { command: 'git $SUB --max-count=5' } });
+  assert.strictEqual(r.code, 0, `expected exit 0, got ${r.code}: ${r.stderr}`);
+})) passed++; else failed++;
+
+if (test('still blocks a bare -n behind an expanded subcommand', () => {
+  const r = runHook({ tool_input: { command: 'git $SUB -n -m "msg"' } });
+  assert.strictEqual(r.code, 2, `expected exit 2, got ${r.code}`);
+})) passed++; else failed++;
+
+if (test('still blocks --no-verify behind an expanded subcommand', () => {
+  const r = runHook({ tool_input: { command: 'git $SUB --no-verify -m "msg"' } });
+  assert.strictEqual(r.code, 2, `expected exit 2, got ${r.code}`);
+})) passed++; else failed++;
+
+if (test('the attached-form exemption does not leak to a literal commit', () => {
+  const r = runHook({ tool_input: { command: 'git commit -n5 -m "msg"' } });
+  assert.strictEqual(r.code, 2, `expected exit 2, got ${r.code}`);
+})) passed++; else failed++;
+
+
 console.log('─'.repeat(50));
 console.log(`Passed: ${passed}  Failed: ${failed}`);
 
