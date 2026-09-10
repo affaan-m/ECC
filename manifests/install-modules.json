@@ -558,6 +558,7 @@
         "skills/messages-ops",
         "skills/project-flow-ops",
         "skills/terminal-ops",
+        "skills/token-card",
         "skills/unified-notifications-ops",
         "skills/workspace-surface-audit",
         "skills/mailtrap-email-integration"
