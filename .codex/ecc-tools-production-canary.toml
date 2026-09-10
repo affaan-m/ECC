@@ -1,0 +1,4 @@
+# ECC Tools production canary. Do not merge.
+[canary]
+purpose = "verify PR audit delivery and idempotency"
+generation = 1
