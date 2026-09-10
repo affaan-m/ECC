@@ -712,7 +712,7 @@ function runTests() {
 
     const result = runValidatorWithDir('validate-hooks', 'HOOKS_FILE', hooksFile);
     assert.strictEqual(result.code, 1, 'Should fail on invalid event type');
-    assert.ok(/Invalid event type|schema/.test(result.stderr), 'Should report invalid event type');
+    assert.ok(result.stderr.includes('InvalidEventType'), 'Should report the invalid event name');
     cleanupTestDir(testDir);
   })) passed++; else failed++;
 

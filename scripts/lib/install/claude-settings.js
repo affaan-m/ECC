@@ -463,15 +463,26 @@ function entriesMatchingId(entries, id) {
 function entriesShareContract(left, right) {
   const leftMetadata = hookMetadata(left);
   const rightMetadata = hookMetadata(right);
+  const leftHasStatusIdentity = entryHasStatusIdentity(left, leftMetadata && leftMetadata.id);
+  const rightHasStatusIdentity = entryHasStatusIdentity(right, rightMetadata && rightMetadata.id);
+  const omitMigratedStatus = leftHasStatusIdentity !== rightHasStatusIdentity;
   return Boolean(
     leftMetadata
     && rightMetadata
     && leftMetadata.id === rightMetadata.id
-    && isDeepStrictEqual(entryContract(left), entryContract(right))
+    && isDeepStrictEqual(
+      entryContract(left, omitMigratedStatus),
+      entryContract(right, omitMigratedStatus)
+    )
   );
 }
 
-function entryContract(entry) {
+function entryHasStatusIdentity(entry, id) {
+  return isJsonObject(entry) && Array.isArray(entry.hooks)
+    && entry.hooks.some(handler => isHookIdentityStatusMessage(handler, id));
+}
+
+function entryContract(entry, omitStatusIdentity = false) {
   const metadata = hookMetadata(entry);
   const stripped = Object.fromEntries(
     Object.entries(entry).filter(([key]) => key !== 'id' && key !== 'description')
@@ -485,6 +496,7 @@ function entryContract(entry) {
       if (!isJsonObject(handler)) return handler;
       return Object.fromEntries(Object.entries(handler).filter(([key]) => (
         key !== 'statusMessage'
+        || !omitStatusIdentity
         || !isHookIdentityStatusMessage(handler, metadata && metadata.id)
       )));
     }),

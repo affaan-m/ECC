@@ -597,6 +597,33 @@ function runTests() {
     );
   })) passed++; else failed++;
 
+  if (test('upgrade and uninstall preserve edited ECC status message text as drift', () => {
+    const desired = materializeManagedHooks({
+      hooks: {
+        Stop: [{
+          matcher: '.*',
+          hooks: [{
+            type: 'command',
+            command: 'version-1',
+            statusMessage: '[ECC:ecc:stop] Managed status',
+          }],
+        }],
+      },
+    }, '/opt/ecc');
+    const installed = stripHookMetadata(desired);
+    const edited = clone(installed);
+    edited.Stop[0].hooks[0].statusMessage = '[ECC:ecc:stop] User status';
+
+    assert.throws(
+      () => mergeManagedHooks({ hooks: edited }, desired, { previousManagedHooks: desired }),
+      /previous managed entry has drifted/
+    );
+
+    const uninstalled = uninstallManagedHooks({ hooks: edited }, desired);
+    assert.deepStrictEqual(uninstalled.settings.hooks, edited);
+    assert.deepStrictEqual(uninstalled.retained.map(item => item.id), ['ecc:stop']);
+  })) passed++; else failed++;
+
   if (test('upgrade fails closed when previous managed content has drifted', () => {
     const settings = { hooks: { Stop: [entry('ecc:stop', 'customer-edit')] } };
     const before = clone(settings);

@@ -146,7 +146,11 @@ function validateHooks() {
     const valid = validate(data);
     if (!valid) {
       for (const err of validate.errors) {
-        console.error(`ERROR: hooks.json schema: ${err.instancePath || '/'} ${err.message}`);
+        const property = err.propertyName || (err.params && err.params.propertyName);
+        const location = property
+          ? `${err.instancePath || '/'} property ${JSON.stringify(property)}`
+          : err.instancePath || '/';
+        console.error(`ERROR: hooks.json schema: ${location} ${err.message}`);
       }
       process.exit(1);
     }
