@@ -12,7 +12,6 @@ Thank you to everyone funding ECC's open-source work. Your sponsorship is what l
 |---------|------|-------|
 | [**CodeRabbit**](https://www.coderabbit.ai) | <img src="assets/images/sponsors/coderabbit.png" width="60" alt="CodeRabbit logo" /> | 2026 |
 | [**Greptile**](https://www.greptile.com/go/ecc) | <img src="assets/images/sponsors/greptile.png" width="60" alt="Greptile logo" /> | 2026 |
-| [**Atlas Cloud**](https://www.atlascloud.ai/?utm_source=github&utm_medium=link&utm_campaign=ECC) | <picture><source media="(prefers-color-scheme: dark)" srcset="assets/images/sponsors/atlascloud-dark.svg" /><img src="assets/images/sponsors/atlascloud.svg" width="120" alt="Atlas Cloud logo" /></picture> | 2026 |
 | [**Moonshot AI (Kimi)**](https://www.moonshot.ai) | <picture><source media="(prefers-color-scheme: dark)" srcset="assets/images/sponsors/moonshot-dark.png" /><img src="assets/images/sponsors/moonshot.png" width="100" alt="Moonshot AI Kimi logo" /></picture> | 2026 |
 | [**Itô**](https://compute.itomarkets.com) | <picture><source media="(prefers-color-scheme: light)" srcset="assets/images/sponsors/ito-transparent-light.png" /><img src="assets/images/sponsors/ito-transparent.png" width="88" alt="Itô Markets logo" /></picture> | 2026 |
 
@@ -24,9 +23,15 @@ Run or self-host any open-source model. Itô partners with ECC on compute, while
 
 | Sponsor | Since |
 |---------|-------|
-| [Mike Morgan](https://github.com/mikejmorgan-ai) | 2026 |
 
 *[Become a Team sponsor](https://github.com/sponsors/affaan-m) to be listed in SPONSORS.md.*
+
+## Past Sponsors
+
+| Sponsor | Logo or tier | Since | Status |
+|---------|--------------|-------|--------|
+| [**Atlas Cloud**](https://www.atlascloud.ai/?utm_source=github&utm_medium=link&utm_campaign=ECC) | <picture><source media="(prefers-color-scheme: dark)" srcset="assets/images/sponsors/atlascloud-dark.svg" /><img src="assets/images/sponsors/atlascloud.svg" width="120" alt="Atlas Cloud logo" /></picture> | 2026 | Past sponsor |
+| [Mike Morgan](https://github.com/mikejmorgan-ai) | Team sponsor | 2026 | Inactive |
 
 ## Pro Sponsors — $50/mo
 
