@@ -6,6 +6,15 @@
  * while allowing obvious placeholder usernames used in templates/examples.
  * Forensic incident reports under `docs/fixes/` are exempt because they may
  * legitimately document a reporter's local machine path.
+ *
+ * Usage:
+ *   node scripts/ci/validate-no-personal-paths.js
+ *   node scripts/ci/validate-no-personal-paths.js --root <dir>
+ *
+ * `--root` scans another tree with the same rules. It exists so a generated
+ * profile carrier can be validated the same way this repository is, which is
+ * the only way that check can assert unconditionally instead of guessing
+ * from stderr whether the flag was understood.
  */
 
 'use strict';
@@ -13,7 +22,48 @@
 const fs = require('fs');
 const path = require('path');
 
-const ROOT = path.join(__dirname, '../..');
+const HELP = `Usage: node scripts/ci/validate-no-personal-paths.js [--root <dir>]
+
+Fails when a shipped file contains a user-specific absolute path
+(/Users/<name> or C:\\Users\\<name>), ignoring placeholder usernames.
+
+  --root <dir>  Scan <dir> instead of the repository root. Used to validate
+                a generated carrier tree.
+`;
+
+function parseArgs(argv) {
+  const options = { root: path.join(__dirname, '../..'), help: false };
+  for (let i = 0; i < argv.length; i += 1) {
+    if (argv[i] === '--help' || argv[i] === '-h') {
+      options.help = true;
+    } else if (argv[i] === '--root') {
+      const value = argv[i + 1];
+      if (!value || value.startsWith('--')) {
+        console.error('ERROR: --root requires a directory');
+        process.exit(2);
+      }
+      options.root = path.resolve(value);
+      i += 1;
+    } else {
+      console.error(`ERROR: unknown argument ${argv[i]}`);
+      process.exit(2);
+    }
+  }
+  return options;
+}
+
+const options = parseArgs(process.argv.slice(2));
+if (options.help) {
+  process.stdout.write(HELP);
+  process.exit(0);
+}
+
+const ROOT = options.root;
+if (!fs.existsSync(ROOT) || !fs.statSync(ROOT).isDirectory()) {
+  console.error(`ERROR: --root is not a directory: ${ROOT}`);
+  process.exit(2);
+}
+
 const TARGETS = [
   'README.md',
   'skills',
@@ -21,6 +71,10 @@ const TARGETS = [
   'agents',
   'docs',
   '.opencode/commands',
+  // Carrier-only surfaces. Absent in the repository, scanned when --root
+  // points at a generated carrier.
+  'on-demand',
+  'ecc-profile.json',
 ];
 
 const EXEMPT_PREFIXES = [
@@ -104,4 +158,4 @@ if (failures > 0) {
   process.exit(1);
 }
 
-console.log('Validated: no personal absolute paths in shipped docs/skills/commands');
+console.log(`Validated: no personal absolute paths under ${ROOT}`);

@@ -110,6 +110,7 @@ skills:
   - perl-testing
   - plankton-code-quality
   - plan-canvas
+  - plugin-profiles
   - plan-orchestrate
   - postgres-patterns
   - product-lens
@@ -220,6 +221,7 @@ commands:
   - plan
   - plan-canvas
   - plan-prd
+  - plugin-profiles
   - pm2
   - projects
   - promote

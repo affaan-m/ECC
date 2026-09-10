@@ -1,0 +1,183 @@
+{
+  "notes": [
+    "Adversarial slice for the skill router. Every prompt here is phrased the",
+    "way the problem is actually experienced, using none of the content tokens",
+    "in the target skill's id or description. The router scores by token",
+    "overlap, so this slice is expected to score far below the main fixture.",
+    "It exists to make that gap visible and measurable rather than implied:",
+    "the main fixture reports what the router does when the user already knows",
+    "the vocabulary, and this one reports what it does when they do not.",
+    "Do not tune the router against this file by adding these words to skill",
+    "descriptions - that would move the number without moving the capability."
+  ],
+  "prompts": [
+    {
+      "prompt": "the page jumps around when I tab through the form",
+      "expected": [
+        "frontend-a11y",
+        "accessibility"
+      ]
+    },
+    {
+      "prompt": "screen readers announce our buttons as just button",
+      "expected": [
+        "frontend-a11y",
+        "accessibility"
+      ]
+    },
+    {
+      "prompt": "everything grinds to a halt once we hit about ten thousand rows",
+      "expected": [
+        "postgres-patterns",
+        "database-migrations"
+      ]
+    },
+    {
+      "prompt": "the numbers in the dashboard disagree with what finance has",
+      "expected": [
+        "benchmark-methodology",
+        "production-audit"
+      ]
+    },
+    {
+      "prompt": "it works on my machine but falls over in the pipeline",
+      "expected": [
+        "delivery-gate",
+        "deployment-patterns"
+      ]
+    },
+    {
+      "prompt": "we keep shipping the same bug over and over",
+      "expected": [
+        "tdd-workflow",
+        "ai-regression-testing"
+      ]
+    },
+    {
+      "prompt": "nobody can tell me why this function exists",
+      "expected": [
+        "codebase-onboarding",
+        "code-tour"
+      ]
+    },
+    {
+      "prompt": "the new hire took three weeks to make their first change",
+      "expected": [
+        "codebase-onboarding",
+        "code-tour"
+      ]
+    },
+    {
+      "prompt": "our secrets ended up in the repo again",
+      "expected": [
+        "security-review",
+        "security-scan"
+      ]
+    },
+    {
+      "prompt": "someone deleted production data and we could not get it back",
+      "expected": [
+        "database-migrations",
+        "production-audit"
+      ]
+    },
+    {
+      "prompt": "the model keeps confidently making things up",
+      "expected": [
+        "eval-harness",
+        "verification-loop"
+      ]
+    },
+    {
+      "prompt": "every conversation starts from scratch and forgets what we agreed",
+      "expected": [
+        "strategic-compact"
+      ]
+    },
+    {
+      "prompt": "the thing is technically correct but nobody wants to use it",
+      "expected": [
+        "product-lens",
+        "make-interfaces-feel-better"
+      ]
+    },
+    {
+      "prompt": "we argue about the same decision every quarter",
+      "expected": [
+        "architecture-decision-records"
+      ]
+    },
+    {
+      "prompt": "our estimates are always wrong by a factor of three",
+      "expected": [
+        "plan-canvas",
+        "intent-driven-development"
+      ]
+    },
+    {
+      "prompt": "the build takes so long people stopped running it",
+      "expected": [
+        "delivery-gate"
+      ]
+    },
+    {
+      "prompt": "two services both think they own the same record",
+      "expected": [
+        "api-design",
+        "contract-first"
+      ]
+    },
+    {
+      "prompt": "it gets slower every time someone adds a feature",
+      "expected": [
+        "plankton-code-quality",
+        "repo-scan"
+      ]
+    },
+    {
+      "prompt": "customers notice problems before our alerts do",
+      "expected": [
+        "production-audit"
+      ]
+    },
+    {
+      "prompt": "half the flags in this file do nothing any more",
+      "expected": [
+        "config-gc",
+        "plankton-code-quality"
+      ]
+    },
+    {
+      "prompt": "the handover doc is a year out of date",
+      "expected": [
+        "living-docs-governance"
+      ]
+    },
+    {
+      "prompt": "we cannot tell which change caused the slowdown",
+      "expected": [
+        "benchmark-methodology",
+        "production-audit"
+      ]
+    },
+    {
+      "prompt": "the same three people are the only ones who can deploy",
+      "expected": [
+        "deployment-patterns"
+      ]
+    },
+    {
+      "prompt": "our tests pass but the feature is broken for real users",
+      "expected": [
+        "e2e-testing",
+        "browser-qa"
+      ]
+    },
+    {
+      "prompt": "this file is four thousand lines and everyone is scared of it",
+      "expected": [
+        "plankton-code-quality"
+      ]
+    }
+  ]
+}
