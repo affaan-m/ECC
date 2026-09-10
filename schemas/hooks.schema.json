@@ -42,6 +42,11 @@
           "type": "number",
           "minimum": 0,
           "description": "Timeout in seconds for async hooks"
+        },
+        "statusMessage": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Optional status text shown while the command hook runs"
         }
       },
       "additionalProperties": true
@@ -202,14 +207,14 @@
             "^(SessionStart|PreToolUse|PermissionRequest|PostToolUse|PostToolUseFailure|SubagentStart|PreCompact|InstructionsLoaded|TeammateIdle|TaskCompleted|ConfigChange|WorktreeCreate|WorktreeRemove|SessionEnd)$": {
               "type": "array",
               "items": {
-                "$ref": "#/$defs/managedMatcherRequiredEntry"
+                "$ref": "#/$defs/matcherEntry"
               }
             }
           },
           "additionalProperties": {
             "type": "array",
             "items": {
-              "$ref": "#/$defs/managedMatcherEntry"
+              "$ref": "#/$defs/matcherEntry"
             }
           }
         }

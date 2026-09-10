@@ -9,6 +9,7 @@ const path = require('path');
 const { execFileSync, spawnSync } = require('child_process');
 const yaml = require('js-yaml');
 const { applyInstallPlan } = require('../../scripts/lib/install/apply');
+const { hookMetadata, stripHookMetadata } = require('../../scripts/lib/hook-registry');
 
 const SCRIPT = path.join(__dirname, '..', '..', 'scripts', 'install-apply.js');
 const DEFAULT_INSTALL_APPLY_TIMEOUT_MS = process.platform === 'win32' ? 30000 : 10000;
@@ -802,14 +803,14 @@ function runTests() {
       );
       const settings = readJson(path.join(claudeRoot, 'settings.json'));
       assert.strictEqual(settings.includeCoAuthoredBy, false);
-      assert.ok(settings.hooks.SessionStart.some(entry => entry.id === 'session:start'));
+      assert.ok(settings.hooks.SessionStart.some(entry => hookMetadata(entry)?.id === 'session:start'));
 
       const state = readJson(path.join(claudeRoot, 'ecc', 'install-state.json'));
       const settingsOperation = state.operations.find(operation => (
         operation.kind === 'update-claude-settings'
       ));
       assert.ok(settingsOperation, 'state should record the settings update operation');
-      assert.deepStrictEqual(settingsOperation.managedHooks, settings.hooks);
+      assert.deepStrictEqual(stripHookMetadata(settingsOperation.managedHooks), settings.hooks);
     } finally {
       cleanup(homeDir);
       cleanup(projectDir);
@@ -836,7 +837,7 @@ function runTests() {
         const installedRoot = state.target.root;
         assert.strictEqual(fs.realpathSync(installedRoot), fs.realpathSync(claudeRoot));
         const installedBashDispatcherEntry = settings.hooks.PreToolUse.find(
-          entry => entry.id === 'pre:bash:dispatcher'
+          entry => hookMetadata(entry)?.id === 'pre:bash:dispatcher'
         );
         assert.ok(installedBashDispatcherEntry);
         const command = installedBashDispatcherEntry.hooks[0].command;
@@ -852,7 +853,7 @@ function runTests() {
         assert.ok(!command.includes('${CLAUDE_PLUGIN_ROOT}'));
 
         const smokeEntry = settings.hooks.PreToolUse.find(
-          entry => entry.id === 'pre:write:doc-file-warning'
+          entry => hookMetadata(entry)?.id === 'pre:write:doc-file-warning'
         );
         const smokeResult = spawnSync(smokeEntry.hooks[0].command, {
           input: JSON.stringify({
@@ -916,7 +917,7 @@ function runTests() {
         'existing event entries should retain their order and content'
       );
       assert.ok(
-        settings.hooks.PreToolUse.some(entry => entry.id === 'pre:bash:dispatcher'),
+        settings.hooks.PreToolUse.some(entry => hookMetadata(entry)?.id === 'pre:bash:dispatcher'),
         'managed Claude hooks should be registered alongside user hooks'
       );
     } finally {
@@ -1012,7 +1013,7 @@ function runTests() {
 
       const settings = readJson(path.join(homeDir, '.claude', 'settings.json'));
       assert.strictEqual(settings.includeCoAuthoredBy, false);
-      const ids = Object.values(settings.hooks).flat().map(entry => entry.id);
+      const ids = Object.values(settings.hooks).flat().map(entry => hookMetadata(entry)?.id);
       assert.strictEqual(ids.length, new Set(ids).size, 'managed hook IDs should not duplicate');
     } finally {
       cleanup(homeDir);
@@ -1041,7 +1042,7 @@ function runTests() {
       const afterSecondInstall = readJson(settingsPath);
       assert.strictEqual(afterSecondInstall.includeCoAuthoredBy, false);
       assert.deepStrictEqual(afterSecondInstall.hooks.PreToolUse[0], legacySettings.hooks.PreToolUse[0]);
-      assert.ok(afterSecondInstall.hooks.PreToolUse.some(entry => entry.id === 'pre:bash:dispatcher'));
+      assert.ok(afterSecondInstall.hooks.PreToolUse.some(entry => hookMetadata(entry)?.id === 'pre:bash:dispatcher'));
     } finally {
       cleanup(homeDir);
       cleanup(projectDir);
@@ -1068,7 +1069,7 @@ function runTests() {
       const afterInstall = readJson(settingsPath);
       assert.strictEqual(afterInstall.includeCoAuthoredBy, true);
       assert.strictEqual(afterInstall.theme, 'dark');
-      assert.ok(afterInstall.hooks.SessionStart.some(entry => entry.id === 'session:start'));
+      assert.ok(afterInstall.hooks.SessionStart.some(entry => hookMetadata(entry)?.id === 'session:start'));
     } finally {
       cleanup(homeDir);
       cleanup(projectDir);
@@ -1098,7 +1099,7 @@ function runTests() {
       assert.deepStrictEqual(afterInstall.attribution, customSettings.attribution);
       assert.strictEqual(afterInstall.theme, 'dark');
       assert.ok(!Object.hasOwn(afterInstall, 'includeCoAuthoredBy'));
-      assert.ok(afterInstall.hooks.SessionStart.some(entry => entry.id === 'session:start'));
+      assert.ok(afterInstall.hooks.SessionStart.some(entry => hookMetadata(entry)?.id === 'session:start'));
     } finally {
       cleanup(homeDir);
       cleanup(projectDir);

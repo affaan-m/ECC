@@ -19,6 +19,7 @@ const {
   isAllowedOrigin,
 } = require('./lib/loopback-guard');
 const { normalizeAgentTools } = require('./lib/agent-tools');
+const { loadHookRegistry } = require('./lib/hook-registry');
 
 const DEFAULT_HOST = '127.0.0.1';
 
@@ -129,7 +130,7 @@ function loadHooks(_root) {
   const hooksPath = path.join(root, 'hooks', 'hooks.json');
   if (!fs.existsSync(hooksPath)) return [];
   try {
-    const data = JSON.parse(fs.readFileSync(hooksPath, 'utf8'));
+    const data = loadHookRegistry(root);
     const hooks = [];
     for (const [eventName, entries] of Object.entries(data.hooks || {})) {
       for (const entry of entries || []) {

@@ -19,6 +19,11 @@ User request → Claude picks a tool → PreToolUse hook runs → Tool executes 
 Memory persistence lifecycle definitions live in `hooks/memory-persistence/`.
 The executable hook graph remains `hooks/hooks.json`; the memory persistence directory is the stable contract for SessionStart, PreCompact, observation, activity tracking, and SessionEnd behavior.
 
+`hooks/hooks.json` follows Claude Code's plugin hook schema. ECC's stable hook
+IDs are encoded in each command handler's supported `statusMessage` field as
+`[ECC:<id>] <description>`; the installer and dashboard recover that metadata
+internally and never write private matcher-group keys into Claude settings.
+
 ## Installing These Hooks Manually
 
 For Claude Code manual installs, do not paste the raw repo `hooks.json` into `~/.claude/settings.json` or copy it directly into `~/.claude/hooks/hooks.json`. The checked-in file is plugin/repo-oriented and is meant to be installed through the ECC installer or loaded as a plugin.

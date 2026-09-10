@@ -12,6 +12,7 @@ const path = require('path');
 const fs = require('fs');
 const os = require('os');
 const { spawn } = require('child_process');
+const { loadHookRegistry } = require('../../scripts/lib/hook-registry');
 const REPO_ROOT = path.join(__dirname, '..', '..');
 
 // Test helper
@@ -281,8 +282,7 @@ async function runTests() {
   let failed = 0;
 
   const scriptsDir = path.join(__dirname, '..', '..', 'scripts', 'hooks');
-  const hooksJsonPath = path.join(__dirname, '..', '..', 'hooks', 'hooks.json');
-  const hooks = JSON.parse(fs.readFileSync(hooksJsonPath, 'utf8'));
+  const hooks = loadHookRegistry(REPO_ROOT);
 
   // ==========================================
   // Input Format Tests

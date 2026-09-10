@@ -4,6 +4,12 @@ const fs = require('fs');
 const path = require('path');
 const { isDeepStrictEqual } = require('util');
 const { writeFileAtomic } = require('../atomic-write');
+const {
+  attachHookMetadata,
+  hookMetadata,
+  isHookIdentityStatusMessage,
+  stripHookEntryMetadata,
+} = require('../hook-registry');
 const { acquireSettingsLock, runWithSettingsLock } = require('./claude-settings-lock');
 
 const CLAUDE_SETTINGS_FILENAME = 'settings.json';
@@ -297,8 +303,9 @@ function materializeManagedHooks(hooksConfig, targetRoot) {
   if (!isNonEmptyString(targetRoot)) {
     throw new Error('Invalid Claude target root: expected a non-empty string');
   }
+  const registry = attachHookMetadata(hooksConfig);
   return validateManagedHooks(resolveManagedHookCommands(
-    replacePluginRootPlaceholders(hooksConfig.hooks, targetRoot),
+    replacePluginRootPlaceholders(registry.hooks, targetRoot),
     targetRoot
   ));
 }
@@ -450,7 +457,38 @@ function reference(event, id) {
 function entriesMatchingId(entries, id) {
   return entries
     .map((entry, index) => ({ entry, index }))
-    .filter(candidate => isJsonObject(candidate.entry) && candidate.entry.id === id);
+    .filter(candidate => hookMetadata(candidate.entry)?.id === id);
+}
+
+function entriesShareContract(left, right) {
+  const leftMetadata = hookMetadata(left);
+  const rightMetadata = hookMetadata(right);
+  return Boolean(
+    leftMetadata
+    && rightMetadata
+    && leftMetadata.id === rightMetadata.id
+    && isDeepStrictEqual(entryContract(left), entryContract(right))
+  );
+}
+
+function entryContract(entry) {
+  const metadata = hookMetadata(entry);
+  const stripped = Object.fromEntries(
+    Object.entries(entry).filter(([key]) => key !== 'id' && key !== 'description')
+  );
+  if (!Array.isArray(stripped.hooks)) {
+    return stripped;
+  }
+  return {
+    ...stripped,
+    hooks: stripped.hooks.map(handler => {
+      if (!isJsonObject(handler)) return handler;
+      return Object.fromEntries(Object.entries(handler).filter(([key]) => (
+        key !== 'statusMessage'
+        || !isHookIdentityStatusMessage(handler, metadata && metadata.id)
+      )));
+    }),
+  };
 }
 
 function assertUnambiguousMatch(entries, event, id) {
@@ -498,7 +536,7 @@ function mergeManagedHooks(settings, managedHooks, options = {}) {
         if (managedEntryFor(desiredHooks, event, previousEntry.id)) continue;
         const match = assertUnambiguousMatch(eventEntries, event, previousEntry.id);
         if (!match) continue;
-        if (!isDeepStrictEqual(match.entry, previousEntry)) {
+        if (!entriesShareContract(match.entry, previousEntry)) {
           throw new Error(
             `Refusing to remove Claude hook for event "${event}" and id `
             + `"${previousEntry.id}" because the previous managed entry has drifted`
@@ -518,17 +556,20 @@ function mergeManagedHooks(settings, managedHooks, options = {}) {
     for (const desiredEntry of desiredEntries) {
       const match = assertUnambiguousMatch(eventEntries, event, desiredEntry.id);
       if (!match) {
-        eventEntries = [...eventEntries, cloneValue(desiredEntry)];
+        eventEntries = [...eventEntries, stripHookEntryMetadata(desiredEntry)];
         added.push(reference(event, desiredEntry.id));
         continue;
       }
-      if (isDeepStrictEqual(match.entry, desiredEntry)) {
+      const desiredStoredEntry = stripHookEntryMetadata(desiredEntry);
+      if (isDeepStrictEqual(match.entry, desiredStoredEntry)) {
         unchanged.push(reference(event, desiredEntry.id));
         continue;
       }
 
       const previousEntry = managedEntryFor(previousHooks, event, desiredEntry.id);
-      if (!repair && (!previousEntry || !isDeepStrictEqual(match.entry, previousEntry))) {
+      const metadataOnlyMigration = entriesShareContract(match.entry, desiredEntry);
+      if (!repair && !metadataOnlyMigration
+        && (!previousEntry || !entriesShareContract(match.entry, previousEntry))) {
         const driftReason = previousEntry ? ' because the previous managed entry has drifted' : '';
         throw new Error(
           `Refusing to overwrite Claude hook for event "${event}" and id `
@@ -537,7 +578,7 @@ function mergeManagedHooks(settings, managedHooks, options = {}) {
       }
 
       eventEntries = eventEntries.map((entry, index) => (
-        index === match.index ? cloneValue(desiredEntry) : entry
+        index === match.index ? desiredStoredEntry : entry
       ));
       updated.push(reference(event, desiredEntry.id));
     }
@@ -586,7 +627,7 @@ function inspectManagedHooks(settings, managedHooks) {
       }
 
       foundEntries.push(cloneValue(match.entry));
-      if (isDeepStrictEqual(match.entry, expectedEntry)) {
+      if (isDeepStrictEqual(match.entry, stripHookEntryMetadata(expectedEntry))) {
         matched.push(reference(event, expectedEntry.id));
       } else {
         drifted.push({
@@ -643,7 +684,7 @@ function uninstallManagedHooks(settings, recordedManagedHooks) {
         missing.push(reference(event, recordedEntry.id));
         continue;
       }
-      if (!isDeepStrictEqual(match.entry, recordedEntry)) {
+      if (!entriesShareContract(match.entry, recordedEntry)) {
         retained.push({
           ...reference(event, recordedEntry.id),
           expected: cloneValue(recordedEntry),

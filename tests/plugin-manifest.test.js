@@ -17,6 +17,7 @@
 const assert = require('assert');
 const fs = require('fs');
 const path = require('path');
+const { loadHookRegistry } = require('../scripts/lib/hook-registry');
 
 const repoRoot = path.resolve(__dirname, '..');
 const packageJsonPath = path.join(repoRoot, 'package.json');
@@ -35,6 +36,7 @@ const opencodePackageJsonPath = path.join(repoRoot, '.opencode', 'package.json')
 const opencodePackageLockPath = path.join(repoRoot, '.opencode', 'package-lock.json');
 const opencodeHooksPluginPath = path.join(repoRoot, '.opencode', 'plugins', 'ecc-hooks.ts');
 const hooksReadmePath = path.join(repoRoot, 'hooks', 'README.md');
+const claudeHooksPath = path.join(repoRoot, 'hooks', 'hooks.json');
 const semverPattern = '[0-9]+\\.[0-9]+\\.[0-9]+(?:-[0-9A-Za-z.-]+)?';
 const installPrPublishedBaseline = '2.1.0';
 
@@ -274,6 +276,20 @@ test('claude plugin.json exposes only supported durable hook preferences', () =>
   assert.ok(typeof hookProfile.description === 'string' && hookProfile.description.trim());
 });
 
+test('Claude hooks.json exposes only official plugin hook fields', () => {
+  const config = loadJsonObject(claudeHooksPath, 'hooks/hooks.json');
+  assert.deepStrictEqual(Object.keys(config).sort(), ['description', 'hooks']);
+  for (const [event, entries] of Object.entries(config.hooks)) {
+    for (const entry of entries) {
+      assert.deepStrictEqual(
+        Object.keys(entry).sort(),
+        ['hooks', 'matcher'],
+        `hooks/hooks.json ${event} matcher groups must not expose ECC-private metadata`
+      );
+    }
+  }
+});
+
 console.log('\n=== .claude-plugin/marketplace.json ===\n');
 
 test('claude marketplace.json exists', () => {
@@ -394,17 +410,20 @@ test('codex lifecycle hook bundle contains only Codex 0.146-supported schema', (
     }
   }
 
-  const claudeConfig = loadJsonObject(path.join(repoRoot, 'hooks', 'hooks.json'), 'hooks/hooks.json');
+  const claudeConfig = loadHookRegistry(repoRoot);
   const sourceSessionStart = claudeConfig.hooks.SessionStart.find(group => group.id === 'session:start');
   const expectedSessionStart = {
     ...sourceSessionStart,
-    hooks: sourceSessionStart.hooks.map(handler => ({
-      ...handler,
-      command: handler.command.replace(
-        'node -e "',
-        'node -e "if(!process.env.PLUGIN_ROOT)throw new Error(\'Missing Codex PLUGIN_ROOT\');process.env.CLAUDE_PLUGIN_ROOT=process.env.PLUGIN_ROOT;'
-      )
-    }))
+    hooks: sourceSessionStart.hooks.map(handler => {
+      const { statusMessage: _statusMessage, ...codexHandler } = handler;
+      return {
+        ...codexHandler,
+        command: codexHandler.command.replace(
+          'node -e "',
+          'node -e "if(!process.env.PLUGIN_ROOT)throw new Error(\'Missing Codex PLUGIN_ROOT\');process.env.CLAUDE_PLUGIN_ROOT=process.env.PLUGIN_ROOT;'
+        )
+      };
+    })
   };
   assert.deepStrictEqual(config.hooks.SessionStart[0], expectedSessionStart, 'Codex SessionStart hook must track its canonical implementation with a Codex-root bootstrap');
 });

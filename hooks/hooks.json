@@ -1,5 +1,5 @@
 {
-  "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "description": "ECC Claude Code lifecycle hooks.",
   "hooks": {
     "PreToolUse": [
       {
@@ -7,11 +7,10 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node -e \"const p=require('path');const r=(function(){var p=require('path'),f=require('fs'),o=require('os');var e=process.env.CLAUDE_PLUGIN_ROOT;if(e&&e.trim())return e.trim();var d=p.join(o.homedir(),'.claude');function L(x){try{return require(p.join(x,'scripts','lib','resolve-ecc-root')).resolveEccRoot()}catch(_){return null}}var r=L(d);if(r)return r;var s=['ecc','ecc@ecc','marketplaces/ecc','everything-claude-code','everything-claude-code@everything-claude-code','marketplaces/everything-claude-code'];for(var i=0;i<s.length;i++){r=L(p.join(d,'plugins',s[i]));if(r)return r}try{var g=['ecc','everything-claude-code'];for(var j=0;j<g.length;j++){var c=p.join(d,'plugins','cache',g[j]);var O=f.readdirSync(c);for(var k=0;k<O.length;k++){var q=p.join(c,O[k]);var V=f.readdirSync(q);for(var m=0;m<V.length;m++){r=L(p.join(q,V[m]));if(r)return r}}}}catch(_){}return d})();const s=p.join(r,'scripts/hooks/plugin-hook-bootstrap.js');process.env.CLAUDE_PLUGIN_ROOT=r;process.argv.splice(1,0,s);require(s)\" node scripts/hooks/pre-bash-dispatcher.js"
+            "command": "node -e \"const p=require('path');const r=(function(){var p=require('path'),f=require('fs'),o=require('os');var e=process.env.CLAUDE_PLUGIN_ROOT;if(e&&e.trim())return e.trim();var d=p.join(o.homedir(),'.claude');function L(x){try{return require(p.join(x,'scripts','lib','resolve-ecc-root')).resolveEccRoot()}catch(_){return null}}var r=L(d);if(r)return r;var s=['ecc','ecc@ecc','marketplaces/ecc','everything-claude-code','everything-claude-code@everything-claude-code','marketplaces/everything-claude-code'];for(var i=0;i<s.length;i++){r=L(p.join(d,'plugins',s[i]));if(r)return r}try{var g=['ecc','everything-claude-code'];for(var j=0;j<g.length;j++){var c=p.join(d,'plugins','cache',g[j]);var O=f.readdirSync(c);for(var k=0;k<O.length;k++){var q=p.join(c,O[k]);var V=f.readdirSync(q);for(var m=0;m<V.length;m++){r=L(p.join(q,V[m]));if(r)return r}}}}catch(_){}return d})();const s=p.join(r,'scripts/hooks/plugin-hook-bootstrap.js');process.env.CLAUDE_PLUGIN_ROOT=r;process.argv.splice(1,0,s);require(s)\" node scripts/hooks/pre-bash-dispatcher.js",
+            "statusMessage": "[ECC:pre:bash:dispatcher] Consolidated Bash preflight dispatcher for quality, tmux, push, and GateGuard checks"
           }
-        ],
-        "description": "Consolidated Bash preflight dispatcher for quality, tmux, push, and GateGuard checks",
-        "id": "pre:bash:dispatcher"
+        ]
       },
       {
         "matcher": "PowerShell",
@@ -19,33 +18,30 @@
           {
             "type": "command",
             "command": "node -e \"const p=require('path');const r=(function(){var p=require('path'),f=require('fs'),o=require('os');var e=process.env.CLAUDE_PLUGIN_ROOT;if(e&&e.trim())return e.trim();var d=p.join(o.homedir(),'.claude');function L(x){try{return require(p.join(x,'scripts','lib','resolve-ecc-root')).resolveEccRoot()}catch(_){return null}}var r=L(d);if(r)return r;var s=['ecc','ecc@ecc','marketplaces/ecc','everything-claude-code','everything-claude-code@everything-claude-code','marketplaces/everything-claude-code'];for(var i=0;i<s.length;i++){r=L(p.join(d,'plugins',s[i]));if(r)return r}try{var g=['ecc','everything-claude-code'];for(var j=0;j<g.length;j++){var c=p.join(d,'plugins','cache',g[j]);var O=f.readdirSync(c);for(var k=0;k<O.length;k++){var q=p.join(c,O[k]);var V=f.readdirSync(q);for(var m=0;m<V.length;m++){r=L(p.join(q,V[m]));if(r)return r}}}}catch(_){}return d})();const s=p.join(r,'scripts/hooks/plugin-hook-bootstrap.js');process.env.CLAUDE_PLUGIN_ROOT=r;process.argv.splice(1,0,s);require(s)\" node scripts/hooks/run-with-flags.js pre:powershell:gateguard-fact-force scripts/hooks/gateguard-fact-force.js standard,strict",
-            "timeout": 5
+            "timeout": 5,
+            "statusMessage": "[ECC:pre:powershell:gateguard-fact-force] PowerShell fact-forcing gate: inspect destructive commands without running unrelated Bash-only preflight hooks"
           }
-        ],
-        "description": "PowerShell fact-forcing gate: inspect destructive commands without running unrelated Bash-only preflight hooks",
-        "id": "pre:powershell:gateguard-fact-force"
+        ]
       },
       {
         "matcher": "Write",
         "hooks": [
           {
             "type": "command",
-            "command": "node -e \"const p=require('path');const r=(function(){var p=require('path'),f=require('fs'),o=require('os');var e=process.env.CLAUDE_PLUGIN_ROOT;if(e&&e.trim())return e.trim();var d=p.join(o.homedir(),'.claude');function L(x){try{return require(p.join(x,'scripts','lib','resolve-ecc-root')).resolveEccRoot()}catch(_){return null}}var r=L(d);if(r)return r;var s=['ecc','ecc@ecc','marketplaces/ecc','everything-claude-code','everything-claude-code@everything-claude-code','marketplaces/everything-claude-code'];for(var i=0;i<s.length;i++){r=L(p.join(d,'plugins',s[i]));if(r)return r}try{var g=['ecc','everything-claude-code'];for(var j=0;j<g.length;j++){var c=p.join(d,'plugins','cache',g[j]);var O=f.readdirSync(c);for(var k=0;k<O.length;k++){var q=p.join(c,O[k]);var V=f.readdirSync(q);for(var m=0;m<V.length;m++){r=L(p.join(q,V[m]));if(r)return r}}}}catch(_){}return d})();const s=p.join(r,'scripts/hooks/plugin-hook-bootstrap.js');process.env.CLAUDE_PLUGIN_ROOT=r;process.argv.splice(1,0,s);require(s)\" node scripts/hooks/run-with-flags.js pre:write:doc-file-warning scripts/hooks/doc-file-warning.js standard,strict"
+            "command": "node -e \"const p=require('path');const r=(function(){var p=require('path'),f=require('fs'),o=require('os');var e=process.env.CLAUDE_PLUGIN_ROOT;if(e&&e.trim())return e.trim();var d=p.join(o.homedir(),'.claude');function L(x){try{return require(p.join(x,'scripts','lib','resolve-ecc-root')).resolveEccRoot()}catch(_){return null}}var r=L(d);if(r)return r;var s=['ecc','ecc@ecc','marketplaces/ecc','everything-claude-code','everything-claude-code@everything-claude-code','marketplaces/everything-claude-code'];for(var i=0;i<s.length;i++){r=L(p.join(d,'plugins',s[i]));if(r)return r}try{var g=['ecc','everything-claude-code'];for(var j=0;j<g.length;j++){var c=p.join(d,'plugins','cache',g[j]);var O=f.readdirSync(c);for(var k=0;k<O.length;k++){var q=p.join(c,O[k]);var V=f.readdirSync(q);for(var m=0;m<V.length;m++){r=L(p.join(q,V[m]));if(r)return r}}}}catch(_){}return d})();const s=p.join(r,'scripts/hooks/plugin-hook-bootstrap.js');process.env.CLAUDE_PLUGIN_ROOT=r;process.argv.splice(1,0,s);require(s)\" node scripts/hooks/run-with-flags.js pre:write:doc-file-warning scripts/hooks/doc-file-warning.js standard,strict",
+            "statusMessage": "[ECC:pre:write:doc-file-warning] Doc file warning: warn about non-standard documentation files (exit code 0; warns only)"
           }
-        ],
-        "description": "Doc file warning: warn about non-standard documentation files (exit code 0; warns only)",
-        "id": "pre:write:doc-file-warning"
+        ]
       },
       {
         "matcher": "Edit|Write",
         "hooks": [
           {
             "type": "command",
-            "command": "node -e \"const p=require('path');const r=(function(){var p=require('path'),f=require('fs'),o=require('os');var e=process.env.CLAUDE_PLUGIN_ROOT;if(e&&e.trim())return e.trim();var d=p.join(o.homedir(),'.claude');function L(x){try{return require(p.join(x,'scripts','lib','resolve-ecc-root')).resolveEccRoot()}catch(_){return null}}var r=L(d);if(r)return r;var s=['ecc','ecc@ecc','marketplaces/ecc','everything-claude-code','everything-claude-code@everything-claude-code','marketplaces/everything-claude-code'];for(var i=0;i<s.length;i++){r=L(p.join(d,'plugins',s[i]));if(r)return r}try{var g=['ecc','everything-claude-code'];for(var j=0;j<g.length;j++){var c=p.join(d,'plugins','cache',g[j]);var O=f.readdirSync(c);for(var k=0;k<O.length;k++){var q=p.join(c,O[k]);var V=f.readdirSync(q);for(var m=0;m<V.length;m++){r=L(p.join(q,V[m]));if(r)return r}}}}catch(_){}return d})();const s=p.join(r,'scripts/hooks/plugin-hook-bootstrap.js');process.env.CLAUDE_PLUGIN_ROOT=r;process.argv.splice(1,0,s);require(s)\" node scripts/hooks/run-with-flags.js pre:edit-write:suggest-compact scripts/hooks/suggest-compact.js standard,strict"
+            "command": "node -e \"const p=require('path');const r=(function(){var p=require('path'),f=require('fs'),o=require('os');var e=process.env.CLAUDE_PLUGIN_ROOT;if(e&&e.trim())return e.trim();var d=p.join(o.homedir(),'.claude');function L(x){try{return require(p.join(x,'scripts','lib','resolve-ecc-root')).resolveEccRoot()}catch(_){return null}}var r=L(d);if(r)return r;var s=['ecc','ecc@ecc','marketplaces/ecc','everything-claude-code','everything-claude-code@everything-claude-code','marketplaces/everything-claude-code'];for(var i=0;i<s.length;i++){r=L(p.join(d,'plugins',s[i]));if(r)return r}try{var g=['ecc','everything-claude-code'];for(var j=0;j<g.length;j++){var c=p.join(d,'plugins','cache',g[j]);var O=f.readdirSync(c);for(var k=0;k<O.length;k++){var q=p.join(c,O[k]);var V=f.readdirSync(q);for(var m=0;m<V.length;m++){r=L(p.join(q,V[m]));if(r)return r}}}}catch(_){}return d})();const s=p.join(r,'scripts/hooks/plugin-hook-bootstrap.js');process.env.CLAUDE_PLUGIN_ROOT=r;process.argv.splice(1,0,s);require(s)\" node scripts/hooks/run-with-flags.js pre:edit-write:suggest-compact scripts/hooks/suggest-compact.js standard,strict",
+            "statusMessage": "[ECC:pre:edit-write:suggest-compact] Suggest manual compaction at logical intervals"
           }
-        ],
-        "description": "Suggest manual compaction at logical intervals",
-        "id": "pre:edit-write:suggest-compact"
+        ]
       },
       {
         "matcher": ".*",
@@ -54,11 +50,10 @@
             "type": "command",
             "command": "node -e \"const p=require('path');const r=(function(){var p=require('path'),f=require('fs'),o=require('os');var e=process.env.CLAUDE_PLUGIN_ROOT;if(e&&e.trim())return e.trim();var d=p.join(o.homedir(),'.claude');function L(x){try{return require(p.join(x,'scripts','lib','resolve-ecc-root')).resolveEccRoot()}catch(_){return null}}var r=L(d);if(r)return r;var s=['ecc','ecc@ecc','marketplaces/ecc','everything-claude-code','everything-claude-code@everything-claude-code','marketplaces/everything-claude-code'];for(var i=0;i<s.length;i++){r=L(p.join(d,'plugins',s[i]));if(r)return r}try{var g=['ecc','everything-claude-code'];for(var j=0;j<g.length;j++){var c=p.join(d,'plugins','cache',g[j]);var O=f.readdirSync(c);for(var k=0;k<O.length;k++){var q=p.join(c,O[k]);var V=f.readdirSync(q);for(var m=0;m<V.length;m++){r=L(p.join(q,V[m]));if(r)return r}}}}catch(_){}return d})();const s=p.join(r,'scripts/hooks/plugin-hook-bootstrap.js');process.env.CLAUDE_PLUGIN_ROOT=r;process.argv.splice(1,0,s);require(s)\" node scripts/hooks/run-with-flags.js pre:observe scripts/hooks/observe-runner.js standard,strict",
             "async": true,
-            "timeout": 10
+            "timeout": 10,
+            "statusMessage": "[ECC:pre:observe:continuous-learning] Capture tool use observations for continuous learning"
           }
-        ],
-        "description": "Capture tool use observations for continuous learning",
-        "id": "pre:observe:continuous-learning"
+        ]
       },
       {
         "matcher": "Bash|PowerShell|Write|Edit|MultiEdit",
@@ -66,11 +61,10 @@
           {
             "type": "command",
             "command": "node -e \"const p=require('path');const r=(function(){var p=require('path'),f=require('fs'),o=require('os');var e=process.env.CLAUDE_PLUGIN_ROOT;if(e&&e.trim())return e.trim();var d=p.join(o.homedir(),'.claude');function L(x){try{return require(p.join(x,'scripts','lib','resolve-ecc-root')).resolveEccRoot()}catch(_){return null}}var r=L(d);if(r)return r;var s=['ecc','ecc@ecc','marketplaces/ecc','everything-claude-code','everything-claude-code@everything-claude-code','marketplaces/everything-claude-code'];for(var i=0;i<s.length;i++){r=L(p.join(d,'plugins',s[i]));if(r)return r}try{var g=['ecc','everything-claude-code'];for(var j=0;j<g.length;j++){var c=p.join(d,'plugins','cache',g[j]);var O=f.readdirSync(c);for(var k=0;k<O.length;k++){var q=p.join(c,O[k]);var V=f.readdirSync(q);for(var m=0;m<V.length;m++){r=L(p.join(q,V[m]));if(r)return r}}}}catch(_){}return d})();const s=p.join(r,'scripts/hooks/plugin-hook-bootstrap.js');process.env.CLAUDE_PLUGIN_ROOT=r;process.argv.splice(1,0,s);require(s)\" node scripts/hooks/run-with-flags.js pre:governance-capture scripts/hooks/governance-capture.js standard,strict",
-            "timeout": 10
+            "timeout": 10,
+            "statusMessage": "[ECC:pre:governance-capture] Capture governance events (secrets, policy violations, approval requests). Enable with ECC_GOVERNANCE_CAPTURE=1"
           }
-        ],
-        "description": "Capture governance events (secrets, policy violations, approval requests). Enable with ECC_GOVERNANCE_CAPTURE=1",
-        "id": "pre:governance-capture"
+        ]
       },
       {
         "matcher": "Write|Edit|MultiEdit",
@@ -78,22 +72,20 @@
           {
             "type": "command",
             "command": "node -e \"const p=require('path');const r=(function(){var p=require('path'),f=require('fs'),o=require('os');var e=process.env.CLAUDE_PLUGIN_ROOT;if(e&&e.trim())return e.trim();var d=p.join(o.homedir(),'.claude');function L(x){try{return require(p.join(x,'scripts','lib','resolve-ecc-root')).resolveEccRoot()}catch(_){return null}}var r=L(d);if(r)return r;var s=['ecc','ecc@ecc','marketplaces/ecc','everything-claude-code','everything-claude-code@everything-claude-code','marketplaces/everything-claude-code'];for(var i=0;i<s.length;i++){r=L(p.join(d,'plugins',s[i]));if(r)return r}try{var g=['ecc','everything-claude-code'];for(var j=0;j<g.length;j++){var c=p.join(d,'plugins','cache',g[j]);var O=f.readdirSync(c);for(var k=0;k<O.length;k++){var q=p.join(c,O[k]);var V=f.readdirSync(q);for(var m=0;m<V.length;m++){r=L(p.join(q,V[m]));if(r)return r}}}}catch(_){}return d})();const s=p.join(r,'scripts/hooks/plugin-hook-bootstrap.js');process.env.CLAUDE_PLUGIN_ROOT=r;process.argv.splice(1,0,s);require(s)\" node scripts/hooks/run-with-flags.js pre:config-protection scripts/hooks/config-protection.js standard,strict",
-            "timeout": 5
+            "timeout": 5,
+            "statusMessage": "[ECC:pre:config-protection] Block modifications to linter/formatter config files. Steers agent to fix code instead of weakening configs."
           }
-        ],
-        "description": "Block modifications to linter/formatter config files. Steers agent to fix code instead of weakening configs.",
-        "id": "pre:config-protection"
+        ]
       },
       {
         "matcher": ".*",
         "hooks": [
           {
             "type": "command",
-            "command": "node -e \"const p=require('path');const r=(function(){var p=require('path'),f=require('fs'),o=require('os');var e=process.env.CLAUDE_PLUGIN_ROOT;if(e&&e.trim())return e.trim();var d=p.join(o.homedir(),'.claude');function L(x){try{return require(p.join(x,'scripts','lib','resolve-ecc-root')).resolveEccRoot()}catch(_){return null}}var r=L(d);if(r)return r;var s=['ecc','ecc@ecc','marketplaces/ecc','everything-claude-code','everything-claude-code@everything-claude-code','marketplaces/everything-claude-code'];for(var i=0;i<s.length;i++){r=L(p.join(d,'plugins',s[i]));if(r)return r}try{var g=['ecc','everything-claude-code'];for(var j=0;j<g.length;j++){var c=p.join(d,'plugins','cache',g[j]);var O=f.readdirSync(c);for(var k=0;k<O.length;k++){var q=p.join(c,O[k]);var V=f.readdirSync(q);for(var m=0;m<V.length;m++){r=L(p.join(q,V[m]));if(r)return r}}}}catch(_){}return d})();const s=p.join(r,'scripts/hooks/plugin-hook-bootstrap.js');process.env.CLAUDE_PLUGIN_ROOT=r;process.argv.splice(1,0,s);require(s)\" node scripts/hooks/run-with-flags.js pre:mcp-health-check scripts/hooks/mcp-health-check.js standard,strict"
+            "command": "node -e \"const p=require('path');const r=(function(){var p=require('path'),f=require('fs'),o=require('os');var e=process.env.CLAUDE_PLUGIN_ROOT;if(e&&e.trim())return e.trim();var d=p.join(o.homedir(),'.claude');function L(x){try{return require(p.join(x,'scripts','lib','resolve-ecc-root')).resolveEccRoot()}catch(_){return null}}var r=L(d);if(r)return r;var s=['ecc','ecc@ecc','marketplaces/ecc','everything-claude-code','everything-claude-code@everything-claude-code','marketplaces/everything-claude-code'];for(var i=0;i<s.length;i++){r=L(p.join(d,'plugins',s[i]));if(r)return r}try{var g=['ecc','everything-claude-code'];for(var j=0;j<g.length;j++){var c=p.join(d,'plugins','cache',g[j]);var O=f.readdirSync(c);for(var k=0;k<O.length;k++){var q=p.join(c,O[k]);var V=f.readdirSync(q);for(var m=0;m<V.length;m++){r=L(p.join(q,V[m]));if(r)return r}}}}catch(_){}return d})();const s=p.join(r,'scripts/hooks/plugin-hook-bootstrap.js');process.env.CLAUDE_PLUGIN_ROOT=r;process.argv.splice(1,0,s);require(s)\" node scripts/hooks/run-with-flags.js pre:mcp-health-check scripts/hooks/mcp-health-check.js standard,strict",
+            "statusMessage": "[ECC:pre:mcp-health-check] Check MCP server health before MCP tool execution and block unhealthy MCP calls"
           }
-        ],
-        "description": "Check MCP server health before MCP tool execution and block unhealthy MCP calls",
-        "id": "pre:mcp-health-check"
+        ]
       },
       {
         "matcher": "Edit|Write|MultiEdit",
@@ -101,11 +93,10 @@
           {
             "type": "command",
             "command": "node -e \"const p=require('path');const r=(function(){var p=require('path'),f=require('fs'),o=require('os');var e=process.env.CLAUDE_PLUGIN_ROOT;if(e&&e.trim())return e.trim();var d=p.join(o.homedir(),'.claude');function L(x){try{return require(p.join(x,'scripts','lib','resolve-ecc-root')).resolveEccRoot()}catch(_){return null}}var r=L(d);if(r)return r;var s=['ecc','ecc@ecc','marketplaces/ecc','everything-claude-code','everything-claude-code@everything-claude-code','marketplaces/everything-claude-code'];for(var i=0;i<s.length;i++){r=L(p.join(d,'plugins',s[i]));if(r)return r}try{var g=['ecc','everything-claude-code'];for(var j=0;j<g.length;j++){var c=p.join(d,'plugins','cache',g[j]);var O=f.readdirSync(c);for(var k=0;k<O.length;k++){var q=p.join(c,O[k]);var V=f.readdirSync(q);for(var m=0;m<V.length;m++){r=L(p.join(q,V[m]));if(r)return r}}}}catch(_){}return d})();const s=p.join(r,'scripts/hooks/plugin-hook-bootstrap.js');process.env.CLAUDE_PLUGIN_ROOT=r;process.argv.splice(1,0,s);require(s)\" node scripts/hooks/run-with-flags.js pre:edit-write:gateguard-fact-force scripts/hooks/gateguard-fact-force.js standard,strict",
-            "timeout": 5
+            "timeout": 5,
+            "statusMessage": "[ECC:pre:edit-write:gateguard-fact-force] Fact-forcing gate: block first Edit/Write/MultiEdit per file and demand investigation (importers, data schemas, user instruction) before allowing"
           }
-        ],
-        "description": "Fact-forcing gate: block first Edit/Write/MultiEdit per file and demand investigation (importers, data schemas, user instruction) before allowing",
-        "id": "pre:edit-write:gateguard-fact-force"
+        ]
       }
     ],
     "PreCompact": [
@@ -114,11 +105,10 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node -e \"const p=require('path');const r=(function(){var p=require('path'),f=require('fs'),o=require('os');var e=process.env.CLAUDE_PLUGIN_ROOT;if(e&&e.trim())return e.trim();var d=p.join(o.homedir(),'.claude');function L(x){try{return require(p.join(x,'scripts','lib','resolve-ecc-root')).resolveEccRoot()}catch(_){return null}}var r=L(d);if(r)return r;var s=['ecc','ecc@ecc','marketplaces/ecc','everything-claude-code','everything-claude-code@everything-claude-code','marketplaces/everything-claude-code'];for(var i=0;i<s.length;i++){r=L(p.join(d,'plugins',s[i]));if(r)return r}try{var g=['ecc','everything-claude-code'];for(var j=0;j<g.length;j++){var c=p.join(d,'plugins','cache',g[j]);var O=f.readdirSync(c);for(var k=0;k<O.length;k++){var q=p.join(c,O[k]);var V=f.readdirSync(q);for(var m=0;m<V.length;m++){r=L(p.join(q,V[m]));if(r)return r}}}}catch(_){}return d})();const s=p.join(r,'scripts/hooks/plugin-hook-bootstrap.js');process.env.CLAUDE_PLUGIN_ROOT=r;process.argv.splice(1,0,s);require(s)\" node scripts/hooks/run-with-flags.js pre:compact scripts/hooks/pre-compact.js standard,strict"
+            "command": "node -e \"const p=require('path');const r=(function(){var p=require('path'),f=require('fs'),o=require('os');var e=process.env.CLAUDE_PLUGIN_ROOT;if(e&&e.trim())return e.trim();var d=p.join(o.homedir(),'.claude');function L(x){try{return require(p.join(x,'scripts','lib','resolve-ecc-root')).resolveEccRoot()}catch(_){return null}}var r=L(d);if(r)return r;var s=['ecc','ecc@ecc','marketplaces/ecc','everything-claude-code','everything-claude-code@everything-claude-code','marketplaces/everything-claude-code'];for(var i=0;i<s.length;i++){r=L(p.join(d,'plugins',s[i]));if(r)return r}try{var g=['ecc','everything-claude-code'];for(var j=0;j<g.length;j++){var c=p.join(d,'plugins','cache',g[j]);var O=f.readdirSync(c);for(var k=0;k<O.length;k++){var q=p.join(c,O[k]);var V=f.readdirSync(q);for(var m=0;m<V.length;m++){r=L(p.join(q,V[m]));if(r)return r}}}}catch(_){}return d})();const s=p.join(r,'scripts/hooks/plugin-hook-bootstrap.js');process.env.CLAUDE_PLUGIN_ROOT=r;process.argv.splice(1,0,s);require(s)\" node scripts/hooks/run-with-flags.js pre:compact scripts/hooks/pre-compact.js standard,strict",
+            "statusMessage": "[ECC:pre:compact] Save state before context compaction"
           }
-        ],
-        "description": "Save state before context compaction",
-        "id": "pre:compact"
+        ]
       }
     ],
     "SessionStart": [
@@ -127,22 +117,20 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node -e \"const p=require('path');const r=(function(){var p=require('path'),f=require('fs'),o=require('os');var e=process.env.CLAUDE_PLUGIN_ROOT;if(e&&e.trim())return e.trim();var d=p.join(o.homedir(),'.claude');function L(x){try{return require(p.join(x,'scripts','lib','resolve-ecc-root')).resolveEccRoot()}catch(_){return null}}var r=L(d);if(r)return r;var s=['ecc','ecc@ecc','marketplaces/ecc','everything-claude-code','everything-claude-code@everything-claude-code','marketplaces/everything-claude-code'];for(var i=0;i<s.length;i++){r=L(p.join(d,'plugins',s[i]));if(r)return r}try{var g=['ecc','everything-claude-code'];for(var j=0;j<g.length;j++){var c=p.join(d,'plugins','cache',g[j]);var O=f.readdirSync(c);for(var k=0;k<O.length;k++){var q=p.join(c,O[k]);var V=f.readdirSync(q);for(var m=0;m<V.length;m++){r=L(p.join(q,V[m]));if(r)return r}}}}catch(_){}return d})();const s=p.join(r,'scripts/hooks/plugin-hook-bootstrap.js');process.env.CLAUDE_PLUGIN_ROOT=r;process.argv.splice(1,0,s);require(s)\" node scripts/hooks/session-start-bootstrap.js"
+            "command": "node -e \"const p=require('path');const r=(function(){var p=require('path'),f=require('fs'),o=require('os');var e=process.env.CLAUDE_PLUGIN_ROOT;if(e&&e.trim())return e.trim();var d=p.join(o.homedir(),'.claude');function L(x){try{return require(p.join(x,'scripts','lib','resolve-ecc-root')).resolveEccRoot()}catch(_){return null}}var r=L(d);if(r)return r;var s=['ecc','ecc@ecc','marketplaces/ecc','everything-claude-code','everything-claude-code@everything-claude-code','marketplaces/everything-claude-code'];for(var i=0;i<s.length;i++){r=L(p.join(d,'plugins',s[i]));if(r)return r}try{var g=['ecc','everything-claude-code'];for(var j=0;j<g.length;j++){var c=p.join(d,'plugins','cache',g[j]);var O=f.readdirSync(c);for(var k=0;k<O.length;k++){var q=p.join(c,O[k]);var V=f.readdirSync(q);for(var m=0;m<V.length;m++){r=L(p.join(q,V[m]));if(r)return r}}}}catch(_){}return d})();const s=p.join(r,'scripts/hooks/plugin-hook-bootstrap.js');process.env.CLAUDE_PLUGIN_ROOT=r;process.argv.splice(1,0,s);require(s)\" node scripts/hooks/session-start-bootstrap.js",
+            "statusMessage": "[ECC:session:start] Load previous context and detect package manager on new session"
           }
-        ],
-        "description": "Load previous context and detect package manager on new session",
-        "id": "session:start"
+        ]
       },
       {
         "matcher": ".*",
         "hooks": [
           {
             "type": "command",
-            "command": "node -e \"const p=require('path');const r=(function(){var p=require('path'),f=require('fs'),o=require('os');var e=process.env.CLAUDE_PLUGIN_ROOT;if(e&&e.trim())return e.trim();var d=p.join(o.homedir(),'.claude');function L(x){try{return require(p.join(x,'scripts','lib','resolve-ecc-root')).resolveEccRoot()}catch(_){return null}}var r=L(d);if(r)return r;var s=['ecc','ecc@ecc','marketplaces/ecc','everything-claude-code','everything-claude-code@everything-claude-code','marketplaces/everything-claude-code'];for(var i=0;i<s.length;i++){r=L(p.join(d,'plugins',s[i]));if(r)return r}try{var g=['ecc','everything-claude-code'];for(var j=0;j<g.length;j++){var c=p.join(d,'plugins','cache',g[j]);var O=f.readdirSync(c);for(var k=0;k<O.length;k++){var q=p.join(c,O[k]);var V=f.readdirSync(q);for(var m=0;m<V.length;m++){r=L(p.join(q,V[m]));if(r)return r}}}}catch(_){}return d})();const s=p.join(r,'scripts/hooks/plugin-hook-bootstrap.js');process.env.CLAUDE_PLUGIN_ROOT=r;process.argv.splice(1,0,s);require(s)\" node scripts/hooks/run-with-flags.js session-start:plan-canvas-sessions scripts/hooks/plan-canvas-sessions.js standard,strict"
+            "command": "node -e \"const p=require('path');const r=(function(){var p=require('path'),f=require('fs'),o=require('os');var e=process.env.CLAUDE_PLUGIN_ROOT;if(e&&e.trim())return e.trim();var d=p.join(o.homedir(),'.claude');function L(x){try{return require(p.join(x,'scripts','lib','resolve-ecc-root')).resolveEccRoot()}catch(_){return null}}var r=L(d);if(r)return r;var s=['ecc','ecc@ecc','marketplaces/ecc','everything-claude-code','everything-claude-code@everything-claude-code','marketplaces/everything-claude-code'];for(var i=0;i<s.length;i++){r=L(p.join(d,'plugins',s[i]));if(r)return r}try{var g=['ecc','everything-claude-code'];for(var j=0;j<g.length;j++){var c=p.join(d,'plugins','cache',g[j]);var O=f.readdirSync(c);for(var k=0;k<O.length;k++){var q=p.join(c,O[k]);var V=f.readdirSync(q);for(var m=0;m<V.length;m++){r=L(p.join(q,V[m]));if(r)return r}}}}catch(_){}return d})();const s=p.join(r,'scripts/hooks/plugin-hook-bootstrap.js');process.env.CLAUDE_PLUGIN_ROOT=r;process.argv.splice(1,0,s);require(s)\" node scripts/hooks/run-with-flags.js session-start:plan-canvas-sessions scripts/hooks/plan-canvas-sessions.js standard,strict",
+            "statusMessage": "[ECC:session-start:plan-canvas-sessions] Surface open Plan Canvas review sessions so a fresh session can resume the loop"
           }
-        ],
-        "description": "Surface open Plan Canvas review sessions so a fresh session can resume the loop",
-        "id": "session-start:plan-canvas-sessions"
+        ]
       }
     ],
     "PostToolUse": [
@@ -152,11 +140,10 @@
           {
             "type": "command",
             "command": "node -e \"const p=require('path');const r=(function(){var p=require('path'),f=require('fs'),o=require('os');var e=process.env.CLAUDE_PLUGIN_ROOT;if(e&&e.trim())return e.trim();var d=p.join(o.homedir(),'.claude');function L(x){try{return require(p.join(x,'scripts','lib','resolve-ecc-root')).resolveEccRoot()}catch(_){return null}}var r=L(d);if(r)return r;var s=['ecc','ecc@ecc','marketplaces/ecc','everything-claude-code','everything-claude-code@everything-claude-code','marketplaces/everything-claude-code'];for(var i=0;i<s.length;i++){r=L(p.join(d,'plugins',s[i]));if(r)return r}try{var g=['ecc','everything-claude-code'];for(var j=0;j<g.length;j++){var c=p.join(d,'plugins','cache',g[j]);var O=f.readdirSync(c);for(var k=0;k<O.length;k++){var q=p.join(c,O[k]);var V=f.readdirSync(q);for(var m=0;m<V.length;m++){r=L(p.join(q,V[m]));if(r)return r}}}}catch(_){}return d})();const s=p.join(r,'scripts/hooks/posttooluse-dispatcher.js');process.env.CLAUDE_PLUGIN_ROOT=r;process.env.ECC_POSTTOOLUSE_PASSTHROUGH='1';process.argv.splice(1,0,s);require(s).cli()\" sync",
-            "timeout": 30
+            "timeout": 30,
+            "statusMessage": "[ECC:post:dispatcher:sync] Run synchronous PostToolUse hooks in one process while preserving per-hook controls"
           }
-        ],
-        "description": "Run synchronous PostToolUse hooks in one process while preserving per-hook controls",
-        "id": "post:dispatcher:sync"
+        ]
       },
       {
         "matcher": ".*",
@@ -165,11 +152,10 @@
             "type": "command",
             "command": "node -e \"const p=require('path');const r=(function(){var p=require('path'),f=require('fs'),o=require('os');var e=process.env.CLAUDE_PLUGIN_ROOT;if(e&&e.trim())return e.trim();var d=p.join(o.homedir(),'.claude');function L(x){try{return require(p.join(x,'scripts','lib','resolve-ecc-root')).resolveEccRoot()}catch(_){return null}}var r=L(d);if(r)return r;var s=['ecc','ecc@ecc','marketplaces/ecc','everything-claude-code','everything-claude-code@everything-claude-code','marketplaces/everything-claude-code'];for(var i=0;i<s.length;i++){r=L(p.join(d,'plugins',s[i]));if(r)return r}try{var g=['ecc','everything-claude-code'];for(var j=0;j<g.length;j++){var c=p.join(d,'plugins','cache',g[j]);var O=f.readdirSync(c);for(var k=0;k<O.length;k++){var q=p.join(c,O[k]);var V=f.readdirSync(q);for(var m=0;m<V.length;m++){r=L(p.join(q,V[m]));if(r)return r}}}}catch(_){}return d})();const s=p.join(r,'scripts/hooks/posttooluse-dispatcher.js');process.env.CLAUDE_PLUGIN_ROOT=r;process.env.ECC_POSTTOOLUSE_PASSTHROUGH='1';process.argv.splice(1,0,s);require(s).cli()\" async",
             "async": true,
-            "timeout": 45
+            "timeout": 45,
+            "statusMessage": "[ECC:post:dispatcher:async] Run background PostToolUse hooks in one process while preserving per-hook controls"
           }
-        ],
-        "description": "Run background PostToolUse hooks in one process while preserving per-hook controls",
-        "id": "post:dispatcher:async"
+        ]
       }
     ],
     "PostToolUseFailure": [
@@ -178,22 +164,20 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node -e \"const p=require('path');const r=(function(){var p=require('path'),f=require('fs'),o=require('os');var e=process.env.CLAUDE_PLUGIN_ROOT;if(e&&e.trim())return e.trim();var d=p.join(o.homedir(),'.claude');function L(x){try{return require(p.join(x,'scripts','lib','resolve-ecc-root')).resolveEccRoot()}catch(_){return null}}var r=L(d);if(r)return r;var s=['ecc','ecc@ecc','marketplaces/ecc','everything-claude-code','everything-claude-code@everything-claude-code','marketplaces/everything-claude-code'];for(var i=0;i<s.length;i++){r=L(p.join(d,'plugins',s[i]));if(r)return r}try{var g=['ecc','everything-claude-code'];for(var j=0;j<g.length;j++){var c=p.join(d,'plugins','cache',g[j]);var O=f.readdirSync(c);for(var k=0;k<O.length;k++){var q=p.join(c,O[k]);var V=f.readdirSync(q);for(var m=0;m<V.length;m++){r=L(p.join(q,V[m]));if(r)return r}}}}catch(_){}return d})();const s=p.join(r,'scripts/hooks/plugin-hook-bootstrap.js');process.env.CLAUDE_PLUGIN_ROOT=r;process.argv.splice(1,0,s);require(s)\" node scripts/hooks/run-with-flags.js post:mcp-health-check scripts/hooks/mcp-health-check.js standard,strict"
+            "command": "node -e \"const p=require('path');const r=(function(){var p=require('path'),f=require('fs'),o=require('os');var e=process.env.CLAUDE_PLUGIN_ROOT;if(e&&e.trim())return e.trim();var d=p.join(o.homedir(),'.claude');function L(x){try{return require(p.join(x,'scripts','lib','resolve-ecc-root')).resolveEccRoot()}catch(_){return null}}var r=L(d);if(r)return r;var s=['ecc','ecc@ecc','marketplaces/ecc','everything-claude-code','everything-claude-code@everything-claude-code','marketplaces/everything-claude-code'];for(var i=0;i<s.length;i++){r=L(p.join(d,'plugins',s[i]));if(r)return r}try{var g=['ecc','everything-claude-code'];for(var j=0;j<g.length;j++){var c=p.join(d,'plugins','cache',g[j]);var O=f.readdirSync(c);for(var k=0;k<O.length;k++){var q=p.join(c,O[k]);var V=f.readdirSync(q);for(var m=0;m<V.length;m++){r=L(p.join(q,V[m]));if(r)return r}}}}catch(_){}return d})();const s=p.join(r,'scripts/hooks/plugin-hook-bootstrap.js');process.env.CLAUDE_PLUGIN_ROOT=r;process.argv.splice(1,0,s);require(s)\" node scripts/hooks/run-with-flags.js post:mcp-health-check scripts/hooks/mcp-health-check.js standard,strict",
+            "statusMessage": "[ECC:post:mcp-health-check] Track failed MCP tool calls, mark unhealthy servers, and attempt reconnect"
           }
-        ],
-        "description": "Track failed MCP tool calls, mark unhealthy servers, and attempt reconnect",
-        "id": "post:mcp-health-check"
+        ]
       },
       {
         "matcher": "Skill",
         "hooks": [
           {
             "type": "command",
-            "command": "node -e \"const p=require('path');const r=(function(){var p=require('path'),f=require('fs'),o=require('os');var e=process.env.CLAUDE_PLUGIN_ROOT;if(e&&e.trim())return e.trim();var d=p.join(o.homedir(),'.claude');function L(x){try{return require(p.join(x,'scripts','lib','resolve-ecc-root')).resolveEccRoot()}catch(_){return null}}var r=L(d);if(r)return r;var s=['ecc','ecc@ecc','marketplaces/ecc','everything-claude-code','everything-claude-code@everything-claude-code','marketplaces/everything-claude-code'];for(var i=0;i<s.length;i++){r=L(p.join(d,'plugins',s[i]));if(r)return r}try{var g=['ecc','everything-claude-code'];for(var j=0;j<g.length;j++){var c=p.join(d,'plugins','cache',g[j]);var O=f.readdirSync(c);for(var k=0;k<O.length;k++){var q=p.join(c,O[k]);var V=f.readdirSync(q);for(var m=0;m<V.length;m++){r=L(p.join(q,V[m]));if(r)return r}}}}catch(_){}return d})();const s=p.join(r,'scripts/hooks/plugin-hook-bootstrap.js');process.env.CLAUDE_PLUGIN_ROOT=r;process.argv.splice(1,0,s);require(s)\" node scripts/hooks/run-with-flags.js post:skill:track scripts/hooks/skill-run-tracker.js standard,strict"
+            "command": "node -e \"const p=require('path');const r=(function(){var p=require('path'),f=require('fs'),o=require('os');var e=process.env.CLAUDE_PLUGIN_ROOT;if(e&&e.trim())return e.trim();var d=p.join(o.homedir(),'.claude');function L(x){try{return require(p.join(x,'scripts','lib','resolve-ecc-root')).resolveEccRoot()}catch(_){return null}}var r=L(d);if(r)return r;var s=['ecc','ecc@ecc','marketplaces/ecc','everything-claude-code','everything-claude-code@everything-claude-code','marketplaces/everything-claude-code'];for(var i=0;i<s.length;i++){r=L(p.join(d,'plugins',s[i]));if(r)return r}try{var g=['ecc','everything-claude-code'];for(var j=0;j<g.length;j++){var c=p.join(d,'plugins','cache',g[j]);var O=f.readdirSync(c);for(var k=0;k<O.length;k++){var q=p.join(c,O[k]);var V=f.readdirSync(q);for(var m=0;m<V.length;m++){r=L(p.join(q,V[m]));if(r)return r}}}}catch(_){}return d})();const s=p.join(r,'scripts/hooks/plugin-hook-bootstrap.js');process.env.CLAUDE_PLUGIN_ROOT=r;process.argv.splice(1,0,s);require(s)\" node scripts/hooks/run-with-flags.js post:skill:track scripts/hooks/skill-run-tracker.js standard,strict",
+            "statusMessage": "[ECC:post:skill:track] Record hard Skill tool failures for skill-health telemetry"
           }
-        ],
-        "description": "Record hard Skill tool failures for skill-health telemetry",
-        "id": "post:skill:track"
+        ]
       }
     ],
     "Stop": [
@@ -202,11 +186,10 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node -e \"const fs=require('fs');const path=require('path');const {spawnSync}=require('child_process');const raw=fs.readFileSync(0,'utf8');const finish=(out,err,code)=>{let pending=1;const done=()=>{pending-=1;if(pending===0)process.exit(code);};if(out){pending+=1;process.stdout.write(out,done);}if(err){pending+=1;process.stderr.write(err,done);}process.nextTick(done);};const rel=path.join('scripts','hooks','run-with-flags.js');const root=(function(){var p=require('path'),f=require('fs'),o=require('os');var e=process.env.CLAUDE_PLUGIN_ROOT;if(e&&e.trim())return e.trim();var d=p.join(o.homedir(),'.claude');function L(x){try{return require(p.join(x,'scripts','lib','resolve-ecc-root')).resolveEccRoot()}catch(_){return null}}var r=L(d);if(r)return r;var s=['ecc','ecc@ecc','marketplaces/ecc','everything-claude-code','everything-claude-code@everything-claude-code','marketplaces/everything-claude-code'];for(var i=0;i<s.length;i++){r=L(p.join(d,'plugins',s[i]));if(r)return r}try{var g=['ecc','everything-claude-code'];for(var j=0;j<g.length;j++){var c=p.join(d,'plugins','cache',g[j]);var O=f.readdirSync(c);for(var k=0;k<O.length;k++){var q=p.join(c,O[k]);var V=f.readdirSync(q);for(var m=0;m<V.length;m++){r=L(p.join(q,V[m]));if(r)return r}}}}catch(_){}return d})();const script=path.join(root,rel);if(fs.existsSync(script)){const result=spawnSync(process.execPath,[script,'stop:plan-canvas-pending','scripts/hooks/plan-canvas-pending.js','minimal,standard,strict'],{input:raw,encoding:'utf8',env:process.env,cwd:process.cwd(),timeout:30000,maxBuffer:16*1024*1024});const failed=result.error||result.status===null||result.signal;const stdout=!failed&&typeof result.stdout==='string'?result.stdout:'';let stderr=typeof result.stderr==='string'?result.stderr:'';let code=Number.isInteger(result.status)?result.status:0;if(failed){const reason=result.error?result.error.message:(result.signal?'signal '+result.signal:'missing exit status');stderr+='[Stop] ERROR: hook runner failed: '+reason+String.fromCharCode(10);code=1;}finish(stdout,stderr,code);}else{finish(raw,'[Stop] WARNING: could not resolve ECC plugin root; skipping hook'+String.fromCharCode(10),0);}\""
+            "command": "node -e \"const fs=require('fs');const path=require('path');const {spawnSync}=require('child_process');const raw=fs.readFileSync(0,'utf8');const finish=(out,err,code)=>{let pending=1;const done=()=>{pending-=1;if(pending===0)process.exit(code);};if(out){pending+=1;process.stdout.write(out,done);}if(err){pending+=1;process.stderr.write(err,done);}process.nextTick(done);};const rel=path.join('scripts','hooks','run-with-flags.js');const root=(function(){var p=require('path'),f=require('fs'),o=require('os');var e=process.env.CLAUDE_PLUGIN_ROOT;if(e&&e.trim())return e.trim();var d=p.join(o.homedir(),'.claude');function L(x){try{return require(p.join(x,'scripts','lib','resolve-ecc-root')).resolveEccRoot()}catch(_){return null}}var r=L(d);if(r)return r;var s=['ecc','ecc@ecc','marketplaces/ecc','everything-claude-code','everything-claude-code@everything-claude-code','marketplaces/everything-claude-code'];for(var i=0;i<s.length;i++){r=L(p.join(d,'plugins',s[i]));if(r)return r}try{var g=['ecc','everything-claude-code'];for(var j=0;j<g.length;j++){var c=p.join(d,'plugins','cache',g[j]);var O=f.readdirSync(c);for(var k=0;k<O.length;k++){var q=p.join(c,O[k]);var V=f.readdirSync(q);for(var m=0;m<V.length;m++){r=L(p.join(q,V[m]));if(r)return r}}}}catch(_){}return d})();const script=path.join(root,rel);if(fs.existsSync(script)){const result=spawnSync(process.execPath,[script,'stop:plan-canvas-pending','scripts/hooks/plan-canvas-pending.js','minimal,standard,strict'],{input:raw,encoding:'utf8',env:process.env,cwd:process.cwd(),timeout:30000,maxBuffer:16*1024*1024});const failed=result.error||result.status===null||result.signal;const stdout=!failed&&typeof result.stdout==='string'?result.stdout:'';let stderr=typeof result.stderr==='string'?result.stderr:'';let code=Number.isInteger(result.status)?result.status:0;if(failed){const reason=result.error?result.error.message:(result.signal?'signal '+result.signal:'missing exit status');stderr+='[Stop] ERROR: hook runner failed: '+reason+String.fromCharCode(10);code=1;}finish(stdout,stderr,code);}else{finish(raw,'[Stop] WARNING: could not resolve ECC plugin root; skipping hook'+String.fromCharCode(10),0);}\"",
+            "statusMessage": "[ECC:stop:plan-canvas-pending] Deliver undelivered Plan Canvas browser feedback before the agent stops"
           }
-        ],
-        "description": "Deliver undelivered Plan Canvas browser feedback before the agent stops",
-        "id": "stop:plan-canvas-pending"
+        ]
       },
       {
         "matcher": ".*",
@@ -214,22 +197,20 @@
           {
             "type": "command",
             "command": "node -e \"const fs=require('fs');const path=require('path');const {spawnSync}=require('child_process');const raw=fs.readFileSync(0,'utf8');const finish=(out,err,code)=>{let pending=1;const done=()=>{pending-=1;if(pending===0)process.exit(code);};if(out){pending+=1;process.stdout.write(out,done);}if(err){pending+=1;process.stderr.write(err,done);}process.nextTick(done);};const rel=path.join('scripts','hooks','run-with-flags.js');const root=(function(){var p=require('path'),f=require('fs'),o=require('os');var e=process.env.CLAUDE_PLUGIN_ROOT;if(e&&e.trim())return e.trim();var d=p.join(o.homedir(),'.claude');function L(x){try{return require(p.join(x,'scripts','lib','resolve-ecc-root')).resolveEccRoot()}catch(_){return null}}var r=L(d);if(r)return r;var s=['ecc','ecc@ecc','marketplaces/ecc','everything-claude-code','everything-claude-code@everything-claude-code','marketplaces/everything-claude-code'];for(var i=0;i<s.length;i++){r=L(p.join(d,'plugins',s[i]));if(r)return r}try{var g=['ecc','everything-claude-code'];for(var j=0;j<g.length;j++){var c=p.join(d,'plugins','cache',g[j]);var O=f.readdirSync(c);for(var k=0;k<O.length;k++){var q=p.join(c,O[k]);var V=f.readdirSync(q);for(var m=0;m<V.length;m++){r=L(p.join(q,V[m]));if(r)return r}}}}catch(_){}return d})();const script=path.join(root,rel);if(fs.existsSync(script)){const result=spawnSync(process.execPath,[script,'stop:format-typecheck','scripts/hooks/stop-format-typecheck.js','standard,strict'],{input:raw,encoding:'utf8',env:process.env,cwd:process.cwd(),timeout:300000,maxBuffer:16*1024*1024});const failed=result.error||result.status===null||result.signal;const stdout=!failed&&typeof result.stdout==='string'?result.stdout:'';let stderr=typeof result.stderr==='string'?result.stderr:'';let code=Number.isInteger(result.status)?result.status:0;if(failed){const reason=result.error?result.error.message:(result.signal?'signal '+result.signal:'missing exit status');stderr+='[Stop] ERROR: hook runner failed: '+reason+String.fromCharCode(10);code=1;}finish(stdout,stderr,code);}else{finish(raw,'[Stop] WARNING: could not resolve ECC plugin root; skipping hook'+String.fromCharCode(10),0);}\"",
-            "timeout": 300
+            "timeout": 300,
+            "statusMessage": "[ECC:stop:format-typecheck] Batch format (Biome/Prettier) and typecheck (tsc) all JS/TS files edited this response — runs once at Stop instead of after every Edit"
           }
-        ],
-        "description": "Batch format (Biome/Prettier) and typecheck (tsc) all JS/TS files edited this response — runs once at Stop instead of after every Edit",
-        "id": "stop:format-typecheck"
+        ]
       },
       {
         "matcher": ".*",
         "hooks": [
           {
             "type": "command",
-            "command": "node -e \"const fs=require('fs');const path=require('path');const {spawnSync}=require('child_process');const raw=fs.readFileSync(0,'utf8');const finish=(out,err,code)=>{let pending=1;const done=()=>{pending-=1;if(pending===0)process.exit(code);};if(out){pending+=1;process.stdout.write(out,done);}if(err){pending+=1;process.stderr.write(err,done);}process.nextTick(done);};const rel=path.join('scripts','hooks','run-with-flags.js');const root=(function(){var p=require('path'),f=require('fs'),o=require('os');var e=process.env.CLAUDE_PLUGIN_ROOT;if(e&&e.trim())return e.trim();var d=p.join(o.homedir(),'.claude');function L(x){try{return require(p.join(x,'scripts','lib','resolve-ecc-root')).resolveEccRoot()}catch(_){return null}}var r=L(d);if(r)return r;var s=['ecc','ecc@ecc','marketplaces/ecc','everything-claude-code','everything-claude-code@everything-claude-code','marketplaces/everything-claude-code'];for(var i=0;i<s.length;i++){r=L(p.join(d,'plugins',s[i]));if(r)return r}try{var g=['ecc','everything-claude-code'];for(var j=0;j<g.length;j++){var c=p.join(d,'plugins','cache',g[j]);var O=f.readdirSync(c);for(var k=0;k<O.length;k++){var q=p.join(c,O[k]);var V=f.readdirSync(q);for(var m=0;m<V.length;m++){r=L(p.join(q,V[m]));if(r)return r}}}}catch(_){}return d})();const script=path.join(root,rel);if(fs.existsSync(script)){const result=spawnSync(process.execPath,[script,'stop:check-console-log','scripts/hooks/check-console-log.js','standard,strict'],{input:raw,encoding:'utf8',env:process.env,cwd:process.cwd(),timeout:30000,maxBuffer:16*1024*1024});const failed=result.error||result.status===null||result.signal;const stdout=!failed&&typeof result.stdout==='string'?result.stdout:'';let stderr=typeof result.stderr==='string'?result.stderr:'';let code=Number.isInteger(result.status)?result.status:0;if(failed){const reason=result.error?result.error.message:(result.signal?'signal '+result.signal:'missing exit status');stderr+='[Stop] ERROR: hook runner failed: '+reason+String.fromCharCode(10);code=1;}finish(stdout,stderr,code);}else{finish(raw,'[Stop] WARNING: could not resolve ECC plugin root; skipping hook'+String.fromCharCode(10),0);}\""
+            "command": "node -e \"const fs=require('fs');const path=require('path');const {spawnSync}=require('child_process');const raw=fs.readFileSync(0,'utf8');const finish=(out,err,code)=>{let pending=1;const done=()=>{pending-=1;if(pending===0)process.exit(code);};if(out){pending+=1;process.stdout.write(out,done);}if(err){pending+=1;process.stderr.write(err,done);}process.nextTick(done);};const rel=path.join('scripts','hooks','run-with-flags.js');const root=(function(){var p=require('path'),f=require('fs'),o=require('os');var e=process.env.CLAUDE_PLUGIN_ROOT;if(e&&e.trim())return e.trim();var d=p.join(o.homedir(),'.claude');function L(x){try{return require(p.join(x,'scripts','lib','resolve-ecc-root')).resolveEccRoot()}catch(_){return null}}var r=L(d);if(r)return r;var s=['ecc','ecc@ecc','marketplaces/ecc','everything-claude-code','everything-claude-code@everything-claude-code','marketplaces/everything-claude-code'];for(var i=0;i<s.length;i++){r=L(p.join(d,'plugins',s[i]));if(r)return r}try{var g=['ecc','everything-claude-code'];for(var j=0;j<g.length;j++){var c=p.join(d,'plugins','cache',g[j]);var O=f.readdirSync(c);for(var k=0;k<O.length;k++){var q=p.join(c,O[k]);var V=f.readdirSync(q);for(var m=0;m<V.length;m++){r=L(p.join(q,V[m]));if(r)return r}}}}catch(_){}return d})();const script=path.join(root,rel);if(fs.existsSync(script)){const result=spawnSync(process.execPath,[script,'stop:check-console-log','scripts/hooks/check-console-log.js','standard,strict'],{input:raw,encoding:'utf8',env:process.env,cwd:process.cwd(),timeout:30000,maxBuffer:16*1024*1024});const failed=result.error||result.status===null||result.signal;const stdout=!failed&&typeof result.stdout==='string'?result.stdout:'';let stderr=typeof result.stderr==='string'?result.stderr:'';let code=Number.isInteger(result.status)?result.status:0;if(failed){const reason=result.error?result.error.message:(result.signal?'signal '+result.signal:'missing exit status');stderr+='[Stop] ERROR: hook runner failed: '+reason+String.fromCharCode(10);code=1;}finish(stdout,stderr,code);}else{finish(raw,'[Stop] WARNING: could not resolve ECC plugin root; skipping hook'+String.fromCharCode(10),0);}\"",
+            "statusMessage": "[ECC:stop:check-console-log] Check for console.log in modified files after each response"
           }
-        ],
-        "description": "Check for console.log in modified files after each response",
-        "id": "stop:check-console-log"
+        ]
       },
       {
         "matcher": ".*",
@@ -238,11 +219,10 @@
             "type": "command",
             "command": "node -e \"const fs=require('fs');const path=require('path');const {spawnSync}=require('child_process');const raw=fs.readFileSync(0,'utf8');const finish=(out,err,code)=>{let pending=1;const done=()=>{pending-=1;if(pending===0)process.exit(code);};if(out){pending+=1;process.stdout.write(out,done);}if(err){pending+=1;process.stderr.write(err,done);}process.nextTick(done);};const rel=path.join('scripts','hooks','run-with-flags.js');const root=(function(){var p=require('path'),f=require('fs'),o=require('os');var e=process.env.CLAUDE_PLUGIN_ROOT;if(e&&e.trim())return e.trim();var d=p.join(o.homedir(),'.claude');function L(x){try{return require(p.join(x,'scripts','lib','resolve-ecc-root')).resolveEccRoot()}catch(_){return null}}var r=L(d);if(r)return r;var s=['ecc','ecc@ecc','marketplaces/ecc','everything-claude-code','everything-claude-code@everything-claude-code','marketplaces/everything-claude-code'];for(var i=0;i<s.length;i++){r=L(p.join(d,'plugins',s[i]));if(r)return r}try{var g=['ecc','everything-claude-code'];for(var j=0;j<g.length;j++){var c=p.join(d,'plugins','cache',g[j]);var O=f.readdirSync(c);for(var k=0;k<O.length;k++){var q=p.join(c,O[k]);var V=f.readdirSync(q);for(var m=0;m<V.length;m++){r=L(p.join(q,V[m]));if(r)return r}}}}catch(_){}return d})();const script=path.join(root,rel);if(fs.existsSync(script)){const result=spawnSync(process.execPath,[script,'stop:session-end','scripts/hooks/session-end.js','minimal,standard,strict'],{input:raw,encoding:'utf8',env:process.env,cwd:process.cwd(),timeout:30000,maxBuffer:16*1024*1024});const failed=result.error||result.status===null||result.signal;const stdout=!failed&&typeof result.stdout==='string'?result.stdout:'';let stderr=typeof result.stderr==='string'?result.stderr:'';let code=Number.isInteger(result.status)?result.status:0;if(failed){const reason=result.error?result.error.message:(result.signal?'signal '+result.signal:'missing exit status');stderr+='[Stop] ERROR: hook runner failed: '+reason+String.fromCharCode(10);code=1;}finish(stdout,stderr,code);}else{finish(raw,'[Stop] WARNING: could not resolve ECC plugin root; skipping hook'+String.fromCharCode(10),0);}\"",
             "async": true,
-            "timeout": 10
+            "timeout": 10,
+            "statusMessage": "[ECC:stop:session-end] Persist session state after each response (Stop carries transcript_path)"
           }
-        ],
-        "description": "Persist session state after each response (Stop carries transcript_path)",
-        "id": "stop:session-end"
+        ]
       },
       {
         "matcher": ".*",
@@ -251,11 +231,10 @@
             "type": "command",
             "command": "node -e \"const fs=require('fs');const path=require('path');const {spawnSync}=require('child_process');const raw=fs.readFileSync(0,'utf8');const finish=(out,err,code)=>{let pending=1;const done=()=>{pending-=1;if(pending===0)process.exit(code);};if(out){pending+=1;process.stdout.write(out,done);}if(err){pending+=1;process.stderr.write(err,done);}process.nextTick(done);};const rel=path.join('scripts','hooks','run-with-flags.js');const root=(function(){var p=require('path'),f=require('fs'),o=require('os');var e=process.env.CLAUDE_PLUGIN_ROOT;if(e&&e.trim())return e.trim();var d=p.join(o.homedir(),'.claude');function L(x){try{return require(p.join(x,'scripts','lib','resolve-ecc-root')).resolveEccRoot()}catch(_){return null}}var r=L(d);if(r)return r;var s=['ecc','ecc@ecc','marketplaces/ecc','everything-claude-code','everything-claude-code@everything-claude-code','marketplaces/everything-claude-code'];for(var i=0;i<s.length;i++){r=L(p.join(d,'plugins',s[i]));if(r)return r}try{var g=['ecc','everything-claude-code'];for(var j=0;j<g.length;j++){var c=p.join(d,'plugins','cache',g[j]);var O=f.readdirSync(c);for(var k=0;k<O.length;k++){var q=p.join(c,O[k]);var V=f.readdirSync(q);for(var m=0;m<V.length;m++){r=L(p.join(q,V[m]));if(r)return r}}}}catch(_){}return d})();const script=path.join(root,rel);if(fs.existsSync(script)){const result=spawnSync(process.execPath,[script,'stop:evaluate-session','scripts/hooks/evaluate-session.js','minimal,standard,strict'],{input:raw,encoding:'utf8',env:process.env,cwd:process.cwd(),timeout:30000,maxBuffer:16*1024*1024});const failed=result.error||result.status===null||result.signal;const stdout=!failed&&typeof result.stdout==='string'?result.stdout:'';let stderr=typeof result.stderr==='string'?result.stderr:'';let code=Number.isInteger(result.status)?result.status:0;if(failed){const reason=result.error?result.error.message:(result.signal?'signal '+result.signal:'missing exit status');stderr+='[Stop] ERROR: hook runner failed: '+reason+String.fromCharCode(10);code=1;}finish(stdout,stderr,code);}else{finish(raw,'[Stop] WARNING: could not resolve ECC plugin root; skipping hook'+String.fromCharCode(10),0);}\"",
             "async": true,
-            "timeout": 10
+            "timeout": 10,
+            "statusMessage": "[ECC:stop:evaluate-session] Evaluate session for extractable patterns"
           }
-        ],
-        "description": "Evaluate session for extractable patterns",
-        "id": "stop:evaluate-session"
+        ]
       },
       {
         "matcher": ".*",
@@ -264,11 +243,10 @@
             "type": "command",
             "command": "node -e \"const fs=require('fs');const path=require('path');const {spawnSync}=require('child_process');const raw=fs.readFileSync(0,'utf8');const finish=(out,err,code)=>{let pending=1;const done=()=>{pending-=1;if(pending===0)process.exit(code);};if(out){pending+=1;process.stdout.write(out,done);}if(err){pending+=1;process.stderr.write(err,done);}process.nextTick(done);};const rel=path.join('scripts','hooks','run-with-flags.js');const root=(function(){var p=require('path'),f=require('fs'),o=require('os');var e=process.env.CLAUDE_PLUGIN_ROOT;if(e&&e.trim())return e.trim();var d=p.join(o.homedir(),'.claude');function L(x){try{return require(p.join(x,'scripts','lib','resolve-ecc-root')).resolveEccRoot()}catch(_){return null}}var r=L(d);if(r)return r;var s=['ecc','ecc@ecc','marketplaces/ecc','everything-claude-code','everything-claude-code@everything-claude-code','marketplaces/everything-claude-code'];for(var i=0;i<s.length;i++){r=L(p.join(d,'plugins',s[i]));if(r)return r}try{var g=['ecc','everything-claude-code'];for(var j=0;j<g.length;j++){var c=p.join(d,'plugins','cache',g[j]);var O=f.readdirSync(c);for(var k=0;k<O.length;k++){var q=p.join(c,O[k]);var V=f.readdirSync(q);for(var m=0;m<V.length;m++){r=L(p.join(q,V[m]));if(r)return r}}}}catch(_){}return d})();const script=path.join(root,rel);if(fs.existsSync(script)){const result=spawnSync(process.execPath,[script,'stop:cost-tracker','scripts/hooks/cost-tracker.js','minimal,standard,strict'],{input:raw,encoding:'utf8',env:process.env,cwd:process.cwd(),timeout:30000,maxBuffer:16*1024*1024});const failed=result.error||result.status===null||result.signal;const stdout=!failed&&typeof result.stdout==='string'?result.stdout:'';let stderr=typeof result.stderr==='string'?result.stderr:'';let code=Number.isInteger(result.status)?result.status:0;if(failed){const reason=result.error?result.error.message:(result.signal?'signal '+result.signal:'missing exit status');stderr+='[Stop] ERROR: hook runner failed: '+reason+String.fromCharCode(10);code=1;}finish(stdout,stderr,code);}else{finish(raw,'[Stop] WARNING: could not resolve ECC plugin root; skipping hook'+String.fromCharCode(10),0);}\"",
             "async": true,
-            "timeout": 10
+            "timeout": 10,
+            "statusMessage": "[ECC:stop:cost-tracker] Track token and cost metrics per session"
           }
-        ],
-        "description": "Track token and cost metrics per session",
-        "id": "stop:cost-tracker"
+        ]
       },
       {
         "matcher": ".*",
@@ -277,11 +255,10 @@
             "type": "command",
             "command": "node -e \"const fs=require('fs');const path=require('path');const {spawnSync}=require('child_process');const raw=fs.readFileSync(0,'utf8');const finish=(out,err,code)=>{let pending=1;const done=()=>{pending-=1;if(pending===0)process.exit(code);};if(out){pending+=1;process.stdout.write(out,done);}if(err){pending+=1;process.stderr.write(err,done);}process.nextTick(done);};const rel=path.join('scripts','hooks','run-with-flags.js');const root=(function(){var p=require('path'),f=require('fs'),o=require('os');var e=process.env.CLAUDE_PLUGIN_ROOT;if(e&&e.trim())return e.trim();var d=p.join(o.homedir(),'.claude');function L(x){try{return require(p.join(x,'scripts','lib','resolve-ecc-root')).resolveEccRoot()}catch(_){return null}}var r=L(d);if(r)return r;var s=['ecc','ecc@ecc','marketplaces/ecc','everything-claude-code','everything-claude-code@everything-claude-code','marketplaces/everything-claude-code'];for(var i=0;i<s.length;i++){r=L(p.join(d,'plugins',s[i]));if(r)return r}try{var g=['ecc','everything-claude-code'];for(var j=0;j<g.length;j++){var c=p.join(d,'plugins','cache',g[j]);var O=f.readdirSync(c);for(var k=0;k<O.length;k++){var q=p.join(c,O[k]);var V=f.readdirSync(q);for(var m=0;m<V.length;m++){r=L(p.join(q,V[m]));if(r)return r}}}}catch(_){}return d})();const script=path.join(root,rel);if(fs.existsSync(script)){const result=spawnSync(process.execPath,[script,'stop:desktop-notify','scripts/hooks/desktop-notify.js','standard,strict'],{input:raw,encoding:'utf8',env:process.env,cwd:process.cwd(),timeout:30000,maxBuffer:16*1024*1024});const failed=result.error||result.status===null||result.signal;const stdout=!failed&&typeof result.stdout==='string'?result.stdout:'';let stderr=typeof result.stderr==='string'?result.stderr:'';let code=Number.isInteger(result.status)?result.status:0;if(failed){const reason=result.error?result.error.message:(result.signal?'signal '+result.signal:'missing exit status');stderr+='[Stop] ERROR: hook runner failed: '+reason+String.fromCharCode(10);code=1;}finish(stdout,stderr,code);}else{finish(raw,'[Stop] WARNING: could not resolve ECC plugin root; skipping hook'+String.fromCharCode(10),0);}\"",
             "async": true,
-            "timeout": 10
+            "timeout": 10,
+            "statusMessage": "[ECC:stop:desktop-notify] Send desktop notification (macOS/WSL) with task summary when Claude responds"
           }
-        ],
-        "description": "Send desktop notification (macOS/WSL) with task summary when Claude responds",
-        "id": "stop:desktop-notify"
+        ]
       }
     ],
     "SessionEnd": [
@@ -292,11 +269,10 @@
             "type": "command",
             "command": "node -e \"const fs=require('fs');const path=require('path');const {spawnSync}=require('child_process');const raw=fs.readFileSync(0,'utf8');const rel=path.join('scripts','hooks','run-with-flags.js');const root=(function(){var p=require('path'),f=require('fs'),o=require('os');var e=process.env.CLAUDE_PLUGIN_ROOT;if(e&&e.trim())return e.trim();var d=p.join(o.homedir(),'.claude');function L(x){try{return require(p.join(x,'scripts','lib','resolve-ecc-root')).resolveEccRoot()}catch(_){return null}}var r=L(d);if(r)return r;var s=['ecc','ecc@ecc','marketplaces/ecc','everything-claude-code','everything-claude-code@everything-claude-code','marketplaces/everything-claude-code'];for(var i=0;i<s.length;i++){r=L(p.join(d,'plugins',s[i]));if(r)return r}try{var g=['ecc','everything-claude-code'];for(var j=0;j<g.length;j++){var c=p.join(d,'plugins','cache',g[j]);var O=f.readdirSync(c);for(var k=0;k<O.length;k++){var q=p.join(c,O[k]);var V=f.readdirSync(q);for(var m=0;m<V.length;m++){r=L(p.join(q,V[m]));if(r)return r}}}}catch(_){}return d})();const script=path.join(root,rel);if(fs.existsSync(script)){const result=spawnSync(process.execPath,[script,'session:end:marker','scripts/hooks/session-end-marker.js','minimal,standard,strict'],{input:raw,encoding:'utf8',env:process.env,cwd:process.cwd(),timeout:30000});const stdout=typeof result.stdout==='string'?result.stdout:'';if(stdout)process.stdout.write(stdout);else process.stdout.write(raw);if(result.stderr)process.stderr.write(result.stderr);if(result.error||result.status===null||result.signal){const reason=result.error?result.error.message:(result.signal?'signal '+result.signal:'missing exit status');process.stderr.write('[SessionEnd] ERROR: hook runner failed: '+reason+String.fromCharCode(10));process.exit(1);}process.exit(Number.isInteger(result.status)?result.status:0);}process.stderr.write('[SessionEnd] WARNING: could not resolve ECC plugin root; skipping hook'+String.fromCharCode(10));process.stdout.write(raw);\"",
             "async": true,
-            "timeout": 10
+            "timeout": 10,
+            "statusMessage": "[ECC:session:end:marker] Session end lifecycle marker (non-blocking)"
           }
-        ],
-        "description": "Session end lifecycle marker (non-blocking)",
-        "id": "session:end:marker"
+        ]
       }
     ]
   }

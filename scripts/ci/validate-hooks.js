@@ -7,6 +7,7 @@ const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
 const Ajv = require('ajv');
+const { attachHookMetadata } = require('../lib/hook-registry');
 
 const HOOKS_FILE = path.join(__dirname, '../../hooks/hooks.json');
 const HOOKS_SCHEMA_PATH = path.join(__dirname, '../../schemas/hooks.schema.json');
@@ -49,7 +50,6 @@ function isNonEmptyStringArray(value) {
  */
 function validateHookEntry(hook, label) {
   let hasErrors = false;
-
   if (!hook.type || typeof hook.type !== 'string') {
     console.error(`ERROR: ${label} missing or invalid 'type' field`);
     hasErrors = true;
@@ -152,16 +152,24 @@ function validateHooks() {
     }
   }
 
-  // Support both object format { hooks: {...} } and array format
-  const hooks = data.hooks || data;
-  const requiresStableIds = Boolean(
-    data
-    && typeof data === 'object'
-    && !Array.isArray(data)
-    && data.hooks
-    && typeof data.hooks === 'object'
-    && !Array.isArray(data.hooks)
+  // Support both object format { hooks: {...} } and array format. The
+  // production registry stores ECC identity in official statusMessage fields.
+  const wrapped = data && typeof data === 'object' && !Array.isArray(data)
+    && data.hooks && typeof data.hooks === 'object' && !Array.isArray(data.hooks);
+  let hooks = data.hooks || data;
+  const usesRegistryMetadata = wrapped && path.resolve(HOOKS_FILE) === path.resolve(
+    path.join(__dirname, '../../hooks/hooks.json')
   );
+  if (usesRegistryMetadata) {
+    try {
+      hooks = attachHookMetadata(data).hooks;
+    } catch (error) {
+      console.error(`ERROR: hooks.json metadata: ${error.message}`);
+      process.exit(1);
+    }
+  }
+  const requiresStableIds = wrapped && !usesRegistryMetadata;
+  const validatesStableIds = usesRegistryMetadata || requiresStableIds;
   let hasErrors = false;
   let totalMatchers = 0;
   const matcherIdLocations = new Map();
@@ -192,12 +200,12 @@ function validateHooks() {
         if (requiresStableIds && !isNonEmptyString(matcher.id)) {
           console.error(`ERROR: ${matcherLabel} missing or invalid 'id' field`);
           hasErrors = true;
-        } else if (requiresStableIds && matcherIdLocations.has(matcher.id)) {
+        } else if (validatesStableIds && matcherIdLocations.has(matcher.id)) {
           console.error(
             `ERROR: ${matcherLabel} has duplicate id '${matcher.id}' (already used by ${matcherIdLocations.get(matcher.id)})`
           );
           hasErrors = true;
-        } else if (requiresStableIds) {
+        } else if (validatesStableIds) {
           matcherIdLocations.set(matcher.id, matcherLabel);
         }
         if (!('matcher' in matcher) && !EVENTS_WITHOUT_MATCHER.has(eventType)) {

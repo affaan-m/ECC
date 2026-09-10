@@ -27,6 +27,7 @@ const {
   assertClaudeSettingsPath,
   materializeManagedHooks,
 } = require('../../scripts/lib/install/claude-settings');
+const { hookMetadata, stripHookMetadata } = require('../../scripts/lib/hook-registry');
 
 const REPO_ROOT = path.join(__dirname, '..', '..');
 const CURRENT_PACKAGE_VERSION = JSON.parse(
@@ -3308,13 +3309,13 @@ function runTests() {
       fs.mkdirSync(targetRoot, { recursive: true });
       fs.writeFileSync(settingsPath, formatJson({
         theme: 'dark',
-        hooks: {
+        hooks: stripHookMetadata({
           Stop: [
             { id: 'user:stop', matcher: 'Bash', hooks: [{ type: 'command', command: 'user' }] },
             ...managedHooks.Stop,
           ],
           ...Object.fromEntries(Object.entries(managedHooks).filter(([event]) => event !== 'Stop')),
-        },
+        }),
       }));
       writeClaudeState(homeDir, {
         operations: [
@@ -3336,14 +3337,17 @@ function runTests() {
 
       fs.writeFileSync(settingsPath, formatJson({
         theme: 'dark',
-        hooks: {
+        hooks: stripHookMetadata({
           ...managedHooks,
           Stop: [
             { id: 'user:stop', matcher: 'Bash', hooks: [{ type: 'command', command: 'user' }] },
-            { ...stopEntry, description: 'drifted' },
+            {
+              ...stripHookMetadata({ Stop: [stopEntry] }).Stop[0],
+              hooks: [{ ...stopEntry.hooks[0], command: 'node drifted.js' }],
+            },
             ...managedHooks.Stop.slice(1),
           ],
-        },
+        }),
       }));
       report = buildDoctorReport({
         repoRoot: REPO_ROOT,
@@ -3356,10 +3360,10 @@ function runTests() {
 
       fs.writeFileSync(settingsPath, formatJson({
         theme: 'dark',
-        hooks: {
+        hooks: stripHookMetadata({
           ...managedHooks,
           Stop: managedHooks.Stop.filter(entry => entry.id !== stopEntry.id),
-        },
+        }),
       }));
       report = buildDoctorReport({
         repoRoot: REPO_ROOT,
@@ -3440,14 +3444,17 @@ function runTests() {
       fs.mkdirSync(targetRoot, { recursive: true });
       fs.writeFileSync(settingsPath, formatJson({
         theme: 'dark',
-        hooks: {
+        hooks: stripHookMetadata({
           ...managedHooks,
           Stop: [
             userHook,
-            { ...stopEntry, description: 'drifted' },
+            {
+              ...stripHookMetadata({ Stop: [stopEntry] }).Stop[0],
+              hooks: [{ ...stopEntry.hooks[0], command: 'node drifted.js' }],
+            },
             ...managedHooks.Stop.slice(1),
           ],
-        },
+        }),
       }));
       writeClaudeState(homeDir, {
         operations: [
@@ -3471,8 +3478,8 @@ function runTests() {
       assert.deepStrictEqual(JSON.parse(fs.readFileSync(settingsPath, 'utf8')), {
         theme: 'dark',
         hooks: {
-          ...managedHooks,
-          Stop: [userHook, ...managedHooks.Stop],
+          ...stripHookMetadata(managedHooks),
+          Stop: [userHook, ...stripHookMetadata(managedHooks).Stop],
         },
       });
     } finally {
@@ -3515,7 +3522,7 @@ function runTests() {
       const descriptor = fs.openSync(settingsPath, 'r');
       try {
         assert.strictEqual(fs.fstatSync(descriptor).mode & 0o777, 0o600);
-        assert.deepStrictEqual(JSON.parse(fs.readFileSync(descriptor, 'utf8')).hooks, managedHooks);
+        assert.deepStrictEqual(JSON.parse(fs.readFileSync(descriptor, 'utf8')).hooks, stripHookMetadata(managedHooks));
       } finally {
         fs.closeSync(descriptor);
       }
@@ -3541,7 +3548,10 @@ function runTests() {
       fs.mkdirSync(targetRoot, { recursive: true });
       fs.writeFileSync(settingsPath, formatJson({
         theme: 'dark',
-        hooks: recordedHooks,
+        hooks: {
+          ...stripHookMetadata(currentHooks),
+          Stop: [...stripHookMetadata(currentHooks).Stop, retiredHook],
+        },
       }));
       writeClaudeState(homeDir, {
         operations: [
@@ -3560,8 +3570,8 @@ function runTests() {
 
       assert.strictEqual(result.results[0].status, 'repaired');
       const repaired = JSON.parse(fs.readFileSync(settingsPath, 'utf8'));
-      assert.ok(!repaired.hooks.Stop.some(entry => entry.id === 'ecc:retired'));
-      assert.deepStrictEqual(repaired.hooks, currentHooks);
+      assert.ok(!repaired.hooks.Stop.some(entry => hookMetadata(entry)?.id === 'ecc:retired'));
+      assert.deepStrictEqual(repaired.hooks, stripHookMetadata(currentHooks));
       const state = readInstallState(path.join(targetRoot, 'ecc', 'install-state.json'));
       const settingsOperation = state.operations.find(operation => (
         operation.kind === 'update-claude-settings'

@@ -130,7 +130,10 @@ function runValidatorWithDir(validatorName, dirConstant, overridePath) {
 
   // Remove the shebang line so wrappers also work against CRLF-checked-out files on Windows.
   source = stripShebang(source);
-
+  source = source.replace(
+    "require('../lib/hook-registry')",
+    `require(${JSON.stringify(path.join(repoRoot, 'scripts', 'lib', 'hook-registry'))})`
+  );
   // Replace the directory constant with our override path
   const dirRegex = new RegExp(`const ${dirConstant} = .*?;`);
   source = source.replace(dirRegex, `const ${dirConstant} = ${JSON.stringify(overridePath)};`);
@@ -147,6 +150,10 @@ function runValidatorWithDirs(validatorName, overrides) {
   const validatorPath = path.join(validatorsDir, `${validatorName}.js`);
   let source = fs.readFileSync(validatorPath, 'utf8');
   source = stripShebang(source);
+  source = source.replace(
+    "require('../lib/hook-registry')",
+    `require(${JSON.stringify(path.join(repoRoot, 'scripts', 'lib', 'hook-registry'))})`
+  );
   for (const [constant, overridePath] of Object.entries(overrides)) {
     const dirRegex = new RegExp(`const ${constant} = .*?;`);
     source = source.replace(dirRegex, `const ${constant} = ${JSON.stringify(overridePath)};`);
@@ -705,7 +712,7 @@ function runTests() {
 
     const result = runValidatorWithDir('validate-hooks', 'HOOKS_FILE', hooksFile);
     assert.strictEqual(result.code, 1, 'Should fail on invalid event type');
-    assert.ok(result.stderr.includes('Invalid event type'), 'Should report invalid event type');
+    assert.ok(/Invalid event type|schema/.test(result.stderr), 'Should report invalid event type');
     cleanupTestDir(testDir);
   })) passed++; else failed++;
 

@@ -21,6 +21,7 @@ const {
 } = require('../../scripts/lib/install-executor');
 const { applyInstallPlan: applyInstallPlanDirect } = require('../../scripts/lib/install/apply');
 const { withHookConsent } = require('../../scripts/lib/install/hook-consent');
+const { hookMetadata } = require('../../scripts/lib/hook-registry');
 
 const REPO_ROOT = path.resolve(__dirname, '..', '..');
 
@@ -195,7 +196,7 @@ function runTests() {
 
       const settings = JSON.parse(fs.readFileSync(settingsPath, 'utf8'));
       assert.strictEqual(settings.theme, 'added-after-preflight');
-      assert.ok(settings.hooks.SessionStart.some(entry => entry.id === 'session:start'));
+      assert.ok(settings.hooks.SessionStart.some(entry => hookMetadata(entry)?.id === 'session:start'));
     } finally {
       cleanup(tempDir);
     }
@@ -247,7 +248,7 @@ function runTests() {
         path.join(homeDir, '.claude', 'settings.json'),
         'utf8'
       ));
-      assert.ok(settings.hooks.SessionStart.some(entry => entry.id === 'session:start'));
+      assert.ok(settings.hooks.SessionStart.some(entry => hookMetadata(entry)?.id === 'session:start'));
     } finally {
       cleanup(tempDir);
     }
@@ -595,7 +596,7 @@ function runTests() {
         /injected attribution rename failure/
       );
       const settings = JSON.parse(fs.readFileSync(settingsPath, 'utf8'));
-      assert.ok(settings.hooks.SessionStart.some(entry => entry.id === 'session:start'));
+      assert.ok(settings.hooks.SessionStart.some(entry => hookMetadata(entry)?.id === 'session:start'));
       assert.strictEqual(Object.hasOwn(settings, 'includeCoAuthoredBy'), false);
     } finally {
       fs.renameSync = originalRenameSync;

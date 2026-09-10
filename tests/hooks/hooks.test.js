@@ -9,6 +9,7 @@ const path = require('path');
 const fs = require('fs');
 const os = require('os');
 const { execFileSync, spawn, spawnSync } = require('child_process');
+const { loadHookRegistry } = require('../../scripts/lib/hook-registry');
 
 const SKIP_BASH = process.platform === 'win32';
 
@@ -2556,8 +2557,7 @@ async function runTests() {
 
   if (
     test('hooks.json has required event types', () => {
-      const hooksPath = path.join(__dirname, '..', '..', 'hooks', 'hooks.json');
-      const hooks = JSON.parse(fs.readFileSync(hooksPath, 'utf8'));
+      const hooks = loadHookRegistry(path.join(__dirname, '..', '..'));
 
       assert.ok(hooks.hooks.PreToolUse, 'Should have PreToolUse hooks');
       assert.ok(hooks.hooks.PostToolUse, 'Should have PostToolUse hooks');
@@ -2572,8 +2572,7 @@ async function runTests() {
 
   if (
     test('hooks.json consolidates PreToolUse Bash and all PostToolUse hooks', () => {
-      const hooksPath = path.join(__dirname, '..', '..', 'hooks', 'hooks.json');
-      const hooks = JSON.parse(fs.readFileSync(hooksPath, 'utf8'));
+      const hooks = loadHookRegistry(path.join(__dirname, '..', '..'));
 
       const preBash = hooks.hooks.PreToolUse.filter(entry => entry.matcher === 'Bash');
       const postEntries = hooks.hooks.PostToolUse;
@@ -2601,8 +2600,7 @@ async function runTests() {
 
   if (
     test('hooks.json gives PowerShell dedicated GateGuard and governance routes', () => {
-      const hooksPath = path.join(__dirname, '..', '..', 'hooks', 'hooks.json');
-      const hooks = JSON.parse(fs.readFileSync(hooksPath, 'utf8'));
+      const hooks = loadHookRegistry(path.join(__dirname, '..', '..'));
       const powerShellRoutes = hooks.hooks.PreToolUse.filter(entry => entry.matcher === 'PowerShell');
       const governanceRoute = hooks.hooks.PreToolUse.find(entry => entry.id === 'pre:governance-capture');
 
@@ -2641,7 +2639,7 @@ async function runTests() {
   if (
     test('configured PowerShell routes enforce denial and emit redacted governance evidence', () => {
       const root = path.join(__dirname, '..', '..');
-      const hooks = JSON.parse(fs.readFileSync(path.join(root, 'hooks', 'hooks.json'), 'utf8'));
+      const hooks = loadHookRegistry(root);
       const gateRoute = hooks.hooks.PreToolUse.find(entry => entry.id === 'pre:powershell:gateguard-fact-force');
       const governanceRoute = hooks.hooks.PreToolUse.find(entry => entry.id === 'pre:governance-capture');
       const stateDir = createTestDir();
@@ -2702,8 +2700,7 @@ async function runTests() {
 
   if (
     test('all string hook matchers are valid regular expressions', () => {
-      const hooksPath = path.join(__dirname, '..', '..', 'hooks', 'hooks.json');
-      const hooks = JSON.parse(fs.readFileSync(hooksPath, 'utf8'));
+      const hooks = loadHookRegistry(path.join(__dirname, '..', '..'));
 
       for (const [eventName, hookArray] of Object.entries(hooks.hooks)) {
         for (const entry of hookArray) {
@@ -2718,8 +2715,7 @@ async function runTests() {
 
   if (
     test('SessionEnd marker hook is async and cleanup-safe', () => {
-      const hooksPath = path.join(__dirname, '..', '..', 'hooks', 'hooks.json');
-      const hooks = JSON.parse(fs.readFileSync(hooksPath, 'utf8'));
+      const hooks = loadHookRegistry(path.join(__dirname, '..', '..'));
       const sessionEndHooks = hooks.hooks.SessionEnd.flatMap(entry => entry.hooks);
       const markerHook = sessionEndHooks.find(hook => hook.command.includes('session-end-marker.js'));
 
@@ -2733,8 +2729,7 @@ async function runTests() {
 
   if (
     test('all hook commands use string form for Claude Code schema compatibility', () => {
-      const hooksPath = path.join(__dirname, '..', '..', 'hooks', 'hooks.json');
-      const hooks = JSON.parse(fs.readFileSync(hooksPath, 'utf8'));
+      const hooks = loadHookRegistry(path.join(__dirname, '..', '..'));
 
       for (const [eventName, hookArray] of Object.entries(hooks.hooks)) {
         for (const entry of hookArray) {
@@ -2750,8 +2745,7 @@ async function runTests() {
 
   if (
     test('inline hook bootstraps avoid escaped double quotes for Git Bash', () => {
-      const hooksPath = path.join(__dirname, '..', '..', 'hooks', 'hooks.json');
-      const hooks = JSON.parse(fs.readFileSync(hooksPath, 'utf8'));
+      const hooks = loadHookRegistry(path.join(__dirname, '..', '..'));
 
       for (const [eventName, hookArray] of Object.entries(hooks.hooks)) {
         for (const entry of hookArray) {
@@ -2770,8 +2764,7 @@ async function runTests() {
 
   if (
     test('all hook commands use node or approved shell wrappers', () => {
-      const hooksPath = path.join(__dirname, '..', '..', 'hooks', 'hooks.json');
-      const hooks = JSON.parse(fs.readFileSync(hooksPath, 'utf8'));
+      const hooks = loadHookRegistry(path.join(__dirname, '..', '..'));
 
       const checkHooks = hookArray => {
         for (const entry of hookArray) {
@@ -2798,8 +2791,7 @@ async function runTests() {
 
   if (
     test('SessionStart hook uses safe inline resolver without plugin-tree scanning', () => {
-      const hooksPath = path.join(__dirname, '..', '..', 'hooks', 'hooks.json');
-      const hooks = JSON.parse(fs.readFileSync(hooksPath, 'utf8'));
+      const hooks = loadHookRegistry(path.join(__dirname, '..', '..'));
       const sessionStartHook = hooks.hooks.SessionStart?.[0]?.hooks?.[0];
 
       assert.ok(sessionStartHook, 'Should define a SessionStart hook');
@@ -2826,8 +2818,7 @@ async function runTests() {
   else failed++;
   if (
     test('Stop and SessionEnd hooks use the safe inline resolver when plugin root may be unset', () => {
-      const hooksPath = path.join(__dirname, '..', '..', 'hooks', 'hooks.json');
-      const hooks = JSON.parse(fs.readFileSync(hooksPath, 'utf8'));
+      const hooks = loadHookRegistry(path.join(__dirname, '..', '..'));
       const stopHooks = (hooks.hooks.Stop || []).flatMap(entry => entry.hooks || []);
       const sessionEndHooks = (hooks.hooks.SessionEnd || []).flatMap(entry => entry.hooks || []);
 
@@ -2850,8 +2841,7 @@ async function runTests() {
   else failed++;
   if (
     test('script references use the safe inline resolver or plugin bootstrap', () => {
-      const hooksPath = path.join(__dirname, '..', '..', 'hooks', 'hooks.json');
-      const hooks = JSON.parse(fs.readFileSync(hooksPath, 'utf8'));
+      const hooks = loadHookRegistry(path.join(__dirname, '..', '..'));
 
       const checkHooks = hookArray => {
         for (const entry of hookArray) {

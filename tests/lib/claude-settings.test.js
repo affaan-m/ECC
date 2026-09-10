@@ -22,6 +22,7 @@ const {
   updateSettingsAtomic,
   validateManagedHooks,
 } = require('../../scripts/lib/install/claude-settings');
+const { stripHookMetadata } = require('../../scripts/lib/hook-registry');
 
 function test(name, fn) {
   try {
@@ -207,6 +208,27 @@ function runTests() {
       }, '/opt/ecc'),
       /Unable to resolve CLAUDE_PLUGIN_ROOT/
     );
+  })) passed++; else failed++;
+
+  if (test('materializes official status metadata while keeping installed settings schema-safe', () => {
+    const source = {
+      hooks: {
+        Stop: [{
+          matcher: '.*',
+          hooks: [{
+            type: 'command',
+            command: 'node stop.js',
+            statusMessage: '[ECC:ecc:stop] Stop hook',
+          }],
+        }],
+      },
+    };
+    const managed = materializeManagedHooks(source, '/opt/ecc');
+    const result = mergeManagedHooks({}, managed);
+
+    assert.strictEqual(managed.Stop[0].id, 'ecc:stop');
+    assert.deepStrictEqual(result.settings.hooks, stripHookMetadata(source.hooks));
+    assert.deepStrictEqual(result.managedHooks, managed);
   })) passed++; else failed++;
 
   if (test('replaces every plugin-root placeholder recursively and immutably', () => {
@@ -476,9 +498,9 @@ function runTests() {
     assert.deepStrictEqual(result.settings, {
       theme: 'dark',
       hooks: {
-        SessionStart: [userEntry, managed.SessionStart[0]],
+        SessionStart: [userEntry, stripHookMetadata(managed).SessionStart[0]],
         Notification: settings.hooks.Notification,
-        Stop: managed.Stop,
+        Stop: stripHookMetadata(managed).Stop,
       },
     });
     assert.deepStrictEqual(result.added, [
@@ -522,8 +544,57 @@ function runTests() {
       { previousManagedHooks }
     );
 
-    assert.deepStrictEqual(result.settings.hooks.Stop, managedHooks.Stop);
+    assert.deepStrictEqual(result.settings.hooks.Stop, stripHookMetadata(managedHooks).Stop);
     assert.deepStrictEqual(result.updated, [{ event: 'Stop', id: 'ecc:stop' }]);
+  })) passed++; else failed++;
+
+  if (test('upgrade migrates legacy group metadata into schema-safe status metadata', () => {
+    const legacy = { Stop: [entry('ecc:stop', 'version-1')] };
+    const desired = materializeManagedHooks({
+      hooks: {
+        Stop: [{
+          matcher: '.*',
+          hooks: [{
+            type: 'command',
+            command: 'version-1',
+            statusMessage: '[ECC:ecc:stop] Stop hook',
+          }],
+        }],
+      },
+    }, '/opt/ecc');
+    const result = mergeManagedHooks({ hooks: clone(legacy) }, desired, {
+      previousManagedHooks: legacy,
+    });
+
+    assert.deepStrictEqual(result.updated, [{ event: 'Stop', id: 'ecc:stop' }]);
+    assert.ok(!Object.hasOwn(result.settings.hooks.Stop[0], 'id'));
+    assert.strictEqual(
+      result.settings.hooks.Stop[0].hooks[0].statusMessage,
+      '[ECC:ecc:stop] Stop hook'
+    );
+  })) passed++; else failed++;
+
+  if (test('upgrade preserves user-authored non-ECC status messages as drift', () => {
+    const previous = { Stop: [entry('ecc:stop', 'version-1')] };
+    const current = clone(previous);
+    current.Stop[0].hooks[0].statusMessage = 'Keep this user status';
+    const desired = materializeManagedHooks({
+      hooks: {
+        Stop: [{
+          matcher: '.*',
+          hooks: [{
+            type: 'command',
+            command: 'version-1',
+            statusMessage: '[ECC:ecc:stop] Stop hook',
+          }],
+        }],
+      },
+    }, '/opt/ecc');
+
+    assert.throws(
+      () => mergeManagedHooks({ hooks: current }, desired, { previousManagedHooks: previous }),
+      /previous managed entry has drifted/
+    );
   })) passed++; else failed++;
 
   if (test('upgrade fails closed when previous managed content has drifted', () => {
@@ -566,7 +637,7 @@ function runTests() {
       hooks: { Stop: [userEntry, ...previousManagedHooks.Stop] },
     }, desired, { previousManagedHooks });
 
-    assert.deepStrictEqual(result.settings.hooks.Stop, [userEntry, desired.Stop[0]]);
+    assert.deepStrictEqual(result.settings.hooks.Stop, [userEntry, stripHookMetadata(desired).Stop[0]]);
     assert.deepStrictEqual(result.removed, [{ event: 'Stop', id: 'ecc:removed' }]);
   })) passed++; else failed++;
 
@@ -623,7 +694,7 @@ function runTests() {
     );
     assert.deepStrictEqual(result.settings.hooks, {
       SessionStart: [entry('shared:id', 'existing')],
-      Stop: [entry('shared:id', 'desired')],
+      Stop: [stripHookMetadata({ Stop: [entry('shared:id', 'desired')] }).Stop[0]],
     });
   })) passed++; else failed++;
 
@@ -636,9 +707,42 @@ function runTests() {
 
     assert.deepStrictEqual(result.settings.hooks.Stop, [
       userEntry,
-      entry('ecc:stop', 'repaired'),
+      stripHookMetadata({ Stop: [entry('ecc:stop', 'repaired')] }).Stop[0],
     ]);
     assert.deepStrictEqual(result.updated, [{ event: 'Stop', id: 'ecc:stop' }]);
+  })) passed++; else failed++;
+
+  if (test('malformed legacy managed entries remain repairable and safe to uninstall', () => {
+    const damaged = { id: 'ecc:stop', description: 'legacy', matcher: '.*' };
+    const desired = { Stop: [entry('ecc:stop', 'repaired')] };
+
+    const repaired = repairManagedHooks({ hooks: { Stop: [damaged] } }, desired);
+    assert.deepStrictEqual(repaired.settings.hooks.Stop, stripHookMetadata(desired).Stop);
+    assert.deepStrictEqual(repaired.updated, [{ event: 'Stop', id: 'ecc:stop' }]);
+
+    const uninstalled = uninstallManagedHooks(
+      { hooks: { Stop: [damaged] } },
+      { Stop: [entry('ecc:stop', 'previous')] }
+    );
+    assert.deepStrictEqual(uninstalled.settings.hooks.Stop, [damaged]);
+    assert.deepStrictEqual(uninstalled.retained.map(item => item.id), ['ecc:stop']);
+
+    const damagedHandler = {
+      matcher: '.*',
+      hooks: [
+        null,
+        {
+          type: 'command',
+          command: 'repaired',
+          statusMessage: '[ECC:ecc:stop] Stop hook',
+        },
+      ],
+    };
+    const repairedHandler = repairManagedHooks(
+      { hooks: { Stop: [damagedHandler] } },
+      desired
+    );
+    assert.deepStrictEqual(repairedHandler.settings.hooks.Stop, stripHookMetadata(desired).Stop);
   })) passed++; else failed++;
 
   if (test('inspect reports exact, missing, and drifted managed entries plus the actual subset', () => {

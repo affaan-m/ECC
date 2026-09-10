@@ -21,12 +21,11 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const { spawnSync } = require('child_process');
+const { loadHookRegistry } = require('../../scripts/lib/hook-registry');
 
 const repoRoot = path.join(__dirname, '..', '..');
 const runner = path.join(repoRoot, 'scripts', 'hooks', 'run-with-flags.js');
-const hooksConfig = JSON.parse(
-  fs.readFileSync(path.join(repoRoot, 'hooks', 'hooks.json'), 'utf8')
-);
+const hooksConfig = loadHookRegistry(repoRoot);
 
 const MAX_STDIN = 1024 * 1024;
 const SUBPROCESS_TIMEOUT_MS = process.platform === 'darwin' && process.env.CI === 'true'
