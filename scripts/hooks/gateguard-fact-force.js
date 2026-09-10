@@ -366,7 +366,12 @@ const SHELL_WRAPPERS = new Set(['sh', 'bash', 'zsh', 'dash', 'ksh']);
 // client. `valueOptions` consume the next token; `positionals` are leading
 // operands of the prefix itself (`timeout DURATION`, `chroot NEWROOT`).
 const EXECUTION_PREFIXES = {
-  env: { assignments: true, valueOptions: ['-u', '--unset', '-C', '--chdir', '-S', '--split-string'] },
+  env: {
+    assignments: true,
+    valueOptions: ['-u', '--unset', '-C', '--chdir'],
+    // `env -S '<string>'` splits the string into a command line and runs it.
+    commandStringOptions: ['-S', '--split-string'],
+  },
   sudo: {
     valueOptions: [
       '-u', '--user', '-g', '--group', '-C', '--close-from', '-D', '--chdir', '-h', '--host',
@@ -378,7 +383,7 @@ const EXECUTION_PREFIXES = {
   exec: { valueOptions: ['-a'] },
   nice: { valueOptions: ['-n', '--adjustment'] },
   nohup: {},
-  time: {},
+  time: { valueOptions: ['-f', '--format', '-o', '--output'] },
   timeout: { valueOptions: ['-s', '--signal', '-k', '--kill-after'], positionals: 1 },
   stdbuf: { valueOptions: ['-i', '-o', '-e', '--input', '--output', '--error'] },
   ionice: { valueOptions: ['-c', '--class', '-n', '--classdata', '-p', '--pid'] },
@@ -392,17 +397,22 @@ const EXECUTION_PREFIXES = {
 
 /**
  * Drop leading execution prefixes (`env`, `sudo`, `nice`, ...) with their
- * options so the real command sits at index 0.
+ * options so the real command sits at index 0. Every recognised prefix is
+ * removed, however many are stacked; each round drops at least one token,
+ * so the loop terminates. Option payloads that are themselves command lines
+ * (`env -S '<string>'`) are returned separately for a recursive scan.
  *
  * @param {string[]} tokens
- * @returns {string[]}
+ * @returns {{ command: string[], commandStrings: string[] }}
  */
 function stripExecutionPrefixes(tokens) {
   let rest = tokens;
-  for (let guard = 0; guard < 8 && rest.length > 0; guard++) {
+  const commandStrings = [];
+  while (rest.length > 0) {
     const spec = EXECUTION_PREFIXES[commandBasename(rest[0])];
     if (!spec) break;
     const valueOptions = new Set(spec.valueOptions || []);
+    const commandStringOptions = spec.commandStringOptions || [];
     let i = 1;
     let consumedValueOption = false;
     while (i < rest.length) {
@@ -416,7 +426,16 @@ function stripExecutionPrefixes(tokens) {
         continue;
       }
       if (token.startsWith('-') && token.length > 1) {
-        if (valueOptions.has(token)) {
+        const inline = commandStringOptions.find(
+          opt => token.startsWith(opt) && token.length > opt.length && (opt.length === 2 || token.charAt(opt.length) === '=')
+        );
+        if (inline) {
+          commandStrings.push(token.slice(inline.length + (opt => (opt.length === 2 ? 0 : 1))(inline)));
+          i++;
+        } else if (commandStringOptions.includes(token)) {
+          if (rest[i + 1] !== undefined) commandStrings.push(rest[i + 1]);
+          i += 2;
+        } else if (valueOptions.has(token)) {
           i += 2;
           consumedValueOption = true;
         } else {
@@ -430,7 +449,7 @@ function stripExecutionPrefixes(tokens) {
     if (spec.positionalUnlessValueOption && consumedValueOption) positionals = 0;
     rest = rest.slice(i + positionals);
   }
-  return rest;
+  return { command: rest, commandStrings };
 }
 
 // A short-option cluster of a shell that includes `c` (`-c`, `-lc`, `-ec`,
@@ -509,7 +528,11 @@ function isDestructiveQuoteAware(raw, depth = 0) {
     if (isDestructiveRm(tokens)) return true;
     if (isDestructiveGit(tokens)) return true;
     if (isDestructiveFindExec(tokens.join(' '))) return true;
-    const command = stripExecutionPrefixes(tokens);
+    const { command, commandStrings } = stripExecutionPrefixes(tokens);
+    // `env -S '<string>'` executes the string as a command line of its own.
+    for (const commandString of commandStrings) {
+      if (isDestructiveQuoteAware(commandString, depth + 1)) return true;
+    }
     if (command.length === 0) continue;
     const base = commandBasename(command[0]);
     // SQL passed to a database client lives inside a quoted argument, which

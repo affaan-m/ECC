@@ -1553,6 +1553,11 @@ function runTests() {
       expectDestructiveDeny('nice -n 10 psql -c "drop table users"', 'nice -n + psql');
       expectDestructiveDeny('timeout 30 mysql -e "truncate sessions"', 'timeout DURATION + mysql');
       expectDestructiveDeny('sudo env PGHOST=db psql -c "drop table users"', 'stacked prefixes');
+      expectDestructiveDeny('env -S \'psql -c "drop table users"\'', 'env -S command string');
+      expectDestructiveDeny('env --split-string=\'mysql -e "delete from sessions"\'', 'env --split-string= command string');
+      expectDestructiveDeny('env time -f "%E" psql -c "drop table users"', 'GNU time -f FORMAT + psql');
+      expectDestructiveDeny('/usr/bin/time -o /tmp/t.log psql -c "truncate audit_log"', 'GNU time -o FILE + psql');
+      expectDestructiveDeny(`${'env '.repeat(12)}psql -c "drop table users"`, 'twelve stacked prefixes');
     })
   )
     passed++;
