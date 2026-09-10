@@ -395,7 +395,7 @@ const EXECUTION_PREFIXES = {
     // `runuser -c '<string>'` hands the string to a shell.
     commandStringOptions: ['-c', '--command', '--session-command'],
   },
-  chroot: { positionals: 1 },
+  chroot: { valueOptions: ['--userspec', '--groups'], positionals: 1 },
   taskset: { valueOptions: ['-c', '--cpu-list'], positionals: 1, positionalUnlessValueOption: true },
 };
 
@@ -412,6 +412,10 @@ const EXECUTION_PREFIXES = {
 function stripExecutionPrefixes(tokens) {
   let rest = tokens;
   let commandStrings = [];
+  // Set once a wrapper option this table does not model is skipped: it may
+  // or may not have consumed a value, so where the command starts is no
+  // longer certain and the caller scans every later token (fail closed).
+  let inconclusive = false;
   while (rest.length > 0) {
     const spec = EXECUTION_PREFIXES[commandBasename(rest[0])];
     if (!spec) break;
@@ -444,6 +448,8 @@ function stripExecutionPrefixes(tokens) {
           i += 2;
           consumedValueOption = true;
         } else {
+          // `--opt=value` carries its value; a bare unknown option may not.
+          if (!(token.startsWith('--') && token.includes('='))) inconclusive = true;
           i++;
         }
         continue;
@@ -454,7 +460,7 @@ function stripExecutionPrefixes(tokens) {
     if (spec.positionalUnlessValueOption && consumedValueOption) positionals = 0;
     rest = rest.slice(i + positionals);
   }
-  return { command: rest, commandStrings };
+  return { command: rest, commandStrings, inconclusive };
 }
 
 // A short-option cluster of a shell that includes `c` (`-c`, `-lc`, `-ec`,
@@ -465,6 +471,8 @@ const SHELL_COMMAND_OPTION = /^-[A-Za-z]*c[A-Za-z]*$/;
 // a filename (`truncate.db`, `psql -f truncate.sql`, `--file=x.sql`), not a
 // SQL phrase. `if=...` is kept so `dd if=disk.img` still matches the dd
 // pattern. Used on single arguments and on flattened command text.
+// Options of the SQL clients whose next argument is a script file, not SQL.
+const SQL_FILE_OPTIONS = new Set(['-f', '--file']);
 const FILE_LIKE_ARGUMENT = /^(?!if=)\S*(?:[\\/]\S*|\.[A-Za-z0-9]{1,8})$/;
 const FILE_LIKE_TOKEN = /(^|\s)(?!if=)\S*(?:[\\/]\S*|\.[A-Za-z0-9]{1,8})(?=\s|$)/g;
 
@@ -475,7 +483,20 @@ const FILE_LIKE_TOKEN = /(^|\s)(?!if=)\S*(?:[\\/]\S*|\.[A-Za-z0-9]{1,8})(?=\s|$)
  * @returns {string}
  */
 function sqlArgumentText(args) {
-  return args.filter(arg => !FILE_LIKE_ARGUMENT.test(arg)).join(' ');
+  const kept = [];
+  for (let i = 0; i < args.length; i++) {
+    const arg = args[i];
+    // A script path given to the client (`-f FILE`, `--file FILE`, `-fFILE`,
+    // `--file=FILE`) is a filename even when it contains spaces.
+    if (SQL_FILE_OPTIONS.has(arg)) {
+      i++;
+      continue;
+    }
+    if (arg.startsWith('--file=') || (arg.startsWith('-f') && arg.length > 2 && !arg.startsWith('--'))) continue;
+    if (FILE_LIKE_ARGUMENT.test(arg)) continue;
+    kept.push(arg);
+  }
+  return kept.join(' ');
 }
 
 /**
@@ -527,33 +548,51 @@ const SQL_CLIENTS = new Set([
  * @returns {boolean}
  */
 function isDestructiveQuoteAware(raw, depth = 0) {
-  if (depth > 4) return false;
+  // Past the nesting limit the payload is not inspected at all, so it is
+  // treated as destructive rather than waved through unseen (fail closed).
+  if (depth > 4) return true;
   for (const tokens of quoteAwareSegments(raw)) {
     if (tokens.length === 0) continue;
     if (isDestructiveRm(tokens)) return true;
     if (isDestructiveGit(tokens)) return true;
     if (isDestructiveFindExec(tokens.join(' '))) return true;
-    const { command, commandStrings } = stripExecutionPrefixes(tokens);
+    const { command, commandStrings, inconclusive } = stripExecutionPrefixes(tokens);
     // `env -S '<string>'` executes the string as a command line of its own.
     for (const commandString of commandStrings) {
       if (isDestructiveQuoteAware(commandString, depth + 1)) return true;
     }
     if (command.length === 0) continue;
-    const base = commandBasename(command[0]);
-    // SQL passed to a database client lives inside a quoted argument, which
-    // the generic scan strips on purpose (a commit message that mentions
-    // "drop table" must not trip the gate). The tokens here carry the
-    // unquoted argument text, so test the SQL phrases on them when the
-    // executable is a known SQL client — `git commit -m "drop table ..."`
-    // still has no SQL client in argv0.
-    if (SQL_CLIENTS.has(base) && DESTRUCTIVE_SQL_DD.test(sqlArgumentText(command.slice(1)))) {
-      return true;
+    // With an unmodelled wrapper option the command boundary is uncertain,
+    // so every later token is tried as the command start.
+    const starts = inconclusive ? command.map((_, index) => index) : [0];
+    for (const start of starts) {
+      if (isDestructiveClientCommand(command.slice(start), depth)) return true;
     }
-    if (SHELL_WRAPPERS.has(base)) {
-      const ci = command.findIndex((token, index) => index > 0 && SHELL_COMMAND_OPTION.test(token));
-      if (ci !== -1 && command[ci + 1] && isDestructiveQuoteAware(command[ci + 1], depth + 1)) {
-        return true;
-      }
+  }
+  return false;
+}
+
+/**
+ * SQL passed to a database client lives inside a quoted argument, which the
+ * generic scan strips on purpose (a commit message that mentions "drop
+ * table" must not trip the gate). The tokens here carry the unquoted
+ * argument text, so the SQL phrases are tested on them when argv0 is a known
+ * SQL client — `git commit -m "drop table ..."` still has no client in
+ * argv0. A shell wrapper hands its `-c` string to a recursive scan.
+ *
+ * @param {string[]} command tokens with execution prefixes removed
+ * @param {number} depth recursion guard, forwarded to nested scans
+ * @returns {boolean}
+ */
+function isDestructiveClientCommand(command, depth) {
+  const base = commandBasename(command[0]);
+  if (SQL_CLIENTS.has(base) && DESTRUCTIVE_SQL_DD.test(sqlArgumentText(command.slice(1)))) {
+    return true;
+  }
+  if (SHELL_WRAPPERS.has(base)) {
+    const ci = command.findIndex((token, index) => index > 0 && SHELL_COMMAND_OPTION.test(token));
+    if (ci !== -1 && command[ci + 1] && isDestructiveQuoteAware(command[ci + 1], depth + 1)) {
+      return true;
     }
   }
   return false;
@@ -1517,4 +1556,4 @@ function run(rawInput) {
   return rawInput; // allow
 }
 
-module.exports = { classifyDestructiveCommand, run };
+module.exports = { classifyDestructiveCommand, run, isDestructiveQuoteAware };

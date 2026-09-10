@@ -1563,6 +1563,12 @@ function runTests() {
       expectDestructiveDeny('runuser -u postgres --session-command \'mysql -e "delete from sessions"\'', 'runuser --session-command');
       expectDestructiveDeny('runuser -u postgres -s /usr/local/bin/fish -c \'psql -c "drop table users"\'', 'runuser -s SHELL -c command string');
       expectDestructiveDeny('runuser --shell=/usr/local/bin/fish -u postgres -c \'psql -c "drop table users"\'', 'runuser --shell= -c command string');
+      expectDestructiveDeny(
+        `runuser --shell /usr/local/bin/fish -u postgres -c 'psql -c "drop table users"'`,
+        'runuser --shell separate value + -c command string'
+      );
+      expectDestructiveDeny('chroot --userspec nobody:nogroup / psql -c "drop table users"', 'chroot --userspec VALUE + psql');
+      expectDestructiveDeny('chroot --made-up-flag value / psql -c "drop table users"', 'unmodelled wrapper option, fail closed');
     })
   )
     passed++;
@@ -1577,7 +1583,21 @@ function runTests() {
       expectAllow('sqlite3 truncate.db "select 1"', 'filename that contains a SQL word');
       expectAllow('psql -f truncate.sql', 'script filename via -f');
       expectAllow('psql --file=./sql/truncate.sql', 'script path via --file=');
+      expectAllow('psql -f "drop table.sql"', 'script filename with a space via -f');
+      expectAllow('psql --file "drop table.sql"', 'script filename with a space via --file');
+      expectAllow('chroot --userspec nobody:nogroup / ls -la', 'chroot --userspec with a harmless command');
       expectAllow('env PGHOST=db psql -c "select 1"', 'prefixed non-destructive SQL');
+    })
+  )
+    passed++;
+  else failed++;
+
+  if (
+    test('denies a script plus a destructive statement and fails closed past the nesting limit', () => {
+      expectDestructiveDeny('psql -f schema.sql -c "drop table users"', 'script file plus destructive -c');
+      const { isDestructiveQuoteAware } = require(hookScript);
+      assert.strictEqual(isDestructiveQuoteAware('ls -la', 5), true, 'sixth nesting level is not inspected and fails closed');
+      assert.strictEqual(isDestructiveQuoteAware('ls -la', 4), false, 'fifth nesting level is still inspected');
     })
   )
     passed++;
