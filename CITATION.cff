@@ -1,0 +1,27 @@
+cff-version: 1.2.0
+title: "ECC: The Agent Harness Operating System"
+message: "If you use ECC in research, writing, or a derived tool, please cite it."
+type: software
+authors:
+  - family-names: Mustafa
+    given-names: Affaan
+    website: "https://x.com/affaan"
+repository-code: "https://github.com/affaan-m/ECC"
+url: "https://ecc.tools"
+abstract: >-
+  ECC is an MIT-licensed agent harness operating system for coding agents such
+  as Claude Code, Codex, Cursor, and OpenCode. It installs a repeatable
+  engineering loop - plan, test, implement, review, verify, remember, improve -
+  as skills, agents, commands, hooks, and rules, together with the AgentShield
+  scanner for prompts, hooks, MCP configuration, permissions, and secrets.
+keywords:
+  - ai-agents
+  - agent-harness
+  - claude-code
+  - developer-tools
+  - llm
+  - mcp
+  - software-engineering
+license: MIT
+version: 2.2.0
+date-released: "2026-08-28"

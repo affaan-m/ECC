@@ -5,6 +5,7 @@ Thanks for wanting to contribute! This repo is a community resource for Claude C
 ## Table of Contents
 
 - [What We're Looking For](#what-were-looking-for)
+- [Your First Contribution](#your-first-contribution)
 - [Quick Start](#quick-start)
 - [Contributing Skills](#contributing-skills)
 - [Skill Adaptation Policy](#skill-adaptation-policy)
@@ -45,6 +46,33 @@ Slash commands that invoke useful workflows:
 - Deployment commands
 - Testing commands
 - Code generation commands
+
+---
+
+## Your First Contribution
+
+You do not need to understand the whole repository to help. These are scoped so
+that reading one directory is enough.
+
+- **[good first issue](https://github.com/affaan-m/ECC/issues?q=is%3Aissue+is%3Aopen+label%3A%22good+first+issue%22)** — scoped on purpose. Comment on one to claim it.
+- **A missing test.** Anything in `scripts/lib/` without a matching file in `tests/lib/` is fair game.
+- **A translation.** `docs/<locale>/` pages drift behind the English ones.
+- **An adopter row.** If you run ECC, add yourself to [ADOPTERS.md](ADOPTERS.md).
+- **A broken instruction.** If a step in the README failed for you, the fix to that step is a real contribution.
+
+### What to expect after you open a pull request
+
+- Triage within one business week: merged, changes requested, or closed with a
+  reason. Security reports are handled first and jump the queue.
+- Automated checks run first. A red build is the most common reason a review
+  stalls, so run `node tests/run-all.js` locally before pushing.
+- If a week passes with no response, comment on the thread. That is a useful
+  nudge, not noise.
+
+Questions that are not yet a pull request belong in
+[Q&A discussions](https://github.com/affaan-m/ECC/discussions/categories/q-a) or
+[Discord](https://discord.gg/36yGMHGFbR). See [SUPPORT.md](SUPPORT.md) for the
+full routing.
 
 ---
 
