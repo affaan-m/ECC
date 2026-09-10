@@ -108,6 +108,7 @@ function runTests() {
         {
           tool: 'Edit',
           sync: [
+            'post:hookify-runtime',
             'post:edit:design-quality-check',
             'post:edit:accumulator',
             'post:edit:console-warn',
@@ -120,27 +121,27 @@ function runTests() {
         },
         {
           tool: 'Write',
-          sync: ['post:edit:design-quality-check', 'post:edit:accumulator', 'post:governance-capture', 'post:session-activity-tracker', 'post:ecc-metrics-bridge', 'post:ecc-context-monitor'],
+          sync: ['post:hookify-runtime', 'post:edit:design-quality-check', 'post:edit:accumulator', 'post:governance-capture', 'post:session-activity-tracker', 'post:ecc-metrics-bridge', 'post:ecc-context-monitor'],
           async: ['post:quality-gate', 'post:observe:continuous-learning']
         },
         {
           tool: 'Bash',
-          sync: ['post:governance-capture', 'post:session-activity-tracker', 'post:ecc-metrics-bridge', 'post:ecc-context-monitor'],
+          sync: ['post:hookify-runtime', 'post:governance-capture', 'post:session-activity-tracker', 'post:ecc-metrics-bridge', 'post:ecc-context-monitor'],
           async: ['post:bash:dispatcher', 'post:observe:continuous-learning']
         },
         {
           tool: 'PowerShell',
-          sync: ['post:governance-capture', 'post:session-activity-tracker', 'post:ecc-metrics-bridge', 'post:ecc-context-monitor'],
+          sync: ['post:hookify-runtime', 'post:governance-capture', 'post:session-activity-tracker', 'post:ecc-metrics-bridge', 'post:ecc-context-monitor'],
           async: ['post:observe:continuous-learning']
         },
         {
           tool: 'powershell',
-          sync: ['post:governance-capture', 'post:session-activity-tracker', 'post:ecc-metrics-bridge', 'post:ecc-context-monitor'],
+          sync: ['post:hookify-runtime', 'post:governance-capture', 'post:session-activity-tracker', 'post:ecc-metrics-bridge', 'post:ecc-context-monitor'],
           async: ['post:observe:continuous-learning']
         },
         {
           tool: 'Read',
-          sync: ['post:session-activity-tracker', 'post:ecc-metrics-bridge', 'post:ecc-context-monitor'],
+          sync: ['post:hookify-runtime', 'post:session-activity-tracker', 'post:ecc-metrics-bridge', 'post:ecc-context-monitor'],
           async: ['post:observe:continuous-learning']
         }
       ];
@@ -177,6 +178,7 @@ function runTests() {
       }
       const ids = results.flatMap(result => previewedIds(result.stderr));
       assert.deepStrictEqual(ids, [
+        'post:hookify-runtime',
         'post:edit:design-quality-check',
         'post:edit:accumulator',
         'post:edit:console-warn',
@@ -225,7 +227,7 @@ function runTests() {
         ECC_HOOK_PROFILE: 'minimal'
       });
       assert.strictEqual(minimalSync.status, 0, minimalSync.stderr);
-      assert.deepStrictEqual(previewedIds(minimalSync.stderr), ['post:ecc-metrics-bridge']);
+      assert.deepStrictEqual(previewedIds(minimalSync.stderr), ['post:hookify-runtime', 'post:ecc-metrics-bridge']);
 
       const minimalAsync = runDispatcher('async', 'Bash', {
         ECC_DRY_RUN: '1',
