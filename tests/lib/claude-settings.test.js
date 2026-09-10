@@ -49,6 +49,22 @@ function clone(value) {
   return JSON.parse(JSON.stringify(value));
 }
 
+function withFirstStatusMessage(hooks, event, statusMessage) {
+  return {
+    ...hooks,
+    [event]: hooks[event].map((hookEntry, entryIndex) => (
+      entryIndex === 0
+        ? {
+          ...hookEntry,
+          hooks: hookEntry.hooks.map((handler, handlerIndex) => (
+            handlerIndex === 0 ? { ...handler, statusMessage } : handler
+          )),
+        }
+        : hookEntry
+    )),
+  };
+}
+
 function assertAtomicParentReplacementRejected(stage) {
   const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'claude-settings-parent-race-'));
   const targetRoot = path.join(tempDir, 'target');
@@ -611,8 +627,11 @@ function runTests() {
       },
     }, '/opt/ecc');
     const installed = stripHookMetadata(desired);
-    const edited = clone(installed);
-    edited.Stop[0].hooks[0].statusMessage = '[ECC:ecc:stop] User status';
+    const edited = withFirstStatusMessage(
+      installed,
+      'Stop',
+      '[ECC:ecc:stop] User status'
+    );
 
     assert.throws(
       () => mergeManagedHooks({ hooks: edited }, desired, { previousManagedHooks: desired }),
@@ -626,8 +645,11 @@ function runTests() {
 
   if (test('legacy upgrades preserve user-added ECC status messages as drift', () => {
     const previous = { Stop: [entry('ecc:stop', 'version-1')] };
-    const current = clone(previous);
-    current.Stop[0].hooks[0].statusMessage = '[ECC:ecc:stop] User status';
+    const current = withFirstStatusMessage(
+      previous,
+      'Stop',
+      '[ECC:ecc:stop] User status'
+    );
     const desired = materializeManagedHooks({
       hooks: {
         Stop: [{
