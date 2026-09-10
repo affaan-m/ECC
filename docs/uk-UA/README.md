@@ -103,12 +103,12 @@
 <p align="center" aria-label="Партнери та спонсори">
   <a href="https://www.coderabbit.ai" title="CodeRabbit"><img src="../../assets/images/sponsors/coderabbit.png" height="54" alt="CodeRabbit" /></a>&nbsp;&nbsp;&nbsp;
   <a href="https://www.greptile.com/go/ecc" title="Greptile"><img src="../../assets/images/sponsors/greptile.png" height="54" alt="Greptile" /></a>&nbsp;&nbsp;&nbsp;
-  <a href="https://www.atlascloud.ai/?utm_source=github&amp;utm_medium=link&amp;utm_campaign=ECC" title="Atlas Cloud"><picture><source media="(prefers-color-scheme: dark)" srcset="../../assets/images/sponsors/atlascloud-dark.svg" /><img src="../../assets/images/sponsors/atlascloud.svg" width="154" alt="Atlas Cloud" /></picture></a>&nbsp;&nbsp;&nbsp;
   <a href="https://www.moonshot.ai" title="Moonshot AI - Kimi"><picture><source media="(prefers-color-scheme: dark)" srcset="../../assets/images/sponsors/moonshot-dark.png" /><img src="../../assets/images/sponsors/moonshot.png" width="132" alt="Moonshot AI - Kimi" /></picture></a>&nbsp;&nbsp;&nbsp;
   <a href="https://compute.itomarkets.com" title="Itô Markets"><picture><source media="(prefers-color-scheme: light)" srcset="../../assets/images/sponsors/ito-transparent-light.png" /><img src="../../assets/images/sponsors/ito-transparent.png" width="96" alt="Itô Markets" /></picture></a>
 </p>
 
-<sub><strong>Спонсори спільноти:</strong> <a href="https://github.com/mikejmorgan-ai">Mike Morgan</a> · <a href="https://github.com/jasonwu513">@jasonwu513</a> · <a href="https://github.com/1anter">@1anter</a> · <a href="https://github.com/massimotodaro">@massimotodaro</a> · <a href="https://github.com/meadmccabe">@meadmccabe</a></sub>
+<sub><strong>Спонсори спільноти:</strong> <a href="https://github.com/mikejmorgan-ai">Mike Morgan (неактивний)</a> · <a href="https://github.com/jasonwu513">@jasonwu513</a> · <a href="https://github.com/1anter">@1anter</a> · <a href="https://github.com/massimotodaro">@massimotodaro</a> · <a href="https://github.com/meadmccabe">@meadmccabe</a></sub>
+<sub><strong>Минулі спонсори:</strong> <a href="https://www.atlascloud.ai/?utm_source=github&amp;utm_medium=link&amp;utm_campaign=ECC">Atlas Cloud</a></sub>
 
 <sub><a href="https://github.com/sponsors/affaan-m"><strong>Стати спонсором</strong></a> · <a href="../../SPONSORS.md">Рівні спонсорства</a> · <a href="../../SPONSORING.md">Програма спонсорства</a></sub>
 
@@ -735,6 +735,7 @@ ECC також постачає розширені керовані адапте
 - **Ціль встановлення Kimi Code** (`--target kimi`): ECC встановлюється нативно в Kimi Code CLI від [Moonshot AI](https://www.moonshot.ai)
 - **Самостійний хостинг на GPU**: перевірений шлях з [Itô](https://compute.itomarkets.com), бажаним обчислювальним спонсором ECC, включно з опційним мостом RFQ `ecc ito find` (деталі та розкриття вище в опціях встановлення)
 - **Moonshot AI (Kimi), Itô та Atlas Cloud** тепер публічні спонсори
+- **Історична примітка (2026-09-10):** Atlas Cloud був минулим спонсором у період випуску 2.1 і більше не є поточним спонсором. Інтеграція провайдера залишається чинною.
 - **Цілі встановлення Hermes + OpenClaw**, посібник з навігації Codex, консолідовані хуки PostToolUse та зміцнення ланцюжка поставок
 
 ### Поточна розробка: Уніфікованe сховище пам'яті

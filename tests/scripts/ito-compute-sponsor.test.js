@@ -372,8 +372,44 @@ function main() {
       assert.doesNotMatch(sponsors, /sixtytwo|sixty.?two/i);
       assertExactComputeRoute(sponsors);
     }],
+    ['sponsor cleanup separates current and past sponsors in both README locales', () => {
+      const readme = read('README.md');
+      const ukrainianReadme = read('docs/uk-UA/README.md');
+      const sponsors = read('SPONSORS.md');
+
+      const currentEnglish = readme.slice(
+        readme.indexOf('<sub><strong>Partners &amp; sponsors</strong></sub>'),
+        readme.indexOf('<sub><strong>Community sponsors:</strong>')
+      );
+      const currentUkrainian = ukrainianReadme.slice(
+        ukrainianReadme.indexOf('<sub><strong>Партнери та спонсори</strong></sub>'),
+        ukrainianReadme.indexOf('<sub><strong>Спонсори спільноти:</strong>')
+      );
+      const currentBusiness = sponsors.slice(
+        sponsors.indexOf('## Business Sponsors'),
+        sponsors.indexOf('## Team Sponsors')
+      );
+
+      assert.doesNotMatch(currentEnglish, /Atlas Cloud|atlascloud/i);
+      assert.doesNotMatch(currentUkrainian, /Atlas Cloud|atlascloud/i);
+      assert.doesNotMatch(currentBusiness, /Atlas Cloud|atlascloud/i);
+      assert.match(readme, /Past sponsors:.*Atlas Cloud/);
+      assert.match(sponsors, /## Past Sponsors/);
+      assert.match(sponsors, /Atlas Cloud/);
+      assert.match(sponsors, /Mike Morgan.*inactive/i);
+      assert.match(readme, /Historical note[^\n]*Atlas Cloud was a past sponsor/);
+      assert.match(
+        ukrainianReadme,
+        /Історична примітка[^\n]*Atlas Cloud був минулим спонсором/
+      );
+    }],
     ['inference guide distinguishes rental compute from managed serving', () => {
-      assertHonestComputeCopy(read('docs/ATLAS-CLOUD-GUIDE.md'));
+      const guide = read('docs/ATLAS-CLOUD-GUIDE.md');
+      assert.match(
+        guide,
+        /^# Atlas Cloud[\s\S]*> Historical sponsor note \(2026-09-10\): Atlas Cloud is a past sponsor\. The provider integration remains valid\./
+      );
+      assertHonestComputeCopy(guide);
     }],
     ['harness docs route generic open-source model intent without lock-in', () => {
       assertHonestComputeCopy(read('.claude-plugin/README.md'));
