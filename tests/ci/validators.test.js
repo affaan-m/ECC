@@ -519,6 +519,42 @@ function runTests() {
     cleanupTestDir(testDir);
   })) passed++; else failed++;
 
+  if (test('fails when cross-harness identity counts drift', () => {
+    const testDir = createTestDir();
+    const {
+      readmePath,
+      agentsPath,
+      soulPath,
+      geminiPath,
+      zhRootReadmePath,
+      zhDocsReadmePath,
+      zhAgentsPath,
+      pluginJsonPath,
+      marketplaceJsonPath,
+    } = writeCatalogFixture(testDir, {
+      crossHarnessCounts: { agents: 9, skills: 8, commands: 7 },
+    });
+
+    const result = runCatalogValidator({
+      ROOT: testDir,
+      README_PATH: readmePath,
+      AGENTS_PATH: agentsPath,
+      SOUL_PATH: soulPath,
+      GEMINI_PATH: geminiPath,
+      README_ZH_CN_PATH: zhRootReadmePath,
+      DOCS_ZH_CN_README_PATH: zhDocsReadmePath,
+      DOCS_ZH_CN_AGENTS_PATH: zhAgentsPath,
+      PLUGIN_JSON_PATH: pluginJsonPath,
+      MARKETPLACE_JSON_PATH: marketplaceJsonPath,
+    });
+
+    assert.strictEqual(result.code, 1, 'Should fail when cross-harness counts drift');
+    const output = result.stdout + result.stderr;
+    assert.ok(output.includes('SOUL.md'), 'Should report SOUL.md mismatches');
+    assert.ok(output.includes('.gemini/GEMINI.md'), 'Should report GEMINI.md mismatches');
+    cleanupTestDir(testDir);
+  })) passed++; else failed++;
+
   if (test('does not require obsolete cross-harness parity counts in README', () => {
     const testDir = createTestDir();
     const {
@@ -588,6 +624,8 @@ function runTests() {
     const {
       readmePath,
       agentsPath,
+      soulPath,
+      geminiPath,
       zhRootReadmePath,
       zhDocsReadmePath,
       zhAgentsPath,
@@ -605,6 +643,7 @@ function runTests() {
       zhAgentsSummaryCounts: { agents: 14, skills: 14, commands: 14 },
       pluginCounts: { agents: 18, skills: 18, commands: 18 },
       marketplaceCounts: { agents: 19, skills: 19, commands: 19 },
+      crossHarnessCounts: { agents: 18, skills: 18, commands: 18 },
       zhAgentsStructureLines: [
         'agents/          — 15 个专业子代理',
         'skills/          — 16 个工作流技能和领域知识',
@@ -622,6 +661,8 @@ function runTests() {
       DOCS_ZH_CN_AGENTS_PATH: zhAgentsPath,
       PLUGIN_JSON_PATH: pluginJsonPath,
       MARKETPLACE_JSON_PATH: marketplaceJsonPath,
+      SOUL_PATH: soulPath,
+      GEMINI_PATH: geminiPath,
     });
 
     assert.strictEqual(result.code, 0, `Should sync and pass, got stderr: ${result.stderr}`);
@@ -651,6 +692,10 @@ function runTests() {
     assert.ok(zhAgentsDoc.includes('commands/        — 1 个斜杠命令'), 'Should sync docs/zh-CN/AGENTS structure');
     assert.ok(pluginJson.includes('1 agents, 1 skills, 1 legacy command shims'), 'Should sync plugin manifest catalog description');
     assert.ok(marketplaceJson.includes('1 agents, 1 skills, 1 legacy command shims'), 'Should sync marketplace plugin catalog description');
+    const soul = fs.readFileSync(soulPath, 'utf8');
+    const gemini = fs.readFileSync(geminiPath, 'utf8');
+    assert.ok(soul.includes('with 1 specialized agents, 1 skills, 1 commands'), 'Should sync SOUL.md catalog summary');
+    assert.ok(gemini.includes('with 1 specialized agents, 1 skills, and 1 commands'), 'Should sync .gemini/GEMINI.md catalog summary');
 
     cleanupTestDir(testDir);
   })) passed++; else failed++;
