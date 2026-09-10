@@ -2600,6 +2600,107 @@ async function runTests() {
   else failed++;
 
   if (
+    test('hooks.json gives PowerShell dedicated GateGuard and governance routes', () => {
+      const hooksPath = path.join(__dirname, '..', '..', 'hooks', 'hooks.json');
+      const hooks = JSON.parse(fs.readFileSync(hooksPath, 'utf8'));
+      const powerShellRoutes = hooks.hooks.PreToolUse.filter(entry => entry.matcher === 'PowerShell');
+      const governanceRoute = hooks.hooks.PreToolUse.find(entry => entry.id === 'pre:governance-capture');
+
+      assert.strictEqual(
+        powerShellRoutes.length,
+        1,
+        'Should have exactly one dedicated PreToolUse PowerShell route'
+      );
+      assert.strictEqual(
+        powerShellRoutes[0].id,
+        'pre:powershell:gateguard-fact-force',
+        'PowerShell should use its independently configurable GateGuard hook ID'
+      );
+      assert.ok(
+        powerShellRoutes[0].hooks[0].command.includes('pre:powershell:gateguard-fact-force'),
+        'Configured command should preserve the PowerShell GateGuard hook ID'
+      );
+      assert.ok(
+        powerShellRoutes[0].hooks[0].command.includes('scripts/hooks/gateguard-fact-force.js'),
+        'PowerShell route should invoke GateGuard without Bash-only preflight hooks'
+      );
+      assert.ok(governanceRoute, 'PreToolUse governance route should exist');
+      assert.ok(
+        governanceRoute.matcher.split('|').includes('PowerShell'),
+        'PreToolUse governance matcher should include PowerShell'
+      );
+      assert.ok(
+        hooks.hooks.PostToolUse.every(entry => entry.matcher === '.*'),
+        'Top-level PostToolUse dispatchers should preserve current-main wildcard matchers'
+      );
+    })
+  )
+    passed++;
+  else failed++;
+
+  if (
+    test('configured PowerShell routes enforce denial and emit redacted governance evidence', () => {
+      const root = path.join(__dirname, '..', '..');
+      const hooks = JSON.parse(fs.readFileSync(path.join(root, 'hooks', 'hooks.json'), 'utf8'));
+      const gateRoute = hooks.hooks.PreToolUse.find(entry => entry.id === 'pre:powershell:gateguard-fact-force');
+      const governanceRoute = hooks.hooks.PreToolUse.find(entry => entry.id === 'pre:governance-capture');
+      const stateDir = createTestDir();
+      const command = 'Remove-Item -Force C:/private/configured-route-sentinel';
+      const payload = JSON.stringify({
+        tool_name: 'PowerShell',
+        tool_input: { command }
+      });
+      const env = {
+        ...process.env,
+        CLAUDE_PLUGIN_ROOT: root,
+        ECC_HOOK_PROFILE: 'standard',
+        GATEGUARD_STATE_DIR: stateDir,
+        CLAUDE_SESSION_ID: 'ecc039-configured-route-test'
+      };
+      for (const key of ['ECC_GATEGUARD', 'GATEGUARD_DISABLED', 'GATEGUARD_BASH_ROUTINE_DISABLED', 'ECC_DISABLED_HOOKS']) {
+        delete env[key];
+      }
+
+      try {
+        const gated = spawnSync(gateRoute.hooks[0].command, {
+          cwd: root,
+          env,
+          input: payload,
+          encoding: 'utf8',
+          shell: true,
+          timeout: 15000
+        });
+        assert.strictEqual(gated.status, 0, gated.stderr);
+        assert.strictEqual(
+          JSON.parse(gated.stdout).hookSpecificOutput?.permissionDecision,
+          'deny',
+          'exact configured GateGuard command should deny destructive PowerShell'
+        );
+
+        const governed = spawnSync(governanceRoute.hooks[0].command, {
+          cwd: root,
+          env: {
+            ...env,
+            ECC_GOVERNANCE_CAPTURE: '1',
+            CLAUDE_HOOK_EVENT_NAME: 'PreToolUse'
+          },
+          input: payload,
+          encoding: 'utf8',
+          shell: true,
+          timeout: 15000
+        });
+        assert.strictEqual(governed.status, 0, governed.stderr);
+        assert.ok(governed.stderr.includes('powershell.remove-item.force'));
+        assert.ok(!governed.stderr.includes(command), 'governance evidence should omit raw command text');
+      } finally {
+        cleanupTestDir(stateDir);
+      }
+    })
+  )
+    passed++;
+  else failed++;
+
+  if (
     test('all string hook matchers are valid regular expressions', () => {
       const hooksPath = path.join(__dirname, '..', '..', 'hooks', 'hooks.json');
       const hooks = JSON.parse(fs.readFileSync(hooksPath, 'utf8'));
@@ -4310,9 +4411,13 @@ async function runTests() {
   else failed++;
 
   if (
-    await asyncTest('source calls process.exit(0) after writing output', async () => {
+    await asyncTest('source exits only after stdout finishes writing', async () => {
       const formatSource = fs.readFileSync(path.join(scriptsDir, 'post-edit-format.js'), 'utf8');
-      assert.ok(formatSource.includes('process.exit(0)'), 'Should call process.exit(0) for clean termination');
+      assert.match(
+        formatSource,
+        /process\.stdout\.write\(data,\s*\(\)\s*=>\s*process\.exit\(0\)\)/,
+        'Should exit from the stdout write callback'
+      );
     })
   )
     passed++;
@@ -4321,7 +4426,7 @@ async function runTests() {
   if (
     await asyncTest('uses process.stdout.write instead of console.log for pass-through', async () => {
       const formatSource = fs.readFileSync(path.join(scriptsDir, 'post-edit-format.js'), 'utf8');
-      assert.ok(formatSource.includes('process.stdout.write(data)'), 'Should use process.stdout.write to avoid trailing newline');
+      assert.ok(formatSource.includes('process.stdout.write(data,'), 'Should use process.stdout.write to avoid trailing newline');
       // Verify no console.log(data) for pass-through (console.error for warnings is OK)
       const lines = formatSource.split('\n');
       const passThrough = lines.filter(l => /console\.log\(data\)/.test(l));
@@ -4334,9 +4439,13 @@ async function runTests() {
   console.log('\nRound 29: post-edit-typecheck.js (exit and pass-through):');
 
   if (
-    await asyncTest('source calls process.exit(0) after writing output', async () => {
+    await asyncTest('source exits only after stdout finishes writing', async () => {
       const tcSource = fs.readFileSync(path.join(scriptsDir, 'post-edit-typecheck.js'), 'utf8');
-      assert.ok(tcSource.includes('process.exit(0)'), 'Should call process.exit(0) for clean termination');
+      assert.match(
+        tcSource,
+        /process\.stdout\.write\(data,\s*\(\)\s*=>\s*process\.exit\(0\)\)/,
+        'Should exit from the stdout write callback'
+      );
     })
   )
     passed++;
@@ -4345,7 +4454,7 @@ async function runTests() {
   if (
     await asyncTest('uses process.stdout.write instead of console.log for pass-through', async () => {
       const tcSource = fs.readFileSync(path.join(scriptsDir, 'post-edit-typecheck.js'), 'utf8');
-      assert.ok(tcSource.includes('process.stdout.write(data)'), 'Should use process.stdout.write');
+      assert.ok(tcSource.includes('process.stdout.write(data,'), 'Should use process.stdout.write');
       const lines = tcSource.split('\n');
       const passThrough = lines.filter(l => /console\.log\(data\)/.test(l));
       assert.strictEqual(passThrough.length, 0, 'Should not use console.log(data) for pass-through');
@@ -5446,18 +5555,17 @@ async function runTests() {
     passed++;
   else failed++;
 
-  console.log('\nRound 59: check-console-log.js (stdin exceeding 1MB — truncation):');
+  console.log('\nRound 59: check-console-log.js (large stdin pass-through):');
 
   if (
-    await asyncTest('suppresses pass-through for oversized stdin (fail-open, #2090)', async () => {
-      // Send 1.2MB of data — exceeds the 1MB MAX_STDIN limit. Echoing the
-      // truncated string would emit a JSON document cut mid-stream, which the
-      // harness reports as a Stop hook JSON validation failure.
+    await asyncTest('preserves complete oversized stdin (#2924)', async () => {
+      // Direct/legacy entrypoints preserve the protocol payload. Production
+      // wrappers continue to enforce their own bounded-input policy.
       const payload = 'x'.repeat(1024 * 1024 + 200000);
       const result = await runScript(path.join(scriptsDir, 'check-console-log.js'), payload);
 
       assert.strictEqual(result.code, 0, 'Should exit 0 even with oversized stdin');
-      assert.strictEqual(result.stdout, '', 'Truncated stdin must not be echoed (empty stdout = no opinion)');
+      assert.strictEqual(result.stdout, payload, 'stdout should exactly match the complete stdin payload');
     })
   )
     passed++;
@@ -5548,20 +5656,16 @@ async function runTests() {
     passed++;
   else failed++;
 
-  console.log('\nRound 60: post-edit-console-warn.js (stdin exceeding 1MB — truncation):');
+  console.log('\nRound 60: post-edit-console-warn.js (large stdin pass-through):');
 
   if (
-    await asyncTest('truncates stdin at 1MB limit and still passes through data', async () => {
-      // Send 1.2MB of data — exceeds the 1MB MAX_STDIN limit
+    await asyncTest('preserves complete oversized stdin', async () => {
       const payload = 'x'.repeat(1024 * 1024 + 200000);
       const result = await runScript(path.join(scriptsDir, 'post-edit-console-warn.js'), payload);
 
       assert.strictEqual(result.code, 0, 'Should exit 0 even with oversized stdin');
-      // Data should be truncated — stdout significantly less than input
-      assert.ok(result.stdout.length < payload.length, `stdout (${result.stdout.length}) should be shorter than input (${payload.length})`);
-      // Should be approximately 1MB (last accepted chunk may push slightly over)
-      assert.ok(result.stdout.length <= 1024 * 1024 + 65536, `stdout (${result.stdout.length}) should be near 1MB, not unbounded`);
-      assert.ok(result.stdout.length > 0, 'Should still pass through truncated data');
+      assert.strictEqual(result.stdout, payload, 'stdout should exactly match the complete stdin payload');
+      assert.ok(result.stdout.length > 0, 'Should pass through complete data');
     })
   )
     passed++;
@@ -6074,40 +6178,32 @@ Some random content without the expected ### Context to Load section
     passed++;
   else failed++;
 
-  // ── Round 87: post-edit-format.js and post-edit-typecheck.js stdin overflow (1MB) ──
-  console.log('\nRound 87: post-edit-format.js (stdin exceeding 1MB — truncation):');
+  // ── Round 87: post-edit-format.js and post-edit-typecheck.js large stdin pass-through ──
+  console.log('\nRound 87: post-edit-format.js (large stdin pass-through):');
 
   if (
-    await asyncTest('truncates stdin at 1MB limit and still passes through data (post-edit-format)', async () => {
-      // Send 1.2MB of data — exceeds the 1MB MAX_STDIN limit (lines 14-22)
+    await asyncTest('preserves complete oversized stdin (post-edit-format)', async () => {
       const payload = 'x'.repeat(1024 * 1024 + 200000);
       const result = await runScript(path.join(scriptsDir, 'post-edit-format.js'), payload);
 
       assert.strictEqual(result.code, 0, 'Should exit 0 even with oversized stdin');
-      // Output should be truncated — significantly less than input
-      assert.ok(result.stdout.length < payload.length, `stdout (${result.stdout.length}) should be shorter than input (${payload.length})`);
-      // Output should be approximately 1MB (last accepted chunk may push slightly over)
-      assert.ok(result.stdout.length <= 1024 * 1024 + 65536, `stdout (${result.stdout.length}) should be near 1MB, not unbounded`);
-      assert.ok(result.stdout.length > 0, 'Should still pass through truncated data');
+      assert.strictEqual(result.stdout, payload, 'stdout should exactly match the complete stdin payload');
+      assert.ok(result.stdout.length > 0, 'Should pass through complete data');
     })
   )
     passed++;
   else failed++;
 
-  console.log('\nRound 87: post-edit-typecheck.js (stdin exceeding 1MB — truncation):');
+  console.log('\nRound 87: post-edit-typecheck.js (large stdin pass-through):');
 
   if (
-    await asyncTest('truncates stdin at 1MB limit and still passes through data (post-edit-typecheck)', async () => {
-      // Send 1.2MB of data — exceeds the 1MB MAX_STDIN limit (lines 16-24)
+    await asyncTest('preserves complete oversized stdin (post-edit-typecheck)', async () => {
       const payload = 'x'.repeat(1024 * 1024 + 200000);
       const result = await runScript(path.join(scriptsDir, 'post-edit-typecheck.js'), payload);
 
       assert.strictEqual(result.code, 0, 'Should exit 0 even with oversized stdin');
-      // Output should be truncated — significantly less than input
-      assert.ok(result.stdout.length < payload.length, `stdout (${result.stdout.length}) should be shorter than input (${payload.length})`);
-      // Output should be approximately 1MB (last accepted chunk may push slightly over)
-      assert.ok(result.stdout.length <= 1024 * 1024 + 65536, `stdout (${result.stdout.length}) should be near 1MB, not unbounded`);
-      assert.ok(result.stdout.length > 0, 'Should still pass through truncated data');
+      assert.strictEqual(result.stdout, payload, 'stdout should exactly match the complete stdin payload');
+      assert.ok(result.stdout.length > 0, 'Should pass through complete data');
     })
   )
     passed++;

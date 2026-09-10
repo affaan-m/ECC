@@ -9,6 +9,7 @@ const crypto = require('crypto');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
+const { spawnSync } = require('child_process');
 
 const {
   applyInstallPlan,
@@ -19,6 +20,7 @@ const {
   listAvailableLanguages,
 } = require('../../scripts/lib/install-executor');
 const { applyInstallPlan: applyInstallPlanDirect } = require('../../scripts/lib/install/apply');
+const { withHookConsent } = require('../../scripts/lib/install/hook-consent');
 
 const REPO_ROOT = path.resolve(__dirname, '..', '..');
 
@@ -163,6 +165,91 @@ function runTests() {
       assert.deepStrictEqual([...languages].sort(), languages);
     } finally {
       cleanup(sourceRoot);
+    }
+  })) passed++; else failed++;
+
+  if (test('Claude settings write preserves unrelated changes made after preflight', () => {
+    const tempDir = createTempDir('install-executor-settings-race-');
+    try {
+      const homeDir = path.join(tempDir, 'home');
+      const projectRoot = path.join(tempDir, 'project');
+      fs.mkdirSync(homeDir, { recursive: true });
+      fs.mkdirSync(projectRoot, { recursive: true });
+      const rawPlan = createManifestInstallPlan({
+        sourceRoot: REPO_ROOT,
+        homeDir,
+        projectRoot,
+        target: 'claude',
+        moduleIds: ['hooks-runtime'],
+      });
+      const plan = withHookConsent(rawPlan, 'enabled');
+      const settingsPath = path.join(homeDir, '.claude', 'settings.json');
+
+      applyInstallPlanDirect(plan, {
+        beforeOperationWrite({ operation }) {
+          if (operation.kind === 'update-claude-settings') {
+            fs.writeFileSync(settingsPath, '{"theme":"added-after-preflight"}\n');
+          }
+        },
+      });
+
+      const settings = JSON.parse(fs.readFileSync(settingsPath, 'utf8'));
+      assert.strictEqual(settings.theme, 'added-after-preflight');
+      assert.ok(settings.hooks.SessionStart.some(entry => entry.id === 'session:start'));
+    } finally {
+      cleanup(tempDir);
+    }
+  })) passed++; else failed++;
+
+  if (test('failed hook disable checkpoints the previous enabled consent state', () => {
+    const tempDir = createTempDir('install-executor-disable-failure-');
+    try {
+      const homeDir = path.join(tempDir, 'home');
+      const projectRoot = path.join(tempDir, 'project');
+      fs.mkdirSync(homeDir, { recursive: true });
+      fs.mkdirSync(projectRoot, { recursive: true });
+      const enabledPlan = withHookConsent(createManifestInstallPlan({
+        sourceRoot: REPO_ROOT,
+        homeDir,
+        projectRoot,
+        target: 'claude',
+        profileId: 'core',
+      }), 'enabled');
+      applyInstallPlanDirect(enabledPlan);
+
+      const declinedPlan = withHookConsent(createManifestInstallPlan({
+        sourceRoot: REPO_ROOT,
+        homeDir,
+        projectRoot,
+        target: 'claude',
+        profileId: 'core',
+      }), 'declined');
+      let injectedFailure = false;
+      assert.throws(
+        () => applyInstallPlanDirect(declinedPlan, {
+          beforeOperationWrite({ operation }) {
+            if (!injectedFailure && operation.kind === 'copy-file') {
+              injectedFailure = true;
+              throw new Error('injected copy failure');
+            }
+          },
+        }),
+        /injected copy failure/
+      );
+
+      const state = JSON.parse(fs.readFileSync(declinedPlan.installStatePath, 'utf8'));
+      assert.strictEqual(state.request.hookConsent, 'enabled');
+      assert.ok(state.resolution.selectedModules.includes('hooks-runtime'));
+      assert.ok(state.operations.some(operation => (
+        operation.kind === 'update-claude-settings'
+      )));
+      const settings = JSON.parse(fs.readFileSync(
+        path.join(homeDir, '.claude', 'settings.json'),
+        'utf8'
+      ));
+      assert.ok(settings.hooks.SessionStart.some(entry => entry.id === 'session:start'));
+    } finally {
+      cleanup(tempDir);
     }
   })) passed++; else failed++;
 
@@ -397,6 +484,122 @@ function runTests() {
     } finally {
       cleanup(sourceRoot);
       cleanup(homeDir);
+    }
+  })) passed++; else failed++;
+
+  if (test('plans one resolved Claude settings hook registration for home and project targets', () => {
+    const tempDir = createTempDir('install-executor-claude-hooks-');
+    try {
+      for (const target of ['claude', 'claude-project']) {
+        const quoted = process.platform === 'win32' ? 'quoted' : '"quoted"';
+        const homeDir = path.join(tempDir, `${target} home ${quoted} $dollar %percent%`);
+        const projectRoot = path.join(tempDir, `${target} project ${quoted} $dollar %percent%`);
+        fs.mkdirSync(homeDir, { recursive: true });
+        fs.mkdirSync(projectRoot, { recursive: true });
+
+        const plan = createManifestInstallPlan({
+          sourceRoot: REPO_ROOT,
+          homeDir,
+          projectRoot,
+          target,
+          moduleIds: ['hooks-runtime'],
+        });
+        const expectedRoot = target === 'claude'
+          ? path.join(homeDir, '.claude')
+          : path.join(projectRoot, '.claude');
+        const settingsOperations = plan.operations.filter(operation => (
+          operation.kind === 'update-claude-settings'
+        ));
+
+        assert.strictEqual(settingsOperations.length, 1, `${target} should plan one settings update`);
+        const operation = settingsOperations[0];
+        assert.strictEqual(operation.moduleId, 'hooks-runtime');
+        assert.strictEqual(
+          operation.sourceRelativePath.split(path.sep).join('/'),
+          'hooks/hooks.json'
+        );
+        assert.strictEqual(operation.destinationPath, path.join(expectedRoot, 'settings.json'));
+        assert.ok(operation.managedHooks);
+        assert.ok(operation.managedHooks.SessionStart.some(entry => (
+          entry.id === 'session:start'
+        )));
+        const commands = Object.values(operation.managedHooks)
+          .flat()
+          .flatMap(entry => entry.hooks || [])
+          .map(hook => hook.command)
+          .filter(command => typeof command === 'string');
+        const encodedRoot = Buffer.from(expectedRoot, 'utf8').toString('base64');
+        assert.ok(commands.some(command => command.includes(encodedRoot)));
+        assert.ok(commands.every(command => !command.includes(expectedRoot)));
+        assert.ok(
+          commands.every(command => !command.includes('var e=process.env.CLAUDE_PLUGIN_ROOT;')),
+          `${target} commands should not depend on an unset CLAUDE_PLUGIN_ROOT`
+        );
+        if (process.platform !== 'win32') {
+          for (const command of commands) {
+            const syntaxCheck = spawnSync('/bin/sh', ['-n', '-c', command], {
+              encoding: 'utf8',
+            });
+            assert.strictEqual(
+              syntaxCheck.status,
+              0,
+              `${target} hook command should remain shell-safe: ${syntaxCheck.stderr}`
+            );
+          }
+        }
+        assert.ok(!plan.operations.some(candidate => (
+          candidate.kind === 'copy-file'
+          && candidate.sourceRelativePath.split(path.sep).join('/') === 'hooks/hooks.json'
+        )));
+
+        const stateOperation = plan.statePreview.operations.find(candidate => (
+          candidate.kind === 'update-claude-settings'
+        ));
+        assert.deepStrictEqual(stateOperation.managedHooks, operation.managedHooks);
+      }
+    } finally {
+      cleanup(tempDir);
+    }
+  })) passed++; else failed++;
+
+  if (test('Claude commit-attribution atomic write failures abort installation', () => {
+    const tempDir = createTempDir('install-executor-attribution-failure-');
+    const originalRenameSync = fs.renameSync;
+    try {
+      const homeDir = path.join(tempDir, 'home');
+      const projectRoot = path.join(tempDir, 'project');
+      fs.mkdirSync(homeDir, { recursive: true });
+      fs.mkdirSync(projectRoot, { recursive: true });
+      const rawPlan = createManifestInstallPlan({
+        sourceRoot: REPO_ROOT,
+        homeDir,
+        projectRoot,
+        target: 'claude',
+        moduleIds: ['hooks-runtime'],
+      });
+      const plan = withHookConsent(rawPlan, 'enabled');
+      const settingsPath = path.join(homeDir, '.claude', 'settings.json');
+      let settingsCommitCount = 0;
+      fs.renameSync = function failAttributionCommit(sourcePath, destinationPath) {
+        if (path.resolve(String(destinationPath)) === path.resolve(settingsPath)) {
+          settingsCommitCount += 1;
+          if (settingsCommitCount === 2) {
+            throw new Error('injected attribution rename failure');
+          }
+        }
+        return originalRenameSync.call(fs, sourcePath, destinationPath);
+      };
+
+      assert.throws(
+        () => applyInstallPlanDirect(plan),
+        /injected attribution rename failure/
+      );
+      const settings = JSON.parse(fs.readFileSync(settingsPath, 'utf8'));
+      assert.ok(settings.hooks.SessionStart.some(entry => entry.id === 'session:start'));
+      assert.strictEqual(Object.hasOwn(settings, 'includeCoAuthoredBy'), false);
+    } finally {
+      fs.renameSync = originalRenameSync;
+      cleanup(tempDir);
     }
   })) passed++; else failed++;
 

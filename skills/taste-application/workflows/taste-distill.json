@@ -1,0 +1,170 @@
+{
+  "name": "taste-distill",
+  "title": "taste-distill",
+  "contents": {
+    "name": "workflow",
+    "nodes": {
+      "output": {
+        "type": "display",
+        "id": "output",
+        "depends": [
+          "node-vision"
+        ],
+        "input": {},
+        "metadata": {
+          "position": {
+            "x": 2800,
+            "y": 0
+          }
+        },
+        "fields": {
+          "output": "$node-vision.output"
+        }
+      },
+      "node-reference1": {
+        "type": "run",
+        "id": "node-reference1",
+        "depends": [
+          "input"
+        ],
+        "metadata": {
+          "position": {
+            "x": 1000,
+            "y": 1200
+          }
+        },
+        "app": "fal-ai/ffmpeg-api/extract-frame",
+        "input": {
+          "video_url": "$input.reference_1",
+          "frame_type": "middle"
+        }
+      },
+      "node-vision": {
+        "type": "run",
+        "id": "node-vision",
+        "depends": [
+          "node-reference1",
+          "node-reference2",
+          "node-reference3",
+          "input"
+        ],
+        "metadata": {
+          "position": {
+            "x": 1900,
+            "y": 0
+          }
+        },
+        "app": "openrouter/router/vision",
+        "input": {
+          "image_urls": [
+            "$node-reference1.images.0.url",
+            "$node-reference2.images.0.url",
+            "$node-reference3.images.0.url"
+          ],
+          "prompt": "These frames are sampled from separate reference videos that share one visual identity. Distill the identity COMMON to all of them, not the content of any single frame. Return ONLY a JSON object, no prose and no markdown fences, with exactly these keys: palette_description (string), grain (string), lighting (string), focal_length (string), camera_motion (string), subject_framing (string), grade_description (string), mood_adjectives (array of strings), avoid (array of strings). Describe only what is visually verifiable across the set. The 'avoid' list names things that would break this look if introduced.",
+          "system_prompt": "$input.measured_grounding",
+          "model": "google/gemini-2.5-flash"
+        }
+      },
+      "node-reference3": {
+        "type": "run",
+        "id": "node-reference3",
+        "depends": [
+          "input"
+        ],
+        "metadata": {
+          "position": {
+            "x": 1000,
+            "y": 600
+          }
+        },
+        "app": "fal-ai/ffmpeg-api/extract-frame",
+        "input": {
+          "video_url": "$input.reference_3",
+          "frame_type": "middle"
+        }
+      },
+      "node-reference2": {
+        "type": "run",
+        "id": "node-reference2",
+        "depends": [
+          "input"
+        ],
+        "metadata": {
+          "position": {
+            "x": 1000,
+            "y": 0
+          }
+        },
+        "app": "fal-ai/ffmpeg-api/extract-frame",
+        "input": {
+          "video_url": "$input.reference_2",
+          "frame_type": "middle"
+        }
+      }
+    },
+    "output": {
+      "output": "$node-vision.output"
+    },
+    "schema": {
+      "input": {
+        "reference_1": {
+          "name": "video_url",
+          "label": "Video_url Field",
+          "description": "A video_url field",
+          "required": true,
+          "defaultValue": "",
+          "examples": [],
+          "ui": {},
+          "type": "string",
+          "modelId": "node-reference1"
+        },
+        "reference_2": {
+          "name": "video_url_1",
+          "label": "Video_url_1 Field",
+          "description": "A video_url field",
+          "required": true,
+          "defaultValue": "",
+          "examples": [],
+          "ui": {},
+          "type": "string",
+          "modelId": "node-reference2"
+        },
+        "reference_3": {
+          "name": "video_url_1",
+          "label": "Video_url_1 Field",
+          "description": "A video_url field",
+          "required": true,
+          "defaultValue": "",
+          "examples": [],
+          "ui": {},
+          "type": "string",
+          "modelId": "node-reference3"
+        },
+        "measured_grounding": {
+          "name": "measured_grounding",
+          "label": "Supplied genre and measured grounding",
+          "description": "Compile offline from measured evidence for these references.",
+          "type": "string",
+          "ui": {
+            "field": "textarea"
+          },
+          "examples": [],
+          "modelId": "node-vision",
+          "defaultValue": "",
+          "required": true
+        }
+      },
+      "output": {}
+    },
+    "version": "1",
+    "metadata": {
+      "input": {
+        "position": {
+          "x": 0,
+          "y": 0
+        }
+      }
+    }
+  }
+}

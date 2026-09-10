@@ -10,8 +10,8 @@
  *
  * Gates:
  *   - Edit/Write: list importers, affected API, verify data schemas, quote instruction
- *   - Bash (destructive): list targets, rollback plan, quote instruction
- *   - Bash (routine): quote current instruction (once per session)
+ *   - Bash/PowerShell (destructive): list targets, rollback plan, quote instruction
+ *   - Bash/PowerShell (routine): quote current instruction (once per session)
  *
  * Compatible with run-with-flags.js via module.exports.run().
  * Cross-platform (Windows, macOS, Linux).
@@ -26,6 +26,7 @@ const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
 const { extractCommandSubstitutions, extractSubshellGroups, extractBraceGroups } = require('../lib/shell-substitution');
+const { classifyPowerShellDestructiveCommand } = require('../lib/powershell-destructive-command');
 const { stripHeredocBodies } = require('./gateguard-heredoc');
 
 // Session state — scoped per session to avoid cross-session races.
@@ -42,10 +43,13 @@ const MAX_SESSION_KEYS = 50;
 const ROUTINE_BASH_SESSION_KEY = '__bash_session__';
 const EDIT_WRITE_HOOK_ID = 'pre:edit-write:gateguard-fact-force';
 const BASH_HOOK_ID = 'pre:bash:gateguard-fact-force';
+const POWERSHELL_HOOK_ID = 'pre:powershell:gateguard-fact-force';
 const EDIT_WRITE_NARROW_RECOVERY_HINT =
   'Narrow recovery: add a matching path glob to `GATEGUARD_EXEMPT_GLOBS` to skip first-touch Edit/Write checks without disabling destructive Bash checks.';
 const ROUTINE_BASH_NARROW_RECOVERY_HINT =
   'Narrow recovery: set `GATEGUARD_BASH_ROUTINE_DISABLED=1`; destructive Bash checks remain active.';
+const ROUTINE_POWERSHELL_NARROW_RECOVERY_HINT =
+  'Narrow recovery: set `GATEGUARD_BASH_ROUTINE_DISABLED=1`; destructive Bash and PowerShell checks remain active.';
 const ECC_DISABLE_VALUES = new Set(['0', 'false', 'off', 'disabled', 'disable']);
 const ECC_ENABLE_VALUES = new Set(['1', 'true', 'on', 'enabled', 'enable', 'yes']);
 
@@ -100,11 +104,12 @@ function getExtraDestructiveRegex() {
 }
 
 // Operator-supplied path exemptions. Comma-separated globs (`GATEGUARD_EXEMPT_GLOBS`)
-// matched against the normalized (forward-slash, lowercased) file path. First-touch
+// matched against the normalized project-relative path (or full path for an
+// explicitly absolute glob). First-touch
 // fact-forcing is skipped for a matching Edit/Write/MultiEdit target — intended for
 // low-import-value trees (tests, generated artifacts, scratch dirs) where "who imports
-// this / what schema" carries no signal. Memoized on the env value; fail-open (a
-// malformed pattern is dropped, never throws). `*` matches within a path segment,
+// this / what schema" carries no signal. Memoized on the env value; malformed
+// patterns are dropped without granting exemptions. `*` matches within a path segment,
 // `**` across segments, `?` a single char.
 let exemptCacheKey = null;
 let exemptCacheRegexes = null;
@@ -116,16 +121,24 @@ function getExemptMatchers() {
   exemptCacheKey = raw;
   exemptCacheRegexes = raw
     .split(',')
-    .map(s => s.trim())
+    .map(s => normalizeForMatch(s.trim()))
     .filter(Boolean)
     .map(glob => {
-      const source = glob
-        .replace(/[.+^${}()|[\]\\]/g, '\\$&') // escape regex metachars, keep * and ?
-        .split('**')                           // ** boundaries (cross-segment)
-        .map(part => part.replace(/\*/g, '[^/]*').replace(/\?/g, '.'))
-        .join('.*');                           // ** -> across segments
+      let source = '';
+      for (let index = 0; index < glob.length; index++) {
+        const char = glob[index];
+        if (char === '*' && glob[index + 1] === '*') {
+          index++;
+          if (glob[index + 1] === '/') {
+            source += '(?:.*/)?';
+            index++;
+          } else source += '.*';
+        } else if (char === '*') source += '[^/]*';
+        else if (char === '?') source += '[^/]';
+        else source += char.replace(/[.+^${}()|[\]\\]/g, '\\$&');
+      }
       try {
-        return new RegExp(source);
+        return { regex: new RegExp(`^${source}$`), absolute: path.posix.isAbsolute(glob) || path.win32.isAbsolute(glob) };
       } catch (_) {
         return null;
       }
@@ -134,9 +147,17 @@ function getExemptMatchers() {
   return exemptCacheRegexes;
 }
 
-function isExemptPath(filePath) {
-  const norm = normalizeForMatch(filePath);
-  return getExemptMatchers().some(re => re.test(norm));
+function isExemptPath(filePath, data) {
+  const projectRoot = process.env.CLAUDE_PROJECT_DIR || data.cwd || process.cwd();
+  if (typeof projectRoot !== 'string' || typeof filePath !== 'string') return false;
+  const paths = /^[a-z]:[\\/]|^\\\\/i.test(projectRoot) ? path.win32 : path.posix;
+  if (!paths.isAbsolute(projectRoot)) return false;
+  const target = paths.resolve(projectRoot, filePath);
+  const relative = paths.relative(projectRoot, target);
+  const contained = relative !== '..' && !relative.startsWith(`..${paths.sep}`) && !paths.isAbsolute(relative);
+  return getExemptMatchers().some(({ regex, absolute }) =>
+    absolute ? regex.test(normalizeForMatch(target)) : contained && regex.test(normalizeForMatch(relative))
+  );
 }
 
 function isRoutineBashGateDisabled() {
@@ -720,6 +741,27 @@ function isDestructiveBash(command) {
   return false;
 }
 
+/**
+ * Return the stable, non-sensitive rule IDs that drive the destructive gate.
+ * PowerShell also passes through the existing Bash-compatible classifier so
+ * shell-agnostic git, SQL, and operator-configured rules retain coverage.
+ * Governance consumes this exact decision for PowerShell approval evidence.
+ *
+ * @param {string} toolName
+ * @param {string} command
+ * @returns {string[]}
+ */
+function classifyDestructiveCommand(toolName, command) {
+  const normalizedTool = String(toolName || '').toLowerCase();
+  if (normalizedTool !== 'bash' && normalizedTool !== 'powershell') return [];
+
+  const findings = [
+    ...(isDestructiveBash(command) ? ['gateguard.bash-compatible-destructive'] : []),
+    ...(normalizedTool === 'powershell' ? classifyPowerShellDestructiveCommand(command) : []),
+  ];
+  return [...new Set(findings)];
+}
+
 // --- State management (per-session, atomic writes, bounded) ---
 
 function normalizeEnvValue(value) {
@@ -898,8 +940,8 @@ function markChecked(key) {
 // 3); afterwards emit a condensed single-line denial that carries the
 // denial ordinal, so consecutive denials are structurally different and
 // never textually identical. True retries of an already-gated target are
-// unaffected (they were always allowed). Destructive-Bash and routine-Bash
-// gates are unchanged.
+// unaffected (they were always allowed). Destructive shell and routine shell
+// gates are not denial-dampened.
 
 const DEFAULT_FULL_DENIALS = 3;
 
@@ -1119,11 +1161,12 @@ function destructiveBashMsg() {
   ].join('\n');
 }
 
-function routineBashMsg() {
+function routineShellMsg(toolName) {
+  const shellName = toolName === 'PowerShell' ? 'PowerShell' : 'Bash';
   return [
     '[Fact-Forcing Gate]',
     '',
-    'Before the first Bash command this session, present these facts:',
+    `Before the first ${shellName} command this session, present these facts:`,
     '',
     '1. The current user request in one sentence',
     '2. What this specific command verifies or produces',
@@ -1200,13 +1243,13 @@ function run(rawInput) {
   const rawToolName = data.tool_name || '';
   const toolInput = data.tool_input || {};
   // Normalize: case-insensitive matching via lookup map
-  const TOOL_MAP = { edit: 'Edit', write: 'Write', multiedit: 'MultiEdit', bash: 'Bash' };
+  const TOOL_MAP = { edit: 'Edit', write: 'Write', multiedit: 'MultiEdit', bash: 'Bash', powershell: 'PowerShell' };
   const toolName = TOOL_MAP[rawToolName.toLowerCase()] || rawToolName;
   const inSubagent = isSubagentInvocation(data);
 
   if (toolName === 'Edit' || toolName === 'Write') {
     const filePath = toolInput.file_path || '';
-    if (!filePath || isClaudeSettingsPath(filePath) || isExemptPath(filePath)) {
+    if (!filePath || isClaudeSettingsPath(filePath) || isExemptPath(filePath, data)) {
       return rawInput; // allow
     }
 
@@ -1239,7 +1282,7 @@ function run(rawInput) {
     const edits = toolInput.edits || [];
     for (const edit of edits) {
       const filePath = edit.file_path || '';
-      if (filePath && !isClaudeSettingsPath(filePath) && !isExemptPath(filePath) && !isChecked(filePath)) {
+      if (filePath && !isClaudeSettingsPath(filePath) && !isExemptPath(filePath, data) && !isChecked(filePath)) {
         const { ok, denials } = markCheckedAndCountDenial(filePath);
         if (!ok) {
           return allowWithStateWarning();
@@ -1255,13 +1298,13 @@ function run(rawInput) {
     return rawInput; // allow
   }
 
-  if (toolName === 'Bash') {
+  if (toolName === 'Bash' || toolName === 'PowerShell') {
     const command = toolInput.command || '';
     if (isReadOnlyGitIntrospection(command)) {
       return rawInput;
     }
 
-    if (isDestructiveBash(command)) {
+    if (classifyDestructiveCommand(toolName, command).length > 0) {
       // Gate destructive commands on first attempt; allow retry after facts presented
       const key = '__destructive__' + crypto.createHash('sha256').update(command).digest('hex').slice(0, 16);
       if (!isChecked(key)) {
@@ -1273,7 +1316,7 @@ function run(rawInput) {
       return rawInput; // allow retry after facts presented
     }
 
-    // Operator opt-out: skip the routine-bash gate entirely. The destructive
+    // Operator opt-out: skip the routine shell gate entirely. The destructive
     // gate above still fires. This is the documented escape hatch for hosts
     // (Cursor, OpenCode, etc.) where the once-per-session routine gate is
     // friction without signal.
@@ -1285,9 +1328,13 @@ function run(rawInput) {
       if (!markChecked(ROUTINE_BASH_SESSION_KEY)) {
         return allowWithStateWarning();
       }
-      return denyResult(routineBashMsg(), {
-        hookIds: [BASH_HOOK_ID],
-        narrowRecoveryHint: ROUTINE_BASH_NARROW_RECOVERY_HINT
+      const hookId = toolName === 'PowerShell' ? POWERSHELL_HOOK_ID : BASH_HOOK_ID;
+      const narrowRecoveryHint = toolName === 'PowerShell'
+        ? ROUTINE_POWERSHELL_NARROW_RECOVERY_HINT
+        : ROUTINE_BASH_NARROW_RECOVERY_HINT;
+      return denyResult(routineShellMsg(toolName), {
+        hookIds: [hookId],
+        narrowRecoveryHint
       });
     }
 
@@ -1297,4 +1344,4 @@ function run(rawInput) {
   return rawInput; // allow
 }
 
-module.exports = { run };
+module.exports = { classifyDestructiveCommand, run };

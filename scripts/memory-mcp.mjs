@@ -3,7 +3,16 @@
 import { createRequire } from 'node:module';
 
 const require = createRequire(import.meta.url);
-const Ajv = require('ajv');
+const { describeMissingDependencyError } = require('./lib/missing-dependency.js');
+
+let Ajv;
+try {
+  Ajv = require('ajv');
+} catch (error) {
+  process.stderr.write(`ECC memory MCP startup failed: ${describeMissingDependencyError(error) || error.message}\n`);
+  process.exit(1);
+}
+
 const fs = require('fs');
 const path = require('path');
 const { fileURLToPath } = require('url');

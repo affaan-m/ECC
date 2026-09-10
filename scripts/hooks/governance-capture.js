@@ -19,8 +19,17 @@
 'use strict';
 
 const crypto = require('crypto');
+const { isElevatedPowerShellCommand } = require('../lib/powershell-destructive-command');
 
 const MAX_STDIN = 1024 * 1024;
+let destructiveCommandClassifier = null;
+
+function classifyDestructiveCommand(toolName, command) {
+  if (!destructiveCommandClassifier) {
+    destructiveCommandClassifier = require('./gateguard-fact-force').classifyDestructiveCommand;
+  }
+  return destructiveCommandClassifier(toolName, command);
+}
 
 // Patterns that indicate potential hardcoded secrets
 const SECRET_PATTERNS = [
@@ -34,6 +43,7 @@ const SECRET_PATTERNS = [
 // Tool names that represent security-relevant operations
 const SECURITY_RELEVANT_TOOLS = new Set([
   'Bash', // Could execute arbitrary commands
+  'PowerShell',
 ]);
 
 // Commands that require governance approval
@@ -123,8 +133,27 @@ function summarizeCommand(command) {
     };
   }
 
+  if (trimmed.startsWith("'") || trimmed.startsWith('"')) {
+    return {
+      commandName: null,
+      commandFingerprint: fingerprintCommand(trimmed),
+    };
+  }
+
+  const firstToken = trimmed.split(/\s+/)[0] || '';
+  // Static method invocations can attach their arguments to the first token,
+  // for example `[IO.File]::Delete('private-path')`. Keep the operation name
+  // while excluding attached argument content from governance evidence.
+  const operation = firstToken.split('(', 1)[0].replace(/^['"]|['"]$/g, '');
+  let commandName = null;
+  if (/^\[(?:[A-Za-z_][\w]*\.)*[A-Za-z_][\w]*\]::[A-Za-z_][\w-]*$/.test(operation)) {
+    commandName = operation;
+  } else if (/^[A-Za-z_][A-Za-z0-9_.:\\/-]*$/.test(operation)) {
+    commandName = operation.split(/[\\/]/).pop() || null;
+  }
+
   return {
-    commandName: trimmed.split(/\s+/)[0] || null,
+    commandName,
     commandFingerprint: fingerprintCommand(trimmed),
   };
 }
@@ -142,7 +171,11 @@ function emitGovernanceEvent(event) {
  */
 function analyzeForGovernanceEvents(input, context = {}) {
   const events = [];
-  const toolName = input.tool_name || '';
+  const rawToolName = input.tool_name || '';
+  const normalizedToolName = String(rawToolName).toLowerCase();
+  const toolName = normalizedToolName === 'powershell'
+    ? 'PowerShell'
+    : normalizedToolName === 'bash' ? 'Bash' : rawToolName;
   const toolInput = input.tool_input || {};
   const toolOutput = typeof input.tool_output === 'string' ? input.tool_output : '';
   const sessionId = context.sessionId || null;
@@ -174,13 +207,17 @@ function analyzeForGovernanceEvents(input, context = {}) {
     });
   }
 
-  // 2. Approval-required commands (Bash only)
-  if (toolName === 'Bash') {
+  // 2. Approval-required commands. Bash retains its existing approval
+  // patterns. PowerShell consumes the exact classifier result used by
+  // GateGuard so denial and governance evidence cannot drift apart.
+  if (toolName === 'Bash' || toolName === 'PowerShell') {
     const command = toolInput.command || '';
-    const approvalFindings = detectApprovalRequired(command);
+    const matchedPatterns = toolName === 'PowerShell'
+      ? classifyDestructiveCommand(toolName, command)
+      : detectApprovalRequired(command).map(finding => finding.pattern);
     const commandSummary = summarizeCommand(command);
 
-    if (approvalFindings.length > 0) {
+    if (matchedPatterns.length > 0) {
       events.push({
         id: generateEventId(),
         sessionId,
@@ -189,7 +226,7 @@ function analyzeForGovernanceEvents(input, context = {}) {
           toolName,
           hookPhase,
           ...commandSummary,
-          matchedPatterns: approvalFindings.map(f => f.pattern),
+          matchedPatterns,
           severity: 'high',
         },
         resolvedAt: null,
@@ -220,7 +257,9 @@ function analyzeForGovernanceEvents(input, context = {}) {
   // 4. Security-relevant tool usage tracking
   if (SECURITY_RELEVANT_TOOLS.has(toolName) && hookPhase === 'post') {
     const command = toolInput.command || '';
-    const hasElevated = /sudo\s/.test(command) || /chmod\s/.test(command) || /chown\s/.test(command);
+    const hasElevated = toolName === 'PowerShell'
+      ? isElevatedPowerShellCommand(command)
+      : /sudo\s/.test(command) || /chmod\s/.test(command) || /chown\s/.test(command);
     const commandSummary = summarizeCommand(command);
 
     if (hasElevated) {
