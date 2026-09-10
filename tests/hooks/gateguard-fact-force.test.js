@@ -1536,7 +1536,23 @@ function runTests() {
   if (
     test('denies destructive SQL to a database client behind a shell wrapper or chain', () => {
       expectDestructiveDeny('sh -c "psql -c \'drop table users\'"', 'psql inside sh -c');
+      expectDestructiveDeny('bash -lc \'psql -c "drop table users"\'', 'psql inside bash -lc');
+      expectDestructiveDeny('sh -ec \'mysql -e "delete from sessions"\'', 'mysql inside sh -ec');
       expectDestructiveDeny('echo migrating && mysql -e "truncate sessions"', 'mysql in second segment');
+    })
+  )
+    passed++;
+  else failed++;
+
+  if (
+    test('denies destructive SQL to a database client behind an execution prefix', () => {
+      expectDestructiveDeny('env PGHOST=db psql -c "drop table users"', 'env assignment + psql');
+      expectDestructiveDeny('env psql -c "drop table users"', 'bare env + psql');
+      expectDestructiveDeny('sudo -u postgres psql -c "truncate audit_log"', 'sudo -u + psql');
+      expectDestructiveDeny('command mysql -e "delete from sessions"', 'command + mysql');
+      expectDestructiveDeny('nice -n 10 psql -c "drop table users"', 'nice -n + psql');
+      expectDestructiveDeny('timeout 30 mysql -e "truncate sessions"', 'timeout DURATION + mysql');
+      expectDestructiveDeny('sudo env PGHOST=db psql -c "drop table users"', 'stacked prefixes');
     })
   )
     passed++;
@@ -1548,6 +1564,10 @@ function runTests() {
       expectAllow('psql -c "delete_from_queue()"', 'psql identifier, not a phrase');
       expectAllow('git commit -m "refactor: drop table indirection"', 'drop table in commit message');
       expectAllow('echo "psql -c \'drop table users\'"', 'echo of a SQL command string');
+      expectAllow('sqlite3 truncate.db "select 1"', 'filename that contains a SQL word');
+      expectAllow('psql -f truncate.sql', 'script filename via -f');
+      expectAllow('psql --file=./sql/truncate.sql', 'script path via --file=');
+      expectAllow('env PGHOST=db psql -c "select 1"', 'prefixed non-destructive SQL');
     })
   )
     passed++;
