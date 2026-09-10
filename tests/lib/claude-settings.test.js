@@ -624,6 +624,32 @@ function runTests() {
     assert.deepStrictEqual(uninstalled.retained.map(item => item.id), ['ecc:stop']);
   })) passed++; else failed++;
 
+  if (test('legacy upgrades preserve user-added ECC status messages as drift', () => {
+    const previous = { Stop: [entry('ecc:stop', 'version-1')] };
+    const current = clone(previous);
+    current.Stop[0].hooks[0].statusMessage = '[ECC:ecc:stop] User status';
+    const desired = materializeManagedHooks({
+      hooks: {
+        Stop: [{
+          matcher: '.*',
+          hooks: [{
+            type: 'command',
+            command: 'version-1',
+            statusMessage: '[ECC:ecc:stop] Managed status',
+          }],
+        }],
+      },
+    }, '/opt/ecc');
+
+    assert.throws(
+      () => mergeManagedHooks({ hooks: current }, desired, { previousManagedHooks: previous }),
+      /previous managed entry has drifted/
+    );
+    const uninstalled = uninstallManagedHooks({ hooks: current }, previous);
+    assert.deepStrictEqual(uninstalled.settings.hooks, current);
+    assert.deepStrictEqual(uninstalled.retained.map(item => item.id), ['ecc:stop']);
+  })) passed++; else failed++;
+
   if (test('upgrade fails closed when previous managed content has drifted', () => {
     const settings = { hooks: { Stop: [entry('ecc:stop', 'customer-edit')] } };
     const before = clone(settings);

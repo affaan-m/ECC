@@ -465,7 +465,7 @@ function entriesShareContract(left, right) {
   const rightMetadata = hookMetadata(right);
   const leftHasStatusIdentity = entryHasStatusIdentity(left, leftMetadata && leftMetadata.id);
   const rightHasStatusIdentity = entryHasStatusIdentity(right, rightMetadata && rightMetadata.id);
-  const omitMigratedStatus = leftHasStatusIdentity !== rightHasStatusIdentity;
+  const omitMigratedStatus = !leftHasStatusIdentity && rightHasStatusIdentity;
   return Boolean(
     leftMetadata
     && rightMetadata
