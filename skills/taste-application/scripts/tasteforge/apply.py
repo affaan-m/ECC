@@ -112,7 +112,9 @@ def plan_shots(cadence: dict[str, Any], target_duration: float) -> list[float]:
         if isinstance(s, dict) and _positive(s.get("duration"), "cadence shot duration") > _MIN_SHOT
     ]
     if not durations:
-        durations = [max(_positive(cadence.get("mean_shot", 1.0), "mean shot duration"), 1.0)]
+        if "mean_shot" not in cadence:
+            raise ValueError("cadence has no measured shot durations to plan from")
+        durations = [max(_positive(cadence.get("mean_shot"), "mean shot duration"), 1.0)]
 
     rng = random.Random(7)  # deterministic, mirrors numpy default_rng(7)
     out: list[float] = []
@@ -152,7 +154,11 @@ def apply_local(
     if not media:
         raise ValueError("apply_local needs at least one media clip")
 
+    if not sp.cadence_path.exists():
+        raise ValueError("pack has no measured cadence (cadence.json is missing)")
     cadence = sp.read_json(sp.cadence_path)
+    if not isinstance(cadence, dict) or not (cadence.get("shots") or "mean_shot" in cadence):
+        raise ValueError("cadence.json has no measured shots to plan from")
     seq_fps = _positive(fps if fps is not None else cadence.get("fps", _DEFAULT_FPS), "fps")
     validated_media = []
     for clip in media:

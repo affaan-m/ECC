@@ -384,12 +384,13 @@ def apply(
 
     overlay_urls: list[str] = []
     if overlays:
+        # Fail before any paid upload: forge() rejects a missing overlay
+        # later, which would strand every generated take without a manifest.
+        missing = [Path(o) for o in overlays if not Path(o).is_file()]
+        if missing:
+            raise SystemExit("--overlay not found: " + ", ".join(str(m) for m in missing))
         for o in overlays:
-            op = Path(o)
-            if not op.exists():
-                print(f"  !! overlay missing, skipping: {op}", file=sys.stderr)
-                continue
-            overlay_urls.append(falapi.upload(op))
+            overlay_urls.append(falapi.upload(Path(o)))
         print(f"  overlays       : {len(overlay_urls)}")
 
     # Uploads are cached by (path, mtime, size), so the workers racing on the

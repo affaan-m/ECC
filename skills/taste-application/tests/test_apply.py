@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import sys
 import tempfile
+import shutil
 import unittest
 from pathlib import Path
 from unittest.mock import Mock
@@ -166,6 +167,19 @@ class StrictApplyTests(unittest.TestCase):
                     apply_mod.plan_shots({}, invalid)
                 with self.assertRaises(ValueError):
                     apply_mod.plan_shots({"shots": [{"duration": invalid}]}, 2)
+
+    def test_missing_or_empty_cadence_is_not_defaulted(self):
+        with tempfile.TemporaryDirectory() as td:
+            pack = pack_mod.load(shutil.copytree(FIXTURE, Path(td) / "pack"))
+            pack.cadence_path.unlink()
+            with self.assertRaisesRegex(ValueError, "cadence"):
+                apply_mod.apply_local(pack, self.clips(2), duration=2)
+            pack.cadence_path.write_text("{}")
+            with self.assertRaisesRegex(ValueError, "cadence"):
+                apply_mod.apply_local(pack, self.clips(2), duration=2)
+        with self.assertRaisesRegex(ValueError, "cadence"):
+            apply_mod.plan_shots({"shots": []}, 2)
+        self.assertEqual(apply_mod.plan_shots({"shots": [], "mean_shot": 2.0}, 2), [2.0])
 
     def test_explicit_fps_overrides_pack_in_default_mode(self):
         report = apply_mod.apply_local(self.pack, self.clips(2), duration=1, fps=30)

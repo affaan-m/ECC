@@ -224,6 +224,41 @@ class CliTests(unittest.TestCase):
                     self.assertNotIn("Traceback", proc.stderr)
                     self.assertFalse(out.exists())
 
+    def test_default_output_names_reject_path_traversal(self):
+        with tempfile.TemporaryDirectory() as td:
+            # pack.json name with traversal: default report path must not be derived from it
+            pack = Path(td) / "pack"
+            shutil.copytree(FIXTURE, pack)
+            manifest = json.loads((pack / "pack.json").read_text())
+            manifest["name"] = "../../escaped"
+            (pack / "pack.json").write_text(json.dumps(manifest))
+            media_p = Path(td) / "media.json"
+            media_p.write_text(json.dumps(MEDIA))
+            proc = run_cli("apply", "--pack", str(pack), "--media", str(media_p), "--duration", "4")
+            self.assertEqual(proc.returncode, 1, proc.stderr)
+            self.assertNotIn("Traceback", proc.stderr)
+            self.assertIn("pack name", proc.stderr)
+            self.assertFalse((REPO_ROOT.parent / "escaped_apply_report.json").exists())
+            self.assertFalse((REPO_ROOT / "out").exists() and any(REPO_ROOT.glob("out/*escaped*")))
+            # profile genre with traversal: default spec path must not be derived from it
+            answers_p = Path(td) / "answers.json"
+            answers_p.write_text(json.dumps(ANSWERS))
+            profile_p = Path(td) / "profile.json"
+            proc = run_cli("interview", "--answers", str(answers_p), "--genre", "flashethereal", "--out", str(profile_p))
+            self.assertEqual(proc.returncode, 0, proc.stderr)
+            profile = json.loads(profile_p.read_text())
+            profile["genre"] = "../escaped"
+            profile_p.write_text(json.dumps(profile))
+            proc = run_cli("distill", "--profile", str(profile_p), "--pack", str(FIXTURE))
+            self.assertEqual(proc.returncode, 1, proc.stderr)
+            self.assertNotIn("Traceback", proc.stderr)
+            self.assertIn("profile genre", proc.stderr)
+            self.assertFalse((REPO_ROOT.parent / "escaped-spec.json").exists())
+            # an explicit --out still works with an odd genre
+            spec_p = Path(td) / "spec.json"
+            proc = run_cli("distill", "--profile", str(profile_p), "--pack", str(FIXTURE), "--out", str(spec_p))
+            self.assertEqual(proc.returncode, 0, proc.stderr)
+
     def test_live_provider_flags_fail_closed(self):
         with tempfile.TemporaryDirectory() as td:
             profile_p = Path(td) / "profile.json"

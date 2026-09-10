@@ -9,9 +9,11 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import subprocess
 import sys
 from pathlib import Path
+from typing import Any
 
 from . import apply as apply_mod
 from . import contract as contract_mod
@@ -64,6 +66,23 @@ def cmd_interview(args: argparse.Namespace) -> int:
     return EXIT_OK
 
 
+_OUTPUT_COMPONENT = re.compile(r"^[a-z0-9][a-z0-9_-]*$")
+
+
+def _output_component(value: Any, what: str) -> str:
+    """Return ``value`` only when it is safe to use as an output filename part.
+
+    Pack names and genres come from operator-authored JSON. They are only
+    used to derive default output paths, so they must never carry path
+    separators or traversal; the same pattern the manifest schema declares.
+    """
+    if not isinstance(value, str) or not _OUTPUT_COMPONENT.fullmatch(value):
+        raise ValueError(
+            f"{what} must match {_OUTPUT_COMPONENT.pattern} to name an output file; pass --out"
+        )
+    return value
+
+
 def cmd_distill(args: argparse.Namespace) -> int:
     if args.live:
         print(distill_mod._FAIL_CLOSED, file=sys.stderr)
@@ -71,7 +90,8 @@ def cmd_distill(args: argparse.Namespace) -> int:
     profile = json.loads(Path(args.profile).read_text(encoding="utf-8"))
     sp = pack_mod.load(args.pack) if args.pack else None
     spec = distill_mod.distill_local(profile, sp)
-    out = Path(args.out) if args.out else Path(f"{profile.get('genre', 'spec')}-spec.json")
+    out = (Path(args.out) if args.out
+           else Path(f"{_output_component(profile.get('genre', 'spec'), 'profile genre')}-spec.json"))
     out.write_text(json.dumps(spec, indent=2), encoding="utf-8")
     print(out)
     return EXIT_OK
@@ -86,7 +106,8 @@ def cmd_apply(args: argparse.Namespace) -> int:
     report = apply_mod.apply_local(
         sp, media, duration=args.duration, fps=args.fps, no_repeat=args.no_repeat
     )
-    out = Path(args.out) if args.out else Path("out") / f"{sp.name}_apply_report.json"
+    out = (Path(args.out) if args.out
+           else Path("out") / f"{_output_component(sp.name, 'pack name')}_apply_report.json")
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(json.dumps(report, indent=2), encoding="utf-8")
     print(out)
