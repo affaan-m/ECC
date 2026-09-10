@@ -17,7 +17,9 @@ use crate::config::{Config, PaneLayout, PaneNavigationAction, Theme};
 use crate::notifications::{DesktopNotifier, NotificationEvent, WebhookNotifier};
 use crate::observability::ToolLogEntry;
 use crate::session::manager;
-use crate::session::output::{OutputLine, OutputStream, OUTPUT_BUFFER_LIMIT};
+use crate::session::output::{
+    OutputLine, OutputStream, OUTPUT_BUFFER_LIMIT, OUTPUT_DELTA_BATCH_LIMIT,
+};
 use crate::session::store::{DaemonActivity, FileActivityOverlap, SessionOutputRecord, StateStore};
 use crate::session::{
     ContextObservationPriority, DecisionLogEntry, FileActivityEntry, Session, SessionBoardMeta,
@@ -76,10 +78,11 @@ struct TestRunSummary {
     passed: usize,
 }
 
+/// Consumes an output cache and returns a new bounded cache with `records` appended.
 fn append_output_records(
-    cache: &mut HashMap<String, Vec<OutputLine>>,
+    mut cache: HashMap<String, Vec<OutputLine>>,
     records: Vec<SessionOutputRecord>,
-) {
+) -> HashMap<String, Vec<OutputLine>> {
     let mut touched_sessions = HashSet::new();
     for record in records {
         cache
@@ -97,6 +100,8 @@ fn append_output_records(
             }
         }
     }
+
+    cache
 }
 
 pub struct Dashboard {
@@ -107,6 +112,7 @@ pub struct Dashboard {
     sessions: Vec<Session>,
     session_harnesses: HashMap<String, SessionHarnessInfo>,
     session_output_cache: HashMap<String, Vec<OutputLine>>,
+    session_output_generations: HashMap<String, chrono::DateTime<Utc>>,
     output_cursor: Option<i64>,
     unread_message_counts: HashMap<String, usize>,
     approval_queue_counts: HashMap<String, usize>,
@@ -521,6 +527,7 @@ fn load_session_harnesses(
 }
 
 impl Dashboard {
+    /// Builds the dashboard and hydrates its initial bounded output snapshot.
     pub fn new(db: StateStore, cfg: Config) -> Self {
         let pane_size_percent = configured_pane_size(&cfg, cfg.pane_layout);
         let initial_cost_metrics_signature = metrics_file_signature(&cfg.cost_metrics_path());
@@ -538,6 +545,10 @@ impl Dashboard {
         let initial_session_states = sessions
             .iter()
             .map(|session| (session.id.clone(), session.state.clone()))
+            .collect();
+        let session_output_generations = sessions
+            .iter()
+            .map(|session| (session.id.clone(), session.created_at))
             .collect();
         let initial_approval_message_id = db
             .latest_unread_approval_message()
@@ -559,6 +570,7 @@ impl Dashboard {
             sessions,
             session_harnesses,
             session_output_cache: HashMap::new(),
+            session_output_generations,
             output_cursor: None,
             unread_message_counts: HashMap::new(),
             approval_queue_counts: HashMap::new(),
@@ -3221,8 +3233,8 @@ impl Dashboard {
         ));
     }
 
+    /// Refreshes persisted dashboard state while preserving the output cursor.
     pub fn refresh(&mut self) {
-        self.output_cursor = None;
         self.sync_from_store();
     }
 
@@ -4075,6 +4087,7 @@ impl Dashboard {
         )
     }
 
+    /// Synchronizes dashboard state, deferring output recovery until sessions load.
     fn sync_from_store(&mut self) {
         let (heartbeat_enforcement, budget_enforcement, conflict_enforcement) =
             self.sync_runtime_metrics();
@@ -4488,16 +4501,24 @@ impl Dashboard {
     }
 
     fn sync_output_cache(&mut self) {
-        let active_session_ids: HashSet<_> = self
+        let active_session_generations: HashMap<_, _> = self
             .sessions
             .iter()
-            .map(|session| session.id.as_str())
+            .map(|session| (session.id.clone(), session.created_at))
             .collect();
-        self.session_output_cache
-            .retain(|session_id, _| active_session_ids.contains(session_id.as_str()));
+        let cached_generations = &self.session_output_generations;
+        self.session_output_cache = std::mem::take(&mut self.session_output_cache)
+            .into_iter()
+            .filter(|(session_id, _)| {
+                active_session_generations.get(session_id) == cached_generations.get(session_id)
+            })
+            .collect();
+        self.session_output_generations = active_session_generations;
 
         let batch = match self.output_cursor {
-            Some(cursor) => self.db.get_output_since(cursor),
+            Some(cursor) => self
+                .db
+                .get_output_since(cursor, OUTPUT_DELTA_BATCH_LIMIT),
             None => self.db.get_output_snapshot(OUTPUT_BUFFER_LIMIT),
         };
         let batch = match batch {
@@ -4509,11 +4530,14 @@ impl Dashboard {
         };
 
         if self.output_cursor.is_none() {
-            self.session_output_cache.clear();
+            self.session_output_cache = HashMap::new();
         }
         self.output_cursor = Some(batch.cursor);
 
-        append_output_records(&mut self.session_output_cache, batch.records);
+        self.session_output_cache = append_output_records(
+            std::mem::take(&mut self.session_output_cache),
+            batch.records,
+        );
     }
 
     fn ensure_selected_pane_visible(&mut self) {
@@ -5226,6 +5250,7 @@ impl Dashboard {
             .map(|session| session.id.as_str())
     }
 
+    /// Returns the selected session's currently cached output window.
     fn selected_output_lines(&self) -> &[OutputLine] {
         self.selected_session_id()
             .and_then(|session_id| self.session_output_cache.get(session_id))
@@ -13190,7 +13215,7 @@ diff --git a/src/lib.rs b/src/lib.rs
             .env("ECC2_OUTPUT_CURSOR_CHILD_DB", &db_path)
             .status()?;
         assert!(child.success(), "child output writer should succeed");
-        dashboard.sync_output_cache();
+        dashboard.refresh();
 
         let text = dashboard.selected_output_text();
         assert!(text.contains("persisted-before-open"));
@@ -13299,21 +13324,23 @@ diff --git a/src/lib.rs b/src/lib.rs
         external.append_output_line("session-2", OutputStream::Stderr, "new-session")?;
         dashboard.sync_from_store();
 
-        assert!(dashboard.sessions.iter().any(|session| session.id == "session-2"));
-        assert_eq!(dashboard.session_output_cache["session-2"][0].text, "new-session");
+        assert!(dashboard
+            .sessions
+            .iter()
+            .any(|session| session.id == "session-2"));
+        assert_eq!(
+            dashboard.session_output_cache["session-2"][0].text,
+            "new-session"
+        );
 
         external.delete_session("session-2")?;
-        dashboard.sync_from_store();
-        assert!(!dashboard.session_output_cache.contains_key("session-2"));
-
-        external.insert_session(&sample_session(
-            "session-2",
-            "codex",
-            SessionState::Running,
-            None,
-            0,
-            0,
-        ))?;
+        let replacement_time = Utc::now() + chrono::Duration::seconds(1);
+        external.insert_session(&Session {
+            created_at: replacement_time,
+            updated_at: replacement_time,
+            last_heartbeat_at: replacement_time,
+            ..sample_session("session-2", "codex", SessionState::Running, None, 0, 0)
+        })?;
         external.append_output_line("session-2", OutputStream::Stdout, "replacement-session")?;
         dashboard.sync_from_store();
 
@@ -13398,7 +13425,7 @@ diff --git a/src/lib.rs b/src/lib.rs
             })
             .collect();
 
-        append_output_records(&mut cache, records);
+        cache = append_output_records(cache, records);
 
         let session_lines = cache.get("session-1").expect("session output");
         assert_eq!(session_lines.len(), OUTPUT_BUFFER_LIMIT);
@@ -15183,6 +15210,10 @@ diff --git a/src/lib.rs b/src/lib.rs
                 )
             })
             .collect();
+        let session_output_generations = sessions
+            .iter()
+            .map(|session| (session.id.clone(), session.created_at))
+            .collect();
         let mut session_table_state = TableState::default();
         if !sessions.is_empty() {
             session_table_state.select(Some(selected_session));
@@ -15197,6 +15228,7 @@ diff --git a/src/lib.rs b/src/lib.rs
             sessions,
             session_harnesses,
             session_output_cache: HashMap::new(),
+            session_output_generations,
             output_cursor: None,
             unread_message_counts: HashMap::new(),
             approval_queue_counts: HashMap::new(),

@@ -5,6 +5,8 @@ use serde::{Deserialize, Serialize};
 use tokio::sync::broadcast;
 
 pub const OUTPUT_BUFFER_LIMIT: usize = 1000;
+/// Maximum number of cross-process output rows applied during one dashboard refresh.
+pub const OUTPUT_DELTA_BATCH_LIMIT: usize = 4096;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum OutputStream {

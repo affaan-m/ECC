@@ -41,6 +41,7 @@ pub(crate) struct SessionOutputBatch {
     pub records: Vec<SessionOutputRecord>,
 }
 
+/// Converts one persisted output row into the dashboard's typed record.
 fn output_record_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<SessionOutputRecord> {
     let stream: String = row.get(2)?;
     let text: String = row.get(3)?;
@@ -4024,6 +4025,7 @@ impl StateStore {
         Ok(lines)
     }
 
+    /// Returns a bounded recent-output snapshot and its highest persisted row ID.
     pub(crate) fn get_output_snapshot(
         &self,
         limit_per_session: usize,
@@ -4047,16 +4049,23 @@ impl StateStore {
         Ok(SessionOutputBatch { cursor, records })
     }
 
-    pub(crate) fn get_output_since(&self, cursor: i64) -> Result<SessionOutputBatch> {
+    /// Returns at most `limit` output rows newer than `cursor` in insertion order.
+    pub(crate) fn get_output_since(
+        &self,
+        cursor: i64,
+        limit: usize,
+    ) -> Result<SessionOutputBatch> {
         let cursor = cursor.max(0);
+        let limit = i64::try_from(limit.max(1)).unwrap_or(i64::MAX);
         let mut stmt = self.conn.prepare(
             "SELECT id, session_id, stream, line, timestamp
              FROM session_output
              WHERE id > ?1
-             ORDER BY id ASC",
+             ORDER BY id ASC
+             LIMIT ?2",
         )?;
         let records = stmt
-            .query_map(rusqlite::params![cursor], output_record_from_row)?
+            .query_map(rusqlite::params![cursor, limit], output_record_from_row)?
             .collect::<Result<Vec<_>, _>>()?;
         let cursor = records.last().map(|record| record.id).unwrap_or(cursor);
 
@@ -7475,14 +7484,21 @@ mod tests {
         );
 
         db.append_output_line("session-2", OutputStream::Stderr, "two-c")?;
-        let delta = db.get_output_since(snapshot.cursor)?;
+        db.append_output_line("session-1", OutputStream::Stdout, "one-d")?;
+        let delta = db.get_output_since(snapshot.cursor, 1)?;
         assert_eq!(delta.cursor, 6);
         assert_eq!(delta.records.len(), 1);
         assert_eq!(delta.records[0].session_id, "session-2");
         assert_eq!(delta.records[0].line.text, "two-c");
 
-        let empty = db.get_output_since(delta.cursor)?;
-        assert_eq!(empty.cursor, delta.cursor);
+        let next = db.get_output_since(delta.cursor, 1)?;
+        assert_eq!(next.cursor, 7);
+        assert_eq!(next.records.len(), 1);
+        assert_eq!(next.records[0].session_id, "session-1");
+        assert_eq!(next.records[0].line.text, "one-d");
+
+        let empty = db.get_output_since(next.cursor, 1)?;
+        assert_eq!(empty.cursor, next.cursor);
         assert!(empty.records.is_empty());
 
         let query_plan = db
