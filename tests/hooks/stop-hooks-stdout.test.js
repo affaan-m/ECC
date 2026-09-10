@@ -127,6 +127,21 @@ function assertStdoutContract(result, label) {
   }
 }
 
+function formatSpawnFailure(result, elapsedMs) {
+  const token = value => typeof value === 'string' && /^[A-Z][A-Z0-9_]{0,47}$/.test(value)
+    ? value : null;
+  // Keep decoded UTF-8 byte counts, never stream contents or error messages.
+  const byteCount = value => typeof value === 'string' ? Buffer.byteLength(value, 'utf8') : null;
+  return JSON.stringify({
+    elapsedMs: Number.isSafeInteger(elapsedMs) && elapsedMs >= 0 ? elapsedMs : null,
+    status: Number.isSafeInteger(result.status) ? result.status : null,
+    signal: token(result.signal),
+    errorCode: token(result.error && result.error.code),
+    stdoutBytes: byteCount(result.stdout),
+    stderrBytes: byteCount(result.stderr)
+  });
+}
+
 // All registered Stop hooks (hooks/hooks.json).
 const STOP_HOOKS = [
   ['stop:format-typecheck', 'scripts/hooks/stop-format-typecheck.js'],
@@ -163,11 +178,13 @@ const realisticPayload = stopPayload(100 * 1024);
 for (const entry of hooksConfig.hooks.Stop) {
   if (
     test(`${entry.id} registered wrapper flushes a 100KB Stop payload`, () => {
+      const startedAt = process.hrtime.bigint();
       const result = runRegisteredStopHook(entry, realisticPayload);
+      const elapsedMs = Math.round(Number(process.hrtime.bigint() - startedAt) / 1e6);
       assert.strictEqual(
         result.status,
         0,
-        `${entry.id}: expected exit 0, got ${result.status}: ${result.stderr}`
+        result.status === 0 ? undefined : `${entry.id}: expected exit 0; ${formatSpawnFailure(result, elapsedMs)}`
       );
       assert.ok(
         result.stdout === realisticPayload,
