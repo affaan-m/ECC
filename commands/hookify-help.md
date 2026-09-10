@@ -14,7 +14,7 @@ enabled; installing a separate Hookify plugin is not required.
 
 - `bash`: triggers on Bash tool use and matches command patterns
 - `file`: triggers on Write/Edit tool use and matches file paths
-- `stop`: triggers when a session ends
+- `stop`: triggers after each Claude response
 - `prompt`: triggers on user message submission and matches input patterns
 - `all`: triggers on all events
 
