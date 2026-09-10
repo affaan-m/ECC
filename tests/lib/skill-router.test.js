@@ -394,6 +394,80 @@ run('a symlinked skills/ directory (installed surface) is likewise refused', () 
   }
 });
 
+run('routePrompt never lstats a single entry once an already-past deadline is given (Greptile P1: routing budget blocks late)', () => {
+  // Companion to the readCatalog deadline tests above, at the scoring loop
+  // instead of the directory walk: resolvesWithoutSymlink does synchronous
+  // lstat() work per catalog entry, so the scoring loop needs the same
+  // deadlineAt convention readCatalog/buildCatalogCache already use, or a
+  // large catalog (or a slow disk) can make routePrompt itself outlive the
+  // caller's budget regardless of what the post-call elapsed-time check
+  // decides afterward.
+  const deadlineRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-skill-router-route-deadline-'));
+  try {
+    writeSkill(deadlineRoot, 'alpha-skill', 'First skill for routing deadline test');
+    writeSkill(deadlineRoot, 'beta-skill', 'Second skill for routing deadline test');
+    buildCatalogCache(deadlineRoot);
+
+    const realLstatSync = fs.lstatSync;
+    let calls = 0;
+    fs.lstatSync = (...args) => {
+      calls++;
+      return realLstatSync(...args);
+    };
+    try {
+      const matches = routePrompt('alpha beta skill', { pluginRoot: deadlineRoot, deadlineAt: Date.now() - 60000 });
+      assert.deepStrictEqual(matches, [], 'an already-expired deadline must stop the scan before scoring anything');
+      assert.strictEqual(calls, 0, `an already-expired deadline must be caught before the first entry's lstat, got ${calls} calls`);
+    } finally {
+      fs.lstatSync = realLstatSync;
+    }
+  } finally {
+    fs.rmSync(deadlineRoot, { recursive: true, force: true });
+  }
+});
+
+run('routePrompt bounds a mid-scan deadline overrun to one entry (Greptile P1: routing budget blocks late)', () => {
+  // Greptile's own reproduction delayed the synchronous lstatSync() path
+  // validation and showed the hook still blocked for the full scan before
+  // ever checking elapsed time. This proves the bound directly: once the
+  // deadline passes partway through, the loop stops before the *next*
+  // entry's lstat rather than continuing to scan the rest of the catalog --
+  // the same "one unit of work" overrun bound readCatalog's own docstring
+  // claims for the directory walk.
+  const deadlineRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-skill-router-route-mid-deadline-'));
+  try {
+    writeSkill(deadlineRoot, 'alpha-skill', 'First skill for mid scan deadline test');
+    writeSkill(deadlineRoot, 'beta-skill', 'Second skill for mid scan deadline test');
+    writeSkill(deadlineRoot, 'gamma-skill', 'Third skill for mid scan deadline test');
+    buildCatalogCache(deadlineRoot);
+
+    const deadlineAt = Date.now() + 20;
+    const realLstatSync = fs.lstatSync;
+    let calls = 0;
+    fs.lstatSync = (...args) => {
+      calls++;
+      if (calls === 1) {
+        // Simulate the slow disk / expensive symlink check Greptile's
+        // reproduction delayed: busy-wait past the deadline mid-entry.
+        const until = Date.now() + 30;
+        while (Date.now() < until) { /* spin past the deadline */ }
+      }
+      return realLstatSync(...args);
+    };
+    try {
+      const matches = routePrompt('alpha beta gamma skill', { pluginRoot: deadlineRoot, deadlineAt });
+      assert.ok(Array.isArray(matches), 'a mid-scan deadline still returns an array, not null');
+      assert.strictEqual(calls, 3,
+        `only the first entry's path segments (skills/alpha-skill/SKILL.md, 3 segments) should be lstat'd `
+        + `before the deadline stops the scan ahead of entry two, got ${calls} calls`);
+    } finally {
+      fs.lstatSync = realLstatSync;
+    }
+  } finally {
+    fs.rmSync(deadlineRoot, { recursive: true, force: true });
+  }
+});
+
 fs.rmSync(cacheDir, { recursive: true, force: true });
 
 console.log(`\nPassed: ${passed}`);

@@ -127,12 +127,18 @@ function run(inputOrRaw, options = {}) {
   const startedAt = now();
   const budget = budgetMs(env);
   try {
-    // routePrompt never builds a catalog. It reads one cache file (or the
-    // carrier's embedded catalog) and scores against it, so the work here is
-    // bounded by construction rather than by a deadline. The budget check
-    // below stays as defence in depth against a pathological prompt or a
-    // very large cache.
-    const matches = routePrompt(prompt, { pluginRoot });
+    // routePrompt never builds a catalog: it reads one cache file (or the
+    // carrier's embedded catalog) and scores against it. But scoring itself
+    // does synchronous lstat() work per entry (resolvesWithoutSymlink), so a
+    // large catalog or a slow disk can still make the scan outlive the
+    // budget -- deadlineAt bounds that overrun to one entry's lstat cost
+    // instead of the whole remaining catalog (Greptile P1: "routing budget
+    // blocks late"). deadlineAt has to be built from `startedAt`, not
+    // `budget` alone: routePrompt compares it against the real Date.now(),
+    // so the two clocks stay on the same basis even when `now` is a test
+    // double. The elapsedMs check below stays as defence in depth for work
+    // outside routePrompt's own loop (JSON parsing, tokenizing the prompt).
+    const matches = routePrompt(prompt, { pluginRoot, deadlineAt: startedAt + budget });
     if (matches === null) {
       return {
         exitCode: 0,

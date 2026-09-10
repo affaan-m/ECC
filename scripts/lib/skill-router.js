@@ -323,6 +323,23 @@ function resolveRouterContext(pluginRoot) {
  * Score the prompt against the catalog. Skill-id token matches weigh 3,
  * description token matches weigh 1; ties break alphabetically so output
  * is deterministic.
+ *
+ * @param {string} prompt Raw prompt text to score.
+ * @param {object} options Options.
+ * @param {string} options.pluginRoot Plugin root to route within.
+ * @param {number} [options.maxResults] Max matches to return.
+ * @param {number} [options.minScore] Minimum score to include a match.
+ * @param {number} [options.deadlineAt] Date.now()-comparable wall-clock
+ *   deadline, same convention as readCatalog/buildCatalogCache. Checked
+ *   before each entry's resolvesWithoutSymlink, since that check does
+ *   synchronous lstat() work per catalog entry: without this, a large
+ *   catalog or a slow disk can make the scan itself outlive the caller's
+ *   budget regardless of what a post-call elapsed-time check decides
+ *   afterward (Greptile P1: "routing budget blocks late"). Bounds the
+ *   overrun to one entry's lstat cost, the same granularity readCatalog
+ *   documents for its own directory walk.
+ * @returns {Array<object>|null} Sanitized, scored matches, or null when
+ *   there is no usable catalog.
  */
 function routePrompt(prompt, options = {}) {
   const pluginRoot = options.pluginRoot;
@@ -331,6 +348,7 @@ function routePrompt(prompt, options = {}) {
   }
   const maxResults = options.maxResults ?? DEFAULT_MAX_RESULTS;
   const minScore = options.minScore ?? DEFAULT_MIN_SCORE;
+  const deadlineAt = options.deadlineAt;
 
   const promptTokens = tokenize(prompt);
   if (promptTokens.size === 0) {
@@ -348,6 +366,12 @@ function routePrompt(prompt, options = {}) {
   const scored = [];
 
   for (const entry of catalog) {
+    // Checked before any per-entry work, including on the very first
+    // iteration: an already-expired deadline must stop the scan before it
+    // lstats a single entry, not just before scoring one.
+    if (deadlineAt !== undefined && Date.now() > deadlineAt) {
+      break;
+    }
     if (entry.id === 'ecc-catalog') {
       continue;
     }
