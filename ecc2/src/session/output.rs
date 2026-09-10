@@ -113,16 +113,6 @@ impl SessionOutputStore {
         });
     }
 
-    pub fn replace_lines(&self, session_id: &str, lines: Vec<OutputLine>) {
-        let mut buffer: VecDeque<OutputLine> = lines.into_iter().collect();
-
-        while buffer.len() > self.capacity {
-            let _ = buffer.pop_front();
-        }
-
-        self.lock_buffers().insert(session_id.to_string(), buffer);
-    }
-
     pub fn lines(&self, session_id: &str) -> Vec<OutputLine> {
         self.lock_buffers()
             .get(session_id)

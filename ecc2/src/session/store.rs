@@ -28,6 +28,30 @@ pub struct StateStore {
     conn: Connection,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct SessionOutputRecord {
+    pub id: i64,
+    pub session_id: String,
+    pub line: OutputLine,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct SessionOutputBatch {
+    pub cursor: i64,
+    pub records: Vec<SessionOutputRecord>,
+}
+
+fn output_record_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<SessionOutputRecord> {
+    let stream: String = row.get(2)?;
+    let text: String = row.get(3)?;
+    let timestamp: String = row.get(4)?;
+    Ok(SessionOutputRecord {
+        id: row.get(0)?,
+        session_id: row.get(1)?,
+        line: OutputLine::new(OutputStream::from_db_value(&stream), text, timestamp),
+    })
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct HarnessAuditEntry {
     pub id: i64,
@@ -4000,6 +4024,45 @@ impl StateStore {
         Ok(lines)
     }
 
+    pub(crate) fn get_output_snapshot(
+        &self,
+        limit_per_session: usize,
+    ) -> Result<SessionOutputBatch> {
+        let limit_per_session = i64::try_from(limit_per_session.max(1)).unwrap_or(i64::MAX);
+        let mut stmt = self.conn.prepare(
+            "SELECT id, session_id, stream, line, timestamp
+             FROM (
+                 SELECT id, session_id, stream, line, timestamp,
+                        ROW_NUMBER() OVER (PARTITION BY session_id ORDER BY id DESC) AS row_num
+                 FROM session_output
+             )
+             WHERE row_num <= ?1
+             ORDER BY id ASC",
+        )?;
+        let records = stmt
+            .query_map(rusqlite::params![limit_per_session], output_record_from_row)?
+            .collect::<Result<Vec<_>, _>>()?;
+        let cursor = records.last().map(|record| record.id).unwrap_or(0);
+
+        Ok(SessionOutputBatch { cursor, records })
+    }
+
+    pub(crate) fn get_output_since(&self, cursor: i64) -> Result<SessionOutputBatch> {
+        let cursor = cursor.max(0);
+        let mut stmt = self.conn.prepare(
+            "SELECT id, session_id, stream, line, timestamp
+             FROM session_output
+             WHERE id > ?1
+             ORDER BY id ASC",
+        )?;
+        let records = stmt
+            .query_map(rusqlite::params![cursor], output_record_from_row)?
+            .collect::<Result<Vec<_>, _>>()?;
+        let cursor = records.last().map(|record| record.id).unwrap_or(cursor);
+
+        Ok(SessionOutputBatch { cursor, records })
+    }
+
     pub fn insert_tool_log(
         &self,
         session_id: &str,
@@ -7378,6 +7441,62 @@ mod tests {
         assert_eq!(texts.first().copied(), Some("line-5"));
         let expected_last_line = format!("line-{}", OUTPUT_BUFFER_LIMIT + 4);
         assert_eq!(texts.last().copied(), Some(expected_last_line.as_str()));
+
+        Ok(())
+    }
+
+    #[test]
+    fn output_cursor_reads_a_bounded_snapshot_then_only_new_rows() -> Result<()> {
+        let tempdir = TestDir::new("store-output-cursor")?;
+        let db = StateStore::open(&tempdir.path().join("state.db"))?;
+
+        db.insert_session(&build_session("session-1", SessionState::Running))?;
+        db.insert_session(&build_session("session-2", SessionState::Running))?;
+        db.append_output_line("session-1", OutputStream::Stdout, "one-a")?;
+        db.append_output_line("session-2", OutputStream::Stderr, "two-a")?;
+        db.append_output_line("session-1", OutputStream::Stdout, "one-b")?;
+        db.append_output_line("session-2", OutputStream::Stdout, "two-b")?;
+        db.append_output_line("session-1", OutputStream::Stdout, "one-c")?;
+
+        let snapshot = db.get_output_snapshot(2)?;
+        assert_eq!(snapshot.cursor, 5);
+        assert_eq!(
+            snapshot
+                .records
+                .iter()
+                .map(|record| (record.session_id.as_str(), record.line.text.as_str()))
+                .collect::<Vec<_>>(),
+            vec![
+                ("session-2", "two-a"),
+                ("session-1", "one-b"),
+                ("session-2", "two-b"),
+                ("session-1", "one-c"),
+            ]
+        );
+
+        db.append_output_line("session-2", OutputStream::Stderr, "two-c")?;
+        let delta = db.get_output_since(snapshot.cursor)?;
+        assert_eq!(delta.cursor, 6);
+        assert_eq!(delta.records.len(), 1);
+        assert_eq!(delta.records[0].session_id, "session-2");
+        assert_eq!(delta.records[0].line.text, "two-c");
+
+        let empty = db.get_output_since(delta.cursor)?;
+        assert_eq!(empty.cursor, delta.cursor);
+        assert!(empty.records.is_empty());
+
+        let query_plan = db
+            .conn
+            .prepare(
+                "EXPLAIN QUERY PLAN SELECT id FROM session_output WHERE id > ?1 ORDER BY id ASC",
+            )?
+            .query_map(rusqlite::params![snapshot.cursor], |row| {
+                row.get::<_, String>(3)
+            })?
+            .collect::<Result<Vec<_>, _>>()?;
+        assert!(query_plan
+            .iter()
+            .any(|detail| detail.contains("INTEGER PRIMARY KEY") && detail.contains("rowid>?")));
 
         Ok(())
     }
