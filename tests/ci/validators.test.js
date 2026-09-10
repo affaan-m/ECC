@@ -185,23 +185,20 @@ function runCatalogValidator(overrides = {}) {
   const argvPreamble = argv.map(arg => `process.argv.push(${JSON.stringify(arg)});`).join('\n');
   source = `${argvPreamble}\n${source}`;
 
+  const resolvedRoot = overrides.ROOT || repoRoot;
   const resolvedOverrides = {
-    ROOT: repoRoot,
-    README_PATH: path.join(repoRoot, 'README.md'),
-    AGENTS_PATH: path.join(repoRoot, 'AGENTS.md'),
-    README_ZH_CN_PATH: path.join(repoRoot, 'README.zh-CN.md'),
-    DOCS_ZH_CN_README_PATH: path.join(repoRoot, 'docs', 'zh-CN', 'README.md'),
-    DOCS_ZH_CN_AGENTS_PATH: path.join(repoRoot, 'docs', 'zh-CN', 'AGENTS.md'),
-    PLUGIN_JSON_PATH: path.join(repoRoot, '.claude-plugin', 'plugin.json'),
-    MARKETPLACE_JSON_PATH: path.join(repoRoot, '.claude-plugin', 'marketplace.json'),
+    ROOT: resolvedRoot,
+    README_PATH: path.join(resolvedRoot, 'README.md'),
+    AGENTS_PATH: path.join(resolvedRoot, 'AGENTS.md'),
+    README_ZH_CN_PATH: path.join(resolvedRoot, 'README.zh-CN.md'),
+    DOCS_ZH_CN_README_PATH: path.join(resolvedRoot, 'docs', 'zh-CN', 'README.md'),
+    DOCS_ZH_CN_AGENTS_PATH: path.join(resolvedRoot, 'docs', 'zh-CN', 'AGENTS.md'),
+    PLUGIN_JSON_PATH: path.join(resolvedRoot, '.claude-plugin', 'plugin.json'),
+    MARKETPLACE_JSON_PATH: path.join(resolvedRoot, '.claude-plugin', 'marketplace.json'),
+    SOUL_PATH: path.join(resolvedRoot, 'SOUL.md'),
+    GEMINI_PATH: path.join(resolvedRoot, '.gemini', 'GEMINI.md'),
     ...overrides,
   };
-
-  // Keep fixture runs hermetic as catalog.js gains tracked document surfaces.
-  // The fixture root is authoritative unless a test explicitly overrides one
-  // of the new paths.
-  resolvedOverrides.SOUL_PATH ||= path.join(resolvedOverrides.ROOT, 'SOUL.md');
-  resolvedOverrides.GEMINI_PATH ||= path.join(resolvedOverrides.ROOT, '.gemini', 'GEMINI.md');
 
   for (const [constant, overridePath] of Object.entries(resolvedOverrides)) {
     const dirRegex = new RegExp(`const ${constant} = .*?;`);
@@ -285,6 +282,7 @@ function writeCatalogFixture(testDir, options = {}) {
     ],
     pluginCounts = { agents: 1, skills: 1, commands: 1 },
     marketplaceCounts = { agents: 1, skills: 1, commands: 1 },
+    crossHarnessCounts = { agents: 1, skills: 1, commands: 1 },
   } = options;
 
   const readmePath = path.join(testDir, 'README.md');
@@ -325,11 +323,11 @@ function writeCatalogFixture(testDir, options = {}) {
   }, null, 2));
   fs.writeFileSync(
     soulPath,
-    'Everything Claude Code (ECC) is a production-ready AI coding plugin with 1 specialized agents, 1 skills, 1 commands, and automated hook workflows.\n'
+    `Everything Claude Code (ECC) is a production-ready AI coding plugin with ${crossHarnessCounts.agents} specialized agents, ${crossHarnessCounts.skills} skills, ${crossHarnessCounts.commands} commands, and automated hook workflows.\n`
   );
   fs.writeFileSync(
     geminiPath,
-    'Everything Claude Code (ECC) is a cross-harness coding system with 1 specialized agents, 1 skills, and 1 commands.\n'
+    `Everything Claude Code (ECC) is a cross-harness coding system with ${crossHarnessCounts.agents} specialized agents, ${crossHarnessCounts.skills} skills, and ${crossHarnessCounts.commands} commands.\n`
   );
 
   return { readmePath, agentsPath, zhRootReadmePath, zhDocsReadmePath, zhAgentsPath, pluginJsonPath, marketplaceJsonPath, soulPath, geminiPath };
