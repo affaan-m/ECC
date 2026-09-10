@@ -141,6 +141,24 @@ if (test('direct entrypoint emits valid JSON for a matched prompt rule', () => {
   }
 })) passed++; else failed++;
 
+if (test('registered PreToolUse hook fails closed on oversized file input', () => {
+  const root = createProject();
+  try {
+    writeRule(root, 'oversized-file', 'name: oversized-file\nevent: file\naction: block\npattern: BLOCK_ME', 'Oversized writes require review.');
+    const hooks = JSON.parse(fs.readFileSync(hooksPath, 'utf8')).hooks;
+    const entry = hooks.PreToolUse.find(item => item.id === 'pre:hookify-runtime');
+    const result = runRegisteredEntry(root, entry, {
+      hook_event_name: 'PreToolUse',
+      tool_name: 'Write',
+      tool_input: { file_path: 'large.txt', content: 'x'.repeat(1024 * 1024 + 1) },
+    });
+    assert.strictEqual(result.status, 0, result.stderr);
+    assert.strictEqual(JSON.parse(result.stdout).hookSpecificOutput.permissionDecision, 'deny');
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+})) passed++; else failed++;
+
 if (test('PostToolUse dispatcher preserves Hookify block decisions over sibling output', () => {
   const dispatcher = require(dispatcherPath);
   const raw = JSON.stringify({ hook_event_name: 'PostToolUse', tool_name: 'Write' });

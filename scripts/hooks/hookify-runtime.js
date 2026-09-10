@@ -713,12 +713,17 @@ function truncatedEventContext(raw, options) {
     || 'PreToolUse'
   );
   const toolName = parsed?.tool_name || options.toolName || '';
-  const alias = eventAlias({
-    ...(parsed || {}),
-    hook_event_name: hookEvent,
-    tool_name: toolName,
-  });
-  return { parsed, hookEvent, toolName, alias };
+  const alias = toolName || !['PreToolUse', 'PostToolUse'].includes(hookEvent)
+    ? eventAlias({
+        ...(parsed || {}),
+        hook_event_name: hookEvent,
+        tool_name: toolName,
+      })
+    : null;
+  const possibleAliases = alias
+    ? [alias]
+    : ['PreToolUse', 'PostToolUse'].includes(hookEvent) ? ['bash', 'file'] : [];
+  return { parsed, hookEvent, toolName, alias, possibleAliases };
 }
 
 function handleTruncatedInput(raw, projectRoot, env, maxStdin, options = {}) {
@@ -726,7 +731,7 @@ function handleTruncatedInput(raw, projectRoot, env, maxStdin, options = {}) {
   const loaded = enforceRuleTrust(projectRoot, loadRules(projectRoot), env);
   const blockers = loaded.rules.filter(rule => (
     rule.action === 'block'
-    && (!context.alias || rule.event === 'all' || rule.event === context.alias)
+    && (rule.event === 'all' || context.possibleAliases.includes(rule.event))
     && (!context.toolName || matchesTool(rule.toolMatcher, context.toolName))
   ));
   const reason = 'Hookify input exceeded ' + maxStdin + ' bytes and could not be fully inspected.';
