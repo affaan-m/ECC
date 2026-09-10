@@ -95,6 +95,20 @@ commands/ - ${counts.commands} slash commands
 `);
 }
 
+function writeCrossHarnessIdentityDocs(root, counts) {
+  fs.writeFileSync(
+    path.join(root, 'SOUL.md'),
+    `Everything Claude Code (ECC) is a production-ready AI coding plugin with ${counts.agents} specialized agents, ${counts.skills} skills, ${counts.commands} commands, and automated hook workflows.\n`
+  );
+
+  const geminiDir = path.join(root, '.gemini');
+  fs.mkdirSync(geminiDir, { recursive: true });
+  fs.writeFileSync(
+    path.join(geminiDir, 'GEMINI.md'),
+    `Everything Claude Code (ECC) is a cross-harness coding system with ${counts.agents} specialized agents, ${counts.skills} skills, and ${counts.commands} commands.\n`
+  );
+}
+
 function writeZhRootReadme(root, counts) {
   fs.writeFileSync(path.join(root, 'README.zh-CN.md'), `你现在可以使用 ${counts.agents} 个代理、${counts.skills} 个技能和 ${counts.commands} 个命令。\n`);
 }
@@ -158,6 +172,7 @@ function writeCatalogFixture(root, options = {}) {
 
   writeEnglishReadme(root, documentedCounts, { unrelatedSkillsCount });
   writeEnglishAgents(root, documentedCounts, { skillsMinimum });
+  writeCrossHarnessIdentityDocs(root, documentedCounts);
   writeZhRootReadme(root, documentedCounts);
   writeZhDocsReadme(root, documentedCounts, { unrelatedSkillsCount });
   writeZhAgents(root, documentedCounts, { skillsMinimum });
@@ -224,6 +239,8 @@ function runTests() {
       assert.ok(formatted.includes('README.md quick-start summary'));
       assert.ok(formatted.includes('README.md project tree'));
       assert.ok(formatted.includes('AGENTS.md summary'));
+      assert.ok(formatted.includes('SOUL.md'));
+      assert.ok(formatted.includes('.gemini/GEMINI.md'));
       assert.ok(formatted.includes('.claude-plugin/plugin.json description'));
       assert.ok(formatted.includes('.claude-plugin/marketplace.json plugin description'));
       assert.ok(formatted.includes('README.zh-CN.md quick-start summary'));
@@ -250,6 +267,8 @@ function runTests() {
 
       const readme = fs.readFileSync(path.join(testDir, 'README.md'), 'utf8');
       const agentsDoc = fs.readFileSync(path.join(testDir, 'AGENTS.md'), 'utf8');
+      const soulDoc = fs.readFileSync(path.join(testDir, 'SOUL.md'), 'utf8');
+      const geminiDoc = fs.readFileSync(path.join(testDir, '.gemini', 'GEMINI.md'), 'utf8');
       const zhReadme = fs.readFileSync(path.join(testDir, 'docs', 'zh-CN', 'README.md'), 'utf8');
       const zhAgentsDoc = fs.readFileSync(path.join(testDir, 'docs', 'zh-CN', 'AGENTS.md'), 'utf8');
       const pluginJson = fs.readFileSync(path.join(testDir, '.claude-plugin', 'plugin.json'), 'utf8');
@@ -261,6 +280,8 @@ function runTests() {
       assert.ok(readme.includes('| Skills | 42 | .agents/skills/ |'));
       assert.ok(agentsDoc.includes('providing 1 specialized agents, 1+ skills, 1 commands'));
       assert.ok(agentsDoc.includes('skills/ - 1+ workflow skills and domain knowledge'));
+      assert.ok(soulDoc.includes('with 1 specialized agents, 1 skills, 1 commands'));
+      assert.ok(geminiDoc.includes('with 1 specialized agents, 1 skills, and 1 commands'));
       assert.ok(zhReadme.includes('| 技能 | 42 | .agents/skills/ |'));
       assert.ok(zhAgentsDoc.includes('提供 1 个专业代理、1+ 项技能、1 条命令'));
       assert.ok(zhAgentsDoc.includes('skills/ - 1+ 个工作流技能和领域知识'));
