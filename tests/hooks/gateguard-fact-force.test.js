@@ -1558,6 +1558,9 @@ function runTests() {
       expectDestructiveDeny('env time -f "%E" psql -c "drop table users"', 'GNU time -f FORMAT + psql');
       expectDestructiveDeny('/usr/bin/time -o /tmp/t.log psql -c "truncate audit_log"', 'GNU time -o FILE + psql');
       expectDestructiveDeny(`${'env '.repeat(12)}psql -c "drop table users"`, 'twelve stacked prefixes');
+      expectDestructiveDeny('runuser -u postgres -c \'psql -c "drop table users"\'', 'runuser -c command string');
+      expectDestructiveDeny('runuser -u postgres --command=\'psql -c "truncate audit_log"\'', 'runuser --command= command string');
+      expectDestructiveDeny('runuser -u postgres --session-command \'mysql -e "delete from sessions"\'', 'runuser --session-command');
     })
   )
     passed++;

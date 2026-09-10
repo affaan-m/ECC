@@ -390,7 +390,11 @@ const EXECUTION_PREFIXES = {
   setsid: {},
   unshare: {},
   busybox: {},
-  runuser: { valueOptions: ['-u', '--user', '-g', '--group', '-G', '--supp-group'] },
+  runuser: {
+    valueOptions: ['-u', '--user', '-g', '--group', '-G', '--supp-group'],
+    // `runuser -c '<string>'` hands the string to a shell.
+    commandStringOptions: ['-c', '--command', '--session-command'],
+  },
   chroot: { positionals: 1 },
   taskset: { valueOptions: ['-c', '--cpu-list'], positionals: 1, positionalUnlessValueOption: true },
 };
@@ -407,7 +411,7 @@ const EXECUTION_PREFIXES = {
  */
 function stripExecutionPrefixes(tokens) {
   let rest = tokens;
-  const commandStrings = [];
+  let commandStrings = [];
   while (rest.length > 0) {
     const spec = EXECUTION_PREFIXES[commandBasename(rest[0])];
     if (!spec) break;
@@ -430,10 +434,11 @@ function stripExecutionPrefixes(tokens) {
           opt => token.startsWith(opt) && token.length > opt.length && (opt.length === 2 || token.charAt(opt.length) === '=')
         );
         if (inline) {
-          commandStrings.push(token.slice(inline.length + (opt => (opt.length === 2 ? 0 : 1))(inline)));
+          const payload = token.slice(inline.length + (inline.length === 2 ? 0 : 1));
+          commandStrings = [...commandStrings, payload];
           i++;
         } else if (commandStringOptions.includes(token)) {
-          if (rest[i + 1] !== undefined) commandStrings.push(rest[i + 1]);
+          if (rest[i + 1] !== undefined) commandStrings = [...commandStrings, rest[i + 1]];
           i += 2;
         } else if (valueOptions.has(token)) {
           i += 2;
