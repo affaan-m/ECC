@@ -1096,6 +1096,31 @@ function isReadOnlyGitIntrospection(command) {
     return args.length === 2 && args[0] === '--abbrev-ref' && /^head$/i.test(args[1]);
   }
 
+  if (subcommand === 'remote') {
+    // Allows: git remote, git remote -v, git remote get-url [--push|--all] <name>,
+    // git remote show [-n] <name>. Denies add/remove/rename/set-url/set-head/prune/update etc.
+    if (args.length === 0) return true;
+
+    const [first, ...rest] = args;
+    if (first === '-v' || first === '--verbose') {
+      return rest.length === 0;
+    }
+
+    const isRemoteName = arg => /^[a-zA-Z0-9._-]+$/.test(arg);
+
+    if (first === 'get-url') {
+      if (rest.length === 0 || rest.length > 2) return false;
+      return rest.every(arg => arg === '--push' || arg === '--all' || isRemoteName(arg));
+    }
+
+    if (first === 'show') {
+      if (rest.length === 0 || rest.length > 2) return false;
+      return rest.every(arg => arg === '-n' || isRemoteName(arg));
+    }
+
+    return false;
+  }
+
   return false;
 }
 
