@@ -1561,6 +1561,8 @@ function runTests() {
       expectDestructiveDeny('runuser -u postgres -c \'psql -c "drop table users"\'', 'runuser -c command string');
       expectDestructiveDeny('runuser -u postgres --command=\'psql -c "truncate audit_log"\'', 'runuser --command= command string');
       expectDestructiveDeny('runuser -u postgres --session-command \'mysql -e "delete from sessions"\'', 'runuser --session-command');
+      expectDestructiveDeny('runuser -u postgres -s /usr/local/bin/fish -c \'psql -c "drop table users"\'', 'runuser -s SHELL -c command string');
+      expectDestructiveDeny('runuser --shell=/usr/local/bin/fish -u postgres -c \'psql -c "drop table users"\'', 'runuser --shell= -c command string');
     })
   )
     passed++;

@@ -391,7 +391,7 @@ const EXECUTION_PREFIXES = {
   unshare: {},
   busybox: {},
   runuser: {
-    valueOptions: ['-u', '--user', '-g', '--group', '-G', '--supp-group'],
+    valueOptions: ['-u', '--user', '-g', '--group', '-G', '--supp-group', '-s', '--shell'],
     // `runuser -c '<string>'` hands the string to a shell.
     commandStringOptions: ['-c', '--command', '--session-command'],
   },
