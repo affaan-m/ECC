@@ -197,6 +197,12 @@ function runCatalogValidator(overrides = {}) {
     ...overrides,
   };
 
+  // Keep fixture runs hermetic as catalog.js gains tracked document surfaces.
+  // The fixture root is authoritative unless a test explicitly overrides one
+  // of the new paths.
+  resolvedOverrides.SOUL_PATH ||= path.join(resolvedOverrides.ROOT, 'SOUL.md');
+  resolvedOverrides.GEMINI_PATH ||= path.join(resolvedOverrides.ROOT, '.gemini', 'GEMINI.md');
+
   for (const [constant, overridePath] of Object.entries(resolvedOverrides)) {
     const dirRegex = new RegExp(`const ${constant} = .*?;`);
     source = source.replace(dirRegex, `const ${constant} = ${JSON.stringify(overridePath)};`);
@@ -288,12 +294,15 @@ function writeCatalogFixture(testDir, options = {}) {
   const zhAgentsPath = path.join(testDir, 'docs', 'zh-CN', 'AGENTS.md');
   const pluginJsonPath = path.join(testDir, '.claude-plugin', 'plugin.json');
   const marketplaceJsonPath = path.join(testDir, '.claude-plugin', 'marketplace.json');
+  const soulPath = path.join(testDir, 'SOUL.md');
+  const geminiPath = path.join(testDir, '.gemini', 'GEMINI.md');
 
   fs.mkdirSync(path.join(testDir, 'agents'), { recursive: true });
   fs.mkdirSync(path.join(testDir, 'commands'), { recursive: true });
   fs.mkdirSync(path.join(testDir, 'skills', 'demo-skill'), { recursive: true });
   fs.mkdirSync(path.join(testDir, 'docs', 'zh-CN'), { recursive: true });
   fs.mkdirSync(path.join(testDir, '.claude-plugin'), { recursive: true });
+  fs.mkdirSync(path.join(testDir, '.gemini'), { recursive: true });
 
   fs.writeFileSync(path.join(testDir, 'agents', 'planner.md'), '---\nmodel: sonnet\ntools: Read\n---\n# Planner');
   fs.writeFileSync(path.join(testDir, 'commands', 'plan.md'), '---\ndescription: Plan\n---\n# Plan');
@@ -314,8 +323,16 @@ function writeCatalogFixture(testDir, options = {}) {
       description: `Marketplace plugin — ${marketplaceCounts.agents} agents, ${marketplaceCounts.skills} skills, ${marketplaceCounts.commands} legacy command shims`,
     }],
   }, null, 2));
+  fs.writeFileSync(
+    soulPath,
+    'Everything Claude Code (ECC) is a production-ready AI coding plugin with 1 specialized agents, 1 skills, 1 commands, and automated hook workflows.\n'
+  );
+  fs.writeFileSync(
+    geminiPath,
+    'Everything Claude Code (ECC) is a cross-harness coding system with 1 specialized agents, 1 skills, and 1 commands.\n'
+  );
 
-  return { readmePath, agentsPath, zhRootReadmePath, zhDocsReadmePath, zhAgentsPath, pluginJsonPath, marketplaceJsonPath };
+  return { readmePath, agentsPath, zhRootReadmePath, zhDocsReadmePath, zhAgentsPath, pluginJsonPath, marketplaceJsonPath, soulPath, geminiPath };
 }
 
 function runTests() {
