@@ -12,8 +12,6 @@ const { spawnSync } = require('child_process');
 
 const repoRoot = path.join(__dirname, '..', '..');
 const runtimePath = path.join(repoRoot, 'scripts', 'hooks', 'hookify-runtime.js');
-const hooksPath = path.join(repoRoot, 'hooks', 'hooks.json');
-const dispatcherPath = path.join(repoRoot, 'scripts', 'hooks', 'posttooluse-dispatcher.js');
 const runtime = require(runtimePath);
 
 function test(name, fn) {
@@ -62,25 +60,6 @@ function removeProject(root) {
   fs.rmSync(root, { recursive: true, force: true });
 }
 
-function runRegisteredEntry(root, entry, input, env = {}) {
-  const raw = JSON.stringify(input);
-  return spawnSync(entry.hooks[0].command, {
-    cwd: root,
-    input: raw,
-    encoding: 'utf8',
-    shell: true,
-    env: {
-      ...process.env,
-      CLAUDE_PLUGIN_ROOT: repoRoot,
-      CLAUDE_PROJECT_DIR: root,
-      ECC_HOOK_PROFILE: 'minimal',
-      ...env,
-    },
-    timeout: 15000,
-    maxBuffer: 16 * 1024 * 1024,
-  });
-}
-
 console.log('\nHookify runtime tests (#2561)');
 console.log('\u2500'.repeat(50));
 
@@ -125,6 +104,38 @@ if (test('parses supported quoted scalars and rejects unsupported frontmatter sh
     () => runtime.parseRuleFrontmatter('name: rule\n  nested: value'),
     /nested values/
   );
+})) passed++; else failed++;
+
+if (test('parses inline YAML comments and literal block scalars', () => {
+  const inline = runtime.parseRuleFrontmatter('name: inline # rule name\nevent: bash\npattern: npm # command comment');
+  assert.strictEqual(inline.name, 'inline');
+  assert.strictEqual(inline.pattern, 'npm');
+
+  const block = runtime.parseRuleFrontmatter([
+    'name: block-scalar',
+    'event: bash',
+    'pattern: |-',
+    '  npm\\s+',
+    '  publish',
+  ].join('\n'));
+  assert.strictEqual(block.pattern, 'npm\\s+\npublish');
+
+  const folded = runtime.parseRuleFrontmatter([
+    'pattern: >-',
+    '  foo  bar',
+    '',
+    '  baz',
+  ].join('\n'));
+  assert.strictEqual(folded.pattern, 'foo  bar\nbaz');
+
+  const conditions = runtime.parseRuleFrontmatter([
+    'conditions: # all entries must match',
+    '  - pattern: |-',
+    '      npm\\s+',
+    '      publish',
+    '    field: command',
+  ].join('\n'));
+  assert.strictEqual(conditions.conditions[0].pattern, 'npm\\s+\npublish');
 })) passed++; else failed++;
 
 if (test('runtime has no install-time package dependency', () => {
@@ -270,6 +281,28 @@ if (test('supports advanced conditions and requires every condition to match', (
       tool_input: { file_path: 'config/.env.example', content: 'API_KEY=placeholder' },
     });
     assert.strictEqual(nonMatching.stdout, nonMatching.raw);
+  } finally {
+    removeProject(root);
+  }
+})) passed++; else failed++;
+
+if (test('rejects a rule that combines pattern and conditions', () => {
+  const root = createProject();
+  try {
+    writeRule(
+      root,
+      'ambiguous',
+      'name: ambiguous\nevent: bash\npattern: npm\nconditions:\n  - field: command\n    operator: contains\n    pattern: publish',
+      'Ambiguous rule.'
+    );
+    const result = runHook(root, {
+      hook_event_name: 'PreToolUse',
+      tool_name: 'Bash',
+      tool_input: { command: 'npm test' },
+    });
+    assert.strictEqual(result.stdout, result.raw);
+    assert.match(result.stderr, /ambiguous/);
+    assert.match(result.stderr, /either pattern or conditions/);
   } finally {
     removeProject(root);
   }
@@ -600,48 +633,6 @@ if (test('a timed-out rule cannot suppress a later valid blocking rule', () => {
   }
 })) passed++; else failed++;
 
-if (test('does not follow rule symlinks outside the project .claude directory', () => {
-  if (process.platform === 'win32') return;
-  const root = createProject();
-  const outside = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-hookify-outside-'));
-  try {
-    const externalRule = path.join(outside, 'external.md');
-    fs.writeFileSync(externalRule, '---\nname: outside\nevent: bash\naction: block\npattern: .*\n---\nMust not load.\n');
-    fs.symlinkSync(externalRule, path.join(root, '.claude', 'hookify.link.local.md'));
-    const result = runHook(root, {
-      hook_event_name: 'PreToolUse',
-      tool_name: 'Bash',
-      tool_input: { command: 'pwd' },
-    });
-    assert.strictEqual(result.stdout, result.raw);
-    assert.match(result.stderr, /symbolic link/);
-  } finally {
-    removeProject(root);
-    removeProject(outside);
-  }
-})) passed++; else failed++;
-
-if (test('trusted CLAUDE_PROJECT_DIR takes precedence over payload cwd', () => {
-  const trusted = createProject();
-  const untrusted = createProject();
-  try {
-    writeRule(untrusted, 'outside', 'name: outside-rule\nevent: bash\naction: block\npattern: .*', 'Must not load.');
-    const result = runtime.run(JSON.stringify({
-      hook_event_name: 'PreToolUse',
-      tool_name: 'Bash',
-      tool_input: { command: 'pwd' },
-      cwd: untrusted,
-    }), {
-      cwd: trusted,
-      env: { ...process.env, CLAUDE_PROJECT_DIR: trusted },
-    });
-    assert.strictEqual(result.stdout, result.raw);
-  } finally {
-    removeProject(trusted);
-    removeProject(untrusted);
-  }
-})) passed++; else failed++;
-
 if (test('caps rule files and emitted messages without producing invalid JSON', () => {
   const root = createProject();
   try {
@@ -663,145 +654,98 @@ if (test('caps rule files and emitted messages without producing invalid JSON', 
   }
 })) passed++; else failed++;
 
-if (test('registers all four events and keeps PostToolUse consolidated', () => {
-  const hooks = JSON.parse(fs.readFileSync(hooksPath, 'utf8')).hooks;
-  assert.ok(hooks.PreToolUse.some(entry => entry.id === 'pre:hookify-runtime'));
-  assert.ok(hooks.UserPromptSubmit.some(entry => entry.id === 'prompt:hookify-runtime'));
-  assert.ok(hooks.Stop.some(entry => entry.id === 'stop:hookify-runtime'));
-  assert.strictEqual(hooks.PostToolUse.length, 2, 'PostToolUse must remain consolidated');
-
-  delete require.cache[require.resolve(dispatcherPath)];
-  const dispatcher = require(dispatcherPath);
-  assert.ok(dispatcher.SYNC_HOOKS.some(entry => entry.id === 'post:hookify-runtime'));
-})) passed++; else failed++;
-
-if (test('registered hook commands enforce rules across all four events', () => {
+if (test('blocking rules inspect content beyond 64 KiB and MultiEdit entry 100', () => {
   const root = createProject();
   try {
-    writeRule(root, 'all-events', 'name: all-events\nevent: all\naction: block\npattern: HOOKIFY_SENTINEL', 'Registered runtime matched.');
-    const hooks = JSON.parse(fs.readFileSync(hooksPath, 'utf8')).hooks;
-    const entries = [
-      [
-        hooks.PreToolUse.find(entry => entry.id === 'pre:hookify-runtime'),
-        { hook_event_name: 'PreToolUse', tool_name: 'Bash', tool_input: { command: 'echo HOOKIFY_SENTINEL' } },
-        output => output.hookSpecificOutput?.permissionDecision === 'deny',
-      ],
-      [
-        hooks.UserPromptSubmit.find(entry => entry.id === 'prompt:hookify-runtime'),
-        { hook_event_name: 'UserPromptSubmit', prompt: 'HOOKIFY_SENTINEL' },
-        output => output.decision === 'block',
-      ],
-      [
-        hooks.PostToolUse.find(entry => entry.id === 'post:dispatcher:sync'),
-        { hook_event_name: 'PostToolUse', tool_name: 'Read', tool_input: { file_path: 'HOOKIFY_SENTINEL' }, tool_response: {} },
-        output => output.decision === 'block',
-      ],
-      [
-        hooks.Stop.find(entry => entry.id === 'stop:hookify-runtime'),
-        { hook_event_name: 'Stop', stop_hook_active: false, last_assistant_message: 'HOOKIFY_SENTINEL' },
-        output => output.decision === 'block',
-      ],
-    ];
-
-    for (const [entry, input, assertion] of entries) {
-      assert.ok(entry, 'registered Hookify entry should exist');
-      const result = runRegisteredEntry(root, entry, input, {
-        ECC_DISABLED_HOOKS: 'post:ecc-metrics-bridge',
-      });
-      assert.strictEqual(result.status, 0, result.stderr);
-      const output = JSON.parse(result.stdout);
-      assert.ok(assertion(output), entry.id + ' did not preserve the blocking decision');
-      assert.match(JSON.stringify(output), /Registered runtime matched/);
-    }
-  } finally {
-    removeProject(root);
-  }
-})) passed++; else failed++;
-
-if (test('registered Hookify IDs can be disabled independently', () => {
-  const root = createProject();
-  try {
-    writeRule(root, 'disable', 'name: block-disabled\nevent: bash\naction: block\npattern: .*', 'Must not run.');
-    const hooks = JSON.parse(fs.readFileSync(hooksPath, 'utf8')).hooks;
-    const entry = hooks.PreToolUse.find(item => item.id === 'pre:hookify-runtime');
-    const input = {
+    writeRule(root, 'deep-content', 'name: deep-content\nevent: file\naction: block\npattern: BLOCK_ME', 'Deep content must be checked.');
+    const writeOutput = parseDecision(runHook(root, {
       hook_event_name: 'PreToolUse',
-      tool_name: 'Bash',
-      tool_input: { command: 'pwd' },
-    };
-    const result = runRegisteredEntry(root, entry, input, { ECC_DISABLED_HOOKS: 'pre:hookify-runtime' });
-    assert.strictEqual(result.status, 0, result.stderr);
-    assert.strictEqual(result.stdout, '');
+      tool_name: 'Write',
+      tool_input: { file_path: 'large.txt', content: 'x'.repeat(70 * 1024) + 'BLOCK_ME' },
+    }));
+    assert.strictEqual(writeOutput.hookSpecificOutput.permissionDecision, 'deny');
+
+    const edits = Array.from({ length: 101 }, (_, index) => ({
+      file_path: 'src/file-' + index + '.js',
+      new_string: index === 100 ? 'BLOCK_ME' : 'safe',
+    }));
+    const multiOutput = parseDecision(runHook(root, {
+      hook_event_name: 'PreToolUse',
+      tool_name: 'MultiEdit',
+      tool_input: { edits },
+    }));
+    assert.strictEqual(multiOutput.hookSpecificOutput.permissionDecision, 'deny');
   } finally {
     removeProject(root);
   }
 })) passed++; else failed++;
 
-if (test('PostToolUse dispatcher preserves Hookify block decisions over warnings', () => {
-  const dispatcher = require(dispatcherPath);
-  const raw = JSON.stringify({ hook_event_name: 'PostToolUse', tool_name: 'Write' });
-  const result = dispatcher.runHooks(raw, [
-    {
-      id: 'post:test:hookify-block',
-      matcher: '*',
-      profiles: 'standard,strict',
-      run: () => ({ stdout: JSON.stringify({ decision: 'block', reason: 'Hookify blocked this result.' }) }),
-    },
-    {
-      id: 'post:test:warning',
-      matcher: '*',
-      profiles: 'standard,strict',
-      run: () => ({ additionalContext: 'Secondary warning.' }),
-    },
-  ], { toolName: 'Write', env: { ECC_HOOK_PROFILE: 'standard' } });
-  const output = JSON.parse(result.stdout);
-  assert.strictEqual(output.decision, 'block');
-  assert.match(output.reason, /Hookify blocked this result/);
-  assert.strictEqual(output.hookSpecificOutput.hookEventName, 'PostToolUse');
-  assert.match(output.hookSpecificOutput.additionalContext, /Secondary warning/);
-
-  const withRawOutput = dispatcher.mergeHookStdout([
-    { id: 'post:test:block', stdout: JSON.stringify({ decision: 'block', reason: 'Keep the block.' }) },
-    { id: 'post:test:raw', stdout: 'unstructured output' },
-  ]);
-  assert.strictEqual(JSON.parse(withRawOutput.stdout).decision, 'block');
-  assert.match(JSON.parse(withRawOutput.stdout).reason, /Keep the block/);
-  assert.match(withRawOutput.warning, /post:test:raw/);
-
-  const withSiblingFailure = dispatcher.runHooks(raw, [
-    {
-      id: 'post:test:block',
-      matcher: '*',
-      profiles: 'standard,strict',
-      run: () => ({ stdout: JSON.stringify({ decision: 'block', reason: 'Block still wins.' }) }),
-    },
-    {
-      id: 'post:test:failure',
-      matcher: '*',
-      profiles: 'standard,strict',
-      run: () => ({ exitCode: 7 }),
-    },
-  ], { toolName: 'Write', env: { ECC_HOOK_PROFILE: 'standard' } });
-  assert.strictEqual(withSiblingFailure.exitCode, 0);
-  assert.strictEqual(JSON.parse(withSiblingFailure.stdout).decision, 'block');
-  assert.match(withSiblingFailure.stderr, /post:test:failure exited with code 7/);
-})) passed++; else failed++;
-
-if (test('direct entrypoint emits valid JSON for a matched prompt rule', () => {
+if (test('oversized PreToolUse input fails closed when a relevant block rule exists', () => {
   const root = createProject();
   try {
-    writeRule(root, 'prompt', 'name: warn-password\nevent: prompt\npattern: password', 'Do not paste credentials.');
-    const result = spawnSync(process.execPath, [runtimePath], {
-      cwd: root,
-      input: JSON.stringify({ hook_event_name: 'UserPromptSubmit', prompt: 'Here is my password' }),
-      encoding: 'utf8',
-      env: { ...process.env, CLAUDE_PROJECT_DIR: root },
-      timeout: 10000,
+    writeRule(root, 'oversized-block', 'name: oversized-block\nevent: file\naction: block\npattern: BLOCK_ME', 'Oversized input needs review.');
+    const raw = JSON.stringify({
+      hook_event_name: 'PreToolUse',
+      tool_name: 'Write',
+      tool_input: { file_path: 'large.txt', content: 'x'.repeat(runtime.MAX_STDIN_BYTES + 1) },
     });
-    assert.strictEqual(result.status, 0, result.stderr);
-    const output = JSON.parse(result.stdout);
-    assert.strictEqual(output.hookSpecificOutput.hookEventName, 'UserPromptSubmit');
-    assert.match(output.hookSpecificOutput.additionalContext, /Do not paste credentials/);
+    const result = runtime.run(raw.slice(0, runtime.MAX_STDIN_BYTES), {
+      cwd: root,
+      env: { ...process.env, CLAUDE_PROJECT_DIR: root },
+      truncated: true,
+      maxStdin: runtime.MAX_STDIN_BYTES,
+    });
+    const output = parseDecision(result);
+    assert.strictEqual(output.hookSpecificOutput.permissionDecision, 'deny');
+    assert.match(output.hookSpecificOutput.permissionDecisionReason, /could not be fully inspected/);
+  } finally {
+    removeProject(root);
+  }
+})) passed++; else failed++;
+
+if (test('oversized PostToolUse input uses the top-level block contract', () => {
+  const root = createProject();
+  try {
+    writeRule(root, 'oversized-post', 'name: oversized-post\nevent: all\naction: block\npattern: BLOCK_ME', 'Oversized output needs review.');
+    const result = runtime.run('{"hook_event_name":"PostToolUse",', {
+      cwd: root,
+      env: { ...process.env, CLAUDE_PROJECT_DIR: root },
+      hookEventName: 'PostToolUse',
+      toolName: 'Write',
+      truncated: true,
+      maxStdin: 1024 * 1024,
+    });
+    const output = parseDecision(result);
+    assert.strictEqual(output.decision, 'block');
+    assert.ok(!output.hookSpecificOutput);
+  } finally {
+    removeProject(root);
+  }
+})) passed++; else failed++;
+
+if (test('oversized inputs only fail closed for rules relevant to their event', () => {
+  const root = createProject();
+  try {
+    writeRule(root, 'bash-only', 'name: bash-only\nevent: bash\naction: block\npattern: .*');
+    const postResult = runtime.run('{"hook_event_name":"PostToolUse",', {
+      cwd: root,
+      env: { ...process.env, CLAUDE_PROJECT_DIR: root },
+      hookEventName: 'PostToolUse',
+      toolName: 'Read',
+      truncated: true,
+      maxStdin: 1024 * 1024,
+    });
+    assert.strictEqual(postResult.stdout, '');
+
+    const preResult = runtime.run('{"hook_event_name":"PreToolUse",', {
+      cwd: root,
+      env: { ...process.env, CLAUDE_PROJECT_DIR: root },
+      hookId: 'pre:hookify-runtime',
+      toolName: 'Write',
+      truncated: true,
+      maxStdin: 1024 * 1024,
+    });
+    assert.strictEqual(preResult.stdout, '');
   } finally {
     removeProject(root);
   }

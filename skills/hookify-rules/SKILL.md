@@ -111,6 +111,10 @@ hook path, and every regex evaluation has a 25 ms hard timeout. Invalid,
 symlinked, or oversized local rules fail open and emit a
 diagnostic without disabling other Hookify rules.
 
+Git-tracked local rules are disabled by default. Set
+`ECC_HOOKIFY_ALLOW_TRACKED=1` only after reviewing those files; ordinary
+gitignored rules created locally remain active without that override.
+
 ## Runtime Behavior
 
 - `warn` injects the message as event-specific additional context and does not block.

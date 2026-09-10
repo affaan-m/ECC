@@ -49,6 +49,7 @@ Supports multiple lines.
 - avoid nested quantifiers such as `(a+)+`; the runtime rejects unsafe regexes
 - every regex evaluation also has a 25 ms hard timeout
 - malformed or oversized rules fail open with a diagnostic so one bad local rule cannot disable all hooks
+- Git-tracked local rules require explicit `ECC_HOOKIFY_ALLOW_TRACKED=1` approval
 
 ### Action Behavior
 

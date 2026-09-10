@@ -160,6 +160,33 @@ function parseStructuredOutput(stdout) {
   }
 }
 
+function mergeBlockingOutputs(outputs, structured) {
+  const blockOutputs = structured.filter(output => output?.blockReason);
+  const contexts = structured
+    .filter(output => output !== null)
+    .map(output => output.additionalContext)
+    .filter(Boolean);
+  const blocked = {
+    decision: 'block',
+    reason: blockOutputs.map(output => output.blockReason).join('\n\n'),
+  };
+  if (contexts.length > 0) {
+    blocked.hookSpecificOutput = {
+      hookEventName: 'PostToolUse',
+      additionalContext: contexts.join('\n'),
+    };
+  }
+  const rawOutputIds = outputs
+    .filter((_output, index) => structured[index] === null)
+    .map(output => output.id);
+  return {
+    stdout: JSON.stringify(blocked),
+    warning: rawOutputIds.length > 0
+      ? '[Hook] raw stdout from ' + rawOutputIds.join(', ') + ' dropped in favor of a blocking decision'
+      : '',
+  };
+}
+
 function mergeHookStdout(outputs) {
   if (outputs.length === 0) return { stdout: '', warning: '' };
   if (outputs.length === 1) return { stdout: outputs[0].stdout, warning: '' };
@@ -167,29 +194,7 @@ function mergeHookStdout(outputs) {
   const structured = outputs.map(output => parseStructuredOutput(output.stdout));
   const blockOutputs = structured.filter(output => output?.blockReason);
   if (blockOutputs.length > 0) {
-    const contexts = structured
-      .filter(output => output !== null)
-      .map(output => output.additionalContext)
-      .filter(Boolean);
-    const blocked = {
-      decision: 'block',
-      reason: blockOutputs.map(output => output.blockReason).join('\n\n'),
-    };
-    if (contexts.length > 0) {
-      blocked.hookSpecificOutput = {
-        hookEventName: 'PostToolUse',
-        additionalContext: contexts.join('\n'),
-      };
-    }
-    const rawOutputIds = outputs
-      .filter((_output, index) => structured[index] === null)
-      .map(output => output.id);
-    return {
-      stdout: JSON.stringify(blocked),
-      warning: rawOutputIds.length > 0
-        ? '[Hook] raw stdout from ' + rawOutputIds.join(', ') + ' dropped in favor of a blocking decision'
-        : '',
-    };
+    return mergeBlockingOutputs(outputs, structured);
   }
   if (structured.every(output => output !== null)) {
     const contexts = structured.map(output => output.additionalContext).filter(Boolean);
@@ -241,6 +246,8 @@ function runHooks(raw, hooks, options = {}) {
           scriptPath: path.join(pluginRoot, hook.script || ''),
           cwd: options.cwd || process.cwd(),
           env,
+          hookEventName: 'PostToolUse',
+          toolName,
           truncated: options.truncated === true,
           maxStdin: MAX_STDIN
         })
@@ -340,6 +347,7 @@ module.exports = {
   cli,
   matchesTool,
   main,
+  mergeBlockingOutputs,
   mergeHookStdout,
   normalizeResult,
   resolveMainStdout,

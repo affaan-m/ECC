@@ -160,6 +160,12 @@ or unsafe-regex rule files are skipped with a diagnostic instead of breaking
 the entire hook chain. Every regex evaluation also has a 25 ms hard timeout.
 Stop rules ignore `stop_hook_active: true` to avoid continuation loops.
 
+Files tracked by Git are disabled by default because opening a repository must
+not activate repository-authored instructions. Locally created, gitignored
+rules continue to work automatically. To review and explicitly trust tracked
+rules, set `ECC_HOOKIFY_ALLOW_TRACKED=1`; messages are still labeled as
+untrusted local rule data when passed to Claude.
+
 ### Writing Your Own Hook
 
 Hooks are shell commands that receive tool input as JSON on stdin and must output JSON on stdout.
