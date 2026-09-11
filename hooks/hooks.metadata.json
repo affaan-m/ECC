@@ -1,0 +1,115 @@
+{
+  "$schema": "../schemas/hooks-metadata.schema.json",
+  "entries": {
+    "PreToolUse": [
+      {
+        "id": "pre:bash:dispatcher",
+        "description": "Consolidated Bash preflight dispatcher for quality, tmux, push, and GateGuard checks"
+      },
+      {
+        "id": "pre:powershell:gateguard-fact-force",
+        "description": "PowerShell fact-forcing gate: inspect destructive commands without running unrelated Bash-only preflight hooks"
+      },
+      {
+        "id": "pre:write:doc-file-warning",
+        "description": "Doc file warning: warn about non-standard documentation files (exit code 0; warns only)"
+      },
+      {
+        "id": "pre:edit-write:suggest-compact",
+        "description": "Suggest manual compaction at logical intervals"
+      },
+      {
+        "id": "pre:observe:continuous-learning",
+        "description": "Capture tool use observations for continuous learning"
+      },
+      {
+        "id": "pre:governance-capture",
+        "description": "Capture governance events (secrets, policy violations, approval requests). Enable with ECC_GOVERNANCE_CAPTURE=1"
+      },
+      {
+        "id": "pre:config-protection",
+        "description": "Block modifications to linter/formatter config files. Steers agent to fix code instead of weakening configs."
+      },
+      {
+        "id": "pre:mcp-health-check",
+        "description": "Check MCP server health before MCP tool execution and block unhealthy MCP calls"
+      },
+      {
+        "id": "pre:edit-write:gateguard-fact-force",
+        "description": "Fact-forcing gate: block first Edit/Write/MultiEdit per file and demand investigation (importers, data schemas, user instruction) before allowing"
+      }
+    ],
+    "PreCompact": [
+      {
+        "id": "pre:compact",
+        "description": "Save state before context compaction"
+      }
+    ],
+    "SessionStart": [
+      {
+        "id": "session:start",
+        "description": "Load previous context and detect package manager on new session"
+      },
+      {
+        "id": "session-start:plan-canvas-sessions",
+        "description": "Surface open Plan Canvas review sessions so a fresh session can resume the loop"
+      }
+    ],
+    "PostToolUse": [
+      {
+        "id": "post:dispatcher:sync",
+        "description": "Run synchronous PostToolUse hooks in one process while preserving per-hook controls"
+      },
+      {
+        "id": "post:dispatcher:async",
+        "description": "Run background PostToolUse hooks in one process while preserving per-hook controls"
+      }
+    ],
+    "PostToolUseFailure": [
+      {
+        "id": "post:mcp-health-check",
+        "description": "Track failed MCP tool calls, mark unhealthy servers, and attempt reconnect"
+      },
+      {
+        "id": "post:skill:track",
+        "description": "Record hard Skill tool failures for skill-health telemetry"
+      }
+    ],
+    "Stop": [
+      {
+        "id": "stop:plan-canvas-pending",
+        "description": "Deliver undelivered Plan Canvas browser feedback before the agent stops"
+      },
+      {
+        "id": "stop:format-typecheck",
+        "description": "Batch format (Biome/Prettier) and typecheck (tsc) all JS/TS files edited this response — runs once at Stop instead of after every Edit"
+      },
+      {
+        "id": "stop:check-console-log",
+        "description": "Check for console.log in modified files after each response"
+      },
+      {
+        "id": "stop:session-end",
+        "description": "Persist session state after each response (Stop carries transcript_path)"
+      },
+      {
+        "id": "stop:evaluate-session",
+        "description": "Evaluate session for extractable patterns"
+      },
+      {
+        "id": "stop:cost-tracker",
+        "description": "Track token and cost metrics per session"
+      },
+      {
+        "id": "stop:desktop-notify",
+        "description": "Send desktop notification (macOS/WSL) with task summary when Claude responds"
+      }
+    ],
+    "SessionEnd": [
+      {
+        "id": "session:end:marker",
+        "description": "Session end lifecycle marker (non-blocking)"
+      }
+    ]
+  }
+}

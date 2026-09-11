@@ -36,6 +36,7 @@ const { adaptAntigravityAgent } = require('./install/antigravity-agent');
 const { buildInstallIndex, rewriteRelativeLinks } = require('./install/link-rewrite');
 const { getInstallTargetAdapter, listInstallTargetAdapters } = require('./install-targets/registry');
 const { resolveInvocationEnvironment } = require('./invocation-environment');
+const { applyHooksMetadata, metadataPathFor } = require('./hooks-config');
 const OPENCODE_BUILD_ARTIFACT = path.join('.opencode', 'dist');
 const OPENCODE_BUILD_SCRIPT = path.join('scripts', 'build-opencode.js');
 const OPENCODE_PLUGIN_NOT_BUILT_CODE = 'opencode-plugin-not-built';
@@ -535,6 +536,23 @@ function readJsonNoFollow(filePath) {
   return JSON.parse(readFileNoFollow(filePath, 'utf8'));
 }
 
+/**
+ * Read hooks.json and merge in hooks/hooks.metadata.json without following
+ * symlinks. The sidecar holds the stable matcher ids that hooks.json cannot
+ * carry, because Claude Code reports unknown keys when the plugin loads.
+ *
+ * @param {string} hooksPath - Path to the source hooks.json.
+ * @returns {object} the hooks configuration with ids and descriptions restored.
+ */
+function readHooksConfigNoFollow(hooksPath) {
+  const hooksConfig = readJsonNoFollow(hooksPath);
+  const metadataPath = metadataPathFor(hooksPath);
+  if (!fs.existsSync(metadataPath)) {
+    return hooksConfig;
+  }
+  return applyHooksMetadata(hooksConfig, readJsonNoFollow(metadataPath));
+}
+
 function assertClaudeSettingsDestination(operation, trustedRoot, target = null) {
   if (target && target !== 'claude' && target !== 'claude-project') {
     throw new Error('Refusing to manage Claude hooks for a non-Claude target.');
@@ -720,7 +738,7 @@ function hydrateRecordedOperations(repoRoot, operations, trustedRoot) {
         sourcePath,
         previousManagedHooks: operation.managedHooks,
         managedHooks: materializeManagedHooks(
-          readJsonNoFollow(sourcePath),
+          readHooksConfigNoFollow(sourcePath),
           trustedRoot
         ),
       };

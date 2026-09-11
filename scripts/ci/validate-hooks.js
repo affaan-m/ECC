@@ -8,8 +8,19 @@ const path = require('path');
 const vm = require('vm');
 const Ajv = require('ajv');
 
+const {
+  METADATA_FILENAME,
+  applyHooksMetadata,
+  findMetadataMismatches,
+  metadataPathFor,
+} = require('../lib/hooks-config');
+
 const HOOKS_FILE = path.join(__dirname, '../../hooks/hooks.json');
 const HOOKS_SCHEMA_PATH = path.join(__dirname, '../../schemas/hooks.schema.json');
+// Keys Claude Code's own hooks schema rejects. Keeping them out of hooks.json is
+// what stops "unknown keys ... ignored" warnings when the plugin loads.
+const HARNESS_UNKNOWN_ROOT_KEYS = ['$schema'];
+const HARNESS_UNKNOWN_MATCHER_KEYS = ['id', 'description'];
 const VALID_EVENTS = [
   'SessionStart',
   'UserPromptSubmit',
@@ -124,6 +135,53 @@ function validateHookEntry(hook, label) {
   return hasErrors;
 }
 
+/**
+ * Reject keys the Claude Code harness does not understand.
+ *
+ * Claude Code validates a plugin's hooks.json against its own schema and prints
+ * every unrecognised key at load time. ECC's stable ids and descriptions belong
+ * in hooks/hooks.metadata.json instead.
+ *
+ * @param {object} data - Parsed hooks.json.
+ * @returns {boolean} true if errors were found
+ */
+function validateHarnessCompatibility(data) {
+  if (!data || typeof data !== 'object' || Array.isArray(data)) {
+    return false;
+  }
+
+  let hasErrors = false;
+  for (const key of HARNESS_UNKNOWN_ROOT_KEYS) {
+    if (key in data) {
+      console.error(
+        `ERROR: hooks.json must not define "${key}" - Claude Code reports it as an unknown key`
+      );
+      hasErrors = true;
+    }
+  }
+
+  const events = data.hooks && typeof data.hooks === 'object' && !Array.isArray(data.hooks)
+    ? data.hooks
+    : {};
+  for (const [eventType, matchers] of Object.entries(events)) {
+    if (!Array.isArray(matchers)) continue;
+    matchers.forEach((matcher, index) => {
+      if (!matcher || typeof matcher !== 'object') return;
+      for (const key of HARNESS_UNKNOWN_MATCHER_KEYS) {
+        if (key in matcher) {
+          console.error(
+            `ERROR: hooks.json ${eventType}[${index}] must not define "${key}" - `
+            + `move it to ${METADATA_FILENAME}`
+          );
+          hasErrors = true;
+        }
+      }
+    });
+  }
+
+  return hasErrors;
+}
+
 function validateHooks() {
   if (!fs.existsSync(HOOKS_FILE)) {
     console.log('No hooks.json found, skipping validation');
@@ -136,6 +194,32 @@ function validateHooks() {
   } catch (e) {
     console.error(`ERROR: Invalid JSON in hooks.json: ${e.message}`);
     process.exit(1);
+  }
+
+  if (validateHarnessCompatibility(data)) {
+    process.exit(1);
+  }
+
+  let metadata = null;
+  const metadataPath = metadataPathFor(HOOKS_FILE);
+  if (fs.existsSync(metadataPath)) {
+    try {
+      metadata = JSON.parse(fs.readFileSync(metadataPath, 'utf-8'));
+    } catch (e) {
+      console.error(`ERROR: Invalid JSON in ${METADATA_FILENAME}: ${e.message}`);
+      process.exit(1);
+    }
+
+    const mismatches = findMetadataMismatches(data, metadata);
+    if (mismatches.length > 0) {
+      for (const mismatch of mismatches) {
+        console.error(`ERROR: ${mismatch}`);
+      }
+      process.exit(1);
+    }
+
+    // Validate the merged view so the id/description rules below still apply.
+    applyHooksMetadata(data, metadata);
   }
 
   // Validate against JSON schema

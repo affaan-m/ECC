@@ -1,0 +1,61 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "ECC Hooks Metadata",
+  "description": "Stable ids and human-readable descriptions for the matcher entries in hooks/hooks.json. Kept in a sidecar because Claude Code reports any key outside its own hooks schema as an unknown key when the plugin loads.",
+  "type": "object",
+  "required": [
+    "entries"
+  ],
+  "properties": {
+    "$schema": {
+      "type": "string"
+    },
+    "entries": {
+      "type": "object",
+      "description": "Event name to an array aligned by index with the same event's entries in hooks.json.",
+      "propertyNames": {
+        "enum": [
+          "SessionStart",
+          "UserPromptSubmit",
+          "PreToolUse",
+          "PermissionRequest",
+          "PostToolUse",
+          "PostToolUseFailure",
+          "Notification",
+          "SubagentStart",
+          "Stop",
+          "SubagentStop",
+          "PreCompact",
+          "InstructionsLoaded",
+          "TeammateIdle",
+          "TaskCompleted",
+          "ConfigChange",
+          "WorktreeCreate",
+          "WorktreeRemove",
+          "SessionEnd"
+        ]
+      },
+      "additionalProperties": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "required": [
+            "id"
+          ],
+          "properties": {
+            "id": {
+              "type": "string",
+              "pattern": "\\S",
+              "description": "Stable, globally unique identifier for the matcher entry at this index."
+            },
+            "description": {
+              "type": "string"
+            }
+          },
+          "additionalProperties": false
+        }
+      }
+    }
+  },
+  "additionalProperties": false
+}
