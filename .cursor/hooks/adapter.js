@@ -6,6 +6,7 @@
  */
 
 const { execFileSync } = require('child_process');
+const fs = require('fs');
 const path = require('path');
 
 const MAX_STDIN = 1024 * 1024;
@@ -22,7 +23,18 @@ function readStdin() {
 }
 
 function getPluginRoot() {
-  return path.resolve(__dirname, '..', '..');
+  // User install: ~/.cursor/hooks → ~/.cursor (scripts live next to hooks/)
+  // Project/repo: <root>/.cursor/hooks → <root> (scripts live at repo root)
+  const candidates = [
+    path.resolve(__dirname, '..'),
+    path.resolve(__dirname, '..', '..'),
+  ];
+  for (const root of candidates) {
+    if (fs.existsSync(path.join(root, 'scripts', 'hooks'))) {
+      return root;
+    }
+  }
+  return candidates[candidates.length - 1];
 }
 
 function transformToClaude(cursorInput, overrides = {}) {

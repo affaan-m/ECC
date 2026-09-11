@@ -1,6 +1,7 @@
 #!/usr/bin/env node
-const { readStdin, hookEnabled } = require('./adapter');
-const { splitShellSegments } = require('../../scripts/lib/shell-split');
+const path = require('path');
+const { readStdin, hookEnabled, getPluginRoot } = require('./adapter');
+const { splitShellSegments } = require(path.join(getPluginRoot(), 'scripts', 'lib', 'shell-split'));
 
 readStdin()
   .then(raw => {
