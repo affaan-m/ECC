@@ -8,8 +8,18 @@ const {
   hasExplicitCommitAttributionPreference,
   withCommitAttributionDisabled,
 } = require('../claude-commit-attribution');
-const { writeInstallState } = require('../install-state');
+const { readInstallState, writeInstallState } = require('../install-state');
 const { assertHookConsentReady, planMaterializesHookRuntime } = require('./hook-consent');
+const {
+  getClaudeSettingsPath,
+  mergeManagedHooks,
+  readSettings,
+  runWithSettingsLock,
+  uninstallManagedHooks,
+  updateSettingsAtomic,
+  validateManagedHooks,
+  validateRecordedManagedHooks,
+} = require('./claude-settings');
 const { filterMcpConfig, parseDisabledMcpServers } = require('../mcp-config');
 const { assertWithinTrustedRoot } = require('../path-safety');
 const {
@@ -18,6 +28,11 @@ const {
   removeLegacyClaudeSkillFiles,
 } = require('./claude-skill-migration');
 const { cleanupLegacyAntigravityInstall } = require('./antigravity-legacy-migration');
+const {
+  assertNoNewUserOwnedFile,
+  prepareUserOwnedFileGuard,
+  preserveUnwrittenFiles,
+} = require('./ownership-guard');
 const { cleanupLegacyOpencodeInstall } = require('./opencode-legacy-migration');
 const { buildInstallIndex, rewriteRelativeLinks } = require('./link-rewrite');
 const { adaptAntigravityAgent } = require('./antigravity-agent');
@@ -200,22 +215,12 @@ function shouldSetClaudeCommitAttributionPreference(plan) {
   });
 }
 
-function writeClaudeCommitAttributionPreference(settingsPath) {
-  // Read once rather than probing with existsSync first. Checking for the file and
-  // then writing it is a file system race (CodeQL js/file-system-race), and a
-  // missing file is simply the fresh-install case.
+function writeClaudeCommitAttributionPreference(settingsPath, options = {}) {
   let settings;
   try {
-    settings = JSON.parse(fs.readFileSync(settingsPath, 'utf8'));
-  } catch (error) {
-    if (error.code !== 'ENOENT') {
-      // Unreadable or malformed settings belong to the user; leave them untouched.
-      return false;
-    }
-    settings = {};
-  }
-
-  if (!settings || typeof settings !== 'object' || Array.isArray(settings)) {
+    settings = readSettings(settingsPath);
+  } catch (_error) {
+    // Unreadable or malformed settings belong to the user; leave them untouched.
     return false;
   }
 
@@ -223,46 +228,15 @@ function writeClaudeCommitAttributionPreference(settingsPath) {
     return false;
   }
 
-  fs.mkdirSync(path.dirname(settingsPath), { recursive: true });
-  fs.writeFileSync(
-    settingsPath,
-    formatJson(withCommitAttributionDisabled(settings)),
-    'utf8'
-  );
-  return true;
-}
-
-function replacePluginRootPlaceholders(value, pluginRoot) {
-  if (!pluginRoot) {
-    return value;
-  }
-
-  if (typeof value === 'string') {
-    return value.split('${CLAUDE_PLUGIN_ROOT}').join(pluginRoot);
-  }
-
-  if (Array.isArray(value)) {
-    return value.map(item => replacePluginRootPlaceholders(item, pluginRoot));
-  }
-
-  if (value && typeof value === 'object') {
-    return Object.fromEntries(
-      Object.entries(value).map(([key, nestedValue]) => [
-        key,
-        replacePluginRootPlaceholders(nestedValue, pluginRoot),
-      ])
-    );
-  }
-
-  return value;
-}
-
-function findHooksOperation(plan, hooksDestinationPath) {
-  return plan.operations.find(item => (
-    item.destinationPath === hooksDestinationPath
-    && item.moduleId === 'hooks-runtime'
-    && typeof item.sourcePath === 'string'
-  ));
+  let changed = false;
+  updateSettingsAtomic(settingsPath, latestSettings => {
+    if (hasExplicitCommitAttributionPreference(latestSettings)) {
+      return { settings: latestSettings };
+    }
+    changed = true;
+    return { settings: withCommitAttributionDisabled(latestSettings) };
+  }, options);
+  return changed;
 }
 
 function isMcpConfigPath(filePath) {
@@ -302,40 +276,135 @@ function assertSafeInstallOperation(plan, operation) {
   }
 }
 
-function buildResolvedClaudeHooks(plan) {
-  if (!plan.adapter || (plan.adapter.target !== 'claude' && plan.adapter.target !== 'claude-project')) {
+function readPreviousInstallState(plan) {
+  if (!fs.existsSync(plan.installStatePath)) {
+    return null;
+  }
+  return readInstallState(plan.installStatePath);
+}
+
+function comparablePath(filePath) {
+  const resolved = path.resolve(filePath);
+  return process.platform === 'win32' ? resolved.toLowerCase() : resolved;
+}
+
+function findPreviousManagedHooks(previousState, plan, operation) {
+  if (
+    !previousState
+    || previousState.target.id !== plan.adapter.id
+    || comparablePath(previousState.target.root) !== comparablePath(plan.targetRoot)
+    || comparablePath(previousState.target.installStatePath) !== comparablePath(plan.installStatePath)
+  ) {
     return null;
   }
 
-  const pluginRoot = plan.targetRoot;
-  const hooksDestinationPath = path.join(plan.targetRoot, 'hooks', 'hooks.json');
-  const hooksOperation = findHooksOperation(plan, hooksDestinationPath);
-  if (!hooksOperation) {
-    return null;
-  }
-  const hooksSourcePath = hooksOperation.sourcePath;
-  if (!fs.existsSync(hooksSourcePath)) {
+  const previousOperation = (previousState.operations || []).find(candidate => (
+    candidate.kind === operation.kind
+    && comparablePath(candidate.destinationPath) === comparablePath(operation.destinationPath)
+  ));
+  if (!previousOperation || !previousOperation.managedHooks) {
     return null;
   }
 
-  const hooksConfig = readJsonObject(hooksSourcePath, 'hooks config');
-  const resolvedHooks = replacePluginRootPlaceholders(hooksConfig.hooks, pluginRoot);
-  if (!resolvedHooks || typeof resolvedHooks !== 'object' || Array.isArray(resolvedHooks)) {
-    throw new Error(`Invalid hooks config at ${hooksSourcePath}: expected "hooks" to be a JSON object`);
+  return validateRecordedManagedHooks(
+    previousOperation.managedHooks,
+    'previous managed hooks'
+  );
+}
+
+function preflightClaudeSettingsOperations(plan) {
+  const settingsOperations = plan.operations.filter(operation => (
+    operation.kind === 'update-claude-settings'
+    || operation.kind === 'remove-claude-settings-hooks'
+  ));
+  if (settingsOperations.length === 0) {
+    return new Map();
   }
 
+  const previousState = readPreviousInstallState(plan);
+  return new Map(settingsOperations.map(operation => {
+    assertSafeInstallOperation(plan, operation);
+    const managedHooks = validateManagedHooks(operation.managedHooks);
+    const settings = readSettings(operation.destinationPath);
+    const previousManagedHooks = findPreviousManagedHooks(previousState, plan, operation);
+    if (operation.kind === 'remove-claude-settings-hooks') {
+      const removal = uninstallManagedHooks(settings, managedHooks);
+      if (removal.retained.length > 0) {
+        throw new Error(
+          `Refusing to disable modified Claude hooks in ${operation.destinationPath}; `
+          + 'run the ECC uninstaller to review retained entries.'
+        );
+      }
+    } else {
+      mergeManagedHooks(settings, managedHooks, { previousManagedHooks });
+    }
+    return [operation, { managedHooks, previousManagedHooks }];
+  }));
+}
+
+function prepareHookConsentMigration(plan, migration) {
+  if (plan.hookConsent !== 'declined') {
+    return migration;
+  }
+  const previousState = readPreviousInstallState(plan);
+  if (!previousState) {
+    return migration;
+  }
+
+  const removals = (previousState.operations || [])
+    .filter(operation => operation.kind === 'update-claude-settings')
+    .map(operation => ({
+      ...operation,
+      kind: 'remove-claude-settings-hooks',
+      strategy: 'remove-hook-ids',
+      scaffoldOnly: false,
+    }));
+  if (removals.length === 0) {
+    return migration;
+  }
+  const removalDestinations = new Set(removals.map(operation => comparablePath(
+    operation.destinationPath
+  )));
   return {
-    hooksOperation,
-    hooksDestinationPath,
-    resolvedHooksConfig: {
-      ...hooksConfig,
-      hooks: resolvedHooks,
+    ...migration,
+    // Disable hooks only after every ordinary install operation succeeds so a
+    // partial reinstall cannot silently revoke working hooks before failing.
+    appliedOperations: [...migration.appliedOperations, ...removals],
+    finalState: {
+      ...migration.finalState,
+      operations: migration.finalState.operations.filter(operation => !(
+        operation.kind === 'update-claude-settings'
+        && removalDestinations.has(comparablePath(operation.destinationPath))
+      )),
     },
+    bridgeState: {
+      ...migration.bridgeState,
+      request: {
+        ...migration.bridgeState.request,
+        hookConsent: 'enabled',
+      },
+      resolution: {
+        ...migration.bridgeState.resolution,
+        selectedModules: [...new Set([
+          ...migration.bridgeState.resolution.selectedModules,
+          'hooks-runtime',
+        ])],
+      },
+    },
+    requiresBridgeState: true,
   };
 }
 
 function previewInstallPlan(plan) {
-  const migration = prepareClaudeSkillMigration(plan);
+  const migration = prepareHookConsentMigration(
+    plan,
+    prepareUserOwnedFileGuard(plan, prepareClaudeSkillMigration(plan))
+  );
+  const appliedPlan = {
+    ...plan,
+    operations: migration.appliedOperations,
+  };
+  preflightClaudeSettingsOperations(appliedPlan);
   const hookConsentWarnings = planMaterializesHookRuntime(plan) && plan.hookConsent !== 'enabled'
     ? ['Applying this plan requires an explicit hook decision: --enable-hooks or --no-hooks.']
     : [];
@@ -356,6 +425,23 @@ function previewInstallPlan(plan) {
 
 function applyInstallPlan(plan, dependencies = {}) {
   assertHookConsentReady(plan);
+  const isClaudeManualTarget = plan.adapter
+    && (plan.adapter.target === 'claude' || plan.adapter.target === 'claude-project');
+  const settingsPathToLock = isClaudeManualTarget
+    ? getClaudeSettingsPath(plan.targetRoot)
+    : null;
+  if (settingsPathToLock) {
+    assertSafeInstallOperation(plan, { destinationPath: settingsPathToLock });
+  }
+  return settingsPathToLock
+    ? runWithSettingsLock(
+      settingsPathToLock,
+      () => applyInstallPlanLocked(plan, dependencies, true)
+    )
+    : applyInstallPlanLocked(plan, dependencies, false);
+}
+
+function applyInstallPlanLocked(plan, dependencies = {}, settingsLockHeld = false) {
   const persistInstallState = dependencies.writeInstallState || writeInstallState;
   const beforeInstallStateRead = dependencies.beforeInstallStateRead;
   const beforeOperationWrite = dependencies.beforeOperationWrite;
@@ -363,30 +449,37 @@ function applyInstallPlan(plan, dependencies = {}) {
   if (typeof beforeInstallStateRead === 'function') {
     beforeInstallStateRead({ plan });
   }
-  const migration = prepareClaudeSkillMigration(plan);
+  const migration = prepareHookConsentMigration(
+    plan,
+    prepareUserOwnedFileGuard(plan, prepareClaudeSkillMigration(plan))
+  );
   const appliedPlan = {
     ...plan,
     operations: migration.appliedOperations,
   };
-  const resolvedClaudeHooksPlan = buildResolvedClaudeHooks(appliedPlan);
+  const preparedClaudeSettings = preflightClaudeSettingsOperations(appliedPlan);
   const disabledServers = parseDisabledMcpServers(process.env.ECC_DISABLED_MCPS);
   const linkIndex = buildLinkIndexForPlan(appliedPlan);
   const hasLegacyMigration = migration.legacyOperationsToRemove.length > 0;
-
-  if (migration.requiresBridgeState) {
-    // Own every operation that may be written during a flat-skill migration
-    // before the first copy. A later failure is retryable and uninstall can
-    // clean the entire partial install, including non-skill files. During
-    // legacy migration the bridge also retains the prior managed operations.
-    if (typeof beforeInstallStateWrite === 'function') {
-      beforeInstallStateWrite({ plan: appliedPlan, state: migration.bridgeState });
+  const hookRemovalCount = appliedPlan.operations.filter(operation => (
+    operation.kind === 'remove-claude-settings-hooks'
+  )).length;
+  let completedHookRemovalCount = 0;
+  const writtenDestinations = new Set();
+    if (migration.requiresBridgeState) {
+      // Own every operation that may be written during a flat-skill migration
+      // before the first copy. A later failure is retryable and uninstall can
+      // clean the entire partial install, including non-skill files. During
+      // legacy migration the bridge also retains the prior managed operations.
+      if (typeof beforeInstallStateWrite === 'function') {
+        beforeInstallStateWrite({ plan: appliedPlan, state: migration.bridgeState });
+      }
+      persistInstallState(plan.installStatePath, migration.bridgeState);
     }
-    persistInstallState(plan.installStatePath, migration.bridgeState);
-  }
 
-  let finalState;
-  try {
-    for (const operation of appliedPlan.operations) {
+    let finalState;
+    try {
+      for (const operation of appliedPlan.operations) {
       assertSafeInstallOperation(appliedPlan, operation);
       assertSafeClaudeSkillOperation(appliedPlan, operation);
       fs.mkdirSync(path.dirname(operation.destinationPath), { recursive: true });
@@ -397,6 +490,44 @@ function applyInstallPlan(plan, dependencies = {}) {
       assertSafeClaudeSkillOperation(appliedPlan, operation);
       if (typeof beforeOperationWrite === 'function') {
         beforeOperationWrite({ plan: appliedPlan, operation });
+      }
+      assertNoNewUserOwnedFile(migration, operation);
+
+      if (
+        operation.kind === 'update-claude-settings'
+        || operation.kind === 'remove-claude-settings-hooks'
+      ) {
+        // Re-read at the write boundary so unrelated settings added after
+        // planning are preserved. A same-ID change still fails closed.
+        const prepared = preparedClaudeSettings.get(operation);
+        assertSafeInstallOperation(appliedPlan, operation);
+        updateSettingsAtomic(operation.destinationPath, latestSettings => {
+          const merged = operation.kind === 'remove-claude-settings-hooks'
+            ? uninstallManagedHooks(latestSettings, prepared.managedHooks)
+            : mergeManagedHooks(latestSettings, prepared.managedHooks, {
+              previousManagedHooks: prepared.previousManagedHooks,
+            });
+          if (
+            operation.kind === 'remove-claude-settings-hooks'
+            && merged.retained.length > 0
+          ) {
+            throw new Error(
+              `Refusing to disable modified Claude hooks in ${operation.destinationPath}; `
+              + 'run the ECC uninstaller to review retained entries.'
+            );
+          }
+          return merged;
+        }, {
+          lockHeld: settingsLockHeld,
+          beforeCommit() {
+            assertSafeInstallOperation(appliedPlan, operation);
+          },
+        });
+        writtenDestinations.add(operation.destinationPath);
+        if (operation.kind === 'remove-claude-settings-hooks') {
+          completedHookRemovalCount += 1;
+        }
+        continue;
       }
 
       if (operation.kind === 'merge-json') {
@@ -417,6 +548,7 @@ function applyInstallPlan(plan, dependencies = {}) {
         );
         const mergedValue = deepMergeJson(currentValue, filteredPayload);
         fs.writeFileSync(operation.destinationPath, formatJson(mergedValue), 'utf8');
+        writtenDestinations.add(operation.destinationPath);
         continue;
       }
 
@@ -424,6 +556,7 @@ function applyInstallPlan(plan, dependencies = {}) {
         const sourceConfig = readJsonObject(operation.sourcePath, 'MCP config');
         const filteredConfig = filterMcpConfig(sourceConfig, disabledServers).config;
         fs.writeFileSync(operation.destinationPath, formatJson(filteredConfig), 'utf8');
+        writtenDestinations.add(operation.destinationPath);
         continue;
       }
 
@@ -446,59 +579,64 @@ function applyInstallPlan(plan, dependencies = {}) {
           })
           : transformed;
         fs.writeFileSync(operation.destinationPath, installedContent, 'utf8');
+        writtenDestinations.add(operation.destinationPath);
         continue;
       }
 
       fs.copyFileSync(operation.sourcePath, operation.destinationPath);
-    }
-
-    if (resolvedClaudeHooksPlan) {
-      assertSafeInstallOperation(appliedPlan, resolvedClaudeHooksPlan.hooksOperation);
-      fs.mkdirSync(path.dirname(resolvedClaudeHooksPlan.hooksDestinationPath), { recursive: true });
-      assertSafeInstallOperation(appliedPlan, resolvedClaudeHooksPlan.hooksOperation);
-      if (typeof beforeOperationWrite === 'function') {
-        beforeOperationWrite({ plan: appliedPlan, operation: resolvedClaudeHooksPlan.hooksOperation });
+      writtenDestinations.add(operation.destinationPath);
       }
-      fs.writeFileSync(
-        resolvedClaudeHooksPlan.hooksDestinationPath,
-        JSON.stringify(resolvedClaudeHooksPlan.resolvedHooksConfig, null, 2) + '\n',
-        'utf8'
-      );
-    }
 
-    if (hasLegacyMigration) {
-      removeLegacyClaudeSkillFiles(migration, plan.targetRoot);
-    }
+      if (hasLegacyMigration) {
+        removeLegacyClaudeSkillFiles(migration, plan.targetRoot);
+      }
 
-    if (shouldSetClaudeCommitAttributionPreference(appliedPlan)) {
-      writeClaudeCommitAttributionPreference(path.join(plan.targetRoot, 'settings.json'));
-    }
-
-    finalState = stateWithContentDigests(migration.finalState, appliedPlan);
-    if (typeof beforeInstallStateWrite === 'function') {
-      beforeInstallStateWrite({ plan: appliedPlan, state: finalState });
-    }
-    persistInstallState(plan.installStatePath, finalState);
-  } catch (error) {
-    if (migration.requiresBridgeState) {
-      try {
-        // The bridge was committed before any writes. Refresh it with hashes of
-        // files that now exist so uninstall can remove only bytes this attempt
-        // actually installed while preserving user changes.
-        persistInstallState(
-          plan.installStatePath,
-          stateWithContentDigests(migration.bridgeState, appliedPlan)
-        );
-      } catch (checkpointError) {
-        throw new Error(
-          `${error.message} Install-state checkpoint also failed: ${checkpointError.message}`,
-          { cause: error }
+      if (shouldSetClaudeCommitAttributionPreference(appliedPlan)) {
+        writeClaudeCommitAttributionPreference(
+          getClaudeSettingsPath(plan.targetRoot),
+          { lockHeld: settingsLockHeld }
         );
       }
+
+      finalState = stateWithContentDigests(migration.finalState, appliedPlan);
+      if (typeof beforeInstallStateWrite === 'function') {
+        beforeInstallStateWrite({ plan: appliedPlan, state: finalState });
+      }
+      persistInstallState(plan.installStatePath, finalState);
+    } catch (error) {
+      if (migration.requiresBridgeState) {
+        try {
+          // The bridge was committed before any writes. Refresh it with hashes of
+          // files that now exist so uninstall can remove only bytes this attempt
+          // actually installed while preserving user changes.
+          persistInstallState(
+            plan.installStatePath,
+            stateWithContentDigests(
+              preserveUnwrittenFiles(
+                hookRemovalCount > 0 && completedHookRemovalCount === hookRemovalCount
+                  ? migration.finalState
+                  : migration.bridgeState,
+                migration,
+                writtenDestinations
+              ),
+              {
+                ...appliedPlan,
+                operations: appliedPlan.operations.filter(operation => (
+                  writtenDestinations.has(operation.destinationPath)
+                )),
+              }
+            )
+          );
+        } catch (checkpointError) {
+          throw new Error(
+            `${error.message} Install-state checkpoint also failed: ${checkpointError.message}`,
+            { cause: error }
+          );
+        }
+      }
+      throw error;
     }
-    throw error;
-  }
-  let antigravityMigrationWarnings = [];
+    let antigravityMigrationWarnings = [];
   try {
     const antigravityMigration = cleanupLegacyAntigravityInstall(appliedPlan);
     if (antigravityMigration.detected && !antigravityMigration.complete) {
@@ -528,20 +666,20 @@ function applyInstallPlan(plan, dependencies = {}) {
     ];
   }
 
-  return {
-    ...plan,
-    statePreview: finalState,
-    plannedOperations: [...plan.operations],
-    operations: migration.appliedOperations,
-    skippedOperations: migration.skippedOperations,
-    warnings: [
-      ...(Array.isArray(plan.warnings) ? plan.warnings : []),
-      ...migration.warnings,
-      ...antigravityMigrationWarnings,
-      ...opencodeMigrationWarnings,
-    ],
-    applied: true,
-  };
+    return {
+      ...plan,
+      statePreview: finalState,
+      plannedOperations: [...plan.operations],
+      operations: migration.appliedOperations,
+      skippedOperations: migration.skippedOperations,
+      warnings: [
+        ...(Array.isArray(plan.warnings) ? plan.warnings : []),
+        ...migration.warnings,
+        ...antigravityMigrationWarnings,
+        ...opencodeMigrationWarnings,
+      ],
+      applied: true,
+    };
 }
 
 module.exports = {

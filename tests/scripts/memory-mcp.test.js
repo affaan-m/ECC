@@ -25,32 +25,43 @@ async function test(name, fn) {
     passed += 1;
   } catch (error) {
     console.log(`  FAIL ${name}`);
-    console.log(`    ${error.stack || error.message}`);
+    console.log(`    ${error.mcpDiagnostic ? JSON.stringify(error.mcpDiagnostic) : error.stack || error.message}`);
     failed += 1;
   }
 }
 
 function createFixture(extraEnv = {}) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-memory-mcp-'));
-  const projectRoot = path.join(root, 'project');
-  const homeDir = path.join(root, 'home');
-  fs.mkdirSync(path.join(projectRoot, '.git'), { recursive: true });
-  fs.mkdirSync(homeDir, { recursive: true });
-  return {
-    root,
-    projectRoot,
-    env: Object.fromEntries(
-      Object.entries({
-        ...process.env,
-        HOME: homeDir,
-        USERPROFILE: homeDir,
-        ECC_MEMORY_PROJECT_ROOT: path.join(projectRoot, '.ecc', 'memory'),
-        ECC_MEMORY_USER_ROOT: path.join(homeDir, '.ecc', 'memory'),
-        ECC_MEMORY_HARNESS: 'claude',
-        ...extraEnv,
-      }).filter(([, value]) => typeof value === 'string')
-    ),
-  };
+  try {
+    const projectRoot = path.join(root, 'project');
+    const homeDir = path.join(root, 'home');
+    fs.mkdirSync(path.join(projectRoot, '.git'), { recursive: true });
+    fs.mkdirSync(homeDir, { recursive: true });
+    return {
+      root,
+      projectRoot,
+      env: Object.fromEntries(
+        Object.entries({
+          ...process.env,
+          HOME: homeDir,
+          USERPROFILE: homeDir,
+          ECC_MEMORY_PROJECT_ROOT: path.join(projectRoot, '.ecc', 'memory'),
+          ECC_MEMORY_USER_ROOT: path.join(homeDir, '.ecc', 'memory'),
+          ECC_MEMORY_HARNESS: 'claude',
+          ECC_MEMORY_ALLOW_USER_SCOPE: '0',
+          ...extraEnv,
+        }).filter(([, value]) => typeof value === 'string')
+      ),
+    };
+  } catch (error) {
+    try { fs.rmSync(root, { recursive: true, force: true }); }
+    catch {
+      const failure = new Error('MCP fixture cleanup failed', { cause: error });
+      failure.mcpCleanupFailure = 'fixture_removal_error';
+      throw failure;
+    }
+    throw error;
+  }
 }
 
 function parseTextResult(result) {
@@ -60,105 +71,261 @@ function parseTextResult(result) {
 }
 
 async function withClient(fn, options = {}) {
-  const fixture = createFixture(options.env);
-  const child = spawn(process.execPath, [options.server || SERVER], {
-    cwd: fixture.projectRoot,
-    env: fixture.env,
-    stdio: ['pipe', 'pipe', 'pipe'],
-  });
+  const started = Date.now();
   const pending = new Map();
+  const mode = options.env?.ECC_MEMORY_ALLOW_USER_SCOPE === '1' ? 'allow' : 'deny';
+  let fixture;
+  let child;
+  let phase = 'setup';
   let nextId = 1;
-  let stdout = '';
-  let stderr = '';
+  let stdout = Buffer.alloc(0);
+  let stdoutBytes = 0;
+  let stderrBytes = 0;
+  let closed = false;
+  let tearingDown = false;
+  let transportError;
+  let primaryError;
+  let primaryFailed = false;
+  let failureKind;
+  let failureElapsedMs;
+  let teardownStarted;
+  let failurePhase;
+  let cleanupFailure;
+  let killStatus = 'not_attempted';
+  let notifyClose;
+  const closePromise = new Promise(resolve => { notifyClose = resolve; });
+  let rejectTransport;
+  const transportFailure = new Promise((_, reject) => { rejectTransport = reject; });
+  // The child may fail before the initialize or callback race is installed.
+  transportFailure.catch(() => {});
 
-  child.stdout.on('data', chunk => {
-    stdout += chunk.toString('utf8');
-    let newlineIndex = stdout.indexOf('\n');
-    while (newlineIndex >= 0) {
-      const line = stdout.slice(0, newlineIndex);
-      stdout = stdout.slice(newlineIndex + 1);
-      if (line.trim()) {
-        const message = JSON.parse(line);
+  const bounded = value => Math.min(2147483647, Math.max(0, Math.trunc(value)));
+  const safeCode = error => [
+    'EPIPE', 'ENOENT', 'EACCES', 'EPERM', 'EINVAL', 'ECONNRESET',
+    'ERR_STREAM_DESTROYED', 'ERR_STREAM_WRITE_AFTER_END', 'ERR_ASSERTION',
+  ].includes(error?.code) ? error.code : null;
+  const diagnostic = () => ({
+    phase: failurePhase || phase,
+    mode,
+    reason: failureKind || cleanupFailure || 'assertion_or_callback',
+    failureElapsedMs: failureElapsedMs ?? null,
+    teardownElapsedMs: bounded(Date.now() - teardownStarted),
+    elapsedMs: bounded(Date.now() - started),
+    stdoutBytes,
+    stderrBytes,
+    pendingRequests: pending.size,
+    childStarted: Boolean(child?.pid),
+    childClosed: closed,
+    exitCode: Number.isInteger(child?.exitCode) ? child.exitCode : null,
+    signal: ['SIGTERM', 'SIGKILL', 'SIGINT'].includes(child?.signalCode) ? child.signalCode : null,
+    errorCode: safeCode(primaryError),
+    cleanupFailure: cleanupFailure || null,
+    killStatus,
+  });
+  function settleAll(error) {
+    for (const waiter of pending.values()) waiter.reject(error);
+    pending.clear();
+  }
+  function fail(kind, cause) {
+    if (tearingDown) {
+      cleanupFailure ||= kind;
+      return;
+    }
+    if (transportError) return;
+    transportError = new Error(`MCP test client ${kind}`);
+    if (safeCode(cause)) transportError.code = safeCode(cause);
+    failurePhase = phase;
+    failureKind = kind;
+    settleAll(transportError);
+    rejectTransport(transportError);
+  }
+  function send(message) {
+    if (transportError) throw transportError;
+    try {
+      child.stdin.write(`${JSON.stringify(message)}\n`, error => {
+        if (error) fail('stdin_write_error', error);
+      });
+    } catch (error) {
+      fail('stdin_write_error', error);
+      throw transportError;
+    }
+  }
+  function request(method, params = {}) {
+    const id = nextId++;
+    const promise = new Promise((resolve, reject) => {
+      if (transportError || tearingDown || closed) {
+        reject(transportError || new Error('MCP test client is closed'));
+        return;
+      }
+      const timer = setTimeout(() => {
+        fail('request_timeout');
+      }, 5000);
+      function settle(fn, value) {
+        clearTimeout(timer);
+        pending.delete(id);
+        fn(value);
+      }
+      pending.set(id, {
+        resolve: value => settle(resolve, value),
+        reject: error => settle(reject, error),
+      });
+      send({ jsonrpc: '2.0', id, method, params });
+    });
+    // Teardown rejects abandoned requests too, without an unhandled rejection.
+    promise.catch(() => {});
+    return promise;
+  }
+
+  try {
+    fixture = createFixture(options.env);
+    phase = 'spawn';
+    child = spawn(process.execPath, [options.server || SERVER], {
+      cwd: fixture.projectRoot,
+      env: fixture.env,
+      stdio: ['pipe', 'pipe', 'pipe'],
+    });
+    child.on('error', error => fail('child_error', error));
+    child.on('exit', () => {
+      if (!tearingDown) fail('child_exit');
+    });
+    child.once('close', () => {
+      closed = true;
+      notifyClose();
+      if (!tearingDown) fail('child_close');
+    });
+    for (const stream of ['stdin', 'stdout', 'stderr']) {
+      child[stream].on('error', error => fail(`${stream}_error`, error));
+    }
+    child.stdout.on('end', () => { if (!tearingDown) fail('stdout_end'); });
+    for (const stream of ['stdin', 'stdout']) {
+      child[stream].on('close', () => { if (!tearingDown) fail(`${stream}_close`); });
+    }
+    child.stderr.on('data', chunk => {
+      stderrBytes = bounded(stderrBytes + chunk.length);
+    });
+    child.stdout.on('data', chunk => {
+      stdoutBytes = bounded(stdoutBytes + chunk.length);
+      if (transportError || tearingDown) return;
+      // Decode complete lines, so a UTF-8 character split across chunks survives.
+      stdout = Buffer.concat([stdout, chunk]);
+      let newlineIndex;
+      while ((newlineIndex = stdout.indexOf(10)) >= 0) {
+        if (newlineIndex > 1024 * 1024) { fail('oversized_frame'); return; }
+        const line = stdout.subarray(0, newlineIndex).toString('utf8');
+        stdout = stdout.subarray(newlineIndex + 1);
+        if (!line.trim()) continue;
+        let message;
+        try {
+          message = JSON.parse(line);
+          if (!message || message.jsonrpc !== '2.0' || !Number.isInteger(message.id)
+            || (Object.hasOwn(message, 'result') === Object.hasOwn(message, 'error'))
+            || (Object.hasOwn(message, 'error') && (!message.error
+              || !Number.isInteger(message.error.code) || typeof message.error.message !== 'string'))) {
+            fail('invalid_frame');
+            return;
+          }
+        } catch {
+          fail('malformed_frame');
+          return;
+        }
         const waiter = pending.get(message.id);
         if (waiter) {
-          pending.delete(message.id);
           if (message.error) {
+            // Existing authorization/protocol assertions inspect this RPC error.
+            // The test logger emits only mcpDiagnostic when it escapes the helper.
             waiter.reject(new Error(`${message.error.code}: ${message.error.message}`));
           } else {
             waiter.resolve(message.result);
           }
         }
       }
-      newlineIndex = stdout.indexOf('\n');
+      if (stdout.length > 1024 * 1024) fail('oversized_frame');
+    });
+
+    phase = 'initialize';
+    const initialized = await request('initialize', {
+      protocolVersion: '2025-11-25',
+      capabilities: {},
+      clientInfo: { name: 'ecc-memory-test', version: '1.0.0' },
+    });
+    phase = 'protocol';
+    assert.strictEqual(initialized.protocolVersion, '2025-11-25');
+    phase = 'notification';
+    send({ jsonrpc: '2.0', method: 'notifications/initialized', params: {} });
+    const client = {
+      listTools: () => request('tools/list'),
+      listToolsRaw: params => request('tools/list', params),
+      callTool: ({ name, arguments: toolArguments }) => request(
+        'tools/call',
+        { name, arguments: toolArguments }
+      ),
+      callToolRaw: params => request('tools/call', params),
+      ping: params => request('ping', params),
+    };
+    phase = 'callback';
+    await Promise.race([Promise.resolve().then(() => fn(client, fixture)), transportFailure]);
+    if (transportError) throw transportError;
+    assert.strictEqual(pending.size, 0, 'MCP callback must await its requests');
+  } catch (error) {
+    primaryError = error;
+    primaryFailed = true;
+    failurePhase ||= phase;
+    failureElapsedMs = bounded(Date.now() - started);
+    if (error?.mcpCleanupFailure === 'fixture_removal_error') {
+      cleanupFailure ||= 'fixture_removal_error';
     }
-  });
-  child.stderr.on('data', chunk => {
-    stderr += chunk.toString('utf8');
-  });
-
-  function send(message) {
-    child.stdin.write(`${JSON.stringify(message)}\n`);
-  }
-
-  function request(method, params = {}) {
-    const id = nextId;
-    nextId += 1;
-    return new Promise((resolve, reject) => {
-      const timeout = setTimeout(() => {
-        pending.delete(id);
-        reject(new Error(`Timed out waiting for ${method}. stderr: ${stderr}`));
-      }, 5000);
-      pending.set(id, {
-        resolve: value => {
-          clearTimeout(timeout);
-          resolve(value);
-        },
-        reject: error => {
-          clearTimeout(timeout);
-          reject(error);
-        },
-      });
-      send({ jsonrpc: '2.0', id, method, params });
-    });
-  }
-
-  const initialized = await request('initialize', {
-    protocolVersion: '2025-11-25',
-    capabilities: {},
-    clientInfo: { name: 'ecc-memory-test', version: '1.0.0' },
-  });
-  assert.strictEqual(initialized.protocolVersion, '2025-11-25');
-  send({ jsonrpc: '2.0', method: 'notifications/initialized', params: {} });
-
-  const client = {
-    listTools: () => request('tools/list'),
-    listToolsRaw: params => request('tools/list', params),
-    callTool: ({ name, arguments: toolArguments }) => request(
-      'tools/call',
-      { name, arguments: toolArguments }
-    ),
-    callToolRaw: params => request('tools/call', params),
-  };
-
-  try {
-    await fn(client, fixture);
   } finally {
-    child.stdin.end();
-    await new Promise(resolve => {
-      if (child.exitCode !== null) {
-        resolve();
-        return;
+    tearingDown = true;
+    teardownStarted = Date.now();
+    phase = 'teardown';
+    settleAll(new Error('MCP test client is closing'));
+    stdout = Buffer.alloc(0);
+    if (child && !closed) {
+      // Keep the original total 2000 ms budget. Reserve its latter half for
+      // direct-child termination and stdio close, including on Windows.
+      let killTimer;
+      let deadlineTimer;
+      function terminate() {
+        try { killStatus = child.kill() ? 'requested' : 'not_sent'; }
+        catch { killStatus = 'error'; }
       }
-      const timeout = setTimeout(() => {
-        child.kill();
-        resolve();
-      }, 2000);
-      child.once('exit', () => {
-        clearTimeout(timeout);
-        resolve();
+      const deadline = new Promise(resolve => {
+        deadlineTimer = setTimeout(resolve, 2000);
+        killTimer = setTimeout(terminate, 1000);
       });
-    });
-    fs.rmSync(fixture.root, { recursive: true, force: true });
+      try {
+        try { child.stdin.end(); }
+        catch {
+          cleanupFailure ||= 'stdin_end_error';
+          clearTimeout(killTimer);
+          terminate();
+        }
+        await Promise.race([closePromise, deadline]);
+      } finally {
+        clearTimeout(killTimer);
+        clearTimeout(deadlineTimer);
+      }
+      if (!closed) cleanupFailure ||= 'child_close_timeout';
+    }
+    if (fixture && (!child || closed)) {
+      try { fs.rmSync(fixture.root, { recursive: true, force: true }); }
+      catch { cleanupFailure ||= 'fixture_removal_error'; }
+    }
+  }
+  if (primaryFailed || cleanupFailure) {
+    if (!primaryFailed) primaryError = new Error('MCP test client cleanup failed');
+    // Keep the primary assertion/RPC/callback error; cleanup must not replace it.
+    // A wrapper retains non-extensible or non-Error thrown values as its cause.
+    if (!primaryError || typeof primaryError !== 'object' || !Object.isExtensible(primaryError)
+      || Object.getOwnPropertyDescriptor(primaryError, 'mcpDiagnostic')?.configurable === false
+      || Object.getOwnPropertyDescriptor(primaryError, 'mcpCleanupFailure')?.configurable === false) {
+      primaryError = new Error('MCP test client failed', { cause: primaryError });
+    }
+    Object.defineProperty(primaryError, 'mcpDiagnostic', { value: diagnostic(), configurable: true });
+    if (cleanupFailure) {
+      Object.defineProperty(primaryError, 'mcpCleanupFailure', { value: cleanupFailure, configurable: true });
+    }
+    throw primaryError;
   }
 }
 
@@ -224,6 +391,25 @@ async function main() {
         client.listToolsRaw({ unexpected: true }),
         /-32602/
       );
+    });
+  });
+
+  await test('accepts the reserved _meta param on ping and rejects malformed values (#2810)', async () => {
+    await withClient(async client => {
+      assert.deepStrictEqual(await client.ping({ _meta: { progressToken: 'progress-1' } }), {});
+      assert.deepStrictEqual(await client.ping(), {});
+      assert.deepStrictEqual(await client.ping({}), {});
+
+      for (const badMeta of [null, ['not', 'an', 'object'], 'string', 42, true]) {
+        await assert.rejects(
+          client.ping({ _meta: badMeta }),
+          /-32602/,
+          `expected ping _meta=${JSON.stringify(badMeta)} to be rejected`
+        );
+      }
+
+      await assert.rejects(client.ping({ unexpected: true }), /-32602/);
+      await assert.rejects(client.ping({ _meta: {}, unexpected: true }), /-32602/);
     });
   });
 

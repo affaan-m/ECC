@@ -115,6 +115,31 @@ function runTests() {
     assert.ok(result.stdout.includes('--modules <id,id,...>'));
   })) passed++; else failed++;
 
+  if (test('Claude hook dry-run validates settings without mutating malformed input', () => {
+    const homeDir = createTempDir('install-apply-home-');
+    const projectDir = createTempDir('install-apply-project-');
+    const claudeRoot = path.join(homeDir, '.claude');
+    const settingsPath = path.join(claudeRoot, 'settings.json');
+
+    try {
+      fs.mkdirSync(claudeRoot, { recursive: true });
+      fs.writeFileSync(settingsPath, '{ malformed\n');
+
+      const result = run(
+        ['--profile', 'core', '--enable-hooks', '--dry-run', '--json'],
+        { cwd: projectDir, homeDir }
+      );
+
+      assert.notStrictEqual(result.code, 0);
+      assert.match(result.stderr, /Failed to parse Claude settings/);
+      assert.strictEqual(fs.readFileSync(settingsPath, 'utf8'), '{ malformed\n');
+      assert.deepStrictEqual(fs.readdirSync(claudeRoot), ['settings.json']);
+    } finally {
+      cleanup(homeDir);
+      cleanup(projectDir);
+    }
+  })) passed++; else failed++;
+
   if (test('guided dispatcher reports sanitized load and rejection failures', () => {
     for (const failureMode of ['load', 'reject']) {
       const result = runWithGuidedDispatcherFailure(failureMode);
@@ -487,6 +512,19 @@ function runTests() {
       const parsed = JSON.parse(result.stdout);
       assert.strictEqual(parsed.dryRun, true);
       assert.ok(parsed.plan.selectedModuleIds.includes('workflow-quality'));
+      const settingsOperations = parsed.plan.operations.filter(operation => (
+        operation.kind === 'update-claude-settings'
+      ));
+      assert.strictEqual(settingsOperations.length, 1);
+      assert.strictEqual(
+        settingsOperations[0].destinationPath,
+        path.join(homeDir, '.claude', 'settings.json')
+      );
+      assert.ok(settingsOperations[0].managedHooks.SessionStart);
+      assert.ok(!parsed.plan.operations.some(operation => (
+        operation.kind === 'copy-file'
+        && String(operation.sourceRelativePath || '').replace(/\\/g, '/') === 'hooks/hooks.json'
+      )));
       assert.ok(
         parsed.plan.operations.some(operation => (
           String(operation.sourceRelativePath || '').replace(/\\/g, '/').startsWith('skills/delivery-gate/')
@@ -532,7 +570,8 @@ function runTests() {
       assert.ok(fs.existsSync(path.join(claudeRoot, 'rules', 'ecc', 'common', 'coding-style.md')));
       assert.ok(fs.existsSync(path.join(claudeRoot, 'agents', 'architect.md')));
       assert.ok(fs.existsSync(path.join(claudeRoot, 'commands', 'plan.md')));
-      assert.ok(fs.existsSync(path.join(claudeRoot, 'hooks', 'hooks.json')));
+      assert.ok(!fs.existsSync(path.join(claudeRoot, 'hooks', 'hooks.json')));
+      assert.ok(readJson(path.join(claudeRoot, 'settings.json')).hooks.SessionStart);
       assert.ok(fs.existsSync(path.join(claudeRoot, 'scripts', 'hooks', 'session-end.js')));
       assert.ok(fs.existsSync(path.join(claudeRoot, 'scripts', 'lib', 'session-manager.js')));
       assert.ok(fs.existsSync(path.join(claudeRoot, 'plugin.json')));
@@ -747,7 +786,7 @@ function runTests() {
     assert.ok(result.stderr.includes('Unknown install module: ghost-module'));
   })) passed++; else failed++;
 
-  if (test('installs claude hooks and defaults commit attribution off', () => {
+  if (test('registers Claude hooks in settings and defaults commit attribution off', () => {
     const homeDir = createTempDir('install-apply-home-');
     const projectDir = createTempDir('install-apply-project-');
 
@@ -756,58 +795,87 @@ function runTests() {
       assert.strictEqual(result.code, 0, result.stderr);
 
       const claudeRoot = path.join(homeDir, '.claude');
-      assert.ok(fs.existsSync(path.join(claudeRoot, 'hooks', 'hooks.json')), 'hooks.json should be copied');
-      assert.deepStrictEqual(
-        readJson(path.join(claudeRoot, 'settings.json')),
-        { includeCoAuthoredBy: false }
+      assert.strictEqual(
+        fs.existsSync(path.join(claudeRoot, 'hooks', 'hooks.json')),
+        false,
+        'hooks.json should not be copied for Claude targets'
       );
+      const settings = readJson(path.join(claudeRoot, 'settings.json'));
+      assert.strictEqual(settings.includeCoAuthoredBy, false);
+      assert.ok(settings.hooks.SessionStart.some(entry => entry.id === 'session:start'));
+
+      const state = readJson(path.join(claudeRoot, 'ecc', 'install-state.json'));
+      const settingsOperation = state.operations.find(operation => (
+        operation.kind === 'update-claude-settings'
+      ));
+      assert.ok(settingsOperation, 'state should record the settings update operation');
+      assert.deepStrictEqual(settingsOperation.managedHooks, settings.hooks);
     } finally {
       cleanup(homeDir);
       cleanup(projectDir);
     }
   })) passed++; else failed++;
 
-  if (test('installs claude hooks with the safe plugin bootstrap contract', () => {
-    const homeDir = createTempDir('install-apply-home-');
-    const projectDir = createTempDir('install-apply-project-');
+  if (test('resolves Claude home and project hook commands to their installed roots', () => {
+    for (const target of ['claude', 'claude-project']) {
+      const homeDir = createTempDir(`install-apply-${target}-home-`);
+      const projectDir = createTempDir(`install-apply-${target}-project-`);
 
-    try {
-      const result = run(['--profile', 'core', '--enable-hooks'], { cwd: projectDir, homeDir });
-      assert.strictEqual(result.code, 0, result.stderr);
+      try {
+        const result = run(
+          ['--target', target, '--profile', 'core', '--enable-hooks'],
+          { cwd: projectDir, homeDir }
+        );
+        assert.strictEqual(result.code, 0, result.stderr);
 
-      const claudeRoot = path.join(homeDir, '.claude');
-      const installedHooks = readJson(path.join(claudeRoot, 'hooks', 'hooks.json'));
+        const claudeRoot = target === 'claude'
+          ? path.join(homeDir, '.claude')
+          : path.join(projectDir, '.claude');
+        const settings = readJson(path.join(claudeRoot, 'settings.json'));
+        const state = readJson(path.join(claudeRoot, 'ecc', 'install-state.json'));
+        const installedRoot = state.target.root;
+        assert.strictEqual(fs.realpathSync(installedRoot), fs.realpathSync(claudeRoot));
+        const installedBashDispatcherEntry = settings.hooks.PreToolUse.find(
+          entry => entry.id === 'pre:bash:dispatcher'
+        );
+        assert.ok(installedBashDispatcherEntry);
+        const command = installedBashDispatcherEntry.hooks[0].command;
+        assert.ok(command.startsWith('node -e '));
+        assert.ok(command.includes('plugin-hook-bootstrap.js'));
+        assert.ok(command.includes('pre-bash-dispatcher.js'));
+        assert.ok(
+          command.includes(Buffer.from(installedRoot, 'utf8').toString('base64')),
+          `${target} command should encode its absolute root without shell interpolation`
+        );
+        assert.ok(!command.includes(claudeRoot));
+        assert.ok(!command.includes('var e=process.env.CLAUDE_PLUGIN_ROOT;'));
+        assert.ok(!command.includes('${CLAUDE_PLUGIN_ROOT}'));
 
-      const installedBashDispatcherEntry = installedHooks.hooks.PreToolUse.find(entry => entry.id === 'pre:bash:dispatcher');
-      assert.ok(installedBashDispatcherEntry, 'hooks/hooks.json should include the consolidated Bash dispatcher hook');
-      assert.strictEqual(typeof installedBashDispatcherEntry.hooks[0].command, 'string', 'hooks/hooks.json should install string-form commands for Claude Code schema compatibility');
-      assert.ok(
-        installedBashDispatcherEntry.hooks[0].command.startsWith('node -e '),
-        'hooks/hooks.json should use the inline node bootstrap contract'
-      );
-      assert.ok(
-        installedBashDispatcherEntry.hooks[0].command.includes('plugin-hook-bootstrap.js'),
-        'hooks/hooks.json should route plugin-managed hooks through the shared bootstrap'
-      );
-      assert.ok(
-        installedBashDispatcherEntry.hooks[0].command.includes('CLAUDE_PLUGIN_ROOT'),
-        'hooks/hooks.json should still consult CLAUDE_PLUGIN_ROOT for runtime resolution'
-      );
-      assert.ok(
-        installedBashDispatcherEntry.hooks[0].command.includes('pre-bash-dispatcher.js'),
-        'hooks/hooks.json should point the Bash preflight contract at the consolidated dispatcher'
-      );
-      assert.ok(
-        !installedBashDispatcherEntry.hooks[0].command.includes('\\"'),
-        'hooks/hooks.json should avoid escaped double quotes that break Windows Git Bash parsing'
-      );
-      assert.ok(
-        !installedBashDispatcherEntry.hooks[0].command.includes('${CLAUDE_PLUGIN_ROOT}'),
-        'hooks/hooks.json should not retain raw CLAUDE_PLUGIN_ROOT shell placeholders after install'
-      );
-    } finally {
-      cleanup(homeDir);
-      cleanup(projectDir);
+        const smokeEntry = settings.hooks.PreToolUse.find(
+          entry => entry.id === 'pre:write:doc-file-warning'
+        );
+        const smokeResult = spawnSync(smokeEntry.hooks[0].command, {
+          input: JSON.stringify({
+            hook_event_name: 'PreToolUse',
+            tool_name: 'Write',
+            tool_input: { file_path: 'README.md' },
+          }),
+          encoding: 'utf8',
+          cwd: projectDir,
+          env: {
+            ...process.env,
+            HOME: homeDir,
+            USERPROFILE: homeDir,
+            ECC_DISABLED_HOOKS: 'pre:write:doc-file-warning',
+          },
+          shell: true,
+          timeout: DEFAULT_INSTALL_APPLY_TIMEOUT_MS,
+        });
+        assert.strictEqual(smokeResult.status, 0, smokeResult.stderr);
+      } finally {
+        cleanup(homeDir);
+        cleanup(projectDir);
+      }
     }
   })) passed++; else failed++;
 
@@ -840,12 +908,16 @@ function runTests() {
       assert.deepStrictEqual(
         settings.hooks.UserPromptSubmit,
         [{ matcher: '*', hooks: [{ type: 'command', command: 'echo custom-submit' }] }],
-        'existing hooks should be left untouched'
+        'unrelated existing hooks should be preserved'
       );
       assert.deepStrictEqual(
-        settings.hooks.PreToolUse,
-        [{ matcher: 'Write', hooks: [{ type: 'command', command: 'echo custom-pretool' }] }],
-        'managed Claude hooks should not be injected into settings.json'
+        settings.hooks.PreToolUse[0],
+        { matcher: 'Write', hooks: [{ type: 'command', command: 'echo custom-pretool' }] },
+        'existing event entries should retain their order and content'
+      );
+      assert.ok(
+        settings.hooks.PreToolUse.some(entry => entry.id === 'pre:bash:dispatcher'),
+        'managed Claude hooks should be registered alongside user hooks'
       );
     } finally {
       cleanup(homeDir);
@@ -927,7 +999,7 @@ function runTests() {
     }
   })) passed++; else failed++;
 
-  if (test('reinstall keeps commit attribution disabled when only managed hooks are installed', () => {
+  if (test('reinstall is idempotent for managed hooks and keeps commit attribution disabled', () => {
     const homeDir = createTempDir('install-apply-home-');
     const projectDir = createTempDir('install-apply-project-');
 
@@ -938,17 +1010,17 @@ function runTests() {
       const secondInstall = run(['--profile', 'core', '--enable-hooks'], { cwd: projectDir, homeDir });
       assert.strictEqual(secondInstall.code, 0, secondInstall.stderr);
 
-      assert.deepStrictEqual(
-        readJson(path.join(homeDir, '.claude', 'settings.json')),
-        { includeCoAuthoredBy: false }
-      );
+      const settings = readJson(path.join(homeDir, '.claude', 'settings.json'));
+      assert.strictEqual(settings.includeCoAuthoredBy, false);
+      const ids = Object.values(settings.hooks).flat().map(entry => entry.id);
+      assert.strictEqual(ids.length, new Set(ids).size, 'managed hook IDs should not duplicate');
     } finally {
       cleanup(homeDir);
       cleanup(projectDir);
     }
   })) passed++; else failed++;
 
-  if (test('reinstall leaves pre-existing hook-based settings.json untouched apart from co-author preference', () => {
+  if (test('reinstall preserves pre-existing hook entries while registering managed hooks', () => {
     const homeDir = createTempDir('install-apply-home-');
     const projectDir = createTempDir('install-apply-project-');
 
@@ -967,10 +1039,9 @@ function runTests() {
       assert.strictEqual(secondInstall.code, 0, secondInstall.stderr);
 
       const afterSecondInstall = readJson(settingsPath);
-      assert.deepStrictEqual(afterSecondInstall, {
-        ...legacySettings,
-        includeCoAuthoredBy: false,
-      });
+      assert.strictEqual(afterSecondInstall.includeCoAuthoredBy, false);
+      assert.deepStrictEqual(afterSecondInstall.hooks.PreToolUse[0], legacySettings.hooks.PreToolUse[0]);
+      assert.ok(afterSecondInstall.hooks.PreToolUse.some(entry => entry.id === 'pre:bash:dispatcher'));
     } finally {
       cleanup(homeDir);
       cleanup(projectDir);
@@ -995,7 +1066,9 @@ function runTests() {
       assert.strictEqual(install.code, 0, install.stderr);
 
       const afterInstall = readJson(settingsPath);
-      assert.deepStrictEqual(afterInstall, customSettings);
+      assert.strictEqual(afterInstall.includeCoAuthoredBy, true);
+      assert.strictEqual(afterInstall.theme, 'dark');
+      assert.ok(afterInstall.hooks.SessionStart.some(entry => entry.id === 'session:start'));
     } finally {
       cleanup(homeDir);
       cleanup(projectDir);
@@ -1022,14 +1095,17 @@ function runTests() {
       assert.strictEqual(install.code, 0, install.stderr);
 
       const afterInstall = readJson(settingsPath);
-      assert.deepStrictEqual(afterInstall, customSettings);
+      assert.deepStrictEqual(afterInstall.attribution, customSettings.attribution);
+      assert.strictEqual(afterInstall.theme, 'dark');
+      assert.ok(!Object.hasOwn(afterInstall, 'includeCoAuthoredBy'));
+      assert.ok(afterInstall.hooks.SessionStart.some(entry => entry.id === 'session:start'));
     } finally {
       cleanup(homeDir);
       cleanup(projectDir);
     }
   })) passed++; else failed++;
 
-  if (test('ignores malformed existing settings.json during claude install', () => {
+  if (test('malformed Claude settings aborts before any install mutation', () => {
     const homeDir = createTempDir('install-apply-home-');
     const projectDir = createTempDir('install-apply-project-');
 
@@ -1040,17 +1116,17 @@ function runTests() {
       fs.writeFileSync(settingsPath, '{ invalid json\n');
 
       const result = run(['--profile', 'core', '--enable-hooks'], { cwd: projectDir, homeDir });
-      assert.strictEqual(result.code, 0, result.stderr);
+      assert.notStrictEqual(result.code, 0);
+      assert.match(result.stderr, /Failed to parse Claude settings/);
       assert.strictEqual(fs.readFileSync(settingsPath, 'utf8'), '{ invalid json\n');
-      assert.ok(fs.existsSync(path.join(claudeRoot, 'hooks', 'hooks.json')), 'hooks.json should still be copied');
-      assert.ok(fs.existsSync(path.join(claudeRoot, 'ecc', 'install-state.json')), 'install state should still be written');
+      assert.deepStrictEqual(fs.readdirSync(claudeRoot), ['settings.json']);
     } finally {
       cleanup(homeDir);
       cleanup(projectDir);
     }
   })) passed++; else failed++;
 
-  if (test('ignores non-object existing settings.json during claude install', () => {
+  if (test('non-object Claude settings aborts before any install mutation', () => {
     const homeDir = createTempDir('install-apply-home-');
     const projectDir = createTempDir('install-apply-project-');
 
@@ -1061,76 +1137,44 @@ function runTests() {
       fs.writeFileSync(settingsPath, '[]\n');
 
       const result = run(['--profile', 'core', '--enable-hooks'], { cwd: projectDir, homeDir });
-      assert.strictEqual(result.code, 0, result.stderr);
+      assert.notStrictEqual(result.code, 0);
+      assert.match(result.stderr, /expected a JSON object/);
       assert.strictEqual(fs.readFileSync(settingsPath, 'utf8'), '[]\n');
-      assert.ok(fs.existsSync(path.join(claudeRoot, 'hooks', 'hooks.json')), 'hooks.json should still be copied');
-      assert.ok(fs.existsSync(path.join(claudeRoot, 'ecc', 'install-state.json')), 'install state should still be written');
+      assert.deepStrictEqual(fs.readdirSync(claudeRoot), ['settings.json']);
     } finally {
       cleanup(homeDir);
       cleanup(projectDir);
     }
   })) passed++; else failed++;
 
-  if (test('fails when source hooks.json root is not an object before copying files', () => {
-    const tempDir = createTempDir('install-apply-invalid-hooks-');
-    const targetRoot = path.join(tempDir, '.claude');
-    const installStatePath = path.join(targetRoot, 'ecc', 'install-state.json');
-    const sourceHooksPath = path.join(tempDir, 'hooks.json');
+  if (test('same-id Claude hook conflict aborts before any install mutation', () => {
+    const homeDir = createTempDir('install-apply-home-');
+    const projectDir = createTempDir('install-apply-project-');
 
     try {
-      fs.writeFileSync(sourceHooksPath, '[]\n');
-
-      assert.throws(() => {
-        applyInstallPlan({
-          targetRoot,
-          installStatePath,
-          hookConsent: 'enabled',
-          statePreview: {
-            schemaVersion: 'ecc.install.v1',
-            installedAt: new Date().toISOString(),
-            target: {
-              id: 'claude-home',
-              kind: 'home',
-              root: targetRoot,
-              installStatePath,
-            },
-            request: {
-              profile: 'core',
-              modules: [],
-              includeComponents: [],
-              excludeComponents: [],
-              legacyLanguages: [],
-              legacyMode: false,
-            },
-            resolution: {
-              selectedModules: ['hooks-runtime'],
-              skippedModules: [],
-            },
-            source: {
-              repoVersion: null,
-              repoCommit: null,
-              manifestVersion: 1,
-            },
-            operations: [],
-          },
-          adapter: { target: 'claude' },
-          operations: [{
-            kind: 'copy-file',
-            moduleId: 'hooks-runtime',
-            sourcePath: sourceHooksPath,
-            sourceRelativePath: 'hooks/hooks.json',
-            destinationPath: path.join(targetRoot, 'hooks', 'hooks.json'),
-            strategy: 'preserve-relative-path',
-            ownership: 'managed',
-            scaffoldOnly: false,
+      const claudeRoot = path.join(homeDir, '.claude');
+      fs.mkdirSync(claudeRoot, { recursive: true });
+      const settingsPath = path.join(claudeRoot, 'settings.json');
+      const existing = {
+        theme: 'dark',
+        hooks: {
+          PreToolUse: [{
+            id: 'pre:bash:dispatcher',
+            matcher: 'Bash',
+            hooks: [{ type: 'command', command: 'echo user-owned' }],
           }],
-        });
-      }, /Invalid hooks config at .*expected a JSON object/);
+        },
+      };
+      fs.writeFileSync(settingsPath, `${JSON.stringify(existing, null, 2)}\n`);
 
-      assert.ok(!fs.existsSync(path.join(targetRoot, 'hooks', 'hooks.json')), 'hooks.json should not be copied when source hooks are invalid');
-      assert.ok(!fs.existsSync(installStatePath), 'install state should not be written when source hooks are invalid');
+      const result = run(['--profile', 'core', '--enable-hooks'], { cwd: projectDir, homeDir });
+      assert.notStrictEqual(result.code, 0);
+      assert.match(result.stderr, /Refusing to overwrite.*pre:bash:dispatcher/);
+      assert.deepStrictEqual(readJson(settingsPath), existing);
+      assert.deepStrictEqual(fs.readdirSync(claudeRoot), ['settings.json']);
     } finally {
-      cleanup(tempDir);
+      cleanup(homeDir);
+      cleanup(projectDir);
     }
   })) passed++; else failed++;
 
@@ -1254,6 +1298,39 @@ function runTests() {
       assert.strictEqual(state.request.hookConsent, 'declined');
       assert.ok(!state.resolution.selectedModules.includes('hooks-runtime'));
       assert.ok(state.resolution.selectedModules.includes('rules-core'));
+      assert.ok(!state.operations.some(operation => (
+        operation.kind === 'update-claude-settings'
+      )));
+    } finally {
+      cleanup(homeDir);
+      cleanup(projectDir);
+    }
+  })) passed++; else failed++;
+
+  if (test('--no-hooks removes hooks registered by a previous enabled install', () => {
+    const projectDir = createTempDir('install-apply-disable-hooks-');
+    const homeDir = createTempDir('install-apply-disable-hooks-home-');
+    try {
+      const enabled = run(['--profile', 'core', '--enable-hooks'], { cwd: projectDir, homeDir });
+      assert.strictEqual(enabled.code, 0, enabled.stderr);
+
+      const settingsPath = path.join(homeDir, '.claude', 'settings.json');
+      const settings = readJson(settingsPath);
+      settings.theme = 'dark';
+      fs.writeFileSync(settingsPath, `${JSON.stringify(settings, null, 2)}\n`);
+
+      const disabled = run(['--profile', 'core', '--no-hooks'], { cwd: projectDir, homeDir });
+      assert.strictEqual(disabled.code, 0, disabled.stderr);
+      assert.deepStrictEqual(readJson(settingsPath), {
+        includeCoAuthoredBy: false,
+        theme: 'dark',
+      });
+
+      const state = readJson(path.join(homeDir, '.claude', 'ecc', 'install-state.json'));
+      assert.strictEqual(state.request.hookConsent, 'declined');
+      assert.ok(!state.operations.some(operation => (
+        operation.kind === 'update-claude-settings'
+      )));
     } finally {
       cleanup(homeDir);
       cleanup(projectDir);

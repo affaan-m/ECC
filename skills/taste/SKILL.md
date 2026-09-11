@@ -140,7 +140,7 @@ This skill is the conductor. Each ECC skill is an instrument. Do not skip layers
 | Structure & cut | `video-editing` | FFmpeg cut/concat/reframe, EDL, scene/silence detection |
 | Generate b-roll | `fal-ai-media` | image/video models per genre preset |
 | Compose & overlay | `remotion-video-creation` | beat-synced `<Sequence>`s, text, blooms, masks |
-| Motion timing | `motion-foundations`, `motion-patterns`, `motion-advanced`, `motion-ui` | easing, springs, light/particle motion |
+| Motion timing | `motion-foundations`, `motion-patterns`, `motion-advanced` | easing, springs, light/particle motion |
 | Server-side video | `videodb` | smart reframe, indexing if footage is large |
 | Distribution | `content-engine` | per-platform cuts, covers, captions |
 | Voice/lyric VO | `video-editing` (ElevenLabs section) | only if a spoken layer is needed |
@@ -258,7 +258,7 @@ for project setup, audio track binding, and render flags.
 - `video-editing` — the mechanical pipeline (FFmpeg, reframe, EDL, polish) this sits on top of
 - `remotion-video-creation` — programmable beat-synced composition and rendering
 - `fal-ai-media` — generate the b-roll, transition SFX, and risers
-- `motion-foundations`, `motion-patterns`, `motion-advanced`, `motion-ui` — easing and motion timing
+- `motion-foundations`, `motion-patterns`, `motion-advanced` — easing and motion timing
 - `videodb` — server-side smart reframe and indexing for large footage
 - `content-engine` — platform-native distribution, covers, captions
 - `frontend-design-direction` — the same "decide a direction first" discipline, for UI

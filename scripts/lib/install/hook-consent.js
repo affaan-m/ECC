@@ -44,7 +44,10 @@ function normalizeOperationPath(value) {
 }
 
 function isHookRuntimeOperation(operation = {}) {
-  if (operation.moduleId === HOOK_RUNTIME_MODULE_ID) {
+  if (
+    operation.kind === 'update-claude-settings'
+    || operation.moduleId === HOOK_RUNTIME_MODULE_ID
+  ) {
     return true;
   }
 

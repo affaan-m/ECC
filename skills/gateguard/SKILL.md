@@ -135,16 +135,20 @@ For hook-level control, keep using `ECC_DISABLED_HOOKS` with the GateGuard hook 
 
 #### Glob semantics for `GATEGUARD_EXEMPT_GLOBS`
 
-Patterns are matched, unanchored, against the target path with backslashes
-normalized to `/` and the whole string lowercased — the path exactly as the
-hook receives it, which for Claude Code tool payloads is absolute. `*` matches
-within a path segment, `**` across segments, `?` a single character. Matching
-is fail-open: a malformed pattern is dropped rather than raising.
+Patterns match the entire project-relative target path. The project root is
+`CLAUDE_PROJECT_DIR`, falling back to the hook payload's `cwd`, then the hook
+process working directory. Relative globs never exempt targets outside that
+root. Explicit absolute globs match the entire absolute target path and may
+deliberately exempt paths outside the project.
 
-Note that a leading `**/` compiles to `.*/`, so it requires at least one
-preceding separator: `**/tests/**` exempts `/repo/tests/foo.js` but would not
-match a bare relative `tests/foo.js`. Add the separator-free form too if you
-pass relative paths:
+Both patterns and paths use `/` separators and lowercase matching. `*` matches
+within a segment, `**` across segments, and `?` one non-separator character.
+`**/` includes zero directories, so `**/tests/**` also matches `tests/foo.js`.
+Malformed patterns are dropped without granting an exemption.
+
+Since 2.2.1, `services/**` only covers the project's root services tree, and
+`*.md` only covers its root Markdown files. Use `**/*.md` for all Markdown
+files within the project. Existing unanchored exemptions may need adjustment:
 
 ```json
 {
