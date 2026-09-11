@@ -219,6 +219,101 @@ if (test('still allows -tn (n is the -t template path, not a flag)', () => {
   assert.strictEqual(r.code, 0, `expected exit 0, got ${r.code}: ${r.stderr}`);
 })) passed++; else failed++;
 
+
+// --- Quoted/heredoc candidates: preserve blocking, prevent flag leakage ---
+
+const executingPayloads = [
+  ['retain broad blocking of a quoted git literal', 'echo "git commit -n"'],
+  ['block double-quoted git executable', '"git" commit -n -m x'],
+  ['block single-quoted git executable', "'git' commit -n -m x"],
+  ['block git executable assembled with empty single quotes', "g''it commit -n -m x"],
+  ['block git executable assembled with empty double quotes', 'g""it commit --no-verify -m x'],
+  ['block git executable assembled from quoted prefix', "'g'it commit -n -m x"],
+  ['block git executable assembled from quoted middle', "g'i't commit -n -m x"],
+  ['block git executable assembled with an escape', 'g\\it commit -n -m x'],
+  ['block double-quoted git plus exe suffix', '"git".exe commit -n -m x'],
+  ['block single-quoted git plus exe suffix', "'git'.exe commit -n -m x"],
+  ['block hooksPath after double-quoted git plus exe suffix', '"git".exe -c core.hooksPath=/tmp/no commit -m x'],
+  ['block hooksPath after single-quoted git plus exe suffix', "'git'.exe -c core.hooksPath=/tmp/no commit -m x"],
+  ['block double-quoted git with quote-assembled exe suffix', '"git".e""xe commit -n -m x'],
+  ['block single-quoted git with quote-assembled exe suffix', "'git'.e''xe commit -n -m x"],
+  ['block adjacent quoted git and escaped exe suffix', '"git""\\.exe" commit -n -m x'],
+  ['block quoted git with escaped exe suffix', '"git".\\exe commit -n -m x'],
+  ['block hooksPath after quote-assembled exe suffix', '"git".e""xe -c core.hooksPath=/tmp/no commit -m x'],
+  ['quoted hash does not hide a later commit bypass', 'echo "#"; git commit -n -m x'],
+  ['hash text in quotes does not hide a later commit bypass', 'echo "not # a comment" && git commit --no-verify -m x'],
+  ['word-internal hash does not hide a later commit bypass', 'echo foo#bar; git commit -n -m x'],
+  ['word-internal hash does not hide a later push bypass', 'printf %s foo#bar && git push --no-verify'],
+  ['pipe echo data to bash', "echo 'git commit -n -m x' | bash"],
+  ['pipe printf data to sh', "printf '%s\\n' 'git commit --no-verify -m x' | sh"],
+  ['execute data through xargs and bash -c', "printf '%s\\n' 'git commit -n -m x' | xargs -I CMD bash -c CMD"],
+  ['execute command substitution text through bash', "echo '$(git commit -n -m x)' | bash"],
+  ['execute bash here-string', "bash <<< 'git commit -n -m x'"],
+  ['execute sh here-string', "sh -s <<< 'git commit --no-verify -m x'"],
+  ['block backtick command substitution', 'echo "`git commit -n -m x`"'],
+  ['block substitution after quoted parenthesis', 'echo "$(printf \')\'; git commit -n -m x)"'],
+  ['block substitution after case parenthesis', 'echo "$(case x in x) :;; esac; git commit -n -m x)"'],
+  ['block bash --noprofile -c', "bash --noprofile -c 'git commit -n -m x'"],
+  ['block bash -O extglob -c', "bash -O extglob -c 'git commit -n -m x'"],
+  ['block bash -o pipefail -c', "bash -o pipefail -c 'git commit -n -m x'"],
+  ['block bash -c after option terminator', "bash -c -- 'git commit -n -m x'"],
+  ['block sh -c after option terminator', "sh -c -- 'git commit --no-verify -m x'"],
+  ['block heredoc piped to bash', 'cat <<EOF | bash\ngit commit -n -m x\nEOF'],
+  ['block heredoc piped to sudo bash', 'cat <<EOF | sudo bash\ngit commit --no-verify -m x\nEOF'],
+  ['block heredoc on leading redirection', '<<EOF bash\ngit commit -n -m x\nEOF'],
+  ['block executable command after CRLF heredoc', 'python3 - <<\'PY\'\r\nprint("git commit -n")\r\nPY\r\ngit commit -n -m x'],
+  ['block bash -c double-quoted payload', 'bash -c "git commit -n -m x"'],
+  ['block eval payload', 'eval "git commit --no-verify -m x"'],
+  ['block bash heredoc payload', 'bash <<EOF\ngit commit -n -m x\nEOF'],
+  ['block second command in a chain', 'git commit -m ok; git commit --no-verify -m x'],
+  ['block third command in a chain', 'git add -A && git commit -m ok && git push --no-verify'],
+  ['block combined short flag after a clean command', 'git commit -m ok; git commit -am x -n'],
+  ['block bypass in a whitespace-separated command sequence', 'git commit -m ok            git push --no-verify'],
+  ['block ANSI-C quoted git executable', "$'git' commit -n -m x"],
+  ['block ANSI-C quoted git with long flag', "$'git' commit --no-verify -m x"],
+  ['block line-continued commit bypass', 'git commit \\\n--no-verify -m x'],
+  ['block heredoc line-continued commit bypass', 'cat <<EOF | bash\ngit commit \\\n--no-verify -m x\nEOF'],
+];
+
+for (const [name, command] of executingPayloads) {
+  if (test(name, () => {
+    const r = runHook({ tool_input: { command } });
+    assert.strictEqual(r.code, 2, `expected exit 2, got ${r.code}: ${r.stderr}`);
+  })) passed++; else failed++;
+}
+
+const nonLeakingPayloads = [
+  ['python heredoc string with later bash -n', 'python3 - <<\'PY\'\nold="git add -A\\nif ! git diff --cached --quiet; then\\n  git commit -q -m \\"vault sync"\nPY\nbash -n vault-sync.sh'],
+  ['assignment string with later bash -n', 'old="git commit -q -m x"; bash -n x.sh'],
+  ['plain commit followed by later-line bash -n', 'git commit -m x\nbash -n s.sh'],
+  ['plain commit followed by grep -n', 'git commit -m x; grep -n foo f.txt'],
+  ['JSON string followed by sed -n', 'printf \'%s\' \'{"cmd":"git commit -q -m \\"x\\""}\' | node x.js; sed -n 1p f'],
+  ['hyphenated Python heredoc delimiter', 'python3 - <<\'PY-SCRIPT\'\nprint("git commit -n")\nPY-SCRIPT\nbash -n x.sh'],
+  ['non-shell heredoc after bash argument', "bash -c 'cat' <<EOF\ngit commit -q -m x\nEOF\nbash -n y.sh"],
+  ['separate commits do not inherit bash -n', 'git commit -m x   ;   git commit --no-edit   ;   bash -n x.sh   ;   git commit -tn'],
+  ['double-quoted literal does not inherit grep -n', 'echo "git commit -q -m x"; grep -n needle file'],
+  ['single-quoted push literal does not inherit later flag', "note='git push'; printf '%s\\n' --no-verify"],
+  ['Python heredoc line does not inherit sed flag', 'python3 <<EOF\nprint("git commit -q -m x")\nEOF\nsed --no-verify file'],
+  ['assignment literal does not inherit grep long flag', "payload='git commit -m x'; grep --no-verify file"],
+  ['printf literal does not inherit bash -n', 'printf \'%s\' "git commit -m x"; bash -n script.sh'],
+  ['assignment literal does not inherit quoted echo -n data', 'old="git commit -q"; echo " -n"'],
+  ['push literal does not inherit quoted printf long flag data', "payload='git push'; printf ' --no-verify'"],
+  ['printf literal does not inherit later quoted echo -n data', 'printf "%s" "git commit -q"; echo " -n"'],
+  ['quoted git executable does not inherit later grep -n', '"git" status; grep -n needle file'],
+  ['assembled git executable does not inherit later bash -n', "g''it status && bash -n script.sh"],
+  ['quoted git executable does not inherit quoted echo -n data', "'git' status; echo \" -n\""],
+  ['quoted git commit does not inherit later bash -n', '"git" commit -m x; bash -n y.sh'],
+  ['ANSI-C quoted status does not inherit later grep -n', "$'git' status; grep -n needle file"],
+  ['heredoc python string line ending in backslash does not inherit later bash -n', 'python3 - <<\'PY\'\nprint("git commit -q \\\n")\nPY\nbash -n x.sh'],
+];
+
+for (const [name, command] of nonLeakingPayloads) {
+  if (test(name, () => {
+    const r = runHook({ tool_input: { command } });
+    assert.strictEqual(r.code, 0, `expected exit 0, got ${r.code}: ${r.stderr}`);
+  })) passed++; else failed++;
+}
+
 console.log('─'.repeat(50));
 console.log(`Passed: ${passed}  Failed: ${failed}`);
 

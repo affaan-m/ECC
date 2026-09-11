@@ -15,25 +15,10 @@
 
 'use strict';
 
+const { tokenizeShellWords, findCommandSegmentEnd, buildScanBoundaries, getScanBoundary, findGitSubcommand, findGit, assembleShellWordContaining } = require('./lib/shell-scan');
+
 const MAX_STDIN = 1024 * 1024;
 let raw = '';
-
-/**
- * Git commands that support the --no-verify flag.
- */
-const GIT_COMMANDS_WITH_NO_VERIFY = [
-  'commit',
-  'push',
-  'merge',
-  'cherry-pick',
-  'rebase',
-  'am',
-];
-
-/**
- * Characters that can appear immediately before 'git' in a command string.
- */
-const VALID_BEFORE_GIT = ' \t\n\r;&|$`(<{!"\']/.~\\';
 
 // Git config section and variable names are case-insensitive
 // (subsection names are case-sensitive but core.hooksPath has none),
@@ -56,21 +41,10 @@ const COMMIT_OPTIONS_WITH_VALUE = new Set([
   '--template',
   '--fixup',
   '--squash',
-  '--pathspec-from-file',
+  '--pathspec-from-file'
 ]);
 
-const COMMIT_OPTIONS_WITH_INLINE_VALUE = [
-  '--message=',
-  '--file=',
-  '--reuse-message=',
-  '--reedit-message=',
-  '--author=',
-  '--date=',
-  '--template=',
-  '--fixup=',
-  '--squash=',
-  '--pathspec-from-file=',
-];
+const COMMIT_OPTIONS_WITH_INLINE_VALUE = ['--message=', '--file=', '--reuse-message=', '--reedit-message=', '--author=', '--date=', '--template=', '--fixup=', '--squash=', '--pathspec-from-file='];
 
 // Short options that take a value. When seen as part of a combined
 // short-option token (e.g. -tn), git's parser treats the rest of the
@@ -79,130 +53,12 @@ const COMMIT_OPTIONS_WITH_INLINE_VALUE = [
 // not another flag.
 const COMMIT_SHORT_OPTIONS_WITH_VALUE = new Set(['m', 'F', 'C', 'c', 't']);
 
-function tokenizeShellWords(input, start = 0, end = input.length) {
-  const tokens = [];
-  let value = '';
-  let tokenStart = null;
-  let quote = null;
-  let escaped = false;
-
-  function beginToken(index) {
-    if (tokenStart === null) {
-      tokenStart = index;
-    }
-  }
-
-  function pushToken(index) {
-    if (tokenStart === null) {
-      return;
-    }
-
-    tokens.push({
-      value,
-      start: tokenStart,
-      end: index,
-    });
-    value = '';
-    tokenStart = null;
-  }
-
-  for (let i = start; i < end; i++) {
-    const char = input.charAt(i);
-
-    if (escaped) {
-      beginToken(i - 1);
-      value += char;
-      escaped = false;
-      continue;
-    }
-
-    if (quote) {
-      if (char === quote) {
-        quote = null;
-        continue;
-      }
-
-      if (quote === '"' && char === '\\') {
-        beginToken(i);
-        escaped = true;
-        continue;
-      }
-
-      beginToken(i);
-      value += char;
-      continue;
-    }
-
-    if (char === '"' || char === "'") {
-      beginToken(i);
-      quote = char;
-      continue;
-    }
-
-    if (char === '\\') {
-      beginToken(i);
-      escaped = true;
-      continue;
-    }
-
-    if (/\s/.test(char)) {
-      pushToken(i);
-      continue;
-    }
-
-    beginToken(i);
-    value += char;
-  }
-
-  if (escaped) {
-    value += '\\';
-  }
-  pushToken(end);
-
-  return tokens;
-}
-
-function findCommandSegmentEnd(input, start) {
-  let quote = null;
-  let escaped = false;
-
-  for (let i = start; i < input.length; i++) {
-    const char = input.charAt(i);
-
-    if (escaped) {
-      escaped = false;
-      continue;
-    }
-
-    if (quote) {
-      if (quote === '"' && char === '\\') {
-        escaped = true;
-        continue;
-      }
-      if (char === quote) {
-        quote = null;
-      }
-      continue;
-    }
-
-    if (char === '"' || char === "'") {
-      quote = char;
-      continue;
-    }
-
-    if (char === '\\') {
-      escaped = true;
-      continue;
-    }
-
-    if (char === ';' || char === '|' || char === '&' || char === '\n') {
-      return i;
-    }
-  }
-
-  return input.length;
-}
-
+/**
+ * Return true when a commit option consumes the following token as its value.
+ *
+ * @param {string} value
+ * @returns {boolean}
+ */
 function commitOptionConsumesNextValue(value) {
   if (isCommitNoVerifyShortFlag(value)) {
     return false;
@@ -216,6 +72,12 @@ function commitOptionConsumesNextValue(value) {
   return Boolean(shortValueOption && shortValueOption.consumesNextValue);
 }
 
+/**
+ * Return true when a commit option already carries its value in the same token.
+ *
+ * @param {string} value
+ * @returns {boolean}
+ */
 function commitOptionContainsInlineValue(value) {
   if (isCommitNoVerifyShortFlag(value)) {
     return false;
@@ -229,6 +91,12 @@ function commitOptionContainsInlineValue(value) {
   return Boolean(shortValueOption && shortValueOption.containsInlineValue);
 }
 
+/**
+ * Classify a combined short-option token that includes a value-taking option.
+ *
+ * @param {string} value
+ * @returns {{consumesNextValue: boolean, containsInlineValue: boolean}|null}
+ */
 function getCommitShortValueOption(value) {
   if (!value.startsWith('-') || value.startsWith('--') || value === '-') {
     return null;
@@ -239,7 +107,7 @@ function getCommitShortValueOption(value) {
     if (COMMIT_SHORT_OPTIONS_WITH_VALUE.has(options.charAt(i))) {
       return {
         consumesNextValue: i === options.length - 1,
-        containsInlineValue: i < options.length - 1,
+        containsInlineValue: i < options.length - 1
       };
     }
   }
@@ -247,6 +115,12 @@ function getCommitShortValueOption(value) {
   return null;
 }
 
+/**
+ * Return true when a token is commit's `-n` / `--no-verify` short form.
+ *
+ * @param {string} value
+ * @returns {boolean}
+ */
 function isCommitNoVerifyShortFlag(value) {
   if (!value.startsWith('-') || value.startsWith('--') || value === '-') {
     return false;
@@ -270,120 +144,55 @@ function isCommitNoVerifyShortFlag(value) {
 }
 
 /**
- * Check if a position in the input is inside a shell comment.
- */
-function isInComment(input, idx) {
-  const lineStart = input.lastIndexOf('\n', idx - 1) + 1;
-  const before = input.slice(lineStart, idx);
-  for (let i = 0; i < before.length; i++) {
-    if (before.charAt(i) === '#') {
-      const prev = i > 0 ? before.charAt(i - 1) : '';
-      if (prev !== '$' && prev !== '\\') return true;
-    }
-  }
-  return false;
-}
-
-/**
- * Find the next 'git' token in the input starting from a position.
- */
-function findGit(input, start) {
-  let pos = start;
-  while (pos < input.length) {
-    const idx = input.indexOf('git', pos);
-    if (idx === -1) return null;
-
-    const isExe = input.slice(idx + 3, idx + 7).toLowerCase() === '.exe';
-    const len = isExe ? 7 : 3;
-    const after = input[idx + len] || ' ';
-    if (!/[\s"']/.test(after)) {
-      pos = idx + 1;
-      continue;
-    }
-
-    const before = idx > 0 ? input[idx - 1] : ' ';
-    if (VALID_BEFORE_GIT.includes(before)) return { idx, len };
-    pos = idx + 1;
-  }
-  return null;
-}
-
-/**
  * Detect which git subcommand (commit, push, etc.) is being invoked.
  * Returns { command, offset } where offset is the position right after the
  * subcommand keyword, so callers can scope flag checks to only that portion.
+ *
+ * @param {string} input
+ * @param {Int32Array} boundaries
+ * @param {Uint8Array} comments
+ * @param {number} [start=0]
+ * @returns {{command: string, offset: number, gitStart: number, gitEnd: number, commandStart: number, scanEnd: number}|null}
  */
-function detectGitCommand(input, start = 0) {
+function detectGitCommand(input, boundaries, comments, start = 0) {
   while (start < input.length) {
     const git = findGit(input, start);
-    if (!git) return null;
+    if (!git) {
+      return null;
+    }
 
-    if (isInComment(input, git.idx)) {
-      start = git.idx + git.len;
+    if (comments[git.idx]) {
+      start = git.end;
       continue;
     }
 
-    // Find the first matching subcommand token after "git".
-    // We pick the one closest to "git" so that argument values like
-    // "git push origin commit" don't misclassify "commit" as the subcommand.
-    let bestCmd = null;
-    let bestIdx = Infinity;
+    const rawGitEnd = git.end;
+    const enclosingEnd = getScanBoundary(boundaries, git.idx, input.length);
+    const quotedExecutable = enclosingEnd === rawGitEnd;
+    const assembledWord = quotedExecutable ? assembleShellWordContaining(input, git.idx) : null;
+    const assembledExecutable = assembledWord && (assembledWord.value === 'git' || assembledWord.value === 'git.exe');
 
-    for (const cmd of GIT_COMMANDS_WITH_NO_VERIFY) {
-      let searchPos = git.idx + git.len;
-      while (searchPos < input.length) {
-        const cmdIdx = input.indexOf(cmd, searchPos);
-        if (cmdIdx === -1) break;
-
-        const before = cmdIdx > 0 ? input[cmdIdx - 1] : ' ';
-        const after = input[cmdIdx + cmd.length] || ' ';
-        if (!/\s/.test(before)) { searchPos = cmdIdx + 1; continue; }
-        if (!/[\s;&#|>)\]}"']/.test(after) && after !== '') { searchPos = cmdIdx + 1; continue; }
-        if (/[;|]/.test(input.slice(git.idx + git.len, cmdIdx))) break;
-        if (isInComment(input, cmdIdx)) { searchPos = cmdIdx + 1; continue; }
-
-        // Verify this token is the first non-flag word after "git" — i.e. the
-        // actual subcommand, not an argument value to a different subcommand.
-        const gap = input.slice(git.idx + git.len, cmdIdx);
-        const tokens = gap.trim().split(/\s+/).filter(Boolean);
-        // Every token before the candidate must be a flag or a flag argument.
-        // Git global flags like -c take a value argument (e.g. -c key=value).
-        let onlyFlagsAndArgs = true;
-        let expectFlagArg = false;
-        for (const t of tokens) {
-          if (expectFlagArg) { expectFlagArg = false; continue; }
-          if (t.startsWith('-')) {
-            // -c is a git global flag that takes the next token as its argument
-            if (t === '-c' || t === '-C' || t === '--work-tree' || t === '--git-dir' ||
-                t === '--namespace' || t === '--super-prefix') {
-              expectFlagArg = true;
-            }
-            continue;
-          }
-          onlyFlagsAndArgs = false;
-          break;
-        }
-        if (!onlyFlagsAndArgs) { searchPos = cmdIdx + 1; continue; }
-
-        if (cmdIdx < bestIdx) {
-          bestIdx = cmdIdx;
-          bestCmd = cmd;
-        }
-        break;
-      }
+    if (quotedExecutable && !assembledExecutable) {
+      start = git.end;
+      continue;
     }
 
-    if (bestCmd) {
+    const gitEnd = assembledExecutable ? assembledWord.end : rawGitEnd;
+    const scanEnd = quotedExecutable ? input.length : enclosingEnd;
+
+    const subcommand = findGitSubcommand(input, gitEnd, scanEnd);
+    if (subcommand?.command) {
       return {
-        command: bestCmd,
-        offset: bestIdx + bestCmd.length,
+        command: subcommand.command,
+        offset: subcommand.start + subcommand.command.length,
         gitStart: git.idx,
-        gitEnd: git.idx + git.len,
-        commandStart: bestIdx,
+        gitEnd,
+        commandStart: subcommand.start,
+        scanEnd
       };
     }
 
-    start = git.idx + git.len;
+    start = git.end;
   }
   return null;
 }
@@ -393,9 +202,15 @@ function detectGitCommand(input, start = 0) {
  * Only inspects the portion of the input starting at `offset` (the position
  * right after the detected subcommand keyword) so that flags belonging to
  * earlier commands in a chain are not falsely matched.
+ *
+ * @param {string} input
+ * @param {string} command
+ * @param {number} offset
+ * @param {number} scanEnd
+ * @returns {boolean}
  */
-function hasNoVerifyFlag(input, command, offset) {
-  const segmentEnd = findCommandSegmentEnd(input, offset);
+function hasNoVerifyFlag(input, command, offset, scanEnd) {
+  const segmentEnd = findCommandSegmentEnd(input, offset, scanEnd);
   const tokens = tokenizeShellWords(input, offset, segmentEnd);
   let skipNext = false;
 
@@ -422,7 +237,9 @@ function hasNoVerifyFlag(input, command, offset) {
       }
     }
 
-    if (value === '--no-verify') return true;
+    if (value === '--no-verify') {
+      return true;
+    }
 
     // For commit, -n is shorthand for --no-verify.
     if (command === 'commit' && isCommitNoVerifyShortFlag(value)) {
@@ -435,6 +252,10 @@ function hasNoVerifyFlag(input, command, offset) {
 
 /**
  * Check if the input contains a -c core.hooksPath= override.
+ *
+ * @param {string} input
+ * @param {{gitEnd: number, commandStart: number}} detected
+ * @returns {boolean}
  */
 function hasHooksPathOverride(input, detected) {
   const tokens = tokenizeShellWords(input, detected.gitEnd, detected.commandStart);
@@ -465,31 +286,37 @@ function hasHooksPathOverride(input, detected) {
 
 /**
  * Check a command string for git hook bypass attempts.
+ *
+ * @param {string} input
+ * @returns {{blocked: boolean, reason?: string}}
  */
 function checkCommand(input) {
+  const { boundaries, comments } = buildScanBoundaries(input);
   let start = 0;
 
   while (start < input.length) {
-    const detected = detectGitCommand(input, start);
-    if (!detected) return { blocked: false };
+    const detected = detectGitCommand(input, boundaries, comments, start);
+    if (!detected) {
+      return { blocked: false };
+    }
 
     const { command: gitCommand, offset } = detected;
 
     if (hasHooksPathOverride(input, detected)) {
       return {
         blocked: true,
-        reason: `BLOCKED: Overriding core.hooksPath is not allowed with git ${gitCommand}. Git hooks must not be bypassed.`,
+        reason: `BLOCKED: Overriding core.hooksPath is not allowed with git ${gitCommand}. Git hooks must not be bypassed.`
       };
     }
 
-    if (hasNoVerifyFlag(input, gitCommand, offset)) {
+    if (hasNoVerifyFlag(input, gitCommand, offset, detected.scanEnd)) {
       return {
         blocked: true,
-        reason: `BLOCKED: --no-verify flag is not allowed with git ${gitCommand}. Git hooks must not be bypassed.`,
+        reason: `BLOCKED: --no-verify flag is not allowed with git ${gitCommand}. Git hooks must not be bypassed.`
       };
     }
 
-    start = findCommandSegmentEnd(input, offset) + 1;
+    start = findCommandSegmentEnd(input, offset, detected.scanEnd) + 1;
   }
 
   return { blocked: false };
@@ -497,22 +324,33 @@ function checkCommand(input) {
 
 /**
  * Extract the command string from hook input (JSON or plain text).
+ *
+ * @param {string} rawInput
+ * @returns {string}
  */
 function extractCommand(rawInput) {
   const trimmed = rawInput.trim();
-  if (!trimmed.startsWith('{')) return trimmed;
+  if (!trimmed.startsWith('{')) {
+    return trimmed;
+  }
 
   try {
     const parsed = JSON.parse(trimmed);
-    if (typeof parsed !== 'object' || parsed === null) return trimmed;
+    if (typeof parsed !== 'object' || parsed === null) {
+      return trimmed;
+    }
 
     // Claude Code format: { tool_input: { command: "..." } }
     const cmd = parsed.tool_input?.command;
-    if (typeof cmd === 'string') return cmd;
+    if (typeof cmd === 'string') {
+      return cmd;
+    }
 
     // Generic JSON formats
     for (const key of ['command', 'cmd', 'input', 'shell', 'script']) {
-      if (typeof parsed[key] === 'string') return parsed[key];
+      if (typeof parsed[key] === 'string') {
+        return parsed[key];
+      }
     }
 
     return trimmed;
@@ -523,6 +361,9 @@ function extractCommand(rawInput) {
 
 /**
  * Exportable run() for in-process execution via run-with-flags.js.
+ *
+ * @param {string} rawInput
+ * @returns {{exitCode: number, stderr?: string}}
  */
 function run(rawInput) {
   const command = extractCommand(rawInput);
@@ -531,7 +372,7 @@ function run(rawInput) {
   if (result.blocked) {
     return {
       exitCode: 2,
-      stderr: result.reason,
+      stderr: result.reason
     };
   }
 
