@@ -109,70 +109,89 @@ function getPluginRoot() {
   return path.resolve(__dirname, '..', '..');
 }
 
-function stripJsNoise(source) {
-  let out = '';
-  let i = 0;
-  const n = source.length;
-  let state = 'code';
-  let quote = '';
-  while (i < n) {
-    const ch = source[i];
-    const next = i + 1 < n ? source[i + 1] : '';
-    if (state === 'code') {
-      if (ch === '/' && next === '/') {
-        state = 'line';
-        i += 2;
-        continue;
-      }
-      if (ch === '/' && next === '*') {
-        state = 'block';
-        i += 2;
-        continue;
-      }
-      if (ch === "'" || ch === '"' || ch === '`') {
-        state = 'string';
-        quote = ch;
-        out += ' ';
-        i += 1;
-        continue;
-      }
-      out += ch;
-      i += 1;
-      continue;
-    }
-    if (state === 'line') {
-      if (ch === '\n') {
-        state = 'code';
-        out += '\n';
-      }
-      i += 1;
-      continue;
-    }
-    if (state === 'block') {
-      if (ch === '*' && next === '/') {
-        state = 'code';
-        i += 2;
-        continue;
-      }
-      if (ch === '\n') {
-        out += '\n';
-      }
-      i += 1;
-      continue;
-    }
-    if (ch === '\\') {
-      i += 2;
-      continue;
-    }
-    if (ch === quote) {
-      state = 'code';
-      out += ' ';
-      i += 1;
-      continue;
-    }
-    i += 1;
+function makeJsScan(source) {
+  return { source, out: '', i: 0, n: source.length, state: 'code', quote: '' };
+}
+
+function scanCodeStep(scan) {
+  const ch = scan.source[scan.i];
+  const next = scan.i + 1 < scan.n ? scan.source[scan.i + 1] : '';
+  if (ch === '/' && next === '/') {
+    scan.state = 'line';
+    scan.i += 2;
+    return;
   }
-  return out;
+  if (ch === '/' && next === '*') {
+    scan.state = 'block';
+    scan.i += 2;
+    return;
+  }
+  if (ch === "'" || ch === '"' || ch === '`') {
+    scan.state = 'string';
+    scan.quote = ch;
+    scan.out += ' ';
+    scan.i += 1;
+    return;
+  }
+  scan.out += ch;
+  scan.i += 1;
+}
+
+function scanLineStep(scan) {
+  if (scan.source[scan.i] === '\n') {
+    scan.state = 'code';
+    scan.out += '\n';
+  }
+  scan.i += 1;
+}
+
+function scanBlockStep(scan) {
+  const ch = scan.source[scan.i];
+  const next = scan.i + 1 < scan.n ? scan.source[scan.i + 1] : '';
+  if (ch === '*' && next === '/') {
+    scan.state = 'code';
+    scan.i += 2;
+    return;
+  }
+  if (ch === '\n') {
+    scan.out += '\n';
+  }
+  scan.i += 1;
+}
+
+function scanStringStep(scan) {
+  const ch = scan.source[scan.i];
+  if (ch === '\\') {
+    scan.i += 2;
+    return;
+  }
+  if (ch === scan.quote) {
+    scan.state = 'code';
+    scan.out += ' ';
+    scan.i += 1;
+    return;
+  }
+  scan.i += 1;
+}
+
+function stripJsNoise(source) {
+  const scan = makeJsScan(source);
+  while (scan.i < scan.n) {
+    if (scan.state === 'code') {
+      scanCodeStep(scan);
+      continue;
+    }
+    if (scan.state === 'line') {
+      scanLineStep(scan);
+      continue;
+    }
+    if (scan.state === 'block') {
+      scanBlockStep(scan);
+      continue;
+    }
+    scanStringStep(scan);
+  }
+  return scan.out;
 }
 
 //Safely extract target context from hook stdin JSON for dry-run preview.

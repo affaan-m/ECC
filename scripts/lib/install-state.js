@@ -339,6 +339,10 @@ function readInstallState(filePath) {
   return state;
 }
 
+function warnFilesystemIssue(message) {
+  process.stderr.write(`${message}\n`);
+}
+
 function syncParentDirectory(directoryPath) {
   if (process.platform === 'win32') {
     return;
@@ -347,14 +351,14 @@ function syncParentDirectory(directoryPath) {
   try {
     fd = fs.openSync(directoryPath, fs.constants.O_RDONLY);
     fs.fsyncSync(fd);
-  } catch (_syncError) {
-    void _syncError;
+  } catch (syncError) {
+    warnFilesystemIssue(`[install-state] directory sync skipped for ${directoryPath}: ${syncError.message}`);
   } finally {
     if (fd !== undefined) {
       try {
         fs.closeSync(fd);
-      } catch (_closeError) {
-        void _closeError;
+      } catch (closeError) {
+        warnFilesystemIssue(`[install-state] directory handle close failed for ${directoryPath}: ${closeError.message}`);
       }
     }
   }
@@ -372,24 +376,33 @@ function writeInstallState(filePath, state) {
   } catch (error) {
     try {
       fs.closeSync(fd);
-    } catch (_closeError) {
-      void _closeError;
+    } catch (closeError) {
+      warnFilesystemIssue(`[install-state] temp file handle close failed for ${tmpPath}: ${closeError.message}`);
     }
     try {
       fs.rmSync(tmpPath, { force: true });
-    } catch (_rmError) {
-      void _rmError;
+    } catch (rmError) {
+      warnFilesystemIssue(`[install-state] temp file cleanup failed for ${tmpPath}: ${rmError.message}`);
     }
     throw error;
   }
-  fs.closeSync(fd);
+  try {
+    fs.closeSync(fd);
+  } catch (closeError) {
+    try {
+      fs.rmSync(tmpPath, { force: true });
+    } catch (rmError) {
+      warnFilesystemIssue(`[install-state] temp file cleanup failed for ${tmpPath}: ${rmError.message}`);
+    }
+    throw closeError;
+  }
   try {
     fs.renameSync(tmpPath, filePath);
   } catch (error) {
     try {
       fs.rmSync(tmpPath, { force: true });
-    } catch (_rmError) {
-      void _rmError;
+    } catch (rmError) {
+      warnFilesystemIssue(`[install-state] temp file cleanup failed for ${tmpPath}: ${rmError.message}`);
     }
     throw error;
   }
