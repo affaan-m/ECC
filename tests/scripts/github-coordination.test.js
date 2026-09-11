@@ -243,6 +243,45 @@ async function runTests() {
     passed++;
   else failed++;
 
+  if (
+    await test('sync filters the issue list to the configured epic label', async () => {
+      const rootDir = createTempDir('github-coordination-sync-');
+      const dbPath = path.join(rootDir, 'state.db');
+
+      try {
+        const epicIssue = {
+          number: 12,
+          title: 'Ship GitHub-native coordination',
+          body: '# Ship GitHub-native coordination',
+          url: 'https://github.com/affaan-m/ECC/issues/12',
+          state: 'OPEN',
+          labels: [{ name: 'epic' }],
+          author: { login: 'maintainer' },
+          updatedAt: '2026-06-01T12:00:00Z'
+        };
+        const shim = writeGhShim(rootDir, {
+          'issue list --repo affaan-m/ECC --state all --limit 100 --label epic --json number,title,body,url,state,labels,author,updatedAt,assignees': [epicIssue]
+        });
+
+        const result = run(['sync', '--repo', 'affaan-m/ECC', '--db', dbPath, '--dry-run', '--json'], {
+          cwd: rootDir,
+          env: {
+            ECC_GH_SHIM: shim.shimPath,
+            ECC_GH_SHIM_LOG: shim.logPath
+          }
+        });
+        assert.strictEqual(result.status, 0, result.stderr);
+        const payload = parseJson(result.stdout);
+        assert.strictEqual(payload.count, 1);
+        assert.strictEqual(payload.items[0].issueNumber, 12);
+      } finally {
+        cleanup(rootDir);
+      }
+    })
+  )
+    passed++;
+  else failed++;
+
   process.stdout.write(`\nResults: Passed: ${passed}, Failed: ${failed}\n`);
   process.exit(failed > 0 ? 1 : 0);
 }

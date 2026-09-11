@@ -84,7 +84,12 @@ function applySync(repo, options = {}, context = {}) {
   assertValidRepo(repo);
   const policy = context.policy || loadPolicy(context.rootDir || process.cwd(), options.configPath);
   const store = context.store || null;
-  const issues = listIssues(repo, { ...options, state: options.state || 'all', limit: options.limit || 100 });
+  const issues = listIssues(repo, {
+    ...options,
+    state: options.state || 'all',
+    limit: options.limit || 100,
+    label: policy.labels && policy.labels.epic,
+  });
   const syncedAt = new Date().toISOString();
   const results = [];
 
