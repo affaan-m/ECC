@@ -57,6 +57,26 @@ function tempDir(prefix) {
   return fs.mkdtempSync(path.join(os.tmpdir(), prefix));
 }
 
+// Windows without Developer Mode (and some locked-down CI images) refuse
+// symlink creation outright; those runs legitimately skip a symlink test.
+// Every other failure -- a missing parent directory, a bad path, a full
+// disk -- means the fixture is wrong, not that the platform is limited, and
+// must surface instead of quietly passing the test it was setting up.
+const SYMLINK_CAPABILITY_ERRORS = new Set(['EPERM', 'EACCES', 'ENOSYS', 'ENOTSUP', 'EOPNOTSUPP']);
+
+function trySymlink(target, linkPath, type) {
+  try {
+    fs.symlinkSync(target, linkPath, type);
+    return true;
+  } catch (error) {
+    if (SYMLINK_CAPABILITY_ERRORS.has(error.code)) {
+      console.log(`    SKIP: symlink creation not permitted on this platform (${error.code}); nothing to assert`);
+      return false;
+    }
+    throw error;
+  }
+}
+
 // Every generation in this file passes allowOverBudget: the install profiles
 // under test are catalog projections whose listing cost is measured, not
 // tuned, and the budget gate has its own dedicated tests below.
@@ -1112,6 +1132,69 @@ run('a generated plugin modified after generation is no longer replaceable witho
     assert.ok(!fs.existsSync(path.join(forced.pluginRoot, 'user-added.txt')), '--force replaces it');
   } finally {
     fs.rmSync(outRoot, { recursive: true, force: true });
+  }
+});
+
+run('a symlink added to a generated plugin after generation revokes ownership (Greptile P1: carrier digest misses symlinks)', () => {
+  // The sibling test above covers a hand-edited *file*: the tree digest
+  // changes, so ownership is correctly revoked. A symlink is the hole in
+  // that reasoning. listFilesRecursive() counts only entry.isFile(), so a
+  // symlink is never enumerated and never hashed -- the digest still
+  // reports "unmodified" while the carrier now serves whatever the link
+  // resolves to, outside the receipted, content-addressed tree. Generation
+  // already rejects a symlinked *source* (previewProfilePlugin ->
+  // findSymlinksUnder over plan sources); nothing re-checked an existing
+  // carrier on disk, which is the tampered-install case.
+  const outRoot = tempDir('ecc-symlink-owned-');
+  const outside = tempDir('ecc-symlink-outside-');
+  try {
+    const plan = resolvePluginProfilePlan({ repoRoot, moduleIds: ['commands-core'], pluginName: 'ecc-symlink-owned' });
+    const first = generate({ plan, outRoot, includeCatalogSkill: false });
+    assert.ok(isGeneratedProfilePlugin(first.pluginRoot), 'freshly generated carrier is owned');
+
+    fs.writeFileSync(path.join(outside, 'payload.md'), 'attacker-controlled, outside the carrier\n');
+    if (!trySymlink(path.join(outside, 'payload.md'), path.join(first.pluginRoot, 'planted.md'), 'file')) {
+      return;
+    }
+
+    assert.strictEqual(
+      isGeneratedProfilePlugin(first.pluginRoot),
+      false,
+      'a carrier containing a symlink must not be treated as an unmodified generated tree'
+    );
+  } finally {
+    fs.rmSync(outRoot, { recursive: true, force: true });
+    fs.rmSync(outside, { recursive: true, force: true });
+  }
+});
+
+run('a symlinked directory planted inside a generated plugin likewise revokes ownership', () => {
+  const outRoot = tempDir('ecc-symlink-dir-owned-');
+  const outside = tempDir('ecc-symlink-dir-outside-');
+  try {
+    const plan = resolvePluginProfilePlan({ repoRoot, moduleIds: ['commands-core'], pluginName: 'ecc-symlink-dir-owned' });
+    const first = generate({ plan, outRoot, includeCatalogSkill: false });
+    assert.ok(isGeneratedProfilePlugin(first.pluginRoot), 'freshly generated carrier is owned');
+
+    fs.mkdirSync(path.join(outside, 'payload-dir'), { recursive: true });
+    fs.writeFileSync(path.join(outside, 'payload-dir', 'SKILL.md'), '---\nname: planted\ndescription: outside\n---\n');
+    // commands-core ships no skills, so skills/ may not exist in the
+    // generated carrier. Create it first: a missing parent would make
+    // symlinkSync fail for a reason that has nothing to do with the
+    // behaviour under test.
+    fs.mkdirSync(path.join(first.pluginRoot, 'skills'), { recursive: true });
+    if (!trySymlink(path.join(outside, 'payload-dir'), path.join(first.pluginRoot, 'skills', 'planted'), 'dir')) {
+      return;
+    }
+
+    assert.strictEqual(
+      isGeneratedProfilePlugin(first.pluginRoot),
+      false,
+      'a symlinked directory inside the carrier must not be treated as an unmodified generated tree'
+    );
+  } finally {
+    fs.rmSync(outRoot, { recursive: true, force: true });
+    fs.rmSync(outside, { recursive: true, force: true });
   }
 });
 

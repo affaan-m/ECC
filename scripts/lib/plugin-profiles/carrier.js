@@ -194,9 +194,22 @@ function readProfileReceipt(pluginRoot) {
 
 /**
  * True when a directory is output this generator previously wrote and has
- * not been modified since: the receipt must name this generator AND its
- * recorded tree digest must match the directory's current contents. A
- * copied-in marker file alone does not make a directory replaceable.
+ * not been modified since: the receipt must name this generator, the tree
+ * must contain no symlink, AND its recorded tree digest must match the
+ * directory's current contents. A copied-in marker file alone does not make
+ * a directory replaceable.
+ *
+ * The symlink check is not redundant with the digest. computeTreeDigest
+ * hashes what listFilesRecursive enumerates, and that counts only
+ * entry.isFile() -- so a symlink planted after generation is never hashed
+ * and the digest still reports "unmodified", while the carrier now serves
+ * whatever the link resolves to, outside the receipted, content-addressed
+ * tree. Generation already refuses a symlinked *source*
+ * (previewProfilePlugin -> findSymlinksUnder); this is the same rule
+ * applied to an existing carrier on disk, which is the case that covers a
+ * tampered install or one from an untrusted source. Fails closed: a tree we
+ * cannot fully account for is not one we own, so it is never deleted or
+ * replaced without --force.
  *
  * @param {string} pluginRoot Candidate plugin directory.
  * @returns {boolean} Whether the directory is safe to replace.
@@ -207,6 +220,9 @@ function isGeneratedProfilePlugin(pluginRoot) {
     return false;
   }
   try {
+    if (findSymlinksUnder(pluginRoot).length > 0) {
+      return false;
+    }
     return computeTreeDigest(pluginRoot) === receipt.treeDigest;
   } catch {
     return false;

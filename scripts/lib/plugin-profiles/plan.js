@@ -465,8 +465,8 @@ function collectBlockers(context) {
   }
   if (context.existing && !context.existingIsGenerated && !context.force) {
     blockers.push(`Refusing to overwrite ${pluginRoot}: it is not an unmodified generated profile plugin `
-      + `(${PROFILE_METADATA_FILE} missing, foreign, or its tree digest no longer matches). `
-      + 'Choose another --name/--out, or pass --force to replace it.');
+      + `(${PROFILE_METADATA_FILE} missing, foreign, its tree contains a symlink, or its tree digest `
+      + 'no longer matches). Choose another --name/--out, or pass --force to replace it.');
   }
   return blockers;
 }
