@@ -265,6 +265,10 @@ add_column :posts, :comments_count, :integer, default: 0, null: false
 
 ### Background job shape
 
+Pass record IDs, not records. Retries make delivery at-least-once, so any job that calls
+an external service must be idempotent — otherwise a transient failure after the remote
+call succeeds will duplicate the effect on the next attempt.
+
 ```ruby
 class AccountingExportJob < ApplicationJob
   queue_as :exports
@@ -274,10 +278,27 @@ class AccountingExportJob < ApplicationJob
 
   def perform(invoice_id)
     invoice = Invoice.find(invoice_id)
-    AccountingApi.export(invoice)
+    export = AccountingExport.find_or_create_by!(
+      invoice: invoice,
+      idempotency_key: "invoice-export-#{invoice.id}-#{invoice.updated_at.to_i}"
+    )
+    return if export.completed_at?
+
+    receipt = AccountingApi.export(invoice, idempotency_key: export.idempotency_key)
+    export.update!(completed_at: Time.current, external_id: receipt.id)
   end
 end
 ```
+
+```ruby
+add_index :accounting_exports, :idempotency_key, unique: true
+```
+
+The unique index is what makes this safe: two concurrent attempts race on insert, one
+raises `ActiveRecord::RecordNotUnique`, and the retry finds the existing row. The guard
+covers the window before the remote call; passing `idempotency_key` through to the API
+covers the window after it, so a crash between the API call and `update!` still resolves
+to a single export.
 
 ### ViewComponent
 
