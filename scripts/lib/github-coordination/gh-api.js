@@ -112,6 +112,7 @@ function listIssues(repo, options = {}) {
     '--limit',
     String(limit),
     ...(options.label ? ['--label', options.label] : []),
+    ...(options.search ? ['--search', options.search] : []),
     '--json',
     'number,title,body,url,state,labels,author,updatedAt,assignees',
   ];
