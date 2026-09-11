@@ -64,13 +64,18 @@ class ClaudeProvider(LLMProvider):
                 if message.role == Role.SYSTEM:
                     continue
                 serialized = message.to_anthropic_dict()
-                if (
+                merges_with_previous = (
                     message.role == Role.TOOL
-                    and api_messages
+                    and bool(api_messages)
                     and api_messages[-1]["role"] == Role.USER.value
                     and isinstance(api_messages[-1]["content"], list)
-                ):
-                    api_messages[-1]["content"].extend(serialized["content"])
+                )
+                if merges_with_previous:
+                    previous = api_messages[-1]
+                    api_messages[-1] = {
+                        **previous,
+                        "content": [*previous["content"], *serialized["content"]],
+                    }
                 else:
                     api_messages.append(serialized)
 

@@ -59,18 +59,18 @@ class Message:
             }
 
         if self.role == Role.ASSISTANT and self.tool_calls:
-            content: list[dict[str, Any]] = []
-            if self.content:
-                content.append({"type": "text", "text": self.content})
-            content.extend(
-                {
-                    "type": "tool_use",
-                    "id": tool_call.id,
-                    "name": tool_call.name,
-                    "input": tool_call.arguments,
-                }
-                for tool_call in self.tool_calls
-            )
+            content: list[dict[str, Any]] = [
+                *([{"type": "text", "text": self.content}] if self.content else []),
+                *(
+                    {
+                        "type": "tool_use",
+                        "id": tool_call.id,
+                        "name": tool_call.name,
+                        "input": tool_call.arguments,
+                    }
+                    for tool_call in self.tool_calls
+                ),
+            ]
             return {"role": Role.ASSISTANT.value, "content": content}
 
         return {"role": self.role.value, "content": self.content}

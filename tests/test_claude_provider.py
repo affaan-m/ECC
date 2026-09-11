@@ -94,7 +94,10 @@ def test_generate_serializes_tool_round_trip_for_anthropic() -> None:
                 Message(
                     role=Role.ASSISTANT,
                     content="",
-                    tool_calls=[ToolCall(id="toolu_1", name="search", arguments={"query": "claude"})],
+                    tool_calls=[
+                        ToolCall(id="toolu_1", name="search", arguments={"query": "claude"}),
+                        ToolCall(id="toolu_2", name="read", arguments={"path": "README.md"}),
+                    ],
                 ),
                 Message(role=Role.TOOL, content="results", tool_call_id="toolu_1"),
                 Message(role=Role.TOOL, content="more results", tool_call_id="toolu_2"),
@@ -112,7 +115,13 @@ def test_generate_serializes_tool_round_trip_for_anthropic() -> None:
                     "id": "toolu_1",
                     "name": "search",
                     "input": {"query": "claude"},
-                }
+                },
+                {
+                    "type": "tool_use",
+                    "id": "toolu_2",
+                    "name": "read",
+                    "input": {"path": "README.md"},
+                },
             ],
         },
         {
