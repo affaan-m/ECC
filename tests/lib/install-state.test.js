@@ -328,6 +328,68 @@ function runTests() {
     }
   })) passed++; else failed++;
 
+  if (test('rename failure preserves original and leaves no stale temp files', () => {
+    const testDir = createTestDir();
+    const statePath = path.join(testDir, 'ecc-install-state.json');
+    try {
+      const baseOptions = {
+        adapter: { id: 'claude-home' },
+        targetRoot: path.join(testDir, '.claude'),
+        installStatePath: statePath,
+        request: { profile: 'core', modules: [], legacyLanguages: [], legacyMode: false },
+        resolution: { selectedModules: ['rules-core'], skippedModules: [] },
+        operations: [],
+        source: { repoVersion: CURRENT_PACKAGE_VERSION, repoCommit: 'abc123', manifestVersion: 1 },
+      };
+      const original = createInstallState(baseOptions);
+      writeInstallState(statePath, original);
+      const beforeContent = fs.readFileSync(statePath, 'utf8');
+      const updated = createInstallState({ ...baseOptions, request: { profile: 'core', modules: ['extra'], legacyLanguages: [], legacyMode: false } });
+      const realRename = fs.renameSync;
+      fs.renameSync = () => { throw new Error('rename boom'); };
+      try {
+        assert.throws(() => writeInstallState(statePath, updated), /rename boom/);
+      } finally {
+        fs.renameSync = realRename;
+      }
+      assert.strictEqual(fs.readFileSync(statePath, 'utf8'), beforeContent);
+      assert.deepStrictEqual(fs.readdirSync(testDir).filter(name => name.includes('.tmp.')), []);
+    } finally {
+      cleanupTestDir(testDir);
+    }
+  })) passed++; else failed++;
+
+  if (test('write failure preserves original and leaves no stale temp files', () => {
+    const testDir = createTestDir();
+    const statePath = path.join(testDir, 'ecc-install-state.json');
+    try {
+      const baseOptions = {
+        adapter: { id: 'claude-home' },
+        targetRoot: path.join(testDir, '.claude'),
+        installStatePath: statePath,
+        request: { profile: 'core', modules: [], legacyLanguages: [], legacyMode: false },
+        resolution: { selectedModules: ['rules-core'], skippedModules: [] },
+        operations: [],
+        source: { repoVersion: CURRENT_PACKAGE_VERSION, repoCommit: 'abc123', manifestVersion: 1 },
+      };
+      const original = createInstallState(baseOptions);
+      writeInstallState(statePath, original);
+      const beforeContent = fs.readFileSync(statePath, 'utf8');
+      const updated = createInstallState({ ...baseOptions, request: { profile: 'core', modules: ['extra'], legacyLanguages: [], legacyMode: false } });
+      const realWrite = fs.writeFileSync;
+      fs.writeFileSync = () => { throw new Error('write boom'); };
+      try {
+        assert.throws(() => writeInstallState(statePath, updated), /write boom/);
+      } finally {
+        fs.writeFileSync = realWrite;
+      }
+      assert.strictEqual(fs.readFileSync(statePath, 'utf8'), beforeContent);
+      assert.deepStrictEqual(fs.readdirSync(testDir).filter(name => name.includes('.tmp.')), []);
+    } finally {
+      cleanupTestDir(testDir);
+    }
+  })) passed++; else failed++;
+
   console.log(`\nResults: Passed: ${passed}, Failed: ${failed}`);
   process.exit(failed > 0 ? 1 : 0);
 }

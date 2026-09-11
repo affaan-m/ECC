@@ -339,6 +339,27 @@ function readInstallState(filePath) {
   return state;
 }
 
+function syncParentDirectory(directoryPath) {
+  if (process.platform === 'win32') {
+    return;
+  }
+  let fd;
+  try {
+    fd = fs.openSync(directoryPath, fs.constants.O_RDONLY);
+    fs.fsyncSync(fd);
+  } catch (_syncError) {
+    void _syncError;
+  } finally {
+    if (fd !== undefined) {
+      try {
+        fs.closeSync(fd);
+      } catch (_closeError) {
+        void _closeError;
+      }
+    }
+  }
+}
+
 function writeInstallState(filePath, state) {
   assertValidInstallState(state, filePath);
   fs.mkdirSync(path.dirname(filePath), { recursive: true });
@@ -348,10 +369,31 @@ function writeInstallState(filePath, state) {
   try {
     fs.writeFileSync(fd, payload);
     fs.fsyncSync(fd);
-  } finally {
-    fs.closeSync(fd);
+  } catch (error) {
+    try {
+      fs.closeSync(fd);
+    } catch (_closeError) {
+      void _closeError;
+    }
+    try {
+      fs.rmSync(tmpPath, { force: true });
+    } catch (_rmError) {
+      void _rmError;
+    }
+    throw error;
   }
-  fs.renameSync(tmpPath, filePath);
+  fs.closeSync(fd);
+  try {
+    fs.renameSync(tmpPath, filePath);
+  } catch (error) {
+    try {
+      fs.rmSync(tmpPath, { force: true });
+    } catch (_rmError) {
+      void _rmError;
+    }
+    throw error;
+  }
+  syncParentDirectory(path.dirname(filePath));
   return state;
 }
 

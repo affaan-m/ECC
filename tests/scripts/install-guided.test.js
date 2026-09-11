@@ -1,6 +1,8 @@
 'use strict';
 
 const assert = require('assert');
+const fs = require('fs');
+const os = require('os');
 const path = require('path');
 const { spawnSync } = require('child_process');
 
@@ -382,6 +384,35 @@ function runGuidedPtyFixture(answers) {
       request: { harnesses: ['claude'], claudeHooks: 'off' },
     }, output);
     assert.ok(!written.includes('enables automation'));
+  });
+
+  await test('ECC_DRY_RUN env forces guided dry-run with no apply or filesystem writes', async () => {
+    const previousDryRun = process.env.ECC_DRY_RUN;
+    process.env.ECC_DRY_RUN = '1';
+    const sandbox = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-guided-dryrun-'));
+    const sentinelPath = path.join(sandbox, 'sentinel.txt');
+    fs.writeFileSync(sentinelPath, 'sentinel');
+    const beforeEntries = fs.readdirSync(sandbox).sort();
+    const beforeContent = fs.readFileSync(sentinelPath, 'utf8');
+    try {
+      const output = capture(false);
+      let applyCalls = 0;
+      const code = await main(['--harness', 'codex', '--yes'], {
+        applyPlan: async () => { applyCalls += 1; return { status: 'complete', completed: [] }; },
+        createPlan: async request => ({ request, harnesses: [{ id: 'codex', channel: 'native-plugin', preview: {} }] }),
+        interactive: false,
+        output,
+      });
+      assert.strictEqual(code, 0);
+      assert.strictEqual(applyCalls, 0);
+      assert.deepStrictEqual(fs.readdirSync(sandbox).sort(), beforeEntries);
+      assert.strictEqual(fs.readFileSync(sentinelPath, 'utf8'), beforeContent);
+      assert.match(output.read(), /Dry run complete/);
+    } finally {
+      if (previousDryRun === undefined) delete process.env.ECC_DRY_RUN;
+      else process.env.ECC_DRY_RUN = previousDryRun;
+      fs.rmSync(sandbox, { recursive: true, force: true });
+    }
   });
 
   console.log(`\nResults: Passed: ${passed}, Failed: ${failed}`);

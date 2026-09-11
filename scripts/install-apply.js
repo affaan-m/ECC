@@ -232,6 +232,9 @@ function runGuidedMain(guidedArgs) {
 const cliArgs = process.argv.slice(2);
 if (cliArgs.includes('--guided')) {
   const guidedArgs = cliArgs.filter(argument => argument !== '--guided');
+  if (isDryRun({ dryRun: guidedArgs.includes('--dry-run') }) && !guidedArgs.includes('--dry-run')) {
+    guidedArgs.push('--dry-run');
+  }
   runGuidedMain(guidedArgs);
 } else {
   main();

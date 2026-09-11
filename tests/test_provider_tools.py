@@ -114,6 +114,38 @@ def test_openai_provider_allows_missing_usage():
     assert output.usage is None
 
 
+def test_openai_provider_preserves_malformed_tool_arguments():
+    from llm.core.types import ToolCall
+
+    provider = OpenAIProvider(api_key="test")
+    tool_call = SimpleNamespace(
+        id="call_1",
+        function=SimpleNamespace(name="search", arguments="{not-json"),
+    )
+    message = SimpleNamespace(content="", tool_calls=[tool_call])
+    provider.client = _OpenAIClient(response=_openai_response(choices=[SimpleNamespace(message=message, finish_reason="tool_calls")]))
+
+    output = provider.generate(LLMInput(messages=[Message(role=Role.USER, content="hi")]))
+
+    assert output.tool_calls == [ToolCall(id="call_1", name="search", arguments={"raw": "{not-json"})]
+
+
+def test_openai_provider_wraps_non_dict_tool_arguments():
+    from llm.core.types import ToolCall
+
+    provider = OpenAIProvider(api_key="test")
+    tool_call = SimpleNamespace(
+        id="call_2",
+        function=SimpleNamespace(name="search", arguments="[1,2]"),
+    )
+    message = SimpleNamespace(content="", tool_calls=[tool_call])
+    provider.client = _OpenAIClient(response=_openai_response(choices=[SimpleNamespace(message=message, finish_reason="tool_calls")]))
+
+    output = provider.generate(LLMInput(messages=[Message(role=Role.USER, content="hi")]))
+
+    assert output.tool_calls == [ToolCall(id="call_2", name="search", arguments={"value": [1, 2]})]
+
+
 def test_claude_provider_serializes_tools_for_messages_api():
     provider = ClaudeProvider(api_key="test")
     client = _AnthropicClient()

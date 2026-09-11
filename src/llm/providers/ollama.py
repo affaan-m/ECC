@@ -25,7 +25,7 @@ def _parse_tool_arguments(raw_arguments: Any) -> dict[str, Any]:
     if not raw_arguments:
         return {}
     if isinstance(raw_arguments, dict):
-        return raw_arguments
+        return {**raw_arguments}
     if isinstance(raw_arguments, str):
         try:
             parsed = json.loads(raw_arguments)
