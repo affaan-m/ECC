@@ -20,6 +20,7 @@ const {
 const { getComputeSponsorCopy } = require('./lib/compute-sponsor');
 const { stripAnsi } = require('./lib/utils');
 const { describeMissingDependencyError } = require('./lib/missing-dependency');
+const { isDryRun } = require('./lib/dry-run');
 
 function getHelpText() {
   const languages = listLegacyCompatibilityLanguages();
@@ -166,6 +167,7 @@ async function main() {
       ...options,
       config,
     });
+    const dryRun = isDryRun(options);
     const rawPlan = createInstallPlanFromRequest(request, {
       projectRoot: process.cwd(),
       homeDir: process.env.HOME || os.homedir(),
@@ -173,7 +175,7 @@ async function main() {
       claudeRulesDir: process.env.CLAUDE_RULES_DIR || null,
     });
 
-    if (options.dryRun) {
+    if (dryRun) {
       const plan = previewInstallPlan(rawPlan);
       if (options.json) {
         console.log(JSON.stringify({ dryRun: true, plan }, null, 2));

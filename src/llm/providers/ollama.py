@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 from typing import Any
 
@@ -18,6 +19,22 @@ from llm.core.types import (
     ProviderType,
     ToolCall,
 )
+
+
+def _parse_tool_arguments(raw_arguments: Any) -> dict[str, Any]:
+    if not raw_arguments:
+        return {}
+    if isinstance(raw_arguments, dict):
+        return raw_arguments
+    if isinstance(raw_arguments, str):
+        try:
+            parsed = json.loads(raw_arguments)
+        except json.JSONDecodeError:
+            return {"raw": raw_arguments}
+        if isinstance(parsed, dict):
+            return parsed
+        return {"value": parsed}
+    return {"value": raw_arguments}
 
 
 class OllamaProvider(LLMProvider):
@@ -58,7 +75,6 @@ class OllamaProvider(LLMProvider):
         ]
 
     def generate(self, input: LLMInput) -> LLMOutput:
-        import json
         import urllib.request
 
         try:
@@ -87,7 +103,7 @@ class OllamaProvider(LLMProvider):
                     ToolCall(
                         id=tc.get("id", ""),
                         name=tc.get("function", {}).get("name", ""),
-                        arguments=tc.get("function", {}).get("arguments", {}),
+                        arguments=_parse_tool_arguments(tc.get("function", {}).get("arguments", {})),
                     )
                     for tc in result["message"]["tool_calls"]
                 ]
@@ -100,8 +116,9 @@ class OllamaProvider(LLMProvider):
             )
         except Exception as e:
             msg = str(e)
-            if "401" in msg or "connection" in msg.lower():
-                raise AuthenticationError(f"Ollama connection failed: {msg}", provider=ProviderType.OLLAMA) from e
+            lowered = msg.lower()
+            if "401" in msg or "unauthorized" in lowered or "authentication" in lowered:
+                raise AuthenticationError(f"Ollama authentication failed: {msg}", provider=ProviderType.OLLAMA) from e
             if "429" in msg or "rate_limit" in msg.lower():
                 raise RateLimitError(msg, provider=ProviderType.OLLAMA) from e
             if "context" in msg.lower() and "length" in msg.lower():

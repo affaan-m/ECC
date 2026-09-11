@@ -342,7 +342,16 @@ function readInstallState(filePath) {
 function writeInstallState(filePath, state) {
   assertValidInstallState(state, filePath);
   fs.mkdirSync(path.dirname(filePath), { recursive: true });
-  fs.writeFileSync(filePath, `${JSON.stringify(state, null, 2)}\n`);
+  const tmpPath = `${filePath}.tmp.${process.pid}.${Date.now()}`;
+  const payload = `${JSON.stringify(state, null, 2)}\n`;
+  const fd = fs.openSync(tmpPath, 'w');
+  try {
+    fs.writeFileSync(fd, payload);
+    fs.fsyncSync(fd);
+  } finally {
+    fs.closeSync(fd);
+  }
+  fs.renameSync(tmpPath, filePath);
   return state;
 }
 
