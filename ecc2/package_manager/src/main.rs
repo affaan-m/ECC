@@ -172,10 +172,17 @@ impl PackageManagerManager {
 
     /// Get Claude configuration directory path
     fn get_claude_dir(&self) -> PathBuf {
+    if let Ok(agent_home) = std::env::var("ECC_AGENT_DATA_HOME") {
+        PathBuf::from(agent_home)
+    } else if let Ok(_) = std::env::var("CURSOR_VERSION") {
         dirs::home_dir()
-            .unwrap_or_else(|| PathBuf::from("."))
-            .join(".claude")
+            .unwrap_or_else(|| PathBuf::from(".")).join(".cursor")
+    } else {
+        dirs::home_dir()
+            .unwrap_or_else(|| PathBuf::from(".")).join(".claude")
     }
+}
+
 
     fn get_config_path(&self) -> PathBuf {
         self.get_claude_dir().join("package-manager.json")
