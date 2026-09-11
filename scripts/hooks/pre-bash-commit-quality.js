@@ -260,29 +260,49 @@ function resolveCommand(command) {
 }
 
 const LINTER_TIMEOUT_MS = 30000;
-const UNSAFE_CMD_EXPANSION = /["%!\0\r\n]/;
+const UNSAFE_CMD_TOKEN = /["\0\r\n]/;
+const CMD_TOKEN_ENV_PREFIX = 'ECC_LINTER_TOKEN_';
 
-function quoteCmdToken(value) {
-  if (UNSAFE_CMD_EXPANSION.test(value)) {
-    throw new Error(`Unsafe character in Windows linter argument: ${JSON.stringify(value)}`);
+function validateCmdToken(value) {
+  const token = String(value);
+  if (UNSAFE_CMD_TOKEN.test(token)) {
+    throw new Error(`Unsafe character in Windows linter argument: ${JSON.stringify(token)}`);
   }
-  return `"${value}"`;
+  return token;
 }
 
 function getLinterInvocation(command, args, platform = process.platform) {
   const useCmd = platform === 'win32' && /\.(?:cmd|bat)$/i.test(command);
 
   if (useCmd) {
-    const commandLine = [command, ...args].map(quoteCmdToken).join(' ');
+    const environment = { ...process.env };
+    for (const name of Object.keys(environment)) {
+      if (name.toUpperCase().startsWith(CMD_TOKEN_ENV_PREFIX)) {
+        delete environment[name];
+      }
+    }
+
+    // Keep untrusted values out of cmd.exe source. Percent expansion is
+    // non-recursive, so percent signs introduced by these environment values
+    // stay literal. Disabling delayed expansion likewise preserves exclamation
+    // marks. Quotes and line controls remain invalid because they could escape
+    // the quoted token boundary or create another command line.
+    const tokenReferences = [command, ...args].map((value, index) => {
+      const name = `${CMD_TOKEN_ENV_PREFIX}${index}`;
+      environment[name] = validateCmdToken(value);
+      return `"%${name}%"`;
+    });
+    const commandLine = tokenReferences.join(' ');
     return {
       command: process.env.ComSpec || process.env.COMSPEC || 'cmd.exe',
-      args: ['/d', '/s', '/c', `"${commandLine}"`],
+      args: ['/d', '/v:off', '/s', '/c', `"${commandLine}"`],
       options: {
         encoding: 'utf8',
         stdio: ['pipe', 'pipe', 'pipe'],
         timeout: LINTER_TIMEOUT_MS,
         shell: false,
-        windowsVerbatimArguments: true
+        windowsVerbatimArguments: true,
+        env: environment
       }
     };
   }
