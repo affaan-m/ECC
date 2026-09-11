@@ -101,6 +101,7 @@ function withEnv(overrides, fn) {
 
 let passed = 0;
 let failed = 0;
+let skipped = 0;
 
 console.log('\nPre-Bash Commit Quality Hook Tests');
 console.log('==================================\n');
@@ -332,36 +333,39 @@ if (test('isolates Windows cmd token variables without mutating the parent envir
   }
 })) passed++; else failed++;
 
-if (test('passes percent and exclamation filenames literally to a Windows batch linter', () => {
-  if (process.platform !== 'win32') return;
+if (process.platform === 'win32') {
+  if (test('passes percent and exclamation filenames literally to a Windows batch linter', () => {
+    const repoDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc cmd literal '));
+    try {
+      const command = path.join(repoDir, 'lint %!.cmd');
+      const capturePath = path.join(repoDir, 'captured arguments.txt');
+      fs.writeFileSync(command, [
+        '@echo off',
+        'setlocal DisableDelayedExpansion',
+        '> "%ECC_CAPTURE_PATH%" echo(%~1',
+        '>> "%ECC_CAPTURE_PATH%" echo(%~2',
+        ''
+      ].join('\r\n'), 'utf8');
 
-  const repoDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc cmd literal '));
-  try {
-    const command = path.join(repoDir, 'lint %!.cmd');
-    const capturePath = path.join(repoDir, 'captured arguments.txt');
-    fs.writeFileSync(command, [
-      '@echo off',
-      'setlocal DisableDelayedExpansion',
-      '> "%ECC_CAPTURE_PATH%" echo(%~1',
-      '>> "%ECC_CAPTURE_PATH%" echo(%~2',
-      ''
-    ].join('\r\n'), 'utf8');
+      const invocation = hook.getLinterInvocation(command, ['100% ready.js', '!important!.js'], 'win32');
+      const result = spawnSync(invocation.command, invocation.args, {
+        ...invocation.options,
+        env: { ...invocation.options.env, ECC_CAPTURE_PATH: capturePath }
+      });
 
-    const invocation = hook.getLinterInvocation(command, ['100% ready.js', '!important!.js'], 'win32');
-    const result = spawnSync(invocation.command, invocation.args, {
-      ...invocation.options,
-      env: { ...invocation.options.env, ECC_CAPTURE_PATH: capturePath }
-    });
-
-    assert.strictEqual(result.status, 0, result.stderr || result.error?.message);
-    assert.deepStrictEqual(
-      fs.readFileSync(capturePath, 'utf8').split(/\r?\n/).filter(Boolean),
-      ['100% ready.js', '!important!.js']
-    );
-  } finally {
-    fs.rmSync(repoDir, { recursive: true, force: true });
-  }
-})) passed++; else failed++;
+      assert.strictEqual(result.status, 0, result.stderr || result.error?.message);
+      assert.deepStrictEqual(
+        fs.readFileSync(capturePath, 'utf8').split(/\r?\n/).filter(Boolean),
+        ['100% ready.js', '!important!.js']
+      );
+    } finally {
+      fs.rmSync(repoDir, { recursive: true, force: true });
+    }
+  })) passed++; else failed++;
+} else {
+  console.log('  - passes percent and exclamation filenames literally to a Windows batch linter (skipped: Windows only)');
+  skipped++;
+}
 
 if (test('rejects characters that can break Windows cmd token boundaries', () => {
   assert.throws(
@@ -501,5 +505,5 @@ if (test('measures length of the full message past an apostrophe (not the trunca
   assert.ok(res.issues.some(i => i.type === 'length'), 'full (>72) message should trigger a length issue');
 })) passed++; else failed++;
 
-console.log(`\nResults: Passed: ${passed}, Failed: ${failed}`);
+console.log(`\nResults: Passed: ${passed}, Failed: ${failed}, Skipped: ${skipped}`);
 process.exit(failed > 0 ? 1 : 0);
