@@ -6,7 +6,7 @@ origin: community
 
 # Rails Patterns
 
-Framework patterns for modern Ruby on Rails applications (Rails 7.1+ and 8.x). Rails is opinionated by design; these are the patterns the community has converged on for apps that stay maintainable past the 50-model mark. This skill is the "how." For the "what" and "when" (the decisions about which pattern to reach for), see `rules/ruby/patterns.md`.
+Framework patterns for modern Ruby on Rails applications (Rails 7.1+ and 8.x). Rails is opinionated by design; these are the patterns the community has converged on for apps that stay maintainable past the 50-model mark. This skill is the "how." For the "what" and "when" (the decisions about which pattern to reach for), see the Ruby patterns rules — `rules/ruby/patterns.md` in this repository, installed as `rules/ecc/ruby/patterns.md`.
 
 ## When to Activate
 
@@ -43,7 +43,7 @@ Avoid `app/lib/`, `app/utils/`, `app/managers/`. If something does not fit the d
 
 ### Skinny controllers
 
-Controllers receive a request, delegate to the right object, and render a response. Business logic lives elsewhere. (Per `rules/ruby/patterns.md`, extract to a service object when the controller starts carrying multiple responsibilities.)
+Controllers receive a request, delegate to the right object, and render a response. Business logic lives elsewhere. (Per the Ruby patterns rules, extract to a service object when the controller starts carrying multiple responsibilities.)
 
 ### Service objects
 
@@ -65,7 +65,7 @@ For ActiveRecord queries reused across controllers or services, or too complex f
 
 ### Background jobs
 
-Offload anything slow. (Per `rules/ruby/patterns.md`, Solid Queue for greenfield Rails 8 with modest throughput; Sidekiq when you need mature observability, high throughput, or existing Redis.) Regardless of adapter: pass IDs not records, make `perform` idempotent, and set `retry_on`/`discard_on` explicitly.
+Offload anything slow. (Per the Ruby patterns rules, Solid Queue for greenfield Rails 8 with modest throughput; Sidekiq when you need mature observability, high throughput, or existing Redis.) Regardless of adapter: pass IDs not records, make `perform` idempotent, and set `retry_on`/`discard_on` explicitly.
 
 ### ViewComponent over partials
 
@@ -73,7 +73,7 @@ For view logic with conditional rendering, more than two arguments, or reuse acr
 
 ### Hotwire: Turbo and Stimulus
 
-The default Rails frontend stack. (Per `rules/ruby/patterns.md`, prefer Hotwire for server-rendered apps; reach for React/Vue only when interaction complexity justifies the client surface.) Turbo Frames for partial page updates, Turbo Streams for server-driven updates, Stimulus for small client-side behaviors next to the markup.
+The default Rails frontend stack. (Per the Ruby patterns rules, prefer Hotwire for server-rendered apps; reach for React/Vue only when interaction complexity justifies the client surface.) Turbo Frames for partial page updates, Turbo Streams for server-driven updates, Stimulus for small client-side behaviors next to the markup.
 
 ### The Rails 8 Solid stack
 
@@ -456,6 +456,6 @@ If the page is server-rendered with occasional interactivity, Hotwire ships fast
 
 ## Related Skills
 
-- `backend-patterns` — service boundaries and adapter patterns (referenced by `rules/ruby/patterns.md`)
+- `backend-patterns` — service boundaries and adapter patterns (referenced by the Ruby patterns rules)
 - `ruby-patterns` — language-level Ruby idioms (if present)
-- `rules/ruby/patterns.md` — the decisions and when-to-use guidance this skill implements
+- Ruby patterns rules (`rules/ruby/patterns.md`, installed as `rules/ecc/ruby/patterns.md`) — the decisions and when-to-use guidance this skill implements
