@@ -111,14 +111,10 @@ function listIssues(repo, options = {}) {
     state,
     '--limit',
     String(limit),
-  ];
-  if (options.label) {
-    args.push('--label', options.label);
-  }
-  args.push(
+    ...(options.label ? ['--label', options.label] : []),
     '--json',
     'number,title,body,url,state,labels,author,updatedAt,assignees',
-  );
+  ];
   return runGhJson(args, options) || [];
 }
 
