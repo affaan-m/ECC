@@ -2,7 +2,6 @@
 
 const fs = require('fs');
 const path = require('path');
-const Ajv = require('ajv');
 
 const DEFAULT_INSTALL_CONFIG = 'ecc-install.json';
 const CONFIG_SCHEMA_PATH = path.join(__dirname, '..', '..', '..', 'schemas', 'ecc-install-config.schema.json');
@@ -22,6 +21,9 @@ function getValidator() {
     return cachedValidator;
   }
 
+  // ajv is required lazily so scripts that never load an install config (the
+  // common case, e.g. `--list-profiles`) don't need it on the require path.
+  const Ajv = require('ajv');
   const schema = readJson(CONFIG_SCHEMA_PATH, 'ecc-install-config.schema.json');
   const ajv = new Ajv({ allErrors: true });
   cachedValidator = ajv.compile(schema);

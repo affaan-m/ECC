@@ -27,10 +27,23 @@ function test(name, fn) {
 }
 
 function buildHookPlan() {
+  const managedHooks = {
+    SessionStart: [{
+      id: 'session:start',
+      matcher: '.*',
+      hooks: [{ type: 'command', command: 'node /target/scripts/hooks/session-start.js' }],
+    }],
+  };
   return {
     operations: [
       { kind: 'copy-file', moduleId: 'rules-core', sourceRelativePath: 'rules/common.md', destinationPath: '/target/rules/common.md' },
-      { kind: 'copy-file', moduleId: 'hooks-runtime', sourceRelativePath: 'hooks/hooks.json', destinationPath: '/target/hooks/hooks.json' },
+      {
+        kind: 'update-claude-settings',
+        moduleId: 'hooks-runtime',
+        sourceRelativePath: 'hooks/hooks.json',
+        destinationPath: '/target/settings.json',
+        managedHooks,
+      },
       { kind: 'copy-file', moduleId: 'hooks-runtime', sourceRelativePath: 'scripts/hooks/session-start.js', destinationPath: '/target/scripts/hooks/session-start.js' },
     ],
     selectedModuleIds: ['rules-core', 'hooks-runtime'],
@@ -46,7 +59,13 @@ function buildHookPlan() {
       },
       operations: [
         { kind: 'copy-file', moduleId: 'rules-core', sourceRelativePath: 'rules/common.md', destinationPath: '/target/rules/common.md' },
-        { kind: 'copy-file', moduleId: 'hooks-runtime', sourceRelativePath: 'hooks/hooks.json', destinationPath: '/target/hooks/hooks.json' },
+        {
+          kind: 'update-claude-settings',
+          moduleId: 'hooks-runtime',
+          sourceRelativePath: 'hooks/hooks.json',
+          destinationPath: '/target/settings.json',
+          managedHooks,
+        },
       ],
       resolution: { selectedModules: ['rules-core', 'hooks-runtime'], skippedModules: [] },
     },
@@ -69,6 +88,7 @@ function runTests() {
 
   if (test('matches hook runtime operations by module id and source path', () => {
     assert.strictEqual(isHookRuntimeOperation({ moduleId: 'hooks-runtime' }), true);
+    assert.strictEqual(isHookRuntimeOperation({ kind: 'update-claude-settings' }), true);
     assert.strictEqual(isHookRuntimeOperation({ sourceRelativePath: 'hooks/hooks.json' }), true);
     assert.strictEqual(isHookRuntimeOperation({ sourceRelativePath: '.cursor/hooks.json' }), true);
     assert.strictEqual(isHookRuntimeOperation({ destinationPath: '/root/.claude/hooks/hooks.json' }), true);

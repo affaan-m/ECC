@@ -61,10 +61,15 @@ function printHuman(result) {
     return;
   }
 
-  console.log('Uninstall summary:\n');
+  // Dry-run output must be phrased as a preview so it can never be mistaken
+  // for a completed uninstall (#2952).
+  console.log(`Uninstall summary${result.dryRun ? ' (dry run; nothing was removed)' : ''}:\n`);
   for (const entry of result.results) {
     console.log(`- ${entry.adapter.id}`);
-    console.log(`  Status: ${entry.status.toUpperCase()}`);
+    const statusLabel = result.dryRun && entry.status === 'planned'
+      ? 'WOULD UNINSTALL (dry run)'
+      : entry.status.toUpperCase();
+    console.log(`  Status: ${statusLabel}`);
     console.log(`  Install-state: ${entry.installStatePath}`);
 
     if (entry.error) {
@@ -84,10 +89,10 @@ function printHuman(result) {
 
     const candidatePaths = result.dryRun ? entry.plannedRemovals : entry.removedPaths;
     const paths = Array.isArray(candidatePaths) ? candidatePaths : [];
-    console.log(`  ${result.dryRun ? 'Planned removals' : 'Removed paths'}: ${paths.length}`);
+    console.log(`  ${result.dryRun ? 'Would remove' : 'Removed paths'}: ${paths.length}`);
   }
 
-  console.log(`\nSummary: checked=${result.summary.checkedCount}, ${result.dryRun ? 'planned' : 'uninstalled'}=${result.dryRun ? result.summary.plannedRemovalCount : result.summary.uninstalledCount}, partial=${result.summary.partialCount}, errors=${result.summary.errorCount}`);
+  console.log(`\nSummary${result.dryRun ? ' (dry run)' : ''}: checked=${result.summary.checkedCount}, ${result.dryRun ? 'planned' : 'uninstalled'}=${result.dryRun ? result.summary.plannedRemovalCount : result.summary.uninstalledCount}, partial=${result.summary.partialCount}, errors=${result.summary.errorCount}`);
 
   if (!result.dryRun) {
     console.log(`\n${exitFeedbackLines().join('\n')}`);
@@ -114,6 +119,20 @@ function codexHomePath() {
   return process.env.CODEX_HOME || path.join(process.env.HOME || os.homedir(), '.codex');
 }
 
+/**
+ * Dry-run is enabled either by the subcommand-level `--dry-run` flag or by the
+ * global `ecc --dry-run <command>` prefix, which sets ECC_DRY_RUN=1 (#2952).
+ * Destructive subcommands must honor both forms rather than silently ignoring
+ * the global flag.
+ */
+function isDryRun(options) {
+  const dryRunEnv = process.env.ECC_DRY_RUN;
+  if (dryRunEnv !== undefined && dryRunEnv !== '0' && dryRunEnv !== '1') {
+    throw new Error('ECC_DRY_RUN must be "1" or "0" when set');
+  }
+  return options.dryRun || dryRunEnv === '1';
+}
+
 function includesCodexTarget(targets) {
   return targets.length === 0 || targets.includes('codex');
 }
@@ -125,6 +144,8 @@ async function main() {
       showHelp(0);
     }
 
+    const dryRun = isDryRun(options);
+
     if (options.legacyCodexSync && options.targets.length > 0) {
       throw new Error('--legacy-codex-sync cannot be combined with --target');
     }
@@ -135,7 +156,7 @@ async function main() {
     if (options.legacyCodexSync) {
       result = uninstallLegacyCodexSync({
         codexHome: codexHomePath(),
-        dryRun: options.dryRun,
+        dryRun,
       });
       mode = 'legacy-codex-sync';
     } else {
@@ -144,7 +165,7 @@ async function main() {
         env: process.env,
         projectRoot: process.cwd(),
         targets: options.targets,
-        dryRun: options.dryRun,
+        dryRun,
       });
 
       if (
@@ -154,12 +175,12 @@ async function main() {
       ) {
         result = uninstallLegacyCodexSync({
           codexHome: codexHomePath(),
-          dryRun: options.dryRun,
+          dryRun,
         });
         mode = 'legacy-codex-sync';
       }
 
-      if (mode === 'install-state' && !options.dryRun) {
+      if (mode === 'install-state' && !dryRun) {
         const { reconcileCanonicalInstallStates } = require('./lib/install-state-store-sync');
         result.installStateProjection = await reconcileCanonicalInstallStates({
           homeDir: process.env.HOME || os.homedir(),
@@ -177,7 +198,7 @@ async function main() {
     if (options.json) {
       console.log(JSON.stringify(result, null, 2));
     } else if (mode === 'legacy-codex-sync') {
-      printLegacy(result, options.dryRun);
+      printLegacy(result, dryRun);
     } else {
       printHuman(result);
     }

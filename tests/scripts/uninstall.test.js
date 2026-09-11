@@ -47,9 +47,13 @@ function writeState(filePath, options) {
 }
 
 function run(args = [], options = {}) {
-  const env = options.homeDir
-    ? { ...process.env, HOME: options.homeDir, CODEX_HOME: path.join(options.homeDir, '.codex') }
-    : Object.fromEntries(Object.entries(process.env).filter(([key]) => key !== 'CODEX_HOME'))
+  const inheritedEnv = Object.fromEntries(
+    Object.entries(process.env).filter(([key]) => key !== 'ECC_DRY_RUN' && key !== 'CODEX_HOME')
+  );
+  const homeEnv = options.homeDir
+    ? { HOME: options.homeDir, USERPROFILE: options.homeDir, CODEX_HOME: path.join(options.homeDir, '.codex') }
+    : {};
+  const env = { ...inheritedEnv, ...(options.env || {}), ...homeEnv };
 
   try {
     const stdout = execFileSync('node', [SCRIPT, ...args], {
@@ -291,6 +295,138 @@ function runTests() {
     }
   })) passed++; else failed++;
 
+  // #2952: the global `ecc --dry-run uninstall` prefix sets ECC_DRY_RUN=1.
+  // The uninstaller must honor it exactly like the subcommand-level flag.
+  if (test('honors global ECC_DRY_RUN=1 without mutating managed files (#2952)', () => {
+    const homeDir = createTempDir('uninstall-home-');
+    const projectRoot = createTempDir('uninstall-project-');
+
+    try {
+      const targetRoot = path.join(projectRoot, '.cursor');
+      fs.mkdirSync(targetRoot, { recursive: true });
+      const normalizedTargetRoot = fs.realpathSync(targetRoot);
+      const statePath = path.join(normalizedTargetRoot, 'ecc-install-state.json');
+      const renderedPath = path.join(normalizedTargetRoot, 'generated.md');
+      fs.writeFileSync(renderedPath, '# generated\n');
+
+      writeState(statePath, {
+        adapter: { id: 'cursor-project', target: 'cursor', kind: 'project' },
+        targetRoot: normalizedTargetRoot,
+        installStatePath: statePath,
+        request: {
+          profile: null,
+          modules: ['platform-configs'],
+          includeComponents: [],
+          excludeComponents: [],
+          legacyLanguages: [],
+          legacyMode: false,
+        },
+        resolution: {
+          selectedModules: ['platform-configs'],
+          skippedModules: [],
+        },
+        operations: [
+          {
+            kind: 'render-template',
+            moduleId: 'platform-configs',
+            sourceRelativePath: '.cursor/generated.md.template',
+            destinationPath: renderedPath,
+            strategy: 'render-template',
+            ownership: 'managed',
+            scaffoldOnly: false,
+            renderedContent: '# generated\n',
+          },
+        ],
+        source: {
+          repoVersion: CURRENT_PACKAGE_VERSION,
+          repoCommit: 'abc123',
+          manifestVersion: CURRENT_MANIFEST_VERSION,
+        },
+      });
+
+      // No --dry-run flag: the global flag form must still be a no-op.
+      const uninstallResult = run(['--target', 'cursor', '--json'], {
+        cwd: projectRoot,
+        homeDir,
+        env: { ECC_DRY_RUN: '1' },
+      });
+      assert.strictEqual(uninstallResult.code, 0, uninstallResult.stderr);
+
+      const parsed = JSON.parse(uninstallResult.stdout);
+      assert.strictEqual(parsed.dryRun, true, 'ECC_DRY_RUN=1 must enable dry-run mode');
+      assert.ok(parsed.results[0].plannedRemovals.includes(renderedPath));
+      assert.ok(fs.existsSync(renderedPath), 'managed file must survive the dry run');
+      assert.ok(fs.existsSync(statePath), 'install-state must survive the dry run');
+    } finally {
+      cleanup(homeDir);
+      cleanup(projectRoot);
+    }
+  })) passed++; else failed++;
+
+  if (test('phrases dry-run human output as an unmistakable preview (#2952)', () => {
+    const homeDir = createTempDir('uninstall-home-');
+    const projectRoot = createTempDir('uninstall-project-');
+
+    try {
+      const targetRoot = path.join(projectRoot, '.cursor');
+      fs.mkdirSync(targetRoot, { recursive: true });
+      const normalizedTargetRoot = fs.realpathSync(targetRoot);
+      const statePath = path.join(normalizedTargetRoot, 'ecc-install-state.json');
+      const renderedPath = path.join(normalizedTargetRoot, 'generated.md');
+      fs.writeFileSync(renderedPath, '# generated\n');
+
+      writeState(statePath, {
+        adapter: { id: 'cursor-project', target: 'cursor', kind: 'project' },
+        targetRoot: normalizedTargetRoot,
+        installStatePath: statePath,
+        request: {
+          profile: null,
+          modules: ['platform-configs'],
+          includeComponents: [],
+          excludeComponents: [],
+          legacyLanguages: [],
+          legacyMode: false,
+        },
+        resolution: {
+          selectedModules: ['platform-configs'],
+          skippedModules: [],
+        },
+        operations: [
+          {
+            kind: 'render-template',
+            moduleId: 'platform-configs',
+            sourceRelativePath: '.cursor/generated.md.template',
+            destinationPath: renderedPath,
+            strategy: 'render-template',
+            ownership: 'managed',
+            scaffoldOnly: false,
+            renderedContent: '# generated\n',
+          },
+        ],
+        source: {
+          repoVersion: CURRENT_PACKAGE_VERSION,
+          repoCommit: 'abc123',
+          manifestVersion: CURRENT_MANIFEST_VERSION,
+        },
+      });
+
+      const uninstallResult = run(['--target', 'cursor', '--dry-run'], {
+        cwd: projectRoot,
+        homeDir,
+      });
+      assert.strictEqual(uninstallResult.code, 0, uninstallResult.stderr);
+
+      assert.ok(uninstallResult.stdout.includes('dry run'), 'summary header must carry the dry-run marker');
+      assert.ok(uninstallResult.stdout.includes('WOULD UNINSTALL (dry run)'), 'status must use conditional wording');
+      assert.ok(uninstallResult.stdout.includes('Would remove:'), 'path count must use conditional wording');
+      assert.ok(!uninstallResult.stdout.includes('Status: UNINSTALLED'), 'dry run must not claim UNINSTALLED');
+      assert.ok(!uninstallResult.stdout.includes('Removed paths:'), 'dry run must not claim removal');
+    } finally {
+      cleanup(homeDir);
+      cleanup(projectRoot);
+    }
+  })) passed++; else failed++;
+
   if (test('reports preserved legacy Antigravity files as an incomplete uninstall', () => {
     const homeDir = createTempDir('uninstall-home-');
     const projectRoot = createTempDir('uninstall-project-');
@@ -409,6 +545,74 @@ function runTests() {
       assert.strictEqual(fs.readFileSync(conversationPath, 'utf8'), 'conversation history');
       assert.strictEqual(fs.readFileSync(userFilePath, 'utf8'), 'unrelated');
       assert.ok(!fs.existsSync(statePath));
+    } finally {
+      cleanup(homeDir);
+      cleanup(projectRoot);
+    }
+  })) passed++; else failed++;
+
+  if (test('global dry-run environment previews legacy Codex cleanup without removing artifacts', () => {
+    const homeDir = createTempDir('uninstall-legacy-codex-dry-run-home-');
+    const projectRoot = createTempDir('uninstall-legacy-codex-dry-run-project-');
+
+    try {
+      const codexHome = path.join(homeDir, '.codex');
+      const promptPath = path.join(codexHome, 'prompts', 'ecc-plan.md');
+      fs.mkdirSync(path.dirname(promptPath), { recursive: true });
+
+      const statePath = beginLegacySyncState({
+        codexHome,
+        backupDir: path.join(codexHome, 'backups', 'ecc-test'),
+      });
+      recordLegacySyncPath({ statePath, filePath: promptPath });
+      fs.writeFileSync(promptPath, '# ECC generated prompt\n');
+      finalizeLegacySyncState({ statePath });
+
+      const uninstallResult = run(['--legacy-codex-sync'], {
+        cwd: projectRoot,
+        homeDir,
+        env: { ECC_DRY_RUN: '1' },
+      });
+
+      assert.strictEqual(uninstallResult.code, 0, uninstallResult.stderr);
+      assert.match(uninstallResult.stdout, /Status: PLANNED/);
+      assert.match(uninstallResult.stdout, /Planned changes:/);
+      assert.doesNotMatch(uninstallResult.stdout, /Status: UNINSTALLED|Removed paths:/);
+      assert.ok(fs.existsSync(promptPath), 'global dry-run must preserve legacy artifacts');
+      assert.ok(fs.existsSync(statePath), 'global dry-run must preserve legacy state');
+    } finally {
+      cleanup(homeDir);
+      cleanup(projectRoot);
+    }
+  })) passed++; else failed++;
+
+  if (test('rejects an invalid global dry-run value before legacy cleanup', () => {
+    const homeDir = createTempDir('uninstall-legacy-codex-invalid-dry-run-home-');
+    const projectRoot = createTempDir('uninstall-legacy-codex-invalid-dry-run-project-');
+
+    try {
+      const codexHome = path.join(homeDir, '.codex');
+      const promptPath = path.join(codexHome, 'prompts', 'ecc-plan.md');
+      fs.mkdirSync(path.dirname(promptPath), { recursive: true });
+
+      const statePath = beginLegacySyncState({
+        codexHome,
+        backupDir: path.join(codexHome, 'backups', 'ecc-test'),
+      });
+      recordLegacySyncPath({ statePath, filePath: promptPath });
+      fs.writeFileSync(promptPath, '# ECC generated prompt\n');
+      finalizeLegacySyncState({ statePath });
+
+      const uninstallResult = run(['--legacy-codex-sync'], {
+        cwd: projectRoot,
+        homeDir,
+        env: { ECC_DRY_RUN: 'true' },
+      });
+
+      assert.strictEqual(uninstallResult.code, 1);
+      assert.match(uninstallResult.stderr, /ECC_DRY_RUN must be "1" or "0" when set/);
+      assert.ok(fs.existsSync(promptPath), 'invalid dry-run input must preserve legacy artifacts');
+      assert.ok(fs.existsSync(statePath), 'invalid dry-run input must preserve legacy state');
     } finally {
       cleanup(homeDir);
       cleanup(projectRoot);

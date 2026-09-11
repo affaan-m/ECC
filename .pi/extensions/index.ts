@@ -15,16 +15,20 @@
  * Design constraints (see .pi/README.md):
  *   - Hooks resolve relative to THIS file, never `process.cwd()`, so a global
  *     `pi install` works from any project directory.
- *   - Hooks execute via `execFile(process.execPath, [...])` with no shell, so
- *     paths containing spaces or shell metacharacters are safe.
- *   - Hook failures are isolated: a broken, missing, or slow hook degrades to a
- *     warning and never terminates the Pi session.
+ *   - Hooks execute via `execFile(hookRuntime, [...])` with no shell, so paths
+ *     containing spaces or shell metacharacters are safe. The hook runtime is
+ *     selected separately because compiled OMP may report `process.release.name`
+ *     as `node` while `process.execPath` points back to `omp`; Bun is detected
+ *     separately via `process.versions.bun`.
+ *   - Hook failures are isolated: a broken, missing, slow, or misconfigured hook
+ *     degrades to a warning and never terminates the Pi session.
  */
 
 import { execFile } from "node:child_process"
 import * as fs from "node:fs"
 import * as os from "node:os"
 import * as path from "node:path"
+import { resolveHookRuntime } from "./hook-runtime.js"
 
 /**
  * Minimal structural types mirroring `@earendil-works/pi-coding-agent`.
@@ -175,8 +179,9 @@ interface HookResult {
 /**
  * Run an ECC hook through ECC's own runner.
  *
- * Never rejects: a missing runner, a non-zero exit, a timeout, or a spawn error
- * all resolve to a `failure` string that the caller surfaces as a warning.
+ * Never rejects: an invalid runtime override, a missing runner, a non-zero exit,
+ * a timeout, or a spawn error all resolve to a `failure` string that the caller
+ * surfaces as a warning.
  */
 function runEccHook(
   spec: HookSpec,
@@ -189,9 +194,19 @@ function runEccHook(
       resolve({ stdout: "", failure: `hook runner not found at ${HOOK_RUNNER}` })
       return
     }
+    let hookRuntime: string
+    try {
+      hookRuntime = resolveHookRuntime()
+    } catch (error) {
+      resolve({
+        stdout: "",
+        failure: `${spec.id}: ${(error as Error).message}`,
+      })
+      return
+    }
 
     const child = execFile(
-      process.execPath,
+      hookRuntime,
       [HOOK_RUNNER, spec.id, spec.script, spec.profiles],
       {
         // Hooks inspect the user's project, so they run there. Only the script

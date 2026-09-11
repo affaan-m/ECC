@@ -23,6 +23,10 @@ const {
   readInstallState,
   writeInstallState,
 } = require('../../scripts/lib/install-state');
+const {
+  assertClaudeSettingsPath,
+  materializeManagedHooks,
+} = require('../../scripts/lib/install/claude-settings');
 
 const REPO_ROOT = path.join(__dirname, '..', '..');
 const CURRENT_PACKAGE_VERSION = JSON.parse(
@@ -50,6 +54,10 @@ function createTempDir(prefix) {
 
 function cleanup(dirPath) {
   fs.rmSync(dirPath, { recursive: true, force: true });
+}
+
+function formatJson(value) {
+  return `${JSON.stringify(value, null, 2)}\n`;
 }
 
 function writeState(filePath, options) {
@@ -98,6 +106,61 @@ function writeCursorState(projectRoot, overrides = {}) {
     installStatePath: options.installStatePath,
     state: options,
   };
+}
+
+function writeClaudeState(homeDir, overrides = {}) {
+  const targetRoot = overrides.targetRoot || path.join(homeDir, '.claude');
+  const installStatePath = overrides.installStatePath
+    || path.join(targetRoot, 'ecc', 'install-state.json');
+  const options = {
+    adapter: { id: 'claude-home', target: 'claude', kind: 'home' },
+    targetRoot,
+    installStatePath,
+    request: {
+      profile: null,
+      modules: [],
+      includeComponents: [],
+      excludeComponents: [],
+      legacyLanguages: [],
+      legacyMode: true,
+      hookConsent: 'enabled',
+      ...(overrides.request || {}),
+    },
+    resolution: {
+      selectedModules: ['legacy-claude-install'],
+      skippedModules: [],
+      ...(overrides.resolution || {}),
+    },
+    operations: overrides.operations || [],
+    source: {
+      repoVersion: CURRENT_PACKAGE_VERSION,
+      repoCommit: 'abc123',
+      manifestVersion: CURRENT_MANIFEST_VERSION,
+      ...(overrides.source || {}),
+    },
+  };
+
+  writeState(installStatePath, options);
+  return {
+    targetRoot,
+    installStatePath,
+    state: options,
+  };
+}
+
+function managedHookEntry(id, command) {
+  return {
+    id,
+    matcher: '.*',
+    hooks: [{ type: 'command', command }],
+  };
+}
+
+function currentManagedHooks(targetRoot) {
+  return materializeManagedHooks(
+    JSON.parse(fs.readFileSync(path.join(REPO_ROOT, 'hooks', 'hooks.json'), 'utf8')),
+    targetRoot
+  );
 }
 
 function createOpencodeStateOptions(homeDir, overrides = {}) {
@@ -171,8 +234,10 @@ function withTemporarilyMovedPath(filePath, callback) {
 function managedOperation(kind, destinationPath, overrides = {}) {
   const operation = {
     kind,
-    moduleId: 'test-module',
-    sourceRelativePath: 'rules/common/coding-style.md',
+    moduleId: kind === 'update-claude-settings' ? 'hooks-runtime' : 'test-module',
+    sourceRelativePath: kind === 'update-claude-settings'
+      ? 'hooks/hooks.json'
+      : 'rules/common/coding-style.md',
     destinationPath,
     strategy: kind,
     ownership: 'managed',
@@ -3228,6 +3293,465 @@ function runTests() {
       cleanup(homeDir);
       cleanup(unsupportedProjectRoot);
       cleanup(missingPayloadProjectRoot);
+    }
+  })) passed++; else failed++;
+
+  if (test('doctor inspects update-claude-settings hooks by event and id', () => {
+    const homeDir = createTempDir('install-lifecycle-claude-home-');
+    const projectRoot = createTempDir('install-lifecycle-project-');
+
+    try {
+      const targetRoot = path.join(homeDir, '.claude');
+      const settingsPath = path.join(targetRoot, 'settings.json');
+      const managedHooks = currentManagedHooks(targetRoot);
+      const stopEntry = managedHooks.Stop[0];
+      fs.mkdirSync(targetRoot, { recursive: true });
+      fs.writeFileSync(settingsPath, formatJson({
+        theme: 'dark',
+        hooks: {
+          Stop: [
+            { id: 'user:stop', matcher: 'Bash', hooks: [{ type: 'command', command: 'user' }] },
+            ...managedHooks.Stop,
+          ],
+          ...Object.fromEntries(Object.entries(managedHooks).filter(([event]) => event !== 'Stop')),
+        },
+      }));
+      writeClaudeState(homeDir, {
+        operations: [
+          managedOperation('update-claude-settings', settingsPath, {
+            sourceRelativePath: 'hooks/hooks.json',
+            strategy: 'update-claude-settings',
+            managedHooks,
+          }),
+        ],
+      });
+
+      let report = buildDoctorReport({
+        repoRoot: REPO_ROOT,
+        homeDir,
+        projectRoot,
+        targets: ['claude'],
+      });
+      assert.strictEqual(report.results[0].status, 'ok');
+
+      fs.writeFileSync(settingsPath, formatJson({
+        theme: 'dark',
+        hooks: {
+          ...managedHooks,
+          Stop: [
+            { id: 'user:stop', matcher: 'Bash', hooks: [{ type: 'command', command: 'user' }] },
+            { ...stopEntry, description: 'drifted' },
+            ...managedHooks.Stop.slice(1),
+          ],
+        },
+      }));
+      report = buildDoctorReport({
+        repoRoot: REPO_ROOT,
+        homeDir,
+        projectRoot,
+        targets: ['claude'],
+      });
+      assert.strictEqual(report.results[0].status, 'warning');
+      assert.ok(report.results[0].issues.some(issue => issue.code === 'drifted-managed-files'));
+
+      fs.writeFileSync(settingsPath, formatJson({
+        theme: 'dark',
+        hooks: {
+          ...managedHooks,
+          Stop: managedHooks.Stop.filter(entry => entry.id !== stopEntry.id),
+        },
+      }));
+      report = buildDoctorReport({
+        repoRoot: REPO_ROOT,
+        homeDir,
+        projectRoot,
+        targets: ['claude'],
+      });
+      assert.strictEqual(report.results[0].status, 'error');
+      assert.ok(report.results[0].issues.some(issue => issue.code === 'missing-managed-files'));
+    } finally {
+      cleanup(homeDir);
+      cleanup(projectRoot);
+    }
+  })) passed++; else failed++;
+
+  if (test('doctor and repair surface malformed Claude settings errors', () => {
+    const homeDir = createTempDir('install-lifecycle-claude-home-');
+    const projectRoot = createTempDir('install-lifecycle-project-');
+
+    try {
+      const targetRoot = path.join(homeDir, '.claude');
+      const settingsPath = path.join(targetRoot, 'settings.json');
+      const managedHooks = currentManagedHooks(targetRoot);
+      fs.mkdirSync(targetRoot, { recursive: true });
+      fs.writeFileSync(settingsPath, '{ invalid json\n');
+      writeClaudeState(homeDir, {
+        operations: [
+          managedOperation('update-claude-settings', settingsPath, {
+            sourceRelativePath: 'hooks/hooks.json',
+            strategy: 'update-claude-settings',
+            managedHooks,
+          }),
+        ],
+      });
+
+      const report = buildDoctorReport({
+        repoRoot: REPO_ROOT,
+        homeDir,
+        projectRoot,
+        targets: ['claude'],
+      });
+      const issue = report.results[0].issues.find(candidate => (
+        candidate.code === 'invalid-claude-settings'
+      ));
+      assert.strictEqual(report.results[0].status, 'error');
+      assert.ok(issue, 'doctor should report an invalid Claude settings issue');
+      assert.match(issue.message, /Failed to inspect Claude settings/);
+
+      const repair = repairInstalledStates({
+        repoRoot: REPO_ROOT,
+        homeDir,
+        projectRoot,
+        targets: ['claude'],
+      });
+      assert.strictEqual(repair.results[0].status, 'error');
+      assert.match(repair.results[0].error, /Failed to inspect Claude settings/);
+      assert.strictEqual(fs.readFileSync(settingsPath, 'utf8'), '{ invalid json\n');
+    } finally {
+      cleanup(homeDir);
+      cleanup(projectRoot);
+    }
+  })) passed++; else failed++;
+
+  if (test('repair restores managed Claude hooks while preserving user settings and hooks', () => {
+    const homeDir = createTempDir('install-lifecycle-claude-home-');
+    const projectRoot = createTempDir('install-lifecycle-project-');
+
+    try {
+      const targetRoot = path.join(homeDir, '.claude');
+      const settingsPath = path.join(targetRoot, 'settings.json');
+      const userHook = {
+        id: 'user:stop',
+        matcher: 'Bash',
+        hooks: [{ type: 'command', command: 'user-command' }],
+      };
+      const managedHooks = currentManagedHooks(targetRoot);
+      const stopEntry = managedHooks.Stop[0];
+      fs.mkdirSync(targetRoot, { recursive: true });
+      fs.writeFileSync(settingsPath, formatJson({
+        theme: 'dark',
+        hooks: {
+          ...managedHooks,
+          Stop: [
+            userHook,
+            { ...stopEntry, description: 'drifted' },
+            ...managedHooks.Stop.slice(1),
+          ],
+        },
+      }));
+      writeClaudeState(homeDir, {
+        operations: [
+          managedOperation('update-claude-settings', settingsPath, {
+            sourceRelativePath: 'hooks/hooks.json',
+            strategy: 'update-claude-settings',
+            managedHooks,
+          }),
+        ],
+      });
+
+      const result = repairInstalledStates({
+        repoRoot: REPO_ROOT,
+        homeDir,
+        projectRoot,
+        targets: ['claude'],
+      });
+
+      assert.strictEqual(result.results[0].status, 'repaired');
+      assert.ok(result.results[0].repairedPaths.includes(settingsPath));
+      assert.deepStrictEqual(JSON.parse(fs.readFileSync(settingsPath, 'utf8')), {
+        theme: 'dark',
+        hooks: {
+          ...managedHooks,
+          Stop: [userHook, ...managedHooks.Stop],
+        },
+      });
+    } finally {
+      cleanup(homeDir);
+      cleanup(projectRoot);
+    }
+  })) passed++; else failed++;
+
+  if (test('repair creates missing Claude settings with private permissions', () => {
+    if (process.platform === 'win32') {
+      console.log('    (POSIX file modes unsupported on this platform; skipping)');
+      return;
+    }
+    const homeDir = createTempDir('install-lifecycle-claude-home-');
+    const projectRoot = createTempDir('install-lifecycle-project-');
+
+    try {
+      const targetRoot = path.join(homeDir, '.claude');
+      const settingsPath = path.join(targetRoot, 'settings.json');
+      const managedHooks = currentManagedHooks(targetRoot);
+      fs.mkdirSync(targetRoot, { recursive: true });
+      writeClaudeState(homeDir, {
+        operations: [
+          managedOperation('update-claude-settings', settingsPath, {
+            sourceRelativePath: 'hooks/hooks.json',
+            strategy: 'update-claude-settings',
+            managedHooks,
+          }),
+        ],
+      });
+
+      const result = repairInstalledStates({
+        repoRoot: REPO_ROOT,
+        homeDir,
+        projectRoot,
+        targets: ['claude'],
+      });
+
+      assert.strictEqual(result.results[0].status, 'repaired');
+      const descriptor = fs.openSync(settingsPath, 'r');
+      try {
+        assert.strictEqual(fs.fstatSync(descriptor).mode & 0o777, 0o600);
+        assert.deepStrictEqual(JSON.parse(fs.readFileSync(descriptor, 'utf8')).hooks, managedHooks);
+      } finally {
+        fs.closeSync(descriptor);
+      }
+    } finally {
+      cleanup(homeDir);
+      cleanup(projectRoot);
+    }
+  })) passed++; else failed++;
+
+  if (test('repair removes retired managed hooks using the recorded ownership snapshot', () => {
+    const homeDir = createTempDir('install-lifecycle-claude-home-');
+    const projectRoot = createTempDir('install-lifecycle-project-');
+
+    try {
+      const targetRoot = path.join(homeDir, '.claude');
+      const settingsPath = path.join(targetRoot, 'settings.json');
+      const currentHooks = currentManagedHooks(targetRoot);
+      const retiredHook = managedHookEntry('ecc:retired', 'node retired.js');
+      const recordedHooks = {
+        ...currentHooks,
+        Stop: [...currentHooks.Stop, retiredHook],
+      };
+      fs.mkdirSync(targetRoot, { recursive: true });
+      fs.writeFileSync(settingsPath, formatJson({
+        theme: 'dark',
+        hooks: recordedHooks,
+      }));
+      writeClaudeState(homeDir, {
+        operations: [
+          managedOperation('update-claude-settings', settingsPath, {
+            managedHooks: recordedHooks,
+          }),
+        ],
+      });
+
+      const result = repairInstalledStates({
+        repoRoot: REPO_ROOT,
+        homeDir,
+        projectRoot,
+        targets: ['claude'],
+      });
+
+      assert.strictEqual(result.results[0].status, 'repaired');
+      const repaired = JSON.parse(fs.readFileSync(settingsPath, 'utf8'));
+      assert.ok(!repaired.hooks.Stop.some(entry => entry.id === 'ecc:retired'));
+      assert.deepStrictEqual(repaired.hooks, currentHooks);
+      const state = readInstallState(path.join(targetRoot, 'ecc', 'install-state.json'));
+      const settingsOperation = state.operations.find(operation => (
+        operation.kind === 'update-claude-settings'
+      ));
+      assert.deepStrictEqual(settingsOperation.managedHooks, currentHooks);
+    } finally {
+      cleanup(homeDir);
+      cleanup(projectRoot);
+    }
+  })) passed++; else failed++;
+
+  if (test('uninstall removes only unchanged managed Claude hooks and reports drift as partial', () => {
+    const homeDir = createTempDir('install-lifecycle-claude-home-');
+    const projectRoot = createTempDir('install-lifecycle-project-');
+
+    try {
+      const targetRoot = path.join(homeDir, '.claude');
+      const settingsPath = path.join(targetRoot, 'settings.json');
+      const managedHooks = {
+        SessionStart: [managedHookEntry('ecc:start', 'node managed-start.js')],
+        Stop: [managedHookEntry('ecc:stop', 'node managed-stop.js')],
+      };
+      const userHook = {
+        id: 'user:stop',
+        matcher: 'Bash',
+        hooks: [{ type: 'command', command: 'user-command' }],
+      };
+      const driftedHook = managedHookEntry('ecc:stop', 'node user-edited-stop.js');
+      fs.mkdirSync(targetRoot, { recursive: true });
+      fs.writeFileSync(settingsPath, formatJson({
+        theme: 'dark',
+        hooks: {
+          SessionStart: managedHooks.SessionStart,
+          Stop: [userHook, driftedHook],
+        },
+      }));
+      const { installStatePath } = writeClaudeState(homeDir, {
+        operations: [
+          managedOperation('update-claude-settings', settingsPath, {
+            sourceRelativePath: 'hooks/hooks.json',
+            strategy: 'update-claude-settings',
+            managedHooks,
+          }),
+        ],
+      });
+
+      const result = uninstallInstalledStates({
+        homeDir,
+        projectRoot,
+        targets: ['claude'],
+      });
+
+      assert.strictEqual(result.results[0].status, 'partial');
+      assert.deepStrictEqual(result.results[0].retainedPaths, [settingsPath]);
+      assert.ok(fs.existsSync(installStatePath));
+      assert.deepStrictEqual(JSON.parse(fs.readFileSync(settingsPath, 'utf8')), {
+        theme: 'dark',
+        hooks: {
+          Stop: [userHook, driftedHook],
+        },
+      });
+    } finally {
+      cleanup(homeDir);
+      cleanup(projectRoot);
+    }
+  })) passed++; else failed++;
+
+  if (test('uninstall clears empty hook containers but preserves unrelated Claude settings', () => {
+    const homeDir = createTempDir('install-lifecycle-claude-home-');
+    const projectRoot = createTempDir('install-lifecycle-project-');
+
+    try {
+      const targetRoot = path.join(homeDir, '.claude');
+      const settingsPath = path.join(targetRoot, 'settings.json');
+      const managedHooks = {
+        Stop: [managedHookEntry('ecc:stop', 'node managed-stop.js')],
+      };
+      fs.mkdirSync(targetRoot, { recursive: true });
+      fs.writeFileSync(settingsPath, formatJson({
+        theme: 'dark',
+        hooks: managedHooks,
+      }));
+      const { installStatePath } = writeClaudeState(homeDir, {
+        operations: [
+          managedOperation('update-claude-settings', settingsPath, {
+            sourceRelativePath: 'hooks/hooks.json',
+            strategy: 'update-claude-settings',
+            managedHooks,
+          }),
+        ],
+      });
+
+      const result = uninstallInstalledStates({
+        homeDir,
+        projectRoot,
+        targets: ['claude'],
+      });
+
+      assert.strictEqual(result.results[0].status, 'uninstalled');
+      assert.deepStrictEqual(JSON.parse(fs.readFileSync(settingsPath, 'utf8')), {
+        theme: 'dark',
+      });
+      assert.ok(!fs.existsSync(installStatePath));
+    } finally {
+      cleanup(homeDir);
+      cleanup(projectRoot);
+    }
+  })) passed++; else failed++;
+
+  if (test('Claude settings lifecycle refuses a final-symlink destination', () => {
+    const homeDir = createTempDir('install-lifecycle-claude-home-');
+    const projectRoot = createTempDir('install-lifecycle-project-');
+
+    try {
+      const targetRoot = path.join(homeDir, '.claude');
+      const victimPath = path.join(targetRoot, 'victim.json');
+      const settingsPath = path.join(targetRoot, 'settings.json');
+      const managedHooks = {
+        Stop: [managedHookEntry('ecc:stop', 'node managed-stop.js')],
+      };
+      fs.mkdirSync(targetRoot, { recursive: true });
+      fs.writeFileSync(victimPath, formatJson({ sentinel: true, hooks: managedHooks }));
+      try {
+        fs.symlinkSync(victimPath, settingsPath, 'file');
+      } catch {
+        console.log('    (file symlink unsupported on this platform; skipping)');
+        return;
+      }
+      writeClaudeState(homeDir, {
+        operations: [
+          managedOperation('update-claude-settings', settingsPath, {
+            sourceRelativePath: 'hooks/hooks.json',
+            strategy: 'update-claude-settings',
+            managedHooks,
+          }),
+        ],
+      });
+
+      const doctor = buildDoctorReport({
+        repoRoot: REPO_ROOT,
+        homeDir,
+        projectRoot,
+        targets: ['claude'],
+      });
+      const repair = repairInstalledStates({
+        repoRoot: REPO_ROOT,
+        homeDir,
+        projectRoot,
+        targets: ['claude'],
+      });
+      const uninstall = uninstallInstalledStates({
+        homeDir,
+        projectRoot,
+        targets: ['claude'],
+      });
+
+      assert.strictEqual(doctor.results[0].status, 'error');
+      assert.ok(doctor.results[0].issues.some(issue => (
+        issue.code === 'unsafe-managed-destination'
+      )));
+      assert.strictEqual(repair.results[0].status, 'error');
+      assert.match(repair.results[0].error, /final symlink/);
+      assert.strictEqual(uninstall.results[0].status, 'error');
+      assert.match(uninstall.results[0].error, /final symlink/);
+      assert.deepStrictEqual(JSON.parse(fs.readFileSync(victimPath, 'utf8')), {
+        sentinel: true,
+        hooks: managedHooks,
+      });
+    } finally {
+      cleanup(homeDir);
+      cleanup(projectRoot);
+    }
+  })) passed++; else failed++;
+
+  if (test('Claude settings path validation refuses a non-canonical destination', () => {
+    const homeDir = createTempDir('install-lifecycle-claude-home-');
+    const projectRoot = createTempDir('install-lifecycle-project-');
+
+    try {
+      const targetRoot = path.join(homeDir, '.claude');
+      const destinationPath = path.join(targetRoot, 'settings.local.json');
+      fs.mkdirSync(targetRoot, { recursive: true });
+      assert.throws(
+        () => assertClaudeSettingsPath(destinationPath, targetRoot),
+        /outside the canonical settings file/
+      );
+      assert.ok(!fs.existsSync(destinationPath));
+    } finally {
+      cleanup(homeDir);
+      cleanup(projectRoot);
     }
   })) passed++; else failed++;
 
