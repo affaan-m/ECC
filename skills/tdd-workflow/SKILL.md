@@ -232,7 +232,7 @@ Recommended path:
 Store the evidence report in the project's standard documentation directory, for example:
 
 ```text
-docs/testing/<plan-or-task-name>.tdd.md
+docs/releases/<version>/<plan-or-task-name>.tdd.md
 .github/tdd/<plan-or-task-name>.tdd.md
 .claude/tdd/<plan-or-task-name>.tdd.md
 ```

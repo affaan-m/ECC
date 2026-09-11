@@ -1,0 +1,15 @@
+{
+ Tools = ordered() {
+  ITO_PROD_RedOffset = Transform { Inputs = { Center = Input { Value = { 0.499, 0.5 }, }, Edges = Input { Value = 2, }, } },
+  ITO_PROD_BlueOffset = Transform { Inputs = { Center = Input { Value = { 0.501, 0.5 }, }, Edges = Input { Value = 2, }, } },
+  ITO_PROD_RedCopy = ChannelBoolean { Inputs = {
+   Operation = Input { Value = 0, }, ToRed = Input { Value = 0, }, ToGreen = Input { Value = 6, }, ToBlue = Input { Value = 7, }, ToAlpha = Input { Value = 8, },
+   Foreground = Input { SourceOp = "ITO_PROD_RedOffset", Source = "Output", },
+  } },
+  ITO_PROD_BlueCopy = ChannelBoolean { Inputs = {
+   Operation = Input { Value = 0, }, ToRed = Input { Value = 5, }, ToGreen = Input { Value = 6, }, ToBlue = Input { Value = 2, }, ToAlpha = Input { Value = 8, },
+   Background = Input { SourceOp = "ITO_PROD_RedCopy", Source = "Output", },
+   Foreground = Input { SourceOp = "ITO_PROD_BlueOffset", Source = "Output", },
+  } },
+ }
+}

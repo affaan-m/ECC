@@ -23,6 +23,7 @@ const {
   validateManagedHooks,
 } = require('../../scripts/lib/install/claude-settings');
 const { stripHookMetadata } = require('../../scripts/lib/hook-registry');
+const { sameFileIdentity } = require('../../scripts/lib/install/claude-settings-lock');
 
 function test(name, fn) {
   try {
@@ -63,6 +64,16 @@ function withFirstStatusMessage(hooks, event, statusMessage) {
         : hookEntry
     )),
   };
+}
+
+function deriveStats(stats, overrides) {
+  return Object.create(stats, Object.fromEntries(
+    Object.entries(overrides).map(([name, value]) => [name, {
+      configurable: true,
+      enumerable: true,
+      value,
+    }])
+  ));
 }
 
 function assertAtomicParentReplacementRejected(stage) {
@@ -317,6 +328,169 @@ function runTests() {
     );
   })) passed++; else failed++;
 
+  if (test('compares file identities strictly except for missing Windows device ids', () => {
+    const originalPlatform = process.platform;
+    try {
+      Object.defineProperty(process, 'platform', { value: 'win32', configurable: true });
+      assert.strictEqual(
+        sameFileIdentity({ dev: 0, ino: 42 }, { dev: 2162558900, ino: 42 }),
+        true
+      );
+      assert.strictEqual(
+        sameFileIdentity(
+          { dev: 0n, ino: 19421773395341796n },
+          { dev: 2162558900n, ino: 19421773395341796n }
+        ),
+        true
+      );
+      assert.strictEqual(
+        sameFileIdentity(
+          { dev: 1n, ino: 9007199254740992n },
+          { dev: 1n, ino: 9007199254740993n }
+        ),
+        false
+      );
+      assert.strictEqual(
+        sameFileIdentity({ dev: 1n, ino: 42n }, { dev: 2n, ino: 42n }),
+        false
+      );
+
+      Object.defineProperty(process, 'platform', { value: 'linux', configurable: true });
+      assert.strictEqual(
+        sameFileIdentity({ dev: 0n, ino: 42n }, { dev: 2n, ino: 42n }),
+        false
+      );
+    } finally {
+      Object.defineProperty(process, 'platform', {
+        value: originalPlatform,
+        configurable: true,
+      });
+    }
+  })) passed++; else failed++;
+
+  if (test('atomic settings updates accept Windows path stats with an omitted device id', () => {
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'claude-settings-win-dev-'));
+    const settingsPath = path.join(tempDir, 'settings.json');
+    const originalLstatSync = fs.lstatSync;
+    const originalPlatform = process.platform;
+    try {
+      fs.writeFileSync(settingsPath, '{"theme":"dark"}\n');
+      Object.defineProperty(process, 'platform', { value: 'win32', configurable: true });
+      fs.lstatSync = function(...args) {
+        const stats = originalLstatSync.apply(fs, args);
+        return deriveStats(stats, { dev: typeof stats.dev === 'bigint' ? 0n : 0 });
+      };
+
+      updateSettingsAtomic(
+        settingsPath,
+        settings => ({ settings: { ...settings, managed: true } })
+      );
+
+      assert.deepStrictEqual(JSON.parse(fs.readFileSync(settingsPath, 'utf8')), {
+        theme: 'dark',
+        managed: true,
+      });
+      assert.ok(!fs.existsSync(`${settingsPath}.ecc.lock`));
+    } finally {
+      fs.lstatSync = originalLstatSync;
+      Object.defineProperty(process, 'platform', {
+        value: originalPlatform,
+        configurable: true,
+      });
+      fs.rmSync(tempDir, { recursive: true, force: true });
+    }
+  })) passed++; else failed++;
+
+  if (test('atomic settings updates reject unequal nonzero Windows device ids', () => {
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'claude-settings-win-dev-mismatch-'));
+    const settingsPath = path.join(tempDir, 'settings.json');
+    const originalLstatSync = fs.lstatSync;
+    const originalPlatform = process.platform;
+    const initial = '{"theme":"initial"}\n';
+    try {
+      fs.writeFileSync(settingsPath, initial);
+      Object.defineProperty(process, 'platform', { value: 'win32', configurable: true });
+      fs.lstatSync = function(targetPath, ...args) {
+        const stats = originalLstatSync.call(fs, targetPath, ...args);
+        if (targetPath !== settingsPath) return stats;
+        const mismatchedDev = typeof stats.dev === 'bigint' ? stats.dev + 1n : stats.dev + 1;
+        return deriveStats(stats, { dev: mismatchedDev });
+      };
+
+      assert.throws(
+        () => updateSettingsAtomic(
+          settingsPath,
+          settings => ({ settings: { ...settings, managed: true } })
+        ),
+        error => error.code === 'ECC_SETTINGS_CHANGED'
+      );
+      assert.strictEqual(fs.readFileSync(settingsPath, 'utf8'), initial);
+      assert.ok(!fs.existsSync(`${settingsPath}.ecc.lock`));
+    } finally {
+      fs.lstatSync = originalLstatSync;
+      Object.defineProperty(process, 'platform', {
+        value: originalPlatform,
+        configurable: true,
+      });
+      fs.rmSync(tempDir, { recursive: true, force: true });
+    }
+  })) passed++; else failed++;
+
+  if (test('settings snapshots request BigInt stats and reject inodes that collide as Numbers', () => {
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'claude-settings-bigint-identity-'));
+    const settingsPath = path.join(tempDir, 'settings.json');
+    const originalOpenSync = fs.openSync;
+    const originalFstatSync = fs.fstatSync;
+    const originalLstatSync = fs.lstatSync;
+    let settingsDescriptor;
+    let sawBigIntFstat = false;
+    let sawBigIntLstat = false;
+    const descriptorIno = 9007199254740992n;
+    const pathIno = 9007199254740993n;
+    try {
+      fs.writeFileSync(settingsPath, '{"theme":"initial"}\n');
+      fs.openSync = function(targetPath, ...args) {
+        const descriptor = originalOpenSync.call(fs, targetPath, ...args);
+        if (targetPath === settingsPath) settingsDescriptor = descriptor;
+        return descriptor;
+      };
+      fs.fstatSync = function(descriptor, options) {
+        const stats = originalFstatSync.call(fs, descriptor, options);
+        if (descriptor !== settingsDescriptor) return stats;
+        sawBigIntFstat = options && options.bigint === true;
+        return deriveStats(stats, {
+          ino: typeof stats.ino === 'bigint' ? descriptorIno : Number(descriptorIno),
+        });
+      };
+      fs.lstatSync = function(targetPath, options) {
+        const stats = originalLstatSync.call(fs, targetPath, options);
+        if (targetPath !== settingsPath) return stats;
+        sawBigIntLstat = options && options.bigint === true;
+        return deriveStats(stats, {
+          ino: typeof stats.ino === 'bigint' ? pathIno : Number(pathIno),
+        });
+      };
+
+      assert.throws(
+        () => updateSettingsAtomic(
+          settingsPath,
+          settings => ({ settings: { ...settings, managed: true } })
+        ),
+        error => error.code === 'ECC_SETTINGS_CHANGED'
+      );
+      assert.strictEqual(sawBigIntFstat, true);
+      assert.strictEqual(sawBigIntLstat, true);
+      assert.deepStrictEqual(JSON.parse(fs.readFileSync(settingsPath, 'utf8')), {
+        theme: 'initial',
+      });
+    } finally {
+      fs.openSync = originalOpenSync;
+      fs.fstatSync = originalFstatSync;
+      fs.lstatSync = originalLstatSync;
+      fs.rmSync(tempDir, { recursive: true, force: true });
+    }
+  })) passed++; else failed++;
+
   if (test('atomic settings updates retry after a concurrent change and preserve secure mode', () => {
     const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'claude-settings-atomic-'));
     const settingsPath = path.join(tempDir, 'settings.json');
@@ -463,6 +637,77 @@ function runTests() {
       assert.ok(caught.releaseError);
       assert.strictEqual(caught.releaseError.code, 'ENOENT');
     } finally {
+      fs.rmSync(tempDir, { recursive: true, force: true });
+    }
+  })) passed++; else failed++;
+
+  if (test('settings lock release preserves a lock with an unequal nonzero Windows device id', () => {
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'claude-settings-release-dev-'));
+    const settingsPath = path.join(tempDir, 'settings.json');
+    const lockPath = `${settingsPath}.ecc.lock`;
+    const originalLstatSync = fs.lstatSync;
+    const originalPlatform = process.platform;
+    let lockContents;
+    try {
+      Object.defineProperty(process, 'platform', { value: 'win32', configurable: true });
+      fs.lstatSync = function(targetPath, ...args) {
+        const stats = originalLstatSync.call(fs, targetPath, ...args);
+        if (!String(targetPath).includes('.ecc.lock.release-')) return stats;
+        const mismatchedDev = typeof stats.dev === 'bigint' ? stats.dev + 1n : stats.dev + 1;
+        return deriveStats(stats, { dev: mismatchedDev });
+      };
+
+      assert.throws(
+        () => runWithSettingsLock(settingsPath, () => {
+          lockContents = fs.readFileSync(lockPath, 'utf8');
+        }),
+        /Refusing to release a changed Claude settings lock/
+      );
+      assert.strictEqual(fs.readFileSync(lockPath, 'utf8'), lockContents);
+    } finally {
+      fs.lstatSync = originalLstatSync;
+      Object.defineProperty(process, 'platform', {
+        value: originalPlatform,
+        configurable: true,
+      });
+      fs.rmSync(tempDir, { recursive: true, force: true });
+    }
+  })) passed++; else failed++;
+
+  if (test('stale lock recovery preserves a lock with an unequal nonzero Windows device id', () => {
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'claude-settings-stale-dev-'));
+    const settingsPath = path.join(tempDir, 'settings.json');
+    const lockPath = `${settingsPath}.ecc.lock`;
+    const originalLstatSync = fs.lstatSync;
+    const originalPlatform = process.platform;
+    const lockContents = 'foreign stale lock\n';
+    try {
+      fs.writeFileSync(lockPath, lockContents, { mode: 0o600 });
+      const stale = new Date(Date.now() - (10 * 60 * 1000));
+      fs.utimesSync(lockPath, stale, stale);
+      Object.defineProperty(process, 'platform', { value: 'win32', configurable: true });
+      fs.lstatSync = function(targetPath, ...args) {
+        const stats = originalLstatSync.call(fs, targetPath, ...args);
+        if (!stats || !String(targetPath).includes('.ecc.lock.stale-')) return stats;
+        const mismatchedDev = typeof stats.dev === 'bigint' ? stats.dev + 1n : stats.dev + 1;
+        return deriveStats(stats, { dev: mismatchedDev });
+      };
+
+      assert.throws(
+        () => updateSettingsAtomic(
+          settingsPath,
+          settings => ({ settings: { ...settings, recovered: true } })
+        ),
+        /Another ECC process is updating Claude settings/
+      );
+      assert.strictEqual(fs.readFileSync(lockPath, 'utf8'), lockContents);
+      assert.ok(!fs.existsSync(`${lockPath}.recover`));
+    } finally {
+      fs.lstatSync = originalLstatSync;
+      Object.defineProperty(process, 'platform', {
+        value: originalPlatform,
+        configurable: true,
+      });
       fs.rmSync(tempDir, { recursive: true, force: true });
     }
   })) passed++; else failed++;
