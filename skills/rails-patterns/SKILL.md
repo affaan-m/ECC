@@ -124,9 +124,18 @@ end
 # app/services/invoices/create.rb
 module Invoices
   class Create
-    Result = Data.define(:success?, :invoice, :errors)
+    # Struct keeps this runnable on every Ruby that Rails 7.1 supports.
+    # On Ruby 3.2+, `Data.define(:success?, :invoice, :errors)` is a more
+    # concise immutable alternative.
+    Result = Struct.new(:success, :invoice, :errors, keyword_init: true) do
+      def success?
+        success
+      end
+    end
 
-    def self.call(params:, user:) = new(params: params, user: user).call
+    def self.call(params:, user:)
+      new(params: params, user: user).call
+    end
 
     def initialize(params:, user:)
       @params = params
@@ -143,9 +152,9 @@ module Invoices
       rescue StandardError => e
         Rails.logger.error("Notification dispatch failed for invoice #{invoice.id}: #{e.message}")
       end
-      Result.new(success?: true, invoice: invoice, errors: nil)
+      Result.new(success: true, invoice: invoice, errors: nil)
     rescue ActiveRecord::RecordInvalid => e
-      Result.new(success?: false, invoice: e.record, errors: e.record.errors)
+      Result.new(success: false, invoice: e.record, errors: e.record.errors)
     end
 
     private
@@ -209,7 +218,9 @@ end
 # app/queries/invoices/overdue.rb
 module Invoices
   class Overdue
-    def self.call(scope: Invoice.all, as_of: Time.current) = new(scope: scope, as_of: as_of).call
+    def self.call(scope: Invoice.all, as_of: Time.current)
+      new(scope: scope, as_of: as_of).call
+    end
 
     def initialize(scope:, as_of:)
       @scope = scope
