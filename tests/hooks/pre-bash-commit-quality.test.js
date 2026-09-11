@@ -269,6 +269,49 @@ if (test('does not flag ordinary unquoted apiKey code references', () => {
   });
 })) passed++; else failed++;
 
+if (test('only quotes Windows batch commands whose path contains spaces', () => {
+  const command = 'C:\\Users\\Jane Doe\\project\\node_modules\\.bin\\eslint.cmd';
+  const invocation = hook.getLinterInvocation(command, ['index.js'], 'win32');
+
+  assert.strictEqual(invocation.command, `"${command}"`);
+  assert.deepStrictEqual(invocation.args, ['index.js']);
+  assert.strictEqual(invocation.options.shell, true);
+
+  const plainCmd = hook.getLinterInvocation('C:\\tools\\eslint.cmd', [], 'win32');
+  assert.strictEqual(plainCmd.command, 'C:\\tools\\eslint.cmd');
+  assert.strictEqual(plainCmd.options.shell, true);
+
+  const batch = hook.getLinterInvocation('C:\\tools\\lint.BAT', [], 'win32');
+  assert.strictEqual(batch.command, 'C:\\tools\\lint.BAT');
+  assert.strictEqual(batch.options.shell, true);
+
+  const executable = hook.getLinterInvocation('C:\\Program Files\\eslint.exe', [], 'win32');
+  assert.strictEqual(executable.command, 'C:\\Program Files\\eslint.exe');
+  assert.strictEqual(executable.options.shell, false);
+
+  const posix = hook.getLinterInvocation('/tmp/project with spaces/eslint', [], 'darwin');
+  assert.strictEqual(posix.command, '/tmp/project with spaces/eslint');
+  assert.strictEqual(posix.options.shell, false);
+})) passed++; else failed++;
+
+if (test('uses ESLint bundled formatter without the removed compact formatter', () => {
+  inTempRepo(repoDir => {
+    const eslintPath = path.join(repoDir, 'node_modules', '.bin', executableName('eslint'));
+    fs.mkdirSync(path.dirname(eslintPath), { recursive: true });
+    const source = process.platform === 'win32'
+      ? '@echo off\r\necho %* | findstr /C:"--format compact" >nul && exit /b 9\r\nexit /b 0\r\n'
+      : '#!/bin/sh\ncase " $* " in *" --format compact "*) exit 9 ;; esac\nexit 0\n';
+    fs.writeFileSync(eslintPath, source, 'utf8');
+    fs.chmodSync(eslintPath, 0o755);
+
+    process.chdir(repoDir);
+    const result = hook.runLinter(['index.js']);
+
+    assert.ok(result.eslint, 'expected ESLint to run');
+    assert.strictEqual(result.eslint.success, true, result.eslint.output);
+  });
+})) passed++; else failed++;
+
 if (test('reports eslint pylint and golint failures from staged files', () => {
   inTempRepo(repoDir => {
     writeAndStage(repoDir, 'index.js', 'const lint = true;\n');

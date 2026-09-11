@@ -259,14 +259,25 @@ function resolveCommand(command) {
   return null;
 }
 
+function getLinterInvocation(command, args, platform = process.platform) {
+  const useShell = platform === 'win32' && /\.(?:cmd|bat)$/i.test(command);
+  const resolvedCommand = useShell && /\s/.test(command) ? `"${command}"` : command;
+
+  return {
+    command: resolvedCommand,
+    args,
+    options: {
+      encoding: 'utf8',
+      stdio: ['pipe', 'pipe', 'pipe'],
+      timeout: 30000,
+      shell: useShell
+    }
+  };
+}
+
 function runLinterCommand(command, args) {
-  const useShell = process.platform === 'win32' && /\.(?:cmd|bat)$/i.test(command);
-  return spawnSync(command, args, {
-    encoding: 'utf8',
-    stdio: ['pipe', 'pipe', 'pipe'],
-    timeout: 30000,
-    shell: useShell
-  });
+  const invocation = getLinterInvocation(command, args);
+  return spawnSync(invocation.command, invocation.args, invocation.options);
 }
 
 function commandOutput(result) {
@@ -294,7 +305,7 @@ function runLinter(files) {
     const eslintBin = process.platform === 'win32' ? 'eslint.cmd' : 'eslint';
     const eslintPath = path.join(process.cwd(), 'node_modules', '.bin', eslintBin);
     if (fs.existsSync(eslintPath)) {
-      const result = runLinterCommand(eslintPath, ['--format', 'compact', ...jsFiles]);
+      const result = runLinterCommand(eslintPath, jsFiles);
       results.eslint = {
         success: result.status === 0,
         output: commandOutput(result)
@@ -481,4 +492,12 @@ if (require.main === module) {
   });
 }
 
-module.exports = { run, evaluate, validateCommitMessage, findFileIssues, isPlaceholderSecret };
+module.exports = {
+  run,
+  evaluate,
+  validateCommitMessage,
+  findFileIssues,
+  isPlaceholderSecret,
+  getLinterInvocation,
+  runLinter
+};
