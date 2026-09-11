@@ -272,9 +272,9 @@ end
 add_column :posts, :comments_count, :integer, default: 0, null: false
 ```
 
-`post.comments_count` becomes a column read instead of a `COUNT(*)`. On a table that
-already has rows, run `Post.reset_counters(id, :comments)` for each existing post after
-adding the column.
+`post.comments_count` becomes a column read instead of a `COUNT(*)`. This example
+assumes a new table; adding a counter cache to a table that already has rows requires a
+backfill, which is out of scope here.
 
 ### Background job shape
 
