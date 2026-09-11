@@ -40,7 +40,8 @@
         "items": {
           "type": "object",
           "required": [
-            "id"
+            "id",
+            "fingerprint"
           ],
           "properties": {
             "id": {
@@ -50,6 +51,11 @@
             },
             "description": {
               "type": "string"
+            },
+            "fingerprint": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{12}$",
+              "description": "First 12 hex characters of the SHA-256 of the matcher entry (matcher + hooks, keys sorted) at this index in hooks.json. Binds the sidecar entry to a specific matcher so a reorder is detected. Regenerate with `node scripts/ci/validate-hooks.js --update-fingerprints`."
             }
           },
           "additionalProperties": false

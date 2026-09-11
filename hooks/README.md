@@ -21,6 +21,8 @@ The executable hook graph remains `hooks/hooks.json`; the memory persistence dir
 
 Stable hook IDs and descriptions live in `hooks/hooks.metadata.json`, aligned by event and index with `hooks/hooks.json`. Claude Code validates a plugin's `hooks.json` against its own schema and reports any other key (`$schema`, `id`, `description`) as unknown at load time, so `hooks.json` carries only what the harness accepts. ECC's installer, validator, and dashboard merge the sidecar back in through `scripts/lib/hooks-config.js`; `node scripts/ci/validate-hooks.js` fails if the two files drift apart.
 
+Each sidecar entry also carries a `fingerprint` of the matcher entry it describes (matcher plus hook commands), so reordering `hooks.json` without reordering the sidecar, or editing a command without updating the sidecar, is caught rather than silently swapping IDs. After changing a hook command or entry order, run `node scripts/ci/validate-hooks.js --update-fingerprints` to refresh the fingerprints, then commit both files.
+
 ## Installing These Hooks Manually
 
 For Claude Code manual installs, do not paste the raw repo `hooks.json` into `~/.claude/settings.json` or copy it directly into `~/.claude/hooks/hooks.json`. The checked-in file is plugin/repo-oriented and is meant to be installed through the ECC installer or loaded as a plugin.

@@ -38,10 +38,15 @@ const {
   applyHooksMetadata,
   findMetadataMismatches,
   metadataPathFor,
+  withRefreshedFingerprints,
 } = require(resolveRepoModule('scripts/lib/hooks-config.js'));
 
 const HOOKS_FILE = path.join(__dirname, '../../hooks/hooks.json');
 const HOOKS_SCHEMA_PATH = path.join(__dirname, '../../schemas/hooks.schema.json');
+const METADATA_SCHEMA_PATH = path.join(__dirname, '../../schemas/hooks-metadata.schema.json');
+// `--update-fingerprints` rewrites the sidecar's fingerprints from the current
+// hooks.json instead of validating. Run it after changing a hook command.
+const UPDATE_FINGERPRINTS = process.argv.includes('--update-fingerprints');
 // Keys Claude Code's own hooks schema rejects. Keeping them out of hooks.json is
 // what stops "unknown keys ... ignored" warnings when the plugin loads.
 const HARNESS_UNKNOWN_ROOT_KEYS = ['$schema'];
@@ -208,6 +213,30 @@ function validateHarnessCompatibility(data) {
   return hasErrors;
 }
 
+/**
+ * Validate a parsed document against a JSON schema file, if the schema exists.
+ *
+ * @param {object} document - Parsed JSON to validate.
+ * @param {string} schemaPath - Path to the schema; skipped when absent.
+ * @param {string} label - Name used in error output.
+ * @returns {boolean} true if errors were found
+ */
+function validateAgainstSchema(document, schemaPath, label) {
+  if (!fs.existsSync(schemaPath)) {
+    return false;
+  }
+  const schema = JSON.parse(fs.readFileSync(schemaPath, 'utf-8'));
+  const ajv = new Ajv({ allErrors: true });
+  const validate = ajv.compile(schema);
+  if (validate(document)) {
+    return false;
+  }
+  for (const err of validate.errors) {
+    console.error(`ERROR: ${label} schema: ${err.instancePath || '/'} ${err.message}`);
+  }
+  return true;
+}
+
 function validateHooks() {
   if (!fs.existsSync(HOOKS_FILE)) {
     console.log('No hooks.json found, skipping validation');
@@ -239,6 +268,18 @@ function validateHooks() {
       process.exit(1);
     }
 
+    if (UPDATE_FINGERPRINTS) {
+      const refreshed = withRefreshedFingerprints(data, metadata);
+      fs.writeFileSync(metadataPath, `${JSON.stringify(refreshed, null, 2)}
+`);
+      console.log(`Updated fingerprints in ${METADATA_FILENAME}`);
+      metadata = refreshed;
+    }
+
+    if (validateAgainstSchema(metadata, METADATA_SCHEMA_PATH, METADATA_FILENAME)) {
+      process.exit(1);
+    }
+
     const mismatches = findMetadataMismatches(data, metadata);
     if (mismatches.length > 0) {
       for (const mismatch of mismatches) {
@@ -248,21 +289,12 @@ function validateHooks() {
     }
 
     // Validate the merged view so the id/description rules below still apply.
-    applyHooksMetadata(data, metadata);
+    data = applyHooksMetadata(data, metadata);
   }
 
   // Validate against JSON schema
-  if (fs.existsSync(HOOKS_SCHEMA_PATH)) {
-    const schema = JSON.parse(fs.readFileSync(HOOKS_SCHEMA_PATH, 'utf-8'));
-    const ajv = new Ajv({ allErrors: true });
-    const validate = ajv.compile(schema);
-    const valid = validate(data);
-    if (!valid) {
-      for (const err of validate.errors) {
-        console.error(`ERROR: hooks.json schema: ${err.instancePath || '/'} ${err.message}`);
-      }
-      process.exit(1);
-    }
+  if (validateAgainstSchema(data, HOOKS_SCHEMA_PATH, 'hooks.json')) {
+    process.exit(1);
   }
 
   // Support both object format { hooks: {...} } and array format

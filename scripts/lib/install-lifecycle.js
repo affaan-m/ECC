@@ -36,7 +36,7 @@ const { adaptAntigravityAgent } = require('./install/antigravity-agent');
 const { buildInstallIndex, rewriteRelativeLinks } = require('./install/link-rewrite');
 const { getInstallTargetAdapter, listInstallTargetAdapters } = require('./install-targets/registry');
 const { resolveInvocationEnvironment } = require('./invocation-environment');
-const { applyHooksMetadata, metadataPathFor } = require('./hooks-config');
+const { mergeHooksMetadata, metadataPathFor } = require('./hooks-config');
 const OPENCODE_BUILD_ARTIFACT = path.join('.opencode', 'dist');
 const OPENCODE_BUILD_SCRIPT = path.join('scripts', 'build-opencode.js');
 const OPENCODE_PLUGIN_NOT_BUILT_CODE = 'opencode-plugin-not-built';
@@ -539,7 +539,9 @@ function readJsonNoFollow(filePath) {
 /**
  * Read hooks.json and merge in hooks/hooks.metadata.json without following
  * symlinks. The sidecar holds the stable matcher ids that hooks.json cannot
- * carry, because Claude Code reports unknown keys when the plugin loads.
+ * carry, because Claude Code reports unknown keys when the plugin loads. A
+ * sidecar that does not line up with hooks.json is rejected before repair can
+ * reconcile matchers under the wrong ids.
  *
  * @param {string} hooksPath - Path to the source hooks.json.
  * @returns {object} the hooks configuration with ids and descriptions restored.
@@ -550,7 +552,7 @@ function readHooksConfigNoFollow(hooksPath) {
   if (!fs.existsSync(metadataPath)) {
     return hooksConfig;
   }
-  return applyHooksMetadata(hooksConfig, readJsonNoFollow(metadataPath));
+  return mergeHooksMetadata(hooksConfig, readJsonNoFollow(metadataPath), hooksPath);
 }
 
 function assertClaudeSettingsDestination(operation, trustedRoot, target = null) {

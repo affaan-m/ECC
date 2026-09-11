@@ -15,8 +15,10 @@ const path = require('path');
 const {
   applyHooksMetadata,
   findMetadataMismatches,
+  fingerprintHookEntry,
   metadataPathFor,
   readHooksConfig,
+  withRefreshedFingerprints,
 } = require('../../scripts/lib/hooks-config');
 
 const REPO_ROOT = path.resolve(__dirname, '../..');
@@ -96,32 +98,128 @@ test('merging leaves hook commands untouched', () => {
 
 test('applyHooksMetadata does not overwrite an id already present', () => {
   const hooksConfig = { hooks: { PreToolUse: [{ id: 'existing', matcher: 'Bash', hooks: [] }] } };
-  applyHooksMetadata(hooksConfig, { entries: { PreToolUse: [{ id: 'from-sidecar' }] } });
-  assert.strictEqual(hooksConfig.hooks.PreToolUse[0].id, 'existing');
+  const merged = applyHooksMetadata(hooksConfig, { entries: { PreToolUse: [{ id: 'from-sidecar' }] } });
+  assert.strictEqual(merged.hooks.PreToolUse[0].id, 'existing');
 });
 
+test('applyHooksMetadata returns a new config and leaves its inputs untouched', () => {
+  const entry = { matcher: 'Bash', hooks: [{ type: 'command', command: 'node a.js' }] };
+  const hooksConfig = { hooks: { PreToolUse: [entry] } };
+  const metadata = { entries: { PreToolUse: [{ id: 'a', description: 'A' }] } };
+
+  const merged = applyHooksMetadata(hooksConfig, metadata);
+
+  assert.notStrictEqual(merged, hooksConfig);
+  assert.notStrictEqual(merged.hooks.PreToolUse[0], entry);
+  assert.deepStrictEqual(merged.hooks.PreToolUse[0], { ...entry, id: 'a', description: 'A' });
+  assert.deepStrictEqual(hooksConfig, { hooks: { PreToolUse: [entry] } });
+  assert.ok(!('id' in entry) && !('description' in entry), 'input entry must not be mutated');
+  assert.strictEqual(merged.hooks.PreToolUse[0].hooks, entry.hooks, 'untouched nested data is shared');
+});
+
+const alpha = { matcher: 'Bash', hooks: [{ type: 'command', command: 'node alpha.js' }] };
+const beta = { matcher: 'Bash', hooks: [{ type: 'command', command: 'node beta.js' }] };
+const alphaMeta = { id: 'a', fingerprint: fingerprintHookEntry(alpha) };
+const betaMeta = { id: 'b', fingerprint: fingerprintHookEntry(beta) };
+
 test('findMetadataMismatches reports length and coverage problems', () => {
-  const hooksConfig = { hooks: { PreToolUse: [{ hooks: [] }, { hooks: [] }] } };
+  const hooksConfig = { hooks: { PreToolUse: [alpha, beta] } };
 
   assert.strictEqual(findMetadataMismatches(hooksConfig, { entries: {} }).length, 1);
   assert.strictEqual(
-    findMetadataMismatches(hooksConfig, { entries: { PreToolUse: [{ id: 'a' }] } }).length,
-    1
-  );
-  assert.strictEqual(
-    findMetadataMismatches(hooksConfig, { entries: { PreToolUse: [{ id: 'a' }, { id: '' }] } }).length,
+    findMetadataMismatches(hooksConfig, { entries: { PreToolUse: [alphaMeta] } }).length,
     1
   );
   assert.strictEqual(
     findMetadataMismatches(hooksConfig, {
-      entries: { PreToolUse: [{ id: 'a' }, { id: 'b' }], Stop: [] },
+      entries: { PreToolUse: [alphaMeta, { ...betaMeta, id: '' }] },
+    }).length,
+    1
+  );
+  assert.strictEqual(
+    findMetadataMismatches(hooksConfig, {
+      entries: { PreToolUse: [alphaMeta, { ...betaMeta, description: 1 }] },
+    }).length,
+    1
+  );
+  assert.strictEqual(
+    findMetadataMismatches(hooksConfig, {
+      entries: { PreToolUse: [alphaMeta, betaMeta], Stop: [] },
     }).length,
     1
   );
   assert.deepStrictEqual(
-    findMetadataMismatches(hooksConfig, { entries: { PreToolUse: [{ id: 'a' }, { id: 'b' }] } }),
+    findMetadataMismatches(hooksConfig, { entries: { PreToolUse: [alphaMeta, betaMeta] } }),
     []
   );
+});
+
+test('findMetadataMismatches detects reordered entries and missing fingerprints', () => {
+  const hooksConfig = { hooks: { PreToolUse: [alpha, beta] } };
+
+  const reordered = findMetadataMismatches(hooksConfig, { entries: { PreToolUse: [betaMeta, alphaMeta] } });
+  assert.strictEqual(reordered.length, 2, 'each swapped entry is reported');
+  assert.match(reordered[0], /PreToolUse\[0\] \(id "b"\) fingerprint .* does not match/);
+
+  const changed = findMetadataMismatches(
+    { hooks: { PreToolUse: [alpha, { ...beta, matcher: 'Write' }] } },
+    { entries: { PreToolUse: [alphaMeta, betaMeta] } }
+  );
+  assert.strictEqual(changed.length, 1, 'a changed matcher invalidates the fingerprint');
+
+  const missing = findMetadataMismatches(hooksConfig, {
+    entries: { PreToolUse: [{ id: 'a' }, { id: 'b', fingerprint: 'nope' }] },
+  });
+  assert.strictEqual(missing.length, 2);
+  assert.match(missing[0], /missing a valid "fingerprint"/);
+});
+
+test('fingerprintHookEntry ignores id, description, and key order', () => {
+  const base = fingerprintHookEntry(alpha);
+  assert.match(base, /^[0-9a-f]{12}$/);
+  assert.strictEqual(fingerprintHookEntry({ ...alpha, id: 'x', description: 'y' }), base);
+  assert.strictEqual(
+    fingerprintHookEntry({ hooks: [{ command: 'node alpha.js', type: 'command' }], matcher: 'Bash' }),
+    base
+  );
+  assert.notStrictEqual(fingerprintHookEntry(beta), base);
+});
+
+test('withRefreshedFingerprints rewrites fingerprints without touching ids', () => {
+  const hooksConfig = { hooks: { PreToolUse: [alpha, beta] } };
+  const stale = {
+    $schema: 's',
+    entries: { PreToolUse: [{ id: 'a', fingerprint: '000000000000' }, { id: 'b' }] },
+  };
+
+  const refreshed = withRefreshedFingerprints(hooksConfig, stale);
+
+  assert.deepStrictEqual(refreshed, { $schema: 's', entries: { PreToolUse: [alphaMeta, betaMeta] } });
+  assert.deepStrictEqual(findMetadataMismatches(hooksConfig, refreshed), []);
+  assert.strictEqual(stale.entries.PreToolUse[0].fingerprint, '000000000000', 'input is not mutated');
+});
+
+test('readHooksConfig rejects a sidecar that does not line up', () => {
+  const tempDir = fs.mkdtempSync(path.join(require('os').tmpdir(), 'ecc-hooks-'));
+  const tempHooks = path.join(tempDir, 'hooks.json');
+  fs.writeFileSync(tempHooks, JSON.stringify({ hooks: { PreToolUse: [alpha, beta] } }));
+  fs.writeFileSync(
+    metadataPathFor(tempHooks),
+    JSON.stringify({ entries: { PreToolUse: [betaMeta, alphaMeta] } })
+  );
+
+  try {
+    assert.throws(() => readHooksConfig(tempHooks), /does not line up with .*hooks\.json[\s\S]*fingerprint/);
+
+    fs.writeFileSync(
+      metadataPathFor(tempHooks),
+      JSON.stringify({ entries: { PreToolUse: [alphaMeta, betaMeta] } })
+    );
+    const merged = readHooksConfig(tempHooks);
+    assert.deepStrictEqual(merged.hooks.PreToolUse.map(entry => entry.id), ['a', 'b']);
+  } finally {
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  }
 });
 
 test('readHooksConfig returns raw config when the sidecar is absent', () => {
@@ -149,5 +247,5 @@ for (const { name, fn } of tests) {
   }
 }
 
-console.log(`\n${tests.length - failures}/${tests.length} hooks metadata tests passed`);
+console.log(`\nResults: Passed: ${tests.length - failures}, Failed: ${failures}`);
 process.exit(failures === 0 ? 0 : 1);
