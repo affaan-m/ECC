@@ -225,7 +225,7 @@ function resolveMainStdout(_raw, result, _options = {}) {
   return result.stdout || '';
 }
 
-async function main() {
+async function main(options = {}) {
   const mode = process.argv[2] === 'async' ? 'async' : 'sync';
   const { raw, truncated } = await readStdinRaw();
   const dispatcherId = `post:dispatcher:${mode}`;
@@ -236,7 +236,8 @@ async function main() {
     },
     process.env
   );
-  const hooks = dispatcherEnabled ? (mode === 'async' ? ASYNC_HOOKS : SYNC_HOOKS) : [];
+  const configuredHooks = options.hookListOverride || (mode === 'async' ? ASYNC_HOOKS : SYNC_HOOKS);
+  const hooks = dispatcherEnabled ? configuredHooks : [];
   const result = runHooks(raw, hooks, { truncated });
   if (truncated) {
     process.stderr.write(`[Hook] stdin exceeded ${MAX_STDIN} bytes for PostToolUse ${mode}; suppressing pass-through\n`);
@@ -247,8 +248,8 @@ async function main() {
   process.exitCode = result.exitCode;
 }
 
-function cli() {
-  main().catch(error => {
+function cli(options = {}) {
+  main(options).catch(error => {
     process.stderr.write(`[Hook] PostToolUse dispatcher failed: ${error.message}\n`);
     process.exitCode = 0;
   });

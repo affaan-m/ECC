@@ -73,10 +73,9 @@ function runConfiguredCommand(entry, raw, env = {}) {
 function runInspectingDispatcher(input, env = {}) {
   const script = [
     `const dispatcher = require(${JSON.stringify(dispatcherPath)});`,
-    'dispatcher.SYNC_HOOKS.length = 0;',
-    "dispatcher.SYNC_HOOKS.push({ id: 'post:test:inspect', matcher: '*', profiles: 'standard,strict', run: (raw, context) => ({ stdout: JSON.stringify({ raw: raw.length <= 16 ? raw : null, bytes: Buffer.byteLength(raw, 'utf8'), truncated: context.truncated, maxStdin: context.maxStdin }) }) });",
+    "const hooks = [{ id: 'post:test:inspect', matcher: '*', profiles: 'standard,strict', run: (raw, context) => ({ stdout: JSON.stringify({ raw: raw.length <= 16 ? raw : null, bytes: Buffer.byteLength(raw, 'utf8'), truncated: context.truncated, maxStdin: context.maxStdin }) }) }];",
     "process.argv[2] = 'sync';",
-    'dispatcher.cli();'
+    'dispatcher.cli({ hookListOverride: hooks });'
   ].join('');
   return spawnSync(process.execPath, ['-e', script], {
     cwd: repoRoot,
@@ -87,7 +86,8 @@ function runInspectingDispatcher(input, env = {}) {
       CLAUDE_PLUGIN_ROOT: repoRoot,
       ECC_HOOK_PROFILE: 'standard',
       ECC_DISABLED_HOOKS: '',
-      ...env
+      ...env,
+      ECC_DRY_RUN: '0'
     },
     timeout: 10000,
     maxBuffer: 4 * 1024 * 1024
@@ -512,16 +512,20 @@ function runTests() {
     test('failing hook exit code propagates to the real dispatcher process status', () => {
       const script = [
         `const dispatcher = require(${JSON.stringify(dispatcherPath)});`,
-        'dispatcher.SYNC_HOOKS.length = 0;',
-        "dispatcher.SYNC_HOOKS.push({ id: 'post:test:fail', matcher: '*', profiles: 'standard,strict', run: () => ({ exitCode: 7 }) });",
+        "const hooks = [{ id: 'post:test:fail', matcher: '*', profiles: 'standard,strict', run: () => ({ exitCode: 7 }) }];",
         "process.argv[2] = 'sync';",
-        'dispatcher.cli();'
+        'dispatcher.cli({ hookListOverride: hooks });'
       ].join('');
       const result = spawnSync(process.execPath, ['-e', script], {
         cwd: repoRoot,
         input: JSON.stringify({ hook_event_name: 'PostToolUse', tool_name: 'Read', tool_input: {}, tool_response: {} }),
         encoding: 'utf8',
-        env: { ...process.env, CLAUDE_PLUGIN_ROOT: repoRoot, ECC_POSTTOOLUSE_PASSTHROUGH: '1' },
+        env: {
+          ...process.env,
+          CLAUDE_PLUGIN_ROOT: repoRoot,
+          ECC_POSTTOOLUSE_PASSTHROUGH: '1',
+          ECC_DRY_RUN: '0'
+        },
         timeout: 10000
       });
       assert.strictEqual(result.status, 7, 'OS-level exit status should reflect the failing hook');
