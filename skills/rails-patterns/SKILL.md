@@ -272,7 +272,9 @@ end
 add_column :posts, :comments_count, :integer, default: 0, null: false
 ```
 
-`post.comments_count` becomes a column read instead of a `COUNT(*)`.
+`post.comments_count` becomes a column read instead of a `COUNT(*)`. On a table that
+already has rows, run `Post.reset_counters(id, :comments)` for each existing post after
+adding the column.
 
 ### Background job shape
 
