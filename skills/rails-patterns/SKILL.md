@@ -289,7 +289,7 @@ class AccountingExportJob < ApplicationJob
 
   def perform(invoice_id)
     invoice = Invoice.find(invoice_id)
-    export = AccountingExport.find_or_create_by!(
+    export = AccountingExport.create_or_find_by!(
       invoice: invoice,
       idempotency_key: "invoice-export-#{invoice.id}-#{invoice.updated_at.to_i}"
     )
@@ -305,8 +305,12 @@ end
 add_index :accounting_exports, :idempotency_key, unique: true
 ```
 
-The unique index is what makes this safe: two concurrent attempts race on insert, one
-raises `ActiveRecord::RecordNotUnique`, and the retry finds the existing row. The guard
+The unique index is what makes this safe, and `create_or_find_by!` is what consumes it:
+it attempts the insert first, and when a concurrent attempt wins the race it rescues
+`ActiveRecord::RecordNotUnique` and loads the existing row itself. Active Record settles
+the race inside the call — no job-level retry is involved, and `retry_on` above covers
+only `AccountingApi::TransientError`. (`find_or_create_by!` selects before inserting, so
+it leaves that race open and can raise.) The guard
 covers the window before the remote call; passing `idempotency_key` through to the API
 covers the window after it, so a crash between the API call and `update!` still resolves
 to a single export.
