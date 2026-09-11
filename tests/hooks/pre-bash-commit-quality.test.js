@@ -269,21 +269,28 @@ if (test('does not flag ordinary unquoted apiKey code references', () => {
   });
 })) passed++; else failed++;
 
-if (test('only quotes Windows batch commands whose path contains spaces', () => {
-  const command = 'C:\\Users\\Jane Doe\\project\\node_modules\\.bin\\eslint.cmd';
-  const invocation = hook.getLinterInvocation(command, ['index.js'], 'win32');
+if (test('runs Windows batch linters through cmd with quoted command and arguments', () => {
+  const command = 'C:\\Users\\Jane Doe & team\\project\\node_modules\\.bin\\eslint.cmd';
+  const invocation = hook.getLinterInvocation(command, ['index.js', 'x & calc & y.js'], 'win32');
 
-  assert.strictEqual(invocation.command, `"${command}"`);
-  assert.deepStrictEqual(invocation.args, ['index.js']);
-  assert.strictEqual(invocation.options.shell, true);
+  assert.ok(/cmd\.exe$/i.test(invocation.command));
+  assert.deepStrictEqual(invocation.args, [
+    '/d',
+    '/s',
+    '/c',
+    `""${command}" "index.js" "x & calc & y.js""`
+  ]);
+  assert.strictEqual(invocation.options.shell, false);
+  assert.strictEqual(invocation.options.windowsVerbatimArguments, true);
 
   const plainCmd = hook.getLinterInvocation('C:\\tools\\eslint.cmd', [], 'win32');
-  assert.strictEqual(plainCmd.command, 'C:\\tools\\eslint.cmd');
-  assert.strictEqual(plainCmd.options.shell, true);
+  assert.ok(/cmd\.exe$/i.test(plainCmd.command));
+  assert.deepStrictEqual(plainCmd.args, ['/d', '/s', '/c', '""C:\\tools\\eslint.cmd""']);
+  assert.strictEqual(plainCmd.options.shell, false);
 
   const batch = hook.getLinterInvocation('C:\\tools\\lint.BAT', [], 'win32');
-  assert.strictEqual(batch.command, 'C:\\tools\\lint.BAT');
-  assert.strictEqual(batch.options.shell, true);
+  assert.ok(/cmd\.exe$/i.test(batch.command));
+  assert.strictEqual(batch.options.shell, false);
 
   const executable = hook.getLinterInvocation('C:\\Program Files\\eslint.exe', [], 'win32');
   assert.strictEqual(executable.command, 'C:\\Program Files\\eslint.exe');
@@ -292,6 +299,23 @@ if (test('only quotes Windows batch commands whose path contains spaces', () => 
   const posix = hook.getLinterInvocation('/tmp/project with spaces/eslint', [], 'darwin');
   assert.strictEqual(posix.command, '/tmp/project with spaces/eslint');
   assert.strictEqual(posix.options.shell, false);
+})) passed++; else failed++;
+
+if (test('rejects Windows cmd expansion characters before shell parsing', () => {
+  assert.throws(
+    () => hook.getLinterInvocation('C:\\%TEMP%\\eslint.cmd', ['index.js'], 'win32'),
+    /Unsafe character/
+  );
+  assert.throws(
+    () => hook.getLinterInvocation('C:\\tools\\eslint.cmd', ['!name!.js'], 'win32'),
+    /Unsafe character/
+  );
+})) passed++; else failed++;
+
+if (test('treats rejected or failed golint invocations as failures', () => {
+  assert.strictEqual(hook.golintSucceeded({ status: 0, stdout: '', error: null }), true);
+  assert.strictEqual(hook.golintSucceeded({ status: 0, stdout: 'issue.go:1: warning', error: null }), false);
+  assert.strictEqual(hook.golintSucceeded({ status: null, stdout: '', error: new Error('unsafe argument') }), false);
 })) passed++; else failed++;
 
 if (test('uses ESLint bundled formatter without the removed compact formatter', () => {

@@ -259,29 +259,61 @@ function resolveCommand(command) {
   return null;
 }
 
+const LINTER_TIMEOUT_MS = 30000;
+const UNSAFE_CMD_EXPANSION = /["%!\0\r\n]/;
+
+function quoteCmdToken(value) {
+  if (UNSAFE_CMD_EXPANSION.test(value)) {
+    throw new Error(`Unsafe character in Windows linter argument: ${JSON.stringify(value)}`);
+  }
+  return `"${value}"`;
+}
+
 function getLinterInvocation(command, args, platform = process.platform) {
-  const useShell = platform === 'win32' && /\.(?:cmd|bat)$/i.test(command);
-  const resolvedCommand = useShell && /\s/.test(command) ? `"${command}"` : command;
+  const useCmd = platform === 'win32' && /\.(?:cmd|bat)$/i.test(command);
+
+  if (useCmd) {
+    const commandLine = [command, ...args].map(quoteCmdToken).join(' ');
+    return {
+      command: process.env.ComSpec || process.env.COMSPEC || 'cmd.exe',
+      args: ['/d', '/s', '/c', `"${commandLine}"`],
+      options: {
+        encoding: 'utf8',
+        stdio: ['pipe', 'pipe', 'pipe'],
+        timeout: LINTER_TIMEOUT_MS,
+        shell: false,
+        windowsVerbatimArguments: true
+      }
+    };
+  }
 
   return {
-    command: resolvedCommand,
+    command,
     args,
     options: {
       encoding: 'utf8',
       stdio: ['pipe', 'pipe', 'pipe'],
-      timeout: 30000,
-      shell: useShell
+      timeout: LINTER_TIMEOUT_MS,
+      shell: false
     }
   };
 }
 
 function runLinterCommand(command, args) {
-  const invocation = getLinterInvocation(command, args);
-  return spawnSync(invocation.command, invocation.args, invocation.options);
+  try {
+    const invocation = getLinterInvocation(command, args);
+    return spawnSync(invocation.command, invocation.args, invocation.options);
+  } catch (error) {
+    return { status: null, stdout: '', stderr: '', error };
+  }
 }
 
 function commandOutput(result) {
   return result.stdout || result.stderr || result.error?.message || '';
+}
+
+function golintSucceeded(result) {
+  return result.status === 0 && !result.error && (!result.stdout || result.stdout.trim() === '');
 }
 
 /**
@@ -340,7 +372,7 @@ function runLinter(files) {
       } else {
         const result = runLinterCommand(golintPath, goFiles);
         results.golint = {
-          success: !result.stdout || result.stdout.trim() === '',
+          success: golintSucceeded(result),
           output: commandOutput(result)
         };
       }
@@ -499,5 +531,6 @@ module.exports = {
   findFileIssues,
   isPlaceholderSecret,
   getLinterInvocation,
+  golintSucceeded,
   runLinter
 };
