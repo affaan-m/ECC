@@ -8,12 +8,37 @@ const path = require('path');
 const vm = require('vm');
 const Ajv = require('ajv');
 
+/**
+ * Resolve a module by its repo-relative path.
+ *
+ * Test harnesses copy this validator to the repo root before running it, so a
+ * plain relative require would break. Walk up from __dirname until the module
+ * is found instead.
+ *
+ * @param {string} repoRelativePath - e.g. 'scripts/lib/hooks-config.js'
+ * @returns {string} absolute path to the module
+ */
+function resolveRepoModule(repoRelativePath) {
+  let dir = __dirname;
+  for (;;) {
+    const candidate = path.join(dir, repoRelativePath);
+    if (fs.existsSync(candidate)) {
+      return candidate;
+    }
+    const parent = path.dirname(dir);
+    if (parent === dir) {
+      throw new Error(`Cannot locate ${repoRelativePath} above ${__dirname}`);
+    }
+    dir = parent;
+  }
+}
+
 const {
   METADATA_FILENAME,
   applyHooksMetadata,
   findMetadataMismatches,
   metadataPathFor,
-} = require('../lib/hooks-config');
+} = require(resolveRepoModule('scripts/lib/hooks-config.js'));
 
 const HOOKS_FILE = path.join(__dirname, '../../hooks/hooks.json');
 const HOOKS_SCHEMA_PATH = path.join(__dirname, '../../schemas/hooks.schema.json');
@@ -139,8 +164,9 @@ function validateHookEntry(hook, label) {
  * Reject keys the Claude Code harness does not understand.
  *
  * Claude Code validates a plugin's hooks.json against its own schema and prints
- * every unrecognised key at load time. ECC's stable ids and descriptions belong
- * in hooks/hooks.metadata.json instead.
+ * every unrecognised key at load time. Once a hooks.metadata.json sidecar is
+ * present it owns the stable ids and descriptions, so hooks.json must not
+ * carry them as well.
  *
  * @param {object} data - Parsed hooks.json.
  * @returns {boolean} true if errors were found
@@ -196,10 +222,9 @@ function validateHooks() {
     process.exit(1);
   }
 
-  if (validateHarnessCompatibility(data)) {
-    process.exit(1);
-  }
-
+  // Without a sidecar, hooks.json keeps its legacy inline ids. With one, the
+  // sidecar is the sole owner of id/description and hooks.json must stay
+  // within Claude Code's schema.
   let metadata = null;
   const metadataPath = metadataPathFor(HOOKS_FILE);
   if (fs.existsSync(metadataPath)) {
@@ -207,6 +232,10 @@ function validateHooks() {
       metadata = JSON.parse(fs.readFileSync(metadataPath, 'utf-8'));
     } catch (e) {
       console.error(`ERROR: Invalid JSON in ${METADATA_FILENAME}: ${e.message}`);
+      process.exit(1);
+    }
+
+    if (validateHarnessCompatibility(data)) {
       process.exit(1);
     }
 
