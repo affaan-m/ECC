@@ -1,5 +1,5 @@
 ---
-description: Run AgentShield against agent, hook, MCP, permission, and secret surfaces.
+description: Run AgentShield against agent, hook, MCP, permission, and secret surfaces. Slash-command surface of the security-scan skill — use when the user wants the scan executed now against a .claude/ directory or repo; the skill documents the same scan for guidance-only contexts.
 agent: ecc:security-reviewer
 subtask: true
 ---

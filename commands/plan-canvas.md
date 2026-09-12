@@ -1,5 +1,5 @@
 ---
-description: Open a plan or HTML artifact in the browser Plan Canvas for annotate-and-approve review
+description: Open a plan or HTML artifact in the browser Plan Canvas for annotate-and-approve review. Slash-command surface of the plan-canvas skill — use when the user wants a plan opened or annotated in the canvas now; the skill owns session lifecycle details.
 argument-hint: "[path/to/artifact.plan.md | path/to/artifact.html]"
 ---
 

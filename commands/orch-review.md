@@ -1,5 +1,5 @@
 ---
-description: Run the orch-review native Workflow over a diff (local changes or a GitHub PR) and report blocking vs advisory findings. Surface for the orch-review workflow.
+description: Run the orch-review native Workflow over a diff (local changes or a GitHub PR) and report blocking vs advisory findings. Surface for the orch-review workflow. Use when the user explicitly asks for the orch-review workflow; for plain review requests prefer /code-review (single-pass) or /review-pr (multi-agent).
 argument-hint: [pr-number | pr-url | blank for local uncommitted changes]
 ---
 

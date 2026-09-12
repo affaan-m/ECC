@@ -1,5 +1,5 @@
 ---
-description: Restate requirements, assess risks, and create step-by-step implementation plan. WAIT for user CONFIRM before touching any code.
+description: Restate requirements, assess risks, and create step-by-step implementation plan. WAIT for user CONFIRM before touching any code. Use for a single interactive plan on one task; for parallel plans from multiple models use /multi-plan, for PRP-series plans use /prp-plan.
 argument-hint: "[feature description | path/to/*.prd.md]"
 ---
 

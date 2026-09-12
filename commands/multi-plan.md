@@ -1,5 +1,5 @@
 ---
-description: Create a multi-model implementation plan without modifying production code.
+description: Create a multi-model implementation plan without modifying production code — several candidate models produce parallel plans that are compared before coding. Use when the user wants model comparison or a consensus plan; for one interactive single-model plan use /plan.
 ---
 
 # Plan - Multi-Model Collaborative Planning

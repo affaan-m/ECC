@@ -40,7 +40,7 @@
     },
     {
       "command": "code-review",
-      "description": "Code review — local uncommitted changes or GitHub PR (pass PR number/URL for PR mode)",
+      "description": "Code review — local uncommitted changes or GitHub PR (pass PR number/URL for PR mode). Use when the user wants a direct single-pass review of current work; escalate to /review-pr for the multi-agent deep review or /orch-review for the blocking-vs-advisory workflow.",
       "type": "testing",
       "primaryAgents": [],
       "allAgents": [],
@@ -49,7 +49,7 @@
     },
     {
       "command": "cost-report",
-      "description": "Generate a local Claude Code cost report from the ECC cost-tracker metrics log.",
+      "description": "Generate a local Claude Code cost report from the ECC cost-tracker metrics log. Use when the user wants a point-in-time cost report for a period; the cost-tracking skill covers ongoing budget rules and thresholds instead.",
       "type": "testing",
       "primaryAgents": [],
       "allAgents": [],
@@ -101,7 +101,7 @@
     },
     {
       "command": "ecc-guide",
-      "description": "Navigate ECC's current agents, skills, commands, hooks, install profiles, and docs from the live repository surface.",
+      "description": "Navigate ECC's current agents, skills, commands, hooks, install profiles, and docs from the live repository surface. Slash-command surface of the ecc-guide skill — use when the user asks how to navigate ECC or what to install; the skill body is canonical and carries the trigger clause.",
       "type": "review",
       "primaryAgents": [],
       "allAgents": [],
@@ -325,11 +325,13 @@
     },
     {
       "command": "harness-audit",
-      "description": "Run a deterministic repository harness audit and return a prioritized scorecard.",
+      "description": "Run a deterministic repository harness audit and return a prioritized scorecard. Use when the user wants an overall harness/agent setup audit with a score; for configuration vulnerability scanning use /security-scan instead.",
       "type": "testing",
       "primaryAgents": [],
       "allAgents": [],
-      "skills": [],
+      "skills": [
+        "security-scan"
+      ],
       "path": "commands/harness-audit.md"
     },
     {
@@ -491,8 +493,8 @@
     },
     {
       "command": "marketing-campaign",
-      "description": "Plan and execute a full marketing campaign. Accepts a product brief and returns positioning, landing page copy, email sequence, social posts, ad variants, video scripts, and a content calendar. Can also review existing copy for conversion quality.",
-      "type": "testing",
+      "description": "Plan and execute a full marketing campaign. Accepts a product brief and returns positioning, landing page copy, email sequence, social posts, ad variants, video scripts, and a content calendar. Can also review existing copy for conversion quality. Slash-command surface of the marketing-campaign skill — same scope, run via slash command; the skill is the canonical orchestration layer.",
+      "type": "orchestration",
       "primaryAgents": [],
       "allAgents": [],
       "skills": [
@@ -538,7 +540,7 @@
     },
     {
       "command": "multi-plan",
-      "description": "Create a multi-model implementation plan without modifying production code.",
+      "description": "Create a multi-model implementation plan without modifying production code — several candidate models produce parallel plans that are compared before coding. Use when the user wants model comparison or a consensus plan; for one interactive single-model plan use /plan.",
       "type": "orchestration",
       "primaryAgents": [],
       "allAgents": [],
@@ -619,7 +621,7 @@
     },
     {
       "command": "orch-review",
-      "description": "Run the orch-review native Workflow over a diff (local changes or a GitHub PR) and report blocking vs advisory findings. Surface for the orch-review workflow.",
+      "description": "Run the orch-review native Workflow over a diff (local changes or a GitHub PR) and report blocking vs advisory findings. Surface for the orch-review workflow. Use when the user explicitly asks for the orch-review workflow; for plain review requests prefer /code-review (single-pass) or /review-pr (multi-agent).",
       "type": "review",
       "primaryAgents": [],
       "allAgents": [],
@@ -628,7 +630,7 @@
     },
     {
       "command": "plan-canvas",
-      "description": "Open a plan or HTML artifact in the browser Plan Canvas for annotate-and-approve review",
+      "description": "Open a plan or HTML artifact in the browser Plan Canvas for annotate-and-approve review. Slash-command surface of the plan-canvas skill — use when the user wants a plan opened or annotated in the canvas now; the skill owns session lifecycle details.",
       "type": "review",
       "primaryAgents": [],
       "allAgents": [],
@@ -648,7 +650,7 @@
     },
     {
       "command": "plan",
-      "description": "Restate requirements, assess risks, and create step-by-step implementation plan. WAIT for user CONFIRM before touching any code.",
+      "description": "Restate requirements, assess risks, and create step-by-step implementation plan. WAIT for user CONFIRM before touching any code. Use for a single interactive plan on one task; for parallel plans from multiple models use /multi-plan, for PRP-series plans use /prp-plan.",
       "type": "testing",
       "primaryAgents": [
         "planner"
@@ -681,11 +683,12 @@
     },
     {
       "command": "project-init",
-      "description": "Detect a project's stack and produce a dry-run ECC onboarding plan using the repository's install manifests and stack mappings.",
+      "description": "Detect a project's stack and produce a dry-run ECC onboarding plan using the repository's install manifests and stack mappings. Use when onboarding a NEW repository into ECC or re-planning its install profile; to change an existing install use /configure-ecc or the agent-sort skill.",
       "type": "testing",
       "primaryAgents": [],
       "allAgents": [],
       "skills": [
+        "configure-ecc",
         "ecc-guide"
       ],
       "path": "commands/project-init.md"
@@ -862,7 +865,7 @@
     },
     {
       "command": "review-pr",
-      "description": "Comprehensive PR review using specialized agents",
+      "description": "Comprehensive PR review using specialized agents. Use when the user wants a deep multi-agent PR review (silent-failure, test-gap, and type-design specialists) rather than a quick diff check — for a single-pass review use /code-review, for the orch-review workflow use /orch-review.",
       "type": "testing",
       "primaryAgents": [],
       "allAgents": [],
@@ -932,7 +935,7 @@
     },
     {
       "command": "security-scan",
-      "description": "Run AgentShield against agent, hook, MCP, permission, and secret surfaces.",
+      "description": "Run AgentShield against agent, hook, MCP, permission, and secret surfaces. Slash-command surface of the security-scan skill — use when the user wants the scan executed now against a .claude/ directory or repo; the skill documents the same scan for guidance-only contexts.",
       "type": "review",
       "primaryAgents": [
         "security-reviewer"
@@ -1030,11 +1033,11 @@
     "byType": {
       "build": 2,
       "general": 10,
-      "orchestration": 11,
+      "orchestration": 12,
       "planning": 2,
       "refactoring": 1,
       "review": 15,
-      "testing": 53
+      "testing": 52
     },
     "topAgents": [
       {
@@ -1112,11 +1115,11 @@
         "count": 3
       },
       {
-        "skill": "cpp-coding-standards",
-        "count": 2
+        "skill": "security-scan",
+        "count": 3
       },
       {
-        "skill": "cpp-testing",
+        "skill": "cpp-coding-standards",
         "count": 2
       }
     ]

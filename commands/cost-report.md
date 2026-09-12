@@ -1,5 +1,5 @@
 ---
-description: Generate a local Claude Code cost report from the ECC cost-tracker metrics log.
+description: Generate a local Claude Code cost report from the ECC cost-tracker metrics log. Use when the user wants a point-in-time cost report for a period; the cost-tracking skill covers ongoing budget rules and thresholds instead.
 argument-hint: [csv]
 ---
 

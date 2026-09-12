@@ -1,5 +1,5 @@
 ---
-description: Plan and execute a full marketing campaign. Accepts a product brief and returns positioning, landing page copy, email sequence, social posts, ad variants, video scripts, and a content calendar. Can also review existing copy for conversion quality.
+description: Plan and execute a full marketing campaign. Accepts a product brief and returns positioning, landing page copy, email sequence, social posts, ad variants, video scripts, and a content calendar. Can also review existing copy for conversion quality. Slash-command surface of the marketing-campaign skill — same scope, run via slash command; the skill is the canonical orchestration layer.
 allowed-tools: ["Read", "Grep", "Glob", "WebSearch", "WebFetch", "Write"]
 ---
 

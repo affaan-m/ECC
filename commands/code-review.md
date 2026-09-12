@@ -1,5 +1,5 @@
 ---
-description: Code review — local uncommitted changes or GitHub PR (pass PR number/URL for PR mode)
+description: Code review — local uncommitted changes or GitHub PR (pass PR number/URL for PR mode). Use when the user wants a direct single-pass review of current work; escalate to /review-pr for the multi-agent deep review or /orch-review for the blocking-vs-advisory workflow.
 argument-hint: [pr-number | pr-url | blank for local review]
 ---
 
