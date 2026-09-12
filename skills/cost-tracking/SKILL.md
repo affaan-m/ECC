@@ -20,7 +20,10 @@ sum across sessions — summing every row multiply-counts.
 ECC also maintains internal per-session files under
 `~/.claude/metrics/cost-snapshots/` so runtime hooks can read the current
 session total without rescanning all history. Treat those files as a
-rebuildable cache; reports and exports should continue to use `costs.jsonl`.
+rebuildable cache; each snapshot stores a byte cursor so only newly appended
+rows are scanned. Stable reads are O(1), while updates are O(new bytes). Stale
+entries are pruned after 30 days or when the directory exceeds 512 sessions.
+Reports and exports should continue to use `costs.jsonl`.
 
 Row schema:
 

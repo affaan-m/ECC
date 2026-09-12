@@ -42,9 +42,12 @@
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const { ensureDir, appendFile, getClaudeDir } = require('../lib/utils');
+const { ensureDir, getClaudeDir } = require('../lib/utils');
 const { sanitizeSessionId } = require('../lib/session-bridge');
-const { publishAppendedSessionCostSnapshot } = require('../lib/session-cost-snapshot');
+const {
+  appendSessionCostRow,
+  warnSessionCostSnapshotFailure
+} = require('../lib/session-cost-snapshot');
 
 const HARNESS_COST_MAX_AGE_SECONDS = 300;
 
@@ -245,12 +248,10 @@ process.stdin.on('end', () => {
       estimated_cost_usd: estimatedCostUsd
     };
 
-    appendFile(path.join(metricsDir, 'costs.jsonl'), `${JSON.stringify(row)}\n`);
     try {
-      publishAppendedSessionCostSnapshot(metricsDir, sessionId, row);
-    } catch {
-      // The append-only log remains authoritative. A later bridge read falls
-      // back to it when an atomic snapshot cannot be published.
+      appendSessionCostRow(metricsDir, sessionId, row);
+    } catch (error) {
+      warnSessionCostSnapshotFailure('publication', metricsDir, sessionId, error);
     }
   } catch {
     // Non-blocking — never fail the Stop hook.

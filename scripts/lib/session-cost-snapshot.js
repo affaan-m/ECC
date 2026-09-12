@@ -1,6 +1,8 @@
 'use strict';
 
+const crypto = require('crypto');
 const fs = require('fs');
+const os = require('os');
 const path = require('path');
 const { writeFileAtomic } = require('./atomic-write');
 const { sanitizeSessionId } = require('./session-bridge');
@@ -8,6 +10,12 @@ const { sanitizeSessionId } = require('./session-bridge');
 const COST_SNAPSHOT_SCHEMA_VERSION = 'ecc.cost-snapshot.v1';
 const COST_SNAPSHOT_DIRECTORY = 'cost-snapshots';
 const COST_LOG_FILENAME = 'costs.jsonl';
+const READ_CHUNK_BYTES = 64 * 1024;
+const FINGERPRINT_WINDOW_BYTES = 256;
+const PRUNE_INTERVAL_MS = 24 * 60 * 60 * 1000;
+const SNAPSHOT_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000;
+const MAX_SNAPSHOTS = 512;
+const WARNING_CACHE_PREFIX = 'ecc-cost-snapshot-warnings-';
 
 function assertSafeSessionId(sessionId) {
   if (sanitizeSessionId(sessionId) !== sessionId) {
@@ -15,24 +23,13 @@ function assertSafeSessionId(sessionId) {
   }
 }
 
+function getSnapshotDirectory(metricsDir) {
+  return path.join(metricsDir, COST_SNAPSHOT_DIRECTORY);
+}
+
 function getCostSnapshotPath(metricsDir, sessionId) {
   assertSafeSessionId(sessionId);
-  // Prefix the filename so Windows device names such as CON/NUL/COM1 never
-  // become the basename, even when they are otherwise valid session IDs.
-  return path.join(metricsDir, COST_SNAPSHOT_DIRECTORY, `session-${sessionId}.json`);
-}
-
-function getCostLogSignature(metricsDir) {
-  const stat = fs.statSync(path.join(metricsDir, COST_LOG_FILENAME));
-  return {
-    size_bytes: stat.size,
-    mtime_ms: stat.mtimeMs
-  };
-}
-
-function signaturesMatch(left, right) {
-  return left?.size_bytes === right?.size_bytes
-    && left?.mtime_ms === right?.mtime_ms;
+  return path.join(getSnapshotDirectory(metricsDir), `session-${sessionId}.json`);
 }
 
 function isValidCostRow(row, sessionId) {
@@ -48,89 +45,354 @@ function isValidCostRow(row, sessionId) {
     && row.output_tokens >= 0;
 }
 
-function assertCostLogSignature(source) {
-  if (!Number.isSafeInteger(source?.size_bytes) || source.size_bytes < 0) {
-    throw new Error('Cost snapshot requires a valid source size');
-  }
-  if (!Number.isFinite(source?.mtime_ms) || source.mtime_ms < 0) {
-    throw new Error('Cost snapshot requires a valid source mtime');
+function readJsonFile(filePath) {
+  try {
+    return JSON.parse(fs.readFileSync(filePath, 'utf8'));
+  } catch {
+    return null;
   }
 }
 
-function writeSnapshotForSource(metricsDir, sessionId, row, source) {
-  assertSafeSessionId(sessionId);
-  if (!isValidCostRow(row, sessionId)) {
-    throw new Error('Cost snapshot requires valid non-negative numeric totals for its session');
+function chooseNewerCumulativeRow(currentRow, nextRow) {
+  if (!currentRow) return nextRow;
+  const nextDominates = nextRow.input_tokens >= currentRow.input_tokens
+    && nextRow.output_tokens >= currentRow.output_tokens
+    && nextRow.estimated_cost_usd >= currentRow.estimated_cost_usd;
+  const currentDominates = currentRow.input_tokens >= nextRow.input_tokens
+    && currentRow.output_tokens >= nextRow.output_tokens
+    && currentRow.estimated_cost_usd >= nextRow.estimated_cost_usd;
+  if (nextDominates && !currentDominates) return nextRow;
+  if (currentDominates && !nextDominates) return currentRow;
+  const nextTimestamp = Date.parse(nextRow.timestamp);
+  const currentTimestamp = Date.parse(currentRow.timestamp);
+  if (Number.isFinite(nextTimestamp) && Number.isFinite(currentTimestamp)) {
+    return nextTimestamp >= currentTimestamp ? nextRow : currentRow;
   }
+  return nextRow;
+}
 
-  const snapshotPath = getCostSnapshotPath(metricsDir, sessionId);
-  assertCostLogSignature(source);
-  return writeFileAtomic(
-    snapshotPath,
-    JSON.stringify({
-      schema_version: COST_SNAPSHOT_SCHEMA_VERSION,
-      source,
-      row
-    }),
+function sourceIdentity(stat) {
+  return `${stat.dev}:${stat.ino}`;
+}
+
+function hashWindow(descriptor, position, length) {
+  const buffer = Buffer.alloc(length);
+  if (length > 0) fs.readSync(descriptor, buffer, 0, length, position);
+  return crypto.createHash('sha256').update(buffer).digest('hex');
+}
+
+function fingerprintProcessedPrefix(descriptor, offset) {
+  const windowLength = Math.min(FINGERPRINT_WINDOW_BYTES, offset);
+  const middleStart = Math.max(0, Math.floor((offset - windowLength) / 2));
+  return {
+    start: hashWindow(descriptor, 0, windowLength),
+    middle: hashWindow(descriptor, middleStart, windowLength),
+    end: hashWindow(descriptor, offset - windowLength, windowLength)
+  };
+}
+
+function fingerprintsMatch(left, right) {
+  return left?.start === right?.start
+    && left?.middle === right?.middle
+    && left?.end === right?.end;
+}
+
+function validSnapshotBase(snapshot, descriptor, stat, sessionId) {
+  if (snapshot?.schema_version !== COST_SNAPSHOT_SCHEMA_VERSION) return null;
+  if (snapshot.row !== null && !isValidCostRow(snapshot.row, sessionId)) return null;
+  const source = snapshot.source;
+  if (source?.identity !== sourceIdentity(stat)) return null;
+  if (!Number.isSafeInteger(source.offset_bytes) || source.offset_bytes < 0) return null;
+  if (source.offset_bytes > stat.size) return null;
+  if (source.offset_bytes === stat.size && source.mtime_ms !== stat.mtimeMs) return null;
+  if (!fingerprintsMatch(
+    source.fingerprint,
+    fingerprintProcessedPrefix(descriptor, source.offset_bytes)
+  )) return null;
+  return { row: snapshot.row, offset: source.offset_bytes };
+}
+
+function scanJsonlRange(descriptor, start, end, sessionId, initialRow) {
+  const buffer = Buffer.allocUnsafe(READ_CHUNK_BYTES);
+  let position = start;
+  let processedOffset = start;
+  let pending = Buffer.alloc(0);
+  let latestRow = initialRow;
+  let committedRow = initialRow;
+  let malformed = 0;
+  let invalid = 0;
+  const malformedHasher = crypto.createHash('sha256');
+  const invalidHasher = crypto.createHash('sha256');
+
+  const processLine = (line, committed = true) => {
+    if (!line.trim()) return;
+    try {
+      const row = JSON.parse(line);
+      if (row.session_id !== sessionId) return;
+      if (!isValidCostRow(row, sessionId)) {
+        if (committed) {
+          invalid += 1;
+          invalidHasher.update(line).update('\0');
+        }
+        return;
+      }
+      latestRow = chooseNewerCumulativeRow(latestRow, row);
+      if (committed) committedRow = chooseNewerCumulativeRow(committedRow, row);
+    } catch {
+      if (committed) {
+        malformed += 1;
+        malformedHasher.update(line).update('\0');
+      }
+    }
+  };
+
+  while (position < end) {
+    const bytesRead = fs.readSync(
+      descriptor,
+      buffer,
+      0,
+      Math.min(buffer.length, end - position),
+      position
+    );
+    if (bytesRead === 0) break;
+    const combined = pending.length > 0
+      ? Buffer.concat([pending, buffer.subarray(0, bytesRead)])
+      : buffer.subarray(0, bytesRead);
+    let lineStart = 0;
+    for (;;) {
+      const newlineIndex = combined.indexOf(0x0a, lineStart);
+      if (newlineIndex < 0) break;
+      processLine(combined.subarray(lineStart, newlineIndex).toString('utf8'));
+      lineStart = newlineIndex + 1;
+    }
+    pending = Buffer.from(combined.subarray(lineStart));
+    position += bytesRead;
+    processedOffset = position - pending.length;
+  }
+  if (pending.toString('utf8').trim()) processLine(pending.toString('utf8'), false);
+  return {
+    row: latestRow,
+    committedRow,
+    processedOffset,
+    malformed,
+    invalid,
+    malformedSignature: malformed > 0 ? malformedHasher.digest('hex').slice(0, 16) : null,
+    invalidSignature: invalid > 0 ? invalidHasher.digest('hex').slice(0, 16) : null
+  };
+}
+
+function writeSnapshotAtOffset(metricsDir, sessionId, row, descriptor, stat, offset) {
+  if (row !== null && !isValidCostRow(row, sessionId)) return false;
+  const snapshot = {
+    schema_version: COST_SNAPSHOT_SCHEMA_VERSION,
+    source: {
+      identity: sourceIdentity(stat),
+      offset_bytes: offset,
+      mtime_ms: stat.mtimeMs,
+      fingerprint: fingerprintProcessedPrefix(descriptor, offset)
+    },
+    row
+  };
+  writeFileAtomic(
+    getCostSnapshotPath(metricsDir, sessionId),
+    JSON.stringify(snapshot),
     {
       beforeRename() {
-        if (!signaturesMatch(source, getCostLogSignature(metricsDir))) {
-          throw new Error('Cost log changed while publishing its session snapshot');
+        const current = fs.fstatSync(descriptor);
+        if (sourceIdentity(current) !== snapshot.source.identity) {
+          throw new Error('Cost log identity changed during snapshot publication');
+        }
+        if (current.size < offset) {
+          throw new Error('Cost log was truncated during snapshot publication');
+        }
+        if (current.size === offset && current.mtimeMs !== snapshot.source.mtime_ms) {
+          throw new Error('Cost log changed during snapshot publication');
+        }
+        if (!fingerprintsMatch(
+          fingerprintProcessedPrefix(descriptor, offset),
+          snapshot.source.fingerprint
+        )) {
+          throw new Error('Cost log prefix changed during snapshot publication');
         }
       }
     }
   );
+  return true;
 }
 
-function costLogEndsWithRow(metricsDir, row) {
-  const expected = Buffer.from(`${JSON.stringify(row)}\n`, 'utf8');
-  const descriptor = fs.openSync(path.join(metricsDir, COST_LOG_FILENAME), 'r');
+function refreshSessionCostSnapshot(metricsDir, sessionId) {
+  assertSafeSessionId(sessionId);
+  const costsPath = path.join(metricsDir, COST_LOG_FILENAME);
+  const descriptor = fs.openSync(costsPath, 'r');
   try {
     const stat = fs.fstatSync(descriptor);
-    if (stat.size < expected.length) return false;
-    const actual = Buffer.allocUnsafe(expected.length);
-    const bytesRead = fs.readSync(
+    const snapshot = readJsonFile(getCostSnapshotPath(metricsDir, sessionId));
+    const base = validSnapshotBase(snapshot, descriptor, stat, sessionId);
+    if (base?.offset === stat.size) {
+      return {
+        row: base.row,
+        scannedBytes: 0,
+        malformed: 0,
+        invalid: 0,
+        malformedSignature: null,
+        invalidSignature: null,
+        snapshotError: null
+      };
+    }
+    const scan = scanJsonlRange(
       descriptor,
-      actual,
-      0,
-      expected.length,
-      stat.size - expected.length
+      base?.offset || 0,
+      stat.size,
+      sessionId,
+      base?.row || null
     );
-    return bytesRead === expected.length && actual.equals(expected);
+    let snapshotError = null;
+    if (scan.committedRow || scan.processedOffset > 0) {
+      try {
+        writeSnapshotAtOffset(
+          metricsDir,
+          sessionId,
+          scan.committedRow,
+          descriptor,
+          stat,
+          scan.processedOffset
+        );
+      } catch (error) {
+        snapshotError = error;
+      }
+    }
+    return {
+      row: scan.row,
+      scannedBytes: scan.processedOffset - (base?.offset || 0),
+      malformed: scan.malformed,
+      invalid: scan.invalid,
+      malformedSignature: scan.malformedSignature,
+      invalidSignature: scan.invalidSignature,
+      snapshotError
+    };
   } finally {
     fs.closeSync(descriptor);
   }
 }
 
-function publishAppendedSessionCostSnapshot(metricsDir, sessionId, row) {
+function costLogNeedsSeparator(metricsDir) {
+  const costsPath = path.join(metricsDir, COST_LOG_FILENAME);
+  let descriptor;
+  try {
+    descriptor = fs.openSync(costsPath, 'r');
+    const stat = fs.fstatSync(descriptor);
+    if (stat.size === 0) return false;
+    const lastByte = Buffer.alloc(1);
+    return fs.readSync(descriptor, lastByte, 0, 1, stat.size - 1) === 1
+      && lastByte[0] !== 0x0a;
+  } catch (error) {
+    if (error.code === 'ENOENT') return false;
+    throw error;
+  } finally {
+    if (descriptor !== undefined) fs.closeSync(descriptor);
+  }
+}
+
+function appendSessionCostRow(metricsDir, sessionId, row) {
   assertSafeSessionId(sessionId);
   if (!isValidCostRow(row, sessionId)) {
     throw new Error('Cost snapshot requires valid non-negative numeric totals for its session');
   }
-  const sourceBefore = getCostLogSignature(metricsDir);
-  if (!costLogEndsWithRow(metricsDir, row)) return false;
-  const sourceAfter = getCostLogSignature(metricsDir);
-  if (!signaturesMatch(sourceBefore, sourceAfter)) return false;
-  writeSnapshotForSource(metricsDir, sessionId, row, sourceAfter);
-  return true;
-}
-
-function repairSessionCostSnapshot(metricsDir, sessionId, row, source) {
-  writeSnapshotForSource(metricsDir, sessionId, row, source);
+  const prefix = costLogNeedsSeparator(metricsDir) ? '\n' : '';
+  fs.appendFileSync(
+    path.join(metricsDir, COST_LOG_FILENAME),
+    `${prefix}${JSON.stringify(row)}\n`,
+    'utf8'
+  );
+  const result = refreshSessionCostSnapshot(metricsDir, sessionId);
+  if (result.snapshotError) throw result.snapshotError;
+  try {
+    maybePruneSessionCostSnapshots(metricsDir);
+  } catch {
+    // Retention is opportunistic and retried by a later update.
+  }
+  return JSON.stringify(result.row) === JSON.stringify(row);
 }
 
 function readSessionCostSnapshot(metricsDir, sessionId) {
   try {
-    const snapshot = JSON.parse(
-      fs.readFileSync(getCostSnapshotPath(metricsDir, sessionId), 'utf8')
-    );
-    if (snapshot?.schema_version !== COST_SNAPSHOT_SCHEMA_VERSION) return null;
-    if (!isValidCostRow(snapshot.row, sessionId)) return null;
-    if (!signaturesMatch(snapshot.source, getCostLogSignature(metricsDir))) return null;
-    return snapshot.row;
-  } catch {
-    return null;
+    return refreshSessionCostSnapshot(metricsDir, sessionId);
+  } catch (error) {
+    if (error.code === 'ENOENT') {
+      return { row: null, scannedBytes: 0, malformed: 0, invalid: 0, snapshotError: null };
+    }
+    throw error;
   }
+}
+
+function maybePruneSessionCostSnapshots(metricsDir, options = {}) {
+  const snapshotDir = getSnapshotDirectory(metricsDir);
+  const now = Number.isFinite(options.now) ? options.now : Date.now();
+  const maxAgeMs = Number.isFinite(options.maxAgeMs) ? options.maxAgeMs : SNAPSHOT_MAX_AGE_MS;
+  const maxSnapshots = Number.isSafeInteger(options.maxSnapshots)
+    ? Math.max(0, options.maxSnapshots)
+    : MAX_SNAPSHOTS;
+  const markerPath = path.join(snapshotDir, '.last-prune');
+
+  fs.mkdirSync(snapshotDir, { recursive: true });
+  const snapshotEntries = fs.readdirSync(snapshotDir, { withFileTypes: true })
+    .filter(entry => entry.isFile() && /^session-.+\.json$/.test(entry.name));
+  if (!options.force) {
+    try {
+      const intervalIsFresh = now - fs.statSync(markerPath).mtimeMs < PRUNE_INTERVAL_MS;
+      if (intervalIsFresh && snapshotEntries.length <= maxSnapshots) return 0;
+    } catch { /* missing marker */ }
+  }
+  fs.writeFileSync(markerPath, String(now), { encoding: 'utf8', mode: 0o600 });
+
+  const snapshots = snapshotEntries
+    .map(entry => {
+      const filePath = path.join(snapshotDir, entry.name);
+      return { filePath, mtimeMs: fs.statSync(filePath).mtimeMs };
+    })
+    .sort((left, right) => right.mtimeMs - left.mtimeMs);
+  const removals = snapshots.filter((entry, index) => (
+    index >= maxSnapshots || now - entry.mtimeMs > maxAgeMs
+  ));
+  let removed = 0;
+  for (const entry of removals) {
+    try {
+      if (fs.statSync(entry.filePath).mtimeMs <= entry.mtimeMs) {
+        fs.rmSync(entry.filePath, { force: true });
+        removed += 1;
+      }
+    } catch { /* already replaced or removed */ }
+  }
+  return removed;
+}
+
+function warningClaimPath(kind, metricsDir, sessionId, signature) {
+  const key = crypto.createHash('sha256')
+    .update(`${path.resolve(metricsDir)}\0${sessionId}\0${kind}\0${signature}`)
+    .digest('hex')
+    .slice(0, 16);
+  return path.join(os.tmpdir(), `${WARNING_CACHE_PREFIX}${key}.claim`);
+}
+
+function warnSessionCostSnapshotFailure(kind, metricsDir, sessionId, error) {
+  const targetPath = getCostSnapshotPath(metricsDir, sessionId);
+  const errorCode = error?.code || error?.name || 'error';
+  const signature = `${kind}:${targetPath}:${errorCode}`;
+  const claimPath = warningClaimPath(kind, metricsDir, sessionId, signature);
+  let claimDescriptor;
+  try {
+    claimDescriptor = fs.openSync(claimPath, 'wx', 0o600);
+    fs.closeSync(claimDescriptor);
+    claimDescriptor = undefined;
+  } catch (claimError) {
+    if (claimDescriptor !== undefined) fs.closeSync(claimDescriptor);
+    if (claimError.code === 'EEXIST') return;
+    // Warning persistence is best effort. If the claim cannot be created,
+    // still surface the underlying snapshot failure.
+  }
+  process.stderr.write(
+    `[cost-snapshot] ${kind} failed for session ${sessionId}: ${error?.message || String(error)}\n`
+  );
 }
 
 module.exports = {
@@ -138,10 +400,12 @@ module.exports = {
   COST_SNAPSHOT_DIRECTORY,
   COST_LOG_FILENAME,
   getCostSnapshotPath,
-  getCostLogSignature,
-  signaturesMatch,
   isValidCostRow,
-  publishAppendedSessionCostSnapshot,
-  repairSessionCostSnapshot,
-  readSessionCostSnapshot
+  chooseNewerCumulativeRow,
+  appendSessionCostRow,
+  readSessionCostSnapshot,
+  refreshSessionCostSnapshot,
+  costLogNeedsSeparator,
+  maybePruneSessionCostSnapshots,
+  warnSessionCostSnapshotFailure
 };

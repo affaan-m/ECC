@@ -119,10 +119,9 @@ function runTests() {
   (test('keeps JSONL authoritative when the snapshot path cannot be published', () => {
     const tmpHome = makeTempDir();
     const metricsDir = path.join(tmpHome, '.claude', 'metrics');
-    const blockedSnapshotPath = path.join(
+    const blockedSnapshotPath = getCostSnapshotPath(
       metricsDir,
-      'cost-snapshots',
-      'snapshot-failure.json'
+      'snapshot-failure'
     );
     fs.mkdirSync(blockedSnapshotPath, { recursive: true });
 
@@ -137,6 +136,14 @@ function runTests() {
         .split('\n')
         .map(line => JSON.parse(line));
       assert.strictEqual(rows.at(-1).session_id, 'snapshot-failure');
+      assert.match(result.stderr, /cost-snapshot.*publication failed/);
+
+      const second = runScript(
+        { session_id: 'snapshot-failure' },
+        withTempHome(tmpHome)
+      );
+      assert.strictEqual(second.code, 0, second.stderr);
+      assert.strictEqual(second.stderr, '', 'identical persistent failure should warn only once');
     } finally {
       fs.rmSync(tmpHome, { recursive: true, force: true });
     }

@@ -12,8 +12,8 @@ const path = require('path');
 
 const { run, hashToolCall, extractFilePaths, readSessionCost } = require('../../scripts/hooks/ecc-metrics-bridge');
 const {
-  getCostSnapshotPath,
-  publishAppendedSessionCostSnapshot
+  appendSessionCostRow,
+  getCostSnapshotPath
 } = require('../../scripts/lib/session-cost-snapshot');
 
 // Test helper
@@ -242,7 +242,8 @@ function runTests() {
       const tmpHome = makeTempHome();
       const originalHome = process.env.HOME;
       const originalUserProfile = process.env.USERPROFILE;
-      const originalReadFileSync = fs.readFileSync;
+      const originalReadSync = fs.readSync;
+      let bytesReadFromCostLog = 0;
       try {
         process.env.HOME = tmpHome;
         process.env.USERPROFILE = tmpHome;
@@ -255,27 +256,18 @@ function runTests() {
           input_tokens: 750,
           output_tokens: 375
         };
-        fs.writeFileSync(
-          path.join(metricsDir, 'costs.jsonl'),
-          `${JSON.stringify(snapshotRow)}\n`,
-          'utf8'
-        );
-        assert.strictEqual(
-          publishAppendedSessionCostSnapshot(metricsDir, 'S1', snapshotRow),
-          true
-        );
+        appendSessionCostRow(metricsDir, 'S1', snapshotRow);
 
-        fs.readFileSync = function guardedRead(filePath, ...args) {
-          if (path.basename(String(filePath)) === 'costs.jsonl') {
-            throw new Error('historical JSONL scan should be bypassed on a snapshot hit');
-          }
-          return originalReadFileSync.call(this, filePath, ...args);
+        fs.readSync = function measuredRead(descriptor, buffer, offset, length, position) {
+          bytesReadFromCostLog += length;
+          return originalReadSync.call(this, descriptor, buffer, offset, length, position);
         };
 
         const result = readSessionCost('S1');
         assert.deepStrictEqual(result, { totalCost: 0.75, totalIn: 750, totalOut: 375 });
+        assert.ok(bytesReadFromCostLog <= 3 * 256);
       } finally {
-        fs.readFileSync = originalReadFileSync;
+        fs.readSync = originalReadSync;
         if (originalHome === undefined) delete process.env.HOME;
         else process.env.HOME = originalHome;
         if (originalUserProfile === undefined) delete process.env.USERPROFILE;
@@ -288,7 +280,7 @@ function runTests() {
   else failed++;
 
   if (
-    test('readSessionCost ignores a stale snapshot after costs.jsonl advances', () => {
+    test('readSessionCost keeps session A on the fast path after session B appends', () => {
       const tmpHome = makeTempHome();
       const originalHome = process.env.HOME;
       const originalUserProfile = process.env.USERPROFILE;
@@ -303,38 +295,24 @@ function runTests() {
           input_tokens: 100,
           output_tokens: 50
         };
-        const latest = {
-          session_id: 'S1',
+        appendSessionCostRow(metricsDir, 'S1', first);
+        appendSessionCostRow(metricsDir, 'S2', {
+          session_id: 'S2',
           estimated_cost_usd: 2,
           input_tokens: 200,
           output_tokens: 100
-        };
-        const costsPath = path.join(metricsDir, 'costs.jsonl');
-        fs.writeFileSync(costsPath, `${JSON.stringify(first)}\n`, 'utf8');
-        publishAppendedSessionCostSnapshot(metricsDir, 'S1', first);
-        fs.appendFileSync(costsPath, `${JSON.stringify(latest)}\n`, 'utf8');
-
-        assert.deepStrictEqual(readSessionCost('S1'), {
-          totalCost: 2,
-          totalIn: 200,
-          totalOut: 100
         });
-
-        const originalReadFileSync = fs.readFileSync;
-        fs.readFileSync = function guardedRead(filePath, ...args) {
-          if (path.basename(String(filePath)) === 'costs.jsonl') {
-            throw new Error('fallback should repair the session snapshot');
-          }
-          return originalReadFileSync.call(this, filePath, ...args);
+        const originalReadSync = fs.readSync;
+        let bytesReadFromCostLog = 0;
+        fs.readSync = function measuredRead(descriptor, buffer, offset, length, position) {
+          bytesReadFromCostLog += length;
+          return originalReadSync.call(this, descriptor, buffer, offset, length, position);
         };
         try {
-          assert.deepStrictEqual(readSessionCost('S1'), {
-            totalCost: 2,
-            totalIn: 200,
-            totalOut: 100
-          });
+          assert.deepStrictEqual(readSessionCost('S1'), { totalCost: 1, totalIn: 100, totalOut: 50 });
+          assert.ok(bytesReadFromCostLog <= 2 * 1024);
         } finally {
-          fs.readFileSync = originalReadFileSync;
+          fs.readSync = originalReadSync;
         }
       } finally {
         if (originalHome === undefined) delete process.env.HOME;
@@ -407,12 +385,12 @@ function runTests() {
         };
         const costsPath = path.join(metricsDir, 'costs.jsonl');
         fs.writeFileSync(costsPath, `${JSON.stringify(valid)}\n`, 'utf8');
-        const stat = fs.statSync(costsPath);
+        appendSessionCostRow(metricsDir, 'S1', valid);
+        const snapshot = JSON.parse(fs.readFileSync(getCostSnapshotPath(metricsDir, 'S1'), 'utf8'));
         fs.writeFileSync(
           getCostSnapshotPath(metricsDir, 'S1'),
           JSON.stringify({
-            schema_version: 'ecc.cost-snapshot.v1',
-            source: { size_bytes: stat.size, mtime_ms: stat.mtimeMs },
+            ...snapshot,
             row: { session_id: 'S1' }
           }),
           'utf8'

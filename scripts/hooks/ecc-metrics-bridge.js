@@ -15,11 +15,8 @@ const os = require('os');
 const path = require('path');
 const { sanitizeSessionId, readBridge, writeBridgeAtomic } = require('../lib/session-bridge');
 const {
-  getCostLogSignature,
-  isValidCostRow,
   readSessionCostSnapshot,
-  repairSessionCostSnapshot,
-  signaturesMatch,
+  warnSessionCostSnapshotFailure
 } = require('../lib/session-cost-snapshot');
 const { getClaudeDir } = require('../lib/utils');
 
@@ -28,11 +25,6 @@ const MAX_FILES_TRACKED = 200;
 const RECENT_TOOLS_SIZE = 5;
 const HASH_INPUT_LIMIT = 2048;
 const WARNING_CACHE_PREFIX = 'ecc-metrics-cost-warnings-';
-
-function toNumber(value) {
-  const n = Number(value);
-  return Number.isFinite(n) ? n : 0;
-}
 
 function stableStringify(value, depth = 0) {
   if (depth > 4) return '[depth-limit]';
@@ -143,8 +135,9 @@ function writeCostWarningIfChanged(kind, costsPath, signature, message) {
 /**
  * Read cumulative cost for a session.
  *
- * The Stop hook publishes an atomic per-session snapshot, so the normal
- * PostToolUse path reads O(1) data instead of reparsing unbounded history.
+ * The Stop hook publishes an atomic per-session cursor snapshot, so a stable
+ * PostToolUse path reads O(1) metadata and newly appended data is O(delta)
+ * instead of reparsing unbounded history.
  * Older ECC installations and damaged/missing snapshots remain compatible:
  * they fall back to scanning costs.jsonl for the last cumulative row.
  *
@@ -155,77 +148,36 @@ function readSessionCost(sessionId) {
   let costsPath = path.join('metrics', 'costs.jsonl');
   try {
     const metricsDir = path.join(getClaudeDir(), 'metrics');
-    const snapshot = readSessionCostSnapshot(metricsDir, sessionId);
-    if (snapshot) {
-      return {
-        totalCost: toNumber(snapshot.estimated_cost_usd),
-        totalIn: toNumber(snapshot.input_tokens),
-        totalOut: toNumber(snapshot.output_tokens)
-      };
-    }
-
     costsPath = path.join(metricsDir, 'costs.jsonl');
-    const sourceBefore = getCostLogSignature(metricsDir);
-    const content = fs.readFileSync(costsPath, 'utf8');
-    const lines = content.split('\n').filter(Boolean);
-
-    let totalCost = 0;
-    let totalIn = 0;
-    let totalOut = 0;
-    let latestRow = null;
-    let malformed = 0;
-    let invalid = 0;
-    const malformedHasher = crypto.createHash('sha256');
-    const invalidHasher = crypto.createHash('sha256');
-    for (const line of lines) {
-      try {
-        const row = JSON.parse(line);
-        if (row.session_id === sessionId) {
-          if (isValidCostRow(row, sessionId)) {
-            latestRow = row;
-            totalCost = row.estimated_cost_usd;
-            totalIn = row.input_tokens;
-            totalOut = row.output_tokens;
-          } else {
-            invalid += 1;
-            invalidHasher.update(line).update('\0');
-          }
-        }
-      } catch {
-        malformed += 1;
-        malformedHasher.update(line).update('\0');
-      }
-    }
-    // One aggregated breadcrumb per call rather than one per bad row, so a
-    // log-flooded costs.jsonl stays diagnosable without overwhelming stderr.
-    // Suppress repeats for the same malformed-line signature across hook
-    // subprocesses, so a persistent bad row should not spam stderr.
-    if (malformed > 0) {
+    const snapshotResult = readSessionCostSnapshot(metricsDir, sessionId);
+    if (snapshotResult.malformed > 0) {
       writeCostWarningIfChanged(
         'malformed',
         costsPath,
-        `${malformed}:${malformedHasher.digest('hex').slice(0, 16)}`,
-        `[ecc-metrics-bridge] skipped ${malformed} malformed line(s) in ${costsPath}\n`
+        `${snapshotResult.malformed}:${snapshotResult.malformedSignature}`,
+        `[ecc-metrics-bridge] skipped ${snapshotResult.malformed} malformed line(s) in ${costsPath}\n`
       );
     }
-    if (invalid > 0) {
+    if (snapshotResult.invalid > 0) {
       writeCostWarningIfChanged(
         'invalid-row',
         costsPath,
-        `${invalid}:${invalidHasher.digest('hex').slice(0, 16)}`,
-        `[ecc-metrics-bridge] skipped ${invalid} invalid cumulative row(s) for ${sessionId} in ${costsPath}\n`
+        `${snapshotResult.invalid}:${snapshotResult.invalidSignature}`,
+        `[ecc-metrics-bridge] skipped ${snapshotResult.invalid} invalid cumulative row(s) for ${sessionId} in ${costsPath}\n`
       );
     }
-
-    const sourceAfter = getCostLogSignature(metricsDir);
-    if (latestRow && signaturesMatch(sourceBefore, sourceAfter)) {
-      try {
-        repairSessionCostSnapshot(metricsDir, sessionId, latestRow, sourceAfter);
-      } catch {
-        // Snapshot repair is best effort; the JSONL result remains valid.
-      }
+    if (snapshotResult.snapshotError) {
+      warnSessionCostSnapshotFailure(
+        'repair',
+        metricsDir,
+        sessionId,
+        snapshotResult.snapshotError
+      );
     }
-    return { totalCost, totalIn, totalOut };
+    const row = snapshotResult.row;
+    return row
+      ? { totalCost: row.estimated_cost_usd, totalIn: row.input_tokens, totalOut: row.output_tokens }
+      : { totalCost: 0, totalIn: 0, totalOut: 0 };
   } catch (err) {
     // ENOENT is the common case (no Stop event has fired yet this session)
     // and is not actually a failure — stay silent on it. Anything else
