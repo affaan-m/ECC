@@ -4,7 +4,9 @@
  *
  * Reads transcript_path from Stop hook stdin, sums usage across all
  * assistant turns in the session JSONL, and appends one row to
- * ~/.claude/metrics/costs.jsonl.
+ * ~/.claude/metrics/costs.jsonl. It also atomically publishes the latest
+ * cumulative row under metrics/cost-snapshots/ so frequent PostToolUse
+ * hooks do not need to rescan the unbounded history.
  *
  * Stop hook stdin payload: { session_id, transcript_path, cwd, hook_event_name, ... }
  * The Stop payload does NOT include `usage` or `model` directly. The previous
@@ -40,8 +42,12 @@
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const { ensureDir, appendFile, getClaudeDir } = require('../lib/utils');
+const { ensureDir, getClaudeDir } = require('../lib/utils');
 const { sanitizeSessionId } = require('../lib/session-bridge');
+const {
+  appendSessionCostRow,
+  warnSessionCostSnapshotFailure
+} = require('../lib/session-cost-snapshot');
 
 const HARNESS_COST_MAX_AGE_SECONDS = 300;
 
@@ -103,7 +109,17 @@ function isSonnet5(model) {
 
 function toNumber(v) {
   const n = Number(v);
-  return Number.isFinite(n) ? n : 0;
+  return Number.isFinite(n) && n >= 0 ? n : 0;
+}
+
+function normalizeUsageTotals(totals) {
+  return {
+    inputTokens: toNumber(totals.inputTokens),
+    outputTokens: toNumber(totals.outputTokens),
+    cacheWriteTokens: toNumber(totals.cacheWriteTokens),
+    cacheReadTokens: toNumber(totals.cacheReadTokens),
+    model: totals.model
+  };
 }
 
 /**
@@ -161,7 +177,9 @@ function sumUsageFromTranscript(transcriptPath) {
     cacheReadTokens  += toNumber(u.cache_read_input_tokens);
   }
 
-  return { inputTokens, outputTokens, cacheWriteTokens, cacheReadTokens, model };
+  return normalizeUsageTotals({
+    inputTokens, outputTokens, cacheWriteTokens, cacheReadTokens, model
+  });
 }
 
 // 1MB, matching the other Stop hooks. The Stop payload carries
@@ -242,7 +260,11 @@ process.stdin.on('end', () => {
       estimated_cost_usd: estimatedCostUsd
     };
 
-    appendFile(path.join(metricsDir, 'costs.jsonl'), `${JSON.stringify(row)}\n`);
+    try {
+      appendSessionCostRow(metricsDir, sessionId, row);
+    } catch (error) {
+      warnSessionCostSnapshotFailure('publication', metricsDir, sessionId, error);
+    }
   } catch {
     // Non-blocking — never fail the Stop hook.
   }
