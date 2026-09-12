@@ -3,6 +3,11 @@
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
+const {
+  countPythonTestFiles,
+  gitignoreIgnoresEnvFiles,
+  hasPythonTestSuite,
+} = require('./lib/harness-audit-consumer');
 
 const CATEGORIES = [
   'Tool Coverage',
@@ -823,6 +828,7 @@ function getConsumerChecks(rootDir) {
   const gitignore = safeRead(rootDir, '.gitignore');
   const projectHooks = safeRead(rootDir, '.claude/settings.json');
   const pluginInstall = findPluginInstall(rootDir);
+  const pythonTestCount = countPythonTestFiles(rootDir);
 
   return [
     {
@@ -876,7 +882,10 @@ function getConsumerChecks(rootDir) {
       scopes: ['repo'],
       path: 'tests/',
       description: 'The project has an automated test entrypoint',
-      pass: typeof packageJson?.scripts?.test === 'string' || countFiles(rootDir, 'tests', '.test.js') > 0 || hasFileWithExtension(rootDir, '.', ['.spec.js', '.spec.ts', '.test.ts']),
+      pass: typeof packageJson?.scripts?.test === 'string' ||
+        countFiles(rootDir, 'tests', '.test.js') > 0 ||
+        hasFileWithExtension(rootDir, '.', ['.spec.js', '.spec.ts', '.test.ts']) ||
+        hasPythonTestSuite(rootDir, pythonTestCount),
       fix: 'Add a test script or checked-in tests so harness recommendations can be verified automatically.',
     },
     {
@@ -906,7 +915,8 @@ function getConsumerChecks(rootDir) {
       scopes: ['repo'],
       path: 'evals/',
       description: 'The project has evals or multiple automated tests',
-      pass: countFiles(rootDir, 'evals', null) > 0 || countFiles(rootDir, 'tests', '.test.js') >= 3,
+      pass: countFiles(rootDir, 'evals', null) > 0 ||
+        countFiles(rootDir, 'tests', '.test.js') + pythonTestCount >= 3,
       fix: 'Add eval fixtures or at least a few focused automated tests for critical flows.',
     },
     {
@@ -926,7 +936,7 @@ function getConsumerChecks(rootDir) {
       scopes: ['repo'],
       path: '.gitignore',
       description: 'The project ignores common secret env files',
-      pass: gitignore.includes('.env'),
+      pass: gitignoreIgnoresEnvFiles(gitignore),
       fix: 'Ignore .env-style files in .gitignore so secrets do not land in the repo.',
     },
     {
