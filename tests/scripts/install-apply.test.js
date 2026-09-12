@@ -254,6 +254,38 @@ function runTests() {
       const mcpConfig = readJson(path.join(projectDir, '.cursor', 'mcp.json'));
       assert.strictEqual(hooksConfig.version, 1);
       assert.ok(hooksConfig.hooks.sessionStart, 'Should keep Cursor sessionStart hooks');
+      assert.strictEqual(
+        hooksConfig.hooks.sessionStart[0].command,
+        'node .cursor/hooks/session-start.js',
+        'Cursor sessionStart should use the event-level dispatcher'
+      );
+      for (const [eventName, entries] of Object.entries(hooksConfig.hooks)) {
+        assert.strictEqual(
+          entries.length,
+          1,
+          `Installed Cursor event ${eventName} should use one dispatcher`
+        );
+      }
+
+      const installedShellDispatcher = path.join(
+        projectDir,
+        '.cursor',
+        'hooks',
+        'before-shell-execution.js'
+      );
+      const blocked = spawnSync(process.execPath, [installedShellDispatcher], {
+        cwd: projectDir,
+        env: { ...process.env, HOME: homeDir, USERPROFILE: homeDir },
+        input: JSON.stringify({ command: 'git commit --no-verify -m test' }),
+        encoding: 'utf8',
+        timeout: DEFAULT_INSTALL_APPLY_TIMEOUT_MS,
+      });
+      assert.strictEqual(
+        blocked.status,
+        2,
+        `Installed Cursor dispatcher should preserve blocking exit codes: ${blocked.stderr}`
+      );
+      assert.match(blocked.stderr, /BLOCKED/);
       assert.ok(mcpConfig.mcpServers['chrome-devtools'], 'Should install shared MCP servers into Cursor');
 
       const statePath = path.join(projectDir, '.cursor', 'ecc-install-state.json');
@@ -754,12 +786,12 @@ function runTests() {
     const projectDir = createTempDir('install-apply-project-');
 
     try {
-      const result = run(['--target', 'cursor', '--modules', 'platform-configs', '--enable-hooks'], {
+      const result = run(['--target', 'cursor', '--modules', 'platform-configs'], {
         cwd: projectDir,
         homeDir,
       });
       assert.strictEqual(result.code, 0, result.stderr);
-      assert.ok(fs.existsSync(path.join(projectDir, '.cursor', 'hooks.json')));
+      assert.ok(!fs.existsSync(path.join(projectDir, '.cursor', 'hooks.json')));
       assert.ok(fs.existsSync(path.join(projectDir, '.cursor', 'rules', 'common-agents.mdc')));
       assert.ok(!fs.existsSync(path.join(projectDir, '.cursor', 'rules', 'common-agents.md')));
 
@@ -770,6 +802,7 @@ function runTests() {
       assert.deepStrictEqual(state.request.excludeComponents, []);
       assert.strictEqual(state.request.legacyMode, false);
       assert.ok(state.resolution.selectedModules.includes('platform-configs'));
+      assert.ok(!fs.existsSync(path.join(projectDir, '.cursor', 'hooks')));
       assert.ok(
         !state.operations.some(operation => operation.destinationPath.endsWith('ecc-install-state.json')),
         'Manifest copy operations should not include generated install-state files'
