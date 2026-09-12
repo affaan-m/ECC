@@ -146,6 +146,47 @@ function runTests() {
     assert.strictEqual(result.code, 0);
   })) passed++; else failed++;
 
+  // The two dev hooks must agree: pre-bash-dev-server-block.js refuses a dev
+  // server outside tmux, and this hook is what puts it in tmux. Both now read
+  // scripts/lib/dev-command.js, so a spelling one recognises cannot be one the
+  // other misses. Before that, this hook used its own raw-text regex and left
+  // every quoted or option-separated form undetached.
+  // Same gate the detection tests above use: on a non-Windows host without
+  // tmux the hook deliberately passes the command through, so asserting a
+  // rewrite there would fail for the right reason and the wrong cause.
+  if (process.platform === 'win32' || tmuxAvailable) {
+    for (const command of [
+      'npm run "dev"',
+      "npm run 'dev'",
+      'npm --silent run dev',
+      'yarn --cwd app dev',
+      // npm takes any config key as `--key value`, so an unknown option must
+      // not swallow the script name.
+      'npm --userconfig /tmp/npmrc run dev'
+    ]) {
+      (test(`detects a quoted or option-separated dev script: ${command}`, () => {
+        const result = runScript({ tool_input: { command } });
+        assert.strictEqual(result.code, 0, `Hook exited ${result.code}: ${result.stderr}`);
+        const out = JSON.parse(result.stdout);
+        assert.notStrictEqual(
+          out.tool_input.command,
+          command,
+          `Expected ${command} to be rewritten for a dev session`
+        );
+      }) ? passed++ : failed++);
+    }
+  }
+
+  (test('leaves a non-dev command alone', () => {
+    for (const command of ['npm run build', 'npm run dev-setup', 'npm test -- --grep dev']) {
+      const result = runScript({ tool_input: { command } });
+      assert.strictEqual(result.code, 0, `Hook exited ${result.code}: ${result.stderr}`);
+      const out = JSON.parse(result.stdout);
+      assert.strictEqual(out.tool_input.command, command, `Expected ${command} unchanged`);
+    }
+  }) ? passed++ : failed++);
+
+
   console.log(`\nResults: Passed: ${passed}, Failed: ${failed}`);
   process.exit(failed > 0 ? 1 : 0);
 }
