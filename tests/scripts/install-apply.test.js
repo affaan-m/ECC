@@ -11,7 +11,11 @@ const yaml = require('js-yaml');
 const { applyInstallPlan } = require('../../scripts/lib/install/apply');
 
 const SCRIPT = path.join(__dirname, '..', '..', 'scripts', 'install-apply.js');
-const DEFAULT_INSTALL_APPLY_TIMEOUT_MS = process.platform === 'win32' ? 30000 : 10000;
+// Windows hosted runners can spend over 30 seconds starting the nested Node
+// process while the full install suite is under load. Keep the timeout bounded
+// but allow the process enough time to finish instead of reporting a false CI
+// failure.
+const DEFAULT_INSTALL_APPLY_TIMEOUT_MS = process.platform === 'win32' ? 60000 : 10000;
 
 function createTempDir(prefix) {
   return fs.mkdtempSync(path.join(os.tmpdir(), prefix));
