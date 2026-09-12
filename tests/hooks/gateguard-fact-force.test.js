@@ -3113,6 +3113,34 @@ function runTests() {
     console.error(`  [cleanup] failed to remove ${stateDir}: ${err.message}`);
   }
 
+  // --- sanitizePath dangerous invisible unicode regression ---
+  clearState();
+  if (
+    test('sanitizePath strips CI-defined dangerous invisible unicode from denial paths', () => {
+      const file_path =
+        '/src/eu2028\u2028app.js\u200bhidden\u2060name\ufefftail\u3164x.js';
+      const input = {
+        tool_name: 'Edit',
+        tool_input: { file_path, old_string: 'foo', new_string: 'bar' }
+      };
+      const result = runHook(input);
+      const output = parseOutput(result.stdout);
+      const reason = String(
+        output && output.hookSpecificOutput
+          ? output.hookSpecificOutput.permissionDecisionReason
+          : ''
+      );
+      for (const bad of ['\u2028', '\u2029', '\u200b', '\u2060', '\ufeff', '\u3164']) {
+        assert.ok(!reason.includes(bad), `denial reason must not carry U+${bad.codePointAt(0).toString(16)} (${bad})`);
+      }
+      assert.ok(reason.includes('app.js'), 'visible path text must remain');
+    })
+  ) {
+    passed++;
+  } else {
+    failed++;
+  }
+
   console.log(`\n  ${passed} passed, ${failed} failed\n`);
   process.exit(failed > 0 ? 1 : 0);
 }
