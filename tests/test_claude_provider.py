@@ -3,7 +3,7 @@ from typing import Any
 
 import pytest
 
-from llm.core.types import LLMInput, Message, Role
+from llm.core.types import LLMInput, Message, Role, ToolCall
 from llm.providers.claude import ClaudeProvider
 
 
@@ -81,6 +81,57 @@ def test_generate_collects_multiple_tool_use_blocks() -> None:
     assert output.content == ""
     assert [call.id for call in output.tool_calls or []] == ["toolu_1", "toolu_2"]
     assert (output.tool_calls or [])[1].arguments == {"path": "README.md"}
+
+
+@pytest.mark.unit
+def test_generate_serializes_tool_round_trip_for_anthropic() -> None:
+    provider = make_provider(make_response([SimpleNamespace(type="text", text="Done.")], stop_reason="end_turn"))
+
+    provider.generate(
+        LLMInput(
+            messages=[
+                Message(role=Role.USER, content="Search"),
+                Message(
+                    role=Role.ASSISTANT,
+                    content="",
+                    tool_calls=[
+                        ToolCall(id="toolu_1", name="search", arguments={"query": "claude"}),
+                        ToolCall(id="toolu_2", name="read", arguments={"path": "README.md"}),
+                    ],
+                ),
+                Message(role=Role.TOOL, content="results", tool_call_id="toolu_1"),
+                Message(role=Role.TOOL, content="more results", tool_call_id="toolu_2"),
+            ]
+        )
+    )
+
+    assert provider.client.messages.last_params["messages"] == [
+        {"role": "user", "content": "Search"},
+        {
+            "role": "assistant",
+            "content": [
+                {
+                    "type": "tool_use",
+                    "id": "toolu_1",
+                    "name": "search",
+                    "input": {"query": "claude"},
+                },
+                {
+                    "type": "tool_use",
+                    "id": "toolu_2",
+                    "name": "read",
+                    "input": {"path": "README.md"},
+                },
+            ],
+        },
+        {
+            "role": "user",
+            "content": [
+                {"type": "tool_result", "tool_use_id": "toolu_1", "content": "results"},
+                {"type": "tool_result", "tool_use_id": "toolu_2", "content": "more results"},
+            ],
+        },
+    ]
 
 
 @pytest.mark.unit
