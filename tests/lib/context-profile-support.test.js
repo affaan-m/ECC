@@ -12,6 +12,8 @@ const TRAVERSAL_LIMIT = 20000;
 
 function mockEnumeration(context, entriesFor) {
   const counts = { opens: 0, reads: 0, closes: 0, wholeDirectoryReads: 0 };
+  // Resolve Node 20's lazy fs.opendirSync export before readdirSync is mocked.
+  const originalOpenDirectory = fs.opendirSync;
   context.mock.method(fs, 'readdirSync', filename => {
     counts.wholeDirectoryReads++;
     return entriesFor(filename);
@@ -26,7 +28,19 @@ function mockEnumeration(context, entriesFor) {
       closeSync() { counts.closes++; },
     };
   });
+  assert.equal(typeof originalOpenDirectory, 'function');
   return counts;
+}
+
+function changedIdentity(stats) {
+  const changed = Object.assign(Object.create(Object.getPrototypeOf(stats)), stats);
+  changed.ino = typeof stats.ino === 'bigint' ? stats.ino + 1n : stats.ino + 1;
+  return changed;
+}
+
+function samePath(left, right) {
+  const normalize = value => path.resolve(value).toLowerCase();
+  return normalize(left) === normalize(right);
 }
 
 test('wide directories stop after one bounded lookahead without allocating a whole listing', context => withFixture(root => {
@@ -83,12 +97,18 @@ test('excluded cache names consume enumeration limits before filtering', context
 
 test('enumeration errors close the directory handle', context => withFixture(root => {
   const reader = createSourceReader(root);
+  const directory = path.join(fs.realpathSync(root), 'skills');
+  const originalOpen = fs.opendirSync;
+  const originalRead = fs.readdirSync;
   let closes = 0;
-  context.mock.method(fs, 'opendirSync', () => ({
+  context.mock.method(fs, 'opendirSync', (filename, options) => samePath(filename, directory) ? ({
     readSync() { throw new Error('TEST_DIRECTORY_READ_FAILURE'); },
     closeSync() { closes++; },
-  }));
-  context.mock.method(fs, 'readdirSync', () => { throw new Error('TEST_DIRECTORY_READ_FAILURE'); });
+  }) : originalOpen(filename, options));
+  context.mock.method(fs, 'readdirSync', (filename, options) => {
+    if (!samePath(filename, directory)) return originalRead(filename, options);
+    throw new Error('TEST_DIRECTORY_READ_FAILURE');
+  });
   try {
     assert.throws(() => reader.list('skills'), /TEST_DIRECTORY_READ_FAILURE/);
     assert.equal(closes, 1);
@@ -108,8 +128,7 @@ test('directory identity changes during open close the handle before reading any
   });
   context.mock.method(fs, 'lstatSync', (filename, ...args) => {
     const stats = originalStat(filename, ...args);
-    if (opened && filename === directory) stats.ino++;
-    return stats;
+    return opened && samePath(filename, directory) ? changedIdentity(stats) : stats;
   });
   try {
     assert.throws(() => reader.list('skills'), /identity.*changed/i);
@@ -130,8 +149,7 @@ test('directory identity changes during enumeration reject the result and close 
   }));
   context.mock.method(fs, 'lstatSync', (filename, ...args) => {
     const stats = originalStat(filename, ...args);
-    if (enumerated && filename === directory) stats.ino++;
-    return stats;
+    return enumerated && samePath(filename, directory) ? changedIdentity(stats) : stats;
   });
   try {
     assert.throws(() => reader.list('skills'), /identity.*changed/i);
