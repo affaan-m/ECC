@@ -29,7 +29,7 @@ const hooksConfig = readHooksConfig(path.join(repoRoot, 'hooks', 'hooks.json'));
 
 const MAX_STDIN = 1024 * 1024;
 const SUBPROCESS_TIMEOUT_MS = process.platform === 'darwin' && process.env.CI === 'true'
-  ? 120_000
+  ? 180_000
   : 60_000;
 
 const workDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-stop-stdout-')); // non-git cwd
@@ -232,29 +232,25 @@ if (
   passed++;
 else failed++;
 
-// spawnSync limits captured output by bytes while the runner's stdin cap is
-// counted after UTF-8 decoding. A payload can therefore be below MAX_STDIN in
-// characters but above Node's default 1MB child-process buffer in bytes.
+// A payload can be below MAX_STDIN in characters but above the byte limit.
+// The runner must count UTF-8 bytes and suppress a truncated JSON document.
 const multibytePayload = stopPayload(400 * 1024, '한');
 assert.ok(multibytePayload.length < MAX_STDIN, 'fixture must stay below the runner character cap');
-assert.ok(Buffer.byteLength(multibytePayload) > MAX_STDIN, 'fixture must exceed the default byte buffer');
+assert.ok(Buffer.byteLength(multibytePayload) > MAX_STDIN, 'fixture must exceed the runner byte cap');
 
 // Every registered command uses the same generated wrapper, verified above.
 // Exercise the multi-megabyte byte-buffer edge once so the test does not
 // amplify hosted-runner load by serializing the identical payload seven times.
 if (
-  test('registered Stop wrapper preserves a multibyte sub-cap payload', () => {
+  test('registered Stop wrapper counts multibyte input by UTF-8 bytes', () => {
     const result = runRegisteredStopHook(representativeStopEntry, multibytePayload);
     assert.strictEqual(
       result.status,
       0,
       `expected exit 0, got ${result.status}: ${result.stderr}`
     );
-    assert.ok(
-      result.stdout === multibytePayload,
-      `registered wrapper must echo ${Buffer.byteLength(multibytePayload)} bytes uncut (got ${Buffer.byteLength(result.stdout)})`
-    );
-    JSON.parse(result.stdout);
+    assert.strictEqual(result.stdout, '', 'byte-oversized JSON must not be echoed');
+    assert.match(result.stderr, /stdin exceeded 1048576 bytes/);
   })
 )
   passed++;

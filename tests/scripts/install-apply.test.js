@@ -168,6 +168,7 @@ function runTests() {
       assert.ok(fs.existsSync(path.join(claudeRoot, 'rules', 'ecc', 'typescript', 'testing.md')));
       assert.ok(fs.existsSync(path.join(claudeRoot, 'commands', 'plan.md')));
       assert.ok(fs.existsSync(path.join(claudeRoot, 'scripts', 'hooks', 'session-end.js')));
+      assert.ok(fs.existsSync(path.join(claudeRoot, 'scripts', 'hooks', 'hookify-runtime.js')));
       assert.ok(fs.existsSync(path.join(claudeRoot, 'scripts', 'lib', 'utils.js')));
       assert.ok(fs.existsSync(path.join(claudeRoot, 'skills', 'tdd-workflow', 'SKILL.md')));
       assert.ok(fs.existsSync(path.join(claudeRoot, 'skills', 'coding-standards', 'SKILL.md')));
@@ -803,6 +804,9 @@ function runTests() {
       const settings = readJson(path.join(claudeRoot, 'settings.json'));
       assert.strictEqual(settings.includeCoAuthoredBy, false);
       assert.ok(settings.hooks.SessionStart.some(entry => entry.id === 'session:start'));
+      assert.ok(settings.hooks.PreToolUse.some(entry => entry.id === 'pre:hookify-runtime'));
+      assert.ok(settings.hooks.UserPromptSubmit.some(entry => entry.id === 'prompt:hookify-runtime'));
+      assert.ok(settings.hooks.Stop.some(entry => entry.id === 'stop:hookify-runtime'));
 
       const state = readJson(path.join(claudeRoot, 'ecc', 'install-state.json'));
       const settingsOperation = state.operations.find(operation => (
@@ -906,9 +910,13 @@ function runTests() {
       assert.strictEqual(settings.includeCoAuthoredBy, false, 'Claude co-author attribution should be disabled by default');
       assert.deepStrictEqual(settings.env, { MY_VAR: '1' }, 'existing env should be preserved');
       assert.deepStrictEqual(
-        settings.hooks.UserPromptSubmit,
-        [{ matcher: '*', hooks: [{ type: 'command', command: 'echo custom-submit' }] }],
+        settings.hooks.UserPromptSubmit[0],
+        { matcher: '*', hooks: [{ type: 'command', command: 'echo custom-submit' }] },
         'unrelated existing hooks should be preserved'
+      );
+      assert.ok(
+        settings.hooks.UserPromptSubmit.some(entry => entry.id === 'prompt:hookify-runtime'),
+        'managed Hookify prompt runtime should be registered alongside user hooks'
       );
       assert.deepStrictEqual(
         settings.hooks.PreToolUse[0],

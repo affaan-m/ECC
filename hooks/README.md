@@ -9,7 +9,8 @@ User request → Claude picks a tool → PreToolUse hook runs → Tool executes 
 ```
 
 - **PreToolUse** hooks run before the tool executes. They can **block** (exit code 2) or **warn** (stderr without blocking).
-- **PostToolUse** hooks run after the tool completes. They can analyze output but cannot block.
+- **PostToolUse** hooks run after the tool completes. They can analyze output and return feedback before Claude continues.
+- **UserPromptSubmit** hooks run before Claude processes a user prompt.
 - **Stop** hooks run after each Claude response.
 - **SessionStart/SessionEnd** hooks run at session lifecycle boundaries.
 - **PreCompact** hooks run before context compaction, useful for saving state.
@@ -53,6 +54,7 @@ idempotent updates and safe uninstall. On Windows, the Claude config root is
 | **Pre-commit quality check** | `Bash` | Runs quality checks before `git commit`: lints staged files, validates commit message format when provided via `-m/--message`, detects console.log/debugger/secrets | 2 (blocks critical) / 0 (warns) |
 | **Doc file warning** | `Write` | Warns about non-standard `.md`/`.txt` files (allows README, CLAUDE, CONTRIBUTING, CHANGELOG, LICENSE, SKILL, docs/, skills/); cross-platform path handling | 0 (warns) |
 | **Strategic compact** | `Edit\|Write` | Suggests manual `/compact` at logical intervals (every ~50 tool calls) | 0 (warns) |
+| **Hookify runtime** | `.*` | Evaluates enabled project-local Hookify rules before shell and file tools | 0 (structured warn/block decision) |
 
 ### PostToolUse Hooks
 
@@ -65,14 +67,17 @@ idempotent updates and safe uninstall. On Windows, the Claude config root is
 | **Prettier format** | `Edit` | Auto-formats JS/TS files with Prettier after edits |
 | **TypeScript check** | `Edit` | Runs `tsc --noEmit` after editing `.ts`/`.tsx` files |
 | **console.log warning** | `Edit` | Warns about `console.log` statements in edited files |
+| **Hookify runtime** | `.*` | Evaluates project-local Hookify rules against completed shell and file tools |
 
 ### Lifecycle Hooks
 
 | Hook | Event | What It Does |
 |------|-------|-------------|
 | **Session start** | `SessionStart` | Loads previous context and detects package manager |
+| **Hookify prompt rules** | `UserPromptSubmit` | Evaluates prompt rules before the user prompt reaches Claude |
 | **Plan Canvas sessions** | `SessionStart` | Surfaces open Plan Canvas browser reviews so a fresh session can resume the loop |
 | **Pre-compact** | `PreCompact` | Saves state before context compaction |
+| **Hookify completion rules** | `Stop` | Warns or requests another turn when an enabled completion rule matches |
 | **Console.log audit** | `Stop` | Checks all modified files for `console.log` after each response |
 | **Session summary** | `Stop` | Persists session state when transcript path is available |
 | **Pattern extraction** | `Stop` | Evaluates session for extractable patterns (continuous learning) |
@@ -144,6 +149,26 @@ Runtime hook profiles:
 The Claude plugin exposes the same choices as the personal `hooks_enabled` and
 `hook_profile` settings. Run `ecc setup --mode claude-plugin` to install or
 update the plugin and change those preferences.
+
+### Hookify Rule Runtime
+
+ECC loads enabled `.claude/hookify.*.local.md` files directly; no separate
+Hookify plugin or Python runtime is required. Rules support `bash`, `file`,
+`prompt`, `stop`, and `all` events, plus either a simple regex `pattern` or an
+AND-combined `conditions` list. `warn` adds visible context for Claude while
+allowing the action. `block` denies a matching `PreToolUse` call and uses the
+event's blocking decision contract for prompt, post-tool, and stop events.
+
+Rule loading is project-scoped and bounded. Symlinked, oversized, malformed,
+or unsafe-regex rule files are skipped with a diagnostic instead of breaking
+the entire hook chain. Every regex evaluation also has a 25 ms hard timeout.
+Stop rules ignore `stop_hook_active: true` to avoid continuation loops.
+
+Files tracked by Git are disabled by default because opening a repository must
+not activate repository-authored instructions. Locally created, gitignored
+rules continue to work automatically. To review and explicitly trust tracked
+rules, set `ECC_HOOKIFY_ALLOW_TRACKED=1`; messages are still labeled as
+untrusted local rule data when passed to Claude.
 
 ### Writing Your Own Hook
 

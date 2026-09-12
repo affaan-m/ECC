@@ -46,6 +46,18 @@
         "id": "pre:edit-write:gateguard-fact-force",
         "description": "Fact-forcing gate: block first Edit/Write/MultiEdit per file and demand investigation (importers, data schemas, user instruction) before allowing",
         "fingerprint": "32c4a312b4c2"
+      },
+      {
+        "id": "pre:hookify-runtime",
+        "description": "Evaluate project-local Hookify rules before Bash, PowerShell, and file tools run",
+        "fingerprint": "65b5a5d6bbd5"
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "id": "prompt:hookify-runtime",
+        "description": "Evaluate project-local Hookify prompt rules before a user prompt is processed",
+        "fingerprint": "89b4809a5a7e"
       }
     ],
     "PreCompact": [
@@ -92,6 +104,11 @@
       }
     ],
     "Stop": [
+      {
+        "id": "stop:hookify-runtime",
+        "description": "Evaluate project-local Hookify completion rules before Claude stops",
+        "fingerprint": "ebc0f182702e"
+      },
       {
         "id": "stop:plan-canvas-pending",
         "description": "Deliver undelivered Plan Canvas browser feedback before the agent stops",

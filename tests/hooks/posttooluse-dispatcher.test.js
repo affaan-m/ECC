@@ -109,6 +109,7 @@ function runTests() {
         {
           tool: 'Edit',
           sync: [
+            'post:hookify-runtime',
             'post:edit:design-quality-check',
             'post:edit:accumulator',
             'post:edit:console-warn',
@@ -121,27 +122,27 @@ function runTests() {
         },
         {
           tool: 'Write',
-          sync: ['post:edit:design-quality-check', 'post:edit:accumulator', 'post:governance-capture', 'post:session-activity-tracker', 'post:ecc-metrics-bridge', 'post:ecc-context-monitor'],
+          sync: ['post:hookify-runtime', 'post:edit:design-quality-check', 'post:edit:accumulator', 'post:governance-capture', 'post:session-activity-tracker', 'post:ecc-metrics-bridge', 'post:ecc-context-monitor'],
           async: ['post:quality-gate', 'post:observe:continuous-learning']
         },
         {
           tool: 'Bash',
-          sync: ['post:governance-capture', 'post:session-activity-tracker', 'post:ecc-metrics-bridge', 'post:ecc-context-monitor'],
+          sync: ['post:hookify-runtime', 'post:governance-capture', 'post:session-activity-tracker', 'post:ecc-metrics-bridge', 'post:ecc-context-monitor'],
           async: ['post:bash:dispatcher', 'post:observe:continuous-learning']
         },
         {
           tool: 'PowerShell',
-          sync: ['post:governance-capture', 'post:session-activity-tracker', 'post:ecc-metrics-bridge', 'post:ecc-context-monitor'],
+          sync: ['post:hookify-runtime', 'post:governance-capture', 'post:session-activity-tracker', 'post:ecc-metrics-bridge', 'post:ecc-context-monitor'],
           async: ['post:observe:continuous-learning']
         },
         {
           tool: 'powershell',
-          sync: ['post:governance-capture', 'post:session-activity-tracker', 'post:ecc-metrics-bridge', 'post:ecc-context-monitor'],
+          sync: ['post:hookify-runtime', 'post:governance-capture', 'post:session-activity-tracker', 'post:ecc-metrics-bridge', 'post:ecc-context-monitor'],
           async: ['post:observe:continuous-learning']
         },
         {
           tool: 'Read',
-          sync: ['post:session-activity-tracker', 'post:ecc-metrics-bridge', 'post:ecc-context-monitor'],
+          sync: ['post:hookify-runtime', 'post:session-activity-tracker', 'post:ecc-metrics-bridge', 'post:ecc-context-monitor'],
           async: ['post:observe:continuous-learning']
         }
       ];
@@ -178,6 +179,7 @@ function runTests() {
       }
       const ids = results.flatMap(result => previewedIds(result.stderr));
       assert.deepStrictEqual(ids, [
+        'post:hookify-runtime',
         'post:edit:design-quality-check',
         'post:edit:accumulator',
         'post:edit:console-warn',
@@ -226,7 +228,7 @@ function runTests() {
         ECC_HOOK_PROFILE: 'minimal'
       });
       assert.strictEqual(minimalSync.status, 0, minimalSync.stderr);
-      assert.deepStrictEqual(previewedIds(minimalSync.stderr), ['post:ecc-metrics-bridge']);
+      assert.deepStrictEqual(previewedIds(minimalSync.stderr), ['post:hookify-runtime', 'post:ecc-metrics-bridge']);
 
       const minimalAsync = runDispatcher('async', 'Bash', {
         ECC_DRY_RUN: '1',
@@ -458,6 +460,41 @@ function runTests() {
       assert.strictEqual(conflicting.stdout, envelope('kept warning'), 'last output should win when raw stdout cannot merge');
       assert.ok(conflicting.warning.includes('post:test:raw'), 'dropped hook IDs should be named');
       assert.ok(conflicting.warning.includes('post:test:ctx'));
+    })
+  )
+    passed++;
+  else failed++;
+
+  if (
+    test('an empty block reason remains blocking when sibling output fails', () => {
+      const { runHooks } = require(dispatcherPath);
+      const raw = JSON.stringify({ hook_event_name: 'PostToolUse', tool_name: 'Read' });
+      const result = runHooks(raw, [
+        {
+          id: 'post:test:block',
+          matcher: '*',
+          profiles: 'standard,strict',
+          run: () => ({ stdout: JSON.stringify({ decision: 'block', reason: '' }) })
+        },
+        {
+          id: 'post:test:context',
+          matcher: '*',
+          profiles: 'standard,strict',
+          run: () => ({ additionalContext: 'Keep this context.' })
+        },
+        {
+          id: 'post:test:failure',
+          matcher: '*',
+          profiles: 'standard,strict',
+          run: () => ({ exitCode: 7 })
+        }
+      ], { toolName: 'Read', env: { ECC_HOOK_PROFILE: 'standard' } });
+
+      const output = JSON.parse(result.stdout);
+      assert.strictEqual(output.decision, 'block');
+      assert.strictEqual(output.reason, '');
+      assert.strictEqual(output.hookSpecificOutput.additionalContext, 'Keep this context.');
+      assert.strictEqual(result.exitCode, 0);
     })
   )
     passed++;
