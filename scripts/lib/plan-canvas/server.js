@@ -4,18 +4,20 @@
  * Plan Canvas loopback server.
  *
  * One detached process serves every open review session: the browser chrome,
- * the rendered artifact, an SSE stream for live updates, and the long-poll
+ * the rendered artifact, finite browser state polling, and the long-poll
  * endpoint agents block on. Sessions are keyed by canonical artifact path
  * (see sessions.js).
  */
 
 const { EventEmitter } = require('events');
+const crypto = require('crypto');
 const fs = require('fs');
 const http = require('http');
 const path = require('path');
 
 const { buildAllowedHostnames, isAllowedHostHeader, isAllowedOrigin } = require('../loopback-guard');
 const { renderMarkdown } = require('./markdown');
+const { exportPdf } = require('./pdf');
 const { artifactSdkJs } = require('./sdk');
 const {
   canvasCss,
@@ -29,14 +31,52 @@ const DEFAULT_PORT = 4517;
 const DEFAULT_HOST = '127.0.0.1';
 const DEFAULT_IDLE_TIMEOUT_MS = 30 * 60 * 1000;
 const MAX_BODY_BYTES = 1024 * 1024;
+const MAX_PDF_SNAPSHOT_BYTES = 5 * 1024 * 1024;
 // How long the "agent is thinking" indicator survives without the agent
 // checking back in, before presence decays to the honest queued/waiting.
 const DEFAULT_THINKING_STALE_MS = 90 * 1000;
 // An explicit typing signal expires faster: it means "a reply is seconds away".
 const DEFAULT_TYPING_EXPIRY_MS = 30 * 1000;
-// Presence is push-based, so expiring states need a tick to re-broadcast on.
-const DEFAULT_PRESENCE_SWEEP_MS = 5 * 1000;
+const PLAN_CANVAS_PROTOCOL_VERSION = 4;
 const TYPING_STATES = new Set(['thinking', 'typing', 'idle']);
+const PDF_EXPORT_CSP = [
+  "default-src 'none'",
+  "base-uri 'none'",
+  "connect-src 'none'",
+  "font-src 'self' data:",
+  "form-action 'none'",
+  "frame-src 'none'",
+  "img-src 'self' data:",
+  "media-src 'self' data:",
+  "object-src 'none'",
+  "script-src 'none'",
+  "style-src 'self' 'unsafe-inline'"
+].join('; ');
+
+// Package versions do not distinguish two worktrees on the same release.
+// Fingerprint every module loaded into the detached server so a current CLI
+// never reuses stale browser or protocol code from an older checkout.
+function computeRuntimeId() {
+  const sources = [
+    ['loopback-guard.js', path.join(__dirname, '..', 'loopback-guard.js')],
+    ['markdown.js', path.join(__dirname, 'markdown.js')],
+    ['pdf.js', path.join(__dirname, 'pdf.js')],
+    ['sdk.js', path.join(__dirname, 'sdk.js')],
+    ['server.js', __filename],
+    ['sessions.js', path.join(__dirname, 'sessions.js')],
+    ['ui.js', path.join(__dirname, 'ui.js')]
+  ];
+  const digest = crypto.createHash('sha256');
+  for (const [name, sourcePath] of sources) {
+    digest.update(name);
+    digest.update('\0');
+    digest.update(fs.readFileSync(sourcePath));
+    digest.update('\0');
+  }
+  return digest.digest('hex').slice(0, 16);
+}
+
+const PLAN_CANVAS_RUNTIME_ID = computeRuntimeId();
 
 const CONTENT_TYPES = {
   '.css': 'text/css; charset=utf-8',
@@ -70,13 +110,13 @@ function resolveIdleTimeoutMs(env = process.env) {
   return Number.isInteger(value) && value > 0 ? value : DEFAULT_IDLE_TIMEOUT_MS;
 }
 
-function readJsonBody(req) {
+function readJsonBody(req, maxBytes = MAX_BODY_BYTES) {
   return new Promise((resolve, reject) => {
     let size = 0;
     const chunks = [];
     req.on('data', chunk => {
       size += chunk.length;
-      if (size > MAX_BODY_BYTES) {
+      if (size > maxBytes) {
         reject(new Error('body too large'));
         req.destroy();
         return;
@@ -104,11 +144,28 @@ function sendJson(res, statusCode, payload) {
 function sendHtml(res, statusCode, html, { csp = true } = {}) {
   const headers = { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' };
   if (csp) {
-    headers['content-security-policy'] =
-      "default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; frame-src 'self'";
+    headers['content-security-policy'] = typeof csp === 'string'
+      ? csp
+      : "default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; frame-src 'self'";
   }
   res.writeHead(statusCode, headers);
   res.end(html);
+}
+
+function sendPdf(res, { buffer, filename }) {
+  const asciiName = filename.replace(/[^\x20-\x7e]/g, '_').replace(/["\\]/g, '-');
+  const encodedName = encodeURIComponent(filename).replace(/['()]/g, character =>
+    `%${character.charCodeAt(0).toString(16).toUpperCase()}`
+  );
+  res.writeHead(200, {
+    'content-type': 'application/pdf',
+    'content-length': buffer.length,
+    'content-disposition': `attachment; filename="${asciiName}"; filename*=UTF-8''${encodedName}`,
+    'x-content-type-options': 'nosniff',
+    'x-plan-canvas-filename': encodeURIComponent(filename),
+    'cache-control': 'no-store'
+  });
+  res.end(buffer);
 }
 
 function createPlanCanvasServer({
@@ -119,7 +176,7 @@ function createPlanCanvasServer({
   heartbeatMs = 15000,
   thinkingStaleMs = DEFAULT_THINKING_STALE_MS,
   typingExpiryMs = DEFAULT_TYPING_EXPIRY_MS,
-  presenceSweepMs = DEFAULT_PRESENCE_SWEEP_MS,
+  pdfExporter = exportPdf,
   onIdleShutdown = null,
   log = () => {}
 } = {}) {
@@ -128,17 +185,15 @@ function createPlanCanvasServer({
   const allowedHostnames = buildAllowedHostnames(host);
   const wake = new EventEmitter();
   wake.setMaxListeners(0);
-  const sseClients = new Map(); // key -> Set<res>
   const awaitCounts = new Map(); // key -> active long-poll count
   const workingKeys = new Map(); // key -> ms timestamp the agent took feedback
   const typingKeys = new Map(); // key -> ms timestamp the agent signalled composing
-  const watchers = new Map(); // key -> fs.FSWatcher
-  const lastPresence = new Map(); // key -> last broadcast state, for sweep diffing
   let idleTimer = null;
-  let presenceSweep = null;
   let closed = false;
+  let pdfExportActive = false;
+  let pdfSnapshot = null;
 
-  // --- presence + SSE ---------------------------------------------------
+  // --- presence ---------------------------------------------------------
 
   /**
    * Presence never claims more than the server actually knows:
@@ -166,34 +221,6 @@ function createPlanCanvasServer({
     return session.pendingFeedback && session.pendingFeedback.length > 0 ? 'queued' : 'waiting';
   }
 
-  function broadcast(key, event, payload) {
-    const clients = sseClients.get(key);
-    if (!clients) return;
-    const frameText = `event: ${event}\ndata: ${JSON.stringify(payload)}\n\n`;
-    for (const client of clients) client.write(frameText);
-  }
-
-  function broadcastPresence(key) {
-    const state = presenceFor(key);
-    lastPresence.set(key, state);
-    broadcast(key, 'presence', { state });
-  }
-
-  // Re-broadcast only where an expiry actually changed the answer, so an
-  // untouched canvas sees the thinking bubble clear itself.
-  function sweepPresence() {
-    for (const key of sseClients.keys()) {
-      const state = presenceFor(key);
-      if (lastPresence.get(key) !== state) broadcastPresence(key);
-    }
-  }
-
-  function startPresenceSweep() {
-    if (presenceSweep || !presenceSweepMs) return;
-    presenceSweep = setInterval(sweepPresence, presenceSweepMs);
-    if (presenceSweep.unref) presenceSweep.unref();
-  }
-
   // The agent is off working on this feedback batch; start the thinking clock.
   function markThinking(key) {
     workingKeys.set(key, Date.now());
@@ -208,7 +235,6 @@ function createPlanCanvasServer({
 
   function connectionCount() {
     let total = 0;
-    for (const clients of sseClients.values()) total += clients.size;
     for (const count of awaitCounts.values()) total += count;
     return total;
   }
@@ -234,31 +260,12 @@ function createPlanCanvasServer({
     armIdleTimer();
   }
 
-  // --- artifact watching --------------------------------------------------
-
-  function watchSession(session) {
-    if (watchers.has(session.key)) return;
-    const dir = path.dirname(session.file);
-    const base = path.basename(session.file);
-    let debounce = null;
+  function artifactVersionFor(session) {
     try {
-      const watcher = fs.watch(dir, (eventType, filename) => {
-        if (filename && filename !== base) return;
-        clearTimeout(debounce);
-        debounce = setTimeout(() => broadcast(session.key, 'reload', {}), 150);
-      });
-      watcher.on('error', () => watchers.delete(session.key));
-      watchers.set(session.key, watcher);
+      const stat = fs.statSync(session.file, { bigint: true });
+      return `${stat.mtimeNs}:${stat.size}`;
     } catch {
-      // Watching is best-effort; manual reload still works.
-    }
-  }
-
-  function unwatchSession(key) {
-    const watcher = watchers.get(key);
-    if (watcher) {
-      watcher.close();
-      watchers.delete(key);
+      return null;
     }
   }
 
@@ -269,9 +276,6 @@ function createPlanCanvasServer({
     if (!session) return null;
     clearAgentActivity(key);
     wake.emit(`wake:${key}`);
-    broadcast(key, 'ended', { endedBy: session.endedBy });
-    broadcastPresence(key);
-    unwatchSession(key);
     return session;
   }
 
@@ -296,8 +300,6 @@ function createPlanCanvasServer({
           next_step: 'The user ended this review from the browser. Do not reopen it unless they ask; pass reopen:true when they do.'
         });
       }
-      watchSession(session);
-      broadcastPresence(session.key);
       return sendJson(res, 200, {
         status: 'open',
         key: session.key,
@@ -324,7 +326,6 @@ function createPlanCanvasServer({
       const first = store.takeFeedback(key);
       if (first.status !== 'waiting') {
         if (first.status === 'feedback') markThinking(key);
-        broadcastPresence(key);
         return sendJson(res, 200, first);
       }
 
@@ -332,7 +333,6 @@ function createPlanCanvasServer({
       noteConnectionOpened();
       awaitCounts.set(key, (awaitCounts.get(key) || 0) + 1);
       clearAgentActivity(key);
-      broadcastPresence(key);
 
       let settled = false;
       let heartbeat = null;
@@ -345,7 +345,6 @@ function createPlanCanvasServer({
           if (payload.status === 'feedback') markThinking(key);
           res.end(JSON.stringify(payload));
         }
-        broadcastPresence(key);
         noteConnectionClosed();
       };
       const onWake = () => {
@@ -391,6 +390,74 @@ function createPlanCanvasServer({
       return sendJson(res, 200, { status: 'ended', endedBy: 'agent' });
     }
 
+    const stateMatch = pathname.match(/^\/api\/session\/([a-f0-9]{12})\/state$/);
+    if (stateMatch && req.method === 'GET') {
+      const session = store.get(stateMatch[1]);
+      if (!session) return sendJson(res, 404, { error: 'unknown session' });
+      // A visible Canvas used to keep the shared server alive through its SSE
+      // connection. Preserve that lifecycle with finite polling by restarting
+      // the idle clock whenever an active browser reports in.
+      armIdleTimer();
+      return sendJson(res, 200, {
+        status: session.status,
+        endedBy: session.endedBy || null,
+        chat: session.chat,
+        presence: presenceFor(session.key),
+        artifactVersion: artifactVersionFor(session)
+      });
+    }
+
+    const pdfMatch = pathname.match(/^\/api\/session\/([a-f0-9]{12})\/pdf$/);
+    if (pdfMatch && (req.method === 'GET' || req.method === 'POST')) {
+      const session = store.get(pdfMatch[1]);
+      if (!session) return sendJson(res, 404, { error: 'unknown session' });
+      const sendBusy = () => {
+        res.setHeader('retry-after', '1');
+        if (req.method === 'POST') res.setHeader('connection', 'close');
+        return sendJson(res, 429, {
+          error: 'another PDF export is already in progress',
+          code: 'PDF_EXPORT_BUSY'
+        });
+      };
+      // Reject overload before accepting a potentially slow snapshot body.
+      if (pdfExportActive) return sendBusy();
+      let requestedSnapshot = null;
+      if (req.method === 'POST') {
+        const body = await readJsonBody(req, MAX_PDF_SNAPSHOT_BYTES);
+        if (typeof body.html !== 'string' || !body.html.trim()) {
+          return sendJson(res, 400, { error: 'html snapshot is required' });
+        }
+        requestedSnapshot = { key: session.key, html: body.html };
+      }
+      // A renderer may have started while this request body was arriving.
+      if (pdfExportActive) return sendBusy();
+      pdfExportActive = true;
+      try {
+        pdfSnapshot = requestedSnapshot;
+        const pdf = await pdfExporter({
+          url: `http://${req.headers.host}/artifact/${session.key}/?pdf=1`,
+          artifactFile: session.file
+        });
+        return sendPdf(res, pdf);
+      } catch (error) {
+        const code = error.code || 'PDF_EXPORT_FAILED';
+        log(`[plan-canvas] PDF export failed (${code}): ${error.stack || error.message}`);
+        if (code === 'PDF_BROWSER_NOT_FOUND') {
+          return sendJson(res, 503, {
+            error: 'PDF export requires Google Chrome, Chromium, or Microsoft Edge; configure ECC_PLAN_CANVAS_CHROME_PATH if auto-discovery cannot find it',
+            code
+          });
+        }
+        return sendJson(res, 500, {
+          error: 'PDF export failed; check the Plan Canvas server log for details',
+          code: 'PDF_EXPORT_FAILED'
+        });
+      } finally {
+        pdfSnapshot = null;
+        pdfExportActive = false;
+      }
+    }
+
     const sessionMatch = pathname.match(/^\/api\/session\/([a-f0-9]{12})\/(feedback|end|reply|typing)$/);
     if (sessionMatch && req.method === 'POST') {
       const [, key, action] = sessionMatch;
@@ -402,13 +469,10 @@ function createPlanCanvasServer({
         const result = store.queueFeedback(key, body.items, { endSession: Boolean(body.endSession) });
         if (!result) return sendJson(res, 409, { error: 'session already ended' });
         wake.emit(`wake:${key}`);
-        broadcast(key, 'chat-sync', { chat: store.get(key).chat });
-        if (body.endSession) broadcast(key, 'ended', { endedBy: 'user' });
         // A parked `await` takes the batch synchronously on the wake above, so
         // presence is already `thinking` by now; with nobody listening it
-        // reports `queued`. Either way the browser must be told, which the
-        // original handler never did, leaving a stale pill on screen.
-        broadcastPresence(key);
+        // reports `queued`. The browser sees the current answer on its next
+        // finite state poll.
         return sendJson(res, 200, {
           status: 'queued',
           accepted: result.accepted.length,
@@ -429,8 +493,6 @@ function createPlanCanvasServer({
         }
         const entry = store.addAgentReply(key, body.text);
         clearAgentActivity(key);
-        broadcast(key, 'chat-sync', { chat: store.get(key).chat });
-        broadcastPresence(key);
         return sendJson(res, 200, { status: 'sent', at: entry.at });
       }
 
@@ -445,7 +507,6 @@ function createPlanCanvasServer({
         if (state === 'idle') clearAgentActivity(key);
         else if (state === 'typing') typingKeys.set(key, Date.now());
         else markThinking(key);
-        broadcastPresence(key);
         return sendJson(res, 200, { status: 'ok', presence: presenceFor(key) });
       }
     }
@@ -456,39 +517,23 @@ function createPlanCanvasServer({
   function handleEvents(req, res, key) {
     const session = store.get(key);
     if (!session) return sendJson(res, 404, { error: 'unknown session' });
-    noteConnectionOpened();
-    res.writeHead(200, {
-      'content-type': 'text/event-stream',
-      'cache-control': 'no-store',
-      connection: 'keep-alive'
-    });
-    res.write(`event: chat-sync\ndata: ${JSON.stringify({ chat: session.chat })}\n\n`);
-    res.write(`event: presence\ndata: ${JSON.stringify({ state: presenceFor(key) })}\n\n`);
-    if (!sseClients.has(key)) sseClients.set(key, new Set());
-    sseClients.get(key).add(res);
-    lastPresence.set(key, presenceFor(key));
-    startPresenceSweep();
-    const ping = setInterval(() => res.write(': ping\n\n'), 25000);
-    if (ping.unref) ping.unref();
-    req.on('close', () => {
-      clearInterval(ping);
-      const clients = sseClients.get(key);
-      if (clients) {
-        clients.delete(res);
-        if (clients.size === 0) {
-          sseClients.delete(key);
-          lastPresence.delete(key);
-        }
-      }
-      noteConnectionClosed();
-    });
+    // Older Canvas clients opened one permanent EventSource per tab. Six open
+    // tabs exhausted Chromium's HTTP/1 connection pool for this origin, so
+    // the next top-level navigation waited forever without receiving a byte.
+    // HTTP 204 tells EventSource not to reconnect, releasing legacy tabs after
+    // a server upgrade. Current clients use finite state polling below.
+    res.writeHead(204, { 'cache-control': 'no-store', connection: 'close' });
+    res.end();
   }
 
-  function serveArtifact(res, key, assetPath) {
+  function serveArtifact(res, key, assetPath, { pdfExport = false } = {}) {
     const session = store.get(key);
     if (!session) return sendHtml(res, 404, '<h1>Unknown session</h1>');
 
     if (!assetPath) {
+      if (pdfExport && pdfSnapshot && pdfSnapshot.key === key) {
+        return sendHtml(res, 200, pdfSnapshot.html, { csp: PDF_EXPORT_CSP });
+      }
       let content;
       try {
         content = fs.readFileSync(session.file, 'utf8');
@@ -501,13 +546,13 @@ function createPlanCanvasServer({
           title: path.basename(session.file),
           sdkSrc: '/sdk.js'
         });
-        return sendHtml(res, 200, html, { csp: false });
+        return sendHtml(res, 200, html, { csp: pdfExport ? PDF_EXPORT_CSP : false });
       }
       const sdkTag = '<script src="/sdk.js"></script>';
       const injected = content.includes('</body>')
         ? content.replace('</body>', `${sdkTag}\n</body>`)
         : `${content}\n${sdkTag}`;
-      return sendHtml(res, 200, injected, { csp: false });
+      return sendHtml(res, 200, injected, { csp: pdfExport ? PDF_EXPORT_CSP : false });
     }
 
     // Sibling assets resolve relative to the artifact's directory and must
@@ -541,7 +586,13 @@ function createPlanCanvasServer({
     Promise.resolve()
       .then(() => {
         if (req.method === 'GET' && pathname === '/health') {
-          return sendJson(res, 200, { ok: true, app: 'ecc-plan-canvas', version });
+          return sendJson(res, 200, {
+            ok: true,
+            app: 'ecc-plan-canvas',
+            version,
+            protocolVersion: PLAN_CANVAS_PROTOCOL_VERSION,
+            runtimeId: PLAN_CANVAS_RUNTIME_ID
+          });
         }
         if (req.method === 'POST' && pathname === '/shutdown') {
           sendJson(res, 200, { status: 'stopping' });
@@ -578,7 +629,9 @@ function createPlanCanvasServer({
         const artifactMatch = pathname.match(/^\/artifact\/([a-f0-9]{12})\/(.*)$/);
         if (req.method === 'GET' && artifactMatch) {
           const assetPath = decodeURIComponent(artifactMatch[2]);
-          return serveArtifact(res, artifactMatch[1], assetPath || null);
+          return serveArtifact(res, artifactMatch[1], assetPath || null, {
+            pdfExport: url.searchParams.get('pdf') === '1'
+          });
         }
         if (pathname.startsWith('/api/')) {
           return handleApi(req, res, url);
@@ -594,14 +647,6 @@ function createPlanCanvasServer({
   function close() {
     closed = true;
     clearTimeout(idleTimer);
-    clearInterval(presenceSweep);
-    presenceSweep = null;
-    lastPresence.clear();
-    for (const key of watchers.keys()) unwatchSession(key);
-    for (const clients of sseClients.values()) {
-      for (const client of clients) client.end();
-    }
-    sseClients.clear();
     wake.emit('server-close');
     return new Promise((resolve, reject) => {
       server.close(error => (error ? reject(error) : resolve()));
@@ -620,7 +665,7 @@ function createPlanCanvasServer({
     });
   }
 
-  return { server, listen, close, presenceFor, sweepPresence, watchSession };
+  return { server, listen, close, presenceFor };
 }
 
 module.exports = {
@@ -628,6 +673,8 @@ module.exports = {
   DEFAULT_PORT,
   DEFAULT_THINKING_STALE_MS,
   DEFAULT_TYPING_EXPIRY_MS,
+  PLAN_CANVAS_PROTOCOL_VERSION,
+  PLAN_CANVAS_RUNTIME_ID,
   createPlanCanvasServer,
   resolveIdleTimeoutMs,
   resolvePort

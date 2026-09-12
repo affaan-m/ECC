@@ -154,6 +154,9 @@ mirror at `ECC_PLAN_CANVAS_MERMAID_URL` for air-gapped use.
   session is refused; pass `--reopen` only when the user asks to resume.
 - Sibling assets (images, CSS) must sit next to the artifact and be
   referenced by relative path.
+- The reviewer can use **Download PDF** in the Canvas header to save the current
+  artifact directly. Export stays local and uses an installed Chrome, Chromium,
+  or Edge renderer; `ECC_PLAN_CANVAS_CHROME_PATH` selects a nonstandard install.
 - The server is loopback-only and exits after 30 idle minutes
   (`ECC_PLAN_CANVAS_IDLE_MS`); `stop` shuts it down explicitly. State lives
   in `~/.claude/plan-canvas/` (`ECC_PLAN_CANVAS_STATE_DIR`).
