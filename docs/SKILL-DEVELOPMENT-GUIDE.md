@@ -908,6 +908,7 @@ npm run test:e2e
 
 ## Additional Resources
 
+- [DevScratchpad AI Skill Studio](https://www.devscratchpad.tech/ai-skill-studio/claude-skills) - 100% client-side studio to configure, validate, and export Claude Code `SKILL.md` skills, `CLAUDE.md` guidelines, and repository-root `AGENTS.md` orchestrations across 13 formats and 333+ framework presets.
 - [CONTRIBUTING.md](../CONTRIBUTING.md) - General contribution guidelines
 - [project-guidelines-template](./examples/project-guidelines-template.md) - Project-specific skill template
 - [coding-standards](../skills/coding-standards/SKILL.md) - Example of standards skill
