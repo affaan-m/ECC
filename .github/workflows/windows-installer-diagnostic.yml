@@ -1,0 +1,88 @@
+name: Windows Installer Diagnostic
+
+on:
+  push:
+    branches: [ci/windows-installer-diagnostic-20260912]
+
+permissions:
+  contents: read
+
+jobs:
+  diagnostic:
+    if: github.ref == 'refs/heads/ci/windows-installer-diagnostic-20260912'
+    runs-on: windows-latest
+    timeout-minutes: 10
+    env:
+      YARN_ENABLE_SCRIPTS: 'false'
+      npm_config_ignore_scripts: 'true'
+    steps:
+      - name: Checkout diagnostic tooling
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          path: diagnostic
+          persist-credentials: false
+      - name: Checkout pinned candidate
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: 472cfa94fbf5fae05e46fbaaf7a3d08077ef6be3
+          path: candidate
+          persist-credentials: false
+      - name: Checkout pinned parent
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: 95b9fe157f815ef064793e49eacfecdbbfc5b813
+          path: base
+          persist-credentials: false
+      - name: Setup Node 18
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '18.x'
+      - name: Activate locked Yarn
+        shell: pwsh
+        run: |
+          corepack enable
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          corepack prepare yarn@4.9.2 --activate
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          New-Item -ItemType Directory -Path diagnostic-output
+      - name: Verify hosted diagnostic wiring without installers
+        id: wiring
+        continue-on-error: true
+        shell: pwsh
+        run: |
+          node diagnostic/scripts/ci/windows-installer-diagnostic/run.cjs --self-check candidate > diagnostic-output/wiring.stdout.log
+          exit $LASTEXITCODE
+      - name: Candidate dependencies and exact two cases
+        id: candidate
+        if: steps.wiring.outcome == 'success'
+        continue-on-error: true
+        shell: pwsh
+        working-directory: candidate
+        run: |
+          corepack yarn install --immutable --mode=skip-build
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          node ../diagnostic/scripts/ci/windows-installer-diagnostic/run.cjs --run . 472cfa94fbf5fae05e46fbaaf7a3d08077ef6be3 > ../diagnostic-output/candidate.stdout.log
+          exit $LASTEXITCODE
+      - name: Parent dependencies and exact two cases
+        id: base
+        if: steps.wiring.outcome == 'success'
+        continue-on-error: true
+        shell: pwsh
+        working-directory: base
+        run: |
+          corepack yarn install --immutable --mode=skip-build
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          node ../diagnostic/scripts/ci/windows-installer-diagnostic/run.cjs --run . 95b9fe157f815ef064793e49eacfecdbbfc5b813 > ../diagnostic-output/base.stdout.log
+          exit $LASTEXITCODE
+      - name: Preserve diagnostic stdout only
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: windows-installer-node18-candidate-parent
+          path: diagnostic-output/*.stdout.log
+          if-no-files-found: error
+          retention-days: 7
+      - name: Preserve failure verdict
+        if: steps.wiring.outcome != 'success' || steps.candidate.outcome != 'success' || steps.base.outcome != 'success'
+        shell: pwsh
+        run: exit 1
