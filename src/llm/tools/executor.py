@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
+import inspect
 from collections.abc import Callable
 from typing import Any
-import inspect
 
 from llm.core.interface import LLMError
 from llm.core.types import (
