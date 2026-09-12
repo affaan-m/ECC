@@ -269,11 +269,12 @@ function validateHooks() {
     }
 
     if (UPDATE_FINGERPRINTS) {
-      const refreshed = withRefreshedFingerprints(data, metadata);
-      fs.writeFileSync(metadataPath, `${JSON.stringify(refreshed, null, 2)}
-`);
-      console.log(`Updated fingerprints in ${METADATA_FILENAME}`);
-      metadata = refreshed;
+      try {
+        metadata = withRefreshedFingerprints(data, metadata);
+      } catch (error) {
+        console.error(`ERROR: ${error.message}`);
+        process.exit(1);
+      }
     }
 
     if (validateAgainstSchema(metadata, METADATA_SCHEMA_PATH, METADATA_FILENAME)) {
@@ -397,6 +398,11 @@ function validateHooks() {
 
   if (hasErrors) {
     process.exit(1);
+  }
+
+  if (UPDATE_FINGERPRINTS && metadata) {
+    fs.writeFileSync(metadataPath, `${JSON.stringify(metadata, null, 2)}\n`);
+    console.log(`Updated fingerprints in ${METADATA_FILENAME}`);
   }
 
   console.log(`Validated ${totalMatchers} hook matchers`);

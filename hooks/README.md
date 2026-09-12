@@ -21,7 +21,7 @@ The executable hook graph remains `hooks/hooks.json`; the memory persistence dir
 
 Stable hook IDs and descriptions live in `hooks/hooks.metadata.json`, aligned by event and index with `hooks/hooks.json`. Claude Code validates a plugin's `hooks.json` against its own schema and reports any other key (`$schema`, `id`, `description`) as unknown at load time, so `hooks.json` carries only what the harness accepts. ECC's installer, validator, and dashboard merge the sidecar back in through `scripts/lib/hooks-config.js`; `node scripts/ci/validate-hooks.js` fails if the two files drift apart.
 
-Each sidecar entry also carries a `fingerprint` of the matcher entry it describes (matcher plus hook commands), so reordering `hooks.json` without reordering the sidecar, or editing a command without updating the sidecar, is caught rather than silently swapping IDs. After changing a hook command or entry order, run `node scripts/ci/validate-hooks.js --update-fingerprints` to refresh the fingerprints, then commit both files.
+Each sidecar entry also carries a `fingerprint` of the matcher entry it describes (matcher plus hook commands), so reordering `hooks.json` without reordering the sidecar, or editing a command without updating the sidecar, is caught rather than silently swapping IDs. When reordering hooks, move the matching sidecar entries first. Then run `node scripts/ci/validate-hooks.js --update-fingerprints` to refresh changed commands and commit both files. The updater rejects known fingerprints at different positions and writes only after validation succeeds.
 
 ## Installing These Hooks Manually
 

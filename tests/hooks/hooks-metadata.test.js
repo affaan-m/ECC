@@ -235,6 +235,48 @@ test('readHooksConfig returns raw config when the sidecar is absent', () => {
   }
 });
 
+test('failed refresh validation preserves the original sidecar bytes', () => {
+  const root = fs.mkdtempSync(path.join(require('os').tmpdir(), 'ecc-metadata-refresh-'));
+  try {
+    for (const relative of ['scripts/ci/validate-hooks.js', 'scripts/lib/hooks-config.js',
+      'schemas/hooks.schema.json', 'schemas/hooks-metadata.schema.json']) {
+      const destination = path.join(root, relative);
+      fs.mkdirSync(path.dirname(destination), { recursive: true });
+      fs.copyFileSync(path.join(REPO_ROOT, relative), destination);
+    }
+    fs.mkdirSync(path.join(root, 'hooks'));
+    fs.writeFileSync(path.join(root, 'hooks/hooks.json'), JSON.stringify({ hooks: { PreToolUse: [alpha] } }));
+    const sidecar = path.join(root, 'hooks/hooks.metadata.json');
+    const original = JSON.stringify({ entries: { PreToolUse: [{ ...alphaMeta, id: '', fingerprint: '000000000000' }] } });
+    fs.writeFileSync(sidecar, original);
+    const result = require('child_process').spawnSync(process.execPath,
+      [path.join(root, 'scripts/ci/validate-hooks.js'), '--update-fingerprints'], {
+        encoding: 'utf8', env: { ...process.env, NODE_PATH: path.join(REPO_ROOT, 'node_modules') },
+      });
+    assert.strictEqual(result.status, 1, result.stderr);
+    assert.match(result.stderr, /id|non-empty/);
+    assert.strictEqual(fs.readFileSync(sidecar, 'utf8'), original);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('refresh refuses reordered hooks instead of rebinding stable ids', () => {
+  const config = { hooks: { PreToolUse: [beta, alpha] } };
+  const metadata = { entries: { PreToolUse: [alphaMeta, betaMeta] } };
+  assert.throws(() => withRefreshedFingerprints(config, metadata), /reorder/i);
+  assert.deepStrictEqual(metadata.entries.PreToolUse, [alphaMeta, betaMeta]);
+});
+
+test('alignment rejects duplicate ids across events', () => {
+  const config = { hooks: { PreToolUse: [alpha], PostToolUse: [beta] } };
+  const metadata = { entries: {
+    PreToolUse: [alphaMeta], PostToolUse: [{ ...betaMeta, id: alphaMeta.id }],
+  } };
+  assert.ok(findMetadataMismatches(config, metadata).some(problem =>
+    /duplicate/.test(problem) && /PreToolUse/.test(problem) && /PostToolUse/.test(problem)));
+});
+
 let failures = 0;
 for (const { name, fn } of tests) {
   try {

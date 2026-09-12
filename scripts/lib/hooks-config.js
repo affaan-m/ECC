@@ -153,6 +153,7 @@ function applyHooksMetadata(hooksConfig, metadata) {
  */
 function findMetadataMismatches(hooksConfig, metadata) {
   const problems = [];
+  const idLocations = new Map();
   const events = eventsOf(hooksConfig) || {};
   const entriesByEvent = metadataEntriesOf(metadata) || {};
 
@@ -180,6 +181,10 @@ function findMetadataMismatches(hooksConfig, metadata) {
       }
       if (typeof entry.id !== 'string' || entry.id.trim() === '') {
         problems.push(`${label} is missing a non-empty "id"`);
+      } else if (idLocations.has(entry.id)) {
+        problems.push(`${label} has duplicate id "${entry.id}" already used by ${idLocations.get(entry.id)}`);
+      } else {
+        idLocations.set(entry.id, label);
       }
       if ('description' in entry && typeof entry.description !== 'string') {
         problems.push(`${label} has a non-string "description"`);
@@ -222,6 +227,28 @@ function withRefreshedFingerprints(hooksConfig, metadata) {
   const events = eventsOf(hooksConfig) || {};
   const entriesByEvent = metadataEntriesOf(metadata) || {};
   const refreshed = {};
+
+  // A known fingerprint at another position signals a reorder, not a command
+  // edit. Require the author to move its metadata before refreshing anything.
+  const positions = new Map();
+  for (const [event, entries] of Object.entries(events)) {
+    if (!Array.isArray(entries)) continue;
+    entries.forEach((entry, index) => {
+      const fingerprint = fingerprintHookEntry(entry);
+      const locations = positions.get(fingerprint) || [];
+      positions.set(fingerprint, [...locations, `${event}[${index}]`]);
+    });
+  }
+  for (const [event, entries] of Object.entries(entriesByEvent)) {
+    if (!Array.isArray(entries)) continue;
+    entries.forEach((entry, index) => {
+      const locations = positions.get(entry?.fingerprint);
+      const location = `${event}[${index}]`;
+      if (locations && !locations.includes(location)) {
+        throw new Error(`Metadata reorder detected at ${location}; move the matching sidecar entry before refreshing fingerprints`);
+      }
+    });
+  }
 
   for (const [event, eventMetadata] of Object.entries(entriesByEvent)) {
     const entries = Array.isArray(events[event]) ? events[event] : [];
