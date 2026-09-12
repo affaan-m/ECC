@@ -29,8 +29,10 @@ The other modules expose local utilities, not a trust decision about code.
 | Replay | `replay.js`, `effect-fence.js` | 04 replay-safe branching | Declared determinism and effect class per tool, content-addressed fixtures, `tool.fixture_missing` fail-closed replay, retired child preload refuses execution |
 | Receipt | `receipt.js` | 07 verifiable receipts | Offline receipt over capsule root, entry count, artifact digest, and gate receipt; detached signature interface; verification names the failing check |
 
-Epics 05 (offline self-improvement) and 06 (causal triage and compaction
-invariance) are not implemented. They consume the records these five produce.
+Epic 05 has an offline, report-only capsule grouping utility described below.
+Self-improvement, operational retrospective validation and epic 06 (causal
+triage and compaction invariance) remain unimplemented. They consume the
+records these five frameworks produce.
 
 ## Effect classes
 
@@ -182,6 +184,64 @@ What the chain does not claim: it does not stop an operator from replacing the
 whole log. That is the job of a witnessed transparency log, which is a later,
 opt-in layer outside this package.
 
+## Offline retrospective preparation
+
+Select 1 to 100 existing capsule directories from one task family:
+
+```sh
+node scripts/eval-harness.js capsule group .ecc/capsules/run-41 .ecc/capsules/run-42
+```
+
+```js
+const { retrospective } = require('./scripts/lib/eval-harness');
+const report = retrospective.groupCapsules(['.ecc/capsules/run-41', '.ecc/capsules/run-42']);
+```
+
+This read-only utility recomputes each projection from the verified metadata and
+journal snapshot using `capsule.project`. It never uses or repairs a saved
+`projection.json`. Inputs must be small, quiescent local capsules from the same
+task family; a mismatch rejects the entire report. There is no directory
+discovery, hook activation, new rollout, fixture replay or candidate execution.
+
+`capsule-retrospective/v1` reports the task family, input count, unique capsule
+count, duplicate count, and groups sorted by declared harness version. Each
+group contains capsule/entry counts, all five lineage counts, all five declared
+effect-class counts, and source digest references. Counts describe recorded
+entries, not unique tasks, attempts, successful effects or independently
+verified outcomes. Empty journals contribute one capsule and zero entries.
+Payload scores, verdicts, costs, durations and pass/fail totals are not used.
+
+The pair `(run_id, capsule_id)` identifies a capsule for deduplication. Repeated
+paths or copied snapshots count once when their verified projection hashes
+match. Conflicting snapshots of that identity, including different checkpoints,
+fail with `retrospective.conflicting_identity`; the utility never picks a winner.
+Distinct capsule identities remain distinct even if their event shapes match.
+Source references contain the canonical hash of the identity pair, entry count,
+root hash, journal digest and projection hash. `report_hash` covers every other
+report field; input ordering does not change the result. Repeating an input
+changes input/duplicate counts and the report hash, but not the grouped counts.
+
+Reports omit directory arguments, raw run/capsule IDs, journal payloads and
+timestamps. **Task-family and harness-version labels are returned verbatim**
+and may themselves contain private text or paths. Digest references are not
+anonymization: they remain linkable and low-entropy IDs can be guessed. Review
+labels and report content before sharing. Neither hashes nor declared labels
+authenticate a producer or prove an improvement; `report_only` is always true.
+
+Any invalid, unreadable or mismatched capsule rejects the whole report with
+`retrospective.invalid_capsule` and a zero-based input index. Diagnostics omit
+underlying reader messages and source paths. Mixed families and invalid input
+lists have separate stable codes. CLI success emits JSON to stdout and exits 0;
+bad usage exits 2, while verification/refusal exits 1 without partial JSON.
+The command accepts no flags and does not write a report file. For a directory
+name beginning with `--`, use a relative `./` prefix or an absolute path.
+
+This inherits the existing capsule reader's filesystem and memory limits. The
+100-input cap does not bound journal bytes. It does not isolate hostile files,
+serialize concurrent writers, validate a signature or establish live provenance.
+Executor containment, opt-in hook recording, stable-taskset validation and the
+roadmap's operational retrospective milestone remain separate prerequisites.
+
 ## Verification gate: unavailable
 
 **Supported candidate execution backends: none, on any OS.** `runGate` and
@@ -321,6 +381,7 @@ and does not validate normal prepack or clear a release.
 ```sh
 node tests/lib/eval-harness/envelope.test.js
 node tests/lib/eval-harness/capsule.test.js
+node tests/lib/eval-harness/retrospective.test.js
 node tests/lib/eval-harness/gate.test.js
 node tests/lib/eval-harness/security.test.js
 node tests/lib/eval-harness/replay.test.js

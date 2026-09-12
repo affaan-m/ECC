@@ -250,6 +250,14 @@ node scripts/eval-harness.js example
   closed; SE3 and above are refused in replay. Record mode invokes the registered
   implementation, so only register trusted functions.
 - Receipt: offline verification of capsule and artifact bytes, with named checks.
+- Retrospective preparation: `node scripts/eval-harness.js capsule group <dir> [<dir> ...]`
+  groups 1 to 100 explicitly selected, verified local capsule snapshots from one
+  task family by declared harness version. Repeated snapshots count once;
+  conflicting identities or invalid capsules reject the whole report. This is
+  read-only record counting, with no new rollouts, scores or promotion. Use small,
+  quiescent capsules. Payloads, directory arguments and raw run/capsule IDs are
+  omitted, but task-family/version labels are verbatim and digest references are
+  linkable; review them before sharing. Operational validation remains pending.
 
 Candidate execution is disabled on every OS because no verified OS containment
 backend is implemented. `gate run`, `runGate`, `runVariant`, direct child launch,

@@ -148,4 +148,35 @@ test('capsule CLI projects and exports valid metadata, and rejects forged metada
   } finally { cleanup(root); }
 });
 
+test('capsule group CLI emits only a read-only report for explicit snapshots', () => {
+  const dir = tempDir('cli-group');
+  try {
+    harness.capsule.Capsule.create(dir, { task_family: 'fixture-family' })
+      .append('plan', 'start', { note: 'private journal marker' });
+    const before = fs.readdirSync(dir).map(name => [name, fs.readFileSync(path.join(dir, name))]);
+    const result = run(['capsule', 'group', dir, dir]);
+    assert.strictEqual(result.status, 0, result.stderr);
+    const report = JSON.parse(result.stdout);
+    assert.strictEqual(report.report_only, true);
+    assert.strictEqual(report.capsule_count, 1);
+    assert.strictEqual(report.duplicate_count, 1);
+    assert.ok(!result.stdout.includes('private journal marker'));
+    assert.ok(!result.stdout.includes(dir));
+    assert.deepStrictEqual(fs.readdirSync(dir).map(name => [name, fs.readFileSync(path.join(dir, name))]), before);
+  } finally { cleanup(dir); }
+});
+
+test('capsule group rejects bad usage and content without a partial report', () => {
+  for (const args of [[], [' '], ['--out', 'missing'], Array(101).fill('missing')]) {
+    const result = run(['capsule', 'group', ...args]);
+    assert.strictEqual(result.status, 2, result.stderr);
+    assert.strictEqual(result.stdout, '');
+  }
+  const result = run(['capsule', 'group', '/missing/private-directory-marker']);
+  assert.strictEqual(result.status, 1);
+  assert.match(result.stderr, /retrospective.invalid_capsule/);
+  assert.ok(!result.stderr.includes('private-directory-marker'));
+  assert.strictEqual(result.stdout, '');
+});
+
 finish('cli');
