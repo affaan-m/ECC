@@ -5,6 +5,7 @@ const {
   CLAUDE_HOOKS_CONFIG_PATH,
   getClaudeSettingsPath,
 } = require('../install/claude-settings');
+const { METADATA_FILENAME } = require('../hooks-config');
 
 const PLATFORM_SOURCE_PATH_OWNERS = Object.freeze({
   '.claude-plugin': 'claude',
@@ -176,7 +177,9 @@ function planClaudeHooksOperations(adapter, module, input) {
   return [
     ...operations,
     ...fs.readdirSync(sourceHooksRoot, { withFileTypes: true })
-      .filter(entry => entry.name !== 'hooks.json')
+      // hooks.json is merged into settings.json above, and its metadata sidecar
+      // is consumed with it, so neither is scaffolded into the target hooks dir.
+      .filter(entry => entry.name !== 'hooks.json' && entry.name !== METADATA_FILENAME)
       .sort((left, right) => left.name.localeCompare(right.name))
       .map(entry => adapter.createScaffoldOperation(
         module.id,

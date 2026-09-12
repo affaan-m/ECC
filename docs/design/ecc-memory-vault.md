@@ -33,6 +33,30 @@ one harness's hook support.
 - Procedural memory remains in rules and instincts, subject to their existing
   promotion and validation gates.
 
+### Retrieval completeness and current state
+
+A bounded scan can be incomplete even when it has found a matching ID. Direct
+reads reject truncated scans and scans containing invalid or unreadable memory
+documents before claiming absence, uniqueness or complete backlinks. The core
+error is `ECC_MEMORY_INCOMPLETE`; local MCP returns the safe tool error
+`MEMORY_READ_INCOMPLETE`. No partial memory content is returned in that case.
+Search retains its existing diagnostics so callers can inspect partial results
+without interpreting them as a complete inventory. Entries excluded by the
+existing hidden-file or symlink policy remain excluded; this does not bypass
+filesystem safety or imply an atomic snapshot across concurrent edits.
+
+Failing a direct read because another document is malformed is an intentional
+tradeoff: the operator must repair the authorized vault before relying on a
+complete ID lookup. Use the existing doctor to inspect problems. Do not expand
+scope or permissions to make a failed lookup pass.
+
+Supersession links are references, not automatic revocations. The existing
+operator-reviewed status field controls active search; a direct read remains
+available for explicit historical inspection once the scan is complete. Evidence
+matching and lexical relevance do not establish current truth, authenticated
+authorship or authority to execute actions. Those checks belong to the consuming
+workflow, with original evidence retained when a fact changes.
+
 ### Threat boundary
 
 The first-release runtime defends against hostile vault documents, stable

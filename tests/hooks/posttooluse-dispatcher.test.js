@@ -13,6 +13,7 @@ const { spawnSync } = require('child_process');
 const repoRoot = path.join(__dirname, '..', '..');
 const hooksPath = path.join(repoRoot, 'hooks', 'hooks.json');
 const dispatcherPath = path.join(repoRoot, 'scripts', 'hooks', 'posttooluse-dispatcher.js');
+const { readHooksConfig } = require(path.join(repoRoot, 'scripts', 'lib', 'hooks-config.js'));
 
 function test(name, fn) {
   try {
@@ -78,7 +79,7 @@ function runTests() {
 
   if (
     test('hooks.json exposes one sync and one async PostToolUse entry', () => {
-      const entries = JSON.parse(fs.readFileSync(hooksPath, 'utf8')).hooks.PostToolUse;
+      const entries = readHooksConfig(hooksPath).hooks.PostToolUse;
       assert.strictEqual(entries.length, 2, 'PostToolUse should launch at most two commands');
       assert.deepStrictEqual(
         entries.map(entry => entry.id),
@@ -163,7 +164,7 @@ function runTests() {
 
   if (
     test('actual hooks.json commands preserve Edit dry-run output and IDs', () => {
-      const entries = JSON.parse(fs.readFileSync(hooksPath, 'utf8')).hooks.PostToolUse;
+      const entries = readHooksConfig(hooksPath).hooks.PostToolUse;
       const raw = JSON.stringify({
         hook_event_name: 'PostToolUse',
         tool_name: 'Edit',
@@ -196,7 +197,7 @@ function runTests() {
 
   if (
     test('actual hooks.json commands never echo truncated oversized input', () => {
-      const entries = JSON.parse(fs.readFileSync(hooksPath, 'utf8')).hooks.PostToolUse;
+      const entries = readHooksConfig(hooksPath).hooks.PostToolUse;
       const values = ['x'.repeat(1024 * 1024 + 1024), 'é'.repeat(600000), '\u{1F600}'.repeat(300000)];
 
       for (const value of values) {
@@ -272,7 +273,7 @@ function runTests() {
 
   if (
     test('public dispatcher IDs disable their complete phase', () => {
-      const entries = JSON.parse(fs.readFileSync(hooksPath, 'utf8')).hooks.PostToolUse;
+      const entries = readHooksConfig(hooksPath).hooks.PostToolUse;
       const raw = JSON.stringify({
         hook_event_name: 'PostToolUse',
         tool_name: 'Edit',
@@ -465,6 +466,41 @@ function runTests() {
   else failed++;
 
   if (
+    test('an empty block reason remains blocking when sibling output fails', () => {
+      const { runHooks } = require(dispatcherPath);
+      const raw = JSON.stringify({ hook_event_name: 'PostToolUse', tool_name: 'Read' });
+      const result = runHooks(raw, [
+        {
+          id: 'post:test:block',
+          matcher: '*',
+          profiles: 'standard,strict',
+          run: () => ({ stdout: JSON.stringify({ decision: 'block', reason: '' }) })
+        },
+        {
+          id: 'post:test:context',
+          matcher: '*',
+          profiles: 'standard,strict',
+          run: () => ({ additionalContext: 'Keep this context.' })
+        },
+        {
+          id: 'post:test:failure',
+          matcher: '*',
+          profiles: 'standard,strict',
+          run: () => ({ exitCode: 7 })
+        }
+      ], { toolName: 'Read', env: { ECC_HOOK_PROFILE: 'standard' } });
+
+      const output = JSON.parse(result.stdout);
+      assert.strictEqual(output.decision, 'block');
+      assert.strictEqual(output.reason, '');
+      assert.strictEqual(output.hookSpecificOutput.additionalContext, 'Keep this context.');
+      assert.strictEqual(result.exitCode, 0);
+    })
+  )
+    passed++;
+  else failed++;
+
+  if (
     test('requiring the dispatcher module never dispatches; hooks.json calls cli()', () => {
       const raw = JSON.stringify({
         hook_event_name: 'PostToolUse',
@@ -482,7 +518,7 @@ function runTests() {
       assert.strictEqual(result.status, 0, result.stderr);
       assert.strictEqual(result.stdout, '', 'require() alone must not run main() or echo stdin');
 
-      const entries = JSON.parse(fs.readFileSync(hooksPath, 'utf8')).hooks.PostToolUse;
+      const entries = readHooksConfig(hooksPath).hooks.PostToolUse;
       assert.ok(
         entries.every(entry => entry.hooks[0].command.includes('require(s).cli()')),
         'hooks.json must invoke the explicit cli() entrypoint'

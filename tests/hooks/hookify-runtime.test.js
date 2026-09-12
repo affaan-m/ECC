@@ -614,6 +614,29 @@ if (test('hard-times out ReDoS shapes that pass static screening', () => {
   }
 })) passed++; else failed++;
 
+if (test('a timed-out blocking rule fails closed', () => {
+  const root = createProject();
+  try {
+    writeRule(
+      root,
+      'timeout-block',
+      'name: timeout-block\nevent: bash\naction: block\npattern: a+a+$|BLOCK_ME',
+      'Timed-out blocking rules require review.'
+    );
+    const result = runHook(root, {
+      hook_event_name: 'PreToolUse',
+      tool_name: 'Bash',
+      tool_input: { command: 'a'.repeat(60000) + '! BLOCK_ME' },
+    });
+    const output = parseDecision(result);
+    assert.strictEqual(output.hookSpecificOutput.permissionDecision, 'deny');
+    assert.match(output.hookSpecificOutput.permissionDecisionReason, /Timed-out blocking rules/);
+    assert.match(result.stderr, /regex evaluation exceeded/);
+  } finally {
+    removeProject(root);
+  }
+})) passed++; else failed++;
+
 if (test('a timed-out rule cannot suppress a later valid blocking rule', () => {
   const root = createProject();
   try {
@@ -680,72 +703,60 @@ if (test('blocking rules inspect content beyond 64 KiB and MultiEdit entry 100',
   }
 })) passed++; else failed++;
 
-if (test('oversized PreToolUse input fails closed when a relevant block rule exists', () => {
+if (test('condition evaluation budget fails closed for an uninspected blocking rule', () => {
   const root = createProject();
   try {
-    writeRule(root, 'oversized-block', 'name: oversized-block\nevent: file\naction: block\npattern: BLOCK_ME', 'Oversized input needs review.');
-    const raw = JSON.stringify({
+    writeRule(
+      root,
+      'budget',
+      'name: budget\nevent: file\naction: block\nconditions:\n  - field: file_path\n    operator: equals\n    pattern: never-match',
+      'Every edit must be inspected.'
+    );
+    const edits = Array.from(
+      { length: runtime.MAX_RULE_EVALUATIONS + 1 },
+      (_, index) => ({ file_path: 'src/file-' + index + '.js', new_string: 'safe' })
+    );
+    const result = runHook(root, {
       hook_event_name: 'PreToolUse',
-      tool_name: 'Write',
-      tool_input: { file_path: 'large.txt', content: 'x'.repeat(runtime.MAX_STDIN_BYTES + 1) },
-    });
-    const result = runtime.run(raw.slice(0, runtime.MAX_STDIN_BYTES), {
-      cwd: root,
-      env: { ...process.env, CLAUDE_PROJECT_DIR: root },
-      truncated: true,
-      maxStdin: runtime.MAX_STDIN_BYTES,
+      tool_name: 'MultiEdit',
+      tool_input: { edits },
     });
     const output = parseDecision(result);
     assert.strictEqual(output.hookSpecificOutput.permissionDecision, 'deny');
-    assert.match(output.hookSpecificOutput.permissionDecisionReason, /could not be fully inspected/);
+    assert.match(result.stderr, /evaluation budget exceeded/);
   } finally {
     removeProject(root);
   }
 })) passed++; else failed++;
 
-if (test('oversized PostToolUse input uses the top-level block contract', () => {
+if (test('a warning cannot consume the budget and hide a later blocking rule', () => {
   const root = createProject();
   try {
-    writeRule(root, 'oversized-post', 'name: oversized-post\nevent: all\naction: block\npattern: BLOCK_ME', 'Oversized output needs review.');
-    const result = runtime.run('{"hook_event_name":"PostToolUse",', {
-      cwd: root,
-      env: { ...process.env, CLAUDE_PROJECT_DIR: root },
-      hookEventName: 'PostToolUse',
-      toolName: 'Write',
-      truncated: true,
-      maxStdin: 1024 * 1024,
+    writeRule(
+      root,
+      'aaa-warning',
+      'name: budget-warning\nevent: file\naction: warn\nconditions:\n  - field: file_path\n    operator: equals\n    pattern: never-match',
+      'Warning only.'
+    );
+    writeRule(
+      root,
+      'zzz-block',
+      'name: budget-block\nevent: file\naction: block\nconditions:\n  - field: content\n    operator: contains\n    pattern: BLOCK_ME',
+      'Uninspected edits must be blocked.'
+    );
+    const edits = Array.from(
+      { length: runtime.MAX_RULE_EVALUATIONS },
+      (_, index) => ({ file_path: 'src/file-' + index + '.js', new_string: 'safe' })
+    );
+    const result = runHook(root, {
+      hook_event_name: 'PreToolUse',
+      tool_name: 'MultiEdit',
+      tool_input: { edits },
     });
     const output = parseDecision(result);
-    assert.strictEqual(output.decision, 'block');
-    assert.ok(!output.hookSpecificOutput);
-  } finally {
-    removeProject(root);
-  }
-})) passed++; else failed++;
-
-if (test('oversized inputs only fail closed for rules relevant to their event', () => {
-  const root = createProject();
-  try {
-    writeRule(root, 'bash-only', 'name: bash-only\nevent: bash\naction: block\npattern: .*');
-    const postResult = runtime.run('{"hook_event_name":"PostToolUse",', {
-      cwd: root,
-      env: { ...process.env, CLAUDE_PROJECT_DIR: root },
-      hookEventName: 'PostToolUse',
-      toolName: 'Read',
-      truncated: true,
-      maxStdin: 1024 * 1024,
-    });
-    assert.strictEqual(postResult.stdout, '');
-
-    const preResult = runtime.run('{"hook_event_name":"PreToolUse",', {
-      cwd: root,
-      env: { ...process.env, CLAUDE_PROJECT_DIR: root },
-      hookId: 'pre:hookify-runtime',
-      toolName: 'Write',
-      truncated: true,
-      maxStdin: 1024 * 1024,
-    });
-    assert.strictEqual(preResult.stdout, '');
+    assert.strictEqual(output.hookSpecificOutput.permissionDecision, 'deny');
+    assert.match(output.hookSpecificOutput.permissionDecisionReason, /Uninspected edits/);
+    assert.match(result.stderr, /evaluation budget exceeded/);
   } finally {
     removeProject(root);
   }

@@ -1,0 +1,102 @@
+{
+  "name": "taste-prop3d",
+  "title": "taste-prop3d",
+  "contents": {
+    "name": "workflow",
+    "nodes": {
+      "node-plate": {
+        "type": "run",
+        "id": "node-plate",
+        "depends": [
+          "input"
+        ],
+        "metadata": {
+          "position": {
+            "x": 380,
+            "y": 0
+          }
+        },
+        "app": "fal-ai/nano-banana-pro",
+        "input": {
+          "prompt": "$input.prop",
+          "num_images": 1,
+          "aspect_ratio": "1:1",
+          "output_format": "png"
+        }
+      },
+      "node-3d": {
+        "type": "run",
+        "id": "node-3d",
+        "depends": [
+          "node-plate"
+        ],
+        "metadata": {
+          "position": {
+            "x": 800,
+            "y": 0
+          }
+        },
+        "app": "fal-ai/hunyuan-3d/v3.1/pro/image-to-3d",
+        "input": {
+          "input_image_url": "$node-plate.images.0.url",
+          "generate_type": "Normal",
+          "enable_pbr": true,
+          "face_count": 300000
+        }
+      },
+      "output": {
+        "type": "display",
+        "id": "output",
+        "depends": [
+          "node-3d"
+        ],
+        "input": {},
+        "metadata": {
+          "position": {
+            "x": 1220,
+            "y": 0
+          }
+        },
+        "fields": {
+          "mesh_glb": "$node-3d.model_glb",
+          "mesh_obj": "$node-3d.model_urls.obj",
+          "preview": "$node-3d.thumbnail",
+          "plate": "$node-plate.images.0"
+        }
+      }
+    },
+    "output": {
+      "mesh_glb": "$node-3d.model_glb",
+      "mesh_obj": "$node-3d.model_urls.obj",
+      "preview": "$node-3d.thumbnail",
+      "plate": "$node-plate.images.0"
+    },
+    "schema": {
+      "input": {
+        "prop": {
+          "name": "prompt",
+          "label": "Prop description (append the plate rules)",
+          "description": "Prop description (append the plate rules)",
+          "required": true,
+          "defaultValue": "",
+          "examples": [],
+          "ui": {
+            "field": "textarea"
+          },
+          "type": "string",
+          "modelId": "node-plate"
+        }
+      },
+      "output": {}
+    },
+    "version": "1",
+    "metadata": {
+      "input": {
+        "position": {
+          "x": 0,
+          "y": 0
+        }
+      }
+    }
+  }
+}

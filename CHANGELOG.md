@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Fixed
+
+- Claude settings updates now tolerate a missing Windows device ID while retaining full-precision inode checks and strict matching when both device IDs are available.
+
 ## 2.2.0 - 2026-08-25
 
 ### Added

@@ -24,9 +24,8 @@ const { spawnSync } = require('child_process');
 
 const repoRoot = path.join(__dirname, '..', '..');
 const runner = path.join(repoRoot, 'scripts', 'hooks', 'run-with-flags.js');
-const hooksConfig = JSON.parse(
-  fs.readFileSync(path.join(repoRoot, 'hooks', 'hooks.json'), 'utf8')
-);
+const { readHooksConfig } = require(path.join(repoRoot, 'scripts', 'lib', 'hooks-config.js'));
+const hooksConfig = readHooksConfig(path.join(repoRoot, 'hooks', 'hooks.json'));
 
 const MAX_STDIN = 1024 * 1024;
 const SUBPROCESS_TIMEOUT_MS = process.platform === 'darwin' && process.env.CI === 'true'
@@ -127,6 +126,21 @@ function assertStdoutContract(result, label) {
   }
 }
 
+function formatSpawnFailure(result, elapsedMs) {
+  const token = value => typeof value === 'string' && /^[A-Z][A-Z0-9_]{0,47}$/.test(value)
+    ? value : null;
+  // Keep decoded UTF-8 byte counts, never stream contents or error messages.
+  const byteCount = value => typeof value === 'string' ? Buffer.byteLength(value, 'utf8') : null;
+  return JSON.stringify({
+    elapsedMs: Number.isSafeInteger(elapsedMs) && elapsedMs >= 0 ? elapsedMs : null,
+    status: Number.isSafeInteger(result.status) ? result.status : null,
+    signal: token(result.signal),
+    errorCode: token(result.error && result.error.code),
+    stdoutBytes: byteCount(result.stdout),
+    stderrBytes: byteCount(result.stderr)
+  });
+}
+
 // All registered Stop hooks (hooks/hooks.json).
 const STOP_HOOKS = [
   ['stop:format-typecheck', 'scripts/hooks/stop-format-typecheck.js'],
@@ -163,11 +177,13 @@ const realisticPayload = stopPayload(100 * 1024);
 for (const entry of hooksConfig.hooks.Stop) {
   if (
     test(`${entry.id} registered wrapper flushes a 100KB Stop payload`, () => {
+      const startedAt = process.hrtime.bigint();
       const result = runRegisteredStopHook(entry, realisticPayload);
+      const elapsedMs = Math.round(Number(process.hrtime.bigint() - startedAt) / 1e6);
       assert.strictEqual(
         result.status,
         0,
-        `${entry.id}: expected exit 0, got ${result.status}: ${result.stderr}`
+        result.status === 0 ? undefined : `${entry.id}: expected exit 0; ${formatSpawnFailure(result, elapsedMs)}`
       );
       assert.ok(
         result.stdout === realisticPayload,
@@ -216,29 +232,25 @@ if (
   passed++;
 else failed++;
 
-// spawnSync limits captured output by bytes while the runner's stdin cap is
-// counted after UTF-8 decoding. A payload can therefore be below MAX_STDIN in
-// characters but above Node's default 1MB child-process buffer in bytes.
+// A payload can be below MAX_STDIN in characters but above the byte limit.
+// The runner must count UTF-8 bytes and suppress a truncated JSON document.
 const multibytePayload = stopPayload(400 * 1024, '한');
 assert.ok(multibytePayload.length < MAX_STDIN, 'fixture must stay below the runner character cap');
-assert.ok(Buffer.byteLength(multibytePayload) > MAX_STDIN, 'fixture must exceed the default byte buffer');
+assert.ok(Buffer.byteLength(multibytePayload) > MAX_STDIN, 'fixture must exceed the runner byte cap');
 
 // Every registered command uses the same generated wrapper, verified above.
 // Exercise the multi-megabyte byte-buffer edge once so the test does not
 // amplify hosted-runner load by serializing the identical payload seven times.
 if (
-  test('registered Stop wrapper preserves a multibyte sub-cap payload', () => {
+  test('registered Stop wrapper counts multibyte input by UTF-8 bytes', () => {
     const result = runRegisteredStopHook(representativeStopEntry, multibytePayload);
     assert.strictEqual(
       result.status,
       0,
       `expected exit 0, got ${result.status}: ${result.stderr}`
     );
-    assert.ok(
-      result.stdout === multibytePayload,
-      `registered wrapper must echo ${Buffer.byteLength(multibytePayload)} bytes uncut (got ${Buffer.byteLength(result.stdout)})`
-    );
-    JSON.parse(result.stdout);
+    assert.strictEqual(result.stdout, '', 'byte-oversized JSON must not be echoed');
+    assert.match(result.stderr, /stdin exceeded 1048576 bytes/);
   })
 )
   passed++;

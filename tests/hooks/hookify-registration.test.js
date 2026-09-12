@@ -14,6 +14,15 @@ const repoRoot = path.join(__dirname, '..', '..');
 const runtimePath = path.join(repoRoot, 'scripts', 'hooks', 'hookify-runtime.js');
 const hooksPath = path.join(repoRoot, 'hooks', 'hooks.json');
 const dispatcherPath = path.join(repoRoot, 'scripts', 'hooks', 'posttooluse-dispatcher.js');
+const { readHooksConfig } = require('../../scripts/lib/hooks-config');
+const {
+  REGISTERED_HOOK_MAX_STDIN_BYTES,
+  createHookContextScanner,
+} = require('../../scripts/hooks/hook-input-limits');
+
+function readRegisteredHooks() {
+  return readHooksConfig(hooksPath).hooks;
+}
 
 function test(name, fn) {
   try {
@@ -62,8 +71,21 @@ console.log('\u2500'.repeat(50));
 let passed = 0;
 let failed = 0;
 
+if (test('streaming context scanner keeps only root hook fields across chunks', () => {
+  const scanner = createHookContextScanner();
+  scanner.push('{"tool_input":{"tool_name":"Bash","content":"');
+  scanner.push('x'.repeat(REGISTERED_HOOK_MAX_STDIN_BYTES + 1));
+  scanner.push('"},"hook_event_name":"PostToolUse","tool_name":"Write",');
+  scanner.push('"stop_hook_active":true}');
+  assert.deepStrictEqual(scanner.context, {
+    hookEventName: 'PostToolUse',
+    toolName: 'Write',
+    stopHookActive: true,
+  });
+})) passed++; else failed++;
+
 if (test('registers all four events and keeps PostToolUse consolidated', () => {
-  const hooks = JSON.parse(fs.readFileSync(hooksPath, 'utf8')).hooks;
+  const hooks = readRegisteredHooks();
   assert.ok(hooks.PreToolUse.some(entry => entry.id === 'pre:hookify-runtime'));
   assert.ok(hooks.UserPromptSubmit.some(entry => entry.id === 'prompt:hookify-runtime'));
   assert.ok(hooks.Stop.some(entry => entry.id === 'stop:hookify-runtime'));
@@ -76,7 +98,7 @@ if (test('registered hook commands enforce rules across all four events', () => 
   const root = createProject();
   try {
     writeRule(root, 'all-events', 'name: all-events\nevent: all\naction: block\npattern: HOOKIFY_SENTINEL', 'Registered runtime matched.');
-    const hooks = JSON.parse(fs.readFileSync(hooksPath, 'utf8')).hooks;
+    const hooks = readRegisteredHooks();
     const entries = [
       [hooks.PreToolUse.find(entry => entry.id === 'pre:hookify-runtime'),
         { hook_event_name: 'PreToolUse', tool_name: 'Bash', tool_input: { command: 'echo HOOKIFY_SENTINEL' } },
@@ -107,7 +129,7 @@ if (test('registered Hookify IDs can be disabled independently', () => {
   const root = createProject();
   try {
     writeRule(root, 'disable', 'name: block-disabled\nevent: bash\naction: block\npattern: .*', 'Must not run.');
-    const hooks = JSON.parse(fs.readFileSync(hooksPath, 'utf8')).hooks;
+    const hooks = readRegisteredHooks();
     const entry = hooks.PreToolUse.find(item => item.id === 'pre:hookify-runtime');
     const result = runRegisteredEntry(root, entry, {
       hook_event_name: 'PreToolUse',
@@ -145,15 +167,113 @@ if (test('registered PreToolUse hook fails closed on oversized file input', () =
   const root = createProject();
   try {
     writeRule(root, 'oversized-file', 'name: oversized-file\nevent: file\naction: block\npattern: BLOCK_ME', 'Oversized writes require review.');
-    const hooks = JSON.parse(fs.readFileSync(hooksPath, 'utf8')).hooks;
+    const hooks = readRegisteredHooks();
+    const entry = hooks.PreToolUse.find(item => item.id === 'pre:hookify-runtime');
+    const result = runRegisteredEntry(root, entry, {
+      tool_input: {
+        tool_name: 'Bash',
+        file_path: 'large.txt',
+        content: 'x'.repeat(REGISTERED_HOOK_MAX_STDIN_BYTES + 1),
+      },
+      hook_event_name: 'PreToolUse',
+      tool_name: 'Write',
+    });
+    assert.strictEqual(result.status, 0, result.stderr);
+    assert.strictEqual(JSON.parse(result.stdout).hookSpecificOutput.permissionDecision, 'deny');
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+})) passed++; else failed++;
+
+if (test('registered stdin limit counts multibyte UTF-8 bytes', () => {
+  const root = createProject();
+  try {
+    writeRule(root, 'unicode', 'name: unicode\nevent: file\naction: block\npattern: NEVER_MATCH', 'Oversized input must be reviewed.');
+    const hooks = readRegisteredHooks();
     const entry = hooks.PreToolUse.find(item => item.id === 'pre:hookify-runtime');
     const result = runRegisteredEntry(root, entry, {
       hook_event_name: 'PreToolUse',
       tool_name: 'Write',
-      tool_input: { file_path: 'large.txt', content: 'x'.repeat(1024 * 1024 + 1) },
+      tool_input: { content: '\u754c'.repeat(400000) },
     });
     assert.strictEqual(result.status, 0, result.stderr);
     assert.strictEqual(JSON.parse(result.stdout).hookSpecificOutput.permissionDecision, 'deny');
+    assert.match(result.stderr, /stdin exceeded 1048576 bytes/);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+})) passed++; else failed++;
+
+if (test('oversized registered Write ignores an unrelated bash-only block rule', () => {
+  const root = createProject();
+  try {
+    writeRule(
+      root,
+      'bash-only',
+      'name: bash-only\nevent: bash\naction: block\npattern: .*',
+      'Bash only.'
+    );
+    const hooks = readRegisteredHooks();
+    const entry = hooks.PreToolUse.find(item => item.id === 'pre:hookify-runtime');
+    const result = runRegisteredEntry(root, entry, {
+      hook_event_name: 'PreToolUse',
+      tool_name: 'Write',
+      tool_input: {
+        file_path: 'large.txt',
+        content: 'x'.repeat(REGISTERED_HOOK_MAX_STDIN_BYTES + 1),
+      },
+    });
+    assert.strictEqual(result.status, 0, result.stderr);
+    assert.strictEqual(result.stdout, '');
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+})) passed++; else failed++;
+
+if (test('oversized registered PostToolUse keeps its tool type after truncation', () => {
+  const root = createProject();
+  try {
+    writeRule(
+      root,
+      'bash-only',
+      'name: bash-only\nevent: bash\naction: block\npattern: .*',
+      'Bash only.'
+    );
+    const hooks = readRegisteredHooks();
+    const entry = hooks.PostToolUse.find(item => item.id === 'post:dispatcher:sync');
+    const result = runRegisteredEntry(root, entry, {
+      tool_input: {
+        tool_name: 'Bash',
+        content: 'x'.repeat(REGISTERED_HOOK_MAX_STDIN_BYTES + 1),
+      },
+      hook_event_name: 'PostToolUse',
+      tool_name: 'Write',
+    }, { ECC_DISABLED_HOOKS: 'post:ecc-metrics-bridge' });
+    assert.strictEqual(result.status, 0, result.stderr);
+    assert.strictEqual(result.stdout, '');
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+})) passed++; else failed++;
+
+if (test('oversized recursive Stop remains non-blocking', () => {
+  const root = createProject();
+  try {
+    writeRule(
+      root,
+      'stop',
+      'name: stop\nevent: stop\naction: block\npattern: .*',
+      'Stop once.'
+    );
+    const hooks = readRegisteredHooks();
+    const entry = hooks.Stop.find(item => item.id === 'stop:hookify-runtime');
+    const result = runRegisteredEntry(root, entry, {
+      last_assistant_message: 'x'.repeat(REGISTERED_HOOK_MAX_STDIN_BYTES + 1),
+      hook_event_name: 'Stop',
+      stop_hook_active: true,
+    });
+    assert.strictEqual(result.status, 0, result.stderr);
+    assert.strictEqual(result.stdout, '');
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
   }

@@ -1,0 +1,255 @@
+[
+  {
+    "id": "same-path",
+    "needsReview": true,
+    "manifest": {
+      "version": 1,
+      "repositories": [
+        {
+          "id": "repo",
+          "sources": {}
+        }
+      ],
+      "tasks": [
+        {
+          "id": "a",
+          "repoId": "repo",
+          "paths": [
+            "src/a.js"
+          ]
+        },
+        {
+          "id": "b",
+          "repoId": "repo",
+          "paths": [
+            "src/a.js"
+          ]
+        }
+      ],
+      "leases": []
+    }
+  },
+  {
+    "id": "direct-relative-import",
+    "needsReview": true,
+    "manifest": {
+      "version": 1,
+      "repositories": [
+        {
+          "id": "repo",
+          "sources": {
+            "src/a.js": "require('../lib/b')",
+            "lib/b.js": ""
+          }
+        }
+      ],
+      "tasks": [
+        {
+          "id": "a",
+          "repoId": "repo",
+          "paths": [
+            "src/a.js"
+          ]
+        },
+        {
+          "id": "b",
+          "repoId": "repo",
+          "paths": [
+            "lib/b.js"
+          ]
+        }
+      ],
+      "leases": []
+    }
+  },
+  {
+    "id": "independent",
+    "needsReview": false,
+    "manifest": {
+      "version": 1,
+      "repositories": [
+        {
+          "id": "repo",
+          "sources": {}
+        }
+      ],
+      "tasks": [
+        {
+          "id": "a",
+          "repoId": "repo",
+          "paths": [
+            "src/a.js"
+          ]
+        },
+        {
+          "id": "b",
+          "repoId": "repo",
+          "paths": [
+            "docs/guide.md"
+          ]
+        }
+      ],
+      "leases": []
+    }
+  },
+  {
+    "id": "same-directory",
+    "needsReview": false,
+    "manifest": {
+      "version": 1,
+      "repositories": [
+        {
+          "id": "repo",
+          "sources": {}
+        }
+      ],
+      "tasks": [
+        {
+          "id": "a",
+          "repoId": "repo",
+          "paths": [
+            "src/a.js"
+          ]
+        },
+        {
+          "id": "b",
+          "repoId": "repo",
+          "paths": [
+            "src/b.js"
+          ]
+        }
+      ],
+      "leases": []
+    }
+  },
+  {
+    "id": "separate-repositories",
+    "needsReview": false,
+    "manifest": {
+      "version": 1,
+      "repositories": [
+        {
+          "id": "repo",
+          "sources": {}
+        },
+        {
+          "id": "other",
+          "sources": {}
+        }
+      ],
+      "tasks": [
+        {
+          "id": "a",
+          "repoId": "repo",
+          "paths": [
+            "src/a.js"
+          ]
+        },
+        {
+          "id": "b",
+          "repoId": "other",
+          "paths": [
+            "src/a.js"
+          ]
+        }
+      ],
+      "leases": []
+    }
+  },
+  {
+    "id": "comment-false-positive",
+    "needsReview": false,
+    "manifest": {
+      "version": 1,
+      "repositories": [
+        {
+          "id": "repo",
+          "sources": {
+            "src/a.js": "// require('../lib/b')",
+            "lib/b.js": ""
+          }
+        }
+      ],
+      "tasks": [
+        {
+          "id": "a",
+          "repoId": "repo",
+          "paths": [
+            "src/a.js"
+          ]
+        },
+        {
+          "id": "b",
+          "repoId": "repo",
+          "paths": [
+            "lib/b.js"
+          ]
+        }
+      ],
+      "leases": []
+    }
+  },
+  {
+    "id": "alias-false-negative",
+    "needsReview": true,
+    "manifest": {
+      "version": 1,
+      "repositories": [
+        {
+          "id": "repo",
+          "sources": {
+            "src/a.js": "import b from '@lib/b'",
+            "lib/b.js": ""
+          }
+        }
+      ],
+      "tasks": [
+        {
+          "id": "a",
+          "repoId": "repo",
+          "paths": [
+            "src/a.js"
+          ]
+        },
+        {
+          "id": "b",
+          "repoId": "repo",
+          "paths": [
+            "lib/b.js"
+          ]
+        }
+      ],
+      "leases": []
+    }
+  },
+  {
+    "id": "cross-artifact-false-negative",
+    "needsReview": true,
+    "manifest": {
+      "version": 1,
+      "repositories": [
+        {
+          "id": "repo",
+          "sources": {}
+        }
+      ],
+      "tasks": [
+        {
+          "id": "a",
+          "repoId": "repo",
+          "paths": [
+            "specs/login.md"
+          ]
+        },
+        {
+          "id": "b",
+          "repoId": "repo",
+          "paths": [
+            "ui/login.html"
+          ]
+        }
+      ],
+      "leases": []
+    }
+  }
+]

@@ -122,10 +122,21 @@ function buildProximitySnapshot(sessions, options = {}) {
   const agents = sessionsToAgents(sessions, options);
 
   // Need at least two participating agents for a collision to be possible.
+  const agentSummaries = agents.map(a => ({
+    agentId: a.agentId,
+    label: a.label,
+    startedAt: a.startedAt,
+    fileCount: a.files.length,
+    progress: a.files.reduce((s, f) => s + (f.weight ?? 1), 0),
+    files: a.files.map(f => f.path)
+  }));
+
   if (agents.length < 2) {
     return {
       enabled: true,
       advisories: [],
+      triggers: [],
+      agents: agentSummaries,
       positions: agents.map(a => ({ agentId: a.agentId, position: [0, 0, 0], fileCount: a.files.length })),
       links: [],
       counts: { agents: agents.length, advisories: 0, resolutions: 0 }
@@ -151,6 +162,7 @@ function buildProximitySnapshot(sessions, options = {}) {
     enabled: true,
     advisories,
     triggers: buildProximityTriggers(scan.advisories),
+    agents: agentSummaries,
     positions: scan.positions,
     links: scan.links,
     counts: scan.counts

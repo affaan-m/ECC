@@ -11,29 +11,42 @@
 const fs = require('fs');
 const path = require('path');
 const { spawnSync } = require('child_process');
+const { StringDecoder } = require('string_decoder');
 const { isHookEnabled, isDryRun } = require('../lib/hook-flags');
 const { buildPreToolUseAdditionalContext } = require('./pretooluse-visible-output');
+const {
+  REGISTERED_HOOK_MAX_STDIN_BYTES,
+  createHookContextScanner,
+} = require('./hook-input-limits');
 
-const MAX_STDIN = 1024 * 1024;
+const MAX_STDIN = REGISTERED_HOOK_MAX_STDIN_BYTES;
 
 function readStdinRaw() {
   return new Promise(resolve => {
+    const rawDecoder = new StringDecoder('utf8');
+    const contextDecoder = new StringDecoder('utf8');
     let raw = '';
+    let bytesRead = 0;
     let truncated = false;
-    process.stdin.setEncoding('utf8');
+    const contextScanner = createHookContextScanner();
     process.stdin.on('data', chunk => {
-      if (raw.length < MAX_STDIN) {
-        const remaining = MAX_STDIN - raw.length;
-        raw += chunk.substring(0, remaining);
-        if (chunk.length > remaining) {
-          truncated = true;
-        }
-      } else {
-        truncated = true;
+      const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+      contextScanner.push(contextDecoder.write(buffer));
+      const remaining = Math.max(0, MAX_STDIN - bytesRead);
+      const accepted = buffer.subarray(0, remaining);
+      if (accepted.length > 0) {
+        raw += rawDecoder.write(accepted);
+        bytesRead += accepted.length;
       }
+      if (accepted.length < buffer.length) truncated = true;
     });
-    process.stdin.on('end', () => resolve({ raw, truncated }));
-    process.stdin.on('error', () => resolve({ raw, truncated }));
+    const finish = () => {
+      contextScanner.push(contextDecoder.end());
+      if (!truncated) raw += rawDecoder.end();
+      resolve({ raw, truncated, hookContext: contextScanner.context });
+    };
+    process.stdin.on('end', finish);
+    process.stdin.on('error', finish);
   });
 }
 
@@ -152,7 +165,7 @@ function buildDryRunPreview(hookId, relScriptPath, profilesCsv, raw) {
 
 async function main() {
   const [, , hookId, relScriptPath, profilesCsv] = process.argv;
-  const { raw, truncated } = await readStdinRaw();
+  const { raw, truncated, hookContext } = await readStdinRaw();
 
   // Oversized payloads: never echo the truncated string — a JSON document
   // cut mid-stream is treated by the harness as a hook failure, blocking the
@@ -229,7 +242,8 @@ async function main() {
         pluginRoot,
         scriptPath,
         truncated,
-        maxStdin: MAX_STDIN
+        maxStdin: MAX_STDIN,
+        ...(truncated ? hookContext : {})
       });
       const result = resolveHookResult(raw, output);
       exitWithStdout(sanitizeEcho(result.stdout), result.exitCode);

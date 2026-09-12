@@ -89,6 +89,65 @@ if (test('rejects Git-tracked local rules unless explicitly approved', () => {
   }
 })) passed++; else failed++;
 
+if (test('detects tracked rules through case-variant .claude paths', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-hookify-case-trust-'));
+  try {
+    assert.strictEqual(spawnSync('git', ['init', '-q'], { cwd: root }).status, 0);
+    const trackedDir = path.join(root, '.CLAUDE');
+    fs.mkdirSync(trackedDir);
+    fs.writeFileSync(
+      path.join(trackedDir, 'hookify.case.local.md'),
+      '---\nname: case-rule\nevent: bash\naction: block\npattern: .*\n---\nTracked data.\n'
+    );
+    assert.strictEqual(
+      spawnSync('git', ['add', '-f', '.CLAUDE/hookify.case.local.md'], { cwd: root }).status,
+      0
+    );
+
+    const tracked = runtime.listTrackedRuleFiles(root);
+    assert.strictEqual(tracked.error, '');
+    assert.ok(tracked.files.has('.claude/hookify.case.local.md'));
+  } finally {
+    removeProject(root);
+  }
+})) passed++; else failed++;
+
+if (test('tracked rules cannot exhaust the rule limit before local rules are considered', () => {
+  const root = createProject();
+  try {
+    assert.strictEqual(spawnSync('git', ['init', '-q'], { cwd: root }).status, 0);
+    const trackedPaths = [];
+    for (let index = 0; index < runtime.MAX_RULES; index += 1) {
+      trackedPaths.push(path.relative(
+        root,
+        writeRule(
+          root,
+          'aaa-' + String(index).padStart(3, '0'),
+          'name: tracked-' + index + '\nevent: bash\naction: warn\npattern: NEVER_MATCH'
+        )
+      ));
+    }
+    assert.strictEqual(spawnSync('git', ['add', '-f', ...trackedPaths], { cwd: root }).status, 0);
+    writeRule(
+      root,
+      'zzz-local',
+      'name: local-block\nevent: bash\naction: block\npattern: BLOCK_ME',
+      'The local blocking rule must run.'
+    );
+
+    const result = runHook(root, {
+      hook_event_name: 'PreToolUse',
+      tool_name: 'Bash',
+      tool_input: { command: 'echo BLOCK_ME' },
+    });
+    const output = JSON.parse(result.stdout);
+    assert.strictEqual(output.hookSpecificOutput.permissionDecision, 'deny');
+    assert.match(output.hookSpecificOutput.permissionDecisionReason, /local-block/);
+  } finally {
+    removeProject(root);
+  }
+})) passed++; else failed++;
+
 if (test('fails closed when Git tracking status cannot be established', () => {
   const root = createProject();
   try {

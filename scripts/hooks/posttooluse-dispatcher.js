@@ -21,8 +21,12 @@ const { run: runMetricsBridge } = require('./ecc-metrics-bridge');
 const { run: runContextMonitor } = require('./ecc-context-monitor');
 const { run: runSkillRunTracker } = require('./skill-run-tracker');
 const { run: runHookify } = require('./hookify-runtime');
+const {
+  REGISTERED_HOOK_MAX_STDIN_BYTES,
+  createHookContextScanner,
+} = require('./hook-input-limits');
 
-const MAX_STDIN = 1024 * 1024;
+const MAX_STDIN = REGISTERED_HOOK_MAX_STDIN_BYTES;
 
 const SYNC_HOOKS = [
   {
@@ -145,6 +149,7 @@ function parseStructuredOutput(stdout) {
     const output = parsed?.hookSpecificOutput;
     if (parsed?.decision === 'block' && typeof parsed.reason === 'string') {
       return {
+        isBlocked: true,
         blockReason: parsed.reason,
         additionalContext: output?.hookEventName === 'PostToolUse'
           && typeof output.additionalContext === 'string'
@@ -154,14 +159,14 @@ function parseStructuredOutput(stdout) {
     }
     if (output?.hookEventName !== 'PostToolUse') return null;
     if (typeof output.additionalContext !== 'string') return null;
-    return { blockReason: '', additionalContext: output.additionalContext };
+    return { isBlocked: false, blockReason: null, additionalContext: output.additionalContext };
   } catch {
     return null;
   }
 }
 
 function mergeBlockingOutputs(outputs, structured) {
-  const blockOutputs = structured.filter(output => output?.blockReason);
+  const blockOutputs = structured.filter(output => output?.isBlocked);
   const contexts = structured
     .filter(output => output !== null)
     .map(output => output.additionalContext)
@@ -192,7 +197,7 @@ function mergeHookStdout(outputs) {
   if (outputs.length === 1) return { stdout: outputs[0].stdout, warning: '' };
 
   const structured = outputs.map(output => parseStructuredOutput(output.stdout));
-  const blockOutputs = structured.filter(output => output?.blockReason);
+  const blockOutputs = structured.filter(output => output?.isBlocked);
   if (blockOutputs.length > 0) {
     return mergeBlockingOutputs(outputs, structured);
   }
@@ -269,19 +274,22 @@ function runHooks(raw, hooks, options = {}) {
   // Structured blocking decisions must reach Claude on a successful command
   // hook exit. An unrelated sibling hook failure must not downgrade the block
   // into a generic non-blocking hook error.
-  const finalExitCode = mergedDecision?.blockReason ? 0 : exitCode;
+  const finalExitCode = mergedDecision?.isBlocked ? 0 : exitCode;
   return { stdout: merged.stdout, stderr, exitCode: finalExitCode };
 }
 
 function readStdinRaw() {
   return new Promise(resolve => {
     const decoder = new StringDecoder('utf8');
+    const contextDecoder = new StringDecoder('utf8');
     let raw = '';
     let bytesRead = 0;
     let truncated = false;
     let settled = false;
+    const contextScanner = createHookContextScanner();
     process.stdin.on('data', chunk => {
       const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+      contextScanner.push(contextDecoder.write(buffer));
       const remaining = Math.max(0, MAX_STDIN - bytesRead);
       const accepted = buffer.subarray(0, remaining);
       if (accepted.length > 0) {
@@ -293,8 +301,9 @@ function readStdinRaw() {
     const finish = () => {
       if (settled) return;
       settled = true;
+      contextScanner.push(contextDecoder.end());
       if (!truncated) raw += decoder.end();
-      resolve({ raw, truncated });
+      resolve({ raw, truncated, hookContext: contextScanner.context });
     };
     process.stdin.once('end', finish);
     process.stdin.once('error', finish);
@@ -309,7 +318,7 @@ function resolveMainStdout(raw, result, options = {}) {
 
 async function main() {
   const mode = process.argv[2] === 'async' ? 'async' : 'sync';
-  const { raw, truncated } = await readStdinRaw();
+  const { raw, truncated, hookContext } = await readStdinRaw();
   const dispatcherId = `post:dispatcher:${mode}`;
   const dispatcherEnabled = isEnabled(
     {
@@ -319,7 +328,10 @@ async function main() {
     process.env
   );
   const hooks = dispatcherEnabled ? (mode === 'async' ? ASYNC_HOOKS : SYNC_HOOKS) : [];
-  const result = runHooks(raw, hooks, { truncated });
+  const result = runHooks(raw, hooks, {
+    truncated,
+    ...(truncated ? { toolName: hookContext.toolName } : {}),
+  });
   if (truncated) {
     process.stderr.write(`[Hook] stdin exceeded ${MAX_STDIN} bytes for PostToolUse ${mode}; suppressing pass-through\n`);
   }
