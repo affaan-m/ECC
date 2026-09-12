@@ -107,6 +107,7 @@ function buildExpectedPublishPaths(repoRoot) {
     "docs/CODEX-NAVIGATION-GUIDE.md",
     "docs/COMMAND-AGENT-MAP.md",
     "docs/ROADMAP.md",
+    "docs/MISTRAL-VIBE-GUIDE.md",
     "docs/design/ecc-memory-vault.md",
     "assets/images/sponsors",
   ]
@@ -223,6 +224,7 @@ function main() {
         "docs/CODEX-NAVIGATION-GUIDE.md",
         "docs/COMMAND-AGENT-MAP.md",
         "docs/ROADMAP.md",
+        "docs/MISTRAL-VIBE-GUIDE.md",
         "docs/design/ecc-memory-vault.md",
         "schemas/install-state.schema.json",
         "schemas/memory.schema.json",

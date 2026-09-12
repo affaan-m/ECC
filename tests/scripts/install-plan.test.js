@@ -123,6 +123,34 @@ function runTests() {
     assert.ok(!parsed.operations.some(operation => operation.sourceRelativePath === 'skills/tdd-workflow'));
   })) passed++; else failed++;
 
+  if (test('resolves Mistral Vibe preview paths from the caller project', () => {
+    const projectDir = require('fs').mkdtempSync(
+      path.join(require('os').tmpdir(), 'ecc-vibe-plan-project-')
+    );
+    try {
+      const realProjectDir = require('fs').realpathSync(projectDir);
+      const result = run([
+        '--skills', 'tdd-workflow',
+        '--target', 'mistral-vibe',
+        '--json',
+      ], { cwd: projectDir });
+      assert.strictEqual(result.code, 0, result.stderr);
+      const parsed = JSON.parse(result.stdout);
+      assert.strictEqual(parsed.targetRoot, path.join(realProjectDir, '.vibe'));
+      assert.strictEqual(
+        parsed.installStatePath,
+        path.join(realProjectDir, '.vibe', 'ecc-install-state.json')
+      );
+      assert.ok(parsed.operations.every(operation => (
+        operation.destinationPath.startsWith(
+          `${path.join(realProjectDir, '.vibe', 'skills')}${path.sep}`
+        )
+      )));
+    } finally {
+      require('fs').rmSync(projectDir, { recursive: true, force: true });
+    }
+  })) passed++; else failed++;
+
   if (test('loads planning intent from ecc-install.json', () => {
     const configDir = path.join(__dirname, '..', 'fixtures', 'tmp-install-plan-config');
     const configPath = path.join(configDir, 'ecc-install.json');

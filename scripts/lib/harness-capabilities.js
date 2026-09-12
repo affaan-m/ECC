@@ -215,6 +215,23 @@ const HARNESS_CAPABILITIES = deepFreeze([
     aliases: ['adal-cli'],
   },
   {
+    id: 'mistral-vibe',
+    label: 'Mistral Vibe',
+    targetIds: ['mistral-vibe'],
+    channel: 'managed-project',
+    installMode: 'managed-project',
+    guidedReady: false,
+    availability: 'advanced',
+    destination: './.vibe',
+    scopes: [scope('project', 'mistral-vibe', './.vibe')],
+    hooks: hooks(
+      'not-configured',
+      false,
+      'ECC installs selected Agent Skills only; Vibe hooks, agents, and provider configuration are not configured.'
+    ),
+    aliases: ['vibe'],
+  },
+  {
     id: 'hermes',
     label: 'Hermes',
     targetIds: ['hermes'],

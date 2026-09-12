@@ -33,12 +33,12 @@ function runTests() {
   let passed = 0;
   let failed = 0;
 
-  if (test('represents all 15 registered targets exactly once across 14 harnesses', () => {
+  if (test('represents all 16 registered targets exactly once across 15 harnesses', () => {
     const catalogTargetIds = HARNESS_CAPABILITIES.flatMap(harness => harness.targetIds);
     const adapterTargetIds = listInstallTargetAdapters().map(adapter => adapter.target);
 
-    assert.strictEqual(HARNESS_CAPABILITIES.length, 14);
-    assert.strictEqual(new Set(catalogTargetIds).size, 15);
+    assert.strictEqual(HARNESS_CAPABILITIES.length, 15);
+    assert.strictEqual(new Set(catalogTargetIds).size, 16);
     assert.deepStrictEqual([...catalogTargetIds].sort(), [...SUPPORTED_INSTALL_TARGETS].sort());
     assert.deepStrictEqual([...catalogTargetIds].sort(), [...adapterTargetIds].sort());
   })) passed++; else failed++;
@@ -103,6 +103,7 @@ function runTests() {
       adal: ['project', './.adal'],
       hermes: ['home', '~/.hermes'],
       openclaw: ['home', '~/.openclaw'],
+      'mistral-vibe': ['project', './.vibe'],
     };
 
     for (const [id, [scopeId, root]] of Object.entries(expected)) {
@@ -138,6 +139,16 @@ function runTests() {
     }
   })) passed++; else failed++;
 
+  if (test('describes Mistral Vibe as a skills-only managed project target', () => {
+    const vibe = getHarnessCapability('vibe');
+    assert.strictEqual(vibe.id, 'mistral-vibe');
+    assert.deepStrictEqual(vibe.targetIds, ['mistral-vibe']);
+    assert.strictEqual(vibe.destination, './.vibe');
+    assert.strictEqual(vibe.hooks.mode, 'not-configured');
+    assert.strictEqual(vibe.hooks.eccConfigured, false);
+    assert.match(vibe.hooks.note, /skills/i);
+  })) passed++; else failed++;
+
   if (test('normalizes wizard selections into canonical guided order', () => {
     assert.deepStrictEqual(
       normalizeHarnessSelection(' KIMI CODE, Claude Code, kimi '),
@@ -171,7 +182,7 @@ function runTests() {
 
     const first = listHarnessCapabilities();
     first.pop();
-    assert.strictEqual(listHarnessCapabilities().length, 14);
+    assert.strictEqual(listHarnessCapabilities().length, 15);
 
     const guided = listGuidedHarnesses();
     guided.reverse();

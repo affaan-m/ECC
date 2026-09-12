@@ -113,6 +113,35 @@ function runTests() {
     assert.ok(result.stdout.includes('--dry-run'));
     assert.ok(result.stdout.includes('--profile <name>'));
     assert.ok(result.stdout.includes('--modules <id,id,...>'));
+    assert.ok(result.stdout.includes('mistral-vibe'));
+    assert.ok(result.stdout.includes('Install selected skills into ./.vibe/skills/'));
+  })) passed++; else failed++;
+
+  if (test('installs a selected skill into Mistral Vibe without unrelated surfaces', () => {
+    const homeDir = createTempDir('install-apply-vibe-home-');
+    const projectDir = createTempDir('install-apply-vibe-project-');
+    try {
+      const result = run(
+        ['--target', 'mistral-vibe', '--skills', 'tdd-workflow', '--json'],
+        { cwd: projectDir, homeDir }
+      );
+      assert.strictEqual(result.code, 0, result.stderr);
+      assert.ok(fs.existsSync(path.join(projectDir, '.vibe', 'skills', 'tdd-workflow', 'SKILL.md')));
+      assert.ok(!fs.existsSync(path.join(projectDir, '.vibe', 'agents')));
+      assert.ok(!fs.existsSync(path.join(projectDir, '.vibe', 'hooks.toml')));
+
+      const state = readJson(path.join(projectDir, '.vibe', 'ecc-install-state.json'));
+      assert.strictEqual(state.target.id, 'mistral-vibe-project');
+      assert.deepStrictEqual(state.resolution.selectedModules, ['skill-tdd-workflow']);
+      assert.ok(state.operations.every(operation => (
+        operation.destinationPath.startsWith(
+          `${path.join(fs.realpathSync(projectDir), '.vibe', 'skills')}${path.sep}`
+        )
+      )));
+    } finally {
+      cleanup(homeDir);
+      cleanup(projectDir);
+    }
   })) passed++; else failed++;
 
   if (test('Claude hook dry-run validates settings without mutating malformed input', () => {

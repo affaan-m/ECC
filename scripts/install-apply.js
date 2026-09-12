@@ -49,6 +49,7 @@ Targets:
   kimi         - Install Kimi Code project instructions, skills, and MCP config into ./.kimi-code/ (ECC hooks not configured)
   openclaw     - Install shared rules/skills/commands into ~/.openclaw/
   adal         - Install shared rules/skills/commands into ./.adal/
+  mistral-vibe - Install selected skills into ./.vibe/skills/ (Vibe hooks and agents not configured)
 
 Options:
   --profile <name>    Resolve and install a manifest profile

@@ -106,6 +106,26 @@ function runTests() {
     }
   })) passed++; else failed++;
 
+  if (test('accepts a Mistral Vibe skills-only install config', () => {
+    const cwd = createTempDir('install-config-vibe-');
+    try {
+      const configPath = path.join(cwd, 'ecc-install.json');
+      writeJson(configPath, {
+        version: 1,
+        target: 'mistral-vibe',
+        include: ['skill:tdd-workflow'],
+        exclude: ['skill:security-review'],
+      });
+
+      const config = loadInstallConfig(configPath);
+      assert.strictEqual(config.target, 'mistral-vibe');
+      assert.deepStrictEqual(config.includeComponentIds, ['skill:tdd-workflow']);
+      assert.deepStrictEqual(config.excludeComponentIds, ['skill:security-review']);
+    } finally {
+      cleanup(cwd);
+    }
+  })) passed++; else failed++;
+
   if (test('rejects invalid config schema values', () => {
     const cwd = createTempDir('install-config-');
 

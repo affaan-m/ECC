@@ -15,6 +15,7 @@ const PLATFORM_SOURCE_PATH_OWNERS = Object.freeze({
   '.hermes': 'hermes',
   '.kimi': 'kimi',
   '.kimi-code': 'kimi',
+  '.vibe': 'mistral-vibe',
   '.joycode': 'joycode',
   '.opencode': 'opencode',
   '.openclaw': 'openclaw',
