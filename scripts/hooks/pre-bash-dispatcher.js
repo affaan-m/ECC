@@ -19,6 +19,21 @@ process.stdin.on('end', () => {
   if (result.stderr) {
     process.stderr.write(result.stderr);
   }
-  process.stdout.write(result.output);
-  process.exitCode = result.exitCode;
+  exitWithStdout(result.output, result.exitCode);
 });
+
+function exitWithStdout(text, exitCode) {
+  process.exitCode = exitCode;
+  let pendingWrites = 1;
+  const exitWhenFlushed = () => {
+    pendingWrites -= 1;
+    if (pendingWrites === 0) {
+      process.exit(exitCode);
+    }
+  };
+  if (typeof text === 'string' && text.length > 0) {
+    pendingWrites += 1;
+    process.stdout.write(text, exitWhenFlushed);
+  }
+  process.stderr.write('', exitWhenFlushed);
+}

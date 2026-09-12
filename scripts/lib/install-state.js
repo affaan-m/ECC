@@ -339,10 +339,74 @@ function readInstallState(filePath) {
   return state;
 }
 
+function warnFilesystemIssue(message) {
+  process.stderr.write(`${message}\n`);
+}
+
+function syncParentDirectory(directoryPath) {
+  if (process.platform === 'win32') {
+    return;
+  }
+  let fd;
+  try {
+    fd = fs.openSync(directoryPath, fs.constants.O_RDONLY);
+    fs.fsyncSync(fd);
+  } catch (syncError) {
+    warnFilesystemIssue(`[install-state] directory sync skipped for ${directoryPath}: ${syncError.message}`);
+  } finally {
+    if (fd !== undefined) {
+      try {
+        fs.closeSync(fd);
+      } catch (closeError) {
+        warnFilesystemIssue(`[install-state] directory handle close failed for ${directoryPath}: ${closeError.message}`);
+      }
+    }
+  }
+}
+
 function writeInstallState(filePath, state) {
   assertValidInstallState(state, filePath);
   fs.mkdirSync(path.dirname(filePath), { recursive: true });
-  fs.writeFileSync(filePath, `${JSON.stringify(state, null, 2)}\n`);
+  const tmpPath = `${filePath}.tmp.${process.pid}.${Date.now()}`;
+  const payload = `${JSON.stringify(state, null, 2)}\n`;
+  const fd = fs.openSync(tmpPath, 'w');
+  try {
+    fs.writeFileSync(fd, payload);
+    fs.fsyncSync(fd);
+  } catch (error) {
+    try {
+      fs.closeSync(fd);
+    } catch (closeError) {
+      warnFilesystemIssue(`[install-state] temp file handle close failed for ${tmpPath}: ${closeError.message}`);
+    }
+    try {
+      fs.rmSync(tmpPath, { force: true });
+    } catch (rmError) {
+      warnFilesystemIssue(`[install-state] temp file cleanup failed for ${tmpPath}: ${rmError.message}`);
+    }
+    throw error;
+  }
+  try {
+    fs.closeSync(fd);
+  } catch (closeError) {
+    try {
+      fs.rmSync(tmpPath, { force: true });
+    } catch (rmError) {
+      warnFilesystemIssue(`[install-state] temp file cleanup failed for ${tmpPath}: ${rmError.message}`);
+    }
+    throw closeError;
+  }
+  try {
+    fs.renameSync(tmpPath, filePath);
+  } catch (error) {
+    try {
+      fs.rmSync(tmpPath, { force: true });
+    } catch (rmError) {
+      warnFilesystemIssue(`[install-state] temp file cleanup failed for ${tmpPath}: ${rmError.message}`);
+    }
+    throw error;
+  }
+  syncParentDirectory(path.dirname(filePath));
   return state;
 }
 

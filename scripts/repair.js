@@ -4,6 +4,7 @@ const os = require('os');
 const { repairInstalledStates } = require('./lib/install-lifecycle');
 const { SUPPORTED_INSTALL_TARGETS } = require('./lib/install-manifests');
 const { problemReportLines } = require('./lib/feedback-links');
+const { isDryRun } = require('./lib/dry-run');
 
 function showHelp(exitCode = 0) {
   console.log(`
@@ -78,15 +79,16 @@ async function main() {
       showHelp(0);
     }
 
+    const dryRun = isDryRun(options);
     const result = repairInstalledStates({
       repoRoot: require('path').join(__dirname, '..'),
       homeDir: process.env.HOME || os.homedir(),
       env: process.env,
       projectRoot: process.cwd(),
       targets: options.targets,
-      dryRun: options.dryRun,
+      dryRun,
     });
-    if (!options.dryRun) {
+    if (!dryRun) {
       const { reconcileCanonicalInstallStates } = require('./lib/install-state-store-sync');
       result.installStateProjection = await reconcileCanonicalInstallStates({
         homeDir: process.env.HOME || os.homedir(),

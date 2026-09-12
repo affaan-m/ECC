@@ -9,6 +9,7 @@ const {
   legacyCodexSyncStateExists,
   uninstallLegacyCodexSync,
 } = require('./lib/codex-legacy-sync');
+const { isDryRun } = require('./lib/dry-run');
 
 function showHelp(exitCode = 0) {
   console.log(`
@@ -117,20 +118,6 @@ function printLegacy(result, dryRun) {
 
 function codexHomePath() {
   return process.env.CODEX_HOME || path.join(process.env.HOME || os.homedir(), '.codex');
-}
-
-/**
- * Dry-run is enabled either by the subcommand-level `--dry-run` flag or by the
- * global `ecc --dry-run <command>` prefix, which sets ECC_DRY_RUN=1 (#2952).
- * Destructive subcommands must honor both forms rather than silently ignoring
- * the global flag.
- */
-function isDryRun(options) {
-  const dryRunEnv = process.env.ECC_DRY_RUN;
-  if (dryRunEnv !== undefined && dryRunEnv !== '0' && dryRunEnv !== '1') {
-    throw new Error('ECC_DRY_RUN must be "1" or "0" when set');
-  }
-  return options.dryRun || dryRunEnv === '1';
 }
 
 function includesCodexTarget(targets) {

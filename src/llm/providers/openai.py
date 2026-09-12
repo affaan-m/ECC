@@ -24,6 +24,18 @@ from llm.core.types import (
 from llm.providers.constants import EMPTY_FILTERED_RESPONSE_ERROR
 
 
+def _parse_tool_arguments(raw_arguments: str | None) -> dict[str, Any]:
+    if not raw_arguments:
+        return {}
+    try:
+        parsed = json.loads(raw_arguments)
+    except json.JSONDecodeError:
+        return {"raw": raw_arguments}
+    if isinstance(parsed, dict):
+        return parsed
+    return {"value": parsed}
+
+
 class OpenAIProvider(LLMProvider):
     provider_type = ProviderType.OPENAI
 
@@ -91,7 +103,7 @@ class OpenAIProvider(LLMProvider):
                     ToolCall(
                         id=tc.id or "",
                         name=tc.function.name,
-                        arguments={} if not tc.function.arguments else json.loads(tc.function.arguments),
+                        arguments=_parse_tool_arguments(tc.function.arguments),
                     )
                     for tc in choice.message.tool_calls
                 ]

@@ -109,6 +109,75 @@ function getPluginRoot() {
   return path.resolve(__dirname, '..', '..');
 }
 
+function makeJsScan(source) {
+  return { source, out: '', i: 0, n: source.length, state: 'code', quote: '' };
+}
+
+function scanCodeStep(scan) {
+  const ch = scan.source[scan.i];
+  const next = scan.i + 1 < scan.n ? scan.source[scan.i + 1] : '';
+  if (ch === '/' && next === '/') {
+    return { ...scan, state: 'line', i: scan.i + 2 };
+  }
+  if (ch === '/' && next === '*') {
+    return { ...scan, state: 'block', i: scan.i + 2 };
+  }
+  if (ch === "'" || ch === '"' || ch === '`') {
+    return { ...scan, state: 'string', quote: ch, out: `${scan.out} `, i: scan.i + 1 };
+  }
+  return { ...scan, out: `${scan.out}${ch}`, i: scan.i + 1 };
+}
+
+function scanLineStep(scan) {
+  if (scan.source[scan.i] === '\n') {
+    return { ...scan, state: 'code', out: `${scan.out}\n`, i: scan.i + 1 };
+  }
+  return { ...scan, i: scan.i + 1 };
+}
+
+function scanBlockStep(scan) {
+  const ch = scan.source[scan.i];
+  const next = scan.i + 1 < scan.n ? scan.source[scan.i + 1] : '';
+  if (ch === '*' && next === '/') {
+    return { ...scan, state: 'code', i: scan.i + 2 };
+  }
+  if (ch === '\n') {
+    return { ...scan, out: `${scan.out}\n`, i: scan.i + 1 };
+  }
+  return { ...scan, i: scan.i + 1 };
+}
+
+function scanStringStep(scan) {
+  const ch = scan.source[scan.i];
+  if (ch === '\\') {
+    return { ...scan, i: scan.i + 2 };
+  }
+  if (ch === scan.quote) {
+    return { ...scan, state: 'code', out: `${scan.out} `, i: scan.i + 1 };
+  }
+  return { ...scan, i: scan.i + 1 };
+}
+
+function stripJsNoise(source) {
+  let scan = makeJsScan(source);
+  while (scan.i < scan.n) {
+    if (scan.state === 'code') {
+      scan = scanCodeStep(scan);
+      continue;
+    }
+    if (scan.state === 'line') {
+      scan = scanLineStep(scan);
+      continue;
+    }
+    if (scan.state === 'block') {
+      scan = scanBlockStep(scan);
+      continue;
+    }
+    scan = scanStringStep(scan);
+  }
+  return scan.out;
+}
+
 //Safely extract target context from hook stdin JSON for dry-run preview.
 
 function extractTargetContext(raw) {
@@ -207,7 +276,8 @@ async function main() {
   // which would interfere with the parent process or cause double execution.
   let hookModule;
   const src = fs.readFileSync(scriptPath, 'utf8');
-  const hasRunExport = /\bmodule\.exports\b/.test(src) && /\brun\b/.test(src);
+  const strippedSrc = stripJsNoise(src);
+  const hasRunExport = /exports\.run\b/.test(strippedSrc) || /module\.exports\.run\b/.test(strippedSrc) || /module\.exports\s*=\s*\{[^}]*\brun\b/.test(strippedSrc);
 
   if (hasRunExport) {
     try {

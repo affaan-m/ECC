@@ -20,6 +20,7 @@ const {
 const { getComputeSponsorCopy } = require('./lib/compute-sponsor');
 const { stripAnsi } = require('./lib/utils');
 const { describeMissingDependencyError } = require('./lib/missing-dependency');
+const { isDryRun } = require('./lib/dry-run');
 
 function getHelpText() {
   const languages = listLegacyCompatibilityLanguages();
@@ -166,6 +167,7 @@ async function main() {
       ...options,
       config,
     });
+    const dryRun = isDryRun(options);
     const rawPlan = createInstallPlanFromRequest(request, {
       projectRoot: process.cwd(),
       homeDir: process.env.HOME || os.homedir(),
@@ -173,7 +175,7 @@ async function main() {
       claudeRulesDir: process.env.CLAUDE_RULES_DIR || null,
     });
 
-    if (options.dryRun) {
+    if (dryRun) {
       const plan = previewInstallPlan(rawPlan);
       if (options.json) {
         console.log(JSON.stringify({ dryRun: true, plan }, null, 2));
@@ -230,6 +232,9 @@ function runGuidedMain(guidedArgs) {
 const cliArgs = process.argv.slice(2);
 if (cliArgs.includes('--guided')) {
   const guidedArgs = cliArgs.filter(argument => argument !== '--guided');
+  if (isDryRun({ dryRun: guidedArgs.includes('--dry-run') }) && !guidedArgs.includes('--dry-run')) {
+    guidedArgs.push('--dry-run');
+  }
   runGuidedMain(guidedArgs);
 } else {
   main();

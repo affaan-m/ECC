@@ -20,6 +20,7 @@ const { formatHookCapabilityDisclosure } = require('./lib/install/hook-consent')
 const { startTerminalSpinner } = require('./lib/terminal-spinner');
 const { showTerminalWelcome } = require('./lib/terminal-welcome');
 const { stripAnsi } = require('./lib/utils');
+const { isDryRun } = require('./lib/dry-run');
 
 const ADVANCED_HARNESSES = 'Cursor, Antigravity, Gemini CLI, OpenCode, CodeBuddy, JoyCode, Qwen Code, Zed, Hermes, and OpenClaw';
 
@@ -256,6 +257,7 @@ async function main(argv = process.argv.slice(2), injected = {}) {
 
   try {
     let options = parseArgs(argv);
+    options = { ...options, dryRun: isDryRun(options) };
     if (options.help) {
       showHelp(output);
       return 0;
