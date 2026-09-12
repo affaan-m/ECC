@@ -12,7 +12,9 @@ const { spawnSync } = require('child_process');
 
 const repoRoot = path.resolve(__dirname, '..');
 const harnessPath = path.join(repoRoot, 'scripts', 'gan-harness.sh');
+const evaluatorPath = path.join(repoRoot, 'agents', 'gan-evaluator.md');
 const harnessSource = fs.readFileSync(harnessPath, 'utf8');
+const evaluatorSource = fs.readFileSync(evaluatorPath, 'utf8');
 
 if (process.platform === 'win32') {
   console.log('\n=== GAN harness helpers ===\n');
@@ -34,13 +36,20 @@ function test(name, fn) {
   }
 }
 
-function runHarnessScript(script, args = []) {
+function runHarnessScript(script, args = [], env = {}) {
   const bashExecutable = process.platform === 'win32' ? 'bash' : '/bin/bash';
   const result = spawnSync(bashExecutable, ['-c', script, 'gan-harness-test', ...args], {
     encoding: 'utf8',
+    env: { ...process.env, ...env },
   });
   assert.strictEqual(result.status, 0, result.stderr || 'GAN harness script failed');
   return result.stdout.trim();
+}
+
+function extractShellFunction(name) {
+  const functionMatch = harnessSource.match(new RegExp(`${name}\\(\\) \\{[\\s\\S]*?\\n\\}`));
+  assert.ok(functionMatch, `expected scripts/gan-harness.sh to define ${name}`);
+  return functionMatch[0];
 }
 
 function extractScore(feedback) {
@@ -56,6 +65,39 @@ function extractScore(feedback) {
   } finally {
     fs.rmSync(temporaryDirectory, { recursive: true, force: true });
   }
+}
+
+function probePlaywright(statusLine, commandStatus = 0) {
+  const script = [
+    'claude() {',
+    '  [ "$#" -eq 3 ] && [ "$1" = mcp ] && [ "$2" = get ] && [ "$3" = playwright ] || return 64',
+    '  [ "$NO_COLOR" = 1 ] || return 65',
+    "  printf '%s\\n' \"$GAN_TEST_MCP_STATUS\"",
+    '  return "$GAN_TEST_MCP_EXIT"',
+    '}',
+    extractShellFunction('playwright_mcp_is_connected'),
+    'if playwright_mcp_is_connected; then printf connected; else printf unavailable; fi',
+  ].join('\n');
+
+  return runHarnessScript(script, [], {
+    GAN_TEST_MCP_STATUS: statusLine,
+    GAN_TEST_MCP_EXIT: String(commandStatus),
+  });
+}
+
+function evaluatorToolsForMode(mode) {
+  return runHarnessScript(
+    `${extractShellFunction('evaluator_tools_for_mode')}\nevaluator_tools_for_mode "$1"`,
+    [mode]
+  ).split(',');
+}
+
+function declaredEvaluatorTools() {
+  const frontmatter = evaluatorSource.match(/^---\r?\n([\s\S]*?)\r?\n---/);
+  assert.ok(frontmatter, 'expected agents/gan-evaluator.md to have frontmatter');
+  const toolsLine = frontmatter[1].match(/^tools:\s*(.+)$/m);
+  assert.ok(toolsLine, 'expected agents/gan-evaluator.md to declare tools');
+  return toolsLine[1].split(',').map(tool => tool.trim());
 }
 
 console.log('\n=== GAN harness helpers ===\n');
@@ -104,6 +146,48 @@ const results = Object.freeze([
     const result = extractScore(feedback);
 
     assert.strictEqual(result, '0.0');
+  }),
+
+  test('Playwright preflight accepts only an explicitly connected server', () => {
+    assert.strictEqual(probePlaywright('Status: \u2713 Connected'), 'connected');
+    assert.strictEqual(probePlaywright('Status: \u2714 Connected'), 'connected');
+    for (const unavailableStatus of [
+      'Status: ! Connected \u00b7 tools fetch failed',
+      'Status: ! Needs authentication',
+      'Status: \u2718 Failed to connect',
+      'Status: \u23f8 Pending approval',
+      'Status: \u2298 Disabled for this project',
+      '',
+    ]) {
+      assert.strictEqual(probePlaywright(unavailableStatus), 'unavailable');
+    }
+    assert.strictEqual(probePlaywright('Status: \u2713 Connected', 1), 'unavailable');
+    assert.strictEqual(
+      probePlaywright('Status: \u2718 Failed to connect\nStatus: \u2713 Connected'),
+      'unavailable'
+    );
+  }),
+
+  test('evaluator tools follow mode and reuse the approved agent contract', () => {
+    assert.deepStrictEqual(evaluatorToolsForMode('playwright'), declaredEvaluatorTools());
+    for (const mode of ['screenshot', 'code-only']) {
+      assert.deepStrictEqual(
+        evaluatorToolsForMode(mode),
+        ['Read', 'Write', 'Bash', 'Grep', 'Glob']
+      );
+    }
+  }),
+
+  test('Playwright is checked before setup and again before evaluator launch', () => {
+    const preflightCall = harnessSource.indexOf('if ! playwright_mcp_is_connected');
+    const setupMutation = harnessSource.indexOf('mkdir -p "$FEEDBACK_DIR"');
+    const runtimeCheck = harnessSource.indexOf('[ "$EVAL_MODE" = "playwright" ] && ! playwright_mcp_is_connected');
+    const evaluatorLaunch = harnessSource.indexOf('claude -p --model "$EVALUATOR_MODEL"');
+
+    assert.ok(preflightCall >= 0 && preflightCall < setupMutation);
+    assert.ok(runtimeCheck >= 0 && runtimeCheck < evaluatorLaunch);
+    assert.match(harnessSource, /--allowedTools "\$EVALUATOR_TOOLS"/);
+    assert.match(harnessSource, /Unsupported GAN_EVAL_MODE/);
   }),
 
   test('final score lookup is compatible with the macOS Bash 3.2 runtime', () => {
