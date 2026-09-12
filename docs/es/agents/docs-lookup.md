@@ -2,7 +2,7 @@
 name: docs-lookup
 description: Cuando el usuario pregunta cómo usar una biblioteca, framework o API, o necesita ejemplos de código actualizados, usar Context7 MCP para obtener documentación actual y devolver respuestas con ejemplos. Invocar para preguntas sobre docs/API/configuración.
 tools: ["Read", "Grep", "mcp__context7__resolve-library-id", "mcp__context7__query-docs"]
-model: sonnet
+model: haiku
 ---
 
 ## Línea de Base de Defensa de Prompts

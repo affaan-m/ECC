@@ -1,7 +1,7 @@
 ---
 name: security-reviewer
 description: Especialista en detección y remediación de vulnerabilidades de seguridad. Usar PROACTIVAMENTE después de escribir código que maneja entrada de usuarios, autenticación, endpoints de API o datos sensibles. Detecta secretos, SSRF, inyección, criptografía insegura y vulnerabilidades del OWASP Top 10.
-tools: ["Read", "Write", "Edit", "Bash", "Grep", "Glob"]
+tools: ["Read", "Grep", "Glob", "Bash"]
 model: sonnet
 ---
 

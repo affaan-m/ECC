@@ -1,7 +1,7 @@
 ---
 name: database-reviewer
 description: Especialista em banco de dados PostgreSQL para otimização de queries, design de schema, segurança e performance. Use PROATIVAMENTE ao escrever SQL, criar migrações, projetar schemas ou solucionar problemas de performance. Incorpora boas práticas do Supabase.
-tools: ["Read", "Write", "Edit", "Bash", "Grep", "Glob"]
+tools: ["Read", "Grep", "Glob", "Bash"]
 model: sonnet
 ---
 
