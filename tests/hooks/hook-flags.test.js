@@ -162,6 +162,21 @@ function runTests() {
     }
   })) passed++; else failed++;
 
+  if (test('plugin root selection skips padded higher-priority values', () => {
+    const homeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-hook-root-'));
+    try {
+      const configPath = path.join(homeDir, 'ecc', 'setup.json');
+      fs.mkdirSync(path.dirname(configPath), { recursive: true });
+      fs.writeFileSync(configPath, JSON.stringify({ hooks: { enabled: false } }));
+      assert.deepStrictEqual(
+        readManagedHookConfig({ CLAUDE_PLUGIN_ROOT: '   ', ECC_PLUGIN_ROOT: ` ${homeDir} ` }),
+        { enabled: false }
+      );
+    } finally {
+      fs.rmSync(homeDir, { recursive: true, force: true });
+    }
+  })) passed++; else failed++;
+
   if (test('a hook evaluation reads managed config only once', () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-hook-flags-read-once-'));
     const configPath = path.join(root, 'setup.json');

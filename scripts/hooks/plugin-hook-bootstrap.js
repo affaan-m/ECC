@@ -264,7 +264,9 @@ function main() {
   const [, , mode, relPath, ...args] = process.argv;
   const raw = readStdinRaw();
   const rootDir = normalizePluginRootForPlatform(
-    process.env.CLAUDE_PLUGIN_ROOT || process.env.ECC_PLUGIN_ROOT
+    [process.env.CLAUDE_PLUGIN_ROOT, process.env.ECC_PLUGIN_ROOT]
+      .map(value => typeof value === 'string' ? value.trim() : '')
+      .find(Boolean) || ''
   );
 
   if (!mode || !relPath || !rootDir) {

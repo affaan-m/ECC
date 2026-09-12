@@ -94,8 +94,8 @@ function resolveEccRoot(options = {}) {
 
   // Plugin cache — Claude Code stores marketplace plugins under
   // ~/.claude/plugins/cache/<plugin-name>/<org>/<version>/
-  try {
-    for (const slug of PLUGIN_CACHE_SLUGS) {
+  for (const slug of PLUGIN_CACHE_SLUGS) {
+    try {
       const cacheBase = path.join(claudeDir, 'plugins', 'cache', slug);
       const orgDirs = fs.readdirSync(cacheBase, { withFileTypes: true });
 
@@ -118,9 +118,10 @@ function resolveEccRoot(options = {}) {
           }
         }
       }
+    } catch {
+      // One absent or unreadable slug must not hide another cache layout.
+      continue;
     }
-  } catch {
-    // Plugin cache doesn't exist or isn't readable — continue to fallback
   }
 
   return claudeDir;

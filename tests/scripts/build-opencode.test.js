@@ -153,6 +153,14 @@ function main() {
         "npm pack should include .codex-plugin/plugin.json"
       )
       assert.ok(
+        packagedPaths.has(".grok-plugin/plugin.json"),
+        "npm pack should include .grok-plugin/plugin.json"
+      )
+      assert.ok(
+        packagedPaths.has(".grok-plugin/marketplace.json"),
+        "npm pack should include .grok-plugin/marketplace.json"
+      )
+      assert.ok(
         packagedPaths.has(".agents/plugins/marketplace.json"),
         "npm pack should include .agents/plugins/marketplace.json"
       )

@@ -302,6 +302,9 @@ function createInstallTargetAdapter(config) {
     id: config.id,
     target: config.target,
     kind: config.kind,
+    rootSegments: Object.freeze([...(config.rootSegments || [])]),
+    installStatePathSegments: Object.freeze([...(config.installStatePathSegments || [])]),
+    acceptsUndeclaredModuleTargets: config.acceptsUndeclaredModuleTargets === true,
     nativeRootRelativePath: config.nativeRootRelativePath || null,
     supports(target) {
       return target === config.target || target === config.id;
@@ -311,11 +314,11 @@ function createInstallTargetAdapter(config) {
       if (typeof config.resolveRoot === 'function') {
         return config.resolveRoot(input, baseRoot);
       }
-      return path.join(baseRoot, ...config.rootSegments);
+      return path.join(baseRoot, ...adapter.rootSegments);
     },
     getInstallStatePath(input = {}) {
       const root = adapter.resolveRoot(input);
-      return path.join(root, ...config.installStatePathSegments);
+      return path.join(root, ...adapter.installStatePathSegments);
     },
     resolveDestinationPath(sourceRelativePath, input = {}) {
       const normalizedSourcePath = normalizeRelativePath(sourceRelativePath);
@@ -350,6 +353,14 @@ function createInstallTargetAdapter(config) {
         destinationPath: adapter.resolveDestinationPath(normalizedSourcePath, input),
         strategy: adapter.determineStrategy(normalizedSourcePath),
       });
+    },
+    prepareSource(input = {}) {
+      if (typeof config.prepareSource === 'function') {
+        return config.prepareSource(input, adapter);
+      }
+      return {
+        sourceRoot: input.sourceRoot || input.repoRoot,
+      };
     },
     planOperations(input = {}) {
       if (typeof config.planOperations === 'function') {

@@ -5,7 +5,7 @@ const { getInstallTargetAdapter, planInstallTargetScaffold } = require('./instal
 const { resolveInvocationEnvironment } = require('./invocation-environment');
 
 const DEFAULT_REPO_ROOT = path.join(__dirname, '../..');
-const SUPPORTED_INSTALL_TARGETS = ['claude', 'claude-project', 'cursor', 'antigravity', 'codex', 'gemini', 'opencode', 'codebuddy', 'joycode', 'qwen', 'zed', 'hermes', 'openclaw', 'kimi', 'adal'];
+const SUPPORTED_INSTALL_TARGETS = ['claude', 'claude-project', 'cursor', 'antigravity', 'codex', 'gemini', 'opencode', 'codebuddy', 'joycode', 'qwen', 'zed', 'hermes', 'openclaw', 'kimi', 'adal', 'grok'];
 const COMPONENT_FAMILY_PREFIXES = {
   baseline: 'baseline:',
   language: 'lang:',
@@ -606,6 +606,9 @@ function resolveInstallPlan(options = {}) {
       projectRoot: validatedProjectRoot || manifests.repoRoot,
       homeDir: validatedHomeDir || os.homedir(),
       env: resolveInvocationEnvironment(options),
+      trust: options.trust === true,
+      consent: options.consent || {},
+      sourceSha: options.sourceSha || null,
     }
     : null;
   const targetAdapter = target ? getInstallTargetAdapter(target) : null;
@@ -649,7 +652,8 @@ function resolveInstallPlan(options = {}) {
 
     const supportsTarget = !target
       || (
-        readModuleTargetsOrThrow(module).includes(target)
+        (readModuleTargetsOrThrow(module).includes(target)
+          || targetAdapter?.acceptsUndeclaredModuleTargets === true)
         && (!targetAdapter || targetAdapter.supportsModule(module, targetPlanningInput))
       );
 
@@ -705,6 +709,9 @@ function resolveInstallPlan(options = {}) {
       projectRoot: targetPlanningInput.projectRoot,
       homeDir: targetPlanningInput.homeDir,
       env: targetPlanningInput.env,
+      trust: targetPlanningInput.trust,
+      consent: targetPlanningInput.consent,
+      sourceSha: targetPlanningInput.sourceSha,
       modules: selectedModules,
       exemptValidationCodes: options.exemptValidationCodes || [],
     })
