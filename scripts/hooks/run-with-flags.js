@@ -16,6 +16,7 @@ const { readStdinRaw: readBoundedStdin, resolveMaxStdin } = require('./hook-inpu
 const { buildPreToolUseAdditionalContext } = require('./pretooluse-visible-output');
 
 const FAIL_CLOSED_ON_TRUNCATION_HOOKS = new Set([
+  'pre:powershell:gateguard-fact-force',
   'pre:edit-write:gateguard-fact-force',
   'pre:mcp-health-check'
 ]);
@@ -92,7 +93,8 @@ function resolveLegacySpawnStdout(result) {
 
 function truncatedInputResult(hookId, maxStdin) {
   if (!FAIL_CLOSED_ON_TRUNCATION_HOOKS.has(hookId)) return null;
-  if (hookId === 'pre:edit-write:gateguard-fact-force') {
+  if (hookId === 'pre:powershell:gateguard-fact-force'
+    || hookId === 'pre:edit-write:gateguard-fact-force') {
     const gateGuardValue = String(process.env.ECC_GATEGUARD || '').trim().toLowerCase();
     const legacyDisabled = String(process.env.GATEGUARD_DISABLED || '').trim() === '1';
     if (legacyDisabled || ['0', 'false', 'off', 'disabled', 'disable'].includes(gateGuardValue)) {

@@ -73,6 +73,13 @@ capsule recording to the hooks that already log session activity. Then the
 next two plan slices: offline retrospective grouping over capsules (no new
 rollouts) and forced-compaction tests that prove pinned constraints survive.
 
+Offline code preparation is available as `capsule group` over explicitly
+selected, verified local snapshots from one task family. It only groups recorded
+counts and digests; it does not run candidates, score outcomes or promote changes.
+This utility does not fulfill the executor, hook-recording or stable-taskset
+prerequisites for the operational milestone below. See the
+[retrospective contract](architecture/eval-harness-frameworks.md#offline-retrospective-preparation).
+
 ### Track C: operator skills
 
 The four desk-pattern skills are present in this candidate: operator approval

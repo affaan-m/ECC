@@ -7,6 +7,7 @@
  *   node scripts/eval-harness.js capsule verify <dir>
  *   node scripts/eval-harness.js capsule project <dir>
  *   node scripts/eval-harness.js capsule export <dir> <out-dir>
+ *   node scripts/eval-harness.js capsule group <dir> [<dir> ...]
  *   node scripts/eval-harness.js gate run <gate.config.json> [--work-dir <dir>] [--capsule <dir>]
  *   node scripts/eval-harness.js receipt build <capsule-dir> [--artifact <file>] [--gate <gate-receipt.json>] [--out <file>]
  *   node scripts/eval-harness.js receipt verify <receipt.json> <capsule-dir> [--artifact <file>] [--gate <gate-receipt.json>]
@@ -26,7 +27,7 @@ function usage(message) {
   if (message) {
     process.stderr.write(`eval-harness: ${message}\n`);
   }
-  const header = fs.readFileSync(__filename, 'utf8').split('\n').slice(3, 15).map((line) => line.replace(/^ \*\s?/, '')).join('\n');
+  const header = fs.readFileSync(__filename, 'utf8').split('\n').slice(3, 16).map((line) => line.replace(/^ \*\s?/, '')).join('\n');
   process.stderr.write(`${header}\n`);
   process.exit(2);
 }
@@ -64,6 +65,13 @@ function runExample(action) {
 function runCapsule(action, rest) {
   const dir = rest[0];
   if (!dir) usage('capsule commands need a capsule directory');
+  if (action === 'group') {
+    if (rest.length > harness.retrospective.MAX_INPUTS || rest.some(arg => !arg.trim() || arg.startsWith('--'))) {
+      usage(`capsule group needs 1 to ${harness.retrospective.MAX_INPUTS} directory paths and accepts no flags`);
+    }
+    print(harness.retrospective.groupCapsules(rest));
+    return;
+  }
   if (action === 'verify') {
     const result = harness.capsule.verify(dir);
     print(result);

@@ -210,6 +210,15 @@ function textResult(payload) {
 }
 
 function toolFailure(code, error) {
+  if (code === 'MEMORY_READ_FAILED' && error?.code === 'ECC_MEMORY_INCOMPLETE') {
+    return {
+      ...textResult({ error: {
+        code: 'MEMORY_READ_INCOMPLETE',
+        message: 'Memory lookup is incomplete. Inspect the authorized vault before retrying.',
+      } }),
+      isError: true,
+    };
+  }
   const suspectedSecret = error instanceof Error
     && error.message.toLowerCase().includes('suspected secret');
   const message = suspectedSecret
@@ -217,7 +226,7 @@ function toolFailure(code, error) {
     : {
       MEMORY_WRITE_REJECTED: 'Memory write was rejected by validation.',
       MEMORY_SEARCH_FAILED: 'Memory search failed validation.',
-      MEMORY_READ_FAILED: 'Memory was not found or is not visible to this harness.',
+      MEMORY_READ_FAILED: 'Memory could not be read. It may be missing, not visible, or invalid.',
       MEMORY_DOCTOR_FAILED: 'Memory doctor could not inspect the authorized vault.',
     }[code] || 'Memory operation failed.';
   return {

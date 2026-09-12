@@ -9,6 +9,7 @@ const path = require('path');
 const fs = require('fs');
 const os = require('os');
 const { execFileSync, spawn, spawnSync } = require('child_process');
+const { readHooksConfig } = require('../../scripts/lib/hooks-config');
 
 const SKIP_BASH = process.platform === 'win32';
 
@@ -2573,7 +2574,7 @@ async function runTests() {
   if (
     test('hooks.json consolidates PreToolUse Bash and all PostToolUse hooks', () => {
       const hooksPath = path.join(__dirname, '..', '..', 'hooks', 'hooks.json');
-      const hooks = JSON.parse(fs.readFileSync(hooksPath, 'utf8'));
+      const hooks = readHooksConfig(hooksPath);
 
       const preBash = hooks.hooks.PreToolUse.filter(entry => entry.matcher === 'Bash');
       const postEntries = hooks.hooks.PostToolUse;
@@ -2602,7 +2603,7 @@ async function runTests() {
   if (
     test('hooks.json gives PowerShell dedicated GateGuard and governance routes', () => {
       const hooksPath = path.join(__dirname, '..', '..', 'hooks', 'hooks.json');
-      const hooks = JSON.parse(fs.readFileSync(hooksPath, 'utf8'));
+      const hooks = readHooksConfig(hooksPath);
       const powerShellRoutes = hooks.hooks.PreToolUse.filter(entry => entry.matcher === 'PowerShell');
       const governanceRoute = hooks.hooks.PreToolUse.find(entry => entry.id === 'pre:governance-capture');
 
@@ -2641,7 +2642,7 @@ async function runTests() {
   if (
     test('configured PowerShell routes enforce denial and emit redacted governance evidence', () => {
       const root = path.join(__dirname, '..', '..');
-      const hooks = JSON.parse(fs.readFileSync(path.join(root, 'hooks', 'hooks.json'), 'utf8'));
+      const hooks = readHooksConfig(path.join(root, 'hooks', 'hooks.json'));
       const gateRoute = hooks.hooks.PreToolUse.find(entry => entry.id === 'pre:powershell:gateguard-fact-force');
       const governanceRoute = hooks.hooks.PreToolUse.find(entry => entry.id === 'pre:governance-capture');
       const stateDir = createTestDir();

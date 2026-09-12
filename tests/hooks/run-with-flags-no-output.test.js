@@ -13,7 +13,8 @@ const { spawnSync } = require('child_process');
 const repoRoot = path.join(__dirname, '..', '..');
 const runner = path.join(repoRoot, 'scripts', 'hooks', 'run-with-flags.js');
 const sessionStartBootstrap = path.join(repoRoot, 'scripts', 'hooks', 'session-start-bootstrap.js');
-const hooksConfig = JSON.parse(fs.readFileSync(path.join(repoRoot, 'hooks', 'hooks.json'), 'utf8'));
+const { readHooksConfig } = require(path.join(repoRoot, 'scripts', 'lib', 'hooks-config.js'));
+const hooksConfig = readHooksConfig(path.join(repoRoot, 'hooks', 'hooks.json'));
 const pluginRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-hook-no-output-'));
 const hooksDir = path.join(pluginRoot, 'hooks');
 fs.mkdirSync(hooksDir, { recursive: true });
@@ -76,6 +77,7 @@ function runConfiguredHook(entry, env = {}, input = payload) {
       ...process.env,
       CLAUDE_PLUGIN_ROOT: repoRoot,
       ECC_PLUGIN_ROOT: repoRoot,
+      ECC_AGENT_DATA_HOME: path.join(pluginRoot, 'agent-data'),
       ECC_HOOK_PROFILE: 'standard',
       ...env
     },
@@ -388,7 +390,7 @@ for (const [eventName, entries] of Object.entries(hooksConfig.hooks)) {
   for (const entry of entries) {
     if (
       test(`${eventName}/${entry.id} registered disabled path stays silent`, () => {
-        const result = runConfiguredHook(entry, { ECC_DISABLED_HOOKS: entry.id });
+        const result = runConfiguredHook(entry, { ECC_HOOKS_ENABLED: '0' });
         assertSilent(result);
       })
     )
@@ -410,6 +412,7 @@ else failed++;
 
 for (const hookId of [
   'pre:bash:dispatcher',
+  'pre:powershell:gateguard-fact-force',
   'pre:config-protection',
   'pre:edit-write:gateguard-fact-force',
   'pre:mcp-health-check'
@@ -417,14 +420,19 @@ for (const hookId of [
   if (
     test(`${hookId} blocks registered PreToolUse input that was truncated`, () => {
       const entry = hooksConfig.hooks.PreToolUse.find(candidate => candidate.id === hookId);
-      const input = JSON.stringify({
-        hook_event_name: 'PreToolUse',
-        tool_name: hookId === 'pre:bash:dispatcher' ? 'Bash' : 'Write',
-        tool_input: {
+      const toolInput = hookId === 'pre:powershell:gateguard-fact-force'
+        ? { command: `Remove-Item -Recurse -Force C:\\important\\data # ${'x'.repeat(256)}` }
+        : {
           command: 'rm -rf /important/data',
           file_path: '/src/important.js',
           content: 'x'.repeat(256)
-        }
+        };
+      const input = JSON.stringify({
+        hook_event_name: 'PreToolUse',
+        tool_name: hookId === 'pre:powershell:gateguard-fact-force'
+          ? 'PowerShell'
+          : hookId === 'pre:bash:dispatcher' ? 'Bash' : 'Write',
+        tool_input: toolInput
       });
       const result = runConfiguredHook(entry, {
         ECC_DISABLED_HOOKS: '',
@@ -441,18 +449,22 @@ for (const hookId of [
   else failed++;
 }
 
-for (const env of [
-  { ECC_GATEGUARD: 'off' },
-  { GATEGUARD_DISABLED: '1' }
+for (const hookId of [
+  'pre:powershell:gateguard-fact-force',
+  'pre:edit-write:gateguard-fact-force'
 ]) {
+  for (const env of [
+    { ECC_GATEGUARD: 'off' },
+    { GATEGUARD_DISABLED: '1' }
+  ]) {
   if (
-    test('GateGuard recovery controls allow truncated input without stdout', () => {
+    test(`${hookId} recovery controls allow truncated input without stdout`, () => {
       const entry = hooksConfig.hooks.PreToolUse.find(
-        candidate => candidate.id === 'pre:edit-write:gateguard-fact-force'
+        candidate => candidate.id === hookId
       );
       const input = JSON.stringify({
         hook_event_name: 'PreToolUse',
-        tool_name: 'Write',
+        tool_name: hookId === 'pre:powershell:gateguard-fact-force' ? 'PowerShell' : 'Write',
         tool_input: { file_path: '/src/recovery.js', content: 'x'.repeat(256) }
       });
       const result = runConfiguredHook(entry, {
@@ -467,6 +479,7 @@ for (const env of [
   )
     passed++;
   else failed++;
+  }
 }
 
 if (
