@@ -22,6 +22,7 @@ from llm.core.types import (
     ToolCall,
 )
 from llm.providers.constants import EMPTY_FILTERED_RESPONSE_ERROR
+from llm.providers.openai_compat import to_openai_message_param
 
 
 class OpenAIProvider(LLMProvider):
@@ -72,7 +73,7 @@ class OpenAIProvider(LLMProvider):
         try:
             params: dict[str, Any] = {
                 "model": input.model or "gpt-4o-mini",
-                "messages": [msg.to_dict() for msg in input.messages],
+                "messages": [to_openai_message_param(msg) for msg in input.messages],
                 "temperature": input.temperature,
             }
             if input.max_tokens:
