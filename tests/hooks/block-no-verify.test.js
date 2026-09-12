@@ -219,6 +219,106 @@ if (test('still allows -tn (n is the -t template path, not a flag)', () => {
   assert.strictEqual(r.code, 0, `expected exit 0, got ${r.code}: ${r.stderr}`);
 })) passed++; else failed++;
 
+// --- Quoted text mentioning the phrase is not a real invocation (Issue: false positive) ---
+// A `git ...` phrase found inside a quoted span is only treated as a real
+// invocation when the quote is the argument to something that re-executes
+// strings (bash -c, sh -lc, eval, ...). Otherwise it's inert data — an echo
+// message, a heredoc, a JSON test fixture — and must not be blocked.
+
+if (test('allows an echo statement that only mentions --no-verify as text', () => {
+  const r = runHook({ tool_input: { command: 'echo "note: never run git commit --no-verify in this repo"' } });
+  assert.strictEqual(r.code, 0, `expected exit 0, got ${r.code}: ${r.stderr}`);
+})) passed++; else failed++;
+
+if (test('allows a single-quoted echo mentioning the phrase', () => {
+  const r = runHook({ tool_input: { command: "echo 'reminder: --no-verify is banned for git commit here'" } });
+  assert.strictEqual(r.code, 0, `expected exit 0, got ${r.code}: ${r.stderr}`);
+})) passed++; else failed++;
+
+if (test('allows echoing JSON-looking text that merely contains the phrase as data', () => {
+  // The actual command being run is `echo ...` — the JSON-looking argument
+  // is inert text, not a nested hook envelope, so it must not be unwrapped
+  // and re-checked as if it were the real command.
+  const r = runHook({
+    tool_input: {
+      command: 'echo \'{"tool_input":{"command":"git commit --no-verify -m test"}}\''
+    }
+  });
+  assert.strictEqual(r.code, 0, `expected exit 0, got ${r.code}: ${r.stderr}`);
+})) passed++; else failed++;
+
+if (test('blocks --no-verify hidden behind bash -c', () => {
+  const r = runHook({ tool_input: { command: "bash -c 'git commit --no-verify -m test'" } });
+  assert.strictEqual(r.code, 2, `expected exit 2, got ${r.code}`);
+})) passed++; else failed++;
+
+if (test('blocks --no-verify hidden behind an absolute-path bash -c', () => {
+  const r = runHook({ tool_input: { command: "/usr/bin/env bash -c 'git commit --no-verify -m test'" } });
+  assert.strictEqual(r.code, 2, `expected exit 2, got ${r.code}`);
+})) passed++; else failed++;
+
+if (test('blocks --no-verify hidden behind sh -lc', () => {
+  const r = runHook({ tool_input: { command: "sh -lc 'git commit --no-verify -m test'" } });
+  assert.strictEqual(r.code, 2, `expected exit 2, got ${r.code}`);
+})) passed++; else failed++;
+
+if (test('blocks --no-verify hidden behind eval', () => {
+  const r = runHook({ tool_input: { command: 'eval "git commit --no-verify -m test"' } });
+  assert.strictEqual(r.code, 2, `expected exit 2, got ${r.code}`);
+})) passed++; else failed++;
+
+// --- Command substitution always executes, even inside an otherwise-inert
+// double-quoted argument (single quotes are the only thing that suppresses
+// it) — flagged by Greptile review on the initial version of this fix.
+
+if (test('blocks --no-verify hidden behind $(...) inside a double-quoted echo', () => {
+  const r = runHook({ tool_input: { command: 'echo "$(git commit --no-verify -m test)"' } });
+  assert.strictEqual(r.code, 2, `expected exit 2, got ${r.code}`);
+})) passed++; else failed++;
+
+if (test('blocks --no-verify hidden behind backticks inside a double-quoted echo', () => {
+  const r = runHook({ tool_input: { command: 'echo "`git commit --no-verify -m test`"' } });
+  assert.strictEqual(r.code, 2, `expected exit 2, got ${r.code}`);
+})) passed++; else failed++;
+
+if (test('blocks --no-verify hidden behind a bare (unquoted) $(...)', () => {
+  const r = runHook({ tool_input: { command: 'echo $(git commit --no-verify -m test)' } });
+  assert.strictEqual(r.code, 2, `expected exit 2, got ${r.code}`);
+})) passed++; else failed++;
+
+if (test('blocks --no-verify behind $(...) alongside an unrelated inert $(...) in the same string', () => {
+  const r = runHook({ tool_input: { command: 'echo "outer $(echo inner) and $(git commit --no-verify -m test)"' } });
+  assert.strictEqual(r.code, 2, `expected exit 2, got ${r.code}`);
+})) passed++; else failed++;
+
+if (test('allows $(...) inside SINGLE quotes, where the shell never expands it', () => {
+  const r = runHook({ tool_input: { command: "echo '$(git commit --no-verify -m test)'" } });
+  assert.strictEqual(r.code, 0, `expected exit 0, got ${r.code}: ${r.stderr}`);
+})) passed++; else failed++;
+
+// --- Value-taking flags between the exec command and the quote, and env -S
+// (flagged by CodeRabbit review on the initial version of this fix) ---
+
+if (test('blocks --no-verify hidden behind env -S', () => {
+  const r = runHook({ tool_input: { command: "env -S 'git commit --no-verify -m test'" } });
+  assert.strictEqual(r.code, 2, `expected exit 2, got ${r.code}`);
+})) passed++; else failed++;
+
+if (test('blocks --no-verify hidden behind bash -O extglob -c (value-taking flag before -c)', () => {
+  const r = runHook({ tool_input: { command: "bash -O extglob -c 'git commit --no-verify -m test'" } });
+  assert.strictEqual(r.code, 2, `expected exit 2, got ${r.code}`);
+})) passed++; else failed++;
+
+if (test('blocks --no-verify behind many chained flags before -c (no fixed token limit)', () => {
+  const r = runHook({ tool_input: { command: "bash -O extglob -O nullglob -O globstar -O nocaseglob -c 'git commit --no-verify -m test'" } });
+  assert.strictEqual(r.code, 2, `expected exit 2, got ${r.code}`);
+})) passed++; else failed++;
+
+if (test('blocks --no-verify when a quoted ) inside $(...) would otherwise end the substitution early', () => {
+  const r = runHook({ tool_input: { command: "echo \"$(printf ')' ; git commit --no-verify -m test)\"" } });
+  assert.strictEqual(r.code, 2, `expected exit 2, got ${r.code}`);
+})) passed++; else failed++;
+
 console.log('─'.repeat(50));
 console.log(`Passed: ${passed}  Failed: ${failed}`);
 
