@@ -1008,13 +1008,30 @@ function isChecked(key) {
 // --- Sanitize file path against injection ---
 
 function sanitizePath(filePath) {
-  // Strip control chars (including null), bidi overrides, and newlines
+  // Strip control chars (including null), bidi overrides, newlines,
+  // and the dangerous invisible characters defined by the repo-wide
+  // unicode safety policy (scripts/ci/check-unicode-safety.js):
+  // zero-width/format/variation-selector/tag blocks are all rendered
+  // or reviewed invisibly, so a denial message must not carry them.
   let sanitized = '';
   for (const char of String(filePath || '')) {
     const code = char.codePointAt(0);
     const isAsciiControl = code <= 0x1f || code === 0x7f;
     const isBidiOverride = (code >= 0x200e && code <= 0x200f) || (code >= 0x202a && code <= 0x202e) || (code >= 0x2066 && code <= 0x2069);
-    sanitized += isAsciiControl || isBidiOverride ? ' ' : char;
+    const isUnicodeSeparator = code === 0x2028 || code === 0x2029;
+    const isDangerousInvisible =
+      (code >= 0x200b && code <= 0x200d) ||
+      code === 0x2060 ||
+      code === 0xfeff ||
+      (code >= 0xfe00 && code <= 0xfe0f) ||
+      (code >= 0xe0100 && code <= 0xe01ef) ||
+      (code >= 0xe0000 && code <= 0xe007f) ||
+      code === 0x180e ||
+      code === 0x115f ||
+      code === 0x1160 ||
+      (code >= 0x2061 && code <= 0x2064) ||
+      code === 0x3164;
+    sanitized += isAsciiControl || isBidiOverride || isUnicodeSeparator || isDangerousInvisible ? ' ' : char;
   }
   return sanitized.trim().slice(0, 500);
 }
