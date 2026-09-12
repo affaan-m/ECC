@@ -117,79 +117,63 @@ function scanCodeStep(scan) {
   const ch = scan.source[scan.i];
   const next = scan.i + 1 < scan.n ? scan.source[scan.i + 1] : '';
   if (ch === '/' && next === '/') {
-    scan.state = 'line';
-    scan.i += 2;
-    return;
+    return { ...scan, state: 'line', i: scan.i + 2 };
   }
   if (ch === '/' && next === '*') {
-    scan.state = 'block';
-    scan.i += 2;
-    return;
+    return { ...scan, state: 'block', i: scan.i + 2 };
   }
   if (ch === "'" || ch === '"' || ch === '`') {
-    scan.state = 'string';
-    scan.quote = ch;
-    scan.out += ' ';
-    scan.i += 1;
-    return;
+    return { ...scan, state: 'string', quote: ch, out: `${scan.out} `, i: scan.i + 1 };
   }
-  scan.out += ch;
-  scan.i += 1;
+  return { ...scan, out: `${scan.out}${ch}`, i: scan.i + 1 };
 }
 
 function scanLineStep(scan) {
   if (scan.source[scan.i] === '\n') {
-    scan.state = 'code';
-    scan.out += '\n';
+    return { ...scan, state: 'code', out: `${scan.out}\n`, i: scan.i + 1 };
   }
-  scan.i += 1;
+  return { ...scan, i: scan.i + 1 };
 }
 
 function scanBlockStep(scan) {
   const ch = scan.source[scan.i];
   const next = scan.i + 1 < scan.n ? scan.source[scan.i + 1] : '';
   if (ch === '*' && next === '/') {
-    scan.state = 'code';
-    scan.i += 2;
-    return;
+    return { ...scan, state: 'code', i: scan.i + 2 };
   }
   if (ch === '\n') {
-    scan.out += '\n';
+    return { ...scan, out: `${scan.out}\n`, i: scan.i + 1 };
   }
-  scan.i += 1;
+  return { ...scan, i: scan.i + 1 };
 }
 
 function scanStringStep(scan) {
   const ch = scan.source[scan.i];
   if (ch === '\\') {
-    scan.i += 2;
-    return;
+    return { ...scan, i: scan.i + 2 };
   }
   if (ch === scan.quote) {
-    scan.state = 'code';
-    scan.out += ' ';
-    scan.i += 1;
-    return;
+    return { ...scan, state: 'code', out: `${scan.out} `, i: scan.i + 1 };
   }
-  scan.i += 1;
+  return { ...scan, i: scan.i + 1 };
 }
 
 function stripJsNoise(source) {
-  const scan = makeJsScan(source);
+  let scan = makeJsScan(source);
   while (scan.i < scan.n) {
     if (scan.state === 'code') {
-      scanCodeStep(scan);
+      scan = scanCodeStep(scan);
       continue;
     }
     if (scan.state === 'line') {
-      scanLineStep(scan);
+      scan = scanLineStep(scan);
       continue;
     }
     if (scan.state === 'block') {
-      scanBlockStep(scan);
+      scan = scanBlockStep(scan);
       continue;
     }
-    scanStringStep(scan);
+    scan = scanStringStep(scan);
   }
   return scan.out;
 }
