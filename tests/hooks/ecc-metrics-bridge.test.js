@@ -11,6 +11,10 @@ const os = require('os');
 const path = require('path');
 
 const { run, hashToolCall, extractFilePaths, readSessionCost } = require('../../scripts/hooks/ecc-metrics-bridge');
+const {
+  getCostSnapshotPath,
+  publishAppendedSessionCostSnapshot
+} = require('../../scripts/lib/session-cost-snapshot');
 
 // Test helper
 function test(name, fn) {
@@ -222,6 +226,252 @@ function runTests() {
         assert.strictEqual(result.totalIn, 1000);
         assert.strictEqual(result.totalOut, 500);
       } finally {
+        if (originalHome === undefined) delete process.env.HOME;
+        else process.env.HOME = originalHome;
+        if (originalUserProfile === undefined) delete process.env.USERPROFILE;
+        else process.env.USERPROFILE = originalUserProfile;
+        fs.rmSync(tmpHome, { recursive: true, force: true });
+      }
+    })
+  )
+    passed++;
+  else failed++;
+
+  if (
+    test('readSessionCost uses the per-session snapshot without scanning historical JSONL', () => {
+      const tmpHome = makeTempHome();
+      const originalHome = process.env.HOME;
+      const originalUserProfile = process.env.USERPROFILE;
+      const originalReadFileSync = fs.readFileSync;
+      try {
+        process.env.HOME = tmpHome;
+        process.env.USERPROFILE = tmpHome;
+        const metricsDir = path.join(tmpHome, '.claude', 'metrics');
+        const snapshotsDir = path.join(metricsDir, 'cost-snapshots');
+        fs.mkdirSync(snapshotsDir, { recursive: true });
+        const snapshotRow = {
+          session_id: 'S1',
+          estimated_cost_usd: 0.75,
+          input_tokens: 750,
+          output_tokens: 375
+        };
+        fs.writeFileSync(
+          path.join(metricsDir, 'costs.jsonl'),
+          `${JSON.stringify(snapshotRow)}\n`,
+          'utf8'
+        );
+        assert.strictEqual(
+          publishAppendedSessionCostSnapshot(metricsDir, 'S1', snapshotRow),
+          true
+        );
+
+        fs.readFileSync = function guardedRead(filePath, ...args) {
+          if (path.basename(String(filePath)) === 'costs.jsonl') {
+            throw new Error('historical JSONL scan should be bypassed on a snapshot hit');
+          }
+          return originalReadFileSync.call(this, filePath, ...args);
+        };
+
+        const result = readSessionCost('S1');
+        assert.deepStrictEqual(result, { totalCost: 0.75, totalIn: 750, totalOut: 375 });
+      } finally {
+        fs.readFileSync = originalReadFileSync;
+        if (originalHome === undefined) delete process.env.HOME;
+        else process.env.HOME = originalHome;
+        if (originalUserProfile === undefined) delete process.env.USERPROFILE;
+        else process.env.USERPROFILE = originalUserProfile;
+        fs.rmSync(tmpHome, { recursive: true, force: true });
+      }
+    })
+  )
+    passed++;
+  else failed++;
+
+  if (
+    test('readSessionCost ignores a stale snapshot after costs.jsonl advances', () => {
+      const tmpHome = makeTempHome();
+      const originalHome = process.env.HOME;
+      const originalUserProfile = process.env.USERPROFILE;
+      try {
+        process.env.HOME = tmpHome;
+        process.env.USERPROFILE = tmpHome;
+        const metricsDir = path.join(tmpHome, '.claude', 'metrics');
+        fs.mkdirSync(metricsDir, { recursive: true });
+        const first = {
+          session_id: 'S1',
+          estimated_cost_usd: 1,
+          input_tokens: 100,
+          output_tokens: 50
+        };
+        const latest = {
+          session_id: 'S1',
+          estimated_cost_usd: 2,
+          input_tokens: 200,
+          output_tokens: 100
+        };
+        const costsPath = path.join(metricsDir, 'costs.jsonl');
+        fs.writeFileSync(costsPath, `${JSON.stringify(first)}\n`, 'utf8');
+        publishAppendedSessionCostSnapshot(metricsDir, 'S1', first);
+        fs.appendFileSync(costsPath, `${JSON.stringify(latest)}\n`, 'utf8');
+
+        assert.deepStrictEqual(readSessionCost('S1'), {
+          totalCost: 2,
+          totalIn: 200,
+          totalOut: 100
+        });
+
+        const originalReadFileSync = fs.readFileSync;
+        fs.readFileSync = function guardedRead(filePath, ...args) {
+          if (path.basename(String(filePath)) === 'costs.jsonl') {
+            throw new Error('fallback should repair the session snapshot');
+          }
+          return originalReadFileSync.call(this, filePath, ...args);
+        };
+        try {
+          assert.deepStrictEqual(readSessionCost('S1'), {
+            totalCost: 2,
+            totalIn: 200,
+            totalOut: 100
+          });
+        } finally {
+          fs.readFileSync = originalReadFileSync;
+        }
+      } finally {
+        if (originalHome === undefined) delete process.env.HOME;
+        else process.env.HOME = originalHome;
+        if (originalUserProfile === undefined) delete process.env.USERPROFILE;
+        else process.env.USERPROFILE = originalUserProfile;
+        fs.rmSync(tmpHome, { recursive: true, force: true });
+      }
+    })
+  )
+    passed++;
+  else failed++;
+
+  if (
+    test('readSessionCost falls back to JSONL when the session snapshot is malformed', () => {
+      const tmpHome = makeTempHome();
+      const originalHome = process.env.HOME;
+      const originalUserProfile = process.env.USERPROFILE;
+      try {
+        process.env.HOME = tmpHome;
+        process.env.USERPROFILE = tmpHome;
+        const metricsDir = path.join(tmpHome, '.claude', 'metrics');
+        const snapshotsDir = path.join(metricsDir, 'cost-snapshots');
+        fs.mkdirSync(snapshotsDir, { recursive: true });
+        fs.writeFileSync(getCostSnapshotPath(metricsDir, 'S1'), '{broken', 'utf8');
+        fs.writeFileSync(
+          path.join(metricsDir, 'costs.jsonl'),
+          `${JSON.stringify({
+            session_id: 'S1',
+            estimated_cost_usd: 1.5,
+            input_tokens: 1500,
+            output_tokens: 750
+          })}\n`,
+          'utf8'
+        );
+
+        assert.deepStrictEqual(readSessionCost('S1'), {
+          totalCost: 1.5,
+          totalIn: 1500,
+          totalOut: 750
+        });
+      } finally {
+        if (originalHome === undefined) delete process.env.HOME;
+        else process.env.HOME = originalHome;
+        if (originalUserProfile === undefined) delete process.env.USERPROFILE;
+        else process.env.USERPROFILE = originalUserProfile;
+        fs.rmSync(tmpHome, { recursive: true, force: true });
+      }
+    })
+  )
+    passed++;
+  else failed++;
+
+  if (
+    test('readSessionCost falls back when a snapshot row has invalid numeric totals', () => {
+      const tmpHome = makeTempHome();
+      const originalHome = process.env.HOME;
+      const originalUserProfile = process.env.USERPROFILE;
+      try {
+        process.env.HOME = tmpHome;
+        process.env.USERPROFILE = tmpHome;
+        const metricsDir = path.join(tmpHome, '.claude', 'metrics');
+        const snapshotsDir = path.join(metricsDir, 'cost-snapshots');
+        fs.mkdirSync(snapshotsDir, { recursive: true });
+        const valid = {
+          session_id: 'S1',
+          estimated_cost_usd: 2,
+          input_tokens: 200,
+          output_tokens: 100
+        };
+        const costsPath = path.join(metricsDir, 'costs.jsonl');
+        fs.writeFileSync(costsPath, `${JSON.stringify(valid)}\n`, 'utf8');
+        const stat = fs.statSync(costsPath);
+        fs.writeFileSync(
+          getCostSnapshotPath(metricsDir, 'S1'),
+          JSON.stringify({
+            schema_version: 'ecc.cost-snapshot.v1',
+            source: { size_bytes: stat.size, mtime_ms: stat.mtimeMs },
+            row: { session_id: 'S1' }
+          }),
+          'utf8'
+        );
+
+        assert.deepStrictEqual(readSessionCost('S1'), {
+          totalCost: 2,
+          totalIn: 200,
+          totalOut: 100
+        });
+      } finally {
+        if (originalHome === undefined) delete process.env.HOME;
+        else process.env.HOME = originalHome;
+        if (originalUserProfile === undefined) delete process.env.USERPROFILE;
+        else process.env.USERPROFILE = originalUserProfile;
+        fs.rmSync(tmpHome, { recursive: true, force: true });
+      }
+    })
+  )
+    passed++;
+  else failed++;
+
+  if (
+    test('readSessionCost skips invalid cumulative JSONL rows after the last valid total', () => {
+      const tmpHome = makeTempHome();
+      const originalHome = process.env.HOME;
+      const originalUserProfile = process.env.USERPROFILE;
+      const originalStderrWrite = process.stderr.write.bind(process.stderr);
+      let captured = '';
+      process.stderr.write = chunk => {
+        captured += String(chunk);
+        return true;
+      };
+      try {
+        process.env.HOME = tmpHome;
+        process.env.USERPROFILE = tmpHome;
+        const metricsDir = path.join(tmpHome, '.claude', 'metrics');
+        fs.mkdirSync(metricsDir, { recursive: true });
+        const rows = [
+          { session_id: 'S1', estimated_cost_usd: 2, input_tokens: 200, output_tokens: 100 },
+          { session_id: 'S1', estimated_cost_usd: -999, input_tokens: 'invalid', output_tokens: -5 },
+          { session_id: 'S1', input_tokens: 300, output_tokens: 150 },
+          { session_id: 'S1', estimated_cost_usd: null, input_tokens: 400, output_tokens: 200 },
+          { session_id: 'OTHER', estimated_cost_usd: -1, input_tokens: -1, output_tokens: -1 }
+        ];
+        fs.writeFileSync(
+          path.join(metricsDir, 'costs.jsonl'),
+          `${rows.map(row => JSON.stringify(row)).join('\n')}\n`,
+          'utf8'
+        );
+
+        assert.deepStrictEqual(readSessionCost('S1'), {
+          totalCost: 2,
+          totalIn: 200,
+          totalOut: 100
+        });
+        assert.match(captured, /skipped 3 invalid cumulative row\(s\) for S1/);
+      } finally {
+        process.stderr.write = originalStderrWrite;
         if (originalHome === undefined) delete process.env.HOME;
         else process.env.HOME = originalHome;
         if (originalUserProfile === undefined) delete process.env.USERPROFILE;

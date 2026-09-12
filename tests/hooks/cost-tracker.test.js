@@ -9,6 +9,7 @@ const path = require('path');
 const fs = require('fs');
 const os = require('os');
 const { spawnSync } = require('child_process');
+const { getCostSnapshotPath } = require('../../scripts/lib/session-cost-snapshot');
 
 const script = path.join(__dirname, '..', '..', 'scripts', 'hooks', 'cost-tracker.js');
 
@@ -115,6 +116,32 @@ function runTests() {
     assert.strictEqual(result.stdout, inputStr, 'Expected stdout to match original input');
   }) ? passed++ : failed++);
 
+  (test('keeps JSONL authoritative when the snapshot path cannot be published', () => {
+    const tmpHome = makeTempDir();
+    const metricsDir = path.join(tmpHome, '.claude', 'metrics');
+    const blockedSnapshotPath = path.join(
+      metricsDir,
+      'cost-snapshots',
+      'snapshot-failure.json'
+    );
+    fs.mkdirSync(blockedSnapshotPath, { recursive: true });
+
+    try {
+      const result = runScript(
+        { session_id: 'snapshot-failure' },
+        withTempHome(tmpHome)
+      );
+      assert.strictEqual(result.code, 0, result.stderr);
+      const rows = fs.readFileSync(path.join(metricsDir, 'costs.jsonl'), 'utf8')
+        .trim()
+        .split('\n')
+        .map(line => JSON.parse(line));
+      assert.strictEqual(rows.at(-1).session_id, 'snapshot-failure');
+    } finally {
+      fs.rmSync(tmpHome, { recursive: true, force: true });
+    }
+  }) ? passed++ : failed++);
+
   // 2. Creates metrics file when given transcript usage data
   (test('creates metrics file when given transcript usage data', () => {
     const tmpHome = makeTempDir();
@@ -154,6 +181,7 @@ function runTests() {
     assert.strictEqual(result.code, 0, `Expected exit code 0, got ${result.code}`);
 
     const metricsFile = path.join(tmpHome, '.claude', 'metrics', 'costs.jsonl');
+    const metricsDir = path.dirname(metricsFile);
     assert.ok(fs.existsSync(metricsFile), `Expected metrics file to exist at ${metricsFile}`);
 
     const content = fs.readFileSync(metricsFile, 'utf8').trim();
@@ -168,6 +196,12 @@ function runTests() {
     assert.ok(row.timestamp, 'Expected timestamp to be present');
     assert.ok(typeof row.estimated_cost_usd === 'number', 'Expected estimated_cost_usd to be a number');
     assert.ok(row.estimated_cost_usd > 0, 'Expected estimated_cost_usd to be positive');
+
+    const snapshotFile = getCostSnapshotPath(metricsDir, 'session-from-hook');
+    assert.ok(fs.existsSync(snapshotFile), 'Expected an O(1) per-session cost snapshot');
+    const snapshot = JSON.parse(fs.readFileSync(snapshotFile, 'utf8'));
+    assert.strictEqual(snapshot.schema_version, 'ecc.cost-snapshot.v1');
+    assert.deepStrictEqual(snapshot.row, row, 'Snapshot must mirror the appended cumulative row');
 
     fs.rmSync(tmpHome, { recursive: true, force: true });
   }) ? passed++ : failed++);

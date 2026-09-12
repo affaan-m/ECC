@@ -14,6 +14,13 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const { sanitizeSessionId, readBridge, writeBridgeAtomic } = require('../lib/session-bridge');
+const {
+  getCostLogSignature,
+  isValidCostRow,
+  readSessionCostSnapshot,
+  repairSessionCostSnapshot,
+  signaturesMatch,
+} = require('../lib/session-cost-snapshot');
 const { getClaudeDir } = require('../lib/utils');
 
 const MAX_STDIN = 1024 * 1024;
@@ -134,41 +141,55 @@ function writeCostWarningIfChanged(kind, costsPath, signature, message) {
 }
 
 /**
- * Read cumulative cost for a session from costs.jsonl.
+ * Read cumulative cost for a session.
  *
- * Scans the full file because each row is a cumulative session total
- * (see cost-tracker.js docblock) and the row we need is the last one
- * matching `sessionId`. The previous implementation read only the
- * trailing 8 KiB; any session whose latest cumulative row was pushed
- * past that window by newer rows from other sessions silently dropped
- * to zero — the opposite sign of the double-count bug fixed in the
- * previous commit.
+ * The Stop hook publishes an atomic per-session snapshot, so the normal
+ * PostToolUse path reads O(1) data instead of reparsing unbounded history.
+ * Older ECC installations and damaged/missing snapshots remain compatible:
+ * they fall back to scanning costs.jsonl for the last cumulative row.
  *
- * costs.jsonl is append-only and unbounded today (no rotation in
- * cost-tracker.js). At a typical ~150 bytes per row, even 100k rows
- * is ~15 MB and a single sync read on every PostToolUse hook is in
- * the low milliseconds. If rotation lands later, this scan becomes
- * even cheaper.
+ * The fallback deliberately scans the whole file. A fixed tail window loses
+ * sessions whose newest row has been pushed back by other sessions.
  */
 function readSessionCost(sessionId) {
   let costsPath = path.join('metrics', 'costs.jsonl');
   try {
-    costsPath = path.join(getClaudeDir(), 'metrics', 'costs.jsonl');
+    const metricsDir = path.join(getClaudeDir(), 'metrics');
+    const snapshot = readSessionCostSnapshot(metricsDir, sessionId);
+    if (snapshot) {
+      return {
+        totalCost: toNumber(snapshot.estimated_cost_usd),
+        totalIn: toNumber(snapshot.input_tokens),
+        totalOut: toNumber(snapshot.output_tokens)
+      };
+    }
+
+    costsPath = path.join(metricsDir, 'costs.jsonl');
+    const sourceBefore = getCostLogSignature(metricsDir);
     const content = fs.readFileSync(costsPath, 'utf8');
     const lines = content.split('\n').filter(Boolean);
 
     let totalCost = 0;
     let totalIn = 0;
     let totalOut = 0;
+    let latestRow = null;
     let malformed = 0;
+    let invalid = 0;
     const malformedHasher = crypto.createHash('sha256');
+    const invalidHasher = crypto.createHash('sha256');
     for (const line of lines) {
       try {
         const row = JSON.parse(line);
         if (row.session_id === sessionId) {
-          totalCost = toNumber(row.estimated_cost_usd);
-          totalIn = toNumber(row.input_tokens);
-          totalOut = toNumber(row.output_tokens);
+          if (isValidCostRow(row, sessionId)) {
+            latestRow = row;
+            totalCost = row.estimated_cost_usd;
+            totalIn = row.input_tokens;
+            totalOut = row.output_tokens;
+          } else {
+            invalid += 1;
+            invalidHasher.update(line).update('\0');
+          }
         }
       } catch {
         malformed += 1;
@@ -186,6 +207,23 @@ function readSessionCost(sessionId) {
         `${malformed}:${malformedHasher.digest('hex').slice(0, 16)}`,
         `[ecc-metrics-bridge] skipped ${malformed} malformed line(s) in ${costsPath}\n`
       );
+    }
+    if (invalid > 0) {
+      writeCostWarningIfChanged(
+        'invalid-row',
+        costsPath,
+        `${invalid}:${invalidHasher.digest('hex').slice(0, 16)}`,
+        `[ecc-metrics-bridge] skipped ${invalid} invalid cumulative row(s) for ${sessionId} in ${costsPath}\n`
+      );
+    }
+
+    const sourceAfter = getCostLogSignature(metricsDir);
+    if (latestRow && signaturesMatch(sourceBefore, sourceAfter)) {
+      try {
+        repairSessionCostSnapshot(metricsDir, sessionId, latestRow, sourceAfter);
+      } catch {
+        // Snapshot repair is best effort; the JSONL result remains valid.
+      }
     }
     return { totalCost, totalIn, totalOut };
   } catch (err) {
@@ -259,7 +297,7 @@ function run(rawInput) {
     if (recent.length > RECENT_TOOLS_SIZE) recent.shift();
     bridge.recent_tools = recent;
 
-    // Update cost from costs.jsonl tail
+    // Use the O(1) session snapshot, with JSONL compatibility fallback.
     const costs = readSessionCost(sessionId);
     bridge.total_cost_usd = Math.round(costs.totalCost * 1e6) / 1e6;
     bridge.total_input_tokens = costs.totalIn;

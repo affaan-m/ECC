@@ -4,7 +4,9 @@
  *
  * Reads transcript_path from Stop hook stdin, sums usage across all
  * assistant turns in the session JSONL, and appends one row to
- * ~/.claude/metrics/costs.jsonl.
+ * ~/.claude/metrics/costs.jsonl. It also atomically publishes the latest
+ * cumulative row under metrics/cost-snapshots/ so frequent PostToolUse
+ * hooks do not need to rescan the unbounded history.
  *
  * Stop hook stdin payload: { session_id, transcript_path, cwd, hook_event_name, ... }
  * The Stop payload does NOT include `usage` or `model` directly. The previous
@@ -42,6 +44,7 @@ const os = require('os');
 const path = require('path');
 const { ensureDir, appendFile, getClaudeDir } = require('../lib/utils');
 const { sanitizeSessionId } = require('../lib/session-bridge');
+const { publishAppendedSessionCostSnapshot } = require('../lib/session-cost-snapshot');
 
 const HARNESS_COST_MAX_AGE_SECONDS = 300;
 
@@ -243,6 +246,12 @@ process.stdin.on('end', () => {
     };
 
     appendFile(path.join(metricsDir, 'costs.jsonl'), `${JSON.stringify(row)}\n`);
+    try {
+      publishAppendedSessionCostSnapshot(metricsDir, sessionId, row);
+    } catch {
+      // The append-only log remains authoritative. A later bridge read falls
+      // back to it when an atomic snapshot cannot be published.
+    }
   } catch {
     // Non-blocking — never fail the Stop hook.
   }

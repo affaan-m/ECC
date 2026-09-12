@@ -17,6 +17,11 @@ The tracker appends one JSON object per session-stop to
 session**, so to total spend you take the **latest row per `session_id`** and
 sum across sessions — summing every row multiply-counts.
 
+ECC also maintains internal per-session files under
+`~/.claude/metrics/cost-snapshots/` so runtime hooks can read the current
+session total without rescanning all history. Treat those files as a
+rebuildable cache; reports and exports should continue to use `costs.jsonl`.
+
 Row schema:
 
 | Field | Meaning |
