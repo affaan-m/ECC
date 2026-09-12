@@ -10,7 +10,6 @@ use ratatui::{
 use regex::Regex;
 use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
 use std::time::UNIX_EPOCH;
-use tokio::sync::broadcast;
 
 use super::widgets::{budget_state, format_currency, format_token_count, BudgetState, TokenMeter};
 use crate::comms;
@@ -19,12 +18,12 @@ use crate::notifications::{DesktopNotifier, NotificationEvent, WebhookNotifier};
 use crate::observability::ToolLogEntry;
 use crate::session::manager;
 use crate::session::output::{
-    OutputEvent, OutputLine, OutputStream, SessionOutputStore, OUTPUT_BUFFER_LIMIT,
+    OutputLine, OutputStream, OUTPUT_BUFFER_LIMIT, OUTPUT_DELTA_BATCH_LIMIT,
 };
-use crate::session::store::{DaemonActivity, FileActivityOverlap, StateStore};
+use crate::session::store::{DaemonActivity, FileActivityOverlap, SessionOutputRecord, StateStore};
 use crate::session::{
-    ContextObservationPriority, DecisionLogEntry, FileActivityEntry, Session, SessionGrouping,
-    SessionBoardMeta, SessionHarnessInfo, SessionMessage, SessionState,
+    ContextObservationPriority, DecisionLogEntry, FileActivityEntry, Session, SessionBoardMeta,
+    SessionGrouping, SessionHarnessInfo, SessionMessage, SessionState,
 };
 use crate::worktree;
 
@@ -79,16 +78,42 @@ struct TestRunSummary {
     passed: usize,
 }
 
+/// Consumes an output cache and returns a new bounded cache with `records` appended.
+fn append_output_records(
+    mut cache: HashMap<String, Vec<OutputLine>>,
+    records: Vec<SessionOutputRecord>,
+) -> HashMap<String, Vec<OutputLine>> {
+    let mut touched_sessions = HashSet::new();
+    for record in records {
+        cache
+            .entry(record.session_id.clone())
+            .or_default()
+            .push(record.line);
+        touched_sessions.insert(record.session_id);
+    }
+
+    for session_id in touched_sessions {
+        if let Some(lines) = cache.get_mut(&session_id) {
+            let overflow = lines.len().saturating_sub(OUTPUT_BUFFER_LIMIT);
+            if overflow > 0 {
+                lines.drain(..overflow);
+            }
+        }
+    }
+
+    cache
+}
+
 pub struct Dashboard {
     db: StateStore,
     cfg: Config,
-    output_store: SessionOutputStore,
-    output_rx: broadcast::Receiver<OutputEvent>,
     notifier: DesktopNotifier,
     webhook_notifier: WebhookNotifier,
     sessions: Vec<Session>,
     session_harnesses: HashMap<String, SessionHarnessInfo>,
     session_output_cache: HashMap<String, Vec<OutputLine>>,
+    session_output_generations: HashMap<String, chrono::DateTime<Utc>>,
+    output_cursor: Option<i64>,
     unread_message_counts: HashMap<String, usize>,
     approval_queue_counts: HashMap<String, usize>,
     approval_queue_preview: Vec<SessionMessage>,
@@ -502,15 +527,8 @@ fn load_session_harnesses(
 }
 
 impl Dashboard {
+    /// Builds the dashboard and hydrates its initial bounded output snapshot.
     pub fn new(db: StateStore, cfg: Config) -> Self {
-        Self::with_output_store(db, cfg, SessionOutputStore::default())
-    }
-
-    pub fn with_output_store(
-        db: StateStore,
-        cfg: Config,
-        output_store: SessionOutputStore,
-    ) -> Self {
         let pane_size_percent = configured_pane_size(&cfg, cfg.pane_layout);
         let initial_cost_metrics_signature = metrics_file_signature(&cfg.cost_metrics_path());
         let initial_tool_activity_signature =
@@ -528,12 +546,15 @@ impl Dashboard {
             .iter()
             .map(|session| (session.id.clone(), session.state.clone()))
             .collect();
+        let session_output_generations = sessions
+            .iter()
+            .map(|session| (session.id.clone(), session.created_at))
+            .collect();
         let initial_approval_message_id = db
             .latest_unread_approval_message()
             .ok()
             .flatten()
             .map(|message| message.id);
-        let output_rx = output_store.subscribe();
         let notifier = DesktopNotifier::new(cfg.desktop_notifications.clone());
         let webhook_notifier = WebhookNotifier::new(cfg.webhook_notifications.clone());
         let mut session_table_state = TableState::default();
@@ -544,13 +565,13 @@ impl Dashboard {
         let mut dashboard = Self {
             db,
             cfg,
-            output_store,
-            output_rx,
             notifier,
             webhook_notifier,
             sessions,
             session_harnesses,
             session_output_cache: HashMap::new(),
+            session_output_generations,
+            output_cursor: None,
             unread_message_counts: HashMap::new(),
             approval_queue_counts: HashMap::new(),
             approval_queue_preview: Vec::new(),
@@ -624,6 +645,7 @@ impl Dashboard {
         dashboard.sync_handoff_backlog_counts();
         dashboard.sync_board_meta();
         dashboard.sync_global_handoff_backlog();
+        dashboard.sync_output_cache();
         dashboard.sync_selected_output();
         dashboard.sync_selected_diff();
         dashboard.sync_selected_messages();
@@ -3211,6 +3233,7 @@ impl Dashboard {
         ));
     }
 
+    /// Refreshes persisted dashboard state while preserving the output cursor.
     pub fn refresh(&mut self) {
         self.sync_from_store();
     }
@@ -3993,15 +4016,6 @@ impl Dashboard {
     }
 
     pub async fn tick(&mut self) {
-        loop {
-            match self.output_rx.try_recv() {
-                Ok(_event) => {}
-                Err(broadcast::error::TryRecvError::Empty) => break,
-                Err(broadcast::error::TryRecvError::Lagged(_)) => continue,
-                Err(broadcast::error::TryRecvError::Closed) => break,
-            }
-        }
-
         if let Err(error) = manager::activate_pending_worktree_sessions(&self.db, &self.cfg).await {
             tracing::warn!("Failed to activate queued worktree sessions: {error}");
         }
@@ -4073,18 +4087,22 @@ impl Dashboard {
         )
     }
 
+    /// Synchronizes dashboard state, deferring output recovery until sessions load.
     fn sync_from_store(&mut self) {
         let (heartbeat_enforcement, budget_enforcement, conflict_enforcement) =
             self.sync_runtime_metrics();
         let selected_id = self.selected_session_id().map(ToOwned::to_owned);
-        self.sessions = match self.db.list_sessions() {
+        let sessions_refreshed = match self.db.list_sessions() {
             Ok(mut sessions) => {
                 sort_sessions_for_display(&mut sessions);
-                sessions
+                self.sessions = sessions;
+                true
             }
             Err(error) => {
                 tracing::warn!("Failed to refresh sessions: {error}");
-                Vec::new()
+                self.output_cursor = None;
+                self.sessions.clear();
+                false
             }
         };
         self.session_harnesses = load_session_harnesses(&self.db, &self.cfg, &self.sessions);
@@ -4103,7 +4121,9 @@ impl Dashboard {
         self.sync_approval_notifications();
         self.sync_global_handoff_backlog();
         self.sync_daemon_activity();
-        self.sync_output_cache();
+        if sessions_refreshed {
+            self.sync_output_cache();
+        }
         self.sync_selection_by_id(selected_id.as_deref());
         self.ensure_selected_pane_visible();
         self.sync_selected_output();
@@ -4481,25 +4501,43 @@ impl Dashboard {
     }
 
     fn sync_output_cache(&mut self) {
-        let active_session_ids: HashSet<_> = self
+        let active_session_generations: HashMap<_, _> = self
             .sessions
             .iter()
-            .map(|session| session.id.as_str())
+            .map(|session| (session.id.clone(), session.created_at))
             .collect();
-        self.session_output_cache
-            .retain(|session_id, _| active_session_ids.contains(session_id.as_str()));
+        let cached_generations = &self.session_output_generations;
+        self.session_output_cache = std::mem::take(&mut self.session_output_cache)
+            .into_iter()
+            .filter(|(session_id, _)| {
+                active_session_generations.get(session_id) == cached_generations.get(session_id)
+            })
+            .collect();
+        self.session_output_generations = active_session_generations;
 
-        for session in &self.sessions {
-            match self.db.get_output_lines(&session.id, OUTPUT_BUFFER_LIMIT) {
-                Ok(lines) => {
-                    self.output_store.replace_lines(&session.id, lines.clone());
-                    self.session_output_cache.insert(session.id.clone(), lines);
-                }
-                Err(error) => {
-                    tracing::warn!("Failed to load session output for {}: {error}", session.id);
-                }
+        let batch = match self.output_cursor {
+            Some(cursor) => self
+                .db
+                .get_output_since(cursor, OUTPUT_DELTA_BATCH_LIMIT),
+            None => self.db.get_output_snapshot(OUTPUT_BUFFER_LIMIT),
+        };
+        let batch = match batch {
+            Ok(batch) => batch,
+            Err(error) => {
+                tracing::warn!("Failed to refresh session output cache: {error}");
+                return;
             }
+        };
+
+        if self.output_cursor.is_none() {
+            self.session_output_cache = HashMap::new();
         }
+        self.output_cursor = Some(batch.cursor);
+
+        self.session_output_cache = append_output_records(
+            std::mem::take(&mut self.session_output_cache),
+            batch.records,
+        );
     }
 
     fn ensure_selected_pane_visible(&mut self) {
@@ -5212,6 +5250,7 @@ impl Dashboard {
             .map(|session| session.id.as_str())
     }
 
+    /// Returns the selected session's currently cached output window.
     fn selected_output_lines(&self) -> &[OutputLine] {
         self.selected_session_id()
             .and_then(|session_id| self.session_output_cache.get(session_id))
@@ -13148,6 +13187,260 @@ diff --git a/src/lib.rs b/src/lib.rs
     }
 
     #[test]
+    fn output_cache_appends_rows_written_by_another_process_without_rehydrating() -> Result<()> {
+        let db_path =
+            std::env::temp_dir().join(format!("ecc2-output-cursor-{}.db", Uuid::new_v4()));
+        let db = StateStore::open(&db_path)?;
+        let session = sample_session("session-1", "claude", SessionState::Running, None, 0, 0);
+        db.insert_session(&session)?;
+        db.append_output_line("session-1", OutputStream::Stdout, "persisted-before-open")?;
+
+        let mut dashboard = Dashboard::new(db, Config::default());
+        assert!(dashboard
+            .selected_output_text()
+            .contains("persisted-before-open"));
+        dashboard
+            .session_output_cache
+            .entry("session-1".to_string())
+            .or_default()
+            .push(test_output_line(OutputStream::Stdout, "cache-only"));
+
+        let child = Command::new(std::env::current_exe()?)
+            .args([
+                "--exact",
+                "tui::dashboard::tests::output_cursor_child_writer",
+                "--ignored",
+                "--nocapture",
+            ])
+            .env("ECC2_OUTPUT_CURSOR_CHILD_DB", &db_path)
+            .status()?;
+        assert!(child.success(), "child output writer should succeed");
+        dashboard.refresh();
+
+        let text = dashboard.selected_output_text();
+        assert!(text.contains("persisted-before-open"));
+        assert!(text.contains("cache-only"));
+        assert!(text.contains("persisted-after-open"));
+
+        dashboard.sync_output_cache();
+        assert_eq!(
+            dashboard
+                .selected_output_lines()
+                .iter()
+                .filter(|line| line.text == "persisted-after-open")
+                .count(),
+            1
+        );
+
+        let _ = std::fs::remove_file(db_path);
+        Ok(())
+    }
+
+    #[test]
+    #[ignore = "helper invoked by output cursor cross-process test"]
+    fn output_cursor_child_writer() -> Result<()> {
+        let Some(db_path) = std::env::var_os("ECC2_OUTPUT_CURSOR_CHILD_DB") else {
+            return Ok(());
+        };
+        StateStore::open(Path::new(&db_path))?.append_output_line(
+            "session-1",
+            OutputStream::Stderr,
+            "persisted-after-open",
+        )
+    }
+
+    #[test]
+    fn output_cache_rehydrates_after_transient_session_list_failure() -> Result<()> {
+        let db_path =
+            std::env::temp_dir().join(format!("ecc2-output-recovery-{}.db", Uuid::new_v4()));
+        let db = StateStore::open(&db_path)?;
+        let session = sample_session("session-1", "claude", SessionState::Running, None, 0, 0);
+        db.insert_session(&session)?;
+        db.append_output_line("session-1", OutputStream::Stdout, "persisted-output")?;
+
+        let mut dashboard = Dashboard::new(db, Config::default());
+        assert!(dashboard
+            .selected_output_text()
+            .contains("persisted-output"));
+        dashboard
+            .session_output_cache
+            .entry("session-1".to_string())
+            .or_default()
+            .push(test_output_line(OutputStream::Stdout, "cache-only"));
+
+        let schema = rusqlite::Connection::open(&db_path)?;
+        schema.execute("ALTER TABLE sessions RENAME TO unavailable_sessions", [])?;
+        dashboard.sync_from_store();
+        assert!(dashboard.sessions.is_empty());
+        assert!(dashboard.session_output_cache["session-1"]
+            .iter()
+            .any(|line| line.text == "cache-only"));
+        assert!(dashboard.output_cursor.is_none());
+
+        dashboard.sync_from_store();
+        assert!(dashboard.session_output_cache["session-1"]
+            .iter()
+            .any(|line| line.text == "cache-only"));
+        assert!(dashboard.output_cursor.is_none());
+
+        schema.execute("ALTER TABLE unavailable_sessions RENAME TO sessions", [])?;
+        dashboard.sync_from_store();
+
+        assert_eq!(dashboard.sessions.len(), 1);
+        assert!(dashboard
+            .selected_output_text()
+            .contains("persisted-output"));
+        assert!(!dashboard.selected_output_text().contains("cache-only"));
+
+        let _ = std::fs::remove_file(db_path);
+        Ok(())
+    }
+
+    #[test]
+    fn output_cache_tracks_session_add_delete_and_same_id_recreation() -> Result<()> {
+        let db_path =
+            std::env::temp_dir().join(format!("ecc2-output-lifecycle-{}.db", Uuid::new_v4()));
+        let db = StateStore::open(&db_path)?;
+        db.insert_session(&sample_session(
+            "session-1",
+            "claude",
+            SessionState::Running,
+            None,
+            0,
+            0,
+        ))?;
+        db.append_output_line("session-1", OutputStream::Stdout, "first-session")?;
+
+        let mut dashboard = Dashboard::new(db, Config::default());
+        let external = StateStore::open(&db_path)?;
+        external.insert_session(&sample_session(
+            "session-2",
+            "codex",
+            SessionState::Running,
+            None,
+            0,
+            0,
+        ))?;
+        external.append_output_line("session-2", OutputStream::Stderr, "new-session")?;
+        dashboard.sync_from_store();
+
+        assert!(dashboard
+            .sessions
+            .iter()
+            .any(|session| session.id == "session-2"));
+        assert_eq!(
+            dashboard.session_output_cache["session-2"][0].text,
+            "new-session"
+        );
+
+        external.delete_session("session-2")?;
+        let replacement_time = Utc::now() + chrono::Duration::seconds(1);
+        external.insert_session(&Session {
+            created_at: replacement_time,
+            updated_at: replacement_time,
+            last_heartbeat_at: replacement_time,
+            ..sample_session("session-2", "codex", SessionState::Running, None, 0, 0)
+        })?;
+        external.append_output_line("session-2", OutputStream::Stdout, "replacement-session")?;
+        dashboard.sync_from_store();
+
+        let replacement = &dashboard.session_output_cache["session-2"];
+        assert_eq!(replacement.len(), 1);
+        assert_eq!(replacement[0].text, "replacement-session");
+
+        let _ = std::fs::remove_file(db_path);
+        Ok(())
+    }
+
+    #[test]
+    fn output_cache_retries_delta_after_transient_output_query_failure() -> Result<()> {
+        let db_path =
+            std::env::temp_dir().join(format!("ecc2-output-query-retry-{}.db", Uuid::new_v4()));
+        let db = StateStore::open(&db_path)?;
+        db.insert_session(&sample_session(
+            "session-1",
+            "claude",
+            SessionState::Running,
+            None,
+            0,
+            0,
+        ))?;
+        db.append_output_line("session-1", OutputStream::Stdout, "persisted-before")?;
+
+        let mut dashboard = Dashboard::new(db, Config::default());
+        dashboard
+            .session_output_cache
+            .get_mut("session-1")
+            .expect("hydrated output")
+            .push(test_output_line(OutputStream::Stdout, "cache-only"));
+        let cursor = dashboard.output_cursor;
+
+        let schema = rusqlite::Connection::open(&db_path)?;
+        schema.execute(
+            "ALTER TABLE session_output RENAME TO unavailable_session_output",
+            [],
+        )?;
+        dashboard.sync_output_cache();
+        assert_eq!(dashboard.output_cursor, cursor);
+        assert!(dashboard.session_output_cache["session-1"]
+            .iter()
+            .any(|line| line.text == "cache-only"));
+
+        schema.execute(
+            "ALTER TABLE unavailable_session_output RENAME TO session_output",
+            [],
+        )?;
+        StateStore::open(&db_path)?.append_output_line(
+            "session-1",
+            OutputStream::Stderr,
+            "persisted-after",
+        )?;
+        dashboard.sync_output_cache();
+
+        let output = &dashboard.session_output_cache["session-1"];
+        assert!(output.iter().any(|line| line.text == "cache-only"));
+        assert_eq!(
+            output
+                .iter()
+                .filter(|line| line.text == "persisted-after")
+                .count(),
+            1
+        );
+
+        let _ = std::fs::remove_file(db_path);
+        Ok(())
+    }
+
+    #[test]
+    fn append_output_records_bounds_each_session_to_the_latest_window() {
+        let mut cache = HashMap::from([(
+            "session-2".to_string(),
+            vec![test_output_line(OutputStream::Stderr, "other-session")],
+        )]);
+        let records = (0..(OUTPUT_BUFFER_LIMIT + 5))
+            .map(|index| crate::session::store::SessionOutputRecord {
+                id: index as i64 + 1,
+                session_id: "session-1".to_string(),
+                line: test_output_line(OutputStream::Stdout, &format!("line-{index}")),
+            })
+            .collect();
+
+        cache = append_output_records(cache, records);
+
+        let session_lines = cache.get("session-1").expect("session output");
+        assert_eq!(session_lines.len(), OUTPUT_BUFFER_LIMIT);
+        assert_eq!(
+            session_lines.first().map(|line| line.text.as_str()),
+            Some("line-5")
+        );
+        assert_eq!(
+            session_lines.last().map(|line| line.text.as_str()),
+            Some(format!("line-{}", OUTPUT_BUFFER_LIMIT + 4).as_str())
+        );
+        assert_eq!(cache["session-2"][0].text, "other-session");
+    }
+
+    #[test]
     fn submit_search_tracks_matches_and_sets_navigation_note() {
         let mut dashboard = test_dashboard(
             vec![sample_session(
@@ -14917,8 +15210,10 @@ diff --git a/src/lib.rs b/src/lib.rs
                 )
             })
             .collect();
-        let output_store = SessionOutputStore::default();
-        let output_rx = output_store.subscribe();
+        let session_output_generations = sessions
+            .iter()
+            .map(|session| (session.id.clone(), session.created_at))
+            .collect();
         let mut session_table_state = TableState::default();
         if !sessions.is_empty() {
             session_table_state.select(Some(selected_session));
@@ -14928,13 +15223,13 @@ diff --git a/src/lib.rs b/src/lib.rs
             db: StateStore::open(Path::new(":memory:")).expect("open test db"),
             pane_size_percent: configured_pane_size(&cfg, cfg.pane_layout),
             cfg,
-            output_store,
-            output_rx,
             notifier,
             webhook_notifier,
             sessions,
             session_harnesses,
             session_output_cache: HashMap::new(),
+            session_output_generations,
+            output_cursor: None,
             unread_message_counts: HashMap::new(),
             approval_queue_counts: HashMap::new(),
             approval_queue_preview: Vec::new(),
