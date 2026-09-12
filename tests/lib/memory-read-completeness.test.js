@@ -75,6 +75,50 @@ async function main() {
       fs.openSync = open;
     }
   });
+  function failTraversal(roots, phase, fn) {
+    const open = fs.opendirSync;
+    let closed = false;
+    fs.opendirSync = (directory, ...args) => {
+      if (directory !== roots.project) return open(directory, ...args);
+      const fail = () => {
+        const error = new Error('Synthetic private directory detail.');
+        error.code = 'EACCES';
+        throw error;
+      };
+      if (phase === 'open') return fail();
+      const handle = open(directory, ...args);
+      return {
+        readSync: () => phase === 'read' ? fail() : handle.readSync(),
+        closeSync: () => {
+          handle.closeSync(); closed = true;
+          if (phase === 'close') fail();
+        },
+      };
+    };
+    try { fn(); } finally {
+      fs.opendirSync = open;
+      if (phase !== 'open') assert.equal(closed, true);
+    }
+  }
+  for (const phase of ['open', 'read', 'close']) {
+    check(`direct read classifies directory ${phase} failure`, ({ roots, read }) => {
+      failTraversal(roots, phase, () => {
+        assert.throws(read, error => error.code === 'ECC_MEMORY_INCOMPLETE'
+          && !error.message.includes('Synthetic private directory detail.'));
+      });
+    });
+    check(`MCP read classifies directory ${phase} failure`, ({ roots, mcp }) => {
+      failTraversal(roots, phase, () => {
+        const result = mcp(); assert.equal(result.isError, true);
+        const error = JSON.parse(result.content[0].text).error;
+        assert.equal(error.code, 'MEMORY_READ_INCOMPLETE');
+        assert.equal(error.message.includes('Synthetic private directory detail.'), false);
+      });
+    });
+  }
+  check('unreadable traversal cannot establish missing memory', ({ roots, read }) => {
+    failTraversal(roots, 'open', () => incomplete(() => read('mem_synthetic_missing')));
+  });
   check('MCP incomplete lookup has a distinct bounded error', ({ mcp, truncate }) => {
     truncate(); const result = mcp(); assert.equal(result.isError, true);
     const error = JSON.parse(result.content[0].text).error;
