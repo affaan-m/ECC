@@ -18,13 +18,13 @@ Saldırı vektörleri esasen herhangi bir etkileşim giriş noktasıdır. Agent'
 
 ### Saldırı Zinciri ve Dahil Olan Düğümler / Bileşenler
 
-![Attack Chain Diagram](../assets/images/security/attack-chain.png)
+![Attack Chain Diagram](../../assets/images/security/attack-chain.png)
 
 Örneğin, agent'ım bir gateway katmanı aracılığıyla WhatsApp'a bağlı. Bir rakip WhatsApp numaranızı biliyor. Mevcut bir jailbreak kullanarak bir prompt injection denemesi yapıyorlar. Sohbette jailbreak spam'i yapıyorlar. Agent mesajı okuyor ve bunu talimat olarak alıyor. Özel bilgileri ifşa eden bir yanıt yürütüyor. Agent'ınızın root erişimi, geniş dosya sistemi erişimi veya yüklü yararlı kimlik bilgileri varsa, tehlikeye girdiniz.
 
 İnsanların güldüğü bu Good Rudi jailbreak klipleri bile (komik ngl) aynı sorun sınıfına işaret ediyor: tekrarlanan denemeler, sonunda hassas bir ifşa, yüzeyde eğlenceli ancak altta yatan arıza ciddi - yani sonuçta çocuklar için tasarlanmış, bundan biraz çıkarım yapın ve bunun neden felaket olabileceği sonucuna hızla varırsınız. Aynı desen, model gerçek araçlara ve gerçek izinlere bağlandığında çok daha ileri gider.
 
-[Video: Bad Rudi Exploit](../assets/images/security/badrudi-exploit.mp4) — good rudi (çocuklar için grok animasyonlu AI karakteri) hassas bilgileri ifşa etmek için tekrarlanan denemelerden sonra bir prompt jailbreak ile exploit edilir. eğlenceli bir örnek ama yine de olasılıklar çok daha ileri gider.
+[Video: Bad Rudi Exploit](../../assets/images/security/badrudi-exploit.mp4) — good rudi (çocuklar için grok animasyonlu AI karakteri) hassas bilgileri ifşa etmek için tekrarlanan denemelerden sonra bir prompt jailbreak ile exploit edilir. eğlenceli bir örnek ama yine de olasılıklar çok daha ileri gider.
 
 WhatsApp sadece bir örnek. E-posta ekleri büyük bir vektör. Bir saldırgan gömülü bir prompt'lu PDF gönderiyor; agent'ınız eki işin bir parçası olarak okuyor ve şimdi yardımcı veri olarak kalması gereken metin kötü niyetli talimata dönüştü. Üzerlerinde OCR yapıyorsanız ekran görüntüleri ve taramalar da aynı derecede kötü. Anthropic'in kendi prompt injection çalışması, gizli metin ve manipüle edilmiş görüntüleri açıkça gerçek saldırı malzemesi olarak adlandırıyor.
 
@@ -111,9 +111,9 @@ Belirli sayılar değişmeye devam edecek. Önemli olan seyahat yönü (olaylar�
 
 Root erişimi tehlikelidir. Geniş yerel erişim tehlikelidir. Aynı makinede uzun ömürlü kimlik bilgileri tehlikelidir. "YOLO, Claude beni koruyor" burada doğru yaklaşım değildir. Cevap izolasyondur.
 
-![Sandboxed agent on a restricted workspace vs. agent running loose on your daily machine](../assets/images/security/sandboxing-comparison.png)
+![Sandboxed agent on a restricted workspace vs. agent running loose on your daily machine](../../assets/images/security/sandboxing-comparison.png)
 
-![Sandboxing visual](../assets/images/security/sandboxing-brain.png)
+![Sandboxing visual](../../assets/images/security/sandboxing-brain.png)
 
 İlke basittir: agent tehlikeye girerse, patlama yarıçapının küçük olması gerekir.
 
@@ -195,7 +195,7 @@ Bir iş akışının sadece bir repo okuması ve testleri çalıştırması gere
 
 Bir LLM'nin okuduğu her şey çalıştırılabilir context'tir. Metin context window'a girdiğinde "veri" ve "talimatlar" arasında anlamlı bir ayrım yoktur. Sanitizasyon kozmetik değildir; runtime sınırının bir parçasıdır.
 
-![LGTM comparison — The file looks clean to a human. The model still sees the hidden instructions](../assets/images/security/sanitization.png)
+![LGTM comparison — The file looks clean to a human. The model still sees the hidden instructions](../../assets/images/security/sanitization.png)
 
 ### Gizli Unicode ve Yorum Payload'ları
 
@@ -278,7 +278,7 @@ OWASP'nin en az ayrıcalık etrafındaki dili agent'lara temiz bir şekilde eşl
 
 Agent'ın neyi okuduğunu, hangi aracı çağırdığını ve hangi ağ hedefine gitmeye çalıştığını göremezseniz, onu güvenli hale getiremezsiniz (bu bariz olmalı, yine de bir ralph döngüsünde claude --dangerously-skip-permissions'ı çalıştırdığınızı ve hiçbir endişe olmadan uzaklaştığınızı görüyorum). Sonra karmaşık bir kod tabanıyla geri geliyorsunuz, agent'ın ne yaptığını bulmaya iş yapmaktan daha fazla zaman harcıyorsunuz.
 
-![Hijacked runs usually look weird in the trace before they look obviously malicious](../assets/images/security/observability.png)
+![Hijacked runs usually look weird in the trace before they look obviously malicious](../../assets/images/security/observability.png)
 
 En azından bunları logla:
 - araç adı
@@ -311,7 +311,7 @@ Zarif ve sert kill'ler arasındaki farkı bilin. `SIGTERM` sürecine temizlik i�
 
 Ayrıca, sadece parent'ı değil, süreç grubunu kill edin. Sadece parent'ı kill ederseniz, çocuklar çalışmaya devam edebilir. (bu aynı zamanda bazen sabah ghostty sekmelerinize baktığınızda bir şekilde 100GB RAM tükettiğinizi ve bilgisayarınızda sadece 64GB varken sürecin duraklatıldığını görmenizin nedenidir, bir sürü çocuk süreç kapandığını düşündüğünüzde kontrolden çıkmış)
 
-![woke up to ts one day — guess what the culprit was](../assets/images/security/ghostyy-overflow.jpeg)
+![woke up to ts one day — guess what the culprit was](../../assets/images/security/ghostyy-overflow.jpeg)
 
 Node örneği:
 
