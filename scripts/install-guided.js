@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 'use strict';
 
+const path = require('path');
 const readline = require('readline/promises');
 
 const {
@@ -113,6 +114,30 @@ function choicesText(values) {
   return values.join('|');
 }
 
+/**
+ * Ask any setup questions this ECC version introduced that the user has not
+ * answered yet, and record the answers so they are asked only once. Returns
+ * the answers keyed by their request option (for example `codexUtf8`).
+ */
+async function askPendingSetupPrompts(terminal, output, context = {}) {
+  const { pendingPrompts, recordAnswer } = require('./lib/setup-prompts');
+  const provided = context.provided || {};
+  const answers = {};
+  for (const prompt of pendingPrompts({ codexSelected: context.codexSelected })) {
+    if (prompt.optionKey && provided[prompt.optionKey] !== undefined) continue;
+    const answer = await askChoice(
+      terminal,
+      output,
+      prompt.question,
+      prompt.choices,
+      prompt.defaultChoice
+    );
+    recordAnswer(prompt.id, answer);
+    if (prompt.optionKey) answers[prompt.optionKey] = answer === 'yes';
+  }
+  return answers;
+}
+
 async function askChoice(terminal, output, prompt, values, defaultValue) {
   output.write(`\n${prompt}\n`);
   values.forEach((value, index) => output.write(`  ${index + 1}. ${value}\n`));
@@ -168,8 +193,13 @@ async function collectInteractiveOptions(options, dependencies = {}) {
   const profile = includesKimi && !options.profile
     ? await askChoice(terminal, output, 'Which ECC content profile should Kimi receive?', [...VALID_PROFILES], 'core')
     : options.profile;
+  const answered = await askPendingSetupPrompts(terminal, output, {
+    codexSelected: normalizedHarnesses.includes('codex'),
+    provided: options,
+  });
   return {
     ...options,
+    ...answered,
     harnesses: normalizedHarnesses,
     claudeScope,
     claudeHooks,
@@ -318,6 +348,15 @@ async function main(argv = process.argv.slice(2), injected = {}) {
         + `${sanitizeTerminalText(result.failure.message)}\n`
         + `Retry with: ecc-universal install --guided ${retry}\n`
       );
+      // The usage bar is plain shell/TOML config and does not depend on the
+      // Codex plugin registration that just failed, but it is applied after
+      // it — so point at the standalone setup when that step cannot succeed.
+      if (result.failure.id === 'codex') {
+        errorOutput.write(
+          'The Codex usage bar was not configured. To set it up on its own:\n'
+          + `  node "${path.join(__dirname, 'codex', 'setup-codex-bar.js')}"\n`
+        );
+      }
     }
     return result.status === 'complete' ? 0 : 1;
   } catch (error) {

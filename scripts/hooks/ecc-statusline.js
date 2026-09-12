@@ -2,8 +2,13 @@
 /**
  * ECC Statusline — statusLine command
  *
- * Displays: model | task | $cost Nt Nf Nm | dir ██░░ N%
+ * ECC usage bar, inspired by leeguooooo/claude-code-usage-bar (MIT).
+ * Renders three lines:
+ *   1. ⚡ 5h/7d rate-limit bars with reset countdowns + prompt-cache hit rate
+ *   2. ✳ model + effort/fast badges │ context bar │ $cost +add/-del duration │ task
+ *   3. ⬢ ECC version │ hooks profile │ plugins with versions │ directory
  *
+ * Set ECC_STATUSLINE_COMPACT=1 for the legacy single-line format.
  * Registered in settings.json under "statusLine", not in hooks.json.
  * Reads bridge file from ecc-metrics-bridge.js and stdin from Claude Code runtime.
  */
@@ -14,6 +19,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const { sanitizeSessionId, readBridge, writeBridgeAtomic } = require('../lib/session-bridge');
+const render = require('../lib/statusline-render');
 
 const AUTO_COMPACT_BUFFER_PCT = 16.5;
 const MAX_STDIN = 1024 * 1024;
@@ -47,7 +53,7 @@ function buildContextBar(remaining) {
   const used = Math.max(0, Math.min(100, Math.round(100 - usableRemaining)));
 
   const filled = Math.floor(used / 10);
-  const bar = '\u2588'.repeat(filled) + '\u2591'.repeat(10 - filled);
+  const bar = '█'.repeat(filled) + '░'.repeat(10 - filled);
 
   if (used < 50) return ` \x1b[32m${bar} ${used}%\x1b[0m`;
   if (used < 65) return ` \x1b[33m${bar} ${used}%\x1b[0m`;
@@ -85,6 +91,71 @@ function readCurrentTask(sessionId) {
   }
 }
 
+/**
+ * ECC version: installed plugin version first, repo VERSION file as fallback.
+ * @param {Array<{name: string, version: string}>} plugins
+ */
+function getEccVersion(plugins) {
+  const ecc = plugins.find(p => p.name === 'ecc');
+  if (ecc?.version) return ecc.version;
+  try {
+    return fs.readFileSync(path.join(__dirname, '..', '..', 'VERSION'), 'utf8').trim();
+  } catch {
+    return '';
+  }
+}
+
+/**
+ * Assemble statusline output lines from Claude Code stdin data.
+ * @param {object} data - Parsed statusLine stdin JSON
+ * @param {object|null} bridge - Session bridge metrics or null
+ * @param {string} task - Current in-progress task
+ * @returns {string[]} Non-empty output lines
+ */
+function buildLines(data, bridge, task) {
+  const remaining = data.context_window?.remaining_percentage;
+  const cost = data.cost || {};
+  const dirname = path.basename(data.workspace?.current_dir || process.cwd());
+
+  if (process.env.ECC_STATUSLINE_COMPACT === '1') {
+    const segments = [`\x1b[2m${data.model?.display_name || 'Claude'}\x1b[0m`];
+    if (task) segments.push(`\x1b[1;97m${task}\x1b[0m`);
+    segments.push(`\x1b[2m${dirname}\x1b[0m`);
+    return [segments.join(render.SEP) + buildContextBar(remaining)];
+  }
+
+  const usageLine = render.buildUsageLine(
+    data.rate_limits,
+    render.computeCacheStats(data.context_window?.current_usage)
+  );
+
+  const durationMs = bridge?.first_timestamp
+    ? Date.now() - new Date(bridge.first_timestamp).getTime()
+    : 0;
+  const sessionLine = render.buildSessionLine({
+    model: data.model?.display_name,
+    effort: data.effort?.level,
+    fastMode: data.fast_mode === true,
+    ctxBar: buildContextBar(remaining),
+    ctxWindowSize: data.context_window?.context_window_size,
+    costUsd: cost.total_cost_usd ?? bridge?.total_cost_usd ?? 0,
+    linesAdded: cost.total_lines_added || 0,
+    linesRemoved: cost.total_lines_removed || 0,
+    durationMs,
+    task,
+  });
+
+  const plugins = render.readInstalledPlugins();
+  const eccLine = render.buildEccLine({
+    eccVersion: getEccVersion(plugins),
+    hooks: render.getHooksSummary(),
+    plugins,
+    dirname,
+  });
+
+  return [usageLine, sessionLine, eccLine].filter(Boolean);
+}
+
 function runStatusline() {
   let input = '';
   const stdinTimeout = setTimeout(() => process.exit(0), 3000);
@@ -98,12 +169,8 @@ function runStatusline() {
     clearTimeout(stdinTimeout);
     try {
       const data = JSON.parse(input);
-      const model = data.model?.display_name || 'Claude';
-      const dir = data.workspace?.current_dir || process.cwd();
-      const session = data.session_id || '';
       const remaining = data.context_window?.remaining_percentage;
-
-      const sessionId = sanitizeSessionId(session);
+      const sessionId = sanitizeSessionId(data.session_id || '');
       const bridge = sessionId ? readBridge(sessionId) : null;
 
       // Write context % back to bridge for context-monitor
@@ -116,53 +183,14 @@ function runStatusline() {
         }
       }
 
-      // Current task
       const task = sessionId ? readCurrentTask(sessionId) : '';
-
-      // Metrics from bridge
-      let metricsStr = '';
-      if (bridge) {
-        const parts = [];
-        if (bridge.total_cost_usd > 0) {
-          parts.push(`$${bridge.total_cost_usd.toFixed(2)}`);
-        }
-        if (bridge.tool_count > 0) {
-          parts.push(`${bridge.tool_count}t`);
-        }
-        if (bridge.files_modified_count > 0) {
-          parts.push(`${bridge.files_modified_count}f`);
-        }
-        const dur = formatDuration(bridge.first_timestamp);
-        if (dur !== '?') {
-          parts.push(dur);
-        }
-        if (parts.length > 0) {
-          metricsStr = `\x1b[38;5;117m${parts.join(' ')}\x1b[0m`;
-        }
-      }
-
-      // Context bar
-      const ctx = buildContextBar(remaining);
-
-      // Build output
-      const dirname = path.basename(dir);
-      const segments = [`\x1b[2m${model}\x1b[0m`];
-
-      if (task) {
-        segments.push(`\x1b[1;97m${task}\x1b[0m`);
-      }
-      if (metricsStr) {
-        segments.push(metricsStr);
-      }
-      segments.push(`\x1b[2m${dirname}\x1b[0m`);
-
-      process.stdout.write(segments.join(' \x1b[2m\u2502\x1b[0m ') + ctx);
+      process.stdout.write(buildLines(data, bridge, task).join('\n'));
     } catch {
       // Silent fail
     }
   });
 }
 
-module.exports = { formatDuration, buildContextBar, readCurrentTask, MAX_STDIN };
+module.exports = { formatDuration, buildContextBar, readCurrentTask, getEccVersion, buildLines, runStatusline, MAX_STDIN };
 
 if (require.main === module) runStatusline();
