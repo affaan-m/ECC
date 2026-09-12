@@ -208,19 +208,6 @@
         "OPENAI_API_KEY": "YOUR_OPENAI_API_KEY_HERE"
       },
       "description": "AI agent regression testing — snapshot behavior, detect regressions in tool calls and output quality. 8 tools: create_test, run_snapshot, run_check, list_tests, validate_skill, generate_skill_tests, run_skill_test, generate_visual_report. API key optional — deterministic checks (tool diff, output hash) work without it. Install: pip install \"evalview>=0.5,<1\""
-    },
-    "squish": {
-      "command": "npx",
-      "args": ["-y", "squish-memory"],
-      "description": "Local-first persistent memory runtime for AI agents — MCP server for Claude Code, Cursor, OpenCode, Codex, Cline. Auto-captures context across sessions. 1-20ms recall, 283KB, no second LLM needed. Runs locally with SQLite. Supports cloud sync via Stripe checkout ($9-$99/mo). GitHub: https://github.com/michielhdoteth/squish | Docs: https://squishplugin.dev | (also available via local `squish run mcp`)"
-    },
-    "serply-search": {
-      "type": "http",
-      "url": "https://api.serply.io/mcp",
-      "headers": {
-        "X-Api-Key": "YOUR_SERPLY_API_KEY_HERE"
-      },
-      "description": "Serply hosted web search: Google, Bing, News, Scholar, Jobs, Maps, video and Amazon product search plus scrape_url. Search tools return a readable result list with structured content alongside, Maps returns structured JSON, and scrape_url returns Markdown or raw HTML. Complements exa-web-search and parallel-search with classic keyword SERP results and per-country/locale targeting. Requires an API key from serply.io (replace the header placeholder)."
     }
   },
   "_comments": {
