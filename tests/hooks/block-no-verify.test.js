@@ -286,6 +286,31 @@ if (test('blocks a git bypass inside a runtime eval payload', () => {
   }
 })) passed++; else failed++;
 
+if (test('allows a runtime flag that loads code but leaves the quoted argument as data', () => {
+  for (const command of [
+    // node -r preloads a module; the script and its arguments stay data.
+    "node -r setup.js cli.js 'git push --no-verify'",
+    'node --require ts-node/register cli.js "git commit --no-verify -m x"',
+    "ruby -r./setup cli.rb 'git push --no-verify'",
+    "python3 -B check.py 'git commit --no-verify'",
+  ]) {
+    const r = runHook({ tool_input: { command } });
+    assert.strictEqual(r.code, 0, `expected exit 0 for ${command}, got ${r.code}: ${r.stderr}`);
+  }
+})) passed++; else failed++;
+
+if (test('blocks each runtime through its own eval flag', () => {
+  for (const command of [
+    'node -p "cp.execSync(\'git push --no-verify\')"',
+    "php -r 'shell_exec(\"git commit --no-verify -m x\");'",
+    "perl -E 'system(\"git push --no-verify\")'",
+    "lua -e 'os.execute(\"git commit --no-verify -m x\")'",
+  ]) {
+    const r = runHook({ tool_input: { command } });
+    assert.strictEqual(r.code, 2, `expected exit 2 for ${command}, got ${r.code}`);
+  }
+})) passed++; else failed++;
+
 if (test('still allows a bypass phrase in an eval payload that does not run git', () => {
   for (const command of [
     'node -e "console.log(\'use --no-verify only in emergencies\')"',

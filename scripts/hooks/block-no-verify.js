@@ -353,45 +353,49 @@ function commandBasename(word) {
 }
 
 /**
- * Runtimes that run a quoted argument as program source once they are given
- * an eval flag (`node -e`, `python3 -c`, `perl -E`, `deno eval`). That source
- * can spawn git itself, so it stays subject to the guard. The same runtime
- * without an eval flag receives a script argument, which is data
- * (`node cli.js 'git commit --no-verify'`).
+ * Runtimes that run a quoted argument as program source, each with the
+ * flags that do it: `node -e`, `python3 -c`, `perl -E`, `php -r`,
+ * `deno eval`. That source can spawn git itself, so it stays subject to the
+ * guard. The same runtime without one of its own eval flags receives a
+ * script path and arguments, which are data (`node cli.js 'git commit
+ * --no-verify'`).
+ *
+ * The flags are per runtime because the same letter means different things:
+ * node's `-r` preloads a module and leaves the rest of the command line as
+ * ordinary arguments, while php's `-r` is how php is handed code.
  */
-const CODE_EVALUATORS = new Set([
-  'node',
-  'nodejs',
-  'bun',
-  'deno',
-  'python',
-  'python2',
-  'python3',
-  'pythonw',
-  'perl',
-  'ruby',
-  'php',
-  'lua',
-  'luajit',
-  'rscript',
-  'osascript',
-  'tclsh',
-  'groovy',
-  'julia',
-  'elixir',
-  'erl',
+const CODE_EVALUATORS = new Map([
+  ['node', ['-e', '--eval', '-p', '--print']],
+  ['nodejs', ['-e', '--eval', '-p', '--print']],
+  ['bun', ['-e', '--eval', '-p', '--print']],
+  ['deno', ['-e', '--eval', 'eval']],
+  ['python', ['-c']],
+  ['python2', ['-c']],
+  ['python3', ['-c']],
+  ['pythonw', ['-c']],
+  ['perl', ['-e', '-E']],
+  ['ruby', ['-e']],
+  ['php', ['-r']],
+  ['lua', ['-e']],
+  ['luajit', ['-e']],
+  ['rscript', ['-e']],
+  ['osascript', ['-e']],
+  ['groovy', ['-e']],
+  ['julia', ['-e', '-E']],
+  ['elixir', ['-e']],
+  ['erl', ['-eval']],
 ]);
-
-/** `-e`, `-E`, `--eval`, `-c`, `-p`, `--print`, `-r` and deno's `eval`. */
-const EVAL_FLAG = /(?:^|\s)(?:-{1,2}(?:e|eval|c|command|p|print|r)|eval)(?:=|\s|$)/i;
 
 /**
  * Whether the words between the program and its quoted argument turn that
- * argument into code.
+ * argument into code. A flag is matched as a whole word, or as the `=` form
+ * of itself, so a path that happens to end in one of them cannot qualify.
  */
 function evaluatesQuotedArgument(input, region, base) {
-  if (!CODE_EVALUATORS.has(base)) return false;
-  return EVAL_FLAG.test(input.slice(region.argv0Start, region.start));
+  const flags = CODE_EVALUATORS.get(base);
+  if (flags === undefined) return false;
+  const words = input.slice(region.argv0Start, region.start).split(/\s+/);
+  return words.some((word) => flags.some((flag) => word === flag || word.startsWith(`${flag}=`)));
 }
 
 /**
