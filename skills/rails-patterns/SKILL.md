@@ -163,8 +163,8 @@ module Invoices
 
     def build_invoice
       invoice = user.invoices.new(params.except(:line_items))
-      invoice.tax_total = TaxCalculator.call(invoice)
       invoice.line_items.build(params[:line_items])
+      invoice.tax_total = TaxCalculator.call(invoice)
       invoice.total = invoice.line_items.sum(&:amount) + invoice.tax_total
       invoice
     end
@@ -258,7 +258,7 @@ Query objects accept a scope, so they compose: `Invoices::Overdue.call(scope: cu
 @posts = Post.published.includes(:author)
 ```
 
-`includes` lets Rails choose preload vs eager_load. Force `preload` for separate queries, `eager_load` for a JOIN when filtering on the association. In Rails 7.1+, `strict_loading` raises on accidental lazy loads.
+`includes` lets Rails choose preload vs eager_load. Force `preload` for separate queries, `eager_load` for a JOIN when filtering on the association. Since Rails 6.1, `strict_loading` raises on accidental lazy loads.
 
 ### Counter cache
 
@@ -472,5 +472,4 @@ If the page is server-rendered with occasional interactivity, Hotwire ships fast
 ## Related Skills
 
 - `backend-patterns` — service boundaries and adapter patterns (referenced by the Ruby patterns rules)
-- `ruby-patterns` — language-level Ruby idioms (if present)
 - Ruby patterns rules (`rules/ruby/patterns.md`, installed as `rules/ecc/ruby/patterns.md`) — the decisions and when-to-use guidance this skill implements
