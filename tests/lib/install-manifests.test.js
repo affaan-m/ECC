@@ -192,6 +192,44 @@ function runTests() {
     );
   })) passed++; else failed++;
 
+  if (test('resolves existing skill components to exact modules for Mistral Vibe', () => {
+    const plan = resolveInstallPlan({
+      includeComponentIds: ['skill:tdd-workflow'],
+      target: 'mistral-vibe',
+      projectRoot: '/workspace/app',
+    });
+
+    assert.deepStrictEqual(plan.selectedModuleIds, ['skill-tdd-workflow']);
+    assert.deepStrictEqual(plan.skippedModuleIds, []);
+    assert.deepStrictEqual(
+      plan.operations.map(operation => operation.sourceRelativePath),
+      ['skills/tdd-workflow']
+    );
+  })) passed++; else failed++;
+
+  if (test('lists existing skill components as installable for Mistral Vibe', () => {
+    const components = listInstallComponents({ family: 'skill', target: 'mistral-vibe' });
+    const tdd = components.find(component => component.id === 'skill:tdd-workflow');
+    assert.ok(tdd, 'Should expose tdd-workflow to Mistral Vibe users');
+    assert.deepStrictEqual(tdd.moduleIds, ['skill-tdd-workflow']);
+    assert.deepStrictEqual(tdd.targets, ['mistral-vibe']);
+    const detail = getInstallComponent('skill:tdd-workflow', { target: 'mistral-vibe' });
+    assert.deepStrictEqual(detail.moduleIds, ['skill-tdd-workflow']);
+    assert.deepStrictEqual(detail.targets, ['mistral-vibe']);
+  })) passed++; else failed++;
+
+  if (test('applies Mistral Vibe exclusions to the exact selected skill module', () => {
+    assert.throws(
+      () => resolveInstallPlan({
+        target: 'mistral-vibe',
+        projectRoot: '/workspace/app',
+        includeComponentIds: ['skill:tdd-workflow'],
+        excludeComponentIds: ['skill:tdd-workflow'],
+      }),
+      /Selection excludes every requested install module/
+    );
+  })) passed++; else failed++;
+
   if (test('marks unified-memory install surfaces as requiring the separate ECC runtime', () => {
     const component = getInstallComponent('skill:unified-memory');
     assert.deepStrictEqual(component.moduleIds, ['skill-unified-memory']);

@@ -155,6 +155,17 @@ test('workflow-quality target smoke explicitly opts into hooks', () => {
   );
 });
 
+test('packed lifecycle exercises the Mistral Vibe skills-only target', () => {
+  const source = fs.readFileSync(
+    path.join(__dirname, 'packed-artifact-lifecycle.js'),
+    'utf8'
+  );
+  assert.match(
+    source,
+    /target: 'mistral-vibe',[\s\S]*selectionArgs: \['--skills', 'skill-comply'\]/
+  );
+});
+
 test('lifecycle cleanup retries Windows file locks without masking results', () => {
   const source = fs.readFileSync(
     path.join(__dirname, 'packed-artifact-lifecycle.js'),

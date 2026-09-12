@@ -51,6 +51,7 @@ function runTests() {
     assert.ok(targets.includes('joycode'), 'Should include joycode target');
     assert.ok(targets.includes('qwen'), 'Should include qwen target');
     assert.ok(targets.includes('zed'), 'Should include zed target');
+    assert.ok(targets.includes('mistral-vibe'), 'Should include mistral-vibe target');
   })) passed++; else failed++;
 
   if (test('resolves cursor adapter root and install-state path from project root', () => {
