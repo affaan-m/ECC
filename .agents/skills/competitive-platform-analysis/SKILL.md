@@ -6,6 +6,7 @@ description: >-
   counts as a competitor, which tier they belong to, and which sources to mine.
   First step in the three-skill competitive pipeline; precedes
   benchmark-methodology.
+license: MIT
 ---
 
 # Competitive Platform Analysis
