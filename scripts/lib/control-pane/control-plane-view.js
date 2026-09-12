@@ -225,6 +225,7 @@ function buildControlPlaneView(snapshot, options = {}) {
   const projection = projectPairs(prox.links || [], {
     window: options.window,
     channelWeights: options.channelWeights,
+    sample: options.sample,
     minWindowForZscore: options.minWindowForZscore
   });
   const pointByAgent = new Map(projection.agents.map(a => [a.agentId, a]));
@@ -319,11 +320,30 @@ function buildControlPlaneView(snapshot, options = {}) {
  */
 function createControlPlaneViewSource(deps = {}) {
   const window = deps.window || createProjectionWindow(deps.projection || {});
+  const clock = deps.clock || Date.now;
+  const interval = deps.sampleIntervalMs === undefined ? 5000 : deps.sampleIntervalMs;
+  if (!Number.isFinite(interval) || interval <= 0) throw new Error('sampleIntervalMs must be positive and finite');
+  let cached = null;
+  let pending = null;
+  let expiresAt = 0;
+  async function refresh() {
+    const snapshot = await deps.buildSnapshot();
+    const view = buildControlPlaneView(snapshot, { ...deps.viewOptions, window });
+    cached = { snapshot, view };
+    expiresAt = clock() + interval;
+    return cached;
+  }
   return {
     window,
     async build(extra = {}) {
-      const snapshot = await deps.buildSnapshot();
-      return buildControlPlaneView(snapshot, { ...deps.viewOptions, ...extra, window });
+      if (!cached || clock() >= expiresAt) {
+        if (!pending) pending = refresh().finally(() => { pending = null; });
+        await pending;
+      }
+      if (Object.keys(extra).length === 0) return cached.view;
+      return buildControlPlaneView(cached.snapshot, {
+        ...deps.viewOptions, ...extra, now: extra.now || cached.view.generatedAt, window, sample: false
+      });
     }
   };
 }

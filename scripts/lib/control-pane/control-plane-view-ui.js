@@ -207,10 +207,13 @@ function renderControlPlaneViewHtml() {
   }
 
   function apply(data) {
-    view = data || view;
-    view.tasks = view.tasks || []; view.lanes = view.lanes || []; view.pairs = view.pairs || [];
-    view.events = view.events || []; view.projection = view.projection || { agents: [] };
-    view.thresholds = view.thresholds || { ta: 0.35, ra: 0.7 };
+    if (!data || data.schemaVersion !== 'ecc.control-plane.view.v1' ||
+        !['tasks', 'lanes', 'pairs', 'events'].every(function (key) { return Array.isArray(data[key]); }) ||
+        !data.projection || !Array.isArray(data.projection.agents) || !data.thresholds ||
+        !Number.isFinite(data.thresholds.ta) || !Number.isFinite(data.thresholds.ra)) {
+      throw new Error('Invalid control-plane view');
+    }
+    view = Object.assign({}, data);
     renderEvents(); renderLanes(); draw();
     var c = view.counts || {};
     document.getElementById('status').textContent =
@@ -220,7 +223,10 @@ function renderControlPlaneViewHtml() {
   }
 
   function poll() {
-    fetch('/api/control-plane').then(function (r) { return r.json(); }).then(apply).catch(function () {
+    fetch('/api/control-plane').then(function (r) {
+      if (!r.ok) throw new Error('Control-plane request failed');
+      return r.json();
+    }).then(apply).catch(function () {
       document.getElementById('status').textContent = 'offline';
     });
   }

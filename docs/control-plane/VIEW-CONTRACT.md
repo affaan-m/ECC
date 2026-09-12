@@ -21,7 +21,7 @@ Served by `node scripts/control-pane.js` (loopback only, same Host and Origin ga
 | `GET /api/control-plane` | The full view document below. |
 | `GET /api/control-plane/events` | `{ schemaVersion, generatedAt, thresholds, events, counts }` only, for hooks and pollers. |
 
-The server keeps one projection window per process, so z-scores roll across polls. Options on `createControlPaneServer`: `projection` (`windowSize`, `clipPercentiles`, `minWindowForZscore`), `viewOptions` (`thresholds`, `manifest`, `channelWeights`), `proximityOptions` (passed to the scan).
+The server keeps one projection window per process. Both API routes share a snapshot cached for five seconds, and concurrent refresh requests are coalesced. Reads within that interval do not add samples. After expiry, the next read refreshes the snapshot once; idle intervals do not generate synthetic samples. Failed refreshes return errors rather than healthy empty data. The page rejects failed HTTP responses and invalid view envelopes and shows `offline`. Options on `createControlPaneServer`: `projection` (`windowSize`, `clipPercentiles`), `viewOptions` (`thresholds`, `manifest`, `channelWeights`, `minWindowForZscore`), `proximityOptions` (passed to the scan).
 
 ## Document
 

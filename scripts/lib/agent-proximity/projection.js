@@ -231,7 +231,7 @@ function projectPairs(links, options = {}) {
   const minWindow = Number.isFinite(options.minWindowForZscore) ? options.minWindowForZscore : PROJECTION_DEFAULTS.minWindowForZscore;
 
   const raw = list.map(l => channelVector(l.channels));
-  if (window) for (const vec of raw) window.push(vec);
+  if (window && options.sample !== false) for (const vec of raw) window.push(vec);
 
   let stats = null;
   let normalization = 'raw';

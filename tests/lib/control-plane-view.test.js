@@ -264,7 +264,9 @@ function snapshotFor(sessions, extra = {}) {
     const sessions = [session('a'), session('b'), session('c'), session('d')];
     const snapshot = snapshotFor(sessions);
     let builds = 0;
+    let clock = 1000;
     const source = createControlPlaneViewSource({
+      clock: () => clock,
       buildSnapshot: async () => {
         builds += 1;
         return snapshot;
@@ -273,12 +275,58 @@ function snapshotFor(sessions, extra = {}) {
       viewOptions: { now: NOW }
     });
     const first = await source.build();
+    clock += 5000;
     const second = await source.build();
     assert.strictEqual(builds, 2);
     assert.strictEqual(first.projection.window.samples, 6);
     assert.strictEqual(second.projection.window.samples, 12);
     assert.strictEqual(source.window.size, 32);
     assert.strictEqual(second.generatedAt, NOW);
+  });
+
+  await test('view source samples once per interval despite repeated and concurrent reads', async () => {
+    let clock = 1000;
+    let builds = 0;
+    const source = createControlPlaneViewSource({
+      clock: () => clock,
+      buildSnapshot: async () => { builds += 1; return snapshotFor([session('a'), session('b')]); },
+      viewOptions: { now: NOW }
+    });
+    const views = await Promise.all(Array.from({ length: 10 }, () => source.build()));
+    assert.strictEqual(builds, 1);
+    assert.strictEqual(source.window.length, 1);
+    assert.ok(views.every(view => view.generatedAt === views[0].generatedAt));
+    await source.build();
+    await source.build({ thresholds: { ta: 0.2, ra: 1.5 } });
+    assert.strictEqual(source.window.length, 1, 'alternate read options must not resample');
+    clock += 5000;
+    await source.build();
+    assert.strictEqual(builds, 2);
+    assert.strictEqual(source.window.length, 2);
+  });
+
+  await test('view source rejects failed refreshes and retries without false healthy data', async () => {
+    let fail = true;
+    let clock = 0;
+    const source = createControlPlaneViewSource({
+      clock: () => clock,
+      buildSnapshot: async () => {
+        if (fail) throw new Error('snapshot unavailable');
+        return snapshotFor([session('a'), session('b')]);
+      }
+    });
+    await assert.rejects(source.build(), /snapshot unavailable/);
+    assert.strictEqual(source.window.length, 0);
+    fail = false;
+    await source.build();
+    assert.strictEqual(source.window.length, 1);
+    clock += 5000;
+    fail = true;
+    await assert.rejects(source.build(), /snapshot unavailable/);
+    assert.strictEqual(source.window.length, 1);
+    fail = false;
+    await source.build();
+    assert.strictEqual(source.window.length, 2);
   });
 
   console.log(`\nResults: Passed: ${passed}, Failed: ${failed}`);
