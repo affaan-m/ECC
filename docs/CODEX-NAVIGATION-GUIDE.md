@@ -27,10 +27,10 @@ policy belongs in `AGENTS.md` and `CONTRIBUTING.md`.
 | `AGENTS.md` | Cross-harness operating rules | Read before any repo work |
 | `.codex/AGENTS.md` | Codex-only guidance | Read after root instructions |
 | `.codex/config.toml` | Codex sandbox, MCP, profiles, agent roles | Inspect when setup or MCP behavior matters |
-| `.codex/agents/` | Codex multi-agent role layers | Use for explorer, reviewer, and docs researcher roles |
+| `.codex/agents/` | Codex multi-agent role layers | Hand-authored roles plus the generated mirror of `agents/*.md` |
 | `.agents/skills/` | Codex-facing skill copies | Use when Codex needs native skill loading |
 | `skills/` | Canonical skill source | Update first for new workflow knowledge |
-| `agents/` | Claude-style subagent prompts | Use as source material for review lanes and delegation intent |
+| `agents/` | Claude-style subagent prompts | Canonical source; regenerate `.codex/agents/` after editing |
 | `commands/` | Legacy slash-command shims | Update only when command compatibility is needed |
 | `docs/COMMAND-AGENT-MAP.md` | Command to agent and skill relationships | Check before renaming or adding workflow surfaces |
 | `rules/` | Shared coding, security, and workflow rules | Read language or domain rules before implementation |
@@ -48,6 +48,7 @@ Use this quick routing before editing:
 | Add or update a skill | `skills/<name>/`, `.agents/skills/<name>/`, `manifests/`, `agent.yaml` | `node scripts/ci/validate-skills.js`, `node tests/ci/codex-skill-surface.test.js` |
 | Add or update a command | `commands/`, `docs/COMMAND-AGENT-MAP.md`, `COMMANDS-QUICK-REF.md` | `node scripts/ci/validate-commands.js`, `npm run command-registry:check` |
 | Add a Codex setup change | `.codex/`, `scripts/codex/`, `scripts/lib/install-targets/codex-home.js` | `node tests/scripts/codex-hooks.test.js`, `node tests/codex-config.test.js` |
+| Add or update an agent | `agents/<name>.md`, then `npm run codex:agent-roles:write` | `node scripts/ci/validate-agents.js`, `node tests/ci/codex-agent-surface.test.js` |
 | Add installable content | `manifests/`, `scripts/lib/install-*`, `package.json` | `node scripts/ci/validate-install-manifests.js`, targeted install tests |
 | Add docs-only guidance | `docs/`, `README.md`, harness supplement files | Targeted docs test plus `markdownlint` if available |
 | Review a PR | `commands/review-pr.md`, `agents/*reviewer.md`, `agents/pr-test-analyzer.md` | Diff review plus relevant tests |

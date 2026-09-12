@@ -1,3 +1,5 @@
+name = "docs-researcher"
+description = "Verifies APIs, framework behavior, and release-note claims against primary documentation before changes land."
 model = "gpt-5.5"
 model_reasoning_effort = "medium"
 sandbox_mode = "read-only"

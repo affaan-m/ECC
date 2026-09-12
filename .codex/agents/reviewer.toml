@@ -1,3 +1,5 @@
+name = "reviewer"
+description = "Reviews changes like an owner, prioritizing correctness, security, behavioral regressions, and missing tests over style."
 model = "gpt-5.5"
 model_reasoning_effort = "high"
 sandbox_mode = "read-only"

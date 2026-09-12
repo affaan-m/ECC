@@ -1,3 +1,5 @@
+name = "explorer"
+description = "Traces the real execution path and cites files and symbols without proposing fixes unless the parent agent asks."
 model = "gpt-5.5"
 model_reasoning_effort = "medium"
 sandbox_mode = "read-only"
