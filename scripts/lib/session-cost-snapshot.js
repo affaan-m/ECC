@@ -500,6 +500,7 @@ module.exports = {
   COST_SNAPSHOT_SCHEMA_VERSION,
   COST_SNAPSHOT_DIRECTORY,
   COST_LOG_FILENAME,
+  MAX_SCAN_BYTES,
   getCostSnapshotPath,
   isValidCostRow,
   chooseNewerCumulativeRow,

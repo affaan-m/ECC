@@ -8,6 +8,7 @@ const path = require('path');
 const {
   appendSessionCostRow,
   getCostSnapshotPath,
+  MAX_SCAN_BYTES,
   maybePruneSessionCostSnapshots,
   readSessionCostSnapshot,
   refreshSessionCostSnapshot,
@@ -199,7 +200,7 @@ try {
   if (test('bounds oversized unterminated rows and caches the discarded prefix', () => {
     const caseRoot = path.join(root, 'oversized-line');
     fs.mkdirSync(caseRoot, { recursive: true });
-    const oversizedBytes = 32 * 1024 * 1024;
+    const oversizedBytes = 2 * MAX_SCAN_BYTES;
     fs.writeFileSync(
       path.join(caseRoot, 'costs.jsonl'),
       Buffer.alloc(oversizedBytes, 0x78)
