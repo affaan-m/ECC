@@ -929,7 +929,15 @@ function runTests() {
         'git show HEAD:"docs/install guide.md"',
         '/usr/bin/git status --short',
         'git branch --show-current',
-        'git rev-parse --abbrev-ref HEAD'
+        'git rev-parse --abbrev-ref HEAD',
+        'git remote',
+        'git remote -v',
+        'git remote --verbose',
+        'git remote get-url origin',
+        'git remote get-url --push origin',
+        'git remote get-url --push --all origin',
+        'git remote get-url my/remote+name@1',
+        'git remote show -n origin'
       ];
 
       for (const command of commands) {
@@ -956,12 +964,79 @@ function runTests() {
     test('gates non-allowlisted git commands as routine Bash', () => {
       const result = runBashHook({
         tool_name: 'Bash',
-        tool_input: { command: 'git remote -v' }
+        tool_input: { command: 'git fetch' }
       });
       const output = parseOutput(result.stdout);
       assert.ok(output, 'should produce JSON output');
       assert.strictEqual(output.hookSpecificOutput.permissionDecision, 'deny');
       assert.ok(output.hookSpecificOutput.permissionDecisionReason.includes('current user request'));
+    })
+  )
+    passed++;
+  else failed++;
+
+  // --- Test 22b: mutating git remote subcommands still flow through routine Bash gate ---
+  if (
+    test('does not treat mutating git remote subcommands as read-only introspection', () => {
+      const commands = [
+        'git remote add origin https://example.com/repo.git',
+        'git remote remove origin',
+        'git remote rename origin upstream',
+        'git remote set-url origin https://example.com/repo.git',
+        'git remote set-head origin -a',
+        'git remote prune origin',
+        'git remote update'
+      ];
+
+      for (const command of commands) {
+        clearState();
+        const result = runBashHook({
+          tool_name: 'Bash',
+          tool_input: { command }
+        });
+        const output = parseOutput(result.stdout);
+        assert.ok(output, `should produce JSON output for ${command}`);
+        assert.strictEqual(output.hookSpecificOutput.permissionDecision, 'deny', `${command} should still be gated`);
+      }
+    })
+  )
+    passed++;
+  else failed++;
+
+  // --- Test 22c: git remote show without -n still gates (it queries the network) ---
+  if (
+    test('gates git remote show without -n since it contacts the remote', () => {
+      clearState();
+      const result = runBashHook({
+        tool_name: 'Bash',
+        tool_input: { command: 'git remote show origin' }
+      });
+      const output = parseOutput(result.stdout);
+      assert.ok(output, 'should produce JSON output');
+      assert.strictEqual(output.hookSpecificOutput.permissionDecision, 'deny', 'git remote show without -n should still be gated');
+    })
+  )
+    passed++;
+  else failed++;
+
+  // --- Test 22d: malformed git remote get-url forms still gate ---
+  if (
+    test('gates malformed git remote get-url forms (no name, or multiple names)', () => {
+      const commands = [
+        'git remote get-url --push --all',
+        'git remote get-url origin upstream'
+      ];
+
+      for (const command of commands) {
+        clearState();
+        const result = runBashHook({
+          tool_name: 'Bash',
+          tool_input: { command }
+        });
+        const output = parseOutput(result.stdout);
+        assert.ok(output, `should produce JSON output for ${command}`);
+        assert.strictEqual(output.hookSpecificOutput.permissionDecision, 'deny', `${command} should still be gated`);
+      }
     })
   )
     passed++;
