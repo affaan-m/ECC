@@ -46,7 +46,9 @@ try {
     assert.strictEqual(appendSessionCostRow(root, 'session-1', current), true);
     const filePath = getCostSnapshotPath(root, 'session-1');
     assert.deepStrictEqual(readSessionCostSnapshot(root, 'session-1').row, current);
-    assert.strictEqual(fs.statSync(filePath).mode & 0o777, 0o600);
+    if (process.platform !== 'win32') {
+      assert.strictEqual(fs.statSync(filePath).mode & 0o777, 0o600);
+    }
     assert.deepStrictEqual(
       fs.readdirSync(path.dirname(filePath)).filter(name => name.endsWith('.tmp')),
       []
