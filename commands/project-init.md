@@ -1,5 +1,5 @@
 ---
-description: Detect a project's stack and produce a dry-run ECC onboarding plan using the repository's install manifests and stack mappings.
+description: Detect a project's stack and produce a dry-run ECC onboarding plan using the repository's install manifests and stack mappings. Use to onboard ECC into a target project via a reviewable dry-run plan; for general feature discovery and navigation use the ecc-guide skill or /ecc-guide command instead.
 ---
 
 # /project-init

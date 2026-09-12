@@ -40,7 +40,7 @@
     },
     {
       "command": "code-review",
-      "description": "Code review — local uncommitted changes or GitHub PR (pass PR number/URL for PR mode)",
+      "description": "Code review — local uncommitted changes or GitHub PR (pass PR number/URL for PR mode). Use for a step-by-step PRP-style checklist review; for a multi-agent pass use /review-pr, and for the adversarially-verified Workflow pass use /orch-review.",
       "type": "testing",
       "primaryAgents": [],
       "allAgents": [],
@@ -49,7 +49,7 @@
     },
     {
       "command": "cost-report",
-      "description": "Generate a local Claude Code cost report from the ECC cost-tracker metrics log.",
+      "description": "Generate a local Claude Code cost report from the ECC cost-tracker metrics log. Use for a terminal summary or CSV export of tracked spend; the cost-tracking skill covers the same metrics log for on-demand cost/budget questions asked in conversation.",
       "type": "testing",
       "primaryAgents": [],
       "allAgents": [],
@@ -101,7 +101,7 @@
     },
     {
       "command": "ecc-guide",
-      "description": "Navigate ECC's current agents, skills, commands, hooks, install profiles, and docs from the live repository surface.",
+      "description": "Navigate ECC's current agents, skills, commands, hooks, install profiles, and docs from the live repository surface. This is the slash-command entrypoint for that navigation; the ecc-guide skill covers the same map for on-demand use in conversation.",
       "type": "review",
       "primaryAgents": [],
       "allAgents": [],
@@ -325,7 +325,7 @@
     },
     {
       "command": "harness-audit",
-      "description": "Run a deterministic repository harness audit and return a prioritized scorecard.",
+      "description": "Run a deterministic repository harness audit and return a prioritized scorecard. Use for a deterministic overall repo-readiness scorecard; for a security-specific audit use the security-scan command.",
       "type": "testing",
       "primaryAgents": [],
       "allAgents": [],
@@ -361,7 +361,7 @@
     },
     {
       "command": "hookify",
-      "description": "Create hooks to prevent unwanted behaviors from conversation analysis or explicit instructions",
+      "description": "Create hooks to prevent unwanted behaviors from conversation analysis or explicit instructions. Use to generate a new hook rule file from conversation analysis or a described behavior; the hookify-rules skill covers hookify rule syntax and patterns for authoring or editing rules directly.",
       "type": "general",
       "primaryAgents": [],
       "allAgents": [],
@@ -464,7 +464,7 @@
     },
     {
       "command": "learn",
-      "description": "Extract reusable patterns from the current session and save them as candidate skills or guidance.",
+      "description": "Extract reusable patterns from the current session and save them as candidate skills or guidance. Use to review a session on demand and persist an approved skill file; continuous-learning-v2 is a separate, configurable Stop/PreToolUse/PostToolUse hook-observation and instinct-evolution system (background observer disabled by default) and is not an automatic equivalent of this command.",
       "type": "review",
       "primaryAgents": [],
       "allAgents": [],
@@ -473,7 +473,7 @@
     },
     {
       "command": "loop-start",
-      "description": "Start a managed autonomous loop pattern with safety defaults and explicit stop conditions.",
+      "description": "Prepare a managed autonomous loop pattern with safety defaults and explicit stop conditions, then print the commands to launch and monitor it. Use to set up sequential, continuous-pr, rfc-dag, or infinite loop patterns with safety gates before starting one; the continuous-agent-loop skill covers the same pattern selection and quality-gate guidance for in-conversation use (supersedes the deprecated autonomous-loops skill).",
       "type": "testing",
       "primaryAgents": [],
       "allAgents": [],
@@ -491,7 +491,7 @@
     },
     {
       "command": "marketing-campaign",
-      "description": "Plan and execute a full marketing campaign. Accepts a product brief and returns positioning, landing page copy, email sequence, social posts, ad variants, video scripts, and a content calendar. Can also review existing copy for conversion quality.",
+      "description": "Plan and execute a full marketing campaign. Accepts a product brief and returns positioning, landing page copy, email sequence, social posts, ad variants, video scripts, and a content calendar. Can also review existing copy for conversion quality. This is the slash-command entrypoint that delegates to the marketing-agent; prefer the marketing-campaign skill for the same end-to-end workflow in conversation.",
       "type": "testing",
       "primaryAgents": [],
       "allAgents": [],
@@ -538,7 +538,7 @@
     },
     {
       "command": "multi-plan",
-      "description": "Create a multi-model implementation plan without modifying production code.",
+      "description": "Create a multi-model (Codex + Antigravity) implementation plan without modifying production code. Requires the external ccg-workflow runtime, not part of the base ECC install (see Prerequisite below). Use when the user explicitly wants dual-model plan drafts; for a single-model plan with no extra runtime use /plan.",
       "type": "orchestration",
       "primaryAgents": [],
       "allAgents": [],
@@ -619,7 +619,7 @@
     },
     {
       "command": "orch-review",
-      "description": "Run the orch-review native Workflow over a diff (local changes or a GitHub PR) and report blocking vs advisory findings. Surface for the orch-review workflow.",
+      "description": "Run the orch-review native Workflow over a diff (local changes or a GitHub PR) and report blocking vs advisory findings. Surface for the orch-review workflow. Use for a native-Workflow, adversarially-verified multi-dimension review with fan-out and dedup; for the step-by-step checklist pass use /code-review, and for the multi-agent pass use /review-pr.",
       "type": "review",
       "primaryAgents": [],
       "allAgents": [],
@@ -628,7 +628,7 @@
     },
     {
       "command": "plan-canvas",
-      "description": "Open a plan or HTML artifact in the browser Plan Canvas for annotate-and-approve review",
+      "description": "Open a plan or HTML artifact in the browser Plan Canvas for annotate-and-approve review. This is a thin slash-command entrypoint over the plan-canvas skill, which covers the full workflow and rules.",
       "type": "review",
       "primaryAgents": [],
       "allAgents": [],
@@ -648,7 +648,7 @@
     },
     {
       "command": "plan",
-      "description": "Restate requirements, assess risks, and create step-by-step implementation plan. WAIT for user CONFIRM before touching any code.",
+      "description": "Restate requirements, assess risks, and create step-by-step implementation plan. WAIT for user CONFIRM before touching any code. Use for a single-model inline or PRD-driven implementation plan; for a dual-model (Codex/Antigravity) plan use /multi-plan, and for visual annotate-and-approve review of the resulting plan use /plan-canvas.",
       "type": "testing",
       "primaryAgents": [
         "planner"
@@ -681,7 +681,7 @@
     },
     {
       "command": "project-init",
-      "description": "Detect a project's stack and produce a dry-run ECC onboarding plan using the repository's install manifests and stack mappings.",
+      "description": "Detect a project's stack and produce a dry-run ECC onboarding plan using the repository's install manifests and stack mappings. Use to onboard ECC into a target project via a reviewable dry-run plan; for general feature discovery and navigation use the ecc-guide skill or /ecc-guide command instead.",
       "type": "testing",
       "primaryAgents": [],
       "allAgents": [],
@@ -759,7 +759,7 @@
     },
     {
       "command": "prune",
-      "description": "Delete pending instincts older than 30 days that were never promoted",
+      "description": "Delete pending instincts older than 30 days that were never promoted. Thin CLI wrapper for continuous-learning-v2's instinct-cli.py prune command; use to clean up stale pending instincts that were never reviewed or promoted.",
       "type": "review",
       "primaryAgents": [],
       "allAgents": [],
@@ -862,7 +862,7 @@
     },
     {
       "command": "review-pr",
-      "description": "Comprehensive PR review using specialized agents",
+      "description": "Comprehensive PR review using specialized agents (code-reviewer, comment-analyzer, pr-test-analyzer, silent-failure-hunter, type-design-analyzer, code-simplifier). Use for a multi-agent PR review pass; for the adversarially-verified Workflow pass use /orch-review, and for the standalone step-by-step checklist review use /code-review.",
       "type": "testing",
       "primaryAgents": [],
       "allAgents": [],
@@ -914,7 +914,7 @@
     },
     {
       "command": "santa-loop",
-      "description": "Adversarial dual-review convergence loop — two independent model reviewers must both approve before code ships.",
+      "description": "Adversarial dual-review convergence loop — two independent model reviewers must both approve before code ships. Use for the CLI-driven version of this loop; wraps the santa-method skill.",
       "type": "review",
       "primaryAgents": [],
       "allAgents": [],
@@ -932,7 +932,7 @@
     },
     {
       "command": "security-scan",
-      "description": "Run AgentShield against agent, hook, MCP, permission, and secret surfaces.",
+      "description": "Run AgentShield against agent, hook, MCP, permission, and secret surfaces. This is the slash-command entrypoint for that audit; prefer the security-scan skill for the same AgentShield audit in conversation.",
       "type": "review",
       "primaryAgents": [
         "security-reviewer"
@@ -965,7 +965,7 @@
     },
     {
       "command": "skill-create",
-      "description": "Analyze local git history to extract coding patterns and generate SKILL.md files. Local version of the Skill Creator GitHub App.",
+      "description": "Analyze local git history to extract coding patterns and generate SKILL.md files. Local version of the Skill Creator GitHub App. Use to generate new skills from local git history on demand; check the skill-scout skill first to avoid duplicating an existing local, marketplace, or GitHub skill.",
       "type": "testing",
       "primaryAgents": [],
       "allAgents": [],
@@ -974,7 +974,7 @@
     },
     {
       "command": "skill-health",
-      "description": "Show skill portfolio health dashboard with charts and analytics",
+      "description": "Show skill portfolio health dashboard with charts and analytics. Use for the quantitative usage/success-rate dashboard; for a qualitative compliance or quality audit use the skill-stocktake skill.",
       "type": "review",
       "primaryAgents": [],
       "allAgents": [],

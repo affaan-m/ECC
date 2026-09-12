@@ -1,5 +1,5 @@
 ---
-description: Plan and execute a full marketing campaign. Accepts a product brief and returns positioning, landing page copy, email sequence, social posts, ad variants, video scripts, and a content calendar. Can also review existing copy for conversion quality.
+description: Plan and execute a full marketing campaign. Accepts a product brief and returns positioning, landing page copy, email sequence, social posts, ad variants, video scripts, and a content calendar. Can also review existing copy for conversion quality. This is the slash-command entrypoint that delegates to the marketing-agent; prefer the marketing-campaign skill for the same end-to-end workflow in conversation.
 allowed-tools: ["Read", "Grep", "Glob", "WebSearch", "WebFetch", "Write"]
 ---
 

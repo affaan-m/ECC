@@ -1,5 +1,5 @@
 ---
-description: Run a deterministic repository harness audit and return a prioritized scorecard.
+description: Run a deterministic repository harness audit and return a prioritized scorecard. Use for a deterministic overall repo-readiness scorecard; for a security-specific audit use the security-scan command.
 ---
 
 # Harness Audit Command

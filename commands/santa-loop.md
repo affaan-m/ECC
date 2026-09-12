@@ -1,5 +1,5 @@
 ---
-description: Adversarial dual-review convergence loop — two independent model reviewers must both approve before code ships.
+description: Adversarial dual-review convergence loop — two independent model reviewers must both approve before code ships. Use for the CLI-driven version of this loop; wraps the santa-method skill.
 ---
 
 # Santa Loop
