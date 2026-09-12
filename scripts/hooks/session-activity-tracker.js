@@ -11,6 +11,7 @@
 const crypto = require('crypto');
 const path = require('path');
 const { spawnSync } = require('child_process');
+const { sanitizeSessionId } = require('../lib/session-bridge');
 const {
   appendFile,
   getClaudeDir,
@@ -561,13 +562,28 @@ function summarizeOutput(toolOutput) {
 }
 
 function buildActivityRow(input, env = process.env) {
-  const hookEvent = String(env.CLAUDE_HOOK_EVENT_NAME || '').trim();
+  // Same env-var-reliance bug as the session id below: Claude Code doesn't
+  // set CLAUDE_HOOK_EVENT_NAME for hook subprocesses either. Real hook stdin
+  // payloads carry hook_event_name as a JSON field -- prefer that.
+  const hookEvent = String(
+    input?.hook_event_name || env.CLAUDE_HOOK_EVENT_NAME || ''
+  ).trim();
   if (hookEvent && hookEvent !== 'PostToolUse') {
     return null;
   }
 
   const toolName = String(input?.tool_name || '').trim();
-  const sessionId = String(env.ECC_SESSION_ID || env.CLAUDE_SESSION_ID || '').trim();
+  // Claude Code does not set CLAUDE_SESSION_ID as an environment variable for
+  // hook subprocesses -- the session id is only available in the hook's own
+  // stdin JSON payload. Prefer that; keep the env vars as a fallback for any
+  // caller that does set them. Sanitized the same way as the sibling hooks
+  // (cost-tracker.js, ecc-context-monitor.js, ecc-metrics-bridge.js,
+  // gateguard-fact-force.js) that already use this exact fallback order.
+  const sessionId =
+    sanitizeSessionId(input?.session_id) ||
+    sanitizeSessionId(env.ECC_SESSION_ID) ||
+    sanitizeSessionId(env.CLAUDE_SESSION_ID) ||
+    '';
   if (!toolName || !sessionId) {
     return null;
   }
