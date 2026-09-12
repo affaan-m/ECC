@@ -1521,6 +1521,89 @@ function runTests() {
   else failed++;
 
   if (
+    test('denies destructive SQL passed to a database client in a quoted argument', () => {
+      expectDestructiveDeny('psql -c "drop table users"', 'psql -c drop table');
+      expectDestructiveDeny("psql -c 'truncate audit_log'", 'psql -c truncate');
+      expectDestructiveDeny("psql --command='truncate audit_log'", 'psql --command= truncate');
+      expectDestructiveDeny('mysql -e "delete from sessions"', 'mysql -e delete from');
+      expectDestructiveDeny('sqlite3 app.db "drop table users"', 'sqlite3 positional drop table');
+      expectDestructiveDeny('/usr/local/bin/psql -h db -U app -c "DROP TABLE users"', 'psql with path and flags');
+    })
+  )
+    passed++;
+  else failed++;
+
+  if (
+    test('denies destructive SQL to a database client behind a shell wrapper or chain', () => {
+      expectDestructiveDeny('sh -c "psql -c \'drop table users\'"', 'psql inside sh -c');
+      expectDestructiveDeny('bash -lc \'psql -c "drop table users"\'', 'psql inside bash -lc');
+      expectDestructiveDeny('sh -ec \'mysql -e "delete from sessions"\'', 'mysql inside sh -ec');
+      expectDestructiveDeny('echo migrating && mysql -e "truncate sessions"', 'mysql in second segment');
+    })
+  )
+    passed++;
+  else failed++;
+
+  if (
+    test('denies destructive SQL to a database client behind an execution prefix', () => {
+      expectDestructiveDeny('env PGHOST=db psql -c "drop table users"', 'env assignment + psql');
+      expectDestructiveDeny('env psql -c "drop table users"', 'bare env + psql');
+      expectDestructiveDeny('sudo -u postgres psql -c "truncate audit_log"', 'sudo -u + psql');
+      expectDestructiveDeny('command mysql -e "delete from sessions"', 'command + mysql');
+      expectDestructiveDeny('nice -n 10 psql -c "drop table users"', 'nice -n + psql');
+      expectDestructiveDeny('timeout 30 mysql -e "truncate sessions"', 'timeout DURATION + mysql');
+      expectDestructiveDeny('sudo env PGHOST=db psql -c "drop table users"', 'stacked prefixes');
+      expectDestructiveDeny('env -S \'psql -c "drop table users"\'', 'env -S command string');
+      expectDestructiveDeny('env --split-string=\'mysql -e "delete from sessions"\'', 'env --split-string= command string');
+      expectDestructiveDeny('env time -f "%E" psql -c "drop table users"', 'GNU time -f FORMAT + psql');
+      expectDestructiveDeny('/usr/bin/time -o /tmp/t.log psql -c "truncate audit_log"', 'GNU time -o FILE + psql');
+      expectDestructiveDeny(`${'env '.repeat(12)}psql -c "drop table users"`, 'twelve stacked prefixes');
+      expectDestructiveDeny('runuser -u postgres -c \'psql -c "drop table users"\'', 'runuser -c command string');
+      expectDestructiveDeny('runuser -u postgres --command=\'psql -c "truncate audit_log"\'', 'runuser --command= command string');
+      expectDestructiveDeny('runuser -u postgres --session-command \'mysql -e "delete from sessions"\'', 'runuser --session-command');
+      expectDestructiveDeny('runuser -u postgres -s /usr/local/bin/fish -c \'psql -c "drop table users"\'', 'runuser -s SHELL -c command string');
+      expectDestructiveDeny('runuser --shell=/usr/local/bin/fish -u postgres -c \'psql -c "drop table users"\'', 'runuser --shell= -c command string');
+      expectDestructiveDeny(
+        `runuser --shell /usr/local/bin/fish -u postgres -c 'psql -c "drop table users"'`,
+        'runuser --shell separate value + -c command string'
+      );
+      expectDestructiveDeny('chroot --userspec nobody:nogroup / psql -c "drop table users"', 'chroot --userspec VALUE + psql');
+      expectDestructiveDeny('chroot --made-up-flag value / psql -c "drop table users"', 'unmodelled wrapper option, fail closed');
+    })
+  )
+    passed++;
+  else failed++;
+
+  if (
+    test('allows non-destructive SQL and SQL phrases outside a database client', () => {
+      expectAllow('psql -c "select count(*) from users"', 'psql select');
+      expectAllow('psql -c "delete_from_queue()"', 'psql identifier, not a phrase');
+      expectAllow('git commit -m "refactor: drop table indirection"', 'drop table in commit message');
+      expectAllow('echo "psql -c \'drop table users\'"', 'echo of a SQL command string');
+      expectAllow('sqlite3 truncate.db "select 1"', 'filename that contains a SQL word');
+      expectAllow('psql -f truncate.sql', 'script filename via -f');
+      expectAllow('psql --file=./sql/truncate.sql', 'script path via --file=');
+      expectAllow('psql -f "drop table.sql"', 'script filename with a space via -f');
+      expectAllow('psql --file "drop table.sql"', 'script filename with a space via --file');
+      expectAllow('chroot --userspec nobody:nogroup / ls -la', 'chroot --userspec with a harmless command');
+      expectAllow('env PGHOST=db psql -c "select 1"', 'prefixed non-destructive SQL');
+    })
+  )
+    passed++;
+  else failed++;
+
+  if (
+    test('denies a script plus a destructive statement and fails closed past the nesting limit', () => {
+      expectDestructiveDeny('psql -f schema.sql -c "drop table users"', 'script file plus destructive -c');
+      const { isDestructiveQuoteAware } = require(hookScript);
+      assert.strictEqual(isDestructiveQuoteAware('ls -la', 5), true, 'sixth nesting level is not inspected and fails closed');
+      assert.strictEqual(isDestructiveQuoteAware('ls -la', 4), false, 'fifth nesting level is still inspected');
+    })
+  )
+    passed++;
+  else failed++;
+
+  if (
     test('allows destructive SQL prose inside a quoted heredoc', () => {
       expectAllow(
         [
