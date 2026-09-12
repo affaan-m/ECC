@@ -19,7 +19,7 @@
 ![Perl](https://img.shields.io/badge/-Perl-39457E?logo=perl&logoColor=white)
 ![Markdown](https://img.shields.io/badge/-Markdown-000000?logo=markdown&logoColor=white)
 
-> **182K+ ستارے** | **28K+ فورکس** | **170+ تعاون کار** | **12+ زبانی ماحولیاتی نظام** | **Anthropic Hackathon فاتح**
+> **248K+ ستارے** | **37.4K+ فورکس** | **170+ تعاون کار** | **12+ زبانی ماحولیاتی نظام** | **Anthropic Hackathon فاتح**
 
 ---
 

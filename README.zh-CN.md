@@ -15,7 +15,7 @@
 ![Perl](https://img.shields.io/badge/-Perl-39457E?logo=perl&logoColor=white)
 ![Markdown](https://img.shields.io/badge/-Markdown-000000?logo=markdown&logoColor=white)
 
-> **140K+ stars** | **21K+ forks** | **170+ 贡献者** | **12+ 语言系统** | **Anthropic黑客松获胜者**
+> **248K+ stars** | **37.4K+ forks** | **170+ 贡献者** | **12+ 语言系统** | **Anthropic黑客松获胜者**
 
 ---
 

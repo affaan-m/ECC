@@ -19,7 +19,7 @@
 ![Perl](https://img.shields.io/badge/-Perl-39457E?logo=perl&logoColor=white)
 ![Markdown](https://img.shields.io/badge/-Markdown-000000?logo=markdown&logoColor=white)
 
-> **182K+ estrellas** | **28K+ forks** | **170+ contribuidores** | **12+ ecosistemas de lenguajes** | **Flujos de trabajo de agentes multi-harness**
+> **248K+ estrellas** | **37.4K+ forks** | **170+ contribuidores** | **12+ ecosistemas de lenguajes** | **Flujos de trabajo de agentes multi-harness**
 
 ---
 
