@@ -271,8 +271,11 @@ function runTests() {
         appendSessionCostRow(metricsDir, 'S1', snapshotRow);
 
         fs.readSync = function measuredRead(descriptor, buffer, offset, length, position) {
-          bytesReadFromCostLog += length;
-          return originalReadSync.call(this, descriptor, buffer, offset, length, position);
+          const bytesRead = originalReadSync.call(
+            this, descriptor, buffer, offset, length, position
+          );
+          if (Number.isSafeInteger(position)) bytesReadFromCostLog += bytesRead;
+          return bytesRead;
         };
 
         const result = readSessionCost('S1');
@@ -329,8 +332,11 @@ function runTests() {
         const originalReadSync = fs.readSync;
         let bytesReadFromCostLog = 0;
         fs.readSync = function measuredRead(descriptor, buffer, offset, length, position) {
-          bytesReadFromCostLog += length;
-          return originalReadSync.call(this, descriptor, buffer, offset, length, position);
+          const bytesRead = originalReadSync.call(
+            this, descriptor, buffer, offset, length, position
+          );
+          if (Number.isSafeInteger(position)) bytesReadFromCostLog += bytesRead;
+          return bytesRead;
         };
         try {
           assert.deepStrictEqual(readSessionCost('S1'), { totalCost: 1, totalIn: 100, totalOut: 50 });
