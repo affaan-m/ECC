@@ -251,6 +251,96 @@ if (test('allows --no-verbose (not a prefix of --no-verify)', () => {
   assert.strictEqual(r.code, 0, `expected exit 0, got ${r.code}: ${r.stderr}`);
 })) passed++; else failed++;
 
+// --- A git command line quoted as an argument to another program is data ---
+
+if (test('allows a quoted git command line passed as an argument to another program', () => {
+  for (const command of [
+    "node /tmp/cli.js 'git commit --no-verify -m x'",
+    'node /tmp/cli.js "git push --no-verify"',
+    "printf '%s' 'git commit --no-verify -m x' | node /tmp/x.js",
+    'python3 -c "print(\'git commit --no-verify\')"',
+    "grep -n 'git commit --no-verify' docs/hooks.md",
+  ]) {
+    const r = runHook({ tool_input: { command } });
+    assert.strictEqual(r.code, 0, `expected exit 0 for ${command}, got ${r.code}: ${r.stderr}`);
+  }
+})) passed++; else failed++;
+
+if (test('blocks a quoted git command line behind a process prefix or another shell', () => {
+  for (const command of [
+    "setsid sh -c 'git commit --no-verify -m x'",
+    'csh -c "git commit --no-verify -m x"',
+    "tcsh -c 'git push --no-verify'",
+    "stdbuf -oL bash -c 'git commit -n -m x'",
+    "taskset -c 0 sh -c 'git push --no-verify'",
+    "unshare -n sh -c 'git commit --no-verify -m x'",
+    "runuser -u deploy -- sh -c 'git push --no-verify'",
+    "npx some-runner 'git commit --no-verify -m x'",
+  ]) {
+    const r = runHook({ tool_input: { command } });
+    assert.strictEqual(r.code, 2, `expected exit 2 for ${command}, got ${r.code}`);
+  }
+})) passed++; else failed++;
+
+if (test('blocks a git command substituted inside a double-quoted data argument', () => {
+  for (const command of [
+    'echo "$(git commit --no-verify -m x)"',
+    'echo "$(git push --no-verify)"',
+    'printf "%s" "`git push --no-verify`"',
+    'node /tmp/cli.js "result: $(git commit -n -m x)"',
+  ]) {
+    const r = runHook({ tool_input: { command } });
+    assert.strictEqual(r.code, 2, `expected exit 2 for ${command}, got ${r.code}`);
+  }
+})) passed++; else failed++;
+
+if (test('blocks a quoted git command line inside a compound command or a nested substitution', () => {
+  for (const command of [
+    "( sh -c 'git commit --no-verify -m x' )",
+    "{ sh -c 'git push --no-verify'; }",
+    "if sh -c 'git commit --no-verify -m x'; then echo ok; fi",
+    "for f in a b; do sh -c 'git commit --no-verify -m x'; done",
+    'echo "$(echo "x"; git commit --no-verify -m x)"',
+    'echo "before $(sh -c \'git commit --no-verify -m x\') after"',
+    'echo "$(echo "$(git push --no-verify)")"',
+    "FOO=\"pre$(echo x)post\" sh -c 'git commit --no-verify -m x'",
+    "PREFIX=\"`date`\" sh -c 'git push --no-verify'",
+    "sh -c 'git push --no-verify'; echo done",
+    "sh -c 'git push --no-verify' && echo done",
+    'sh -c "git commit --no-verify -m x" || true',
+  ]) {
+    const r = runHook({ tool_input: { command } });
+    assert.strictEqual(r.code, 2, `expected exit 2 for ${command}, got ${r.code}`);
+  }
+})) passed++; else failed++;
+
+if (test('stays fast on a large quoted data payload full of git tokens', () => {
+  const payload = 'git commit --no-verify -m x '.repeat(12000);
+  const command = `node /tmp/cli.js '${payload}'`;
+  assert.ok(command.length > 300000, 'payload should exceed 300 KB');
+  const started = Date.now();
+  const r = runHook({ tool_input: { command } });
+  const elapsed = Date.now() - started;
+  assert.strictEqual(r.code, 0, `expected exit 0, got ${r.code}: ${r.stderr}`);
+  assert.ok(elapsed < 5000, `hook took ${elapsed}ms on a 300 KB quoted payload`);
+})) passed++; else failed++;
+
+if (test('still blocks a quoted git command line handed to a shell or command wrapper', () => {
+  for (const command of [
+    'sh -c "git commit --no-verify -m x"',
+    "bash -lc 'git push --no-verify'",
+    'sudo git commit --no-verify -m x',
+    "xargs -0 git commit --no-verify",
+    'env FOO=1 git commit -n -m x',
+    "eval 'git commit --no-verify -m x'",
+    'node /tmp/cli.js "data" && git commit --no-verify -m x',
+    "echo 'git commit --no-verify' ; git push --no-verify",
+  ]) {
+    const r = runHook({ tool_input: { command } });
+    assert.strictEqual(r.code, 2, `expected exit 2 for ${command}, got ${r.code}`);
+  }
+})) passed++; else failed++;
+
 console.log('─'.repeat(50));
 console.log(`Passed: ${passed}  Failed: ${failed}`);
 
