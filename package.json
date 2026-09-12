@@ -90,6 +90,7 @@
     "plugins/ecc/",
     "rules/",
     "schemas/",
+    "scripts/agent-convert.js",
     "scripts/catalog.js",
     "scripts/ci/scan-supply-chain-iocs.js",
     "scripts/ci/supply-chain-advisory-sources.js",

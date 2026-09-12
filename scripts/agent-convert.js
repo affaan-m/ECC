@@ -1,0 +1,177 @@
+#!/usr/bin/env node
+'use strict';
+
+/**
+ * ECC Agent IR — converter CLI.
+ *
+ * Converts ECC's canonical agents from one harness format to another. v1
+ * supports a single direction: `claude -> pi`. Future emitters (cursor,
+ * opencode, gemini, codex, zed) plug into the same IR.
+ *
+ * Usage:
+ *   node scripts/agent-convert.js --check
+ *   node scripts/agent-convert.js --from claude --to pi [--json]
+ *   node scripts/agent-convert.js --from claude --to pi --out <dir> [--dry-run]
+ *
+ * When `--json` is set, stdout carries only the machine-readable summary;
+ * progress lines (wrote / would-write) go to stderr so automation can parse
+ * stdout as JSON.
+ */
+
+const fs = require('fs');
+const path = require('path');
+const { parseAllAgents } = require('./lib/agent-ir');
+const { emitAllPiAgents } = require('./lib/agent-emit-pi');
+const { emitAllCursorAgents } = require('./lib/agent-emit-cursor');
+const { emitAllOpenCodeAgents } = require('./lib/agent-emit-opencode');
+
+const SUPPORTED = { claude: ['pi', 'cursor', 'opencode'] };
+
+const EMITTERS = {
+  pi: emitAllPiAgents,
+  cursor: emitAllCursorAgents,
+  opencode: emitAllOpenCodeAgents,
+};
+
+function requireValue(argv, index, flag) {
+  const value = argv[index + 1];
+  if (value === undefined || value === '' || value.startsWith('--')) {
+    throw new Error(`missing value for ${flag}`);
+  }
+  return value;
+}
+
+function parseArgs(argv) {
+  let args = { from: 'claude', to: 'pi', json: false, dryRun: false, check: false, out: null };
+  for (let i = 0; i < argv.length; i++) {
+    const a = argv[i];
+    if (a === '--from') {
+      args = { ...args, from: requireValue(argv, i, '--from') };
+      i++;
+    } else if (a === '--to') {
+      args = { ...args, to: requireValue(argv, i, '--to') };
+      i++;
+    } else if (a === '--json') {
+      args = { ...args, json: true };
+    } else if (a === '--dry-run') {
+      args = { ...args, dryRun: true };
+    } else if (a === '--check') {
+      args = { ...args, check: true };
+    } else if (a === '--out') {
+      args = { ...args, out: requireValue(argv, i, '--out') };
+      i++;
+    } else if (a === '--help' || a === '-h') {
+      args = { ...args, help: true };
+    } else {
+      throw new Error(`unknown argument: ${a}`);
+    }
+  }
+  return args;
+}
+
+function showHelp() {
+  console.log(`ECC Agent IR converter (v1)
+
+Usage:
+  node scripts/agent-convert.js --check
+      Parse and validate every agent under agents/ against the IR schema.
+
+  node scripts/agent-convert.js --from claude --to pi [--json]
+      Emit all agents as Pi subagent definitions and print a summary.
+
+  node scripts/agent-convert.js --from claude --to pi --out <dir> [--dry-run]
+      Write emitted Pi agent files (<dir>/<id>.md). --dry-run prints only.
+
+Options:
+  --from <claude>   Source harness (v1: claude only)
+  --to <pi>         Target harness (v1: pi only)
+  --json            Machine-readable summary on stdout
+  --out <dir>       Write emitted files to a directory
+  --dry-run         With --out, report writes without writing
+  --check           Validate parsing only (no emit)
+`);
+}
+
+function main() {
+  let args;
+  try {
+    args = parseArgs(process.argv.slice(2));
+  } catch (err) {
+    console.error(`error: ${err.message}`);
+    process.exit(2);
+  }
+  if (args.help) {
+    showHelp();
+    process.exit(0);
+  }
+
+  if (!SUPPORTED[args.from] || !SUPPORTED[args.from].includes(args.to)) {
+    console.error(`error: unsupported conversion ${args.from} -> ${args.to}`);
+    console.error(`supported: ${Object.entries(SUPPORTED).map(([f, ts]) => `${f} -> ${ts.join(',')}`).join('; ')}`);
+    process.exit(2);
+  }
+
+  let irs;
+  try {
+    irs = parseAllAgents();
+  } catch (err) {
+    console.error(`error: ${err.message}`);
+    process.exit(1);
+  }
+
+  if (args.check) {
+    if (args.json) {
+      console.log(JSON.stringify({ schema: 'ecc.agent-ir.v1', checked: irs.length, ok: true }, null, 2));
+    } else {
+      console.log(`OK: ${irs.length} agents parsed and validated against ecc.agent-ir.v1`);
+    }
+    process.exit(0);
+  }
+
+  const { results, warnings, notes } = EMITTERS[args.to](irs);
+
+  // Progress lines must never corrupt machine-readable stdout.
+  const progress = msg => {
+    if (args.json) process.stderr.write(`${msg}\n`);
+    else console.log(msg);
+  };
+
+  if (args.out) {
+    const dir = path.resolve(args.out);
+    if (!args.dryRun) fs.mkdirSync(dir, { recursive: true });
+    for (const r of results) {
+      const target = path.join(dir, `${r.id}.md`);
+      if (args.dryRun) {
+        progress(`[dry-run] would write ${target}`);
+      } else {
+        fs.writeFileSync(target, r.markdown);
+        progress(`wrote ${target}`);
+      }
+    }
+  }
+
+  const summary = {
+    schema: 'ecc.agent-ir.v1',
+    from: args.from,
+    to: args.to,
+    converted: results.length,
+    warnings: warnings.length,
+    warningsDetail: warnings,
+    notes,
+  };
+
+  if (args.json) {
+    console.log(JSON.stringify(summary, null, 2));
+  } else {
+    console.log(`converted ${results.length} agents (${args.from} -> ${args.to})`);
+    for (const note of notes) {
+      console.log(`  ${note}`);
+    }
+    if (warnings.length) {
+      console.log(`\n${warnings.length} actionable warning(s):`);
+      for (const w of warnings) console.log(`  - ${w}`);
+    }
+  }
+}
+
+main();
