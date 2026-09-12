@@ -37,7 +37,7 @@ Targets:
   claude       (default) - Install ECC into ~/.claude/ with managed rules under rules/ecc and flat skills under skills/
   claude-project - Install ECC into ./.claude/ (per-project) with managed rules under rules/ecc and flat skills under skills/
   cursor       - Install rules, hooks, and bundled Cursor configs to ./.cursor/
-  antigravity  - Install rules, workflows, skills, and agents to ./.agents/
+  antigravity  - Install rules, workflows, skills, agents, and opt-in native security hooks to ./.agents/
   codex        - Install shared agents/config into ~/.codex/
   gemini       - Install project-local Gemini config into ./.gemini/
   opencode     - Install into OPENCODE_CONFIG_DIR, XDG_CONFIG_HOME/opencode, or ~/.config/opencode/

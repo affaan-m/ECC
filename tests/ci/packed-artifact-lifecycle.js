@@ -377,10 +377,13 @@ function findDriftCandidate(state, cursorRoot) {
 }
 
 function runTargetSmoke(options) {
+  const moduleIds = options.target === 'antigravity'
+    ? 'workflow-quality,hooks-runtime'
+    : 'workflow-quality';
   parseJsonOutput(
     options.runCli([
       'install',
-      '--modules', 'workflow-quality',
+      '--modules', moduleIds,
       '--target', options.target,
       '--enable-hooks',
       '--json',
@@ -399,6 +402,32 @@ function runTargetSmoke(options) {
     fs.existsSync(installedSkillPath),
     `${options.target} must install skill-comply from the packed archive`
   );
+  if (options.target === 'antigravity') {
+    const hooksPath = path.join(options.targetRoot, 'hooks.json');
+    const installedAdapter = path.join(
+      options.targetRoot, 'ecc-hooks', 'hooks', 'antigravity-security.js'
+    );
+    assert.ok(fs.existsSync(hooksPath), 'Antigravity hooks.json must be installed');
+    assert.ok(fs.existsSync(installedAdapter), 'Antigravity security adapter must be installed');
+    const hookResult = spawnSync(process.execPath, [installedAdapter], {
+      cwd: path.dirname(options.targetRoot),
+      input: JSON.stringify({
+        toolCall: { name: 'run_command', args: { CommandLine: 'git push --no-verify' } },
+        conversationId: 'packed-antigravity-hook',
+        workspacePaths: [path.dirname(options.targetRoot)],
+      }),
+      encoding: 'utf8',
+      env: {
+        ...process.env,
+        ECC_HOOKS_ENABLED: '1',
+        ECC_HOOK_PROFILE: 'standard',
+        ECC_DISABLED_HOOKS: '',
+        GATEGUARD_BASH_ROUTINE_DISABLED: '1',
+      },
+    });
+    assert.strictEqual(hookResult.status, 0, hookResult.stderr);
+    assert.strictEqual(JSON.parse(hookResult.stdout).decision, 'deny');
+  }
 
   const doctor = parseJsonOutput(
     options.runCli(['doctor', '--target', options.target, '--json']),
@@ -416,6 +445,16 @@ function runTargetSmoke(options) {
     !fs.existsSync(installedSkillPath),
     `${options.target} uninstall must remove the installed skill`
   );
+  if (options.target === 'antigravity') {
+    assert.ok(
+      !fs.existsSync(path.join(options.targetRoot, 'ecc-hooks')),
+      'Antigravity uninstall must remove the managed hook runtime'
+    );
+    const remainingHooks = fs.existsSync(path.join(options.targetRoot, 'hooks.json'))
+      ? JSON.parse(fs.readFileSync(path.join(options.targetRoot, 'hooks.json'), 'utf8'))
+      : {};
+    assert.ok(!Object.hasOwn(remainingHooks, 'ecc-security-guard'));
+  }
 }
 
 function runLifecycle(options) {

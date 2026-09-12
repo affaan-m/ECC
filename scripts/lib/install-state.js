@@ -1,10 +1,17 @@
 const fs = require('fs');
 const path = require('path');
+const { writeFileAtomic } = require('./atomic-write');
 const {
   CLAUDE_HOOKS_CONFIG_PATH,
   getClaudeSettingsPath,
   validateRecordedManagedHooks,
 } = require('./install/claude-settings');
+const {
+  assertAntigravityHooksPath,
+  getAntigravityRuntimePath,
+  validateHookGroups,
+} = require('./install/antigravity-hooks');
+const { sameFileIdentity } = require('./install/claude-settings-lock');
 
 // Dependency-free, self-contained validation. The installer closure must not
 // require any non-builtin package (enterprise supply-chain vetting: the vetted
@@ -214,6 +221,50 @@ function createFallbackValidator() {
         ) {
           pushError(`${instancePath}/contentSha256`, 'must be a SHA-256 hex digest');
         }
+        if (
+          state.target
+          && state.target.target === 'antigravity'
+          && operation.kind === 'copy-file'
+          && (
+            operation.moduleId === 'hooks-runtime'
+            || (
+              isNonEmptyString(state.target.root)
+              && isNonEmptyString(operation.destinationPath)
+              && path.relative(
+                path.resolve(state.target.root, 'ecc-hooks'),
+                path.resolve(operation.destinationPath)
+              ).split(path.sep)[0] !== '..'
+            )
+          )
+        ) {
+          const expectedRuntimePath = getAntigravityRuntimePath(
+            state.target.root,
+            operation.sourceRelativePath
+          );
+          const actualRuntimePath = path.resolve(operation.destinationPath);
+          const runtimePathMatches = expectedRuntimePath && (process.platform === 'win32'
+            ? actualRuntimePath.toLowerCase() === path.resolve(expectedRuntimePath).toLowerCase()
+            : actualRuntimePath === path.resolve(expectedRuntimePath));
+          if (operation.moduleId !== 'hooks-runtime' || !runtimePathMatches) {
+            pushError(
+              `${instancePath}/destinationPath`,
+              'must match an approved Antigravity hook runtime source and destination'
+            );
+          }
+        }
+        if (
+          state.target
+          && state.target.target === 'antigravity'
+          && isNonEmptyString(state.target.root)
+          && isNonEmptyString(operation.destinationPath)
+          && path.basename(operation.destinationPath).toLowerCase() === 'hooks.json'
+          && operation.kind !== 'update-antigravity-hooks'
+        ) {
+          pushError(
+            `${instancePath}/kind`,
+            'must use update-antigravity-hooks for the canonical Antigravity hooks path'
+          );
+        }
         if (operation.kind === 'update-claude-settings') {
           if (!['claude', 'claude-project'].includes(state.target && state.target.target)) {
             pushError(`${instancePath}/kind`, 'is only valid for Claude targets');
@@ -244,6 +295,36 @@ function createFallbackValidator() {
             validateRecordedManagedHooks(operation.managedHooks);
           } catch (error) {
             pushError(`${instancePath}/managedHooks`, error.message);
+          }
+        }
+        if (operation.kind === 'update-antigravity-hooks') {
+          if (state.target && state.target.target !== 'antigravity') {
+            pushError(`${instancePath}/kind`, 'is only valid for the Antigravity target');
+          }
+          if (operation.moduleId !== 'hooks-runtime') {
+            pushError(`${instancePath}/moduleId`, 'must equal hooks-runtime');
+          }
+          if (String(operation.sourceRelativePath).replace(/\\/g, '/') !== 'scripts/hooks/antigravity-hooks.json') {
+            pushError(`${instancePath}/sourceRelativePath`, 'must equal scripts/hooks/antigravity-hooks.json');
+          }
+          if (
+            isNonEmptyString(state.target && state.target.root)
+            && isNonEmptyString(operation.destinationPath)
+          ) {
+            try {
+              assertAntigravityHooksPath(operation.destinationPath, state.target.root);
+            } catch (error) {
+              pushError(`${instancePath}/destinationPath`, error.message);
+            }
+          }
+          try {
+            validateHookGroups(operation.managedHookGroups, 'managed Antigravity hook groups');
+            const groupNames = Object.keys(operation.managedHookGroups || {});
+            if (groupNames.length !== 1 || groupNames[0] !== 'ecc-security-guard') {
+              throw new Error('managed Antigravity hook groups must contain only ecc-security-guard');
+            }
+          } catch (error) {
+            pushError(`${instancePath}/managedHookGroups`, error.message);
           }
         }
       }
@@ -341,8 +422,27 @@ function readInstallState(filePath) {
 
 function writeInstallState(filePath, state) {
   assertValidInstallState(state, filePath);
-  fs.mkdirSync(path.dirname(filePath), { recursive: true });
-  fs.writeFileSync(filePath, `${JSON.stringify(state, null, 2)}\n`);
+  const parentPath = path.dirname(path.resolve(filePath));
+  fs.mkdirSync(parentPath, { recursive: true });
+  const parentStats = fs.lstatSync(parentPath, { bigint: true });
+  if (!parentStats.isDirectory() || parentStats.isSymbolicLink()) {
+    throw new Error(`Refusing to write install-state through an unsafe parent: ${parentPath}`);
+  }
+  const validateParent = () => {
+    const current = fs.lstatSync(parentPath, { bigint: true });
+    if (
+      !current.isDirectory()
+      || current.isSymbolicLink()
+      || !sameFileIdentity(current, parentStats)
+    ) {
+      throw new Error(`Install-state parent directory changed: ${parentPath}`);
+    }
+  };
+  writeFileAtomic(filePath, `${JSON.stringify(state, null, 2)}\n`, {
+    encoding: 'utf8',
+    mode: 0o600,
+    validateParent,
+  });
   return state;
 }
 

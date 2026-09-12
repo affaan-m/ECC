@@ -158,6 +158,19 @@ function materializeScaffoldOperation(sourceRoot, operation) {
     return materializeClaudeSettingsOperation(sourceRoot, operation);
   }
 
+  if (operation.kind === 'update-antigravity-hooks') {
+    const sourcePath = path.join(sourceRoot, operation.sourceRelativePath);
+    if (!fs.existsSync(sourcePath)) {
+      return [];
+    }
+    return [{
+      ...operation,
+      sourcePath,
+      scaffoldOnly: false,
+      managedHookGroups: readJsonObject(sourcePath, operation.sourceRelativePath),
+    }];
+  }
+
   if (operation.kind === 'merge-json') {
     return [
       {
