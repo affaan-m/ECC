@@ -585,6 +585,90 @@ function runTests() {
     }
   })) passed += 1; else failed += 1;
 
+  if (test('runAutoUpdate perforates a Grok fixture when incoming would drop overlay files', () => {
+    const homeDir = createTempDir('auto-update-grok-home-');
+    const projectRoot = createTempDir('auto-update-grok-project-');
+    const repoRoot = createTempDir('auto-update-grok-repo-');
+    const grokHome = path.join(homeDir, '.grok');
+    const exclusiveRel = 'scripts/sync-ecc-to-grok.sh';
+    const sharedRel = 'scripts/codex/merge-mcp-config.js';
+
+    try {
+      ensureFakeRepo(repoRoot);
+      fs.mkdirSync(path.join(repoRoot, 'scripts', 'codex'), { recursive: true });
+      fs.writeFileSync(path.join(repoRoot, exclusiveRel), '#!/bin/bash\necho fixture\n');
+      fs.writeFileSync(path.join(repoRoot, sharedRel), "const harness = '--harness grok';\n");
+      fs.mkdirSync(grokHome, { recursive: true });
+      fs.writeFileSync(
+        path.join(grokHome, 'AGENTS.md'),
+        '# User\n\n# Grok Supplement (From ECC .grok/AGENTS.md)\n'
+      );
+
+      const records = [
+        makeRecord({
+          repoRoot,
+          homeDir,
+          projectRoot,
+          adapter: { id: 'cursor-project', target: 'cursor', kind: 'project' },
+          request: {
+            profile: 'core',
+            modules: [],
+            includeComponents: [],
+            excludeComponents: [],
+            legacyLanguages: [],
+            legacyMode: false,
+          },
+          resolution: { selectedModules: ['rules-core'], skippedModules: [] },
+          operations: [
+            {
+              kind: 'copy-file',
+              moduleId: 'rules-core',
+              sourcePath: path.join(repoRoot, '.cursor', 'mcp.json'),
+              sourceRelativePath: path.join('.cursor', 'mcp.json'),
+              destinationPath: path.join(projectRoot, '.cursor', 'mcp.json'),
+              strategy: 'sync-root-children',
+              ownership: 'managed',
+              scaffoldOnly: false,
+            },
+          ],
+        }),
+      ];
+
+      const result = runAutoUpdate(
+        { homeDir, projectRoot, grokHome, dryRun: false },
+        {
+          discoverInstalledStates: () => records,
+          runExternalCommand: (command, args) => {
+            if (command === 'git' && args[0] === 'diff') {
+              return { stdout: `${sharedRel}\n`, stderr: '' };
+            }
+            if (command === 'git' && (args[0] === 'show' || args[0] === 'cat-file')) {
+              throw new Error('missing on incoming');
+            }
+            if (command === 'git' && args[0] === 'pull') {
+              fs.rmSync(path.join(repoRoot, exclusiveRel));
+              fs.writeFileSync(path.join(repoRoot, sharedRel), 'upstream removed grok harness\n');
+              return { stdout: '', stderr: '' };
+            }
+            if (command === process.execPath) {
+              return { stdout: JSON.stringify({ dryRun: false, result: {} }), stderr: '' };
+            }
+            return { stdout: '', stderr: '' };
+          },
+        }
+      );
+
+      assert.strictEqual(result.grokFixture.flow, 'perforated');
+      assert.strictEqual(result.grokFixture.necessary, true);
+      assert.strictEqual(fs.readFileSync(path.join(repoRoot, exclusiveRel), 'utf8'), '#!/bin/bash\necho fixture\n');
+      assert.match(fs.readFileSync(path.join(repoRoot, sharedRel), 'utf8'), /--harness grok/);
+    } finally {
+      cleanup(homeDir);
+      cleanup(projectRoot);
+      cleanup(repoRoot);
+    }
+  })) passed += 1; else failed += 1;
+
   console.log(`\nResults: Passed: ${passed}, Failed: ${failed}`);
   process.exit(failed > 0 ? 1 : 0);
 }
