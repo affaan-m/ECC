@@ -659,6 +659,11 @@ function readMemoryById(id, options = {}) {
     ? validateSlug(options.targetHarness, 'target harness')
     : null;
   const loaded = readMemoryFiles(options);
+  if (loaded.truncated || loaded.invalidFileCount > 0) {
+    const error = new Error('Memory lookup is incomplete. Inspect the authorized vault before retrying.');
+    error.code = 'ECC_MEMORY_INCOMPLETE';
+    throw error;
+  }
   const matches = loaded.entries
     .filter(entry => entry.memory.id === memoryId)
     .filter(entry => (
