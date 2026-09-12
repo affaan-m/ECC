@@ -18,6 +18,26 @@ function cleanup(dirPath) {
   fs.rmSync(dirPath, { recursive: true, force: true });
 }
 
+// Finds a shell that genuinely lacks bash's `[[` compound command, so tests
+// that exercise install.sh's capability-probe re-exec guard actually take
+// the "not bash" branch instead of trivially passing on a system where
+// `sh` happens to resolve to bash.
+function findPosixOnlyShell() {
+  for (const candidate of ['dash', 'sh']) {
+    try {
+      execFileSync(candidate, ['-c', "eval '[[ 1 == 1 ]]'"], { stdio: 'ignore' });
+      // Probe succeeded: this shell supports `[[`, so it can't stand in for
+      // a POSIX-only shell.
+    } catch (error) {
+      if (error.code === 'ENOENT') {
+        continue; // candidate not installed, try the next one
+      }
+      return candidate; // probe failed: genuinely lacks `[[` support
+    }
+  }
+  return null;
+}
+
 function run(args = [], options = {}) {
   const env = {
     ...process.env,
@@ -26,7 +46,7 @@ function run(args = [], options = {}) {
   };
 
   try {
-    const stdout = execFileSync('bash', [options.scriptPath || SCRIPT, ...args], {
+    const stdout = execFileSync(options.shell || 'bash', [options.scriptPath || SCRIPT, ...args], {
       cwd: options.cwd,
       env,
       encoding: 'utf8',
@@ -124,6 +144,74 @@ function runTests() {
       assert.deepStrictEqual(payload.args, ['--target', 'antigravity', '--dry-run', 'typescript']);
       assert.strictEqual(fs.readFileSync(npmCwdPath, 'utf8').trim(), sourceDir);
       assert.ok(fs.existsSync(path.join(sourceDir, 'node_modules')));
+    } finally {
+      cleanup(sourceDir);
+      cleanup(projectDir);
+    }
+  })) passed++; else failed++;
+
+  if (test('delegates to the Node installer when invoked via a POSIX sh wrapper', () => {
+    const sourceDir = createTempDir('install-sh-posix-source-');
+    const projectDir = createTempDir('install-sh-posix-target-');
+    const scriptsDir = path.join(sourceDir, 'scripts');
+    const fixtureScript = path.join(sourceDir, 'install.sh');
+
+    try {
+      fs.mkdirSync(scriptsDir, { recursive: true });
+      fs.mkdirSync(path.join(sourceDir, 'node_modules'), { recursive: true });
+      fs.copyFileSync(SCRIPT, fixtureScript);
+      fs.writeFileSync(
+        path.join(scriptsDir, 'install-apply.js'),
+        'console.log(JSON.stringify({ cwd: process.cwd(), args: process.argv.slice(2) }));\n'
+      );
+
+      const result = run(['--target', 'antigravity', '--dry-run', 'typescript'], {
+        cwd: projectDir,
+        scriptPath: fixtureScript,
+        shell: 'sh',
+      });
+
+      assert.strictEqual(result.code, 0, result.stderr);
+      const payload = JSON.parse(result.stdout.trim().split('\n').at(-1));
+      assert.strictEqual(payload.cwd, fs.realpathSync(projectDir));
+      assert.deepStrictEqual(payload.args, ['--target', 'antigravity', '--dry-run', 'typescript']);
+    } finally {
+      cleanup(sourceDir);
+      cleanup(projectDir);
+    }
+  })) passed++; else failed++;
+
+  const posixOnlyShell = findPosixOnlyShell();
+  if (!posixOnlyShell) {
+    console.log(
+      '  - skipped: re-execs into bash under sh even when BASH_VERSION is spoofed in the environment ' +
+        '(no shell without `[[` support was found on this system)'
+    );
+  } else if (test('re-execs into bash under sh even when BASH_VERSION is spoofed in the environment', () => {
+    const sourceDir = createTempDir('install-sh-spoof-source-');
+    const projectDir = createTempDir('install-sh-spoof-target-');
+    const scriptsDir = path.join(sourceDir, 'scripts');
+    const fixtureScript = path.join(sourceDir, 'install.sh');
+
+    try {
+      fs.mkdirSync(scriptsDir, { recursive: true });
+      fs.mkdirSync(path.join(sourceDir, 'node_modules'), { recursive: true });
+      fs.copyFileSync(SCRIPT, fixtureScript);
+      fs.writeFileSync(
+        path.join(scriptsDir, 'install-apply.js'),
+        'console.log(JSON.stringify({ cwd: process.cwd(), args: process.argv.slice(2) }));\n'
+      );
+
+      const result = run(['--target', 'antigravity', '--dry-run', 'typescript'], {
+        cwd: projectDir,
+        scriptPath: fixtureScript,
+        shell: posixOnlyShell,
+        env: { BASH_VERSION: '9.9.9(1)-spoofed' },
+      });
+
+      assert.strictEqual(result.code, 0, result.stderr);
+      const payload = JSON.parse(result.stdout.trim().split('\n').at(-1));
+      assert.deepStrictEqual(payload.args, ['--target', 'antigravity', '--dry-run', 'typescript']);
     } finally {
       cleanup(sourceDir);
       cleanup(projectDir);
