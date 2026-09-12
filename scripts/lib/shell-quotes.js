@@ -5,8 +5,9 @@
  *
  * One forward pass records every quoted region: where it starts and ends, the
  * argv0 of the statement containing it (the first non-assignment, non-reserved
- * word before the quote; '' when the quote is part of that first word) and
- * whether the string carries a command substitution. A `$(` or backtick inside
+ * word before the quote; '' when the quote is part of that first word, with
+ * `argv0Start` holding its offset so a caller can read the words in between)
+ * and whether the string carries a command substitution. A `$(` or backtick inside
  * "..." suspends the string: the substitution body is top-level shell again
  * (its own statements and quotes) until the matching `)` / backtick, after
  * which the string resumes as a new region. Both halves are flagged
@@ -37,9 +38,16 @@ function createState() {
     escaped: false,
     open: null,
     argv0: null,
+    argv0Start: -1,
     word: '',
+    wordStart: -1,
     inWord: false,
   };
+}
+
+function startWord(state, index) {
+  if (!state.inWord) state.wordStart = index;
+  state.inWord = true;
 }
 
 function endWord(state) {
@@ -51,6 +59,7 @@ function endWord(state) {
     !ASSIGNMENT_WORD.test(state.word)
   ) {
     state.argv0 = state.word;
+    state.argv0Start = state.wordStart;
   }
   state.word = '';
   state.inWord = false;
@@ -59,11 +68,12 @@ function endWord(state) {
 function newStatement(state) {
   endWord(state);
   state.argv0 = null;
+  state.argv0Start = -1;
 }
 
-function openRegion(state, start, quote, argv0, substitution) {
+function openRegion(state, start, quote, argv0, argv0Start, substitution) {
   state.quote = quote;
-  state.open = { start, quote, argv0, substitution };
+  state.open = { start, quote, argv0, argv0Start, substitution };
 }
 
 function closeRegion(state, end, substitution) {
@@ -84,6 +94,7 @@ function suspendString(state, index, char) {
     backtick: char === '`',
     depth: 0,
     argv0: state.open.argv0,
+    argv0Start: state.open.argv0Start,
     outer: { word: state.word, inWord: state.inWord, argv0: state.argv0 },
   });
   closeRegion(state, index, true);
@@ -98,7 +109,7 @@ function resumeString(state, index, outer) {
   state.word = outer.outer.word;
   state.inWord = outer.outer.inWord;
   state.argv0 = outer.outer.argv0;
-  openRegion(state, index, '"', outer.argv0, true);
+  openRegion(state, index, '"', outer.argv0, outer.argv0Start, true);
 }
 
 /** A character inside a quoted string. Returns the number of characters consumed. */
@@ -124,12 +135,12 @@ function scanQuotedChar(state, input, index) {
 function scanBareChar(state, index, char) {
   if (char === '\\') {
     state.escaped = true;
-    state.inWord = true;
+    startWord(state, index);
     return 1;
   }
   if (char === '"' || char === "'") {
-    state.inWord = true;
-    openRegion(state, index, char, state.argv0 === null ? '' : state.argv0, false);
+    startWord(state, index);
+    openRegion(state, index, char, state.argv0 === null ? '' : state.argv0, state.argv0Start, false);
     return 1;
   }
   const outer = state.suspended.length > 0 ? state.suspended[state.suspended.length - 1] : null;
@@ -153,7 +164,7 @@ function scanBareChar(state, index, char) {
     return 1;
   }
   state.word += char;
-  state.inWord = true;
+  startWord(state, index);
   return 1;
 }
 
@@ -161,7 +172,7 @@ function scanBareChar(state, index, char) {
  * Every quoted region of `input`, sorted by start and disjoint.
  *
  * @param {string} input
- * @returns {Array<{start: number, end: number, quote: string, argv0: string, substitution: boolean}>}
+ * @returns {Array<{start: number, end: number, quote: string, argv0: string, argv0Start: number, substitution: boolean}>}
  */
 function quotedRegions(input) {
   if (cache.input === input) return cache.regions;

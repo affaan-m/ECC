@@ -42,7 +42,8 @@ const VALID_BEFORE_GIT = ' \t\n\r;&|$`(<{!"\']/.~\\';
  * `git` inside one of their quoted arguments is a command that must still
  * be checked (`sh -c "git commit --no-verify"`, `sudo`, `xargs`, `env`...).
  * For any other argv0 (`node cli.js 'git commit --no-verify'`,
- * `printf '%s' '...'`, `python3 -c "..."`) a quoted string is data.
+ * `printf '%s' '...'`, `grep -n '...' docs.md`) a quoted string is data,
+ * unless it is a runtime given an eval flag (see CODE_EVALUATORS).
  */
 const COMMAND_WRAPPERS = new Set([
   'sh',
@@ -352,9 +353,52 @@ function commandBasename(word) {
 }
 
 /**
+ * Runtimes that run a quoted argument as program source once they are given
+ * an eval flag (`node -e`, `python3 -c`, `perl -E`, `deno eval`). That source
+ * can spawn git itself, so it stays subject to the guard. The same runtime
+ * without an eval flag receives a script argument, which is data
+ * (`node cli.js 'git commit --no-verify'`).
+ */
+const CODE_EVALUATORS = new Set([
+  'node',
+  'nodejs',
+  'bun',
+  'deno',
+  'python',
+  'python2',
+  'python3',
+  'pythonw',
+  'perl',
+  'ruby',
+  'php',
+  'lua',
+  'luajit',
+  'rscript',
+  'osascript',
+  'tclsh',
+  'groovy',
+  'julia',
+  'elixir',
+  'erl',
+]);
+
+/** `-e`, `-E`, `--eval`, `-c`, `-p`, `--print`, `-r` and deno's `eval`. */
+const EVAL_FLAG = /(?:^|\s)(?:-{1,2}(?:e|eval|c|command|p|print|r)|eval)(?:=|\s|$)/i;
+
+/**
+ * Whether the words between the program and its quoted argument turn that
+ * argument into code.
+ */
+function evaluatesQuotedArgument(input, region, base) {
+  if (!CODE_EVALUATORS.has(base)) return false;
+  return EVAL_FLAG.test(input.slice(region.argv0Start, region.start));
+}
+
+/**
  * A `git` inside a quoted string is only a command when that string is
- * handed to something that executes it. Otherwise it is an argument of an
- * unrelated program (a CLI under test, printf, python -c, ...) and must not
+ * handed to something that executes it: a shell or process wrapper, or a
+ * runtime given an eval flag. Otherwise it is an argument of an unrelated
+ * program (a CLI under test, printf, grep, a script path, ...) and must not
  * be inspected for bypass flags. A double-quoted string that contains a
  * command substitution (`"$(git ...)"`, "`git ...`") runs git before any
  * program receives it, so it is never data.
@@ -364,7 +408,8 @@ function isQuotedDataArgument(input, idx) {
   if (region === null || region.argv0 === '') return false;
   if (region.substitution) return false;
   const base = commandBasename(region.argv0);
-  return base !== 'git' && !COMMAND_WRAPPERS.has(base);
+  if (base === 'git' || COMMAND_WRAPPERS.has(base)) return false;
+  return !evaluatesQuotedArgument(input, region, base);
 }
 
 /**
@@ -484,6 +529,16 @@ function isNoVerifyLongFlag(value) {
 }
 
 /**
+ * A flag inside a code payload is followed by the punctuation that closes the
+ * call (`execSync("git push --no-verify")`), and the word tokenizer keeps that
+ * punctuation in the token. Trim it so the flag is comparable; a real flag
+ * never ends in one of these characters.
+ */
+function flagToken(value) {
+  return value.replace(/[)\]}'"`;,]+$/, '');
+}
+
+/**
  * Check if the input contains a --no-verify flag for a specific git command.
  * Only inspects the portion of the input starting at `offset` (the position
  * right after the detected subcommand keyword) so that flags belonging to
@@ -495,7 +550,7 @@ function hasNoVerifyFlag(input, command, offset, limit = input.length) {
   let skipNext = false;
 
   for (const token of tokens) {
-    const value = token.value;
+    const value = flagToken(token.value);
 
     if (skipNext) {
       skipNext = false;

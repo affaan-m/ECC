@@ -258,8 +258,38 @@ if (test('allows a quoted git command line passed as an argument to another prog
     "node /tmp/cli.js 'git commit --no-verify -m x'",
     'node /tmp/cli.js "git push --no-verify"',
     "printf '%s' 'git commit --no-verify -m x' | node /tmp/x.js",
-    'python3 -c "print(\'git commit --no-verify\')"',
+    "python3 /tmp/check.py 'git commit --no-verify'",
+    "node /tmp/cli.js --expect 'git push --no-verify'",
     "grep -n 'git commit --no-verify' docs/hooks.md",
+  ]) {
+    const r = runHook({ tool_input: { command } });
+    assert.strictEqual(r.code, 0, `expected exit 0 for ${command}, got ${r.code}: ${r.stderr}`);
+  }
+})) passed++; else failed++;
+
+// A runtime given an eval flag executes its quoted argument as source, so a
+// bypass in that source runs git for real and stays blocked.
+if (test('blocks a git bypass inside a runtime eval payload', () => {
+  for (const command of [
+    'node -e "require(\'child_process\').execSync(\'git commit --no-verify -m x\')"',
+    "node -e 'require(\"child_process\").execSync(\"git push --no-verify\")'",
+    'node --eval="git commit --no-verify -m x"',
+    'node -p "cp.execSync(\'git push --no-verify\')"',
+    "python3 -c 'import os; os.system(\"git push --no-verify\")'",
+    "perl -e 'system(\"git commit --no-verify -m x\")'",
+    "ruby -e 'system(\"git push --no-verify\")'",
+    "php -r 'shell_exec(\"git commit --no-verify -m x\");'",
+    'deno eval "git push --no-verify"',
+  ]) {
+    const r = runHook({ tool_input: { command } });
+    assert.strictEqual(r.code, 2, `expected exit 2 for ${command}, got ${r.code}`);
+  }
+})) passed++; else failed++;
+
+if (test('still allows a bypass phrase in an eval payload that does not run git', () => {
+  for (const command of [
+    'node -e "console.log(\'use --no-verify only in emergencies\')"',
+    "python3 -c 'print(\"never pass -n to commit\")'",
   ]) {
     const r = runHook({ tool_input: { command } });
     assert.strictEqual(r.code, 0, `expected exit 0 for ${command}, got ${r.code}: ${r.stderr}`);
