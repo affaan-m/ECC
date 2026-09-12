@@ -155,7 +155,7 @@ function readSessionCost(sessionId) {
         'malformed',
         costsPath,
         `${snapshotResult.malformed}:${snapshotResult.malformedSignature}`,
-        `[ecc-metrics-bridge] skipped ${snapshotResult.malformed} malformed line(s) in ${costsPath}\n`
+        `[ecc-metrics-bridge] skipped ${snapshotResult.malformed} malformed line(s) during the snapshot scan of ${costsPath}\n`
       );
     }
     if (snapshotResult.invalid > 0) {
@@ -163,7 +163,7 @@ function readSessionCost(sessionId) {
         'invalid-row',
         costsPath,
         `${snapshotResult.invalid}:${snapshotResult.invalidSignature}`,
-        `[ecc-metrics-bridge] skipped ${snapshotResult.invalid} invalid cumulative row(s) for ${sessionId} in ${costsPath}\n`
+        `[ecc-metrics-bridge] skipped ${snapshotResult.invalid} invalid cumulative row(s) for ${sessionId} during the snapshot scan of ${costsPath}\n`
       );
     }
     if (snapshotResult.snapshotError) {

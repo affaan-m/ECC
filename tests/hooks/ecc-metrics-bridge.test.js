@@ -256,6 +256,18 @@ function runTests() {
           input_tokens: 750,
           output_tokens: 375
         };
+        const historicalRow = JSON.stringify({
+          session_id: 'HISTORY',
+          estimated_cost_usd: 0,
+          input_tokens: 0,
+          output_tokens: 0
+        });
+        fs.writeFileSync(
+          path.join(metricsDir, 'costs.jsonl'),
+          `${historicalRow}\n`.repeat(100),
+          'utf8'
+        );
+        assert.ok(fs.statSync(path.join(metricsDir, 'costs.jsonl')).size > 3 * 256);
         appendSessionCostRow(metricsDir, 'S1', snapshotRow);
 
         fs.readSync = function measuredRead(descriptor, buffer, offset, length, position) {
@@ -295,6 +307,18 @@ function runTests() {
           input_tokens: 100,
           output_tokens: 50
         };
+        const historicalRow = JSON.stringify({
+          session_id: 'HISTORY',
+          estimated_cost_usd: 0,
+          input_tokens: 0,
+          output_tokens: 0
+        });
+        fs.writeFileSync(
+          path.join(metricsDir, 'costs.jsonl'),
+          `${historicalRow}\n`.repeat(200),
+          'utf8'
+        );
+        assert.ok(fs.statSync(path.join(metricsDir, 'costs.jsonl')).size > 3 * 1024);
         appendSessionCostRow(metricsDir, 'S1', first);
         appendSessionCostRow(metricsDir, 'S2', {
           session_id: 'S2',
@@ -310,7 +334,7 @@ function runTests() {
         };
         try {
           assert.deepStrictEqual(readSessionCost('S1'), { totalCost: 1, totalIn: 100, totalOut: 50 });
-          assert.ok(bytesReadFromCostLog <= 2 * 1024);
+          assert.ok(bytesReadFromCostLog <= 3 * 1024);
         } finally {
           fs.readSync = originalReadSync;
         }
@@ -448,6 +472,7 @@ function runTests() {
           totalOut: 100
         });
         assert.match(captured, /skipped 3 invalid cumulative row\(s\) for S1/);
+        assert.match(captured, /during the snapshot scan of/);
       } finally {
         process.stderr.write = originalStderrWrite;
         if (originalHome === undefined) delete process.env.HOME;
@@ -541,6 +566,7 @@ function runTests() {
         const matches = captured.match(/skipped 2 malformed line\(s\)/g) || [];
         assert.strictEqual(matches.length, 1,
           `expected one aggregated malformed-line breadcrumb on stderr, got: ${captured}`);
+        assert.match(captured, /during the snapshot scan of/);
       } finally {
         process.stderr.write = originalStderrWrite;
         if (originalHome === undefined) delete process.env.HOME;

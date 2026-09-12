@@ -63,9 +63,11 @@ try {
   })) passed++; else failed++;
 
   if (test('a delayed older writer cannot lower the latest cumulative total', () => {
-    const older = row('session-order', 1);
     const newer = row('session-order', 2);
-    older.timestamp = new Date(Date.parse(newer.timestamp) + 1000).toISOString();
+    const older = {
+      ...row('session-order', 1),
+      timestamp: new Date(Date.parse(newer.timestamp) + 1000).toISOString()
+    };
     assert.strictEqual(appendSessionCostRow(root, 'session-order', newer), true);
     assert.strictEqual(appendSessionCostRow(root, 'session-order', older), false);
     assert.deepStrictEqual(readSessionCostSnapshot(root, 'session-order').row, newer);
@@ -73,9 +75,11 @@ try {
 
   if (test('publication failure followed by an older writer still converges to the newer row', () => {
     const sessionId = 'session-publication-race';
-    const older = row(sessionId, 1);
     const newer = row(sessionId, 2);
-    older.timestamp = new Date(Date.parse(newer.timestamp) + 1000).toISOString();
+    const older = {
+      ...row(sessionId, 1),
+      timestamp: new Date(Date.parse(newer.timestamp) + 1000).toISOString()
+    };
     const snapshotPath = getCostSnapshotPath(root, sessionId);
     const originalRenameSync = fs.renameSync;
     let injectedFailure = false;
@@ -99,22 +103,25 @@ try {
 
   if (test('accepts increasing cumulative totals that share a timestamp', () => {
     const first = row('session-same-time', 1);
-    const next = row('session-same-time', 2);
-    next.timestamp = first.timestamp;
+    const next = { ...row('session-same-time', 2), timestamp: first.timestamp };
     appendSessionCostRow(root, 'session-same-time', first);
     assert.strictEqual(appendSessionCostRow(root, 'session-same-time', next), true);
     assert.deepStrictEqual(readSessionCostSnapshot(root, 'session-same-time').row, next);
   })) passed++; else failed++;
 
   if (test('uses timestamps when cumulative dimensions move in opposite directions', () => {
-    const newer = row('session-mixed', 1);
-    newer.input_tokens = 200;
-    newer.output_tokens = 100;
-    newer.timestamp = '2026-01-02T00:00:00.000Z';
-    const delayedOlder = row('session-mixed', 2);
-    delayedOlder.input_tokens = 100;
-    delayedOlder.output_tokens = 50;
-    delayedOlder.timestamp = '2026-01-01T00:00:00.000Z';
+    const newer = {
+      ...row('session-mixed', 1),
+      input_tokens: 200,
+      output_tokens: 100,
+      timestamp: '2026-01-02T00:00:00.000Z'
+    };
+    const delayedOlder = {
+      ...row('session-mixed', 2),
+      input_tokens: 100,
+      output_tokens: 50,
+      timestamp: '2026-01-01T00:00:00.000Z'
+    };
     appendSessionCostRow(root, 'session-mixed', newer);
     assert.strictEqual(appendSessionCostRow(root, 'session-mixed', delayedOlder), false);
     assert.deepStrictEqual(readSessionCostSnapshot(root, 'session-mixed').row, newer);
@@ -187,6 +194,45 @@ try {
       'utf8'
     );
     assert.deepStrictEqual(refreshSessionCostSnapshot(caseRoot, 'utf8').row, current);
+  })) passed++; else failed++;
+
+  if (test('bounds oversized unterminated rows and caches the discarded prefix', () => {
+    const caseRoot = path.join(root, 'oversized-line');
+    fs.mkdirSync(caseRoot, { recursive: true });
+    const oversizedBytes = 32 * 1024 * 1024;
+    fs.writeFileSync(
+      path.join(caseRoot, 'costs.jsonl'),
+      Buffer.alloc(oversizedBytes, 0x78)
+    );
+    const originalConcat = Buffer.concat;
+    let copiedBytes = 0;
+    Buffer.concat = function measuredConcat(list, totalLength) {
+      copiedBytes += totalLength ?? list.reduce((sum, item) => sum + item.length, 0);
+      return originalConcat.call(this, list, totalLength);
+    };
+    try {
+      const first = refreshSessionCostSnapshot(caseRoot, 'oversized');
+      assert.strictEqual(first.row, null);
+      assert.strictEqual(first.malformed, 1);
+      assert.ok(first.scannedBytes > 0 && first.scannedBytes < oversizedBytes);
+      assert.ok(copiedBytes <= 2 * 1024 * 1024, `copied ${copiedBytes} bytes`);
+      const second = refreshSessionCostSnapshot(caseRoot, 'oversized');
+      assert.strictEqual(second.scannedBytes, oversizedBytes - first.scannedBytes);
+      assert.strictEqual(second.malformed, 0);
+      const stable = refreshSessionCostSnapshot(caseRoot, 'oversized');
+      assert.strictEqual(stable.scannedBytes, 0);
+      const recovered = row('oversized', 3);
+      fs.appendFileSync(
+        path.join(caseRoot, 'costs.jsonl'),
+        `\n${JSON.stringify(recovered)}\n`,
+        'utf8'
+      );
+      const resumed = refreshSessionCostSnapshot(caseRoot, 'oversized');
+      assert.deepStrictEqual(resumed.row, recovered);
+      assert.ok(resumed.scannedBytes < 1024);
+    } finally {
+      Buffer.concat = originalConcat;
+    }
   })) passed++; else failed++;
 
   if (test('rebuilds after an in-place rewrite or inode rotation', () => {
@@ -294,6 +340,85 @@ try {
       .filter(name => name.startsWith('session-'));
     assert.strictEqual(removed, 3);
     assert.strictEqual(remaining.length, 2);
+  })) passed++; else failed++;
+
+  if (test('surfaces retention removal failures for the caller to report', () => {
+    const caseRoot = path.join(root, 'retention-failure');
+    fs.mkdirSync(caseRoot, { recursive: true });
+    const sessionId = 'retention-target';
+    appendSessionCostRow(caseRoot, sessionId, row(sessionId, 1));
+    const snapshotPath = getCostSnapshotPath(caseRoot, sessionId);
+    const markerPath = path.join(caseRoot, 'cost-snapshots', '.last-prune');
+    fs.rmSync(markerPath, { force: true });
+    const old = new Date(Date.now() - 10_000);
+    fs.utimesSync(snapshotPath, old, old);
+    const originalRmSync = fs.rmSync;
+    fs.rmSync = function failSnapshotRemoval(filePath, options) {
+      if (path.resolve(filePath) === path.resolve(snapshotPath)) {
+        const error = new Error('injected retention failure');
+        error.code = 'EACCES';
+        throw error;
+      }
+      return originalRmSync.call(this, filePath, options);
+    };
+    try {
+      assert.throws(
+        () => maybePruneSessionCostSnapshots(caseRoot, {
+          force: true,
+          now: Date.now(),
+          maxAgeMs: 1
+        }),
+        /injected retention failure/
+      );
+      assert.strictEqual(
+        fs.existsSync(markerPath),
+        false,
+        'failed pruning must not defer the next retry'
+      );
+    } finally {
+      fs.rmSync = originalRmSync;
+    }
+  })) passed++; else failed++;
+
+  if (test('reports retention failures without rolling back the appended row', () => {
+    const caseRoot = path.join(root, 'retention-warning');
+    fs.mkdirSync(caseRoot, { recursive: true });
+    const snapshotDir = path.join(caseRoot, 'cost-snapshots');
+    const originalReaddirSync = fs.readdirSync;
+    const originalWrite = process.stderr.write.bind(process.stderr);
+    let captured = '';
+    fs.readdirSync = function failRetentionRead(directory, options) {
+      if (path.resolve(directory) === path.resolve(snapshotDir)) {
+        const error = new Error('injected retention read failure');
+        error.code = 'EACCES';
+        throw error;
+      }
+      return originalReaddirSync.call(this, directory, options);
+    };
+    process.stderr.write = chunk => {
+      captured += String(chunk);
+      return true;
+    };
+    try {
+      const current = row('retention-warning-session', 1);
+      assert.strictEqual(appendSessionCostRow(
+        caseRoot,
+        'retention-warning-session',
+        current
+      ), true);
+      assert.strictEqual(appendSessionCostRow(
+        caseRoot,
+        'retention-warning-session',
+        row('retention-warning-session', 2)
+      ), true);
+      const warnings = captured.match(/retention failed/g) || [];
+      assert.strictEqual(warnings.length, 1);
+      const persisted = fs.readFileSync(path.join(caseRoot, 'costs.jsonl'), 'utf8');
+      assert.match(persisted, /retention-warning-session/);
+    } finally {
+      fs.readdirSync = originalReaddirSync;
+      process.stderr.write = originalWrite;
+    }
   })) passed++; else failed++;
 
   if (test('deduplicates snapshot warnings independently by failure kind', () => {

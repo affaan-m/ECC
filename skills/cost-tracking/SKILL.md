@@ -23,6 +23,8 @@ session total without rescanning all history. Treat those files as a
 rebuildable cache; each snapshot stores a byte cursor so only newly appended
 rows are scanned. Stable reads are O(1), while updates are O(new bytes). Stale
 entries are pruned after 30 days or when the directory exceeds 512 sessions.
+Cold catch-up work is limited to 16 MiB per hook invocation, and malformed
+unterminated rows larger than 1 MiB are discarded with a resumable cursor.
 Reports and exports should continue to use `costs.jsonl`.
 
 Row schema:

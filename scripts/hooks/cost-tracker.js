@@ -109,7 +109,17 @@ function isSonnet5(model) {
 
 function toNumber(v) {
   const n = Number(v);
-  return Number.isFinite(n) ? n : 0;
+  return Number.isFinite(n) && n >= 0 ? n : 0;
+}
+
+function normalizeUsageTotals(totals) {
+  return {
+    inputTokens: toNumber(totals.inputTokens),
+    outputTokens: toNumber(totals.outputTokens),
+    cacheWriteTokens: toNumber(totals.cacheWriteTokens),
+    cacheReadTokens: toNumber(totals.cacheReadTokens),
+    model: totals.model
+  };
 }
 
 /**
@@ -167,7 +177,9 @@ function sumUsageFromTranscript(transcriptPath) {
     cacheReadTokens  += toNumber(u.cache_read_input_tokens);
   }
 
-  return { inputTokens, outputTokens, cacheWriteTokens, cacheReadTokens, model };
+  return normalizeUsageTotals({
+    inputTokens, outputTokens, cacheWriteTokens, cacheReadTokens, model
+  });
 }
 
 // 1MB, matching the other Stop hooks. The Stop payload carries

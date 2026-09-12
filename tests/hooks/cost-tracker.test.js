@@ -249,6 +249,57 @@ function runTests() {
     fs.rmSync(tmpHome, { recursive: true, force: true });
   }) ? passed++ : failed++);
 
+  (test('normalizes malformed negative and non-finite transcript usage', () => {
+    const tmpHome = makeTempDir();
+    const transcriptPath = path.join(tmpHome, 'session.jsonl');
+    writeTranscript(transcriptPath, [{
+      type: 'assistant',
+      message: {
+        id: 'msg_invalid_usage',
+        model: 'claude-sonnet-4-20250514',
+        usage: {
+          input_tokens: -100,
+          output_tokens: 'Infinity',
+          cache_creation_input_tokens: -20,
+          cache_read_input_tokens: 'not-a-number',
+        },
+      },
+    }, {
+      type: 'assistant',
+      message: {
+        id: 'msg_overflow_1',
+        model: 'claude-sonnet-4-20250514',
+        usage: { input_tokens: 1e308, output_tokens: 0 },
+      },
+    }, {
+      type: 'assistant',
+      message: {
+        id: 'msg_overflow_2',
+        model: 'claude-sonnet-4-20250514',
+        usage: { input_tokens: 1e308, output_tokens: 0 },
+      },
+    }]);
+
+    const result = runScript(
+      { session_id: 'invalid-usage', transcript_path: transcriptPath },
+      withTempHome(tmpHome)
+    );
+    assert.strictEqual(result.code, 0, result.stderr);
+    const metricsFile = path.join(tmpHome, '.claude', 'metrics', 'costs.jsonl');
+    const recorded = JSON.parse(fs.readFileSync(metricsFile, 'utf8').trim());
+    assert.deepStrictEqual(
+      {
+        input: recorded.input_tokens,
+        output: recorded.output_tokens,
+        cacheWrite: recorded.cache_write_tokens,
+        cacheRead: recorded.cache_read_tokens,
+        cost: recorded.estimated_cost_usd,
+      },
+      { input: 0, output: 0, cacheWrite: 0, cacheRead: 0, cost: 0 }
+    );
+    fs.rmSync(tmpHome, { recursive: true, force: true });
+  }) ? passed++ : failed++);
+
   // 3. Handles empty input gracefully
   (test('handles empty input gracefully', () => {
     const tmpHome = makeTempDir();
