@@ -71,12 +71,12 @@
       {
         "id": "post:dispatcher:sync",
         "description": "Run synchronous PostToolUse hooks in one process while preserving per-hook controls",
-        "fingerprint": "cc868baab727"
+        "fingerprint": "69422cb651aa"
       },
       {
         "id": "post:dispatcher:async",
         "description": "Run background PostToolUse hooks in one process while preserving per-hook controls",
-        "fingerprint": "5e256d15db44"
+        "fingerprint": "01af98da6841"
       }
     ],
     "PostToolUseFailure": [
@@ -95,44 +95,44 @@
       {
         "id": "stop:plan-canvas-pending",
         "description": "Deliver undelivered Plan Canvas browser feedback before the agent stops",
-        "fingerprint": "e1a0fd79c26f"
+        "fingerprint": "5953e0fed81c"
       },
       {
         "id": "stop:format-typecheck",
         "description": "Batch format (Biome/Prettier) and typecheck (tsc) all JS/TS files edited this response — runs once at Stop instead of after every Edit",
-        "fingerprint": "9836d01e962e"
+        "fingerprint": "a9d9bb04e060"
       },
       {
         "id": "stop:check-console-log",
         "description": "Check for console.log in modified files after each response",
-        "fingerprint": "235c7f182b76"
+        "fingerprint": "a675a517c549"
       },
       {
         "id": "stop:session-end",
         "description": "Persist session state after each response (Stop carries transcript_path)",
-        "fingerprint": "981212c32849"
+        "fingerprint": "d094692bee01"
       },
       {
         "id": "stop:evaluate-session",
         "description": "Evaluate session for extractable patterns",
-        "fingerprint": "d874ecf69ef7"
+        "fingerprint": "664eec4bb68f"
       },
       {
         "id": "stop:cost-tracker",
         "description": "Track token and cost metrics per session",
-        "fingerprint": "57d255146fc0"
+        "fingerprint": "5c5fe7253e20"
       },
       {
         "id": "stop:desktop-notify",
         "description": "Send desktop notification (macOS/WSL) with task summary when Claude responds",
-        "fingerprint": "668cdbae027d"
+        "fingerprint": "7a492e898bf6"
       }
     ],
     "SessionEnd": [
       {
         "id": "session:end:marker",
         "description": "Session end lifecycle marker (non-blocking)",
-        "fingerprint": "23a3832480e1"
+        "fingerprint": "9270863f2935"
       }
     ]
   }

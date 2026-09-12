@@ -17,7 +17,11 @@ const CURRENT_PACKAGE_VERSION = JSON.parse(
   fs.readFileSync(path.join(__dirname, '..', '..', 'package.json'), 'utf8')
 ).version;
 
-const { resolveEccRoot, INLINE_RESOLVE } = require('../../scripts/lib/resolve-ecc-root');
+const {
+  resolveEccRoot,
+  normalizePluginRootForPlatform,
+  INLINE_RESOLVE
+} = require('../../scripts/lib/resolve-ecc-root');
 
 // Sentinel ECC skill that resolveEccRoot() requires (alongside the script tree)
 // before accepting a root for skill consumers. Kept in sync with the module's
@@ -399,6 +403,17 @@ function runTests() {
   if (test('INLINE_RESOLVE is a non-empty string', () => {
     assert.ok(typeof INLINE_RESOLVE === 'string');
     assert.ok(INLINE_RESOLVE.length > 50, 'Should be a substantial inline expression');
+  })) passed++; else failed++;
+
+  if (test('normalizes Git Bash drive roots for Windows lifecycle loaders', () => {
+    assert.strictEqual(
+      normalizePluginRootForPlatform('/c/Users/x/.claude/plugins/ecc', 'win32'),
+      'C:/Users/x/.claude/plugins/ecc'
+    );
+    assert.strictEqual(
+      normalizePluginRootForPlatform('/workspace/ecc', 'win32'),
+      '/workspace/ecc'
+    );
   })) passed++; else failed++;
 
   if (test('INLINE_RESOLVE does not contain spread, nested arrays, or escaped quotes', () => {
