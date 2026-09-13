@@ -53,10 +53,10 @@ function runTests() {
 
   if (test('README leads with the idempotent guided plugin setup path', () => {
     const topClaudeSectionIndex = readme.indexOf('## Install with Claude Code');
-    const topGuidedCommandIndex = readme.indexOf('npx ecc-universal setup', topClaudeSectionIndex);
+    const topGuidedCommandIndex = readme.indexOf('npx ecc-universal@2.2.1 setup', topClaudeSectionIndex);
     const nativePluginCommandIndex = readme.indexOf('/plugin marketplace add', topClaudeSectionIndex);
     const installSectionIndex = readme.indexOf('## Install ECC');
-    const guidedCommandIndex = readme.indexOf('npx ecc-universal setup', installSectionIndex);
+    const guidedCommandIndex = readme.indexOf('npx ecc-universal@2.2.1 setup', installSectionIndex);
     const claudeDetailsIndex = readme.indexOf('### Claude Code details', installSectionIndex);
 
     assert.ok(
@@ -95,9 +95,9 @@ function runTests() {
   })) passed++; else failed++;
 
   if (test('README documents modern package-runner alternatives', () => {
-    assert.ok(readme.includes('pnpm dlx ecc-universal setup'));
-    assert.ok(readme.includes('yarn dlx ecc-universal setup'));
-    assert.ok(readme.includes('bunx ecc-universal setup'));
+    assert.ok(readme.includes('pnpm dlx ecc-universal@2.2.1 setup'));
+    assert.ok(readme.includes('yarn dlx ecc-universal@2.2.1 setup'));
+    assert.ok(readme.includes('bunx ecc-universal@2.2.1 setup'));
     assert.ok(
       readme.includes('Yarn Classic 1 does not provide `yarn dlx`'),
       'README should not advertise the modern Yarn command to Yarn Classic users'
@@ -122,10 +122,10 @@ function runTests() {
       'README should document doctor before reinstalling'
     );
     for (const command of [
-      'npx ecc-universal list-installed',
-      'npx ecc-universal doctor',
-      'npx ecc-universal repair',
-      'npx ecc-universal uninstall --dry-run',
+      'npx ecc-universal@2.2.1 list-installed',
+      'npx ecc-universal@2.2.1 doctor',
+      'npx ecc-universal@2.2.1 repair',
+      'npx ecc-universal@2.2.1 uninstall --dry-run',
     ]) {
       assert.ok(
         readme.includes(command),
@@ -148,7 +148,7 @@ function runTests() {
       'README should document the shell minimal profile command'
     );
     assert.ok(
-      readme.includes('npx ecc-universal install --profile minimal --target claude'),
+      readme.includes('npx ecc-universal@2.2.1 install --profile minimal --target claude'),
       'README should document the published universal-package minimal profile command'
     );
     assert.ok(
@@ -175,7 +175,7 @@ function runTests() {
       'README should surface component discovery before install steps'
     );
     assert.ok(
-      readme.includes('npx ecc-universal consult "security reviews" --target claude'),
+      readme.includes('npx ecc-universal@2.2.1 consult "security reviews" --target claude'),
       'README should document the packaged consult command'
     );
     assert.ok(
@@ -193,15 +193,15 @@ function runTests() {
 
   if (test('README gives the native guided Codex and managed Kimi dry-run paths', () => {
     assert.ok(
-      readme.includes('npx ecc-universal install --guided --harness codex --dry-run'),
+      readme.includes('npx ecc-universal@2.2.1 install --guided --harness codex --dry-run'),
       'README should verify Codex through the native guided reconciler'
     );
     assert.ok(
-      !readme.includes('npx ecc-universal install --profile core --target codex --dry-run'),
+      !readme.includes('npx ecc-universal@2.2.1 install --profile core --target codex --dry-run'),
       'README should not present the legacy managed Codex adapter as the native lifecycle'
     );
     assert.ok(
-      readme.includes('npx ecc-universal install --profile core --target kimi --dry-run')
+      readme.includes('npx ecc-universal@2.2.1 install --profile core --target kimi --dry-run')
     );
     for (const target of ['cursor', 'gemini', 'opencode', 'codebuddy', 'joycode', 'qwen', 'zed', 'hermes', 'openclaw']) {
       assert.ok(readme.includes(`\`${target}\``), `README should name the ${target} target`);
@@ -310,6 +310,18 @@ function runTests() {
       !rulesReadme.includes('~/.claude/rules/typescript'),
       'rules README should not recommend flat user-level rule destinations'
     );
+  })) passed++; else failed++;
+
+  if (test('README binds package runners to the release and avoids unaudited bootstraps', () => {
+    const version = JSON.parse(fs.readFileSync(path.join(__dirname, '..', '..', 'package.json'))).version;
+    const runners = [...readme.matchAll(/(?:npx |pnpm dlx |yarn dlx |bunx )(ecc-universal[^\s`]+)/g)];
+    assert.ok(runners.length >= 15);
+    for (const match of runners) assert.strictEqual(match[1], `ecc-universal@${version}`);
+    assert.ok(!/npx (?:-y )?(?:ecc-agentshield|ccg-workflow)/.test(readme));
+    assert.ok(!/npm install -g opencode(?:\s|$)/m.test(readme));
+    assert.match(readme, /version pin is not a security audit/i);
+    assert.match(readme, /already installed.*reviewed.*AgentShield/i);
+    assert.ok(readme.includes('https://www.npmjs.com/package/ecc-universal/v/2.2.1'));
   })) passed++; else failed++;
 
   console.log(`\nResults: Passed: ${passed}, Failed: ${failed}`);

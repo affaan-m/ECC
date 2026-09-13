@@ -4,7 +4,11 @@ const fs = require('fs');
 const path = require('path');
 const { isDeepStrictEqual } = require('util');
 const { writeFileAtomic } = require('../atomic-write');
-const { acquireSettingsLock, runWithSettingsLock } = require('./claude-settings-lock');
+const {
+  acquireSettingsLock,
+  runWithSettingsLock,
+  sameFileIdentity,
+} = require('./claude-settings-lock');
 
 const CLAUDE_SETTINGS_FILENAME = 'settings.json';
 const CLAUDE_HOOKS_CONFIG_PATH = 'hooks/hooks.json';
@@ -340,10 +344,10 @@ function readSettingsSnapshot(settingsPath) {
   }
 
   try {
-    const descriptorStat = fs.fstatSync(descriptor);
+    const descriptorStat = fs.fstatSync(descriptor, { bigint: true });
     let pathStat;
     try {
-      pathStat = fs.lstatSync(settingsPath);
+      pathStat = fs.lstatSync(settingsPath, { bigint: true });
     } catch (error) {
       if (error && error.code === 'ENOENT') {
         error.code = 'ECC_SETTINGS_CHANGED';
@@ -354,8 +358,7 @@ function readSettingsSnapshot(settingsPath) {
       !descriptorStat.isFile()
       || !pathStat.isFile()
       || pathStat.isSymbolicLink()
-      || descriptorStat.dev !== pathStat.dev
-      || descriptorStat.ino !== pathStat.ino
+      || !sameFileIdentity(descriptorStat, pathStat)
     ) {
       const error = new Error(`Refusing to read changed Claude settings at ${settingsPath}`);
       error.code = 'ECC_SETTINGS_CHANGED';
@@ -366,7 +369,7 @@ function readSettingsSnapshot(settingsPath) {
       exists: true,
       raw,
       settings: parseSettings(raw, `Claude settings at ${settingsPath}`),
-      mode: descriptorStat.mode & 0o777,
+      mode: Number(descriptorStat.mode & 0o777n),
       dev: descriptorStat.dev,
       ino: descriptorStat.ino,
     };

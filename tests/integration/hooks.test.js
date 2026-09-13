@@ -12,6 +12,7 @@ const path = require('path');
 const fs = require('fs');
 const os = require('os');
 const { spawn } = require('child_process');
+const { readHooksConfig } = require('../../scripts/lib/hooks-config');
 const REPO_ROOT = path.join(__dirname, '..', '..');
 
 // Test helper
@@ -282,7 +283,7 @@ async function runTests() {
 
   const scriptsDir = path.join(__dirname, '..', '..', 'scripts', 'hooks');
   const hooksJsonPath = path.join(__dirname, '..', '..', 'hooks', 'hooks.json');
-  const hooks = JSON.parse(fs.readFileSync(hooksJsonPath, 'utf8'));
+  const hooks = readHooksConfig(hooksJsonPath);
 
   // ==========================================
   // Input Format Tests

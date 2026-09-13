@@ -1,0 +1,26 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ecc-tasteforge"
+version = "1.0.0"
+description = "ECC reusable TasteForge media contracts and creative adapters"
+requires-python = ">=3.9"
+license = {file = "LICENSE"}
+dependencies = []
+
+[project.optional-dependencies]
+media = ["numpy", "Pillow", "pixelsort"]
+capcut = ["pycapcut"]
+manim = ["manim"]
+
+[project.scripts]
+tasteforge = "tasteforge.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["tasteforge*"]
+
+[tool.setuptools.package-data]
+tasteforge = ["fixtures/flashethereal/*", "README.md"]

@@ -49,6 +49,7 @@ function renderProximityVizHtml() {
   <header>
     <h1>ECC - Agent Airspace</h1>
     <span class="sub" id="status">connecting...</span>
+    <a class="sub" href="/control-plane" style="margin-left:auto;text-decoration:none">2D control plane</a>
   </header>
   <div id="wrap">
     <div id="stage">

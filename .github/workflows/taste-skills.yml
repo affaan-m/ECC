@@ -1,0 +1,44 @@
+name: Standalone taste workflows
+
+on:
+  pull_request:
+    paths:
+      - 'skills/taste-application/**'
+      - 'skills/taste-distillation/**'
+      - 'tests/test_taste_*.py'
+      - '.github/workflows/taste-skills.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'skills/taste-application/**'
+      - 'skills/taste-distillation/**'
+      - 'tests/test_taste_*.py'
+      - '.github/workflows/taste-skills.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  offline:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
+        with:
+          python-version: '3.12'
+      - name: Install local media dependencies
+        run: python -m pip install -r skills/taste-application/scripts/requirements.txt
+      - name: Build and install the reusable ECC engine
+        run: |
+          python -m pip wheel --no-deps skills/taste-application/scripts --wheel-dir /tmp/ecc-wheels
+          python -m pip install /tmp/ecc-wheels/ecc_tasteforge-*.whl
+      - name: Test canonical engine and original creative scripts
+        run: |
+          python -m unittest discover -s skills/taste-application/tests
+          python -m unittest discover -s tests -p 'test_taste_*.py'
+          cd /tmp
+          python -I -c "from pathlib import Path; import sys, tasteforge; from tasteforge.pack import load; root = Path(tasteforge.__file__).resolve(); assert root.is_relative_to(Path(sys.prefix).resolve()); fixture = root.parent / 'fixtures/flashethereal'; assert load(fixture).inspect()['validation']['status'] == 'valid'"
+          python -m tasteforge --help

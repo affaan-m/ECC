@@ -78,6 +78,10 @@ const COMMIT_OPTIONS_WITH_INLINE_VALUE = [
 // must stop at this character — anything after it is the inline value,
 // not another flag.
 const COMMIT_SHORT_OPTIONS_WITH_VALUE = new Set(['m', 'F', 'C', 'c', 't']);
+// Short options whose value is OPTIONAL and must be stuck to the flag
+// (`-uno`, `-S<keyid>`). The rest of the cluster is that value, so an `n`
+// after them is not the -n flag: `git commit -uno` means --untracked-files=no.
+const COMMIT_SHORT_OPTIONS_WITH_OPTIONAL_VALUE = new Set(['u', 'S']);
 
 function tokenizeShellWords(input, start = 0, end = input.length) {
   const tokens = [];
@@ -264,6 +268,7 @@ function isCommitNoVerifyShortFlag(value) {
     const option = options.charAt(i);
     if (option === 'n') return true;
     if (COMMIT_SHORT_OPTIONS_WITH_VALUE.has(option)) return false;
+    if (COMMIT_SHORT_OPTIONS_WITH_OPTIONAL_VALUE.has(option)) return false;
   }
 
   return false;
@@ -389,6 +394,16 @@ function detectGitCommand(input, start = 0) {
 }
 
 /**
+ * git's option parser accepts any unambiguous prefix of a long option, so
+ * `--no-veri` and `--no-verif` run as --no-verify. Shorter prefixes such as
+ * `--no-ver` are ambiguous with --no-verbose and git rejects them itself, so
+ * refusing every prefix from `--no-v` up blocks nothing that would have run.
+ */
+function isNoVerifyLongFlag(value) {
+  return value.length >= '--no-v'.length && '--no-verify'.startsWith(value);
+}
+
+/**
  * Check if the input contains a --no-verify flag for a specific git command.
  * Only inspects the portion of the input starting at `offset` (the position
  * right after the detected subcommand keyword) so that flags belonging to
@@ -422,7 +437,7 @@ function hasNoVerifyFlag(input, command, offset) {
       }
     }
 
-    if (value === '--no-verify') return true;
+    if (isNoVerifyLongFlag(value)) return true;
 
     // For commit, -n is shorthand for --no-verify.
     if (command === 'commit' && isCommitNoVerifyShortFlag(value)) {
