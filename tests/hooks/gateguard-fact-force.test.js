@@ -1535,6 +1535,7 @@ function runTests() {
     test('denies quoted destructive SQL through sudo/env wrappers', () => {
       expectDestructiveDeny('sudo -u postgres psql -c "drop table users"', 'sudo -u psql');
       expectDestructiveDeny('env PGUSER=postgres psql -c "drop table users"', 'env psql');
+      expectDestructiveDeny('env PGPASSWORD=value psql -c "drop table users"', 'env PGPASSWORD psql');
     })
   )
     passed++;
