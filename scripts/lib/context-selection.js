@@ -1,0 +1,179 @@
+'use strict';
+
+const yaml = require('js-yaml');
+const { loadContextRegistry } = require('./context-pack-registry');
+const { compileContextProfile } = require('./context-profiles');
+const { DEFAULT_REPO_ROOT, createSourceReader, digestObject } = require('./context-profile-support');
+
+const MAX_CANDIDATES = 5;
+const MAX_SELECTED = 8;
+const MAX_CONTEXT_BYTES = 32000;
+const TASK_KEYS = new Set(['sessionId', 'taskId', 'revision', 'phase', 'query', 'explicitIds', 'proposedIds', 'noWorkflow']);
+const STOP_WORDS = new Set('a an and are for from help i in is it me my of on please the to with'.split(' '));
+
+function validateTask(task) {
+  if (!task || typeof task !== 'object' || Array.isArray(task)) throw new Error('Task must be an object');
+  for (const key of Object.keys(task)) if (!TASK_KEYS.has(key)) throw new Error(`Unknown task field: ${key}`);
+  for (const key of ['sessionId', 'taskId', 'phase']) {
+    if (typeof task[key] !== 'string' || !/^[a-zA-Z0-9][a-zA-Z0-9_.:-]{0,127}$/.test(task[key])) {
+      throw new Error(`Invalid task ${key}`);
+    }
+  }
+  if (!Number.isSafeInteger(task.revision) || task.revision < 1) throw new Error('Task revision must be a positive integer');
+  if (task.query !== undefined && (typeof task.query !== 'string' || Buffer.byteLength(task.query) > 8192)) {
+    throw new Error('Task query exceeds the input limit');
+  }
+  if (task.noWorkflow !== undefined && typeof task.noWorkflow !== 'boolean') throw new Error('noWorkflow must be boolean');
+  for (const key of ['explicitIds', 'proposedIds']) {
+    if (task[key] !== undefined && (!Array.isArray(task[key]) || task[key].length > MAX_SELECTED
+      || task[key].some(id => typeof id !== 'string') || new Set(task[key]).size !== task[key].length)) {
+      throw new Error(`${key} must contain at most ${MAX_SELECTED} unique skill IDs`);
+    }
+  }
+  if (task.noWorkflow && ((task.explicitIds || []).length || (task.proposedIds || []).length)) {
+    throw new Error('noWorkflow conflicts with requested skills');
+  }
+}
+
+function tokens(text) {
+  return [...new Set(text.toLowerCase().split(/[^a-z0-9]+/).filter(word => word.length > 1 && !STOP_WORDS.has(word)))];
+}
+
+function normalizedName(text) { return text.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim(); }
+
+// Inspired by Jeffrey Montoya's bounded local routing in community PR #2945.
+// Canonical source digests replace its independent cache/receipt authority.
+function candidatesFor(query, entries, excluded) {
+  const words = tokens(query);
+  const normalizedQuery = ` ${normalizedName(query)} `;
+  const available = entries.filter(entry => !excluded.has(entry.id));
+  const exactIds = available.filter(entry => [entry.id.slice('skill:'.length), entry.name]
+    .some(name => normalizedName(name) && normalizedQuery.includes(` ${normalizedName(name)} `))).map(entry => entry.id);
+  const exact = new Set(exactIds);
+  const candidates = available.map(entry => {
+    const name = new Set(tokens(entry.id));
+    const description = new Set(tokens(entry.description));
+    return { id: entry.id, score: words.reduce((score, word) => score + (name.has(word) ? 3 : description.has(word) ? 1 : 0), 0),
+      description: entry.description.slice(0, 2048), descriptionTruncated: entry.description.length > 2048 };
+  }).filter(entry => exact.has(entry.id) || entry.score >= 3)
+    .sort((a, b) => Number(exact.has(b.id)) - Number(exact.has(a.id)) || b.score - a.score
+      || (a.id < b.id ? -1 : 1)).slice(0, MAX_CANDIDATES);
+  return { candidates, exactIds };
+}
+
+function verifiedResource(entry, sourcePath, reader) {
+  const expected = entry.resources.find(resource => resource.path === sourcePath);
+  const actual = reader.read(sourcePath);
+  if (!expected || actual.digest !== expected.digest || actual.bytes !== expected.bytes) {
+    throw new Error('Context source changed during selection');
+  }
+  return actual;
+}
+
+function policyFor(entry, reader) {
+  const source = verifiedResource(entry, entry.sourcePath, reader).content.toString('utf8');
+  const match = source.replace(/\r\n?/g, '\n').match(/^---\n([\s\S]*?)\n---(?:\n|$)/);
+  const metadata = match ? yaml.load(match[1], { schema: yaml.JSON_SCHEMA }) : {};
+  let manualOnly = metadata['disable-model-invocation'] === true;
+  const config = entry.resources.find(resource => resource.path.endsWith('/agents/openai.yaml'));
+  if (config) {
+    const document = yaml.load(verifiedResource(entry, config.path, reader).content.toString('utf8'), { schema: yaml.JSON_SCHEMA });
+    manualOnly ||= document?.policy?.allow_implicit_invocation === false;
+  }
+  return { manualOnly, authority: ['allowed-tools', 'context', 'agent', 'hooks'].some(key => metadata[key] !== undefined),
+    dynamic: /!`/.test(source) };
+}
+
+function selectedClosure(ids, explicit, byId, excluded, reader) {
+  const selected = new Set();
+  function visit(id) {
+    if (!byId.has(id)) throw new Error(`Unknown context ID: ${id}`);
+    if (excluded.has(id)) throw new Error(`Context ID is excluded: ${id}`);
+    if (selected.has(id)) return;
+    const entry = byId.get(id);
+    const policy = policyFor(entry, reader);
+    if (policy.manualOnly && !explicit.has(id)) throw new Error(`Context ID is manual-only: ${id}`);
+    if (policy.authority || policy.dynamic) throw new Error(`Context requires native authority or dynamic-content review: ${id}`);
+    selected.add(id);
+    if (selected.size > MAX_SELECTED) throw new Error('Task selection exceeds the skill limit');
+    entry.dependencies.forEach(visit);
+  }
+  ids.forEach(visit);
+  return [...selected].sort();
+}
+
+function readSelected(ids, byId, reader) {
+  let total = 0;
+  return ids.flatMap(id => {
+    const entry = byId.get(id);
+    return [...new Set([entry.sourcePath, ...entry.requiredResources])].map(sourcePath => {
+      const actual = verifiedResource(entry, sourcePath, reader);
+      total += actual.bytes;
+      if (total > MAX_CONTEXT_BYTES) throw new Error('Task context exceeds the 32000-byte budget; choose a narrower immediate step');
+      const content = actual.content.toString('utf8');
+      if (!Buffer.from(content, 'utf8').equals(actual.content) || content.includes('\0')) throw new Error('Required context resource is not UTF-8 text');
+      return { id, path: sourcePath, digest: actual.digest, bytes: actual.bytes, content };
+    });
+  });
+}
+
+function validatePrevious(previous) {
+  if (!previous) return;
+  const { receiptDigest, ...value } = previous;
+  if (previous.schemaVersion !== 'ecc.task-context-receipt.v1' || digestObject(value) !== receiptDigest
+    || !Array.isArray(previous.selectedIds) || !Array.isArray(previous.explicitIds)) {
+    throw new Error('Invalid task context receipt');
+  }
+}
+
+/** Pure task-scoped resolver. Returned context never invokes a native skill or changes permissions. */
+function resolveTaskContext({ repoRoot = DEFAULT_REPO_ROOT, task, profileId = 'lean@1', target = 'codex',
+  selectionMode = 'auto', include = [], exclude = [], load = false, previous = null, expectedDigest = null } = {}) {
+  validateTask(task);
+  validatePrevious(previous);
+  const plan = compileContextProfile({ repoRoot, profileId, target, selectionMode, include, exclude });
+  const registry = loadContextRegistry({ repoRoot });
+  if (registry.registryDigest !== plan.registryDigest) throw new Error('Registry changed during task selection');
+  const reader = createSourceReader(repoRoot);
+  const byId = new Map(registry.entries.map(entry => [entry.id, entry]));
+  const excluded = new Set(plan.excludedIds);
+  const explicitIds = [...(task.explicitIds || [])].sort();
+  const proposedIds = [...(task.proposedIds || [])].sort();
+  [...explicitIds, ...proposedIds].forEach(id => {
+    if (!byId.has(id)) throw new Error(`Unknown context ID: ${id}`);
+    if (excluded.has(id)) throw new Error(`Context ID is excluded: ${id}`);
+  });
+  const taskBinding = { sessionId: task.sessionId, taskId: task.taskId, revision: task.revision, phase: task.phase };
+  const bindingDigest = digestObject({ ...taskBinding, planDigest: plan.planDigest });
+  const reused = Boolean(previous && previous.bindingDigest === bindingDigest && !task.noWorkflow
+    && !explicitIds.length && !proposedIds.length);
+  const { candidates, exactIds } = task.noWorkflow || selectionMode === 'manual'
+    ? { candidates: [], exactIds: [] } : candidatesFor(task.query || '', registry.entries, excluded);
+  const requested = task.noWorkflow ? [] : explicitIds.length ? explicitIds
+    : reused ? previous.selectedIds : selectionMode === 'manual' ? []
+      : proposedIds.length ? proposedIds : exactIds.length === 1 ? exactIds : [];
+  const effectiveExplicit = reused ? previous.explicitIds : explicitIds;
+  const selectedIds = selectedClosure(requested, new Set(effectiveExplicit), byId, excluded, reader);
+  const selectionDigest = digestObject({ bindingDigest, selectedIds, explicitIds: effectiveExplicit });
+  if (expectedDigest && expectedDigest !== selectionDigest) throw new Error('Task selection is stale; resolve again before loading');
+  const resources = load && selectionMode !== 'suggest' ? readSelected(selectedIds, byId, reader) : [];
+  const loadedIds = [...new Set(resources.map(resource => resource.id))].sort();
+  const reason = task.noWorkflow ? 'no-workflow-needed' : reused ? 'reused-pinned-selection'
+    : explicitIds.length ? 'explicit-selection' : proposedIds.length && selectedIds.length ? 'bounded-local-selection'
+      : selectedIds.length ? 'exact-name-selection' : candidates.length ? 'agent-selection-required' : 'no-selection';
+  const receiptValue = { schemaVersion: 'ecc.task-context-receipt.v1', ...taskBinding, bindingDigest,
+    selectionDigest, profileId: plan.profileId, selectionMode, target, registryDigest: registry.registryDigest,
+    selectedIds, explicitIds: effectiveExplicit, loadedIds,
+    resources: resources.map(({ content: _content, ...resource }) => resource) };
+  return { schemaVersion: 'ecc.task-context.v1', profileId: plan.profileId, selectionMode, target,
+    reason, reused, selectedIds, loadedIds, candidates, resources,
+    activation: loadedIds.length ? 'context-returned' : 'proposed', nativeInvocation: 'unobserved',
+    enforcement: 'prompt-advisory', maxContextBytes: MAX_CONTEXT_BYTES,
+    receipt: { ...receiptValue, receiptDigest: digestObject(receiptValue) },
+    limitations: ['Context returned by this command is data for the calling agent; native invocation and execution are unobserved.',
+      'Free-text scores rank suggestions only. Automatic selection requires a unique complete skill name or admitted agent-proposed IDs.',
+      'Selection grants no tools, hooks, network access, installation or persistent configuration changes.',
+      'The byte cap is an output bound, not a measured native token budget. Declared workflow dependencies remain incomplete.'] };
+}
+
+module.exports = { resolveTaskContext };

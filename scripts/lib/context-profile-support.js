@@ -41,7 +41,8 @@ function normalizeMetadataText(value, label) {
 
 // Match the installer's generated-file exclusions and npm's Python cache exclusions.
 function isExcludedResource(relativePath) {
-  return relativePath.split('/').some(part => EXCLUDED_DIRECTORIES.has(part) || /\.(pyc|pyo|pyd)$/i.test(part));
+  return relativePath.split('/').some(part => EXCLUDED_DIRECTORIES.has(part)
+    || ['.gitignore', '.npmignore'].includes(part) || /\.(pyc|pyo|pyd)$/i.test(part));
 }
 
 function validateRelativePath(relativePath) {

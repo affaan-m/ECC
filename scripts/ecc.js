@@ -33,7 +33,7 @@ const COMMANDS = {
   },
   profile: {
     script: 'profile.js',
-    description: 'Inspect context profile definitions and read-only skill projections',
+    description: 'Inspect Lean/Full profiles, stage managed generations, and resolve task context',
   },
   'control-pane': {
     script: 'control-pane.js',

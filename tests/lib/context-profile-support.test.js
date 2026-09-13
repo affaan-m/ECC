@@ -34,7 +34,11 @@ function mockEnumeration(context, entriesFor) {
 
 function changedIdentity(stats) {
   const changed = Object.assign(Object.create(Object.getPrototypeOf(stats)), stats);
-  changed.ino = typeof stats.ino === 'bigint' ? stats.ino + 1n : stats.ino + 1;
+  // Windows file IDs can exceed Number's integer precision, so ino + 1 may
+  // equal ino. Use an exactly representable identity that always differs.
+  const zero = typeof stats.ino === 'bigint' ? 0n : 0;
+  const one = typeof stats.ino === 'bigint' ? 1n : 1;
+  changed.ino = stats.ino === zero ? one : zero;
   return changed;
 }
 
@@ -115,44 +119,50 @@ test('enumeration errors close the directory handle', context => withFixture(roo
   } finally { context.mock.restoreAll(); }
 }));
 
-test('directory identity changes during open close the handle before reading any entries', context => withFixture(root => {
-  const reader = createSourceReader(root);
-  const directory = path.join(fs.realpathSync(root), 'skills');
-  const originalStat = fs.lstatSync;
-  let opened = false;
-  let reads = 0;
-  let closes = 0;
-  context.mock.method(fs, 'opendirSync', () => {
-    opened = true;
-    return { readSync() { reads++; return null; }, closeSync() { closes++; } };
-  });
-  context.mock.method(fs, 'lstatSync', (filename, ...args) => {
-    const stats = originalStat(filename, ...args);
-    return opened && samePath(filename, directory) ? changedIdentity(stats) : stats;
-  });
-  try {
-    assert.throws(() => reader.list('skills'), /identity.*changed/i);
-    assert.equal(reads, 0);
-    assert.equal(closes, 1);
-  } finally { context.mock.restoreAll(); }
-}));
+for (const inode of [undefined, 2 ** 60]) {
+  const identityLabel = inode === undefined ? 'host inode' : 'large Windows-style inode';
 
-test('directory identity changes during enumeration reject the result and close the handle', context => withFixture(root => {
-  const reader = createSourceReader(root);
-  const directory = path.join(fs.realpathSync(root), 'skills');
-  const originalStat = fs.lstatSync;
-  let enumerated = false;
-  let closes = 0;
-  context.mock.method(fs, 'opendirSync', () => ({
-    readSync() { enumerated = true; return null; },
-    closeSync() { closes++; },
+  test(`directory identity changes during open close the handle before reading any entries (${identityLabel})`, context => withFixture(root => {
+    const reader = createSourceReader(root);
+    const directory = path.join(fs.realpathSync(root), 'skills');
+    const originalStat = fs.lstatSync;
+    let opened = false;
+    let reads = 0;
+    let closes = 0;
+    context.mock.method(fs, 'opendirSync', () => {
+      opened = true;
+      return { readSync() { reads++; return null; }, closeSync() { closes++; } };
+    });
+    context.mock.method(fs, 'lstatSync', (filename, ...args) => {
+      const stats = originalStat(filename, ...args);
+      if (samePath(filename, directory) && inode !== undefined) stats.ino = inode;
+      return opened && samePath(filename, directory) ? changedIdentity(stats) : stats;
+    });
+    try {
+      assert.throws(() => reader.list('skills'), /identity.*changed/i);
+      assert.equal(reads, 0);
+      assert.equal(closes, 1);
+    } finally { context.mock.restoreAll(); }
   }));
-  context.mock.method(fs, 'lstatSync', (filename, ...args) => {
-    const stats = originalStat(filename, ...args);
-    return enumerated && samePath(filename, directory) ? changedIdentity(stats) : stats;
-  });
-  try {
-    assert.throws(() => reader.list('skills'), /identity.*changed/i);
-    assert.equal(closes, 1);
-  } finally { context.mock.restoreAll(); }
-}));
+
+  test(`directory identity changes during enumeration reject the result and close the handle (${identityLabel})`, context => withFixture(root => {
+    const reader = createSourceReader(root);
+    const directory = path.join(fs.realpathSync(root), 'skills');
+    const originalStat = fs.lstatSync;
+    let enumerated = false;
+    let closes = 0;
+    context.mock.method(fs, 'opendirSync', () => ({
+      readSync() { enumerated = true; return null; },
+      closeSync() { closes++; },
+    }));
+    context.mock.method(fs, 'lstatSync', (filename, ...args) => {
+      const stats = originalStat(filename, ...args);
+      if (samePath(filename, directory) && inode !== undefined) stats.ino = inode;
+      return enumerated && samePath(filename, directory) ? changedIdentity(stats) : stats;
+    });
+    try {
+      assert.throws(() => reader.list('skills'), /identity.*changed/i);
+      assert.equal(closes, 1);
+    } finally { context.mock.restoreAll(); }
+  }));
+}
