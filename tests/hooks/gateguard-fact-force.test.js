@@ -1536,6 +1536,17 @@ function runTests() {
       expectDestructiveDeny('sudo -u postgres psql -c "drop table users"', 'sudo -u psql');
       expectDestructiveDeny('env PGUSER=postgres psql -c "drop table users"', 'env psql');
       expectDestructiveDeny('env PGPASSWORD=value psql -c "drop table users"', 'env PGPASSWORD psql');
+      expectDestructiveDeny('env -C /tmp psql -c "drop table users"', 'env -C psql');
+      expectDestructiveDeny('env --chdir /tmp psql -c "drop table users"', 'env --chdir psql');
+    })
+  )
+    passed++;
+  else failed++;
+
+  if (
+    test('denies destructive SQL through wrapper sh -c chains', () => {
+      expectDestructiveDeny('sudo sh -c \'psql -c "drop table users"\'', 'sudo sh -c psql');
+      expectDestructiveDeny('env sh -c \'psql -c "drop table users"\'', 'env sh -c psql');
     })
   )
     passed++;
@@ -1544,6 +1555,7 @@ function runTests() {
   if (
     test('allows SQL string literals and non-SQL clients mentioning SQL', () => {
       expectAllow('psql -c "SELECT \'drop table\' FROM audit_log"', 'SQL string literal');
+      expectAllow('psql -c "SELECT $tag$drop table users$tag$ FROM t"', 'tagged dollar-quote literal');
       expectAllow('echo "drop table users"', 'echo SQL mention');
     })
   )

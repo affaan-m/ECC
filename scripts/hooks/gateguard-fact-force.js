@@ -386,7 +386,7 @@ const SQL_CLIENT_COMMANDS = new Set([
  * Strip SQL string literals so phrases inside query data do not trigger
  * the destructive detector (e.g. `SELECT 'drop table' ...` is a read).
  * Handles single-quoted literals with '' escapes, double-quoted
- * identifiers, and $$...$$ dollar-quoted blocks.
+ * identifiers, and dollar-quoted blocks ($$...$$ and $tag$...$tag$).
  *
  * @param {string} input
  * @returns {string}
@@ -395,7 +395,7 @@ function stripSqlLiterals(input) {
   return String(input || '')
     .replace(/'(?:[^']|'')*'/g, "''")
     .replace(/"(?:[^"\\]|\\.)*"/g, '""')
-    .replace(/\$\$[\s\S]*?\$\$/g, '$$$$');
+    .replace(/(\$[A-Za-z_][A-Za-z0-9_]*\$|\$\$)[\s\S]*?\1/g, '$$$$');
 }
 
 const SUDO_VALUE_FLAGS = new Set([
@@ -467,6 +467,10 @@ function unwrapLeadWrappers(tokens) {
           index += 2;
           continue;
         }
+        if (arg === '-C' || arg === '--chdir') {
+          index += 2;
+          continue;
+        }
         if (/^--unset=.*$/.test(arg) || /^--chdir=.*$/.test(arg) || /^--argv0=.*$/.test(arg)) {
           index += 1;
           continue;
@@ -521,9 +525,10 @@ function isDestructiveQuoteAware(raw, depth = 0) {
     if (isDestructiveGit(tokens)) return true;
     if (isDestructiveSqlClient(tokens)) return true;
     if (isDestructiveFindExec(tokens.join(' '))) return true;
-    const base = commandBasename(tokens[0]);
+    const wi = unwrapLeadWrappers(tokens);
+    const base = wi < tokens.length ? commandBasename(tokens[wi]) : '';
     if (SHELL_WRAPPERS.has(base)) {
-      const ci = tokens.indexOf('-c');
+      const ci = tokens.indexOf('-c', wi);
       if (ci !== -1 && tokens[ci + 1] && isDestructiveQuoteAware(tokens[ci + 1], depth + 1)) {
         return true;
       }
