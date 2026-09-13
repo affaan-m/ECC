@@ -906,9 +906,13 @@ function runTests() {
       assert.strictEqual(settings.includeCoAuthoredBy, false, 'Claude co-author attribution should be disabled by default');
       assert.deepStrictEqual(settings.env, { MY_VAR: '1' }, 'existing env should be preserved');
       assert.deepStrictEqual(
-        settings.hooks.UserPromptSubmit,
-        [{ matcher: '*', hooks: [{ type: 'command', command: 'echo custom-submit' }] }],
+        settings.hooks.UserPromptSubmit[0],
+        { matcher: '*', hooks: [{ type: 'command', command: 'echo custom-submit' }] },
         'unrelated existing hooks should be preserved'
+      );
+      assert.ok(
+        settings.hooks.UserPromptSubmit.some(entry => entry.id === 'user-prompt:context-gate'),
+        'managed context gate should be registered alongside user hooks'
       );
       assert.deepStrictEqual(
         settings.hooks.PreToolUse[0],
