@@ -153,6 +153,13 @@ const STOP_HOOKS = [
   // covered separately below (run() bails on JSON.parse before notifying).
 ];
 
+// Valid input reaches each hook's production side effects. Keep desktop
+// notification coverage on the malformed/truncated path below so CI never
+// launches a real notification service such as macOS osascript.
+const VALID_PAYLOAD_STOP_ENTRIES = hooksConfig.hooks.Stop.filter(
+  entry => entry.id !== 'stop:desktop-notify'
+);
+
 // Direct-invocation legacy paths that echo stdin.
 const ECHOING_STOP_HOOKS = [
   'scripts/hooks/stop-format-typecheck.js',
@@ -174,7 +181,7 @@ const realisticPayload = stopPayload(100 * 1024);
 // flushes large stdout before exiting, but the outer lifecycle wrapper used to
 // call process.exit() immediately after forwarding it, cutting the JSON at the
 // OS pipe buffer and reintroducing #2222 above the tested runner layer.
-for (const entry of hooksConfig.hooks.Stop) {
+for (const entry of VALID_PAYLOAD_STOP_ENTRIES) {
   if (
     test(`${entry.id} registered wrapper flushes a 100KB Stop payload`, () => {
       const startedAt = process.hrtime.bigint();
