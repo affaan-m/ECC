@@ -360,6 +360,50 @@ function quoteAwareSegments(input) {
 const SHELL_WRAPPERS = new Set(['sh', 'bash', 'zsh', 'dash', 'ksh']);
 
 /**
+ * SQL clients whose `-c`/`-e`/positional arguments carry SQL statements.
+ * Quoted SQL (e.g. `psql -c "drop table users"`) is invisible to the
+ * quote-stripping SQL regex, so it is re-checked here against dequoted
+ * tokens where quoted content is preserved (issue #3024). Restricted to
+ * known clients so `git commit -m "drop table"` and `echo "drop table"`
+ * stay allowed.
+ */
+const SQL_CLIENT_COMMANDS = new Set([
+  'psql',
+  'postgres',
+  'mysql',
+  'mariadb',
+  'sqlite3',
+  'sqlite',
+  'sqlcmd',
+  'isql',
+  'pgcli',
+  'mycli',
+  'duckdb',
+  'bq',
+]);
+
+/**
+ * Detect destructive SQL passed as (possibly quoted) arguments to a known
+ * SQL client. Operates on dequoted tokens from `quoteAwareSegments`, so
+ * `psql -c "drop table users"` joins back to matchable text.
+ *
+ * @param {string[]} tokens dequoted tokens for one segment
+ * @returns {boolean}
+ */
+function isDestructiveSqlClient(tokens) {
+  if (!tokens || tokens.length === 0) return false;
+  let start = 0;
+  // Unwrap `sudo`/`doas`/`env ...` prefixes (single level, no flag parsing).
+  const first = commandBasename(tokens[0]);
+  if ((first === 'sudo' || first === 'doas' || first === 'env') && tokens.length > 1) {
+    start = 1;
+  }
+  if (start >= tokens.length) return false;
+  if (!SQL_CLIENT_COMMANDS.has(commandBasename(tokens[start]))) return false;
+  return DESTRUCTIVE_SQL_DD.test(tokens.slice(start).join(' '));
+}
+
+/**
  * Quote-aware destructive check: catches quoted command words, newline
  * separators, quoted `find -exec`, and `sh -c`/`bash -c` wrappers that evade
  * the quote-stripping path (GHSA-4v57-ph3x-gf55).
@@ -374,6 +418,7 @@ function isDestructiveQuoteAware(raw, depth = 0) {
     if (tokens.length === 0) continue;
     if (isDestructiveRm(tokens)) return true;
     if (isDestructiveGit(tokens)) return true;
+    if (isDestructiveSqlClient(tokens)) return true;
     if (isDestructiveFindExec(tokens.join(' '))) return true;
     const base = commandBasename(tokens[0]);
     if (SHELL_WRAPPERS.has(base)) {
