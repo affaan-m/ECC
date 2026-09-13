@@ -1521,6 +1521,35 @@ function runTests() {
   else failed++;
 
   if (
+    test('denies quoted destructive SQL passed to SQL clients (issue #3024)', () => {
+      expectDestructiveDeny('psql -c "drop table users"', 'psql quoted drop table');
+      expectDestructiveDeny("psql -c 'truncate audit_log'", 'psql quoted truncate');
+      expectDestructiveDeny('mysql -e "delete from sessions"', 'mysql quoted delete');
+      expectDestructiveDeny('sqlite3 app.db "DROP TABLE users"', 'sqlite3 quoted drop');
+    })
+  )
+    passed++;
+  else failed++;
+
+  if (
+    test('denies quoted destructive SQL through sudo/env wrappers', () => {
+      expectDestructiveDeny('sudo -u postgres psql -c "drop table users"', 'sudo -u psql');
+      expectDestructiveDeny('env PGUSER=postgres psql -c "drop table users"', 'env psql');
+    })
+  )
+    passed++;
+  else failed++;
+
+  if (
+    test('allows SQL string literals and non-SQL clients mentioning SQL', () => {
+      expectAllow('psql -c "SELECT \'drop table\' FROM audit_log"', 'SQL string literal');
+      expectAllow('echo "drop table users"', 'echo SQL mention');
+    })
+  )
+    passed++;
+  else failed++;
+
+  if (
     test('allows destructive SQL prose inside a quoted heredoc', () => {
       expectAllow(
         [

@@ -383,6 +383,112 @@ const SQL_CLIENT_COMMANDS = new Set([
 ]);
 
 /**
+ * Strip SQL string literals so phrases inside query data do not trigger
+ * the destructive detector (e.g. `SELECT 'drop table' ...` is a read).
+ * Handles single-quoted literals with '' escapes, double-quoted
+ * identifiers, and $$...$$ dollar-quoted blocks.
+ *
+ * @param {string} input
+ * @returns {string}
+ */
+function stripSqlLiterals(input) {
+  return String(input || '')
+    .replace(/'(?:[^']|'')*'/g, "''")
+    .replace(/"(?:[^"\\]|\\.)*"/g, '""')
+    .replace(/\$\$[\s\S]*?\$\$/g, '$$$$');
+}
+
+const SUDO_VALUE_FLAGS = new Set([
+  '-u',
+  '--user',
+  '-g',
+  '--group',
+  '-U',
+  '--other-user',
+  '-p',
+  '--prompt',
+  '-C',
+  '--close-from',
+  '-D',
+  '--chdir',
+  '-h',
+  '--host',
+  '-r',
+  '--role',
+  '-t',
+  '--type',
+  '-T',
+  '--command-timeout',
+]);
+
+/**
+ * Advance past `sudo`/`doas`/`env` wrappers including their flags and
+ * `VAR=value` assignments, so `sudo -u postgres psql ...` and
+ * `env PGUSER=postgres psql ...` still resolve to the real command.
+ *
+ * @param {string[]} tokens dequoted tokens for one segment
+ * @returns {number} index of the real command token
+ */
+function unwrapLeadWrappers(tokens) {
+  let index = 0;
+  for (let guard = 0; guard < 4; guard += 1) {
+    if (index >= tokens.length) return index;
+    const base = commandBasename(tokens[index]);
+    if (base === 'sudo' || base === 'doas') {
+      index += 1;
+      while (index < tokens.length) {
+        const flag = tokens[index];
+        if (flag === '--') {
+          index += 1;
+          break;
+        }
+        if (flag === '-' || !flag.startsWith('-')) break;
+        if (SUDO_VALUE_FLAGS.has(flag)) {
+          index += 2;
+          continue;
+        }
+        if (/^--[^=]+=.*$/.test(flag)) {
+          index += 1;
+          continue;
+        }
+        index += 1;
+      }
+      continue;
+    }
+    if (base === 'env') {
+      index += 1;
+      while (index < tokens.length) {
+        const arg = tokens[index];
+        if (arg === '--' || arg === '-' || arg === '-i' || arg === '--ignore-environment') {
+          index += 1;
+          continue;
+        }
+        if (arg === '-u' || arg === '--unset') {
+          index += 2;
+          continue;
+        }
+        if (/^--unset=.*$/.test(arg) || /^--chdir=.*$/.test(arg) || /^--argv0=.*$/.test(arg)) {
+          index += 1;
+          continue;
+        }
+        if (arg.startsWith('-') && !/^[A-Za-z_][A-Za-z0-9_]*=/.test(arg)) {
+          index += 1;
+          continue;
+        }
+        if (/^[A-Za-z_][A-Za-z0-9_]*=/.test(arg)) {
+          index += 1;
+          continue;
+        }
+        break;
+      }
+      continue;
+    }
+    break;
+  }
+  return index;
+}
+
+/**
  * Detect destructive SQL passed as (possibly quoted) arguments to a known
  * SQL client. Operates on dequoted tokens from `quoteAwareSegments`, so
  * `psql -c "drop table users"` joins back to matchable text.
@@ -392,15 +498,10 @@ const SQL_CLIENT_COMMANDS = new Set([
  */
 function isDestructiveSqlClient(tokens) {
   if (!tokens || tokens.length === 0) return false;
-  let start = 0;
-  // Unwrap `sudo`/`doas`/`env ...` prefixes (single level, no flag parsing).
-  const first = commandBasename(tokens[0]);
-  if ((first === 'sudo' || first === 'doas' || first === 'env') && tokens.length > 1) {
-    start = 1;
-  }
+  const start = unwrapLeadWrappers(tokens);
   if (start >= tokens.length) return false;
   if (!SQL_CLIENT_COMMANDS.has(commandBasename(tokens[start]))) return false;
-  return DESTRUCTIVE_SQL_DD.test(tokens.slice(start).join(' '));
+  return DESTRUCTIVE_SQL_DD.test(stripSqlLiterals(tokens.slice(start).join(' ')));
 }
 
 /**
