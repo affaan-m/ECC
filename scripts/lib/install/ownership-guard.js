@@ -139,13 +139,18 @@ function preserveUnwrittenFiles(state, migration, writtenDestinations) {
   return {
     ...state,
     operations: state.operations.filter(operation => (
+      operation.kind !== 'update-antigravity-hooks'
+      || writtenPaths.has(comparablePath(operation.destinationPath))
+      || migration.previousManagedOperations.has(comparablePath(operation.destinationPath))
+    )).filter(operation => (
       operation.kind !== 'copy-file'
       || migration.managedDestinations.has(comparablePath(operation.destinationPath))
       || writtenPaths.has(comparablePath(operation.destinationPath))
       || !pathExists(operation.destinationPath)
     )).map(operation => {
       const destination = comparablePath(operation.destinationPath);
-      return operation.kind === 'copy-file' && !writtenPaths.has(destination)
+      return (operation.kind === 'copy-file' || operation.kind === 'update-antigravity-hooks')
+        && !writtenPaths.has(destination)
         ? migration.previousManagedOperations.get(destination) || operation
         : operation;
     }),

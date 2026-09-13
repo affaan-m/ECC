@@ -1,0 +1,16 @@
+{
+  "ecc-security-guard": {
+    "PreToolUse": [
+      {
+        "matcher": "run_command|write_to_file|replace_file_content|multi_replace_file_content",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node .agents/ecc-hooks/hooks/antigravity-security.js",
+            "timeout": 10
+          }
+        ]
+      }
+    ]
+  }
+}

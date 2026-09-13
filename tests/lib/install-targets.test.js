@@ -543,6 +543,65 @@ function runTests() {
     );
   })) passed++; else failed++;
 
+  if (test('plans native Antigravity security hooks as managed operations', () => {
+    const repoRoot = path.join(__dirname, '..', '..');
+    const projectRoot = '/workspace/app';
+    const plan = planInstallTargetScaffold({
+      target: 'antigravity',
+      repoRoot,
+      projectRoot,
+      modules: [{
+        id: 'hooks-runtime',
+        paths: ['hooks', 'scripts/hooks', 'scripts/lib'],
+      }],
+    });
+
+    const hooksConfig = plan.operations.find(operation => (
+      operation.kind === 'update-antigravity-hooks'
+      && operation.destinationPath === path.join(projectRoot, '.agents', 'hooks.json')
+    ));
+    assert.ok(hooksConfig, 'Should merge the native Antigravity hook registration');
+    assert.deepStrictEqual(
+      Object.keys(hooksConfig.managedHookGroups),
+      ['ecc-security-guard']
+    );
+    assert.strictEqual(
+      plan.operations.at(-1),
+      hooksConfig,
+      'Should register hooks only after every runtime and profile file is planned'
+    );
+
+    for (const destination of [
+      'ecc-hooks/hooks/antigravity-security.js',
+      'ecc-hooks/hooks/block-no-verify.js',
+      'ecc-hooks/hooks/config-protection.js',
+      'ecc-hooks/hooks/gateguard-fact-force.js',
+      'ecc-hooks/hooks/gateguard-heredoc.js',
+      'ecc-hooks/lib/hook-flags.js',
+      'ecc-hooks/lib/powershell-destructive-command.js',
+      'ecc-hooks/lib/shell-substitution.js',
+    ]) {
+      assert.ok(
+        plan.operations.some(operation => (
+          operation.kind === 'copy-path'
+          && operation.destinationPath === path.join(projectRoot, '.agents', destination)
+        )),
+        `Should plan ${destination}`
+      );
+    }
+  })) passed++; else failed++;
+
+  if (test('requires an explicit source root before planning Antigravity hooks', () => {
+    assert.throws(
+      () => planInstallTargetScaffold({
+        target: 'antigravity',
+        projectRoot: '/workspace/app',
+        modules: [{ id: 'hooks-runtime', paths: ['scripts/hooks'] }],
+      }),
+      /Missing Antigravity hook config source/
+    );
+  })) passed++; else failed++;
+
   if (test('exposes validate and planOperations on adapters', () => {
     const claudeAdapter = getInstallTargetAdapter('claude');
     const cursorAdapter = getInstallTargetAdapter('cursor');

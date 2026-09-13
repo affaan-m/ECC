@@ -11,7 +11,10 @@ const yaml = require('js-yaml');
 const { applyInstallPlan } = require('../../scripts/lib/install/apply');
 
 const SCRIPT = path.join(__dirname, '..', '..', 'scripts', 'install-apply.js');
-const DEFAULT_INSTALL_APPLY_TIMEOUT_MS = process.platform === 'win32' ? 30000 : 10000;
+// Windows hosted runners can take longer to copy and hash the large managed
+// install surface under load. Keep the timeout bounded while avoiding false
+// failures after the child process has already made steady progress.
+const DEFAULT_INSTALL_APPLY_TIMEOUT_MS = process.platform === 'win32' ? 60000 : 10000;
 
 function createTempDir(prefix) {
   return fs.mkdtempSync(path.join(os.tmpdir(), prefix));
@@ -714,7 +717,18 @@ function runTests() {
     const projectDir = createTempDir('install-apply-project-');
 
     try {
-      const result = run(['--target', 'antigravity', '--profile', 'core'], { cwd: projectDir, homeDir });
+      const hooksPath = path.join(projectDir, '.agents', 'hooks.json');
+      fs.mkdirSync(path.dirname(hooksPath), { recursive: true });
+      fs.writeFileSync(hooksPath, `${JSON.stringify({
+        'user-linter': {
+          PostToolUse: [{ matcher: 'run_command', hooks: [{ command: './lint.sh' }] }],
+        },
+      }, null, 2)}\n`);
+
+      const result = run(
+        ['--target', 'antigravity', '--profile', 'core', '--enable-hooks'],
+        { cwd: projectDir, homeDir }
+      );
       assert.strictEqual(result.code, 0, result.stderr);
 
       assert.ok(fs.existsSync(path.join(projectDir, '.agents', 'rules', 'common-coding-style.md')));
@@ -725,24 +739,103 @@ function runTests() {
       assert.ok(fs.existsSync(path.join(projectDir, '.agents', 'agents', 'architect.md')));
       assert.ok(fs.existsSync(path.join(projectDir, '.agents', 'workflows', 'plan.md')));
       assert.ok(fs.existsSync(path.join(projectDir, '.agents', 'skills', 'tdd-workflow', 'SKILL.md')));
+      assert.ok(fs.existsSync(path.join(projectDir, '.agents', 'ecc-hooks', 'hooks', 'antigravity-security.js')));
+      const hooksConfig = readJson(hooksPath);
+      assert.ok(hooksConfig['user-linter'], 'Should preserve existing user hook definitions');
+      assert.ok(hooksConfig['ecc-security-guard'], 'Should install the ECC native security hook');
 
       const state = readJson(path.join(projectDir, '.agents', 'ecc-install-state.json'));
       assert.strictEqual(state.request.profile, 'core');
       assert.strictEqual(state.request.legacyMode, false);
+      assert.strictEqual(state.request.hookConsent, 'enabled');
       assert.deepStrictEqual(
         state.resolution.selectedModules,
         [
           'rules-core',
           'agents-core',
           'commands-core',
+          'hooks-runtime',
           'platform-configs',
           'skill-unified-memory',
           'workflow-quality'
         ]
       );
-      assert.ok(state.resolution.skippedModules.includes('hooks-runtime'));
+      assert.ok(!state.resolution.skippedModules.includes('hooks-runtime'));
       assert.ok(!state.resolution.skippedModules.includes('workflow-quality'));
       assert.ok(!state.resolution.skippedModules.includes('platform-configs'));
+      assert.ok(state.operations.some(operation => (
+        operation.kind === 'update-antigravity-hooks'
+        && fs.realpathSync(operation.destinationPath) === fs.realpathSync(hooksPath)
+      )));
+    } finally {
+      cleanup(homeDir);
+      cleanup(projectDir);
+    }
+  })) passed++; else failed++;
+
+  if (test('requires explicit consent before installing Antigravity hooks', () => {
+    const homeDir = createTempDir('install-apply-home-');
+    const projectDir = createTempDir('install-apply-project-');
+    try {
+      const result = run(['--target', 'antigravity', '--profile', 'core'], { cwd: projectDir, homeDir });
+      assert.notStrictEqual(result.code, 0);
+      assert.match(result.stderr, /automatic hook runtime/);
+      assert.ok(!fs.existsSync(path.join(projectDir, '.agents', 'hooks.json')));
+    } finally {
+      cleanup(homeDir);
+      cleanup(projectDir);
+    }
+  })) passed++; else failed++;
+
+  if (test('refuses Antigravity hooks when a runtime destination is user-owned', () => {
+    const homeDir = createTempDir('install-apply-home-');
+    const projectDir = createTempDir('install-apply-project-');
+    const runtimePath = path.join(projectDir, '.agents', 'ecc-hooks', 'hooks', 'block-no-verify.js');
+    try {
+      fs.mkdirSync(path.dirname(runtimePath), { recursive: true });
+      fs.writeFileSync(runtimePath, 'user owned\n');
+      const result = run(
+        ['--target', 'antigravity', '--profile', 'core', '--enable-hooks'],
+        { cwd: projectDir, homeDir }
+      );
+      assert.notStrictEqual(result.code, 0);
+      assert.match(result.stderr, /runtime destination is user-owned/);
+      assert.ok(!fs.existsSync(path.join(projectDir, '.agents', 'hooks.json')));
+      assert.strictEqual(fs.readFileSync(runtimePath, 'utf8'), 'user owned\n');
+    } finally {
+      cleanup(homeDir);
+      cleanup(projectDir);
+    }
+  })) passed++; else failed++;
+
+  if (test('--no-hooks disables managed Antigravity hooks and preserves user hooks', () => {
+    const homeDir = createTempDir('install-apply-home-');
+    const projectDir = createTempDir('install-apply-project-');
+    const hooksPath = path.join(projectDir, '.agents', 'hooks.json');
+    try {
+      fs.mkdirSync(path.dirname(hooksPath), { recursive: true });
+      fs.writeFileSync(hooksPath, `${JSON.stringify({
+        'user-linter': { PostToolUse: [{ matcher: '*', hooks: [{ command: './lint.sh' }] }] },
+      }, null, 2)}\n`);
+      const enabled = run(
+        ['--target', 'antigravity', '--profile', 'core', '--enable-hooks'],
+        { cwd: projectDir, homeDir }
+      );
+      assert.strictEqual(enabled.code, 0, enabled.stderr);
+
+      const disabled = run(
+        ['--target', 'antigravity', '--profile', 'core', '--no-hooks'],
+        { cwd: projectDir, homeDir }
+      );
+      assert.strictEqual(disabled.code, 0, disabled.stderr);
+      assert.deepStrictEqual(readJson(hooksPath), {
+        'user-linter': { PostToolUse: [{ matcher: '*', hooks: [{ command: './lint.sh' }] }] },
+      });
+      assert.ok(!fs.existsSync(path.join(projectDir, '.agents', 'ecc-hooks')));
+      const state = readJson(path.join(projectDir, '.agents', 'ecc-install-state.json'));
+      assert.strictEqual(state.request.hookConsent, 'declined');
+      assert.ok(!state.resolution.selectedModules.includes('hooks-runtime'));
+      assert.ok(!state.operations.some(operation => operation.moduleId === 'hooks-runtime'));
     } finally {
       cleanup(homeDir);
       cleanup(projectDir);

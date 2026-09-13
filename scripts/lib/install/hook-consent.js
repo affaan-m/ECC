@@ -46,6 +46,8 @@ function normalizeOperationPath(value) {
 function isHookRuntimeOperation(operation = {}) {
   if (
     operation.kind === 'update-claude-settings'
+    || operation.kind === 'update-antigravity-hooks'
+    || operation.kind === 'remove-antigravity-hooks'
     || operation.moduleId === HOOK_RUNTIME_MODULE_ID
   ) {
     return true;
@@ -60,6 +62,7 @@ function isHookRuntimeOperation(operation = {}) {
     || source.startsWith('.cursor/hooks/')
     || source === '.cursor/hooks.json'
     || destination.endsWith('/hooks/hooks.json')
+    || destination.endsWith('/.agents/hooks.json')
     || destination.endsWith('/.cursor/hooks.json')
     || destination.includes('/.cursor/hooks/')
   );
