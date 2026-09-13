@@ -141,6 +141,16 @@ function formatSpawnFailure(result, elapsedMs) {
   });
 }
 
+function isNativeLinux() {
+  if (process.platform !== 'linux') return false;
+
+  try {
+    return !fs.readFileSync('/proc/version', 'utf8').toLowerCase().includes('microsoft');
+  } catch {
+    return false;
+  }
+}
+
 // All registered Stop hooks (hooks/hooks.json).
 const STOP_HOOKS = [
   ['stop:format-typecheck', 'scripts/hooks/stop-format-typecheck.js'],
@@ -158,6 +168,9 @@ const STOP_HOOKS = [
 // launches a real notification service such as macOS osascript.
 const VALID_PAYLOAD_STOP_ENTRIES = hooksConfig.hooks.Stop.filter(
   entry => entry.id !== 'stop:desktop-notify'
+);
+const desktopNotifyEntry = hooksConfig.hooks.Stop.find(
+  entry => entry.id === 'stop:desktop-notify'
 );
 
 // Direct-invocation legacy paths that echo stdin.
@@ -199,6 +212,31 @@ for (const entry of VALID_PAYLOAD_STOP_ENTRIES) {
       JSON.parse(result.stdout);
     })
   )
+    passed++;
+  else failed++;
+}
+
+// Native Linux has no notification backend in desktop-notify, so it can
+// exercise the enabled production path without launching an OS service.
+if (isNativeLinux()) {
+  if (test('stop:desktop-notify enabled wrapper flushes a 100KB Stop payload', () => {
+    assert.ok(desktopNotifyEntry, 'stop:desktop-notify must remain registered');
+    const result = runRegisteredStopHook(desktopNotifyEntry, realisticPayload, {
+      ECC_DISABLED_HOOKS: '',
+      ECC_HOOKS_ENABLED: 'true'
+    });
+    assert.strictEqual(
+      result.status,
+      0,
+      `stop:desktop-notify: expected exit 0, got ${result.status}: ${result.stderr}`
+    );
+    assert.strictEqual(
+      result.stdout,
+      realisticPayload,
+      `stop:desktop-notify: registered wrapper must echo ${realisticPayload.length} characters uncut`
+    );
+    JSON.parse(result.stdout);
+  }))
     passed++;
   else failed++;
 }
