@@ -22,6 +22,8 @@ const fs = require('fs');
 const http = require('http');
 const os = require('os');
 const path = require('path');
+const vm = require('vm');
+const { createRequire } = require('module');
 const { spawn, spawnSync } = require('child_process');
 
 const CLI = path.join(__dirname, '..', '..', 'scripts', 'plan-canvas.js');
@@ -144,6 +146,41 @@ async function main() {
   let key = null;
 
   try {
+    await test('Windows startup identity tolerates slow PowerShell and reuses the current process identity', async () => {
+      const module = { exports: {} };
+      const cliRequire = createRequire(CLI);
+      let lookups = 0;
+      vm.runInNewContext(fs.readFileSync(CLI, 'utf8'), {
+        module,
+        require: name => name === 'child_process' ? {
+          execFileSync: (command, args, options) => {
+            assert.strictEqual(command, 'powershell.exe');
+            lookups += 1;
+            // Model a cold PowerShell launch exceeding the old three-second budget.
+            if (options.timeout < 5000) throw Object.assign(new Error('timed out'), { code: 'ETIMEDOUT' });
+            return '638920000000000000\r\n';
+          }
+        } : cliRequire(name),
+        process: { pid: process.pid, platform: 'win32', kill: process.kill.bind(process) },
+        setTimeout,
+        URL,
+        Buffer
+      }, { filename: CLI });
+      const lockDir = path.join(tmp, 'windows-startup-locks');
+      let active = 0;
+      let maximumActive = 0;
+      const runLocked = () => module.exports.withServerStartLock(port + 7, async () => {
+        active += 1;
+        maximumActive = Math.max(maximumActive, active);
+        await new Promise(resolve => setTimeout(resolve, 40));
+        active -= 1;
+      }, { lockDir, timeoutMs: 2000 });
+      await Promise.all([runLocked(), runLocked()]);
+      assert.strictEqual(maximumActive, 1);
+      assert.strictEqual(lookups, 1, 'same-process tickets must reuse the successful identity lookup');
+      assert.deepStrictEqual(fs.readdirSync(lockDir), []);
+    });
+
     await test('port-scoped startup lock serializes server replacement callers', async () => {
       const lockDir = path.join(tmp, 'startup-locks');
       let active = 0;

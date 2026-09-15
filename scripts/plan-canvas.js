@@ -182,7 +182,17 @@ function processIsAlive(pid) {
   }
 }
 
+let currentProcessIdentity = null;
+
 function readProcessIdentity(pid) {
+  // Only our own PID is safe to cache: other processes can exit and reuse a PID.
+  if (pid === process.pid && currentProcessIdentity !== null) return currentProcessIdentity;
+  const identity = queryProcessIdentity(pid);
+  if (pid === process.pid && identity !== null) currentProcessIdentity = identity;
+  return identity;
+}
+
+function queryProcessIdentity(pid) {
   if (!Number.isInteger(pid) || pid <= 0) return null;
   try {
     if (process.platform === 'linux') {
@@ -198,7 +208,8 @@ function readProcessIdentity(pid) {
       const startTicks = execFileSync(
         'powershell.exe',
         ['-NoProfile', '-NonInteractive', '-Command', command],
-        { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 3000, windowsHide: true }
+        // Cold PowerShell startup on loaded Windows runners can exceed three seconds.
+        { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 10000, windowsHide: true }
       ).trim();
       return startTicks ? `win32:${startTicks}` : null;
     }
