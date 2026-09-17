@@ -107,3 +107,6 @@ ecc2/target/
 assets/images/security/badrudi-exploit.mp4
 
 .aider*
+branch_structure.json
+temp_auto_push.bat
+temp_interactive_push.bat
