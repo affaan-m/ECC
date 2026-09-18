@@ -15,6 +15,8 @@
 
 'use strict';
 
+const { quotedRegionAt } = require('../lib/shell-quotes');
+
 const MAX_STDIN = 1024 * 1024;
 let raw = '';
 
@@ -34,6 +36,53 @@ const GIT_COMMANDS_WITH_NO_VERIFY = [
  * Characters that can appear immediately before 'git' in a command string.
  */
 const VALID_BEFORE_GIT = ' \t\n\r;&|$`(<{!"\']/.~\\';
+
+/**
+ * Programs that execute a quoted argument as a shell command line, so a
+ * `git` inside one of their quoted arguments is a command that must still
+ * be checked (`sh -c "git commit --no-verify"`, `sudo`, `xargs`, `env`...).
+ * For any other argv0 (`node cli.js 'git commit --no-verify'`,
+ * `printf '%s' '...'`, `grep -n '...' docs.md`) a quoted string is data,
+ * unless it is a runtime given an eval flag (see CODE_EVALUATORS).
+ */
+const COMMAND_WRAPPERS = new Set([
+  'sh',
+  'bash',
+  'zsh',
+  'dash',
+  'ksh',
+  'fish',
+  'busybox',
+  'eval',
+  'exec',
+  'command',
+  'xargs',
+  'sudo',
+  'doas',
+  'su',
+  'env',
+  'nice',
+  'ionice',
+  'nohup',
+  'timeout',
+  'time',
+  'watch',
+  'flock',
+  'ssh',
+  'script',
+  'csh',
+  'tcsh',
+  'setsid',
+  'stdbuf',
+  'taskset',
+  'chrt',
+  'unshare',
+  'chroot',
+  'runuser',
+  'npx',
+  'bunx',
+  'pnpx',
+]);
 
 // Git config section and variable names are case-insensitive
 // (subsection names are case-sensitive but core.hooksPath has none),
@@ -149,7 +198,11 @@ function tokenizeShellWords(input, start = 0, end = input.length) {
       continue;
     }
 
-    if (/\s/.test(char)) {
+    // Whitespace ends a word; so do the unquoted substitution delimiters,
+    // which can never be part of a word (`echo "$(git push --no-verify)"`,
+    // "`git push --no-verify`" used to yield the token `--no-verify)` /
+    // `--no-verify\``, hiding the flag).
+    if (/[\s`()]/.test(char)) {
       pushToken(i);
       continue;
     }
@@ -290,6 +343,80 @@ function isInComment(input, idx) {
 }
 
 /**
+ * Strip a leading path and a trailing `.exe` from a command word.
+ */
+function commandBasename(word) {
+  return String(word || '')
+    .replace(/^.*[\\/]/, '')
+    .replace(/\.exe$/i, '')
+    .toLowerCase();
+}
+
+/**
+ * Runtimes that run a quoted argument as program source, each with the
+ * flags that do it: `node -e`, `python3 -c`, `perl -E`, `php -r`,
+ * `deno eval`. That source can spawn git itself, so it stays subject to the
+ * guard. The same runtime without one of its own eval flags receives a
+ * script path and arguments, which are data (`node cli.js 'git commit
+ * --no-verify'`).
+ *
+ * The flags are per runtime because the same letter means different things:
+ * node's `-r` preloads a module and leaves the rest of the command line as
+ * ordinary arguments, while php's `-r` is how php is handed code.
+ */
+const CODE_EVALUATORS = new Map([
+  ['node', ['-e', '--eval', '-p', '--print']],
+  ['nodejs', ['-e', '--eval', '-p', '--print']],
+  ['bun', ['-e', '--eval', '-p', '--print']],
+  ['deno', ['-e', '--eval', 'eval']],
+  ['python', ['-c']],
+  ['python2', ['-c']],
+  ['python3', ['-c']],
+  ['pythonw', ['-c']],
+  ['perl', ['-e', '-E']],
+  ['ruby', ['-e']],
+  ['php', ['-r']],
+  ['lua', ['-e']],
+  ['luajit', ['-e']],
+  ['rscript', ['-e']],
+  ['osascript', ['-e']],
+  ['groovy', ['-e']],
+  ['julia', ['-e', '-E']],
+  ['elixir', ['-e']],
+  ['erl', ['-eval']],
+]);
+
+/**
+ * Whether the words between the program and its quoted argument turn that
+ * argument into code. A flag is matched as a whole word, or as the `=` form
+ * of itself, so a path that happens to end in one of them cannot qualify.
+ */
+function evaluatesQuotedArgument(input, region, base) {
+  const flags = CODE_EVALUATORS.get(base);
+  if (flags === undefined) return false;
+  const words = input.slice(region.argv0Start, region.start).split(/\s+/);
+  return words.some((word) => flags.some((flag) => word === flag || word.startsWith(`${flag}=`)));
+}
+
+/**
+ * A `git` inside a quoted string is only a command when that string is
+ * handed to something that executes it: a shell or process wrapper, or a
+ * runtime given an eval flag. Otherwise it is an argument of an unrelated
+ * program (a CLI under test, printf, grep, a script path, ...) and must not
+ * be inspected for bypass flags. A double-quoted string that contains a
+ * command substitution (`"$(git ...)"`, "`git ...`") runs git before any
+ * program receives it, so it is never data.
+ */
+function isQuotedDataArgument(input, idx) {
+  const region = quotedRegionAt(input, idx);
+  if (region === null || region.argv0 === '') return false;
+  if (region.substitution) return false;
+  const base = commandBasename(region.argv0);
+  if (base === 'git' || COMMAND_WRAPPERS.has(base)) return false;
+  return !evaluatesQuotedArgument(input, region, base);
+}
+
+/**
  * Find the next 'git' token in the input starting from a position.
  */
 function findGit(input, start) {
@@ -307,7 +434,9 @@ function findGit(input, start) {
     }
 
     const before = idx > 0 ? input[idx - 1] : ' ';
-    if (VALID_BEFORE_GIT.includes(before)) return { idx, len };
+    if (VALID_BEFORE_GIT.includes(before) && !isQuotedDataArgument(input, idx)) {
+      return { idx, len };
+    }
     pos = idx + 1;
   }
   return null;
@@ -404,18 +533,28 @@ function isNoVerifyLongFlag(value) {
 }
 
 /**
+ * A flag inside a code payload is followed by the punctuation that closes the
+ * call (`execSync("git push --no-verify")`), and the word tokenizer keeps that
+ * punctuation in the token. Trim it so the flag is comparable; a real flag
+ * never ends in one of these characters.
+ */
+function flagToken(value) {
+  return value.replace(/[)\]}'"`;,]+$/, '');
+}
+
+/**
  * Check if the input contains a --no-verify flag for a specific git command.
  * Only inspects the portion of the input starting at `offset` (the position
  * right after the detected subcommand keyword) so that flags belonging to
  * earlier commands in a chain are not falsely matched.
  */
-function hasNoVerifyFlag(input, command, offset) {
-  const segmentEnd = findCommandSegmentEnd(input, offset);
+function hasNoVerifyFlag(input, command, offset, limit = input.length) {
+  const segmentEnd = Math.min(findCommandSegmentEnd(input, offset), limit);
   const tokens = tokenizeShellWords(input, offset, segmentEnd);
   let skipNext = false;
 
   for (const token of tokens) {
-    const value = token.value;
+    const value = flagToken(token.value);
 
     if (skipNext) {
       skipNext = false;
@@ -497,7 +636,13 @@ function checkCommand(input) {
       };
     }
 
-    if (hasNoVerifyFlag(input, gitCommand, offset)) {
+    // A git command line inside a quoted string (`sh -c 'git push ...'`)
+    // ends with that string: scanning past the closing quote would read the
+    // rest of the outer statement in the wrong quote state, so `sh -c 'git
+    // push --no-verify'; echo done` glued `; echo done` onto the flag token.
+    const region = quotedRegionAt(input, detected.gitStart);
+    const limit = region === null ? input.length : region.end;
+    if (hasNoVerifyFlag(input, gitCommand, offset, limit)) {
       return {
         blocked: true,
         reason: `BLOCKED: --no-verify flag is not allowed with git ${gitCommand}. Git hooks must not be bypassed.`,
