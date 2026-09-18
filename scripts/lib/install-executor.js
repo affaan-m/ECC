@@ -47,6 +47,12 @@ function validateLegacyTarget(target) {
   // positional syntax (which is legacy-only). Guide the user to the right mode
   // instead of implying the target is unknown (#2282).
   if (SUPPORTED_INSTALL_TARGETS.includes(target)) {
+    if (target === 'mistral-vibe') {
+      throw new Error(
+        "Target 'mistral-vibe' supports explicit Agent Skill installs only. " +
+          "Use `install.sh --target mistral-vibe --skills <id,...>`."
+      );
+    }
     throw new Error(
       `Target '${target}' is supported, but the bare-language install syntax only accepts ${LEGACY_INSTALL_TARGETS.join(', ')}. ` +
         `Install '${target}' with a component selection instead, e.g. \`install.sh --target ${target} --profile full\` ` +

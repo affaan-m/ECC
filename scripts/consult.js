@@ -242,11 +242,17 @@ function commandFor(kind, id, target) {
   if (kind === 'profile') {
     return `npx ecc-universal install --profile ${id} --target ${target}`;
   }
+  if (target === 'mistral-vibe' && id.startsWith('skill:')) {
+    return `npx ecc-universal install --target mistral-vibe --skills ${id.slice('skill:'.length)}`;
+  }
 
   return `npx ecc-universal install --profile minimal --target ${target} --with ${id}`;
 }
 
 function planCommandFor(componentId, target) {
+  if (target === 'mistral-vibe' && componentId.startsWith('skill:')) {
+    return `npx ecc-universal plan --target mistral-vibe --skills ${componentId.slice('skill:'.length)}`;
+  }
   return `npx ecc-universal plan --profile minimal --target ${target} --with ${componentId}`;
 }
 
@@ -358,6 +364,7 @@ function rankComponents({ queryTokens, target, limit }) {
 }
 
 function rankProfiles({ queryTokens, target, limit }) {
+  if (target === 'mistral-vibe') return [];
   const manifests = loadInstallManifests();
   return listInstallProfiles()
     .map(profile => {
