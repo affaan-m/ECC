@@ -89,6 +89,91 @@ function runTests() {
     fs.rmSync(homeDir, { recursive: true, force: true });
   })) passed += 1; else failed += 1;
 
+  if (test('extra trusted roots allow recording files outside harness home', () => {
+    const homeDir = tempDir('legacy-extra-root-');
+    const grokHome = path.join(homeDir, '.grok');
+    const agentsHome = path.join(homeDir, '.agents');
+    const backupDir = path.join(grokHome, 'backups', 'ecc-test');
+    const skillPath = path.join(agentsHome, 'skills', 'tdd-workflow', 'SKILL.md');
+    fs.mkdirSync(grokHome, { recursive: true });
+    fs.mkdirSync(path.dirname(skillPath), { recursive: true });
+    const statePath = beginLegacySyncState({
+      codexHome: grokHome,
+      backupDir,
+      extraTrustedRoots: [agentsHome],
+    });
+    recordLegacySyncPath({ statePath, filePath: skillPath });
+    fs.writeFileSync(skillPath, '# skill\n');
+    finalizeLegacySyncState({ statePath });
+    const state = JSON.parse(fs.readFileSync(statePath, 'utf8'));
+    const canonicalAgentsHome = fs.realpathSync(agentsHome);
+    assert.ok(state.trustedRoots.some(rootPath => {
+      try {
+        return fs.realpathSync(rootPath) === canonicalAgentsHome;
+      } catch {
+        return path.resolve(rootPath) === path.resolve(agentsHome);
+      }
+    }));
+    fs.rmSync(homeDir, { recursive: true, force: true });
+  })) passed += 1; else failed += 1;
+
+  if (test('begin refuses filesystem root and parent-segment extra trusted roots', () => {
+    const homeDir = tempDir('legacy-root-fs-');
+    const grokHome = path.join(homeDir, '.grok');
+    fs.mkdirSync(grokHome, { recursive: true });
+    const backupDir = path.join(grokHome, 'backups', 'ecc-test');
+    const fsRoot = path.parse(homeDir).root;
+    assert.throws(
+      () => beginLegacySyncState({
+        codexHome: grokHome,
+        backupDir,
+        extraTrustedRoots: [fsRoot],
+      }),
+      /filesystem root/
+    );
+    assert.throws(
+      () => beginLegacySyncState({
+        codexHome: grokHome,
+        backupDir,
+        extraTrustedRoots: ['..'],
+      }),
+      /parent segments/
+    );
+    assert.throws(
+      () => beginLegacySyncState({
+        codexHome: fsRoot,
+        backupDir,
+      }),
+      /filesystem root/
+    );
+    fs.rmSync(homeDir, { recursive: true, force: true });
+  })) passed += 1; else failed += 1;
+
+  if (test('recording accepts a realpath destination under a lexically different trusted root', () => {
+    const homeDir = tempDir('legacy-alias-root-');
+    const realHome = path.join(homeDir, 'real-home');
+    const lexicalHome = path.join(homeDir, 'lexical-home');
+    fs.mkdirSync(realHome, { recursive: true });
+    fs.symlinkSync(realHome, lexicalHome);
+    const destFile = path.join(realHome, 'commands', 'aside.md');
+    fs.mkdirSync(path.dirname(destFile), { recursive: true });
+    fs.writeFileSync(destFile, '# aside\n');
+    const realDest = fs.realpathSync(destFile);
+    assert.notStrictEqual(
+      path.resolve(path.join(lexicalHome, 'commands', 'aside.md')),
+      realDest
+    );
+
+    const statePath = beginLegacySyncState({
+      codexHome: lexicalHome,
+      backupDir: path.join(lexicalHome, 'backups', 'ecc-test'),
+    });
+    recordLegacySyncPath({ statePath, filePath: realDest });
+    const state = JSON.parse(fs.readFileSync(statePath, 'utf8'));
+    assert.ok(state.paths.some(entry => path.basename(entry.path) === 'aside.md'));
+    fs.rmSync(homeDir, { recursive: true, force: true });
+  })) passed += 1; else failed += 1;
+
   if (test('dry-run is non-mutating and drifted artifacts are retained', () => {
     const homeDir = tempDir('legacy-codex-home-');
     const codexHome = path.join(homeDir, '.codex');

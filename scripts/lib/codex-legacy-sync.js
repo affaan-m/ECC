@@ -5,6 +5,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const { execFileSync } = require('child_process');
+const { realpathNearestExisting } = require('./path-safety');
 
 const SCHEMA = 'ecc.codex-legacy-sync.v1';
 const BEGIN_MARKER = '<!-- BEGIN ECC -->';
@@ -154,38 +155,89 @@ function parseState(content, statePath) {
   return state;
 }
 
-function hasUnsafeManagedAncestor(filePath, codexHome) {
-  const relativePath = path.relative(codexHome, filePath);
-  if (relativePath === '' || relativePath.startsWith('..') || path.isAbsolute(relativePath)) {
-    return relativePath !== '';
+function canonicalizeTrustedRoot(rootPath) {
+  if (String(rootPath).split(/[\\/]/).includes('..')) {
+    throw new Error(`Refusing to trust a legacy sync root with parent segments: ${rootPath}`);
   }
-  const segments = relativePath.split(path.sep).slice(0, -1);
-  let currentPath = codexHome;
-  for (const segment of [null, ...segments]) {
-    if (segment !== null) currentPath = path.join(currentPath, segment);
-    try {
-      const stat = fs.lstatSync(currentPath);
-      if (stat.isSymbolicLink() || !stat.isDirectory()) return true;
-    } catch (error) {
-      if (error.code === 'ENOENT') break;
-      throw error;
-    }
+  const canonical = realpathNearestExisting(path.resolve(rootPath));
+  if (canonical === path.parse(canonical).root) {
+    throw new Error(`Refusing to trust filesystem root as a legacy sync root: ${rootPath}`);
   }
-  return false;
+  return canonical;
 }
 
-function isWithinRoot(filePath, rootPath) {
-  const relativePath = path.relative(rootPath, filePath);
+function canonicalizeManagedPath(filePath) {
+  const resolved = path.resolve(filePath);
+  return path.join(realpathNearestExisting(path.dirname(resolved)), path.basename(resolved));
+}
+
+function isLexicalRelativeWithin(rootPath, filePath) {
+  const relativePath = path.relative(path.resolve(rootPath), path.resolve(filePath));
   return relativePath === '' || (!relativePath.startsWith('..') && !path.isAbsolute(relativePath));
 }
 
-function getTrustedRoot(state, filePath) {
+function isWithinRoot(filePath, rootPath) {
+  if (!rootPath) return false;
+  if (isLexicalRelativeWithin(rootPath, filePath)) return true;
+  let realRoot;
+  try {
+    realRoot = canonicalizeTrustedRoot(rootPath);
+  } catch {
+    return false;
+  }
+  if (isLexicalRelativeWithin(realRoot, canonicalizeManagedPath(filePath))) return true;
+  const resolvedRoot = path.resolve(rootPath);
+  let current = path.resolve(path.dirname(filePath));
+  while (true) {
+    try {
+      if (fs.realpathSync(current) === realRoot) return true;
+    } catch {
+      if (path.resolve(current) === resolvedRoot) return true;
+    }
+    const parent = path.dirname(current);
+    if (parent === current) return false;
+    current = parent;
+  }
+}
+
+function hasUnsafeManagedAncestor(filePath, trustedRoot) {
+  let realRoot;
+  try {
+    realRoot = canonicalizeTrustedRoot(trustedRoot);
+  } catch {
+    return true;
+  }
+  const resolvedRoot = path.resolve(trustedRoot);
+  let current = path.resolve(path.dirname(filePath));
+  while (true) {
+    let reachedRoot = path.resolve(current) === resolvedRoot;
+    try {
+      reachedRoot = reachedRoot || fs.realpathSync(current) === realRoot;
+    } catch {
+      // Missing ancestor: keep walking toward the root.
+    }
+    if (reachedRoot) return false;
+    try {
+      const stat = fs.lstatSync(current);
+      if (stat.isSymbolicLink() || !stat.isDirectory()) return true;
+    } catch (error) {
+      if (error.code !== 'ENOENT') throw error;
+    }
+    const parent = path.dirname(current);
+    if (parent === current) return false;
+    current = parent;
+  }
+}
+
+function getConfiguredRoots(state) {
   const roots = Array.isArray(state.trustedRoots) && state.trustedRoots.length > 0
     ? state.trustedRoots
     : [state.codexHome];
-  return roots
-    .map(rootPath => path.resolve(rootPath))
-    .find(rootPath => isWithinRoot(filePath, rootPath)) || null;
+  return [...new Set(roots.filter(Boolean).map(rootPath => canonicalizeTrustedRoot(rootPath)))];
+}
+
+function getTrustedRoot(state, filePath) {
+  return getConfiguredRoots(state).find(rootPath => isWithinRoot(filePath, rootPath)) || null;
 }
 
 function snapshotLegacyPath(filePath) {
@@ -227,6 +279,9 @@ function beginLegacySyncState(options) {
   const configPath = path.join(codexHome, 'config.toml');
   const agentsPath = path.join(codexHome, 'AGENTS.md');
   const installedHooksPath = options.installedHooksPath ? path.resolve(options.installedHooksPath) : null;
+  const extraTrustedRoots = Array.isArray(options.extraTrustedRoots)
+    ? options.extraTrustedRoots.filter(Boolean)
+    : [];
   const priorState = readStateIfPresent(statePath);
   if (priorState && priorState.status !== 'installed') {
     throw new Error(`Legacy Codex sync state requires recovery before reinstall: ${statePath}`);
@@ -237,7 +292,8 @@ function beginLegacySyncState(options) {
     ...(Array.isArray(priorState?.trustedRoots) ? priorState.trustedRoots : []),
     ...(priorState?.installedHooksPath ? [priorState.installedHooksPath] : []),
     ...(installedHooksPath ? [installedHooksPath] : []),
-  ].map(rootPath => path.resolve(rootPath)))];
+    ...extraTrustedRoots,
+  ].map(rootPath => canonicalizeTrustedRoot(rootPath)))];
   const state = priorState ? {
     ...priorState,
     status: 'applying',
@@ -281,7 +337,10 @@ function recordLegacySyncPath(options) {
   if (hasUnsafeManagedAncestor(filePath, trustedRoot)) {
     throw new Error(`Refusing to manage legacy sync path through symlinked ancestor: ${filePath}`);
   }
-  if (!state.paths.some(entry => entry.path === filePath)) {
+  const canonicalFile = canonicalizeManagedPath(filePath);
+  if (!state.paths.some(entry => (
+    entry.path === filePath || canonicalizeManagedPath(entry.path) === canonicalFile
+  ))) {
     const snapshot = snapshotLegacyPath(filePath);
     state.paths.push(snapshot);
     state.rollbackPaths = [...(state.rollbackPaths || []), { ...snapshot }];

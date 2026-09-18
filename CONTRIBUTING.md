@@ -415,6 +415,7 @@ ECC ships skill subsets for other harnesses:
 
 - **Codex:** `.agents/skills/` — skills listed in `agents/openai.yaml` are loaded by Codex.
 - **Cursor:** `.cursor/skills/` — a subset of skills is bundled for Cursor.
+- **Grok Build:** copied-config sync via `scripts/sync-ecc-to-grok.sh` into `~/.grok` (not a plugin/marketplace or `install-modules.json` target). Keep Grok guidance in `.grok/` and `docs/GROK-NAVIGATION-GUIDE.md`. Do not treat this as a replacement for skills-first install.
 
 When you **add a new skill** that should be available on Codex or Cursor:
 
