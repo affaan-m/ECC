@@ -1007,16 +1007,62 @@ function isChecked(key) {
 
 // --- Sanitize file path against injection ---
 
+// Unicode policy for sanitizePath, mirroring the repo-wide dangerous set in
+// scripts/ci/check-unicode-safety.js. Named so the ranges stay auditable and
+// drift against the CI policy is visible in one place.
+const ASCII_CONTROL_MAX = 0x1f;
+const ASCII_DELETE = 0x7f;
+const C1_CONTROLS = [0x80, 0x9f]; // Unicode C1 control block (U+0080..U+009F)
+const BIDI_MARKS = [0x200e, 0x200f]; // LRM/RLM
+const BIDI_EMBEDDINGS = [0x202a, 0x202e]; // LRE..PDF
+const BIDI_ISOLATES = [0x2066, 0x2069]; // LRI..PDI
+const ZERO_WIDTHS = [0x200b, 0x200d]; // ZWSP..ZWJ
+const WORD_JOINER = 0x2060;
+const BYTE_ORDER_MARK = 0xfeff;
+const VARIATION_SELECTORS = [0xfe00, 0xfe0f];
+const VARIATION_SUPPLEMENTS = [0xe0100, 0xe01ef]; // MONGOLIAN..TAGS (VS17..VS256)
+const TAG_BLOCK = [0xe0000, 0xe007f]; // ASCII-smuggling tag characters
+const MONGOLIAN_VOWEL_SEPARATOR = 0x180e;
+const HANGUL_CHOSEONG_FILLER = 0x115f;
+const HANGUL_JUNGSEONG_FILLER = 0x1160;
+const HANGUL_FILLER = 0x3164;
+const INVISIBLE_MATH_OPERATORS = [0x2061, 0x2064]; // FUNCTION APPLICATION..INVISIBLE PLUS
+const LINE_SEPARATOR = 0x2028;
+const PARAGRAPH_SEPARATOR = 0x2029;
+const SANITIZED_PATH_MAX_LENGTH = 500;
+
+function inRange(code, [lo, hi]) {
+  return code >= lo && code <= hi;
+}
+
 function sanitizePath(filePath) {
-  // Strip control chars (including null), bidi overrides, and newlines
+  // Strip control chars (including null), bidi overrides, separators,
+  // and the dangerous invisible characters defined by the constants
+  // above (mirroring scripts/ci/check-unicode-safety.js), so a denial
+  // message cannot carry content a human reviewer cannot see.
   let sanitized = '';
   for (const char of String(filePath || '')) {
     const code = char.codePointAt(0);
-    const isAsciiControl = code <= 0x1f || code === 0x7f;
-    const isBidiOverride = (code >= 0x200e && code <= 0x200f) || (code >= 0x202a && code <= 0x202e) || (code >= 0x2066 && code <= 0x2069);
-    sanitized += isAsciiControl || isBidiOverride ? ' ' : char;
+    const isAsciiControl =
+      code <= ASCII_CONTROL_MAX || code === ASCII_DELETE || inRange(code, C1_CONTROLS);
+    const isBidiOverride =
+      inRange(code, BIDI_MARKS) || inRange(code, BIDI_EMBEDDINGS) || inRange(code, BIDI_ISOLATES);
+    const isUnicodeSeparator = code === LINE_SEPARATOR || code === PARAGRAPH_SEPARATOR;
+    const isDangerousInvisible =
+      inRange(code, ZERO_WIDTHS) ||
+      code === WORD_JOINER ||
+      code === BYTE_ORDER_MARK ||
+      inRange(code, VARIATION_SELECTORS) ||
+      inRange(code, VARIATION_SUPPLEMENTS) ||
+      inRange(code, TAG_BLOCK) ||
+      code === MONGOLIAN_VOWEL_SEPARATOR ||
+      code === HANGUL_CHOSEONG_FILLER ||
+      code === HANGUL_JUNGSEONG_FILLER ||
+      code === HANGUL_FILLER ||
+      inRange(code, INVISIBLE_MATH_OPERATORS);
+    sanitized += isAsciiControl || isBidiOverride || isUnicodeSeparator || isDangerousInvisible ? ' ' : char;
   }
-  return sanitized.trim().slice(0, 500);
+  return sanitized.trim().slice(0, SANITIZED_PATH_MAX_LENGTH);
 }
 
 function normalizeForMatch(value) {
