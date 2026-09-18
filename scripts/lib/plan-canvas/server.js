@@ -120,6 +120,7 @@ function createPlanCanvasServer({
   thinkingStaleMs = DEFAULT_THINKING_STALE_MS,
   typingExpiryMs = DEFAULT_TYPING_EXPIRY_MS,
   presenceSweepMs = DEFAULT_PRESENCE_SWEEP_MS,
+  clock = () => Date.now(),
   onIdleShutdown = null,
   log = () => {}
 } = {}) {
@@ -155,7 +156,7 @@ function createPlanCanvasServer({
    * The old `working` pill had no expiry and no re-broadcast, so it stuck at
    * "agent working" while nothing at all was listening.
    */
-  function presenceFor(key, now = Date.now()) {
+  function presenceFor(key, now = clock()) {
     const session = store.get(key);
     if (!session || session.status === 'ended') return 'ended';
     const typingAt = typingKeys.get(key);
@@ -196,7 +197,7 @@ function createPlanCanvasServer({
 
   // The agent is off working on this feedback batch; start the thinking clock.
   function markThinking(key) {
-    workingKeys.set(key, Date.now());
+    workingKeys.set(key, clock());
     typingKeys.delete(key);
   }
 
@@ -443,7 +444,7 @@ function createPlanCanvasServer({
           return sendJson(res, 400, { error: `state must be one of: ${[...TYPING_STATES].join(', ')}` });
         }
         if (state === 'idle') clearAgentActivity(key);
-        else if (state === 'typing') typingKeys.set(key, Date.now());
+        else if (state === 'typing') typingKeys.set(key, clock());
         else markThinking(key);
         broadcastPresence(key);
         return sendJson(res, 200, { status: 'ok', presence: presenceFor(key) });

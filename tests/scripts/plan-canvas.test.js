@@ -310,32 +310,56 @@ async function main() {
     const staleArtifact = path.join(tmp, 'stale.plan.md');
     fs.writeFileSync(staleArtifact, '# Plan: Stale\n');
     const staleStore = createSessionStore({ stateDir: path.join(tmp, 'stale-state') });
+    let activityNow = 1000;
     const staleCanvas = createPlanCanvasServer({
       store: staleStore,
       version: '9.9.9-test',
       idleTimeoutMs: 0,
       thinkingStaleMs: 40,
       typingExpiryMs: 20,
-      presenceSweepMs: 0
+      presenceSweepMs: 0,
+      clock: () => activityNow
     });
-    const bound = await staleCanvas.listen(0);
-    const opened = jsonBody(await request(bound.port, 'POST', '/api/sessions', { body: { file: staleArtifact } }));
+    try {
+      const bound = await staleCanvas.listen(0);
+      const opened = jsonBody(await request(bound.port, 'POST', '/api/sessions', { body: { file: staleArtifact } }));
 
-    await request(bound.port, 'POST', `/api/session/${opened.key}/typing`, { body: { state: 'typing' } });
-    assert.strictEqual(staleCanvas.presenceFor(opened.key), 'typing');
-    await new Promise(resolve => setTimeout(resolve, 60));
-    assert.strictEqual(staleCanvas.presenceFor(opened.key), 'waiting');
+      // Keep activity age independent of HTTP and disk latency.
+      const typing = await request(bound.port, 'POST', `/api/session/${opened.key}/typing`, { body: { state: 'typing' } });
+      assert.strictEqual(typing.statusCode, 200);
+      assert.strictEqual(jsonBody(typing).presence, 'typing');
+      assert.strictEqual(staleCanvas.presenceFor(opened.key), 'typing');
+      activityNow += 19;
+      assert.strictEqual(staleCanvas.presenceFor(opened.key), 'typing');
+      activityNow += 1;
+      assert.strictEqual(staleCanvas.presenceFor(opened.key), 'waiting');
 
-    // An abandoned agent decays to queued so the human is never told a
-    // stalled session is still being worked on.
-    await request(bound.port, 'POST', `/api/session/${opened.key}/typing`, { body: { state: 'thinking' } });
-    await request(bound.port, 'POST', `/api/session/${opened.key}/feedback`, {
-      body: { items: [{ kind: 'chat', text: 'still there?' }] }
-    });
-    assert.strictEqual(staleCanvas.presenceFor(opened.key), 'thinking');
-    await new Promise(resolve => setTimeout(resolve, 60));
-    assert.strictEqual(staleCanvas.presenceFor(opened.key), 'queued');
-    await staleCanvas.close();
+      // Abandoned activity expires while its undelivered feedback stays queued.
+      const thinking = await request(bound.port, 'POST', `/api/session/${opened.key}/typing`, { body: { state: 'thinking' } });
+      assert.strictEqual(jsonBody(thinking).presence, 'thinking');
+      const feedback = await request(bound.port, 'POST', `/api/session/${opened.key}/feedback`, {
+        body: { items: [{ kind: 'chat', text: 'still there?' }] }
+      });
+      assert.strictEqual(jsonBody(feedback).accepted, 1);
+      assert.strictEqual(staleCanvas.presenceFor(opened.key), 'thinking');
+      activityNow += 39;
+      assert.strictEqual(staleCanvas.presenceFor(opened.key), 'thinking');
+      activityNow += 1;
+      assert.strictEqual(staleCanvas.presenceFor(opened.key), 'queued');
+      assert.strictEqual(staleStore.get(opened.key).pendingFeedback.length, 1);
+
+      activityNow += 20;
+      assert.strictEqual(staleCanvas.presenceFor(opened.key), 'queued');
+      await request(bound.port, 'POST', `/api/session/${opened.key}/typing`, { body: { state: 'thinking' } });
+      assert.strictEqual(staleCanvas.presenceFor(opened.key), 'thinking');
+      activityNow += 39;
+      assert.strictEqual(staleCanvas.presenceFor(opened.key), 'thinking');
+      activityNow += 1;
+      assert.strictEqual(staleCanvas.presenceFor(opened.key), 'queued');
+      assert.strictEqual(staleStore.get(opened.key).pendingFeedback.length, 1);
+    } finally {
+      await staleCanvas.close();
+    }
   })) passed++; else failed++;
 
   // The stuck pill only self-heals if the decay is pushed to an idle browser
