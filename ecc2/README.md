@@ -14,6 +14,12 @@ It is usable as an alpha for local experimentation, but it is **not** the finish
 - worktree-aware session scaffolding
 - basic multi-session state and output tracking
 
+Dashboard output is hydrated from SQLite at startup and after recovery, then
+synchronized with a monotonic database cursor. Because session runners are
+separate processes, the database remains the cross-process source of truth
+while steady-state refreshes read only the rows appended since the previous
+dashboard tick.
+
 ## What This Is For
 
 ECC 2.0 is the layer above individual harness installs.
