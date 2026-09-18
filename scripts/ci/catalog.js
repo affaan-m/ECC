@@ -18,6 +18,8 @@ const path = require('path');
 const ROOT = path.join(__dirname, '../..');
 const README_PATH = path.join(ROOT, 'README.md');
 const AGENTS_PATH = path.join(ROOT, 'AGENTS.md');
+const SOUL_PATH = path.join(ROOT, 'SOUL.md');
+const GEMINI_PATH = path.join(ROOT, '.gemini', 'GEMINI.md');
 const README_ZH_CN_PATH = path.join(ROOT, 'README.zh-CN.md');
 const DOCS_ZH_CN_README_PATH = path.join(ROOT, 'docs', 'zh-CN', 'README.md');
 const DOCS_ZH_CN_AGENTS_PATH = path.join(ROOT, 'docs', 'zh-CN', 'AGENTS.md');
@@ -271,6 +273,30 @@ function parseAgentsDocExpectations(agentsContent) {
   }
 
   return expectations;
+}
+
+function parseCrossHarnessIdentityExpectations(content, source) {
+  const match = content.match(/with\s+(\d+)\s+specialized agents,\s+(\d+)\s+skills,\s+(?:and\s+)?(\d+)\s+commands/i);
+  if (!match) {
+    throw new Error(`${source} is missing the catalog summary line`);
+  }
+
+  return [
+    { category: 'agents', mode: 'exact', expected: Number(match[1]), source },
+    { category: 'skills', mode: 'exact', expected: Number(match[2]), source },
+    { category: 'commands', mode: 'exact', expected: Number(match[3]), source },
+  ];
+}
+
+function syncCrossHarnessIdentity(content, catalog, source) {
+  return replaceOrThrow(
+    content,
+    /(with\s+)(\d+)(\s+specialized agents,\s+)(\d+)(\s+skills,\s+(?:and\s+)?)(\d+)(\s+commands)/i,
+    (_, prefix, __, agentsSuffix, ___, skillsSuffix, ____, commandsSuffix) => (
+      `${prefix}${catalog.agents.count}${agentsSuffix}${catalog.skills.count}${skillsSuffix}${catalog.commands.count}${commandsSuffix}`
+    ),
+    source
+  );
 }
 
 function parseZhAgentsDocExpectations(agentsContent) {
@@ -563,6 +589,8 @@ function createDocumentSpecs(paths = {}) {
   const {
     readmePath = README_PATH,
     agentsPath = AGENTS_PATH,
+    soulPath = SOUL_PATH,
+    geminiPath = GEMINI_PATH,
     zhRootReadmePath = README_ZH_CN_PATH,
     zhDocsReadmePath = DOCS_ZH_CN_README_PATH,
     zhDocsAgentsPath = DOCS_ZH_CN_AGENTS_PATH,
@@ -580,6 +608,16 @@ function createDocumentSpecs(paths = {}) {
       filePath: agentsPath,
       parseExpectations: parseAgentsDocExpectations,
       syncContent: syncEnglishAgents,
+    },
+    {
+      filePath: soulPath,
+      parseExpectations: content => parseCrossHarnessIdentityExpectations(content, 'SOUL.md'),
+      syncContent: (content, catalog) => syncCrossHarnessIdentity(content, catalog, 'SOUL.md'),
+    },
+    {
+      filePath: geminiPath,
+      parseExpectations: content => parseCrossHarnessIdentityExpectations(content, '.gemini/GEMINI.md'),
+      syncContent: (content, catalog) => syncCrossHarnessIdentity(content, catalog, '.gemini/GEMINI.md'),
     },
     {
       filePath: zhRootReadmePath,
@@ -633,6 +671,8 @@ function createDocumentSpecsForRoot(root) {
   return createDocumentSpecs({
     readmePath: path.join(root, 'README.md'),
     agentsPath: path.join(root, 'AGENTS.md'),
+    soulPath: path.join(root, 'SOUL.md'),
+    geminiPath: path.join(root, '.gemini', 'GEMINI.md'),
     zhRootReadmePath: path.join(root, 'README.zh-CN.md'),
     zhDocsReadmePath: path.join(root, 'docs', 'zh-CN', 'README.md'),
     zhDocsAgentsPath: path.join(root, 'docs', 'zh-CN', 'AGENTS.md'),
@@ -742,6 +782,7 @@ module.exports = {
   formatExpectation,
   main,
   parseAgentsDocExpectations,
+  parseCrossHarnessIdentityExpectations,
   parseCatalogDescriptionExpectations,
   parseReadmeExpectations,
   parseZhAgentsDocExpectations,
@@ -751,6 +792,7 @@ module.exports = {
   syncCatalogDescription,
   syncEnglishAgents,
   syncEnglishReadme,
+  syncCrossHarnessIdentity,
   syncZhAgents,
   syncZhDocsReadme,
   syncZhRootReadme,
