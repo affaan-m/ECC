@@ -359,6 +359,185 @@ function quoteAwareSegments(input) {
 
 const SHELL_WRAPPERS = new Set(['sh', 'bash', 'zsh', 'dash', 'ksh']);
 
+// Programs that only run the command following them. They are stripped
+// (together with their own options and `NAME=value` assignments) before
+// argv0 is classified, so `env PGHOST=db psql -c "..."`, `sudo -u postgres
+// psql -c "..."` and `timeout 30 mysql -e "..."` are treated like the bare
+// client. `valueOptions` consume the next token; `positionals` are leading
+// operands of the prefix itself (`timeout DURATION`, `chroot NEWROOT`).
+const EXECUTION_PREFIXES = {
+  env: {
+    assignments: true,
+    valueOptions: ['-u', '--unset', '-C', '--chdir'],
+    // `env -S '<string>'` splits the string into a command line and runs it.
+    commandStringOptions: ['-S', '--split-string'],
+  },
+  sudo: {
+    valueOptions: [
+      '-u', '--user', '-g', '--group', '-C', '--close-from', '-D', '--chdir', '-h', '--host',
+      '-p', '--prompt', '-r', '--role', '-t', '--type', '-T', '--command-timeout', '-U', '--other-user',
+    ],
+  },
+  doas: { valueOptions: ['-u', '-C'] },
+  command: {},
+  exec: { valueOptions: ['-a'] },
+  nice: { valueOptions: ['-n', '--adjustment'] },
+  nohup: {},
+  time: { valueOptions: ['-f', '--format', '-o', '--output'] },
+  timeout: { valueOptions: ['-s', '--signal', '-k', '--kill-after'], positionals: 1 },
+  stdbuf: { valueOptions: ['-i', '-o', '-e', '--input', '--output', '--error'] },
+  ionice: { valueOptions: ['-c', '--class', '-n', '--classdata', '-p', '--pid'] },
+  setsid: {},
+  unshare: {},
+  busybox: {},
+  runuser: {
+    valueOptions: ['-u', '--user', '-g', '--group', '-G', '--supp-group', '-s', '--shell'],
+    // `runuser -c '<string>'` hands the string to a shell.
+    commandStringOptions: ['-c', '--command', '--session-command'],
+  },
+  chroot: { valueOptions: ['--userspec', '--groups'], positionals: 1 },
+  taskset: { valueOptions: ['-c', '--cpu-list'], positionals: 1, positionalUnlessValueOption: true },
+};
+
+/**
+ * Drop leading execution prefixes (`env`, `sudo`, `nice`, ...) with their
+ * options so the real command sits at index 0. Every recognised prefix is
+ * removed, however many are stacked; each round drops at least one token,
+ * so the loop terminates. Option payloads that are themselves command lines
+ * (`env -S '<string>'`) are returned separately for a recursive scan.
+ *
+ * @param {string[]} tokens
+ * @returns {{ command: string[], commandStrings: string[] }}
+ */
+function stripExecutionPrefixes(tokens) {
+  let rest = tokens;
+  let commandStrings = [];
+  // Set once a wrapper option this table does not model is skipped: it may
+  // or may not have consumed a value, so where the command starts is no
+  // longer certain and the caller scans every later token (fail closed).
+  let inconclusive = false;
+  while (rest.length > 0) {
+    const spec = EXECUTION_PREFIXES[commandBasename(rest[0])];
+    if (!spec) break;
+    const valueOptions = new Set(spec.valueOptions || []);
+    const commandStringOptions = spec.commandStringOptions || [];
+    let i = 1;
+    let consumedValueOption = false;
+    while (i < rest.length) {
+      const token = rest[i];
+      if (token === '--') {
+        i++;
+        break;
+      }
+      if (spec.assignments && /^[A-Za-z_][A-Za-z0-9_]*=/.test(token)) {
+        i++;
+        continue;
+      }
+      if (token.startsWith('-') && token.length > 1) {
+        const inline = commandStringOptions.find(
+          opt => token.startsWith(opt) && token.length > opt.length && (opt.length === 2 || token.charAt(opt.length) === '=')
+        );
+        if (inline) {
+          const payload = token.slice(inline.length + (inline.length === 2 ? 0 : 1));
+          commandStrings = [...commandStrings, payload];
+          i++;
+        } else if (commandStringOptions.includes(token)) {
+          if (rest[i + 1] !== undefined) commandStrings = [...commandStrings, rest[i + 1]];
+          i += 2;
+        } else if (valueOptions.has(token)) {
+          i += 2;
+          consumedValueOption = true;
+        } else {
+          // `--opt=value` carries its value; a bare unknown option may not.
+          if (!(token.startsWith('--') && token.includes('='))) inconclusive = true;
+          i++;
+        }
+        continue;
+      }
+      break;
+    }
+    let positionals = spec.positionals || 0;
+    if (spec.positionalUnlessValueOption && consumedValueOption) positionals = 0;
+    rest = rest.slice(i + positionals);
+  }
+  return { command: rest, commandStrings, inconclusive };
+}
+
+// A short-option cluster of a shell that includes `c` (`-c`, `-lc`, `-ec`,
+// `-xc`): the next token is the command string the shell executes.
+const SHELL_COMMAND_OPTION = /^-[A-Za-z]*c[A-Za-z]*$/;
+
+// A bare word that carries a path separator or ends in a file extension is
+// a filename (`truncate.db`, `psql -f truncate.sql`, `--file=x.sql`), not a
+// SQL phrase. `if=...` is kept so `dd if=disk.img` still matches the dd
+// pattern. Used on single arguments and on flattened command text.
+// Options of the SQL clients whose next argument is a script file, not SQL.
+const SQL_FILE_OPTIONS = new Set(['-f', '--file']);
+const FILE_LIKE_ARGUMENT = /^(?!if=)\S*(?:[\\/]\S*|\.[A-Za-z0-9]{1,8})$/;
+const FILE_LIKE_TOKEN = /(^|\s)(?!if=)\S*(?:[\\/]\S*|\.[A-Za-z0-9]{1,8})(?=\s|$)/g;
+
+/**
+ * Argument text of a SQL client invocation with filename-like tokens removed.
+ *
+ * @param {string[]} args
+ * @returns {string}
+ */
+function sqlArgumentText(args) {
+  const kept = [];
+  for (let i = 0; i < args.length; i++) {
+    const arg = args[i];
+    // A script path given to the client (`-f FILE`, `--file FILE`, `-fFILE`,
+    // `--file=FILE`) is a filename even when it contains spaces.
+    if (SQL_FILE_OPTIONS.has(arg)) {
+      i++;
+      continue;
+    }
+    if (arg.startsWith('--file=') || (arg.startsWith('-f') && arg.length > 2 && !arg.startsWith('--'))) continue;
+    if (FILE_LIKE_ARGUMENT.test(arg)) continue;
+    kept.push(arg);
+  }
+  return kept.join(' ');
+}
+
+/**
+ * Flattened command text with filename-like words removed, for the SQL/dd
+ * phrase regex.
+ *
+ * @param {string} text
+ * @returns {string}
+ */
+function stripFileLikeTokens(text) {
+  return text.replace(FILE_LIKE_TOKEN, '$1');
+}
+
+// Interactive database clients that take a SQL statement as an argument
+// (`psql -c "..."`, `mysql -e "..."`, `sqlite3 db.sqlite "..."`). A real
+// SQL invocation is always quoted, so the generic quote-stripped scan can
+// never see it; for these executables the destructive-SQL phrases are
+// matched against the (unquoted) argument text instead.
+const SQL_CLIENTS = new Set([
+  'psql',
+  'pgcli',
+  'mysql',
+  'mariadb',
+  'mycli',
+  'sqlite3',
+  'sqlite',
+  'litecli',
+  'duckdb',
+  'usql',
+  'sqlcmd',
+  'clickhouse-client',
+  'clickhouse',
+  'cockroach',
+  'mongosh',
+  'mongo',
+  'cqlsh',
+  'trino',
+  'presto',
+  'beeline',
+]);
+
 /**
  * Quote-aware destructive check: catches quoted command words, newline
  * separators, quoted `find -exec`, and `sh -c`/`bash -c` wrappers that evade
@@ -369,18 +548,51 @@ const SHELL_WRAPPERS = new Set(['sh', 'bash', 'zsh', 'dash', 'ksh']);
  * @returns {boolean}
  */
 function isDestructiveQuoteAware(raw, depth = 0) {
-  if (depth > 4) return false;
+  // Past the nesting limit the payload is not inspected at all, so it is
+  // treated as destructive rather than waved through unseen (fail closed).
+  if (depth > 4) return true;
   for (const tokens of quoteAwareSegments(raw)) {
     if (tokens.length === 0) continue;
     if (isDestructiveRm(tokens)) return true;
     if (isDestructiveGit(tokens)) return true;
     if (isDestructiveFindExec(tokens.join(' '))) return true;
-    const base = commandBasename(tokens[0]);
-    if (SHELL_WRAPPERS.has(base)) {
-      const ci = tokens.indexOf('-c');
-      if (ci !== -1 && tokens[ci + 1] && isDestructiveQuoteAware(tokens[ci + 1], depth + 1)) {
-        return true;
-      }
+    const { command, commandStrings, inconclusive } = stripExecutionPrefixes(tokens);
+    // `env -S '<string>'` executes the string as a command line of its own.
+    for (const commandString of commandStrings) {
+      if (isDestructiveQuoteAware(commandString, depth + 1)) return true;
+    }
+    if (command.length === 0) continue;
+    // With an unmodelled wrapper option the command boundary is uncertain,
+    // so every later token is tried as the command start.
+    const starts = inconclusive ? command.map((_, index) => index) : [0];
+    for (const start of starts) {
+      if (isDestructiveClientCommand(command.slice(start), depth)) return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * SQL passed to a database client lives inside a quoted argument, which the
+ * generic scan strips on purpose (a commit message that mentions "drop
+ * table" must not trip the gate). The tokens here carry the unquoted
+ * argument text, so the SQL phrases are tested on them when argv0 is a known
+ * SQL client — `git commit -m "drop table ..."` still has no client in
+ * argv0. A shell wrapper hands its `-c` string to a recursive scan.
+ *
+ * @param {string[]} command tokens with execution prefixes removed
+ * @param {number} depth recursion guard, forwarded to nested scans
+ * @returns {boolean}
+ */
+function isDestructiveClientCommand(command, depth) {
+  const base = commandBasename(command[0]);
+  if (SQL_CLIENTS.has(base) && DESTRUCTIVE_SQL_DD.test(sqlArgumentText(command.slice(1)))) {
+    return true;
+  }
+  if (SHELL_WRAPPERS.has(base)) {
+    const ci = command.findIndex((token, index) => index > 0 && SHELL_COMMAND_OPTION.test(token));
+    if (ci !== -1 && command[ci + 1] && isDestructiveQuoteAware(command[ci + 1], depth + 1)) {
+      return true;
     }
   }
   return false;
@@ -700,7 +912,7 @@ function isDestructiveBash(command) {
   const raw = String(command || '');
   const executable = stripHeredocBodies(raw);
   const flattened = explodeSubshells(stripQuotedStrings(executable));
-  if (DESTRUCTIVE_SQL_DD.test(flattened)) return true;
+  if (DESTRUCTIVE_SQL_DD.test(stripFileLikeTokens(flattened))) return true;
 
   // Operator-supplied additional destructive patterns. Same scope as the
   // built-in SQL/dd regex: matched against the quote-stripped, subshell-
@@ -727,7 +939,7 @@ function isDestructiveBash(command) {
   const segments = bodies.flatMap(splitCommandSegments);
   for (const segment of segments) {
     const stripped = stripQuotedStrings(segment);
-    if (DESTRUCTIVE_SQL_DD.test(stripped)) return true;
+    if (DESTRUCTIVE_SQL_DD.test(stripFileLikeTokens(stripped))) return true;
     if (extra && extra.test(stripped)) return true;
     const tokens = tokenize(segment);
     if (isDestructiveRm(tokens)) return true;
@@ -1344,4 +1556,4 @@ function run(rawInput) {
   return rawInput; // allow
 }
 
-module.exports = { classifyDestructiveCommand, run };
+module.exports = { classifyDestructiveCommand, run, isDestructiveQuoteAware };
