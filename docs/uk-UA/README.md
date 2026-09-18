@@ -16,7 +16,8 @@
   <a href="../th/README.md">ไทย</a> |
   <a href="../de-DE/README.md">Deutsch</a> |
   <a href="../es/README.md">Español</a> |
-  <a href="../uk-UA/README.md">Українська</a>
+  <a href="../uk-UA/README.md">Українська</a> |
+  <a href="../bn/README.md">বাংলা</a>
 </p>
 
 <p align="center">
