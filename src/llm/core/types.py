@@ -44,6 +44,37 @@ class Message:
             ]
         return result
 
+    def to_anthropic_dict(self) -> dict[str, Any]:
+        """Serialize a message using the Anthropic Messages API format."""
+        if self.role == Role.TOOL:
+            return {
+                "role": Role.USER.value,
+                "content": [
+                    {
+                        "type": "tool_result",
+                        "tool_use_id": self.tool_call_id or "",
+                        "content": self.content,
+                    }
+                ],
+            }
+
+        if self.role == Role.ASSISTANT and self.tool_calls:
+            content: list[dict[str, Any]] = [
+                *([{"type": "text", "text": self.content}] if self.content else []),
+                *(
+                    {
+                        "type": "tool_use",
+                        "id": tool_call.id,
+                        "name": tool_call.name,
+                        "input": tool_call.arguments,
+                    }
+                    for tool_call in self.tool_calls
+                ),
+            ]
+            return {"role": Role.ASSISTANT.value, "content": content}
+
+        return {"role": self.role.value, "content": self.content}
+
 
 @dataclass(frozen=True)
 class ToolDefinition:
