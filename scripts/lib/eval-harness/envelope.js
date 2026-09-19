@@ -63,6 +63,13 @@ const PAYLOAD_TYPES = Object.freeze({
   branch_id: 'string',
   parent_branch_id: 'string',
   summary: 'string',
+  event_id: 'string',
+  session: 'string',
+  file: 'string',
+  maneuver: 'string',
+  blocked: 'integer',
+  risk: 'number',
+  threshold: 'string',
 });
 const DEFAULT_PAYLOAD_ALLOWLIST = Object.freeze(Object.keys(PAYLOAD_TYPES));
 const ENVELOPE_FIELDS = new Set([
