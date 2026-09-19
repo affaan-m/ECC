@@ -189,6 +189,32 @@ function readInstalledPackageNames(settingsFile) {
 }
 
 /**
+ * Mirror of the adapter's `findInstalledCompanion` (same file, same matching
+ * rule) so the exact-match and unscoped-satisfied-by-scoped cases can be
+ * exercised directly without importing the TypeScript source. This copy
+ * proves the *behavior* below is correct, but a copy cannot detect the real
+ * adapter's rule drifting out from under it. The source-text assertions in
+ * the "companion package detection tolerates a scoped fork" test below read
+ * the real `findInstalledCompanion` text out of `.pi/extensions/index.ts` and
+ * pin its actual guards directly.
+ */
+function findInstalledCompanion(companion, installed) {
+  if (installed.has(companion)) {
+    return companion
+  }
+  if (companion.startsWith("@")) {
+    return undefined
+  }
+  const scopedSuffix = `/${companion}`
+  for (const name of installed) {
+    if (name.startsWith("@") && name.endsWith(scopedSuffix)) {
+      return name
+    }
+  }
+  return undefined
+}
+
+/**
  * Parses the `PORTABLE_RULE_FILES` array literal out of `.pi/extensions/index.ts`
  * by text, so the real-filesystem-existence test and the `loadPortableRules`
  * behavioral mirror below follow the constant instead of hardcoding the file
@@ -1132,6 +1158,146 @@ async function main() {
         )
       } finally {
         fs.rmSync(tmpDir, { recursive: true, force: true })
+      }
+    }],
+
+    ["companion package detection tolerates a scoped fork (source contract): the unscoped-entry fallback exists, scoped entries stay exact, and the doctor loop reports what satisfied the entry", () => {
+      const matchStart = extensionSource.indexOf("function findInstalledCompanion")
+      assert.ok(
+        matchStart !== -1,
+        "expected .pi/extensions/index.ts to define a function named findInstalledCompanion; " +
+          "a bare installed.has(name) check reports an installed scoped fork such as " +
+          "@tintinweb/pi-subagents as missing, and then tells the user to run " +
+          "`pi install npm:pi-subagents`, which would put a SECOND extension registering " +
+          "the same tool names into their session"
+      )
+      const nextFunctionStart = extensionSource.indexOf("\nfunction ", matchStart + 1)
+      const matchSource =
+        nextFunctionStart === -1
+          ? extensionSource.slice(matchStart)
+          : extensionSource.slice(matchStart, nextFunctionStart)
+
+      assert.ok(
+        /if\s*\(\s*installed\.has\(\s*companion\s*\)\s*\)/.test(matchSource),
+        "expected findInstalledCompanion in .pi/extensions/index.ts to check the exact name " +
+          "first; an exact install is the ordinary case and must not be routed through the " +
+          "scoped-fork scan"
+      )
+      assert.ok(
+        /if\s*\(\s*companion\.startsWith\(\s*["'`]@["'`]\s*\)\s*\)\s*\{\s*return undefined/.test(
+          matchSource
+        ),
+        "expected findInstalledCompanion in .pi/extensions/index.ts to bail out for a SCOPED " +
+          "companion entry before the fallback; for an entry like " +
+          "@juicesharp/rpiv-todo the scope is part of the identity ECC is naming, so some " +
+          "other publisher's rpiv-todo must not silently satisfy it"
+      )
+      assert.ok(
+        /name\.startsWith\(\s*["'`]@["'`]\s*\)\s*&&\s*name\.endsWith\(\s*scopedSuffix\s*\)/.test(
+          matchSource
+        ),
+        "expected findInstalledCompanion in .pi/extensions/index.ts to match an installed " +
+          "scoped package by the '@scope/' + exact bare name shape; matching on endsWith " +
+          "alone would let a package named my-pi-subagents satisfy the pi-subagents entry"
+      )
+
+      const withoutComments = stripComments(extensionSource)
+      assert.ok(
+        !/installed\.has\(name\)/.test(withoutComments),
+        "found a bare installed.has(name) still used as executable code in " +
+          ".pi/extensions/index.ts; the /ecc-doctor companion loop must go through " +
+          "findInstalledCompanion so a scoped fork is not reported as missing"
+      )
+      assert.ok(
+        /satisfied by/.test(extensionSource),
+        "expected the /ecc-doctor companion loop in .pi/extensions/index.ts to name the " +
+          "package that satisfied an entry when it is not an exact match; reporting a " +
+          "bare 'installed' for @tintinweb/pi-subagents under the pi-subagents line hides " +
+          "which implementation is actually loaded, which is the first thing to know when " +
+          "its behavior differs from the unscoped package's"
+      )
+    }],
+
+    ["companion package matching (behavioral mirror): an unscoped entry is satisfied by a scoped fork, a scoped entry is matched exactly", () => {
+      assert.strictEqual(
+        findInstalledCompanion("pi-subagents", new Set(["pi-subagents"])),
+        "pi-subagents",
+        "expected an exactly-installed companion to be reported as itself"
+      )
+      assert.strictEqual(
+        findInstalledCompanion("pi-subagents", new Set(["@tintinweb/pi-subagents"])),
+        "@tintinweb/pi-subagents",
+        "expected a scoped fork to satisfy the unscoped pi-subagents entry; the subagents " +
+          "capability is published under that bare name by more than one maintainer, and a " +
+          "user running the scoped one has working Agent/SubagentWorkflow tools in session " +
+          "while /ecc-doctor was calling it missing"
+      )
+      assert.strictEqual(
+        findInstalledCompanion("pi-subagents", new Set(["pi-subagents", "@tintinweb/pi-subagents"])),
+        "pi-subagents",
+        "expected the exact match to win when both are installed, so the reported name is " +
+          "stable rather than depending on Set iteration order"
+      )
+      assert.strictEqual(
+        findInstalledCompanion("pi-subagents", new Set(["my-pi-subagents"])),
+        undefined,
+        "expected an unscoped package that merely ENDS WITH the companion name to not " +
+          "satisfy it; only a @scope/ prefix counts"
+      )
+      assert.strictEqual(
+        findInstalledCompanion("pi-subagents", new Set(["@acme/my-pi-subagents"])),
+        undefined,
+        "expected a scoped package whose bare name merely ends with the companion name to " +
+          "not satisfy it; the segment after the scope must equal the companion name"
+      )
+      assert.strictEqual(
+        findInstalledCompanion("@juicesharp/rpiv-todo", new Set(["@juicesharp/rpiv-todo"])),
+        "@juicesharp/rpiv-todo",
+        "expected an exactly-installed scoped companion to be reported as itself"
+      )
+      assert.strictEqual(
+        findInstalledCompanion("@juicesharp/rpiv-todo", new Set(["@someoneelse/rpiv-todo"])),
+        undefined,
+        "expected a DIFFERENT scope to not satisfy a scoped companion entry; ECC names that " +
+          "scope deliberately, so relaxing this direction would report an unrelated " +
+          "publisher's package as the one ECC documents"
+      )
+      assert.strictEqual(
+        findInstalledCompanion("@juicesharp/rpiv-todo", new Set(["rpiv-todo"])),
+        undefined,
+        "expected an unscoped package to not satisfy a scoped companion entry"
+      )
+      assert.strictEqual(
+        findInstalledCompanion("pi-subagents", new Set()),
+        undefined,
+        "expected an empty install set to satisfy nothing"
+      )
+    }],
+
+    ["every COMPANION_PACKAGES entry this repo ships is still resolvable by the matcher it is checked with", () => {
+      const constStart = extensionSource.indexOf("const COMPANION_PACKAGES")
+      assert.ok(
+        constStart !== -1,
+        "expected to find a COMPANION_PACKAGES array literal in .pi/extensions/index.ts"
+      )
+      const constEnd = extensionSource.indexOf("]", constStart)
+      const companions = Array.from(
+        extensionSource.slice(constStart, constEnd + 1).matchAll(/["'`](@?[\w./-]+)["'`]/g)
+      ).map(match => match[1])
+
+      assert.ok(
+        companions.length > 0,
+        "expected to parse at least one companion package name out of COMPANION_PACKAGES"
+      )
+
+      for (const companion of companions) {
+        assert.strictEqual(
+          findInstalledCompanion(companion, new Set([companion])),
+          companion,
+          `expected the companion entry ${companion} to be recognized when it is installed ` +
+            "under exactly its own name; an entry the matcher cannot resolve would be " +
+            "reported as permanently missing no matter what the user installs"
+        )
       }
     }],
 
