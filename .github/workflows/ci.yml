@@ -267,6 +267,11 @@ jobs:
       - name: Run Python tests
         run: python -m pytest tests/test_*.py -m "not integration"
 
+      - name: Test minimum supported OpenAI SDK
+        run: |
+          python -m pip install 'openai==2.34.0'
+          python -m pytest tests/test_provider_tools.py tests/test_atlas_provider.py tests/test_astraflow_provider.py tests/test_resolver.py
+
   security:
     name: Security Scan
     runs-on: ubuntu-latest
