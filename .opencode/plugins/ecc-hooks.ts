@@ -481,7 +481,7 @@ export const ECCHooksPlugin: ECCHooksPluginFn = async ({
      * Triggers: Before shell command execution
      * Action: Sets PROJECT_ROOT, PACKAGE_MANAGER, DETECTED_LANGUAGES, ECC_VERSION
      */
-    "shell.env": async () => {
+    "shell.env": async (_input: { cwd: string }, output: { env: Record<string, string> }) => {
       const env: Record<string, string> = {
         ECC_VERSION: getECCVersion(),
         ECC_PLUGIN: "true",
@@ -523,7 +523,8 @@ export const ECCHooksPlugin: ECCHooksPluginFn = async ({
         env.PRIMARY_LANGUAGE = detected[0]
       }
 
-      return env
+      // OpenCode reads the supplied output object and ignores callback return values.
+      output.env = { ...output.env, ...env }
     },
 
     /**
@@ -531,9 +532,12 @@ export const ECCHooksPlugin: ECCHooksPluginFn = async ({
      * OpenCode-specific: Control context compaction behavior
      *
      * Triggers: Before context compaction
-     * Action: Push ECC context block and custom compaction prompt
+     * Action: Push ECC context block and compaction guidance
      */
-    "experimental.session.compacting": async () => {
+    "experimental.session.compacting": async (
+      _input: { sessionID: string },
+      output: { context: string[]; prompt?: string }
+    ) => {
       const contextBlock = [
         "# ECC Context (preserve across compaction)",
         "",
@@ -558,9 +562,16 @@ export const ECCHooksPlugin: ECCHooksPluginFn = async ({
         contextBlock.push("")
       }
 
-      return {
-        context: contextBlock.join("\n"),
-        compaction_prompt: "Focus on preserving: 1) Current task status and progress, 2) Key decisions made, 3) Files created/modified, 4) Remaining work items, 5) Any security concerns flagged. Discard: verbose tool outputs, intermediate exploration, redundant file listings.",
+      const eccContext = [
+        contextBlock.join("\n"),
+        "Focus on preserving: 1) Current task status and progress, 2) Key decisions made, 3) Files created/modified, 4) Remaining work items, 5) Any security concerns flagged. Discard: verbose tool outputs, intermediate exploration, redundant file listings.",
+      ]
+
+      // OpenCode requires output assignment and skips context when a prompt is set.
+      if (output.prompt !== undefined) {
+        output.prompt = [output.prompt, ...eccContext].join("\n\n")
+      } else {
+        output.context = [...output.context, ...eccContext]
       }
     },
 
