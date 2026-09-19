@@ -2,7 +2,7 @@
 name: gan-planner
 description: "GANハーネス — プランナーエージェント。1行のプロンプトを、機能、スプリント、評価基準、デザイン方向を含む完全な製品仕様に展開します。"
 tools: ["Read", "Write", "Grep", "Glob"]
-model: opus
+model: sonnet
 color: purple
 ---
 
