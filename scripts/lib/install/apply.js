@@ -498,7 +498,7 @@ function applyInstallPlanLocked(plan, dependencies = {}, settingsLockHeld = fals
       if (typeof beforeOperationWrite === 'function') {
         beforeOperationWrite({ plan: appliedPlan, operation });
       }
-      assertNoNewUserOwnedFile(migration, operation);
+      assertNoNewUserOwnedFile(migration, operation, appliedPlan);
 
       if (
         operation.kind === 'update-claude-settings'
