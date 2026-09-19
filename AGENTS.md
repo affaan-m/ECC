@@ -1,6 +1,6 @@
 # Everything Claude Code (ECC) — Agent Instructions
 
-This is a **production-ready AI coding plugin** providing 68 specialized agents, 292 skills, 94 commands, and automated hook workflows for software development.
+This is a **production-ready AI coding plugin** providing 68 specialized agents, 286 skills, 94 commands, and automated hook workflows for software development.
 
 **Version:** 2.2.1
 
@@ -154,7 +154,7 @@ Troubleshoot failures: check test isolation → verify mocks → fix implementat
 
 ```
 agents/          — 68 specialized subagents
-skills/          — 292 workflow skills and domain knowledge
+skills/          — 286 workflow skills and domain knowledge
 commands/        — 94 slash commands
 hooks/           — Trigger-based automations
 rules/           — Always-follow guidelines (common + per-language)
@@ -164,6 +164,16 @@ tests/           — Test suite
 ```
 
 `commands/` remains in the repo for compatibility, but the long-term direction is skills-first.
+
+## Book-Derived Skills (mlops)
+
+17 skills extracted from "Build a Large Language Model (From Scratch)" (Raschka) and "AI Engineering" (Huyen), synced across Hermes/Claude Code/Codex/OpenCode on PC and Mac. See `~/docs/adr/0001-extract-book-skills.md`.
+
+| Skill | Covers |
+|-------|--------|
+| `llm-from-scratch-ch1`–`ch7` | LLM fundamentals → data → attention → GPT → pretrain → finetune |
+| `llm-from-scratch-appendix-lora` | LoRA parameter-efficient FT (concat factors, never average) |
+| `ai-engineering-ch1`–`ch10` | Build-vs-buy → evals → prompts → RAG/agents → FT → data → inference → prod |
 
 ## Success Metrics
 
