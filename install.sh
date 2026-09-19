@@ -4,6 +4,14 @@
 # This wrapper resolves the real repo/package root when invoked through a
 # symlinked npm bin, then delegates to the Node-based installer runtime.
 
+# Re-exec under bash if invoked via a POSIX sh (e.g. `sh install.sh`), since
+# the rest of this script relies on bash features (`set -o pipefail`, `[[`).
+# Probe actual shell capability instead of trusting $BASH_VERSION, which is
+# just an environment variable and could be inherited/spoofed under sh.
+if ! (eval '[[ 1 == 1 ]]' >/dev/null 2>&1); then
+    exec bash "$0" "$@"
+fi
+
 set -euo pipefail
 
 SCRIPT_PATH="$0"
@@ -23,7 +31,7 @@ fi
 # On MSYS2/Git Bash, convert the POSIX path to a Windows path so Node.js
 # (a native Windows binary) receives a valid path instead of a doubled one
 # like G:\g\projects\... that results from Git Bash's auto path conversion.
-if command -v cygpath &>/dev/null; then
+if command -v cygpath >/dev/null 2>&1; then
     NODE_SCRIPT="$(cygpath -w "$SCRIPT_DIR/scripts/install-apply.js")"
 else
     NODE_SCRIPT="$SCRIPT_DIR/scripts/install-apply.js"
