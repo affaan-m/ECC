@@ -1,0 +1,232 @@
+#!/usr/bin/env bash
+# ecc-codex — run Codex CLI with a live ECC usage bar in the terminal.
+#
+# Codex draws inline, so the bar is given three rows of its own that Codex
+# cannot scroll over, in whichever form the terminal supports:
+#   - tmux: three lines of the session's status area
+#   - WezTerm: a three-row pane across the bottom of the window
+#   - anything else: the bottom three rows, reserved with DECSTBM margins
+#
+# Usage: ecc-codex [codex args...]
+# Env:   ECC_CODEX_BAR=off          disable the bar (plain `codex` passthrough)
+#        ECC_CODEX_BAR_INTERVAL=15  refresh interval in seconds
+#        ECC_CODEX_PANE=off         no WezTerm bottom pane (title/user var only)
+#        ECC_CODEX_REGION=off       no reserved bottom rows in plain terminals
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+RENDERER="$SCRIPT_DIR/ecc-usage-bar-codex.js"
+PANE_RENDERER="$SCRIPT_DIR/ecc-codex-bar-pane"
+
+if [ "${ECC_CODEX_BAR:-on}" = "off" ] || [ ! -t 1 ] || [ ! -e /dev/tty ] \
+  || ! command -v node >/dev/null 2>&1 || [ ! -f "$RENDERER" ]; then
+  exec codex "$@"
+fi
+
+INTERVAL="${ECC_CODEX_BAR_INTERVAL:-15}"
+ECC_CODEX_RUN_STARTED_AT_MS="$(node -e 'process.stdout.write(String(Date.now()))')"
+export ECC_CODEX_RUN_STARTED_AT_MS
+
+# Inside tmux, show the full three-line bar for the lifetime of this Codex run.
+# Options are session-scoped (no -g) and unset on exit, so nothing persists in
+# the user's tmux config and other sessions are untouched.
+in_tmux() {
+  [ -n "${TMUX:-}" ] && command -v tmux >/dev/null 2>&1
+}
+
+# Outside tmux, WezTerm gets the same three lines in a pane of its own.
+#
+# WezTerm's only status area is the tab bar: one line, shared with the tabs.
+# A dedicated bottom pane is the sole way to give the full bar its own space,
+# so ecc-codex opens one for the lifetime of the run and closes it after. The
+# pane is created with --top-level, so it spans the whole window rather than
+# splitting whichever pane Codex happens to be in.
+WEZTERM_BAR_PANE=""
+
+in_wezterm() {
+  [ "${ECC_CODEX_PANE:-on}" != "off" ] \
+    && [ -z "${TMUX:-}" ] && [ -n "${WEZTERM_PANE:-}" ] \
+    && command -v wezterm >/dev/null 2>&1 \
+    && [ -f "$PANE_RENDERER" ]
+}
+
+wezterm_bar_on() {
+  in_wezterm || return 0
+
+  local pane
+  pane="$(wezterm cli split-pane --bottom --top-level --cells 3 \
+    --pane-id "$WEZTERM_PANE" -- \
+    env ECC_CODEX_RUN_STARTED_AT_MS="$ECC_CODEX_RUN_STARTED_AT_MS" \
+    bash "$PANE_RENDERER" "$RENDERER" "$$" "$INTERVAL" 2>/dev/null)" || return 0
+
+  pane="${pane//[$'\r\n\t ']/}"
+  [ -n "$pane" ] || return 0
+  WEZTERM_BAR_PANE="$pane"
+
+  # split-pane focuses what it creates, and the bar must never take the keyboard
+  # away from Codex.
+  wezterm cli activate-pane --pane-id "$WEZTERM_PANE" >/dev/null 2>&1 || true
+}
+
+wezterm_bar_off() {
+  [ -n "$WEZTERM_BAR_PANE" ] || return 0
+  wezterm cli kill-pane --pane-id "$WEZTERM_BAR_PANE" >/dev/null 2>&1 || true
+  WEZTERM_BAR_PANE=""
+}
+
+# Plain terminals (Terminal.app and friends) get the three lines in a reserved
+# region at the bottom of the window.
+#
+# This works only because Codex draws inline rather than on the alternate
+# screen (verified: tmux reports alternate_on=0 for a running Codex). Setting
+# the DECSTBM scroll margins to rows 1..H-3 means Codex physically cannot
+# scroll into the last three rows, so the bar stays put while Codex redraws
+# above it.
+REGION_ACTIVE=0
+
+in_plain_terminal() {
+  [ "${ECC_CODEX_REGION:-on}" != "off" ] \
+    && [ -z "${TMUX:-}" ] \
+    && [ -z "$WEZTERM_BAR_PANE" ]
+}
+
+term_rows() {
+  local rows
+  rows="$(stty size < /dev/tty 2>/dev/null | awk '{print $1}')"
+  case "$rows" in
+    '' | 0 | *[!0-9]*) return 1 ;;
+  esac
+  printf '%s' "$rows"
+}
+
+region_on() {
+  in_plain_terminal || return 0
+  local rows
+  rows="$(term_rows)" || return 0
+  # Refuse to carve three rows out of a window too short to spare them.
+  [ "$rows" -gt 8 ] || return 0
+  REGION_ACTIVE=1
+  printf '\033[1;%dr\033[%d;1H' "$((rows - 3))" "$((rows - 3))" > /dev/tty
+}
+
+# Codex resets the scroll margins when it starts, and again whenever it
+# reinitialises the terminal, which wipes the reservation out from under us.
+# Rather than trying to detect that, the margins are re-asserted on a one
+# second cadence so the bar is never missing for longer than a blink.
+#
+# Re-asserting DECSTBM homes the cursor, so the whole sequence is wrapped in
+# DECSC/DECRC (\0337 and \0338) and Codex never sees its cursor move.
+REGION_L1=""
+REGION_L2=""
+REGION_L3=""
+
+# Rendering shells out to node, so it runs on the slow interval. Painting is a
+# single printf and runs every second.
+region_render() {
+  [ "$REGION_ACTIVE" = 1 ] || return 0
+  local l1="" l2="" l3=""
+  { IFS= read -r l1 || true; IFS= read -r l2 || true; IFS= read -r l3 || true; } \
+    < <(node "$RENDERER" --full 2>/dev/null)
+  [ -n "$l1" ] || return 0
+  REGION_L1="$l1"
+  REGION_L2="$l2"
+  REGION_L3="$l3"
+}
+
+region_draw() {
+  [ "$REGION_ACTIVE" = 1 ] || return 0
+  [ -n "$REGION_L1" ] || return 0
+  local rows base
+  rows="$(term_rows)" || return 0
+  [ "$rows" -gt 8 ] || return 0
+  base=$((rows - 2))
+
+  printf '\0337\033[1;%dr\033[%d;1H%s\033[K\033[%d;1H%s\033[K\033[%d;1H%s\033[K\0338' \
+    "$((rows - 3))" \
+    "$base" "$REGION_L1" "$((base + 1))" "$REGION_L2" "$((base + 2))" "$REGION_L3" \
+    > /dev/tty
+}
+
+region_off() {
+  [ "$REGION_ACTIVE" = 1 ] || return 0
+  local rows
+  REGION_ACTIVE=0
+  rows="$(term_rows)" || return 0
+  # Drop the margins first, then wipe the rows the bar was using so the shell
+  # prompt does not land on top of a stale bar.
+  printf '\033[r\0337\033[%d;1H\033[J\0338' "$((rows - 2))" > /dev/tty
+}
+
+tmux_bar_on() {
+  in_tmux || return 0
+  tmux set status 4 >/dev/null 2>&1 || return 0
+  tmux set status-interval 15 >/dev/null 2>&1
+  # bg=default keeps tmux's green status background out of the way so the bar
+  # blends into whatever terminal theme the user runs (Terminal.app, Windows
+  # Terminal, Linux terminals, WezTerm, iTerm2).
+  tmux set status-style 'bg=default,fg=default' >/dev/null 2>&1
+
+  # Block glyphs are used when either signal says UTF-8 is safe: the shell's
+  # locale (the installer exports one) or tmux's attached client. client_utf8
+  # is empty while detached, so it can only ever add confidence, never remove it.
+  local glyphs='ascii'
+  case "${LC_ALL:-${LC_CTYPE:-${LANG:-}}}" in
+    *[Uu][Tt][Ff]*) glyphs='unicode' ;;
+  esac
+  if [ "$(tmux display -p '#{client_utf8}' 2>/dev/null)" = "1" ]; then
+    glyphs='unicode'
+  fi
+
+  local n
+  for n in 1 2 3; do
+    tmux set "status-format[$n]" \
+      "#[align=left,bg=default,fg=default]#(ECC_CODEX_RUN_STARTED_AT_MS=$ECC_CODEX_RUN_STARTED_AT_MS ECC_BAR_GLYPHS=$glyphs node \"$RENDERER\" --tmux --line $n)" \
+      >/dev/null 2>&1
+  done
+}
+
+# Session-scoped options are unset, so each falls back to the user's own
+# global tmux value rather than anything this wrapper invented.
+tmux_bar_off() {
+  in_tmux || return 0
+  local n
+  for n in 1 2 3; do
+    tmux set -u "status-format[$n]" >/dev/null 2>&1
+  done
+  tmux set -u status-interval >/dev/null 2>&1
+  tmux set -u status-style >/dev/null 2>&1
+  tmux set -u status >/dev/null 2>&1
+}
+
+cleanup() {
+  if [ -n "${UPDATER_PID:-}" ]; then
+    kill "$UPDATER_PID" 2>/dev/null || true
+  fi
+  tmux_bar_off
+  wezterm_bar_off
+  region_off
+}
+trap cleanup EXIT INT TERM
+
+tmux_bar_on
+wezterm_bar_on
+region_on
+
+# Only the reserved-region mode needs a loop here. tmux refreshes its own
+# status area, and the WezTerm pane runs its own renderer.
+if [ "$REGION_ACTIVE" = 1 ]; then
+  region_render
+  (
+    tick=0
+    while :; do
+      [ "$((tick % INTERVAL))" -eq 0 ] && region_render
+      region_draw
+      sleep 1
+      tick=$((tick + 1))
+    done
+  ) &
+  UPDATER_PID=$!
+fi
+
+codex "$@"
