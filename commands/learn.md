@@ -1,5 +1,5 @@
 ---
-description: Extract reusable patterns from the current session and save them as candidate skills or guidance.
+description: Extract reusable patterns from the current session and save them as candidate skills or guidance. Use to review a session on demand and persist an approved skill file; continuous-learning-v2 is a separate, configurable Stop/PreToolUse/PostToolUse hook-observation and instinct-evolution system (background observer disabled by default) and is not an automatic equivalent of this command.
 ---
 
 # /learn - Extract Reusable Patterns
