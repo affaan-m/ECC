@@ -1,9 +1,9 @@
 /**
- * Tests for .cursor/hooks/before-shell-execution-block-no-verify.js
+ * Tests for block-no-verify behavior in the Cursor beforeShell dispatcher.
  *
  * Issue #2107: previously .cursor/hooks.json wired `npx block-no-verify@1.1.2`,
  * which over-matches and blocks legitimate commits whose message body
- * mentions `--no-verify` or `-n`. The wrapper added in this PR delegates
+ * mentions `--no-verify` or `-n`. The event-level dispatcher delegates
  * to the local scripts/hooks/block-no-verify.js so Cursor users get the
  * same flag-position-aware matcher Claude Code already uses.
  */
@@ -14,17 +14,23 @@ const assert = require('assert');
 const path = require('path');
 const { spawnSync } = require('child_process');
 
-const wrapper = path.join(
+const dispatcher = path.join(
   __dirname, '..', '..',
-  '.cursor', 'hooks', 'before-shell-execution-block-no-verify.js'
+  '.cursor', 'hooks', 'before-shell-execution.js'
 );
 
 function runWrapper(input, env = {}) {
   const rawInput = typeof input === 'string' ? input : JSON.stringify(input);
-  const result = spawnSync('node', [wrapper], {
+  const result = spawnSync('node', [dispatcher], {
     input: rawInput,
     encoding: 'utf8',
-    env: { ...process.env, ECC_HOOK_PROFILE: 'standard', ...env },
+    env: {
+      ...process.env,
+      ECC_HOOKS_ENABLED: 'true',
+      ECC_HOOK_PROFILE: 'standard',
+      ECC_DISABLED_HOOKS: 'pre:bash:dev-server-block',
+      ...env,
+    },
     timeout: 15000,
     stdio: ['pipe', 'pipe', 'pipe'],
   });
@@ -51,7 +57,7 @@ function test(name, fn) {
 let passed = 0;
 let failed = 0;
 
-console.log('\ncursor block-no-verify wrapper tests');
+console.log('\ncursor block-no-verify dispatcher tests');
 console.log('─'.repeat(50));
 
 // --- Cursor input shapes ---
@@ -129,6 +135,12 @@ if (test('handles malformed JSON gracefully (treats raw as command string)', () 
   assert.strictEqual(r.code, 0, `expected 0, got ${r.code}: ${r.stderr}`);
 })) passed++; else failed++;
 
+if (test('blocks a bypass attempt supplied as a raw command string', () => {
+  const r = runWrapper('git commit --no-verify -m "msg"');
+  assert.strictEqual(r.code, 2, `expected 2, got ${r.code}: ${r.stderr}`);
+  assert.ok(r.stderr.includes('BLOCKED'), `stderr should contain BLOCKED: ${r.stderr}`);
+})) passed++; else failed++;
+
 // --- Disable via ECC_DISABLED_HOOKS ---
 
 if (test('respects ECC_DISABLED_HOOKS=pre:bash:block-no-verify', () => {
@@ -136,7 +148,7 @@ if (test('respects ECC_DISABLED_HOOKS=pre:bash:block-no-verify', () => {
     { command: 'git commit --no-verify -m "msg"' },
     { ECC_DISABLED_HOOKS: 'pre:bash:block-no-verify' }
   );
-  // When the hook is disabled, the wrapper should pass through (exit 0)
+  // When the hook is disabled, the dispatcher should pass through (exit 0)
   // even on a real bypass attempt.
   assert.strictEqual(r.code, 0, `expected 0 when disabled, got ${r.code}: ${r.stderr}`);
 })) passed++; else failed++;
