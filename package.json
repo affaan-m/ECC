@@ -1,6 +1,6 @@
 {
   "name": "ecc-universal",
-  "version": "2.2.1",
+  "version": "2.2.2",
   "description": "Harness-native agent operating system for Codex, OpenCode, Cursor, Gemini, Claude Code, and terminal workflows - skills, hooks, rules, MCP conventions, and operator control-plane patterns",
   "main": ".opencode/dist/index.js",
   "types": ".opencode/dist/index.d.ts",
@@ -62,6 +62,7 @@
     ".hermes/",
     ".kimi/",
     ".opencode/",
+    ".opencode/dist/",
     ".pi/",
     ".openclaw/",
     ".qwen/",
