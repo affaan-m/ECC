@@ -14,10 +14,12 @@ while [ -L "$SCRIPT_PATH" ]; do
 done
 SCRIPT_DIR="$(cd "$(dirname "$SCRIPT_PATH")" && pwd)"
 
-# Auto-install Node dependencies when running from a git clone
+# Auto-install Node dependencies when running from a git clone.
+# SECURITY: --ignore-scripts blocks preinstall/postinstall RCE from a
+# compromised dependency. ECC deps are pure JS (no native build step).
 if [ ! -d "$SCRIPT_DIR/node_modules" ]; then
     echo "[ECC] Installing dependencies..."
-    (cd "$SCRIPT_DIR" && npm install --no-audit --no-fund --loglevel=error)
+    (cd "$SCRIPT_DIR" && npm install --ignore-scripts --no-audit --no-fund --loglevel=error)
 fi
 
 # On MSYS2/Git Bash, convert the POSIX path to a Windows path so Node.js

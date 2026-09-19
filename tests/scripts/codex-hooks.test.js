@@ -169,6 +169,7 @@ function runHermeticPrePush({
   includeCorepack = true,
   includePnpm = false,
   audit = false,
+  runChecks = true,
 } = {}) {
   const tempDir = createTempDir('codex-pre-push-');
   const binDir = path.join(tempDir, 'bin');
@@ -204,6 +205,7 @@ ${includePnpm ? functionStub('pnpm', false) : ''}
       PATH: toBashPath(binDir),
       BASH_ENV: toBashPath(bashEnv),
       ECC_PREPUSH_AUDIT: audit ? '1' : '0',
+      ECC_PREPUSH_RUN_CHECKS: runChecks ? '1' : '0',
       ECC_SKIP_GIT_HOOKS: '0',
       ECC_SKIP_PREPUSH: '0',
       MSYS_NO_PATHCONV: '1',
@@ -221,7 +223,7 @@ ${includePnpm ? functionStub('pnpm', false) : ''}
 
 if (
   test('pre-push uses Corepack pinned pnpm and runs every required verification script', () => {
-    const { result, calls } = runHermeticPrePush();
+    const { result, calls } = runHermeticPrePush({ runChecks: true });
     assert.strictEqual(result.status, 0, JSON.stringify(result, null, 2));
     assert.deepStrictEqual(calls, [
       'pnpm run lint',
@@ -264,7 +266,7 @@ else failed++;
 
 if (
   test('pre-push stops immediately when a required verification script fails', () => {
-    const { result, calls } = runHermeticPrePush({ failScript: 'typecheck' });
+    const { result, calls } = runHermeticPrePush({ runChecks: true, failScript: 'typecheck' });
     assert.notStrictEqual(result.status, 0, `${result.stdout}\n${result.stderr}`);
     assert.deepStrictEqual(calls, ['pnpm run lint', 'pnpm run typecheck']);
     assert.match(result.stderr, /typecheck failed/);
@@ -274,8 +276,19 @@ if (
 else failed++;
 
 if (
+  test('pre-push skips verification scripts by default when opt-in is not set', () => {
+    const { result, calls } = runHermeticPrePush({ runChecks: false });
+    assert.strictEqual(result.status, 0, `${result.stdout}\n${result.stderr}`);
+    assert.deepStrictEqual(calls, []);
+    assert.match(result.stderr, /ECC_PREPUSH_RUN_CHECKS!=1/);
+  })
+)
+  passed++;
+else failed++;
+
+if (
   test('pre-push runs the production audit through Corepack pnpm', () => {
-    const { result, calls } = runHermeticPrePush({ audit: true });
+    const { result, calls } = runHermeticPrePush({ runChecks: true, audit: true });
     assert.strictEqual(result.status, 0, `${result.stdout}\n${result.stderr}`);
     assert.deepStrictEqual(calls, [
       'pnpm run lint',
