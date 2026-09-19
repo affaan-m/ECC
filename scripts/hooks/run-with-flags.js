@@ -227,7 +227,18 @@ async function main() {
   // which would interfere with the parent process or cause double execution.
   let hookModule;
   const src = fs.readFileSync(scriptPath, 'utf8');
-  const hasRunExport = /\bmodule\.exports\b/.test(src) && /\brun\b/.test(src);
+  // Gate require() on concrete export syntax, not a bare word match: the old
+  // /\bmodule\.exports\b/ && /\brun\b/ test fired on comments, strings, and
+  // unrelated properties, causing require() — and its module-scope side
+  // effects — to run for hooks that export no run(). Still lexical (no parser
+  // dependency), but requires an actual export assignment form.
+  const RUN_EXPORT_PATTERNS = [
+    /module\.exports\s*\.\s*run\s*=/,
+    /exports\s*\.\s*run\s*=/,
+    /module\.exports\s*=\s*\{[^}]*\brun\b/,
+    /module\.exports\s*=\s*(async\s+)?function\s+run\b/,
+  ];
+  const hasRunExport = RUN_EXPORT_PATTERNS.some(re => re.test(src));
 
   if (hasRunExport) {
     try {

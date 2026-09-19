@@ -54,12 +54,24 @@ run_or_echo chmod +x "$DEST_DIR/pre-commit" "$DEST_DIR/pre-push"
 
 if [[ "$MODE" == "apply" ]]; then
   prev_hooks_path="$(git config --global core.hooksPath || true)"
-  if [[ -n "$prev_hooks_path" ]]; then
-    log "Previous global hooksPath: $prev_hooks_path"
+  if [[ -n "$prev_hooks_path" && "$prev_hooks_path" != "$DEST_DIR" ]]; then
+    # SECURITY: never silently displace another tool's global hooks — that
+    # turns every commit/push in every repo into ECC code execution and breaks
+    # the user's existing security controls. Require explicit opt-in to replace.
+    if [[ "${ECC_FORCE_GLOBAL_HOOKS:-0}" != "1" ]]; then
+      log "ERROR: global core.hooksPath already set to: $prev_hooks_path"
+      log "Refusing to overwrite. Options:"
+      log "  1) Per-repo install (recommended): git config core.hooksPath \"$DEST_DIR\""
+      log "  2) Force replace: ECC_FORCE_GLOBAL_HOOKS=1 $0"
+      log "  3) Restore afterwards: git config --global core.hooksPath \"$prev_hooks_path\""
+      exit 1
+    fi
+    log "WARNING: replacing previous global hooksPath: $prev_hooks_path (ECC_FORCE_GLOBAL_HOOKS=1)"
+    log "Restore with: git config --global core.hooksPath \"$prev_hooks_path\""
   fi
 fi
 run_or_echo git config --global core.hooksPath "$DEST_DIR"
 
 log "Installed ECC global git hooks."
-log "Disable per repo by creating .ecc-hooks-disable in project root."
-log "Temporary bypass: ECC_SKIP_PRECOMMIT=1 or ECC_SKIP_PREPUSH=1"
+log "Per-repo alternative (recommended): git config core.hooksPath \"$DEST_DIR\""
+log "Temporary bypass (audible): ECC_SKIP_GIT_HOOKS=1 (logs a warning to stderr)"
