@@ -99,7 +99,8 @@
         "devops-infra",
         "machine-learning",
         "supply-chain-domain",
-        "document-processing"
+        "document-processing",
+        "hermes-hooks"
       ]
     }
   }
