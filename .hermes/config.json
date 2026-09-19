@@ -1,0 +1,46 @@
+{
+  "version": "2.2.1",
+  "harness": "hermes",
+  "description": "ECC configuration for Hermes operator shell",
+  "install": {
+    "target": "hermes",
+    "kind": "home",
+    "rootSegments": [".hermes"],
+    "nativeRootRelativePath": ".hermes"
+  },
+  "modules": {
+    "rules-core": {
+      "description": "Shared and language rules",
+      "paths": ["rules"]
+    },
+    "agents-core": {
+      "description": "Agent definitions and project-level agent guidance",
+      "paths": ["AGENTS.md"]
+    },
+    "commands-core": {
+      "description": "Core slash-command library",
+      "paths": ["commands", "scripts/harness-audit.js", "scripts/skills-health.js"]
+    },
+    "skill-unified-memory": {
+      "description": "Unified memory guidance",
+      "paths": ["skills/unified-memory"]
+    },
+    "workflow-quality": {
+      "description": "Evaluation, TDD, verification, compaction, learning skills",
+      "paths": ["skills"]
+    }
+  },
+  "features": {
+    "agents": true,
+    "commands": true,
+    "rules": true,
+    "skills": true,
+    "hooks": false
+  },
+  "paths": {
+    "rules": "rules",
+    "commands": "commands",
+    "skills": "skills",
+    "scripts": "scripts"
+  }
+}

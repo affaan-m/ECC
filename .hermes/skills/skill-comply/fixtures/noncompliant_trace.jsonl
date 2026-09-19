@@ -1,0 +1,3 @@
+{"timestamp":"2026-03-20T10:00:01Z","event":"tool_complete","tool":"Write","session":"sess-002","input":"{\"file_path\":\"src/fib.py\",\"content\":\"def fib(n): return n if n <= 1 else fib(n-1)+fib(n-2)\"}","output":"File created"}
+{"timestamp":"2026-03-20T10:00:10Z","event":"tool_complete","tool":"Write","session":"sess-002","input":"{\"file_path\":\"tests/test_fib.py\",\"content\":\"def test_fib(): assert fib(0) == 0\"}","output":"File created"}
+{"timestamp":"2026-03-20T10:00:20Z","event":"tool_complete","tool":"Bash","session":"sess-002","input":"{\"command\":\"cd /tmp/sandbox && pytest tests/\"}","output":"1 passed"}
