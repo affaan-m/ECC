@@ -52,6 +52,9 @@ packages = ["src/llm"]
 testpaths = ["tests"]
 asyncio_mode = "auto"
 filterwarnings = ["ignore::DeprecationWarning"]
+markers = [
+    "unit: fast, isolated tests that do not require a network service",
+]
 
 [tool.coverage.run]
 source = ["src/llm"]

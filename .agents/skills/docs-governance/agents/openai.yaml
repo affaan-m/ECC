@@ -1,0 +1,7 @@
+interface:
+  display_name: "Docs Governance"
+  short_description: "Route the complete project documentation governance workflow"
+  brand_color: "#0EA5E9"
+  default_prompt: "Use $docs-governance to route and coordinate durable project documentation, decisions, evidence, and audits."
+policy:
+  allow_implicit_invocation: true

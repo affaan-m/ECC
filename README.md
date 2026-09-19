@@ -3,21 +3,6 @@
 </p>
 
 <p align="center">
-  <a href="https://www.star-history.com/affaan-m/ecc">
-    <picture>
-      <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/badge?repo=affaan-m/ECC&type=trending&theme=dark" />
-      <img src="https://api.star-history.com/badge?repo=affaan-m/ECC&type=trending" alt="GitHub Trending Repository of the Day" height="46" />
-    </picture>
-  </a>
-  <a href="https://www.star-history.com/affaan-m/ecc">
-    <picture>
-      <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/badge?repo=affaan-m/ECC&type=rank&theme=dark" />
-      <img src="https://api.star-history.com/badge?repo=affaan-m/ECC&type=rank" alt="Star History Global Rank" height="46" />
-    </picture>
-  </a>
-</p>
-
-<p align="center">
   <strong>Language:</strong>
   <a href="README.md">English</a> |
   <a href="docs/pt-BR/README.md">Português (Brasil)</a> |
@@ -138,13 +123,13 @@ Instead of rebuilding that process in every prompt, you install it once and make
 
 ECC is MIT-licensed open source. It works best with Claude Code today, has a supported Codex sync path, and provides capability-limited adapters for Cursor, OpenCode, Gemini, Zed, GitHub Copilot, Antigravity, Qwen, and other harnesses. See the [support status matrix](#platform-support) before assuming feature parity.
 
-Access to 68 agents, 292 skills, and 94 legacy command shims, plus hooks, rules, memory, continuous learning, and AgentShield security scanning. The agents are specialized for planning, review, build repair, security, architecture, and domain work.
+Access to 71 agents, 297 skills, and 100 legacy command shims, plus hooks, rules, memory, continuous learning, and AgentShield security scanning. The agents are specialized for planning, review, build repair, security, architecture, and domain work.
 
 | Included         |       Count | What it gives you                                                                    |
 | ---------------- | ----------: | ------------------------------------------------------------------------------------ |
-| Agents           |   68 agents | Planning, review, build repair, security, architecture, and domain work              |
-| Skills           |  292 skills | TDD, research, security, docs, frontend, data, ML, operations, and more              |
-| Commands         | 94 commands | Convenient entry points while ECC moves to a skills-first surface                    |
+| Agents           |   71 agents | Planning, review, build repair, security, architecture, and domain work              |
+| Skills           |  297 skills | TDD, research, security, docs, frontend, data, ML, operations, and more              |
+| Commands         | 100 commands | Convenient entry points while ECC moves to a skills-first surface                    |
 | Hooks and memory |     Runtime | Enforcement, session summaries, continuous learning, instincts, and context controls |
 | Rules            |   Selective | Always-loaded standards you choose by language or project                            |
 | AgentShield      |    Included | Scanning for prompts, hooks, MCP config, permissions, secrets, and agent files       |
@@ -578,6 +563,72 @@ Without `ccg-workflow`, these `multi-*` commands will not run correctly.
 </details>
 
 <details>
+<summary><strong>Custom API endpoints, model gateways, and self-hosted models</strong></summary>
+
+ECC works through each harness's normal configuration, so you can use an official provider, a compatible custom API endpoint or model gateway, or a self-hosted model without changing ECC's workflows.
+
+For Claude Code, ECC does not hardcode Anthropic-hosted transport settings. Minimal gateway example:
+
+```bash
+export ANTHROPIC_BASE_URL=https://your-gateway.example.com
+export ANTHROPIC_AUTH_TOKEN=your-token
+claude
+```
+
+If your gateway remaps model names, configure that in Claude Code rather than in ECC. ECC's hooks, skills, commands, and rules are model-provider agnostic once the `claude` CLI is already working. See Anthropic's [LLM gateway documentation](https://docs.anthropic.com/en/docs/claude-code/llm-gateway) and [model configuration documentation](https://docs.anthropic.com/en/docs/claude-code/model-config).
+
+Run or self-host any open-source model behind that gateway using separate compute and serving setup. If you need GPU capacity, [Itô](https://compute.itomarkets.com) is ECC's preferred compute sponsor; any GPU provider works. The sponsorship link is passive: it does not invoke an RFQ, reserve capacity, provision compute, or configure serving. Separately, `ecc ito find` invokes the explicitly configured canonical Itô CLI and submits a live authenticated RFQ; it does not reserve capacity. Managed inference through Itô is not live yet.
+
+### Self-host Kimi with ECC + Itô compute
+
+The Kimi Code harness and the model-serving layer are separate. ECC configures the agent harness; you bring an API endpoint or self-host an open-weight Kimi model on your own GPU capacity. This adapter is verified against Kimi Code 0.31.x (`@moonshot-ai/kimi-code`):
+
+<table aria-label="Local Kimi model path" width="100%">
+<tr>
+<td width="33%" align="center">
+  <a href="https://compute.itomarkets.com">
+    <picture><source media="(prefers-color-scheme: light)" srcset="assets/images/sponsors/ito-transparent-light.png" /><img src="assets/images/sponsors/ito-transparent.png" width="92" alt="Itô Markets" /></picture><br />
+    <strong>1. Get GPU capacity</strong>
+  </a><br />
+  <sub>Use Itô or any GPU provider.</sub>
+</td>
+<td width="33%" align="center">
+  <a href="https://www.moonshot.ai">
+    <picture><source media="(prefers-color-scheme: dark)" srcset="assets/images/sponsors/moonshot-dark.png" /><img src="assets/images/sponsors/moonshot.png" width="126" alt="Moonshot AI - Kimi" /></picture><br />
+    <strong>2. Serve Kimi</strong>
+  </a><br />
+  <sub>Expose the chosen checkpoint through a compatible endpoint.</sub>
+</td>
+<td width="33%" align="center">
+  <a href=".kimi/README.md">
+    <img src="assets/images/community/ecc-tools-mark.svg" height="52" alt="ECC Tools" /><br />
+    <strong>3. Run Kimi Code with ECC</strong>
+  </a><br />
+  <sub>Install project instructions and skills, then start Kimi Code.</sub>
+</td>
+</tr>
+</table>
+
+Configure the endpoint with Kimi Code's <a href="https://moonshotai.github.io/kimi-cli/en/configuration/providers.html">official provider guide</a>, then install ECC:
+
+```bash
+bash ./install.sh --target kimi --profile minimal
+node scripts/ecc.js doctor --target kimi
+kimi
+```
+
+Kimi Code discovers the installed `.kimi-code/AGENTS.md` instructions and `.kimi-code/skills/` workflows natively; project-level `.agents/skills/` is also an official discovery location. ECC safely merges project MCP entries into `.kimi-code/mcp.json` and does not change the user-level `~/.kimi-code/config.toml`. Kimi Code supports native hooks, but ECC's current managed-project adapter does not configure them, so this installer does not offer Kimi hook profiles. The installer dry-run and regression suite verify that every managed Kimi write stays inside the project-local `.kimi-code/` root.
+
+### Itô compute CLI bridge
+
+`ecc ito` delegates to the separately installed canonical Itô client; ECC does not maintain a second API client. `ecc ito login [--no-browser]` performs device authorization, opens the Itô verification page by default, and persists a device token in macOS Keychain; `--no-browser` suppresses the page handoff. ECC itself does no browser automation. `ecc ito auth` is validation-only and rejects `--no-browser`. The available operations are `ecc ito login`, `ecc ito auth`, `ecc ito find`, `ecc ito status`, and the separately gated `ecc ito evals`. The matching MCP tools remain `ito_auth`, `ito_find`, and `ito_status`; `ito_auth` validates existing credentials and node qualification is CLI-only.
+
+The `ito-compute-cli` package is currently unpublished. Build it locally from the Itô runtime repo (private while the desk hardens; design partners get access) under `cli/ito-compute-cli`, run `npm ci` and `npm run check`, then set `ECC_ITO_CLI_EXECUTABLE` to that build's absolute `dist/bin/ito.js` path. Login never inherits `ITO_API_KEY`; auth, find, and status forward `ITO_API_KEY` directly when configured, and `ITO_AUTH_MODE=legacy` is not required. `ecc ito logout` revokes the current device credential and retains its local copy if remote revocation cannot be confirmed. Device tokens use macOS Keychain by default; explicit file fallback must retain owner-only directory/file permissions. ECC does not discover this credential-bearing client through `PATH`. See the [`ito-compute` skill](skills/ito-compute/SKILL.md) for the full RFQ authority and MCP setup contract.
+
+`find` submits a live authenticated RFQ. It does not reserve capacity. `evals` requires both `ITO_ENABLE_SIXTYTWO_LIVE=1` and `--live-sixtytwo`, a separately installed `sixtytwo-cli==0.3.33`, an explicit node list, and an existing absolute configuration directory. It cannot rent, launch, recover, repair, or purchase. ECC exposes no quote lock, purchase, workload, or inference path, and it never replaces a missing client or failed live call with a local result.
+</details>
+
+<details>
 <summary><strong>Reset, repair, or uninstall</strong></summary>
 
 ### Reset / Uninstall ECC
@@ -719,6 +770,139 @@ ECC works through each harness's normal configuration, so you can use an officia
 
 For Claude Code, ECC does not hardcode Anthropic-hosted transport settings. Minimal gateway example:
 
+### Plan Canvas: review plans by pointing, not retyping
+
+Your agent writes a plan, then opens it in a loopback-only browser canvas. Click the part you mean, attach numbered annotations, chat from a side rail, and hit **Approve plan** or **Request changes**. The verdict maps straight onto `/plan`'s CONFIRM gate. Mermaid diagrams render live, and edits to the plan file reload the page.
+
+![Plan Canvas demo: reviewing an ECC plan in the browser, scrolling diagrams, attaching an anchored annotation, chatting with the agent, and approving the plan](https://raw.githubusercontent.com/affaan-m/ECC/main/docs/releases/2.1.0/assets/ecc-plan-canvas-demo.gif)
+
+It's harness- and model-agnostic: a plain CLI (`ecc-plan-canvas`) speaking JSON, so any agent can drive it. Try it: ask your agent to `/ecc:plan` anything, then review from the page instead of the terminal.
+
+[Open the plan used in this demo →](https://github.com/affaan-m/ECC/blob/main/docs/releases/2.1.0/plan-canvas-demo.plan.md)
+
+### Also in 2.1
+
+- **Kimi Code install target** (`--target kimi`): ECC installs natively into [Moonshot AI](https://www.moonshot.ai)'s Kimi Code CLI
+- **Self-host on GPUs**: a verified path with [Itô](https://compute.itomarkets.com), ECC's preferred compute sponsor, including the opt-in `ecc ito find` RFQ bridge (details and disclosures above in the install options)
+- **Moonshot AI (Kimi), Itô, and Atlas Cloud** are now public sponsors
+- **Hermes + OpenClaw install targets**, a Codex navigation guide, consolidated PostToolUse hooks, and supply-chain hardening
+
+### Current development: Unified Memory Vault
+
+`ecc memory` gives Claude, Codex, Hermes, OpenClaw, Kimi, and other harnesses one local, inspectable Markdown format for durable context and handoffs. The optional `ecc-memory-mcp` stdio server exposes the same bounded save/search/read/doctor surface without enabling itself by default. Full detail in [Share context between harnesses](#share-context-between-harnesses) below.
+
+<details>
+<summary><strong>Previous releases</strong></summary>
+
+| Version | Highlights |
+|---|---|
+| [v2.0.0](https://github.com/affaan-m/ECC/releases/tag/v2.0.0) | The Agent Harness Operating System: cross-harness graduation, control-pane substrate, `orch-*` orchestrators, Discord + ECC bot, single-connector MCP policy |
+| [v1.10.0](https://github.com/affaan-m/ECC/releases/tag/v1.10.0) | Surface refresh, operator workflows, ECC 2.0 alpha |
+| [v1.9.0](https://github.com/affaan-m/ECC/releases/tag/v1.9.0) | Selective install, ECC Tools Pro, 12 language ecosystems |
+| [v1.8.0](https://github.com/affaan-m/ECC/releases/tag/v1.8.0) | Harness performance and cross-platform reliability |
+| [v1.7.0](https://github.com/affaan-m/ECC/releases/tag/v1.7.0) | Cross-platform expansion and presentation builder |
+| [v1.6.0](https://github.com/affaan-m/ECC/releases/tag/v1.6.0) | Codex Edition and the ECC Tools GitHub App |
+| [v1.5.0](https://github.com/affaan-m/ECC/releases/tag/v1.5.0) | Universal Edition |
+| [v1.4.0](https://github.com/affaan-m/ECC/releases/tag/v1.4.0) | Multi-language rules, installation wizard, PM2 orchestration |
+| [v1.3.0](https://github.com/affaan-m/ECC/releases/tag/v1.3.0) | Complete OpenCode plugin support |
+| [v1.2.0](https://github.com/affaan-m/ECC/releases/tag/v1.2.0) | Unified commands and skills |
+| [v1.1.0](https://github.com/affaan-m/ECC/releases/tag/v1.1.0) | Cross-platform support and community fixes |
+| [v1.0.0](https://github.com/affaan-m/ECC/releases/tag/v1.0.0) | Official plugin release |
+
+</details>
+
+<details>
+<summary><strong>Release history in detail</strong></summary>
+
+### v2.0.0: The Agent Harness Operating System (Jun 2026)
+
+Stable graduation of the 2.0 line: the control-pane substrate (session adapters + MCP inventory), the worktree-lifecycle service, the `orch-*` orchestrator family, and the launch of the [ECC Discord community](https://discord.gg/36yGMHGFbR). Full notes: [docs/releases/2.0.0/release-notes.md](docs/releases/2.0.0/release-notes.md).
+
+### v2.0.0-rc.1: Surface Refresh, Operator Workflows, and ECC 2.0 Alpha (Apr 2026)
+
+- **Dashboard GUI**: New Tkinter-based desktop application (`ecc_dashboard.py` or `npm run dashboard`) with dark/light theme toggle, font customization, and project logo in header and taskbar.
+- **Public surface synced to the live repo**: metadata, catalog counts, plugin manifests, and install-facing docs now match the actual OSS surface.
+- **Operator and outbound workflow expansion**: `brand-voice`, `social-graph-ranker`, `connections-optimizer`, `customer-billing-ops`, `ecc-tools-cost-audit`, `google-workspace-ops`, `project-flow-ops`, and `workspace-surface-audit` round out the operator lane.
+- **Media and launch tooling**: `manim-video`, `remotion-video-creation`, and upgraded social publishing surfaces make technical explainers and launch content part of the same system.
+- **Framework and product surface growth**: `nestjs-patterns`, richer Codex/OpenCode install surfaces, and expanded cross-harness packaging keep the repo usable beyond a single harness.
+- **Itô prediction-market skill pack**: the consolidated `ito-baskets` skill (read-only basket index, comparison, market briefs, and non-executable planning worksheets — replacing the former `ito-market-intelligence`, `ito-basket-compare`, `ito-trade-planner`, and `ito-data-atlas-agent` skills), plus `prediction-market-oracle-research` and `prediction-market-risk-review`, add public, non-advisory market/basket workflows while keeping live Itô API access gated and separate from ECC Tools billing.
+- **Optimization skill pack**: `parallel-execution-optimizer`, `benchmark-optimization-loop`, `data-throughput-accelerator`, `latency-critical-systems`, and `recursive-decision-ledger` turn repeated speed/recursion prompts into bounded benchmark, throughput, and decision-ledger workflows.
+- **ECC 2.0 alpha in-tree**: the Rust control-plane prototype in `ecc2/` builds locally and exposes `dashboard`, `start`, `sessions`, `status`, `stop`, `resume`, and `daemon` commands.
+- **Operator status snapshots**: `ecc status --markdown --write status.md` turns the local state store into a portable handoff covering readiness, active sessions, skill-run health, install health, pending governance events, and linked work items from Linear/GitHub/handoffs.
+- **Ecosystem hardening**: AgentShield, ECC Tools cost controls, billing portal work, and website refreshes continue to ship around the core plugin instead of drifting into separate silos.
+
+### v1.9.0: Selective Install and Language Expansion (Mar 2026)
+
+- **Selective install architecture**: Manifest-driven install pipeline with `install-plan.js` and `install-apply.js` for targeted component installation. State store tracks what's installed and enables incremental updates.
+- **6 new agents**: `typescript-reviewer`, `pytorch-build-resolver`, `java-build-resolver`, `java-reviewer`, `kotlin-reviewer`, `kotlin-build-resolver` expand language coverage to 10 languages.
+- **New skills**: `pytorch-patterns`, `documentation-lookup`, `bun-runtime`, `nextjs-turbopack`, 8 operational domain skills, and `mcp-server-patterns`.
+- **Session and state infrastructure**: SQLite state store with query CLI, session adapters for structured recording, skill evolution foundation for self-improving skills.
+- **Orchestration overhaul**: Deterministic harness audit scoring, hardened orchestration status and launcher compatibility, observer loop prevention with 5-layer guard.
+- **Observer reliability**: Memory explosion fix with throttling and tail sampling, sandbox access fix, lazy-start logic, and re-entrancy guard.
+- **12 language ecosystems**: New rules for Java, PHP, Perl, Kotlin/Android/KMP, C++, and Rust join existing TypeScript, Python, Go, and common rules.
+- **Community contributions**: Korean and Chinese translations, biome hook optimization, video processing skills, operational skills, PowerShell installer, Antigravity IDE support.
+- **CI hardening**: 19 test failure fixes, catalog count enforcement, install manifest validation, and full test suite green.
+
+### v1.8.0: Harness Performance System (Mar 2026)
+
+- **Harness-first release**: ECC is explicitly framed as an agent harness performance system, not just a config pack.
+- **Hook reliability overhaul**: SessionStart root fallback, Stop-phase session summaries, and script-based hooks replacing fragile inline one-liners.
+- **Hook runtime controls**: `ECC_HOOK_PROFILE=minimal|standard|strict` and `ECC_DISABLED_HOOKS=...` for runtime gating without editing hook files.
+- **New harness commands**: `/harness-audit`, `/loop-start`, `/loop-status`, `/quality-gate`, `/model-route`.
+- **NanoClaw v2**: model routing, skill hot-load, session branch/search/export/compact/metrics.
+- **Cross-harness parity**: behavior tightened across Claude Code, Cursor, OpenCode, and Codex app/CLI.
+- **997 internal tests passing**: full suite green after hook/runtime refactor and compatibility updates.
+
+### v1.7.0: Cross-Platform Expansion and Presentation Builder (Feb 2026)
+
+- **Codex app + CLI support**: Direct `AGENTS.md`-based Codex support, installer targeting, and Codex docs
+- **`frontend-slides` skill**: Zero-dependency HTML presentation builder with PPTX conversion guidance and strict viewport-fit rules
+- **5 new generic business/content skills**: `article-writing`, `content-engine`, `market-research`, `investor-materials`, `investor-outreach`
+- **Broader tool coverage**: Cursor, Codex, and OpenCode support tightened so the same repo ships cleanly across all major harnesses
+- **992 internal tests**: Expanded validation and regression coverage across plugin, hooks, skills, and packaging
+
+### v1.6.0: Codex CLI, AgentShield, and Marketplace (Feb 2026)
+
+- **Codex CLI support**: New `/codex-setup` command generates `codex.md` for OpenAI Codex CLI compatibility
+- **7 new skills**: `search-first`, `swift-actor-persistence`, `swift-protocol-di-testing`, `regex-vs-llm-structured-text`, `content-hash-cache-pattern`, `cost-aware-llm-pipeline`, `skill-stocktake`
+- **AgentShield integration**: `/security-scan` runs AgentShield directly from Claude Code; 1282 tests, 102 rules
+- **GitHub Marketplace**: ECC Tools GitHub App live at [github.com/marketplace/ecc-tools](https://github.com/marketplace/ecc-tools) with free/pro/enterprise tiers
+- **30+ community PRs merged**: Contributions from 30 contributors across 6 languages
+- **978 internal tests**: Expanded validation suite across agents, skills, commands, hooks, and rules
+
+### v1.4.1: Bug Fix (Feb 2026)
+
+- **Fixed instinct import content loss**: `parse_instinct_file()` was silently dropping all content after frontmatter (Action, Evidence, Examples sections) during `/instinct-import`. ([#148](https://github.com/affaan-m/ECC/issues/148), [#161](https://github.com/affaan-m/ECC/pull/161))
+
+### v1.4.0: Multi-Language Rules, Installation Wizard, and PM2 (Feb 2026)
+
+- **Interactive installation wizard**: New `configure-ecc` skill provides guided setup with merge/overwrite detection
+- **PM2 and multi-agent orchestration**: 6 new commands (`/pm2`, `/multi-plan`, `/multi-execute`, `/multi-backend`, `/multi-frontend`, `/multi-workflow`) for managing complex multi-service workflows
+- **Multi-language rules architecture**: Rules restructured from flat files into `common/` + `typescript/` + `python/` + `golang/` directories. Install only the languages you need
+- **Chinese (zh-CN) translations**: Complete translation of all agents, commands, skills, and rules (80+ files)
+- **GitHub Sponsors support**: Sponsor the project via GitHub Sponsors
+- **Enhanced CONTRIBUTING.md**: Detailed PR templates for each contribution type
+
+### v1.3.0: OpenCode Plugin Support (Feb 2026)
+
+- **Full OpenCode integration**: 12 agents, 24 commands, 16 skills with hook support via OpenCode's plugin system (20+ event types)
+- **3 native custom tools**: run-tests, check-coverage, security-audit
+- **LLM documentation**: `llms.txt` for comprehensive OpenCode docs
+
+### v1.2.0: Unified Commands and Skills (Feb 2026)
+
+- **Python/Django support**: Django patterns, security, TDD, and verification skills
+- **Java Spring Boot skills**: Patterns, security, TDD, and verification for Spring Boot
+- **Session management**: `/sessions` command for session history
+- **Continuous learning v2**: Instinct-based learning with confidence scoring, import/export, evolution
+
+See the full changelog in [Releases](https://github.com/affaan-m/ECC/releases).
+</details>
+
+## Share context between harnesses
+
+ECC's Memory Vault gives Claude, Codex, Hermes, OpenClaw, Kimi, and other harnesses one local, inspectable Markdown format for durable context and handoffs. Project and team memories live under `.ecc/memory/`; user memories live under `~/.ecc/memory/`.
+
 ```bash
 export ANTHROPIC_BASE_URL=https://your-gateway.example.com
 export ANTHROPIC_AUTH_TOKEN=your-token
@@ -795,9 +979,9 @@ Stable graduation of the 2.0 line: control-pane substrate, worktree lifecycle se
 
 ```text
 ECC/
-|-- agents/           # 68 specialized subagents for delegation
-|-- skills/           # 292 reusable workflows loaded on demand
-|-- commands/         # 94 maintained slash-command shims
+|-- agents/           # 71 specialized subagents for delegation
+|-- skills/           # 297 reusable workflows loaded on demand
+|-- commands/         # 100 maintained slash-command shims
 |-- rules/            # opt-in common and language standards
 |-- hooks/            # runtime automation and enforcement
 |-- scripts/          # install, repair, sync, orchestration, and checks
