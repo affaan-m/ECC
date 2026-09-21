@@ -52,7 +52,7 @@ function managedJourney(temp, env) {
 
   const taskPath = path.join(temp, 'task.json');
   const task = { sessionId: 'packed-probe', taskId: 'python-step', revision: 1, phase: 'implement',
-    query: 'python-patterns' };
+    query: 'python-patterns', proposedIds: ['skill:python-patterns'] };
   fs.writeFileSync(taskPath, JSON.stringify(task));
   const resolve = args => command(['resolve', 'lean', '--task-input', taskPath, ...args]).selection;
   const selected = resolve(['--selection', 'auto']);
@@ -75,7 +75,7 @@ function managedJourney(temp, env) {
   fs.writeFileSync(taskPath, JSON.stringify(task));
   const receiptPath = path.join(temp, 'receipt.json');
   fs.writeFileSync(receiptPath, JSON.stringify(loaded.receipt));
-  fs.writeFileSync(taskPath, JSON.stringify({ ...task, query: 'unrelated wording' }));
+  fs.writeFileSync(taskPath, JSON.stringify({ ...task, proposedIds: [], query: 'unrelated wording' }));
   assert.equal(resolve(['--previous', receiptPath, '--load']).reused, true);
   fs.writeFileSync(taskPath, JSON.stringify({ ...task, revision: 2, noWorkflow: true }));
   const reset = resolve(['--previous', receiptPath, '--load']);

@@ -1,6 +1,6 @@
-# ECC-029 September 13 verification
+# ECC-029 verification ledger
 
-Branch: `feat/ecc-029-profile-delivery`, incorporating upstream main `8321021c` and the previous carrier branch. This report describes local development and packed evidence, not a public release.
+September 13 baseline branch: `feat/ecc-029-profile-delivery`, incorporating upstream main `8321021c` and the previous carrier branch. The September 21 continuation is recorded below. This report describes local development and packed evidence, not a public release.
 
 ## Reproduced failures and fixes
 
@@ -11,7 +11,7 @@ Branch: `feat/ecc-029-profile-delivery`, incorporating upstream main `8321021c` 
 | Implicit-invocation policy race | Change `agents/openai.yaml` after compile and before policy read | Policy bytes revalidated against registry digests; preview/load reject drift |
 | Windows managed-root parsing | Drive/UNC decomposition loses root separator | Platform-aware root preservation; drive/UNC tests pass |
 | Interactive setup fixture race | Delayed startup sends blank answers and EOF before prompt | Prompt-driven PTY and final input closure; 30 tests and 36 existing-install combinations pass |
-| Overconfident keyword Auto | Realistic JS review, RAG research and npm release queries select unrelated top scores | Generic scores only shortlist; exact complete names select; agent proposals pass separate admission |
+| Overconfident keyword Auto | Realistic JS review, RAG research and npm release queries select unrelated top scores | Names and generic scores only shortlist; loading requires explicit IDs or a separately admitted agent proposal |
 | Native state and executable drift | Reviewed receipt resealing, stale revision, symlink/FIFO and binary replacement cases | Immutable transition binding, bounded regular-file reads, prepublication checks and pinned binary checks |
 | Packaged native binary layout | Linux npm wrapper differs from assumed vendor path | Resolve and fingerprint the actual pinned platform binary; regression and real Podman pass |
 
@@ -57,3 +57,34 @@ No authenticated model calls were made. Auto proposal and task transport, admiss
 Native readiness attests the isolated generation and discovery in its empty project. Task launch inherits the actual working directory and its repository controls, so complete task-context equivalence is unverified. Codex proposal execution is filesystem-read-only but inherits provider tools; tool avoidance in its prompt is advisory. Claude proposal tools are disabled. Task execution inherits provider policy and requires normal authentication.
 
 The store recovers actual process exits at five durable boundaries. Initial creation interrupted before its ownership marker, corrupted partial writes and numeric filesystem identity precision retain explicit limitations. Live installer migration, other-provider activation, interactive Auto bootstrap, whole-context outcome evaluation and default/release changes remain delivery gates. Native status never claims that an existing session changed context.
+
+## September 21 production-acceptance continuation
+
+Branch: `feat/ecc-029-production-acceptance`, with the working integration snapshot updated to upstream main `43b3a01e`. The writer session stopped at its provider usage limit after integrating the interactive and evaluation slices. A replacement session recovered the exact tmux transcript, process state, task log and worktree before continuing. No test process was still running and no conflicting writer remained active.
+
+Additional RED/GREEN cases cover gaps found during review:
+
+- Complete skill names in questions, quoted data or negated requests previously triggered implicit loading. Names now create candidates only; a user explicit ID or admitted agent proposal is required.
+- A pending receipt could previously be reused and skip the provider decision. Receipts now bind routing-policy version and `selected`, `none` or `pending` decision state; only completed decisions can be reused.
+- A changed or removed pinned Codex executable could leave native preparation unable to refresh. Explicit preparation may create a newly verified generation while preserving the old receipt and pointer until publication. Ordinary status and start remain fail-closed.
+- Isolated native task launch previously inherited every caller environment variable. It now passes only pinned home paths, `PATH`, a fixed locale, a private temporary directory and the required Windows system root. Regression coverage proves unrelated cloud credentials, API keys, proxy settings and `NODE_OPTIONS` are absent.
+- The Auto authority check previously missed the shipped `tools` frontmatter field. Scalar and array forms now require manual selection. Malformed task JSON now returns a fixed error without echoing task bytes.
+- Provider and sandbox timeouts previously used a catchable termination signal. Launch, proposal, native discovery and sandbox supervision now use `SIGKILL`; a real subprocess that ignores `SIGTERM` verifies the sandbox bound.
+- The acceptance driver previously trusted only the sandbox exit code. It now binds the executable and its complete implementation tree, rechecks both identities across preview and execution, and validates backend, tier, real execution, assertion commands, final smoke payload, architecture, layout matrix and evidence boundaries.
+
+The opt-in interactive slice adds bounded UTF-8 task JSON on stdin, receipt-bound bootstrap instructions, installed-source and executable identity checks, exact Codex 0.154.0/0.155.1 version admission, safe refresh, and `profile start`. A real macOS arm64 Codex 0.155.1 run verified Lean, an explicit include, Full with an exclusion, relocated resource digests, stdin resolution, bootstrap visibility, sign-in-screen startup and removed-binary refresh. No credential was copied and no authenticated task turn was made.
+
+The source-only AI pilot fixes 13 selection probes and eight paired artifact tasks before execution. Registration binds corpus, registry, plans, implementation, Node runtime, pinned parser and validator dependency versions, model and binary. The provider adapter uses disposable homes, explicit opt-in, `CODEX_API_KEY`, bounded JSONL, deadlines and call counts. Independent artifact assertions and sanitized metrics are implemented. Synthetic tests validate the measurement path; they do not establish model quality. The 13/8 pilot remains below the 30/30 gate and therefore reports `insufficient-sample` even if every case passes.
+
+Current combined verification after recovery:
+
+- Focused registry, carrier, store, native, interactive, resolver, admission, evaluation, sandbox and CLI suites pass, including the review regressions above.
+- The final focused `node:test` run passes 182/182. Claude migration and setup compatibility suites pass 16/16 and 30/30. The complete repository runner passes 4,940/4,940; lint, diff checks and the production dependency audit all pass with zero vulnerabilities.
+- The integration snapshot is current with upstream main `43b3a01e`. The latest-main Claude setup change removed obsolete install flags; migration dry-run and setup expectations now match the shipped command while retaining separate settings preservation.
+- Real Tier 1 run `ecc-profile-tier1-dd89224f-123c-4348-835c-1cf156a046e0` passes on rootless Podman with package SHA-256 `3049d1d28b58da575e1578c71abc7ae7b5f86b28fc3a3830199471044ede7371`, a validated final smoke payload, a complete 10,758-added/4-changed layer diff, no credentials and exact cleanup.
+- Real Tier 2 run `ecc-profile-tier2-71e4d8c5-8810-4cc4-a981-c10103baf60a` passes on a disposable native macOS arm64 Lume clone with the same package digest. It validates all ten layouts, isolated Codex discovery, no credential transfer, stopped-guest cleanup and artifact-server cleanup. Lume v1 reports a bounded path scan with 49 added and 12 changed files; it explicitly does not claim a complete disk diff.
+- The initial Tier 2 attempt exposed `/tmp` as the standard macOS symlink to `/private/tmp`. The acceptance verifier now canonicalizes its newly created private directory while the production managed-store guard continues to reject symlinked roots. A second guest run proved the corrected path.
+- The default sandbox checkout's 5,000-path capture limit truncated a real Tier 1 install diff and failed closed. The reviewed ECC-029 sandbox implementation raises the bounded cap to 50,000, passes its 26-case boundary suite, and produced both final reports. The driver receipt binds its 51-file implementation digest `a84e09ab848b8cd05f33792c13734f7aabe16bfe16d50d8f8292eb5261a93c3a`.
+- No real AI outcome call ran because `CODEX_API_KEY` was absent. Host ChatGPT authentication was neither copied nor exposed to the disposable evaluator.
+
+These boundaries keep the shipped behavior distinct from the M1 release gate. Authenticated outcome observations, a complete Tier 2 disk diff, live-install migration, other-provider activation, whole-context token truth and release defaults remain unverified until their explicit prerequisites are available.

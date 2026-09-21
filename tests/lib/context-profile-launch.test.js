@@ -26,6 +26,7 @@ test('Auto launcher resolves context and supplies it on stdin without permission
     assert.ok(options.input.includes(input.query));
     assert.match(options.input, /# feature/);
     assert.equal(options.shell, false);
+    assert.equal(options.killSignal, 'SIGKILL');
     return { status: 0, stdout: 'A list is a sequence.', stderr: '' };
   } });
   assert.equal(called, 1);
@@ -73,8 +74,12 @@ test('isolated native launches replace every provider home without mutating the 
     assert.equal(options.env.USERPROFILE, nativeEnvironment.home);
     assert.equal(options.env.CODEX_HOME, nativeEnvironment.codexHome);
     assert.equal(options.env.PATH, before.PATH);
+    for (const key of ['AWS_ACCESS_KEY_ID', 'OPENAI_API_KEY', 'ANTHROPIC_API_KEY', 'HTTP_PROXY', 'NODE_OPTIONS']) {
+      assert.equal(options.env[key], undefined);
+    }
     assert.equal(options.shell, false);
     assert.equal(options.timeout, 120000);
+    assert.equal(options.killSignal, 'SIGKILL');
     assert.equal(options.maxBuffer, 1024 * 1024);
     return { status: 0, stdout: 'ok' };
   } });

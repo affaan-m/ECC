@@ -43,7 +43,7 @@ function normalizedName(text) { return text.toLowerCase().replace(/[^a-z0-9]+/g,
 
 // Inspired by Jeffrey Montoya's bounded local routing in community PR #2945.
 // Canonical source digests replace its independent cache/receipt authority.
-function candidatesFor(query, entries, excluded) {
+function candidatesFor(query, entries, excluded, admissible) {
   const words = tokens(query);
   const normalizedQuery = ` ${normalizedName(query)} `;
   const available = entries.filter(entry => !excluded.has(entry.id));
@@ -55,10 +55,10 @@ function candidatesFor(query, entries, excluded) {
     const description = new Set(tokens(entry.description));
     return { id: entry.id, score: words.reduce((score, word) => score + (name.has(word) ? 3 : description.has(word) ? 1 : 0), 0),
       description: entry.description.slice(0, 2048), descriptionTruncated: entry.description.length > 2048 };
-  }).filter(entry => exact.has(entry.id) || entry.score >= 3)
+  }).filter(entry => (exact.has(entry.id) || entry.score >= 3) && admissible(entry.id))
     .sort((a, b) => Number(exact.has(b.id)) - Number(exact.has(a.id)) || b.score - a.score
       || (a.id < b.id ? -1 : 1)).slice(0, MAX_CANDIDATES);
-  return { candidates, exactIds };
+  return { candidates };
 }
 
 function verifiedResource(entry, sourcePath, reader) {
@@ -80,7 +80,7 @@ function policyFor(entry, reader) {
     const document = yaml.load(verifiedResource(entry, config.path, reader).content.toString('utf8'), { schema: yaml.JSON_SCHEMA });
     manualOnly ||= document?.policy?.allow_implicit_invocation === false;
   }
-  return { manualOnly, authority: ['allowed-tools', 'context', 'agent', 'hooks'].some(key => metadata[key] !== undefined),
+  return { manualOnly, authority: ['allowed-tools', 'tools', 'context', 'agent', 'hooks'].some(key => metadata[key] !== undefined),
     dynamic: /!`/.test(source) };
 }
 
@@ -121,7 +121,8 @@ function validatePrevious(previous) {
   if (!previous) return;
   const { receiptDigest, ...value } = previous;
   if (previous.schemaVersion !== 'ecc.task-context-receipt.v1' || digestObject(value) !== receiptDigest
-    || !Array.isArray(previous.selectedIds) || !Array.isArray(previous.explicitIds)) {
+    || !Array.isArray(previous.selectedIds) || !Array.isArray(previous.explicitIds)
+    || (previous.decision !== undefined && !['pending', 'selected', 'none'].includes(previous.decision))) {
     throw new Error('Invalid task context receipt');
   }
 }
@@ -144,14 +145,26 @@ function resolveTaskContext({ repoRoot = DEFAULT_REPO_ROOT, task, profileId = 'l
     if (excluded.has(id)) throw new Error(`Context ID is excluded: ${id}`);
   });
   const taskBinding = { sessionId: task.sessionId, taskId: task.taskId, revision: task.revision, phase: task.phase };
-  const bindingDigest = digestObject({ ...taskBinding, planDigest: plan.planDigest });
+  const bindingDigest = digestObject({ ...taskBinding, planDigest: plan.planDigest, routingPolicyVersion: 2 });
   const reused = Boolean(previous && previous.bindingDigest === bindingDigest && !task.noWorkflow
-    && !explicitIds.length && !proposedIds.length);
-  const { candidates, exactIds } = task.noWorkflow || selectionMode === 'manual'
-    ? { candidates: [], exactIds: [] } : candidatesFor(task.query || '', registry.entries, excluded);
+    && ['selected', 'none'].includes(previous.decision) && !explicitIds.length && !proposedIds.length);
+  const admissible = id => {
+    try {
+      const closure = selectedClosure([id], new Set(), byId, excluded, reader);
+      readSelected(closure, byId, reader);
+      return true;
+    } catch (error) {
+      // Only known admission denials remove a suggestion. Source drift and
+      // malformed policy still fail closed instead of disappearing from view.
+      if (/manual-only|requires native authority|is excluded|exceeds the skill limit|32000-byte budget|not UTF-8 text/.test(error.message)) return false;
+      throw error;
+    }
+  };
+  const { candidates } = task.noWorkflow || selectionMode === 'manual' || reused
+    ? { candidates: [] } : candidatesFor(task.query || '', registry.entries, excluded, admissible);
   const requested = task.noWorkflow ? [] : explicitIds.length ? explicitIds
     : reused ? previous.selectedIds : selectionMode === 'manual' ? []
-      : proposedIds.length ? proposedIds : exactIds.length === 1 ? exactIds : [];
+      : proposedIds.length ? proposedIds : [];
   const effectiveExplicit = reused ? previous.explicitIds : explicitIds;
   const selectedIds = selectedClosure(requested, new Set(effectiveExplicit), byId, excluded, reader);
   const selectionDigest = digestObject({ bindingDigest, selectedIds, explicitIds: effectiveExplicit });
@@ -160,10 +173,11 @@ function resolveTaskContext({ repoRoot = DEFAULT_REPO_ROOT, task, profileId = 'l
   const loadedIds = [...new Set(resources.map(resource => resource.id))].sort();
   const reason = task.noWorkflow ? 'no-workflow-needed' : reused ? 'reused-pinned-selection'
     : explicitIds.length ? 'explicit-selection' : proposedIds.length && selectedIds.length ? 'bounded-local-selection'
-      : selectedIds.length ? 'exact-name-selection' : candidates.length ? 'agent-selection-required' : 'no-selection';
+      : candidates.length ? 'agent-selection-required' : 'no-selection';
+  const decision = selectedIds.length ? 'selected' : reason === 'agent-selection-required' ? 'pending' : 'none';
   const receiptValue = { schemaVersion: 'ecc.task-context-receipt.v1', ...taskBinding, bindingDigest,
     selectionDigest, profileId: plan.profileId, selectionMode, target, registryDigest: registry.registryDigest,
-    selectedIds, explicitIds: effectiveExplicit, loadedIds,
+    decision, selectedIds, explicitIds: effectiveExplicit, loadedIds,
     resources: resources.map(({ content: _content, ...resource }) => resource) };
   return { schemaVersion: 'ecc.task-context.v1', profileId: plan.profileId, selectionMode, target,
     reason, reused, selectedIds, loadedIds, candidates, resources,
@@ -171,7 +185,7 @@ function resolveTaskContext({ repoRoot = DEFAULT_REPO_ROOT, task, profileId = 'l
     enforcement: 'prompt-advisory', maxContextBytes: MAX_CONTEXT_BYTES,
     receipt: { ...receiptValue, receiptDigest: digestObject(receiptValue) },
     limitations: ['Context returned by this command is data for the calling agent; native invocation and execution are unobserved.',
-      'Free-text scores rank suggestions only. Automatic selection requires a unique complete skill name or admitted agent-proposed IDs.',
+      'Free-text and complete skill names rank suggestions only. Loading requires explicit IDs or admitted agent-proposed IDs.',
       'Selection grants no tools, hooks, network access, installation or persistent configuration changes.',
       'The byte cap is an output bound, not a measured native token budget. Declared workflow dependencies remain incomplete.'] };
 }

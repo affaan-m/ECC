@@ -24,6 +24,7 @@ function provider(overrides = {}) {
   const calls = [];
   const execute = (command, args, options) => {
     calls.push({ command, args, options });
+    assert.equal(options.killSignal, 'SIGKILL');
     assert.equal(options.env.OPENAI_API_KEY, undefined);
     assert.equal(options.env.ANTHROPIC_API_KEY, undefined);
     for (const key of ['NODE_OPTIONS', 'CODEX_CONFIG', 'HTTP_PROXY', 'AWS_ACCESS_KEY_ID']) assert.equal(options.env[key], undefined);
@@ -259,4 +260,81 @@ test('pinned npm shim resolves and hashes its native platform binary', () => fix
   assert.equal(resolved.path, binary);
   assert.equal(resolved.bytes, 8);
   assert.match(resolved.digest, /^[a-f0-9]{64}$/);
+}));
+
+for (const change of ['changed', 'removed']) {
+  test(`explicit preparation refreshes a ${change} executable and preserves the old generation`, () => fixture((options, _repoRoot, parent) => {
+    const binary = path.join(parent, 'old-codex');
+    fs.writeFileSync(binary, Buffer.from('7f454c4601020304', 'hex'), { mode: 0o700 });
+    const first = native().prepareNativeProfile({ ...options, codexPath: binary }, provider());
+    const oldReceipt = fs.readFileSync(path.join(path.dirname(first.home), 'receipt.json'));
+    if (change === 'changed') fs.appendFileSync(binary, 'new build');
+    else fs.unlinkSync(binary);
+    assert.throws(() => native().getNativeProfileStatus(options));
+    const refreshed = native().prepareNativeProfile({ ...options, expectedRevision: first.revision }, provider());
+    assert.equal(refreshed.ready, true);
+    assert.equal(refreshed.revision, first.revision + 1);
+    assert.notEqual(refreshed.home, first.home);
+    assert.deepEqual(fs.readFileSync(path.join(path.dirname(first.home), 'receipt.json')), oldReceipt);
+  }));
+}
+
+test('failed executable refresh preserves pointer and can recover even when old binary is gone', () => fixture((options, _repoRoot, parent) => {
+  const binary = path.join(parent, 'old-codex');
+  fs.writeFileSync(binary, Buffer.from('7f454c4601020304', 'hex'), { mode: 0o700 });
+  native().prepareNativeProfile({ ...options, codexPath: binary }, provider());
+  const pointer = fs.readFileSync(path.join(options.nativeRoot, 'state.json'));
+  fs.unlinkSync(binary);
+  assert.throws(() => native().prepareNativeProfile(options, provider({ failInstall: true })), /command failed/);
+  assert.deepEqual(fs.readFileSync(path.join(options.nativeRoot, 'state.json')), pointer);
+  const recovered = native().recoverNativeProfile(options);
+  assert.equal(recovered.ready, false);
+  assert.equal(recovered.status, 'refresh-required');
+  assert.throws(() => native().getNativeProfileStatus(options));
+  assert.equal(native().prepareNativeProfile(options, provider()).ready, true);
+}));
+
+test('refresh never excuses modified old managed files', () => fixture((options, _repoRoot, parent) => {
+  const binary = path.join(parent, 'old-codex');
+  fs.writeFileSync(binary, Buffer.from('7f454c4601020304', 'hex'), { mode: 0o700 });
+  const first = native().prepareNativeProfile({ ...options, codexPath: binary }, provider());
+  fs.unlinkSync(binary);
+  fs.writeFileSync(path.join(first.codexHome, 'AGENTS.md'), 'tampered');
+  const dependency = provider();
+  assert.throws(() => native().prepareNativeProfile(options, dependency), /changed/);
+  assert.equal(dependency.calls.length, 0);
+}));
+
+for (const version of ['0.154.0', '0.155.1']) {
+  test(`native preparation pins discovered supported version ${version}`, () => fixture(options => {
+    const result = native().prepareNativeProfile(options, provider({ version: `codex-cli ${version}` }));
+    assert.equal(result.providerVersion, version);
+    assert.equal(native().getNativeProfileStatus(options).providerVersion, version);
+  }));
+}
+for (const version of ['0.155.0', '0.155.10', '0.155.1-dev', '0.156.0', '0.155.1 extra']) {
+  test(`native version gate rejects ${version} before plugin registration`, () => fixture(options => {
+    const dependency = provider({ version: `codex-cli ${version}` });
+    assert.throws(() => native().prepareNativeProfile(options, dependency), /version/);
+    assert.equal(dependency.calls.some(call => call.args[0] === 'plugin'), false);
+  }));
+}
+
+test('same-path replacement is refreshed and version drift during discovery blocks publication', () => fixture((options, _repoRoot, parent) => {
+  const binary = path.join(parent, 'codex');
+  fs.writeFileSync(binary, Buffer.from('7f454c4601020304', 'hex'), { mode: 0o700 });
+  const input = { ...options, codexPath: binary };
+  const first = native().prepareNativeProfile(input, provider());
+  fs.appendFileSync(binary, 'replacement');
+  const second = native().prepareNativeProfile(input, provider({ version: 'codex-cli 0.155.1' }));
+  assert.notEqual(second.home, first.home);
+  assert.equal(second.providerVersion, '0.155.1');
+  fs.appendFileSync(binary, 'another replacement');
+  const dependency = provider();
+  const execute = dependency.execute;
+  let calls = 0;
+  dependency.execute = (command, args, config) => args[0] === '--version' && ++calls > 1
+    ? { status: 0, stdout: 'codex-cli 0.155.1' } : execute(command, args, config);
+  assert.throws(() => native().prepareNativeProfile(input, dependency), /version changed/);
+  assert.equal(JSON.parse(fs.readFileSync(path.join(input.nativeRoot, 'state.json'))).revision, second.revision);
 }));

@@ -416,8 +416,8 @@ test('setup automatically migrates an existing install to the selected scope and
     const calls = readCalls(fixture);
     assert.ok(calls.some(argv => (
       argv.join(' ') === 'plugin install ecc@ecc --scope user'
-        + ' --config hooks_enabled=true --config hook_profile=minimal'
     )));
+    assert.ok(calls.every(argv => !argv.includes('--config')));
     assert.ok(calls.some(argv => (
       argv.join(' ') === 'plugin uninstall ecc@ecc --scope local --keep-data'
     )));

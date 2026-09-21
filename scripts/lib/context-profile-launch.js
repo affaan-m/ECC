@@ -4,6 +4,14 @@ const { spawnSync } = require('node:child_process');
 const path = require('node:path');
 const { resolveTaskContext } = require('./context-selection');
 
+function isolatedEnvironment(nativeEnvironment) {
+  const env = { PATH: process.env.PATH, HOME: nativeEnvironment.home,
+    USERPROFILE: nativeEnvironment.home, CODEX_HOME: nativeEnvironment.codexHome,
+    TMPDIR: nativeEnvironment.home, LANG: 'C.UTF-8' };
+  if (process.platform === 'win32' && process.env.SystemRoot) env.SystemRoot = process.env.SystemRoot;
+  return env;
+}
+
 /** Explicit task launch, with ordinary prompt context and inherited provider policy. */
 function launchTaskContext({ task, target = 'codex', dryRun = false, execute = spawnSync,
   nativeEnvironment = null, assertCurrent = () => {}, ...selectionOptions } = {}) {
@@ -21,8 +29,7 @@ function launchTaskContext({ task, target = 'codex', dryRun = false, execute = s
     if (nativeEnvironment && require('./context-profile-native-executable').fingerprintExecutable(adapter.command).digest
       !== nativeEnvironment.executableDigest) throw new Error('Native executable changed; no task was launched');
   }
-  const env = nativeEnvironment ? { ...process.env, HOME: nativeEnvironment.home,
-    USERPROFILE: nativeEnvironment.home, CODEX_HOME: nativeEnvironment.codexHome } : undefined;
+  const env = nativeEnvironment ? isolatedEnvironment(nativeEnvironment) : undefined;
   const proposalRequired = selection.selectionMode === 'auto' && selection.reason === 'agent-selection-required';
   let routingCalls = 0;
   if (proposalRequired && !dryRun) {
@@ -46,7 +53,7 @@ function launchTaskContext({ task, target = 'codex', dryRun = false, execute = s
     + JSON.stringify({ schemaVersion: 'ecc.selected-context.v1', selectedIds: selection.loadedIds,
       resources: selection.resources }) + '\n';
   const child = execute(adapter.command, adapter.args, { input, encoding: 'utf8', shell: false,
-    timeout: routingCalls ? 90000 : 120000, maxBuffer: 1024 * 1024,
+    timeout: routingCalls ? 90000 : 120000, killSignal: 'SIGKILL', maxBuffer: 1024 * 1024,
     ...(env ? { env } : {}) });
   return { ...base, status: child.status === 0 && !child.error ? 'completed' : 'failed',
     exitCode: child.status ?? 1, output: child.stdout || '', error: child.error?.message || child.stderr || '' };

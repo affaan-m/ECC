@@ -11,6 +11,7 @@ test('Codex proposal is read-only, bounded, and returns only a listed ID', () =>
     assert.ok(args.includes('--ephemeral'));
     assert.equal(options.shell, false);
     assert.equal(options.timeout, 30000);
+    assert.equal(options.killSignal, 'SIGKILL');
     assert.match(options.input, /Python idioms/);
     return { status: 0, stdout: '{"selectedIds":["skill:python-patterns"]}' };
   } });

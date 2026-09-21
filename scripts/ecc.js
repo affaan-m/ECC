@@ -273,6 +273,7 @@ function runCommand(commandName, args) {
     throw new Error(`Unknown command: ${commandName}`);
   }
   const isItoLogin = commandName === 'ito' && getInvocationCommand(args) === 'login';
+  const isProfileStart = commandName === 'profile' && getInvocationCommand(args) === 'start';
   const result = spawnSync(
     process.execPath,
     [path.join(__dirname, command.script), ...args],
@@ -285,9 +286,9 @@ function runCommand(commandName, args) {
           }),
         }
         : process.env,
-      stdio: isItoLogin || commandName === 'setup' || commandName === 'install'
+      stdio: isItoLogin || isProfileStart || commandName === 'setup' || commandName === 'install'
         ? 'inherit'
-        : commandName === 'memory'
+        : commandName === 'memory' || commandName === 'profile'
           ? ['inherit', 'pipe', 'pipe']
           : ['pipe', 'pipe', 'pipe'],
       encoding: 'utf8',

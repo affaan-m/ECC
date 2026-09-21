@@ -14,6 +14,8 @@ const { discoverSync } = require('./context-profile-native-discovery');
 const { fingerprintExecutable, resolveExecutable } = require('./context-profile-native-executable');
 
 const VERSION = '0.154.0';
+// 0.155.1: credential-free native-probe verified Lean, include, Full exclusion and resource relocation.
+const SUPPORTED_VERSIONS = ['0.154.0', '0.155.1'];
 const DIGEST = /^[a-f0-9]{64}$/;
 const ID = /^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/;
 const KEYS = new Set(['stateRoot', 'nativeRoot', 'expectedRevision', 'expectedCarrierDigest', 'codexPath']);
@@ -116,11 +118,11 @@ function snapshot(root) {
   });
 }
 
-function loadReceipt(options, state, verify = true) {
+function loadReceipt(options, state, { allowRefresh = false } = {}) {
   const root = generation(options, state.generationId);
   const receipt = io.readJson(path.join(root, 'receipt.json'));
   if (digestObject(receipt) !== state.generationReceiptDigest || receipt.schemaVersion !== 'ecc.native-context-receipt.v1'
-    || receipt.generationId !== state.generationId || receipt.providerVersion !== VERSION
+    || receipt.generationId !== state.generationId || !SUPPORTED_VERSIONS.includes(receipt.providerVersion)
     || receipt.bindingDigest !== digestObject({ nativeRoot: options.nativeRoot, stateRoot: options.stateRoot })) {
     throw new Error('Native receipt integrity failed');
   }
@@ -128,14 +130,19 @@ function loadReceipt(options, state, verify = true) {
   validateSchema(carrier, 'context-carrier.schema.json');
   const { carrierDigest, ...body } = carrier;
   if (carrierDigest !== receipt.carrierDigest || digestObject(body) !== carrierDigest) throw new Error('Native carrier digest integrity failed');
-  if (verify && !equal(snapshot(root), receipt.controls)) throw new Error('Native discovery configuration or skill bytes changed');
-  if (verify && (!receipt.executable || !equal(fingerprintExecutable(receipt.executable.path), receipt.executable))) {
+  if (!equal(snapshot(root), receipt.controls)) throw new Error('Native discovery configuration or skill bytes changed');
+  if (!allowRefresh && (!receipt.executable || !equal(fingerprintExecutable(receipt.executable.path), receipt.executable))) {
     throw new Error('Native Codex executable changed since preparation');
+  }
+  if (receipt.bootstrap) {
+    if (receipt.bootstrap.stateRoot !== options.stateRoot || receipt.bootstrap.nativeRoot !== options.nativeRoot
+      || receipt.bootstrap.carrierDigest !== receipt.carrierDigest) throw new Error('Interactive root binding integrity failed');
+    if (!allowRefresh) require('./context-profile-interactive').verifyBootstrap(receipt.bootstrap);
   }
   return { receipt, carrier, root };
 }
 
-function response(options, state, current, pending = false) {
+function response(options, state, current, pending = false, allowRefresh = false) {
   const base = { schemaVersion: 'ecc.native-context-status.v1', nativeRoot: options.nativeRoot,
     stateRoot: options.stateRoot, active: false, ready: false, revision: state?.revision || 0,
     status: pending ? 'recovery-required' : 'unconfigured', target: 'codex',
@@ -143,9 +150,17 @@ function response(options, state, current, pending = false) {
     currentStoreRevision: current.revision, currentCarrierDigest: current.carrierDigest,
     discovery: 'unobserved', currentSessionChanged: false, credentialsCopied: false };
   if (!state) return base;
-  const { receipt, carrier, root } = loadReceipt(options, state);
+  const { receipt, carrier, root } = loadReceipt(options, state, { allowRefresh });
+  let bindingsMatch = true;
+  if (allowRefresh) {
+    try {
+      bindingsMatch = equal(fingerprintExecutable(receipt.executable.path), receipt.executable);
+      if (receipt.bootstrap) require('./context-profile-interactive').verifyBootstrap(receipt.bootstrap);
+    } catch { bindingsMatch = false; }
+  }
   const matches = state.storeRevision === current.revision && receipt.carrierDigest === current.carrierDigest;
-  return { ...base, status: pending ? 'recovery-required' : matches ? 'ready' : 'stale', ready: matches && !pending,
+  return { ...base, status: pending ? 'recovery-required' : !bindingsMatch ? 'refresh-required' : matches ? 'ready' : 'stale',
+    ready: matches && bindingsMatch && !pending, providerVersion: receipt.providerVersion, bootstrap: receipt.bootstrap || null,
     home: path.join(root, 'home'), codexHome: path.join(root, 'home/.codex'),
     carrierDigest: receipt.carrierDigest, storeRevision: state.storeRevision,
     codexPath: receipt.executable.path, executable: receipt.executable.path, executableDigest: receipt.executable.digest,
@@ -162,10 +177,12 @@ function getNativeProfileStatus(input) {
 
 function previewNativeProfile(input) {
   const options = inputs(input); const current = currentStore(options);
-  const before = getNativeProfileStatus(options);
+  const before = owner(options) ? response(options, readState(options), current,
+    exists(path.join(options.nativeRoot, 'pending.json')) || exists(path.join(options.nativeRoot, '.lock')), true)
+    : response(options, null, current);
   if (options.expectedRevision !== undefined && options.expectedRevision !== before.revision) throw new Error('Native revision changed since preview');
   return { ...before, status: 'proposed', ready: false, proposedCarrierDigest: current.carrierDigest,
-    proposedStoreRevision: current.revision, requiredProviderVersion: VERSION };
+    proposedStoreRevision: current.revision, requiredProviderVersion: VERSION, supportedProviderVersions: [...SUPPORTED_VERSIONS] };
 }
 
 function environment(root) {
@@ -180,14 +197,14 @@ function command(options, root, args, dependencies) {
   }
   const result = (dependencies.execute || spawnSync)(options.codexPath, args, {
     cwd: path.join(root, 'project'), env: environment(root), encoding: 'utf8', shell: false,
-    timeout: 30000, maxBuffer: 2 * 1024 * 1024 });
+    timeout: 30000, killSignal: 'SIGKILL', maxBuffer: 2 * 1024 * 1024 });
   if (result.error || result.status !== 0) throw new Error('Native Codex command failed; isolated attempt retained for recovery');
   if (typeof result.stdout !== 'string' || Buffer.byteLength(result.stdout) > 2 * 1024 * 1024) throw new Error('Native Codex command output exceeded its bound');
   return result.stdout.trim();
 }
 
 function verifyNative(options, root, carrier, dependencies) {
-  if (command(options, root, ['--version'], dependencies) !== `codex-cli ${VERSION}`) throw new Error(`Native Codex version must be ${VERSION}`);
+  if (command(options, root, ['--version'], dependencies) !== `codex-cli ${options.providerVersion}`) throw new Error('Native Codex version changed since verification');
   const env = environment(root); const marketplaceName = `ecc-context-${carrier.carrierDigest.slice(0, 16)}`;
   const cache = path.join(env.CODEX_HOME, 'plugins/cache', marketplaceName, 'ecc-context-carrier/local');
   const result = (dependencies.discover || discoverSync)(options.codexPath, { cwd: path.join(root, 'project'), env });
@@ -237,6 +254,7 @@ function recheckStore(options, current) {
 function publish(options, before, current, generationId, receipt, dependencies) {
   recheckStore(options, current);
   loadReceipt(options, { generationId, generationReceiptDigest: digestObject(receipt) });
+  if (before) loadReceipt(options, before, { allowRefresh: true });
   if (!equal(readState(options), before)) throw new Error('Native state changed before publication');
   const transition = { schemaVersion: 'ecc.native-context-state.v1', revision: (before?.revision || 0) + 1,
     generationId, previousGenerationId: before?.generationId || null,
@@ -255,7 +273,9 @@ function register(options, root, carrier, current, dependencies) {
   for (const relative of ['home', 'home/.codex', 'project', 'marketplace', 'marketplace/.agents', 'marketplace/.agents/plugins', 'marketplace/carrier']) {
     io.mkdir(path.join(root, relative));
   }
-  if (command(options, root, ['--version'], dependencies) !== `codex-cli ${VERSION}`) throw new Error(`Native Codex version must be ${VERSION}`);
+  const version = command(options, root, ['--version'], dependencies);
+  const providerVersion = SUPPORTED_VERSIONS.find(value => version === `codex-cli ${value}`);
+  if (!providerVersion) throw new Error(`Native Codex version must be exactly ${SUPPORTED_VERSIONS.join(' or ')}`);
   for (const file of carrier.files) {
     const relative = `marketplace/carrier/${file.destinationPath}`;
     const bytes = io.read(path.join(current.generationRoot, file.destinationPath));
@@ -269,7 +289,8 @@ function register(options, root, carrier, current, dependencies) {
   command(options, root, ['plugin', 'marketplace', 'add', path.join(root, 'marketplace'), '--json'], dependencies);
   command(options, root, ['plugin', 'add', `ecc-context-carrier@${name}`, '--json'], dependencies);
   checkpoint(dependencies, 'registered');
-  verifyNative(options, root, carrier, dependencies);
+  verifyNative({ ...options, providerVersion }, root, carrier, dependencies);
+  return providerVersion;
 }
 
 function prepareNativeProfile(input, dependencies = {}) {
@@ -282,10 +303,11 @@ function prepareNativeProfile(input, dependencies = {}) {
     if (exists(path.join(options.nativeRoot, 'pending.json'))) throw new Error('Native attempt requires recovery');
     const before = readState(options);
     if (options.expectedRevision !== undefined && options.expectedRevision !== (before?.revision || 0)) throw new Error('Native revision changed since preview');
+    const previous = before ? loadReceipt(options, before, { allowRefresh: true }) : null;
+    const bootstrap = require('./context-profile-interactive').bootstrapFor(options, current);
     if (before && before.storeRevision === current.revision) {
-      const previous = loadReceipt(options, before);
-      if (previous.receipt.carrierDigest === current.carrierDigest && equal(previous.receipt.executable, executable)) {
-        verifyNative(options, previous.root, previous.carrier, dependencies);
+      if (previous.receipt.carrierDigest === current.carrierDigest && equal(previous.receipt.executable, executable) && equal(previous.receipt.bootstrap, bootstrap.binding)) {
+        verifyNative({ ...options, providerVersion: previous.receipt.providerVersion }, previous.root, previous.carrier, dependencies);
         recheckStore(options, current);
         return response(options, before, current);
       }
@@ -301,10 +323,11 @@ function prepareNativeProfile(input, dependencies = {}) {
     const { carrierDigest, ...body } = carrier;
     if (carrierDigest !== current.carrierDigest || digestObject(body) !== carrierDigest) throw new Error('Managed carrier descriptor changed before native registration');
     io.writeExclusive(path.join(root, 'carrier.json'), io.jsonBytes(carrier));
-    register(options, root, carrier, current, dependencies);
+    const providerVersion = register(options, root, carrier, current, dependencies);
+    io.writeExclusive(path.join(root, 'home/.codex/AGENTS.md'), bootstrap.bytes);
     const receipt = { schemaVersion: 'ecc.native-context-receipt.v1', generationId,
       bindingDigest: digestObject({ nativeRoot: options.nativeRoot, stateRoot: options.stateRoot }),
-      carrierDigest: carrier.carrierDigest, providerVersion: VERSION, executable, controls: snapshot(root) };
+      carrierDigest: carrier.carrierDigest, providerVersion, executable, bootstrap: bootstrap.binding, controls: snapshot(root) };
     io.writeExclusive(path.join(root, 'receipt.json'), io.jsonBytes(receipt));
     checkpoint(dependencies, 'verified');
     return publish(options, before, current, generationId, receipt, dependencies);
@@ -324,7 +347,7 @@ function rollbackNativeProfile(input, dependencies = {}) {
     const previous = loadReceipt(options, { generationId: before.previousGenerationId,
       generationReceiptDigest: before.previousGenerationReceiptDigest });
     if (receipt.carrierDigest !== current.carrierDigest) throw new Error('Rollback the managed store to the previous native carrier first');
-    verifyNative({ ...options, codexPath: receipt.executable.path, executableBinding: receipt.executable }, root, previous.carrier, dependencies);
+    verifyNative({ ...options, providerVersion: receipt.providerVersion, codexPath: receipt.executable.path, executableBinding: receipt.executable }, root, previous.carrier, dependencies);
     io.atomicJson(path.join(options.nativeRoot, 'pending.json'), { schemaVersion: 'ecc.native-context-pending.v1',
       before, generationId: before.previousGenerationId, carrierDigest: current.carrierDigest, storeRevision: current.revision });
     return publish(options, before, current, before.previousGenerationId, receipt, dependencies);
@@ -336,14 +359,14 @@ function recoverNativeProfile(input) {
   if (!owner(options)) return response(options, null, current);
   return locked(options, true, () => {
     const file = path.join(options.nativeRoot, 'pending.json');
-    if (!exists(file)) return response(options, readState(options), current);
+    if (!exists(file)) return response(options, readState(options), current, false, true);
     const pending = io.readJson(file); const state = readState(options);
     if (pending.schemaVersion !== 'ecc.native-context-pending.v1' || !ID.test(pending.generationId)
       || !DIGEST.test(pending.carrierDigest) || !Number.isSafeInteger(pending.storeRevision)) throw new Error('Native pending integrity failed');
     const committed = state && state.generationId === pending.generationId
       && state.storeRevision === pending.storeRevision && state.revision === (pending.before?.revision || 0) + 1;
     if (!committed && !equal(state, pending.before)) throw new Error('Native state changed outside pending attempt');
-    const result = response(options, state, current);
+    const result = response(options, state, current, false, true);
     // Retain unselected attempts. Recovery never deletes provider or unrelated data.
     fs.unlinkSync(file); io.syncDirectory(options.nativeRoot);
     return { ...result, retainedAttemptRoot: generation(options, pending.generationId) };

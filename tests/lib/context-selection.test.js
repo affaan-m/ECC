@@ -156,7 +156,7 @@ test('source changes invalidate reuse and source-bound load preview', () => with
 test('bounded search uses canonical IDs and deterministic order', () => withFixture(repoRoot => {
   const result = resolve(repoRoot, { query: 'feature' });
   assert.equal(result.candidates[0].id, 'skill:feature');
-  assert.deepEqual(result.selectedIds, ['skill:feature']);
+  assert.deepEqual(result.selectedIds, []);
   assert.ok(result.candidates.length <= 5);
 }));
 
@@ -169,12 +169,13 @@ test('generic lexical relevance requests agent selection instead of loading the 
   assert.equal(result.reason, 'agent-selection-required');
 }));
 
-test('complete canonical and native names use an exact-name fast path', () => withFixture(repoRoot => {
+test('complete canonical and native names shortlist the exact skill for an agent decision', () => withFixture(repoRoot => {
   write(repoRoot, 'skills/feature/SKILL.md', '---\nname: native-feature\ndescription: Feature workflow\n---\nFeature instructions');
   for (const query of ['Use skill:feature.', 'Use the native-feature skill.', 'Use Native Feature guidance.']) {
     const result = resolve(repoRoot, { query }, { load: true });
-    assert.deepEqual(result.loadedIds, ['skill:feature']);
-    assert.equal(result.reason, 'exact-name-selection');
+    assert.deepEqual(result.loadedIds, []);
+    assert.equal(result.candidates[0].id, 'skill:feature');
+    assert.equal(result.reason, 'agent-selection-required');
   }
 }));
 
@@ -233,10 +234,11 @@ test('actual registry: a simple factual question needs no context', () => {
   assert.deepEqual(result.candidates, []);
 });
 
-test('actual registry: the full Python patterns name selects its exact context', () => {
+test('actual registry: the full Python patterns name is proposed without loading', () => {
   const result = resolveTaskContext({ task: task({ query: 'Use Python patterns for this change.' }), load: true });
-  assert.deepEqual(result.loadedIds, ['skill:python-patterns']);
-  assert.equal(result.reason, 'exact-name-selection');
+  assert.deepEqual(result.loadedIds, []);
+  assert.equal(result.candidates[0].id, 'skill:python-patterns');
+  assert.equal(result.reason, 'agent-selection-required');
 });
 
 test('invalid input and oversized bodies fail closed', () => withFixture(repoRoot => {

@@ -1,10 +1,11 @@
 'use strict';
 
 const path = require('node:path');
+const fs = require('node:fs');
 const { createSourceReader } = require('./context-profile-support');
 
 const NATIVE_COMMANDS = ['prepare-native', 'native-status', 'native-rollback', 'native-recover'];
-const COMMANDS = ['resolve', 'run', 'set', 'mode', 'status', 'rollback', 'recover', ...NATIVE_COMMANDS];
+const COMMANDS = ['start', 'resolve', 'run', 'set', 'mode', 'status', 'rollback', 'recover', ...NATIVE_COMMANDS];
 const VALUE_FLAGS = ['--task-input', '--previous', '--expected-digest', '--state-root', '--expected-revision',
   '--target', '--selection', '--include', '--exclude', '--native-root'];
 
@@ -19,7 +20,7 @@ function parse(argv) {
     else if (arg === '--load' && result.command === 'resolve') result.load = true;
     else if (VALUE_FLAGS.includes(arg)) {
       const value = args[++index];
-      if (!value || value.startsWith('-')) throw new Error(`Missing value for ${arg}`);
+      if (!value || (value.startsWith('-') && !(arg === '--task-input' && value === '-'))) throw new Error(`Missing value for ${arg}`);
       if (seen.has(arg) && !['--include', '--exclude'].includes(arg)) throw new Error(`Duplicate argument: ${arg}`);
       seen.add(arg);
       if (arg === '--include') result.include.push(value);
@@ -29,7 +30,7 @@ function parse(argv) {
     else throw new Error(`Unknown argument: ${arg}`);
   }
   const taskCommand = ['resolve', 'run'].includes(result.command);
-  const allowed = NATIVE_COMMANDS.includes(result.command)
+  const allowed = result.command === 'start' ? ['--state-root', '--native-root'] : NATIVE_COMMANDS.includes(result.command)
     ? ['--state-root', '--native-root', '--expected-revision', '--expected-digest'] : taskCommand
     ? ['--task-input', '--previous', '--expected-digest', '--state-root', '--target', '--selection', '--include', '--exclude',
       ...(result.command === 'run' ? ['--native-root'] : [])]
@@ -39,7 +40,7 @@ function parse(argv) {
   for (const flag of seen) if (!allowed.includes(flag)) throw new Error(`${flag} is unavailable for ${result.command}`);
   if (taskCommand && !result['task-input']) throw new Error(`${result.command} requires --task-input`);
   if (!taskCommand && !result['state-root']) throw new Error(`${result.command} requires --state-root`);
-  if (NATIVE_COMMANDS.includes(result.command) && !result['native-root']) throw new Error(`${result.command} requires --native-root`);
+  if ((NATIVE_COMMANDS.includes(result.command) || result.command === 'start') && !result['native-root']) throw new Error(`${result.command} requires --native-root`);
   if (result['native-root'] && !result['state-root']) throw new Error('--native-root requires --state-root');
   if (result.command === 'mode' && !['auto', 'manual', 'suggest'].includes(result.profileId)) throw new Error('Choose mode auto, manual, or suggest');
   if (taskCommand && result['state-root']
@@ -49,17 +50,42 @@ function parse(argv) {
   if (result['expected-revision'] !== undefined && !/^(0|[1-9][0-9]*)$/.test(result['expected-revision'])) {
     throw new Error('Expected revision must be a nonnegative integer');
   }
+  if (result.command === 'start' && result.json && !result.dryRun) {
+    throw new Error('--json requires --dry-run for interactive start');
+  }
   return result;
 }
 
 function readInput(file) {
+  if (file === '-') {
+    const bytes = Buffer.alloc(65537);
+    let length = 0;
+    while (length < bytes.length) {
+      const count = fs.readSync(0, bytes, length, bytes.length - length, null);
+      if (!count) break;
+      length += count;
+    }
+    if (length > 65536) throw new Error('Task input exceeds the 65536-byte limit');
+    const content = bytes.subarray(0, length);
+    const text = content.toString('utf8');
+    if (!Buffer.from(text).equals(content) || text.includes('\0')) throw new Error('Task input must be UTF-8 JSON without NUL');
+    try { return JSON.parse(text); } catch { throw new Error('Task input must be valid JSON'); }
+  }
   const absolute = path.resolve(file);
   const resource = createSourceReader(path.dirname(absolute)).read(path.basename(absolute));
   if (resource.bytes > 65536) throw new Error('Task input exceeds the 65536-byte limit');
-  return JSON.parse(resource.content.toString('utf8'));
+  try { return JSON.parse(resource.content.toString('utf8')); }
+  catch { throw new Error('Task input must be valid JSON'); }
 }
 
 function execute(options) {
+  if (options.command === 'start') {
+    if (!options.dryRun && (!process.stdin.isTTY || !process.stdout.isTTY)) {
+      throw new Error('Interactive start requires a terminal; use --dry-run --json to inspect it');
+    }
+    return { interactive: require('./context-profile-interactive').startInteractiveProfile({
+      stateRoot: options['state-root'], nativeRoot: options['native-root'], dryRun: options.dryRun }) };
+  }
   if (NATIVE_COMMANDS.includes(options.command)) {
     const native = require('./context-profile-native');
     const input = { stateRoot: options['state-root'], nativeRoot: options['native-root'],
@@ -135,8 +161,9 @@ function execute(options) {
 function run(argv) {
   const options = parse(argv);
   const value = execute(options);
-  return { schemaVersion: 'ecc.profile-operation.v1', status: value.launch?.status === 'failed' ? 'error' : 'success',
-    summary: options.command === 'run' ? 'Task launch uses selected context and the provider configuration. Inspect the launch result.'
+  return { schemaVersion: 'ecc.profile-operation.v1', status: (value.launch?.status === 'failed' || value.interactive?.status === 'failed') ? 'error' : 'success',
+    summary: options.command === 'start' ? 'Opt-in interactive Codex uses the verified isolated generation and inherited terminal. Context selection remains advisory.'
+      : options.command === 'run' ? 'Task launch uses selected context and the provider configuration. Inspect the launch result.'
       : options.command === 'resolve' ? 'Task context resolved within the selected profile.'
       : 'Managed profile generation inspected. Native activation is a separate provider boundary.',
     activation: value.selection?.activation || 'unobserved', next_actions: [], artifacts: [], ...value };

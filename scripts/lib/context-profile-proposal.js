@@ -12,7 +12,8 @@ function proposeTaskContext({ target, query, candidates, execute = spawnSync, en
     + 'Select only a clearly applicable candidate. Empty selection is valid. Reply with exactly {"selectedIds":["skill:id"]} or {"selectedIds":[]}, without prose.\n'
     + JSON.stringify({ task: query, candidates: candidates.map(({ id, description }) => ({ id, description })) }) + '\n';
   const result = execute(executable || (target === 'codex' ? 'codex' : 'claude'), args, {
-    input, encoding: 'utf8', shell: false, timeout: 30000, maxBuffer: 65536, ...(env ? { env } : {}) });
+    input, encoding: 'utf8', shell: false, timeout: 30000, killSignal: 'SIGKILL',
+    maxBuffer: 65536, ...(env ? { env } : {}) });
   if (result.status !== 0 || result.error || typeof result.stdout !== 'string'
     || Buffer.byteLength(result.stdout) > 65536) throw new Error('Context proposal failed; no task was launched');
   let value;
