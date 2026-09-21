@@ -135,26 +135,37 @@ export async function setupV2(ctx: Context): Promise<() => void> {
 
   const resolvePath = (p: string): string => (path.isAbsolute(p) ? p : path.join(worktreePath, p))
 
+  /**
+   * Post-edit handling for a touched file. OpenCode 2 does not emit
+   * `filesystem.changed` for agent-initiated writes, so this is called from the
+   * tool hook as well as from the filesystem event, matching the V1
+   * `file.edited` behavior.
+   */
+  const onFileTouched = (file: string): void => {
+    if (!/\.(ts|tsx|js|jsx)$/.test(file)) return
+    editedFiles.add(file)
+
+    if (hookEnabled("post:edit:format", ["strict"])) {
+      void runShell(`prettier --write ${shellQuote(resolvePath(file))} 2>/dev/null`, worktreePath)
+    }
+
+    if (hookEnabled("post:edit:console-warn", ["standard", "strict"])) {
+      void runShell(`grep -n "console\\.log" ${shellQuote(resolvePath(file))} 2>/dev/null`, worktreePath).then((result) => {
+        const lines = result.stdout.trim()
+        if (lines) {
+          const count = lines.split("\n").length
+          log(`console.log found in ${file} (${count} occurrence${count > 1 ? "s" : ""})`)
+        }
+      })
+    }
+  }
+
   const hasProjectFile = (relativePath: string): boolean => {
     try {
       return fs.statSync(resolvePath(relativePath)).isFile()
     } catch {
       return false
     }
-  }
-
-  const trackToolChange = (tool: string, input: unknown): void => {
-    const filePath = getFilePath(input)
-    if (!filePath) return
-
-    if (tool === "edit") {
-      recordChange(filePath, "modified")
-      return
-    }
-    if (tool !== "write") return
-
-    const callKey = `${tool}:${++writeCounter}:${filePath}`
-    pendingToolChanges.set(callKey, { path: filePath, type: "modified" })
   }
 
   // ── tool.execute.before ──────────────────────────────────────────────────
@@ -213,6 +224,10 @@ export async function setupV2(ctx: Context): Promise<() => void> {
     if (tool === "edit" || tool === "write") {
       const filePath = getFilePath(input)
       if (filePath) {
+        // V2 does not emit `filesystem.changed` for agent-initiated writes, so
+        // track and post-process JS/TS files here as the V1 `file.edited` hook did.
+        if (/\.(ts|tsx|js|jsx)$/.test(filePath)) onFileTouched(filePath)
+
         const pending = [...pendingToolChanges.entries()].find(([, value]) => value.path === filePath)
         if (pending) {
           recordChange(pending[1].path, pending[1].type)
@@ -355,21 +370,8 @@ export async function setupV2(ctx: Context): Promise<() => void> {
     const changeType = rawEvent === "add" ? "added" : rawEvent === "unlink" ? "deleted" : "modified"
     recordChange(file, changeType)
 
-    if (rawEvent === "change" && /\.(ts|tsx|js|jsx)$/.test(file)) {
-      editedFiles.add(file)
-    }
-
-    if (changeType !== "deleted" && hookEnabled("post:edit:format", ["strict"]) && /\.(ts|tsx|js|jsx)$/.test(file)) {
-      void runShell(`prettier --write ${shellQuote(resolvePath(file))} 2>/dev/null`, worktreePath)
-    }
-    if (changeType !== "deleted" && hookEnabled("post:edit:console-warn", ["standard", "strict"]) && /\.(ts|tsx|js|jsx)$/.test(file)) {
-      void runShell(`grep -n "console\\.log" ${shellQuote(resolvePath(file))} 2>/dev/null`, worktreePath).then((result) => {
-        const lines = result.stdout.trim()
-        if (lines) {
-          const count = lines.split("\n").length
-          log(`console.log found in ${file} (${count} occurrence${count > 1 ? "s" : ""})`)
-        }
-      })
+    if (changeType !== "deleted") {
+      onFileTouched(file)
     }
   }
 
