@@ -1,0 +1,7 @@
+interface:
+  display_name: "Marketing Mindset"
+  short_description: "Judgement layer for marketing decisions"
+  brand_color: "#0EA5E9"
+  default_prompt: "Use $marketing-mindset to judge a marketing decision before producing artifacts."
+policy:
+  allow_implicit_invocation: true
