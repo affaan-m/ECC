@@ -6,7 +6,9 @@ const path = require('path');
 const { assertWithinTrustedRoot } = require('../path-safety');
 
 function isCodexUserConfig(plan, operation) {
-  if (plan.adapter.id !== 'codex-home' || operation.kind !== 'copy-file') {
+  // Plans used by unit tests (and some internal apply paths) may omit adapter.
+  // Only Codex home installs own config.toml / AGENTS.md — anything else is not.
+  if (!plan || !plan.adapter || plan.adapter.id !== 'codex-home' || operation.kind !== 'copy-file') {
     return false;
   }
   const relativePath = path.relative(plan.targetRoot, operation.destinationPath);

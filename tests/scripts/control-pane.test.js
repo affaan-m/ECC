@@ -204,6 +204,9 @@ async function runTests() {
           assert.ok(html.includes('id="work-items"'));
           assert.ok(html.includes('function renderWorkItems'));
           assert.ok(html.includes('function showError'));
+          assert.ok(html.includes('id="freshness"'), 'refresh failures must have a visible stale badge');
+          assert.ok(html.includes('function handleLoadError'), 'auto-refresh must share the load error path');
+          assert.ok(!html.includes('load().catch(() => {})'), 'auto-refresh must not swallow errors');
           assert.ok(html.includes('response.ok'));
           // Board controls must use escaped data-* attributes + delegated
           // listeners, never ids concatenated into inline onclick JS (XSS).

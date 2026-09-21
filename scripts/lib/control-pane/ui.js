@@ -60,6 +60,7 @@ function renderControlPaneHtml() {
       align-items: center;
       gap: 10px;
       min-width: 180px;
+      flex-wrap: wrap;
     }
 
     .brand img {
@@ -328,6 +329,16 @@ function renderControlPaneHtml() {
       z-index: 10;
     }
 
+    body.is-stale main {
+      opacity: 0.55;
+    }
+
+    #freshness {
+      max-width: min(420px, 70vw);
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
     .empty {
       padding: 18px 14px;
       color: var(--muted);
@@ -355,6 +366,7 @@ function renderControlPaneHtml() {
       <div class="brand">
         <img src="/assets/ecc-icon.svg" alt="">
         <h1>ECC Control Pane</h1>
+        <span id="freshness" class="pill warn" hidden></span>
       </div>
       <form class="query" id="query-form">
         <input id="query" type="search" placeholder="Recall operator memory, session context, runbooks">
@@ -410,7 +422,9 @@ function renderControlPaneHtml() {
   </div>
   <div id="app" hidden></div>
   <script>
-    const state = { query: '' };
+    let state = { query: '', lastSuccessAt: null };
+    let loadGeneration = 0;
+    let snapshotRequestInFlight = false;
     const $ = selector => document.querySelector(selector);
     const escapeHtml = value => String(value ?? '').replace(/[&<>"']/g, char => ({
       '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
@@ -434,6 +448,29 @@ function renderControlPaneHtml() {
       if (!target) return;
       target.hidden = true;
       target.textContent = '';
+    }
+
+    function markStale() {
+      document.body.classList.add('is-stale');
+      const badge = $('#freshness');
+      if (!badge) return;
+      badge.hidden = false;
+      badge.textContent = state.lastSuccessAt
+        ? 'Stale · last live ' + new Date(state.lastSuccessAt).toISOString()
+        : 'Stale';
+    }
+
+    function clearStale() {
+      document.body.classList.remove('is-stale');
+      const badge = $('#freshness');
+      if (!badge) return;
+      badge.hidden = true;
+      badge.textContent = '';
+    }
+
+    function handleLoadError(error) {
+      showError('#app', error);
+      if (state.lastSuccessAt) markStale();
     }
 
     async function readJsonResponse(response) {
@@ -625,33 +662,46 @@ function renderControlPaneHtml() {
     }
 
     async function load() {
+      const generation = ++loadGeneration;
+      const query = state.query;
       const url = new URL('/api/snapshot', window.location.href);
-      if (state.query) url.searchParams.set('query', state.query);
-      const response = await fetch(url);
-      const snapshot = await readJsonResponse(response);
-      $('#query').value = snapshot.knowledge.query || state.query;
-      $('#db-path').textContent = snapshot.database.exists ? snapshot.dbPath : 'database missing';
-      state.allowActions = Boolean(snapshot.execution.allowActions);
-      $('#action-status').textContent = state.allowActions ? 'local allowlist' : 'read-only';
-      renderMetrics(snapshot.summary);
-      renderSessions(snapshot.sessions);
-      renderWorkItems(snapshot.workItems);
-      renderKnowledge(snapshot.knowledge);
-      renderConnectors(snapshot.connectors);
-      renderActions(snapshot.actions.map(action => ({
-        ...action,
-        executable: snapshot.execution.allowActions && action.executable
-      })));
-      clearError('#app');
+      if (query) url.searchParams.set('query', query);
+      snapshotRequestInFlight = true;
+      try {
+        const response = await fetch(url);
+        const snapshot = await readJsonResponse(response);
+        if (generation !== loadGeneration) return;
+        $('#query').value = snapshot.knowledge.query || query;
+        $('#db-path').textContent = snapshot.database.exists ? snapshot.dbPath : 'database missing';
+        state = { ...state, allowActions: Boolean(snapshot.execution.allowActions) };
+        $('#action-status').textContent = state.allowActions ? 'local allowlist' : 'read-only';
+        renderMetrics(snapshot.summary);
+        renderSessions(snapshot.sessions);
+        renderWorkItems(snapshot.workItems);
+        renderKnowledge(snapshot.knowledge);
+        renderConnectors(snapshot.connectors);
+        renderActions(snapshot.actions.map(action => ({
+          ...action,
+          executable: snapshot.execution.allowActions && action.executable
+        })));
+        state = { ...state, lastSuccessAt: Date.now() };
+        clearStale();
+        clearError('#app');
+      } catch (error) {
+        if (generation !== loadGeneration) return;
+        throw error;
+      } finally {
+        if (generation === loadGeneration) snapshotRequestInFlight = false;
+      }
     }
 
     $('#query-form').addEventListener('submit', event => {
       event.preventDefault();
-      state.query = $('#query').value.trim();
-      load().catch(error => showError('#app', error));
+      state = { ...state, query: $('#query').value.trim() };
+      load().catch(handleLoadError);
     });
     $('#refresh').addEventListener('click', () => {
-      load().catch(error => showError('#app', error));
+      load().catch(handleLoadError);
     });
 
     async function postWorkItem(pathSuffix, payload) {
@@ -680,12 +730,17 @@ function renderControlPaneHtml() {
     };
 
     // Live board: refresh on a gentle interval; pause while a prompt/tab is hidden.
+    // Skip the tick while a snapshot request is in flight so that generation can
+    // paint or reach handleLoadError. Do not abort and restart it.
     setInterval(() => {
-      if (document.hidden) return;
-      load().catch(() => {});
+      if (document.hidden || snapshotRequestInFlight) return;
+      load().catch(error => {
+        console.warn('Control pane auto-refresh failed', error);
+        handleLoadError(error);
+      });
     }, 15000);
 
-    load().catch(error => showError('#app', error));
+    load().catch(handleLoadError);
   </script>
 </body>
 </html>`;
