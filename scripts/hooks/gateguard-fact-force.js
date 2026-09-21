@@ -463,9 +463,64 @@ function findGitSubcommand(tokens) {
 }
 
 /**
+ * Branch names treated as shared history: a forced update of one of
+ * these rewrites commits other clones build on, even when the push is
+ * lease-checked.
+ */
+const SHARED_GIT_BRANCHES = new Set(['main', 'master', 'develop', 'trunk']);
+
+/**
+ * Decide whether the positional arguments of a `git push` name a shared
+ * branch as the destination of a refspec. The first positional token is
+ * the remote (unless the remote came from `--repo`); every later
+ * positional token is a refspec whose destination is the part after
+ * `:` (or the whole token when there is no `:`). A leading `+` force
+ * marker is stripped. When no refspec is given the target is the
+ * current branch, which the hook cannot know, so this returns false.
+ *
+ * @param {string[]} rest tokens after `push`
+ * @returns {boolean}
+ */
+function pushTargetsSharedBranch(rest) {
+  const valueConsuming = new Set(['-o', '--push-option', '--receive-pack', '--exec']);
+  const positional = [];
+  let remoteViaFlag = false;
+  for (let i = 0; i < rest.length; i++) {
+    const t = rest[i];
+    if (t === '--repo') {
+      remoteViaFlag = true;
+      i += 1;
+      continue;
+    }
+    if (t.startsWith('--repo=')) {
+      remoteViaFlag = true;
+      continue;
+    }
+    if (valueConsuming.has(t)) {
+      i += 1;
+      continue;
+    }
+    if (t.startsWith('-')) continue;
+    positional.push(t);
+  }
+  // Unless the remote came from --repo, positional[0] is the remote and
+  // the rest are refspecs.
+  const refspecs = remoteViaFlag ? positional : positional.slice(1);
+  for (const refspec of refspecs) {
+    const cleaned = refspec.startsWith('+') ? refspec.slice(1) : refspec;
+    const dst = cleaned.includes(':') ? cleaned.slice(cleaned.indexOf(':') + 1) : cleaned;
+    const branch = dst.startsWith('refs/heads/') ? dst.slice('refs/heads/'.length) : dst;
+    if (SHARED_GIT_BRANCHES.has(branch)) return true;
+  }
+  return false;
+}
+
+/**
  * Detect destructive `git` invocations: `reset --hard`, `checkout --`,
- * `clean -f...`, `push --force` (but not `--force-with-lease`),
- * `commit --amend`, `rm -rf`.
+ * `clean -f...`, `push --force` (`--force-with-lease` only to a shared
+ * branch), `commit --amend`, `rm -rf`, `branch -D`, `stash drop` /
+ * `stash clear`, `reflog expire` / `reflog delete`, `update-ref -d`,
+ * and `restore` against the worktree.
  *
  * @param {string[]} tokens
  * @returns {boolean}
@@ -532,7 +587,9 @@ function isDestructiveGit(tokens) {
         plusRefspecForce = true;
       }
     }
-    return bareForce || (plusRefspecForce && !withLease);
+    if (bareForce || (plusRefspecForce && !withLease)) return true;
+    // A lease-checked force still rewrites a shared branch's history.
+    return withLease && pushTargetsSharedBranch(rest);
   }
 
   if (command === 'commit') {
@@ -561,6 +618,53 @@ function isDestructiveGit(tokens) {
       const body = t.slice(1);
       return /[fC]/.test(body);
     });
+  }
+
+  if (command === 'branch') {
+    // `git branch -D` (long spelling: `--delete --force`) deletes a
+    // branch even when it is unmerged, orphaning its commits. Plain
+    // `-d` refuses when unmerged, so it is safe to leave ungated.
+    let del = false;
+    let force = false;
+    for (const t of rest) {
+      if (t === '--delete') { del = true; continue; }
+      if (t === '--force') { force = true; continue; }
+      if (!t.startsWith('-') || t.startsWith('--')) continue;
+      const body = t.slice(1);
+      if (body.includes('D')) return true;
+      if (body.includes('d')) del = true;
+      if (body.includes('f')) force = true;
+    }
+    return del && force;
+  }
+
+  if (command === 'stash') {
+    // `drop` destroys one stash entry, `clear` the entire stash.
+    // `list`, `show`, `pop` and `apply` keep the entries recoverable.
+    return rest[0] === 'drop' || rest[0] === 'clear';
+  }
+
+  if (command === 'reflog') {
+    // `expire` and `delete` remove the recovery net that makes every
+    // other gated git command recoverable.
+    return rest[0] === 'expire' || rest[0] === 'delete';
+  }
+
+  if (command === 'update-ref') {
+    // `git update-ref -d <ref>` deletes a ref directly.
+    return rest.includes('-d') || rest.includes('--delete');
+  }
+
+  if (command === 'restore') {
+    // `git restore <path>` overwrites the working tree from the index
+    // by default, the modern spelling of gated `git checkout -- <path>`.
+    // Only `--staged` alone is non-destructive (it leaves the file on
+    // disk untouched); `--worktree` (the default target) is destructive.
+    const has = (long, short) => rest.some(t =>
+      t === long || (t.startsWith('-') && !t.startsWith('--') && t.slice(1).includes(short)));
+    const staged = has('--staged', 'S');
+    const worktree = has('--worktree', 'W');
+    return worktree || !staged;
   }
 
   return false;
@@ -1101,6 +1205,21 @@ function isReadOnlyGitIntrospection(command) {
 
 // --- Gate messages ---
 
+/**
+ * Batch-consistency warning (#3136). A first-touch denial marks the file
+ * checked so the retry passes; a parallel batch of edits to one
+ * not-yet-touched file therefore partially applies (first call denied,
+ * siblings allowed). Hooks see calls one at a time and cannot lock a
+ * batch, so the denial must say this out loud: name the file and tell
+ * the agent that siblings may already have been applied.
+ */
+function batchSiblingWarning(safePath) {
+  return (
+    `If this call was sent in a parallel batch, other edits to ${safePath} from that batch ` +
+    'may already have been applied. Re-read the file before building on them.'
+  );
+}
+
 function editGateMsg(filePath) {
   const safe = sanitizePath(filePath);
   return [
@@ -1112,6 +1231,8 @@ function editGateMsg(filePath) {
     '2. List the public functions/classes affected by this change',
     '3. If this file reads/writes data files, show field names, structure, and date format (use redacted or synthetic values, not raw production data)',
     "4. Quote the user's current instruction verbatim",
+    '',
+    batchSiblingWarning(safe),
     '',
     'Present the facts, then retry the same operation.'
   ].join('\n');
@@ -1129,6 +1250,8 @@ function writeGateMsg(filePath) {
     '3. If this file reads/writes data files, show field names, structure, and date format (use redacted or synthetic values, not raw production data)',
     "4. Quote the user's current instruction verbatim",
     '',
+    batchSiblingWarning(safe),
+    '',
     'Present the facts, then retry the same operation.'
   ].join('\n');
 }
@@ -1143,6 +1266,7 @@ function condensedGateMsg(action, filePath, ordinal) {
   return (
     `[Fact-Forcing Gate] (denial #${ordinal} this session) First ${action} of ${safe}: ` +
     "briefly state importers/callers, affected API, data schemas if any, and the user's verbatim instruction, then retry. " +
+    `${batchSiblingWarning(safe)} ` +
     '(Use GATEGUARD_EXEMPT_GLOBS for path-scoped exemptions; ECC_GATEGUARD=off disables this gate.)'
   );
 }

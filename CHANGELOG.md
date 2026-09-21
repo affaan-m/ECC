@@ -1,10 +1,38 @@
 # Changelog
 
-## Unreleased
+## 2.2.2 - 2026-09-15
 
 ### Fixed
 
-- Claude settings updates now tolerate a missing Windows device ID while retaining full-precision inode checks and strict matching when both device IDs are available.
+#### Packaging
+
+- Explicitly include the compiled OpenCode payload in the npm package and verify that packing builds it from a clean state with lifecycle scripts enabled.
+
+#### Memory and MCP
+
+- Distinguish incomplete memory reads from missing records and classify directory traversal failures (`90ef62cb`, `8321021c`).
+- Accept the reserved `_meta` parameter on memory MCP ping requests (`380f4b35`).
+
+#### Hooks and Windows compatibility
+
+- Keep `hooks.json` within Claude Code's schema by moving stable hook metadata into a validated sidecar (`1ac07903`).
+- Handle stuck optional values and long-option prefixes in the no-verify guard (`4f373874`).
+- Support Windows linter paths and ESLint 9 (`2083c983`).
+- Tolerate missing Windows device IDs in settings updates while retaining full-precision inode checks and strict matching when both device IDs are available (`d3af582b`).
+
+#### Workflow guidance and catalog
+
+- Filter epic sync issues by label (`3033436d`).
+- Remove instructions to auto-merge dependency bumps and synchronize localized merge authority (`22d7ed51`, `678c6dea`).
+- Keep common naming and Boolean guidance language-neutral (`072e4684`, `a0ecb793`, `013ed0a8`).
+- Distinguish the `prp-pr` command alias (`cc91c24f`).
+- Correct Rails skill discovery, invoice tax calculation order, and framework documentation (`b6ddd13a`).
+- Remove Serply and Squish catalog entries (`c4904e3f`).
+
+#### Dependency security
+
+- Update `lru` to 0.18.2 for RUSTSEC-2026-0253 (`4fc950c4`).
+- Update `js-yaml` to 4.3.2 for GHSA-2883-xcg3-v3hh (`549c1469`).
 
 ## 2.2.0 - 2026-08-25
 

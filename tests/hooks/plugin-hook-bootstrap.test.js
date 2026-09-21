@@ -11,7 +11,9 @@ const path = require('path');
 const { spawnSync } = require('child_process');
 
 const SCRIPT = path.join(__dirname, '..', '..', 'scripts', 'hooks', 'plugin-hook-bootstrap.js');
+const LIFECYCLE_SCRIPT = path.join(__dirname, '..', '..', 'scripts', 'hooks', 'lifecycle-hook-bootstrap.js');
 const { normalizePluginRootForPlatform, withComparisonInput } = require(SCRIPT);
+const { resolveTimeout } = require(LIFECYCLE_SCRIPT);
 
 function createTempDir() {
   return fs.mkdtempSync(path.join(os.tmpdir(), 'plugin-hook-bootstrap-'));
@@ -124,6 +126,16 @@ function runTests() {
       normalizePluginRootForPlatform('/workspace/ecc', 'win32'),
       '/workspace/ecc'
     );
+  })) passed++; else failed++;
+
+  if (test('lifecycle bootstrap shares Windows root normalization and bounds timeouts', () => {
+    const rootResolver = require(path.join(__dirname, '..', '..', 'scripts', 'lib', 'resolve-ecc-root.js'));
+    assert.strictEqual(
+      rootResolver.normalizePluginRootForPlatform('/c/Users/x/.claude/plugins/ecc', 'win32'),
+      'C:/Users/x/.claude/plugins/ecc'
+    );
+    assert.strictEqual(resolveTimeout('600000'), 300000);
+    assert.strictEqual(resolveTimeout('invalid'), 30000);
   })) passed++; else failed++;
 
   if (test('node mode runs target script with plugin root environment', () => {

@@ -11,7 +11,7 @@
 
 const path = require('path');
 const fs = require('fs');
-const { getSessionsDir, getDateString, getTimeString, getSessionIdShort, sanitizeSessionId, getProjectName, ensureDir, readFile, writeFile, runCommand, stripAnsi, log } = require('../lib/utils');
+const { getSessionsDir, getDateString, getTimeString, getSessionIdShort, sanitizeSessionId, getProjectName, getRepoIdentity, ensureDir, readFile, writeFile, runCommand, stripAnsi, log } = require('../lib/utils');
 const { generateSessionSummary, getContextRemainingPct, getContextThreshold } = require('../lib/llm-summary');
 
 const SUMMARY_START_MARKER = '<!-- ECC:SUMMARY:START -->';
@@ -130,7 +130,8 @@ function getSessionMetadata() {
   return {
     project: getProjectName() || 'unknown',
     branch: branchResult.success ? branchResult.output : 'unknown',
-    worktree: process.cwd()
+    worktree: process.cwd(),
+    repo: getRepoIdentity()
   };
 }
 
@@ -145,16 +146,20 @@ function buildSessionHeader(today, currentTime, metadata, existingContent = '') 
   const date = extractHeaderField(existingContent, 'Date') || today;
   const started = extractHeaderField(existingContent, 'Started') || currentTime;
 
-  return [
+  const lines = [
     heading,
     `**Date:** ${date}`,
     `**Started:** ${started}`,
     `**Last Updated:** ${currentTime}`,
     `**Project:** ${metadata.project}`,
     `**Branch:** ${metadata.branch}`,
-    `**Worktree:** ${metadata.worktree}`,
-    ''
-  ].join('\n');
+    `**Worktree:** ${metadata.worktree}`
+  ];
+  if (metadata.repo) {
+    lines.push(`**Repo:** ${metadata.repo}`);
+  }
+  lines.push('');
+  return lines.join('\n');
 }
 
 function mergeSessionHeader(content, today, currentTime, metadata) {

@@ -2,29 +2,36 @@
 
 ## Available Agents
 
-Located in `~/.claude/agents/`:
+ECC agents ship with the `ecc@ecc` plugin, not in `~/.claude/agents/`.
+They are invoked through the Agent tool with a plugin-scoped `subagent_type`:
+
+```text
+Agent(subagent_type: "ecc:planner", prompt: "...")
+```
 
 | Agent | Purpose | When to Use |
 |-------|---------|-------------|
-| planner | Implementation planning | Complex features, refactoring |
-| architect | System design | Architectural decisions |
-| tdd-guide | Test-driven development | New features, bug fixes |
-| code-reviewer | Code review | After writing code |
-| security-reviewer | Security analysis | Before commits |
-| build-error-resolver | Fix build errors | When build fails |
-| e2e-runner | E2E testing | Critical user flows |
-| refactor-cleaner | Dead code cleanup | Code maintenance |
-| doc-updater | Documentation | Updating docs |
-| rust-reviewer | Rust code review | Rust projects |
-| harmonyos-app-resolver | HarmonyOS app development | HarmonyOS/ArkTS projects |
+| ecc:planner | Implementation planning | Complex features, refactoring |
+| ecc:architect | System design | Architectural decisions |
+| ecc:tdd-guide | Test-driven development | New features, bug fixes |
+| ecc:code-reviewer | Code review | After writing code |
+| ecc:security-reviewer | Security analysis | Before commits |
+| ecc:build-error-resolver | Fix build errors | When build fails |
+| ecc:e2e-runner | E2E testing | Critical user flows |
+| ecc:refactor-cleaner | Dead code cleanup | Code maintenance |
+| ecc:doc-updater | Documentation | Updating docs |
+| ecc:rust-reviewer | Rust code review | Rust projects |
+| ecc:harmonyos-app-resolver | HarmonyOS app development | HarmonyOS/ArkTS projects |
+
+For the full roster of 68 agents, see `/ecc:ecc-guide`.
 
 ## Immediate Agent Usage
 
 No user prompt needed:
-1. Complex feature requests - Use **planner** agent
-2. Code just written/modified - Use **code-reviewer** agent
-3. Bug fix or new feature - Use **tdd-guide** agent
-4. Architectural decision - Use **architect** agent
+1. Complex feature requests - Use **ecc:planner** agent
+2. Code just written/modified - Use **ecc:code-reviewer** agent
+3. Bug fix or new feature - Use **ecc:tdd-guide** agent
+4. Architectural decision - Use **ecc:architect** agent
 
 ## Parallel Task Execution
 

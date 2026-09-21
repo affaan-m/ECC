@@ -420,7 +420,7 @@ affoon:~ ctx:65% Opus 4.5 19:52
 - [Interactive Mode](https://code.claude.com/docs/en/interactive-mode)
 - [Memory Sistemi](https://code.claude.com/docs/en/memory)
 - [Subagent'lar](https://code.claude.com/docs/en/sub-agents)
-- [MCP Genel Bakış](https://code.claude.com/docs/en/mcp-overview)
+- [MCP Genel Bakış](https://code.claude.com/docs/en/mcp)
 
 ---
 

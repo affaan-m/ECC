@@ -9,6 +9,7 @@ const path = require('path');
 const fs = require('fs');
 const os = require('os');
 const { spawnSync } = require('child_process');
+const { getCostSnapshotPath } = require('../../scripts/lib/session-cost-snapshot');
 
 const script = path.join(__dirname, '..', '..', 'scripts', 'hooks', 'cost-tracker.js');
 
@@ -115,6 +116,39 @@ function runTests() {
     assert.strictEqual(result.stdout, inputStr, 'Expected stdout to match original input');
   }) ? passed++ : failed++);
 
+  (test('keeps JSONL authoritative when the snapshot path cannot be published', () => {
+    const tmpHome = makeTempDir();
+    const metricsDir = path.join(tmpHome, '.claude', 'metrics');
+    const blockedSnapshotPath = getCostSnapshotPath(
+      metricsDir,
+      'snapshot-failure'
+    );
+    fs.mkdirSync(blockedSnapshotPath, { recursive: true });
+
+    try {
+      const result = runScript(
+        { session_id: 'snapshot-failure' },
+        withTempHome(tmpHome)
+      );
+      assert.strictEqual(result.code, 0, result.stderr);
+      const rows = fs.readFileSync(path.join(metricsDir, 'costs.jsonl'), 'utf8')
+        .trim()
+        .split('\n')
+        .map(line => JSON.parse(line));
+      assert.strictEqual(rows.at(-1).session_id, 'snapshot-failure');
+      assert.match(result.stderr, /cost-snapshot.*publication failed/);
+
+      const second = runScript(
+        { session_id: 'snapshot-failure' },
+        withTempHome(tmpHome)
+      );
+      assert.strictEqual(second.code, 0, second.stderr);
+      assert.strictEqual(second.stderr, '', 'identical persistent failure should warn only once');
+    } finally {
+      fs.rmSync(tmpHome, { recursive: true, force: true });
+    }
+  }) ? passed++ : failed++);
+
   // 2. Creates metrics file when given transcript usage data
   (test('creates metrics file when given transcript usage data', () => {
     const tmpHome = makeTempDir();
@@ -154,6 +188,7 @@ function runTests() {
     assert.strictEqual(result.code, 0, `Expected exit code 0, got ${result.code}`);
 
     const metricsFile = path.join(tmpHome, '.claude', 'metrics', 'costs.jsonl');
+    const metricsDir = path.dirname(metricsFile);
     assert.ok(fs.existsSync(metricsFile), `Expected metrics file to exist at ${metricsFile}`);
 
     const content = fs.readFileSync(metricsFile, 'utf8').trim();
@@ -168,6 +203,12 @@ function runTests() {
     assert.ok(row.timestamp, 'Expected timestamp to be present');
     assert.ok(typeof row.estimated_cost_usd === 'number', 'Expected estimated_cost_usd to be a number');
     assert.ok(row.estimated_cost_usd > 0, 'Expected estimated_cost_usd to be positive');
+
+    const snapshotFile = getCostSnapshotPath(metricsDir, 'session-from-hook');
+    assert.ok(fs.existsSync(snapshotFile), 'Expected an O(1) per-session cost snapshot');
+    const snapshot = JSON.parse(fs.readFileSync(snapshotFile, 'utf8'));
+    assert.strictEqual(snapshot.schema_version, 'ecc.cost-snapshot.v1');
+    assert.deepStrictEqual(snapshot.row, row, 'Snapshot must mirror the appended cumulative row');
 
     fs.rmSync(tmpHome, { recursive: true, force: true });
   }) ? passed++ : failed++);
@@ -205,6 +246,57 @@ function runTests() {
     assert.strictEqual(row.cache_write_tokens, 200, 'Expected cache write counted once per message.id');
     assert.strictEqual(row.cache_read_tokens, 300, 'Expected cache read counted once per message.id');
 
+    fs.rmSync(tmpHome, { recursive: true, force: true });
+  }) ? passed++ : failed++);
+
+  (test('normalizes malformed negative and non-finite transcript usage', () => {
+    const tmpHome = makeTempDir();
+    const transcriptPath = path.join(tmpHome, 'session.jsonl');
+    writeTranscript(transcriptPath, [{
+      type: 'assistant',
+      message: {
+        id: 'msg_invalid_usage',
+        model: 'claude-sonnet-4-20250514',
+        usage: {
+          input_tokens: -100,
+          output_tokens: 'Infinity',
+          cache_creation_input_tokens: -20,
+          cache_read_input_tokens: 'not-a-number',
+        },
+      },
+    }, {
+      type: 'assistant',
+      message: {
+        id: 'msg_overflow_1',
+        model: 'claude-sonnet-4-20250514',
+        usage: { input_tokens: 1e308, output_tokens: 0 },
+      },
+    }, {
+      type: 'assistant',
+      message: {
+        id: 'msg_overflow_2',
+        model: 'claude-sonnet-4-20250514',
+        usage: { input_tokens: 1e308, output_tokens: 0 },
+      },
+    }]);
+
+    const result = runScript(
+      { session_id: 'invalid-usage', transcript_path: transcriptPath },
+      withTempHome(tmpHome)
+    );
+    assert.strictEqual(result.code, 0, result.stderr);
+    const metricsFile = path.join(tmpHome, '.claude', 'metrics', 'costs.jsonl');
+    const recorded = JSON.parse(fs.readFileSync(metricsFile, 'utf8').trim());
+    assert.deepStrictEqual(
+      {
+        input: recorded.input_tokens,
+        output: recorded.output_tokens,
+        cacheWrite: recorded.cache_write_tokens,
+        cacheRead: recorded.cache_read_tokens,
+        cost: recorded.estimated_cost_usd,
+      },
+      { input: 0, output: 0, cacheWrite: 0, cacheRead: 0, cost: 0 }
+    );
     fs.rmSync(tmpHome, { recursive: true, force: true });
   }) ? passed++ : failed++);
 

@@ -2,7 +2,7 @@
 
 This is a **production-ready AI coding plugin** providing 68 specialized agents, 292 skills, 94 commands, and automated hook workflows for software development.
 
-**Version:** 2.2.1
+**Version:** 2.2.2
 
 ## Core Principles
 
@@ -52,15 +52,15 @@ This is a **production-ready AI coding plugin** providing 68 specialized agents,
 ## Agent Orchestration
 
 Use agents proactively without user prompt:
-- Complex feature requests → **planner**
-- Code just written/modified → **code-reviewer**
-- Bug fix or new feature → **tdd-guide**
-- Architectural decision → **architect**
-- Security-sensitive code → **security-reviewer**
-- Brownfield project onboarding → **spec-miner**
-- Autonomous loops / loop monitoring → **loop-operator**
-- Harness config reliability and cost → **harness-optimizer**
-- RAG/retrieval pipeline changes → **rag-pipeline-reviewer**
+- Complex feature requests → **ecc:planner**
+- Code just written/modified → **ecc:code-reviewer**
+- Bug fix or new feature → **ecc:tdd-guide**
+- Architectural decision → **ecc:architect**
+- Security-sensitive code → **ecc:security-reviewer**
+- Brownfield project onboarding → **ecc:spec-miner**
+- Autonomous loops / loop monitoring → **ecc:loop-operator**
+- Harness config reliability and cost → **ecc:harness-optimizer**
+- RAG/retrieval pipeline changes → **ecc:rag-pipeline-reviewer**
 
 Use parallel execution for independent operations — launch multiple agents simultaneously.
 
@@ -114,9 +114,9 @@ Troubleshoot failures: check test isolation → verify mocks → fix implementat
 
 ## Development Workflow
 
-1. **Plan** — Use planner agent, identify dependencies and risks, break into phases
-2. **TDD** — Use tdd-guide agent, write tests first, implement, refactor
-3. **Review** — Use code-reviewer agent immediately, address CRITICAL/HIGH issues
+1. **Plan** — Use ecc:planner agent, identify dependencies and risks, break into phases
+2. **TDD** — Use ecc:tdd-guide agent, write tests first, implement, refactor
+3. **Review** — Use ecc:code-reviewer agent immediately, address CRITICAL/HIGH issues
 4. **Capture knowledge in the right place**
    - Personal debugging notes, preferences, and temporary context → auto memory
    - Team/project knowledge (architecture decisions, API changes, runbooks) → the project's existing docs structure

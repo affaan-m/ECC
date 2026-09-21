@@ -446,6 +446,110 @@ function runTests() {
   })) passed++; else failed++;
 
   // ==========================================
+  // check-hooks-schema-keys.js
+  // ==========================================
+  console.log('\ncheck-hooks-schema-keys.js:');
+
+  if (test('passes on real project hooks configs', () => {
+    const result = runValidator('check-hooks-schema-keys');
+    assert.strictEqual(result.code, 0, `Should pass, got stderr: ${result.stderr}`);
+    assert.ok(result.stdout.includes('Checked 2 hooks config(s)'), 'Should report both configs checked');
+  })) passed++; else failed++;
+
+  if (test('exits 0 when hooks.json does not exist', () => {
+    const result = runValidatorWithDir('check-hooks-schema-keys', 'HOOKS_FILE', '/nonexistent/hooks.json');
+    assert.strictEqual(result.code, 0, 'Should skip when no hooks.json');
+    assert.ok(result.stdout.includes('skipping'), 'Should say skipping');
+  })) passed++; else failed++;
+
+  if (test('fails on root $schema key', () => {
+    const testDir = createTestDir();
+    const hooksFile = path.join(testDir, 'hooks.json');
+    fs.writeFileSync(hooksFile, JSON.stringify({
+      $schema: '../schemas/hooks.schema.json',
+      hooks: {}
+    }));
+
+    const result = runValidatorWithDir('check-hooks-schema-keys', 'HOOKS_FILE', hooksFile);
+    assert.strictEqual(result.code, 1, 'Should fail on root $schema');
+    assert.ok(result.stderr.includes('"$schema"'), 'Should name the offending key');
+    cleanupTestDir(testDir);
+  })) passed++; else failed++;
+
+  if (test('fails on group id and description keys', () => {
+    const testDir = createTestDir();
+    const hooksFile = path.join(testDir, 'hooks.json');
+    fs.writeFileSync(hooksFile, JSON.stringify({
+      hooks: {
+        PreToolUse: [{
+          id: 'test:group',
+          description: 'metadata that belongs in the sidecar',
+          matcher: 'Bash',
+          hooks: [{ type: 'command', command: 'echo hi' }]
+        }]
+      }
+    }));
+
+    const result = runValidatorWithDir('check-hooks-schema-keys', 'HOOKS_FILE', hooksFile);
+    assert.strictEqual(result.code, 1, 'Should fail on group id/description');
+    assert.ok(result.stderr.includes('"id"'), 'Should name id');
+    assert.ok(result.stderr.includes('"description"'), 'Should name description');
+    cleanupTestDir(testDir);
+  })) passed++; else failed++;
+
+  if (test('fails on unknown handler key', () => {
+    const testDir = createTestDir();
+    const hooksFile = path.join(testDir, 'hooks.json');
+    fs.writeFileSync(hooksFile, JSON.stringify({
+      hooks: {
+        Stop: [{ hooks: [{ type: 'command', command: 'echo hi', label: 'not a loader key' }] }]
+      }
+    }));
+
+    const result = runValidatorWithDir('check-hooks-schema-keys', 'HOOKS_FILE', hooksFile);
+    assert.strictEqual(result.code, 1, 'Should fail on unknown handler key');
+    assert.ok(result.stderr.includes('"label"'), 'Should name the offending handler key');
+    cleanupTestDir(testDir);
+  })) passed++; else failed++;
+
+  if (test('fails on codex-hooks.json root $schema key', () => {
+    const testDir = createTestDir();
+    const hooksFile = path.join(testDir, 'codex-hooks.json');
+    fs.writeFileSync(hooksFile, JSON.stringify({
+      $schema: '../schemas/hooks.schema.json',
+      description: 'codex projection',
+      hooks: {
+        SessionStart: [{ id: 'session:start', matcher: '.*', hooks: [{ type: 'command', command: 'echo hi' }] }]
+      }
+    }));
+
+    const result = runValidatorWithDir('check-hooks-schema-keys', 'CODEX_HOOKS_FILE', hooksFile);
+    assert.strictEqual(result.code, 1, 'Should fail on codex root $schema');
+    assert.ok(result.stderr.includes('"$schema"'), 'Should name the offending key');
+    cleanupTestDir(testDir);
+  })) passed++; else failed++;
+
+  if (test('accepts codex documented keys including group id and root description', () => {
+    const testDir = createTestDir();
+    const hooksFile = path.join(testDir, 'codex-hooks.json');
+    fs.writeFileSync(hooksFile, JSON.stringify({
+      description: 'codex projection',
+      hooks: {
+        SessionStart: [{
+          id: 'session:start',
+          description: 'pinned by plugin-manifest test',
+          matcher: '.*',
+          hooks: [{ type: 'command', command: 'echo hi', timeout: 5 }]
+        }]
+      }
+    }));
+
+    const result = runValidatorWithDir('check-hooks-schema-keys', 'CODEX_HOOKS_FILE', hooksFile);
+    assert.strictEqual(result.code, 0, `Should pass, got stderr: ${result.stderr}`);
+    cleanupTestDir(testDir);
+  })) passed++; else failed++;
+
+  // ==========================================
   // catalog.js
   // ==========================================
   console.log('\ncatalog.js:');

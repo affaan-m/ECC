@@ -2,7 +2,7 @@
 
 这是一个**生产就绪的 AI 编码插件**，提供 68 个专业代理、292 项技能、94 条命令以及自动化钩子工作流，用于软件开发。
 
-**版本:** 2.2.1
+**版本:** 2.2.2
 
 ## 核心原则
 
@@ -48,14 +48,14 @@
 
 主动使用智能体，无需用户提示：
 
-* 复杂功能请求 → **planner**
-* 刚编写/修改的代码 → **code-reviewer**
-* 错误修复或新功能 → **tdd-guide**
-* 架构决策 → **architect**
-* 安全敏感代码 → **security-reviewer**
-* 多渠道沟通分流 → **chief-of-staff**
-* 自主循环 / 循环监控 → **loop-operator**
-* 线束配置可靠性及成本 → **harness-optimizer**
+* 复杂功能请求 → **ecc:planner**
+* 刚编写/修改的代码 → **ecc:code-reviewer**
+* 错误修复或新功能 → **ecc:tdd-guide**
+* 架构决策 → **ecc:architect**
+* 安全敏感代码 → **ecc:security-reviewer**
+* 多渠道沟通分流 → **ecc:chief-of-staff**
+* 自主循环 / 循环监控 → **ecc:loop-operator**
+* 线束配置可靠性及成本 → **ecc:harness-optimizer**
 
 对于独立操作使用并行执行 — 同时启动多个智能体。
 

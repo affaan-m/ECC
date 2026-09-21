@@ -4,6 +4,7 @@
 
 const assert = require("assert")
 const fs = require("fs")
+const os = require("os")
 const path = require("path")
 const { spawnSync } = require("child_process")
 const { getNpmPackEntry } = require("../lib/npm-pack-output")
@@ -45,6 +46,72 @@ function main() {
       })
       assert.strictEqual(result.status, 0, result.stderr)
       assert.ok(fs.existsSync(distEntry), ".opencode/dist/index.js should exist after build")
+    }],
+    ["package.json declares a resolvable OpenCode plugin entry", () => {
+      assert.strictEqual(packageJson.main, ".opencode/dist/index.js")
+      assert.ok(packageJson.exports, "package.json must declare an exports map")
+      assert.deepStrictEqual(packageJson.exports["."], {
+        types: "./.opencode/dist/index.d.ts",
+        import: "./.opencode/dist/index.js",
+        default: "./.opencode/dist/index.js",
+      })
+    }],
+    ["installed package resolves and imports its root module by name", () => {
+      const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "ecc-opencode-entry-"))
+      try {
+        fs.mkdirSync(path.join(tempDir, "node_modules"), { recursive: true })
+        fs.symlinkSync(
+          repoRoot,
+          path.join(tempDir, "node_modules", "ecc-universal"),
+          process.platform === "win32" ? "junction" : "dir"
+        )
+        const probe = `
+          const resolved = import.meta.resolve("ecc-universal")
+          if (!resolved.endsWith("/.opencode/dist/index.js")) {
+            throw new Error("unexpected entry resolution: " + resolved)
+          }
+          const mod = await import("ecc-universal")
+          if (Object.keys(mod).join(",") !== "default" || typeof mod.default !== "function") {
+            throw new Error("root module must export exactly the plugin function")
+          }
+        `
+        const probePath = path.join(tempDir, "probe.mjs")
+        fs.writeFileSync(probePath, probe)
+        const result = spawnSync(process.execPath, [probePath], {
+          cwd: tempDir,
+          encoding: "utf8",
+        })
+        assert.strictEqual(result.status, 0, result.stderr)
+      } finally {
+        fs.rmSync(tempDir, { recursive: true, force: true })
+      }
+    }],
+    ["OpenCode TypeScript sources resolve their relative imports in place", () => {
+      const opencodeDir = path.join(repoRoot, ".opencode")
+      const sourceFiles = []
+      const walk = (dir) => {
+        for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+          const entryPath = path.join(dir, entry.name)
+          if (entry.isDirectory()) {
+            if (entry.name !== "node_modules" && entry.name !== "dist") walk(entryPath)
+          } else if (entry.name.endsWith(".ts")) {
+            sourceFiles.push(entryPath)
+          }
+        }
+      }
+      walk(opencodeDir)
+      assert.ok(sourceFiles.length > 0, "expected OpenCode TypeScript sources")
+      const unresolved = []
+      for (const sourceFile of sourceFiles) {
+        const source = fs.readFileSync(sourceFile, "utf8")
+        for (const match of source.matchAll(/(?:from|import)\s*\(?\s*"(\.[^"]+)"/g)) {
+          const target = path.resolve(path.dirname(sourceFile), match[1])
+          if (!fs.existsSync(target)) {
+            unresolved.push(`${path.relative(repoRoot, sourceFile)} -> ${match[1]}`)
+          }
+        }
+      }
+      assert.deepStrictEqual(unresolved, [])
     }],
     ["built OpenCode entry exports only the plugin function", () => {
       const check = `
@@ -117,7 +184,8 @@ function main() {
       assert.strictEqual(result.status, 0, result.stderr)
     }],
     ["npm pack includes the compiled OpenCode dist payload", () => {
-      const result = spawnSync("npm", ["pack", "--dry-run", "--json"], {
+      fs.rmSync(path.dirname(distEntry), { recursive: true, force: true })
+      const result = spawnSync("npm", ["pack", "--dry-run", "--json", "--ignore-scripts=false"], {
         cwd: repoRoot,
         encoding: "utf8",
         shell: process.platform === "win32",
