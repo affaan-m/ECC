@@ -422,7 +422,8 @@ function renderControlPaneHtml() {
   </div>
   <div id="app" hidden></div>
   <script>
-    const state = { query: '', lastSuccessAt: null };
+    let state = { query: '', lastSuccessAt: null };
+    let loadGeneration = 0;
     const $ = selector => document.querySelector(selector);
     const escapeHtml = value => String(value ?? '').replace(/[&<>"']/g, char => ({
       '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
@@ -660,31 +661,39 @@ function renderControlPaneHtml() {
     }
 
     async function load() {
+      const generation = ++loadGeneration;
+      const query = state.query;
       const url = new URL('/api/snapshot', window.location.href);
-      if (state.query) url.searchParams.set('query', state.query);
-      const response = await fetch(url);
-      const snapshot = await readJsonResponse(response);
-      $('#query').value = snapshot.knowledge.query || state.query;
-      $('#db-path').textContent = snapshot.database.exists ? snapshot.dbPath : 'database missing';
-      state.allowActions = Boolean(snapshot.execution.allowActions);
-      $('#action-status').textContent = state.allowActions ? 'local allowlist' : 'read-only';
-      renderMetrics(snapshot.summary);
-      renderSessions(snapshot.sessions);
-      renderWorkItems(snapshot.workItems);
-      renderKnowledge(snapshot.knowledge);
-      renderConnectors(snapshot.connectors);
-      renderActions(snapshot.actions.map(action => ({
-        ...action,
-        executable: snapshot.execution.allowActions && action.executable
-      })));
-      state.lastSuccessAt = Date.now();
-      clearStale();
-      clearError('#app');
+      if (query) url.searchParams.set('query', query);
+      try {
+        const response = await fetch(url);
+        const snapshot = await readJsonResponse(response);
+        if (generation !== loadGeneration) return;
+        $('#query').value = snapshot.knowledge.query || query;
+        $('#db-path').textContent = snapshot.database.exists ? snapshot.dbPath : 'database missing';
+        state = { ...state, allowActions: Boolean(snapshot.execution.allowActions) };
+        $('#action-status').textContent = state.allowActions ? 'local allowlist' : 'read-only';
+        renderMetrics(snapshot.summary);
+        renderSessions(snapshot.sessions);
+        renderWorkItems(snapshot.workItems);
+        renderKnowledge(snapshot.knowledge);
+        renderConnectors(snapshot.connectors);
+        renderActions(snapshot.actions.map(action => ({
+          ...action,
+          executable: snapshot.execution.allowActions && action.executable
+        })));
+        state = { ...state, lastSuccessAt: Date.now() };
+        clearStale();
+        clearError('#app');
+      } catch (error) {
+        if (generation !== loadGeneration) return;
+        throw error;
+      }
     }
 
     $('#query-form').addEventListener('submit', event => {
       event.preventDefault();
-      state.query = $('#query').value.trim();
+      state = { ...state, query: $('#query').value.trim() };
       load().catch(handleLoadError);
     });
     $('#refresh').addEventListener('click', () => {
