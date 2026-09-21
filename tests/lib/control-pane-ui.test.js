@@ -3,6 +3,8 @@
  *
  * The generated page polls /api/snapshot every 15s. Refresh failures must
  * mark the board stale and surface the error — not discard it in an empty catch.
+ * A tick that lands while a snapshot request is still in flight must not start
+ * another load; that in-flight result still renders or marks the pane stale.
  */
 
 'use strict';
@@ -379,6 +381,62 @@ async function runTests() {
     assert.strictEqual(elements.freshness.hidden, true);
     assert.match(elements.metrics.innerHTML, />4</);
     assert.doesNotMatch(elements.metrics.innerHTML, />1</);
+  })) passed++; else failed++;
+
+  if (await test('a slow interval poll still renders when later ticks fire before it resolves', async () => {
+    const { pending, fetchImpl } = createDeferredFetch();
+    const { elements, body, intervals } = mountControlPane(fetchImpl);
+
+    pending[0].resolve(jsonResponse(true, snapshotPayload({ summary: summaryWithSessions(1) })));
+    await flush();
+    assert.match(elements.metrics.innerHTML, />1</);
+    assert.ok(!body.classList.contains('is-stale'));
+
+    intervals[0].fn();
+    assert.strictEqual(pending.length, 2, 'the first tick starts one snapshot request');
+
+    intervals[0].fn();
+    intervals[0].fn();
+    assert.strictEqual(pending.length, 2, 'later ticks must not start another snapshot while one is in flight');
+
+    pending[1].resolve(jsonResponse(true, snapshotPayload({ summary: summaryWithSessions(6) })));
+    await flush();
+
+    assert.match(elements.metrics.innerHTML, />6</, 'the in-flight poll still renders after later ticks');
+    assert.doesNotMatch(elements.metrics.innerHTML, />1</);
+    assert.ok(!body.classList.contains('is-stale'));
+    assert.strictEqual(elements.app.hidden, true);
+    assert.strictEqual(elements.freshness.hidden, true);
+
+    intervals[0].fn();
+    assert.strictEqual(pending.length, 3, 'a tick after the in-flight poll settles starts a new snapshot');
+  })) passed++; else failed++;
+
+  if (await test('a slow interval poll still marks the pane stale when it fails after later ticks', async () => {
+    const { pending, fetchImpl } = createDeferredFetch();
+    const { elements, body, intervals } = mountControlPane(fetchImpl);
+
+    pending[0].resolve(jsonResponse(true, snapshotPayload({ summary: summaryWithSessions(1) })));
+    await flush();
+    assert.match(elements.metrics.innerHTML, />1</);
+
+    intervals[0].fn();
+    assert.strictEqual(pending.length, 2, 'the first tick starts one snapshot request');
+
+    intervals[0].fn();
+    intervals[0].fn();
+    assert.strictEqual(pending.length, 2, 'later ticks must not supersede the in-flight poll');
+
+    pending[1].reject(new TypeError('Failed to fetch'));
+    await flush();
+
+    assert.ok(body.classList.contains('is-stale'), 'the in-flight failure must mark the pane stale');
+    assert.strictEqual(elements.app.hidden, false, 'the in-flight failure must surface via showError');
+    assert.match(elements.app.textContent, /Failed to fetch/);
+    assert.strictEqual(elements.freshness.hidden, false, 'the stale badge must be visible');
+    assert.match(elements.freshness.textContent, /stale/i);
+    assert.match(elements.freshness.textContent, /last/i);
+    assert.match(elements.metrics.innerHTML, />1</, 'the last fast snapshot stays visible');
   })) passed++; else failed++;
 
   console.log(`\nResults: Passed: ${passed}, Failed: ${failed}`);

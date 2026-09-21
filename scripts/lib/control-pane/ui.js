@@ -424,6 +424,7 @@ function renderControlPaneHtml() {
   <script>
     let state = { query: '', lastSuccessAt: null };
     let loadGeneration = 0;
+    let snapshotRequestInFlight = false;
     const $ = selector => document.querySelector(selector);
     const escapeHtml = value => String(value ?? '').replace(/[&<>"']/g, char => ({
       '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
@@ -665,6 +666,7 @@ function renderControlPaneHtml() {
       const query = state.query;
       const url = new URL('/api/snapshot', window.location.href);
       if (query) url.searchParams.set('query', query);
+      snapshotRequestInFlight = true;
       try {
         const response = await fetch(url);
         const snapshot = await readJsonResponse(response);
@@ -688,6 +690,8 @@ function renderControlPaneHtml() {
       } catch (error) {
         if (generation !== loadGeneration) return;
         throw error;
+      } finally {
+        if (generation === loadGeneration) snapshotRequestInFlight = false;
       }
     }
 
@@ -726,8 +730,10 @@ function renderControlPaneHtml() {
     };
 
     // Live board: refresh on a gentle interval; pause while a prompt/tab is hidden.
+    // Skip the tick while a snapshot request is in flight so that generation can
+    // paint or reach handleLoadError. Do not abort and restart it.
     setInterval(() => {
-      if (document.hidden) return;
+      if (document.hidden || snapshotRequestInFlight) return;
       load().catch(error => {
         console.warn('Control pane auto-refresh failed', error);
         handleLoadError(error);
