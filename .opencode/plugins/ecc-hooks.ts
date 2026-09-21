@@ -632,4 +632,54 @@ export const ECCHooksPlugin: ECCHooksPluginFn = async ({
   }
 }
 
-export default ECCHooksPlugin
+/**
+ * Dual OpenCode entrypoint.
+ *
+ * OpenCode 2 calls `setup(ctx)`; OpenCode 1 (1.18.29+) calls `server()` and
+ * receives the V1 hook map below. The V2 implementation is imported lazily so
+ * that an OpenCode 1 runtime never evaluates the V2-only module.
+ */
+type OpenCodeV2Context = import("@opencode/plugin").Plugin.Context
+
+/**
+ * OpenCode 1.18.x calls `setup()` too, but with a partial context that lacks
+ * `location`, `tool`, `event`, `shell`, `permission`, and `session`. Only run
+ * the V2 implementation when the domains it depends on are actually present;
+ * otherwise OpenCode 1 keeps using `server()` below.
+ */
+function isOpenCodeV2Context(value: unknown): value is OpenCodeV2Context {
+  if (!value || typeof value !== "object") return false
+  const ctx = value as Record<string, unknown>
+  const location = ctx.location as { directory?: unknown } | undefined
+  const tool = ctx.tool as { hook?: unknown } | undefined
+  const event = ctx.event as { subscribe?: unknown } | undefined
+  const shell = ctx.shell as { hook?: unknown } | undefined
+  const permission = ctx.permission as { hook?: unknown } | undefined
+  const session = ctx.session as { hook?: unknown } | undefined
+
+  return (
+    typeof location?.directory === "string" &&
+    typeof tool?.hook === "function" &&
+    typeof event?.subscribe === "function" &&
+    typeof shell?.hook === "function" &&
+    typeof permission?.hook === "function" &&
+    typeof session?.hook === "function"
+  )
+}
+
+const eccOpenCodePlugin = {
+  id: "ecc",
+  async setup(ctx: OpenCodeV2Context): Promise<() => void> {
+    if (!isOpenCodeV2Context(ctx)) {
+      // OpenCode 1's partial envelope: hooks are delivered through `server()`.
+      return () => {}
+    }
+    const { setupV2 } = await import("./lib/ecc-hooks-v2.ts")
+    return setupV2(ctx)
+  },
+  async server(input: PluginInput): Promise<Record<string, unknown>> {
+    return ECCHooksPlugin(input)
+  },
+}
+
+export default eccOpenCodePlugin
