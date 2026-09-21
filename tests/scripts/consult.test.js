@@ -173,6 +173,23 @@ function runTests() {
     assert.ok(payload.matches[0].installCommand.includes('--target codex'));
   })) passed++; else failed++;
 
+  if (test('recommends only exact skill installs for Mistral Vibe', () => {
+    const result = run(['test-driven', 'development', '--target', 'mistral-vibe', '--json']);
+
+    assert.strictEqual(result.status, 0, result.stderr);
+    const payload = parseJson(result.stdout);
+    assert.strictEqual(payload.target, 'mistral-vibe');
+    assert.deepStrictEqual(payload.profiles, []);
+    assert.ok(payload.matches.length > 0);
+    assert.ok(payload.matches.every(match => match.family === 'skill'));
+    assert.ok(payload.matches.every(match => match.installCommand.startsWith(
+      'npx ecc-universal install --target mistral-vibe --skills '
+    )));
+    assert.ok(payload.matches.every(match => match.planCommand.startsWith(
+      'npx ecc-universal plan --target mistral-vibe --skills '
+    )));
+  })) passed++; else failed++;
+
   if (test('rejects unknown targets', () => {
     const result = run(['security', '--target', 'not-a-target']);
 

@@ -5,7 +5,7 @@ const { getInstallTargetAdapter, planInstallTargetScaffold } = require('./instal
 const { resolveInvocationEnvironment } = require('./invocation-environment');
 
 const DEFAULT_REPO_ROOT = path.join(__dirname, '../..');
-const SUPPORTED_INSTALL_TARGETS = ['claude', 'claude-project', 'cursor', 'antigravity', 'codex', 'gemini', 'opencode', 'codebuddy', 'joycode', 'qwen', 'zed', 'hermes', 'openclaw', 'kimi', 'adal'];
+const SUPPORTED_INSTALL_TARGETS = ['claude', 'claude-project', 'cursor', 'antigravity', 'codex', 'gemini', 'opencode', 'codebuddy', 'joycode', 'qwen', 'zed', 'hermes', 'openclaw', 'kimi', 'adal', 'mistral-vibe'];
 const COMPONENT_FAMILY_PREFIXES = {
   baseline: 'baseline:',
   language: 'lang:',
@@ -189,42 +189,58 @@ function listSkillDirectoryIds(repoRoot) {
     .sort();
 }
 
-function addSyntheticSkillComponents({ repoRoot, modules, components }) {
-  const moduleIds = new Set(modules.map(module => module.id));
+function addSyntheticSkillComponents({ repoRoot, modules, components, target = null }) {
+  const originalModuleIds = new Set(modules.map(module => module.id));
   const componentIds = new Set(components.map(component => component.id));
+  const syntheticModules = [];
+  const syntheticComponents = [];
 
   for (const skillId of listSkillDirectoryIds(repoRoot)) {
     const componentId = `skill:${skillId}`;
+    const needsTargetSpecificModule = target === 'mistral-vibe';
+    if (componentIds.has(componentId) && !needsTargetSpecificModule) {
+      continue;
+    }
+    const moduleId = `skill-${skillId}`;
+    const exactSkillModule = {
+      id: moduleId,
+      kind: 'skills',
+      description: `Single-skill install surface for ${skillId}.`,
+      paths: [`skills/${skillId}`],
+      targets: needsTargetSpecificModule
+        ? ['mistral-vibe']
+        : SUPPORTED_INSTALL_TARGETS.slice(),
+      dependencies: [],
+      defaultInstall: false,
+      cost: 'light',
+      stability: 'stable',
+      synthetic: true,
+    };
+    if (needsTargetSpecificModule || !originalModuleIds.has(moduleId)) {
+      syntheticModules.push(exactSkillModule);
+    }
+
     if (componentIds.has(componentId)) {
       continue;
     }
 
-    const moduleId = `skill-${skillId}`;
-    if (!moduleIds.has(moduleId)) {
-      modules.push({
-        id: moduleId,
-        kind: 'skills',
-        description: `Single-skill install surface for ${skillId}.`,
-        paths: [`skills/${skillId}`],
-        targets: SUPPORTED_INSTALL_TARGETS.slice(),
-        dependencies: [],
-        defaultInstall: false,
-        cost: 'light',
-        stability: 'stable',
-        synthetic: true,
-      });
-      moduleIds.add(moduleId);
-    }
-
-    components.push({
+    syntheticComponents.push({
       id: componentId,
       family: 'skill',
       description: `Install only the ${skillId} skill directory.`,
       modules: [moduleId],
       synthetic: true,
     });
-    componentIds.add(componentId);
   }
+
+  const replacementModuleIds = new Set(syntheticModules.map(module => module.id));
+  return {
+    modules: [
+      ...modules.filter(module => !replacementModuleIds.has(module.id)),
+      ...syntheticModules,
+    ],
+    components: [...components, ...syntheticComponents],
+  };
 }
 
 function readOptionalStringOption(options, key) {
@@ -292,6 +308,21 @@ function intersectTargets(modules) {
   ));
 }
 
+function getComponentModuleIds(component, manifests, target = null) {
+  const skillId = component.id.startsWith(COMPONENT_FAMILY_PREFIXES.skill)
+    ? component.id.slice(COMPONENT_FAMILY_PREFIXES.skill.length)
+    : null;
+  const exactSkillModuleId = skillId ? `skill-${skillId}` : null;
+  if (
+    target === 'mistral-vibe'
+    && exactSkillModuleId
+    && manifests.modulesById.has(exactSkillModuleId)
+  ) {
+    return [exactSkillModuleId];
+  }
+  return dedupeStrings(component.modules);
+}
+
 function getManifestPaths(repoRoot = DEFAULT_REPO_ROOT) {
   return {
     modulesPath: path.join(repoRoot, 'manifests', 'install-modules.json'),
@@ -319,23 +350,30 @@ function loadInstallManifests(options = {}) {
     : {};
   const components = Array.isArray(componentsData.components) ? componentsData.components.slice() : [];
 
-  addSyntheticSkillComponents({ repoRoot, modules, components });
+  const withSyntheticSkills = addSyntheticSkillComponents({
+    repoRoot,
+    modules,
+    components,
+    target: options.target || null,
+  });
+  const resolvedModules = withSyntheticSkills.modules;
+  const resolvedComponents = withSyntheticSkills.components;
 
-  for (const module of modules) {
+  for (const module of resolvedModules) {
     readModuleTargetsOrThrow(module);
   }
 
-  const modulesById = new Map(modules.map(module => [module.id, module]));
-  const componentsById = new Map(components.map(component => [component.id, component]));
+  const modulesById = new Map(resolvedModules.map(module => [module.id, module]));
+  const componentsById = new Map(resolvedComponents.map(component => [component.id, component]));
 
   return {
     repoRoot,
     modulesPath,
     profilesPath,
     componentsPath,
-    modules,
+    modules: resolvedModules,
     profiles,
-    components,
+    components: resolvedComponents,
     modulesById,
     componentsById,
     modulesVersion: modulesData.version,
@@ -398,7 +436,7 @@ function listInstallComponents(options = {}) {
   return manifests.components
     .filter(component => !family || component.family === family)
     .map(component => {
-      const moduleIds = dedupeStrings(component.modules);
+      const moduleIds = getComponentModuleIds(component, manifests, target);
       const modules = moduleIds
         .map(moduleId => manifests.modulesById.get(moduleId))
         .filter(Boolean);
@@ -429,7 +467,7 @@ function getInstallComponent(componentId, options = {}) {
     throw new Error(`Unknown install component: ${normalizedComponentId}`);
   }
 
-  const moduleIds = dedupeStrings(component.modules);
+  const moduleIds = getComponentModuleIds(component, manifests, options.target || null);
   const modules = moduleIds
     .map(moduleId => manifests.modulesById.get(moduleId))
     .filter(Boolean)
@@ -455,7 +493,7 @@ function getInstallComponent(componentId, options = {}) {
   };
 }
 
-function expandComponentIdsToModuleIds(componentIds, manifests) {
+function expandComponentIdsToModuleIds(componentIds, manifests, options = {}) {
   const expandedModuleIds = [];
 
   for (const componentId of dedupeStrings(componentIds)) {
@@ -463,7 +501,11 @@ function expandComponentIdsToModuleIds(componentIds, manifests) {
     if (!component) {
       throw new Error(`Unknown install component: ${componentId}`);
     }
-    expandedModuleIds.push(...component.modules);
+    expandedModuleIds.push(...getComponentModuleIds(
+      component,
+      manifests,
+      options.target || null
+    ));
   }
 
   return dedupeStrings(expandedModuleIds);
@@ -543,13 +585,19 @@ function resolveLegacyCompatibilitySelection(options = {}) {
 }
 
 function resolveInstallPlan(options = {}) {
-  const manifests = loadInstallManifests(options);
+  const target = options.target || null;
+  const manifests = loadInstallManifests({ ...options, target });
   const requestedProfileId = options.profileId || null;
   const explicitModuleIds = dedupeStrings(options.moduleIds);
   const includedComponentIds = dedupeStrings(options.includeComponentIds);
   const excludedComponentIds = dedupeStrings(options.excludeComponentIds);
   const requestedModuleIds = [];
-  const target = options.target || null;
+
+  if (target === 'mistral-vibe' && requestedProfileId) {
+    throw new Error(
+      'Mistral Vibe currently supports explicit Agent Skill installs only; use --skills <id,...> instead of a profile.'
+    );
+  }
 
   if (target && !SUPPORTED_INSTALL_TARGETS.includes(target)) {
     throw new Error(
@@ -577,16 +625,24 @@ function resolveInstallPlan(options = {}) {
   }
 
   requestedModuleIds.push(...explicitModuleIds);
-  requestedModuleIds.push(...expandComponentIdsToModuleIds(includedComponentIds, manifests));
+  requestedModuleIds.push(...expandComponentIdsToModuleIds(
+    includedComponentIds,
+    manifests,
+    { target }
+  ));
 
-  const excludedModuleIds = expandComponentIdsToModuleIds(excludedComponentIds, manifests);
+  const excludedModuleIds = expandComponentIdsToModuleIds(
+    excludedComponentIds,
+    manifests,
+    { target }
+  );
   const excludedModuleOwners = new Map();
   for (const componentId of excludedComponentIds) {
     const component = manifests.componentsById.get(componentId);
     if (!component) {
       throw new Error(`Unknown install component: ${componentId}`);
     }
-    for (const moduleId of component.modules) {
+    for (const moduleId of getComponentModuleIds(component, manifests, target)) {
       const owners = excludedModuleOwners.get(moduleId) || [];
       owners.push(componentId);
       excludedModuleOwners.set(moduleId, owners);
@@ -615,6 +671,11 @@ function resolveInstallPlan(options = {}) {
   );
 
   if (requestedModuleIds.length === 0) {
+    if (target === 'mistral-vibe') {
+      throw new Error(
+        'Mistral Vibe currently supports explicit Agent Skill installs only; use --skills <id,...>.'
+      );
+    }
     throw new Error('No install profile, module IDs, or included component IDs were provided');
   }
 
@@ -698,6 +759,11 @@ function resolveInstallPlan(options = {}) {
   const selectedModules = manifests.modules.filter(module => selectedIds.has(module.id));
   const skippedModules = manifests.modules.filter(module => skippedTargetIds.has(module.id));
   const excludedModules = manifests.modules.filter(module => excludedIds.has(module.id));
+  if (target === 'mistral-vibe' && selectedModules.length === 0) {
+    throw new Error(
+      'Mistral Vibe currently supports explicit Agent Skill installs only; use --skills <id,...>.'
+    );
+  }
   const scaffoldPlan = target
     ? planInstallTargetScaffold({
       target,
