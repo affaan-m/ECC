@@ -89,6 +89,14 @@ function stringifyArgs(input: unknown): string {
 }
 
 /**
+ * OpenCode 2 renamed the shell tool from `bash` (v1) to `shell`; accept both so
+ * the bash hooks work across versions.
+ */
+function isShellTool(tool: string): boolean {
+  return tool === "bash" || tool === "shell"
+}
+
+/**
  * Wire the ECC hook + tool surface into an OpenCode 2 plugin context.
  * Returns a cleanup function that stops the event subscription.
  */
@@ -185,7 +193,7 @@ export async function setupV2(ctx: Context): Promise<() => void> {
       }
     }
 
-    if (hookEnabled("pre:bash:git-push-reminder", "strict") && tool === "bash") {
+    if (hookEnabled("pre:bash:git-push-reminder", "strict") && isShellTool(tool)) {
       if (stringifyArgs(input).includes("git push")) {
         log("Remember to review changes before pushing: git diff origin/main...HEAD")
       }
@@ -205,7 +213,7 @@ export async function setupV2(ctx: Context): Promise<() => void> {
       }
     }
 
-    if (hookEnabled("pre:bash:tmux-reminder", "strict") && tool === "bash") {
+    if (hookEnabled("pre:bash:tmux-reminder", "strict") && isShellTool(tool)) {
       const cmd = stringifyArgs(input)
       if (
         /^(npm|pnpm|yarn|bun)\s+(install|build|test|run)/.test(cmd) ||
@@ -256,7 +264,7 @@ export async function setupV2(ctx: Context): Promise<() => void> {
       }
     }
 
-    if (hookEnabled("post:bash:pr-created", ["standard", "strict"]) && tool === "bash") {
+    if (hookEnabled("post:bash:pr-created", ["standard", "strict"]) && isShellTool(tool)) {
       if (stringifyArgs(input).includes("gh pr create")) {
         log("PR created - check GitHub Actions status")
       }
