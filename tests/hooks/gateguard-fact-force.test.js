@@ -1508,6 +1508,48 @@ function runTests() {
   else failed++;
 
   if (
+    test('denies quoted destructive SQL passed to SQL clients (issue #3024)', () => {
+      expectDestructiveDeny('psql -c "drop table users"', 'psql quoted drop table');
+      expectDestructiveDeny("psql -c 'truncate audit_log'", 'psql quoted truncate');
+      expectDestructiveDeny('mysql -e "delete from sessions"', 'mysql quoted delete');
+      expectDestructiveDeny('sqlite3 app.db "DROP TABLE users"', 'sqlite3 quoted drop');
+    })
+  )
+    passed++;
+  else failed++;
+
+  if (
+    test('denies quoted destructive SQL through sudo/env wrappers', () => {
+      expectDestructiveDeny('sudo -u postgres psql -c "drop table users"', 'sudo -u psql');
+      expectDestructiveDeny('env PGUSER=postgres psql -c "drop table users"', 'env psql');
+      expectDestructiveDeny('env PGPASSWORD=value psql -c "drop table users"', 'env PGPASSWORD psql');
+      expectDestructiveDeny('env -C /tmp psql -c "drop table users"', 'env -C psql');
+      expectDestructiveDeny('env --chdir /tmp psql -c "drop table users"', 'env --chdir psql');
+    })
+  )
+    passed++;
+  else failed++;
+
+  if (
+    test('denies destructive SQL through wrapper sh -c chains', () => {
+      expectDestructiveDeny('sudo sh -c \'psql -c "drop table users"\'', 'sudo sh -c psql');
+      expectDestructiveDeny('env sh -c \'psql -c "drop table users"\'', 'env sh -c psql');
+    })
+  )
+    passed++;
+  else failed++;
+
+  if (
+    test('allows SQL string literals and non-SQL clients mentioning SQL', () => {
+      expectAllow('psql -c "SELECT \'drop table\' FROM audit_log"', 'SQL string literal');
+      expectAllow('psql -c "SELECT $tag$drop table users$tag$ FROM t"', 'tagged dollar-quote literal');
+      expectAllow('echo "drop table users"', 'echo SQL mention');
+    })
+  )
+    passed++;
+  else failed++;
+
+  if (
     test('allows destructive SQL prose inside a quoted heredoc', () => {
       expectAllow(
         [
@@ -3325,6 +3367,34 @@ function runTests() {
     }
   } catch (err) {
     console.error(`  [cleanup] failed to remove ${stateDir}: ${err.message}`);
+  }
+
+  // --- sanitizePath dangerous invisible unicode regression ---
+  clearState();
+  if (
+    test('sanitizePath strips CI-defined dangerous invisible unicode from denial paths', () => {
+      const file_path =
+        '/src/eu2028\u2028eu2029\u2029app.js\u200bhidden\u2060name\ufefftail\u3164x\u0091c1.js';
+      const input = {
+        tool_name: 'Edit',
+        tool_input: { file_path, old_string: 'foo', new_string: 'bar' }
+      };
+      const result = runHook(input);
+      const output = parseOutput(result.stdout);
+      const reason = String(
+        output && output.hookSpecificOutput
+          ? output.hookSpecificOutput.permissionDecisionReason
+          : ''
+      );
+      for (const bad of ['\u2028', '\u2029', '\u200b', '\u2060', '\ufeff', '\u3164', '\u0091']) {
+        assert.ok(!reason.includes(bad), `denial reason must not carry U+${bad.codePointAt(0).toString(16)} (${bad})`);
+      }
+      assert.ok(reason.includes('app.js'), 'visible path text must remain');
+    })
+  ) {
+    passed++;
+  } else {
+    failed++;
   }
 
   console.log(`\n  ${passed} passed, ${failed} failed\n`);
