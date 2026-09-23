@@ -495,9 +495,10 @@ function mergeState(diskState, memoryState, now = Date.now()) {
  * @returns {Object} Parsed state object or empty template.
  */
 function loadStateFromDisk(stateFile) {
-  if (fs.existsSync(stateFile)) {
+  const resolved = path.resolve(stateFile);
+  if (fs.existsSync(resolved)) {
     try {
-      return JSON.parse(fs.readFileSync(stateFile, 'utf8'));
+      return JSON.parse(fs.readFileSync(resolved, 'utf8'));
     } catch (_err) {
       return { checked: [], last_active: Date.now() };
     }
@@ -511,14 +512,15 @@ function loadStateFromDisk(stateFile) {
  * @param {Object} state State object to serialize.
  */
 function writeStateToDiskAtomic(stateFile, state) {
-  const tmpFile = `${stateFile}.tmp.${process.pid}.${crypto.randomBytes(4).toString('hex')}`;
+  const resolvedDest = path.resolve(stateFile);
+  const tmpFile = path.resolve(`${resolvedDest}.tmp.${process.pid}.${crypto.randomBytes(4).toString('hex')}`);
   fs.writeFileSync(tmpFile, JSON.stringify(state, null, 2), 'utf8');
   try {
-    fs.renameSync(tmpFile, stateFile);
+    fs.renameSync(tmpFile, resolvedDest);
   } catch (e) {
     if (e && (e.code === 'EEXIST' || e.code === 'EPERM')) {
-      try { fs.unlinkSync(stateFile); } catch (_unlinkErr) { void 0; }
-      fs.renameSync(tmpFile, stateFile);
+      try { fs.unlinkSync(resolvedDest); } catch (_unlinkErr) { void 0; }
+      fs.renameSync(tmpFile, resolvedDest);
     } else {
       throw e;
     }
@@ -547,8 +549,11 @@ function recordToolUse(rawInput) {
   }
 
   const sessionKey = resolveSessionKey(data);
-  const stateDir = getStateDir();
-  const stateFile = path.join(stateDir, `state-${sessionKey}.json`);
+  const stateDir = path.resolve(getStateDir());
+  const stateFile = path.resolve(stateDir, `state-${sessionKey}.json`);
+  if (!stateFile.startsWith(stateDir + path.sep)) {
+    return { output: '', exitCode: 0 };
+  }
 
   try {
     fs.mkdirSync(stateDir, { recursive: true });

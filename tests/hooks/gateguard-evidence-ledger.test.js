@@ -558,6 +558,37 @@ if (test('denies quoted and subshell-wrapped terraform destroy (CodeRabbit CWE-6
   assert.ok(out.hookSpecificOutput?.permissionDecisionReason.includes('rollback'));
 })) passed++; else failed++;
 
+clearState();
+if (test('permits echo and printf containing IaC destroy commands without false positives (Greptile P2 review resolution)', () => {
+  const echoQuoted = runBashHook({
+    tool_name: 'Bash',
+    tool_input: { command: 'echo "terraform destroy"' }
+  }, { GATEGUARD_BASH_ROUTINE_DISABLED: '1' });
+  const echoQuotedOut = parseOutput(echoQuoted.stdout);
+  assert.notStrictEqual(echoQuotedOut.hookSpecificOutput?.permissionDecisionReason?.includes('rollback'), true);
+
+  const echoKubectl = runBashHook({
+    tool_name: 'Bash',
+    tool_input: { command: 'echo "kubectl delete namespace foo"' }
+  }, { GATEGUARD_BASH_ROUTINE_DISABLED: '1' });
+  const echoKubectlOut = parseOutput(echoKubectl.stdout);
+  assert.notStrictEqual(echoKubectlOut.hookSpecificOutput?.permissionDecisionReason?.includes('rollback'), true);
+
+  const echoUnquoted = runBashHook({
+    tool_name: 'Bash',
+    tool_input: { command: 'echo terraform destroy' }
+  }, { GATEGUARD_BASH_ROUTINE_DISABLED: '1' });
+  const echoUnquotedOut = parseOutput(echoUnquoted.stdout);
+  assert.notStrictEqual(echoUnquotedOut.hookSpecificOutput?.permissionDecisionReason?.includes('rollback'), true);
+
+  const printfIaC = runBashHook({
+    tool_name: 'Bash',
+    tool_input: { command: 'printf "%s\\n" "terraform destroy"' }
+  }, { GATEGUARD_BASH_ROUTINE_DISABLED: '1' });
+  const printfOut = parseOutput(printfIaC.stdout);
+  assert.notStrictEqual(printfOut.hookSpecificOutput?.permissionDecisionReason?.includes('rollback'), true);
+})) passed++; else failed++;
+
 // Cleanup
 clearState();
 if (fs.existsSync(stateDir)) {

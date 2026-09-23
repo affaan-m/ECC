@@ -81,16 +81,82 @@ const DESTRUCTIVE_SQL_DD = /\b(drop\s+table|delete\s+from|truncate|dd\s+if=)\b/i
  * @param {string} text Command string.
  * @returns {boolean} True if destructive IaC command detected.
  */
-function isDestructiveIaC(text) {
-  if (!text || typeof text !== 'string') return false;
-  // terraform / tofu destroy with optional flags/arguments
-  if (/\b(?:terraform|tofu)\b(?:\s+-[^\s]+|\s+[^-][^\s]*)*\s+destroy\b/i.test(text)) {
-    return true;
+/**
+ * Detect destructive Infrastructure as Code (IaC) commands targeting terraform,
+ * tofu, or kubectl. Restricts inspection strictly to resolved executables and their
+ * arguments to prevent false positives in echo, printf, cat, or scripts printing IaC text.
+ *
+ * @param {string[]|string} tokensOrText Command tokens or command string.
+ * @returns {boolean} True if destructive IaC command detected.
+ */
+function isDestructiveIaC(tokensOrText) {
+  let tokens;
+  if (Array.isArray(tokensOrText)) {
+    tokens = tokensOrText;
+  } else if (typeof tokensOrText === 'string') {
+    tokens = tokenize(tokensOrText);
+  } else {
+    return false;
   }
-  // kubectl delete namespace / all / node / pv / pvc with optional flags/arguments
-  if (/\bkubectl\b(?:\s+-[^\s]+|\s+[^-][^\s]*)*\s+delete\b(?:\s+-[^\s]+|\s+[^-][^\s]*)*\s+(?:namespace|namespaces|ns|node|nodes|all|pv|pvc)\b/i.test(text)) {
-    return true;
+  if (!tokens || tokens.length === 0) return false;
+
+  const start = unwrapLeadWrappers(tokens);
+  if (start >= tokens.length) return false;
+
+  const exe = commandBasename(tokens[start]);
+  if (exe !== 'terraform' && exe !== 'tofu' && exe !== 'kubectl') {
+    return false;
   }
+
+  const args = tokens.slice(start + 1);
+
+  if (exe === 'terraform' || exe === 'tofu') {
+    for (let i = 0; i < args.length; i++) {
+      const arg = args[i].toLowerCase();
+      if (arg === 'destroy') return true;
+      if (!arg.startsWith('-') && ['plan', 'apply', 'init', 'validate', 'show', 'output', 'version', 'fmt'].includes(arg)) {
+        return false;
+      }
+    }
+    return false;
+  }
+
+  if (exe === 'kubectl') {
+    let hasDelete = false;
+    for (let i = 0; i < args.length; i++) {
+      const arg = args[i].toLowerCase();
+      if (arg === 'delete') {
+        hasDelete = true;
+        continue;
+      }
+      if (hasDelete) {
+        if (arg.startsWith('-')) continue;
+        const dangerousTypes = new Set([
+          'namespace',
+          'namespaces',
+          'ns',
+          'node',
+          'nodes',
+          'all',
+          'pv',
+          'pvc',
+          'persistentvolume',
+          'persistentvolumes',
+          'persistentvolumeclaim',
+          'persistentvolumeclaims'
+        ]);
+        if (dangerousTypes.has(arg)) {
+          return true;
+        }
+        return false;
+      }
+      if (!arg.startsWith('-') && ['get', 'describe', 'logs', 'apply', 'create', 'edit', 'exec', 'top'].includes(arg)) {
+        return false;
+      }
+    }
+    return false;
+  }
+
   return false;
 }
 
@@ -560,7 +626,7 @@ function isDestructiveQuoteAware(raw, depth = 0) {
     if (isDestructiveGit(tokens)) return true;
     if (isDestructiveSqlClient(tokens)) return true;
     if (isDestructiveFindExec(tokens.join(' '))) return true;
-    if (isDestructiveIaC(tokens.join(' '))) return true;
+    if (isDestructiveIaC(tokens)) return true;
     const wi = unwrapLeadWrappers(tokens);
     const base = wi < tokens.length ? commandBasename(tokens[wi]) : '';
     if (SHELL_WRAPPERS.has(base)) {
@@ -992,7 +1058,6 @@ function isDestructiveBash(command) {
   const executable = stripHeredocBodies(raw);
   const flattened = explodeSubshells(stripQuotedStrings(executable));
   if (DESTRUCTIVE_SQL_DD.test(flattened)) return true;
-  if (isDestructiveIaC(flattened)) return true;
 
   // Operator-supplied additional destructive patterns. Same scope as the
   // built-in SQL/dd regex: matched against the quote-stripped, subshell-
@@ -1020,11 +1085,11 @@ function isDestructiveBash(command) {
   for (const segment of segments) {
     const stripped = stripQuotedStrings(segment);
     if (DESTRUCTIVE_SQL_DD.test(stripped)) return true;
-    if (isDestructiveIaC(stripped)) return true;
     if (extra && extra.test(stripped)) return true;
     const tokens = tokenize(segment);
     if (isDestructiveRm(tokens)) return true;
     if (isDestructiveGit(tokens)) return true;
+    if (isDestructiveIaC(tokens)) return true;
   }
 
   // Quote-aware pass: closes the quoted-command-word, newline-separator,
