@@ -35,6 +35,7 @@ const {
   validScopePass,
   grantScopePass,
   pruneEvidence,
+  pruneReadFiles,
   EVIDENCE_MAX_ENTRIES
 } = require('./gateguard-evidence-ledger');
 
@@ -1161,7 +1162,9 @@ function saveState(state) {
     let mergedLastActive = typeof state.last_active === 'number' ? state.last_active : 0;
     let mergedDenials = getDenialCount(state);
     let mergedEvidence = Array.isArray(state.evidence) ? state.evidence : [];
-    let mergedReadFiles = Array.isArray(state.read_files) ? state.read_files : [];
+    let mergedReadFiles = (state.read_files && typeof state.read_files === 'object' && !Array.isArray(state.read_files))
+      ? { ...state.read_files }
+      : {};
     let mergedScopePasses = (state.scope_passes && typeof state.scope_passes === 'object') ? state.scope_passes : {};
 
     try {
@@ -1177,8 +1180,14 @@ function saveState(state) {
         if (Array.isArray(diskState.evidence)) {
           mergedEvidence = pruneEvidence([...diskState.evidence, ...mergedEvidence], Date.now());
         }
-        if (Array.isArray(diskState.read_files)) {
-          mergedReadFiles = Array.from(new Set([...diskState.read_files, ...mergedReadFiles])).slice(-EVIDENCE_MAX_ENTRIES);
+        if (diskState.read_files && typeof diskState.read_files === 'object' && !Array.isArray(diskState.read_files)) {
+          mergedReadFiles = Object.assign({}, diskState.read_files, mergedReadFiles);
+        } else if (Array.isArray(diskState.read_files)) {
+          for (const f of diskState.read_files) {
+            if (typeof f === 'string' && !mergedReadFiles[f.toLowerCase()]) {
+              mergedReadFiles[f.toLowerCase()] = Date.now();
+            }
+          }
         }
         if (diskState.scope_passes && typeof diskState.scope_passes === 'object') {
           mergedScopePasses = Object.assign({}, diskState.scope_passes, mergedScopePasses);
@@ -1193,7 +1202,7 @@ function saveState(state) {
       last_active: Math.max(mergedLastActive, Date.now()),
       fact_force_denials: mergedDenials,
       evidence: pruneEvidence(mergedEvidence, Date.now()),
-      read_files: mergedReadFiles,
+      read_files: pruneReadFiles(mergedReadFiles, Date.now()),
       scope_passes: mergedScopePasses
     };
 
@@ -1216,7 +1225,7 @@ function saveState(state) {
     }
     tmpFile = null;
     return true;
-  } catch (_) {
+  } catch (err) {
     if (tmpFile) {
       try {
         fs.unlinkSync(tmpFile);
@@ -1224,6 +1233,7 @@ function saveState(state) {
         /* ignore */
       }
     }
+    process.stderr.write(`[GateGuard] State persistence failed: ${err.message}\n`);
     return false;
   }
 }
@@ -1595,6 +1605,41 @@ function allowWithStateWarning() {
   };
 }
 
+/**
+ * Evaluates whether an edit/write operation qualifies for zero-friction evidence auto-pass.
+ * @param {string} filePath File path being edited.
+ * @param {string} tier Risk tier ('normal', 'elevated', 'high').
+ * @param {Object} state Session state object.
+ * @param {number} now Current timestamp.
+ * @returns {boolean} True if the edit qualifies for auto-pass.
+ */
+function evaluateAutoPass(filePath, tier, state, now) {
+  if (!isEvidenceBypassEnabled()) return false;
+  if (tier === 'high' || tier === 'elevated') return false;
+  const level = evidenceLevel(filePath, state, now);
+  if (level === 'deep') return true;
+  if (level === 'touched' && validScopePass(filePath, state, now)) return true;
+  return false;
+}
+
+/**
+ * Records an auto-pass grant in session state immutably and persists it.
+ * @param {string} filePath File path granted auto-pass.
+ * @param {string} tier Risk tier.
+ * @param {Object} state Session state object.
+ * @param {number} now Current timestamp.
+ * @returns {Object} Updated session state object.
+ */
+function recordAutoPass(filePath, tier, state, now) {
+  let nextState = tier === 'normal' ? grantScopePass(state, filePath, now) : Object.assign({}, state);
+  const checked = Array.isArray(nextState.checked) ? nextState.checked : [];
+  if (!checked.includes(filePath)) {
+    nextState = Object.assign({}, nextState, { checked: [...checked, filePath] });
+  }
+  saveState(nextState);
+  return nextState;
+}
+
 // --- Core logic (exported for run-with-flags.js) ---
 
 function run(rawInput) {
@@ -1637,32 +1682,11 @@ function run(rawInput) {
     }
 
     if (!isChecked(filePath)) {
-      let state = loadState();
+      const state = loadState();
       const now = Date.now();
 
-      let autoPass = false;
-      if (isEvidenceBypassEnabled()) {
-        if (tier === 'high' || tier === 'elevated') {
-          // Public signature changes and sensitive targets are never silently bypassed
-          autoPass = false;
-        } else {
-          const level = evidenceLevel(filePath, state, now);
-          if (level === 'deep') {
-            autoPass = true;
-          } else if (level === 'touched' && validScopePass(filePath, state, now)) {
-            autoPass = true;
-          }
-        }
-      }
-
-      if (autoPass) {
-        if (tier === 'normal') {
-          state = grantScopePass(state, filePath, now);
-        }
-        if (!state.checked.includes(filePath)) {
-          state.checked.push(filePath);
-        }
-        saveState(state);
+      if (evaluateAutoPass(filePath, tier, state, now)) {
+        recordAutoPass(filePath, tier, state, now);
         return rawInput; // allow
       }
 
@@ -1704,28 +1728,8 @@ function run(rawInput) {
       let state = loadState();
       const now = Date.now();
 
-      let autoPass = false;
-      if (isEvidenceBypassEnabled()) {
-        if (tier === 'high' || tier === 'elevated') {
-          autoPass = false;
-        } else {
-          const level = evidenceLevel(filePath, state, now);
-          if (level === 'deep') {
-            autoPass = true;
-          } else if (level === 'touched' && validScopePass(filePath, state, now)) {
-            autoPass = true;
-          }
-        }
-      }
-
-      if (autoPass) {
-        if (tier === 'normal') {
-          state = grantScopePass(state, filePath, now);
-        }
-        if (!state.checked.includes(filePath)) {
-          state.checked.push(filePath);
-        }
-        saveState(state);
+      if (evaluateAutoPass(filePath, tier, state, now)) {
+        state = recordAutoPass(filePath, tier, state, now);
         continue;
       }
 

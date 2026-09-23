@@ -14,6 +14,7 @@ const {
   normalizePath,
   extractStem,
   pruneEvidence,
+  pruneReadFiles,
   buildEvidenceEntry,
   matchingEvidence,
   evidenceLevel,
@@ -464,32 +465,91 @@ if (test('High-risk file (.env) is gated even for whitespace or comment edits', 
   assert.ok(out.hookSpecificOutput?.permissionDecisionReason.includes('Fact-Forcing Gate'));
 })) passed++; else failed++;
 
-// 14. Destructive IaC commands with flags (terraform -chdir=... destroy, kubectl delete)
+// 14. Destructive IaC commands with flags (atomic tests adhering to AAA pattern)
 clearState();
-if (test('denies terraform destroy and kubectl delete namespace with global flags', () => {
-  const tfResult = runBashHook({
+if (test('denies terraform destroy with chdir flag', () => {
+  const result = runBashHook({
     tool_name: 'Bash',
     tool_input: { command: 'terraform -chdir=prod destroy -auto-approve' }
   });
-  const tfOut = parseOutput(tfResult.stdout);
-  assert.strictEqual(tfOut.hookSpecificOutput?.permissionDecision, 'deny');
-  assert.ok(tfOut.hookSpecificOutput?.permissionDecisionReason.includes('rollback'));
+  const out = parseOutput(result.stdout);
+  assert.strictEqual(out.hookSpecificOutput?.permissionDecision, 'deny');
+  assert.ok(out.hookSpecificOutput?.permissionDecisionReason.includes('rollback'));
+})) passed++; else failed++;
 
-  const tofuResult = runBashHook({
+clearState();
+if (test('denies tofu destroy with chdir flag', () => {
+  const result = runBashHook({
     tool_name: 'Bash',
     tool_input: { command: 'tofu -chdir=prod destroy' }
   });
-  const tofuOut = parseOutput(tofuResult.stdout);
-  assert.strictEqual(tofuOut.hookSpecificOutput?.permissionDecision, 'deny');
-  assert.ok(tofuOut.hookSpecificOutput?.permissionDecisionReason.includes('rollback'));
+  const out = parseOutput(result.stdout);
+  assert.strictEqual(out.hookSpecificOutput?.permissionDecision, 'deny');
+  assert.ok(out.hookSpecificOutput?.permissionDecisionReason.includes('rollback'));
+})) passed++; else failed++;
 
-  const k8sResult = runBashHook({
+clearState();
+if (test('denies kubectl delete namespace with context flag', () => {
+  const result = runBashHook({
     tool_name: 'Bash',
     tool_input: { command: 'kubectl --context=prod delete namespace production' }
   });
-  const k8sOut = parseOutput(k8sResult.stdout);
-  assert.strictEqual(k8sOut.hookSpecificOutput?.permissionDecision, 'deny');
-  assert.ok(k8sOut.hookSpecificOutput?.permissionDecisionReason.includes('rollback'));
+  const out = parseOutput(result.stdout);
+  assert.strictEqual(out.hookSpecificOutput?.permissionDecision, 'deny');
+  assert.ok(out.hookSpecificOutput?.permissionDecisionReason.includes('rollback'));
+})) passed++; else failed++;
+
+// 15. Risk tier classification for extended environment filenames
+if (test('classifies .envrc and .env-production as high-risk', () => {
+  assert.strictEqual(riskTier('Edit', {}, '.envrc'), 'high');
+  assert.strictEqual(riskTier('Edit', {}, '/path/to/.env-production'), 'high');
+  assert.strictEqual(riskTier('Edit', {}, 'packages/backend/.env.local'), 'high');
+})) passed++; else failed++;
+
+// 16. pruneReadFiles entry count cap
+if (test('caps active read entries to EVIDENCE_MAX_ENTRIES', () => {
+  const now = Date.now();
+  const oversizedMap = {};
+  for (let i = 0; i < 250; i++) {
+    oversizedMap[`file-${i}.js`] = now - i * 10;
+  }
+  const pruned = pruneReadFiles(oversizedMap, now);
+  const keys = Object.keys(pruned);
+  assert.strictEqual(keys.length, EVIDENCE_MAX_ENTRIES);
+  // Ensure the most recent entries were kept
+  assert.ok(keys.includes('file-0.js'));
+  assert.ok(!keys.includes('file-249.js'));
+})) passed++; else failed++;
+
+// 17. Persistence failure reports diagnostic to stderr (Greptile P2 review resolution)
+if (test('reports diagnostic to stderr when state directory is an uncreatable file', () => {
+  const testFileDir = path.join(tmpRoot, `gateguard-err-file-${Date.now()}`);
+  fs.writeFileSync(testFileDir, 'blocking-file', 'utf8');
+
+  const origEnv = process.env.GATEGUARD_STATE_DIR;
+  process.env.GATEGUARD_STATE_DIR = testFileDir;
+
+  let stderrOutput = '';
+  const originalStderrWrite = process.stderr.write;
+  process.stderr.write = (chunk) => {
+    stderrOutput += String(chunk);
+    return true;
+  };
+
+  try {
+    const res = recordToolUse({
+      tool_name: 'Read',
+      tool_input: { file_path: '/path/to/test.js' }
+    });
+
+    assert.strictEqual(res.exitCode, 0);
+    assert.ok(stderrOutput.includes('[GateGuard] Failed to persist evidence state'));
+    assert.ok(res.stderr.includes('Failed to persist evidence state'));
+  } finally {
+    process.stderr.write = originalStderrWrite;
+    process.env.GATEGUARD_STATE_DIR = origEnv;
+    try { fs.unlinkSync(testFileDir); } catch (_) { void 0; }
+  }
 })) passed++; else failed++;
 
 // Cleanup

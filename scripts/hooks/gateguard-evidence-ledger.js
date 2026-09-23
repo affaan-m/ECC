@@ -29,7 +29,7 @@ const HIGH_RISK_PATH_TOKENS = new Set([
   'secret', 'secrets', 'credential', 'credentials', 'migration', 'migrations'
 ]);
 
-const HIGH_RISK_FILENAME_RE = /^\.env(\..+)?$|^settings(\.local)?\.json$|\.plist$|^\.gateguard\.ya?ml$/i;
+const HIGH_RISK_FILENAME_RE = /^\.env(?:[.-].*|rc)?$|^settings(\.local)?\.json$|\.plist$|^\.gateguard\.ya?ml$/i;
 const HIGH_RISK_PATH_RE = /(?:^|\/)\.github\/workflows\//i;
 
 // Public or exported signature line detection across multiple languages:
@@ -38,7 +38,7 @@ const HIGH_RISK_PATH_RE = /(?:^|\/)\.github\/workflows\//i;
 // Java/C#/Kotlin: public class/interface/enum/record/method
 // Go: func ExportedName, type ExportedName
 // Rust: pub fn/struct/enum/trait/type/const
-const SIGNATURE_LINE_RE = /^\s*(?:async\s+def\s|def\s|class\s|export\s|function\s|interface\s|type\s+\S+\s*=|public\s+(?:static\s+|abstract\s+|final\s+)?(?:class|interface|enum|record|[\w<>\[\]]+\s+\w+\s*\()|func\s+(?:\([^)]+\)\s+)?[A-Z]\w*|type\s+[A-Z]\w*\s+(?:struct|interface)|pub\s+(?:fn|struct|enum|trait|type|const))/;
+const SIGNATURE_LINE_RE = /^\s*(?:async\s+def\s|def\s|class\s|export\s|function\s|interface\s|type\s+\S+\s*=|public\s+(?:(?:static|abstract|final|synchronized)\s+)*(?:class|interface|enum|record|[\w<>\[\]]+\s+\w+\s*\()|func\s+(?:\([^)]+\)\s+)?[A-Z]\w*|type\s+[A-Z]\w*\s+(?:struct|interface)|pub\s+(?:fn|struct|enum|trait|type|const))/;
 
 const INDENT_SENSITIVE_EXTS = new Set(['.py', '.pyw', '.yaml', '.yml', '.nim']);
 const INDENT_SENSITIVE_BASES = new Set(['makefile', 'gnumakefile']);
@@ -92,11 +92,18 @@ function pruneEvidence(evidence, now = Date.now()) {
  */
 function pruneReadFiles(readFiles, now = Date.now()) {
   if (!readFiles || typeof readFiles !== 'object' || Array.isArray(readFiles)) return {};
-  const cleaned = {};
+  const activeEntries = [];
   for (const [p, ts] of Object.entries(readFiles)) {
     if (typeof ts === 'number' && (now - ts) < EVIDENCE_TTL_MS) {
-      cleaned[p] = ts;
+      activeEntries.push([p, ts]);
     }
+  }
+  // Keep the most recent entries up to EVIDENCE_MAX_ENTRIES
+  activeEntries.sort((a, b) => b[1] - a[1]);
+  const capped = activeEntries.slice(0, EVIDENCE_MAX_ENTRIES);
+  const cleaned = {};
+  for (const [p, ts] of capped) {
+    cleaned[p] = ts;
   }
   return cleaned;
 }
@@ -163,7 +170,7 @@ function buildEvidenceEntry(toolName, toolInput, now = Date.now()) {
 
 /**
  * Finds relevant active evidence for a target file.
- * Requires exact path match or direct parent directory match.
+ * Requires exact path match or containing directory match.
  * @param {string} filePath Target file path.
  * @param {Object} state Session state object.
  * @param {number} [now=Date.now()] Current timestamp in ms.
@@ -483,10 +490,46 @@ function mergeState(diskState, memoryState, now = Date.now()) {
 }
 
 /**
+ * Loads and parses state file from disk, returning default state on missing/malformed file.
+ * @param {string} stateFile Path to state file.
+ * @returns {Object} Parsed state object or empty template.
+ */
+function loadStateFromDisk(stateFile) {
+  if (fs.existsSync(stateFile)) {
+    try {
+      return JSON.parse(fs.readFileSync(stateFile, 'utf8'));
+    } catch (_err) {
+      return { checked: [], last_active: Date.now() };
+    }
+  }
+  return { checked: [], last_active: Date.now() };
+}
+
+/**
+ * Atomically writes state to disk using a unique temporary file.
+ * @param {string} stateFile Path to destination state file.
+ * @param {Object} state State object to serialize.
+ */
+function writeStateToDiskAtomic(stateFile, state) {
+  const tmpFile = `${stateFile}.tmp.${process.pid}.${crypto.randomBytes(4).toString('hex')}`;
+  fs.writeFileSync(tmpFile, JSON.stringify(state, null, 2), 'utf8');
+  try {
+    fs.renameSync(tmpFile, stateFile);
+  } catch (e) {
+    if (e && (e.code === 'EEXIST' || e.code === 'EPERM')) {
+      try { fs.unlinkSync(stateFile); } catch (_unlinkErr) { void 0; }
+      fs.renameSync(tmpFile, stateFile);
+    } else {
+      throw e;
+    }
+  }
+}
+
+/**
  * Records a tool use event in the session evidence ledger.
  * Concurrency-safe: merges updates with current on-disk state.
  * @param {string|Object} rawInput Raw hook JSON string or parsed object.
- * @returns {{output: string, exitCode: number}} Hook response.
+ * @returns {{output: string, exitCode: number, stderr?: string}} Hook response.
  */
 function recordToolUse(rawInput) {
   let data;
@@ -509,15 +552,7 @@ function recordToolUse(rawInput) {
 
   try {
     fs.mkdirSync(stateDir, { recursive: true });
-    let diskState = { checked: [], last_active: Date.now() };
-
-    if (fs.existsSync(stateFile)) {
-      try {
-        diskState = JSON.parse(fs.readFileSync(stateFile, 'utf8'));
-      } catch (_err) {
-        diskState = { checked: [], last_active: Date.now() };
-      }
-    }
+    const diskState = loadStateFromDisk(stateFile);
 
     const now = Date.now();
     const readFiles = (diskState.read_files && typeof diskState.read_files === 'object' && !Array.isArray(diskState.read_files))
@@ -535,22 +570,11 @@ function recordToolUse(rawInput) {
     };
 
     const finalState = mergeState(diskState, memoryState, now);
-
-    // Atomic write via temp file
-    const tmpFile = `${stateFile}.tmp.${process.pid}.${crypto.randomBytes(4).toString('hex')}`;
-    fs.writeFileSync(tmpFile, JSON.stringify(finalState, null, 2), 'utf8');
-    try {
-      fs.renameSync(tmpFile, stateFile);
-    } catch (e) {
-      if (e && (e.code === 'EEXIST' || e.code === 'EPERM')) {
-        try { fs.unlinkSync(stateFile); } catch (_unlinkErr) { void 0; }
-        fs.renameSync(tmpFile, stateFile);
-      } else {
-        throw e;
-      }
-    }
-  } catch (_err) {
-    // Fail silently in PostToolUse to never disrupt the agent
+    writeStateToDiskAtomic(stateFile, finalState);
+  } catch (err) {
+    const errorMsg = `[GateGuard] Failed to persist evidence state: ${err.message}\n`;
+    process.stderr.write(errorMsg);
+    return { output: '', stderr: errorMsg.trim(), exitCode: 0 };
   }
 
   return { output: '', exitCode: 0 };
