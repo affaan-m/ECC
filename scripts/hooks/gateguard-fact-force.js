@@ -28,6 +28,15 @@ const path = require('path');
 const { extractCommandSubstitutions, extractSubshellGroups, extractBraceGroups } = require('../lib/shell-substitution');
 const { classifyPowerShellDestructiveCommand } = require('../lib/powershell-destructive-command');
 const { stripHeredocBodies } = require('./gateguard-heredoc');
+const {
+  isTrivialChange,
+  riskTier,
+  evidenceLevel,
+  validScopePass,
+  grantScopePass,
+  pruneEvidence,
+  EVIDENCE_MAX_ENTRIES
+} = require('./gateguard-evidence-ledger');
 
 // Session state — scoped per session to avoid cross-session races.
 const STATE_DIR = process.env.GATEGUARD_STATE_DIR || path.join(process.env.HOME || process.env.USERPROFILE || '/tmp', '.gateguard');
@@ -53,11 +62,17 @@ const ROUTINE_POWERSHELL_NARROW_RECOVERY_HINT =
 const ECC_DISABLE_VALUES = new Set(['0', 'false', 'off', 'disabled', 'disable']);
 const ECC_ENABLE_VALUES = new Set(['1', 'true', 'on', 'enabled', 'enable', 'yes']);
 
-// SQL-keyword + dd patterns stay as a single regex — they are stable
+function isEvidenceBypassEnabled() {
+  const envVal = process.env.GATEGUARD_EVIDENCE_BYPASS;
+  if (!envVal) return true;
+  return !ECC_DISABLE_VALUES.has(String(envVal).trim().toLowerCase());
+}
+
+// SQL-keyword + dd + destructive IaC patterns stay as a single regex — they are stable
 // phrases without shell-flag ordering concerns. Quoted strings are
 // stripped before this regex runs so a commit message mentioning
 // "drop table" no longer triggers a false positive.
-const DESTRUCTIVE_SQL_DD = /\b(drop\s+table|delete\s+from|truncate|dd\s+if=)\b/i;
+const DESTRUCTIVE_SQL_DD = /\b(drop\s+table|delete\s+from|truncate|dd\s+if=|terraform\s+destroy|tofu\s+destroy|kubectl\s+delete\s+(?:namespace|ns|node|all|pv|pvc))\b/i;
 
 // Operator-supplied additional destructive patterns. Lazily compiled from
 // `GATEGUARD_BASH_EXTRA_DESTRUCTIVE` (regex source) on first use, then
@@ -1124,6 +1139,9 @@ function saveState(state) {
     let mergedChecked = Array.isArray(state.checked) ? state.checked : [];
     let mergedLastActive = typeof state.last_active === 'number' ? state.last_active : 0;
     let mergedDenials = getDenialCount(state);
+    let mergedEvidence = Array.isArray(state.evidence) ? state.evidence : [];
+    let mergedReadFiles = Array.isArray(state.read_files) ? state.read_files : [];
+    let mergedScopePasses = (state.scope_passes && typeof state.scope_passes === 'object') ? state.scope_passes : {};
 
     try {
       if (fs.existsSync(stateFile)) {
@@ -1135,6 +1153,15 @@ function saveState(state) {
           mergedLastActive = Math.max(mergedLastActive, diskState.last_active);
         }
         mergedDenials = Math.max(mergedDenials, getDenialCount(diskState));
+        if (Array.isArray(diskState.evidence)) {
+          mergedEvidence = pruneEvidence([...diskState.evidence, ...mergedEvidence], Date.now());
+        }
+        if (Array.isArray(diskState.read_files)) {
+          mergedReadFiles = Array.from(new Set([...diskState.read_files, ...mergedReadFiles])).slice(-EVIDENCE_MAX_ENTRIES);
+        }
+        if (diskState.scope_passes && typeof diskState.scope_passes === 'object') {
+          mergedScopePasses = Object.assign({}, diskState.scope_passes, mergedScopePasses);
+        }
       }
     } catch (_) {
       /* ignore malformed or transient disk state */
@@ -1143,7 +1170,10 @@ function saveState(state) {
     const finalState = {
       checked: pruneCheckedEntries(mergedChecked),
       last_active: Math.max(mergedLastActive, Date.now()),
-      fact_force_denials: mergedDenials
+      fact_force_denials: mergedDenials,
+      evidence: pruneEvidence(mergedEvidence, Date.now()),
+      read_files: mergedReadFiles,
+      scope_passes: mergedScopePasses
     };
 
     // Atomic write: temp file + rename prevents partial reads
@@ -1578,7 +1608,42 @@ function run(rawInput) {
       return rawInput; // parent session already passed the first-touch file gate
     }
 
+    if (isTrivialChange(toolName, toolInput)) {
+      return rawInput; // allow comment/whitespace-only edits
+    }
+
     if (!isChecked(filePath)) {
+      const state = loadState();
+      const now = Date.now();
+      const tier = riskTier(toolName, toolInput, filePath);
+
+      let autoPass = false;
+      if (isEvidenceBypassEnabled()) {
+        if (tier === 'high') {
+          autoPass = false;
+        } else if (tier === 'elevated') {
+          if (evidenceLevel(filePath, state, now) === 'deep') {
+            autoPass = true;
+          }
+        } else {
+          const level = evidenceLevel(filePath, state, now);
+          if (level === 'deep') {
+            autoPass = true;
+          } else if (level === 'touched' && validScopePass(filePath, state, now)) {
+            autoPass = true;
+          }
+        }
+      }
+
+      if (autoPass) {
+        grantScopePass(state, filePath, now);
+        if (!state.checked.includes(filePath)) {
+          state.checked.push(filePath);
+        }
+        saveState(state);
+        return rawInput; // allow
+      }
+
       const { ok, denials } = markCheckedAndCountDenial(filePath);
       if (!ok) {
         return allowWithStateWarning();
@@ -1603,18 +1668,55 @@ function run(rawInput) {
     const edits = toolInput.edits || [];
     for (const edit of edits) {
       const filePath = edit.file_path || '';
-      if (filePath && !isClaudeSettingsPath(filePath) && !isExemptPath(filePath, data) && !isChecked(filePath)) {
-        const { ok, denials } = markCheckedAndCountDenial(filePath);
-        if (!ok) {
-          return allowWithStateWarning();
-        }
-        if (denials > getFullDenialBudget()) {
-          return denyResult(condensedGateMsg('edit', filePath, denials), { includeRecoveryHint: false });
-        }
-        return denyResult(editGateMsg(filePath), {
-          narrowRecoveryHint: EDIT_WRITE_NARROW_RECOVERY_HINT
-        });
+      if (!filePath || isClaudeSettingsPath(filePath) || isExemptPath(filePath, data) || isChecked(filePath)) {
+        continue;
       }
+
+      if (isTrivialChange('Edit', edit)) {
+        continue;
+      }
+
+      const state = loadState();
+      const now = Date.now();
+      const tier = riskTier('Edit', edit, filePath);
+
+      let autoPass = false;
+      if (isEvidenceBypassEnabled()) {
+        if (tier === 'high') {
+          autoPass = false;
+        } else if (tier === 'elevated') {
+          if (evidenceLevel(filePath, state, now) === 'deep') {
+            autoPass = true;
+          }
+        } else {
+          const level = evidenceLevel(filePath, state, now);
+          if (level === 'deep') {
+            autoPass = true;
+          } else if (level === 'touched' && validScopePass(filePath, state, now)) {
+            autoPass = true;
+          }
+        }
+      }
+
+      if (autoPass) {
+        grantScopePass(state, filePath, now);
+        if (!state.checked.includes(filePath)) {
+          state.checked.push(filePath);
+        }
+        saveState(state);
+        continue;
+      }
+
+      const { ok, denials } = markCheckedAndCountDenial(filePath);
+      if (!ok) {
+        return allowWithStateWarning();
+      }
+      if (denials > getFullDenialBudget()) {
+        return denyResult(condensedGateMsg('edit', filePath, denials), { includeRecoveryHint: false });
+      }
+      return denyResult(editGateMsg(filePath), {
+        narrowRecoveryHint: EDIT_WRITE_NARROW_RECOVERY_HINT
+      });
     }
     return rawInput; // allow
   }

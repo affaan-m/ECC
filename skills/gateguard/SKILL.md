@@ -134,15 +134,21 @@ load-bearing destructive-Bash checks keep running:
 
 | Variable | Default | Effect |
 |---|---|---|
-| `GATEGUARD_BASH_ROUTINE_DISABLED` | unset (gate on) | Disables the **routine-Bash** gate only. The destructive-Bash gate (`rm -rf`, `git reset --hard`, `drop table`, `dd if=`, …) is unaffected. |
+| `GATEGUARD_EVIDENCE_BYPASS` | `1` (on) | Controls evidence-based recognition audit. When enabled, files that have been deeply investigated (`Read` + `Grep`/`Glob`/investigative Bash) or covered by a 30-min directory scope pass bypass the first-touch ceremony without denial. Set to `0` or `off` to require manual denial/retry on every target. |
+| `GATEGUARD_BASH_ROUTINE_DISABLED` | unset (gate on) | Disables the **routine-Bash** gate only. The destructive-Bash gate (`rm -rf`, `git reset --hard`, `drop table`, `terraform destroy`, `kubectl delete`, …) is unaffected. |
 | `GATEGUARD_EXEMPT_GLOBS` | unset (no exemptions) | Comma-separated globs; a matching Edit/Write/MultiEdit target skips first-touch fact-forcing. Intended for low-import-value trees (tests, generated artifacts, scratch dirs) where "who imports this / what schema" carries no signal. |
 | `GATEGUARD_FACT_FORCE_FULL_DENIALS` | `3` | How many denials emit the full four-fact block before later ones condense to a single line. `0` condenses from the very first denial. |
 | `GATEGUARD_BASH_EXTRA_DESTRUCTIVE` | unset | Extra destructive-command patterns, as regex source, added to the built-in set. A malformed regex is treated as unset (built-ins still apply) and logged once to stderr. |
 | `GATEGUARD_STATE_DIR` | `~/.gateguard` | Where per-session gate state is kept. If state cannot be persisted the gate allows the operation rather than looping, and names this variable in the warning. |
 
-`GATEGUARD_BASH_ROUTINE_DISABLED` accepts `1`, `true`, `on`, `enabled`,
-`enable`, or `yes` (case- and whitespace-insensitive); any other value
-leaves the gate on.
+### Evidence Ledger & Recognition Audit
+
+GateGuard tracks exploratory tool calls (`Read`, `Grep`, `Glob`, and investigative `Bash` commands like `rg`, `find`, `cat`, `git diff`, `git log`) in a per-session Evidence Ledger with a 30-minute TTL:
+
+- **Zero-Friction Pass (`deep` evidence)**: When Claude has genuinely investigated a file (read its contents and cross-referenced its symbols or dependencies), the first-touch `[Fact-Forcing Gate]` allows the edit immediately without requiring an artificial denial and retry cycle.
+- **Trivial Change Pass**: Edits that only alter comments or whitespace are recognized as trivial and pass without ceremony.
+- **Directory Scope Passes**: Once a file receives a deep-evidence pass, a 30-minute scope pass is granted to its directory. Sibling files in the same directory that have already been read (`touched`) can be edited without repetitive gating.
+- **Risk Tiers**: Sensitive targets (`.env*`, `auth/`, `payments/`, `migrations/`, `.github/workflows/`) and edits that alter public exported signatures are treated as `high` or `elevated` risk and are never silently bypassed.
 
 #### Turning the gate off completely
 
