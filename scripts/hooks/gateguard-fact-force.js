@@ -560,6 +560,7 @@ function isDestructiveQuoteAware(raw, depth = 0) {
     if (isDestructiveGit(tokens)) return true;
     if (isDestructiveSqlClient(tokens)) return true;
     if (isDestructiveFindExec(tokens.join(' '))) return true;
+    if (isDestructiveIaC(tokens.join(' '))) return true;
     const wi = unwrapLeadWrappers(tokens);
     const base = wi < tokens.length ? commandBasename(tokens[wi]) : '';
     if (SHELL_WRAPPERS.has(base)) {

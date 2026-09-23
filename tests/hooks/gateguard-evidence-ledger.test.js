@@ -50,15 +50,10 @@ function test(name, fn) {
 }
 
 function clearState() {
-  try {
-    if (fs.existsSync(stateDir)) {
-      fs.rmSync(stateDir, { recursive: true, force: true });
-    }
-    fs.mkdirSync(stateDir, { recursive: true });
-  } catch (_err) {
-    /* ignore cleanup error */
-    void 0;
+  if (fs.existsSync(stateDir)) {
+    fs.rmSync(stateDir, { recursive: true, force: true });
   }
+  fs.mkdirSync(stateDir, { recursive: true });
 }
 
 function writeState(state) {
@@ -552,13 +547,21 @@ if (test('reports diagnostic to stderr when state directory is an uncreatable fi
   }
 })) passed++; else failed++;
 
+clearState();
+if (test('denies quoted and subshell-wrapped terraform destroy (CodeRabbit CWE-693 resolution)', () => {
+  const result = runBashHook({
+    tool_name: 'Bash',
+    tool_input: { command: 'bash -c "terraform destroy"' }
+  });
+  const out = parseOutput(result.stdout);
+  assert.strictEqual(out.hookSpecificOutput?.permissionDecision, 'deny');
+  assert.ok(out.hookSpecificOutput?.permissionDecisionReason.includes('rollback'));
+})) passed++; else failed++;
+
 // Cleanup
 clearState();
-try {
-  fs.rmdirSync(stateDir);
-} catch (_err) {
-  /* ignore cleanup error */
-  void 0;
+if (fs.existsSync(stateDir)) {
+  fs.rmSync(stateDir, { recursive: true, force: true });
 }
 
 console.log(`\nEvidence Ledger test summary: ${passed} passed, ${failed} failed`);
