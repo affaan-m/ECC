@@ -1,4 +1,5 @@
 const adalProject = require('./adal-project');
+const antigravityHome = require('./antigravity-home');
 const antigravityProject = require('./antigravity-project');
 const claudeHome = require('./claude-home');
 const claudeProject = require('./claude-project');
@@ -19,6 +20,7 @@ const ADAPTERS = Object.freeze([
   claudeHome,
   claudeProject,
   cursorProject,
+  antigravityHome,
   antigravityProject,
   codexHome,
   geminiProject,

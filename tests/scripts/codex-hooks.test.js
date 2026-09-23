@@ -406,6 +406,7 @@ function runHermeticPythonPrePush({
     HOME: process.env.HOME ?? '',
     ECC_SKIP_GIT_HOOKS: '0',
     ECC_SKIP_PREPUSH: '0',
+    ECC_PREPUSH_RUN_CHECKS: '1',
     MSYS_NO_PATHCONV: '1',
     ...(venvDir === null || trackVenv ? {} : { VIRTUAL_ENV: toBashPath(venvDir) }),
     ...(override === null ? {} : { ECC_PYTEST_CMD: override }),
@@ -452,7 +453,7 @@ else failed++;
 // A case-folded spelling, because macOS resolves `$venv/bin/python` to a committed
 // `Python` while git matches index pathspecs case-sensitively. Skipped where the
 // filesystem is case-sensitive and the two names cannot collide.
-if (fs.existsSync(__filename.toUpperCase()) || fs.existsSync(__filename.toLowerCase())) {
+if (fs.existsSync(__filename.toUpperCase()) && fs.existsSync(__filename.toLowerCase())) {
   if (
     test('pre-push refuses a tracked interpreter committed under a folded case', () => {
       const { result, calls } = runHermeticPythonPrePush({

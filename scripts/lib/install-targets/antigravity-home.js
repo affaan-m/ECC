@@ -1,35 +1,20 @@
+'use strict';
+
 const fs = require('fs');
 const path = require('path');
 
 const {
+  HOME_INSTALL_EXCLUDED_SOURCE_PATHS,
   createFlatRuleOperations,
   createInstallTargetAdapter,
   createManagedOperation,
   createManagedScaffoldOperation,
+  isForeignPlatformPath,
   normalizeRelativePath,
 } = require('./helpers');
 const { buildAntigravityHooksConfig } = require('../antigravity-hooks');
 const { buildAntigravityMcpConfig } = require('../antigravity-mcp');
 const { buildAntigravityPluginManifest } = require('../antigravity-plugin');
-
-const SUPPORTED_SOURCE_PREFIXES = [
-  'rules',
-  'commands',
-  'agents',
-  'skills',
-  'hooks',
-  'scripts/hooks',
-  'scripts/lib',
-  'mcp-configs',
-  '.mcp.json',
-];
-
-function supportsAntigravitySourcePath(sourceRelativePath) {
-  const normalizedPath = normalizeRelativePath(sourceRelativePath);
-  return SUPPORTED_SOURCE_PREFIXES.some(prefix => (
-    normalizedPath === prefix || normalizedPath.startsWith(`${prefix}/`)
-  ));
-}
 
 function readJsonObject(filePath, label) {
   let parsed;
@@ -47,16 +32,13 @@ function readJsonObject(filePath, label) {
 }
 
 module.exports = createInstallTargetAdapter({
-  id: 'antigravity-project',
-  target: 'antigravity',
-  kind: 'project',
-  rootSegments: ['.agents'],
+  id: 'antigravity-home',
+  target: 'antigravity-home',
+  kind: 'home',
+  rootSegments: ['.gemini', 'config', 'plugins', 'ecc'],
   installStatePathSegments: ['ecc-install-state.json'],
-  nativeRootRelativePath: '.agents',
-  supportsModule(module) {
-    const paths = Array.isArray(module && module.paths) ? module.paths : [];
-    return paths.length > 0;
-  },
+  nativeRootRelativePath: '.gemini',
+  excludedSourcePaths: HOME_INSTALL_EXCLUDED_SOURCE_PATHS,
   planOperations(input, adapter) {
     const modules = Array.isArray(input.modules)
       ? input.modules
@@ -76,7 +58,7 @@ module.exports = createInstallTargetAdapter({
     return modules.flatMap(module => {
       const paths = Array.isArray(module.paths) ? module.paths : [];
       return paths
-        .filter(supportsAntigravitySourcePath)
+        .filter(p => !isForeignPlatformPath(p, 'antigravity') && !adapter.excludesSourcePath(p))
         .flatMap(sourceRelativePath => {
           const normalizedSourcePath = normalizeRelativePath(sourceRelativePath);
 
@@ -194,7 +176,7 @@ module.exports = createInstallTargetAdapter({
                 kind: 'merge-json',
                 moduleId: module.id,
                 sourceRelativePath: 'plugin.json',
-                destinationPath: path.join(targetRoot, 'plugins', 'ecc', 'plugin.json'),
+                destinationPath: path.join(targetRoot, 'plugin.json'),
                 strategy: 'merge-json',
                 ownership: 'managed',
                 scaffoldOnly: false,

@@ -6,7 +6,7 @@ const path = require('path');
 const { assertWithinTrustedRoot } = require('../path-safety');
 
 function isCodexUserConfig(plan, operation) {
-  if (plan.adapter.id !== 'codex-home' || operation.kind !== 'copy-file') {
+  if (plan?.adapter?.id !== 'codex-home' || operation?.kind !== 'copy-file') {
     return false;
   }
   const relativePath = path.relative(plan.targetRoot, operation.destinationPath);

@@ -60,6 +60,7 @@ function isHookRuntimeOperation(operation = {}) {
     || source.startsWith('.cursor/hooks/')
     || source === '.cursor/hooks.json'
     || destination.endsWith('/hooks/hooks.json')
+    || destination.endsWith('/hooks.json')
     || destination.endsWith('/.cursor/hooks.json')
     || destination.includes('/.cursor/hooks/')
   );
