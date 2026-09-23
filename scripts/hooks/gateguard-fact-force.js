@@ -32,6 +32,7 @@ const { stripHeredocBodies } = require('./gateguard-heredoc');
 const {
   isTrivialChange,
   riskTier,
+  EVIDENCE_TTL_MS,
   evidenceLevel,
   validScopePass,
   grantScopePass,
@@ -48,7 +49,7 @@ const STATE_DIR = process.env.GATEGUARD_STATE_DIR || path.join(process.env.HOME 
 let activeStateFile = null;
 
 // State expires after 30 minutes of inactivity
-const SESSION_TIMEOUT_MS = 30 * 60 * 1000;
+const SESSION_TIMEOUT_MS = EVIDENCE_TTL_MS;
 const READ_HEARTBEAT_MS = 60 * 1000;
 
 // Maximum checked entries to prevent unbounded growth
@@ -85,7 +86,7 @@ const KUBECTL_GLOBAL_OPTIONS_WITH_VALUE = new Set([
   '--request-timeout', '-s', '--server', '--token', '--user', '--username', '--as-user-extra', '--kuberc',
   '--profile', '--profile-output', '--proxy-url', '--storage-driver-buffer-duration',
   '--storage-driver-db', '--storage-driver-host', '--storage-driver-password',
-  '--storage-driver-table', '--storage-driver-user', '--tls-server-name'
+  '--storage-driver-table', '--storage-driver-user', '--tls-server-name', '-v', '--v', '--vmodule'
 ]);
 const KUBECTL_DELETE_OPTIONS_WITH_VALUE = new Set([
   '--cascade', '--dry-run', '--field-selector', '-f', '--filename', '--grace-period', '-k', '--kustomize',
@@ -155,7 +156,8 @@ function isDestructiveTerraform(args) {
 /** Treats `-destroy` boolean assignments as enabled unless explicitly false. */
 function isEnabledDestroyModeFlag(arg) {
   const [flag, value] = String(arg).toLowerCase().split('=', 2);
-  if (flag !== '-destroy') return false;
+  const normalizedFlag = flag.startsWith('--') ? flag.slice(1) : flag;
+  if (normalizedFlag !== '-destroy') return false;
   return value === undefined || !['false', '0', 'f'].includes(value);
 }
 
@@ -171,19 +173,28 @@ function isDestructiveKubectl(args) {
   if (subcommandIndex < 0 || args[subcommandIndex].toLowerCase() !== 'delete') return false;
 
   const deleteArgs = args.slice(subcommandIndex + 1);
+  const resources = [];
+  let afterOptions = false;
   for (let i = 0; i < deleteArgs.length; i += 1) {
     const arg = deleteArgs[i].toLowerCase();
+    if (afterOptions) {
+      resources.push(arg);
+      continue;
+    }
+    if (arg === '--') {
+      afterOptions = true;
+      continue;
+    }
     if (arg === '--all') return true;
-    if (arg === '--') return deleteArgs.slice(i + 1).some(isDangerousKubectlResource);
     if (isUninspectableKubectlDeleteOption(arg)) return true;
     if (arg.startsWith('-')) {
       const option = arg.split('=')[0];
       if (KUBECTL_DELETE_OPTIONS_WITH_VALUE.has(option) && !arg.includes('=')) i += 1;
       continue;
     }
-    return isDangerousKubectlResource(arg);
+    resources.push(arg);
   }
-  return false;
+  return resources.some(isDangerousKubectlResource);
 }
 
 /** Returns whether a resource token or resource/name pair targets a risky type. */
@@ -1108,9 +1119,11 @@ function isDestructiveFindExecCommand(execTokens) {
 
 /** Detects destructive commands in all `find -exec/-execdir/-ok` clauses. */
 function isDestructiveFindExecTokens(tokens) {
-  if (!Array.isArray(tokens) || commandBasename(tokens[0] || '') !== 'find') return false;
+  if (!Array.isArray(tokens)) return false;
+  const start = unwrapLeadWrappers(tokens);
+  if (start >= tokens.length || commandBasename(tokens[start] || '') !== 'find') return false;
 
-  for (let index = 1; index < tokens.length; index += 1) {
+  for (let index = start + 1; index < tokens.length; index += 1) {
     if (!FIND_EXEC_OPERATORS.has(tokens[index])) continue;
     const execTokens = [];
     for (index += 1; index < tokens.length; index += 1) {
@@ -1181,8 +1194,10 @@ function isDestructiveBash(command) {
 
 /** Detects `find ... -delete`, which mutates matched paths directly. */
 function isDestructiveFindDelete(tokens) {
-  if (!Array.isArray(tokens) || commandBasename(tokens[0] || '') !== 'find') return false;
-  for (let index = 1; index < tokens.length; index += 1) {
+  if (!Array.isArray(tokens)) return false;
+  const start = unwrapLeadWrappers(tokens);
+  if (start >= tokens.length || commandBasename(tokens[start] || '') !== 'find') return false;
+  for (let index = start + 1; index < tokens.length; index += 1) {
     if (FIND_EXEC_OPERATORS.has(tokens[index])) {
       for (index += 1; index < tokens.length; index += 1) {
         if (FIND_EXEC_TERMINATORS.has(tokens[index])) break;

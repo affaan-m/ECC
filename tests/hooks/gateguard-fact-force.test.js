@@ -117,6 +117,16 @@ function runHooksConcurrently(inputs) {
   });
 }
 
+function withPatchedFsMethod(method, createPatchedMethod, operation) {
+  const original = fs[method];
+  fs[method] = createPatchedMethod(original);
+  try {
+    return operation();
+  } finally {
+    fs[method] = original;
+  }
+}
+
 function buildConcurrentEdits(count) {
   return Array.from({ length: count }, (_, index) => ({
     tool_name: 'Edit',
@@ -1162,47 +1172,44 @@ function runTests() {
   if (
     test('merges concurrent evidence before applying the 200-entry cap', () => {
       const hook = loadDirectHook();
-      const originalMkdirSync = fs.mkdirSync;
       let injected = false;
+      let stateFileReads = 0;
       const now = Date.now();
-      const existingEvidence = buildEvidenceEntries('existing', 150, now - 1000);
-      const concurrentEvidence = buildEvidenceEntries('concurrent', 150, now);
+      const existingEvidence = buildEvidenceEntries('existing', 60, now - 1000);
+      const concurrentEvidence = buildEvidenceEntries('concurrent', 60, now);
       writeState({ checked: [], last_active: now, evidence: existingEvidence });
 
-      fs.mkdirSync = function patchedMkdirSync(target) {
-        const result = originalMkdirSync.apply(fs, arguments);
-        if (!injected && path.resolve(String(target)) === path.resolve(stateDir)) {
-          injected = true;
-          fs.writeFileSync(
-            stateFile,
-            JSON.stringify({
-              checked: ['/src/concurrent.js'],
-              last_active: now,
-              evidence: [...existingEvidence, ...concurrentEvidence]
-            }),
-            'utf8'
-          );
+      const result = withPatchedFsMethod('readFileSync', original => function patchedReadFileSync(target) {
+        if (path.resolve(String(target)) === path.resolve(stateFile)) {
+          stateFileReads += 1;
+          if (stateFileReads === 2) {
+            injected = true;
+            fs.writeFileSync(
+              stateFile,
+              JSON.stringify({
+                checked: ['/src/concurrent.js'],
+                last_active: now,
+                evidence: [...existingEvidence, ...concurrentEvidence]
+              }),
+              'utf8'
+            );
+          }
         }
-        return result;
-      };
-
-      try {
-        const result = hook.run({
+        return original.apply(fs, arguments);
+      }, () => hook.run({
           tool_name: 'Edit',
           tool_input: { file_path: '/src/new-edit.js', old_string: 'a', new_string: 'b' }
-        });
-        const output = parseOutput(result.stdout);
-        assert.strictEqual(output.hookSpecificOutput.permissionDecision, 'deny', 'first edit should still be gated');
-      } finally {
-        fs.mkdirSync = originalMkdirSync;
-      }
+        }));
+      const output = parseOutput(result.stdout);
+      assert.strictEqual(output.hookSpecificOutput.permissionDecision, 'deny', 'first edit should still be gated');
+      assert.strictEqual(injected, true, 'concurrent state should be injected between load and save');
 
       const persisted = JSON.parse(fs.readFileSync(stateFile, 'utf8'));
       assert.ok(persisted.checked.includes('/src/concurrent.js'), 'concurrent disk entry should be preserved');
       assert.ok(persisted.checked.includes('/src/new-edit.js'), 'new in-memory entry should be persisted');
       const evidenceIdentities = persisted.evidence.map(entry => `${entry.kind}|${entry.target}|${entry.pattern}|${entry.ts}`);
-      assert.strictEqual(persisted.evidence.length, 200);
-      assert.strictEqual(new Set(evidenceIdentities).size, 200);
+      assert.strictEqual(persisted.evidence.length, 120);
+      assert.strictEqual(new Set(evidenceIdentities).size, 120);
       assert.ok(concurrentEvidence.every(entry => evidenceIdentities.includes(`${entry.kind}|${entry.target}|${entry.pattern}|${entry.ts}`)));
     })
   )

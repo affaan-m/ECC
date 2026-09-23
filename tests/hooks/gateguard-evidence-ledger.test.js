@@ -202,6 +202,27 @@ if (test('buildEvidenceEntry identifies Read, Grep, Glob, and Investigative Bash
   assert.strictEqual(nonTargetTool, null);
 })) passed++; else failed++;
 
+if (test('records literal tool paths containing framework metacharacters', () => {
+  const now = Date.now();
+  const readEntry = buildEvidenceEntry('Read', { file_path: '/app/[slug]/page.tsx' });
+  const grepEntry = buildEvidenceEntry('Grep', { path: '/app/[slug]', pattern: 'params' });
+  const globEntry = buildEvidenceEntry('Glob', { path: '/routes/$id', pattern: '*.tsx' });
+
+  assert.strictEqual(readEntry.target, '/app/[slug]/page.tsx');
+  assert.strictEqual(grepEntry.target, '/app/[slug]');
+  assert.strictEqual(globEntry.target, '/routes/$id');
+  assert.strictEqual(evidenceLevel('/app/[slug]/page.tsx', {
+    read_files: { '/app/[slug]/page.tsx': now },
+    evidence: [readEntry, grepEntry]
+  }, now), 'deep');
+})) passed++; else failed++;
+
+if (test('rejects shell investigation paths that require expansion', () => {
+  const entry = buildEvidenceEntry('Bash', { command: 'rg params /app/[slug]/page.tsx' });
+
+  assert.strictEqual(entry, null);
+})) passed++; else failed++;
+
 if (test('records the searched file after ripgrep --pre consumes its command value', () => {
   const entry = buildEvidenceEntry('Bash', {
     command: 'rg --pre cat needle /tmp/other.js'
@@ -563,6 +584,29 @@ if (test('recordToolUse persists evidence into state file', () => {
   assert.ok(state.read_files['/src/services/api.js']);
 })) passed++; else failed++;
 
+clearState();
+if (test('recordToolUse does not revive checked entries from an expired session', () => {
+  writeState({
+    checked: ['/src/already-checked.js'],
+    last_active: Date.now() - EVIDENCE_TTL_MS - 1000,
+    evidence: [],
+    read_files: {}
+  });
+
+  recordToolUse({
+    session_id: TEST_SESSION_ID,
+    tool_name: 'Read',
+    tool_input: { file_path: '/src/recent-read.js' }
+  });
+
+  const result = runHook({
+    tool_name: 'Edit',
+    tool_input: { file_path: '/src/already-checked.js', old_string: 'before', new_string: 'after' }
+  });
+
+  assert.strictEqual(parseOutput(result.stdout).hookSpecificOutput.permissionDecision, 'deny');
+})) passed++; else failed++;
+
 // 10. Integration: PreToolUse bypasses gate when evidence is deep for normal risk
 clearState();
 if (test('PreToolUse Edit automatically allows without denial when evidence is deep', () => {
@@ -705,6 +749,20 @@ if (test('denies Terraform apply with destroy mode enabled through an equals fla
 })) passed++; else failed++;
 
 clearState();
+if (test('denies Terraform apply with the double-dash destroy mode flag', () => {
+  const result = runBashHook({ tool_name: 'Bash', tool_input: { command: 'terraform apply --destroy -auto-approve' } }, { GATEGUARD_BASH_ROUTINE_DISABLED: '1' });
+
+  assert.strictEqual(parseOutput(result.stdout).hookSpecificOutput.permissionDecision, 'deny');
+})) passed++; else failed++;
+
+clearState();
+if (test('denies OpenTofu plan with the double-dash destroy mode flag', () => {
+  const result = runBashHook({ tool_name: 'Bash', tool_input: { command: 'tofu plan --destroy' } }, { GATEGUARD_BASH_ROUTINE_DISABLED: '1' });
+
+  assert.strictEqual(parseOutput(result.stdout).hookSpecificOutput.permissionDecision, 'deny');
+})) passed++; else failed++;
+
+clearState();
 if (test('does not treat an explicitly disabled Terraform destroy flag as destructive', () => {
   const result = runBashHook({ tool_name: 'Bash', tool_input: { command: 'terraform plan -destroy=false' } }, {
     GATEGUARD_BASH_ROUTINE_DISABLED: '1'
@@ -721,6 +779,27 @@ if (test('denies kubectl delete namespace with context flag', () => {
   const out = parseOutput(result.stdout);
   assert.strictEqual(out.hookSpecificOutput?.permissionDecision, 'deny');
   assert.ok(out.hookSpecificOutput?.permissionDecisionReason.includes('rollback'));
+})) passed++; else failed++;
+
+clearState();
+if (test('denies kubectl delete after a short verbosity option value', () => {
+  const result = runBashHook({ tool_name: 'Bash', tool_input: { command: 'kubectl -v 8 delete namespace prod' } }, { GATEGUARD_BASH_ROUTINE_DISABLED: '1' });
+
+  assert.strictEqual(parseOutput(result.stdout).hookSpecificOutput.permissionDecision, 'deny');
+})) passed++; else failed++;
+
+clearState();
+if (test('denies kubectl delete after the long verbosity option value', () => {
+  const result = runBashHook({ tool_name: 'Bash', tool_input: { command: 'kubectl --v 8 delete namespace prod' } }, { GATEGUARD_BASH_ROUTINE_DISABLED: '1' });
+
+  assert.strictEqual(parseOutput(result.stdout).hookSpecificOutput.permissionDecision, 'deny');
+})) passed++; else failed++;
+
+clearState();
+if (test('denies kubectl delete after the vmodule option value', () => {
+  const result = runBashHook({ tool_name: 'Bash', tool_input: { command: 'kubectl --vmodule api=2 delete namespace prod' } }, { GATEGUARD_BASH_ROUTINE_DISABLED: '1' });
+
+  assert.strictEqual(parseOutput(result.stdout).hookSpecificOutput.permissionDecision, 'deny');
 })) passed++; else failed++;
 
 clearState();
@@ -814,6 +893,27 @@ if (test('denies kubectl delete all requests', () => {
 })) passed++; else failed++;
 
 clearState();
+if (test('denies kubectl delete when --all follows a safe resource argument', () => {
+  const result = runBashHook({ tool_name: 'Bash', tool_input: { command: 'kubectl delete pods --all -A' } }, { GATEGUARD_BASH_ROUTINE_DISABLED: '1' });
+
+  assert.strictEqual(parseOutput(result.stdout).hookSpecificOutput.permissionDecision, 'deny');
+})) passed++; else failed++;
+
+clearState();
+if (test('denies kubectl delete when a dangerous resource follows a safe resource', () => {
+  const result = runBashHook({ tool_name: 'Bash', tool_input: { command: 'kubectl delete pod/tmp namespace/prod' } }, { GATEGUARD_BASH_ROUTINE_DISABLED: '1' });
+
+  assert.strictEqual(parseOutput(result.stdout).hookSpecificOutput.permissionDecision, 'deny');
+})) passed++; else failed++;
+
+clearState();
+if (test('denies kubectl delete when a manifest option follows the resource', () => {
+  const result = runBashHook({ tool_name: 'Bash', tool_input: { command: 'kubectl delete pod x -f ns.yaml' } }, { GATEGUARD_BASH_ROUTINE_DISABLED: '1' });
+
+  assert.strictEqual(parseOutput(result.stdout).hookSpecificOutput.permissionDecision, 'deny');
+})) passed++; else failed++;
+
+clearState();
 if (test('denies command-wrapped Terraform destroy', () => {
   const result = runBashHook({ tool_name: 'Bash', tool_input: { command: 'command terraform destroy' } });
   assert.ok(parseOutput(result.stdout).hookSpecificOutput.permissionDecisionReason.includes('rollback'));
@@ -873,6 +973,27 @@ if (test('denies destructive shell commands invoked by find exec', () => {
   });
 
   assert.ok(parseOutput(result.stdout).hookSpecificOutput.permissionDecisionReason.includes('rollback'));
+})) passed++; else failed++;
+
+clearState();
+if (test('denies find delete when wrapped by sudo', () => {
+  const result = runBashHook({ tool_name: 'Bash', tool_input: { command: 'sudo find /var/cache -delete' } }, { GATEGUARD_BASH_ROUTINE_DISABLED: '1' });
+
+  assert.strictEqual(parseOutput(result.stdout).hookSpecificOutput.permissionDecision, 'deny');
+})) passed++; else failed++;
+
+clearState();
+if (test('denies find delete when wrapped by time', () => {
+  const result = runBashHook({ tool_name: 'Bash', tool_input: { command: 'time find . -delete' } }, { GATEGUARD_BASH_ROUTINE_DISABLED: '1' });
+
+  assert.strictEqual(parseOutput(result.stdout).hookSpecificOutput.permissionDecision, 'deny');
+})) passed++; else failed++;
+
+clearState();
+if (test('denies find exec when wrapped by env', () => {
+  const result = runBashHook({ tool_name: 'Bash', tool_input: { command: 'env find . -exec rm {} \\;' } }, { GATEGUARD_BASH_ROUTINE_DISABLED: '1' });
+
+  assert.strictEqual(parseOutput(result.stdout).hookSpecificOutput.permissionDecision, 'deny');
 })) passed++; else failed++;
 
 clearState();
