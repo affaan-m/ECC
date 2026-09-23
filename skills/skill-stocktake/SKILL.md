@@ -20,6 +20,8 @@ The command targets the following paths **relative to the directory where it is 
 
 **At the start of Phase 1, the command explicitly lists which paths were found and scanned.**
 
+Directories named `.trash` are excluded from both scan modes: archived skills are not part of the live inventory. If an older `results.json` contains `.trash` entries, run a Full Stocktake once to replace that cache before resuming Quick Scan.
+
 ### Targeting a specific project
 
 To include project-level skills, run from that project's root directory:
@@ -74,6 +76,8 @@ Scanning:
 | Skill | 7d use | 30d use | Description |
 |-------|--------|---------|-------------|
 
+Usage counts come from the optional `~/.claude/observations.jsonl` file (overridable with `SKILL_STOCKTAKE_OBSERVATIONS`), which Claude Code does not create by default. When the file is absent, `use_7d` and `use_30d` are JSON `null`; display them as **unmeasured** in inventory and summary tables. A numeric `0` means the file exists but contains no matching Read observations in that window. Missing usage data is never evidence for retiring a skill.
+
 ### Phase 2 — Quality Evaluation
 
 Launch an Agent tool subagent (**general-purpose agent**) with the full inventory and checklist:
@@ -110,7 +114,7 @@ Each skill is evaluated against this checklist:
 - [ ] Content overlap with other skills checked
 - [ ] Overlap with MEMORY.md / CLAUDE.md checked
 - [ ] Freshness of technical references verified (use WebSearch if tool names / CLI flags / APIs are present)
-- [ ] Usage frequency considered
+- [ ] Usage frequency considered when measured; missing observations marked unmeasured, not treated as zero
 ```
 
 Verdict criteria:

@@ -78,7 +78,7 @@ date_ago() {
 count_obs() {
   local file="$1" cutoff="$2"
   if [[ ! -f "$OBSERVATIONS" ]]; then
-    echo 0
+    echo null
     return
   fi
   jq -r --arg p "$file" --arg c "$cutoff" \
@@ -104,9 +104,12 @@ scan_dir_to_json() {
   # Pre-aggregate observation counts in two passes (one per window) instead of
   # calling jq per-file — reduces from O(n*m) to O(n+m) jq invocations.
   local obs_7d_counts obs_30d_counts
+  # Zero is meaningful only when an observations file is available.
+  local usage_default=null
   obs_7d_counts=""
   obs_30d_counts=""
   if [[ -f "$OBSERVATIONS" ]]; then
+    usage_default=0
     obs_7d_counts=$(jq -r --arg c "$c7" \
       'select(.tool=="Read" and .timestamp>=$c) | .path' \
       "$OBSERVATIONS" 2>/dev/null | sort | uniq -c)
@@ -123,7 +126,8 @@ scan_dir_to_json() {
   # exit non-zero, which would otherwise silently under-count skills.
   # NUL-delimited (-print0 / sort_nul_file / read -d '') so a path containing a
   # literal newline can't desync record boundaries — paths here are untrusted.
-  if ! find -L "$dir" -name "SKILL.md" -type f -print0 >"$find_out" 2>"$find_err"; then
+  # Archived skills are not live inventory; prune the entire trash subtree.
+  if ! find -L "$dir" -type d -name ".trash" -prune -o -name "SKILL.md" -type f -print0 >"$find_out" 2>"$find_err"; then
     echo "Warning: find encountered errors while scanning $dir (broken symlinks or permission issues may cause skills to be missed):" >&2
     cat "$find_err" >&2
   fi
@@ -143,9 +147,9 @@ scan_dir_to_json() {
       # Use awk exact field match to avoid substring false-positives from grep -F.
       # uniq -c output format: "   N /path/to/file" — path is always field 2.
       u7=$(echo "$obs_7d_counts" | awk -v f="$file" '$2 == f {print $1}' | head -1)
-      u7="${u7:-0}"
+      u7="${u7:-$usage_default}"
       u30=$(echo "$obs_30d_counts" | awk -v f="$file" '$2 == f {print $1}' | head -1)
-      u30="${u30:-0}"
+      u30="${u30:-$usage_default}"
     fi
     dp="${file/#$HOME/~}"
 
