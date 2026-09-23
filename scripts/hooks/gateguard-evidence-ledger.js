@@ -38,7 +38,7 @@ const HIGH_RISK_PATH_RE = /(?:^|\/)\.github\/workflows\//i;
 // Java/C#/Kotlin: public class/interface/enum/record/method
 // Go: func ExportedName, type ExportedName
 // Rust: pub fn/struct/enum/trait/type/const
-const SIGNATURE_LINE_RE = /^\s*(?:async\s+def\s|def\s|class\s|export\s|function\s|interface\s|type\s+\S+\s*=|public\s+(?:(?:static|abstract|final|synchronized)\s+)*(?:class|interface|enum|record|[\w<>\[\]]+\s+\w+\s*\()|func\s+(?:\([^)]+\)\s+)?[A-Z]\w*|type\s+[A-Z]\w*\s+(?:struct|interface)|pub\s+(?:fn|struct|enum|trait|type|const))/;
+const SIGNATURE_LINE_RE = /^\s*(?:async\s+def\s|def\s|class\s|export\s|function\s|interface\s|type\s+\S+\s*=|public\s+(?:(?:static|abstract|final|synchronized)\s+)*(?:class|interface|enum|record|[\w<>[\]]+\s+\w+\s*\()|func\s+(?:\([^)]+\)\s+)?[A-Z]\w*|type\s+[A-Z]\w*\s+(?:struct|interface)|pub\s+(?:fn|struct|enum|trait|type|const))/;
 
 const INDENT_SENSITIVE_EXTS = new Set(['.py', '.pyw', '.yaml', '.yml', '.nim']);
 const INDENT_SENSITIVE_BASES = new Set(['makefile', 'gnumakefile']);
