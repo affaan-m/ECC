@@ -514,15 +514,23 @@ function loadStateFromDisk(stateFile) {
 function writeStateToDiskAtomic(stateFile, state) {
   const resolvedDest = path.resolve(stateFile);
   const tmpFile = path.resolve(`${resolvedDest}.tmp.${process.pid}.${crypto.randomBytes(4).toString('hex')}`);
-  fs.writeFileSync(tmpFile, JSON.stringify(state, null, 2), 'utf8');
+  let renamed = false;
   try {
-    fs.renameSync(tmpFile, resolvedDest);
-  } catch (e) {
-    if (e && (e.code === 'EEXIST' || e.code === 'EPERM')) {
-      try { fs.unlinkSync(resolvedDest); } catch (_unlinkErr) { void 0; }
+    fs.writeFileSync(tmpFile, JSON.stringify(state, null, 2), 'utf8');
+    try {
       fs.renameSync(tmpFile, resolvedDest);
-    } else {
-      throw e;
+    } catch (e) {
+      if (e && (e.code === 'EEXIST' || e.code === 'EPERM')) {
+        try { fs.unlinkSync(resolvedDest); } catch (_unlinkErr) { void 0; }
+        fs.renameSync(tmpFile, resolvedDest);
+      } else {
+        throw e;
+      }
+    }
+    renamed = true;
+  } finally {
+    if (!renamed) {
+      try { fs.unlinkSync(tmpFile); } catch (_cleanupErr) { void 0; }
     }
   }
 }
@@ -604,5 +612,7 @@ module.exports = {
   sanitizeSessionKey,
   resolveSessionKey,
   mergeState,
+  loadStateFromDisk,
+  writeStateToDiskAtomic,
   recordToolUse
 };

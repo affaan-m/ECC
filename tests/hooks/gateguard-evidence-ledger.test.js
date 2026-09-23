@@ -23,6 +23,7 @@ const {
   validScopePass,
   grantScopePass,
   mergeState,
+  writeStateToDiskAtomic,
   recordToolUse
 } = require('../../scripts/hooks/gateguard-evidence-ledger');
 
@@ -518,7 +519,7 @@ if (test('caps active read entries to EVIDENCE_MAX_ENTRIES', () => {
 
 // 17. Persistence failure reports diagnostic to stderr (Greptile P2 review resolution)
 if (test('reports diagnostic to stderr when state directory is an uncreatable file', () => {
-  const testFileDir = path.join(tmpRoot, `gateguard-err-file-${Date.now()}`);
+  const testFileDir = path.resolve(tmpRoot, `gateguard-err-file-${Date.now()}`);
   fs.writeFileSync(testFileDir, 'blocking-file', 'utf8');
 
   const origEnv = process.env.GATEGUARD_STATE_DIR;
@@ -587,6 +588,28 @@ if (test('permits echo and printf containing IaC destroy commands without false 
   }, { GATEGUARD_BASH_ROUTINE_DISABLED: '1' });
   const printfOut = parseOutput(printfIaC.stdout);
   assert.notStrictEqual(printfOut.hookSpecificOutput?.permissionDecisionReason?.includes('rollback'), true);
+})) passed++; else failed++;
+
+if (test('cleans up tmpFile when writeStateToDiskAtomic rename fails (CodeRabbit review resolution)', () => {
+  const destDir = fs.mkdtempSync(path.join(tmpRoot, 'gateguard-atomic-fail-'));
+  const targetFile = path.join(destDir, 'state.json');
+
+  const origRename = fs.renameSync;
+  fs.renameSync = () => {
+    throw new Error('Simulated atomic rename failure');
+  };
+
+  try {
+    assert.throws(() => {
+      writeStateToDiskAtomic(targetFile, { test: 1 });
+    }, /Simulated atomic rename failure/);
+
+    const remainingFiles = fs.readdirSync(destDir);
+    assert.strictEqual(remainingFiles.filter(f => f.includes('.tmp.')).length, 0);
+  } finally {
+    fs.renameSync = origRename;
+    try { fs.rmSync(destDir, { recursive: true, force: true }); } catch (_) { void 0; }
+  }
 })) passed++; else failed++;
 
 // Cleanup
