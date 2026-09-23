@@ -146,7 +146,7 @@ load-bearing destructive-Bash checks keep running:
 GateGuard tracks exploratory tool calls (`Read`, `Grep`, `Glob`, and investigative `Bash` commands like `rg`, `find`, `cat`, `git diff`, `git log`) in a per-session Evidence Ledger with a 30-minute TTL:
 
 - **Zero-Friction Pass (`deep` evidence)**: When Claude has genuinely investigated a file (read its contents and cross-referenced its symbols or dependencies), the first-touch `[Fact-Forcing Gate]` allows the edit immediately without requiring an artificial denial and retry cycle.
-- **Trivial Change Pass**: Edits that only alter comments or whitespace are recognized as trivial and pass without ceremony.
+- **Trivial Change Pass**: Only unambiguous whitespace-only edits in supported source files can pass without ceremony. Comment-only edits still require the normal gate because the hook has no syntax parser to distinguish comments from string content. YAML, Makefiles, Markdown, and other unsupported or whitespace-sensitive formats do not receive this bypass.
 - **Directory Scope Passes**: Once a file receives a deep-evidence pass, a 30-minute scope pass is granted to its directory. Sibling files in the same directory that have already been read (`touched`) can be edited without repetitive gating.
 - **Risk Tiers**: Sensitive targets (`.env*`, `auth/`, `payments/`, `migrations/`, GitHub workflows in `.github/workflows/`) and edits that alter public exported signatures are treated as `high` or `elevated` risk and are never silently bypassed.
 

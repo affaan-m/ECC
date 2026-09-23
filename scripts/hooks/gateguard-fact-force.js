@@ -27,6 +27,7 @@ const fs = require('fs');
 const path = require('path');
 const { extractCommandSubstitutions, extractSubshellGroups, extractBraceGroups } = require('../lib/shell-substitution');
 const { classifyPowerShellDestructiveCommand } = require('../lib/powershell-destructive-command');
+const { withStateFileLock } = require('../lib/gateguard-state-lock');
 const { stripHeredocBodies } = require('./gateguard-heredoc');
 const {
   isTrivialChange,
@@ -35,8 +36,11 @@ const {
   validScopePass,
   grantScopePass,
   pruneEvidence,
+  dedupeEvidence,
   pruneReadFiles,
-  EVIDENCE_MAX_ENTRIES
+  mergeTimestampMaps,
+  restoreStateBackup,
+  writeStateToDiskAtomic
 } = require('./gateguard-evidence-ledger');
 
 // Session state — scoped per session to avoid cross-session races.
@@ -74,18 +78,29 @@ function isEvidenceBypassEnabled() {
 // stripped before this regex runs so a commit message mentioning
 // "drop table" no longer triggers a false positive.
 const DESTRUCTIVE_SQL_DD = /\b(drop\s+table|delete\s+from|truncate|dd\s+if=)\b/i;
+const TERRAFORM_OPTIONS_WITH_VALUE = new Set(['-chdir', '-var', '-var-file', '-state', '-backup', '-state-out', '-plugin-dir', '-lock-timeout', '-parallelism']);
+const KUBECTL_GLOBAL_OPTIONS_WITH_VALUE = new Set([
+  '--as', '--as-group', '--as-uid', '--cache-dir', '--certificate-authority', '--client-certificate',
+  '--client-key', '--cluster', '--context', '--kubeconfig', '--namespace', '-n', '--password',
+  '--request-timeout', '-s', '--server', '--token', '--user', '--username', '--as-user-extra', '--kuberc',
+  '--profile', '--profile-output', '--proxy-url', '--storage-driver-buffer-duration',
+  '--storage-driver-db', '--storage-driver-host', '--storage-driver-password',
+  '--storage-driver-table', '--storage-driver-user', '--tls-server-name'
+]);
+const KUBECTL_DELETE_OPTIONS_WITH_VALUE = new Set([
+  '--cascade', '--dry-run', '--field-selector', '-f', '--filename', '--grace-period', '-k', '--kustomize',
+  '--label-selector', '-l', '--namespace', '-n', '--output', '-o', '--preconditions', '--raw',
+  '--resource-version', '--selector', '--timeout', '--wait'
+]);
+const UNINSPECTABLE_KUBECTL_DELETE_OPTIONS = new Set(['-f', '--filename', '-k', '--kustomize', '--raw']);
+const DANGEROUS_KUBECTL_RESOURCES = new Set([
+  'namespace', 'namespaces', 'ns', 'node', 'nodes', 'all', 'pv', 'pvc',
+  'persistentvolume', 'persistentvolumes', 'persistentvolumeclaim', 'persistentvolumeclaims'
+]);
 
 /**
  * Checks for destructive Infrastructure as Code commands, tolerating arbitrary
  * global CLI options (e.g. `terraform -chdir=... destroy`, `kubectl --context=... delete namespace ...`).
- * @param {string} text Command string.
- * @returns {boolean} True if destructive IaC command detected.
- */
-/**
- * Detect destructive Infrastructure as Code (IaC) commands targeting terraform,
- * tofu, or kubectl. Restricts inspection strictly to resolved executables and their
- * arguments to prevent false positives in echo, printf, cat, or scripts printing IaC text.
- *
  * @param {string[]|string} tokensOrText Command tokens or command string.
  * @returns {boolean} True if destructive IaC command detected.
  */
@@ -109,55 +124,71 @@ function isDestructiveIaC(tokensOrText) {
   }
 
   const args = tokens.slice(start + 1);
+  return exe === 'kubectl' ? isDestructiveKubectl(args) : isDestructiveTerraform(args);
+}
 
-  if (exe === 'terraform' || exe === 'tofu') {
-    for (let i = 0; i < args.length; i++) {
-      const arg = args[i].toLowerCase();
-      if (arg === 'destroy') return true;
-      if (!arg.startsWith('-') && ['plan', 'apply', 'init', 'validate', 'show', 'output', 'version', 'fmt'].includes(arg)) {
-        return false;
-      }
+/** Finds a CLI subcommand while consuming known global option values. */
+function findSubcommand(args, optionsWithValue) {
+  for (let i = 0; i < args.length; i += 1) {
+    const arg = args[i];
+    if (arg === '--') return i + 1 < args.length ? i + 1 : -1;
+    if (arg.startsWith('-')) {
+      const option = arg.split('=')[0].toLowerCase();
+      if (optionsWithValue.has(option) && !arg.includes('=')) i += 1;
+      continue;
     }
-    return false;
+    return i;
   }
+  return -1;
+}
 
-  if (exe === 'kubectl') {
-    let hasDelete = false;
-    for (let i = 0; i < args.length; i++) {
-      const arg = args[i].toLowerCase();
-      if (arg === 'delete') {
-        hasDelete = true;
-        continue;
-      }
-      if (hasDelete) {
-        if (arg.startsWith('-')) continue;
-        const dangerousTypes = new Set([
-          'namespace',
-          'namespaces',
-          'ns',
-          'node',
-          'nodes',
-          'all',
-          'pv',
-          'pvc',
-          'persistentvolume',
-          'persistentvolumes',
-          'persistentvolumeclaim',
-          'persistentvolumeclaims'
-        ]);
-        if (dangerousTypes.has(arg)) {
-          return true;
-        }
-        return false;
-      }
-      if (!arg.startsWith('-') && ['get', 'describe', 'logs', 'apply', 'create', 'edit', 'exec', 'top'].includes(arg)) {
-        return false;
-      }
+/** Detects Terraform/OpenTofu destroy subcommands and destroy plan flags. */
+function isDestructiveTerraform(args) {
+  const subcommandIndex = findSubcommand(args, TERRAFORM_OPTIONS_WITH_VALUE);
+  if (subcommandIndex < 0) return false;
+  const subcommand = args[subcommandIndex].toLowerCase();
+  if (subcommand === 'destroy') return true;
+  return ['plan', 'apply'].includes(subcommand)
+    && args.slice(subcommandIndex + 1).some(isEnabledDestroyModeFlag);
+}
+
+/** Treats `-destroy` boolean assignments as enabled unless explicitly false. */
+function isEnabledDestroyModeFlag(arg) {
+  const [flag, value] = String(arg).toLowerCase().split('=', 2);
+  if (flag !== '-destroy') return false;
+  return value === undefined || !['false', '0', 'f'].includes(value);
+}
+
+/** Flags deletes whose target cannot be inspected statically. */
+function isUninspectableKubectlDeleteOption(arg) {
+  const option = arg.split('=')[0];
+  return UNINSPECTABLE_KUBECTL_DELETE_OPTIONS.has(option) || /^-[fk].+/.test(arg);
+}
+
+/** Detects risky Kubernetes deletes after consuming global and delete option values. */
+function isDestructiveKubectl(args) {
+  const subcommandIndex = findSubcommand(args, KUBECTL_GLOBAL_OPTIONS_WITH_VALUE);
+  if (subcommandIndex < 0 || args[subcommandIndex].toLowerCase() !== 'delete') return false;
+
+  const deleteArgs = args.slice(subcommandIndex + 1);
+  for (let i = 0; i < deleteArgs.length; i += 1) {
+    const arg = deleteArgs[i].toLowerCase();
+    if (arg === '--all') return true;
+    if (arg === '--') return deleteArgs.slice(i + 1).some(isDangerousKubectlResource);
+    if (isUninspectableKubectlDeleteOption(arg)) return true;
+    if (arg.startsWith('-')) {
+      const option = arg.split('=')[0];
+      if (KUBECTL_DELETE_OPTIONS_WITH_VALUE.has(option) && !arg.includes('=')) i += 1;
+      continue;
     }
-    return false;
+    return isDangerousKubectlResource(arg);
   }
-
   return false;
+}
+
+/** Returns whether a resource token or resource/name pair targets a risky type. */
+function isDangerousKubectlResource(resourceArg) {
+  return resourceArg.split(',').some(resource => DANGEROUS_KUBECTL_RESOURCES.has(resource.split('/')[0]));
 }
 
 // Operator-supplied additional destructive patterns. Lazily compiled from
@@ -522,6 +553,10 @@ const SUDO_VALUE_FLAGS = new Set([
   '--command-timeout',
 ]);
 
+const TIME_VALUE_FLAGS = new Set(['-f', '--format', '-o', '--output']);
+const FIND_EXEC_OPERATORS = new Set(['-exec', '-execdir', '-ok', '-okdir']);
+const FIND_EXEC_TERMINATORS = new Set([';', '\\;', '+']);
+
 /**
  * Advance past `sudo`/`doas`/`env` wrappers including their flags and
  * `VAR=value` assignments, so `sudo -u postgres psql ...` and
@@ -588,6 +623,57 @@ function unwrapLeadWrappers(tokens) {
       }
       continue;
     }
+    if (base === 'command') {
+      index += 1;
+      if (tokens[index] === '-p') index += 1;
+      if (tokens[index] === '--') index += 1;
+      if (tokens[index] && tokens[index].startsWith('-')) return tokens.length;
+      continue;
+    }
+    if (base === 'time') {
+      index += 1;
+      while (index < tokens.length) {
+        const flag = tokens[index];
+        if (flag === '--') {
+          index += 1;
+          break;
+        }
+        if (TIME_VALUE_FLAGS.has(flag) || /^(?:-f|--format|-o|--output)=/.test(flag)) {
+          index += TIME_VALUE_FLAGS.has(flag) ? 2 : 1;
+          continue;
+        }
+        if (flag.startsWith('-')) {
+          index += 1;
+          continue;
+        }
+        break;
+      }
+      continue;
+    }
+    if (base === 'exec') {
+      index += 1;
+      while (index < tokens.length) {
+        const flag = tokens[index];
+        if (flag === '--') {
+          index += 1;
+          break;
+        }
+        if (flag === '-a' || flag === '--argv0') {
+          index += 2;
+          continue;
+        }
+        if (/^--argv0=/.test(flag)) {
+          index += 1;
+          continue;
+        }
+        if (flag.startsWith('-')) {
+          index += 1;
+          continue;
+        }
+        break;
+      }
+      continue;
+    }
     break;
   }
   return index;
@@ -609,6 +695,20 @@ function isDestructiveSqlClient(tokens) {
   return DESTRUCTIVE_SQL_DD.test(stripSqlLiterals(tokens.slice(start).join(' ')));
 }
 
+/** Finds the command string argument for a shell `-c` option, including
+ * bundled short options such as `-lc` and `-xc`. */
+function findShellCommandArgument(tokens, start) {
+  for (let index = start + 1; index < tokens.length; index += 1) {
+    const arg = tokens[index];
+    if (arg === '--') return -1;
+    if (arg === '-c' || /^-[^-]*c/.test(arg)) return index + 1;
+    if (arg === '--rcfile' || arg === '--init-file' || arg === '-o' || arg === '-O') {
+      index += 1;
+    }
+  }
+  return -1;
+}
+
 /**
  * Quote-aware destructive check: catches quoted command words, newline
  * separators, quoted `find -exec`, and `sh -c`/`bash -c` wrappers that evade
@@ -625,13 +725,14 @@ function isDestructiveQuoteAware(raw, depth = 0) {
     if (isDestructiveRm(tokens)) return true;
     if (isDestructiveGit(tokens)) return true;
     if (isDestructiveSqlClient(tokens)) return true;
-    if (isDestructiveFindExec(tokens.join(' '))) return true;
+    if (isDestructiveFindDelete(tokens)) return true;
+    if (isDestructiveFindExecTokens(tokens)) return true;
     if (isDestructiveIaC(tokens)) return true;
     const wi = unwrapLeadWrappers(tokens);
     const base = wi < tokens.length ? commandBasename(tokens[wi]) : '';
     if (SHELL_WRAPPERS.has(base)) {
-      const ci = tokens.indexOf('-c', wi);
-      if (ci !== -1 && tokens[ci + 1] && isDestructiveQuoteAware(tokens[ci + 1], depth + 1)) {
+      const ci = findShellCommandArgument(tokens, wi);
+      if (ci !== -1 && tokens[ci] && isDestructiveQuoteAware(tokens[ci], depth + 1)) {
         return true;
       }
     }
@@ -980,73 +1081,51 @@ function collectExecutableBodies(raw) {
   return bodies;
 }
 
-/**
- * Detect destructive commands inside `find ... -exec` invocations.
- * Handles `-exec rm {} \;`, `-exec rm -rf {} \;`, `-exec rmdir {} \;`,
- * `-exec unlink {} \;`, `-exec git reset --hard {} \;`.
- *
- * @param {string} command
- * @returns {boolean}
- */
-function isDestructiveFindExec(command) {
-  const raw = String(command || '');
-  const trimmed = raw.trim();
-  if (!trimmed) {
-    return false;
-  }
+/** Detects destructive commands inside one `find` execution clause. */
+function isDestructiveFindExecCommand(execTokens) {
+  if (!Array.isArray(execTokens) || execTokens.length === 0) return false;
+  const start = unwrapLeadWrappers(execTokens);
+  if (start >= execTokens.length) return false;
 
-  // Tokenize the whole command line
-  const tokens = tokenize(trimmed);
-  if (!tokens || tokens.length === 0) {
-    return false;
-  }
+  const baseCmd = commandBasename(execTokens[start]);
+  if (baseCmd === 'rmdir' || baseCmd === 'unlink' || baseCmd === 'rm') return true;
 
-  // Must start with `find`
-  if (commandBasename(tokens[0]) !== 'find') {
-    return false;
-  }
-
-  // Find the `-exec` token
-  const execIndex = tokens.indexOf('-exec');
-  if (execIndex === -1) {
-    return false;
-  }
-
-  // Collect tokens after `-exec` until we hit a terminator (`;`, `\;`, or `+`)
-  const execTokens = [];
-  for (let i = execIndex + 1; i < tokens.length; i++) {
-    const token = tokens[i];
-    if (token === ';' || token === '\\;' || token === '+') {
-      break;
-    }
-    execTokens.push(token);
-  }
-
-  if (execTokens.length === 0) {
-    return false;
-  }
-
-  const baseCmd = commandBasename(execTokens[0]);
-
-  // Directly destructive commands inside -exec
-  if (baseCmd === 'rmdir' || baseCmd === 'unlink') {
-    return true;
-  }
-
-  // `rm` with any flags (including none) inside -exec is destructive
-  if (baseCmd === 'rm') {
-    return true;
-  }
-
-  // `git reset --hard` inside -exec
   if (baseCmd === 'git') {
-    const sub = findGitSubcommand(execTokens);
-    if (sub && sub.command === 'reset' && sub.rest.includes('--hard')) {
+    const sub = findGitSubcommand(execTokens.slice(start));
+    if (sub && sub.command === 'reset' && sub.rest.includes('--hard')) return true;
+  }
+
+  if (SHELL_WRAPPERS.has(baseCmd)) {
+    const commandIndex = findShellCommandArgument(execTokens, start);
+    if (commandIndex !== -1 && execTokens[commandIndex]
+      && isDestructiveQuoteAware(execTokens[commandIndex], 1)) {
       return true;
     }
   }
 
   return false;
+}
+
+/** Detects destructive commands in all `find -exec/-execdir/-ok` clauses. */
+function isDestructiveFindExecTokens(tokens) {
+  if (!Array.isArray(tokens) || commandBasename(tokens[0] || '') !== 'find') return false;
+
+  for (let index = 1; index < tokens.length; index += 1) {
+    if (!FIND_EXEC_OPERATORS.has(tokens[index])) continue;
+    const execTokens = [];
+    for (index += 1; index < tokens.length; index += 1) {
+      const token = tokens[index];
+      if (FIND_EXEC_TERMINATORS.has(token)) break;
+      execTokens.push(token);
+    }
+    if (isDestructiveFindExecCommand(execTokens)) return true;
+  }
+  return false;
+}
+
+/** Detects destructive commands inside a raw `find` command segment. */
+function isDestructiveFindExec(command) {
+  return quoteAwareSegments(String(command || '')).some(isDestructiveFindExecTokens);
 }
 
 function isDestructiveBash(command) {
@@ -1087,6 +1166,7 @@ function isDestructiveBash(command) {
     if (DESTRUCTIVE_SQL_DD.test(stripped)) return true;
     if (extra && extra.test(stripped)) return true;
     const tokens = tokenize(segment);
+    if (isDestructiveFindDelete(tokens)) return true;
     if (isDestructiveRm(tokens)) return true;
     if (isDestructiveGit(tokens)) return true;
     if (isDestructiveIaC(tokens)) return true;
@@ -1096,6 +1176,21 @@ function isDestructiveBash(command) {
   // quoted-find-exec, and sh/bash -c bypasses (GHSA-4v57-ph3x-gf55).
   if (isDestructiveQuoteAware(executable)) return true;
 
+  return false;
+}
+
+/** Detects `find ... -delete`, which mutates matched paths directly. */
+function isDestructiveFindDelete(tokens) {
+  if (!Array.isArray(tokens) || commandBasename(tokens[0] || '') !== 'find') return false;
+  for (let index = 1; index < tokens.length; index += 1) {
+    if (FIND_EXEC_OPERATORS.has(tokens[index])) {
+      for (index += 1; index < tokens.length; index += 1) {
+        if (FIND_EXEC_TERMINATORS.has(tokens[index])) break;
+      }
+      continue;
+    }
+    if (tokens[index].toLowerCase() === '-delete') return true;
+  }
   return false;
 }
 
@@ -1183,24 +1278,32 @@ function getStateFile(data) {
 
 function loadState() {
   const stateFile = getStateFile();
+  const lockFile = `${stateFile}.lock`;
+  const emptyState = () => ({ checked: [], last_active: Date.now() });
   try {
-    if (fs.existsSync(stateFile)) {
-      const state = JSON.parse(fs.readFileSync(stateFile, 'utf8'));
-      const lastActive = state.last_active || 0;
-      if (Date.now() - lastActive > SESSION_TIMEOUT_MS) {
-        try {
-          fs.unlinkSync(stateFile);
-        } catch (_) {
-          /* ignore */
-        }
-        return { checked: [], last_active: Date.now() };
-      }
-      return state;
-    }
+    return withStateFileLock(lockFile, () => {
+      return loadStateUnlocked(stateFile, emptyState);
+    });
   } catch (_) {
     /* ignore */
   }
-  return { checked: [], last_active: Date.now() };
+  return emptyState();
+}
+
+function loadStateUnlocked(stateFile, emptyState = () => ({ checked: [], last_active: Date.now() })) {
+  restoreStateBackup(stateFile);
+  if (!fs.existsSync(stateFile)) return emptyState();
+  try {
+    const state = JSON.parse(fs.readFileSync(stateFile, 'utf8'));
+    if (Date.now() - (state.last_active || 0) > SESSION_TIMEOUT_MS) {
+      fs.unlinkSync(stateFile);
+      return emptyState();
+    }
+    return state;
+  } catch (_) {
+    /* ignore malformed or transient disk state */
+    return emptyState();
+  }
 }
 
 function pruneCheckedEntries(checked) {
@@ -1220,88 +1323,58 @@ function pruneCheckedEntries(checked) {
 
 function saveState(state) {
   const stateFile = getStateFile();
-  let tmpFile = null;
   try {
-    fs.mkdirSync(STATE_DIR, { recursive: true });
-
-    let mergedChecked = Array.isArray(state.checked) ? state.checked : [];
-    let mergedLastActive = typeof state.last_active === 'number' ? state.last_active : 0;
-    let mergedDenials = getDenialCount(state);
-    let mergedEvidence = Array.isArray(state.evidence) ? state.evidence : [];
-    let mergedReadFiles = (state.read_files && typeof state.read_files === 'object' && !Array.isArray(state.read_files))
-      ? { ...state.read_files }
-      : {};
-    let mergedScopePasses = (state.scope_passes && typeof state.scope_passes === 'object') ? state.scope_passes : {};
-
-    try {
-      if (fs.existsSync(stateFile)) {
-        const diskState = JSON.parse(fs.readFileSync(stateFile, 'utf8'));
-        if (Array.isArray(diskState.checked)) {
-          mergedChecked = Array.from(new Set([...diskState.checked, ...mergedChecked]));
-        }
-        if (typeof diskState.last_active === 'number') {
-          mergedLastActive = Math.max(mergedLastActive, diskState.last_active);
-        }
-        mergedDenials = Math.max(mergedDenials, getDenialCount(diskState));
-        if (Array.isArray(diskState.evidence)) {
-          mergedEvidence = pruneEvidence([...diskState.evidence, ...mergedEvidence], Date.now());
-        }
-        if (diskState.read_files && typeof diskState.read_files === 'object' && !Array.isArray(diskState.read_files)) {
-          mergedReadFiles = Object.assign({}, diskState.read_files, mergedReadFiles);
-        } else if (Array.isArray(diskState.read_files)) {
-          for (const f of diskState.read_files) {
-            if (typeof f === 'string' && !mergedReadFiles[f.toLowerCase()]) {
-              mergedReadFiles[f.toLowerCase()] = Date.now();
-            }
-          }
-        }
-        if (diskState.scope_passes && typeof diskState.scope_passes === 'object') {
-          mergedScopePasses = Object.assign({}, diskState.scope_passes, mergedScopePasses);
-        }
-      }
-    } catch (_) {
-      /* ignore malformed or transient disk state */
-    }
-
-    const finalState = {
-      checked: pruneCheckedEntries(mergedChecked),
-      last_active: Math.max(mergedLastActive, Date.now()),
-      fact_force_denials: mergedDenials,
-      evidence: pruneEvidence(mergedEvidence, Date.now()),
-      read_files: pruneReadFiles(mergedReadFiles, Date.now()),
-      scope_passes: mergedScopePasses
-    };
-
-    // Atomic write: temp file + rename prevents partial reads
-    tmpFile = `${stateFile}.tmp.${process.pid}.${crypto.randomBytes(4).toString('hex')}`;
-    fs.writeFileSync(tmpFile, JSON.stringify(finalState, null, 2), 'utf8');
-    try {
-      fs.renameSync(tmpFile, stateFile);
-    } catch (error) {
-      if (error && (error.code === 'EEXIST' || error.code === 'EPERM')) {
-        try {
-          fs.unlinkSync(stateFile);
-        } catch (_) {
-          /* ignore */
-        }
-        fs.renameSync(tmpFile, stateFile);
-      } else {
-        throw error;
-      }
-    }
-    tmpFile = null;
-    return true;
+    return withStateFileLock(`${stateFile}.lock`, () => saveStateUnlocked(state, stateFile));
   } catch (err) {
-    if (tmpFile) {
-      try {
-        fs.unlinkSync(tmpFile);
-      } catch (_) {
-        /* ignore */
-      }
-    }
     process.stderr.write(`[GateGuard] State persistence failed: ${err.message}\n`);
     return false;
   }
+}
+
+function saveStateUnlocked(state, stateFile) {
+  fs.mkdirSync(STATE_DIR, { recursive: true });
+  restoreStateBackup(stateFile);
+  let diskState = {};
+  try {
+    if (fs.existsSync(stateFile)) diskState = JSON.parse(fs.readFileSync(stateFile, 'utf8'));
+  } catch (_) {
+    /* Ignore malformed state and retain the in-memory snapshot. */
+  }
+
+  const now = Date.now();
+  const readFiles = normalizeReadFiles(diskState.read_files);
+  const memoryReadFiles = normalizeReadFiles(state.read_files);
+  const scopePasses = mergeTimestampMaps(diskState.scope_passes, state.scope_passes);
+  const mergedEvidence = dedupeEvidence([
+    ...(Array.isArray(diskState.evidence) ? diskState.evidence : []),
+    ...(Array.isArray(state.evidence) ? state.evidence : [])
+  ]);
+  const finalState = {
+    checked: pruneCheckedEntries(Array.from(new Set([
+      ...(Array.isArray(diskState.checked) ? diskState.checked : []),
+      ...(Array.isArray(state.checked) ? state.checked : [])
+    ]))),
+    last_active: Math.max(Number(diskState.last_active) || 0, Number(state.last_active) || 0, now),
+    fact_force_denials: Math.max(getDenialCount(diskState), getDenialCount(state)),
+    evidence: pruneEvidence(mergedEvidence, now),
+    read_files: pruneReadFiles(mergeTimestampMaps(readFiles, memoryReadFiles), now),
+    scope_passes: scopePasses
+  };
+
+  writeStateToDiskAtomic(stateFile, finalState);
+  return true;
+}
+
+function normalizeReadFiles(readFiles) {
+  if (Array.isArray(readFiles)) {
+    const now = Date.now();
+    const entries = readFiles.filter(file => typeof file === 'string' && path.isAbsolute(file));
+    return Object.fromEntries(entries.map(file => [file.replace(/\\/g, '/'), now]));
+  }
+  if (!readFiles || typeof readFiles !== 'object') return {};
+  return Object.fromEntries(Object.entries(readFiles)
+    .filter(([file, timestamp]) => path.isAbsolute(file) && typeof timestamp === 'number')
+    .map(([file, timestamp]) => [file.replace(/\\/g, '/'), timestamp]));
 }
 
 function markChecked(key) {
@@ -1346,13 +1419,24 @@ function getDenialCount(state) {
  * write persisted.
  */
 function markCheckedAndCountDenial(key) {
-  const state = loadState();
-  if (!state.checked.includes(key)) {
-    state.checked.push(key);
+  const stateFile = getStateFile();
+  const emptyState = () => ({ checked: [], last_active: Date.now() });
+  try {
+    return withStateFileLock(`${stateFile}.lock`, () => {
+      const state = loadStateUnlocked(stateFile, emptyState);
+      const checked = Array.isArray(state.checked) ? state.checked : [];
+      const updated = {
+        ...state,
+        checked: checked.includes(key) ? checked : [...checked, key],
+        fact_force_denials: getDenialCount(state) + 1,
+        last_active: Date.now()
+      };
+      return { ok: saveStateUnlocked(updated, stateFile), denials: updated.fact_force_denials };
+    });
+  } catch (err) {
+    process.stderr.write(`[GateGuard] State persistence failed: ${err.message}\n`);
+    return { ok: false, denials: 0 };
   }
-  const denials = getDenialCount(state) + 1;
-  state.fact_force_denials = denials;
-  return { ok: saveState(state), denials };
 }
 
 function isChecked(key) {
@@ -1376,7 +1460,15 @@ function isChecked(key) {
       try {
         const stat = fs.statSync(fp);
         if (now - stat.mtimeMs > SESSION_TIMEOUT_MS * 2) {
-          fs.unlinkSync(fp);
+          if (f.endsWith('.json')) {
+            withStateFileLock(`${fp}.lock`, () => {
+              if (fs.existsSync(fp) && Date.now() - fs.statSync(fp).mtimeMs > SESSION_TIMEOUT_MS * 2) {
+                fs.unlinkSync(fp);
+              }
+            });
+          } else {
+            fs.unlinkSync(fp);
+          }
         }
       } catch (_) {
         // Ignore files that disappear between readdir/stat/unlink.

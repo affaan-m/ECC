@@ -59,6 +59,15 @@ function writeState(state) {
   fs.writeFileSync(stateFile, JSON.stringify(state), 'utf8');
 }
 
+function buildEvidenceEntries(prefix, count, ts) {
+  return Array.from({ length: count }, (_, index) => ({
+    kind: 'grep',
+    target: `/src/${prefix}-${index}.js`,
+    pattern: `symbol-${prefix}-${index}`,
+    ts
+  }));
+}
+
 function runHook(input, env = {}) {
   const rawInput = typeof input === 'string' ? input : JSON.stringify(input);
   const result = spawnSync('node', [runner, 'pre:edit-write:gateguard-fact-force', 'scripts/hooks/gateguard-fact-force.js', 'standard,strict'], {
@@ -80,6 +89,39 @@ function runHook(input, env = {}) {
     stdout: result.stdout || '',
     stderr: result.stderr || ''
   };
+}
+
+function runHooksConcurrently(inputs) {
+  const coordinator = `
+    const { spawn } = require('child_process');
+    const runner = process.argv[1];
+    const inputs = JSON.parse(process.argv[2]);
+    const calls = inputs.map(input => new Promise((resolve, reject) => {
+      const child = spawn(process.execPath, [runner, 'pre:edit-write:gateguard-fact-force', 'scripts/hooks/gateguard-fact-force.js', 'standard,strict'], { env: process.env, stdio: ['pipe', 'ignore', 'ignore'] });
+      child.on('error', reject);
+      child.on('exit', code => resolve(code));
+      child.stdin.end(JSON.stringify(input));
+    }));
+    Promise.all(calls).then(codes => process.exit(codes.every(code => code === 0) ? 0 : 1), () => process.exit(1));
+  `;
+  return spawnSync(process.execPath, ['-e', coordinator, runner, JSON.stringify(inputs)], {
+    encoding: 'utf8',
+    env: {
+      ...process.env,
+      ECC_HOOK_PROFILE: 'standard',
+      GATEGUARD_STATE_DIR: stateDir,
+      CLAUDE_SESSION_ID: TEST_SESSION_ID
+    },
+    timeout: 30000,
+    stdio: ['ignore', 'pipe', 'pipe']
+  });
+}
+
+function buildConcurrentEdits(count) {
+  return Array.from({ length: count }, (_, index) => ({
+    tool_name: 'Edit',
+    tool_input: { file_path: `/src/concurrent-denial-${index}.js` }
+  }));
 }
 
 function runBashHook(input, env = {}) {
@@ -1115,13 +1157,17 @@ function runTests() {
     passed++;
   else failed++;
 
-  // --- Test 28: saveState preserves concurrent disk updates ---
+  // --- Test 28: saveState preserves concurrent disk updates without duplicate evidence ---
   clearState();
   if (
-    test('merges state written by another process during save', () => {
+    test('merges concurrent evidence before applying the 200-entry cap', () => {
       const hook = loadDirectHook();
       const originalMkdirSync = fs.mkdirSync;
       let injected = false;
+      const now = Date.now();
+      const existingEvidence = buildEvidenceEntries('existing', 150, now - 1000);
+      const concurrentEvidence = buildEvidenceEntries('concurrent', 150, now);
+      writeState({ checked: [], last_active: now, evidence: existingEvidence });
 
       fs.mkdirSync = function patchedMkdirSync(target) {
         const result = originalMkdirSync.apply(fs, arguments);
@@ -1131,7 +1177,8 @@ function runTests() {
             stateFile,
             JSON.stringify({
               checked: ['/src/concurrent.js'],
-              last_active: Date.now()
+              last_active: now,
+              evidence: [...existingEvidence, ...concurrentEvidence]
             }),
             'utf8'
           );
@@ -1153,6 +1200,10 @@ function runTests() {
       const persisted = JSON.parse(fs.readFileSync(stateFile, 'utf8'));
       assert.ok(persisted.checked.includes('/src/concurrent.js'), 'concurrent disk entry should be preserved');
       assert.ok(persisted.checked.includes('/src/new-edit.js'), 'new in-memory entry should be persisted');
+      const evidenceIdentities = persisted.evidence.map(entry => `${entry.kind}|${entry.target}|${entry.pattern}|${entry.ts}`);
+      assert.strictEqual(persisted.evidence.length, 200);
+      assert.strictEqual(new Set(evidenceIdentities).size, 200);
+      assert.ok(concurrentEvidence.every(entry => evidenceIdentities.includes(`${entry.kind}|${entry.target}|${entry.pattern}|${entry.ts}`)));
     })
   )
     passed++;
@@ -2573,6 +2624,32 @@ function runTests() {
   else failed++;
 
   if (
+    test('denies find -delete as destructive', () => {
+      expectDestructiveDeny('find /tmp/cache -type f -delete', 'find -delete');
+    })
+  )
+    passed++;
+  else failed++;
+
+  if (
+    test('denies destructive find -execdir commands', () => {
+      expectDestructiveDeny('find /tmp/cache -execdir rm -f {} \\;', 'find -execdir rm');
+    })
+  )
+    passed++;
+  else failed++;
+
+  if (
+    test('denies destructive commands nested in find execution wrappers', () => {
+      expectDestructiveDeny('find /tmp/cache -exec env rm {} \\;', 'find -exec env rm');
+      expectDestructiveDeny("find /tmp/cache -exec sh -c 'rm -rf \"$@\"' sh {} +", 'find -exec shell rm');
+      expectDestructiveDeny("find /tmp/cache -ok sh -c 'terraform destroy' sh {} \\;", 'find -ok shell terraform');
+    })
+  )
+    passed++;
+  else failed++;
+
+  if (
     test('denies find -exec rm {} \\; preceded by && (bypass via compound command)', () => {
       expectDestructiveDeny('echo x && find . -exec rm {} \\;', 'compound command bypass: find -exec rm');
     })
@@ -2646,6 +2723,33 @@ function runTests() {
   else failed++;
 
   if (
+    test('denies IaC destruction wrapped by time and exec', () => {
+      expectDestructiveDeny('time -p terraform destroy', 'time terraform destroy');
+      expectDestructiveDeny('exec -a terraform terraform destroy', 'exec terraform destroy');
+    })
+  )
+    passed++;
+  else failed++;
+
+  if (
+    test('denies destruction in bundled shell -c flags', () => {
+      expectDestructiveDeny("bash -lc 'terraform destroy'", 'bash -lc wrapper');
+      expectDestructiveDeny("bash -xc 'rm -rf /tmp/victim'", 'bash -xc wrapper');
+    })
+  )
+    passed++;
+  else failed++;
+
+  if (
+    test('denies find -delete inside a shell wrapper', () => {
+      expectDestructiveDeny("bash -c 'find /src -delete'", 'bash find -delete wrapper');
+      expectDestructiveDeny("sh -c 'find /src -delete'", 'sh find -delete wrapper');
+    })
+  )
+    passed++;
+  else failed++;
+
+  if (
     test('denies find -exec with a quoted rm binary (GHSA-4v57)', () => {
       expectDestructiveDeny("find . -name '*.tmp' -exec 'rm' {} \\;", 'quoted find -exec rm');
     })
@@ -2682,6 +2786,39 @@ function runTests() {
   )
     passed++;
   else failed++;
+
+  if (
+    test('allows find -exec echo -delete text (non-destructive, routine gate)', () => {
+      expectAllow('find . -name "*.tmp" -exec echo -delete {} \\;', 'find -exec echo -delete');
+    })
+  )
+    passed++;
+  else failed++;
+
+  const kubectlGlobalValueFlagCases = [
+    ['-s api-server', 'kubectl -s https://api.internal delete namespace prod'],
+    ['--as-user-extra alice', 'kubectl --as-user-extra alice delete namespace prod'],
+    ['--kuberc path', 'kubectl --kuberc /tmp/kuberc delete namespace prod'],
+    ['--profile name', 'kubectl --profile prod delete namespace prod'],
+    ['--profile-output name', 'kubectl --profile-output json delete namespace prod'],
+    ['--proxy-url value', 'kubectl --proxy-url http://127.0.0.1 delete namespace prod'],
+    ['--storage-driver-buffer-duration value', 'kubectl --storage-driver-buffer-duration 1m delete namespace prod'],
+    ['--storage-driver-db value', 'kubectl --storage-driver-db state delete namespace prod'],
+    ['--storage-driver-host value', 'kubectl --storage-driver-host db:8086 delete namespace prod'],
+    ['--storage-driver-password value', 'kubectl --storage-driver-password secret delete namespace prod'],
+    ['--storage-driver-table value', 'kubectl --storage-driver-table stats delete namespace prod'],
+    ['--storage-driver-user value', 'kubectl --storage-driver-user admin delete namespace prod'],
+    ['--tls-server-name value', 'kubectl --tls-server-name api.internal delete namespace prod']
+  ];
+  for (const [label, command] of kubectlGlobalValueFlagCases) {
+    if (
+      test(`denies kubectl delete after inherited ${label}`, () => {
+        expectDestructiveDeny(command, `kubectl ${label}`);
+      })
+    )
+      passed++;
+    else failed++;
+  }
 
   // --- Issue #2078 review fix: warning emitted once per *distinct*
   // invalid regex, not once per process. Verifies the same-process
@@ -2748,6 +2885,20 @@ function runTests() {
       assert.ok(output.hookSpecificOutput.permissionDecisionReason.includes('present these facts'), 'first denial should use the full block');
       const state = JSON.parse(fs.readFileSync(stateFile, 'utf8'));
       assert.strictEqual(state.fact_force_denials, 1, 'denial counter should persist in session state');
+    })
+  )
+    passed++;
+  else failed++;
+
+  clearState();
+  if (
+    test('concurrent first-touch denials persist every denial ordinal', () => {
+      const edits = buildConcurrentEdits(12);
+      const result = runHooksConcurrently(edits);
+      assert.strictEqual(result.status, 0, `all hook processes should exit cleanly: ${result.stderr}`);
+      const state = JSON.parse(fs.readFileSync(stateFile, 'utf8'));
+      assert.strictEqual(state.fact_force_denials, edits.length, 'each process increments the shared counter under the same lock');
+      assert.strictEqual(state.checked.length, edits.length, 'all first-touch targets remain recorded');
     })
   )
     passed++;
