@@ -68,11 +68,30 @@ function isEvidenceBypassEnabled() {
   return !ECC_DISABLE_VALUES.has(String(envVal).trim().toLowerCase());
 }
 
-// SQL-keyword + dd + destructive IaC patterns stay as a single regex — they are stable
-// phrases without shell-flag ordering concerns. Quoted strings are
+// SQL-keyword + dd phrases live in command bodies, not as flag-bearing
+// arguments, so they are matched by regex. Quoted strings are
 // stripped before this regex runs so a commit message mentioning
 // "drop table" no longer triggers a false positive.
-const DESTRUCTIVE_SQL_DD = /\b(drop\s+table|delete\s+from|truncate|dd\s+if=|terraform\s+destroy|tofu\s+destroy|kubectl\s+delete\s+(?:namespace|ns|node|all|pv|pvc))\b/i;
+const DESTRUCTIVE_SQL_DD = /\b(drop\s+table|delete\s+from|truncate|dd\s+if=)\b/i;
+
+/**
+ * Checks for destructive Infrastructure as Code commands, tolerating arbitrary
+ * global CLI options (e.g. `terraform -chdir=... destroy`, `kubectl --context=... delete namespace ...`).
+ * @param {string} text Command string.
+ * @returns {boolean} True if destructive IaC command detected.
+ */
+function isDestructiveIaC(text) {
+  if (!text || typeof text !== 'string') return false;
+  // terraform / tofu destroy with optional flags/arguments
+  if (/\b(?:terraform|tofu)\b(?:\s+-[^\s]+|\s+[^-][^\s]*)*\s+destroy\b/i.test(text)) {
+    return true;
+  }
+  // kubectl delete namespace / all / node / pv / pvc with optional flags/arguments
+  if (/\bkubectl\b(?:\s+-[^\s]+|\s+[^-][^\s]*)*\s+delete\b(?:\s+-[^\s]+|\s+[^-][^\s]*)*\s+(?:namespace|namespaces|ns|node|nodes|all|pv|pvc)\b/i.test(text)) {
+    return true;
+  }
+  return false;
+}
 
 // Operator-supplied additional destructive patterns. Lazily compiled from
 // `GATEGUARD_BASH_EXTRA_DESTRUCTIVE` (regex source) on first use, then
@@ -971,6 +990,7 @@ function isDestructiveBash(command) {
   const executable = stripHeredocBodies(raw);
   const flattened = explodeSubshells(stripQuotedStrings(executable));
   if (DESTRUCTIVE_SQL_DD.test(flattened)) return true;
+  if (isDestructiveIaC(flattened)) return true;
 
   // Operator-supplied additional destructive patterns. Same scope as the
   // built-in SQL/dd regex: matched against the quote-stripped, subshell-
@@ -998,6 +1018,7 @@ function isDestructiveBash(command) {
   for (const segment of segments) {
     const stripped = stripQuotedStrings(segment);
     if (DESTRUCTIVE_SQL_DD.test(stripped)) return true;
+    if (isDestructiveIaC(stripped)) return true;
     if (extra && extra.test(stripped)) return true;
     const tokens = tokenize(segment);
     if (isDestructiveRm(tokens)) return true;
@@ -1608,23 +1629,22 @@ function run(rawInput) {
       return rawInput; // parent session already passed the first-touch file gate
     }
 
-    if (isTrivialChange(toolName, toolInput)) {
+    const tier = riskTier(toolName, toolInput, filePath);
+
+    // High and elevated risk targets NEVER bypass via trivial change
+    if (tier === 'normal' && isTrivialChange(toolName, toolInput, filePath)) {
       return rawInput; // allow comment/whitespace-only edits
     }
 
     if (!isChecked(filePath)) {
-      const state = loadState();
+      let state = loadState();
       const now = Date.now();
-      const tier = riskTier(toolName, toolInput, filePath);
 
       let autoPass = false;
       if (isEvidenceBypassEnabled()) {
-        if (tier === 'high') {
+        if (tier === 'high' || tier === 'elevated') {
+          // Public signature changes and sensitive targets are never silently bypassed
           autoPass = false;
-        } else if (tier === 'elevated') {
-          if (evidenceLevel(filePath, state, now) === 'deep') {
-            autoPass = true;
-          }
         } else {
           const level = evidenceLevel(filePath, state, now);
           if (level === 'deep') {
@@ -1636,7 +1656,9 @@ function run(rawInput) {
       }
 
       if (autoPass) {
-        grantScopePass(state, filePath, now);
+        if (tier === 'normal') {
+          state = grantScopePass(state, filePath, now);
+        }
         if (!state.checked.includes(filePath)) {
           state.checked.push(filePath);
         }
@@ -1672,22 +1694,20 @@ function run(rawInput) {
         continue;
       }
 
-      if (isTrivialChange('Edit', edit)) {
+      const tier = riskTier('Edit', edit, filePath);
+
+      // High and elevated risk targets NEVER bypass via trivial change
+      if (tier === 'normal' && isTrivialChange('Edit', edit, filePath)) {
         continue;
       }
 
-      const state = loadState();
+      let state = loadState();
       const now = Date.now();
-      const tier = riskTier('Edit', edit, filePath);
 
       let autoPass = false;
       if (isEvidenceBypassEnabled()) {
-        if (tier === 'high') {
+        if (tier === 'high' || tier === 'elevated') {
           autoPass = false;
-        } else if (tier === 'elevated') {
-          if (evidenceLevel(filePath, state, now) === 'deep') {
-            autoPass = true;
-          }
         } else {
           const level = evidenceLevel(filePath, state, now);
           if (level === 'deep') {
@@ -1699,7 +1719,9 @@ function run(rawInput) {
       }
 
       if (autoPass) {
-        grantScopePass(state, filePath, now);
+        if (tier === 'normal') {
+          state = grantScopePass(state, filePath, now);
+        }
         if (!state.checked.includes(filePath)) {
           state.checked.push(filePath);
         }

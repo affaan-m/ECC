@@ -148,7 +148,7 @@ GateGuard tracks exploratory tool calls (`Read`, `Grep`, `Glob`, and investigati
 - **Zero-Friction Pass (`deep` evidence)**: When Claude has genuinely investigated a file (read its contents and cross-referenced its symbols or dependencies), the first-touch `[Fact-Forcing Gate]` allows the edit immediately without requiring an artificial denial and retry cycle.
 - **Trivial Change Pass**: Edits that only alter comments or whitespace are recognized as trivial and pass without ceremony.
 - **Directory Scope Passes**: Once a file receives a deep-evidence pass, a 30-minute scope pass is granted to its directory. Sibling files in the same directory that have already been read (`touched`) can be edited without repetitive gating.
-- **Risk Tiers**: Sensitive targets (`.env*`, `auth/`, `payments/`, `migrations/`, `.github/workflows/`) and edits that alter public exported signatures are treated as `high` or `elevated` risk and are never silently bypassed.
+- **Risk Tiers**: Sensitive targets (`.env*`, `auth/`, `payments/`, `migrations/`, GitHub workflows in `.github/workflows/`) and edits that alter public exported signatures are treated as `high` or `elevated` risk and are never silently bypassed.
 
 #### Turning the gate off completely
 

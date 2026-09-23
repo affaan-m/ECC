@@ -1,5 +1,11 @@
 'use strict';
 
+/**
+ * @fileoverview Evidence ledger for GateGuard.
+ * Tracks investigative tool use (Read, Grep, Glob, Bash diagnostics),
+ * evaluates evidence levels, risk tiers, and temporary directory scope passes.
+ */
+
 const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
@@ -8,6 +14,10 @@ const EVIDENCE_TTL_MS = 30 * 60 * 1000; // 30 minutes
 const EVIDENCE_MAX_ENTRIES = 200;
 const SCOPE_PASS_TTL_MS = 30 * 60 * 1000; // 30 minutes
 
+/**
+ * Returns the state directory path, respecting GATEGUARD_STATE_DIR.
+ * @returns {string} Absolute path to state directory.
+ */
 function getStateDir() {
   return process.env.GATEGUARD_STATE_DIR || path.join(process.env.HOME || process.env.USERPROFILE || '/tmp', '.gateguard');
 }
@@ -22,14 +32,36 @@ const HIGH_RISK_PATH_TOKENS = new Set([
 const HIGH_RISK_FILENAME_RE = /^\.env(\..+)?$|^settings(\.local)?\.json$|\.plist$|^\.gateguard\.ya?ml$/i;
 const HIGH_RISK_PATH_RE = /(?:^|\/)\.github\/workflows\//i;
 
-const SIGNATURE_LINE_RE = /^\s*(async\s+def\s|def\s|class\s|import\s|from\s+\S+\s+import\s|export\s|function\s|interface\s|type\s+\S+\s*=)/;
-const COMMENT_LINE_RE = /^\s*(#|\/\/|\/\*|\*\/|\*|<!--|--\s)/;
+// Public or exported signature line detection across multiple languages:
+// JS/TS: export, function, interface, type
+// Python: def, async def, class
+// Java/C#/Kotlin: public class/interface/enum/record/method
+// Go: func ExportedName, type ExportedName
+// Rust: pub fn/struct/enum/trait/type/const
+const SIGNATURE_LINE_RE = /^\s*(?:async\s+def\s|def\s|class\s|export\s|function\s|interface\s|type\s+\S+\s*=|public\s+(?:static\s+|abstract\s+|final\s+)?(?:class|interface|enum|record|[\w<>\[\]]+\s+\w+\s*\()|func\s+(?:\([^)]+\)\s+)?[A-Z]\w*|type\s+[A-Z]\w*\s+(?:struct|interface)|pub\s+(?:fn|struct|enum|trait|type|const))/;
 
+const INDENT_SENSITIVE_EXTS = new Set(['.py', '.pyw', '.yaml', '.yml', '.nim']);
+const INDENT_SENSITIVE_BASES = new Set(['makefile', 'gnumakefile']);
+const HASH_COMMENT_EXTS = new Set([
+  '.py', '.pyw', '.yaml', '.yml', '.sh', '.bash', '.zsh', '.rb',
+  '.pl', '.pm', '.r', '.toml', '.ini', '.cfg', '.conf', '.dockerfile'
+]);
+
+/**
+ * Normalizes file paths for platform-agnostic matching.
+ * @param {string} p File path to normalize.
+ * @returns {string} Normalized path.
+ */
 function normalizePath(p) {
   if (!p) return '';
   return String(p).replace(/\\/g, '/').trim();
 }
 
+/**
+ * Extracts filename stem (basename without extension).
+ * @param {string} filePath Path of the file.
+ * @returns {string} Base filename without extension.
+ */
 function extractStem(filePath) {
   if (!filePath) return '';
   const base = path.basename(normalizePath(filePath));
@@ -37,6 +69,12 @@ function extractStem(filePath) {
   return ext ? base.slice(0, -ext.length) : base;
 }
 
+/**
+ * Prunes expired or excess evidence entries based on TTL and capacity.
+ * @param {Array<Object>} evidence Array of evidence records.
+ * @param {number} [now=Date.now()] Current timestamp in ms.
+ * @returns {Array<Object>} Pruned evidence array.
+ */
 function pruneEvidence(evidence, now = Date.now()) {
   if (!Array.isArray(evidence)) return [];
   const valid = evidence.filter(e => e && typeof e.ts === 'number' && (now - e.ts) < EVIDENCE_TTL_MS);
@@ -46,6 +84,30 @@ function pruneEvidence(evidence, now = Date.now()) {
   return valid;
 }
 
+/**
+ * Prunes timestamped read records map.
+ * @param {Object} readFiles Map of path to timestamp.
+ * @param {number} [now=Date.now()] Current timestamp in ms.
+ * @returns {Object} Cleaned map of active reads.
+ */
+function pruneReadFiles(readFiles, now = Date.now()) {
+  if (!readFiles || typeof readFiles !== 'object' || Array.isArray(readFiles)) return {};
+  const cleaned = {};
+  for (const [p, ts] of Object.entries(readFiles)) {
+    if (typeof ts === 'number' && (now - ts) < EVIDENCE_TTL_MS) {
+      cleaned[p] = ts;
+    }
+  }
+  return cleaned;
+}
+
+/**
+ * Builds an evidence ledger entry from a tool use event.
+ * @param {string} toolName Name of the tool.
+ * @param {Object} toolInput Input payload of the tool.
+ * @param {number} [now=Date.now()] Current timestamp in ms.
+ * @returns {Object|null} Evidence entry object or null.
+ */
 function buildEvidenceEntry(toolName, toolInput, now = Date.now()) {
   if (!toolName || !toolInput) return null;
   const normTool = String(toolName).toLowerCase();
@@ -99,11 +161,20 @@ function buildEvidenceEntry(toolName, toolInput, now = Date.now()) {
   return null;
 }
 
+/**
+ * Finds relevant active evidence for a target file.
+ * Requires exact path match or direct parent directory match.
+ * @param {string} filePath Target file path.
+ * @param {Object} state Session state object.
+ * @param {number} [now=Date.now()] Current timestamp in ms.
+ * @param {number} [limit=8] Maximum number of matched entries.
+ * @returns {Array<Object>} Matched evidence records.
+ */
 function matchingEvidence(filePath, state, now = Date.now(), limit = 8) {
   if (!filePath || !state || !Array.isArray(state.evidence)) return [];
   const target = normalizePath(filePath);
   const targetLower = target.toLowerCase();
-  const stem = extractStem(target).toLowerCase();
+  const baseName = path.basename(targetLower);
   const dir = normalizePath(path.dirname(target)).toLowerCase();
 
   const entries = state.evidence.filter(e => e && typeof e.ts === 'number' && (now - e.ts) < EVIDENCE_TTL_MS);
@@ -116,19 +187,19 @@ function matchingEvidence(filePath, state, now = Date.now(), limit = 8) {
 
     let isMatch = false;
 
-    // Direct read or exact target match
+    // Direct target match: exact canonical path or full path suffix
     if (eTarget && (eTarget === targetLower || targetLower.endsWith('/' + eTarget) || eTarget.endsWith('/' + targetLower))) {
       isMatch = true;
-    } else if (stem && stem.length >= 3) {
-      if (ePattern && ePattern.includes(stem)) {
-        isMatch = true;
-      } else if (eTarget && eTarget.includes(stem)) {
+    } else if (dir && dir !== '.' && dir !== '/') {
+      // Directory match: grep/glob targeted this directory or a direct parent
+      if (eTarget && (eTarget === dir || targetLower.startsWith(eTarget + '/'))) {
         isMatch = true;
       }
     }
 
-    if (!isMatch && dir && dir !== '.' && dir !== '/') {
-      if (eTarget && (eTarget === dir || targetLower.startsWith(eTarget + '/'))) {
+    // Investigative bash command mentioning the target file specifically
+    if (!isMatch && e.kind === 'bash' && ePattern) {
+      if (ePattern.includes(baseName) || ePattern.includes(targetLower)) {
         isMatch = true;
       }
     }
@@ -142,18 +213,32 @@ function matchingEvidence(filePath, state, now = Date.now(), limit = 8) {
   return matched;
 }
 
+/**
+ * Determines the evidence level for a file: 'deep', 'touched', or 'none'.
+ * Both direct read and investigation evidence must be within the 30-minute TTL.
+ * @param {string} filePath Target file path.
+ * @param {Object} state Session state object.
+ * @param {number} [now=Date.now()] Current timestamp in ms.
+ * @returns {'deep'|'touched'|'none'} Evidence level.
+ */
 function evidenceLevel(filePath, state, now = Date.now()) {
   if (!filePath || !state) return 'none';
   const target = normalizePath(filePath);
   const targetLower = target.toLowerCase();
 
-  const readFiles = new Set((state.read_files || []).map(f => normalizePath(f).toLowerCase()));
-  const touched = readFiles.has(targetLower) ||
-    Array.from(readFiles).some(f => targetLower.endsWith('/' + f) || f.endsWith('/' + targetLower));
-
   const matches = matchingEvidence(filePath, state, now, EVIDENCE_MAX_ENTRIES);
+
+  // Check direct read strictly within TTL
+  let hasDirectRead = matches.some(m => m.kind === 'read');
+
+  if (!hasDirectRead && state.read_files && typeof state.read_files === 'object' && !Array.isArray(state.read_files)) {
+    const readTs = state.read_files[targetLower];
+    if (typeof readTs === 'number' && (now - readTs) < EVIDENCE_TTL_MS) {
+      hasDirectRead = true;
+    }
+  }
+
   const hasInvestigation = matches.some(m => m.kind !== 'read');
-  const hasDirectRead = touched || matches.some(m => m.kind === 'read');
 
   if (hasInvestigation && hasDirectRead) {
     return 'deep';
@@ -166,7 +251,16 @@ function evidenceLevel(filePath, state, now = Date.now()) {
   return 'none';
 }
 
-function isTrivialChange(toolName, toolInput) {
+/**
+ * Checks if an edit contains only trivial comment or whitespace changes.
+ * Conserves indentation for indentation-sensitive files (Python, YAML, Makefiles)
+ * and distinguishes comments from preprocessor directives in C/C++.
+ * @param {string} toolName Tool name ('Edit').
+ * @param {Object} toolInput Tool input payload.
+ * @param {string} [filePath=''] Target file path.
+ * @returns {boolean} True if the change is strictly non-semantic.
+ */
+function isTrivialChange(toolName, toolInput, filePath = '') {
   const normTool = String(toolName || '').toLowerCase();
   if (normTool !== 'edit') return false;
   if (!toolInput || typeof toolInput.old_string !== 'string' || typeof toolInput.new_string !== 'string') {
@@ -179,16 +273,48 @@ function isTrivialChange(toolName, toolInput) {
     return false;
   }
 
+  const targetPath = normalizePath(filePath || toolInput.file_path || '');
+  const ext = path.extname(targetPath).toLowerCase();
+  const base = path.basename(targetPath).toLowerCase();
+
+  const isIndentSensitive = INDENT_SENSITIVE_EXTS.has(ext) || INDENT_SENSITIVE_BASES.has(base);
+  const allowsHashComment = HASH_COMMENT_EXTS.has(ext) || base === 'dockerfile';
+
+  function isCommentLine(line) {
+    const trimmed = line.trim();
+    if (!trimmed) return false;
+    if (trimmed.startsWith('//') || trimmed.startsWith('/*') || trimmed.startsWith('*') ||
+        trimmed.startsWith('*/') || trimmed.startsWith('<!--') || trimmed.startsWith('-- ')) {
+      return true;
+    }
+    if (allowsHashComment && trimmed.startsWith('#')) {
+      return true;
+    }
+    return false;
+  }
+
   function stripTrivia(text) {
     return text.split(/\r?\n/)
-      .map(line => line.trim())
-      .filter(line => line.length > 0 && !COMMENT_LINE_RE.test(line))
+      .map(line => isIndentSensitive ? line.trimEnd() : line.trim())
+      .filter(line => {
+        const trimmed = line.trim();
+        return trimmed.length > 0 && !isCommentLine(line);
+      })
       .join('\n');
   }
 
   return stripTrivia(oldStr) === stripTrivia(newStr);
 }
 
+/**
+ * Evaluates the risk tier for a file and operation: 'high', 'elevated', or 'normal'.
+ * Sensitive paths and files are classified 'high'.
+ * Public API signature changes (Edit) and public API definitions (Write) are classified 'elevated'.
+ * @param {string} toolName Name of the tool ('Edit' or 'Write').
+ * @param {Object} toolInput Tool input payload.
+ * @param {string} filePath Target file path.
+ * @returns {'high'|'elevated'|'normal'} Risk tier.
+ */
 function riskTier(toolName, toolInput, filePath) {
   const norm = normalizePath(filePath).toLowerCase();
   const base = path.basename(norm);
@@ -210,7 +336,7 @@ function riskTier(toolName, toolInput, filePath) {
   }
 
   const normTool = String(toolName || '').toLowerCase();
-  if (normTool === 'edit') {
+  if (normTool === 'edit' && toolInput) {
     const oldStr = String(toolInput.old_string || '');
     const newStr = String(toolInput.new_string || '');
 
@@ -222,9 +348,23 @@ function riskTier(toolName, toolInput, filePath) {
     }
   }
 
+  if (normTool === 'write' && toolInput) {
+    const content = String(toolInput.content || '');
+    if (content.split(/\r?\n/).some(l => SIGNATURE_LINE_RE.test(l))) {
+      return 'elevated';
+    }
+  }
+
   return 'normal';
 }
 
+/**
+ * Checks if an active temporary directory scope pass exists for the file.
+ * @param {string} filePath Target file path.
+ * @param {Object} state Session state object.
+ * @param {number} [now=Date.now()] Current timestamp in ms.
+ * @returns {boolean} True if a valid scope pass exists.
+ */
 function validScopePass(filePath, state, now = Date.now()) {
   if (!filePath || !state || !state.scope_passes) return false;
   const dir = normalizePath(path.dirname(filePath)).toLowerCase();
@@ -232,24 +372,35 @@ function validScopePass(filePath, state, now = Date.now()) {
   return typeof expiry === 'number' && expiry > now;
 }
 
+/**
+ * Immutably grants a temporary directory scope pass.
+ * @param {Object} state Current state object.
+ * @param {string} filePath Target file path.
+ * @param {number} [now=Date.now()] Current timestamp in ms.
+ * @returns {Object} New state object with updated scope passes.
+ */
 function grantScopePass(state, filePath, now = Date.now()) {
   if (!state) return state;
   const dir = normalizePath(path.dirname(filePath)).toLowerCase();
-  if (!state.scope_passes || typeof state.scope_passes !== 'object') {
-    state.scope_passes = {};
-  }
-
-  // Prune expired
-  for (const [d, exp] of Object.entries(state.scope_passes)) {
-    if (typeof exp !== 'number' || exp <= now) {
-      delete state.scope_passes[d];
+  const existing = state.scope_passes && typeof state.scope_passes === 'object' ? state.scope_passes : {};
+  const cleaned = {};
+  for (const [d, exp] of Object.entries(existing)) {
+    if (typeof exp === 'number' && exp > now) {
+      cleaned[d] = exp;
     }
   }
-
-  state.scope_passes[dir] = now + SCOPE_PASS_TTL_MS;
-  return state;
+  cleaned[dir] = now + SCOPE_PASS_TTL_MS;
+  return {
+    ...state,
+    scope_passes: cleaned
+  };
 }
 
+/**
+ * Sanitizes an arbitrary session identifier into a filesystem-safe string.
+ * @param {string} value Raw session ID candidate.
+ * @returns {string} Sanitized session key.
+ */
 function sanitizeSessionKey(value) {
   const raw = String(value || '').trim();
   if (!raw) return '';
@@ -258,6 +409,11 @@ function sanitizeSessionKey(value) {
   return `sid-${crypto.createHash('sha256').update(String(raw)).digest('hex').slice(0, 24)}`;
 }
 
+/**
+ * Resolves a stable session key from tool context and environment variables.
+ * @param {Object} data Input hook data.
+ * @returns {string} Session key.
+ */
 function resolveSessionKey(data) {
   const directCandidates = [
     data && data.session_id,
@@ -281,11 +437,62 @@ function resolveSessionKey(data) {
   return `proj-${crypto.createHash('sha256').update(path.resolve(projectFingerprint)).digest('hex').slice(0, 24)}`;
 }
 
+/**
+ * Merges in-memory state with freshly read disk state to handle concurrency safely.
+ * @param {Object} diskState State currently persisted on disk.
+ * @param {Object} memoryState In-memory updates.
+ * @param {number} [now=Date.now()] Current timestamp in ms.
+ * @returns {Object} Merged state object.
+ */
+function mergeState(diskState, memoryState, now = Date.now()) {
+  const disk = diskState && typeof diskState === 'object' ? diskState : {};
+  const mem = memoryState && typeof memoryState === 'object' ? memoryState : {};
+
+  const existingEvidence = Array.isArray(disk.evidence) ? disk.evidence : [];
+  const newEvidence = Array.isArray(mem.evidence) ? mem.evidence : [];
+
+  const combined = [...existingEvidence];
+  const seen = new Set(existingEvidence.map(e => `${e.kind}|${e.target}|${e.pattern || ''}|${e.ts}`));
+  for (const e of newEvidence) {
+    const key = `${e.kind}|${e.target}|${e.pattern || ''}|${e.ts}`;
+    if (!seen.has(key)) {
+      seen.add(key);
+      combined.push(e);
+    }
+  }
+
+  const readMap = {};
+  if (disk.read_files && typeof disk.read_files === 'object' && !Array.isArray(disk.read_files)) {
+    Object.assign(readMap, disk.read_files);
+  }
+  if (mem.read_files && typeof mem.read_files === 'object' && !Array.isArray(mem.read_files)) {
+    Object.assign(readMap, mem.read_files);
+  }
+
+  const merged = {
+    ...disk,
+    ...mem,
+    evidence: pruneEvidence(combined, now),
+    read_files: pruneReadFiles(readMap, now),
+    scope_passes: { ...(disk.scope_passes || {}), ...(mem.scope_passes || {}) },
+    checked: Array.from(new Set([...(disk.checked || []), ...(mem.checked || [])])),
+    last_active: now
+  };
+
+  return merged;
+}
+
+/**
+ * Records a tool use event in the session evidence ledger.
+ * Concurrency-safe: merges updates with current on-disk state.
+ * @param {string|Object} rawInput Raw hook JSON string or parsed object.
+ * @returns {{output: string, exitCode: number}} Hook response.
+ */
 function recordToolUse(rawInput) {
   let data;
   try {
     data = typeof rawInput === 'string' ? JSON.parse(rawInput) : rawInput;
-  } catch (_) {
+  } catch (_err) {
     return { output: '', exitCode: 0 };
   }
 
@@ -302,51 +509,47 @@ function recordToolUse(rawInput) {
 
   try {
     fs.mkdirSync(stateDir, { recursive: true });
-    let state = { checked: [], last_active: Date.now() };
+    let diskState = { checked: [], last_active: Date.now() };
 
     if (fs.existsSync(stateFile)) {
       try {
-        state = JSON.parse(fs.readFileSync(stateFile, 'utf8'));
-      } catch (_) {
-        state = { checked: [], last_active: Date.now() };
+        diskState = JSON.parse(fs.readFileSync(stateFile, 'utf8'));
+      } catch (_err) {
+        diskState = { checked: [], last_active: Date.now() };
       }
-    }
-
-    if (!Array.isArray(state.evidence)) {
-      state.evidence = [];
-    }
-    if (!Array.isArray(state.read_files)) {
-      state.read_files = [];
     }
 
     const now = Date.now();
-    state.evidence = pruneEvidence([...state.evidence, entry], now);
+    const readFiles = (diskState.read_files && typeof diskState.read_files === 'object' && !Array.isArray(diskState.read_files))
+      ? { ...diskState.read_files }
+      : {};
 
     if (entry.kind === 'read' && entry.target) {
-      if (!state.read_files.includes(entry.target)) {
-        state.read_files.push(entry.target);
-        if (state.read_files.length > EVIDENCE_MAX_ENTRIES) {
-          state.read_files = state.read_files.slice(-EVIDENCE_MAX_ENTRIES);
-        }
-      }
+      readFiles[entry.target.toLowerCase()] = now;
     }
 
-    state.last_active = now;
+    const memoryState = {
+      evidence: [entry],
+      read_files: readFiles,
+      last_active: now
+    };
 
-    // Atomic write
+    const finalState = mergeState(diskState, memoryState, now);
+
+    // Atomic write via temp file
     const tmpFile = `${stateFile}.tmp.${process.pid}.${crypto.randomBytes(4).toString('hex')}`;
-    fs.writeFileSync(tmpFile, JSON.stringify(state, null, 2), 'utf8');
+    fs.writeFileSync(tmpFile, JSON.stringify(finalState, null, 2), 'utf8');
     try {
       fs.renameSync(tmpFile, stateFile);
     } catch (e) {
       if (e && (e.code === 'EEXIST' || e.code === 'EPERM')) {
-        try { fs.unlinkSync(stateFile); } catch (_) {}
+        try { fs.unlinkSync(stateFile); } catch (_unlinkErr) { void 0; }
         fs.renameSync(tmpFile, stateFile);
       } else {
         throw e;
       }
     }
-  } catch (_) {
+  } catch (_err) {
     // Fail silently in PostToolUse to never disrupt the agent
   }
 
@@ -357,9 +560,11 @@ module.exports = {
   EVIDENCE_TTL_MS,
   EVIDENCE_MAX_ENTRIES,
   SCOPE_PASS_TTL_MS,
+  getStateDir,
   normalizePath,
   extractStem,
   pruneEvidence,
+  pruneReadFiles,
   buildEvidenceEntry,
   matchingEvidence,
   evidenceLevel,
@@ -367,6 +572,8 @@ module.exports = {
   riskTier,
   validScopePass,
   grantScopePass,
+  sanitizeSessionKey,
   resolveSessionKey,
+  mergeState,
   recordToolUse
 };
