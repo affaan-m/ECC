@@ -1,8 +1,9 @@
-# Agent-space distance metric & collision avoidance (Layer 4)
+# Agent-space proximity and advisory prototypes (Layer 4)
 
-> Status: v0 implemented in `scripts/lib/agent-proximity/`. This is the moat
-> layer of ECC 2.0 — *spatial deconfliction for multiple agents (and humans)
-> working the same codebase*, modeled on aircraft collision avoidance (TCAS).
+> Status: v0 proximity scoring exists in `scripts/lib/agent-proximity/`.
+> A separate v1 shadow trail records bounded advisories and declared responses.
+> Current scores and drawings have no calibrated conflict probability or live
+> conflict-reduction result.
 
 ## The analogy
 
@@ -28,16 +29,16 @@ also declare an **intent set** *I_a* of files it is about to touch (look-ahead).
 
 ## 2. Collision is multi-channel (noisy-OR)
 
-Two agents can collide through several independent channels. Each channel *i*
-yields a collision probability *r_i ∈ [0,1]*; we combine them as the probability
-of colliding through **at least one** channel:
+Several channels contribute bounded heuristic scores *r_i ∈ [0,1]*. The shipped
+noisy-OR-shaped combination is:
 
 ```
 R(a,b) = 1 − Π_i ( 1 − ω_i · r_i )                                   (2)
 ```
 
-with channel weights *ω_i ∈ [0,1]*. The reported **distance** is the dual
-*D(a,b) = 1 − R(a,b)*.
+with channel weights *ω_i ∈ [0,1]*. The reported **distance score** is the dual
+*D(a,b) = 1 − R(a,b)*. Correlated channels and unvalidated weights mean *R* is
+not a calibrated probability, and *D* need not satisfy metric axioms.
 
 ### Channel 1 — edit overlap *r_overlap*
 
@@ -119,10 +120,9 @@ rate near *τ_TA* can pre-emptively escalate before the protected zone is entere
 Each file gets a coordinate via a **space-filling embedding of its path** (files
 sharing a long directory prefix share most of their coordinate), then pulled
 toward its dependency neighbours by one averaging step. An agent sits at the
-recency-weighted centroid of its files' coordinates. The result: `‖v_a − v_b‖`
-tracks the collision risk *R*, so a **3D "where are the agents" view** renders
-agents as moving points in a file-cloud — you literally watch them crawl toward
-each other, see the advisory line light up, and watch one steer away.
+recency-weighted centroid of its files' coordinates. The resulting **3D display**
+illustrates path and dependency proximity. Its Euclidean separation has not
+been shown to preserve the risk score or predict collisions.
 
 `scanAirspace(agents, graph)` returns, in one pass: the non-clear `advisories`
 (what the trigger layer acts on), the 3D `positions` and `fileCoordinates` (what
@@ -133,18 +133,58 @@ the renderer draws), and pairwise `links` with risk (the edges to color).
 - **Inputs** come from the session/work state: each running session's worktree
   diff gives its working set *W_a*; the dependency graph is built from the repo
   (`buildDependencyGraph`).
-- **Triggers**: the control-pane tick calls `scanAirspace`; a Traffic Advisory
-  injects a "transmit intent" message between the two agents' sessions; a
-  Resolution Advisory tells the lower-priority agent to steer (re-target to a
-  different file/subtree) — the first concrete realization of *just-in-time
-  multi-agent (and multi-human) deconfliction*.
+- **Triggers**: control-pane prototype code can derive messages from
+  `scanAirspace`. Delivery, acknowledgement, scope authorization and actual
+  conflict resolution are separate evidence. The shadow trail below calls no
+  sink, hook or steer path.
 - **Board**: advisories surface on the kanban as proximity warnings, extending
   the agent/human JIT assignment layer already in the control pane.
 
+## Passive shadow receipt trail (v1)
+
+`scripts/lib/agent-proximity/shadow-trail.js` accepts two supplied, versioned
+observations with task/repository/base/scope identity, read/write path sets,
+completeness and expiry. It computes a local advisory using the shipped
+three-channel scorer. An exact write/write or write/read path overlap takes
+precedence over a low score. Incomplete, expired, future or incomparable critical
+observations produce `unknown`; an absent advisory means only that no advisory
+was found **within the complete, comparable supplied scope and supplied dependency
+graph**. The optional graph defaults to empty and may be supplied anew for
+re-observation; a quiet advisory says nothing about unsupplied dependencies.
+
+Call `createShadowTrail`, then `appendAcknowledgement` for both observed agents,
+`appendScopeRevision` for one externally declared revision and its new footprint,
+and `appendReobservation` with a fresh matching pair. `summarizeShadowTrail`
+reports the latest scoped advisory, its own advisory-bound ACKs, separate
+historical acknowledgers and `outcome: unadjudicated`. Both original observations
+must still be current when the scope-change declaration is recorded.
+`verifyShadowTrail` checks the bounded local receipt chain after JSON persistence.
+Each receipt hash binds the trail ID, event ID, time, predecessor hash and
+canonical payload. The verifier rejects noncanonical persisted payload field
+and path order before comparing hashes. Append results copy earlier receipts,
+so changing an earlier returned object cannot change a later returned trail.
+Returned data can still be mutated; verification detects inconsistent local
+content. A party able to
+rewrite and rehash the entire trail can forge a consistent chain. These hashes
+do not establish trusted identity, permission, delivery, whole-log immutability
+or an independently verified result.
+
+The module issues no grants and sends no messages. The scope-change receipt's
+`authorizationRef` is a caller declaration and is labelled `declared-only`;
+the actual authority owner must validate it before any real work changes. It
+records path metadata locally, so a caller must apply its own publication policy.
+It accepts no memory summary or required-state payload. Approximate summaries
+belong to the separately owned memory envelope; exact task constraints and
+authority remain outside this heuristic score. The trail is limited to one
+two-agent change, so it cannot grant coherent ownership across a three-agent
+conflict component.
+
 ## Roadmap
 
-- v0 (done): tree + overlap + dependency channels, noisy-OR risk, TCAS advisories,
-  priority/steer, 3D embedding, full test coverage.
+- v0 (source present): tree + overlap + dependency channels, noisy-OR-shaped
+  risk score, advisory/priority prototype and display embedding.
+- v1 shadow (source present): passive two-agent observation/advisory/ACK/scope
+  revision/re-observation receipts; no active steering or measured benefit.
 - v1: call-graph & symbol read/write channels; intent look-ahead; closure-rate
   escalation wired to live session diffs.
 - v2: cross-machine airspace over Tailscale (teammate agents enter the same
