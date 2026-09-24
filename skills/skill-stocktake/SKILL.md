@@ -20,6 +20,8 @@ The command targets the following paths **relative to the directory where it is 
 
 **At the start of Phase 1, the command explicitly lists which paths were found and scanned.**
 
+Directories named `.trash` are excluded from both scan modes: archived skills are not part of the live inventory. If an older `results.json` contains `.trash` entries, start a new Full Stocktake using the cache initialization below before resuming Quick Scan. An ordinary save merges entries and does not remove archived records.
+
 ### Targeting a specific project
 
 To include project-level skills, run from that project's root directory:
@@ -59,7 +61,11 @@ Re-evaluate only skills that have changed since the last run (5–10 min).
 
 ### Phase 1 — Inventory
 
-Run: `bash ~/.claude/skills/skill-stocktake/scripts/scan.sh`
+Capture the inventory:
+
+```bash
+SCAN_JSON=$(bash ~/.claude/skills/skill-stocktake/scripts/scan.sh)
+```
 
 The script enumerates skill files, extracts frontmatter, and collects UTC mtimes.
 Project dir is auto-detected from `$PWD/.claude/skills`; pass it explicitly only if needed.
@@ -73,6 +79,21 @@ Scanning:
 
 | Skill | 7d use | 30d use | Description |
 |-------|--------|---------|-------------|
+
+Usage counts come from the optional `~/.claude/observations.jsonl` file (overridable with `SKILL_STOCKTAKE_OBSERVATIONS`), which Claude Code does not create by default. When the file is absent, `use_7d` and `use_30d` are JSON `null`; display them as **unmeasured** in inventory and summary tables. A numeric `0` means the file exists but contains no matching Read observations in that window. Missing usage data is never evidence for retiring a skill.
+
+After a successful scan, initialize the cache **once at the start of a new Full Stocktake**:
+
+```bash
+INITIAL_RESULTS=$(printf '%s\n' "$SCAN_JSON" | jq '{
+  mode: "full", skills: {},
+  batch_progress: {total: (.skills | length), evaluated: 0, status: "in_progress"}
+}')
+bash ~/.claude/skills/skill-stocktake/scripts/save-results.sh \
+  ~/.claude/skills/skill-stocktake/results.json --replace <<< "$INITIAL_RESULTS"
+```
+
+`--replace` replaces the entire cached evaluation, removing archived or deleted skills and stale metadata. Do not run initialization when resuming an `in_progress` evaluation. Later chunks, completion updates, and Quick Scans must omit `--replace` so they merge into the current run instead of losing earlier results.
 
 ### Phase 2 — Quality Evaluation
 
@@ -98,7 +119,7 @@ The subagent reads each skill, applies the checklist, and returns per-skill JSON
 
 `{ "verdict": "Keep"|"Improve"|"Update"|"Retire"|"Merge into [X]", "reason": "..." }`
 
-**Chunk guidance:** Process ~20 skills per subagent invocation to keep context manageable. Save intermediate results to `results.json` (`status: "in_progress"`) after each chunk.
+**Chunk guidance:** Process ~20 skills per subagent invocation to keep context manageable. Save intermediate results with `save-results.sh RESULTS_JSON` (without `--replace`, `status: "in_progress"`) after each chunk.
 
 After all skills are evaluated: set `status: "completed"`, proceed to Phase 3.
 
@@ -110,7 +131,7 @@ Each skill is evaluated against this checklist:
 - [ ] Content overlap with other skills checked
 - [ ] Overlap with MEMORY.md / CLAUDE.md checked
 - [ ] Freshness of technical references verified (use WebSearch if tool names / CLI flags / APIs are present)
-- [ ] Usage frequency considered
+- [ ] Usage frequency considered when measured; missing observations marked unmeasured, not treated as zero
 ```
 
 Verdict criteria:
