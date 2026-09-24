@@ -16,6 +16,7 @@ DSH_HOME="${DSH_HOME:-$HOME/.dsh}"
 PROFILE="web"
 WITH_SKILLS=0
 DRY_RUN=0
+FORCE=0
 
 usage() {
   cat <<'USAGE'
@@ -24,6 +25,7 @@ Usage: ./.dsh/install.sh [options]
   --profile <name>    DSH profile to install into (default: web)
   --dsh-home <path>   Harness home (default: $DSH_HOME or ~/.dsh)
   --skills            Also link ECC's skills into <dsh-home>/skills
+  --force             Overwrite an edited ecc-hooks.json instead of preserving it
   --dry-run           Print the plan without writing anything
   -h, --help          This message
 USAGE
@@ -34,6 +36,7 @@ while [ $# -gt 0 ]; do
     --profile) PROFILE="${2:?--profile needs a value}"; shift 2 ;;
     --dsh-home) DSH_HOME="${2:?--dsh-home needs a value}"; shift 2 ;;
     --skills) WITH_SKILLS=1; shift ;;
+    --force) FORCE=1; shift ;;
     --dry-run) DRY_RUN=1; shift ;;
     -h|--help) usage; exit 0 ;;
     *) echo "unknown option: $1" >&2; usage >&2; exit 2 ;;
@@ -43,6 +46,14 @@ done
 case "$ECC_ROOT$DSH_HOME" in
   *"'"*) echo "paths containing a single quote are not supported" >&2; exit 2 ;;
 esac
+
+# A relative --dsh-home would bake a relative configPath into the bundle patch,
+# which the bridge resolves against whatever directory a session starts in.
+if [ "$DRY_RUN" != 1 ]; then
+  mkdir -p "$DSH_HOME"
+  DSH_HOME="$(cd "$DSH_HOME" && pwd)"
+fi
+export DSH_HOME
 
 HOOKS_SOURCE="$ECC_ROOT/hooks/hooks.json"
 PLUGIN_SOURCE="$ECC_ROOT/.dsh/plugin"
@@ -69,7 +80,13 @@ echo
 
 echo "1. hook config"
 run mkdir -p "$DSH_HOME/claude-compat"
-run cp "$HOOKS_SOURCE" "$CONFIG_PATH"
+# A reinstall must not silently re-enable hooks the user trimmed out of this copy.
+if [ -f "$CONFIG_PATH" ] && ! cmp -s "$HOOKS_SOURCE" "$CONFIG_PATH" && [ "$FORCE" != 1 ]; then
+  echo "   kept your edited $CONFIG_PATH (fresh copy at $CONFIG_PATH.dist; use --force to replace)"
+  [ "$DRY_RUN" = 1 ] || cp "$HOOKS_SOURCE" "$CONFIG_PATH.dist"
+else
+  run cp "$HOOKS_SOURCE" "$CONFIG_PATH"
+fi
 echo "   -> $CONFIG_PATH"
 
 echo "2. hook bridge"
@@ -112,6 +129,14 @@ if [ "$WITH_SKILLS" = 1 ]; then
       skipped=$((skipped + 1))
       continue
     fi
+    if [ -L "$target" ]; then
+      case "$(readlink "$target")" in
+        "$ECC_ROOT"/skills/*) : ;;   # our own link: safe to refresh
+        *) echo "   skip $name (existing link points elsewhere: $(readlink "$target"))"
+           skipped=$((skipped + 1))
+           continue ;;
+      esac
+    fi
     run ln -sfn "${skill%/}" "$target"
     linked=$((linked + 1))
   done
@@ -122,10 +147,11 @@ fi
 
 echo "4. register the bundle"
 if command -v dsh >/dev/null 2>&1; then
+  # DSH_HOME is exported above so registration targets the same home we wrote into.
   run dsh plugin --profile "$PROFILE" add "$BUNDLE_DIR"
 else
   echo "   dsh is not on PATH: register it from the harness with the plugin manager,"
-  echo "   or run: dsh plugin --profile $PROFILE add $BUNDLE_DIR"
+  echo "   or run: DSH_HOME=$DSH_HOME dsh plugin --profile $PROFILE add $BUNDLE_DIR"
 fi
 
 echo

@@ -21,16 +21,23 @@ ECC uses.
 ./.dsh/install.sh                       # hooks only
 ./.dsh/install.sh --skills              # also link the 292 skills into $DSH_HOME/skills
 ./.dsh/install.sh --dry-run             # print what would happen
+./.dsh/install.sh --force               # replace an ecc-hooks.json you have edited
 ```
 
 Options: `--profile <name>` (default `web`), `--dsh-home <path>` (default `$DSH_HOME` or `~/.dsh`),
-`--skills`, `--dry-run`. The script only writes inside `$DSH_HOME`: it copies `hooks/hooks.json`,
-installs the bridge into `$DSH_HOME/local-bundles/dsh-cc-hooks/`, and registers that bundle with
-`dsh plugin --profile <name> add`. Nothing else is touched, and re-running is safe.
+`--skills`, `--force`, `--dry-run`. The script only writes inside `$DSH_HOME`: it copies
+`hooks/hooks.json`, installs the bridge into `$DSH_HOME/local-bundles/dsh-cc-hooks/`, and registers
+that bundle with `dsh plugin --profile <name> add`. Nothing else is touched, and re-running is safe.
+
+Re-running preserves local edits: if you trimmed hooks out of the installed `ecc-hooks.json`, the
+installer keeps your copy and leaves the fresh one beside it as `ecc-hooks.json.dist` (use `--force`
+to replace it). With `--skills`, an existing symlink that points somewhere other than this checkout
+is left alone.
 
 Remove it with:
 
 ```bash
+DSH_HOME="${DSH_HOME:-$HOME/.dsh}"
 dsh plugin --profile web remove dsh-cc-hooks
 rm -rf "$DSH_HOME/local-bundles/dsh-cc-hooks" "$DSH_HOME/claude-compat/ecc-hooks.json"
 ```
@@ -47,7 +54,7 @@ plus three it has no hook point for:
 | `PreToolUse` | `tools/pre-execute` |
 | `PostToolUse` | `tools/post-execute` |
 | `PostToolUseFailure` | `tools/post-execute` with `result.isError` |
-| `PreCompact` | `session/event` → `compaction/start` |
+| `PreCompact` | `session/event` → `compaction/start` (not awaited — see below) |
 | `Stop` | `agent/turn-stopping` |
 | `SubagentStart` / `SubagentStop` | `subagent/start` / `subagent/end` |
 | `SessionEnd` | `session/disposed` |
@@ -95,12 +102,18 @@ End-to-end check on a live harness: start a `dsh` session and confirm the bridge
 line.
 
 ```bash
-tail -3 "$DSH_HOME/cc-hooks/cc-hooks.log"
+tail -3 "${DSH_HOME:-$HOME/.dsh}/cc-hooks/cc-hooks.log"
 ```
 
 ## Known differences from Claude Code
 
 - **PreToolUse warnings arrive with the tool result**, not before dispatch (DSH limitation).
+- **`PreCompact` cannot delay compaction.** DSH's `session/event` feed is fire-and-forget, so a
+  PreCompact hook runs concurrently with the compaction it was meant to precede. Nothing in the
+  harness exposes an awaited pre-compaction point; the hook still sees a fresh transcript, so a
+  summary saved by that hook is at worst concurrent rather than stale.
+- **A blocking Stop hook re-fires once with `stop_hook_active: true`**, matching Claude Code, so an
+  unconditional blocker cannot loop forever.
 - **SessionStart context can miss the very first request** — the point runs detached.
 - **Subagents also receive session-start context**, because DSH fires `agent/created` for
   in-process children too.

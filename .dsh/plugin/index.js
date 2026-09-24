@@ -118,8 +118,17 @@ function isMatchAll(matcher) {
 /** A Claude-literal pattern is purely word characters plus `|`. */
 const CLAUDE_LITERAL = /^[A-Za-z0-9_|]+$/;
 
-/** Compile an unanchored matcher regex; invalid patterns return `undefined`. */
+/** Patterns longer than this are treated as non-matches instead of compiled. */
+const MAX_MATCHER_LENGTH = 200;
+
+/**
+ * Compile an unanchored matcher regex; invalid patterns return `undefined`.
+ * Matchers come from the user's own hooks.json and keep upstream's regex
+ * semantics, but a length cap contains the ReDoS surface a non-literal
+ * `RegExp` would otherwise expose (CWE-1333).
+ */
 function compileRegex(pattern) {
+  if (typeof pattern !== 'string' || pattern.length > MAX_MATCHER_LENGTH) return undefined;
   try {
     return new RegExp(pattern);
   } catch {
@@ -481,6 +490,8 @@ export function apply(ctx, config) {
   const transcripts = new Map();
   const preContext = new Map();
   const compactionSeen = new Set();
+  /** Sessions whose Stop hook already forced another step this turn. */
+  const stopReentry = new Set();
   let handlerCounter = 0;
 
   /** Run every matching hook for one point and fold the outcomes. */
@@ -488,6 +499,13 @@ export function apply(ctx, config) {
     const groups = parsed[point] ?? [];
     const outputs = [];
     let handlers = 0;
+    // ECC hooks (observer leases, session cleanup) read the session id from the
+    // environment, so every run carries it alongside the payload field.
+    const runEnv = {
+      ...hookEnv,
+      ...(typeof payload?.session_id === 'string' && payload.session_id !== '' ? { CLAUDE_SESSION_ID: payload.session_id } : {}),
+      ...(opts.env ?? {}),
+    };
     for (const group of groups) {
       if (MATCHED_POINTS.has(point) && !matchesTool(group.matcher, matchQuery)) continue;
       for (const hook of group.hooks) {
@@ -496,13 +514,17 @@ export function apply(ctx, config) {
         const { output, durationMs } = await runHookCommand(ctx.shell, hook, {
           payload,
           defaultTimeoutMs,
-          ...(Object.keys(hookEnv).length > 0 ? { env: hookEnv } : {}),
+          ...(Object.keys(runEnv).length > 0 ? { env: runEnv } : {}),
           ...(opts.cwd !== undefined ? { cwd: opts.cwd } : {}),
           signal: opts.signal ?? detachedAbort.signal,
           trailingNewline: true,
           expectedEventName: point,
         });
         outputs.push(output);
+        if (output.updatedInput !== undefined) {
+          // DSH's PreToolDecision cannot rewrite arguments; surface it instead of dropping it.
+          log({ event: 'unsupported-updated-input', point });
+        }
         log({
           event: 'hook',
           point,
@@ -522,12 +544,16 @@ export function apply(ctx, config) {
     return userMessage(merged.additionalContext.join('\n\n'));
   }
 
-  /** Best-effort Claude Code transcript for one session, throttled per session. */
-  async function transcriptFor(sessionId) {
+  /**
+   * Best-effort Claude Code transcript for one session, throttled per session.
+   * `fresh` bypasses the throttle: lifecycle points (Stop, PreCompact, SessionEnd)
+   * must see the tool results that just happened, not a 20-second-old file.
+   */
+  async function transcriptFor(sessionId, fresh = false) {
     if (!transcriptEnabled || typeof sessionId !== 'string' || sessionId === '') return '';
     const cached = transcripts.get(sessionId);
     const now = Date.now();
-    if (cached !== undefined && now - cached.at < transcriptTtlMs) return cached.path;
+    if (!fresh && cached !== undefined && now - cached.at < transcriptTtlMs) return cached.path;
     let path = cached?.path ?? '';
     try {
       const query = ctx.get('sessionQuery');
@@ -559,8 +585,24 @@ export function apply(ctx, config) {
     switch (event?.type) {
       case 'user/message':
         return { type: 'user', message: { role: 'user', content: event.data?.content ?? [] }, uuid, sessionId, cwd, timestamp: time };
-      case 'assistant/message':
-        return { type: 'assistant', message: { role: 'assistant', content: event.data?.message?.content ?? [] }, uuid, sessionId, cwd, timestamp: time };
+      case 'assistant/message': {
+        // Model and usage are what cost-tracking hooks read; dropping them makes
+        // every session report an unknown model with zero tokens.
+        const message = event.data?.message ?? {};
+        return {
+          type: 'assistant',
+          message: {
+            role: 'assistant',
+            content: message.content ?? [],
+            ...(message.model !== undefined ? { model: message.model } : {}),
+            ...(event.data?.usage !== undefined ? { usage: event.data.usage } : message.usage !== undefined ? { usage: message.usage } : {}),
+          },
+          uuid,
+          sessionId,
+          cwd,
+          timestamp: time,
+        };
+      }
       case 'tool/result':
         return { type: 'user', message: { role: 'user', content: event.data?.message?.content ?? [] }, uuid, sessionId, cwd, timestamp: time };
       default:
@@ -573,7 +615,7 @@ export function apply(ctx, config) {
     const sessionId = header?.id ?? extra.sessionId ?? '';
     return {
       session_id: sessionId,
-      transcript_path: await transcriptFor(sessionId),
+      transcript_path: await transcriptFor(sessionId, extra.fresh === true),
       cwd: header?.cwd ?? config.projectDir ?? process.cwd(),
       hook_event_name: event,
       ...(extra.fields ?? {}),
@@ -593,6 +635,8 @@ export function apply(ctx, config) {
   ctx.on('agent/pre-step', async ({ agent, messages, signal }, next) => {
     try {
       if (messages.length === 0) return next();
+      const sessionId = agent?.session?.header?.id;
+      if (typeof sessionId === 'string') stopReentry.delete(sessionId);
       const payload = await basePayload('UserPromptSubmit', agent, {
         fields: { prompt: blocksToText(messages.flatMap((message) => message.content)) },
       });
@@ -622,6 +666,11 @@ export function apply(ctx, config) {
         // DSH's PreToolDecision cannot carry context: hold it for this call's result.
         preContext.set(exec.callId, merged.additionalContext);
       }
+      // Claude Code's `continue: false` stops the run; the closest DSH mapping is
+      // a denial, so it must short-circuit before next().
+      if (merged.stop) {
+        return { kind: 'deny', reason: merged.stopReason ?? merged.reason ?? 'stopped by PreToolUse hook' };
+      }
       if (merged.decision === 'deny') return { kind: 'deny', reason: merged.reason ?? 'blocked by PreToolUse hook' };
       if (merged.decision === 'ask') return { kind: 'ask', ...(merged.reason !== undefined ? { reason: merged.reason } : {}) };
       return next();
@@ -641,18 +690,15 @@ export function apply(ctx, config) {
         tool_response: ccToolResponse(exec.name, text),
       };
       const cwd = exec.agent?.session?.header?.cwd;
-      const merged = await runPoint('PostToolUse', exec.name, await basePayload('PostToolUse', exec.agent, { fields }), { signal: exec.signal, cwd });
+      // Claude Code runs PostToolUse after a success and PostToolUseFailure in its
+      // place on a failure; running both double-records the outcome.
+      const failed = result?.isError === true;
+      const point = failed ? 'PostToolUseFailure' : 'PostToolUse';
+      const payload = await basePayload(point, exec.agent, {
+        fields: failed ? { ...fields, error: result?.error?.message ?? text, is_interrupt: false } : fields,
+      });
+      const merged = await runPoint(point, exec.name, payload, { signal: exec.signal, cwd });
       const parts = [...merged.additionalContext];
-      if (result?.isError === true) {
-        const failure = await runPoint('PostToolUseFailure', exec.name, await basePayload('PostToolUseFailure', exec.agent, {
-          fields: { ...fields, error: result?.error?.message ?? text, is_interrupt: false },
-        }), { signal: exec.signal, cwd });
-        parts.push(...failure.additionalContext);
-        if (failure.decision === 'deny' && merged.decision !== 'deny') {
-          merged.decision = 'deny';
-          merged.reason = failure.reason ?? merged.reason;
-        }
-      }
       const held = preContext.get(exec.callId);
       if (held !== undefined) {
         preContext.delete(exec.callId);
@@ -677,8 +723,16 @@ export function apply(ctx, config) {
 
   ctx.on('agent/turn-stopping', async ({ agent, signal }) => {
     try {
-      const merged = await runPoint('Stop', '', await basePayload('Stop', agent, { fields: { stop_hook_active: false } }), { signal });
-      if (merged.decision === 'deny') agent.steer(userMessage(merged.reason ?? 'continue: blocked by Stop hook'));
+      const sessionId = agent?.session?.header?.id;
+      const reentry = typeof sessionId === 'string' && stopReentry.has(sessionId);
+      const merged = await runPoint('Stop', '', await basePayload('Stop', agent, { fields: { stop_hook_active: reentry }, fresh: true }), { signal });
+      if (merged.decision === 'deny') {
+        // Claude Code stops re-firing an already-continued turn through this flag.
+        if (typeof sessionId === 'string') stopReentry.add(sessionId);
+        agent.steer(userMessage(merged.reason ?? 'continue: blocked by Stop hook'));
+      } else if (typeof sessionId === 'string') {
+        stopReentry.delete(sessionId);
+      }
     } catch (error) {
       log({ event: 'listener-failed', point: 'Stop', message: String(error) });
     }
@@ -728,7 +782,7 @@ export function apply(ctx, config) {
         const header = session?.header;
         await runPoint('PreCompact', '', {
           session_id: header?.id ?? '',
-          transcript_path: await transcriptFor(header?.id),
+          transcript_path: await transcriptFor(header?.id, true),
           cwd: header?.cwd ?? process.cwd(),
           hook_event_name: 'PreCompact',
           trigger: 'auto',
@@ -745,7 +799,7 @@ export function apply(ctx, config) {
         const header = session?.header;
         await runPoint('SessionEnd', '', {
           session_id: header?.id ?? '',
-          transcript_path: await transcriptFor(header?.id),
+          transcript_path: await transcriptFor(header?.id, true),
           cwd: header?.cwd ?? process.cwd(),
           hook_event_name: 'SessionEnd',
           reason: 'other',

@@ -328,12 +328,13 @@ const ADAPTER_RECORDS = Object.freeze([
     ],
     verification_commands: [
       '`node .dsh/plugin/test.mjs`',
-      '`tail -3 $DSH_HOME/cc-hooks/cc-hooks.log` after a session starts',
+      '`tail -3 ${DSH_HOME:-$HOME/.dsh}/cc-hooks/cc-hooks.log` after a session starts',
     ],
     risk_notes: [
       'The bridge runs ECC hooks on every tool call; measure before enabling the standard or strict hook profile.',
       'ECC hooks keep writing their own state under ~/.claude and ~/.local/share/ecc-homunculus.',
       'Linking all 292 skills puts the whole catalog into every request; a curated subset is usually better.',
+      'PreCompact hooks run concurrently with compaction: the harness exposes no awaited pre-compaction point.',
     ],
     last_verified_at: '2026-09-24',
     owner: 'ECC maintainers',

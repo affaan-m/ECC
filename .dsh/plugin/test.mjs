@@ -122,3 +122,105 @@ if (realPath) {
 }
 
 console.log('ok — matcher, codec, merge and payload translation verified');
+
+/* ---------------------------------------------------------------- *
+ * Runtime wiring: apply the plugin against a mock harness and assert
+ * the decisions listeners actually return. The translation checks
+ * above pass even when a configured hook cannot run; these do not.
+ * ---------------------------------------------------------------- */
+import { mkdtempSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { apply } from './index.js';
+
+const work = mkdtempSync(join(tmpdir(), 'cc-hooks-test-'));
+const configPath = join(work, 'hooks.json');
+writeFileSync(configPath, JSON.stringify({
+  hooks: {
+    PreToolUse: [{ matcher: 'Edit|Write', hooks: [{ type: 'command', command: 'gate' }] }],
+    PostToolUse: [{ matcher: '.*', hooks: [{ type: 'command', command: 'success-hook' }] }],
+    PostToolUseFailure: [{ matcher: '.*', hooks: [{ type: 'command', command: 'failure-hook' }] }],
+  },
+}));
+
+/** A harness stand-in: records commands, answers with canned hook output. */
+function harness(respond) {
+  const handlers = {};
+  const ran = [];
+  return {
+    handlers,
+    ran,
+    ctx: {
+      logger: { warn: () => {} },
+      on: (event, fn) => { handlers[event] = fn; },
+      effect: () => () => {},
+      get: () => undefined,
+      shell: {
+        resolve: (request) => request,
+        execute: async (spec) => {
+          ran.push(spec.command);
+          const answer = respond(spec.command) ?? {};
+          return {
+            result: async () => ({
+              exitCode: answer.exitCode ?? 0,
+              stdout: { text: answer.stdout ?? '' },
+              stderr: { text: answer.stderr ?? '' },
+            }),
+          };
+        },
+      },
+    },
+  };
+}
+
+const json = (o) => JSON.stringify(o);
+const exec = (extra) => ({ callId: 'call-1', name: 'write', arguments: { file_path: '/tmp/x.md', content: 'x' }, signal: new AbortController().signal, ...extra });
+
+// A denying PreToolUse hook stops the call.
+{
+  const h = harness(() => ({ stdout: json({ hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'deny', permissionDecisionReason: '[Gate] stop' } }) }));
+  apply(h.ctx, { configPath, dshHome: work, logPath: join(work, 'a.log'), transcript: 'off' });
+  const decision = await h.handlers['tools/pre-execute'](exec(), async () => ({ kind: 'allow' }));
+  assert.equal(decision.kind, 'deny', 'denying hook denies the call');
+  assert.equal(decision.reason, '[Gate] stop');
+}
+
+// `continue: false` also stops the call, before next().
+{
+  const h = harness(() => ({ stdout: json({ continue: false, stopReason: 'halt' }) }));
+  apply(h.ctx, { configPath, dshHome: work, logPath: join(work, 'b.log'), transcript: 'off' });
+  let delegated = false;
+  const decision = await h.handlers['tools/pre-execute'](exec(), async () => { delegated = true; return { kind: 'allow' }; });
+  assert.equal(decision.kind, 'deny', 'continue:false denies');
+  assert.equal(decision.reason, 'halt');
+  assert.equal(delegated, false, 'continue:false never reaches next()');
+}
+
+// PreToolUse context is buffered and delivered with that call's result.
+{
+  const h = harness((command) => (command === 'gate'
+    ? { stdout: json({ hookSpecificOutput: { hookEventName: 'PreToolUse', additionalContext: '[Hook] WARNING' } }) }
+    : { stdout: '' }));
+  apply(h.ctx, { configPath, dshHome: work, logPath: join(work, 'c.log'), transcript: 'off' });
+  const call = exec();
+  await h.handlers['tools/pre-execute'](call, async () => ({ kind: 'allow' }));
+  const upper = call.callId.toUpperCase();
+  const decision = await h.handlers['tools/post-execute'](call, { isError: false, content: [{ type: 'text', text: 'ok' }] }, async () => ({ kind: 'accept' }));
+  const contexts = decision.additionalContexts ?? [];
+  assert.equal(contexts.length, 1, 'held context is attached to the result');
+  assert.ok(JSON.stringify(contexts[0]).includes('[Hook] WARNING'), `context text survives (${upper})`);
+}
+
+// A failed call runs only the failure hook; a successful one only the success hook.
+{
+  const h = harness(() => ({ stdout: '' }));
+  apply(h.ctx, { configPath, dshHome: work, logPath: join(work, 'd.log'), transcript: 'off' });
+  h.ran.length = 0;
+  await h.handlers['tools/post-execute'](exec({ callId: 'fail-1' }), { isError: true, content: [], error: { message: 'boom' } }, async () => ({ kind: 'accept' }));
+  assert.deepEqual(h.ran, ['failure-hook'], `failure path ran ${JSON.stringify(h.ran)}`);
+  h.ran.length = 0;
+  await h.handlers['tools/post-execute'](exec({ callId: 'ok-1' }), { isError: false, content: [{ type: 'text', text: 'ok' }] }, async () => ({ kind: 'accept' }));
+  assert.deepEqual(h.ran, ['success-hook'], `success path ran ${JSON.stringify(h.ran)}`);
+}
+
+console.log('ok — runtime wiring verified (deny, continue:false, context hand-off, failure routing)');
