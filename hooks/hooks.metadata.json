@@ -46,6 +46,11 @@
         "id": "pre:edit-write:gateguard-fact-force",
         "description": "Fact-forcing gate: block first Edit/Write/MultiEdit per file and demand investigation (importers, data schemas, user instruction) before allowing",
         "fingerprint": "32c4a312b4c2"
+      },
+      {
+        "id": "pre:edit:tcas",
+        "description": "TCAS pre-edit advisory hook: transmit, hold, wait, or pause overlapping edits",
+        "fingerprint": "7ecb35ef8d87"
       }
     ],
     "PreCompact": [
