@@ -11,29 +11,26 @@
 const fs = require('fs');
 const path = require('path');
 const { spawnSync } = require('child_process');
-const { isHookEnabled } = require('../lib/hook-flags');
+const { isHookEnabled, isDryRun } = require('../lib/hook-flags');
+const { readStdinRaw: readBoundedStdin, resolveMaxStdin } = require('./hook-input');
 const { buildPreToolUseAdditionalContext } = require('./pretooluse-visible-output');
 
-const MAX_STDIN = 1024 * 1024;
+const FAIL_CLOSED_ON_TRUNCATION_HOOKS = new Set([
+  'pre:powershell:gateguard-fact-force',
+  'pre:edit-write:gateguard-fact-force',
+  'pre:mcp-health-check'
+]);
+
+const MAX_STDIN = resolveMaxStdin(process.env.ECC_HOOK_INPUT_MAX_BYTES, {
+  writeDiagnostic: message => process.stderr.write(message)
+});
 
 function readStdinRaw() {
-  return new Promise(resolve => {
-    let raw = '';
-    let truncated = false;
-    process.stdin.setEncoding('utf8');
-    process.stdin.on('data', chunk => {
-      if (raw.length < MAX_STDIN) {
-        const remaining = MAX_STDIN - raw.length;
-        raw += chunk.substring(0, remaining);
-        if (chunk.length > remaining) {
-          truncated = true;
-        }
-      } else {
-        truncated = true;
-      }
-    });
-    process.stdin.on('end', () => resolve({ raw, truncated }));
-    process.stdin.on('error', () => resolve({ raw, truncated }));
+  return readBoundedStdin(process.stdin, {
+    maxStdin: MAX_STDIN,
+    truncated: /^(1|true|yes)$/i.test(
+      String(process.env.ECC_HOOK_INPUT_TRUNCATED_UPSTREAM || '')
+    )
   });
 }
 
@@ -46,20 +43,29 @@ function writeStderr(stderr) {
 }
 
 /**
- * Write stdout fully, then exit. `process.exit()` immediately after
- * `process.stdout.write()` drops anything beyond the ~64KB pipe buffer,
- * which cut large pass-through payloads mid-JSON and made the harness
- * treat the hook as failed (#2222). The write callback fires only after
- * the chunk is flushed to the pipe.
+ * Exit only after stdout and any previously queued stderr have drained.
+ * `process.exit()` immediately after a stream write drops anything beyond
+ * the OS pipe buffer, which cut large hook output mid-payload and made the
+ * harness treat the hook as failed (#2222).
  */
 function exitWithStdout(text, exitCode) {
-  if (typeof text !== 'string' || text.length === 0) {
-    process.exit(exitCode);
+  process.exitCode = exitCode;
+  let pendingWrites = 1;
+  const exitWhenFlushed = () => {
+    pendingWrites -= 1;
+    if (pendingWrites === 0) {
+      process.exit(exitCode);
+    }
+  };
+
+  if (typeof text === 'string' && text.length > 0) {
+    pendingWrites += 1;
+    process.stdout.write(text, exitWhenFlushed);
   }
-  process.stdout.write(text, () => process.exit(exitCode));
+  process.stderr.write('', exitWhenFlushed);
 }
 
-function resolveHookResult(raw, output) {
+function resolveHookResult(output) {
   if (typeof output === 'string' || Buffer.isBuffer(output)) {
     return { stdout: String(output), exitCode: 0 };
   }
@@ -74,23 +80,39 @@ function resolveHookResult(raw, output) {
     if (Object.prototype.hasOwnProperty.call(output, 'stdout')) {
       return { stdout: String(output.stdout ?? ''), exitCode };
     }
-    return { stdout: exitCode === 0 ? raw : '', exitCode };
+    return { stdout: '', exitCode };
   }
 
-  return { stdout: raw, exitCode: 0 };
+  return { stdout: '', exitCode: 0 };
 }
 
-function resolveLegacySpawnStdout(raw, result) {
+function resolveLegacySpawnStdout(result) {
   const stdout = typeof result.stdout === 'string' ? result.stdout : '';
-  if (stdout) {
-    return stdout;
+  return stdout || '';
+}
+
+function truncatedInputResult(hookId, maxStdin) {
+  if (!FAIL_CLOSED_ON_TRUNCATION_HOOKS.has(hookId)) return null;
+  if (hookId === 'pre:powershell:gateguard-fact-force'
+    || hookId === 'pre:edit-write:gateguard-fact-force') {
+    const gateGuardValue = String(process.env.ECC_GATEGUARD || '').trim().toLowerCase();
+    const legacyDisabled = String(process.env.GATEGUARD_DISABLED || '').trim() === '1';
+    if (legacyDisabled || ['0', 'false', 'off', 'disabled', 'disable'].includes(gateGuardValue)) {
+      return null;
+    }
+  }
+  if (hookId === 'pre:mcp-health-check') {
+    const failOpen = /^(1|true|yes)$/i.test(
+      String(process.env.ECC_MCP_HEALTH_FAIL_OPEN || '')
+    );
+    if (failOpen) return null;
   }
 
-  if (Number.isInteger(result.status) && result.status === 0) {
-    return raw;
-  }
-
-  return '';
+  return {
+    stdout: '',
+    stderr: `BLOCKED: Hook input exceeded ${maxStdin} bytes, so ${hookId} could not safely inspect the complete request. Retry with a smaller tool input or explicitly disable this hook.`,
+    exitCode: 2
+  };
 }
 
 function getPluginRoot() {
@@ -100,6 +122,47 @@ function getPluginRoot() {
   return path.resolve(__dirname, '..', '..');
 }
 
+//Safely extract target context from hook stdin JSON for dry-run preview.
+
+function extractTargetContext(raw) {
+  const result = { tool: '', filePath: '', command: '' };
+  if (!raw || typeof raw !== 'string') return result;
+
+  try {
+    const payload = JSON.parse(raw);
+    if (payload && typeof payload === 'object') {
+      result.tool = String(payload.tool || '');
+      const input = payload.tool_input;
+      if (input && typeof input === 'object') {
+        result.filePath = String(input.file_path || input.path || '');
+        result.command = String(input.command || '');
+      }
+    }
+  } catch {
+    // best-effort field extraction; ignore malformed input
+  }
+  return result;
+}
+
+// Build the [DryRun] preview line for stderr.
+
+function buildDryRunPreview(hookId, relScriptPath, profilesCsv, raw) {
+  const ctx = extractTargetContext(raw);
+  const parts = [`[DryRun] Hook "${hookId}" would execute: ${relScriptPath}`, `(enabled=true, profiles=${profilesCsv || 'default'})`];
+
+  if (ctx.tool) {
+    parts.push(`tool=${ctx.tool}`);
+  }
+  if (ctx.filePath) {
+    parts.push(`target=${ctx.filePath}`);
+  }
+  if (ctx.command) {
+    parts.push(`command=${ctx.command}`);
+  }
+
+  return parts.join(' ') + '\n';
+}
+
 async function main() {
   const [, , hookId, relScriptPath, profilesCsv] = process.argv;
   const { raw, truncated } = await readStdinRaw();
@@ -107,21 +170,28 @@ async function main() {
   // Oversized payloads: never echo the truncated string — a JSON document
   // cut mid-stream is treated by the harness as a hook failure, blocking the
   // tool call (#2222). Empty stdout + exit 0 means "no opinion", so
-  // pass-through paths fail open. The hook itself still runs and receives
+  // silent/no-op paths fail open. The hook itself still runs and receives
   // the truncated flag (run() context / ECC_HOOK_INPUT_TRUNCATED), so
   // security hooks like config-protection can still choose to block.
   const sanitizeEcho = text => (truncated && text === raw ? '' : text);
   if (truncated) {
-    process.stderr.write(`[Hook] stdin exceeded ${MAX_STDIN} bytes for ${hookId || 'unknown'}; suppressing pass-through (fail-open unless the hook blocks)\n`);
+    process.stderr.write(`[Hook] stdin exceeded ${MAX_STDIN} bytes for ${hookId || 'unknown'}; suppressing raw passthrough\n`);
   }
 
   if (!hookId || !relScriptPath) {
-    exitWithStdout(sanitizeEcho(raw), 0);
+    exitWithStdout('', 0);
     return;
   }
 
   if (!isHookEnabled(hookId, { profiles: profilesCsv })) {
-    exitWithStdout(sanitizeEcho(raw), 0);
+    exitWithStdout('', 0);
+    return;
+  }
+
+  if (isDryRun()) {
+    const preview = buildDryRunPreview(hookId, relScriptPath, profilesCsv, raw);
+    process.stderr.write(preview);
+    exitWithStdout('', 0);
     return;
   }
 
@@ -132,13 +202,20 @@ async function main() {
   // Prevent path traversal outside the plugin root
   if (!scriptPath.startsWith(resolvedRoot + path.sep)) {
     process.stderr.write(`[Hook] Path traversal rejected for ${hookId}: ${scriptPath}\n`);
-    exitWithStdout(sanitizeEcho(raw), 0);
+    exitWithStdout('', 0);
     return;
   }
 
   if (!fs.existsSync(scriptPath)) {
     process.stderr.write(`[Hook] Script not found for ${hookId}: ${scriptPath}\n`);
-    exitWithStdout(sanitizeEcho(raw), 0);
+    exitWithStdout('', 0);
+    return;
+  }
+
+  const truncationBlock = truncated ? truncatedInputResult(hookId, MAX_STDIN) : null;
+  if (truncationBlock) {
+    writeStderr(truncationBlock.stderr);
+    exitWithStdout(truncationBlock.stdout, truncationBlock.exitCode);
     return;
   }
 
@@ -150,7 +227,18 @@ async function main() {
   // which would interfere with the parent process or cause double execution.
   let hookModule;
   const src = fs.readFileSync(scriptPath, 'utf8');
-  const hasRunExport = /\bmodule\.exports\b/.test(src) && /\brun\b/.test(src);
+  // Gate require() on concrete export syntax, not a bare word match: the old
+  // /\bmodule\.exports\b/ && /\brun\b/ test fired on comments, strings, and
+  // unrelated properties, causing require() — and its module-scope side
+  // effects — to run for hooks that export no run(). Still lexical (no parser
+  // dependency), but requires an actual export assignment form.
+  const RUN_EXPORT_PATTERNS = [
+    /module\.exports\s*\.\s*run\s*=/,
+    /exports\s*\.\s*run\s*=/,
+    /module\.exports\s*=\s*\{[^}]*\brun\b/,
+    /module\.exports\s*=\s*(async\s+)?function\s+run\b/,
+  ];
+  const hasRunExport = RUN_EXPORT_PATTERNS.some(re => re.test(src));
 
   if (hasRunExport) {
     try {
@@ -163,18 +251,22 @@ async function main() {
 
   if (hookModule && typeof hookModule.run === 'function') {
     try {
-      const output = hookModule.run(raw, {
+      // Awaited so a hook may export `async run()`. Without this an async hook
+      // hands back a pending Promise, which resolveHookResult reads as "no
+      // opinion" and silently degrades to pass-through. Synchronous hooks are
+      // unaffected: awaiting a plain value just costs a microtask.
+      const output = await hookModule.run(raw, {
         hookId,
         pluginRoot,
         scriptPath,
         truncated,
         maxStdin: MAX_STDIN
       });
-      const result = resolveHookResult(raw, output);
+      const result = resolveHookResult(output);
       exitWithStdout(sanitizeEcho(result.stdout), result.exitCode);
     } catch (runErr) {
       process.stderr.write(`[Hook] run() error for ${hookId}: ${runErr.message}\n`);
-      exitWithStdout(sanitizeEcho(raw), 0);
+      exitWithStdout('', 0);
     }
     return;
   }
@@ -195,7 +287,7 @@ async function main() {
     timeout: 30000
   });
 
-  const legacyStdout = sanitizeEcho(resolveLegacySpawnStdout(raw, result));
+  const legacyStdout = sanitizeEcho(resolveLegacySpawnStdout(result));
   if (result.stderr) process.stderr.write(result.stderr);
 
   if (result.error || result.signal || result.status === null) {

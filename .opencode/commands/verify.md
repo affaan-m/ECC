@@ -1,6 +1,6 @@
 ---
 description: Run verification loop to validate implementation
-agent: everything-claude-code:build
+agent: build
 ---
 
 # Verify Command

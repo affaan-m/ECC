@@ -23,7 +23,8 @@ const {
   resolveContextThreshold,
   resolveContextInterval,
   computeContextBucket,
-  formatWindowLabel
+  formatWindowLabel,
+  isContextWindowInferred
 } = require('../../scripts/lib/transcript-context');
 
 console.log('=== Testing transcript-context.js ===\n');
@@ -78,47 +79,32 @@ function tracked(filePath) {
 console.log('readLatestContextTokens:');
 
 test('sums input + cache_read + cache_creation from the latest usage record', () => {
-  const file = tracked(writeTranscript([
-    usageRecord({ input: 10, cacheRead: 20, cacheCreation: 5 }),
-    usageRecord({ input: 100, cacheRead: 150000, cacheCreation: 7000 })
-  ]));
+  const file = tracked(writeTranscript([usageRecord({ input: 10, cacheRead: 20, cacheCreation: 5 }), usageRecord({ input: 100, cacheRead: 150000, cacheCreation: 7000 })]));
   const result = readLatestContextTokens(file);
   assert.ok(result, 'Expected a usage result');
   assert.strictEqual(result.tokens, 157100);
 });
 
 test('returns the model id alongside the token count', () => {
-  const file = tracked(writeTranscript([
-    usageRecord({ input: 1000 }, 'claude-opus-4-5[1m]')
-  ]));
+  const file = tracked(writeTranscript([usageRecord({ input: 1000 }, 'claude-opus-4-5[1m]')]));
   const result = readLatestContextTokens(file);
   assert.strictEqual(result.model, 'claude-opus-4-5[1m]');
 });
 
 test('skips trailing records without usage (e.g. tool results)', () => {
-  const file = tracked(writeTranscript([
-    usageRecord({ input: 5000 }),
-    JSON.stringify({ type: 'user', message: { content: 'tool result' } }),
-    JSON.stringify({ type: 'system', subtype: 'info' })
-  ]));
+  const file = tracked(writeTranscript([usageRecord({ input: 5000 }), JSON.stringify({ type: 'user', message: { content: 'tool result' } }), JSON.stringify({ type: 'system', subtype: 'info' })]));
   const result = readLatestContextTokens(file);
   assert.strictEqual(result.tokens, 5000);
 });
 
 test('skips malformed JSONL lines without throwing', () => {
-  const file = tracked(writeTranscript([
-    usageRecord({ input: 4200 }),
-    '{not json at all',
-    ''
-  ]));
+  const file = tracked(writeTranscript([usageRecord({ input: 4200 }), '{not json at all', '']));
   const result = readLatestContextTokens(file);
   assert.strictEqual(result.tokens, 4200);
 });
 
 test('returns null for a transcript with no usage records', () => {
-  const file = tracked(writeTranscript([
-    JSON.stringify({ type: 'user', message: { content: 'hello' } })
-  ]));
+  const file = tracked(writeTranscript([JSON.stringify({ type: 'user', message: { content: 'hello' } })]));
   assert.strictEqual(readLatestContextTokens(file), null);
 });
 
@@ -132,10 +118,7 @@ test('returns null for empty or non-string paths', () => {
 });
 
 test('ignores zero-token usage records', () => {
-  const file = tracked(writeTranscript([
-    usageRecord({ input: 999 }),
-    usageRecord({ input: 0 })
-  ]));
+  const file = tracked(writeTranscript([usageRecord({ input: 999 }), usageRecord({ input: 0 })]));
   const result = readLatestContextTokens(file);
   assert.strictEqual(result.tokens, 999);
 });
@@ -154,8 +137,44 @@ test('only scans the transcript tail (latest records win on large files)', () =>
 // ── resolveContextWindowTokens ──
 console.log('\nresolveContextWindowTokens:');
 
+// Isolation: an env-set window override (either knob) otherwise leaks into the
+// default-window assertions below and fails them (#2290).
+const originalContextWindowEnv = {
+  ECC_CONTEXT_WINDOW_TOKENS: process.env.ECC_CONTEXT_WINDOW_TOKENS,
+  CLAUDE_CODE_AUTO_COMPACT_WINDOW: process.env.CLAUDE_CODE_AUTO_COMPACT_WINDOW,
+};
+delete process.env.ECC_CONTEXT_WINDOW_TOKENS;
+delete process.env.CLAUDE_CODE_AUTO_COMPACT_WINDOW;
+
 test('defaults to the standard 200k window', () => {
   assert.strictEqual(resolveContextWindowTokens(50000, 'claude-sonnet-4-6'), STANDARD_CONTEXT_WINDOW_TOKENS);
+});
+
+test('honors an explicit ECC_CONTEXT_WINDOW_TOKENS override (e.g. 400k models, #2290)', () => {
+  process.env.ECC_CONTEXT_WINDOW_TOKENS = '400000';
+  try {
+    assert.strictEqual(resolveContextWindowTokens(50000, 'claude-opus-4-x'), 400000);
+  } finally {
+    delete process.env.ECC_CONTEXT_WINDOW_TOKENS;
+  }
+});
+
+test('honors Claude Code native CLAUDE_CODE_AUTO_COMPACT_WINDOW override', () => {
+  process.env.CLAUDE_CODE_AUTO_COMPACT_WINDOW = '400000';
+  try {
+    assert.strictEqual(resolveContextWindowTokens(50000, 'claude-opus-4-x'), 400000);
+  } finally {
+    delete process.env.CLAUDE_CODE_AUTO_COMPACT_WINDOW;
+  }
+});
+
+test('ignores a non-positive / invalid window override', () => {
+  process.env.ECC_CONTEXT_WINDOW_TOKENS = 'not-a-number';
+  try {
+    assert.strictEqual(resolveContextWindowTokens(50000, 'claude-sonnet-4-6'), STANDARD_CONTEXT_WINDOW_TOKENS);
+  } finally {
+    delete process.env.ECC_CONTEXT_WINDOW_TOKENS;
+  }
 });
 
 test('detects a 1M window from the [1m] model marker', () => {
@@ -166,9 +185,76 @@ test('detects a 1M window when observed tokens exceed 200k (marker dropped)', ()
   assert.strictEqual(resolveContextWindowTokens(220000, 'claude-opus-4-5'), LARGE_CONTEXT_WINDOW_TOKENS);
 });
 
+test('recognizes claude-fable-5 as a 1M window without a [1m] marker or 200k+ tokens (#2461)', () => {
+  assert.strictEqual(resolveContextWindowTokens(187000, 'claude-fable-5'), LARGE_CONTEXT_WINDOW_TOKENS);
+});
+
+test('recognizes claude-mythos-5 as a 1M window from the known-model table (#2461)', () => {
+  assert.strictEqual(resolveContextWindowTokens(50000, 'claude-mythos-5'), LARGE_CONTEXT_WINDOW_TOKENS);
+});
+
+test('recognizes claude-opus-5 as a 1M window from the known-model table', () => {
+  assert.strictEqual(resolveContextWindowTokens(50000, 'claude-opus-5'), LARGE_CONTEXT_WINDOW_TOKENS);
+});
+
+test('recognizes dated/prefixed variants of known large-window model ids (#2461)', () => {
+  assert.strictEqual(resolveContextWindowTokens(50000, 'us.anthropic.claude-fable-5-20260115-v1:0'), LARGE_CONTEXT_WINDOW_TOKENS);
+});
+
+test('env window override still wins over the known-model table (#2461)', () => {
+  process.env.ECC_CONTEXT_WINDOW_TOKENS = '400000';
+  try {
+    assert.strictEqual(resolveContextWindowTokens(50000, 'claude-fable-5'), 400000);
+  } finally {
+    delete process.env.ECC_CONTEXT_WINDOW_TOKENS;
+  }
+});
+
+test('does not match hypothetical smaller tiers sharing a known-family prefix (#2461)', () => {
+  assert.strictEqual(resolveContextWindowTokens(50000, 'claude-fable-5-mini'), STANDARD_CONTEXT_WINDOW_TOKENS);
+  assert.strictEqual(resolveContextWindowTokens(50000, 'claude-mythos-5-haiku-20260201'), STANDARD_CONTEXT_WINDOW_TOKENS);
+});
+
+test('keeps the 200k default for unknown model ids at low token counts (no false positives, #2461)', () => {
+  assert.strictEqual(resolveContextWindowTokens(187000, 'claude-haiku-4-5-20251001'), STANDARD_CONTEXT_WINDOW_TOKENS);
+});
+
 test('treats an empty model id as standard window', () => {
   assert.strictEqual(resolveContextWindowTokens(100000, ''), STANDARD_CONTEXT_WINDOW_TOKENS);
 });
+
+// ── isContextWindowInferred ──
+console.log('\nisContextWindowInferred:');
+
+test('flags the assumed 200k default as inferred', () => {
+  assert.strictEqual(isContextWindowInferred(187000, 'claude-opus-9'), true);
+});
+
+test('an env override is a detected window, not inferred', () => {
+  process.env.ECC_CONTEXT_WINDOW_TOKENS = '1000000';
+  try {
+    assert.strictEqual(isContextWindowInferred(187000, 'claude-opus-9'), false);
+  } finally {
+    delete process.env.ECC_CONTEXT_WINDOW_TOKENS;
+  }
+});
+
+test('a [1m] marker is a detected window, not inferred', () => {
+  assert.strictEqual(isContextWindowInferred(187000, 'claude-opus-4-5[1m]'), false);
+});
+
+test('a known large-window family is a detected window, not inferred', () => {
+  assert.strictEqual(isContextWindowInferred(187000, 'claude-fable-5'), false);
+});
+
+test('tokens above the standard window still leave the exact size inferred', () => {
+  assert.strictEqual(isContextWindowInferred(220000, 'claude-opus-9'), true);
+});
+
+for (const [name, value] of Object.entries(originalContextWindowEnv)) {
+  if (value === undefined) delete process.env[name];
+  else process.env[name] = value;
+}
 
 // ── resolveContextThreshold ──
 console.log('\nresolveContextThreshold:');
@@ -191,11 +277,7 @@ test('COMPACT_CONTEXT_THRESHOLD=0 disables the signal', () => {
 
 test('invalid COMPACT_CONTEXT_THRESHOLD falls back to the default', () => {
   for (const bad of ['-5', 'abc', '99999999999']) {
-    assert.strictEqual(
-      resolveContextThreshold({ COMPACT_CONTEXT_THRESHOLD: bad }, STANDARD_CONTEXT_WINDOW_TOKENS),
-      DEFAULT_CONTEXT_THRESHOLD_STANDARD,
-      `Expected fallback for ${bad}`
-    );
+    assert.strictEqual(resolveContextThreshold({ COMPACT_CONTEXT_THRESHOLD: bad }, STANDARD_CONTEXT_WINDOW_TOKENS), DEFAULT_CONTEXT_THRESHOLD_STANDARD, `Expected fallback for ${bad}`);
   }
 });
 

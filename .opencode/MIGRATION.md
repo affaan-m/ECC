@@ -184,7 +184,7 @@ Create a detailed implementation plan for: {input}
 ```markdown
 ---
 description: Create implementation plan
-agent: everything-claude-code:planner
+agent: planner
 ---
 
 Create a detailed implementation plan for: $ARGUMENTS

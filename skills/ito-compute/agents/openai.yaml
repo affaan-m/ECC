@@ -1,0 +1,4 @@
+interface:
+  display_name: "Itô Compute"
+  short_description: "GPU inventory, RFQs, status, quote acceptance, and revocation"
+  default_prompt: "Use $ito-compute to request a live GPU RFQ, inspect status, accept a quote, or revoke this device safely."

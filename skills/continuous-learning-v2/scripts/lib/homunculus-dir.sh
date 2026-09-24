@@ -6,7 +6,7 @@
 #   2. XDG_DATA_HOME/ecc-homunculus, when XDG_DATA_HOME is absolute
 #   3. HOME/.local/share/ecc-homunculus
 
-_ecc_resolve_homunculus_dir() {
+_clv2_resolve_homunculus_dir() {
   if [ -n "${CLV2_HOMUNCULUS_DIR:-}" ]; then
     case "$CLV2_HOMUNCULUS_DIR" in
       /*) printf '%s\n' "$CLV2_HOMUNCULUS_DIR"; return 0 ;;

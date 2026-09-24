@@ -497,7 +497,11 @@ function renderControlPaneHtml() {
       const summary = workItems || { totalCount: 0, openCount: 0, blockedCount: 0, doneCount: 0, kanban: {}, items: [] };
       const items = Array.isArray(summary.items) ? summary.items : [];
       const kanban = summary.kanban || {};
-      $('#work-item-count').textContent = summary.openCount + ' open / ' + summary.blockedCount + ' blocked';
+      const needsAssignment = Array.isArray(summary.needsAssignment) ? summary.needsAssignment : [];
+      const assignment = summary.assignment || { agent: 0, human: 0, unassigned: 0 };
+      $('#work-item-count').textContent = summary.openCount + ' open / ' + summary.blockedCount + ' blocked'
+        + ' / ' + (assignment.agent || 0) + ' agent / ' + (assignment.human || 0) + ' human'
+        + (needsAssignment.length ? ' / ' + needsAssignment.length + ' need owner' : '');
 
       const lanes = ['ready', 'running', 'blocked', 'done'];
       const laneHtml = '<div class="kanban">' + lanes.map(lane =>
@@ -513,15 +517,41 @@ function renderControlPaneHtml() {
         const branch = item.branch || (item.metadata && item.metadata.branch) || '';
         const mergeGate = item.mergeGate || (item.metadata && item.metadata.mergeGate) || '';
         const blocker = item.blocker || (item.metadata && item.metadata.blocker) || '';
-        const owner = item.owner || item.source || 'unassigned';
+        const assigneeKind = item.assigneeKind || 'unassigned';
+        const owner = item.assignee || item.owner || (assigneeKind === 'unassigned' ? 'unassigned (JIT)' : item.source) || 'unassigned';
+        // Ids/lanes go into HTML-escaped data-* attributes and are read back via
+        // dataset in delegated listeners below — never concatenated into inline
+        // JS handlers — so a crafted work-item id cannot inject script (XSS).
+        const idAttr = escapeHtml(item.id);
+        const moveButtons = ['ready', 'running', 'blocked', 'done'].map(lane =>
+          '<button type="button" data-wi-action="move" data-wi-id="' + idAttr + '" data-wi-lane="' + lane + '">' + escapeHtml(lane) + '</button>'
+        ).join('');
+        const controls = state.allowActions
+          ? '<div class="row">'
+            + (assigneeKind === 'unassigned' ? '<button type="button" data-wi-action="claim" data-wi-id="' + idAttr + '">Claim</button>' : '')
+            + moveButtons
+            + '</div>'
+          : '';
         return '<div class="work-item">' +
           '<div class="row"><strong>' + escapeHtml(item.title || item.id) + '</strong>' + statePill(item.kanbanState || item.status) + '</div>' +
-          '<div class="subtle">' + escapeHtml(owner) + ' - ' + escapeHtml(item.source || 'manual') + (item.priority ? ' - ' + escapeHtml(item.priority) : '') + '</div>' +
+          '<div class="subtle">[' + escapeHtml(assigneeKind) + '] ' + escapeHtml(owner) + ' - ' + escapeHtml(item.source || 'manual') + (item.priority ? ' - ' + escapeHtml(item.priority) : '') + '</div>' +
           (branch ? '<div class="subtle">branch: ' + escapeHtml(branch) + '</div>' : '') +
           (mergeGate ? '<div class="subtle">merge gate: ' + escapeHtml(mergeGate) + '</div>' : '') +
           (blocker ? '<div class="subtle">blocker: ' + escapeHtml(blocker) + '</div>' : '') +
+          controls +
         '</div>';
       }).join('');
+
+      document.querySelectorAll('#work-items [data-wi-action]').forEach(button => {
+        button.addEventListener('click', () => {
+          const id = button.getAttribute('data-wi-id');
+          if (button.getAttribute('data-wi-action') === 'claim') {
+            eccClaimItem(id);
+          } else {
+            eccMoveItem(id, button.getAttribute('data-wi-lane'));
+          }
+        });
+      });
     }
 
     function renderKnowledge(knowledge) {
@@ -601,7 +631,8 @@ function renderControlPaneHtml() {
       const snapshot = await readJsonResponse(response);
       $('#query').value = snapshot.knowledge.query || state.query;
       $('#db-path').textContent = snapshot.database.exists ? snapshot.dbPath : 'database missing';
-      $('#action-status').textContent = snapshot.execution.allowActions ? 'local allowlist' : 'read-only';
+      state.allowActions = Boolean(snapshot.execution.allowActions);
+      $('#action-status').textContent = state.allowActions ? 'local allowlist' : 'read-only';
       renderMetrics(snapshot.summary);
       renderSessions(snapshot.sessions);
       renderWorkItems(snapshot.workItems);
@@ -622,6 +653,38 @@ function renderControlPaneHtml() {
     $('#refresh').addEventListener('click', () => {
       load().catch(error => showError('#app', error));
     });
+
+    async function postWorkItem(pathSuffix, payload) {
+      const response = await fetch('/api/work-items/' + pathSuffix, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(payload || {})
+      });
+      const result = await readJsonResponse(response);
+      if (!result.ok) throw new Error(result.error || 'request failed');
+      await load();
+    }
+
+    window.eccClaimItem = function (id) {
+      if (!state.allowActions) return;
+      const owner = window.prompt('Claim "' + id + '" as (owner name):');
+      if (!owner) return;
+      const as = (window.prompt("Owner kind: 'agent' or 'human'", 'human') || '').trim().toLowerCase();
+      postWorkItem(encodeURIComponent(id) + '/claim', { owner: owner.trim(), as: as === 'agent' ? 'agent' : 'human' })
+        .catch(error => showError('#app', error));
+    };
+    window.eccMoveItem = function (id, lane) {
+      if (!state.allowActions) return;
+      postWorkItem(encodeURIComponent(id) + '/move', { lane })
+        .catch(error => showError('#app', error));
+    };
+
+    // Live board: refresh on a gentle interval; pause while a prompt/tab is hidden.
+    setInterval(() => {
+      if (document.hidden) return;
+      load().catch(() => {});
+    }, 15000);
+
     load().catch(error => showError('#app', error));
   </script>
 </body>
@@ -629,5 +692,5 @@ function renderControlPaneHtml() {
 }
 
 module.exports = {
-  renderControlPaneHtml,
+  renderControlPaneHtml
 };

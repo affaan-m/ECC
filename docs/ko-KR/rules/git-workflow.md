@@ -9,7 +9,7 @@
 
 타입: feat, fix, refactor, docs, test, chore, perf, ci
 
-참고: 어트리뷰션 비활성화 여부는 각자의 `~/.claude/settings.json` 로컬 설정에 따라 달라질 수 있습니다.
+참고: ECC가 관리하는 설치는 `~/.claude/settings.json`에 `"includeCoAuthoredBy": false`를 설정하므로 커밋에 기본적으로 `Co-Authored-By`가 붙지 않습니다. Claude 표기를 유지하려면 `"includeCoAuthoredBy": true`를 설정하거나 `attribution`을 구성하세요. ECC는 명시적인 선택을 덮어쓰지 않습니다.
 
 ## Pull Request 워크플로우
 

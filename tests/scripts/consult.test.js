@@ -75,7 +75,7 @@ function runTests() {
     assert.ok(payload.matches[0].reasons.some(reason => reason.includes('security')));
     assert.strictEqual(
       payload.matches[0].installCommand,
-      'npx ecc install --profile minimal --target claude --with capability:security'
+      'npx ecc-universal install --profile minimal --target claude --with capability:security'
     );
     assert.ok(payload.profiles.some(profile => profile.id === 'security'));
     assert.ok(payload.profiles.find(profile => profile.id === 'security').installCommand.includes('--profile security'));
@@ -87,8 +87,8 @@ function runTests() {
     assert.strictEqual(result.status, 0, result.stderr);
     assert.match(result.stdout, /ECC consult/);
     assert.match(result.stdout, /capability:security/);
-    assert.match(result.stdout, /npx ecc install --profile minimal --target claude --with capability:security/);
-    assert.match(result.stdout, /npx ecc plan --profile minimal --target claude --with capability:security/);
+    assert.match(result.stdout, /npx ecc-universal install --profile minimal --target claude --with capability:security/);
+    assert.match(result.stdout, /npx ecc-universal plan --profile minimal --target claude --with capability:security/);
   })) passed++; else failed++;
 
   if (test('recommends machine-learning component and reviewer agent', () => {

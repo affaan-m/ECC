@@ -40,7 +40,9 @@ origin: ECC
 
 ## 钩子设置
 
-添加到你的 `~/.claude/settings.json`：
+**作为插件安装？** 无需任何设置。插件的 `hooks/hooks.json` 已经注册了 `suggest-compact.js`（钩子 ID `pre:edit-write:suggest-compact`，在 `standard` 和 `strict` 钩子配置档中生效）。不要把下面的代码块复制到 `~/.claude/settings.json` — 插件安装中不存在 `~/.claude/scripts/`，并且重复注册插件钩子会导致双重执行。
+
+**如果是手动安装**（`./install.sh`），添加到你的 `~/.claude/settings.json`：
 
 ```json
 {

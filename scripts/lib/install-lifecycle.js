@@ -1,16 +1,47 @@
+const crypto = require('crypto');
 const fs = require('fs');
+const { execFileSync } = require('child_process');
 const os = require('os');
 const path = require('path');
+const { isDeepStrictEqual } = require('util');
 
-const { resolveInstallPlan, loadInstallManifests } = require('./install-manifests');
-const { readInstallState, writeInstallState } = require('./install-state');
+const { loadInstallManifests } = require('./install-manifests');
+const { readInstallState, validateInstallState } = require('./install-state');
+const { assertWithinTrustedRoot } = require('./path-safety');
+const { createInstallPlanFromRequest } = require('./install/runtime');
+const { assertNoNewUserOwnedFile, prepareUserOwnedFileGuard } = require('./install/ownership-guard');
+const { isCodexUserConfig } = require('./install/codex-user-config');
+const { getRecordedHookConsent } = require('./install/hook-consent');
 const {
-  createManifestInstallPlan,
-} = require('./install-executor');
+  prepareClaudeSkillMigration,
+} = require('./install/claude-skill-migration');
 const {
-  getInstallTargetAdapter,
-  listInstallTargetAdapters,
-} = require('./install-targets/registry');
+  getLegacyAntigravityLocation,
+  inspectLegacyAntigravityState,
+} = require('./install/antigravity-legacy-migration');
+const {
+  getLegacyOpencodeLocation,
+  inspectLegacyOpencodeState,
+} = require('./install/opencode-legacy-migration');
+const {
+  acquireSettingsLock,
+  assertClaudeSettingsPath,
+  getClaudeSettingsPath,
+  inspectManagedHooks,
+  materializeManagedHooks,
+  repairManagedHooks,
+  uninstallManagedHooks,
+  updateSettingsAtomic,
+  validateManagedHooks,
+} = require('./install/claude-settings');
+const { adaptAntigravityAgent } = require('./install/antigravity-agent');
+const { buildInstallIndex, rewriteRelativeLinks } = require('./install/link-rewrite');
+const { getInstallTargetAdapter, listInstallTargetAdapters } = require('./install-targets/registry');
+const { resolveInvocationEnvironment } = require('./invocation-environment');
+const { mergeHooksMetadata, metadataPathFor } = require('./hooks-config');
+const OPENCODE_BUILD_ARTIFACT = path.join('.opencode', 'dist');
+const OPENCODE_BUILD_SCRIPT = path.join('scripts', 'build-opencode.js');
+const OPENCODE_PLUGIN_NOT_BUILT_CODE = 'opencode-plugin-not-built';
 
 const DEFAULT_REPO_ROOT = path.join(__dirname, '../..');
 
@@ -50,36 +81,169 @@ function compareStringArrays(left, right) {
   return leftValues.every((value, index) => value === rightValues[index]);
 }
 
+function buildRecordedManifestRequest(record) {
+  const state = record.state || {};
+  const request = state.request || {};
+
+  return {
+    mode: 'manifest',
+    target: state.target && state.target.target ? state.target.target : record.adapter.target,
+    profileId: request.profile || null,
+    moduleIds: Array.isArray(request.modules) ? [...request.modules] : [],
+    includeComponentIds: Array.isArray(request.includeComponents) ? [...request.includeComponents] : [],
+    excludeComponentIds: Array.isArray(request.excludeComponents) ? [...request.excludeComponents] : [],
+    legacyLanguages: Array.isArray(request.legacyLanguages) ? [...request.legacyLanguages] : [],
+    hookConsent: getRecordedHookConsent(state),
+  };
+}
+
+function resolveRecordedManifestPlan(record, context, options = {}) {
+  return createInstallPlanFromRequest(buildRecordedManifestRequest(record), {
+    sourceRoot: context.repoRoot,
+    projectRoot: context.projectRoot,
+    homeDir: context.homeDir,
+    env: context.env,
+    exemptValidationCodes: options.exemptValidationCodes || [],
+  });
+}
+
+function hasOpencodeBuildError(issues) {
+  return Array.isArray(issues) && issues.some(issue => issue.code === OPENCODE_PLUGIN_NOT_BUILT_CODE);
+}
+
+function getOpencodeBuildValidationIssues(context) {
+  return getInstallTargetAdapter('opencode').validate({
+    homeDir: context.homeDir,
+    repoRoot: context.repoRoot,
+    env: context.env,
+  });
+}
+
+function buildOpencodePayload(repoRoot, buildRunner = execFileSync) {
+  buildRunner(process.execPath, [path.join(repoRoot, OPENCODE_BUILD_SCRIPT)], {
+    cwd: repoRoot,
+    encoding: 'utf8',
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+}
+
+function formatBuildErrorMessage(error) {
+  const stderr = typeof error.stderr === 'string' ? error.stderr.trim() : '';
+  const stdout = typeof error.stdout === 'string' ? error.stdout.trim() : '';
+  return stderr || stdout || error.message || 'Failed to build OpenCode payload';
+}
+
 function getManagedOperations(state) {
-  return Array.isArray(state && state.operations)
-    ? state.operations.filter(operation => operation.ownership === 'managed')
-    : [];
+  return Array.isArray(state && state.operations) ? state.operations.filter(operation => operation.ownership === 'managed') : [];
+}
+
+function createUnsafeRepairSourceError() {
+  return new Error(
+    'Refusing unsafe repair source metadata: sources must stay within the repository.'
+  );
+}
+
+function assertSafeRepairSourcePath(sourcePath, repoRoot) {
+  try {
+    return assertWithinTrustedRoot(sourcePath, repoRoot, 'read repair source');
+  } catch {
+    throw createUnsafeRepairSourceError();
+  }
 }
 
 function resolveOperationSourcePath(repoRoot, operation) {
   if (operation.sourceRelativePath) {
-    return path.join(repoRoot, operation.sourceRelativePath);
+    if (typeof operation.sourceRelativePath !== 'string') {
+      throw createUnsafeRepairSourceError();
+    }
+
+    const sourceRelativePath = operation.sourceRelativePath;
+    const hasParentTraversal = sourceRelativePath
+      .split(/[/\\]+/)
+      .includes('..');
+    const isAbsolute = path.isAbsolute(sourceRelativePath)
+      || path.win32.isAbsolute(sourceRelativePath);
+    if (isAbsolute || hasParentTraversal) {
+      throw createUnsafeRepairSourceError();
+    }
+
+    return assertSafeRepairSourcePath(
+      path.resolve(repoRoot, sourceRelativePath),
+      repoRoot
+    );
   }
 
-  return operation.sourcePath || null;
+  if (!operation.sourcePath) {
+    return null;
+  }
+  if (
+    typeof operation.sourcePath !== 'string'
+    || !path.isAbsolute(operation.sourcePath)
+  ) {
+    throw createUnsafeRepairSourceError();
+  }
+  return assertSafeRepairSourcePath(operation.sourcePath, repoRoot);
 }
 
 function areFilesEqual(leftPath, rightPath) {
   try {
-    const leftStat = fs.statSync(leftPath);
-    const rightStat = fs.statSync(rightPath);
-    if (!leftStat.isFile() || !rightStat.isFile()) {
-      return false;
-    }
-
-    return fs.readFileSync(leftPath).equals(fs.readFileSync(rightPath));
+    return readFileNoFollow(leftPath).equals(readFileNoFollow(rightPath));
   } catch (_error) {
     return false;
   }
 }
 
-function readFileUtf8(filePath) {
-  return fs.readFileSync(filePath, 'utf8');
+function hasRecordedContentDigest(operation) {
+  return /^[a-f0-9]{64}$/i.test(String(operation && operation.contentSha256 || ''));
+}
+
+function fileMatchesRecordedContent(filePath, operation) {
+  if (!hasRecordedContentDigest(operation)) {
+    return false;
+  }
+
+  try {
+    return crypto.createHash('sha256')
+      .update(readFileNoFollow(filePath))
+      .digest('hex') === operation.contentSha256.toLowerCase();
+  } catch (_error) {
+    return false;
+  }
+}
+
+function isMarkdownPath(filePath) {
+  return /\.(md|mdx|markdown)$/i.test(String(filePath || ''));
+}
+
+function buildLinkIndexForOperations(operations, trustedRoot) {
+  const mappings = (operations || [])
+    .filter(operation => operation.kind === 'copy-file' && operation.sourceRelativePath)
+    .map(operation => ({
+      sourceRel: operation.sourceRelativePath,
+      destRel: path.relative(trustedRoot, operation.destinationPath),
+    }));
+  return buildInstallIndex(mappings);
+}
+
+function transformCopyFileContent(operation, content) {
+  if (!operation.contentTransform) {
+    return content;
+  }
+  if (operation.contentTransform === 'antigravity-agent-frontmatter') {
+    return adaptAntigravityAgent(content, operation.sourceRelativePath);
+  }
+  throw new Error(`Unknown install content transform: ${operation.contentTransform}`);
+}
+
+function getExpectedCopyFileContent(operation, content, linkIndex) {
+  const transformed = transformCopyFileContent(operation, content);
+  if (!linkIndex || !operation.sourceRelativePath || !isMarkdownPath(operation.destinationPath)) {
+    return transformed;
+  }
+  return rewriteRelativeLinks(transformed, {
+    sourceRel: operation.sourceRelativePath,
+    index: linkIndex,
+  });
 }
 
 function isPlainObject(value) {
@@ -115,13 +279,7 @@ function parseJsonLikeValue(value, label) {
 }
 
 function getOperationTextContent(operation) {
-  const candidateKeys = [
-    'renderedContent',
-    'content',
-    'managedContent',
-    'expectedContent',
-    'templateOutput',
-  ];
+  const candidateKeys = ['renderedContent', 'content', 'managedContent', 'expectedContent', 'templateOutput'];
 
   for (const key of candidateKeys) {
     if (typeof operation[key] === 'string') {
@@ -133,13 +291,7 @@ function getOperationTextContent(operation) {
 }
 
 function getOperationJsonPayload(operation) {
-  const candidateKeys = [
-    'mergePayload',
-    'managedPayload',
-    'payload',
-    'value',
-    'expectedValue',
-  ];
+  const candidateKeys = ['mergePayload', 'managedPayload', 'payload', 'value', 'expectedValue'];
 
   for (const key of candidateKeys) {
     if (operation[key] !== undefined) {
@@ -151,11 +303,7 @@ function getOperationJsonPayload(operation) {
 }
 
 function getOperationPreviousContent(operation) {
-  const candidateKeys = [
-    'previousContent',
-    'originalContent',
-    'backupContent',
-  ];
+  const candidateKeys = ['previousContent', 'originalContent', 'backupContent'];
 
   for (const key of candidateKeys) {
     if (typeof operation[key] === 'string') {
@@ -167,11 +315,7 @@ function getOperationPreviousContent(operation) {
 }
 
 function getOperationPreviousJson(operation) {
-  const candidateKeys = [
-    'previousValue',
-    'previousJson',
-    'originalValue',
-  ];
+  const candidateKeys = ['previousValue', 'previousJson', 'originalValue'];
 
   for (const key of candidateKeys) {
     if (operation[key] !== undefined) {
@@ -186,12 +330,320 @@ function formatJson(value) {
   return `${JSON.stringify(value, null, 2)}\n`;
 }
 
-function readJsonFile(filePath) {
-  return JSON.parse(readFileUtf8(filePath));
+function getManagedDestination(
+  destinationPath,
+  trustedRoot,
+  action,
+  { allowFinalSymlink = false } = {}
+) {
+  if (!destinationPath || typeof destinationPath !== 'string') {
+    throw new Error(`Refusing to ${action}: missing destination path.`);
+  }
+
+  const canonicalRoot = assertWithinTrustedRoot(trustedRoot, trustedRoot, action);
+  const resolvedDestination = path.resolve(destinationPath);
+  const canonicalParent = assertWithinTrustedRoot(
+    path.dirname(resolvedDestination),
+    canonicalRoot,
+    action
+  );
+  const managedPath = path.join(canonicalParent, path.basename(resolvedDestination));
+  let stat = null;
+
+  try {
+    stat = fs.lstatSync(managedPath);
+  } catch (error) {
+    if (!error || (error.code !== 'ENOENT' && error.code !== 'ENOTDIR')) {
+      throw error;
+    }
+  }
+
+  if (stat && stat.isSymbolicLink() && !allowFinalSymlink) {
+    const error = new Error(
+      `Refusing to ${action}: managed destination is a final symlink.`
+    );
+    error.code = 'ECC_FINAL_DESTINATION_SYMLINK';
+    throw error;
+  }
+
+  return {
+    canonicalRoot,
+    exists: stat !== null,
+    isFinalSymlink: Boolean(stat && stat.isSymbolicLink()),
+    managedPath
+  };
 }
 
-function ensureParentDir(filePath) {
-  fs.mkdirSync(path.dirname(filePath), { recursive: true });
+function ensureContainedParentDir(destinationPath, trustedRoot, action) {
+  const initialDestination = getManagedDestination(
+    destinationPath,
+    trustedRoot,
+    action
+  );
+  const { canonicalRoot, managedPath } = initialDestination;
+  const canonicalParent = path.dirname(managedPath);
+  const relativeParent = path.relative(canonicalRoot, canonicalParent);
+  const pathSegments = relativeParent
+    ? relativeParent.split(path.sep).filter(Boolean)
+    : [];
+  let currentPath = canonicalRoot;
+
+  for (const segment of pathSegments) {
+    const validatedParent = assertWithinTrustedRoot(currentPath, canonicalRoot, action);
+    const nextPath = path.join(validatedParent, segment);
+    try {
+      fs.mkdirSync(nextPath);
+    } catch (error) {
+      if (!error || error.code !== 'EEXIST') {
+        throw error;
+      }
+    }
+
+    const validatedNext = assertWithinTrustedRoot(nextPath, canonicalRoot, action);
+    const nextStat = fs.lstatSync(validatedNext);
+    if (!nextStat.isDirectory() || nextStat.isSymbolicLink()) {
+      throw new Error(`Refusing to ${action}: destination parent is not a trusted directory.`);
+    }
+    currentPath = validatedNext;
+  }
+
+  return getManagedDestination(managedPath, canonicalRoot, action).managedPath;
+}
+
+function prepareContainedWriteDestination(destinationPath, trustedRoot, action) {
+  return ensureContainedParentDir(destinationPath, trustedRoot, action);
+}
+
+function getContainedExistingPath(
+  destinationPath,
+  trustedRoot,
+  action,
+  { allowFinalSymlink = false } = {}
+) {
+  const initialDestination = getManagedDestination(
+    destinationPath,
+    trustedRoot,
+    action,
+    { allowFinalSymlink }
+  );
+  const followsToExistingPath = fs.existsSync(initialDestination.managedPath);
+  if (!followsToExistingPath && !initialDestination.isFinalSymlink) {
+    return null;
+  }
+
+  const finalDestination = getManagedDestination(
+    initialDestination.managedPath,
+    trustedRoot,
+    action,
+    { allowFinalSymlink }
+  );
+  return finalDestination.exists ? finalDestination.managedPath : null;
+}
+
+function hasSameFileIdentity(leftStat, rightStat) {
+  return leftStat.dev === rightStat.dev && leftStat.ino === rightStat.ino;
+}
+
+function createChangedDestinationError(action) {
+  return new Error(
+    `Refusing to ${action}: managed destination changed during the write.`
+  );
+}
+
+function getStableParentStat(filePath, action) {
+  const parentStat = fs.lstatSync(path.dirname(filePath));
+  if (!parentStat.isDirectory() || parentStat.isSymbolicLink()) {
+    throw createChangedDestinationError(action);
+  }
+  return parentStat;
+}
+
+function assertPinnedWriteDestination(
+  filePath,
+  fileDescriptor,
+  expectedParentStat,
+  trustedRoot,
+  action
+) {
+  const liveDestination = getManagedDestination(filePath, trustedRoot, action);
+  if (path.resolve(liveDestination.managedPath) !== path.resolve(filePath)) {
+    throw createChangedDestinationError(action);
+  }
+
+  const liveParentStat = getStableParentStat(filePath, action);
+  if (!hasSameFileIdentity(expectedParentStat, liveParentStat)) {
+    throw createChangedDestinationError(action);
+  }
+
+  const descriptorStat = fs.fstatSync(fileDescriptor);
+  const livePathStat = fs.lstatSync(liveDestination.managedPath);
+  if (
+    !descriptorStat.isFile()
+    || !livePathStat.isFile()
+    || livePathStat.isSymbolicLink()
+    || !hasSameFileIdentity(descriptorStat, livePathStat)
+  ) {
+    throw createChangedDestinationError(action);
+  }
+}
+
+function writeFileNoFollow(filePath, content, mode, trustedRoot, action) {
+  const expectedParentStat = getStableParentStat(filePath, action);
+  const flags = fs.constants.O_WRONLY
+    | fs.constants.O_CREAT
+    | (fs.constants.O_NOFOLLOW || 0);
+  const fileDescriptor = fs.openSync(filePath, flags, mode);
+
+  try {
+    assertPinnedWriteDestination(
+      filePath,
+      fileDescriptor,
+      expectedParentStat,
+      trustedRoot,
+      action
+    );
+    fs.ftruncateSync(fileDescriptor, 0);
+    fs.writeFileSync(fileDescriptor, content);
+    if (mode !== undefined) {
+      fs.fchmodSync(fileDescriptor, mode);
+    }
+  } finally {
+    fs.closeSync(fileDescriptor);
+  }
+}
+
+function readFileWithMetadataNoFollow(filePath, encoding) {
+  const flags = fs.constants.O_RDONLY | (fs.constants.O_NOFOLLOW || 0);
+  const fileDescriptor = fs.openSync(filePath, flags);
+
+  try {
+    const stat = fs.fstatSync(fileDescriptor);
+    if (!stat.isFile()) {
+      throw new Error(`Refusing to read non-file path: ${filePath}`);
+    }
+    return {
+      content: fs.readFileSync(fileDescriptor, encoding),
+      mode: stat.mode,
+    };
+  } finally {
+    fs.closeSync(fileDescriptor);
+  }
+}
+
+function readFileNoFollow(filePath, encoding) {
+  return readFileWithMetadataNoFollow(filePath, encoding).content;
+}
+
+function readJsonNoFollow(filePath) {
+  return JSON.parse(readFileNoFollow(filePath, 'utf8'));
+}
+
+/**
+ * Read hooks.json and merge in hooks/hooks.metadata.json without following
+ * symlinks. The sidecar holds the stable matcher ids that hooks.json cannot
+ * carry, because Claude Code reports unknown keys when the plugin loads. A
+ * sidecar that does not line up with hooks.json is rejected before repair can
+ * reconcile matchers under the wrong ids.
+ *
+ * @param {string} hooksPath - Path to the source hooks.json.
+ * @returns {object} the hooks configuration with ids and descriptions restored.
+ */
+function readHooksConfigNoFollow(hooksPath) {
+  const hooksConfig = readJsonNoFollow(hooksPath);
+  const metadataPath = metadataPathFor(hooksPath);
+  if (!fs.existsSync(metadataPath)) {
+    return hooksConfig;
+  }
+  return mergeHooksMetadata(hooksConfig, readJsonNoFollow(metadataPath), hooksPath);
+}
+
+function assertClaudeSettingsDestination(operation, trustedRoot, target = null) {
+  if (target && target !== 'claude' && target !== 'claude-project') {
+    throw new Error('Refusing to manage Claude hooks for a non-Claude target.');
+  }
+  assertClaudeSettingsPath(operation.destinationPath, trustedRoot);
+}
+
+function writeContainedFile(destinationPath, content, trustedRoot, action, mode) {
+  const preparedDestination = prepareContainedWriteDestination(destinationPath, trustedRoot, action);
+  const finalDestination = getManagedDestination(
+    preparedDestination,
+    trustedRoot,
+    action
+  ).managedPath;
+  writeFileNoFollow(
+    finalDestination,
+    content,
+    mode,
+    trustedRoot,
+    action
+  );
+  return finalDestination;
+}
+
+function copyContainedFile(sourcePath, destinationPath, trustedRoot, action) {
+  const source = readFileWithMetadataNoFollow(sourcePath);
+  return writeContainedFile(
+    destinationPath,
+    source.content,
+    trustedRoot,
+    action,
+    source.mode & 0o777
+  );
+}
+
+function removeContainedPath(destinationPath, trustedRoot, action, options = {}) {
+  const existingDestination = getContainedExistingPath(
+    destinationPath,
+    trustedRoot,
+    action,
+    { allowFinalSymlink: true }
+  );
+  if (!existingDestination) {
+    return null;
+  }
+
+  const managedDestination = getManagedDestination(
+    existingDestination,
+    trustedRoot,
+    action,
+    { allowFinalSymlink: true }
+  );
+  const finalDestination = managedDestination.managedPath;
+  const expectedStat = fs.lstatSync(finalDestination, { bigint: true });
+  const quarantineDir = fs.mkdtempSync(path.join(
+    path.dirname(managedDestination.canonicalRoot),
+    '.ecc-remove-'
+  ));
+  const quarantinePath = path.join(quarantineDir, path.basename(finalDestination));
+
+  try {
+    fs.renameSync(finalDestination, quarantinePath);
+  } catch (error) {
+    fs.rmdirSync(quarantineDir);
+    throw error;
+  }
+
+  const quarantinedStat = fs.lstatSync(quarantinePath, { bigint: true });
+  if (!hasSameFileIdentity(expectedStat, quarantinedStat)) {
+    try {
+      fs.renameSync(quarantinePath, finalDestination);
+      fs.rmdirSync(quarantineDir);
+    } catch (_restoreError) {
+      throw new Error(
+        `Refusing to ${action}: managed destination changed before removal; replacement preserved at ${quarantinePath}.`
+      );
+    }
+    throw createChangedDestinationError(action);
+  }
+
+  if (quarantinedStat.isDirectory() && !options.recursive) {
+    fs.rmdirSync(quarantinePath);
+  } else {
+    fs.rmSync(quarantinePath, options);
+  }
+  fs.rmdirSync(quarantineDir);
+  return finalDestination;
 }
 
 function deepMergeJson(baseValue, patchValue) {
@@ -216,10 +668,7 @@ function jsonContainsSubset(actualValue, expectedValue) {
       return false;
     }
 
-    return Object.entries(expectedValue).every(([key, value]) => (
-      Object.prototype.hasOwnProperty.call(actualValue, key)
-      && jsonContainsSubset(actualValue[key], value)
-    ));
+    return Object.entries(expectedValue).every(([key, value]) => Object.prototype.hasOwnProperty.call(actualValue, key) && jsonContainsSubset(actualValue[key], value));
   }
 
   if (Array.isArray(expectedValue)) {
@@ -279,15 +728,33 @@ function deepRemoveJsonSubset(currentValue, managedValue) {
   return currentValue === managedValue ? JSON_REMOVE_SENTINEL : currentValue;
 }
 
-function hydrateRecordedOperations(repoRoot, operations) {
+function hydrateRecordedOperations(repoRoot, operations, trustedRoot) {
   return operations.map(operation => {
+    if (operation.kind === 'update-claude-settings') {
+      const sourcePath = resolveOperationSourcePath(repoRoot, operation);
+      if (!sourcePath || !fs.existsSync(sourcePath)) {
+        throw new Error(
+          `Missing source file for repair: ${sourcePath || operation.sourceRelativePath}`
+        );
+      }
+      return {
+        ...operation,
+        sourcePath,
+        previousManagedHooks: operation.managedHooks,
+        managedHooks: materializeManagedHooks(
+          readHooksConfigNoFollow(sourcePath),
+          trustedRoot
+        ),
+      };
+    }
+
     if (operation.kind !== 'copy-file') {
       return { ...operation };
     }
 
     return {
       ...operation,
-      sourcePath: resolveOperationSourcePath(repoRoot, operation),
+      sourcePath: resolveOperationSourcePath(repoRoot, operation)
     };
   });
 }
@@ -299,9 +766,9 @@ function buildRecordedStatePreview(state, context, operations) {
     source: {
       ...state.source,
       repoVersion: context.packageVersion,
-      manifestVersion: context.manifestVersion,
+      manifestVersion: context.manifestVersion
     },
-    lastValidatedAt: new Date().toISOString(),
+    lastValidatedAt: new Date().toISOString()
   };
 }
 
@@ -309,16 +776,36 @@ function shouldRepairFromRecordedOperations(state) {
   return getManagedOperations(state).some(operation => operation.kind !== 'copy-file');
 }
 
-function executeRepairOperation(repoRoot, operation) {
+function executeRepairOperation(
+  repoRoot,
+  operation,
+  trustedRoot,
+  linkIndex = null,
+  target = null,
+  settingsLockHeld = false
+) {
+  // Install-state is attacker-controllable; never write/delete outside the
+  // adapter-derived trusted root, regardless of what the state file claims
+  // (GHSA-hfpv-w6mp-5g95).
   if (operation.kind === 'copy-file') {
     const sourcePath = resolveOperationSourcePath(repoRoot, operation);
     if (!sourcePath || !fs.existsSync(sourcePath)) {
       throw new Error(`Missing source file for repair: ${sourcePath || operation.sourceRelativePath}`);
     }
 
-    ensureParentDir(operation.destinationPath);
-    fs.copyFileSync(sourcePath, operation.destinationPath);
-    return;
+    if (operation.contentTransform || isMarkdownPath(operation.destinationPath)) {
+      const source = readFileWithMetadataNoFollow(sourcePath, 'utf8');
+      writeContainedFile(
+        operation.destinationPath,
+        getExpectedCopyFileContent(operation, source.content, linkIndex),
+        trustedRoot,
+        'repair',
+        source.mode & 0o777
+      );
+    } else {
+      copyContainedFile(sourcePath, operation.destinationPath, trustedRoot, 'repair');
+    }
+    return operation.destinationPath;
   }
 
   if (operation.kind === 'render-template') {
@@ -327,9 +814,8 @@ function executeRepairOperation(repoRoot, operation) {
       throw new Error(`Missing rendered content for repair: ${operation.destinationPath}`);
     }
 
-    ensureParentDir(operation.destinationPath);
-    fs.writeFileSync(operation.destinationPath, renderedContent);
-    return;
+    writeContainedFile(operation.destinationPath, renderedContent, trustedRoot, 'repair');
+    return operation.destinationPath;
   }
 
   if (operation.kind === 'merge-json') {
@@ -338,104 +824,183 @@ function executeRepairOperation(repoRoot, operation) {
       throw new Error(`Missing merge payload for repair: ${operation.destinationPath}`);
     }
 
-    const currentValue = fs.existsSync(operation.destinationPath)
-      ? readJsonFile(operation.destinationPath)
+    const existingDestination = getContainedExistingPath(operation.destinationPath, trustedRoot, 'repair');
+    const currentValue = existingDestination
+      ? readJsonNoFollow(
+        getManagedDestination(existingDestination, trustedRoot, 'repair').managedPath
+      )
       : {};
     const mergedValue = deepMergeJson(currentValue, payload);
 
-    ensureParentDir(operation.destinationPath);
-    fs.writeFileSync(operation.destinationPath, formatJson(mergedValue));
-    return;
+    writeContainedFile(operation.destinationPath, formatJson(mergedValue), trustedRoot, 'repair');
+    return operation.destinationPath;
+  }
+
+  if (operation.kind === 'update-claude-settings') {
+    assertClaudeSettingsDestination(operation, trustedRoot, target);
+    const managedHooks = validateManagedHooks(operation.managedHooks);
+    const previousManagedHooks = operation.previousManagedHooks
+      ? validateManagedHooks(operation.previousManagedHooks, 'previous managed hooks')
+      : null;
+    const existingDestination = getContainedExistingPath(
+      operation.destinationPath,
+      trustedRoot,
+      'repair'
+    );
+    const settingsPath = existingDestination
+      ? getManagedDestination(existingDestination, trustedRoot, 'repair').managedPath
+      : prepareContainedWriteDestination(operation.destinationPath, trustedRoot, 'repair');
+    updateSettingsAtomic(
+      settingsPath,
+      currentSettings => repairManagedHooks(currentSettings, managedHooks, {
+        previousManagedHooks,
+      }),
+      {
+        lockHeld: settingsLockHeld,
+        beforeCommit() {
+          getManagedDestination(settingsPath, trustedRoot, 'repair');
+        },
+      }
+    );
+    return operation.destinationPath;
   }
 
   if (operation.kind === 'remove') {
-    if (!fs.existsSync(operation.destinationPath)) {
-      return;
-    }
-
-    fs.rmSync(operation.destinationPath, { recursive: true, force: true });
-    return;
+    const removedPath = removeContainedPath(
+      operation.destinationPath,
+      trustedRoot,
+      'repair',
+      { recursive: true, force: true }
+    );
+    return removedPath ? operation.destinationPath : null;
   }
 
   throw new Error(`Unsupported repair operation kind: ${operation.kind}`);
 }
 
-function executeUninstallOperation(operation) {
+function executeUninstallOperation(operation, trustedRoot, options = {}) {
+  // Confine deletes to the trusted install root (GHSA-hfpv-w6mp-5g95).
   if (operation.kind === 'copy-file') {
-    if (!fs.existsSync(operation.destinationPath)) {
+    if (options.preserveDriftedCopies) {
+      const existingDestination = getContainedExistingPath(
+        operation.destinationPath,
+        trustedRoot,
+        'uninstall',
+        { allowFinalSymlink: true }
+      );
+      if (!existingDestination) {
+        return {
+          removedPaths: [],
+          cleanupTargets: []
+        };
+      }
+      if (fs.lstatSync(existingDestination).isSymbolicLink()) {
+        return {
+          removedPaths: [],
+          cleanupTargets: [],
+          retainedPaths: [operation.destinationPath]
+        };
+      }
+      const recordedDigest = operation.contentSha256;
+      const currentDigest = /^[a-f0-9]{64}$/i.test(recordedDigest || '')
+        ? crypto.createHash('sha256')
+          .update(readFileNoFollow(existingDestination))
+          .digest('hex')
+        : null;
+      if (!currentDigest || currentDigest !== recordedDigest.toLowerCase()) {
+        return {
+          removedPaths: [],
+          cleanupTargets: [],
+          retainedPaths: [operation.destinationPath]
+        };
+      }
+    }
+
+    const removedPath = removeContainedPath(
+      operation.destinationPath,
+      trustedRoot,
+      'uninstall',
+      { force: true }
+    );
+    if (!removedPath) {
       return {
         removedPaths: [],
-        cleanupTargets: [],
+        cleanupTargets: []
       };
     }
 
-    fs.rmSync(operation.destinationPath, { force: true });
     return {
       removedPaths: [operation.destinationPath],
-      cleanupTargets: [operation.destinationPath],
+      cleanupTargets: [removedPath]
     };
   }
 
   if (operation.kind === 'render-template') {
     const previousContent = getOperationPreviousContent(operation);
     if (previousContent !== null) {
-      ensureParentDir(operation.destinationPath);
-      fs.writeFileSync(operation.destinationPath, previousContent);
+      writeContainedFile(operation.destinationPath, previousContent, trustedRoot, 'uninstall');
       return {
         removedPaths: [],
-        cleanupTargets: [],
+        cleanupTargets: []
       };
     }
 
     const previousJson = getOperationPreviousJson(operation);
     if (previousJson !== undefined) {
-      ensureParentDir(operation.destinationPath);
-      fs.writeFileSync(operation.destinationPath, formatJson(previousJson));
+      writeContainedFile(operation.destinationPath, formatJson(previousJson), trustedRoot, 'uninstall');
       return {
         removedPaths: [],
-        cleanupTargets: [],
+        cleanupTargets: []
       };
     }
 
-    if (!fs.existsSync(operation.destinationPath)) {
+    const removedPath = removeContainedPath(
+      operation.destinationPath,
+      trustedRoot,
+      'uninstall',
+      { force: true }
+    );
+    if (!removedPath) {
       return {
         removedPaths: [],
-        cleanupTargets: [],
+        cleanupTargets: []
       };
     }
 
-    fs.rmSync(operation.destinationPath, { force: true });
     return {
       removedPaths: [operation.destinationPath],
-      cleanupTargets: [operation.destinationPath],
+      cleanupTargets: [removedPath]
     };
   }
 
   if (operation.kind === 'merge-json') {
     const previousContent = getOperationPreviousContent(operation);
     if (previousContent !== null) {
-      ensureParentDir(operation.destinationPath);
-      fs.writeFileSync(operation.destinationPath, previousContent);
+      writeContainedFile(operation.destinationPath, previousContent, trustedRoot, 'uninstall');
       return {
         removedPaths: [],
-        cleanupTargets: [],
+        cleanupTargets: []
       };
     }
 
     const previousJson = getOperationPreviousJson(operation);
     if (previousJson !== undefined) {
-      ensureParentDir(operation.destinationPath);
-      fs.writeFileSync(operation.destinationPath, formatJson(previousJson));
+      writeContainedFile(operation.destinationPath, formatJson(previousJson), trustedRoot, 'uninstall');
       return {
         removedPaths: [],
-        cleanupTargets: [],
+        cleanupTargets: []
       };
     }
 
-    if (!fs.existsSync(operation.destinationPath)) {
+    const existingDestination = getContainedExistingPath(
+      operation.destinationPath,
+      trustedRoot,
+      'uninstall'
+    );
+    if (!existingDestination) {
       return {
         removedPaths: [],
-        cleanupTargets: [],
+        cleanupTargets: []
       };
     }
 
@@ -444,104 +1009,200 @@ function executeUninstallOperation(operation) {
       throw new Error(`Missing merge payload for uninstall: ${operation.destinationPath}`);
     }
 
-    const currentValue = readJsonFile(operation.destinationPath);
+    const currentValue = readJsonNoFollow(
+      getManagedDestination(existingDestination, trustedRoot, 'uninstall').managedPath
+    );
     const nextValue = deepRemoveJsonSubset(currentValue, payload);
     if (nextValue === JSON_REMOVE_SENTINEL) {
-      fs.rmSync(operation.destinationPath, { force: true });
+      const removedPath = removeContainedPath(
+        operation.destinationPath,
+        trustedRoot,
+        'uninstall',
+        { force: true }
+      );
       return {
-        removedPaths: [operation.destinationPath],
-        cleanupTargets: [operation.destinationPath],
+        removedPaths: removedPath ? [operation.destinationPath] : [],
+        cleanupTargets: removedPath ? [removedPath] : []
       };
     }
 
-    ensureParentDir(operation.destinationPath);
-    fs.writeFileSync(operation.destinationPath, formatJson(nextValue));
+    writeContainedFile(operation.destinationPath, formatJson(nextValue), trustedRoot, 'uninstall');
+    return {
+      removedPaths: [],
+      cleanupTargets: []
+    };
+  }
+
+  if (operation.kind === 'update-claude-settings') {
+    assertClaudeSettingsDestination(operation, trustedRoot, options.target);
+    const existingDestination = getContainedExistingPath(
+      operation.destinationPath,
+      trustedRoot,
+      'uninstall'
+    );
+    if (!existingDestination) {
+      return {
+        removedPaths: [],
+        cleanupTargets: []
+      };
+    }
+
+    const settingsPath = getManagedDestination(
+      existingDestination,
+      trustedRoot,
+      'uninstall'
+    ).managedPath;
+    const uninstalled = updateSettingsAtomic(
+      settingsPath,
+      currentSettings => uninstallManagedHooks(currentSettings, operation.managedHooks),
+      {
+        lockHeld: Boolean(options.settingsLockHeld),
+        beforeCommit() {
+          getManagedDestination(settingsPath, trustedRoot, 'uninstall');
+        },
+      }
+    );
+
     return {
       removedPaths: [],
       cleanupTargets: [],
+      retainedPaths: uninstalled.retained.length > 0
+        ? [operation.destinationPath]
+        : []
     };
   }
 
   if (operation.kind === 'remove') {
     const previousContent = getOperationPreviousContent(operation);
     if (previousContent !== null) {
-      ensureParentDir(operation.destinationPath);
-      fs.writeFileSync(operation.destinationPath, previousContent);
+      writeContainedFile(operation.destinationPath, previousContent, trustedRoot, 'uninstall');
       return {
         removedPaths: [],
-        cleanupTargets: [],
+        cleanupTargets: []
       };
     }
 
     const previousJson = getOperationPreviousJson(operation);
     if (previousJson !== undefined) {
-      ensureParentDir(operation.destinationPath);
-      fs.writeFileSync(operation.destinationPath, formatJson(previousJson));
+      writeContainedFile(operation.destinationPath, formatJson(previousJson), trustedRoot, 'uninstall');
       return {
         removedPaths: [],
-        cleanupTargets: [],
+        cleanupTargets: []
       };
     }
 
     return {
       removedPaths: [],
-      cleanupTargets: [],
+      cleanupTargets: []
     };
   }
 
   throw new Error(`Unsupported uninstall operation kind: ${operation.kind}`);
 }
 
-function inspectManagedOperation(repoRoot, operation) {
+function inspectManagedOperation(repoRoot, trustedRoot, operation, linkIndex = null, target = null) {
   const destinationPath = operation.destinationPath;
   if (!destinationPath) {
     return {
       status: 'invalid-destination',
-      operation,
+      operation
     };
   }
 
+  let managedDestination;
+  try {
+    managedDestination = getManagedDestination(
+      destinationPath,
+      trustedRoot,
+      'inspect managed operation',
+      { allowFinalSymlink: operation.kind === 'remove' }
+    );
+  } catch (error) {
+    return {
+      status: 'unsafe-destination',
+      operation,
+      destinationPath,
+      reason: error && error.code === 'ECC_FINAL_DESTINATION_SYMLINK'
+        ? 'final-symlink'
+        : 'outside-root'
+    };
+  }
+
+  const inspectedPath = managedDestination.managedPath;
+
   if (operation.kind === 'remove') {
-    if (fs.existsSync(destinationPath)) {
+    if (managedDestination.exists) {
       return {
         status: 'drifted',
         operation,
-        destinationPath,
+        destinationPath
       };
     }
 
     return {
       status: 'ok',
       operation,
-      destinationPath,
+      destinationPath
     };
   }
 
-  if (!fs.existsSync(destinationPath)) {
+  let copySourcePath = null;
+  if (operation.kind === 'copy-file') {
+    try {
+      copySourcePath = resolveOperationSourcePath(repoRoot, operation);
+    } catch {
+      return {
+        status: 'unsafe-source',
+        operation,
+        destinationPath
+      };
+    }
+  }
+
+  if (!managedDestination.exists) {
     return {
       status: 'missing',
       operation,
-      destinationPath,
+      destinationPath
     };
   }
 
   if (operation.kind === 'copy-file') {
-    const sourcePath = resolveOperationSourcePath(repoRoot, operation);
-    if (!sourcePath || !fs.existsSync(sourcePath)) {
+    if (!copySourcePath || !fs.existsSync(copySourcePath)) {
       return {
         status: 'missing-source',
         operation,
         destinationPath,
-        sourcePath,
+        sourcePath: copySourcePath
       };
     }
 
-    if (!areFilesEqual(sourcePath, destinationPath)) {
+    let contentMatches;
+    try {
+      contentMatches = hasRecordedContentDigest(operation)
+        ? fileMatchesRecordedContent(inspectedPath, operation)
+        : operation.contentTransform || isMarkdownPath(operation.destinationPath)
+          ? readFileNoFollow(inspectedPath, 'utf8') === getExpectedCopyFileContent(
+            operation,
+            readFileNoFollow(copySourcePath, 'utf8'),
+            linkIndex
+          )
+          : areFilesEqual(copySourcePath, inspectedPath);
+    } catch (_error) {
+      return {
+        status: 'unverified',
+        operation,
+        destinationPath,
+        sourcePath: copySourcePath
+      };
+    }
+
+    if (!contentMatches) {
       return {
         status: 'drifted',
         operation,
         destinationPath,
-        sourcePath,
+        sourcePath: copySourcePath
       };
     }
 
@@ -549,7 +1210,7 @@ function inspectManagedOperation(repoRoot, operation) {
       status: 'ok',
       operation,
       destinationPath,
-      sourcePath,
+      sourcePath: copySourcePath
     };
   }
 
@@ -559,22 +1220,30 @@ function inspectManagedOperation(repoRoot, operation) {
       return {
         status: 'unverified',
         operation,
-        destinationPath,
+        destinationPath
       };
     }
 
-    if (readFileUtf8(destinationPath) !== renderedContent) {
+    try {
+      if (readFileNoFollow(inspectedPath, 'utf8') !== renderedContent) {
+        return {
+          status: 'drifted',
+          operation,
+          destinationPath
+        };
+      }
+    } catch {
       return {
         status: 'drifted',
         operation,
-        destinationPath,
+        destinationPath
       };
     }
 
     return {
       status: 'ok',
       operation,
-      destinationPath,
+      destinationPath
     };
   }
 
@@ -584,70 +1253,170 @@ function inspectManagedOperation(repoRoot, operation) {
       return {
         status: 'unverified',
         operation,
-        destinationPath,
+        destinationPath
       };
     }
 
     try {
-      const currentValue = readJsonFile(destinationPath);
+      const currentValue = readJsonNoFollow(inspectedPath);
       if (!jsonContainsSubset(currentValue, payload)) {
         return {
           status: 'drifted',
           operation,
-          destinationPath,
+          destinationPath
         };
       }
     } catch (_error) {
       return {
         status: 'drifted',
         operation,
-        destinationPath,
+        destinationPath
       };
     }
 
     return {
       status: 'ok',
       operation,
-      destinationPath,
+      destinationPath
     };
+  }
+
+  if (operation.kind === 'update-claude-settings') {
+    try {
+      assertClaudeSettingsDestination(operation, trustedRoot, target);
+    } catch (_error) {
+      return {
+        status: 'unsafe-destination',
+        operation,
+        destinationPath,
+        reason: 'non-canonical-claude-settings'
+      };
+    }
+    let managedHooks;
+    try {
+      managedHooks = validateManagedHooks(operation.managedHooks);
+    } catch (_error) {
+      return {
+        status: 'unverified',
+        operation,
+        destinationPath
+      };
+    }
+
+    try {
+      const inspection = inspectManagedHooks(
+        readJsonNoFollow(inspectedPath),
+        managedHooks
+      );
+      return {
+        status: inspection.status,
+        operation,
+        destinationPath,
+        managedHookInspection: inspection
+      };
+    } catch (error) {
+      return {
+        status: 'invalid-settings',
+        operation,
+        destinationPath,
+        error: `Failed to inspect Claude settings at ${destinationPath}: ${error.message}`
+      };
+    }
   }
 
   return {
     status: 'unverified',
     operation,
-    destinationPath,
+    destinationPath
   };
 }
 
-function summarizeManagedOperationHealth(repoRoot, operations) {
-  return operations.reduce((summary, operation) => {
-    const inspection = inspectManagedOperation(repoRoot, operation);
-    if (inspection.status === 'missing') {
-      summary.missing.push(inspection);
-    } else if (inspection.status === 'drifted') {
-      summary.drifted.push(inspection);
-    } else if (inspection.status === 'missing-source') {
-      summary.missingSource.push(inspection);
-    } else if (inspection.status === 'unverified' || inspection.status === 'invalid-destination') {
-      summary.unverified.push(inspection);
+function summarizeManagedOperationHealth(repoRoot, trustedRoot, operations, target = null) {
+  const linkIndex = buildLinkIndexForOperations(operations, trustedRoot);
+  return operations.reduce(
+    (summary, operation) => {
+      const inspection = inspectManagedOperation(
+        repoRoot,
+        trustedRoot,
+        operation,
+        linkIndex,
+        target
+      );
+      if (inspection.status === 'missing') {
+        summary.missing.push(inspection);
+      } else if (inspection.status === 'drifted') {
+        summary.drifted.push(inspection);
+      } else if (inspection.status === 'missing-source') {
+        summary.missingSource.push(inspection);
+      } else if (inspection.status === 'unsafe-source') {
+        summary.unsafeSource.push(inspection);
+      } else if (inspection.status === 'unsafe-destination') {
+        summary.unsafeDestination.push(inspection);
+      } else if (inspection.status === 'invalid-settings') {
+        summary.invalidSettings.push(inspection);
+      } else if (inspection.status === 'unverified' || inspection.status === 'invalid-destination') {
+        summary.unverified.push(inspection);
+      }
+      return summary;
+    },
+    {
+      missing: [],
+      drifted: [],
+      missingSource: [],
+      unsafeSource: [],
+      unsafeDestination: [],
+      invalidSettings: [],
+      unverified: []
     }
-    return summary;
-  }, {
-    missing: [],
-    drifted: [],
-    missingSource: [],
-    unverified: [],
-  });
+  );
 }
 
-function buildDiscoveryRecord(adapter, context) {
+function getUnsafeManagedDestinationError(operationHealth) {
+  const hasFinalSymlink = operationHealth.unsafeDestination.some(
+    inspection => inspection.reason === 'final-symlink'
+  );
+  if (hasFinalSymlink) {
+    return 'Refusing unsafe managed destination: final symlink detected.';
+  }
+  return 'Refusing unsafe managed destination outside adapter-derived install root.';
+}
+
+function getUnsafeOperationResult(record, operationHealth) {
+  const error = operationHealth.unsafeDestination.length > 0
+    ? getUnsafeManagedDestinationError(operationHealth)
+    : operationHealth.unsafeSource.length > 0
+      ? createUnsafeRepairSourceError().message
+      : operationHealth.invalidSettings.length > 0
+        ? operationHealth.invalidSettings[0].error
+        : null;
+  if (!error) {
+    return null;
+  }
+
+  return {
+    adapter: record.adapter,
+    status: 'error',
+    installStatePath: record.installStatePath,
+    repairedPaths: [],
+    plannedRepairs: [],
+    stateRefreshed: false,
+    error
+  };
+}
+
+function buildDiscoveryRecord(adapter, context, location = null, knownState = null) {
   const installTargetInput = {
     homeDir: context.homeDir,
     projectRoot: context.projectRoot,
     repoRoot: context.projectRoot,
+    env: context.env,
   };
-  const targetRoot = adapter.resolveRoot(installTargetInput);
-  const installStatePath = adapter.getInstallStatePath(installTargetInput);
+  const targetRoot = location
+    ? location.targetRoot
+    : adapter.resolveRoot(installTargetInput);
+  const installStatePath = location
+    ? location.installStatePath
+    : adapter.getInstallStatePath(installTargetInput);
   const exists = fs.existsSync(installStatePath);
 
   if (!exists) {
@@ -655,13 +1424,32 @@ function buildDiscoveryRecord(adapter, context) {
       adapter: {
         id: adapter.id,
         target: adapter.target,
-        kind: adapter.kind,
+        kind: adapter.kind
       },
       targetRoot,
       installStatePath,
       exists: false,
       state: null,
       error: null,
+      legacy: Boolean(location),
+      legacyLayout: location?.legacyLayout || null
+    };
+  }
+
+  if (knownState) {
+    return {
+      adapter: {
+        id: adapter.id,
+        target: adapter.target,
+        kind: adapter.kind
+      },
+      targetRoot,
+      installStatePath,
+      exists: true,
+      state: knownState,
+      error: null,
+      legacy: Boolean(location),
+      legacyLayout: location?.legacyLayout || null
     };
   }
 
@@ -671,26 +1459,30 @@ function buildDiscoveryRecord(adapter, context) {
       adapter: {
         id: adapter.id,
         target: adapter.target,
-        kind: adapter.kind,
+        kind: adapter.kind
       },
       targetRoot,
       installStatePath,
       exists: true,
       state,
       error: null,
+      legacy: Boolean(location),
+      legacyLayout: location?.legacyLayout || null
     };
   } catch (error) {
     return {
       adapter: {
         id: adapter.id,
         target: adapter.target,
-        kind: adapter.kind,
+        kind: adapter.kind
       },
       targetRoot,
       installStatePath,
       exists: true,
       state: null,
       error: error.message,
+      legacy: Boolean(location),
+      legacyLayout: location?.legacyLayout || null
     };
   }
 }
@@ -699,12 +1491,83 @@ function discoverInstalledStates(options = {}) {
   const context = {
     homeDir: options.homeDir || process.env.HOME || os.homedir(),
     projectRoot: options.projectRoot || process.cwd(),
+    env: resolveInvocationEnvironment(options),
   };
   const targets = normalizeTargets(options.targets);
 
-  return targets.map(target => {
+  return targets.flatMap(target => {
     const adapter = getInstallTargetAdapter(target);
-    return buildDiscoveryRecord(adapter, context);
+    const canonicalRecord = buildDiscoveryRecord(adapter, context);
+    if (adapter.target === 'opencode') {
+      const legacyLocation = getLegacyOpencodeLocation(context.homeDir);
+      const legacyInspection = inspectLegacyOpencodeState(legacyLocation);
+      if (
+        path.resolve(legacyLocation.installStatePath) === path.resolve(canonicalRecord.installStatePath)
+        || legacyInspection.status === 'absent'
+        || legacyInspection.status === 'invalid'
+      ) {
+        return [canonicalRecord];
+      }
+      if (legacyInspection.status === 'unreadable') {
+        return [canonicalRecord, {
+          adapter: {
+            id: adapter.id,
+            target: adapter.target,
+            kind: adapter.kind,
+          },
+          targetRoot: legacyLocation.targetRoot,
+          installStatePath: legacyLocation.installStatePath,
+          exists: true,
+          state: null,
+          error: legacyInspection.error,
+          legacy: true,
+          legacyLayout: 'opencode',
+        }];
+      }
+      return [
+        canonicalRecord,
+        buildDiscoveryRecord(adapter, context, legacyLocation, legacyInspection.state),
+      ];
+    }
+
+    if (adapter.target !== 'antigravity') {
+      return [canonicalRecord];
+    }
+
+    const legacyLocation = {
+      ...getLegacyAntigravityLocation(context.projectRoot),
+      legacyLayout: 'antigravity',
+    };
+    const legacyInspection = inspectLegacyAntigravityState(legacyLocation);
+    if (
+      path.resolve(legacyLocation.installStatePath) === path.resolve(canonicalRecord.installStatePath)
+      || legacyInspection.status === 'absent'
+      || legacyInspection.status === 'invalid'
+    ) {
+      return [canonicalRecord];
+    }
+
+    if (legacyInspection.status === 'unreadable') {
+      return [canonicalRecord, {
+        adapter: {
+          id: adapter.id,
+          target: adapter.target,
+          kind: adapter.kind,
+        },
+        targetRoot: legacyLocation.targetRoot,
+        installStatePath: legacyLocation.installStatePath,
+        exists: true,
+        state: null,
+          error: legacyInspection.error,
+          legacy: true,
+          legacyLayout: 'antigravity',
+      }];
+    }
+
+    return [
+      canonicalRecord,
+      buildDiscoveryRecord(adapter, context, legacyLocation, legacyInspection.state),
+    ];
   });
 }
 
@@ -713,7 +1576,7 @@ function buildIssue(severity, code, message, extra = {}) {
     severity,
     code,
     message,
-    ...extra,
+    ...extra
   };
 }
 
@@ -732,12 +1595,28 @@ function determineStatus(issues) {
 function analyzeRecord(record, context) {
   const issues = [];
 
+  if (record.legacyLayout === 'antigravity') {
+    issues.push(buildIssue(
+      'warning',
+      'legacy-antigravity-layout',
+      'Legacy Antigravity install-state remains under .agent. Review and move any preserved modified or unmanaged files out of .agent, then rerun the Antigravity install to finish migration.'
+    ));
+  }
+
+  if (record.legacyLayout === 'opencode') {
+    issues.push(buildIssue(
+      'warning',
+      'legacy-opencode-layout',
+      'Legacy OpenCode install-state remains under ~/.opencode. Rerun the OpenCode install or repair command to migrate unchanged ECC-managed files to ~/.config/opencode; modified files are preserved for review.'
+    ));
+  }
+
   if (record.error) {
     issues.push(buildIssue('error', 'invalid-install-state', record.error));
     return {
       ...record,
       status: determineStatus(issues),
-      issues,
+      issues
     };
   }
 
@@ -746,152 +1625,135 @@ function analyzeRecord(record, context) {
     return {
       ...record,
       status: 'missing',
-      issues,
+      issues
     };
   }
 
   if (!fs.existsSync(state.target.root)) {
-    issues.push(buildIssue(
-      'error',
-      'missing-target-root',
-      `Target root does not exist: ${state.target.root}`
-    ));
+    issues.push(buildIssue('error', 'missing-target-root', `Target root does not exist: ${state.target.root}`));
   }
 
   if (state.target.root !== record.targetRoot) {
-    issues.push(buildIssue(
-      'warning',
-      'target-root-mismatch',
-      `Recorded target root differs from current target root (${record.targetRoot})`,
-      {
+    issues.push(
+      buildIssue('warning', 'target-root-mismatch', `Recorded target root differs from current target root (${record.targetRoot})`, {
         recordedTargetRoot: state.target.root,
-        currentTargetRoot: record.targetRoot,
-      }
-    ));
+        currentTargetRoot: record.targetRoot
+      })
+    );
   }
 
   if (state.target.installStatePath !== record.installStatePath) {
-    issues.push(buildIssue(
-      'warning',
-      'install-state-path-mismatch',
-      `Recorded install-state path differs from current path (${record.installStatePath})`,
-      {
+    issues.push(
+      buildIssue('warning', 'install-state-path-mismatch', `Recorded install-state path differs from current path (${record.installStatePath})`, {
         recordedInstallStatePath: state.target.installStatePath,
-        currentInstallStatePath: record.installStatePath,
-      }
-    ));
+        currentInstallStatePath: record.installStatePath
+      })
+    );
   }
 
   const managedOperations = getManagedOperations(state);
-  const operationHealth = summarizeManagedOperationHealth(context.repoRoot, managedOperations);
+  const operationHealth = summarizeManagedOperationHealth(
+    context.repoRoot,
+    record.targetRoot,
+    managedOperations,
+    record.adapter.target
+  );
   const missingManagedOperations = operationHealth.missing;
 
+  if (operationHealth.unsafeDestination.length > 0) {
+    issues.push(
+      buildIssue(
+        'error',
+        'unsafe-managed-destination',
+        `${operationHealth.unsafeDestination.length} managed operation(s) target an unsafe destination`
+      )
+    );
+  }
+
+  if (operationHealth.unsafeSource.length > 0) {
+    issues.push(
+      buildIssue(
+        'error',
+        'unsafe-repair-source',
+        `${operationHealth.unsafeSource.length} managed operation(s) reference unsafe repair source metadata`
+      )
+    );
+  }
+
+  if (operationHealth.invalidSettings.length > 0) {
+    issues.push(
+      buildIssue(
+        'error',
+        'invalid-claude-settings',
+        operationHealth.invalidSettings[0].error,
+        { paths: operationHealth.invalidSettings.map(entry => entry.destinationPath) }
+      )
+    );
+  }
+
   if (missingManagedOperations.length > 0) {
-    issues.push(buildIssue(
-      'error',
-      'missing-managed-files',
-      `${missingManagedOperations.length} managed file(s) are missing`,
-      {
-        paths: missingManagedOperations.map(entry => entry.destinationPath),
-      }
-    ));
+    issues.push(
+      buildIssue('error', 'missing-managed-files', `${missingManagedOperations.length} managed file(s) are missing`, {
+        paths: missingManagedOperations.map(entry => entry.destinationPath)
+      })
+    );
   }
 
   if (operationHealth.drifted.length > 0) {
-    issues.push(buildIssue(
-      'warning',
-      'drifted-managed-files',
-      `${operationHealth.drifted.length} managed file(s) differ from the source repo`,
-      {
-        paths: operationHealth.drifted.map(entry => entry.destinationPath),
-      }
-    ));
+    issues.push(
+      buildIssue('warning', 'drifted-managed-files', `${operationHealth.drifted.length} managed file(s) differ from the source repo`, {
+        paths: operationHealth.drifted.map(entry => entry.destinationPath)
+      })
+    );
   }
 
   if (operationHealth.missingSource.length > 0) {
-    issues.push(buildIssue(
-      'error',
-      'missing-source-files',
-      `${operationHealth.missingSource.length} source file(s) referenced by install-state are missing`,
-      {
-        paths: operationHealth.missingSource.map(entry => entry.sourcePath).filter(Boolean),
-      }
-    ));
+    issues.push(
+      buildIssue('error', 'missing-source-files', `${operationHealth.missingSource.length} source file(s) referenced by install-state are missing`, {
+        paths: operationHealth.missingSource.map(entry => entry.sourcePath).filter(Boolean)
+      })
+    );
   }
 
   if (operationHealth.unverified.length > 0) {
-    issues.push(buildIssue(
-      'warning',
-      'unverified-managed-operations',
-      `${operationHealth.unverified.length} managed operation(s) could not be content-verified`,
-      {
-        paths: operationHealth.unverified.map(entry => entry.destinationPath).filter(Boolean),
-      }
-    ));
+    issues.push(
+      buildIssue('warning', 'unverified-managed-operations', `${operationHealth.unverified.length} managed operation(s) could not be content-verified`, {
+        paths: operationHealth.unverified.map(entry => entry.destinationPath).filter(Boolean)
+      })
+    );
   }
 
   if (state.source.manifestVersion !== context.manifestVersion) {
-    issues.push(buildIssue(
-      'warning',
-      'manifest-version-mismatch',
-      `Recorded manifest version ${state.source.manifestVersion} differs from current manifest version ${context.manifestVersion}`
-    ));
+    issues.push(buildIssue('warning', 'manifest-version-mismatch', `Recorded manifest version ${state.source.manifestVersion} differs from current manifest version ${context.manifestVersion}`));
   }
 
-  if (
-    context.packageVersion
-    && state.source.repoVersion
-    && state.source.repoVersion !== context.packageVersion
-  ) {
-    issues.push(buildIssue(
-      'warning',
-      'repo-version-mismatch',
-      `Recorded repo version ${state.source.repoVersion} differs from current repo version ${context.packageVersion}`
-    ));
+  if (context.packageVersion && state.source.repoVersion && state.source.repoVersion !== context.packageVersion) {
+    issues.push(buildIssue('warning', 'repo-version-mismatch', `Recorded repo version ${state.source.repoVersion} differs from current repo version ${context.packageVersion}`));
   }
 
   if (!state.request.legacyMode) {
     try {
-      const desiredPlan = resolveInstallPlan({
-        repoRoot: context.repoRoot,
-        projectRoot: context.projectRoot,
-        homeDir: context.homeDir,
-        target: record.adapter.target,
-        profileId: state.request.profile || null,
-        moduleIds: state.request.modules || [],
-        includeComponentIds: state.request.includeComponents || [],
-        excludeComponentIds: state.request.excludeComponents || [],
-      });
+      const desiredPlan = resolveRecordedManifestPlan(record, context);
 
-      if (
-        !compareStringArrays(desiredPlan.selectedModuleIds, state.resolution.selectedModules)
-        || !compareStringArrays(desiredPlan.skippedModuleIds, state.resolution.skippedModules)
-      ) {
-        issues.push(buildIssue(
-          'warning',
-          'resolution-drift',
-          'Current manifest resolution differs from recorded install-state',
-          {
+      if (!compareStringArrays(desiredPlan.selectedModuleIds, state.resolution.selectedModules) || !compareStringArrays(desiredPlan.skippedModuleIds, state.resolution.skippedModules)) {
+        issues.push(
+          buildIssue('warning', 'resolution-drift', 'Current manifest resolution differs from recorded install-state', {
             expectedSelectedModules: desiredPlan.selectedModuleIds,
             recordedSelectedModules: state.resolution.selectedModules,
             expectedSkippedModules: desiredPlan.skippedModuleIds,
-            recordedSkippedModules: state.resolution.skippedModules,
-          }
-        ));
+            recordedSkippedModules: state.resolution.skippedModules
+          })
+        );
       }
     } catch (error) {
-      issues.push(buildIssue(
-        'error',
-        'resolution-unavailable',
-        error.message
-      ));
+      issues.push(buildIssue('error', 'resolution-unavailable', error.message));
     }
   }
 
   return {
     ...record,
     status: determineStatus(issues),
-    issues,
+    issues
   };
 }
 
@@ -902,49 +1764,61 @@ function buildDoctorReport(options = {}) {
     homeDir: options.homeDir,
     projectRoot: options.projectRoot,
     targets: options.targets,
+    env: resolveInvocationEnvironment(options),
   }).filter(record => record.exists);
   const context = {
     repoRoot,
     homeDir: options.homeDir || process.env.HOME || os.homedir(),
     projectRoot: options.projectRoot || process.cwd(),
+    env: resolveInvocationEnvironment(options),
     manifestVersion: manifests.modulesVersion,
-    packageVersion: readPackageVersion(repoRoot),
+    packageVersion: readPackageVersion(repoRoot)
   };
   const results = records.map(record => analyzeRecord(record, context));
-  const summary = results.reduce((accumulator, result) => {
-    const errorCount = result.issues.filter(issue => issue.severity === 'error').length;
-    const warningCount = result.issues.filter(issue => issue.severity === 'warning').length;
+  const summary = results.reduce(
+    (accumulator, result) => {
+      const errorCount = result.issues.filter(issue => issue.severity === 'error').length;
+      const warningCount = result.issues.filter(issue => issue.severity === 'warning').length;
 
-    return {
-      checkedCount: accumulator.checkedCount + 1,
-      okCount: accumulator.okCount + (result.status === 'ok' ? 1 : 0),
-      errorCount: accumulator.errorCount + errorCount,
-      warningCount: accumulator.warningCount + warningCount,
-    };
-  }, {
-    checkedCount: 0,
-    okCount: 0,
-    errorCount: 0,
-    warningCount: 0,
-  });
+      return {
+        checkedCount: accumulator.checkedCount + 1,
+        okCount: accumulator.okCount + (result.status === 'ok' ? 1 : 0),
+        errorCount: accumulator.errorCount + errorCount,
+        warningCount: accumulator.warningCount + warningCount
+      };
+    },
+    {
+      checkedCount: 0,
+      okCount: 0,
+      errorCount: 0,
+      warningCount: 0
+    }
+  );
 
   return {
     generatedAt: new Date().toISOString(),
     packageVersion: context.packageVersion,
     manifestVersion: context.manifestVersion,
     results,
-    summary,
+    summary
   };
 }
 
-function createRepairPlanFromRecord(record, context) {
+function createRepairPlanFromRecord(record, context, options = {}) {
   const state = record.state;
   if (!state) {
     throw new Error('No install-state available for repair');
   }
 
-  if (state.request.legacyMode || shouldRepairFromRecordedOperations(state)) {
-    const operations = hydrateRecordedOperations(context.repoRoot, getManagedOperations(state));
+  if (
+    record.legacyLayout !== 'opencode'
+    && (state.request.legacyMode || shouldRepairFromRecordedOperations(state))
+  ) {
+    const operations = hydrateRecordedOperations(
+      context.repoRoot,
+      getManagedOperations(state),
+      record.targetRoot
+    );
     const statePreview = buildRecordedStatePreview(state, context, operations);
 
     return {
@@ -955,31 +1829,114 @@ function createRepairPlanFromRecord(record, context) {
       installRoot: state.target.root,
       installStatePath: state.target.installStatePath,
       warnings: [],
-      languages: Array.isArray(state.request.legacyLanguages)
-        ? [...state.request.legacyLanguages]
-        : [],
+      languages: Array.isArray(state.request.legacyLanguages) ? [...state.request.legacyLanguages] : [],
       operations,
-      statePreview,
+      statePreview
     };
   }
 
-  const desiredPlan = createManifestInstallPlan({
-    sourceRoot: context.repoRoot,
-    target: record.adapter.target,
-    profileId: state.request.profile || null,
-    moduleIds: state.request.modules || [],
-    includeComponentIds: state.request.includeComponents || [],
-    excludeComponentIds: state.request.excludeComponents || [],
-    projectRoot: context.projectRoot,
-    homeDir: context.homeDir,
-  });
+  const desiredPlan = resolveRecordedManifestPlan(record, context, options);
 
   return {
     ...desiredPlan,
     statePreview: {
       ...desiredPlan.statePreview,
       installedAt: state.installedAt,
-      lastValidatedAt: new Date().toISOString(),
+      lastValidatedAt: new Date().toISOString()
+    }
+  };
+}
+
+function buildAdapterDerivedStatePreview(statePreview, record) {
+  return {
+    ...statePreview,
+    target: {
+      ...statePreview.target,
+      id: record.adapter.id,
+      target: record.adapter.target,
+      kind: record.adapter.kind,
+      root: record.targetRoot,
+      installStatePath: record.installStatePath
+    }
+  };
+}
+
+function assertValidInstallStateForWrite(state, label) {
+  const validation = validateInstallState(state);
+  if (validation.valid) {
+    return;
+  }
+
+  const details = validation.errors
+    .map(error => `${error.instancePath || '/'} ${error.message}`)
+    .join('; ');
+  throw new Error(`Invalid install-state (${label}): ${details}`);
+}
+
+function writeRefreshedInstallState(record, statePreview, writtenPaths = []) {
+  const trustedStatePreview = buildAdapterDerivedStatePreview(statePreview, record);
+  const stateWithCurrentDigests = {
+    ...trustedStatePreview,
+    operations: (trustedStatePreview.operations || []).map(operation => {
+      if (!operation.destinationPath) {
+        return { ...operation };
+      }
+      // Refreshing a ledger is not a file write. Keep the last installed digest
+      // for untouched shared configs so a concurrent user edit is never claimed.
+      if (isCodexUserConfig(record, operation)
+        && !writtenPaths.some(writtenPath => path.relative(writtenPath, operation.destinationPath) === '')) {
+        const previousOperation = (record.state.operations || []).find(previous => (
+          previous.destinationPath
+          && path.relative(previous.destinationPath, operation.destinationPath) === ''
+        ));
+        const { contentSha256: _plannedDigest, ...operationWithoutDigest } = operation;
+        return previousOperation && previousOperation.contentSha256
+          ? { ...operationWithoutDigest, contentSha256: previousOperation.contentSha256 }
+          : operationWithoutDigest;
+      }
+      try {
+        const contentSha256 = crypto.createHash('sha256')
+          .update(readFileNoFollow(operation.destinationPath))
+          .digest('hex');
+        return { ...operation, contentSha256 };
+      } catch (_error) {
+        const { contentSha256: _staleDigest, ...operationWithoutDigest } = operation;
+        return operationWithoutDigest;
+      }
+    }),
+  };
+  assertValidInstallStateForWrite(stateWithCurrentDigests, record.installStatePath);
+  return writeContainedFile(
+    record.installStatePath,
+    formatJson(stateWithCurrentDigests),
+    record.targetRoot,
+    'repair'
+  );
+}
+
+function prepareRepairMigration(plan, record) {
+  const trustedPlan = {
+    ...plan,
+    adapter: record.adapter,
+    targetRoot: record.targetRoot,
+    installRoot: record.targetRoot,
+    installStatePath: record.installStatePath,
+    statePreview: buildAdapterDerivedStatePreview(plan.statePreview, record),
+  };
+  const skillMigration = prepareClaudeSkillMigration(trustedPlan);
+  const migration = record.adapter.id === 'codex-home'
+    ? prepareUserOwnedFileGuard(trustedPlan, skillMigration)
+    : skillMigration;
+  return {
+    migration,
+    plan: {
+      ...trustedPlan,
+      operations: migration.finalState.operations,
+      statePreview: migration.finalState,
+      warnings: [
+        ...(Array.isArray(plan.warnings) ? plan.warnings : []),
+        ...migration.warnings,
+      ],
     },
   };
 }
@@ -991,14 +1948,22 @@ function repairInstalledStates(options = {}) {
     repoRoot,
     homeDir: options.homeDir || process.env.HOME || os.homedir(),
     projectRoot: options.projectRoot || process.cwd(),
+    env: resolveInvocationEnvironment(options),
     manifestVersion: manifests.modulesVersion,
-    packageVersion: readPackageVersion(repoRoot),
+    packageVersion: readPackageVersion(repoRoot)
   };
+  const buildOpencodeRunner = typeof options.buildOpencodePayload === 'function'
+    ? options.buildOpencodePayload
+    : buildOpencodePayload;
   const records = discoverInstalledStates({
     homeDir: context.homeDir,
     projectRoot: context.projectRoot,
     targets: options.targets,
-  }).filter(record => record.exists);
+    env: context.env,
+  }).filter(record => (
+    record.exists
+    && (!record.legacy || record.legacyLayout === 'opencode')
+  ));
 
   const results = records.map(record => {
     if (record.error) {
@@ -1008,13 +1973,151 @@ function repairInstalledStates(options = {}) {
         installStatePath: record.installStatePath,
         repairedPaths: [],
         plannedRepairs: [],
-        error: record.error,
+        error: record.error
       };
     }
 
+    let releaseSettingsLock = null;
     try {
-      const desiredPlan = createRepairPlanFromRecord(record, context);
-      const operationHealth = summarizeManagedOperationHealth(context.repoRoot, desiredPlan.operations);
+      const settingsPathToLock = !options.dryRun
+        && getManagedOperations(record.state || {}).some(
+          operation => operation.kind === 'update-claude-settings'
+        )
+        ? getClaudeSettingsPath(record.targetRoot)
+        : null;
+      if (settingsPathToLock) {
+        releaseSettingsLock = acquireSettingsLock(settingsPathToLock);
+      }
+      const needsOpencodeBuild = record.adapter.target === 'opencode'
+        && hasOpencodeBuildError(getOpencodeBuildValidationIssues(context));
+      const opencodeBuildRepairPath = path.join(context.repoRoot, OPENCODE_BUILD_ARTIFACT);
+
+      if (record.legacyLayout === 'opencode') {
+        if (needsOpencodeBuild && !options.dryRun) {
+          try {
+            buildOpencodeRunner(context.repoRoot);
+          } catch (error) {
+            return {
+              adapter: record.adapter,
+              status: 'error',
+              installStatePath: record.installStatePath,
+              repairedPaths: [],
+              plannedRepairs: [],
+              error: formatBuildErrorMessage(error),
+            };
+          }
+        }
+
+        const canonicalPlan = createRepairPlanFromRecord(record, context, {
+          exemptValidationCodes: options.dryRun && needsOpencodeBuild
+            ? [OPENCODE_PLUGIN_NOT_BUILT_CODE]
+            : [],
+        });
+        const plannedRepairs = [...new Set([
+          ...(needsOpencodeBuild ? [opencodeBuildRepairPath] : []),
+          ...canonicalPlan.operations.map(operation => operation.destinationPath),
+          ...getManagedOperations(record.state).map(operation => operation.destinationPath),
+          record.installStatePath,
+        ])];
+
+        if (options.dryRun) {
+          return {
+            adapter: record.adapter,
+            status: 'planned',
+            installStatePath: canonicalPlan.installStatePath,
+            repairedPaths: [],
+            plannedRepairs,
+            stateRefreshed: false,
+            warnings: canonicalPlan.warnings,
+            error: null,
+          };
+        }
+
+        // Load lazily to avoid a module cycle during install-lifecycle startup.
+        const { applyInstallPlan } = require('./install/apply');
+        const appliedPlan = applyInstallPlan(canonicalPlan);
+        return {
+          adapter: record.adapter,
+          status: 'repaired',
+          installStatePath: canonicalPlan.installStatePath,
+          repairedPaths: [
+            ...(needsOpencodeBuild ? [opencodeBuildRepairPath] : []),
+            ...canonicalPlan.operations.map(operation => operation.destinationPath),
+          ],
+          plannedRepairs: [],
+          stateRefreshed: true,
+          warnings: appliedPlan.warnings,
+          error: null,
+        };
+      }
+
+      if (needsOpencodeBuild && options.dryRun) {
+        const rawPlan = createRepairPlanFromRecord(record, context, {
+          exemptValidationCodes: [OPENCODE_PLUGIN_NOT_BUILT_CODE],
+        });
+        const { plan: desiredPlan } = prepareRepairMigration(rawPlan, record);
+        const operationHealth = summarizeManagedOperationHealth(
+          context.repoRoot,
+          record.targetRoot,
+          desiredPlan.operations,
+          record.adapter.target
+        );
+        const unsafeOperationResult = getUnsafeOperationResult(
+          record,
+          operationHealth
+        );
+        if (unsafeOperationResult) {
+          return unsafeOperationResult;
+        }
+        const repairOperations = [...operationHealth.missing.map(entry => ({ ...entry.operation })), ...operationHealth.drifted.map(entry => ({ ...entry.operation }))];
+        const plannedRepairs = [opencodeBuildRepairPath, ...repairOperations.map(operation => operation.destinationPath)];
+
+        return {
+          adapter: record.adapter,
+          status: 'planned',
+          installStatePath: record.installStatePath,
+          repairedPaths: [],
+          plannedRepairs,
+          stateRefreshed: false,
+          warnings: desiredPlan.warnings,
+          error: null
+        };
+      }
+
+      if (needsOpencodeBuild) {
+        try {
+          buildOpencodeRunner(context.repoRoot);
+        } catch (error) {
+          return {
+            adapter: record.adapter,
+            status: 'error',
+            installStatePath: record.installStatePath,
+            repairedPaths: [],
+            plannedRepairs: [],
+            error: formatBuildErrorMessage(error)
+          };
+        }
+      }
+
+      const rawPlan = createRepairPlanFromRecord(record, context);
+      const {
+        migration,
+        plan: desiredPlan,
+      } = prepareRepairMigration(rawPlan, record);
+      const operationHealth = summarizeManagedOperationHealth(
+        context.repoRoot,
+        record.targetRoot,
+        desiredPlan.operations,
+        record.adapter.target
+      );
+
+      const unsafeOperationResult = getUnsafeOperationResult(
+        record,
+        operationHealth
+      );
+      if (unsafeOperationResult) {
+        return unsafeOperationResult;
+      }
 
       if (operationHealth.missingSource.length > 0) {
         return {
@@ -1023,15 +2126,34 @@ function repairInstalledStates(options = {}) {
           installStatePath: record.installStatePath,
           repairedPaths: [],
           plannedRepairs: [],
-          error: `Missing source file(s): ${operationHealth.missingSource.map(entry => entry.sourcePath).join(', ')}`,
+          warnings: desiredPlan.warnings,
+          error: `Missing source file(s): ${operationHealth.missingSource.map(entry => entry.sourcePath).join(', ')}`
         };
       }
 
       const repairOperations = [
         ...operationHealth.missing.map(entry => ({ ...entry.operation })),
         ...operationHealth.drifted.map(entry => ({ ...entry.operation })),
-      ];
-      const plannedRepairs = repairOperations.map(operation => operation.destinationPath);
+        ...desiredPlan.operations
+          .filter(operation => (
+            operation.kind === 'update-claude-settings'
+            && operation.previousManagedHooks
+            && !isDeepStrictEqual(operation.previousManagedHooks, operation.managedHooks)
+          ))
+          .map(operation => ({ ...operation })),
+      ].filter((operation, index, items) => items.findIndex(candidate => (
+        candidate.kind === operation.kind
+        && candidate.destinationPath === operation.destinationPath
+      )) === index);
+      const repairLinkIndex = buildLinkIndexForOperations(desiredPlan.operations, record.targetRoot);
+      const legacyMigrationPaths = migration.legacyOperationsToRemove.map(
+        operation => operation.destinationPath
+      );
+      const plannedRepairs = [...new Set([
+        ...(needsOpencodeBuild ? [opencodeBuildRepairPath] : []),
+        ...repairOperations.map(operation => operation.destinationPath),
+        ...legacyMigrationPaths,
+      ])];
 
       if (options.dryRun) {
         return {
@@ -1041,27 +2163,69 @@ function repairInstalledStates(options = {}) {
           repairedPaths: [],
           plannedRepairs,
           stateRefreshed: plannedRepairs.length === 0,
-          error: null,
+          warnings: desiredPlan.warnings,
+          error: null
         };
       }
 
-      if (repairOperations.length > 0) {
-        for (const operation of repairOperations) {
-          executeRepairOperation(context.repoRoot, operation);
-        }
-        writeInstallState(desiredPlan.installStatePath, desiredPlan.statePreview);
-      } else {
-        writeInstallState(desiredPlan.installStatePath, desiredPlan.statePreview);
+      const hasLegacyMigration = migration.legacyOperationsToRemove.length > 0;
+      const repairedPaths = needsOpencodeBuild ? [opencodeBuildRepairPath] : [];
+      if (migration.requiresBridgeState && (repairOperations.length > 0 || hasLegacyMigration)) {
+        writeRefreshedInstallState(record, migration.bridgeState);
       }
+
+      for (const operation of repairOperations) {
+        if (record.adapter.id === 'codex-home') {
+          assertNoNewUserOwnedFile(migration, operation, desiredPlan);
+        }
+        const repairedPath = executeRepairOperation(
+          context.repoRoot,
+          operation,
+          record.targetRoot,
+          repairLinkIndex,
+          record.adapter.target,
+          Boolean(releaseSettingsLock)
+        );
+        if (repairedPath) {
+          repairedPaths.push(repairedPath);
+        }
+      }
+      if (hasLegacyMigration) {
+        for (const operation of migration.legacyOperationsToRemove) {
+          const removedPath = removeContainedPath(
+            operation.destinationPath,
+            record.targetRoot,
+            'migrate managed Claude skill',
+            { force: true }
+          );
+          if (removedPath) {
+            repairedPaths.push(removedPath);
+          }
+        }
+      }
+      const changedInstalledBytes = repairOperations.length > 0
+        || needsOpencodeBuild
+        || hasLegacyMigration;
+      const statePreviewToWrite = changedInstalledBytes
+        ? desiredPlan.statePreview
+        : {
+            ...desiredPlan.statePreview,
+            installedAt: record.state.installedAt,
+            source: { ...record.state.source },
+          };
+      writeRefreshedInstallState(record, statePreviewToWrite, repairedPaths);
 
       return {
         adapter: record.adapter,
-        status: repairOperations.length > 0 ? 'repaired' : 'ok',
+        status: (repairOperations.length > 0 || needsOpencodeBuild || hasLegacyMigration)
+          ? 'repaired'
+          : 'ok',
         installStatePath: record.installStatePath,
-        repairedPaths: plannedRepairs,
+        repairedPaths,
         plannedRepairs: [],
         stateRefreshed: true,
-        error: null,
+        warnings: desiredPlan.warnings,
+        error: null
       };
     } catch (error) {
       return {
@@ -1070,52 +2234,71 @@ function repairInstalledStates(options = {}) {
         installStatePath: record.installStatePath,
         repairedPaths: [],
         plannedRepairs: [],
-        error: error.message,
+        error: error.message
       };
+    } finally {
+      if (releaseSettingsLock) releaseSettingsLock();
     }
   });
 
-  const summary = results.reduce((accumulator, result) => ({
-    checkedCount: accumulator.checkedCount + 1,
-    repairedCount: accumulator.repairedCount + (result.status === 'repaired' ? 1 : 0),
-    plannedRepairCount: accumulator.plannedRepairCount + (result.status === 'planned' ? 1 : 0),
-    errorCount: accumulator.errorCount + (result.status === 'error' ? 1 : 0),
-  }), {
-    checkedCount: 0,
-    repairedCount: 0,
-    plannedRepairCount: 0,
-    errorCount: 0,
-  });
+  const summary = results.reduce(
+    (accumulator, result) => ({
+      checkedCount: accumulator.checkedCount + 1,
+      repairedCount: accumulator.repairedCount + (result.status === 'repaired' ? 1 : 0),
+      plannedRepairCount: accumulator.plannedRepairCount + (result.status === 'planned' ? 1 : 0),
+      errorCount: accumulator.errorCount + (result.status === 'error' ? 1 : 0)
+    }),
+    {
+      checkedCount: 0,
+      repairedCount: 0,
+      plannedRepairCount: 0,
+      errorCount: 0
+    }
+  );
 
   return {
     dryRun: Boolean(options.dryRun),
     generatedAt: new Date().toISOString(),
     results,
-    summary,
+    summary
   };
 }
 
 function cleanupEmptyParentDirs(filePath, stopAt) {
-  let currentPath = path.dirname(filePath);
-  const normalizedStopAt = path.resolve(stopAt);
+  const trustedStopAt = assertWithinTrustedRoot(stopAt, stopAt, 'clean up');
+  const trustedFilePath = assertWithinTrustedRoot(filePath, trustedStopAt, 'clean up');
+  let currentPath = path.dirname(trustedFilePath);
 
-  while (
-    currentPath
-    && path.resolve(currentPath).startsWith(normalizedStopAt)
-    && path.resolve(currentPath) !== normalizedStopAt
-  ) {
-    if (!fs.existsSync(currentPath)) {
-      currentPath = path.dirname(currentPath);
-      continue;
-    }
-
-    const stat = fs.lstatSync(currentPath);
-    if (!stat.isDirectory() || fs.readdirSync(currentPath).length > 0) {
+  while (currentPath) {
+    const relativePath = path.relative(trustedStopAt, currentPath);
+    const isContained = relativePath !== '..'
+      && !relativePath.startsWith(`..${path.sep}`)
+      && !path.isAbsolute(relativePath);
+    if (!isContained || relativePath === '') {
       break;
     }
 
-    fs.rmdirSync(currentPath);
-    currentPath = path.dirname(currentPath);
+    let validatedPath = assertWithinTrustedRoot(currentPath, trustedStopAt, 'clean up');
+    if (!fs.existsSync(validatedPath)) {
+      currentPath = path.dirname(validatedPath);
+      continue;
+    }
+
+    validatedPath = assertWithinTrustedRoot(validatedPath, trustedStopAt, 'clean up');
+    const stat = fs.lstatSync(validatedPath);
+    if (!stat.isDirectory() || stat.isSymbolicLink()) {
+      break;
+    }
+
+    validatedPath = assertWithinTrustedRoot(validatedPath, trustedStopAt, 'clean up');
+    if (fs.readdirSync(validatedPath).length > 0) {
+      break;
+    }
+
+    const finalPath = assertWithinTrustedRoot(validatedPath, trustedStopAt, 'clean up');
+    const removedPath = removeContainedPath(finalPath, trustedStopAt, 'clean up');
+    if (!removedPath) break;
+    currentPath = path.dirname(removedPath);
   }
 }
 
@@ -1124,6 +2307,7 @@ function uninstallInstalledStates(options = {}) {
     homeDir: options.homeDir,
     projectRoot: options.projectRoot,
     targets: options.targets,
+    env: resolveInvocationEnvironment(options),
   }).filter(record => record.exists);
 
   const results = records.map(record => {
@@ -1134,14 +2318,27 @@ function uninstallInstalledStates(options = {}) {
         installStatePath: record.installStatePath,
         removedPaths: [],
         plannedRemovals: [],
-        error: record.error || 'No valid install-state available',
+        error: record.error || 'No valid install-state available'
       };
     }
 
     const state = record.state;
+    const managedOperations = getManagedOperations(state);
+    if (record.legacyLayout === 'antigravity' && managedOperations.length > 0) {
+      return {
+        adapter: record.adapter,
+        status: 'partial',
+        installStatePath: record.installStatePath,
+        removedPaths: [],
+        plannedRemovals: [],
+        retainedPaths: managedOperations.map(operation => operation.destinationPath),
+        warning: 'Legacy Antigravity files were preserved because their provenance cannot be revalidated during uninstall. Rerun the Antigravity installer to migrate verified files, then review .agent manually.',
+        error: null
+      };
+    }
     const plannedRemovals = Array.from(new Set([
-      ...getManagedOperations(state).map(operation => operation.destinationPath),
-      state.target.installStatePath,
+      ...managedOperations.map(operation => operation.destinationPath),
+      record.installStatePath
     ]));
 
     if (options.dryRun) {
@@ -1151,38 +2348,61 @@ function uninstallInstalledStates(options = {}) {
         installStatePath: record.installStatePath,
         removedPaths: [],
         plannedRemovals,
-        error: null,
+        error: null
       };
     }
 
+    let releaseSettingsLock = null;
     try {
       const removedPaths = [];
       const cleanupTargets = [];
+      const retainedPaths = [];
       const operations = getManagedOperations(state);
-
-      for (const operation of operations) {
-        const outcome = executeUninstallOperation(operation);
-        removedPaths.push(...outcome.removedPaths);
-        cleanupTargets.push(...outcome.cleanupTargets);
+      if (operations.some(operation => operation.kind === 'update-claude-settings')) {
+        releaseSettingsLock = acquireSettingsLock(
+          getClaudeSettingsPath(record.targetRoot)
+        );
       }
 
-      if (fs.existsSync(state.target.installStatePath)) {
-        fs.rmSync(state.target.installStatePath, { force: true });
-        removedPaths.push(state.target.installStatePath);
-        cleanupTargets.push(state.target.installStatePath);
+      for (const operation of operations) {
+        const outcome = executeUninstallOperation(operation, record.targetRoot, {
+          preserveDriftedCopies: true,
+          target: record.adapter.target,
+          settingsLockHeld: Boolean(releaseSettingsLock),
+        });
+        removedPaths.push(...outcome.removedPaths);
+        cleanupTargets.push(...outcome.cleanupTargets);
+        retainedPaths.push(...(outcome.retainedPaths || []));
+      }
+
+      if (retainedPaths.length === 0) {
+        const removedStatePath = removeContainedPath(
+          record.installStatePath,
+          record.targetRoot,
+          'uninstall',
+          { force: true }
+        );
+        if (removedStatePath) {
+          removedPaths.push(record.installStatePath);
+          cleanupTargets.push(removedStatePath);
+        }
       }
 
       for (const cleanupTarget of cleanupTargets) {
-        cleanupEmptyParentDirs(cleanupTarget, state.target.root);
+        cleanupEmptyParentDirs(cleanupTarget, record.targetRoot);
       }
 
       return {
         adapter: record.adapter,
-        status: 'uninstalled',
+        status: retainedPaths.length > 0 ? 'partial' : 'uninstalled',
         installStatePath: record.installStatePath,
         removedPaths,
+        retainedPaths: [...new Set(retainedPaths)].sort(),
         plannedRemovals: [],
-        error: null,
+        warning: retainedPaths.length > 0
+          ? 'Modified or unverifiable managed files were preserved together with install-state for review.'
+          : null,
+        error: null
       };
     } catch (error) {
       return {
@@ -1191,28 +2411,35 @@ function uninstallInstalledStates(options = {}) {
         installStatePath: record.installStatePath,
         removedPaths: [],
         plannedRemovals,
-        error: error.message,
+        error: error.message
       };
+    } finally {
+      if (releaseSettingsLock) releaseSettingsLock();
     }
   });
 
-  const summary = results.reduce((accumulator, result) => ({
-    checkedCount: accumulator.checkedCount + 1,
-    uninstalledCount: accumulator.uninstalledCount + (result.status === 'uninstalled' ? 1 : 0),
-    plannedRemovalCount: accumulator.plannedRemovalCount + (result.status === 'planned' ? 1 : 0),
-    errorCount: accumulator.errorCount + (result.status === 'error' ? 1 : 0),
-  }), {
-    checkedCount: 0,
-    uninstalledCount: 0,
-    plannedRemovalCount: 0,
-    errorCount: 0,
-  });
+  const summary = results.reduce(
+    (accumulator, result) => ({
+      checkedCount: accumulator.checkedCount + 1,
+      uninstalledCount: accumulator.uninstalledCount + (result.status === 'uninstalled' ? 1 : 0),
+      plannedRemovalCount: accumulator.plannedRemovalCount + (result.status === 'planned' ? 1 : 0),
+      partialCount: accumulator.partialCount + (result.status === 'partial' ? 1 : 0),
+      errorCount: accumulator.errorCount + (result.status === 'error' ? 1 : 0)
+    }),
+    {
+      checkedCount: 0,
+      uninstalledCount: 0,
+      plannedRemovalCount: 0,
+      partialCount: 0,
+      errorCount: 0
+    }
+  );
 
   return {
     dryRun: Boolean(options.dryRun),
     generatedAt: new Date().toISOString(),
     results,
-    summary,
+    summary
   };
 }
 
@@ -1222,5 +2449,5 @@ module.exports = {
   discoverInstalledStates,
   normalizeTargets,
   repairInstalledStates,
-  uninstallInstalledStates,
+  uninstallInstalledStates
 };

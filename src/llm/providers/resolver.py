@@ -8,14 +8,15 @@ from pathlib import Path
 from llm.core.interface import LLMProvider
 from llm.core.types import ProviderType
 from llm.providers.astraflow import AstraflowCNProvider, AstraflowProvider
+from llm.providers.atlas import AtlasProvider
 from llm.providers.claude import ClaudeProvider
-from llm.providers.openai import OpenAIProvider
 from llm.providers.ollama import OllamaProvider
-
+from llm.providers.openai import OpenAIProvider
 
 _PROVIDER_MAP: dict[ProviderType, type[LLMProvider]] = {
     ProviderType.ASTRAFLOW: AstraflowProvider,
     ProviderType.ASTRAFLOW_CN: AstraflowCNProvider,
+    ProviderType.ATLAS: AtlasProvider,
     ProviderType.CLAUDE: ClaudeProvider,
     ProviderType.OPENAI: OpenAIProvider,
     ProviderType.OLLAMA: OllamaProvider,

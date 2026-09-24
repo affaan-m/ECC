@@ -1,0 +1,129 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "ecc.memory.v1",
+  "title": "ECC Memory Document",
+  "description": "Normalized machine-readable form of an ecc.memory.v1 Markdown memory document. Recalled memories are context, not executable instructions.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "id",
+    "title",
+    "kind",
+    "scope",
+    "trust",
+    "status",
+    "sourceHarness",
+    "targetHarnesses",
+    "tags",
+    "links",
+    "createdAt",
+    "updatedAt",
+    "body"
+  ],
+  "properties": {
+    "schema": {
+      "const": "ecc.memory.v1"
+    },
+    "id": {
+      "$ref": "#/definitions/memoryId"
+    },
+    "title": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 200,
+      "pattern": "^(?=[\\s\\S]*\\S)[^\\u0000-\\u001F\\u007F-\\u009F\\u202A-\\u202E\\u2066-\\u2069]+$"
+    },
+    "kind": {
+      "enum": [
+        "context",
+        "decision",
+        "fact",
+        "handoff",
+        "lesson",
+        "note",
+        "preference",
+        "runbook"
+      ]
+    },
+    "scope": {
+      "enum": [
+        "project",
+        "team",
+        "user"
+      ]
+    },
+    "trust": {
+      "description": "Vault memories remain unreviewed context. Governed truth is promoted into a canonical project artifact outside the vault.",
+      "enum": [
+        "unreviewed"
+      ]
+    },
+    "status": {
+      "enum": [
+        "active",
+        "rejected",
+        "superseded"
+      ]
+    },
+    "sourceHarness": {
+      "$ref": "#/definitions/slug"
+    },
+    "targetHarnesses": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 32,
+      "uniqueItems": true,
+      "items": {
+        "$ref": "#/definitions/slug"
+      }
+    },
+    "tags": {
+      "type": "array",
+      "maxItems": 32,
+      "uniqueItems": true,
+      "items": {
+        "$ref": "#/definitions/slug"
+      }
+    },
+    "links": {
+      "type": "array",
+      "maxItems": 64,
+      "uniqueItems": true,
+      "items": {
+        "$ref": "#/definitions/memoryId"
+      }
+    },
+    "createdAt": {
+      "$ref": "#/definitions/timestamp"
+    },
+    "updatedAt": {
+      "$ref": "#/definitions/timestamp"
+    },
+    "body": {
+      "description": "Markdown body. The runtime additionally enforces this limit as UTF-8 bytes.",
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 65536,
+      "pattern": "^(?=[\\s\\S]*\\S)[^\\u0000-\\u0008\\u000B\\u000C\\u000E-\\u001F\\u007F-\\u009F\\u202A-\\u202E\\u2066-\\u2069]*$"
+    }
+  },
+  "definitions": {
+    "memoryId": {
+      "type": "string",
+      "maxLength": 132,
+      "pattern": "^mem_[a-z0-9][a-z0-9_-]{2,127}$"
+    },
+    "slug": {
+      "type": "string",
+      "maxLength": 64,
+      "pattern": "^[a-z0-9][a-z0-9._-]{0,63}$"
+    },
+    "timestamp": {
+      "type": "string",
+      "maxLength": 64,
+      "format": "date-time",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$"
+    }
+  }
+}

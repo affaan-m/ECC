@@ -119,6 +119,14 @@ function runTests() {
     assert.strictEqual(output.tool_input.command, 'npm run develop');
   })) passed++; else failed++;
 
+  if (test('does not transform npm run dev-build (hyphenated script)', () => {
+    const input = { tool_input: { command: 'npm run dev-build' } };
+    const result = runScript(input);
+    assert.strictEqual(result.code, 0);
+    const output = JSON.parse(result.stdout);
+    assert.strictEqual(output.tool_input.command, 'npm run dev-build');
+  })) passed++; else failed++;
+
   console.log('\nEdge cases:');
 
   if (test('handles empty input gracefully', () => {

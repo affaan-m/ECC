@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" aria-hidden="true" viewBox="0 0 96 96" fill="none">
+  <defs>
+    <linearGradient id="favicon-frame" x1="18" y1="14" x2="82" y2="86" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#E07856"/>
+      <stop offset="1" stop-color="#ffd700"/>
+    </linearGradient>
+    <linearGradient id="favicon-node" x1="24" y1="24" x2="72" y2="72" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#ffd700"/>
+      <stop offset="1" stop-color="#7ee787"/>
+    </linearGradient>
+  </defs>
+  <rect x="10" y="10" width="76" height="76" rx="24" fill="rgba(255,255,255,0.03)" stroke="url(#favicon-frame)" stroke-width="2"/>
+  <rect x="22" y="22" width="52" height="52" rx="16" fill="rgba(10,10,18,0.86)" stroke="rgba(255,255,255,0.06)"/>
+  <path d="M34 60V40.5C34 36.91 36.91 34 40.5 34H48" stroke="url(#favicon-node)" stroke-width="4" stroke-linecap="round"/>
+  <path d="M48 34H56C59.59 34 62.5 36.91 62.5 40.5V44" stroke="url(#favicon-node)" stroke-width="4" stroke-linecap="round"/>
+  <path d="M52 55L60 47L52 39" stroke="#E07856" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="34" cy="60" r="5" fill="#ffd700"/>
+  <circle cx="48" cy="34" r="5" fill="#E07856"/>
+  <circle cx="62" cy="44" r="5" fill="#7ee787"/>
+</svg>

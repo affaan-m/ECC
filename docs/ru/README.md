@@ -1,4 +1,4 @@
-**Язык:** [English](../../README.md) | [Português (Brasil)](../pt-BR/README.md) | [简体中文](../../README.zh-CN.md) | [繁體中文](../zh-TW/README.md) | [日本語](../ja-JP/README.md) | [한국어](../ko-KR/README.md) | [Türkçe](../tr/README.md) | **Русский** | [Tiếng Việt](../vi-VN/README.md) | [ไทย](../th/README.md) | [Deutsch](../de-DE/README.md)
+**Язык:** [English](../../README.md) | [Português (Brasil)](../pt-BR/README.md) | [简体中文](../../README.zh-CN.md) | [繁體中文](../zh-TW/README.md) | [日本語](../ja-JP/README.md) | [한국어](../ko-KR/README.md) | [Türkçe](../tr/README.md) | **Русский** | [Tiếng Việt](../vi-VN/README.md) | [ไทย](../th/README.md) | [Deutsch](../de-DE/README.md) | [Українська](../uk-UA/README.md)
 
 # Everything Claude Code
 
@@ -27,7 +27,7 @@
 
 **Язык / 语言 / 語言 / Dil / Ngôn ngữ**
 
-[**English**](../../README.md) | [Português (Brasil)](../pt-BR/README.md) | [简体中文](../../README.zh-CN.md) | [繁體中文](../zh-TW/README.md) | [日本語](../ja-JP/README.md) | [한국어](../ko-KR/README.md) | [Türkçe](../tr/README.md) | **Русский** | [Tiếng Việt](../vi-VN/README.md) | [ไทย](../th/README.md) | [Deutsch](../de-DE/README.md)
+[**English**](../../README.md) | [Português (Brasil)](../pt-BR/README.md) | [简体中文](../../README.zh-CN.md) | [繁體中文](../zh-TW/README.md) | [日本語](../ja-JP/README.md) | [한국어](../ko-KR/README.md) | [Türkçe](../tr/README.md) | **Русский** | [Tiếng Việt](../vi-VN/README.md) | [ไทย](../th/README.md) | [Deutsch](../de-DE/README.md) | [Українська](../uk-UA/README.md)
 
 </div>
 
@@ -174,7 +174,7 @@ ECC v2.0.0-rc.1 добавляет публичную историю опера�
 
 - **Рекомендуемый вариант по умолчанию:** установите плагин Claude Code, затем скопируйте только те папки правил, которые вам действительно нужны.
 - **Используйте ручной установщик только если** вам нужен более тонкий контроль, вы хотите полностью избежать пути через плагин или ваша сборка Claude Code не может разрешить self-hosted запись в marketplace.
-- **Не накладывайте методы установки друг на друга.** Самая частая сломанная конфигурация: сначала `/plugin install`, затем `install.sh --profile full` или `npx ecc-install --profile full`.
+- **Не накладывайте методы установки друг на друга.** Самая частая сломанная конфигурация: сначала `/plugin install`, затем `install.sh --profile full` или `npx ecc-universal install --profile full`.
 
 Если вы уже наложили несколько установок и видите дублирование, сразу переходите к разделу [Сброс / удаление ECC](#сброс--удаление-ecc).
 
@@ -189,7 +189,7 @@ ECC v2.0.0-rc.1 добавляет публичную историю опера�
 ```powershell
 .\install.ps1 --profile minimal --target claude
 # или
-npx ecc-install --profile minimal --target claude
+npx ecc-universal install --profile minimal --target claude
 ```
 
 Этот профиль намеренно исключает `hooks-runtime`.
@@ -211,7 +211,7 @@ npx ecc-install --profile minimal --target claude
 Если вы не уверены, какой профиль ECC или компонент установить, спросите упакованный advisor из любого проекта:
 
 ```bash
-npx ecc consult "security reviews" --target claude
+npx ecc-universal consult "security reviews" --target claude
 ```
 
 Он вернёт подходящие компоненты, связанные профили и команды предпросмотра/установки. Используйте команду предпросмотра перед установкой, если хотите посмотреть точный план файлов.
@@ -242,7 +242,7 @@ npx ecc consult "security reviews" --target claude
 
 > ПРЕДУПРЕЖДЕНИЕ: **Важно:** плагины Claude Code не могут автоматически распространять `rules`.
 >
-> Если вы уже установили ECC через `/plugin install`, **не запускайте после этого `./install.sh --profile full`, `.\install.ps1 --profile full` или `npx ecc-install --profile full`**. Плагин уже загружает навыки, команды и хуки ECC. Запуск полного установщика после установки плагина скопирует те же компоненты в пользовательские директории и может создать дублирующиеся навыки и дублирующееся runtime-поведение.
+> Если вы уже установили ECC через `/plugin install`, **не запускайте после этого `./install.sh --profile full`, `.\install.ps1 --profile full` или `npx ecc-universal install --profile full`**. Плагин уже загружает навыки, команды и хуки ECC. Запуск полного установщика после установки плагина скопирует те же компоненты в пользовательские директории и может создать дублирующиеся навыки и дублирующееся runtime-поведение.
 >
 > Для установки через плагин вручную скопируйте только нужные директории `rules/` в `~/.claude/rules/ecc/`. Начните с `rules/common` плюс один языковой или framework-пакет, который вы действительно используете. Не копируйте все директории правил, если явно не хотите весь этот контекст в Claude.
 >
@@ -277,7 +277,7 @@ Copy-Item -Recurse rules/typescript "$HOME/.claude/rules/ecc/"
 
 # Полностью ручной путь установки ECC (используйте вместо /plugin install)
 # .\install.ps1 --profile full
-# npx ecc-install --profile full
+# npx ecc-universal install --profile full
 ```
 
 Инструкции по ручной установке смотрите в README в папке `rules/`. При ручном копировании правил копируйте всю языковую директорию целиком (например, `rules/common` или `rules/golang`), а не файлы внутри неё, чтобы относительные ссылки продолжали работать и имена файлов не конфликтовали.
@@ -293,7 +293,7 @@ Copy-Item -Recurse rules/typescript "$HOME/.claude/rules/ecc/"
 ```powershell
 .\install.ps1 --profile full
 # или
-npx ecc-install --profile full
+npx ecc-universal install --profile full
 ```
 
 Если выбираете этот путь, на нём и остановитесь. Не запускайте дополнительно `/plugin install`.
@@ -1082,7 +1082,7 @@ cp -r everything-claude-code/rules/common ~/.claude/rules/ecc/
 - **Gemini CLI**: экспериментальная project-local поддержка через `.gemini/GEMINI.md` и общий plumbing установщика.
 - **OpenCode**: полная поддержка плагина в `.opencode/`. См. [Поддержка OpenCode](#поддержка-opencode).
 - **Codex**: первоклассная поддержка macOS app и CLI, с guards против adapter drift и SessionStart fallback. См. PR [#257](https://github.com/affaan-m/everything-claude-code/pull/257).
-- **Antigravity**: плотная настройка для workflows, skills и flattened rules в `.agent/`. См. [Antigravity Guide](../ANTIGRAVITY-GUIDE.md).
+- **Antigravity**: плотная настройка для workflows, skills, agents и flattened rules в `.agents/`. См. [Antigravity Guide](../ANTIGRAVITY-GUIDE.md).
 - **Ненативные среды**: ручной fallback path для Grok и похожих интерфейсов. См. [Manual Adaptation Guide](../MANUAL-ADAPTATION-GUIDE.md).
 - **Claude Code**: нативно — это основная цель.
 </details>

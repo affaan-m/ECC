@@ -1,7 +1,8 @@
 ---
 name: ecc-guide
 description: Guide users through ECC's current agents, skills, commands, hooks, rules, install profiles, and project onboarding by reading the live repository surface before answering.
-origin: community
+metadata:
+  origin: community
 ---
 
 # ECC Guide

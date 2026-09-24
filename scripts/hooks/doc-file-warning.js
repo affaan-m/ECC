@@ -16,8 +16,7 @@
 const path = require('path');
 const { buildPreToolUseAdditionalContext } = require('./pretooluse-visible-output');
 
-const MAX_STDIN = 1024 * 1024;
-let data = '';
+const MAX_DIRECT_STDIN_BYTES = 16 * 1024 * 1024;
 
 // Known ad-hoc filenames that indicate impulse/scratch files (case-sensitive, uppercase only)
 const ADHOC_FILENAMES = /^(NOTES|TODO|SCRATCH|TEMP|DRAFT|BRAINSTORM|SPIKE|DEBUG|WIP)\.(md|txt)$/;
@@ -70,27 +69,48 @@ function run(inputOrRaw, _options = {}) {
   return { exitCode: 0 };
 }
 
-module.exports = { run };
+/**
+ * Stdin entrypoint for direct/spawnSync execution: reads the hook payload from
+ * stdin, runs the policy, and writes the PreToolUse result to stdout. Direct
+ * and legacy entrypoints preserve complete supported payloads up to 16MiB;
+ * the production runner applies its stricter bounded-input policy. Must only
+ * run when invoked directly so stdin listeners are not leaked into a parent.
+ */
+function main() {
+  let data = '';
+  let stdinBytes = 0;
+  let oversized = false;
+  process.stdin.setEncoding('utf8');
+  process.stdin.on('data', c => {
+    if (oversized) return;
+    stdinBytes += Buffer.byteLength(c, 'utf8');
+    if (stdinBytes > MAX_DIRECT_STDIN_BYTES) {
+      data = '';
+      oversized = true;
+      return;
+    }
+    data += c;
+  });
 
-// Stdin fallback for spawnSync execution
-process.stdin.setEncoding('utf8');
-process.stdin.on('data', c => {
-  if (data.length < MAX_STDIN) {
-    const remaining = MAX_STDIN - data.length;
-    data += c.substring(0, remaining);
-  }
-});
+  process.stdin.on('end', () => {
+    if (oversized) return;
+    const result = run(data);
 
-process.stdin.on('end', () => {
-  const result = run(data);
+    if (result.stderr) {
+      process.stderr.write(result.stderr + '\n');
+    }
 
-  if (result.stderr) {
-    process.stderr.write(result.stderr + '\n');
-  }
+    if (Object.prototype.hasOwnProperty.call(result, 'additionalContext')) {
+      process.stdout.write(buildPreToolUseAdditionalContext(result.additionalContext));
+    } else {
+      process.stdout.write(data);
+    }
+  });
+}
 
-  if (Object.prototype.hasOwnProperty.call(result, 'additionalContext')) {
-    process.stdout.write(buildPreToolUseAdditionalContext(result.additionalContext));
-  } else {
-    process.stdout.write(data);
-  }
-});
+module.exports = { run, main };
+
+// Stdin fallback for spawnSync execution — only when invoked directly, not via require()
+if (require.main === module) {
+  main();
+}

@@ -27,6 +27,18 @@ const {
 const SESSION_FILENAME_REGEX = /^(\d{4}-\d{2}-\d{2})(?:-([a-zA-Z0-9_][a-zA-Z0-9_-]*))?-session\.tmp$/;
 
 /**
+ * Resolve a file's creation time, preferring birthtime but falling back to
+ * ctime when birthtime is unavailable. Some filesystems (e.g. overlayfs in
+ * containers) report birthtime as epoch 0; a Date object is always truthy, so
+ * `birthtime || ctime` would never fall back. Compare on milliseconds instead.
+ * @param {import('fs').Stats} stats
+ * @returns {Date}
+ */
+function resolveCreatedTime(stats) {
+  return stats.birthtimeMs > 0 ? stats.birthtime : stats.ctime;
+}
+
+/**
  * Parse session filename to extract metadata
  * @param {string} filename - Session filename (e.g., "2026-01-17-abc123-session.tmp" or "2026-01-17-session.tmp")
  * @returns {object|null} Parsed metadata or null if invalid
@@ -116,7 +128,7 @@ function getSessionCandidates(options = {}) {
         hasContent: stats.size > 0,
         size: stats.size,
         modifiedTime: stats.mtime,
-        createdTime: stats.birthtime || stats.ctime
+        createdTime: resolveCreatedTime(stats)
       });
     }
   }
@@ -151,7 +163,7 @@ function buildSessionRecord(sessionPath, metadata) {
     hasContent: stats.size > 0,
     size: stats.size,
     modifiedTime: stats.mtime,
-    createdTime: stats.birthtime || stats.ctime
+    createdTime: resolveCreatedTime(stats)
   };
 }
 

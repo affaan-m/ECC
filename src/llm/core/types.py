@@ -20,6 +20,7 @@ class ProviderType(str, Enum):
     OLLAMA = "ollama"
     ASTRAFLOW = "astraflow"
     ASTRAFLOW_CN = "astraflow_cn"
+    ATLAS = "atlas"
 
 
 @dataclass(frozen=True)

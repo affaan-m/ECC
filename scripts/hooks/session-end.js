@@ -11,20 +11,8 @@
 
 const path = require('path');
 const fs = require('fs');
-const {
-  getSessionsDir,
-  getDateString,
-  getTimeString,
-  getSessionIdShort,
-  sanitizeSessionId,
-  getProjectName,
-  ensureDir,
-  readFile,
-  writeFile,
-  runCommand,
-  stripAnsi,
-  log
-} = require('../lib/utils');
+const { getSessionsDir, getDateString, getTimeString, getSessionIdShort, sanitizeSessionId, getProjectName, getRepoIdentity, ensureDir, readFile, writeFile, runCommand, stripAnsi, log } = require('../lib/utils');
+const { generateSessionSummary, getContextRemainingPct, getContextThreshold } = require('../lib/llm-summary');
 
 const SUMMARY_START_MARKER = '<!-- ECC:SUMMARY:START -->';
 const SUMMARY_END_MARKER = '<!-- ECC:SUMMARY:END -->';
@@ -55,13 +43,16 @@ function extractSessionSummary(transcriptPath) {
       if (entry.type === 'user' || entry.role === 'user' || entry.message?.role === 'user') {
         // Support both direct content and nested message.content (Claude Code JSONL format)
         const rawContent = entry.message?.content ?? entry.content;
-        const text = typeof rawContent === 'string'
-          ? rawContent
-          : Array.isArray(rawContent)
-            ? rawContent.map(c => (c && c.text) || '').join(' ')
-            : '';
+        // Skip tool_result carrier turns — they are not user asks.
+        const isToolResult = Array.isArray(rawContent) && rawContent.some(c => c && c.type === 'tool_result');
+        const text = typeof rawContent === 'string' ? rawContent : Array.isArray(rawContent) ? rawContent.map(c => (c && c.text) || '').join(' ') : '';
         const cleaned = stripAnsi(text).trim();
-        if (cleaned) {
+        // Skip harness noise: local command echoes, caveats, system reminders.
+        const isNoise = /^<(local-command-caveat|local-command-stdout|command-name|command-message|command-args|system-reminder|task-notification)/i.test(cleaned);
+        // `isMeta` is also used for genuine channel- and plugin-originated
+        // human prompts. Exclude known structured noise above instead of
+        // discarding every metadata-marked user turn.
+        if (cleaned && !isToolResult && !isNoise) {
           userMessages.push(cleaned.slice(0, 200));
         }
       }
@@ -139,7 +130,8 @@ function getSessionMetadata() {
   return {
     project: getProjectName() || 'unknown',
     branch: branchResult.success ? branchResult.output : 'unknown',
-    worktree: process.cwd()
+    worktree: process.cwd(),
+    repo: getRepoIdentity()
   };
 }
 
@@ -154,16 +146,20 @@ function buildSessionHeader(today, currentTime, metadata, existingContent = '') 
   const date = extractHeaderField(existingContent, 'Date') || today;
   const started = extractHeaderField(existingContent, 'Started') || currentTime;
 
-  return [
+  const lines = [
     heading,
     `**Date:** ${date}`,
     `**Started:** ${started}`,
     `**Last Updated:** ${currentTime}`,
     `**Project:** ${metadata.project}`,
     `**Branch:** ${metadata.branch}`,
-    `**Worktree:** ${metadata.worktree}`,
-    ''
-  ].join('\n');
+    `**Worktree:** ${metadata.worktree}`
+  ];
+  if (metadata.repo) {
+    lines.push(`**Repo:** ${metadata.repo}`);
+  }
+  lines.push('');
+  return lines.join('\n');
 }
 
 function mergeSessionHeader(content, today, currentTime, metadata) {
@@ -197,6 +193,29 @@ async function main() {
     }
   }
 
+  // ECC's LLM summary helper launches a one-shot Claude subprocess whose Stop
+  // hooks inherit this dedicated marker. Skip that known internal session
+  // before touching session state. Transcript cardinality is not a safe proxy:
+  // an ordinary user session may legitimately contain one prompt and no tools.
+  if (process.env.ECC_LLM_SUMMARY_SUBPROCESS === '1') {
+    log('[SessionEnd] Skipped ECC LLM summary subprocess');
+    return;
+  }
+
+  // Read known transcripts before resolving session metadata or touching the
+  // session directory. Missing, unreadable, or unparseable transcript data keeps
+  // the established fallback behavior because it cannot be classified reliably.
+  let summary = null;
+  let transcriptExists = false;
+  if (transcriptPath) {
+    transcriptExists = fs.existsSync(transcriptPath);
+    if (transcriptExists) {
+      summary = extractSessionSummary(transcriptPath);
+    } else {
+      log(`[SessionEnd] Transcript not found: ${transcriptPath}`);
+    }
+  }
+
   const sessionsDir = getSessionsDir();
   const today = getDateString();
   // Derive shortId from transcript_path UUID when available, using the SAME
@@ -217,7 +236,9 @@ async function main() {
       shortId = sanitizeSessionId(m[1].slice(-8).toLowerCase());
     }
   }
-  if (!shortId) { shortId = getSessionIdShort(); }
+  if (!shortId) {
+    shortId = getSessionIdShort();
+  }
   const sessionFile = path.join(sessionsDir, `${today}-${shortId}-session.tmp`);
   const sessionMetadata = getSessionMetadata();
 
@@ -225,14 +246,23 @@ async function main() {
 
   const currentTime = getTimeString();
 
-  // Try to extract summary from transcript
-  let summary = null;
-
-  if (transcriptPath) {
-    if (fs.existsSync(transcriptPath)) {
-      summary = extractSessionSummary(transcriptPath);
-    } else {
-      log(`[SessionEnd] Transcript not found: ${transcriptPath}`);
+  // Decide whether to call LLM for a richer summary.
+  // Triggers: context remaining < 20%, or every 50 user messages as a baseline.
+  let llmSummary = null;
+  if (transcriptPath && summary && transcriptExists) {
+    const contextPct = getContextRemainingPct(transcriptPath);
+    const isContextLow = contextPct !== null && contextPct < getContextThreshold();
+    const interval = parseInt(process.env.ECC_LLM_SUMMARY_INTERVAL || '50', 10);
+    const safeInterval = Number.isFinite(interval) && interval > 0 ? interval : 50;
+    const isPeriodicTurn = summary.totalMessages > 0 && summary.totalMessages % safeInterval === 0;
+    if (isContextLow || isPeriodicTurn) {
+      log(`[SessionEnd] LLM summary triggered (context: ${contextPct ?? 'unknown'}%, messages: ${summary.totalMessages})`);
+      llmSummary = generateSessionSummary(transcriptPath);
+      if (llmSummary) {
+        log('[SessionEnd] LLM summary generated successfully');
+      } else {
+        log('[SessionEnd] LLM summary failed; falling back to mechanical extraction');
+      }
     }
   }
 
@@ -253,17 +283,14 @@ async function main() {
     // This keeps repeated Stop invocations idempotent and preserves
     // user-authored sections in the same session file.
     if (summary && updatedContent) {
-      const summaryBlock = buildSummaryBlock(summary);
+      const summaryBlock = llmSummary ? `${SUMMARY_START_MARKER}\n${llmSummary}\n${SUMMARY_END_MARKER}` : buildSummaryBlock(summary);
 
       // Use function replacers: summaryBlock embeds raw user-message text, and a
       // string replacement argument interprets $-sequences ($&, $$, $`, $', $n).
       // A $& in a user message would otherwise re-inject the entire matched block
       // and corrupt the persisted summary. A function replacer is treated literally.
       if (updatedContent.includes(SUMMARY_START_MARKER) && updatedContent.includes(SUMMARY_END_MARKER)) {
-        updatedContent = updatedContent.replace(
-          new RegExp(`${escapeRegExp(SUMMARY_START_MARKER)}[\\s\\S]*?${escapeRegExp(SUMMARY_END_MARKER)}`),
-          () => summaryBlock
-        );
+        updatedContent = updatedContent.replace(new RegExp(`${escapeRegExp(SUMMARY_START_MARKER)}[\\s\\S]*?${escapeRegExp(SUMMARY_END_MARKER)}`), () => summaryBlock);
       } else {
         // Migration path for files created before summary markers existed.
         updatedContent = updatedContent.replace(
@@ -280,8 +307,9 @@ async function main() {
     log(`[SessionEnd] Updated session file: ${sessionFile}`);
   } else {
     // Create new session file
-    const summarySection = summary
-      ? `${buildSummaryBlock(summary)}\n\n### Notes for Next Session\n-\n\n### Context to Load\n\`\`\`\n[relevant files]\n\`\`\``
+    const block = llmSummary ? `${SUMMARY_START_MARKER}\n${llmSummary}\n${SUMMARY_END_MARKER}` : summary ? buildSummaryBlock(summary) : null;
+    const summarySection = block
+      ? `${block}\n\n### Notes for Next Session\n-\n\n### Context to Load\n\`\`\`\n[relevant files]\n\`\`\``
       : `## Current State\n\n[Session context goes here]\n\n### Completed\n- [ ]\n\n### In Progress\n- [ ]\n\n### Notes for Next Session\n-\n\n### Context to Load\n\`\`\`\n[relevant files]\n\`\`\``;
 
     const template = `${buildSessionHeader(today, currentTime, sessionMetadata)}${SESSION_SEPARATOR}${summarySection}

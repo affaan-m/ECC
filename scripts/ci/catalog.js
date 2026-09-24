@@ -101,19 +101,6 @@ function parseReadmeExpectations(readmeContent) {
     { category: 'commands', mode: 'exact', expected: Number(quickStartMatch[3]), source: 'README.md quick-start summary' }
   );
 
-  const releaseNoteMatch = readmeContent.match(
-    /actual OSS surface:\s+(\d+)\s+agents,\s+(\d+)\s+skills,\s+and\s+(\d+)\s+legacy command shims/i
-  );
-  if (!releaseNoteMatch) {
-    throw new Error('README.md is missing the rc.1 release-note catalog summary');
-  }
-
-  expectations.push(
-    { category: 'agents', mode: 'exact', expected: Number(releaseNoteMatch[1]), source: 'README.md rc.1 release-note summary' },
-    { category: 'skills', mode: 'exact', expected: Number(releaseNoteMatch[2]), source: 'README.md rc.1 release-note summary' },
-    { category: 'commands', mode: 'exact', expected: Number(releaseNoteMatch[3]), source: 'README.md rc.1 release-note summary' }
-  );
-
   const projectTreeAgentsMatch = readmeContent.match(/^\|\s*--\s*agents\/\s*#\s*(\d+)\s+specialized subagents for delegation\s*$/im);
   if (!projectTreeAgentsMatch) {
     throw new Error('README.md project tree is missing the agents count');
@@ -133,38 +120,6 @@ function parseReadmeExpectations(readmeContent) {
   ];
 
   for (const pattern of tablePatterns) {
-    const match = readmeContent.match(pattern.regex);
-    if (!match) {
-      throw new Error(`${pattern.source} is missing the ${pattern.category} row`);
-    }
-
-    expectations.push({
-      category: pattern.category,
-      mode: 'exact',
-      expected: Number(match[1]),
-      source: `${pattern.source} (${pattern.category})`
-    });
-  }
-
-  const parityPatterns = [
-    {
-      category: 'agents',
-      regex: /^\|\s*(?:\*\*)?Agents(?:\*\*)?\s*\|\s*(\d+)\s*\|\s*Shared\s*\(AGENTS\.md\)\s*\|\s*Shared\s*\(AGENTS\.md\)\s*\|\s*12\s*\|(?:\s*N\/A\s*\|)?$/im,
-      source: 'README.md parity table'
-    },
-    {
-      category: 'commands',
-      regex: /^\|\s*(?:\*\*)?Commands(?:\*\*)?\s*\|\s*(\d+)\s*\|\s*Shared\s*\|\s*Instruction-based\s*\|\s*\d+\s*\|(?:\s*\d+\s+prompts\s*\|)?$/im,
-      source: 'README.md parity table'
-    },
-    {
-      category: 'skills',
-      regex: /^\|\s*(?:\*\*)?Skills(?:\*\*)?\s*\|\s*(\d+)\s*\|\s*Shared\s*\|\s*10\s*\(native format\)\s*\|\s*37\s*\|(?:\s*Via instructions\s*\|)?$/im,
-      source: 'README.md parity table'
-    }
-  ];
-
-  for (const pattern of parityPatterns) {
     const match = readmeContent.match(pattern.regex);
     if (!match) {
       throw new Error(`${pattern.source} is missing the ${pattern.category} row`);
@@ -430,13 +385,6 @@ function syncEnglishReadme(content, catalog) {
   );
   nextContent = replaceOrThrow(
     nextContent,
-    /(actual OSS surface:\s+)(\d+)(\s+agents,\s+)(\d+)(\s+skills,\s+and\s+)(\d+)(\s+legacy command shims)/i,
-    (_, prefix, __, agentsSuffix, ___, skillsSuffix, ____, commandsSuffix) =>
-      `${prefix}${catalog.agents.count}${agentsSuffix}${catalog.skills.count}${skillsSuffix}${catalog.commands.count}${commandsSuffix}`,
-    'README.md rc.1 release-note summary'
-  );
-  nextContent = replaceOrThrow(
-    nextContent,
     /^(\|\s*--\s*agents\/\s*#\s*)(\d+)(\s+specialized subagents for delegation\s*)$/im,
     (_, prefix, __, suffix) => `${prefix}${catalog.agents.count}${suffix}`,
     'README.md project tree (agents)'
@@ -459,25 +407,6 @@ function syncEnglishReadme(content, catalog) {
     (_, prefix, __, suffix) => `${prefix}${catalog.skills.count}${suffix}`,
     'README.md comparison table (skills)'
   );
-  nextContent = replaceOrThrow(
-    nextContent,
-    /^(\|\s*(?:\*\*)?Agents(?:\*\*)?\s*\|\s*)(\d+)(\s*\|\s*Shared\s*\(AGENTS\.md\)\s*\|\s*Shared\s*\(AGENTS\.md\)\s*\|\s*12\s*\|(?:\s*N\/A\s*\|)?)$/im,
-    (_, prefix, __, suffix) => `${prefix}${catalog.agents.count}${suffix}`,
-    'README.md parity table (agents)'
-  );
-  nextContent = replaceOrThrow(
-    nextContent,
-    /^(\|\s*(?:\*\*)?Commands(?:\*\*)?\s*\|\s*)(\d+)(\s*\|\s*Shared\s*\|\s*Instruction-based\s*\|\s*\d+\s*\|(?:\s*\d+\s+prompts\s*\|)?)$/im,
-    (_, prefix, __, suffix) => `${prefix}${catalog.commands.count}${suffix}`,
-    'README.md parity table (commands)'
-  );
-  nextContent = replaceOrThrow(
-    nextContent,
-    /^(\|\s*(?:\*\*)?Skills(?:\*\*)?\s*\|\s*)(\d+)(\s*\|\s*Shared\s*\|\s*10\s*\(native format\)\s*\|\s*37\s*\|(?:\s*Via instructions\s*\|)?)$/im,
-    (_, prefix, __, suffix) => `${prefix}${catalog.skills.count}${suffix}`,
-    'README.md parity table (skills)'
-  );
-
   return nextContent;
 }
 

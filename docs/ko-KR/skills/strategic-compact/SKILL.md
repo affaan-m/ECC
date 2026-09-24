@@ -38,21 +38,21 @@ origin: ECC
 
 ## Hook 설정
 
-`~/.claude/settings.json`에 추가합니다:
+**플러그인으로 설치한 경우**: 별도 설정이 필요 없습니다. 플러그인의 `hooks/hooks.json`이 이미 `suggest-compact.js`를 등록합니다(훅 ID `pre:edit-write:suggest-compact`, `standard` 및 `strict` 훅 프로파일에서 활성). 아래 블록을 `~/.claude/settings.json`에 복사하지 마세요 — 플러그인 설치에는 `~/.claude/scripts/`가 존재하지 않으며, 플러그인 훅을 중복하면 이중 실행이 발생합니다(`${CLAUDE_PLUGIN_ROOT}`는 사용자 `settings.json`에서 해석되지 않습니다).
+
+**수동 설치**(`./install.sh`)인 경우 `~/.claude/settings.json`에 추가합니다:
 
 ```json
 {
   "hooks": {
     "PreToolUse": [
       {
-        "matcher": "Edit|Write",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "node \"${CLAUDE_PLUGIN_ROOT}/scripts/hooks/run-with-flags.js\" \"pre:edit-write:suggest-compact\" \"scripts/hooks/suggest-compact.js\" \"standard,strict\""
-          }
-        ],
-        "description": "Suggest manual compaction at logical intervals"
+        "matcher": "Edit",
+        "hooks": [{ "type": "command", "command": "node ~/.claude/scripts/hooks/suggest-compact.js" }]
+      },
+      {
+        "matcher": "Write",
+        "hooks": [{ "type": "command", "command": "node ~/.claude/scripts/hooks/suggest-compact.js" }]
       }
     ]
   }

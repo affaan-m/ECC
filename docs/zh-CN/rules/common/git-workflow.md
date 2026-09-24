@@ -10,7 +10,7 @@
 
 类型：feat, fix, refactor, docs, test, chore, perf, ci
 
-注意：通过 ~/.claude/settings.json 全局禁用了归因。
+注意：ECC 管理的安装会在 `~/.claude/settings.json` 中设置 `"includeCoAuthoredBy": false`，因此提交默认不带 `Co-Authored-By`。若要保留 Claude 的归因，请设置 `"includeCoAuthoredBy": true` 或配置 `attribution`；ECC 不会覆盖用户的显式选择。
 
 ## 拉取请求工作流程
 

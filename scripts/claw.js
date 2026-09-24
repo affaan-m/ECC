@@ -32,7 +32,8 @@ function getSessionPath(name) {
 function listSessions(dir) {
   const clawDir = dir || getClawDir();
   if (!fs.existsSync(clawDir)) return [];
-  return fs.readdirSync(clawDir)
+  return fs
+    .readdirSync(clawDir)
     .filter(f => f.endsWith('.md'))
     .map(f => f.replace(/\.md$/, ''));
 }
@@ -55,7 +56,10 @@ function appendTurn(filePath, role, content, timestamp) {
 function normalizeSkillList(raw) {
   if (!raw) return [];
   if (Array.isArray(raw)) return raw.map(s => String(s).trim()).filter(Boolean);
-  return String(raw).split(',').map(s => s.trim()).filter(Boolean);
+  return String(raw)
+    .split(',')
+    .map(s => s.trim())
+    .filter(Boolean);
 }
 
 function loadECCContext(skillList) {
@@ -91,21 +95,54 @@ function askClaude(systemPrompt, history, userMessage, model) {
   }
   args.push('-p');
 
-  // On Windows the `claude` binary installed via npm is `claude.cmd`/`claude.ps1`,
-  // and Node's spawn() cannot resolve those wrappers via PATH without shell: true.
-  // But shell mode concatenates args *unescaped*, so a multi-line prompt passed as
-  // an arg gets mangled (newlines and the `===` section markers truncate it, and
-  // claude receives an empty prompt). Fix: send the prompt over stdin via `input`
-  // and keep only the short, safe flags (`--model`, `-p`) as args.
-  // 'claude' is a hardcoded literal here (not user input), so shell mode is safe.
-  const result = spawnSync('claude', args, {
+  // SECURITY: a model value like `x & calc &` breaks out when Node
+  // concatenates command+args unquoted under cmd.exe (DEP0190), so the model
+  // token is validated and only fixed flags reach the command line.
+  if (model && !/^[A-Za-z0-9][A-Za-z0-9._:-]{0,63}$/.test(model)) {
+    return `[Error: invalid model name]`;
+  }
+  // On Windows the `claude` binary is usually a .cmd shim, which Node
+  // >=18.20/20.12 refuses to spawn directly (CVE-2024-27980 mitigation), and
+  // .ps1 shims are not directly executable at all. Resolve a natively
+  // executable target first; only .cmd/.bat go through cmd.exe, using the
+  // same quoted-command-line pattern as scripts/hooks/mcp-health-check.js so
+  // space-containing paths survive as single tokens. .ps1 is never executed
+  // directly — fall through to bare `claude` (pre-change behavior) instead.
+  // cmd.exe expands %NAME% even inside double-quoted strings, so reject
+  // percent-delimited executable paths rather than route them through the shell.
+  function quoteWinToken(token) {
+    if (/%/.test(token)) return null;
+    return /[\s"&|<>^();]/.test(token) ? '"' + token.replace(/"/g, '""') + '"' : token;
+  }
+  let bin = 'claude';
+  let useShell = false;
+  if (process.platform === 'win32') {
+    const { spawnSync: spawnWhere } = require('child_process');
+    for (const ext of ['.exe', '.cmd', '.bat']) {
+      let found = null;
+      try {
+        found = spawnWhere('where', [`claude${ext}`], { encoding: 'utf8' });
+      } catch { /* ignore */ }
+      if (found && found.status === 0 && found.stdout && found.stdout.trim()) {
+        bin = found.stdout.trim().split(/\r?\n/)[0];
+        useShell = /\.(cmd|bat)$/i.test(bin);
+        break;
+      }
+    }
+    if (useShell && quoteWinToken(bin) === null) {
+      useShell = false;
+    }
+  }
+  const spawnOpts = {
     input: fullPrompt,
     encoding: 'utf8',
     stdio: ['pipe', 'pipe', 'pipe'],
     env: { ...process.env, CLAUDECODE: '' },
     timeout: 300000,
-    shell: process.platform === 'win32',
-  });
+  };
+  const result = useShell
+    ? spawnSync([bin, ...args].map(quoteWinToken).join(' '), { ...spawnOpts, shell: true })
+    : spawnSync(bin, args, { ...spawnOpts, shell: false });
 
   if (result.error) {
     return `[Error: ${result.error.message}]`;
@@ -120,9 +157,14 @@ function askClaude(systemPrompt, history, userMessage, model) {
 
 function parseTurns(history) {
   const turns = [];
+  // Bound the input: the lazy `[\s\S]*?` body re-scans toward EOF from each
+  // `### [` start, so a very large/adversarial history file can drive O(n^2)
+  // scanning (ReDoS). Session histories are far below this cap.
+  const text = String(history || '');
+  const safe = text.length > 5_000_000 ? text.slice(0, 5_000_000) : text;
   const regex = /### \[([^\]]+)\] ([^\n]+)\n([\s\S]*?)\n---\n/g;
   let match;
-  while ((match = regex.exec(history)) !== null) {
+  while ((match = regex.exec(safe)) !== null) {
     turns.push({ timestamp: match[1], role: match[2], content: match[3] });
   }
   return turns;
@@ -145,12 +187,14 @@ function getSessionMetrics(filePath) {
     userTurns,
     assistantTurns,
     charCount,
-    tokenEstimate,
+    tokenEstimate
   };
 }
 
 function searchSessions(query, dir) {
-  const q = String(query || '').toLowerCase().trim();
+  const q = String(query || '')
+    .toLowerCase()
+    .trim();
   if (!q) return [];
 
   const sessionDir = dir || getClawDir();
@@ -297,7 +341,7 @@ function main() {
     sessionName: initialSessionName,
     sessionPath: getSessionPath(initialSessionName),
     model: DEFAULT_MODEL,
-    skills: normalizeSkillList(process.env.CLAW_SKILLS || ''),
+    skills: normalizeSkillList(process.env.CLAW_SKILLS || '')
   };
 
   let eccContext = loadECCContext(state.skills);
@@ -314,7 +358,7 @@ function main() {
   const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
 
   const prompt = () => {
-    rl.question('claw> ', (input) => {
+    rl.question('claw> ', input => {
       const line = input.trim();
       if (!line) return prompt();
 
@@ -469,7 +513,7 @@ module.exports = {
   compactSession,
   exportSession,
   branchSession,
-  main,
+  main
 };
 
 if (require.main === module) {

@@ -2,6 +2,7 @@
 
 const fs = require('fs');
 const path = require('path');
+const { normalizeAgentTools } = require('./agent-tools');
 
 /**
  * Parse YAML frontmatter from a markdown string.
@@ -33,6 +34,10 @@ function parseFrontmatter(content) {
     // Strip surrounding quotes
     if (typeof value === 'string' && value.startsWith('"') && value.endsWith('"')) {
       value = value.slice(1, -1);
+    }
+
+    if (key === 'tools') {
+      value = normalizeAgentTools(value);
     }
 
     frontmatter[key] = value;

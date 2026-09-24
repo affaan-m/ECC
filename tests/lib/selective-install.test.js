@@ -649,6 +649,7 @@ function runTests() {
         scriptPath,
         '--profile', 'core',
         '--with', 'capability:security',
+        '--enable-hooks',
       ], {
         cwd: projectDir,
         env: { ...process.env, HOME: homeDir },
@@ -658,7 +659,7 @@ function runTests() {
 
       const claudeRoot = path.join(homeDir, '.claude');
       // Security skill should be installed (from --with)
-      assert.ok(fs.existsSync(path.join(claudeRoot, 'skills', 'ecc', 'security-review', 'SKILL.md')),
+      assert.ok(fs.existsSync(path.join(claudeRoot, 'skills', 'security-review', 'SKILL.md')),
         'Should install security-review skill from --with');
       // Core profile modules should be installed
       assert.ok(fs.existsSync(path.join(claudeRoot, 'rules', 'ecc', 'common', 'coding-style.md')),
@@ -668,6 +669,7 @@ function runTests() {
       const statePath = path.join(claudeRoot, 'ecc', 'install-state.json');
       const state = JSON.parse(fs.readFileSync(statePath, 'utf8'));
       assert.strictEqual(state.request.profile, 'core');
+      assert.strictEqual(state.request.hookConsent, 'enabled');
       assert.deepStrictEqual(state.request.includeComponents, ['capability:security']);
       assert.deepStrictEqual(state.request.excludeComponents, []);
       assert.ok(state.resolution.selectedModules.includes('security'));
@@ -688,6 +690,7 @@ function runTests() {
         scriptPath,
         '--profile', 'developer',
         '--without', 'capability:orchestration',
+        '--enable-hooks',
       ], {
         cwd: projectDir,
         env: { ...process.env, HOME: homeDir },
@@ -697,17 +700,18 @@ function runTests() {
 
       const claudeRoot = path.join(homeDir, '.claude');
       // Orchestration skills should NOT be installed (from --without)
-      assert.ok(!fs.existsSync(path.join(claudeRoot, 'skills', 'ecc', 'dmux-workflows', 'SKILL.md')),
+      assert.ok(!fs.existsSync(path.join(claudeRoot, 'skills', 'dmux-workflows', 'SKILL.md')),
         'Should not install orchestration skills');
       // Developer profile base modules should be installed
       assert.ok(fs.existsSync(path.join(claudeRoot, 'rules', 'ecc', 'common', 'coding-style.md')),
         'Should install core rules');
-      assert.ok(fs.existsSync(path.join(claudeRoot, 'skills', 'ecc', 'tdd-workflow', 'SKILL.md')),
+      assert.ok(fs.existsSync(path.join(claudeRoot, 'skills', 'tdd-workflow', 'SKILL.md')),
         'Should install workflow skills');
 
       const statePath = path.join(claudeRoot, 'ecc', 'install-state.json');
       const state = JSON.parse(fs.readFileSync(statePath, 'utf8'));
       assert.strictEqual(state.request.profile, 'developer');
+      assert.strictEqual(state.request.hookConsent, 'enabled');
       assert.deepStrictEqual(state.request.excludeComponents, ['capability:orchestration']);
       assert.ok(!state.resolution.selectedModules.includes('orchestration'));
     } finally {
@@ -735,7 +739,7 @@ function runTests() {
 
       const claudeRoot = path.join(homeDir, '.claude');
       // framework-language skill (from lang:typescript) should be installed
-      assert.ok(fs.existsSync(path.join(claudeRoot, 'skills', 'ecc', 'coding-standards', 'SKILL.md')),
+      assert.ok(fs.existsSync(path.join(claudeRoot, 'skills', 'coding-standards', 'SKILL.md')),
         'Should install framework-language skills');
       // Its dependencies should be installed
       assert.ok(fs.existsSync(path.join(claudeRoot, 'rules', 'ecc', 'common', 'coding-style.md')),
@@ -771,11 +775,11 @@ function runTests() {
 
       const claudeRoot = path.join(homeDir, '.claude');
       assert.ok(
-        fs.existsSync(path.join(claudeRoot, 'skills', 'ecc', 'continuous-learning-v2', 'SKILL.md')),
+        fs.existsSync(path.join(claudeRoot, 'skills', 'continuous-learning-v2', 'SKILL.md')),
         'Should install continuous-learning-v2'
       );
       assert.ok(
-        !fs.existsSync(path.join(claudeRoot, 'skills', 'ecc', 'tdd-workflow', 'SKILL.md')),
+        !fs.existsSync(path.join(claudeRoot, 'skills', 'tdd-workflow', 'SKILL.md')),
         'Should not install unrelated workflow-quality skills'
       );
 

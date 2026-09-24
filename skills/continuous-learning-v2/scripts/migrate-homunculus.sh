@@ -7,7 +7,7 @@ OLD="${HOME}/.claude/homunculus"
 
 # shellcheck disable=SC1091
 . "$(dirname "$0")/lib/homunculus-dir.sh"
-NEW="$(_ecc_resolve_homunculus_dir)"
+NEW="$(_clv2_resolve_homunculus_dir)"
 
 if [ "$NEW" = "$OLD" ]; then
   echo "Resolved destination equals source ($OLD); nothing to migrate."
@@ -20,7 +20,13 @@ if [ ! -d "$OLD" ]; then
 fi
 
 if command -v pgrep >/dev/null 2>&1; then
-  if pgrep -f "${HOME}.*observer-loop\\.sh" >/dev/null 2>&1; then
+  # pgrep -f treats its argument as an extended regular expression, so $HOME
+  # must be escaped before interpolation. Without this, regex metacharacters in
+  # the path (e.g. /home/user.name, /home/c++dev, /home/user (work)) would make
+  # the match over-broad or invalid, causing false negatives (observer missed,
+  # migration proceeds unsafely) or false positives (migration blocked).
+  escaped_home="$(printf '%s' "$HOME" | sed 's/[]\.[(){}+*?|^$]/\\&/g')"
+  if pgrep -f "${escaped_home}.*observer-loop\\.sh" >/dev/null 2>&1; then
     echo "Refusing to migrate: observer-loop.sh is running." >&2
     echo "Exit all Claude Code sessions, then re-run." >&2
     exit 1

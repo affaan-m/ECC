@@ -58,8 +58,31 @@ function shouldCheckFile(filePath) {
 }
 
 /**
+ * Decide whether a captured api-key value is an OBVIOUS non-secret placeholder so
+ * the heuristic generic api-key rule does not emit a false positive. Deliberately
+ * narrow: only suppresses whole-value env references / interpolations / angle-bracket
+ * tokens and a short explicit whitelist of placeholder + env-var NAME tokens. It must
+ * NOT suppress arbitrary high-entropy data (uppercase-hex, base32, digit-only, mixed
+ * tokens), since the generic rule is the only net catching non-prefixed secrets and a
+ * false-negative there is the safety-critical failure this hook exists to prevent.
+ * @param {string} value
+ * @returns {boolean}
+ */
+function isPlaceholderSecret(value) {
+  const v = (value || '').trim();
+  if (v.length === 0) return true;                                  // empty value
+  if (/^process\.env\.[A-Za-z0-9_]+$/.test(v)) return true;          // entire value is a process.env.NAME reference
+  if (/^\$\{[^}]*\}$/.test(v)) return true;                          // entire value is a ${...} interpolation
+  if (/^<[^<>]*>$/.test(v)) return true;                             // entire value is a <PLACEHOLDER> token
+  // Short explicit whitelist of placeholder + env-var NAME tokens (whole-value match only).
+  // No general all-caps clause: real all-caps/hex/base32/digit secrets must still flag.
+  if (/^(REPLACE_ME|CHANGE_?ME|YOUR[_-]?API[_-]?KEY|YOUR[_-]?KEY[_-]?HERE|API[_-]?KEY|SECRET|TOKEN|KEY|TODO|TBD|FIXME|XXX+)$/i.test(v)) return true;
+  return false;
+}
+
+/**
  * Find issues in file content
- * @param {string} filePath 
+ * @param {string} filePath
  * @returns {object[]} Array of issues found
  */
 function findFileIssues(filePath) {
@@ -76,7 +99,7 @@ function findFileIssues(filePath) {
       const lineNum = index + 1;
       
       // Check for console.log
-      if (line.includes('console.log') && !line.trim().startsWith('//') && !line.trim().startsWith('*')) {
+      if (line.includes('console.log') && !line.trim().startsWith('//') && !line.trim().startsWith('*') && !line.trim().startsWith('#')) {
         issues.push({
           type: 'console.log',
           message: `console.log found at line ${lineNum}`,
@@ -86,7 +109,7 @@ function findFileIssues(filePath) {
       }
       
       // Check for debugger statements
-      if (/\bdebugger\b/.test(line) && !line.trim().startsWith('//')) {
+      if (/\bdebugger\b/.test(line) && !line.trim().startsWith('//') && !line.trim().startsWith('#')) {
         issues.push({
           type: 'debugger',
           message: `debugger statement at line ${lineNum}`,
@@ -96,7 +119,7 @@ function findFileIssues(filePath) {
       }
       
       // Check for TODO/FIXME without issue reference
-      const todoMatch = line.match(/\/\/\s*(TODO|FIXME):?\s*(.+)/);
+    const todoMatch = line.match(/(?:\/\/|#)\s*(TODO|FIXME):?\s*(\S.*)/);
       if (todoMatch && !todoMatch[2].match(/#\d+|issue/i)) {
         issues.push({
           type: 'todo',
@@ -108,14 +131,25 @@ function findFileIssues(filePath) {
       
       // Check for hardcoded secrets (basic patterns)
       const secretPatterns = [
+        { pattern: /sk-ant-[a-zA-Z0-9_-]{20,}/, name: 'Anthropic API key' },
         { pattern: /sk-[a-zA-Z0-9]{20,}/, name: 'OpenAI API key' },
         { pattern: /ghp_[a-zA-Z0-9]{36}/, name: 'GitHub PAT' },
         { pattern: /AKIA[A-Z0-9]{16}/, name: 'AWS Access Key' },
-        { pattern: /api[_-]?key\s*[=:]\s*['"][^'"]+['"]/i, name: 'API key' }
+        // Capture the quoted value so obvious non-secret placeholders can be excluded
+        { pattern: /api[_-]?key\s*[=:]\s*['"]([^'"]+)['"]/i, name: 'API key', valueGroup: 1 },
+        // Unquoted form (API_KEY=..., api_key: ... without quotes). Scoped to a
+        // single alnum/underscore/hyphen token of 12+ chars containing at least
+        // one digit — real secrets are near-always alphanumeric, whereas bare
+        // identifiers/expressions common in this hook's checkable languages
+        // (config.apiKey, getApiKey(), process.env.API_KEY) are pure-alpha or
+        // contain '.'/'(' that fall outside the character class, so they don't
+        // match. Kept deliberately narrow to avoid flagging ordinary code.
+        { pattern: /api[_-]?key\s*[=:]\s*(?!['"])((?=[A-Za-z0-9_-]*\d)[A-Za-z0-9_-]{12,})/i, name: 'API key', valueGroup: 1 }
       ];
       
-      for (const { pattern, name } of secretPatterns) {
-        if (pattern.test(line)) {
+      for (const { pattern, name, valueGroup } of secretPatterns) {
+        const secretMatch = line.match(pattern);
+        if (secretMatch && !(valueGroup && isPlaceholderSecret(secretMatch[valueGroup]))) {
           issues.push({
             type: 'secret',
             message: `Potential ${name} exposed at line ${lineNum}`,
@@ -138,11 +172,14 @@ function findFileIssues(filePath) {
  * @returns {object|null} Validation result or null if no message to validate
  */
 function validateCommitMessage(command) {
-  // Extract commit message from command
-  const messageMatch = command.match(/(?:-m|--message)[=\s]+["']?([^"']+)["']?/);
+  // Extract commit message from command (quote-aware: when quoted, capture to the
+  // matching closing quote, consuming escaped chars (\") so an embedded escaped
+  // quote does not truncate the subject, and allowing the OTHER quote char inside
+  // the body; when unquoted, capture the full remaining tail, not just the first token)
+  const messageMatch = command.match(/(?:-m|--message)[=\s]+(?:"((?:\\.|[^"\\])*)"|'((?:\\.|[^'\\])*)'|([^"']+?)\s*$)/);
   if (!messageMatch) return null;
   
-  const message = messageMatch[1];
+  const message = messageMatch[1] ?? messageMatch[2] ?? messageMatch[3];
   const issues = [];
   
   // Check conventional commit format
@@ -222,18 +259,81 @@ function resolveCommand(command) {
   return null;
 }
 
+const LINTER_TIMEOUT_MS = 30000;
+const UNSAFE_CMD_TOKEN = /["\0\r\n]/;
+const CMD_TOKEN_ENV_PREFIX = 'ECC_LINTER_TOKEN_';
+
+function validateCmdToken(value) {
+  const token = String(value);
+  if (UNSAFE_CMD_TOKEN.test(token)) {
+    throw new Error(`Unsafe character in Windows linter argument: ${JSON.stringify(token)}`);
+  }
+  return token;
+}
+
+function getLinterInvocation(command, args, platform = process.platform) {
+  const useCmd = platform === 'win32' && /\.(?:cmd|bat)$/i.test(command);
+
+  if (useCmd) {
+    const environment = { ...process.env };
+    for (const name of Object.keys(environment)) {
+      if (name.toUpperCase().startsWith(CMD_TOKEN_ENV_PREFIX)) {
+        delete environment[name];
+      }
+    }
+
+    // Keep untrusted values out of cmd.exe source. Percent expansion is
+    // non-recursive, so percent signs introduced by these environment values
+    // stay literal. Disabling delayed expansion likewise preserves exclamation
+    // marks. Quotes and line controls remain invalid because they could escape
+    // the quoted token boundary or create another command line.
+    const tokenReferences = [command, ...args].map((value, index) => {
+      const name = `${CMD_TOKEN_ENV_PREFIX}${index}`;
+      environment[name] = validateCmdToken(value);
+      return `"%${name}%"`;
+    });
+    const commandLine = tokenReferences.join(' ');
+    return {
+      command: process.env.ComSpec || process.env.COMSPEC || 'cmd.exe',
+      args: ['/d', '/v:off', '/s', '/c', `"${commandLine}"`],
+      options: {
+        encoding: 'utf8',
+        stdio: ['pipe', 'pipe', 'pipe'],
+        timeout: LINTER_TIMEOUT_MS,
+        shell: false,
+        windowsVerbatimArguments: true,
+        env: environment
+      }
+    };
+  }
+
+  return {
+    command,
+    args,
+    options: {
+      encoding: 'utf8',
+      stdio: ['pipe', 'pipe', 'pipe'],
+      timeout: LINTER_TIMEOUT_MS,
+      shell: false
+    }
+  };
+}
+
 function runLinterCommand(command, args) {
-  const useShell = process.platform === 'win32' && /\.(?:cmd|bat)$/i.test(command);
-  return spawnSync(command, args, {
-    encoding: 'utf8',
-    stdio: ['pipe', 'pipe', 'pipe'],
-    timeout: 30000,
-    shell: useShell
-  });
+  try {
+    const invocation = getLinterInvocation(command, args);
+    return spawnSync(invocation.command, invocation.args, invocation.options);
+  } catch (error) {
+    return { status: null, stdout: '', stderr: '', error };
+  }
 }
 
 function commandOutput(result) {
   return result.stdout || result.stderr || result.error?.message || '';
+}
+
+function golintSucceeded(result) {
+  return result.status === 0 && !result.error && (!result.stdout || result.stdout.trim() === '');
 }
 
 /**
@@ -257,7 +357,7 @@ function runLinter(files) {
     const eslintBin = process.platform === 'win32' ? 'eslint.cmd' : 'eslint';
     const eslintPath = path.join(process.cwd(), 'node_modules', '.bin', eslintBin);
     if (fs.existsSync(eslintPath)) {
-      const result = runLinterCommand(eslintPath, ['--format', 'compact', ...jsFiles]);
+      const result = runLinterCommand(eslintPath, jsFiles);
       results.eslint = {
         success: result.status === 0,
         output: commandOutput(result)
@@ -292,7 +392,7 @@ function runLinter(files) {
       } else {
         const result = runLinterCommand(golintPath, goFiles);
         results.golint = {
-          success: !result.stdout || result.stdout.trim() === '',
+          success: golintSucceeded(result),
           output: commandOutput(result)
         };
       }
@@ -444,4 +544,13 @@ if (require.main === module) {
   });
 }
 
-module.exports = { run, evaluate };
+module.exports = {
+  run,
+  evaluate,
+  validateCommitMessage,
+  findFileIssues,
+  isPlaceholderSecret,
+  getLinterInvocation,
+  golintSucceeded,
+  runLinter
+};

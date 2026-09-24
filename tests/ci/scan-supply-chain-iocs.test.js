@@ -310,6 +310,45 @@ function run() {
     });
   })) passed++; else failed++;
 
+  if (test('does not flag legitimate hook filenames ending in an IOC filename', () => {
+    withFixture({
+      '.cursor/hooks.json': JSON.stringify({
+        hooks: {
+          beforeShellExecution: [{
+            command: 'node .cursor/hooks/before-shell-execution.js',
+          }],
+          afterShellExecution: [{
+            command: 'node .cursor/hooks/after-shell-execution.js',
+          }],
+          beforeMCPExecution: [{
+            command: 'node .cursor/hooks/before-mcp-execution.js',
+          }],
+          afterFileEdit: [{
+            command: 'node .cursor/hooks/post_execution.js',
+          }],
+        },
+      }, null, 2),
+    }, rootDir => {
+      const result = scanSupplyChainIocs({ rootDir });
+      assert.deepStrictEqual(result.findings, []);
+    });
+  })) passed++; else failed++;
+
+  if (test('still flags the bare execution.js payload after a path separator', () => {
+    withFixture({
+      '.cursor/hooks.json': JSON.stringify({
+        hooks: {
+          sessionStart: [{
+            command: 'node .cursor/hooks/execution.js',
+          }],
+        },
+      }, null, 2),
+    }, rootDir => {
+      const result = scanSupplyChainIocs({ rootDir });
+      assert.ok(result.findings.some(finding => finding.indicator === 'execution.js'));
+    });
+  })) passed++; else failed++;
+
   if (test('rejects user-level VS Code task persistence when home scan is enabled', () => {
     withFixture({
       'home/Library/Application Support/Code/User/tasks.json': JSON.stringify({

@@ -26,7 +26,35 @@ const REPO_URL = 'https://github.com/affaan-m/ECC';
 const INVITE = process.env.DISCORD_INVITE || '';
 const API = 'https://discord.com/api/v10';
 
-const log = (...a) => console.log(new Date().toISOString(), ...a);
+// Strip CR/LF from string args so Discord-payload-controlled values (command
+// names, usernames) cannot forge or inject extra log lines (log injection).
+const log = (...a) =>
+  console.log(new Date().toISOString(), ...a.map(x => (typeof x === 'string' ? x.replace(/[\r\n]+/g, ' ') : x)));
+
+// Interaction ids are Discord snowflakes (numeric) and tokens are a bounded
+// URL-safe set. Validate before building the callback URL so a malformed or
+// hostile gateway payload cannot inject path segments / alter the request
+// target (SSRF). The host is always the fixed API constant.
+const SNOWFLAKE_RE = /^[0-9]{1,20}$/;
+const INTERACTION_TOKEN_RE = /^[A-Za-z0-9._-]{1,255}$/;
+
+function interactionCallbackUrl(interaction) {
+  const id = String(interaction?.id ?? '');
+  const token = String(interaction?.token ?? '');
+  if (!SNOWFLAKE_RE.test(id) || !INTERACTION_TOKEN_RE.test(token)) {
+    throw new Error('invalid interaction id/token');
+  }
+  return `${API}/interactions/${id}/${token}/callback`;
+}
+
+// Clamp a remote-supplied timer interval to a sane range so a hostile/bogus
+// heartbeat_interval cannot spin a tight loop or hang the bot (resource
+// exhaustion). Discord's real value is ~41250ms.
+function clampHeartbeatInterval(value) {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return 41250;
+  return Math.max(1000, Math.min(n, 600000));
+}
 
 // ---------- skill + docs lookup (local clone as the data source) ----------
 
@@ -148,7 +176,13 @@ const handlers = {
 async function respond(interaction) {
   const name = interaction.data?.name;
   const handler = handlers[name];
-  const url = `${API}/interactions/${interaction.id}/${interaction.token}/callback`;
+  let url;
+  try {
+    url = interactionCallbackUrl(interaction);
+  } catch (err) {
+    log('rejected interaction', err.message);
+    return;
+  }
   if (!handler) {
     await fetch(url, {
       method: 'POST',
@@ -192,7 +226,7 @@ async function main() {
     if (msg.s) seq = msg.s;
     switch (msg.op) {
       case 10: { // HELLO
-        const interval = msg.d.heartbeat_interval;
+        const interval = clampHeartbeatInterval(msg.d.heartbeat_interval);
         setTimeout(() => {
           send({ op: 1, d: seq });
           setInterval(() => {

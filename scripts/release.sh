@@ -73,6 +73,15 @@ if [[ -z "$OLD_VERSION" ]]; then
   echo "Error: Could not extract current version from $PLUGIN_JSON"
   exit 1
 fi
+
+if [[ "$OLD_VERSION" == "$VERSION" ]]; then
+  echo "Error: Version $VERSION is already declared in release metadata."
+  echo "After the merged commit passes CI, publish it through the tag workflow:"
+  echo "  git tag \"v$VERSION\""
+  echo "  git push origin \"v$VERSION\""
+  exit 1
+fi
+
 echo "Bumping version: $OLD_VERSION -> $VERSION"
 
 update_version() {
@@ -140,23 +149,49 @@ update_readme_version_row() {
   ' "$file" "$VERSION" "$label" "$first_col" "$second_col" "$third_col"
 }
 
-update_latest_release_heading() {
+update_marketplace_plugin_version() {
   local file="$1"
+  # Was `sed "0,/re/s|..."`, which is a GNU extension. BSD sed on macOS ignores
+  # it and still exits 0, so the bump silently no-opped here and only surfaced
+  # later as a plugin-manifest test failure. Node replaces the first match on
+  # every platform and fails loudly.
   node -e '
     const fs = require("fs");
     const file = process.argv[1];
     const version = process.argv[2];
     const current = fs.readFileSync(file, "utf8");
     const updated = current.replace(
-      /^### v[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+)?( .*)$/m,
-      `### v${version}$1`
+      /"version": *"[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+)?"/,
+      `"version": "${version}"`
     );
     if (updated === current) {
-      console.error(`Error: could not update latest release heading in ${file}`);
+      console.error(`Error: could not update plugin version in ${file}`);
       process.exit(1);
     }
     fs.writeFileSync(file, updated);
   ' "$file" "$VERSION"
+}
+
+update_latest_release_heading() {
+  local file="$1"
+  local old_version="$2"
+  node -e '
+    const fs = require("fs");
+    const file = process.argv[1];
+    const version = process.argv[2];
+    const oldVersion = process.argv[3];
+    const escape = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const current = fs.readFileSync(file, "utf8");
+    const updated = current.replace(
+      new RegExp(`^### v${escape(oldVersion)}( .*)$`, "m"),
+      `### v${version}$1`
+    );
+    if (updated === current) {
+      console.error(`Error: could not update release heading for v${oldVersion} in ${file}`);
+      process.exit(1);
+    }
+    fs.writeFileSync(file, updated);
+  ' "$file" "$VERSION" "$old_version"
 }
 
 update_selective_install_repo_version() {
@@ -248,7 +283,7 @@ update_opencode_hook_banner_version() {
     const version = process.argv[2];
     const current = fs.readFileSync(file, "utf8");
     const updated = current.replace(
-      /(## Active Plugin: Everything Claude Code v)[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+)?/,
+      /(## Active Plugin: (?:Everything Claude Code|ECC) v)[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+)?/,
       `$1${version}`
     );
     if (updated === current) {
@@ -268,7 +303,7 @@ update_agents_version "$ZH_CN_AGENTS_MD" "版本"
 update_agent_yaml_version
 update_version_file
 update_version "$PLUGIN_JSON" "s|\"version\": *\"[^\"]*\"|\"version\": \"$VERSION\"|"
-update_version "$MARKETPLACE_JSON" "0,/\"version\": *\"[^\"]*\"/s|\"version\": *\"[^\"]*\"|\"version\": \"$VERSION\"|"
+update_marketplace_plugin_version "$MARKETPLACE_JSON"
 update_codex_marketplace_version
 update_version "$CODEX_PLUGIN_JSON" "s|\"version\": *\"[^\"]*\"|\"version\": \"$VERSION\"|"
 update_version "$CODEX_MARKETPLACE_PLUGIN_JSON" "s|\"version\": *\"[^\"]*\"|\"version\": \"$VERSION\"|"
@@ -277,10 +312,13 @@ update_package_lock_version "$OPENCODE_PACKAGE_LOCK_JSON"
 update_opencode_hook_banner_version
 update_readme_version_row "$README_FILE" "Version" "Plugin" "Plugin" "Reference config"
 update_readme_version_row "$ZH_CN_README_FILE" "版本" "插件" "插件" "参考配置"
-update_latest_release_heading "$README_FILE"
-update_latest_release_heading "$ROOT_ZH_CN_README_FILE"
-update_latest_release_heading "$TR_README_FILE"
-update_latest_release_heading "$PT_BR_README_FILE"
+update_latest_release_heading "$README_FILE" "$OLD_VERSION"
+update_latest_release_heading "$ROOT_ZH_CN_README_FILE" "$OLD_VERSION"
+update_latest_release_heading "$TR_README_FILE" "$OLD_VERSION"
+update_latest_release_heading "$PT_BR_README_FILE" "$OLD_VERSION"
+# docs/zh-CN/README.md got its version row bumped but never its release
+# heading, so plugin-manifest.test.js failed on it every time.
+update_latest_release_heading "$ZH_CN_README_FILE" "$OLD_VERSION"
 update_selective_install_repo_version "$SELECTIVE_INSTALL_ARCHITECTURE_DOC"
 
 # Verify the bumped release surface is still internally consistent before
@@ -291,7 +329,7 @@ node tests/scripts/build-opencode.test.js
 node tests/plugin-manifest.test.js
 
 # Stage, commit, tag, and push
-git add "$ROOT_PACKAGE_JSON" "$PACKAGE_LOCK_JSON" "$ROOT_AGENTS_MD" "$TR_AGENTS_MD" "$ZH_CN_AGENTS_MD" "$AGENT_YAML" "$VERSION_FILE" "$PLUGIN_JSON" "$MARKETPLACE_JSON" "$CODEX_MARKETPLACE_JSON" "$CODEX_PLUGIN_JSON" "$OPENCODE_PACKAGE_JSON" "$OPENCODE_PACKAGE_LOCK_JSON" "$OPENCODE_ECC_HOOKS_PLUGIN" "$README_FILE" "$ROOT_ZH_CN_README_FILE" "$TR_README_FILE" "$PT_BR_README_FILE" "$ZH_CN_README_FILE" "$SELECTIVE_INSTALL_ARCHITECTURE_DOC"
+git add "$ROOT_PACKAGE_JSON" "$PACKAGE_LOCK_JSON" "$ROOT_AGENTS_MD" "$TR_AGENTS_MD" "$ZH_CN_AGENTS_MD" "$AGENT_YAML" "$VERSION_FILE" "$PLUGIN_JSON" "$MARKETPLACE_JSON" "$CODEX_MARKETPLACE_JSON" "$CODEX_PLUGIN_JSON" "$CODEX_MARKETPLACE_PLUGIN_JSON" "$OPENCODE_PACKAGE_JSON" "$OPENCODE_PACKAGE_LOCK_JSON" "$OPENCODE_ECC_HOOKS_PLUGIN" "$README_FILE" "$ROOT_ZH_CN_README_FILE" "$TR_README_FILE" "$PT_BR_README_FILE" "$ZH_CN_README_FILE" "$SELECTIVE_INSTALL_ARCHITECTURE_DOC"
 git commit -m "chore: bump plugin version to $VERSION"
 git tag "v$VERSION"
 git push origin main "v$VERSION"
