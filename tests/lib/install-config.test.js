@@ -106,6 +106,63 @@ function runTests() {
     }
   })) passed++; else failed++;
 
+  if (test('loads a UTF-8 BOM config without changing its values or source bytes', () => {
+    const cwd = createTempDir('install-config-');
+
+    try {
+      const configPath = path.join(cwd, 'ecc-install.json');
+      const value = { version: 1, target: 'cursor', modules: ['rules-core'] };
+      writeJson(configPath, value);
+      const expected = loadInstallConfig(configPath);
+      const content = `\uFEFF${JSON.stringify(value, null, 2).replace(/\n/g, '\r\n')}\r\n`;
+      fs.writeFileSync(configPath, content, 'utf8');
+
+      assert.deepStrictEqual(loadInstallConfig(configPath), expected);
+      assert.strictEqual(fs.readFileSync(configPath, 'utf8'), content);
+    } finally {
+      cleanup(cwd);
+    }
+  })) passed++; else failed++;
+
+  if (test('preserves BOM characters inside JSON string values', () => {
+    const cwd = createTempDir('install-config-');
+
+    try {
+      const configPath = path.join(cwd, 'ecc-install.json');
+      const options = { note: 'custom\uFEFFvalue' };
+      fs.writeFileSync(configPath, `\uFEFF${JSON.stringify({ version: 1, options })}`, 'utf8');
+      assert.deepStrictEqual(loadInstallConfig(configPath).options, options);
+    } finally {
+      cleanup(cwd);
+    }
+  })) passed++; else failed++;
+
+  if (test('still rejects malformed JSON and misplaced BOM characters', () => {
+    const cwd = createTempDir('install-config-');
+
+    try {
+      const configPath = path.join(cwd, 'ecc-install.json');
+      for (const content of ['\uFEFF{', ' \uFEFF{"version":1}', '\uFEFF\uFEFF{"version":1}']) {
+        fs.writeFileSync(configPath, content, 'utf8');
+        assert.throws(() => loadInstallConfig(configPath), /Invalid JSON in ecc-install.json/);
+      }
+    } finally {
+      cleanup(cwd);
+    }
+  })) passed++; else failed++;
+
+  if (test('validates the schema after reading a UTF-8 BOM config', () => {
+    const cwd = createTempDir('install-config-');
+
+    try {
+      const configPath = path.join(cwd, 'ecc-install.json');
+      fs.writeFileSync(configPath, '\uFEFF{"version":2,"target":"ghost-target"}', 'utf8');
+      assert.throws(() => loadInstallConfig(configPath), /Invalid install config/);
+    } finally {
+      cleanup(cwd);
+    }
+  })) passed++; else failed++;
+
   if (test('rejects invalid config schema values', () => {
     const cwd = createTempDir('install-config-');
 

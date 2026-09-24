@@ -10,7 +10,9 @@ let cachedValidator = null;
 
 function readJson(filePath, label) {
   try {
-    return JSON.parse(fs.readFileSync(filePath, 'utf8'));
+    // Windows PowerShell 5.1 writes a BOM with Set-Content -Encoding UTF8.
+    const content = fs.readFileSync(filePath, 'utf8').replace(/^\uFEFF/, '');
+    return JSON.parse(content);
   } catch (error) {
     throw new Error(`Invalid JSON in ${label}: ${error.message}`);
   }
