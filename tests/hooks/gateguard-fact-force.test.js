@@ -2826,6 +2826,133 @@ function runTests() {
 
   clearState();
   if (
+    test('allows new paths after the session-wide denial budget', () => {
+      writeState({ checked: [], last_active: Date.now(), fact_force_denials: 3 });
+      const result = runHook(
+        { tool_name: 'Edit', tool_input: { file_path: '/src/after-budget.js' } },
+        { GATEGUARD_FACT_FORCE_MAX_DENIALS: '3' }
+      );
+      assert.strictEqual(result.code, 0);
+      const output = parseOutput(result.stdout);
+      assert.ok(output, 'should produce valid JSON output');
+      assert.ok(!output.hookSpecificOutput, 'paths after the budget should pass through');
+      assert.strictEqual(output.tool_name, 'Edit', 'pass-through should preserve input');
+    })
+  )
+    passed++;
+  else failed++;
+
+  clearState();
+  if (
+    test('MultiEdit allows new paths after the session-wide denial budget', () => {
+      writeState({ checked: [], last_active: Date.now(), fact_force_denials: 3 });
+      const result = runHook(
+        { tool_name: 'MultiEdit', tool_input: { edits: [{ file_path: '/src/after-multi-budget.js', old_string: 'a', new_string: 'b' }] } },
+        { GATEGUARD_FACT_FORCE_MAX_DENIALS: '3' }
+      );
+      assert.strictEqual(result.code, 0);
+      const output = parseOutput(result.stdout);
+      assert.ok(output, 'should produce valid JSON output');
+      assert.ok(!output.hookSpecificOutput, 'MultiEdit paths after the budget should pass through');
+      assert.strictEqual(output.tool_name, 'MultiEdit', 'pass-through should preserve input');
+    })
+  )
+    passed++;
+  else failed++;
+
+  clearState();
+  if (
+    test('Write allows new paths after the session-wide denial budget', () => {
+      writeState({ checked: [], last_active: Date.now(), fact_force_denials: 3 });
+      const result = runHook(
+        { tool_name: 'Write', tool_input: { file_path: '/src/after-write-budget.js', content: 'x' } },
+        { GATEGUARD_FACT_FORCE_MAX_DENIALS: '3' }
+      );
+      assert.strictEqual(result.code, 0);
+      const output = parseOutput(result.stdout);
+      assert.ok(output, 'should produce valid JSON output');
+      assert.ok(!output.hookSpecificOutput, 'Write paths after the budget should pass through');
+      assert.strictEqual(output.tool_name, 'Write', 'pass-through should preserve input');
+    })
+  )
+    passed++;
+  else failed++;
+
+  clearState();
+  if (
+    test('denies at the exact budget and passes through on the next path', () => {
+      // Budget 3: the 3rd denial is still a denial; the 4th path is allowed.
+      writeState({ checked: [], last_active: Date.now(), fact_force_denials: 2 });
+      const atLimit = runHook(
+        { tool_name: 'Edit', tool_input: { file_path: '/src/at-budget.js' } },
+        { GATEGUARD_FACT_FORCE_MAX_DENIALS: '3' }
+      );
+      const atLimitOutput = parseOutput(atLimit.stdout);
+      assert.ok(atLimitOutput, 'should produce valid JSON output at the limit');
+      assert.strictEqual(
+        atLimitOutput.hookSpecificOutput.permissionDecision,
+        'deny',
+        'the denial that reaches the budget should still deny'
+      );
+
+      const pastLimit = runHook(
+        { tool_name: 'Edit', tool_input: { file_path: '/src/past-budget.js' } },
+        { GATEGUARD_FACT_FORCE_MAX_DENIALS: '3' }
+      );
+      const pastLimitOutput = parseOutput(pastLimit.stdout);
+      assert.ok(pastLimitOutput, 'should produce valid JSON output past the limit');
+      assert.ok(!pastLimitOutput.hookSpecificOutput, 'the next path should pass through');
+    })
+  )
+    passed++;
+  else failed++;
+
+  for (const malformed of ['3.5', '3oops', '0x3', ' 3 oops', '-1', '']) {
+    clearState();
+    if (
+      test(`leaves the gate uncapped for malformed budget ${JSON.stringify(malformed)}`, () => {
+        writeState({ checked: [], last_active: Date.now(), fact_force_denials: 9 });
+        const result = runHook(
+          { tool_name: 'Edit', tool_input: { file_path: '/src/malformed-budget.js' } },
+          { GATEGUARD_FACT_FORCE_MAX_DENIALS: malformed }
+        );
+        const output = parseOutput(result.stdout);
+        assert.ok(output, 'should produce valid JSON output');
+        assert.strictEqual(
+          output.hookSpecificOutput.permissionDecision,
+          'deny',
+          'a malformed budget must not silently become a finite cap'
+        );
+      })
+    )
+      passed++;
+    else failed++;
+  }
+
+  clearState();
+  if (
+    test('condensed denial names the session-wide denial cap', () => {
+      // Budget above the full-block budget so a condensed denial is still reached.
+      writeState({ checked: [], last_active: Date.now(), fact_force_denials: 5 });
+      const result = runHook(
+        { tool_name: 'Edit', tool_input: { file_path: '/src/condensed-budget.js' } },
+        { GATEGUARD_FACT_FORCE_MAX_DENIALS: '10' }
+      );
+      const output = parseOutput(result.stdout);
+      assert.ok(output, 'should produce valid JSON output');
+      const reason = output.hookSpecificOutput.permissionDecisionReason;
+      assert.strictEqual(output.hookSpecificOutput.permissionDecision, 'deny');
+      assert.ok(
+        reason.includes('GATEGUARD_FACT_FORCE_MAX_DENIALS'),
+        'condensed denial should name the session-wide denial cap'
+      );
+    })
+  )
+    passed++;
+  else failed++;
+
+  clearState();
+  if (
     test('malformed denial counter in state is treated as zero (full block, no crash)', () => {
       writeState({ checked: [], last_active: Date.now(), fact_force_denials: 'garbage' });
       const result = runHook({ tool_name: 'Edit', tool_input: { file_path: '/src/damp-malformed.js' } });

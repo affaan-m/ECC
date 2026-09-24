@@ -1208,6 +1208,30 @@ function getFullDenialBudget() {
   return DEFAULT_FULL_DENIALS;
 }
 
+const MAX_DENIALS_PATTERN = /^\d+$/;
+
+/**
+ * Session-wide ceiling on Edit/Write/MultiEdit fact-force denials, from
+ * GATEGUARD_FACT_FORCE_MAX_DENIALS. Opt-in: unset keeps the existing behavior
+ * of denying every new path, and the destructive-Bash gate is unaffected
+ * either way.
+ *
+ * The value is validated whole rather than with Number.parseInt, because a
+ * prefix parse turns '3.5', '3oops', and '0x3' into finite caps and would
+ * quietly weaken the gate on a typo. Anything that is not a complete
+ * non-negative decimal integer leaves the gate uncapped.
+ *
+ * @returns {number} the denial ceiling, or Number.POSITIVE_INFINITY when uncapped
+ */
+function getMaxDenialBudget() {
+  const raw = (process.env.GATEGUARD_FACT_FORCE_MAX_DENIALS || '').trim();
+  if (!MAX_DENIALS_PATTERN.test(raw)) {
+    return Number.POSITIVE_INFINITY;
+  }
+  const parsed = Number(raw);
+  return Number.isSafeInteger(parsed) ? parsed : Number.POSITIVE_INFINITY;
+}
+
 function getDenialCount(state) {
   const n = Number(state && state.fact_force_denials);
   return Number.isFinite(n) && n >= 0 ? Math.floor(n) : 0;
@@ -1464,7 +1488,7 @@ function condensedGateMsg(action, filePath, ordinal) {
     `[Fact-Forcing Gate] (denial #${ordinal} this session) First ${action} of ${safe}: ` +
     "briefly state importers/callers, affected API, data schemas if any, and the user's verbatim instruction, then retry. " +
     `${batchSiblingWarning(safe)} ` +
-    '(Use GATEGUARD_EXEMPT_GLOBS for path-scoped exemptions; ECC_GATEGUARD=off disables this gate.)'
+    '(Use GATEGUARD_EXEMPT_GLOBS for path-scoped exemptions; GATEGUARD_FACT_FORCE_MAX_DENIALS caps denials per session; ECC_GATEGUARD=off disables this gate.)'
   );
 }
 
@@ -1583,6 +1607,9 @@ function run(rawInput) {
       if (!ok) {
         return allowWithStateWarning();
       }
+      if (denials > getMaxDenialBudget()) {
+        return rawInput;
+      }
       if (denials > getFullDenialBudget()) {
         const action = toolName === 'Edit' ? 'edit' : 'creation';
         return denyResult(condensedGateMsg(action, filePath, denials), { includeRecoveryHint: false });
@@ -1607,6 +1634,9 @@ function run(rawInput) {
         const { ok, denials } = markCheckedAndCountDenial(filePath);
         if (!ok) {
           return allowWithStateWarning();
+        }
+        if (denials > getMaxDenialBudget()) {
+          return rawInput;
         }
         if (denials > getFullDenialBudget()) {
           return denyResult(condensedGateMsg('edit', filePath, denials), { includeRecoveryHint: false });
