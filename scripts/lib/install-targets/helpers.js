@@ -329,6 +329,13 @@ function createInstallTargetAdapter(config) {
       }
       return path.join(baseRoot, ...config.rootSegments);
     },
+    resolveTrustedRoots(input = {}) {
+      const root = adapter.resolveRoot(input);
+      if (typeof config.resolveTrustedRoots === 'function') {
+        return config.resolveTrustedRoots(input, root);
+      }
+      return [root];
+    },
     getInstallStatePath(input = {}) {
       const root = adapter.resolveRoot(input);
       return path.join(root, ...config.installStatePathSegments);

@@ -155,7 +155,7 @@ node "$EccRoot\scripts\uninstall.js" --target antigravity --dry-run
 Antigravity supports global plugins located in `~/.gemini/config/plugins/<name>/`. Installing ECC as a native Antigravity plugin enables:
 
 1. **Global Scope**: ECC rules, skills, agents, workflows, and memory MCP are active across all projects automatically, without requiring a `.agents/` folder in every repository.
-2. **Lifecycle Hooks (`hooks.json`)**: Full support for `PreToolUse` (command security gates, file modification guards) `PostToolUse` edit tracking, and `Stop` formatting and diagnostics using Antigravity's protojson protocol (`{ decision, reason }`).
+2. **Lifecycle Hooks (`hooks.json`)**: Full support for `PreToolUse` (command security gates, file modification guards), `PostToolUse` edit tracking, and `Stop` formatting and diagnostics using Antigravity's protojson protocol (`{ decision, reason }`).
 3. **Shared Memory Vault (`mcp_config.json`)**: Direct integration with `ecc-memory-mcp` across all Antigravity sessions.
 4. **Native Plugin Manifest (`plugin.json`)**: Declares the ECC plugin metadata.
 
@@ -182,15 +182,16 @@ with `--target antigravity`. Use `--no-hooks` to omit automatic hooks.
 ### Global Plugin Structure
 
 ```text
-~/.gemini/config/plugins/ecc/
-├── plugin.json              # Antigravity plugin manifest
-├── hooks.json               # PreToolUse, PostToolUse, and Stop hooks
-├── mcp_config.json          # Shared ECC Memory Vault MCP server
-├── rules/                   # Rules applied to all workspaces
+~/.gemini/config/
 ├── workflows/               # Global slash workflows
-├── skills/                  # Global Agent Skills
-├── scripts/                 # Hook bridge and memory runtime
-└── node_modules/            # Memory server dependencies
+└── plugins/ecc/
+    ├── plugin.json          # Antigravity plugin manifest
+    ├── hooks.json           # PreToolUse, PostToolUse, and Stop hooks
+    ├── mcp_config.json      # Shared ECC Memory Vault MCP server
+    ├── rules/               # Rules applied to all workspaces
+    ├── skills/              # Global Agent Skills
+    ├── scripts/             # Hook bridge and memory runtime
+    └── node_modules/        # Memory server dependencies
 ```
 
 ## Official Antigravity references

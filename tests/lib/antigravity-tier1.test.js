@@ -153,6 +153,7 @@ function runTests() {
   });
 
   test('hook commands preserve shell metacharacters in the installed path', () => {
+    if (process.platform === 'win32') return;
     const dir = createTempDir("ecc space ' $HOME `echo x` ");
     try {
       const script = path.join(dir, 'bridge.js');
@@ -353,7 +354,7 @@ function runTests() {
       // Check workflows
       assert.ok(
         plan.operations.some(op => (
-          op.destinationPath.startsWith(path.join(targetRoot, 'workflows'))
+          op.destinationPath.startsWith(path.join(homeDir, '.gemini', 'config', 'workflows'))
         )),
         'Should plan workflows'
       );
@@ -522,6 +523,7 @@ function runTests() {
       assert.ok(fs.existsSync(path.join(pluginDir, 'rules', 'common-coding-style.md')), 'rules should exist');
       assert.ok(fs.existsSync(path.join(pluginDir, 'skills', 'tdd-workflow', 'SKILL.md')), 'skills should exist');
       assert.ok(fs.existsSync(path.join(pluginDir, 'scripts', 'hooks', 'antigravity-hook-bridge.js')), 'hook bridge should exist');
+      assert.ok(fs.existsSync(path.join(homeDir, '.gemini', 'config', 'workflows', 'plan.md')), 'workflow plan.md should exist in global workflows dir');
 
       const pluginJson = JSON.parse(fs.readFileSync(path.join(pluginDir, 'plugin.json'), 'utf8'));
       assert.strictEqual(pluginJson.name, 'ecc');

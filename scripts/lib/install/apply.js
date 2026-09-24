@@ -21,7 +21,7 @@ const {
   validateRecordedManagedHooks,
 } = require('./claude-settings');
 const { filterMcpConfig, parseDisabledMcpServers } = require('../mcp-config');
-const { assertWithinTrustedRoot } = require('../path-safety');
+const { assertWithinTrustedRoot, isWithinRoot } = require('../path-safety');
 const {
   assertSafeClaudeSkillOperation,
   prepareClaudeSkillMigration,
@@ -248,12 +248,22 @@ function isMcpConfigPath(filePath) {
   return basename === '.mcp.json' || basename === 'mcp.json';
 }
 
+function getTrustedRootsForPlan(plan) {
+  if (!plan) return [];
+  if (Array.isArray(plan.trustedRoots) && plan.trustedRoots.length > 0) {
+    return plan.trustedRoots;
+  }
+  return plan.targetRoot ? [plan.targetRoot] : [];
+}
+
 function assertSafeInstallOperation(plan, operation) {
   if (!operation || typeof operation.destinationPath !== 'string') {
     throw new Error('Refusing to apply install operation: missing destination path.');
   }
 
-  const targetRoot = plan && plan.targetRoot;
+  const trustedRoots = getTrustedRootsForPlan(plan);
+  const matchingRoot = trustedRoots.find(root => isWithinRoot(operation.destinationPath, root));
+  const targetRoot = matchingRoot || (plan && plan.targetRoot);
   assertWithinTrustedRoot(operation.destinationPath, targetRoot, 'install ECC file');
 
   const resolvedRoot = path.resolve(targetRoot);

@@ -328,6 +328,7 @@ function createManifestInstallPlan(options = {}) {
     },
     homeDir: plan.homeDir,
     targetRoot: plan.targetRoot,
+    trustedRoots: plan.trustedRoots || (plan.targetRoot ? [plan.targetRoot] : []),
     installRoot: plan.targetRoot,
     installStatePath: plan.installStatePath,
     warnings: Array.isArray(options.warnings) ? [...options.warnings] : [],

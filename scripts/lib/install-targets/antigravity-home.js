@@ -39,6 +39,13 @@ module.exports = createInstallTargetAdapter({
   installStatePathSegments: ['ecc-install-state.json'],
   nativeRootRelativePath: '.gemini',
   excludedSourcePaths: HOME_INSTALL_EXCLUDED_SOURCE_PATHS,
+  resolveTrustedRoots(input, targetRoot) {
+    const workflowsRoot = path.join(
+      path.dirname(path.dirname(targetRoot)),
+      'workflows'
+    );
+    return [targetRoot, workflowsRoot];
+  },
   planOperations(input, adapter) {
     const modules = Array.isArray(input.modules)
       ? input.modules
@@ -81,11 +88,15 @@ module.exports = createInstallTargetAdapter({
             const commandRelativePath = normalizedSourcePath === 'commands'
               ? ''
               : normalizedSourcePath.slice('commands/'.length);
+            const workflowsRoot = path.join(
+              path.dirname(path.dirname(targetRoot)),
+              'workflows'
+            );
             return [
               createManagedScaffoldOperation(
                 module.id,
                 normalizedSourcePath,
-                path.join(targetRoot, 'workflows', commandRelativePath),
+                path.join(workflowsRoot, commandRelativePath),
                 'preserve-relative-path'
               ),
             ];

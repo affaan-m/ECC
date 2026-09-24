@@ -6,7 +6,7 @@ const os = require('os');
 const path = require('path');
 
 const { assertSafeInstallOperation } = require('./install/apply');
-const { assertWithinTrustedRoot, realpathNearestExisting } = require('./path-safety');
+const { assertWithinTrustedRoot, isWithinRoot, realpathNearestExisting } = require('./path-safety');
 
 const VALID_CLAUDE_SCOPES = new Set(['user', 'project', 'local']);
 const VALID_CLAUDE_HOOKS = new Set(['off', 'minimal', 'standard', 'strict']);
@@ -208,7 +208,11 @@ function readOwnedDestinations(plan, dependencies) {
       );
     }
     const destinationPath = operation.destinationPath;
-    assertWithinTrustedRoot(destinationPath, plan.targetRoot, 'trust install-state ownership');
+    const trustedRoots = Array.isArray(plan.trustedRoots) && plan.trustedRoots.length > 0
+      ? plan.trustedRoots
+      : [plan.targetRoot];
+    const matchingRoot = trustedRoots.find(root => isWithinRoot(destinationPath, root)) || plan.targetRoot;
+    assertWithinTrustedRoot(destinationPath, matchingRoot, 'trust install-state ownership');
     const canonicalDestination = canonicalPath(destinationPath);
     const plannedOperation = plannedByDestination.get(canonicalDestination);
     if (!plannedOperation) continue;

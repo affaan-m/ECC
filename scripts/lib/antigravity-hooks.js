@@ -22,7 +22,7 @@ function buildAntigravityHooksConfig(options = {}) {
     if (/[%"!$`\r\n]/.test(bridgeScript)) {
       throw new Error('bridgeScript contains unsafe shell expansion characters');
     }
-    quotedBridgeScript = bridgeScript.includes(' ') ? `"${bridgeScript}"` : bridgeScript;
+    quotedBridgeScript = `"${bridgeScript}"`;
   } else {
     quotedBridgeScript = shellQuote(bridgeScript);
   }

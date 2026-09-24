@@ -741,6 +741,7 @@ function resolveInstallPlan(options = {}) {
     targetAdapterId: scaffoldPlan ? scaffoldPlan.adapter.id : null,
     homeDir: targetPlanningInput ? targetPlanningInput.homeDir : null,
     targetRoot: scaffoldPlan ? scaffoldPlan.targetRoot : null,
+    trustedRoots: scaffoldPlan ? scaffoldPlan.trustedRoots : (scaffoldPlan?.targetRoot ? [scaffoldPlan.targetRoot] : []),
     installStatePath: scaffoldPlan ? scaffoldPlan.installStatePath : null,
     operations: scaffoldPlan ? scaffoldPlan.operations : [],
   };
