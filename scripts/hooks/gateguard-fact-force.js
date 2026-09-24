@@ -360,6 +360,31 @@ function quoteAwareSegments(input) {
 const SHELL_WRAPPERS = new Set(['sh', 'bash', 'zsh', 'dash', 'ksh']);
 
 /**
+ * The command lines `su` may run through the target user's shell: the value of
+ * every `-c`/`--command`, or of a short-option cluster ending in `c` (`-lc`).
+ * `su` runs only the last one, so each is checked rather than guessing which
+ * wins. `su` passes the arguments after `--` to that shell, which runs a `-c`
+ * there too, so the scan does not stop at `--`.
+ *
+ * @param {string[]} tokens dequoted tokens for one segment
+ * @param {number} start index of the `su` token
+ * @returns {string[]}
+ */
+function suCommandLines(tokens, start) {
+  const commandLines = [];
+  for (let i = start + 1; i < tokens.length; i += 1) {
+    const arg = tokens[i];
+    if (arg.startsWith('--command=')) {
+      commandLines.push(arg.slice('--command='.length));
+    } else if ((arg === '--command' || /^-[A-Za-z]*c$/.test(arg)) && i + 1 < tokens.length) {
+      commandLines.push(tokens[i + 1]);
+      i += 1;
+    }
+  }
+  return commandLines;
+}
+
+/**
  * SQL clients whose `-c`/`-e`/positional arguments carry SQL statements.
  * Quoted SQL (e.g. `psql -c "drop table users"`) is invisible to the
  * quote-stripping SQL regex, so it is re-checked here against dequoted
@@ -421,17 +446,35 @@ const SUDO_VALUE_FLAGS = new Set([
   '--command-timeout',
 ]);
 
+// Programs that only run the command after them. `valueOptions` consume the
+// next token; `positionals` are leading operands of the program itself
+// (`timeout DURATION`). sudo, doas and env keep their own handling below.
+const RUNNER_PREFIXES = {
+  command: {},
+  exec: { valueOptions: ['-a'] },
+  ionice: { valueOptions: ['-c', '--class', '-n', '--classdata', '-p', '--pid'] },
+  nice: { valueOptions: ['-n', '--adjustment'] },
+  nohup: {},
+  setsid: {},
+  stdbuf: { valueOptions: ['-i', '-o', '-e', '--input', '--output', '--error'] },
+  taskset: { positionals: 1 },
+  time: { valueOptions: ['-f', '--format', '-o', '--output'] },
+  timeout: { valueOptions: ['-s', '--signal', '-k', '--kill-after'], positionals: 1 }
+};
+
 /**
  * Advance past `sudo`/`doas`/`env` wrappers including their flags and
- * `VAR=value` assignments, so `sudo -u postgres psql ...` and
- * `env PGUSER=postgres psql ...` still resolve to the real command.
+ * `VAR=value` assignments, and past the runners in {@link RUNNER_PREFIXES},
+ * so `sudo -u postgres psql ...`, `env PGUSER=postgres psql ...` and
+ * `timeout 30 psql ...` still resolve to the real command. Wrappers stack
+ * without a fixed limit: every one consumes at least one token.
  *
  * @param {string[]} tokens dequoted tokens for one segment
  * @returns {number} index of the real command token
  */
 function unwrapLeadWrappers(tokens) {
   let index = 0;
-  for (let guard = 0; guard < 4; guard += 1) {
+  for (let guard = 0; guard < tokens.length; guard += 1) {
     if (index >= tokens.length) return index;
     const base = commandBasename(tokens[index]);
     if (base === 'sudo' || base === 'doas') {
@@ -487,9 +530,68 @@ function unwrapLeadWrappers(tokens) {
       }
       continue;
     }
+    const runner = RUNNER_PREFIXES[base];
+    if (runner) {
+      const valueOptions = runner.valueOptions || [];
+      index += 1;
+      while (index < tokens.length) {
+        const arg = tokens[index];
+        if (arg === '--') {
+          index += 1;
+          break;
+        }
+        if (arg === '-' || !arg.startsWith('-')) break;
+        index += valueOptions.includes(arg) ? 2 : 1;
+      }
+      index += runner.positionals || 0;
+      continue;
+    }
     break;
   }
   return index;
+}
+
+/**
+ * Command lines that `env -S` / `env --split-string` split and run. The
+ * whole command hides inside one argument (`env -S 'psql -c "..."'`), so
+ * each payload is scanned as a command line of its own.
+ *
+ * @param {string[]} tokens dequoted tokens for one segment
+ * @returns {string[]} the command lines, possibly none
+ */
+// `env -S` splits only its own argument; later arguments reach the command
+// whole. Escaping every character makes the classifier read each one back as a
+// single literal word, so a `;` inside one cannot become a separator.
+function asLiteralWord(token) {
+  return token === '' ? "''" : token.replace(/[\s\S]/gu, ch => `\\${ch}`);
+}
+
+function envSplitStrings(tokens) {
+  const payloads = [];
+  for (let i = 0; i < tokens.length; i += 1) {
+    if (commandBasename(tokens[i]) !== 'env') continue;
+    for (let j = i + 1; j < tokens.length; j += 1) {
+      const arg = tokens[j];
+      if (arg === '-S' || arg === '--split-string') {
+        if (j + 1 < tokens.length) payloads.push([tokens[j + 1], ...tokens.slice(j + 2).map(asLiteralWord)].join(' '));
+        break;
+      }
+      if (arg.startsWith('--split-string=')) {
+        payloads.push([arg.slice('--split-string='.length), ...tokens.slice(j + 1).map(asLiteralWord)].join(' '));
+        break;
+      }
+      if (/^-S./.test(arg)) {
+        payloads.push([arg.slice(2), ...tokens.slice(j + 1).map(asLiteralWord)].join(' '));
+        break;
+      }
+      if (arg === '-u' || arg === '--unset' || arg === '-C' || arg === '--chdir') {
+        j += 1;
+        continue;
+      }
+      if (!arg.startsWith('-') && !/^[A-Za-z_][A-Za-z0-9_]*=/.test(arg)) break;
+    }
+  }
+  return payloads;
 }
 
 /**
@@ -513,24 +615,36 @@ function isDestructiveSqlClient(tokens) {
  * separators, quoted `find -exec`, and `sh -c`/`bash -c` wrappers that evade
  * the quote-stripping path (GHSA-4v57-ph3x-gf55).
  *
+ * Past the recursion limit the nested command is not visible, so the check
+ * fails closed: a guard that allowed it would be bypassed by one more level.
+ *
  * @param {string} raw
  * @param {number} [depth] recursion guard for shell -c wrappers
  * @returns {boolean}
  */
 function isDestructiveQuoteAware(raw, depth = 0) {
-  if (depth > 4) return false;
+  if (depth > 4) return true;
   for (const tokens of quoteAwareSegments(raw)) {
     if (tokens.length === 0) continue;
     if (isDestructiveRm(tokens)) return true;
     if (isDestructiveGit(tokens)) return true;
     if (isDestructiveSqlClient(tokens)) return true;
     if (isDestructiveFindExec(tokens.join(' '))) return true;
+    for (const payload of envSplitStrings(tokens)) {
+      if (isDestructiveQuoteAware(payload, depth + 1)) return true;
+    }
     const wi = unwrapLeadWrappers(tokens);
     const base = wi < tokens.length ? commandBasename(tokens[wi]) : '';
     if (SHELL_WRAPPERS.has(base)) {
-      const ci = tokens.indexOf('-c', wi);
+      // `-c`, or a short-option cluster that includes it (`-lc`, `-ec`).
+      const ci = tokens.findIndex((token, i) => i > wi && /^-[A-Za-z]*c[A-Za-z]*$/.test(token));
       if (ci !== -1 && tokens[ci + 1] && isDestructiveQuoteAware(tokens[ci + 1], depth + 1)) {
         return true;
+      }
+    }
+    if (base === 'su') {
+      for (const commandLine of suCommandLines(tokens, wi)) {
+        if (isDestructiveQuoteAware(commandLine, depth + 1)) return true;
       }
     }
   }
