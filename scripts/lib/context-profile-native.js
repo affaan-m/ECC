@@ -7,6 +7,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
+const TOML = require('@iarna/toml');
 const io = require('./context-profile-store-fs');
 const { getStoreStatus } = require('./context-profile-store');
 const { digestObject, stableStringify, validateSchema } = require('./context-profile-support');
@@ -25,6 +26,25 @@ const CONTROLS = ['marketplace', 'project', 'home/.agents', 'home/.codex/config.
 const exists = file => Boolean(fs.lstatSync(file, { throwIfNoEntry: false }));
 const equal = (a, b) => stableStringify(a) === stableStringify(b);
 const inside = (a, b) => a === b || a.startsWith(`${b}${path.sep}`);
+
+// Codex rewrites config.toml with project trust bookkeeping at every session
+// start, and creates it on first run when it did not exist at preparation.
+// Those entries are provider runtime state, not skill discovery state, and the
+// carrier never writes config.toml, so readiness compares the config with
+// provider bookkeeping keys removed; a missing config, an empty config, and a
+// bookkeeping-only config are the same discovery state. Unparseable TOML fails
+// closed to raw byte integrity.
+const PROVIDER_BOOKKEEPING_KEYS = ['trust', 'projects'];
+const PROVIDER_CONFIG_NORMALIZATION = `provider-bookkeeping-keys-ignored:${PROVIDER_BOOKKEEPING_KEYS.join(',')}`;
+function providerConfigDigest(bytes) {
+  try {
+    const doc = TOML.parse(bytes.toString('utf8'));
+    for (const key of PROVIDER_BOOKKEEPING_KEYS) delete doc[key];
+    return digestObject(doc);
+  } catch {
+    return io.hash(bytes);
+  }
+}
 
 function inputs(options) {
   if (!options || typeof options !== 'object' || Array.isArray(options)) throw new Error('Native profile options must be an object');
@@ -106,6 +126,13 @@ function readState(options) {
 function snapshot(root) {
   return CONTROLS.map(relative => {
     const file = path.join(root, relative);
+    if (relative === 'home/.codex/config.toml') {
+      // Provider-owned runtime config: compare discovery-relevant state only
+      // (see providerConfigDigest); a missing config is the empty state.
+      if (!exists(file)) return { path: relative, kind: 'file', digest: digestObject({}), normalization: PROVIDER_CONFIG_NORMALIZATION };
+      const bytes = io.read(file);
+      return { path: relative, kind: 'file', digest: providerConfigDigest(bytes), normalization: PROVIDER_CONFIG_NORMALIZATION };
+    }
     if (!exists(file)) return { path: relative, kind: 'absent' };
     const stat = io.inspect(file).stat;
     if (stat.isDirectory()) {

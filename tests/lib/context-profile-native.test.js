@@ -208,6 +208,25 @@ test('managed descriptor drift rejects before native registration', () => fixtur
   assert.equal(dependency.calls.length, 0);
 }));
 
+test('provider project trust bookkeeping does not invalidate native readiness', () => fixture(options => {
+  const dependency = provider();
+  const prepared = native().prepareNativeProfile(options, dependency);
+  // Codex rewrites config.toml with a project trust entry at every session start;
+  // that bookkeeping does not change skill discovery.
+  fs.appendFileSync(path.join(prepared.codexHome, 'config.toml'),
+    '\n[trust."/tmp/ecc-workspace"]\ntrust_level = "trusted"\n');
+  const status = native().getNativeProfileStatus(options, dependency);
+  assert.equal(status.status, 'ready');
+  assert.equal(status.ready, true);
+}));
+
+test('discovery-relevant provider config change still invalidates readiness', () => fixture(options => {
+  const dependency = provider();
+  const prepared = native().prepareNativeProfile(options, dependency);
+  fs.appendFileSync(path.join(prepared.codexHome, 'config.toml'), '\nmodel = "codex-99"\n');
+  assert.throws(() => native().getNativeProfileStatus(options, dependency), /changed/);
+}));
+
 test('executable digest tampering rejects readiness without provider execution', () => fixture((options, _repoRoot, parent) => {
   const executable = path.join(parent, 'native-codex');
   fs.writeFileSync(executable, Buffer.from([0x7f, 0x45, 0x4c, 0x46, 1, 2, 3, 4]), { mode: 0o700 });
