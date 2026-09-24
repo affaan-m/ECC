@@ -1,5 +1,5 @@
 ---
-name: uspto-database
+name: scientific-db-uspto-database
 description: 公式記録の検索、PatentSearch クエリ、TSDR チェック、譲渡データ、および再現可能な IP 調査ログのための USPTO 特許・商標データワークフロー。
 origin: community
 ---
