@@ -663,6 +663,14 @@
       ]
     },
     {
+      "id": "locale:bn",
+      "family": "locale",
+      "description": "Bengali (bn) translated reference documentation installed to ~/.claude/docs/bn/.",
+      "modules": [
+        "docs-bn"
+      ]
+    },
+    {
       "id": "locale:de-de",
       "family": "locale",
       "description": "German (de-DE) translated reference docs installed to ~/.claude/docs/de-DE/.",

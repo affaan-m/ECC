@@ -130,6 +130,17 @@ function runTests() {
     }
   })) passed++; else failed++;
 
+  if (test('every locale component is reachable through --locale', () => {
+    const aliased = new Set(Object.values(LOCALE_ALIAS_TO_COMPONENT_ID));
+
+    for (const component of listInstallComponents({ family: 'locale' })) {
+      assert.ok(
+        aliased.has(component.id),
+        `${component.id} has no --locale alias; add it to LOCALE_ALIAS_TO_COMPONENT_ID and SUPPORTED_LOCALES`
+      );
+    }
+  })) passed++; else failed++;
+
   if (test('gets install component details and validates component IDs', () => {
     const component = getInstallComponent(' lang:typescript ');
 
