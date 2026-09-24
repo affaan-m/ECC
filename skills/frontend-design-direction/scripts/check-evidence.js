@@ -17,8 +17,12 @@ function checkEvidence(report) {
     return [`${name} needs a passing observation${allowNotApplicable ? ' or a not-applicable reason' : ''}`];
   };
   const renders = Array.isArray(report.renderedEvidence) ? report.renderedEvidence : [];
+  const targets = Array.isArray(report.targetViewports) ? report.targetViewports : [];
   return [
     ...(text(report.contract) ? [] : ['contract is required']),
+    ...(targets.length && targets.every(text) ? [] : ['targetViewports must contain nonempty viewport strings']),
+    ...targets.filter(text).flatMap(viewport => renders.some(item => object(item) && item.viewport === viewport)
+      ? [] : [`renderedEvidence is missing target viewport ${viewport}`]),
     ...check('accessibility', report.accessibility),
     ...check('responsive', report.responsive),
     ...states.flatMap(state => check(`contentStates.${state}`, report.contentStates?.[state], true)),

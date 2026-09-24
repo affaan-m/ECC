@@ -13,6 +13,7 @@ function report() {
   const observation = { status: 'pass', evidence: 'Observed in the local test run.' };
   return {
     contract: 'Settings: account owner can save changes and recover from failure.',
+    targetViewports: ['390x844'],
     accessibility: { ...observation },
     responsive: { ...observation },
     contentStates: Object.fromEntries(['loading', 'empty', 'error', 'partial', 'success', 'permission']
@@ -24,7 +25,7 @@ function report() {
 test('requires observed accessibility, responsive behavior and every content state', () => {
   const evidence = report();
   assert.deepEqual(checkEvidence(evidence), []);
-  for (const key of ['contract', 'accessibility', 'responsive', 'contentStates', 'renderedEvidence']) {
+  for (const key of ['contract', 'targetViewports', 'accessibility', 'responsive', 'contentStates', 'renderedEvidence']) {
     const missing = { ...evidence };
     delete missing[key];
     assert.ok(checkEvidence(missing).length, `accepted missing ${key}`);
@@ -38,6 +39,16 @@ test('requires observed accessibility, responsive behavior and every content sta
     assert.ok(checkEvidence({ ...evidence, accessibility: { status, evidence: 'Unresolved.' } }).length);
   }
   assert.ok(checkEvidence({ ...evidence, responsive: { status: 'pass', evidence: ' ' } }).length);
+});
+
+test('requires rendered evidence for every declared target viewport', () => {
+  const evidence = { ...report(), targetViewports: ['390x844', '1440x900'] };
+  assert.ok(checkEvidence(evidence).length, 'mobile alone must not satisfy a desktop target');
+  const desktop = { viewport: '1440x900', artifact: 'desktop.png', observation: 'Long labels fit.' };
+  assert.deepEqual(checkEvidence({ ...evidence, renderedEvidence: [...evidence.renderedEvidence, desktop] }), []);
+  for (const targetViewports of [[], '390x844', [' '], [null], ['390x844', 1440]]) {
+    assert.ok(checkEvidence({ ...report(), targetViewports }).length, 'invalid targets must fail');
+  }
 });
 
 test('only content states may be not applicable with a reason', () => {
@@ -57,6 +68,7 @@ test('rejects malformed reports and rendered evidence without inspection details
 
 test('CLI requires a nonempty local artifact and fails safely on invalid input', () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-ui-evidence-'));
+  const external = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-ui-external-'));
   const input = path.join(dir, 'report.json');
   const run = (...args) => spawnSync(process.execPath, [script, ...args], { encoding: 'utf8' });
   try {
@@ -66,10 +78,13 @@ test('CLI requires a nonempty local artifact and fails safely on invalid input',
     assert.equal(run(input).status, 0);
     fs.writeFileSync(path.join(dir, 'render.png'), '');
     assert.equal(run(input).status, 1, 'empty artifact must fail');
+    fs.writeFileSync(path.join(dir, 'render.png'), 'nonempty local artifact');
+    fs.writeFileSync(path.join(external, 'render.png'), 'nonempty external artifact');
     fs.symlinkSync(path.join(dir, 'render.png'), path.join(dir, 'linked.png'));
-    fs.symlinkSync(os.tmpdir(), path.join(dir, 'outside'));
+    fs.symlinkSync(path.join(external, 'render.png'), path.join(dir, 'outside'));
+    fs.symlinkSync(external, path.join(dir, 'external-dir'), 'junction');
     for (const artifact of ['.', 'https://example.com/render.png', path.join(dir, 'render.png'),
-      '../render.png', 'C:\\render.png', 'linked.png', 'outside']) {
+      '../render.png', 'C:\\render.png', 'linked.png', 'outside', 'external-dir/render.png']) {
       fs.writeFileSync(input, JSON.stringify({ ...report(), renderedEvidence: [{ viewport: '390x844', artifact, observation: 'Checked.' }] }));
       assert.equal(run(input).status, 1, 'directories and remote artifacts must fail');
     }
@@ -82,5 +97,6 @@ test('CLI requires a nonempty local artifact and fails safely on invalid input',
     assert.equal(run().status, 1);
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
+    fs.rmSync(external, { recursive: true, force: true });
   }
 });

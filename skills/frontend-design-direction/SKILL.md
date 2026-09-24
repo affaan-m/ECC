@@ -133,6 +133,9 @@ node <installed-skill>/scripts/check-evidence.js <local-report.json>
 The record contains:
 
 - `contract`: the checkable product constraints or a local contract reference.
+- `targetViewports`: a nonempty array of viewport strings from the contract,
+  such as `["390x844", "1440x900"]`. Each target requires a matching `viewport`
+  entry in `renderedEvidence`; one mobile capture cannot cover a desktop target.
 - `accessibility` and `responsive`: objects with `status: "pass"` and a nonempty
   `evidence` observation describing the checks performed.
 - `contentStates`: one object for each of `loading`, `empty`, `error`, `partial`,
