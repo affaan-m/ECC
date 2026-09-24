@@ -13,7 +13,7 @@ const {
 
 function helpText() {
   return `
-ECC Nasiko control-plane bridge
+ECC experimental Nasiko CLI lifecycle bridge
 
 Usage:
   ecc nasiko status [--install-dir <absolute-path>] [--json]

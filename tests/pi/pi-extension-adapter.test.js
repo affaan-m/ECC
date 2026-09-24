@@ -45,7 +45,11 @@ const fs = require("fs")
 const os = require("os")
 const path = require("path")
 const { spawnSync, execFile } = require("child_process")
+const { resolveHookRuntime } = require(
+  path.join(__dirname, "..", "..", ".pi", "extensions", "hook-runtime.js")
+)
 
+/** Run a single adapter test and report the result. */
 async function runTest(name, fn) {
   try {
     await fn()
@@ -70,9 +74,9 @@ function stripComments(source) {
 }
 
 /**
- * Mirrors the adapter's own hook invocation (`runEccHook` in
- * .pi/extensions/index.ts): same binary (`process.execPath`), same argv
- * shape, same stdin-JSON payload, same env keys. No shell is used anywhere.
+ * Invokes ECC's hook runner like the adapter (`runEccHook` in
+ * .pi/extensions/index.ts): it uses the test host's Node executable with the
+ * same argv shape and JSON payload on stdin. No shell is used.
  */
 function runHookRunner(eccRoot, hookId, relScript, profiles, payload, extraEnv, cwd) {
   const runner = path.join(eccRoot, "scripts", "hooks", "run-with-flags.js")
@@ -96,7 +100,7 @@ function buildEccSkeleton(repoRoot) {
   const hooksDir = path.join(root, "scripts", "hooks")
   fs.mkdirSync(hooksDir, { recursive: true })
 
-  for (const name of ["run-with-flags.js", "session-end-marker.js", "pretooluse-visible-output.js"]) {
+  for (const name of ["hook-input.js", "run-with-flags.js", "session-end-marker.js", "pretooluse-visible-output.js"]) {
     fs.cpSync(path.join(repoRoot, "scripts", "hooks", name), path.join(hooksDir, name))
   }
   fs.cpSync(path.join(repoRoot, "scripts", "lib"), path.join(root, "scripts", "lib"), { recursive: true })
@@ -182,6 +186,32 @@ function readInstalledPackageNames(settingsFile) {
     // Missing or unreadable settings are simply "nothing installed here".
   }
   return names
+}
+
+/**
+ * Mirror of the adapter's `findInstalledCompanion` (same file, same matching
+ * rule) so the exact-match and unscoped-satisfied-by-scoped cases can be
+ * exercised directly without importing the TypeScript source. This copy
+ * proves the *behavior* below is correct, but a copy cannot detect the real
+ * adapter's rule drifting out from under it. The source-text assertions in
+ * the "companion package detection tolerates a scoped fork" test below read
+ * the real `findInstalledCompanion` text out of `.pi/extensions/index.ts` and
+ * pin its actual guards directly.
+ */
+function findInstalledCompanion(companion, installed) {
+  if (installed.has(companion)) {
+    return companion
+  }
+  if (companion.startsWith("@")) {
+    return undefined
+  }
+  const scopedSuffix = `/${companion}`
+  for (const name of installed) {
+    if (name.startsWith("@") && name.endsWith(scopedSuffix)) {
+      return name
+    }
+  }
+  return undefined
 }
 
 /**
@@ -283,6 +313,7 @@ function isDisabledByEnvMirror(value) {
   return typeof value === "string" && DISABLED_VALUES_MIRROR.has(value.trim().toLowerCase())
 }
 
+/** Run the Pi adapter regression suite. */
 async function main() {
   console.log("\n=== Testing .pi/extensions/index.ts (Pi thin adapter) ===\n")
 
@@ -320,8 +351,8 @@ async function main() {
         "expected the adapter to invoke hooks via child_process.execFile(...)"
       )
       assert.ok(
-        extensionSource.includes("process.execPath"),
-        "expected hooks to be spawned with process.execPath, not a hardcoded 'node' string"
+        extensionSource.includes("resolveHookRuntime"),
+        "expected the adapter to select a hook runtime before execFile(...)"
       )
 
       const shellExecPattern = /(?<!execFile)\bexec\s*\(/
@@ -341,6 +372,95 @@ async function main() {
         !extensionSource.includes("shell: true"),
         "found `shell: true` in .pi/extensions/index.ts; opting into a shell reintroduces " +
           "the path-with-spaces / injection risk execFile(...) with no shell was meant to avoid"
+      )
+    }],
+    ["selects a real Node runtime instead of compiled OMP's masquerading process.execPath", () => {
+      const runtimeSource = fs.readFileSync(
+        path.join(repoRoot, ".pi", "extensions", "hook-runtime.js"),
+        "utf8"
+      )
+      const runHookStart = extensionSource.indexOf("function runEccHook")
+      const runHookEnd = extensionSource.indexOf("function resolveHookCwd")
+      const runHookSource = extensionSource.slice(runHookStart, runHookEnd)
+      const beforeRunHookSource = extensionSource.slice(0, runHookStart)
+      assert.ok(
+        extensionSource.includes('from "./hook-runtime.js"'),
+        "expected the adapter to import the shared hook runtime selector"
+      )
+      assert.ok(
+        !beforeRunHookSource.includes("resolveHookRuntime()") &&
+          /try\s*\{\s*hookRuntime = resolveHookRuntime\(\)\s*\}\s*catch/.test(runHookSource) &&
+          /execFile\(\s*hookRuntime,/.test(runHookSource),
+        "expected runEccHook to resolve its runtime inside the guarded hook path rather than " +
+          "during module initialization"
+      )
+      assert.ok(
+        runtimeSource.includes("process.versions?.bun") &&
+          runtimeSource.includes("path.basename(execPath)") &&
+          runtimeSource.includes("path.isAbsolute(overridePath)") &&
+          runtimeSource.includes(
+            'throw new Error("ECC_HOOK_NODE must be an absolute path: " + overridePath)'
+          ),
+        "expected the selector to reject Bun/OMP runtimes, require absolute overrides, and " +
+          "fall back to PATH node"
+      )
+    }],
+
+    ["resolves hook runtimes across Node, compiled OMP, and explicit override cases", () => {
+      assert.strictEqual(
+        resolveHookRuntime({ execPath: "/usr/bin/node", override: "" }),
+        "/usr/bin/node"
+      )
+      assert.strictEqual(
+        resolveHookRuntime({ execPath: "/usr/bin/nodejs", override: "" }),
+        "/usr/bin/nodejs"
+      )
+      assert.strictEqual(
+        resolveHookRuntime({
+          execPath: "/usr/bin/node",
+          bunVersion: "1.4.0",
+          override: "",
+        }),
+        "node"
+      )
+      assert.strictEqual(
+        resolveHookRuntime({
+          execPath: "/usr/bin/node",
+          releaseName: "bun",
+          override: "",
+        }),
+        "node"
+      )
+      assert.strictEqual(
+        resolveHookRuntime({
+          execPath: "/home/user/.omp/bin/omp",
+          releaseName: "node",
+          override: "",
+        }),
+        "node"
+      )
+      assert.throws(
+        () =>
+          resolveHookRuntime({
+            execPath: "/usr/bin/node",
+            override: "./node",
+          }),
+        /ECC_HOOK_NODE must be an absolute path: \.\/node/
+      )
+      assert.strictEqual(
+        resolveHookRuntime({
+          execPath: "/usr/bin/node",
+          override: " /opt/node/bin/node ",
+        }),
+        "/opt/node/bin/node"
+      )
+      assert.strictEqual(
+        resolveHookRuntime({
+          execPath: "/home/user/.omp/bin/omp",
+          bunVersion: "1.4.0",
+          override: " /opt/node/bin/node ",
+        }),
+        "/opt/node/bin/node"
       )
     }],
 
@@ -1038,6 +1158,146 @@ async function main() {
         )
       } finally {
         fs.rmSync(tmpDir, { recursive: true, force: true })
+      }
+    }],
+
+    ["companion package detection tolerates a scoped fork (source contract): the unscoped-entry fallback exists, scoped entries stay exact, and the doctor loop reports what satisfied the entry", () => {
+      const matchStart = extensionSource.indexOf("function findInstalledCompanion")
+      assert.ok(
+        matchStart !== -1,
+        "expected .pi/extensions/index.ts to define a function named findInstalledCompanion; " +
+          "a bare installed.has(name) check reports an installed scoped fork such as " +
+          "@tintinweb/pi-subagents as missing, and then tells the user to run " +
+          "`pi install npm:pi-subagents`, which would put a SECOND extension registering " +
+          "the same tool names into their session"
+      )
+      const nextFunctionStart = extensionSource.indexOf("\nfunction ", matchStart + 1)
+      const matchSource =
+        nextFunctionStart === -1
+          ? extensionSource.slice(matchStart)
+          : extensionSource.slice(matchStart, nextFunctionStart)
+
+      assert.ok(
+        /if\s*\(\s*installed\.has\(\s*companion\s*\)\s*\)/.test(matchSource),
+        "expected findInstalledCompanion in .pi/extensions/index.ts to check the exact name " +
+          "first; an exact install is the ordinary case and must not be routed through the " +
+          "scoped-fork scan"
+      )
+      assert.ok(
+        /if\s*\(\s*companion\.startsWith\(\s*["'`]@["'`]\s*\)\s*\)\s*\{\s*return undefined/.test(
+          matchSource
+        ),
+        "expected findInstalledCompanion in .pi/extensions/index.ts to bail out for a SCOPED " +
+          "companion entry before the fallback; for an entry like " +
+          "@juicesharp/rpiv-todo the scope is part of the identity ECC is naming, so some " +
+          "other publisher's rpiv-todo must not silently satisfy it"
+      )
+      assert.ok(
+        /name\.startsWith\(\s*["'`]@["'`]\s*\)\s*&&\s*name\.endsWith\(\s*scopedSuffix\s*\)/.test(
+          matchSource
+        ),
+        "expected findInstalledCompanion in .pi/extensions/index.ts to match an installed " +
+          "scoped package by the '@scope/' + exact bare name shape; matching on endsWith " +
+          "alone would let a package named my-pi-subagents satisfy the pi-subagents entry"
+      )
+
+      const withoutComments = stripComments(extensionSource)
+      assert.ok(
+        !/installed\.has\(name\)/.test(withoutComments),
+        "found a bare installed.has(name) still used as executable code in " +
+          ".pi/extensions/index.ts; the /ecc-doctor companion loop must go through " +
+          "findInstalledCompanion so a scoped fork is not reported as missing"
+      )
+      assert.ok(
+        /satisfied by/.test(extensionSource),
+        "expected the /ecc-doctor companion loop in .pi/extensions/index.ts to name the " +
+          "package that satisfied an entry when it is not an exact match; reporting a " +
+          "bare 'installed' for @tintinweb/pi-subagents under the pi-subagents line hides " +
+          "which implementation is actually loaded, which is the first thing to know when " +
+          "its behavior differs from the unscoped package's"
+      )
+    }],
+
+    ["companion package matching (behavioral mirror): an unscoped entry is satisfied by a scoped fork, a scoped entry is matched exactly", () => {
+      assert.strictEqual(
+        findInstalledCompanion("pi-subagents", new Set(["pi-subagents"])),
+        "pi-subagents",
+        "expected an exactly-installed companion to be reported as itself"
+      )
+      assert.strictEqual(
+        findInstalledCompanion("pi-subagents", new Set(["@tintinweb/pi-subagents"])),
+        "@tintinweb/pi-subagents",
+        "expected a scoped fork to satisfy the unscoped pi-subagents entry; the subagents " +
+          "capability is published under that bare name by more than one maintainer, and a " +
+          "user running the scoped one has working Agent/SubagentWorkflow tools in session " +
+          "while /ecc-doctor was calling it missing"
+      )
+      assert.strictEqual(
+        findInstalledCompanion("pi-subagents", new Set(["pi-subagents", "@tintinweb/pi-subagents"])),
+        "pi-subagents",
+        "expected the exact match to win when both are installed, so the reported name is " +
+          "stable rather than depending on Set iteration order"
+      )
+      assert.strictEqual(
+        findInstalledCompanion("pi-subagents", new Set(["my-pi-subagents"])),
+        undefined,
+        "expected an unscoped package that merely ENDS WITH the companion name to not " +
+          "satisfy it; only a @scope/ prefix counts"
+      )
+      assert.strictEqual(
+        findInstalledCompanion("pi-subagents", new Set(["@acme/my-pi-subagents"])),
+        undefined,
+        "expected a scoped package whose bare name merely ends with the companion name to " +
+          "not satisfy it; the segment after the scope must equal the companion name"
+      )
+      assert.strictEqual(
+        findInstalledCompanion("@juicesharp/rpiv-todo", new Set(["@juicesharp/rpiv-todo"])),
+        "@juicesharp/rpiv-todo",
+        "expected an exactly-installed scoped companion to be reported as itself"
+      )
+      assert.strictEqual(
+        findInstalledCompanion("@juicesharp/rpiv-todo", new Set(["@someoneelse/rpiv-todo"])),
+        undefined,
+        "expected a DIFFERENT scope to not satisfy a scoped companion entry; ECC names that " +
+          "scope deliberately, so relaxing this direction would report an unrelated " +
+          "publisher's package as the one ECC documents"
+      )
+      assert.strictEqual(
+        findInstalledCompanion("@juicesharp/rpiv-todo", new Set(["rpiv-todo"])),
+        undefined,
+        "expected an unscoped package to not satisfy a scoped companion entry"
+      )
+      assert.strictEqual(
+        findInstalledCompanion("pi-subagents", new Set()),
+        undefined,
+        "expected an empty install set to satisfy nothing"
+      )
+    }],
+
+    ["every COMPANION_PACKAGES entry this repo ships is still resolvable by the matcher it is checked with", () => {
+      const constStart = extensionSource.indexOf("const COMPANION_PACKAGES")
+      assert.ok(
+        constStart !== -1,
+        "expected to find a COMPANION_PACKAGES array literal in .pi/extensions/index.ts"
+      )
+      const constEnd = extensionSource.indexOf("]", constStart)
+      const companions = Array.from(
+        extensionSource.slice(constStart, constEnd + 1).matchAll(/["'`](@?[\w./-]+)["'`]/g)
+      ).map(match => match[1])
+
+      assert.ok(
+        companions.length > 0,
+        "expected to parse at least one companion package name out of COMPANION_PACKAGES"
+      )
+
+      for (const companion of companions) {
+        assert.strictEqual(
+          findInstalledCompanion(companion, new Set([companion])),
+          companion,
+          `expected the companion entry ${companion} to be recognized when it is installed ` +
+            "under exactly its own name; an entry the matcher cannot resolve would be " +
+            "reported as permanently missing no matter what the user installs"
+        )
       }
     }],
 

@@ -12,13 +12,19 @@ Thank you to everyone funding ECC's open-source work. Your sponsorship is what l
 |---------|------|-------|
 | [**CodeRabbit**](https://www.coderabbit.ai) | <img src="assets/images/sponsors/coderabbit.png" width="60" alt="CodeRabbit logo" /> | 2026 |
 | [**Greptile**](https://www.greptile.com/go/ecc) | <img src="assets/images/sponsors/greptile.png" width="60" alt="Greptile logo" /> | 2026 |
-| [**Atlas Cloud**](https://www.atlascloud.ai/?utm_source=github&utm_medium=link&utm_campaign=ECC) | <picture><source media="(prefers-color-scheme: dark)" srcset="assets/images/sponsors/atlascloud-dark.svg" /><img src="assets/images/sponsors/atlascloud.svg" width="120" alt="Atlas Cloud logo" /></picture> | 2026 |
 | [**Moonshot AI (Kimi)**](https://www.moonshot.ai) | <picture><source media="(prefers-color-scheme: dark)" srcset="assets/images/sponsors/moonshot-dark.png" /><img src="assets/images/sponsors/moonshot.png" width="100" alt="Moonshot AI Kimi logo" /></picture> | 2026 |
 | [**Itô**](https://compute.itomarkets.com) | <picture><source media="(prefers-color-scheme: light)" srcset="assets/images/sponsors/ito-transparent-light.png" /><img src="assets/images/sponsors/ito-transparent.png" width="88" alt="Itô Markets logo" /></picture> | 2026 |
+| [**SerpApi**](https://serpapi.com/github-ecc) | <picture><source media="(prefers-color-scheme: dark)" srcset="assets/images/sponsors/serpapi-logo-dark-mode.svg" /><img src="assets/images/sponsors/serpapi-logo-light-mode.svg" width="200" alt="SerpApi: Web Search API" /></picture> | 2026 |
 
 *[Become a Business sponsor](https://github.com/sponsors/affaan-m) to get README sponsor placement + SPONSORS.md listing. Current Business tier is $800/mo. No seats, SLA, custom development, or preferential technical placement is bundled unless separately agreed.*
 
 Run or self-host any open-source model. Itô partners with ECC on compute, while ECC remains provider-agnostic and any GPU provider works. The [Itô dashboard](https://compute.itomarkets.com) sponsorship link is passive: it does not invoke an RFQ, reserve capacity, provision compute, or configure serving. Separately, the opt-in `ecc ito find` bridge invokes the explicitly configured canonical Itô CLI and submits a live authenticated RFQ; it does not reserve capacity. Managed inference through Itô is not live yet.
+
+## Past Sponsors
+
+| Sponsor | Active period |
+|---------|---------------|
+| [**Atlas Cloud**](https://www.atlascloud.ai/?utm_source=github&utm_medium=link&utm_campaign=ECC) | 2026 |
 
 ## Team Sponsors — $200/mo
 

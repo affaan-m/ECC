@@ -271,6 +271,21 @@ function agentPriority(agent) {
 }
 
 /**
+ * Right-of-way between two agents: more progress wins; tie goes to the earlier
+ * start (greater age); final deterministic tiebreak on agentId so the maneuver
+ * is coordinated. Returns { hold, steer } as agentIds.
+ */
+function rightOfWay(a, b) {
+  const pa = agentPriority(a);
+  const pb = agentPriority(b);
+  let aHasPriority;
+  if (pa.progress !== pb.progress) aHasPriority = pa.progress > pb.progress;
+  else if (pa.ageMs !== pb.ageMs) aHasPriority = pa.ageMs > pb.ageMs;
+  else aHasPriority = String(a.agentId) < String(b.agentId);
+  return { hold: aHasPriority ? a.agentId : b.agentId, steer: aHasPriority ? b.agentId : a.agentId };
+}
+
+/**
  * TCAS-style advisory between two agents given their collision risk.
  * Returns { level: 'clear'|'advisory'|'resolution', risk, transmit, steer, hold }.
  *   - advisory: both should transmit intent to each other.
@@ -284,17 +299,7 @@ function advise(a, b, graph = {}, options = {}) {
     return { level: 'clear', risk, distance, channels, transmit: false, steer: null, hold: null };
   }
 
-  const pa = agentPriority(a);
-  const pb = agentPriority(b);
-  // Right-of-way: more progress wins; tie → earlier start (greater age) wins;
-  // final deterministic tiebreak on agentId so the maneuver is coordinated.
-  let aHasPriority;
-  if (pa.progress !== pb.progress) aHasPriority = pa.progress > pb.progress;
-  else if (pa.ageMs !== pb.ageMs) aHasPriority = pa.ageMs > pb.ageMs;
-  else aHasPriority = String(a.agentId) < String(b.agentId);
-
-  const hold = aHasPriority ? a.agentId : b.agentId;
-  const steer = aHasPriority ? b.agentId : a.agentId;
+  const { hold, steer } = rightOfWay(a, b);
 
   if (risk < thresholds.ra) {
     // Traffic advisory: exchange intent, no one has to move yet.
@@ -324,6 +329,7 @@ module.exports = {
   treeRisk,
   collisionRisk,
   agentPriority,
+  rightOfWay,
   advise,
   closureRate,
   _internal: { normalizePath, segments, jaccard }

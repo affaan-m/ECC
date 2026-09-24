@@ -19,6 +19,7 @@ const {
 } = require('./lib/install/request');
 const { getComputeSponsorCopy } = require('./lib/compute-sponsor');
 const { stripAnsi } = require('./lib/utils');
+const { describeMissingDependencyError } = require('./lib/missing-dependency');
 
 function getHelpText() {
   const languages = listLegacyCompatibilityLanguages();
@@ -39,7 +40,7 @@ Targets:
   antigravity  - Install rules, workflows, skills, and agents to ./.agents/
   codex        - Install shared agents/config into ~/.codex/
   gemini       - Install project-local Gemini config into ./.gemini/
-  opencode     - Install shared commands/hooks/config into ~/.opencode/
+  opencode     - Install into OPENCODE_CONFIG_DIR, XDG_CONFIG_HOME/opencode, or ~/.config/opencode/
   codebuddy    - Install commands, agents, skills, and flattened rules into ./.codebuddy/
   joycode      - Install commands, agents, skills, and flattened rules into ./.joycode/
   qwen         - Install commands, agents, skills, rules, and Qwen config into ~/.qwen/
@@ -47,6 +48,7 @@ Targets:
   hermes       - Install shared rules/skills/commands into ~/.hermes/
   kimi         - Install Kimi Code project instructions, skills, and MCP config into ./.kimi-code/ (ECC hooks not configured)
   openclaw     - Install shared rules/skills/commands into ~/.openclaw/
+  adal         - Install shared rules/skills/commands into ./.adal/
 
 Options:
   --profile <name>    Resolve and install a manifest profile
@@ -58,6 +60,9 @@ Options:
   --locale <code>     Install translated docs to ~/.claude/docs/<locale>/ (or ./.claude/docs/<locale>/ for claude-project)
                       (claude or claude-project target only; can be combined with --profile or --with)
   --config <path>     Load install intent from ecc-install.json
+  --enable-hooks      Confirm installing the automatic hook runtime (required
+                      when the selected profile/modules materialize hooks)
+  --no-hooks          Install everything except the automatic hook runtime
   --dry-run    Show the install plan without copying files
   --json       Emit machine-readable plan/result JSON
   --help       Show this help text
@@ -127,6 +132,13 @@ function printHumanPlan(plan, dryRun) {
     }
   }
 
+  if (Array.isArray(plan.reconciledExcludedPaths) && plan.reconciledExcludedPaths.length > 0) {
+    console.log('\nReconciled excluded paths:');
+    for (const removedPath of plan.reconciledExcludedPaths) {
+      console.log(`- removed ${removedPath}`);
+    }
+  }
+
   if (!dryRun) {
     console.log(`\nDone. Install-state written to ${plan.installStatePath}`);
   }
@@ -164,6 +176,7 @@ async function main() {
     const rawPlan = createInstallPlanFromRequest(request, {
       projectRoot: process.cwd(),
       homeDir: process.env.HOME || os.homedir(),
+      env: process.env,
       claudeRulesDir: process.env.CLAUDE_RULES_DIR || null,
     });
 
@@ -195,7 +208,12 @@ async function main() {
       printHumanPlan(result, false);
     }
   } catch (error) {
-    process.stderr.write(`Error: ${error.message}${getHelpText()}`);
+    const missingDependencyMessage = describeMissingDependencyError(error);
+    process.stderr.write(
+      missingDependencyMessage
+        ? `Error: ${missingDependencyMessage}\n`
+        : `Error: ${error.message}${getHelpText()}`
+    );
     process.exit(1);
   }
 }

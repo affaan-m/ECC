@@ -41,7 +41,7 @@ const COMMANDS = {
   },
   nasiko: {
     script: 'nasiko.js',
-    description: 'Install or inspect the optional pinned Nasiko control-plane CLI',
+    description: 'Install or inspect the optional pinned Nasiko CLI lifecycle bridge',
   },
   memory: {
     script: 'memory.js',

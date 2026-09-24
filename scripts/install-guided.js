@@ -16,6 +16,7 @@ const {
   createMultiHarnessPlan,
   normalizeGuidedInstallRequest,
 } = require('./lib/multi-harness-setup');
+const { formatHookCapabilityDisclosure } = require('./lib/install/hook-consent');
 const { startTerminalSpinner } = require('./lib/terminal-spinner');
 const { showTerminalWelcome } = require('./lib/terminal-welcome');
 const { stripAnsi } = require('./lib/utils');
@@ -208,6 +209,13 @@ function printPlan(plan, output) {
   }
   if (plan.request.harnesses.includes('kimi')) {
     output.write('\nKimi note: ECC hooks are not configured; model, provider, and authentication settings are unchanged.\n');
+  }
+  if (plan.request.harnesses.includes('claude') && plan.request.claudeHooks && plan.request.claudeHooks !== 'off') {
+    output.write(
+      `\nClaude hook profile '${plan.request.claudeHooks}' enables automation that can:\n`
+      + `${formatHookCapabilityDisclosure()}\n`
+      + "Choose '--claude-hooks off' to install without automatic hook behavior.\n"
+    );
   }
 }
 

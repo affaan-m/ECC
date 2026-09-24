@@ -4,9 +4,6 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 
-const initSqlJs = require('sql.js');
-const toml = require('@iarna/toml');
-
 const { buildControlPaneActions } = require('./actions');
 
 const SNAPSHOT_SCHEMA_VERSION = 'ecc.control-pane.snapshot.v1';
@@ -85,6 +82,10 @@ function normalizeConfig(rawConfig = {}, options = {}) {
 }
 
 function readTomlConfig(configPath) {
+  // @iarna/toml is required lazily so commands that never resolve a config
+  // file (e.g. `--help`, or a first run before any ecc2.toml exists) don't
+  // need it on the require path.
+  const toml = require('@iarna/toml');
   const raw = fs.readFileSync(configPath, 'utf8');
   return toml.parse(raw);
 }
@@ -113,6 +114,10 @@ function resolveControlPaneConfig(options = {}) {
 
 async function openSqlDatabase(dbPath) {
   if (!dbPath || !fs.existsSync(dbPath)) return null;
+  // sql.js is required lazily so commands that never open an existing
+  // ecc2.db (e.g. `--help`, or a first run before any db exists) don't need
+  // it on the require path.
+  const initSqlJs = require('sql.js');
   const SQL = await initSqlJs();
   const buffer = fs.readFileSync(dbPath);
   return new SQL.Database(buffer);

@@ -10,7 +10,9 @@ const {
   VALID_SCOPES,
   assertNoConflictingEccPlugins,
   assertSafeLocalInventory,
+  assertGitAvailable,
   currentEccPlugins,
+  createDryRunClaudeRunner,
   deriveHookMode,
   ensureOfficialMarketplace,
   ensurePluginAtScope,
@@ -256,7 +258,14 @@ function migrateClaudePluginScope(options = {}, dependencies = {}) {
   const settingsPath = path.join(paths.configDir, 'settings.json');
   const settings = readSettings(settingsPath);
   assertSafeLocalInventory(paths);
-  const run = dependencies.runClaude || runClaude;
+  assertGitAvailable(
+    { cwd: paths.projectRoot },
+    { spawnSync: dependencies.spawnSync }
+  );
+  const providerRun = dependencies.runClaude || runClaude;
+  const run = options.dryRun
+    ? createDryRunClaudeRunner(providerRun, paths, options)
+    : providerRun;
   const plugins = readPluginInventory(run, paths.projectRoot, 'inventory');
   const migration = assertMigrationInventory(plugins, options.scope);
   const hooks = options.hooks === undefined
@@ -354,6 +363,7 @@ function migrateClaudePluginScope(options = {}, dependencies = {}) {
       projectRoot: paths.projectRoot,
       run,
       scope: options.scope,
+      spawnSync: dependencies.spawnSync,
     });
     ensurePluginAtScope({
       hookConfiguration,

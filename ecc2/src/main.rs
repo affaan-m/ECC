@@ -5214,7 +5214,6 @@ fn build_legacy_migration_audit_report(source: &Path) -> Result<LegacyMigrationA
             mapping: vec![
                 "ecc graph connector-sync".to_string(),
                 "ecc graph recall".to_string(),
-                "WORKING-CONTEXT.md".to_string(),
             ],
             notes: vec![
                 "Import only sanitized operator memory into the shared context graph."

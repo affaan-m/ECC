@@ -155,7 +155,7 @@ fi
 # Non-interactive SDK automation is still filtered by Layers 2-5 below
 # (ECC_HOOK_PROFILE=minimal, ECC_SKIP_OBSERVE=1, agent_id, path exclusions).
 case "${CLAUDE_CODE_ENTRYPOINT:-cli}" in
-  cli|sdk-ts|claude-desktop|claude-vscode) ;;
+  cli|sdk-ts|sdk-cli|claude-desktop|claude-vscode) ;;
   *) exit 0 ;;
 esac
 
