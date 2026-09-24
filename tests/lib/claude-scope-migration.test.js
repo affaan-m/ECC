@@ -155,15 +155,8 @@ function captureError(fn) {
   assert.fail('Expected operation to throw');
 }
 
-function installArgv(scope, hooks = 'standard', profileOverride) {
-  const enabled = hooks !== 'off';
-  const profile = profileOverride || (hooks === 'off' ? 'standard' : hooks);
-  return [
-    'plugin', 'install', 'ecc@ecc',
-    '--scope', scope,
-    '--config', `hooks_enabled=${enabled}`,
-    '--config', `hook_profile=${profile}`,
-  ];
+function installArgv(scope) {
+  return ['plugin', 'install', 'ecc@ecc', '--scope', scope];
 }
 
 function uninstallArgv(scope) {
