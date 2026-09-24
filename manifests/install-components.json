@@ -583,6 +583,14 @@
       ]
     },
     {
+      "id": "skill:osint-investigation",
+      "family": "skill",
+      "description": "Adaptive public-source investigation with tool selection, evidence tracking, visual verification, and falsification.",
+      "modules": [
+        "research-apis"
+      ]
+    },
+    {
       "id": "skill:deep-research",
       "family": "skill",
       "description": "Deep research and investigation workflows.",

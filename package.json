@@ -290,6 +290,7 @@
     "skills/network-interface-health/",
     "skills/nodejs-keccak256/",
     "skills/nutrient-document-processing/",
+    "skills/osint-investigation/",
     "skills/latency-critical-systems/",
     "skills/perl-patterns/",
     "skills/perl-security/",

@@ -193,6 +193,11 @@ These lifecycle commands are also available through the `ecc` CLI.
 
 ## Docs & Research
 
+For public-source investigations starting from sparse clues, use the
+[`osint-investigation` skill](skills/osint-investigation/SKILL.md) to extract
+overlooked leads, connect fragmented evidence, and test competing explanations
+through deliberate falsification and visual verification.
+
 | Command | What it does |
 |---------|-------------|
 | `/ecc-guide` | Navigate ECC's current agents, skills, commands, hooks, install profiles, and docs from the live repository surface |

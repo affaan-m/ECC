@@ -74,6 +74,12 @@ This document lists each slash command and the primary agent(s) or skills it inv
 - **strategic-compact**: suggested at compaction points (hooks)
 - **unified-memory**: `ecc memory ...` and the opt-in `ecc-memory-mcp` server
 
+## Direct-Use Skills
+
+| Skill | Purpose | Entry point |
+|-------|---------|-------------|
+| [osint-investigation](../skills/osint-investigation/SKILL.md) | Public-source investigation methodology: competing hypotheses, falsification, visual verification, and evidence tracking | Invoke the self-contained skill directly using available host capabilities. |
+
 ## How to use this map
 
 - **Discoverability:** Find which command triggers which agent (e.g. “use `/code-review` for code-reviewer”).
