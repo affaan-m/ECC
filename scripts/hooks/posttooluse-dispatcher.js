@@ -20,6 +20,7 @@ const { run: runObserve } = require('./observe-runner');
 const { run: runMetricsBridge } = require('./ecc-metrics-bridge');
 const { run: runContextMonitor } = require('./ecc-context-monitor');
 const { run: runSkillRunTracker } = require('./skill-run-tracker');
+const { recordToolUse: runEvidenceTracker } = require('./gateguard-evidence-ledger');
 
 const MAX_STDIN = resolveMaxStdin(process.env.ECC_HOOK_INPUT_MAX_BYTES, {
   writeDiagnostic: message => process.stderr.write(message)
@@ -35,7 +36,8 @@ const SYNC_HOOKS = [
   { id: 'post:governance-capture', matcher: 'Bash|PowerShell|Write|Edit|MultiEdit', profiles: 'standard,strict', script: 'scripts/hooks/governance-capture.js', run: runGovernanceCapture },
   { id: 'post:session-activity-tracker', matcher: '*', profiles: 'standard,strict', script: 'scripts/hooks/session-activity-tracker.js', run: runSessionActivityTracker },
   { id: 'post:ecc-metrics-bridge', matcher: '*', profiles: 'minimal,standard,strict', script: 'scripts/hooks/ecc-metrics-bridge.js', run: runMetricsBridge },
-  { id: 'post:ecc-context-monitor', matcher: '*', profiles: 'standard,strict', script: 'scripts/hooks/ecc-context-monitor.js', run: runContextMonitor }
+  { id: 'post:ecc-context-monitor', matcher: '*', profiles: 'standard,strict', script: 'scripts/hooks/ecc-context-monitor.js', run: runContextMonitor },
+  { id: 'post:gateguard:evidence-tracker', matcher: 'Read|Grep|Glob|Bash|PowerShell', profiles: 'standard,strict', script: 'scripts/hooks/gateguard-evidence-ledger.js', run: runEvidenceTracker }
 ];
 
 const ASYNC_HOOKS = [

@@ -154,22 +154,22 @@ function runTests() {
         },
         {
           tool: 'Bash',
-          sync: ['post:governance-capture', 'post:session-activity-tracker', 'post:ecc-metrics-bridge', 'post:ecc-context-monitor'],
+          sync: ['post:governance-capture', 'post:session-activity-tracker', 'post:ecc-metrics-bridge', 'post:ecc-context-monitor', 'post:gateguard:evidence-tracker'],
           async: ['post:bash:dispatcher', 'post:observe:continuous-learning']
         },
         {
           tool: 'PowerShell',
-          sync: ['post:governance-capture', 'post:session-activity-tracker', 'post:ecc-metrics-bridge', 'post:ecc-context-monitor'],
+          sync: ['post:governance-capture', 'post:session-activity-tracker', 'post:ecc-metrics-bridge', 'post:ecc-context-monitor', 'post:gateguard:evidence-tracker'],
           async: ['post:observe:continuous-learning']
         },
         {
           tool: 'powershell',
-          sync: ['post:governance-capture', 'post:session-activity-tracker', 'post:ecc-metrics-bridge', 'post:ecc-context-monitor'],
+          sync: ['post:governance-capture', 'post:session-activity-tracker', 'post:ecc-metrics-bridge', 'post:ecc-context-monitor', 'post:gateguard:evidence-tracker'],
           async: ['post:observe:continuous-learning']
         },
         {
           tool: 'Read',
-          sync: ['post:session-activity-tracker', 'post:ecc-metrics-bridge', 'post:ecc-context-monitor'],
+          sync: ['post:session-activity-tracker', 'post:ecc-metrics-bridge', 'post:ecc-context-monitor', 'post:gateguard:evidence-tracker'],
           async: ['post:observe:continuous-learning']
         }
       ];
