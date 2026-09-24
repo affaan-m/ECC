@@ -156,8 +156,9 @@ test('source changes invalidate reuse and source-bound load preview', () => with
 test('bounded search uses canonical IDs and deterministic order', () => withFixture(repoRoot => {
   const result = resolve(repoRoot, { query: 'feature' });
   assert.equal(result.candidates[0].id, 'skill:feature');
-  assert.deepEqual(result.selectedIds, ['skill:feature']);
-  assert.equal(result.reason, 'auto-selection');
+  // A bare name mention ranks the skill but is not a directive citation.
+  assert.deepEqual(result.selectedIds, []);
+  assert.equal(result.reason, 'agent-selection-required');
   assert.ok(result.candidates.length <= 5);
 }));
 
@@ -181,8 +182,8 @@ test('a single complete canonical or native name auto-selects the cited skill', 
   }
 }));
 
-test('multiple complete names defer to an explicit agent proposal', () => withFixture(repoRoot => {
-  const result = resolve(repoRoot, { query: 'Use feature and shared guidance.' }, { load: true });
+test('multiple directive citations defer to an explicit agent proposal', () => withFixture(repoRoot => {
+  const result = resolve(repoRoot, { query: 'Use feature and use shared guidance.' }, { load: true });
   assert.deepEqual(result.selectedIds, []);
   assert.equal(result.reason, 'agent-selection-required');
 }));

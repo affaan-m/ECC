@@ -165,10 +165,32 @@ function resolveTaskContext({ repoRoot = DEFAULT_REPO_ROOT, task, profileId = 'l
   const { candidates } = task.noWorkflow || selectionMode === 'manual' || reused
     ? { candidates: [] } : candidatesFor(task.query || '', registry.entries, excluded, admissible);
   // Auto admission: free-text routing loads the ranked top skill only on
-  // unambiguous evidence, or when exactly one complete skill name is cited.
-  // Everything else keeps the bounded-proposal path so the primary agent
-  // decides ambiguous cases during work it was already doing.
-  const exactAnchors = candidates.filter(candidate => candidate.exact);
+  // unambiguous evidence, or when the query is an explicit directive citation
+  // of exactly one skill (for example "Use the X skill"). Mere mentions —
+  // questions, negations, reported speech, multiple cited names — never admit
+  // implicitly. Everything else keeps the bounded-proposal path so the
+  // primary agent decides ambiguous cases during work it was already doing.
+  const DIRECTIVE_VERB = /\b(use|apply|invoke|run|follow|load)\s+(the\s+)?/i;
+  const normalizedQueryName = text => text.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+  const directiveCitation = candidate => {
+    if (!candidate || !candidate.exact) return false;
+    const text = normalizedQueryName(task.query || '');
+    const aliases = [...new Set([candidate.exactAlias,
+      candidate.id.slice('skill:'.length).toLowerCase(),
+      candidate.id.slice('skill:'.length).toLowerCase().replace(/-/g, ' ')].filter(Boolean))];
+    for (const name of aliases) {
+      const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const pattern = new RegExp(`${DIRECTIVE_VERB.source}(skill\\s*:?\\s*)?${escaped}(\\s+(skill|workflow|guidance))?\\b`, 'i');
+      const match = pattern.exec(text);
+      if (!match) continue;
+      const window = text.slice(Math.max(0, match.index - 28), match.index);
+      if (/\b(do not|don't|never|no)\b/.test(window)) return false;
+      if (/\b(says|said|reads|told|document)\b/i.test(task.query || '')) return false;
+      return true;
+    }
+    return false;
+  };
+  const exactAnchors = candidates.filter(directiveCitation);
   let autoSelection = null;
   if (!task.noWorkflow && selectionMode === 'auto' && !reused && !explicitIds.length && !proposedIds.length && candidates.length) {
     if (exactAnchors.length === 1) {

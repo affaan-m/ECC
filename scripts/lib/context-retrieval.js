@@ -152,17 +152,21 @@ function searchRetrieval(index, query, { limit = 5 } = {}) {
   addRank(denseRanked, 0.8);
   // A complete canonical/native name in the query anchors that skill first,
   // matching the previous contract and how agents cite skills.
-  const exactAnchors = index.documents.filter(document => document.aliases
-    .some(alias => alias && normalizedQuery.includes(` ${alias} `)));
-  for (const document of exactAnchors) fused.set(document, (fused.get(document) || 0) + 1);
+  const exactAnchors = index.documents.map(document => ({ document,
+    alias: document.aliases.filter(alias => alias && normalizedQuery.includes(` ${alias} `))
+      .sort((a, b) => b.length - a.length)[0] || null }))
+    .filter(anchor => anchor.alias);
+  for (const { document } of exactAnchors) fused.set(document, (fused.get(document) || 0) + 1);
   if (!fused.size) return [];
+  const anchored = new Map(exactAnchors.map(anchor => [anchor.document, anchor.alias]));
   return [...fused.entries()]
     .sort((a, b) => b[1] - a[1] || (a[0].entry.id < b[0].entry.id ? -1 : 1))
     .slice(0, limit)
     .map(([document, score]) => {
       const matched = [...new Set(queryTokens)].filter(term => document.weighted.has(term));
-      const exact = exactAnchors.includes(document);
+      const exact = anchored.has(document);
       return { id: document.entry.id, score: Math.round(score * 10000) / 10000, exact,
+        exactAlias: exact ? anchored.get(document) : undefined,
         dense: Math.round((dense.get(document) || 0) * 10000) / 10000,
         bm25: Math.round((bm25.get(document) || 0) * 10000) / 10000,
         matchedTerms: matched,
