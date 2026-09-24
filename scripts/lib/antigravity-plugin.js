@@ -7,7 +7,7 @@
  */
 
 function buildAntigravityPluginManifest(options = {}) {
-  const version = options.version || '2.2.2';
+  const version = options.version || require('../../package.json').version;
   return {
     name: 'ecc',
     description: 'ECC - The Agent Harness Operating System for Antigravity',

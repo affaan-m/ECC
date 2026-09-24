@@ -658,6 +658,7 @@ function setupClaudePlugin(options = {}, dependencies = {}) {
     spawnSync: dependencies.spawnSync,
   });
   const action = ensurePluginAtScope({
+    hookConfiguration: hookOptions(hooks),
     hooks,
     installed: inventory.installed,
     projectRoot: paths.projectRoot,

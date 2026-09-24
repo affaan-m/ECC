@@ -1,5 +1,8 @@
 'use strict';
 
+const path = require('path');
+const { shellQuote } = require('./control-pane/actions');
+
 /**
  * Antigravity Hooks Generator
  *
@@ -10,7 +13,19 @@
 
 function buildAntigravityHooksConfig(options = {}) {
   const profile = options.profile || 'standard';
-  const bridgeScript = options.bridgeScript || 'scripts/hooks/antigravity-hook-bridge.js';
+  const { bridgeScript } = options;
+  if (typeof bridgeScript !== 'string' || !path.isAbsolute(bridgeScript) || bridgeScript.includes('\0')) {
+    throw new Error('bridgeScript must be an absolute path');
+  }
+  let quotedBridgeScript;
+  if (process.platform === 'win32') {
+    if (/[%"!$`\r\n]/.test(bridgeScript)) {
+      throw new Error('bridgeScript contains unsafe shell expansion characters');
+    }
+    quotedBridgeScript = bridgeScript.includes(' ') ? `"${bridgeScript}"` : bridgeScript;
+  } else {
+    quotedBridgeScript = shellQuote(bridgeScript);
+  }
 
   const preToolUseHandlers = [
     {
@@ -18,22 +33,22 @@ function buildAntigravityHooksConfig(options = {}) {
       hooks: [
         {
           type: 'command',
-          command: `node ${bridgeScript} --mode pre-tool-use --hook pre:bash:dispatcher`,
+          command: `node ${quotedBridgeScript} --mode pre-tool-use --hook pre:bash:dispatcher`,
           timeout: 15,
         },
       ],
     },
     {
-      matcher: 'write_to_file|replace_file_content',
+      matcher: 'write_to_file|replace_file_content|multi_replace_file_content',
       hooks: [
         {
           type: 'command',
-          command: `node ${bridgeScript} --mode pre-tool-use --hook pre:edit-write:gateguard-fact-force`,
+          command: `node ${quotedBridgeScript} --mode pre-tool-use --hook pre:edit-write:gateguard-fact-force`,
           timeout: 10,
         },
         {
           type: 'command',
-          command: `node ${bridgeScript} --mode pre-tool-use --hook pre:config-protection`,
+          command: `node ${quotedBridgeScript} --mode pre-tool-use --hook pre:config-protection`,
           timeout: 5,
         },
       ],
@@ -46,7 +61,7 @@ function buildAntigravityHooksConfig(options = {}) {
       hooks: [
         {
           type: 'command',
-          command: `node ${bridgeScript} --mode pre-tool-use --hook pre:write:doc-file-warning`,
+          command: `node ${quotedBridgeScript} --mode pre-tool-use --hook pre:write:doc-file-warning`,
           timeout: 5,
         },
       ],
@@ -56,12 +71,12 @@ function buildAntigravityHooksConfig(options = {}) {
   const stopHandlers = [
     {
       type: 'command',
-      command: `node ${bridgeScript} --mode stop --hook stop:format-typecheck`,
-      timeout: 120,
+      command: `node ${quotedBridgeScript} --mode stop --hook stop:format-typecheck`,
+      timeout: 300,
     },
     {
       type: 'command',
-      command: `node ${bridgeScript} --mode stop --hook stop:check-console-log`,
+      command: `node ${quotedBridgeScript} --mode stop --hook stop:check-console-log`,
       timeout: 30,
     },
   ];
@@ -69,6 +84,14 @@ function buildAntigravityHooksConfig(options = {}) {
   return {
     'ecc-guard': {
       PreToolUse: preToolUseHandlers,
+      PostToolUse: [{
+        matcher: 'write_to_file|replace_file_content|multi_replace_file_content',
+        hooks: [{
+          type: 'command',
+          command: `node ${quotedBridgeScript} --mode post-tool-use --hook post:edit:accumulator`,
+          timeout: 10,
+        }],
+      }],
       Stop: stopHandlers,
     },
   };

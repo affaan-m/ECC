@@ -13,7 +13,7 @@ const {
   normalizeRelativePath,
 } = require('./helpers');
 const { buildAntigravityHooksConfig } = require('../antigravity-hooks');
-const { buildAntigravityMcpConfig } = require('../antigravity-mcp');
+const { buildAntigravityMcpConfig, planAntigravityMemoryRuntime } = require('../antigravity-mcp');
 const { buildAntigravityPluginManifest } = require('../antigravity-plugin');
 
 function readJsonObject(filePath, label) {
@@ -131,6 +131,7 @@ module.exports = createInstallTargetAdapter({
             && normalizedSourcePath === 'hooks'
           ) {
             return [
+              createManagedScaffoldOperation(module.id, 'package.json', path.join(targetRoot, 'package.json'), 'preserve-relative-path'),
               createManagedOperation({
                 kind: 'merge-json',
                 moduleId: module.id,
@@ -141,6 +142,7 @@ module.exports = createInstallTargetAdapter({
                 scaffoldOnly: false,
                 mergePayload: buildAntigravityHooksConfig({
                   profile: input.hookProfile || 'standard',
+                  bridgeScript: path.join(targetRoot, 'scripts', 'hooks', 'antigravity-hook-bridge.js'),
                 }),
               }),
             ];
@@ -153,7 +155,9 @@ module.exports = createInstallTargetAdapter({
             const baseMcp = (repoRoot && fs.existsSync(path.join(repoRoot, '.mcp.json')))
               ? readJsonObject(path.join(repoRoot, '.mcp.json'), '.mcp.json')
               : { mcpServers: {} };
-            const antigravityMcp = buildAntigravityMcpConfig();
+            const antigravityMcp = buildAntigravityMcpConfig({
+              memoryScript: path.join(targetRoot, 'scripts', 'memory-mcp.mjs'),
+            });
             const mergedMcp = {
               mcpServers: {
                 ...(baseMcp.mcpServers || {}),
@@ -185,14 +189,7 @@ module.exports = createInstallTargetAdapter({
             ];
 
             if (repoRoot && fs.existsSync(path.join(repoRoot, 'scripts', 'memory-mcp.mjs'))) {
-              operations.push(
-                createManagedScaffoldOperation(
-                  module.id,
-                  'scripts/memory-mcp.mjs',
-                  path.join(targetRoot, 'scripts', 'memory-mcp.mjs'),
-                  'preserve-relative-path'
-                )
-              );
+              operations.push(...planAntigravityMemoryRuntime(module.id, repoRoot, targetRoot));
             }
 
             return operations;

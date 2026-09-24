@@ -14,7 +14,7 @@ const { spawnSync } = require('child_process');
 const { runPreBash } = require('./bash-hook-dispatcher');
 const { run: runGateGuard } = require('./gateguard-fact-force');
 const { run: runDocFileWarning } = require('./doc-file-warning');
-const { run: runStopFormatTypecheck } = require('./stop-format-typecheck');
+const { run: runPostEditAccumulator } = require('./post-edit-accumulator');
 const { readStdinRaw, resolveMaxStdin } = require('./hook-input');
 
 function parseArgs(argv) {
@@ -53,11 +53,20 @@ function adaptAntigravityInputToEcc(antigravityData) {
   };
 
   return {
-    tool_name: toolName,
+    tool_name: ({ run_command: 'Bash', write_to_file: 'Write', replace_file_content: 'Edit', multi_replace_file_content: 'Edit' })[toolName] || toolName,
     tool_input: toolInput,
+    session_id: antigravityData.conversationId || antigravityData.session_id || '',
+    cwd: args.Cwd || antigravityData.cwd || antigravityData.workspacePaths?.[0] || '',
     conversation_id: antigravityData.conversationId || '',
     workspace_paths: antigravityData.workspacePaths || [],
   };
+}
+
+function writeFailure(mode, reason) {
+  process.stdout.write(JSON.stringify({
+    decision: mode === 'pre-tool-use' ? 'deny' : 'allow',
+    ...(mode === 'pre-tool-use' ? { reason } : {}),
+  }));
 }
 
 async function main() {
@@ -67,19 +76,21 @@ async function main() {
   let raw = '';
   try {
     const inputResult = await readStdinRaw(process.stdin, { maxStdin });
+    if (inputResult.truncated) throw new Error('Incomplete hook input');
     raw = inputResult.raw;
   } catch (_err) {
-    // If stdin read fails, fail open safely
-    process.stdout.write(JSON.stringify({ decision: 'allow' }));
+    writeFailure(options.mode, 'ECC hook input could not be read completely');
     return;
   }
 
   let antigravityPayload = {};
   try {
-    antigravityPayload = raw.trim() ? JSON.parse(raw) : {};
+    antigravityPayload = JSON.parse(raw);
+    if (!antigravityPayload || typeof antigravityPayload !== 'object' || Array.isArray(antigravityPayload)) {
+      throw new Error('Invalid hook input');
+    }
   } catch (_parseErr) {
-    // Malformed JSON on stdin
-    process.stdout.write(JSON.stringify({ decision: 'allow' }));
+    writeFailure(options.mode, 'ECC hook input must be a valid JSON object');
     return;
   }
 
@@ -97,45 +108,65 @@ async function main() {
       const child = spawnSync(process.execPath, [path.join(__dirname, 'config-protection.js')], {
         input: eccJsonString,
         encoding: 'utf8',
+        timeout: 4000,
       });
       result = {
-        exitCode: child.status || 0,
+        exitCode: child.error || child.status === null ? 2 : child.status,
         stderr: child.stderr || '',
       };
     } else if (options.hook === 'pre:write:doc-file-warning') {
       result = runDocFileWarning(eccJsonString);
     }
 
-    if (result && (result.exitCode === 2 || result.denied || result.blocked)) {
-      const reason = result.stderr || result.reason || 'Blocked by ECC safety hook';
-      process.stdout.write(JSON.stringify({
-        decision: 'deny',
-        reason: reason.replace(/\r?\n/g, ' ').trim(),
-      }));
-      return;
-    }
+    const output = result && (result.stdout || result.output);
+    const hookOutput = output ? JSON.parse(output).hookSpecificOutput : null;
+    const denied = result && ((result.exitCode !== undefined && result.exitCode !== 0) || result.denied || result.blocked)
+      || hookOutput?.permissionDecision === 'deny';
+    const context = result?.additionalContext || hookOutput?.additionalContext;
+    const reason = denied
+      ? hookOutput?.permissionDecisionReason || result.stderr || result.reason || 'Blocked by ECC safety hook'
+      : Array.isArray(context) ? context.join(' ') : context;
+    process.stdout.write(JSON.stringify({
+      decision: denied ? 'deny' : 'allow',
+      ...(reason ? { reason: String(reason).replace(/\r?\n/g, ' ').trim() } : {}),
+    }));
+    return;
+  }
 
-    process.stdout.write(JSON.stringify({ decision: 'allow' }));
+  // Both accumulator and batch formatter use the same session-scoped temp file.
+  if (eccPayload.session_id) process.env.CLAUDE_SESSION_ID = String(eccPayload.session_id);
+
+  if (options.mode === 'post-tool-use') {
+    if (options.hook === 'post:edit:accumulator' && !antigravityPayload.error) {
+      runPostEditAccumulator(eccJsonString);
+    }
+    process.stdout.write(JSON.stringify({}));
     return;
   }
 
   if (options.mode === 'stop') {
+    if (antigravityPayload.fullyIdle === false) {
+      process.stdout.write(JSON.stringify({ decision: 'allow' }));
+      return;
+    }
     let stopResult = { exitCode: 0, stderr: '' };
 
-    if (options.hook === 'stop:format-typecheck') {
-      stopResult = runStopFormatTypecheck(eccJsonString);
-    } else if (options.hook === 'stop:check-console-log') {
-      const child = spawnSync(process.execPath, [path.join(__dirname, 'check-console-log.js')], {
+    const stopScript = {
+      'stop:format-typecheck': 'stop-format-typecheck.js',
+      'stop:check-console-log': 'check-console-log.js',
+    }[options.hook];
+    if (stopScript) {
+      const child = spawnSync(process.execPath, [path.join(__dirname, stopScript)], {
         input: eccJsonString,
         encoding: 'utf8',
+        timeout: options.hook === 'stop:format-typecheck' ? 280000 : 25000,
       });
       stopResult = {
-        exitCode: child.status || 0,
-        stderr: child.stderr || '',
+        stderr: child.stderr || (child.error ? 'ECC stop hook failed: ' + child.error.message : ''),
       };
     }
 
-    if (stopResult && stopResult.exitCode !== 0 && stopResult.stderr) {
+    if (stopResult && stopResult.stderr) {
       process.stdout.write(JSON.stringify({
         decision: 'continue',
         reason: stopResult.stderr.replace(/\r?\n/g, ' ').trim(),
@@ -143,7 +174,7 @@ async function main() {
       return;
     }
 
-    process.stdout.write(JSON.stringify({}));
+    process.stdout.write(JSON.stringify({ decision: 'allow' }));
     return;
   }
 
@@ -153,7 +184,7 @@ async function main() {
 
 if (require.main === module) {
   main().catch(() => {
-    process.stdout.write(JSON.stringify({ decision: 'allow' }));
+    writeFailure(parseArgs(process.argv).mode, 'ECC safety hook failed unexpectedly');
   });
 }
 
