@@ -1,6 +1,6 @@
 ---
 name: prune
-description: Delete pending instincts older than 30 days that were never promoted
+description: Delete pending instincts older than 30 days that were never promoted. Thin CLI wrapper for continuous-learning-v2's instinct-cli.py prune command; use to clean up stale pending instincts that were never reviewed or promoted.
 command: true
 ---
 
