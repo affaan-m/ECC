@@ -3,6 +3,15 @@
 const assert = require('assert');
 const vm = require('vm');
 const { renderControlPlaneViewHtml } = require('../../scripts/lib/control-pane/control-plane-view-ui');
+const { renderProximityVizHtml } = require('../../scripts/lib/control-pane/proximity-viz');
+
+const controlPlaneHtml = renderControlPlaneViewHtml();
+assert.ok(controlPlaneHtml.includes('grid-template-rows: minmax(0, 1fr)'));
+assert.ok(controlPlaneHtml.includes('#stage { position: relative; height: 100%; min-height: 0;'));
+
+const proximityHtml = renderProximityVizHtml();
+assert.ok(proximityHtml.includes('grid-template-rows: minmax(0, 1fr)'));
+assert.ok(proximityHtml.includes('#stage { position: relative; height: 100%; min-height: 0;'));
 
 async function renderResponse(ok, data) {
   const elements = new Map();

@@ -383,10 +383,12 @@ function createMemoryMcpService(options = {}) {
 
       const isNotification = !hasId;
       if (isNotification) {
+        const params = message.params ?? {};
         if (
           message.method === 'notifications/initialized'
           && initializationRequested
-          && Object.keys(message.params || {}).length === 0
+          && (!Object.prototype.hasOwnProperty.call(params, '_meta') || isRecord(params._meta))
+          && Object.keys(params).every(key => key === '_meta')
         ) {
           initialized = true;
         }

@@ -26,8 +26,8 @@ function renderControlPlaneViewHtml() {
   header nav { margin-left: auto; font-size: 12px; }
   header nav a { color: #8b949e; margin-left: 12px; text-decoration: none; }
   header nav a:hover { color: #e6edf3; }
-  #wrap { display: grid; grid-template-columns: 1fr 360px; height: calc(100vh - 49px); }
-  #stage { position: relative; border-right: 1px solid #1f2630; }
+  #wrap { display: grid; grid-template-columns: 1fr 360px; grid-template-rows: minmax(0, 1fr); height: calc(100vh - 49px); }
+  #stage { position: relative; height: 100%; min-height: 0; border-right: 1px solid #1f2630; }
   canvas { width: 100%; height: 100%; display: block; }
   #side { padding: 12px 14px; overflow-y: auto; }
   #side h2 { font-size: 12px; text-transform: uppercase; letter-spacing: .04em; color: #8b949e; margin: 14px 0 8px; }

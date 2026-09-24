@@ -184,7 +184,8 @@ function main() {
       assert.strictEqual(result.status, 0, result.stderr)
     }],
     ["npm pack includes the compiled OpenCode dist payload", () => {
-      const result = spawnSync("npm", ["pack", "--dry-run", "--json"], {
+      fs.rmSync(path.dirname(distEntry), { recursive: true, force: true })
+      const result = spawnSync("npm", ["pack", "--dry-run", "--json", "--ignore-scripts=false"], {
         cwd: repoRoot,
         encoding: "utf8",
         shell: process.platform === "win32",

@@ -122,8 +122,12 @@ function buildExpectedPublishPaths(repoRoot) {
     [...modules.flatMap((module) => module.paths || []), ...extraPaths, ...exclusionPaths].map(normalizePublishPath)
   )
 
+  // npm needs an explicit entry to include this gitignored build output.
+  const requiredBuildPaths = [".opencode/dist"]
+
   return [...combined]
     .filter((publishPath) => !isCoveredByAncestor(publishPath, combined))
+    .concat(requiredBuildPaths)
     .sort()
 }
 
