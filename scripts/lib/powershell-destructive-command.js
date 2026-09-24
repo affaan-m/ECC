@@ -423,18 +423,22 @@ function currentClause(prefix) {
   return prefix.slice(clauseStart + 1).trim();
 }
 
-function invokesContainerResult(prefix) {
+function invokesContainerResult(prefix, options = {}) {
   const clause = currentClause(prefix);
   const pipelineStart = clause.lastIndexOf('|');
   const pipelineCommand = clause.slice(pipelineStart + 1).trim();
+  const isForeachLoopHeader = Boolean(options.groupingExpression) &&
+    pipelineStart === -1 &&
+    /^foreach$/i.test(pipelineCommand);
   return /(?:^|\s)(?:&|\.)\s*$/.test(clause) ||
     /\.\s*(?:foreach|where)\s*$/i.test(clause) ||
     /-(?:action|begin|command|end|expression|filter|initializationscript|parallel|process|scriptblock)(?:\s*:\s*)?$/i.test(clause) ||
-    /^(?:(?:[\w.-]+\\)?(?:foreach-object|where-object|foreach|where|invoke-command|start-job|measure-command)|%|\?)(?:\s|$)/i.test(pipelineCommand);
+    (!isForeachLoopHeader &&
+      /^(?:(?:[\w.-]+\\)?(?:foreach-object|where-object|foreach|where|invoke-command|start-job|measure-command)|%|\?)(?:\s|$)/i.test(pipelineCommand));
 }
 
-function invokesDynamicResult(prefix) {
-  return invokesContainerResult(prefix) ||
+function invokesDynamicResult(prefix, options = {}) {
+  return invokesContainerResult(prefix, options) ||
     /(?:^|\s)(?:iex|invoke-expression)\s*$/i.test(currentClause(prefix));
 }
 
@@ -850,6 +854,9 @@ function extractExecutableContainers(input, options = {}) {
 
     const withinDoubleQuote = quote === '"';
     const prefix = context;
+    const invokesContainer = invokesContainerResult(prefix, {
+      groupingExpression: isGroupingExpression,
+    });
     const invokedAfter = isInvokedAfterContainer(input, group.end);
     const createsScriptBlock = /\[\s*(?:system\.management\.automation\.)?scriptblock\s*\]\s*::\s*create\s*$/i.test(
       currentClause(prefix)
@@ -863,7 +870,7 @@ function extractExecutableContainers(input, options = {}) {
         options: {
           executeBareScriptBlocks: Boolean(options.executeBareScriptBlocks) ||
             invokedAfter || executesNestedScriptBlocks ||
-            (!isScriptBlock && invokesContainerResult(prefix)),
+            (!isScriptBlock && invokesContainer),
         },
       });
     } else {
@@ -883,7 +890,7 @@ function extractExecutableContainers(input, options = {}) {
     }
     let resolvedCommand = null;
     if (!isScriptBlock) {
-      if (isSubexpression || invokesContainerResult(prefix)) {
+      if (isSubexpression || invokesContainer) {
         resolvedCommand = staticOutputResult(group.body);
         if (resolvedCommand === null && isSubexpression) {
           const scalarReference = variableReference(group.body);
@@ -904,16 +911,16 @@ function extractExecutableContainers(input, options = {}) {
     const executableBlockExpression = /\{|\[\s*(?:system\.management\.automation\.)?scriptblock\s*\]\s*::\s*create/i.test(
       maskQuotedStrings(group.body)
     );
-    if (!resolvedCommand && !isScriptBlock && invokesDynamicResult(prefix) && !executableBlockExpression) {
+    if (!resolvedCommand && !isScriptBlock && invokesDynamicResult(prefix, {
+      groupingExpression: isGroupingExpression,
+    }) && !executableBlockExpression) {
       resolvedCommand = DYNAMIC_EXECUTION_MARKER;
     }
     if (resolvedCommand) {
-      for (let offset = 0; offset < resolvedCommand.length; offset += 1) {
-        masked[index + offset] = resolvedCommand[offset];
-      }
+      masked[index] = resolvedCommand;
       if (!withinDoubleQuote) appendContext(resolvedCommand);
     } else if (isScriptBlock) {
-      if (invokesContainerResult(prefix)) {
+      if (invokesContainer) {
         context = prefix;
       } else {
         resetContext();

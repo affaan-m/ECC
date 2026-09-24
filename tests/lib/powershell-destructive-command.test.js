@@ -472,6 +472,27 @@ test('classifies invoked functions and filters across executable containers', ()
   for (const command of commands) expectRules(command, [RULES.REMOVE_FORCE]);
 });
 
+test('distinguishes foreach statements from the pipeline alias', () => {
+  for (const command of [
+    "foreach ($r in 'aaaaaaaaaaaaa') { $r }",
+    "foreach ($r in 'aaaaaaaaaaaaaa') { $r }",
+    "foreach ($s in 'BTCUSDT','ETHUSDT','SOLUSDT') { $s }",
+  ]) {
+    expectSafe(command);
+  }
+
+  expectRules(
+    "foreach ($r in 'aaaaaaaaaaaaaa') { Remove-Item -Force C:/tmp/demo }",
+    [RULES.REMOVE_FORCE]
+  );
+  expectRules('1 | foreach { Remove-Item -Force C:/tmp/demo }', [
+    RULES.REMOVE_FORCE,
+  ]);
+  expectRules('1 | foreach ({ Remove-Item -Force C:/tmp/demo })', [
+    RULES.REMOVE_FORCE,
+  ]);
+});
+
 test('classifies invoked static script-block variables but leaves assignments inert', () => {
   expectSafe('$cleanup = { Remove-Item -Force C:/tmp/demo }');
   expectRules('$cleanup = { Remove-Item -Force C:/tmp/demo }; & $cleanup', [
@@ -620,6 +641,13 @@ test('classifies static execution primitives', () => {
   expectRules('& (Get-Command Remove-Item) -Force C:/tmp/demo', [
     RULES.DYNAMIC_EXECUTION,
   ]);
+  for (const command of [
+    'iex ($a); Remove-Item -Force C:/tmp/demo',
+    'Invoke-Expression ($a); Remove-Item -Force C:/tmp/demo',
+    '& ($a); Remove-Item -Force C:/tmp/demo',
+  ]) {
+    expectRules(command, [RULES.DYNAMIC_EXECUTION, RULES.REMOVE_FORCE]);
+  }
   expectRules("iex ('Remove-'+'Item -Force C:/tmp/demo')", [
     RULES.DYNAMIC_EXECUTION,
   ]);
