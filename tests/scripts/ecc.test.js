@@ -70,8 +70,11 @@ function main() {
       assert.match(result.stdout, /doctor/);
       assert.match(result.stdout, /auto-update/);
       assert.match(result.stdout, /consult/);
+      assert.match(result.stdout, /control-pane/);
       assert.match(result.stdout, /loop-status/);
       assert.match(result.stdout, /work-items/);
+      assert.match(result.stdout, /platform-audit/);
+      assert.match(result.stdout, /security-ioc-scan/);
     }],
     ['delegates explicit install command', () => {
       const result = runCli(['install', '--dry-run', '--json', 'typescript']);
@@ -111,6 +114,12 @@ function main() {
       const payload = parseJson(result.stdout);
       assert.strictEqual(payload.schemaVersion, 'ecc.consult.v1');
       assert.strictEqual(payload.matches[0].componentId, 'capability:security');
+    }],
+    ['supports help for the control-pane subcommand', () => {
+      const result = runCli(['help', 'control-pane']);
+      assert.strictEqual(result.status, 0, result.stderr);
+      assert.match(result.stdout, /Usage:/);
+      assert.match(result.stdout, /control-pane/);
     }],
     ['delegates lifecycle commands', () => {
       const homeDir = createTempDir('ecc-cli-home-');
@@ -206,6 +215,28 @@ function main() {
       const result = runCli(['help', 'work-items']);
       assert.strictEqual(result.status, 0, result.stderr);
       assert.match(result.stdout, /node scripts\/work-items\.js upsert/);
+    }],
+    ['supports help for the platform-audit subcommand', () => {
+      const result = runCli(['help', 'platform-audit']);
+      assert.strictEqual(result.status, 0, result.stderr);
+      assert.match(result.stdout, /Usage: node scripts\/platform-audit\.js/);
+    }],
+    ['supports help for the security-ioc-scan subcommand', () => {
+      const result = runCli(['help', 'security-ioc-scan']);
+      assert.strictEqual(result.status, 0, result.stderr);
+      assert.match(result.stdout, /Usage: node scripts\/ci\/scan-supply-chain-iocs\.js/);
+    }],
+    ['delegates security-ioc-scan command', () => {
+      const projectRoot = createTempDir('ecc-cli-ioc-scan-');
+      fs.writeFileSync(
+        path.join(projectRoot, 'package.json'),
+        JSON.stringify({ dependencies: { leftpad: '1.0.0' } }, null, 2)
+      );
+
+      const result = runCli(['security-ioc-scan', '--root', projectRoot, '--json']);
+      assert.strictEqual(result.status, 0, result.stderr);
+      const payload = parseJson(result.stdout);
+      assert.deepStrictEqual(payload.findings, []);
     }],
     ['fails on unknown commands instead of treating them as installs', () => {
       const result = runCli(['bogus']);

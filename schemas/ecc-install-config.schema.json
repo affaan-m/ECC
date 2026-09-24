@@ -19,6 +19,7 @@
       "type": "string",
       "enum": [
         "claude",
+        "claude-project",
         "cursor",
         "antigravity",
         "codex",
@@ -26,7 +27,8 @@
         "opencode",
         "codebuddy",
         "joycode",
-        "qwen"
+        "qwen",
+        "zed"
       ]
     },
     "profile": {

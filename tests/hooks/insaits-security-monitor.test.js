@@ -75,7 +75,7 @@ function readAudit(root) {
 
 function runMonitor(options = {}) {
   if (!PYTHON) {
-    throw new Error('Python 3 is required for insaits-security-monitor.py tests');
+    throw new Error('Python 3 was expected to be available for this test run');
   }
 
   const tempDir = createTempDir();
@@ -118,6 +118,12 @@ function test(name, fn) {
 
 function runTests() {
   console.log('\n=== Testing insaits-security-monitor.py ===\n');
+
+  if (!PYTHON) {
+    console.log('  SKIP Python 3 not found; insaits-security-monitor.py subprocess tests require a Python runtime');
+    console.log('\nResults: Passed: 0, Failed: 0');
+    process.exit(0);
+  }
 
   let passed = 0;
   let failed = 0;

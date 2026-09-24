@@ -39,6 +39,10 @@ function getClaudeManagedDestinationPath(adapter, sourceRelativePath, input) {
     );
   }
 
+  if (normalizedSourcePath === 'docs' || normalizedSourcePath.startsWith('docs/')) {
+    return path.join(targetRoot, normalizedSourcePath);
+  }
+
   return null;
 }
 

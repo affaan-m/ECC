@@ -362,14 +362,14 @@ npx lighthouse https://your-app.com --only-categories=performance
 ### Web Vitals Monitoring
 
 ```typescript
-// Track Core Web Vitals
-import { getCLS, getFID, getLCP, getFCP, getTTFB } from 'web-vitals';
+// Track Core Web Vitals (web-vitals v4 API)
+import { onCLS, onINP, onLCP, onFCP, onTTFB } from 'web-vitals';
 
-getCLS(console.log);  // Cumulative Layout Shift
-getFID(console.log);  // First Input Delay
-getLCP(console.log);  // Largest Contentful Paint
-getFCP(console.log);  // First Contentful Paint
-getTTFB(console.log); // Time to First Byte
+onCLS(console.log);  // Cumulative Layout Shift
+onINP(console.log);  // Interaction to Next Paint
+onLCP(console.log);  // Largest Contentful Paint
+onFCP(console.log);  // First Contentful Paint
+onTTFB(console.log); // Time to First Byte
 ```
 
 ## Performance Report Template
@@ -393,7 +393,7 @@ getTTFB(console.log); // Time to First Byte
 | Metric | Current | Target | Status |
 |--------|---------|--------|--------|
 | LCP | X.Xs | < 2.5s | PASS: |
-| FID | XXms | < 100ms | PASS: |
+| INP | XXms | < 200ms | PASS: |
 | CLS | X.XX | < 0.1 | WARNING: |
 
 ## Critical Issues

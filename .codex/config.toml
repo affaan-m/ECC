@@ -51,7 +51,9 @@ args = ["-y", "@upstash/context7-mcp@latest"]
 startup_timeout_sec = 30
 
 [mcp_servers.exa]
-url = "https://mcp.exa.ai/mcp"
+command = "npx"
+args = ["-y", "mcp-remote", "https://mcp.exa.ai/mcp"]
+startup_timeout_sec = 30
 
 [mcp_servers.memory]
 command = "npx"

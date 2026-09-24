@@ -2,6 +2,7 @@
 'use strict';
 
 const MAX_STDIN = 1024 * 1024;
+const { buildPreToolUseAdditionalContext } = require('./pretooluse-visible-output');
 let raw = '';
 
 function run(rawInput) {
@@ -10,11 +11,10 @@ function run(rawInput) {
     const cmd = String(input.tool_input?.command || '');
     if (/\bgit\s+push\b/.test(cmd)) {
       return {
-        stdout: typeof rawInput === 'string' ? rawInput : JSON.stringify(rawInput),
-        stderr: [
+        additionalContext: [
           '[Hook] Review changes before push...',
           '[Hook] Continuing with push (remove this hook to add interactive review)',
-        ].join('\n'),
+        ],
         exitCode: 0,
       };
     }
@@ -40,7 +40,11 @@ if (require.main === module) {
       if (result.stderr) {
         process.stderr.write(`${result.stderr}\n`);
       }
-      process.stdout.write(String(result.stdout || ''));
+      if (Object.prototype.hasOwnProperty.call(result, 'additionalContext')) {
+        process.stdout.write(buildPreToolUseAdditionalContext(result.additionalContext));
+      } else {
+        process.stdout.write(String(result.stdout || ''));
+      }
       process.exitCode = Number.isInteger(result.exitCode) ? result.exitCode : 0;
       return;
     }

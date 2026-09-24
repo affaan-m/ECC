@@ -1,0 +1,5 @@
+{
+  "$schema": "https://json.schemastore.org/json",
+  "description": "ECC agent data root for this project when using Cursor. Memory hooks read session summaries and learned skills from here instead of ~/.claude.",
+  "agentDataHome": "~/.cursor/ecc"
+}

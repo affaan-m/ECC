@@ -196,13 +196,30 @@ function run(rawInput) {
 
 if (require.main === module) {
   let stdinData = '';
+  let truncated = false;
   process.stdin.setEncoding('utf8');
   process.stdin.on('data', chunk => {
-    if (stdinData.length < MAX_STDIN) stdinData += chunk.substring(0, MAX_STDIN - stdinData.length);
+    if (stdinData.length < MAX_STDIN) {
+      const remaining = MAX_STDIN - stdinData.length;
+      stdinData += chunk.substring(0, remaining);
+      if (chunk.length > remaining) truncated = true;
+    } else {
+      truncated = true;
+    }
   });
   process.stdin.on('end', () => {
-    process.stdout.write(run(stdinData));
-    process.exit(0);
+    const output = run(stdinData);
+    // Never echo truncated stdin (invalid JSON would be reported as a Stop
+    // hook failure, #2090); flush stdout before exiting so large payloads
+    // are not cut at the pipe buffer.
+    if (truncated) {
+      process.stderr.write('[Hook] stop-format-typecheck: stdin exceeded 1MB; suppressing pass-through (fail-open)\n');
+      process.exit(0);
+    }
+    if (!output) {
+      process.exit(0);
+    }
+    process.stdout.write(output, () => process.exit(0));
   });
 }
 

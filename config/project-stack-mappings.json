@@ -58,10 +58,14 @@
       "indicators": [
         { "file": "package.json", "contains": "\"react\":" }
       ],
-      "rules": ["common", "typescript", "web"],
+      "rules": ["common", "typescript", "web", "react"],
       "skills": [
         "coding-standards",
         "frontend-patterns",
+        "react-patterns",
+        "react-performance",
+        "react-testing",
+        "accessibility",
         "tdd-workflow",
         "verification-loop"
       ],

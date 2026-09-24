@@ -67,6 +67,15 @@ origin: ECC
 
 将这些存储在您的 shell 环境、密钥管理器或未跟踪的本地环境文件中。不要将其提交到仓库。
 
+对于直接 `curl` 示例，请通过标准输入传递 Jira 用户配置，避免凭据出现在命令行参数中。
+
+```bash
+jira_curl() {
+  printf 'user = "%s:%s"\n' "$JIRA_EMAIL" "$JIRA_API_TOKEN" |
+    curl -s -K - "$@"
+}
+```
+
 ## MCP 工具参考
 
 当配置了 `mcp-atlassian` MCP 服务器时，以下工具可用：
@@ -90,7 +99,7 @@ origin: ECC
 ### 获取工单
 
 ```bash
-curl -s -u "$JIRA_EMAIL:$JIRA_API_TOKEN" \
+jira_curl \
   -H "Content-Type: application/json" \
   "$JIRA_URL/rest/api/3/issue/PROJ-1234" | jq '{
     key: .key,
@@ -107,7 +116,7 @@ curl -s -u "$JIRA_EMAIL:$JIRA_API_TOKEN" \
 ### 获取评论
 
 ```bash
-curl -s -u "$JIRA_EMAIL:$JIRA_API_TOKEN" \
+jira_curl \
   -H "Content-Type: application/json" \
   "$JIRA_URL/rest/api/3/issue/PROJ-1234?fields=comment" | jq '.fields.comment.comments[] | {
     author: .author.displayName,
@@ -119,7 +128,7 @@ curl -s -u "$JIRA_EMAIL:$JIRA_API_TOKEN" \
 ### 添加评论
 
 ```bash
-curl -s -X POST -u "$JIRA_EMAIL:$JIRA_API_TOKEN" \
+jira_curl -X POST \
   -H "Content-Type: application/json" \
   -d '{
     "body": {
@@ -138,11 +147,11 @@ curl -s -X POST -u "$JIRA_EMAIL:$JIRA_API_TOKEN" \
 
 ```bash
 # 1. Get available transitions
-curl -s -u "$JIRA_EMAIL:$JIRA_API_TOKEN" \
+jira_curl \
   "$JIRA_URL/rest/api/3/issue/PROJ-1234/transitions" | jq '.transitions[] | {id, name: .name}'
 
 # 2. Execute transition (replace TRANSITION_ID)
-curl -s -X POST -u "$JIRA_EMAIL:$JIRA_API_TOKEN" \
+jira_curl -X POST \
   -H "Content-Type: application/json" \
   -d '{"transition": {"id": "TRANSITION_ID"}}' \
   "$JIRA_URL/rest/api/3/issue/PROJ-1234/transitions"
@@ -151,7 +160,7 @@ curl -s -X POST -u "$JIRA_EMAIL:$JIRA_API_TOKEN" \
 ### 使用 JQL 搜索
 
 ```bash
-curl -s -G -u "$JIRA_EMAIL:$JIRA_API_TOKEN" \
+jira_curl -G \
   --data-urlencode "jql=project = PROJ AND status = 'In Progress'" \
   "$JIRA_URL/rest/api/3/search"
 ```

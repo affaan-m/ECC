@@ -207,6 +207,52 @@ function readJsonObject(filePath, label) {
   return parsed;
 }
 
+function addCursorAgentDataScaffoldOperations(operations, options) {
+  const scaffoldRoot = path.join(options.sourceRoot, 'scaffolds', 'cursor');
+  if (!fs.existsSync(scaffoldRoot)) {
+    return;
+  }
+
+  addFileCopyOperation(operations, {
+    moduleId: options.moduleId,
+    sourceRoot: options.sourceRoot,
+    sourceRelativePath: path.join('scaffolds', 'cursor', 'ecc-agent-data.json'),
+    destinationPath: path.join(options.targetRoot, 'ecc-agent-data.json'),
+    strategy: 'preserve-relative-path',
+  });
+
+  addFileCopyOperation(operations, {
+    moduleId: options.moduleId,
+    sourceRoot: options.sourceRoot,
+    sourceRelativePath: path.join('scaffolds', 'cursor', 'rules', 'ecc-agent-data-home.mdc'),
+    destinationPath: path.join(options.targetRoot, 'rules', 'ecc-agent-data-home.mdc'),
+    strategy: 'preserve-relative-path',
+  });
+
+  addJsonMergeOperation(operations, {
+    moduleId: options.moduleId,
+    sourceRoot: options.sourceRoot,
+    sourceRelativePath: path.join('scaffolds', 'cursor', 'hooks.json'),
+    destinationPath: path.join(options.targetRoot, 'hooks.json'),
+  });
+
+  const cursorSessionHookDeps = [
+    path.join('scripts', 'hooks', 'cursor-session-env.js'),
+    path.join('scripts', 'lib', 'agent-data-home.js'),
+    path.join('scripts', 'lib', 'utils.js'),
+  ];
+
+  for (const sourceRelativePath of cursorSessionHookDeps) {
+    addFileCopyOperation(operations, {
+      moduleId: options.moduleId,
+      sourceRoot: options.sourceRoot,
+      sourceRelativePath,
+      destinationPath: path.join(options.targetRoot, sourceRelativePath),
+      strategy: 'preserve-relative-path',
+    });
+  }
+}
+
 function addJsonMergeOperation(operations, options) {
   const sourcePath = path.join(options.sourceRoot, options.sourceRelativePath);
   if (!fs.existsSync(sourcePath)) {
@@ -262,18 +308,16 @@ function isDirectoryNonEmpty(dirPath) {
   return fs.existsSync(dirPath) && fs.statSync(dirPath).isDirectory() && fs.readdirSync(dirPath).length > 0;
 }
 
-function planClaudeLegacyInstall(context) {
-  const adapter = getInstallTargetAdapter('claude');
-  const targetRoot = adapter.resolveRoot({ homeDir: context.homeDir });
-  const rulesDir = context.claudeRulesDir || path.join(targetRoot, 'rules', CLAUDE_ECC_NAMESPACE);
-  const installStatePath = adapter.getInstallStatePath({ homeDir: context.homeDir });
+function planClaudeStyleLegacyInstall(context, { adapterId, adapterRootInput, rulesDir: rulesDirOverride }) {
+  const adapter = getInstallTargetAdapter(adapterId);
+  const targetRoot = adapter.resolveRoot(adapterRootInput);
+  const rulesDir = rulesDirOverride || path.join(targetRoot, 'rules', CLAUDE_ECC_NAMESPACE);
+  const installStatePath = adapter.getInstallStatePath(adapterRootInput);
   const operations = [];
   const warnings = [];
 
   if (isDirectoryNonEmpty(rulesDir)) {
-    warnings.push(
-      `Destination ${rulesDir}/ already exists and files may be overwritten`
-    );
+    warnings.push(`Destination ${rulesDir}/ already exists and files may be overwritten`);
   }
 
   addRecursiveCopyOperations(operations, {
@@ -285,9 +329,7 @@ function planClaudeLegacyInstall(context) {
 
   for (const language of context.languages) {
     if (!LANGUAGE_NAME_PATTERN.test(language)) {
-      warnings.push(
-        `Invalid language name '${language}'. Only alphanumeric, dash, and underscore are allowed`
-      );
+      warnings.push(`Invalid language name '${language}'. Only alphanumeric, dash, and underscore are allowed`);
       continue;
     }
 
@@ -308,7 +350,7 @@ function planClaudeLegacyInstall(context) {
   return {
     mode: 'legacy',
     adapter,
-    target: 'claude',
+    target: adapterId,
     targetRoot,
     installRoot: rulesDir,
     installStatePath,
@@ -316,6 +358,22 @@ function planClaudeLegacyInstall(context) {
     warnings,
     selectedModules: ['legacy-claude-rules'],
   };
+}
+
+function planClaudeLegacyInstall(context) {
+  return planClaudeStyleLegacyInstall(context, {
+    adapterId: 'claude',
+    adapterRootInput: { homeDir: context.homeDir },
+    rulesDir: context.claudeRulesDir || null,
+  });
+}
+
+function planClaudeProjectLegacyInstall(context) {
+  return planClaudeStyleLegacyInstall(context, {
+    adapterId: 'claude-project',
+    adapterRootInput: { repoRoot: context.projectRoot },
+    rulesDir: null,
+  });
 }
 
 function planCursorLegacyInstall(context) {
@@ -391,6 +449,12 @@ function planCursorLegacyInstall(context) {
     sourceRoot: context.sourceRoot,
     sourceRelativePath: '.mcp.json',
     destinationPath: path.join(targetRoot, 'mcp.json'),
+  });
+
+  addCursorAgentDataScaffoldOperations(operations, {
+    moduleId: 'legacy-cursor-install',
+    sourceRoot: context.sourceRoot,
+    targetRoot,
   });
 
   return {
@@ -503,6 +567,8 @@ function createLegacyInstallPlan(options = {}) {
   let plan;
   if (target === 'claude') {
     plan = planClaudeLegacyInstall(context);
+  } else if (target === 'claude-project') {
+    plan = planClaudeProjectLegacyInstall(context);
   } else if (target === 'cursor') {
     plan = planCursorLegacyInstall(context);
   } else {
@@ -555,6 +621,12 @@ function createLegacyCompatInstallPlan(options = {}) {
   const sourceRoot = options.sourceRoot || getSourceRoot();
   const projectRoot = options.projectRoot || process.cwd();
   const target = options.target || 'claude';
+  const includeComponentIds = Array.isArray(options.includeComponentIds)
+    ? [...options.includeComponentIds]
+    : [];
+  const excludeComponentIds = Array.isArray(options.excludeComponentIds)
+    ? [...options.excludeComponentIds]
+    : [];
 
   validateLegacyTarget(target);
 
@@ -571,14 +643,14 @@ function createLegacyCompatInstallPlan(options = {}) {
     target,
     profileId: null,
     moduleIds: selection.moduleIds,
-    includeComponentIds: [],
-    excludeComponentIds: [],
+    includeComponentIds,
+    excludeComponentIds,
     legacyLanguages: selection.legacyLanguages,
     legacyMode: true,
     requestProfileId: null,
     requestModuleIds: [],
-    requestIncludeComponentIds: [],
-    requestExcludeComponentIds: [],
+    requestIncludeComponentIds: includeComponentIds,
+    requestExcludeComponentIds: excludeComponentIds,
     mode: 'legacy-compat',
   });
 }

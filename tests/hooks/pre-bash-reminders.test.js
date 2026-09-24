@@ -35,6 +35,10 @@ function runScript(scriptPath, command, envOverrides = {}) {
   return { code: result.status || 0, stdout: result.stdout || '', stderr: result.stderr || '', inputStr };
 }
 
+function parseHookOutput(stdout) {
+  return JSON.parse(stdout);
+}
+
 function runTests() {
   console.log('\n=== Testing pre-bash-git-push-reminder.js & pre-bash-tmux-reminder.js ===\n');
 
@@ -45,11 +49,13 @@ function runTests() {
 
   console.log('  git-push-reminder:');
 
-  (test('git push triggers stderr warning', () => {
+  (test('git push triggers visible additionalContext warning', () => {
     const result = runScript(gitPushScript, 'git push origin main');
     assert.strictEqual(result.code, 0, `Expected exit code 0, got ${result.code}`);
-    assert.ok(result.stderr.includes('[Hook]'), `Expected stderr to contain [Hook], got: ${result.stderr}`);
-    assert.ok(result.stderr.includes('Review changes before push'), `Expected stderr to mention review`);
+    assert.strictEqual(result.stderr, '', `Expected no stderr, got: ${result.stderr}`);
+    const additionalContext = parseHookOutput(result.stdout).hookSpecificOutput.additionalContext;
+    assert.ok(additionalContext.includes('[Hook]'), `Expected additionalContext to contain [Hook], got: ${result.stdout}`);
+    assert.ok(additionalContext.includes('Review changes before push'), `Expected additionalContext to mention review`);
   }) ? passed++ : failed++);
 
   (test('git status has no warning', () => {
@@ -58,9 +64,11 @@ function runTests() {
     assert.strictEqual(result.stderr, '', `Expected no stderr, got: ${result.stderr}`);
   }) ? passed++ : failed++);
 
-  (test('git push always passes through input on stdout', () => {
+  (test('git push emits PreToolUse additionalContext JSON on stdout', () => {
     const result = runScript(gitPushScript, 'git push');
-    assert.strictEqual(result.stdout, result.inputStr, 'Expected stdout to match original input');
+    const output = parseHookOutput(result.stdout);
+    assert.strictEqual(output.hookSpecificOutput.hookEventName, 'PreToolUse');
+    assert.ok(output.hookSpecificOutput.additionalContext.includes('Review changes before push'));
   }) ? passed++ : failed++);
 
   // --- tmux-reminder tests (non-Windows only) ---
@@ -70,17 +78,20 @@ function runTests() {
   if (!isWindows) {
     console.log('\n  tmux-reminder:');
 
-    (test('npm install triggers tmux suggestion', () => {
+    (test('npm install triggers visible tmux suggestion', () => {
       const result = runScript(tmuxScript, 'npm install', { TMUX: '' });
       assert.strictEqual(result.code, 0, `Expected exit code 0, got ${result.code}`);
-      assert.ok(result.stderr.includes('[Hook]'), `Expected stderr to contain [Hook], got: ${result.stderr}`);
-      assert.ok(result.stderr.includes('tmux'), `Expected stderr to mention tmux`);
+      assert.strictEqual(result.stderr, '', `Expected no stderr, got: ${result.stderr}`);
+      const additionalContext = parseHookOutput(result.stdout).hookSpecificOutput.additionalContext;
+      assert.ok(additionalContext.includes('[Hook]'), `Expected additionalContext to contain [Hook], got: ${result.stdout}`);
+      assert.ok(additionalContext.includes('tmux'), `Expected additionalContext to mention tmux`);
     }) ? passed++ : failed++);
 
     (test('npm test triggers tmux suggestion', () => {
       const result = runScript(tmuxScript, 'npm test', { TMUX: '' });
       assert.strictEqual(result.code, 0, `Expected exit code 0, got ${result.code}`);
-      assert.ok(result.stderr.includes('tmux'), `Expected stderr to mention tmux`);
+      assert.strictEqual(result.stderr, '', `Expected no stderr, got: ${result.stderr}`);
+      assert.ok(parseHookOutput(result.stdout).hookSpecificOutput.additionalContext.includes('tmux'), `Expected additionalContext to mention tmux`);
     }) ? passed++ : failed++);
 
     (test('regular command like ls has no tmux suggestion', () => {
@@ -89,9 +100,11 @@ function runTests() {
       assert.strictEqual(result.stderr, '', `Expected no stderr for ls, got: ${result.stderr}`);
     }) ? passed++ : failed++);
 
-    (test('tmux reminder always passes through input on stdout', () => {
+    (test('tmux reminder emits PreToolUse additionalContext JSON on stdout', () => {
       const result = runScript(tmuxScript, 'npm install', { TMUX: '' });
-      assert.strictEqual(result.stdout, result.inputStr, 'Expected stdout to match original input');
+      const output = parseHookOutput(result.stdout);
+      assert.strictEqual(output.hookSpecificOutput.hookEventName, 'PreToolUse');
+      assert.ok(output.hookSpecificOutput.additionalContext.includes('tmux'));
     }) ? passed++ : failed++);
   } else {
     console.log('\n  (skipping tmux-reminder tests on Windows)\n');

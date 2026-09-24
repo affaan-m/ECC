@@ -10,10 +10,18 @@ origin: community
 
 Use this skill when you need to dispatch multiple Claude Code agents to work on coding tasks in parallel. Each agent runs in an isolated git worktree with full tooling.
 
-Requires a running Claude DevFleet instance connected via MCP:
+## Setup
+
+The DevFleet server is a separate project, not bundled with ECC. Install and
+run it from its repository first: <https://github.com/LEC-AI/claude-devfleet>
+
+Then connect the running instance via MCP:
 ```bash
 claude mcp add devfleet --transport http http://localhost:18801/mcp
 ```
+
+Before first use, verify the process listening on port 18801 is the DevFleet
+binary you installed (see SECURITY.md on localhost MCP servers).
 
 ## How It Works
 

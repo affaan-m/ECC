@@ -2,6 +2,8 @@
 
 Multi-model işbirlikçi planlama - Context retrieval + Dual-model analiz → Adım adım implementation planı oluştur.
 
+> **Ön koşul:** Bu komut, temel ECC kurulumunun parçası **olmayan** harici `ccg-workflow` runtime'ını gerektirir. Bu komutun bağımlı olduğu `~/.claude/bin/codeagent-wrapper` ve `~/.claude/.ccg/prompts/*` rol dosyalarını sağlamak için `npx ccg-workflow` komutuyla başlatın. Bu runtime olmadan bu komut düzgün çalışmaz.
+
 $ARGUMENTS
 
 ---

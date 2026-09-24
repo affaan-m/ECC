@@ -7,6 +7,7 @@ const fs = require('fs');
 const path = require('path');
 
 const README = path.join(__dirname, '..', '..', 'README.md');
+const RULES_README = path.join(__dirname, '..', '..', 'rules', 'README.md');
 
 function test(name, fn) {
   try {
@@ -27,6 +28,7 @@ function runTests() {
   let failed = 0;
 
   const readme = fs.readFileSync(README, 'utf8');
+  const rulesReadme = fs.readFileSync(RULES_README, 'utf8');
 
   if (test('README marks one default path and warns against stacked installs', () => {
     assert.ok(
@@ -135,6 +137,29 @@ function runTests() {
     assert.ok(
       readme.includes('~/.claude/rules/ecc/'),
       'README should steer plugin-path rules into an ECC-owned namespace'
+    );
+  })) passed++; else failed++;
+
+  if (test('rules README mirrors ECC namespaced install path', () => {
+    assert.ok(
+      rulesReadme.includes('mkdir -p ~/.claude/rules/ecc'),
+      'rules README should create the ECC-owned user-level rules namespace'
+    );
+    assert.ok(
+      rulesReadme.includes('cp -r rules/common ~/.claude/rules/ecc/'),
+      'rules README should copy common rules under ~/.claude/rules/ecc/'
+    );
+    assert.ok(
+      rulesReadme.includes('cp -r rules/typescript ~/.claude/rules/ecc/'),
+      'rules README should copy language rules under ~/.claude/rules/ecc/'
+    );
+    assert.ok(
+      rulesReadme.includes('mkdir -p .claude/rules/ecc'),
+      'rules README should document the project-local ECC namespace'
+    );
+    assert.ok(
+      !rulesReadme.includes('~/.claude/rules/typescript'),
+      'rules README should not recommend flat user-level rule destinations'
     );
   })) passed++; else failed++;
 

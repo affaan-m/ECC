@@ -5043,6 +5043,9 @@ mod tests {
         run_git(path, ["init", "-q"])?;
         run_git(path, ["config", "user.name", "ECC Tests"])?;
         run_git(path, ["config", "user.email", "ecc-tests@example.com"])?;
+        // Keep fixtures hermetic: a global core.hooksPath (e.g. identity-checking
+        // pre-push hooks) must not run inside test repos.
+        run_git(path, ["config", "core.hooksPath", "hooks-disabled"])?;
         fs::write(path.join("README.md"), "hello\n")?;
         run_git(path, ["add", "README.md"])?;
         run_git(path, ["commit", "-qm", "init"])?;

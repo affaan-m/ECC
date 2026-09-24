@@ -955,6 +955,75 @@ async function runTests() {
     }
   })) passed++; else failed++;
 
+  if (await asyncTest('treats HTTP 406 probe responses as healthy reachable Streamable HTTP MCP servers', async () => {
+    const tempDir = createTempDir();
+    const configPath = path.join(tempDir, 'claude.json');
+    const statePath = path.join(tempDir, 'mcp-health.json');
+    const serverScript = path.join(tempDir, 'http-406-server.js');
+    const portFile = path.join(tempDir, 'server-port.txt');
+
+    fs.writeFileSync(
+      serverScript,
+      [
+        "const fs = require('fs');",
+        "const http = require('http');",
+        "const portFile = process.argv[2];",
+        "const server = http.createServer((req, res) => {",
+        "  if (String(req.headers.accept || '').includes('text/event-stream')) {",
+        "    res.writeHead(200, { 'Content-Type': 'text/event-stream' });",
+        "    res.end();",
+        "    return;",
+        "  }",
+        "  res.writeHead(406, { 'Content-Type': 'application/json' });",
+        "  res.end(JSON.stringify({ error: 'missing Accept: text/event-stream' }));",
+        "});",
+        "server.listen(0, '127.0.0.1', () => {",
+        "  fs.writeFileSync(portFile, String(server.address().port));",
+        "});",
+        "setInterval(() => {}, 1000);"
+      ].join('\n')
+    );
+
+    const serverProcess = spawn(process.execPath, [serverScript, portFile], {
+      stdio: 'ignore'
+    });
+
+    try {
+      const port = waitForFile(portFile).trim();
+      await waitForHttpReady(`http://127.0.0.1:${port}/mcp`);
+
+      writeConfig(configPath, {
+        mcpServers: {
+          streamable: {
+            type: 'http',
+            url: `http://127.0.0.1:${port}/mcp`
+          }
+        }
+      });
+
+      const input = { tool_name: 'mcp__streamable__initialize', tool_input: {} };
+      const result = runHook(input, {
+        CLAUDE_HOOK_EVENT_NAME: 'PreToolUse',
+        ECC_MCP_CONFIG_PATH: configPath,
+        ECC_MCP_HEALTH_STATE_PATH: statePath,
+        ECC_MCP_HEALTH_TIMEOUT_MS: '2000'
+      });
+
+      assert.strictEqual(
+        result.code,
+        0,
+        `Expected HTTP 406 probe to be treated as healthy: ${hookFailureDetails(result, statePath)}`
+      );
+      assert.strictEqual(result.stdout.trim(), JSON.stringify(input), 'Expected original JSON on stdout');
+
+      const state = readState(statePath);
+      assert.strictEqual(state.servers.streamable.status, 'healthy', 'Expected Streamable HTTP MCP server to be marked healthy');
+    } finally {
+      serverProcess.kill('SIGTERM');
+      cleanupTempDir(tempDir);
+    }
+  })) passed++; else failed++;
+
   // Windows-only: child_process.spawn cannot resolve .cmd/.bat shims for
   // bare PATH commands without an extension, and Node 18.20+/20.12+ refuse
   // to spawn .cmd targets without `shell: true` (CVE-2024-27980). The probe

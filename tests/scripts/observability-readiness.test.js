@@ -114,6 +114,10 @@ function seedMinimalRepo(rootDir, overrides = {}) {
     'docs/security/supply-chain-incident-response.md': [
       'TanStack',
       'Mini Shai-Hulud',
+      'scan-supply-chain-iocs.js',
+      'gh-token-monitor',
+      '.claude/settings.json',
+      '.vscode/tasks.json',
       'npm audit signatures',
       'trusted publishing',
       'pull_request_target',
@@ -126,6 +130,8 @@ function seedMinimalRepo(rootDir, overrides = {}) {
       'id-token: write',
       'shared cache'
     ].join('\n'),
+    'scripts/ci/scan-supply-chain-iocs.js': 'TanStack Mini Shai-Hulud gh-token-monitor',
+    'tests/ci/scan-supply-chain-iocs.test.js': 'scan-supply-chain-iocs',
     'tests/ci/validate-workflow-security.test.js': 'npm audit signatures persist-credentials: false',
     'tests/scripts/npm-publish-surface.test.js': 'npm pack --dry-run Python bytecode',
     'tests/docs/ecc2-release-surface.test.js': 'publication-readiness.md',

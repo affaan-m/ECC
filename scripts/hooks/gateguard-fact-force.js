@@ -25,6 +25,11 @@
 const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
+const {
+  extractCommandSubstitutions,
+  extractSubshellGroups,
+  extractBraceGroups
+} = require('../lib/shell-substitution');
 
 // Session state — scoped per session to avoid cross-session races.
 const STATE_DIR = process.env.GATEGUARD_STATE_DIR || path.join(process.env.HOME || process.env.USERPROFILE || '/tmp', '.gateguard');
@@ -41,12 +46,61 @@ const ROUTINE_BASH_SESSION_KEY = '__bash_session__';
 const EDIT_WRITE_HOOK_ID = 'pre:edit-write:gateguard-fact-force';
 const BASH_HOOK_ID = 'pre:bash:gateguard-fact-force';
 const ECC_DISABLE_VALUES = new Set(['0', 'false', 'off', 'disabled', 'disable']);
+const ECC_ENABLE_VALUES = new Set(['1', 'true', 'on', 'enabled', 'enable', 'yes']);
 
 // SQL-keyword + dd patterns stay as a single regex — they are stable
 // phrases without shell-flag ordering concerns. Quoted strings are
 // stripped before this regex runs so a commit message mentioning
 // "drop table" no longer triggers a false positive.
 const DESTRUCTIVE_SQL_DD = /\b(drop\s+table|delete\s+from|truncate|dd\s+if=)\b/i;
+
+// Operator-supplied additional destructive patterns. Lazily compiled from
+// `GATEGUARD_BASH_EXTRA_DESTRUCTIVE` (regex source) on first use, then
+// memoized keyed by the env-var value so a test or long-running process
+// that flips the env between calls re-reads it without paying for a
+// recompile on every invocation. A malformed regex is treated as
+// "not configured" (the gate falls back to the built-in patterns) and
+// the parse failure is logged once via `[gateguard-fact-force]` to
+// stderr — hooks must never crash tool execution because of operator
+// config errors.
+let extraDestructiveCacheKey = null;
+let extraDestructiveCacheRegex = null;
+let extraDestructiveWarnLogged = false;
+function getExtraDestructiveRegex() {
+  const raw = process.env.GATEGUARD_BASH_EXTRA_DESTRUCTIVE || '';
+  if (!raw) {
+    extraDestructiveCacheKey = '';
+    extraDestructiveCacheRegex = null;
+    return null;
+  }
+  if (raw === extraDestructiveCacheKey) {
+    return extraDestructiveCacheRegex;
+  }
+  // The env value just changed; reset the once-per-pattern warning gate
+  // so a subsequent *different* invalid regex is also reported once. The
+  // previous shape kept the flag sticky and silently swallowed the
+  // second bad pattern in a long-running process.
+  extraDestructiveCacheKey = raw;
+  extraDestructiveWarnLogged = false;
+  try {
+    extraDestructiveCacheRegex = new RegExp(raw, 'i');
+  } catch (err) {
+    extraDestructiveCacheRegex = null;
+    if (!extraDestructiveWarnLogged) {
+      try {
+        process.stderr.write(
+          `[gateguard-fact-force] ignoring invalid GATEGUARD_BASH_EXTRA_DESTRUCTIVE regex: ${err.message}\n`
+        );
+      } catch (_) { /* stderr write failure is non-fatal */ }
+      extraDestructiveWarnLogged = true;
+    }
+  }
+  return extraDestructiveCacheRegex;
+}
+
+function isRoutineBashGateDisabled() {
+  return ECC_ENABLE_VALUES.has(normalizeEnvValue(process.env.GATEGUARD_BASH_ROUTINE_DISABLED));
+}
 
 /**
  * Strip the contents of single- and double-quoted strings so phrases
@@ -85,105 +139,6 @@ function explodeSubshells(input) {
 }
 
 /**
- * Extract executable command-substitution bodies from a shell line. Single
- * quotes are literal, so substitutions inside them are ignored; double quotes
- * still permit substitutions, so those bodies are scanned before quoted text
- * is stripped.
- *
- * @param {string} input
- * @returns {string[]}
- */
-function extractCommandSubstitutions(input) {
-  const source = String(input || '');
-  const substitutions = [];
-  let inSingle = false;
-  let inDouble = false;
-
-  for (let i = 0; i < source.length; i++) {
-    const ch = source[i];
-    const prev = source[i - 1];
-
-    if (ch === '\\' && !inSingle) {
-      i += 1;
-      continue;
-    }
-
-    if (ch === "'" && !inDouble && prev !== '\\') {
-      inSingle = !inSingle;
-      continue;
-    }
-
-    if (ch === '"' && !inSingle && prev !== '\\') {
-      inDouble = !inDouble;
-      continue;
-    }
-
-    if (inSingle) {
-      continue;
-    }
-
-    if (ch === '`') {
-      let body = '';
-      i += 1;
-      while (i < source.length) {
-        const inner = source[i];
-        if (inner === '\\') {
-          body += inner;
-          if (i + 1 < source.length) {
-            body += source[i + 1];
-            i += 2;
-            continue;
-          }
-        }
-        if (inner === '`') {
-          break;
-        }
-        body += inner;
-        i += 1;
-      }
-      if (body.trim()) {
-        substitutions.push(body);
-        substitutions.push(...extractCommandSubstitutions(body));
-      }
-      continue;
-    }
-
-    if (ch === '$' && source[i + 1] === '(') {
-      let depth = 1;
-      let body = '';
-      i += 2;
-      while (i < source.length && depth > 0) {
-        const inner = source[i];
-        if (inner === '\\') {
-          body += inner;
-          if (i + 1 < source.length) {
-            body += source[i + 1];
-            i += 2;
-            continue;
-          }
-        }
-        if (inner === '(') {
-          depth += 1;
-        } else if (inner === ')') {
-          depth -= 1;
-          if (depth === 0) {
-            break;
-          }
-        }
-        body += inner;
-        i += 1;
-      }
-      if (body.trim()) {
-        substitutions.push(body);
-        substitutions.push(...extractCommandSubstitutions(body));
-      }
-    }
-  }
-
-  return substitutions;
-}
-
-/**
  * Split a command line into top-level segments at unquoted shell
  * separators (`;`, `|`, `&`, `&&`, `||`) and across subshells
  * (`$(...)` / backticks). Quoted strings are stripped first so
@@ -211,6 +166,65 @@ function splitCommandSegments(input) {
  */
 function tokenize(segment) {
   return segment.split(/\s+/).filter(Boolean);
+}
+
+
+/**
+ * Tokenize a short allowlisted shell command while preserving quoted
+ * arguments. This is intentionally smaller than a full shell parser: the
+ * caller rejects shell control characters before invoking it, so this only
+ * needs to keep spaces inside quotes together for read-only git commands.
+ *
+ * @param {string} input
+ * @returns {string[] | null}
+ */
+function tokenizeAllowlistedShellWords(input) {
+  const tokens = [];
+  let current = '';
+  let quote = null;
+  let escaped = false;
+
+  for (const char of String(input || '')) {
+    if (escaped) {
+      current += char;
+      escaped = false;
+      continue;
+    }
+
+    if (char === '\\') {
+      escaped = true;
+      continue;
+    }
+
+    if (quote) {
+      if (char === quote) {
+        quote = null;
+      } else {
+        current += char;
+      }
+      continue;
+    }
+
+    if (char === '"' || char === "'") {
+      quote = char;
+      continue;
+    }
+
+    if (/\s/.test(char)) {
+      if (current) {
+        tokens.push(current);
+        current = '';
+      }
+      continue;
+    }
+
+    current += char;
+  }
+
+  if (escaped) current += '\\';
+  if (quote) return null;
+  if (current) tokens.push(current);
+  return tokens;
 }
 
 /**
@@ -304,7 +318,14 @@ function isDestructiveGit(tokens) {
   }
 
   if (command === 'checkout') {
-    return rest.includes('--');
+    // `git checkout -- <path>`, `git checkout .`, and the force forms
+    // (`--force` / `-f`) all discard uncommitted working-tree changes,
+    // mirroring the `switch` handler below.
+    return rest.some(t => {
+      if (t === '--' || t === '.' || t === '--force') return true;
+      if (!t.startsWith('-') || t.startsWith('--')) return false;
+      return t.slice(1).includes('f');
+    });
   }
 
   if (command === 'clean') {
@@ -392,6 +413,54 @@ function isDestructiveGit(tokens) {
  * @param {string} command
  * @returns {boolean}
  */
+/**
+ * Walk every executable body reachable from a raw command line and
+ * return them as a flat list. Bodies that bash will execute live in
+ * three different syntactic constructs, each handled by a sibling
+ * extractor in `scripts/lib/shell-substitution.js`:
+ *   - `$(...)` and backticks via `extractCommandSubstitutions`
+ *   - plain `(...)` subshells   via `extractSubshellGroups`
+ *   - `{ ...; }` brace groups   via `extractBraceGroups`
+ *
+ * Each extractor recurses into its own syntax. The BFS here adds
+ * cross-syntax discovery — e.g. a `(...)` inside a `$(...)` body, or
+ * a `{ ...; }` inside a `(...)` body — by feeding every harvested
+ * body back through all three extractors. A `seen` set bounds the
+ * cost to O(unique bodies).
+ *
+ * @param {string} raw
+ * @returns {string[]}
+ */
+function collectExecutableBodies(raw) {
+  const bodies = [raw];
+  const queue = [raw];
+  const seen = new Set();
+
+  while (queue.length) {
+    const current = queue.shift();
+    if (seen.has(current)) continue;
+    seen.add(current);
+
+    for (const body of extractCommandSubstitutions(current)) {
+      if (seen.has(body)) continue;
+      bodies.push(body);
+      queue.push(body);
+    }
+    for (const body of extractSubshellGroups(current)) {
+      if (seen.has(body)) continue;
+      bodies.push(body);
+      queue.push(body);
+    }
+    for (const body of extractBraceGroups(current)) {
+      if (seen.has(body)) continue;
+      bodies.push(body);
+      queue.push(body);
+    }
+  }
+
+  return bodies;
+}
+
 function isDestructiveBash(command) {
   // The SQL/dd phrases live in command bodies, not as flag-bearing
   // arguments, so we still match them by regex — but on the input
@@ -401,9 +470,17 @@ function isDestructiveBash(command) {
   const flattened = explodeSubshells(stripQuotedStrings(raw));
   if (DESTRUCTIVE_SQL_DD.test(flattened)) return true;
 
-  const segments = [raw, ...extractCommandSubstitutions(raw)].flatMap(splitCommandSegments);
+  // Operator-supplied additional destructive patterns. Same scope as the
+  // built-in SQL/dd regex: matched against the quote-stripped, subshell-
+  // exploded command so a phrase inside `$(...)` or backticks is caught.
+  const extra = getExtraDestructiveRegex();
+  if (extra && extra.test(flattened)) return true;
+
+  const segments = collectExecutableBodies(raw).flatMap(splitCommandSegments);
   for (const segment of segments) {
-    if (DESTRUCTIVE_SQL_DD.test(stripQuotedStrings(segment))) return true;
+    const stripped = stripQuotedStrings(segment);
+    if (DESTRUCTIVE_SQL_DD.test(stripped)) return true;
+    if (extra && extra.test(stripped)) return true;
     const tokens = tokenize(segment);
     if (isDestructiveRm(tokens)) return true;
     if (isDestructiveGit(tokens)) return true;
@@ -515,6 +592,7 @@ function saveState(state) {
 
     let mergedChecked = Array.isArray(state.checked) ? state.checked : [];
     let mergedLastActive = typeof state.last_active === 'number' ? state.last_active : 0;
+    let mergedDenials = getDenialCount(state);
 
     try {
       if (fs.existsSync(stateFile)) {
@@ -525,6 +603,7 @@ function saveState(state) {
         if (typeof diskState.last_active === 'number') {
           mergedLastActive = Math.max(mergedLastActive, diskState.last_active);
         }
+        mergedDenials = Math.max(mergedDenials, getDenialCount(diskState));
       }
     } catch (_) {
       /* ignore malformed or transient disk state */
@@ -532,7 +611,8 @@ function saveState(state) {
 
     const finalState = {
       checked: pruneCheckedEntries(mergedChecked),
-      last_active: Math.max(mergedLastActive, Date.now())
+      last_active: Math.max(mergedLastActive, Date.now()),
+      fact_force_denials: mergedDenials
     };
 
     // Atomic write: temp file + rename prevents partial reads
@@ -573,6 +653,48 @@ function markChecked(key) {
     return saveState(state);
   }
   return true;
+}
+
+// --- Fact-force denial dampening (#2142) ---
+//
+// In long sessions the near-identical four-fact deny blocks accumulate in
+// the context window and measurably raise the odds of the model dropping
+// into a degenerate repetition loop. Emit the full four-fact block only for
+// the first GATEGUARD_FACT_FORCE_FULL_DENIALS denials per session (default
+// 3); afterwards emit a condensed single-line denial that carries the
+// denial ordinal, so consecutive denials are structurally different and
+// never textually identical. True retries of an already-gated target are
+// unaffected (they were always allowed). Destructive-Bash and routine-Bash
+// gates are unchanged.
+
+const DEFAULT_FULL_DENIALS = 3;
+
+function getFullDenialBudget() {
+  const raw = Number.parseInt(process.env.GATEGUARD_FACT_FORCE_FULL_DENIALS || '', 10);
+  if (Number.isInteger(raw) && raw >= 0) {
+    return raw;
+  }
+  return DEFAULT_FULL_DENIALS;
+}
+
+function getDenialCount(state) {
+  const n = Number(state && state.fact_force_denials);
+  return Number.isFinite(n) && n >= 0 ? Math.floor(n) : 0;
+}
+
+/**
+ * Record a first-touch target AND count the fact-force denial in the same
+ * state write. Returns the new denial ordinal (1-based) plus whether the
+ * write persisted.
+ */
+function markCheckedAndCountDenial(key) {
+  const state = loadState();
+  if (!state.checked.includes(key)) {
+    state.checked.push(key);
+  }
+  const denials = getDenialCount(state) + 1;
+  state.fact_force_denials = denials;
+  return { ok: saveState(state), denials };
 }
 
 function isChecked(key) {
@@ -638,8 +760,16 @@ function isReadOnlyGitIntrospection(command) {
     return false;
   }
 
-  const tokens = trimmed.split(/\s+/);
-  if (tokens[0] !== 'git' || tokens.length < 2) {
+  const segments = splitCommandSegments(trimmed);
+  if (segments.length !== 1) {
+    return false;
+  }
+
+  const tokens = tokenizeAllowlistedShellWords(trimmed);
+  if (!tokens) {
+    return false;
+  }
+  if (commandBasename(tokens[0]) !== 'git' || tokens.length < 2) {
     return false;
   }
 
@@ -659,7 +789,7 @@ function isReadOnlyGitIntrospection(command) {
   }
 
   if (subcommand === 'show') {
-    return args.length === 1 && !args[0].startsWith('--') && /^[a-zA-Z0-9._:/-]+$/.test(args[0]);
+    return args.length === 1 && !args[0].startsWith('--') && /^[a-zA-Z0-9._:/ -]+$/.test(args[0]);
   }
 
   if (subcommand === 'branch') {
@@ -705,6 +835,20 @@ function writeGateMsg(filePath) {
     '',
     'Present the facts, then retry the same operation.'
   ].join('\n');
+}
+
+/**
+ * Condensed single-line denial used after the full-block budget is spent
+ * (#2142). Carries the denial ordinal so consecutive denials differ
+ * textually, and a one-line recovery hint instead of the multi-line block.
+ */
+function condensedGateMsg(action, filePath, ordinal) {
+  const safe = sanitizePath(filePath);
+  return (
+    `[Fact-Forcing Gate] (denial #${ordinal} this session) First ${action} of ${safe}: ` +
+    "briefly state importers/callers, affected API, data schemas if any, and the user's verbatim instruction, then retry. " +
+    '(ECC_GATEGUARD=off disables this gate.)'
+  );
 }
 
 function destructiveBashMsg() {
@@ -817,8 +961,13 @@ function run(rawInput) {
     }
 
     if (!isChecked(filePath)) {
-      if (!markChecked(filePath)) {
+      const { ok, denials } = markCheckedAndCountDenial(filePath);
+      if (!ok) {
         return allowWithStateWarning();
+      }
+      if (denials > getFullDenialBudget()) {
+        const action = toolName === 'Edit' ? 'edit' : 'creation';
+        return denyResult(condensedGateMsg(action, filePath, denials), { includeRecoveryHint: false });
       }
       return denyResult(toolName === 'Edit' ? editGateMsg(filePath) : writeGateMsg(filePath));
     }
@@ -835,8 +984,12 @@ function run(rawInput) {
     for (const edit of edits) {
       const filePath = edit.file_path || '';
       if (filePath && !isClaudeSettingsPath(filePath) && !isChecked(filePath)) {
-        if (!markChecked(filePath)) {
+        const { ok, denials } = markCheckedAndCountDenial(filePath);
+        if (!ok) {
           return allowWithStateWarning();
+        }
+        if (denials > getFullDenialBudget()) {
+          return denyResult(condensedGateMsg('edit', filePath, denials), { includeRecoveryHint: false });
         }
         return denyResult(editGateMsg(filePath));
       }
@@ -860,6 +1013,14 @@ function run(rawInput) {
         return denyResult(destructiveBashMsg(), { includeRecoveryHint: false });
       }
       return rawInput; // allow retry after facts presented
+    }
+
+    // Operator opt-out: skip the routine-bash gate entirely. The destructive
+    // gate above still fires. This is the documented escape hatch for hosts
+    // (Cursor, OpenCode, etc.) where the once-per-session routine gate is
+    // friction without signal.
+    if (isRoutineBashGateDisabled()) {
+      return rawInput; // routine gate opted out via env
     }
 
     if (!isChecked(ROUTINE_BASH_SESSION_KEY)) {

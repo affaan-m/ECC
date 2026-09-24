@@ -290,6 +290,18 @@
         "edit": true
       }
     },
+    "php-reviewer": {
+      "description": "Expert PHP code reviewer specializing in PSR-12 compliance, PHP type system, Eloquent ORM patterns, security, and performance.",
+      "mode": "subagent",
+      "model": "anthropic/claude-opus-4-5",
+      "prompt": "{file:prompts/agents/php-reviewer.txt}",
+      "tools": {
+        "read": true,
+        "bash": true,
+        "write": false,
+        "edit": false
+      }
+    },
     "python-reviewer": {
       "description": "Expert Python code reviewer specializing in PEP 8 compliance, Pythonic idioms, type hints, security, and performance.",
       "mode": "subagent",

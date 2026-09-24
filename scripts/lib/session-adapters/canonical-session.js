@@ -36,6 +36,12 @@ function ensureString(value, fieldPath) {
   }
 }
 
+function ensureStringAllowEmpty(value, fieldPath) {
+  if (typeof value !== 'string') {
+    throw new Error(`Canonical session snapshot requires ${fieldPath} to be a string`);
+  }
+}
+
 function ensureOptionalString(value, fieldPath) {
   if (value !== null && value !== undefined && typeof value !== 'string') {
     throw new Error(`Canonical session snapshot requires ${fieldPath} to be a string or null`);
@@ -210,7 +216,7 @@ function validateCanonicalSnapshot(snapshot) {
       throw new Error(`Canonical session snapshot requires workers[${index}].intent to be an object`);
     }
 
-    ensureString(worker.intent.objective, `workers[${index}].intent.objective`);
+    ensureStringAllowEmpty(worker.intent.objective, `workers[${index}].intent.objective`);
     ensureArrayOfStrings(worker.intent.seedPaths, `workers[${index}].intent.seedPaths`);
 
     if (!isObject(worker.outputs)) {
@@ -520,12 +526,119 @@ function normalizeClaudeHistorySession(session, sourceTarget) {
   });
 }
 
+function normalizeCodexWorktreeSession(session, sourceTarget) {
+  const state = session.active ? 'active' : 'recorded';
+  const objective = typeof session.objective === 'string' ? session.objective : '';
+  const worker = {
+    id: session.sessionId,
+    label: session.sessionId,
+    state,
+    health: 'healthy',
+    branch: session.branch || null,
+    worktree: session.cwd || null,
+    runtime: {
+      kind: 'codex-session',
+      command: 'codex',
+      pid: null,
+      active: Boolean(session.active),
+      dead: !session.active,
+    },
+    intent: {
+      objective,
+      seedPaths: []
+    },
+    outputs: {
+      summary: [],
+      validation: [],
+      remainingRisks: []
+    },
+    artifacts: {
+      sessionFile: session.sessionPath || null,
+      model: session.model || null,
+      originator: session.originator || null,
+      cliVersion: session.cliVersion || null,
+      startedAt: session.startedAt || null,
+      recordCount: Number.isInteger(session.recordCount) ? session.recordCount : null
+    }
+  };
+
+  return validateCanonicalSnapshot({
+    schemaVersion: SESSION_SCHEMA_VERSION,
+    adapterId: 'codex-worktree',
+    session: {
+      id: session.sessionId,
+      kind: 'codex-worktree',
+      state,
+      repoRoot: session.cwd || null,
+      sourceTarget
+    },
+    workers: [worker],
+    aggregates: buildAggregates([worker])
+  });
+}
+
+function normalizeOpencodeSession(session, sourceTarget) {
+  const state = session.active ? 'active' : 'recorded';
+  const objective = typeof session.objective === 'string' ? session.objective : '';
+  const worker = {
+    id: session.sessionId,
+    label: session.title || session.sessionId,
+    state,
+    health: 'healthy',
+    branch: session.branch || null,
+    worktree: session.cwd || null,
+    runtime: {
+      kind: 'opencode-session',
+      command: 'opencode',
+      pid: null,
+      active: Boolean(session.active),
+      dead: !session.active,
+    },
+    intent: {
+      objective,
+      seedPaths: []
+    },
+    outputs: {
+      summary: [],
+      validation: [],
+      remainingRisks: []
+    },
+    artifacts: {
+      sessionFile: session.sessionPath || null,
+      projectId: session.projectId || null,
+      version: session.version || null,
+      model: session.model || null,
+      provider: session.provider || null,
+      title: session.title || null,
+      createdAt: session.createdAt || null,
+      updatedAt: session.updatedAt || null,
+      messageCount: Number.isInteger(session.messageCount) ? session.messageCount : null
+    }
+  };
+
+  return validateCanonicalSnapshot({
+    schemaVersion: SESSION_SCHEMA_VERSION,
+    adapterId: 'opencode',
+    session: {
+      id: session.sessionId,
+      kind: 'opencode',
+      state,
+      repoRoot: session.cwd || null,
+      sourceTarget
+    },
+    workers: [worker],
+    aggregates: buildAggregates([worker])
+  });
+}
+
 module.exports = {
   SESSION_SCHEMA_VERSION,
   buildAggregates,
   getFallbackSessionRecordingPath,
   normalizeClaudeHistorySession,
+  normalizeCodexWorktreeSession,
   normalizeDmuxSnapshot,
+  normalizeOpencodeSession,
   persistCanonicalSnapshot,
   validateCanonicalSnapshot
 };

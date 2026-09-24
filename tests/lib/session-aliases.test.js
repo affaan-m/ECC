@@ -1230,8 +1230,8 @@ function runTests() {
     // session-aliases.js lines 131-137: When saveAliases fails (outer catch),
     // it tries to restore from backup. If the restore ALSO fails, the inner
     // catch at line 135 logs restoreErr. No existing test creates this double-fault.
-    if (process.platform === 'win32') {
-      console.log('    (skipped — chmod not reliable on Windows)');
+    if (process.platform === 'win32' || process.getuid?.() === 0) {
+      console.log('    (skipped — chmod ineffective on Windows/root)');
       return;
     }
     const isoHome = path.join(os.tmpdir(), `ecc-r90-restore-fail-${Date.now()}`);

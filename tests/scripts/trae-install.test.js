@@ -113,11 +113,11 @@ function runTests() {
       assert.ok(manifestLines.includes('skills/skill-comply/pyproject.toml'));
       assert.ok(manifestLines.includes('rules/common/code-review.md'));
       assert.ok(manifestLines.includes('rules/python/coding-style.md'));
-      assert.ok(manifestLines.includes('rules/zh/README.md'));
+      assert.ok(manifestLines.includes('rules/web/performance.md'));
 
       assert.ok(fs.existsSync(path.join(projectRoot, '.trae', 'skills', 'skill-comply', 'pyproject.toml')));
       assert.ok(fs.existsSync(path.join(projectRoot, '.trae', 'rules', 'python', 'coding-style.md')));
-      assert.ok(fs.existsSync(path.join(projectRoot, '.trae', 'rules', 'zh', 'README.md')));
+      assert.ok(fs.existsSync(path.join(projectRoot, '.trae', 'rules', 'web', 'performance.md')));
     } finally {
       cleanup(homeDir);
       cleanup(projectRoot);

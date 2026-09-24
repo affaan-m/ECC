@@ -2,6 +2,8 @@
 
 Multi-model işbirlikçi geliştirme iş akışı (Research → Ideation → Plan → Execute → Optimize → Review), akıllı yönlendirme ile: Frontend → Gemini, Backend → Codex.
 
+> **Ön koşul:** Bu komut, temel ECC kurulumunun parçası **olmayan** harici `ccg-workflow` runtime'ını gerektirir. Bu komutun bağımlı olduğu `~/.claude/bin/codeagent-wrapper` ve `~/.claude/.ccg/prompts/*` rol dosyalarını sağlamak için `npx ccg-workflow` komutuyla başlatın. Bu runtime olmadan bu komut düzgün çalışmaz.
+
 Kalite kontrol noktaları, MCP servisleri ve multi-model işbirliği ile yapılandırılmış geliştirme iş akışı.
 
 ## Kullanım

@@ -1,6 +1,6 @@
 ---
 name: canary-watch
-description: Use this skill to monitor a deployed URL for regressions after deploys, merges, or dependency upgrades.
+description: Use this skill to monitor and verify a deployed URL after releases — checks HTTP endpoints, SSE streams, static assets, console errors, and performance regressions after deploys, merges, or dependency upgrades. Smoke / canary / post-deploy verification.
 origin: ECC
 ---
 
@@ -27,6 +27,8 @@ Monitors a deployed URL for regressions. Runs in a loop until stopped or until t
 4. Performance — LCP/CLS/INP regression vs baseline?
 5. Content — did key elements disappear? (h1, nav, footer, CTA)
 6. API Health — are critical endpoints responding within SLA?
+7. Static Assets — are JS, CSS, image, and font requests returning 2xx/3xx with expected content types?
+8. SSE Streams — do event-stream endpoints connect and receive an initial event or heartbeat?
 ```
 
 ### Watch Modes
@@ -54,12 +56,16 @@ critical:  # immediate alert
   - Console error count > 5 (new errors only)
   - LCP > 4s
   - API endpoint returns 5xx
+  - Static asset returns 4xx/5xx
+  - SSE endpoint cannot connect or drops before first heartbeat
 
 warning:   # flag in report
   - LCP increased > 500ms from baseline
   - CLS > 0.1
   - New console warnings
   - Response time > 2x baseline
+  - Static asset content type changed unexpectedly
+  - SSE heartbeat latency > 2x baseline
 
 info:      # log only
   - Minor performance variance
@@ -87,6 +93,8 @@ When a critical threshold is crossed:
 | LCP | 1.8s ✓ | 1.6s | +200ms |
 | CLS | 0.01 ✓ | 0.01 | — |
 | API /health | 145ms ✓ | 120ms | +25ms |
+| Static assets | 42/42 ✓ | 42/42 | — |
+| SSE /events | connected ✓ | connected | +80ms heartbeat |
 
 ### No regressions detected. Deploy is clean.
 ```

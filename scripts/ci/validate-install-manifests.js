@@ -21,6 +21,7 @@ const COMPONENT_FAMILY_PREFIXES = {
   language: 'lang:',
   framework: 'framework:',
   capability: 'capability:',
+  locale: 'locale:',
 };
 
 function readJson(filePath, label) {
@@ -163,9 +164,12 @@ function validateInstallManifests() {
 
   if (profiles.full) {
     const fullModules = new Set(profiles.full.modules);
-    for (const moduleId of moduleIds) {
-      if (!fullModules.has(moduleId)) {
-        console.error(`ERROR: full profile is missing module ${moduleId}`);
+    for (const module of modules) {
+      if (module.kind === 'docs' && module.defaultInstall === false) {
+        continue;
+      }
+      if (!fullModules.has(module.id)) {
+        console.error(`ERROR: full profile is missing module ${module.id}`);
         hasErrors = true;
       }
     }

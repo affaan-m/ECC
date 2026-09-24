@@ -12,7 +12,7 @@
 - Orquestrando fluxos de trabalho multi-agente
 - Tarefas de codificação complexas
 
-**Opus 4.5** (Raciocínio mais profundo):
+**Opus 4.6** (Raciocínio mais profundo):
 - Decisões arquiteturais complexas
 - Requisitos máximos de raciocínio
 - Pesquisa e análise
@@ -37,7 +37,7 @@ O pensamento estendido está habilitado por padrão, reservando até 31.999 toke
 Controle o pensamento estendido via:
 - **Toggle**: Option+T (macOS) / Alt+T (Windows/Linux)
 - **Config**: Defina `alwaysThinkingEnabled` em `~/.claude/settings.json`
-- **Limite de orçamento**: `export MAX_THINKING_TOKENS=10000`
+- **Limite de orçamento**: `export MAX_THINKING_TOKENS=10000` (bash) ou `$env:MAX_THINKING_TOKENS = "10000"` (PowerShell)
 - **Modo verbose**: Ctrl+O para ver a saída de pensamento
 
 Para tarefas complexas que requerem raciocínio profundo:

@@ -63,6 +63,11 @@ function runTests() {
       const result = runScript('bun run dev');
       assert.strictEqual(result.code, 2, `Expected exit code 2, got ${result.code}`);
     }) ? passed++ : failed++);
+
+    (test('still blocks npm run dev:ssr — colon variant is a dev server (exit 2)', () => {
+      const result = runScript('npm run dev:ssr');
+      assert.strictEqual(result.code, 2, `Expected exit code 2, got ${result.code}`);
+    }) ? passed++ : failed++);
   } else {
     console.log('  (skipping blocking tests on Windows)\n');
   }
@@ -88,6 +93,127 @@ function runTests() {
     const result = runScript('npm run build');
     assert.strictEqual(result.code, 0, `Expected exit code 0, got ${result.code}`);
   }) ? passed++ : failed++);
+
+  // --- dev-<suffix> scripts are distinct from the dev server, must not be blocked ---
+
+  (test('allows npm run dev-setup — distinct script, not the dev server (exit 0)', () => {
+    const result = runScript('npm run dev-setup');
+    assert.strictEqual(result.code, 0, `Expected exit code 0, got ${result.code}`);
+  }) ? passed++ : failed++);
+
+  (test('allows pnpm run dev-docs — distinct script (exit 0)', () => {
+    const result = runScript('pnpm run dev-docs');
+    assert.strictEqual(result.code, 0, `Expected exit code 0, got ${result.code}`);
+  }) ? passed++ : failed++);
+
+  (test('allows yarn dev-build — distinct script (exit 0)', () => {
+    const result = runScript('yarn dev-build');
+    assert.strictEqual(result.code, 0, `Expected exit code 0, got ${result.code}`);
+  }) ? passed++ : failed++);
+
+  // --- Subshell bypass regression (issue: dev server slipped past via $(), ``, ()) ---
+
+  if (!isWindows) {
+    (test('blocks $(npm run dev) — command substitution', () => {
+      const result = runScript('$(npm run dev)');
+      assert.strictEqual(result.code, 2, `Expected exit code 2, got ${result.code}`);
+      assert.ok(result.stderr.includes('BLOCKED'), 'expected BLOCKED in stderr');
+    }) ? passed++ : failed++);
+
+    (test('blocks `npm run dev` — backtick substitution', () => {
+      const result = runScript('`npm run dev`');
+      assert.strictEqual(result.code, 2, `Expected exit code 2, got ${result.code}`);
+    }) ? passed++ : failed++);
+
+    (test('blocks echo $(npm run dev) — substitution nested in argument', () => {
+      const result = runScript('echo $(npm run dev)');
+      assert.strictEqual(result.code, 2, `Expected exit code 2, got ${result.code}`);
+    }) ? passed++ : failed++);
+
+    (test('blocks (npm run dev) — plain subshell group', () => {
+      const result = runScript('(npm run dev)');
+      assert.strictEqual(result.code, 2, `Expected exit code 2, got ${result.code}`);
+    }) ? passed++ : failed++);
+
+    (test('blocks $(echo a; npm run dev) — substitution with sequenced segments', () => {
+      const result = runScript('$(echo a; npm run dev)');
+      assert.strictEqual(result.code, 2, `Expected exit code 2, got ${result.code}`);
+    }) ? passed++ : failed++);
+
+    (test('blocks (pnpm dev) — plain subshell group with pnpm', () => {
+      const result = runScript('(pnpm dev)');
+      assert.strictEqual(result.code, 2, `Expected exit code 2, got ${result.code}`);
+    }) ? passed++ : failed++);
+
+    (test('allows tmux launcher inside subshell wrapping (exit code 0)', () => {
+      const result = runScript('(tmux new-session -d -s dev "npm run dev")');
+      assert.strictEqual(result.code, 0, `Expected exit code 0, got ${result.code}`);
+    }) ? passed++ : failed++);
+
+    (test('allows single-quoted "(npm run dev)" — literal string, not a subshell', () => {
+      const result = runScript("git commit -m '(npm run dev)'");
+      assert.strictEqual(result.code, 0, `Expected exit code 0, got ${result.code}`);
+    }) ? passed++ : failed++);
+
+    (test('allows double-quoted "(npm run dev)" — literal in double quotes (bash does not subshell)', () => {
+      const result = runScript('echo "(npm run dev)"');
+      assert.strictEqual(result.code, 0, `Expected exit code 0, got ${result.code}`);
+    }) ? passed++ : failed++);
+
+    (test("allows single-quoted '$(npm run dev)' — literal string, no substitution", () => {
+      const result = runScript("git commit -m '$(npm run dev) fix'");
+      assert.strictEqual(result.code, 0, `Expected exit code 0, got ${result.code}`);
+    }) ? passed++ : failed++);
+  }
+
+  // --- Round 1 review fixes (Greptile + CodeRabbit on PR #1889) ---
+
+  if (!isWindows) {
+    (test('blocks $(echo ")"; (npm run dev)) — quoted ) does not terminate $() early', () => {
+      const result = runScript('$(echo ")"; (npm run dev))');
+      assert.strictEqual(result.code, 2, `Expected exit code 2, got ${result.code}`);
+    }) ? passed++ : failed++);
+
+    (test('blocks (echo ")"; npm run dev) — quoted ) does not terminate (...) early', () => {
+      const result = runScript('(echo ")"; npm run dev)');
+      assert.strictEqual(result.code, 2, `Expected exit code 2, got ${result.code}`);
+    }) ? passed++ : failed++);
+
+    (test('allows $(echo "(npm run dev)") — () inside double-quoted substitution body is literal', () => {
+      const result = runScript('$(echo "(npm run dev)")');
+      assert.strictEqual(result.code, 0, `Expected exit code 0, got ${result.code}`);
+    }) ? passed++ : failed++);
+
+    (test('blocks { npm run dev; } — brace group runs in current shell', () => {
+      const result = runScript('{ npm run dev; }');
+      assert.strictEqual(result.code, 2, `Expected exit code 2, got ${result.code}`);
+    }) ? passed++ : failed++);
+
+    (test('blocks echo hi && { npm run dev; } — brace group after &&', () => {
+      const result = runScript('echo hi && { npm run dev; }');
+      assert.strictEqual(result.code, 2, `Expected exit code 2, got ${result.code}`);
+    }) ? passed++ : failed++);
+
+    (test('allows {npm run dev} — bash requires space after { to form a group', () => {
+      const result = runScript('{npm run dev}');
+      assert.strictEqual(result.code, 0, `Expected exit code 0, got ${result.code}`);
+    }) ? passed++ : failed++);
+
+    (test('blocks yarn run dev — yarn 1.x convention', () => {
+      const result = runScript('yarn run dev');
+      assert.strictEqual(result.code, 2, `Expected exit code 2, got ${result.code}`);
+    }) ? passed++ : failed++);
+
+    (test('blocks bun dev — bun bare form', () => {
+      const result = runScript('bun dev');
+      assert.strictEqual(result.code, 2, `Expected exit code 2, got ${result.code}`);
+    }) ? passed++ : failed++);
+
+    (test('blocks "$(npm run dev)" — double-quoted substitution still substitutes', () => {
+      const result = runScript('echo "$(npm run dev)"');
+      assert.strictEqual(result.code, 2, `Expected exit code 2, got ${result.code}`);
+    }) ? passed++ : failed++);
+  }
 
   // --- Edge cases ---
 

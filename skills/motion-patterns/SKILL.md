@@ -337,8 +337,7 @@ export function ExpandingCard({ title, body }: { title: string; body: string }) 
     duration: motionTokens.duration.normal,
     ease: motionTokens.easing.smooth,
   }}
->
-  {children}
+> {children}
 </motion.div>
 ```
 

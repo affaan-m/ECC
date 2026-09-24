@@ -4,6 +4,7 @@
 const fs = require('fs');
 const path = require('path');
 const { spawnSync } = require('child_process');
+const { ensureAgentDataHomeEnv } = require('../lib/agent-data-home');
 
 function readStdinRaw() {
   try {
@@ -29,6 +30,20 @@ function passthrough(raw, result) {
   if (!Number.isInteger(result?.status) || result.status === 0) {
     process.stdout.write(raw);
   }
+}
+
+function normalizePluginRootForPlatform(rootDir, platform = process.platform) {
+  if (platform !== 'win32' || typeof rootDir !== 'string') {
+    return rootDir;
+  }
+
+  const match = rootDir.match(/^\/([a-zA-Z])(?:\/(.*))?$/);
+  if (!match) {
+    return rootDir;
+  }
+
+  const [, driveLetter, rest = ''] = match;
+  return `${driveLetter.toUpperCase()}:/${rest}`;
 }
 
 function resolveTarget(rootDir, relPath) {
@@ -69,14 +84,16 @@ function findShellBinary() {
 }
 
 function spawnNode(rootDir, relPath, raw, args) {
+  ensureAgentDataHomeEnv();
+  const hookEnv = {
+    ...process.env,
+    CLAUDE_PLUGIN_ROOT: rootDir,
+    ECC_PLUGIN_ROOT: rootDir,
+  };
   return spawnSync(process.execPath, [resolveTarget(rootDir, relPath), ...args], {
     input: raw,
     encoding: 'utf8',
-    env: {
-      ...process.env,
-      CLAUDE_PLUGIN_ROOT: rootDir,
-      ECC_PLUGIN_ROOT: rootDir,
-    },
+    env: hookEnv,
     cwd: process.cwd(),
     timeout: 30000,
     windowsHide: true,
@@ -93,14 +110,16 @@ function spawnShell(rootDir, relPath, raw, args) {
     };
   }
 
+  ensureAgentDataHomeEnv();
+  const hookEnv = {
+    ...process.env,
+    CLAUDE_PLUGIN_ROOT: rootDir,
+    ECC_PLUGIN_ROOT: rootDir,
+  };
   return spawnSync(shell, [resolveTarget(rootDir, relPath), ...args], {
     input: raw,
     encoding: 'utf8',
-    env: {
-      ...process.env,
-      CLAUDE_PLUGIN_ROOT: rootDir,
-      ECC_PLUGIN_ROOT: rootDir,
-    },
+    env: hookEnv,
     cwd: process.cwd(),
     timeout: 30000,
     windowsHide: true,
@@ -110,7 +129,9 @@ function spawnShell(rootDir, relPath, raw, args) {
 function main() {
   const [, , mode, relPath, ...args] = process.argv;
   const raw = readStdinRaw();
-  const rootDir = process.env.CLAUDE_PLUGIN_ROOT || process.env.ECC_PLUGIN_ROOT;
+  const rootDir = normalizePluginRootForPlatform(
+    process.env.CLAUDE_PLUGIN_ROOT || process.env.ECC_PLUGIN_ROOT
+  );
 
   if (!mode || !relPath || !rootDir) {
     process.stdout.write(raw);
@@ -150,4 +171,18 @@ function main() {
   process.exit(Number.isInteger(result.status) ? result.status : 0);
 }
 
-main();
+// Run when invoked as a hook entry. Production hooks load this via
+// `node -e "...; process.argv.splice(1,0,s); require(s)"`; on Node 21+ that
+// leaves require.main undefined (not this module), which previously skipped
+// main() and made every plugin hook a silent no-op. Guard on both the
+// direct-entry case and that eval-bootstrap case. When imported for its
+// exports (tests), require.main is a real, different module, so main() stays
+// dormant.
+if (require.main === module || require.main === undefined) {
+  main();
+}
+
+module.exports = {
+  main,
+  normalizePluginRootForPlatform,
+};

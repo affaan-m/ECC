@@ -57,14 +57,14 @@ Python, koşulları kontrol etmek yerine exception handling'i tercih eder.
 
 ```python
 # İyi: EAFP stili
-def get_value(dictionary: dict, key: str) -> Any:
+def get_value(dictionary: dict, key: str, default_value: Any = None) -> Any:
     try:
         return dictionary[key]
     except KeyError:
         return default_value
 
 # Kötü: LBYL (Atlamadan Önce Bak) stili
-def get_value(dictionary: dict, key: str) -> Any:
+def get_value(dictionary: dict, key: str, default_value: Any = None) -> Any:
     if key in dictionary:
         return dictionary[key]
     else:

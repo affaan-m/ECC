@@ -83,9 +83,22 @@ function dedupeRecentSessions(searchDirs) {
     .sort((left, right) => right.mtime - left.mtime || left.dirIndex - right.dirIndex);
 }
 
+/**
+ * Resolve session retention days from the ECC_SESSION_RETENTION_DAYS env var.
+ *
+ * @returns {number|null} The retention window in days, or `null` when the
+ *   user has explicitly opted out of pruning. Falsy/garbage values fall back
+ *   to {@link DEFAULT_SESSION_RETENTION_DAYS}.
+ */
 function getSessionRetentionDays() {
   const raw = process.env.ECC_SESSION_RETENTION_DAYS;
   if (!raw) return DEFAULT_SESSION_RETENTION_DAYS;
+
+  const normalized = String(raw).trim().toLowerCase();
+  if (['0', 'off', 'false', 'disabled', 'never', 'none'].includes(normalized)) {
+    return null;
+  }
+
   const parsed = Number.parseInt(raw, 10);
   return Number.isInteger(parsed) && parsed > 0 ? parsed : DEFAULT_SESSION_RETENTION_DAYS;
 }
@@ -526,9 +539,13 @@ async function main() {
   ensureDir(learnedDir);
 
   const retentionDays = getSessionRetentionDays();
-  const prunedSessions = pruneExpiredSessions(sessionSearchDirs, retentionDays);
-  if (prunedSessions > 0) {
-    log(`[SessionStart] Pruned ${prunedSessions} expired session(s) older than ${retentionDays} day(s)`);
+  if (retentionDays === null) {
+    log('[SessionStart] Pruning disabled via ECC_SESSION_RETENTION_DAYS');
+  } else {
+    const prunedSessions = pruneExpiredSessions(sessionSearchDirs, retentionDays);
+    if (prunedSessions > 0) {
+      log(`[SessionStart] Pruned ${prunedSessions} expired session(s) older than ${retentionDays} day(s)`);
+    }
   }
 
   const observerSessionId = resolveSessionId();

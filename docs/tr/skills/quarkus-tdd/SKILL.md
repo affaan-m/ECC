@@ -36,25 +36,25 @@ Kapsamlı ve okunabilir testler için bu yapılandırılmış yaklaşımı izley
 @ExtendWith(MockitoExtension.class)
 @DisplayName("As2ProcessingService Unit Tests")
 class As2ProcessingServiceTest {
-  
+
   @Mock
   private InvoiceFlowValidator invoiceFlowValidator;
-  
+
   @Mock
   private EventService eventService;
-  
+
   @Mock
   private DocumentJobService documentJobService;
-  
+
   @Mock
   private BusinessRulesPublisher businessRulesPublisher;
-  
+
   @Mock
   private FileStorageService fileStorageService;
-  
+
   @InjectMocks
   private As2ProcessingService as2ProcessingService;
-  
+
   private Path testFilePath;
   private LogContext testLogContext;
   private InvoiceValidationResult validationResult;
@@ -64,17 +64,17 @@ class As2ProcessingServiceTest {
   void setUp() {
     // ARRANGE - Ortak test verisi
     testFilePath = Path.of("/tmp/test-invoice.xml");
-    
+
     testLogContext = new LogContext();
     testLogContext.put(As2Constants.STRUCTURE_ID, "STRUCT-001");
     testLogContext.put(As2Constants.FILE_NAME, "invoice.xml");
     testLogContext.put(As2Constants.AS2_FROM, "PARTNER-001");
-    
+
     validationResult = new InvoiceValidationResult();
     validationResult.setValid(true);
     validationResult.setSize(1024L);
     validationResult.setDocumentHash("abc123");
-    
+
     documentInfo = new StoredDocumentInfo();
     documentInfo.setPath("s3://bucket/path/invoice.xml");
     documentInfo.setSize(1024L);
@@ -83,43 +83,43 @@ class As2ProcessingServiceTest {
   @Nested
   @DisplayName("processFile için testler")
   class ProcessFile {
-    
+
     @Test
     @DisplayName("CHORUS olmayan dosyayı tüm validasyonlarla başarıyla işlemeli")
     void givenNonChorusFile_whenProcessFile_thenAllValidationsApplied() throws Exception {
       // ARRANGE
       testLogContext.put(As2Constants.CHORUS_FLOW, "false");
       CustomLog.setCurrentContext(testLogContext);
-      
+
       when(invoiceFlowValidator.validateFlowWithConfig(
-          eq(testFilePath), 
+          eq(testFilePath),
           eq(ValidationFlowConfig.allValidations()),
           eq(EInvoiceSyntaxFormat.UBL),
           any(LogContext.class)))
           .thenReturn(validationResult);
-      
+
       when(invoiceFlowValidator.computeFlowProfile(any(), any()))
           .thenReturn(FlowProfile.BASIC);
-      
+
       when(fileStorageService.uploadOriginalFile(any(), anyLong(), any(), any()))
           .thenReturn(CompletableFuture.completedFuture(documentInfo));
-      
+
       when(documentJobService.createDocumentAndJobEntities(any(), any(), any(), any(), any()))
           .thenReturn(new BusinessRulesPayload());
-      
+
       // ACT
       assertDoesNotThrow(() -> as2ProcessingService.processFile(testFilePath));
-      
+
       // ASSERT
       verify(invoiceFlowValidator).validateFlowWithConfig(
           eq(testFilePath),
           eq(ValidationFlowConfig.allValidations()),
           eq(EInvoiceSyntaxFormat.UBL),
           any(LogContext.class));
-      
-      verify(eventService).createSuccessEvent(any(StoredDocumentInfo.class), 
+
+      verify(eventService).createSuccessEvent(any(StoredDocumentInfo.class),
           eq("PERSISTENCE_BLOB_EVENT_TYPE"));
-      verify(eventService).createSuccessEvent(any(BusinessRulesPayload.class), 
+      verify(eventService).createSuccessEvent(any(BusinessRulesPayload.class),
           eq("BUSINESS_RULES_MESSAGE_SENT"));
       verify(businessRulesPublisher).publishAsync(any(BusinessRulesPayload.class));
     }
@@ -130,34 +130,34 @@ class As2ProcessingServiceTest {
       // ARRANGE
       testLogContext.put(As2Constants.CHORUS_FLOW, "true");
       CustomLog.setCurrentContext(testLogContext);
-      
+
       when(invoiceFlowValidator.validateFlowWithConfig(
-          eq(testFilePath), 
+          eq(testFilePath),
           eq(ValidationFlowConfig.xsdOnly()),
           eq(EInvoiceSyntaxFormat.UBL),
           any(LogContext.class)))
           .thenReturn(validationResult);
-      
+
       when(fileStorageService.uploadOriginalFile(any(), anyLong(), any(), any()))
           .thenReturn(CompletableFuture.completedFuture(documentInfo));
-      
-      when(documentJobService.createDocumentAndJobEntities(any(), any(), any(), 
+
+      when(documentJobService.createDocumentAndJobEntities(any(), any(), any(),
           eq(FlowProfile.EXTENDED_CTC_FR), any()))
           .thenReturn(new BusinessRulesPayload());
-      
+
       // ACT
       assertDoesNotThrow(() -> as2ProcessingService.processFile(testFilePath));
-      
+
       // ASSERT
       verify(invoiceFlowValidator).validateFlowWithConfig(
           eq(testFilePath),
           eq(ValidationFlowConfig.xsdOnly()),
           eq(EInvoiceSyntaxFormat.UBL),
           any(LogContext.class));
-      
+
       verify(documentJobService).createDocumentAndJobEntities(
-          any(), any(), any(), 
-          eq(FlowProfile.EXTENDED_CTC_FR), 
+          any(), any(), any(),
+          eq(FlowProfile.EXTENDED_CTC_FR),
           any());
     }
 
@@ -167,31 +167,31 @@ class As2ProcessingServiceTest {
       // ARRANGE
       testLogContext.put(As2Constants.CHORUS_FLOW, "false");
       CustomLog.setCurrentContext(testLogContext);
-      
+
       when(invoiceFlowValidator.validateFlowWithConfig(any(), any(), any(), any()))
           .thenReturn(validationResult);
-      
+
       when(invoiceFlowValidator.computeFlowProfile(any(), any()))
           .thenReturn(FlowProfile.BASIC);
-      
+
       documentInfo.setPath(""); // Boş path hatayı tetikler
       when(fileStorageService.uploadOriginalFile(any(), anyLong(), any(), any()))
           .thenReturn(CompletableFuture.completedFuture(documentInfo));
-      
+
       // ACT & ASSERT
       As2ServerProcessingException exception = assertThrows(
           As2ServerProcessingException.class,
           () -> as2ProcessingService.processFile(testFilePath)
       );
-      
+
       assertThat(exception.getMessage())
           .contains("File path is empty after upload");
-      
+
       verify(eventService).createErrorEvent(
-          eq(documentInfo), 
-          eq("FILE_UPLOAD_FAILED"), 
+          eq(documentInfo),
+          eq("FILE_UPLOAD_FAILED"),
           contains("File path is empty"));
-      
+
       verify(businessRulesPublisher, never()).publishAsync(any());
     }
 
@@ -201,18 +201,18 @@ class As2ProcessingServiceTest {
       // ARRANGE
       testLogContext.put(As2Constants.CHORUS_FLOW, "false");
       CustomLog.setCurrentContext(testLogContext);
-      
+
       when(invoiceFlowValidator.validateFlowWithConfig(any(), any(), any(), any()))
           .thenReturn(validationResult);
-      
+
       when(invoiceFlowValidator.computeFlowProfile(any(), any()))
           .thenReturn(FlowProfile.BASIC);
-      
-      CompletableFuture<StoredDocumentInfo> failedFuture = 
+
+      CompletableFuture<StoredDocumentInfo> failedFuture =
           CompletableFuture.failedFuture(new StorageException("S3 connection failed"));
       when(fileStorageService.uploadOriginalFile(any(), anyLong(), any(), any()))
           .thenReturn(failedFuture);
-      
+
       // ACT & ASSERT
       assertThrows(
           CompletionException.class,
@@ -225,13 +225,13 @@ class As2ProcessingServiceTest {
     void givenNullFilePath_whenProcessFile_thenThrowsException() {
       // ARRANGE
       Path nullPath = null;
-      
+
       // ACT & ASSERT
       NullPointerException exception = assertThrows(
           NullPointerException.class,
           () -> as2ProcessingService.processFile(nullPath)
       );
-      
+
       verify(invoiceFlowValidator, never()).validateFlowWithConfig(any(), any(), any(), any());
     }
   }
@@ -287,7 +287,7 @@ class BusinessRulesRouteTest {
       // ARRANGE
       MockEndpoint mockRabbitMQ = camelContext.getEndpoint("mock:rabbitmq", MockEndpoint.class);
       mockRabbitMQ.expectedMessageCount(1);
-      
+
       // Test için gerçek endpoint'i mock ile değiştir
       camelContext.getRouteController().stopRoute("business-rules-publisher");
       AdviceWith.adviceWith(camelContext, "business-rules-publisher", advice -> {
@@ -295,13 +295,13 @@ class BusinessRulesRouteTest {
         advice.weaveByToString(".*spring-rabbitmq.*").replace().to("mock:rabbitmq");
       });
       camelContext.getRouteController().startRoute("business-rules-publisher");
-      
+
       // ACT
       producerTemplate.sendBody("direct:business-rules-publisher", testPayload);
-      
+
       // ASSERT — .marshal().json() sonrası body JSON String'dir
       mockRabbitMQ.assertIsSatisfied(5000);
-      
+
       assertThat(mockRabbitMQ.getExchanges()).hasSize(1);
       String body = mockRabbitMQ.getExchanges().get(0).getIn().getBody(String.class);
       assertThat(body).contains("\"documentId\":1");
@@ -314,19 +314,19 @@ class BusinessRulesRouteTest {
       MockEndpoint mockMarshal = new MockEndpoint("mock:marshal");
       camelContext.addEndpoint("mock:marshal", mockMarshal);
       mockMarshal.expectedMessageCount(1);
-      
+
       camelContext.getRouteController().stopRoute("business-rules-publisher");
       AdviceWith.adviceWith(camelContext, "business-rules-publisher", advice -> {
         advice.weaveAddLast().to("mock:marshal");
       });
       camelContext.getRouteController().startRoute("business-rules-publisher");
-      
+
       // ACT
       producerTemplate.sendBody("direct:business-rules-publisher", testPayload);
-      
+
       // ASSERT
       mockMarshal.assertIsSatisfied(5000);
-      
+
       String body = mockMarshal.getExchanges().get(0).getIn().getBody(String.class);
       assertThat(body).contains("\"documentId\":1");
       assertThat(body).contains("\"flowProfile\":\"BASIC\"");
@@ -343,17 +343,17 @@ class BusinessRulesRouteTest {
       // ARRANGE
       MockEndpoint mockInvoice = camelContext.getEndpoint("mock:invoice", MockEndpoint.class);
       mockInvoice.expectedMessageCount(1);
-      
+
       camelContext.getRouteController().stopRoute("document-processing");
       AdviceWith.adviceWith(camelContext, "document-processing", advice -> {
         advice.weaveByToString(".*direct:process-invoice.*").replace().to("mock:invoice");
       });
       camelContext.getRouteController().startRoute("document-processing");
-      
+
       // ACT
-      producerTemplate.sendBodyAndHeader("direct:process-document", 
+      producerTemplate.sendBodyAndHeader("direct:process-document",
           testPayload, "documentType", "INVOICE");
-      
+
       // ASSERT
       mockInvoice.assertIsSatisfied(5000);
     }
@@ -364,25 +364,25 @@ class BusinessRulesRouteTest {
       // ARRANGE
       MockEndpoint mockError = camelContext.getEndpoint("mock:error", MockEndpoint.class);
       mockError.expectedMessageCount(1);
-      
+
       camelContext.getRouteController().stopRoute("document-processing");
       AdviceWith.adviceWith(camelContext, "document-processing", advice -> {
         advice.weaveByToString(".*direct:validation-error-handler.*")
             .replace().to("mock:error");
       });
       camelContext.getRouteController().startRoute("document-processing");
-      
+
       // Error event oluşturma hatasını gerçek EventService API'si üzerinden simüle et
       doThrow(new ValidationException("Invalid document"))
           .when(eventService)
           .createErrorEvent(any(), eq("VALIDATION_ERROR"), anyString());
-      
+
       // ACT
       producerTemplate.sendBody("direct:process-document", testPayload);
-      
+
       // ASSERT
       mockError.assertIsSatisfied(5000);
-      
+
       Exception exception = mockError.getExchanges().get(0).getException();
       assertThat(exception).isInstanceOf(ValidationException.class);
       assertThat(exception.getMessage()).contains("Invalid document");
@@ -400,13 +400,13 @@ class EventServiceTest {
 
   @Mock
   private EventRepository eventRepository;
-  
+
   @Mock
   private ObjectMapper objectMapper;
-  
+
   @InjectMocks
   private EventService eventService;
-  
+
   private BusinessRulesPayload testPayload;
 
   @BeforeEach
@@ -419,19 +419,19 @@ class EventServiceTest {
   @Nested
   @DisplayName("createSuccessEvent için testler")
   class CreateSuccessEvent {
-    
+
     @Test
     @DisplayName("Doğru niteliklerle başarı eventi oluşturulmalı")
     void givenValidPayload_whenCreateSuccessEvent_thenEventPersisted() throws Exception {
       // ARRANGE
       when(objectMapper.writeValueAsString(testPayload)).thenReturn("{\"documentId\":1}");
-      
+
       // ACT
-      assertDoesNotThrow(() -> 
+      assertDoesNotThrow(() ->
           eventService.createSuccessEvent(testPayload, "DOCUMENT_PROCESSED"));
-      
+
       // ASSERT
-      verify(eventRepository).persist(argThat(event -> 
+      verify(eventRepository).persist(argThat(event ->
           event.getType().equals("DOCUMENT_PROCESSED") &&
           event.getStatus() == EventStatus.SUCCESS &&
           event.getPayload().equals("{\"documentId\":1}") &&
@@ -444,13 +444,13 @@ class EventServiceTest {
     void givenNullPayload_whenCreateSuccessEvent_thenThrowsException() {
       // ARRANGE
       Object nullPayload = null;
-      
+
       // ACT & ASSERT
       NullPointerException exception = assertThrows(
           NullPointerException.class,
           () -> eventService.createSuccessEvent(nullPayload, "EVENT_TYPE")
       );
-      
+
       assertThat(exception.getMessage()).isEqualTo("Payload cannot be null");
       verify(eventRepository, never()).persist(any());
     }
@@ -459,20 +459,20 @@ class EventServiceTest {
   @Nested
   @DisplayName("createErrorEvent için testler")
   class CreateErrorEvent {
-    
+
     @Test
     @DisplayName("Hata mesajıyla hata eventi oluşturulmalı")
     void givenError_whenCreateErrorEvent_thenEventPersistedWithMessage() throws Exception {
       // ARRANGE
       String errorMessage = "Processing failed";
       when(objectMapper.writeValueAsString(testPayload)).thenReturn("{\"documentId\":1}");
-      
+
       // ACT
-      assertDoesNotThrow(() -> 
+      assertDoesNotThrow(() ->
           eventService.createErrorEvent(testPayload, "PROCESSING_ERROR", errorMessage));
-      
+
       // ASSERT
-      verify(eventRepository).persist(argThat(event -> 
+      verify(eventRepository).persist(argThat(event ->
           event.getType().equals("PROCESSING_ERROR") &&
           event.getStatus() == EventStatus.ERROR &&
           event.getErrorMessage().equals(errorMessage) &&
@@ -489,7 +489,7 @@ class EventServiceTest {
           IllegalArgumentException.class,
           () -> eventService.createErrorEvent(testPayload, "ERROR", blankMessage)
       );
-      
+
       assertThat(exception.getMessage()).contains("Error message cannot be blank");
     }
   }
@@ -505,13 +505,13 @@ class FileStorageServiceTest {
 
   @Mock
   private S3Client s3Client;
-  
+
   @Mock
   private ExecutorService executorService;
-  
+
   @InjectMocks
   private FileStorageService fileStorageService;
-  
+
   private InputStream testInputStream;
   private LogContext testLogContext;
 
@@ -526,7 +526,7 @@ class FileStorageServiceTest {
   @Nested
   @DisplayName("uploadOriginalFile için testler")
   class UploadOriginalFile {
-    
+
     @Test
     @DisplayName("Dosyayı başarıyla yüklemeli ve belge bilgisi döndürmeli")
     void givenValidFile_whenUpload_thenReturnsDocumentInfo() throws Exception {
@@ -535,23 +535,23 @@ class FileStorageServiceTest {
         ((Runnable) invocation.getArgument(0)).run();
         return null;
       }).when(executorService).execute(any(Runnable.class));
-      
+
       when(s3Client.putObject(any(PutObjectRequest.class), any(RequestBody.class)))
           .thenReturn(PutObjectResponse.builder().build());
-      
+
       // ACT
-      CompletableFuture<StoredDocumentInfo> future = 
-          fileStorageService.uploadOriginalFile(testInputStream, 1024L, 
+      CompletableFuture<StoredDocumentInfo> future =
+          fileStorageService.uploadOriginalFile(testInputStream, 1024L,
               testLogContext, InvoiceFormat.UBL);
-      
+
       StoredDocumentInfo result = future.join();
-      
+
       // ASSERT
       assertThat(result).isNotNull();
       assertThat(result.getPath()).isNotBlank();
       assertThat(result.getSize()).isEqualTo(1024L);
       assertThat(result.getUploadedAt()).isNotNull();
-      
+
       verify(s3Client).putObject(any(PutObjectRequest.class), any(RequestBody.class));
     }
 
@@ -566,12 +566,12 @@ class FileStorageServiceTest {
 
       when(s3Client.putObject(any(PutObjectRequest.class), any(RequestBody.class)))
           .thenThrow(new StorageException("S3 unavailable"));
-      
+
       // ACT
-      CompletableFuture<StoredDocumentInfo> future = 
-          fileStorageService.uploadOriginalFile(testInputStream, 1024L, 
+      CompletableFuture<StoredDocumentInfo> future =
+          fileStorageService.uploadOriginalFile(testInputStream, 1024L,
               testLogContext, InvoiceFormat.UBL);
-      
+
       // ASSERT
       assertThatThrownBy(() -> future.join())
           .isInstanceOf(CompletionException.class)
@@ -584,17 +584,17 @@ class FileStorageServiceTest {
     void givenLogContext_whenUpload_thenContextPropagated() throws Exception {
       // ARRANGE
       AtomicReference<LogContext> capturedContext = new AtomicReference<>();
-      
+
       doAnswer(invocation -> {
         capturedContext.set(CustomLog.getCurrentContext());
         ((Runnable) invocation.getArgument(0)).run();
         return null;
       }).when(executorService).execute(any(Runnable.class));
-      
+
       // ACT
-      fileStorageService.uploadOriginalFile(testInputStream, 1024L, 
+      fileStorageService.uploadOriginalFile(testInputStream, 1024L,
           testLogContext, InvoiceFormat.UBL).join();
-      
+
       // ASSERT
       assertThat(capturedContext.get()).isNotNull();
       assertThat(capturedContext.get().get("traceId")).isEqualTo("trace-123");
@@ -746,7 +746,7 @@ class DocumentIntegrationTest {
         <goal>prepare-agent</goal>
       </goals>
     </execution>
-    
+
     <!-- Kapsam raporu oluştur -->
     <execution>
       <id>report</id>
@@ -755,7 +755,7 @@ class DocumentIntegrationTest {
         <goal>report</goal>
       </goals>
     </execution>
-    
+
     <!-- Kapsam eşiklerini zorla -->
     <execution>
       <id>check</id>
@@ -810,14 +810,14 @@ mvn jacoco:check
         <artifactId>quarkus-junit5-mockito</artifactId>
         <scope>test</scope>
     </dependency>
-    
+
     <!-- Mockito -->
     <dependency>
         <groupId>org.mockito</groupId>
         <artifactId>mockito-core</artifactId>
         <scope>test</scope>
     </dependency>
-    
+
     <!-- AssertJ (JUnit assertion'larına tercih edilir) -->
     <dependency>
         <groupId>org.assertj</groupId>
@@ -825,14 +825,14 @@ mvn jacoco:check
         <version>3.24.2</version>
         <scope>test</scope>
     </dependency>
-    
+
     <!-- REST Assured -->
     <dependency>
         <groupId>io.rest-assured</groupId>
         <artifactId>rest-assured</artifactId>
         <scope>test</scope>
     </dependency>
-    
+
     <!-- Camel Test -->
     <dependency>
         <groupId>org.apache.camel.quarkus</groupId>

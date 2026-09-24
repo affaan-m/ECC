@@ -6,10 +6,10 @@ This supplements the root `AGENTS.md` with Codex-specific guidance.
 
 | Task Type | Recommended Model |
 |-----------|------------------|
-| Routine coding, tests, formatting | GPT 5.4 |
-| Complex features, architecture | GPT 5.4 |
-| Debugging, refactoring | GPT 5.4 |
-| Security review | GPT 5.4 |
+| Routine coding, tests, formatting | GPT 5.5 |
+| Complex features, architecture | GPT 5.5 |
+| Debugging, refactoring | GPT 5.5 |
+| Security review | GPT 5.5 |
 
 ## Skills Discovery
 

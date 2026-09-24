@@ -10,16 +10,16 @@ command: true
 
 ## 実装
 
-プラグインルートパスを使用してインスティンクトCLIを実行します:
+`hooks/hooks.json` および他のスラッシュコマンド（`/sessions`、`/skill-health`）
+と同じリゾルバ（環境変数 → 標準インストール → 既知のプラグインルート →
+プラグインキャッシュ → フォールバック）でインスティンクトCLIを実行します。
+これにより、`CLAUDE_PLUGIN_ROOT` が未設定で
+レガシーの `~/.claude/skills/continuous-learning-v2/` ディレクトリが
+残っているときに発生するパスの分岐を回避します (#2037)。
 
 ```bash
-python3 "${CLAUDE_PLUGIN_ROOT}/skills/continuous-learning-v2/scripts/instinct-cli.py" status
-```
-
-または、`CLAUDE_PLUGIN_ROOT` が設定されていない場合（手動インストール）の場合は:
-
-```bash
-python3 ~/.claude/skills/continuous-learning-v2/scripts/instinct-cli.py status
+ECC_ROOT="${CLAUDE_PLUGIN_ROOT:-$(node -e "var r=(()=>{var e=process.env.CLAUDE_PLUGIN_ROOT;if(e&&e.trim())return e.trim();var p=require('path'),f=require('fs'),h=require('os').homedir(),d=p.join(h,'.claude'),q=p.join('scripts','lib','utils.js');if(f.existsSync(p.join(d,q)))return d;for(var s of [['ecc'],['ecc@ecc'],['marketplaces','ecc'],['everything-claude-code'],['everything-claude-code@everything-claude-code'],['marketplaces','everything-claude-code']]){var l=p.join(d,'plugins',...s);if(f.existsSync(p.join(l,q)))return l}try{for(var g of ['ecc','everything-claude-code']){var b=p.join(d,'plugins','cache',g);for(var o of f.readdirSync(b,{withFileTypes:true})){if(!o.isDirectory())continue;for(var v of f.readdirSync(p.join(b,o.name),{withFileTypes:true})){if(!v.isDirectory())continue;var c=p.join(b,o.name,v.name);if(f.existsSync(p.join(c,q)))return c}}}}catch(x){}return d})();console.log(r)")}"
+python3 "$ECC_ROOT/skills/continuous-learning-v2/scripts/instinct-cli.py" status
 ```
 
 ## 使用方法

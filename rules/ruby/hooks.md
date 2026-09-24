@@ -15,7 +15,7 @@ paths:
 Configure project-local hooks to prefer binstubs and checked-in tooling:
 
 - **RuboCop**: run `bundle exec rubocop -A <file>` or the project's safer formatter command after Ruby edits.
-- **Brakeman**: run `bundle exec brakeman --no-pager` after security-sensitive Rails changes.
+- **Brakeman**: run `bundle exec brakeman --no-progress` after security-sensitive Rails changes.
 - **Tests**: run the narrowest matching `bin/rails test ...` or `bundle exec rspec ...` command for touched files.
 - **Bundler audit**: run `bundle exec bundle-audit check --update` when `Gemfile` or `Gemfile.lock` changes and the project has bundler-audit installed.
 
@@ -29,7 +29,7 @@ Configure project-local hooks to prefer binstubs and checked-in tooling:
 
 ```bash
 bundle exec rubocop
-bundle exec brakeman --no-pager
+bundle exec brakeman --no-progress
 bin/rails test
 bundle exec rspec
 ```

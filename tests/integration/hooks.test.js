@@ -997,6 +997,13 @@ async function runTests() {
             (Array.isArray(command) && typeof command[0] === 'string' && command[0].endsWith('.sh')) ||
             commandText.endsWith('.sh');
 
+          if (isInline) {
+            assert.ok(
+              !commandText.includes('\\"'),
+              `Hook command in ${hookType} should not include escaped double quotes in node -e payload: ${commandText.substring(0, 80)}`
+            );
+          }
+
           assert.ok(
             isInline || isFilePath || isNpx || isShellWrapper || isShellScriptPath,
             `Hook command in ${hookType} should be node -e, node script, npx, or shell wrapper/script, got: ${commandText.substring(0, 80)}`

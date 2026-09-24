@@ -280,6 +280,32 @@ function runTests() {
     );
   })) passed++; else failed++;
 
+  if (test('resolves Zed minimal profile with project settings and without hooks', () => {
+    const projectRoot = '/workspace/zed-app';
+    const plan = resolveInstallPlan({
+      profileId: 'minimal',
+      target: 'zed',
+      projectRoot,
+    });
+
+    assert.deepStrictEqual(
+      plan.selectedModuleIds,
+      ['rules-core', 'agents-core', 'commands-core', 'platform-configs', 'workflow-quality']
+    );
+    assert.deepStrictEqual(plan.skippedModuleIds, []);
+    assert.strictEqual(plan.targetAdapterId, 'zed-project');
+    assert.strictEqual(plan.targetRoot, path.join(projectRoot, '.zed'));
+    assert.ok(
+      plan.operations.some(operation => operation.sourceRelativePath === '.zed'),
+      'Should install Zed native project settings'
+    );
+    assert.ok(
+      !plan.selectedModuleIds.includes('hooks-runtime')
+      && !plan.operations.some(operation => operation.moduleId === 'hooks-runtime'),
+      'Zed minimal profile should not install hook runtime files'
+    );
+  })) passed++; else failed++;
+
   if (test('resolves machine-learning component with workflow dependencies', () => {
     const plan = resolveInstallPlan({
       includeComponentIds: ['capability:machine-learning'],

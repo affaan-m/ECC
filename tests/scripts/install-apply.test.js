@@ -150,8 +150,7 @@ function runTests() {
       const mcpConfig = readJson(path.join(projectDir, '.cursor', 'mcp.json'));
       assert.strictEqual(hooksConfig.version, 1);
       assert.ok(hooksConfig.hooks.sessionStart, 'Should keep Cursor sessionStart hooks');
-      assert.ok(mcpConfig.mcpServers.github, 'Should install shared MCP servers into Cursor');
-      assert.ok(mcpConfig.mcpServers.context7, 'Should include bundled documentation MCPs');
+      assert.ok(mcpConfig.mcpServers['chrome-devtools'], 'Should install shared MCP servers into Cursor');
 
       const statePath = path.join(projectDir, '.cursor', 'ecc-install-state.json');
       const state = readJson(statePath);
@@ -194,8 +193,7 @@ function runTests() {
 
       const mcpConfig = readJson(path.join(projectDir, '.cursor', 'mcp.json'));
       assert.ok(mcpConfig.mcpServers.custom, 'Should preserve existing custom Cursor MCP servers');
-      assert.ok(mcpConfig.mcpServers.github, 'Should merge bundled GitHub MCP server');
-      assert.ok(mcpConfig.mcpServers.playwright, 'Should merge bundled Playwright MCP server');
+      assert.ok(mcpConfig.mcpServers['chrome-devtools'], 'Should merge the bundled chrome-devtools MCP server');
     } finally {
       cleanup(homeDir);
       cleanup(projectDir);
@@ -530,6 +528,10 @@ function runTests() {
       assert.ok(
         installedBashDispatcherEntry.hooks[0].command.includes('pre-bash-dispatcher.js'),
         'hooks/hooks.json should point the Bash preflight contract at the consolidated dispatcher'
+      );
+      assert.ok(
+        !installedBashDispatcherEntry.hooks[0].command.includes('\\"'),
+        'hooks/hooks.json should avoid escaped double quotes that break Windows Git Bash parsing'
       );
       assert.ok(
         !installedBashDispatcherEntry.hooks[0].command.includes('${CLAUDE_PLUGIN_ROOT}'),

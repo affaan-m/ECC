@@ -4,7 +4,7 @@ const path = require('path');
 const { getInstallTargetAdapter, planInstallTargetScaffold } = require('./install-targets/registry');
 
 const DEFAULT_REPO_ROOT = path.join(__dirname, '../..');
-const SUPPORTED_INSTALL_TARGETS = ['claude', 'cursor', 'antigravity', 'codex', 'gemini', 'opencode', 'codebuddy', 'joycode', 'qwen'];
+const SUPPORTED_INSTALL_TARGETS = ['claude', 'claude-project', 'cursor', 'antigravity', 'codex', 'gemini', 'opencode', 'codebuddy', 'joycode', 'qwen', 'zed'];
 const COMPONENT_FAMILY_PREFIXES = {
   baseline: 'baseline:',
   language: 'lang:',
@@ -12,9 +12,40 @@ const COMPONENT_FAMILY_PREFIXES = {
   capability: 'capability:',
   agent: 'agent:',
   skill: 'skill:',
+  locale: 'locale:',
 };
+const SUPPORTED_LOCALES = Object.freeze(['ja', 'zh-CN', 'ko-KR', 'pt-BR', 'ru', 'tr', 'vi-VN', 'zh-TW', 'de-DE']);
+const LOCALE_ALIAS_TO_COMPONENT_ID = Object.freeze({
+  'ja': 'locale:ja',
+  'ja-JP': 'locale:ja',
+  'zh-CN': 'locale:zh-cn',
+  'zh': 'locale:zh-cn',
+  'ko-KR': 'locale:ko-kr',
+  'ko': 'locale:ko-kr',
+  'pt-BR': 'locale:pt-br',
+  'pt': 'locale:pt-br',
+  'ru': 'locale:ru',
+  'tr': 'locale:tr',
+  'vi-VN': 'locale:vi-vn',
+  'vi': 'locale:vi-vn',
+  'zh-TW': 'locale:zh-tw',
+  'de-DE': 'locale:de-de',
+  'de': 'locale:de-de',
+});
+
+function listSupportedLocales() {
+  return [...SUPPORTED_LOCALES];
+}
 const LEGACY_COMPAT_BASE_MODULE_IDS_BY_TARGET = Object.freeze({
   claude: [
+    'rules-core',
+    'agents-core',
+    'commands-core',
+    'hooks-runtime',
+    'platform-configs',
+    'workflow-quality',
+  ],
+  'claude-project': [
     'rules-core',
     'agents-core',
     'commands-core',
@@ -34,6 +65,13 @@ const LEGACY_COMPAT_BASE_MODULE_IDS_BY_TARGET = Object.freeze({
     'rules-core',
     'agents-core',
     'commands-core',
+  ],
+  zed: [
+    'rules-core',
+    'agents-core',
+    'commands-core',
+    'platform-configs',
+    'workflow-quality',
   ],
 });
 const LEGACY_LANGUAGE_ALIAS_TO_CANONICAL = Object.freeze({
@@ -72,6 +110,18 @@ const LEGACY_LANGUAGE_EXTRA_MODULE_IDS = Object.freeze({
   rust: ['framework-language'],
   swift: [],
   typescript: ['framework-language'],
+});
+const TARGET_DEFAULT_PROFILE_IDS = Object.freeze({
+  opencode: 'opencode',
+});
+const TARGET_DEFAULT_EXCLUSIONS = Object.freeze({
+  opencode: [
+    {
+      moduleId: 'hooks-runtime',
+      reason: 'OpenCode defaults intentionally exclude hooks-runtime until users opt in.',
+      optInCommand: './install.sh --target opencode --modules hooks-runtime',
+    },
+  ],
 });
 
 function readJson(filePath, label) {
@@ -378,6 +428,22 @@ function expandComponentIdsToModuleIds(componentIds, manifests) {
   return dedupeStrings(expandedModuleIds);
 }
 
+function getTargetDefaultProfileId(target, manifests) {
+  const profileId = target ? TARGET_DEFAULT_PROFILE_IDS[target] : null;
+  return profileId && manifests.profiles[profileId] ? profileId : null;
+}
+
+function getTargetDefaultExclusions(target, manifests) {
+  const exclusions = target ? TARGET_DEFAULT_EXCLUSIONS[target] : null;
+  if (!Array.isArray(exclusions)) {
+    return [];
+  }
+
+  return exclusions
+    .filter(exclusion => manifests.modulesById.has(exclusion.moduleId))
+    .map(exclusion => ({ ...exclusion }));
+}
+
 function resolveLegacyCompatibilitySelection(options = {}) {
   const manifests = loadInstallManifests(options);
   const target = options.target || null;
@@ -433,11 +499,29 @@ function resolveLegacyCompatibilitySelection(options = {}) {
 
 function resolveInstallPlan(options = {}) {
   const manifests = loadInstallManifests(options);
-  const profileId = options.profileId || null;
+  const requestedProfileId = options.profileId || null;
   const explicitModuleIds = dedupeStrings(options.moduleIds);
   const includedComponentIds = dedupeStrings(options.includeComponentIds);
   const excludedComponentIds = dedupeStrings(options.excludeComponentIds);
   const requestedModuleIds = [];
+  const target = options.target || null;
+
+  if (target && !SUPPORTED_INSTALL_TARGETS.includes(target)) {
+    throw new Error(
+      `Unknown install target: ${target}. Expected one of ${SUPPORTED_INSTALL_TARGETS.join(', ')}`
+    );
+  }
+
+  const shouldUseTargetDefaultProfile = !requestedProfileId
+    && explicitModuleIds.length === 0
+    && includedComponentIds.length === 0;
+  const targetDefaultProfileId = shouldUseTargetDefaultProfile
+    ? getTargetDefaultProfileId(target, manifests)
+    : null;
+  const profileId = requestedProfileId || targetDefaultProfileId;
+  const targetDefaultExclusions = targetDefaultProfileId
+    ? getTargetDefaultExclusions(target, manifests)
+    : [];
 
   if (profileId) {
     const profile = manifests.profiles[profileId];
@@ -463,13 +547,12 @@ function resolveInstallPlan(options = {}) {
       excludedModuleOwners.set(moduleId, owners);
     }
   }
-
-  const target = options.target || null;
-  if (target && !SUPPORTED_INSTALL_TARGETS.includes(target)) {
-    throw new Error(
-      `Unknown install target: ${target}. Expected one of ${SUPPORTED_INSTALL_TARGETS.join(', ')}`
-    );
+  for (const exclusion of targetDefaultExclusions) {
+    const owners = excludedModuleOwners.get(exclusion.moduleId) || [];
+    owners.push(`${target} default`);
+    excludedModuleOwners.set(exclusion.moduleId, owners);
   }
+
   const validatedProjectRoot = readOptionalStringOption(options, 'projectRoot');
   const validatedHomeDir = readOptionalStringOption(options, 'homeDir');
   const targetPlanningInput = target
@@ -495,7 +578,10 @@ function resolveInstallPlan(options = {}) {
 
   const selectedIds = new Set();
   const skippedTargetIds = new Set();
-  const excludedIds = new Set(excludedModuleIds);
+  const excludedIds = new Set([
+    ...excludedModuleIds,
+    ...targetDefaultExclusions.map(exclusion => exclusion.moduleId),
+  ]);
   const visitingIds = new Set();
   const resolvedIds = new Set();
 
@@ -584,6 +670,12 @@ function resolveInstallPlan(options = {}) {
     explicitModuleIds,
     includedComponentIds,
     excludedComponentIds,
+    targetDefaultProfileId,
+    targetDefaultExclusions,
+    warnings: targetDefaultExclusions.map(exclusion => (
+      `${exclusion.moduleId} is intentionally excluded from the OpenCode default. `
+        + `Opt in with: ${exclusion.optInCommand}`
+    )),
     selectedModuleIds: selectedModules.map(module => module.id),
     skippedModuleIds: skippedModules.map(module => module.id),
     excludedModuleIds: excludedModules.map(module => module.id),
@@ -600,11 +692,14 @@ function resolveInstallPlan(options = {}) {
 module.exports = {
   DEFAULT_REPO_ROOT,
   SUPPORTED_INSTALL_TARGETS,
+  SUPPORTED_LOCALES,
+  LOCALE_ALIAS_TO_COMPONENT_ID,
   getManifestPaths,
   loadInstallManifests,
   getInstallComponent,
   listInstallComponents,
   listLegacyCompatibilityLanguages,
+  listSupportedLocales,
   listInstallModules,
   listInstallProfiles,
   resolveInstallPlan,

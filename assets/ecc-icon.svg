@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-labelledby="title">
+  <title id="title">ECC</title>
+  <rect width="128" height="128" rx="28" fill="#111827"/>
+  <path d="M26 39h55v13H42v12h34v12H42v13h40v13H26V39Z" fill="#F59E0B"/>
+  <path d="M83 39h19v13H83V39Zm0 25h19v13H83V64Zm0 25h19v13H83V89Z" fill="#E07856"/>
+</svg>

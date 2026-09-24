@@ -3,7 +3,7 @@ const globals = require('globals');
 
 module.exports = [
     {
-        ignores: ['.opencode/dist/**', '.cursor/**', 'node_modules/**']
+        ignores: ['.opencode/dist/**', '.cursor/**', 'node_modules/**', '.venv/**', 'venv/**', 'coverage/**']
     },
     js.configs.recommended,
     {

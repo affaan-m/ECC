@@ -3,13 +3,13 @@
 > WARNING: This README is specific to OpenCode usage.
 > If you installed ECC via npm (e.g. `npm install opencode-ecc`), refer to the root README instead.
 
-Everything Claude Code (ECC) plugin for OpenCode - agents, commands, hooks, and skills.
+ECC plugin for OpenCode - agents, commands, hooks, and skills.
 
 ## Installation
 
 ## Installation Overview
 
-There are two ways to use Everything Claude Code (ECC):
+There are two ways to use ECC:
 
 1. **npm package (recommended for most users)**
    Install via npm/bun/yarn and use the `ecc-install` CLI to set up rules and agents.
@@ -52,10 +52,23 @@ npx ecc-install typescript
 Clone and run OpenCode in the repository:
 
 ```bash
-git clone https://github.com/affaan-m/everything-claude-code
-cd everything-claude-code
+git clone https://github.com/affaan-m/ECC
+cd ECC
 opencode
 ```
+
+If you also want to apply the ECC home install
+(`node scripts/install-apply.js --target opencode --profile full`), build the
+plugin first so the compiled payload at `.opencode/dist/` exists:
+
+```bash
+node scripts/build-opencode.js   # or: npm run build:opencode
+node scripts/install-apply.js --target opencode --profile full
+```
+
+Without `.opencode/dist/index.js`, OpenCode will detect the slash commands
+but silently skip plugin hooks and tools. The installer now fails fast with
+a pointer to this command if the build step is missing.
 
 ## Features
 

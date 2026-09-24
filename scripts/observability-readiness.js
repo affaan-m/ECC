@@ -291,7 +291,9 @@ function buildChecks(rootDir) {
       pass: fileExists(rootDir, 'docs/releases/2.0.0-rc.1/publication-readiness.md')
         && fileExists(rootDir, 'docs/releases/2.0.0-rc.1/publication-evidence-2026-05-13-post-hardening.md')
         && fileExists(rootDir, 'docs/security/supply-chain-incident-response.md')
+        && fileExists(rootDir, 'scripts/ci/scan-supply-chain-iocs.js')
         && fileExists(rootDir, 'scripts/ci/validate-workflow-security.js')
+        && fileExists(rootDir, 'tests/ci/scan-supply-chain-iocs.test.js')
         && fileExists(rootDir, 'tests/ci/validate-workflow-security.test.js')
         && fileExists(rootDir, 'tests/scripts/npm-publish-surface.test.js')
         && fileExists(rootDir, 'tests/docs/ecc2-release-surface.test.js')
@@ -316,6 +318,10 @@ function buildChecks(rootDir) {
         && includesAll(supplyChainIncidentResponse, [
           'TanStack',
           'Mini Shai-Hulud',
+          'scan-supply-chain-iocs.js',
+          'gh-token-monitor',
+          '.claude/settings.json',
+          '.vscode/tasks.json',
           'npm audit signatures',
           'trusted publishing',
           'pull_request_target',

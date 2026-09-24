@@ -46,21 +46,16 @@ console.log('\n=== Testing GitHub Copilot support surface ===\n');
 test('VS Code settings enable Copilot prompt files', () => {
   const settings = JSON.parse(read('.vscode/settings.json'));
   assert.strictEqual(settings['chat.promptFiles'], true);
+  assert.ok(!Object.prototype.hasOwnProperty.call(settings, 'github.copilot.chat.reviewSelection.instructions'));
 });
 
 test('Copilot prompt files use current VS Code frontmatter', () => {
-  const promptFiles = fs.readdirSync(promptDir)
+  const promptFiles = fs
+    .readdirSync(promptDir)
     .filter(file => file.endsWith('.prompt.md'))
     .sort();
 
-  assert.deepStrictEqual(promptFiles, [
-    'build-fix.prompt.md',
-    'code-review.prompt.md',
-    'plan.prompt.md',
-    'refactor.prompt.md',
-    'security-review.prompt.md',
-    'tdd.prompt.md',
-  ]);
+  assert.deepStrictEqual(promptFiles, ['build-fix.prompt.md', 'plan.prompt.md', 'refactor.prompt.md', 'security-review.prompt.md', 'tdd.prompt.md']);
 
   for (const file of promptFiles) {
     const relativePath = `.github/prompts/${file}`;
@@ -74,18 +69,15 @@ test('Copilot prompt files use current VS Code frontmatter', () => {
 });
 
 test('Copilot docs advertise slash prompt invocation instead of hash commands', () => {
-  const sources = [
-    '.github/copilot-instructions.md',
-    'README.md',
-  ].map(read).join('\n');
+  const sources = ['.github/copilot-instructions.md', 'README.md'].map(read).join('\n');
 
-  for (const command of ['plan', 'tdd', 'code-review', 'security-review', 'build-fix', 'refactor']) {
+  for (const command of ['plan', 'tdd', 'security-review', 'build-fix', 'refactor']) {
     assert.ok(!sources.includes(`#${command}`), `Expected no stale #${command} command syntax`);
   }
 
   assert.ok(sources.includes('/plan'));
   assert.ok(sources.includes('/tdd'));
-  assert.ok(sources.includes('/code-review'));
+  assert.ok(sources.includes('/security-review'));
 });
 
 test('Copilot instructions include a prompt defense baseline', () => {

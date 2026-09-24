@@ -234,13 +234,13 @@ Options:
 
 Execute installation:
 ```bash
-# Common rules (flat copy into rules/)
-cp -r $ECC_ROOT/rules/common/* $TARGET/rules/
+# Common rules
+cp -r $ECC_ROOT/rules/common $TARGET/rules/common
 
-# Language-specific rules (flat copy into rules/)
-cp -r $ECC_ROOT/rules/typescript/* $TARGET/rules/   # if selected
-cp -r $ECC_ROOT/rules/python/* $TARGET/rules/        # if selected
-cp -r $ECC_ROOT/rules/golang/* $TARGET/rules/        # if selected
+# Language-specific rules (preserve per-language directories)
+cp -r $ECC_ROOT/rules/typescript $TARGET/rules/typescript   # if selected
+cp -r $ECC_ROOT/rules/python $TARGET/rules/python            # if selected
+cp -r $ECC_ROOT/rules/golang $TARGET/rules/golang            # if selected
 ```
 
 **Important**: If the user selects any language-specific rules but NOT common rules, warn them:

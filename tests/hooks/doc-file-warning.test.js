@@ -28,6 +28,10 @@ function runScript(input) {
   return { code: result.status || 0, stdout: result.stdout || '', stderr: result.stderr || '' };
 }
 
+function parseHookOutput(stdout) {
+  return JSON.parse(stdout);
+}
+
 function runTests() {
   console.log('\n=== Testing doc-file-warning.js (denylist policy) ===\n');
   let passed = 0;
@@ -138,10 +142,13 @@ function runTests() {
   ];
   for (const file of deniedFiles) {
     (test(`warns on ad-hoc denylist file: ${file}`, () => {
-      const { code, stderr } = runScript({ tool_input: { file_path: file } });
+      const { code, stdout, stderr } = runScript({ tool_input: { file_path: file } });
       assert.strictEqual(code, 0, 'should still exit 0 (warn only)');
-      assert.ok(stderr.includes('WARNING'), `expected warning in stderr for ${file}, got: ${stderr}`);
-      assert.ok(stderr.includes(file), `expected file path in stderr for ${file}`);
+      assert.strictEqual(stderr, '', `expected visible warning via stdout JSON, got stderr: ${stderr}`);
+      const output = parseHookOutput(stdout);
+      const additionalContext = output.hookSpecificOutput?.additionalContext || '';
+      assert.ok(additionalContext.includes('WARNING'), `expected warning in additionalContext for ${file}, got: ${stdout}`);
+      assert.ok(additionalContext.includes(file), `expected file path in additionalContext for ${file}`);
     }) ? passed++ : failed++);
   }
 
@@ -153,9 +160,10 @@ function runTests() {
   }) ? passed++ : failed++);
 
   (test('warns on ad-hoc name with backslash in non-structured dir', () => {
-    const { code, stderr } = runScript({ tool_input: { file_path: 'src\\SCRATCH.md' } });
+    const { code, stdout, stderr } = runScript({ tool_input: { file_path: 'src\\SCRATCH.md' } });
     assert.strictEqual(code, 0, 'should still exit 0');
-    assert.ok(stderr.includes('WARNING'), 'expected warning for non-structured backslash path');
+    assert.strictEqual(stderr, '', `expected visible warning via stdout JSON, got stderr: ${stderr}`);
+    assert.ok(parseHookOutput(stdout).hookSpecificOutput.additionalContext.includes('WARNING'), 'expected warning for non-structured backslash path');
   }) ? passed++ : failed++);
 
   // 8. Invalid/empty input - passes through without error
@@ -196,10 +204,12 @@ function runTests() {
     assert.strictEqual(stdout, JSON.stringify(input));
   }) ? passed++ : failed++);
 
-  (test('passes through input to stdout for warned file', () => {
+  (test('emits visible additionalContext JSON for warned file', () => {
     const input = { tool_input: { file_path: 'TODO.md' } };
     const { stdout } = runScript(input);
-    assert.strictEqual(stdout, JSON.stringify(input));
+    const output = parseHookOutput(stdout);
+    assert.strictEqual(output.hookSpecificOutput.hookEventName, 'PreToolUse');
+    assert.ok(output.hookSpecificOutput.additionalContext.includes('TODO.md'));
   }) ? passed++ : failed++);
 
   (test('passes through input to stdout for empty input', () => {

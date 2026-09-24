@@ -29,6 +29,7 @@ Add to your `~/.claude/settings.json`:
 | `model` | opus | **sonnet** | Sonnet handles ~80% of coding tasks well. Switch to Opus with `/model opus` for complex reasoning. ~60% cost reduction. |
 | `MAX_THINKING_TOKENS` | 31,999 | **10,000** | Extended thinking reserves up to 31,999 output tokens per request for internal reasoning. Reducing this cuts hidden cost by ~70%. Set to `0` to disable for trivial tasks. |
 | `CLAUDE_CODE_SUBAGENT_MODEL` | _(inherits main)_ | **haiku** | Subagents (Task tool) run on this model. Haiku is ~80% cheaper and sufficient for exploration, file reading, and test running. |
+| `ECC_CONTEXT_MONITOR_COST_WARNINGS` | on | **off for subscription users** | Suppresses agent-facing API-rate estimate warnings while keeping context exhaustion, scope, and loop warnings. |
 
 ### Community note on auto-compaction overrides
 
@@ -70,6 +71,22 @@ Switch models mid-session:
 | `/clear` | Between unrelated tasks. Stale context wastes tokens on every subsequent message. |
 | `/compact` | At logical task breakpoints (after planning, after debugging, before switching focus). |
 | `/cost` | Check token spending for the current session. |
+
+### API-rate cost estimate warnings
+
+ECC's context monitor can emit API-rate cost estimates from local hook telemetry. If you are on a Claude subscription and those estimates do not reflect your actual bill, disable only the agent-facing cost warnings:
+
+```bash
+export ECC_CONTEXT_MONITOR_COST_WARNINGS=off
+```
+
+Windows PowerShell:
+
+```powershell
+[Environment]::SetEnvironmentVariable('ECC_CONTEXT_MONITOR_COST_WARNINGS', 'off', 'User')
+```
+
+This does not disable context exhaustion warnings, scope warnings, loop warnings, `/cost`, or cost telemetry files.
 
 ### Strategic compaction
 

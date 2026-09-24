@@ -12,7 +12,7 @@
 - 멀티 에이전트 워크플로우 오케스트레이션
 - 복잡한 코딩 작업
 
-**Opus 4.5** (가장 깊은 추론):
+**Opus 4.6** (가장 깊은 추론):
 - 복잡한 아키텍처 의사결정
 - 최대 추론 요구사항
 - 리서치 및 분석 작업
@@ -37,7 +37,7 @@
 확장 사고 제어 방법:
 - **전환**: Option+T (macOS) / Alt+T (Windows/Linux)
 - **설정**: `~/.claude/settings.json`에서 `alwaysThinkingEnabled` 설정
-- **예산 제한**: `export MAX_THINKING_TOKENS=10000`
+- **예산 제한**: `export MAX_THINKING_TOKENS=10000` (bash) 또는 `$env:MAX_THINKING_TOKENS = "10000"` (PowerShell)
 - **상세 모드**: Ctrl+O로 사고 출력 확인
 
 깊은 추론이 필요한 복잡한 작업:

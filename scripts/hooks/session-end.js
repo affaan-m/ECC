@@ -255,16 +255,20 @@ async function main() {
     if (summary && updatedContent) {
       const summaryBlock = buildSummaryBlock(summary);
 
+      // Use function replacers: summaryBlock embeds raw user-message text, and a
+      // string replacement argument interprets $-sequences ($&, $$, $`, $', $n).
+      // A $& in a user message would otherwise re-inject the entire matched block
+      // and corrupt the persisted summary. A function replacer is treated literally.
       if (updatedContent.includes(SUMMARY_START_MARKER) && updatedContent.includes(SUMMARY_END_MARKER)) {
         updatedContent = updatedContent.replace(
           new RegExp(`${escapeRegExp(SUMMARY_START_MARKER)}[\\s\\S]*?${escapeRegExp(SUMMARY_END_MARKER)}`),
-          summaryBlock
+          () => summaryBlock
         );
       } else {
         // Migration path for files created before summary markers existed.
         updatedContent = updatedContent.replace(
           /## (?:Session Summary|Current State)[\s\S]*?$/,
-          `${summaryBlock}\n\n### Notes for Next Session\n-\n\n### Context to Load\n\`\`\`\n[relevant files]\n\`\`\`\n`
+          () => `${summaryBlock}\n\n### Notes for Next Session\n-\n\n### Context to Load\n\`\`\`\n[relevant files]\n\`\`\`\n`
         );
       }
     }

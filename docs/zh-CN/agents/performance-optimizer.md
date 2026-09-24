@@ -353,14 +353,14 @@ npx lighthouse https://your-app.com --only-categories=performance
 ### Web Vitals 监控
 
 ```typescript
-// Track Core Web Vitals
-import { getCLS, getFID, getLCP, getFCP, getTTFB } from 'web-vitals';
+// Track Core Web Vitals (web-vitals v4 API)
+import { onCLS, onINP, onLCP, onFCP, onTTFB } from 'web-vitals';
 
-getCLS(console.log);  // Cumulative Layout Shift
-getFID(console.log);  // First Input Delay
-getLCP(console.log);  // Largest Contentful Paint
-getFCP(console.log);  // First Contentful Paint
-getTTFB(console.log); // Time to First Byte
+onCLS(console.log);  // Cumulative Layout Shift
+onINP(console.log);  // Interaction to Next Paint
+onLCP(console.log);  // Largest Contentful Paint
+onFCP(console.log);  // First Contentful Paint
+onTTFB(console.log); // Time to First Byte
 ```
 
 ## 性能报告模板
@@ -384,7 +384,7 @@ getTTFB(console.log); // Time to First Byte
 | 指标 | 当前值 | 目标值 | 状态 |
 |--------|---------|--------|--------|
 | LCP | X.X秒 | < 2.5秒 | 通过： |
-| FID | XX毫秒 | < 100毫秒 | 通过： |
+| INP | XX毫秒 | < 200毫秒 | 通过： |
 | CLS | X.XX | < 0.1 | 警告： |
 
 ## 关键问题

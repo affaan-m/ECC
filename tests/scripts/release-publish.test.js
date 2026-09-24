@@ -22,7 +22,7 @@ function test(name, fn) {
 }
 
 function load(relativePath) {
-  return fs.readFileSync(path.join(repoRoot, relativePath), 'utf8');
+  return fs.readFileSync(path.join(repoRoot, relativePath), 'utf8').replace(/\r\n/g, '\n');
 }
 
 console.log('\n=== Testing release publish workflow ===\n');
@@ -32,9 +32,12 @@ for (const workflow of [
   '.github/workflows/reusable-release.yml',
 ]) {
   const content = load(workflow);
+  const jobsIndex = content.search(/^jobs:\s*$/m);
+  const workflowHeader = jobsIndex >= 0 ? content.slice(0, jobsIndex) : content;
 
-  test(`${workflow} grants id-token for npm provenance`, () => {
-    assert.match(content, /permissions:\s*[\s\S]*id-token:\s*write/m);
+  test(`${workflow} scopes id-token to the publish job for npm provenance`, () => {
+    assert.doesNotMatch(workflowHeader, /id-token:\s*write/);
+    assert.match(content, /\n\s+permissions:\n\s+contents:\s*write\n\s+id-token:\s*write/m);
   });
 
   test(`${workflow} configures the npm registry`, () => {
@@ -51,7 +54,7 @@ for (const workflow of [
   });
 
   test(`${workflow} publishes new tag versions to npm`, () => {
-    assert.match(content, /npm publish --access public --provenance/);
+    assert.match(content, /npm publish "\$\{\{ needs\.verify\.outputs\.package_file \}\}" --access public --provenance/);
     assert.match(content, /NODE_AUTH_TOKEN:\s*\$\{\{\s*secrets\.NPM_TOKEN\s*\}\}/);
   });
 

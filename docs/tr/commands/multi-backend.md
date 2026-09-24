@@ -2,6 +2,8 @@
 
 Backend odaklı iş akışı (Research → Ideation → Plan → Execute → Optimize → Review), Codex liderliğinde.
 
+> **Ön koşul:** Bu komut, temel ECC kurulumunun parçası **olmayan** harici `ccg-workflow` runtime'ını gerektirir. Bu komutun bağımlı olduğu `~/.claude/bin/codeagent-wrapper` ve `~/.claude/.ccg/prompts/*` rol dosyalarını sağlamak için `npx ccg-workflow` komutuyla başlatın. Bu runtime olmadan bu komut düzgün çalışmaz.
+
 ## Kullanım
 
 ```bash

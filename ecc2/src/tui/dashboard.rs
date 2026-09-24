@@ -12923,8 +12923,7 @@ diff --git a/src/lib.rs b/src/lib.rs
         let repo_root = tempdir.join("repo");
         init_git_repo(&repo_root)?;
 
-        let original_dir = std::env::current_dir()?;
-        std::env::set_current_dir(&repo_root)?;
+        let cwd_guard = crate::test_support::CurrentDirGuard::enter(&repo_root)?;
 
         let mut cfg = build_config(&tempdir);
         cfg.orchestration_templates = BTreeMap::from([(
@@ -13000,7 +12999,7 @@ diff --git a/src/lib.rs b/src/lib.rs
             ])
         );
 
-        std::env::set_current_dir(original_dir)?;
+        drop(cwd_guard);
         let _ = std::fs::remove_dir_all(&tempdir);
         Ok(())
     }
@@ -15048,6 +15047,9 @@ diff --git a/src/lib.rs b/src/lib.rs
         run_git(path, &["init", "-q"])?;
         run_git(path, &["config", "user.name", "ECC Tests"])?;
         run_git(path, &["config", "user.email", "ecc-tests@example.com"])?;
+        // Keep fixtures hermetic: a global core.hooksPath (e.g. identity-checking
+        // pre-push hooks) must not run inside test repos.
+        run_git(path, &["config", "core.hooksPath", "hooks-disabled"])?;
         fs::write(path.join("README.md"), "hello\n")?;
         run_git(path, &["add", "README.md"])?;
         run_git(path, &["commit", "-qm", "init"])?;

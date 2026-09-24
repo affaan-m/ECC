@@ -88,7 +88,9 @@ test('stale PR salvage ledger keeps localization tails manual-review only', () =
   assert.ok(source.includes('#1609 Persian README translation'));
   assert.ok(source.includes('#1563 zh-TW README sync'));
   assert.ok(source.includes('translator/manual review'));
+  assert.ok(source.includes('Linear ITO-55'));
   assert.ok(source.includes('Do not import stale top-level docs'));
+  assert.ok(source.includes('not a release-blocking salvage task'));
 });
 
 test('legacy inventory and roadmap link to the durable salvage ledger', () => {
@@ -97,7 +99,10 @@ test('legacy inventory and roadmap link to the durable salvage ledger', () => {
 
   assert.ok(inventory.includes('docs/stale-pr-salvage-ledger.md'));
   assert.ok(roadmap.includes('docs/stale-pr-salvage-ledger.md'));
-  assert.ok(roadmap.includes('#1687 translator/manual'));
+  assert.ok(roadmap.includes('#1687, #1609, #1563, #1564'));
+  assert.ok(roadmap.includes('Linear ITO-55'));
+  assert.ok(roadmap.includes('#1609'));
+  assert.ok(roadmap.includes('no automatic import remains release-blocking'));
 });
 
 test('stale PR salvage ledger records the May 12 gap pass', () => {

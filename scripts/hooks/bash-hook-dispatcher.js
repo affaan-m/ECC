@@ -2,6 +2,10 @@
 'use strict';
 
 const { isHookEnabled } = require('../lib/hook-flags');
+const {
+  buildPreToolUseAdditionalContext,
+  combineAdditionalContext,
+} = require('./pretooluse-visible-output');
 
 const { run: runBlockNoVerify } = require('./block-no-verify');
 const { run: runAutoTmuxDev } = require('./auto-tmux-dev');
@@ -93,7 +97,9 @@ function normalizeHookResult(previousRaw, output) {
   }
 
   if (output && typeof output === 'object') {
-    const nextRaw = Object.prototype.hasOwnProperty.call(output, 'stdout')
+    const nextRaw = Object.prototype.hasOwnProperty.call(output, 'additionalContext')
+      ? previousRaw
+      : Object.prototype.hasOwnProperty.call(output, 'stdout')
       ? String(output.stdout ?? '')
       : !Number.isInteger(output.exitCode) || output.exitCode === 0
         ? previousRaw
@@ -102,6 +108,7 @@ function normalizeHookResult(previousRaw, output) {
     return {
       raw: nextRaw,
       stderr: typeof output.stderr === 'string' ? output.stderr : '',
+      additionalContext: output.additionalContext,
       exitCode: Number.isInteger(output.exitCode) ? output.exitCode : 0,
     };
   }
@@ -116,6 +123,7 @@ function normalizeHookResult(previousRaw, output) {
 function runHooks(rawInput, hooks) {
   let currentRaw = rawInput;
   let stderr = '';
+  let additionalContext = '';
 
   for (const hook of hooks) {
     if (!isHookEnabled(hook.id, { profiles: hook.profiles })) {
@@ -128,15 +136,25 @@ function runHooks(rawInput, hooks) {
       if (result.stderr) {
         stderr += result.stderr.endsWith('\n') ? result.stderr : `${result.stderr}\n`;
       }
+      if (result.additionalContext) {
+        additionalContext = combineAdditionalContext(additionalContext, result.additionalContext);
+      }
       if (result.exitCode !== 0) {
-        return { output: currentRaw, stderr, exitCode: result.exitCode };
+        return { output: currentRaw, stderr, additionalContext, exitCode: result.exitCode };
       }
     } catch (error) {
       stderr += `[Hook] ${hook.id} failed: ${error.message}\n`;
     }
   }
 
-  return { output: currentRaw, stderr, exitCode: 0 };
+  return {
+    output: additionalContext
+      ? buildPreToolUseAdditionalContext(additionalContext)
+      : currentRaw,
+    stderr,
+    additionalContext,
+    exitCode: 0,
+  };
 }
 
 function runPreBash(rawInput) {

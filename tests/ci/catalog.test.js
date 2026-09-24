@@ -44,6 +44,7 @@ function writeEnglishReadme(root, counts, options = {}) {
   const unrelatedSkillsCount = options.unrelatedSkillsCount || 16;
 
   fs.writeFileSync(path.join(root, 'README.md'), `Access to ${counts.agents} agents, ${counts.skills} skills, and ${counts.commands} commands.
+- **Public surface synced to the live repo** - metadata, catalog counts, plugin manifests, and install-facing docs now match the actual OSS surface: ${counts.agents} agents, ${counts.skills} skills, and ${counts.commands} legacy command shims.
 |-- agents/           # ${counts.agents} specialized subagents for delegation
 | Feature | Claude Code | Cursor IDE | Codex CLI | OpenCode |
 | --- | --- | --- | --- | --- |
@@ -221,6 +222,7 @@ function runTests() {
         .join('\n');
 
       assert.ok(formatted.includes('README.md quick-start summary'));
+      assert.ok(formatted.includes('README.md rc.1 release-note summary'));
       assert.ok(formatted.includes('README.md project tree'));
       assert.ok(formatted.includes('AGENTS.md summary'));
       assert.ok(formatted.includes('.claude-plugin/plugin.json description'));
@@ -255,6 +257,7 @@ function runTests() {
       const marketplaceJson = fs.readFileSync(path.join(testDir, '.claude-plugin', 'marketplace.json'), 'utf8');
 
       assert.ok(readme.includes('Access to 1 agents, 1 skills, and 1 legacy command shims'));
+      assert.ok(readme.includes('actual OSS surface: 1 agents, 1 skills, and 1 legacy command shims'));
       assert.ok(readme.includes('|-- agents/           # 1 specialized subagents for delegation'));
       assert.ok(readme.includes('| Skills | 42 | .agents/skills/ |'));
       assert.ok(agentsDoc.includes('providing 1 specialized agents, 1+ skills, 1 commands'));

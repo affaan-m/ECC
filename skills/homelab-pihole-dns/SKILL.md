@@ -96,11 +96,11 @@ less pi-hole-install.sh   # review before proceeding
 bash pi-hole-install.sh
 
 # Follow the interactive installer:
-#   1. Select network interface (eth0 for wired — recommended)
-#   2. Select upstream DNS (Cloudflare or leave default — can change later)
-#   3. Confirm static IP
-#   4. Install the web admin interface (recommended)
-#   5. Note the admin password shown at the end
+# 1. Select network interface (eth0 for wired — recommended)
+# 2. Select upstream DNS (Cloudflare or leave default — can change later)
+# 3. Confirm static IP
+# 4. Install the web admin interface (recommended)
+# 5. Note the admin password shown at the end
 ```
 
 ## Pointing Your Network at Pi-hole
@@ -183,9 +183,9 @@ sudo systemctl start cloudflared
 sudo systemctl enable cloudflared
 
 # Now point Pi-hole at the local DoH proxy:
-#   Pi-hole admin → Settings → DNS → Custom upstream DNS
-#   Set to: 127.0.0.1#5053
-#   Uncheck all other upstream resolvers
+# Pi-hole admin → Settings → DNS → Custom upstream DNS
+# Set to: 127.0.0.1#5053
+# Uncheck all other upstream resolvers
 ```
 
 ## Local DNS Records

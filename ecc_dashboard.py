@@ -10,9 +10,12 @@ import os
 import json
 from pathlib import Path
 from typing import Dict, List, Optional
+import logging
 import webbrowser
 
 from scripts.lib.ecc_dashboard_runtime import launch_terminal, maximize_window
+
+logger = logging.getLogger(__name__)
 
 # ============================================================================
 # DATA LOADERS - Load ECC data from the project
@@ -112,9 +115,9 @@ def load_skills(project_path: str) -> List[Dict]:
                                 if line.startswith('# '):
                                     description = line[2:].strip()[:100]
                                     break
-                    except:
-                        pass
-                
+                    except Exception:
+                        logger.debug("Failed to parse skill file %s", skill_file, exc_info=True)
+
                 # Determine category
                 category = "General"
                 item_lower = item.lower()
@@ -186,9 +189,9 @@ def load_commands(project_path: str) -> List[Dict]:
                             if line.startswith('# '):
                                 description = line[2:].strip()
                                 break
-                except:
-                    pass
-                
+                except Exception:
+                    logger.debug("Failed to parse command file %s", item, exc_info=True)
+
                 commands.append({
                     'name': cmd_name,
                     'description': description or cmd_name.replace('-', ' ').title()
@@ -280,8 +283,8 @@ class ECCDashboard(tk.Tk):
         try:
             self.icon_image = tk.PhotoImage(file='assets/images/ecc-logo.png')
             self.iconphoto(True, self.icon_image)
-        except:
-            pass
+        except Exception:
+            logger.debug("Failed to load window icon", exc_info=True)
         
         self.minsize(800, 600)
         
@@ -344,8 +347,8 @@ class ECCDashboard(tk.Tk):
             self.logo_image = tk.PhotoImage(file='assets/images/ecc-logo.png')
             self.logo_image = self.logo_image.subsample(2, 2)
             ttk.Label(header_frame, image=self.logo_image).pack(side=tk.LEFT, padx=(0, 10))
-        except:
-            pass
+        except Exception:
+            logger.debug("Failed to load header logo", exc_info=True)
         
         self.title_label = ttk.Label(header_frame, text="ECC Dashboard", font=('Open Sans', 18, 'bold'))
         self.title_label.pack(side=tk.LEFT)
@@ -897,22 +900,20 @@ Project: github.com/affaan-m/everything-claude-code"""
         def update_widget_colors(widget):
             try:
                 widget.configure(background=bg_color)
-            except:
-                pass
-            for child in widget.winfo_children():
-                try:
-                    child.configure(background=bg_color)
-                except:
-                    pass
+            except Exception:
+                logger.debug("Cannot set background on %s", widget.__class__.__name__, exc_info=True)
+            try:
+                children = widget.winfo_children()
+            except Exception:
+                logger.debug("Cannot list child widgets on %s", widget.__class__.__name__, exc_info=True)
+                return
+            for child in children:
                 try:
                     update_widget_colors(child)
-                except:
-                    pass
-        
-        try:
-            update_widget_colors(self)
-        except:
-            pass
+                except Exception:
+                    logger.debug("Cannot update child widget colors on %s", child.__class__.__name__, exc_info=True)
+
+        update_widget_colors(self)
         
         self.update()
 

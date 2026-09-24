@@ -261,7 +261,7 @@ if (
 else failed++;
 
 if (
-  test('merge-mcp-config dry-run appends all recommended servers without mutating target', () => {
+  test('merge-mcp-config dry-run appends the current default set without mutating target', () => {
     const tempDir = createTempDir('mcp-merge-dry-run-');
     const configPath = path.join(tempDir, 'config.toml');
     const original = '';
@@ -272,9 +272,12 @@ if (
 
       assert.strictEqual(result.status, 0, `${result.stdout}\n${result.stderr}`);
       assert.match(result.stdout, /Package manager: npm \(exec: npx\)/);
-      assert.match(result.stdout, /\[add\] mcp_servers\.supabase/);
-      assert.match(result.stdout, /\[mcp_servers\.github\]/);
+      assert.match(result.stdout, /\[add\] mcp_servers\.chrome-devtools/);
+      assert.match(result.stdout, /\[mcp_servers\.chrome-devtools\]/);
       assert.match(result.stdout, /Dry run/);
+      // Retired defaults (June 2026 connector policy) must not be emitted.
+      assert.doesNotMatch(result.stdout, /mcp_servers\.(supabase|playwright|context7|exa|github|memory|sequential-thinking)\b/);
+      assert.doesNotMatch(result.stdout, /url = /);
       assert.strictEqual(fs.readFileSync(configPath, 'utf8'), original);
     } finally {
       cleanup(tempDir);
@@ -296,14 +299,17 @@ if (
 
       const merged = fs.readFileSync(configPath, 'utf8');
       const parsed = TOML.parse(merged);
-      assert.strictEqual(parsed.mcp_servers.exa.url, 'https://mcp.exa.ai/mcp');
-      assert.strictEqual(parsed.mcp_servers.github.command, 'bash');
-      assert.deepStrictEqual(parsed.mcp_servers.memory.args, ['@modelcontextprotocol/server-memory']);
-      assert.strictEqual(parsed.mcp_servers.supabase.tool_timeout_sec, 120);
+      assert.strictEqual(parsed.mcp_servers['chrome-devtools'].command, 'npx');
+      assert.deepStrictEqual(parsed.mcp_servers['chrome-devtools'].args, ['chrome-devtools-mcp@latest']);
+      assert.strictEqual(parsed.mcp_servers['chrome-devtools'].startup_timeout_sec, 30);
+      // No retired server may be (re-)emitted — exa's url form broke Codex (#2224).
+      assert.strictEqual(parsed.mcp_servers.exa, undefined);
+      assert.strictEqual(parsed.mcp_servers.github, undefined);
+      assert.strictEqual(parsed.mcp_servers.supabase, undefined);
 
       const second = runNode(mergeMcpConfigScript, [configPath], deterministicPackageEnv);
       assert.strictEqual(second.status, 0, `${second.stdout}\n${second.stderr}`);
-      assert.match(second.stdout, /\[ok\] mcp_servers\.github/);
+      assert.match(second.stdout, /\[ok\] mcp_servers\.chrome-devtools/);
       assert.match(second.stdout, /All ECC MCP servers already present/);
       assert.strictEqual(fs.readFileSync(configPath, 'utf8'), merged);
     } finally {
@@ -315,24 +321,88 @@ if (
 else failed++;
 
 if (
-  test('merge-mcp-config update dry-run reports canonical and legacy section refreshes', () => {
+  test('merge-mcp-config repairs the invalid exa url entry from earlier ECC versions (#2224)', () => {
+    const tempDir = createTempDir('mcp-merge-exa-repair-');
+    const configPath = path.join(tempDir, 'config.toml');
+    const original = [
+      '[mcp_servers.github]',
+      'command = "npx"',
+      'args = ["-y", "@modelcontextprotocol/server-github"]',
+      '',
+      '[mcp_servers.exa]',
+      'url = "https://mcp.exa.ai/mcp"',
+      '',
+    ].join('\n');
+
+    try {
+      fs.writeFileSync(configPath, original);
+      const result = runNode(mergeMcpConfigScript, [configPath], deterministicPackageEnv);
+
+      assert.strictEqual(result.status, 0, `${result.stdout}\n${result.stderr}`);
+      assert.match(result.stdout, /\[repair\] mcp_servers\.exa/);
+
+      const updated = fs.readFileSync(configPath, 'utf8');
+      const parsed = TOML.parse(updated);
+      assert.strictEqual(parsed.mcp_servers.exa, undefined, 'invalid exa url entry must be removed');
+      assert.doesNotMatch(updated, /url = "https:\/\/mcp\.exa\.ai\/mcp"/);
+      // User-managed servers are untouched; current default is added.
+      assert.strictEqual(parsed.mcp_servers.github.command, 'npx');
+      assert.strictEqual(parsed.mcp_servers['chrome-devtools'].command, 'npx');
+
+      // Re-running must not re-introduce the invalid entry.
+      const second = runNode(mergeMcpConfigScript, [configPath], deterministicPackageEnv);
+      assert.strictEqual(second.status, 0, `${second.stdout}\n${second.stderr}`);
+      assert.doesNotMatch(fs.readFileSync(configPath, 'utf8'), /mcp_servers\.exa/);
+    } finally {
+      cleanup(tempDir);
+    }
+  })
+)
+  passed++;
+else failed++;
+
+if (
+  test('merge-mcp-config leaves a user-managed stdio exa entry untouched', () => {
+    const tempDir = createTempDir('mcp-merge-exa-stdio-');
+    const configPath = path.join(tempDir, 'config.toml');
+    const original = [
+      '[mcp_servers.exa]',
+      'command = "npx"',
+      'args = ["-y", "mcp-remote", "https://mcp.exa.ai/mcp"]',
+      'startup_timeout_sec = 30',
+      '',
+    ].join('\n');
+
+    try {
+      fs.writeFileSync(configPath, original);
+      const result = runNode(mergeMcpConfigScript, [configPath], deterministicPackageEnv);
+
+      assert.strictEqual(result.status, 0, `${result.stdout}\n${result.stderr}`);
+      assert.doesNotMatch(result.stdout, /\[repair\]/);
+
+      const parsed = TOML.parse(fs.readFileSync(configPath, 'utf8'));
+      assert.strictEqual(parsed.mcp_servers.exa.command, 'npx');
+      assert.deepStrictEqual(parsed.mcp_servers.exa.args, ['-y', 'mcp-remote', 'https://mcp.exa.ai/mcp']);
+    } finally {
+      cleanup(tempDir);
+    }
+  })
+)
+  passed++;
+else failed++;
+
+if (
+  test('merge-mcp-config update dry-run refreshes managed sections and leaves user servers alone', () => {
     const tempDir = createTempDir('mcp-merge-update-dry-run-');
     const configPath = path.join(tempDir, 'config.toml');
     const original = [
+      '[mcp_servers.chrome-devtools]',
+      'command = "custom"',
+      'args = ["old"]',
+      '',
       '[mcp_servers.context7]',
-      'command = "custom"',
-      'args = ["old"]',
-      '',
-      '[mcp_servers.context7-mcp]',
       'command = "npx"',
-      'args = ["legacy"]',
-      '',
-      '[mcp_servers.supabase]',
-      'command = "custom"',
-      'args = ["old"]',
-      '',
-      '[mcp_servers.supabase.env]',
-      'SUPABASE_ACCESS_TOKEN = "token"',
+      'args = ["-y", "@upstash/context7-mcp@latest"]',
       '',
     ].join('\n');
 
@@ -341,11 +411,10 @@ if (
       const result = runNode(mergeMcpConfigScript, [configPath, '--update-mcp', '--dry-run'], deterministicPackageEnv);
 
       assert.strictEqual(result.status, 0, `${result.stdout}\n${result.stderr}`);
-      assert.match(result.stdout, /\[remove\] mcp_servers\.context7/);
-      assert.match(result.stdout, /\[remove\] mcp_servers\.context7-mcp/);
-      assert.match(result.stdout, /\[remove\] mcp_servers\.supabase/);
-      assert.match(result.stdout, /\[mcp_servers\.supabase\]/);
-      assert.match(result.stdout, /\[mcp_servers\.context7\]/);
+      assert.match(result.stdout, /\[remove\] mcp_servers\.chrome-devtools/);
+      assert.match(result.stdout, /\[mcp_servers\.chrome-devtools\]/);
+      // Retired servers are no longer ECC-managed: never removed or re-added.
+      assert.doesNotMatch(result.stdout, /\[remove\] mcp_servers\.context7/);
       assert.strictEqual(fs.readFileSync(configPath, 'utf8'), original);
     } finally {
       cleanup(tempDir);
@@ -356,38 +425,31 @@ if (
 else failed++;
 
 if (
-  test('merge-mcp-config removes disabled legacy servers without appending replacements', () => {
+  test('merge-mcp-config removes disabled servers without appending replacements', () => {
     const tempDir = createTempDir('mcp-merge-disabled-');
     const configPath = path.join(tempDir, 'config.toml');
     const original = [
-      '[mcp_servers.context7-mcp]',
+      '[mcp_servers.chrome-devtools]',
       'command = "npx"',
-      'args = ["legacy"]',
-      '',
-      '[mcp_servers.exa]',
-      'url = "https://mcp.exa.ai/mcp"',
+      'args = ["chrome-devtools-mcp@latest"]',
       '',
     ].join('\n');
-    const allServersDisabled = 'supabase,playwright,context7,exa,github,memory,sequential-thinking';
 
     try {
       fs.writeFileSync(configPath, original);
       const result = runNode(mergeMcpConfigScript, [configPath], {
         ...deterministicPackageEnv,
-        ECC_DISABLED_MCPS: allServersDisabled,
+        ECC_DISABLED_MCPS: 'chrome-devtools',
       });
 
       assert.strictEqual(result.status, 0, `${result.stdout}\n${result.stderr}`);
       assert.match(result.stdout, /Disabled via ECC_DISABLED_MCPS/);
-      assert.match(result.stdout, /\[skip\] mcp_servers\.context7 \(disabled\)/);
-      assert.match(result.stdout, /\[skip\] mcp_servers\.exa \(disabled\)/);
-      assert.match(result.stdout, /\[update\] mcp_servers\.context7-mcp \(disabled\)/);
-      assert.match(result.stdout, /\[update\] mcp_servers\.exa \(disabled\)/);
-      assert.match(result.stdout, /Done\. Removed 2 disabled server\(s\)\./);
+      assert.match(result.stdout, /\[skip\] mcp_servers\.chrome-devtools \(disabled\)/);
+      assert.match(result.stdout, /\[update\] mcp_servers\.chrome-devtools \(disabled\)/);
+      assert.match(result.stdout, /Done\. Removed 1 server section\(s\)\./);
 
       const updated = fs.readFileSync(configPath, 'utf8');
-      assert.doesNotMatch(updated, /context7-mcp/);
-      assert.doesNotMatch(updated, /mcp_servers\.exa/);
+      assert.doesNotMatch(updated, /chrome-devtools/);
     } finally {
       cleanup(tempDir);
     }
@@ -454,7 +516,10 @@ if (
       assert.strictEqual(parsedConfig.agents.explorer.config_file, 'agents/explorer.toml');
       assert.strictEqual(parsedConfig.agents.reviewer.config_file, 'agents/reviewer.toml');
       assert.strictEqual(parsedConfig.agents.docs_researcher.config_file, 'agents/docs-researcher.toml');
-      assert.ok(parsedConfig.mcp_servers.exa);
+      // Current default connector is added; retired servers are not emitted,
+      // and pre-existing user-managed entries are preserved untouched.
+      assert.ok(parsedConfig.mcp_servers['chrome-devtools']);
+      assert.strictEqual(parsedConfig.mcp_servers.exa, undefined);
       assert.ok(parsedConfig.mcp_servers.github);
       assert.ok(parsedConfig.mcp_servers.memory);
       assert.ok(parsedConfig.mcp_servers['sequential-thinking']);

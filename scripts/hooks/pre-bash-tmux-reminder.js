@@ -2,6 +2,7 @@
 'use strict';
 
 const MAX_STDIN = 1024 * 1024;
+const { buildPreToolUseAdditionalContext } = require('./pretooluse-visible-output');
 let raw = '';
 
 function run(rawInput) {
@@ -15,11 +16,10 @@ function run(rawInput) {
       /(npm (install|test)|pnpm (install|test)|yarn (install|test)?|bun (install|test)|cargo build|make\b|docker\b|pytest|vitest|playwright)/.test(cmd)
     ) {
       return {
-        stdout: typeof rawInput === 'string' ? rawInput : JSON.stringify(rawInput),
-        stderr: [
+        additionalContext: [
           '[Hook] Consider running in tmux for session persistence',
           '[Hook] tmux new -s dev  |  tmux attach -t dev',
-        ].join('\n'),
+        ],
         exitCode: 0,
       };
     }
@@ -45,7 +45,11 @@ if (require.main === module) {
       if (result.stderr) {
         process.stderr.write(`${result.stderr}\n`);
       }
-      process.stdout.write(String(result.stdout || ''));
+      if (Object.prototype.hasOwnProperty.call(result, 'additionalContext')) {
+        process.stdout.write(buildPreToolUseAdditionalContext(result.additionalContext));
+      } else {
+        process.stdout.write(String(result.stdout || ''));
+      }
       process.exitCode = Number.isInteger(result.exitCode) ? result.exitCode : 0;
       return;
     }

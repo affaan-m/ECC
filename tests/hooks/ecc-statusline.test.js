@@ -131,9 +131,9 @@ function runTests() {
   else failed++;
 
   if (
-    test('20% remaining contains red blink ANSI code', () => {
+    test('20% remaining contains bold red ANSI code', () => {
       const bar = buildContextBar(20);
-      assert.ok(bar.includes('\x1b[5;31m'), `Expected red blink ANSI in: ${JSON.stringify(bar)}`);
+      assert.ok(bar.includes('\x1b[1;31m'), `Expected bold red ANSI in: ${JSON.stringify(bar)}`);
     })
   )
     passed++;

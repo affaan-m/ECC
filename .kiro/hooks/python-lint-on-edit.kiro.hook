@@ -1,0 +1,8 @@
+{
+  "version": "1.0.0",
+  "enabled": true,
+  "name": "python-lint-on-edit",
+  "description": "Check Python files for type errors and style issues when edited.",
+  "when": { "type": "fileEdited", "patterns": ["*.py"] },
+  "then": { "type": "askAgent", "prompt": "A Python file was just saved. Check for any obvious type errors, PEP 8 violations, or common anti-patterns in the modified file and flag them if found." }
+}
