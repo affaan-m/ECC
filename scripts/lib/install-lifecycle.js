@@ -2281,6 +2281,9 @@ function repairInstalledStates(options = {}) {
         desiredPlan.operations,
         record.adapter.target
       );
+      if (typeof options.afterOperationInspection === 'function') {
+        options.afterOperationInspection({ record, desiredPlan, operationHealth });
+      }
 
       const unsafeOperationResult = getUnsafeOperationResult(
         record,
