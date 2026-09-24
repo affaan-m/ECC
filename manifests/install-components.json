@@ -677,6 +677,14 @@
       "modules": [
         "docs-uk-ua"
       ]
+    },
+    {
+      "id": "locale:pl",
+      "family": "locale",
+      "description": "Polish (pl) translated reference docs installed to ~/.claude/docs/pl/.",
+      "modules": [
+        "docs-pl"
+      ]
     }
   ]
 }

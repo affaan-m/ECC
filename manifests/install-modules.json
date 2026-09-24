@@ -1177,6 +1177,22 @@
       "defaultInstall": false,
       "cost": "heavy",
       "stability": "stable"
+    },
+    {
+      "id": "docs-pl",
+      "kind": "docs",
+      "description": "Polish (pl) getting-started and core-concepts guide with a terminology glossary.",
+      "paths": [
+        "docs/pl"
+      ],
+      "targets": [
+        "claude",
+        "claude-project"
+      ],
+      "dependencies": [],
+      "defaultInstall": false,
+      "cost": "heavy",
+      "stability": "stable"
     }
   ]
 }
