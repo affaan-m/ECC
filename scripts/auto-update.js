@@ -8,6 +8,7 @@ const { spawnSync } = require('child_process');
 const { discoverInstalledStates } = require('./lib/install-lifecycle');
 const { getRecordedHookConsent } = require('./lib/install/hook-consent');
 const { SUPPORTED_INSTALL_TARGETS } = require('./lib/install-manifests');
+const grokFixtureUpgrade = require('./lib/grok-fixture-upgrade');
 
 function showHelp(exitCode = 0) {
   console.log(`
@@ -268,10 +269,68 @@ function runAutoUpdate(options = {}, dependencies = {}) {
     HOME: homeDir,
     USERPROFILE: homeDir
   };
+  const grokHome = options.grokHome || path.join(homeDir, '.grok');
+  const classify = dependencies.classifyGrokFixtureUpgrade || grokFixtureUpgrade.classifyGrokFixtureUpgrade;
+  const probeIncoming = dependencies.probeGrokSupportFromGit || grokFixtureUpgrade.probeGrokSupportFromGit;
+  const snapshotFiles = dependencies.snapshotFixtureFiles || grokFixtureUpgrade.snapshotFixtureFiles;
+  const applyFixture = dependencies.applyGrokFixtureUpgrade || grokFixtureUpgrade.applyGrokFixtureUpgrade;
+  const detectDest = dependencies.detectDestFixture || grokFixtureUpgrade.detectDestFixture;
+  const readPolicy = dependencies.readFixturePolicy || grokFixtureUpgrade.readFixturePolicy;
+  const listChanged = dependencies.listChangedPaths || grokFixtureUpgrade.listChangedPaths;
+  const isNecessary = dependencies.isFixtureNecessary || grokFixtureUpgrade.isFixtureNecessary;
+
+  let grokFixture = { flow: 'none' };
 
   if (!options.dryRun) {
     execute('git', ['fetch', '--all', '--prune'], { cwd: repoRoot, env });
+    const destPresent = detectDest(grokHome);
+    const policy = readPolicy(grokHome);
+    let decision = { flow: 'none', reason: 'no-fixture', cleanup: null };
+    let incoming = null;
+    let snapshot = null;
+    if (destPresent || (policy && policy.status === 'active')) {
+      incoming = probeIncoming({ execute, repoRoot, ref: 'FETCH_HEAD' });
+      decision = classify({
+        destPresent,
+        policyStatus: policy ? policy.status : null,
+        incoming,
+        changedPaths: listChanged(execute, repoRoot, 'HEAD', 'FETCH_HEAD'),
+      });
+      if (decision.flow === 'perforated') {
+        snapshot = snapshotFiles(repoRoot);
+      }
+    }
     execute('git', ['pull', '--ff-only'], { cwd: repoRoot, env });
+    if (decision.flow !== 'none') {
+      const applied = applyFixture({
+        decision,
+        repoRoot,
+        grokHome,
+        snapshot,
+        dryRun: false,
+      });
+      grokFixture = {
+        ...decision,
+        ...applied,
+        incoming,
+        necessary: isNecessary({ destPresent, incoming }),
+      };
+      if (
+        (decision.flow === 'perforated' || decision.flow === 'passthrough')
+        && fs.existsSync(path.join(grokHome, 'config.toml'))
+      ) {
+        try {
+          execute('bash', [path.join(repoRoot, 'scripts', 'sync-ecc-to-grok.sh')], {
+            cwd: repoRoot,
+            env: { ...env, GROK_HOME: grokHome },
+          });
+          grokFixture.destSync = 'applied';
+        } catch (error) {
+          grokFixture.destSync = 'error';
+          grokFixture.destSyncError = error.message;
+        }
+      }
+    }
   }
 
   for (const entry of validRecords) {
@@ -317,6 +376,7 @@ function runAutoUpdate(options = {}, dependencies = {}) {
   return {
     dryRun: Boolean(options.dryRun),
     repoRoot,
+    grokFixture,
     results,
     warnings,
     summary: {
@@ -342,6 +402,12 @@ function printHuman(result) {
   console.log(`${result.dryRun ? 'Auto-update dry run' : 'Auto-update summary'}:\n`);
   if (result.repoRoot) {
     console.log(`Repo root: ${result.repoRoot}\n`);
+  }
+  if (result.grokFixture && result.grokFixture.flow && result.grokFixture.flow !== 'none') {
+    console.log(
+      `Grok fixture: flow=${result.grokFixture.flow} necessary=${result.grokFixture.necessary ? 'yes' : 'no'} `
+      + `(${result.grokFixture.reason || 'n/a'})\n`
+    );
   }
 
   for (const entry of result.results) {
