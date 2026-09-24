@@ -18,7 +18,8 @@ origin: ECC
 
 ```bash
 # @Action を直接実行 - 新しいアクションが動作するか確認する最速の方法
-bin/dispatcher greet/James
+# （クラスをインポートする必要があります。--import または application.properties の default.import.applications を参照してください）
+bin/dispatcher greet/James --import com.example.MyService
 bin/dispatcher echo --words "Praise the Lord"
 
 # Web向けの対応部分を検証する必要があるときに HTTP サーバーを起動
@@ -44,11 +45,11 @@ bin/dispatcher --version
 **2. プロジェクトルートから、フレームワークを一度実行します：**
 
 ```bash
-java -cp ~/.m2/repository/org/tinystruct/tinystruct/1.7.34/tinystruct-1.7.34.jar \
+java -cp ~/.m2/repository/org/tinystruct/tinystruct/<version>/tinystruct-<version>.jar \
      org.tinystruct.system.Dispatcher --version
 ```
 
-Windows では `%USERPROFILE%\.m2\repository\org\tinystruct\tinystruct\1.7.34\tinystruct-1.7.34.jar` と同じクラスを使用します。これにより**実行したOS用のスクリプトだけ**が、まだ存在しない場合にのみ作成されます：
+`<version>` をステップ1で確認したバージョンに置き換えてください。Windows では `%USERPROFILE%\.m2\repository\org\tinystruct\tinystruct\<version>\tinystruct-<version>.jar` と同じクラスを使用します。これにより**実行したOS用のスクリプトだけ**が、まだ存在しない場合にのみ作成されます：
 
 | 実行環境 | 作成されるもの |
 |---|---|
@@ -372,7 +373,7 @@ String port = this.getConfiguration("server.port");
 - [アーキテクチャと設定](references/architecture.md) — 抽象化、パッケージマップ、プロパティ
 - [ルーティングと@Action](references/routing.md) — アノテーションの詳細、モード、パラメータ
 - [データ処理](references/data-handling.md) — Builder、Builders、JSONのシリアライズ・パース
-- [データベース永続化](references/database.md) — AbstractData POJO、CRUD、アノテーションとXMLマッピング、POJO生成、テーブルの自動作成
+- [データベース永続化](../../../../skills/tinystruct-patterns/references/database.md) — AbstractData POJO、CRUD、アノテーションとXMLマッピング、POJO生成、テーブルの自動作成
 - [システムと使用方法](references/system-usage.md) — Context、セッション、SSE、ファイルアップロード、イベント、ネットワーキング
 - [テストパターン](references/testing.md) — JUnit 5 によるユニットテストとHTTP統合テスト
 

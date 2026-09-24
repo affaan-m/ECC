@@ -18,7 +18,8 @@ Architecture and implementation patterns for building modules with the **tinystr
 
 ```bash
 # Run any @Action directly - the fastest way to verify a new action works
-bin/dispatcher greet/James
+# (the class must be imported; see --import or default.import.applications in application.properties)
+bin/dispatcher greet/James --import com.example.MyService
 bin/dispatcher echo --words "Praise the Lord"
 
 # Start the HTTP server when you need the web-facing counterpart
@@ -44,11 +45,11 @@ Every tinystruct project needs its launcher in `bin/`. **The framework generates
 **2. From the project root, run the framework once:**
 
 ```bash
-java -cp ~/.m2/repository/org/tinystruct/tinystruct/1.7.34/tinystruct-1.7.34.jar \
+java -cp ~/.m2/repository/org/tinystruct/tinystruct/<version>/tinystruct-<version>.jar \
      org.tinystruct.system.Dispatcher --version
 ```
 
-On Windows use `%USERPROFILE%\.m2\repository\org\tinystruct\tinystruct\1.7.34\tinystruct-1.7.34.jar` and the same class. This creates **only the script for the OS you ran it on**, and only if it is not already there:
+Replace `<version>` with the version found in step 1. On Windows use `%USERPROFILE%\.m2\repository\org\tinystruct\tinystruct\<version>\tinystruct-<version>.jar` and the same class. This creates **only the script for the OS you ran it on**, and only if it is not already there:
 
 | Run on | Creates |
 |---|---|
