@@ -5,6 +5,28 @@
 
 ECC plugin for OpenCode - agents, commands, hooks, and skills.
 
+## OpenCode 2 support
+
+ECC ships a **dual OpenCode entrypoint**, so one package works on both harness
+generations:
+
+- **OpenCode 2** calls `setup(ctx)`, which registers the ECC hooks through the
+  V2 domain APIs (`ctx.tool.hook`, `ctx.event.subscribe`, `ctx.shell.hook`,
+  `ctx.session.hook`, `ctx.permission.hook`) and the custom tools through
+  `ctx.tool.transform`. OpenCode 2 removed the Bun `$` shell helper from plugin
+  context, so the V2 path uses `node:child_process`.
+- **OpenCode 1** calls `server()` and receives the original V1 hook map.
+
+OpenCode 1.18.x also calls `setup()`, but with a partial context that omits
+`location`, `tool`, `event`, `shell`, `permission`, and `session`. ECC detects
+that and defers to `server()`, so the V2 code path never runs on OpenCode 1.
+
+Known OpenCode 2 gaps:
+
+- `todo.updated` has no V2 event equivalent and is not registered there.
+- The V1 `file.edited` and `file.watcher.updated` hooks map to the single V2
+  `filesystem.changed` event.
+
 ## Installation
 
 ## Installation Overview

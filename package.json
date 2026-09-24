@@ -518,6 +518,7 @@
   "devDependencies": {
     "@eslint/js": "9.39.2",
     "@opencode-ai/plugin": "1.18.25",
+    "@opencode/plugin": "2.0.12",
     "@types/node": "26.4.0",
     "c8": "11.0.0",
     "eslint": "10.9.1",

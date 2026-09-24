@@ -71,8 +71,12 @@ function main() {
             throw new Error("unexpected entry resolution: " + resolved)
           }
           const mod = await import("ecc-universal")
-          if (Object.keys(mod).join(",") !== "default" || typeof mod.default !== "function") {
-            throw new Error("root module must export exactly the plugin function")
+          const entry = mod.default
+          if (Object.keys(mod).join(",") !== "default" || !entry || typeof entry !== "object") {
+            throw new Error("root module must export exactly the dual plugin object")
+          }
+          if (entry.id !== "ecc" || typeof entry.setup !== "function" || typeof entry.server !== "function") {
+            throw new Error("dual plugin must expose id, setup() and server()")
           }
         `
         const probePath = path.join(tempDir, "probe.mjs")
@@ -113,7 +117,7 @@ function main() {
       }
       assert.deepStrictEqual(unresolved, [])
     }],
-    ["built OpenCode entry exports only the plugin function", () => {
+    ["built OpenCode entry exports the dual plugin with a working v1 server()", () => {
       const check = `
         const assert = require("assert")
         const { pathToFileURL } = require("url")
@@ -127,10 +131,15 @@ function main() {
             process.exit(1)
           }
           assert.deepStrictEqual(Object.keys(mod).sort(), ["default"])
-          assert.strictEqual(typeof mod.default, "function")
+
+          const entry = mod.default
+          assert.ok(entry && typeof entry === "object", "default export must be the dual plugin object")
+          assert.strictEqual(entry.id, "ecc", "dual plugin must be identified as ecc")
+          assert.strictEqual(typeof entry.setup, "function", "dual plugin must expose setup() for OpenCode 2")
+          assert.strictEqual(typeof entry.server, "function", "dual plugin must expose server() for OpenCode 1")
 
           let shellCalls = 0
-          const plugin = await mod.default({
+          const plugin = await entry.server({
             client: { app: { log: () => {} } },
             $: async () => {
               shellCalls += 1
