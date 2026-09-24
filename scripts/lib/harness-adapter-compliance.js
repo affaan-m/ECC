@@ -334,7 +334,7 @@ const ADAPTER_RECORDS = Object.freeze([
       'The bridge runs ECC hooks on every tool call; measure before enabling the standard or strict hook profile.',
       'ECC hooks keep writing their own state under ~/.claude and ~/.local/share/ecc-homunculus.',
       'Linking all 292 skills puts the whole catalog into every request; a curated subset is usually better.',
-      'PreCompact hooks run concurrently with compaction: the harness exposes no awaited pre-compaction point.',
+      'PreCompact hooks cannot delay the summary (no awaited point), but they receive a frozen pre-compaction transcript and the next step waits for them.',
     ],
     last_verified_at: '2026-09-24',
     owner: 'ECC maintainers',

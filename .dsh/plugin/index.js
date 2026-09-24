@@ -50,6 +50,14 @@ const DEFAULT_TRANSCRIPT_TTL_MS = 20_000;
 const DEFAULT_TRANSCRIPT_MAX_BYTES = 8 * 1024 * 1024;
 const MAX_HOOKS_PER_POINT = 16;
 const LOG_MAX_BYTES = 512 * 1024;
+/**
+ * Longest a step will wait for an in-flight PreCompact hook. The harness offers
+ * no awaited pre-compaction point, so a hook cannot delay the summary; it can
+ * still be guaranteed to receive a pre-compaction transcript and to finish
+ * before the next model step. Beyond this bound the step proceeds and the wait
+ * is logged, so a hung hook cannot stall the session.
+ */
+const PRECOMPACT_WAIT_MS = 30_000;
 
 const SUPPORTED_POINTS = new Set([
   'SessionStart',
@@ -445,6 +453,7 @@ export function apply(ctx, config) {
   const transcriptMaxBytes = typeof config.transcriptMaxBytes === 'number' ? config.transcriptMaxBytes : DEFAULT_TRANSCRIPT_MAX_BYTES;
   const defaultTimeoutMs = typeof config.defaultTimeoutMs === 'number' ? config.defaultTimeoutMs : DEFAULT_TIMEOUT_MS;
   const maxHooksPerPoint = typeof config.maxHooksPerPoint === 'number' ? config.maxHooksPerPoint : MAX_HOOKS_PER_POINT;
+  const precompactWaitMs = typeof config.precompactWaitMs === 'number' ? config.precompactWaitMs : PRECOMPACT_WAIT_MS;
   const vars = {
     ...(typeof config.pluginRoot === 'string' ? { CLAUDE_PLUGIN_ROOT: config.pluginRoot } : {}),
     ...(typeof config.projectDir === 'string' ? { CLAUDE_PROJECT_DIR: config.projectDir } : {}),
@@ -492,6 +501,8 @@ export function apply(ctx, config) {
   const compactionSeen = new Set();
   /** Sessions whose Stop hook already forced another step this turn. */
   const stopReentry = new Set();
+  /** In-flight PreCompact runs, awaited by the next step for that session. */
+  const pendingPreCompact = new Map();
   let handlerCounter = 0;
 
   /** Run every matching hook for one point and fold the outcomes. */
@@ -589,12 +600,16 @@ export function apply(ctx, config) {
         // Model and usage are what cost-tracking hooks read; dropping them makes
         // every session report an unknown model with zero tokens.
         const message = event.data?.message ?? {};
+        // DSH keeps the model on the message's source (`message.source.model`,
+        // verified against a live session log), with `request/header` carrying
+        // the same value under `header.config.model`.
+        const model = message.model ?? message.source?.model ?? event.data?.model;
         return {
           type: 'assistant',
           message: {
             role: 'assistant',
             content: message.content ?? [],
-            ...(message.model !== undefined ? { model: message.model } : {}),
+            ...(model !== undefined ? { model } : {}),
             ...(event.data?.usage !== undefined ? { usage: event.data.usage } : message.usage !== undefined ? { usage: message.usage } : {}),
           },
           uuid,
@@ -636,6 +651,20 @@ export function apply(ctx, config) {
     try {
       if (messages.length === 0) return next();
       const sessionId = agent?.session?.header?.id;
+      // Compaction is not awaitable, but the state a PreCompact hook saves must
+      // be on disk before work continues; wait for it, bounded.
+      const pending = typeof sessionId === 'string' ? pendingPreCompact.get(sessionId) : undefined;
+      if (pending !== undefined) {
+        let bound;
+        const settled = await Promise.race([
+          pending.then(() => true, () => true),
+          // Cleared as soon as the hook wins the race, so no bound timer lingers
+          // for the whole window after the wait is over.
+          new Promise((resolve) => { bound = setTimeout(() => resolve(false), precompactWaitMs); }),
+        ]);
+        clearTimeout(bound);
+        if (!settled) log({ event: 'precompact-wait-timeout', sessionId, ms: precompactWaitMs });
+      }
       if (typeof sessionId === 'string') stopReentry.delete(sessionId);
       const payload = await basePayload('UserPromptSubmit', agent, {
         fields: { prompt: blocksToText(messages.flatMap((message) => message.content)) },
@@ -777,12 +806,17 @@ export function apply(ctx, config) {
     const id = String(event?.data?.compactionId ?? event?.seq ?? '');
     if (compactionSeen.has(id)) return;
     compactionSeen.add(id);
-    void (async () => {
+    const header = session?.header;
+    const sessionId = header?.id ?? '';
+    // Freeze the transcript here, synchronously: the summary replaces the
+    // session surface moments later, so a read started after it would hand the
+    // hook the compacted view instead of what it is about to summarize.
+    const frozenTranscript = transcriptFor(sessionId, true);
+    const run = (async () => {
       try {
-        const header = session?.header;
         await runPoint('PreCompact', '', {
-          session_id: header?.id ?? '',
-          transcript_path: await transcriptFor(header?.id, true),
+          session_id: sessionId,
+          transcript_path: await frozenTranscript,
           cwd: header?.cwd ?? process.cwd(),
           hook_event_name: 'PreCompact',
           trigger: 'auto',
@@ -791,6 +825,12 @@ export function apply(ctx, config) {
         log({ event: 'listener-failed', point: 'PreCompact', message: String(error) });
       }
     })();
+    if (sessionId !== '') {
+      pendingPreCompact.set(sessionId, run);
+      void run.finally(() => {
+        if (pendingPreCompact.get(sessionId) === run) pendingPreCompact.delete(sessionId);
+      });
+    }
   });
 
   ctx.on('session/disposed', (session) => {

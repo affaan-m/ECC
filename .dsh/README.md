@@ -108,10 +108,17 @@ tail -3 "${DSH_HOME:-$HOME/.dsh}/cc-hooks/cc-hooks.log"
 ## Known differences from Claude Code
 
 - **PreToolUse warnings arrive with the tool result**, not before dispatch (DSH limitation).
-- **`PreCompact` cannot delay compaction.** DSH's `session/event` feed is fire-and-forget, so a
-  PreCompact hook runs concurrently with the compaction it was meant to precede. Nothing in the
-  harness exposes an awaited pre-compaction point; the hook still sees a fresh transcript, so a
-  summary saved by that hook is at worst concurrent rather than stale.
+- **A failing shell command is a successful tool call here.** DSH reports a non-zero exit as the
+  bash tool's content (`[exit code: N]`), so `PostToolUseFailure` fires only for a tool that itself
+  fails (a missing file, a denied write); Claude Code also fires it for a failing Bash command.
+  Failure hooks therefore see fewer events — the success hooks still run, never both.
+- **`PreCompact` cannot delay the summary.** DSH's `session/event` feed is fire-and-forget, so no
+  listener return value is awaited and the harness exposes no awaited pre-compaction point (the
+  dispatch was checked: `ctx.intercept` merges service *config*, it does not wrap methods). What
+  the bridge does guarantee: the hook's transcript is frozen synchronously at `compaction/start`,
+  before the summary can replace the session surface, and the next step for that session waits for
+  the hook to finish (bounded at 30 s, logged if exceeded). So the state a PreCompact hook saves is
+  written before work continues, from pre-compaction content.
 - **A blocking Stop hook re-fires once with `stop_hook_active: true`**, matching Claude Code, so an
   unconditional blocker cannot loop forever.
 - **SessionStart context can miss the very first request** — the point runs detached.

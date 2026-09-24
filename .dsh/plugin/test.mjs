@@ -147,9 +147,11 @@ writeFileSync(configPath, JSON.stringify({
 function harness(respond) {
   const handlers = {};
   const ran = [];
+  const payloads = [];
   return {
     handlers,
     ran,
+    payloads,
     ctx: {
       logger: { warn: () => {} },
       on: (event, fn) => { handlers[event] = fn; },
@@ -159,6 +161,7 @@ function harness(respond) {
         resolve: (request) => request,
         execute: async (spec) => {
           ran.push(spec.command);
+          try { payloads.push(JSON.parse(spec.stdin)); } catch { payloads.push({}); }
           const answer = respond(spec.command) ?? {};
           return {
             result: async () => ({
@@ -224,3 +227,109 @@ const exec = (extra) => ({ callId: 'call-1', name: 'write', arguments: { file_pa
 }
 
 console.log('ok — runtime wiring verified (deny, continue:false, context hand-off, failure routing)');
+
+/* ---------------------------------------------------------------- *
+ * Two more wiring guarantees, both taken from review findings:
+ * an empty prompt batch must not re-run prompt hooks, and the
+ * transcript must keep the model + token usage the cost tracker reads
+ * (event shape copied from a live DSH session log).
+ * ---------------------------------------------------------------- */
+{
+  const sessionQuery = {
+    readSurface: async (id) => ({
+      session: { id, cwd: '/tmp' },
+      events: [
+        { type: 'user/message', seq: 1, time: Date.now(), data: { id: 'u1', role: 'user', content: [{ type: 'text', text: 'hi' }] } },
+        { type: 'assistant/message', seq: 2, time: Date.now(), data: {
+          message: { id: 'm1', role: 'assistant', content: [{ type: 'text', text: 'hello' }], source: { model: 'test-model' } },
+          step: 1, turn: 1, stream: [], usage: { inputTokens: 11, outputTokens: 22 },
+        } },
+      ],
+    }),
+  };
+  const h = harness(() => ({ stdout: '' }));
+  h.ctx.get = (name) => (name === 'sessionQuery' ? sessionQuery : undefined);
+  const transcriptDir = join(work, 'transcripts-live-shape');
+  apply(h.ctx, { configPath, dshHome: work, logPath: join(work, 'e.log'), transcriptDir, transcriptTtlMs: 60_000 });
+
+  // Empty prompt batches (tool continuations) must delegate without running hooks.
+  h.ran.length = 0;
+  let delegated = false;
+  const step = await h.handlers['agent/pre-step']({ agent: { session: { header: { id: 'sess-shape', cwd: '/tmp' } } }, messages: [], turn: 2, signal: new AbortController().signal }, async () => { delegated = true; return { kind: 'enter', messages: [] }; });
+  assert.equal(delegated, true, 'empty batch delegates');
+  assert.deepEqual(h.ran, [], `empty batch ran hooks: ${JSON.stringify(h.ran)}`);
+
+  // A lifecycle point must see model + usage in the transcript.
+  await h.handlers['agent/turn-stopping']({ agent: { session: { header: { id: 'sess-shape', cwd: '/tmp' } } }, turn: 2, signal: new AbortController().signal });
+  const transcript = readFileSync(join(transcriptDir, 'sess-shape.jsonl'), 'utf8');
+  assert.ok(transcript.includes('"model":"test-model"'), 'transcript keeps the model');
+  assert.ok(transcript.includes('"inputTokens":11'), 'transcript keeps token usage');
+}
+
+console.log('ok — transcript shape and prompt-batch routing verified');
+
+/* ---------------------------------------------------------------- *
+ * PreCompact guarantees. The harness exposes no awaited
+ * pre-compaction point, so the bridge guarantees the two things it
+ * can: the hook's transcript is frozen at compaction/start, and the
+ * next step waits for the hook (bounded).
+ * ---------------------------------------------------------------- */
+{
+  const precompactConfig = join(work, 'hooks-precompact.json');
+  writeFileSync(precompactConfig, JSON.stringify({
+    hooks: { PreCompact: [{ matcher: '.*', hooks: [{ type: 'command', command: 'precompact-hook' }] }] },
+  }));
+  const session = (id) => ({ header: { id, cwd: '/tmp' } });
+  const compaction = (seq) => ({ type: 'compaction/start', seq, time: Date.now(), data: { compactionId: `c${seq}` } });
+
+  // Frozen input: the surface is replaced moments after compaction/start.
+  let phase = 'original';
+  const frozen = harness(() => ({ stdout: '' }));
+  frozen.ctx.get = () => ({
+    readSurface: async (id) => ({
+      session: { id, cwd: '/tmp' },
+      events: [{ type: 'user/message', seq: 1, time: Date.now(), data: { id: 'u', role: 'user', content: [{ type: 'text', text: phase }] } }],
+    }),
+  });
+  const frozenDir = join(work, 'transcripts-precompact');
+  apply(frozen.ctx, { configPath: precompactConfig, dshHome: work, logPath: join(work, 'f.log'), transcriptDir: frozenDir });
+  frozen.handlers['session/event'](session('sess-frozen'), compaction(1));
+  phase = 'compacted';
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  const payload = frozen.payloads.find((p) => p.hook_event_name === 'PreCompact');
+  assert.ok(payload !== undefined, 'PreCompact hook ran');
+  assert.ok(readFileSync(payload.transcript_path, 'utf8').includes('original'), 'hook read a pre-compaction transcript');
+
+  // The next step waits for the hook, and the wait is bounded.
+  let finishedAt = 0;
+  const slow = harness(() => ({ stdout: '' }));
+  slow.ctx.shell.execute = async (spec) => {
+    await new Promise((resolve) => setTimeout(resolve, 120));
+    finishedAt = Date.now();
+    return { result: async () => ({ exitCode: 0, stdout: { text: '' }, stderr: { text: '' } }) };
+  };
+  apply(slow.ctx, { configPath: precompactConfig, dshHome: work, logPath: join(work, 'g.log'), transcriptDir: join(work, 't-slow') });
+  slow.handlers['session/event'](session('sess-slow'), compaction(2));
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  await slow.handlers['agent/pre-step'](
+    { agent: { session: session('sess-slow') }, messages: [{ content: [{ type: 'text', text: 'next' }] }], turn: 2, signal: new AbortController().signal },
+    async () => ({ kind: 'enter', messages: [] }),
+  );
+  assert.ok(finishedAt !== 0 && Date.now() >= finishedAt, 'the step waited for the PreCompact hook');
+
+  const hungLog = join(work, 'h.log');
+  const hung = harness(() => ({ stdout: '' }));
+  hung.ctx.shell.execute = () => new Promise(() => {});
+  apply(hung.ctx, { configPath: precompactConfig, dshHome: work, logPath: hungLog, transcriptDir: join(work, 't-hung'), precompactWaitMs: 100 });
+  hung.handlers['session/event'](session('sess-hung'), compaction(3));
+  const started = Date.now();
+  const decision = await hung.handlers['agent/pre-step'](
+    { agent: { session: session('sess-hung') }, messages: [{ content: [{ type: 'text', text: 'next' }] }], turn: 2, signal: new AbortController().signal },
+    async () => ({ kind: 'enter', messages: [] }),
+  );
+  assert.equal(decision.kind, 'enter', 'a hung hook must not stall the step');
+  assert.ok(Date.now() - started < 2000, 'the wait stayed bounded');
+  assert.ok(readFileSync(hungLog, 'utf8').includes('precompact-wait-timeout'), 'the timeout was recorded');
+}
+
+console.log('ok — PreCompact input, step wait and bounded wait verified');
