@@ -1,10 +1,12 @@
 const path = require('path');
 
 const {
+  HOME_INSTALL_EXCLUDED_SOURCE_PATHS,
   createInstallTargetAdapter,
   createRemappedOperation,
   isForeignPlatformPath,
   normalizeRelativePath,
+  planClaudeHooksOperations,
 } = require('./helpers');
 
 const CLAUDE_ECC_NAMESPACE = 'ecc';
@@ -27,14 +29,13 @@ function getClaudeManagedDestinationPath(adapter, sourceRelativePath, input) {
   }
 
   if (normalizedSourcePath === 'skills') {
-    return path.join(targetRoot, 'skills', CLAUDE_ECC_NAMESPACE);
+    return path.join(targetRoot, 'skills');
   }
 
   if (normalizedSourcePath.startsWith('skills/')) {
     return path.join(
       targetRoot,
       'skills',
-      CLAUDE_ECC_NAMESPACE,
       normalizedSourcePath.slice('skills/'.length)
     );
   }
@@ -52,6 +53,7 @@ module.exports = createInstallTargetAdapter({
   kind: 'home',
   rootSegments: ['.claude'],
   installStatePathSegments: ['ecc', 'install-state.json'],
+  excludedSourcePaths: HOME_INSTALL_EXCLUDED_SOURCE_PATHS,
   nativeRootRelativePath: '.claude-plugin',
   planOperations(input, adapter) {
     const modules = Array.isArray(input.modules)
@@ -66,8 +68,15 @@ module.exports = createInstallTargetAdapter({
     return modules.flatMap(module => {
       const paths = Array.isArray(module.paths) ? module.paths : [];
       return paths
-        .filter(p => !isForeignPlatformPath(p, adapter.target))
-        .map(sourceRelativePath => {
+        .filter(p => !isForeignPlatformPath(p, adapter.target) && !adapter.excludesSourcePath(p))
+        .flatMap(sourceRelativePath => {
+          if (
+            module.id === 'hooks-runtime'
+            && normalizeRelativePath(sourceRelativePath) === 'hooks'
+          ) {
+            return planClaudeHooksOperations(adapter, module, planningInput);
+          }
+
           const managedDestinationPath = getClaudeManagedDestinationPath(
             adapter,
             sourceRelativePath,
@@ -75,16 +84,16 @@ module.exports = createInstallTargetAdapter({
           );
 
           if (managedDestinationPath) {
-            return createRemappedOperation(
+            return [createRemappedOperation(
               adapter,
               module.id,
               sourceRelativePath,
               managedDestinationPath,
               { strategy: 'preserve-relative-path' }
-            );
+            )];
           }
 
-          return adapter.createScaffoldOperation(module.id, sourceRelativePath, planningInput);
+          return [adapter.createScaffoldOperation(module.id, sourceRelativePath, planningInput)];
         });
     });
   },

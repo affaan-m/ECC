@@ -5,17 +5,22 @@
 'use strict';
 
 const assert = require('assert');
+const crypto = require('crypto');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
+const { spawnSync } = require('child_process');
 
 const {
   applyInstallPlan,
   createLegacyCompatInstallPlan,
   createLegacyInstallPlan,
   createManifestInstallPlan,
+  dedupeCopyFileOperations,
   listAvailableLanguages,
 } = require('../../scripts/lib/install-executor');
+const { applyInstallPlan: applyInstallPlanDirect } = require('../../scripts/lib/install/apply');
+const { withHookConsent } = require('../../scripts/lib/install/hook-consent');
 
 const REPO_ROOT = path.resolve(__dirname, '..', '..');
 
@@ -51,6 +56,11 @@ function writeLegacySourceFixture(root) {
   writeFile(root, path.join('rules', 'common', 'nested', 'shared.md'), '# Shared\n');
   writeFile(root, path.join('rules', 'common', 'node_modules', 'ignored.md'), '# Ignored\n');
   writeFile(root, path.join('rules', 'common', '.git', 'ignored.md'), '# Ignored\n');
+  writeFile(root, path.join('rules', 'common', '__pycache__', 'ignored.cpython-314.pyc'), 'ignored\n');
+  writeFile(root, path.join('rules', 'common', '.pytest_cache', 'ignored.md'), '# Ignored\n');
+  writeFile(root, path.join('rules', 'common', 'stray.pyc'), 'ignored\n');
+  writeFile(root, path.join('rules', 'common', 'stray.pyo'), 'ignored\n');
+  writeFile(root, path.join('rules', 'common', 'stray.pyd'), 'ignored\n');
   writeFile(root, path.join('rules', 'typescript', 'testing.md'), '# TS\n');
   writeFile(root, path.join('rules', 'python', 'testing.md'), '# Python\n');
 
@@ -108,6 +118,11 @@ function writeManifestSourceFixture(root) {
   writeFile(root, path.join('src', 'nested', 'feature.js'), 'console.log("feature");\n');
   writeFile(root, path.join('src', 'node_modules', 'ignored.js'), 'console.log("ignored");\n');
   writeFile(root, path.join('src', '.git', 'ignored.js'), 'console.log("ignored");\n');
+  writeFile(root, path.join('src', '__pycache__', 'ignored.cpython-314.pyc'), 'ignored\n');
+  writeFile(root, path.join('src', '.pytest_cache', 'ignored.md'), '# Ignored\n');
+  writeFile(root, path.join('src', 'stray.pyc'), 'ignored\n');
+  writeFile(root, path.join('src', 'stray.pyo'), 'ignored\n');
+  writeFile(root, path.join('src', 'stray.pyd'), 'ignored\n');
   writeFile(root, path.join('src', 'nested', 'ecc-install-state.json'), '{}\n');
   writeFile(root, path.join('rules', 'common', 'coding-style.md'), '# Common\n');
   writeFile(root, path.join('skills', 'demo', 'SKILL.md'), '# Demo\n');
@@ -153,6 +168,91 @@ function runTests() {
     }
   })) passed++; else failed++;
 
+  if (test('Claude settings write preserves unrelated changes made after preflight', () => {
+    const tempDir = createTempDir('install-executor-settings-race-');
+    try {
+      const homeDir = path.join(tempDir, 'home');
+      const projectRoot = path.join(tempDir, 'project');
+      fs.mkdirSync(homeDir, { recursive: true });
+      fs.mkdirSync(projectRoot, { recursive: true });
+      const rawPlan = createManifestInstallPlan({
+        sourceRoot: REPO_ROOT,
+        homeDir,
+        projectRoot,
+        target: 'claude',
+        moduleIds: ['hooks-runtime'],
+      });
+      const plan = withHookConsent(rawPlan, 'enabled');
+      const settingsPath = path.join(homeDir, '.claude', 'settings.json');
+
+      applyInstallPlanDirect(plan, {
+        beforeOperationWrite({ operation }) {
+          if (operation.kind === 'update-claude-settings') {
+            fs.writeFileSync(settingsPath, '{"theme":"added-after-preflight"}\n');
+          }
+        },
+      });
+
+      const settings = JSON.parse(fs.readFileSync(settingsPath, 'utf8'));
+      assert.strictEqual(settings.theme, 'added-after-preflight');
+      assert.ok(settings.hooks.SessionStart.some(entry => entry.id === 'session:start'));
+    } finally {
+      cleanup(tempDir);
+    }
+  })) passed++; else failed++;
+
+  if (test('failed hook disable checkpoints the previous enabled consent state', () => {
+    const tempDir = createTempDir('install-executor-disable-failure-');
+    try {
+      const homeDir = path.join(tempDir, 'home');
+      const projectRoot = path.join(tempDir, 'project');
+      fs.mkdirSync(homeDir, { recursive: true });
+      fs.mkdirSync(projectRoot, { recursive: true });
+      const enabledPlan = withHookConsent(createManifestInstallPlan({
+        sourceRoot: REPO_ROOT,
+        homeDir,
+        projectRoot,
+        target: 'claude',
+        profileId: 'core',
+      }), 'enabled');
+      applyInstallPlanDirect(enabledPlan);
+
+      const declinedPlan = withHookConsent(createManifestInstallPlan({
+        sourceRoot: REPO_ROOT,
+        homeDir,
+        projectRoot,
+        target: 'claude',
+        profileId: 'core',
+      }), 'declined');
+      let injectedFailure = false;
+      assert.throws(
+        () => applyInstallPlanDirect(declinedPlan, {
+          beforeOperationWrite({ operation }) {
+            if (!injectedFailure && operation.kind === 'copy-file') {
+              injectedFailure = true;
+              throw new Error('injected copy failure');
+            }
+          },
+        }),
+        /injected copy failure/
+      );
+
+      const state = JSON.parse(fs.readFileSync(declinedPlan.installStatePath, 'utf8'));
+      assert.strictEqual(state.request.hookConsent, 'enabled');
+      assert.ok(state.resolution.selectedModules.includes('hooks-runtime'));
+      assert.ok(state.operations.some(operation => (
+        operation.kind === 'update-claude-settings'
+      )));
+      const settings = JSON.parse(fs.readFileSync(
+        path.join(homeDir, '.claude', 'settings.json'),
+        'utf8'
+      ));
+      assert.ok(settings.hooks.SessionStart.some(entry => entry.id === 'session:start'));
+    } finally {
+      cleanup(tempDir);
+    }
+  })) passed++; else failed++;
+
   if (test('rejects unknown legacy install targets before planning', () => {
     assert.throws(
       () => createLegacyInstallPlan({ target: 'not-a-target' }),
@@ -189,6 +289,9 @@ function runTests() {
       assert.ok(operationFor(plan, path.join('custom-rules', 'typescript', 'testing.md')));
       assert.ok(!plan.operations.some(operation => operation.sourceRelativePath.includes('node_modules')));
       assert.ok(!plan.operations.some(operation => operation.sourceRelativePath.includes('.git')));
+      assert.ok(!plan.operations.some(operation => operation.sourceRelativePath.includes('__pycache__')));
+      assert.ok(!plan.operations.some(operation => operation.sourceRelativePath.includes('.pytest_cache')));
+      assert.ok(!plan.operations.some(operation => /\.(?:pyc|pyo|pyd)$/.test(operation.sourceRelativePath)));
       assert.deepStrictEqual(plan.statePreview.request.legacyLanguages, ['typescript', 'missing-lang', '../bad']);
       assert.strictEqual(plan.statePreview.request.legacyMode, true);
       assert.strictEqual(plan.statePreview.source.repoVersion, '9.8.7');
@@ -294,7 +397,7 @@ function runTests() {
     const homeDir = createTempDir('install-executor-home-');
     try {
       writeLegacySourceFixture(sourceRoot);
-      writeFile(projectRoot, path.join('.agent', 'rules', 'existing.md'), '# Existing\n');
+      writeFile(projectRoot, path.join('.agents', 'rules', 'existing.md'), '# Existing\n');
 
       const plan = createLegacyInstallPlan({
         sourceRoot,
@@ -304,15 +407,21 @@ function runTests() {
         languages: ['typescript', 'missing-lang', 'bad/name'],
       });
 
-      assert.strictEqual(plan.installRoot, path.join(projectRoot, '.agent'));
+      assert.strictEqual(plan.installRoot, path.join(projectRoot, '.agents'));
       assert.ok(plan.warnings.some(warning => warning.includes('files may be overwritten')));
       assert.ok(plan.warnings.some(warning => warning.includes("rules/missing-lang/ does not exist")));
       assert.ok(plan.warnings.some(warning => warning.includes("Invalid language name 'bad/name'")));
-      assert.ok(operationFor(plan, path.join('.agent', 'rules', 'common-coding-style.md')));
-      assert.ok(operationFor(plan, path.join('.agent', 'rules', 'typescript-testing.md')));
-      assert.ok(operationFor(plan, path.join('.agent', 'workflows', 'plan.md')));
-      assert.ok(operationFor(plan, path.join('.agent', 'skills', 'architect.md')));
-      assert.ok(operationFor(plan, path.join('.agent', 'skills', 'demo', 'SKILL.md')));
+      assert.ok(operationFor(plan, path.join('.agents', 'rules', 'common-coding-style.md')));
+      assert.ok(operationFor(plan, path.join('.agents', 'rules', 'typescript-testing.md')));
+      assert.ok(operationFor(plan, path.join('.agents', 'workflows', 'plan.md')));
+      const agentOperation = plan.operations.find(operation => (
+        operation.destinationPath.endsWith(path.join('.agents', 'agents', 'architect.md'))
+      ));
+      assert.ok(agentOperation);
+      assert.strictEqual(agentOperation.contentTransform, 'antigravity-agent-frontmatter');
+      assert.ok(plan.operations.some(operation => (
+        operation.destinationPath.endsWith(path.join('.agents', 'skills', 'demo', 'SKILL.md'))
+      )));
       assert.strictEqual(plan.statePreview.target.id, 'antigravity-project');
     } finally {
       cleanup(sourceRoot);
@@ -351,6 +460,9 @@ function runTests() {
       assert.ok(!normalizedSources.includes('src/nested/ecc-install-state.json'));
       assert.ok(!normalizedSources.some(source => source.includes('node_modules')));
       assert.ok(!normalizedSources.some(source => source.includes('.git')));
+      assert.ok(!normalizedSources.some(source => source.includes('__pycache__')));
+      assert.ok(!normalizedSources.some(source => source.includes('.pytest_cache')));
+      assert.ok(!normalizedSources.some(source => /\.(?:pyc|pyo|pyd)$/.test(source)));
       assert.ok(plan.operations.some(operation => (
         operation.sourceRelativePath === path.join('.claude-plugin', 'plugin.json')
         && operation.destinationPath === path.join(homeDir, '.claude', 'plugin.json')
@@ -361,7 +473,7 @@ function runTests() {
       )));
       assert.ok(plan.operations.some(operation => (
         operation.sourceRelativePath === path.join('skills', 'demo', 'SKILL.md')
-        && operation.destinationPath === path.join(homeDir, '.claude', 'skills', 'ecc', 'demo', 'SKILL.md')
+        && operation.destinationPath === path.join(homeDir, '.claude', 'skills', 'demo', 'SKILL.md')
       )));
       assert.deepStrictEqual(plan.warnings, ['fixture warning']);
       assert.strictEqual(plan.statePreview.request.profile, 'minimal');
@@ -372,6 +484,122 @@ function runTests() {
     } finally {
       cleanup(sourceRoot);
       cleanup(homeDir);
+    }
+  })) passed++; else failed++;
+
+  if (test('plans one resolved Claude settings hook registration for home and project targets', () => {
+    const tempDir = createTempDir('install-executor-claude-hooks-');
+    try {
+      for (const target of ['claude', 'claude-project']) {
+        const quoted = process.platform === 'win32' ? 'quoted' : '"quoted"';
+        const homeDir = path.join(tempDir, `${target} home ${quoted} $dollar %percent%`);
+        const projectRoot = path.join(tempDir, `${target} project ${quoted} $dollar %percent%`);
+        fs.mkdirSync(homeDir, { recursive: true });
+        fs.mkdirSync(projectRoot, { recursive: true });
+
+        const plan = createManifestInstallPlan({
+          sourceRoot: REPO_ROOT,
+          homeDir,
+          projectRoot,
+          target,
+          moduleIds: ['hooks-runtime'],
+        });
+        const expectedRoot = target === 'claude'
+          ? path.join(homeDir, '.claude')
+          : path.join(projectRoot, '.claude');
+        const settingsOperations = plan.operations.filter(operation => (
+          operation.kind === 'update-claude-settings'
+        ));
+
+        assert.strictEqual(settingsOperations.length, 1, `${target} should plan one settings update`);
+        const operation = settingsOperations[0];
+        assert.strictEqual(operation.moduleId, 'hooks-runtime');
+        assert.strictEqual(
+          operation.sourceRelativePath.split(path.sep).join('/'),
+          'hooks/hooks.json'
+        );
+        assert.strictEqual(operation.destinationPath, path.join(expectedRoot, 'settings.json'));
+        assert.ok(operation.managedHooks);
+        assert.ok(operation.managedHooks.SessionStart.some(entry => (
+          entry.id === 'session:start'
+        )));
+        const commands = Object.values(operation.managedHooks)
+          .flat()
+          .flatMap(entry => entry.hooks || [])
+          .map(hook => hook.command)
+          .filter(command => typeof command === 'string');
+        const encodedRoot = Buffer.from(expectedRoot, 'utf8').toString('base64');
+        assert.ok(commands.some(command => command.includes(encodedRoot)));
+        assert.ok(commands.every(command => !command.includes(expectedRoot)));
+        assert.ok(
+          commands.every(command => !command.includes('var e=process.env.CLAUDE_PLUGIN_ROOT;')),
+          `${target} commands should not depend on an unset CLAUDE_PLUGIN_ROOT`
+        );
+        if (process.platform !== 'win32') {
+          for (const command of commands) {
+            const syntaxCheck = spawnSync('/bin/sh', ['-n', '-c', command], {
+              encoding: 'utf8',
+            });
+            assert.strictEqual(
+              syntaxCheck.status,
+              0,
+              `${target} hook command should remain shell-safe: ${syntaxCheck.stderr}`
+            );
+          }
+        }
+        assert.ok(!plan.operations.some(candidate => (
+          candidate.kind === 'copy-file'
+          && candidate.sourceRelativePath.split(path.sep).join('/') === 'hooks/hooks.json'
+        )));
+
+        const stateOperation = plan.statePreview.operations.find(candidate => (
+          candidate.kind === 'update-claude-settings'
+        ));
+        assert.deepStrictEqual(stateOperation.managedHooks, operation.managedHooks);
+      }
+    } finally {
+      cleanup(tempDir);
+    }
+  })) passed++; else failed++;
+
+  if (test('Claude commit-attribution atomic write failures abort installation', () => {
+    const tempDir = createTempDir('install-executor-attribution-failure-');
+    const originalRenameSync = fs.renameSync;
+    try {
+      const homeDir = path.join(tempDir, 'home');
+      const projectRoot = path.join(tempDir, 'project');
+      fs.mkdirSync(homeDir, { recursive: true });
+      fs.mkdirSync(projectRoot, { recursive: true });
+      const rawPlan = createManifestInstallPlan({
+        sourceRoot: REPO_ROOT,
+        homeDir,
+        projectRoot,
+        target: 'claude',
+        moduleIds: ['hooks-runtime'],
+      });
+      const plan = withHookConsent(rawPlan, 'enabled');
+      const settingsPath = path.join(homeDir, '.claude', 'settings.json');
+      let settingsCommitCount = 0;
+      fs.renameSync = function failAttributionCommit(sourcePath, destinationPath) {
+        if (path.resolve(String(destinationPath)) === path.resolve(settingsPath)) {
+          settingsCommitCount += 1;
+          if (settingsCommitCount === 2) {
+            throw new Error('injected attribution rename failure');
+          }
+        }
+        return originalRenameSync.call(fs, sourcePath, destinationPath);
+      };
+
+      assert.throws(
+        () => applyInstallPlanDirect(plan),
+        /injected attribution rename failure/
+      );
+      const settings = JSON.parse(fs.readFileSync(settingsPath, 'utf8'));
+      assert.ok(settings.hooks.SessionStart.some(entry => entry.id === 'session:start'));
+      assert.strictEqual(Object.hasOwn(settings, 'includeCoAuthoredBy'), false);
+    } finally {
+      fs.renameSync = originalRenameSync;
+      cleanup(tempDir);
     }
   })) passed++; else failed++;
 
@@ -415,16 +643,257 @@ function runTests() {
 
       assert.strictEqual(applied.applied, true);
       assert.ok(fs.existsSync(path.join(homeDir, '.claude', 'rules', 'ecc', 'common', 'coding-style.md')));
-      assert.ok(fs.existsSync(path.join(homeDir, '.claude', 'skills', 'ecc', 'demo', 'SKILL.md')));
+      assert.ok(fs.existsSync(path.join(homeDir, '.claude', 'skills', 'demo', 'SKILL.md')));
       assert.ok(fs.existsSync(path.join(homeDir, '.claude', 'src', 'app.js')));
       assert.ok(fs.existsSync(path.join(homeDir, '.claude', 'standalone.txt')));
       assert.ok(fs.existsSync(path.join(homeDir, '.claude', 'plugin.json')));
       const state = JSON.parse(fs.readFileSync(path.join(homeDir, '.claude', 'ecc', 'install-state.json'), 'utf8'));
       assert.strictEqual(state.request.profile, 'minimal');
       assert.deepStrictEqual(state.resolution.selectedModules, ['fixture-core']);
+      for (const operation of state.operations) {
+        assert.strictEqual(
+          operation.contentSha256,
+          crypto.createHash('sha256')
+            .update(fs.readFileSync(operation.destinationPath))
+            .digest('hex')
+        );
+      }
     } finally {
       cleanup(sourceRoot);
       cleanup(homeDir);
+    }
+  })) passed++; else failed++;
+
+  if (test('per-operation guard runs after mkdir and immediately before a copy write', () => {
+    const tempDir = createTempDir('install-executor-write-guard-');
+    try {
+      const targetRoot = path.join(tempDir, 'target');
+      const sourcePath = writeFile(tempDir, path.join('source', 'security.md'), 'ecc\n');
+      const destinationPath = path.join(targetRoot, 'rules', 'security.md');
+      const plan = {
+        adapter: { id: 'kimi-project', target: 'kimi', kind: 'project' },
+        installStatePath: path.join(targetRoot, 'ecc-install-state.json'),
+        operations: [{
+          kind: 'copy-file',
+          moduleId: 'core',
+          sourcePath,
+          sourceRelativePath: 'rules/security.md',
+          destinationPath,
+          strategy: 'preserve-relative-path',
+          ownership: 'managed',
+          scaffoldOnly: false,
+        }],
+        statePreview: { operations: [] },
+        target: 'kimi',
+        targetRoot,
+      };
+      const events = [];
+
+      assert.throws(
+        () => applyInstallPlanDirect(plan, {
+          beforeOperationWrite({ operation }) {
+            events.push(operation.destinationPath);
+            assert.strictEqual(fs.existsSync(path.dirname(destinationPath)), true);
+            assert.strictEqual(fs.existsSync(destinationPath), false);
+            writeFile(targetRoot, path.join('rules', 'security.md'), 'user\n');
+            throw new Error('late unowned collision');
+          },
+          writeInstallState() {},
+        }),
+        /late unowned collision/
+      );
+      assert.deepStrictEqual(events, [destinationPath]);
+      assert.strictEqual(fs.readFileSync(destinationPath, 'utf8'), 'user\n');
+    } finally {
+      cleanup(tempDir);
+    }
+  })) passed++; else failed++;
+
+  if (test('dedupeCopyFileOperations keeps the last writer per destination (issue #2414)', () => {
+    // Mirrors the OpenCode command scenario: a generic commands/<name>.md source
+    // (preserve-relative-path) and an override .opencode/commands/<name>.md source
+    // (sync-root-children) both write the same destination. Before the fix both
+    // ops were recorded, so `doctor` reported perpetual drift and `repair`
+    // clobbered the override. Only the last writer (the override) should survive.
+    const dest = '/home/.opencode/commands/build-fix.md';
+    const operations = [
+      { kind: 'copy-file', sourceRelativePath: 'commands/build-fix.md', destinationPath: dest, strategy: 'preserve-relative-path' },
+      { kind: 'copy-file', sourceRelativePath: '.opencode/commands/build-fix.md', destinationPath: dest, strategy: 'sync-root-children' },
+      { kind: 'copy-file', sourceRelativePath: 'commands/other.md', destinationPath: '/home/.opencode/commands/other.md', strategy: 'preserve-relative-path' },
+    ];
+
+    const deduped = dedupeCopyFileOperations(operations);
+
+    const destinations = deduped
+      .filter(operation => operation.kind === 'copy-file')
+      .map(operation => operation.destinationPath);
+    assert.deepStrictEqual(
+      destinations,
+      [dest, '/home/.opencode/commands/other.md'],
+      'each copy-file destination must appear exactly once'
+    );
+    const survivor = deduped.find(operation => operation.destinationPath === dest);
+    assert.strictEqual(
+      survivor.sourceRelativePath,
+      '.opencode/commands/build-fix.md',
+      'the last writer (override) must win, not the generic source'
+    );
+  })) passed++; else failed++;
+
+  if (test('dedupeCopyFileOperations leaves non copy-file operations and order intact', () => {
+    // merge-json operations legitimately accumulate into a shared config file, so
+    // multiple writes to one destination must be preserved; only redundant
+    // copy-file writes are collapsed, and surviving ops keep their relative order.
+    const mergeDest = '/home/.opencode/opencode.json';
+    const operations = [
+      { kind: 'merge-json', sourceRelativePath: 'a.json', destinationPath: mergeDest },
+      { kind: 'copy-file', sourceRelativePath: 'src/x.md', destinationPath: '/home/x.md' },
+      { kind: 'merge-json', sourceRelativePath: 'b.json', destinationPath: mergeDest },
+      { kind: 'copy-file', sourceRelativePath: 'other/x.md', destinationPath: '/home/x.md' },
+      { kind: 'remove', destinationPath: '/home/legacy.md' },
+    ];
+
+    const deduped = dedupeCopyFileOperations(operations);
+
+    assert.deepStrictEqual(
+      deduped.map(operation => `${operation.kind}:${operation.sourceRelativePath || operation.destinationPath}`),
+      ['merge-json:a.json', 'merge-json:b.json', 'copy-file:other/x.md', 'remove:/home/legacy.md'],
+      'both merge-json writes and the remove op survive; only the shadowed copy-file is dropped, order preserved'
+    );
+  })) passed++; else failed++;
+
+  if (test('applyInstallPlan refuses generic install writes outside the target root', () => {
+    const tempDir = createTempDir('install-executor-safety-');
+    try {
+      const sourceRoot = path.join(tempDir, 'source');
+      const targetRoot = path.join(tempDir, 'project', '.kimi-code');
+      const outsidePath = path.join(tempDir, 'outside.txt');
+      const sourcePath = writeFile(sourceRoot, 'skills/demo/SKILL.md', '# Demo\n');
+      const plan = {
+        mode: 'manifest',
+        target: 'kimi',
+        adapter: { id: 'kimi-project', target: 'kimi', kind: 'project' },
+        sourceRoot,
+        targetRoot,
+        installRoot: targetRoot,
+        installStatePath: path.join(targetRoot, 'ecc-install-state.json'),
+        warnings: [],
+        statePreview: {
+          target: 'kimi',
+          adapter: { id: 'kimi-project', target: 'kimi', kind: 'project' },
+          root: targetRoot,
+          operations: [],
+        },
+        operations: [
+          {
+            kind: 'copy-file',
+            moduleId: 'fixture',
+            sourcePath,
+            sourceRelativePath: 'skills/demo/SKILL.md',
+            destinationPath: outsidePath,
+            strategy: 'preserve-relative-path',
+            ownership: 'managed',
+            scaffoldOnly: false,
+          },
+        ],
+      };
+
+      assert.throws(
+        () => applyInstallPlanDirect(plan, { writeInstallState: () => {} }),
+        /outside the install root/
+      );
+      assert.strictEqual(fs.existsSync(outsidePath), false);
+    } finally {
+      cleanup(tempDir);
+    }
+  })) passed++; else failed++;
+
+  if (test('Claude install without hooks-runtime leaves an existing hooks config untouched', () => {
+    const tempDir = createTempDir('install-executor-no-hooks-');
+    try {
+      const targetRoot = path.join(tempDir, 'home', '.claude');
+      const hooksPath = writeFile(
+        targetRoot,
+        'hooks/hooks.json',
+        '{"hooks":{"SessionStart":[{"command":"$CLAUDE_PLUGIN_ROOT/original.js"}]}}\n'
+      );
+      const before = fs.readFileSync(hooksPath, 'utf8');
+      const plan = {
+        mode: 'manifest',
+        target: 'claude',
+        adapter: { id: 'claude-home', target: 'claude', kind: 'home' },
+        sourceRoot: path.join(tempDir, 'source'),
+        targetRoot,
+        installRoot: targetRoot,
+        installStatePath: path.join(targetRoot, 'ecc', 'install-state.json'),
+        warnings: [],
+        statePreview: {
+          target: 'claude',
+          adapter: { id: 'claude-home', target: 'claude', kind: 'home' },
+          root: targetRoot,
+          operations: [],
+        },
+        operations: [],
+      };
+
+      applyInstallPlanDirect(plan, { writeInstallState() {} });
+      assert.strictEqual(fs.readFileSync(hooksPath, 'utf8'), before);
+    } finally {
+      cleanup(tempDir);
+    }
+  })) passed++; else failed++;
+
+  if (test('Claude hooks install refuses a symlinked hooks destination', () => {
+    if (process.platform === 'win32') return;
+
+    const tempDir = createTempDir('install-executor-hooks-symlink-');
+    try {
+      const sourceRoot = path.join(tempDir, 'source');
+      const targetRoot = path.join(tempDir, 'home', '.claude');
+      const outsideRoot = path.join(tempDir, 'outside');
+      const sourcePath = writeFile(
+        sourceRoot,
+        'hooks/hooks.json',
+        '{"hooks":{"SessionStart":[]}}\n'
+      );
+      fs.mkdirSync(targetRoot, { recursive: true });
+      fs.mkdirSync(outsideRoot, { recursive: true });
+      fs.symlinkSync(outsideRoot, path.join(targetRoot, 'hooks'), 'dir');
+      const plan = {
+        mode: 'manifest',
+        target: 'claude',
+        adapter: { id: 'claude-home', target: 'claude', kind: 'home' },
+        sourceRoot,
+        targetRoot,
+        installRoot: targetRoot,
+        installStatePath: path.join(targetRoot, 'ecc', 'install-state.json'),
+        warnings: [],
+        hookConsent: 'enabled',
+        statePreview: {
+          target: 'claude',
+          adapter: { id: 'claude-home', target: 'claude', kind: 'home' },
+          root: targetRoot,
+          operations: [],
+        },
+        operations: [{
+          kind: 'copy-file',
+          moduleId: 'hooks-runtime',
+          sourcePath,
+          sourceRelativePath: 'hooks/hooks.json',
+          destinationPath: path.join(targetRoot, 'hooks', 'hooks.json'),
+          strategy: 'preserve-relative-path',
+          ownership: 'managed',
+          scaffoldOnly: false,
+        }],
+      };
+
+      assert.throws(
+        () => applyInstallPlanDirect(plan, { writeInstallState() {} }),
+        /outside the install root|symlinked path/
+      );
+      assert.strictEqual(fs.existsSync(path.join(outsideRoot, 'hooks.json')), false);
+    } finally {
+      cleanup(tempDir);
     }
   })) passed++; else failed++;
 

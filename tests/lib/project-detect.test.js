@@ -165,6 +165,29 @@ function runTests() {
     }
   })) passed++; else failed++;
 
+  if (test('detects flask/fastapi from ~= compatible-release pins (requirements.txt)', () => {
+    const dir = createTempDir();
+    try {
+      writeTestFile(dir, 'requirements.txt', 'fastapi~=0.110\nflask~=3.0\nuvicorn');
+      const result = detectProjectType(dir);
+      assert.ok(result.frameworks.includes('fastapi'), `fastapi not detected: ${JSON.stringify(result.frameworks)}`);
+      assert.ok(result.frameworks.includes('flask'), `flask not detected: ${JSON.stringify(result.frameworks)}`);
+    } finally {
+      cleanupDir(dir);
+    }
+  })) passed++; else failed++;
+
+  if (test('detects fastapi from ~= pin in pyproject.toml dependencies', () => {
+    const dir = createTempDir();
+    try {
+      writeTestFile(dir, 'pyproject.toml', '[project]\nname = "test"\ndependencies = [\n  "fastapi~=0.110",\n  "uvicorn"\n]');
+      const result = detectProjectType(dir);
+      assert.ok(result.frameworks.includes('fastapi'), `fastapi not detected: ${JSON.stringify(result.frameworks)}`);
+    } finally {
+      cleanupDir(dir);
+    }
+  })) passed++; else failed++;
+
   // TypeScript/JavaScript detection
   console.log('\nTypeScript/JavaScript Detection:');
 
@@ -383,6 +406,35 @@ function runTests() {
       assert.ok(deps.includes('flask'));
       assert.ok(deps.includes('requests'));
       assert.ok(!deps.includes('-r'));
+    } finally {
+      cleanupDir(dir);
+    }
+  })) passed++; else failed++;
+
+  if (test('getPythonDeps strips ~= compatible-release pins', () => {
+    const dir = createTempDir();
+    try {
+      writeTestFile(dir, 'requirements.txt', 'fastapi~=0.110\nflask~=3.0');
+      const deps = getPythonDeps(dir);
+      assert.ok(deps.includes('fastapi'), `fastapi missing from deps: ${JSON.stringify(deps)}`);
+      assert.ok(deps.includes('flask'), `flask missing from deps: ${JSON.stringify(deps)}`);
+      assert.ok(!deps.includes('flask~'));
+    } finally {
+      cleanupDir(dir);
+    }
+  })) passed++; else failed++;
+
+  if (test('getPythonDeps strips @ direct-reference URLs and git+ VCS forms', () => {
+    const dir = createTempDir();
+    try {
+      writeTestFile(dir, 'requirements.txt', 'pkg @ git+https://github.com/user/repo.git\nother @ https://example.com/pkg.tar.gz\ngit-dep @ git+https://github.com/user/dep.git@v2.0\ngit+https://github.com/user/repo.git#egg=pkg');
+      const deps = getPythonDeps(dir);
+      assert.ok(deps.includes('pkg'), `pkg missing from deps: ${JSON.stringify(deps)}`);
+      assert.ok(deps.includes('other'), `other missing from deps: ${JSON.stringify(deps)}`);
+      assert.ok(deps.includes('git-dep'), `git-dep missing from deps: ${JSON.stringify(deps)}`);
+      assert.ok(!deps.some(d => d.includes('git+')), `VCS URL leaked into deps: ${JSON.stringify(deps)}`);
+      assert.ok(!deps.some(d => d.includes('://')), `URL leaked into deps: ${JSON.stringify(deps)}`);
+      assert.ok(!deps.some(d => d.includes('@')), `@ delimiter leaked into deps: ${JSON.stringify(deps)}`);
     } finally {
       cleanupDir(dir);
     }

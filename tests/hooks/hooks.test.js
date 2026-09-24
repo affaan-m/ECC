@@ -9,6 +9,7 @@ const path = require('path');
 const fs = require('fs');
 const os = require('os');
 const { execFileSync, spawn, spawnSync } = require('child_process');
+const { readHooksConfig } = require('../../scripts/lib/hooks-config');
 
 const SKIP_BASH = process.platform === 'win32';
 
@@ -33,19 +34,14 @@ function fromBashPath(filePath) {
   }
 
   try {
-    return execFileSync(
-      'bash',
-      ['-lc', 'cygpath -w -- "$1"', 'bash', rawPath],
-      { stdio: ['ignore', 'pipe', 'ignore'] }
-    )
+    return execFileSync('bash', ['-lc', 'cygpath -w -- "$1"', 'bash', rawPath], { stdio: ['ignore', 'pipe', 'ignore'] })
       .toString()
       .trim();
   } catch {
     // Fall back to common Git Bash path shapes when cygpath is unavailable.
   }
 
-  const match = rawPath.match(/^\/(?:cygdrive\/)?([A-Za-z])\/(.*)$/)
-    || rawPath.match(/^\/\/([A-Za-z])\/(.*)$/);
+  const match = rawPath.match(/^\/(?:cygdrive\/)?([A-Za-z])\/(.*)$/) || rawPath.match(/^\/\/([A-Za-z])\/(.*)$/);
   if (match) {
     return `${match[1].toUpperCase()}:\\${match[2].replace(/\//g, '\\')}`;
   }
@@ -107,6 +103,9 @@ const CLI_RESUME_SESSION_SENTINEL = 'CLI_RESUME_CONTEXT_SHOULD_NOT_BE_INJECTED';
 const CLI_CLEAR_SESSION_SENTINEL = 'CLI_CLEAR_CONTEXT_SHOULD_NOT_BE_INJECTED';
 const DESKTOP_CLEAR_SESSION_SENTINEL = 'DESKTOP_CLEAR_CONTEXT_SHOULD_NOT_BE_INJECTED';
 const PROJECT_ONLY_SESSION_SENTINEL = 'PROJECT_ONLY_CONTEXT_SHOULD_BE_INJECTED';
+const SAME_REPO_WORKTREE_SENTINEL = 'SAME_REPO_WORKTREE_CONTEXT_SHOULD_BE_INJECTED';
+const REPO_FIELD_SESSION_SENTINEL = 'REPO_FIELD_CONTEXT_SHOULD_BE_INJECTED';
+const UNRELATED_REPO_SESSION_SENTINEL = 'UNRELATED_REPO_CONTEXT_SHOULD_NOT_BE_INJECTED';
 
 function buildSessionStartFixture(content, options = {}) {
   const title = options.title ?? '# Session';
@@ -117,9 +116,39 @@ function buildSessionStartFixture(content, options = {}) {
   if (worktree) {
     lines.push(`**Worktree:** ${worktree}`);
   }
+  if (options.repo) {
+    lines.push(`**Repo:** ${options.repo}`);
+  }
   lines.push('', content, '');
 
   return lines.join('\n');
+}
+
+function initGitRepoWithWorktrees(baseDir, worktreeNames) {
+  const mainrepo = path.join(baseDir, 'mainrepo');
+  execFileSync('git', ['init', '-q', mainrepo]);
+  execFileSync('git', ['config', 'user.email', 't@t.local'], { cwd: mainrepo });
+  execFileSync('git', ['config', 'user.name', 't'], { cwd: mainrepo });
+  fs.writeFileSync(path.join(mainrepo, 'README.md'), 'seed\n');
+  execFileSync('git', ['add', '-A'], { cwd: mainrepo });
+  execFileSync('git', ['commit', '-q', '-m', 'seed'], { cwd: mainrepo });
+  const worktrees = {};
+  for (const name of worktreeNames) {
+    const target = path.join(baseDir, name);
+    execFileSync('git', ['worktree', 'add', '-q', '-b', name, target, 'HEAD'], { cwd: mainrepo });
+    worktrees[name] = target;
+  }
+  return { mainrepo, worktrees };
+}
+
+function gitCommonDirRealpath(dir) {
+  const out = execFileSync('git', ['rev-parse', '--git-common-dir'], { cwd: dir, encoding: 'utf8' }).trim();
+  const resolved = path.resolve(dir, out);
+  try {
+    return fs.realpathSync(resolved);
+  } catch {
+    return resolved;
+  }
 }
 
 // Test helper
@@ -149,9 +178,10 @@ async function asyncTest(name, fn) {
 }
 
 // Run a script and capture output
-function runScript(scriptPath, input = '', env = {}) {
+function runScript(scriptPath, input = '', env = {}, cwd = process.cwd()) {
   return new Promise((resolve, reject) => {
     const proc = spawn('node', [scriptPath], {
+      cwd,
       env: { ...process.env, ...env },
       stdio: ['pipe', 'pipe', 'pipe']
     });
@@ -375,7 +405,7 @@ async function runTests() {
 
   if (
     await asyncTest('exits 0 even with isolated empty HOME', async () => {
-      const isoHome = path.join(os.tmpdir(), `ecc-iso-start-${Date.now()}`);
+      const isoHome = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-iso-start-'));
       fs.mkdirSync(getCanonicalSessionsDir(isoHome), { recursive: true });
       fs.mkdirSync(path.join(isoHome, '.claude', 'skills', 'learned'), { recursive: true });
       try {
@@ -403,7 +433,7 @@ async function runTests() {
 
   if (
     await asyncTest('skips template session content', async () => {
-      const isoHome = path.join(os.tmpdir(), `ecc-tpl-start-${Date.now()}`);
+      const isoHome = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-tpl-start-'));
       const sessionsDir = getLegacySessionsDir(isoHome);
       fs.mkdirSync(sessionsDir, { recursive: true });
       fs.mkdirSync(path.join(isoHome, '.claude', 'skills', 'learned'), { recursive: true });
@@ -430,17 +460,14 @@ async function runTests() {
 
   if (
     await asyncTest('injects real session content', async () => {
-      const isoHome = path.join(os.tmpdir(), `ecc-real-start-${Date.now()}`);
+      const isoHome = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-real-start-'));
       const sessionsDir = getLegacySessionsDir(isoHome);
       fs.mkdirSync(sessionsDir, { recursive: true });
       fs.mkdirSync(path.join(isoHome, '.claude', 'skills', 'learned'), { recursive: true });
 
       // Create a real session file
       const sessionFile = path.join(sessionsDir, '2026-02-11-efgh5678-session.tmp');
-      fs.writeFileSync(
-        sessionFile,
-        buildSessionStartFixture('I worked on authentication refactor.', { title: '# Real Session' })
-      );
+      fs.writeFileSync(sessionFile, buildSessionStartFixture('I worked on authentication refactor.', { title: '# Real Session' }));
 
       try {
         const result = await runScript(path.join(scriptsDir, 'session-start.js'), '', {
@@ -449,22 +476,10 @@ async function runTests() {
         });
         assert.strictEqual(result.code, 0);
         const additionalContext = getSessionStartAdditionalContext(result.stdout);
-        assert.ok(
-          additionalContext.includes('HISTORICAL REFERENCE ONLY'),
-          'Should wrap injected session with the stale-replay guard preamble'
-        );
-        assert.ok(
-          additionalContext.includes('STALE-BY-DEFAULT'),
-          'Should spell out the stale-by-default contract so the model does not re-execute prior ARGUMENTS'
-        );
-        assert.ok(
-          additionalContext.includes('--- BEGIN PRIOR-SESSION SUMMARY ---'),
-          'Should delimit the prior-session summary with an explicit begin marker'
-        );
-        assert.ok(
-          additionalContext.includes('--- END PRIOR-SESSION SUMMARY ---'),
-          'Should delimit the prior-session summary with an explicit end marker'
-        );
+        assert.ok(additionalContext.includes('HISTORICAL REFERENCE ONLY'), 'Should wrap injected session with the stale-replay guard preamble');
+        assert.ok(additionalContext.includes('STALE-BY-DEFAULT'), 'Should spell out the stale-by-default contract so the model does not re-execute prior ARGUMENTS');
+        assert.ok(additionalContext.includes('--- BEGIN PRIOR-SESSION SUMMARY ---'), 'Should delimit the prior-session summary with an explicit begin marker');
+        assert.ok(additionalContext.includes('--- END PRIOR-SESSION SUMMARY ---'), 'Should delimit the prior-session summary with an explicit end marker');
         assert.ok(additionalContext.includes('authentication refactor'), 'Should include session content text');
       } finally {
         fs.rmSync(isoHome, { recursive: true, force: true });
@@ -476,16 +491,13 @@ async function runTests() {
 
   if (
     await asyncTest('caps very large session-start context by default', async () => {
-      const isoHome = path.join(os.tmpdir(), `ecc-large-start-${Date.now()}`);
+      const isoHome = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-large-start-'));
       const sessionsDir = getLegacySessionsDir(isoHome);
       fs.mkdirSync(sessionsDir, { recursive: true });
       fs.mkdirSync(path.join(isoHome, '.claude', 'skills', 'learned'), { recursive: true });
 
       const sessionFile = path.join(sessionsDir, '2026-02-11-large000-session.tmp');
-      fs.writeFileSync(
-        sessionFile,
-        buildSessionStartFixture(`START_MARKER\n${'A'.repeat(20000)}\nEND_MARKER`, { title: '# Large Session' })
-      );
+      fs.writeFileSync(sessionFile, buildSessionStartFixture(`START_MARKER\n${'A'.repeat(20000)}\nEND_MARKER`, { title: '# Large Session' }));
 
       try {
         const result = await runScript(path.join(scriptsDir, 'session-start.js'), '', {
@@ -508,16 +520,13 @@ async function runTests() {
 
   if (
     await asyncTest('honors ECC_SESSION_START_MAX_CHARS for injected context', async () => {
-      const isoHome = path.join(os.tmpdir(), `ecc-max-start-${Date.now()}`);
+      const isoHome = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-max-start-'));
       const sessionsDir = getLegacySessionsDir(isoHome);
       fs.mkdirSync(sessionsDir, { recursive: true });
       fs.mkdirSync(path.join(isoHome, '.claude', 'skills', 'learned'), { recursive: true });
 
       const sessionFile = path.join(sessionsDir, '2026-02-11-max0000-session.tmp');
-      fs.writeFileSync(
-        sessionFile,
-        buildSessionStartFixture('B'.repeat(1200), { title: '# Sized Session' })
-      );
+      fs.writeFileSync(sessionFile, buildSessionStartFixture('B'.repeat(1200), { title: '# Sized Session' }));
 
       try {
         const result = await runScript(path.join(scriptsDir, 'session-start.js'), '', {
@@ -538,8 +547,155 @@ async function runTests() {
   else failed++;
 
   if (
+    await asyncTest('honors ECC_MAX_INJECTED_INSTINCTS for injected instincts', async () => {
+      const isoHome = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-max-instincts-'));
+      const homunculusDir = path.join(isoHome, 'homunculus');
+      const instinctsDir = path.join(homunculusDir, 'instincts', 'personal');
+      fs.mkdirSync(instinctsDir, { recursive: true });
+      for (let i = 1; i <= 8; i++) {
+        fs.writeFileSync(
+          path.join(instinctsDir, `instinct-${i}.md`),
+          `---\nid: max-instinct-${i}\nconfidence: 0.9\n---\n## Action\nDo configurable thing number ${i}.\n`
+        );
+      }
+      const baseEnv = { HOME: isoHome, USERPROFILE: isoHome, CLV2_HOMUNCULUS_DIR: homunculusDir };
+
+      try {
+        const def = await runScript(path.join(scriptsDir, 'session-start.js'), '', baseEnv);
+        assert.strictEqual(def.code, 0);
+        assert.ok(def.stderr.includes('Injecting 6 instinct(s)'), `default cap should inject 6, stderr: ${def.stderr}`);
+
+        const capped = await runScript(path.join(scriptsDir, 'session-start.js'), '', { ...baseEnv, ECC_MAX_INJECTED_INSTINCTS: '3' });
+        assert.strictEqual(capped.code, 0);
+        assert.ok(capped.stderr.includes('Injecting 3 instinct(s)'), `override should inject 3, stderr: ${capped.stderr}`);
+
+        const garbage = await runScript(path.join(scriptsDir, 'session-start.js'), '', { ...baseEnv, ECC_MAX_INJECTED_INSTINCTS: 'not-a-number' });
+        assert.strictEqual(garbage.code, 0);
+        assert.ok(garbage.stderr.includes('Injecting 6 instinct(s)'), `garbage override should fall back to default 6, stderr: ${garbage.stderr}`);
+
+        // A partial/non-integer value must be rejected whole, not truncated.
+        const partial = await runScript(path.join(scriptsDir, 'session-start.js'), '', { ...baseEnv, ECC_MAX_INJECTED_INSTINCTS: '3.9' });
+        assert.strictEqual(partial.code, 0);
+        assert.ok(partial.stderr.includes('Injecting 6 instinct(s)'), `non-integer override (3.9) should fall back to default 6, not truncate to 3, stderr: ${partial.stderr}`);
+
+        // Non-decimal numeric syntax (exponent, hex) must be rejected too.
+        // If "1e2" were accepted as 100, all 8 fixtures would inject; the
+        // default cap of 6 proves it fell back.
+        const exponent = await runScript(path.join(scriptsDir, 'session-start.js'), '', { ...baseEnv, ECC_MAX_INJECTED_INSTINCTS: '1e2' });
+        assert.strictEqual(exponent.code, 0);
+        assert.ok(exponent.stderr.includes('Injecting 6 instinct(s)'), `exponent override (1e2) should fall back to default 6, stderr: ${exponent.stderr}`);
+      } finally {
+        fs.rmSync(isoHome, { recursive: true, force: true });
+      }
+    })
+  )
+    passed++;
+  else failed++;
+
+  if (
+    await asyncTest('honors ECC_INSTINCT_CONFIDENCE_THRESHOLD for injected instincts', async () => {
+      const isoHome = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-instinct-threshold-'));
+      const homunculusDir = path.join(isoHome, 'homunculus');
+      const instinctsDir = path.join(homunculusDir, 'instincts', 'personal');
+      fs.mkdirSync(instinctsDir, { recursive: true });
+      // 4 high-confidence (0.9) + 4 low-confidence (0.6) instincts.
+      for (let i = 1; i <= 8; i++) {
+        const confidence = i <= 4 ? '0.9' : '0.6';
+        fs.writeFileSync(
+          path.join(instinctsDir, `instinct-${i}.md`),
+          `---\nid: thr-instinct-${i}\nconfidence: ${confidence}\n---\n## Action\nDo threshold thing number ${i}.\n`
+        );
+      }
+      const baseEnv = { HOME: isoHome, USERPROFILE: isoHome, CLV2_HOMUNCULUS_DIR: homunculusDir };
+
+      try {
+        const def = await runScript(path.join(scriptsDir, 'session-start.js'), '', baseEnv);
+        assert.strictEqual(def.code, 0);
+        assert.ok(def.stderr.includes('Injecting 4 instinct(s)'), `default 0.7 threshold should inject only the four 0.9 instincts, stderr: ${def.stderr}`);
+
+        const raised = await runScript(path.join(scriptsDir, 'session-start.js'), '', { ...baseEnv, ECC_INSTINCT_CONFIDENCE_THRESHOLD: '0.95' });
+        assert.strictEqual(raised.code, 0);
+        assert.ok(!raised.stderr.includes('instinct(s) into session context'), `0.95 threshold should filter out all instincts, stderr: ${raised.stderr}`);
+
+        const lowered = await runScript(path.join(scriptsDir, 'session-start.js'), '', { ...baseEnv, ECC_INSTINCT_CONFIDENCE_THRESHOLD: '0.5' });
+        assert.strictEqual(lowered.code, 0);
+        assert.ok(lowered.stderr.includes('Injecting 6 instinct(s)'), `0.5 threshold should pass all eight but cap at the default 6, stderr: ${lowered.stderr}`);
+
+        // Non-decimal syntax must fall back to the default 0.7, not be read
+        // as hex. If "0x1" were accepted as 1.0, zero instincts would inject
+        // (none are at full confidence); the default 0.7 injects the four 0.9s.
+        const hex = await runScript(path.join(scriptsDir, 'session-start.js'), '', { ...baseEnv, ECC_INSTINCT_CONFIDENCE_THRESHOLD: '0x1' });
+        assert.strictEqual(hex.code, 0);
+        assert.ok(hex.stderr.includes('Injecting 4 instinct(s)'), `hex threshold (0x1) should fall back to the 0.7 default and inject the four 0.9 instincts, stderr: ${hex.stderr}`);
+      } finally {
+        fs.rmSync(isoHome, { recursive: true, force: true });
+      }
+    })
+  )
+    passed++;
+  else failed++;
+
+  if (
+    await asyncTest('ranks stack-relevant instincts above higher-confidence unrelated ones (#2371)', async () => {
+      const isoHome = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-instinct-relevance-'));
+      const homunculusDir = path.join(isoHome, 'homunculus');
+      const instinctsDir = path.join(homunculusDir, 'instincts', 'personal');
+      fs.mkdirSync(instinctsDir, { recursive: true });
+      // A stack-matching 0.75 instinct and an unrelated higher-confidence 0.9.
+      fs.writeFileSync(
+        path.join(instinctsDir, 'terraform-first.md'),
+        '---\nid: terraform-first\nconfidence: 0.75\ndomain: terraform\n---\n## Action\nRun terraform plan before every apply.\n'
+      );
+      fs.writeFileSync(
+        path.join(instinctsDir, 'unrelated-high.md'),
+        '---\nid: unrelated-high\nconfidence: 0.9\ndomain: python\n---\n## Action\nPin Python dependencies in requirements.txt.\n'
+      );
+      // A project root that detects as terraform via a *.tf marker.
+      const projectRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-tf-project-'));
+      fs.writeFileSync(path.join(projectRoot, 'main.tf'), 'resource "null_resource" "x" {}\n');
+
+      const baseEnv = {
+        HOME: isoHome,
+        USERPROFILE: isoHome,
+        CLV2_HOMUNCULUS_DIR: homunculusDir,
+        CLAUDE_PROJECT_DIR: projectRoot,
+        ECC_INSTINCT_RELEVANCE_RANKING: 'on',
+        ECC_INSTINCT_CONFIDENCE_THRESHOLD: '0.7',
+        ECC_MAX_INJECTED_INSTINCTS: '6',
+      };
+
+      try {
+        const on = await runScript(path.join(scriptsDir, 'session-start.js'), '', baseEnv);
+        assert.strictEqual(on.code, 0);
+        const ctxOn = getSessionStartAdditionalContext(on.stdout);
+        const tfOn = ctxOn.indexOf('Run terraform plan before every apply.');
+        const pyOn = ctxOn.indexOf('Pin Python dependencies in requirements.txt.');
+        assert.ok(tfOn !== -1 && pyOn !== -1, `both instincts should inject, ctx: ${ctxOn}`);
+        assert.ok(tfOn < pyOn, `stack-matching 0.75 should rank above unrelated 0.9 when relevance is on, ctx: ${ctxOn}`);
+
+        // Opting out restores pure confidence ordering (0.9 before 0.75).
+        const off = await runScript(path.join(scriptsDir, 'session-start.js'), '', {
+          ...baseEnv,
+          ECC_INSTINCT_RELEVANCE_RANKING: 'off',
+        });
+        assert.strictEqual(off.code, 0);
+        const ctxOff = getSessionStartAdditionalContext(off.stdout);
+        const tfOff = ctxOff.indexOf('Run terraform plan before every apply.');
+        const pyOff = ctxOff.indexOf('Pin Python dependencies in requirements.txt.');
+        assert.ok(tfOff !== -1 && pyOff !== -1, `both instincts should still inject, ctx: ${ctxOff}`);
+        assert.ok(pyOff < tfOff, `with ranking off, higher-confidence 0.9 should rank first, ctx: ${ctxOff}`);
+      } finally {
+        fs.rmSync(isoHome, { recursive: true, force: true });
+        fs.rmSync(projectRoot, { recursive: true, force: true });
+      }
+    })
+  )
+    passed++;
+  else failed++;
+
+  if (
     await asyncTest('disables session-start additional context when requested', async () => {
-      const isoHome = path.join(os.tmpdir(), `ecc-disabled-start-${Date.now()}`);
+      const isoHome = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-disabled-start-'));
       const sessionsDir = getLegacySessionsDir(isoHome);
       fs.mkdirSync(sessionsDir, { recursive: true });
       fs.mkdirSync(path.join(isoHome, '.claude', 'skills', 'learned'), { recursive: true });
@@ -567,7 +723,7 @@ async function runTests() {
 
   if (
     await asyncTest('prefers canonical session-data content over legacy duplicates', async () => {
-      const isoHome = path.join(os.tmpdir(), `ecc-canonical-start-${Date.now()}`);
+      const isoHome = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-canonical-start-'));
       const canonicalDir = getCanonicalSessionsDir(isoHome);
       const legacyDir = getLegacySessionsDir(isoHome);
       const now = new Date();
@@ -581,14 +737,8 @@ async function runTests() {
       fs.mkdirSync(legacyDir, { recursive: true });
       fs.mkdirSync(path.join(isoHome, '.claude', 'skills', 'learned'), { recursive: true });
 
-      fs.writeFileSync(
-        canonicalFile,
-        buildSessionStartFixture('Use the canonical session-data copy.', { title: '# Canonical Session' })
-      );
-      fs.writeFileSync(
-        legacyFile,
-        buildSessionStartFixture('Do not prefer the legacy duplicate.', { title: '# Legacy Session' })
-      );
+      fs.writeFileSync(canonicalFile, buildSessionStartFixture('Use the canonical session-data copy.', { title: '# Canonical Session' }));
+      fs.writeFileSync(legacyFile, buildSessionStartFixture('Do not prefer the legacy duplicate.', { title: '# Legacy Session' }));
       fs.utimesSync(canonicalFile, canonicalTime, canonicalTime);
       fs.utimesSync(legacyFile, legacyTime, legacyTime);
 
@@ -611,19 +761,13 @@ async function runTests() {
 
   if (
     await asyncTest('strips ANSI escape codes from injected session content', async () => {
-      const isoHome = path.join(os.tmpdir(), `ecc-ansi-start-${Date.now()}`);
+      const isoHome = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-ansi-start-'));
       const sessionsDir = getLegacySessionsDir(isoHome);
       fs.mkdirSync(sessionsDir, { recursive: true });
       fs.mkdirSync(path.join(isoHome, '.claude', 'skills', 'learned'), { recursive: true });
 
       const sessionFile = path.join(sessionsDir, '2026-02-11-winansi00-session.tmp');
-      fs.writeFileSync(
-        sessionFile,
-        buildSessionStartFixture(
-          'I worked on \x1b[1;36mWindows terminal handling\x1b[0m.\x1b[K',
-          { title: '\x1b[H\x1b[2J\x1b[3J# Real Session' }
-        )
-      );
+      fs.writeFileSync(sessionFile, buildSessionStartFixture('I worked on \x1b[1;36mWindows terminal handling\x1b[0m.\x1b[K', { title: '\x1b[H\x1b[2J\x1b[3J# Real Session' }));
 
       try {
         const result = await runScript(path.join(scriptsDir, 'session-start.js'), '', {
@@ -632,10 +776,7 @@ async function runTests() {
         });
         assert.strictEqual(result.code, 0);
         const additionalContext = getSessionStartAdditionalContext(result.stdout);
-        assert.ok(
-          additionalContext.includes('HISTORICAL REFERENCE ONLY'),
-          'Should wrap injected session with the stale-replay guard preamble'
-        );
+        assert.ok(additionalContext.includes('HISTORICAL REFERENCE ONLY'), 'Should wrap injected session with the stale-replay guard preamble');
         assert.ok(additionalContext.includes('Windows terminal handling'), 'Should preserve sanitized session text');
         assert.ok(!additionalContext.includes('\x1b['), 'Should not emit ANSI escape codes');
       } finally {
@@ -648,7 +789,7 @@ async function runTests() {
 
   if (
     await asyncTest('skips prior session summary on Desktop SessionStart resume', async () => {
-      const isoHome = path.join(os.tmpdir(), `ecc-resume-start-${Date.now()}`);
+      const isoHome = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-resume-start-'));
       const sessionsDir = getCanonicalSessionsDir(isoHome);
       fs.mkdirSync(sessionsDir, { recursive: true });
       fs.mkdirSync(path.join(isoHome, '.claude', 'skills', 'learned'), { recursive: true });
@@ -657,11 +798,7 @@ async function runTests() {
       fs.writeFileSync(sessionFile, buildSessionStartFixture(RESUME_SESSION_SENTINEL));
 
       try {
-        const result = await runScript(
-          path.join(scriptsDir, 'session-start.js'),
-          JSON.stringify({ hookName: 'SessionStart:resume' }),
-          { HOME: isoHome, USERPROFILE: isoHome }
-        );
+        const result = await runScript(path.join(scriptsDir, 'session-start.js'), JSON.stringify({ hookName: 'SessionStart:resume' }), { HOME: isoHome, USERPROFILE: isoHome });
         assert.strictEqual(result.code, 0);
         const additionalContext = getSessionStartAdditionalContext(result.stdout);
         assert.ok(!additionalContext.includes('HISTORICAL REFERENCE ONLY'), 'Should not inject a previous summary on resume');
@@ -677,7 +814,7 @@ async function runTests() {
 
   if (
     await asyncTest('skips prior session summary on CLI SessionStart resume', async () => {
-      const isoHome = path.join(os.tmpdir(), `ecc-cli-resume-start-${Date.now()}`);
+      const isoHome = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-cli-resume-start-'));
       const sessionsDir = getCanonicalSessionsDir(isoHome);
       fs.mkdirSync(sessionsDir, { recursive: true });
       fs.mkdirSync(path.join(isoHome, '.claude', 'skills', 'learned'), { recursive: true });
@@ -686,11 +823,7 @@ async function runTests() {
       fs.writeFileSync(sessionFile, buildSessionStartFixture(CLI_RESUME_SESSION_SENTINEL));
 
       try {
-        const result = await runScript(
-          path.join(scriptsDir, 'session-start.js'),
-          JSON.stringify({ hook_event_name: 'SessionStart', source: 'resume' }),
-          { HOME: isoHome, USERPROFILE: isoHome }
-        );
+        const result = await runScript(path.join(scriptsDir, 'session-start.js'), JSON.stringify({ hook_event_name: 'SessionStart', source: 'resume' }), { HOME: isoHome, USERPROFILE: isoHome });
         assert.strictEqual(result.code, 0);
         const additionalContext = getSessionStartAdditionalContext(result.stdout);
         assert.ok(!additionalContext.includes(CLI_RESUME_SESSION_SENTINEL), 'Should not inject CLI resume session content');
@@ -705,7 +838,7 @@ async function runTests() {
 
   if (
     await asyncTest('skips prior session summary on clear SessionStart payloads', async () => {
-      const isoHome = path.join(os.tmpdir(), `ecc-clear-start-${Date.now()}`);
+      const isoHome = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-clear-start-'));
       const sessionsDir = getCanonicalSessionsDir(isoHome);
       fs.mkdirSync(sessionsDir, { recursive: true });
       fs.mkdirSync(path.join(isoHome, '.claude', 'skills', 'learned'), { recursive: true });
@@ -714,20 +847,12 @@ async function runTests() {
       fs.writeFileSync(desktopFile, buildSessionStartFixture(`${DESKTOP_CLEAR_SESSION_SENTINEL}\n${CLI_CLEAR_SESSION_SENTINEL}`));
 
       try {
-        const desktopResult = await runScript(
-          path.join(scriptsDir, 'session-start.js'),
-          JSON.stringify({ hookName: 'SessionStart:clear' }),
-          { HOME: isoHome, USERPROFILE: isoHome }
-        );
+        const desktopResult = await runScript(path.join(scriptsDir, 'session-start.js'), JSON.stringify({ hookName: 'SessionStart:clear' }), { HOME: isoHome, USERPROFILE: isoHome });
         assert.strictEqual(desktopResult.code, 0);
         const desktopContext = getSessionStartAdditionalContext(desktopResult.stdout);
         assert.ok(!desktopContext.includes(DESKTOP_CLEAR_SESSION_SENTINEL), 'Should not inject Desktop clear session content');
 
-        const cliResult = await runScript(
-          path.join(scriptsDir, 'session-start.js'),
-          JSON.stringify({ hook_event_name: 'SessionStart', source: 'clear' }),
-          { HOME: isoHome, USERPROFILE: isoHome }
-        );
+        const cliResult = await runScript(path.join(scriptsDir, 'session-start.js'), JSON.stringify({ hook_event_name: 'SessionStart', source: 'clear' }), { HOME: isoHome, USERPROFILE: isoHome });
         assert.strictEqual(cliResult.code, 0);
         const cliContext = getSessionStartAdditionalContext(cliResult.stdout);
         assert.ok(!cliContext.includes(CLI_CLEAR_SESSION_SENTINEL), 'Should not inject CLI clear session content');
@@ -742,7 +867,7 @@ async function runTests() {
 
   if (
     await asyncTest('does not log malformed SessionStart stdin content while skipping prior summary', async () => {
-      const isoHome = path.join(os.tmpdir(), `ecc-invalid-start-${Date.now()}`);
+      const isoHome = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-invalid-start-'));
       const sessionsDir = getCanonicalSessionsDir(isoHome);
       fs.mkdirSync(sessionsDir, { recursive: true });
       fs.mkdirSync(path.join(isoHome, '.claude', 'skills', 'learned'), { recursive: true });
@@ -772,16 +897,19 @@ async function runTests() {
 
   if (
     await asyncTest('does not fall back to unrelated recent session content', async () => {
-      const isoHome = path.join(os.tmpdir(), `ecc-cross-project-start-${Date.now()}`);
+      const isoHome = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-cross-project-start-'));
       const sessionsDir = getCanonicalSessionsDir(isoHome);
       fs.mkdirSync(sessionsDir, { recursive: true });
       fs.mkdirSync(path.join(isoHome, '.claude', 'skills', 'learned'), { recursive: true });
 
       const sessionFile = path.join(sessionsDir, '2026-02-11-crossproj-session.tmp');
-      fs.writeFileSync(sessionFile, buildSessionStartFixture(CROSS_PROJECT_SESSION_SENTINEL, {
-        project: 'different-project',
-        worktree: path.join(os.tmpdir(), 'different-project')
-      }));
+      fs.writeFileSync(
+        sessionFile,
+        buildSessionStartFixture(CROSS_PROJECT_SESSION_SENTINEL, {
+          project: 'different-project',
+          worktree: path.join(os.tmpdir(), 'different-project')
+        })
+      );
 
       try {
         const result = await runScript(path.join(scriptsDir, 'session-start.js'), '', {
@@ -802,15 +930,18 @@ async function runTests() {
 
   if (
     await asyncTest('does not inject same-project sessions from a different explicit worktree', async () => {
-      const isoHome = path.join(os.tmpdir(), `ecc-cross-worktree-start-${Date.now()}`);
+      const isoHome = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-cross-worktree-start-'));
       const sessionsDir = getCanonicalSessionsDir(isoHome);
       fs.mkdirSync(sessionsDir, { recursive: true });
       fs.mkdirSync(path.join(isoHome, '.claude', 'skills', 'learned'), { recursive: true });
 
       const sessionFile = path.join(sessionsDir, '2026-02-11-crosswt-session.tmp');
-      fs.writeFileSync(sessionFile, buildSessionStartFixture(CROSS_WORKTREE_PROJECT_SENTINEL, {
-        worktree: path.join(os.tmpdir(), 'same-project-different-worktree')
-      }));
+      fs.writeFileSync(
+        sessionFile,
+        buildSessionStartFixture(CROSS_WORKTREE_PROJECT_SENTINEL, {
+          worktree: path.join(os.tmpdir(), 'same-project-different-worktree')
+        })
+      );
 
       try {
         const result = await runScript(path.join(scriptsDir, 'session-start.js'), '', {
@@ -830,7 +961,7 @@ async function runTests() {
 
   if (
     await asyncTest('allows project fallback only for legacy sessions without worktree metadata', async () => {
-      const isoHome = path.join(os.tmpdir(), `ecc-project-only-start-${Date.now()}`);
+      const isoHome = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-project-only-start-'));
       const sessionsDir = getCanonicalSessionsDir(isoHome);
       fs.mkdirSync(sessionsDir, { recursive: true });
       fs.mkdirSync(path.join(isoHome, '.claude', 'skills', 'learned'), { recursive: true });
@@ -856,8 +987,121 @@ async function runTests() {
   else failed++;
 
   if (
+    await asyncTest('injects a same-repository session recorded in a different worktree (#3160)', async () => {
+      const isoHome = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-3160-samerepo-home-'));
+      const sessionsDir = getCanonicalSessionsDir(isoHome);
+      fs.mkdirSync(sessionsDir, { recursive: true });
+      fs.mkdirSync(path.join(isoHome, '.claude', 'skills', 'learned'), { recursive: true });
+      const repoBase = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-3160-samerepo-'));
+      const { worktrees } = initGitRepoWithWorktrees(repoBase, ['wt-a', 'wt-b']);
+
+      const sessionFile = path.join(sessionsDir, '2026-02-11-samerepo-session.tmp');
+      fs.writeFileSync(
+        sessionFile,
+        buildSessionStartFixture(SAME_REPO_WORKTREE_SENTINEL, {
+          project: 'wt-a',
+          worktree: worktrees['wt-a']
+        })
+      );
+
+      try {
+        const result = await runScript(path.join(scriptsDir, 'session-start.js'), '', {
+          HOME: isoHome,
+          USERPROFILE: isoHome
+        }, worktrees['wt-b']);
+        assert.strictEqual(result.code, 0);
+        const additionalContext = getSessionStartAdditionalContext(result.stdout);
+        assert.ok(additionalContext.includes(SAME_REPO_WORKTREE_SENTINEL), 'Should inject a session recorded in another worktree of the same repository');
+        assert.ok(result.stderr.includes('(match: repo)'), `Should report repository identity match, stderr: ${result.stderr}`);
+      } finally {
+        fs.rmSync(isoHome, { recursive: true, force: true });
+        fs.rmSync(repoBase, { recursive: true, force: true });
+      }
+    })
+  )
+    passed++;
+  else failed++;
+
+  if (
+    await asyncTest('scopes sessions by recorded repository identity when the worktree path is gone (#3160)', async () => {
+      const isoHome = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-3160-repofield-home-'));
+      const sessionsDir = getCanonicalSessionsDir(isoHome);
+      fs.mkdirSync(sessionsDir, { recursive: true });
+      fs.mkdirSync(path.join(isoHome, '.claude', 'skills', 'learned'), { recursive: true });
+      const repoBase = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-3160-repofield-'));
+      const { mainrepo, worktrees } = initGitRepoWithWorktrees(repoBase, ['wt-b']);
+
+      const sessionFile = path.join(sessionsDir, '2026-02-11-repofield-session.tmp');
+      fs.writeFileSync(
+        sessionFile,
+        buildSessionStartFixture(REPO_FIELD_SESSION_SENTINEL, {
+          project: 'wt-removed',
+          worktree: path.join(repoBase, 'wt-removed'),
+          repo: gitCommonDirRealpath(mainrepo)
+        })
+      );
+
+      try {
+        const result = await runScript(path.join(scriptsDir, 'session-start.js'), '', {
+          HOME: isoHome,
+          USERPROFILE: isoHome
+        }, worktrees['wt-b']);
+        assert.strictEqual(result.code, 0);
+        const additionalContext = getSessionStartAdditionalContext(result.stdout);
+        assert.ok(additionalContext.includes(REPO_FIELD_SESSION_SENTINEL), 'Should match on the recorded common git dir when the recorded worktree path no longer resolves');
+        assert.ok(result.stderr.includes('(match: repo)'), `Should report repository identity match, stderr: ${result.stderr}`);
+      } finally {
+        fs.rmSync(isoHome, { recursive: true, force: true });
+        fs.rmSync(repoBase, { recursive: true, force: true });
+      }
+    })
+  )
+    passed++;
+  else failed++;
+
+  if (
+    await asyncTest('never injects a session from an unrelated repository (#3160)', async () => {
+      const isoHome = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-3160-unrelated-home-'));
+      const sessionsDir = getCanonicalSessionsDir(isoHome);
+      fs.mkdirSync(sessionsDir, { recursive: true });
+      fs.mkdirSync(path.join(isoHome, '.claude', 'skills', 'learned'), { recursive: true });
+      const repoBaseX = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-3160-repox-'));
+      const repoX = initGitRepoWithWorktrees(repoBaseX, ['wt-x']);
+      const repoBaseY = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-3160-repoy-'));
+      const repoY = initGitRepoWithWorktrees(repoBaseY, ['wt-y']);
+
+      const sessionFile = path.join(sessionsDir, '2026-02-11-unrelated-session.tmp');
+      fs.writeFileSync(
+        sessionFile,
+        buildSessionStartFixture(UNRELATED_REPO_SESSION_SENTINEL, {
+          project: 'wt-x',
+          worktree: repoX.worktrees['wt-x'],
+          repo: gitCommonDirRealpath(repoX.mainrepo)
+        })
+      );
+
+      try {
+        const result = await runScript(path.join(scriptsDir, 'session-start.js'), '', {
+          HOME: isoHome,
+          USERPROFILE: isoHome
+        }, repoY.worktrees['wt-y']);
+        assert.strictEqual(result.code, 0);
+        const additionalContext = getSessionStartAdditionalContext(result.stdout);
+        assert.ok(!additionalContext.includes(UNRELATED_REPO_SESSION_SENTINEL), 'Should never inject a session from an unrelated repository');
+        assert.ok(result.stderr.includes('No worktree/project session match found'), `Should log no-match reason, stderr: ${result.stderr}`);
+      } finally {
+        fs.rmSync(isoHome, { recursive: true, force: true });
+        fs.rmSync(repoBaseX, { recursive: true, force: true });
+        fs.rmSync(repoBaseY, { recursive: true, force: true });
+      }
+    })
+  )
+    passed++;
+  else failed++;
+
+  if (
     await asyncTest('reports learned skills count', async () => {
-      const isoHome = path.join(os.tmpdir(), `ecc-skills-start-${Date.now()}`);
+      const isoHome = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-skills-start-'));
       const learnedDir = path.join(isoHome, '.claude', 'skills', 'learned');
       fs.mkdirSync(learnedDir, { recursive: true });
       fs.mkdirSync(getCanonicalSessionsDir(isoHome), { recursive: true });
@@ -883,7 +1127,7 @@ async function runTests() {
 
   if (
     await asyncTest('injects learned skills into session-start additional context', async () => {
-      const isoHome = path.join(os.tmpdir(), `ecc-skills-context-${Date.now()}`);
+      const isoHome = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-skills-context-'));
       const learnedDir = path.join(isoHome, '.claude', 'skills', 'learned');
       fs.mkdirSync(learnedDir, { recursive: true });
       fs.mkdirSync(getCanonicalSessionsDir(isoHome), { recursive: true });
@@ -897,19 +1141,11 @@ async function runTests() {
           'Use for recurring flaky integration tests that need deterministic setup checks.',
           '',
           '## Solution',
-          'Verify service readiness before running the test body.',
-        ].join('\n'),
+          'Verify service readiness before running the test body.'
+        ].join('\n')
       );
       fs.mkdirSync(path.join(learnedDir, 'debugging-pattern'), { recursive: true });
-      fs.writeFileSync(
-        path.join(learnedDir, 'debugging-pattern', 'SKILL.md'),
-        [
-          '# Debugging Pattern',
-          '',
-          '## Trigger',
-          'Use when a CLI tool silently exits without a result payload.',
-        ].join('\n'),
-      );
+      fs.writeFileSync(path.join(learnedDir, 'debugging-pattern', 'SKILL.md'), ['# Debugging Pattern', '', '## Trigger', 'Use when a CLI tool silently exits without a result payload.'].join('\n'));
 
       try {
         const result = await runScript(path.join(scriptsDir, 'session-start.js'), '', {
@@ -918,20 +1154,11 @@ async function runTests() {
         });
         assert.strictEqual(result.code, 0);
         const additionalContext = getSessionStartAdditionalContext(result.stdout);
-        assert.ok(
-          additionalContext.includes('Available learned skills'),
-          `Should inject learned skills into additionalContext, got: ${additionalContext}`
-        );
+        assert.ok(additionalContext.includes('Available learned skills'), `Should inject learned skills into additionalContext, got: ${additionalContext}`);
         assert.ok(additionalContext.includes('testing-patterns'), 'Should include the learned skill slug');
-        assert.ok(
-          additionalContext.includes('Use for recurring flaky integration tests'),
-          'Should include the learned skill trigger text'
-        );
+        assert.ok(additionalContext.includes('Use for recurring flaky integration tests'), 'Should include the learned skill trigger text');
         assert.ok(additionalContext.includes('debugging-pattern'), 'Should include directory-style learned skills');
-        assert.ok(
-          additionalContext.includes('CLI tool silently exits'),
-          'Should summarize directory-style learned skill trigger text'
-        );
+        assert.ok(additionalContext.includes('CLI tool silently exits'), 'Should summarize directory-style learned skill trigger text');
       } finally {
         fs.rmSync(isoHome, { recursive: true, force: true });
       }
@@ -988,7 +1215,7 @@ async function runTests() {
 
   if (
     await asyncTest('creates or updates session file', async () => {
-      const isoHome = path.join(os.tmpdir(), `ecc-session-create-${Date.now()}`);
+      const isoHome = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-session-create-'));
 
       try {
         await runScript(path.join(scriptsDir, 'session-end.js'), '', {
@@ -1019,7 +1246,7 @@ async function runTests() {
 
   if (
     await asyncTest('includes session ID in filename', async () => {
-      const isoHome = path.join(os.tmpdir(), `ecc-session-id-${Date.now()}`);
+      const isoHome = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-session-id-'));
       const testSessionId = 'test-session-abc12345';
       const expectedShortId = 'abc12345'; // Last 8 chars
 
@@ -1051,7 +1278,7 @@ async function runTests() {
   // backward compatibility (same `.slice(-8)` convention).
   if (
     await asyncTest('derives shortId from transcript_path UUID when available', async () => {
-      const isoHome = path.join(os.tmpdir(), `ecc-session-transcript-${Date.now()}`);
+      const isoHome = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-session-transcript-'));
       const transcriptUuid = 'abcdef12-3456-4789-a012-bcdef3456789';
       const expectedShortId = 'f3456789'; // Last 8 chars of UUID (matches getSessionIdShort convention)
       const transcriptPath = path.join(isoHome, 'transcripts', `${transcriptUuid}.jsonl`);
@@ -1089,7 +1316,7 @@ async function runTests() {
   // lowercase so the filename is consistent with getSessionIdShort()'s output.
   if (
     await asyncTest('normalizes transcript UUID shortId to lowercase', async () => {
-      const isoHome = path.join(os.tmpdir(), `ecc-session-transcript-upper-${Date.now()}`);
+      const isoHome = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-session-transcript-upper-'));
       const transcriptUuid = 'ABCDEF12-3456-4789-A012-BCDEF3456789';
       const expectedShortId = 'f3456789'; // last 8 lowercased
       const transcriptPath = path.join(isoHome, 'transcripts', `${transcriptUuid}.jsonl`);
@@ -1124,7 +1351,7 @@ async function runTests() {
   // existing .tmp files are not orphaned on upgrade.
   if (
     await asyncTest('matches getSessionIdShort when transcript UUID equals CLAUDE_SESSION_ID', async () => {
-      const isoHome = path.join(os.tmpdir(), `ecc-session-transcript-match-${Date.now()}`);
+      const isoHome = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-session-transcript-match-'));
       const sessionUuid = '11223344-5566-4778-8899-aabbccddeeff';
       const expectedShortId = 'ccddeeff'; // last 8 chars of both transcript UUID and CLAUDE_SESSION_ID
       const transcriptPath = path.join(isoHome, 'transcripts', `${sessionUuid}.jsonl`);
@@ -1156,7 +1383,7 @@ async function runTests() {
 
   if (
     await asyncTest('writes project, branch, and worktree metadata into new session files', async () => {
-      const isoHome = path.join(os.tmpdir(), `ecc-session-metadata-${Date.now()}`);
+      const isoHome = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-session-metadata-'));
       const testSessionId = 'test-session-meta1234';
       const expectedShortId = testSessionId.slice(-8);
       const topLevel = spawnSync('git', ['rev-parse', '--show-toplevel'], { encoding: 'utf8' }).stdout.trim();
@@ -1179,6 +1406,7 @@ async function runTests() {
         assert.ok(content.includes(`**Project:** ${project}`), 'Should persist project metadata');
         assert.ok(content.includes(`**Branch:** ${branch}`), 'Should persist branch metadata');
         assert.ok(content.includes(`**Worktree:** ${process.cwd()}`), 'Should persist worktree metadata');
+        assert.ok(content.includes(`**Repo:** ${gitCommonDirRealpath(process.cwd())}`), 'Should persist repository identity metadata');
       } finally {
         fs.rmSync(isoHome, { recursive: true, force: true });
       }
@@ -1220,13 +1448,15 @@ async function runTests() {
 
   if (
     await asyncTest('annotates active session file with compaction marker', async () => {
-      const isoHome = path.join(os.tmpdir(), `ecc-compact-annotate-${Date.now()}`);
+      const isoHome = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-compact-annotate-'));
       const sessionsDir = getCanonicalSessionsDir(isoHome);
       fs.mkdirSync(sessionsDir, { recursive: true });
 
       // Create an active .tmp session file
       const sessionFile = path.join(sessionsDir, '2026-02-11-test-session.tmp');
-      fs.writeFileSync(sessionFile, '# Session: 2026-02-11\n**Started:** 10:00\n');
+      fs.writeFileSync(sessionFile, buildSessionStartFixture('**Started:** 10:00', {
+        title: '# Session: 2026-02-11'
+      }));
 
       try {
         await runScript(path.join(scriptsDir, 'pre-compact.js'), '', {
@@ -1246,7 +1476,7 @@ async function runTests() {
 
   if (
     await asyncTest('compaction log contains timestamp', async () => {
-      const isoHome = path.join(os.tmpdir(), `ecc-compact-ts-${Date.now()}`);
+      const isoHome = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-compact-ts-'));
       const sessionsDir = getCanonicalSessionsDir(isoHome);
       fs.mkdirSync(sessionsDir, { recursive: true });
 
@@ -1769,10 +1999,14 @@ async function runTests() {
       fs.mkdirSync(path.join(isolatedHome, '.claude'), { recursive: true });
 
       const stdinJson = JSON.stringify({ tool_input: { file_path: filePath } });
-      const result = await runScript(path.join(scriptsDir, 'post-edit-format.js'), stdinJson, withPrependedPath(binDir, {
-        HOME: isolatedHome,
-        USERPROFILE: isolatedHome
-      }));
+      const result = await runScript(
+        path.join(scriptsDir, 'post-edit-format.js'),
+        stdinJson,
+        withPrependedPath(binDir, {
+          HOME: isolatedHome,
+          USERPROFILE: isolatedHome
+        })
+      );
 
       assert.strictEqual(result.code, 0, 'Should exit 0 for config-only repo');
       const logEntries = readCommandLog(logFile);
@@ -2027,6 +2261,41 @@ async function runTests() {
       const stdinJson = JSON.stringify({ transcript_path: transcriptPath });
       const result = await runScript(path.join(scriptsDir, 'session-end.js'), stdinJson);
       assert.strictEqual(result.code, 0, 'Should handle array content without crash');
+      cleanupTestDir(testDir);
+    })
+  )
+    passed++;
+  else failed++;
+
+  if (
+    await asyncTest('keeps isMeta human prompts while filtering structured transcript noise', async () => {
+      const testDir = createTestDir();
+      const transcriptPath = path.join(testDir, 'transcript.jsonl');
+      const lines = [
+        JSON.stringify({ type: 'user', isMeta: true, content: 'Prompt delivered by a channel plugin' }),
+        JSON.stringify({ type: 'user', isMeta: true, content: '<system-reminder>internal harness context</system-reminder>' }),
+        JSON.stringify({
+          type: 'user',
+          message: { role: 'user', content: [{ type: 'tool_result', content: 'tool output' }] },
+        }),
+      ];
+      fs.writeFileSync(transcriptPath, lines.join('\n'));
+
+      const result = await runScript(
+        path.join(scriptsDir, 'session-end.js'),
+        JSON.stringify({ transcript_path: transcriptPath }),
+        { HOME: testDir, USERPROFILE: testDir }
+      );
+      assert.strictEqual(result.code, 0);
+
+      const sessionsDir = getCanonicalSessionsDir(testDir);
+      const sessionFiles = fs.readdirSync(sessionsDir).filter(file => file.endsWith('.tmp'));
+      assert.strictEqual(sessionFiles.length, 1, 'Should create one session file');
+      const content = fs.readFileSync(path.join(sessionsDir, sessionFiles[0]), 'utf8');
+      assert.ok(content.includes('Prompt delivered by a channel plugin'));
+      assert.ok(!content.includes('internal harness context'));
+      assert.ok(!content.includes('tool output'));
+      assert.ok(content.includes('Total user messages: 1'));
       cleanupTestDir(testDir);
     })
   )
@@ -2451,27 +2720,146 @@ async function runTests() {
   else failed++;
 
   if (
-    test('hooks.json consolidates Bash hooks into one pre and one post dispatcher', () => {
+    test('hooks.json consolidates PreToolUse Bash and all PostToolUse hooks', () => {
+      const hooksPath = path.join(__dirname, '..', '..', 'hooks', 'hooks.json');
+      const hooks = readHooksConfig(hooksPath);
+
+      const preBash = hooks.hooks.PreToolUse.filter(entry => entry.matcher === 'Bash');
+      const postEntries = hooks.hooks.PostToolUse;
+
+      assert.strictEqual(preBash.length, 1, 'Should have exactly one PreToolUse Bash dispatcher');
+      assert.strictEqual(preBash[0].id, 'pre:bash:dispatcher');
+      assert.deepStrictEqual(
+        postEntries.map(entry => entry.id),
+        ['post:dispatcher:sync', 'post:dispatcher:async'],
+        'PostToolUse should have one sync and one async dispatcher'
+      );
+      assert.ok(postEntries.every(entry => entry.matcher === '.*'));
+
+      const preCommand = Array.isArray(preBash[0].hooks[0].command) ? preBash[0].hooks[0].command.join(' ') : preBash[0].hooks[0].command;
+
+      assert.ok(preCommand.includes('pre-bash-dispatcher.js'), 'PreToolUse Bash hook should use the pre dispatcher');
+      assert.ok(postEntries[0].hooks[0].command.includes('posttooluse-dispatcher.js'));
+      assert.ok(postEntries[0].hooks[0].command.endsWith('" sync'));
+      assert.ok(postEntries[1].hooks[0].command.includes('posttooluse-dispatcher.js'));
+      assert.ok(postEntries[1].hooks[0].command.endsWith('" async'));
+    })
+  )
+    passed++;
+  else failed++;
+
+  if (
+    test('hooks.json gives PowerShell dedicated GateGuard and governance routes', () => {
+      const hooksPath = path.join(__dirname, '..', '..', 'hooks', 'hooks.json');
+      const hooks = readHooksConfig(hooksPath);
+      const powerShellRoutes = hooks.hooks.PreToolUse.filter(entry => entry.matcher === 'PowerShell');
+      const governanceRoute = hooks.hooks.PreToolUse.find(entry => entry.id === 'pre:governance-capture');
+
+      assert.strictEqual(
+        powerShellRoutes.length,
+        1,
+        'Should have exactly one dedicated PreToolUse PowerShell route'
+      );
+      assert.strictEqual(
+        powerShellRoutes[0].id,
+        'pre:powershell:gateguard-fact-force',
+        'PowerShell should use its independently configurable GateGuard hook ID'
+      );
+      assert.ok(
+        powerShellRoutes[0].hooks[0].command.includes('pre:powershell:gateguard-fact-force'),
+        'Configured command should preserve the PowerShell GateGuard hook ID'
+      );
+      assert.ok(
+        powerShellRoutes[0].hooks[0].command.includes('scripts/hooks/gateguard-fact-force.js'),
+        'PowerShell route should invoke GateGuard without Bash-only preflight hooks'
+      );
+      assert.ok(governanceRoute, 'PreToolUse governance route should exist');
+      assert.ok(
+        governanceRoute.matcher.split('|').includes('PowerShell'),
+        'PreToolUse governance matcher should include PowerShell'
+      );
+      assert.ok(
+        hooks.hooks.PostToolUse.every(entry => entry.matcher === '.*'),
+        'Top-level PostToolUse dispatchers should preserve current-main wildcard matchers'
+      );
+    })
+  )
+    passed++;
+  else failed++;
+
+  if (
+    test('configured PowerShell routes enforce denial and emit redacted governance evidence', () => {
+      const root = path.join(__dirname, '..', '..');
+      const hooks = readHooksConfig(path.join(root, 'hooks', 'hooks.json'));
+      const gateRoute = hooks.hooks.PreToolUse.find(entry => entry.id === 'pre:powershell:gateguard-fact-force');
+      const governanceRoute = hooks.hooks.PreToolUse.find(entry => entry.id === 'pre:governance-capture');
+      const stateDir = createTestDir();
+      const command = 'Remove-Item -Force C:/private/configured-route-sentinel';
+      const payload = JSON.stringify({
+        tool_name: 'PowerShell',
+        tool_input: { command }
+      });
+      const env = {
+        ...process.env,
+        CLAUDE_PLUGIN_ROOT: root,
+        ECC_HOOK_PROFILE: 'standard',
+        GATEGUARD_STATE_DIR: stateDir,
+        CLAUDE_SESSION_ID: 'ecc039-configured-route-test'
+      };
+      for (const key of ['ECC_GATEGUARD', 'GATEGUARD_DISABLED', 'GATEGUARD_BASH_ROUTINE_DISABLED', 'ECC_DISABLED_HOOKS']) {
+        delete env[key];
+      }
+
+      try {
+        const gated = spawnSync(gateRoute.hooks[0].command, {
+          cwd: root,
+          env,
+          input: payload,
+          encoding: 'utf8',
+          shell: true,
+          timeout: 15000
+        });
+        assert.strictEqual(gated.status, 0, gated.stderr);
+        assert.strictEqual(
+          JSON.parse(gated.stdout).hookSpecificOutput?.permissionDecision,
+          'deny',
+          'exact configured GateGuard command should deny destructive PowerShell'
+        );
+
+        const governed = spawnSync(governanceRoute.hooks[0].command, {
+          cwd: root,
+          env: {
+            ...env,
+            ECC_GOVERNANCE_CAPTURE: '1',
+            CLAUDE_HOOK_EVENT_NAME: 'PreToolUse'
+          },
+          input: payload,
+          encoding: 'utf8',
+          shell: true,
+          timeout: 15000
+        });
+        assert.strictEqual(governed.status, 0, governed.stderr);
+        assert.ok(governed.stderr.includes('powershell.remove-item.force'));
+        assert.ok(!governed.stderr.includes(command), 'governance evidence should omit raw command text');
+      } finally {
+        cleanupTestDir(stateDir);
+      }
+    })
+  )
+    passed++;
+  else failed++;
+
+  if (
+    test('all string hook matchers are valid regular expressions', () => {
       const hooksPath = path.join(__dirname, '..', '..', 'hooks', 'hooks.json');
       const hooks = JSON.parse(fs.readFileSync(hooksPath, 'utf8'));
 
-      const preBash = hooks.hooks.PreToolUse.filter(entry => entry.matcher === 'Bash');
-      const postBash = hooks.hooks.PostToolUse.filter(entry => entry.matcher === 'Bash');
-
-      assert.strictEqual(preBash.length, 1, 'Should have exactly one PreToolUse Bash dispatcher');
-      assert.strictEqual(postBash.length, 1, 'Should have exactly one PostToolUse Bash dispatcher');
-      assert.strictEqual(preBash[0].id, 'pre:bash:dispatcher');
-      assert.strictEqual(postBash[0].id, 'post:bash:dispatcher');
-
-      const preCommand = Array.isArray(preBash[0].hooks[0].command)
-        ? preBash[0].hooks[0].command.join(' ')
-        : preBash[0].hooks[0].command;
-      const postCommand = Array.isArray(postBash[0].hooks[0].command)
-        ? postBash[0].hooks[0].command.join(' ')
-        : postBash[0].hooks[0].command;
-
-      assert.ok(preCommand.includes('pre-bash-dispatcher.js'), 'PreToolUse Bash hook should use the pre dispatcher');
-      assert.ok(postCommand.includes('post-bash-dispatcher.js'), 'PostToolUse Bash hook should use the post dispatcher');
+      for (const [eventName, hookArray] of Object.entries(hooks.hooks)) {
+        for (const entry of hookArray) {
+          if (typeof entry.matcher !== 'string') continue;
+          assert.doesNotThrow(() => new RegExp(entry.matcher), `${eventName}/${entry.id || 'hook'} should use a valid regex matcher`);
+        }
+      }
     })
   )
     passed++;
@@ -2500,11 +2888,7 @@ async function runTests() {
       for (const [eventName, hookArray] of Object.entries(hooks.hooks)) {
         for (const entry of hookArray) {
           for (const hook of entry.hooks) {
-            assert.strictEqual(
-              typeof hook.command,
-              'string',
-              `${eventName}/${entry.id || entry.matcher || 'hook'} should use string command form`,
-            );
+            assert.strictEqual(typeof hook.command, 'string', `${eventName}/${entry.id || entry.matcher || 'hook'} should use string command form`);
           }
         }
       }
@@ -2523,10 +2907,7 @@ async function runTests() {
           for (const hook of entry.hooks) {
             const commandText = Array.isArray(hook.command) ? hook.command.join(' ') : hook.command;
             if (typeof commandText === 'string' && commandText.startsWith('node -e ')) {
-              assert.ok(
-                !commandText.includes('\\"'),
-                `${eventName}/${entry.id || entry.matcher || 'hook'} should not ship escaped double quotes in node -e payload`,
-              );
+              assert.ok(!commandText.includes('\\"'), `${eventName}/${entry.id || entry.matcher || 'hook'} should not ship escaped double quotes in node -e payload`);
             }
           }
         }
@@ -2550,10 +2931,7 @@ async function runTests() {
               const isNode = commandStart === 'node' || (typeof commandStart === 'string' && commandStart.startsWith('node'));
               const isNpx = commandStart === 'npx' || (typeof commandStart === 'string' && commandStart.startsWith('npx '));
               const isSkillScript = commandText.includes('/skills/') && (/^(bash|sh)\s/.test(commandText) || commandText.includes('/skills/'));
-              assert.ok(
-                isNode || isNpx || isSkillScript,
-                `Hook command should use node or approved shell wrapper: ${commandText.substring(0, 100)}...`
-              );
+              assert.ok(isNode || isNpx || isSkillScript, `Hook command should use node or approved shell wrapper: ${commandText.substring(0, 100)}...`);
             }
           }
         }
@@ -2576,10 +2954,7 @@ async function runTests() {
       assert.ok(sessionStartHook, 'Should define a SessionStart hook');
       const commandText = sessionStartHook.command;
       assert.strictEqual(typeof sessionStartHook.command, 'string', 'SessionStart should use string command form for Claude Code compatibility');
-      assert.ok(
-        commandText.includes('session-start-bootstrap.js'),
-        'SessionStart should delegate to the extracted bootstrap script'
-      );
+      assert.ok(commandText.includes('session-start-bootstrap.js'), 'SessionStart should delegate to the extracted bootstrap script');
       assert.ok(commandText.includes('CLAUDE_PLUGIN_ROOT'), 'SessionStart should use CLAUDE_PLUGIN_ROOT');
       assert.ok(!commandText.includes('${CLAUDE_PLUGIN_ROOT}'), 'SessionStart should not depend on raw shell placeholder expansion');
       assert.ok(!commandText.includes('find '), 'Should not scan arbitrary plugin paths with find');
@@ -2592,7 +2967,8 @@ async function runTests() {
       assert.ok(bootstrapSrc.includes('session:start'), 'Bootstrap should invoke the session:start profile');
       assert.ok(bootstrapSrc.includes('run-with-flags.js'), 'Bootstrap should resolve the runner script');
       assert.ok(bootstrapSrc.includes('CLAUDE_PLUGIN_ROOT'), 'Bootstrap should consult CLAUDE_PLUGIN_ROOT');
-      assert.ok(bootstrapSrc.includes('plugins'), 'Bootstrap should probe known plugin roots');
+      assert.ok(bootstrapSrc.includes('resolve-ecc-root'), 'Bootstrap should delegate to the committed resolver module');
+      assert.ok(bootstrapSrc.includes('resolveEccRoot({ probe: rel })'), 'Bootstrap should call resolveEccRoot with the hook probe');
     })
   )
     passed++;
@@ -2607,14 +2983,14 @@ async function runTests() {
       for (const hook of [...stopHooks, ...sessionEndHooks]) {
         const commandText = Array.isArray(hook.command) ? hook.command.join(' ') : hook.command;
         assert.ok(
-          (Array.isArray(hook.command) && hook.command[0] === 'node' && hook.command[1] === '-e') ||
-          (typeof hook.command === 'string' && hook.command.startsWith('node -e "')),
+          (Array.isArray(hook.command) && hook.command[0] === 'node' && hook.command[1] === '-e') || (typeof hook.command === 'string' && hook.command.startsWith('node -e "')),
           'Lifecycle hook should use inline node resolver'
         );
-        assert.ok(commandText.includes('run-with-flags.js'), 'Lifecycle hook should resolve the runner script');
+        assert.ok(commandText.includes('lifecycle-hook-bootstrap.js'), 'Lifecycle hook should resolve the shared lifecycle bootstrap');
         assert.ok(commandText.includes('CLAUDE_PLUGIN_ROOT'), 'Lifecycle hook should consult CLAUDE_PLUGIN_ROOT');
+        assert.ok(commandText.includes("process.platform==='win32'"), 'Lifecycle hook should normalize Git Bash drive roots before loading the bootstrap');
         assert.ok(!commandText.includes('${CLAUDE_PLUGIN_ROOT}'), 'Lifecycle hook should not depend on raw shell placeholder expansion');
-        assert.ok(commandText.includes('plugins'), 'Lifecycle hook should probe known plugin roots');
+        assert.ok(commandText.includes('resolve-ecc-root'), 'Lifecycle hook should delegate to the committed resolver module');
         assert.ok(!commandText.includes('find '), 'Lifecycle hook should not scan arbitrary plugin paths with find');
         assert.ok(!commandText.includes('head -n 1'), 'Lifecycle hook should not pick the first matching plugin path');
       }
@@ -2635,11 +3011,10 @@ async function runTests() {
             if (hook.type === 'command' && commandText.includes('scripts/hooks/')) {
               const usesInlineResolver = commandStart.startsWith('node -e') && commandText.includes('run-with-flags.js');
               const usesPluginBootstrap = commandStart.startsWith('node -e') && commandText.includes('plugin-hook-bootstrap.js');
+              const usesDirectPostDispatcher = commandStart.startsWith('node -e') && commandText.includes('posttooluse-dispatcher.js') && commandText.includes('resolve-ecc-root');
+              const usesLifecycleBootstrap = commandStart.startsWith('node -e') && commandText.includes('lifecycle-hook-bootstrap.js') && commandText.includes('resolve-ecc-root');
               assert.ok(!commandText.includes('${CLAUDE_PLUGIN_ROOT}'), `Script paths should not depend on raw shell placeholder expansion: ${commandText.substring(0, 80)}...`);
-              assert.ok(
-                usesInlineResolver || usesPluginBootstrap,
-                `Script paths should use the inline resolver or plugin bootstrap: ${commandText.substring(0, 80)}...`
-              );
+              assert.ok(usesInlineResolver || usesPluginBootstrap || usesDirectPostDispatcher || usesLifecycleBootstrap, `Script paths should use a safe inline resolver or plugin bootstrap: ${commandText.substring(0, 80)}...`);
             }
           }
         }
@@ -2652,7 +3027,6 @@ async function runTests() {
   )
     passed++;
   else failed++;
-
 
   // plugin.json validation
   console.log('\nplugin.json Validation:');
@@ -3151,6 +3525,53 @@ async function runTests() {
     passed++;
   else failed++;
 
+  if (
+    test('start-observer waits for PID file via poll instead of fixed sleep (#2295)', () => {
+      const startObserverSource = fs.readFileSync(path.join(__dirname, '..', '..', 'skills', 'continuous-learning-v2', 'agents', 'start-observer.sh'), 'utf8');
+
+      assert.ok(!/^\s*sleep 2\s*$/m.test(startObserverSource), 'start-observer.sh should not use the fixed `sleep 2` wait after spawning the observer loop');
+      assert.ok(/\bseq 1 \d+\b/.test(startObserverSource), 'start-observer.sh should bound PID-file polling to a finite iteration count');
+      assert.ok(/\[ -f "\$PID_FILE" \] && break/.test(startObserverSource), 'start-observer.sh should exit polling as soon as $PID_FILE appears');
+      assert.ok(/sleep 0\.\d+/.test(startObserverSource), 'start-observer.sh should poll at sub-second intervals so healthy startups do not pay multi-second latency');
+    })
+  )
+    passed++;
+  else failed++;
+
+  if (
+    test('observer scripts only call homunculus resolvers the shared lib defines (#2452)', () => {
+      const skillRoot = path.join(__dirname, '..', '..', 'skills', 'continuous-learning-v2');
+      const libSource = fs.readFileSync(path.join(skillRoot, 'scripts', 'lib', 'homunculus-dir.sh'), 'utf8');
+      const definedResolvers = new Set([...libSource.matchAll(/^([A-Za-z_][A-Za-z0-9_]*_resolve_homunculus_dir)\(\)/gm)].map((m) => m[1]));
+      assert.ok(definedResolvers.size > 0, 'homunculus-dir.sh should define a homunculus resolver function');
+
+      const callers = [
+        ['agents', 'start-observer.sh'],
+        ['hooks', 'observe.sh'],
+        ['scripts', 'detect-project.sh'],
+        ['scripts', 'migrate-homunculus.sh']
+      ];
+      for (const rel of callers) {
+        const callerSource = fs.readFileSync(path.join(skillRoot, ...rel), 'utf8');
+        for (const match of callerSource.matchAll(/([A-Za-z_][A-Za-z0-9_]*_resolve_homunculus_dir)\b/g)) {
+          assert.ok(definedResolvers.has(match[1]), `${rel.join('/')} calls ${match[1]}, which homunculus-dir.sh does not define (stale name breaks daemon boot under set -e)`);
+        }
+      }
+    })
+  )
+    passed++;
+  else failed++;
+
+  if (
+    test('observer-loop closes stdin on the backgrounded claude analysis call (#2452)', () => {
+      const observerLoopSource = fs.readFileSync(path.join(__dirname, '..', '..', 'skills', 'continuous-learning-v2', 'agents', 'observer-loop.sh'), 'utf8');
+
+      assert.ok(observerLoopSource.includes('-p "$prompt_content" < /dev/null'), 'observer-loop should close stdin on the backgrounded claude call so Git Bash children do not hang on inherited stdin and exit 1');
+    })
+  )
+    passed++;
+  else failed++;
+
   if (SKIP_BASH) {
     console.log('  ⊘ detect-project exports the resolved Python command (skipped on Windows)');
     passed++;
@@ -3224,14 +3645,7 @@ async function runTests() {
 
         const [projectId, projectDir] = stdout.trim().split(/\r?\n/);
         const registryPath = path.join(homeDir, '.local', 'share', 'ecc-homunculus', 'projects.json');
-        const expectedProjectDir = path.join(
-          homeDir,
-          '.local',
-          'share',
-          'ecc-homunculus',
-          'projects',
-          projectId
-        );
+        const expectedProjectDir = path.join(homeDir, '.local', 'share', 'ecc-homunculus', 'projects', projectId);
         const projectMetadataPath = path.join(expectedProjectDir, 'project.json');
 
         assert.ok(projectId, 'detect-project should emit a project id');
@@ -3249,11 +3663,7 @@ async function runTests() {
         assert.ok(registry[projectId], 'registry should contain the detected project');
         assert.strictEqual(metadata.id, projectId, 'project.json should include the detected id');
         assert.strictEqual(metadata.name, path.basename(repoDir), 'project.json should include the repo name');
-        assert.strictEqual(
-          comparableMetadataRoot,
-          comparableRepoDir,
-          `project.json should include the repo root (expected ${comparableRepoDir}, got ${comparableMetadataRoot})`
-        );
+        assert.strictEqual(comparableMetadataRoot, comparableRepoDir, `project.json should include the repo root (expected ${comparableRepoDir}, got ${comparableMetadataRoot})`);
         assert.strictEqual(metadata.remote, 'https://github.com/example/ecc-test.git', 'project.json should include the sanitized remote');
         assert.ok(metadata.created_at, 'project.json should include created_at');
         assert.ok(metadata.last_seen, 'project.json should include last_seen');
@@ -3304,10 +3714,7 @@ async function runTests() {
 
         const homunculusDir = path.join(homeDir, '.local', 'share', 'ecc-homunculus');
         const projectsDir = path.join(homunculusDir, 'projects');
-        assert.ok(
-          !fs.existsSync(projectsDir) || fs.readdirSync(projectsDir).length === 0,
-          'observe.sh should not create a project-scoped directory for a non-git cwd'
-        );
+        assert.ok(!fs.existsSync(projectsDir) || fs.readdirSync(projectsDir).length === 0, 'observe.sh should not create a project-scoped directory for a non-git cwd');
 
         const observationsPath = path.join(homunculusDir, 'observations.jsonl');
         const observations = fs.readFileSync(observationsPath, 'utf8').trim().split('\n').filter(Boolean);
@@ -3338,7 +3745,10 @@ async function runTests() {
     passed++;
   else failed++;
 
-  if (SKIP_BASH) { console.log("  ⊘ observe.sh skips minimal hook profile (skipped on Windows)"); passed++; } else if (
+  if (SKIP_BASH) {
+    console.log('  ⊘ observe.sh skips minimal hook profile (skipped on Windows)');
+    passed++;
+  } else if (
     await asyncTest('observe.sh skips minimal hook profile before project detection side effects', async () => {
       await assertObserveSkipBeforeProjectDetection({
         name: 'minimal hook profile',
@@ -3349,7 +3759,10 @@ async function runTests() {
     passed++;
   else failed++;
 
-  if (SKIP_BASH) { console.log("  ⊘ observe.sh skips cooperative skip env (skipped on Windows)"); passed++; } else if (
+  if (SKIP_BASH) {
+    console.log('  ⊘ observe.sh skips cooperative skip env (skipped on Windows)');
+    passed++;
+  } else if (
     await asyncTest('observe.sh skips cooperative skip env before project detection side effects', async () => {
       await assertObserveSkipBeforeProjectDetection({
         name: 'cooperative skip env',
@@ -3360,7 +3773,10 @@ async function runTests() {
     passed++;
   else failed++;
 
-  if (SKIP_BASH) { console.log("  ⊘ observe.sh skips subagent payloads (skipped on Windows)"); passed++; } else if (
+  if (SKIP_BASH) {
+    console.log('  ⊘ observe.sh skips subagent payloads (skipped on Windows)');
+    passed++;
+  } else if (
     await asyncTest('observe.sh skips subagent payloads before project detection side effects', async () => {
       await assertObserveSkipBeforeProjectDetection({
         name: 'subagent payload',
@@ -3372,7 +3788,10 @@ async function runTests() {
     passed++;
   else failed++;
 
-  if (SKIP_BASH) { console.log("  ⊘ observe.sh skips configured observer-session paths (skipped on Windows)"); passed++; } else if (
+  if (SKIP_BASH) {
+    console.log('  ⊘ observe.sh skips configured observer-session paths (skipped on Windows)');
+    passed++;
+  } else if (
     await asyncTest('observe.sh skips configured observer-session paths before project detection side effects', async () => {
       await assertObserveSkipBeforeProjectDetection({
         name: 'cwd skip path',
@@ -3698,14 +4117,14 @@ async function runTests() {
 
   if (
     await asyncTest('only annotates *-session.tmp files, not other .tmp files', async () => {
-      const isoHome = path.join(os.tmpdir(), `ecc-compact-glob-${Date.now()}`);
+      const isoHome = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-compact-glob-'));
       const sessionsDir = getCanonicalSessionsDir(isoHome);
       fs.mkdirSync(sessionsDir, { recursive: true });
 
       // Create a session .tmp file and a non-session .tmp file
       const sessionFile = path.join(sessionsDir, '2026-02-11-abc-session.tmp');
       const otherTmpFile = path.join(sessionsDir, 'other-data.tmp');
-      fs.writeFileSync(sessionFile, '# Session\n');
+      fs.writeFileSync(sessionFile, buildSessionStartFixture('', { title: '# Session' }));
       fs.writeFileSync(otherTmpFile, 'some other data\n');
 
       try {
@@ -3729,7 +4148,7 @@ async function runTests() {
 
   if (
     await asyncTest('handles no active session files gracefully', async () => {
-      const isoHome = path.join(os.tmpdir(), `ecc-compact-nosession-${Date.now()}`);
+      const isoHome = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-compact-nosession-'));
       const sessionsDir = getCanonicalSessionsDir(isoHome);
       fs.mkdirSync(sessionsDir, { recursive: true });
 
@@ -3984,7 +4403,7 @@ async function runTests() {
 
   if (
     await asyncTest('exits 0 with empty sessions directory (no recent sessions)', async () => {
-      const isoHome = path.join(os.tmpdir(), `ecc-start-empty-${Date.now()}`);
+      const isoHome = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-start-empty-'));
       fs.mkdirSync(getCanonicalSessionsDir(isoHome), { recursive: true });
       fs.mkdirSync(path.join(isoHome, '.claude', 'skills', 'learned'), { recursive: true });
       try {
@@ -4006,7 +4425,7 @@ async function runTests() {
 
   if (
     await asyncTest('does not inject blank template session into context', async () => {
-      const isoHome = path.join(os.tmpdir(), `ecc-start-blank-${Date.now()}`);
+      const isoHome = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-start-blank-'));
       const sessionsDir = getCanonicalSessionsDir(isoHome);
       fs.mkdirSync(sessionsDir, { recursive: true });
       fs.mkdirSync(path.join(isoHome, '.claude', 'skills', 'learned'), { recursive: true });
@@ -4143,9 +4562,13 @@ async function runTests() {
   else failed++;
 
   if (
-    await asyncTest('source calls process.exit(0) after writing output', async () => {
+    await asyncTest('source exits only after stdout finishes writing', async () => {
       const formatSource = fs.readFileSync(path.join(scriptsDir, 'post-edit-format.js'), 'utf8');
-      assert.ok(formatSource.includes('process.exit(0)'), 'Should call process.exit(0) for clean termination');
+      assert.match(
+        formatSource,
+        /process\.stdout\.write\(data,\s*\(\)\s*=>\s*process\.exit\(0\)\)/,
+        'Should exit from the stdout write callback'
+      );
     })
   )
     passed++;
@@ -4154,7 +4577,7 @@ async function runTests() {
   if (
     await asyncTest('uses process.stdout.write instead of console.log for pass-through', async () => {
       const formatSource = fs.readFileSync(path.join(scriptsDir, 'post-edit-format.js'), 'utf8');
-      assert.ok(formatSource.includes('process.stdout.write(data)'), 'Should use process.stdout.write to avoid trailing newline');
+      assert.ok(formatSource.includes('process.stdout.write(data,'), 'Should use process.stdout.write to avoid trailing newline');
       // Verify no console.log(data) for pass-through (console.error for warnings is OK)
       const lines = formatSource.split('\n');
       const passThrough = lines.filter(l => /console\.log\(data\)/.test(l));
@@ -4167,9 +4590,13 @@ async function runTests() {
   console.log('\nRound 29: post-edit-typecheck.js (exit and pass-through):');
 
   if (
-    await asyncTest('source calls process.exit(0) after writing output', async () => {
+    await asyncTest('source exits only after stdout finishes writing', async () => {
       const tcSource = fs.readFileSync(path.join(scriptsDir, 'post-edit-typecheck.js'), 'utf8');
-      assert.ok(tcSource.includes('process.exit(0)'), 'Should call process.exit(0) for clean termination');
+      assert.match(
+        tcSource,
+        /process\.stdout\.write\(data,\s*\(\)\s*=>\s*process\.exit\(0\)\)/,
+        'Should exit from the stdout write callback'
+      );
     })
   )
     passed++;
@@ -4178,7 +4605,7 @@ async function runTests() {
   if (
     await asyncTest('uses process.stdout.write instead of console.log for pass-through', async () => {
       const tcSource = fs.readFileSync(path.join(scriptsDir, 'post-edit-typecheck.js'), 'utf8');
-      assert.ok(tcSource.includes('process.stdout.write(data)'), 'Should use process.stdout.write');
+      assert.ok(tcSource.includes('process.stdout.write(data,'), 'Should use process.stdout.write');
       const lines = tcSource.split('\n');
       const passThrough = lines.filter(l => /console\.log\(data\)/.test(l));
       assert.strictEqual(passThrough.length, 0, 'Should not use console.log(data) for pass-through');
@@ -4212,9 +4639,15 @@ async function runTests() {
   console.log('\nRound 29: post-edit-console-warn.js (extension and exit):');
 
   if (
-    await asyncTest('source calls process.exit(0) after writing output', async () => {
-      const cwSource = fs.readFileSync(path.join(scriptsDir, 'post-edit-console-warn.js'), 'utf8');
-      assert.ok(cwSource.includes('process.exit(0)'), 'Should call process.exit(0)');
+    await asyncTest('exports a require-safe run function', async () => {
+      const consoleWarn = require(path.join(scriptsDir, 'post-edit-console-warn.js'));
+      const stdinJson = JSON.stringify({ tool_input: { file_path: '/test.py' } });
+      assert.strictEqual(typeof consoleWarn.run, 'function');
+      assert.deepStrictEqual(consoleWarn.run(stdinJson), {
+        stdout: stdinJson,
+        stderr: '',
+        exitCode: 0,
+      });
     })
   )
     passed++;
@@ -4614,23 +5047,24 @@ async function runTests() {
     passed++;
   else failed++;
 
-  // Round 41: pre-compact.js (multiple session files)
+  // Round 41: pre-compact.js (multiple sessions for the current worktree)
   console.log('\nRound 41: pre-compact.js (multiple session files):');
 
   if (
-    await asyncTest('annotates only the newest session file when multiple exist', async () => {
-      const isoHome = path.join(os.tmpdir(), `ecc-compact-multi-${Date.now()}`);
+    await asyncTest('annotates only the newest session when multiple match the current worktree', async () => {
+      const isoHome = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-compact-multi-'));
       const sessionsDir = getCanonicalSessionsDir(isoHome);
       fs.mkdirSync(sessionsDir, { recursive: true });
 
       // Create two session files with different mtimes
       const olderSession = path.join(sessionsDir, '2026-01-01-older-session.tmp');
       const newerSession = path.join(sessionsDir, '2026-02-11-newer-session.tmp');
-      fs.writeFileSync(olderSession, '# Older Session\n');
+      const olderContent = buildSessionStartFixture('', { title: '# Older Session' });
+      fs.writeFileSync(olderSession, olderContent);
       // Small delay to ensure different mtime
       const now = Date.now();
       fs.utimesSync(olderSession, new Date(now - 60000), new Date(now - 60000));
-      fs.writeFileSync(newerSession, '# Newer Session\n');
+      fs.writeFileSync(newerSession, buildSessionStartFixture('', { title: '# Newer Session' }));
 
       try {
         const result = await runScript(path.join(scriptsDir, 'pre-compact.js'), '', {
@@ -4640,11 +5074,11 @@ async function runTests() {
         assert.strictEqual(result.code, 0);
 
         const newerContent = fs.readFileSync(newerSession, 'utf8');
-        const olderContent = fs.readFileSync(olderSession, 'utf8');
+        const updatedOlderContent = fs.readFileSync(olderSession, 'utf8');
 
-        // findFiles sorts by mtime newest first, so sessions[0] is the newest
+        // findFiles sorts matches by mtime, so the newest matching worktree wins.
         assert.ok(newerContent.includes('Compaction occurred'), 'Should annotate the newest session file');
-        assert.strictEqual(olderContent, '# Older Session\n', 'Should NOT annotate older session files');
+        assert.strictEqual(updatedOlderContent, olderContent, 'Should NOT annotate older session files');
       } finally {
         fs.rmSync(isoHome, { recursive: true, force: true });
       }
@@ -4697,7 +5131,7 @@ async function runTests() {
 
   if (
     await asyncTest('does not inject empty session file content into context', async () => {
-      const isoHome = path.join(os.tmpdir(), `ecc-start-empty-file-${Date.now()}`);
+      const isoHome = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-start-empty-file-'));
       const sessionsDir = getCanonicalSessionsDir(isoHome);
       fs.mkdirSync(sessionsDir, { recursive: true });
       fs.mkdirSync(path.join(isoHome, '.claude', 'skills', 'learned'), { recursive: true });
@@ -4758,14 +5192,18 @@ async function runTests() {
 
   if (
     await asyncTest('summary omits Files Modified and Tools Used when none found', async () => {
-      const isoHome = path.join(os.tmpdir(), `ecc-notools-${Date.now()}`);
+      const isoHome = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-notools-'));
       const sessionsDir = getCanonicalSessionsDir(isoHome);
       fs.mkdirSync(sessionsDir, { recursive: true });
 
       const testDir = createTestDir();
       const transcriptPath = path.join(testDir, 'transcript.jsonl');
       // Only user messages — no tool_use entries at all
-      const lines = ['{"type":"user","content":"How does authentication work?"}', '{"type":"assistant","message":{"content":[{"type":"text","text":"It uses JWT"}]}}'];
+      const lines = [
+        '{"type":"user","content":"How does authentication work?"}',
+        '{"type":"assistant","message":{"content":[{"type":"text","text":"It uses JWT"}]}}',
+        '{"type":"user","content":"Explain the token refresh path too"}'
+      ];
       fs.writeFileSync(transcriptPath, lines.join('\n'));
       const stdinJson = JSON.stringify({ transcript_path: transcriptPath });
 
@@ -4796,7 +5234,7 @@ async function runTests() {
 
   if (
     await asyncTest('reports available session aliases on startup', async () => {
-      const isoHome = path.join(os.tmpdir(), `ecc-start-alias-${Date.now()}`);
+      const isoHome = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-start-alias-'));
       fs.mkdirSync(getCanonicalSessionsDir(isoHome), { recursive: true });
       fs.mkdirSync(path.join(isoHome, '.claude', 'skills', 'learned'), { recursive: true });
 
@@ -4833,7 +5271,7 @@ async function runTests() {
 
   if (
     await asyncTest('parallel compaction runs all append to log without loss', async () => {
-      const isoHome = path.join(os.tmpdir(), `ecc-compact-par-${Date.now()}`);
+      const isoHome = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-compact-par-'));
       const sessionsDir = getCanonicalSessionsDir(isoHome);
       fs.mkdirSync(sessionsDir, { recursive: true });
 
@@ -4866,7 +5304,7 @@ async function runTests() {
 
   if (
     await asyncTest('exits 0 when sessions path is a file (not a directory)', async () => {
-      const isoHome = path.join(os.tmpdir(), `ecc-start-blocked-${Date.now()}`);
+      const isoHome = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-start-blocked-'));
       fs.mkdirSync(path.join(isoHome, '.claude'), { recursive: true });
       // Block sessions dir creation by placing a file at that path
       fs.writeFileSync(getCanonicalSessionsDir(isoHome), 'blocked');
@@ -4931,26 +5369,20 @@ async function runTests() {
 
   if (
     await asyncTest('excludes session files older than 7 days', async () => {
-      const isoHome = path.join(os.tmpdir(), `ecc-start-7day-${Date.now()}`);
+      const isoHome = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-start-7day-'));
       const sessionsDir = getCanonicalSessionsDir(isoHome);
       fs.mkdirSync(sessionsDir, { recursive: true });
       fs.mkdirSync(path.join(isoHome, '.claude', 'skills', 'learned'), { recursive: true });
 
       // Create session file 6.9 days old (should be INCLUDED by maxAge:7)
       const recentFile = path.join(sessionsDir, '2026-02-06-recent69-session.tmp');
-      fs.writeFileSync(
-        recentFile,
-        buildSessionStartFixture('RECENT CONTENT HERE', { title: '# Recent Session' })
-      );
+      fs.writeFileSync(recentFile, buildSessionStartFixture('RECENT CONTENT HERE', { title: '# Recent Session' }));
       const sixPointNineDaysAgo = new Date(Date.now() - 6.9 * 24 * 60 * 60 * 1000);
       fs.utimesSync(recentFile, sixPointNineDaysAgo, sixPointNineDaysAgo);
 
       // Create session file 8 days old (should be EXCLUDED by maxAge:7)
       const oldFile = path.join(sessionsDir, '2026-02-05-old8day-session.tmp');
-      fs.writeFileSync(
-        oldFile,
-        buildSessionStartFixture('OLD CONTENT SHOULD NOT APPEAR', { title: '# Old Session' })
-      );
+      fs.writeFileSync(oldFile, buildSessionStartFixture('OLD CONTENT SHOULD NOT APPEAR', { title: '# Old Session' }));
       const eightDaysAgo = new Date(Date.now() - 8 * 24 * 60 * 60 * 1000);
       fs.utimesSync(oldFile, eightDaysAgo, eightDaysAgo);
 
@@ -4974,7 +5406,7 @@ async function runTests() {
 
   if (
     await asyncTest('prunes session files older than the retention window', async () => {
-      const isoHome = path.join(os.tmpdir(), `ecc-start-prune-${Date.now()}`);
+      const isoHome = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-start-prune-'));
       const sessionsDir = getCanonicalSessionsDir(isoHome);
       fs.mkdirSync(sessionsDir, { recursive: true });
       fs.mkdirSync(path.join(isoHome, '.claude', 'skills', 'learned'), { recursive: true });
@@ -4993,7 +5425,7 @@ async function runTests() {
         const result = await runScript(path.join(scriptsDir, 'session-start.js'), '', {
           HOME: isoHome,
           USERPROFILE: isoHome,
-          ECC_SESSION_RETENTION_DAYS: '30',
+          ECC_SESSION_RETENTION_DAYS: '30'
         });
 
         assert.strictEqual(result.code, 0);
@@ -5010,7 +5442,7 @@ async function runTests() {
 
   if (
     await asyncTest('disables pruning when ECC_SESSION_RETENTION_DAYS=0', async () => {
-      const isoHome = path.join(os.tmpdir(), `ecc-start-prune-off-${Date.now()}`);
+      const isoHome = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-start-prune-off-'));
       const sessionsDir = getCanonicalSessionsDir(isoHome);
       fs.mkdirSync(sessionsDir, { recursive: true });
       fs.mkdirSync(path.join(isoHome, '.claude', 'skills', 'learned'), { recursive: true });
@@ -5024,13 +5456,12 @@ async function runTests() {
         const result = await runScript(path.join(scriptsDir, 'session-start.js'), '', {
           HOME: isoHome,
           USERPROFILE: isoHome,
-          ECC_SESSION_RETENTION_DAYS: '0',
+          ECC_SESSION_RETENTION_DAYS: '0'
         });
 
         assert.strictEqual(result.code, 0);
         assert.ok(fs.existsSync(expiredFile), 'Should keep all sessions when retention is opt-out=0');
-        assert.ok(result.stderr.includes('Pruning disabled via ECC_SESSION_RETENTION_DAYS'),
-          `Should log pruning disabled, stderr: ${result.stderr}`);
+        assert.ok(result.stderr.includes('Pruning disabled via ECC_SESSION_RETENTION_DAYS'), `Should log pruning disabled, stderr: ${result.stderr}`);
         assert.ok(!result.stderr.includes('Pruned'), `Should not log any pruning, stderr: ${result.stderr}`);
       } finally {
         fs.rmSync(isoHome, { recursive: true, force: true });
@@ -5042,7 +5473,7 @@ async function runTests() {
 
   if (
     await asyncTest('disables pruning when ECC_SESSION_RETENTION_DAYS=off', async () => {
-      const isoHome = path.join(os.tmpdir(), `ecc-start-prune-offstr-${Date.now()}`);
+      const isoHome = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-start-prune-offstr-'));
       const sessionsDir = getCanonicalSessionsDir(isoHome);
       fs.mkdirSync(sessionsDir, { recursive: true });
       fs.mkdirSync(path.join(isoHome, '.claude', 'skills', 'learned'), { recursive: true });
@@ -5056,13 +5487,12 @@ async function runTests() {
         const result = await runScript(path.join(scriptsDir, 'session-start.js'), '', {
           HOME: isoHome,
           USERPROFILE: isoHome,
-          ECC_SESSION_RETENTION_DAYS: 'off',
+          ECC_SESSION_RETENTION_DAYS: 'off'
         });
 
         assert.strictEqual(result.code, 0);
         assert.ok(fs.existsSync(expiredFile), 'Should keep all sessions when retention is opt-out=off');
-        assert.ok(result.stderr.includes('Pruning disabled via ECC_SESSION_RETENTION_DAYS'),
-          `Should log pruning disabled, stderr: ${result.stderr}`);
+        assert.ok(result.stderr.includes('Pruning disabled via ECC_SESSION_RETENTION_DAYS'), `Should log pruning disabled, stderr: ${result.stderr}`);
       } finally {
         fs.rmSync(isoHome, { recursive: true, force: true });
       }
@@ -5073,7 +5503,7 @@ async function runTests() {
 
   if (
     await asyncTest('falls back to default retention when ECC_SESSION_RETENTION_DAYS is garbage', async () => {
-      const isoHome = path.join(os.tmpdir(), `ecc-start-prune-garbage-${Date.now()}`);
+      const isoHome = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-start-prune-garbage-'));
       const sessionsDir = getCanonicalSessionsDir(isoHome);
       fs.mkdirSync(sessionsDir, { recursive: true });
       fs.mkdirSync(path.join(isoHome, '.claude', 'skills', 'learned'), { recursive: true });
@@ -5087,16 +5517,13 @@ async function runTests() {
         const result = await runScript(path.join(scriptsDir, 'session-start.js'), '', {
           HOME: isoHome,
           USERPROFILE: isoHome,
-          ECC_SESSION_RETENTION_DAYS: 'bogus-value',
+          ECC_SESSION_RETENTION_DAYS: 'bogus-value'
         });
 
         assert.strictEqual(result.code, 0);
-        assert.ok(!fs.existsSync(expiredFile),
-          'Should fall back to default 30-day retention and prune the 40-day-old file');
-        assert.ok(result.stderr.includes('Pruned 1 expired session'),
-          `Should log pruning at default retention, stderr: ${result.stderr}`);
-        assert.ok(!result.stderr.includes('Pruning disabled'),
-          'Should NOT treat garbage as opt-out');
+        assert.ok(!fs.existsSync(expiredFile), 'Should fall back to default 30-day retention and prune the 40-day-old file');
+        assert.ok(result.stderr.includes('Pruned 1 expired session'), `Should log pruning at default retention, stderr: ${result.stderr}`);
+        assert.ok(!result.stderr.includes('Pruning disabled'), 'Should NOT treat garbage as opt-out');
       } finally {
         fs.rmSync(isoHome, { recursive: true, force: true });
       }
@@ -5109,7 +5536,7 @@ async function runTests() {
 
   if (
     await asyncTest('injects newest session when multiple recent sessions exist', async () => {
-      const isoHome = path.join(os.tmpdir(), `ecc-start-multi-${Date.now()}`);
+      const isoHome = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-start-multi-'));
       const sessionsDir = getCanonicalSessionsDir(isoHome);
       fs.mkdirSync(sessionsDir, { recursive: true });
       fs.mkdirSync(path.join(isoHome, '.claude', 'skills', 'learned'), { recursive: true });
@@ -5118,18 +5545,12 @@ async function runTests() {
 
       // Create older session (2 days ago)
       const olderSession = path.join(sessionsDir, '2026-02-11-olderabc-session.tmp');
-      fs.writeFileSync(
-        olderSession,
-        buildSessionStartFixture('OLDER_CONTEXT_MARKER', { title: '# Older Session' })
-      );
+      fs.writeFileSync(olderSession, buildSessionStartFixture('OLDER_CONTEXT_MARKER', { title: '# Older Session' }));
       fs.utimesSync(olderSession, new Date(now - 2 * 86400000), new Date(now - 2 * 86400000));
 
       // Create newer session (1 day ago)
       const newerSession = path.join(sessionsDir, '2026-02-12-newerdef-session.tmp');
-      fs.writeFileSync(
-        newerSession,
-        buildSessionStartFixture('NEWER_CONTEXT_MARKER', { title: '# Newer Session' })
-      );
+      fs.writeFileSync(newerSession, buildSessionStartFixture('NEWER_CONTEXT_MARKER', { title: '# Newer Session' }));
       fs.utimesSync(newerSession, new Date(now - 1 * 86400000), new Date(now - 1 * 86400000));
 
       try {
@@ -5156,8 +5577,11 @@ async function runTests() {
     await asyncTest('handles stdin exceeding MAX_STDIN (1MB) gracefully', async () => {
       const testDir = createTestDir();
       const transcriptPath = path.join(testDir, 'transcript.jsonl');
-      // Create a minimal valid transcript so env var fallback works
-      fs.writeFileSync(transcriptPath, JSON.stringify({ type: 'user', content: 'Overflow test' }) + '\n');
+      // Create a substantive valid transcript so env var fallback works
+      fs.writeFileSync(
+        transcriptPath,
+        [JSON.stringify({ type: 'user', content: 'Overflow test' }), JSON.stringify({ type: 'user', content: 'Verify fallback behavior' })].join('\n') + '\n'
+      );
 
       // Create stdin > 1MB: truncated JSON will be invalid → falls back to env var
       const oversizedPayload = '{"transcript_path":"' + 'x'.repeat(1048600) + '"}';
@@ -5247,7 +5671,7 @@ async function runTests() {
         console.log('    (skipped — not supported on this platform)');
         return;
       }
-      const isoHome = path.join(os.tmpdir(), `ecc-start-unreadable-${Date.now()}`);
+      const isoHome = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-start-unreadable-'));
       const sessionsDir = getCanonicalSessionsDir(isoHome);
       fs.mkdirSync(sessionsDir, { recursive: true });
 
@@ -5282,18 +5706,17 @@ async function runTests() {
     passed++;
   else failed++;
 
-  console.log('\nRound 59: check-console-log.js (stdin exceeding 1MB — truncation):');
+  console.log('\nRound 59: check-console-log.js (large stdin pass-through):');
 
   if (
-    await asyncTest('suppresses pass-through for oversized stdin (fail-open, #2090)', async () => {
-      // Send 1.2MB of data — exceeds the 1MB MAX_STDIN limit. Echoing the
-      // truncated string would emit a JSON document cut mid-stream, which the
-      // harness reports as a Stop hook JSON validation failure.
+    await asyncTest('preserves complete oversized stdin (#2924)', async () => {
+      // Direct/legacy entrypoints preserve the protocol payload. Production
+      // wrappers continue to enforce their own bounded-input policy.
       const payload = 'x'.repeat(1024 * 1024 + 200000);
       const result = await runScript(path.join(scriptsDir, 'check-console-log.js'), payload);
 
       assert.strictEqual(result.code, 0, 'Should exit 0 even with oversized stdin');
-      assert.strictEqual(result.stdout, '', 'Truncated stdin must not be echoed (empty stdout = no opinion)');
+      assert.strictEqual(result.stdout, payload, 'stdout should exactly match the complete stdin payload');
     })
   )
     passed++;
@@ -5307,7 +5730,7 @@ async function runTests() {
         console.log('    (skipped — not supported on this platform)');
         return;
       }
-      const isoHome = path.join(os.tmpdir(), `ecc-compact-ro-${Date.now()}`);
+      const isoHome = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-compact-ro-'));
       const sessionsDir = getCanonicalSessionsDir(isoHome);
       fs.mkdirSync(sessionsDir, { recursive: true });
 
@@ -5348,7 +5771,7 @@ async function runTests() {
 
   if (
     await asyncTest('logs warning when existing session file lacks Last Updated field', async () => {
-      const isoHome = path.join(os.tmpdir(), `ecc-end-nots-${Date.now()}`);
+      const isoHome = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-end-nots-'));
       const sessionsDir = getCanonicalSessionsDir(isoHome);
       fs.mkdirSync(sessionsDir, { recursive: true });
 
@@ -5384,20 +5807,16 @@ async function runTests() {
     passed++;
   else failed++;
 
-  console.log('\nRound 60: post-edit-console-warn.js (stdin exceeding 1MB — truncation):');
+  console.log('\nRound 60: post-edit-console-warn.js (large stdin pass-through):');
 
   if (
-    await asyncTest('truncates stdin at 1MB limit and still passes through data', async () => {
-      // Send 1.2MB of data — exceeds the 1MB MAX_STDIN limit
+    await asyncTest('preserves complete oversized stdin', async () => {
       const payload = 'x'.repeat(1024 * 1024 + 200000);
       const result = await runScript(path.join(scriptsDir, 'post-edit-console-warn.js'), payload);
 
       assert.strictEqual(result.code, 0, 'Should exit 0 even with oversized stdin');
-      // Data should be truncated — stdout significantly less than input
-      assert.ok(result.stdout.length < payload.length, `stdout (${result.stdout.length}) should be shorter than input (${payload.length})`);
-      // Should be approximately 1MB (last accepted chunk may push slightly over)
-      assert.ok(result.stdout.length <= 1024 * 1024 + 65536, `stdout (${result.stdout.length}) should be near 1MB, not unbounded`);
-      assert.ok(result.stdout.length > 0, 'Should still pass through truncated data');
+      assert.strictEqual(result.stdout, payload, 'stdout should exactly match the complete stdin payload');
+      assert.ok(result.stdout.length > 0, 'Should pass through complete data');
     })
   )
     passed++;
@@ -5439,7 +5858,7 @@ async function runTests() {
 
   if (
     await asyncTest('extracts user messages from role-only format (no type field)', async () => {
-      const isoHome = path.join(os.tmpdir(), `ecc-role-only-${Date.now()}`);
+      const isoHome = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-role-only-'));
       const sessionsDir = getCanonicalSessionsDir(isoHome);
       fs.mkdirSync(sessionsDir, { recursive: true });
 
@@ -5475,7 +5894,7 @@ async function runTests() {
 
   if (
     await asyncTest('logs "Transcript not found" for nonexistent transcript_path', async () => {
-      const isoHome = path.join(os.tmpdir(), `ecc-notfound-${Date.now()}`);
+      const isoHome = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-notfound-'));
       const sessionsDir = getCanonicalSessionsDir(isoHome);
       fs.mkdirSync(sessionsDir, { recursive: true });
 
@@ -5504,7 +5923,7 @@ async function runTests() {
 
   if (
     await asyncTest('extracts tool name and file path from entry.name/entry.input (not tool_name/tool_input)', async () => {
-      const isoHome = path.join(os.tmpdir(), `ecc-r70-entryname-${Date.now()}`);
+      const isoHome = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-r70-entryname-'));
       const sessionsDir = getCanonicalSessionsDir(isoHome);
       fs.mkdirSync(sessionsDir, { recursive: true });
       const transcriptPath = path.join(isoHome, 'transcript.jsonl');
@@ -5551,7 +5970,7 @@ async function runTests() {
 
   if (
     await asyncTest('shows selection prompt when no package manager preference found (default source)', async () => {
-      const isoHome = path.join(os.tmpdir(), `ecc-r71-ss-default-${Date.now()}`);
+      const isoHome = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-r71-ss-default-'));
       const isoProject = path.join(isoHome, 'project');
       fs.mkdirSync(getCanonicalSessionsDir(isoHome), { recursive: true });
       fs.mkdirSync(path.join(isoHome, '.claude', 'skills', 'learned'), { recursive: true });
@@ -5699,7 +6118,7 @@ async function runTests() {
 
   if (
     await asyncTest('extracts user messages from entries where only message.role is user (not type or role)', async () => {
-      const isoHome = path.join(os.tmpdir(), `ecc-msgrole-${Date.now()}`);
+      const isoHome = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-msgrole-'));
       const sessionsDir = getCanonicalSessionsDir(isoHome);
       fs.mkdirSync(sessionsDir, { recursive: true });
 
@@ -5766,7 +6185,7 @@ async function runTests() {
     await asyncTest('skips user messages with numeric content (non-string non-array branch)', async () => {
       // session-end.js line 50-55: rawContent is checked for string, then array, else ''
       // When content is a number (42), neither branch matches, text = '', message is skipped.
-      const isoHome = path.join(os.tmpdir(), `ecc-r81-numcontent-${Date.now()}`);
+      const isoHome = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-r81-numcontent-'));
       const sessionsDir = getCanonicalSessionsDir(isoHome);
       fs.mkdirSync(sessionsDir, { recursive: true });
       const transcriptPath = path.join(isoHome, 'transcript.jsonl');
@@ -5774,6 +6193,8 @@ async function runTests() {
       const lines = [
         // Normal user message (string content) — should be included
         '{"type":"user","content":"Real user message"}',
+        // A second valid message keeps this fixture eligible for persistence
+        '{"type":"user","content":"Follow-up user message"}',
         // User message with numeric content — exercises the else: '' branch
         '{"type":"user","content":42}',
         // User message with boolean content — also hits the else branch
@@ -5815,7 +6236,7 @@ async function runTests() {
 
   if (
     await asyncTest('collects tool name from entry with tool_name but non-tool_use type', async () => {
-      const isoHome = path.join(os.tmpdir(), `ecc-r82-toolname-${Date.now()}`);
+      const isoHome = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-r82-toolname-'));
       const sessionsDir = getCanonicalSessionsDir(isoHome);
       fs.mkdirSync(sessionsDir, { recursive: true });
 
@@ -5853,7 +6274,7 @@ async function runTests() {
 
   if (
     await asyncTest('preserves file when marker present but regex does not match corrupted template', async () => {
-      const isoHome = path.join(os.tmpdir(), `ecc-r82-tmpl-${Date.now()}`);
+      const isoHome = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-r82-tmpl-'));
       const sessionsDir = getCanonicalSessionsDir(isoHome);
       fs.mkdirSync(sessionsDir, { recursive: true });
 
@@ -5908,40 +6329,32 @@ Some random content without the expected ### Context to Load section
     passed++;
   else failed++;
 
-  // ── Round 87: post-edit-format.js and post-edit-typecheck.js stdin overflow (1MB) ──
-  console.log('\nRound 87: post-edit-format.js (stdin exceeding 1MB — truncation):');
+  // ── Round 87: post-edit-format.js and post-edit-typecheck.js large stdin pass-through ──
+  console.log('\nRound 87: post-edit-format.js (large stdin pass-through):');
 
   if (
-    await asyncTest('truncates stdin at 1MB limit and still passes through data (post-edit-format)', async () => {
-      // Send 1.2MB of data — exceeds the 1MB MAX_STDIN limit (lines 14-22)
+    await asyncTest('preserves complete oversized stdin (post-edit-format)', async () => {
       const payload = 'x'.repeat(1024 * 1024 + 200000);
       const result = await runScript(path.join(scriptsDir, 'post-edit-format.js'), payload);
 
       assert.strictEqual(result.code, 0, 'Should exit 0 even with oversized stdin');
-      // Output should be truncated — significantly less than input
-      assert.ok(result.stdout.length < payload.length, `stdout (${result.stdout.length}) should be shorter than input (${payload.length})`);
-      // Output should be approximately 1MB (last accepted chunk may push slightly over)
-      assert.ok(result.stdout.length <= 1024 * 1024 + 65536, `stdout (${result.stdout.length}) should be near 1MB, not unbounded`);
-      assert.ok(result.stdout.length > 0, 'Should still pass through truncated data');
+      assert.strictEqual(result.stdout, payload, 'stdout should exactly match the complete stdin payload');
+      assert.ok(result.stdout.length > 0, 'Should pass through complete data');
     })
   )
     passed++;
   else failed++;
 
-  console.log('\nRound 87: post-edit-typecheck.js (stdin exceeding 1MB — truncation):');
+  console.log('\nRound 87: post-edit-typecheck.js (large stdin pass-through):');
 
   if (
-    await asyncTest('truncates stdin at 1MB limit and still passes through data (post-edit-typecheck)', async () => {
-      // Send 1.2MB of data — exceeds the 1MB MAX_STDIN limit (lines 16-24)
+    await asyncTest('preserves complete oversized stdin (post-edit-typecheck)', async () => {
       const payload = 'x'.repeat(1024 * 1024 + 200000);
       const result = await runScript(path.join(scriptsDir, 'post-edit-typecheck.js'), payload);
 
       assert.strictEqual(result.code, 0, 'Should exit 0 even with oversized stdin');
-      // Output should be truncated — significantly less than input
-      assert.ok(result.stdout.length < payload.length, `stdout (${result.stdout.length}) should be shorter than input (${payload.length})`);
-      // Output should be approximately 1MB (last accepted chunk may push slightly over)
-      assert.ok(result.stdout.length <= 1024 * 1024 + 65536, `stdout (${result.stdout.length}) should be near 1MB, not unbounded`);
-      assert.ok(result.stdout.length > 0, 'Should still pass through truncated data');
+      assert.strictEqual(result.stdout, payload, 'stdout should exactly match the complete stdin payload');
+      assert.ok(result.stdout.length > 0, 'Should pass through complete data');
     })
   )
     passed++;
@@ -6146,6 +6559,95 @@ Some random content without the expected ### Context to Load section
           assert.ok(!content.includes('### Files Modified'), 'Should NOT include Files Modified section (Read/Grep do not modify files)');
         }
       }
+      cleanupTestDir(testDir);
+    })
+  )
+    passed++;
+  else failed++;
+
+  // ── Round 95: pre-compact.js — ECC_SKIP_LLM_SUMMARY guard ──
+  console.log('\nRound 95: pre-compact.js (transcript_path provided + ECC_SKIP_LLM_SUMMARY=1 — LLM skipped):');
+
+  if (
+    await asyncTest('pre-compact falls back to compaction log entry when ECC_SKIP_LLM_SUMMARY=1', async () => {
+      const testDir = createTestDir();
+      const sessionsDir = path.join(testDir, '.claude', 'session-data');
+      fs.mkdirSync(sessionsDir, { recursive: true });
+
+      // Create a minimal session .tmp file
+      const sessionFile = path.join(sessionsDir, '2026-01-01-test-session.tmp');
+      fs.writeFileSync(sessionFile, buildSessionStartFixture('', {
+        title: '# Session: 2026-01-01'
+      }));
+
+      // Create a minimal transcript with one user message
+      const transcriptPath = path.join(testDir, 'transcript.jsonl');
+      const userEntry = JSON.stringify({ type: 'user', message: { role: 'user', content: 'hello' } });
+      fs.writeFileSync(transcriptPath, userEntry + '\n');
+
+      const stdinJson = JSON.stringify({ transcript_path: transcriptPath });
+      const result = await runScript(path.join(scriptsDir, 'pre-compact.js'), stdinJson, {
+        HOME: testDir,
+        ECC_SKIP_LLM_SUMMARY: '1'
+      });
+
+      assert.strictEqual(result.code, 0, 'Should exit 0');
+      // LLM was skipped → fallback log entry appended
+      assert.ok(result.stderr.includes('[PreCompact] LLM summary unavailable'), `stderr should report LLM unavailable, got: ${result.stderr}`);
+      // Session file should have the compaction event marker, not an LLM summary block
+      const content = fs.readFileSync(sessionFile, 'utf8');
+      assert.ok(content.includes('Compaction occurred at'), `session file should contain compaction marker, got: ${content}`);
+      cleanupTestDir(testDir);
+    })
+  )
+    passed++;
+  else failed++;
+
+  // ── Round 95: session-end.js — ECC_LLM_SUMMARY_INTERVAL controls trigger ──
+  console.log('\nRound 95: session-end.js (ECC_LLM_SUMMARY_INTERVAL — controls LLM trigger cadence):');
+
+  if (
+    await asyncTest('session-end triggers LLM when totalMessages % interval === 0', async () => {
+      const testDir = createTestDir();
+      const transcriptPath = path.join(testDir, 'transcript.jsonl');
+
+      // 3 user messages → totalMessages=3; interval=3 → 3%3===0 → should trigger
+      const lines = [1, 2, 3].map(i => JSON.stringify({ type: 'user', message: { role: 'user', content: `task ${i}` } }));
+      fs.writeFileSync(transcriptPath, lines.join('\n') + '\n');
+
+      const stdinJson = JSON.stringify({ transcript_path: transcriptPath });
+      const result = await runScript(path.join(scriptsDir, 'session-end.js'), stdinJson, {
+        HOME: testDir,
+        ECC_LLM_SUMMARY_INTERVAL: '3',
+        ECC_SKIP_LLM_SUMMARY: '1' // prevent actual claude -p invocation in tests
+      });
+
+      assert.strictEqual(result.code, 0, 'Should exit 0');
+      assert.ok(result.stderr.includes('[SessionEnd] LLM summary triggered'), `stderr should report LLM triggered, got: ${result.stderr}`);
+      cleanupTestDir(testDir);
+    })
+  )
+    passed++;
+  else failed++;
+
+  if (
+    await asyncTest('session-end does NOT trigger LLM when totalMessages % interval !== 0', async () => {
+      const testDir = createTestDir();
+      const transcriptPath = path.join(testDir, 'transcript.jsonl');
+
+      // 2 user messages → totalMessages=2; interval=3 → 2%3!==0 → should NOT trigger
+      const lines = [1, 2].map(i => JSON.stringify({ type: 'user', message: { role: 'user', content: `task ${i}` } }));
+      fs.writeFileSync(transcriptPath, lines.join('\n') + '\n');
+
+      const stdinJson = JSON.stringify({ transcript_path: transcriptPath });
+      const result = await runScript(path.join(scriptsDir, 'session-end.js'), stdinJson, {
+        HOME: testDir,
+        ECC_LLM_SUMMARY_INTERVAL: '3',
+        ECC_SKIP_LLM_SUMMARY: '1'
+      });
+
+      assert.strictEqual(result.code, 0, 'Should exit 0');
+      assert.ok(!result.stderr.includes('[SessionEnd] LLM summary triggered'), `stderr should NOT report LLM triggered, got: ${result.stderr}`);
       cleanupTestDir(testDir);
     })
   )

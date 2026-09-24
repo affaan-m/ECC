@@ -101,6 +101,7 @@ function withEnv(overrides, fn) {
 
 let passed = 0;
 let failed = 0;
+let skipped = 0;
 
 console.log('\nPre-Bash Commit Quality Hook Tests');
 console.log('==================================\n');
@@ -212,6 +213,7 @@ if (test('blocks commits with staged secret patterns across checkable files', ()
   inTempRepo(repoDir => {
     writeAndStage(repoDir, 'index.js', [
       "const openai = 'sk-abcdefghijklmnopqrstuvwxyz';",
+      "const anthropic = 'sk-ant-api03-AbCdEf-GhIjKlMnOpQrStUvWx_Yz012345';",
       "const token = 'ghp_abcdefghijklmnopqrstuvwxyzABCDEFGHIJ';",
       ''
     ].join('\n'));
@@ -227,9 +229,176 @@ if (test('blocks commits with staged secret patterns across checkable files', ()
     assert.strictEqual(result.output, input);
     assert.strictEqual(result.exitCode, 2);
     assert.ok(stderr.includes('Potential OpenAI API key'), `expected OpenAI secret warning, got: ${stderr}`);
+    assert.ok(stderr.includes('Potential Anthropic API key'), `expected Anthropic key warning, got: ${stderr}`);
     assert.ok(stderr.includes('Potential GitHub PAT'), `expected GitHub PAT warning, got: ${stderr}`);
     assert.ok(stderr.includes('Potential AWS Access Key'), `expected AWS key warning, got: ${stderr}`);
     assert.ok(stderr.includes('Potential API key'), `expected generic API key warning, got: ${stderr}`);
+  });
+})) passed++; else failed++;
+
+if (test('blocks commits with an unquoted API key assignment', () => {
+  inTempRepo(repoDir => {
+    writeAndStage(repoDir, 'config.py', [
+      'API_KEY=sk_live_1234567890abcdef',
+      ''
+    ].join('\n'));
+
+    const input = JSON.stringify({ tool_input: { command: 'git commit -m "fix: unquoted key"' } });
+    const { result, stderr } = captureConsoleError(() => hook.evaluate(input));
+
+    assert.strictEqual(result.output, input);
+    assert.strictEqual(result.exitCode, 2);
+    assert.ok(stderr.includes('Potential API key'), `expected unquoted API key warning, got: ${stderr}`);
+  });
+})) passed++; else failed++;
+
+if (test('does not flag ordinary unquoted apiKey code references', () => {
+  inTempRepo(repoDir => {
+    writeAndStage(repoDir, 'index.js', [
+      'const apiKey = getApiKeyFromVault();',
+      'this.apiKey = options.apiKey;',
+      'const apiKey2 = process.env.API_KEY;',
+      ''
+    ].join('\n'));
+
+    const input = JSON.stringify({ tool_input: { command: 'git commit -m "fix: no secret here"' } });
+    const { result, stderr } = captureConsoleError(() => hook.evaluate(input));
+
+    assert.strictEqual(result.output, input);
+    assert.strictEqual(result.exitCode, 0, `expected exit 0 (no secrets), got ${result.exitCode}: ${stderr}`);
+    assert.ok(!stderr.includes('Potential API key'), `should not flag ordinary code as a secret, got: ${stderr}`);
+  });
+})) passed++; else failed++;
+
+if (test('runs Windows batch linters through cmd with quoted command and arguments', () => {
+  const command = 'C:\\Users\\Jane %team%!\\project\\node_modules\\.bin\\eslint.cmd';
+  const args = [
+    'index.js',
+    '100%.js',
+    '!important!.js',
+    '%PATH%.js',
+    '!PATH!.js',
+    '%1.js',
+    'mixed %!^&() name.js'
+  ];
+  const invocation = hook.getLinterInvocation(command, args, 'win32');
+
+  assert.ok(/cmd\.exe$/i.test(invocation.command));
+  assert.deepStrictEqual(invocation.args, [
+    '/d',
+    '/v:off',
+    '/s',
+    '/c',
+    '""%ECC_LINTER_TOKEN_0%" "%ECC_LINTER_TOKEN_1%" "%ECC_LINTER_TOKEN_2%" "%ECC_LINTER_TOKEN_3%" "%ECC_LINTER_TOKEN_4%" "%ECC_LINTER_TOKEN_5%" "%ECC_LINTER_TOKEN_6%" "%ECC_LINTER_TOKEN_7%""'
+  ]);
+  assert.deepStrictEqual(
+    Object.fromEntries(Object.entries(invocation.options.env).filter(([key]) => key.startsWith('ECC_LINTER_TOKEN_'))),
+    Object.fromEntries([command, ...args].map((value, index) => [`ECC_LINTER_TOKEN_${index}`, value]))
+  );
+  assert.ok(!invocation.args[4].includes(command), 'untrusted command must not be embedded in cmd source');
+  assert.ok(!invocation.args[4].includes(args[1]), 'untrusted argument must not be embedded in cmd source');
+  assert.strictEqual(invocation.options.shell, false);
+  assert.strictEqual(invocation.options.windowsVerbatimArguments, true);
+
+  const plainCmd = hook.getLinterInvocation('C:\\tools\\eslint.cmd', [], 'win32');
+  assert.ok(/cmd\.exe$/i.test(plainCmd.command));
+  assert.deepStrictEqual(plainCmd.args, ['/d', '/v:off', '/s', '/c', '""%ECC_LINTER_TOKEN_0%""']);
+  assert.strictEqual(plainCmd.options.shell, false);
+
+  const batch = hook.getLinterInvocation('C:\\tools\\lint.BAT', [], 'win32');
+  assert.ok(/cmd\.exe$/i.test(batch.command));
+  assert.strictEqual(batch.options.shell, false);
+
+  const executable = hook.getLinterInvocation('C:\\Program Files\\eslint.exe', [], 'win32');
+  assert.strictEqual(executable.command, 'C:\\Program Files\\eslint.exe');
+  assert.strictEqual(executable.options.shell, false);
+
+  const posix = hook.getLinterInvocation('/tmp/project with spaces/eslint', [], 'darwin');
+  assert.strictEqual(posix.command, '/tmp/project with spaces/eslint');
+  assert.strictEqual(posix.options.shell, false);
+})) passed++; else failed++;
+
+if (test('isolates Windows cmd token variables without mutating the parent environment', () => {
+  const original = process.env.ECC_LINTER_TOKEN_0;
+  process.env.ECC_LINTER_TOKEN_0 = 'parent value';
+
+  try {
+    const invocation = hook.getLinterInvocation('C:\\tools\\eslint.cmd', ['100%.js'], 'win32');
+    assert.strictEqual(invocation.options.env.ECC_LINTER_TOKEN_0, 'C:\\tools\\eslint.cmd');
+    assert.strictEqual(invocation.options.env.ECC_LINTER_TOKEN_1, '100%.js');
+    assert.strictEqual(process.env.ECC_LINTER_TOKEN_0, 'parent value');
+  } finally {
+    if (original === undefined) delete process.env.ECC_LINTER_TOKEN_0;
+    else process.env.ECC_LINTER_TOKEN_0 = original;
+  }
+})) passed++; else failed++;
+
+if (process.platform === 'win32') {
+  if (test('passes percent and exclamation filenames literally to a Windows batch linter', () => {
+    const repoDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc cmd literal '));
+    try {
+      const command = path.join(repoDir, 'lint %!.cmd');
+      const capturePath = path.join(repoDir, 'captured arguments.txt');
+      fs.writeFileSync(command, [
+        '@echo off',
+        'setlocal DisableDelayedExpansion',
+        '> "%ECC_CAPTURE_PATH%" echo(%~1',
+        '>> "%ECC_CAPTURE_PATH%" echo(%~2',
+        ''
+      ].join('\r\n'), 'utf8');
+
+      const invocation = hook.getLinterInvocation(command, ['100% ready.js', '!important!.js'], 'win32');
+      const result = spawnSync(invocation.command, invocation.args, {
+        ...invocation.options,
+        env: { ...invocation.options.env, ECC_CAPTURE_PATH: capturePath }
+      });
+
+      assert.strictEqual(result.status, 0, result.stderr || result.error?.message);
+      assert.deepStrictEqual(
+        fs.readFileSync(capturePath, 'utf8').split(/\r?\n/).filter(Boolean),
+        ['100% ready.js', '!important!.js']
+      );
+    } finally {
+      fs.rmSync(repoDir, { recursive: true, force: true });
+    }
+  })) passed++; else failed++;
+} else {
+  console.log('  - passes percent and exclamation filenames literally to a Windows batch linter (skipped: Windows only)');
+  skipped++;
+}
+
+if (test('rejects characters that can break Windows cmd token boundaries', () => {
+  assert.throws(
+    () => hook.getLinterInvocation('C:\\tools\\eslint.cmd', ['bad"name.js'], 'win32'),
+    /Unsafe character/
+  );
+  assert.throws(
+    () => hook.getLinterInvocation('C:\\tools\\eslint.cmd', ['bad\r\nname.js'], 'win32'),
+    /Unsafe character/
+  );
+})) passed++; else failed++;
+
+if (test('treats rejected or failed golint invocations as failures', () => {
+  assert.strictEqual(hook.golintSucceeded({ status: 0, stdout: '', error: null }), true);
+  assert.strictEqual(hook.golintSucceeded({ status: 0, stdout: 'issue.go:1: warning', error: null }), false);
+  assert.strictEqual(hook.golintSucceeded({ status: null, stdout: '', error: new Error('unsafe argument') }), false);
+})) passed++; else failed++;
+
+if (test('uses ESLint bundled formatter without the removed compact formatter', () => {
+  inTempRepo(repoDir => {
+    const eslintPath = path.join(repoDir, 'node_modules', '.bin', executableName('eslint'));
+    fs.mkdirSync(path.dirname(eslintPath), { recursive: true });
+    const source = process.platform === 'win32'
+      ? '@echo off\r\necho %* | findstr /C:"--format compact" >nul && exit /b 9\r\nexit /b 0\r\n'
+      : '#!/bin/sh\ncase " $* " in *" --format compact "*) exit 9 ;; esac\nexit 0\n';
+    fs.writeFileSync(eslintPath, source, 'utf8');
+    fs.chmodSync(eslintPath, 0o755);
+
+    process.chdir(repoDir);
+    const result = hook.runLinter(['index.js']);
+
+    assert.ok(result.eslint, 'expected ESLint to run');
+    assert.strictEqual(result.eslint.success, true, result.eslint.output);
   });
 })) passed++; else failed++;
 
@@ -289,5 +458,78 @@ if (test('stdin entry point truncates oversized input and preserves pass-through
   assert.ok(result.stderr.includes('[Hook] Error:'), 'truncated JSON should be logged and allowed');
 })) passed++; else failed++;
 
-console.log(`\nResults: Passed: ${passed}, Failed: ${failed}`);
+// --- Secret-scanner placeholder exclusion (false-positive fix, no false-negative) ---
+
+if (test('isPlaceholderSecret suppresses obvious non-secret placeholders', () => {
+  for (const v of ['process.env.API_KEY', '${API_KEY}', '<YOUR_KEY>', 'REPLACE_ME', 'CHANGEME', 'YOUR_API_KEY', '']) {
+    assert.strictEqual(hook.isPlaceholderSecret(v), true, `should suppress placeholder: ${JSON.stringify(v)}`);
+  }
+})) passed++; else failed++;
+
+if (test('isPlaceholderSecret does NOT suppress real high-entropy secrets', () => {
+  for (const v of [
+    'sk-live-abcdef0123456789ABCDEF',          // prefixed
+    '9F8A7B6C5D4E3F2A1B0C9D8E7F6A5B4C',          // uppercase hex
+    'JBSWY3DPEHPK3PXP',                           // base32 TOTP/HMAC seed
+    '1234567890123456',                          // digit-only token
+    'PROD_7F3A9C2E_LIVE_8821',                    // uppercase-with-underscore token
+    'AbCd1234EfGh5678'                            // mixed token
+  ]) {
+    assert.strictEqual(hook.isPlaceholderSecret(v), false, `must NOT suppress real secret: ${v}`);
+  }
+})) passed++; else failed++;
+
+// --- Quote-aware commit-message extraction (truncation fix) ---
+
+if (test('captures full double-quoted -m message containing an apostrophe', () => {
+  const res = hook.validateCommitMessage(`git commit -m "fix: don't crash on empty input"`);
+  assert.ok(res, 'expected a validation result');
+  assert.strictEqual(res.message, "fix: don't crash on empty input");
+})) passed++; else failed++;
+
+if (test('captures full single-quoted -m message containing a double quote', () => {
+  const res = hook.validateCommitMessage(`git commit -m 'fix: handle the "edge" case'`);
+  assert.strictEqual(res.message, 'fix: handle the "edge" case');
+})) passed++; else failed++;
+
+if (test('captures full double-quoted -m message with escaped inner quotes (not truncated)', () => {
+  const res = hook.validateCommitMessage('git commit -m "fix: say \\"hello\\" to the user"');
+  assert.ok(res, 'expected a validation result');
+  assert.strictEqual(res.message, 'fix: say \\"hello\\" to the user');
+})) passed++; else failed++;
+
+if (test('measures length of the full message past an apostrophe (not the truncated prefix)', () => {
+  const subject = "fix: it's a deliberately long commit subject that comfortably exceeds seventy-two chars";
+  const res = hook.validateCommitMessage(`git commit -m "${subject}"`);
+  assert.strictEqual(res.message, subject);
+  assert.ok(res.issues.some(i => i.type === 'length'), 'full (>72) message should trigger a length issue');
+})) passed++; else failed++;
+if (test('handles hash-prefixed python comments and string false-positives', () => {
+  inTempRepo(repoDir => {
+    writeAndStage(repoDir, 'script.py', [
+      '# console.log("commented out");',
+      '# debugger',
+      '# TODO: python unreferenced',
+      '# TODO: python issue #456',
+      'const str = "# TODO: string false positive";', // Greptile string limitation
+      ''
+    ].join('\n'));
+    
+    const input = JSON.stringify({ tool_input: { command: 'git commit -m "fix(hooks): python hash comments"' } });
+    
+    const origConsoleError = console.error;
+    let stderr = '';
+    console.error = msg => { stderr += msg + '\n'; };
+    
+    const result = hook.evaluate(input);
+    console.error = origConsoleError;
+    
+    assert.strictEqual(result.exitCode, 0, 'warning-only issues should not block');
+    assert.ok(stderr.includes('INFO Line 3:'), `expected python TODO warning`);
+    assert.ok(!stderr.includes('INFO Line 4'), 'referenced python TODO should not warn');
+    assert.ok(!stderr.includes('ERROR Line 2'), 'commented debugger should not error');
+    assert.ok(stderr.includes('INFO Line 5:'), `expected string limitation warning`);
+  });
+})) passed++; else failed++;
+console.log(`\nResults: Passed: ${passed}, Failed: ${failed}, Skipped: ${skipped}`);
 process.exit(failed > 0 ? 1 : 0);

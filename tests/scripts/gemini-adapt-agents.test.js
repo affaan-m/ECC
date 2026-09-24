@@ -99,6 +99,36 @@ function runTests() {
     }
   })) passed++; else failed++;
 
+  if (test('adapts comma-separated scalar Claude Code tools', () => {
+    const tempDir = createTempDir();
+    const agentsDir = path.join(tempDir, '.gemini', 'agents');
+
+    try {
+      writeAgent(
+        agentsDir,
+        'docs-lookup.md',
+        [
+          '---',
+          'name: docs-lookup',
+          'description: Documentation lookup agent',
+          'tools: Read, Grep, mcp__context7__resolve-library-id, mcp__context7__query-docs',
+          'model: sonnet',
+          '---',
+          '',
+          'Body'
+        ].join('\n')
+      );
+
+      const result = run([agentsDir]);
+      assert.strictEqual(result.code, 0, result.stderr);
+
+      const updated = fs.readFileSync(path.join(agentsDir, 'docs-lookup.md'), 'utf8');
+      assert.ok(updated.includes('tools: ["read_file", "grep_search", "mcp_context7_resolve_library_id", "mcp_context7_query_docs"]'));
+    } finally {
+      cleanupTempDir(tempDir);
+    }
+  })) passed++; else failed++;
+
   if (test('defaults to the cwd .gemini/agents directory', () => {
     const tempDir = createTempDir();
     const agentsDir = path.join(tempDir, '.gemini', 'agents');

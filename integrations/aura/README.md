@@ -18,7 +18,7 @@ from aura import before_settle, AuraUntrusted
 
 def settle(counterparty_did: str, amount: float) -> None:
     try:
-        before_settle(counterparty_did)        # rejects high_risk + unknown
+        before_settle(counterparty_did)        # rejects high_risk + new + unknown
     except AuraUntrusted as e:
         log.warning("blocked: %s", e)
         return                                  # your policy decides what to do
@@ -41,9 +41,8 @@ if v.dimensions and v.dimensions.get("financial_integrity", 1) < 0.4:
     require_manual_review()   # placeholder for your own policy
 ```
 
-> `v.ok` reflects the *verdict class* (True for `trusted`/`caution`), not the
-> outcome of `require_trust()` — the gate's default `allow` also lets `new`
-> through. Use the gate's return/raise for the decision, `v.ok` for display.
+> `v.ok` reflects the *verdict class* (True for `trusted`/`caution`). Use the
+> gate's return/raise for the policy decision and `v.ok` for display.
 
 ## Verdicts
 
@@ -58,8 +57,8 @@ if v.dimensions and v.dimensions.get("financial_integrity", 1) < 0.4:
 ## Policy knobs
 
 ```python
-# Reject brand-new agents too (strict):
-before_settle(did, allow=("trusted", "caution"))
+# Explicitly allow brand-new agents during a controlled onboarding flow:
+before_settle(did, allow=("trusted", "caution", "new"))
 
 # Treat an *unreachable* AURA as a pass (fail-open). Off by default —
 # absence of evidence is not evidence of trust.
@@ -78,11 +77,15 @@ before_settle(did, base_url="https://my-aura-mirror.example", timeout=5)
 
 - **default (`fail_open=False`)** — `unknown` is rejected → an unreachable AURA
   blocks the action. *Fail-closed.*
-- **`fail_open=True`** — `unknown` from an unreachable endpoint is allowed
-  through, so AURA can never take your flow down. *Fail-open.*
+- **`new` verdict** — rejected by default because the agent has no interaction
+  history. Onboarding flows can explicitly add `new` to `allow`.
+- **`fail_open=True`** — `unknown` from a transport failure is allowed through.
+  HTTP errors, malformed JSON, and invalid response shapes remain blocked
+  because the endpoint was reached but did not return a trustworthy verdict.
 
-This keeps the trust signal **purely additive**: if you remove the adapter or
-AURA is down, your existing allow/deny logic runs exactly as before.
+Removing the adapter leaves your existing allow/deny logic untouched. While
+the gate is enabled, an AURA outage blocks the protected action by default;
+callers must explicitly choose `fail_open=True` to preserve availability.
 
 ## Tests
 

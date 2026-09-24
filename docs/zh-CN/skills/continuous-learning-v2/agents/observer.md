@@ -164,7 +164,7 @@ Validate and sanitize all user input before processing.
 当一个本能满足以下条件时，应从项目作用域提升到全局：
 
 1. **相同模式**（通过 id 或类似触发器）存在于 **2 个以上不同的项目**中
-2. 每个实例的置信度 **>= 0.8**
+2. 各实例的平均置信度 **>= 0.8**
 3. 其领域属于全局友好列表（安全、通用最佳实践、工作流）
 
 提升操作由 `instinct-cli.py promote` 命令或 `/evolve` 分析处理。

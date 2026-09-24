@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # Continuous Learning v2 - Observation Hook
 #
 # Captures tool use events for pattern analysis.
@@ -135,7 +135,7 @@ fi
 
 # shellcheck disable=SC1091
 . "$(dirname "$0")/../scripts/lib/homunculus-dir.sh"
-CONFIG_DIR="$(_ecc_resolve_homunculus_dir)"
+CONFIG_DIR="$(_clv2_resolve_homunculus_dir)"
 
 # Skip if disabled (check both default and CLV2_CONFIG-derived locations)
 if [ -f "$CONFIG_DIR/disabled" ]; then
@@ -155,7 +155,7 @@ fi
 # Non-interactive SDK automation is still filtered by Layers 2-5 below
 # (ECC_HOOK_PROFILE=minimal, ECC_SKIP_OBSERVE=1, agent_id, path exclusions).
 case "${CLAUDE_CODE_ENTRYPOINT:-cli}" in
-  cli|sdk-ts|claude-desktop|claude-vscode) ;;
+  cli|sdk-ts|sdk-cli|claude-desktop|claude-vscode) ;;
   *) exit 0 ;;
 esac
 
@@ -268,12 +268,25 @@ if [ "$PARSED_OK" != "True" ]; then
   echo "$INPUT_JSON" | "$PYTHON_CMD" -c '
 import json, sys, os, re
 
+# Linear-time secret matcher. Bounded quantifiers and a fixed set of auth
+# schemes (instead of a generic [A-Za-z]+\s+ that overlapped the value class)
+# prevent the catastrophic backtracking that pegged python at 100% CPU (#2278).
 _SECRET_RE = re.compile(
     r"(?i)(api[_-]?key|token|secret|password|authorization|credentials?|auth)"
-    r"""(["'"'"'\s:=]+)"""
-    r"([A-Za-z]+\s+)?"
-    r"([A-Za-z0-9_\-/.+=]{8,})"
+    r"""(["'"'"'\s:=]{1,8})"""
+    r"((?:bearer|basic|token|bot)\s+)?"
+    r"([A-Za-z0-9_\-/.+=]{8,256})"
 )
+
+import signal
+def _clv2_bail(*_):
+    print("[observe] SIGALRM timeout: parse-error fallback observation dropped before write (#2300)", file=sys.stderr)
+    sys.exit(0)
+try:
+    signal.signal(signal.SIGALRM, _clv2_bail)
+    signal.alarm(8)  # self-terminate before the async hook 10s timeout can orphan us (#2278)
+except Exception:
+    pass
 
 raw = sys.stdin.read()[:2000]
 raw = _SECRET_RE.sub(lambda m: m.group(1) + m.group(2) + (m.group(3) or "") + "[REDACTED]", raw)
@@ -302,6 +315,16 @@ export TIMESTAMP="$timestamp"
 
 echo "$PARSED" | "$PYTHON_CMD" -c '
 import json, sys, os, re
+import signal
+
+def _clv2_bail(*_):
+    print("[observe] SIGALRM timeout: in-flight observation dropped before write (#2300)", file=sys.stderr)
+    sys.exit(0)
+try:
+    signal.signal(signal.SIGALRM, _clv2_bail)
+    signal.alarm(8)  # self-terminate before the async hook 10s timeout can orphan us (#2278)
+except Exception:
+    pass
 
 parsed = json.load(sys.stdin)
 observation = {
@@ -315,11 +338,14 @@ observation = {
 
 # Scrub secrets: match common key=value, key: value, and key"value patterns
 # Includes optional auth scheme (e.g., "Bearer", "Basic") before token
+# Linear-time secret matcher. Bounded quantifiers and a fixed set of auth
+# schemes (instead of a generic [A-Za-z]+\s+ that overlapped the value class)
+# prevent the catastrophic backtracking that pegged python at 100% CPU (#2278).
 _SECRET_RE = re.compile(
     r"(?i)(api[_-]?key|token|secret|password|authorization|credentials?|auth)"
-    r"""(["'"'"'\s:=]+)"""
-    r"([A-Za-z]+\s+)?"
-    r"([A-Za-z0-9_\-/.+=]{8,})"
+    r"""(["'"'"'\s:=]{1,8})"""
+    r"((?:bearer|basic|token|bot)\s+)?"
+    r"([A-Za-z0-9_\-/.+=]{8,256})"
 )
 
 def scrub(val):
@@ -349,6 +375,14 @@ _REMOVE_FILE_IF_PRESENT() {
 _START_OBSERVER_LOGGED() {
   local bootstrap_log="${PROJECT_DIR}/observer-start.log"
   mkdir -p "$PROJECT_DIR"
+  # Every call site below sits inside the lazy-start lock (flock / lockfile /
+  # mkdir), so the streak read-modify-write in _NOTE_OBSERVER_NOSURVIVE is
+  # serialized here without a second lock -- concurrent hook invocations cannot
+  # lose an increment or double-log the warning. Counting at the restart (rather
+  # than at detection) also means N racing hooks record one death, not N.
+  if [ "${OBSERVER_DIED:-false}" = "true" ]; then
+    _NOTE_OBSERVER_NOSURVIVE
+  fi
   "${SKILL_ROOT}/agents/start-observer.sh" start >> "$bootstrap_log" 2>&1 || true
 }
 
@@ -367,10 +401,80 @@ _CHECK_OBSERVER_RUNNING() {
     if kill -0 "$pid" 2>/dev/null; then
       return 0  # Process is alive
     fi
-    # Stale PID file - remove it
+    # Stale PID file - remove it. A well-formed PID that is no longer alive
+    # means an observer we launched has since died, which is the only evidence
+    # of non-survival any process ever sees (#2489). Record it; the caller
+    # decides whether the streak is long enough to warn about.
+    OBSERVER_DIED=true
     _REMOVE_FILE_IF_PRESENT "$pid_file"
   fi
   return 1  # No PID file or process dead
+}
+
+# The observer is lazy-started from a hook process that exits immediately after.
+# start-observer.sh's own liveness check runs inside that still-living process
+# tree, so it always sees a healthy observer and reports success -- on native
+# Windows the reap happens later, when the hook's Job Object closes. The next
+# hook invocation is therefore the only place the death is observable, and
+# before #2489 it silently deleted the stale PID and restarted, once per tool
+# call, forever. Warn once per streak so this is signal rather than noise.
+_NOTE_OBSERVER_NOSURVIVE() {
+  local streak_file="${PROJECT_DIR}/.observer-nosurvive-count"
+  local log_file="${PROJECT_DIR}/observer-start.log"
+  local warn_after="${ECC_OBSERVER_NOSURVIVE_WARN_AFTER:-3}"
+  local streak
+  streak=$(cat "$streak_file" 2>/dev/null || echo 0)
+  # Force base 10 after the digit check: a stray leading zero would otherwise
+  # make bash read the value as octal, and `08` is an arithmetic error that
+  # would abort the whole hook under `set -e`.
+  case "$streak" in ''|*[!0-9]*) streak=0 ;; *) streak=$((10#$streak)) ;; esac
+  # Reject every all-zero spelling, not just the literal `0`: `00` passes a
+  # digits-only check but compares as zero, and since the streak only grows the
+  # threshold could never be reached -- silently disabling the diagnostic.
+  case "$warn_after" in ''|*[!0-9]*) warn_after=3 ;; *) warn_after=$((10#$warn_after)) ;; esac
+  if [ "$warn_after" -lt 1 ]; then warn_after=3; fi
+  streak=$((streak + 1))
+
+  # Warn only on a persisted increment, and only on equality. Both conditions
+  # are what keep this to one warning per streak:
+  #   - `-eq` rather than `-ge` stops it repeating once the threshold is passed.
+  #   - Requiring the write to succeed stops it repeating when the write fails:
+  #     a stuck counter file would otherwise be reread at `warn_after - 1` on
+  #     every tool call, re-incremented in memory, and warn every time.
+  # A failed write is still never fatal -- observe.sh runs on every tool call
+  # and the repo rule is that hooks exit 0 on non-critical errors, so a full
+  # disk must not break tool execution. The `if` context keeps `set -e` happy.
+  if printf '%s\n' "$streak" > "$streak_file" 2>/dev/null &&
+     [ "$streak" -eq "$warn_after" ]; then
+    local platform_hint
+    local uname_lower
+    uname_lower=$(uname -s 2>/dev/null | tr '[:upper:]' '[:lower:]')
+    case "$uname_lower" in
+      *mingw*|*msys*|*cygwin*)
+        platform_hint='[observe] On native Windows (Git Bash/MSYS2) this is expected: the background launch does not detach the observer from the hook process Job Object, so it is killed when the hook exits. Run under WSL2, Linux or macOS. See issue #2489.'
+        ;;
+      *)
+        platform_hint="[observe] Check ${PROJECT_DIR}/observer.log for the reason the observer exited."
+        ;;
+    esac
+
+    local message
+    printf -v message '%s\n%s\n%s\n%s' \
+      "[observe] Observer did not survive to the next hook invocation ${streak} times in a row." \
+      "[observe] Startup reports success, but the process is gone by the following tool call, so no analysis ever runs." \
+      "$platform_hint" \
+      "[observe] Set ECC_OBSERVER_NOSURVIVE_WARN_AFTER to change this threshold (currently ${warn_after})."
+    # An unwritable log must not silently swallow the diagnostic, so fall back
+    # to stderr. Safe from spam: this block runs once per streak, not per call.
+    if ! printf '%s\n' "$message" >> "$log_file" 2>/dev/null; then
+      printf '%s\n' "$message" >&2 2>/dev/null || true
+    fi
+  fi
+  return 0
+}
+
+_RESET_OBSERVER_NOSURVIVE_STREAK() {
+  _REMOVE_FILE_IF_PRESENT "${PROJECT_DIR}/.observer-nosurvive-count"
 }
 
 if [ -f "${CONFIG_DIR}/disabled" ]; then
@@ -401,9 +505,21 @@ fi
 
 # Check both project-scoped AND global PID files (with stale PID recovery)
 if [ "$OBSERVER_ENABLED" = "true" ]; then
-  # Clean up stale PID files first
-  _CHECK_OBSERVER_RUNNING "${PROJECT_DIR}/.observer.pid" || true
-  _CHECK_OBSERVER_RUNNING "${CONFIG_DIR}/.observer.pid" || true
+  # Clean up stale PID files first.
+  # `if` context (not `|| true`) so `set -e` stays satisfied while we still
+  # capture whether either PID file pointed at a live observer.
+  OBSERVER_ALIVE=false
+  OBSERVER_DIED=false
+  if _CHECK_OBSERVER_RUNNING "${PROJECT_DIR}/.observer.pid"; then OBSERVER_ALIVE=true; fi
+  if _CHECK_OBSERVER_RUNNING "${CONFIG_DIR}/.observer.pid"; then OBSERVER_ALIVE=true; fi
+
+  # A live observer clears the streak so a later one-off crash does not inherit
+  # an old count. This is an idempotent unlink, not a read-modify-write, so it
+  # needs no lock. The matching increment runs inside the lazy-start lock, in
+  # _START_OBSERVER_LOGGED.
+  if [ "$OBSERVER_ALIVE" = "true" ]; then
+    _RESET_OBSERVER_NOSURVIVE_STREAK
+  fi
 
   # Check if observer is now running after cleanup
   if [ ! -f "${PROJECT_DIR}/.observer.pid" ] && [ ! -f "${CONFIG_DIR}/.observer.pid" ]; then
@@ -453,21 +569,82 @@ fi
 # which caused runaway parallel Claude analysis processes.
 SIGNAL_EVERY_N="${ECC_OBSERVER_SIGNAL_EVERY_N:-20}"
 SIGNAL_COUNTER_FILE="${PROJECT_DIR}/.observer-signal-counter"
+SIGNAL_COUNTER_LOCK="${SIGNAL_COUNTER_FILE}.lock"
 ACTIVITY_FILE="${PROJECT_DIR}/.observer-last-activity"
 
 touch "$ACTIVITY_FILE" 2>/dev/null || true
 
+# Serialize the throttle-counter read-modify-write. observe.sh runs on every
+# tool call (which can fire every second), so concurrent invocations previously
+# raced on this counter: both read the same value, both incremented, and one
+# write was lost, signaling the observer at unpredictable intervals (#2296).
+# Prefer flock (a kernel advisory lock the OS releases automatically if the hook
+# is killed); fall back to the atomic mkdir lock this script already uses for
+# the lazy-start path above. Both wrap the same read-modify-write below.
 should_signal=0
-if [ -f "$SIGNAL_COUNTER_FILE" ]; then
-  counter=$(cat "$SIGNAL_COUNTER_FILE" 2>/dev/null || echo 0)
-  counter=$((counter + 1))
-  if [ "$counter" -ge "$SIGNAL_EVERY_N" ]; then
-    should_signal=1
-    counter=0
+
+_clv2_bump_signal_counter() {
+  if [ -f "$SIGNAL_COUNTER_FILE" ]; then
+    counter=$(cat "$SIGNAL_COUNTER_FILE" 2>/dev/null || echo 0)
+    # Guard against a corrupt counter file: a non-integer value would abort the
+    # hook under `set -e` at the arithmetic below.
+    case "$counter" in
+      ''|*[!0-9]*) counter=0 ;;
+    esac
+    counter=$((counter + 1))
+    if [ "$counter" -ge "$SIGNAL_EVERY_N" ]; then
+      should_signal=1
+      counter=0
+    fi
+    echo "$counter" > "$SIGNAL_COUNTER_FILE"
+  else
+    echo "1" > "$SIGNAL_COUNTER_FILE"
   fi
-  echo "$counter" > "$SIGNAL_COUNTER_FILE"
+}
+
+if command -v flock >/dev/null 2>&1 && exec 8>"$SIGNAL_COUNTER_LOCK" 2>/dev/null; then
+  # flock is auto-released when fd 8 closes or the process dies, so there is no
+  # stale lock and no lost increment. Use a bounded -w wait so the hook never
+  # blocks indefinitely, and only bump the counter while the lock is held -- on
+  # a timeout we skip the tick rather than doing an unlocked read-modify-write.
+  if flock -w 2 8 2>/dev/null; then
+    _clv2_bump_signal_counter
+    flock -u 8 2>/dev/null || true
+  fi
+  exec 8>&- 2>/dev/null || true
 else
-  echo "1" > "$SIGNAL_COUNTER_FILE"
+  # No flock (e.g. macOS): atomic mkdir lock with a bounded spin so the hook
+  # never blocks indefinitely. A trap releases the lock on every exit path --
+  # including the async-timeout SIGTERM -- so a killed hook does not strand the
+  # directory. We deliberately do NOT hand-roll PID-based stale reclaim:
+  # re-verifying then removing another process's lock is racy and can delete a
+  # live re-acquirer's directory, reintroducing the very race this fixes.
+  _signal_lock_held=0
+  _signal_lock_spins=0
+  while [ "$_signal_lock_spins" -lt 100 ]; do
+    if mkdir "$SIGNAL_COUNTER_LOCK" 2>/dev/null; then
+      # EXIT cleans up on normal completion. INT/TERM must release AND exit:
+      # a signal trap that only released the lock would otherwise fall through
+      # and continue the read-modify-write without ownership.
+      trap 'rmdir "$SIGNAL_COUNTER_LOCK" 2>/dev/null || true' EXIT
+      trap 'rmdir "$SIGNAL_COUNTER_LOCK" 2>/dev/null || true; exit 130' INT
+      trap 'rmdir "$SIGNAL_COUNTER_LOCK" 2>/dev/null || true; exit 143' TERM
+      _signal_lock_held=1
+      break
+    fi
+    _signal_lock_spins=$((_signal_lock_spins + 1))
+    sleep 0.02
+  done
+  if [ "$_signal_lock_held" -eq 1 ]; then
+    # Bump only under the held lock -- never an unlocked read-modify-write.
+    _clv2_bump_signal_counter
+    rmdir "$SIGNAL_COUNTER_LOCK" 2>/dev/null || true
+    trap - EXIT INT TERM
+  fi
+  # If the lock could not be acquired within the spin budget we skip this tick
+  # rather than racing on an unlocked counter. Dropping one throttle tick under
+  # extreme contention only delays the next observer signal slightly; it never
+  # corrupts the counter or signals spuriously.
 fi
 
 # Signal observer if running and throttle allows (check both project-scoped and global observer, deduplicate)

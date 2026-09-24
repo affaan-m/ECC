@@ -121,16 +121,7 @@ Validate and sanitize all user input before processing.
 
 When creating instincts, determine scope based on these heuristics:
 
-| Pattern Type | Scope | Examples |
-|-------------|-------|---------|
-| Language/framework conventions | **project** | "Use React hooks", "Follow Django REST patterns" |
-| File structure preferences | **project** | "Tests in `__tests__`/", "Components in src/components/" |
-| Code style | **project** | "Use functional style", "Prefer dataclasses" |
-| Error handling strategies | **project** (usually) | "Use Result type for errors" |
-| Security practices | **global** | "Validate user input", "Sanitize SQL" |
-| General best practices | **global** | "Write tests first", "Always handle errors" |
-| Tool workflow preferences | **global** | "Grep before Edit", "Read before Write" |
-| Git practices | **global** | "Conventional commits", "Small focused commits" |
+> **Scope Decision Guide** – See the canonical table under the "Scope Decision Guide" heading in `skills/continuous-learning-v2/SKILL.md`.
 
 **When in doubt, default to `scope: project`** — it's safer to be project-specific and promote later than to contaminate the global space.
 
@@ -151,7 +142,7 @@ Confidence adjusts over time:
 
 An instinct should be promoted from project-scoped to global when:
 1. The **same pattern** (by id or similar trigger) exists in **2+ different projects**
-2. Each instance has confidence **>= 0.8**
+2. Average confidence across instances is **>= 0.8**
 3. The domain is in the global-friendly list (security, general-best-practices, workflow)
 
 Promotion is handled by the `instinct-cli.py promote` command or the `/evolve` analysis.

@@ -8,6 +8,12 @@ const path = require('path');
 
 const README = path.join(__dirname, '..', '..', 'README.md');
 const HOOKS_README = path.join(__dirname, '..', '..', 'hooks', 'README.md');
+const HOOK_REGISTRATION_PHRASE =
+  'registers the resolved hook entries in `~/.claude/settings.json`';
+
+function normalizeWhitespace(text) {
+  return text.replace(/\s+/g, ' ');
+}
 
 function test(name, fn) {
   try {
@@ -36,16 +42,20 @@ function runTests() {
       'README should warn against unsupported raw hook copying'
     );
     assert.ok(
-      readme.includes('bash ./install.sh --target claude --modules hooks-runtime'),
+      readme.includes('bash ./install.sh --target claude --modules hooks-runtime --enable-hooks'),
       'README should document the supported Bash hook install path'
     );
     assert.ok(
-      readme.includes('pwsh -File .\\install.ps1 --target claude --modules hooks-runtime'),
+      readme.includes('pwsh -File .\\install.ps1 --target claude --modules hooks-runtime --enable-hooks'),
       'README should document the supported PowerShell hook install path'
     );
     assert.ok(
-      readme.includes('%USERPROFILE%\\\\.claude'),
+      readme.includes('%USERPROFILE%\\.claude'),
       'README should call out the correct Windows Claude config root'
+    );
+    assert.ok(
+      normalizeWhitespace(readme).includes(HOOK_REGISTRATION_PHRASE),
+      'README should explain that manual installs register hooks in Claude settings'
     );
   })) passed++; else failed++;
 
@@ -55,12 +65,16 @@ function runTests() {
       'hooks/README should warn against unsupported raw hook copying'
     );
     assert.ok(
-      hooksReadme.includes('bash ./install.sh --target claude --modules hooks-runtime'),
+      hooksReadme.includes('bash ./install.sh --target claude --modules hooks-runtime --enable-hooks'),
       'hooks/README should document the supported Bash hook install path'
     );
     assert.ok(
-      hooksReadme.includes('pwsh -File .\\install.ps1 --target claude --modules hooks-runtime'),
+      hooksReadme.includes('pwsh -File .\\install.ps1 --target claude --modules hooks-runtime --enable-hooks'),
       'hooks/README should document the supported PowerShell hook install path'
+    );
+    assert.ok(
+      normalizeWhitespace(hooksReadme).includes(HOOK_REGISTRATION_PHRASE),
+      'hooks/README should explain that manual installs register hooks in Claude settings'
     );
   })) passed++; else failed++;
 

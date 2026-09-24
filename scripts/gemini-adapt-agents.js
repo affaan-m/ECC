@@ -3,6 +3,7 @@
 
 const fs = require('fs');
 const path = require('path');
+const { normalizeAgentTools } = require('./lib/agent-tools');
 
 const TOOL_NAME_MAP = new Map([
   ['Read', 'read_file'],
@@ -53,25 +54,13 @@ function ensureDirectory(dirPath) {
   }
 }
 
-function stripQuotes(value) {
-  return value.trim().replace(/^['"]|['"]$/g, '');
-}
-
 function parseToolList(line) {
-  const match = line.match(/^(\s*tools\s*:\s*)\[(.*)\]\s*$/);
+  const match = line.match(/^\s*tools\s*:\s*(.*)$/);
   if (!match) {
     return null;
   }
 
-  const rawItems = match[2].trim();
-  if (!rawItems) {
-    return [];
-  }
-
-  return rawItems
-    .split(',')
-    .map(part => stripQuotes(part))
-    .filter(Boolean);
+  return normalizeAgentTools(match[1]);
 }
 
 function adaptToolName(toolName) {

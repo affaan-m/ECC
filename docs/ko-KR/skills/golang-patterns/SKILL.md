@@ -617,7 +617,8 @@ linters-settings:
   errcheck:
     check-type-assertions: true
   govet:
-    check-shadowing: true
+    enable:
+      - shadow
 
 issues:
   exclude-use-default: false

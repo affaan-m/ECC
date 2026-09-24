@@ -9,7 +9,7 @@
 
 Tipos: feat, fix, refactor, docs, test, chore, perf, ci
 
-Nota: Atribuição desabilitada globalmente via ~/.claude/settings.json.
+Nota: As instalações gerenciadas pelo ECC definem `"includeCoAuthoredBy": false` em `~/.claude/settings.json`, portanto os commits não incluem `Co-Authored-By` por padrão. Para manter a atribuição do Claude, defina `"includeCoAuthoredBy": true` ou configure `attribution`; o ECC nunca sobrescreve uma escolha explícita.
 
 ## Fluxo de Trabalho de Pull Request
 

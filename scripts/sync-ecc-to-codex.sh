@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-set -euo pipefail
+set -Eeuo pipefail
 
 # Sync Everything Claude Code (ECC) assets into a local Codex CLI setup.
 # - Backs up ~/.codex config and AGENTS.md
@@ -29,11 +29,22 @@ AGENTS_ROOT_SRC="$REPO_ROOT/AGENTS.md"
 AGENTS_CODEX_SUPP_SRC="$REPO_ROOT/.codex/AGENTS.md"
 CODEX_AGENTS_SRC="$REPO_ROOT/.codex/agents"
 CODEX_AGENTS_DEST="$CODEX_HOME/agents"
+CODEX_NAV_GUIDE_SRC="$REPO_ROOT/docs/CODEX-NAVIGATION-GUIDE.md"
+CODEX_NAV_GUIDE_DEST="$CODEX_HOME/docs/CODEX-NAVIGATION-GUIDE.md"
+CODEX_COMMAND_AGENT_MAP_SRC="$REPO_ROOT/docs/COMMAND-AGENT-MAP.md"
+CODEX_COMMAND_AGENT_MAP_DEST="$CODEX_HOME/docs/COMMAND-AGENT-MAP.md"
+CODEX_COMMANDS_QUICK_REF_SRC="$REPO_ROOT/COMMANDS-QUICK-REF.md"
+CODEX_COMMANDS_QUICK_REF_DEST="$CODEX_HOME/COMMANDS-QUICK-REF.md"
+CODEX_CONTRIBUTING_SRC="$REPO_ROOT/CONTRIBUTING.md"
+CODEX_CONTRIBUTING_DEST="$CODEX_HOME/CONTRIBUTING.md"
+CODEX_PR_TEMPLATE_SRC="$REPO_ROOT/.github/PULL_REQUEST_TEMPLATE.md"
+CODEX_PR_TEMPLATE_DEST="$CODEX_HOME/.github/PULL_REQUEST_TEMPLATE.md"
 PROMPTS_SRC="$REPO_ROOT/commands"
 PROMPTS_DEST="$CODEX_HOME/prompts"
 BASELINE_MERGE_SCRIPT="$REPO_ROOT/scripts/codex/merge-codex-config.js"
 HOOKS_INSTALLER="$REPO_ROOT/scripts/codex/install-global-git-hooks.sh"
 SANITY_CHECKER="$REPO_ROOT/scripts/codex/check-codex-global-state.sh"
+LEGACY_STATE_HELPER="$REPO_ROOT/scripts/codex/legacy-sync-state.js"
 CURSOR_RULES_DIR="$REPO_ROOT/.cursor/rules"
 
 STAMP="$(date +%Y%m%d-%H%M%S)"
@@ -150,10 +161,16 @@ MCP_MERGE_SCRIPT="$REPO_ROOT/scripts/codex/merge-mcp-config.js"
 require_path "$REPO_ROOT/AGENTS.md" "ECC AGENTS.md"
 require_path "$AGENTS_CODEX_SUPP_SRC" "ECC Codex AGENTS supplement"
 require_path "$CODEX_AGENTS_SRC" "ECC Codex agent roles"
+require_path "$CODEX_NAV_GUIDE_SRC" "ECC Codex navigation guide"
+require_path "$CODEX_COMMAND_AGENT_MAP_SRC" "ECC command-agent map"
+require_path "$CODEX_COMMANDS_QUICK_REF_SRC" "ECC commands quick reference"
+require_path "$CODEX_CONTRIBUTING_SRC" "ECC contributing guide"
+require_path "$CODEX_PR_TEMPLATE_SRC" "ECC PR template"
 require_path "$PROMPTS_SRC" "ECC commands directory"
 require_path "$BASELINE_MERGE_SCRIPT" "ECC Codex baseline merge script"
 require_path "$HOOKS_INSTALLER" "ECC global git hooks installer"
 require_path "$SANITY_CHECKER" "ECC global sanity checker"
+require_path "$LEGACY_STATE_HELPER" "ECC legacy sync state helper"
 require_path "$CURSOR_RULES_DIR" "ECC Cursor rules directory"
 require_path "$CONFIG_FILE" "Codex config.toml"
 require_path "$MCP_MERGE_SCRIPT" "ECC MCP merge script"
@@ -172,6 +189,40 @@ run_or_echo mkdir -p "$BACKUP_DIR"
 run_or_echo cp "$CONFIG_FILE" "$BACKUP_DIR/config.toml"
 if [[ -f "$AGENTS_FILE" ]]; then
   run_or_echo cp "$AGENTS_FILE" "$BACKUP_DIR/AGENTS.md"
+fi
+
+LEGACY_STATE_PATH=""
+record_managed_path() {
+  local managed_path="$1"
+  if [[ "$MODE" == "apply" ]]; then
+    node "$LEGACY_STATE_HELPER" record --state "$LEGACY_STATE_PATH" --path "$managed_path"
+  fi
+}
+
+if [[ "$MODE" == "apply" ]]; then
+  previous_hooks_path="$(git config --global core.hooksPath || true)"
+  LEGACY_STATE_PATH="$(
+    node "$LEGACY_STATE_HELPER" begin \
+      --codex-home "$CODEX_HOME" \
+      --backup-dir "$BACKUP_DIR" \
+      --previous-hooks-path "$previous_hooks_path" \
+      --installed-hooks-path "${ECC_GLOBAL_HOOKS_DIR:-$CODEX_HOME/git-hooks}"
+  )"
+  rollback_legacy_sync() {
+    local exit_status="${1:-1}"
+    trap - ERR INT TERM
+    log "Install interrupted; restoring the pre-sync Codex state"
+    if ! node "$LEGACY_STATE_HELPER" rollback --state "$LEGACY_STATE_PATH"; then
+      log "ERROR: Automatic rollback was partial. Review: $LEGACY_STATE_PATH"
+    fi
+    exit "$exit_status"
+  }
+  trap 'rollback_legacy_sync $?' ERR
+  trap 'rollback_legacy_sync 130' INT
+  trap 'rollback_legacy_sync 143' TERM
+
+  record_managed_path "$CONFIG_FILE"
+  record_managed_path "$AGENTS_FILE"
 fi
 
 ECC_BEGIN_MARKER="<!-- BEGIN ECC -->"
@@ -259,6 +310,20 @@ else
   node "$BASELINE_MERGE_SCRIPT" "$CONFIG_FILE"
 fi
 
+log "Syncing Codex navigation guide"
+run_or_echo mkdir -p "$(dirname "$CODEX_NAV_GUIDE_DEST")"
+record_managed_path "$CODEX_NAV_GUIDE_DEST"
+run_or_echo cp "$CODEX_NAV_GUIDE_SRC" "$CODEX_NAV_GUIDE_DEST"
+record_managed_path "$CODEX_COMMAND_AGENT_MAP_DEST"
+run_or_echo cp "$CODEX_COMMAND_AGENT_MAP_SRC" "$CODEX_COMMAND_AGENT_MAP_DEST"
+record_managed_path "$CODEX_COMMANDS_QUICK_REF_DEST"
+run_or_echo cp "$CODEX_COMMANDS_QUICK_REF_SRC" "$CODEX_COMMANDS_QUICK_REF_DEST"
+record_managed_path "$CODEX_CONTRIBUTING_DEST"
+run_or_echo cp "$CODEX_CONTRIBUTING_SRC" "$CODEX_CONTRIBUTING_DEST"
+run_or_echo mkdir -p "$(dirname "$CODEX_PR_TEMPLATE_DEST")"
+record_managed_path "$CODEX_PR_TEMPLATE_DEST"
+run_or_echo cp "$CODEX_PR_TEMPLATE_SRC" "$CODEX_PR_TEMPLATE_DEST"
+
 log "Syncing sample Codex agent role files"
 run_or_echo mkdir -p "$CODEX_AGENTS_DEST"
 for agent_file in "$CODEX_AGENTS_SRC"/*.toml; do
@@ -268,6 +333,7 @@ for agent_file in "$CODEX_AGENTS_SRC"/*.toml; do
   if [[ -e "$dest" ]]; then
     log "Keeping existing Codex agent role file: $dest"
   else
+    record_managed_path "$dest"
     run_or_echo cp "$agent_file" "$dest"
   fi
 done
@@ -279,6 +345,7 @@ done
 log "Generating prompt files from ECC commands"
 run_or_echo mkdir -p "$PROMPTS_DEST"
 manifest="$PROMPTS_DEST/ecc-prompts-manifest.txt"
+record_managed_path "$manifest"
 if [[ "$MODE" == "dry-run" ]]; then
   printf '[dry-run] > %s\n' "$manifest"
 else
@@ -292,6 +359,7 @@ while IFS= read -r -d '' command_file; do
   if [[ "$MODE" == "dry-run" ]]; then
     printf '[dry-run] generate %s from %s\n' "$out" "$command_file"
   else
+    record_managed_path "$out"
     generate_prompt_file "$command_file" "$out" "$name"
     printf 'ecc-%s.md\n' "$name" >> "$manifest"
   fi
@@ -304,6 +372,7 @@ fi
 
 log "Generating Codex tool prompts + optional rule-pack prompts"
 extension_manifest="$PROMPTS_DEST/ecc-extension-prompts-manifest.txt"
+record_managed_path "$extension_manifest"
 if [[ "$MODE" == "dry-run" ]]; then
   printf '[dry-run] > %s\n' "$extension_manifest"
 else
@@ -318,6 +387,7 @@ write_extension_prompt() {
   if [[ "$MODE" == "dry-run" ]]; then
     printf '[dry-run] generate %s\n' "$file"
   else
+    record_managed_path "$file"
     cat > "$file"
     printf '%s\n' "$name" >> "$extension_manifest"
   fi
@@ -507,6 +577,8 @@ if [[ "$MODE" == "dry-run" ]]; then
   ECC_GLOBAL_HOOKS_DIR="${ECC_GLOBAL_HOOKS_DIR:-$CODEX_HOME/git-hooks}" \
     "$HOOKS_INSTALLER" --dry-run
 else
+  record_managed_path "${ECC_GLOBAL_HOOKS_DIR:-$CODEX_HOME/git-hooks}/pre-commit"
+  record_managed_path "${ECC_GLOBAL_HOOKS_DIR:-$CODEX_HOME/git-hooks}/pre-push"
   HOME="$HOME" \
   CODEX_HOME="$CODEX_HOME" \
   AGENTS_HOME="${AGENTS_HOME:-$HOME/.agents}" \
@@ -530,5 +602,7 @@ log "Backup saved at: $BACKUP_DIR"
 log "Prompts generated: $((prompt_count + extension_count)) (commands: $prompt_count, extensions: $extension_count)"
 
 if [[ "$MODE" == "apply" ]]; then
+  node "$LEGACY_STATE_HELPER" finalize --state "$LEGACY_STATE_PATH"
+  trap - ERR INT TERM
   log "Done. Restart Codex CLI to reload AGENTS, prompts, and MCP servers."
 fi

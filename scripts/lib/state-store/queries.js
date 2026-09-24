@@ -348,6 +348,23 @@ function normalizeInstallStateInput(installState) {
   };
 }
 
+function normalizeInstallStateIdentity(identity) {
+  if (!identity || typeof identity !== 'object') {
+    throw new Error('Invalid installState identity: expected targetId and targetRoot');
+  }
+
+  const targetId = identity.targetId;
+  const targetRoot = identity.targetRoot;
+  if (typeof targetId !== 'string' || targetId.length === 0) {
+    throw new Error('Invalid installState identity: targetId must be a non-empty string');
+  }
+  if (typeof targetRoot !== 'string' || targetRoot.length === 0) {
+    throw new Error('Invalid installState identity: targetRoot must be a non-empty string');
+  }
+
+  return { targetId, targetRoot };
+}
+
 function normalizeGovernanceEventInput(governanceEvent) {
   return {
     id: governanceEvent.id,
@@ -431,6 +448,11 @@ function createQueryApi(db) {
     SELECT *
     FROM install_state
     ORDER BY installed_at DESC, target_id ASC
+  `);
+  const getInstallStateStatement = db.prepare(`
+    SELECT target_id
+    FROM install_state
+    WHERE target_id = ? AND target_root = ?
   `);
   const countPendingGovernanceStatement = db.prepare(`
     SELECT COUNT(*) AS total_count
@@ -617,6 +639,10 @@ function createQueryApi(db) {
       installed_at = excluded.installed_at,
       source_version = excluded.source_version
   `);
+  const deleteInstallStateStatement = db.prepare(`
+    DELETE FROM install_state
+    WHERE target_id = @target_id AND target_root = @target_root
+  `);
 
   const insertGovernanceEventStatement = db.prepare(`
     INSERT INTO governance_events (
@@ -778,6 +804,18 @@ function createQueryApi(db) {
   }
 
   return {
+    deleteInstallState(identity) {
+      const normalized = normalizeInstallStateIdentity(identity);
+      const existing = getInstallStateStatement.get(normalized.targetId, normalized.targetRoot);
+      if (!existing) {
+        return false;
+      }
+      deleteInstallStateStatement.run({
+        target_id: normalized.targetId,
+        target_root: normalized.targetRoot,
+      });
+      return true;
+    },
     getSessionById,
     getSessionDetail,
     getWorkItemById,

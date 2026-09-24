@@ -1,6 +1,6 @@
 ---
 description: Go code review for idiomatic patterns
-agent: everything-claude-code:go-reviewer
+agent: go-reviewer
 subtask: true
 ---
 

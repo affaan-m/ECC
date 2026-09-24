@@ -220,7 +220,20 @@ test('prompt references analysis_file not full OBSERVATIONS_FILE', () => {
   assert.ok(heredocStart > 0, 'Should find prompt heredoc start');
   assert.ok(heredocEnd > heredocStart, 'Should find prompt heredoc end');
   const promptSection = content.substring(heredocStart, heredocEnd);
-  assert.ok(promptSection.includes('${analysis_relpath}'), 'Prompt should point Claude at the sampled analysis file (via relative path), not the full observations file');
+  assert.ok(promptSection.includes('${analysis_relpath}'), 'Prompt should point Claude at the sampled analysis file, not the full observations file');
+});
+
+test('observer uses an absolute analysis path outside Windows', () => {
+  const content = fs.readFileSync(observerLoopPath, 'utf8');
+  assert.ok(
+    content.includes('if [ "${CLV2_IS_WINDOWS:-false}" = "true" ]') &&
+      content.includes('analysis_relpath="$analysis_file"'),
+    'macOS and Linux must pass the absolute analysis path to Claude'
+  );
+  assert.ok(
+    content.includes('analysis_relpath=".observer-tmp/$(basename "$analysis_file")"'),
+    'Windows must retain the MSYS-compatible relative analysis path'
+  );
 });
 
 test('observer-loop wait helper retries SIGUSR1-interrupted waits while claude child is alive', () => {
@@ -375,7 +388,7 @@ test('observe.sh creates counter file and increments on each call', () => {
     path.join(scriptsLibDir, 'homunculus-dir.sh'),
     [
       '#!/bin/bash',
-      '_ecc_resolve_homunculus_dir() { printf "%s\\n" "$HOME/.local/share/ecc-homunculus"; }',
+      '_clv2_resolve_homunculus_dir() { printf "%s\\n" "$HOME/.local/share/ecc-homunculus"; }',
       ''
     ].join('\n')
   );
@@ -454,8 +467,13 @@ test('claude invocation still includes ECC_SKIP_OBSERVE and ECC_HOOK_PROFILE gua
   const content = fs.readFileSync(observerLoopPath, 'utf8');
   // Find the claude execution line(s)
   const lines = content.split('\n');
-  const claudeLine = lines.find(l => l.includes('claude --model haiku'));
-  assert.ok(claudeLine, 'Should find claude --model haiku invocation line');
+  const claudeLine = lines.find(l => l.includes('claude --model'));
+  assert.ok(claudeLine, 'Should find claude --model invocation line');
+  // Model is configurable via ECC_OBSERVER_MODEL but must still default to haiku.
+  assert.ok(
+    claudeLine.includes('${ECC_OBSERVER_MODEL:-haiku}'),
+    `claude --model should default to haiku and honor ECC_OBSERVER_MODEL, got: ${claudeLine}`
+  );
   // The env vars are on the same line as the claude command
   const claudeLineIndex = lines.indexOf(claudeLine);
   const fullCommand = lines.slice(Math.max(0, claudeLineIndex - 1), claudeLineIndex + 3).join(' ');

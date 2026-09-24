@@ -17,7 +17,7 @@ Instead, drive all animations from `useCurrentFrame()`.
 
 ## Bar Chart Animations
 
-See [Bar Chart Example](assets/charts/bar-chart.tsx) for a basic example implmentation.
+See [Bar Chart Example](assets/charts/bar-chart.tsx) for a basic example implementation.
 
 ### Staggered Bars
 

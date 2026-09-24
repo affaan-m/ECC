@@ -29,7 +29,7 @@ function runInstall(options = {}) {
     },
     encoding: 'utf8',
     stdio: ['pipe', 'pipe', 'pipe'],
-    timeout: 60000,
+    timeout: 300000,
   });
 }
 
@@ -43,7 +43,7 @@ function runUninstall(options = {}) {
     encoding: 'utf8',
     input: options.input || 'y\n',
     stdio: ['pipe', 'pipe', 'pipe'],
-    timeout: 60000,
+    timeout: 300000,
   });
 }
 

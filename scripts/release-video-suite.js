@@ -5,9 +5,7 @@ const fs = require('fs');
 const path = require('path');
 const { spawnSync } = require('child_process');
 
-const RELEASE = '2.0.0-rc.1';
 const SCHEMA_VERSION = 'ecc.release-video-suite.v1';
-const VIDEO_MANIFEST_PATH = `docs/releases/${RELEASE}/video-suite-production.md`;
 const HYPERGROWTH_DOC_PATH = 'docs/releases/2.0.0/ecc-2-hypergrowth-release-command-center.md';
 
 const REQUIRED_DOC_MARKERS = [
@@ -320,7 +318,7 @@ function usage() {
   console.log([
     'Usage: node scripts/release-video-suite.js [options]',
     '',
-    'Validates the ECC 2.0 release video production lane without committing raw media paths.',
+    'Validates the ECC 2.0 release video production lane for the package.json release version without committing raw media paths.',
     '',
     'Options:',
     '  --format <text|json>     Output format (default: text)',
@@ -453,6 +451,28 @@ function safeParseJson(text) {
   } catch (_error) {
     return null;
   }
+}
+
+function resolveRelease(packageJson, options = {}) {
+  if (typeof options.release === 'string' && options.release.trim()) {
+    return options.release.trim();
+  }
+
+  return typeof packageJson.version === 'string' ? packageJson.version.trim() : '';
+}
+
+function releaseDirFor(release) {
+  return `docs/releases/${release}`;
+}
+
+function releasePathsFor(release) {
+  const releaseDir = releaseDirFor(release);
+
+  return {
+    videoManifestPath: `${releaseDir}/video-suite-production.md`,
+    previewManifestPath: `${releaseDir}/preview-pack-manifest.md`,
+    launchChecklistPath: `${releaseDir}/launch-checklist.md`,
+  };
 }
 
 function lineNumberForIndex(text, index) {
@@ -841,17 +861,19 @@ function buildReport(options = {}) {
   const suiteRoot = options.suiteRoot ? path.resolve(options.suiteRoot) : '';
   const skipProbe = Boolean(options.skipProbe);
   const packageJson = safeParseJson(readText(rootDir, 'package.json')) || {};
+  const release = resolveRelease(packageJson, options);
+  const releasePaths = releasePathsFor(release);
   const packageScripts = packageJson.scripts || {};
   const packageFiles = Array.isArray(packageJson.files) ? packageJson.files : [];
-  const manifest = readText(rootDir, VIDEO_MANIFEST_PATH);
+  const manifest = readText(rootDir, releasePaths.videoManifestPath);
   const hypergrowth = readText(rootDir, HYPERGROWTH_DOC_PATH);
 
   const missingDocMarkers = REQUIRED_DOC_MARKERS.filter(marker => !manifest.includes(marker));
   const forbiddenPaths = scanForbiddenPaths(rootDir, [
-    VIDEO_MANIFEST_PATH,
+    releasePaths.videoManifestPath,
     HYPERGROWTH_DOC_PATH,
-    `docs/releases/${RELEASE}/preview-pack-manifest.md`,
-    `docs/releases/${RELEASE}/launch-checklist.md`,
+    releasePaths.previewManifestPath,
+    releasePaths.launchChecklistPath,
   ]);
   const sourceAssets = inspectSourceAssets(sourceRoot, skipProbe);
   const suiteArtifacts = inspectSuiteArtifacts(suiteRoot, skipProbe);
@@ -875,7 +897,7 @@ function buildReport(options = {}) {
       'video-suite-manifest-present',
       manifest && missingDocMarkers.length === 0 ? 'pass' : 'fail',
       manifest && missingDocMarkers.length === 0
-        ? `${VIDEO_MANIFEST_PATH} includes the required production markers`
+        ? `${releasePaths.videoManifestPath} includes the required production markers`
         : `missing markers: ${missingDocMarkers.join(', ') || 'manifest file missing'}`,
       'Restore the video production manifest and required production markers.'
     ),
@@ -960,7 +982,7 @@ function buildReport(options = {}) {
 
   return {
     schema_version: SCHEMA_VERSION,
-    release: RELEASE,
+    release,
     generatedAt: options.generatedAt || new Date().toISOString(),
     root: rootDir,
     sourceRootConfigured: Boolean(sourceRoot),
@@ -1090,6 +1112,7 @@ module.exports = {
   REQUIRED_SOURCE_ASSETS,
   REQUIRED_SUITE_ARTIFACTS,
   buildReport,
+  releasePathsFor,
   parseArgs,
   renderText,
   summarizeReport,

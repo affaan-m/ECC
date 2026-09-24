@@ -1,3 +1,10 @@
+---
+name: browser-qa
+description: Automate visual testing and UI interaction verification using browser automation after deployment.
+metadata:
+  origin: ECC
+---
+
 # Browser QA — 自动化视觉测试与交互验证
 
 ## When to use

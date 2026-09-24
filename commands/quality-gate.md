@@ -39,8 +39,9 @@ Then report formatter findings and concrete remediation steps.
 
 ## Notes
 
-Hook wiring lives in `hooks/hooks.json` (`post:quality-gate`, profiles
-`standard`/`strict` via `run-with-flags.js`).
+Hook wiring enters through the async PostToolUse dispatcher in
+`hooks/hooks.json`. Its internal registry preserves the `post:quality-gate`
+ID and the `standard`/`strict` profiles.
 
 ## Arguments
 

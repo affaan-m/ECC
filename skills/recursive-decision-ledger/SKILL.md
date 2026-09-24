@@ -1,7 +1,9 @@
 ---
 name: recursive-decision-ledger
 description: Use when the user asks for repeated rollouts, marked decision processes, high-dimensional search, stochastic optimization, local-optima exploration, ensemble comparison, or recursive reasoning with a visible evidence trail.
-origin: ECC
+license: MIT
+metadata:
+  origin: ECC
 tools: Read, Write, Edit, Bash, Grep, Glob
 ---
 

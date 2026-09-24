@@ -19,6 +19,13 @@ const {
   summarizeReport,
 } = require(SCRIPT);
 
+const CURRENT_RELEASE = require(path.join(__dirname, '..', '..', 'package.json')).version;
+const RC_RELEASE = '2.0.0-rc.1';
+
+function releaseDirFor(release) {
+  return `docs/releases/${release}`;
+}
+
 function createTempDir(prefix) {
   return fs.mkdtempSync(path.join(os.tmpdir(), prefix));
 }
@@ -33,31 +40,39 @@ function writeFile(rootDir, relativePath, content = 'fixture') {
   fs.writeFileSync(targetPath, content);
 }
 
-function seedRepo(rootDir, overrides = {}) {
+function videoManifestContent(extra = '') {
+  return [
+    '# ECC 2.0 Video Suite Production Manifest',
+    'ECC_VIDEO_SOURCE_ROOT',
+    'ECC_VIDEO_RELEASE_SUITE_ROOT',
+    'Primary launch video',
+    'video-use compatible workflow',
+    'Self-Eval Gate',
+    'Do Not Publish If',
+    'Do not commit raw footage, transcript JSON, or timeline exports',
+    extra,
+  ].join('\n');
+}
+
+function seedRepo(rootDir, overrides = {}, options = {}) {
+  const release = options.release || CURRENT_RELEASE;
+  const releaseDir = releaseDirFor(release);
   const files = {
     'package.json': JSON.stringify({
       name: 'ecc-universal',
+      version: release,
       files: ['scripts/release-video-suite.js'],
       scripts: {
         'release:video-suite': 'node scripts/release-video-suite.js',
       },
     }, null, 2),
-    'docs/releases/2.0.0-rc.1/video-suite-production.md': [
-      '# ECC 2.0 Video Suite Production Manifest',
-      'ECC_VIDEO_SOURCE_ROOT',
-      'ECC_VIDEO_RELEASE_SUITE_ROOT',
-      'Primary launch video',
-      'video-use compatible workflow',
-      'Self-Eval Gate',
-      'Do Not Publish If',
-      'Do not commit raw footage, transcript JSON, or timeline exports',
-    ].join('\n'),
+    [`${releaseDir}/video-suite-production.md`]: videoManifestContent(),
     'docs/releases/2.0.0/ecc-2-hypergrowth-release-command-center.md': [
       'Keep raw absolute paths out of public docs',
       'Pick final video cuts, upload after approval, and attach public URLs',
     ].join('\n'),
-    'docs/releases/2.0.0-rc.1/preview-pack-manifest.md': 'video-suite-production.md',
-    'docs/releases/2.0.0-rc.1/launch-checklist.md': 'release video suite',
+    [`${releaseDir}/preview-pack-manifest.md`]: 'video-suite-production.md',
+    [`${releaseDir}/launch-checklist.md`]: 'release video suite',
   };
 
   for (const [relativePath, content] of Object.entries({ ...files, ...overrides })) {
@@ -171,6 +186,7 @@ function runTests() {
       });
 
       assert.strictEqual(report.schema_version, 'ecc.release-video-suite.v1');
+      assert.strictEqual(report.release, CURRENT_RELEASE);
       assert.strictEqual(report.ready, true);
       assert.strictEqual(report.mediaPathsRedacted, true);
       assert.ok(report.checks.every(check => check.status === 'pass'));
@@ -187,6 +203,33 @@ function runTests() {
         summarizeReport(report).publishCandidateSummary.present,
         REQUIRED_PUBLISH_CANDIDATES.length
       );
+    } finally {
+      cleanup(rootDir);
+      cleanup(sourceRoot);
+      cleanup(suiteRoot);
+    }
+  })) passed++; else failed++;
+
+  if (test('release override keeps rc.1 video fixtures testable', () => {
+    const rootDir = createTempDir('release-video-rc-');
+    const sourceRoot = createTempDir('release-video-source-');
+    const suiteRoot = createTempDir('release-video-suite-');
+
+    try {
+      seedRepo(rootDir, {}, { release: RC_RELEASE });
+      seedMedia(sourceRoot, suiteRoot);
+
+      const report = buildReport({
+        root: rootDir,
+        release: RC_RELEASE,
+        sourceRoot,
+        suiteRoot,
+        skipProbe: true,
+        generatedAt: '2026-05-19T00:00:00.000Z',
+      });
+
+      assert.strictEqual(report.release, RC_RELEASE);
+      assert.strictEqual(report.ready, true);
     } finally {
       cleanup(rootDir);
       cleanup(sourceRoot);
@@ -231,18 +274,9 @@ function runTests() {
     const suiteRoot = createTempDir('release-video-suite-');
 
     try {
+      const releaseDir = releaseDirFor(CURRENT_RELEASE);
       seedRepo(rootDir, {
-        'docs/releases/2.0.0-rc.1/video-suite-production.md': [
-          '# ECC 2.0 Video Suite Production Manifest',
-          'ECC_VIDEO_SOURCE_ROOT',
-          'ECC_VIDEO_RELEASE_SUITE_ROOT',
-          'Primary launch video',
-          'video-use compatible workflow',
-          'Self-Eval Gate',
-          'Do Not Publish If',
-          'Do not commit raw footage, transcript JSON, or timeline exports',
-          '/Users/affoon/private-media',
-        ].join('\n'),
+        [`${releaseDir}/video-suite-production.md`]: videoManifestContent('/Users/affoon/private-media'),
       });
       seedMedia(sourceRoot, suiteRoot);
 
@@ -283,6 +317,7 @@ function runTests() {
       const parsed = JSON.parse(output);
 
       assert.strictEqual(parsed.ready, true);
+      assert.strictEqual(parsed.release, CURRENT_RELEASE);
       assert.strictEqual(parsed.sourceRootConfigured, true);
       assert.strictEqual(parsed.suiteRootConfigured, true);
       assert.strictEqual(parsed.sourceAssetSummary.present, REQUIRED_SOURCE_ASSETS.length);

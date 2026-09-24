@@ -1,5 +1,6 @@
 ---
 inclusion: auto
+name: lessons-learned
 description: Project-specific patterns, preferences, and lessons learned over time (user-editable)
 ---
 

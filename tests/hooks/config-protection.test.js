@@ -112,10 +112,9 @@ function runTests() {
         }
       };
 
-      const rawInput = JSON.stringify(input);
       const result = runHook(input);
       assert.strictEqual(result.code, 0, 'Expected safe file edit to pass');
-      assert.strictEqual(result.stdout, rawInput, 'Expected exact raw JSON passthrough');
+      assert.strictEqual(result.stdout, '', 'Allowed edits should not echo raw hook input');
       assert.strictEqual(result.stderr, '', 'Expected no stderr for safe edits');
     })
   )
@@ -155,10 +154,9 @@ function runTests() {
           }
         };
 
-        const rawInput = JSON.stringify(input);
         const result = runHook(input);
         assert.strictEqual(result.code, 0, `Expected exit 0 for first-time creation, got ${result.code}; stderr: ${result.stderr}`);
-        assert.strictEqual(result.stdout, rawInput, 'Expected raw passthrough when creation is allowed');
+        assert.strictEqual(result.stdout, '', 'Allowed creation should not echo raw hook input');
         assert.strictEqual(result.stderr, '', `Expected no stderr for first-time creation, got: ${result.stderr}`);
       } finally {
         try {
@@ -189,10 +187,9 @@ function runTests() {
           }
         };
 
-        const rawInput = JSON.stringify(input);
         const result = runHook(input);
         assert.strictEqual(result.code, 0, `Expected exit 0 for ENOENT path, got ${result.code}; stderr: ${result.stderr}`);
-        assert.strictEqual(result.stdout, rawInput, 'Expected raw passthrough when path does not exist');
+        assert.strictEqual(result.stdout, '', 'Allowed missing paths should not echo raw hook input');
       } finally {
         try {
           fs.rmSync(tmpDir, { recursive: true, force: true });
@@ -234,10 +231,52 @@ function runTests() {
         const result = runHook(input);
         assert.strictEqual(result.code, 2, `Expected exit 2 for dangling symlink, got ${result.code}; stderr: ${result.stderr}`);
         assert.strictEqual(result.stdout, '', 'Blocked hook should not echo raw input');
-        assert.ok(
-          result.stderr.includes('BLOCKED: Modifying .eslintrc.js is not allowed.'),
-          `Expected block message, got: ${result.stderr}`
-        );
+        assert.ok(result.stderr.includes('BLOCKED: Modifying .eslintrc.js is not allowed.'), `Expected block message, got: ${result.stderr}`);
+      } finally {
+        try {
+          fs.rmSync(tmpDir, { recursive: true, force: true });
+        } catch {
+          // best-effort cleanup
+        }
+      }
+    })
+  )
+    passed++;
+  else failed++;
+
+  if (
+    test('blocks case-variant writes that resolve to an existing protected config', () => {
+      const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-config-protect-'));
+      try {
+        const realPath = path.join(tmpDir, '.eslintrc.js');
+        const variantPath = path.join(tmpDir, '.ESLINTRC.JS');
+        fs.writeFileSync(realPath, 'module.exports = { rules: { "no-explicit-any": "error" } };');
+
+        // Only meaningful on a case-insensitive filesystem (macOS APFS/HFS+,
+        // Windows NTFS), where the uppercase path is the SAME inode. On a
+        // case-sensitive filesystem the variant is a genuinely different file
+        // and the write is harmless, so skip rather than assert.
+        let sameFile = false;
+        try {
+          sameFile = fs.lstatSync(variantPath).ino === fs.lstatSync(realPath).ino;
+        } catch {
+          sameFile = false;
+        }
+        if (!sameFile) {
+          console.log('    (skipped: case-sensitive filesystem)');
+          return;
+        }
+
+        const result = runHook({
+          tool_name: 'Write',
+          tool_input: {
+            file_path: variantPath,
+            content: 'module.exports = { rules: {} }; // WEAKENED'
+          }
+        });
+
+        assert.strictEqual(result.code, 2, `Case-variant write must be blocked: it overwrites ${path.basename(realPath)} on this filesystem. Got ${result.code}; stderr: ${result.stderr}`);
+        assert.strictEqual(result.stdout, '', 'Blocked hook should not echo raw input');
       } finally {
         try {
           fs.rmSync(tmpDir, { recursive: true, force: true });

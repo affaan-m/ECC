@@ -4,7 +4,8 @@ description: >
   Accessibility patterns for React and Next.js — semantic HTML, ARIA attributes,
   form labeling, keyboard navigation, focus management, and screen reader support.
   Use when building any interactive UI component or form.
-origin: community
+metadata:
+  origin: community
 ---
 
 # Frontend Accessibility Patterns
@@ -442,4 +443,4 @@ Before submitting any interactive component for review:
 
 - `frontend-patterns` — general React component and state patterns
 - `design-system` — design token and component consistency
-- `motion-ui` — animation patterns with accessibility considerations
+- `motion-foundations` and `motion-patterns`: animation patterns with accessibility considerations

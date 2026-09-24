@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: ECC questions and setup help
+    url: https://github.com/affaan-m/ECC/discussions/categories/q-a
+    about: Ask a public question or get help from the community.
+  - name: Private security report
+    url: https://github.com/affaan-m/ECC/security/advisories/new
+    about: Report vulnerabilities privately. Do not put secrets in a public issue.

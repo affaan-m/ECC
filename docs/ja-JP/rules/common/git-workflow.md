@@ -10,7 +10,7 @@
 
 タイプ: feat, fix, refactor, docs, test, chore, perf, ci
 
-注記: Attribution は ~/.claude/settings.json でグローバルに無効化されています。
+注記: ECC が管理するインストールは `~/.claude/settings.json` に `"includeCoAuthoredBy": false` を設定するため、コミットには既定で `Co-Authored-By` が付きません。Claude の属性を残す場合は `"includeCoAuthoredBy": true` または `attribution` を設定してください。ECC は明示的な設定を上書きしません。
 
 ## Pull Request ワークフロー
 

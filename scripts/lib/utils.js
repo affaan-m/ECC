@@ -136,6 +136,74 @@ function getGitRepoName() {
 }
 
 /**
+ * Get the repository identity for a directory: the canonical (real) path of
+ * the repository's common git dir, which is the main worktree's .git
+ * directory. Every linked worktree of one repository resolves to the same
+ * identity, while unrelated repositories never share one.
+ *
+ * @param {string} [dir] - Directory to resolve from (defaults to process.cwd()).
+ * @returns {string|null} The canonical common git dir, or null when dir is
+ *   not inside a git repository or does not exist.
+ */
+function getRepoIdentity(dir, runCmd = runCommand) {
+  const target = dir || process.cwd();
+  const result = runCmd('git rev-parse --git-common-dir', { cwd: target });
+  if (!result.success || !result.output) return null;
+  const commonDir = path.resolve(target, result.output);
+  try {
+    return fs.realpathSync(commonDir);
+  } catch {
+    return commonDir;
+  }
+}
+
+/**
+ * Normalize a repository identity path for comparison: canonical (real) form
+ * when it exists, forward slashes, no trailing slash, and lowercase on
+ * Windows where the filesystem is case-insensitive. The platform argument
+ * exists so Windows-shaped git output can be tested on any OS.
+ *
+ * @param {string} p - Path to normalize.
+ * @param {string} [platform] - Platform override (defaults to process.platform).
+ * @returns {string} The normalized path, or '' for empty input.
+ */
+function normalizeRepoPath(p, platform = process.platform) {
+  if (!p) return '';
+  let resolved;
+  try {
+    resolved = fs.realpathSync(p);
+  } catch {
+    resolved = path.resolve(p);
+  }
+  const slashed = resolved.replace(/\\/g, '/').replace(/\/+$/, '');
+  return platform === 'win32' ? slashed.toLowerCase() : slashed;
+}
+
+/**
+ * Compare two repository identity paths. String normalization alone is not
+ * enough on Windows CI runners, where TEMP commonly uses an 8.3 short name
+ * (RUNNER~1): Node's realpath keeps the short form while git reports the
+ * long form for the same directory. When the strings differ, fall back to
+ * filesystem identity (device + inode), which is immune to 8.3 names, case
+ * and separators. Fails closed when either path cannot be statted.
+ *
+ * @param {string} a - First identity path.
+ * @param {string} b - Second identity path.
+ * @returns {boolean} True when both paths name the same directory.
+ */
+function sameRepoIdentity(a, b) {
+  if (!a || !b) return false;
+  if (normalizeRepoPath(a) === normalizeRepoPath(b)) return true;
+  try {
+    const sa = fs.statSync(a);
+    const sb = fs.statSync(b);
+    return sa.ino !== 0 && sa.dev === sb.dev && sa.ino === sb.ino;
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Get project name from git repo or current directory
  */
 function getProjectName() {
@@ -284,6 +352,7 @@ async function readStdinJson(options = {}) {
   return new Promise((resolve) => {
     let data = '';
     let settled = false;
+    let overflowed = false;
 
     const timer = setTimeout(() => {
       if (!settled) {
@@ -293,7 +362,12 @@ async function readStdinJson(options = {}) {
         process.stdin.removeAllListeners('end');
         process.stdin.removeAllListeners('error');
         if (process.stdin.unref) process.stdin.unref();
-        // Resolve with whatever we have so far rather than hanging
+        // Oversized input is always rejected. Otherwise, resolve with whatever
+        // arrived before the timeout rather than hanging.
+        if (overflowed) {
+          resolve({});
+          return;
+        }
         try {
           resolve(data.trim() ? JSON.parse(data) : {});
         } catch {
@@ -304,15 +378,34 @@ async function readStdinJson(options = {}) {
 
     process.stdin.setEncoding('utf8');
     process.stdin.on('data', chunk => {
-      if (data.length < maxSize) {
-        data += chunk;
+      if (settled) return;
+      if (overflowed) return;
+      // Mark oversized input as rejected and discard the buffered prefix.
+      // Continue consuming the stream without retaining later chunks so a
+      // finite parent can finish writing without EPIPE. Resolution happens at
+      // EOF or the existing timeout, which also bounds never-closing writers.
+      if (data.length + chunk.length > maxSize) {
+        overflowed = true;
+        data = '';
+        process.stderr.write(
+          `[readStdinJson] stdin exceeded ${maxSize} bytes; input truncated and treated as empty\n`
+        );
+        return;
       }
+      data += chunk;
     });
 
     process.stdin.on('end', () => {
-      if (settled) return;
+      if (settled) {
+        clearTimeout(timer);
+        return;
+      }
       settled = true;
       clearTimeout(timer);
+      if (overflowed) {
+        resolve({});
+        return;
+      }
       try {
         resolve(data.trim() ? JSON.parse(data) : {});
       } catch {
@@ -323,7 +416,10 @@ async function readStdinJson(options = {}) {
     });
 
     process.stdin.on('error', () => {
-      if (settled) return;
+      if (settled) {
+        clearTimeout(timer);
+        return;
+      }
       settled = true;
       clearTimeout(timer);
       // Resolve with empty object so hooks don't crash on stdin errors
@@ -614,6 +710,9 @@ module.exports = {
   sanitizeSessionId,
   getSessionIdShort,
   getGitRepoName,
+  getRepoIdentity,
+  normalizeRepoPath,
+  sameRepoIdentity,
   getProjectName,
 
   // File operations

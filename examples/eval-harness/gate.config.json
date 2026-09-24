@@ -1,0 +1,12 @@
+{
+  "taskset": "taskset.json",
+  "baseline": "variants/baseline",
+  "candidate": "variants/candidate",
+  "max_effect_class": "SE1",
+  "thresholds": {
+    "smoke_tasks": 3,
+    "min_pass_rate": 0.9,
+    "max_regressions": 0,
+    "timeout_ms": 20000
+  }
+}

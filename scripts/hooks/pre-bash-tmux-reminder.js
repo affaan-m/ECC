@@ -13,7 +13,7 @@ function run(rawInput) {
     if (
       process.platform !== 'win32' &&
       !process.env.TMUX &&
-      /(npm (install|test)|pnpm (install|test)|yarn (install|test)?|bun (install|test)|cargo build|make\b|docker\b|pytest|vitest|playwright)/.test(cmd)
+      /(npm (install|test)|pnpm (install|test)|yarn (install|test)|bun (install|test)|cargo build|make\b|docker\b|pytest|vitest|playwright)/.test(cmd)
     ) {
       return {
         additionalContext: [

@@ -4,7 +4,7 @@ description: Run a frontend-focused multi-model workflow for components, layouts
 
 # Frontend - Frontend-Focused Development
 
-Frontend-focused workflow (Research → Ideation → Plan → Execute → Optimize → Review), Gemini-led.
+Frontend-focused workflow (Research → Ideation → Plan → Execute → Optimize → Review), Antigravity-led.
 
 > **Prerequisite:** Requires the external `ccg-workflow` runtime, which is **not** part of the base ECC install. Initialize it with `npx ccg-workflow` to provision `~/.claude/bin/codeagent-wrapper` and the `~/.claude/.ccg/prompts/*` role files this command depends on. Without that runtime, this command will not run correctly.
 
@@ -17,7 +17,7 @@ Frontend-focused workflow (Research → Ideation → Plan → Execute → Optimi
 ## Context
 
 - Frontend task: $ARGUMENTS
-- Gemini-led, Codex for auxiliary reference
+- Antigravity-led, Codex for auxiliary reference
 - Applicable: Component design, responsive layout, UI animations, style optimization
 
 ## Your Role
@@ -25,7 +25,7 @@ Frontend-focused workflow (Research → Ideation → Plan → Execute → Optimi
 You are the **Frontend Orchestrator**, coordinating multi-model collaboration for UI/UX tasks (Research → Ideation → Plan → Execute → Optimize → Review).
 
 **Collaborative Models**:
-- **Gemini** – Frontend UI/UX (**Frontend authority, trustworthy**)
+- **Antigravity** – Frontend UI/UX (**Frontend authority, trustworthy**)
 - **Codex** – Backend perspective (**Frontend opinions for reference only**)
 - **Claude (self)** – Orchestration, planning, execution, delivery
 
@@ -38,7 +38,7 @@ You are the **Frontend Orchestrator**, coordinating multi-model collaboration fo
 ```
 # New session call
 Bash({
-  command: "~/.claude/bin/codeagent-wrapper {{LITE_MODE_FLAG}}--backend gemini --gemini-model gemini-3-pro-preview - \"$PWD\" <<'EOF'
+  command: "~/.claude/bin/codeagent-wrapper {{LITE_MODE_FLAG}}--backend antigravity - \"$PWD\" <<'EOF'
 ROLE_FILE: <role prompt path>
 <TASK>
 Requirement: <enhanced requirement (or $ARGUMENTS if not enhanced)>
@@ -53,7 +53,7 @@ EOF",
 
 # Resume session call
 Bash({
-  command: "~/.claude/bin/codeagent-wrapper {{LITE_MODE_FLAG}}--backend gemini --gemini-model gemini-3-pro-preview resume <SESSION_ID> - \"$PWD\" <<'EOF'
+  command: "~/.claude/bin/codeagent-wrapper {{LITE_MODE_FLAG}}--backend antigravity resume <SESSION_ID> - \"$PWD\" <<'EOF'
 ROLE_FILE: <role prompt path>
 <TASK>
 Requirement: <enhanced requirement (or $ARGUMENTS if not enhanced)>
@@ -69,13 +69,13 @@ EOF",
 
 **Role Prompts**:
 
-| Phase | Gemini |
+| Phase | Antigravity |
 |-------|--------|
-| Analysis | `~/.claude/.ccg/prompts/gemini/analyzer.md` |
-| Planning | `~/.claude/.ccg/prompts/gemini/architect.md` |
-| Review | `~/.claude/.ccg/prompts/gemini/reviewer.md` |
+| Analysis | `~/.claude/.ccg/prompts/antigravity/analyzer.md` |
+| Planning | `~/.claude/.ccg/prompts/antigravity/architect.md` |
+| Review | `~/.claude/.ccg/prompts/antigravity/reviewer.md` |
 
-**Session Reuse**: Each call returns `SESSION_ID: xxx`, use `resume xxx` for subsequent phases. Save `GEMINI_SESSION` in Phase 2, use `resume` in Phases 3 and 5.
+**Session Reuse**: Each call returns `SESSION_ID: xxx`, use `resume xxx` for subsequent phases. Save `ANTIGRAVITY_SESSION` in Phase 2, use `resume` in Phases 3 and 5.
 
 ---
 
@@ -91,7 +91,7 @@ EOF",
 
 ### Phase 0: Prompt Enhancement (Optional)
 
-`[Mode: Prepare]` - If ace-tool MCP available, call `mcp__ace-tool__enhance_prompt`, **replace original $ARGUMENTS with enhanced result for subsequent Gemini calls**. If unavailable, use `$ARGUMENTS` as-is.
+`[Mode: Prepare]` - If ace-tool MCP available, call `mcp__ace-tool__enhance_prompt`, **replace original $ARGUMENTS with enhanced result for subsequent Antigravity calls**. If unavailable, use `$ARGUMENTS` as-is.
 
 ### Phase 1: Research
 
@@ -102,24 +102,24 @@ EOF",
 
 ### Phase 2: Ideation
 
-`[Mode: Ideation]` - Gemini-led analysis
+`[Mode: Ideation]` - Antigravity-led analysis
 
-**MUST call Gemini** (follow call specification above):
-- ROLE_FILE: `~/.claude/.ccg/prompts/gemini/analyzer.md`
+**MUST call Antigravity** (follow call specification above):
+- ROLE_FILE: `~/.claude/.ccg/prompts/antigravity/analyzer.md`
 - Requirement: Enhanced requirement (or $ARGUMENTS if not enhanced)
 - Context: Project context from Phase 1
 - OUTPUT: UI feasibility analysis, recommended solutions (at least 2), UX evaluation
 
-**Save SESSION_ID** (`GEMINI_SESSION`) for subsequent phase reuse.
+**Save SESSION_ID** (`ANTIGRAVITY_SESSION`) for subsequent phase reuse.
 
 Output solutions (at least 2), wait for user selection.
 
 ### Phase 3: Planning
 
-`[Mode: Plan]` - Gemini-led planning
+`[Mode: Plan]` - Antigravity-led planning
 
-**MUST call Gemini** (use `resume <GEMINI_SESSION>` to reuse session):
-- ROLE_FILE: `~/.claude/.ccg/prompts/gemini/architect.md`
+**MUST call Antigravity** (use `resume <ANTIGRAVITY_SESSION>` to reuse session):
+- ROLE_FILE: `~/.claude/.ccg/prompts/antigravity/architect.md`
 - Requirement: User's selected solution
 - Context: Analysis results from Phase 2
 - OUTPUT: Component structure, UI flow, styling approach
@@ -136,10 +136,10 @@ Claude synthesizes plan, save to `.claude/plan/task-name.md` after user approval
 
 ### Phase 5: Optimization
 
-`[Mode: Optimize]` - Gemini-led review
+`[Mode: Optimize]` - Antigravity-led review
 
-**MUST call Gemini** (follow call specification above):
-- ROLE_FILE: `~/.claude/.ccg/prompts/gemini/reviewer.md`
+**MUST call Antigravity** (follow call specification above):
+- ROLE_FILE: `~/.claude/.ccg/prompts/antigravity/reviewer.md`
 - Requirement: Review the following frontend code changes
 - Context: git diff or code content
 - OUTPUT: Accessibility, responsiveness, performance, design consistency issues list
@@ -158,7 +158,7 @@ Integrate review feedback, execute optimization after user confirmation.
 
 ## Key Rules
 
-1. **Gemini frontend opinions are trustworthy**
+1. **Antigravity frontend opinions are trustworthy**
 2. **Codex frontend opinions for reference only**
 3. External models have **zero filesystem write access**
 4. Claude handles all code writes and file operations

@@ -22,140 +22,80 @@
  *   3. Delegates to `scripts/hooks/run-with-flags.js` with the `session:start`
  *      event, which applies hook-profile gating and then runs session-start.js.
  *   4. Passes stdout/stderr through and forwards the child exit code.
- *   5. If the plugin root cannot be found, emits a warning and passes stdin
- *      through unchanged so Claude Code can continue normally.
+ *   5. If the plugin root cannot be found, emits a warning and no stdout so
+ *      Claude Code can continue normally without duplicating the event.
  */
 
 const fs = require('fs');
 const path = require('path');
 const { spawnSync } = require('child_process');
+const { resolveEccRoot } = require('../lib/resolve-ecc-root');
+const { readStdinRaw, resolveMaxStdin } = require('./hook-input');
+const { exitAfterFlush } = require('./lifecycle-hook-bootstrap');
 
-const CURRENT_PLUGIN_SLUG = 'ecc';
-const LEGACY_PLUGIN_SLUG = 'everything-claude-code';
-const KNOWN_PLUGIN_PATHS = [
-  [CURRENT_PLUGIN_SLUG],
-  [`${CURRENT_PLUGIN_SLUG}@${CURRENT_PLUGIN_SLUG}`],
-  ['marketplaces', CURRENT_PLUGIN_SLUG],
-  [LEGACY_PLUGIN_SLUG],
-  [`${LEGACY_PLUGIN_SLUG}@${LEGACY_PLUGIN_SLUG}`],
-  ['marketplaces', LEGACY_PLUGIN_SLUG],
-];
-const CACHE_PLUGIN_SLUGS = [CURRENT_PLUGIN_SLUG, LEGACY_PLUGIN_SLUG];
-
-// Read the raw JSON event from stdin
-const raw = fs.readFileSync(0, 'utf8');
-
-// Path (relative to plugin root) to the hook runner
-const rel = path.join('scripts', 'hooks', 'run-with-flags.js');
-
-/**
- * Returns true when `candidate` looks like a valid ECC plugin root, i.e. the
- * run-with-flags.js runner exists inside it.
- *
- * @param {unknown} candidate
- * @returns {boolean}
- */
-function hasRunnerRoot(candidate) {
-  const value = typeof candidate === 'string' ? candidate.trim() : '';
-  return value.length > 0 && fs.existsSync(path.join(path.resolve(value), rel));
-}
-
-/**
- * Resolves the ECC plugin root using the following priority order:
- *   1. CLAUDE_PLUGIN_ROOT environment variable
- *   2. ~/.claude (direct install)
- *   3. Several well-known plugin sub-paths under ~/.claude/plugins/ (current + legacy)
- *   4. Versioned cache directories under ~/.claude/plugins/cache/{ecc,everything-claude-code}/
- *   5. Falls back to ~/.claude if nothing else matches
- *
- * @returns {string}
- */
-function resolvePluginRoot() {
-  const envRoot = process.env.CLAUDE_PLUGIN_ROOT || '';
-  if (hasRunnerRoot(envRoot)) {
-    return path.resolve(envRoot.trim());
+async function main() {
+  const maxStdin = resolveMaxStdin(process.env.ECC_HOOK_INPUT_MAX_BYTES, {
+    writeDiagnostic: message => process.stderr.write(message)
+  });
+  const { raw, truncated } = await readStdinRaw(process.stdin, {
+    maxStdin,
+    truncated: /^(1|true|yes)$/i.test(
+      String(process.env.ECC_HOOK_INPUT_TRUNCATED_UPSTREAM || '')
+    )
+  });
+  if (truncated) {
+    process.stderr.write(`[SessionStart] stdin exceeded ${maxStdin} bytes; forwarded a bounded prefix\n`);
   }
 
-  const home = require('os').homedir();
-  const claudeDir = path.join(home, '.claude');
+  // Path (relative to plugin root) to the hook runner
+  const rel = path.join('scripts', 'hooks', 'run-with-flags.js');
 
-  if (hasRunnerRoot(claudeDir)) {
-    return claudeDir;
-  }
+// Resolve the ECC plugin root via the shared resolver, probing for the runner
+// so a valid root is one that actually contains run-with-flags.js.
+  const root = resolveEccRoot({ probe: rel });
+  const script = path.join(root, rel);
 
-  const knownPaths = KNOWN_PLUGIN_PATHS.map((segments) =>
-    path.join(claudeDir, 'plugins', ...segments)
-  );
-
-  for (const candidate of knownPaths) {
-    if (hasRunnerRoot(candidate)) {
-      return candidate;
-    }
-  }
-
-  // Walk versioned cache: ~/.claude/plugins/cache/{ecc,everything-claude-code}/<org>/<version>/
-  try {
-    for (const slug of CACHE_PLUGIN_SLUGS) {
-      const cacheBase = path.join(claudeDir, 'plugins', 'cache', slug);
-      for (const org of fs.readdirSync(cacheBase, { withFileTypes: true })) {
-        if (!org.isDirectory()) continue;
-        for (const version of fs.readdirSync(path.join(cacheBase, org.name), { withFileTypes: true })) {
-          if (!version.isDirectory()) continue;
-          const candidate = path.join(cacheBase, org.name, version.name);
-          if (hasRunnerRoot(candidate)) {
-            return candidate;
-          }
-        }
+  if (fs.existsSync(script)) {
+    const result = spawnSync(
+      process.execPath,
+      [script, 'session:start', 'scripts/hooks/session-start.js', 'minimal,standard,strict'],
+      {
+        input: raw,
+        encoding: 'utf8',
+        env: {
+          ...process.env,
+          ECC_HOOK_INPUT_MAX_BYTES: String(maxStdin),
+          ECC_HOOK_INPUT_TRUNCATED_UPSTREAM: truncated ? '1' : '0'
+        },
+        cwd: process.cwd(),
+        timeout: 30000,
       }
+    );
+
+    const stdout = typeof result.stdout === 'string' ? result.stdout : '';
+    let stderr = typeof result.stderr === 'string' ? result.stderr : '';
+    let exitCode = Number.isInteger(result.status) ? result.status : 0;
+
+    if (result.error || result.status === null || result.signal) {
+      const reason = result.error
+        ? result.error.message
+        : result.signal
+          ? 'signal ' + result.signal
+          : 'missing exit status';
+      stderr += '[SessionStart] ERROR: session-start hook failed: ' + reason + '\n';
+      exitCode = 1;
     }
-  } catch {
-    // cache directory may not exist; that's fine
+
+    exitAfterFlush(stdout, stderr, exitCode);
+    return;
   }
 
-  return claudeDir;
-}
-
-const root = resolvePluginRoot();
-const script = path.join(root, rel);
-
-if (fs.existsSync(script)) {
-  const result = spawnSync(
-    process.execPath,
-    [script, 'session:start', 'scripts/hooks/session-start.js', 'minimal,standard,strict'],
-    {
-      input: raw,
-      encoding: 'utf8',
-      env: process.env,
-      cwd: process.cwd(),
-      timeout: 30000,
-    }
+  process.stderr.write(
+    '[SessionStart] WARNING: could not resolve ECC plugin root; skipping session-start hook\n'
   );
-
-  const stdout = typeof result.stdout === 'string' ? result.stdout : '';
-  if (stdout) {
-    process.stdout.write(stdout);
-  } else {
-    process.stdout.write(raw);
-  }
-
-  if (result.stderr) {
-    process.stderr.write(result.stderr);
-  }
-
-  if (result.error || result.status === null || result.signal) {
-    const reason = result.error
-      ? result.error.message
-      : result.signal
-        ? 'signal ' + result.signal
-        : 'missing exit status';
-    process.stderr.write('[SessionStart] ERROR: session-start hook failed: ' + reason + '\n');
-    process.exit(1);
-  }
-
-  process.exit(Number.isInteger(result.status) ? result.status : 0);
 }
 
-process.stderr.write(
-  '[SessionStart] WARNING: could not resolve ECC plugin root; skipping session-start hook\n'
-);
-process.stdout.write(raw);
+main().catch(error => {
+  process.stderr.write(`[SessionStart] bootstrap failed: ${error.message}\n`);
+  process.exitCode = 0;
+});

@@ -1,7 +1,8 @@
 ---
 name: design-system
-description: Use this skill to generate or audit design systems, check visual consistency, and review PRs that touch styling.
-origin: ECC
+description: Use this skill to generate or audit design systems, check visual consistency, and review PRs that touch styling. Use when generating or auditing a design system, checking visual consistency, or reviewing a PR that touches styling.
+metadata:
+  origin: ECC
 ---
 
 # Design System — Generate & Audit Visual Systems

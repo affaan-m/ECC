@@ -1,3 +1,4 @@
+const adalProject = require('./adal-project');
 const antigravityProject = require('./antigravity-project');
 const claudeHome = require('./claude-home');
 const claudeProject = require('./claude-project');
@@ -5,10 +6,14 @@ const codebuddyProject = require('./codebuddy-project');
 const codexHome = require('./codex-home');
 const cursorProject = require('./cursor-project');
 const geminiProject = require('./gemini-project');
+const hermesHome = require('./hermes-home');
 const joycodeProject = require('./joycode-project');
+const kimiProject = require('./kimi-project');
+const openclawHome = require('./openclaw-home');
 const opencodeHome = require('./opencode-home');
 const qwenHome = require('./qwen-home');
 const zedProject = require('./zed-project');
+const { resolveInvocationEnvironment } = require('../invocation-environment');
 
 const ADAPTERS = Object.freeze([
   claudeHome,
@@ -17,11 +22,15 @@ const ADAPTERS = Object.freeze([
   antigravityProject,
   codexHome,
   geminiProject,
+  hermesHome,
   opencodeHome,
+  openclawHome,
   codebuddyProject,
   joycodeProject,
+  kimiProject,
   qwenHome,
   zedProject,
+  adalProject,
 ]);
 
 function listInstallTargetAdapters() {
@@ -41,13 +50,17 @@ function getInstallTargetAdapter(targetOrAdapterId) {
 function planInstallTargetScaffold(options = {}) {
   const adapter = getInstallTargetAdapter(options.target);
   const modules = Array.isArray(options.modules) ? options.modules : [];
+  const exemptValidationCodes = new Set(Array.isArray(options.exemptValidationCodes) ? options.exemptValidationCodes : []);
   const planningInput = {
     repoRoot: options.repoRoot,
     projectRoot: options.projectRoot || options.repoRoot,
     homeDir: options.homeDir,
+    env: resolveInvocationEnvironment(options),
   };
   const validationIssues = adapter.validate(planningInput);
-  const blockingIssues = validationIssues.filter(issue => issue.severity === 'error');
+  const blockingIssues = validationIssues.filter(issue => (
+    issue.severity === 'error' && !exemptValidationCodes.has(issue.code)
+  ));
   if (blockingIssues.length > 0) {
     throw new Error(blockingIssues.map(issue => issue.message).join('; '));
   }

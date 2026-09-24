@@ -10,8 +10,10 @@ from llm.providers.claude import ClaudeProvider
 class FakeMessages:
     def __init__(self, response: SimpleNamespace) -> None:
         self.response = response
+        self.last_params: dict[str, Any] = {}
 
-    def create(self, **_params: object) -> SimpleNamespace:
+    def create(self, **params: object) -> SimpleNamespace:
+        self.last_params = dict(params)
         return self.response
 
 
@@ -109,3 +111,41 @@ def test_generate_text_only_has_no_tool_calls() -> None:
 
     assert output.content == "Hello."
     assert output.tool_calls is None
+
+
+@pytest.mark.unit
+def test_generate_does_not_pass_cache_control_as_top_level_param() -> None:
+    # cache_control is a per-content-block field on the Anthropic Messages API,
+    # not a top-level parameter. Passing it at the top level raises TypeError
+    # in the Anthropic Python SDK (or a 400 from the API).
+    provider = make_provider(make_response([SimpleNamespace(type="text", text="ok")]))
+
+    provider.generate(
+        LLMInput(
+            messages=[
+                Message(role=Role.SYSTEM, content="system prompt"),
+                Message(role=Role.USER, content="hi"),
+            ]
+        )
+    )
+
+    params = provider.client.messages.last_params
+    assert "cache_control" not in params
+
+    # When a system prompt is present, cache_control should ride on the last
+    # system content block so ephemeral prompt caching still works.
+    system = params.get("system")
+    assert isinstance(system, list), "system should be sent as a list of content blocks"
+    assert system, "system content-block list should not be empty"
+    assert system[-1].get("cache_control") == {"type": "ephemeral"}
+
+
+@pytest.mark.unit
+def test_generate_without_system_does_not_set_system_or_cache_control() -> None:
+    provider = make_provider(make_response([SimpleNamespace(type="text", text="ok")]))
+
+    provider.generate(LLMInput(messages=[Message(role=Role.USER, content="hi")]))
+
+    params = provider.client.messages.last_params
+    assert "cache_control" not in params
+    assert "system" not in params

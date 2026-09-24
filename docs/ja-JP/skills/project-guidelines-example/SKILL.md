@@ -1,3 +1,10 @@
+---
+name: project-guidelines-example
+description: Project-specific skill template covering architecture, patterns, testing, and deployment guidance.
+metadata:
+  origin: ECC
+---
+
 # プロジェクトガイドラインスキル（例）
 
 これはプロジェクト固有のスキルの例です。自分のプロジェクトのテンプレートとして使用してください。
@@ -159,7 +166,7 @@ async def analyze_with_claude(content: str) -> AnalysisResult:
     client = Anthropic()
 
     response = client.messages.create(
-        model="claude-sonnet-4-5-20250514",
+        model="claude-sonnet-5",
         max_tokens=1024,
         messages=[{"role": "user", "content": content}],
         tools=[{
