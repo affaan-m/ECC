@@ -1,0 +1,14 @@
+[package]
+name = "ecc-package-manager"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+thiserror = "1.0"
+regex = "1.10"
+dirs = "5.0"
+chrono = { version = "0.4", features = ["serde"] }
+which = "6.0"
+once_cell = "1.19"
