@@ -74,9 +74,9 @@ Discovery evidence comes from the generation's empty project. Task launch inheri
 
 ## Outcome-evaluation pilot
 
-`docker/context-profiles/ai-eval.js` preregisters a fixed selection and artifact corpus before any provider call. It binds the corpus, profile plans, registry, implementation, Node runtime, parser/validator dependency versions, model and executable digests. Real execution requires an explicit flag and a separately provisioned `CODEX_API_KEY`; it never copies the user's Codex authentication or configuration. Each call runs with a disposable home and workspace, bounded output, deadline and call count. Results contain allowlisted metrics and independent artifact assertions, not prompts, transcripts, paths or credentials.
+`docker/context-profiles/ai-eval.js` is a development-only evaluator; it lives outside the published package. It preregisters a fixed corpus of 30 small coding tasks and at least 30 selection probes before any provider call, binding the corpus, profile plans, registry, implementation, Node runtime, dependency versions, model and executable digests. Each run prepares real Lean and Full Codex installs through the isolated native adapter above, then compares native Full discovery, manual Lean and Auto Lean on identical workspaces. A hidden grader enters each workspace only after the agent exits and runs read-only where Node supports its permission model.
 
-The bundled pilot has 13 selection cases and eight distinct paired tasks. It is intentionally below the preregistered 30-case and 30-task threshold, so its gate is always `insufficient-sample`. Synthetic provider tests prove the harness and grading path only. See `context-profile-ai-evaluation.md` for the measurement contract and statistical limits.
+Real execution requires an explicit flag and either a dedicated subscription login home (`--auth-home`) or `CODEX_API_KEY`. A subscription login is leased into each isolated call home, refreshed tokens are returned to the login home, and the leased copy is always removed. The evaluator never reads or copies the user's own Codex home. Results contain allowlisted metrics and hidden-check verdicts, not prompts, transcripts, paths or credentials. See `context-profile-ai-evaluation.md` for the setup, measurement contract and statistical limits.
 
 ## Community integration
 

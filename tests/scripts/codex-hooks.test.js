@@ -404,6 +404,7 @@ function runHermeticPythonPrePush({
       ? process.env.PATH
       : `${toBashPath(pathBin)}${path.delimiter}${process.env.PATH}`,
     HOME: process.env.HOME ?? '',
+    ECC_PREPUSH_RUN_CHECKS: '1',
     ECC_SKIP_GIT_HOOKS: '0',
     ECC_SKIP_PREPUSH: '0',
     MSYS_NO_PATHCONV: '1',

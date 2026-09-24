@@ -1,144 +1,128 @@
-# Context profile AI evaluation pilot
+# Context profile AI evaluation
 
-This source-only evaluation compares concrete artifact outcomes with the existing
-launcher and resolver. It does not change those APIs, install a profile, or certify
-native workflow invocation. No provider call occurs without an injected test
-provider or the explicit `--allow-real-provider` flag.
+This development-only evaluator measures whether Lean with Auto selection completes real
+coding tasks as well as Full. It lives in `docker/context-profiles/` and is not part of
+the published npm package. No provider call occurs without an injected test provider or
+the explicit `--allow-real-provider` flag. Reports never approve a release on their own.
 
-## Preregistered design
+## What it compares
 
-`docker/context-profiles/ai-corpus.json` fixes 13 selection probes and eight artifact
-tasks before execution. Selection covers exact names, paraphrases, irrelevant
-arithmetic, misleading workflow vocabulary, explicit opt-out, exclusion,
-conflicting opt-out, unknown IDs, and native-authority rejection. The task set
-covers stable aggregation, pagination exhaustion, strict text extraction, numeric
-boundary partitions, instruction-like untrusted data, and three no-workflow cases.
-These are deliberately small, purposively selected cases. They are representative
-of routing situations, not a statistically representative production population.
+`docker/context-profiles/ai-corpus.json` fixes 30 small coding tasks and at least 30
+selection probes before execution. Each task is a tiny CommonJS workspace with a bug or
+missing behavior; about two thirds benefit from a specific ECC skill and the rest need
+none, including tasks with misleading workflow vocabulary. Each task carries a hidden
+grader that the agent never sees.
 
-Every task runs in all three arms, in separate fresh workspaces with identical
-input. Arm order rotates by task and repeat to reduce fixed ordering effects.
+Every task runs in all three arms, in separate fresh workspaces with identical files.
+Arm order rotates by task and repeat to reduce fixed ordering effects.
 
-| Arm | Discovery data supplied to task call | Workflow selection |
+| Arm | Codex install | ECC task context |
 | --- | --- | --- |
-| Full | Full registry metadata | Preregistered explicit IDs |
-| manual Lean | Lean kernel metadata | Same preregistered explicit IDs |
-| Auto Lean | Lean kernel metadata | Explicit IDs or a bounded admitted agent proposal |
+| Full | Real Full install: every skill natively discoverable | None; the host chooses from its own catalog |
+| manual Lean | Real Lean install: three-entry core | The task's preregistered skill, loaded by the launcher |
+| Auto Lean | Same Lean install | The resolver's shortlist plus one bounded agent proposal |
 
-The Full baseline therefore measures full discovery overhead against a known
-manual workflow choice. It does not load every workflow body. Discovery metadata
-is supplied as prompt reference data, since the current launcher does not render
-native discovery catalogs. Loaded bodies and dependencies still come exclusively
-from `launchTaskContext`. Auto proposal cost is included in task totals. Separate
-selection probes use `resolveTaskContext` and `proposeTaskContext` directly and do
-not count toward paired outcome sample size.
+Both installs are prepared through the isolated native adapter (`applyStore` then
+`prepareNativeProfile`), the same path users get. Before every call the evaluator
+re-verifies the install's recorded inventory and stops with `environment-drift` if
+Codex changed discovery configuration or skill bytes. Full therefore measures today's
+native experience, including its real startup context, rather than a simulated catalog.
 
-Preregistration also binds the exact Node runtime and the pinned `ajv` and
-`js-yaml` dependency versions used by validation and profile parsing. A runtime
-or dependency change therefore invalidates retained registration before calls.
+## Hidden grading
 
-Each task must produce `result.json`. The evaluator reads that artifact after the
-provider exits, compares it against independent closed-set assertions, and checks
-that input bytes survived. Provider exit status, claimed success, and correct
-workflow selection alone cannot pass an outcome. Expected artifacts are absent
-from provider inputs. These are bounded data-processing and reasoning outcomes,
-not evidence of broad software implementation ability or security containment.
-Extending tasks requires updating the independent assertions and versioning the
-corpus before gathering new evidence.
+After the agent exits, the evaluator writes the grader into the workspace and runs it
+with Node. Exit zero passes. An agent that plants its own grader file fails. On Node 20
+and later the grader runs under Node's permission model with read access limited to the
+workspace, so it cannot write files, spawn processes or start workers. Network access is
+not restricted by that model; run live evaluations inside the Tier 1 sandbox when that
+matters. Provider exit status and claimed success alone never pass a task.
 
-## Pins and execution
+`tests/lib/context-profile-eval-corpus.test.js` proves every grader fails on the initial
+files and passes on an independent reference solution kept in
+`tests/fixtures/context-eval-references.json`, which is never shown to the agent.
 
-Generate and retain registration before enabling provider work:
+## Setup with a ChatGPT subscription
+
+The Codex adapter supports exactly Codex 0.154.0 and 0.155.1. Install a pinned copy
+next to, not over, your everyday Codex:
 
 ```sh
-node docker/context-profiles/ai-eval.js --plan \
-  --executable /absolute/path/to/codex --model YOUR_PINNED_MODEL \
-  > /tmp/ecc-ai-registration.json
-node docker/context-profiles/ai-eval.js --allow-real-provider \
-  --registration /tmp/ecc-ai-registration.json \
-  --executable /absolute/path/to/codex --model YOUR_PINNED_MODEL \
-  --max-calls 80 --deadline-ms 600000 > /tmp/ecc-ai-metrics.json
+npm install --prefix ~/.ecc-eval/codex @openai/codex@0.155.1
 ```
 
-The registration binds corpus bytes semantically using canonical JSON, registry
-resource digests, both profile plans, evaluator and launch/resolver implementation
-digests, model and executable fingerprints, case order, repeats, and analysis
-thresholds. A plan without model/executable options is an offline preview and
-cannot authorize live execution. A changed registration or
-source stops execution. Repeated sampling requires the same `--repeats N` at
-registration and execution. A changed corpus is a new experiment, never a silent
-replacement for failed cases.
+Create a dedicated login home and sign in once. The file credential store keeps the
+login in `auth.json`, which the evaluator can lease:
 
-Use an actual Codex executable supporting `exec --json`, `--ephemeral`,
-`--ignore-user-config`, and `--ignore-rules`. Authentication must be explicitly
-provisioned by the operator as `CODEX_API_KEY` in the evaluation environment.
-The runner forwards that variable only to the opted-in subprocess, never writes
-it, never copies auth files, and never uses the user's existing Codex home.
-Each call uses a disposable home, a disposable cwd, and an allowlisted environment.
-Selection is read-only; artifact execution uses workspace-write with approval
-policy `never`. The parent sandbox runner owns stronger process/network isolation.
-A disposable cwd is not itself a security boundary.
+```sh
+mkdir -m 700 -p ~/.ecc-eval/auth
+CODEX_HOME=~/.ecc-eval/auth ~/.ecc-eval/codex/node_modules/.bin/codex login \
+  -c 'cli_auth_credentials_store="file"'
+chmod 600 ~/.ecc-eval/auth/auth.json
+```
 
-Defaults are 80 provider calls, a ten-minute overall execution deadline, and at
-most two minutes per call. Proposal calls retain the launcher's tighter timeout.
-Hard limits are 2,000 calls, one hour, and 120 seconds per call. Calls use bounded
-stdout/stderr buffers and kill on timeout. No retries are hidden in the evaluator.
-Codex/provider internal request retries are outside this process-call accounting.
-Every scheduled outcome remains in the denominator after a budget, deadline,
-provider, or assertion failure. Workspaces are removed in `finally`.
+For each call, the evaluator copies `auth.json` into the isolated install's
+`CODEX_HOME`, runs Codex, writes any refreshed tokens back to the login home, and always
+deletes the copy. It refuses a login home that is your own `~/.codex` or `CODEX_HOME`,
+or that other users can read. It never reads your everyday Codex home. Calls run
+sequentially, so refreshed tokens cannot race. Usage counts against your subscription's
+rate limits. `CODEX_API_KEY` remains an alternative when no `--auth-home` is given.
+
+## Running
+
+Register first, then execute against the retained registration:
+
+```sh
+CODEX=$(realpath ~/.ecc-eval/codex/node_modules/@openai/codex/bin/codex.js)
+node docker/context-profiles/ai-eval.js --plan \
+  --executable "$CODEX" --model YOUR_PINNED_MODEL > /tmp/ecc-ai-registration.json
+node docker/context-profiles/ai-eval.js --allow-real-provider \
+  --registration /tmp/ecc-ai-registration.json \
+  --executable "$CODEX" --model YOUR_PINNED_MODEL \
+  --auth-home ~/.ecc-eval/auth > /tmp/ecc-ai-metrics.json
+```
+
+The registration binds corpus bytes, registry resource digests, both profile plans,
+evaluator, launcher, resolver and native adapter digests, model and executable
+fingerprints, case order, repeats and analysis thresholds. A changed source stops
+execution. Repeated sampling requires the same `--repeats N` at registration and
+execution. A changed corpus is a new experiment, never a silent replacement for failed
+cases.
+
+Defaults are 300 provider calls, a one-hour overall deadline and five minutes per task
+call. Hard limits are 2,000 calls, four hours and ten minutes per call. Proposal calls
+retain the launcher's tighter timeout. A single pass of the bundled corpus makes about
+90 task calls plus up to one proposal call per Auto task and selection probe. Every
+scheduled outcome remains in the denominator after a budget, deadline, provider, drift
+or grading failure. Workspaces and installs are removed in `finally`.
 
 ## Metrics and statistical limits
 
-The JSON report is built from an allowlist: case IDs, arm, repeat, pass/fail,
-controlled failure codes, admitted skill IDs, digests, call counts, elapsed time,
-and numeric usage. Transcripts, prompts, paths, stderr, credentials, and model
-messages are never emitted or persisted by the evaluator. JSONL exists only in
-bounded process memory. Valid usage requires one `turn.completed` record with
-nonnegative integer input, cached-input and output counters. Cached input is a
-subset of input, not an additive extra. Missing/malformed usage is unknown,
-never zero. Provider usage covers the observed invocation, including tool-turn
-context if reported by Codex; it is not a native discovery-only token counter.
+The JSON report is built from an allowlist: case IDs, arm, repeat, pass/fail, controlled
+failure codes, selected skill IDs, digests, call counts, elapsed time, numeric usage,
+install skill counts and the authentication mode. Transcripts, prompts, paths, stderr
+and credentials are never emitted or persisted. Valid usage requires one
+`turn.completed` record with nonnegative integer input, cached-input and output
+counters. Missing or malformed usage is unknown, never zero.
 
 Selection accuracy includes a descriptive 95% Wilson interval. Paired pass-rate
-differences against Full use a conservative bounded Hoeffding interval, with
-Bonferroni correction across the two comparisons. Repeats are first averaged
-within distinct task IDs. Repeating eight tasks never creates 30 independent
-tasks. These intervals are descriptive under a purposive corpus; no production
-population generalization is justified.
+differences against Full use a conservative bounded Hoeffding interval with Bonferroni
+correction across the two comparisons. Repeats are averaged within distinct task IDs
+first, so repeating tasks never creates new independent tasks. The corpus is purposive,
+so no production population generalization is justified.
 
 The preregistered minimum is 30 distinct tasks and 30 selection cases, with a
-five-percentage-point noninferiority margin. The bundled pilot necessarily reports
-`insufficient-sample`, even for perfect results. Injected-provider evidence cannot
-establish real model quality. Reports never automatically approve a release.
-A larger independently chosen corpus, actual provider observations, adequate
-precision, and human review are required for claims beyond this pilot.
+five-percentage-point noninferiority margin. With 30 tasks the Hoeffding interval is
+still wide, so a first live run is expected to report `review-required` without
+supporting noninferiority. Use its observed variance to size the next corpus.
 
 ## Deterministic verification
 
 ```sh
-node --test tests/lib/context-profile-eval.test.js
+node --test tests/lib/context-profile-eval.test.js tests/lib/context-profile-eval-corpus.test.js
 node docker/context-profiles/ai-eval.js --plan
 ```
 
-`runEvaluation({ provider })` accepts a synchronous provider returning the same
-`{ status, stdout, error? }` envelope as `spawnSync`; stdout is Codex JSONL. The
-request contains phase, input, disposable cwd/home, timeout and output bound.
-Injected code is trusted test code and must honor its timeout; JavaScript cannot
-preempt a blocking in-process function. Tests write artifacts independently and
-cover incorrect success claims, cleanup, usage parsing, pin mismatch, budgets,
-confidence intervals, CLI rejection, and opt-in enforcement. A passing synthetic
-run validates the framework, never the model's efficacy.
-
-## Initial deterministic findings
-
-The initial resolver selected `skill:security-review` for literal workflow words.
-The integration removes unconditional name admission and adds a negative skill
-mention to the fixed pilot. Both now require the agent to decide whether context
-is useful. Synthetic outcomes validate the measurement path and assertions only.
-No live provider outcomes have been collected; the pilot gate stays
-`insufficient-sample`. Credential preflight fails before the first real call when
-the disposable environment has no `CODEX_API_KEY`.
-
-A valid CLI report exits zero even when cases fail or the sample is insufficient.
-Consumers must inspect the report's case results and gate. Argument, configuration
-and preregistration failures exit one with a sanitized message.
+Injected providers validate the measurement path, isolation, grading, lease handling
+and sanitization. A passing synthetic run validates the framework, never model quality.
+A valid CLI report exits zero even when cases fail or the sample is insufficient;
+consumers must inspect case results and the gate.
