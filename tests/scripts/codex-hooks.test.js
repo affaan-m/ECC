@@ -916,7 +916,7 @@ if (
       const merged = fs.readFileSync(configPath, 'utf8');
       const parsed = TOML.parse(merged);
       assert.strictEqual(parsed.mcp_servers['chrome-devtools'].command, 'npx');
-      assert.deepStrictEqual(parsed.mcp_servers['chrome-devtools'].args, ['chrome-devtools-mcp@latest']);
+      assert.deepStrictEqual(parsed.mcp_servers['chrome-devtools'].args, ['chrome-devtools-mcp@1.10.1']);
       assert.strictEqual(parsed.mcp_servers['chrome-devtools'].startup_timeout_sec, 30);
       // No retired server may be (re-)emitted — exa's url form broke Codex (#2224).
       assert.strictEqual(parsed.mcp_servers.exa, undefined);
