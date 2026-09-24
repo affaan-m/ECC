@@ -2,6 +2,12 @@
 
 This directory contains the **Codex plugin manifest** for ECC.
 
+> **Portable manifest first.** `plugin.json` at the repository root is ECC's
+> [Agent Plugins 1.0.0](https://agent-plugins.org) manifest and carries the OpenAI
+> plugin directory metadata under `extensions["com.openai"]`. This directory remains
+> as the documented compatibility overlay for Codex builds that still read it, and the
+> two manifests are kept in sync by `tests/plugin-manifest.test.js`.
+
 ## Structure
 
 ```

@@ -35,8 +35,8 @@
       "Write"
     ],
     "websiteURL": "https://ecc.tools",
-    "privacyPolicyURL": "https://docs.github.com/en/site-policy/privacy-policies/github-general-privacy-statement",
-    "termsOfServiceURL": "https://docs.github.com/en/site-policy/github-terms/github-terms-of-service",
+    "privacyPolicyURL": "https://ecc.tools/privacy",
+    "termsOfServiceURL": "https://ecc.tools/terms",
     "brandColor": "#E07856",
     "composerIcon": "./assets/ecc-icon.svg",
     "logo": "./assets/hero.png",

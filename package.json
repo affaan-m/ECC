@@ -73,6 +73,7 @@
     "CONTRIBUTING.md",
     "VERSION",
     "agent.yaml",
+    "plugin.json",
     "assets/ecc-icon.svg",
     "assets/hero.png",
     "assets/images/community/",
