@@ -373,7 +373,7 @@ String port = this.getConfiguration("server.port");
 - [アーキテクチャと設定](references/architecture.md) — 抽象化、パッケージマップ、プロパティ
 - [ルーティングと@Action](references/routing.md) — アノテーションの詳細、モード、パラメータ
 - [データ処理](references/data-handling.md) — Builder、Builders、JSONのシリアライズ・パース
-- [データベース永続化](../../../../skills/tinystruct-patterns/references/database.md) — AbstractData POJO、CRUD、アノテーションとXMLマッピング、POJO生成、テーブルの自動作成
+- [データベース永続化](references/database.md) — AbstractData POJO、CRUD、アノテーションとXMLマッピング、POJO生成、テーブルの自動作成
 - [システムと使用方法](references/system-usage.md) — Context、セッション、SSE、ファイルアップロード、イベント、ネットワーキング
 - [テストパターン](references/testing.md) — JUnit 5 によるユニットテストとHTTP統合テスト
 
