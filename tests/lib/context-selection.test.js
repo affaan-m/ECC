@@ -156,7 +156,8 @@ test('source changes invalidate reuse and source-bound load preview', () => with
 test('bounded search uses canonical IDs and deterministic order', () => withFixture(repoRoot => {
   const result = resolve(repoRoot, { query: 'feature' });
   assert.equal(result.candidates[0].id, 'skill:feature');
-  assert.deepEqual(result.selectedIds, []);
+  assert.deepEqual(result.selectedIds, ['skill:feature']);
+  assert.equal(result.reason, 'auto-selection');
   assert.ok(result.candidates.length <= 5);
 }));
 
@@ -169,13 +170,14 @@ test('generic lexical relevance requests agent selection instead of loading the 
   assert.equal(result.reason, 'agent-selection-required');
 }));
 
-test('complete canonical and native names shortlist the exact skill for an agent decision', () => withFixture(repoRoot => {
+test('a single complete canonical or native name auto-selects the cited skill', () => withFixture(repoRoot => {
   write(repoRoot, 'skills/feature/SKILL.md', '---\nname: native-feature\ndescription: Feature workflow\n---\nFeature instructions');
   for (const query of ['Use skill:feature.', 'Use the native-feature skill.', 'Use Native Feature guidance.']) {
     const result = resolve(repoRoot, { query }, { load: true });
-    assert.deepEqual(result.loadedIds, []);
+    assert.deepEqual(result.loadedIds, ['skill:feature']);
     assert.equal(result.candidates[0].id, 'skill:feature');
-    assert.equal(result.reason, 'agent-selection-required');
+    assert.equal(result.reason, 'auto-selection');
+    assert.equal(result.receipt.autoSelection.exact, true);
   }
 }));
 
@@ -206,25 +208,37 @@ test('normalization cannot turn a native name into an empty-query anchor', () =>
   assert.deepEqual(resolve(repoRoot, {}).selectedIds, []);
 }));
 
+// [label, query, expected]. Expected 'auto' arms must auto-select the pinned
+// skill (reason 'auto-selection'); 'agent' arms must defer to the bounded
+// proposal path (reason 'agent-selection-required', nothing loaded).
 const QUERY_CORPUS = [
-  ['small Python defect', 'Fix an off-by-one bug in a Python function that indexes a list.'],
-  ['React keyboard accessibility', 'Fix keyboard navigation and focus handling in our React settings form.'],
-  ['PostgreSQL migration review', 'Review a PostgreSQL migration that adds an indexed nullable column without downtime.'],
-  ['read-only JavaScript review', 'Review this JavaScript pull request for input validation bugs without modifying the code.'],
-  ['RAG literature research', 'Find recent papers about retrieval augmented generation and compare their experimental evidence.'],
-  ['npm release verification', 'Prepare a release checklist for our npm package, verifying the packed archive and test results.'],
-  ['API documentation', 'Update the API documentation to explain the new pagination response fields and include an example.'],
-  ['Rust memory diagnosis', 'Diagnose a memory leak in a Rust background worker service.'],
-  ['mixed-stack feature', 'Add a React preferences form and a Django endpoint that saves preferences in PostgreSQL.'],
+  ['small Python defect', 'Fix an off-by-one bug in a Python function that indexes a list.', 'agent'],
+  ['React keyboard accessibility', 'Fix keyboard navigation and focus handling in our React settings form.', 'auto', 'skill:frontend-a11y'],
+  ['PostgreSQL migration review', 'Review a PostgreSQL migration that adds an indexed nullable column without downtime.', 'auto', 'skill:database-migrations'],
+  ['read-only JavaScript review', 'Review this JavaScript pull request for input validation bugs without modifying the code.', 'agent'],
+  ['RAG literature research', 'Find recent papers about retrieval augmented generation and compare their experimental evidence.', 'agent'],
+  ['npm release verification', 'Prepare a release checklist for our npm package, verifying the packed archive and test results.', 'agent'],
+  ['API documentation', 'Update the API documentation to explain the new pagination response fields and include an example.', 'agent'],
+  ['Rust memory diagnosis', 'Diagnose a memory leak in a Rust background worker service.', 'agent'],
+  ['mixed-stack feature', 'Add a React preferences form and a Django endpoint that saves preferences in PostgreSQL.', 'agent'],
 ];
 
-for (const [label, query] of QUERY_CORPUS) {
-  test(`actual registry: ${label} needs an agent decision before loading`, () => {
+for (const [label, query, arm, expectedId] of QUERY_CORPUS) {
+  test(`actual registry: ${label} ${arm === 'auto' ? 'auto-selects its skill' : 'needs an agent decision before loading'}`, () => {
     const result = resolveTaskContext({ task: task({ query }), load: true });
-    assert.deepEqual(result.selectedIds, []);
-    assert.deepEqual(result.loadedIds, []);
-    assert.equal(result.reason, 'agent-selection-required');
     assert.ok(result.candidates.length > 0 && result.candidates.length <= 5);
+    if (arm === 'auto') {
+      assert.deepEqual(result.selectedIds, [expectedId]);
+      assert.deepEqual(result.loadedIds, [expectedId]);
+      assert.equal(result.reason, 'auto-selection');
+      assert.equal(result.receipt.autoSelection.id, expectedId);
+      assert.equal(result.receipt.decision, 'selected');
+    } else {
+      assert.deepEqual(result.selectedIds, []);
+      assert.deepEqual(result.loadedIds, []);
+      assert.equal(result.reason, 'agent-selection-required');
+      assert.equal(result.receipt.decision, 'pending');
+    }
   });
 }
 
@@ -234,11 +248,12 @@ test('actual registry: a simple factual question needs no context', () => {
   assert.deepEqual(result.candidates, []);
 });
 
-test('actual registry: the full Python patterns name is proposed without loading', () => {
+test('actual registry: the full Python patterns name auto-selects the cited skill', () => {
   const result = resolveTaskContext({ task: task({ query: 'Use Python patterns for this change.' }), load: true });
-  assert.deepEqual(result.loadedIds, []);
+  assert.deepEqual(result.loadedIds, ['skill:python-patterns']);
   assert.equal(result.candidates[0].id, 'skill:python-patterns');
-  assert.equal(result.reason, 'agent-selection-required');
+  assert.equal(result.reason, 'auto-selection');
+  assert.equal(result.receipt.autoSelection.exact, true);
 });
 
 test('invalid input and oversized bodies fail closed', () => withFixture(repoRoot => {

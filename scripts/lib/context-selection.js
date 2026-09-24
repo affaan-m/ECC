@@ -9,6 +9,16 @@ const { DEFAULT_REPO_ROOT, createSourceReader, digestObject } = require('./conte
 const MAX_CANDIDATES = 5;
 const MAX_SELECTED = 8;
 const MAX_CONTEXT_BYTES = 32000;
+// Auto-admission bar, calibrated on the pinned probe corpus in
+// tests/lib/context-retrieval.test.js: admit the ranked top skill without a
+// provider proposal only when the match is strong in absolute terms and
+// clearly separated from the second candidate. Exact canonical-name anchors
+// are admitted when exactly one skill is cited. Revisit these values when the
+// pinned-embedder upgrade changes score distributions.
+const AUTO_ADMIT_MIN_BM25 = 20;
+const AUTO_ADMIT_MIN_TERMS = 3;
+const AUTO_ADMIT_MARGIN = 1.5;
+const ROUTING_POLICY_VERSION = 3;
 const TASK_KEYS = new Set(['sessionId', 'taskId', 'revision', 'phase', 'query', 'explicitIds', 'proposedIds', 'noWorkflow']);
 const STOP_WORDS = new Set('a an and are for from help i in is it me my of on please the to with'.split(' '));
 
@@ -137,7 +147,7 @@ function resolveTaskContext({ repoRoot = DEFAULT_REPO_ROOT, task, profileId = 'l
     if (excluded.has(id)) throw new Error(`Context ID is excluded: ${id}`);
   });
   const taskBinding = { sessionId: task.sessionId, taskId: task.taskId, revision: task.revision, phase: task.phase };
-  const bindingDigest = digestObject({ ...taskBinding, planDigest: plan.planDigest, routingPolicyVersion: 2 });
+  const bindingDigest = digestObject({ ...taskBinding, planDigest: plan.planDigest, routingPolicyVersion: ROUTING_POLICY_VERSION });
   const reused = Boolean(previous && previous.bindingDigest === bindingDigest && !task.noWorkflow
     && ['selected', 'none'].includes(previous.decision) && !explicitIds.length && !proposedIds.length);
   const admissible = id => {
@@ -154,9 +164,28 @@ function resolveTaskContext({ repoRoot = DEFAULT_REPO_ROOT, task, profileId = 'l
   };
   const { candidates } = task.noWorkflow || selectionMode === 'manual' || reused
     ? { candidates: [] } : candidatesFor(task.query || '', registry.entries, excluded, admissible);
+  // Auto admission: free-text routing loads the ranked top skill only on
+  // unambiguous evidence, or when exactly one complete skill name is cited.
+  // Everything else keeps the bounded-proposal path so the primary agent
+  // decides ambiguous cases during work it was already doing.
+  const exactAnchors = candidates.filter(candidate => candidate.exact);
+  let autoSelection = null;
+  if (!task.noWorkflow && selectionMode === 'auto' && !reused && !explicitIds.length && !proposedIds.length && candidates.length) {
+    if (exactAnchors.length === 1) {
+      autoSelection = { id: exactAnchors[0].id, bm25: exactAnchors[0].bm25,
+        matchedTerms: exactAnchors[0].matchedTerms.length, exact: true };
+    } else if (!exactAnchors.length) {
+      const top = candidates[0];
+      const second = candidates[1];
+      if (top.bm25 >= AUTO_ADMIT_MIN_BM25 && top.matchedTerms.length >= AUTO_ADMIT_MIN_TERMS
+        && (!second || top.bm25 >= AUTO_ADMIT_MARGIN * (second.bm25 || 0))) {
+        autoSelection = { id: top.id, bm25: top.bm25, matchedTerms: top.matchedTerms.length, exact: false };
+      }
+    }
+  }
   const requested = task.noWorkflow ? [] : explicitIds.length ? explicitIds
     : reused ? previous.selectedIds : selectionMode === 'manual' ? []
-      : proposedIds.length ? proposedIds : [];
+      : proposedIds.length ? proposedIds : autoSelection ? [autoSelection.id] : [];
   const effectiveExplicit = reused ? previous.explicitIds : explicitIds;
   const selectedIds = selectedClosure(requested, new Set(effectiveExplicit), byId, excluded, reader);
   const selectionDigest = digestObject({ bindingDigest, selectedIds, explicitIds: effectiveExplicit });
@@ -164,20 +193,22 @@ function resolveTaskContext({ repoRoot = DEFAULT_REPO_ROOT, task, profileId = 'l
   const resources = load && selectionMode !== 'suggest' ? readSelected(selectedIds, byId, reader) : [];
   const loadedIds = [...new Set(resources.map(resource => resource.id))].sort();
   const reason = task.noWorkflow ? 'no-workflow-needed' : reused ? 'reused-pinned-selection'
-    : explicitIds.length ? 'explicit-selection' : proposedIds.length && selectedIds.length ? 'bounded-local-selection'
-      : candidates.length ? 'agent-selection-required' : 'no-selection';
+    : explicitIds.length ? 'explicit-selection' : autoSelection ? 'auto-selection'
+      : proposedIds.length && selectedIds.length ? 'bounded-local-selection'
+        : candidates.length ? 'agent-selection-required' : 'no-selection';
   const decision = selectedIds.length ? 'selected' : reason === 'agent-selection-required' ? 'pending' : 'none';
   const receiptValue = { schemaVersion: 'ecc.task-context-receipt.v1', ...taskBinding, bindingDigest,
     selectionDigest, profileId: plan.profileId, selectionMode, target, registryDigest: registry.registryDigest,
     decision, selectedIds, explicitIds: effectiveExplicit, loadedIds,
     resources: resources.map(({ content: _content, ...resource }) => resource) };
+  if (autoSelection) receiptValue.autoSelection = autoSelection;
   return { schemaVersion: 'ecc.task-context.v1', profileId: plan.profileId, selectionMode, target,
     reason, reused, selectedIds, loadedIds, candidates, resources,
     activation: loadedIds.length ? 'context-returned' : 'proposed', nativeInvocation: 'unobserved',
     enforcement: 'prompt-advisory', maxContextBytes: MAX_CONTEXT_BYTES,
     receipt: { ...receiptValue, receiptDigest: digestObject(receiptValue) },
     limitations: ['Context returned by this command is data for the calling agent; native invocation and execution are unobserved.',
-      'Free-text and complete skill names rank suggestions only. Loading requires explicit IDs or admitted agent-proposed IDs.',
+      'Auto mode admits a ranked skill only on calibrated unambiguous evidence or a single cited skill name; ambiguous routing still requires an explicit ID or an admitted agent proposal.',
       'Selection grants no tools, hooks, network access, installation or persistent configuration changes.',
       'The byte cap is an output bound, not a measured native token budget. Declared workflow dependencies remain incomplete.'] };
 }

@@ -96,7 +96,7 @@ function buildRetrievalIndex(entries) {
     }
     return { entry, fields, weighted, docLength,
       dense: denseVector([fields.name, fields.description]),
-      exactName: normalizedName(entry.id.slice('skill:'.length)) === normalizedName(entry.name || '') ? normalizedName(entry.name) : null };
+      aliases: [...new Set([entry.id.slice('skill:'.length), entry.name].filter(Boolean).map(normalizedName))] };
   });
   const documentFrequency = new Map();
   for (const document of documents) {
@@ -152,8 +152,8 @@ function searchRetrieval(index, query, { limit = 5 } = {}) {
   addRank(denseRanked, 0.8);
   // A complete canonical/native name in the query anchors that skill first,
   // matching the previous contract and how agents cite skills.
-  const exactAnchors = index.documents.filter(document => document.exactName
-    && normalizedQuery.includes(` ${document.exactName} `));
+  const exactAnchors = index.documents.filter(document => document.aliases
+    .some(alias => alias && normalizedQuery.includes(` ${alias} `)));
   for (const document of exactAnchors) fused.set(document, (fused.get(document) || 0) + 1);
   if (!fused.size) return [];
   return [...fused.entries()]
