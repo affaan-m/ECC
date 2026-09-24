@@ -168,14 +168,20 @@ function readLatestContextTokens(transcriptPath, options = {}) {
  * unmarked intermediate size such as 400k. Callers must not present inferred
  * windows as fact.
  *
+ * @param {number} tokens
+ * @param {string} [model]
+ * @param {object} [env] - Environment to read overrides from; defaults to
+ *   process.env. Callers supporting injected environments (hook run()
+ *   options.env) must pass theirs through so window overrides are honored
+ *   consistently with the threshold controls.
  * @returns {{ windowTokens: number, inferred: boolean }}
  */
-function resolveContextWindow(tokens, model) {
+function resolveContextWindow(tokens, model, env) {
   // Explicit window override wins: 400k models (e.g. Opus 4.x) match neither the
   // 200k default nor the 1M marker and would otherwise report ~double usage (#2290).
   // Honor ECC's own knob and Claude Code's native CLAUDE_CODE_AUTO_COMPACT_WINDOW.
-  const env = (typeof process !== 'undefined' && process.env) || {};
-  const envWindow = Number.parseInt(env.ECC_CONTEXT_WINDOW_TOKENS || env.CLAUDE_CODE_AUTO_COMPACT_WINDOW || '', 10);
+  const environment = env || (typeof process !== 'undefined' && process.env) || {};
+  const envWindow = Number.parseInt(environment.ECC_CONTEXT_WINDOW_TOKENS || environment.CLAUDE_CODE_AUTO_COMPACT_WINDOW || '', 10);
   if (Number.isInteger(envWindow) && envWindow > 0) {
     return { windowTokens: envWindow, inferred: false };
   }
