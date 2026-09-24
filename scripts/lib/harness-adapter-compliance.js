@@ -308,6 +308,42 @@ const ADAPTER_RECORDS = Object.freeze([
     source_docs: ['docs/architecture/cross-harness.md'],
   },
   {
+    id: 'dsh',
+    harness: 'DeepSeek Harness',
+    state: 'Adapter-backed',
+    supported_assets: [
+      'skills (linked into $DSH_HOME/skills, scanned live by the harness)',
+      'hooks (all seven events ECC uses, through the cc-hooks bridge in .dsh/plugin)',
+      'rules and instructions (pasted into $DSH_HOME/AGENTS.md or a project AGENTS.md)',
+    ],
+    unsupported_surfaces: [
+      'Claude Code slash commands and .md subagent definitions have no DSH equivalent',
+      'PreToolUse additionalContext arrives with the tool result, not before dispatch',
+      'transcript_path is synthesized from the session log rather than a native artifact',
+      'MCP config is mountable but not wired by this adapter',
+    ],
+    install_or_onramp: [
+      '`./.dsh/install.sh` (add `--skills` to link the skill catalog)',
+      '`./.dsh/install.sh --dry-run` to review the plan before writing',
+    ],
+    verification_commands: [
+      '`node .dsh/plugin/test.mjs`',
+      '`tail -3 $DSH_HOME/cc-hooks/cc-hooks.log` after a session starts',
+    ],
+    risk_notes: [
+      'The bridge runs ECC hooks on every tool call; measure before enabling the standard or strict hook profile.',
+      'ECC hooks keep writing their own state under ~/.claude and ~/.local/share/ecc-homunculus.',
+      'Linking all 292 skills puts the whole catalog into every request; a curated subset is usually better.',
+    ],
+    last_verified_at: '2026-09-24',
+    owner: 'ECC maintainers',
+    source_docs: [
+      '.dsh/README.md',
+      '.dsh/plugin/index.js',
+      'docs/architecture/cross-harness.md',
+    ],
+  },
+  {
     id: 'terminal-only',
     harness: 'Terminal-only',
     state: 'Native',
