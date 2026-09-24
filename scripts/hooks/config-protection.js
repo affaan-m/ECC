@@ -62,6 +62,40 @@ const PROTECTED_FILES = new Set([
   '.markdownlintrc'
 ]);
 
+/**
+ * Exact basenames only catch a tool's canonical entry point. Real repos split
+ * flat config across files: a shared `eslint.config.base.mjs` holding the
+ * ignore list and rule severities, imported by per-workspace
+ * `eslint.config.mjs` files. That is the common monorepo shape, and matching
+ * basenames alone protected the leaves while leaving the trunk — the file that
+ * actually carries the rules — freely editable.
+ *
+ * These patterns cover `<tool>.config.<qualifier>.<ext>` and
+ * `.<tool>rc.<qualifier>.<ext>` for the linters and formatters listed above.
+ * They are case-insensitive for the same reason the Set lookup above is.
+ *
+ * Deliberately NOT matched: build and test tooling — `vite.config.ts`,
+ * `vitest.config.ts`, `jest.config.js`, `playwright.config.ts`,
+ * `tsconfig.json`. This hook exists to stop a LINTER config being weakened in
+ * place of fixing the code; editing a bundler or test-runner config is
+ * ordinary work, and sweeping those in would make the hook obstructive.
+ */
+const PROTECTED_PATTERNS = [
+  // eslint.config.base.mjs, prettier.config.shared.cjs, stylelint.config.local.js …
+  /^(eslint|prettier|stylelint|commitlint|oxlint|biome)\.config(\.[A-Za-z0-9_-]+)*\.(js|mjs|cjs|ts|mts|cts)$/i,
+  // .eslintrc.base.json, .prettierrc.shared.yml …
+  /^\.(eslintrc|prettierrc|stylelintrc|markdownlintrc)(\.[A-Za-z0-9_-]+)*\.(js|cjs|mjs|json|jsonc|yml|yaml|toml)$/i,
+  // biome.base.json, biome.shared.jsonc
+  /^biome(\.[A-Za-z0-9_-]+)*\.jsonc?$/i,
+];
+
+function isProtectedName(basename) {
+  const lower = basename.toLowerCase();
+  return PROTECTED_FILES.has(basename)
+    || PROTECTED_FILES.has(lower)
+    || PROTECTED_PATTERNS.some((re) => re.test(basename));
+}
+
 function parseInput(inputOrRaw) {
   if (typeof inputOrRaw === 'string') {
     try {
@@ -101,7 +135,7 @@ function run(inputOrRaw, options = {}) {
   // silently overwrite the real config while the guard returned exit 0.
   // On genuinely case-sensitive filesystems this only costs a false positive
   // on a distinct file that differs from a protected name by case alone.
-  if (PROTECTED_FILES.has(basename) || PROTECTED_FILES.has(basename.toLowerCase())) {
+  if (isProtectedName(basename)) {
     // Allow first-time creation — there's no existing config to weaken.
     // The hook's purpose is blocking modifications; writing a brand-new
     // config file in a project that has none is a legitimate bootstrap
