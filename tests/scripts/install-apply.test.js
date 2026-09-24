@@ -1197,12 +1197,14 @@ function runTests() {
       assert.strictEqual(fs.readFileSync(scriptsPackagePath, 'utf8'), userScriptsPackage);
 
       const state = readJson(path.join(claudeRoot, 'ecc', 'install-state.json'));
-      const boundaryPaths = [hooksPackagePath, libPackagePath];
+      const boundaryPaths = [hooksPackagePath, libPackagePath].map(filePath => (
+        fs.realpathSync(filePath)
+      ));
       const packageBoundaryOperations = state.operations.filter(operation => (
-        boundaryPaths.includes(operation.destinationPath)
+        boundaryPaths.includes(fs.realpathSync(operation.destinationPath))
       ));
       assert.deepStrictEqual(
-        packageBoundaryOperations.map(operation => operation.destinationPath).sort(),
+        packageBoundaryOperations.map(operation => fs.realpathSync(operation.destinationPath)).sort(),
         [...boundaryPaths].sort()
       );
       assert.ok(packageBoundaryOperations.every(operation => operation.moduleId === 'hooks-runtime'));
