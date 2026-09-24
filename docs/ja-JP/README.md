@@ -136,11 +136,11 @@ plan -> test -> implement -> review -> verify -> remember -> improve
 
 ECC は MIT ライセンスのオープンソースです。現時点では Claude Code で最もよく機能し、サポート対象の Codex 同期パスを備え、Cursor、OpenCode、Gemini、Zed、GitHub Copilot、Antigravity、Qwen、その他のハーネス向けには機能が限定されたアダプターを提供しています。機能の同等性を前提にする前に、[サポート状況マトリクス](#プラットフォームサポート)を確認してください。
 
-68 の agents、292 の skills、95 のレガシー command シムに加えて、hooks、rules、メモリ、継続的学習、AgentShield セキュリティスキャンを利用できます。agents は計画、レビュー、ビルド修復、セキュリティ、アーキテクチャ、ドメイン作業に特化しています。
+69 の agents、292 の skills、95 のレガシー command シムに加えて、hooks、rules、メモリ、継続的学習、AgentShield セキュリティスキャンを利用できます。agents は計画、レビュー、ビルド修復、セキュリティ、アーキテクチャ、ドメイン作業に特化しています。
 
 | 含まれるもの     |        数 | 得られるもの                                                                          |
 | ---------------- | ----------: | ------------------------------------------------------------------------------------ |
-| Agents           |   68 agents | 計画、レビュー、ビルド修復、セキュリティ、アーキテクチャ、ドメイン作業                |
+| Agents           |   69 agents | 計画、レビュー、ビルド修復、セキュリティ、アーキテクチャ、ドメイン作業                |
 | Skills           |  292 skills | TDD、リサーチ、セキュリティ、ドキュメント、フロントエンド、データ、ML、運用など       |
 | Commands         | 95 commands | ECC が skills ファーストの構成へ移行する間の便利なエントリーポイント                  |
 | Hooks とメモリ   |     ランタイム | 強制、セッションサマリー、継続的学習、instincts、コンテキスト制御                  |
@@ -793,7 +793,7 @@ Kimi Code はインストールされた `.kimi-code/AGENTS.md` の指示と `.k
 
 ```text
 ECC/
-|-- agents/           # 委譲用の 68 の専門サブエージェント
+|-- agents/           # 委譲用の 69 の専門サブエージェント
 |-- skills/           # オンデマンドで読み込まれる 292 の再利用可能なワークフロー
 |-- commands/         # メンテナンスされている 94 のスラッシュコマンドシム
 |-- rules/            # オプトインの共通標準と言語別標準
@@ -817,7 +817,7 @@ ECC/
 |   |-- plugin.json         # Plugin メタデータとコンポーネントパス
 |   |-- marketplace.json    # /plugin marketplace add 用のマーケットプレイスカタログ
 |
-|-- agents/           # 委譲用の 67 の専門サブエージェント
+|-- agents/           # 委譲用の 69 の専門サブエージェント
 |   |-- planner.md           # 機能実装の計画
 |   |-- architect.md         # システム設計の意思決定
 |   |-- tdd-guide.md         # テスト駆動開発
@@ -844,6 +844,7 @@ ECC/
 |   |-- kotlin-reviewer.md   # Kotlin/Android/KMP コードレビュー
 |   |-- kotlin-build-resolver.md # Kotlin/Gradle ビルドエラー
 |   |-- harmonyos-app-resolver.md # HarmonyOS/ArkTS アプリ開発
+|   |-- ruby-reviewer.md     # Ruby/Rails コードレビュー
 |   |-- rust-reviewer.md     # Rust コードレビュー
 |   |-- rust-build-resolver.md # Rust ビルドエラーの解決
 |   |-- pytorch-build-resolver.md # PyTorch/CUDA トレーニングエラー
