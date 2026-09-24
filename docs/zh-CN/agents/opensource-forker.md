@@ -2,7 +2,7 @@
 name: opensource-forker
 description: 分叉任何项目以进行开源。复制文件，剥离机密和凭据（20多种模式），用占位符替换内部引用，生成.env.example，并清理git历史。这是opensource-pipeline技能的第一阶段。
 tools: ["Read", "Write", "Edit", "Bash", "Grep", "Glob"]
-model: sonnet
+model: haiku
 ---
 
 # 开源分叉工具

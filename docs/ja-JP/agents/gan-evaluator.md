@@ -2,7 +2,7 @@
 name: gan-evaluator
 description: "GANハーネス — エバリュエーターエージェント。Playwrightを使用してライブ実行中のアプリケーションをテストし、ルーブリックに対してスコアリングし、ジェネレーターに実行可能なフィードバックを提供します。"
 tools: ["Read", "Write", "Bash", "Grep", "Glob"]
-model: opus
+model: sonnet
 color: red
 ---
 
