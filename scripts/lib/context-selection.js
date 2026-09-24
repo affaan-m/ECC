@@ -3,6 +3,7 @@
 const yaml = require('js-yaml');
 const { loadContextRegistry } = require('./context-pack-registry');
 const { compileContextProfile } = require('./context-profiles');
+const { buildRetrievalIndex, searchRetrieval } = require('./context-retrieval');
 const { DEFAULT_REPO_ROOT, createSourceReader, digestObject } = require('./context-profile-support');
 
 const MAX_CANDIDATES = 5;
@@ -10,6 +11,10 @@ const MAX_SELECTED = 8;
 const MAX_CONTEXT_BYTES = 32000;
 const TASK_KEYS = new Set(['sessionId', 'taskId', 'revision', 'phase', 'query', 'explicitIds', 'proposedIds', 'noWorkflow']);
 const STOP_WORDS = new Set('a an and are for from help i in is it me my of on please the to with'.split(' '));
+
+function tokens(text) {
+  return [...new Set(text.toLowerCase().split(/[^a-z0-9]+/).filter(word => word.length > 1 && !STOP_WORDS.has(word)))];
+}
 
 function validateTask(task) {
   if (!task || typeof task !== 'object' || Array.isArray(task)) throw new Error('Task must be an object');
@@ -35,29 +40,16 @@ function validateTask(task) {
   }
 }
 
-function tokens(text) {
-  return [...new Set(text.toLowerCase().split(/[^a-z0-9]+/).filter(word => word.length > 1 && !STOP_WORDS.has(word)))];
-}
-
-function normalizedName(text) { return text.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim(); }
-
 // Inspired by Jeffrey Montoya's bounded local routing in community PR #2945.
 // Canonical source digests replace its independent cache/receipt authority.
+// Ranking now uses the hybrid retrieval engine (BM25-weighted fields fused
+// with hashed character n-gram vectors); see context-retrieval.js.
 function candidatesFor(query, entries, excluded, admissible) {
-  const words = tokens(query);
-  const normalizedQuery = ` ${normalizedName(query)} `;
   const available = entries.filter(entry => !excluded.has(entry.id));
-  const exactIds = available.filter(entry => [entry.id.slice('skill:'.length), entry.name]
-    .some(name => normalizedName(name) && normalizedQuery.includes(` ${normalizedName(name)} `))).map(entry => entry.id);
-  const exact = new Set(exactIds);
-  const candidates = available.map(entry => {
-    const name = new Set(tokens(entry.id));
-    const description = new Set(tokens(entry.description));
-    return { id: entry.id, score: words.reduce((score, word) => score + (name.has(word) ? 3 : description.has(word) ? 1 : 0), 0),
-      description: entry.description.slice(0, 2048), descriptionTruncated: entry.description.length > 2048 };
-  }).filter(entry => (exact.has(entry.id) || entry.score >= 3) && admissible(entry.id))
-    .sort((a, b) => Number(exact.has(b.id)) - Number(exact.has(a.id)) || b.score - a.score
-      || (a.id < b.id ? -1 : 1)).slice(0, MAX_CANDIDATES);
+  const index = buildRetrievalIndex(available);
+  const candidates = searchRetrieval(index, query, { limit: MAX_CANDIDATES * 3 })
+    .filter(candidate => admissible(candidate.id))
+    .slice(0, MAX_CANDIDATES);
   return { candidates };
 }
 
