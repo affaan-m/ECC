@@ -5,6 +5,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 
 const text = value => typeof value === 'string' && value.trim().length > 0;
+const viewportKey = value => value.trim().toLowerCase().replace(/\s+/g, '');
 const object = value => value !== null && typeof value === 'object' && !Array.isArray(value);
 const states = ['loading', 'empty', 'error', 'partial', 'success', 'permission'];
 
@@ -18,10 +19,11 @@ function checkEvidence(report) {
   };
   const renders = Array.isArray(report.renderedEvidence) ? report.renderedEvidence : [];
   const targets = Array.isArray(report.targetViewports) ? report.targetViewports : [];
+  const targetKeys = [...new Set(targets.filter(text).map(viewportKey))];
   return [
     ...(text(report.contract) ? [] : ['contract is required']),
     ...(targets.length && targets.every(text) ? [] : ['targetViewports must contain nonempty viewport strings']),
-    ...targets.filter(text).flatMap(viewport => renders.some(item => object(item) && item.viewport === viewport)
+    ...targetKeys.flatMap(viewport => renders.some(item => object(item) && text(item.viewport) && viewportKey(item.viewport) === viewport)
       ? [] : [`renderedEvidence is missing target viewport ${viewport}`]),
     ...check('accessibility', report.accessibility),
     ...check('responsive', report.responsive),

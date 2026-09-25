@@ -136,6 +136,10 @@ The record contains:
 - `targetViewports`: a nonempty array of viewport strings from the contract,
   such as `["390x844", "1440x900"]`. Each target requires a matching `viewport`
   entry in `renderedEvidence`; one mobile capture cannot cover a desktop target.
+  Matching ignores case and whitespace and checks duplicate targets once.
+  Use consistent labels when writing the record: `375 px` matches `375px`,
+  but `mobile-375`, `375px` and `375x812` remain distinct. The checker does not
+  infer aliases, units or dimensions and does not rewrite the record.
 - `accessibility` and `responsive`: objects with `status: "pass"` and a nonempty
   `evidence` observation describing the checks performed.
 - `contentStates`: one object for each of `loading`, `empty`, `error`, `partial`,

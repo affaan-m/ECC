@@ -51,6 +51,44 @@ test('requires rendered evidence for every declared target viewport', () => {
   }
 });
 
+test('normalizes viewport case and whitespace, deduplicates missing coverage, and preserves input', () => {
+  const evidence = {
+    ...report(),
+    targetViewports: [' 390 X 844 PX ', '390x844px', '1440 X 900 PX'],
+    renderedEvidence: [
+      { viewport: '390x844PX', artifact: 'render.png', observation: 'Mobile layout fits.' },
+      { viewport: ' 1440x900px ', artifact: 'desktop.png', observation: 'Desktop layout fits.' },
+    ],
+  };
+  const before = JSON.parse(JSON.stringify(evidence));
+
+  assert.deepEqual(checkEvidence(evidence), []);
+  assert.deepEqual(evidence, before, 'viewport validation must not mutate the report');
+
+  const missing = {
+    ...evidence,
+    renderedEvidence: [],
+  };
+  const missingErrors = checkEvidence(missing).filter(error => error.includes('missing target viewport'));
+  assert.equal(missingErrors.length, 2, 'missing coverage should report one error per normalized target');
+  assert.deepEqual(evidence, before, 'coverage checks must not mutate the report');
+
+  for (const [targetViewport, renderedViewport] of [
+    ['mobile-375', '375px'],
+    ['375', '375px'],
+  ]) {
+    const aliases = {
+      ...report(),
+      targetViewports: [targetViewport],
+      renderedEvidence: [{ viewport: renderedViewport, artifact: 'render.png', observation: 'Checked.' }],
+    };
+    assert.ok(
+      checkEvidence(aliases).some(error => error.includes('missing target viewport')),
+      `${targetViewport} must not alias ${renderedViewport}`
+    );
+  }
+});
+
 test('only content states may be not applicable with a reason', () => {
   const evidence = report();
   const contentStates = { ...evidence.contentStates, permission: { status: 'not-applicable', reason: 'Public view without restricted actions.' } };
