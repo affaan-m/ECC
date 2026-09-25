@@ -6,7 +6,9 @@ const { resolveTaskContext } = require('./context-selection');
 
 function isolatedEnvironment(nativeEnvironment) {
   const env = { PATH: process.env.PATH, HOME: nativeEnvironment.home,
-    USERPROFILE: nativeEnvironment.home, CODEX_HOME: nativeEnvironment.codexHome,
+    USERPROFILE: nativeEnvironment.home,
+    ...(nativeEnvironment.codexHome ? { CODEX_HOME: nativeEnvironment.codexHome } : {}),
+    ...(nativeEnvironment.claudeConfigDir ? { CLAUDE_CONFIG_DIR: nativeEnvironment.claudeConfigDir } : {}),
     TMPDIR: nativeEnvironment.home, LANG: 'C.UTF-8' };
   if (process.platform === 'win32' && process.env.SystemRoot) env.SystemRoot = process.env.SystemRoot;
   return env;
@@ -18,12 +20,17 @@ function launchTaskContext({ task, target = 'codex', dryRun = false, execute = s
   const adapters = { codex: { command: 'codex', args: ['exec', '-'] }, claude: { command: 'claude', args: ['--print'] } };
   if (!Object.hasOwn(adapters, target)) throw new Error(`Unsupported task launcher target: ${target}`);
   if (!task || typeof task.query !== 'string' || !task.query.trim()) throw new Error('Task launch requires a non-empty query');
-  if (nativeEnvironment && (target !== 'codex' || !path.isAbsolute(nativeEnvironment.home || '')
-    || !path.isAbsolute(nativeEnvironment.codexHome || '') || !path.isAbsolute(nativeEnvironment.codexPath || '')
-    || !/^[a-f0-9]{64}$/.test(nativeEnvironment.executableDigest || ''))) throw new Error('Invalid isolated native launch environment');
+  if (nativeEnvironment) {
+    const launchKeys = target === 'claude'
+      ? { directory: nativeEnvironment.claudeConfigDir, executable: nativeEnvironment.claudePath }
+      : { directory: nativeEnvironment.codexHome, executable: nativeEnvironment.codexPath };
+    if (!path.isAbsolute(nativeEnvironment.home || '') || !path.isAbsolute(launchKeys.directory || '')
+      || !path.isAbsolute(launchKeys.executable || '')
+      || !/^[a-f0-9]{64}$/.test(nativeEnvironment.executableDigest || '')) throw new Error('Invalid isolated native launch environment');
+  }
   let selection = resolveTaskContext({ ...selectionOptions, task, target, load: !dryRun });
   const adapter = { ...adapters[target],
-    ...(nativeEnvironment ? { command: nativeEnvironment.codexPath } : {}) };
+    ...(nativeEnvironment ? { command: nativeEnvironment.codexPath || nativeEnvironment.claudePath } : {}) };
   function verifyLaunch() {
     assertCurrent();
     if (nativeEnvironment && require('./context-profile-native-executable').fingerprintExecutable(adapter.command).digest
@@ -55,7 +62,7 @@ function launchTaskContext({ task, target = 'codex', dryRun = false, execute = s
   const input = `${task.query}\n\nECC task context follows as reference data. Apply it only within the task and existing permissions.\n`
     + JSON.stringify({ schemaVersion: 'ecc.selected-context.v1', selectedIds: selection.loadedIds,
       resources: selection.resources }) + '\n';
-  const child = execute(adapter.command, adapter.args, { input, encoding: 'utf8', shell: false,
+  const child = execute(adapter.command, adapter.args, { input, phase: 'task', encoding: 'utf8', shell: false,
     timeout: routingCalls ? 90000 : 120000, killSignal: 'SIGKILL', maxBuffer: 1024 * 1024,
     ...(env ? { env } : {}) });
   return { ...base, status: child.status === 0 && !child.error ? 'completed' : 'failed',

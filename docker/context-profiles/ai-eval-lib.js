@@ -16,6 +16,7 @@ const { launchTaskContext } = require(path.join(LIB, 'context-profile-launch'));
 const { applyStore } = require(path.join(LIB, 'context-profile-store'));
 const { prepareNativeProfile, getNativeProfileStatus } = require(path.join(LIB, 'context-profile-native'));
 const { DEFAULT_REPO_ROOT, digestObject, createSourceReader } = require(path.join(LIB, 'context-profile-support'));
+const io = require(path.join(LIB, 'context-profile-store-fs'));
 
 const ARMS = Object.freeze(['full', 'manual-lean', 'auto-lean']);
 const CORPUS_PATH = path.join(__dirname, 'ai-corpus.json');
@@ -31,6 +32,7 @@ const BLOCKS = Object.freeze({ excluded: /Context ID is excluded:/,
   'native-authority': /requires native authority or dynamic-content review/,
   'manual-only': /Context ID is manual-only:/, 'opt-out-conflict': /noWorkflow conflicts/, 'unknown-id': /Unknown context ID:/ });
 const ENV_KEYS = ['PATH', 'HOME', 'USERPROFILE', 'CODEX_HOME', 'TMPDIR', 'LANG', 'SystemRoot'];
+const CLAUDE_ENV_KEYS = ['PATH', 'HOME', 'USERPROFILE', 'CLAUDE_CONFIG_DIR', 'TMPDIR', 'LANG', 'SystemRoot'];
 const bounded = (value, min, max) => Number.isSafeInteger(value) && value >= min && value <= max;
 const exists = file => Boolean(fs.lstatSync(file, { throwIfNoEntry: false }));
 
@@ -78,6 +80,22 @@ function sourceSnapshot(repoRoot) {
 }
 
 const EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max', 'ultra'];
+
+function providerFamily(executable) {
+  const base = path.basename(String(executable || '')).toLowerCase();
+  if (base.includes('claude')) return 'claude';
+  if (base.includes('codex')) return 'codex';
+  throw new Error('Provider executable must name a Claude or Codex CLI');
+}
+
+function resolveFamily(provider, executable) {
+  if (provider !== undefined && provider !== null) {
+    if (!['claude', 'codex'].includes(provider)) throw new Error('Provider must be claude or codex');
+    return provider;
+  }
+  if (executable) return providerFamily(executable);
+  return 'codex';
+}
 
 function providerPin(model, executable, effort) {
   if (model === undefined && executable === undefined && effort === undefined) return null;
@@ -132,6 +150,32 @@ function parseCodexJsonl(stdout) {
   return completions === 1 ? { valid: true, text, usage } : invalid;
 }
 
+// Claude print-mode emits exactly one result JSON object. Fresh input folds cache creations;
+// cache reads are reported separately. is_error results are provider failures, not parse failures.
+function parseClaudeJson(stdout) {
+  const invalid = { valid: false, text: '', usage: null };
+  if (typeof stdout !== 'string' || Buffer.byteLength(stdout) > 1024 * 1024) return invalid;
+  let result = null;
+  let results = 0;
+  try {
+    for (const line of stdout.split('\n').filter(line => line.trim())) {
+      const event = JSON.parse(line);
+      if (!event || typeof event !== 'object' || Array.isArray(event)) return invalid;
+      if (event.type !== 'result') continue;
+      results++;
+      result = event;
+    }
+  } catch { return invalid; }
+  if (results !== 1) return invalid;
+  if (result.is_error !== false || typeof result.result !== 'string') return { ...invalid, error: true };
+  const u = result.usage;
+  if (!u || ![u.input_tokens, u.cache_creation_input_tokens, u.cache_read_input_tokens, u.output_tokens]
+    .every(value => bounded(value, 0, 1e9))) return { ...invalid, error: true };
+  return { valid: true, text: result.result,
+    usage: { inputTokens: u.input_tokens + u.cache_creation_input_tokens,
+      cachedInputTokens: u.cache_read_input_tokens, outputTokens: u.output_tokens } };
+}
+
 function privateEntry(file, directory) {
   const stat = fs.lstatSync(file, { throwIfNoEntry: false });
   return Boolean(stat) && !stat.isSymbolicLink() && (directory ? stat.isDirectory() : stat.isFile())
@@ -172,6 +216,61 @@ function createAuthLease(authHome) {
       }
     },
   };
+}
+
+/**
+ * Claude subscription logins live in the macOS Keychain as a JSON wrapper. The lease reads the
+ * current access token per call into the child environment only; it is never persisted or reported.
+ */
+function readClaudeKeychainToken() {
+  if (process.platform !== 'darwin') throw new Error('Claude Keychain login requires macOS; provide CLAUDE_CODE_OAUTH_TOKEN or ANTHROPIC_API_KEY');
+  const result = spawnSync('security', ['find-generic-password', '-s', 'Claude Code-credentials', '-w'],
+    { encoding: 'utf8', shell: false, timeout: 15000, killSignal: 'SIGKILL', maxBuffer: 65536 });
+  if (result.status !== 0 || result.error) throw new Error('Claude Keychain login is unavailable; provide CLAUDE_CODE_OAUTH_TOKEN or ANTHROPIC_API_KEY');
+  let parsed;
+  try { parsed = JSON.parse(result.stdout); }
+  catch { throw new Error('Claude Keychain login is unreadable; provide CLAUDE_CODE_OAUTH_TOKEN or ANTHROPIC_API_KEY'); }
+  const token = parsed?.claudeAiOauth?.accessToken;
+  if (typeof token !== 'string' || !token) throw new Error('Claude Keychain login is unrecognized; provide CLAUDE_CODE_OAUTH_TOKEN or ANTHROPIC_API_KEY');
+  return token;
+}
+
+function createClaudeProvider({ allowRealProvider = false, executable, model,
+  apiKey = process.env.ANTHROPIC_API_KEY, oauthToken = process.env.CLAUDE_CODE_OAUTH_TOKEN,
+  tokenSource = readClaudeKeychainToken, execute = spawnSync } = {}) {
+  if (allowRealProvider !== true) throw new Error('Real provider requires explicit opt-in');
+  if (!model || !executable) throw new Error('Real provider requires a model and absolute executable');
+  let lease = null;
+  let authentication;
+  if (oauthToken) authentication = 'oauth-env';
+  else if (apiKey) authentication = 'api-key';
+  else if (typeof tokenSource === 'function') {
+    lease = { mode: 'subscription-keychain-lease',
+      run(env, work) { env.CLAUDE_CODE_OAUTH_TOKEN = tokenSource(); return work(); } };
+    authentication = lease.mode;
+  } else throw new Error('Real provider requires CLAUDE_CODE_OAUTH_TOKEN, ANTHROPIC_API_KEY, or the Claude Keychain login');
+  const pin = providerPin(model, executable, undefined);
+  const binary = resolveExecutable(executable);
+  const provider = request => {
+    if (fingerprintExecutable(binary.path).digest !== pin.executableDigest) fail('source-drift');
+    const selection = request.phase === 'selection';
+    // Selection is tool-free and read-only; task execution may edit and run commands in the workspace.
+    // Claude has no cwd-write sandbox flag, so containment relies on the isolated home and temp workspace.
+    const args = ['--print', '--output-format', 'json', '--no-session-persistence',
+      ...(selection ? ['--tools', ''] : ['--permission-mode', 'bypassPermissions']),
+      '--model', model];
+    const env = Object.fromEntries(CLAUDE_ENV_KEYS.filter(key => typeof request.env?.[key] === 'string')
+      .map(key => [key, request.env[key]]));
+    env.DISABLE_NON_ESSENTIAL_MODEL_CALLS = '1';
+    if (authentication === 'oauth-env') env.CLAUDE_CODE_OAUTH_TOKEN = oauthToken;
+    if (authentication === 'api-key') env.ANTHROPIC_API_KEY = apiKey;
+    const call = () => execute(binary.path, args, { input: request.input, cwd: request.cwd, env,
+      encoding: 'utf8', shell: false, timeout: request.timeoutMs, killSignal: 'SIGKILL',
+      maxBuffer: request.maxBuffer });
+    return lease ? lease.run(env, call) : call();
+  };
+  provider.authentication = authentication;
+  return provider;
 }
 
 function createCodexProvider({ allowRealProvider = false, executable, model, effort, authHome,
@@ -234,6 +333,38 @@ function prepareEnvironments({ repoRoot, executable, root }) {
         let ready = false;
         try { ready = getNativeProfileStatus(options).ready; } catch { ready = false; }
         if (!ready) fail('environment-drift');
+      } };
+  }
+  return environments;
+}
+
+/** Real Claude installs in isolated config homes. Managed-skill drift aborts; there is no
+ * provider bookkeeping to restore because isolated Claude runs do not mutate the managed tree. */
+function prepareClaudeEnvironments({ repoRoot, executable, root }) {
+  const binary = resolveExecutable(executable);
+  const environments = {};
+  for (const [name, profileId, selectionMode] of [['full', 'full@1', 'manual'], ['lean', 'lean@1', 'auto']]) {
+    const stateRoot = path.join(root, name, 'managed');
+    fs.mkdirSync(path.join(root, name), { mode: 0o700 });
+    const status = applyStore({ repoRoot, stateRoot, target: 'claude', selectionMode, profileId });
+    const home = path.join(root, name, 'home');
+    const config = path.join(home, '.claude');
+    const installed = path.join(config, 'skills');
+    fs.mkdirSync(installed, { recursive: true, mode: 0o700 });
+    const payload = path.join(status.generationRoot, 'skills');
+    for (const entry of fs.readdirSync(payload)) {
+      fs.cpSync(path.join(payload, entry), path.join(installed, entry), { recursive: true, errorOnExist: true, force: false });
+    }
+    const managed = () => digestObject(io.inventory(installed));
+    const prepared = managed();
+    environments[name] = { profileId, skills: status.selectedIds.length,
+      launch: { home, claudeConfigDir: config, claudePath: binary.path, executableDigest: binary.digest },
+      restore() {},
+      verify() {
+        if (fingerprintExecutable(binary.path).digest !== binary.digest) fail('environment-drift');
+        let observed = null;
+        try { observed = managed(); } catch { observed = null; }
+        if (observed !== prepared) fail('environment-drift');
       } };
   }
   return environments;
@@ -320,6 +451,13 @@ function failureCode(error) {
 }
 function fail(code) { const error = new Error(code); error.code = code; throw error; }
 
+function launchEnvironment(launch) {
+  return { PATH: process.env.PATH, HOME: launch.home,
+    ...(launch.codexHome ? { CODEX_HOME: launch.codexHome } : {}),
+    ...(launch.claudeConfigDir ? { CLAUDE_CONFIG_DIR: launch.claudeConfigDir } : {}),
+    TMPDIR: launch.home, LANG: 'C.UTF-8' };
+}
+
 function executeAdapter(state, cwd, environment) {
   return (_command, args, options) => {
     if (state.calls >= state.maxCalls) fail('call-budget');
@@ -327,14 +465,13 @@ function executeAdapter(state, cwd, environment) {
     environment.verify();
     const remaining = state.deadline - Date.now();
     if (remaining <= 0) fail('deadline');
-    const phase = args.includes('read-only') ? 'selection' : 'task';
+    const phase = options.phase || (args.includes('read-only') ? 'selection' : 'task');
     state.calls++;
     const started = Date.now();
     let raw;
     // Coding tasks outgrow the launcher's interactive default, so the evaluator's own call bound governs them.
     const timeoutMs = Math.min(phase === 'task' ? state.callTimeoutMs : options.timeout, state.callTimeoutMs, remaining);
-    const env = options.env || { PATH: process.env.PATH, HOME: environment.launch.home,
-      CODEX_HOME: environment.launch.codexHome, LANG: 'C.UTF-8' };
+    const env = options.env || launchEnvironment(environment.launch);
     try {
       raw = state.provider({ phase, input: options.input, cwd, env, timeoutMs, maxBuffer: 1024 * 1024 });
     } catch (error) {
@@ -343,23 +480,23 @@ function executeAdapter(state, cwd, environment) {
       fail('provider-failed');
     } finally { environment.restore(); }
     const elapsedMs = Date.now() - started;
-    const parsed = parseCodexJsonl(raw?.stdout);
+    const parsed = state.family === 'claude' ? parseClaudeJson(raw?.stdout) : parseCodexJsonl(raw?.stdout);
     state.metrics.push({ phase, elapsedMs, usage: parsed.valid && raw?.status === 0 && !raw?.error ? parsed.usage : null });
     if (Date.now() >= state.deadline || elapsedMs > timeoutMs) fail('deadline');
     state.assertCurrent();
     if (raw?.status !== 0 || raw?.error) fail('provider-failed');
-    if (!parsed.valid) fail('invalid-jsonl');
+    if (!parsed.valid) fail(parsed.error ? 'provider-failed' : 'invalid-jsonl');
     return { status: 0, stdout: parsed.text };
   };
 }
 
-function selectionProbe(item, repoRoot, execute, environment) {
+function selectionProbe(item, repoRoot, execute, environment, target) {
   const options = { repoRoot, task: selectionTask(item), exclude: item.exclude || [], load: true };
   try {
     let selection = resolveTaskContext(options);
     if (selection.reason === 'agent-selection-required') {
-      const proposedIds = proposeTaskContext({ target: 'codex', query: item.query, candidates: selection.candidates, execute,
-        executable: environment.launch.codexPath });
+      const proposedIds = proposeTaskContext({ target, query: item.query, candidates: selection.candidates, execute,
+        executable: environment.launch.codexPath || environment.launch.claudePath });
       const next = resolveTaskContext({ ...options, task: { ...options.task, proposedIds, noWorkflow: proposedIds.length === 0 } });
       selection = next.selectedIds.length ? next : resolveDeclinedFallback(options, selection);
     }
@@ -373,10 +510,10 @@ function selectionProbe(item, repoRoot, execute, environment) {
 }
 
 // Full relies on native discovery of the whole install; the Lean arms receive ECC-selected skill bodies.
-function outcomeTrial(item, arm, repeat, repoRoot, execute, cwd, environment) {
+function outcomeTrial(item, arm, repeat, repoRoot, execute, cwd, environment, target) {
   try {
     const task = selectionTask(item);
-    const result = launchTaskContext({ repoRoot, execute, nativeEnvironment: environment.launch,
+    const result = launchTaskContext({ repoRoot, execute, nativeEnvironment: environment.launch, target,
       task: { ...task, ...(arm === 'manual-lean' && item.manualIds.length ? { explicitIds: item.manualIds } : {}) },
       profileId: arm === 'full' ? 'full@1' : 'lean@1', selectionMode: arm === 'auto-lean' ? 'auto' : 'manual' });
     const passed = result.status === 'completed' && runCheck(cwd, item.check);
@@ -395,18 +532,22 @@ function metricsSince(metrics, start) {
 }
 
 function runEvaluation({ repoRoot = DEFAULT_REPO_ROOT, corpus = loadCorpus(), registration,
-  repeats = 1, provider, allowRealProvider = false, executable, model, effort, authHome, environments,
+  repeats = 1, provider, family, allowRealProvider = false, executable, model, effort, authHome, environments,
   maxCalls = 300, deadlineMs = 3600000, callTimeoutMs = 300000 } = {}) {
   if (!provider && !allowRealProvider) throw new Error('Evaluation requires an injected provider or explicit opt-in');
   if (!bounded(maxCalls, 1, 2000) || !bounded(deadlineMs, 1, 4 * 3600000)
     || !bounded(callTimeoutMs, 1, 600000)) throw new Error('Invalid call or deadline bound');
   if (!provider && !registration) throw new Error('Real evaluation requires prior registration');
+  const resolvedFamily = provider ? (family || 'codex') : resolveFamily(family, executable);
+  if (resolvedFamily === 'claude' && effort !== undefined) throw new Error('Reasoning effort applies only to the Codex provider');
   const pin = preregister({ repoRoot, corpus, repeats, model, executable, effort });
   if (registration && !isDeepStrictEqual(registration, pin)) throw new Error('Registration pin mismatch');
   const injected = Boolean(provider);
-  const liveProvider = provider || createCodexProvider({ allowRealProvider, executable, model, effort, authHome });
-  const state = { calls: 0, metrics: [], maxCalls, callTimeoutMs, deadline: Date.now() + deadlineMs,
-    provider: liveProvider,
+  const liveProvider = provider || (resolvedFamily === 'claude'
+    ? createClaudeProvider({ allowRealProvider, executable, model })
+    : createCodexProvider({ allowRealProvider, executable, model, effort, authHome }));
+  const state = { calls: 0, metrics: [], maxCalls, callTimeoutMs, family: resolvedFamily,
+    deadline: Date.now() + deadlineMs, provider: liveProvider,
     assertCurrent() {
       if (digestObject(corpus) !== pin.corpusDigest || sourceSnapshot(repoRoot).sourceDigest !== pin.sourceDigest) fail('source-drift');
     } };
@@ -418,13 +559,15 @@ function runEvaluation({ repoRoot = DEFAULT_REPO_ROOT, corpus = loadCorpus(), re
     const installRoot = path.join(temp, 'installs');
     fs.mkdirSync(installRoot, { mode: 0o700 });
     const envs = environments || (injected ? syntheticEnvironments(installRoot)
-      : prepareEnvironments({ repoRoot, executable, root: installRoot }));
+      : resolvedFamily === 'claude'
+        ? prepareClaudeEnvironments({ repoRoot, executable, root: installRoot })
+        : prepareEnvironments({ repoRoot, executable, root: installRoot }));
     installs = Object.fromEntries(Object.entries(envs).map(([name, env]) => [name, { profileId: env.profileId, skills: env.skills }]));
     for (const item of corpus.selection) {
       const cwd = path.join(temp, `${item.id}--selection`);
       fs.mkdirSync(cwd);
       const start = state.metrics.length;
-      selection.push({ ...selectionProbe(item, repoRoot, executeAdapter(state, cwd, envs.lean), envs.lean),
+      selection.push({ ...selectionProbe(item, repoRoot, executeAdapter(state, cwd, envs.lean), envs.lean, resolvedFamily),
         ...metricsSince(state.metrics, start) });
     }
     for (const scheduled of pin.order) {
@@ -436,7 +579,7 @@ function runEvaluation({ repoRoot = DEFAULT_REPO_ROOT, corpus = loadCorpus(), re
         writeWorkspace(cwd, item.files);
         const start = state.metrics.length;
         outcomes.push({ ...outcomeTrial(item, arm, scheduled.repeat, repoRoot,
-          executeAdapter(state, cwd, environment), cwd, environment), ...metricsSince(state.metrics, start) });
+          executeAdapter(state, cwd, environment), cwd, environment, resolvedFamily), ...metricsSince(state.metrics, start) });
         fs.rmSync(cwd, { recursive: true, force: true });
       }
     }
@@ -445,7 +588,7 @@ function runEvaluation({ repoRoot = DEFAULT_REPO_ROOT, corpus = loadCorpus(), re
   const insufficient = summary.distinctTasks < pin.minimumDistinctTasks || selection.length < pin.minimumDistinctTasks;
   const selectionSuccesses = selection.filter(row => row.passed).length;
   return { schemaVersion: 'ecc.context-eval.v2', registration: pin,
-    evidence: injected ? 'injected-provider' : 'codex-jsonl', installs,
+    evidence: injected ? 'injected-provider' : resolvedFamily === 'claude' ? 'claude-json' : 'codex-jsonl', installs,
     authentication: injected ? 'injected' : liveProvider.authentication, credentialsRetained: false,
     calls: state.calls, bounds: { maxCalls, deadlineMs, callTimeoutMs }, selection, outcomes, summary,
     selectionSummary: { n: selection.length, successes: selectionSuccesses,
@@ -459,5 +602,6 @@ function runEvaluation({ repoRoot = DEFAULT_REPO_ROOT, corpus = loadCorpus(), re
     measurementScope: 'native-install-hidden-graded-coding-tasks', ...metricsSince(state.metrics, 0) };
 }
 
-module.exports = { loadCorpus, preregister, runEvaluation, parseCodexJsonl, summarize, wilson,
-  runCheck, createAuthLease, createCodexProvider, prepareEnvironments };
+module.exports = { loadCorpus, preregister, runEvaluation, parseCodexJsonl, parseClaudeJson, summarize, wilson,
+  runCheck, createAuthLease, createCodexProvider, createClaudeProvider, prepareEnvironments,
+  prepareClaudeEnvironments, providerFamily, resolveFamily, readClaudeKeychainToken };

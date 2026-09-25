@@ -5,14 +5,17 @@ const os = require('node:os');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
 const test = require('node:test');
-const { preregister, runEvaluation, parseCodexJsonl, summarize, wilson, runCheck,
-  createAuthLease, createCodexProvider } = require('../../docker/context-profiles/ai-eval-lib');
+const { preregister, runEvaluation, parseCodexJsonl, parseClaudeJson, summarize, wilson, runCheck,
+  createAuthLease, createCodexProvider, createClaudeProvider, prepareClaudeEnvironments,
+  providerFamily, resolveFamily } = require('../../docker/context-profiles/ai-eval-lib');
 const { withFixture, write } = require('./helpers/context-fixture');
 const root = path.resolve(__dirname, '../..');
 const jsonl = (text = '{}', tokens = 10) => [
   { type: 'item.completed', item: { type: 'agent_message', text } },
   { type: 'turn.completed', usage: { input_tokens: tokens, cached_input_tokens: 2, output_tokens: 3 } },
 ].map(JSON.stringify).join('\n');
+const claudeJson = (text = '{}', tokens = 10) => JSON.stringify({ type: 'result', result: text, is_error: false,
+  usage: { input_tokens: tokens, cache_creation_input_tokens: 3, cache_read_input_tokens: 4, output_tokens: 5 } });
 const posix = process.platform !== 'win32';
 const permissionModel = Number(process.versions.node.split('.')[0]) >= 20;
 
@@ -281,4 +284,124 @@ test('invalid corpus, unsafe workspace paths, bounds and repeats fail before pro
     { corpus: tinyCorpus({ tasks: [{ ...task, check: '' }] }) }]) {
     assert.throws(() => runEvaluation({ ...base, ...options }));
   }
+}));
+
+test('Claude result JSON maps cache-corrected usage and separates provider errors from parse errors', () => {
+  const parsed = parseClaudeJson(claudeJson('private text'));
+  assert.deepEqual(parsed.usage, { inputTokens: 13, cachedInputTokens: 4, outputTokens: 5 });
+  assert.equal(parsed.text, 'private text');
+  const denied = parseClaudeJson(JSON.stringify({ type: 'result', result: 'Not logged in', is_error: true,
+    usage: { input_tokens: 0, cache_creation_input_tokens: 0, cache_read_input_tokens: 0, output_tokens: 0 } }));
+  assert.equal(denied.valid, false);
+  assert.equal(denied.error, true);
+  for (const raw of ['private text', '{}', '{"type":"result"}', '{"type":"result","result":"x","is_error":false,"usage":{"input_tokens":-1,"cache_creation_input_tokens":0,"cache_read_input_tokens":0,"output_tokens":0}}',
+    claudeJson() + '\n' + claudeJson(), 'not json']) {
+    assert.equal(parseClaudeJson(raw).valid, false);
+  }
+});
+
+test('provider family resolves from an explicit flag or the executable name, and effort stays Codex-only', () => {
+  assert.equal(resolveFamily('claude', '/x/anything'), 'claude');
+  assert.equal(resolveFamily(undefined, '/opt/codex-cli'), 'codex');
+  assert.equal(resolveFamily(undefined, '/usr/local/bin/claude'), 'claude');
+  assert.equal(resolveFamily(undefined, undefined), 'codex');
+  assert.throws(() => resolveFamily('gpt', undefined), /claude or codex/);
+  assert.throws(() => resolveFamily(undefined, '/bin/ls'), /Claude or Codex/);
+  withFixture(repoRoot => {
+    const registration = preregister({ repoRoot, corpus: tinyCorpus(), executable: process.execPath, model: 'm', effort: 'high' });
+    assert.throws(() => runEvaluation({ repoRoot, corpus: tinyCorpus(), registration, allowRealProvider: true,
+      executable: process.execPath, model: 'm', effort: 'high', family: 'claude' }), /Codex/);
+  });
+});
+
+test('Claude provider runs tool-free selection and permissioned tasks with a sanitized isolated env', { skip: !posix }, () => withFixture(cwd => {
+  assert.throws(() => createClaudeProvider({}), /opt.in/);
+  assert.throws(() => createClaudeProvider({ allowRealProvider: true }), /model|executable/);
+  const calls = [];
+  const provider = createClaudeProvider({ allowRealProvider: true, executable: process.execPath, model: 'pinned-model',
+    oauthToken: 'test-token', tokenSource: null,
+    execute(command, args, options) { calls.push({ args, options }); return { status: 0, stdout: claudeJson() }; } });
+  assert.equal(provider.authentication, 'oauth-env');
+  const request = { phase: 'selection', input: 'request', cwd, timeoutMs: 5, maxBuffer: 1000,
+    env: { PATH: '/bin', HOME: cwd, CLAUDE_CONFIG_DIR: path.join(cwd, 'cfg'), TMPDIR: '/tmp', CODEX_HOME: '/tmp/x', SECRET: 's' } };
+  provider(request);
+  provider({ ...request, phase: 'task' });
+  assert.ok(calls[0].args.includes('--tools'));
+  assert.ok(!calls[0].args.join(' ').includes('bypassPermissions'));
+  assert.ok(calls[1].args.includes('--permission-mode') && calls[1].args.includes('bypassPermissions'));
+  for (const call of calls) {
+    for (const flag of ['--print', '--output-format', 'json', '--no-session-persistence', '--model', 'pinned-model']) assert.ok(call.args.includes(flag));
+    assert.deepEqual(Object.keys(call.options.env).sort(), ['CLAUDE_CODE_OAUTH_TOKEN', 'CLAUDE_CONFIG_DIR', 'DISABLE_NON_ESSENTIAL_MODEL_CALLS', 'HOME', 'PATH', 'TMPDIR']);
+    assert.equal(call.options.env.CLAUDE_CODE_OAUTH_TOKEN, 'test-token');
+    assert.equal(call.options.cwd, cwd);
+    assert.equal(call.options.killSignal, 'SIGKILL');
+    assert.equal(call.options.shell, false);
+  }
+  const keyed = createClaudeProvider({ allowRealProvider: true, executable: process.execPath, model: 'm', oauthToken: '',
+    apiKey: 'k', tokenSource: null,
+    execute(command, args, options) { calls.push({ args, options }); return { status: 0, stdout: claudeJson() }; } });
+  keyed(request);
+  assert.equal(keyed.authentication, 'api-key');
+  assert.equal(calls.at(-1).options.env.ANTHROPIC_API_KEY, 'k');
+  assert.ok(!('CLAUDE_CODE_OAUTH_TOKEN' in calls.at(-1).options.env));
+  const leased = createClaudeProvider({ allowRealProvider: true, executable: process.execPath, model: 'm', oauthToken: '',
+    apiKey: '', tokenSource: () => 'leased-token',
+    execute(command, args, options) { calls.push({ args, options }); return { status: 0, stdout: claudeJson() }; } });
+  leased(request);
+  assert.equal(leased.authentication, 'subscription-keychain-lease');
+  assert.equal(calls.at(-1).options.env.CLAUDE_CODE_OAUTH_TOKEN, 'leased-token');
+  const denied = createClaudeProvider({ allowRealProvider: true, executable: process.execPath, model: 'm', oauthToken: '',
+    apiKey: '', tokenSource: () => { throw new Error('Claude Keychain login is unavailable; provide CLAUDE_CODE_OAUTH_TOKEN'); },
+    execute(command, args, options) { return { status: 0, stdout: claudeJson() }; } });
+  assert.throws(() => denied(request), /unavailable/);
+}));
+
+test('Claude native installs materialize managed skills and detect tampering as environment drift', { skip: !posix }, () => withFixture(repoRoot => {
+  const temp = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-eval-claude-')));
+  try {
+    const envs = prepareClaudeEnvironments({ repoRoot, executable: process.execPath, root: temp });
+    assert.deepEqual(Object.keys(envs).sort(), ['full', 'lean']);
+    for (const name of ['full', 'lean']) {
+      assert.equal(envs[name].profileId, `${name}@1`);
+      assert.ok(envs[name].skills > 0);
+      const installed = fs.readdirSync(path.join(envs[name].launch.claudeConfigDir, 'skills'));
+      assert.equal(installed.length, envs[name].skills);
+      envs[name].verify();
+      envs[name].restore();
+    }
+    const tampered = path.join(envs.lean.launch.claudeConfigDir, 'skills',
+      fs.readdirSync(path.join(envs.lean.launch.claudeConfigDir, 'skills'))[0], 'SKILL.md');
+    fs.appendFileSync(tampered, 'tamper');
+    assert.throws(() => envs.lean.verify(), /environment-drift/);
+  } finally { fs.rmSync(temp, { recursive: true, force: true }); }
+}));
+
+test('injected Claude-family run parses Claude JSON, isolates config homes, grades checks and maps usage', { skip: !posix }, () => withFixture(repoRoot => {
+  const temp = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-eval-claude-run-')));
+  try {
+    const environments = prepareClaudeEnvironments({ repoRoot, executable: process.execPath, root: temp });
+    const seen = [];
+    const provider = request => {
+      seen.push({ ...request, env: { ...request.env } });
+      if (request.phase === 'selection') return { status: 0, stdout: claudeJson('{"selectedIds":[]}') };
+      fs.writeFileSync(path.join(request.cwd, 'add.js'), FIX);
+      return { status: 0, stdout: claudeJson('done') };
+    };
+    const result = runEvaluation({ repoRoot, corpus: tinyCorpus(), provider, family: 'claude', environments });
+    assert.equal(result.evidence, 'injected-provider');
+    assert.equal(result.outcomes.length, 3);
+    assert.ok(result.outcomes.every(row => row.passed), JSON.stringify(result.outcomes));
+    assert.equal(result.installs.full.skills, 5);
+    assert.equal(result.installs.lean.skills, 3);
+    assert.deepEqual(result.usage, { inputTokens: 13 * result.calls, cachedInputTokens: 4 * result.calls, outputTokens: 5 * result.calls });
+    const task = arm => seen.find(call => call.phase === 'task' && call.cwd.includes(`--${arm}--`));
+    assert.equal(typeof task('full').env.CLAUDE_CONFIG_DIR, 'string');
+    assert.equal(task('full').env.CODEX_HOME, undefined);
+    assert.notEqual(task('full').env.CLAUDE_CONFIG_DIR, task('manual-lean').env.CLAUDE_CONFIG_DIR);
+    assert.equal(task('manual-lean').env.CLAUDE_CONFIG_DIR, task('auto-lean').env.CLAUDE_CONFIG_DIR);
+    assert.deepEqual(result.outcomes.find(row => row.arm === 'full').selectedIds, []);
+    assert.deepEqual(result.outcomes.find(row => row.arm === 'manual-lean').selectedIds, ['skill:feature']);
+    const saved = JSON.stringify(result);
+    for (const forbidden of ['CLAUDE_CONFIG_DIR', os.tmpdir(), 'leased-token']) assert.ok(!saved.includes(forbidden), forbidden);
+  } finally { fs.rmSync(temp, { recursive: true, force: true }); }
 }));
