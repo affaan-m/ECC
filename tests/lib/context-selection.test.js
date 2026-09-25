@@ -5,7 +5,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const test = require('node:test');
 const { withFixture, write, update } = require('./helpers/context-fixture');
-const { resolveTaskContext } = require('../../scripts/lib/context-selection');
+const { resolveTaskContext, resolveDeclinedFallback } = require('../../scripts/lib/context-selection');
 
 const task = (values = {}) => ({ sessionId: 'session-1', taskId: 'task-1', revision: 1,
   phase: 'implement', query: '', explicitIds: [], proposedIds: [], ...values });
@@ -242,6 +242,28 @@ for (const [label, query, arm, expectedId] of QUERY_CORPUS) {
     }
   });
 }
+
+test('actual registry: a declined proposal exposes a tier-2 fallback candidate', () => {
+  const { tasks } = require('../../docker/context-profiles/ai-corpus.json');
+  const query = tasks.find(item => item.id === 'rbac-middleware').query;
+  const result = resolveTaskContext({ task: task({ query }), load: false });
+  assert.equal(result.reason, 'agent-selection-required');
+  assert.ok(result.fallback, 'expected a tier-2 fallback for the rbac task');
+  const resolved = resolveDeclinedFallback({ task: task({ query }), load: true }, result);
+  assert.equal(resolved.reason, 'auto-selection-fallback');
+  assert.deepEqual(resolved.selectedIds, [result.fallback.id]);
+  assert.equal(resolved.receipt.fallbackApplied, true);
+  const { receiptDigest, ...body } = resolved.receipt;
+  assert.equal(require('../../scripts/lib/context-profile-support').digestObject(body), receiptDigest);
+});
+
+test('actual registry: a near-tied wrong top candidate exposes no fallback', () => {
+  const { tasks } = require('../../docker/context-profiles/ai-corpus.json');
+  const query = tasks.find(item => item.id === 'slugify-regression-tests').query;
+  const result = resolveTaskContext({ task: task({ query }), load: false });
+  assert.equal(result.reason, 'agent-selection-required');
+  assert.equal(result.fallback, null);
+});
 
 test('actual registry: a simple factual question needs no context', () => {
   const result = resolveTaskContext({ task: task({ query: 'What is the capital of Japan?' }), load: true });

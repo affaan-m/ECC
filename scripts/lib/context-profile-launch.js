@@ -38,8 +38,11 @@ function launchTaskContext({ task, target = 'codex', dryRun = false, execute = s
     const proposedIds = require('./context-profile-proposal').proposeTaskContext({ target, query: task.query,
       candidates: selection.candidates, execute, env, executable: adapter.command });
     routingCalls = 1;
-    const admitted = resolveTaskContext({ ...selectionOptions, task: { ...task, proposedIds, noWorkflow: proposedIds.length === 0 },
+    let admitted = resolveTaskContext({ ...selectionOptions, task: { ...task, proposedIds, noWorkflow: proposedIds.length === 0 },
       target, load: true });
+    if (!admitted.selectedIds.length) {
+      admitted = require('./context-selection').resolveDeclinedFallback({ ...selectionOptions, task, target, load: true }, selection);
+    }
     if (admitted.receipt.bindingDigest !== selection.receipt.bindingDigest) throw new Error('Context source changed during proposal; no task was launched');
     selection = admitted;
   }
