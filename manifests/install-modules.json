@@ -430,6 +430,7 @@
         "skills/hipaa-compliance",
         "skills/laravel-security",
         "skills/llm-trading-agent-security",
+        "skills/mcp-dependency-review",
         "skills/nodejs-keccak256",
         "skills/perl-security",
         "skills/quarkus-security",
