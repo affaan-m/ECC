@@ -32,6 +32,25 @@ function runScript(command) {
   return { code: result.status || 0, stdout: result.stdout || '', stderr: result.stderr || '' };
 }
 
+/**
+ * Run the hook with `process.platform` forced to a POSIX value.
+ *
+ * The hook is a no-op on Windows, so its decision cannot be observed there at
+ * all — yet the decision itself has nothing platform-specific in it.
+ */
+function runScriptAsPosix(command) {
+  const input = { tool_input: { command } };
+  const bootstrap =
+    "Object.defineProperty(process, 'platform', { value: 'linux' });" +
+    `require(${JSON.stringify(script)});`;
+  const result = spawnSync('node', ['-e', bootstrap], {
+    encoding: 'utf8',
+    input: JSON.stringify(input),
+    timeout: 10000,
+  });
+  return { code: result.status || 0, stdout: result.stdout || '', stderr: result.stderr || '' };
+}
+
 function runTests() {
   console.log('\n=== Testing pre-bash-dev-server-block.js ===\n');
 
@@ -236,6 +255,83 @@ function runTests() {
     });
     assert.strictEqual(result.status || 0, 0);
     assert.strictEqual(result.stdout.trim(), inputStr, `Expected stdout to contain original input`);
+  }) ? passed++ : failed++);
+
+  // --- Quoted and option-separated spellings (all platforms) ---
+  //
+  // The hook no-ops on Windows, so the blocking tests above are skipped there
+  // and this class of bug could only be caught on CI. The DECISION is
+  // platform-independent, so these force the platform in-process and run
+  // everywhere.
+  //
+  // Measured before the token-based script lookup, every one of these reached
+  // the shell as a plain `npm run dev` and was allowed:
+  //
+  //   npm run "dev"        allow      npm --silent run dev   allow
+  //   npm run 'dev'        allow      yarn --cwd app dev     allow
+  //   pnpm "dev"           allow
+
+  for (const command of [
+    'npm run "dev"',
+    "npm run 'dev'",
+    'npm run de"v"',
+    'pnpm "dev"',
+    'yarn run "dev"',
+    'bun run "dev"',
+    'npm --silent run dev',
+    'yarn --cwd app dev',
+    // npm accepts any config key as `--key value`, so an option the parser does
+    // not know must not swallow the script name behind it.
+    'npm --userconfig /tmp/npmrc run dev',
+    'npm --registry https://registry.example run dev',
+    'npm --loglevel silly run dev',
+    // pnpm/yarn/bun take a script without `run`, so a value-taking option of
+    // theirs must not be read as the script name.
+    'pnpm --loglevel debug dev',
+    'yarn --network-timeout 60000 dev',
+    'bun --env-file .env dev',
+    // The implicit script wins over anything after it: this runs `dev` and
+    // passes it `run build`.
+    'pnpm dev run build'
+  ]) {
+    (test(`blocks a quoted or option-separated dev script: ${command}`, () => {
+      const result = runScriptAsPosix(command);
+      assert.strictEqual(result.code, 2, `Expected exit code 2, got ${result.code}`);
+      assert.ok(result.stderr.includes('BLOCKED'), `Expected BLOCKED, got: ${result.stderr}`);
+    }) ? passed++ : failed++);
+  }
+
+  for (const command of [
+    'npm run dev-setup',
+    'pnpm run dev-docs',
+    'yarn dev-build',
+    'npm run build',
+    'npm test',
+    'npm install',
+    // `--` ends the manager's own arguments: everything after it belongs to the
+    // script, so a stray "dev" there is not a dev server.
+    'npm test -- --grep dev',
+    // A known value-taking option still consumes its value, so a workspace or
+    // filter literally named `dev` is not mistaken for the dev script.
+    'npm run build --workspace dev',
+    'pnpm --filter dev run build',
+    // After the `run` keyword the next token IS the script; everything past it
+    // is that script's argument. `npm run run dev` runs a script called `run`.
+    'npm run run dev',
+    'npm run build dev',
+    'tmux new-session -d -s dev "npm run dev"'
+  ]) {
+    (test(`still allows: ${command}`, () => {
+      const result = runScriptAsPosix(command);
+      assert.strictEqual(result.code, 0, `Expected exit code 0, got ${result.code}: ${result.stderr}`);
+    }) ? passed++ : failed++);
+  }
+
+  (test('blocks the bare `pnpm dev` / `yarn dev` / `bun dev` forms', () => {
+    for (const command of ['pnpm dev', 'yarn dev', 'bun dev', 'npm run dev:ssr']) {
+      const result = runScriptAsPosix(command);
+      assert.strictEqual(result.code, 2, `Expected exit code 2 for ${command}, got ${result.code}`);
+    }
   }) ? passed++ : failed++);
 
   // --- Summary ---
