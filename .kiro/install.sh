@@ -87,9 +87,9 @@ if [ -d "$SOURCE_KIRO/steering" ]; then
   done
 fi
 
-# Copy hooks (.kiro.hook files and README)
+# Copy hooks (v1 JSON files are canonical; legacy .kiro.hook kept as reference only)
 if [ -d "$SOURCE_KIRO/hooks" ]; then
-  for f in "$SOURCE_KIRO/hooks"/*.kiro.hook "$SOURCE_KIRO/hooks"/*.md; do
+  for f in "$SOURCE_KIRO/hooks"/*.json "$SOURCE_KIRO/hooks"/*.md; do
     [ -f "$f" ] || continue
     local_name=$(basename "$f")
     if [ ! -f "$TARGET/.kiro/hooks/$local_name" ]; then
