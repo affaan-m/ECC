@@ -1,7 +1,7 @@
 'use strict';
 
 const yaml = require('js-yaml');
-const { loadContextRegistry } = require('./context-pack-registry');
+const { loadContextRegistry, loadSkillTriggers } = require('./context-pack-registry');
 const { compileContextProfile } = require('./context-profiles');
 const { buildRetrievalIndex, searchRetrieval } = require('./context-retrieval');
 const { DEFAULT_REPO_ROOT, createSourceReader, digestObject } = require('./context-profile-support');
@@ -18,6 +18,13 @@ const MAX_CONTEXT_BYTES = 32000;
 const AUTO_ADMIT_MIN_BM25 = 20;
 const AUTO_ADMIT_MIN_TERMS = 3;
 const AUTO_ADMIT_MARGIN = 1.5;
+// Tier-2 fallback: when Auto defers to a provider proposal and the proposal
+// declines, admit the top candidate anyway if it clears this lower bar. Below
+// it, no fallback exists — running without context is safer than loading a
+// likely-wrong skill.
+const FALLBACK_MIN_BM25 = 12;
+const FALLBACK_MIN_TERMS = 2;
+const FALLBACK_MARGIN = 1.1;
 const ROUTING_POLICY_VERSION = 3;
 const TASK_KEYS = new Set(['sessionId', 'taskId', 'revision', 'phase', 'query', 'explicitIds', 'proposedIds', 'noWorkflow']);
 const STOP_WORDS = new Set('a an and are for from help i in is it me my of on please the to with'.split(' '));
@@ -54,8 +61,9 @@ function validateTask(task) {
 // Canonical source digests replace its independent cache/receipt authority.
 // Ranking now uses the hybrid retrieval engine (BM25-weighted fields fused
 // with hashed character n-gram vectors); see context-retrieval.js.
-function candidatesFor(query, entries, excluded, admissible) {
-  const available = entries.filter(entry => !excluded.has(entry.id));
+function candidatesFor(query, entries, excluded, admissible, triggers = {}) {
+  const available = entries.filter(entry => !excluded.has(entry.id))
+    .map(entry => triggers[entry.id] ? { ...entry, triggers: triggers[entry.id] } : entry);
   const index = buildRetrievalIndex(available);
   const candidates = searchRetrieval(index, query, { limit: MAX_CANDIDATES * 3 })
     .filter(candidate => admissible(candidate.id))
@@ -136,6 +144,7 @@ function resolveTaskContext({ repoRoot = DEFAULT_REPO_ROOT, task, profileId = 'l
   validatePrevious(previous);
   const plan = compileContextProfile({ repoRoot, profileId, target, selectionMode, include, exclude });
   const registry = loadContextRegistry({ repoRoot });
+  const { triggers } = loadSkillTriggers({ repoRoot });
   if (registry.registryDigest !== plan.registryDigest) throw new Error('Registry changed during task selection');
   const reader = createSourceReader(repoRoot);
   const byId = new Map(registry.entries.map(entry => [entry.id, entry]));
@@ -163,7 +172,7 @@ function resolveTaskContext({ repoRoot = DEFAULT_REPO_ROOT, task, profileId = 'l
     }
   };
   const { candidates } = task.noWorkflow || selectionMode === 'manual' || reused
-    ? { candidates: [] } : candidatesFor(task.query || '', registry.entries, excluded, admissible);
+    ? { candidates: [] } : candidatesFor(task.query || '', registry.entries, excluded, admissible, triggers);
   // Auto admission: free-text routing loads the ranked top skill only on
   // unambiguous evidence, or when the query is an explicit directive citation
   // of exactly one skill (for example "Use the X skill"). Mere mentions —
@@ -171,7 +180,8 @@ function resolveTaskContext({ repoRoot = DEFAULT_REPO_ROOT, task, profileId = 'l
   // implicitly. Everything else keeps the bounded-proposal path so the
   // primary agent decides ambiguous cases during work it was already doing.
   const DIRECTIVE_VERB = /\b(use|apply|invoke|run|follow|load)\s+(the\s+)?/i;
-  const normalizedQueryName = text => text.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+  const normalizedQueryName = text => text.replace(/([a-z0-9])([A-Z])/g, '$1 $2').replace(/_/g, ' ')
+    .toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
   const directiveCitation = candidate => {
     if (!candidate || !candidate.exact) return false;
     const text = normalizedQueryName(task.query || '');
@@ -205,6 +215,16 @@ function resolveTaskContext({ repoRoot = DEFAULT_REPO_ROOT, task, profileId = 'l
       }
     }
   }
+  let fallback = null;
+  if (!autoSelection && !task.noWorkflow && selectionMode === 'auto' && !reused
+    && !explicitIds.length && !proposedIds.length && candidates.length && !exactAnchors.length) {
+    const top = candidates[0];
+    const second = candidates[1];
+    if (top.bm25 >= FALLBACK_MIN_BM25 && top.matchedTerms.length >= FALLBACK_MIN_TERMS
+      && (!second || top.bm25 >= FALLBACK_MARGIN * (second.bm25 || 0))) {
+      fallback = { id: top.id, bm25: top.bm25, matchedTerms: top.matchedTerms.length };
+    }
+  }
   const requested = task.noWorkflow ? [] : explicitIds.length ? explicitIds
     : reused ? previous.selectedIds : selectionMode === 'manual' ? []
       : proposedIds.length ? proposedIds : autoSelection ? [autoSelection.id] : [];
@@ -225,7 +245,7 @@ function resolveTaskContext({ repoRoot = DEFAULT_REPO_ROOT, task, profileId = 'l
     resources: resources.map(({ content: _content, ...resource }) => resource) };
   if (autoSelection) receiptValue.autoSelection = autoSelection;
   return { schemaVersion: 'ecc.task-context.v1', profileId: plan.profileId, selectionMode, target,
-    reason, reused, selectedIds, loadedIds, candidates, resources,
+    reason, reused, selectedIds, loadedIds, candidates, resources, fallback,
     activation: loadedIds.length ? 'context-returned' : 'proposed', nativeInvocation: 'unobserved',
     enforcement: 'prompt-advisory', maxContextBytes: MAX_CONTEXT_BYTES,
     receipt: { ...receiptValue, receiptDigest: digestObject(receiptValue) },
@@ -235,4 +255,17 @@ function resolveTaskContext({ repoRoot = DEFAULT_REPO_ROOT, task, profileId = 'l
       'The byte cap is an output bound, not a measured native token budget. Declared workflow dependencies remain incomplete.'] };
 }
 
-module.exports = { resolveTaskContext };
+/** After a bounded proposal declines, admit the tier-2 fallback candidate so a
+ * task with decent local evidence never runs with zero context. Returns the
+ * original selection when no fallback exists or it cannot be admitted. */
+function resolveDeclinedFallback(options, selection) {
+  if (!selection || selection.reason !== 'agent-selection-required' || !selection.fallback) return selection;
+  const resolved = resolveTaskContext({ ...options, task: { ...options.task, proposedIds: [selection.fallback.id] } });
+  if (!resolved.selectedIds.length) return selection;
+  const receiptValue = { ...resolved.receipt, fallbackApplied: true };
+  delete receiptValue.receiptDigest;
+  return { ...resolved, reason: 'auto-selection-fallback',
+    receipt: { ...receiptValue, receiptDigest: digestObject(receiptValue) } };
+}
+
+module.exports = { resolveTaskContext, resolveDeclinedFallback };

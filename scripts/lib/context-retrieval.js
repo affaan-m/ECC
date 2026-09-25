@@ -20,16 +20,20 @@ const K1 = 1.2;
 const B = 0.75;
 const RRF_K = 60;
 const DENSE_DIM = 2048;
-const FIELD_WEIGHTS = { name: 3.0, description: 2.0, module: 1.0 };
+const FIELD_WEIGHTS = { name: 3.0, triggers: 2.5, description: 2.0, module: 1.0 };
 // A dense-leg hit this strong means morphology matched even without BM25
 // tokens; below it, sparse hash collisions are more likely than intent.
 const DENSE_ADMIT_COSINE = 0.35;
 
 function tokenize(text) {
-  return text.toLowerCase().split(/[^a-z0-9]+/).filter(word => word.length > 1 && !STOP_WORDS.has(word));
+  // Split camelCase and snake_case identifiers so code-heavy task prose
+  // (buildFindUserQuery, node-postgres) matches skill vocabulary token by token.
+  return text.replace(/([a-z0-9])([A-Z])/g, '$1 $2').replace(/_/g, ' ')
+    .toLowerCase().split(/[^a-z0-9]+/).filter(word => word.length > 1 && !STOP_WORDS.has(word));
 }
 
-function normalizedName(text) { return text.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim(); }
+function normalizedName(text) { return text.replace(/([a-z0-9])([A-Z])/g, '$1 $2').replace(/_/g, ' ')
+  .toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim(); }
 
 // FNV-1a 32-bit: stable, platform-independent feature hashing.
 function hash32(text) {
@@ -75,11 +79,14 @@ function dot(left, right) {
 
 function fieldTokens(entry, field) {
   if (field === 'name') return tokenize(`${entry.id.slice('skill:'.length)} ${entry.name || ''}`);
+  if (field === 'triggers') return tokenize((entry.triggers || []).join(' '));
   if (field === 'description') return tokenize(entry.description || '');
   return tokenize(`${entry.ownerModuleId || ''} ${entry.packId || ''}`);
 }
 
-/** Build a reusable retrieval index over registry-shaped entries. */
+/** Build a reusable retrieval index over registry-shaped entries. Entries may
+ * carry a `triggers` array (from the checked-in skill-triggers manifest) that
+ * is weighted between name and description. */
 function buildRetrievalIndex(entries) {
   const documents = entries.map(entry => {
     const fields = {};

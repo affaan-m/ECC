@@ -1,6 +1,7 @@
 'use strict';
 
 const fs = require('fs');
+const path = require('path');
 const yaml = require('js-yaml');
 const {
   DEFAULT_REPO_ROOT, TARGETS, createSourceReader, digestObject, validateRelativePath,
@@ -8,6 +9,7 @@ const {
 } = require('./context-profile-support');
 
 const REGISTRY_PATH = 'manifests/context-packs/skill-registry@1.json';
+const TRIGGERS_PATH = 'manifests/context-packs/skill-triggers@1.json';
 const ID_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 
 function validateModules(document) {
@@ -123,6 +125,23 @@ function loadContextRegistry({ repoRoot = DEFAULT_REPO_ROOT } = {}) {
   return { ...value, registryDigest: digestObject(value) };
 }
 
+function loadSkillTriggers({ repoRoot = DEFAULT_REPO_ROOT } = {}) {
+  const file = path.join(repoRoot, TRIGGERS_PATH);
+  if (!fs.existsSync(file) || !fs.statSync(file).isFile()) return { triggers: {}, manifest: null };
+  let manifest;
+  try { manifest = JSON.parse(fs.readFileSync(file, 'utf8')); }
+  catch (error) { throw new Error(`Invalid skill triggers manifest: ${error.message}`); }
+  if (!manifest || manifest.schemaVersion !== 1 || !manifest.triggers || typeof manifest.triggers !== 'object') {
+    throw new Error('Invalid skill triggers manifest: expected schemaVersion 1 with a triggers object');
+  }
+  const triggers = {};
+  for (const [id, list] of Object.entries(manifest.triggers)) {
+    if (!Array.isArray(list) || !list.length) continue;
+    triggers[id] = [...new Set(list.map(item => String(item).trim().toLowerCase()).filter(Boolean))];
+  }
+  return { triggers, manifest };
+}
+
 function projectionFor(entry, target) {
   return {
     installSupport: entry.declaredInstallTargets.includes(target) ? 'declared' : 'not-declared',
@@ -138,4 +157,4 @@ function explainContextEntry({ repoRoot = DEFAULT_REPO_ROOT, id, target = 'codex
   return { ...entry, target, projection: projectionFor(entry, target), registryDigest: registry.registryDigest };
 }
 
-module.exports = { explainContextEntry, loadContextRegistry, projectionFor };
+module.exports = { explainContextEntry, loadContextRegistry, loadSkillTriggers, projectionFor };

@@ -9,7 +9,7 @@ const { isDeepStrictEqual } = require('node:util');
 const LIB = path.join(__dirname, '../../scripts/lib');
 const { loadContextRegistry } = require(path.join(LIB, 'context-pack-registry'));
 const { compileContextProfile } = require(path.join(LIB, 'context-profiles'));
-const { resolveTaskContext } = require(path.join(LIB, 'context-selection'));
+const { resolveTaskContext, resolveDeclinedFallback } = require(path.join(LIB, 'context-selection'));
 const { proposeTaskContext } = require(path.join(LIB, 'context-profile-proposal'));
 const { resolveExecutable, fingerprintExecutable } = require(path.join(LIB, 'context-profile-native-executable'));
 const { launchTaskContext } = require(path.join(LIB, 'context-profile-launch'));
@@ -21,6 +21,7 @@ const ARMS = Object.freeze(['full', 'manual-lean', 'auto-lean']);
 const CORPUS_PATH = path.join(__dirname, 'ai-corpus.json');
 const CHECK_FILE = '.ecc-eval-check.cjs';
 const IMPLEMENTATION = ['docker/context-profiles/ai-eval-lib.js', 'docker/context-profiles/ai-eval.js',
+  'manifests/context-packs/skill-triggers@1.json',
   'scripts/lib/context-profile-launch.js', 'scripts/lib/context-selection.js',
   'scripts/lib/context-profile-proposal.js', 'scripts/lib/context-profiles.js',
   'scripts/lib/context-profile-support.js', 'scripts/lib/context-pack-registry.js',
@@ -359,7 +360,8 @@ function selectionProbe(item, repoRoot, execute, environment) {
     if (selection.reason === 'agent-selection-required') {
       const proposedIds = proposeTaskContext({ target: 'codex', query: item.query, candidates: selection.candidates, execute,
         executable: environment.launch.codexPath });
-      selection = resolveTaskContext({ ...options, task: { ...options.task, proposedIds, noWorkflow: proposedIds.length === 0 } });
+      const next = resolveTaskContext({ ...options, task: { ...options.task, proposedIds, noWorkflow: proposedIds.length === 0 } });
+      selection = next.selectedIds.length ? next : resolveDeclinedFallback(options, selection);
     }
     return { id: item.id, category: item.category, passed: !item.expectedBlock
       && isDeepStrictEqual(selection.selectedIds, item.expectedIds), selectedIds: selection.selectedIds, failure: null };
