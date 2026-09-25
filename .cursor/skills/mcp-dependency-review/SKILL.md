@@ -15,7 +15,7 @@ This is a **static review workflow**. Read configuration as text/JSON only. Do n
 - Before approving a new or changed MCP configuration.
 - When reviewing `.mcp.json`, `.github/mcp.json`, `.cursor/mcp.json`, `.vscode/mcp.json`, or equivalent workspace configuration.
 - When adding a deterministic MCP configuration check to CI.
-- When an MCP package reference uses `@latest`, a bare package name, or a version range.
+- When an MCP package reference uses `@latest`, another npm distribution tag, a bare package name, or a version range.
 - When a team wants to know whether a previously reviewed config can silently resolve to newer package code.
 
 ## Review Boundary
@@ -36,10 +36,11 @@ For npm/npx-style package selectors, classify the package reference itself:
 
 | Selector | Result | Why |
 | --- | --- | --- |
-| `package@1.2.3` | SAFE | Exact semantic version is reproducible. |
+| `package@1.2.3` | SAFE | The direct package selector is exact. This does not prove the full dependency tree is reproducible without a lockfile or equivalent integrity controls. |
 | `package` | HIGH | A future resolution can select different package code. |
 | `@scope/package` | HIGH | Scoped bare package is still mutable. |
-| `package@latest` | HIGH | The selector is explicitly mutable. |
+| `package@latest` | HIGH | The selector is an npm distribution tag and is explicitly mutable. |
+| `package@beta`, `package@next`, or another distribution tag | HIGH | npm distribution tags can be moved to different package versions. |
 | `package@^1.2.0` | MEDIUM | Resolution can move within the range. |
 | `package@~1.2.0` | MEDIUM | Resolution can move within the range. |
 | wildcard / inequality / other range | MEDIUM | Selector permits more than one version. |
@@ -51,7 +52,7 @@ Treat `-y` / `--yes` only as context. It suppresses interactive confirmation; it
 
 ### 1. Locate repo-scoped configuration
 
-Check only relevant workspace paths first, for example:
+Check common workspace paths first, for example:
 
 ```text
 .mcp.json
@@ -59,19 +60,23 @@ Check only relevant workspace paths first, for example:
 .cursor/mcp.json
 .vscode/mcp.json
 .windsurf/mcp.json
+.kiro/settings/mcp.json
+.kiro/settings/mcp.json.example
 ```
 
-Also inspect another MCP config path when the user names it explicitly.
+Then perform bounded discovery inside the requested repository/workspace for equivalent tracked MCP configuration files and examples. Stay inside the requested workspace; do not silently expand into home-directory or machine-wide configuration. Also inspect another MCP config path when the user names it explicitly.
 
 ### 2. Parse without executing
 
-Read JSON or configuration text and identify each configured MCP server. For package-runner invocations such as `npx`, `npm exec`, `bunx`, `bun x`, `pnpm dlx`, or `yarn dlx`, isolate the package selector from command-line flags.
+Read JSON or configuration text and identify each configured MCP server. For package-runner invocations such as `npx`, `npm exec`, `bunx`, `bun x`, `pnpm dlx`, or `yarn dlx`, isolate every package selector from command-line flags.
+
+Package-valued flags count as package selectors too. For example, in `npx --package ecc-universal ecc`, classify `ecc-universal` as the package selector and treat `ecc` as the executable. If multiple package-valued flags are present, review every supplied package selector.
 
 Never execute the discovered command to learn what it does.
 
 ### 3. Classify the selector
 
-Apply the static classification table above. If the syntax is ambiguous, return REVIEW rather than guessing.
+Apply the static classification table above. Treat any npm distribution tag, not only `latest`, as HIGH. If the syntax is ambiguous, return REVIEW rather than guessing.
 
 ### 4. Recommend a reproducible fix
 
@@ -90,6 +95,7 @@ End with these boundaries:
 
 - No MCP servers were executed during this review.
 - Mutable dependency references are reproducibility/review signals, not breach claims.
+- `SAFE` means the direct selector is exact; it does not establish full transitive dependency reproducibility.
 - A clean result here is not a complete MCP security assessment.
 
 ## Example
@@ -137,7 +143,7 @@ Next: pin the exact version the team reviews and update it deliberately.
 
 ### Treating a clean drift review as complete MCP security
 
-Exact dependency pins do not prove safe authorization, prompt-injection resistance, package provenance, secure implementation, or runtime isolation.
+Exact direct dependency pins do not prove full transitive reproducibility, safe authorization, prompt-injection resistance, package provenance, secure implementation, or runtime isolation.
 
 ## Related Skills
 
