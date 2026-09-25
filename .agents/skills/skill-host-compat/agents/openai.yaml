@@ -1,0 +1,7 @@
+interface:
+  display_name: "Skill Host Compat"
+  short_description: "Lint skills for Codex-safe frontmatter and substitutions"
+  brand_color: "#6366F1"
+  default_prompt: "Use $skill-host-compat to lint skills for Codex/Cursor-safe frontmatter and Claude-only substitutions."
+policy:
+  allow_implicit_invocation: true

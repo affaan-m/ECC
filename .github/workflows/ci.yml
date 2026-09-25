@@ -211,6 +211,10 @@ jobs:
         run: node scripts/ci/validate-skills.js
         continue-on-error: false
 
+      - name: Validate skill host compatibility
+        run: node scripts/ci/validate-skill-host-compat.js
+        continue-on-error: false
+
       - name: Validate install manifests
         run: node scripts/ci/validate-install-manifests.js
         continue-on-error: false

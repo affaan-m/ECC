@@ -138,13 +138,13 @@ Instead of rebuilding that process in every prompt, you install it once and make
 
 ECC is MIT-licensed open source. It works best with Claude Code today, has a supported Codex sync path, and provides capability-limited adapters for Cursor, OpenCode, Gemini, Zed, GitHub Copilot, Antigravity, Qwen, and other harnesses. See the [support status matrix](#platform-support) before assuming feature parity.
 
-Access to 68 agents, 292 skills, and 94 legacy command shims, plus hooks, rules, memory, continuous learning, and AgentShield security scanning. The agents are specialized for planning, review, build repair, security, architecture, and domain work.
+Access to 68 agents, 293 skills, and 95 legacy command shims, plus hooks, rules, memory, continuous learning, and AgentShield security scanning. The agents are specialized for planning, review, build repair, security, architecture, and domain work.
 
 | Included         |       Count | What it gives you                                                                    |
 | ---------------- | ----------: | ------------------------------------------------------------------------------------ |
 | Agents           |   68 agents | Planning, review, build repair, security, architecture, and domain work              |
-| Skills           |  292 skills | TDD, research, security, docs, frontend, data, ML, operations, and more              |
-| Commands         | 94 commands | Convenient entry points while ECC moves to a skills-first surface                    |
+| Skills           |  293 skills | TDD, research, security, docs, frontend, data, ML, operations, and more              |
+| Commands         | 95 commands | Convenient entry points while ECC moves to a skills-first surface                    |
 | Hooks and memory |     Runtime | Enforcement, session summaries, continuous learning, instincts, and context controls |
 | Rules            |   Selective | Always-loaded standards you choose by language or project                            |
 | AgentShield      |    Included | Scanning for prompts, hooks, MCP config, permissions, secrets, and agent files       |
@@ -937,6 +937,7 @@ ECC/
 |   |-- swift-protocol-di-testing/  # Protocol-based DI for testable Swift code
 |   |-- search-first/               # Research-before-coding workflow
 |   |-- skill-stocktake/            # Audit skills and commands for quality
+|   |-- skill-host-compat/          # Lint skills for Codex-safe frontmatter and substitutions
 |   |-- liquid-glass-design/        # iOS 26 Liquid Glass design system
 |   |-- foundation-models-on-device/ # Apple on-device LLM with FoundationModels
 |   |-- swift-concurrency-6-2/      # Swift 6.2 Approachable Concurrency
@@ -963,6 +964,7 @@ ECC/
 |   |-- go-test.md          # /go-test - Go TDD workflow
 |   |-- go-build.md         # /go-build - Fix Go build errors
 |   |-- skill-create.md     # /skill-create - Generate skills from git history
+|   |-- skill-host-compat.md # /skill-host-compat - Lint skills for Codex/Cursor copies
 |   |-- instinct-status.md  # /instinct-status - View learned instincts
 |   |-- instinct-import.md  # /instinct-import - Import instincts
 |   |-- instinct-export.md  # /instinct-export - Export instincts

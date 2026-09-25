@@ -50,6 +50,8 @@ function buildExpectedPublishPaths(repoRoot) {
     "scripts/catalog.js",
     "scripts/ci/scan-supply-chain-iocs.js",
     "scripts/ci/supply-chain-advisory-sources.js",
+    "scripts/ci/validate-skill-host-compat.js",
+    "scripts/ci/validate-skills.js",
     "scripts/consult.js",
     "scripts/control-pane.js",
     "scripts/dashboard-web.js",
@@ -184,6 +186,8 @@ function main() {
         "scripts/catalog.js",
         "scripts/ci/scan-supply-chain-iocs.js",
         "scripts/ci/supply-chain-advisory-sources.js",
+        "scripts/ci/validate-skill-host-compat.js",
+        "scripts/ci/validate-skills.js",
         "scripts/consult.js",
         "scripts/control-pane.js",
         "scripts/feedback.js",
@@ -232,6 +236,7 @@ function main() {
         "schemas/memory.schema.json",
         "skills/backend-patterns/SKILL.md",
         "skills/skill-comply/SKILL.md",
+        "skills/skill-host-compat/SKILL.md",
         "skills/unified-memory/SKILL.md",
       ]) {
         assert.ok(

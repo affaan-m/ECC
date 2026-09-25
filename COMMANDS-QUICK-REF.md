@@ -180,6 +180,7 @@ These lifecycle commands are also available through the `ecc` CLI.
 | `/instinct-import` | Import instincts from a file or URL |
 | `/skill-create` | Analyse local git history → generate a reusable skill |
 | `/skill-health` | Skill portfolio health dashboard with analytics |
+| `/skill-host-compat` | Lint skills for Codex-safe frontmatter and Claude substitutions |
 
 ---
 

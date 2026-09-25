@@ -41,6 +41,9 @@ jobs:
       - name: Validate skills
         run: node scripts/ci/validate-skills.js
 
+      - name: Validate skill host compatibility
+        run: node scripts/ci/validate-skill-host-compat.js
+
       - name: Validate install manifests
         run: node scripts/ci/validate-install-manifests.js
 

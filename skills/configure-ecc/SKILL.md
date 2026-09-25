@@ -73,15 +73,10 @@ the selected install scope.
 
 ### 3. Preview and confirm once
 
-Prefer the plugin-bundled setup script. Substitute the two selected values and
-include `--move-scope` only for a scope migration:
-
-```bash
-node "$CLAUDE_PLUGIN_ROOT/scripts/setup.js" --mode claude-plugin \
-  --scope <scope> --hooks <hooks> [--move-scope] --dry-run --json
-```
-
-If `$CLAUDE_PLUGIN_ROOT` is unavailable, use the published npm package:
+Prefer the plugin-bundled setup script. When `$CLAUDE_PLUGIN_ROOT` is set, run
+`node` on `scripts/setup.js` under that plugin root. Substitute the two selected
+values and include `--move-scope` only for a scope migration. If the plugin root
+is unavailable, use the published npm package:
 
 ```bash
 npx --yes --package ecc-universal ecc setup --mode claude-plugin \
@@ -96,14 +91,9 @@ harness shell tool because that shell is commonly non-TTY.
 ### 4. Apply the explicit choices
 
 After confirmation, rerun the same route without `--dry-run`. Keep every choice
-explicit and request JSON so success can be checked deterministically:
-
-```bash
-node "$CLAUDE_PLUGIN_ROOT/scripts/setup.js" --mode claude-plugin \
-  --scope <scope> --hooks <hooks> [--move-scope] --yes --json
-```
-
-Fallback:
+explicit and request JSON so success can be checked deterministically. When
+`$CLAUDE_PLUGIN_ROOT` is set, that is `node` plus `scripts/setup.js` with
+`--yes --json`. Otherwise:
 
 ```bash
 npx --yes --package ecc-universal ecc setup --mode claude-plugin \
