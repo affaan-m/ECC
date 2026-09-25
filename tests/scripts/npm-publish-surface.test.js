@@ -170,6 +170,7 @@ function main() {
       const packagedPaths = new Set(packEntry?.files?.map((file) => file.path) ?? [])
 
       for (const requiredPath of [
+        "skills/frontend-design-direction/scripts/check-evidence.js",
         "scripts/eval-harness.js",
         "scripts/lib/eval-harness/index.js",
         "examples/eval-harness/run-example.js",
