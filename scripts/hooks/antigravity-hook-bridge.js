@@ -113,19 +113,32 @@ async function main() {
       result = {
         exitCode: child.error || child.status === null ? 2 : child.status,
         stderr: child.stderr || '',
+        stdout: typeof child.stdout === 'string' ? child.stdout : '',
       };
     } else if (options.hook === 'pre:write:doc-file-warning') {
       result = runDocFileWarning(eccJsonString);
     }
 
-    const output = result && (result.stdout || result.output);
-    const hookOutput = output ? JSON.parse(output).hookSpecificOutput : null;
-    const denied = result && ((result.exitCode !== undefined && result.exitCode !== 0) || result.denied || result.blocked)
-      || hookOutput?.permissionDecision === 'deny';
+    const output = typeof result?.stdout === 'string'
+      ? result.stdout
+      : (typeof result?.output === 'string' ? result.output : null);
+    let hookOutput = null;
+    if (output) {
+      try {
+        const parsed = JSON.parse(output);
+        hookOutput = parsed && typeof parsed === 'object' ? parsed.hookSpecificOutput : null;
+      } catch {
+        hookOutput = null;
+      }
+    }
+    const denied = Boolean(
+      (result && ((result.exitCode !== undefined && result.exitCode !== 0) || result.denied || result.blocked))
+      || hookOutput?.permissionDecision === 'deny'
+    );
     const context = result?.additionalContext || hookOutput?.additionalContext;
     const reason = denied
-      ? hookOutput?.permissionDecisionReason || result.stderr || result.reason || 'Blocked by ECC safety hook'
-      : Array.isArray(context) ? context.join(' ') : context;
+      ? hookOutput?.permissionDecisionReason || result?.stderr || result?.reason || 'Blocked by ECC safety hook'
+      : (Array.isArray(context) ? context.join(' ') : context);
     process.stdout.write(JSON.stringify({
       decision: denied ? 'deny' : 'allow',
       ...(reason ? { reason: String(reason).replace(/\r?\n/g, ' ').trim() } : {}),

@@ -477,6 +477,29 @@ function runTests() {
     assert.match(output.reason, /completely|input/i);
   });
 
+  test('antigravity-hook-bridge safely ignores non-JSON hook stdout and allows safe tool call', () => {
+    const bridgePath = path.join(__dirname, '..', '..', 'scripts', 'hooks', 'antigravity-hook-bridge.js');
+    const input = JSON.stringify({
+      conversationId: 'test-conv',
+      workspacePaths: ['/tmp'],
+      toolCall: {
+        name: 'run_command',
+        args: {
+          CommandLine: 'echo safe',
+        },
+      },
+    });
+
+    const run = spawnSync(process.execPath, [bridgePath, '--mode', 'pre-tool-use', '--hook', 'pre:write:doc-file-warning'], {
+      input,
+      encoding: 'utf8',
+    });
+
+    assert.strictEqual(run.status, 0);
+    const output = JSON.parse(run.stdout);
+    assert.strictEqual(output.decision, 'allow');
+  });
+
   test('antigravity-project plans mcp_config.json when platform configs are selected', () => {
     const projectRoot = createTempDir('antigravity-proj-mcp-');
     try {

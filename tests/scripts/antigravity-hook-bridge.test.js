@@ -62,6 +62,9 @@ async function main() {
   }
   assert.strictEqual((await invoke({ hook: 'pre:config-protection', child: { status: 0, stderr: '' } })).response.decision, 'allow');
   assert.strictEqual((await invoke({ result: '{}' })).response.decision, 'allow');
+  assert.strictEqual((await invoke({ result: { exitCode: 0, stdout: 'warning: non-json line' } })).response.decision, 'allow');
+  assert.strictEqual((await invoke({ result: { exitCode: 0, output: ['ignored', 'output array'] } })).response.decision, 'allow');
+  assert.strictEqual((await invoke({ hook: 'pre:config-protection', child: { status: 0, stdout: 'non-json warning', stderr: '' } })).response.decision, 'allow');
   assert.strictEqual((await invoke({ mode: 'stop', raw: '{' })).response.decision, 'allow');
   assert.strictEqual((await invoke({ mode: 'post-tool-use', hook: 'post:edit:accumulator' })).hookCalls, 1);
   assert.strictEqual((await invoke({ mode: 'post-tool-use', hook: 'post:edit:accumulator', raw: JSON.stringify({ error: 'write failed' }) })).hookCalls, 0);
