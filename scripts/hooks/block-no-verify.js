@@ -15,6 +15,16 @@
 
 'use strict';
 
+const { quotedRegionAt, commandStatements, ASSIGNMENT_WORD } = require('../lib/shell-quotes');
+const {
+  startsAtSubstitution,
+  statementBounds,
+  endsStatement,
+  mayGroupStatements,
+} = require('../lib/shell-statements');
+const { receivesAsData, sedArguments, readsCodeFromStdin } = require('../lib/code-receivers');
+const { sedScriptTexts, sedExecution } = require('../lib/sed-script');
+
 const MAX_STDIN = 1024 * 1024;
 let raw = '';
 
@@ -149,7 +159,11 @@ function tokenizeShellWords(input, start = 0, end = input.length) {
       continue;
     }
 
-    if (/\s/.test(char)) {
+    // Whitespace ends a word; so do the unquoted substitution delimiters,
+    // which can never be part of a word (`echo "$(git push --no-verify)"`,
+    // "`git push --no-verify`" used to yield the token `--no-verify)` /
+    // `--no-verify\``, hiding the flag).
+    if (/[\s`()]/.test(char)) {
       pushToken(i);
       continue;
     }
@@ -290,6 +304,78 @@ function isInComment(input, idx) {
 }
 
 /**
+ * The commands the sed scripts in `input` run, from every statement that runs
+ * sed. A script that only mentions a bypass flag, in a pattern or a text it
+ * does not run, adds nothing, and neither does an input file name.
+ */
+function sedExecutedCommands(input) {
+  return commandStatements(input).flatMap(({ argv0Start }) => {
+    const { end, opaque } = statementBounds(input, argv0Start);
+    const words = tokenizeShellWords(input, argv0Start, end).map((token) => token.value);
+    const args = sedArguments(words);
+    if (args === null) return [];
+    return sedScriptTexts(args, opaque).flatMap((script) => sedExecution(script).commands);
+  });
+}
+
+/**
+ * Whether a later part of the command line pipes into a program that reads
+ * what it receives as code (`echo '...' | sh`). Every later pipe counts, not
+ * only the rest of this pipeline, so a group such as `{ echo '...'; } | sh`
+ * is covered as well. When nothing before a statement's end can group it
+ * with later commands, its output stops there: in
+ * `echo '...'; printf x | sh` only `printf x` reaches `sh`.
+ */
+function pipesIntoCodeReader(input, from) {
+  let pos = from;
+  let grouped = false;
+  while (pos < input.length) {
+    const end = findCommandSegmentEnd(input, pos);
+    if (end >= input.length) return false;
+    // The prefix only grows, so once it can group statements it always can.
+    if (!grouped && endsStatement(input, end)) {
+      if (!mayGroupStatements(input, end)) return false;
+      grouped = true;
+    }
+    pos = end + 1;
+    if (input.charAt(end) !== '|') continue;
+    if (input.charAt(pos) === '|') {
+      pos += 1;
+      continue;
+    }
+    if (input.charAt(pos) === '&') pos += 1;
+    // A newline right after a pipe continues the pipeline.
+    while (/\s/.test(input.charAt(pos))) pos += 1;
+    const words = tokenizeShellWords(input, pos, findCommandSegmentEnd(input, pos))
+      .map((token) => token.value)
+      .filter((word) => !ASSIGNMENT_WORD.test(word));
+    if (words.length > 0 && readsCodeFromStdin(words)) return true;
+  }
+  return false;
+}
+
+/**
+ * A `git` inside a quoted string is only a command when that string is
+ * handed to something that executes it: a shell or process wrapper, or a
+ * runtime given an eval flag. Otherwise it is an argument of an unrelated
+ * program (a CLI under test, printf, grep, a script path, ...) and must not
+ * be inspected for bypass flags. A double-quoted string that contains a
+ * command substitution (`"$(git ...)"`, "`git ...`") runs git before any
+ * program receives it, so it is never data. Nor is a string whose program
+ * prints it into something that runs it: a pipe into a shell, or a
+ * substitution whose output is run or sourced.
+ */
+function isQuotedDataArgument(input, idx) {
+  const region = quotedRegionAt(input, idx);
+  if (region === null || region.argv0 === '') return false;
+  if (region.substitution) return false;
+  if (startsAtSubstitution(input, region.argv0Start)) return false;
+  if (pipesIntoCodeReader(input, region.end + 1)) return false;
+  const words = input.slice(region.argv0Start, region.start).split(/\s+/).filter(Boolean);
+  return receivesAsData([region.argv0, ...words.slice(1)]);
+}
+
+/**
  * Find the next 'git' token in the input starting from a position.
  */
 function findGit(input, start) {
@@ -307,7 +393,9 @@ function findGit(input, start) {
     }
 
     const before = idx > 0 ? input[idx - 1] : ' ';
-    if (VALID_BEFORE_GIT.includes(before)) return { idx, len };
+    if (VALID_BEFORE_GIT.includes(before) && !isQuotedDataArgument(input, idx)) {
+      return { idx, len };
+    }
     pos = idx + 1;
   }
   return null;
@@ -404,18 +492,30 @@ function isNoVerifyLongFlag(value) {
 }
 
 /**
+ * A flag inside a code payload is followed by the punctuation that closes the
+ * call (`execSync("git push --no-verify")`), and the word tokenizer keeps that
+ * punctuation in the token. When the payload goes on after the call, the
+ * closing quote reads to the tokenizer as an opening one, and the rest of the
+ * payload lands in the same token (`system("git push --no-verify") }`). Keep
+ * the part before the first such character; a real flag contains none.
+ */
+function flagToken(value) {
+  return value.replace(/[)\]}'"`;,\s][\s\S]*$/, '');
+}
+
+/**
  * Check if the input contains a --no-verify flag for a specific git command.
  * Only inspects the portion of the input starting at `offset` (the position
  * right after the detected subcommand keyword) so that flags belonging to
  * earlier commands in a chain are not falsely matched.
  */
-function hasNoVerifyFlag(input, command, offset) {
-  const segmentEnd = findCommandSegmentEnd(input, offset);
+function hasNoVerifyFlag(input, command, offset, limit = input.length) {
+  const segmentEnd = Math.min(findCommandSegmentEnd(input, offset), limit);
   const tokens = tokenizeShellWords(input, offset, segmentEnd);
   let skipNext = false;
 
   for (const token of tokens) {
-    const value = token.value;
+    const value = flagToken(token.value);
 
     if (skipNext) {
       skipNext = false;
@@ -482,6 +582,14 @@ function hasHooksPathOverride(input, detected) {
  * Check a command string for git hook bypass attempts.
  */
 function checkCommand(input) {
+  // sed runs these through a shell, and inside its script they are glued to
+  // the delimiters (`s/x/git push --no-verify/e`), so they are checked as the
+  // command lines they are.
+  for (const command of sedExecutedCommands(input)) {
+    const result = checkCommand(command);
+    if (result.blocked) return result;
+  }
+
   let start = 0;
 
   while (start < input.length) {
@@ -497,7 +605,13 @@ function checkCommand(input) {
       };
     }
 
-    if (hasNoVerifyFlag(input, gitCommand, offset)) {
+    // A git command line inside a quoted string (`sh -c 'git push ...'`)
+    // ends with that string: scanning past the closing quote would read the
+    // rest of the outer statement in the wrong quote state, so `sh -c 'git
+    // push --no-verify'; echo done` glued `; echo done` onto the flag token.
+    const region = quotedRegionAt(input, detected.gitStart);
+    const limit = region === null ? input.length : region.end;
+    if (hasNoVerifyFlag(input, gitCommand, offset, limit)) {
       return {
         blocked: true,
         reason: `BLOCKED: --no-verify flag is not allowed with git ${gitCommand}. Git hooks must not be bypassed.`,
