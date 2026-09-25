@@ -167,3 +167,43 @@ no Codex install path); `--provider claude` is required.
   shipped. This is identical for every arm (the task says to make `npm test`
   pass, and agents fix the script), so fairness holds, but it adds unplanned
   work per trial. A future corpus revision should ship a portable test script.
+
+## complex-tasks@2 (discriminative revision)
+
+The @1 run saturated: every arm scored 1.000 on every task, so only economics
+and routing differed. @2 (`cases2/`, built to `complex-corpus-v2.json`) is
+designed to discriminate on the axes users actually pay for — correctness on
+traps, solution efficiency, spec thoroughness — with wide partial-credit
+spreads. The @1 corpus and its report stay untouched for comparability.
+
+1. **`keccak-selector`** (domain-knowledge trap). Implement Ethereum function
+   selectors from scratch, stdlib only. The trap: Node's crypto offers
+   SHA3-256, which shares the Keccak-f[1600] permutation but differs in
+   padding — the naive one-liner is wrong for every vector (verified: the
+   naive control scores 0.25, format checks only). Graded by 9 selector
+   vectors including a padding edge case, all cross-validated against Node's
+   SHA3-256 on shared-permutation inputs. Canonical skill: `nodejs-keccak256`.
+   *Hypothesis:* the skill body carries exactly this knowledge; bare agents
+   must rediscover it.
+
+2. **`event-stats-api`** (correctness edges + measured efficiency). A shipped
+   implementation that is both wrong on the documented edge semantics
+   (interpolated instead of nearest-rank percentiles, zeros instead of nulls,
+   unrounded averages, missing 400s) and algorithmically naive (full-log scan
+   + sort per query). Graded by 10 independently computed correctness probes
+   plus a measured 2,000-query performance budget (threshold 6s; shipped naive
+   ~7.7s, reference ~1.5s — calibrated on the grading machine in
+   `calibrate-stats.js`). Canonical skill: `backend-patterns`. *Hypothesis:*
+   solution *efficiency* separates arms even when correctness doesn't.
+
+3. **`forge-cli`** (spec thoroughness + robustness). Twelve contractual
+   behaviors with exact messages, exit codes, sorting, and a never-throw
+   guarantee, graded by 26 checks including junk-input fuzzing and static
+   hygiene (no leftover TODO/FIXME, no new dependencies). Canonical skill:
+   `tdd-workflow`. *Hypothesis:* checklist discipline shows up as breadth of
+   completion, and partial credit spreads the distribution.
+
+First @2 run uses `claude-opus-4-8` (cost discipline); the corpus is
+provider- and model-pinned per run, so a later Opus 5.5 rerun on the same
+digest measures the model difference directly. repeats=2 (30 trials): simple
+experimentation, expand later.
