@@ -7,6 +7,10 @@ description: This skill should be used when the user asks to create a hookify ru
 
 ## Overview
 
+ECC evaluates project-local Hookify rules with its built-in Node runtime. No
+separate Hookify plugin or Python installation is required when ECC hooks are
+enabled.
+
 Hookify rules are markdown files with YAML frontmatter that define patterns to watch for and messages to show when those patterns match. Rules are stored in `.claude/hookify.{rule-name}.local.md` files.
 
 ## Rule File Format
@@ -100,6 +104,23 @@ Match user prompt content for workflow enforcement.
 ```bash
 python3 -c "import re; print(re.search(r'your_pattern', 'test text'))"
 ```
+
+Avoid nested quantifiers such as `(a+)+`. The runtime rejects patterns with
+common catastrophic-backtracking shapes because rules run synchronously in the
+hook path, and every regex evaluation has a 25 ms hard timeout. Invalid,
+symlinked, or oversized local rules fail open and emit a
+diagnostic without disabling other Hookify rules.
+
+Git-tracked local rules are disabled by default. Set
+`ECC_HOOKIFY_ALLOW_TRACKED=1` only after reviewing those files; ordinary
+gitignored rules created locally remain active without that override.
+
+## Runtime Behavior
+
+- `warn` injects the message as event-specific additional context and does not block.
+- `block` denies matching Bash, PowerShell, Write, Edit, or MultiEdit calls before execution.
+- On prompt, post-tool, and stop events, `block` uses Claude Code's structured block decision.
+- Stop rules skip recursive `stop_hook_active` events to prevent infinite continuation loops.
 
 ## File Organization
 

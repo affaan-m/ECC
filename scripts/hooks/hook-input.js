@@ -35,6 +35,7 @@ function readStdinRaw(stream = process.stdin, options = {}) {
     let settled = false;
     stream.on('data', chunk => {
       const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+      if (typeof options.onChunk === 'function') options.onChunk(buffer);
       const remaining = Math.max(0, maxStdin - acceptedBytes);
       const accepted = buffer.subarray(0, remaining);
       if (accepted.length > 0) {
