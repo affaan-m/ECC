@@ -49,175 +49,597 @@ console.log('─'.repeat(50));
 
 // --- Basic allow/block ---
 
-if (test('allows plain git commit', () => {
-  const r = runHook({ tool_input: { command: 'git commit -m "hello"' } });
-  assert.strictEqual(r.code, 0, `expected exit 0, got ${r.code}: ${r.stderr}`);
-})) passed++; else failed++;
+if (
+  test('allows plain git commit', () => {
+    const r = runHook({ tool_input: { command: 'git commit -m "hello"' } });
+    assert.strictEqual(r.code, 0, `expected exit 0, got ${r.code}: ${r.stderr}`);
+  })
+)
+  passed++;
+else failed++;
 
-if (test('blocks --no-verify on git commit', () => {
-  const r = runHook({ tool_input: { command: 'git commit --no-verify -m "msg"' } });
-  assert.strictEqual(r.code, 2, `expected exit 2, got ${r.code}`);
-  assert.ok(r.stderr.includes('BLOCKED'), `stderr should contain BLOCKED: ${r.stderr}`);
-})) passed++; else failed++;
+if (
+  test('blocks --no-verify on git commit', () => {
+    const r = runHook({ tool_input: { command: 'git commit --no-verify -m "msg"' } });
+    assert.strictEqual(r.code, 2, `expected exit 2, got ${r.code}`);
+    assert.ok(r.stderr.includes('BLOCKED'), `stderr should contain BLOCKED: ${r.stderr}`);
+  })
+)
+  passed++;
+else failed++;
 
-if (test('blocks -n shorthand on git commit', () => {
-  const r = runHook({ tool_input: { command: 'git commit -n -m "msg"' } });
-  assert.strictEqual(r.code, 2, `expected exit 2, got ${r.code}`);
-  assert.ok(r.stderr.includes('BLOCKED'), `stderr should contain BLOCKED: ${r.stderr}`);
-})) passed++; else failed++;
+if (
+  test('blocks -n shorthand on git commit', () => {
+    const r = runHook({ tool_input: { command: 'git commit -n -m "msg"' } });
+    assert.strictEqual(r.code, 2, `expected exit 2, got ${r.code}`);
+    assert.ok(r.stderr.includes('BLOCKED'), `stderr should contain BLOCKED: ${r.stderr}`);
+  })
+)
+  passed++;
+else failed++;
 
-if (test('blocks core.hooksPath override', () => {
-  const r = runHook({ tool_input: { command: 'git -c core.hooksPath=/dev/null commit -m "msg"' } });
-  assert.strictEqual(r.code, 2, `expected exit 2, got ${r.code}`);
-  assert.ok(r.stderr.includes('core.hooksPath'), `stderr should mention core.hooksPath: ${r.stderr}`);
-})) passed++; else failed++;
+if (
+  test('blocks core.hooksPath override', () => {
+    const r = runHook({ tool_input: { command: 'git -c core.hooksPath=/dev/null commit -m "msg"' } });
+    assert.strictEqual(r.code, 2, `expected exit 2, got ${r.code}`);
+    assert.ok(r.stderr.includes('core.hooksPath'), `stderr should mention core.hooksPath: ${r.stderr}`);
+  })
+)
+  passed++;
+else failed++;
 
-if (test('blocks quoted core.hooksPath override argument', () => {
-  const r = runHook({ tool_input: { command: 'git -c "core.hooksPath=/dev/null" commit -m "msg"' } });
-  assert.strictEqual(r.code, 2, `expected exit 2, got ${r.code}`);
-  assert.ok(r.stderr.includes('core.hooksPath'), `stderr should mention core.hooksPath: ${r.stderr}`);
-})) passed++; else failed++;
+if (
+  test('blocks quoted core.hooksPath override argument', () => {
+    const r = runHook({ tool_input: { command: 'git -c "core.hooksPath=/dev/null" commit -m "msg"' } });
+    assert.strictEqual(r.code, 2, `expected exit 2, got ${r.code}`);
+    assert.ok(r.stderr.includes('core.hooksPath'), `stderr should mention core.hooksPath: ${r.stderr}`);
+  })
+)
+  passed++;
+else failed++;
 
 // --- Chained command false positive prevention (Comment 2) ---
 
-if (test('does not false-positive on -n belonging to git log in a chain', () => {
-  const r = runHook({ tool_input: { command: 'git log -n 10 && git commit -m "msg"' } });
-  assert.strictEqual(r.code, 0, `expected exit 0, got ${r.code}: ${r.stderr}`);
-})) passed++; else failed++;
+if (
+  test('does not false-positive on -n belonging to git log in a chain', () => {
+    const r = runHook({ tool_input: { command: 'git log -n 10 && git commit -m "msg"' } });
+    assert.strictEqual(r.code, 0, `expected exit 0, got ${r.code}: ${r.stderr}`);
+  })
+)
+  passed++;
+else failed++;
 
-if (test('does not false-positive on --no-verify in a prior non-git command', () => {
-  const r = runHook({ tool_input: { command: 'echo --no-verify && git commit -m "msg"' } });
-  assert.strictEqual(r.code, 0, `expected exit 0, got ${r.code}: ${r.stderr}`);
-})) passed++; else failed++;
+if (
+  test('does not false-positive on --no-verify in a prior non-git command', () => {
+    const r = runHook({ tool_input: { command: 'echo --no-verify && git commit -m "msg"' } });
+    assert.strictEqual(r.code, 0, `expected exit 0, got ${r.code}: ${r.stderr}`);
+  })
+)
+  passed++;
+else failed++;
 
-if (test('allows --no-verify discussed in a double-quoted commit message', () => {
-  const r = runHook({ tool_input: { command: 'git commit -m "fix: --no-verify edge case"' } });
-  assert.strictEqual(r.code, 0, `expected exit 0, got ${r.code}: ${r.stderr}`);
-})) passed++; else failed++;
+if (
+  test('allows --no-verify discussed in a double-quoted commit message', () => {
+    const r = runHook({ tool_input: { command: 'git commit -m "fix: --no-verify edge case"' } });
+    assert.strictEqual(r.code, 0, `expected exit 0, got ${r.code}: ${r.stderr}`);
+  })
+)
+  passed++;
+else failed++;
 
-if (test('allows --no-verify discussed in a single-quoted commit message', () => {
-  const r = runHook({ tool_input: { command: "git commit -m 'fix: --no-verify edge case'" } });
-  assert.strictEqual(r.code, 0, `expected exit 0, got ${r.code}: ${r.stderr}`);
-})) passed++; else failed++;
+if (
+  test('allows --no-verify discussed in a single-quoted commit message', () => {
+    const r = runHook({ tool_input: { command: "git commit -m 'fix: --no-verify edge case'" } });
+    assert.strictEqual(r.code, 0, `expected exit 0, got ${r.code}: ${r.stderr}`);
+  })
+)
+  passed++;
+else failed++;
 
-if (test('allows -n discussed in a quoted commit message', () => {
-  const r = runHook({ tool_input: { command: 'git commit -m "Fixed -n bug in module"' } });
-  assert.strictEqual(r.code, 0, `expected exit 0, got ${r.code}: ${r.stderr}`);
-})) passed++; else failed++;
+if (
+  test('allows -n discussed in a quoted commit message', () => {
+    const r = runHook({ tool_input: { command: 'git commit -m "Fixed -n bug in module"' } });
+    assert.strictEqual(r.code, 0, `expected exit 0, got ${r.code}: ${r.stderr}`);
+  })
+)
+  passed++;
+else failed++;
 
-if (test('allows --no-verify after combined -am message option', () => {
-  const r = runHook({ tool_input: { command: 'git commit -am "--no-verify"' } });
-  assert.strictEqual(r.code, 0, `expected exit 0, got ${r.code}: ${r.stderr}`);
-})) passed++; else failed++;
+if (
+  test('allows --no-verify after combined -am message option', () => {
+    const r = runHook({ tool_input: { command: 'git commit -am "--no-verify"' } });
+    assert.strictEqual(r.code, 0, `expected exit 0, got ${r.code}: ${r.stderr}`);
+  })
+)
+  passed++;
+else failed++;
 
-if (test('allows -n after combined -am message option', () => {
-  const r = runHook({ tool_input: { command: 'git commit -am "-n"' } });
-  assert.strictEqual(r.code, 0, `expected exit 0, got ${r.code}: ${r.stderr}`);
-})) passed++; else failed++;
+if (
+  test('allows -n after combined -am message option', () => {
+    const r = runHook({ tool_input: { command: 'git commit -am "-n"' } });
+    assert.strictEqual(r.code, 0, `expected exit 0, got ${r.code}: ${r.stderr}`);
+  })
+)
+  passed++;
+else failed++;
 
 // --- Short options cluster, so -n need not lead ---
 
-if (test('blocks -n clustered after -a', () => {
-  const r = runHook({ tool_input: { command: 'git commit -an -m "msg"' } });
-  assert.strictEqual(r.code, 2, `expected exit 2, got ${r.code}`);
-})) passed++; else failed++;
+if (
+  test('blocks -n clustered after -a', () => {
+    const r = runHook({ tool_input: { command: 'git commit -an -m "msg"' } });
+    assert.strictEqual(r.code, 2, `expected exit 2, got ${r.code}`);
+  })
+)
+  passed++;
+else failed++;
 
-if (test('blocks -n clustered after -s', () => {
-  const r = runHook({ tool_input: { command: 'git commit -sn -m "msg"' } });
-  assert.strictEqual(r.code, 2, `expected exit 2, got ${r.code}`);
-})) passed++; else failed++;
+if (
+  test('blocks -n clustered after -s', () => {
+    const r = runHook({ tool_input: { command: 'git commit -sn -m "msg"' } });
+    assert.strictEqual(r.code, 2, `expected exit 2, got ${r.code}`);
+  })
+)
+  passed++;
+else failed++;
 
-if (test('blocks -n clustered after -v', () => {
-  const r = runHook({ tool_input: { command: 'git commit -vn -m "msg"' } });
-  assert.strictEqual(r.code, 2, `expected exit 2, got ${r.code}`);
-})) passed++; else failed++;
+if (
+  test('blocks -n clustered after -v', () => {
+    const r = runHook({ tool_input: { command: 'git commit -vn -m "msg"' } });
+    assert.strictEqual(r.code, 2, `expected exit 2, got ${r.code}`);
+  })
+)
+  passed++;
+else failed++;
 
-if (test('allows -mn, where n is the inline message and not a flag', () => {
-  const r = runHook({ tool_input: { command: 'git commit -mn' } });
-  assert.strictEqual(r.code, 0, `expected exit 0, got ${r.code}: ${r.stderr}`);
-})) passed++; else failed++;
+if (
+  test('allows -mn, where n is the inline message and not a flag', () => {
+    const r = runHook({ tool_input: { command: 'git commit -mn' } });
+    assert.strictEqual(r.code, 0, `expected exit 0, got ${r.code}: ${r.stderr}`);
+  })
+)
+  passed++;
+else failed++;
 
-if (test('allows core.hooksPath discussed in a quoted commit message', () => {
-  const r = runHook({ tool_input: { command: 'git commit -m "doc: explain core.hooksPath= setting"' } });
-  assert.strictEqual(r.code, 0, `expected exit 0, got ${r.code}: ${r.stderr}`);
-})) passed++; else failed++;
+if (
+  test('allows core.hooksPath discussed in a quoted commit message', () => {
+    const r = runHook({ tool_input: { command: 'git commit -m "doc: explain core.hooksPath= setting"' } });
+    assert.strictEqual(r.code, 0, `expected exit 0, got ${r.code}: ${r.stderr}`);
+  })
+)
+  passed++;
+else failed++;
 
-if (test('allows git bypass phrase discussed in a quoted commit message', () => {
-  const r = runHook({ tool_input: { command: 'git commit -m "doc: explain git push --no-verify risk"' } });
-  assert.strictEqual(r.code, 0, `expected exit 0, got ${r.code}: ${r.stderr}`);
-})) passed++; else failed++;
+if (
+  test('allows git bypass phrase discussed in a quoted commit message', () => {
+    const r = runHook({ tool_input: { command: 'git commit -m "doc: explain git push --no-verify risk"' } });
+    assert.strictEqual(r.code, 0, `expected exit 0, got ${r.code}: ${r.stderr}`);
+  })
+)
+  passed++;
+else failed++;
 
-if (test('still blocks --no-verify on the git commit part of a chain', () => {
-  const r = runHook({ tool_input: { command: 'git log -n 5 && git commit --no-verify -m "msg"' } });
-  assert.strictEqual(r.code, 2, `expected exit 2, got ${r.code}`);
-})) passed++; else failed++;
+if (
+  test('still blocks --no-verify on the git commit part of a chain', () => {
+    const r = runHook({ tool_input: { command: 'git log -n 5 && git commit --no-verify -m "msg"' } });
+    assert.strictEqual(r.code, 2, `expected exit 2, got ${r.code}`);
+  })
+)
+  passed++;
+else failed++;
 
-if (test('still blocks a real quoted --no-verify flag', () => {
-  const r = runHook({ tool_input: { command: 'git commit "--no-verify" -m "msg"' } });
-  assert.strictEqual(r.code, 2, `expected exit 2, got ${r.code}`);
-  assert.ok(r.stderr.includes('BLOCKED'), `stderr should contain BLOCKED: ${r.stderr}`);
-})) passed++; else failed++;
+if (
+  test('still blocks a real quoted --no-verify flag', () => {
+    const r = runHook({ tool_input: { command: 'git commit "--no-verify" -m "msg"' } });
+    assert.strictEqual(r.code, 2, `expected exit 2, got ${r.code}`);
+    assert.ok(r.stderr.includes('BLOCKED'), `stderr should contain BLOCKED: ${r.stderr}`);
+  })
+)
+  passed++;
+else failed++;
 
-if (test('still blocks bypass flags in later chained git commands', () => {
-  const r = runHook({ tool_input: { command: 'git commit -m "msg" && git push --no-verify' } });
-  assert.strictEqual(r.code, 2, `expected exit 2, got ${r.code}`);
-  assert.ok(r.stderr.includes('git push'), `stderr should mention git push: ${r.stderr}`);
-})) passed++; else failed++;
+if (
+  test('still blocks bypass flags in later chained git commands', () => {
+    const r = runHook({ tool_input: { command: 'git commit -m "msg" && git push --no-verify' } });
+    assert.strictEqual(r.code, 2, `expected exit 2, got ${r.code}`);
+    assert.ok(r.stderr.includes('git push'), `stderr should mention git push: ${r.stderr}`);
+  })
+)
+  passed++;
+else failed++;
 
 // --- Subcommand detection (Comment 4) ---
 
-if (test('does not misclassify "commit" as subcommand when it is an argument to push', () => {
-  // "git push origin commit" — "commit" is a refspec arg, not the subcommand
-  const r = runHook({ tool_input: { command: 'git push origin commit' } });
-  // This should detect "push" as the subcommand, not "commit"
-  // Either way it should not block since there's no --no-verify
-  assert.strictEqual(r.code, 0, `expected exit 0, got ${r.code}: ${r.stderr}`);
-})) passed++; else failed++;
+if (
+  test('does not misclassify "commit" as subcommand when it is an argument to push', () => {
+    // "git push origin commit" — "commit" is a refspec arg, not the subcommand
+    const r = runHook({ tool_input: { command: 'git push origin commit' } });
+    // This should detect "push" as the subcommand, not "commit"
+    // Either way it should not block since there's no --no-verify
+    assert.strictEqual(r.code, 0, `expected exit 0, got ${r.code}: ${r.stderr}`);
+  })
+)
+  passed++;
+else failed++;
 
 // --- Blocks on push --no-verify ---
 
-if (test('blocks --no-verify on git push', () => {
-  const r = runHook({ tool_input: { command: 'git push --no-verify' } });
-  assert.strictEqual(r.code, 2, `expected exit 2, got ${r.code}`);
-  assert.ok(r.stderr.includes('git push'), `stderr should mention git push: ${r.stderr}`);
-})) passed++; else failed++;
+if (
+  test('blocks --no-verify on git push', () => {
+    const r = runHook({ tool_input: { command: 'git push --no-verify' } });
+    assert.strictEqual(r.code, 2, `expected exit 2, got ${r.code}`);
+    assert.ok(r.stderr.includes('git push'), `stderr should mention git push: ${r.stderr}`);
+  })
+)
+  passed++;
+else failed++;
 
 // --- Non-git commands pass through ---
 
-if (test('allows non-git commands', () => {
-  const r = runHook({ tool_input: { command: 'npm test' } });
-  assert.strictEqual(r.code, 0, `expected exit 0, got ${r.code}: ${r.stderr}`);
-})) passed++; else failed++;
+if (
+  test('allows non-git commands', () => {
+    const r = runHook({ tool_input: { command: 'npm test' } });
+    assert.strictEqual(r.code, 0, `expected exit 0, got ${r.code}: ${r.stderr}`);
+  })
+)
+  passed++;
+else failed++;
 
 // --- Plain text input (not JSON) ---
 
-if (test('handles plain text input', () => {
-  const r = runHook('git commit -m "hello"');
-  assert.strictEqual(r.code, 0, `expected exit 0, got ${r.code}: ${r.stderr}`);
-})) passed++; else failed++;
+if (
+  test('handles plain text input', () => {
+    const r = runHook('git commit -m "hello"');
+    assert.strictEqual(r.code, 0, `expected exit 0, got ${r.code}: ${r.stderr}`);
+  })
+)
+  passed++;
+else failed++;
 
-if (test('blocks plain text input with --no-verify', () => {
-  const r = runHook('git commit --no-verify -m "msg"');
-  assert.strictEqual(r.code, 2, `expected exit 2, got ${r.code}`);
-})) passed++; else failed++;
+if (
+  test('blocks plain text input with --no-verify', () => {
+    const r = runHook('git commit --no-verify -m "msg"');
+    assert.strictEqual(r.code, 2, `expected exit 2, got ${r.code}`);
+  })
+)
+  passed++;
+else failed++;
 
 // --- Case-insensitivity of git config keys + -t template short option ---
 
-if (test('blocks case-variant core.hooksPath (lowercase)', () => {
-  const r = runHook({ tool_input: { command: 'git -c core.hookspath=/dev/null commit -m "msg"' } });
-  assert.strictEqual(r.code, 2, `expected exit 2, got ${r.code}`);
-  assert.ok(/core\.hookspath/i.test(r.stderr), `stderr should mention core.hooksPath: ${r.stderr}`);
-})) passed++; else failed++;
+if (
+  test('blocks case-variant core.hooksPath (lowercase)', () => {
+    const r = runHook({ tool_input: { command: 'git -c core.hookspath=/dev/null commit -m "msg"' } });
+    assert.strictEqual(r.code, 2, `expected exit 2, got ${r.code}`);
+    assert.ok(/core\.hookspath/i.test(r.stderr), `stderr should mention core.hooksPath: ${r.stderr}`);
+  })
+)
+  passed++;
+else failed++;
 
-if (test('blocks case-variant core.hooksPath (uppercase)', () => {
-  const r = runHook({ tool_input: { command: 'git -c core.HOOKSPATH=/dev/null commit -m "msg"' } });
-  assert.strictEqual(r.code, 2, `expected exit 2, got ${r.code}`);
-})) passed++; else failed++;
+if (
+  test('blocks case-variant core.hooksPath (uppercase)', () => {
+    const r = runHook({ tool_input: { command: 'git -c core.HOOKSPATH=/dev/null commit -m "msg"' } });
+    assert.strictEqual(r.code, 2, `expected exit 2, got ${r.code}`);
+  })
+)
+  passed++;
+else failed++;
 
-if (test('still allows -tn (n is the -t template path, not a flag)', () => {
-  const r = runHook({ tool_input: { command: 'git commit -tn -m "msg"' } });
-  assert.strictEqual(r.code, 0, `expected exit 0, got ${r.code}: ${r.stderr}`);
-})) passed++; else failed++;
+if (
+  test('still allows -tn (n is the -t template path, not a flag)', () => {
+    const r = runHook({ tool_input: { command: 'git commit -tn -m "msg"' } });
+    assert.strictEqual(r.code, 0, `expected exit 0, got ${r.code}: ${r.stderr}`);
+  })
+)
+  passed++;
+else failed++;
+
+// --- Quoted text mentioning the phrase is not a real invocation (Issue: false positive) ---
+// A `git ...` phrase found inside a quoted span is only treated as a real
+// invocation when the quote is the argument to something that re-executes
+// strings (bash -c, sh -lc, eval, ...). Otherwise it's inert data — an echo
+// message, a heredoc, a JSON test fixture — and must not be blocked.
+
+if (
+  test('allows an echo statement that only mentions --no-verify as text', () => {
+    const r = runHook({ tool_input: { command: 'echo "note: never run git commit --no-verify in this repo"' } });
+    assert.strictEqual(r.code, 0, `expected exit 0, got ${r.code}: ${r.stderr}`);
+  })
+)
+  passed++;
+else failed++;
+
+if (
+  test('allows a single-quoted echo mentioning the phrase', () => {
+    const r = runHook({ tool_input: { command: "echo 'reminder: --no-verify is banned for git commit here'" } });
+    assert.strictEqual(r.code, 0, `expected exit 0, got ${r.code}: ${r.stderr}`);
+  })
+)
+  passed++;
+else failed++;
+
+if (
+  test('allows echoing JSON-looking text that merely contains the phrase as data', () => {
+    // The actual command being run is `echo ...` — the JSON-looking argument
+    // is inert text, not a nested hook envelope, so it must not be unwrapped
+    // and re-checked as if it were the real command.
+    const r = runHook({
+      tool_input: {
+        command: 'echo \'{"tool_input":{"command":"git commit --no-verify -m test"}}\''
+      }
+    });
+    assert.strictEqual(r.code, 0, `expected exit 0, got ${r.code}: ${r.stderr}`);
+  })
+)
+  passed++;
+else failed++;
+
+if (
+  test('blocks --no-verify hidden behind bash -c', () => {
+    const r = runHook({ tool_input: { command: "bash -c 'git commit --no-verify -m test'" } });
+    assert.strictEqual(r.code, 2, `expected exit 2, got ${r.code}`);
+  })
+)
+  passed++;
+else failed++;
+
+if (
+  test('blocks --no-verify hidden behind an absolute-path bash -c', () => {
+    const r = runHook({ tool_input: { command: "/usr/bin/env bash -c 'git commit --no-verify -m test'" } });
+    assert.strictEqual(r.code, 2, `expected exit 2, got ${r.code}`);
+  })
+)
+  passed++;
+else failed++;
+
+if (
+  test('blocks --no-verify hidden behind sh -lc', () => {
+    const r = runHook({ tool_input: { command: "sh -lc 'git commit --no-verify -m test'" } });
+    assert.strictEqual(r.code, 2, `expected exit 2, got ${r.code}`);
+  })
+)
+  passed++;
+else failed++;
+
+if (
+  test('blocks --no-verify hidden behind eval', () => {
+    const r = runHook({ tool_input: { command: 'eval "git commit --no-verify -m test"' } });
+    assert.strictEqual(r.code, 2, `expected exit 2, got ${r.code}`);
+  })
+)
+  passed++;
+else failed++;
+
+// --- Command substitution always executes, even inside an otherwise-inert
+// double-quoted argument (single quotes are the only thing that suppresses
+// it) — flagged by Greptile review on the initial version of this fix.
+
+if (
+  test('blocks --no-verify hidden behind $(...) inside a double-quoted echo', () => {
+    const r = runHook({ tool_input: { command: 'echo "$(git commit --no-verify -m test)"' } });
+    assert.strictEqual(r.code, 2, `expected exit 2, got ${r.code}`);
+  })
+)
+  passed++;
+else failed++;
+
+if (
+  test('blocks --no-verify hidden behind backticks inside a double-quoted echo', () => {
+    const r = runHook({ tool_input: { command: 'echo "`git commit --no-verify -m test`"' } });
+    assert.strictEqual(r.code, 2, `expected exit 2, got ${r.code}`);
+  })
+)
+  passed++;
+else failed++;
+
+if (
+  test('blocks --no-verify hidden behind a bare (unquoted) $(...)', () => {
+    const r = runHook({ tool_input: { command: 'echo $(git commit --no-verify -m test)' } });
+    assert.strictEqual(r.code, 2, `expected exit 2, got ${r.code}`);
+  })
+)
+  passed++;
+else failed++;
+
+if (
+  test('blocks --no-verify behind $(...) alongside an unrelated inert $(...) in the same string', () => {
+    const r = runHook({ tool_input: { command: 'echo "outer $(echo inner) and $(git commit --no-verify -m test)"' } });
+    assert.strictEqual(r.code, 2, `expected exit 2, got ${r.code}`);
+  })
+)
+  passed++;
+else failed++;
+
+if (
+  test('allows $(...) inside SINGLE quotes, where the shell never expands it', () => {
+    const r = runHook({ tool_input: { command: "echo '$(git commit --no-verify -m test)'" } });
+    assert.strictEqual(r.code, 0, `expected exit 0, got ${r.code}: ${r.stderr}`);
+  })
+)
+  passed++;
+else failed++;
+
+// --- Value-taking flags between the exec command and the quote, and env -S
+// (flagged by CodeRabbit review on the initial version of this fix) ---
+
+if (
+  test('blocks --no-verify hidden behind env -S', () => {
+    const r = runHook({ tool_input: { command: "env -S 'git commit --no-verify -m test'" } });
+    assert.strictEqual(r.code, 2, `expected exit 2, got ${r.code}`);
+  })
+)
+  passed++;
+else failed++;
+
+if (
+  test('blocks --no-verify hidden behind env --split-string', () => {
+    const r = runHook({ tool_input: { command: "env --split-string='git commit --no-verify -m test'" } });
+    assert.strictEqual(r.code, 2, `expected exit 2, got ${r.code}`);
+  })
+)
+  passed++;
+else failed++;
+
+// --- Bare env/exec/source/. do NOT re-parse a quoted string as shell code:
+// env and exec pass it straight to execvp as a literal (space-containing)
+// program name, and source/. treat it as a filename to open — none of them
+// invoke a shell, so none of them actually run the quoted git command.
+// (flagged by external review on the initial version of this fix) ---
+
+if (
+  test('allows --no-verify inside bare env (no -S — string is a literal program name, never executed)', () => {
+    const r = runHook({ tool_input: { command: "env 'git commit --no-verify -m test'" } });
+    assert.strictEqual(r.code, 0, `expected exit 0, got ${r.code}: ${r.stderr}`);
+  })
+)
+  passed++;
+else failed++;
+
+if (
+  test('allows --no-verify inside exec (string is a literal execvp argv[0], never executed)', () => {
+    const r = runHook({ tool_input: { command: "exec 'git commit --no-verify -m test'" } });
+    assert.strictEqual(r.code, 0, `expected exit 0, got ${r.code}: ${r.stderr}`);
+  })
+)
+  passed++;
+else failed++;
+
+if (
+  test('allows --no-verify inside source (string is a filename to open, never executed)', () => {
+    const r = runHook({ tool_input: { command: "source 'git commit --no-verify -m test'" } });
+    assert.strictEqual(r.code, 0, `expected exit 0, got ${r.code}: ${r.stderr}`);
+  })
+)
+  passed++;
+else failed++;
+
+if (
+  test('allows --no-verify inside . (dot) (string is a filename to open, never executed)', () => {
+    const r = runHook({ tool_input: { command: ". 'git commit --no-verify -m test'" } });
+    assert.strictEqual(r.code, 0, `expected exit 0, got ${r.code}: ${r.stderr}`);
+  })
+)
+  passed++;
+else failed++;
+
+if (
+  test('blocks --no-verify hidden behind bash -O extglob -c (value-taking flag before -c)', () => {
+    const r = runHook({ tool_input: { command: "bash -O extglob -c 'git commit --no-verify -m test'" } });
+    assert.strictEqual(r.code, 2, `expected exit 2, got ${r.code}`);
+  })
+)
+  passed++;
+else failed++;
+
+if (
+  test('blocks --no-verify behind many chained flags before -c (no fixed token limit)', () => {
+    const r = runHook({ tool_input: { command: "bash -O extglob -O nullglob -O globstar -O nocaseglob -c 'git commit --no-verify -m test'" } });
+    assert.strictEqual(r.code, 2, `expected exit 2, got ${r.code}`);
+  })
+)
+  passed++;
+else failed++;
+
+if (
+  test('blocks --no-verify when a quoted ) inside $(...) would otherwise end the substitution early', () => {
+    const r = runHook({ tool_input: { command: 'echo "$(printf \')\' ; git commit --no-verify -m test)"' } });
+    assert.strictEqual(r.code, 2, `expected exit 2, got ${r.code}`);
+  })
+)
+  passed++;
+else failed++;
+
+// --- bash/sh/zsh/ksh/dash only re-parse the ONE quoted argument immediately
+// after -c as code; without -c they open the argument as a script filename
+// (like source/.), and a quoted arg after the -c string is just $0/$1/...,
+// not more code. (flagged by CodeRabbit review) ---
+
+if (
+  test('allows a positional arg after bash -c (only the -c string itself is executed)', () => {
+    const r = runHook({ tool_input: { command: "bash -c 'printf ok' 'git commit --no-verify -m test'" } });
+    assert.strictEqual(r.code, 0, `expected exit 0, got ${r.code}: ${r.stderr}`);
+  })
+)
+  passed++;
+else failed++;
+
+if (
+  test('allows bash with no -c (argument is a script filename, never executed inline)', () => {
+    const r = runHook({ tool_input: { command: "bash 'git commit --no-verify -m test'" } });
+    assert.strictEqual(r.code, 0, `expected exit 0, got ${r.code}: ${r.stderr}`);
+  })
+)
+  passed++;
+else failed++;
+
+if (
+  test('allows sh with no -c (argument is a script filename, never executed inline)', () => {
+    const r = runHook({ tool_input: { command: "sh 'git commit --no-verify -m test'" } });
+    assert.strictEqual(r.code, 0, `expected exit 0, got ${r.code}: ${r.stderr}`);
+  })
+)
+  passed++;
+else failed++;
+
+if (
+  test('still blocks bash -c with the real command string (regression)', () => {
+    const r = runHook({ tool_input: { command: "bash -c 'git commit --no-verify -m test'" } });
+    assert.strictEqual(r.code, 2, `expected exit 2, got ${r.code}`);
+  })
+)
+  passed++;
+else failed++;
+
+if (
+  test('still blocks bash -O extglob -c with a positional arg after the real command string', () => {
+    const r = runHook({ tool_input: { command: "bash -O extglob -c 'git commit --no-verify -m test' 'harmless-arg0'" } });
+    assert.strictEqual(r.code, 2, `expected exit 2, got ${r.code}`);
+  })
+)
+  passed++;
+else failed++;
+
+// --- Variable-assignment indirection: `X='git commit --no-verify'; bash -c
+// "$X"` must not sail through just because the literal bypass text sits in
+// an "inert" single-quoted assignment rather than directly in the executed
+// span. (flagged by Greptile review, P1 security) ---
+
+if (
+  test('blocks --no-verify smuggled through a variable assigned then run via bash -c "$VAR"', () => {
+    const r = runHook({ tool_input: { command: 'X=\'git commit --no-verify -m x\'; bash -c "$X"' } });
+    assert.strictEqual(r.code, 2, `expected exit 2, got ${r.code}`);
+  })
+)
+  passed++;
+else failed++;
+
+if (
+  test('blocks --no-verify smuggled through a variable assigned then run via eval "$VAR"', () => {
+    const r = runHook({ tool_input: { command: 'X=\'git commit --no-verify -m x\'; eval "$X"' } });
+    assert.strictEqual(r.code, 2, `expected exit 2, got ${r.code}`);
+  })
+)
+  passed++;
+else failed++;
+
+if (
+  test('allows a variable assignment that is never fed to a re-executing interpreter', () => {
+    const r = runHook({ tool_input: { command: 'MSG=\'discuss --no-verify in standup\'; echo "$MSG"' } });
+    assert.strictEqual(r.code, 0, `expected exit 0, got ${r.code}: ${r.stderr}`);
+  })
+)
+  passed++;
+else failed++;
+
+if (
+  test('allows bash -c "$VAR" when the executed span has no bare variable reference', () => {
+    const r = runHook({ tool_input: { command: "X='git commit --no-verify -m x'; bash -c 'printf safe'" } });
+    assert.strictEqual(r.code, 0, `expected exit 0, got ${r.code}: ${r.stderr}`);
+  })
+)
+  passed++;
+else failed++;
 
 // --- Optional stuck values (-u, -S) and long-option prefixes ---
 

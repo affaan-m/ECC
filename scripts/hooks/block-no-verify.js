@@ -21,14 +21,7 @@ let raw = '';
 /**
  * Git commands that support the --no-verify flag.
  */
-const GIT_COMMANDS_WITH_NO_VERIFY = [
-  'commit',
-  'push',
-  'merge',
-  'cherry-pick',
-  'rebase',
-  'am',
-];
+const GIT_COMMANDS_WITH_NO_VERIFY = ['commit', 'push', 'merge', 'cherry-pick', 'rebase', 'am'];
 
 /**
  * Characters that can appear immediately before 'git' in a command string.
@@ -56,21 +49,10 @@ const COMMIT_OPTIONS_WITH_VALUE = new Set([
   '--template',
   '--fixup',
   '--squash',
-  '--pathspec-from-file',
+  '--pathspec-from-file'
 ]);
 
-const COMMIT_OPTIONS_WITH_INLINE_VALUE = [
-  '--message=',
-  '--file=',
-  '--reuse-message=',
-  '--reedit-message=',
-  '--author=',
-  '--date=',
-  '--template=',
-  '--fixup=',
-  '--squash=',
-  '--pathspec-from-file=',
-];
+const COMMIT_OPTIONS_WITH_INLINE_VALUE = ['--message=', '--file=', '--reuse-message=', '--reedit-message=', '--author=', '--date=', '--template=', '--fixup=', '--squash=', '--pathspec-from-file='];
 
 // Short options that take a value. When seen as part of a combined
 // short-option token (e.g. -tn), git's parser treats the rest of the
@@ -104,7 +86,7 @@ function tokenizeShellWords(input, start = 0, end = input.length) {
     tokens.push({
       value,
       start: tokenStart,
-      end: index,
+      end: index
     });
     value = '';
     tokenStart = null;
@@ -243,7 +225,7 @@ function getCommitShortValueOption(value) {
     if (COMMIT_SHORT_OPTIONS_WITH_VALUE.has(options.charAt(i))) {
       return {
         consumesNextValue: i === options.length - 1,
-        containsInlineValue: i < options.length - 1,
+        containsInlineValue: i < options.length - 1
       };
     }
   }
@@ -290,13 +272,328 @@ function isInComment(input, idx) {
 }
 
 /**
- * Find the next 'git' token in the input starting from a position.
+ * Shell built-ins/interpreters that re-execute a quoted string as code
+ * (`bash -c '...'`, `eval "..."`, etc.). A `git ...` phrase found inside a
+ * quoted span whose preceding word is NOT one of these is just string data —
+ * e.g. an `echo` message, a heredoc, a JSON test fixture — not a real
+ * invocation, and must not be treated as one.
+ *
+ * `exec`, `source`, `.`, and bare `env` are deliberately excluded even though
+ * they can precede a quoted string: `exec` and plain `env` pass the string
+ * straight to execvp as a literal, space-containing program name —
+ * `env 'git commit --no-verify'` looks for a program named that whole
+ * string, it never runs `git`. `source`/`.` treat the string as a filename
+ * to open, not inline code. None of them re-parse the string as shell
+ * syntax, so flagging them here would only reintroduce false positives.
+ * `env` is handled separately below: it only counts when paired with
+ * `-S`/`--split-string`, the one flag that makes it word-split and execute
+ * the string instead — see `isExecutedSpan`.
+ *
+ * `eval` always executes every string argument it's given, no flag needed.
+ * `bash`/`sh`/`zsh`/`ksh`/`dash` are different: given a single quoted
+ * argument with no `-c`, they open it as a script FILENAME — the same
+ * source/. case above — and even with `-c`, only the argument immediately
+ * after `-c` is the executed command string; any further quoted argument is
+ * `$0`, `$1`, ..., not more code. So these two groups need different
+ * adjacency rules in `isExecutedSpan`.
  */
-function findGit(input, start) {
+const EVAL_COMMANDS = new Set(['eval']);
+const SHELL_C_COMMANDS = new Set(['bash', 'sh', 'zsh', 'ksh', 'dash']);
+
+/**
+ * Matches env's word-splitting flag, the one case where `env` actually
+ * re-parses its string argument into a command instead of treating it as a
+ * literal program name: `-S`, `--split-string`, or `--split-string=...`.
+ */
+const ENV_SPLIT_STRING_FLAG = /^(-S|--split-string)(=.*)?$/;
+
+/**
+ * Matches a `-c` short-option cluster (`-c`, `-lc`, ...). Bash's own rule is
+ * that `-c`'s value must be the token immediately following it, so this is
+ * only meaningful when tested against the very first word walked in
+ * `isExecutedSpan` — a later positional quote is preceded by the previous
+ * quote's tail fragment, not `-c`, so it never matches this at that point.
+ */
+const DASH_C_FLAG = /^-[A-Za-z]*c$/;
+
+/**
+ * Find every top-level (non-nested — shell quotes don't nest) quoted span in
+ * the input, tracking quote state from index 0 so a quote opened at the very
+ * start of the command (e.g. `echo '...'`) is honored for matches found deep
+ * inside it.
+ */
+function computeQuoteSpans(input) {
+  const spans = [];
+  let quote = null;
+  let spanStart = null;
+  let escaped = false;
+
+  for (let i = 0; i < input.length; i++) {
+    const char = input.charAt(i);
+
+    if (escaped) {
+      escaped = false;
+      continue;
+    }
+
+    if (quote) {
+      if (quote === '"' && char === '\\') {
+        escaped = true;
+        continue;
+      }
+      if (char === quote) {
+        spans.push({ start: spanStart, end: i + 1, quote });
+        quote = null;
+        spanStart = null;
+      }
+      continue;
+    }
+
+    if (char === '\\') {
+      escaped = true;
+      continue;
+    }
+
+    if (char === '"' || char === "'") {
+      quote = char;
+      spanStart = i;
+    }
+  }
+
+  return spans;
+}
+
+/**
+ * Find every `$(...)` (balanced, possibly nested) and backtick-delimited
+ * command substitution in input[start, end). The shell evaluates these
+ * regardless of enclosing double quotes — only single quotes suppress them
+ * entirely — so their content can never be treated as inert text.
+ */
+function findSubstitutionRanges(input, start, end) {
+  const ranges = [];
+  let i = start;
+
+  while (i < end) {
+    const char = input.charAt(i);
+
+    if (char === '\\') {
+      i += 2;
+      continue;
+    }
+
+    if (char === '$' && input.charAt(i + 1) === '(') {
+      const subStart = i;
+      let depth = 1;
+      let subQuote = null;
+      let j = i + 2;
+      while (j < end && depth > 0) {
+        const inner = input.charAt(j);
+
+        // A paren inside a quote nested within the substitution is just
+        // string data to the shell (e.g. `$(printf ')' ; git ...)`) — it
+        // must not affect paren depth, or scanning stops at that literal
+        // `)` and misses everything (including a real bypass) after it.
+        if (subQuote) {
+          if (subQuote === '"' && inner === '\\') {
+            j += 2;
+            continue;
+          }
+          if (inner === subQuote) subQuote = null;
+          j++;
+          continue;
+        }
+
+        if (inner === '\\') {
+          j += 2;
+          continue;
+        }
+        if (inner === '"' || inner === "'") {
+          subQuote = inner;
+          j++;
+          continue;
+        }
+        if (inner === '(') depth++;
+        else if (inner === ')') depth--;
+        j++;
+      }
+      ranges.push({ start: subStart, end: j });
+      i = j;
+      continue;
+    }
+
+    if (char === '`') {
+      const subStart = i;
+      let j = i + 1;
+      while (j < end && input.charAt(j) !== '`') {
+        if (input.charAt(j) === '\\') {
+          j += 2;
+          continue;
+        }
+        j++;
+      }
+      j = Math.min(j + 1, end);
+      ranges.push({ start: subStart, end: j });
+      i = j;
+      continue;
+    }
+
+    i++;
+  }
+
+  return ranges;
+}
+
+/**
+ * Whether a quoted span is the string argument to an exec-style command, e.g.
+ * `bash -c '...'`, `sh -lc "..."`, `eval "..."`, `env -S '...'`,
+ * `bash -O extglob -c '...'`. Walks backward over whitespace-delimited
+ * words, checking each one against the exec-command list, until it either
+ * finds a match or hits a command delimiter (`;`, `&`, `|`, `(`, newline)
+ * that starts a fresh, unrelated command. Checking every word rather than
+ * stopping at the first non-flag one matters because a value-taking flag
+ * (`-O extglob`, `-S <string>`) can put other, unrelated words between the
+ * command name and the quote.
+ */
+function isExecutedSpan(input, span) {
+  let end = span.start;
+  let sawSplitStringFlag = false;
+  let precededByDashC = false;
+  let isFirstWord = true;
+  // No fixed hop cap: `end` strictly decreases every iteration (bounded below
+  // by 0), so this always terminates in at most input.length steps. A fixed
+  // cap here previously let enough value-taking flags before the quote (e.g.
+  // several chained `bash -O <optname>` flags before `-c`) push the actual
+  // command name out of reach and wrongly return false.
+  while (true) {
+    while (end > 0 && /\s/.test(input.charAt(end - 1))) end--;
+    if (end === 0) return false;
+    if (/[;&|(\n]/.test(input.charAt(end - 1))) return false;
+
+    let start = end;
+    while (start > 0 && !/[\s;&|()<>\n]/.test(input.charAt(start - 1))) start--;
+    const word = input.slice(start, end);
+    if (!word) return false;
+
+    // Check every word walked over, flag or not — a value-taking flag (e.g.
+    // `bash -O extglob -c '...'`) means the command name can sit multiple
+    // tokens back from the quote, not just past a single flag.
+    const base = word.split('/').pop().toLowerCase();
+
+    if (isFirstWord) {
+      precededByDashC = DASH_C_FLAG.test(word);
+      isFirstWord = false;
+    }
+
+    if (ENV_SPLIT_STRING_FLAG.test(word)) sawSplitStringFlag = true;
+
+    if (base === 'env') {
+      // Bare `env 'foo'` passes the whole string to execvp as a literal
+      // program name — it never runs it as shell code. Only `env -S`/
+      // `--split-string` actually word-splits and executes the string, so
+      // that's the only form worth blocking.
+      if (sawSplitStringFlag) return true;
+      return false;
+    }
+
+    if (EVAL_COMMANDS.has(base)) return true;
+
+    if (SHELL_C_COMMANDS.has(base)) {
+      // Without `-c`, these open the quoted argument as a script FILENAME
+      // (like source/.), not inline code. With `-c`, only the argument
+      // directly after it is the command string — `precededByDashC` is only
+      // true when THIS quote was that argument, not some later one.
+      return precededByDashC;
+    }
+
+    end = start;
+  }
+}
+
+/**
+ * A bare variable reference (`$NAME` or `${NAME}`) inside a span that IS
+ * executed code means the real bytes that will run are not fully known from
+ * this command string alone — they depend on whatever that variable holds
+ * at run time. `bash -c "$X"` / `eval "$X"` are exactly this shape.
+ */
+const VAR_REFERENCE = /\$\{?[A-Za-z_][A-Za-z0-9_]*\}?/;
+
+/**
+ * Whether the text immediately before a quote's opening character ends in a
+ * shell variable assignment (`NAME=`), i.e. the quote is that variable's
+ * value rather than a command argument.
+ */
+const VAR_ASSIGNMENT_BEFORE_QUOTE = /(?:^|[;&|(\n]|\s)[A-Za-z_][A-Za-z0-9_]*=$/;
+
+/**
+ * Quoted ranges whose content is inert string data rather than something the
+ * shell will actually execute — i.e. NOT the argument to eval/bash -c/sh -c/etc.
+ *
+ * Single-quoted spans suppress all expansion, so a non-executed one is inert
+ * end to end. Double-quoted spans still run any `$(...)` or backtick command
+ * substitution they contain regardless of what command they're an argument
+ * to, so those sub-ranges are carved out and left un-ignored even when the
+ * enclosing quote itself is inert.
+ *
+ * One more case: if some executed span elsewhere re-executes a bare
+ * variable reference (`bash -c "$X"`), the interpreter's real input is
+ * whatever that variable holds — which this scanner cannot resolve
+ * statically. Trusting a same-command assignment's quoted value as inert
+ * here would let `X='git commit --no-verify'; bash -c "$X"` sail through
+ * untouched. So once that pattern shows up anywhere in the command,
+ * assignment values stop being treated as inert too — a conservative,
+ * name-agnostic rule: it doesn't try to prove the assignment feeds that
+ * specific variable, it just stops trusting any local assignment once
+ * variable-driven re-execution is present at all.
+ */
+function computeIgnoredSpans(input) {
+  const spans = computeQuoteSpans(input);
+  const executed = spans.map(span => isExecutedSpan(input, span));
+  const hasVariableDrivenExecution = spans.some((span, i) => executed[i] && VAR_REFERENCE.test(input.slice(span.start, span.end)));
+
+  const ignored = [];
+
+  for (let i = 0; i < spans.length; i++) {
+    const span = spans[i];
+    if (executed[i]) continue;
+
+    if (hasVariableDrivenExecution && VAR_ASSIGNMENT_BEFORE_QUOTE.test(input.slice(0, span.start))) continue;
+
+    if (span.quote === "'") {
+      ignored.push({ start: span.start, end: span.end });
+      continue;
+    }
+
+    const subs = findSubstitutionRanges(input, span.start + 1, span.end - 1);
+    let cursor = span.start;
+    for (const sub of subs) {
+      if (sub.start > cursor) ignored.push({ start: cursor, end: sub.start });
+      cursor = sub.end;
+    }
+    if (cursor < span.end) ignored.push({ start: cursor, end: span.end });
+  }
+
+  return ignored;
+}
+
+function isWithinIgnoredSpan(ignoredSpans, idx) {
+  return ignoredSpans.some(span => idx > span.start && idx < span.end);
+}
+
+/**
+ * Find the next 'git' token in the input starting from a position, skipping
+ * any match that falls inside an ignored (inert, quoted-as-data) span.
+ */
+function findGit(input, start, ignoredSpans) {
   let pos = start;
   while (pos < input.length) {
     const idx = input.indexOf('git', pos);
     if (idx === -1) return null;
+
+    if (isWithinIgnoredSpan(ignoredSpans, idx)) {
+      const span = ignoredSpans.find(s => idx > s.start && idx < s.end);
+      pos = span.end;
+      continue;
+    }
 
     const isExe = input.slice(idx + 3, idx + 7).toLowerCase() === '.exe';
     const len = isExe ? 7 : 3;
@@ -318,9 +615,9 @@ function findGit(input, start) {
  * Returns { command, offset } where offset is the position right after the
  * subcommand keyword, so callers can scope flag checks to only that portion.
  */
-function detectGitCommand(input, start = 0) {
+function detectGitCommand(input, start = 0, ignoredSpans = computeIgnoredSpans(input)) {
   while (start < input.length) {
-    const git = findGit(input, start);
+    const git = findGit(input, start, ignoredSpans);
     if (!git) return null;
 
     if (isInComment(input, git.idx)) {
@@ -342,10 +639,19 @@ function detectGitCommand(input, start = 0) {
 
         const before = cmdIdx > 0 ? input[cmdIdx - 1] : ' ';
         const after = input[cmdIdx + cmd.length] || ' ';
-        if (!/\s/.test(before)) { searchPos = cmdIdx + 1; continue; }
-        if (!/[\s;&#|>)\]}"']/.test(after) && after !== '') { searchPos = cmdIdx + 1; continue; }
+        if (!/\s/.test(before)) {
+          searchPos = cmdIdx + 1;
+          continue;
+        }
+        if (!/[\s;&#|>)\]}"']/.test(after) && after !== '') {
+          searchPos = cmdIdx + 1;
+          continue;
+        }
         if (/[;|]/.test(input.slice(git.idx + git.len, cmdIdx))) break;
-        if (isInComment(input, cmdIdx)) { searchPos = cmdIdx + 1; continue; }
+        if (isInComment(input, cmdIdx)) {
+          searchPos = cmdIdx + 1;
+          continue;
+        }
 
         // Verify this token is the first non-flag word after "git" — i.e. the
         // actual subcommand, not an argument value to a different subcommand.
@@ -356,11 +662,13 @@ function detectGitCommand(input, start = 0) {
         let onlyFlagsAndArgs = true;
         let expectFlagArg = false;
         for (const t of tokens) {
-          if (expectFlagArg) { expectFlagArg = false; continue; }
+          if (expectFlagArg) {
+            expectFlagArg = false;
+            continue;
+          }
           if (t.startsWith('-')) {
             // -c is a git global flag that takes the next token as its argument
-            if (t === '-c' || t === '-C' || t === '--work-tree' || t === '--git-dir' ||
-                t === '--namespace' || t === '--super-prefix') {
+            if (t === '-c' || t === '-C' || t === '--work-tree' || t === '--git-dir' || t === '--namespace' || t === '--super-prefix') {
               expectFlagArg = true;
             }
             continue;
@@ -368,7 +676,10 @@ function detectGitCommand(input, start = 0) {
           onlyFlagsAndArgs = false;
           break;
         }
-        if (!onlyFlagsAndArgs) { searchPos = cmdIdx + 1; continue; }
+        if (!onlyFlagsAndArgs) {
+          searchPos = cmdIdx + 1;
+          continue;
+        }
 
         if (cmdIdx < bestIdx) {
           bestIdx = cmdIdx;
@@ -384,7 +695,7 @@ function detectGitCommand(input, start = 0) {
         offset: bestIdx + bestCmd.length,
         gitStart: git.idx,
         gitEnd: git.idx + git.len,
-        commandStart: bestIdx,
+        commandStart: bestIdx
       };
     }
 
@@ -483,9 +794,10 @@ function hasHooksPathOverride(input, detected) {
  */
 function checkCommand(input) {
   let start = 0;
+  const ignoredSpans = computeIgnoredSpans(input);
 
   while (start < input.length) {
-    const detected = detectGitCommand(input, start);
+    const detected = detectGitCommand(input, start, ignoredSpans);
     if (!detected) return { blocked: false };
 
     const { command: gitCommand, offset } = detected;
@@ -493,14 +805,14 @@ function checkCommand(input) {
     if (hasHooksPathOverride(input, detected)) {
       return {
         blocked: true,
-        reason: `BLOCKED: Overriding core.hooksPath is not allowed with git ${gitCommand}. Git hooks must not be bypassed.`,
+        reason: `BLOCKED: Overriding core.hooksPath is not allowed with git ${gitCommand}. Git hooks must not be bypassed.`
       };
     }
 
     if (hasNoVerifyFlag(input, gitCommand, offset)) {
       return {
         blocked: true,
-        reason: `BLOCKED: --no-verify flag is not allowed with git ${gitCommand}. Git hooks must not be bypassed.`,
+        reason: `BLOCKED: --no-verify flag is not allowed with git ${gitCommand}. Git hooks must not be bypassed.`
       };
     }
 
@@ -546,7 +858,7 @@ function run(rawInput) {
   if (result.blocked) {
     return {
       exitCode: 2,
-      stderr: result.reason,
+      stderr: result.reason
     };
   }
 
