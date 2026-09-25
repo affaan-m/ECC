@@ -410,7 +410,7 @@ function renderControlPaneHtml() {
   </div>
   <div id="app" hidden></div>
   <script>
-    const state = { query: '' };
+    const state = { query: '', shownQuery: '' };
     const $ = selector => document.querySelector(selector);
     const escapeHtml = value => String(value ?? '').replace(/[&<>"']/g, char => ({
       '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
@@ -434,6 +434,28 @@ function renderControlPaneHtml() {
       if (!target) return;
       target.hidden = true;
       target.textContent = '';
+    }
+
+    // The board keeps the last snapshot on screen, so a failed refresh has to
+    // say that the data is no longer live, and since when.
+    let loadedAt = null;
+    // Loads are numbered as they start and finish in any order. The board shows
+    // the newest data any load brought, and the error box the outcome of the
+    // newest load that has finished, so a load that finishes late can neither
+    // replace newer data nor overrule a newer outcome.
+    let loadsStarted = 0;
+    let newestFinished = 0;
+    let shownLoad = 0;
+    let failure = null;
+    function showRefreshFailure(error) {
+      const since = loadedAt
+        ? ' The data below is from ' + loadedAt.toLocaleString() + '.'
+        : '';
+      showError('#app', 'Live refresh failed.' + since + '\\n' + formatError(error));
+    }
+    function showFailure() {
+      if (failure.live) showRefreshFailure(failure.error);
+      else showError('#app', failure.error);
     }
 
     async function readJsonResponse(response) {
@@ -611,10 +633,12 @@ function renderControlPaneHtml() {
       output.textContent = 'Running ' + actionId + '...';
 
       try {
+        // An action runs for the query its card on the board was built for.
+        // After a failed load that is not always the query typed last.
         const response = await fetch('/api/actions/' + encodeURIComponent(actionId), {
           method: 'POST',
           headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ query: state.query })
+          body: JSON.stringify({ query: state.shownQuery })
         });
         const payload = await readJsonResponse(response);
         output.textContent = JSON.stringify(payload, null, 2);
@@ -624,11 +648,39 @@ function renderControlPaneHtml() {
       }
     }
 
-    async function load() {
-      const url = new URL('/api/snapshot', window.location.href);
-      if (state.query) url.searchParams.set('query', state.query);
-      const response = await fetch(url);
-      const snapshot = await readJsonResponse(response);
+    async function load(live = false) {
+      const id = ++loadsStarted;
+      const query = state.query;
+      try {
+        const url = new URL('/api/snapshot', window.location.href);
+        if (query) url.searchParams.set('query', query);
+        const response = await fetch(url);
+        const snapshot = await readJsonResponse(response);
+        // A snapshot that cannot be shown fails its load like one that could
+        // not be fetched, and older data may still take the board.
+        if (id > shownLoad) {
+          render(snapshot, query);
+          shownLoad = id;
+        }
+      } catch (error) {
+        if (id < newestFinished) return;
+        newestFinished = id;
+        failure = { error, live };
+        showFailure();
+        return;
+      }
+      if (id < newestFinished) {
+        // A newer load failed first. This data is still the newest on the
+        // board, so the failure stays, dated by it.
+        if (failure && id === shownLoad) showFailure();
+        return;
+      }
+      newestFinished = id;
+      failure = null;
+      clearError('#app');
+    }
+
+    function render(snapshot, query) {
       $('#query').value = snapshot.knowledge.query || state.query;
       $('#db-path').textContent = snapshot.database.exists ? snapshot.dbPath : 'database missing';
       state.allowActions = Boolean(snapshot.execution.allowActions);
@@ -642,7 +694,8 @@ function renderControlPaneHtml() {
         ...action,
         executable: snapshot.execution.allowActions && action.executable
       })));
-      clearError('#app');
+      state.shownQuery = query;
+      loadedAt = new Date();
     }
 
     $('#query-form').addEventListener('submit', event => {
@@ -682,7 +735,7 @@ function renderControlPaneHtml() {
     // Live board: refresh on a gentle interval; pause while a prompt/tab is hidden.
     setInterval(() => {
       if (document.hidden) return;
-      load().catch(() => {});
+      load(true).catch(error => showError('#app', error));
     }, 15000);
 
     load().catch(error => showError('#app', error));
