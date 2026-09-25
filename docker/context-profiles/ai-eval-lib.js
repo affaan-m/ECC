@@ -18,7 +18,7 @@ const { prepareNativeProfile, getNativeProfileStatus } = require(path.join(LIB, 
 const { DEFAULT_REPO_ROOT, digestObject, createSourceReader } = require(path.join(LIB, 'context-profile-support'));
 const io = require(path.join(LIB, 'context-profile-store-fs'));
 
-const ARMS = Object.freeze(['full', 'manual-lean', 'auto-lean']);
+const ARMS = Object.freeze(['full', 'manual-lean', 'auto-lean', 'baseline']);
 const CORPUS_PATH = path.join(__dirname, 'ai-corpus.json');
 const CHECK_FILE = '.ecc-eval-check.cjs';
 const IMPLEMENTATION = ['docker/context-profiles/ai-eval-lib.js', 'docker/context-profiles/ai-eval.js',
@@ -237,7 +237,7 @@ function readClaudeKeychainToken() {
 
 function createClaudeProvider({ allowRealProvider = false, executable, model,
   apiKey = process.env.ANTHROPIC_API_KEY, oauthToken = process.env.CLAUDE_CODE_OAUTH_TOKEN,
-  tokenSource = readClaudeKeychainToken, execute = spawnSync } = {}) {
+  tokenSource = readClaudeKeychainToken, persistSessions = false, execute = spawnSync } = {}) {
   if (allowRealProvider !== true) throw new Error('Real provider requires explicit opt-in');
   if (!model || !executable) throw new Error('Real provider requires a model and absolute executable');
   let lease = null;
@@ -256,7 +256,8 @@ function createClaudeProvider({ allowRealProvider = false, executable, model,
     const selection = request.phase === 'selection';
     // Selection is tool-free and read-only; task execution may edit and run commands in the workspace.
     // Claude has no cwd-write sandbox flag, so containment relies on the isolated home and temp workspace.
-    const args = ['--print', '--output-format', 'json', '--no-session-persistence',
+    const args = ['--print', '--output-format', 'json',
+      ...(persistSessions ? [] : ['--no-session-persistence']),
       ...(selection ? ['--tools', ''] : ['--permission-mode', 'bypassPermissions']),
       '--model', model];
     const env = Object.fromEntries(CLAUDE_ENV_KEYS.filter(key => typeof request.env?.[key] === 'string')
@@ -303,6 +304,7 @@ function createCodexProvider({ allowRealProvider = false, executable, model, eff
 
 /** Real Lean and Full installs, prepared through the same isolated native adapter users get. */
 function prepareEnvironments({ repoRoot, executable, root }) {
+  const binary = resolveExecutable(executable);
   const environments = {};
   for (const [name, profileId, selectionMode] of [['full', 'full@1', 'manual'], ['lean', 'lean@1', 'auto']]) {
     const options = { stateRoot: path.join(root, name, 'managed'), nativeRoot: path.join(root, name, 'native') };
@@ -335,6 +337,12 @@ function prepareEnvironments({ repoRoot, executable, root }) {
         if (!ready) fail('environment-drift');
       } };
   }
+  // Baseline arm: an empty native home with no ECC install, for provider-overhead subtraction.
+  const home = path.join(root, 'baseline', 'home');
+  fs.mkdirSync(path.join(home, '.codex'), { recursive: true, mode: 0o700 });
+  environments.baseline = { profileId: null, skills: 0, restore() {},
+    launch: { home, codexHome: path.join(home, '.codex'), codexPath: binary.path, executableDigest: binary.digest },
+    verify() { if (fingerprintExecutable(binary.path).digest !== binary.digest) fail('environment-drift'); } };
   return environments;
 }
 
@@ -367,15 +375,22 @@ function prepareClaudeEnvironments({ repoRoot, executable, root }) {
         if (observed !== prepared) fail('environment-drift');
       } };
   }
+  // Baseline arm: an empty config home with no ECC install, for provider-overhead subtraction.
+  const baselineHome = path.join(root, 'baseline', 'home');
+  const baselineConfig = path.join(baselineHome, '.claude');
+  fs.mkdirSync(baselineConfig, { recursive: true, mode: 0o700 });
+  environments.baseline = { profileId: null, skills: 0, restore() {},
+    launch: { home: baselineHome, claudeConfigDir: baselineConfig, claudePath: binary.path, executableDigest: binary.digest },
+    verify() { if (fingerprintExecutable(binary.path).digest !== binary.digest) fail('environment-drift'); } };
   return environments;
 }
 
 function syntheticEnvironments(root) {
   const executable = resolveExecutable(process.execPath);
-  return Object.fromEntries(['full', 'lean'].map(name => {
+  return Object.fromEntries(['full', 'lean', 'baseline'].map(name => {
     const home = path.join(root, name, 'home');
     fs.mkdirSync(path.join(home, '.codex'), { recursive: true, mode: 0o700 });
-    return [name, { profileId: `${name}@1`, skills: null, verify() {}, restore() {},
+    return [name, { profileId: name === 'baseline' ? null : `${name}@1`, skills: null, verify() {}, restore() {},
       launch: { home, codexHome: path.join(home, '.codex'), codexPath: executable.path, executableDigest: executable.digest } }];
   }));
 }
@@ -509,17 +524,23 @@ function selectionProbe(item, repoRoot, execute, environment, target) {
   }
 }
 
-// Full relies on native discovery of the whole install; the Lean arms receive ECC-selected skill bodies.
-function outcomeTrial(item, arm, repeat, repoRoot, execute, cwd, environment, target) {
+// Full relies on native discovery of the whole install; the Lean arms receive ECC-selected skill bodies;
+// Baseline runs the bare task query with no ECC install and no context block.
+function outcomeTrial(item, arm, repeat, repoRoot, execute, cwd, environment, target, harvest) {
   try {
     const task = selectionTask(item);
     const result = launchTaskContext({ repoRoot, execute, nativeEnvironment: environment.launch, target,
+      bare: arm === 'baseline',
       task: { ...task, ...(arm === 'manual-lean' && item.manualIds.length ? { explicitIds: item.manualIds } : {}) },
       profileId: arm === 'full' ? 'full@1' : 'lean@1', selectionMode: arm === 'auto-lean' ? 'auto' : 'manual' });
+    if (harvest) harvest(arm, item.id, repeat, environment);
     const passed = result.status === 'completed' && runCheck(cwd, item.check);
     return { id: item.id, arm, repeat, passed, selectedIds: result.selection.selectedIds,
       failure: passed ? null : 'hidden-check' };
-  } catch (error) { return { id: item.id, arm, repeat, passed: false, selectedIds: [], failure: failureCode(error) }; }
+  } catch (error) {
+    if (harvest) harvest(arm, item.id, repeat, environment);
+    return { id: item.id, arm, repeat, passed: false, selectedIds: [], failure: failureCode(error) };
+  }
 }
 
 function metricsSince(metrics, start) {
@@ -531,9 +552,46 @@ function metricsSince(metrics, start) {
       outputTokens: sum.outputTokens + c.usage.outputTokens }), { inputTokens: 0, cachedInputTokens: 0, outputTokens: 0 }) : null };
 }
 
+// Transcript retention is opt-in (--artifact-dir) and file-only: reports never embed session content or paths.
+function createHarvester(artifactDir, envs) {
+  if (typeof artifactDir !== 'string' || !path.isAbsolute(artifactDir)) throw new Error('Artifact directory must be absolute');
+  fs.mkdirSync(artifactDir, { recursive: true });
+  const sessionsOf = env => {
+    const config = env.launch.claudeConfigDir;
+    const projects = config ? path.join(config, 'projects') : null;
+    if (!projects || !exists(projects)) return new Set();
+    const found = new Set();
+    const walk = directory => {
+      for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
+        const item = path.join(directory, entry.name);
+        if (entry.isDirectory()) walk(item);
+        else if (entry.name.endsWith('.jsonl')) found.add(item);
+      }
+    };
+    walk(projects);
+    return found;
+  };
+  const seen = new Map(Object.entries(envs).map(([name, env]) => [name, sessionsOf(env)]));
+  const index = [];
+  return {
+    record(arm, id, repeat, env) {
+      const before = seen.get(arm) || new Set();
+      const now = sessionsOf(env);
+      seen.set(arm, now);
+      const fresh = [...now].filter(file => !before.has(file));
+      if (!fresh.length) return;
+      const directory = path.join(artifactDir, `${id}--${arm}--${repeat}`);
+      fs.mkdirSync(directory, { recursive: true });
+      for (const file of fresh) fs.copyFileSync(file, path.join(directory, path.basename(file)));
+      index.push({ id, arm, repeat, files: fresh.map(file => path.basename(file)) });
+    },
+    writeIndex() { fs.writeFileSync(path.join(artifactDir, 'artifact-index.json'), `${JSON.stringify(index, null, 1)}\n`); },
+  };
+}
+
 function runEvaluation({ repoRoot = DEFAULT_REPO_ROOT, corpus = loadCorpus(), registration,
   repeats = 1, provider, family, allowRealProvider = false, executable, model, effort, authHome, environments,
-  maxCalls = 300, deadlineMs = 3600000, callTimeoutMs = 300000 } = {}) {
+  artifactDir = null, maxCalls = 300, deadlineMs = 3600000, callTimeoutMs = 300000 } = {}) {
   if (!provider && !allowRealProvider) throw new Error('Evaluation requires an injected provider or explicit opt-in');
   if (!bounded(maxCalls, 1, 2000) || !bounded(deadlineMs, 1, 4 * 3600000)
     || !bounded(callTimeoutMs, 1, 600000)) throw new Error('Invalid call or deadline bound');
@@ -544,7 +602,7 @@ function runEvaluation({ repoRoot = DEFAULT_REPO_ROOT, corpus = loadCorpus(), re
   if (registration && !isDeepStrictEqual(registration, pin)) throw new Error('Registration pin mismatch');
   const injected = Boolean(provider);
   const liveProvider = provider || (resolvedFamily === 'claude'
-    ? createClaudeProvider({ allowRealProvider, executable, model })
+    ? createClaudeProvider({ allowRealProvider, executable, model, persistSessions: Boolean(artifactDir) })
     : createCodexProvider({ allowRealProvider, executable, model, effort, authHome }));
   const state = { calls: 0, metrics: [], maxCalls, callTimeoutMs, family: resolvedFamily,
     deadline: Date.now() + deadlineMs, provider: liveProvider,
@@ -555,6 +613,7 @@ function runEvaluation({ repoRoot = DEFAULT_REPO_ROOT, corpus = loadCorpus(), re
   const selection = [];
   const outcomes = [];
   let installs = null;
+  let harvester = null;
   try {
     const installRoot = path.join(temp, 'installs');
     fs.mkdirSync(installRoot, { mode: 0o700 });
@@ -563,6 +622,8 @@ function runEvaluation({ repoRoot = DEFAULT_REPO_ROOT, corpus = loadCorpus(), re
         ? prepareClaudeEnvironments({ repoRoot, executable, root: installRoot })
         : prepareEnvironments({ repoRoot, executable, root: installRoot }));
     installs = Object.fromEntries(Object.entries(envs).map(([name, env]) => [name, { profileId: env.profileId, skills: env.skills }]));
+    harvester = artifactDir && resolvedFamily === 'claude' && !injected ? createHarvester(artifactDir, envs) : null;
+    const harvest = harvester ? (arm, id, repeat, env) => harvester.record(arm, id, repeat, env) : null;
     for (const item of corpus.selection) {
       const cwd = path.join(temp, `${item.id}--selection`);
       fs.mkdirSync(cwd);
@@ -574,16 +635,17 @@ function runEvaluation({ repoRoot = DEFAULT_REPO_ROOT, corpus = loadCorpus(), re
       const item = corpus.tasks.find(c => c.id === scheduled.id);
       for (const arm of scheduled.arms) {
         const cwd = path.join(temp, `${item.id}--${arm}--${scheduled.repeat}`);
-        const environment = envs[arm === 'full' ? 'full' : 'lean'];
+        const environment = envs[arm === 'full' ? 'full' : arm === 'baseline' ? 'baseline' : 'lean'];
         fs.mkdirSync(cwd);
         writeWorkspace(cwd, item.files);
         const start = state.metrics.length;
         outcomes.push({ ...outcomeTrial(item, arm, scheduled.repeat, repoRoot,
-          executeAdapter(state, cwd, environment), cwd, environment, resolvedFamily), ...metricsSince(state.metrics, start) });
+          executeAdapter(state, cwd, environment), cwd, environment, resolvedFamily, harvest), ...metricsSince(state.metrics, start) });
         fs.rmSync(cwd, { recursive: true, force: true });
       }
     }
-  } finally { fs.rmSync(temp, { recursive: true, force: true }); }
+    if (harvester) harvester.writeIndex();
+  } finally { if (harvester) harvester.writeIndex(); fs.rmSync(temp, { recursive: true, force: true }); }
   const summary = summarize(outcomes);
   const insufficient = summary.distinctTasks < pin.minimumDistinctTasks || selection.length < pin.minimumDistinctTasks;
   const selectionSuccesses = selection.filter(row => row.passed).length;
@@ -599,7 +661,8 @@ function runEvaluation({ repoRoot = DEFAULT_REPO_ROOT, corpus = loadCorpus(), re
     gate: { status: insufficient ? 'insufficient-sample' : injected ? 'synthetic-only' : 'review-required',
       nonInferioritySupported: !insufficient && !injected && summary.pairs.every(p => p.interval[0] >= -pin.nonInferiorityMargin),
       releaseApproved: false }, nativeInvocation: 'unobserved',
-    measurementScope: 'native-install-hidden-graded-coding-tasks', ...metricsSince(state.metrics, 0) };
+    measurementScope: 'native-install-hidden-graded-coding-tasks',
+    artifactRetention: harvester ? 'session-jsonl-per-task-trial' : 'none', ...metricsSince(state.metrics, 0) };
 }
 
 module.exports = { loadCorpus, preregister, runEvaluation, parseCodexJsonl, parseClaudeJson, summarize, wilson,

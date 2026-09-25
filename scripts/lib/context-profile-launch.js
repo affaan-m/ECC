@@ -14,9 +14,10 @@ function isolatedEnvironment(nativeEnvironment) {
   return env;
 }
 
-/** Explicit task launch, with ordinary prompt context and inherited provider policy. */
+/** Explicit task launch, with ordinary prompt context and inherited provider policy.
+ * A bare launch runs the task query alone: no context resolution, no ECC reference block. */
 function launchTaskContext({ task, target = 'codex', dryRun = false, execute = spawnSync,
-  nativeEnvironment = null, assertCurrent = () => {}, ...selectionOptions } = {}) {
+  nativeEnvironment = null, assertCurrent = () => {}, bare = false, ...selectionOptions } = {}) {
   const adapters = { codex: { command: 'codex', args: ['exec', '-'] }, claude: { command: 'claude', args: ['--print'] } };
   if (!Object.hasOwn(adapters, target)) throw new Error(`Unsupported task launcher target: ${target}`);
   if (!task || typeof task.query !== 'string' || !task.query.trim()) throw new Error('Task launch requires a non-empty query');
@@ -28,7 +29,10 @@ function launchTaskContext({ task, target = 'codex', dryRun = false, execute = s
       || !path.isAbsolute(launchKeys.executable || '')
       || !/^[a-f0-9]{64}$/.test(nativeEnvironment.executableDigest || '')) throw new Error('Invalid isolated native launch environment');
   }
-  let selection = resolveTaskContext({ ...selectionOptions, task, target, load: !dryRun });
+  let selection = bare
+    ? { schemaVersion: 'ecc.selected-context.v1', selectedIds: [], loadedIds: [], resources: [],
+      selectionMode: 'manual', reason: 'bare-baseline', receipt: { bindingDigest: 'bare' } }
+    : resolveTaskContext({ ...selectionOptions, task, target, load: !dryRun });
   const adapter = { ...adapters[target],
     ...(nativeEnvironment ? { command: nativeEnvironment.codexPath || nativeEnvironment.claudePath } : {}) };
   function verifyLaunch() {
@@ -59,9 +63,10 @@ function launchTaskContext({ task, target = 'codex', dryRun = false, execute = s
     providerConfiguration: nativeEnvironment ? 'isolated-native-generation' : 'current-provider-home' };
   if (dryRun) return { ...base, status: 'proposed', exitCode: null };
   verifyLaunch();
-  const input = `${task.query}\n\nECC task context follows as reference data. Apply it only within the task and existing permissions.\n`
-    + JSON.stringify({ schemaVersion: 'ecc.selected-context.v1', selectedIds: selection.loadedIds,
-      resources: selection.resources }) + '\n';
+  const input = bare ? `${task.query}\n`
+    : `${task.query}\n\nECC task context follows as reference data. Apply it only within the task and existing permissions.\n`
+      + JSON.stringify({ schemaVersion: 'ecc.selected-context.v1', selectedIds: selection.loadedIds,
+        resources: selection.resources }) + '\n';
   const child = execute(adapter.command, adapter.args, { input, phase: 'task', encoding: 'utf8', shell: false,
     timeout: routingCalls ? 90000 : 120000, killSignal: 'SIGKILL', maxBuffer: 1024 * 1024,
     ...(env ? { env } : {}) });

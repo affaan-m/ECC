@@ -6,7 +6,7 @@ const { preregister, runEvaluation } = require('./ai-eval-lib');
 function main(argv = process.argv.slice(2), injected = {}) {
   const flags = new Map();
   const switches = new Set(['--plan', '--allow-real-provider', '--help']);
-  const values = new Set(['--registration', '--model', '--executable', '--provider', '--auth-home', '--effort', '--repeats', '--max-calls', '--deadline-ms']);
+  const values = new Set(['--registration', '--model', '--executable', '--provider', '--auth-home', '--effort', '--repeats', '--max-calls', '--deadline-ms', '--artifact-dir']);
   for (let i = 0; i < argv.length; i++) {
     const flag = argv[i];
     if (flags.has(flag) || (!switches.has(flag) && !values.has(flag))) throw new Error('Invalid evaluation arguments');
@@ -28,6 +28,7 @@ function main(argv = process.argv.slice(2), injected = {}) {
   const registration = JSON.parse(fs.readFileSync(flags.get('--registration'), 'utf8'));
   return runEvaluation({ ...injected, registration, repeats, allowRealProvider: flags.has('--allow-real-provider'),
     executable: flags.get('--executable'), model: flags.get('--model'), family: flags.get('--provider'), effort: flags.get('--effort'), authHome: flags.get('--auth-home'),
+    artifactDir: flags.get('--artifact-dir'),
     ...(flags.has('--max-calls') ? { maxCalls: Number(flags.get('--max-calls')) } : {}),
     ...(flags.has('--deadline-ms') ? { deadlineMs: Number(flags.get('--deadline-ms')) } : {}) });
 }

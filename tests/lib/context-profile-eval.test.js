@@ -61,7 +61,7 @@ test('registration pins corpus, source, native-install design and paired order b
   assert.equal(registration.schemaVersion, 'ecc.context-eval-registration.v2');
   assert.equal(registration.design, 'paired-native-installs-hidden-graded-coding-tasks');
   assert.match(registration.corpusDigest, /^[a-f0-9]{64}$/);
-  assert.deepEqual(registration.arms, ['full', 'manual-lean', 'auto-lean']);
+  assert.deepEqual(registration.arms, ['full', 'manual-lean', 'auto-lean', 'baseline']);
   assert.throws(() => runEvaluation({ registration: { ...registration, corpusDigest: '0'.repeat(64) },
     repoRoot, corpus, provider: () => assert.fail('called') }), /pin|registration/i);
 }));
@@ -70,22 +70,27 @@ test('injected paired run grades hidden checks, gives Full no ECC bodies, remove
   assert.throws(() => runEvaluation(), /opt.in|provider/i);
   const seen = [];
   const result = runEvaluation({ repoRoot, corpus: tinyCorpus(), provider: providerFor(seen) });
-  assert.equal(result.outcomes.length, 3);
+  assert.equal(result.outcomes.length, 4);
   assert.ok(result.outcomes.every(row => row.passed), JSON.stringify(result.outcomes));
   assert.equal(result.selection[0].passed, true);
   assert.equal(result.gate.status, 'insufficient-sample');
   assert.equal(result.authentication, 'injected');
   assert.equal(result.credentialsRetained, false);
+  assert.equal(result.artifactRetention, 'none');
   assert.ok(seen.every(call => !fs.existsSync(call.cwd)));
   const saved = JSON.stringify(result);
   for (const forbidden of ['secret transcript', 'resources', 'stdout', 'HOME', os.tmpdir()]) assert.ok(!saved.includes(forbidden), forbidden);
   const task = arm => seen.find(call => call.phase === 'task' && call.cwd.includes(`--${arm}--`));
   assert.deepEqual(result.outcomes.find(row => row.arm === 'full').selectedIds, []);
+  assert.deepEqual(result.outcomes.find(row => row.arm === 'baseline').selectedIds, []);
   assert.deepEqual(result.outcomes.find(row => row.arm === 'manual-lean').selectedIds, ['skill:feature']);
   assert.match(task('manual-lean').input, /skill:feature/);
   assert.doesNotMatch(task('full').input, /skill:feature/);
+  assert.doesNotMatch(task('baseline').input, /ecc.selected-context|resources/);
   assert.notEqual(task('full').env.CODEX_HOME, task('manual-lean').env.CODEX_HOME);
   assert.equal(task('manual-lean').env.CODEX_HOME, task('auto-lean').env.CODEX_HOME);
+  assert.notEqual(task('baseline').env.CODEX_HOME, task('full').env.CODEX_HOME);
+  assert.notEqual(task('baseline').env.CODEX_HOME, task('manual-lean').env.CODEX_HOME);
 }));
 
 test('claimed success without the required change fails the hidden check', () => withFixture(repoRoot => {
@@ -106,7 +111,7 @@ test('call budget stops work without dropping scheduled failures', () => withFix
   const result = runEvaluation({ repoRoot, corpus: tinyCorpus(), maxCalls: 1,
     provider: () => { calls++; return { status: 0, stdout: jsonl() }; } });
   assert.equal(calls, 1);
-  assert.equal(result.outcomes.length, 3);
+  assert.equal(result.outcomes.length, 4);
   assert.ok(result.outcomes.some(row => row.failure === 'call-budget'));
 }));
 
@@ -145,7 +150,7 @@ test('a changed native install stops later calls as environment drift', () => wi
     const { fingerprintExecutable } = require('../../scripts/lib/context-profile-native-executable');
     const env = name => ({ profileId: `${name}@1`, skills: 1, restore() {}, verify: () => { const e = new Error('x'); e.code = 'environment-drift'; throw e; },
       launch: { home: temp, codexHome: temp, codexPath: process.execPath, executableDigest: fingerprintExecutable(process.execPath).digest } });
-    const result = runEvaluation({ repoRoot, corpus: tinyCorpus(), environments: { full: env('full'), lean: env('lean') },
+    const result = runEvaluation({ repoRoot, corpus: tinyCorpus(), environments: { full: env('full'), lean: env('lean'), baseline: env('baseline') },
       provider: () => assert.fail('called') });
     assert.ok(result.outcomes.every(row => row.failure === 'environment-drift'));
   } finally { fs.rmSync(temp, { recursive: true, force: true }); }
@@ -159,7 +164,7 @@ test('prepared install config is restored after every call, including failed cal
     const env = name => ({ profileId: `${name}@1`, skills: 1, verify() {}, restore() { restores++; },
       launch: { home: temp, codexHome: temp, codexPath: process.execPath, executableDigest: fingerprintExecutable(process.execPath).digest } });
     let calls = 0;
-    const result = runEvaluation({ repoRoot, corpus: tinyCorpus(), environments: { full: env('full'), lean: env('lean') },
+    const result = runEvaluation({ repoRoot, corpus: tinyCorpus(), environments: { full: env('full'), lean: env('lean'), baseline: env('baseline') },
       provider: request => { calls++; if (calls === 1) throw new Error('crash'); return providerFor()(request); } });
     assert.equal(restores, calls);
     assert.equal(result.outcomes.filter(row => row.failure === 'provider-failed').length, 1);
@@ -238,10 +243,11 @@ test('real provider needs opt-in, pins and a credential source, and never ignore
 }));
 
 test('confidence intervals use distinct task clusters, not repeated calls as independent samples', () => {
-  const rows = Array.from({ length: 100 }, (_, repeat) => ['full', 'manual-lean', 'auto-lean']
+  const rows = Array.from({ length: 100 }, (_, repeat) => ['full', 'manual-lean', 'auto-lean', 'baseline']
     .map(arm => ({ id: 'one-task', repeat, arm, passed: true }))).flat();
   const report = summarize(rows);
   assert.equal(report.distinctTasks, 1);
+  assert.equal(report.pairs.length, 3);
   assert.equal(report.pairs[0].n, 1);
   assert.ok(report.pairs[0].interval[0] < 0 && report.pairs[0].interval[1] > 0);
   assert.deepEqual(wilson(0, 0), [0, 1]);
@@ -360,12 +366,16 @@ test('Claude native installs materialize managed skills and detect tampering as 
   const temp = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-eval-claude-')));
   try {
     const envs = prepareClaudeEnvironments({ repoRoot, executable: process.execPath, root: temp });
-    assert.deepEqual(Object.keys(envs).sort(), ['full', 'lean']);
+    assert.deepEqual(Object.keys(envs).sort(), ['baseline', 'full', 'lean']);
     for (const name of ['full', 'lean']) {
       assert.equal(envs[name].profileId, `${name}@1`);
       assert.ok(envs[name].skills > 0);
       const installed = fs.readdirSync(path.join(envs[name].launch.claudeConfigDir, 'skills'));
       assert.equal(installed.length, envs[name].skills);
+    }
+    assert.equal(envs.baseline.profileId, null);
+    assert.equal(envs.baseline.skills, 0);
+    for (const name of ['baseline', 'full', 'lean']) {
       envs[name].verify();
       envs[name].restore();
     }
@@ -389,17 +399,21 @@ test('injected Claude-family run parses Claude JSON, isolates config homes, grad
     };
     const result = runEvaluation({ repoRoot, corpus: tinyCorpus(), provider, family: 'claude', environments });
     assert.equal(result.evidence, 'injected-provider');
-    assert.equal(result.outcomes.length, 3);
+    assert.equal(result.outcomes.length, 4);
     assert.ok(result.outcomes.every(row => row.passed), JSON.stringify(result.outcomes));
     assert.equal(result.installs.full.skills, 5);
     assert.equal(result.installs.lean.skills, 3);
+    assert.equal(result.installs.baseline.skills, 0);
     assert.deepEqual(result.usage, { inputTokens: 13 * result.calls, cachedInputTokens: 4 * result.calls, outputTokens: 5 * result.calls });
     const task = arm => seen.find(call => call.phase === 'task' && call.cwd.includes(`--${arm}--`));
     assert.equal(typeof task('full').env.CLAUDE_CONFIG_DIR, 'string');
     assert.equal(task('full').env.CODEX_HOME, undefined);
     assert.notEqual(task('full').env.CLAUDE_CONFIG_DIR, task('manual-lean').env.CLAUDE_CONFIG_DIR);
     assert.equal(task('manual-lean').env.CLAUDE_CONFIG_DIR, task('auto-lean').env.CLAUDE_CONFIG_DIR);
+    assert.notEqual(task('baseline').env.CLAUDE_CONFIG_DIR, task('full').env.CLAUDE_CONFIG_DIR);
+    assert.doesNotMatch(task('baseline').input, /ecc.selected-context|resources/);
     assert.deepEqual(result.outcomes.find(row => row.arm === 'full').selectedIds, []);
+    assert.deepEqual(result.outcomes.find(row => row.arm === 'baseline').selectedIds, []);
     assert.deepEqual(result.outcomes.find(row => row.arm === 'manual-lean').selectedIds, ['skill:feature']);
     const saved = JSON.stringify(result);
     for (const forbidden of ['CLAUDE_CONFIG_DIR', os.tmpdir(), 'leased-token']) assert.ok(!saved.includes(forbidden), forbidden);
