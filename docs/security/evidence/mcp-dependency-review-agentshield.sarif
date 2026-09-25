@@ -1,0 +1,33 @@
+{
+  "version": "2.1.0",
+  "$schema": "https://json.schemastore.org/sarif-2.1.0.json",
+  "runs": [
+    {
+      "tool": {
+        "driver": {
+          "name": "AgentShield",
+          "informationUri": "https://github.com/affaan-m/agentshield",
+          "rules": []
+        }
+      },
+      "automationDetails": {
+        "id": "agentshield/security-scan"
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "endTimeUtc": "2026-09-25T10:10:50.216Z",
+          "workingDirectory": {
+            "uri": "<target-path>"
+          }
+        }
+      ],
+      "properties": {
+        "score": 100,
+        "grade": "A",
+        "filesScanned": 1
+      },
+      "results": []
+    }
+  ]
+}
