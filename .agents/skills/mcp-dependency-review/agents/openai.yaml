@@ -1,0 +1,7 @@
+interface:
+  display_name: "MCP Dependency Review"
+  short_description: "Review mutable MCP package references"
+  brand_color: "#0EA5E9"
+  default_prompt: "Use $mcp-dependency-review to statically review this repository's MCP configuration without executing discovered servers."
+policy:
+  allow_implicit_invocation: true
