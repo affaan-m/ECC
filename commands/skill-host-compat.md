@@ -36,5 +36,5 @@ node "$ECC_ROOT/scripts/ci/validate-skill-host-compat.js" --inventory
 
 1. Run `scripts/ci/validate-skill-host-compat.js` from the ECC root
 2. Show ERROR and WARN lines to the user
-3. For substitution errors, move Claude env vars out of bash fences
+3. For substitution errors, move Claude env vars out of bash fences. Rewrite `$CLAUDE_PROJECT_DIR` to `$(pwd)` or an explicit path
 4. For Codex-key errors, drop `origin` / `version` / `argument-hint` on the copy

@@ -5,7 +5,9 @@
  * Checks:
  *   1. Claude-only substitutions in executable bash/sh/zsh fences
  *      (${CLAUDE_SESSION_ID}, ${CLAUDE_SKILL_DIR}, ${CLAUDE_PLUGIN_ROOT},
- *      $ARGUMENTS). Codex and a bare shell leave those tokens literal.
+ *      ${CLAUDE_PROJECT_DIR}, $ARGUMENTS). Codex and a bare shell leave
+ *      those tokens literal. Rewrite ${CLAUDE_PROJECT_DIR} in Codex copies
+ *      to $(pwd) or an explicit path.
  *   2. Codex-copy frontmatter allowlist on .agents/skills/<name>/SKILL.md
  *      (name, description, metadata, license, allowed-tools). origin/version
  *      may remain on the canonical skills/ copy.
@@ -47,6 +49,8 @@ const CLAUDE_SUBSTITUTION_PATTERNS = [
   { token: '$CLAUDE_SKILL_DIR', regex: /\$CLAUDE_SKILL_DIR\b/g },
   { token: '${CLAUDE_PLUGIN_ROOT}', regex: /\$\{CLAUDE_PLUGIN_ROOT\}/g },
   { token: '$CLAUDE_PLUGIN_ROOT', regex: /\$CLAUDE_PLUGIN_ROOT\b/g },
+  { token: '${CLAUDE_PROJECT_DIR}', regex: /\$\{CLAUDE_PROJECT_DIR\}/g },
+  { token: '$CLAUDE_PROJECT_DIR', regex: /\$CLAUDE_PROJECT_DIR\b/g },
   { token: '$ARGUMENTS', regex: /\$ARGUMENTS\b|\$\{ARGUMENTS\}/g },
   // Claude skill form ${1}. Bare $1 is handled in findSubstitutionTokens so
   // POSIX `VAR=$1` and Perl/awk `$1 < 80` are not treated as Claude args.
@@ -231,6 +235,14 @@ function pushFinding(findings, finding) {
   findings.push(finding);
 }
 
+function substitutionMessage(skillName, fenceLang, token) {
+  const base = `${relSkillMd(skillName)} - ${fenceLang} fence contains Claude-only substitution ${token}`;
+  if (token === '${CLAUDE_PROJECT_DIR}' || token === '$CLAUDE_PROJECT_DIR') {
+    return `${base}; rewrite to $(pwd) or an explicit path`;
+  }
+  return base;
+}
+
 function inspectCanonicalSkill(skillName, content, findings) {
   const { frontmatter, body } = stripFrontmatter(content);
   const values = frontmatter.present ? inspectFrontmatter(frontmatter.lines).values : {};
@@ -289,7 +301,7 @@ function inspectCanonicalSkill(skillName, content, findings) {
         code: 'substitution',
         skill: skillName,
         token,
-        message: `${relSkillMd(skillName)} - ${fence.lang} fence contains Claude-only substitution ${token}`,
+        message: substitutionMessage(skillName, fence.lang, token),
       });
     }
   }

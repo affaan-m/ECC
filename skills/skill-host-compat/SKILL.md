@@ -27,7 +27,9 @@ sees `.agents/skills/`. This script is the cross-tree gate:
 
 1. Claude-only substitutions in executable `bash` / `sh` / `zsh` fences
    (`${CLAUDE_SESSION_ID}`, `${CLAUDE_SKILL_DIR}`, `${CLAUDE_PLUGIN_ROOT}`,
-   `$ARGUMENTS`) fail. Codex leaves those tokens as literal text.
+   `${CLAUDE_PROJECT_DIR}`, `$ARGUMENTS`) fail. Codex leaves those tokens
+   as literal text. In a Codex copy, rewrite `${CLAUDE_PROJECT_DIR}` to
+   `$(pwd)` or an explicit path.
 2. A Codex copy may only use `name`, `description`, `metadata`, `license`,
    and `allowed-tools`. `origin: ECC` may stay on the canonical `skills/`
    copy and must be stripped on the Codex copy.
@@ -76,6 +78,7 @@ forbidden pattern:
 echo "${CLAUDE_SESSION_ID}"
 ls "${CLAUDE_SKILL_DIR}"
 node "${CLAUDE_PLUGIN_ROOT}/scripts/setup.js" $ARGUMENTS
+cd "${CLAUDE_PROJECT_DIR}"
 ```
 
 Do not add `version:` or `origin:` to a Codex copy under `.agents/skills/`.
@@ -87,7 +90,9 @@ every `skills/` entry to have a Cursor copy.
 - Keep canonical `origin: ECC` if the CONTRIBUTING template calls for it.
 - Drop `origin`, `version`, and `argument-hint` on the Codex copy.
 - Show host-portable commands in bash fences (`npx`, `ecc`, or a resolved
-  root). Mention Claude env vars in prose, not in executable fences.
+  root). Rewrite `${CLAUDE_PROJECT_DIR}` in Codex copies to `$(pwd)` or an
+  explicit path. Mention other Claude env vars in prose, not in executable
+  fences.
 - Run this script before `npm test` when the change is a new skill.
 - Use `--inventory` to see checklist warning volume without failing the tree.
 

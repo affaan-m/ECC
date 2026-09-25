@@ -150,6 +150,75 @@ check('fail: bash fence contains ${CLAUDE_SESSION_ID}', () => {
   }
 });
 
+check('fail: bash fence contains ${CLAUDE_PROJECT_DIR}', () => {
+  const root = createRoot();
+  try {
+    writeSkill(
+      root,
+      'proj',
+      `${checklistBody('Proj')}\n## Code Examples\n\n\`\`\`bash\ncd "\${CLAUDE_PROJECT_DIR}"\n\`\`\`\n`
+    );
+    const result = runValidator(root);
+    assert.strictEqual(result.status, 1);
+    assert.ok(result.stderr.includes('ERROR:'));
+    assert.ok(result.stderr.includes('proj'));
+    assert.ok(result.stderr.includes('${CLAUDE_PROJECT_DIR}'));
+    assert.ok(result.stderr.includes('rewrite to $(pwd) or an explicit path'));
+  } finally {
+    cleanup(root);
+  }
+});
+
+check('fail: $CLAUDE_PROJECT_DIR used as a substitution in a bash fence', () => {
+  const root = createRoot();
+  try {
+    writeSkill(
+      root,
+      'proj',
+      `${checklistBody('Proj')}\n## Code Examples\n\n\`\`\`sh\ncd "$CLAUDE_PROJECT_DIR"\n\`\`\`\n`
+    );
+    const result = runValidator(root);
+    assert.strictEqual(result.status, 1);
+    assert.ok(result.stderr.includes('$CLAUDE_PROJECT_DIR'));
+    assert.ok(result.stderr.includes('rewrite to $(pwd) or an explicit path'));
+  } finally {
+    cleanup(root);
+  }
+});
+
+check('bash fence $(pwd) is accepted in place of CLAUDE_PROJECT_DIR', () => {
+  const root = createRoot();
+  try {
+    writeSkill(
+      root,
+      'proj',
+      `${checklistBody('Proj')}\n## Code Examples\n\n\`\`\`bash\ncd "$(pwd)"\n\`\`\`\n`
+    );
+    const result = runValidator(root);
+    assert.strictEqual(result.status, 0, result.stderr);
+    assert.ok(!result.stderr.includes('ERROR:'));
+    assert.ok(!result.stderr.includes('CLAUDE_PROJECT_DIR'));
+  } finally {
+    cleanup(root);
+  }
+});
+
+check('prose mention of CLAUDE_PROJECT_DIR does not fail', () => {
+  const root = createRoot();
+  try {
+    writeSkill(
+      root,
+      'prose',
+      `${checklistBody('Prose')}\nThe project root is \`CLAUDE_PROJECT_DIR\`, then cwd.\n`
+    );
+    const result = runValidator(root);
+    assert.strictEqual(result.status, 0, result.stderr);
+    assert.ok(!result.stderr.includes('ERROR:'));
+  } finally {
+    cleanup(root);
+  }
+});
+
 check('fail: $ARGUMENTS used as a substitution in a bash fence', () => {
   const root = createRoot();
   try {
