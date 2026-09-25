@@ -162,3 +162,8 @@ no Codex install path); `--provider claude` is required.
   reports each probe individually so flakes are visible.
 - Provider behavior varies week to week; the pinned model/executable digests
   make a rerun comparable only within the same pin.
+- Fixture wart observed in the 2026-09-25 run: on Node 24, `node --test test/`
+  no longer scans the directory the way Node 22 did, so `npm test` fails as
+  shipped. This is identical for every arm (the task says to make `npm test`
+  pass, and agents fix the script), so fairness holds, but it adds unplanned
+  work per trial. A future corpus revision should ship a portable test script.
