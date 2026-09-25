@@ -18,10 +18,12 @@ const { prepareNativeProfile, getNativeProfileStatus } = require(path.join(LIB, 
 const { DEFAULT_REPO_ROOT, digestObject, createSourceReader } = require(path.join(LIB, 'context-profile-support'));
 const io = require(path.join(LIB, 'context-profile-store-fs'));
 
-const ARMS = Object.freeze(['full', 'manual-lean', 'auto-lean', 'baseline']);
+const ARMS = Object.freeze(['full', 'manual-lean', 'auto-lean', 'ecc-legacy', 'baseline']);
 const CORPUS_PATH = path.join(__dirname, 'ai-corpus.json');
+const LEGACY_PIN_PATH = path.join(__dirname, 'legacy-source.json');
 const CHECK_FILE = '.ecc-eval-check.cjs';
 const IMPLEMENTATION = ['docker/context-profiles/ai-eval-lib.js', 'docker/context-profiles/ai-eval.js',
+  'docker/context-profiles/legacy-source.json',
   'manifests/context-packs/skill-triggers@1.json',
   'scripts/lib/context-profile-launch.js', 'scripts/lib/context-selection.js',
   'scripts/lib/context-profile-proposal.js', 'scripts/lib/context-profiles.js',
@@ -36,7 +38,7 @@ const CLAUDE_ENV_KEYS = ['PATH', 'HOME', 'USERPROFILE', 'CLAUDE_CONFIG_DIR', 'TM
 const bounded = (value, min, max) => Number.isSafeInteger(value) && value >= min && value <= max;
 const exists = file => Boolean(fs.lstatSync(file, { throwIfNoEntry: false }));
 
-function loadCorpus() { return JSON.parse(fs.readFileSync(CORPUS_PATH, 'utf8')); }
+function loadCorpus(file = CORPUS_PATH) { return JSON.parse(fs.readFileSync(file, 'utf8')); }
 
 function safeRelative(file) {
   return typeof file === 'string' && file.length > 0 && file.length <= 200 && !path.isAbsolute(file)
@@ -44,24 +46,47 @@ function safeRelative(file) {
 }
 
 function validateCorpus(corpus) {
+  if (corpus?.schemaVersion === 'ecc.context-eval-complex-corpus.v1') return validateComplexCorpus(corpus);
   if (corpus?.schemaVersion !== 'ecc.context-eval-corpus.v2'
     || !Array.isArray(corpus.selection) || !Array.isArray(corpus.tasks)
     || !bounded(corpus.selection.length, 1, 200) || !bounded(corpus.tasks.length, 1, 200)
     || corpus.minimumDistinctTasks !== 30 || corpus.nonInferiorityMargin !== 0.05) {
     throw new Error('Invalid preregistered corpus');
   }
-  for (const cases of [corpus.selection, corpus.tasks]) {
-    if (new Set(cases.map(c => c.id)).size !== cases.length) throw new Error('Duplicate corpus ID');
-    for (const item of cases) {
-      if (!/^[a-z][a-z0-9-]{0,63}$/.test(item.id) || typeof item.query !== 'string'
-        || !bounded(Buffer.byteLength(item.query), 1, 8192)) throw new Error('Invalid corpus case');
-    }
-  }
+  for (const cases of [corpus.selection, corpus.tasks]) validateCorpusIds(cases);
   for (const task of corpus.tasks) {
     const files = Object.entries(task.files || {});
     if (!Array.isArray(task.manualIds) || task.manualIds.length > 1 || !bounded(files.length, 1, 8)
       || files.some(([file, content]) => !safeRelative(file) || typeof content !== 'string' || Buffer.byteLength(content) > 16384)
       || typeof task.check !== 'string' || !bounded(Buffer.byteLength(task.check), 1, 16384)) {
+      throw new Error('Invalid corpus task');
+    }
+  }
+}
+
+function validateCorpusIds(cases) {
+  if (new Set(cases.map(c => c.id)).size !== cases.length) throw new Error('Duplicate corpus ID');
+  for (const item of cases) {
+    if (!/^[a-z][a-z0-9-]{0,63}$/.test(item.id) || typeof item.query !== 'string'
+      || !bounded(Buffer.byteLength(item.query), 1, 8192)) throw new Error('Invalid corpus case');
+  }
+}
+
+// Complex corpora hold a few realistic multi-file tasks with scored hidden graders. Sample gates
+// are descriptive at this size, so the distinct-task minimum relaxes to the corpus itself.
+function validateComplexCorpus(corpus) {
+  if (!Array.isArray(corpus.selection) || !Array.isArray(corpus.tasks)
+    || !bounded(corpus.selection.length, 0, 50) || !bounded(corpus.tasks.length, 1, 10)
+    || corpus.minimumDistinctTasks !== corpus.tasks.length || corpus.nonInferiorityMargin !== 0.05) {
+    throw new Error('Invalid preregistered corpus');
+  }
+  for (const cases of [corpus.selection, corpus.tasks]) validateCorpusIds(cases);
+  for (const task of corpus.tasks) {
+    const files = Object.entries(task.files || {});
+    if (!Array.isArray(task.manualIds) || task.manualIds.length > 3 || !bounded(files.length, 1, 24)
+      || files.some(([file, content]) => !safeRelative(file) || typeof content !== 'string' || Buffer.byteLength(content) > 65536)
+      || typeof task.check !== 'string' || !bounded(Buffer.byteLength(task.check), 1, 65536)
+      || (task.checkTimeoutMs !== undefined && !bounded(task.checkTimeoutMs, 1, 120000))) {
       throw new Error('Invalid corpus task');
     }
   }
@@ -113,9 +138,11 @@ function preregister({ repoRoot = DEFAULT_REPO_ROOT, corpus = loadCorpus(), repe
   const value = { schemaVersion: 'ecc.context-eval-registration.v2', corpusDigest: digestObject(corpus),
     sourceDigest: source.sourceDigest, registryDigest: source.registry.registryDigest,
     providerPin: providerPin(model, executable, effort), runtime: source.runtime,
-    arms: [...ARMS], repeats, minimumDistinctTasks: 30, nonInferiorityMargin: 0.05,
+    arms: [...ARMS], repeats, minimumDistinctTasks: corpus.minimumDistinctTasks, nonInferiorityMargin: 0.05,
     confidence: 0.95, sampling: 'fixed-purposive-pilot',
-    design: 'paired-native-installs-hidden-graded-coding-tasks',
+    design: corpus.schemaVersion === 'ecc.context-eval-complex-corpus.v1'
+      ? 'paired-native-installs-hidden-scored-complex-tasks'
+      : 'paired-native-installs-hidden-graded-coding-tasks',
     order: corpus.tasks.flatMap((task, index) => Array.from({ length: repeats }, (_, repeat) => ({
       id: task.id, repeat, arms: ARMS.map((_, offset) => ARMS[(index + repeat + offset) % ARMS.length]),
     }))), selectionIds: corpus.selection.map(c => c.id) };
@@ -304,6 +331,7 @@ function createCodexProvider({ allowRealProvider = false, executable, model, eff
 
 /** Real Lean and Full installs, prepared through the same isolated native adapter users get. */
 function prepareEnvironments({ repoRoot, executable, root }) {
+  throw new Error('The ecc-legacy arm requires the Claude provider; Codex native installs are not prepared here');
   const binary = resolveExecutable(executable);
   const environments = {};
   for (const [name, profileId, selectionMode] of [['full', 'full@1', 'manual'], ['lean', 'lean@1', 'auto']]) {
@@ -346,9 +374,58 @@ function prepareEnvironments({ repoRoot, executable, root }) {
   return environments;
 }
 
+function installClaudeSkills({ payload, home }) {
+  const config = path.join(home, '.claude');
+  const installed = path.join(config, 'skills');
+  fs.mkdirSync(installed, { recursive: true, mode: 0o700 });
+  for (const entry of fs.readdirSync(payload)) {
+    fs.cpSync(path.join(payload, entry), path.join(installed, entry), { recursive: true, errorOnExist: true, force: false });
+  }
+  return { config, installed };
+}
+
+function claudeEnvironment({ name, binary, home, config, installed, profileId, skills, sourceSha = null }) {
+  const managed = () => digestObject(io.inventory(installed));
+  const prepared = managed();
+  return [name, { profileId, skills, sourceSha,
+    launch: { home, claudeConfigDir: config, claudePath: binary.path, executableDigest: binary.digest },
+    restore() {},
+    verify() {
+      if (fingerprintExecutable(binary.path).digest !== binary.digest) fail('environment-drift');
+      let observed = null;
+      try { observed = managed(); } catch { observed = null; }
+      if (observed !== prepared) fail('environment-drift');
+    } }];
+}
+
+/** The pre-scoping ECC source, pinned by commit so the ecc-legacy arm is reproducible. */
+function exportLegacySource({ repoRoot = DEFAULT_REPO_ROOT, destination,
+  pin = JSON.parse(fs.readFileSync(LEGACY_PIN_PATH, 'utf8')) } = {}) {
+  if (!/^[a-f0-9]{40}$/.test(pin?.sha || '')) throw new Error('Invalid legacy source pin');
+  if (!path.isAbsolute(destination || '')) throw new Error('Legacy destination must be absolute');
+  const resolved = spawnSync('git', ['-C', repoRoot, 'rev-parse', '--verify', `${pin.sha}^{commit}`],
+    { encoding: 'utf8', shell: false, timeout: 30000, killSignal: 'SIGKILL' });
+  if (resolved.status !== 0 || resolved.error || resolved.stdout.trim() !== pin.sha) {
+    throw new Error('Legacy source pin is unavailable in this repository');
+  }
+  fs.mkdirSync(destination, { recursive: true, mode: 0o700 });
+  const tar = path.join(destination, 'legacy.tar');
+  const archive = spawnSync('git', ['-C', repoRoot, 'archive', '--format=tar', '-o', tar, pin.sha, 'skills'],
+    { encoding: 'utf8', shell: false, timeout: 60000, killSignal: 'SIGKILL' });
+  const extract = archive.status === 0 && !archive.error
+    ? spawnSync('tar', ['-xf', tar, '-C', destination], { encoding: 'utf8', shell: false, timeout: 60000, killSignal: 'SIGKILL' })
+    : archive;
+  fs.rmSync(tar, { force: true });
+  const payload = path.join(destination, 'skills');
+  if (extract.status !== 0 || extract.error || !exists(payload) || !fs.readdirSync(payload).length) {
+    throw new Error('Legacy source export failed');
+  }
+  return { root: destination, sha: pin.sha };
+}
+
 /** Real Claude installs in isolated config homes. Managed-skill drift aborts; there is no
  * provider bookkeeping to restore because isolated Claude runs do not mutate the managed tree. */
-function prepareClaudeEnvironments({ repoRoot, executable, root }) {
+function prepareClaudeEnvironments({ repoRoot, executable, root, legacySource = null }) {
   const binary = resolveExecutable(executable);
   const environments = {};
   for (const [name, profileId, selectionMode] of [['full', 'full@1', 'manual'], ['lean', 'lean@1', 'auto']]) {
@@ -356,30 +433,24 @@ function prepareClaudeEnvironments({ repoRoot, executable, root }) {
     fs.mkdirSync(path.join(root, name), { mode: 0o700 });
     const status = applyStore({ repoRoot, stateRoot, target: 'claude', selectionMode, profileId });
     const home = path.join(root, name, 'home');
-    const config = path.join(home, '.claude');
-    const installed = path.join(config, 'skills');
-    fs.mkdirSync(installed, { recursive: true, mode: 0o700 });
-    const payload = path.join(status.generationRoot, 'skills');
-    for (const entry of fs.readdirSync(payload)) {
-      fs.cpSync(path.join(payload, entry), path.join(installed, entry), { recursive: true, errorOnExist: true, force: false });
-    }
-    const managed = () => digestObject(io.inventory(installed));
-    const prepared = managed();
-    environments[name] = { profileId, skills: status.selectedIds.length,
-      launch: { home, claudeConfigDir: config, claudePath: binary.path, executableDigest: binary.digest },
-      restore() {},
-      verify() {
-        if (fingerprintExecutable(binary.path).digest !== binary.digest) fail('environment-drift');
-        let observed = null;
-        try { observed = managed(); } catch { observed = null; }
-        if (observed !== prepared) fail('environment-drift');
-      } };
+    const { config, installed } = installClaudeSkills({ payload: path.join(status.generationRoot, 'skills'), home });
+    const [key, env] = claudeEnvironment({ name, binary, home, config, installed, profileId, skills: status.selectedIds.length });
+    environments[key] = env;
+  }
+  if (legacySource) {
+    // ecc-legacy: the typical pre-scoping install — the full skill library from the pinned
+    // pre-ECC-029 commit, launched bare with no ECC context block.
+    const home = path.join(root, 'ecc-legacy', 'home');
+    const { config, installed } = installClaudeSkills({ payload: path.join(legacySource.root, 'skills'), home });
+    const [key, env] = claudeEnvironment({ name: 'ecc-legacy', binary, home, config, installed,
+      profileId: null, skills: fs.readdirSync(installed).length, sourceSha: legacySource.sha });
+    environments[key] = env;
   }
   // Baseline arm: an empty config home with no ECC install, for provider-overhead subtraction.
   const baselineHome = path.join(root, 'baseline', 'home');
   const baselineConfig = path.join(baselineHome, '.claude');
   fs.mkdirSync(baselineConfig, { recursive: true, mode: 0o700 });
-  environments.baseline = { profileId: null, skills: 0, restore() {},
+  environments.baseline = { profileId: null, skills: 0, sourceSha: null, restore() {},
     launch: { home: baselineHome, claudeConfigDir: baselineConfig, claudePath: binary.path, executableDigest: binary.digest },
     verify() { if (fingerprintExecutable(binary.path).digest !== binary.digest) fail('environment-drift'); } };
   return environments;
@@ -387,10 +458,11 @@ function prepareClaudeEnvironments({ repoRoot, executable, root }) {
 
 function syntheticEnvironments(root) {
   const executable = resolveExecutable(process.execPath);
-  return Object.fromEntries(['full', 'lean', 'baseline'].map(name => {
+  return Object.fromEntries(['full', 'lean', 'ecc-legacy', 'baseline'].map(name => {
     const home = path.join(root, name, 'home');
     fs.mkdirSync(path.join(home, '.codex'), { recursive: true, mode: 0o700 });
-    return [name, { profileId: name === 'baseline' ? null : `${name}@1`, skills: null, verify() {}, restore() {},
+    return [name, { profileId: ['baseline', 'ecc-legacy'].includes(name) ? null : `${name}@1`, skills: null, sourceSha: null,
+      verify() {}, restore() {},
       launch: { home, codexHome: path.join(home, '.codex'), codexPath: executable.path, executableDigest: executable.digest } }];
   }));
 }
@@ -402,14 +474,28 @@ function checkArguments(cwd) {
 }
 
 // The hidden grader enters the workspace only after the agent exits, and runs read-only where Node supports it.
-function runCheck(cwd, source) {
+// A grader may print one `ECC_EVAL_SCORE {"score":0..1}` line for partial credit; without it the exit
+// status alone decides (exit 0 scores 1). Outcome success still requires a full score.
+const SCORE_LINE = /^\s*ECC_EVAL_SCORE\s+(\{[^\n]*\})\s*$/m;
+function runScoredCheck(cwd, source, timeoutMs = 10000) {
   const file = path.join(cwd, CHECK_FILE);
-  if (exists(file)) return false;
+  if (exists(file)) return { passed: false, score: 0 };
   fs.writeFileSync(file, source, { flag: 'wx' });
   const result = spawnSync(process.execPath, checkArguments(fs.realpathSync(cwd)), { cwd, encoding: 'utf8',
-    env: { LANG: 'C.UTF-8' }, shell: false, timeout: 10000, killSignal: 'SIGKILL', maxBuffer: 65536 });
-  return result.status === 0 && !result.error;
+    env: { LANG: 'C.UTF-8' }, shell: false, timeout: timeoutMs, killSignal: 'SIGKILL', maxBuffer: 65536 });
+  const passed = result.status === 0 && !result.error;
+  let score = passed ? 1 : 0;
+  const match = SCORE_LINE.exec(result.stdout || '');
+  if (passed && match) {
+    try {
+      const parsed = JSON.parse(match[1]);
+      if (typeof parsed?.score === 'number' && parsed.score >= 0 && parsed.score <= 1) score = parsed.score;
+    } catch { /* A malformed score line keeps the exit-status score. */ }
+  }
+  return { passed, score };
 }
+
+function runCheck(cwd, source) { return runScoredCheck(cwd, source).passed; }
 
 function writeWorkspace(cwd, files) {
   for (const [relative, content] of Object.entries(files)) {
@@ -433,7 +519,8 @@ function summarize(outcomes) {
   const rates = ARMS.map(arm => {
     const rows = outcomes.filter(row => row.arm === arm);
     return { arm, attempts: rows.length, successes: rows.filter(row => row.passed).length,
-      rate: rows.length ? rows.filter(row => row.passed).length / rows.length : null };
+      rate: rows.length ? rows.filter(row => row.passed).length / rows.length : null,
+      meanScore: rows.length ? rows.reduce((sum, row) => sum + (typeof row.score === 'number' ? row.score : Number(row.passed)), 0) / rows.length : null };
   });
   const pairs = ARMS.slice(1).map(arm => {
     const differences = ids.map(id => {
@@ -445,7 +532,7 @@ function summarize(outcomes) {
     }).filter(value => value !== null);
     const n = differences.length;
     const delta = n ? differences.reduce((a, b) => a + b, 0) / n : null;
-    // Paired task-cluster means in [-1,1]. Hoeffding with Bonferroni for two comparisons.
+    // Paired task-cluster means in [-1,1]. Hoeffding with Bonferroni for four comparisons.
     const radius = n ? Math.sqrt(2 * Math.log(80) / n) : 2;
     return { arm, n, delta, interval: [Math.max(-1, (delta || 0) - radius), Math.min(1, (delta || 0) + radius)],
       method: 'paired-task-cluster-hoeffding-familywise-95' };
@@ -525,21 +612,22 @@ function selectionProbe(item, repoRoot, execute, environment, target) {
 }
 
 // Full relies on native discovery of the whole install; the Lean arms receive ECC-selected skill bodies;
-// Baseline runs the bare task query with no ECC install and no context block.
+// ecc-legacy runs bare against the pinned pre-scoping skill library; Baseline runs the bare task query.
 function outcomeTrial(item, arm, repeat, repoRoot, execute, cwd, environment, target, harvest) {
   try {
     const task = selectionTask(item);
     const result = launchTaskContext({ repoRoot, execute, nativeEnvironment: environment.launch, target,
-      bare: arm === 'baseline',
+      bare: arm === 'baseline' || arm === 'ecc-legacy',
       task: { ...task, ...(arm === 'manual-lean' && item.manualIds.length ? { explicitIds: item.manualIds } : {}) },
       profileId: arm === 'full' ? 'full@1' : 'lean@1', selectionMode: arm === 'auto-lean' ? 'auto' : 'manual' });
     if (harvest) harvest(arm, item.id, repeat, environment);
-    const passed = result.status === 'completed' && runCheck(cwd, item.check);
-    return { id: item.id, arm, repeat, passed, selectedIds: result.selection.selectedIds,
-      failure: passed ? null : 'hidden-check' };
+    const verdict = runScoredCheck(cwd, item.check, item.checkTimeoutMs);
+    const passed = result.status === 'completed' && verdict.passed && verdict.score >= 0.999;
+    return { id: item.id, arm, repeat, passed, score: result.status === 'completed' ? verdict.score : 0,
+      selectedIds: result.selection.selectedIds, failure: passed ? null : 'hidden-check' };
   } catch (error) {
     if (harvest) harvest(arm, item.id, repeat, environment);
-    return { id: item.id, arm, repeat, passed: false, selectedIds: [], failure: failureCode(error) };
+    return { id: item.id, arm, repeat, passed: false, score: 0, selectedIds: [], failure: failureCode(error) };
   }
 }
 
@@ -593,7 +681,7 @@ function runEvaluation({ repoRoot = DEFAULT_REPO_ROOT, corpus = loadCorpus(), re
   repeats = 1, provider, family, allowRealProvider = false, executable, model, effort, authHome, environments,
   artifactDir = null, maxCalls = 300, deadlineMs = 3600000, callTimeoutMs = 300000 } = {}) {
   if (!provider && !allowRealProvider) throw new Error('Evaluation requires an injected provider or explicit opt-in');
-  if (!bounded(maxCalls, 1, 2000) || !bounded(deadlineMs, 1, 4 * 3600000)
+  if (!bounded(maxCalls, 1, 2000) || !bounded(deadlineMs, 1, 8 * 3600000)
     || !bounded(callTimeoutMs, 1, 600000)) throw new Error('Invalid call or deadline bound');
   if (!provider && !registration) throw new Error('Real evaluation requires prior registration');
   const resolvedFamily = provider ? (family || 'codex') : resolveFamily(family, executable);
@@ -619,9 +707,11 @@ function runEvaluation({ repoRoot = DEFAULT_REPO_ROOT, corpus = loadCorpus(), re
     fs.mkdirSync(installRoot, { mode: 0o700 });
     const envs = environments || (injected ? syntheticEnvironments(installRoot)
       : resolvedFamily === 'claude'
-        ? prepareClaudeEnvironments({ repoRoot, executable, root: installRoot })
+        ? prepareClaudeEnvironments({ repoRoot, executable, root: installRoot,
+          legacySource: exportLegacySource({ repoRoot, destination: path.join(installRoot, 'legacy-source') }) })
         : prepareEnvironments({ repoRoot, executable, root: installRoot }));
-    installs = Object.fromEntries(Object.entries(envs).map(([name, env]) => [name, { profileId: env.profileId, skills: env.skills }]));
+    installs = Object.fromEntries(Object.entries(envs).map(([name, env]) => [name,
+      { profileId: env.profileId, skills: env.skills, ...(env.sourceSha ? { sourceSha: env.sourceSha } : {}) }]));
     harvester = artifactDir && resolvedFamily === 'claude' && !injected ? createHarvester(artifactDir, envs) : null;
     const harvest = harvester ? (arm, id, repeat, env) => harvester.record(arm, id, repeat, env) : null;
     for (const item of corpus.selection) {
@@ -635,7 +725,7 @@ function runEvaluation({ repoRoot = DEFAULT_REPO_ROOT, corpus = loadCorpus(), re
       const item = corpus.tasks.find(c => c.id === scheduled.id);
       for (const arm of scheduled.arms) {
         const cwd = path.join(temp, `${item.id}--${arm}--${scheduled.repeat}`);
-        const environment = envs[arm === 'full' ? 'full' : arm === 'baseline' ? 'baseline' : 'lean'];
+        const environment = envs[['full', 'baseline', 'ecc-legacy'].includes(arm) ? arm : 'lean'];
         fs.mkdirSync(cwd);
         writeWorkspace(cwd, item.files);
         const start = state.metrics.length;
@@ -666,5 +756,5 @@ function runEvaluation({ repoRoot = DEFAULT_REPO_ROOT, corpus = loadCorpus(), re
 }
 
 module.exports = { loadCorpus, preregister, runEvaluation, parseCodexJsonl, parseClaudeJson, summarize, wilson,
-  runCheck, createAuthLease, createCodexProvider, createClaudeProvider, prepareEnvironments,
-  prepareClaudeEnvironments, providerFamily, resolveFamily, readClaudeKeychainToken };
+  runCheck, runScoredCheck, createAuthLease, createCodexProvider, createClaudeProvider, prepareEnvironments,
+  prepareClaudeEnvironments, exportLegacySource, providerFamily, resolveFamily, readClaudeKeychainToken };

@@ -5,7 +5,7 @@ const os = require('node:os');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
 const test = require('node:test');
-const { preregister, runEvaluation, parseCodexJsonl, parseClaudeJson, summarize, wilson, runCheck,
+const { preregister, runEvaluation, parseCodexJsonl, parseClaudeJson, summarize, wilson, runCheck, runScoredCheck,
   createAuthLease, createCodexProvider, createClaudeProvider, prepareClaudeEnvironments,
   providerFamily, resolveFamily } = require('../../docker/context-profiles/ai-eval-lib');
 const { withFixture, write } = require('./helpers/context-fixture');
@@ -61,7 +61,7 @@ test('registration pins corpus, source, native-install design and paired order b
   assert.equal(registration.schemaVersion, 'ecc.context-eval-registration.v2');
   assert.equal(registration.design, 'paired-native-installs-hidden-graded-coding-tasks');
   assert.match(registration.corpusDigest, /^[a-f0-9]{64}$/);
-  assert.deepEqual(registration.arms, ['full', 'manual-lean', 'auto-lean', 'baseline']);
+  assert.deepEqual(registration.arms, ['full', 'manual-lean', 'auto-lean', 'ecc-legacy', 'baseline']);
   assert.throws(() => runEvaluation({ registration: { ...registration, corpusDigest: '0'.repeat(64) },
     repoRoot, corpus, provider: () => assert.fail('called') }), /pin|registration/i);
 }));
@@ -70,7 +70,7 @@ test('injected paired run grades hidden checks, gives Full no ECC bodies, remove
   assert.throws(() => runEvaluation(), /opt.in|provider/i);
   const seen = [];
   const result = runEvaluation({ repoRoot, corpus: tinyCorpus(), provider: providerFor(seen) });
-  assert.equal(result.outcomes.length, 4);
+  assert.equal(result.outcomes.length, 5);
   assert.ok(result.outcomes.every(row => row.passed), JSON.stringify(result.outcomes));
   assert.equal(result.selection[0].passed, true);
   assert.equal(result.gate.status, 'insufficient-sample');
@@ -83,14 +83,17 @@ test('injected paired run grades hidden checks, gives Full no ECC bodies, remove
   const task = arm => seen.find(call => call.phase === 'task' && call.cwd.includes(`--${arm}--`));
   assert.deepEqual(result.outcomes.find(row => row.arm === 'full').selectedIds, []);
   assert.deepEqual(result.outcomes.find(row => row.arm === 'baseline').selectedIds, []);
+  assert.deepEqual(result.outcomes.find(row => row.arm === 'ecc-legacy').selectedIds, []);
   assert.deepEqual(result.outcomes.find(row => row.arm === 'manual-lean').selectedIds, ['skill:feature']);
   assert.match(task('manual-lean').input, /skill:feature/);
   assert.doesNotMatch(task('full').input, /skill:feature/);
   assert.doesNotMatch(task('baseline').input, /ecc.selected-context|resources/);
+  assert.doesNotMatch(task('ecc-legacy').input, /ecc.selected-context|resources/);
   assert.notEqual(task('full').env.CODEX_HOME, task('manual-lean').env.CODEX_HOME);
   assert.equal(task('manual-lean').env.CODEX_HOME, task('auto-lean').env.CODEX_HOME);
   assert.notEqual(task('baseline').env.CODEX_HOME, task('full').env.CODEX_HOME);
   assert.notEqual(task('baseline').env.CODEX_HOME, task('manual-lean').env.CODEX_HOME);
+  for (const other of ['full', 'manual-lean', 'baseline']) assert.notEqual(task('ecc-legacy').env.CODEX_HOME, task(other).env.CODEX_HOME);
 }));
 
 test('claimed success without the required change fails the hidden check', () => withFixture(repoRoot => {
@@ -111,7 +114,7 @@ test('call budget stops work without dropping scheduled failures', () => withFix
   const result = runEvaluation({ repoRoot, corpus: tinyCorpus(), maxCalls: 1,
     provider: () => { calls++; return { status: 0, stdout: jsonl() }; } });
   assert.equal(calls, 1);
-  assert.equal(result.outcomes.length, 4);
+  assert.equal(result.outcomes.length, 5);
   assert.ok(result.outcomes.some(row => row.failure === 'call-budget'));
 }));
 
@@ -150,7 +153,7 @@ test('a changed native install stops later calls as environment drift', () => wi
     const { fingerprintExecutable } = require('../../scripts/lib/context-profile-native-executable');
     const env = name => ({ profileId: `${name}@1`, skills: 1, restore() {}, verify: () => { const e = new Error('x'); e.code = 'environment-drift'; throw e; },
       launch: { home: temp, codexHome: temp, codexPath: process.execPath, executableDigest: fingerprintExecutable(process.execPath).digest } });
-    const result = runEvaluation({ repoRoot, corpus: tinyCorpus(), environments: { full: env('full'), lean: env('lean'), baseline: env('baseline') },
+    const result = runEvaluation({ repoRoot, corpus: tinyCorpus(), environments: { full: env('full'), lean: env('lean'), 'ecc-legacy': env('ecc-legacy'), baseline: env('baseline') },
       provider: () => assert.fail('called') });
     assert.ok(result.outcomes.every(row => row.failure === 'environment-drift'));
   } finally { fs.rmSync(temp, { recursive: true, force: true }); }
@@ -164,7 +167,7 @@ test('prepared install config is restored after every call, including failed cal
     const env = name => ({ profileId: `${name}@1`, skills: 1, verify() {}, restore() { restores++; },
       launch: { home: temp, codexHome: temp, codexPath: process.execPath, executableDigest: fingerprintExecutable(process.execPath).digest } });
     let calls = 0;
-    const result = runEvaluation({ repoRoot, corpus: tinyCorpus(), environments: { full: env('full'), lean: env('lean'), baseline: env('baseline') },
+    const result = runEvaluation({ repoRoot, corpus: tinyCorpus(), environments: { full: env('full'), lean: env('lean'), 'ecc-legacy': env('ecc-legacy'), baseline: env('baseline') },
       provider: request => { calls++; if (calls === 1) throw new Error('crash'); return providerFor()(request); } });
     assert.equal(restores, calls);
     assert.equal(result.outcomes.filter(row => row.failure === 'provider-failed').length, 1);
@@ -243,11 +246,11 @@ test('real provider needs opt-in, pins and a credential source, and never ignore
 }));
 
 test('confidence intervals use distinct task clusters, not repeated calls as independent samples', () => {
-  const rows = Array.from({ length: 100 }, (_, repeat) => ['full', 'manual-lean', 'auto-lean', 'baseline']
+  const rows = Array.from({ length: 100 }, (_, repeat) => ['full', 'manual-lean', 'auto-lean', 'ecc-legacy', 'baseline']
     .map(arm => ({ id: 'one-task', repeat, arm, passed: true }))).flat();
   const report = summarize(rows);
   assert.equal(report.distinctTasks, 1);
-  assert.equal(report.pairs.length, 3);
+  assert.equal(report.pairs.length, 4);
   assert.equal(report.pairs[0].n, 1);
   assert.ok(report.pairs[0].interval[0] < 0 && report.pairs[0].interval[1] > 0);
   assert.deepEqual(wilson(0, 0), [0, 1]);
@@ -389,7 +392,13 @@ test('Claude native installs materialize managed skills and detect tampering as 
 test('injected Claude-family run parses Claude JSON, isolates config homes, grades checks and maps usage', { skip: !posix }, () => withFixture(repoRoot => {
   const temp = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-eval-claude-run-')));
   try {
-    const environments = prepareClaudeEnvironments({ repoRoot, executable: process.execPath, root: temp });
+    const legacyRoot = path.join(temp, 'legacy-src');
+    for (const id of ['feature', 'shared']) {
+      fs.mkdirSync(path.join(legacyRoot, 'skills', id), { recursive: true });
+      fs.writeFileSync(path.join(legacyRoot, 'skills', id, 'SKILL.md'), `---\nname: ${id}\ndescription: Legacy ${id}.\n---\n`);
+    }
+    const environments = prepareClaudeEnvironments({ repoRoot, executable: process.execPath, root: temp,
+      legacySource: { root: legacyRoot, sha: '0'.repeat(40) } });
     const seen = [];
     const provider = request => {
       seen.push({ ...request, env: { ...request.env } });
@@ -399,10 +408,12 @@ test('injected Claude-family run parses Claude JSON, isolates config homes, grad
     };
     const result = runEvaluation({ repoRoot, corpus: tinyCorpus(), provider, family: 'claude', environments });
     assert.equal(result.evidence, 'injected-provider');
-    assert.equal(result.outcomes.length, 4);
+    assert.equal(result.outcomes.length, 5);
     assert.ok(result.outcomes.every(row => row.passed), JSON.stringify(result.outcomes));
     assert.equal(result.installs.full.skills, 5);
     assert.equal(result.installs.lean.skills, 3);
+    assert.equal(result.installs['ecc-legacy'].skills, 2);
+    assert.equal(result.installs['ecc-legacy'].sourceSha, '0'.repeat(40));
     assert.equal(result.installs.baseline.skills, 0);
     assert.deepEqual(result.usage, { inputTokens: 13 * result.calls, cachedInputTokens: 4 * result.calls, outputTokens: 5 * result.calls });
     const task = arm => seen.find(call => call.phase === 'task' && call.cwd.includes(`--${arm}--`));
@@ -411,11 +422,65 @@ test('injected Claude-family run parses Claude JSON, isolates config homes, grad
     assert.notEqual(task('full').env.CLAUDE_CONFIG_DIR, task('manual-lean').env.CLAUDE_CONFIG_DIR);
     assert.equal(task('manual-lean').env.CLAUDE_CONFIG_DIR, task('auto-lean').env.CLAUDE_CONFIG_DIR);
     assert.notEqual(task('baseline').env.CLAUDE_CONFIG_DIR, task('full').env.CLAUDE_CONFIG_DIR);
+    for (const other of ['full', 'manual-lean', 'baseline']) assert.notEqual(task('ecc-legacy').env.CLAUDE_CONFIG_DIR, task(other).env.CLAUDE_CONFIG_DIR);
     assert.doesNotMatch(task('baseline').input, /ecc.selected-context|resources/);
+    assert.doesNotMatch(task('ecc-legacy').input, /ecc.selected-context|resources/);
     assert.deepEqual(result.outcomes.find(row => row.arm === 'full').selectedIds, []);
     assert.deepEqual(result.outcomes.find(row => row.arm === 'baseline').selectedIds, []);
+    assert.deepEqual(result.outcomes.find(row => row.arm === 'ecc-legacy').selectedIds, []);
     assert.deepEqual(result.outcomes.find(row => row.arm === 'manual-lean').selectedIds, ['skill:feature']);
     const saved = JSON.stringify(result);
     for (const forbidden of ['CLAUDE_CONFIG_DIR', os.tmpdir(), 'leased-token']) assert.ok(!saved.includes(forbidden), forbidden);
   } finally { fs.rmSync(temp, { recursive: true, force: true }); }
 }));
+
+const SCORED_CHECK = "const path = require('node:path');\nlet ok = 0;\n"
+  + "try { if (require(path.join(process.cwd(), 'add.js'))(2, 3) === 5) ok++; } catch {}\n"
+  + "try { if (require(path.join(process.cwd(), 'sub.js'))(5, 3) === 2) ok++; } catch {}\n"
+  + "console.log(`ECC_EVAL_SCORE ${JSON.stringify({ score: ok / 2 })}`);\nprocess.exit(0);\n";
+function tinyComplexCorpus() {
+  return { schemaVersion: 'ecc.context-eval-complex-corpus.v1', id: 'tiny-complex@1', sampling: 'test',
+    minimumDistinctTasks: 1, nonInferiorityMargin: 0.05,
+    selection: [{ id: 'complex-addsub', category: 'complex-test', query: 'Fix add.js and sub.js.', expectedIds: ['skill:feature'] }],
+    tasks: [{ id: 'addsub', category: 'complex-test', manualIds: ['skill:feature', 'skill:shared'], query: 'Fix add.js and sub.js.',
+      files: { 'add.js': 'module.exports = (a, b) => a - b;\n', 'sub.js': 'module.exports = (a, b) => a * b;\n' },
+      check: SCORED_CHECK }] };
+}
+
+test('complex corpora register a scored design and keep partial credit per arm', () => withFixture(repoRoot => {
+  const corpus = tinyComplexCorpus();
+  const registration = preregister({ repoRoot, corpus });
+  assert.equal(registration.design, 'paired-native-installs-hidden-scored-complex-tasks');
+  assert.equal(registration.minimumDistinctTasks, 1);
+  const result = runEvaluation({ repoRoot, corpus, provider: providerFor() });
+  assert.equal(result.outcomes.length, 5);
+  assert.ok(result.outcomes.every(row => !row.passed && row.score === 0.5), JSON.stringify(result.outcomes));
+  assert.equal(result.summary.rates.find(row => row.arm === 'full').meanScore, 0.5);
+  assert.equal(result.gate.status, 'synthetic-only');
+  assert.deepEqual(result.outcomes.find(row => row.arm === 'manual-lean').selectedIds, ['skill:feature', 'skill:shared']);
+}));
+
+test('complex corpus validation rejects wrong minimums and oversized manual picks', () => withFixture(repoRoot => {
+  const corpus = tinyComplexCorpus();
+  const base = { repoRoot, provider: () => assert.fail('called') };
+  assert.throws(() => runEvaluation({ ...base, corpus: { ...corpus, minimumDistinctTasks: 2 } }));
+  assert.throws(() => runEvaluation({ ...base, corpus: { ...corpus,
+    tasks: [{ ...corpus.tasks[0], manualIds: ['skill:a', 'skill:b', 'skill:c', 'skill:d'] }] } }));
+  assert.throws(() => runEvaluation({ ...base, corpus: { ...corpus, schemaVersion: 'ecc.context-eval-corpus.v9' } }));
+  assert.throws(() => runEvaluation({ ...base, corpus: { ...corpus, tasks: [{ ...corpus.tasks[0], checkTimeoutMs: 120001 }] } }));
+}));
+
+test('scored checks parse the partial-credit line and fall back to exit status', () => withFixture(root => {
+  const dir = name => { const made = path.join(root, name); fs.mkdirSync(made); return made; };
+  assert.deepEqual(runScoredCheck(dir('a'), "console.log('ECC_EVAL_SCORE {\"score\":0.25}');"), { passed: true, score: 0.25 });
+  assert.deepEqual(runScoredCheck(dir('b'), "console.log('ECC_EVAL_SCORE not-json');"), { passed: true, score: 1 });
+  assert.deepEqual(runScoredCheck(dir('c'), "console.log('ECC_EVAL_SCORE {\"score\":1.5}');"), { passed: true, score: 1 });
+  assert.deepEqual(runScoredCheck(dir('d'), "console.log('ECC_EVAL_SCORE {\"score\":0.9}');\nprocess.exit(1);"), { passed: false, score: 0 });
+  assert.deepEqual(runScoredCheck(dir('e'), 'process.exit(0);'), { passed: true, score: 1 });
+}));
+
+test('the legacy source pin is validated before any git export', () => {
+  const { exportLegacySource } = require('../../docker/context-profiles/ai-eval-lib');
+  assert.throws(() => exportLegacySource({ destination: 'relative/path' }), /absolute/);
+  assert.throws(() => exportLegacySource({ destination: path.join(os.tmpdir(), 'ecc-legacy-pin'), pin: { sha: 'not-a-sha' } }), /pin/);
+});

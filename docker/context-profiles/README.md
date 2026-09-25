@@ -57,6 +57,12 @@ The task image and private temporary build directory are removed afterward.
 Dependency download layers can remain in Podman's ordinary build cache. The
 runner never changes host harness configuration or mounts a host home.
 
+The outcome evaluator (`ai-eval.js`) measures graded task success and provider
+usage across install arms; see `ai-corpus.json` for the 30-task repair corpus
+and `complex-eval/DESIGN.md` for the preregistered three-task complex-task
+benchmark (feature build, incident triage, security hardening) with scored
+hidden graders, reference solutions, and reproduction instructions.
+
 These checks certify the observed discovery paths for the reported exact provider
 versions. They do not certify model invocation, skill workflow outcomes,
 implicit provider invocation of Auto, host activation, crash recovery, permission consent, or actual token

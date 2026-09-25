@@ -1,0 +1,11 @@
+{
+  "id": "incident-triage",
+  "category": "debugging-incident",
+  "manualIds": ["skill:orch-fix-defect"],
+  "checkTimeoutMs": 30000,
+  "selection": {
+    "id": "complex-incident-triage",
+    "category": "complex-debugging-incident",
+    "expectedIds": ["skill:orch-fix-defect"]
+  }
+}

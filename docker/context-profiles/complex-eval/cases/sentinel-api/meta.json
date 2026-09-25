@@ -1,0 +1,11 @@
+{
+  "id": "sentinel-api",
+  "category": "security-hardening",
+  "manualIds": ["skill:security-review"],
+  "checkTimeoutMs": 60000,
+  "selection": {
+    "id": "complex-sentinel-api",
+    "category": "complex-security-hardening",
+    "expectedIds": ["skill:security-review"]
+  }
+}
