@@ -69,12 +69,16 @@ function formatMatchLines(instinct) {
   };
 }
 
-function buildBlockMessage(instinct) {
+function buildBlockMessage(instinct, toolName) {
   const { id, confidence, trigger } = formatMatchLines(instinct);
+  const normalizedTool = normalizeToolName(toolName);
+  const recovery = normalizedTool === 'Bash'
+    ? 'change the command to avoid the matched instinct'
+    : 'rename to avoid the forbidden prefix';
   return [
     `[instinct-enforce] blocked by instinct \`${id}\` (confidence ${confidence})`,
     `trigger: ${trigger}`,
-    'recovery: rename to avoid the forbidden prefix, or ECC_INSTINCT_ENFORCE=0 for this session',
+    `recovery: ${recovery}, or ECC_INSTINCT_ENFORCE=0 for this session`,
   ].join('\n');
 }
 
@@ -156,7 +160,7 @@ async function run(stdinText) {
   }
 
   if (verdict === 'block') {
-    const message = buildBlockMessage(best);
+    const message = buildBlockMessage(best, toolName);
     return {
       exitCode: 2,
       stdout: message,
@@ -203,9 +207,14 @@ async function runCheck(filePath) {
     return;
   }
 
-  const toolInput = data && typeof data === 'object'
-    ? (data.tool_input || data.toolInput || {})
-    : {};
+  const record = data && typeof data === 'object' ? data : null;
+  const toolName = normalizeToolName(record && (record.tool_name || record.toolName));
+  if (!ENFORCE_TOOLS.has(toolName)) {
+    process.stdout.write(formatCheckOutput([], 'none'));
+    return;
+  }
+
+  const toolInput = record.tool_input || record.toolInput || {};
   const matches = loadMatchesForTool(toolInput);
   const { verdict } = evaluateMatches(matches);
   process.stdout.write(formatCheckOutput(matches, verdict));

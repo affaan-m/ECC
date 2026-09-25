@@ -180,6 +180,7 @@ async function runTests() {
       const message = `${result.stderr || ''}\n${result.stdout || ''}`;
       assert.ok(message.includes('no-foo-prefix'), `block message should include instinct id, got: ${message}`);
       assert.ok(message.includes('[instinct-enforce]'));
+      assert.ok(message.includes('rename to avoid the forbidden prefix'));
       assert.ok(message.includes('ECC_INSTINCT_ENFORCE=0'));
       assert.ok(!message.includes('"tool_name":"Write"') && !String(result.stdout || '').includes(JSON.stringify(payload)));
 
@@ -228,6 +229,27 @@ async function runTests() {
       }));
       assert.strictEqual(result.exitCode, 0);
       assert.ok(result.additionalContext.includes('no-foo-prefix'));
+    })) passed++; else failed++;
+  });
+
+  await withHomunculus({
+    id: 'no-rm-outside-temp',
+    confidence: 0.91,
+    trigger: 'when running destructive shell commands',
+    content: 'NEVER rm outside temp',
+  }, async () => {
+    if (await test('blocked Bash uses a command recovery hint, not rename advice', async () => {
+      const hook = loadHook();
+      const result = await hook.run(JSON.stringify({
+        tool_name: 'bash',
+        tool_input: { command: 'rm -rf /var/app' },
+      }));
+      assert.strictEqual(result.exitCode, 2);
+      const message = `${result.stderr || ''}\n${result.stdout || ''}`;
+      assert.ok(message.includes('no-rm-outside-temp'), `block message should include instinct id, got: ${message}`);
+      assert.ok(message.includes('change the command to avoid the matched instinct'));
+      assert.ok(message.includes('ECC_INSTINCT_ENFORCE=0'));
+      assert.ok(!message.includes('rename to avoid the forbidden prefix'));
     })) passed++; else failed++;
   });
 
@@ -284,6 +306,23 @@ async function runTests() {
       assert.strictEqual(result.status, 0, result.stderr);
       assert.ok(result.stdout.includes('no-foo-prefix'));
       assert.ok(/block/i.test(result.stdout));
+
+      fs.writeFileSync(payloadPath, JSON.stringify({
+        tool_name: 'Grep',
+        tool_input: { file_path: '/src/fooWidget.js', contents: 'fooWidget' },
+      }));
+      const grepResult = spawnSync(process.execPath, [hookScript, '--check', payloadPath], {
+        encoding: 'utf8',
+        env: {
+          ...process.env,
+          CLV2_HOMUNCULUS_DIR: homunculusDir,
+        },
+      });
+      assert.strictEqual(grepResult.status, 0, grepResult.stderr);
+      assert.ok(grepResult.stdout.includes('verdict: none'));
+      assert.ok(grepResult.stdout.includes('matches: none'));
+      assert.ok(!grepResult.stdout.includes('no-foo-prefix'));
+      assert.ok(!/verdict: (block|warn)/.test(grepResult.stdout));
     } finally {
       fs.rmSync(homunculusDir, { recursive: true, force: true });
     }
