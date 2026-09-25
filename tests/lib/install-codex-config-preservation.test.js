@@ -65,7 +65,11 @@ function createFixture(t) {
     statePath: path.join(homeDir, '.codex', 'ecc-install-state.json'),
     plan,
     install: moduleIds => applyInstallPlan(plan(moduleIds)),
-    repair: (dryRun = false) => repairInstalledStates({ ...lifecycleOptions, dryRun }),
+    repair: (dryRun = false, extraOptions = {}) => repairInstalledStates({
+      ...lifecycleOptions,
+      dryRun,
+      ...extraOptions,
+    }),
     doctor: () => buildDoctorReport(lifecycleOptions),
     uninstall: () => uninstallInstalledStates(lifecycleOptions),
   };
@@ -93,35 +97,21 @@ function assertWarning(result, name) {
   )), `Expected an explicit preservation warning for ${name}`);
 }
 
-function editAfterRepairInspection(fixture, name, content, action) {
-  const originalOpen = fs.openSync;
-  const originalClose = fs.closeSync;
-  const inspectedDescriptors = new Set();
+function editAfterRepairInspection(fixture, name, content) {
   let injected = false;
-  fs.openSync = function (filePath, ...args) {
-    const descriptor = originalOpen.call(fs, filePath, ...args);
-    if (!injected && filePath === fixture.destination(name)
-      && new Error().stack.includes('inspectManagedOperation')) {
-      inspectedDescriptors.add(descriptor);
+  const result = fixture.repair(false, {
+    afterOperationInspection({ desiredPlan }) {
+      if (!injected && desiredPlan.operations.some(operation => (
+        operation.destinationPath === fixture.destination(name)
+      ))) {
+        // Inspection has read the previous bytes. Simulate an editor saving next,
+        // before repair checkpoints or refreshes state; no digest-refresh hook is used.
+        injected = true;
+        writeFile(fixture.destination(name), content);
+      }
     }
-    return descriptor;
-  };
-  fs.closeSync = function (descriptor) {
-    const result = originalClose.call(fs, descriptor);
-    if (!injected && inspectedDescriptors.delete(descriptor)) {
-      // Inspection has read the previous bytes. Simulate an editor saving next,
-      // before repair checkpoints or refreshes state; no digest-refresh hook is used.
-      injected = true;
-      writeFile(fixture.destination(name), content);
-    }
-    return result;
-  };
-  try {
-    return { result: action(), injected };
-  } finally {
-    fs.openSync = originalOpen;
-    fs.closeSync = originalClose;
-  }
+  });
+  return { result, injected };
 }
 
 for (const name of SHARED_FILES) {
@@ -138,9 +128,7 @@ for (const name of SHARED_FILES) {
       }
       const content = `${TEMPLATES[name]}\r\n# Saved after repair inspected the file\r\n`;
 
-      const { result: report, injected } = editAfterRepairInspection(
-        fixture, name, content, () => fixture.repair()
-      );
+      const { result: report, injected } = editAfterRepairInspection(fixture, name, content);
 
       assert.ok(injected, 'The simulated edit must occur after repair inspection');
       assert.equal(report.results.length, 1);

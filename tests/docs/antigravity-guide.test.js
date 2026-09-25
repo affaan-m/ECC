@@ -92,6 +92,15 @@ test('guide invokes every post-install lifecycle script through the absolute ECC
   assert.ok(!/node scripts\/(?:list-installed|doctor|repair|uninstall)\.js/.test(guide));
 });
 
+test('guide documents opt-in native Antigravity security hooks', () => {
+  assert.ok(guide.includes('--target antigravity --profile core --enable-hooks'));
+  assert.ok(guide.includes('.agents/hooks.json'));
+  assert.ok(guide.includes('run_command'));
+  assert.ok(guide.includes('write_to_file'));
+  assert.ok(guide.includes('decision'));
+  assert.ok(guide.includes('deny'));
+});
+
 test('repository has no accidental nested ECC gitlink', () => {
   assert.ok(
     !fs.existsSync(path.join(repoRoot, 'ECC')),

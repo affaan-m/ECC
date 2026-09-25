@@ -190,6 +190,21 @@ function runTests() {
     );
   })) passed++; else failed++;
 
+  if (test('CI leaves enough time for the full cross-platform test matrix', () => {
+    const testJobMatch = normalizedCiWorkflowSource.match(
+      /jobs:\n\s+test:\n([\s\S]*?)\n\s{2}[a-z][a-z0-9-]*:/
+    );
+    const testJob = testJobMatch ? testJobMatch[1] : '';
+    const timeoutMatch = testJob.match(/timeout-minutes:\s*(\d+)/);
+    const timeoutMinutes = timeoutMatch ? Number(timeoutMatch[1]) : 0;
+
+    assert.ok(testJob, 'ci.yml should define the full matrix test job');
+    assert.ok(
+      timeoutMinutes >= 30,
+      `the full matrix test job needs at least 30 minutes (got ${timeoutMinutes})`
+    );
+  })) passed++; else failed++;
+
   console.log(`\nResults: Passed: ${passed}, Failed: ${failed}`);
   process.exit(failed > 0 ? 1 : 0);
 }

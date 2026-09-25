@@ -119,6 +119,8 @@ function runTests() {
   if (test('describes hook capability without claiming Kimi provider support is absent', () => {
     assert.strictEqual(getHarnessCapability('claude').hooks.mode, 'profile-selection');
     assert.strictEqual(getHarnessCapability('codex').hooks.mode, 'native-trust');
+    assert.strictEqual(getHarnessCapability('antigravity').hooks.mode, 'adapter-configured');
+    assert.strictEqual(getHarnessCapability('antigravity').hooks.eccConfigured, true);
 
     const kimiHooks = getHarnessCapability('kimi').hooks;
     assert.strictEqual(kimiHooks.mode, 'not-configured');

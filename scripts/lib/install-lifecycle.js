@@ -13,6 +13,15 @@ const { assertNoNewUserOwnedFile, prepareUserOwnedFileGuard } = require('./insta
 const { isCodexUserConfig } = require('./install/codex-user-config');
 const { getRecordedHookConsent } = require('./install/hook-consent');
 const {
+  assertAntigravityHooksPath,
+  getAntigravityHooksPath,
+  inspectManagedHookGroups,
+  mergeManagedHookGroups,
+  uninstallManagedHookGroups,
+  updateHookConfigAtomic,
+  validateHookGroups,
+} = require('./install/antigravity-hooks');
+const {
   prepareClaudeSkillMigration,
 } = require('./install/claude-skill-migration');
 const {
@@ -85,6 +94,12 @@ function buildRecordedManifestRequest(record) {
   const state = record.state || {};
   const request = state.request || {};
 
+  const hasManagedAntigravityHooks = (state.operations || []).some(operation => (
+    operation.kind === 'update-antigravity-hooks'
+  ));
+  const recordedHookConsent = record.adapter.target === 'antigravity'
+    ? (state.request?.hookConsent === 'enabled' || hasManagedAntigravityHooks ? 'enabled' : 'declined')
+    : getRecordedHookConsent(state);
   return {
     mode: 'manifest',
     target: state.target && state.target.target ? state.target.target : record.adapter.target,
@@ -93,7 +108,7 @@ function buildRecordedManifestRequest(record) {
     includeComponentIds: Array.isArray(request.includeComponents) ? [...request.includeComponents] : [],
     excludeComponentIds: Array.isArray(request.excludeComponents) ? [...request.excludeComponents] : [],
     legacyLanguages: Array.isArray(request.legacyLanguages) ? [...request.legacyLanguages] : [],
-    hookConsent: getRecordedHookConsent(state),
+    hookConsent: recordedHookConsent,
   };
 }
 
@@ -748,6 +763,24 @@ function hydrateRecordedOperations(repoRoot, operations, trustedRoot) {
       };
     }
 
+    if (operation.kind === 'update-antigravity-hooks') {
+      const sourcePath = resolveOperationSourcePath(repoRoot, operation);
+      if (!sourcePath || !fs.existsSync(sourcePath)) {
+        throw new Error(
+          `Missing source file for repair: ${sourcePath || operation.sourceRelativePath}`
+        );
+      }
+      return {
+        ...operation,
+        sourcePath,
+        previousManagedHookGroups: operation.managedHookGroups,
+        managedHookGroups: validateHookGroups(
+          readJsonNoFollow(sourcePath),
+          'managed Antigravity hook groups'
+        ),
+      };
+    }
+
     if (operation.kind !== 'copy-file') {
       return { ...operation };
     }
@@ -836,6 +869,25 @@ function executeRepairOperation(
     return operation.destinationPath;
   }
 
+  if (operation.kind === 'update-antigravity-hooks') {
+    assertAntigravityHooksPath(operation.destinationPath, trustedRoot);
+    validateHookGroups(operation.managedHookGroups);
+    updateHookConfigAtomic(
+      operation.destinationPath,
+      currentConfig => mergeManagedHookGroups(currentConfig, operation.managedHookGroups, {
+        previousManagedHookGroups: operation.previousManagedHookGroups,
+        repair: true,
+      }),
+      {
+        lockHeld: settingsLockHeld,
+        validateParent() {
+          getManagedDestination(operation.destinationPath, trustedRoot, 'repair');
+        },
+      }
+    );
+    return operation.destinationPath;
+  }
+
   if (operation.kind === 'update-claude-settings') {
     assertClaudeSettingsDestination(operation, trustedRoot, target);
     const managedHooks = validateManagedHooks(operation.managedHooks);
@@ -881,6 +933,26 @@ function executeRepairOperation(
 function executeUninstallOperation(operation, trustedRoot, options = {}) {
   // Confine deletes to the trusted install root (GHSA-hfpv-w6mp-5g95).
   if (operation.kind === 'copy-file') {
+    if (options.target === 'antigravity' && operation.moduleId === 'hooks-runtime') {
+      const sourcePath = resolveOperationSourcePath(options.repoRoot, operation);
+      if (!sourcePath || !fs.existsSync(sourcePath)) {
+        return {
+          removedPaths: [],
+          cleanupTargets: [],
+          retainedPaths: [operation.destinationPath],
+        };
+      }
+      const trustedSourceDigest = crypto.createHash('sha256')
+        .update(readFileNoFollow(sourcePath))
+        .digest('hex');
+      if (operation.contentSha256?.toLowerCase() !== trustedSourceDigest) {
+        return {
+          removedPaths: [],
+          cleanupTargets: [],
+          retainedPaths: [operation.destinationPath],
+        };
+      }
+    }
     if (options.preserveDriftedCopies) {
       const existingDestination = getContainedExistingPath(
         operation.destinationPath,
@@ -1069,6 +1141,61 @@ function executeUninstallOperation(operation, trustedRoot, options = {}) {
       retainedPaths: uninstalled.retained.length > 0
         ? [operation.destinationPath]
         : []
+    };
+  }
+
+  if (operation.kind === 'update-antigravity-hooks') {
+    assertAntigravityHooksPath(operation.destinationPath, trustedRoot);
+    const trustedConfigPath = resolveOperationSourcePath(options.repoRoot, operation);
+    if (!trustedConfigPath || !fs.existsSync(trustedConfigPath)) {
+      return {
+        removedPaths: [],
+        cleanupTargets: [],
+        retainedPaths: [operation.destinationPath],
+      };
+    }
+    let trustedGroups;
+    try {
+      trustedGroups = validateHookGroups(
+        readJsonNoFollow(trustedConfigPath),
+        'trusted managed Antigravity hook groups'
+      );
+    } catch (_error) {
+      return {
+        removedPaths: [],
+        cleanupTargets: [],
+        retainedPaths: [operation.destinationPath],
+      };
+    }
+    if (!isDeepStrictEqual(trustedGroups, operation.managedHookGroups)) {
+      return {
+        removedPaths: [],
+        cleanupTargets: [],
+        retainedPaths: [operation.destinationPath],
+      };
+    }
+    const existingDestination = getContainedExistingPath(
+      operation.destinationPath,
+      trustedRoot,
+      'uninstall'
+    );
+    if (!existingDestination) {
+      return { removedPaths: [], cleanupTargets: [] };
+    }
+    const result = updateHookConfigAtomic(
+      operation.destinationPath,
+      currentConfig => uninstallManagedHookGroups(currentConfig, operation.managedHookGroups),
+      {
+        lockHeld: Boolean(options.settingsLockHeld),
+        validateParent() {
+          getManagedDestination(operation.destinationPath, trustedRoot, 'uninstall');
+        },
+      }
+    );
+    return {
+      removedPaths: [],
+      cleanupTargets: [],
+      retainedPaths: result.retained.length > 0 ? [operation.destinationPath] : [],
     };
   }
 
@@ -1320,6 +1447,38 @@ function inspectManagedOperation(repoRoot, trustedRoot, operation, linkIndex = n
         operation,
         destinationPath,
         error: `Failed to inspect Claude settings at ${destinationPath}: ${error.message}`
+      };
+    }
+  }
+
+  if (operation.kind === 'update-antigravity-hooks') {
+    try {
+      assertAntigravityHooksPath(operation.destinationPath, trustedRoot);
+    } catch (_error) {
+      return {
+        status: 'unsafe-destination',
+        operation,
+        destinationPath,
+        reason: 'non-canonical-antigravity-hooks',
+      };
+    }
+    try {
+      const inspection = inspectManagedHookGroups(
+        readJsonNoFollow(inspectedPath),
+        operation.managedHookGroups
+      );
+      return {
+        status: inspection.status,
+        operation,
+        destinationPath,
+        managedHookInspection: inspection,
+      };
+    } catch (error) {
+      return {
+        status: 'invalid-settings',
+        operation,
+        destinationPath,
+        error: `Failed to inspect Antigravity hooks at ${destinationPath}: ${error.message}`,
       };
     }
   }
@@ -1681,10 +1840,13 @@ function analyzeRecord(record, context) {
   }
 
   if (operationHealth.invalidSettings.length > 0) {
+    const invalidSettingsCode = record.adapter.target === 'antigravity'
+      ? 'invalid-antigravity-hooks'
+      : 'invalid-claude-settings';
     issues.push(
       buildIssue(
         'error',
-        'invalid-claude-settings',
+        invalidSettingsCode,
         operationHealth.invalidSettings[0].error,
         { paths: operationHealth.invalidSettings.map(entry => entry.destinationPath) }
       )
@@ -1881,6 +2043,10 @@ function writeRefreshedInstallState(record, statePreview, writtenPaths = []) {
       if (!operation.destinationPath) {
         return { ...operation };
       }
+      if (operation.kind === 'update-antigravity-hooks') {
+        const { contentSha256: _sharedFileDigest, ...operationWithoutDigest } = operation;
+        return operationWithoutDigest;
+      }
       // Refreshing a ledger is not a file write. Keep the last installed digest
       // for untouched shared configs so a concurrent user edit is never claimed.
       if (isCodexUserConfig(record, operation)
@@ -1980,10 +2146,15 @@ function repairInstalledStates(options = {}) {
     let releaseSettingsLock = null;
     try {
       const settingsPathToLock = !options.dryRun
-        && getManagedOperations(record.state || {}).some(
+        ? getManagedOperations(record.state || {}).some(
           operation => operation.kind === 'update-claude-settings'
         )
-        ? getClaudeSettingsPath(record.targetRoot)
+          ? getClaudeSettingsPath(record.targetRoot)
+          : getManagedOperations(record.state || {}).some(
+            operation => operation.kind === 'update-antigravity-hooks'
+          )
+            ? getAntigravityHooksPath(record.targetRoot)
+            : null
         : null;
       if (settingsPathToLock) {
         releaseSettingsLock = acquireSettingsLock(settingsPathToLock);
@@ -2110,6 +2281,9 @@ function repairInstalledStates(options = {}) {
         desiredPlan.operations,
         record.adapter.target
       );
+      if (typeof options.afterOperationInspection === 'function') {
+        options.afterOperationInspection({ record, desiredPlan, operationHealth });
+      }
 
       const unsafeOperationResult = getUnsafeOperationResult(
         record,
@@ -2141,10 +2315,23 @@ function repairInstalledStates(options = {}) {
             && !isDeepStrictEqual(operation.previousManagedHooks, operation.managedHooks)
           ))
           .map(operation => ({ ...operation })),
+        ...desiredPlan.operations
+          .filter(operation => (
+            operation.kind === 'update-antigravity-hooks'
+            && operation.previousManagedHookGroups
+            && !isDeepStrictEqual(
+              operation.previousManagedHookGroups,
+              operation.managedHookGroups
+            )
+          ))
+          .map(operation => ({ ...operation })),
       ].filter((operation, index, items) => items.findIndex(candidate => (
         candidate.kind === operation.kind
         && candidate.destinationPath === operation.destinationPath
-      )) === index);
+      )) === index).sort((left, right) => {
+        const priority = operation => operation.kind === 'update-antigravity-hooks' ? 1 : 0;
+        return priority(left) - priority(right);
+      });
       const repairLinkIndex = buildLinkIndexForOperations(desiredPlan.operations, record.targetRoot);
       const legacyMigrationPaths = migration.legacyOperationsToRemove.map(
         operation => operation.destinationPath
@@ -2357,22 +2544,45 @@ function uninstallInstalledStates(options = {}) {
       const removedPaths = [];
       const cleanupTargets = [];
       const retainedPaths = [];
-      const operations = getManagedOperations(state);
+      const operations = getManagedOperations(state).slice().sort((left, right) => {
+        const priority = operation => operation.kind === 'update-antigravity-hooks' ? 0 : 1;
+        return priority(left) - priority(right);
+      });
       if (operations.some(operation => operation.kind === 'update-claude-settings')) {
         releaseSettingsLock = acquireSettingsLock(
           getClaudeSettingsPath(record.targetRoot)
         );
+      } else if (operations.some(operation => operation.kind === 'update-antigravity-hooks')) {
+        releaseSettingsLock = acquireSettingsLock(
+          getAntigravityHooksPath(record.targetRoot)
+        );
       }
 
+      let preserveAntigravityRuntime = false;
       for (const operation of operations) {
+        if (
+          preserveAntigravityRuntime
+          && operation.moduleId === 'hooks-runtime'
+          && operation.kind === 'copy-file'
+        ) {
+          retainedPaths.push(operation.destinationPath);
+          continue;
+        }
         const outcome = executeUninstallOperation(operation, record.targetRoot, {
           preserveDriftedCopies: true,
           target: record.adapter.target,
+          repoRoot: options.repoRoot || DEFAULT_REPO_ROOT,
           settingsLockHeld: Boolean(releaseSettingsLock),
         });
         removedPaths.push(...outcome.removedPaths);
         cleanupTargets.push(...outcome.cleanupTargets);
         retainedPaths.push(...(outcome.retainedPaths || []));
+        if (
+          operation.kind === 'update-antigravity-hooks'
+          && (outcome.retainedPaths || []).length > 0
+        ) {
+          preserveAntigravityRuntime = true;
+        }
       }
 
       if (retainedPaths.length === 0) {

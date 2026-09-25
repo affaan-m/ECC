@@ -144,14 +144,14 @@ test('Windows public CLI invocation accepts the exact Itô capability selection'
   );
 });
 
-test('workflow-quality target smoke explicitly opts into hooks', () => {
+test('target smoke opts Antigravity into hooks while preserving the ordinary module set', () => {
   const source = fs.readFileSync(
     path.join(__dirname, 'packed-artifact-lifecycle.js'),
     'utf8'
   );
   assert.match(
     source,
-    /'--modules', 'workflow-quality'[\s\S]*'--enable-hooks'/
+    /options\.target === 'antigravity'[\s\S]*'workflow-quality,hooks-runtime'[\s\S]*'--modules', moduleIds[\s\S]*'--enable-hooks'/
   );
 });
 

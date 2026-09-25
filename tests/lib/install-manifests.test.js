@@ -280,12 +280,13 @@ function runTests() {
         'rules-core',
         'agents-core',
         'commands-core',
+        'hooks-runtime',
         'platform-configs',
         'skill-unified-memory',
         'workflow-quality'
       ]
     );
-    assert.ok(plan.skippedModuleIds.includes('hooks-runtime'));
+    assert.ok(!plan.skippedModuleIds.includes('hooks-runtime'));
     assert.ok(!plan.skippedModuleIds.includes('platform-configs'));
     assert.ok(!plan.skippedModuleIds.includes('workflow-quality'));
     assert.strictEqual(plan.targetAdapterId, 'antigravity-project');

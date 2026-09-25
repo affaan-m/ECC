@@ -3,6 +3,101 @@
   "title": "ECC install state",
   "type": "object",
   "additionalProperties": false,
+  "definitions": {
+    "antigravityHookHandler": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "command"
+      ],
+      "properties": {
+        "type": {
+          "const": "command"
+        },
+        "command": {
+          "type": "string",
+          "pattern": "\\S"
+        },
+        "timeout": {
+          "type": "integer",
+          "minimum": 1
+        }
+      }
+    },
+    "antigravityToolHookEntry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "matcher",
+        "hooks"
+      ],
+      "properties": {
+        "matcher": {
+          "type": "string",
+          "pattern": "\\S"
+        },
+        "hooks": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/definitions/antigravityHookHandler"
+          }
+        }
+      }
+    },
+    "antigravityHookGroup": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "PreToolUse": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/definitions/antigravityToolHookEntry"
+          }
+        },
+        "PostToolUse": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/definitions/antigravityToolHookEntry"
+          }
+        },
+        "PreInvocation": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/definitions/antigravityHookHandler"
+          }
+        },
+        "PostInvocation": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/definitions/antigravityHookHandler"
+          }
+        },
+        "Stop": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/definitions/antigravityHookHandler"
+          }
+        }
+      },
+      "anyOf": [
+        { "required": ["PreToolUse"] },
+        { "required": ["PostToolUse"] },
+        { "required": ["PreInvocation"] },
+        { "required": ["PostInvocation"] },
+        { "required": ["Stop"] }
+      ]
+    }
+  },
   "required": [
     "schemaVersion",
     "installedAt",
@@ -235,6 +330,20 @@
                 }
               }
             }
+          },
+          "managedHookGroups": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "ecc-security-guard"
+            ],
+            "properties": {
+              "ecc-security-guard": {
+                "$ref": "#/definitions/antigravityHookGroup"
+              }
+            },
+            "minProperties": 1,
+            "maxProperties": 1
           }
         },
         "allOf": [
@@ -251,6 +360,20 @@
                 "sourceRelativePath": { "const": "hooks/hooks.json" }
               }
             }
+          },
+          {
+            "if": {
+              "properties": {
+                "kind": { "const": "update-antigravity-hooks" }
+              }
+            },
+            "then": {
+              "required": ["managedHookGroups"],
+              "properties": {
+                "moduleId": { "const": "hooks-runtime" },
+                "sourceRelativePath": { "const": "scripts/hooks/antigravity-hooks.json" }
+              }
+            }
           }
         ]
       }
@@ -261,6 +384,7 @@
       "if": {
         "properties": {
           "operations": {
+            "type": "array",
             "contains": {
               "type": "object",
               "properties": {
@@ -274,10 +398,165 @@
       "then": {
         "properties": {
           "target": {
+            "type": "object",
             "properties": {
               "target": { "enum": ["claude", "claude-project"] }
             },
             "required": ["target"]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "operations": {
+            "type": "array",
+            "contains": {
+              "type": "object",
+              "properties": {
+                "kind": { "const": "update-antigravity-hooks" }
+              },
+              "required": ["kind"]
+            }
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "target": {
+            "type": "object",
+            "properties": {
+              "target": { "const": "antigravity" }
+            },
+            "required": ["target"]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "target": {
+            "type": "object",
+            "properties": {
+              "target": { "const": "antigravity" }
+            },
+            "required": ["target"]
+          }
+        },
+        "required": ["target"]
+      },
+      "then": {
+        "properties": {
+          "operations": {
+            "type": "array",
+            "items": {
+              "allOf": [
+                {
+                  "if": {
+                    "properties": {
+                      "kind": { "const": "copy-file" }
+                    },
+                    "required": ["kind"]
+                  },
+                  "then": {
+                    "properties": {
+                      "destinationPath": {
+                        "not": {
+                          "pattern": "[\\/][hH][oO][oO][kK][sS]\\.[jJ][sS][oO][nN]$"
+                        }
+                      }
+                    }
+                  }
+                },
+                {
+                  "if": {
+                    "allOf": [
+                      {
+                        "properties": {
+                          "kind": { "const": "copy-file" }
+                        },
+                        "required": ["kind"]
+                      },
+                      {
+                        "anyOf": [
+                          {
+                            "properties": {
+                              "moduleId": { "const": "hooks-runtime" }
+                            },
+                            "required": ["moduleId"]
+                          },
+                          {
+                            "properties": {
+                              "destinationPath": {
+                                "pattern": "[\\/]ecc-hooks[\\/]"
+                              }
+                            },
+                            "required": ["destinationPath"]
+                          }
+                        ]
+                      }
+                    ]
+                  },
+                  "then": {
+                    "properties": {
+                      "moduleId": { "const": "hooks-runtime" }
+                    },
+                    "oneOf": [
+                      {
+                        "properties": {
+                          "sourceRelativePath": { "const": "scripts/hooks/antigravity-security.js" },
+                          "destinationPath": { "pattern": "[\\/]ecc-hooks[\\/]hooks[\\/]antigravity-security\\.js$" }
+                        }
+                      },
+                      {
+                        "properties": {
+                          "sourceRelativePath": { "const": "scripts/hooks/block-no-verify.js" },
+                          "destinationPath": { "pattern": "[\\/]ecc-hooks[\\/]hooks[\\/]block-no-verify\\.js$" }
+                        }
+                      },
+                      {
+                        "properties": {
+                          "sourceRelativePath": { "const": "scripts/hooks/config-protection.js" },
+                          "destinationPath": { "pattern": "[\\/]ecc-hooks[\\/]hooks[\\/]config-protection\\.js$" }
+                        }
+                      },
+                      {
+                        "properties": {
+                          "sourceRelativePath": { "const": "scripts/hooks/gateguard-fact-force.js" },
+                          "destinationPath": { "pattern": "[\\/]ecc-hooks[\\/]hooks[\\/]gateguard-fact-force\\.js$" }
+                        }
+                      },
+                      {
+                        "properties": {
+                          "sourceRelativePath": { "const": "scripts/hooks/gateguard-heredoc.js" },
+                          "destinationPath": { "pattern": "[\\/]ecc-hooks[\\/]hooks[\\/]gateguard-heredoc\\.js$" }
+                        }
+                      },
+                      {
+                        "properties": {
+                          "sourceRelativePath": { "const": "scripts/lib/hook-flags.js" },
+                          "destinationPath": { "pattern": "[\\/]ecc-hooks[\\/]lib[\\/]hook-flags\\.js$" }
+                        }
+                      },
+                      {
+                        "properties": {
+                          "sourceRelativePath": { "const": "scripts/lib/powershell-destructive-command.js" },
+                          "destinationPath": { "pattern": "[\\/]ecc-hooks[\\/]lib[\\/]powershell-destructive-command\\.js$" }
+                        }
+                      },
+                      {
+                        "properties": {
+                          "sourceRelativePath": { "const": "scripts/lib/shell-substitution.js" },
+                          "destinationPath": { "pattern": "[\\/]ecc-hooks[\\/]lib[\\/]shell-substitution\\.js$" }
+                        }
+                      }
+                    ]
+                  }
+                }
+              ]
+            }
           }
         }
       }

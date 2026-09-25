@@ -2,7 +2,7 @@
 
 Google Antigravity 2.0 discovers workspace customizations from the project-local
 `.agents/` directory. ECC's Antigravity target installs native rules, workflows,
-skills, and custom agents into that directory.
+skills, custom agents, and opt-in security hooks into that directory.
 
 Native Antigravity 2.0 installation requires ECC 2.2.0 or newer. ECC 2.1.0 uses
 the legacy `.agent/` adapter and does not provide the native layout described
@@ -28,6 +28,9 @@ ECC_ROOT="/absolute/path/to/ECC"
 # Install the minimal profile
 "$ECC_ROOT/install.sh" --profile minimal --target antigravity
 
+# Add native command and file-write guardrails
+"$ECC_ROOT/install.sh" --target antigravity --profile core --enable-hooks
+
 # Compatibility syntax: common rules plus only these language packs
 "$ECC_ROOT/install.sh" --target antigravity typescript python go
 ```
@@ -38,6 +41,7 @@ PowerShell uses the same project-root working-directory contract:
 $EccRoot = "C:\absolute\path\to\ECC"
 
 & "$EccRoot\install.ps1" --profile minimal --target antigravity
+& "$EccRoot\install.ps1" --target antigravity --profile core --enable-hooks
 & "$EccRoot\install.ps1" --target antigravity typescript python go
 ```
 
@@ -52,6 +56,7 @@ updated skill inventory.
 | `commands/` | `.agents/workflows/` | User-invoked slash workflows |
 | `skills/<name>/` | `.agents/skills/<name>/` | Agent Skills with a required `SKILL.md` |
 | `agents/<name>.md` | `.agents/agents/<name>.md` | Custom main agents and subagents |
+| Antigravity hook adapter | `.agents/hooks.json` and `.agents/ecc-hooks/` | Opt-in command and file-write guardrails |
 
 ECC does not copy the repository's `.agents/` directory wholesale. That source
 tree is Codex packaging and contains Codex-specific marketplace metadata. An
@@ -77,8 +82,44 @@ your-project/
     │       └── SKILL.md
     ├── agents/
     │   └── code-reviewer.md
+    ├── ecc-hooks/
+    │   ├── hooks/
+    │   │   └── antigravity-security.js
+    │   └── lib/
+    ├── hooks.json
     └── ecc-install-state.json
 ```
+
+## Native security hooks
+
+Antigravity hook installation is explicit because hooks execute commands in
+your workspace. Use a profile that includes `hooks-runtime` together with
+`--enable-hooks`:
+
+```bash
+"$ECC_ROOT/install.sh" --target antigravity --profile core --enable-hooks
+```
+
+ECC merges one namespaced `ecc-security-guard` definition into
+`.agents/hooks.json`, preserving unrelated user hook definitions. The managed
+runtime under `.agents/ecc-hooks/` adapts Antigravity's documented camelCase
+payload to ECC's internal hook contract. It currently covers:
+
+- `PreToolUse` for `run_command`: blocks git hook bypasses and applies
+  GateGuard destructive-command checks.
+- `PreToolUse` for `write_to_file`, `replace_file_content`, and
+  `multi_replace_file_content`: protects existing lint/formatter configs and
+  applies the first-touch GateGuard check.
+
+The adapter writes Antigravity-native `decision: "ask"` or
+`decision: "deny"` JSON. Safe operations remain subject to Antigravity's
+normal user confirmation instead of being auto-approved. Malformed, incomplete,
+and oversized requests fail
+closed without echoing the original payload. Other lifecycle events are not
+registered until their payloads can be mapped without weakening ECC's existing
+contracts. `doctor`, `repair`, and `uninstall` track the config and runtime files
+through `.agents/ecc-install-state.json`; uninstall removes only ECC's
+namespaced hook definition and preserves unrelated user hooks.
 
 ## Verify the installation
 
@@ -155,6 +196,7 @@ node "$EccRoot\scripts\uninstall.js" --target antigravity --dry-run
 - [Skills](https://antigravity.google/docs/skills)
 - [Rules and workflows](https://antigravity.google/docs/rules-workflows)
 - [Custom agents and subagents](https://antigravity.google/docs/subagents)
+- [Hooks](https://antigravity.google/docs/ide/hooks)
 - [Plugins](https://antigravity.google/docs/plugins)
 
 See [CONTRIBUTING.md](../CONTRIBUTING.md) for ECC contribution guidance and

@@ -111,7 +111,11 @@ const HARNESS_CAPABILITIES = deepFreeze([
     availability: 'advanced',
     destination: './.agents',
     scopes: [scope('project', 'antigravity', './.agents')],
-    hooks: hooks('not-configured', false, 'ECC hooks are not configured by this adapter.'),
+    hooks: hooks(
+      'adapter-configured',
+      true,
+      'ECC installs an opt-in native Antigravity security hook for command and file-write guardrails.'
+    ),
     aliases: ['google-antigravity'],
   },
   {

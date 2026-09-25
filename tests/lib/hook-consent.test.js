@@ -89,9 +89,12 @@ function runTests() {
   if (test('matches hook runtime operations by module id and source path', () => {
     assert.strictEqual(isHookRuntimeOperation({ moduleId: 'hooks-runtime' }), true);
     assert.strictEqual(isHookRuntimeOperation({ kind: 'update-claude-settings' }), true);
+    assert.strictEqual(isHookRuntimeOperation({ kind: 'update-antigravity-hooks' }), true);
+    assert.strictEqual(isHookRuntimeOperation({ kind: 'remove-antigravity-hooks' }), true);
     assert.strictEqual(isHookRuntimeOperation({ sourceRelativePath: 'hooks/hooks.json' }), true);
     assert.strictEqual(isHookRuntimeOperation({ sourceRelativePath: '.cursor/hooks.json' }), true);
     assert.strictEqual(isHookRuntimeOperation({ destinationPath: '/root/.claude/hooks/hooks.json' }), true);
+    assert.strictEqual(isHookRuntimeOperation({ destinationPath: '/repo/.agents/hooks.json' }), true);
     assert.strictEqual(
       isHookRuntimeOperation({
         moduleId: 'platform-configs',
