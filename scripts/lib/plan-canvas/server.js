@@ -541,14 +541,27 @@ function createPlanCanvasServer({
     } catch {
       return sendJson(res, 404, { error: 'asset not found' });
     }
+    // Residual TOCTOU note: the confinement check and the read below are
+    // separate operations, so a local actor racing a symlink swap between
+    // them could redirect the read. Accepted for a loopback-local dev tool:
+    // anyone able to win that race already has arbitrary local file write,
+    // and served HTML is sandboxed (see below) while other types are inert.
     let data;
     try {
       data = fs.readFileSync(realTarget);
     } catch {
       return sendJson(res, 404, { error: 'asset not found' });
     }
-    const type = CONTENT_TYPES[path.extname(realTarget).toLowerCase()] || 'application/octet-stream';
-    res.writeHead(200, { 'content-type': type, 'cache-control': 'no-store' });
+    // MIME comes from the link/request name first so a symlinked asset keeps
+    // the type the page asked for; the target extension is the fallback.
+    const type = CONTENT_TYPES[path.extname(resolved).toLowerCase()]
+      || CONTENT_TYPES[path.extname(realTarget).toLowerCase()]
+      || 'application/octet-stream';
+    const headers = { 'content-type': type, 'cache-control': 'no-store' };
+    if (type.startsWith('text/html')) {
+      headers['content-security-policy'] = ARTIFACT_CSP;
+    }
+    res.writeHead(200, headers);
     return res.end(data);
   }
 

@@ -224,24 +224,51 @@ async function main() {
   })) passed++; else failed++;
 
   if (await test('missing-artifact 404 escapes the file path', async () => {
-    const evilFile = path.join(tmp, 'evil<img src=x onerror=alert(1)>.plan.md');
+    // Quotes and ampersands are escapable on every platform (Windows
+    // rejects < > in filenames, so angle brackets stay out of fixtures).
+    const evilFile = path.join(tmp, `evil'b&xss.plan.md`);
     fs.writeFileSync(evilFile, '# Evil\n');
     const opened = jsonBody(await request(port, 'POST', '/api/sessions', { body: { file: evilFile } }));
     fs.rmSync(evilFile);
     const res = await request(port, 'GET', `/artifact/${opened.key}/`);
     assert.strictEqual(res.statusCode, 404);
-    assert.ok(!res.body.includes('<img src=x'), 'raw filename must not appear in the 404 page');
-    assert.ok(res.body.includes('&lt;img'), 'filename must be HTML-escaped in the 404 page');
+    assert.ok(!res.body.includes(`evil'b&xss`), 'raw filename must not appear in the 404 page');
+    assert.ok(res.body.includes('evil&#39;b&amp;xss'), 'filename must be HTML-escaped in the 404 page');
   })) passed++; else failed++;
 
   if (await test('symlinked sibling assets escaping the artifact dir are blocked', async () => {
-    fs.symlinkSync(path.join(outsideDir, 'secret.txt'), path.join(tmp, 'evil-link.txt'));
+    try {
+      fs.symlinkSync(path.join(outsideDir, 'secret.txt'), path.join(tmp, 'evil-link.txt'));
+      fs.symlinkSync(path.join(tmp, 'style.css'), path.join(tmp, 'ok-link.css'));
+    } catch {
+      console.log('    SKIP: symlink creation unavailable on this platform');
+      return;
+    }
     const blocked = await request(port, 'GET', `/artifact/${key}/evil-link.txt`);
     assert.strictEqual(blocked.statusCode, 403);
-    fs.symlinkSync(path.join(tmp, 'style.css'), path.join(tmp, 'ok-link.css'));
     const allowed = await request(port, 'GET', `/artifact/${key}/ok-link.css`);
     assert.strictEqual(allowed.statusCode, 200);
     assert.ok(allowed.body.includes('color: red'));
+  })) passed++; else failed++;
+
+  if (await test('served HTML siblings carry the sandbox CSP', async () => {
+    fs.writeFileSync(path.join(tmp, 'note.html'), '<!DOCTYPE html><html><body><p>hi</p></body></html>');
+    const res = await request(port, 'GET', `/artifact/${key}/note.html`);
+    assert.strictEqual(res.statusCode, 200);
+    assert.strictEqual(res.headers['content-security-policy'], 'sandbox allow-scripts allow-forms allow-popups');
+  })) passed++; else failed++;
+
+  if (await test('symlinked assets take their MIME from the link name', async () => {
+    try {
+      fs.writeFileSync(path.join(tmp, 'realfile'), 'body { color: blue }');
+      fs.symlinkSync(path.join(tmp, 'realfile'), path.join(tmp, 'theme.css'));
+    } catch {
+      console.log('    SKIP: symlink creation unavailable on this platform');
+      return;
+    }
+    const res = await request(port, 'GET', `/artifact/${key}/theme.css`);
+    assert.strictEqual(res.statusCode, 200);
+    assert.ok(String(res.headers['content-type']).startsWith('text/css'));
   })) passed++; else failed++;
 
   if (await test('static chrome assets are served', async () => {
