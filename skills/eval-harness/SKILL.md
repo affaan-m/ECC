@@ -236,6 +236,40 @@ Regression: 3/3 passed (pass^3: 100%)
 Status: SHIP IT
 ```
 
+## Local Framework Utilities
+
+The mechanical utilities ship in `scripts/lib/eval-harness/`:
+
+```sh
+node scripts/eval-harness.js example
+```
+
+- Capsule: hash-linked journal with five lineages and local integrity checks.
+- Inspection: source digests, validated variant paths, and syntactic warnings.
+- Replay: declared tools and content-addressed fixtures. Missing fixtures fail
+  closed; SE3 and above are refused in replay. Record mode invokes the registered
+  implementation, so only register trusted functions.
+- Receipt: offline verification of capsule and artifact bytes, with named checks.
+- Retrospective preparation: `node scripts/eval-harness.js capsule group <dir> [<dir> ...]`
+  groups 1 to 100 explicitly selected, verified local capsule snapshots from one
+  task family by declared harness version. Repeated snapshots count once;
+  conflicting identities or invalid capsules reject the whole report. This is
+  read-only record counting, with no new rollouts, scores or promotion. Use small,
+  quiescent capsules. Payloads, directory arguments and raw run/capsule IDs are
+  omitted, but task-family/version labels are verbatim and digest references are
+  linkable; review them before sharing. Operational validation remains pending.
+
+Candidate execution is disabled on every OS because no verified OS containment
+backend is implemented. `gate run`, `runGate`, `runVariant`, direct child launch,
+and the retired effect preload refuse with `gate.isolation_required`. No trust
+flag or caller-supplied executor can bypass the refusal. The example records
+that refusal and inspects source without executing or scoring it.
+
+Do not present static warnings, a capsule receipt, or successful utility tests
+as candidate containment or promotion evidence. A future gate requires an
+independently reviewed OS boundary, protected checker and audit channels, and
+fatal baseline rejection. See `docs/architecture/eval-harness-frameworks.md`.
+
 ## Product Evals (v1.8)
 
 Use product evals when behavior quality cannot be captured by unit tests alone.

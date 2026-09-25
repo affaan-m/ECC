@@ -6,6 +6,7 @@ const path = require('path');
 const { spawnSync } = require('child_process');
 
 const { discoverInstalledStates } = require('./lib/install-lifecycle');
+const { getRecordedHookConsent } = require('./lib/install/hook-consent');
 const { SUPPORTED_INSTALL_TARGETS } = require('./lib/install-manifests');
 
 function showHelp(exitCode = 0) {
@@ -85,6 +86,7 @@ function buildInstallApplyArgs(record) {
   const target = state.target.target || record.adapter.target;
   const request = state.request || {};
   const args = [];
+  const hookConsent = getRecordedHookConsent(state);
 
   if (target) {
     args.push('--target', target);
@@ -104,6 +106,12 @@ function buildInstallApplyArgs(record) {
 
   for (const componentId of Array.isArray(request.excludeComponents) ? request.excludeComponents : []) {
     args.push('--without', componentId);
+  }
+
+  if (hookConsent === 'enabled') {
+    args.push('--enable-hooks');
+  } else if (hookConsent === 'declined') {
+    args.push('--no-hooks');
   }
 
   for (const language of Array.isArray(request.legacyLanguages) ? request.legacyLanguages : []) {
@@ -173,6 +181,13 @@ function runExternalCommand(command, args, options = {}) {
   return result;
 }
 
+function legacyMigrationWarning(record) {
+  if (record.legacyLayout === 'opencode') {
+    return 'Found only a legacy OpenCode ~/.opencode install-state. Run the OpenCode installer once to migrate it to the configured OpenCode directory before auto-updating.';
+  }
+  return 'Found only a legacy Antigravity .agent install-state. Run the Antigravity installer once to migrate it to .agents before auto-updating.';
+}
+
 function runAutoUpdate(options = {}, dependencies = {}) {
   const discover = dependencies.discoverInstalledStates || discoverInstalledStates;
   const execute = dependencies.runExternalCommand || runExternalCommand;
@@ -187,9 +202,7 @@ function runAutoUpdate(options = {}, dependencies = {}) {
   const records = discoveredRecords.filter(record => record.exists && !record.legacy);
   const legacyRecords = discoveredRecords.filter(record => record.exists && record.legacy);
   const warnings = records.length === 0 && legacyRecords.length > 0
-    ? [
-        'Found only a legacy Antigravity .agent install-state. Run the Antigravity installer once to migrate it to .agents before auto-updating.',
-      ]
+    ? [...new Set(legacyRecords.map(legacyMigrationWarning))]
     : [];
 
   const results = [];

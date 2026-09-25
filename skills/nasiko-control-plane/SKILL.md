@@ -1,12 +1,12 @@
 ---
 name: nasiko-control-plane
-description: Install, detect, and operate the optional Nasiko agent control plane through ECC with pinned artifacts, explicit consent, and telemetry and secrets boundaries.
+description: Use the experimental Nasiko CLI lifecycle bridge for pinned installation, read-only status, and qualified uninstall with explicit consent and telemetry and secrets boundaries.
 ---
 
-# Nasiko Control Plane
+# Nasiko CLI Lifecycle Bridge
 
-Use this skill when a user explicitly asks to install, inspect, or operate the
-Nasiko control plane with ECC.
+Use this skill when a user explicitly asks ECC to install, inspect, or remove
+the qualified Nasiko CLI. This skill does not operate a Nasiko control plane.
 
 ## Safety contract
 

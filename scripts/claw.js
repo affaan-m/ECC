@@ -95,21 +95,54 @@ function askClaude(systemPrompt, history, userMessage, model) {
   }
   args.push('-p');
 
-  // On Windows the `claude` binary installed via npm is `claude.cmd`/`claude.ps1`,
-  // and Node's spawn() cannot resolve those wrappers via PATH without shell: true.
-  // But shell mode concatenates args *unescaped*, so a multi-line prompt passed as
-  // an arg gets mangled (newlines and the `===` section markers truncate it, and
-  // claude receives an empty prompt). Fix: send the prompt over stdin via `input`
-  // and keep only the short, safe flags (`--model`, `-p`) as args.
-  // 'claude' is a hardcoded literal here (not user input), so shell mode is safe.
-  const result = spawnSync('claude', args, {
+  // SECURITY: a model value like `x & calc &` breaks out when Node
+  // concatenates command+args unquoted under cmd.exe (DEP0190), so the model
+  // token is validated and only fixed flags reach the command line.
+  if (model && !/^[A-Za-z0-9][A-Za-z0-9._:-]{0,63}$/.test(model)) {
+    return `[Error: invalid model name]`;
+  }
+  // On Windows the `claude` binary is usually a .cmd shim, which Node
+  // >=18.20/20.12 refuses to spawn directly (CVE-2024-27980 mitigation), and
+  // .ps1 shims are not directly executable at all. Resolve a natively
+  // executable target first; only .cmd/.bat go through cmd.exe, using the
+  // same quoted-command-line pattern as scripts/hooks/mcp-health-check.js so
+  // space-containing paths survive as single tokens. .ps1 is never executed
+  // directly — fall through to bare `claude` (pre-change behavior) instead.
+  // cmd.exe expands %NAME% even inside double-quoted strings, so reject
+  // percent-delimited executable paths rather than route them through the shell.
+  function quoteWinToken(token) {
+    if (/%/.test(token)) return null;
+    return /[\s"&|<>^();]/.test(token) ? '"' + token.replace(/"/g, '""') + '"' : token;
+  }
+  let bin = 'claude';
+  let useShell = false;
+  if (process.platform === 'win32') {
+    const { spawnSync: spawnWhere } = require('child_process');
+    for (const ext of ['.exe', '.cmd', '.bat']) {
+      let found = null;
+      try {
+        found = spawnWhere('where', [`claude${ext}`], { encoding: 'utf8' });
+      } catch { /* ignore */ }
+      if (found && found.status === 0 && found.stdout && found.stdout.trim()) {
+        bin = found.stdout.trim().split(/\r?\n/)[0];
+        useShell = /\.(cmd|bat)$/i.test(bin);
+        break;
+      }
+    }
+    if (useShell && quoteWinToken(bin) === null) {
+      useShell = false;
+    }
+  }
+  const spawnOpts = {
     input: fullPrompt,
     encoding: 'utf8',
     stdio: ['pipe', 'pipe', 'pipe'],
     env: { ...process.env, CLAUDECODE: '' },
     timeout: 300000,
-    shell: process.platform === 'win32'
-  });
+  };
+  const result = useShell
+    ? spawnSync([bin, ...args].map(quoteWinToken).join(' '), { ...spawnOpts, shell: true })
+    : spawnSync(bin, args, { ...spawnOpts, shell: false });
 
   if (result.error) {
     return `[Error: ${result.error.message}]`;

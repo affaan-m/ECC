@@ -51,7 +51,30 @@ function runTests() {
     assert.ok(components.some(component => component.id === 'locale:ja'));
     assert.ok(components.some(component => component.id === 'locale:zh-cn'));
     assert.ok(components.some(component => component.id === 'locale:de-de'));
+    assert.ok(components.some(component => component.id === 'locale:uk-ua'));
     assert.ok(components.every(component => component.family === 'locale'));
+  })) passed++; else failed++;
+
+  if (test('locale:uk-ua resolves to the Ukrainian translated docs module', () => {
+    const homeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'locale-plan-uk-'));
+    try {
+      const plan = resolveInstallPlan({
+        includeComponentIds: ['locale:uk-ua'],
+        target: 'claude',
+        homeDir,
+      });
+
+      assert.deepStrictEqual(plan.selectedModuleIds, ['docs-uk-ua']);
+      assert.ok(
+        plan.operations.some(operation => (
+          normalizePlanPath(operation.sourceRelativePath) === 'docs/uk-UA'
+          && normalizePlanPath(operation.destinationPath).endsWith('/.claude/docs/uk-UA')
+        )),
+        'Should map docs/uk-UA to ~/.claude/docs/uk-UA'
+      );
+    } finally {
+      fs.rmSync(homeDir, { recursive: true, force: true });
+    }
   })) passed++; else failed++;
 
   if (test('locale component resolves to the translated docs module', () => {
@@ -160,6 +183,37 @@ function runTests() {
     }
   })) passed++; else failed++;
 
+  if (test('end-to-end: --locale uk dry-run includes docs-uk-ua operations', () => {
+    const homeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'locale-dry-run-uk-'));
+    const projectDir = fs.mkdtempSync(path.join(os.tmpdir(), 'locale-dry-run-uk-project-'));
+
+    try {
+      const output = runInstallApply([
+        '--locale', 'uk',
+        '--dry-run',
+        '--json',
+      ], {
+        cwd: projectDir,
+        env: { HOME: homeDir },
+      });
+      const json = JSON.parse(output);
+
+      assert.strictEqual(json.plan.mode, 'manifest');
+      assert.deepStrictEqual(json.plan.includedComponentIds, ['locale:uk-ua']);
+      assert.deepStrictEqual(json.plan.selectedModuleIds, ['docs-uk-ua']);
+      assert.ok(
+        json.plan.operations.some(operation => (
+          normalizePlanPath(operation.sourceRelativePath) === 'docs/uk-UA/README.md'
+          && normalizePlanPath(operation.destinationPath).endsWith('/.claude/docs/uk-UA/README.md')
+        )),
+        'Should copy translated README into ~/.claude/docs/uk-UA'
+      );
+    } finally {
+      fs.rmSync(homeDir, { recursive: true, force: true });
+      fs.rmSync(projectDir, { recursive: true, force: true });
+    }
+  })) passed++; else failed++;
+
   if (test('end-to-end: legacy language plus --locale keeps legacy install and docs', () => {
     const homeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'locale-legacy-dry-run-'));
     const projectDir = fs.mkdtempSync(path.join(os.tmpdir(), 'locale-legacy-dry-run-project-'));
@@ -213,6 +267,38 @@ function runTests() {
       const state = JSON.parse(fs.readFileSync(statePath, 'utf8'));
       assert.deepStrictEqual(state.request.includeComponents, ['locale:ja']);
       assert.deepStrictEqual(state.resolution.selectedModules, ['docs-ja-jp']);
+    } finally {
+      fs.rmSync(homeDir, { recursive: true, force: true });
+      fs.rmSync(projectDir, { recursive: true, force: true });
+    }
+  })) passed++; else failed++;
+
+  if (test('end-to-end: --locale uk-UA installs translated docs cleanly', () => {
+    const homeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'locale-install-uk-'));
+    const projectDir = fs.mkdtempSync(path.join(os.tmpdir(), 'locale-install-uk-project-'));
+
+    try {
+      runInstallApply([
+        '--locale', 'uk-UA',
+      ], {
+        cwd: projectDir,
+        env: { HOME: homeDir },
+      });
+
+      const claudeRoot = path.join(homeDir, '.claude');
+      assert.ok(
+        fs.existsSync(path.join(claudeRoot, 'docs', 'uk-UA', 'README.md')),
+        'Should install Ukrainian README under docs/uk-UA'
+      );
+      assert.ok(
+        !fs.existsSync(path.join(claudeRoot, 'skills', 'configure-ecc', 'SKILL.md')),
+        'Locale-only install should not install English skills'
+      );
+
+      const statePath = path.join(claudeRoot, 'ecc', 'install-state.json');
+      const state = JSON.parse(fs.readFileSync(statePath, 'utf8'));
+      assert.deepStrictEqual(state.request.includeComponents, ['locale:uk-ua']);
+      assert.deepStrictEqual(state.resolution.selectedModules, ['docs-uk-ua']);
     } finally {
       fs.rmSync(homeDir, { recursive: true, force: true });
       fs.rmSync(projectDir, { recursive: true, force: true });

@@ -26,29 +26,31 @@ const EXCLUDED_PATTERNS = [
   /__mocks__\//,
 ];
 
-const MAX_STDIN = 1024 * 1024; // 1MB limit
+const MAX_DIRECT_STDIN_BYTES = 16 * 1024 * 1024;
 let data = '';
-let truncated = false;
+let stdinBytes = 0;
+let oversized = false;
 process.stdin.setEncoding('utf8');
 
 process.stdin.on('data', chunk => {
-  if (data.length < MAX_STDIN) {
-    const remaining = MAX_STDIN - data.length;
-    data += chunk.substring(0, remaining);
-    if (chunk.length > remaining) truncated = true;
-  } else {
-    truncated = true;
+  if (oversized) return;
+  stdinBytes += Buffer.byteLength(chunk, 'utf8');
+  if (stdinBytes > MAX_DIRECT_STDIN_BYTES) {
+    data = '';
+    oversized = true;
+    return;
   }
+  data += chunk;
 });
 
 /**
  * Echo stdin back (ECC pass-through convention), then exit once the pipe has
- * flushed. Truncated stdin is never echoed: a JSON document cut mid-stream is
- * reported by the harness as a Stop hook JSON validation failure (#2090).
+ * flushed. Direct/legacy entrypoints preserve complete supported payloads up
+ * to 16MiB; the production runner applies its stricter bounded-input policy.
  */
 function passThroughAndExit() {
-  if (truncated) {
-    log('[Hook] check-console-log: stdin exceeded 1MB; suppressing pass-through (fail-open)');
+  if (oversized) {
+    log('[Hook] check-console-log: direct stdin exceeded 16MiB; suppressing pass-through');
     process.exit(0);
   }
   if (!data) {
@@ -85,6 +87,6 @@ process.stdin.on('end', () => {
     log(`[Hook] check-console-log error: ${err.message}`);
   }
 
-  // Always output the original data (unless truncated)
+  // Always output the complete original data.
   passThroughAndExit();
 });

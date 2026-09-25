@@ -1,0 +1,5 @@
+# Install only for separately authorized provider execution.
+-r requirements.txt
+# subscribe(client_timeout=...) exists from 0.13.0; older releases raise
+# TypeError, which falapi would report as an unknown job acceptance.
+fal-client>=0.13.0

@@ -1,5 +1,10 @@
 const fs = require('fs');
 const path = require('path');
+const {
+  CLAUDE_HOOKS_CONFIG_PATH,
+  getClaudeSettingsPath,
+  validateRecordedManagedHooks,
+} = require('./install/claude-settings');
 
 // Dependency-free, self-contained validation. The installer closure must not
 // require any non-builtin package (enterprise supply-chain vetting: the vetted
@@ -127,7 +132,7 @@ function createFallbackValidator() {
       validateNoAdditionalProperties(
         request,
         '/request',
-        ['profile', 'modules', 'includeComponents', 'excludeComponents', 'legacyLanguages', 'legacyMode']
+        ['profile', 'modules', 'includeComponents', 'excludeComponents', 'legacyLanguages', 'legacyMode', 'hookConsent']
       );
       if (!(Object.prototype.hasOwnProperty.call(request, 'profile') && (request.profile === null || typeof request.profile === 'string'))) {
         pushError('/request/profile', 'must be string or null');
@@ -138,6 +143,14 @@ function createFallbackValidator() {
       validateStringArray(request.legacyLanguages, '/request/legacyLanguages');
       if (typeof request.legacyMode !== 'boolean') {
         pushError('/request/legacyMode', 'must be boolean');
+      }
+      if (
+        request.hookConsent !== undefined
+        && request.hookConsent !== null
+        && request.hookConsent !== 'enabled'
+        && request.hookConsent !== 'declined'
+      ) {
+        pushError('/request/hookConsent', 'must be enabled, declined, or null');
       }
     }
 
@@ -201,6 +214,38 @@ function createFallbackValidator() {
         ) {
           pushError(`${instancePath}/contentSha256`, 'must be a SHA-256 hex digest');
         }
+        if (operation.kind === 'update-claude-settings') {
+          if (!['claude', 'claude-project'].includes(state.target && state.target.target)) {
+            pushError(`${instancePath}/kind`, 'is only valid for Claude targets');
+          }
+          if (operation.moduleId !== 'hooks-runtime') {
+            pushError(`${instancePath}/moduleId`, 'must equal hooks-runtime');
+          }
+          if (String(operation.sourceRelativePath).replace(/\\/g, '/') !== CLAUDE_HOOKS_CONFIG_PATH) {
+            pushError(`${instancePath}/sourceRelativePath`, 'must equal hooks/hooks.json');
+          }
+          if (
+            isNonEmptyString(state.target && state.target.root)
+            && isNonEmptyString(operation.destinationPath)
+          ) {
+            const expectedDestination = path.resolve(getClaudeSettingsPath(state.target.root));
+            const actualDestination = path.resolve(operation.destinationPath);
+            const pathsMatch = process.platform === 'win32'
+              ? expectedDestination.toLowerCase() === actualDestination.toLowerCase()
+              : expectedDestination === actualDestination;
+            if (!pathsMatch) {
+              pushError(
+                `${instancePath}/destinationPath`,
+                'must equal the canonical Claude settings path'
+              );
+            }
+          }
+          try {
+            validateRecordedManagedHooks(operation.managedHooks);
+          } catch (error) {
+            pushError(`${instancePath}/managedHooks`, error.message);
+          }
+        }
       }
     }
 
@@ -258,6 +303,9 @@ function createInstallState(options) {
         ? [...options.request.legacyLanguages]
         : [],
       legacyMode: Boolean(options.request.legacyMode),
+      hookConsent: Object.prototype.hasOwnProperty.call(options.request, 'hookConsent')
+        ? options.request.hookConsent
+        : null,
     },
     resolution: {
       selectedModules: Array.isArray(options.resolution.selectedModules)

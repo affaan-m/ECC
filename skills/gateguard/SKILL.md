@@ -89,6 +89,26 @@ Triggers on: `rm -rf`, `git reset --hard`, `git push --force`, `drop table`, etc
 2. What this specific command verifies or produces
 ```
 
+## Parallel Batches and Partial Application
+
+The first-touch gate evaluates each tool call independently. When several
+edits to a file that has not been touched yet are sent in one parallel
+batch, the first call is denied and the denial marks the file as checked,
+so the sibling edits in that batch are applied. Nothing is rolled back:
+the file can end up holding the sibling edits without the denied one.
+
+The denial message names the file and warns that batch siblings may
+already have been applied. Treat it literally:
+
+- Send dependent edits to a not-yet-touched file sequentially, not in a
+  parallel batch. A definition and its first use, or an import and its
+  call site, must not ride in the same batch.
+- After a first-touch denial, present the facts, retry the denied edit,
+  and re-read the file before building on anything else from the batch.
+
+A batch-wide lock is not possible: hooks see tool calls one at a time, so
+the gate cannot know which calls arrived together.
+
 ## Quick Start
 
 ### Option A: Use the ECC hook (zero install)
@@ -105,6 +125,59 @@ denials are condensed to a single line carrying the denial ordinal, so
 near-identical blocks cannot accumulate in the context window and
 amplify model repetition loops (#2142). Retrying the same file or
 command after presenting facts never re-triggers the gate.
+
+#### Graduated controls
+
+`ECC_GATEGUARD=off` (or `GATEGUARD_DISABLED=1`) turns the gate off entirely.
+The variables in this table do **not** — each narrows one behaviour while the
+load-bearing destructive-Bash checks keep running:
+
+| Variable | Default | Effect |
+|---|---|---|
+| `GATEGUARD_BASH_ROUTINE_DISABLED` | unset (gate on) | Disables the **routine-Bash** gate only. The destructive-Bash gate (`rm -rf`, `git reset --hard`, `drop table`, `dd if=`, …) is unaffected. |
+| `GATEGUARD_EXEMPT_GLOBS` | unset (no exemptions) | Comma-separated globs; a matching Edit/Write/MultiEdit target skips first-touch fact-forcing. Intended for low-import-value trees (tests, generated artifacts, scratch dirs) where "who imports this / what schema" carries no signal. |
+| `GATEGUARD_FACT_FORCE_FULL_DENIALS` | `3` | How many denials emit the full four-fact block before later ones condense to a single line. `0` condenses from the very first denial. |
+| `GATEGUARD_BASH_EXTRA_DESTRUCTIVE` | unset | Extra destructive-command patterns, as regex source, added to the built-in set. A malformed regex is treated as unset (built-ins still apply) and logged once to stderr. |
+| `GATEGUARD_STATE_DIR` | `~/.gateguard` | Where per-session gate state is kept. If state cannot be persisted the gate allows the operation rather than looping, and names this variable in the warning. |
+
+`GATEGUARD_BASH_ROUTINE_DISABLED` accepts `1`, `true`, `on`, `enabled`,
+`enable`, or `yes` (case- and whitespace-insensitive); any other value
+leaves the gate on.
+
+#### Turning the gate off completely
+
+| Variable | Effect |
+|---|---|
+| `ECC_GATEGUARD=off` | Disables GateGuard for the session. Accepts `0`, `false`, `off`, `disabled`, or `disable`. |
+| `GATEGUARD_DISABLED=1` | Same effect. Recognises `1` only — the spellings above do **not** apply here. |
+
+For hook-level control, keep using `ECC_DISABLED_HOOKS` with the GateGuard hook ID.
+
+#### Glob semantics for `GATEGUARD_EXEMPT_GLOBS`
+
+Patterns match the entire project-relative target path. The project root is
+`CLAUDE_PROJECT_DIR`, falling back to the hook payload's `cwd`, then the hook
+process working directory. Relative globs never exempt targets outside that
+root. Explicit absolute globs match the entire absolute target path and may
+deliberately exempt paths outside the project.
+
+Both patterns and paths use `/` separators and lowercase matching. `*` matches
+within a segment, `**` across segments, and `?` one non-separator character.
+`**/` includes zero directories, so `**/tests/**` also matches `tests/foo.js`.
+Malformed patterns are dropped without granting an exemption.
+
+Since 2.2.1, `services/**` only covers the project's root services tree, and
+`*.md` only covers its root Markdown files. Use `**/*.md` for all Markdown
+files within the project. Existing unanchored exemptions may need adjustment:
+
+```json
+{
+  "env": {
+    "GATEGUARD_BASH_ROUTINE_DISABLED": "1",
+    "GATEGUARD_EXEMPT_GLOBS": "**/tests/**,tests/**,**/*.test.*,**/docs/**,**/dist/**"
+  }
+}
+```
 
 ### Option B: Full package with config
 

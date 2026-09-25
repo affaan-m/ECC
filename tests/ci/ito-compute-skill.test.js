@@ -45,7 +45,7 @@ function main() {
         assert.match(skill, new RegExp(command.replace(" ", "\\s+")));
       }
       assert.doesNotMatch(skill, /^\s*ito (?:auth|find|status|evals)\b/m);
-      for (const tool of ["ito_auth", "ito_find", "ito_status"]) {
+      for (const tool of ["ito_auth", "ito_find", "ito_status", "ito_accept"]) {
         assert.match(skill, new RegExp(`\\b${tool}\\b`));
       }
       assert.doesNotMatch(
@@ -142,7 +142,7 @@ function main() {
         "/absolute/path/to/ito-cloud-runtime/cli/ito-compute-cli/dist/bin/ito-mcp.js",
       ]);
       assert.doesNotMatch(JSON.stringify(server), /npx|ito_lock|ito_run|paper|simulat/i);
-      assert.match(server.description, /ito_auth, ito_find, and ito_status/);
+      assert.match(server.description, /ito_auth, ito_find, ito_status, and ito_accept/);
       assert.match(server.description, /unpublished/i);
       assert.match(server.description, /ito_auth.*validat/i);
       assert.match(server.description, /macOS Keychain/i);

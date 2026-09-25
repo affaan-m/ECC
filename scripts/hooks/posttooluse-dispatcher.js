@@ -7,8 +7,8 @@
 'use strict';
 
 const path = require('path');
-const { StringDecoder } = require('string_decoder');
 const { isHookEnabled } = require('../lib/hook-flags');
+const { readStdinRaw: readBoundedStdin, resolveMaxStdin } = require('./hook-input');
 const { runPostBash } = require('./bash-hook-dispatcher');
 const { run: runQualityGate } = require('./quality-gate');
 const { run: runDesignQualityCheck } = require('./design-quality-check');
@@ -21,13 +21,18 @@ const { run: runMetricsBridge } = require('./ecc-metrics-bridge');
 const { run: runContextMonitor } = require('./ecc-context-monitor');
 const { run: runSkillRunTracker } = require('./skill-run-tracker');
 
-const MAX_STDIN = 1024 * 1024;
+const MAX_STDIN = resolveMaxStdin(process.env.ECC_HOOK_INPUT_MAX_BYTES, {
+  writeDiagnostic: message => process.stderr.write(message)
+});
+const UPSTREAM_TRUNCATED = /^(1|true|yes)$/i.test(
+  String(process.env.ECC_HOOK_INPUT_TRUNCATED_UPSTREAM || '')
+);
 
 const SYNC_HOOKS = [
   { id: 'post:edit:design-quality-check', matcher: 'Edit|Write|MultiEdit', profiles: 'standard,strict', script: 'scripts/hooks/design-quality-check.js', run: runDesignQualityCheck },
   { id: 'post:edit:accumulator', matcher: 'Edit|Write|MultiEdit', profiles: 'standard,strict', script: 'scripts/hooks/post-edit-accumulator.js', run: runPostEditAccumulator },
   { id: 'post:edit:console-warn', matcher: 'Edit', profiles: 'standard,strict', script: 'scripts/hooks/post-edit-console-warn.js', run: runConsoleWarn },
-  { id: 'post:governance-capture', matcher: 'Bash|Write|Edit|MultiEdit', profiles: 'standard,strict', script: 'scripts/hooks/governance-capture.js', run: runGovernanceCapture },
+  { id: 'post:governance-capture', matcher: 'Bash|PowerShell|Write|Edit|MultiEdit', profiles: 'standard,strict', script: 'scripts/hooks/governance-capture.js', run: runGovernanceCapture },
   { id: 'post:session-activity-tracker', matcher: '*', profiles: 'standard,strict', script: 'scripts/hooks/session-activity-tracker.js', run: runSessionActivityTracker },
   { id: 'post:ecc-metrics-bridge', matcher: '*', profiles: 'minimal,standard,strict', script: 'scripts/hooks/ecc-metrics-bridge.js', run: runMetricsBridge },
   { id: 'post:ecc-context-monitor', matcher: '*', profiles: 'standard,strict', script: 'scripts/hooks/ecc-context-monitor.js', run: runContextMonitor }
@@ -55,13 +60,14 @@ function getPluginRoot(env = process.env) {
 }
 
 function matchesTool(matcher, toolName) {
+  const normalizedToolName = String(toolName || '').toLowerCase();
   return (
     matcher === '*' ||
     String(matcher || '')
       .split('|')
       .map(value => value.trim())
       .filter(Boolean)
-      .includes(String(toolName || ''))
+      .some(value => value.toLowerCase() === normalizedToolName)
   );
 }
 
@@ -209,40 +215,17 @@ function runHooks(raw, hooks, options = {}) {
 }
 
 function readStdinRaw() {
-  return new Promise(resolve => {
-    const decoder = new StringDecoder('utf8');
-    let raw = '';
-    let bytesRead = 0;
-    let truncated = false;
-    let settled = false;
-    process.stdin.on('data', chunk => {
-      const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
-      const remaining = Math.max(0, MAX_STDIN - bytesRead);
-      const accepted = buffer.subarray(0, remaining);
-      if (accepted.length > 0) {
-        raw += decoder.write(accepted);
-        bytesRead += accepted.length;
-      }
-      if (buffer.length > accepted.length) truncated = true;
-    });
-    const finish = () => {
-      if (settled) return;
-      settled = true;
-      if (!truncated) raw += decoder.end();
-      resolve({ raw, truncated });
-    };
-    process.stdin.once('end', finish);
-    process.stdin.once('error', finish);
+  return readBoundedStdin(process.stdin, {
+    maxStdin: MAX_STDIN,
+    truncated: UPSTREAM_TRUNCATED
   });
 }
 
-function resolveMainStdout(raw, result, options = {}) {
-  if (result.stdout) return result.stdout;
-  if (options.truncated || result.exitCode !== 0 || !options.passthrough) return '';
-  return raw;
+function resolveMainStdout(_raw, result, _options = {}) {
+  return result.stdout || '';
 }
 
-async function main() {
+async function main(options = {}) {
   const mode = process.argv[2] === 'async' ? 'async' : 'sync';
   const { raw, truncated } = await readStdinRaw();
   const dispatcherId = `post:dispatcher:${mode}`;
@@ -253,22 +236,20 @@ async function main() {
     },
     process.env
   );
-  const hooks = dispatcherEnabled ? (mode === 'async' ? ASYNC_HOOKS : SYNC_HOOKS) : [];
+  const configuredHooks = options.hookListOverride || (mode === 'async' ? ASYNC_HOOKS : SYNC_HOOKS);
+  const hooks = dispatcherEnabled ? configuredHooks : [];
   const result = runHooks(raw, hooks, { truncated });
   if (truncated) {
     process.stderr.write(`[Hook] stdin exceeded ${MAX_STDIN} bytes for PostToolUse ${mode}; suppressing pass-through\n`);
   }
   if (result.stderr) process.stderr.write(result.stderr);
-  const stdout = resolveMainStdout(raw, result, {
-    passthrough: process.env.ECC_POSTTOOLUSE_PASSTHROUGH === '1',
-    truncated
-  });
+  const stdout = resolveMainStdout(raw, result, { truncated });
   if (stdout) process.stdout.write(stdout);
   process.exitCode = result.exitCode;
 }
 
-function cli() {
-  main().catch(error => {
+function cli(options = {}) {
+  main(options).catch(error => {
     process.stderr.write(`[Hook] PostToolUse dispatcher failed: ${error.message}\n`);
     process.exitCode = 0;
   });

@@ -2,9 +2,10 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const { getInstallTargetAdapter, planInstallTargetScaffold } = require('./install-targets/registry');
+const { resolveInvocationEnvironment } = require('./invocation-environment');
 
 const DEFAULT_REPO_ROOT = path.join(__dirname, '../..');
-const SUPPORTED_INSTALL_TARGETS = ['claude', 'claude-project', 'cursor', 'antigravity', 'codex', 'gemini', 'opencode', 'codebuddy', 'joycode', 'qwen', 'zed', 'hermes', 'openclaw', 'kimi'];
+const SUPPORTED_INSTALL_TARGETS = ['claude', 'claude-project', 'cursor', 'antigravity', 'codex', 'gemini', 'opencode', 'codebuddy', 'joycode', 'qwen', 'zed', 'hermes', 'openclaw', 'kimi', 'adal'];
 const COMPONENT_FAMILY_PREFIXES = {
   baseline: 'baseline:',
   language: 'lang:',
@@ -14,7 +15,7 @@ const COMPONENT_FAMILY_PREFIXES = {
   skill: 'skill:',
   locale: 'locale:',
 };
-const SUPPORTED_LOCALES = Object.freeze(['ja', 'zh-CN', 'ko-KR', 'pt-BR', 'ru', 'tr', 'vi-VN', 'zh-TW', 'de-DE']);
+const SUPPORTED_LOCALES = Object.freeze(['ja', 'zh-CN', 'ko-KR', 'pt-BR', 'ru', 'tr', 'vi-VN', 'zh-TW', 'de-DE', 'uk-UA']);
 const LOCALE_ALIAS_TO_COMPONENT_ID = Object.freeze({
   'ja': 'locale:ja',
   'ja-JP': 'locale:ja',
@@ -31,6 +32,8 @@ const LOCALE_ALIAS_TO_COMPONENT_ID = Object.freeze({
   'zh-TW': 'locale:zh-tw',
   'de-DE': 'locale:de-de',
   'de': 'locale:de-de',
+  'uk-UA': 'locale:uk-ua',
+  'uk': 'locale:uk-ua'
 });
 
 function listSupportedLocales() {
@@ -90,6 +93,13 @@ const LEGACY_COMPAT_BASE_MODULE_IDS_BY_TARGET = Object.freeze({
     'workflow-quality',
   ],
   kimi: [
+    'rules-core',
+    'agents-core',
+    'commands-core',
+    'platform-configs',
+    'workflow-quality',
+  ],
+  adal: [
     'rules-core',
     'agents-core',
     'commands-core',
@@ -595,6 +605,7 @@ function resolveInstallPlan(options = {}) {
       repoRoot: manifests.repoRoot,
       projectRoot: validatedProjectRoot || manifests.repoRoot,
       homeDir: validatedHomeDir || os.homedir(),
+      env: resolveInvocationEnvironment(options),
     }
     : null;
   const targetAdapter = target ? getInstallTargetAdapter(target) : null;
@@ -693,6 +704,7 @@ function resolveInstallPlan(options = {}) {
       repoRoot: targetPlanningInput.repoRoot,
       projectRoot: targetPlanningInput.projectRoot,
       homeDir: targetPlanningInput.homeDir,
+      env: targetPlanningInput.env,
       modules: selectedModules,
       exemptValidationCodes: options.exemptValidationCodes || [],
     })
@@ -719,6 +731,7 @@ function resolveInstallPlan(options = {}) {
     skippedModules,
     excludedModules,
     targetAdapterId: scaffoldPlan ? scaffoldPlan.adapter.id : null,
+    homeDir: targetPlanningInput ? targetPlanningInput.homeDir : null,
     targetRoot: scaffoldPlan ? scaffoldPlan.targetRoot : null,
     installStatePath: scaffoldPlan ? scaffoldPlan.installStatePath : null,
     operations: scaffoldPlan ? scaffoldPlan.operations : [],

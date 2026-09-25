@@ -34,7 +34,7 @@ const {
 } = require('../lib/utils');
 const {
   readLatestContextTokens,
-  resolveContextWindowTokens,
+  resolveContextWindow,
   resolveContextThreshold,
   resolveContextInterval,
   computeContextBucket,
@@ -171,7 +171,7 @@ function buildContextSuggestion(transcriptPath, bucketFile, env) {
     const usage = readLatestContextTokens(transcriptPath);
     if (!usage) return null;
 
-    const windowTokens = resolveContextWindowTokens(usage.tokens, usage.model);
+    const { windowTokens, inferred } = resolveContextWindow(usage.tokens, usage.model);
     const threshold = resolveContextThreshold(env, windowTokens);
     if (threshold <= 0) return null; // COMPACT_CONTEXT_THRESHOLD=0 disables
 
@@ -185,8 +185,13 @@ function buildContextSuggestion(transcriptPath, bucketFile, env) {
     writeFile(bucketFile, String(bucket));
 
     const approxTokens = `${Math.round(usage.tokens / 1000)}k`;
-    const percent = Math.round((usage.tokens / windowTokens) * 100);
-    return `[StrategicCompact] Context ~${approxTokens} tokens (${percent}% of ${formatWindowLabel(windowTokens)} window) - consider /compact at the next logical boundary`;
+    // Only quote a percentage when the window size was actually detected.
+    // Against an assumed 200k default the denominator is a guess, and a
+    // "97% of 200k window" line on a 1M session triggers needless compaction.
+    const scale = inferred
+      ? ''
+      : ` (${Math.round((usage.tokens / windowTokens) * 100)}% of ${formatWindowLabel(windowTokens)} window)`;
+    return `[StrategicCompact] Context ~${approxTokens} tokens${scale} - consider /compact at the next logical boundary`;
   } catch (err) {
     log(`[StrategicCompact] Context signal skipped: ${err.message}`);
     return null;

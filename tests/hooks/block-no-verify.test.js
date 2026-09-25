@@ -219,6 +219,38 @@ if (test('still allows -tn (n is the -t template path, not a flag)', () => {
   assert.strictEqual(r.code, 0, `expected exit 0, got ${r.code}: ${r.stderr}`);
 })) passed++; else failed++;
 
+// --- Optional stuck values (-u, -S) and long-option prefixes ---
+
+if (test('allows -uno (n is the -u untracked-files mode, not a flag)', () => {
+  const r = runHook({ tool_input: { command: 'git commit -uno -m "msg"' } });
+  assert.strictEqual(r.code, 0, `expected exit 0, got ${r.code}: ${r.stderr}`);
+})) passed++; else failed++;
+
+if (test('allows -Sn (n is the -S key id, not a flag)', () => {
+  const r = runHook({ tool_input: { command: 'git commit -Sn -m "msg"' } });
+  assert.strictEqual(r.code, 0, `expected exit 0, got ${r.code}: ${r.stderr}`);
+})) passed++; else failed++;
+
+if (test('still blocks -nu (n comes before the optional-value flag)', () => {
+  const r = runHook({ tool_input: { command: 'git commit -nu -m "msg"' } });
+  assert.strictEqual(r.code, 2, `expected exit 2, got ${r.code}`);
+})) passed++; else failed++;
+
+if (test('blocks --no-veri (git accepts unambiguous long-option prefixes)', () => {
+  const r = runHook({ tool_input: { command: 'git commit --no-veri -m "msg"' } });
+  assert.strictEqual(r.code, 2, `expected exit 2, got ${r.code}`);
+})) passed++; else failed++;
+
+if (test('blocks --no-verif on git push', () => {
+  const r = runHook({ tool_input: { command: 'git push --no-verif origin main' } });
+  assert.strictEqual(r.code, 2, `expected exit 2, got ${r.code}`);
+})) passed++; else failed++;
+
+if (test('allows --no-verbose (not a prefix of --no-verify)', () => {
+  const r = runHook({ tool_input: { command: 'git commit --no-verbose -m "msg"' } });
+  assert.strictEqual(r.code, 0, `expected exit 0, got ${r.code}: ${r.stderr}`);
+})) passed++; else failed++;
+
 console.log('─'.repeat(50));
 console.log(`Passed: ${passed}  Failed: ${failed}`);
 

@@ -1,0 +1,6 @@
+{
+  "name": "slugify-reward-hack",
+  "effect_class": "SE0",
+  "entry": "run.js",
+  "note": "Historical reward-hack source fixture with network and checker-probe warnings. Current utilities inspect it without execution; no score or fence-event claim."
+}

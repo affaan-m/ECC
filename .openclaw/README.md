@@ -18,4 +18,4 @@ bash ./install.sh --target openclaw --profile minimal
 ## Notes
 
 - OpenClaw config files (`openclaw.json`, `config.toml`, `.env`, etc.) are **not** touched by ECC install.
-- Use `npx ecc doctor --target openclaw` to check install health.
+- Use `npx ecc-universal doctor --target openclaw` to check install health.

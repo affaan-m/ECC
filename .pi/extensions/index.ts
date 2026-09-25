@@ -15,16 +15,20 @@
  * Design constraints (see .pi/README.md):
  *   - Hooks resolve relative to THIS file, never `process.cwd()`, so a global
  *     `pi install` works from any project directory.
- *   - Hooks execute via `execFile(process.execPath, [...])` with no shell, so
- *     paths containing spaces or shell metacharacters are safe.
- *   - Hook failures are isolated: a broken, missing, or slow hook degrades to a
- *     warning and never terminates the Pi session.
+ *   - Hooks execute via `execFile(hookRuntime, [...])` with no shell, so paths
+ *     containing spaces or shell metacharacters are safe. The hook runtime is
+ *     selected separately because compiled OMP may report `process.release.name`
+ *     as `node` while `process.execPath` points back to `omp`; Bun is detected
+ *     separately via `process.versions.bun`.
+ *   - Hook failures are isolated: a broken, missing, slow, or misconfigured hook
+ *     degrades to a warning and never terminates the Pi session.
  */
 
 import { execFile } from "node:child_process"
 import * as fs from "node:fs"
 import * as os from "node:os"
 import * as path from "node:path"
+import { resolveHookRuntime } from "./hook-runtime.js"
 
 /**
  * Minimal structural types mirroring `@earendil-works/pi-coding-agent`.
@@ -137,6 +141,10 @@ const DISABLED_VALUES = new Set(["0", "false", "off", "none", "disabled"])
 /**
  * Optional Pi companion packages. ECC works without every one of these; they
  * are reported by `/ecc-doctor` so users can see which extras are available.
+ *
+ * These are capability names, not exact install specs. See
+ * `findInstalledCompanion` for how an entry is matched against what Pi has
+ * actually installed.
  */
 const COMPANION_PACKAGES = [
   "pi-subagents",
@@ -175,8 +183,9 @@ interface HookResult {
 /**
  * Run an ECC hook through ECC's own runner.
  *
- * Never rejects: a missing runner, a non-zero exit, a timeout, or a spawn error
- * all resolve to a `failure` string that the caller surfaces as a warning.
+ * Never rejects: an invalid runtime override, a missing runner, a non-zero exit,
+ * a timeout, or a spawn error all resolve to a `failure` string that the caller
+ * surfaces as a warning.
  */
 function runEccHook(
   spec: HookSpec,
@@ -189,9 +198,19 @@ function runEccHook(
       resolve({ stdout: "", failure: `hook runner not found at ${HOOK_RUNNER}` })
       return
     }
+    let hookRuntime: string
+    try {
+      hookRuntime = resolveHookRuntime()
+    } catch (error) {
+      resolve({
+        stdout: "",
+        failure: `${spec.id}: ${(error as Error).message}`,
+      })
+      return
+    }
 
     const child = execFile(
-      process.execPath,
+      hookRuntime,
       [HOOK_RUNNER, spec.id, spec.script, spec.profiles],
       {
         // Hooks inspect the user's project, so they run there. Only the script
@@ -460,6 +479,41 @@ function normalizePiPackageName(entry: unknown): string | undefined {
   return versionAt > 0 ? spec.slice(0, versionAt) : spec
 }
 
+/**
+ * The installed package satisfying a companion entry, or undefined if none is.
+ *
+ * An exact name match is the ordinary case. An UNSCOPED companion entry is
+ * also satisfied by a scoped package with the same bare name --
+ * `@tintinweb/pi-subagents` satisfies `pi-subagents`. The subagents capability
+ * is published to npm by more than one maintainer under that same bare name,
+ * and a user running a scoped fork has the capability installed by any
+ * meaning of the word; reporting "not installed" at them while its tools are
+ * live in their session is a false negative, and the suggested
+ * `pi install npm:pi-subagents` would push them into installing a second
+ * extension that registers the same tool names.
+ *
+ * A SCOPED companion entry is matched exactly, because there the scope is
+ * part of the identity the entry names, not incidental packaging.
+ */
+function findInstalledCompanion(companion: string, installed: Set<string>): string | undefined {
+  if (installed.has(companion)) {
+    return companion
+  }
+
+  if (companion.startsWith("@")) {
+    return undefined
+  }
+
+  const scopedSuffix = `/${companion}`
+  for (const name of installed) {
+    if (name.startsWith("@") && name.endsWith(scopedSuffix)) {
+      return name
+    }
+  }
+
+  return undefined
+}
+
 function countDirectories(dir: string): number {
   try {
     return fs.readdirSync(dir, { withFileTypes: true }).filter(entry => entry.isDirectory()).length
@@ -532,10 +586,12 @@ function buildDoctorReport(ctx: ExtensionContext): string {
 
   const installed = listInstalledPiPackages(ctx.cwd)
   for (const name of COMPANION_PACKAGES) {
-    const present = installed.has(name)
-    lines.push(`  ${present ? "installed    " : "not installed"}  ${name}`)
-    if (!present) {
+    const match = findInstalledCompanion(name, installed)
+    lines.push(`  ${match ? "installed    " : "not installed"}  ${name}`)
+    if (!match) {
       lines.push(`      install with: pi install npm:${name}`)
+    } else if (match !== name) {
+      lines.push(`      satisfied by: ${match}`)
     }
   }
 

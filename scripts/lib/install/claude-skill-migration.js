@@ -133,19 +133,13 @@ function isManagedOperation(operation) {
 }
 
 function uniqueOperations(operations) {
-  const seen = new Set();
-  return operations.filter(operation => {
-    const key = [
-      operation.kind,
-      normalizeSourceRelativePath(operation.sourceRelativePath) || operation.sourceRelativePath,
-      comparablePath(operation.destinationPath),
-    ].join('\0');
-    if (seen.has(key)) {
-      return false;
-    }
-    seen.add(key);
-    return true;
-  });
+  const byDestination = new Map();
+  for (const operation of operations) {
+    // A target path has one current owner. Later operations come from the
+    // newest plan and replace stale metadata for the same destination.
+    byDestination.set(comparablePath(operation.destinationPath), operation);
+  }
+  return [...byDestination.values()];
 }
 
 function buildState(statePreview, operations) {
@@ -236,16 +230,20 @@ function createFileConflictWarning(destinationPath, retainsLegacy) {
   return `Skipped user-owned Claude skill file ${destinationPath}: the existing file is not recorded in ECC install-state.${legacySuffix}`;
 }
 
-function createDisabledMigration(plan) {
+function createDisabledMigration(plan, previousState) {
+  const finalState = buildState(plan.statePreview, [
+    ...((previousState && previousState.operations) || []),
+    ...plan.statePreview.operations,
+  ]);
   return {
     enabled: false,
     appliedOperations: [...plan.operations],
     skippedOperations: [],
     warnings: [],
-    bridgeState: plan.statePreview,
-    finalState: plan.statePreview,
+    bridgeState: finalState,
+    finalState,
     legacyOperationsToRemove: [],
-    requiresBridgeState: false,
+    requiresBridgeState: plan.operations.length > 0,
   };
 }
 
@@ -331,11 +329,16 @@ function buildMigrationStates(plan, previousState, previous, classification) {
   const legacyOperationsToRemove = legacyOperations.filter(operation => (
     !retainedLegacyOperations.has(operation)
   ));
+  const removedLegacyDestinations = new Set(
+    legacyOperationsToRemove.map(operation => comparablePath(operation.destinationPath))
+  );
   const finalOperations = [
+    ...((previousState && previousState.operations) || []).filter(operation => (
+      !removedLegacyDestinations.has(comparablePath(operation.destinationPath))
+    )),
     ...plan.statePreview.operations.filter(operation => (
       !skippedDestinations.has(comparablePath(operation.destinationPath))
     )),
-    ...retainedLegacyOperations,
   ];
   const bridgeOperations = [
     ...((previousState && previousState.operations) || []),
@@ -352,14 +355,13 @@ function buildMigrationStates(plan, previousState, previous, classification) {
 }
 
 function prepareClaudeSkillMigration(plan) {
-  const target = plan && plan.adapter && plan.adapter.target;
-  if (!CLAUDE_TARGETS.has(target)) {
-    return createDisabledMigration(plan);
-  }
-
   const previousState = pathExists(plan.installStatePath)
     ? readInstallState(plan.installStatePath)
     : null;
+  const target = plan && plan.adapter && plan.adapter.target;
+  if (!CLAUDE_TARGETS.has(target)) {
+    return createDisabledMigration(plan, previousState);
+  }
   const currentGroups = groupCurrentSkillOperations(plan);
   const previous = classifyPreviousOperations(plan, previousState);
   const classification = classifySkillConflicts(currentGroups, previous);
