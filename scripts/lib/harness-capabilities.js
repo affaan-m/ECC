@@ -103,16 +103,23 @@ const HARNESS_CAPABILITIES = deepFreeze([
   },
   {
     id: 'antigravity',
-    label: 'Antigravity',
-    targetIds: ['antigravity'],
-    channel: 'managed-project',
-    installMode: 'managed-project',
+    label: 'Google Antigravity',
+    targetIds: ['antigravity-home', 'antigravity'],
+    channel: 'native-plugin',
+    installMode: 'native-plugin',
     guidedReady: false,
     availability: 'advanced',
-    destination: './.agents',
-    scopes: [scope('project', 'antigravity', './.agents')],
-    hooks: hooks('not-configured', false, 'ECC hooks are not configured by this adapter.'),
-    aliases: ['google-antigravity'],
+    destination: 'Selected Antigravity scope: ~/.gemini/config/plugins/ecc or ./.agents',
+    scopes: [
+      scope('user', 'antigravity-home', '~/.gemini/config/plugins/ecc'),
+      scope('project', 'antigravity', './.agents'),
+    ],
+    hooks: hooks(
+      'profile-selection',
+      true,
+      'ECC hooks are configured through Antigravity PreToolUse and Stop lifecycle hooks.'
+    ),
+    aliases: ['google-antigravity', 'gemini-antigravity', 'agy'],
   },
   {
     id: 'gemini',

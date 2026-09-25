@@ -294,6 +294,8 @@ test('fresh install uses supported Claude arguments and follows the verification
       [
         'plugin', 'install', 'ecc@ecc',
         '--scope', 'project',
+        '--config', 'hooks_enabled=true',
+        '--config', 'hook_profile=strict',
       ],
       ['plugin', 'list', '--json'],
     ]);
@@ -322,6 +324,19 @@ test('fresh installs support all Claude scopes while hook preferences stay user-
       assert.ok(!fs.existsSync(path.join(fixture.projectRoot, '.claude', 'settings.local.json')));
     });
   }
+});
+
+test('fresh installs pass disabled hooks to the provider before activation', () => {
+  withFixture({}, fixture => {
+    setupClaudePlugin(setupOptions(fixture, { scope: 'user', hooks: 'off' }));
+    const install = readCalls(fixture).find(argv => argv[1] === 'install');
+    assert.deepStrictEqual(install, [
+      'plugin', 'install', 'ecc@ecc', '--scope', 'user',
+      '--config', 'hooks_enabled=false', '--config', 'hook_profile=standard',
+    ]);
+    const settings = JSON.parse(fs.readFileSync(fixture.settingsPath, 'utf8'));
+    assert.strictEqual(settings.pluginConfigs['ecc@ecc'].options.hooks_enabled, false);
+  });
 });
 
 test('same-scope repeat setup updates ECC and changes durable user hook preferences', () => {
@@ -722,6 +737,8 @@ test('provider failures stop later operations and leave settings untouched', () 
   const installArgv = [
     'plugin', 'install', 'ecc@ecc',
     '--scope', 'user',
+    '--config', 'hooks_enabled=true',
+    '--config', 'hook_profile=standard',
   ];
   withFixture({
     failures: [{

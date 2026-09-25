@@ -167,8 +167,10 @@ function materializeScaffoldOperation(sourceRoot, operation) {
         destinationPath: operation.destinationPath,
         strategy: operation.strategy || 'merge-json',
         ownership: operation.ownership || 'managed',
-        scaffoldOnly: Object.hasOwn(operation, 'scaffoldOnly') ? operation.scaffoldOnly : false,
-        mergePayload: readJsonObject(path.join(sourceRoot, operation.sourceRelativePath), operation.sourceRelativePath)
+        scaffoldOnly: typeof operation.scaffoldOnly === 'boolean' ? operation.scaffoldOnly : false,
+        mergePayload: operation.mergePayload !== undefined
+          ? JSON.parse(JSON.stringify(operation.mergePayload))
+          : readJsonObject(path.join(sourceRoot, operation.sourceRelativePath), operation.sourceRelativePath)
       }
     ];
   }
@@ -326,6 +328,7 @@ function createManifestInstallPlan(options = {}) {
     },
     homeDir: plan.homeDir,
     targetRoot: plan.targetRoot,
+    trustedRoots: plan.trustedRoots || (plan.targetRoot ? [plan.targetRoot] : []),
     installRoot: plan.targetRoot,
     installStatePath: plan.installStatePath,
     warnings: Array.isArray(options.warnings) ? [...options.warnings] : [],

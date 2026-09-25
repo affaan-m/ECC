@@ -150,12 +150,57 @@ node "$EccRoot\scripts\uninstall.js" --target antigravity --dry-run
 - Confirm the files are under `.agents/workflows/`.
 - Invoke a workflow with `/<workflow-name>` after restarting Antigravity.
 
+## Tier 1 Native Plugin and Global Installation (`antigravity-home`)
+
+Antigravity supports global plugins located in `~/.gemini/config/plugins/<name>/`. Installing ECC as a native Antigravity plugin enables:
+
+1. **Global Scope**: ECC rules, skills, agents, workflows, and memory MCP are active across all projects automatically, without requiring a `.agents/` folder in every repository.
+2. **Lifecycle Hooks (`hooks.json`)**: Full support for `PreToolUse` (command security gates, file modification guards), `PostToolUse` edit tracking, and `Stop` formatting and diagnostics using Antigravity's protojson protocol (`{ decision, reason }`).
+3. **Shared Memory Vault (`mcp_config.json`)**: Direct integration with `ecc-memory-mcp` across all Antigravity sessions.
+4. **Native Plugin Manifest (`plugin.json`)**: Declares the ECC plugin metadata.
+
+### Installing Globally
+
+```bash
+# Using install.sh from source
+"$ECC_ROOT/install.sh" --target antigravity-home --profile core --enable-hooks
+```
+
+PowerShell:
+
+```powershell
+& "$EccRoot\install.ps1" --target antigravity-home --profile core --enable-hooks
+```
+
+The installer copies the memory server and its runtime dependencies into the
+managed target. Generated hook and MCP commands use absolute installed paths,
+so they also work when Antigravity runs from another workspace.
+
+Project-local hooks use the same runtime; select `--profile core --enable-hooks`
+with `--target antigravity`. Use `--no-hooks` to omit automatic hooks.
+
+### Global Plugin Structure
+
+```text
+~/.gemini/config/
+├── workflows/               # Global slash workflows
+└── plugins/ecc/
+    ├── plugin.json          # Antigravity plugin manifest
+    ├── hooks.json           # PreToolUse, PostToolUse, and Stop hooks
+    ├── mcp_config.json      # Shared ECC Memory Vault MCP server
+    ├── rules/               # Rules applied to all workspaces
+    ├── skills/              # Global Agent Skills
+    ├── scripts/             # Hook bridge and memory runtime
+    └── node_modules/        # Memory server dependencies
+```
+
 ## Official Antigravity references
 
 - [Skills](https://antigravity.google/docs/skills)
 - [Rules and workflows](https://antigravity.google/docs/rules-workflows)
 - [Custom agents and subagents](https://antigravity.google/docs/subagents)
 - [Plugins](https://antigravity.google/docs/plugins)
+- [Lifecycle hooks](https://antigravity.google/docs/hooks)
 
 See [CONTRIBUTING.md](../CONTRIBUTING.md) for ECC contribution guidance and
 [SELECTIVE-INSTALL-ARCHITECTURE.md](SELECTIVE-INSTALL-ARCHITECTURE.md) for the

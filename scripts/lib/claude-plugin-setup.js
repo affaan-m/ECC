@@ -570,6 +570,7 @@ function verifyPluginAtScope(options) {
 
 function ensurePluginAtScope(options) {
   const run = options.run || runClaude;
+  const configuredHooks = options.hookConfiguration;
   if (options.installed) {
     run(
       ['plugin', 'update', CURRENT_PLUGIN_ID, '--scope', options.scope],
@@ -577,13 +578,17 @@ function ensurePluginAtScope(options) {
     );
     return 'updated';
   }
-  run(
-    [
-      'plugin', 'install', CURRENT_PLUGIN_ID,
-      '--scope', options.scope,
-    ],
-    { cwd: options.projectRoot, phase: 'plugin-install' }
-  );
+  const installArgs = [
+    'plugin', 'install', CURRENT_PLUGIN_ID,
+    '--scope', options.scope,
+  ];
+  if (configuredHooks) {
+    installArgs.push(
+      '--config', `hooks_enabled=${configuredHooks.hooks_enabled}`,
+      '--config', `hook_profile=${configuredHooks.hook_profile}`
+    );
+  }
+  run(installArgs, { cwd: options.projectRoot, phase: 'plugin-install' });
   return 'installed';
 }
 
@@ -653,6 +658,7 @@ function setupClaudePlugin(options = {}, dependencies = {}) {
     spawnSync: dependencies.spawnSync,
   });
   const action = ensurePluginAtScope({
+    hookConfiguration: hookOptions(hooks),
     hooks,
     installed: inventory.installed,
     projectRoot: paths.projectRoot,

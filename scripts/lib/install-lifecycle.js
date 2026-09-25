@@ -7,7 +7,7 @@ const { isDeepStrictEqual } = require('util');
 
 const { loadInstallManifests } = require('./install-manifests');
 const { readInstallState, validateInstallState } = require('./install-state');
-const { assertWithinTrustedRoot } = require('./path-safety');
+const { assertWithinTrustedRoot, isWithinRoot } = require('./path-safety');
 const { createInstallPlanFromRequest } = require('./install/runtime');
 const { assertNoNewUserOwnedFile, prepareUserOwnedFileGuard } = require('./install/ownership-guard');
 const { isCodexUserConfig } = require('./install/codex-user-config');
@@ -2364,8 +2364,14 @@ function uninstallInstalledStates(options = {}) {
         );
       }
 
+      const adapter = record.adapter && getInstallTargetAdapter(record.adapter.id || record.adapter.target);
+      const trustedRoots = adapter && typeof adapter.resolveTrustedRoots === 'function'
+        ? adapter.resolveTrustedRoots({ homeDir: options.homeDir, projectRoot: options.projectRoot })
+        : [record.targetRoot];
+
       for (const operation of operations) {
-        const outcome = executeUninstallOperation(operation, record.targetRoot, {
+        const matchingRoot = trustedRoots.find(root => isWithinRoot(operation.destinationPath, root)) || record.targetRoot;
+        const outcome = executeUninstallOperation(operation, matchingRoot, {
           preserveDriftedCopies: true,
           target: record.adapter.target,
           settingsLockHeld: Boolean(releaseSettingsLock),
@@ -2389,7 +2395,8 @@ function uninstallInstalledStates(options = {}) {
       }
 
       for (const cleanupTarget of cleanupTargets) {
-        cleanupEmptyParentDirs(cleanupTarget, record.targetRoot);
+        const matchingRoot = trustedRoots.find(root => isWithinRoot(cleanupTarget, root)) || record.targetRoot;
+        cleanupEmptyParentDirs(cleanupTarget, matchingRoot);
       }
 
       return {

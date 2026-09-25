@@ -891,7 +891,7 @@ function runTests() {
     const projectDir = createTempDir('install-apply-project-');
 
     try {
-      const result = run(['--target', 'antigravity', '--profile', 'core'], { cwd: projectDir, homeDir });
+      const result = run(['--target', 'antigravity', '--profile', 'core', '--enable-hooks'], { cwd: projectDir, homeDir });
       assert.strictEqual(result.code, 0, result.stderr);
 
       assert.ok(fs.existsSync(path.join(projectDir, '.agents', 'rules', 'common-coding-style.md')));
@@ -902,6 +902,7 @@ function runTests() {
       assert.ok(fs.existsSync(path.join(projectDir, '.agents', 'agents', 'architect.md')));
       assert.ok(fs.existsSync(path.join(projectDir, '.agents', 'workflows', 'plan.md')));
       assert.ok(fs.existsSync(path.join(projectDir, '.agents', 'skills', 'tdd-workflow', 'SKILL.md')));
+      assert.ok(fs.existsSync(path.join(projectDir, '.agents', 'hooks.json')), 'hooks.json should exist');
 
       const state = readJson(path.join(projectDir, '.agents', 'ecc-install-state.json'));
       assert.strictEqual(state.request.profile, 'core');
@@ -912,12 +913,13 @@ function runTests() {
           'rules-core',
           'agents-core',
           'commands-core',
+          'hooks-runtime',
           'platform-configs',
           'skill-unified-memory',
           'workflow-quality'
         ]
       );
-      assert.ok(state.resolution.skippedModules.includes('hooks-runtime'));
+      assert.ok(!state.resolution.skippedModules.includes('hooks-runtime'));
       assert.ok(!state.resolution.skippedModules.includes('workflow-quality'));
       assert.ok(!state.resolution.skippedModules.includes('platform-configs'));
     } finally {

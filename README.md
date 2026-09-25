@@ -136,7 +136,7 @@ Instead of rebuilding that process in every prompt, you install it once and make
 
 > Optimize the context window. Persist everything else.
 
-ECC is MIT-licensed open source. It works best with Claude Code today, has a supported Codex sync path, and provides capability-limited adapters for Cursor, OpenCode, Gemini, Zed, GitHub Copilot, Antigravity, Qwen, and other harnesses. See the [support status matrix](#platform-support) before assuming feature parity.
+ECC is MIT-licensed open source. It works best with Claude Code today, has supported native plugin paths for Codex and Antigravity, and provides capability-limited adapters for Cursor, OpenCode, Gemini, Zed, GitHub Copilot, Qwen, and other harnesses. See the [support status matrix](#platform-support) before assuming feature parity.
 
 Access to 68 agents, 292 skills, and 94 legacy command shims, plus hooks, rules, memory, continuous learning, and AgentShield security scanning. The agents are specialized for planning, review, build repair, security, architecture, and domain work.
 
@@ -259,7 +259,7 @@ npx ecc-universal@2.2.2 doctor --target kimi
 
 Do not use `npx ecc-install --profile minimal --target claude`: `ecc-install` is a binary name inside `ecc-universal`, not a separately published npm package.
 
-ECC also ships advanced managed adapters for `cursor`, `antigravity`, `gemini`, `opencode`, `codebuddy`, `joycode`, `qwen`, `zed`, `hermes`, and `openclaw`. Those targets still use their documented `ecc install --target ...` paths until each adapter has passed the guided collision, update, repair, and uninstall lifecycle matrix. Neither wizard silently installs into every detected harness.
+ECC also ships advanced managed adapters for `cursor`, `antigravity`, `antigravity-home`, `gemini`, `opencode`, `codebuddy`, `joycode`, `qwen`, `zed`, `hermes`, and `openclaw`. Those targets still use their documented `ecc install --target ...` paths until each adapter has passed the guided collision, update, repair, and uninstall lifecycle matrix. Neither wizard silently installs into every detected harness.
 
 ### Pick one path only (per harness)
 
@@ -399,7 +399,8 @@ cd ECC
 | OpenCode | `npm install && npm run build:opencode && ./install.sh --profile full --target opencode --enable-hooks` | Builds the plugin payload before the full install |
 | Gemini CLI | `./install.sh --profile minimal --target gemini` | Project-local `.gemini/` config |
 | Zed | `./install.sh --profile minimal --target zed` | Project-local `.zed/` adapter |
-| Antigravity | `./install.sh --profile minimal --target antigravity` | See the [Antigravity guide](docs/ANTIGRAVITY-GUIDE.md) |
+| Antigravity (Global Plugin) | `./install.sh --target antigravity-home --profile core --enable-hooks` | Native Tier 1 global plugin (`~/.gemini/config/plugins/ecc/`) with lifecycle hooks · [Guide](docs/ANTIGRAVITY-GUIDE.md) |
+| Antigravity (Project-Local) | `./install.sh --target antigravity --profile minimal` | Project-local `.agents/` adapter · [Guide](docs/ANTIGRAVITY-GUIDE.md) |
 | Qwen CLI | `./install.sh --profile minimal --target qwen` | See the [Qwen guide](docs/QWEN-GUIDE.md) |
 | Hermes | `./install.sh --profile minimal --target hermes` | See the [Hermes setup guide](docs/HERMES-SETUP.md) |
 | OpenClaw | `./install.sh --profile minimal --target openclaw` | Managed home-directory install |
@@ -1284,10 +1285,11 @@ Treat `stable`, `beta`, `experimental`, and `instruction-only` below as capabili
 |---|---|---|---|
 | Claude Code | Stable primary | Plugin or selective installer | The plugin advertises the installed catalog to the model; use a selective/manual profile when context footprint matters. Optional shell-backed skills are not portable to every OS. |
 | Codex | Supported native plugin | Codex marketplace plugin or repo config | Native hooks require an explicit trust decision and do not use Claude's hook profiles. The legacy sync is compatibility-only. |
+| Antigravity | Supported native plugin | Native plugin (`~/.gemini/config/plugins/ecc`) or project `.agents/` | Global native plugin with lifecycle hooks (`PreToolUse`, `Stop`) via protojson bridge, rules, workflows, skills, and memory MCP. |
 | Cursor | Beta project adapter | Selective installer into `.cursor/` | Agent discovery varies by Cursor build, and ECC's installer paths do not yet expose identical hook sets ([#2419](https://github.com/affaan-m/ECC/issues/2419)). |
 | OpenCode | Beta built plugin | Build plugin, then selective installer | ECC ships a subset of the catalog; connect a provider and select a model in OpenCode ([#2617](https://github.com/affaan-m/ECC/issues/2617)). |
 | GitHub Copilot | Instruction-only | Checked-in instructions and prompt files | No ECC hooks, runtime agents, delegation, or native skill discovery. |
-| Gemini, Zed, Antigravity, Qwen, Hermes, OpenClaw, Kimi, CodeBuddy, JoyCode | Experimental/minimal adapters | Harness-specific selective target | File placement and instruction portability are tested; full Claude feature parity is not claimed. |
+| Gemini, Zed, Qwen, Hermes, OpenClaw, Kimi, CodeBuddy, JoyCode | Experimental/minimal adapters | Harness-specific selective target | File placement and instruction portability are tested; full Claude feature parity is not claimed. |
 
 <details>
 <summary><strong>Package manager detection</strong></summary>
