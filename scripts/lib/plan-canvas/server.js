@@ -15,7 +15,7 @@ const http = require('http');
 const path = require('path');
 
 const { buildAllowedHostnames, isAllowedHostHeader, isAllowedOrigin } = require('../loopback-guard');
-const { renderMarkdown } = require('./markdown');
+const { escapeHtml, renderMarkdown } = require('./markdown');
 const { artifactSdkJs } = require('./sdk');
 const {
   canvasCss,
@@ -101,9 +101,21 @@ function sendJson(res, statusCode, payload) {
   res.end(body);
 }
 
+// Artifact pages render inside a sandboxed iframe (no allow-same-origin) and
+// legitimately run CDN scripts (Mermaid) plus inline loaders, so the default
+// restrictive CSP cannot apply. A sandbox-only CSP mirrors the iframe
+// attribute instead: scripts keep working, but the document gets an opaque
+// origin, which neuters direct-navigation abuse of the loopback API (no CORS
+// reads, JSON POSTs are preflight-blocked) without changing in-iframe
+// behavior. A hostile <meta> CSP in a raw HTML artifact can only narrow this
+// further, never loosen it.
+const ARTIFACT_CSP = 'sandbox allow-scripts allow-forms allow-popups';
+
 function sendHtml(res, statusCode, html, { csp = true } = {}) {
   const headers = { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' };
-  if (csp) {
+  if (csp === 'artifact') {
+    headers['content-security-policy'] = ARTIFACT_CSP;
+  } else if (csp) {
     headers['content-security-policy'] =
       "default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; frame-src 'self'";
   }
@@ -493,7 +505,7 @@ function createPlanCanvasServer({
       try {
         content = fs.readFileSync(session.file, 'utf8');
       } catch {
-        return sendHtml(res, 404, `<h1>Artifact missing</h1><p>${session.file} no longer exists.</p>`, { csp: false });
+        return sendHtml(res, 404, `<h1>Artifact missing</h1><p>${escapeHtml(session.file)} no longer exists.</p>`);
       }
       const ext = path.extname(session.file).toLowerCase();
       if (ext === '.md' || ext === '.markdown') {
@@ -501,30 +513,55 @@ function createPlanCanvasServer({
           title: path.basename(session.file),
           sdkSrc: '/sdk.js'
         });
-        return sendHtml(res, 200, html, { csp: false });
+        return sendHtml(res, 200, html, { csp: 'artifact' });
       }
       const sdkTag = '<script src="/sdk.js"></script>';
       const injected = content.includes('</body>')
         ? content.replace('</body>', `${sdkTag}\n</body>`)
         : `${content}\n${sdkTag}`;
-      return sendHtml(res, 200, injected, { csp: false });
+      return sendHtml(res, 200, injected, { csp: 'artifact' });
     }
 
     // Sibling assets resolve relative to the artifact's directory and must
-    // stay confined to it.
+    // stay confined to it. The prefix check alone is insufficient: a symlink
+    // inside the directory can point outside it, so the check is repeated
+    // against the real paths and fails closed when they cannot be resolved.
     const baseDir = path.dirname(session.file);
     const resolved = path.resolve(baseDir, assetPath);
     if (resolved !== baseDir && !resolved.startsWith(baseDir + path.sep)) {
       return sendJson(res, 403, { error: 'asset path escapes artifact directory' });
     }
-    let data;
+    let realTarget;
     try {
-      data = fs.readFileSync(resolved);
+      const realBase = fs.realpathSync(baseDir);
+      realTarget = fs.realpathSync(resolved);
+      if (realTarget !== realBase && !realTarget.startsWith(realBase + path.sep)) {
+        return sendJson(res, 403, { error: 'asset path escapes artifact directory' });
+      }
     } catch {
       return sendJson(res, 404, { error: 'asset not found' });
     }
-    const type = CONTENT_TYPES[path.extname(resolved).toLowerCase()] || 'application/octet-stream';
-    res.writeHead(200, { 'content-type': type, 'cache-control': 'no-store' });
+    // Residual TOCTOU note: the confinement check and the read below are
+    // separate operations, so a local actor racing a symlink swap between
+    // them could redirect the read. Accepted for a loopback-local dev tool:
+    // anyone able to win that race already has arbitrary local file write,
+    // and served HTML is sandboxed (see below) while other types are inert.
+    let data;
+    try {
+      data = fs.readFileSync(realTarget);
+    } catch {
+      return sendJson(res, 404, { error: 'asset not found' });
+    }
+    // MIME comes from the link/request name first so a symlinked asset keeps
+    // the type the page asked for; the target extension is the fallback.
+    const type = CONTENT_TYPES[path.extname(resolved).toLowerCase()]
+      || CONTENT_TYPES[path.extname(realTarget).toLowerCase()]
+      || 'application/octet-stream';
+    const headers = { 'content-type': type, 'cache-control': 'no-store' };
+    if (type.startsWith('text/html')) {
+      headers['content-security-policy'] = ARTIFACT_CSP;
+    }
+    res.writeHead(200, headers);
     return res.end(data);
   }
 

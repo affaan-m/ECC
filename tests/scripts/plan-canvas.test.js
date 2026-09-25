@@ -182,7 +182,7 @@ async function main() {
     assert.ok(res.body.includes('<h1 id="plan-demo">'));
     assert.ok(res.body.includes('<table>'));
     assert.ok(res.body.includes('<script src="/sdk.js">'));
-    assert.strictEqual(res.headers['content-security-policy'], undefined);
+    assert.strictEqual(res.headers['content-security-policy'], 'sandbox allow-scripts allow-forms allow-popups');
     // No diagram in this plan → no Mermaid loader shipped.
     assert.ok(!res.body.includes('mermaid.run'));
   })) passed++; else failed++;
@@ -212,6 +212,63 @@ async function main() {
     assert.ok(ok.body.includes('color: red'));
     const escape = await request(port, 'GET', `/artifact/${key}/..%2F${path.basename(outsideDir)}%2Fsecret.txt`);
     assert.strictEqual(escape.statusCode, 403);
+  })) passed++; else failed++;
+
+  if (await test('artifact responses carry a sandbox CSP (direct-navigation hardening)', async () => {
+    const md = await request(port, 'GET', `/artifact/${key}/`);
+    assert.strictEqual(md.statusCode, 200);
+    assert.strictEqual(md.headers['content-security-policy'], 'sandbox allow-scripts allow-forms allow-popups');
+    const html = await request(port, 'GET', `/artifact/${htmlKey}/`);
+    assert.strictEqual(html.statusCode, 200);
+    assert.strictEqual(html.headers['content-security-policy'], 'sandbox allow-scripts allow-forms allow-popups');
+  })) passed++; else failed++;
+
+  if (await test('missing-artifact 404 escapes the file path', async () => {
+    // Quotes and ampersands are escapable on every platform (Windows
+    // rejects < > in filenames, so angle brackets stay out of fixtures).
+    const evilFile = path.join(tmp, `evil'b&xss.plan.md`);
+    fs.writeFileSync(evilFile, '# Evil\n');
+    const opened = jsonBody(await request(port, 'POST', '/api/sessions', { body: { file: evilFile } }));
+    fs.rmSync(evilFile);
+    const res = await request(port, 'GET', `/artifact/${opened.key}/`);
+    assert.strictEqual(res.statusCode, 404);
+    assert.ok(!res.body.includes(`evil'b&xss`), 'raw filename must not appear in the 404 page');
+    assert.ok(res.body.includes('evil&#39;b&amp;xss'), 'filename must be HTML-escaped in the 404 page');
+  })) passed++; else failed++;
+
+  if (await test('symlinked sibling assets escaping the artifact dir are blocked', async () => {
+    try {
+      fs.symlinkSync(path.join(outsideDir, 'secret.txt'), path.join(tmp, 'evil-link.txt'));
+      fs.symlinkSync(path.join(tmp, 'style.css'), path.join(tmp, 'ok-link.css'));
+    } catch {
+      console.log('    SKIP: symlink creation unavailable on this platform');
+      return;
+    }
+    const blocked = await request(port, 'GET', `/artifact/${key}/evil-link.txt`);
+    assert.strictEqual(blocked.statusCode, 403);
+    const allowed = await request(port, 'GET', `/artifact/${key}/ok-link.css`);
+    assert.strictEqual(allowed.statusCode, 200);
+    assert.ok(allowed.body.includes('color: red'));
+  })) passed++; else failed++;
+
+  if (await test('served HTML siblings carry the sandbox CSP', async () => {
+    fs.writeFileSync(path.join(tmp, 'note.html'), '<!DOCTYPE html><html><body><p>hi</p></body></html>');
+    const res = await request(port, 'GET', `/artifact/${key}/note.html`);
+    assert.strictEqual(res.statusCode, 200);
+    assert.strictEqual(res.headers['content-security-policy'], 'sandbox allow-scripts allow-forms allow-popups');
+  })) passed++; else failed++;
+
+  if (await test('symlinked assets take their MIME from the link name', async () => {
+    try {
+      fs.writeFileSync(path.join(tmp, 'realfile'), 'body { color: blue }');
+      fs.symlinkSync(path.join(tmp, 'realfile'), path.join(tmp, 'theme.css'));
+    } catch {
+      console.log('    SKIP: symlink creation unavailable on this platform');
+      return;
+    }
+    const res = await request(port, 'GET', `/artifact/${key}/theme.css`);
+    assert.strictEqual(res.statusCode, 200);
+    assert.ok(String(res.headers['content-type']).startsWith('text/css'));
   })) passed++; else failed++;
 
   if (await test('static chrome assets are served', async () => {
