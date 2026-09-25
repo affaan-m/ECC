@@ -26,8 +26,7 @@
    "category": "complex-feature-build",
    "query": "The webhook relay in this repo accepts delivery requests but never actually sends them — the delivery worker was never finished, and customers are losing notifications. Implement asynchronous delivery per the README: POST each delivery's JSON payload to its URL, retry failures with exponential backoff starting around 100ms and doubling each time, give up after 5 total attempts and mark the delivery dead. Keep the documented module contract, make `npm test` pass, and extend the test suite to cover the retry and dead-letter behavior.",
    "expectedIds": [
-    "skill:tdd-workflow",
-    "skill:backend-patterns"
+    "skill:tdd-workflow"
    ]
   }
  ],
@@ -77,8 +76,7 @@
    "id": "webhook-relay",
    "category": "feature-build",
    "manualIds": [
-    "skill:tdd-workflow",
-    "skill:backend-patterns"
+    "skill:tdd-workflow"
    ],
    "checkTimeoutMs": 60000,
    "query": "The webhook relay in this repo accepts delivery requests but never actually sends them — the delivery worker was never finished, and customers are losing notifications. Implement asynchronous delivery per the README: POST each delivery's JSON payload to its URL, retry failures with exponential backoff starting around 100ms and doubling each time, give up after 5 total attempts and mark the delivery dead. Keep the documented module contract, make `npm test` pass, and extend the test suite to cover the retry and dead-letter behavior.",

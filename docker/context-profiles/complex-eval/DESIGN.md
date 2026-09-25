@@ -45,8 +45,9 @@ deterministic, dependency-free grader.
    (delivery after failures, exact attempt counts, backoff timing window,
    dead-lettering, error capture, API preservation, concurrency).
    *Why it belongs here:* everyday backend feature work where test discipline
-   and backend patterns genuinely change outcomes; canonical skills:
-   `tdd-workflow`, `backend-patterns`.
+   and backend patterns genuinely change outcomes; canonical skill:
+   `tdd-workflow` (a second skill would exceed the 32 KB selection budget —
+   itself a measured constraint of the scoping layer).
 
 2. **`incident-triage`** (debugging / root cause). Finance reports one-cent
    total errors since yesterday's deploy. The repo contains three changelog
