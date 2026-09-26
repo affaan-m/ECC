@@ -403,7 +403,7 @@ cd ECC
 | Qwen CLI | `./install.sh --profile minimal --target qwen` | See the [Qwen guide](docs/QWEN-GUIDE.md) |
 | Hermes | `./install.sh --profile minimal --target hermes` | See the [Hermes setup guide](docs/HERMES-SETUP.md) |
 | OpenClaw | `./install.sh --profile minimal --target openclaw` | Managed home-directory install |
-| Kimi Code CLI | `./install.sh --profile minimal --target kimi` | Project-local `.kimi-code/` install · [Get Kimi Code](https://www.kimi.com/code?aff=ecc) |
+| Kimi Code CLI | `./install.sh --profile minimal --target kimi` | Project-local `.kimi-code/` install · [Get Kimi Code](https://www.kimi.ai/code?aff=ecc) |
 | CodeBuddy | `./install.sh --profile minimal --target codebuddy` | Project-local `.codebuddy/` install |
 | JoyCode | `./install.sh --profile minimal --target joycode` | Project-local `.joycode/` install |
 
