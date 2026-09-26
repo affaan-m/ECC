@@ -537,12 +537,15 @@ test('a failed step ends the chain and remaining tickets score zero', () => with
   assert.deepEqual(row.steps.map(step => step.score), [0, 0]);
 }));
 
-test('step graders use distinct files and refuse replays in the same workspace', () => withFixture(root => {
+test('step graders use distinct files and are removed after running so later tickets cannot read them', () => withFixture(root => {
   const dir = path.join(root, 'stepped');
   fs.mkdirSync(dir);
   assert.deepEqual(runScoredCheck(dir, "console.log('ECC_EVAL_SCORE {\"score\":1}');", 10000, 1), { passed: true, score: 1 });
+  assert.equal(fs.existsSync(path.join(dir, '.ecc-eval-check-1.cjs')), false);
   assert.deepEqual(runScoredCheck(dir, "console.log('ECC_EVAL_SCORE {\"score\":1}');", 10000, 2), { passed: true, score: 1 });
-  assert.deepEqual(runScoredCheck(dir, "console.log('ECC_EVAL_SCORE {\"score\":1}');", 10000, 1), { passed: false, score: 0 });
+  // A grader planted by the agent before its step still fails closed.
+  fs.writeFileSync(path.join(dir, '.ecc-eval-check-3.cjs'), 'process.exit(0);');
+  assert.deepEqual(runScoredCheck(dir, "console.log('ECC_EVAL_SCORE {\"score\":1}');", 10000, 3), { passed: false, score: 0 });
 }));
 
 test('stepped corpus validation rejects bad steps before provider calls', () => withFixture(repoRoot => {

@@ -505,6 +505,9 @@ function runScoredCheck(cwd, source, timeoutMs = 10000, step = null) {
   fs.writeFileSync(file, source, { flag: 'wx' });
   const result = spawnSync(process.execPath, checkArguments(fs.realpathSync(cwd), name, step !== null), { cwd, encoding: 'utf8',
     env: { LANG: 'C.UTF-8' }, shell: false, timeout: timeoutMs, killSignal: 'SIGKILL', maxBuffer: 65536 });
+  // Grader files never linger: in stepped tasks the workspace accumulates, and a later ticket's
+  // agent could read or replay an earlier grader. The planted-grader guard above still applies.
+  fs.rmSync(file, { force: true });
   const passed = result.status === 0 && !result.error;
   let score = passed ? 1 : 0;
   const match = SCORE_LINE.exec(result.stdout || '');
