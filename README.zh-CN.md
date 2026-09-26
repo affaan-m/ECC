@@ -80,7 +80,7 @@
 
 ## 最新动态
 
-### v2.2.1 — 引导式多 Harness 安装（2026年8月）
+### v2.2.2 — 引导式多 Harness 安装（2026年8月）
 
 新增可审查的 Claude Code、Codex 与 Kimi Code 多 Harness 安装流程，并提供同步的 npm 命令入口。
 
@@ -196,7 +196,7 @@ Copy-Item -Recurse rules/typescript "$HOME/.claude/rules/"
 /plugin list ecc@ecc
 ```
 
-**完成！** 你现在可以使用 68 个代理、287 个技能和 95 个命令。
+**完成！** 你现在可以使用 68 个代理、293 个技能和 95 个命令。
 
 ### multi-* 命令需要额外配置
 

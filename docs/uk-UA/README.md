@@ -27,8 +27,8 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/affaan-m/ECC/stargazers"><img src="https://img.shields.io/endpoint?url=https%3A%2F%2Fapi.ecc.tools%2Fbadge%2Fstars&style=flat" alt="Stars" /></a>
-  <a href="https://github.com/affaan-m/ECC/network/members"><img src="https://img.shields.io/endpoint?url=https%3A%2F%2Fapi.ecc.tools%2Fbadge%2Fforks&style=flat" alt="Forks" /></a>
+  <a href="https://github.com/affaan-m/ECC"><img src="https://img.shields.io/github/stars/affaan-m/ECC?style=flat" alt="GitHub stars" /></a>
+  <a href="https://github.com/affaan-m/ECC/forks"><img src="https://img.shields.io/github/forks/affaan-m/ECC?style=flat" alt="GitHub forks" /></a>
   <a href="https://github.com/affaan-m/ECC/graphs/contributors"><img src="https://img.shields.io/github/contributors/affaan-m/ECC?style=flat" alt="Contributors" /></a>
   <a href="https://github.com/marketplace/ecc-tools"><img src="https://img.shields.io/endpoint?url=https%3A%2F%2Fapi.ecc.tools%2Fbadge%2Finstalls&logo=github" alt="GitHub App installs" /></a>
 </p>
@@ -105,7 +105,8 @@
   <a href="https://www.greptile.com/go/ecc" title="Greptile"><img src="../../assets/images/sponsors/greptile.png" height="54" alt="Greptile" /></a>&nbsp;&nbsp;&nbsp;
   <a href="https://www.atlascloud.ai/?utm_source=github&amp;utm_medium=link&amp;utm_campaign=ECC" title="Atlas Cloud"><picture><source media="(prefers-color-scheme: dark)" srcset="../../assets/images/sponsors/atlascloud-dark.svg" /><img src="../../assets/images/sponsors/atlascloud.svg" width="154" alt="Atlas Cloud" /></picture></a>&nbsp;&nbsp;&nbsp;
   <a href="https://www.moonshot.ai" title="Moonshot AI - Kimi"><picture><source media="(prefers-color-scheme: dark)" srcset="../../assets/images/sponsors/moonshot-dark.png" /><img src="../../assets/images/sponsors/moonshot.png" width="132" alt="Moonshot AI - Kimi" /></picture></a>&nbsp;&nbsp;&nbsp;
-  <a href="https://compute.itomarkets.com" title="Itô Markets"><picture><source media="(prefers-color-scheme: light)" srcset="../../assets/images/sponsors/ito-transparent-light.png" /><img src="../../assets/images/sponsors/ito-transparent.png" width="96" alt="Itô Markets" /></picture></a>
+  <a href="https://compute.itomarkets.com" title="Itô Markets"><picture><source media="(prefers-color-scheme: light)" srcset="../../assets/images/sponsors/ito-transparent-light.png" /><img src="../../assets/images/sponsors/ito-transparent.png" width="96" alt="Itô Markets" /></picture></a>&nbsp;&nbsp;&nbsp;
+  <a href="https://serpapi.com/github-ecc" title="SerpApi: Web Search API"><picture><source media="(prefers-color-scheme: dark)" srcset="../../assets/images/sponsors/serpapi-logo-dark-mode.svg" /><img src="../../assets/images/sponsors/serpapi-logo-light-mode.svg" width="200" alt="SerpApi: Web Search API" /></picture></a>
 </p>
 
 <sub><strong>Спонсори спільноти:</strong> <a href="https://github.com/mikejmorgan-ai">Mike Morgan</a> · <a href="https://github.com/jasonwu513">@jasonwu513</a> · <a href="https://github.com/1anter">@1anter</a> · <a href="https://github.com/massimotodaro">@massimotodaro</a> · <a href="https://github.com/meadmccabe">@meadmccabe</a></sub>

@@ -13,6 +13,7 @@ const { spawnSync } = require('child_process');
 const repoRoot = path.join(__dirname, '..', '..');
 const hooksPath = path.join(repoRoot, 'hooks', 'hooks.json');
 const dispatcherPath = path.join(repoRoot, 'scripts', 'hooks', 'posttooluse-dispatcher.js');
+const { readHooksConfig } = require(path.join(repoRoot, 'scripts', 'lib', 'hooks-config.js'));
 
 function test(name, fn) {
   try {
@@ -70,6 +71,30 @@ function runConfiguredCommand(entry, raw, env = {}) {
   });
 }
 
+function runInspectingDispatcher(input, env = {}) {
+  const script = [
+    `const dispatcher = require(${JSON.stringify(dispatcherPath)});`,
+    "const hooks = [{ id: 'post:test:inspect', matcher: '*', profiles: 'standard,strict', run: (raw, context) => ({ stdout: JSON.stringify({ raw: raw.length <= 16 ? raw : null, bytes: Buffer.byteLength(raw, 'utf8'), truncated: context.truncated, maxStdin: context.maxStdin }) }) }];",
+    "process.argv[2] = 'sync';",
+    'dispatcher.cli({ hookListOverride: hooks });'
+  ].join('');
+  return spawnSync(process.execPath, ['-e', script], {
+    cwd: repoRoot,
+    input,
+    encoding: 'utf8',
+    env: {
+      ...process.env,
+      CLAUDE_PLUGIN_ROOT: repoRoot,
+      ECC_HOOK_PROFILE: 'standard',
+      ECC_DISABLED_HOOKS: '',
+      ...env,
+      ECC_DRY_RUN: '0'
+    },
+    timeout: 10000,
+    maxBuffer: 4 * 1024 * 1024
+  });
+}
+
 function runTests() {
   console.log('\n=== PostToolUse dispatcher tests ===\n');
 
@@ -78,7 +103,7 @@ function runTests() {
 
   if (
     test('hooks.json exposes one sync and one async PostToolUse entry', () => {
-      const entries = JSON.parse(fs.readFileSync(hooksPath, 'utf8')).hooks.PostToolUse;
+      const entries = readHooksConfig(hooksPath).hooks.PostToolUse;
       assert.strictEqual(entries.length, 2, 'PostToolUse should launch at most two commands');
       assert.deepStrictEqual(
         entries.map(entry => entry.id),
@@ -95,6 +120,10 @@ function runTests() {
       assert.ok(
         entries.every(entry => !entry.hooks[0].command.includes('plugin-hook-bootstrap.js')),
         'PostToolUse dispatchers should not spawn a second Node bootstrap process'
+      );
+      assert.ok(
+        entries.every(entry => !entry.hooks[0].command.includes('ECC_POSTTOOLUSE_PASSTHROUGH')),
+        'PostToolUse commands must not opt back into raw stdin passthrough'
       );
       assert.ok(entries[1].hooks[0].timeout >= 30);
     })
@@ -161,8 +190,8 @@ function runTests() {
   else failed++;
 
   if (
-    test('actual hooks.json commands preserve Edit dry-run output and IDs', () => {
-      const entries = JSON.parse(fs.readFileSync(hooksPath, 'utf8')).hooks.PostToolUse;
+    test('actual hooks.json commands keep Edit dry-run silent and preserve IDs', () => {
+      const entries = readHooksConfig(hooksPath).hooks.PostToolUse;
       const raw = JSON.stringify({
         hook_event_name: 'PostToolUse',
         tool_name: 'Edit',
@@ -173,7 +202,7 @@ function runTests() {
 
       for (const result of results) {
         assert.strictEqual(result.status, 0, result.stderr);
-        assert.strictEqual(result.stdout, raw, 'configured command should preserve pass-through output');
+        assert.strictEqual(result.stdout, '', 'configured command should stay silent when no child hook emits output');
       }
       const ids = results.flatMap(result => previewedIds(result.stderr));
       assert.deepStrictEqual(ids, [
@@ -194,7 +223,7 @@ function runTests() {
 
   if (
     test('actual hooks.json commands never echo truncated oversized input', () => {
-      const entries = JSON.parse(fs.readFileSync(hooksPath, 'utf8')).hooks.PostToolUse;
+      const entries = readHooksConfig(hooksPath).hooks.PostToolUse;
       const values = ['x'.repeat(1024 * 1024 + 1024), 'é'.repeat(600000), '\u{1F600}'.repeat(300000)];
 
       for (const value of values) {
@@ -213,6 +242,94 @@ function runTests() {
           assert.ok(result.stderr.includes('stdin exceeded'), `${entry.id} should report truncation`);
         }
       }
+    })
+  )
+    passed++;
+  else failed++;
+
+  if (
+    test('legacy passthrough env cannot restore silent sync or async output', () => {
+      for (const mode of ['sync', 'async']) {
+        const result = runDispatcher(mode, 'Read', {
+          ECC_DRY_RUN: '1',
+          ECC_POSTTOOLUSE_PASSTHROUGH: '1'
+        });
+        assert.strictEqual(result.status, 0, result.stderr);
+        assert.strictEqual(result.stdout, '', `${mode} dispatcher must ignore legacy passthrough opt-in`);
+      }
+    })
+  )
+    passed++;
+  else failed++;
+
+  if (
+    test('configured stdin cap controls PostToolUse input and hook context', () => {
+      const result = runInspectingDispatcher('x'.repeat(256), { ECC_HOOK_INPUT_MAX_BYTES: '128' });
+      assert.strictEqual(result.status, 0, result.stderr);
+      assert.deepStrictEqual(JSON.parse(result.stdout), {
+        raw: null,
+        bytes: 128,
+        truncated: true,
+        maxStdin: 128
+      });
+      assert.match(result.stderr, /stdin exceeded 128 bytes/);
+    })
+  )
+    passed++;
+  else failed++;
+
+  if (
+    test('PostToolUse stdin cap honors UTF-8 byte boundaries', () => {
+      const character = String.fromCodePoint(0xe9);
+      const exact = runInspectingDispatcher(character.repeat(2), { ECC_HOOK_INPUT_MAX_BYTES: '4' });
+      assert.strictEqual(exact.status, 0, exact.stderr);
+      assert.deepStrictEqual(JSON.parse(exact.stdout), {
+        raw: character.repeat(2),
+        bytes: 4,
+        truncated: false,
+        maxStdin: 4
+      });
+
+      const truncated = runInspectingDispatcher(character.repeat(2), { ECC_HOOK_INPUT_MAX_BYTES: '3' });
+      assert.strictEqual(truncated.status, 0, truncated.stderr);
+      assert.deepStrictEqual(JSON.parse(truncated.stdout), {
+        raw: character,
+        bytes: 2,
+        truncated: true,
+        maxStdin: 3
+      });
+    })
+  )
+    passed++;
+  else failed++;
+
+  if (
+    test('invalid PostToolUse stdin caps fall back with a diagnostic', () => {
+      for (const value of ['0', '-1', '1.5', 'not-a-number']) {
+        const result = runInspectingDispatcher('payload', { ECC_HOOK_INPUT_MAX_BYTES: value });
+        assert.strictEqual(result.status, 0, result.stderr);
+        assert.strictEqual(JSON.parse(result.stdout).maxStdin, 1024 * 1024);
+        assert.match(result.stderr, /must be a positive safe integer/);
+      }
+    })
+  )
+    passed++;
+  else failed++;
+
+  if (
+    test('PostToolUse stdin cap cannot exceed the 1 MiB safety maximum', () => {
+      const result = runInspectingDispatcher('x'.repeat(1024 * 1024 + 1), {
+        ECC_HOOK_INPUT_MAX_BYTES: String(2 * 1024 * 1024)
+      });
+      assert.strictEqual(result.status, 0, result.stderr);
+      assert.deepStrictEqual(JSON.parse(result.stdout), {
+        raw: null,
+        bytes: 1024 * 1024,
+        truncated: true,
+        maxStdin: 1024 * 1024
+      });
+      assert.match(result.stderr, /exceeds the 1 MiB safety maximum/);
+      assert.match(result.stderr, /stdin exceeded 1048576 bytes/);
     })
   )
     passed++;
@@ -270,7 +387,7 @@ function runTests() {
 
   if (
     test('public dispatcher IDs disable their complete phase', () => {
-      const entries = JSON.parse(fs.readFileSync(hooksPath, 'utf8')).hooks.PostToolUse;
+      const entries = readHooksConfig(hooksPath).hooks.PostToolUse;
       const raw = JSON.stringify({
         hook_event_name: 'PostToolUse',
         tool_name: 'Edit',
@@ -285,7 +402,7 @@ function runTests() {
         });
         assert.strictEqual(result.status, 0, result.stderr);
         assert.deepStrictEqual(previewedIds(result.stderr), [], `${entry.id} should disable all child hooks`);
-        assert.strictEqual(result.stdout, raw);
+        assert.strictEqual(result.stdout, '');
       }
     })
   )
@@ -370,6 +487,23 @@ function runTests() {
       assert.ok(result.stderr.indexOf('post:test:broken') < result.stderr.indexOf('last warning'));
       assert.strictEqual(result.exitCode, 7, 'explicit child exit codes should be preserved');
       assert.strictEqual(resolveMainStdout(raw, { stdout: '', exitCode: 7 }, { passthrough: true, truncated: false }), '', 'nonzero results should not restore raw input');
+      assert.strictEqual(resolveMainStdout(raw, { stdout: '', exitCode: 0 }, { passthrough: true, truncated: false }), '', 'silent successful results must not restore raw input');
+
+      const explicitFailure = runHooks(
+        raw,
+        [
+          {
+            id: 'post:test:explicit-failure',
+            matcher: '*',
+            profiles: 'standard,strict',
+            run: () => ({ stdout: explicitOutput, stderr: 'failure detail', exitCode: 9 })
+          }
+        ],
+        { toolName: 'Read', env: { ECC_HOOK_PROFILE: 'standard' } }
+      );
+      assert.strictEqual(explicitFailure.stdout, explicitOutput);
+      assert.strictEqual(explicitFailure.exitCode, 9);
+      assert.match(explicitFailure.stderr, /failure detail/);
     })
   )
     passed++;
@@ -379,16 +513,20 @@ function runTests() {
     test('failing hook exit code propagates to the real dispatcher process status', () => {
       const script = [
         `const dispatcher = require(${JSON.stringify(dispatcherPath)});`,
-        'dispatcher.SYNC_HOOKS.length = 0;',
-        "dispatcher.SYNC_HOOKS.push({ id: 'post:test:fail', matcher: '*', profiles: 'standard,strict', run: () => ({ exitCode: 7 }) });",
+        "const hooks = [{ id: 'post:test:fail', matcher: '*', profiles: 'standard,strict', run: () => ({ exitCode: 7 }) }];",
         "process.argv[2] = 'sync';",
-        'dispatcher.cli();'
+        'dispatcher.cli({ hookListOverride: hooks });'
       ].join('');
       const result = spawnSync(process.execPath, ['-e', script], {
         cwd: repoRoot,
         input: JSON.stringify({ hook_event_name: 'PostToolUse', tool_name: 'Read', tool_input: {}, tool_response: {} }),
         encoding: 'utf8',
-        env: { ...process.env, CLAUDE_PLUGIN_ROOT: repoRoot, ECC_POSTTOOLUSE_PASSTHROUGH: '1' },
+        env: {
+          ...process.env,
+          CLAUDE_PLUGIN_ROOT: repoRoot,
+          ECC_POSTTOOLUSE_PASSTHROUGH: '1',
+          ECC_DRY_RUN: '0'
+        },
         timeout: 10000
       });
       assert.strictEqual(result.status, 7, 'OS-level exit status should reflect the failing hook');
@@ -480,7 +618,7 @@ function runTests() {
       assert.strictEqual(result.status, 0, result.stderr);
       assert.strictEqual(result.stdout, '', 'require() alone must not run main() or echo stdin');
 
-      const entries = JSON.parse(fs.readFileSync(hooksPath, 'utf8')).hooks.PostToolUse;
+      const entries = readHooksConfig(hooksPath).hooks.PostToolUse;
       assert.ok(
         entries.every(entry => entry.hooks[0].command.includes('require(s).cli()')),
         'hooks.json must invoke the explicit cli() entrypoint'

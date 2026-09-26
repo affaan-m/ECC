@@ -2,7 +2,7 @@
 
 const assert = require('assert');
 const path = require('path');
-const { spawnSync } = require('child_process');
+const { spawn } = require('child_process');
 
 const {
   collectInteractiveOptions,
@@ -60,25 +60,56 @@ function quoteShellArgument(value) {
   return `'${String(value).replace(/'/g, `'\\''`)}'`;
 }
 
-function runGuidedPtyFixture(answers) {
-  if (process.platform === 'win32') return null;
+function stripPtyControlBytes(value) {
+  return value
+    // eslint-disable-next-line no-control-regex
+    .replace(/\x1b\[[0-9;?]*[ -/]*[@-~]/g, '')
+    .replace(/\r/g, '');
+}
+
+function runGuidedPtyFixture(exchanges) {
+  if (process.platform === 'win32') return Promise.resolve(null);
   const command = [process.execPath, guidedPtyFixture];
   const scriptArgs = process.platform === 'darwin'
     ? ['-q', '-e', '/dev/null', ...command]
     : ['-q', '-e', '-c', command.map(quoteShellArgument).join(' '), '/dev/null'];
-  const pseudoTerminalCommand = ['script', ...scriptArgs]
-    .map(quoteShellArgument)
-    .join(' ');
-  const answerCommands = answers
-    .map(answer => `sleep 0.35; printf '%s\\n' ${quoteShellArgument(answer)}`)
-    .join('; ');
-  return spawnSync('sh', ['-c', `(${answerCommands}; sleep 0.1) | ${pseudoTerminalCommand}`], {
-    cwd: repoRoot,
-    encoding: 'utf8',
-    timeout: 15000,
+  return new Promise((resolve, reject) => {
+    // Answers go through cat so script reads a plain pipe: spawned stdio is
+    // a socketpair, and the macOS script(1) refuses a socket stdin.
+    const feeder = `cat | ${['script', ...scriptArgs].map(quoteShellArgument).join(' ')}`;
+    const child = spawn('sh', ['-c', feeder], { cwd: repoRoot });
+    let stdout = '';
+    let stderr = '';
+    let sent = 0;
+    let settled = false;
+    const finish = callback => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      callback();
+    };
+    const timer = setTimeout(() => {
+      child.kill('SIGKILL');
+      finish(() => reject(new Error('guided PTY fixture timed out')));
+    }, 15000);
+    const feed = () => {
+      // Answer only once the matching prompt is on screen. Fixed sleeps
+      // typed answers ahead of readline; under CI load the first answer
+      // could land before the interface listened, shifting every later
+      // answer onto the wrong question (ubuntu Node 18 npm job).
+      const visible = stripPtyControlBytes(stdout + stderr);
+      while (sent < exchanges.length && visible.includes(exchanges[sent].expect)) {
+        child.stdin.write(`${exchanges[sent].send}\n`);
+        sent += 1;
+      }
+      if (sent === exchanges.length) child.stdin.end();
+    };
+    child.stdout.on('data', data => { stdout += data; feed(); });
+    child.stderr.on('data', data => { stderr += data; feed(); });
+    child.on('error', error => finish(() => reject(error)));
+    child.on('close', (status, signal) => finish(() => resolve({ status, signal, stdout, stderr })));
   });
 }
-
 (async () => {
   console.log('\n=== Guided multi-harness CLI tests ===\n');
 
@@ -175,14 +206,17 @@ function runGuidedPtyFixture(answers) {
     );
   });
 
-  await test('real PTY shows every all-harness question and applies after visible yes', () => {
-    const result = runGuidedPtyFixture(['all', '1', '3', '2', 'y']);
+  await test('real PTY shows every all-harness question and applies after visible yes', async () => {
+    const result = await runGuidedPtyFixture([
+      { expect: 'Choose one or more (for example 1,3 or all):', send: 'all' },
+      { expect: 'Choose [Recommended: user] (one option only):', send: '1' },
+      { expect: 'Choose [Recommended: standard] (one option only):', send: '3' },
+      { expect: 'Choose [Recommended: core] (one option only):', send: '2' },
+      { expect: 'Apply ECC to these harnesses? [y/N]:', send: 'y' },
+    ]);
     if (result === null) return;
     assert.strictEqual(result.status, 0, result.stderr);
-    const visible = `${result.stdout}${result.stderr}`
-      // eslint-disable-next-line no-control-regex
-      .replace(/\x1b\[[0-9;?]*[ -/]*[@-~]/g, '')
-      .replace(/\r/g, '');
+    const visible = stripPtyControlBytes(`${result.stdout}${result.stderr}`);
     const orderedPrompts = [
       'Choose one or more (for example 1,3 or all):',
       'Choose [Recommended: user] (one option only):',

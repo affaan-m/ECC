@@ -1,6 +1,6 @@
 ---
 name: token-card
-description: Render a token-usage stat card from local Claude Code, Codex, and OpenCode session logs and commit it into the repository as a file. Use when someone wants a current usage figure in a README, or asks for a shareable card of their coding-agent activity.
+description: Render a token-usage stat card from local Claude Code, Codex, Gemini CLI, and OpenCode session logs and commit it into the repository as a file. Use when someone wants a current usage figure in a README, or asks for a shareable card of their coding-agent activity.
 metadata:
   origin: community
 ---
@@ -25,7 +25,7 @@ different sources and produce different things:
 | | `/cost-report` | Token Card |
 |---|---|---|
 | Source | `~/.claude/metrics/costs.jsonl`, written by ECC's `stop:cost-tracker` hook | The agents' own session logs |
-| Agents | Claude Code | Claude Code, Codex, OpenCode |
+| Agents | Claude Code | Claude Code, Codex, Gemini CLI, OpenCode |
 | Output | Terminal summary, optional CSV | An SVG file committed to the repo |
 
 ## The tool this runs
@@ -38,13 +38,13 @@ would be executed with access to them before anyone had reviewed it. Pin, and ra
 knowingly:
 
 ```bash
-TOKENCHIT_VERSION=0.7.0
+TOKENCHIT_VERSION=0.10.0
 ```
 
 To check the pinned artifact before running it the first time:
 
 ```bash
-npm view @tokenchit/cli@0.7.0 dist.integrity dist.tarball
+npm view @tokenchit/cli@0.10.0 dist.integrity dist.tarball
 ```
 
 ## Workflow
@@ -57,7 +57,7 @@ npm view @tokenchit/cli@0.7.0 dist.integrity dist.tarball
 2. **Configure, unless this is a dry run.** If `.tokenchit.json` is absent, run:
 
    ```bash
-   npx -y @tokenchit/cli@0.7.0 init
+   npx -y @tokenchit/cli@0.10.0 init
    ```
 
    It detects which agents have logs on this machine and records them. The file is meant to
@@ -69,7 +69,7 @@ npm view @tokenchit/cli@0.7.0 dist.integrity dist.tarball
 3. **Render the card:**
 
    ```bash
-   npx -y @tokenchit/cli@0.7.0 sync [--out PATH] [--theme auto|light|dark] [--dry-run]
+   npx -y @tokenchit/cli@0.10.0 sync [--out PATH] [--theme auto|light|dark] [--dry-run]
    ```
 
    `sync` reads local files and sends nothing: no prompts, no code, no file contents leave

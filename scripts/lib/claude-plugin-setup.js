@@ -570,7 +570,6 @@ function verifyPluginAtScope(options) {
 
 function ensurePluginAtScope(options) {
   const run = options.run || runClaude;
-  const configuredHooks = options.hookConfiguration || hookOptions(options.hooks);
   if (options.installed) {
     run(
       ['plugin', 'update', CURRENT_PLUGIN_ID, '--scope', options.scope],
@@ -582,8 +581,6 @@ function ensurePluginAtScope(options) {
     [
       'plugin', 'install', CURRENT_PLUGIN_ID,
       '--scope', options.scope,
-      '--config', `hooks_enabled=${configuredHooks.hooks_enabled}`,
-      '--config', `hook_profile=${configuredHooks.hook_profile}`,
     ],
     { cwd: options.projectRoot, phase: 'plugin-install' }
   );

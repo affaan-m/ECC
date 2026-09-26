@@ -8,8 +8,49 @@ const path = require('path');
 const vm = require('vm');
 const Ajv = require('ajv');
 
+/**
+ * Resolve a module by its repo-relative path.
+ *
+ * Test harnesses copy this validator to the repo root before running it, so a
+ * plain relative require would break. Walk up from __dirname until the module
+ * is found instead.
+ *
+ * @param {string} repoRelativePath - e.g. 'scripts/lib/hooks-config.js'
+ * @returns {string} absolute path to the module
+ */
+function resolveRepoModule(repoRelativePath) {
+  let dir = __dirname;
+  for (;;) {
+    const candidate = path.join(dir, repoRelativePath);
+    if (fs.existsSync(candidate)) {
+      return candidate;
+    }
+    const parent = path.dirname(dir);
+    if (parent === dir) {
+      throw new Error(`Cannot locate ${repoRelativePath} above ${__dirname}`);
+    }
+    dir = parent;
+  }
+}
+
+const {
+  METADATA_FILENAME,
+  applyHooksMetadata,
+  findMetadataMismatches,
+  metadataPathFor,
+  withRefreshedFingerprints,
+} = require(resolveRepoModule('scripts/lib/hooks-config.js'));
+
 const HOOKS_FILE = path.join(__dirname, '../../hooks/hooks.json');
 const HOOKS_SCHEMA_PATH = path.join(__dirname, '../../schemas/hooks.schema.json');
+const METADATA_SCHEMA_PATH = path.join(__dirname, '../../schemas/hooks-metadata.schema.json');
+// `--update-fingerprints` rewrites the sidecar's fingerprints from the current
+// hooks.json instead of validating. Run it after changing a hook command.
+const UPDATE_FINGERPRINTS = process.argv.includes('--update-fingerprints');
+// Keys Claude Code's own hooks schema rejects. Keeping them out of hooks.json is
+// what stops "unknown keys ... ignored" warnings when the plugin loads.
+const HARNESS_UNKNOWN_ROOT_KEYS = ['$schema'];
+const HARNESS_UNKNOWN_MATCHER_KEYS = ['id', 'description'];
 const VALID_EVENTS = [
   'SessionStart',
   'UserPromptSubmit',
@@ -124,6 +165,78 @@ function validateHookEntry(hook, label) {
   return hasErrors;
 }
 
+/**
+ * Reject keys the Claude Code harness does not understand.
+ *
+ * Claude Code validates a plugin's hooks.json against its own schema and prints
+ * every unrecognised key at load time. Once a hooks.metadata.json sidecar is
+ * present it owns the stable ids and descriptions, so hooks.json must not
+ * carry them as well.
+ *
+ * @param {object} data - Parsed hooks.json.
+ * @returns {boolean} true if errors were found
+ */
+function validateHarnessCompatibility(data) {
+  if (!data || typeof data !== 'object' || Array.isArray(data)) {
+    return false;
+  }
+
+  let hasErrors = false;
+  for (const key of HARNESS_UNKNOWN_ROOT_KEYS) {
+    if (key in data) {
+      console.error(
+        `ERROR: hooks.json must not define "${key}" - Claude Code reports it as an unknown key`
+      );
+      hasErrors = true;
+    }
+  }
+
+  const events = data.hooks && typeof data.hooks === 'object' && !Array.isArray(data.hooks)
+    ? data.hooks
+    : {};
+  for (const [eventType, matchers] of Object.entries(events)) {
+    if (!Array.isArray(matchers)) continue;
+    matchers.forEach((matcher, index) => {
+      if (!matcher || typeof matcher !== 'object') return;
+      for (const key of HARNESS_UNKNOWN_MATCHER_KEYS) {
+        if (key in matcher) {
+          console.error(
+            `ERROR: hooks.json ${eventType}[${index}] must not define "${key}" - `
+            + `move it to ${METADATA_FILENAME}`
+          );
+          hasErrors = true;
+        }
+      }
+    });
+  }
+
+  return hasErrors;
+}
+
+/**
+ * Validate a parsed document against a JSON schema file, if the schema exists.
+ *
+ * @param {object} document - Parsed JSON to validate.
+ * @param {string} schemaPath - Path to the schema; skipped when absent.
+ * @param {string} label - Name used in error output.
+ * @returns {boolean} true if errors were found
+ */
+function validateAgainstSchema(document, schemaPath, label) {
+  if (!fs.existsSync(schemaPath)) {
+    return false;
+  }
+  const schema = JSON.parse(fs.readFileSync(schemaPath, 'utf-8'));
+  const ajv = new Ajv({ allErrors: true });
+  const validate = ajv.compile(schema);
+  if (validate(document)) {
+    return false;
+  }
+  for (const err of validate.errors) {
+    console.error(`ERROR: ${label} schema: ${err.instancePath || '/'} ${err.message}`);
+  }
+  return true;
+}
+
 function validateHooks() {
   if (!fs.existsSync(HOOKS_FILE)) {
     console.log('No hooks.json found, skipping validation');
@@ -138,18 +251,51 @@ function validateHooks() {
     process.exit(1);
   }
 
-  // Validate against JSON schema
-  if (fs.existsSync(HOOKS_SCHEMA_PATH)) {
-    const schema = JSON.parse(fs.readFileSync(HOOKS_SCHEMA_PATH, 'utf-8'));
-    const ajv = new Ajv({ allErrors: true });
-    const validate = ajv.compile(schema);
-    const valid = validate(data);
-    if (!valid) {
-      for (const err of validate.errors) {
-        console.error(`ERROR: hooks.json schema: ${err.instancePath || '/'} ${err.message}`);
+  // Without a sidecar, hooks.json keeps its legacy inline ids. With one, the
+  // sidecar is the sole owner of id/description and hooks.json must stay
+  // within Claude Code's schema.
+  let metadata = null;
+  const metadataPath = metadataPathFor(HOOKS_FILE);
+  if (fs.existsSync(metadataPath)) {
+    try {
+      metadata = JSON.parse(fs.readFileSync(metadataPath, 'utf-8'));
+    } catch (e) {
+      console.error(`ERROR: Invalid JSON in ${METADATA_FILENAME}: ${e.message}`);
+      process.exit(1);
+    }
+
+    if (validateHarnessCompatibility(data)) {
+      process.exit(1);
+    }
+
+    if (UPDATE_FINGERPRINTS) {
+      try {
+        metadata = withRefreshedFingerprints(data, metadata);
+      } catch (error) {
+        console.error(`ERROR: ${error.message}`);
+        process.exit(1);
+      }
+    }
+
+    if (validateAgainstSchema(metadata, METADATA_SCHEMA_PATH, METADATA_FILENAME)) {
+      process.exit(1);
+    }
+
+    const mismatches = findMetadataMismatches(data, metadata);
+    if (mismatches.length > 0) {
+      for (const mismatch of mismatches) {
+        console.error(`ERROR: ${mismatch}`);
       }
       process.exit(1);
     }
+
+    // Validate the merged view so the id/description rules below still apply.
+    data = applyHooksMetadata(data, metadata);
+  }
+
+  // Validate against JSON schema
+  if (validateAgainstSchema(data, HOOKS_SCHEMA_PATH, 'hooks.json')) {
+    process.exit(1);
   }
 
   // Support both object format { hooks: {...} } and array format
@@ -252,6 +398,11 @@ function validateHooks() {
 
   if (hasErrors) {
     process.exit(1);
+  }
+
+  if (UPDATE_FINGERPRINTS && metadata) {
+    fs.writeFileSync(metadataPath, `${JSON.stringify(metadata, null, 2)}\n`);
+    console.log(`Updated fingerprints in ${METADATA_FILENAME}`);
   }
 
   console.log(`Validated ${totalMatchers} hook matchers`);

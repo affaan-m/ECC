@@ -89,6 +89,26 @@ Triggers on: `rm -rf`, `git reset --hard`, `git push --force`, `drop table`, etc
 2. What this specific command verifies or produces
 ```
 
+## Parallel Batches and Partial Application
+
+The first-touch gate evaluates each tool call independently. When several
+edits to a file that has not been touched yet are sent in one parallel
+batch, the first call is denied and the denial marks the file as checked,
+so the sibling edits in that batch are applied. Nothing is rolled back:
+the file can end up holding the sibling edits without the denied one.
+
+The denial message names the file and warns that batch siblings may
+already have been applied. Treat it literally:
+
+- Send dependent edits to a not-yet-touched file sequentially, not in a
+  parallel batch. A definition and its first use, or an import and its
+  call site, must not ride in the same batch.
+- After a first-touch denial, present the facts, retry the denied edit,
+  and re-read the file before building on anything else from the batch.
+
+A batch-wide lock is not possible: hooks see tool calls one at a time, so
+the gate cannot know which calls arrived together.
+
 ## Quick Start
 
 ### Option A: Use the ECC hook (zero install)

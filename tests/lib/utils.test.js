@@ -7,6 +7,7 @@
 const assert = require('assert');
 const path = require('path');
 const fs = require('fs');
+const os = require('os');
 const { spawnSync } = require('child_process');
 
 // Import the module
@@ -241,6 +242,69 @@ function runTests() {
   if (test('getProjectName returns non-empty string', () => {
     const name = utils.getProjectName();
     assert.ok(name && name.length > 0);
+  })) passed++; else failed++;
+
+  // Repository identity tests (#3160 Windows path forms)
+  console.log('\nRepository Identity:');
+
+  if (test('getRepoIdentity resolves a mocked relative git output against dir', () => {
+    const fakeGit = () => ({ success: true, output: '.git' });
+    const id = utils.getRepoIdentity('/definitely/missing/repo', fakeGit);
+    assert.strictEqual(id, path.resolve('/definitely/missing/repo', '.git'));
+  })) passed++; else failed++;
+
+  if (test('getRepoIdentity returns null when git fails', () => {
+    const fakeGit = () => ({ success: false, output: 'not a git repository' });
+    assert.strictEqual(utils.getRepoIdentity('/definitely/missing/repo', fakeGit), null);
+  })) passed++; else failed++;
+
+  if (test('normalizeRepoPath treats Windows-shaped paths equal across case and separators', () => {
+    // Windows-shaped git output: 8.3 short name, backslashes, mixed case.
+    // Runs on any OS; the platform argument selects the case-insensitive rule.
+    const a = 'C:\\Users\\RUNNER~1\\AppData\\Local\\Temp\\repo\\.git';
+    const b = 'c:/users/runner~1/appdata/local/temp/repo/.git';
+    assert.strictEqual(
+      utils.normalizeRepoPath(a, 'win32'),
+      utils.normalizeRepoPath(b, 'win32')
+    );
+  })) passed++; else failed++;
+
+  if (test('normalizeRepoPath strips trailing slashes and keeps case off win32', () => {
+    const a = utils.normalizeRepoPath('X:/Repo/Main/.git/', 'linux');
+    const b = utils.normalizeRepoPath('X:/Repo/Main/.git', 'linux');
+    assert.strictEqual(a, b);
+    assert.ok(!/\.git\/$/.test(a));
+    assert.ok(a.includes('Repo'), 'linux normalization must not lowercase');
+  })) passed++; else failed++;
+
+  if (test('sameRepoIdentity matches a hard link by filesystem identity', () => {
+    // dev+ino fallback: different path strings, same file. This is what
+    // rescues 8.3 short-name versus long-name mismatches on Windows.
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-repoid-'));
+    try {
+      const orig = path.join(dir, 'a');
+      const link = path.join(dir, 'b');
+      fs.writeFileSync(orig, 'x');
+      fs.linkSync(orig, link);
+      assert.ok(utils.sameRepoIdentity(orig, link));
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  })) passed++; else failed++;
+
+  if (test('sameRepoIdentity rejects different files and missing paths', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-repoid-'));
+    try {
+      const a = path.join(dir, 'a');
+      const b = path.join(dir, 'b');
+      fs.writeFileSync(a, 'x');
+      fs.writeFileSync(b, 'y');
+      assert.ok(!utils.sameRepoIdentity(a, b));
+      assert.ok(!utils.sameRepoIdentity(a, path.join(dir, 'missing')));
+      assert.ok(!utils.sameRepoIdentity('', b));
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
   })) passed++; else failed++;
 
   // sanitizeSessionId tests

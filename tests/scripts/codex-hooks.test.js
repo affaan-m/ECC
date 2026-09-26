@@ -169,6 +169,7 @@ function runHermeticPrePush({
   includeCorepack = true,
   includePnpm = false,
   audit = false,
+  runChecks = true,
 } = {}) {
   const tempDir = createTempDir('codex-pre-push-');
   const binDir = path.join(tempDir, 'bin');
@@ -204,6 +205,7 @@ ${includePnpm ? functionStub('pnpm', false) : ''}
       PATH: toBashPath(binDir),
       BASH_ENV: toBashPath(bashEnv),
       ECC_PREPUSH_AUDIT: audit ? '1' : '0',
+      ECC_PREPUSH_RUN_CHECKS: runChecks ? '1' : '0',
       ECC_SKIP_GIT_HOOKS: '0',
       ECC_SKIP_PREPUSH: '0',
       MSYS_NO_PATHCONV: '1',
@@ -221,7 +223,7 @@ ${includePnpm ? functionStub('pnpm', false) : ''}
 
 if (
   test('pre-push uses Corepack pinned pnpm and runs every required verification script', () => {
-    const { result, calls } = runHermeticPrePush();
+    const { result, calls } = runHermeticPrePush({ runChecks: true });
     assert.strictEqual(result.status, 0, JSON.stringify(result, null, 2));
     assert.deepStrictEqual(calls, [
       'pnpm run lint',
@@ -264,7 +266,7 @@ else failed++;
 
 if (
   test('pre-push stops immediately when a required verification script fails', () => {
-    const { result, calls } = runHermeticPrePush({ failScript: 'typecheck' });
+    const { result, calls } = runHermeticPrePush({ runChecks: true, failScript: 'typecheck' });
     assert.notStrictEqual(result.status, 0, `${result.stdout}\n${result.stderr}`);
     assert.deepStrictEqual(calls, ['pnpm run lint', 'pnpm run typecheck']);
     assert.match(result.stderr, /typecheck failed/);
@@ -274,8 +276,19 @@ if (
 else failed++;
 
 if (
+  test('pre-push skips verification scripts by default when opt-in is not set', () => {
+    const { result, calls } = runHermeticPrePush({ runChecks: false });
+    assert.strictEqual(result.status, 0, `${result.stdout}\n${result.stderr}`);
+    assert.deepStrictEqual(calls, []);
+    assert.match(result.stderr, /ECC_PREPUSH_RUN_CHECKS!=1/);
+  })
+)
+  passed++;
+else failed++;
+
+if (
   test('pre-push runs the production audit through Corepack pnpm', () => {
-    const { result, calls } = runHermeticPrePush({ audit: true });
+    const { result, calls } = runHermeticPrePush({ runChecks: true, audit: true });
     assert.strictEqual(result.status, 0, `${result.stdout}\n${result.stderr}`);
     assert.deepStrictEqual(calls, [
       'pnpm run lint',
@@ -305,6 +318,246 @@ if (
 )
   passed++;
 else failed++;
+
+function writeExecutable(filePath, body) {
+  fs.mkdirSync(path.dirname(filePath), { recursive: true });
+  fs.writeFileSync(filePath, body);
+  fs.chmodSync(filePath, 0o755);
+}
+
+// The Python arm of the hook, exercised without a real interpreter: the stubs
+// record the argv they were handed, which is what the virtualenv-path regression
+// is actually about.
+function runHermeticPythonPrePush({
+  venvName = null,
+  venvExit = 0,
+  trackVenv = false,
+  trackedVenvBasename = 'python',
+  trackedSymlinkVenv = false,
+  pytestCmd = null,
+  overrideStub = false,
+  pathPytestVersionLine = null,
+} = {}) {
+  const tempDir = createTempDir('codex-pre-push-py-');
+  const projectDir = path.join(tempDir, 'project');
+  const callsPath = path.join(tempDir, 'calls.txt');
+  fs.mkdirSync(projectDir);
+  fs.writeFileSync(path.join(projectDir, 'pyproject.toml'), '[project]\nname = "demo"\n');
+  const initialized = spawnSync('git', ['init', '--quiet'], { cwd: projectDir });
+  assert.strictEqual(initialized.status, 0, initialized.stderr?.toString());
+
+  // Every stub records the argv it was handed. That record is the assertion: it is
+  // how a test tells a preserved path from a split one, and a command that was run
+  // once from one the hook probed first.
+  const record = `printf '%s\\n' "$0|$*" >> "${toBashPath(callsPath)}"`;
+
+  // A tracked venv has to live inside the repository to be trackable at all, and is
+  // found by directory-name discovery rather than by VIRTUAL_ENV.
+  const venvDir = venvName === null ? null : path.join(trackVenv ? projectDir : tempDir, venvName);
+  const venvPython = venvDir === null
+    ? null
+    : path.join(venvDir, 'bin', trackVenv ? trackedVenvBasename : 'python');
+  if (venvPython !== null) {
+    writeExecutable(venvPython, `#!/bin/sh\n${record}\ncase " $* " in *" -c "*) exit 0 ;; esac\nexit ${venvExit}\n`);
+    if (trackVenv) {
+      // Staged, not committed: `git ls-files` reads the index, so this is enough to
+      // make the file repository-controlled without needing a committer identity.
+      const added = spawnSync('git', ['add', '-f', '--', venvPython], { cwd: projectDir });
+      assert.strictEqual(added.status, 0, added.stderr?.toString());
+    }
+  }
+
+  // The shape that defeats a naive `git ls-files -- .venv/bin/python` check: the
+  // repository commits `.venv` as a symlink to its own root plus a tracked
+  // `bin/python`, so git is asked about a path it has never indexed.
+  if (trackedSymlinkVenv) {
+    writeExecutable(path.join(projectDir, 'bin', 'python'), `#!/bin/sh\n${record}\nexit 0\n`);
+    fs.symlinkSync('.', path.join(projectDir, '.venv'));
+    const added = spawnSync('git', ['add', '-f', '--', 'bin/python', '.venv'], { cwd: projectDir });
+    assert.strictEqual(added.status, 0, added.stderr?.toString());
+  }
+
+  // Deliberately does NOT special-case --version: an operator's wrapper would not
+  // either, and the recorded calls are what prove the hook never probed it.
+  const overrideStubPath = overrideStub ? path.join(tempDir, 'bin', 'wrapper') : null;
+  if (overrideStubPath !== null) {
+    writeExecutable(overrideStubPath, `#!/bin/sh\n${record}\nexit 0\n`);
+  }
+
+  const pathBin = pathPytestVersionLine === null ? null : path.join(tempDir, 'pathbin');
+  if (pathBin !== null) {
+    writeExecutable(
+      path.join(pathBin, 'pytest'),
+      `#!/bin/sh\nif [ "$1" = "--version" ]; then printf '%s\\n' '${pathPytestVersionLine}'; exit 0; fi\n${record}\nexit 0\n`,
+    );
+  }
+
+  const override = overrideStubPath === null ? pytestCmd : toBashPath(overrideStubPath);
+  // Built from nothing rather than from process.env. The hook reads VIRTUAL_ENV and
+  // ECC_PYTEST_CMD from the ambient environment, so a developer running this suite
+  // inside an activated virtualenv, or with ECC_PYTEST_CMD exported, would resolve a
+  // pytest the fixture never created. Omitted, not blanked: now that a variable set
+  // to nothing is itself an override, blanking it here would make every one of these
+  // tests take that branch.
+  const env = {
+    PATH: pathBin === null
+      ? process.env.PATH
+      : `${toBashPath(pathBin)}${path.delimiter}${process.env.PATH}`,
+    HOME: process.env.HOME ?? '',
+    ECC_SKIP_GIT_HOOKS: '0',
+    ECC_SKIP_PREPUSH: '0',
+    MSYS_NO_PATHCONV: '1',
+    ...(venvDir === null || trackVenv ? {} : { VIRTUAL_ENV: toBashPath(venvDir) }),
+    ...(override === null ? {} : { ECC_PYTEST_CMD: override }),
+  };
+
+  const result = runBash(prePushHook, {
+    env,
+    cwd: projectDir,
+    preservePath: false,
+    input: Buffer.from('refs/heads/main 1111111111111111111111111111111111111111 refs/heads/main 0000000000000000000000000000000000000000\n'),
+  });
+  const calls = fs.existsSync(callsPath)
+    ? fs.readFileSync(callsPath, 'utf8').trim().split(/\r?\n/).filter(Boolean)
+    : [];
+  cleanup(tempDir);
+  return { result, calls, venvPython, overrideStubPath };
+}
+
+if (
+  test('pre-push runs pytest from a virtualenv whose path contains spaces', () => {
+    const { result, calls, venvPython } = runHermeticPythonPrePush({ venvName: 'my venv' });
+    const python = toBashPath(venvPython);
+    assert.strictEqual(result.status, 0, `${result.stdout}\n${result.stderr}`);
+    assert.deepStrictEqual(calls, [
+      `${python}|-I -c import pytest`,
+      `${python}|-m pytest -q`,
+    ], JSON.stringify({ calls, python, stdout: result.stdout, stderr: result.stderr }, null, 2));
+  })
+)
+  passed++;
+else failed++;
+
+if (
+  test('pre-push refuses to run a virtualenv python that the repository tracks', () => {
+    const { result, calls } = runHermeticPythonPrePush({ venvName: '.venv', trackVenv: true });
+    assert.strictEqual(result.status, 0, `${result.stdout}\n${result.stderr}`);
+    assert.deepStrictEqual(calls, [], JSON.stringify(calls));
+    assert.match(result.stdout, /the repository ships it/);
+  })
+)
+  passed++;
+else failed++;
+
+// A case-folded spelling, because macOS resolves `$venv/bin/python` to a committed
+// `Python` while git matches index pathspecs case-sensitively. Skipped where the
+// filesystem is case-sensitive and the two names cannot collide.
+if (fs.existsSync(__filename.toUpperCase()) || fs.existsSync(__filename.toLowerCase())) {
+  if (
+    test('pre-push refuses a tracked interpreter committed under a folded case', () => {
+      const { result, calls } = runHermeticPythonPrePush({
+        venvName: '.venv',
+        trackVenv: true,
+        trackedVenvBasename: 'Python',
+      });
+      assert.strictEqual(result.status, 0, `${result.stdout}\n${result.stderr}`);
+      assert.deepStrictEqual(calls, [], JSON.stringify(calls));
+      assert.match(result.stdout, /the repository ships it/);
+    })
+  )
+    passed++;
+  else failed++;
+}
+
+if (
+  test('pre-push refuses a tracked interpreter reached through a committed symlink', () => {
+    const { result, calls } = runHermeticPythonPrePush({ trackedSymlinkVenv: true });
+    assert.strictEqual(result.status, 0, `${result.stdout}\n${result.stderr}`);
+    assert.deepStrictEqual(calls, [], JSON.stringify(calls));
+    assert.match(result.stdout, /the repository ships it/);
+  })
+)
+  passed++;
+else failed++;
+
+if (
+  test('pre-push blocks the push when the resolved pytest fails', () => {
+    const { result } = runHermeticPythonPrePush({ venvName: 'venv-red', venvExit: 1 });
+    assert.notStrictEqual(result.status, 0, `${result.stdout}\n${result.stderr}`);
+    assert.match(result.stderr, /pytest failed \(exit 1\)/);
+    assert.doesNotMatch(result.stdout, /Verification checks passed/);
+  })
+)
+  passed++;
+else failed++;
+
+if (
+  test('pre-push does not block when pytest collected no tests (exit 5)', () => {
+    const { result } = runHermeticPythonPrePush({ venvName: 'venv-empty', venvExit: 5 });
+    assert.strictEqual(result.status, 0, `${result.stdout}\n${result.stderr}`);
+    assert.match(result.stdout, /collected no tests \(exit 5\)/);
+    assert.match(result.stdout, /rootdir, testpaths, and conftest\.py/);
+  })
+)
+  passed++;
+else failed++;
+
+if (
+  test('pre-push runs an ECC_PYTEST_CMD override exactly once, without probing it', () => {
+    const { result, calls, overrideStubPath } = runHermeticPythonPrePush({ overrideStub: true });
+    assert.strictEqual(result.status, 0, `${result.stdout}\n${result.stderr}`);
+    assert.deepStrictEqual(calls, [`${toBashPath(overrideStubPath)}|-q`], JSON.stringify(calls));
+    // The override is not verified to be pytest, so it must at least be loud.
+    assert.match(result.stdout, /via ECC_PYTEST_CMD/);
+    assert.match(result.stdout, /does\n?.*not check that it is pytest/s);
+  })
+)
+  passed++;
+else failed++;
+
+// Both blank forms, because they used to disagree: an unquoted empty value fell
+// through to discovery while whitespace failed the push. A venv is present so a
+// fall-through would be visible as a pass rather than as an absence.
+for (const [label, blank] of [['empty', ''], ['whitespace', '   ']]) {
+  if (
+    test(`pre-push fails closed when ECC_PYTEST_CMD is set to ${label}`, () => {
+      const { result, calls } = runHermeticPythonPrePush({
+        venvName: 'venv-blank',
+        pytestCmd: blank,
+      });
+      assert.notStrictEqual(result.status, 0, `${result.stdout}\n${result.stderr}`);
+      assert.match(result.stderr, /ECC_PYTEST_CMD is set but names no command/);
+      assert.deepStrictEqual(calls, [], JSON.stringify(calls));
+    })
+  )
+    passed++;
+  else failed++;
+}
+
+if (
+  test('pre-push rejects a PATH pytest that does not identify itself as pytest', () => {
+    const { result, calls } = runHermeticPythonPrePush({
+      pathPytestVersionLine: 'true (GNU coreutils) 9.0',
+    });
+    assert.strictEqual(result.status, 0, `${result.stdout}\n${result.stderr}`);
+    assert.match(result.stdout, /no pytest found/);
+    assert.deepStrictEqual(calls, []);
+  })
+)
+  passed++;
+else failed++;
+
+if (
+  test('pre-push accepts a PATH pytest that reports a pytest version', () => {
+    const { result, calls } = runHermeticPythonPrePush({ pathPytestVersionLine: 'pytest 8.0.0' });
+    assert.strictEqual(result.status, 0, `${result.stdout}\n${result.stderr}`);
+    assert.strictEqual(calls.length, 1, JSON.stringify(calls));
+    assert.match(calls[0], /\|-q$/);
+  })
+)
+  passed++;
+else failed++;
+
 
 if (
   test('check-plugin-cache fails when the installed cache is missing manifest-referenced files', () => {

@@ -9,6 +9,8 @@ const { loadInstallManifests } = require('./install-manifests');
 const { readInstallState, validateInstallState } = require('./install-state');
 const { assertWithinTrustedRoot } = require('./path-safety');
 const { createInstallPlanFromRequest } = require('./install/runtime');
+const { assertNoNewUserOwnedFile, prepareUserOwnedFileGuard } = require('./install/ownership-guard');
+const { isCodexUserConfig } = require('./install/codex-user-config');
 const { getRecordedHookConsent } = require('./install/hook-consent');
 const {
   prepareClaudeSkillMigration,
@@ -36,6 +38,7 @@ const { adaptAntigravityAgent } = require('./install/antigravity-agent');
 const { buildInstallIndex, rewriteRelativeLinks } = require('./install/link-rewrite');
 const { getInstallTargetAdapter, listInstallTargetAdapters } = require('./install-targets/registry');
 const { resolveInvocationEnvironment } = require('./invocation-environment');
+const { mergeHooksMetadata, metadataPathFor } = require('./hooks-config');
 const OPENCODE_BUILD_ARTIFACT = path.join('.opencode', 'dist');
 const OPENCODE_BUILD_SCRIPT = path.join('scripts', 'build-opencode.js');
 const OPENCODE_PLUGIN_NOT_BUILT_CODE = 'opencode-plugin-not-built';
@@ -535,6 +538,25 @@ function readJsonNoFollow(filePath) {
   return JSON.parse(readFileNoFollow(filePath, 'utf8'));
 }
 
+/**
+ * Read hooks.json and merge in hooks/hooks.metadata.json without following
+ * symlinks. The sidecar holds the stable matcher ids that hooks.json cannot
+ * carry, because Claude Code reports unknown keys when the plugin loads. A
+ * sidecar that does not line up with hooks.json is rejected before repair can
+ * reconcile matchers under the wrong ids.
+ *
+ * @param {string} hooksPath - Path to the source hooks.json.
+ * @returns {object} the hooks configuration with ids and descriptions restored.
+ */
+function readHooksConfigNoFollow(hooksPath) {
+  const hooksConfig = readJsonNoFollow(hooksPath);
+  const metadataPath = metadataPathFor(hooksPath);
+  if (!fs.existsSync(metadataPath)) {
+    return hooksConfig;
+  }
+  return mergeHooksMetadata(hooksConfig, readJsonNoFollow(metadataPath), hooksPath);
+}
+
 function assertClaudeSettingsDestination(operation, trustedRoot, target = null) {
   if (target && target !== 'claude' && target !== 'claude-project') {
     throw new Error('Refusing to manage Claude hooks for a non-Claude target.');
@@ -720,7 +742,7 @@ function hydrateRecordedOperations(repoRoot, operations, trustedRoot) {
         sourcePath,
         previousManagedHooks: operation.managedHooks,
         managedHooks: materializeManagedHooks(
-          readJsonNoFollow(sourcePath),
+          readHooksConfigNoFollow(sourcePath),
           trustedRoot
         ),
       };
@@ -1851,13 +1873,26 @@ function assertValidInstallStateForWrite(state, label) {
   throw new Error(`Invalid install-state (${label}): ${details}`);
 }
 
-function writeRefreshedInstallState(record, statePreview) {
+function writeRefreshedInstallState(record, statePreview, writtenPaths = []) {
   const trustedStatePreview = buildAdapterDerivedStatePreview(statePreview, record);
   const stateWithCurrentDigests = {
     ...trustedStatePreview,
     operations: (trustedStatePreview.operations || []).map(operation => {
       if (!operation.destinationPath) {
         return { ...operation };
+      }
+      // Refreshing a ledger is not a file write. Keep the last installed digest
+      // for untouched shared configs so a concurrent user edit is never claimed.
+      if (isCodexUserConfig(record, operation)
+        && !writtenPaths.some(writtenPath => path.relative(writtenPath, operation.destinationPath) === '')) {
+        const previousOperation = (record.state.operations || []).find(previous => (
+          previous.destinationPath
+          && path.relative(previous.destinationPath, operation.destinationPath) === ''
+        ));
+        const { contentSha256: _plannedDigest, ...operationWithoutDigest } = operation;
+        return previousOperation && previousOperation.contentSha256
+          ? { ...operationWithoutDigest, contentSha256: previousOperation.contentSha256 }
+          : operationWithoutDigest;
       }
       try {
         const contentSha256 = crypto.createHash('sha256')
@@ -1888,7 +1923,10 @@ function prepareRepairMigration(plan, record) {
     installStatePath: record.installStatePath,
     statePreview: buildAdapterDerivedStatePreview(plan.statePreview, record),
   };
-  const migration = prepareClaudeSkillMigration(trustedPlan);
+  const skillMigration = prepareClaudeSkillMigration(trustedPlan);
+  const migration = record.adapter.id === 'codex-home'
+    ? prepareUserOwnedFileGuard(trustedPlan, skillMigration)
+    : skillMigration;
   return {
     migration,
     plan: {
@@ -2137,6 +2175,9 @@ function repairInstalledStates(options = {}) {
       }
 
       for (const operation of repairOperations) {
+        if (record.adapter.id === 'codex-home') {
+          assertNoNewUserOwnedFile(migration, operation, desiredPlan);
+        }
         const repairedPath = executeRepairOperation(
           context.repoRoot,
           operation,
@@ -2172,7 +2213,7 @@ function repairInstalledStates(options = {}) {
             installedAt: record.state.installedAt,
             source: { ...record.state.source },
           };
-      writeRefreshedInstallState(record, statePreviewToWrite);
+      writeRefreshedInstallState(record, statePreviewToWrite, repairedPaths);
 
       return {
         adapter: record.adapter,

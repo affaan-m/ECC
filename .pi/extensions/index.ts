@@ -141,6 +141,10 @@ const DISABLED_VALUES = new Set(["0", "false", "off", "none", "disabled"])
 /**
  * Optional Pi companion packages. ECC works without every one of these; they
  * are reported by `/ecc-doctor` so users can see which extras are available.
+ *
+ * These are capability names, not exact install specs. See
+ * `findInstalledCompanion` for how an entry is matched against what Pi has
+ * actually installed.
  */
 const COMPANION_PACKAGES = [
   "pi-subagents",
@@ -475,6 +479,41 @@ function normalizePiPackageName(entry: unknown): string | undefined {
   return versionAt > 0 ? spec.slice(0, versionAt) : spec
 }
 
+/**
+ * The installed package satisfying a companion entry, or undefined if none is.
+ *
+ * An exact name match is the ordinary case. An UNSCOPED companion entry is
+ * also satisfied by a scoped package with the same bare name --
+ * `@tintinweb/pi-subagents` satisfies `pi-subagents`. The subagents capability
+ * is published to npm by more than one maintainer under that same bare name,
+ * and a user running a scoped fork has the capability installed by any
+ * meaning of the word; reporting "not installed" at them while its tools are
+ * live in their session is a false negative, and the suggested
+ * `pi install npm:pi-subagents` would push them into installing a second
+ * extension that registers the same tool names.
+ *
+ * A SCOPED companion entry is matched exactly, because there the scope is
+ * part of the identity the entry names, not incidental packaging.
+ */
+function findInstalledCompanion(companion: string, installed: Set<string>): string | undefined {
+  if (installed.has(companion)) {
+    return companion
+  }
+
+  if (companion.startsWith("@")) {
+    return undefined
+  }
+
+  const scopedSuffix = `/${companion}`
+  for (const name of installed) {
+    if (name.startsWith("@") && name.endsWith(scopedSuffix)) {
+      return name
+    }
+  }
+
+  return undefined
+}
+
 function countDirectories(dir: string): number {
   try {
     return fs.readdirSync(dir, { withFileTypes: true }).filter(entry => entry.isDirectory()).length
@@ -547,10 +586,12 @@ function buildDoctorReport(ctx: ExtensionContext): string {
 
   const installed = listInstalledPiPackages(ctx.cwd)
   for (const name of COMPANION_PACKAGES) {
-    const present = installed.has(name)
-    lines.push(`  ${present ? "installed    " : "not installed"}  ${name}`)
-    if (!present) {
+    const match = findInstalledCompanion(name, installed)
+    lines.push(`  ${match ? "installed    " : "not installed"}  ${name}`)
+    if (!match) {
       lines.push(`      install with: pi install npm:${name}`)
+    } else if (match !== name) {
+      lines.push(`      satisfied by: ${match}`)
     }
   }
 

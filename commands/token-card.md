@@ -21,7 +21,7 @@ slash-command harnesses can reach it.
 ## What it does
 
 Renders an SVG card of this machine's AI coding agent usage — tokens, equivalent cost,
-streak, per-agent split — from local Claude Code, Codex and OpenCode session logs, and writes
+streak, per-agent split — from local Claude Code, Codex, Gemini CLI and OpenCode session logs, and writes
 it into the working tree as a file the README can reference.
 
 Follow the skill for the full workflow, including the confirmation required before the first
