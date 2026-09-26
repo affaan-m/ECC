@@ -1,6 +1,6 @@
 ---
 description: Plan and execute a full marketing campaign. Accepts a product brief and returns positioning, landing page copy, email sequence, social posts, ad variants, video scripts, and a content calendar. Can also review existing copy for conversion quality.
-allowed_tools: ["Read", "Grep", "Glob", "WebSearch", "WebFetch", "Write"]
+allowed-tools: ["Read", "Grep", "Glob", "WebSearch", "WebFetch", "Write"]
 ---
 
 # /marketing-campaign

@@ -3,8 +3,10 @@
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
+const { resolveOpencodeConfigRoot } = require('../../opencode-paths');
+const { resolveInvocationEnvironment } = require('../../invocation-environment');
 
-// OpenCode stores MCP servers under "mcp" in ~/.config/opencode/opencode.json.
+// OpenCode stores MCP servers under "mcp" in its resolved configuration root.
 // Shape differs from Claude/Codex:
 //   { type: "local"|"remote", command: ["npx","-y","pkg"], environment: {},
 //     enabled: bool, url: "https://..." }
@@ -38,11 +40,15 @@ function mapOpencodeServer(name, raw, configPath) {
 
 function readOpencodeMcp(options = {}) {
   const homeDir = options.homeDir || os.homedir();
+  const configRoot = resolveOpencodeConfigRoot({
+    homeDir,
+    env: resolveInvocationEnvironment(options),
+  });
   const candidatePaths = options.configPath
     ? [options.configPath]
     : [
-      path.join(homeDir, '.config', 'opencode', 'opencode.json'),
-      path.join(homeDir, '.config', 'opencode', 'config.json'),
+      path.join(configRoot, 'opencode.json'),
+      path.join(configRoot, 'config.json'),
       path.join(homeDir, '.opencode.json')
     ];
 

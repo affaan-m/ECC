@@ -39,6 +39,10 @@ const COMMANDS = {
     script: 'ito.js',
     description: 'Invoke the separately installed canonical Itô compute CLI',
   },
+  nasiko: {
+    script: 'nasiko.js',
+    description: 'Install or inspect the optional pinned Nasiko CLI lifecycle bridge',
+  },
   memory: {
     script: 'memory.js',
     description: 'Share durable context across Claude, Codex, Hermes, and other harnesses',
@@ -110,6 +114,7 @@ const PRIMARY_COMMANDS = [
   'consult',
   'control-pane',
   'ito',
+  'nasiko',
   'memory',
   'list-installed',
   'doctor',
@@ -168,6 +173,9 @@ Examples:
   ecc ito auth
   ecc ito find --gpu h200 --count 8 --nodes 1 --gpus-per-node 8 --days 30 --storage-tb 1 --start-window 2099-08-15 --max-rate 3.00 --form-factor bare_metal --contract-type reservation --fabric infiniband --region us-east-1
   ecc ito status --json
+  ecc nasiko status --json
+  ecc nasiko install --version v0.1.0 --dry-run --json
+  ecc nasiko install --version v0.1.0 --yes --json
   ecc ito evals --cluster clu_prod_example --live-sixtytwo --nodes gpu-01,gpu-02 --config-dir /absolute/path/to/qualification-config
   ecc memory init
   ecc memory handoff --from codex --target claude --title "Continue migration" --stdin

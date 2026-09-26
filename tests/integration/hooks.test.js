@@ -12,6 +12,7 @@ const path = require('path');
 const fs = require('fs');
 const os = require('os');
 const { spawn } = require('child_process');
+const { readHooksConfig } = require('../../scripts/lib/hooks-config');
 const REPO_ROOT = path.join(__dirname, '..', '..');
 
 // Test helper
@@ -282,7 +283,7 @@ async function runTests() {
 
   const scriptsDir = path.join(__dirname, '..', '..', 'scripts', 'hooks');
   const hooksJsonPath = path.join(__dirname, '..', '..', 'hooks', 'hooks.json');
-  const hooks = JSON.parse(fs.readFileSync(hooksJsonPath, 'utf8'));
+  const hooks = readHooksConfig(hooksJsonPath);
 
   // ==========================================
   // Input Format Tests
@@ -854,8 +855,8 @@ async function runTests() {
   })) passed++; else failed++;
 
   if (await asyncTest('hooks survive stdin exceeding 1MB limit', async () => {
-    // The post-edit-console-warn hook reads stdin up to 1MB then passes through
-    // Send > 1MB to verify truncation doesn't crash the hook
+    // Direct invocation preserves the complete payload. Send >1MB to verify
+    // the pass-through path remains stable under backpressure.
     const oversizedInput = JSON.stringify({
       tool_input: { file_path: '/test.js' },
       tool_output: { output: 'x'.repeat(1200000) } // ~1.2MB

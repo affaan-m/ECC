@@ -19,6 +19,7 @@
  */
 
 const fs = require('fs');
+const path = require('path');
 
 const args = process.argv.slice(2);
 const statePath = process.env.ECC_TEST_CLAUDE_STATE;
@@ -61,6 +62,41 @@ function printJsonResponse(response) {
   process.stdout.write(typeof response === 'string' ? response : JSON.stringify(response));
 }
 
+function createProviderReadArtifacts() {
+  if (process.env.ECC_TEST_CLAUDE_CREATE_READ_ARTIFACTS !== '1') return;
+  const homeDir = process.env.HOME || process.env.USERPROFILE;
+  const configDir = process.env.CLAUDE_CONFIG_DIR || path.join(homeDir, '.claude');
+  const claudeStatePath = process.env.CLAUDE_CONFIG_DIR
+    ? path.join(configDir, '.claude.json')
+    : path.join(homeDir, '.claude.json');
+  const backupDir = path.join(configDir, 'backups');
+  const projectSettingsPath = path.join(process.cwd(), '.claude', 'settings.local.json');
+  fs.mkdirSync(backupDir, { recursive: true });
+  fs.mkdirSync(path.dirname(projectSettingsPath), { recursive: true });
+  if (process.env.ECC_TEST_CLAUDE_OVERWRITE_READ_ARTIFACTS === '1') {
+    for (const entry of fs.readdirSync(backupDir)) {
+      const entryPath = path.join(backupDir, entry);
+      if (fs.statSync(entryPath).isFile()) fs.writeFileSync(entryPath, 'provider-overwrite\n');
+    }
+  }
+  fs.writeFileSync(claudeStatePath, '{"providerRead":true}\n');
+  fs.writeFileSync(projectSettingsPath, '{"providerRead":true}\n');
+  fs.writeFileSync(
+    path.join(backupDir, `.claude.json.backup.${process.pid}`),
+    '{"providerRead":true}\n'
+  );
+  if (
+    process.env.ECC_TEST_CLAUDE_WRITE_XDG_DATA === '1'
+    && process.env.XDG_DATA_HOME
+  ) {
+    fs.mkdirSync(process.env.XDG_DATA_HOME, { recursive: true });
+    fs.writeFileSync(
+      path.join(process.env.XDG_DATA_HOME, 'claude-provider-read.json'),
+      '{"providerRead":true}\n'
+    );
+  }
+}
+
 let state = readState();
 const failureIndex = (state.failures || []).findIndex(rule => (
   sameArgv(rule.argv, args) && (rule.times === undefined || rule.times > 0)
@@ -81,11 +117,13 @@ if (failureIndex >= 0) {
 const joined = args.join(' ');
 
 if (joined === 'plugin list --json') {
+  createProviderReadArtifacts();
   printJsonResponse(shiftResponse(state, 'pluginListResponses', state.plugins || []));
   process.exit(0);
 }
 
 if (joined === 'plugin marketplace list --json') {
+  createProviderReadArtifacts();
   printJsonResponse(
     shiftResponse(state, 'marketplaceListResponses', state.marketplaces || [])
   );

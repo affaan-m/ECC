@@ -270,6 +270,65 @@ async function runTests() {
   else failed++;
 
   if (
+    await test('serves the control-plane live view page, the view JSON and the event feed', async () => {
+      const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-control-plane-view-'));
+      const dbPath = path.join(tempDir, 'ecc2.db');
+
+      try {
+        await writeMinimalDatabase(dbPath);
+        const app = await createControlPaneServer({
+          host: '127.0.0.1',
+          port: 0,
+          dbPath,
+          repoRoot: REPO_ROOT,
+          allowActions: false
+        });
+
+        await app.listen();
+        try {
+          const page = await fetchLocal(`${app.url}/control-plane`);
+          assert.strictEqual(page.status, 200);
+          assert.ok((page.headers.get('content-type') || '').includes('text/html'));
+          const html = await page.text();
+          assert.ok(html.includes('ECC Control Plane'), 'page is titled ECC Control Plane');
+          assert.ok(html.includes('<canvas'), 'page renders the 2D projection canvas');
+          assert.ok(html.includes('/api/control-plane'), 'page polls the view feed');
+          assert.ok(!html.includes('<script src='), 'page loads no external scripts');
+
+          const view = await fetchLocal(`${app.url}/api/control-plane`).then(r => r.json());
+          assert.strictEqual(view.schemaVersion, 'ecc.control-plane.view.v1');
+          assert.deepStrictEqual(view.thresholds, { ta: 0.35, ra: 0.7, source: 'static' });
+          assert.ok(Array.isArray(view.tasks) && view.tasks.length === 1, 'one session becomes one task');
+          assert.strictEqual(view.tasks[0].id, 'session-a');
+          assert.strictEqual(view.tasks[0].lane, 'harness:codex');
+          assert.ok(Array.isArray(view.lanes) && view.lanes.length === 1);
+          assert.ok(Array.isArray(view.events) && Array.isArray(view.pairs));
+          assert.strictEqual(view.projection.method, 'pca');
+          assert.deepStrictEqual(view.projection.channels, ['x_tree', 'x_overlap', 'x_dep']);
+          assert.strictEqual(view.inventory.status, 'ok');
+          assert.strictEqual(view.inventory.mode, 'read-only');
+          assert.strictEqual(view.counts.tasks, 1);
+
+          const events = await fetchLocal(`${app.url}/api/control-plane/events`).then(r => r.json());
+          assert.strictEqual(events.schemaVersion, 'ecc.control-plane.view.v1');
+          assert.deepStrictEqual(events.events, []);
+          assert.deepStrictEqual(events.counts, { events: 0, advisories: 0, resolutions: 0 });
+
+          // The airspace page links to the new view.
+          const airspace = await fetchLocal(`${app.url}/proximity`).then(r => r.text());
+          assert.ok(airspace.includes('href="/control-plane"'));
+        } finally {
+          await app.close();
+        }
+      } finally {
+        fs.rmSync(tempDir, { recursive: true, force: true });
+      }
+    })
+  )
+    passed++;
+  else failed++;
+
+  if (
     await test('serves health, asset, not-found, invalid body, and read-only action responses', async () => {
       const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-control-pane-routes-'));
 

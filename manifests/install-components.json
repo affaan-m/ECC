@@ -195,11 +195,27 @@
       ]
     },
     {
+      "id": "capability:operator-desk-patterns",
+      "family": "capability",
+      "description": "Operator desk patterns for agents that draft, gate, and paper external counterparty interactions.",
+      "modules": [
+        "operator-desk-patterns"
+      ]
+    },
+    {
       "id": "capability:ito-compute",
       "family": "capability",
-      "description": "Authenticated Itô GPU inventory, RFQ, status, device revocation, and explicitly gated node-qualification workflows through the separately installed canonical CLI.",
+      "description": "Authenticated It\u00f4 GPU inventory, RFQ, status, device revocation, and explicitly gated node-qualification workflows through the separately installed canonical CLI.",
       "modules": [
         "ito-compute"
+      ]
+    },
+    {
+      "id": "capability:nasiko-control-plane",
+      "family": "capability",
+      "description": "Experimental Nasiko CLI lifecycle bridge guidance for pinned installation, read-only status, qualified uninstall, and opt-in telemetry boundaries.",
+      "modules": [
+        "nasiko-control-plane"
       ]
     },
     {
@@ -652,6 +668,14 @@
       "description": "German (de-DE) translated reference docs installed to ~/.claude/docs/de-DE/.",
       "modules": [
         "docs-de-de"
+      ]
+    },
+    {
+      "id": "locale:uk-ua",
+      "family": "locale",
+      "description": "Ukrainian (uk-UA) translated reference docs installed to ~/.claude/docs/uk-UA/.",
+      "modules": [
+        "docs-uk-ua"
       ]
     }
   ]

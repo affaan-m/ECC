@@ -260,6 +260,7 @@ test('an existing single-scope install defaults to its detected scope', () => {
       ['plugin', 'list', '--json'],
     ]);
     const settings = JSON.parse(fs.readFileSync(fixture.settingsPath, 'utf8'));
+    assert.strictEqual(settings.includeCoAuthoredBy, false);
     assert.strictEqual(settings.pluginConfigs['ecc@ecc'].options.hook_profile, 'minimal');
   });
 });
@@ -277,7 +278,7 @@ test('requesting another scope fails without the PR 2 move-scope operation', () 
   });
 });
 
-test('fresh install follows the exact inventory, marketplace, install, and verification sequence', () => {
+test('fresh install uses supported Claude arguments and follows the verification sequence', () => {
   withFixture({}, fixture => {
     const result = setupClaudePlugin(setupOptions(fixture, {
       scope: 'project',
@@ -293,8 +294,6 @@ test('fresh install follows the exact inventory, marketplace, install, and verif
       [
         'plugin', 'install', 'ecc@ecc',
         '--scope', 'project',
-        '--config', 'hooks_enabled=true',
-        '--config', 'hook_profile=strict',
       ],
       ['plugin', 'list', '--json'],
     ]);
@@ -345,6 +344,7 @@ test('same-scope repeat setup updates ECC and changes durable user hook preferen
     setupClaudePlugin(setupOptions(fixture, { scope: 'local', hooks: 'off' }));
     const settings = JSON.parse(fs.readFileSync(fixture.settingsPath, 'utf8'));
     assert.strictEqual(settings.theme, 'dark');
+    assert.strictEqual(settings.includeCoAuthoredBy, false);
     assert.deepStrictEqual(settings.pluginConfigs['another@market'], { enabled: false });
     assert.deepStrictEqual(settings.pluginConfigs['ecc@ecc'].futureKey, { keep: true });
     assert.strictEqual(settings.pluginConfigs['ecc@ecc'].options.unknown, 'keep');
@@ -373,7 +373,59 @@ test('repeat setup preserves the current hook preference when --hooks is omitted
     const result = setupClaudePlugin(setupOptions(fixture, { hooks: undefined }));
     const settings = JSON.parse(fs.readFileSync(fixture.settingsPath, 'utf8'));
     assert.strictEqual(result.hooks, 'off');
+    assert.strictEqual(settings.includeCoAuthoredBy, false);
     assert.strictEqual(settings.pluginConfigs['ecc@ecc'].options.hooks_enabled, false);
+    assert.strictEqual(settings.pluginConfigs['ecc@ecc'].options.hook_profile, 'strict');
+  });
+});
+
+test('setup preserves an explicit includeCoAuthoredBy opt-in', () => {
+  withFixture({
+    plugins: [installedPlugin('user')],
+    marketplaces: [officialMarketplace('user')],
+  }, fixture => {
+    fs.writeFileSync(fixture.settingsPath, `${JSON.stringify({
+      includeCoAuthoredBy: true,
+      pluginConfigs: {
+        'ecc@ecc': {
+          options: {
+            hooks_enabled: true,
+            hook_profile: 'minimal',
+          },
+        },
+      },
+    }, null, 2)}\n`);
+
+    setupClaudePlugin(setupOptions(fixture, { hooks: 'strict' }));
+    const settings = JSON.parse(fs.readFileSync(fixture.settingsPath, 'utf8'));
+    assert.strictEqual(settings.includeCoAuthoredBy, true);
+    assert.strictEqual(settings.pluginConfigs['ecc@ecc'].options.hook_profile, 'strict');
+  });
+});
+
+test('setup preserves an explicit attribution opt-in', () => {
+  withFixture({
+    plugins: [installedPlugin('user')],
+    marketplaces: [officialMarketplace('user')],
+  }, fixture => {
+    // `attribution` wins over `includeCoAuthoredBy` in Claude Code, so ECC must not
+    // add a deprecated key that would silently lose to the user's own setting.
+    fs.writeFileSync(fixture.settingsPath, `${JSON.stringify({
+      attribution: { commit: 'Signed-off-by: Someone <someone@example.com>' },
+      pluginConfigs: {
+        'ecc@ecc': {
+          options: {
+            hooks_enabled: true,
+            hook_profile: 'minimal',
+          },
+        },
+      },
+    }, null, 2)}\n`);
+
+    setupClaudePlugin(setupOptions(fixture, { hooks: 'strict' }));
+    const settings = JSON.parse(fs.readFileSync(fixture.settingsPath, 'utf8'));
+    assert.strictEqual(settings.includeCoAuthoredBy, undefined);
+    assert.deepStrictEqual(settings.attribution, { commit: 'Signed-off-by: Someone <someone@example.com>' });
     assert.strictEqual(settings.pluginConfigs['ecc@ecc'].options.hook_profile, 'strict');
   });
 });
@@ -548,6 +600,119 @@ test('dry-run reads inventory only and never writes settings', () => {
   });
 });
 
+test('dry-run snapshots local-scope inventory into isolated Claude and project roots', () => {
+  withFixture({}, fixture => {
+    const projectConfigDir = path.join(fixture.projectRoot, '.claude');
+    const projectSettingsPath = path.join(projectConfigDir, 'settings.local.json');
+    const providerStatePath = path.join(fixture.configDir, '.claude.json');
+    const pluginsDir = path.join(fixture.configDir, 'plugins');
+    const installedPluginsPath = path.join(pluginsDir, 'installed_plugins.json');
+    const marketplacesPath = path.join(pluginsDir, 'known_marketplaces.json');
+    fs.mkdirSync(projectConfigDir, { recursive: true });
+    fs.mkdirSync(pluginsDir, { recursive: true });
+    fs.writeFileSync(projectSettingsPath, '{"enabledPlugins":{"ecc@ecc":true}}\n');
+    fs.writeFileSync(providerStatePath, '{"projects":{}}\n');
+    fs.writeFileSync(installedPluginsPath, `${JSON.stringify({
+      version: 2,
+      plugins: {
+        'ecc@ecc': [{
+          scope: 'local',
+          enabled: true,
+          installPath: path.join(
+            fs.realpathSync(fixture.configDir),
+            'plugins',
+            'cache',
+            'ecc'
+          ),
+          projectPath: fs.realpathSync(fixture.projectRoot),
+          version: '2.2.0',
+        }],
+      },
+    }, null, 2)}\n`);
+    fs.writeFileSync(marketplacesPath, `${JSON.stringify({
+      ecc: {
+        source: { source: 'github', repo: 'affaan-m/ECC' },
+      },
+    }, null, 2)}\n`);
+
+    const runClaude = (args, runOptions) => {
+      assert.notStrictEqual(runOptions.cwd, fixture.projectRoot);
+      assert.notStrictEqual(runOptions.env.HOME, fixture.homeDir);
+      assert.notStrictEqual(runOptions.env.CLAUDE_CONFIG_DIR, fixture.configDir);
+      assert.ok(
+        runOptions.env.XDG_DATA_HOME.startsWith(path.dirname(runOptions.env.HOME))
+      );
+      const shadowSettingsPath = path.join(
+        runOptions.cwd,
+        '.claude',
+        'settings.local.json'
+      );
+      assert.strictEqual(fs.lstatSync(shadowSettingsPath).isFile(), true);
+      const shadowInstalled = JSON.parse(fs.readFileSync(
+        path.join(runOptions.env.CLAUDE_CONFIG_DIR, 'plugins', 'installed_plugins.json'),
+        'utf8'
+      ));
+      assert.strictEqual(
+        shadowInstalled.plugins['ecc@ecc'][0].projectPath,
+        runOptions.cwd
+      );
+      assert.ok(
+        shadowInstalled.plugins['ecc@ecc'][0].installPath
+          .startsWith(runOptions.env.CLAUDE_CONFIG_DIR)
+      );
+      fs.writeFileSync(shadowSettingsPath, '{"providerRead":true}\n');
+      fs.mkdirSync(runOptions.env.XDG_DATA_HOME, { recursive: true });
+      fs.writeFileSync(
+        path.join(runOptions.env.XDG_DATA_HOME, 'claude-provider-read.json'),
+        '{"providerRead":true}\n'
+      );
+      if (args.join(' ') === 'plugin list --json') {
+        return { stdout: JSON.stringify([installedPlugin('local')]) };
+      }
+      return { stdout: JSON.stringify([officialMarketplace('local')]) };
+    };
+
+    const result = setupClaudePlugin(
+      setupOptions(fixture, { scope: 'local', dryRun: true }),
+      {
+        runClaude,
+        spawnSync: () => ({ status: 0, stdout: 'git version 2.0.0\n' }),
+      }
+    );
+    assert.strictEqual(result.action, 'would-update');
+    assert.strictEqual(result.scope, 'local');
+    assert.strictEqual(
+      fs.readFileSync(projectSettingsPath, 'utf8'),
+      '{"enabledPlugins":{"ecc@ecc":true}}\n'
+    );
+    assert.strictEqual(fs.readFileSync(providerStatePath, 'utf8'), '{"projects":{}}\n');
+  });
+});
+
+test('missing Git reports an actionable prerequisite during dry-run before provider inventory', () => {
+  withFixture({}, fixture => {
+    const missingGit = Object.assign(new Error('spawnSync git ENOENT'), {
+      code: 'ENOENT',
+    });
+    assert.throws(
+      () => setupClaudePlugin(
+        setupOptions(fixture, { scope: 'user', dryRun: true }),
+        { spawnSync: () => ({ error: missingGit, status: null }) }
+      ),
+      error => {
+        assert.strictEqual(error.code, 'GIT_NOT_FOUND');
+        assert.strictEqual(error.phase, 'preflight');
+        assert.match(error.message, /Git is required for Claude marketplace setup/i);
+        assert.match(error.message, /install Git/i);
+        assert.doesNotMatch(error.message, /ERR_STREAM_PREMATURE_CLOSE/i);
+        return true;
+      }
+    );
+    assert.deepStrictEqual(readCalls(fixture), []);
+    assert.ok(!fs.existsSync(fixture.settingsPath));
+  });
+});
+
 test('provider failures stop later operations and leave settings untouched', () => {
   const marketplaceArgv = [
     'plugin', 'marketplace', 'add',
@@ -557,8 +722,6 @@ test('provider failures stop later operations and leave settings untouched', () 
   const installArgv = [
     'plugin', 'install', 'ecc@ecc',
     '--scope', 'user',
-    '--config', 'hooks_enabled=true',
-    '--config', 'hook_profile=standard',
   ];
   withFixture({
     failures: [{

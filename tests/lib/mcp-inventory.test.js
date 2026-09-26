@@ -4,6 +4,7 @@ const assert = require('assert');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
+const { spawnSync } = require('child_process');
 
 const {
   MCP_SCHEMA_VERSION,
@@ -182,6 +183,78 @@ test('opencode reader splits command array and reads environment', () => {
   assert.deepStrictEqual(github.args, ['-y', '@modelcontextprotocol/server-github']);
   assert.deepStrictEqual(Object.keys(github.env), ['GITHUB_TOKEN']);
   assert.strictEqual(records.find(r => r.name === 'disabledtool').enabled, false);
+});
+
+test('opencode reader honors OPENCODE_CONFIG_DIR before XDG_CONFIG_HOME', () => {
+  const home = tmpHome();
+  const explicitRoot = path.join(home, 'explicit-opencode');
+  const xdgRoot = path.join(home, 'xdg');
+  for (const root of [explicitRoot, path.join(xdgRoot, 'opencode')]) {
+    fs.mkdirSync(root, { recursive: true });
+    fs.writeFileSync(path.join(root, 'opencode.json'), JSON.stringify({
+      mcp: {
+        [root === explicitRoot ? 'explicit' : 'xdg']: {
+          type: 'local',
+          command: ['node'],
+        },
+      },
+    }), 'utf8');
+  }
+
+  const explicit = readOpencodeMcp({
+    homeDir: home,
+    env: {
+      OPENCODE_CONFIG_DIR: explicitRoot,
+      XDG_CONFIG_HOME: xdgRoot,
+    },
+  });
+  assert.deepStrictEqual(explicit.map(record => record.name), ['explicit']);
+
+  const xdg = readOpencodeMcp({
+    homeDir: home,
+    env: { XDG_CONFIG_HOME: xdgRoot },
+  });
+  assert.deepStrictEqual(xdg.map(record => record.name), ['xdg']);
+});
+
+test('opencode reader isolates an explicit home from ambient config overrides', () => {
+  const home = tmpHome();
+  const configRoot = path.join(home, '.config', 'opencode');
+  const ambientRoot = path.join(home, 'runner-global-opencode');
+  fs.mkdirSync(configRoot, { recursive: true });
+  fs.mkdirSync(ambientRoot, { recursive: true });
+  fs.writeFileSync(path.join(configRoot, 'opencode.json'), JSON.stringify({
+    mcp: { isolated: { type: 'local', command: ['node'] } },
+  }), 'utf8');
+  fs.writeFileSync(path.join(ambientRoot, 'opencode.json'), JSON.stringify({
+    mcp: { leaked: { type: 'local', command: ['node'] } },
+  }), 'utf8');
+  const readerPath = path.join(
+    __dirname,
+    '..',
+    '..',
+    'scripts',
+    'lib',
+    'mcp-inventory',
+    'readers',
+    'opencode.js'
+  );
+  const child = spawnSync(process.execPath, ['-e', [
+    'const { readOpencodeMcp } = require(process.env.ECC_TEST_READER);',
+    'const names = readOpencodeMcp({ homeDir: process.env.ECC_TEST_HOME }).map(record => record.name);',
+    'process.stdout.write(JSON.stringify(names));',
+  ].join('\n')], {
+    encoding: 'utf8',
+    env: {
+      ...process.env,
+      ECC_TEST_READER: readerPath,
+      ECC_TEST_HOME: home,
+      OPENCODE_CONFIG_DIR: ambientRoot,
+    },
+  });
+
+  assert.strictEqual(child.status, 0, child.stderr);
+  assert.deepStrictEqual(JSON.parse(child.stdout), ['isolated']);
 });
 
 test('collectMcpInventory merges harnesses, detects fragmentation + drift, redacts secrets', () => {

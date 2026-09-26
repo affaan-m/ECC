@@ -20,14 +20,13 @@
 const fs = require('fs');
 const http = require('http');
 const path = require('path');
-const { spawn } = require('child_process');
-
 const {
   canonicalizeArtifactPath,
   createSessionStore,
   resolveStateDir,
   sessionKeyFor
 } = require('./lib/plan-canvas/sessions');
+const { openBrowser } = require('./lib/platform-launch');
 const {
   DEFAULT_HOST,
   createPlanCanvasServer,
@@ -194,19 +193,7 @@ async function ensureServer({ stateDir, port }) {
   throw new Error(`plan-canvas server did not become healthy on port ${port}; check ${path.join(stateDir, 'server.log')}`);
 }
 
-function openBrowser(url) {
-  const platform = process.platform;
-  const [cmd, args] =
-    platform === 'darwin' ? ['open', [url]]
-      : platform === 'win32' ? ['cmd', ['/c', 'start', '', url]]
-        : ['xdg-open', [url]];
-  try {
-    spawn(cmd, args, { detached: true, stdio: 'ignore' }).unref();
-    return true;
-  } catch {
-    return false;
-  }
-}
+
 
 function output(payload) {
   process.stdout.write(`${JSON.stringify(payload, null, 2)}\n`);
@@ -232,11 +219,13 @@ async function cmdOpen(file, args, { stateDir, port }) {
   if (res.statusCode === 409) return res.body;
   if (res.statusCode !== 200) throw new Error(res.body.error || `open failed (HTTP ${res.statusCode})`);
   const url = `http://${DEFAULT_HOST}:${port}${res.body.url}`;
-  const launched = args.includes('--no-open') ? false : openBrowser(url);
+  const launchResult = args.includes('--no-open') ? { opened: false, reason: 'no-open-flag' } : openBrowser(url);
+  const launched = launchResult.opened;
   return {
     status: 'open',
     url,
     browser: launched ? 'opened' : 'not opened',
+    browserReason: launchResult.reason,
     next_step:
       'Run `ecc-plan-canvas await <file>` and leave it running; it returns when the human sends feedback, a verdict, or ends the session.'
   };

@@ -6,6 +6,7 @@ const path = require('path');
 const { spawnSync } = require('child_process');
 
 const { discoverInstalledStates } = require('./lib/install-lifecycle');
+const { getRecordedHookConsent } = require('./lib/install/hook-consent');
 const { SUPPORTED_INSTALL_TARGETS } = require('./lib/install-manifests');
 
 function showHelp(exitCode = 0) {
@@ -85,6 +86,7 @@ function buildInstallApplyArgs(record) {
   const target = state.target.target || record.adapter.target;
   const request = state.request || {};
   const args = [];
+  const hookConsent = getRecordedHookConsent(state);
 
   if (target) {
     args.push('--target', target);
@@ -104,6 +106,12 @@ function buildInstallApplyArgs(record) {
 
   for (const componentId of Array.isArray(request.excludeComponents) ? request.excludeComponents : []) {
     args.push('--without', componentId);
+  }
+
+  if (hookConsent === 'enabled') {
+    args.push('--enable-hooks');
+  } else if (hookConsent === 'declined') {
+    args.push('--no-hooks');
   }
 
   for (const language of Array.isArray(request.legacyLanguages) ? request.legacyLanguages : []) {
@@ -173,17 +181,29 @@ function runExternalCommand(command, args, options = {}) {
   return result;
 }
 
+function legacyMigrationWarning(record) {
+  if (record.legacyLayout === 'opencode') {
+    return 'Found only a legacy OpenCode ~/.opencode install-state. Run the OpenCode installer once to migrate it to the configured OpenCode directory before auto-updating.';
+  }
+  return 'Found only a legacy Antigravity .agent install-state. Run the Antigravity installer once to migrate it to .agents before auto-updating.';
+}
+
 function runAutoUpdate(options = {}, dependencies = {}) {
   const discover = dependencies.discoverInstalledStates || discoverInstalledStates;
   const execute = dependencies.runExternalCommand || runExternalCommand;
   const homeDir = options.homeDir || process.env.HOME || os.homedir();
   const projectRoot = options.projectRoot || process.cwd();
   const requestedRepoRoot = options.repoRoot ? validateRepoRoot(options.repoRoot) : null;
-  const records = discover({
+  const discoveredRecords = discover({
     homeDir,
     projectRoot,
     targets: options.targets
-  }).filter(record => record.exists);
+  });
+  const records = discoveredRecords.filter(record => record.exists && !record.legacy);
+  const legacyRecords = discoveredRecords.filter(record => record.exists && record.legacy);
+  const warnings = records.length === 0 && legacyRecords.length > 0
+    ? [...new Set(legacyRecords.map(legacyMigrationWarning))]
+    : [];
 
   const results = [];
   if (records.length === 0) {
@@ -191,6 +211,7 @@ function runAutoUpdate(options = {}, dependencies = {}) {
       dryRun: Boolean(options.dryRun),
       repoRoot: requestedRepoRoot,
       results,
+      warnings,
       summary: {
         checkedCount: 0,
         updatedCount: 0,
@@ -233,6 +254,7 @@ function runAutoUpdate(options = {}, dependencies = {}) {
       dryRun: Boolean(options.dryRun),
       repoRoot,
       results,
+      warnings,
       summary: {
         checkedCount: results.length,
         updatedCount: 0,
@@ -296,6 +318,7 @@ function runAutoUpdate(options = {}, dependencies = {}) {
     dryRun: Boolean(options.dryRun),
     repoRoot,
     results,
+    warnings,
     summary: {
       checkedCount: results.length,
       updatedCount: results.filter(result => result.status === 'updated' || result.status === 'planned').length,
@@ -306,7 +329,13 @@ function runAutoUpdate(options = {}, dependencies = {}) {
 
 function printHuman(result) {
   if (result.results.length === 0) {
-    console.log('No ECC install-state files found for the current home/project context.');
+    const hasWarnings = Array.isArray(result.warnings) && result.warnings.length > 0;
+    console.log(hasWarnings
+      ? 'No active ECC install-state files found for the current home/project context.'
+      : 'No ECC install-state files found for the current home/project context.');
+    for (const warning of Array.isArray(result.warnings) ? result.warnings : []) {
+      console.log(`Warning: ${warning}`);
+    }
     return;
   }
 

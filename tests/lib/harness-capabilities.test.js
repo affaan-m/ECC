@@ -33,12 +33,12 @@ function runTests() {
   let passed = 0;
   let failed = 0;
 
-  if (test('represents all 14 registered targets exactly once across 13 harnesses', () => {
+  if (test('represents all 15 registered targets exactly once across 14 harnesses', () => {
     const catalogTargetIds = HARNESS_CAPABILITIES.flatMap(harness => harness.targetIds);
     const adapterTargetIds = listInstallTargetAdapters().map(adapter => adapter.target);
 
-    assert.strictEqual(HARNESS_CAPABILITIES.length, 13);
-    assert.strictEqual(new Set(catalogTargetIds).size, 14);
+    assert.strictEqual(HARNESS_CAPABILITIES.length, 14);
+    assert.strictEqual(new Set(catalogTargetIds).size, 15);
     assert.deepStrictEqual([...catalogTargetIds].sort(), [...SUPPORTED_INSTALL_TARGETS].sort());
     assert.deepStrictEqual([...catalogTargetIds].sort(), [...adapterTargetIds].sort());
   })) passed++; else failed++;
@@ -83,18 +83,24 @@ function runTests() {
     assert.deepStrictEqual(kimi.scopes, [
       { id: 'project', targetId: 'kimi', root: './.kimi-code' },
     ]);
+
+    const opencode = getHarnessCapability('opencode');
+    assert.match(opencode.destinationResolution, /OPENCODE_CONFIG_DIR/);
+    assert.match(opencode.destinationResolution, /XDG_CONFIG_HOME/);
+    assert.match(opencode.destinationResolution, /~\/\.config\/opencode/);
   })) passed++; else failed++;
 
   if (test('keeps every advanced target attached to its registered root and scope', () => {
     const expected = {
       cursor: ['project', './.cursor'],
-      antigravity: ['project', './.agent'],
+      antigravity: ['project', './.agents'],
       gemini: ['project', './.gemini'],
-      opencode: ['home', '~/.opencode'],
+      opencode: ['home', '~/.config/opencode'],
       codebuddy: ['project', './.codebuddy'],
       joycode: ['project', './.joycode'],
       qwen: ['home', '~/.qwen'],
       zed: ['project', './.zed'],
+      adal: ['project', './.adal'],
       hermes: ['home', '~/.hermes'],
       openclaw: ['home', '~/.openclaw'],
     };
@@ -103,6 +109,7 @@ function runTests() {
       const harness = getHarnessCapability(id);
       assert.strictEqual(harness.guidedReady, false, id);
       assert.strictEqual(harness.availability, 'advanced', id);
+      assert.strictEqual(harness.destination, root, id);
       assert.deepStrictEqual(harness.scopes, [
         { id: scopeId, targetId: id, root },
       ], id);
@@ -164,7 +171,7 @@ function runTests() {
 
     const first = listHarnessCapabilities();
     first.pop();
-    assert.strictEqual(listHarnessCapabilities().length, 13);
+    assert.strictEqual(listHarnessCapabilities().length, 14);
 
     const guided = listGuidedHarnesses();
     guided.reverse();

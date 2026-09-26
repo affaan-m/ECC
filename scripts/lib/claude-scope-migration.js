@@ -10,12 +10,15 @@ const {
   VALID_SCOPES,
   assertNoConflictingEccPlugins,
   assertSafeLocalInventory,
+  assertGitAvailable,
   currentEccPlugins,
+  createDryRunClaudeRunner,
   deriveHookMode,
   ensureOfficialMarketplace,
   ensurePluginAtScope,
   hookOptions,
   isOfficialMarketplace,
+  needsClaudeCommitAttributionPreferenceWrite,
   parseMarketplaceList,
   parsePluginList,
   readSettings,
@@ -255,7 +258,14 @@ function migrateClaudePluginScope(options = {}, dependencies = {}) {
   const settingsPath = path.join(paths.configDir, 'settings.json');
   const settings = readSettings(settingsPath);
   assertSafeLocalInventory(paths);
-  const run = dependencies.runClaude || runClaude;
+  assertGitAvailable(
+    { cwd: paths.projectRoot },
+    { spawnSync: dependencies.spawnSync }
+  );
+  const providerRun = dependencies.runClaude || runClaude;
+  const run = options.dryRun
+    ? createDryRunClaudeRunner(providerRun, paths, options)
+    : providerRun;
   const plugins = readPluginInventory(run, paths.projectRoot, 'inventory');
   const migration = assertMigrationInventory(plugins, options.scope);
   const hooks = options.hooks === undefined
@@ -264,6 +274,7 @@ function migrateClaudePluginScope(options = {}, dependencies = {}) {
   const hookConfiguration = options.hooks === undefined
     ? readStoredHookOptions(settings)
     : hookOptions(options.hooks);
+  const needsCommitAttributionPreference = needsClaudeCommitAttributionPreferenceWrite(settings);
 
   const marketplaces = parseMarketplaceList(
     run(
@@ -296,14 +307,23 @@ function migrateClaudePluginScope(options = {}, dependencies = {}) {
         ...result,
         dryRun: true,
         preferencesUpdated: false,
-        plannedActions: options.hooks === undefined ? [] : [{
-          action: 'write-hook-preferences',
-          ...hookConfiguration,
-        }],
+        plannedActions: [
+          ...(options.hooks === undefined ? [] : [{
+            action: 'write-hook-preferences',
+            ...hookConfiguration,
+          }]),
+          ...(needsCommitAttributionPreference ? [{
+            action: 'write-commit-attribution-preference',
+            includeCoAuthoredBy: false,
+          }] : []),
+        ],
       };
     }
-    if (options.hooks !== undefined) {
-      writeClaudePluginOptions(settingsPath, options.hooks);
+    if (options.hooks !== undefined || needsCommitAttributionPreference) {
+      writeClaudePluginOptions(
+        settingsPath,
+        options.hooks !== undefined ? options.hooks : undefined
+      );
       return { ...result, preferencesUpdated: true };
     }
     return result;
@@ -343,6 +363,7 @@ function migrateClaudePluginScope(options = {}, dependencies = {}) {
       projectRoot: paths.projectRoot,
       run,
       scope: options.scope,
+      spawnSync: dependencies.spawnSync,
     });
     ensurePluginAtScope({
       hookConfiguration,
@@ -371,8 +392,11 @@ function migrateClaudePluginScope(options = {}, dependencies = {}) {
   const warnings = uninstallSource(run, paths, migration, options.scope);
   verifyFinalState(run, paths, options.scope);
 
-  if (options.hooks !== undefined) {
-    writeClaudePluginOptions(settingsPath, options.hooks);
+  if (options.hooks !== undefined || needsCommitAttributionPreference) {
+    writeClaudePluginOptions(
+      settingsPath,
+      options.hooks !== undefined ? options.hooks : undefined
+    );
   }
 
   const result = {

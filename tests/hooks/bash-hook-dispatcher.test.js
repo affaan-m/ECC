@@ -63,6 +63,49 @@ function runTests() {
     assert.strictEqual(result.stdout, '', `Pass-through must emit empty stdout, got: ${result.stdout}`);
   })) passed++; else failed++;
 
+  if (test('pre dispatcher fails closed when its configured byte cap truncates input', () => {
+    const input = {
+      tool_name: 'Bash',
+      tool_input: { command: `echo ${'x'.repeat(256)}` }
+    };
+    const result = runScript(preDispatcher, input, {
+      ECC_HOOK_PROFILE: 'standard',
+      ECC_HOOK_INPUT_MAX_BYTES: '64'
+    });
+    assert.strictEqual(result.status, 2, result.stderr);
+    assert.strictEqual(result.stdout, '');
+    assert.match(result.stderr, /safety checks require the complete request/);
+  })) passed++; else failed++;
+
+  if (test('pre dispatcher applies its byte cap at UTF-8 boundaries', () => {
+    const input = {
+      tool_name: 'Bash',
+      tool_input: { command: String.fromCodePoint(0xe9).repeat(64) }
+    };
+    const result = runScript(preDispatcher, input, {
+      ECC_HOOK_PROFILE: 'standard',
+      ECC_HOOK_INPUT_MAX_BYTES: '65'
+    });
+    assert.strictEqual(result.status, 2, result.stderr);
+    assert.strictEqual(result.stdout, '');
+    assert.match(result.stderr, /stdin exceeded 65 bytes/);
+  })) passed++; else failed++;
+
+  if (test('disabled pre dispatcher does not block truncated input', () => {
+    const input = {
+      tool_name: 'Bash',
+      tool_input: { command: `echo ${'x'.repeat(256)}` }
+    };
+    for (const env of [
+      { ECC_HOOK_INPUT_MAX_BYTES: '64', ECC_DISABLED_HOOKS: 'pre:bash:dispatcher' },
+      { ECC_HOOK_INPUT_MAX_BYTES: '64', ECC_HOOKS_ENABLED: 'false' }
+    ]) {
+      const result = runScript(preDispatcher, input, env);
+      assert.strictEqual(result.status, 0, result.stderr);
+      assert.strictEqual(result.stdout, '');
+    }
+  })) passed++; else failed++;
+
   if (test('pre dispatcher still honors per-hook disable flags', () => {
     const input = { tool_input: { command: 'git push origin main' } };
 

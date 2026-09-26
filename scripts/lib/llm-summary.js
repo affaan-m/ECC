@@ -156,7 +156,8 @@ function generateSessionSummary(transcriptPath) {
       env: {
         ...process.env,
         CLAUDECODE: '',
-        ECC_SKIP_LLM_SUMMARY: '1'
+        ECC_SKIP_LLM_SUMMARY: '1',
+        ECC_LLM_SUMMARY_SUBPROCESS: '1'
       },
       timeout: LLM_TIMEOUT_MS,
       shell: process.platform === 'win32'
