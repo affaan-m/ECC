@@ -376,7 +376,7 @@ cd ECC
 | Qwen CLI | `./install.sh --profile minimal --target qwen` | [Qwen ガイド](../QWEN-GUIDE.md)を参照 |
 | Hermes | `./install.sh --profile minimal --target hermes` | [Hermes セットアップガイド](../HERMES-SETUP.md)を参照 |
 | OpenClaw | `./install.sh --profile minimal --target openclaw` | 管理されたホームディレクトリインストール |
-| Kimi Code CLI | `./install.sh --profile minimal --target kimi` | プロジェクトローカルの `.kimi-code/` インストール · [Kimi Code を入手](https://www.kimi.com/code?aff=ecc) |
+| Kimi Code CLI | `./install.sh --profile minimal --target kimi` | プロジェクトローカルの `.kimi-code/` インストール · [Kimi Code を入手](https://www.kimi.ai/code?aff=ecc) |
 | CodeBuddy | `./install.sh --profile minimal --target codebuddy` | プロジェクトローカルの `.codebuddy/` インストール |
 | JoyCode | `./install.sh --profile minimal --target joycode` | プロジェクトローカルの `.joycode/` インストール |
 
