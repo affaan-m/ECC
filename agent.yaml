@@ -158,6 +158,7 @@ skills:
   - tdd-workflow
   - team-builder
   - token-budget-advisor
+  - token-card
   - unified-memory
   - verification-loop
   - video-editing
@@ -256,6 +257,7 @@ commands:
   - skill-create
   - skill-health
   - test-coverage
+  - token-card
   - update-codemaps
   - update-docs
   - vue-review
