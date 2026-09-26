@@ -66,7 +66,8 @@ npm view @tokenchit/cli@0.10.0 dist.integrity dist.tarball
    **Skip this entirely when the user passed `--dry-run`**, and report that `.tokenchit.json`
    *would* be created. A preview that writes a config file is not a preview.
 
-3. **Render the card.** The bare command, which writes `tokenchit.svg` in the repository root:
+3. **Render the card.** The bare command writes to the configured output — `tokenchit.svg`
+   unless `.tokenchit.json` names another path:
 
    ```bash
    npx -y @tokenchit/cli@0.10.0 sync
@@ -79,7 +80,7 @@ npm view @tokenchit/cli@0.10.0 dist.integrity dist.tarball
 
    | Flag | Effect |
    |---|---|
-   | `--out <path>` | Write somewhere other than `tokenchit.svg` |
+   | `--out <path>` | Write somewhere other than the configured output |
    | `--theme auto` \| `light` \| `dark` | Card theme; `auto` adapts to the reader's system |
    | `--dry-run` | Print what would be written and touch nothing |
 
@@ -95,6 +96,9 @@ npm view @tokenchit/cli@0.10.0 dist.integrity dist.tarball
    ```markdown
    ![tokenchit](./tokenchit.svg)
    ```
+
+   Use the path `sync` actually reported, not this one, when the output is configured
+   elsewhere.
 
    Do not edit the README without being asked.
 

@@ -12,7 +12,7 @@ slash-command harnesses can reach it.
 ## Usage
 
 ```
-/token-card                       # write ./tokenchit.svg
+/token-card                       # write the configured output (./tokenchit.svg by default)
 /token-card --out docs/usage.svg  # write somewhere else
 /token-card --theme dark
 /token-card --dry-run             # report what would be written, write nothing
