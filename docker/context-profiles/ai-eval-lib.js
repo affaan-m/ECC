@@ -80,12 +80,27 @@ function validateComplexCorpus(corpus) {
     || corpus.minimumDistinctTasks !== corpus.tasks.length || corpus.nonInferiorityMargin !== 0.05) {
     throw new Error('Invalid preregistered corpus');
   }
-  for (const cases of [corpus.selection, corpus.tasks]) validateCorpusIds(cases);
+  validateCorpusIds(corpus.selection);
+  if (new Set(corpus.tasks.map(c => c.id)).size !== corpus.tasks.length) throw new Error('Duplicate corpus ID');
   for (const task of corpus.tasks) {
+    if (!/^[a-z][a-z0-9-]{0,63}$/.test(task.id)) throw new Error('Invalid corpus case');
+    if (task.steps === undefined
+      && (typeof task.query !== 'string' || !bounded(Buffer.byteLength(task.query), 1, 8192))) throw new Error('Invalid corpus case');
     const files = Object.entries(task.files || {});
     if (!Array.isArray(task.manualIds) || task.manualIds.length > 3 || !bounded(files.length, 1, 24)
-      || files.some(([file, content]) => !safeRelative(file) || typeof content !== 'string' || Buffer.byteLength(content) > 65536)
-      || typeof task.check !== 'string' || !bounded(Buffer.byteLength(task.check), 1, 65536)
+      || files.some(([file, content]) => !safeRelative(file) || typeof content !== 'string' || Buffer.byteLength(content) > 65536)) {
+      throw new Error('Invalid corpus task');
+    }
+    if (task.steps !== undefined) {
+      // Stepped (chained) task: sequential tickets graded in one accumulating workspace.
+      if (!Array.isArray(task.steps) || !bounded(task.steps.length, 2, 8)
+        || task.steps.some(step => typeof step.query !== 'string' || !bounded(Buffer.byteLength(step.query), 1, 8192)
+          || typeof step.check !== 'string' || !bounded(Buffer.byteLength(step.check), 1, 65536)
+          || (step.checkTimeoutMs !== undefined && !bounded(step.checkTimeoutMs, 1, 120000))
+          || (step.manualIds !== undefined && (!Array.isArray(step.manualIds) || step.manualIds.length > 3)))) {
+        throw new Error('Invalid corpus task');
+      }
+    } else if (typeof task.check !== 'string' || !bounded(Buffer.byteLength(task.check), 1, 65536)
       || (task.checkTimeoutMs !== undefined && !bounded(task.checkTimeoutMs, 1, 120000))) {
       throw new Error('Invalid corpus task');
     }
@@ -131,20 +146,23 @@ function providerPin(model, executable, effort) {
     ...(effort === undefined ? {} : { effort }) };
 }
 
-function preregister({ repoRoot = DEFAULT_REPO_ROOT, corpus = loadCorpus(), repeats = 1, model, executable, effort } = {}) {
+function preregister({ repoRoot = DEFAULT_REPO_ROOT, corpus = loadCorpus(), repeats = 1, model, executable, effort, arms } = {}) {
   validateCorpus(corpus);
   if (!bounded(repeats, 1, 20)) throw new Error('Invalid repeat count');
+  const armList = arms === undefined ? [...ARMS] : arms;
+  if (!Array.isArray(armList) || !armList.length || new Set(armList).size !== armList.length
+    || armList.some(arm => !ARMS.includes(arm))) throw new Error('Invalid arm subset');
   const source = sourceSnapshot(repoRoot);
   const value = { schemaVersion: 'ecc.context-eval-registration.v2', corpusDigest: digestObject(corpus),
     sourceDigest: source.sourceDigest, registryDigest: source.registry.registryDigest,
     providerPin: providerPin(model, executable, effort), runtime: source.runtime,
-    arms: [...ARMS], repeats, minimumDistinctTasks: corpus.minimumDistinctTasks, nonInferiorityMargin: 0.05,
+    arms: armList, repeats, minimumDistinctTasks: corpus.minimumDistinctTasks, nonInferiorityMargin: 0.05,
     confidence: 0.95, sampling: 'fixed-purposive-pilot',
     design: corpus.schemaVersion === 'ecc.context-eval-complex-corpus.v1'
       ? 'paired-native-installs-hidden-scored-complex-tasks'
       : 'paired-native-installs-hidden-graded-coding-tasks',
     order: corpus.tasks.flatMap((task, index) => Array.from({ length: repeats }, (_, repeat) => ({
-      id: task.id, repeat, arms: ARMS.map((_, offset) => ARMS[(index + repeat + offset) % ARMS.length]),
+      id: task.id, repeat, arms: armList.map((_, offset) => armList[(index + repeat + offset) % armList.length]),
     }))), selectionIds: corpus.selection.map(c => c.id) };
   return { ...value, registrationDigest: digestObject(value) };
 }
@@ -467,31 +485,41 @@ function syntheticEnvironments(root) {
   }));
 }
 
-function checkArguments(cwd) {
+function checkArguments(cwd, file = CHECK_FILE, writable = false) {
   const major = Number(process.versions.node.split('.')[0]);
   const flag = major >= 22 ? '--permission' : major >= 20 ? '--experimental-permission' : null;
-  return flag ? [flag, `--allow-fs-read=${cwd}`, `--allow-fs-read=${path.join(cwd, '*')}`, CHECK_FILE] : [CHECK_FILE];
+  return flag ? [flag, `--allow-fs-read=${cwd}`, `--allow-fs-read=${path.join(cwd, '*')}`,
+    // Stepped graders exercise stateful apps (persistence); single-step graders stay read-only.
+    ...(writable ? [`--allow-fs-write=${cwd}`, `--allow-fs-write=${path.join(cwd, '*')}`] : []), file] : [file];
 }
 
 // The hidden grader enters the workspace only after the agent exits, and runs read-only where Node supports it.
 // A grader may print one `ECC_EVAL_SCORE {"score":0..1}` line for partial credit; without it the exit
-// status alone decides (exit 0 scores 1). Outcome success still requires a full score.
+// status alone decides (exit 0 scores 1). Outcome success still requires a full score. Stepped tasks
+// grade each step with a distinct grader file so earlier graders stay readable in the workspace.
 const SCORE_LINE = /^\s*ECC_EVAL_SCORE\s+(\{[^\n]*\})\s*$/m;
-function runScoredCheck(cwd, source, timeoutMs = 10000) {
-  const file = path.join(cwd, CHECK_FILE);
+function runScoredCheck(cwd, source, timeoutMs = 10000, step = null) {
+  const name = step === null ? CHECK_FILE : `.ecc-eval-check-${step}.cjs`;
+  const file = path.join(cwd, name);
   if (exists(file)) return { passed: false, score: 0 };
   fs.writeFileSync(file, source, { flag: 'wx' });
-  const result = spawnSync(process.execPath, checkArguments(fs.realpathSync(cwd)), { cwd, encoding: 'utf8',
+  const result = spawnSync(process.execPath, checkArguments(fs.realpathSync(cwd), name, step !== null), { cwd, encoding: 'utf8',
     env: { LANG: 'C.UTF-8' }, shell: false, timeout: timeoutMs, killSignal: 'SIGKILL', maxBuffer: 65536 });
   const passed = result.status === 0 && !result.error;
   let score = passed ? 1 : 0;
   const match = SCORE_LINE.exec(result.stdout || '');
+  // A grader that advertises ECC_EVAL_SCORE but never printed it died mid-run (e.g. the graded
+  // server crashed the process): that is a zero, never a silent pass. A printed but malformed
+  // line keeps the exit-status score.
+  const graderDied = passed && !match && source.includes('ECC_EVAL_SCORE')
+    && !(result.stdout || '').includes('ECC_EVAL_SCORE');
   if (passed && match) {
     try {
       const parsed = JSON.parse(match[1]);
       if (typeof parsed?.score === 'number' && parsed.score >= 0 && parsed.score <= 1) score = parsed.score;
     } catch { /* A malformed score line keeps the exit-status score. */ }
   }
+  if (graderDied) score = 0;
   return { passed, score };
 }
 
@@ -514,27 +542,29 @@ function wilson(successes, n) {
   return [Math.max(0, center - radius), Math.min(1, center + radius)];
 }
 
-function summarize(outcomes) {
+function summarize(outcomes, arms = ARMS) {
   const ids = [...new Set(outcomes.map(row => row.id))];
-  const rates = ARMS.map(arm => {
+  // Reference arm: full when present (all-arms runs), otherwise the last registered arm (baseline in subset runs).
+  const reference = arms.includes('full') ? 'full' : arms[arms.length - 1];
+  const rates = arms.map(arm => {
     const rows = outcomes.filter(row => row.arm === arm);
     return { arm, attempts: rows.length, successes: rows.filter(row => row.passed).length,
       rate: rows.length ? rows.filter(row => row.passed).length / rows.length : null,
       meanScore: rows.length ? rows.reduce((sum, row) => sum + (typeof row.score === 'number' ? row.score : Number(row.passed)), 0) / rows.length : null };
   });
-  const pairs = ARMS.slice(1).map(arm => {
+  const pairs = arms.filter(arm => arm !== reference).map(arm => {
     const differences = ids.map(id => {
       const rows = outcomes.filter(row => row.id === id);
-      const baseline = rows.filter(row => row.arm === 'full');
+      const baseline = rows.filter(row => row.arm === reference);
       const delta = baseline.map(row => Number(rows.find(r => r.arm === arm && r.repeat === row.repeat)?.passed === true)
         - Number(row.passed === true));
       return delta.length ? delta.reduce((a, b) => a + b, 0) / delta.length : null;
     }).filter(value => value !== null);
     const n = differences.length;
     const delta = n ? differences.reduce((a, b) => a + b, 0) / n : null;
-    // Paired task-cluster means in [-1,1]. Hoeffding with Bonferroni for four comparisons.
+    // Paired task-cluster means in [-1,1]. Hoeffding with Bonferroni for the arm comparisons.
     const radius = n ? Math.sqrt(2 * Math.log(80) / n) : 2;
-    return { arm, n, delta, interval: [Math.max(-1, (delta || 0) - radius), Math.min(1, (delta || 0) + radius)],
+    return { arm, reference, n, delta, interval: [Math.max(-1, (delta || 0) - radius), Math.min(1, (delta || 0) + radius)],
       method: 'paired-task-cluster-hoeffding-familywise-95' };
   });
   return { distinctTasks: ids.length, rates, pairs };
@@ -613,18 +643,46 @@ function selectionProbe(item, repoRoot, execute, environment, target) {
 
 // Full relies on native discovery of the whole install; the Lean arms receive ECC-selected skill bodies;
 // ecc-legacy runs bare against the pinned pre-scoping skill library; Baseline runs the bare task query.
-function outcomeTrial(item, arm, repeat, repoRoot, execute, cwd, environment, target, harvest) {
-  try {
-    const task = selectionTask(item);
-    const result = launchTaskContext({ repoRoot, execute, nativeEnvironment: environment.launch, target,
+// Stepped tasks run each ticket in the same accumulating workspace, grading after every step.
+function outcomeTrial(item, arm, repeat, repoRoot, execute, cwd, environment, target, harvest, metrics = null) {
+  const launchStep = (query, manualIds) => {
+    const task = { sessionId: 'ecc-eval', taskId: item.id, revision: 1, phase: 'evaluate', query };
+    return launchTaskContext({ repoRoot, execute, nativeEnvironment: environment.launch, target,
       bare: arm === 'baseline' || arm === 'ecc-legacy',
-      task: { ...task, ...(arm === 'manual-lean' && item.manualIds.length ? { explicitIds: item.manualIds } : {}) },
+      task: { ...task, ...(arm === 'manual-lean' && manualIds?.length ? { explicitIds: manualIds } : {}) },
       profileId: arm === 'full' ? 'full@1' : 'lean@1', selectionMode: arm === 'auto-lean' ? 'auto' : 'manual' });
-    if (harvest) harvest(arm, item.id, repeat, environment);
-    const verdict = runScoredCheck(cwd, item.check, item.checkTimeoutMs);
-    const passed = result.status === 'completed' && verdict.passed && verdict.score >= 0.999;
-    return { id: item.id, arm, repeat, passed, score: result.status === 'completed' ? verdict.score : 0,
-      selectedIds: result.selection.selectedIds, failure: passed ? null : 'hidden-check' };
+  };
+  try {
+    if (!item.steps) {
+      const result = launchStep(item.query, item.manualIds);
+      if (harvest) harvest(arm, item.id, repeat, environment);
+      const verdict = runScoredCheck(cwd, item.check, item.checkTimeoutMs);
+      const passed = result.status === 'completed' && verdict.passed && verdict.score >= 0.999;
+      return { id: item.id, arm, repeat, passed, score: result.status === 'completed' ? verdict.score : 0,
+        selectedIds: result.selection.selectedIds, failure: passed ? null : 'hidden-check' };
+    }
+    const steps = [];
+    const selectedIds = [];
+    for (let index = 0; index < item.steps.length; index++) {
+      const step = item.steps[index];
+      const start = metrics ? metrics.length : 0;
+      const result = launchStep(step.query, step.manualIds || item.manualIds);
+      if (harvest) harvest(arm, `${item.id}--step${index + 1}`, repeat, environment);
+      if (result.status !== 'completed') {
+        // A failed ticket ends the chain; remaining tickets are unscored.
+        for (let rest = index; rest < item.steps.length; rest++) {
+          steps.push({ score: 0, ...(metrics ? metricsSince(metrics, start) : {}) });
+        }
+        break;
+      }
+      selectedIds.push(...result.selection.selectedIds);
+      const verdict = runScoredCheck(cwd, step.check, step.checkTimeoutMs, index + 1);
+      steps.push({ score: verdict.passed ? verdict.score : 0, ...(metrics ? metricsSince(metrics, start) : {}) });
+    }
+    const score = steps.reduce((sum, step) => sum + step.score, 0) / item.steps.length;
+    const passed = steps.length === item.steps.length && steps.every(step => step.score >= 0.999);
+    return { id: item.id, arm, repeat, passed, score, selectedIds: [...new Set(selectedIds)], steps,
+      failure: passed ? null : 'hidden-check' };
   } catch (error) {
     if (harvest) harvest(arm, item.id, repeat, environment);
     return { id: item.id, arm, repeat, passed: false, score: 0, selectedIds: [], failure: failureCode(error) };
@@ -679,14 +737,14 @@ function createHarvester(artifactDir, envs) {
 
 function runEvaluation({ repoRoot = DEFAULT_REPO_ROOT, corpus = loadCorpus(), registration,
   repeats = 1, provider, family, allowRealProvider = false, executable, model, effort, authHome, environments,
-  artifactDir = null, maxCalls = 300, deadlineMs = 3600000, callTimeoutMs = 300000 } = {}) {
+  arms = undefined, artifactDir = null, maxCalls = 300, deadlineMs = 3600000, callTimeoutMs = 300000 } = {}) {
   if (!provider && !allowRealProvider) throw new Error('Evaluation requires an injected provider or explicit opt-in');
   if (!bounded(maxCalls, 1, 2000) || !bounded(deadlineMs, 1, 8 * 3600000)
     || !bounded(callTimeoutMs, 1, 600000)) throw new Error('Invalid call or deadline bound');
   if (!provider && !registration) throw new Error('Real evaluation requires prior registration');
   const resolvedFamily = provider ? (family || 'codex') : resolveFamily(family, executable);
   if (resolvedFamily === 'claude' && effort !== undefined) throw new Error('Reasoning effort applies only to the Codex provider');
-  const pin = preregister({ repoRoot, corpus, repeats, model, executable, effort });
+  const pin = preregister({ repoRoot, corpus, repeats, model, executable, effort, arms });
   if (registration && !isDeepStrictEqual(registration, pin)) throw new Error('Registration pin mismatch');
   const injected = Boolean(provider);
   const liveProvider = provider || (resolvedFamily === 'claude'
@@ -708,7 +766,9 @@ function runEvaluation({ repoRoot = DEFAULT_REPO_ROOT, corpus = loadCorpus(), re
     const envs = environments || (injected ? syntheticEnvironments(installRoot)
       : resolvedFamily === 'claude'
         ? prepareClaudeEnvironments({ repoRoot, executable, root: installRoot,
-          legacySource: exportLegacySource({ repoRoot, destination: path.join(installRoot, 'legacy-source') }) })
+          ...(pin.arms.includes('ecc-legacy')
+            ? { legacySource: exportLegacySource({ repoRoot, destination: path.join(installRoot, 'legacy-source') }) }
+            : {}) })
         : prepareEnvironments({ repoRoot, executable, root: installRoot }));
     installs = Object.fromEntries(Object.entries(envs).map(([name, env]) => [name,
       { profileId: env.profileId, skills: env.skills, ...(env.sourceSha ? { sourceSha: env.sourceSha } : {}) }]));
@@ -730,13 +790,14 @@ function runEvaluation({ repoRoot = DEFAULT_REPO_ROOT, corpus = loadCorpus(), re
         writeWorkspace(cwd, item.files);
         const start = state.metrics.length;
         outcomes.push({ ...outcomeTrial(item, arm, scheduled.repeat, repoRoot,
-          executeAdapter(state, cwd, environment), cwd, environment, resolvedFamily, harvest), ...metricsSince(state.metrics, start) });
+          executeAdapter(state, cwd, environment), cwd, environment, resolvedFamily, harvest, state.metrics),
+          ...metricsSince(state.metrics, start) });
         fs.rmSync(cwd, { recursive: true, force: true });
       }
     }
     if (harvester) harvester.writeIndex();
   } finally { if (harvester) harvester.writeIndex(); fs.rmSync(temp, { recursive: true, force: true }); }
-  const summary = summarize(outcomes);
+  const summary = summarize(outcomes, pin.arms);
   const insufficient = summary.distinctTasks < pin.minimumDistinctTasks || selection.length < pin.minimumDistinctTasks;
   const selectionSuccesses = selection.filter(row => row.passed).length;
   return { schemaVersion: 'ecc.context-eval.v2', registration: pin,

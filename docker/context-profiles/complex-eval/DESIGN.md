@@ -207,3 +207,47 @@ First @2 run uses `claude-opus-4-8` (cost discipline); the corpus is
 provider- and model-pinned per run, so a later Opus 5.5 rerun on the same
 digest measures the model difference directly. repeats=2 (30 trials): simple
 experimentation, expand later.
+
+## complex-tasks@3 (vagueness and horizon; arms: auto-lean vs baseline)
+
+@2 still saturated on outcomes (30/30) — enumerated specs are within the
+model's cold competence. @3 (`cases3/`, built to `complex-corpus-v3.json`)
+moves grading to what users actually complain about (see the complaint
+taxonomy in this file's discussion: happy-path-only work, unverified
+completion, skipped implied work, convention drift, concurrency blindness).
+Everything graded is discoverable from repo docs visible to every arm — the
+question is whether agents reliably *do* all of it under vague instruction.
+
+1. **`chained-tickets`** (long horizon). Four sequential tickets in one
+   accumulating workspace — build a link shortener core, then vague tickets:
+   "links need to survive a restart", "we're seeing abuse, deal with it",
+   "track redirect hits, consistent with the existing API". 33 hidden probes
+   across the four steps grade function, convention compliance (error
+   envelope, layering — pinned in a visible CONTRIBUTING.md), and implied
+   work (changelog entries, growing tests, accurate README). Stepped trials
+   grade each ticket after its call; a failed ticket ends the chain.
+2. **`production-ready`** (vague prompt, heavy implication). "This goes to
+   production Monday — get it ready." A documented production bar
+   (validation envelopes, body limits, /health, structured request logs, env
+   config, graceful SIGTERM, nosniff, error-path tests, changelog) graded by
+   16 probes against a naive prototype. Fixture scores 0.063.
+3. **`idempotent-webhooks`** (the "almost right" trap). A payment receiver
+   whose shipped code has a textbook check-then-act race (INC-104). Hidden
+   grader fires 50 concurrent identical deliveries plus replay, already-paid,
+   mixed-storm, and contract probes. The naive fixture double-applies and
+   crashes on unknown orders (0.25). Exactly-once requires claiming events
+   synchronously — the discipline skills like `error-handling` encode.
+
+Grader robustness (hard-won, now fixed and unit-tested): a graded server runs
+in-process, so a crashing server kills the grader. Graders install
+uncaughtException/unhandledRejection handlers, emit their score line via
+`process.stdout.write` (immune to the log-capture patching used in probes),
+pre-declare their check totals (unreached checks score zero), and the
+evaluator itself treats a score-advertising grader that printed nothing as a
+zero (`graderDied` guard in `runScoredCheck`). Stepped graders may write to
+the workspace (persistence probes); single-step graders stay read-only.
+
+First @3 run: arms `auto-lean` and `baseline` only, repeats=1,
+`claude-opus-4-8` — the direct test of "ECC auto-routing vs no harness" on
+quality, time, and tokens. Full-arm and Opus 5.5 replications follow if the
+spread shows up.

@@ -27,11 +27,28 @@ for (const id of fs.readdirSync(casesDir).sort()) {
   const directory = path.join(casesDir, id);
   const meta = JSON.parse(fs.readFileSync(path.join(directory, 'meta.json'), 'utf8'));
   if (meta.id !== id || !/^[a-z][a-z0-9-]{0,63}$/.test(id)) throw new Error(`Invalid task metadata in ${id}`);
-  const query = fs.readFileSync(path.join(directory, 'query.md'), 'utf8').trim();
-  tasks.push({ id, category: meta.category, manualIds: meta.manualIds,
-    ...(meta.checkTimeoutMs ? { checkTimeoutMs: meta.checkTimeoutMs } : {}),
-    query, files: collect(path.join(directory, 'files')), check: fs.readFileSync(path.join(directory, 'check.cjs'), 'utf8') });
-  selection.push({ id: meta.selection.id, category: meta.selection.category, query, expectedIds: meta.selection.expectedIds });
+  const files = collect(path.join(directory, 'files'));
+  const stepsDir = path.join(directory, 'steps');
+  let task;
+  if (fs.existsSync(stepsDir)) {
+    const steps = fs.readdirSync(stepsDir).sort().map((name, index) => ({
+      query: fs.readFileSync(path.join(stepsDir, name, 'query.md'), 'utf8').trim(),
+      check: fs.readFileSync(path.join(stepsDir, name, 'check.cjs'), 'utf8'),
+      ...(meta.steps?.[index]?.manualIds ? { manualIds: meta.steps[index].manualIds } : {}),
+      ...((meta.steps?.[index]?.checkTimeoutMs || meta.checkTimeoutMs)
+        ? { checkTimeoutMs: meta.steps?.[index]?.checkTimeoutMs || meta.checkTimeoutMs } : {}),
+    }));
+    task = { id, category: meta.category, manualIds: meta.manualIds || [], files, steps };
+  } else {
+    const query = fs.readFileSync(path.join(directory, 'query.md'), 'utf8').trim();
+    task = { id, category: meta.category, manualIds: meta.manualIds,
+      ...(meta.checkTimeoutMs ? { checkTimeoutMs: meta.checkTimeoutMs } : {}),
+      query, files, check: fs.readFileSync(path.join(directory, 'check.cjs'), 'utf8') };
+  }
+  tasks.push(task);
+  selection.push({ id: meta.selection.id, category: meta.selection.category,
+    query: meta.selection.query || task.query || task.steps.map(step => step.query).join(' '),
+    expectedIds: meta.selection.expectedIds });
 }
 
 const corpus = {

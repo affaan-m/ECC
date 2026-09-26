@@ -1,0 +1,17 @@
+{
+  "id": "chained-tickets",
+  "category": "long-horizon-chain",
+  "manualIds": [],
+  "checkTimeoutMs": 60000,
+  "steps": [
+    { "manualIds": ["skill:backend-patterns"] },
+    { "manualIds": ["skill:backend-patterns"] },
+    { "manualIds": ["skill:security-review"] },
+    { "manualIds": ["skill:api-design"] }
+  ],
+  "selection": {
+    "id": "complex-chained-tickets",
+    "category": "complex-long-horizon",
+    "expectedIds": ["skill:backend-patterns"]
+  }
+}

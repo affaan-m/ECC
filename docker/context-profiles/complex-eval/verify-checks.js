@@ -31,8 +31,27 @@ function stage(task, overlayDir) {
 
 let failed = false;
 for (const task of fs.readdirSync(casesDir).sort()) {
+  const meta = JSON.parse(fs.readFileSync(path.join(casesDir, task, 'meta.json'), 'utf8'));
+  const stepsDir = path.join(casesDir, task, 'steps');
+  if (fs.existsSync(stepsDir)) {
+    // Stepped task: graders run in order against one accumulating workspace.
+    const steps = fs.readdirSync(stepsDir).sort().map((name, index) => ({
+      check: fs.readFileSync(path.join(stepsDir, name, 'check.cjs'), 'utf8'),
+      timeoutMs: meta.steps?.[index]?.checkTimeoutMs || meta.checkTimeoutMs || 30000,
+    }));
+    const runChain = overlayDir => {
+      const cwd = stage(task, overlayDir);
+      return steps.map((step, index) => runScoredCheck(cwd, step.check, step.timeoutMs, index + 1).score);
+    };
+    const bare = runChain(null);
+    const solved = runChain(referenceDir);
+    const ok = solved.every(score => score === 1) && bare.some(score => score < 1);
+    if (!ok) failed = true;
+    console.log(`${ok ? 'ok' : 'FAIL'} - ${task}: fixture=[${bare.map(s => s.toFixed(2))}] reference=[${solved.map(s => s.toFixed(2))}]`);
+    continue;
+  }
   const check = fs.readFileSync(path.join(casesDir, task, 'check.cjs'), 'utf8');
-  const timeoutMs = JSON.parse(fs.readFileSync(path.join(casesDir, task, 'meta.json'), 'utf8')).checkTimeoutMs || 30000;
+  const timeoutMs = meta.checkTimeoutMs || 30000;
   const bare = runScoredCheck(stage(task, null), check, timeoutMs);
   const naive = fs.existsSync(path.join(naiveDir, task))
     ? runScoredCheck(stage(task, naiveDir), check, timeoutMs) : null;

@@ -477,6 +477,10 @@ test('scored checks parse the partial-credit line and fall back to exit status',
   assert.deepEqual(runScoredCheck(dir('c'), "console.log('ECC_EVAL_SCORE {\"score\":1.5}');"), { passed: true, score: 1 });
   assert.deepEqual(runScoredCheck(dir('d'), "console.log('ECC_EVAL_SCORE {\"score\":0.9}');\nprocess.exit(1);"), { passed: false, score: 0 });
   assert.deepEqual(runScoredCheck(dir('e'), 'process.exit(0);'), { passed: true, score: 1 });
+  // A grader that advertises ECC_EVAL_SCORE but dies before printing it scores zero, never a silent pass.
+  assert.deepEqual(runScoredCheck(dir('f'), "throw new Error('agent server crashed the process'); // ECC_EVAL_SCORE\n"),
+    { passed: false, score: 0 });
+  assert.deepEqual(runScoredCheck(dir('g'), "process.exit(0); // ECC_EVAL_SCORE\n"), { passed: true, score: 0 });
 }));
 
 test('the legacy source pin is validated before any git export', () => {
@@ -484,3 +488,66 @@ test('the legacy source pin is validated before any git export', () => {
   assert.throws(() => exportLegacySource({ destination: 'relative/path' }), /absolute/);
   assert.throws(() => exportLegacySource({ destination: path.join(os.tmpdir(), 'ecc-legacy-pin'), pin: { sha: 'not-a-sha' } }), /pin/);
 });
+
+test('arm subsets register and run only the requested arms, paired against the last arm', () => withFixture(repoRoot => {
+  const corpus = tinyCorpus();
+  const registration = preregister({ repoRoot, corpus, arms: ['auto-lean', 'baseline'] });
+  assert.deepEqual(registration.arms, ['auto-lean', 'baseline']);
+  assert.throws(() => preregister({ repoRoot, corpus, arms: ['nope'] }), /arm/i);
+  assert.throws(() => preregister({ repoRoot, corpus, arms: [] }), /arm/i);
+  const result = runEvaluation({ repoRoot, corpus, arms: ['auto-lean', 'baseline'], provider: providerFor() });
+  assert.equal(result.outcomes.length, 2);
+  assert.deepEqual(result.summary.rates.map(row => row.arm), ['auto-lean', 'baseline']);
+  assert.equal(result.summary.pairs.length, 1);
+  assert.equal(result.summary.pairs[0].reference, 'baseline');
+}));
+
+const STEPPED_CHECK = want => "const fs=require('node:fs');const n=Number(fs.readFileSync('n.txt','utf8'));\n"
+  + `console.log(\`ECC_EVAL_SCORE \${JSON.stringify({score: n >= ${want} ? 1 : 0})}\`);\nprocess.exit(0);\n`;
+function steppedCorpus() {
+  return { schemaVersion: 'ecc.context-eval-complex-corpus.v1', id: 'stepped@1', sampling: 'test',
+    minimumDistinctTasks: 1, nonInferiorityMargin: 0.05, selection: [],
+    tasks: [{ id: 'chain', category: 'test', manualIds: [], files: { 'n.txt': '1\n' },
+      steps: [{ query: 'Increment the number in n.txt.', check: STEPPED_CHECK(2) },
+        { query: 'Increment the number in n.txt again.', check: STEPPED_CHECK(3) }] }] };
+}
+
+test('stepped tasks grade each ticket in the accumulating workspace with per-step metrics', () => withFixture(repoRoot => {
+  const result = runEvaluation({ repoRoot, corpus: steppedCorpus(), arms: ['baseline'],
+    provider: request => {
+      const file = path.join(request.cwd, 'n.txt');
+      fs.writeFileSync(file, String(Number(fs.readFileSync(file, 'utf8')) + 1) + '\n');
+      return { status: 0, stdout: jsonl('done') };
+    } });
+  assert.equal(result.outcomes.length, 1);
+  const row = result.outcomes[0];
+  assert.equal(row.passed, true);
+  assert.equal(row.score, 1);
+  assert.equal(row.steps.length, 2);
+  assert.ok(row.steps.every(step => step.score === 1 && step.calls === 1 && step.usage));
+  assert.equal(row.calls, 2);
+}));
+
+test('a failed step ends the chain and remaining tickets score zero', () => withFixture(repoRoot => {
+  const result = runEvaluation({ repoRoot, corpus: steppedCorpus(), arms: ['baseline'],
+    provider: () => ({ status: 0, stdout: jsonl('nothing done') }) });
+  const row = result.outcomes[0];
+  assert.equal(row.passed, false);
+  assert.equal(row.score, 0);
+  assert.deepEqual(row.steps.map(step => step.score), [0, 0]);
+}));
+
+test('step graders use distinct files and refuse replays in the same workspace', () => withFixture(root => {
+  const dir = path.join(root, 'stepped');
+  fs.mkdirSync(dir);
+  assert.deepEqual(runScoredCheck(dir, "console.log('ECC_EVAL_SCORE {\"score\":1}');", 10000, 1), { passed: true, score: 1 });
+  assert.deepEqual(runScoredCheck(dir, "console.log('ECC_EVAL_SCORE {\"score\":1}');", 10000, 2), { passed: true, score: 1 });
+  assert.deepEqual(runScoredCheck(dir, "console.log('ECC_EVAL_SCORE {\"score\":1}');", 10000, 1), { passed: false, score: 0 });
+}));
+
+test('stepped corpus validation rejects bad steps before provider calls', () => withFixture(repoRoot => {
+  const corpus = steppedCorpus();
+  const base = { repoRoot, arms: ['baseline'], provider: () => assert.fail('called') };
+  assert.throws(() => runEvaluation({ ...base, corpus: { ...corpus, tasks: [{ ...corpus.tasks[0], steps: [corpus.tasks[0].steps[0]] }] } }));
+  assert.throws(() => runEvaluation({ ...base, corpus: { ...corpus, tasks: [{ ...corpus.tasks[0], steps: [{ query: '', check: 'x' }, corpus.tasks[0].steps[1]] }] } }));
+}));
