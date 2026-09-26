@@ -313,6 +313,95 @@ describe('validate-openspec-syntax (v1 schema)', () => {
     });
   });
 
+  describe('code fences (illustrative content)', () => {
+    it('ignores an enforced anchor inside a fenced code block', () => {
+      const root = makeTempProject({
+        'fence/spec.md':
+          invariantSpec('src/lib.js::enforceCheck') +
+          'Example of what NOT to write:\n\n' +
+          '```md\n' +
+          '<!-- enforced: /etc/passwd::x -->\n' +
+          '```\n',
+      });
+      try {
+        const result = runValidator(root);
+        assert.strictEqual(result.exitCode, 0, result.stderr);
+      } finally {
+        fs.rmSync(root, { recursive: true, force: true });
+      }
+    });
+
+    it('ignores a tilde-fenced block too', () => {
+      const root = makeTempProject({
+        'fence-tilde/spec.md':
+          invariantSpec('src/lib.js::enforceCheck') +
+          '~~~md\n' +
+          '<!-- enforced: ::broken -->\n' +
+          '~~~\n',
+      });
+      try {
+        const result = runValidator(root);
+        assert.strictEqual(result.exitCode, 0, result.stderr);
+      } finally {
+        fs.rmSync(root, { recursive: true, force: true });
+      }
+    });
+
+    it('ignores inline code spans containing anchor syntax', () => {
+      const root = makeTempProject({
+        'inline/spec.md':
+          invariantSpec('src/lib.js::enforceCheck') +
+          'Never write `<!-- enforced: not a real anchor -->` in prose.\n',
+      });
+      try {
+        const result = runValidator(root);
+        assert.strictEqual(result.exitCode, 0, result.stderr);
+      } finally {
+        fs.rmSync(root, { recursive: true, force: true });
+      }
+    });
+
+    it('ignores metadata-looking comments and delta markers inside fences', () => {
+      // 'enforcd' would trip the unknown-key typo guard, and 'ADDED' would
+      // flip the file into delta mode + an empty-block error — if code were
+      // treated as declarative. Both must be ignored.
+      const root = makeTempProject({
+        'fence-meta/spec.md':
+          requirementSpec() +
+          '```md\n' +
+          '<!-- enforcd: typo-in-example -->\n' +
+          '<!-- ADDED: -->\n' +
+          '```\n',
+      });
+      try {
+        const result = runValidator(root);
+        assert.strictEqual(result.exitCode, 0, result.stderr);
+      } finally {
+        fs.rmSync(root, { recursive: true, force: true });
+      }
+    });
+
+    it('does not treat a fenced anchor as satisfying the Invariant requirement', () => {
+      const root = makeTempProject({
+        'fence-only/spec.md':
+          '### Invariant: Shown Only In Example\n' +
+          'The anchor below is illustrative, not a declaration.\n\n' +
+          '```md\n' +
+          '<!-- enforced: src/lib.js::check -->\n' +
+          '```\n',
+      });
+      try {
+        const result = runValidator(root);
+        assert.strictEqual(result.exitCode, 1);
+        const parsed = JSON.parse(result.stdout.split('\n').pop());
+        const hit = parsed.errors.some((e) => e.includes('missing <!-- enforced: --> anchor'));
+        assert.ok(hit, `expected missing-enforced error, got: ${JSON.stringify(parsed.errors)}`);
+      } finally {
+        fs.rmSync(root, { recursive: true, force: true });
+      }
+    });
+  });
+
   describe('delta files', () => {
     it('passes a delta with three non-empty blocks', () => {
       const root = makeTempProject({

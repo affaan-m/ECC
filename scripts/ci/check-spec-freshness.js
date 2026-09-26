@@ -29,6 +29,9 @@
  *     through fs.realpathSync and must stay inside the real project root.
  *   - shallow clones report UNVERIFIED — incomplete history is never
  *     mislabelled ORPHANED or STALE.
+ *   - code is never declarative: fenced code blocks (``` / ~~~) and inline
+ *     code spans (`...`) are stripped before anchor/date sweeps, so an
+ *     example showing the anchor syntax never becomes an enforced target.
  *
  * Exit contract:
  *   0 = no stale specs (or ECC_SPEC_STALE_WARN_ONLY === "true")
@@ -263,6 +266,21 @@ function walkMdFiles(dir) {
   return results;
 }
 
+/**
+ * Remove fenced code blocks (``` / ~~~, up to 3 leading spaces) and inline
+ * code spans (`...`, no newlines inside). Content inside code is illustrative
+ * and must never be collected as enforced anchors or a Last verified date.
+ * Fenced blocks are replaced with an equal number of blank lines so that
+ * line-oriented matches downstream keep working on the same line numbers.
+ */
+function stripCodeSpans(content) {
+  const withoutFences = content.replace(
+    /^[ \t]{0,3}(`{3,}|~{3,})[^\n]*\n[\s\S]*?^[ \t]{0,3}\1[ \t]*$/gm,
+    (block) => '\n'.repeat(block.split('\n').length - 1)
+  );
+  return withoutFences.replace(/`[^`\n]*`/g, '');
+}
+
 function parseSpecFile(filePath) {
   let content;
   try {
@@ -271,14 +289,17 @@ function parseSpecFile(filePath) {
     return { error: 'unreadable' };
   }
 
+  // Code blocks/spans are illustrative, never declarative.
+  const declarative = stripCodeSpans(content);
+
   const enforced = [];
   let m;
   const re = new RegExp(ENFORCED_RE.source, 'g');
-  while ((m = re.exec(content)) !== null) {
+  while ((m = re.exec(declarative)) !== null) {
     enforced.push(m[1].trim());
   }
 
-  const lv = content.match(LAST_VERIFIED_RE);
+  const lv = declarative.match(LAST_VERIFIED_RE);
   const lastVerifiedRaw = lv ? lv[1].trim() : null;
 
   return { enforced, lastVerifiedRaw, error: null };

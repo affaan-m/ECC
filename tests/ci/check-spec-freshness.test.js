@@ -349,6 +349,40 @@ describe('check-spec-freshness (v1, file-level)', () => {
     });
   });
 
+  describe('code fences (illustrative content)', () => {
+    it('ignores anchors and Last verified dates inside fenced / inline code', () => {
+      const repo = track(initRepo());
+      commitFile(repo, 'src/lib.js', 'v1\n', daysAgo(300), 'v1');
+      commitFile(repo, 'src/lib.js', 'v2\n', daysAgo(50), 'v2');
+
+      const dir = path.join(repo, 'openspec', 'specs', 'fence');
+      fs.mkdirSync(dir, { recursive: true });
+      fs.writeFileSync(
+        path.join(dir, 'spec.md'),
+        '---\ntitle: fence\n---\n\n' +
+          `Last verified: ${daysAgo(1)}\n\n` +
+          '### Requirement: fence\n\n' +
+          '#### Scenario: holds\n' +
+          '- **WHEN** trigger\n' +
+          '- **THEN** outcome\n\n' +
+          '<!-- enforced: src/lib.js::run -->\n\n' +
+          'Example (illustrative only):\n\n' +
+          '```md\n' +
+          '<!-- enforced: src/ghost.js::missing -->\n' +
+          'Last verified: 1999-01-01\n' +
+          '```\n\n' +
+          'Inline: `<!-- enforced: src/other.js::x -->`\n'
+      );
+
+      const result = runChecker(repo, { ECC_SPEC_STALE_DAYS: '365' });
+      assert.strictEqual(result.exitCode, 0, result.stderr);
+      const spec = parseJson(result).specs.find((s) => s.path.includes('fence'));
+      assert.strictEqual(spec.status, 'FRESH', JSON.stringify(spec));
+      // Only the real anchor is collected; example anchors must not over-constrain.
+      assert.deepStrictEqual(spec.enforced, ['src/lib.js::run']);
+    });
+  });
+
   describe('shallow clones', () => {
     it('reports UNVERIFIED (never ORPHANED/STALE) on shallow history', () => {
       const full = track(initRepo());

@@ -22,6 +22,12 @@
  *   - everything else (`Note:`, `TODO:`, no colon) → ordinary comment, allowed
  * ADDED/MODIFIED/REMOVED are structural delta markers, not metadata.
  *
+ * Code is never declarative:
+ *   Content inside fenced code blocks (``` / ~~~) and inline code spans
+ *   (`...`) is illustrative. It is stripped before any comment/anchor/marker
+ *   sweep, so an example showing the anchor or delta syntax is never
+ *   validated as a declaration and never marks a block as non-empty.
+ *
  * Enforced anchor grammar:
  *   <!-- enforced: <repo-relative/path.ext>::<symbol> -->
  *   relative path + symbol, no whitespace, no leading "/", no "../" or
@@ -150,6 +156,21 @@ const INVALID_ANCHOR_MSG = (rel, raw, reason) =>
   `${rel}: Invalid enforced anchor "${raw}" (${reason}; expected <relative/path.ext>::<symbol>)`;
 
 /**
+ * Remove fenced code blocks (``` / ~~~, up to 3 leading spaces) and inline
+ * code spans (`...`, no newlines inside). Content inside code is illustrative
+ * and must never be read as enforced anchors, metadata, or delta markers.
+ * Fenced blocks are replaced with an equal number of blank lines so that
+ * line-oriented splitting downstream keeps working on the same line numbers.
+ */
+function stripCodeSpans(content) {
+  const withoutFences = content.replace(
+    /^[ \t]{0,3}(`{3,}|~{3,})[^\n]*\n[\s\S]*?^[ \t]{0,3}\1[ \t]*$/gm,
+    (block) => '\n'.repeat(block.split('\n').length - 1)
+  );
+  return withoutFences.replace(/`[^`\n]*`/g, '');
+}
+
+/**
  * Walk every HTML comment in a file and classify it.
  * Returns { errors, metadata[] } — metadata entries not currently consumed by
  * structural checks, but presence of an error means the file is invalid.
@@ -182,7 +203,7 @@ function classifyComments(rel, content, errors) {
   return meta;
 }
 
-/** Collect every enforced anchor string in the file (any location). */
+/** Collect every enforced anchor string in declarative content (code spans already stripped). */
 function collectEnforcedAnchors(content) {
   const anchors = [];
   let match;
@@ -280,11 +301,15 @@ function validateSpecFile(filePath) {
     return [`${rel}: Empty spec file`];
   }
 
+  // Code blocks/spans are illustrative, never declarative: validate the
+  // stripped view so examples cannot inject anchors, metadata, or markers.
+  const declarative = stripCodeSpans(content);
+
   // Metadata allowlist + typo guard + ordinary-comment handling.
-  classifyComments(rel, content, errors);
+  classifyComments(rel, declarative, errors);
 
   // Every enforced anchor anywhere in the file must satisfy the grammar.
-  for (const raw of collectEnforcedAnchors(content)) {
+  for (const raw of collectEnforcedAnchors(declarative)) {
     const parsed = parseAnchor(raw);
     if (parsed.invalid) {
       errors.push(INVALID_ANCHOR_MSG(rel, raw, parsed.reason));
@@ -292,13 +317,13 @@ function validateSpecFile(filePath) {
   }
 
   // Fresh regex per call: /g regexes are stateful across .test() calls.
-  const isDelta = new RegExp(DELTA_MARKER_RE.source, 'g').test(content);
+  const isDelta = new RegExp(DELTA_MARKER_RE.source, 'g').test(declarative);
   if (isDelta) {
-    validateDelta(rel, content, errors);
+    validateDelta(rel, declarative, errors);
     return errors;
   }
 
-  validateBaseline(rel, content, errors);
+  validateBaseline(rel, declarative, errors);
   return errors;
 }
 
