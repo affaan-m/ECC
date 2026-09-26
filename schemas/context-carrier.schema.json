@@ -1,0 +1,106 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "ECC read-only skill carrier proposal",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "status", "active", "disposition", "nativeSupport", "target", "profileId", "selectionMode", "registryDigest", "profileDigest", "compilerDigest", "planDigest", "adapterDigest", "carrierDigest", "layout", "selectedIds", "routedIds", "excludedIds", "entries", "files", "limitations"],
+  "properties": {
+    "schemaVersion": { "const": "ecc.context-carrier.v1" },
+    "status": { "enum": ["planned", "unsupported"] },
+    "active": { "const": false },
+    "disposition": { "const": "proposed" },
+    "nativeSupport": { "const": "unobserved" },
+    "target": { "enum": ["adal", "antigravity", "claude", "claude-project", "codebuddy", "codex", "cursor", "gemini", "hermes", "joycode", "kimi", "openclaw", "opencode", "pi", "qwen", "zed"] },
+    "profileId": { "enum": ["lean@1", "full@1"] },
+    "selectionMode": { "enum": ["manual", "suggest", "auto"] },
+    "registryDigest": { "$ref": "#/definitions/digest" },
+    "profileDigest": { "$ref": "#/definitions/digest" },
+    "compilerDigest": { "$ref": "#/definitions/digest" },
+    "planDigest": { "$ref": "#/definitions/digest" },
+    "adapterDigest": { "$ref": "#/definitions/digest" },
+    "carrierDigest": { "$ref": "#/definitions/digest" },
+    "layout": {
+      "oneOf": [
+        { "type": "null" },
+        {
+          "type": "object", "additionalProperties": false,
+          "required": ["id", "skillRoot", "manifestPath"],
+          "properties": {
+            "id": { "enum": ["claude-plugin@1", "codex-plugin@1", "pi-package@1", "opencode-project@1", "cursor-project@1"] },
+            "skillRoot": { "enum": ["skills", ".opencode/skills", ".cursor/skills"] },
+            "manifestPath": { "enum": [null, ".claude-plugin/plugin.json", ".codex-plugin/plugin.json", "package.json"] }
+          }
+        }
+      ]
+    },
+    "selectedIds": { "$ref": "#/definitions/skillIds" },
+    "routedIds": { "$ref": "#/definitions/skillIds" },
+    "excludedIds": { "$ref": "#/definitions/skillIds" },
+    "entries": {
+      "type": "array",
+      "items": {
+        "type": "object", "additionalProperties": false,
+        "required": ["id", "name", "sourcePath", "contentDigest", "requiredResources", "installSupport"],
+        "properties": {
+          "id": { "$ref": "#/definitions/skillId" },
+          "name": { "type": "string", "minLength": 1, "maxLength": 64, "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$" },
+          "sourcePath": { "$ref": "#/definitions/path" },
+          "contentDigest": { "$ref": "#/definitions/digest" },
+          "requiredResources": { "type": "array", "uniqueItems": true, "items": { "$ref": "#/definitions/path" } },
+          "installSupport": { "enum": ["declared", "not-declared"] }
+        }
+      }
+    },
+    "files": {
+      "type": "array",
+      "items": {
+        "oneOf": [
+          {
+            "type": "object", "additionalProperties": false,
+            "required": ["kind", "skillId", "sourcePath", "destinationPath", "digest", "bytes"],
+            "properties": {
+              "kind": { "const": "copy" },
+              "skillId": { "$ref": "#/definitions/skillId" },
+              "sourcePath": { "$ref": "#/definitions/path" },
+              "destinationPath": { "$ref": "#/definitions/path" },
+              "digest": { "$ref": "#/definitions/digest" },
+              "bytes": { "$ref": "#/definitions/bytes" }
+            }
+          },
+          {
+            "type": "object", "additionalProperties": false,
+            "required": ["kind", "destinationPath", "content", "encoding", "digest", "bytes"],
+            "properties": {
+              "kind": { "const": "generated" },
+              "destinationPath": { "enum": [".claude-plugin/plugin.json", ".codex-plugin/plugin.json", "package.json"] },
+              "content": { "type": "string", "minLength": 1, "maxLength": 4096 },
+              "encoding": { "const": "utf8" },
+              "digest": { "$ref": "#/definitions/digest" },
+              "bytes": { "$ref": "#/definitions/bytes" }
+            }
+          }
+        ]
+      }
+    },
+    "limitations": { "type": "array", "minItems": 1, "items": { "type": "string", "minLength": 1 } }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "status": { "const": "unsupported" } } },
+      "then": { "properties": { "layout": { "type": "null" }, "files": { "type": "array", "maxItems": 0 } } },
+      "else": { "properties": { "layout": { "type": "object" } } }
+    },
+    {
+      "if": { "properties": { "target": { "enum": ["claude", "codex", "pi", "opencode", "cursor"] } } },
+      "then": { "properties": { "status": { "const": "planned" } } },
+      "else": { "properties": { "status": { "const": "unsupported" } } }
+    }
+  ],
+  "definitions": {
+    "digest": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+    "bytes": { "type": "integer", "minimum": 0, "maximum": 4194304 },
+    "skillId": { "type": "string", "pattern": "^skill:[a-z0-9]+(?:-[a-z0-9]+)*$" },
+    "skillIds": { "type": "array", "uniqueItems": true, "items": { "$ref": "#/definitions/skillId" } },
+    "path": { "type": "string", "minLength": 1, "maxLength": 4096, "pattern": "^(?!/)(?!.*(?:^|/)\\.\\.?(?:/|$))(?!.*[\\\\<>:\"|?*\\u0000-\\u001f\\u007f-\\u009f])[^/]+(?:/[^/]+)*$" }
+  }
+}

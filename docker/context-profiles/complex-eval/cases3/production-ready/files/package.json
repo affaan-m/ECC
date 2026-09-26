@@ -1,0 +1,6 @@
+{
+  "name": "notes-service",
+  "private": true,
+  "type": "commonjs",
+  "scripts": { "test": "node --test test/*.test.js" }
+}

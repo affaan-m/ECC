@@ -1104,7 +1104,7 @@ function runTests() {
       assert.strictEqual(fs.readFileSync(scriptsPackagePath, 'utf8'), userScriptsPackage);
 
       const state = readJson(path.join(claudeRoot, 'ecc', 'install-state.json'));
-      const boundaryPaths = [hooksPackagePath, libPackagePath];
+      const boundaryPaths = [hooksPackagePath, libPackagePath].map(file => fs.realpathSync(file));
       const packageBoundaryOperations = state.operations.filter(operation => (
         boundaryPaths.includes(operation.destinationPath)
       ));
@@ -1191,6 +1191,7 @@ function runTests() {
 
       applyInstallPlan({
         targetRoot: path.join(tempDir, 'installed'),
+        adapter: { id: 'test-install', target: 'test-install' },
         installStatePath,
         statePreview: {
           schemaVersion: 'ecc.install.v1',

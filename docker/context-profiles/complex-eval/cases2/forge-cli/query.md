@@ -1,0 +1,1 @@
+Build the snippet manager CLI per the README — all twelve numbered behaviors are contractual, including exact messages, exit codes, sorting, and the never-throw guarantee. `npm test` must pass, and add tests for the tricky edges (duplicates, invalid names, bad imports) so we don't regress them.

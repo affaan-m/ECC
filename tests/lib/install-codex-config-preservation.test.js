@@ -100,7 +100,8 @@ function editAfterRepairInspection(fixture, name, content, action) {
   let injected = false;
   fs.openSync = function (filePath, ...args) {
     const descriptor = originalOpen.call(fs, filePath, ...args);
-    if (!injected && filePath === fixture.destination(name)
+    if (!injected && typeof filePath === 'string'
+      && fs.realpathSync(filePath) === fs.realpathSync(fixture.destination(name))
       && new Error().stack.includes('inspectManagedOperation')) {
       inspectedDescriptors.add(descriptor);
     }

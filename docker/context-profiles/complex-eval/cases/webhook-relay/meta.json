@@ -1,0 +1,11 @@
+{
+  "id": "webhook-relay",
+  "category": "feature-build",
+  "manualIds": ["skill:tdd-workflow"],
+  "checkTimeoutMs": 60000,
+  "selection": {
+    "id": "complex-webhook-relay",
+    "category": "complex-feature-build",
+    "expectedIds": ["skill:tdd-workflow"]
+  }
+}

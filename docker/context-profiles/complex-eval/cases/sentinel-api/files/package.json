@@ -1,0 +1,6 @@
+{
+  "name": "sentinel-paste",
+  "private": true,
+  "type": "commonjs",
+  "scripts": { "test": "node --test test/" }
+}
