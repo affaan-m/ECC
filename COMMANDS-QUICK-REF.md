@@ -1,6 +1,6 @@
 # Commands Quick Reference
 
-> 94 slash commands installed globally. Type `/` in any Claude Code session to invoke.
+> 100 slash commands installed globally. Type `/` in any Claude Code session to invoke.
 
 ---
 
@@ -198,6 +198,12 @@ These lifecycle commands are also available through the `ecc` CLI.
 | `/ecc-guide` | Navigate ECC's current agents, skills, commands, hooks, install profiles, and docs from the live repository surface |
 | `/update-docs` | Sync documentation from source-of-truth files such as scripts, schemas, routes, and exports |
 | `/update-codemaps` | Regenerate codemaps for the codebase |
+| `/governance` | Discover and incrementally maintain a project's canonical documentation roles |
+| `/governance-init` | Initialize the minimum day-zero governance skeleton for a new long-running project |
+| `/governance-audit` | Run deterministic checks before a read-only semantic documentation audit |
+| `/governance-sync` | Synchronize only the canonical documents affected by the current phase |
+| `/governance-retro` | Analyze append-only project history for recurring defects and automation candidates |
+| `/regression-audit` | Execute module and downstream regression commands from the project ledger |
 
 ---
 

@@ -29,6 +29,7 @@ skills:
   - bun-runtime
   - canary-watch
   - carrier-relationship-management
+  - change-impact
   - ck
   - claude-devfleet
   - click-path-audit
@@ -38,6 +39,7 @@ skills:
   - compose-multiplatform-patterns
   - configure-ecc
   - contract-first
+  - context-and-decisions
   - content-engine
   - content-hash-cache-pattern
   - context-budget
@@ -61,6 +63,7 @@ skills:
   - dmux-workflows
   - docker-patterns
   - documentation-lookup
+  - docs-governance
   - e2e-testing
   - energy-procurement
   - enterprise-agent-ops
@@ -100,6 +103,7 @@ skills:
   - logistics-exception-management
   - market-research
   - mcp-server-patterns
+  - module-regression
   - motion-advanced
   - motion-foundations
   - motion-patterns
@@ -157,6 +161,7 @@ skills:
   - tasteforge-video
   - tdd-workflow
   - team-builder
+  - test-collaboration
   - token-budget-advisor
   - unified-memory
   - verification-loop
@@ -194,6 +199,11 @@ commands:
   - go-review
   - go-test
   - gradle-build
+  - governance
+  - governance-audit
+  - governance-init
+  - governance-retro
+  - governance-sync
   - harness-audit
   - hookify
   - hookify-configure
@@ -242,6 +252,7 @@ commands:
   - react-build
   - react-review
   - react-test
+  - regression-audit
   - refactor-clean
   - resume-session
   - review-pr

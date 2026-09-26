@@ -1,0 +1,7 @@
+interface:
+  display_name: "Change Impact"
+  short_description: "Map evidence-backed blast radius before changing code"
+  brand_color: "#F59E0B"
+  default_prompt: "Use $change-impact to map the blast radius, verification, and documentation effects of a proposed change."
+policy:
+  allow_implicit_invocation: true
