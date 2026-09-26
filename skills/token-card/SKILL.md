@@ -66,11 +66,22 @@ npm view @tokenchit/cli@0.10.0 dist.integrity dist.tarball
    **Skip this entirely when the user passed `--dry-run`**, and report that `.tokenchit.json`
    *would* be created. A preview that writes a config file is not a preview.
 
-3. **Render the card:**
+3. **Render the card.** The bare command, which writes `tokenchit.svg` in the repository root:
 
    ```bash
-   npx -y @tokenchit/cli@0.10.0 sync [--out PATH] [--theme auto|light|dark] [--dry-run]
+   npx -y @tokenchit/cli@0.10.0 sync
    ```
+
+   Append only the flags the user actually asked for, each spelled exactly as below. Do not
+   copy a placeholder into the command — `sync` ignores an unrecognised positional argument
+   rather than refusing it, so a bracketed `[--dry-run]` reaches the CLI as junk and the card
+   is written anyway, which is the opposite of what was asked.
+
+   | Flag | Effect |
+   |---|---|
+   | `--out <path>` | Write somewhere other than `tokenchit.svg` |
+   | `--theme auto` \| `light` \| `dark` | Card theme; `auto` adapts to the reader's system |
+   | `--dry-run` | Print what would be written and touch nothing |
 
    `sync` reads local files and sends nothing: no prompts, no code, no file contents leave
    the machine, and it transmits nothing to any server. The npx invocation around it is a
@@ -98,5 +109,6 @@ On a dry run: what would have been written, and nothing on disk changed.
 
 ## Notes
 
-- Requires Node.js. Nothing is installed globally; `npx` fetches the pinned version per run.
+- Requires Node.js 22 or newer (the package declares `engines: { node: ">=22" }`). Nothing is
+  installed globally; `npx` fetches the pinned version per run.
 - Reads token counts and timestamps only.
