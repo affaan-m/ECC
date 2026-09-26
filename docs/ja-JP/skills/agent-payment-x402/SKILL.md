@@ -186,17 +186,21 @@ let sessionApproved = false;
 async function payOnce(url: string, init?: RequestInit): Promise<Response> {
   // Reserve the worst case the policy allows. Settlement responses do not
   // carry an amount, so counting MAX_AMOUNT per call is a deliberate
-  // over-estimate — it can stop early, never late.
+  // over-estimate — it can stop early, never late. Reserve before any await,
+  // so concurrent calls cannot all pass the check.
   if (sessionSpent + MAX_AMOUNT > SESSION_CAP) {
     throw new Error("Session budget exhausted — blocked");
   }
+  sessionSpent += MAX_AMOUNT;
   if (!sessionApproved) {
     sessionApproved = await confirmWithUser(
       `Allow paid requests up to ${SESSION_CAP} atomic units this session?`,
     );
-    if (!sessionApproved) throw new Error("User declined — no payment attempted");
+    if (!sessionApproved) {
+      sessionSpent -= MAX_AMOUNT; // nothing was signed
+      throw new Error("User declined — no payment attempted");
+    }
   }
-  sessionSpent += MAX_AMOUNT;
   return fetchWithPayment(url, init);
 }
 
