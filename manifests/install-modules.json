@@ -386,6 +386,36 @@
       "stability": "stable"
     },
     {
+      "id": "documentation-governance",
+      "kind": "skills",
+      "description": "Optional documentation-governance routing and deterministic read-only audits.",
+      "paths": [
+        "skills/docs-governance"
+      ],
+      "targets": [
+        "claude",
+        "claude-project",
+        "cursor",
+        "antigravity",
+        "codex",
+        "opencode",
+        "codebuddy",
+        "joycode",
+        "qwen",
+        "zed",
+        "hermes",
+        "openclaw",
+        "kimi",
+        "adal"
+      ],
+      "dependencies": [
+        "workflow-quality"
+      ],
+      "defaultInstall": false,
+      "cost": "light",
+      "stability": "beta"
+    },
+    {
       "id": "optimization-workflows",
       "kind": "skills",
       "description": "Parallel execution, benchmarking, data-throughput, latency, and recursive decision-ledger skills for faster evidence-backed work.",
