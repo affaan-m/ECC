@@ -35,6 +35,26 @@ test('a comment-only change to C-family code is trivial', () => {
   assert.strictEqual(isTrivialEdit('a(); // x', 'a(); // y', JS), true);
 });
 
+test('comment markers inside a string are code', () => {
+  assert.strictEqual(isTrivialEdit('const s = "a // b";', 'const s = "a // c";', JS), false);
+  assert.strictEqual(isTrivialEdit("const s = 'x /* y */ z';", "const s = 'x /* q */ z';", JS), false);
+});
+
+test('an escaped quote does not end a string', () => {
+  assert.strictEqual(isTrivialEdit('const s = "a\\" // b";', 'const s = "a\\" // c";', JS), false);
+});
+
+test('a long block comment with stars and slashes stays a comment', () => {
+  const before = 'a();\n/* one * two / three\n * four ** five\n */\nb();';
+  const after = 'a();\n/* one * two / 3\n * 4 ** five\n */\nb();';
+  assert.strictEqual(isTrivialEdit(before, after, JS), true);
+});
+
+test('a line comment ending in CRLF keeps the next line as code', () => {
+  assert.strictEqual(isTrivialEdit('a(); // x\r\nb();', 'a(); // y\r\nc();', JS), false);
+  assert.strictEqual(isTrivialEdit('a(); // x\r\nb();', 'a(); // y\r\nb();', JS), true);
+});
+
 test('a code change is not trivial', () => {
   assert.strictEqual(isTrivialEdit('a();', 'b();', JS), false);
 });

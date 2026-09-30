@@ -75,7 +75,43 @@ function endsWithContinuation(code) {
   return code[end - 1] === '\\';
 }
 
+const CODE_SPECIALS = new WeakMap();
+
+function escapeClass(chars) {
+  return chars.replace(/[\\\]^-]/g, ch => `\\${ch}`);
+}
+
+function codeSpecials(spec) {
+  let specials = CODE_SPECIALS.get(spec);
+  if (!specials) {
+    const chars = `\n\r/${spec.lineComment === '#' ? '#' : ''}${spec.quotes || ''}${spec.forbiddenCode || ''}${spec.jsx !== undefined ? '<-' : ''}${spec.rustChars ? "'" : ''}`;
+    specials = { pattern: new RegExp(`[${escapeClass(chars)}]`, 'g'), chars: new Set(chars) };
+    CODE_SPECIALS.set(spec, specials);
+  }
+  return specials;
+}
+
+function nextSpecial(pattern, text, i) {
+  pattern.lastIndex = i;
+  const match = pattern.exec(text);
+  return match ? match.index : text.length;
+}
+
+const LINE_BREAK = /[\n\r]/g;
+const BLOCK_SPECIALS = /[\n\r*/]/g;
+const STRING_SPECIALS = new Map();
+
+function stringSpecials(quote) {
+  let pattern = STRING_SPECIALS.get(quote);
+  if (!pattern) {
+    pattern = new RegExp(`[\\n\\r\\\\${escapeClass(quote)}]`, 'g');
+    STRING_SPECIALS.set(quote, pattern);
+  }
+  return pattern;
+}
+
 function lexCodeLines(text, spec) {
+  const specials = codeSpecials(spec);
   const lines = [];
   let code = '';
   let state = 'code';
@@ -118,8 +154,15 @@ function lexCodeLines(text, spec) {
       if (ch === '\r' && text[i + 1] === '\n') i++;
       continue;
     }
-    if (state === 'line') continue;
+    if (state === 'line') {
+      i = nextSpecial(LINE_BREAK, text, i) - 1;
+      continue;
+    }
     if (state === 'block') {
+      if (ch !== '*' && ch !== '/') {
+        i = nextSpecial(BLOCK_SPECIALS, text, i + 1) - 1;
+        continue;
+      }
       if (ch === '*' && text[i + 1] === '/') {
         endComment(i);
         state = 'code';
@@ -131,6 +174,14 @@ function lexCodeLines(text, spec) {
       continue;
     }
     if (state === 'string') {
+      if (ch !== '\\' && ch !== quote) {
+        const end = nextSpecial(stringSpecials(quote), text, i + 1);
+        const run = text.slice(i, end);
+        append(run);
+        stringBody += run;
+        i = end - 1;
+        continue;
+      }
       append(ch);
       if (ch === '\\') {
         const next = text[i + 1];
@@ -143,6 +194,12 @@ function lexCodeLines(text, spec) {
       } else {
         stringBody += ch;
       }
+      continue;
+    }
+    if (!specials.chars.has(ch)) {
+      const end = nextSpecial(specials.pattern, text, i + 1);
+      append(text.slice(i, end));
+      i = end - 1;
       continue;
     }
     if (spec.lineComment === '//' && ch === '/' && text[i + 1] === '/') {
