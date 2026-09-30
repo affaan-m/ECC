@@ -17,14 +17,13 @@
  * keeping the PreToolUse hook fast even for very large sessions.
  */
 
-const fs = require('fs');
+const { readFileTail, DEFAULT_TRANSCRIPT_TAIL_BYTES } = require('./file-tail');
 
 const STANDARD_CONTEXT_WINDOW_TOKENS = 200000;
 const LARGE_CONTEXT_WINDOW_TOKENS = 1000000;
 const DEFAULT_CONTEXT_THRESHOLD_STANDARD = 160000;
 const DEFAULT_CONTEXT_THRESHOLD_LARGE = 250000;
 const DEFAULT_CONTEXT_INTERVAL_TOKENS = 60000;
-const DEFAULT_TRANSCRIPT_TAIL_BYTES = 256 * 1024;
 const MAX_TOKEN_SETTING = 10000000;
 const LARGE_WINDOW_MODEL_MARKER = '[1m]';
 
@@ -59,38 +58,6 @@ function isKnownModelFamilyMatch(model, familyId) {
  * Read the trailing `tailBytes` of a file as UTF-8.
  * Returns null when the file is missing or unreadable.
  */
-function readFileTail(filePath, tailBytes) {
-  let fd;
-  try {
-    fd = fs.openSync(filePath, 'r');
-  } catch {
-    return null;
-  }
-
-  try {
-    const size = fs.fstatSync(fd).size;
-    const start = Math.max(0, size - tailBytes);
-    const length = size - start;
-    if (length <= 0) {
-      return { text: '', truncated: false };
-    }
-
-    const buffer = Buffer.alloc(length);
-    const bytesRead = fs.readSync(fd, buffer, 0, length, start);
-    return {
-      text: buffer.toString('utf8', 0, bytesRead),
-      truncated: start > 0
-    };
-  } catch {
-    return null;
-  } finally {
-    try {
-      fs.closeSync(fd);
-    } catch {
-      /* ignore */
-    }
-  }
-}
 
 /**
  * Extract the context token total from a transcript record's usage block.

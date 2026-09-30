@@ -7394,7 +7394,7 @@ function runTests() {
       'const hook = require(process.argv[1]);',
       'hook.run(process.argv[2]);',
       "const names = Object.keys(require.cache).map(f => require('path').basename(f, '.js'));",
-      "const libs = names.filter(n => /^(gateguard-|transcript-context$)/.test(n) && !/^gateguard-(fact-force|heredoc)$/.test(n));",
+      "const libs = names.filter(n => /^(gateguard-|transcript-context$|file-tail$)/.test(n) && !/^gateguard-(fact-force|heredoc)$/.test(n));",
       'process.stdout.write(JSON.stringify(libs.sort()));'
     ].join('\n');
     try {
@@ -7411,7 +7411,7 @@ function runTests() {
     ['a first shell command loads only the read-only check', lazyBash('npm test'), [], ['gateguard-readonly-shell', 'gateguard-state']],
     ['a shell command after the routine gate loads only the state helpers', lazyBash('npm run build'), [lazyBash('npm test')], ['gateguard-state']],
     ['an edit of a checked file loads only the target classification', lazyEdit, [lazyEdit], ['gateguard-state', 'gateguard-target-class']],
-    ['a first touch without a transcript loads no search matching', lazyEdit, [], ['gateguard-change-profile', 'gateguard-code-lexer', 'gateguard-file-context', 'gateguard-state', 'gateguard-target-class', 'gateguard-turn-scan', 'transcript-context']]
+    ['a first touch without a transcript loads no search matching', lazyEdit, [], ['file-tail', 'gateguard-change-profile', 'gateguard-code-lexer', 'gateguard-file-context', 'gateguard-state', 'gateguard-target-class', 'gateguard-turn-scan']]
   ];
   for (const [label, payload, setup, expected] of lazyCases) {
     if (test(`lazy loading: ${label}`, () => assert.deepStrictEqual(loadedLibs(payload, setup), expected))) passed++;

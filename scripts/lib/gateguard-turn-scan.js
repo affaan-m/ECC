@@ -3,7 +3,7 @@
 const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
-const { readFileTail, DEFAULT_TRANSCRIPT_TAIL_BYTES } = require('./transcript-context');
+const { readFileTail, DEFAULT_TRANSCRIPT_TAIL_BYTES } = require('./file-tail');
 
 const TRANSCRIPT_SCAN_MAX_LINES = 2000;
 // see docs/gateguard/design-notes.md#read-is-not-evidence

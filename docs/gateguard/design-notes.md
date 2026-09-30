@@ -58,6 +58,8 @@ and trivial edits) is in [change-profile.md](change-profile.md).
   detection and sibling-collapse eligibility. Stateless; filesystem access is
   limited to worktree `.git` checks, realpath/lstat of the target's parent
   chain, and lstat/stat of the target for its link count.
+- `scripts/lib/file-tail.js`: the bounded tail read shared with the
+  strategic-compact hook's `transcript-context.js`.
 - `scripts/lib/gateguard-turn-scan.js`: one bounded tail read of the Claude Code
   JSONL transcript, walked back to the start of the current turn. Yields the
   turn id, the turn's completed non-error search calls (newest first), their
