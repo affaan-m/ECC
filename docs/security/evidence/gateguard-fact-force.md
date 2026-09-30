@@ -71,16 +71,16 @@ bypasses as SARIF errors. They are:
 
 | Suite | this branch | `main` |
 | --- | --- | --- |
-| `tests/hooks/gateguard-fact-force.test.js` | 1010 passed, 0 failed | 704 passed, 0 failed |
+| `tests/hooks/gateguard-fact-force.test.js` | 1018 passed, 0 failed | 704 passed, 0 failed |
 | `tests/hooks/gateguard-scenarios.test.js` | 25 passed, 0 failed | — |
 | `tests/lib/gateguard-target-class.test.js` | 30 passed, 0 failed | — |
 | `tests/lib/gateguard-readonly-shell.test.js` | 18 passed, 0 failed | — |
 | `tests/lib/gateguard-change-profile.test.js` | 47 passed, 0 failed | — |
-| `tests/lib/gateguard-code-lexer.test.js` | 11 passed, 0 failed | — |
+| `tests/lib/gateguard-code-lexer.test.js` | 15 passed, 0 failed | — |
 | `tests/lib/gateguard-file-context.test.js` | 7 passed, 0 failed | — |
 | `tests/lib/gateguard-search-filters.test.js` | 10 passed, 0 failed | — |
-| `tests/lib/gateguard-turn-scan.test.js` | 16 passed, 0 failed | — |
-| `tests/scripts/gateguard-eval.test.js` | 12 passed, 0 failed | — |
+| `tests/lib/gateguard-turn-scan.test.js` | 17 passed, 0 failed | — |
+| `tests/scripts/gateguard-eval.test.js` | 15 passed, 0 failed | — |
 
 ## Repository gates
 

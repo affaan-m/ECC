@@ -42,7 +42,7 @@ Baseline comparison against `main`:
 - The gate reports one new and one resolved `info` finding. It is the same
   finding, "Hook code reads Claude transcript input" in
   `scripts/hooks/gateguard-fact-force.js`, on the same unchanged source line,
-  which moved from line 1356 to 1393. AgentShield puts the line number in the
+  which moved from line 1356 to 1418. AgentShield puts the line number in the
   finding id and the id in its baseline fingerprint, so a moved line counts
   as new. Because the gate allows no new findings, it exits `3` on this line
   shift alone.

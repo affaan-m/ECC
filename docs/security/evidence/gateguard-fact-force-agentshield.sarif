@@ -144,7 +144,7 @@
               }
             },
             {
-              "id": "hooks-code-transcript-access-1393",
+              "id": "hooks-code-transcript-access-1418",
               "name": "Hook code reads Claude transcript input",
               "shortDescription": {
                 "text": "Hook code reads Claude transcript input"
@@ -341,7 +341,7 @@
       "invocations": [
         {
           "executionSuccessful": true,
-          "endTimeUtc": "2026-09-30T03:29:39.393Z",
+          "endTimeUtc": "2026-09-30T15:35:58.877Z",
           "workingDirectory": {
             "uri": "<target-path>"
           }
@@ -1144,7 +1144,7 @@
           }
         },
         {
-          "ruleId": "hooks-code-transcript-access-1393",
+          "ruleId": "hooks-code-transcript-access-1418",
           "ruleIndex": 5,
           "level": "note",
           "message": {
@@ -1157,7 +1157,7 @@
                   "uri": "scripts/hooks/gateguard-fact-force.js"
                 },
                 "region": {
-                  "startLine": 1393
+                  "startLine": 1418
                 }
               }
             }
