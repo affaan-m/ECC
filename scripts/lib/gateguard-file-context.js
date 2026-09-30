@@ -708,12 +708,13 @@ function trivialInFile(pairs, fileText, spec) {
     const start = windowStart(text, found.first);
     const end = windowEnd(text, found.last + oldString.length);
     work += start + 2 * (end - start);
-    if (end - start > MAX_WINDOW_CHARS || work > MAX_CONTEXT_WORK || !spec.startsFresh(text.slice(0, start), spec)) return false;
+    if (end - start > MAX_WINDOW_CHARS || work > MAX_CONTEXT_WORK) return false;
     const before = text.slice(start, end);
     const after = replaceAll
       ? before.split(oldString).join(newString)
       : `${text.slice(start, found.first)}${newString}${text.slice(found.first + oldString.length, end)}`;
-    if (!isTrivialEdit(before, after, spec)) return false;
+    // see docs/gateguard/change-profile.md#file-context
+    if (!isTrivialEdit(before, after, spec) || !spec.startsFresh(text.slice(0, start), spec)) return false;
     text = `${text.slice(0, start)}${after}${text.slice(end)}`;
     if (text.length > MAX_FILE_CHARS) return false;
   }

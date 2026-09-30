@@ -1674,6 +1674,11 @@ function countTrivialAllow() {
   return saveState({ ...state, trivial_allows: getTrivialAllowCount(state) + 1 });
 }
 
+// see docs/gateguard/change-profile.md#when-a-change-is-profiled
+function needsProfile(toolName, cls) {
+  return targetClass().questionsUseProfile(cls) || ((toolName === 'Edit' || toolName === 'MultiEdit') && TRIVIAL_CLASSES.has(cls)) || isMetricsEnabled();
+}
+
 function isTrivialChange(cls, restricted, profile) {
   return !restricted && TRIVIAL_CLASSES.has(cls) && Boolean(profile) && profile.known === true && profile.trivial === true;
 }
@@ -2332,7 +2337,9 @@ function gate(rawInput) {
         recordDecision('credit', 'prior-search', { target: filePath, cls, sensitive });
         return { additionalContext: creditNote(credit, filePath), exitCode: 0 };
       }
-      const profile = restricted || toolName === 'NotebookEdit' ? null : changeProfileFor(toolName, filePath, [toolInput], toolInput.content, data);
+      const profile = restricted || toolName === 'NotebookEdit' || !needsProfile(toolName, cls)
+        ? null
+        : changeProfileFor(toolName, filePath, [toolInput], toolInput.content, data);
       if (toolName === 'Edit' && isTrivialChange(cls, restricted, profile)) {
         if (!countTrivialAllow()) {
           return allowWithStateWarning();
@@ -2406,7 +2413,9 @@ function gate(rawInput) {
           notes.push(creditNote(credit, filePath));
           continue;
         }
-        const profile = restricted ? null : changeProfileFor('Edit', filePath, entriesFor(edits, fileKey, data), undefined, data);
+        const profile = restricted || !needsProfile('MultiEdit', cls)
+          ? null
+          : changeProfileFor('Edit', filePath, entriesFor(edits, fileKey, data), undefined, data);
         if (isTrivialChange(cls, restricted, profile)) {
           if (!countTrivialAllow()) {
             return allowWithStateWarning();

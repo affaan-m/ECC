@@ -254,11 +254,24 @@ against the file it applies to.
   eight levels.
 - Go files that import `"C"` are never trivial: the comment before the import
   is C code.
+- The window comparison runs before the prefix scan. Both must pass, so the
+  order changes no result, but most first-touch edits change code and fail
+  the window comparison, which spares them a scan of everything above the
+  edit.
 
 The scanner was checked against real tokenizers over this repository: every
 line start it calls plain code in 801 JS files (espree) and 146 Python files
 (`tokenize`) is outside strings, templates, regex literals and comments and
 not a backslash continuation.
+
+## When a change is profiled
+
+The profile is computed only when its result is used: for classes whose
+questions depend on it (code), for Edit and MultiEdit calls on the classes
+that can pass as trivial (code, test, prose), and for every call when
+decision metrics are on, so the metrics lines keep their profile fields.
+Instruction and config targets, and new test or prose files, skip it and the
+lexer modules it needs.
 
 ## Questions from the change profile
 

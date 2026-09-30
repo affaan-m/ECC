@@ -7411,7 +7411,8 @@ function runTests() {
     ['a first shell command loads only the read-only check', lazyBash('npm test'), [], ['gateguard-readonly-shell', 'gateguard-state']],
     ['a shell command after the routine gate loads only the state helpers', lazyBash('npm run build'), [lazyBash('npm test')], ['gateguard-state']],
     ['an edit of a checked file loads only the target classification', lazyEdit, [lazyEdit], ['gateguard-state', 'gateguard-target-class']],
-    ['a first touch without a transcript loads no search matching', lazyEdit, [], ['file-tail', 'gateguard-change-profile', 'gateguard-code-lexer', 'gateguard-file-context', 'gateguard-state', 'gateguard-target-class', 'gateguard-turn-scan']]
+    ['a first touch without a transcript loads no search matching', lazyEdit, [], ['file-tail', 'gateguard-change-profile', 'gateguard-code-lexer', 'gateguard-file-context', 'gateguard-state', 'gateguard-target-class', 'gateguard-turn-scan']],
+    ['a first touch of an instruction file skips the change profile', { ...lazyEdit, tool_input: { ...lazyEdit.tool_input, file_path: '/tmp/gateguard-lazy/CLAUDE.md' } }, [], ['file-tail', 'gateguard-state', 'gateguard-target-class', 'gateguard-turn-scan']]
   ];
   for (const [label, payload, setup, expected] of lazyCases) {
     if (test(`lazy loading: ${label}`, () => assert.deepStrictEqual(loadedLibs(payload, setup), expected))) passed++;

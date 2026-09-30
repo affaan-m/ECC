@@ -193,6 +193,11 @@ function codeQuestionIds(isWrite, profile) {
 }
 
 /** Stable ids of the first-touch questions for a class, action and change profile. */
+/** True when a class's questions depend on the change profile. */
+function questionsUseProfile(cls) {
+  return !Object.hasOwn(CLASS_QUESTION_IDS, cls);
+}
+
 function questionIdsFor(cls, isWrite, profile) {
   const ids = Object.hasOwn(CLASS_QUESTION_IDS, cls) ? CLASS_QUESTION_IDS[cls](Boolean(isWrite)) : codeQuestionIds(Boolean(isWrite), profile);
   return [...ids, 'quote-instruction'];
@@ -407,6 +412,7 @@ function collapseGateDir(filePath, data, cls) {
 }
 
 module.exports = {
+  questionsUseProfile,
   WINDOWS_PATH_PATTERN,
   COLLAPSIBLE_CLASSES,
   CLASS_QUESTIONS,
