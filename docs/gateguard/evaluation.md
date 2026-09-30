@@ -84,10 +84,10 @@ Corpus: 20 scenarios, 184 steps.
 | Allows with a credit note | 12 | 0 | 12 |
 | Allows with a sibling note | 11 | 0 | 11 |
 | Allows with a trivial-edit note | 5 | 0 | 5 |
-| Hook latency p50, fresh process (ms) | 21.18 | 10.58 | 25.11 |
-| Hook latency p95, fresh process (ms) | 30.34 | 16.67 | 38.24 |
-| run() latency p50, warm (ms) | 2.03 | 1.03 | 2.01 |
-| run() latency p95, warm (ms) | 10.56 | 2.58 | 7.03 |
+| Hook latency p50, fresh process (ms) | 22.81 | 10.12 | 25.75 |
+| Hook latency p95, fresh process (ms) | 32.60 | 13.92 | 38.08 |
+| run() latency p50, warm (ms) | 1.81 | 0.78 | 1.94 |
+| run() latency p95, warm (ms) | 11.16 | 2.08 | 7.64 |
 
 | Scenario | Steps | Denials: working tree | Denials: upstream/main | Denials: 4b02f669 |
 | --- | ---: | ---: | ---: | ---: |
@@ -184,12 +184,10 @@ What the working tree still gets wrong, by the corpus's own labels:
   (the 1 unasked one).
 - Latency: a first touch costs more than on `upstream/main` because it reads
   the transcript, matches the searches that name the target, reads the target
-  file and profiles the change (fresh-process p50 21.2 ms against 10.6 ms,
-  p95 30.3 ms against 16.7 ms on this corpus, where every step is a first
-  touch or a gate). Shell commands and repeat edits stay within about 1 to
-  2.5 ms of `main`; see [Latency](#latency). Checking a comment-only edit
-  reads and scans the target file, which costs up to about 50 ms for a 1 MiB
-  file (the largest one read).
+  file and profiles the change (fresh-process p50 22.8 ms against 10.1 ms,
+  p95 32.6 ms against 13.9 ms on this corpus, where every step is a first
+  touch or a gate). Shell commands and repeat edits stay within about
+  2 ms of `main`; see [Latency](#latency).
 
 ## Reproduce
 
@@ -221,18 +219,20 @@ a step decided differently fails the run. `--no-cold` skips the pass.
 
 Per call type: 25 fresh processes each, p50 of `require()` plus p50 of
 `run()` in ms, Node 22 on Linux, with a 20-search turn and a 50-function
-target file:
+target file; the last row is the median of 9 runs on a 406 KiB file. Runs on
+the same machine vary by about 1 to 2 ms.
 
 | Call | this branch | `4b02f669` | `main` |
 | --- | ---: | ---: | ---: |
-| Shell command, first of session | 10.2 | 19.2 | 8.7 |
-| Shell command, routine gate already passed | 12.3 | 21.3 | 11.6 |
-| Edit of a file already checked | 11.1 | 20.6 | 8.7 |
-| First-touch edit, denied | 22.4 | 29.7 | 9.6 |
-| First-touch edit, comment-only pass | 25.7 | 38.5 | 9.5 |
+| Shell command, first of session | 10.5 | 20.8 | 10.6 |
+| Shell command, routine gate already passed | 12.0 | 21.3 | 11.1 |
+| Edit of a file already checked | 11.0 | 19.2 | 9.4 |
+| First-touch edit, denied | 23.5 | 29.1 | 9.3 |
+| First-touch edit, comment-only pass | 25.0 | 35.8 | 10.5 |
+| First-touch edit, denied, 406 KiB file | 31.3 | 49.7 | 17.4 |
 
 Shell commands and repeat edits, most calls in a session, now load only the
-modules they use and stay within about 1 to 2.5 ms of `main`. A first touch
+modules they use and stay within about 2 ms of `main`. A first touch
 reads the transcript, parses the turn's searches that name the target, reads
 the target file and profiles the change; `main` does none of these. Each hook
 call is a new Node process, so the code a call runs is also compiled on that

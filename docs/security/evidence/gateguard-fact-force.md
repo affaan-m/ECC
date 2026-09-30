@@ -71,7 +71,7 @@ bypasses as SARIF errors. They are:
 
 | Suite | this branch | `main` |
 | --- | --- | --- |
-| `tests/hooks/gateguard-fact-force.test.js` | 1018 passed, 0 failed | 704 passed, 0 failed |
+| `tests/hooks/gateguard-fact-force.test.js` | 1019 passed, 0 failed | 704 passed, 0 failed |
 | `tests/hooks/gateguard-scenarios.test.js` | 25 passed, 0 failed | — |
 | `tests/lib/gateguard-target-class.test.js` | 30 passed, 0 failed | — |
 | `tests/lib/gateguard-readonly-shell.test.js` | 18 passed, 0 failed | — |
