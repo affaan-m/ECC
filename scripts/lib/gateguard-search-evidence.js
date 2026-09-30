@@ -84,6 +84,16 @@ function eligibleStem(filePath, data) {
   return stem.length >= MIN_STEM_LENGTH && !GENERIC_STEMS.has(stem) ? stem : null;
 }
 
+// see docs/gateguard/design-notes.md#search-prefilter
+function inputMayMention(input, word) {
+  if (!input || typeof input !== 'object') return false;
+  let text = '';
+  for (const value of Object.values(input)) {
+    if (typeof value === 'string') text += `\n${value}`;
+  }
+  return text.toLowerCase().replace(/["'\\]/g, '').includes(word);
+}
+
 // see docs/gateguard/design-notes.md#stem-matching
 function stemMatcher(stem) {
   if (!stem) return null;
@@ -393,6 +403,30 @@ function createSearchEvidence({ quoteAwareSegments, commandBasename, SHELL_SEGME
     return evidence;
   }
 
+  const evidenceCache = new WeakMap();
+  const trustCache = new WeakMap();
+
+  function cachedEvidence(search, shellDirsTrusted) {
+    if (!search || typeof search !== 'object') return { items: [], misses: [] };
+    let byTrust = evidenceCache.get(search);
+    if (!byTrust) {
+      byTrust = new Map();
+      evidenceCache.set(search, byTrust);
+    }
+    let entry = byTrust.get(shellDirsTrusted);
+    if (!entry) {
+      const misses = [];
+      entry = { items: searchEvidence(search, shellDirsTrusted, misses), misses };
+      byTrust.set(shellDirsTrusted, entry);
+    }
+    return entry;
+  }
+
+  function shellDirsTrustedFor(scan) {
+    if (!trustCache.has(scan)) trustCache.set(scan, !turnChangesDirectory(scan.shellCommands));
+    return trustCache.get(scan);
+  }
+
   function turnChangesDirectory(shellCommands) {
     if (!Array.isArray(shellCommands)) return false;
     return shellCommands.some(command => {
@@ -409,13 +443,17 @@ function createSearchEvidence({ quoteAwareSegments, commandBasename, SHELL_SEGME
       if (typeof targetPath !== 'string' || !targetPath) return null;
       const ctx = dirContext(targetPath, data);
       if (!ctx) return null;
-      const stem = stemMatcher(eligibleStem(targetPath, data));
+      const eligible = eligibleStem(targetPath, data);
+      if (eligible === null && !allowDirMatch) return null;
+      const stem = stemMatcher(eligible);
       // see docs/gateguard/design-notes.md#same-batch-searches
       const excluded = excludedBatchId(scan, data);
-      const shellDirsTrusted = !turnChangesDirectory(scan.shellCommands);
+      let shellDirsTrusted = null;
       for (const search of scan.searches) {
         if (typeof search.messageId !== 'string' || !search.messageId || search.messageId === excluded) continue;
-        for (const item of searchEvidence(search, shellDirsTrusted)) {
+        if (!allowDirMatch && !inputMayMention(search.input, eligible)) continue;
+        if (shellDirsTrusted === null) shellDirsTrusted = shellDirsTrustedFor(scan);
+        for (const item of cachedEvidence(search, shellDirsTrusted).items) {
           if (!evidenceInScope(item, ctx) || !filtersAdmitTarget(item, ctx, stem)) continue;
           const byStem = stem !== null && includesAdmitTarget(item, ctx) && item.texts.some(text => stem.test(text.toLowerCase()));
           const byDir = Boolean(allowDirMatch) && evidenceNamesDir(item, ctx);
@@ -462,15 +500,17 @@ function createSearchEvidence({ quoteAwareSegments, commandBasename, SHELL_SEGME
       const bare = bareStem(targetPath, data);
       const rawStem = eligible === null && bare.length >= MIN_GENERIC_MISS_STEM ? stemMatcher(bare) : null;
       const excluded = excludedBatchId(scan, data);
-      const shellDirsTrusted = !turnChangesDirectory(scan.shellCommands);
+      let shellDirsTrusted = null;
       let best = null;
       const consider = (name, detail, reason) => {
         if (reason && (best === null || MISS_RANK[reason] < MISS_RANK[best.reason])) best = { name, detail, reason };
       };
       for (const search of scan.searches) {
         if (!search || typeof search.messageId !== 'string' || !search.messageId) continue;
-        const misses = [];
-        for (const item of searchEvidence(search, shellDirsTrusted, misses)) {
+        if (!allowDirMatch && (!bare || !inputMayMention(search.input, bare))) continue;
+        if (shellDirsTrusted === null) shellDirsTrusted = shellDirsTrustedFor(scan);
+        const { items, misses } = cachedEvidence(search, shellDirsTrusted);
+        for (const item of items) {
           consider(search.name, item.detail, itemMiss(item, ctx, stem, rawStem, allowDirMatch, search.messageId === excluded));
         }
         for (const miss of misses) {

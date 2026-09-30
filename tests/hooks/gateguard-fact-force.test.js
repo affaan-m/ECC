@@ -5663,6 +5663,21 @@ function runTests() {
     });
   }
 
+  // --- The search prefilter never hides a search that names the target ---
+  const prefilterCases = [
+    ["rg wid''get .", true],
+    ['rg "wid"get .', true],
+    ['rg WIDGET .', true],
+    ['rg gadget .', false]
+  ];
+  for (const [command, credited] of prefilterCases) {
+    gateCase(`search prefilter: ${command}`, () => {
+      const out = creditEdit(exclusionTarget, exclusionTurn('Bash', { command }));
+      if (credited) assertCredited(out, command);
+      else assertNotCredited(out, command);
+    });
+  }
+
   // --- Every PowerShell spelling of -Exclude is an exclusion ---
   const psExcludeDenied = [
     'Get-ChildItem -Recurse -ex widget.py',
@@ -7369,6 +7384,38 @@ function runTests() {
     passed++;
   } else {
     failed++;
+  }
+
+  // --- Modules load only on the paths that need them ---
+  const loadedLibs = (payload, setup = []) => {
+    const dir = fs.mkdtempSync(path.join(tmpRoot, 'gateguard-lazy-'));
+    const env = { PATH: process.env.PATH, HOME: dir, GATEGUARD_STATE_DIR: path.join(dir, 'state'), CLAUDE_PROJECT_DIR: dir };
+    const probe = [
+      'const hook = require(process.argv[1]);',
+      'hook.run(process.argv[2]);',
+      "const names = Object.keys(require.cache).map(f => require('path').basename(f, '.js'));",
+      "const libs = names.filter(n => /^(gateguard-|transcript-context$)/.test(n) && !/^gateguard-(fact-force|heredoc)$/.test(n));",
+      'process.stdout.write(JSON.stringify(libs.sort()));'
+    ].join('\n');
+    try {
+      for (const step of setup) spawnSync(process.execPath, ['-e', probe, hookScript, JSON.stringify(step)], { env });
+      const out = spawnSync(process.execPath, ['-e', probe, hookScript, JSON.stringify(payload)], { encoding: 'utf8', env });
+      return JSON.parse(out.stdout);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  };
+  const lazyEdit = { session_id: 'lazy', tool_name: 'Edit', tool_input: { file_path: '/tmp/gateguard-lazy/src/widget.js', old_string: 'a', new_string: 'b' } };
+  const lazyBash = command => ({ session_id: 'lazy', tool_name: 'Bash', tool_input: { command } });
+  const lazyCases = [
+    ['a first shell command loads only the read-only check', lazyBash('npm test'), [], ['gateguard-readonly-shell', 'gateguard-state']],
+    ['a shell command after the routine gate loads only the state helpers', lazyBash('npm run build'), [lazyBash('npm test')], ['gateguard-state']],
+    ['an edit of a checked file loads only the target classification', lazyEdit, [lazyEdit], ['gateguard-state', 'gateguard-target-class']],
+    ['a first touch without a transcript loads no search matching', lazyEdit, [], ['gateguard-change-profile', 'gateguard-code-lexer', 'gateguard-file-context', 'gateguard-state', 'gateguard-target-class', 'gateguard-turn-scan', 'transcript-context']]
+  ];
+  for (const [label, payload, setup, expected] of lazyCases) {
+    if (test(`lazy loading: ${label}`, () => assert.deepStrictEqual(loadedLibs(payload, setup), expected))) passed++;
+    else failed++;
   }
 
   const ddResults = runDdRegressionTests();

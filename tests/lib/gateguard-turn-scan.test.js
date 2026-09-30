@@ -370,6 +370,22 @@ test('the hook re-exports scanCurrentTurn', () => {
   }
 });
 
+test('searchesMayNameTarget finds the stem in any search input', () => {
+  const { searchesMayNameTarget } = require(libPath);
+  const scanOf = (...inputs) => ({ searches: inputs.map(input => ({ name: 'Bash', input })) });
+  assert.strictEqual(searchesMayNameTarget(scanOf({ command: 'rg widget .' }), 'src/widget.py'), true);
+  assert.strictEqual(searchesMayNameTarget(scanOf({ command: 'rg other .' }, { pattern: 'x', glob: '*.md' }), 'src/widget.py'), false);
+  assert.strictEqual(searchesMayNameTarget(scanOf({ command: "rg wid''get ." }), 'src/widget.py'), true, 'quotes cannot split the stem');
+  assert.strictEqual(searchesMayNameTarget(scanOf({ command: 'rg "wid\\get" .' }), 'src/widget.py'), true, 'backslashes cannot split the stem');
+  assert.strictEqual(searchesMayNameTarget(scanOf({ command: 'rg WIDGET .' }), 'src/widget.py'), true, 'case-insensitive');
+  assert.strictEqual(searchesMayNameTarget(scanOf({ pattern: 'widget' }), 'tests/test_widget.py'), true, 'test prefix stripped');
+  assert.strictEqual(searchesMayNameTarget(scanOf({ pattern: 'widget' }), 'src/widget.test.js'), true, 'test suffix stripped');
+  assert.strictEqual(searchesMayNameTarget(scanOf({ pattern: 'widget' }), 'pkg/widget_test.go'), true, 'go test suffix stripped');
+  assert.strictEqual(searchesMayNameTarget({ searches: [] }, 'src/widget.py'), false);
+  assert.strictEqual(searchesMayNameTarget(null, 'src/widget.py'), false);
+  assert.strictEqual(searchesMayNameTarget(scanOf({ command: 'ls' }), 'dir/'), true, 'no stem: never skipped');
+});
+
 fs.rmSync(transcriptDir, { recursive: true, force: true });
 
 console.log(`\nResults: Passed: ${passed}, Failed: ${failed}`);

@@ -1,7 +1,5 @@
 'use strict';
 
-const { COLLAPSIBLE_CLASSES } = require('./gateguard-target-class');
-
 // --- Counters ---
 // see docs/gateguard/design-notes.md#state-file-is-untrusted
 
@@ -87,7 +85,7 @@ function dirGateKey(cls, dir) {
 function isDirGateKey(key) {
   if (!isSafeKey(key)) return false;
   const at = key.indexOf(DIR_GATE_KEY_SEPARATOR);
-  return at > 0 && at < key.length - 1 && COLLAPSIBLE_CLASSES.has(key.slice(0, at));
+  return at > 0 && at < key.length - 1 && require('./gateguard-target-class').COLLAPSIBLE_CLASSES.has(key.slice(0, at));
 }
 
 function isDirGateEntry(entry) {

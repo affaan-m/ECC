@@ -89,6 +89,18 @@ and trivial edits) is in [change-profile.md](change-profile.md).
   decision metrics lines (see [Metrics](#metrics)). `scripts/gateguard-report.js`
   reads them back.
 
+## Lazy loading
+
+Most hook calls are shell commands and edits of files already checked in the
+session; neither needs the target classification beyond the path key, the
+transcript scan, the search matcher or the change profile. The hook requires
+those modules on first use, so a shell command loads only the shell parser and
+the state helpers, as on `main`. Every Node process runs one hook call, so a
+module that is loaded is also compiled on that call: the cost of a
+first-touch edit follows how much code it runs, not how much the files hold.
+`module.exports` lists `run` first because `run-with-flags.js` recognises a
+`run()` hook by a lexical match on the export object.
+
 ## Fail to deny
 
 Every allowance other than a retry of an already-gated target (prior-search
@@ -272,6 +284,20 @@ names only the implicit cwd, so it gives no directory credit. Directory
 evidence from shell operands must name a directory that exists now.
 PowerShell `-Path`/`-LiteralPath` values count as operands but never as
 directory evidence.
+
+## Search prefilter
+
+Before any search is parsed, the turn's searches are checked for the target's
+stem as plain text, with quotes and backslashes removed so that quoting
+cannot split the stem. A search whose input does not contain the stem cannot
+credit the target (credit needs the stem as a word in the parsed search), so
+it is skipped; when no search passes, the search-evidence modules are not
+loaded at all. The hook-side check strips test prefixes and suffixes
+(`test_`, `_test`, `.test`, `.spec`) so it never skips a search the full
+match would accept. New-file creations, which can also be credited by a
+search that names their directory, bypass the prefilter. Parsed evidence is
+cached per search, so the credit check and the closest-miss note share one
+parse.
 
 ## Stem matching
 

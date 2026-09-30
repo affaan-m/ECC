@@ -28,24 +28,49 @@ const path = require('path');
 const { extractCommandSubstitutions, extractSubshellGroups, extractBraceGroups } = require('../lib/shell-substitution');
 const { classifyPowerShellDestructiveCommand } = require('../lib/powershell-destructive-command');
 const { stripHeredocBodies } = require('./gateguard-heredoc');
-const {
-  WINDOWS_PATH_PATTERN,
-  questionIdsFor,
-  questionText,
-  condensedHintFor,
-  resolveTargetPath,
-  canonicalPathKey,
-  classifyTarget,
-  classifyTargetFor,
-  collapseGateDir,
-  isSensitiveTargetFor,
-  isHardLinkedTargetFor
-} = require('../lib/gateguard-target-class');
-const { scanCurrentTurn, createTurnScanner, currentTurnId, transcriptPathFor } = require('../lib/gateguard-turn-scan');
-const { createSearchEvidence } = require('../lib/gateguard-search-evidence');
-const { profileChange } = require('../lib/gateguard-change-profile');
-const { createReadOnlyShell } = require('../lib/gateguard-readonly-shell');
-const { appendMetrics, metricsEvent } = require('../lib/gateguard-metrics');
+
+// --- Lazily loaded modules ---
+// see docs/gateguard/design-notes.md#lazy-loading
+
+function lazily(load) {
+  let loaded = null;
+  return () => loaded || (loaded = load());
+}
+
+const targetClass = lazily(() => require('../lib/gateguard-target-class'));
+const turnScan = lazily(() => require('../lib/gateguard-turn-scan'));
+const changeProfile = lazily(() => require('../lib/gateguard-change-profile'));
+const metricsLib = lazily(() => require('../lib/gateguard-metrics'));
+const readOnlyShell = lazily(() => require('../lib/gateguard-readonly-shell').createReadOnlyShell({ quoteAwareSegments }));
+const searchEvidence = lazily(() =>
+  require('../lib/gateguard-search-evidence').createSearchEvidence({ quoteAwareSegments, commandBasename, SHELL_SEGMENT_SEPARATORS })
+);
+
+const questionIdsFor = (...args) => targetClass().questionIdsFor(...args);
+const questionText = (...args) => targetClass().questionText(...args);
+const condensedHintFor = (...args) => targetClass().condensedHintFor(...args);
+const resolveTargetPath = (...args) => targetClass().resolveTargetPath(...args);
+const canonicalPathKey = (...args) => targetClass().canonicalPathKey(...args);
+const classifyTargetFor = (...args) => targetClass().classifyTargetFor(...args);
+const collapseGateDir = (...args) => targetClass().collapseGateDir(...args);
+const isSensitiveTargetFor = (...args) => targetClass().isSensitiveTargetFor(...args);
+const isHardLinkedTargetFor = (...args) => targetClass().isHardLinkedTargetFor(...args);
+const createTurnScanner = (...args) => turnScan().createTurnScanner(...args);
+const currentTurnId = (...args) => turnScan().currentTurnId(...args);
+const transcriptPathFor = (...args) => turnScan().transcriptPathFor(...args);
+const profileChange = (...args) => changeProfile().profileChange(...args);
+const appendMetrics = (...args) => metricsLib().appendMetrics(...args);
+const metricsEvent = (...args) => metricsLib().metricsEvent(...args);
+const isReadOnlyShellCommand = (...args) => readOnlyShell().isReadOnlyShellCommand(...args);
+const hasEntries = list => Array.isArray(list) && list.length > 0;
+const findCreditingSearch = (scan, filePath, allowDirMatch, data) =>
+  scan && hasEntries(scan.searches) && (allowDirMatch || turnScan().searchesMayNameTarget(scan, filePath))
+    ? searchEvidence().findCreditingSearch(scan, filePath, allowDirMatch, data)
+    : null;
+const findClosestMiss = (scan, filePath, allowDirMatch, data) =>
+  scan && (hasEntries(scan.reads) || (hasEntries(scan.searches) && (allowDirMatch || turnScan().searchesMayNameTarget(scan, filePath))))
+    ? searchEvidence().findClosestMiss(scan, filePath, allowDirMatch, data)
+    : null;
 const {
   getDenialCount,
   getCreditedCount,
@@ -191,7 +216,7 @@ function getExemptMatchers() {
 function isExemptPath(filePath, data) {
   const projectRoot = process.env.CLAUDE_PROJECT_DIR || data.cwd || process.cwd();
   if (typeof projectRoot !== 'string' || typeof filePath !== 'string') return false;
-  const paths = WINDOWS_PATH_PATTERN.test(projectRoot) ? path.win32 : path.posix;
+  const paths = targetClass().WINDOWS_PATH_PATTERN.test(projectRoot) ? path.win32 : path.posix;
   if (!paths.isAbsolute(projectRoot)) return false;
   const target = paths.resolve(projectRoot, filePath);
   const relative = paths.relative(projectRoot, target);
@@ -1655,8 +1680,6 @@ function isTrivialChange(cls, restricted, profile) {
 
 // --- Read-only first shell command ---
 
-const { isReadOnlyShellCommand } = createReadOnlyShell({ quoteAwareSegments });
-
 function countRoutineReadonlyPass() {
   const state = loadState();
   return saveState({ ...state, routine_readonly_passes: getRoutineReadonlyPassCount(state) + 1 });
@@ -2030,7 +2053,6 @@ function allowWithStateWarning() {
 // --- Prior-search credit ---
 
 const CREDIT_DETAIL_MAX_CHARS = 80;
-const { findCreditingSearch, findClosestMiss } = createSearchEvidence({ quoteAwareSegments, commandBasename, SHELL_SEGMENT_SEPARATORS });
 
 function creditNote(match, filePath) {
   const chars = Array.from(sanitizePath(match.detail).replace(/\s+/g, ' '));
@@ -2279,7 +2301,8 @@ function gate(rawInput) {
     pendingMetrics = { tool: toolName, data, entries: [], keys: new Set() };
   }
   const inSubagent = isSubagentInvocation(data);
-  const getTurnScan = createTurnScanner(data);
+  let turnScanner = null;
+  const getTurnScan = () => (turnScanner || (turnScanner = createTurnScanner(data)))();
 
   if (toolName === 'Edit' || toolName === 'Write' || toolName === 'NotebookEdit') {
     const filePath = (toolName === 'NotebookEdit' ? toolInput.notebook_path : toolInput.file_path) || '';
@@ -2473,4 +2496,21 @@ function gate(rawInput) {
   return rawInput; // allow
 }
 
-module.exports = { classifyDestructiveCommand, classifyTarget, classifyTargetFor, findCreditingSearch, findClosestMiss, isReadOnlyShellCommand, run, scanCurrentTurn };
+module.exports = {
+  run,
+  classifyDestructiveCommand,
+  findCreditingSearch,
+  findClosestMiss,
+  get classifyTarget() {
+    return targetClass().classifyTarget;
+  },
+  get classifyTargetFor() {
+    return targetClass().classifyTargetFor;
+  },
+  get isReadOnlyShellCommand() {
+    return readOnlyShell().isReadOnlyShellCommand;
+  },
+  get scanCurrentTurn() {
+    return turnScan().scanCurrentTurn;
+  }
+};

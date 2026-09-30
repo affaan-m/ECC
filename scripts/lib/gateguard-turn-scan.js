@@ -2,6 +2,7 @@
 
 const crypto = require('crypto');
 const fs = require('fs');
+const path = require('path');
 const { readFileTail, DEFAULT_TRANSCRIPT_TAIL_BYTES } = require('./transcript-context');
 
 const TRANSCRIPT_SCAN_MAX_LINES = 2000;
@@ -231,6 +232,33 @@ function createTurnScanner(data) {
   };
 }
 
+// see docs/gateguard/design-notes.md#search-prefilter
+function targetNeedle(filePath) {
+  const base = (String(filePath).split(/[\\/]/).pop() || '').toLowerCase();
+  const ext = path.posix.extname(base);
+  let stem = ext ? base.slice(0, -ext.length) : base;
+  if (stem.endsWith('.test') || stem.endsWith('.spec')) stem = stem.slice(0, -5);
+  if (stem.startsWith('test_')) stem = stem.slice(5);
+  if (stem.endsWith('_test')) stem = stem.slice(0, -5);
+  return stem;
+}
+
+/** False only when no search of the turn can name the target's stem, so matching can be skipped. */
+function searchesMayNameTarget(scan, filePath) {
+  if (!scan || !Array.isArray(scan.searches) || scan.searches.length === 0) return false;
+  const needle = targetNeedle(filePath);
+  if (!needle) return true;
+  return scan.searches.some(search => {
+    const input = search && search.input;
+    if (!isObject(input)) return false;
+    let text = '';
+    for (const value of Object.values(input)) {
+      if (typeof value === 'string') text += `\n${value}`;
+    }
+    return text.toLowerCase().replace(/["'\\]/g, '').includes(needle);
+  });
+}
+
 function currentTurnId(scan) {
   return scan && typeof scan.turnId === 'string' && scan.turnId ? scan.turnId : null;
 }
@@ -247,5 +275,6 @@ module.exports = {
   scanCurrentTurn: neverThrows(scanCurrentTurn, null),
   excludedBatchId: neverThrows(excludedBatchId, null),
   createTurnScanner: neverThrows(createTurnScanner, () => null),
-  currentTurnId: neverThrows(currentTurnId, null)
+  currentTurnId: neverThrows(currentTurnId, null),
+  searchesMayNameTarget: neverThrows(searchesMayNameTarget, true)
 };
