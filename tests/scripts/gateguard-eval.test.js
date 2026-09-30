@@ -5,10 +5,11 @@
 'use strict';
 
 const assert = require('assert');
+const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const { pathToFileURL } = require('url');
-const { parseArgs, renderSarif } = require('../../scripts/dev/gateguard-eval');
+const { parseArgs, renderSarif, loadCorpus, runCorpus, summarize, measureColdLatency } = require('../../scripts/dev/gateguard-eval');
 
 let passed = 0;
 let failed = 0;
@@ -164,6 +165,42 @@ test('output leaves out timing so reruns are byte-identical', () => {
   assert.strictEqual(renderSarif(slower), text);
 });
 
-console.log(`\nPassed: ${passed}`);
-console.log(`Failed: ${failed}`);
-process.exitCode = failed > 0 ? 1 : 0;
+test('--no-cold turns off the fresh-process pass', () => {
+  assert.strictEqual(parseArgs([]).cold, true);
+  assert.strictEqual(parseArgs(['--no-cold']).cold, false);
+});
+
+async function coldTests() {
+  const corpusDir = fs.mkdtempSync(path.join(os.tmpdir(), 'gateguard-eval-corpus-'));
+  try {
+    fs.copyFileSync(
+      path.join(__dirname, '..', 'fixtures', 'gateguard-scenarios', '11-first-shell-commands.json'),
+      path.join(corpusDir, 'shell.json')
+    );
+    const scenarios = loadCorpus(corpusDir);
+    const hookFile = path.join(__dirname, '..', '..', 'scripts', 'hooks', 'gateguard-fact-force.js');
+    const warm = summarize(await runCorpus(hookFile, scenarios));
+    const cold = measureColdLatency(hookFile, scenarios);
+    test('the fresh-process pass times every step', () => {
+      assert.strictEqual(cold.length, scenarios[0].steps.length);
+      assert.ok(cold.every(step => Number.isFinite(step.latencyMs) && step.latencyMs > 0));
+    });
+    test('fresh processes decide every step as the worker does', () => {
+      assert.deepStrictEqual(cold.map(step => step.decision), warm.steps.map(step => step.decision));
+    });
+  } finally {
+    fs.rmSync(corpusDir, { recursive: true, force: true });
+  }
+}
+
+coldTests().then(finish, error => {
+  console.log(`  ✗ fresh-process pass failed: ${error.message}`);
+  failed++;
+  finish();
+});
+
+function finish() {
+  console.log(`\nPassed: ${passed}`);
+  console.log(`Failed: ${failed}`);
+  process.exitCode = failed > 0 ? 1 : 0;
+}

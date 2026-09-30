@@ -305,6 +305,59 @@ async function runCorpus(hookFile, scenarios) {
   }
 }
 
+// --- cold latency ---
+// see docs/gateguard/evaluation.md#latency
+
+const COLD_PROBE = [
+  "const { performance } = require('perf_hooks');",
+  'const started = performance.now();',
+  'const hook = require(process.argv[1]);',
+  'const result = hook.run(process.argv[2]);',
+  'const ms = performance.now() - started;',
+  'process.stdout.write(JSON.stringify({ ms, result: result === undefined ? null : result }));'
+].join('\n');
+
+/** Replay every scenario with one fresh Node process per step; returns per-step require+run latency and decisions. */
+function measureColdLatency(hookFile, scenarios) {
+  const workDir = fs.mkdtempSync(path.join(os.tmpdir(), 'gateguard-cold-'));
+  try {
+    const steps = [];
+    for (const scenario of scenarios) {
+      const prepared = prepareScenario(scenario, workDir);
+      if (prepared.skipped) continue;
+      for (const step of prepared.steps) {
+        if (step.records.length > 0) {
+          fs.appendFileSync(prepared.transcript, step.records.map(record => `${JSON.stringify(record)}\n`).join(''), 'utf8');
+        }
+        const raw = JSON.stringify(step.payload);
+        const stdout = execFileSync(process.execPath, ['-e', COLD_PROBE, hookFile, raw], {
+          env: prepared.env,
+          encoding: 'utf8',
+          maxBuffer: 16 * 1024 * 1024,
+          stdio: ['ignore', 'pipe', 'ignore']
+        });
+        const { ms, result } = JSON.parse(stdout);
+        const output = hookOutput(result);
+        steps.push({ scenario: scenario.name, step: step.id, latencyMs: ms, decision: output.decision === 'deny' ? 'deny' : 'allow' });
+      }
+    }
+    return steps;
+  } finally {
+    fs.rmSync(workDir, { recursive: true, force: true });
+  }
+}
+
+function coldSummary(coldSteps, warmSteps) {
+  const sorted = coldSteps.map(step => step.latencyMs).sort((a, b) => a - b);
+  const warmDecisions = new Map(warmSteps.map(step => [`${step.scenario}/${step.step}`, step.decision]));
+  const disagreements = coldSteps.filter(step => warmDecisions.get(`${step.scenario}/${step.step}`) !== step.decision).length;
+  return {
+    p50Ms: Number(percentile(sorted, 0.5).toFixed(3)),
+    p95Ms: Number(percentile(sorted, 0.95).toFixed(3)),
+    disagreements
+  };
+}
+
 // --- question mapping ---
 
 function questionTextTable() {
@@ -439,8 +492,10 @@ const METRIC_ROWS = [
   ['Allows with a credit note', s => s.totals.allowsByKind.credit],
   ['Allows with a sibling note', s => s.totals.allowsByKind.sibling],
   ['Allows with a trivial-edit note', s => s.totals.allowsByKind.trivial],
-  ['Hook latency p50 (ms)', s => s.latency.p50Ms.toFixed(2)],
-  ['Hook latency p95 (ms)', s => s.latency.p95Ms.toFixed(2)]
+  ['Hook latency p50, fresh process (ms)', s => (s.cold ? s.cold.p50Ms.toFixed(2) : 'not run')],
+  ['Hook latency p95, fresh process (ms)', s => (s.cold ? s.cold.p95Ms.toFixed(2) : 'not run')],
+  ['run() latency p50, warm (ms)', s => s.latency.p50Ms.toFixed(2)],
+  ['run() latency p95, warm (ms)', s => s.latency.p95Ms.toFixed(2)]
 ];
 
 function markdownTable(header, rows) {
@@ -473,6 +528,10 @@ function renderMarkdown(report) {
   if (mismatched.length > 0) {
     lines.push('', `${report.hooks[0].label} mismatches:`, '');
     mismatched.forEach(step => lines.push(`- ${step.scenario} / ${step.step}: expected ${step.expect}, got ${step.decision} (${step.kind})`));
+  }
+  const cold = report.hooks[0].summary.cold;
+  if (cold && cold.disagreements > 0) {
+    lines.push('', `${report.hooks[0].label}: ${cold.disagreements} step(s) decided differently in a fresh process.`);
   }
   return `${lines.join('\n')}\n`;
 }
@@ -586,16 +645,18 @@ const USAGE = [
   '  --corpus <dir>    scenario directory (default tests/fixtures/gateguard-scenarios)',
   '  --markdown        print markdown tables (default)',
   '  --json            print the full report as JSON',
-  '  --sarif <file>    also write working-tree gate failures as SARIF 2.1.0'
+  '  --sarif <file>    also write working-tree gate failures as SARIF 2.1.0',
+  '  --no-cold         skip the fresh-process latency pass (one Node process per step)'
 ].join('\n');
 
 function parseArgs(argv) {
-  const options = { format: 'markdown', baselines: [], corpus: DEFAULT_CORPUS_DIR, sarif: null, help: false };
+  const options = { format: 'markdown', baselines: [], corpus: DEFAULT_CORPUS_DIR, sarif: null, cold: true, help: false };
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
     if (arg === '--markdown') options.format = 'markdown';
     else if (arg === '--json') options.format = 'json';
     else if (arg === '--help' || arg === '-h') options.help = true;
+    else if (arg === '--no-cold') options.cold = false;
     else if ((arg === '--baseline' || arg === '--corpus' || arg === '--sarif') && i + 1 < argv.length) {
       if (arg === '--baseline') options.baselines.push(argv[++i]);
       else if (arg === '--sarif') options.sarif = path.resolve(argv[++i]);
@@ -607,7 +668,7 @@ function parseArgs(argv) {
 }
 
 /** Evaluate the working-tree hook and each baseline ref over a corpus. */
-async function evaluate({ baselines = [DEFAULT_BASELINE], corpus = DEFAULT_CORPUS_DIR } = {}) {
+async function evaluate({ baselines = [DEFAULT_BASELINE], corpus = DEFAULT_CORPUS_DIR, cold = false } = {}) {
   const scenarios = loadCorpus(corpus);
   const table = questionTextTable();
   const hooks = [{ label: 'working tree', ref: null, file: path.join(REPO_ROOT, ...HOOK_RELATIVE_PATH.split('/')) }];
@@ -618,7 +679,9 @@ async function evaluate({ baselines = [DEFAULT_BASELINE], corpus = DEFAULT_CORPU
     });
     const evaluated = [];
     for (const hook of hooks) {
-      evaluated.push({ label: hook.label, ref: hook.ref, summary: summarize(await runCorpus(hook.file, scenarios), table) });
+      const summary = summarize(await runCorpus(hook.file, scenarios), table);
+      if (cold) summary.cold = coldSummary(measureColdLatency(hook.file, scenarios), summary.steps);
+      evaluated.push({ label: hook.label, ref: hook.ref, summary });
     }
     return {
       corpus: { scenarios: scenarios.length, steps: scenarios.reduce((sum, scenario) => sum + scenario.steps.length, 0) },
@@ -640,7 +703,8 @@ async function main() {
   process.stdout.write(options.format === 'json' ? `${JSON.stringify(report, null, 2)}\n` : renderMarkdown(report));
   if (options.sarif) fs.writeFileSync(options.sarif, renderSarif(report), 'utf8');
   const working = report.hooks[0].summary.totals;
-  if (working.mustDenyBypasses > 0 || working.mismatches > 0 || working.explicitAllows > 0 || working.errors > 0) {
+  const coldDisagreements = report.hooks[0].summary.cold ? report.hooks[0].summary.cold.disagreements : 0;
+  if (working.mustDenyBypasses > 0 || working.mismatches > 0 || working.explicitAllows > 0 || working.errors > 0 || coldDisagreements > 0) {
     process.exitCode = 1;
   }
 }
@@ -654,4 +718,4 @@ if (!isMainThread && workerData && workerData.gateguardEval) {
   });
 }
 
-module.exports = { loadCorpus, materializeHook, runCorpus, summarize, questionsAsked, renderMarkdown, renderSarif, parseArgs, evaluate };
+module.exports = { loadCorpus, materializeHook, runCorpus, measureColdLatency, summarize, questionsAsked, renderMarkdown, renderSarif, parseArgs, evaluate };

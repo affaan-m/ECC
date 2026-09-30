@@ -43,8 +43,15 @@ Metrics per hook:
   not ask. Asking fewer questions must not drop the ones that matter.
 - **Estimated denial tokens**: characters of all denial reasons divided by 4.
 - **Allows with a note**: how the working tree avoided a denial.
-- **Hook latency p50/p95**: wall time of `run()` per step, in process. The
-  only non-deterministic metric.
+- **Hook latency, fresh process**: `require()` of the hook plus `run()`, timed
+  inside a new Node process per step, which is how Claude Code runs a hook.
+  Node start-up itself is excluded; it is the same for every hook. See
+  [Latency](#latency).
+- **run() latency, warm**: wall time of `run()` in the scenario's worker, after
+  the hook module is loaded. Modules the hook loads lazily count on the step
+  that first needs them.
+
+The latency rows are the only non-deterministic metrics.
 
 Each scenario runs in its own temp project (files, symlinks and hard links
 created from the fixture), with its own transcript, `GATEGUARD_STATE_DIR`, `HOME` and a
@@ -57,30 +64,32 @@ relatively at that ref, into a temp tree that mirrors the repo layout.
 ## Results
 
 Working tree = branch `gateguard-full`; `upstream/main` = `c70874fa`;
-`8438f040` = the pull request head before this round. Node 22, Linux.
+`4b02f669` = the pull request head before this round. Node 22, Linux.
 
 ```text
 Corpus: 20 scenarios, 184 steps.
 ```
 
-| Metric | working tree | upstream/main | 8438f040 |
+| Metric | working tree | upstream/main | 4b02f669 |
 | --- | ---: | ---: | ---: |
 | Steps | 184 | 184 | 184 |
-| Denials | 132 | 157 | 131 |
+| Denials | 132 | 157 | 132 |
 | Redundant denials | 0 | 38 | 0 |
-| Must-deny bypasses | 0 | 8 | 1 |
-| Expectation mismatches | 0 | 55 | 1 |
+| Must-deny bypasses | 0 | 8 | 0 |
+| Expectation mismatches | 0 | 55 | 0 |
 | Irrelevant questions asked | 2 | 187 | 2 |
 | Irrelevant questions in condensed denials | 2 | 111 | 2 |
 | Warranted questions not asked | 1 | 57 | 1 |
-| Estimated denial tokens | 25633 | 27796 | 25455 |
-| Allows with a credit note | 12 | 0 | 13 |
+| Estimated denial tokens | 25633 | 27796 | 25633 |
+| Allows with a credit note | 12 | 0 | 12 |
 | Allows with a sibling note | 11 | 0 | 11 |
 | Allows with a trivial-edit note | 5 | 0 | 5 |
-| Hook latency p50 (ms) | 2.28 | 1.20 | 2.14 |
-| Hook latency p95 (ms) | 7.81 | 2.93 | 7.48 |
+| Hook latency p50, fresh process (ms) | 21.18 | 10.58 | 25.11 |
+| Hook latency p95, fresh process (ms) | 30.34 | 16.67 | 38.24 |
+| run() latency p50, warm (ms) | 2.03 | 1.03 | 2.01 |
+| run() latency p95, warm (ms) | 10.56 | 2.58 | 7.03 |
 
-| Scenario | Steps | Denials: working tree | Denials: upstream/main | Denials: 8438f040 |
+| Scenario | Steps | Denials: working tree | Denials: upstream/main | Denials: 4b02f669 |
 | --- | ---: | ---: | ---: | ---: |
 | docs-heavy-session | 14 | 6 | 12 | 6 |
 | scaffold-module | 10 | 3 | 10 | 3 |
@@ -94,7 +103,7 @@ Corpus: 20 scenarios, 184 steps.
 | subagent-edits | 6 | 3 | 1 | 3 |
 | first-shell-commands | 20 | 11 | 17 | 11 |
 | windows-paths | 8 | 5 | 7 | 5 |
-| bypass-search-filters | 19 | 15 | 19 | 14 |
+| bypass-search-filters | 19 | 15 | 19 | 15 |
 | bypass-turn-and-batch | 7 | 7 | 7 | 7 |
 | bypass-siblings | 11 | 11 | 11 | 11 |
 | cap-with-sensitive | 6 | 4 | 6 | 4 |
@@ -129,12 +138,12 @@ Against `upstream/main`:
   after a comment-only one (the comment edit no longer spends the file's first
   touch).
 
-Against `8438f040` (the pull request head before this round): one more
-denial and one fewer credit. `bypass-search-filters` now includes a search
-whose directory-qualified include (`rg -g 'src/**' sweep .`) keeps the target
-in `lib/` out of the search; `8438f040` dropped that include and credited the
-edit, its one must-deny bypass. The control that searches the target's own
-directory is still credited.
+Against `4b02f669` (the pull request head before this round): the same
+decisions, questions and notes on every step; only latency changes (see
+[Latency](#latency)). `bypass-search-filters` includes a search whose
+directory-qualified include (`rg -g 'src/**' sweep .`) keeps the target in
+`lib/` out of the search; it must be denied, and the control that searches
+the target's own directory is credited.
 
 Four scenarios come from security reviews of this change.
 `bypass-comment-context` holds 21 must-deny steps: comment-looking edits that
@@ -173,10 +182,12 @@ What the working tree still gets wrong, by the corpus's own labels:
   (`c-comment-continuation`) has no data words, so the condensed hint no
   longer mentions data schemas; the corpus labels that question as warranted
   (the 1 unasked one).
-- Latency rises against `upstream/main` (p50 2.3 ms against 1.2 ms, p95
-  7.8 ms against 2.9 ms) with the added transcript scanning, path resolution
-  and the target's link-count check; both stay far below the 200 ms budget
-  for blocking hooks. Checking a comment-only edit
+- Latency: a first touch costs more than on `upstream/main` because it reads
+  the transcript, matches the searches that name the target, reads the target
+  file and profiles the change (fresh-process p50 21.2 ms against 10.6 ms,
+  p95 30.3 ms against 16.7 ms on this corpus, where every step is a first
+  touch or a gate). Shell commands and repeat edits stay within about 1 to
+  2.5 ms of `main`; see [Latency](#latency). Checking a comment-only edit
   reads and scans the target file, which costs up to about 50 ms for a 1 MiB
   file (the largest one read).
 
@@ -185,14 +196,14 @@ What the working tree still gets wrong, by the corpus's own labels:
 ```bash
 git fetch upstream main
 node scripts/dev/gateguard-eval.js --markdown
-node scripts/dev/gateguard-eval.js --markdown --baseline upstream/main --baseline 8438f040
+node scripts/dev/gateguard-eval.js --markdown --baseline upstream/main --baseline 4b02f669
 node scripts/dev/gateguard-eval.js --json > gateguard-eval.json
 node scripts/dev/gateguard-eval.js --baseline upstream/main --sarif gateguard-eval.sarif
 node tests/hooks/gateguard-scenarios.test.js
 ```
 
 `--baseline <ref>` takes any ref and can be repeated (default
-`upstream/main`); pass the pull request head (`8438f040` above) to compare
+`upstream/main`); pass the pull request head (`4b02f669` above) to compare
 against it. `--corpus <dir>` points at another
 scenario directory. The script exits non-zero when the working tree has a
 mismatch, a must-deny bypass, an explicit `allow` decision or a thrown error.
@@ -200,6 +211,34 @@ mismatch, a must-deny bypass, an explicit `allow` decision or a thrown error.
 (bypasses, explicit allows and errors as `error`, other mismatches as
 `warning`) with each hook's totals in the run properties. Timing is left out,
 so the file is identical across reruns of the same tree and corpus.
+
+## Latency
+
+The fresh-process pass replays every scenario again, with a new state
+directory and transcript, and runs each step with
+`node -e <probe> <hook> <payload>`. Its decisions must match the worker's;
+a step decided differently fails the run. `--no-cold` skips the pass.
+
+Per call type: 25 fresh processes each, p50 of `require()` plus p50 of
+`run()` in ms, Node 22 on Linux, with a 20-search turn and a 50-function
+target file:
+
+| Call | this branch | `4b02f669` | `main` |
+| --- | ---: | ---: | ---: |
+| Shell command, first of session | 10.2 | 19.2 | 8.7 |
+| Shell command, routine gate already passed | 12.3 | 21.3 | 11.6 |
+| Edit of a file already checked | 11.1 | 20.6 | 8.7 |
+| First-touch edit, denied | 22.4 | 29.7 | 9.6 |
+| First-touch edit, comment-only pass | 25.7 | 38.5 | 9.5 |
+
+Shell commands and repeat edits, most calls in a session, now load only the
+modules they use and stay within about 1 to 2.5 ms of `main`. A first touch
+reads the transcript, parses the turn's searches that name the target, reads
+the target file and profiles the change; `main` does none of these. Each hook
+call is a new Node process, so the code a call runs is also compiled on that
+call, and that compilation, not the size of the files, is most of the
+remaining difference. Node's module compile cache does not reduce it: it
+caches top-level code, and the gate's functions are compiled on first call.
 
 ## Corpus format
 
