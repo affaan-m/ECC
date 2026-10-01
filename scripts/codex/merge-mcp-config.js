@@ -150,7 +150,7 @@ function removeSectionFromText(text, sectionHeader) {
   const result = [];
   let skipping = false;
   for (const line of lines) {
-    const trimmed = line.replace(/\r$/, '');
+    const trimmed = line.replace(/^[ \t]+/, '').replace(/\r$/, '');
     if (headerPattern.test(trimmed)) {
       skipping = true;
       continue;
