@@ -53,13 +53,24 @@ function fail(msg) {
   violations.push(msg);
 }
 
+function collectClassifications(names, prefix) {
+  const known = new Set();
+  for (const name of names) {
+    if (known.has(name)) {
+      fail(`${prefix}/${name} is classified more than once in manifests/pi-core.json`);
+    }
+    known.add(name);
+  }
+  return known;
+}
+
 // ---------- partition completeness -----------------------------------------
 // Every on-disk skill dir and command file must be classified exactly once in
 // the manifest, so new content cannot silently bypass curation.
 {
   const onDiskSkills = fs.readdirSync(SKILLS_SRC, { withFileTypes: true })
     .filter(e => e.isDirectory()).map(e => e.name);
-  const known = new Set([...manifest.skills.include, ...Object.keys(manifest.skills.exclude)]);
+  const known = collectClassifications([...manifest.skills.include, ...Object.keys(manifest.skills.exclude)], 'skills');
   for (const dir of onDiskSkills) {
     if (!known.has(dir)) fail(`skills/${dir} is not classified in manifests/pi-core.json`);
   }
@@ -67,7 +78,7 @@ function fail(msg) {
     if (!onDiskSkills.includes(name)) fail(`manifests/pi-core.json references missing skills/${name}`);
   }
   const onDiskCommands = fs.readdirSync(COMMANDS_SRC).filter(f => f.endsWith('.md'));
-  const knownCmd = new Set([...manifest.commands.include, ...Object.keys(manifest.commands.exclude)]);
+  const knownCmd = collectClassifications([...manifest.commands.include, ...Object.keys(manifest.commands.exclude)], 'commands');
   for (const f of onDiskCommands) {
     if (!knownCmd.has(f)) fail(`commands/${f} is not classified in manifests/pi-core.json`);
   }
