@@ -113,28 +113,43 @@ class MultimodalWorkflowTests(unittest.TestCase):
         }
 
     def test_scene_intervals_stay_within_each_reference(self):
-        self.config["genres"][0]["references"] = [str(path) for path in self.references[:2]]
-        self.config_path.write_text(json.dumps(self.config), encoding="utf-8")
+        config = {
+            **self.config,
+            "genres": [
+                {**self.config["genres"][0],
+                 "references": [str(path) for path in self.references[:2]]},
+                *self.config["genres"][1:],
+            ],
+        }
+        self.config_path.write_text(json.dumps(config), encoding="utf-8")
         for cuts, mean, variance in (
-            ([0.75, 2.25, 5.25], 2.25, 0.5625),
-            ([1.0], 0.0, 0.0),
+            (([0.75, 2.25, 5.25], [1.0, 3.0]), 2.166667, 0.388889),
+            (([1.0], [4.0]), 0.0, 0.0),
         ):
             with self.subTest(cuts=cuts):
-                def probe(path):
-                    measured = self.fake_probe(path)
-                    measured["scene_changes"] = cuts
-                    return measured
+                source_cuts = {
+                    hashlib.sha256(path.read_bytes()).hexdigest(): times
+                    for path, times in zip(self.references[:2], cuts)
+                }
 
-                out = self.root / f"out-{len(cuts)}"
+                def probe(path):
+                    digest = hashlib.sha256(path.read_bytes()).hexdigest()
+                    measured = self.fake_probe(path)
+                    return {**measured, "scene_changes": source_cuts.get(
+                        digest, measured["scene_changes"]
+                    )}
+
+                out = self.root / f"out-{len(cuts[0])}"
                 run_workflow(self.config_path, out, probe=probe)
                 spec_path = sorted((out / "genres").glob("*.json"))[0]
                 spec = json.loads(spec_path.read_text())
                 temporal = spec["measured_features"]["temporal"]
-                self.assertEqual(temporal["scene_change_count"], 2 * len(cuts))
+                self.assertEqual(temporal["scene_change_count"], sum(map(len, cuts)))
                 self.assertEqual(len(temporal["scene_change_evidence"]), 2)
-                self.assertTrue(all(
-                    item["times"] == cuts for item in temporal["scene_change_evidence"]
-                ))
+                self.assertEqual({
+                    item["sha256"]: item["times"]
+                    for item in temporal["scene_change_evidence"]
+                }, source_cuts)
                 self.assertAlmostEqual(temporal["scene_interval_mean"], mean)
                 self.assertAlmostEqual(temporal["scene_interval_variance"], variance)
                 validate_bundle(out)
