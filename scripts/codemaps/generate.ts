@@ -35,25 +35,25 @@ const TODAY = new Date().toISOString().split('T')[0];
 // Patterns used to classify files into codemap areas
 const AREA_PATTERNS: Record<string, RegExp[]> = {
   frontend: [
-    /\/(app|pages|components|hooks|contexts|ui|views|layouts|styles)\//i,
+    /(?:^|\/)(app|pages|components|hooks|contexts|ui|views|layouts|styles)\//i,
     /\.(tsx|jsx|css|scss|sass|less|vue|svelte)$/i,
   ],
   backend: [
-    /\/(api|routes|controllers|middleware|server|services|handlers)\//i,
+    /(?:^|\/)(api|routes|controllers|middleware|server|services|handlers)\//i,
     /\.(route|controller|handler|middleware|service)\.(ts|js)$/i,
   ],
   database: [
-    /\/(models|schemas|migrations|prisma|drizzle|db|database|repositories)\//i,
+    /(?:^|\/)(models|schemas|migrations|prisma|drizzle|db|database|repositories)\//i,
     /\.(model|schema|migration|seed)\.(ts|js)$/i,
     /prisma\/schema\.prisma$/,
     /schema\.sql$/,
   ],
   integrations: [
-    /\/(integrations?|third-party|external|plugins?|adapters?|connectors?)\//i,
+    /(?:^|\/)(integrations?|third-party|external|plugins?|adapters?|connectors?)\//i,
     /\.(integration|adapter|connector)\.(ts|js)$/i,
   ],
   workers: [
-    /\/(workers?|jobs?|queues?|tasks?|cron|background)\//i,
+    /(?:^|\/)(workers?|jobs?|queues?|tasks?|cron|background)\//i,
     /\.(worker|job|queue|task|cron)\.(ts|js)$/i,
   ],
 };
