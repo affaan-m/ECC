@@ -8,7 +8,49 @@ from __future__ import annotations
 import os
 import platform
 import subprocess
+import json
+import re
 from typing import Optional, Tuple, Dict, List
+
+
+def skill_description(content: str, fallback: str) -> str:
+    """Read a skill summary, excluding frontmatter from body fallbacks."""
+    lines = content.lstrip('\ufeff').splitlines()
+    body = lines
+    if lines and lines[0] == '---':
+        end = next((i for i in range(1, len(lines)) if lines[i] == '---'), None)
+        if end is None:
+            return fallback
+        body = lines[end + 1:]
+        for index in range(1, end):
+            match = re.match(r'^description:\s*(.*)$', lines[index])
+            if not match:
+                continue
+            value = match.group(1).strip()
+            if re.fullmatch(r'[>|][+-]?', value):
+                parts = []
+                for line in lines[index + 1:end]:
+                    if line and not line[0].isspace():
+                        break
+                    parts.append(line.strip())
+                value = ' '.join(parts).strip()
+            elif value.startswith('"'):
+                try:
+                    value = json.loads(value)
+                except ValueError:
+                    value = ''
+            elif value.startswith("'") and value.endswith("'"):
+                value = value[1:-1].replace("''", "'")
+            if isinstance(value, str) and value.strip():
+                return ' '.join(value.split())[:100]
+            break
+    for line in body:
+        line = line.strip()
+        if line.startswith('# '):
+            return line[2:].strip()[:100] or fallback
+        if line and not line.startswith('#') and line not in ('---', '...'):
+            return line[:100]
+    return fallback
 
 
 def maximize_window(window) -> None:

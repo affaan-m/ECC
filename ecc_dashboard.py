@@ -28,7 +28,7 @@ from typing import Dict, List, Optional
 import logging
 import webbrowser
 
-from scripts.lib.ecc_dashboard_runtime import launch_terminal, maximize_window
+from scripts.lib.ecc_dashboard_runtime import launch_terminal, maximize_window, skill_description
 
 logger = logging.getLogger(__name__)
 
@@ -121,15 +121,7 @@ def load_skills(project_path: str) -> List[Dict]:
                     try:
                         with open(skill_file, 'r', encoding='utf-8') as f:
                             content = f.read()
-                            # Extract description from first lines
-                            lines = content.split('\n')
-                            for line in lines:
-                                if line.strip() and not line.startswith('#'):
-                                    description = line.strip()[:100]
-                                    break
-                                if line.startswith('# '):
-                                    description = line[2:].strip()[:100]
-                                    break
+                            description = skill_description(content, description)
                     except Exception:
                         logger.debug("Failed to parse skill file %s", skill_file, exc_info=True)
 
