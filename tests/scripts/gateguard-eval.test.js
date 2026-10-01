@@ -43,7 +43,7 @@ function step(overrides) {
 function summary(steps, totals = {}) {
   return {
     totals: { steps: steps.length, denials: 0, mustDenyBypasses: 0, mismatches: 0, explicitAllows: 0, errors: 0, skippedScenarios: 0, ...totals },
-    latency: { p50Ms: 1.234, p95Ms: 5.678 },
+    latency: { p50Ms: 1.234, p90Ms: 4.321, p95Ms: 5.678 },
     perScenario: [],
     steps
   };
@@ -161,7 +161,7 @@ test('output leaves out timing so reruns are byte-identical', () => {
   const text = renderSarif(report([step({ latencyMs: 3.21 })]));
   assert.ok(!/latency|p50|p95|Time/i.test(text), 'timing leaked into SARIF');
   const slower = report([step({ latencyMs: 9.87 })]);
-  slower.hooks[0].summary.latency = { p50Ms: 9, p95Ms: 99 };
+  slower.hooks[0].summary.latency = { p50Ms: 9, p90Ms: 90, p95Ms: 99 };
   assert.strictEqual(renderSarif(slower), text);
 });
 

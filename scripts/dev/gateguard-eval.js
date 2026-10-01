@@ -353,6 +353,7 @@ function coldSummary(coldSteps, warmSteps) {
   const disagreements = coldSteps.filter(step => warmDecisions.get(`${step.scenario}/${step.step}`) !== step.decision).length;
   return {
     p50Ms: Number(percentile(sorted, 0.5).toFixed(3)),
+    p90Ms: Number(percentile(sorted, 0.9).toFixed(3)),
     p95Ms: Number(percentile(sorted, 0.95).toFixed(3)),
     disagreements
   };
@@ -471,7 +472,11 @@ function summarize(runs, table = questionTextTable()) {
   const sorted = latencies.slice().sort((a, b) => a - b);
   return {
     totals,
-    latency: { p50Ms: Number(percentile(sorted, 0.5).toFixed(3)), p95Ms: Number(percentile(sorted, 0.95).toFixed(3)) },
+    latency: {
+      p50Ms: Number(percentile(sorted, 0.5).toFixed(3)),
+      p90Ms: Number(percentile(sorted, 0.9).toFixed(3)),
+      p95Ms: Number(percentile(sorted, 0.95).toFixed(3))
+    },
     perScenario,
     steps
   };
@@ -493,8 +498,10 @@ const METRIC_ROWS = [
   ['Allows with a sibling note', s => s.totals.allowsByKind.sibling],
   ['Allows with a trivial-edit note', s => s.totals.allowsByKind.trivial],
   ['Hook latency p50, fresh process (ms)', s => (s.cold ? s.cold.p50Ms.toFixed(2) : 'not run')],
+  ['Hook latency p90, fresh process (ms)', s => (s.cold ? s.cold.p90Ms.toFixed(2) : 'not run')],
   ['Hook latency p95, fresh process (ms)', s => (s.cold ? s.cold.p95Ms.toFixed(2) : 'not run')],
   ['run() latency p50, warm (ms)', s => s.latency.p50Ms.toFixed(2)],
+  ['run() latency p90, warm (ms)', s => s.latency.p90Ms.toFixed(2)],
   ['run() latency p95, warm (ms)', s => s.latency.p95Ms.toFixed(2)]
 ];
 
