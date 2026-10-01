@@ -132,6 +132,25 @@ Maven 片段：
       <phase>verify</phase>
       <goals><goal>report</goal></goals>
     </execution>
+    <execution>
+      <id>check</id>
+      <phase>verify</phase>
+      <goals><goal>check</goal></goals>
+      <configuration>
+        <rules>
+          <rule>
+            <element>BUNDLE</element>
+            <limits>
+              <limit>
+                <counter>LINE</counter>
+                <value>COVEREDRATIO</value>
+                <minimum>0.80</minimum>
+              </limit>
+            </limits>
+          </rule>
+        </rules>
+      </configuration>
+    </execution>
   </executions>
 </plugin>
 ```
@@ -154,7 +173,7 @@ class MarketBuilder {
 
 ## CI 命令
 
-* Maven: `mvn -T 4 test` 或 `mvn verify`
-* Gradle: `./gradlew test jacocoTestReport`
+* Maven：`mvn -T 4 test` 运行测试；`mvn verify` 还会生成报告并执行配置的 80% 行覆盖率门槛。
+* Gradle：`./gradlew test jacocoTestReport` 运行测试并生成报告。要执行覆盖率门槛，请为 `jacocoTestCoverageVerification` 配置 80% 规则，并运行该任务。
 
 **记住**：保持测试快速、隔离且确定。测试行为，而非实现细节。

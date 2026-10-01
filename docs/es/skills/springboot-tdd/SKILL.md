@@ -130,6 +130,25 @@ Fragmento Maven:
       <phase>verify</phase>
       <goals><goal>report</goal></goals>
     </execution>
+    <execution>
+      <id>check</id>
+      <phase>verify</phase>
+      <goals><goal>check</goal></goals>
+      <configuration>
+        <rules>
+          <rule>
+            <element>BUNDLE</element>
+            <limits>
+              <limit>
+                <counter>LINE</counter>
+                <value>COVEREDRATIO</value>
+                <minimum>0.80</minimum>
+              </limit>
+            </limits>
+          </rule>
+        </rules>
+      </configuration>
+    </execution>
   </executions>
 </plugin>
 ```
@@ -152,7 +171,7 @@ class MarketBuilder {
 
 ## Comandos de CI
 
-- Maven: `mvn -T 4 test` o `mvn verify`
-- Gradle: `./gradlew test jacocoTestReport`
+- Maven: `mvn -T 4 test` ejecuta las pruebas; `mvn verify` también genera el informe y exige la cobertura de líneas del 80% configurada.
+- Gradle: `./gradlew test jacocoTestReport` ejecuta las pruebas y genera un informe. Para exigir cobertura, configura una regla del 80% en `jacocoTestCoverageVerification` y ejecuta también esa tarea.
 
 **Recuerda**: Mantener las pruebas rápidas, aisladas y deterministas. Probar comportamiento, no detalles de implementación.
