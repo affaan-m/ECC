@@ -146,8 +146,9 @@ function configDiffers(existing, recommended) {
 function isTableHeaderAt(lines, index) {
   if (!/^[ \t]*\[.*\][ \t]*(?:#.*)?\r?$/.test(lines[index])) return false;
   try {
-    // A prefix ending inside a multiline string or array is incomplete TOML.
-    // Use the parser to distinguish real headers from bracketed value lines.
+    // Require complete TOML before and through the candidate header: a line
+    // that closes a multiline string can otherwise look like a real header.
+    TOML.parse(lines.slice(0, index).join('\n'));
     TOML.parse(lines.slice(0, index + 1).join('\n'));
     return true;
   } catch {

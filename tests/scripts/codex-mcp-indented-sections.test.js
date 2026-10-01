@@ -11,7 +11,10 @@ const script = path.resolve(__dirname, '../../scripts/codex/merge-mcp-config.js'
 let passed = 0;
 let failed = 0;
 
-for (const [indent, newline] of [['  ', '\n'], ['\t', '\r\n']]) {
+for (const [indent, newline, closingOnHeader] of [
+  ['  ', '\n', false], ['  ', '\n', true],
+  ['\t', '\r\n', false], ['\t', '\r\n', true],
+]) {
   const multiline = (newline === '\n' ? '"' : "'").repeat(3);
   for (const mode of ['refresh', 'disable', 'repair', 'dry-run']) {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-mcp-indent-'));
@@ -26,9 +29,9 @@ for (const [indent, newline] of [['  ', '\n'], ['\t', '\r\n']]) {
       'args = ["keep-me"]',
       `${indent}[mcp_servers.user-server.env]`,
       `NOTE = ${multiline}`,
-      `${indent}[mcp_servers.${server}]`,
-      'This is user data, not a section to remove.',
-      multiline,
+      ...(closingOnHeader
+        ? [`${indent}[mcp_servers.${server}] # ${multiline}`]
+        : [`${indent}[mcp_servers.${server}]`, 'This is user data, not a section to remove.', multiline]),
       '',
     ].join(newline);
     const original = [
@@ -75,7 +78,7 @@ for (const [indent, newline] of [['  ', '\n'], ['\t', '\r\n']]) {
         assert.strictEqual(after.mcp_servers?.[server], undefined);
       }
       passed += 1;
-      console.log(`PASS ${mode} with ${newline === '\n' ? 'spaces/LF' : 'tabs/CRLF'} headers`);
+      console.log(`PASS ${mode} with ${newline === '\n' ? 'spaces/LF' : 'tabs/CRLF'} headers${closingOnHeader ? ' and string closing on header' : ''}`);
     } catch (error) {
       failed += 1;
       console.error(`FAIL ${mode}: ${error.message}`);
