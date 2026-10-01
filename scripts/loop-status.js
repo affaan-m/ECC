@@ -355,7 +355,12 @@ function readJsonlEntries(transcriptPath) {
     }
 
     try {
-      entries.push(JSON.parse(line));
+      const entry = JSON.parse(line);
+      if (!entry || typeof entry !== 'object' || Array.isArray(entry)) {
+        parseErrors += 1;
+        continue;
+      }
+      entries.push(entry);
     } catch (_error) {
       parseErrors += 1;
     }
