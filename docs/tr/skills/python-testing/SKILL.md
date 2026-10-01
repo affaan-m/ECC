@@ -684,15 +684,40 @@ def test_create_user(client):
 
 ### Veritabanı Operasyonlarını Test Etme
 
+Bu SQLAlchemy 2.x fixture, SAVEPOINT destekleyen bir arka uç ve gerçek işlem denetimi olan bir engine gerektirir. Python 3.12+ üzerinde SQLite için `create_engine(..., connect_args={"autocommit": False})` yapılandırın; eski sürücülerde SQLAlchemy SQLite işlem kurulumunu kullanın. Test `session.commit()` çağırsa bile dış işlem geri alınır.
+
+Python 3.11 ve daha eski SQLite sürümleri için herhangi bir engine bağlantısını açmadan önce bu alternatif kurulumu kullanın. Yukarıdaki `autocommit=False` yapılandırmasıyla birleştirmeyin:
+
 ```python
+from sqlalchemy import create_engine, event
+
+engine = create_engine("sqlite://")
+
+@event.listens_for(engine, "connect")
+def disable_driver_begin(dbapi_connection, connection_record):
+    dbapi_connection.isolation_level = None
+
+@event.listens_for(engine, "begin")
+def emit_begin(connection):
+    connection.exec_driver_sql("BEGIN")
+```
+
+```python
+import pytest
+from sqlalchemy.orm import Session
+
 @pytest.fixture
 def db_session():
     """Test veritabanı oturumu oluştur."""
-    session = Session(bind=engine)
-    session.begin_nested()
-    yield session
-    session.rollback()
-    session.close()
+    with engine.connect() as connection:
+        transaction = connection.begin()
+        try:
+            with Session(
+                bind=connection, join_transaction_mode="create_savepoint"
+            ) as session:
+                yield session
+        finally:
+            transaction.rollback()
 
 def test_create_user(db_session):
     user = User(name="Alice", email="alice@example.com")

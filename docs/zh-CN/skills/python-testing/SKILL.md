@@ -684,15 +684,40 @@ def test_create_user(client):
 
 ### 测试数据库操作
 
+此 SQLAlchemy 2.x fixture 要求后端支持 SAVEPOINT，且 engine 启用真实事务控制。Python 3.12+ 的 SQLite 应配置 `create_engine(..., connect_args={"autocommit": False})`；旧驱动请使用 SQLAlchemy SQLite 事务配置。即使测试调用 `session.commit()`，外层事务仍会在清理时回滚。
+
+Python 3.11 及更早版本的 SQLite 可在打开任何 engine 连接前使用以下替代配置。不要与上面的 `autocommit=False` 配置混用：
+
 ```python
+from sqlalchemy import create_engine, event
+
+engine = create_engine("sqlite://")
+
+@event.listens_for(engine, "connect")
+def disable_driver_begin(dbapi_connection, connection_record):
+    dbapi_connection.isolation_level = None
+
+@event.listens_for(engine, "begin")
+def emit_begin(connection):
+    connection.exec_driver_sql("BEGIN")
+```
+
+```python
+import pytest
+from sqlalchemy.orm import Session
+
 @pytest.fixture
 def db_session():
     """Create a test database session."""
-    session = Session(bind=engine)
-    session.begin_nested()
-    yield session
-    session.rollback()
-    session.close()
+    with engine.connect() as connection:
+        transaction = connection.begin()
+        try:
+            with Session(
+                bind=connection, join_transaction_mode="create_savepoint"
+            ) as session:
+                yield session
+        finally:
+            transaction.rollback()
 
 def test_create_user(db_session):
     user = User(name="Alice", email="alice@example.com")
