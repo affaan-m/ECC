@@ -610,7 +610,8 @@ def run_workflow(config_path: str | Path, out_dir: str | Path, *, probe: Probe |
         scene_changes = [time for item in scene_change_evidence for time in item["times"]]
         scene_intervals = [
             later - earlier
-            for earlier, later in zip(scene_changes, scene_changes[1:])  # noqa: RUF007
+            for item in scene_change_evidence
+            for earlier, later in zip(item["times"], item["times"][1:])  # noqa: RUF007
         ]
         style_samples = [
             sample
