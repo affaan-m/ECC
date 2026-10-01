@@ -35,13 +35,25 @@ public actor LocalRepository<T: Codable & Identifiable> where T.ID == String {
     // MARK: - Public API
 
     public func save(_ item: T) throws {
+        let previous = cache[item.id]
         cache[item.id] = item
-        try persistToFile()
+        do {
+            try persistToFile()
+        } catch {
+            cache[item.id] = previous
+            throw error
+        }
     }
 
     public func delete(_ id: String) throws {
+        let previous = cache[id]
         cache[id] = nil
-        try persistToFile()
+        do {
+            try persistToFile()
+        } catch {
+            cache[id] = previous
+            throw error
+        }
     }
 
     public func find(by id: String) -> T? {
