@@ -417,10 +417,12 @@ class DocumentResourceTest {
 ```
 
 Ejecutar pruebas con cobertura:
+Configura el plugin JaCoCo de `quarkus-tdd` antes de comprobar la cobertura. Las reglas pertenecen a la ejecución `check`; `jacoco:check@check` selecciona esas reglas (Maven 3.3.1+). `jacoco:check` sin selector usa `default-cli` y no hereda esa configuración de ejecución.
+
 ```bash
 mvn clean test
 mvn jacoco:report
-mvn jacoco:check
+mvn jacoco:check@check
 
 # Reporte en: target/site/jacoco/index.html
 ```

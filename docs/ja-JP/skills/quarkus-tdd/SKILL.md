@@ -682,10 +682,12 @@ class DocumentIntegrationTest {
 ```
 
 カバレッジ付きテスト実行:
+カバレッジ検証の前に `quarkus-tdd` の JaCoCo プラグインを設定してください。ルールは実行ID `check` に属します。`jacoco:check@check` はそのルールを選択します（Maven 3.3.1以降）。指定のない `jacoco:check` は `default-cli` を使い、この実行設定を継承しません。
+
 ```bash
 mvn clean test
 mvn jacoco:report
-mvn jacoco:check
+mvn jacoco:check@check
 
 # レポート: target/site/jacoco/index.html
 ```

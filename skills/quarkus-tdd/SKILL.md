@@ -683,10 +683,12 @@ class DocumentIntegrationTest {
 ```
 
 Run tests with coverage:
+Configure the JaCoCo plugin shown in `quarkus-tdd` before running coverage checks. The rules are scoped to execution ID `check`; `jacoco:check@check` selects those rules (Maven 3.3.1+). A bare `jacoco:check` uses `default-cli` and does not inherit that execution configuration.
+
 ```bash
 mvn clean test
 mvn jacoco:report
-mvn jacoco:check
+mvn jacoco:check@check
 
 # Report at: target/site/jacoco/index.html
 ```

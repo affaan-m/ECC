@@ -55,6 +55,8 @@ mvn sonar:sonar \
 
 ## Faz 3: Testler + Kapsam
 
+Kapsam kontrolünden önce [quarkus-tdd](../quarkus-tdd/SKILL.md) içindeki JaCoCo eklentisini yapılandırın. Kurallar `check` yürütmesine aittir; `jacoco:check@check` bu kuralları seçer (Maven 3.3.1+). Seçici olmadan `jacoco:check`, `default-cli` kullanır ve bu yürütme yapılandırmasını devralmaz.
+
 ```bash
 # Tüm testleri çalıştır
 mvn clean test
@@ -63,7 +65,7 @@ mvn clean test
 mvn jacoco:report
 
 # Kapsam eşiğini zorla (%80)
-mvn jacoco:check
+mvn jacoco:check@check
 
 # Veya Gradle ile
 ./gradlew test jacocoTestReport jacocoTestCoverageVerification
@@ -408,7 +410,7 @@ echo "=== Faz 2: Static Analiz ==="
 mvn checkstyle:check pmd:check spotbugs:check
 
 echo "=== Faz 3: Testler + Kapsam ==="
-mvn test jacoco:report jacoco:check
+mvn test jacoco:report jacoco:check@check
 
 echo "=== Faz 4: Güvenlik Taraması ==="
 mvn org.owasp:dependency-check-maven:check
@@ -454,7 +456,7 @@ jobs:
         run: mvn clean verify -DskipTests
 
       - name: Test with Coverage
-        run: mvn test jacoco:report jacoco:check
+        run: mvn test jacoco:report jacoco:check@check
 
       - name: Security Scan
         run: mvn org.owasp:dependency-check-maven:check
