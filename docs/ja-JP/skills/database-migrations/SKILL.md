@@ -50,7 +50,7 @@ ALTER TABLE users ADD COLUMN avatar_url TEXT;
 ALTER TABLE users ADD COLUMN is_active BOOLEAN NOT NULL DEFAULT true;
 
 -- BAD: デフォルトなしのNOT NULLは既存行があるとNULL制約違反で失敗する
-ALTER TABLE users ADD COLUMN is_active BOOLEAN NOT NULL;
+ALTER TABLE users ADD COLUMN role TEXT NOT NULL;
 ```
 
 詳細についてはドキュメントを参照してください。
