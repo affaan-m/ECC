@@ -183,6 +183,8 @@ Steering files provide always-on rules and context that shape how the agent work
 
 Steering files with `always` inclusion are loaded automatically. No action needed — they apply as soon as you install them.
 
+> **Upgrading an existing install:** the installer never overwrites steering files that already exist in your project. If you installed before these files switched to `always`, change `inclusion: auto` to `inclusion: always` in the frontmatter of `coding-style.md`, `security.md`, `testing.md`, `development-workflow.md`, `git-workflow.md`, `patterns.md`, `performance.md`, and `lessons-learned.md` in your `.kiro/steering/` directory, or delete those files and rerun the installer.
+
 To create your own, add a markdown file to `.kiro/steering/` with YAML frontmatter:
 
 ```yaml
