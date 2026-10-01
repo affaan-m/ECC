@@ -333,7 +333,7 @@ function main() {
   process.stdout.write(output);
 
   if (options.exitCode && !report.ready) {
-    process.exit(2);
+    process.exitCode = 2;
   }
 }
 

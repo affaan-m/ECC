@@ -97,6 +97,37 @@ function runTests() {
   let passed = 0;
   let failed = 0;
 
+  if (test('exit-code mode preserves a large complete JSON report through a pipe', () => {
+    const rootDir = createTempDir('discussion-audit-output-');
+    try {
+      const nodes = Array.from({ length: 100 }, (_, index) => ({
+        number: index + 1, title: 'Discussion '.padEnd(200, 'x'),
+        url: `https://github.com/fixture/project/discussions/${index + 1}`,
+        updatedAt: '2026-05-19T00:00:00Z', authorAssociation: 'NONE',
+        category: { name: 'Questions', isAnswerable: true }, answer: null,
+        comments: { nodes: [] },
+      }));
+      const responses = {};
+      const args = ['--json', '--exit-code'];
+      for (const name of ['one', 'two', 'three', 'four', 'five']) {
+        responses[discussionEnabledGhKey('fixture', name)] = { data: { repository: { hasDiscussionsEnabled: true } } };
+        responses[discussionGhKey('fixture', name)] = { data: { repository: { hasDiscussionsEnabled: true, discussions: { totalCount: 100, nodes } } } };
+        args.push('--repo', `fixture/${name}`);
+      }
+      const shimPath = writeGhShim(rootDir, responses);
+      const result = runProcess(args, { env: { ECC_GH_SHIM: shimPath } });
+      assert.ifError(result.error);
+      assert.strictEqual(result.status, 2, result.stderr);
+      const report = JSON.parse(result.stdout);
+      assert.strictEqual(report.ready, false);
+      assert.strictEqual(report.totals.needingMaintainerTouch, 500);
+      assert.strictEqual(report.repos[0].discussions.answerableWithoutAcceptedAnswer[99].number, 100);
+      assert.ok(result.stdout.endsWith('\n'));
+    } finally {
+      cleanup(rootDir);
+    }
+  })) passed++; else failed++;
+
   if (test('passes when discussions have maintainer touch and accepted answers', () => {
     const rootDir = createTempDir('discussion-audit-pass-');
 
