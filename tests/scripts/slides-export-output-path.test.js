@@ -35,6 +35,7 @@ if (process.platform === 'win32') {
       { name: 'relative output in the caller directory', output: 'slides.pdf', expected: 'slides.pdf' },
       { name: 'relative output with spaces and a new directory', output: 'exports with spaces/my deck.pdf', expected: 'exports with spaces/my deck.pdf' },
       { name: 'absolute output', output: 'absolute', expected: 'absolute slides.pdf' },
+      { name: 'relative output with exported CDPATH', output: 'exports/deck.pdf', expected: 'exports/deck.pdf', cdpath: '.' },
     ];
     for (const [index, scenario] of cases.entries()) {
       const cwd = path.join(root, `case-${index}`);
@@ -47,7 +48,7 @@ if (process.platform === 'win32') {
         cwd,
         encoding: 'utf8',
         timeout: 10000,
-        env: { ...process.env, PATH: `${bin}${path.delimiter}${process.env.PATH}` },
+        env: { ...process.env, CDPATH: scenario.cdpath || '', PATH: `${bin}${path.delimiter}${process.env.PATH}` },
       });
       try {
         assert.strictEqual(result.status, 0, result.stderr || result.error?.message);
