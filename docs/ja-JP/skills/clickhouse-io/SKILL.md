@@ -288,6 +288,7 @@ GROUP BY date
 ORDER BY date;
 
 -- リテンション分析
+-- 各ユーザーの最初の観測活動日をコホートとし、日ごとに一度だけ数える
 SELECT
     signup_date,
     countIf(days_since_signup = 0) AS day_0,
@@ -295,13 +296,12 @@ SELECT
     countIf(days_since_signup = 7) AS day_7,
     countIf(days_since_signup = 30) AS day_30
 FROM (
-    SELECT
+    SELECT DISTINCT
         user_id,
-        min(toDate(timestamp)) AS signup_date,
+        min(toDate(timestamp)) OVER (PARTITION BY user_id) AS signup_date,
         toDate(timestamp) AS activity_date,
         dateDiff('day', signup_date, activity_date) AS days_since_signup
     FROM events
-    GROUP BY user_id, activity_date
 )
 GROUP BY signup_date
 ORDER BY signup_date DESC;
