@@ -186,7 +186,7 @@ Older codebases on React 18 still need `forwardRef`.
 ### React Native
 
 - Platform-specific imports (`Platform.OS`, `.ios.tsx` / `.android.tsx`), `StyleSheet`, navigation libraries (React Navigation, Expo Router)
-- Treated as a separate track — `rules/react-native/` is not yet present
+- Follow the separate [React Native / Expo rules](../react-native/patterns.md) for platform-specific guidance
 - React core hooks/patterns from this file still apply
 
 ## Skill Reference
