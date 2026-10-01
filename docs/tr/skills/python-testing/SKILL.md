@@ -486,7 +486,10 @@ async def test_async_with_fixture(async_client):
 ### Asenkron Fixture
 
 ```python
-@pytest.fixture
+import pytest
+import pytest_asyncio
+
+@pytest_asyncio.fixture
 async def async_client():
     """Asenkron test client sağlayan asenkron fixture."""
     app = create_app()
