@@ -374,15 +374,13 @@ async function etlPipeline() {
 setInterval(etlPipeline, 60 * 60 * 1000)  // 1時間ごと
 ```
 
-### 変更データキャプチャ（CDC）
+### 変更通知（LISTEN/NOTIFY）
 
 ```typescript
 // PostgreSQLの変更をリッスンしてClickHouseに同期
 import { Client } from 'pg'
 
 const pgClient = new Client({ connectionString: process.env.DATABASE_URL })
-
-pgClient.query('LISTEN market_updates')
 
 pgClient.on('notification', async (msg) => {
   const update = JSON.parse(msg.payload)
@@ -400,7 +398,12 @@ pgClient.on('notification', async (msg) => {
     format: 'JSONEachRow'
   })
 })
+
+await pgClient.connect()
+await pgClient.query('LISTEN market_updates')
 ```
+
+この例は、セッションがリッスンしている間にアプリケーションが送信する JSON 通知を転送します。`LISTEN` の登録はセッション終了時に解除されるため、永続的な CDC や再生機能ではありません。リスナー停止中の変更も保持する必要がある場合は、論理デコーディングまたは永続的な outbox を使用します。
 
 ## ベストプラクティス
 

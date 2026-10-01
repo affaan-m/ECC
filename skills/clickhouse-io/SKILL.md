@@ -385,15 +385,13 @@ async function etlPipeline() {
 setInterval(etlPipeline, 60 * 60 * 1000)  // Every hour
 ```
 
-### Change Data Capture (CDC)
+### Change Notifications (LISTEN/NOTIFY)
 
 ```typescript
 // Listen to PostgreSQL changes and sync to ClickHouse
 import { Client } from 'pg'
 
 const pgClient = new Client({ connectionString: process.env.DATABASE_URL })
-
-pgClient.query('LISTEN market_updates')
 
 pgClient.on('notification', async (msg) => {
   const update = JSON.parse(msg.payload)
@@ -411,7 +409,12 @@ pgClient.on('notification', async (msg) => {
     format: 'JSONEachRow'
   })
 })
+
+await pgClient.connect()
+await pgClient.query('LISTEN market_updates')
 ```
+
+This example forwards application-emitted JSON notifications while the session is listening. `LISTEN` registrations end with the session, so this is not durable CDC or replay. Use logical decoding or a durable outbox when changes must survive listener downtime.
 
 ## Best Practices
 

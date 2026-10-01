@@ -385,15 +385,13 @@ async function etlPipeline() {
 setInterval(etlPipeline, 60 * 60 * 1000)  // Every hour
 ```
 
-### 变更数据捕获 (CDC)
+### 变更通知 (LISTEN/NOTIFY)
 
 ```typescript
 // Listen to PostgreSQL changes and sync to ClickHouse
 import { Client } from 'pg'
 
 const pgClient = new Client({ connectionString: process.env.DATABASE_URL })
-
-pgClient.query('LISTEN market_updates')
 
 pgClient.on('notification', async (msg) => {
   const update = JSON.parse(msg.payload)
@@ -411,7 +409,12 @@ pgClient.on('notification', async (msg) => {
     format: 'JSONEachRow'
   })
 })
+
+await pgClient.connect()
+await pgClient.query('LISTEN market_updates')
 ```
+
+此示例在会话监听期间转发应用发出的 JSON 通知。`LISTEN` 注册随会话结束而清除，因此不提供持久 CDC 或重放。需要保留监听器停机期间的变更时，应使用逻辑解码或持久 outbox。
 
 ## 最佳实践
 
