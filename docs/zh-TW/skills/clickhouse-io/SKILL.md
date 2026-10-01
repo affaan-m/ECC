@@ -54,6 +54,14 @@ ORDER BY (user_id, event_id, timestamp)
 PRIMARY KEY (user_id, event_id);
 ```
 
+去重依據完整的 `ORDER BY` 元組 `(user_id, event_id, timestamp)`，而不是較短的 `PRIMARY KEY`。此範例假設事件時間戳記不變，使重試保持相同排序鍵和月份分割區。背景合併非同步發生，且僅在分割區內進行；需要無重複結果時，應使用 `FINAL` 等查詢時去重。不要在每次讀取前強制磁碟合併。
+
+```sql
+SELECT user_id, event_id, timestamp, properties
+FROM user_events FINAL
+WHERE user_id = 'user-123';
+```
+
 ### AggregatingMergeTree（預聚合）
 
 ```sql
@@ -421,7 +429,7 @@ pgClient.on('notification', async (msg) => {
 
 ### 4. 避免
 - SELECT *（指定欄位）
-- FINAL（改為在查詢前合併資料）
+- 對不需要去重的讀取使用不必要的 `FINAL`（正確性需要時保留 `FINAL` 或等效查詢時去重）
 - 太多 JOINs（為分析反正規化）
 - 小量頻繁插入（改用批量）
 
