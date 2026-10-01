@@ -349,6 +349,7 @@ REVOKE ALL ON SCHEMA public FROM public;
 
 ```sql
 -- 4GB RAMの例
+-- max_connections の変更は再読み込みでは反映されないため、サーバーの再起動が必要
 ALTER SYSTEM SET max_connections = 100;
 ALTER SYSTEM SET work_mem = '8MB';  -- 8MB * 100 = 最大800MB
 SELECT pg_reload_conf();
@@ -511,6 +512,8 @@ RETURNING *;
 ## モニタリングと診断
 
 ### 1. pg_stat_statementsを有効化
+
+既存の項目を保持して `shared_preload_libraries` に `pg_stat_statements` を追加し、`compute_query_id` が `auto` または `on` であることを確認します。プリロードの一覧を変更した場合はサーバーを再起動します。統計ビューが必要な各データベースに接続して、以下の拡張機能を作成します。`CREATE EXTENSION` だけではモジュールはプリロードされません。
 
 ```sql
 CREATE EXTENSION IF NOT EXISTS pg_stat_statements;

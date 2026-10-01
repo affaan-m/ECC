@@ -127,13 +127,16 @@ ALTER SYSTEM SET work_mem = '8MB';
 ALTER SYSTEM SET idle_in_transaction_session_timeout = '30s';
 ALTER SYSTEM SET statement_timeout = '30s';
 
--- Monitoring
-CREATE EXTENSION IF NOT EXISTS pg_stat_statements;
-
 -- Security defaults
 REVOKE ALL ON SCHEMA public FROM public;
 
 SELECT pg_reload_conf();
+```
+
+`pg_reload_conf()`는 다시 로드할 수 있는 설정만 반영하며, `max_connections` 변경에는 서버 재시작이 필요합니다. `pg_stat_statements`를 사용하기 전에 기존 항목을 유지하면서 `shared_preload_libraries`에 추가하고 `compute_query_id`가 `auto` 또는 `on`인지 확인하세요. 사전 로드 목록을 변경했다면 서버를 재시작한 뒤, 통계 뷰가 필요한 각 데이터베이스에 연결하여 다음을 실행하세요:
+
+```sql
+CREATE EXTENSION IF NOT EXISTS pg_stat_statements;
 ```
 
 ## 관련 항목

@@ -127,13 +127,16 @@ ALTER SYSTEM SET work_mem = '8MB';
 ALTER SYSTEM SET idle_in_transaction_session_timeout = '30s';
 ALTER SYSTEM SET statement_timeout = '30s';
 
--- İzleme
-CREATE EXTENSION IF NOT EXISTS pg_stat_statements;
-
 -- Güvenlik varsayılanları
 REVOKE ALL ON SCHEMA public FROM public;
 
 SELECT pg_reload_conf();
+```
+
+`pg_reload_conf()` yalnızca yeniden yüklenebilen ayarları yükler; `max_connections` değişiklikleri sunucunun yeniden başlatılmasını gerektirir. `pg_stat_statements` kullanmadan önce mevcut girdileri koruyarak onu `shared_preload_libraries` listesine ekleyin ve `compute_query_id` değerinin `auto` veya `on` olduğundan emin olun. Ön yükleme listesi değiştiyse sunucuyu yeniden başlatın; ardından istatistik görünümlerinin gerektiği her veritabanına bağlanıp çalıştırın:
+
+```sql
+CREATE EXTENSION IF NOT EXISTS pg_stat_statements;
 ```
 
 ## İlgili

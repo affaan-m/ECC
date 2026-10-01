@@ -128,13 +128,16 @@ ALTER SYSTEM SET work_mem = '8MB';
 ALTER SYSTEM SET idle_in_transaction_session_timeout = '30s';
 ALTER SYSTEM SET statement_timeout = '30s';
 
--- Monitoring
-CREATE EXTENSION IF NOT EXISTS pg_stat_statements;
-
 -- Security defaults
 REVOKE ALL ON SCHEMA public FROM public;
 
 SELECT pg_reload_conf();
+```
+
+`pg_reload_conf()` reloads settings that support reload; it does not activate changes to `max_connections`, which require a server restart. Before using `pg_stat_statements`, add it to `shared_preload_libraries` while preserving any existing entries, and ensure `compute_query_id` is `auto` or `on`. Restart the server if the preload list changed, then connect to each database where the statistics views are needed and run:
+
+```sql
+CREATE EXTENSION IF NOT EXISTS pg_stat_statements;
 ```
 
 ## Related
