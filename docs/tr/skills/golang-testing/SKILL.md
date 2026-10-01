@@ -551,11 +551,13 @@ go test -race -coverprofile=coverage.out ./...
 
 ### Oluşturulan Kodu Coverage'dan Hariç Tutma
 
-```go
-//go:generate mockgen -source=interface.go -destination=mock_interface.go
+`//go:generate` dosyaları coverage dışında bırakmaz; `-tags=!generate` bir coverage filtresi değildir. Build kısıtları derlenecek kaynak dosyaları seçer; testlerin ihtiyaç duyduğu oluşturulmuş mock'ları kaldırmayın.
 
-// Coverage profile'ında, build tag'leri ile hariç tut:
-// go test -cover -tags=!generate ./...
+Oluşturulan kod ayrı paketlerdeyse, tüm testleri çalıştırmaya devam ederek uygulama paketlerini `-coverpkg` ile seçin (bu paket yollarını projenize uyarlayın). Seçim paket düzeyindedir; aynı paketteki oluşturulmuş dosyalar için build tag yerine açık bir rapor filtreleme politikası gerekir.
+
+```bash
+go test -coverpkg=./internal/service,./internal/handler -coverprofile=coverage.out ./...
+go tool cover -func=coverage.out
 ```
 
 ## HTTP Handler Testleri
