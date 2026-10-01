@@ -42,7 +42,7 @@ Gradle（如果已配置）：
 
 ## 阶段 3：测试 + 覆盖率
 
-先配置 [springboot-tdd](../springboot-tdd/SKILL.md) 中 verify 阶段的报告生成和 80% 行覆盖率检查。仅生成报告不会执行门槛。使用 Gradle 时，请先为 `jacocoTestCoverageVerification` 配置同样的最低值，再运行任务。
+先配置 [springboot-tdd](../springboot-tdd/SKILL.md) 中 verify 阶段的报告生成和 80% 行覆盖率检查。仅生成报告不会执行门槛。使用 Gradle 时，请先为 `jacocoTestCoverageVerification` (`counter = "LINE"`, `value = "COVEREDRATIO"`, `minimum = 0.80`) 配置同样的最低值，再运行任务。
 
 ```bash
 mvn -T 4 verify

@@ -174,6 +174,6 @@ class MarketBuilder {
 ## CI 命令
 
 * Maven：`mvn -T 4 test` 运行测试；`mvn verify` 还会生成报告并执行配置的 80% 行覆盖率门槛。
-* Gradle：`./gradlew test jacocoTestReport` 运行测试并生成报告。要执行覆盖率门槛，请为 `jacocoTestCoverageVerification` 配置 80% 规则，并运行该任务。
+* Gradle：`./gradlew test jacocoTestReport` 运行测试并生成报告。要执行覆盖率门槛，请为 `jacocoTestCoverageVerification` (`counter = "LINE"`, `value = "COVEREDRATIO"`, `minimum = 0.80`) 配置 80% 规则，并运行该任务。
 
 **记住**：保持测试快速、隔离且确定。测试行为，而非实现细节。

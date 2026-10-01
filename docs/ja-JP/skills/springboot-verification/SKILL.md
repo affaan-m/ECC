@@ -31,7 +31,7 @@ Gradle（設定されている場合）:
 
 ## フェーズ3: テスト + カバレッジ
 
-先に [springboot-tdd](../springboot-tdd/SKILL.md) の verify フェーズのレポートと行カバレッジ80%の検証を設定してください。レポート生成だけでは基準は適用されません。Gradle ではタスク実行前に `jacocoTestCoverageVerification` に同じ最小値を設定してください。
+先に [springboot-tdd](../springboot-tdd/SKILL.md) の verify フェーズのレポートと行カバレッジ80%の検証を設定してください。レポート生成だけでは基準は適用されません。Gradle ではタスク実行前に `jacocoTestCoverageVerification` (`counter = "LINE"`, `value = "COVEREDRATIO"`, `minimum = 0.80`) に同じ最小値を設定してください。
 
 ```bash
 mvn -T 4 verify

@@ -172,6 +172,6 @@ class MarketBuilder {
 ## CI Komutları
 
 - Maven: `mvn -T 4 test` testleri çalıştırır; `mvn verify` ayrıca rapor oluşturur ve yapılandırılan %80 satır kapsamı eşiğini uygular.
-- Gradle: `./gradlew test jacocoTestReport` testleri çalıştırır ve rapor oluşturur. Kapsamı zorunlu kılmak için `jacocoTestCoverageVerification` görevinde %80 kuralı yapılandırın ve bu görevi de çalıştırın.
+- Gradle: `./gradlew test jacocoTestReport` testleri çalıştırır ve rapor oluşturur. Kapsamı zorunlu kılmak için `jacocoTestCoverageVerification` (`counter = "LINE"`, `value = "COVEREDRATIO"`, `minimum = 0.80`) görevinde %80 kuralı yapılandırın ve bu görevi de çalıştırın.
 
 **Unutmayın**: Testleri hızlı, izole ve deterministik tutun. Uygulama detaylarını değil, davranışı test edin.

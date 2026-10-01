@@ -172,6 +172,6 @@ class MarketBuilder {
 ## Comandos de CI
 
 - Maven: `mvn -T 4 test` ejecuta las pruebas; `mvn verify` también genera el informe y exige la cobertura de líneas del 80% configurada.
-- Gradle: `./gradlew test jacocoTestReport` ejecuta las pruebas y genera un informe. Para exigir cobertura, configura una regla del 80% en `jacocoTestCoverageVerification` y ejecuta también esa tarea.
+- Gradle: `./gradlew test jacocoTestReport` ejecuta las pruebas y genera un informe. Para exigir cobertura, configura una regla del 80% en `jacocoTestCoverageVerification` (`counter = "LINE"`, `value = "COVEREDRATIO"`, `minimum = 0.80`) y ejecuta también esa tarea.
 
 **Recuerda**: Mantener las pruebas rápidas, aisladas y deterministas. Probar comportamiento, no detalles de implementación.

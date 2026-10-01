@@ -173,6 +173,6 @@ class MarketBuilder {
 ## CI Commands
 
 - Maven: `mvn -T 4 test` runs tests; `mvn verify` also generates the report and enforces the configured 80% line coverage gate.
-- Gradle: `./gradlew test jacocoTestReport` runs tests and generates a report. To enforce coverage, configure an 80% rule for `jacocoTestCoverageVerification` and run that task as well.
+- Gradle: `./gradlew test jacocoTestReport` runs tests and generates a report. To enforce coverage, configure an 80% rule for `jacocoTestCoverageVerification` (`counter = "LINE"`, `value = "COVEREDRATIO"`, `minimum = 0.80`) and run that task as well.
 
 **Remember**: Keep tests fast, isolated, and deterministic. Test behavior, not implementation details.

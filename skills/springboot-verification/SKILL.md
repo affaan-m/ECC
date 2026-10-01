@@ -41,7 +41,7 @@ Gradle (if configured):
 
 ## Phase 3: Tests + Coverage
 
-Configure the verify-phase report and 80% line coverage check from [springboot-tdd](../springboot-tdd/SKILL.md) first. Report generation alone does not enforce a threshold. For Gradle, configure the same minimum in `jacocoTestCoverageVerification` before running the task.
+Configure the verify-phase report and 80% line coverage check from [springboot-tdd](../springboot-tdd/SKILL.md) first. Report generation alone does not enforce a threshold. For Gradle, configure the same minimum in `jacocoTestCoverageVerification` (`counter = "LINE"`, `value = "COVEREDRATIO"`, `minimum = 0.80`) before running the task.
 
 ```bash
 mvn -T 4 verify

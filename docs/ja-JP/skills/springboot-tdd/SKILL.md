@@ -171,6 +171,6 @@ class MarketBuilder {
 ## CIコマンド
 
 - Maven: `mvn -T 4 test` はテストを実行します。`mvn verify` はレポート生成に加え、設定した行カバレッジ80%の基準も検証します。
-- Gradle: `./gradlew test jacocoTestReport` はテストとレポート生成を実行します。カバレッジを必須にするには、`jacocoTestCoverageVerification` に80%のルールを設定し、そのタスクも実行してください。
+- Gradle: `./gradlew test jacocoTestReport` はテストとレポート生成を実行します。カバレッジを必須にするには、`jacocoTestCoverageVerification` (`counter = "LINE"`, `value = "COVEREDRATIO"`, `minimum = 0.80`) に80%のルールを設定し、そのタスクも実行してください。
 
 **覚えておいてください**: テストは高速で、分離され、決定論的に保ちます。実装の詳細ではなく、動作をテストします。
