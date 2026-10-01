@@ -683,15 +683,24 @@ def test_create_user(client):
 
 ### データベース操作のテスト
 
+この SQLAlchemy 2.x fixture は、SAVEPOINT をサポートするバックエンドと実際のトランザクション制御を備えた engine を必要とします。Python 3.12+ の SQLite では `create_engine(..., connect_args={"autocommit": False})` を設定してください。古いドライバーでは SQLAlchemy の SQLite トランザクション設定を使用します。テストが `session.commit()` を呼び出しても、外側のトランザクションはロールバックされます。
+
 ```python
+import pytest
+from sqlalchemy.orm import Session
+
 @pytest.fixture
 def db_session():
     """Create a test database session."""
-    session = Session(bind=engine)
-    session.begin_nested()
-    yield session
-    session.rollback()
-    session.close()
+    with engine.connect() as connection:
+        transaction = connection.begin()
+        try:
+            with Session(
+                bind=connection, join_transaction_mode="create_savepoint"
+            ) as session:
+                yield session
+        finally:
+            transaction.rollback()
 
 def test_create_user(db_session):
     user = User(name="Alice", email="alice@example.com")
