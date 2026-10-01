@@ -159,6 +159,32 @@ function runTests() {
     }
   })) passed++; else failed++;
 
+  for (const tools of ['Read, Grep', '[Read, Grep]']) {
+    if (test(`adapts CRLF frontmatter with ${tools} and preserves body bytes`, () => {
+      const tempDir = createTempDir();
+      const filePath = path.join(tempDir, 'windows.md');
+      const body = 'Body with CRLF\r\n---\r\nKeep this section unchanged.\n';
+      try {
+        writeAgent(tempDir, 'windows.md', [
+          '---', 'name: windows', `tools: ${tools}`, 'color: blue', '---', ''
+        ].join('\r\n') + body);
+        const result = run([tempDir]);
+        assert.strictEqual(result.code, 0, result.stderr);
+        assert.ok(result.stdout.includes('Updated 1 agent file(s)'));
+        const expected = [
+          '---', 'name: windows', 'tools: ["read_file", "grep_search"]', '---', ''
+        ].join('\r\n') + body;
+        assert.strictEqual(fs.readFileSync(filePath, 'utf8'), expected);
+        const repeated = run([tempDir]);
+        assert.strictEqual(repeated.code, 0, repeated.stderr);
+        assert.ok(repeated.stdout.includes('Updated 0 agent file(s); 1 already compatible'));
+        assert.strictEqual(fs.readFileSync(filePath, 'utf8'), expected);
+      } finally {
+        cleanupTempDir(tempDir);
+      }
+    })) passed++; else failed++;
+  }
+
   console.log(`\nResults: Passed: ${passed}, Failed: ${failed}`);
   process.exit(failed > 0 ? 1 : 0);
 }
