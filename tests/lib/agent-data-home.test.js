@@ -91,6 +91,7 @@ function runTests() {
     withIsolatedCwd(() => {
       withEnv({
         ECC_AGENT_DATA_HOME: undefined,
+        CLAUDE_CONFIG_DIR: undefined,
         CURSOR_VERSION: undefined,
         CURSOR_PROJECT_DIR: undefined,
       }, () => {
@@ -482,6 +483,78 @@ function runTests() {
     } finally {
       console.error = originalError;
       fs.rmSync(tmpDir, { recursive: true, force: true });
+    }
+  })) passed++; else failed++;
+
+  if (test('uses CLAUDE_CONFIG_DIR outside Cursor when ECC_AGENT_DATA_HOME is unset', () => {
+    withIsolatedCwd(() => {
+      const configDir = path.join(os.tmpdir(), 'ecc-claude-config-profile');
+      withEnv({
+        ECC_AGENT_DATA_HOME: undefined,
+        CLAUDE_CONFIG_DIR: configDir,
+        CURSOR_VERSION: undefined,
+        CURSOR_PROJECT_DIR: undefined,
+      }, () => {
+        const agentDataHome = require('../../scripts/lib/agent-data-home');
+        assert.strictEqual(agentDataHome.resolveAgentDataHome(), configDir);
+        assert.strictEqual(agentDataHome.getDefaultClaudeAgentDataHome(), configDir);
+        const utils = require('../../scripts/lib/utils');
+        assert.strictEqual(utils.getClaudeDir(), configDir);
+      });
+    });
+  })) passed++; else failed++;
+
+  if (test('ECC_AGENT_DATA_HOME takes precedence over CLAUDE_CONFIG_DIR', () => {
+    withIsolatedCwd(() => {
+      const explicitHome = path.join(os.tmpdir(), 'ecc-explicit-agent-data-home');
+      withEnv({
+        ECC_AGENT_DATA_HOME: explicitHome,
+        CLAUDE_CONFIG_DIR: path.join(os.tmpdir(), 'ecc-claude-config-profile'),
+        CURSOR_VERSION: undefined,
+        CURSOR_PROJECT_DIR: undefined,
+      }, () => {
+        const agentDataHome = require('../../scripts/lib/agent-data-home');
+        assert.strictEqual(agentDataHome.resolveAgentDataHome(), explicitHome);
+      });
+    });
+  })) passed++; else failed++;
+
+  if (test('CLAUDE_CONFIG_DIR does not override the Cursor default', () => {
+    withIsolatedCwd(() => {
+      withEnv({
+        ECC_AGENT_DATA_HOME: undefined,
+        CLAUDE_CONFIG_DIR: path.join(os.tmpdir(), 'ecc-claude-config-profile'),
+        CURSOR_VERSION: '1.0.0',
+      }, () => {
+        const agentDataHome = require('../../scripts/lib/agent-data-home');
+        assert.strictEqual(
+          agentDataHome.resolveAgentDataHome(),
+          path.join(os.homedir(), '.cursor', 'ecc')
+        );
+      });
+    });
+  })) passed++; else failed++;
+
+  if (test('project config may select ~/.claude/shared when CLAUDE_CONFIG_DIR points elsewhere', () => {
+    const homeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-agent-data-home-claude-root-'));
+    const projectDir = path.join(homeDir, 'project');
+    const configPath = path.join(projectDir, '.cursor', 'ecc-agent-data.json');
+    const sharedHome = path.join(homeDir, '.claude', 'shared');
+    fs.mkdirSync(path.dirname(configPath), { recursive: true });
+    fs.writeFileSync(configPath, JSON.stringify({ agentDataHome: sharedHome }), 'utf8');
+
+    try {
+      withEnv({
+        ECC_AGENT_DATA_HOME: undefined,
+        CLAUDE_CONFIG_DIR: path.join(homeDir, 'custom-claude-profile'),
+        HOME: homeDir,
+        USERPROFILE: undefined,
+      }, () => {
+        const agentDataHome = require('../../scripts/lib/agent-data-home');
+        assert.strictEqual(agentDataHome.readProjectConfigAt(configPath), path.join(fs.realpathSync(homeDir), '.claude', 'shared'));
+      });
+    } finally {
+      fs.rmSync(homeDir, { recursive: true, force: true });
     }
   })) passed++; else failed++;
 
