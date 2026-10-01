@@ -35,13 +35,16 @@ public actor LocalRepository<T: Codable & Identifiable> where T.ID == String {
     // MARK: - Public API
 
     public func save(_ item: T) throws {
-        cache[item.id] = item
-        try persistToFile()
+        let id = item.id
+        let updatedCache = cache.merging([id: item]) { _, new in new }
+        try persistToFile(updatedCache)
+        cache = updatedCache
     }
 
     public func delete(_ id: String) throws {
-        cache[id] = nil
-        try persistToFile()
+        let updatedCache = cache.filter { $0.key != id }
+        try persistToFile(updatedCache)
+        cache = updatedCache
     }
 
     public func find(by id: String) -> T? {
@@ -54,8 +57,8 @@ public actor LocalRepository<T: Codable & Identifiable> where T.ID == String {
 
     // MARK: - Private
 
-    private func persistToFile() throws {
-        let data = try JSONEncoder().encode(Array(cache.values))
+    private func persistToFile(_ items: [String: T]) throws {
+        let data = try JSONEncoder().encode(Array(items.values))
         try data.write(to: fileURL, options: .atomic)
     }
 
