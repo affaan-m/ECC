@@ -40,11 +40,12 @@ Gradle (si está configurado):
 
 ## Fase 3: Pruebas + Cobertura
 
+Configura primero el informe y la comprobación de cobertura de líneas del 80% en la fase verify de [springboot-tdd](../springboot-tdd/SKILL.md). Generar un informe no exige un umbral. Para Gradle, configura el mismo mínimo en `jacocoTestCoverageVerification` antes de ejecutar la tarea.
+
 ```bash
-mvn -T 4 test
-mvn jacoco:report   # verificar cobertura 80%+
+mvn -T 4 verify
 # o
-./gradlew test jacocoTestReport
+./gradlew test jacocoTestReport jacocoTestCoverageVerification
 ```
 
 Reporte:
