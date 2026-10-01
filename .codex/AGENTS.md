@@ -71,9 +71,10 @@ When approval is ambiguous, produce a local plan or draft artifact instead of ta
 
 ## Multi-Agent Support
 
-Codex now supports multi-agent workflows behind the experimental `features.multi_agent` flag.
+Codex multi-agent collaboration is stable and enabled by default in current builds,
+as documented in the [official configuration reference](https://developers.openai.com/codex/config-reference).
 
-- Enable it in `.codex/config.toml` with `[features] multi_agent = true`
+- ECC keeps `[features] multi_agent = true` explicit in `.codex/config.toml`
 - Define project-local roles under `[agents.<name>]`
 - Point each role at a TOML layer under `.codex/agents/`
 - Use `/agent` inside Codex CLI to inspect and steer child agents
