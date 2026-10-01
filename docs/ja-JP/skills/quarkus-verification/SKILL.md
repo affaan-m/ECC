@@ -55,6 +55,8 @@ mvn sonar:sonar \
 
 ## Phase 3: Tests + Coverage
 
+カバレッジ検証の前に [quarkus-tdd](../quarkus-tdd/SKILL.md) の JaCoCo プラグインを設定してください。ルールは実行ID `check` に属します。`jacoco:check@check` はそのルールを選択します（Maven 3.3.1以降）。指定のない `jacoco:check` は `default-cli` を使い、この実行設定を継承しません。
+
 ```bash
 # 全テスト実行
 mvn clean test
@@ -63,7 +65,7 @@ mvn clean test
 mvn jacoco:report
 
 # カバレッジ閾値を強制（80%）
-mvn jacoco:check
+mvn jacoco:check@check
 
 # またはGradleで
 ./gradlew test jacocoTestReport jacocoTestCoverageVerification
@@ -408,7 +410,7 @@ echo "=== Phase 2: Static Analysis ==="
 mvn checkstyle:check pmd:check spotbugs:check
 
 echo "=== Phase 3: Tests + Coverage ==="
-mvn test jacoco:report jacoco:check
+mvn test jacoco:report jacoco:check@check
 
 echo "=== Phase 4: Security Scan ==="
 mvn org.owasp:dependency-check-maven:check
@@ -454,7 +456,7 @@ jobs:
         run: mvn clean verify -DskipTests
 
       - name: Test with Coverage
-        run: mvn test jacoco:report jacoco:check
+        run: mvn test jacoco:report jacoco:check@check
 
       - name: Security Scan
         run: mvn org.owasp:dependency-check-maven:check

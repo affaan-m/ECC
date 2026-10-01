@@ -56,6 +56,8 @@ mvn sonar:sonar \
 
 ## Phase 3: Tests + Coverage
 
+Configure the JaCoCo plugin shown in [quarkus-tdd](../quarkus-tdd/SKILL.md) before running coverage checks. The rules are scoped to execution ID `check`; `jacoco:check@check` selects those rules (Maven 3.3.1+). A bare `jacoco:check` uses `default-cli` and does not inherit that execution configuration.
+
 ```bash
 # Run all tests
 mvn clean test
@@ -64,7 +66,7 @@ mvn clean test
 mvn jacoco:report
 
 # Enforce coverage threshold (80%)
-mvn jacoco:check
+mvn jacoco:check@check
 
 # Or with Gradle
 ./gradlew test jacocoTestReport jacocoTestCoverageVerification
@@ -409,7 +411,7 @@ echo "=== Phase 2: Static Analysis ==="
 mvn checkstyle:check pmd:check spotbugs:check
 
 echo "=== Phase 3: Tests + Coverage ==="
-mvn test jacoco:report jacoco:check
+mvn test jacoco:report jacoco:check@check
 
 echo "=== Phase 4: Security Scan ==="
 mvn org.owasp:dependency-check-maven:check
@@ -455,7 +457,7 @@ jobs:
         run: mvn clean verify -DskipTests
 
       - name: Test with Coverage
-        run: mvn test jacoco:report jacoco:check
+        run: mvn test jacoco:report jacoco:check@check
 
       - name: Security Scan
         run: mvn org.owasp:dependency-check-maven:check
