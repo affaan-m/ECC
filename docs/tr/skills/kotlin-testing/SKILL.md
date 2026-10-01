@@ -334,6 +334,7 @@ import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.advanceTimeBy
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 
 class FlowServiceTest : FunSpec({
@@ -359,11 +360,13 @@ class FlowServiceTest : FunSpec({
             val job = launch {
                 service.searchUsers(queries).collect { results.add(it) }
             }
+            runCurrent()
 
             queries.emit("a")
             queries.emit("ab")
             queries.emit("abc") // Sadece bu aramayı tetiklemeli
             advanceTimeBy(500)
+            runCurrent()
 
             results shouldHaveSize 1
             job.cancel()
