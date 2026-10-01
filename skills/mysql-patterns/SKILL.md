@@ -302,7 +302,15 @@ Enable the slow log in a controlled environment:
 SET GLOBAL slow_query_log = 'ON';
 SET GLOBAL long_query_time = 1;
 SET GLOBAL log_queries_not_using_indexes = 'ON';
+SET SESSION long_query_time = 1;
 ```
+
+`SET GLOBAL long_query_time` sets the default for new connections; it does not
+change the threshold in existing sessions, including the session issuing it.
+The `SET SESSION` statement applies the threshold to the current diagnostic
+connection. Existing application pool connections retain their previous session
+values; reconnect them or set the session threshold on each relevant connection
+when collecting application queries with the new threshold.
 
 Use `EXPLAIN ANALYZE` only when it is safe to execute the query. It runs the
 statement and can be expensive on production-sized data.
