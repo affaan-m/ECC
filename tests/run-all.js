@@ -147,4 +147,5 @@ console.log(boxLine(`  Passed:      ${String(totalPassed).padStart(4)}  ✓`));
 console.log(boxLine(`  Failed:      ${String(totalFailed).padStart(4)}  ${totalFailed > 0 ? '✗' : ' '}`));
 console.log('╚' + '═'.repeat(BOX_W) + '╝');
 
-process.exit(totalFailed > 0 ? 1 : 0);
+// Let piped output drain before exiting so CI retains the final diagnostics.
+process.exitCode = totalFailed > 0 ? 1 : 0;
