@@ -43,11 +43,12 @@ function parsePort(v) {
 const PORT = parsePort(process.argv[2] || process.env.ECC_DASHBOARD_PORT || '3456');
 const HOST = resolveDashboardHost();
 const ROOT = path.resolve(__dirname, '..');
+const FRONTMATTER_PATTERN = /^\uFEFF?---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/;
 
 function readFrontmatter(p) {
   try {
     const c = fs.readFileSync(p, 'utf8');
-    const m = c.match(/^---\n([\s\S]*?)\n---/);
+    const m = c.match(FRONTMATTER_PATTERN);
     if (!m) return {};
     const fm = {};
     for (const l of m[1].split('\n')) {
@@ -61,11 +62,11 @@ function readFrontmatter(p) {
       }
       fm[k] = v;
     }
-    fm._body = c.replace(/^---[\s\S]*?---\n*/, '').trim();
+    fm._body = c.slice(m[0].length).trim();
     return fm;
   } catch { return {}; }
 }
-function readSkill(p) { try { const c = fs.readFileSync(p, 'utf8'); const fm = readFrontmatter(p); return { d: fm.description || '', b: c.replace(/^---[\s\S]*?---\n*/, '').trim() }; } catch { return { d: '', b: '' }; } }
+function readSkill(p) { try { const c = fs.readFileSync(p, 'utf8'); const fm = readFrontmatter(p); return { d: fm.description || '', b: c.replace(FRONTMATTER_PATTERN, '').trim() }; } catch { return { d: '', b: '' }; } }
 
 function loadAgents(_root) {
   const root = _root || ROOT;
