@@ -340,7 +340,7 @@ class ProductCreateSerializer(serializers.ModelSerializer):
 
     def validate(self, data):
         """複数フィールドのカスタム検証。"""
-        if data['price'] > 10000 and data['stock'] > 100:
+        if data['price'] > 10000 and data.get('stock', 0) > 100:
             raise serializers.ValidationError(
                 "Cannot have high-value products with large stock."
             )
@@ -434,8 +434,11 @@ class ProductViewSet(viewsets.ModelViewSet):
         """現在のユーザーが作成した製品を返す。"""
         products = self.queryset.filter(created_by=request.user)
         page = self.paginate_queryset(products)
-        serializer = self.get_serializer(page, many=True)
-        return self.get_paginated_response(serializer.data)
+        if page is not None:
+            serializer = self.get_serializer(page, many=True)
+            return self.get_paginated_response(serializer.data)
+        serializer = self.get_serializer(products, many=True)
+        return Response(serializer.data)
 ```
 
 ### カスタムアクション
