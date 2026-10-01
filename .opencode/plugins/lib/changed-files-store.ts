@@ -22,6 +22,9 @@ function toRelative(p: string): string {
 export function recordChange(filePath: string, type: ChangeType): void {
   const rel = toRelative(filePath)
   if (!rel) return
+  // A later edit does not turn a file added during this tracking lifetime
+  // into a pre-existing file. Deletions and subsequent additions still win.
+  if (type === "modified" && changes.get(rel) === "added") return
   changes.set(rel, type)
 }
 
