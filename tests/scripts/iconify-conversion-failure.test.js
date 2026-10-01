@@ -27,18 +27,28 @@ if (process.platform === 'win32') {
       'exit 1',
       '',
     ].join('\n'), { mode: 0o755 });
-    for (const mode of ['failure', 'empty', 'success']) {
+    for (const mode of ['failure', 'empty', 'success', 'stale-empty', 'failure-second']) {
       fs.writeFileSync(path.join(bin, 'sips'), [
         '#!/bin/sh',
-        mode === 'failure' ? 'exit 1' : mode === 'empty' ? 'exit 0' : 'printf "fixture PNG" > "$6"',
+        mode === 'failure' ? 'exit 1'
+          : ['empty', 'stale-empty'].includes(mode) ? 'exit 0'
+            : mode === 'failure-second' ? 'case "$6" in *@2x.png) exit 1;; esac; printf "fixture PNG" > "$6"'
+              : 'printf "fixture PNG" > "$6"',
         '',
       ].join('\n'), { mode: 0o755 });
       const output = path.join(root, mode);
+      const imageset = path.join(output, 'icon.imageset');
+      const existing = ['stale-empty', 'failure-second'].includes(mode);
+      const filenames = ['icon.png', 'icon@2x.png', 'icon@3x.png'];
+      if (existing) {
+        fs.mkdirSync(imageset, { recursive: true });
+        for (const filename of filenames) fs.writeFileSync(path.join(imageset, filename), 'old icon');
+        fs.writeFileSync(path.join(imageset, 'Contents.json'), 'old manifest');
+      }
       const result = spawnSync('bash', [script, 'mdi:test', 'icon', '--output', output], {
         encoding: 'utf8', timeout: 10000,
         env: { ...process.env, PATH: `${bin}${path.delimiter}${process.env.PATH}` },
       });
-      const imageset = path.join(output, 'icon.imageset');
       try {
         if (mode === 'success') {
           assert.strictEqual(result.status, 0, result.stderr);
@@ -50,8 +60,16 @@ if (process.platform === 'win32') {
         } else {
           assert.notStrictEqual(result.status, 0);
           assert.ok(result.stderr.includes('ERROR'));
-          assert.ok(fs.existsSync(path.join(imageset, 'icon.svg')), 'keep the downloaded source on conversion failure');
-          assert.ok(!fs.existsSync(path.join(imageset, 'Contents.json')), 'do not publish an incomplete imageset');
+          const source = mode === 'failure-second' ? 'icon@2x.svg' : 'icon.svg';
+          assert.ok(fs.existsSync(path.join(imageset, source)), 'keep the downloaded source on conversion failure');
+          if (existing) {
+            assert.strictEqual(fs.readFileSync(path.join(imageset, 'Contents.json'), 'utf8'), 'old manifest');
+            for (const filename of filenames) {
+              assert.strictEqual(fs.readFileSync(path.join(imageset, filename), 'utf8'), 'old icon');
+            }
+          } else {
+            assert.ok(!fs.existsSync(path.join(imageset, 'Contents.json')), 'do not publish an incomplete imageset');
+          }
         }
         console.log(`  ✓ ${mode}`);
         passed++;
