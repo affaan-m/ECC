@@ -203,12 +203,12 @@ async function defaultFetchSource(source, options = {}) {
     });
 
     if (result.statusCode === 405 || result.statusCode === 403) {
-      return requestUrl(source.url, {
+      const fallbackResult = await requestUrl(source.url, {
         timeoutMs: options.timeoutMs || DEFAULT_TIMEOUT_MS,
         redirectsRemaining: MAX_REDIRECTS,
         method: 'GET',
-        checkedAt,
       });
+      return { ...fallbackResult, checkedAt };
     }
 
     return { ...result, checkedAt };
