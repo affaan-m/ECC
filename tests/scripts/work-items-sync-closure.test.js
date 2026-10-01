@@ -21,6 +21,8 @@ async function main() {
       if (command === 'list') {
         console.log(JSON.stringify([{ number: 1, title: 'Visible', isDraft: false }]));
       } else if (command === 'view') {
+        const expectedKind = id === '4' ? 'pr' : 'issue';
+        if (kind !== expectedKind) { console.error('wrong lookup kind'); process.exit(1); }
         if (id === '6') { console.error('source unavailable'); process.exit(1); }
         const states = { '2': 'OPEN', '3': 'CLOSED', '4': 'MERGED', '5': 'UNKNOWN' };
         console.log(JSON.stringify({ state: states[id] }));
