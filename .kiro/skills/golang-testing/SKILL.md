@@ -154,9 +154,25 @@ go tool cover -html=coverage.out
 
 ### Coverage Thresholds
 
+Require at least 80% for every package reporting numeric coverage. Preserve test-command failures and fail if no numeric coverage is reported.
+
 ```bash
-# Fail if coverage below 80%
-go test -cover ./... | grep -E 'coverage: [0-7][0-9]\.[0-9]%' && exit 1
+coverage_status=0
+coverage_output=$(go test -cover ./...) || coverage_status=$?
+printf '%s\n' "$coverage_output"
+if [ "$coverage_status" -ne 0 ]; then
+  exit "$coverage_status"
+fi
+printf '%s\n' "$coverage_output" | awk '
+  /coverage: [0-9]+(\.[0-9]+)?%/ {
+    value = $0
+    sub(/^.*coverage: /, "", value)
+    sub(/%.*$/, "", value)
+    if (value + 0 < 80) failed = 1
+    seen = 1
+  }
+  END { exit (failed || !seen) }
+'
 ```
 
 ## Benchmarking
