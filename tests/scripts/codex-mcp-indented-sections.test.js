@@ -12,6 +12,7 @@ let passed = 0;
 let failed = 0;
 
 for (const [indent, newline] of [['  ', '\n'], ['\t', '\r\n']]) {
+  const multiline = (newline === '\n' ? '"' : "'").repeat(3);
   for (const mode of ['refresh', 'disable', 'repair', 'dry-run']) {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-mcp-indent-'));
     const config = path.join(dir, 'config.toml');
@@ -23,6 +24,11 @@ for (const [indent, newline] of [['  ', '\n'], ['\t', '\r\n']]) {
       `${indent}[mcp_servers.user-server] # keep user config`,
       'command = "user-launcher"',
       'args = ["keep-me"]',
+      `${indent}[mcp_servers.user-server.env]`,
+      `NOTE = ${multiline}`,
+      `${indent}[mcp_servers.${server}]`,
+      'This is user data, not a section to remove.',
+      multiline,
       '',
     ].join(newline);
     const original = [
@@ -30,7 +36,10 @@ for (const [indent, newline] of [['  ', '\n'], ['\t', '\r\n']]) {
       `${indent}[mcp_servers.${server}] # managed config`,
       ...managed,
       `${indent}[mcp_servers.${server}.env]`,
-      'OLD_ENV = "old-value"',
+      `OLD_ENV = ${multiline}`,
+      `${indent}[example text]`,
+      `${indent}[mcp_servers.user-server]`,
+      multiline,
       '',
     ].join(newline) + userBlock;
     try {
@@ -55,6 +64,9 @@ for (const [indent, newline] of [['  ', '\n'], ['\t', '\r\n']]) {
       assert.strictEqual(after.model, before.model);
       if (mode === 'dry-run') {
         assert.strictEqual(output, original);
+        assert.match(result.stdout, /Dry run — would remove:/);
+        assert.match(result.stdout, /\[remove\] mcp_servers\.chrome-devtools/);
+        assert.match(result.stdout, /Dry run — would append:/);
       } else if (mode === 'refresh') {
         assert.strictEqual(after.mcp_servers[server].command, 'npx');
         assert.deepStrictEqual(after.mcp_servers[server].args, ['chrome-devtools-mcp@1.10.1']);
