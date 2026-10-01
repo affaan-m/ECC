@@ -22,7 +22,7 @@ Enforce `eslint-plugin-react-hooks` with `react-hooks/rules-of-hooks` set to err
 3. Always called in the same order on every render
 4. Only inside React function components or custom hooks (functions starting with `use`)
 
-React 19's `use` API is an exception to the ordering rule: it can be called in loops and conditions, but still only inside a component or hook. See [the `use` reference](https://react.dev/reference/react/use).
+React 19's `use` API is an exception to the ordering rule: it can be called in loops and conditions, but still only inside a component or hook. Do not wrap `use` in `try`/`catch`; handle rejected promises with an Error Boundary or provide a fallback value with `Promise.catch` before passing the promise to `use`. See [the `use` reference](https://react.dev/reference/react/use).
 
 ```tsx
 // WRONG: conditional hook
