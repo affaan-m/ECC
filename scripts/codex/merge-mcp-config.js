@@ -143,19 +143,34 @@ function configDiffers(existing, recommended) {
  * (e.g. `[mcp_servers.github] # comment`).
  * Returns the text with the section removed.
  */
+function isTableHeaderAt(lines, index) {
+  if (!/^[ \t]*\[.*\][ \t]*(?:#.*)?\r?$/.test(lines[index])) return false;
+  try {
+    // Require complete TOML before and through the candidate header: a line
+    // that closes a multiline string can otherwise look like a real header.
+    TOML.parse(lines.slice(0, index).join('\n'));
+    TOML.parse(lines.slice(0, index + 1).join('\n'));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 function removeSectionFromText(text, sectionHeader) {
   const escaped = sectionHeader.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   const headerPattern = new RegExp(`^${escaped}(\\s*(#.*)?)?$`);
   const lines = text.split('\n');
   const result = [];
   let skipping = false;
-  for (const line of lines) {
-    const trimmed = line.replace(/\r$/, '');
-    if (headerPattern.test(trimmed)) {
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index];
+    const trimmed = line.replace(/^[ \t]+/, '').replace(/\r$/, '');
+    const isHeader = isTableHeaderAt(lines, index);
+    if (isHeader && headerPattern.test(trimmed)) {
       skipping = true;
       continue;
     }
-    if (skipping && /^\[/.test(trimmed)) {
+    if (skipping && isHeader) {
       skipping = false;
     }
     if (!skipping) {
