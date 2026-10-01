@@ -179,7 +179,7 @@ withContext(Dispatchers.IO) { database.query() }
 withContext(Dispatchers.Main) { updateUi() }
 ```
 
-KMP では `Dispatchers.Default` と `Dispatchers.Main`（すべてのプラットフォームで利用可能）を使用してください。`Dispatchers.IO` は JVM/Android のみです — 他のプラットフォームでは `Dispatchers.Default` を使用するか DI で提供してください。
+KMP では `Dispatchers.Default` は共通 API です。`Dispatchers.IO` は JVM/Android と Native をサポートし、JS/Wasm では利用できません。共有コードのブロッキング処理には、`Default` を IO プールと見なさず、プラットフォームに適したディスパッチャーを注入してください。`Dispatchers.Main` はプラットフォームのサポートが必要です。JVM では Android、JavaFX、Swing のいずれかのディスパッチャーモジュールが必要で、Native では Darwin ターゲットで提供されますが、他の Native ターゲットでは利用できません。
 
 ## キャンセル
 
