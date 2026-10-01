@@ -57,12 +57,12 @@ async function main() {
       ] });
       assert.ok(logs.some(x => /Progress: 1\/2/.test(x.message)));
     });
-    await test('native idle runs the edited-file audit and deletion preserves workspace changes', async () => {
+    await test('native idle runs the audit and the last tracked session clears workspace changes', async () => {
       await emit('file.edited', { file: 'src/idle.ts' });
       await emit('session.idle', { sessionID: 'session-a' });
       assert.ok(logs.some(x => /Session idle/.test(x.message)));
       await emit('session.deleted', { info: { id: 'session-a' } });
-      assert.strictEqual(store.getChanges().get(path.normalize('src/idle.ts')), 'modified');
+      assert.strictEqual(store.hasChanges(), false);
     });
     await test('native before output.args classifies a new write as added', async () => {
       await hooks['tool.execute.before']({ tool: 'write', sessionID: 'session-a', callID: 'write-a' }, {
@@ -80,6 +80,8 @@ async function main() {
       assert.ok(logs.some(x => /PR created/.test(x.message)));
     });
     await test('deleting session A preserves session B pending writes and audit files', async () => {
+      await emit('session.created', { info: { id: 'session-a' } });
+      await emit('session.created', { info: { id: 'session-b' } });
       await hooks['tool.execute.before']({ tool: 'write', sessionID: 'session-b', callID: 'write-b' }, {
         args: { filePath: 'session-b.md' }
       });
@@ -90,6 +92,14 @@ async function main() {
       assert.strictEqual(store.getChanges().get('session-b.md'), 'added');
       await emit('session.idle', { sessionID: 'session-b' });
       assert.ok(logs.some(x => /Session idle/.test(x.message)));
+      await emit('session.deleted', { info: { id: 'session-b' } });
+      assert.strictEqual(store.hasChanges(), false);
+      fs.writeFileSync(path.join(dir, 'session-b.md'), 'committed fixture');
+      await emit('session.created', { info: { id: 'session-c' } });
+      await hooks['tool.execute.before']({ tool: 'write', sessionID: 'session-c', callID: 'later-write' }, { args: { filePath: 'session-b.md' } });
+      await hooks['tool.execute.after']({ tool: 'write', sessionID: 'session-c', callID: 'later-write', args: { filePath: 'session-b.md' } }, {});
+      assert.strictEqual(store.getChanges().get('session-b.md'), 'modified');
+      await emit('session.deleted', { info: { id: 'session-c' } });
     });
     await test('new files remain added through native edits, watcher changes and later writes', async () => {
       await emit('file.watcher.updated', { file: 'new.txt', event: 'add' });

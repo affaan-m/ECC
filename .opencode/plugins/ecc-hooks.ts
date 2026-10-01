@@ -90,6 +90,7 @@ export const ECCHooksPlugin: ECCHooksPluginFn = async ({
   const worktreePath = worktree || directory
 
   const editedFiles = new Set<string>()
+  const activeSessions = new Set<string>()
 
   function resolvePath(p: string): string {
     if (path.isAbsolute(p)) return p
@@ -234,6 +235,7 @@ export const ECCHooksPlugin: ECCHooksPluginFn = async ({
       input: ToolInput,
       output: unknown
     ) => {
+      if (input.sessionID) activeSessions.add(input.sessionID)
       const filePath = getFilePath(input.args)
       if (input.tool === "edit" && filePath) {
         changedFilesStore?.recordChange(filePath, "modified")
@@ -293,6 +295,7 @@ export const ECCHooksPlugin: ECCHooksPluginFn = async ({
       // OpenCode supplies before-tool arguments in the mutable output envelope.
       // Keep input.args as a fallback for existing direct callers.
       const input = { ...nativeInput, args: output?.args ?? nativeInput.args }
+      if (input.sessionID) activeSessions.add(input.sessionID)
       if (input.tool === "write") {
         const filePath = getFilePath(input.args)
         if (filePath) {
@@ -460,12 +463,14 @@ export const ECCHooksPlugin: ECCHooksPluginFn = async ({
         for (const [key, pending] of pendingToolChanges) {
           if (pending.sessionID === event.sessionID) pendingToolChanges.delete(key)
         }
-        return
+        const wasActive = activeSessions.delete(event.sessionID)
+        if (!wasActive || activeSessions.size > 0) return
       }
-      // Preserve explicit legacy cleanup for callers without a session ID.
+      // Clear at the last tracked native session, or explicit legacy cleanup.
       editedFiles.clear()
       changedFilesStore?.clearChanges()
       pendingToolChanges.clear()
+      activeSessions.clear()
     },
 
     /**
@@ -673,15 +678,18 @@ export const ECCHooksPlugin: ECCHooksPluginFn = async ({
           await hooks["file.watcher.updated"]({ path: event.properties.file, type: event.properties.event === "unlink" ? "delete" : event.properties.event })
           break
         case "session.created":
+          activeSessions.add(event.properties.info.id)
           await hooks["session.created"]()
           break
         case "session.idle":
+          activeSessions.add(event.properties.sessionID)
           await hooks["session.idle"]()
           break
         case "session.deleted":
           await hooks["session.deleted"]({ sessionID: event.properties.info.id })
           break
         case "todo.updated":
+          activeSessions.add(event.properties.sessionID)
           await hooks["todo.updated"]({ todos: event.properties.todos.map(todo => ({ text: todo.content, done: todo.status === "completed" })) })
           break
       }
