@@ -158,14 +158,14 @@ Steering files provide always-on rules and context that shape how the agent work
 
 | File | Inclusion | Description |
 |------|-----------|-------------|
-| `coding-style.md` | auto | Core coding style rules: immutability, file organization, error handling, and code quality standards. Loaded in every conversation. |
-| `security.md` | auto | Security best practices including mandatory checks, secret management, and security response protocol. Loaded in every conversation. |
-| `testing.md` | auto | Testing requirements: 80% coverage minimum, TDD workflow, and test types (unit, integration, E2E). Loaded in every conversation. |
-| `development-workflow.md` | auto | Development process, PR workflow, and collaboration patterns. Loaded in every conversation. |
-| `git-workflow.md` | auto | Git commit conventions, branching strategies, and version control best practices. Loaded in every conversation. |
-| `patterns.md` | auto | Common design patterns and architectural principles. Loaded in every conversation. |
-| `performance.md` | auto | Performance optimization guidelines and profiling strategies. Loaded in every conversation. |
-| `lessons-learned.md` | auto | Project-specific patterns and learnings. Edit this file to capture your team's conventions. Loaded in every conversation. |
+| `coding-style.md` | always | Core coding style rules: immutability, file organization, error handling, and code quality standards. Loaded in every conversation. |
+| `security.md` | always | Security best practices including mandatory checks, secret management, and security response protocol. Loaded in every conversation. |
+| `testing.md` | always | Testing requirements: 80% coverage minimum, TDD workflow, and test types (unit, integration, E2E). Loaded in every conversation. |
+| `development-workflow.md` | always | Development process, PR workflow, and collaboration patterns. Loaded in every conversation. |
+| `git-workflow.md` | always | Git commit conventions, branching strategies, and version control best practices. Loaded in every conversation. |
+| `patterns.md` | always | Common design patterns and architectural principles. Loaded in every conversation. |
+| `performance.md` | always | Performance optimization guidelines and profiling strategies. Loaded in every conversation. |
+| `lessons-learned.md` | always | Project-specific patterns and learnings. Edit this file to capture your team's conventions. Loaded in every conversation. |
 | `typescript-patterns.md` | fileMatch: `*.ts,*.tsx` | TypeScript-specific patterns, type safety, and best practices. Loaded when editing TypeScript files. |
 | `python-patterns.md` | fileMatch: `*.py` | Python-specific patterns, type hints, and best practices. Loaded when editing Python files. |
 | `golang-patterns.md` | fileMatch: `*.go` | Go-specific patterns, concurrency, and best practices. Loaded when editing Go files. |
@@ -181,15 +181,17 @@ Steering files provide always-on rules and context that shape how the agent work
 | `review-mode.md` | manual | Code review context mode. Invoke with `#review-mode` for thorough reviews. |
 | `research-mode.md` | manual | Research context mode. Invoke with `#research-mode` for exploration and learning. |
 
-Steering files with `auto` inclusion are loaded automatically. No action needed — they apply as soon as you install them.
+Steering files with `always` inclusion are loaded automatically. No action needed — they apply as soon as you install them.
+
+> **Upgrading an existing install:** the installer never overwrites steering files that already exist in your project. If you installed before these files switched to `always`, change `inclusion: auto` to `inclusion: always` in the frontmatter of `coding-style.md`, `security.md`, `testing.md`, `development-workflow.md`, `git-workflow.md`, `patterns.md`, `performance.md`, and `lessons-learned.md` in your `.kiro/steering/` directory.
 
 To create your own, add a markdown file to `.kiro/steering/` with YAML frontmatter:
 
 ```yaml
 ---
-inclusion: auto        # auto | fileMatch | manual
-name: my-steering      # required if inclusion is auto
-description: Brief explanation of what this steering file contains
+inclusion: always         # always | auto | fileMatch | manual
+name: my-steering         # required if inclusion is auto
+description: Brief explanation of what this steering file contains # required if inclusion is auto
 fileMatchPattern: "*.ts"  # required if inclusion is fileMatch
 ---
 
@@ -325,14 +327,14 @@ Shell scripts used by hooks to perform quality checks and formatting.
 │   ├── ... and 26 more           # (testing, deployment, docker, etc.)
 │   └── (each skill has a SKILL.md with YAML frontmatter)
 ├── steering/                     # 22 steering files
-│   ├── coding-style.md           # Auto-loaded coding style rules
-│   ├── security.md               # Auto-loaded security rules
-│   ├── testing.md                # Auto-loaded testing rules
-│   ├── development-workflow.md   # Auto-loaded dev workflow
-│   ├── git-workflow.md           # Auto-loaded git workflow
-│   ├── patterns.md               # Auto-loaded design patterns
-│   ├── performance.md            # Auto-loaded performance rules
-│   ├── lessons-learned.md        # Auto-loaded project patterns
+│   ├── coding-style.md           # Always-loaded coding style rules
+│   ├── security.md               # Always-loaded security rules
+│   ├── testing.md                # Always-loaded testing rules
+│   ├── development-workflow.md   # Always-loaded dev workflow
+│   ├── git-workflow.md           # Always-loaded git workflow
+│   ├── patterns.md               # Always-loaded design patterns
+│   ├── performance.md            # Always-loaded performance rules
+│   ├── lessons-learned.md        # Always-loaded project patterns
 │   ├── typescript-patterns.md    # Loaded for .ts/.tsx files
 │   ├── typescript-security.md    # Loaded for .ts/.tsx files
 │   ├── python-patterns.md        # Loaded for .py files
@@ -395,7 +397,7 @@ All files are yours to modify after installation. The installer never overwrites
 5. **Run quality gate**: Trigger the `quality-gate` hook before committing
 6. **Verify comprehensively**: Use the `verification-loop` skill before creating PRs
 
-The auto-loaded steering files (coding-style, security, testing) ensure consistent standards throughout your session.
+The always-loaded steering files (coding-style, security, testing) ensure consistent standards throughout your session.
 
 ## Usage Examples
 
@@ -466,7 +468,7 @@ kiro-cli --agent code-reviewer
 > /agent swap security-reviewer
 > "Analyze the API endpoints for security vulnerabilities"
 
-# 4. The security.md steering file is auto-loaded, ensuring:
+# 4. The security.md steering file is always-loaded, ensuring:
 # - No hardcoded secrets
 # - Proper error handling
 # - Secure crypto usage
@@ -486,7 +488,7 @@ kiro-cli --agent python-reviewer
 > "Review the type hints and error handling"
 > /python-patterns  # Invoke Python-specific patterns skill
 
-# Language-specific steering files are auto-loaded:
+# Language-specific steering files are loaded automatically on file match:
 # - golang-patterns.md loads when editing .go files
 # - python-patterns.md loads when editing .py files
 # - typescript-patterns.md loads when editing .ts/.tsx files
