@@ -73,7 +73,7 @@ bypasses as SARIF errors. They are:
 | --- | --- | --- |
 | `tests/hooks/gateguard-fact-force.test.js` | 1019 passed, 0 failed | 704 passed, 0 failed |
 | `tests/hooks/gateguard-scenarios.test.js` | 25 passed, 0 failed | — |
-| `tests/lib/gateguard-target-class.test.js` | 30 passed, 0 failed | — |
+| `tests/lib/gateguard-target-class.test.js` | 31 passed, 0 failed | — |
 | `tests/lib/gateguard-readonly-shell.test.js` | 18 passed, 0 failed | — |
 | `tests/lib/gateguard-change-profile.test.js` | 47 passed, 0 failed | — |
 | `tests/lib/gateguard-code-lexer.test.js` | 15 passed, 0 failed | — |

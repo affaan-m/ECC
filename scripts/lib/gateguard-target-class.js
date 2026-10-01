@@ -192,12 +192,12 @@ function codeQuestionIds(isWrite, profile) {
   return data ? [...opening, 'data-schema'] : opening;
 }
 
-/** Stable ids of the first-touch questions for a class, action and change profile. */
 /** True when a class's questions depend on the change profile. */
 function questionsUseProfile(cls) {
   return !Object.hasOwn(CLASS_QUESTION_IDS, cls);
 }
 
+/** Stable ids of the first-touch questions for a class, action and change profile. */
 function questionIdsFor(cls, isWrite, profile) {
   const ids = Object.hasOwn(CLASS_QUESTION_IDS, cls) ? CLASS_QUESTION_IDS[cls](Boolean(isWrite)) : codeQuestionIds(Boolean(isWrite), profile);
   return [...ids, 'quote-instruction'];

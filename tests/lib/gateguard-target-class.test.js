@@ -18,6 +18,7 @@ const {
   CLASS_CONDENSED_HINTS,
   QUOTE_INSTRUCTION,
   questionIdsFor,
+  questionsUseProfile,
   questionText,
   condensedHintFor,
   condensedQuestionPhrase,
@@ -375,6 +376,24 @@ test('code condensed hints name exactly the questions of the change profile', ()
       assert.ok(hint.startsWith('briefly state ') && hint.endsWith(', then retry.'), hint);
     }
   }
+});
+
+test('a class that skips profiling asks the same questions under every profile', () => {
+  const profiles = [null, { known: false }];
+  for (const s of [true, false]) for (const d of [true, false]) profiles.push({ known: true, language: 'js', touchesPublicSurface: s, touchesData: d, trivial: false });
+  const classes = ['code', 'test', 'prose', 'instruction', 'config', 'unknown-class'];
+  for (const cls of classes) {
+    for (const isWrite of [false, true]) {
+      const asked = profiles.map(profile => JSON.stringify(questionIdsFor(cls, isWrite, profile)));
+      const hints = profiles.map(profile => condensedHintFor(cls, isWrite, profile));
+      if (!questionsUseProfile(cls)) {
+        assert.strictEqual(new Set(asked).size, 1, `${cls} ${isWrite} questions vary with the profile`);
+        assert.strictEqual(new Set(hints).size, 1, `${cls} ${isWrite} hints vary with the profile`);
+      }
+    }
+  }
+  assert.strictEqual(questionsUseProfile('code'), true);
+  for (const cls of ['test', 'prose', 'instruction', 'config']) assert.strictEqual(questionsUseProfile(cls), false, cls);
 });
 
 test('code condensed hints read as one sentence', () => {
