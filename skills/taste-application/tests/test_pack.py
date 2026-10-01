@@ -51,7 +51,7 @@ class FixturePackTests(unittest.TestCase):
 
 
 class BrokenPackTests(unittest.TestCase):
-    def test_unreadable_manifest_reports_only_the_source_error(self):
+    def test_unreadable_manifest_reports_only_the_source_error(self) -> None:
         for payload in ("{broken", '["unexpected"]', "null", "42"):
             with self.subTest(payload=payload), tempfile.TemporaryDirectory() as td:
                 d = self._write(td, {})
@@ -61,7 +61,7 @@ class BrokenPackTests(unittest.TestCase):
                 self.assertEqual(len(report["validation"]["errors"]), 1)
                 self.assertTrue(report["validation"]["errors"][0].startswith("pack.json:"))
 
-    def test_invalid_json_and_non_object_metadata_are_reported(self):
+    def test_invalid_json_and_non_object_metadata_are_reported(self) -> None:
         for filename in ("pack.json", "grade.json", "cadence.json", "spec.json"):
             for payload in ("{broken", '["unexpected"]', "null", "42"):
                 with self.subTest(filename=filename, payload=payload), tempfile.TemporaryDirectory() as td:
@@ -75,7 +75,7 @@ class BrokenPackTests(unittest.TestCase):
                     ))
                     self.assertEqual(target.read_text(encoding="utf-8"), payload)
 
-    def test_non_object_artifact_inventory_is_reported_with_lut_present(self):
+    def test_non_object_artifact_inventory_is_reported_with_lut_present(self) -> None:
         with tempfile.TemporaryDirectory() as td:
             manifest = {**json.loads((FIXTURE / "pack.json").read_text()), "artifacts": []}
             d = self._write(td, manifest)
