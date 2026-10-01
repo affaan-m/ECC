@@ -22,6 +22,8 @@ Enforce `eslint-plugin-react-hooks` with `react-hooks/rules-of-hooks` set to err
 3. Always called in the same order on every render
 4. Only inside React function components or custom hooks (functions starting with `use`)
 
+React 19's `use` API is an exception to the ordering rule: it can be called in loops and conditions, but still only inside a component or hook. See [the `use` reference](https://react.dev/reference/react/use).
+
 ```tsx
 // WRONG: conditional hook
 function Foo({ enabled }: { enabled: boolean }) {
@@ -73,19 +75,27 @@ Every subscription, interval, listener, or in-flight request must clean up.
 ```tsx
 useEffect(() => {
   const controller = new AbortController();
-  fetch(url, { signal: controller.signal }).then(handleResponse);
+  fetch(url, { signal: controller.signal })
+    .then((response) => {
+      if (!controller.signal.aborted) handleResponse(response);
+    })
+    .catch((error) => {
+      if (!controller.signal.aborted) handleError(error);
+    });
   return () => controller.abort();
-}, [url]);
+}, [url, handleResponse, handleError]);
 ```
 
 ```tsx
 useEffect(() => {
   const id = setInterval(tick, 1000);
   return () => clearInterval(id);
-}, []);
+}, [tick]);
 ```
 
 Missing cleanup = race conditions when deps change, memory leaks on unmount.
+
+Handle request rejections, including cleanup cancellation, and ignore results from an aborted effect. Include reactive callbacks in the dependencies; keep their identities stable when appropriate.
 
 ## `useMemo` and `useCallback` — When Worth It
 
@@ -157,11 +167,13 @@ const isOnline = useSyncExternalStore(
 ## React 19 Additions
 
 - `use()` — unwrap promises and contexts inline; usable conditionally (only hook with that property)
-- `useFormStatus()` / `useFormState()` (or `useActionState`) — form submission state without prop drilling
+- `useFormStatus()` from `react-dom` — status of the parent form's submission
+- `useActionState()` from `react` — action result and pending state; replaces the deprecated Canary `ReactDOM.useFormState` name
 - `useOptimistic()` — optimistic UI updates while a server action is pending
-- `useTransition()` — mark non-urgent state updates so urgent ones stay responsive
 
 When the project targets React 19+, prefer these over hand-rolled equivalents.
+
+`useTransition()` already exists in React 18; use it to mark non-urgent state updates so urgent ones stay responsive.
 
 ## Stale Closure Trap
 
