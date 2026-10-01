@@ -112,6 +112,33 @@ class MultimodalWorkflowTests(unittest.TestCase):
             "scene_changes": [0.75, 2.25, 5.25],
         }
 
+    def test_scene_intervals_stay_within_each_reference(self):
+        self.config["genres"][0]["references"] = [str(path) for path in self.references[:2]]
+        self.config_path.write_text(json.dumps(self.config), encoding="utf-8")
+        for cuts, mean, variance in (
+            ([0.75, 2.25, 5.25], 2.25, 0.5625),
+            ([1.0], 0.0, 0.0),
+        ):
+            with self.subTest(cuts=cuts):
+                def probe(path):
+                    measured = self.fake_probe(path)
+                    measured["scene_changes"] = cuts
+                    return measured
+
+                out = self.root / f"out-{len(cuts)}"
+                run_workflow(self.config_path, out, probe=probe)
+                spec_path = sorted((out / "genres").glob("*.json"))[0]
+                spec = json.loads(spec_path.read_text())
+                temporal = spec["measured_features"]["temporal"]
+                self.assertEqual(temporal["scene_change_count"], 2 * len(cuts))
+                self.assertEqual(len(temporal["scene_change_evidence"]), 2)
+                self.assertTrue(all(
+                    item["times"] == cuts for item in temporal["scene_change_evidence"]
+                ))
+                self.assertAlmostEqual(temporal["scene_interval_mean"], mean)
+                self.assertAlmostEqual(temporal["scene_interval_variance"], variance)
+                validate_bundle(out)
+
     def test_file_driven_run_emits_distinct_genres_and_all_modality_manifests(self):
         out = self.root / "out"
         receipt = run_workflow(self.config_path, out, probe=self.fake_probe)
