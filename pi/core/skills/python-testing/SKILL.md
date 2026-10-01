@@ -687,6 +687,22 @@ def test_create_user(client):
 
 This SQLAlchemy 2.x fixture requires a backend with SAVEPOINT support and an engine with real transaction control. For SQLite on Python 3.12+, configure `create_engine(..., connect_args={"autocommit": False})`; for older drivers, use the SQLAlchemy SQLite transaction setup. The outer transaction is rolled back even when the test calls `session.commit()`.
 
+For SQLite on Python 3.11 and older, use this alternative before opening any engine connections. Do not combine it with the `autocommit=False` configuration above:
+
+```python
+from sqlalchemy import create_engine, event
+
+engine = create_engine("sqlite://")
+
+@event.listens_for(engine, "connect")
+def disable_driver_begin(dbapi_connection, connection_record):
+    dbapi_connection.isolation_level = None
+
+@event.listens_for(engine, "begin")
+def emit_begin(connection):
+    connection.exec_driver_sql("BEGIN")
+```
+
 ```python
 import pytest
 from sqlalchemy.orm import Session
