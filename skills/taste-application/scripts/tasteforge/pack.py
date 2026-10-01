@@ -98,8 +98,9 @@ class StylePack:
         errors: list[str] = list(self.problems)
         warnings: list[str] = []
 
-        self._check("pack.json (manifest)", self.manifest,
-                    schema.PACK_MANIFEST_SCHEMA, errors)
+        if not self.problems:
+            self._check("pack.json (manifest)", self.manifest,
+                        schema.PACK_MANIFEST_SCHEMA, errors)
 
         grade = self._inspect_json(self.grade_path, schema.GRADE_SCHEMA, errors)
         if not self.grade_path.exists():

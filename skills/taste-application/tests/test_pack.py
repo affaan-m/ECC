@@ -51,6 +51,16 @@ class FixturePackTests(unittest.TestCase):
 
 
 class BrokenPackTests(unittest.TestCase):
+    def test_unreadable_manifest_reports_only_the_source_error(self):
+        for payload in ("{broken", '["unexpected"]', "null", "42"):
+            with self.subTest(payload=payload), tempfile.TemporaryDirectory() as td:
+                d = self._write(td, {})
+                (d / "pack.json").write_text(payload, encoding="utf-8")
+                report = pack_mod.load(d).inspect()
+                self.assertEqual(report["validation"]["status"], "invalid")
+                self.assertEqual(len(report["validation"]["errors"]), 1)
+                self.assertTrue(report["validation"]["errors"][0].startswith("pack.json:"))
+
     def test_invalid_json_and_non_object_metadata_are_reported(self):
         for filename in ("pack.json", "grade.json", "cadence.json", "spec.json"):
             for payload in ("{broken", '["unexpected"]', "null", "42"):
