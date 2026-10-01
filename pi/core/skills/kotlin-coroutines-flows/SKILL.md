@@ -180,7 +180,7 @@ withContext(Dispatchers.IO) { database.query() }
 withContext(Dispatchers.Main) { updateUi() }
 ```
 
-In KMP, use `Dispatchers.Default` and `Dispatchers.Main` (available on all platforms). `Dispatchers.IO` is JVM/Android only — use `Dispatchers.Default` on other platforms or provide via DI.
+In KMP, `Dispatchers.Default` is a common API. `Dispatchers.IO` supports JVM/Android and Native; it is not available on JS/Wasm. Inject a platform-appropriate dispatcher for blocking work in shared code rather than assuming `Default` is an IO pool. `Dispatchers.Main` requires platform support: JVM needs an Android, JavaFX, or Swing dispatcher module, and Native provides it on Darwin targets but not other Native targets.
 
 ## Cancellation
 
