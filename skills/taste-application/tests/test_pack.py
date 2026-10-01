@@ -51,6 +51,29 @@ class FixturePackTests(unittest.TestCase):
 
 
 class BrokenPackTests(unittest.TestCase):
+    def test_invalid_json_and_non_object_metadata_are_reported(self):
+        for filename in ("pack.json", "grade.json", "cadence.json", "spec.json"):
+            for payload in ("{broken", '["unexpected"]', "null", "42"):
+                with self.subTest(filename=filename, payload=payload), tempfile.TemporaryDirectory() as td:
+                    d = self._write(td, json.loads((FIXTURE / "pack.json").read_text()))
+                    target = d / filename
+                    target.write_text(payload, encoding="utf-8")
+                    report = pack_mod.load(d).inspect()
+                    self.assertEqual(report["validation"]["status"], "invalid")
+                    self.assertTrue(any(
+                        filename in error for error in report["validation"]["errors"]
+                    ))
+                    self.assertEqual(target.read_text(encoding="utf-8"), payload)
+
+    def test_non_object_artifact_inventory_is_reported_with_lut_present(self):
+        with tempfile.TemporaryDirectory() as td:
+            manifest = {**json.loads((FIXTURE / "pack.json").read_text()), "artifacts": []}
+            d = self._write(td, manifest)
+            (d / "look.cube").write_text("fixture")
+            report = pack_mod.load(d).inspect()
+            self.assertEqual(report["validation"]["status"], "invalid")
+            self.assertTrue(any("artifacts" in error for error in report["validation"]["errors"]))
+
     def _write(self, tmp, manifest) -> Path:
         d = Path(tmp) / "brokenpack"
         d.mkdir(parents=True)

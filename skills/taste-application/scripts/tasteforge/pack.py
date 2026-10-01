@@ -95,34 +95,22 @@ class StylePack:
     # ---- inspect / validate ----------------------------------------------
     def inspect(self) -> dict[str, Any]:
         """Validate every artifact against its schema; return a full report."""
-        errors: list[str] = []
+        errors: list[str] = list(self.problems)
         warnings: list[str] = []
 
         self._check("pack.json (manifest)", self.manifest,
                     schema.PACK_MANIFEST_SCHEMA, errors)
 
-        grade = self.read_json(self.grade_path)
-        if grade:
-            self._check("grade.json", grade, schema.GRADE_SCHEMA, errors)
-        elif self.grade_path.exists():
-            errors.append("grade.json: unreadable JSON")
-        else:
+        grade = self._inspect_json(self.grade_path, schema.GRADE_SCHEMA, errors)
+        if not self.grade_path.exists():
             warnings.append("grade.json: missing (pack has no measured grade)")
 
-        cadence = self.read_json(self.cadence_path)
-        if cadence:
-            self._check("cadence.json", cadence, schema.CADENCE_SCHEMA, errors)
-        elif self.cadence_path.exists():
-            errors.append("cadence.json: unreadable JSON")
-        else:
+        cadence = self._inspect_json(self.cadence_path, schema.CADENCE_SCHEMA, errors)
+        if not self.cadence_path.exists():
             warnings.append("cadence.json: missing (pack has no measured cadence)")
 
-        spec = self.read_json(self.spec_path)
-        if spec:
-            self._check("spec.json", spec, schema.SPEC_SCHEMA, errors)
-        elif self.spec_path.exists():
-            errors.append("spec.json: unreadable JSON")
-        else:
+        spec = self._inspect_json(self.spec_path, schema.SPEC_SCHEMA, errors)
+        if not self.spec_path.exists():
             warnings.append("spec.json: missing (pack has no distilled spec)")
 
         if not self.grounding_path.exists():
@@ -137,6 +125,8 @@ class StylePack:
         if not props:
             warnings.append("props: none present")
         lut_present = self.lut_path.exists()
+        inventory = self.manifest.get("artifacts", {})
+        inventory = inventory if isinstance(inventory, dict) else {}
 
         status = "valid" if not errors else "invalid"
         return {
@@ -145,7 +135,7 @@ class StylePack:
             "manifest_version": self.manifest.get("version"),
             "refs": self.manifest.get("refs", []),
             "artifacts": {
-                "lut": self.manifest.get("artifacts", {}).get("lut") if lut_present else None,
+                "lut": inventory.get("lut") if lut_present else None,
                 "lut_present": lut_present,
                 "grade": bool(grade),
                 "cadence": bool(cadence),
@@ -170,6 +160,18 @@ class StylePack:
         }
 
     @staticmethod
+    def _inspect_json(path: Path, schem: dict, errors: list[str]) -> dict:
+        if not path.exists():
+            return {}
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError as exc:
+            errors.append(f"{path.name}: {exc}")
+            return {}
+        StylePack._check(path.name, payload, schem, errors)
+        return payload if isinstance(payload, dict) else {}
+
+    @staticmethod
     def _check(label: str, payload: dict, schem: dict, errors: list[str]) -> None:
         problems = schema.validate(payload, schem)
         for p in problems:
@@ -184,7 +186,14 @@ def load(path: str | Path) -> StylePack:
             f"no style pack at {sp.dir} - expected a pack.json manifest"
         )
     try:
-        sp.manifest = json.loads(sp.manifest_path.read_text(encoding="utf-8"))
+        payload = json.loads(sp.manifest_path.read_text(encoding="utf-8"))
+        if isinstance(payload, dict):
+            sp.manifest = payload
+        else:
+            sp.problems.extend(
+                f"pack.json: {problem}"
+                for problem in schema.validate(payload, schema.PACK_MANIFEST_SCHEMA)
+            )
     except json.JSONDecodeError as exc:
         sp.manifest = {}
         sp.problems.append(f"pack.json: {exc}")
