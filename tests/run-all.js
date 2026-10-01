@@ -1,9 +1,4 @@
 #!/usr/bin/env node
-/**
- * Run all tests
- *
- * Usage: node tests/run-all.js
- */
 
 const { spawnSync } = require('child_process');
 const path = require('path');
@@ -12,9 +7,20 @@ const fs = require('fs');
 const testsDir = __dirname;
 const repoRoot = path.resolve(testsDir, '..');
 const TEST_GLOB = 'tests/**/*.test.js';
+const filter = (((process.argv || [])[2]) || '').split(path.sep).join('/');
+const skipPatterns = (process.env.ECC_TEST_SKIP || '')
+  .split(',')
+  .map(s => s.trim())
+  .filter(Boolean);
 
 function matchesTestGlob(relativePath) {
   const normalized = relativePath.split(path.sep).join('/');
+  if (filter && !normalized.includes(filter)) {
+    return false;
+  }
+  if (skipPatterns.some(pattern => normalized.includes(pattern))) {
+    return false;
+  }
   if (typeof path.matchesGlob === 'function') {
     return path.matchesGlob(normalized, TEST_GLOB);
   }
@@ -58,9 +64,38 @@ function annotateFailure(displayPath, reason, output) {
   console.log(`::error file=${escapeAnnotation(`tests/${displayPath}`, true)}::${escapeAnnotation(message)}`);
 }
 
+function parseCounts(combined) {
+  const passedMatch = combined.match(/Passed:\s*(\d+)/);
+  const failedMatch = combined.match(/Failed:\s*(\d+)/);
+  if (passedMatch || failedMatch) {
+    return {
+      passed: passedMatch ? parseInt(passedMatch[1], 10) : 0,
+      failed: failedMatch ? parseInt(failedMatch[1], 10) : 0,
+      definite: true,
+    };
+  }
+  const lines = combined.split(/\r?\n/);
+  let tapPassed = 0;
+  let tapFailed = 0;
+  let tapSeen = false;
+  for (const line of lines) {
+    if (/^ok\b/.test(line.trim())) {
+      tapSeen = true;
+      tapPassed += 1;
+    } else if (/^not ok\b/.test(line.trim())) {
+      tapSeen = true;
+      tapFailed += 1;
+    }
+  }
+  if (tapSeen) {
+    return { passed: tapPassed, failed: tapFailed, definite: true };
+  }
+  return { passed: 0, failed: 0, definite: false };
+}
+
 const testFiles = discoverTestFiles();
 
-const BOX_W = 58; // inner width between ║ delimiters
+const BOX_W = 58;
 const boxLine = s => `║${s.padEnd(BOX_W)}║`;
 
 console.log('╔' + '═'.repeat(BOX_W) + '╗');
@@ -68,14 +103,21 @@ console.log(boxLine('           Everything Claude Code - Test Suite'));
 console.log('╚' + '═'.repeat(BOX_W) + '╝');
 console.log();
 
+if (skipPatterns.length > 0) {
+  console.log(`⚠ Skipped patterns: ${skipPatterns.join(', ')}`);
+  console.log();
+}
+
 if (testFiles.length === 0) {
-  console.log(`✗ No test files matched ${TEST_GLOB}`);
+  console.log(`✗ No test files matched ${TEST_GLOB}${filter ? ` with filter "${filter}"` : ''}`);
   process.exit(1);
 }
 
 let totalPassed = 0;
 let totalFailed = 0;
-let totalTests = 0;
+let filesPassed = 0;
+let filesFailed = 0;
+const failedFiles = [];
 
 for (const testFile of testFiles) {
   const testPath = path.join(testsDir, testFile);
@@ -88,10 +130,6 @@ for (const testFile of testFiles) {
 
   console.log(`\n━━━ Running ${displayPath} ━━━`);
 
-  // Run each test hermetically: strip inherited git env vars. When the suite
-  // runs inside a git hook (e.g. pre-push), git sets GIT_DIR/GIT_WORK_TREE,
-  // which would hijack `git -C <dir>` calls in tests that exercise real git
-  // and make them operate on the host repo instead of their own fixtures.
   const childEnv = { ...process.env };
   for (const key of ['GIT_DIR', 'GIT_WORK_TREE', 'GIT_INDEX_FILE', 'GIT_COMMON_DIR', 'GIT_PREFIX']) {
     delete childEnv[key];
@@ -106,19 +144,12 @@ for (const testFile of testFiles) {
   const stdout = result.stdout || '';
   const stderr = result.stderr || '';
 
-  // Show both stdout and stderr so hook warnings are visible
   if (stdout) console.log(stdout);
   if (stderr) console.log(stderr);
 
-  // Parse results from combined output
   const combined = `${stdout}\n${stderr}`;
-  const passedMatch = combined.match(/Passed:\s*(\d+)/);
-  const failedMatch = combined.match(/Failed:\s*(\d+)/);
-
-  if (passedMatch) totalPassed += parseInt(passedMatch[1], 10);
-  const reportedFailures = failedMatch ? parseInt(failedMatch[1], 10) : 0;
+  const counts = parseCounts(combined);
   const processFailed = Boolean(result.error) || result.status !== 0;
-  totalFailed += processFailed ? Math.max(reportedFailures, 1) : reportedFailures;
 
   let failureReason;
   if (result.error) {
@@ -127,17 +158,29 @@ for (const testFile of testFiles) {
     failureReason = result.signal
       ? `terminated by signal ${result.signal}`
       : `exited with status ${result.status}`;
-  } else if (reportedFailures > 0) {
-    failureReason = `reported ${reportedFailures} failed tests`;
+  } else if (counts.definite && counts.failed > 0) {
+    failureReason = `reported ${counts.failed} failed tests`;
   }
 
   if (failureReason) {
+    filesFailed += 1;
+    failedFiles.push(displayPath);
+    totalPassed += counts.passed;
+    totalFailed += processFailed ? Math.max(counts.failed, 1) : counts.failed;
     console.log(`✗ ${displayPath} ${failureReason}`);
     annotateFailure(displayPath, failureReason, combined);
+  } else {
+    filesPassed += 1;
+    if (counts.definite) {
+      totalPassed += counts.passed;
+      totalFailed += counts.failed;
+    } else {
+      totalPassed += 1;
+    }
   }
 }
 
-totalTests = totalPassed + totalFailed;
+const totalTests = totalPassed + totalFailed;
 
 console.log('\n╔' + '═'.repeat(BOX_W) + '╗');
 console.log(boxLine('                     Final Results'));
@@ -145,6 +188,17 @@ console.log('╠' + '═'.repeat(BOX_W) + '╣');
 console.log(boxLine(`  Total Tests: ${String(totalTests).padStart(4)}`));
 console.log(boxLine(`  Passed:      ${String(totalPassed).padStart(4)}  ✓`));
 console.log(boxLine(`  Failed:      ${String(totalFailed).padStart(4)}  ${totalFailed > 0 ? '✗' : ' '}`));
+console.log(boxLine(`  Files: ${filesPassed} passed, ${filesFailed} failed`));
+if (failedFiles.length > 0) {
+  console.log('╠' + '═'.repeat(BOX_W) + '╣');
+  for (const name of failedFiles.slice(0, 10)) {
+    console.log(boxLine(`  ✗ ${name}`.slice(0, BOX_W)));
+  }
+  if (failedFiles.length > 10) {
+    console.log(boxLine(`  ... and ${failedFiles.length - 10} more`));
+  }
+}
 console.log('╚' + '═'.repeat(BOX_W) + '╝');
+console.log(`\nPassed: ${totalPassed}, Failed: ${totalFailed}`);
 
 process.exit(totalFailed > 0 ? 1 : 0);

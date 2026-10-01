@@ -22,7 +22,13 @@ module.exports = [
                 caughtErrorsIgnorePattern: '^_'
             }],
             'no-undef': 'error',
-            'eqeqeq': 'warn'
+            'eqeqeq': 'warn',
+            'prefer-const': 'warn',
+            'no-var': 'warn',
+            'no-console': 'off',
+            'complexity': ['warn', 20],
+            'max-depth': ['warn', 5],
+            'max-params': ['warn', 6]
         }
     },
     {
