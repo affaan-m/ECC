@@ -52,17 +52,17 @@ async function main() {
       assert.strictEqual(store.getChanges().get('gone.txt'), 'deleted');
     });
     await test('native todo status drives progress reporting', async () => {
-      await emit('todo.updated', { todos: [
+      await emit('todo.updated', { sessionID: 'session-a', todos: [
         { content: 'done', status: 'completed' }, { content: 'waiting', status: 'pending' }
       ] });
       assert.ok(logs.some(x => /Progress: 1\/2/.test(x.message)));
     });
-    await test('native idle runs the edited-file audit and deletion clears the store', async () => {
+    await test('native idle runs the edited-file audit and deletion preserves workspace changes', async () => {
       await emit('file.edited', { file: 'src/idle.ts' });
       await emit('session.idle', { sessionID: 'session-a' });
       assert.ok(logs.some(x => /Session idle/.test(x.message)));
       await emit('session.deleted', { info: { id: 'session-a' } });
-      assert.strictEqual(store.hasChanges(), false);
+      assert.strictEqual(store.getChanges().get(path.normalize('src/idle.ts')), 'modified');
     });
     await test('native before output.args classifies a new write as added', async () => {
       await hooks['tool.execute.before']({ tool: 'write', sessionID: 'session-a', callID: 'write-a' }, {
@@ -78,6 +78,38 @@ async function main() {
       await hooks['tool.execute.after']({ tool: 'bash', sessionID: 'session-a', callID: 'bash-b', args: { command: 'gh pr create' } }, {});
       assert.ok(logs.some(x => /review changes before pushing/.test(x.message)));
       assert.ok(logs.some(x => /PR created/.test(x.message)));
+    });
+    await test('deleting session A preserves session B pending writes and audit files', async () => {
+      await hooks['tool.execute.before']({ tool: 'write', sessionID: 'session-b', callID: 'write-b' }, {
+        args: { filePath: 'session-b.md' }
+      });
+      await emit('file.edited', { file: 'src/session-b.ts' });
+      await emit('session.deleted', { info: { id: 'session-a' } });
+      assert.strictEqual(store.getChanges().get(path.normalize('src/session-b.ts')), 'modified');
+      await hooks['tool.execute.after']({ tool: 'write', sessionID: 'session-b', callID: 'write-b', args: { filePath: 'session-b.md' } }, {});
+      assert.strictEqual(store.getChanges().get('session-b.md'), 'added');
+      await emit('session.idle', { sessionID: 'session-b' });
+      assert.ok(logs.some(x => /Session idle/.test(x.message)));
+    });
+    await test('new files remain added through native edits, watcher changes and later writes', async () => {
+      await emit('file.watcher.updated', { file: 'new.txt', event: 'add' });
+      await emit('file.edited', { file: 'new.txt' });
+      await emit('file.watcher.updated', { file: 'new.txt', event: 'change' });
+      fs.writeFileSync(path.join(dir, 'new.txt'), 'new');
+      await hooks['tool.execute.before']({ tool: 'write', sessionID: 'session-b', callID: 'rewrite' }, { args: { filePath: 'new.txt' } });
+      await hooks['tool.execute.after']({ tool: 'write', sessionID: 'session-b', callID: 'rewrite', args: { filePath: 'new.txt' } }, {});
+      assert.deepStrictEqual(store.getChangedPaths('added'), [{ path: 'new.txt', changeType: 'added' }]);
+      await emit('file.watcher.updated', { file: 'new.txt', event: 'unlink' });
+      assert.strictEqual(store.getChanges().get('new.txt'), 'deleted');
+    });
+    await test('malformed native payloads are rejected without coercion or partial todo totals', async () => {
+      for (const event of [null, {}, { type: 'file.edited', properties: null },
+        { type: 'file.watcher.updated', properties: { file: 'bad.txt', event: 'unknown' } },
+        { type: 'session.deleted', properties: { info: {} } },
+        { type: 'todo.updated', properties: { sessionID: 'a', todos: [{ content: {}, status: 'completed' }, { content: 'valid', status: 'pending' }] } }
+      ]) await hooks.event({ event });
+      assert.deepStrictEqual(logs, []);
+      assert.strictEqual(store.hasChanges(), false);
     });
     await test('unknown native events have no effect', async () => {
       await emit('message.updated', { info: {} });

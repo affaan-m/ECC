@@ -14,6 +14,7 @@
  */
 
 import type { PluginInput } from "@opencode-ai/plugin"
+import { tool } from "@opencode-ai/plugin/tool"
 import * as fs from "fs"
 import * as path from "path"
 import changedFilesTool from "../tools/changed-files.ts"
@@ -32,6 +33,7 @@ interface ToolArgs {
 
 interface ToolInput {
   tool: string
+  sessionID?: string
   callID?: string
   args?: ToolArgs
 }
@@ -66,6 +68,17 @@ function getECCVersion(): string {
 
 type ECCHooksPluginFn = (input: PluginInput) => Promise<Record<string, unknown>>
 
+// OpenCode exposes Zod through tool.schema; use the same runtime dependency
+// already required by the custom tools instead of adding another Zod version.
+const nativeEventSchema = tool.schema.discriminatedUnion("type", [
+  tool.schema.object({ type: tool.schema.literal("file.edited"), properties: tool.schema.object({ file: tool.schema.string().min(1) }) }),
+  tool.schema.object({ type: tool.schema.literal("file.watcher.updated"), properties: tool.schema.object({ file: tool.schema.string().min(1), event: tool.schema.enum(["add", "change", "unlink"]) }) }),
+  tool.schema.object({ type: tool.schema.literal("session.created"), properties: tool.schema.object({ info: tool.schema.object({ id: tool.schema.string().min(1) }) }) }),
+  tool.schema.object({ type: tool.schema.literal("session.idle"), properties: tool.schema.object({ sessionID: tool.schema.string().min(1) }) }),
+  tool.schema.object({ type: tool.schema.literal("session.deleted"), properties: tool.schema.object({ info: tool.schema.object({ id: tool.schema.string().min(1) }) }) }),
+  tool.schema.object({ type: tool.schema.literal("todo.updated"), properties: tool.schema.object({ sessionID: tool.schema.string().min(1), todos: tool.schema.array(tool.schema.object({ content: tool.schema.string(), status: tool.schema.string() })) }) }),
+])
+
 export const ECCHooksPlugin: ECCHooksPluginFn = async ({
   client,
   $,
@@ -91,7 +104,7 @@ export const ECCHooksPlugin: ECCHooksPluginFn = async ({
     }
   }
 
-  const pendingToolChanges = new Map<string, { path: string; type: "added" | "modified" }>()
+  const pendingToolChanges = new Map<string, { path: string; type: "added" | "modified"; sessionID?: string }>()
   let writeCounter = 0
 
   function getFilePath(args: ToolArgs | undefined): string | null {
@@ -293,7 +306,7 @@ export const ECCHooksPlugin: ECCHooksPluginFn = async ({
             type = "modified"
           }
           const key = input.callID ?? `write-${++writeCounter}-${filePath}`
-          pendingToolChanges.set(key, { path: filePath, type })
+          pendingToolChanges.set(key, { path: filePath, type, sessionID: input.sessionID })
         }
       }
 
@@ -438,9 +451,18 @@ export const ECCHooksPlugin: ECCHooksPluginFn = async ({
      * Triggers: When session ends
      * Action: Final cleanup and state saving
      */
-    "session.deleted": async () => {
+    "session.deleted": async (event?: { sessionID: string }) => {
       if (!hookEnabled("session:end-marker", ["minimal", "standard", "strict"])) return
       log("info", "[ECC] Session ended - cleaning up")
+      if (event) {
+        // File events have no session ID: the file store and audit set track
+        // workspace changes. A single session deletion cannot clear them.
+        for (const [key, pending] of pendingToolChanges) {
+          if (pending.sessionID === event.sessionID) pendingToolChanges.delete(key)
+        }
+        return
+      }
+      // Preserve explicit legacy cleanup for callers without a session ID.
       editedFiles.clear()
       changedFilesStore?.clearChanges()
       pendingToolChanges.clear()
@@ -639,19 +661,16 @@ export const ECCHooksPlugin: ECCHooksPluginFn = async ({
     ...hooks,
     // OpenCode broadcasts lifecycle/file/todo events through this callback;
     // the named handlers above also remain available to legacy direct callers.
-    event: async ({ event }: { event: { type: string; properties: Record<string, unknown> } }) => {
-      const properties = event.properties
+    event: async ({ event: rawEvent }: { event: unknown }) => {
+      const parsed = nativeEventSchema.safeParse(rawEvent)
+      if (!parsed.success) return
+      const event = parsed.data
       switch (event.type) {
         case "file.edited":
-          if (typeof properties.file === "string") {
-            await hooks["file.edited"]({ path: properties.file })
-          }
+          await hooks["file.edited"]({ path: event.properties.file })
           break
         case "file.watcher.updated":
-          if (typeof properties.file === "string" && typeof properties.event === "string") {
-            const type = properties.event === "unlink" ? "delete" : properties.event
-            await hooks["file.watcher.updated"]({ path: properties.file, type })
-          }
+          await hooks["file.watcher.updated"]({ path: event.properties.file, type: event.properties.event === "unlink" ? "delete" : event.properties.event })
           break
         case "session.created":
           await hooks["session.created"]()
@@ -660,15 +679,10 @@ export const ECCHooksPlugin: ECCHooksPluginFn = async ({
           await hooks["session.idle"]()
           break
         case "session.deleted":
-          await hooks["session.deleted"]()
+          await hooks["session.deleted"]({ sessionID: event.properties.info.id })
           break
         case "todo.updated":
-          if (Array.isArray(properties.todos)) {
-            const todos = properties.todos
-              .filter((todo): todo is Record<string, unknown> => typeof todo === "object" && todo !== null)
-              .map(todo => ({ text: String(todo.content ?? ""), done: todo.status === "completed" }))
-            await hooks["todo.updated"]({ todos })
-          }
+          await hooks["todo.updated"]({ todos: event.properties.todos.map(todo => ({ text: todo.content, done: todo.status === "completed" })) })
           break
       }
     },
