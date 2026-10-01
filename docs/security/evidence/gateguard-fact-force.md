@@ -81,6 +81,7 @@ bypasses as SARIF errors. They are:
 | `tests/lib/gateguard-search-filters.test.js` | 10 passed, 0 failed | — |
 | `tests/lib/gateguard-turn-scan.test.js` | 17 passed, 0 failed | — |
 | `tests/scripts/gateguard-eval.test.js` | 15 passed, 0 failed | — |
+| `tests/scripts/gateguard-latency.test.js` | 8 passed, 0 failed | — |
 
 ## Repository gates
 

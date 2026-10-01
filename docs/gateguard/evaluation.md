@@ -84,10 +84,12 @@ Corpus: 20 scenarios, 184 steps.
 | Allows with a credit note | 12 | 0 | 12 |
 | Allows with a sibling note | 11 | 0 | 11 |
 | Allows with a trivial-edit note | 5 | 0 | 5 |
-| Hook latency p50, fresh process (ms) | 22.81 | 10.12 | 25.75 |
-| Hook latency p95, fresh process (ms) | 32.60 | 13.92 | 38.08 |
-| run() latency p50, warm (ms) | 1.81 | 0.78 | 1.94 |
-| run() latency p95, warm (ms) | 11.16 | 2.08 | 7.64 |
+| Hook latency p50, fresh process (ms) | 23.68 | 11.58 | 27.05 |
+| Hook latency p90, fresh process (ms) | 30.94 | 14.29 | 33.61 |
+| Hook latency p95, fresh process (ms) | 33.16 | 16.57 | 38.57 |
+| run() latency p50, warm (ms) | 1.72 | 0.90 | 2.02 |
+| run() latency p90, warm (ms) | 6.62 | 2.33 | 6.93 |
+| run() latency p95, warm (ms) | 11.84 | 2.63 | 8.98 |
 
 | Scenario | Steps | Denials: working tree | Denials: upstream/main | Denials: 4b02f669 |
 | --- | ---: | ---: | ---: | ---: |
@@ -184,10 +186,12 @@ What the working tree still gets wrong, by the corpus's own labels:
   (the 1 unasked one).
 - Latency: a first touch costs more than on `upstream/main` because it reads
   the transcript, matches the searches that name the target, reads the target
-  file and profiles the change (fresh-process p50 22.8 ms against 10.1 ms,
-  p95 32.6 ms against 13.9 ms on this corpus, where every step is a first
-  touch or a gate). Shell commands and repeat edits stay within about
-  2 ms of `main`; see [Latency](#latency).
+  file and profiles the change (fresh-process p50 23.7 ms against 11.6 ms,
+  p90 30.9 ms against 14.3 ms on this corpus, where every step is a first
+  touch or a gate). The warm p95 is higher than `4b02f669`'s because modules
+  now load on the first step that needs them instead of before the timer
+  starts; the fresh-process rows count both. See [Latency](#latency) for
+  each call type with confidence intervals.
 
 ## Reproduce
 
@@ -197,6 +201,7 @@ node scripts/dev/gateguard-eval.js --markdown
 node scripts/dev/gateguard-eval.js --markdown --baseline upstream/main --baseline 4b02f669
 node scripts/dev/gateguard-eval.js --json > gateguard-eval.json
 node scripts/dev/gateguard-eval.js --baseline upstream/main --sarif gateguard-eval.sarif
+node scripts/dev/gateguard-latency.js --baseline upstream/main --runs 40
 node tests/hooks/gateguard-scenarios.test.js
 ```
 
@@ -217,28 +222,67 @@ directory and transcript, and runs each step with
 `node -e <probe> <hook> <payload>`. Its decisions must match the worker's;
 a step decided differently fails the run. `--no-cold` skips the pass.
 
-Per call type: 25 fresh processes each, p50 of `require()` plus p50 of
-`run()` in ms, Node 22 on Linux, with a 20-search turn and a 50-function
-target file; the last row is the median of 9 runs on a 406 KiB file. Runs on
-the same machine vary by about 1 to 2 ms.
+Per call type, `scripts/dev/gateguard-latency.js` runs each hook in a new
+Node process per sample, interleaving the hooks in a shuffled order every
+round so machine load affects them alike, and reports p50 and p90 with 95%
+percentile-bootstrap intervals for the difference from each baseline. A
+change counts as faster or slower only when its interval excludes zero. The
+fixture is a 20-search turn, a 50-function file, a 406 KiB file and a
+`CLAUDE.md`; Node 22 on Linux, 2 cores.
 
-| Call | this branch | `4b02f669` | `main` |
+40 fresh processes per call type and hook, interleaved; require() + run() in ms; 95% bootstrap intervals of the working tree minus the baseline.
+
+| Call | working tree p50 / p90 | 4b02f669 p50 / p90 | upstream/main p50 / p90 |
 | --- | ---: | ---: | ---: |
-| Shell command, first of session | 10.5 | 20.8 | 10.6 |
-| Shell command, routine gate already passed | 12.0 | 21.3 | 11.1 |
-| Edit of a file already checked | 11.0 | 19.2 | 9.4 |
-| First-touch edit, denied | 23.5 | 29.1 | 9.3 |
-| First-touch edit, comment-only pass | 25.0 | 35.8 | 10.5 |
-| First-touch edit, denied, 406 KiB file | 31.3 | 49.7 | 17.4 |
+| Shell command, first of session | 16.9 / 19.9 | 25.7 / 33.4 | 14.5 / 18.0 |
+| Shell command, routine gate passed | 15.6 / 19.7 | 24.3 / 27.0 | 13.8 / 17.4 |
+| Edit of a file already checked | 14.1 / 19.2 | 22.9 / 28.8 | 11.6 / 15.3 |
+| First edit, code, denied | 25.7 / 32.0 | 37.3 / 44.3 | 12.4 / 13.9 |
+| First edit, comment-only pass | 29.5 / 35.2 | 42.7 / 47.9 | 12.5 / 14.5 |
+| First edit, CLAUDE.md, denied | 21.4 / 24.4 | 35.1 / 41.8 | 12.3 / 16.0 |
+| First edit, 406 KiB file, denied | 27.9 / 34.5 | 59.0 / 67.5 | 12.2 / 16.6 |
 
-Shell commands and repeat edits, most calls in a session, now load only the
-modules they use and stay within about 2 ms of `main`. A first touch
+| Call | p50 change vs 4b02f669 | p90 change vs 4b02f669 |
+| --- | --- | --- |
+| Shell command, first of session | [-10.5, -7.8] faster | [-16.0, -6.2] faster |
+| Shell command, routine gate passed | [-9.6, -7.7] faster | [-11.5, -5.3] faster |
+| Edit of a file already checked | [-10.7, -7.0] faster | [-16.1, -6.5] faster |
+| First edit, code, denied | [-13.6, -10.0] faster | [-19.1, -6.5] faster |
+| First edit, comment-only pass | [-15.4, -10.9] faster | [-19.7, -4.6] faster |
+| First edit, CLAUDE.md, denied | [-16.4, -11.6] faster | [-25.3, -14.4] faster |
+| First edit, 406 KiB file, denied | [-32.5, -29.3] faster | [-41.7, -25.9] faster |
+
+| Call | p50 change vs upstream/main | p90 change vs upstream/main |
+| --- | --- | --- |
+| Shell command, first of session | [2.0, 3.0] slower | [-0.6, 7.4] no measurable change |
+| Shell command, routine gate passed | [1.3, 2.2] slower | [-2.1, 4.7] no measurable change |
+| Edit of a file already checked | [2.0, 3.0] slower | [-0.6, 6.8] no measurable change |
+| First edit, code, denied | [12.2, 14.7] slower | [14.3, 21.5] slower |
+| First edit, comment-only pass | [15.5, 17.9] slower | [16.0, 28.6] slower |
+| First edit, CLAUDE.md, denied | [8.3, 10.2] slower | [6.0, 11.0] slower |
+| First edit, 406 KiB file, denied | [14.5, 16.4] slower | [13.7, 21.3] slower |
+
+Against `4b02f669` every call type is faster at p50 and p90. Against `main`,
+shell commands and repeat edits are 1.3 to 3 ms slower at p50 with no
+measurable p90 difference; a first touch costs 8 to 18 ms more because it
 reads the transcript, parses the turn's searches that name the target, reads
-the target file and profiles the change; `main` does none of these. Each hook
+the target file and profiles the change, which `main` does not do. Each hook
 call is a new Node process, so the code a call runs is also compiled on that
-call, and that compilation, not the size of the files, is most of the
-remaining difference. Node's module compile cache does not reduce it: it
-caches top-level code, and the gate's functions are compiled on first call.
+call, and that compilation is most of the remaining difference. A V8 code
+cache written after each run was tried and measured end to end through
+`run-with-flags.js`: setting it up and loading the cached code cost about as
+much as the compilation it saved.
+
+Each commit of this round was measured the same way (40 samples per call
+type and version); no commit is slower at p50 or p90 than the one before it
+on any call type:
+
+| Commit | Change in ms, point estimate (95% interval) |
+| --- | --- |
+| Load modules and parse searches only when needed | every call type faster: p50 -8.4 to -14.1, p90 -9.1 to -14.5 |
+| Skip plain character runs when lexing | comment-only pass p50 -3.3 (-5.3 to -2.2); no other measurable change |
+| Read the transcript tail through a small module | no measurable change |
+| Profile a change only when used, window first | 406 KiB file p50 -19.9 (-21.5 to -18.3), p90 -19.8 (-37.8 to -13.9); `CLAUDE.md` p50 -4.3 (-5.6 to -2.9); no other measurable change |
 
 ## Corpus format
 
