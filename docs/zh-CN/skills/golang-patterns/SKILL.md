@@ -533,7 +533,7 @@ func ProcessRequest(data []byte) []byte {
 
     buf.Write(data)
     // Process...
-    // Copy before returning the buffer to the pool; Bytes aliases its storage.
+    // 归还缓冲区到 pool 前先复制；Bytes 与缓冲区共用底层存储空间。
     return append([]byte(nil), buf.Bytes()...)
 }
 ```
