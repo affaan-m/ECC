@@ -29,7 +29,7 @@ origin: ECC
 应用任何迁移之前：
 
 * \[ ] 迁移同时包含 UP 和 DOWN（或明确标记为不可逆）
-* \[ ] 对大表没有全表锁（使用并发操作）
+* \[ ] 已检查锁保持时间和获取超时，避免长时间持有表锁
 * \[ ] 新列有默认值或可为空（切勿添加没有默认值的 NOT NULL）
 * \[ ] 索引是并发创建的（对于现有表，不与 CREATE TABLE 内联创建）
 * \[ ] 数据回填是与模式变更分开的迁移
@@ -40,16 +40,18 @@ origin: ECC
 
 ### 安全地添加列
 
+这些 ADD COLUMN 语句仍会获取 ACCESS EXCLUSIVE 锁。保持事务简短，并用 `lock_timeout` 限制获取锁的等待时间。快速默认值优化适用于非 volatile 表达式；volatile 表达式仍可能要求重写表。
+
 ```sql
--- GOOD: Nullable column, no lock
+-- GOOD: Nullable column, no table rewrite; still takes ACCESS EXCLUSIVE
 ALTER TABLE users ADD COLUMN avatar_url TEXT;
 
--- GOOD: Column with default (Postgres 11+ is instant, no rewrite)
+-- GOOD: Constant default avoids a table rewrite on Postgres 11+; still locks
 ALTER TABLE users ADD COLUMN is_active BOOLEAN NOT NULL DEFAULT true;
 
--- BAD: NOT NULL without default on existing table (requires full rewrite)
+-- BAD: NOT NULL without default fails when the table already has rows
 ALTER TABLE users ADD COLUMN role TEXT NOT NULL;
--- This locks the table and rewrites every row
+-- Existing rows receive NULL, which violates the new constraint
 ```
 
 ### 无停机添加索引
@@ -329,7 +331,7 @@ Day 7：迁移删除旧的 `status` 列
 |-------------|-------------|-----------------|
 | 在生产中手动执行 SQL | 没有审计追踪，不可重复 | 始终使用迁移文件 |
 | 编辑已部署的迁移 | 导致环境间出现差异 | 改为创建新迁移 |
-| 没有默认值的 NOT NULL | 锁定表，重写所有行 | 添加可为空列，回填数据，然后添加约束 |
+| 没有默认值的 NOT NULL | 非空表的已有行获得 NULL，导致约束失败 | 添加可为空列，回填数据，然后添加约束 |
 | 在大表上内联创建索引 | 在构建期间阻塞写入 | 使用 CREATE INDEX CONCURRENTLY |
 | 在一个迁移中混合模式和数据的变更 | 难以回滚，事务时间长 | 分开的迁移 |
 | 在移除代码之前删除列 | 应用程序在缺失列时出错 | 先移除代码，下一次部署再删除列 |
