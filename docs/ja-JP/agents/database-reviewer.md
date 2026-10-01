@@ -513,7 +513,7 @@ RETURNING *;
 
 ### 1. pg_stat_statementsを有効化
 
-既存の項目を保持して `shared_preload_libraries` に `pg_stat_statements` を追加し、`compute_query_id` が `auto` または `on` であることを確認します。プリロードの一覧を変更した場合はサーバーを再起動します。統計ビューが必要な各データベースに接続して、以下の拡張機能を作成します。`CREATE EXTENSION` だけではモジュールはプリロードされません。
+既存の項目を保持して `shared_preload_libraries` に `pg_stat_statements` を追加し、組み込みのクエリ識別子には `compute_query_id = auto` または `on` を使用し、外部モジュールがクエリ識別子を計算する場合は `off` に設定します。プリロードの一覧を変更した場合はサーバーを再起動します。統計ビューが必要な各データベースに接続して、以下の拡張機能を作成します。`CREATE EXTENSION` だけではモジュールはプリロードされません。
 
 ```sql
 CREATE EXTENSION IF NOT EXISTS pg_stat_statements;

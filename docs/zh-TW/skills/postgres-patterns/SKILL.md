@@ -132,7 +132,7 @@ REVOKE ALL ON SCHEMA public FROM public;
 SELECT pg_reload_conf();
 ```
 
-`pg_reload_conf()` 只重新載入支援 reload 的設定；修改 `max_connections` 必須重新啟動伺服器。使用 `pg_stat_statements` 前，將它加入 `shared_preload_libraries` 並保留既有項目，確認 `compute_query_id` 為 `auto` 或 `on`。若修改了預載入清單，重新啟動伺服器，然後連線到每個需要統計檢視的資料庫並執行：
+`pg_reload_conf()` 只重新載入支援 reload 的設定；修改 `max_connections` 必須重新啟動伺服器。使用 `pg_stat_statements` 前，將它加入 `shared_preload_libraries` 並保留既有項目，內建查詢識別碼使用 `compute_query_id = auto` 或 `on`；若由外部模組計算查詢識別碼，則設為 `off`。若修改了預載入清單，重新啟動伺服器，然後連線到每個需要統計檢視的資料庫並執行：
 
 ```sql
 CREATE EXTENSION IF NOT EXISTS pg_stat_statements;

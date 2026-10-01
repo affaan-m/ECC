@@ -133,7 +133,7 @@ REVOKE ALL ON SCHEMA public FROM public;
 SELECT pg_reload_conf();
 ```
 
-`pg_reload_conf()` recarga los parámetros que admiten recarga; los cambios en `max_connections` requieren reiniciar el servidor. Antes de usar `pg_stat_statements`, añádelo a `shared_preload_libraries` conservando las entradas existentes y asegúrate de que `compute_query_id` sea `auto` u `on`. Reinicia el servidor si cambió la lista de precarga; después, conecta a cada base de datos que necesite las vistas de estadísticas y ejecuta:
+`pg_reload_conf()` recarga los parámetros que admiten recarga; los cambios en `max_connections` requieren reiniciar el servidor. Antes de usar `pg_stat_statements`, añádelo a `shared_preload_libraries` conservando las entradas existentes. Usa `compute_query_id = auto` u `on` para los identificadores integrados; configúralo en `off` si un módulo externo calcula los identificadores de consulta. Reinicia el servidor si cambió la lista de precarga; después, conecta a cada base de datos que necesite las vistas de estadísticas y ejecuta:
 
 ```sql
 CREATE EXTENSION IF NOT EXISTS pg_stat_statements;
