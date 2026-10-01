@@ -593,6 +593,8 @@ detekt {
 ### 用于领域操作的 Result 类型
 
 ```kotlin
+import kotlinx.coroutines.CancellationException
+
 // Good: Use Kotlin's Result or a custom sealed class
 suspend fun createUser(request: CreateUserRequest): Result<User> = runCatching {
     require(request.name.isNotBlank()) { "Name cannot be blank" }
@@ -605,6 +607,8 @@ suspend fun createUser(request: CreateUserRequest): Result<User> = runCatching {
     )
     userRepository.save(user)
     user
+}.onFailure { error ->
+    if (error is CancellationException) throw error
 }
 
 // Good: Chain results

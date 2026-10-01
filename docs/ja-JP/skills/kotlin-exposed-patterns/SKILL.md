@@ -427,6 +427,8 @@ suspend fun updateUser(id: UUID, request: UpdateUserRequest): User? =
 ### サスペンドトランザクションのサポート
 
 ```kotlin
+import kotlinx.coroutines.CancellationException
+
 // 良い例: コルーチンサポートのために newSuspendedTransaction を使用
 suspend fun performDatabaseOperation(): Result<User> =
     runCatching {
@@ -438,6 +440,8 @@ suspend fun performDatabaseOperation(): Result<User> =
             // このブロック内のすべての操作はアトミック
             user.toModel()
         }
+    }.onFailure { error ->
+        if (error is CancellationException) throw error
     }
 
 // 良い例: セーブポイントによるネストされたトランザクション

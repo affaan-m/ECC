@@ -108,6 +108,8 @@ interface ItemRepository {
 Coordinates between local and remote data sources:
 
 ```kotlin
+import kotlinx.coroutines.CancellationException
+
 class ItemRepositoryImpl(
     private val localDataSource: ItemLocalDataSource,
     private val remoteDataSource: ItemRemoteDataSource
@@ -118,12 +120,16 @@ class ItemRepositoryImpl(
             val remote = remoteDataSource.fetchItems(category)
             localDataSource.insertItems(remote.map { it.toEntity() })
             localDataSource.getItemsByCategory(category).map { it.toDomain() }
+        }.onFailure { error ->
+            if (error is CancellationException) throw error
         }
     }
 
     override suspend fun saveItem(item: Item): Result<Unit> {
         return runCatching {
             localDataSource.insertItems(listOf(item.toEntity()))
+        }.onFailure { error ->
+            if (error is CancellationException) throw error
         }
     }
 

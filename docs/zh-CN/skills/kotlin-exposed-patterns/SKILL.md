@@ -427,6 +427,8 @@ suspend fun updateUser(id: UUID, request: UpdateUserRequest): User? =
 ### 挂起事务支持
 
 ```kotlin
+import kotlinx.coroutines.CancellationException
+
 // Good: Use newSuspendedTransaction for coroutine support
 suspend fun performDatabaseOperation(): Result<User> =
     runCatching {
@@ -438,6 +440,8 @@ suspend fun performDatabaseOperation(): Result<User> =
             // All operations in this block are atomic
             user.toModel()
         }
+    }.onFailure { error ->
+        if (error is CancellationException) throw error
     }
 
 // Good: Nested transactions with savepoints
