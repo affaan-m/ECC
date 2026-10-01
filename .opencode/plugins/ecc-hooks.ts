@@ -169,7 +169,7 @@ export const ECCHooksPlugin: ECCHooksPluginFn = async ({
     return profileAllowed(requiredProfile)
   }
 
-  return {
+  const hooks = {
     /**
      * Prettier Auto-Format Hook
      * Equivalent to Claude Code PostToolUse hook for prettier
@@ -260,7 +260,7 @@ export const ECCHooksPlugin: ECCHooksPluginFn = async ({
       if (
         hookEnabled("post:bash:pr-created", ["standard", "strict"]) &&
         input.tool === "bash" &&
-        input.args?.toString().includes("gh pr create")
+        input.args?.command?.includes("gh pr create")
       ) {
         log("info", "[ECC] PR created - check GitHub Actions status")
       }
@@ -274,8 +274,12 @@ export const ECCHooksPlugin: ECCHooksPluginFn = async ({
      * Action: Warns about potential security issues
      */
     "tool.execute.before": async (
-      input: ToolInput
+      nativeInput: ToolInput,
+      output?: { args: ToolArgs }
     ) => {
+      // OpenCode supplies before-tool arguments in the mutable output envelope.
+      // Keep input.args as a fallback for existing direct callers.
+      const input = { ...nativeInput, args: output?.args ?? nativeInput.args }
       if (input.tool === "write") {
         const filePath = getFilePath(input.args)
         if (filePath) {
@@ -297,7 +301,7 @@ export const ECCHooksPlugin: ECCHooksPluginFn = async ({
       if (
         hookEnabled("pre:bash:git-push-reminder", "strict") &&
         input.tool === "bash" &&
-        input.args?.toString().includes("git push")
+        input.args?.command?.includes("git push")
       ) {
         log(
           "info",
@@ -628,6 +632,45 @@ export const ECCHooksPlugin: ECCHooksPluginFn = async ({
     tool: {
       "changed-files": changedFilesTool,
       "dependency-analyzer": dependencyAnalyzerTool,
+    },
+  }
+
+  return {
+    ...hooks,
+    // OpenCode broadcasts lifecycle/file/todo events through this callback;
+    // the named handlers above also remain available to legacy direct callers.
+    event: async ({ event }: { event: { type: string; properties: Record<string, unknown> } }) => {
+      const properties = event.properties
+      switch (event.type) {
+        case "file.edited":
+          if (typeof properties.file === "string") {
+            await hooks["file.edited"]({ path: properties.file })
+          }
+          break
+        case "file.watcher.updated":
+          if (typeof properties.file === "string" && typeof properties.event === "string") {
+            const type = properties.event === "unlink" ? "delete" : properties.event
+            await hooks["file.watcher.updated"]({ path: properties.file, type })
+          }
+          break
+        case "session.created":
+          await hooks["session.created"]()
+          break
+        case "session.idle":
+          await hooks["session.idle"]()
+          break
+        case "session.deleted":
+          await hooks["session.deleted"]()
+          break
+        case "todo.updated":
+          if (Array.isArray(properties.todos)) {
+            const todos = properties.todos
+              .filter((todo): todo is Record<string, unknown> => typeof todo === "object" && todo !== null)
+              .map(todo => ({ text: String(todo.content ?? ""), done: todo.status === "completed" }))
+            await hooks["todo.updated"]({ todos })
+          }
+          break
+      }
     },
   }
 }
