@@ -194,6 +194,13 @@ export function nativeMemoryDir(absolutePath) {
 
 // ─── Rendering ────────────────────────────────────────────────────────────────
 
+export function extractMarkdownSection(markdown, heading) {
+  const normalized = markdown.replace(/\r\n?/g, '\n');
+  const pattern = new RegExp(`## ${heading}\\n([\\s\\S]*?)(?=\\n## |$)`);
+  const match = normalized.match(pattern);
+  return match ? match[1].trim() : null;
+}
+
 /** Render the human-readable CONTEXT.md from context.json */
 export function renderContextMd(ctx) {
   const latest = ctx.sessions?.[ctx.sessions.length - 1] || null;

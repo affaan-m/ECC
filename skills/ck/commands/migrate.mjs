@@ -13,7 +13,7 @@
 
 import { readFileSync, existsSync, renameSync } from 'fs';
 import { resolve } from 'path';
-import { readProjects, writeProjects, saveContext, today, shortId, CONTEXTS_DIR } from './shared.mjs';
+import { readProjects, writeProjects, saveContext, today, shortId, CONTEXTS_DIR, extractMarkdownSection as extractSection } from './shared.mjs';
 
 const isDryRun = process.argv.includes('--dry-run');
 
@@ -22,12 +22,6 @@ if (isDryRun) {
 }
 
 // ── v1 markdown parsers ───────────────────────────────────────────────────────
-
-function extractSection(md, heading) {
-  const re = new RegExp(`## ${heading}\\n([\\s\\S]*?)(?=\\n## |$)`);
-  const m = md.match(re);
-  return m ? m[1].trim() : null;
-}
 
 function parseBullets(text) {
   if (!text) return [];
