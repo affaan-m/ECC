@@ -14,14 +14,14 @@ let failed = 0;
 for (const scenario of ['detail to tab', 'direct tab route', 'tab history return']) {
   try {
     let panels = [];
-    let selected = null;
-    const makeNode = name => ({
-      dataset: { tab: name },
-      classList: {
-        add: () => { selected = name; },
-        remove: () => {},
-      },
-    });
+    const makeNode = name => {
+      const node = { dataset: { tab: name }, active: false };
+      node.classList = {
+        add: () => { node.active = true; },
+        remove: () => { node.active = false; },
+      };
+      return node;
+    };
     const navigation = names.map(makeNode);
     const context = vm.createContext({
       location: { hash: '' },
@@ -32,10 +32,9 @@ for (const scenario of ['detail to tab', 'direct tab route', 'tab history return
         querySelector: selector => navigation.find(node => selector.includes(`"${node.dataset.tab}"`)),
       },
       renderMain: () => {
-        panels = names.map(name => ({ ...makeNode(name), id: 'panel-' + name }));
-        selected = 'agents';
+        panels = names.map(name => Object.assign(makeNode(name), { id: 'panel-' + name }));
       },
-      renderPage: () => { panels = []; selected = null; },
+      renderPage: () => { panels = []; },
     });
     vm.runInContext(routing + tabs, context);
     if (scenario === 'detail to tab') {
@@ -53,9 +52,44 @@ for (const scenario of ['detail to tab', 'direct tab route', 'tab history return
       context.location.hash = previous;
     }
     context.handleRoute();
-    assert.strictEqual(selected, 'skills');
+    assert.strictEqual(navigation[1].active, true, 'Skills navigation button is active');
+    assert.strictEqual(panels.find(node => node.id === 'panel-skills')?.active, true, 'Skills panel is active');
     assert.strictEqual(context.location.hash, '#/tabs/skills');
     assert.ok(panels.some(node => node.id === 'panel-skills'));
+    passed += 1;
+    console.log(`PASS ${scenario}`);
+  } catch (error) {
+    failed += 1;
+    console.error(`FAIL ${scenario}: ${error.message}`);
+  }
+}
+const details = script.slice(script.indexOf('function renderPage('), script.indexOf('// Filters'));
+const suggestions = script.slice(script.indexOf('function showSuggestions('), script.indexOf('function onSearchKey('));
+for (const scenario of ['command card route', 'command suggestion route']) {
+  try {
+    const app = { innerHTML: '', querySelectorAll: () => [] };
+    const suggest = { innerHTML: '', classList: { add: () => {}, remove: () => {} } };
+    const context = vm.createContext({
+      location: { hash: '#/commands/plan' },
+      window: { addEventListener: () => {} },
+      document: {
+        getElementById: id => id === 'app' ? app : id === 'suggest' ? suggest : { value: 'plan' },
+        querySelectorAll: () => [],
+      },
+      AGENTS: [], SKILLS: [], COMMANDS: [{ n: '/plan', d: 'Create a plan', c: 'workflow', b: 'Plan details' }],
+      addRecent: () => {}, esc: value => String(value), t: value => value,
+      renderMain: () => {},
+    });
+    vm.runInContext(routing + details + suggestions, context);
+    if (scenario === 'command suggestion route') {
+      context.showSuggestions();
+      const route = suggest.innerHTML.match(/location.hash='([^']+)'/);
+      assert.ok(route, 'suggestion contains a navigation route');
+      context.location.hash = route[1];
+    }
+    context.handleRoute();
+    assert.ok(app.innerHTML.includes('<h2>/plan</h2>'));
+    assert.ok(app.innerHTML.includes('Plan details'));
     passed += 1;
     console.log(`PASS ${scenario}`);
   } catch (error) {

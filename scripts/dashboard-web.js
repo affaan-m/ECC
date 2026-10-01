@@ -712,6 +712,7 @@ function esc(s) { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').re
 
 // Detail Pages
 function renderPage(type, name) {
+  if (type === 'commands' && name.startsWith('/')) name = name.slice(1);
   addRecent(type, name);
   const app = document.getElementById('app');
   let html = '';
