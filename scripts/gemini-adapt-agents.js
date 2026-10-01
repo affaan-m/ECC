@@ -85,15 +85,16 @@ function formatToolLine(tools) {
 }
 
 function adaptFrontmatter(text) {
-  const match = text.match(/^---\n([\s\S]*?)\n---(\n|$)/);
+  const match = text.match(/^---\r?\n([\s\S]*?)\r?\n---(\r?\n|$)/);
   if (!match) {
     return { text, changed: false };
   }
 
+  const newline = text.startsWith('---\r\n') ? '\r\n' : '\n';
   let changed = false;
   const updatedLines = [];
 
-  for (const line of match[1].split('\n')) {
+  for (const line of match[1].split(/\r?\n/)) {
     if (/^\s*color\s*:/.test(line)) {
       changed = true;
       continue;
@@ -128,7 +129,7 @@ function adaptFrontmatter(text) {
   }
 
   return {
-    text: `---\n${updatedLines.join('\n')}\n---${match[2]}${text.slice(match[0].length)}`,
+    text: `---${newline}${updatedLines.join(newline)}${newline}---${match[2]}${text.slice(match[0].length)}`,
     changed: true,
   };
 }
