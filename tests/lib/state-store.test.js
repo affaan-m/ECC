@@ -94,6 +94,10 @@ if (args[0] === 'pr' && args[1] === 'list') {
       labels: [{ name: 'release' }]
     }
   ]);
+} else if ((args[0] === 'pr' && ['3', '4'].includes(args[2]))
+  || (args[0] === 'issue' && args[2] === '9')) {
+  if (args[1] !== 'view') throw new Error('expected a native state lookup');
+  write({ state: mode === 'empty' ? 'CLOSED' : 'OPEN' });
 } else {
   process.stderr.write('unexpected gh args: ' + args.join(' '));
   process.exit(2);
