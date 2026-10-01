@@ -252,6 +252,12 @@ async function run() {
         return;
       }
 
+      if (request.url === '/head-forbidden' && request.method === 'HEAD') {
+        response.writeHead(403);
+        response.end();
+        return;
+      }
+
       response.writeHead(200, { 'Content-Type': 'text/plain' });
       response.end('ok');
     });
@@ -264,7 +270,9 @@ async function run() {
         ...source,
         url: index === 0
           ? `http://127.0.0.1:${port}/redirect`
-          : `http://127.0.0.1:${port}/head-unsupported`,
+          : index === 1
+            ? `http://127.0.0.1:${port}/head-forbidden`
+            : `http://127.0.0.1:${port}/head-unsupported`,
       }));
 
       const report = await buildAdvisorySourceReport({
@@ -276,6 +284,7 @@ async function run() {
       assert.strictEqual(report.ready, true);
       assert.strictEqual(report.refresh.ok, true);
       assert.ok(report.sources.every(source => source.refreshStatus.status === 'ok'));
+      assert.ok(report.sources.every(source => source.refreshStatus.checkedAt === report.generatedAt));
     } finally {
       await new Promise(resolve => server.close(resolve));
     }
