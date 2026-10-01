@@ -51,7 +51,7 @@ Deep links and dynamic routes deliver untrusted strings. Validate them with Zod 
 
 ```tsx
 // app/user/[id].tsx
-import { useLocalSearchParams, router } from 'expo-router'
+import { Redirect, useLocalSearchParams } from 'expo-router'
 import { z } from 'zod'
 import { UserProfile } from '@/features/user/UserProfile'
 
@@ -60,8 +60,7 @@ const Params = z.object({ id: z.string().uuid() })
 export default function UserRoute() {
   const parsed = Params.safeParse(useLocalSearchParams())
   if (!parsed.success) {
-    router.replace('/not-found')
-    return null
+    return <Redirect href="/not-found" />
   }
   return <UserProfile userId={parsed.data.id} />
 }
