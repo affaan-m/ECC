@@ -13,16 +13,17 @@ const AGENTS_DIR = path.join(ROOT_DIR, 'agents');
 const SKILLS_DIR = path.join(ROOT_DIR, 'skills');
 
 function validateFrontmatter(file, content) {
-  if (!content.startsWith('---\n')) {
+  const normalized = content.replace(/^\uFEFF/, '').replace(/\r\n/g, '\n');
+  if (!normalized.startsWith('---\n')) {
     return [];
   }
 
-  const endIndex = content.indexOf('\n---\n', 4);
+  const endIndex = normalized.indexOf('\n---\n', 4);
   if (endIndex === -1) {
     return [`${file} - frontmatter block is missing a closing --- delimiter`];
   }
 
-  const block = content.slice(4, endIndex);
+  const block = normalized.slice(4, endIndex);
   const errors = [];
 
   for (const rawLine of block.split('\n')) {
