@@ -16,6 +16,7 @@ from llm.core.interface import (
 )
 from llm.core.types import LLMInput, LLMOutput, ModelInfo, ProviderType, ToolCall
 from llm.providers.constants import EMPTY_FILTERED_RESPONSE_ERROR
+from llm.providers.reasoning import strip_reasoning
 
 ATLAS_BASE_URL = "https://api.atlascloud.ai/v1"
 DEFAULT_ATLAS_MODEL = "deepseek-ai/deepseek-v4-pro"
@@ -121,7 +122,7 @@ class AtlasProvider(LLMProvider):
                 }
 
             return LLMOutput(
-                content=choice.message.content or "",
+                content=strip_reasoning(choice.message.content or ""),
                 tool_calls=tool_calls,
                 model=response.model,
                 usage=usage,

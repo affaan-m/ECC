@@ -19,6 +19,7 @@ from llm.core.types import (
     ProviderType,
     ToolCall,
 )
+from llm.providers.reasoning import prefilled_reasoning_from_env, strip_reasoning
 
 
 class OllamaProvider(LLMProvider):
@@ -28,7 +29,15 @@ class OllamaProvider(LLMProvider):
         self,
         base_url: str | None = None,
         default_model: str | None = None,
+        prefilled_reasoning: bool | None = None,
     ) -> None:
+        # Set for models whose chat template prefills <think>, so replies arrive
+        # as "...</think>answer" without the opening tag.
+        self.prefilled_reasoning = (
+            prefilled_reasoning
+            if prefilled_reasoning is not None
+            else prefilled_reasoning_from_env("OLLAMA_PREFILLED_REASONING")
+        )
         self.base_url = base_url or os.environ.get("OLLAMA_BASE_URL", "http://localhost:11434")
         self.default_model = default_model or os.environ.get("OLLAMA_MODEL", "llama3.2")
         self._models = [
@@ -85,7 +94,9 @@ class OllamaProvider(LLMProvider):
             with urllib.request.urlopen(req, timeout=60) as response:
                 result = json.loads(response.read().decode("utf-8"))
 
-            content = result.get("message", {}).get("content", "")
+            content = strip_reasoning(
+                result.get("message", {}).get("content", ""), prefilled=self.prefilled_reasoning
+            )
 
             tool_calls = None
             if result.get("message", {}).get("tool_calls"):
