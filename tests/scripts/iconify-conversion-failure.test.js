@@ -47,9 +47,10 @@ if (process.platform === 'win32') {
       }
       const result = spawnSync('bash', [script, 'mdi:test', 'icon', '--output', output], {
         encoding: 'utf8', timeout: 10000,
-        env: { ...process.env, PATH: `${bin}${path.delimiter}${process.env.PATH}` },
+        env: { ...process.env, TMPDIR: root, PATH: `${bin}${path.delimiter}${process.env.PATH}` },
       });
       try {
+        assert.ok(fs.readdirSync(imageset).every(name => !name.startsWith('.iconify.')));
         if (mode === 'success') {
           assert.strictEqual(result.status, 0, result.stderr);
           const manifest = JSON.parse(fs.readFileSync(path.join(imageset, 'Contents.json'), 'utf8'));

@@ -159,7 +159,7 @@ generate_icon() {
 
     mkdir -p "$imageset_dir"
     local conversion_dir
-    conversion_dir=$(mktemp -d "${imageset_dir}/.iconify.XXXXXX")
+    conversion_dir=$(mktemp -d "${TMPDIR:-/tmp}/ecc-iconify.XXXXXX")
 
     echo "Generating ${asset_name} from Iconify '${icon_id}':"
 
@@ -178,6 +178,7 @@ generate_icon() {
         curl "${CURL_OPTS[@]}" "$svg_url" -o "$svg_file" || { echo "ERROR: Failed to download icon '${icon_id}'"; exit 1; }
         if ! sips -s format png "$svg_file" --out "$png_file" >/dev/null 2>&1 || [[ ! -s "$png_file" ]]; then
             echo "ERROR: PNG conversion failed for ${svg_file}; keeping the SVG" >&2
+            echo "Partial conversions retained outside the asset catalog: ${conversion_dir}" >&2
             return 1
         fi
         rm "$svg_file"
