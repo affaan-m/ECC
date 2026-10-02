@@ -137,6 +137,8 @@ services:
     volumes: !reset []
     environment:
       NODE_ENV: production
+      DATABASE_URL: ${PRODUCTION_DATABASE_URL:?Set PRODUCTION_DATABASE_URL}
+      REDIS_URL: ${PRODUCTION_REDIS_URL:?Set PRODUCTION_REDIS_URL}
     restart: always
     deploy:
       resources:
