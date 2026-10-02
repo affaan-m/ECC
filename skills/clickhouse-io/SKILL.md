@@ -393,26 +393,50 @@ import { Client } from 'pg'
 
 const pgClient = new Client({ connectionString: process.env.DATABASE_URL })
 
-pgClient.on('notification', async (msg) => {
-  const update = JSON.parse(msg.payload)
-
-  await clickhouse.insert({
-    table: 'market_updates',
-    values: [
-      {
-        market_id: update.id,
-        event_type: update.operation,  // INSERT, UPDATE, DELETE
-        timestamp: new Date(),
-        data: JSON.stringify(update.new_data)
-      }
-    ],
-    format: 'JSONEachRow'
-  })
+pgClient.on('error', (error) => {
+  console.error('PostgreSQL listener connection failed:', error)
 })
 
-await pgClient.connect()
-await pgClient.query('LISTEN market_updates')
+pgClient.on('notification', async (msg) => {
+  if (!msg.payload) return
+
+  try {
+    const update = JSON.parse(msg.payload)
+
+    await clickhouse.insert({
+      table: 'market_updates',
+      values: [
+        {
+          market_id: update.id,
+          event_type: update.operation,  // INSERT, UPDATE, DELETE
+          timestamp: new Date(),
+          data: JSON.stringify(update.new_data)
+        }
+      ],
+      format: 'JSONEachRow'
+    })
+  } catch (error) {
+    console.error('Failed to forward market update:', error)
+  }
+})
+
+async function startNotificationListener() {
+  await pgClient.connect()
+  await pgClient.query('LISTEN market_updates')
+}
+
+void startNotificationListener().catch(async (error) => {
+  console.error('Failed to start notification listener:', error)
+  try {
+    await pgClient.end()
+  } catch (closeError) {
+    console.error('Failed to close PostgreSQL listener:', closeError)
+  }
+  process.exitCode = 1
+})
 ```
+
+Failures are reported, but this example does not retry or replay failed notifications; use a durable outbox when delivery must be guaranteed.
 
 This example forwards application-emitted JSON notifications while the session is listening. `LISTEN` registrations end with the session, so this is not durable CDC or replay. Use logical decoding or a durable outbox when changes must survive listener downtime.
 

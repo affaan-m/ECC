@@ -393,26 +393,50 @@ import { Client } from 'pg'
 
 const pgClient = new Client({ connectionString: process.env.DATABASE_URL })
 
-pgClient.on('notification', async (msg) => {
-  const update = JSON.parse(msg.payload)
-
-  await clickhouse.insert({
-    table: 'market_updates',
-    values: [
-      {
-        market_id: update.id,
-        event_type: update.operation,  // INSERT, UPDATE, DELETE
-        timestamp: new Date(),
-        data: JSON.stringify(update.new_data)
-      }
-    ],
-    format: 'JSONEachRow'
-  })
+pgClient.on('error', (error) => {
+  console.error('PostgreSQL listener connection failed:', error)
 })
 
-await pgClient.connect()
-await pgClient.query('LISTEN market_updates')
+pgClient.on('notification', async (msg) => {
+  if (!msg.payload) return
+
+  try {
+    const update = JSON.parse(msg.payload)
+
+    await clickhouse.insert({
+      table: 'market_updates',
+      values: [
+        {
+          market_id: update.id,
+          event_type: update.operation,  // INSERT, UPDATE, DELETE
+          timestamp: new Date(),
+          data: JSON.stringify(update.new_data)
+        }
+      ],
+      format: 'JSONEachRow'
+    })
+  } catch (error) {
+    console.error('Failed to forward market update:', error)
+  }
+})
+
+async function startNotificationListener() {
+  await pgClient.connect()
+  await pgClient.query('LISTEN market_updates')
+}
+
+void startNotificationListener().catch(async (error) => {
+  console.error('Failed to start notification listener:', error)
+  try {
+    await pgClient.end()
+  } catch (closeError) {
+    console.error('Failed to close PostgreSQL listener:', closeError)
+  }
+  process.exitCode = 1
+})
 ```
+
+错误会被记录，但此示例不会重试或重放失败的通知；需要保证投递时，应使用持久 outbox。
 
 此示例在会话监听期间转发应用发出的 JSON 通知。`LISTEN` 注册随会话结束而清除，因此不提供持久 CDC 或重放。需要保留监听器停机期间的变更时，应使用逻辑解码或持久 outbox。
 
