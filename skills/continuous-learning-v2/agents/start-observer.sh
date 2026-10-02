@@ -31,6 +31,17 @@ OBSERVER_LOOP_SCRIPT="${SCRIPT_DIR}/observer-loop.sh"
 source "${SKILL_ROOT}/scripts/detect-project.sh"
 PYTHON_CMD="${CLV2_PYTHON_CMD:-}"
 
+# Use the physical storage path as the observer key. The configured data
+# directory can be reached through symlinks or lexical path aliases, which
+# would otherwise make the same project appear to have multiple PID files.
+if [ -d "$PROJECT_DIR" ]; then
+  _CLV2_CANONICAL_PROJECT_DIR=$(cd -P "$PROJECT_DIR" 2>/dev/null && pwd -P) || _CLV2_CANONICAL_PROJECT_DIR=""
+  if [ -n "$_CLV2_CANONICAL_PROJECT_DIR" ]; then
+    PROJECT_DIR="$_CLV2_CANONICAL_PROJECT_DIR"
+  fi
+fi
+unset _CLV2_CANONICAL_PROJECT_DIR
+
 # ─────────────────────────────────────────────
 # Configuration
 # ─────────────────────────────────────────────
