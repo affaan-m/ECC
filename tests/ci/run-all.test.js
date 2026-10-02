@@ -42,7 +42,7 @@ function run(result, filename = 'sample.test.js', actions = true) {
     if (error !== exit) throw error;
   }
   assert.strictEqual(spawns, 1);
-  return { status, logs, annotations: logs.filter(line => line.startsWith('::error ')) };
+  return { status: status ?? fakeProcess.exitCode, logs, annotations: logs.filter(line => line.startsWith('::error ')) };
 }
 
 const tests = [
