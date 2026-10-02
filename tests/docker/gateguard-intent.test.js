@@ -17,7 +17,6 @@ const assert = require('assert');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const { test } = require('node:test');
 
 const ROOT = path.join(__dirname, '..', '..');
 const DIR = path.join(ROOT, 'docker', 'gateguard-effectiveness');
@@ -26,6 +25,25 @@ const session = require(path.join(DIR, 'session'));
 const coverage = require(path.join(DIR, 'coverage'));
 const intentEval = require(path.join(DIR, 'intent-eval'));
 const { parseArgs } = require(path.join(DIR, 'run-intent'));
+
+let passed = 0;
+let failed = 0;
+
+function test(name, fn) {
+  try {
+    fn();
+    console.log(`  ✓ ${name}`);
+    passed++;
+  } catch (error) {
+    console.log(`  ✗ ${name}`);
+    console.log(`    Error: ${error.message}`);
+    failed++;
+  }
+}
+
+function tempDir(prefix) {
+  return fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), prefix)));
+}
 
 const INTENT = Object.freeze({
   id: 'probe',
@@ -58,7 +76,7 @@ test('every shipped hidden-intent scenario loads and declares a decisive fact', 
 });
 
 test('a scenario that declares targetQuestions is rejected', () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'gg-blind-'));
+  const dir = tempDir('gg-blind-');
   const scenario = path.join(dir, 'leaky');
   fs.mkdirSync(path.join(scenario, 'workspace'), { recursive: true });
   fs.writeFileSync(
@@ -71,7 +89,7 @@ test('a scenario that declares targetQuestions is rejected', () => {
 });
 
 test('an intent with no decisive fact is rejected', () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'gg-nodecisive-'));
+  const dir = tempDir('gg-nodecisive-');
   const scenario = path.join(dir, 'soft');
   fs.mkdirSync(path.join(scenario, 'workspace'), { recursive: true });
   fs.writeFileSync(path.join(scenario, 'task.json'), JSON.stringify({ id: 'soft', trap: 't', prompt: 'p', evidence: ['e'] }));
@@ -86,7 +104,7 @@ test('an intent with no decisive fact is rejected', () => {
 // --- graders must discriminate, or the trial is worthless ---
 
 test('every grader separates the start, the trap and a correct solution', () => {
-  const workRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'gg-sound-'));
+  const workRoot = tempDir('gg-sound-');
   for (const scenario of intentEval.loadIntentScenarios()) {
     const { scores, sound } = intentEval.graderIsSound(scenario, workRoot);
     assert.ok(
@@ -369,3 +387,7 @@ test('real sessions require the explicit flag', () => {
   assert.throws(() => parseArgs(['--out', 'o', '--model', 'm']), /--allow-real-provider/);
   assert.doesNotThrow(() => parseArgs(['--out', 'o', '--dry-run']));
 });
+
+console.log(`\nPassed: ${passed}`);
+console.log(`Failed: ${failed}`);
+process.exitCode = failed > 0 ? 1 : 0;
