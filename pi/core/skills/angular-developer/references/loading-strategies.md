@@ -24,7 +24,7 @@ Use `loadComponent` to fetch the component on demand.
 ```ts
 {
   path: 'admin',
-  loadComponent: () => import('./admin/admin.component').then(m => m.AdminComponent)`,
+  loadComponent: () => import('./admin/admin.component').then(m => m.AdminComponent),
 }
 ```
 
