@@ -375,6 +375,14 @@
       ]
     },
     {
+      "id": "capability:documentation-change-impact",
+      "family": "capability",
+      "description": "Optional read-only change-impact analysis workflow.",
+      "modules": [
+        "documentation-change-impact"
+      ]
+    },
+    {
       "id": "capability:documents",
       "family": "capability",
       "description": "Document processing, conversion, and translation skills.",

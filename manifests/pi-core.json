@@ -52,6 +52,7 @@
       "bun-runtime",
       "click-path-audit",
       "clickhouse-io",
+      "change-impact",
       "code-tour",
       "codebase-onboarding",
       "coding-standards",
