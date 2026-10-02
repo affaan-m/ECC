@@ -516,8 +516,6 @@ impl StateStore {
             CREATE INDEX IF NOT EXISTS idx_session_output_session
                 ON session_output(session_id, id);
             CREATE INDEX IF NOT EXISTS idx_session_board_lane ON session_board(lane);
-            CREATE INDEX IF NOT EXISTS idx_session_board_coords
-                ON session_board(column_index, row_index, stack_index);
             CREATE INDEX IF NOT EXISTS idx_decision_log_session
                 ON decision_log(session_id, timestamp, id);
             CREATE INDEX IF NOT EXISTS idx_context_graph_entities_session
@@ -544,6 +542,10 @@ impl StateStore {
         self.ensure_harness_eval_columns()?;
         self.ensure_harness_candidate_aliases()?;
         self.ensure_session_board_columns()?;
+        self.conn.execute_batch(
+            "CREATE INDEX IF NOT EXISTS idx_session_board_coords
+             ON session_board(column_index, row_index, stack_index);",
+        )?;
         self.refresh_session_board_meta()?;
         Ok(())
     }
@@ -4050,11 +4052,7 @@ impl StateStore {
     }
 
     /// Returns at most `limit` output rows newer than `cursor` in insertion order.
-    pub(crate) fn get_output_since(
-        &self,
-        cursor: i64,
-        limit: usize,
-    ) -> Result<SessionOutputBatch> {
+    pub(crate) fn get_output_since(&self, cursor: i64, limit: usize) -> Result<SessionOutputBatch> {
         let cursor = cursor.max(0);
         let limit = i64::try_from(limit.max(1)).unwrap_or(i64::MAX);
         let mut stmt = self.conn.prepare(
@@ -5778,6 +5776,55 @@ mod tests {
         assert!(error
             .to_string()
             .contains("Invalid session state transition"));
+        Ok(())
+    }
+
+    #[test]
+    fn open_migrates_board_columns_before_creating_coordinate_index() -> Result<()> {
+        let root = TestDir::new("store-board-migration")?;
+        let path = root.path().join("state.db");
+        let db = StateStore::open(&path)?;
+        db.insert_session(&build_session("existing", SessionState::Stopped))?;
+        drop(db);
+        let fixture = Connection::open(&path)?;
+        fixture.execute_batch(
+            "DROP TABLE session_board;
+             CREATE TABLE session_board (
+                 session_id TEXT PRIMARY KEY REFERENCES sessions(id) ON DELETE CASCADE,
+                 lane TEXT NOT NULL,
+                 project TEXT,
+                 feature TEXT,
+                 issue TEXT,
+                 updated_at TEXT NOT NULL,
+                 custom_marker TEXT
+             );
+             INSERT INTO session_board VALUES
+                 ('existing', 'Stopped', 'workspace', NULL, NULL,
+                  '2026-01-01T00:00:00Z', 'retain unknown data');",
+        )?;
+        drop(fixture);
+        for _ in 0..2 {
+            let db = StateStore::open(&path)?;
+            let columns = db
+                .conn
+                .prepare("PRAGMA index_info(idx_session_board_coords)")?
+                .query_map([], |row| row.get::<_, String>(2))?
+                .collect::<rusqlite::Result<Vec<_>>>()?;
+            assert_eq!(columns, ["column_index", "row_index", "stack_index"]);
+            let marker: String = db.conn.query_row(
+                "SELECT custom_marker FROM session_board WHERE session_id = 'existing'",
+                [],
+                |row| row.get(0),
+            )?;
+            assert_eq!(marker, "retain unknown data");
+            assert_eq!(
+                db.get_session("existing")?.unwrap().state,
+                SessionState::Stopped
+            );
+            assert!(db.has_column("session_board", "column_index")?);
+            assert!(db.has_column("session_board", "row_index")?);
+            assert!(db.has_column("session_board", "stack_index")?);
+        }
         Ok(())
     }
 
