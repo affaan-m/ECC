@@ -128,45 +128,61 @@ interface CoverageResult {
   suggestion?: string
 }
 
-function parseCoverageData(data: unknown): CoverageSummary {
-  // Handle istanbul/nyc format
-  if (typeof data === "object" && data !== null && "total" in data) {
-    const istanbulData = data as Record<string, unknown>
-    const total = istanbulData.total as Record<string, { total: number; covered: number }>
+const lineSummarySchema = tool.schema.object({
+  total: tool.schema.number().int().nonnegative(),
+  covered: tool.schema.number().int().nonnegative(),
+}).refine(value => value.covered <= value.total, "Covered lines exceed total lines")
 
-    const files: CoverageSummary["files"] = []
+const summarySchema = tool.schema.object({ lines: lineSummarySchema })
+const locationSchema = tool.schema.object({
+  start: tool.schema.object({ line: tool.schema.number().int().positive() }),
+})
+const rawSchema = tool.schema.object({
+  statementMap: tool.schema.record(tool.schema.string(), locationSchema),
+  s: tool.schema.record(tool.schema.string(), tool.schema.number().int().nonnegative()),
+}).refine(value => {
+  const statementIds = Object.keys(value.statementMap)
+  return statementIds.length === Object.keys(value.s).length
+    && statementIds.every(id => Object.hasOwn(value.s, id))
+}, "Coverage statement maps and hit records must contain the same IDs")
+const reportSchema = tool.schema.record(tool.schema.string(), tool.schema.unknown())
 
-    for (const [key, value] of Object.entries(istanbulData)) {
-      if (key !== "total" && typeof value === "object" && value !== null) {
-        const fileData = value as Record<string, { total: number; covered: number }>
-        if (fileData.lines) {
-          files.push({
-            file: key,
-            lines: fileData.lines.total,
-            covered: fileData.lines.covered,
-            percentage: fileData.lines.total > 0
-              ? (fileData.lines.covered / fileData.lines.total) * 100
-              : 100,
-          })
-        }
-      }
-    }
-
-    return {
-      total: {
-        lines: total.lines?.total || 0,
-        covered: total.lines?.covered || 0,
-        percentage: total.lines?.total
-          ? (total.lines.covered / total.lines.total) * 100
-          : 0,
-      },
-      files,
-    }
+function lineMetrics(lines: number, covered: number): CoverageSummary["total"] {
+  if (!Number.isInteger(lines) || !Number.isInteger(covered) || lines < 0 || covered < 0 || covered > lines) {
+    throw new Error("Invalid coverage line metrics")
   }
+  return { lines, covered, percentage: lines > 0 ? (covered / lines) * 100 : 100 }
+}
 
-  // Default empty result
+function summaryMetrics(value: unknown): CoverageSummary["total"] {
+  const { lines } = summarySchema.parse(value)
+  return lineMetrics(lines.total, lines.covered)
+}
+
+function rawMetrics(value: unknown): CoverageSummary["total"] {
+  const { statementMap, s } = rawSchema.parse(value)
+  const statements = Object.entries(s).map(([id, hits]) => ({ line: statementMap[id].start.line, hits }))
+  // Istanbul groups statements by start line and uses the maximum hit count.
+  // A line is covered if any statement on it has hits, regardless of end ranges.
+  const lines = new Set(statements.map(statement => statement.line))
+  const covered = new Set(statements.filter(statement => statement.hits > 0).map(statement => statement.line))
+  return lineMetrics(lines.size, covered.size)
+}
+
+function parseCoverageData(value: unknown): CoverageSummary {
+  const data = reportSchema.parse(value)
+  if ("total" in data) {
+    const files = Object.entries(data).filter(([file]) => file !== "total")
+      .map(([file, summary]) => ({ file, ...summaryMetrics(summary) }))
+    return { total: summaryMetrics(data.total), files }
+  }
+  if (Object.keys(data).length === 0) throw new Error("Empty coverage report")
+  const files = Object.entries(data).map(([file, raw]) => ({ file, ...rawMetrics(raw) }))
   return {
-    total: { lines: 0, covered: 0, percentage: 0 },
-    files: [],
+    total: lineMetrics(
+      files.reduce((sum, file) => sum + file.lines, 0),
+      files.reduce((sum, file) => sum + file.covered, 0)
+    ),
+    files,
   }
 }
