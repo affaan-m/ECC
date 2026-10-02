@@ -23,7 +23,7 @@ for (const newline of ['\n', '\r\n']) {
         .replace('- Change unrelated files', '- Change unrelated files\n  Preserve user data')
         .replace('- Review complete', '- Review complete\n  Follow-up pending')
         .replace('- Implement feature', '1. Implement feature\n   Include docs')
-        + '\n## Decisions Made\n| Decision | Why | Date |\n|---|---|---|\n| Keep old\nstate | Preserve data | 2026-10-01 |\n' : markdown;
+        + '\n## Decisions Made\n| Decision | Why | Date |\n|---|---|---|\n| Keep old\nstate | Preserve data | 2026-10-01 |\n| Retain backup | Recovery | 2026-10-02\n' : markdown;
       const source = inputMarkdown.replace(/\n/g, newline);
       fs.writeFileSync(path.join(project, 'CLAUDE.md'), source);
       if (entry !== 'init') {
@@ -50,7 +50,9 @@ for (const newline of ['\n', '\r\n']) {
         if (entry === 'migrate') {
           assert.strictEqual(data.sessions[0].leftOff, 'Review complete\nFollow-up pending');
           assert.deepStrictEqual(data.sessions[0].nextSteps, ['Implement feature\nInclude docs']);
-          assert.deepStrictEqual(data.sessions[0].decisions, [{what: 'Keep old\nstate', why: 'Preserve data', date: '2026-10-01'}]);
+          assert.deepStrictEqual(data.sessions[0].decisions, [{what: 'Keep old\nstate', why: 'Preserve data', date: '2026-10-01'}, {what: 'Retain backup', why: 'Recovery', date: '2026-10-02'}]);
+          const rendered = fs.readFileSync(path.join(contextDir, 'CONTEXT.md'), 'utf8');
+          assert.ok(rendered.includes('| Keep old<br>state | Preserve data |'));
           assert.deepStrictEqual(data.sessions[0].blockers, []);
         }
       }

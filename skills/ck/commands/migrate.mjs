@@ -25,11 +25,11 @@ if (isDryRun) {
 
 function parseBullets(text) {
   if (!text) return [];
-  const entries = [];
+  let entries = [];
   for (const line of text.split('\n')) {
     const bullet = line.match(/^\s*(?:[-*]|\d+[.)])\s+(.+)$/);
-    if (bullet) entries.push(bullet[1].trim());
-    else if (entries.length && line.trim()) entries[entries.length - 1] += '\n' + line.trim();
+    if (bullet) entries = [...entries, bullet[1].trim()];
+    else if (entries.length && line.trim()) entries = [...entries.slice(0, -1), entries.at(-1) + '\n' + line.trim()];
   }
   return entries;
 }
@@ -41,8 +41,9 @@ function parseDecisionsTable(text) {
   for (const line of text.split('\n')) {
     if (!pending && (!line.trimStart().startsWith('|') || line.match(/^[|\s:-]+$/))) continue;
     pending += (pending ? '\n' : '') + line.trim();
-    const cols = pending.split(/(?<!\\)\|/).slice(1, -1).map(c => c.trim().replace(/\\\|/g, '|'));
-    if (cols.length < 3 || !pending.endsWith('|')) continue;
+    const parts = pending.split(/(?<!\\)\|/).slice(1);
+    const cols = (pending.endsWith('|') ? parts.slice(0, -1) : parts).map(c => c.trim().replace(/\\\|/g, '|'));
+    if (cols.length < 3) continue;
     pending = '';
     if (cols.length >= 1 && !cols[0].startsWith('Decision') && !cols[0].startsWith('_')) {
       rows.push({ what: cols[0] || '', why: cols[1] || '', date: cols[2] || '' });

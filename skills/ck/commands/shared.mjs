@@ -255,7 +255,8 @@ export function renderContextMd(ctx) {
   lines.push(`| Decision | Why | Date |`);
   lines.push(`|----------|-----|------|`);
   if (allDecisions.length) {
-    allDecisions.forEach(d => lines.push(`| ${d.what} | ${d.why || ''} | ${d.date || ''} |`));
+    const cell = value => String(value || '').replace(/\r?\n/g, '<br>').replace(/\|/g, '\\|');
+    allDecisions.forEach(d => lines.push(`| ${cell(d.what)} | ${cell(d.why)} | ${cell(d.date)} |`));
   } else {
     lines.push(`| _(none yet)_ | | |`);
   }
@@ -310,7 +311,7 @@ export function renderBriefingBox(ctx, _meta = {}) {
   lines.push(`│  NEXT STEPS${' '.repeat(W - 12)}│`);
   const steps = latest.nextSteps || [];
   if (steps.length) {
-    steps.forEach((s, i) => lines.push(`│    ${i + 1}. ${pad(s, W - 8)}│`));
+    steps.forEach((s, i) => lines.push(`│    ${i + 1}. ${pad(s.replace(/\r?\n/g, ' '), W - 8)}│`));
   } else {
     lines.push(`│    —${' '.repeat(W - 5)}│`);
   }
