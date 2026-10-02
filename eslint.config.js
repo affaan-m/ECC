@@ -30,5 +30,11 @@ module.exports = [
         languageOptions: {
             sourceType: 'module'
         }
+    },
+    {
+        files: ['docker/context-profiles/complex-eval/**/recurring-incident/**/*.js'],
+        languageOptions: {
+            sourceType: 'module'
+        }
     }
 ];

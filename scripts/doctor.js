@@ -96,6 +96,7 @@ function main() {
     const report = buildDoctorReport({
       repoRoot: require('path').join(__dirname, '..'),
       homeDir: process.env.HOME || os.homedir(),
+      env: process.env,
       projectRoot: process.cwd(),
       targets: options.targets,
     });

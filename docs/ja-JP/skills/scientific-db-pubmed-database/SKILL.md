@@ -1,5 +1,5 @@
 ---
-name: pubmed-database
+name: scientific-db-pubmed-database
 description: 生物医学文献、MeSH クエリ、PMID 検索、引用取得、および API を利用した文献モニタリングのための PubMed および NCBI E-utilities の直接検索ワークフロー。
 origin: community
 ---

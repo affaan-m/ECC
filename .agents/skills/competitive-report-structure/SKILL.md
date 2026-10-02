@@ -6,6 +6,7 @@ description: >-
   profiles, benchmarking matrix, white-space analysis, strategic recommendations,
   and team alignment trigger questions. Final step in the three-skill competitive
   pipeline.
+license: MIT
 ---
 
 # Competitive Report Structure

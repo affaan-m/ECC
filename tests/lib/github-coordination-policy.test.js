@@ -128,6 +128,13 @@ if (test('merges labels when parsed.labels is a plain object', () => {
   });
 })) passed++; else failed++;
 
+if (test('rejects an empty epic label', () => {
+  withTempDir(tmpDir => {
+    writeConfig(tmpDir, { labels: { epic: '  ' } });
+    assert.throws(() => loadPolicy(tmpDir), /labels\.epic.*non-empty string/);
+  });
+})) passed++; else failed++;
+
 if (test('falls back to empty labels when parsed.labels is null', () => {
   withTempDir(tmpDir => {
     writeConfig(tmpDir, { labels: null });

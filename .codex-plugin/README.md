@@ -79,12 +79,18 @@ not create a second scope or duplicate hook registration.
 
 ## Native plugin versus legacy managed sync
 
-The commands above are the native Codex plugin path. The legacy managed sync
+The commands above are the native Codex plugin path. The deprecated legacy managed sync
 (`bash scripts/sync-ecc-to-codex.sh`) is a separate compatibility
 path that merges files into `~/.codex`. It is not a native plugin install and
 does not create a marketplace registration. Prefer the native path on current
 Codex; use the legacy managed sync only when you intentionally need its copied
 configuration layer.
+
+New sync runs record a versioned ownership manifest. Inspect or remove that
+layer explicitly with `ecc uninstall --legacy-codex-sync --dry-run`, followed
+by `ecc uninstall --legacy-codex-sync`. Cleanup never targets conversation
+history or native plugin caches. Older pre-manifest installs are cleaned
+conservatively and unverifiable files are retained with warnings.
 
 After install, `codex plugin list` is only a registration check. From an ECC
 checkout, run the cache check to verify that the installed manifest can resolve

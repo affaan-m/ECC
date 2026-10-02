@@ -65,7 +65,7 @@ if (args[0] === 'pr' && args[1] === 'list') {
       number: 3,
       title: 'Conflicting queue cleanup',
       author: { login: 'contributor-a' },
-      url: 'https://github.com/affaan-m/everything-claude-code/pull/3',
+      url: 'https://github.com/affaan-m/ECC/pull/3',
       updatedAt: '2026-05-11T10:00:00Z',
       mergeStateStatus: 'DIRTY',
       isDraft: false,
@@ -75,7 +75,7 @@ if (args[0] === 'pr' && args[1] === 'list') {
       number: 4,
       title: 'Clean docs update',
       author: { login: 'contributor-b' },
-      url: 'https://github.com/affaan-m/everything-claude-code/pull/4',
+      url: 'https://github.com/affaan-m/ECC/pull/4',
       updatedAt: '2026-05-11T11:00:00Z',
       mergeStateStatus: 'CLEAN',
       isDraft: false,
@@ -89,7 +89,7 @@ if (args[0] === 'pr' && args[1] === 'list') {
       number: 9,
       title: 'Track release blocker',
       author: { login: 'reporter' },
-      url: 'https://github.com/affaan-m/everything-claude-code/issues/9',
+      url: 'https://github.com/affaan-m/ECC/issues/9',
       updatedAt: '2026-05-11T12:00:00Z',
       labels: [{ name: 'release' }]
     }
@@ -359,6 +359,68 @@ async function runTests() {
     }
   })) passed += 1; else failed += 1;
 
+  if (await test('creates private state-store directories and atomically persists a private database file', async () => {
+    const testDir = createTempDir('ecc-state-private-');
+    const privateParent = path.join(testDir, 'new-parent', 'ecc');
+    const dbPath = path.join(privateParent, 'state.db');
+
+    try {
+      const store = await createStateStore({ dbPath });
+      store.close();
+
+      if (process.platform !== 'win32') {
+        assert.strictEqual(fs.statSync(path.join(testDir, 'new-parent')).mode & 0o777, 0o700);
+        assert.strictEqual(fs.statSync(privateParent).mode & 0o777, 0o700);
+        assert.strictEqual(fs.statSync(dbPath).mode & 0o777, 0o600);
+      }
+      assert.deepStrictEqual(
+        fs.readdirSync(privateParent).sort(),
+        ['state.db']
+      );
+    } finally {
+      cleanupTempDir(testDir);
+    }
+  })) passed += 1; else failed += 1;
+
+  if (await test('refuses a final state database symlink without changing its target', async () => {
+    const testDir = createTempDir('ecc-state-final-link-');
+    const targetPath = path.join(testDir, 'outside.db');
+    const dbPath = path.join(testDir, 'state.db');
+
+    try {
+      fs.writeFileSync(targetPath, 'do not overwrite');
+      fs.symlinkSync(targetPath, dbPath);
+
+      await assert.rejects(
+        () => createStateStore({ dbPath }),
+        /symlink/i
+      );
+      assert.strictEqual(fs.readFileSync(targetPath, 'utf8'), 'do not overwrite');
+    } finally {
+      cleanupTempDir(testDir);
+    }
+  })) passed += 1; else failed += 1;
+
+  if (await test('refuses an intermediate state database symlink without writing outside the requested tree', async () => {
+    const testDir = createTempDir('ecc-state-parent-link-');
+    const outsideDir = path.join(testDir, 'outside');
+    const linkedParent = path.join(testDir, 'linked-parent');
+    const dbPath = path.join(linkedParent, 'ecc', 'state.db');
+
+    try {
+      fs.mkdirSync(outsideDir);
+      fs.symlinkSync(outsideDir, linkedParent, process.platform === 'win32' ? 'junction' : 'dir');
+
+      await assert.rejects(
+        () => createStateStore({ dbPath }),
+        /symlink/i
+      );
+      assert.strictEqual(fs.existsSync(path.join(outsideDir, 'ecc', 'state.db')), false);
+    } finally {
+      cleanupTempDir(testDir);
+    }
+  })) passed += 1; else failed += 1;
+
   if (await test('stores sessions and returns detailed session views with workers, skill runs, and decisions', async () => {
     const testDir = createTempDir('ecc-state-db-');
     const dbPath = path.join(testDir, 'state.db');
@@ -498,7 +560,7 @@ async function runTests() {
         title: 'Add Qwen install target',
         status: 'merged',
         priority: 'normal',
-        url: 'https://github.com/affaan-m/everything-claude-code/pull/1738',
+        url: 'https://github.com/affaan-m/ECC/pull/1738',
         owner: 'maintainer',
         createdAt: '2026-03-15T08:14:00.000Z',
         updatedAt: '2026-03-15T08:17:00.000Z',
@@ -655,6 +717,37 @@ async function runTests() {
       store.close();
     } finally {
       cleanupTempDir(testDir);
+    }
+  })) passed += 1; else failed += 1;
+
+  if (await test('deletes install projections by exact target id and root', async () => {
+    const store = await createStateStore({ dbPath: ':memory:' });
+    try {
+      store.upsertInstallState({
+        targetId: 'claude-home',
+        targetRoot: '/tmp/one/.claude',
+        sourceVersion: '2.2.0',
+      });
+      store.upsertInstallState({
+        targetId: 'claude-home',
+        targetRoot: '/tmp/two/.claude',
+        sourceVersion: '2.2.0',
+      });
+
+      assert.strictEqual(store.deleteInstallState({
+        targetId: 'claude-home',
+        targetRoot: '/tmp/one/.claude',
+      }), true);
+      assert.strictEqual(store.deleteInstallState({
+        targetId: 'claude-home',
+        targetRoot: '/tmp/missing/.claude',
+      }), false);
+      assert.deepStrictEqual(
+        store.getStatus().installHealth.installations.map(row => row.targetRoot),
+        ['/tmp/two/.claude']
+      );
+    } finally {
+      store.close();
     }
   })) passed += 1; else failed += 1;
 
@@ -853,7 +946,7 @@ async function runTests() {
     const testDir = createTempDir('ecc-work-items-github-');
     const dbPath = path.join(testDir, 'state.db');
     const binDir = path.join(testDir, 'bin');
-    const repo = 'affaan-m/everything-claude-code';
+    const repo = 'affaan-m/ECC';
 
     try {
       const env = {
@@ -877,7 +970,7 @@ async function runTests() {
       assert.strictEqual(syncPayload.issueCount, 1);
       assert.strictEqual(syncPayload.closedCount, 0);
       assert.strictEqual(syncPayload.items.length, 3);
-      assert.strictEqual(syncPayload.items[0].id, 'github-affaan-m-everything-claude-code-pr-3');
+      assert.strictEqual(syncPayload.items[0].id, 'github-affaan-m-ecc-pr-3');
       assert.strictEqual(syncPayload.items[0].status, 'blocked');
       assert.strictEqual(syncPayload.items[1].status, 'needs-review');
       assert.strictEqual(syncPayload.items[2].metadata.labels[0], 'release');

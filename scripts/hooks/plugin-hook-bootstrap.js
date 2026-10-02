@@ -1,51 +1,74 @@
 #!/usr/bin/env node
 'use strict';
 
-const fs = require('fs');
 const path = require('path');
 const { spawnSync } = require('child_process');
 const { ensureAgentDataHomeEnv } = require('../lib/agent-data-home');
+const { normalizePluginRootForPlatform } = require('../lib/resolve-ecc-root');
+const { readStdinRaw: readBoundedStdin, resolveMaxStdin } = require('./hook-input');
 
 const SHELL_PROBE_TIMEOUT_MS = 2000;
 
-function readStdinRaw() {
-  try {
-    return fs.readFileSync(0, 'utf8');
-  } catch (_error) {
-    return '';
-  }
-}
-
 function writeStderr(stderr) {
-  if (typeof stderr === 'string' && stderr.length > 0) {
+  if ((typeof stderr === 'string' || Buffer.isBuffer(stderr)) && stderr.length > 0) {
     process.stderr.write(stderr);
   }
 }
 
-function passthrough(raw, result) {
-  const stdout = typeof result?.stdout === 'string' ? result.stdout : '';
-  if (stdout) {
+function toBuffer(value) {
+  if (Buffer.isBuffer(value)) return value;
+  return typeof value === 'string' ? Buffer.from(value, 'utf8') : Buffer.alloc(0);
+}
+
+function withComparisonInput(result, comparisonInput) {
+  return { ...result, comparisonInput };
+}
+
+function isRawPassthrough(raw, stdout) {
+  const rawBytes = toBuffer(raw);
+  const stdoutBytes = toBuffer(stdout);
+  if (rawBytes.length === 0 || stdoutBytes.length === 0) return false;
+  return (
+    stdoutBytes.length <= rawBytes.length &&
+    rawBytes.subarray(0, stdoutBytes.length).equals(stdoutBytes)
+  );
+}
+
+function passthrough(result) {
+  const stdout =
+    typeof result?.stdout === 'string' || Buffer.isBuffer(result?.stdout)
+      ? result.stdout
+      : Buffer.alloc(0);
+  if (stdout.length > 0) {
+    // Most ECC hook scripts follow a `run(rawInput) -> rawInput` passthrough
+    // pattern: they do their work, then return the original input so the hook
+    // chain's tool result is preserved. The harness then writes the verbatim
+    // raw input (tool_input + tool_response, often 1-275 KB) into the session
+    // transcript as a hook_success attachment -- ~89% of every ECC session's
+    // transcript is this bloat. Detect the passthrough and emit empty stdout
+    // instead; the harness falls back to the tool_use's original result, the
+    // same path #2240 established for bash-hook-dispatcher.
+    //
+    // IMPORTANT: a strict `stdout === raw` check misses child processes whose
+    // synchronous `process.stdout.write()` is truncated before exit. Pipe
+    // capacity varies by platform and Node version (observed at 8, 16, and
+    // 64 KiB), so classify any non-empty byte-exact prefix of the raw hook
+    // event as passthrough instead of assuming one buffer size.
+    const raw = result?.comparisonInput;
+    const looksLikePassthrough = isRawPassthrough(raw, stdout);
+    if (looksLikePassthrough) {
+      writeStderr(
+        '[Hook] bootstrap: hook returned raw input as stdout; emitting empty to avoid transcript bloat\n'
+      );
+      return;
+    }
     process.stdout.write(stdout);
     return;
   }
 
   if (!Number.isInteger(result?.status) || result.status === 0) {
-    process.stdout.write(raw);
+    writeStderr('[Hook] bootstrap: hook produced no output; emitting empty stdout\n');
   }
-}
-
-function normalizePluginRootForPlatform(rootDir, platform = process.platform) {
-  if (platform !== 'win32' || typeof rootDir !== 'string') {
-    return rootDir;
-  }
-
-  const match = rootDir.match(/^\/([a-zA-Z])(?:\/(.*))?$/);
-  if (!match) {
-    return rootDir;
-  }
-
-  const [, driveLetter, rest = ''] = match;
-  return `${driveLetter.toUpperCase()}:/${rest}`;
 }
 
 function resolveTarget(rootDir, relPath) {
@@ -139,28 +162,30 @@ function findBashBinary() {
   return null;
 }
 
-function spawnNode(rootDir, relPath, raw, args) {
+function spawnNode(rootDir, relPath, raw, args, options = {}) {
   ensureAgentDataHomeEnv();
   const hookEnv = {
     ...process.env,
     CLAUDE_PLUGIN_ROOT: rootDir,
     ECC_PLUGIN_ROOT: rootDir,
+    ECC_HOOK_INPUT_MAX_BYTES: String(options.maxStdin),
+    ECC_HOOK_INPUT_TRUNCATED_UPSTREAM: options.truncated ? '1' : '0',
   };
-  return spawnSync(process.execPath, [resolveTarget(rootDir, relPath), ...args], {
+  const result = spawnSync(process.execPath, [resolveTarget(rootDir, relPath), ...args], {
     input: raw,
-    encoding: 'utf8',
     env: hookEnv,
     cwd: process.cwd(),
     timeout: 30000,
     windowsHide: true,
   });
+  return withComparisonInput(result, Buffer.from(raw, 'utf8'));
 }
 
 // spawnShell is not used by any hook in the shipped hooks.json configuration
 // (all hooks use 'node' mode). It is provided for third-party plugins that
 // register shell-backed hooks. Plugins should supply .ps1 scripts on Windows
 // and .sh scripts on Unix; mixing them will produce a skip with a stderr warning.
-function spawnShell(rootDir, relPath, raw, args) {
+function spawnShell(rootDir, relPath, raw, args, options = {}) {
   const shell = findShellBinary();
   if (!shell) {
     return {
@@ -175,6 +200,8 @@ function spawnShell(rootDir, relPath, raw, args) {
     ...process.env,
     CLAUDE_PLUGIN_ROOT: rootDir,
     ECC_PLUGIN_ROOT: rootDir,
+    ECC_HOOK_INPUT_MAX_BYTES: String(options.maxStdin),
+    ECC_HOOK_INPUT_TRUNCATED_UPSTREAM: options.truncated ? '1' : '0',
   };
   const scriptPath = resolveTarget(rootDir, relPath);
   const isPs = isPowerShellBin(shell);
@@ -190,14 +217,14 @@ function spawnShell(rootDir, relPath, raw, args) {
         stderr: '[Hook] .sh script requested but no bash binary found on Windows; skipping\n',
       };
     }
-    return spawnSync(bash, [scriptPath, ...args], {
+    const bashResult = spawnSync(bash, [scriptPath, ...args], {
       input: raw,
-      encoding: 'utf8',
       env: hookEnv,
       cwd: process.cwd(),
       timeout: 30000,
       windowsHide: true,
     });
+    return withComparisonInput(bashResult, Buffer.from(raw, 'utf8'));
   }
 
   const shellArgs = isPs
@@ -206,46 +233,56 @@ function spawnShell(rootDir, relPath, raw, args) {
     ? ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', scriptPath, ...args]
     : [scriptPath, ...args];
 
-  return spawnSync(shell, shellArgs, {
+  const result = spawnSync(shell, shellArgs, {
     input: raw,
-    encoding: 'utf8',
     env: hookEnv,
     cwd: process.cwd(),
     timeout: 30000,
     windowsHide: true,
   });
+  return withComparisonInput(result, Buffer.from(raw, 'utf8'));
 }
 
-function main() {
+async function main() {
   const [, , mode, relPath, ...args] = process.argv;
-  const raw = readStdinRaw();
+  const maxStdin = resolveMaxStdin(process.env.ECC_HOOK_INPUT_MAX_BYTES, {
+    writeDiagnostic: message => process.stderr.write(message)
+  });
+  const { raw, truncated } = await readBoundedStdin(process.stdin, { maxStdin });
   const rootDir = normalizePluginRootForPlatform(
     process.env.CLAUDE_PLUGIN_ROOT || process.env.ECC_PLUGIN_ROOT
   );
 
   if (!mode || !relPath || !rootDir) {
-    process.stdout.write(raw);
-    process.exit(0);
+    writeStderr(
+      '[Hook] bootstrap: missing required args (mode/relPath/rootDir); emitting empty stdout\n'
+    );
+    process.exitCode = 0;
+    return;
+  }
+
+  if (truncated) {
+    process.stderr.write(`[Hook] bootstrap: stdin exceeded ${maxStdin} bytes; forwarded a bounded prefix\n`);
   }
 
   let result;
   try {
     if (mode === 'node') {
-      result = spawnNode(rootDir, relPath, raw, args);
+      result = spawnNode(rootDir, relPath, raw, args, { maxStdin, truncated });
     } else if (mode === 'shell') {
-      result = spawnShell(rootDir, relPath, raw, args);
+      result = spawnShell(rootDir, relPath, raw, args, { maxStdin, truncated });
     } else {
-      writeStderr(`[Hook] unknown bootstrap mode: ${mode}\n`);
-      process.stdout.write(raw);
-      process.exit(0);
+      writeStderr(`[Hook] unknown bootstrap mode: ${mode}; emitting empty stdout\n`);
+      process.exitCode = 0;
+      return;
     }
   } catch (error) {
-    writeStderr(`[Hook] bootstrap resolution failed: ${error.message}\n`);
-    process.stdout.write(raw);
-    process.exit(0);
+    writeStderr(`[Hook] bootstrap resolution failed: ${error.message}; emitting empty stdout\n`);
+    process.exitCode = 0;
+    return;
   }
 
-  passthrough(raw, result);
+  passthrough(result);
   writeStderr(result.stderr);
 
   if (result.error || result.signal || result.status === null) {
@@ -255,10 +292,11 @@ function main() {
         ? `terminated by signal ${result.signal}`
         : 'missing exit status';
     writeStderr(`[Hook] bootstrap execution failed: ${reason}\n`);
-    process.exit(0);
+    process.exitCode = 0;
+    return;
   }
 
-  process.exit(Number.isInteger(result.status) ? result.status : 0);
+  process.exitCode = Number.isInteger(result.status) ? result.status : 0;
 }
 
 // Run when invoked as a hook entry. Production hooks load this via
@@ -269,10 +307,15 @@ function main() {
 // exports (tests), require.main is a real, different module, so main() stays
 // dormant.
 if (require.main === module || require.main === undefined) {
-  main();
+  main().catch(error => {
+    writeStderr(`[Hook] bootstrap failed: ${error.message}\n`);
+    process.exitCode = 0;
+  });
 }
 
 module.exports = {
+  isRawPassthrough,
   main,
   normalizePluginRootForPlatform,
+  withComparisonInput,
 };

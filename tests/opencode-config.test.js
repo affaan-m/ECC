@@ -29,6 +29,27 @@ let passed = 0;
 let failed = 0;
 
 if (
+  test('model selection inherits the user configured OpenCode provider', () => {
+    assert.ok(!Object.hasOwn(config, 'model'), 'Root config must not pin a provider-specific model');
+    assert.ok(!Object.hasOwn(config, 'small_model'), 'Root config must not pin a provider-specific small model');
+
+    assert.ok(
+      config.agent &&
+        typeof config.agent === 'object' &&
+        !Array.isArray(config.agent) &&
+        Object.keys(config.agent).length > 0,
+      'Reference config must define registered agents'
+    );
+
+    for (const [agentId, agent] of Object.entries(config.agent)) {
+      assert.ok(!Object.hasOwn(agent, 'model'), `Agent "${agentId}" must inherit the selected OpenCode model`);
+    }
+  })
+)
+  passed++;
+else failed++;
+
+if (
   test('plugin paths do not duplicate the .opencode directory', () => {
     const plugins = config.plugin || [];
     for (const pluginPath of plugins) {
@@ -98,7 +119,7 @@ if (
 
       // Regression guard for #2477: opencode registers these agents unscoped
       // in opencode.json's `agent` map, so ANY namespace-scoped id
-      // (`<plugin>:<agent>` — e.g. the Claude Code `everything-claude-code:`
+      // (`<plugin>:<agent>` — e.g. the legacy Claude Code `everything-claude-code:`
       // prefix) fails to resolve ("Agent not found") and hard-breaks subtask
       // commands like /code-review on opencode. Reject the whole scoped class,
       // not just the one legacy prefix.

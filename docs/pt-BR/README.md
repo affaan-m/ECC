@@ -1,10 +1,10 @@
-**Idioma:** [English](../../README.md) | [简体中文](../../README.zh-CN.md) | [繁體中文](../zh-TW/README.md) | [日本語](../ja-JP/README.md) | [한국어](../ko-KR/README.md) | Português (Brasil) | [Türkçe](../tr/README.md) | [Русский](../ru/README.md) | [Tiếng Việt](../vi-VN/README.md) | [ไทย](../th/README.md) | [Deutsch](../de-DE/README.md)
+**Idioma:** [English](../../README.md) | [简体中文](../../README.zh-CN.md) | [繁體中文](../zh-TW/README.md) | [日本語](../ja-JP/README.md) | [한국어](../ko-KR/README.md) | Português (Brasil) | [Türkçe](../tr/README.md) | [Русский](../ru/README.md) | [Tiếng Việt](../vi-VN/README.md) | [ไทย](../th/README.md) | [Deutsch](../de-DE/README.md) | [Українська](../uk-UA/README.md) | [Polski](../pl/README.md)
 
-# Everything Claude Code
+# ECC
 
-[![Stars](https://img.shields.io/github/stars/affaan-m/everything-claude-code?style=flat)](https://github.com/affaan-m/everything-claude-code/stargazers)
-[![Forks](https://img.shields.io/github/forks/affaan-m/everything-claude-code?style=flat)](https://github.com/affaan-m/everything-claude-code/network/members)
-[![Contributors](https://img.shields.io/github/contributors/affaan-m/everything-claude-code?style=flat)](https://github.com/affaan-m/everything-claude-code/graphs/contributors)
+[![Stars](https://img.shields.io/github/stars/affaan-m/ECC?style=flat)](https://github.com/affaan-m/ECC/stargazers)
+[![Forks](https://img.shields.io/github/forks/affaan-m/ECC?style=flat)](https://github.com/affaan-m/ECC/network/members)
+[![Contributors](https://img.shields.io/github/contributors/affaan-m/ECC?style=flat)](https://github.com/affaan-m/ECC/graphs/contributors)
 [![npm ecc-universal](https://img.shields.io/npm/dw/ecc-universal?label=ecc-universal%20weekly%20downloads&logo=npm)](https://www.npmjs.com/package/ecc-universal)
 [![npm ecc-agentshield](https://img.shields.io/npm/dw/ecc-agentshield?label=ecc-agentshield%20weekly%20downloads&logo=npm)](https://www.npmjs.com/package/ecc-agentshield)
 [![GitHub App Install](https://img.shields.io/endpoint?url=https%3A%2F%2Fapi.ecc.tools%2Fbadge%2Finstalls&logo=github)](https://github.com/marketplace/ecc-tools)
@@ -24,8 +24,7 @@
 
 **Idioma / Language / 语言 / Dil / Язык / Ngôn ngữ**
 
-[**English**](../../README.md) | [简体中文](../../README.zh-CN.md) | [繁體中文](../zh-TW/README.md) | [日本語](../ja-JP/README.md) | [한국어](../ko-KR/README.md) | [Português (Brasil)](README.md) | [Türkçe](../tr/README.md) | [Русский](../ru/README.md) | [Tiếng Việt](../vi-VN/README.md) | [ไทย](../th/README.md) | [Deutsch](../de-DE/README.md)
-
+[**English**](../../README.md) | [简体中文](../../README.zh-CN.md) | [繁體中文](../zh-TW/README.md) | [日本語](../ja-JP/README.md) | [한국어](../ko-KR/README.md) | [Português (Brasil)](README.md) | [Türkçe](../tr/README.md) | [Русский](../ru/README.md) | [Tiếng Việt](../vi-VN/README.md) | [ไทย](../th/README.md) | [Deutsch](../de-DE/README.md) | [Українська](../uk-UA/README.md) | [Polski](../pl/README.md)
 </div>
 
 ---
@@ -46,12 +45,12 @@ Este repositório contém apenas o código. Os guias explicam tudo.
 <tr>
 <td width="33%">
 <a href="https://x.com/affaanmustafa/status/2012378465664745795">
-<img src="../../assets/images/guides/shorthand-guide.png" alt="The Shorthand Guide to Everything Claude Code" />
+<img src="../../assets/images/guides/shorthand-guide.png" alt="The Shorthand Guide to ECC" />
 </a>
 </td>
 <td width="33%">
 <a href="https://x.com/affaanmustafa/status/2014040193557471352">
-<img src="../../assets/images/guides/longform-guide.png" alt="The Longform Guide to Everything Claude Code" />
+<img src="../../assets/images/guides/longform-guide.png" alt="The Longform Guide to ECC" />
 </a>
 </td>
 <td width="33%">
@@ -80,7 +79,11 @@ Este repositório contém apenas o código. Os guias explicam tudo.
 
 ## O Que Há de Novo
 
-### v2.2.0 — Instalação Guiada para Múltiplos Harnesses (Ago 2026)
+### v2.2.3 — Perfil pi/core e Confiabilidade de Releases (Out 2026)
+
+O perfil `pi/core` agora se refere ao projeto apenas como ECC, e o workflow de release aguarda até cinco minutos pelo npm antes de verificar o pacote publicado.
+
+### v2.2.2 — Instalação Guiada para Múltiplos Harnesses (Ago 2026)
 
 Adiciona uma instalação revisável para Claude Code, Codex e Kimi Code, com uma entrada de comando npm sincronizada.
 
@@ -141,8 +144,8 @@ Comece em menos de 2 minutos:
 
 ```bash
 # Clone o repositório primeiro
-git clone https://github.com/affaan-m/everything-claude-code.git
-cd everything-claude-code
+git clone https://github.com/affaan-m/ECC.git
+cd ECC
 
 # Instalar dependências (escolha seu gerenciador de pacotes)
 npm install        # ou: pnpm install | yarn install | bun install
@@ -161,8 +164,8 @@ npm install        # ou: pnpm install | yarn install | bun install
 # .\install.ps1 --target cursor typescript
 # .\install.ps1 --target antigravity typescript
 
-# O ponto de entrada de compatibilidade npm também funciona multiplataforma
-npx ecc-install typescript
+# O ponto de entrada do pacote npm publicado também funciona multiplataforma
+npx ecc-universal install typescript
 ```
 
 ### Passo 3: Começar a Usar
@@ -232,7 +235,7 @@ export ECC_DISABLED_HOOKS="pre:bash:tmux-reminder,post:edit:typecheck"
 ## O Que Está Incluído
 
 ```
-everything-claude-code/
+ECC/
 |-- agents/           # 28 subagentes especializados para delegação
 |-- skills/           # Definições de fluxo de trabalho e conhecimento de domínio
 |-- commands/         # Comandos slash para execução rápida
@@ -332,7 +335,7 @@ Ou adicione diretamente ao seu `~/.claude/settings.json`:
     "ecc": {
       "source": {
         "source": "github",
-        "repo": "affaan-m/everything-claude-code"
+        "repo": "affaan-m/ECC"
       }
     }
   },
@@ -346,16 +349,16 @@ Ou adicione diretamente ao seu `~/.claude/settings.json`:
 >
 > ```bash
 > # Clone o repositório primeiro
-> git clone https://github.com/affaan-m/everything-claude-code.git
+> git clone https://github.com/affaan-m/ECC.git
 >
 > # Opção A: Regras no nível do usuário (aplica a todos os projetos)
 > mkdir -p ~/.claude/rules
-> cp -r everything-claude-code/rules/common ~/.claude/rules/common
-> cp -r everything-claude-code/rules/typescript ~/.claude/rules/typescript   # escolha sua stack
+> cp -r ECC/rules/common ~/.claude/rules/common
+> cp -r ECC/rules/typescript ~/.claude/rules/typescript   # escolha sua stack
 >
 > # Opção B: Regras no nível do projeto (aplica apenas ao projeto atual)
 > mkdir -p .claude/rules
-> cp -r everything-claude-code/rules/common .claude/rules/common
+> cp -r ECC/rules/common .claude/rules/common
 > ```
 
 ---
@@ -364,20 +367,20 @@ Ou adicione diretamente ao seu `~/.claude/settings.json`:
 
 ```bash
 # Clonar o repositório
-git clone https://github.com/affaan-m/everything-claude-code.git
+git clone https://github.com/affaan-m/ECC.git
 
 # Copiar agentes para sua config Claude
-cp everything-claude-code/agents/*.md ~/.claude/agents/
+cp ECC/agents/*.md ~/.claude/agents/
 
 # Copiar regras (comuns + específicas da linguagem)
-cp -r everything-claude-code/rules/common ~/.claude/rules/common
-cp -r everything-claude-code/rules/typescript ~/.claude/rules/typescript
+cp -r ECC/rules/common ~/.claude/rules/common
+cp -r ECC/rules/typescript ~/.claude/rules/typescript
 
 # Copiar comandos
-cp everything-claude-code/commands/*.md ~/.claude/commands/
+cp ECC/commands/*.md ~/.claude/commands/
 
 # Copiar skills (core vs nicho)
-cp -r everything-claude-code/.agents/skills/* ~/.claude/skills/
+cp -r ECC/.agents/skills/* ~/.claude/skills/
 ```
 
 ---
@@ -477,7 +480,7 @@ Sim. O ECC é multiplataforma:
 - **Cursor**: Configs pré-traduzidas em `.cursor/`
 - **OpenCode**: Suporte completo a plugins em `.opencode/`
 - **Codex**: Suporte de primeira classe para app macOS e CLI
-- **Antigravity**: Configuração integrada em `.agent/`
+- **Antigravity**: Configuração integrada em `.agents/`
 - **Claude Code**: Nativo — este é o alvo principal
 </details>
 

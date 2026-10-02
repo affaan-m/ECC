@@ -158,24 +158,30 @@ function readLatestContextTokens(transcriptPath, options = {}) {
 }
 
 /**
- * Detect the context window size for a turn.
- * 1M when the model id carries the `[1m]` marker, matches a known large-window
- * model family, or when the observed token count already exceeds the standard
- * 200k window (covers logs that drop the suffix); otherwise the standard 200k
- * window.
+ * Detect the context window size for a turn, and report whether that size was
+ * positively detected or merely assumed.
+ *
+ * `inferred: false` means the size came from evidence — an explicit env
+ * override, the `[1m]` marker, or a known large-window family. An observed
+ * token count above the standard window selects the safer large-window
+ * thresholds, but remains inferred because the true denominator could be an
+ * unmarked intermediate size such as 400k. Callers must not present inferred
+ * windows as fact.
+ *
+ * @returns {{ windowTokens: number, inferred: boolean }}
  */
-function resolveContextWindowTokens(tokens, model) {
+function resolveContextWindow(tokens, model) {
   // Explicit window override wins: 400k models (e.g. Opus 4.x) match neither the
   // 200k default nor the 1M marker and would otherwise report ~double usage (#2290).
   // Honor ECC's own knob and Claude Code's native CLAUDE_CODE_AUTO_COMPACT_WINDOW.
   const env = (typeof process !== 'undefined' && process.env) || {};
   const envWindow = Number.parseInt(env.ECC_CONTEXT_WINDOW_TOKENS || env.CLAUDE_CODE_AUTO_COMPACT_WINDOW || '', 10);
   if (Number.isInteger(envWindow) && envWindow > 0) {
-    return envWindow;
+    return { windowTokens: envWindow, inferred: false };
   }
 
   if (typeof model === 'string' && model.includes(LARGE_WINDOW_MODEL_MARKER)) {
-    return LARGE_CONTEXT_WINDOW_TOKENS;
+    return { windowTokens: LARGE_CONTEXT_WINDOW_TOKENS, inferred: false };
   }
 
   // Large-window model families without a [1m] marker fall through the checks
@@ -183,15 +189,37 @@ function resolveContextWindowTokens(tokens, model) {
   if (typeof model === 'string') {
     const known = KNOWN_MODEL_WINDOW_TOKENS.find(([familyId]) => isKnownModelFamilyMatch(model, familyId));
     if (known) {
-      return known[1];
+      return { windowTokens: known[1], inferred: false };
     }
   }
 
   if (Number.isFinite(tokens) && tokens > STANDARD_CONTEXT_WINDOW_TOKENS) {
-    return LARGE_CONTEXT_WINDOW_TOKENS;
+    return { windowTokens: LARGE_CONTEXT_WINDOW_TOKENS, inferred: true };
   }
 
-  return STANDARD_CONTEXT_WINDOW_TOKENS;
+  return { windowTokens: STANDARD_CONTEXT_WINDOW_TOKENS, inferred: true };
+}
+
+/**
+ * Detect the context window size for a turn.
+ * 1M when the model id carries the `[1m]` marker, matches a known large-window
+ * model family, or when the observed token count already exceeds the standard
+ * 200k window (covers logs that drop the suffix); otherwise the standard 200k
+ * window.
+ */
+function resolveContextWindowTokens(tokens, model) {
+  return resolveContextWindow(tokens, model).windowTokens;
+}
+
+/**
+ * True when the resolved window is the assumed 200k default rather than a
+ * detected size. Opt-in large-window models that ship no `[1m]` marker in the
+ * transcript (e.g. a 1M-context Opus tier, where the base tier is 200k and the
+ * two are indistinguishable by model id) land here, so a percentage computed
+ * against 200k can be wildly wrong while usage sits below that mark.
+ */
+function isContextWindowInferred(tokens, model) {
+  return resolveContextWindow(tokens, model).inferred;
 }
 
 /**
@@ -254,7 +282,9 @@ module.exports = {
   DEFAULT_CONTEXT_INTERVAL_TOKENS,
   DEFAULT_TRANSCRIPT_TAIL_BYTES,
   readLatestContextTokens,
+  resolveContextWindow,
   resolveContextWindowTokens,
+  isContextWindowInferred,
   resolveContextThreshold,
   resolveContextInterval,
   computeContextBucket,

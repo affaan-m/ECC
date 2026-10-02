@@ -1,0 +1,42 @@
+{
+  "version": 1,
+  "repositories": [
+    {
+      "id": "repo",
+      "sources": {
+        "src/a.js": "require('../lib/b')",
+        "lib/b.js": ""
+      }
+    }
+  ],
+  "tasks": [
+    {
+      "id": "a",
+      "repoId": "repo",
+      "paths": [
+        "src/a.js"
+      ],
+      "heartbeatAt": "2026-09-08T06:00:00Z"
+    },
+    {
+      "id": "b",
+      "repoId": "repo",
+      "paths": [
+        "lib/b.js"
+      ],
+      "parentId": "a"
+    }
+  ],
+  "leases": [
+    {
+      "resource": "browser:chrome",
+      "owner": "root",
+      "expiresAt": "2026-09-08T07:00:00Z"
+    },
+    {
+      "resource": "browser:chrome",
+      "owner": "worker",
+      "expiresAt": "2026-09-08T07:00:00Z"
+    }
+  ]
+}

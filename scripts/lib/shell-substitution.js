@@ -1,126 +1,97 @@
 'use strict';
 
-/**
- * Extract executable command-substitution bodies from a shell line.
- *
- * Single quotes are literal, so substitutions inside them are ignored;
- * double quotes still permit substitutions, so those bodies are scanned
- * before quoted text is stripped. Returns each substitution body plus
- * any nested substitutions discovered recursively.
- *
- * Originally introduced in scripts/hooks/gateguard-fact-force.js
- * (PR #1853 round 2). Extracted to a shared lib so other PreToolUse
- * hooks that need the same "scan inside `$(...)` and backticks"
- * behavior can reuse it without duplicating the parser.
- *
- * @param {string} input
- * @returns {string[]}
- */
-function extractCommandSubstitutions(input) {
-  const source = String(input || '');
-  const substitutions = [];
+/** @returns {{ body: string, endIndex: number }} */
+function readBacktickSubstitution(source, startIndex) {
+  let body = '';
+  let endIndex = startIndex + 1;
+  while (endIndex < source.length) {
+    const inner = source[endIndex];
+    if (inner === '\\') {
+      const escaped = source[endIndex + 1];
+      body = escaped === undefined ? `${body}\\` : `${body}\\${escaped}`;
+      endIndex += escaped === undefined ? 1 : 2;
+      continue;
+    }
+    if (inner === '`') break;
+    body = `${body}${inner}`;
+    endIndex += 1;
+  }
+  return { body, endIndex };
+}
+
+/** @returns {{ body: string, endIndex: number }} */
+function readDollarSubstitution(source, startIndex) {
+  let body = '';
+  let depth = 1;
   let inSingle = false;
   let inDouble = false;
+  let endIndex = startIndex + 2;
+  while (endIndex < source.length && depth > 0) {
+    const inner = source[endIndex];
+    if (inner === '\\' && !inSingle) {
+      const escaped = source[endIndex + 1];
+      body = escaped === undefined ? `${body}\\` : `${body}\\${escaped}`;
+      endIndex += escaped === undefined ? 1 : 2;
+      continue;
+    }
+    if (inner === "'" && !inDouble) inSingle = !inSingle;
+    else if (inner === '"' && !inSingle) inDouble = !inDouble;
+    else if (!inSingle && !inDouble && inner === '(') depth += 1;
+    else if (!inSingle && !inDouble && inner === ')') depth -= 1;
+    if (depth > 0) body = `${body}${inner}`;
+    endIndex += depth > 0 ? 1 : 0;
+  }
+  return { body, endIndex };
+}
 
-  for (let i = 0; i < source.length; i++) {
+/**
+ * Iterate over command-substitution bodies, followed by nested bodies.
+ * Quote characters in an unquoted heredoc are literal only at the outer level;
+ * substitutions still use normal shell quote semantics internally.
+ *
+ * @param {string} input
+ * @param {{ literalOuterQuotes?: boolean }} [options]
+ * @returns {Generator<string>}
+ */
+function* iterateCommandSubstitutions(input, options = {}) {
+  const source = String(input || '');
+  const literalOuterQuotes = options.literalOuterQuotes === true;
+  let inSingle = false;
+  let inDouble = false;
+  for (let i = 0; i < source.length; i += 1) {
     const ch = source[i];
-    const prev = source[i - 1];
-
     if (ch === '\\' && !inSingle) {
       i += 1;
       continue;
     }
-
-    if (ch === "'" && !inDouble && prev !== '\\') {
+    if (!literalOuterQuotes && ch === "'" && !inDouble) {
       inSingle = !inSingle;
       continue;
     }
-
-    if (ch === '"' && !inSingle && prev !== '\\') {
+    if (!literalOuterQuotes && ch === '"' && !inSingle) {
       inDouble = !inDouble;
       continue;
     }
-
-    if (inSingle) {
-      continue;
-    }
-
-    if (ch === '`') {
-      let body = '';
-      i += 1;
-      while (i < source.length) {
-        const inner = source[i];
-        if (inner === '\\') {
-          body += inner;
-          if (i + 1 < source.length) {
-            body += source[i + 1];
-            i += 2;
-          } else {
-            // Trailing backslash at end of an unterminated span: advance past
-            // it so it is not appended a second time by the fallthrough below.
-            i += 1;
-          }
-          continue;
-        }
-        if (inner === '`') {
-          break;
-        }
-        body += inner;
-        i += 1;
-      }
-      if (body.trim()) {
-        substitutions.push(body);
-        substitutions.push(...extractCommandSubstitutions(body));
-      }
-      continue;
-    }
-
-    if (ch === '$' && source[i + 1] === '(') {
-      let depth = 1;
-      let body = '';
-      let bodyInSingle = false;
-      let bodyInDouble = false;
-      i += 2;
-      while (i < source.length && depth > 0) {
-        const inner = source[i];
-        const innerPrev = source[i - 1];
-        if (inner === '\\' && !bodyInSingle) {
-          body += inner;
-          if (i + 1 < source.length) {
-            body += source[i + 1];
-            i += 2;
-          } else {
-            // Trailing backslash at end of an unterminated span: advance past
-            // it so it is not appended a second time by the fallthrough below.
-            i += 1;
-          }
-          continue;
-        }
-        if (inner === "'" && !bodyInDouble && innerPrev !== '\\') {
-          bodyInSingle = !bodyInSingle;
-        } else if (inner === '"' && !bodyInSingle && innerPrev !== '\\') {
-          bodyInDouble = !bodyInDouble;
-        } else if (!bodyInSingle && !bodyInDouble) {
-          if (inner === '(') {
-            depth += 1;
-          } else if (inner === ')') {
-            depth -= 1;
-            if (depth === 0) {
-              break;
-            }
-          }
-        }
-        body += inner;
-        i += 1;
-      }
-      if (body.trim()) {
-        substitutions.push(body);
-        substitutions.push(...extractCommandSubstitutions(body));
-      }
-    }
+    if (inSingle) continue;
+    const span = ch === '`' ? readBacktickSubstitution(source, i) : null;
+    const substitution = ch === '$' && source[i + 1] === '(' ? readDollarSubstitution(source, i) : span;
+    if (!substitution) continue;
+    i = substitution.endIndex;
+    if (!substitution.body.trim()) continue;
+    yield substitution.body;
+    yield* iterateCommandSubstitutions(substitution.body);
   }
+}
 
-  return substitutions;
+/**
+ * Extract executable command-substitution bodies from a shell line.
+ *
+ * @param {string} input
+ * @param {{ literalOuterQuotes?: boolean }} [options]
+ * @returns {string[]}
+ */
+function extractCommandSubstitutions(input, options = {}) {
+  return [...iterateCommandSubstitutions(input, options)];
 }
 
 /**

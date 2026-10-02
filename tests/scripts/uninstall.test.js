@@ -3,6 +3,7 @@
  */
 
 const assert = require('assert');
+const crypto = require('crypto');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
@@ -17,11 +18,19 @@ const CURRENT_PACKAGE_VERSION = JSON.parse(
 const CURRENT_MANIFEST_VERSION = JSON.parse(
   fs.readFileSync(path.join(REPO_ROOT, 'manifests', 'install-modules.json'), 'utf8')
 ).version;
-const CLI_TIMEOUT_MS = 30000;
+// Windows CI file I/O is several times slower, and these cases run two full
+// CLI passes (install, then uninstall) over hundreds of files. install-apply
+// tests already scale their timeout the same way.
+const CLI_TIMEOUT_MS = process.platform === 'win32' ? 90000 : 30000;
 const {
   createInstallState,
   writeInstallState,
 } = require('../../scripts/lib/install-state');
+const {
+  beginLegacySyncState,
+  recordLegacySyncPath,
+  finalizeLegacySyncState,
+} = require('../../scripts/lib/codex-legacy-sync');
 
 function createTempDir(prefix) {
   return fs.mkdtempSync(path.join(os.tmpdir(), prefix));
@@ -38,10 +47,13 @@ function writeState(filePath, options) {
 }
 
 function run(args = [], options = {}) {
-  const env = {
-    ...process.env,
-    HOME: options.homeDir || process.env.HOME,
-  };
+  const inheritedEnv = Object.fromEntries(
+    Object.entries(process.env).filter(([key]) => key !== 'ECC_DRY_RUN' && key !== 'CODEX_HOME')
+  );
+  const homeEnv = options.homeDir
+    ? { HOME: options.homeDir, USERPROFILE: options.homeDir, CODEX_HOME: path.join(options.homeDir, '.codex') }
+    : {};
+  const env = { ...inheritedEnv, ...(options.env || {}), ...homeEnv };
 
   try {
     const stdout = execFileSync('node', [SCRIPT, ...args], {
@@ -85,7 +97,7 @@ function runTests() {
     const projectRoot = createTempDir('uninstall-project-');
 
     try {
-      const installStdout = execFileSync('node', [INSTALL_SCRIPT, '--target', 'cursor', 'typescript'], {
+      const installStdout = execFileSync('node', [INSTALL_SCRIPT, '--target', 'cursor', 'typescript', '--enable-hooks'], {
         cwd: projectRoot,
         env: {
           ...process.env,
@@ -114,6 +126,59 @@ function runTests() {
       assert.ok(!fs.existsSync(managedPath));
       assert.ok(!fs.existsSync(statePath));
       assert.ok(fs.existsSync(unrelatedPath));
+    } finally {
+      cleanup(homeDir);
+      cleanup(projectRoot);
+    }
+  })) passed++; else failed++;
+
+  if (test('uninstalls the project hook module boundary and preserves user Claude package data', () => {
+    const homeDir = createTempDir('uninstall-claude-project-esm-home-');
+    const projectRoot = createTempDir('uninstall-claude-project-esm-');
+    const claudeRoot = path.join(projectRoot, '.claude');
+    const userPackagePath = path.join(claudeRoot, 'package.json');
+    const scriptsPackagePath = path.join(claudeRoot, 'scripts', 'package.json');
+    const hooksPackagePath = path.join(claudeRoot, 'scripts', 'hooks', 'package.json');
+    const libPackagePath = path.join(claudeRoot, 'scripts', 'lib', 'package.json');
+    const statePath = path.join(claudeRoot, 'ecc', 'install-state.json');
+    const userPackage = '{"name":"user-claude-config","type":"module"}\n';
+    const userScriptsPackage = '{"name":"user-claude-scripts","type":"module"}\n';
+
+    try {
+      fs.writeFileSync(path.join(projectRoot, 'package.json'), '{"type":"module"}\n');
+      fs.mkdirSync(path.dirname(scriptsPackagePath), { recursive: true });
+      fs.writeFileSync(userPackagePath, userPackage);
+      fs.writeFileSync(scriptsPackagePath, userScriptsPackage);
+
+      execFileSync(
+        'node',
+        [INSTALL_SCRIPT, '--target', 'claude-project', '--profile', 'core', '--enable-hooks'],
+        {
+          cwd: projectRoot,
+          env: {
+            ...process.env,
+            HOME: homeDir,
+            USERPROFILE: homeDir,
+          },
+          encoding: 'utf8',
+          stdio: ['pipe', 'pipe', 'pipe'],
+          timeout: CLI_TIMEOUT_MS,
+        }
+      );
+      assert.deepStrictEqual(JSON.parse(fs.readFileSync(hooksPackagePath, 'utf8')), { type: 'commonjs' });
+      assert.deepStrictEqual(JSON.parse(fs.readFileSync(libPackagePath, 'utf8')), { type: 'commonjs' });
+      assert.strictEqual(fs.readFileSync(scriptsPackagePath, 'utf8'), userScriptsPackage);
+
+      const uninstallResult = run(['--target', 'claude-project'], {
+        cwd: projectRoot,
+        homeDir,
+      });
+      assert.strictEqual(uninstallResult.code, 0, uninstallResult.stderr);
+      assert.strictEqual(fs.readFileSync(userPackagePath, 'utf8'), userPackage);
+      assert.strictEqual(fs.readFileSync(scriptsPackagePath, 'utf8'), userScriptsPackage);
+      assert.ok(!fs.existsSync(hooksPackagePath));
+      assert.ok(!fs.existsSync(libPackagePath));
+      assert.ok(!fs.existsSync(statePath));
     } finally {
       cleanup(homeDir);
       cleanup(projectRoot);
@@ -165,6 +230,7 @@ function runTests() {
             strategy: 'preserve-relative-path',
             ownership: 'managed',
             scaffoldOnly: false,
+            contentSha256: crypto.createHash('sha256').update('managed\n').digest('hex'),
           },
           {
             kind: 'merge-json',
@@ -276,6 +342,437 @@ function runTests() {
       assert.ok(parsed.results[0].plannedRemovals.includes(renderedPath));
       assert.ok(fs.existsSync(renderedPath));
       assert.ok(fs.existsSync(statePath));
+    } finally {
+      cleanup(homeDir);
+      cleanup(projectRoot);
+    }
+  })) passed++; else failed++;
+
+  // #2952: the global `ecc --dry-run uninstall` prefix sets ECC_DRY_RUN=1.
+  // The uninstaller must honor it exactly like the subcommand-level flag.
+  if (test('honors global ECC_DRY_RUN=1 without mutating managed files (#2952)', () => {
+    const homeDir = createTempDir('uninstall-home-');
+    const projectRoot = createTempDir('uninstall-project-');
+
+    try {
+      const targetRoot = path.join(projectRoot, '.cursor');
+      fs.mkdirSync(targetRoot, { recursive: true });
+      const normalizedTargetRoot = fs.realpathSync(targetRoot);
+      const statePath = path.join(normalizedTargetRoot, 'ecc-install-state.json');
+      const renderedPath = path.join(normalizedTargetRoot, 'generated.md');
+      fs.writeFileSync(renderedPath, '# generated\n');
+
+      writeState(statePath, {
+        adapter: { id: 'cursor-project', target: 'cursor', kind: 'project' },
+        targetRoot: normalizedTargetRoot,
+        installStatePath: statePath,
+        request: {
+          profile: null,
+          modules: ['platform-configs'],
+          includeComponents: [],
+          excludeComponents: [],
+          legacyLanguages: [],
+          legacyMode: false,
+        },
+        resolution: {
+          selectedModules: ['platform-configs'],
+          skippedModules: [],
+        },
+        operations: [
+          {
+            kind: 'render-template',
+            moduleId: 'platform-configs',
+            sourceRelativePath: '.cursor/generated.md.template',
+            destinationPath: renderedPath,
+            strategy: 'render-template',
+            ownership: 'managed',
+            scaffoldOnly: false,
+            renderedContent: '# generated\n',
+          },
+        ],
+        source: {
+          repoVersion: CURRENT_PACKAGE_VERSION,
+          repoCommit: 'abc123',
+          manifestVersion: CURRENT_MANIFEST_VERSION,
+        },
+      });
+
+      // No --dry-run flag: the global flag form must still be a no-op.
+      const uninstallResult = run(['--target', 'cursor', '--json'], {
+        cwd: projectRoot,
+        homeDir,
+        env: { ECC_DRY_RUN: '1' },
+      });
+      assert.strictEqual(uninstallResult.code, 0, uninstallResult.stderr);
+
+      const parsed = JSON.parse(uninstallResult.stdout);
+      assert.strictEqual(parsed.dryRun, true, 'ECC_DRY_RUN=1 must enable dry-run mode');
+      assert.ok(parsed.results[0].plannedRemovals.includes(renderedPath));
+      assert.ok(fs.existsSync(renderedPath), 'managed file must survive the dry run');
+      assert.ok(fs.existsSync(statePath), 'install-state must survive the dry run');
+    } finally {
+      cleanup(homeDir);
+      cleanup(projectRoot);
+    }
+  })) passed++; else failed++;
+
+  if (test('phrases dry-run human output as an unmistakable preview (#2952)', () => {
+    const homeDir = createTempDir('uninstall-home-');
+    const projectRoot = createTempDir('uninstall-project-');
+
+    try {
+      const targetRoot = path.join(projectRoot, '.cursor');
+      fs.mkdirSync(targetRoot, { recursive: true });
+      const normalizedTargetRoot = fs.realpathSync(targetRoot);
+      const statePath = path.join(normalizedTargetRoot, 'ecc-install-state.json');
+      const renderedPath = path.join(normalizedTargetRoot, 'generated.md');
+      fs.writeFileSync(renderedPath, '# generated\n');
+
+      writeState(statePath, {
+        adapter: { id: 'cursor-project', target: 'cursor', kind: 'project' },
+        targetRoot: normalizedTargetRoot,
+        installStatePath: statePath,
+        request: {
+          profile: null,
+          modules: ['platform-configs'],
+          includeComponents: [],
+          excludeComponents: [],
+          legacyLanguages: [],
+          legacyMode: false,
+        },
+        resolution: {
+          selectedModules: ['platform-configs'],
+          skippedModules: [],
+        },
+        operations: [
+          {
+            kind: 'render-template',
+            moduleId: 'platform-configs',
+            sourceRelativePath: '.cursor/generated.md.template',
+            destinationPath: renderedPath,
+            strategy: 'render-template',
+            ownership: 'managed',
+            scaffoldOnly: false,
+            renderedContent: '# generated\n',
+          },
+        ],
+        source: {
+          repoVersion: CURRENT_PACKAGE_VERSION,
+          repoCommit: 'abc123',
+          manifestVersion: CURRENT_MANIFEST_VERSION,
+        },
+      });
+
+      const uninstallResult = run(['--target', 'cursor', '--dry-run'], {
+        cwd: projectRoot,
+        homeDir,
+      });
+      assert.strictEqual(uninstallResult.code, 0, uninstallResult.stderr);
+
+      assert.ok(uninstallResult.stdout.includes('dry run'), 'summary header must carry the dry-run marker');
+      assert.ok(uninstallResult.stdout.includes('WOULD UNINSTALL (dry run)'), 'status must use conditional wording');
+      assert.ok(uninstallResult.stdout.includes('Would remove:'), 'path count must use conditional wording');
+      assert.ok(!uninstallResult.stdout.includes('Status: UNINSTALLED'), 'dry run must not claim UNINSTALLED');
+      assert.ok(!uninstallResult.stdout.includes('Removed paths:'), 'dry run must not claim removal');
+    } finally {
+      cleanup(homeDir);
+      cleanup(projectRoot);
+    }
+  })) passed++; else failed++;
+
+  if (test('reports preserved legacy Antigravity files as an incomplete uninstall', () => {
+    const homeDir = createTempDir('uninstall-home-');
+    const projectRoot = createTempDir('uninstall-project-');
+
+    try {
+      const targetRoot = path.join(projectRoot, '.agent');
+      fs.mkdirSync(path.join(targetRoot, 'rules'), { recursive: true });
+      const normalizedTargetRoot = fs.realpathSync(targetRoot);
+      const statePath = path.join(normalizedTargetRoot, 'ecc-install-state.json');
+      const editedPath = path.join(normalizedTargetRoot, 'rules', 'common-coding-style.md');
+      fs.writeFileSync(editedPath, 'customer edit\n');
+
+      writeState(statePath, {
+        adapter: { id: 'antigravity-project', target: 'antigravity', kind: 'project' },
+        targetRoot: normalizedTargetRoot,
+        installStatePath: statePath,
+        request: {
+          profile: null,
+          modules: [],
+          includeComponents: [],
+          excludeComponents: [],
+          legacyLanguages: ['typescript'],
+          legacyMode: true,
+        },
+        resolution: {
+          selectedModules: ['legacy-antigravity-install'],
+          skippedModules: [],
+        },
+        operations: [{
+          kind: 'copy-file',
+          moduleId: 'rules-core',
+          sourceRelativePath: 'rules/common/coding-style.md',
+          destinationPath: editedPath,
+          strategy: 'flatten-copy',
+          ownership: 'managed',
+          scaffoldOnly: false,
+        }],
+        source: {
+          repoVersion: CURRENT_PACKAGE_VERSION,
+          repoCommit: 'abc123',
+          manifestVersion: CURRENT_MANIFEST_VERSION,
+        },
+      });
+
+      const dryRun = run(['--target', 'antigravity', '--dry-run', '--json'], {
+        cwd: projectRoot,
+        homeDir,
+      });
+      assert.strictEqual(dryRun.code, 1);
+      const parsed = JSON.parse(dryRun.stdout);
+      assert.strictEqual(parsed.results[0].status, 'partial');
+      assert.deepStrictEqual(parsed.results[0].plannedRemovals, []);
+      assert.deepStrictEqual(parsed.results[0].retainedPaths, [editedPath]);
+      assert.strictEqual(parsed.summary.partialCount, 1);
+
+      const applied = run(['--target', 'antigravity'], {
+        cwd: projectRoot,
+        homeDir,
+      });
+      assert.strictEqual(applied.code, 1);
+      assert.ok(applied.stdout.includes('Status: PARTIAL'));
+      assert.ok(applied.stdout.includes('Legacy Antigravity files were preserved'));
+      assert.ok(applied.stdout.includes(editedPath));
+      assert.ok(fs.existsSync(editedPath));
+      assert.ok(fs.existsSync(statePath));
+    } finally {
+      cleanup(homeDir);
+      cleanup(projectRoot);
+    }
+  })) passed++; else failed++;
+
+  if (test('auto-detects legacy sync-ecc-to-codex.sh install and removes artifacts without touching conversations or unrelated config keys', () => {
+    const homeDir = createTempDir('uninstall-legacy-codex-home-');
+    const projectRoot = createTempDir('uninstall-legacy-codex-project-');
+
+    try {
+      const codexHome = path.join(homeDir, '.codex');
+      const configPath = path.join(codexHome, 'config.toml');
+      const agentsPath = path.join(codexHome, 'AGENTS.md');
+      const promptPath = path.join(codexHome, 'prompts', 'ecc-plan.md');
+      const conversationPath = path.join(codexHome, 'conversations', 'keep-me.md');
+      const userFilePath = path.join(codexHome, 'user-owned.txt');
+
+      fs.mkdirSync(codexHome, { recursive: true });
+      fs.writeFileSync(configPath, 'model = "user"\n');
+      fs.writeFileSync(agentsPath, '# User instructions\n');
+      fs.mkdirSync(path.dirname(promptPath), { recursive: true });
+
+      const statePath = beginLegacySyncState({
+        codexHome,
+        backupDir: path.join(codexHome, 'backups', 'ecc-test'),
+      });
+      recordLegacySyncPath({ statePath, filePath: configPath });
+      recordLegacySyncPath({ statePath, filePath: agentsPath });
+      recordLegacySyncPath({ statePath, filePath: promptPath });
+
+      fs.writeFileSync(configPath, 'model = "user"\napproval_policy = "on-request"\n');
+      fs.writeFileSync(
+        agentsPath,
+        '# User instructions\n\n<!-- BEGIN ECC -->\n# ECC managed\n<!-- END ECC -->\n'
+      );
+      fs.writeFileSync(promptPath, '# ECC generated prompt\n');
+      finalizeLegacySyncState({ statePath });
+
+      fs.mkdirSync(path.dirname(conversationPath), { recursive: true });
+      fs.writeFileSync(conversationPath, 'conversation history');
+      fs.writeFileSync(userFilePath, 'unrelated');
+
+      const uninstallResult = run([], { cwd: projectRoot, homeDir });
+      assert.strictEqual(uninstallResult.code, 0, uninstallResult.stderr);
+      assert.ok(!uninstallResult.stdout.includes('No ECC install-state files found'), uninstallResult.stdout);
+      assert.ok(uninstallResult.stdout.includes('Legacy Codex sync cleanup summary'), uninstallResult.stdout);
+      assert.ok(!fs.existsSync(promptPath));
+      assert.strictEqual(fs.readFileSync(configPath, 'utf8'), 'model = "user"\n');
+      assert.strictEqual(fs.readFileSync(agentsPath, 'utf8'), '# User instructions\n');
+      assert.strictEqual(fs.readFileSync(conversationPath, 'utf8'), 'conversation history');
+      assert.strictEqual(fs.readFileSync(userFilePath, 'utf8'), 'unrelated');
+      assert.ok(!fs.existsSync(statePath));
+    } finally {
+      cleanup(homeDir);
+      cleanup(projectRoot);
+    }
+  })) passed++; else failed++;
+
+  if (test('global dry-run environment previews legacy Codex cleanup without removing artifacts', () => {
+    const homeDir = createTempDir('uninstall-legacy-codex-dry-run-home-');
+    const projectRoot = createTempDir('uninstall-legacy-codex-dry-run-project-');
+
+    try {
+      const codexHome = path.join(homeDir, '.codex');
+      const promptPath = path.join(codexHome, 'prompts', 'ecc-plan.md');
+      fs.mkdirSync(path.dirname(promptPath), { recursive: true });
+
+      const statePath = beginLegacySyncState({
+        codexHome,
+        backupDir: path.join(codexHome, 'backups', 'ecc-test'),
+      });
+      recordLegacySyncPath({ statePath, filePath: promptPath });
+      fs.writeFileSync(promptPath, '# ECC generated prompt\n');
+      finalizeLegacySyncState({ statePath });
+
+      const uninstallResult = run(['--legacy-codex-sync'], {
+        cwd: projectRoot,
+        homeDir,
+        env: { ECC_DRY_RUN: '1' },
+      });
+
+      assert.strictEqual(uninstallResult.code, 0, uninstallResult.stderr);
+      assert.match(uninstallResult.stdout, /Status: PLANNED/);
+      assert.match(uninstallResult.stdout, /Planned changes:/);
+      assert.doesNotMatch(uninstallResult.stdout, /Status: UNINSTALLED|Removed paths:/);
+      assert.ok(fs.existsSync(promptPath), 'global dry-run must preserve legacy artifacts');
+      assert.ok(fs.existsSync(statePath), 'global dry-run must preserve legacy state');
+    } finally {
+      cleanup(homeDir);
+      cleanup(projectRoot);
+    }
+  })) passed++; else failed++;
+
+  if (test('rejects an invalid global dry-run value before legacy cleanup', () => {
+    const homeDir = createTempDir('uninstall-legacy-codex-invalid-dry-run-home-');
+    const projectRoot = createTempDir('uninstall-legacy-codex-invalid-dry-run-project-');
+
+    try {
+      const codexHome = path.join(homeDir, '.codex');
+      const promptPath = path.join(codexHome, 'prompts', 'ecc-plan.md');
+      fs.mkdirSync(path.dirname(promptPath), { recursive: true });
+
+      const statePath = beginLegacySyncState({
+        codexHome,
+        backupDir: path.join(codexHome, 'backups', 'ecc-test'),
+      });
+      recordLegacySyncPath({ statePath, filePath: promptPath });
+      fs.writeFileSync(promptPath, '# ECC generated prompt\n');
+      finalizeLegacySyncState({ statePath });
+
+      const uninstallResult = run(['--legacy-codex-sync'], {
+        cwd: projectRoot,
+        homeDir,
+        env: { ECC_DRY_RUN: 'true' },
+      });
+
+      assert.strictEqual(uninstallResult.code, 1);
+      assert.match(uninstallResult.stderr, /ECC_DRY_RUN must be "1" or "0" when set/);
+      assert.ok(fs.existsSync(promptPath), 'invalid dry-run input must preserve legacy artifacts');
+      assert.ok(fs.existsSync(statePath), 'invalid dry-run input must preserve legacy state');
+    } finally {
+      cleanup(homeDir);
+      cleanup(projectRoot);
+    }
+  })) passed++; else failed++;
+
+  if (test('does not misclassify a clean Codex home as a legacy install', () => {
+    const homeDir = createTempDir('uninstall-clean-codex-home-');
+    const projectRoot = createTempDir('uninstall-clean-codex-project-');
+
+    try {
+      const codexHome = path.join(homeDir, '.codex');
+      const configPath = path.join(codexHome, 'config.toml');
+      const conversationPath = path.join(codexHome, 'conversations', 'keep-me.md');
+
+      fs.mkdirSync(codexHome, { recursive: true });
+      fs.writeFileSync(configPath, 'model = "user"\n');
+      fs.mkdirSync(path.dirname(conversationPath), { recursive: true });
+      fs.writeFileSync(conversationPath, 'conversation history');
+
+      const uninstallResult = run([], { cwd: projectRoot, homeDir });
+      assert.strictEqual(uninstallResult.code, 0, uninstallResult.stderr);
+      assert.ok(uninstallResult.stdout.includes('No ECC install-state files found'), uninstallResult.stdout);
+      assert.ok(!uninstallResult.stdout.includes('Legacy Codex sync cleanup summary'), uninstallResult.stdout);
+      assert.strictEqual(fs.readFileSync(configPath, 'utf8'), 'model = "user"\n');
+      assert.strictEqual(fs.readFileSync(conversationPath, 'utf8'), 'conversation history');
+    } finally {
+      cleanup(homeDir);
+      cleanup(projectRoot);
+    }
+  })) passed++; else failed++;
+
+  if (test('explicit --legacy-codex-sync on a clean home reports not-found without removing files', () => {
+    const homeDir = createTempDir('uninstall-legacy-clean-home-');
+    const projectRoot = createTempDir('uninstall-legacy-clean-project-');
+
+    try {
+      const codexHome = path.join(homeDir, '.codex');
+      const configPath = path.join(codexHome, 'config.toml');
+
+      fs.mkdirSync(codexHome, { recursive: true });
+      fs.writeFileSync(configPath, 'model = "user"\n');
+
+      const uninstallResult = run(['--legacy-codex-sync', '--json'], { cwd: projectRoot, homeDir });
+      assert.strictEqual(uninstallResult.code, 0, uninstallResult.stderr);
+      const parsed = JSON.parse(uninstallResult.stdout);
+      assert.strictEqual(parsed.status, 'not-found');
+      assert.deepStrictEqual(parsed.plannedRemovals, []);
+      assert.deepStrictEqual(parsed.retainedPaths, []);
+      assert.strictEqual(fs.readFileSync(configPath, 'utf8'), 'model = "user"\n');
+    } finally {
+      cleanup(homeDir);
+      cleanup(projectRoot);
+    }
+  })) passed++; else failed++;
+
+  if (test('does not auto-fallback to a marker-only AGENTS.md without a legacy ownership manifest', () => {
+    const homeDir = createTempDir('uninstall-marker-only-codex-home-');
+    const projectRoot = createTempDir('uninstall-marker-only-codex-project-');
+
+    try {
+      const codexHome = path.join(homeDir, '.codex');
+      const configPath = path.join(codexHome, 'config.toml');
+      const agentsPath = path.join(codexHome, 'AGENTS.md');
+      const conversationPath = path.join(codexHome, 'conversations', 'keep-me.md');
+
+      fs.mkdirSync(codexHome, { recursive: true });
+      fs.writeFileSync(configPath, 'model = "user"\n');
+      fs.writeFileSync(
+        agentsPath,
+        '# User instructions\n\n<!-- BEGIN ECC -->\n# ECC managed\n<!-- END ECC -->\n'
+      );
+      fs.mkdirSync(path.dirname(conversationPath), { recursive: true });
+      fs.writeFileSync(conversationPath, 'conversation history');
+
+      const uninstallResult = run([], { cwd: projectRoot, homeDir });
+      assert.strictEqual(uninstallResult.code, 0, uninstallResult.stderr);
+      assert.ok(uninstallResult.stdout.includes('No ECC install-state files found'), uninstallResult.stdout);
+      assert.ok(!uninstallResult.stdout.includes('Legacy Codex sync cleanup summary'), uninstallResult.stdout);
+      assert.strictEqual(fs.readFileSync(agentsPath, 'utf8'), '# User instructions\n\n<!-- BEGIN ECC -->\n# ECC managed\n<!-- END ECC -->\n');
+      assert.strictEqual(fs.readFileSync(configPath, 'utf8'), 'model = "user"\n');
+      assert.strictEqual(fs.readFileSync(conversationPath, 'utf8'), 'conversation history');
+    } finally {
+      cleanup(homeDir);
+      cleanup(projectRoot);
+    }
+  })) passed++; else failed++;
+
+  if (test('explicit --legacy-codex-sync removes a marker-only AGENTS.md block', () => {
+    const homeDir = createTempDir('uninstall-explicit-marker-codex-home-');
+    const projectRoot = createTempDir('uninstall-explicit-marker-codex-project-');
+
+    try {
+      const codexHome = path.join(homeDir, '.codex');
+      const agentsPath = path.join(codexHome, 'AGENTS.md');
+
+      fs.mkdirSync(codexHome, { recursive: true });
+      fs.writeFileSync(
+        agentsPath,
+        '# User instructions\n\n<!-- BEGIN ECC -->\n# ECC managed\n<!-- END ECC -->\n'
+      );
+
+      const uninstallResult = run(['--legacy-codex-sync'], { cwd: projectRoot, homeDir });
+      assert.strictEqual(uninstallResult.code, 0, uninstallResult.stderr);
+      assert.ok(uninstallResult.stdout.includes('Legacy Codex sync cleanup summary'), uninstallResult.stdout);
+      assert.ok(uninstallResult.stdout.includes('Status: UNINSTALLED'), uninstallResult.stdout);
+      assert.strictEqual(fs.readFileSync(agentsPath, 'utf8'), '# User instructions\n\n');
     } finally {
       cleanup(homeDir);
       cleanup(projectRoot);

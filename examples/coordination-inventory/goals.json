@@ -1,0 +1,18 @@
+{
+  "version": 1,
+  "repositories": [{ "id": "repo", "sources": { "src/a.js": "require('../lib/b')", "lib/b.js": "" } }],
+  "tasks": [
+    { "id": "a", "repoId": "repo", "paths": ["src/a.js"], "status": "running" },
+    { "id": "b", "repoId": "repo", "paths": ["lib/b.js"], "parentId": "a" }
+  ],
+  "goals": [
+    { "id": "goal-active", "taskId": "a", "kind": "native", "status": "active", "updatedAt": "2026-09-08T06:30:00.000Z" },
+    { "id": "goal-complete", "taskId": "b", "kind": "native", "status": "complete", "updatedAt": "2026-09-08T06:30:00.000Z" }
+  ],
+  "sessions": [
+    { "id": "session-active", "taskId": "a", "goalId": "goal-active", "status": "open", "updatedAt": "2026-09-08T06:30:00.000Z" },
+    { "id": "session-open-complete", "taskId": "b", "goalId": "goal-complete", "status": "open" },
+    { "id": "terminal-only", "status": "open" }
+  ],
+  "leases": []
+}

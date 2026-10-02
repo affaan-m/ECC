@@ -1,0 +1,16 @@
+{
+  "id": "recurring-incident",
+  "category": "learning-loop-chain",
+  "manualIds": [],
+  "checkTimeoutMs": 60000,
+  "steps": [
+    { "manualIds": ["skill:error-handling"] },
+    { "manualIds": ["skill:error-handling"] },
+    { "manualIds": ["skill:continuous-learning"] }
+  ],
+  "selection": {
+    "id": "complex-recurring-incident",
+    "category": "complex-learning-loop",
+    "expectedIds": ["skill:continuous-learning"]
+  }
+}

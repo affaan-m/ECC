@@ -56,18 +56,21 @@ function createFixture(state = {}) {
     callsPath,
   };
 }
-function runSetup(fixture, args) {
+function runSetup(fixture, args, options = {}) {
+  const env = {
+    ...process.env,
+    HOME: fixture.homeDir,
+    USERPROFILE: fixture.homeDir,
+    CLAUDE_CONFIG_DIR: fixture.configDir,
+    PATH: options.path || `${fixture.binDir}${path.delimiter}${process.env.PATH || ''}`,
+    ECC_TEST_CLAUDE_STATE: fixture.statePath,
+    ECC_TEST_CLAUDE_CALLS: fixture.callsPath,
+    ...options.env,
+  };
+  if (options.defaultClaudeConfig) delete env.CLAUDE_CONFIG_DIR;
   return spawnSync(process.execPath, [setupScript, ...args], {
     cwd: fixture.projectRoot,
-    env: {
-      ...process.env,
-      HOME: fixture.homeDir,
-      USERPROFILE: fixture.homeDir,
-      CLAUDE_CONFIG_DIR: fixture.configDir,
-      PATH: `${fixture.binDir}${path.delimiter}${process.env.PATH || ''}`,
-      ECC_TEST_CLAUDE_STATE: fixture.statePath,
-      ECC_TEST_CLAUDE_CALLS: fixture.callsPath,
-    },
+    env,
     encoding: 'utf8',
     timeout: 15000,
   });
@@ -75,6 +78,35 @@ function runSetup(fixture, args) {
 function quoteShellArgument(value) {
   return `'${String(value).replace(/'/g, `'\\''`)}'`;
 }
+
+// Answer only after the PTY displays a prompt. Fixed-delay pipes can deliver
+// blank defaults and EOF before the wizard creates its readline interface.
+function driveInteractiveTerminal() {
+  const { spawn } = require('child_process');
+  const { pseudoTerminalCommand, answers } = JSON.parse(process.argv[1]);
+  // Node pipes are sockets on macOS; script requires a real pipe for stdin.
+  const child = spawn('sh', ['-c', `cat | ${pseudoTerminalCommand}`], { stdio: ['pipe', 'pipe', 'pipe'] });
+  let pending = '';
+  let answerIndex = 0;
+  child.stdout.on('data', chunk => {
+    process.stdout.write(chunk);
+    pending += chunk.toString('utf8');
+    const prompt = /Choose(?: \[\d+\])?: |\[y\/N\] /.exec(pending);
+    if (!prompt) return;
+    pending = pending.slice(prompt.index + prompt[0].length);
+    if (answerIndex >= answers.length) { child.stdin.end(); return; }
+    const answer = answers[answerIndex++];
+    child.stdin.write(answer === '\u0004' ? answer : `${answer}\n`);
+    if (answerIndex === answers.length) child.stdin.end();
+  });
+  child.stderr.on('data', chunk => process.stderr.write(chunk));
+  child.stdin.on('error', error => {
+    if (error.code !== 'EPIPE') { process.stderr.write(error.message); process.exitCode = 1; }
+  });
+  child.on('error', error => { process.stderr.write(error.message); process.exitCode = 1; });
+  child.on('close', code => { process.exitCode = code ?? 1; });
+}
+
 function runInteractiveEccSetup(fixture, options = {}) {
   if (process.platform === 'win32') {
     return null;
@@ -82,12 +114,18 @@ function runInteractiveEccSetup(fixture, options = {}) {
 
   const args = options.args || ['--dry-run'];
   const answers = options.answers || ['3', '3'];
-  const command = [
+  const setupCommand = [
     process.execPath,
     eccScript,
     'setup',
     ...args,
   ];
+  const command = options.delayedStartup
+    ? [process.execPath, '-e', `setTimeout(() => {
+      const result = require('child_process').spawnSync(process.argv[1], process.argv.slice(2), { stdio: 'inherit' });
+      process.exitCode = result.status ?? 1;
+    }, 1250);`, ...setupCommand]
+    : setupCommand;
   const scriptArgs = process.platform === 'darwin'
     ? ['-q', '-e', '/dev/null', ...command]
     : [
@@ -97,16 +135,11 @@ function runInteractiveEccSetup(fixture, options = {}) {
       command.map(quoteShellArgument).join(' '),
       '/dev/null',
     ];
-  const pseudoTerminalCommand = ['script', ...scriptArgs]
-    .map(quoteShellArgument)
-    .join(' ');
-  const answerCommands = answers
-    .map(answer => `sleep 0.5; printf '%s\\n' ${quoteShellArgument(answer)}`)
-    .join('; ');
-
-  return spawnSync('sh', [
-    '-c',
-    `(${answerCommands}; sleep 0.1) | ${pseudoTerminalCommand}`,
+  const pseudoTerminalCommand = ['script', ...scriptArgs].map(quoteShellArgument).join(' ');
+  return spawnSync(process.execPath, [
+    '-e',
+    `(${driveInteractiveTerminal.toString()})();`,
+    JSON.stringify({ pseudoTerminalCommand, answers }),
   ], {
     cwd: fixture.projectRoot,
     env: {
@@ -267,6 +300,96 @@ test('dry-run JSON emits JSON only and reads inventory without mutation', () => 
   });
 });
 
+test('dry-run leaves a pristine HOME unchanged when Claude inventory creates backups', () => {
+  withFixture({}, fixture => {
+    assert.deepStrictEqual(fs.readdirSync(fixture.homeDir), []);
+    assert.deepStrictEqual(fs.readdirSync(fixture.projectRoot), []);
+    const result = runSetup(fixture, [
+      '--mode', 'claude-plugin',
+      '--scope', 'local',
+      '--hooks', 'minimal',
+      '--dry-run',
+      '--json',
+    ], {
+      defaultClaudeConfig: true,
+      env: { ECC_TEST_CLAUDE_CREATE_READ_ARTIFACTS: '1' },
+    });
+    assert.strictEqual(result.status, 0, result.stderr);
+    assert.deepStrictEqual(fs.readdirSync(fixture.homeDir), []);
+    assert.deepStrictEqual(fs.readdirSync(fixture.projectRoot), []);
+  });
+});
+
+test('dry-run isolates pre-existing Claude backups and symlinked project settings', () => {
+  if (process.platform === 'win32') return;
+
+  withFixture({}, fixture => {
+    const defaultConfigDir = path.join(fixture.homeDir, '.claude');
+    const backupDir = path.join(defaultConfigDir, 'backups');
+    const backupPath = path.join(backupDir, 'existing.backup');
+    const statePath = path.join(fixture.homeDir, '.claude.json');
+    const projectConfigDir = path.join(fixture.projectRoot, '.claude');
+    const settingsTarget = path.join(fixture.root, 'settings-target.json');
+    const settingsPath = path.join(projectConfigDir, 'settings.local.json');
+    const xdgDataHome = path.join(fixture.homeDir, 'xdg-data');
+    fs.mkdirSync(backupDir, { recursive: true });
+    fs.mkdirSync(projectConfigDir, { recursive: true });
+    fs.writeFileSync(backupPath, 'original-backup\n');
+    fs.writeFileSync(statePath, '{"original":true}\n');
+    fs.writeFileSync(settingsTarget, '{"enabledPlugins":{"ecc@ecc":true}}\n');
+    fs.symlinkSync(settingsTarget, settingsPath, 'file');
+
+    const result = runSetup(fixture, [
+      '--mode', 'claude-plugin',
+      '--scope', 'local',
+      '--hooks', 'minimal',
+      '--dry-run',
+      '--json',
+    ], {
+      defaultClaudeConfig: true,
+      env: {
+        ECC_TEST_CLAUDE_CREATE_READ_ARTIFACTS: '1',
+        ECC_TEST_CLAUDE_OVERWRITE_READ_ARTIFACTS: '1',
+        ECC_TEST_CLAUDE_WRITE_XDG_DATA: '1',
+        XDG_DATA_HOME: xdgDataHome,
+      },
+    });
+    assert.strictEqual(result.status, 0, result.stderr);
+    assert.strictEqual(fs.readFileSync(backupPath, 'utf8'), 'original-backup\n');
+    assert.strictEqual(fs.readFileSync(statePath, 'utf8'), '{"original":true}\n');
+    assert.strictEqual(
+      fs.readFileSync(settingsTarget, 'utf8'),
+      '{"enabledPlugins":{"ecc@ecc":true}}\n'
+    );
+    assert.strictEqual(fs.lstatSync(settingsPath).isSymbolicLink(), true);
+    assert.strictEqual(
+      fs.existsSync(path.join(xdgDataHome, 'claude-provider-read.json')),
+      false
+    );
+  });
+});
+
+test('missing Git fails with an actionable prerequisite during dry-run', () => {
+  withFixture({}, fixture => {
+    const result = runSetup(fixture, [
+      '--mode', 'claude-plugin',
+      '--scope', 'user',
+      '--hooks', 'standard',
+      '--dry-run',
+      '--json',
+    ], { path: fixture.binDir });
+    assert.strictEqual(result.status, 1);
+    assert.strictEqual(result.stdout, '');
+    const payload = JSON.parse(result.stderr);
+    assert.strictEqual(payload.error.code, 'GIT_NOT_FOUND');
+    assert.strictEqual(payload.error.phase, 'preflight');
+    assert.match(payload.error.message, /Git is required for Claude marketplace setup/i);
+    assert.match(payload.error.message, /install Git/i);
+    assert.doesNotMatch(payload.error.message, /ERR_STREAM_PREMATURE_CLOSE/i);
+    assert.deepStrictEqual(readCalls(fixture), []);
+  });
+});
+
 test('setup automatically migrates an existing install to the selected scope and hooks', () => {
   withFixture({
     plugins: [{ id: 'ecc@ecc', scope: 'local', enabled: true, version: '1.9.0' }],
@@ -293,8 +416,8 @@ test('setup automatically migrates an existing install to the selected scope and
     const calls = readCalls(fixture);
     assert.ok(calls.some(argv => (
       argv.join(' ') === 'plugin install ecc@ecc --scope user'
-        + ' --config hooks_enabled=true --config hook_profile=minimal'
     )));
+    assert.ok(calls.every(argv => !argv.includes('--config')));
     assert.ok(calls.some(argv => (
       argv.join(' ') === 'plugin uninstall ecc@ecc --scope local --keep-data'
     )));
@@ -821,6 +944,7 @@ test('interactive defaults preserve an existing install scope and hook preferenc
     const result = runInteractiveEccSetup(fixture, {
       args: ['--dry-run'],
       answers: ['', ''],
+      delayedStartup: true,
     });
     assert.ifError(result.error);
     assert.strictEqual(result.status, 0, `${result.stdout}\n${result.stderr}`);

@@ -1,5 +1,5 @@
 ---
-name: scholar-evaluation
+name: scientific-thinking-scholar-evaluation
 description: 論文、提案書、文献レビュー、方法論セクション、証拠の質、引用サポート、研究論文フィードバックのための構造化された学術的作業評価。
 origin: community
 ---

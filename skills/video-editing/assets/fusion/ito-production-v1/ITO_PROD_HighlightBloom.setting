@@ -1,0 +1,10 @@
+{
+ Tools = ordered() {
+  ITO_PROD_Bloom = SoftGlow { Inputs = {
+   Threshold = Input { Value = 0.70, }, Gain = Input { Value = 0.12, },
+   XGlowSize = Input { Value = 6.0, }, YGlowSize = Input { Value = 6.0, },
+   Blend = Input { Value = 0.22, }, Alpha = Input { Value = 0, },
+   ClippingMode = Input { Value = FuID { "Frame" }, },
+  } },
+ }
+}

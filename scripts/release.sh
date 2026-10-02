@@ -77,7 +77,7 @@ fi
 if [[ "$OLD_VERSION" == "$VERSION" ]]; then
   echo "Error: Version $VERSION is already declared in release metadata."
   echo "After the merged commit passes CI, publish it through the tag workflow:"
-  echo "  git tag \"v$VERSION\""
+  echo "  git tag -s \"v$VERSION\" -m \"Release v$VERSION\""
   echo "  git push origin \"v$VERSION\""
   exit 1
 fi
@@ -328,10 +328,11 @@ node scripts/build-opencode.js
 node tests/scripts/build-opencode.test.js
 node tests/plugin-manifest.test.js
 
-# Stage, commit, tag, and push
+# Stage, commit, explicitly sign an annotated tag, and push. Signing failure
+# stops here under set -e; no personal tag.gpgSign default is assumed.
 git add "$ROOT_PACKAGE_JSON" "$PACKAGE_LOCK_JSON" "$ROOT_AGENTS_MD" "$TR_AGENTS_MD" "$ZH_CN_AGENTS_MD" "$AGENT_YAML" "$VERSION_FILE" "$PLUGIN_JSON" "$MARKETPLACE_JSON" "$CODEX_MARKETPLACE_JSON" "$CODEX_PLUGIN_JSON" "$CODEX_MARKETPLACE_PLUGIN_JSON" "$OPENCODE_PACKAGE_JSON" "$OPENCODE_PACKAGE_LOCK_JSON" "$OPENCODE_ECC_HOOKS_PLUGIN" "$README_FILE" "$ROOT_ZH_CN_README_FILE" "$TR_README_FILE" "$PT_BR_README_FILE" "$ZH_CN_README_FILE" "$SELECTIVE_INSTALL_ARCHITECTURE_DOC"
 git commit -m "chore: bump plugin version to $VERSION"
-git tag "v$VERSION"
+git tag -s "v$VERSION" -m "Release v$VERSION"
 git push origin main "v$VERSION"
 
 echo "Released v$VERSION"

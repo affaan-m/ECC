@@ -1,0 +1,7 @@
+{
+ Tools = ordered() {
+  ITO_V28_SubjectRect = RectangleMask { Inputs = { Width = Input { Value = 0.28, }, Height = Input { Value = 0.34, }, BorderWidth = Input { Value = 0.012, }, Solid = Input { Value = 0, }, } },
+  ITO_V28_SubjectGlow = SoftGlow { Inputs = { Gain = Input { Value = 0.85, }, GlowSize = Input { Value = 12.0, }, EffectMask = Input { SourceOp = "ITO_V28_SubjectRect", Source = "Mask", }, } },
+  ITO_V28_SubjectFrame = Transform { Inputs = { Center = Input { Value = { 0.5, 0.42 }, }, Input = Input { SourceOp = "ITO_V28_SubjectGlow", Source = "Output", }, } }
+ }
+}

@@ -216,7 +216,8 @@ function hasFileWithExtension(rootDir, relativeDir, extensions) {
 
 function detectTargetMode(rootDir) {
   const packageJson = safeParseJson(safeRead(rootDir, 'package.json'));
-  if (packageJson?.name === 'everything-claude-code') {
+  // 'everything-claude-code' is the legacy package name, kept for older checkouts.
+  if (['ecc-universal', 'everything-claude-code'].includes(packageJson?.name)) {
     return 'repo';
   }
 
@@ -232,6 +233,8 @@ function detectTargetMode(rootDir) {
   return 'consumer';
 }
 
+// The everything-claude-code entries below are legacy install ids, kept so
+// existing 1.x installs are still detected.
 const ECC_PLUGIN_KEY_PATTERNS = [
   /^ecc@/i,
   /^everything-claude-code@/i,
@@ -831,7 +834,7 @@ function getConsumerChecks(rootDir) {
       points: 4,
       scopes: ['repo'],
       path: '~/.claude/plugins/ecc/ (legacy everything-claude-code paths also supported)',
-      description: 'Everything Claude Code is installed for the active user or project',
+      description: 'ECC is installed for the active user or project',
       pass: Boolean(pluginInstall),
       fix: 'Install the ECC plugin for this user or project before auditing project-specific harness quality.',
     },

@@ -1,0 +1,20 @@
+{
+  "kind": "manifest",
+  "expected": "reject",
+  "payload": {
+    "modality": "video",
+    "provider_calls": 0,
+    "provider_execution": false,
+    "dry_run": true,
+    "submit": false,
+    "requests": [
+      {
+        "provider_calls": 0,
+        "provider_execution": false,
+        "dry_run": false,
+        "submit": false,
+        "provider_call_mode": "disabled"
+      }
+    ]
+  }
+}

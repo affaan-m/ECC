@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 1,
+  "id": "full@1",
+  "description": "Proposed complete canonical skill discovery projection. Agents, commands, rules, hooks and tool schemas remain outside this projection; native activation is unobserved.",
+  "registryId": "skill-registry@1",
+  "selection": {
+    "eager": "all",
+    "required": ["skill:configure-ecc", "skill:context-budget", "skill:ecc-guide"],
+    "remainder": "routed"
+  },
+  "budget": { "tokens": 8000, "mode": "report-only" }
+}

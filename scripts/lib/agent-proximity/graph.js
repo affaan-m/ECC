@@ -25,9 +25,11 @@ function toRepoRel(repoRoot, absPath) {
 
 // Match relative specifiers only (./ or ../). Bare specifiers are node_modules
 // and never the target of an in-repo collision.
+// Consume import whitespace once; a word boundary before `from` avoids
+// overlapping whitespace quantifiers on incomplete import statements.
 const SPEC_PATTERNS = [
   /require\(\s*['"](\.[^'"]+)['"]\s*\)/g,
-  /import\s+(?:[^'"]*?\s+from\s+)?['"](\.[^'"]+)['"]/g,
+  /import\s+(?!\s)(?:[^'"]*?\bfrom\s+)?['"](\.[^'"]+)['"]/g,
   /import\(\s*['"](\.[^'"]+)['"]\s*\)/g,
   /export\s+(?:\*|\{[^}]*\})\s+from\s+['"](\.[^'"]+)['"]/g
 ];

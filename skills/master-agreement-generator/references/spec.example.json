@@ -1,0 +1,16 @@
+{
+  "file": "AcmeSupplier",
+  "short": "Acme",
+  "role": "supplier",
+  "date": "September 2, 2026",
+  "legal": "Acme Compute Ltd",
+  "juris": "England and Wales company",
+  "addr": "1 Example Street, London",
+  "signer": "A. Person",
+  "title": "Director",
+  "email": "signer@example.com",
+  "schedule": [
+    ["1", "2026-08-20", "Lot A (16 nodes)", "introducer", "12 months", "standard"]
+  ],
+  "supplement": "the Data Processing Addendum dated 2026-09-01"
+}

@@ -1,0 +1,11 @@
+MEASURED GROUND TRUTH (from numeric analysis of all sampled frames across the reference set). These values are FACTS. Do not contradict them, do not call this footage neutral or ungraded:
+- black point L*0.0, white point L*99.7, contrast (std L*) 34.7
+- global cast: a*+9.0 (green<->magenta), b*-11.2 (blue<->yellow)
+- chroma by luminance zone -> L*8: a*+0.5 b*-1.5; L*25: a*+35.4 b*-44.7; L*45: a*+23.1 b*-17.7; L*65: a*+2.9 b*-10.0; L*88: a*-1.0 b*-0.5
+- dominant palette: #131215, #e4e4eb, #67505b, #b19b9c, #1214f4
+- cut rhythm: 77 shots, mean 0.78s, 77 cuts/min, rhythm variance 1.06
+
+Your job is to describe HOW this measured grade manifests visually, not whether it exists.
+Write for a generative video model as DIRECTIVE instructions.
+BANNED words: varied, mixed, dynamic, various, inconsistent, no consistent, some, often, sometimes, likely.
+Every field must COMMIT to one specific choice. If the references genuinely differ, pick the DOMINANT one and state it.

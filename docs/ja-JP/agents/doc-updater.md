@@ -2,7 +2,7 @@
 name: doc-updater
 description: ドキュメントとコードマップのスペシャリスト。コードマップとドキュメントの更新に積極的に使用してください。/update-codemapsと/update-docsを実行し、docs/CODEMAPS/*を生成し、READMEとガイドを更新します。
 tools: ["Read", "Write", "Edit", "Bash", "Grep", "Glob"]
-model: opus
+model: haiku
 ---
 
 # ドキュメント & コードマップスペシャリスト

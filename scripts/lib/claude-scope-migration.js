@@ -10,7 +10,9 @@ const {
   VALID_SCOPES,
   assertNoConflictingEccPlugins,
   assertSafeLocalInventory,
+  assertGitAvailable,
   currentEccPlugins,
+  createDryRunClaudeRunner,
   deriveHookMode,
   ensureOfficialMarketplace,
   ensurePluginAtScope,
@@ -147,15 +149,13 @@ function validateExpectedScopes(plugins, expectedScopes, options = {}) {
   return installed;
 }
 
-function plannedActions(migration, destinationScope, marketplaceAction, hookConfiguration) {
+function plannedActions(migration, destinationScope, marketplaceAction) {
   const actions = [];
   if (migration.mode === 'migrate') {
     actions.push(marketplaceAction);
     actions.push([
       'plugin', 'install', CURRENT_PLUGIN_ID,
       '--scope', destinationScope,
-      '--config', `hooks_enabled=${hookConfiguration.hooks_enabled}`,
-      '--config', `hook_profile=${hookConfiguration.hook_profile}`,
     ]);
   }
   actions.push(['plugin', 'list', '--json']);
@@ -256,7 +256,14 @@ function migrateClaudePluginScope(options = {}, dependencies = {}) {
   const settingsPath = path.join(paths.configDir, 'settings.json');
   const settings = readSettings(settingsPath);
   assertSafeLocalInventory(paths);
-  const run = dependencies.runClaude || runClaude;
+  assertGitAvailable(
+    { cwd: paths.projectRoot },
+    { spawnSync: dependencies.spawnSync }
+  );
+  const providerRun = dependencies.runClaude || runClaude;
+  const run = options.dryRun
+    ? createDryRunClaudeRunner(providerRun, paths, options)
+    : providerRun;
   const plugins = readPluginInventory(run, paths.projectRoot, 'inventory');
   const migration = assertMigrationInventory(plugins, options.scope);
   const hooks = options.hooks === undefined
@@ -339,8 +346,7 @@ function migrateClaudePluginScope(options = {}, dependencies = {}) {
       plannedActions: plannedActions(
         migration,
         options.scope,
-        marketplaceAction,
-        hookConfiguration
+        marketplaceAction
       ),
       pluginId: CURRENT_PLUGIN_ID,
       sourceScope: migration.sourceScope,
@@ -354,6 +360,7 @@ function migrateClaudePluginScope(options = {}, dependencies = {}) {
       projectRoot: paths.projectRoot,
       run,
       scope: options.scope,
+      spawnSync: dependencies.spawnSync,
     });
     ensurePluginAtScope({
       hookConfiguration,

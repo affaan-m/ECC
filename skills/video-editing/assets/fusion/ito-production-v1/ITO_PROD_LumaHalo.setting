@@ -1,0 +1,16 @@
+{
+ Tools = ordered() {
+  ITO_PROD_Contours = Filter { Inputs = { FilterType = Input { Value = 3, }, Power = Input { Value = 1, }, Alpha = Input { Value = 0, }, } },
+  ITO_PROD_EdgeMask = BitmapMask { Inputs = {
+   Image = Input { SourceOp = "ITO_PROD_Contours", Source = "Output", },
+   Channel = Input { Value = FuID { "Luminance" }, }, Low = Input { Value = 0.07, }, High = Input { Value = 0.35, },
+  } },
+  ITO_PROD_Halo = SoftGlow { Inputs = {
+   Threshold = Input { Value = 0.55, }, Gain = Input { Value = 0.10, },
+   XGlowSize = Input { Value = 2.0, }, YGlowSize = Input { Value = 2.0, }, Blend = Input { Value = 0.25, }, Alpha = Input { Value = 0, },
+   ClippingMode = Input { Value = FuID { "Frame" }, },
+   EffectMask = Input { SourceOp = "ITO_PROD_EdgeMask", Source = "Mask", },
+   GlowMask = Input { SourceOp = "ITO_PROD_EdgeMask", Source = "Mask", },
+  } },
+ }
+}

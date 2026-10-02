@@ -9,6 +9,8 @@ const { buildControlPaneAction } = require('./actions');
 const { buildControlPaneSnapshot, resolveControlPaneConfig } = require('./state');
 const { renderControlPaneHtml } = require('./ui');
 const { renderProximityVizHtml } = require('./proximity-viz');
+const { renderControlPlaneViewHtml } = require('./control-plane-view-ui');
+const { createControlPlaneViewSource } = require('./control-plane-view');
 const { claimWorkItem, moveWorkItem } = require('./work-item-mutations');
 
 // Run a single write against the local work-item store, then close it. Kept
@@ -185,6 +187,24 @@ function createControlPaneServer(options = {}) {
   const baseQuery = options.query || '';
   const allowedHostnames = buildAllowedHostnames(host);
 
+  // Live control-plane view: sessions + proximity scan + coordination
+  // inventory, joined as tasks/lanes/events with a 2D projection. The view
+  // source owns the rolling projection window so z-scores span ticks.
+  const viewSource = createControlPlaneViewSource({
+    projection: options.projection || {},
+    viewOptions: options.viewOptions || {},
+    buildSnapshot: () =>
+      buildControlPaneSnapshot({
+        repoRoot,
+        dbPath: resolvedConfig.dbPath,
+        stateDbPath: resolvedConfig.stateDbPath,
+        config: resolvedConfig,
+        allowActions,
+        includeProximity: true,
+        proximityOptions: options.proximityOptions
+      })
+  });
+
   const server = http.createServer(async (req, res) => {
     try {
       if (!isAllowedHostHeader(req.headers.host, allowedHostnames)) {
@@ -254,6 +274,29 @@ function createControlPaneServer(options = {}) {
           includeProximity: true
         });
         sendJson(res, 200, snapshot.proximity || { enabled: true, advisories: [], positions: [], links: [], counts: {} });
+        return;
+      }
+
+      // Control-plane live view: 2D projection + advisory events + inventory.
+      if (req.method === 'GET' && requestUrl.pathname === '/control-plane') {
+        sendText(res, 200, renderControlPlaneViewHtml(), 'text/html; charset=utf-8');
+        return;
+      }
+
+      if (req.method === 'GET' && requestUrl.pathname === '/api/control-plane') {
+        sendJson(res, 200, await viewSource.build());
+        return;
+      }
+
+      if (req.method === 'GET' && requestUrl.pathname === '/api/control-plane/events') {
+        const view = await viewSource.build();
+        sendJson(res, 200, {
+          schemaVersion: view.schemaVersion,
+          generatedAt: view.generatedAt,
+          thresholds: view.thresholds,
+          events: view.events,
+          counts: { events: view.counts.events, advisories: view.counts.advisories, resolutions: view.counts.resolutions }
+        });
         return;
       }
 

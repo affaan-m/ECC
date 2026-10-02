@@ -19,6 +19,7 @@ const {
   isAllowedOrigin,
 } = require('./lib/loopback-guard');
 const { normalizeAgentTools } = require('./lib/agent-tools');
+const { readHooksConfig } = require('./lib/hooks-config');
 
 const DEFAULT_HOST = '127.0.0.1';
 
@@ -129,7 +130,9 @@ function loadHooks(_root) {
   const hooksPath = path.join(root, 'hooks', 'hooks.json');
   if (!fs.existsSync(hooksPath)) return [];
   try {
-    const data = JSON.parse(fs.readFileSync(hooksPath, 'utf8'));
+    // Ids and descriptions live in hooks/hooks.metadata.json so that hooks.json
+    // stays within the key set Claude Code's hooks schema accepts.
+    const data = readHooksConfig(hooksPath);
     const hooks = [];
     for (const [eventName, entries] of Object.entries(data.hooks || {})) {
       for (const entry of entries || []) {

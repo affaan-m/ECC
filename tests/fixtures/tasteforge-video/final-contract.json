@@ -1,0 +1,151 @@
+{
+  "genre_specs": [
+    {
+      "number": 1,
+      "style_fingerprint": "flash-ethereal",
+      "dry_run": true
+    },
+    {
+      "number": 2,
+      "style_fingerprint": "fluid-sketch",
+      "dry_run": true
+    }
+  ],
+  "receipt": {
+    "provider_calls": 0,
+    "provider_execution": false,
+    "dry_run": true,
+    "references": [
+      {
+        "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "source_duration": 6,
+        "probe": {
+          "duration": 6,
+          "sample_times": [0.75, 2.25],
+          "scene_changes": [0.75],
+          "style_samples": [
+            {
+              "time": 0.75,
+              "luma": 0.2,
+              "saturation": 0.4
+            }
+          ]
+        }
+      }
+    ]
+  },
+  "effect_recipe": {
+    "provider_calls": 0,
+    "provider_execution": false,
+    "dry_run": true,
+    "timeline_duration": 6,
+    "events": [
+      {
+        "effect": "cv_subject_glitch",
+        "time": 0.5,
+        "duration": 0.25,
+        "evidence": {
+          "reference_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "time": 0.75,
+          "source_duration": 6
+        },
+        "requires_subject_anchor": true,
+        "subject_anchor": {
+          "source_ref_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "evidence_time": 0.75,
+          "source_duration": 6,
+          "lost_policy": "disable_effect_until_track_recovers"
+        }
+      },
+      {
+        "effect": "flash_bloom",
+        "time": 2,
+        "duration": 0.5,
+        "evidence": {
+          "reference_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "time": 2.25,
+          "source_duration": 6
+        },
+        "requires_subject_anchor": false
+      },
+      {
+        "effect": "ink_bleed",
+        "time": 4.25,
+        "duration": 0.5,
+        "evidence": {
+          "reference_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "time": 0.75,
+          "source_duration": 6
+        },
+        "requires_subject_anchor": false
+      }
+    ]
+  },
+  "manifests": {
+    "image": {
+      "provider_calls": 0,
+      "provider_execution": false,
+      "dry_run": true,
+      "submit": false,
+      "requests": [
+        {
+          "provider_calls": 0,
+          "provider_execution": false,
+          "dry_run": true,
+          "submit": false,
+          "provider_call_mode": "disabled"
+        }
+      ]
+    },
+    "video": {
+      "provider_calls": 0,
+      "provider_execution": false,
+      "dry_run": true,
+      "submit": false,
+      "requests": [
+        {
+          "provider_calls": 0,
+          "provider_execution": false,
+          "dry_run": true,
+          "submit": false,
+          "provider_call_mode": "disabled"
+        }
+      ]
+    },
+    "3d_asset": {
+      "provider_calls": 0,
+      "provider_execution": false,
+      "dry_run": true,
+      "submit": false,
+      "requests": [
+        {
+          "provider_calls": 0,
+          "provider_execution": false,
+          "dry_run": true,
+          "submit": false,
+          "provider_call_mode": "disabled"
+        }
+      ]
+    }
+  },
+  "source_binding": {
+    "before_probe_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "probed_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "receipt_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "after_probe_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+  },
+  "missing_media_tool_error": {
+    "exit_code": 2,
+    "stderr": "ERROR local media processing unavailable\n"
+  },
+  "output_entries": [
+    {
+      "path": "genres/01.json",
+      "type": "regular_file"
+    },
+    {
+      "path": "manifests",
+      "type": "directory"
+    }
+  ]
+}

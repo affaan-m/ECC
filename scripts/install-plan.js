@@ -14,6 +14,7 @@ const {
   loadInstallConfig,
 } = require('./lib/install/config');
 const { normalizeInstallRequest } = require('./lib/install/request');
+const { describeMissingDependencyError } = require('./lib/missing-dependency');
 
 function showHelp() {
   console.log(`
@@ -268,7 +269,7 @@ function main() {
       printPlan(plan);
     }
   } catch (error) {
-    console.error(`Error: ${error.message}`);
+    console.error(`Error: ${describeMissingDependencyError(error) || error.message}`);
     process.exit(1);
   }
 }

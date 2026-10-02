@@ -1,0 +1,39 @@
+{
+  "bundle": "ITO_V28",
+  "classification": "technical compatibility examples; not recommended production defaults",
+  "files": {
+    "ITO_V28_FlashEtherealBloom.setting": "6bc178e29cc1a39458f58d53d397357eb8ecb4510780d5993fb25cef30b26d47",
+    "ITO_V28_RGBDisplacement.setting": "66598d0c60e8551e1704932ef014691fc8cd684d50f1bf0646b39e3d2f4ccf36",
+    "ITO_V28_SubjectHalo.setting": "ac70fca7f622da29ad34963a737f668c73b526a7852c2504f66b719d2c14b638",
+    "install_ito_v28.lua": "b111d9ed0773e29682a8e426fa9f65099022cfac3de4330db187e9303d4a0dd4"
+  },
+  "native_verification": {
+    "reported_at_utc": "2026-09-07T11:45:06.454774+00:00",
+    "interpreter": "DaVinci Resolve bundled fuscript -l lua",
+    "syntax_passed": true,
+    "actual_install_passed": true,
+    "second_idempotent_run_passed": true,
+    "import_api": "TimelineItem.ImportFusionComp",
+    "saved_and_reopened": true,
+    "renders": {
+      "count": 6,
+      "width": 1920,
+      "height": 1080,
+      "frames_each": 30,
+      "fps": 30,
+      "fully_decoded": true
+    },
+    "original_v22_preserved": true,
+    "scope": "Prior native compatibility run. This packaging task does not rerun native installation or certify production visual quality."
+  },
+  "visual_limitations": [
+    "Bloom defaults blow highlights.",
+    "RGB performs channel remapping and smear, not independent RGB spatial displacement; defaults introduce a strong green tint.",
+    "Halo uses a static rectangular mask with no subject detection or tracking; full-frame translation introduces a border."
+  ],
+  "evidence_sha256": {
+    "installation_verification.json": "28e86f95029b8d76054236a5667cf67f181cd9b40a94b81fa0bdc1075b879bf2",
+    "verified_bundle_receipt.json": "d84f60dfefb110a8dd3ae3b8c4cfc3d73857b86aecbddf46fbcdd15f55df2008",
+    "VALIDATION.md": "76a7959394432e70e2946c166e395a2cd492a695f26668b2dbbc807bd1e8d46b"
+  }
+}

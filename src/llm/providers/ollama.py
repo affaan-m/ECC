@@ -8,6 +8,7 @@ from typing import Any
 from llm.core.interface import (
     AuthenticationError,
     ContextLengthError,
+    LLMError,
     LLMProvider,
     RateLimitError,
 )
@@ -70,8 +71,13 @@ class OllamaProvider(LLMProvider):
                 "messages": [msg.to_dict() for msg in input.messages],
                 "stream": False,
             }
+            options: dict[str, Any] = {}
             if input.temperature != 1.0:
-                payload["options"] = {"temperature": input.temperature}
+                options["temperature"] = input.temperature
+            if input.max_tokens is not None:
+                options["num_predict"] = input.max_tokens
+            if options:
+                payload["options"] = options
 
             data = json.dumps(payload).encode("utf-8")
             req = urllib.request.Request(url, data=data, headers={"Content-Type": "application/json"})
@@ -100,13 +106,33 @@ class OllamaProvider(LLMProvider):
             )
         except Exception as e:
             msg = str(e)
-            if "401" in msg or "connection" in msg.lower():
-                raise AuthenticationError(f"Ollama connection failed: {msg}", provider=ProviderType.OLLAMA) from e
-            if "429" in msg or "rate_limit" in msg.lower():
+            lowered = msg.lower()
+            if "401" in msg or "unauthorized" in lowered or "forbidden" in lowered:
+                raise AuthenticationError(f"Ollama authentication failed: {msg}", provider=ProviderType.OLLAMA) from e
+            if "429" in msg or "rate_limit" in lowered:
                 raise RateLimitError(msg, provider=ProviderType.OLLAMA) from e
-            if "context" in msg.lower() and "length" in msg.lower():
+            if "context" in lowered and "length" in lowered:
                 raise ContextLengthError(msg, provider=ProviderType.OLLAMA) from e
-            raise
+            if (
+                "connection" in lowered
+                or "refused" in lowered
+                or "timed out" in lowered
+                or "timeout" in lowered
+                or "unreachable" in lowered
+                or "name resolution" in lowered
+                or "nodename nor servname" in lowered
+                or isinstance(e, (ConnectionError, TimeoutError))
+            ):
+                raise LLMError(
+                    f"Ollama connection failed: {type(e).__name__}",
+                    provider=ProviderType.OLLAMA,
+                    code="connection_error",
+                ) from e
+            raise LLMError(
+                f"Ollama request failed: {type(e).__name__}",
+                provider=ProviderType.OLLAMA,
+                code="provider_error",
+            ) from e
 
     def list_models(self) -> list[ModelInfo]:
         return self._models.copy()

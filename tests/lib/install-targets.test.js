@@ -6,12 +6,14 @@ const assert = require('assert');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
+const { spawnSync } = require('child_process');
 
 const {
   getInstallTargetAdapter,
   listInstallTargetAdapters,
   planInstallTargetScaffold,
 } = require('../../scripts/lib/install-targets/registry');
+const { resolveInvocationEnvironment } = require('../../scripts/lib/invocation-environment');
 
 function normalizedRelativePath(value) {
   return String(value || '').replace(/\\/g, '/');
@@ -479,7 +481,7 @@ function runTests() {
     );
   })) passed++; else failed++;
 
-  if (test('plans antigravity remaps for workflows, skills, and flat rules', () => {
+  if (test('plans native Antigravity 2.0 rules, workflows, skills, and agents', () => {
     const repoRoot = path.join(__dirname, '..', '..');
     const projectRoot = '/workspace/app';
 
@@ -494,7 +496,11 @@ function runTests() {
         },
         {
           id: 'agents-core',
-          paths: ['agents'],
+          paths: ['.agents', 'agents', 'AGENTS.md'],
+        },
+        {
+          id: 'workflow-quality',
+          paths: ['skills/tdd-workflow'],
         },
         {
           id: 'rules-core',
@@ -506,23 +512,34 @@ function runTests() {
     assert.ok(
       plan.operations.some(operation => (
         operation.sourceRelativePath === 'commands'
-        && operation.destinationPath === path.join(projectRoot, '.agent', 'workflows')
+        && operation.destinationPath === path.join(projectRoot, '.agents', 'workflows')
       )),
       'Should remap commands into workflows'
     );
     assert.ok(
       plan.operations.some(operation => (
         operation.sourceRelativePath === 'agents'
-        && operation.destinationPath === path.join(projectRoot, '.agent', 'skills')
+        && operation.destinationPath === path.join(projectRoot, '.agents', 'agents')
       )),
-      'Should remap agents into skills'
+      'Should remap agents into native agents'
+    );
+    assert.ok(
+      plan.operations.some(operation => (
+        operation.sourceRelativePath === 'skills/tdd-workflow'
+        && operation.destinationPath === path.join(projectRoot, '.agents', 'skills', 'tdd-workflow')
+      )),
+      'Should remap canonical skills into native skills'
     );
     assert.ok(
       plan.operations.some(operation => (
         normalizedRelativePath(operation.sourceRelativePath) === 'rules/common/coding-style.md'
-        && operation.destinationPath === path.join(projectRoot, '.agent', 'rules', 'common-coding-style.md')
+        && operation.destinationPath === path.join(projectRoot, '.agents', 'rules', 'common-coding-style.md')
       )),
       'Should flatten common rules for antigravity'
+    );
+    assert.ok(
+      plan.operations.every(operation => !['.agents', 'AGENTS.md'].includes(operation.sourceRelativePath)),
+      'Should exclude Codex-only .agents metadata and root AGENTS.md'
     );
   })) passed++; else failed++;
 
@@ -614,14 +631,78 @@ function runTests() {
   if (test('resolves qwen adapter root and install-state path from home dir', () => {
     const adapter = getInstallTargetAdapter('qwen');
     const homeDir = '/Users/example';
-    const root = adapter.resolveRoot({ homeDir });
-    const statePath = adapter.getInstallStatePath({ homeDir });
+    const root = adapter.resolveRoot({ homeDir, env: {} });
+    const statePath = adapter.getInstallStatePath({ homeDir, env: {} });
 
     assert.strictEqual(adapter.id, 'qwen-home');
     assert.strictEqual(adapter.target, 'qwen');
     assert.strictEqual(adapter.kind, 'home');
     assert.strictEqual(root, path.join(homeDir, '.qwen'));
     assert.strictEqual(statePath, path.join(homeDir, '.qwen', 'ecc-install-state.json'));
+  })) passed++; else failed++;
+
+  if (test('opencode adapter honors config overrides in priority order', () => {
+    const adapter = getInstallTargetAdapter('opencode');
+    const homeDir = '/Users/example';
+    const xdgRoot = path.join(homeDir, 'xdg');
+    const explicitRoot = path.join(homeDir, 'custom-opencode');
+
+    assert.strictEqual(
+      adapter.resolveRoot({
+        homeDir,
+        env: {
+          XDG_CONFIG_HOME: xdgRoot,
+          OPENCODE_CONFIG_DIR: explicitRoot,
+        },
+      }),
+      path.resolve(explicitRoot)
+    );
+    assert.strictEqual(
+      adapter.resolveRoot({ homeDir, env: { XDG_CONFIG_HOME: xdgRoot } }),
+      path.join(path.resolve(xdgRoot), 'opencode')
+    );
+    assert.strictEqual(
+      adapter.getInstallStatePath({
+        homeDir,
+        env: { OPENCODE_CONFIG_DIR: explicitRoot },
+      }),
+      path.join(path.resolve(explicitRoot), 'ecc-install-state.json')
+    );
+  })) passed++; else failed++;
+
+  if (test('opencode adapter isolates an explicit home from ambient config overrides', () => {
+    const homeDir = '/Users/isolated';
+    const registryPath = path.join(__dirname, '..', '..', 'scripts', 'lib', 'install-targets', 'registry.js');
+    const child = spawnSync(process.execPath, ['-e', [
+      'const { getInstallTargetAdapter } = require(process.env.ECC_TEST_REGISTRY);',
+      'const root = getInstallTargetAdapter(\'opencode\').resolveRoot({ homeDir: process.env.ECC_TEST_HOME });',
+      'process.stdout.write(JSON.stringify(root));',
+    ].join('\n')], {
+      encoding: 'utf8',
+      env: {
+        ...process.env,
+        ECC_TEST_REGISTRY: registryPath,
+        ECC_TEST_HOME: homeDir,
+        OPENCODE_CONFIG_DIR: '/runner/global/opencode',
+        XDG_CONFIG_HOME: '/runner/global/xdg',
+      },
+    });
+
+    assert.strictEqual(child.status, 0, child.stderr);
+    assert.strictEqual(
+      JSON.parse(child.stdout),
+      path.join(path.resolve(homeDir), '.config', 'opencode')
+    );
+  })) passed++; else failed++;
+
+  if (test('invocation environments are immutable snapshots', () => {
+    const source = { OPENCODE_CONFIG_DIR: '/custom/opencode' };
+    const selected = resolveInvocationEnvironment({ env: source });
+    const ambient = resolveInvocationEnvironment();
+    assert.notStrictEqual(selected, source);
+    assert.notStrictEqual(ambient, process.env);
+    selected.OPENCODE_CONFIG_DIR = '/mutated';
+    assert.strictEqual(source.OPENCODE_CONFIG_DIR, '/custom/opencode');
   })) passed++; else failed++;
 
   if (test('qwen adapter supports lookup by target and adapter id', () => {
@@ -894,6 +975,119 @@ function runTests() {
     );
   })) passed++; else failed++;
 
+  if (test('resolves adal adapter root and install-state path from project root', () => {
+    const adapter = getInstallTargetAdapter('adal');
+    const projectRoot = '/workspace/app';
+    const root = adapter.resolveRoot({ projectRoot });
+    const statePath = adapter.getInstallStatePath({ projectRoot });
+
+    assert.strictEqual(adapter.id, 'adal-project');
+    assert.strictEqual(adapter.target, 'adal');
+    assert.strictEqual(adapter.kind, 'project');
+    assert.strictEqual(root, path.join(projectRoot, '.adal'));
+    assert.strictEqual(statePath, path.join(projectRoot, '.adal', 'ecc-install-state.json'));
+  })) passed++; else failed++;
+
+  if (test('adal adapter supports lookup by target and adapter id', () => {
+    const byTarget = getInstallTargetAdapter('adal');
+    const byId = getInstallTargetAdapter('adal-project');
+
+    assert.strictEqual(byTarget.id, 'adal-project');
+    assert.strictEqual(byId.id, 'adal-project');
+    assert.ok(byTarget.supports('adal'));
+    assert.ok(byTarget.supports('adal-project'));
+  })) passed++; else failed++;
+
+  if (test('plans adal project rules, skills, and native root sync', () => {
+    const repoRoot = path.join(__dirname, '..', '..');
+    const projectRoot = '/workspace/app';
+
+    const plan = planInstallTargetScaffold({
+      target: 'adal',
+      repoRoot,
+      projectRoot,
+      modules: [
+        {
+          id: 'rules-core',
+          paths: ['rules'],
+        },
+        {
+          id: 'workflow-quality',
+          paths: ['skills/tdd-workflow'],
+        },
+        {
+          id: 'platform-configs',
+          paths: ['.adal', '.cursor', '.zed'],
+        },
+      ],
+    });
+
+    assert.strictEqual(plan.adapter.id, 'adal-project');
+    assert.strictEqual(plan.targetRoot, path.join(projectRoot, '.adal'));
+    assert.strictEqual(plan.installStatePath, path.join(projectRoot, '.adal', 'ecc-install-state.json'));
+    assert.ok(
+      plan.operations.some(operation => (
+        normalizedRelativePath(operation.sourceRelativePath) === 'rules'
+        && operation.destinationPath === path.join(projectRoot, '.adal', 'rules')
+      )),
+      'Should preserve rules under .adal/rules'
+    );
+    assert.ok(
+      plan.operations.some(operation => (
+        normalizedRelativePath(operation.sourceRelativePath) === 'skills/tdd-workflow'
+        && operation.destinationPath === path.join(projectRoot, '.adal', 'skills', 'tdd-workflow')
+      )),
+      'Should install skills under .adal/skills'
+    );
+    assert.ok(
+      plan.operations.some(operation => (
+        normalizedRelativePath(operation.sourceRelativePath) === '.adal'
+        && operation.destinationPath === path.join(projectRoot, '.adal')
+        && operation.strategy === 'sync-root-children'
+      )),
+      'Should sync native .adal root children in place'
+    );
+  })) passed++; else failed++;
+
+  if (test('adal adapter skips foreign platform source paths', () => {
+    const repoRoot = path.join(__dirname, '..', '..');
+    const projectRoot = '/workspace/app';
+
+    const plan = planInstallTargetScaffold({
+      target: 'adal',
+      repoRoot,
+      projectRoot,
+      modules: [
+        {
+          id: 'platform-configs',
+          paths: ['.cursor', '.zed', 'rules'],
+        },
+      ],
+    });
+
+    assert.ok(
+      plan.operations.some(operation => (
+        normalizedRelativePath(operation.sourceRelativePath) === 'rules'
+        && operation.destinationPath === path.join(projectRoot, '.adal', 'rules')
+      )),
+      'Should still include non-foreign rules path (guards against empty-plan regression)'
+    );
+    assert.ok(
+      !plan.operations.some(operation => (
+        normalizedRelativePath(operation.sourceRelativePath) === '.cursor'
+        || normalizedRelativePath(operation.sourceRelativePath).startsWith('.cursor/')
+      )),
+      'Should skip foreign Cursor platform paths'
+    );
+    assert.ok(
+      !plan.operations.some(operation => (
+        normalizedRelativePath(operation.sourceRelativePath) === '.zed'
+        || normalizedRelativePath(operation.sourceRelativePath).startsWith('.zed/')
+      )),
+      'Should skip foreign Zed platform paths'
+    );
+  })) passed++; else failed++;
+
   if (test('exposes validate and planOperations on codebuddy adapter', () => {
     const codebuddyAdapter = getInstallTargetAdapter('codebuddy');
 
@@ -1058,8 +1252,11 @@ function runTests() {
     assert.strictEqual(adapter.id, 'opencode-home');
     assert.strictEqual(adapter.target, 'opencode');
     assert.strictEqual(adapter.kind, 'home');
-    assert.strictEqual(root, path.join(homeDir, '.opencode'));
-    assert.strictEqual(statePath, path.join(homeDir, '.opencode', 'ecc-install-state.json'));
+    assert.strictEqual(root, path.join(path.resolve(homeDir), '.config', 'opencode'));
+    assert.strictEqual(
+      statePath,
+      path.join(path.resolve(homeDir), '.config', 'opencode', 'ecc-install-state.json')
+    );
   })) passed++; else failed++;
 
   if (test('opencode adapter validate reports an error when compiled plugin is missing', () => {

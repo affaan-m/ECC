@@ -73,7 +73,15 @@ key or token in arguments, tracked files, MCP results, logs, or chat.
 
 5. Run `ecc ito status` to inspect RFQs and procurement orders.
    After an ambiguous transport failure, check status before repeating `find`.
-6. Run `ecc ito logout` when the user explicitly asks to revoke this device.
+6. When a quote is ready and the buyer explicitly approves, accept it:
+
+   ```sh
+   ecc ito accept rfq_<ticket-id>
+   ```
+
+   This routes the ticket to the desk for human review. It does not move funds
+   or reserve capacity. Do not accept without explicit buyer authority.
+7. Run `ecc ito logout` when the user explicitly asks to revoke this device.
    The canonical CLI keeps the local credential when remote revocation fails so
    the operator can retry; never delete the token manually as a substitute.
 
@@ -129,23 +137,29 @@ The server exposes only:
 - `ito_auth`
 - `ito_find`
 - `ito_status`
+- `ito_accept`
 
 `ito_auth` validates existing credentials; it does not start device login. Use
 `ito_auth`, gather explicit buyer authority and every hard constraint, call
-`ito_find`, then poll with `ito_status` when needed.
+`ito_find`, then poll with `ito_status` when needed. When a quote is ready and
+the buyer explicitly approves, call `ito_accept` with the ticket id. Desk
+quotes are usually indicative and nonbinding until the desk confirms; the
+result carries `quote_class`.
 
 ## Rent or purchase semantics
 
 `find` submits an RFQ and may return a firm quote, but it does not rent,
-purchase, reserve, provision, or move funds. `status` is read-oriented, though
-the provider endpoint may reconcile an existing procurement order. The passive
-dashboard link in ECC help is a separate user-operated web route; do not open or
-operate it as a substitute for a missing CLI capability.
+purchase, reserve, provision, or move funds. `accept` routes a quote to the desk
+for human review; it does not move funds or reserve capacity. `status` is
+read-oriented, though the provider endpoint may reconcile an existing procurement
+order. The passive dashboard link in ECC help is a separate user-operated web
+route; do not open or operate it as a substitute for a missing CLI capability.
 
 ## Unsupported operations
 
 The supported client surface cannot lock quotes, reserve capacity, execute
-workloads, or serve inference. The MCP server does not expose qualification;
-use the explicit CLI command above. Do not invent additional tools or a
-purchase path. Do not substitute a browser or fixture when the local CLI is
-missing or a live operation fails. Report the missing capability and stop.
+workloads, or serve inference. `accept` is a desk handoff, not a purchase. The
+MCP server does not expose qualification; use the explicit CLI command above. Do
+not invent additional tools or a purchase path. Do not substitute a browser or
+fixture when the local CLI is missing or a live operation fails. Report the
+missing capability and stop.

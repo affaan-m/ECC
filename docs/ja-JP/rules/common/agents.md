@@ -2,27 +2,34 @@
 
 ## 利用可能な Agent
 
-`~/.claude/agents/` に配置:
+ECC の Agent は `ecc@ecc` プラグインに同梱されており、`~/.claude/agents/` には配置されません。
+Agent ツールではプラグインスコープの `subagent_type` で呼び出します:
+
+```text
+Agent(subagent_type: "ecc:planner", prompt: "...")
+```
 
 | Agent | 目的 | 使用タイミング |
 |-------|---------|-------------|
-| planner | 実装計画 | 複雑な機能、リファクタリング |
-| architect | システム設計 | アーキテクチャの意思決定 |
-| tdd-guide | テスト駆動開発 | 新機能、バグ修正 |
-| code-reviewer | コードレビュー | コード記述後 |
-| security-reviewer | セキュリティ分析 | コミット前 |
-| build-error-resolver | ビルドエラー修正 | ビルド失敗時 |
-| e2e-runner | E2Eテスト | 重要なユーザーフロー |
-| refactor-cleaner | デッドコードクリーンアップ | コードメンテナンス |
-| doc-updater | ドキュメント | ドキュメント更新 |
+| ecc:planner | 実装計画 | 複雑な機能、リファクタリング |
+| ecc:architect | システム設計 | アーキテクチャの意思決定 |
+| ecc:tdd-guide | テスト駆動開発 | 新機能、バグ修正 |
+| ecc:code-reviewer | コードレビュー | コード記述後 |
+| ecc:security-reviewer | セキュリティ分析 | コミット前 |
+| ecc:build-error-resolver | ビルドエラー修正 | ビルド失敗時 |
+| ecc:e2e-runner | E2Eテスト | 重要なユーザーフロー |
+| ecc:refactor-cleaner | デッドコードクリーンアップ | コードメンテナンス |
+| ecc:doc-updater | ドキュメント | ドキュメント更新 |
+
+全 68 Agent の一覧は `/ecc:ecc-guide` を参照。
 
 ## Agent の即座の使用
 
 ユーザープロンプト不要:
-1. 複雑な機能リクエスト - **planner** agent を使用
-2. コード作成/変更直後 - **code-reviewer** agent を使用
-3. バグ修正または新機能 - **tdd-guide** agent を使用
-4. アーキテクチャの意思決定 - **architect** agent を使用
+1. 複雑な機能リクエスト - **ecc:planner** agent を使用
+2. コード作成/変更直後 - **ecc:code-reviewer** agent を使用
+3. バグ修正または新機能 - **ecc:tdd-guide** agent を使用
+4. アーキテクチャの意思決定 - **ecc:architect** agent を使用
 
 ## 並列タスク実行
 

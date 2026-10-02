@@ -1,7 +1,7 @@
 ---
 name: conversation-analyzer
 description: 会話のトランスクリプトを分析し、フックで防止すべき動作を見つけるためにこのエージェントを使用します。引数なしの/hookifyでトリガーされます。
-model: sonnet
+model: haiku
 tools: [Read, Grep]
 ---
 

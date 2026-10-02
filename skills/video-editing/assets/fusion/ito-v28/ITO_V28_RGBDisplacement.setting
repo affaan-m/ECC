@@ -1,0 +1,7 @@
+{
+ Tools = ordered() {
+  ITO_V28_RGBBase = Transform { Inputs = { Size = Input { Value = 1.008, }, } },
+  ITO_V28_RGBShift = ChannelBoolean { Inputs = { ToRed = Input { Value = 4, }, ToGreen = Input { Value = 3, }, ToBlue = Input { Value = 2, }, Background = Input { SourceOp = "ITO_V28_RGBBase", Source = "Output", }, Foreground = Input { SourceOp = "ITO_V28_RGBBase", Source = "Output", }, } },
+  ITO_V28_RGBSmear = DirectionalBlur { Inputs = { Length = Input { Value = 0.018, }, Angle = Input { Value = 0.0, }, Input = Input { SourceOp = "ITO_V28_RGBShift", Source = "Output", }, } }
+ }
+}

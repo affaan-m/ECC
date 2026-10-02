@@ -5,12 +5,13 @@ set -euo pipefail
 # Blocks commits that add high-signal secrets.
 
 if [[ "${ECC_SKIP_GIT_HOOKS:-0}" == "1" || "${ECC_SKIP_PRECOMMIT:-0}" == "1" ]]; then
+  printf '[ECC pre-commit] WARNING: hook bypassed via env (ECC_SKIP_*=1)\n' >&2
   exit 0
 fi
 
-if [[ -f ".ecc-hooks-disable" || -f ".git/ecc-hooks-disable" ]]; then
-  exit 0
-fi
+# NOTE: file-based disables (.ecc-hooks-disable) were removed — a malicious
+# repo could ship that file and silently turn off secret scanning exactly
+# where it is most needed. Use the env bypass above (audible warning) instead.
 
 if ! git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
   exit 0

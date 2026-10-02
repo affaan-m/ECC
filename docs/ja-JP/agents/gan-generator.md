@@ -2,7 +2,7 @@
 name: gan-generator
 description: "GANハーネス — ジェネレーターエージェント。仕様に従って機能を実装し、エバリュエーターのフィードバックを読み、品質閾値を満たすまでイテレーションします。"
 tools: ["Read", "Write", "Edit", "Bash", "Grep", "Glob"]
-model: opus
+model: sonnet
 color: green
 ---
 

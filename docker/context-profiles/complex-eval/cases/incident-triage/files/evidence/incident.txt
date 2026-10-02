@@ -1,0 +1,5 @@
+2026-09-24T08:57:11Z finance-review order=ORD-2204 note="charged_total_cents=115 expected_total_cents=116 lines=[{priceCents:165,quantity:1}] discountPercent=30"
+2026-09-24T09:14:02Z finance-review order=ORD-2291 note="charged_total_cents=232 expected_total_cents=233 lines=[{priceCents:250,quantity:1}] discountPercent=7"
+2026-09-24T09:41:37Z finance-review order=ORD-2310 note="charged_total_cents=227 expected_total_cents=228 lines=[{priceCents:325,quantity:1}] discountPercent=30"
+2026-09-24T10:05:19Z support-ticket customer="ORDER-2310 looks like it undercharged me by a cent vs the invoice email"
+2026-09-24T10:22:48Z finance-review summary="12 of 4,813 orders since the 2026-09-23 deploy are off by exactly one cent, always in the store's favor; all pre-deploy orders reconcile"

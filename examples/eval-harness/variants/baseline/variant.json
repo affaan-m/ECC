@@ -1,0 +1,6 @@
+{
+  "name": "slugify-baseline",
+  "effect_class": "SE0",
+  "entry": "run.js",
+  "note": "Known-weak baseline: no diacritic folding, no underscore handling, keeps doubled dashes."
+}

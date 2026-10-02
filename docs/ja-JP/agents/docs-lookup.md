@@ -2,7 +2,7 @@
 name: docs-lookup
 description: ユーザーがライブラリ、フレームワーク、APIの使い方を質問したり、最新のコード例が必要な場合に、Context7 MCPを使用して最新のドキュメントを取得し、例付きの回答を返します。ドキュメント/API/セットアップの質問時に呼び出します。
 tools: ["Read", "Grep", "mcp__context7__resolve-library-id", "mcp__context7__query-docs"]
-model: sonnet
+model: haiku
 ---
 
 ## プロンプト防御ベースライン

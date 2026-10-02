@@ -1,8 +1,8 @@
-# Everything Claude Code (ECC) — Agent Instructions
+# ECC — Agent Instructions
 
-This is a **production-ready AI coding plugin** providing 68 specialized agents, 288 skills, 94 commands, and automated hook workflows for software development.
+This is a **production-ready AI coding plugin** providing 68 specialized agents, 294 skills, 94 commands, and automated hook workflows for software development.
 
-**Version:** 2.2.0
+**Version:** 2.2.3
 
 ## Core Principles
 
@@ -48,19 +48,66 @@ This is a **production-ready AI coding plugin** providing 68 specialized agents,
 | mle-reviewer | Production ML pipeline review | ML pipelines, evals, serving, monitoring, rollback |
 | rag-pipeline-reviewer | RAG pipeline review | Retrieval quality, chunking, reranking, RAGAS evaluation coverage |
 | typescript-reviewer | TypeScript/JavaScript code review | TypeScript/JavaScript projects |
+| react-reviewer | React/JSX code review | React component and hook changes |
+| react-build-resolver | React/Vite/Next.js/webpack build errors | React build failures |
+| vue-reviewer | Vue.js Composition API and reactivity review | Vue component, Pinia, and Nuxt changes |
+| swift-reviewer | Swift/iOS code review | Swift code changes |
+| swift-build-resolver | Swift/Xcode/SPM build errors | Swift build failures |
+| flutter-reviewer | Flutter/Dart widget and state review | Flutter app changes |
+| dart-build-resolver | Dart/Flutter build and pub dependency errors | Flutter compilation failures |
+| csharp-reviewer | C#/.NET async patterns, nullability, security | All C# code changes |
+| fastapi-reviewer | FastAPI async correctness, Pydantic, OpenAPI | FastAPI endpoint and schema changes |
+| php-reviewer | PHP/PSR-12, Eloquent, security review | PHP code changes |
+| harmonyos-app-resolver | HarmonyOS ArkTS/ArkUI code and API review | HarmonyOS/OpenHarmony application changes |
+| healthcare-reviewer | Clinical safety, PHI compliance, CDSS accuracy | Healthcare, EMR/EHR application code |
+| a11y-architect | WCAG 2.2 accessibility architecture | Designing UI components, accessibility audits |
+| code-architect | Feature architecture blueprints from codebase patterns | New features needing implementation design |
+| network-architect | Enterprise multi-site network architecture | Complex network design decisions |
+| homelab-architect | Home/small-lab network design | Home infrastructure planning |
+| network-config-reviewer | Router/switch config security and correctness | Network configuration changes |
+| network-troubleshooter | OSI-layer connectivity and routing diagnosis | Network connectivity and routing issues |
+| performance-optimizer | Bottleneck detection, bundle size, memory leaks | Slow code or high resource usage |
+| silent-failure-hunter | Swallowed errors and missing propagation | Code reliability audits |
+| type-design-analyzer | Type encapsulation and invariant design | Type design and invariant reviews |
+| pr-test-analyzer | PR test coverage quality and completeness | Before merging pull requests |
+| code-explorer | Execution path tracing and architecture mapping | Understanding unfamiliar code paths |
+| code-simplifier | Clarity-focused code refinement without behavior change | Post-implementation cleanup |
+| comment-analyzer | Comment accuracy, freshness, and rot risk | Code comment audits |
+| agent-evaluator | 5-axis quality scoring for agent output | Evaluating task completion quality |
+| chief-of-staff | Multi-channel communication triage and drafting | Managing email/Slack communication workflows |
+| conversation-analyzer | Extract hook behaviors from session transcripts | Creating hooks from observed patterns |
+| marketing-agent | Campaign planning, copy creation, content calendars | Product launches, marketing campaigns |
+| seo-specialist | Technical SEO audit, structured data, Core Web Vitals | Site audits, meta tag and schema issues |
+| opensource-forker | Fork projects and strip secrets for open-sourcing | Starting an open-source release |
+| opensource-sanitizer | Verify sanitized fork is release-ready | Before any public release |
+| opensource-packager | Generate OSS packaging boilerplate (README, LICENSE, etc.) | Finalizing an open-source release |
+| gan-planner | Expand a prompt into a full product specification | Starting a GAN harness session |
+| gan-generator | Implement features per spec, iterate on evaluator feedback | GAN harness implementation phase |
+| gan-evaluator | Test running application via Playwright and score it | GAN harness evaluation phase |
 
 ## Agent Orchestration
 
 Use agents proactively without user prompt:
-- Complex feature requests → **planner**
-- Code just written/modified → **code-reviewer**
-- Bug fix or new feature → **tdd-guide**
-- Architectural decision → **architect**
-- Security-sensitive code → **security-reviewer**
-- Brownfield project onboarding → **spec-miner**
-- Autonomous loops / loop monitoring → **loop-operator**
-- Harness config reliability and cost → **harness-optimizer**
-- RAG/retrieval pipeline changes → **rag-pipeline-reviewer**
+- Complex feature requests → **ecc:planner**
+- Code just written/modified → **ecc:code-reviewer**
+- Bug fix or new feature → **ecc:tdd-guide**
+- Architectural decision → **ecc:architect**
+- Security-sensitive code → **ecc:security-reviewer**
+- Brownfield project onboarding → **ecc:spec-miner**
+- Autonomous loops / loop monitoring → **ecc:loop-operator**
+- Harness config reliability and cost → **ecc:harness-optimizer**
+- RAG/retrieval pipeline changes → **ecc:rag-pipeline-reviewer**
+- Performance bottleneck or slow code → **ecc:performance-optimizer**
+- React/JSX changes → **ecc:react-reviewer**
+- Vue changes → **ecc:vue-reviewer**
+- Swift changes → **ecc:swift-reviewer**
+- C# changes → **ecc:csharp-reviewer**
+- PHP changes → **ecc:php-reviewer**
+- Flutter/Dart changes → **ecc:flutter-reviewer**
+- Healthcare/clinical code → **ecc:healthcare-reviewer**
+- UI component design → **ecc:a11y-architect**
+- Open-source release prep → **ecc:opensource-forker** → **ecc:opensource-sanitizer** → **ecc:opensource-packager**
+- Agent output quality check → **ecc:agent-evaluator**
 
 Use parallel execution for independent operations — launch multiple agents simultaneously.
 
@@ -114,9 +161,9 @@ Troubleshoot failures: check test isolation → verify mocks → fix implementat
 
 ## Development Workflow
 
-1. **Plan** — Use planner agent, identify dependencies and risks, break into phases
-2. **TDD** — Use tdd-guide agent, write tests first, implement, refactor
-3. **Review** — Use code-reviewer agent immediately, address CRITICAL/HIGH issues
+1. **Plan** — Use ecc:planner agent, identify dependencies and risks, break into phases
+2. **TDD** — Use ecc:tdd-guide agent, write tests first, implement, refactor
+3. **Review** — Use ecc:code-reviewer agent immediately, address CRITICAL/HIGH issues
 4. **Capture knowledge in the right place**
    - Personal debugging notes, preferences, and temporary context → auto memory
    - Team/project knowledge (architecture decisions, API changes, runbooks) → the project's existing docs structure
@@ -154,7 +201,7 @@ Troubleshoot failures: check test isolation → verify mocks → fix implementat
 
 ```
 agents/          — 68 specialized subagents
-skills/          — 288 workflow skills and domain knowledge
+skills/          — 294 workflow skills and domain knowledge
 commands/        — 94 slash commands
 hooks/           — Trigger-based automations
 rules/           — Always-follow guidelines (common + per-language)

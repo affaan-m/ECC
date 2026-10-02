@@ -1,0 +1,40 @@
+{
+  "palette_description": "dry-run palette_description: dominant colors and how they are distributed",
+  "grain": "dry-run grain: texture/noise character, e.g. fine 35mm grain",
+  "lighting": "dry-run lighting: key/fill/practical sources and their quality",
+  "focal_length": "dry-run focal_length: apparent focal length and its perspective effect, e.g. 35mm",
+  "camera_motion": "dry-run camera_motion: how the camera moves, or that it is locked off",
+  "subject_framing": "dry-run subject_framing: how subjects sit in frame; headroom, rule-of-thirds, negative space",
+  "grade_description": "dry-run grade_description: the color grade in colorist language",
+  "mood_adjectives": [
+    "dry-run-mood_adjectives-1",
+    "dry-run-mood_adjectives-2",
+    "dry-run-mood_adjectives-3"
+  ],
+  "avoid": [
+    "dry-run-avoid-1",
+    "dry-run-avoid-2",
+    "dry-run-avoid-3"
+  ],
+  "source": {
+    "pack": "flashethereal",
+    "generated": "2026-08-16T07:10:41Z",
+    "stills": [
+      "genre1_000.png",
+      "genre1_002.png",
+      "genre1_004.png",
+      "genre1_2_001.png",
+      "genre1_2_003.png",
+      "genre1_3_001.png"
+    ],
+    "dry_run": true,
+    "attempts": [
+      {
+        "attempt": 1,
+        "chars": 873,
+        "problems": []
+      }
+    ],
+    "endpoint": "fal-ai/any-llm/vision"
+  }
+}

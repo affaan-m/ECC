@@ -179,9 +179,14 @@ async function main() {
           const $ = createFailingShell()
           const hooks = await ECCHooksPlugin({ client, $, directory: projectDir })
 
-          const env = await hooks["shell.env"]()
+          const existingEnv = Object.freeze({ EXISTING_ENV: "preserved" })
+          const output = { env: existingEnv }
+          await hooks["shell.env"]({ cwd: projectDir }, output)
+          const { env } = output
 
           assert.deepStrictEqual($.calls, [], `Unexpected shell probes: ${$.calls.join(", ")}`)
+          assert.strictEqual(env.EXISTING_ENV, "preserved")
+          assert.notStrictEqual(env, existingEnv)
           assert.strictEqual(env.PROJECT_ROOT, projectDir)
           assert.strictEqual(env.PACKAGE_MANAGER, "pnpm")
           assert.strictEqual(env.DETECTED_LANGUAGES, "typescript,python")
@@ -243,9 +248,12 @@ async function main() {
           const $ = createFailingShell()
           const hooks = await ECCHooksPlugin({ client, $, directory: projectDir })
 
-          const env = await hooks["shell.env"]()
+          const output = { env: {} }
+          await hooks["shell.env"]({ cwd: projectDir }, output)
+          const { env } = output
 
           assert.deepStrictEqual($.calls, [], `Unexpected shell probes: ${$.calls.join(", ")}`)
+          assert.strictEqual(env.PROJECT_ROOT, projectDir)
           assert.ok(!("PACKAGE_MANAGER" in env), "Lockfile directory should not set PACKAGE_MANAGER")
           assert.ok(!("DETECTED_LANGUAGES" in env), "Marker directory should not set DETECTED_LANGUAGES")
           assert.ok(!("PRIMARY_LANGUAGE" in env), "Marker directory should not set PRIMARY_LANGUAGE")
@@ -253,6 +261,47 @@ async function main() {
           fs.rmSync(projectDir, { recursive: true, force: true })
         }
       },
+    ],
+    [
+      "compacting appends ECC context without replacing the host compaction prompt",
+      async () => withTempProject([], async (projectDir) => {
+        const client = createClient()
+        const $ = createFailingShell()
+        const hooks = await ECCHooksPlugin({ client, $, directory: projectDir })
+        const existingContext = Object.freeze(["Existing plugin context"])
+        const output = { context: existingContext }
+
+        await hooks["experimental.session.compacting"]({ sessionID: "session-1" }, output)
+
+        assert.strictEqual(output.context[0], "Existing plugin context")
+        assert.notStrictEqual(output.context, existingContext)
+        const prompt = output.prompt ?? ["Default compaction prompt", ...output.context].join("\n\n")
+        assert.ok(prompt.includes("Default compaction prompt"))
+        assert.ok(prompt.includes("# ECC Context"))
+        assert.ok(prompt.includes("Current task status and progress"))
+        assert.deepStrictEqual($.calls, [])
+      }),
+    ],
+    [
+      "compacting appends ECC guidance to custom prompts, including an empty prompt",
+      async () => withTempProject([], async (projectDir) => {
+        const client = createClient()
+        const $ = createFailingShell()
+        const hooks = await ECCHooksPlugin({ client, $, directory: projectDir })
+
+        for (const customPrompt of ["Another plugin's custom prompt", ""]) {
+          const existingContext = Object.freeze(["Existing plugin context"])
+          const output = { context: existingContext, prompt: customPrompt }
+          await hooks["experimental.session.compacting"]({ sessionID: "session-1" }, output)
+
+          const prompt = output.prompt ?? ["Default compaction prompt", ...output.context].join("\n\n")
+          assert.ok(prompt.startsWith(`${customPrompt}\n\n`))
+          assert.ok(prompt.includes("# ECC Context"))
+          assert.ok(prompt.includes("Current task status and progress"))
+          assert.strictEqual(output.context, existingContext)
+        }
+        assert.deepStrictEqual($.calls, [])
+      }),
     ],
     [
       "permission.ask handles read-only tools correctly",

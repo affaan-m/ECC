@@ -1,10 +1,10 @@
-**언어:** [English](../../README.md) | [Português (Brasil)](../pt-BR/README.md) | [简体中文](../../README.zh-CN.md) | [繁體中文](../zh-TW/README.md) | [日本語](../ja-JP/README.md) | 한국어 | [Türkçe](../tr/README.md) | [Русский](../ru/README.md) | [Tiếng Việt](../vi-VN/README.md) | [ไทย](../th/README.md) | [Deutsch](../de-DE/README.md)
+**언어:** [English](../../README.md) | [Português (Brasil)](../pt-BR/README.md) | [简体中文](../../README.zh-CN.md) | [繁體中文](../zh-TW/README.md) | [日本語](../ja-JP/README.md) | 한국어 | [Türkçe](../tr/README.md) | [Русский](../ru/README.md) | [Tiếng Việt](../vi-VN/README.md) | [ไทย](../th/README.md) | [Deutsch](../de-DE/README.md) | [Українська](../uk-UA/README.md) | [Polski](../pl/README.md)
 
-# Everything Claude Code
+# ECC
 
-[![Stars](https://img.shields.io/github/stars/affaan-m/everything-claude-code?style=flat)](https://github.com/affaan-m/everything-claude-code/stargazers)
-[![Forks](https://img.shields.io/github/forks/affaan-m/everything-claude-code?style=flat)](https://github.com/affaan-m/everything-claude-code/network/members)
-[![Contributors](https://img.shields.io/github/contributors/affaan-m/everything-claude-code?style=flat)](https://github.com/affaan-m/everything-claude-code/graphs/contributors)
+[![Stars](https://img.shields.io/github/stars/affaan-m/ECC?style=flat)](https://github.com/affaan-m/ECC/stargazers)
+[![Forks](https://img.shields.io/github/forks/affaan-m/ECC?style=flat)](https://github.com/affaan-m/ECC/network/members)
+[![Contributors](https://img.shields.io/github/contributors/affaan-m/ECC?style=flat)](https://github.com/affaan-m/ECC/graphs/contributors)
 [![npm ecc-universal](https://img.shields.io/npm/dw/ecc-universal?label=ecc-universal%20weekly%20downloads&logo=npm)](https://www.npmjs.com/package/ecc-universal)
 [![npm ecc-agentshield](https://img.shields.io/npm/dw/ecc-agentshield?label=ecc-agentshield%20weekly%20downloads&logo=npm)](https://www.npmjs.com/package/ecc-agentshield)
 [![GitHub App Install](https://img.shields.io/endpoint?url=https%3A%2F%2Fapi.ecc.tools%2Fbadge%2Finstalls&logo=github)](https://github.com/marketplace/ecc-tools)
@@ -24,7 +24,7 @@
 
 **Language / 语言 / 語言 / 언어 / Dil / Язык / Ngôn ngữ**
 
-[**English**](../../README.md) | [Português (Brasil)](../pt-BR/README.md) | [简体中文](../../README.zh-CN.md) | [繁體中文](../zh-TW/README.md) | [日本語](../ja-JP/README.md) | [한국어](README.md) | [Türkçe](../tr/README.md) | [Русский](../ru/README.md) | [Tiếng Việt](../vi-VN/README.md) | [ไทย](../th/README.md) | [Deutsch](../de-DE/README.md)
+[**English**](../../README.md) | [Português (Brasil)](../pt-BR/README.md) | [简体中文](../../README.zh-CN.md) | [繁體中文](../zh-TW/README.md) | [日本語](../ja-JP/README.md) | [한국어](README.md) | [Türkçe](../tr/README.md) | [Русский](../ru/README.md) | [Tiếng Việt](../vi-VN/README.md) | [ไทย](../th/README.md) | [Deutsch](../de-DE/README.md) | [Українська](../uk-UA/README.md) | [Polski](../pl/README.md)
 
 </div>
 
@@ -46,12 +46,12 @@
 <tr>
 <td width="50%">
 <a href="https://x.com/affaanmustafa/status/2012378465664745795">
-<img src="https://github.com/user-attachments/assets/1a471488-59cc-425b-8345-5245c7efbcef" alt="The Shorthand Guide to Everything Claude Code" />
+<img src="https://github.com/user-attachments/assets/1a471488-59cc-425b-8345-5245c7efbcef" alt="The Shorthand Guide to ECC" />
 </a>
 </td>
 <td width="50%">
 <a href="https://x.com/affaanmustafa/status/2014040193557471352">
-<img src="https://github.com/user-attachments/assets/c9ca43bc-b149-427f-b551-af6840c368f0" alt="The Longform Guide to Everything Claude Code" />
+<img src="https://github.com/user-attachments/assets/c9ca43bc-b149-427f-b551-af6840c368f0" alt="The Longform Guide to ECC" />
 </a>
 </td>
 </tr>
@@ -100,7 +100,7 @@
 - **30명 이상의 커뮤니티 기여** — 6개 언어에 걸친 30명의 기여자
 - **978개 내부 테스트** — 에이전트, 스킬, 커맨드, 훅, 룰 전반에 걸친 검증
 
-전체 변경 내역은 [Releases](https://github.com/affaan-m/everything-claude-code/releases)에서 확인하세요.
+전체 변경 내역은 [Releases](https://github.com/affaan-m/ECC/releases)에서 확인하세요.
 
 ---
 
@@ -124,8 +124,8 @@
 
 ```bash
 # 먼저 저장소 클론
-git clone https://github.com/affaan-m/everything-claude-code.git
-cd everything-claude-code
+git clone https://github.com/affaan-m/ECC.git
+cd ECC
 
 # 권장: 설치 스크립트 사용 (common + 언어별 룰을 안전하게 처리)
 ./install.sh typescript    # 또는 python, golang
@@ -206,7 +206,7 @@ export ECC_DISABLED_HOOKS="pre:bash:tmux-reminder,post:edit:typecheck"
 이 저장소는 **Claude Code 플러그인**입니다 - 직접 설치하거나 컴포넌트를 수동으로 복사할 수 있습니다.
 
 ```
-everything-claude-code/
+ECC/
 |-- .claude-plugin/   # 플러그인 및 마켓플레이스 매니페스트
 |   |-- plugin.json         # 플러그인 메타데이터와 컴포넌트 경로
 |   |-- marketplace.json    # /plugin marketplace add용 마켓플레이스 카탈로그
@@ -370,7 +370,7 @@ Claude Code v2.1+는 설치된 플러그인의 `hooks/hooks.json`을 **자동으
     "ecc": {
       "source": {
         "source": "github",
-        "repo": "affaan-m/everything-claude-code"
+        "repo": "affaan-m/ECC"
       }
     }
   },
@@ -383,16 +383,16 @@ Claude Code v2.1+는 설치된 플러그인의 `hooks/hooks.json`을 **자동으
 > **참고:** Claude Code 플러그인 시스템은 `rules`를 플러그인으로 배포하는 것을 지원하지 않습니다. 룰은 수동으로 설치해야 합니다:
 >
 > ```bash
-> git clone https://github.com/affaan-m/everything-claude-code.git
+> git clone https://github.com/affaan-m/ECC.git
 >
 > # 옵션 A: 사용자 레벨 룰 (모든 프로젝트에 적용)
 > mkdir -p ~/.claude/rules
-> cp -r everything-claude-code/rules/common ~/.claude/rules/common
-> cp -r everything-claude-code/rules/typescript ~/.claude/rules/typescript   # 사용하는 스택 선택
+> cp -r ECC/rules/common ~/.claude/rules/common
+> cp -r ECC/rules/typescript ~/.claude/rules/typescript   # 사용하는 스택 선택
 >
 > # 옵션 B: 프로젝트 레벨 룰 (현재 프로젝트에만 적용)
 > mkdir -p .claude/rules
-> cp -r everything-claude-code/rules/common .claude/rules/common
+> cp -r ECC/rules/common .claude/rules/common
 > ```
 
 ---
@@ -403,21 +403,21 @@ Claude Code v2.1+는 설치된 플러그인의 `hooks/hooks.json`을 **자동으
 
 ```bash
 # 저장소 클론
-git clone https://github.com/affaan-m/everything-claude-code.git
+git clone https://github.com/affaan-m/ECC.git
 
 # 에이전트 복사
-cp everything-claude-code/agents/*.md ~/.claude/agents/
+cp ECC/agents/*.md ~/.claude/agents/
 
 # 룰 복사 (common + 언어별)
-cp -r everything-claude-code/rules/common ~/.claude/rules/common
-cp -r everything-claude-code/rules/typescript ~/.claude/rules/typescript   # 사용하는 스택 선택
+cp -r ECC/rules/common ~/.claude/rules/common
+cp -r ECC/rules/typescript ~/.claude/rules/typescript   # 사용하는 스택 선택
 
 # 커맨드 복사
-cp everything-claude-code/commands/*.md ~/.claude/commands/
+cp ECC/commands/*.md ~/.claude/commands/
 
 # 스킬 복사
-cp -r everything-claude-code/skills/* ~/.claude/skills/
-cp -r everything-claude-code/skills/search-first ~/.claude/skills/
+cp -r ECC/skills/* ~/.claude/skills/
+cp -r ECC/skills/search-first ~/.claude/skills/
 ```
 
 ---
@@ -570,10 +570,10 @@ MCP 서버가 너무 많으면 컨텍스트를 잡아먹습니다. 각 MCP 도�
 
 ```bash
 # 에이전트만
-cp everything-claude-code/agents/*.md ~/.claude/agents/
+cp ECC/agents/*.md ~/.claude/agents/
 
 # 룰만
-cp -r everything-claude-code/rules/common ~/.claude/rules/common
+cp -r ECC/rules/common ~/.claude/rules/common
 ```
 
 각 컴포넌트는 완전히 독립적입니다.
@@ -586,7 +586,7 @@ cp -r everything-claude-code/rules/common ~/.claude/rules/common
 - **Cursor**: `.cursor/`에 변환된 설정 제공
 - **OpenCode**: `.opencode/`에 전체 플러그인 지원
 - **Codex**: macOS 앱과 CLI 모두 퍼스트클래스 지원
-- **Antigravity**: `.agent/`에 워크플로우, 스킬, 평탄화된 룰 통합
+- **Antigravity**: `.agents/`에 워크플로우, 스킬, 에이전트, 평탄화된 룰 통합
 - **Claude Code**: 네이티브 — 이것이 주 타겟입니다
 </details>
 
@@ -709,14 +709,14 @@ Claude Code 사용 비용이 부담된다면 토큰 소비를 관리해야 합�
 
 ## Star 히스토리
 
-[![Star History Chart](https://api.star-history.com/svg?repos=affaan-m/everything-claude-code&type=Date)](https://star-history.com/#affaan-m/everything-claude-code&Date)
+[![Star History Chart](https://api.star-history.com/svg?repos=affaan-m/ECC&type=Date)](https://star-history.com/#affaan-m/ECC&Date)
 
 ---
 
 ## 링크
 
-- **요약 가이드 (여기서 시작):** [The Shorthand Guide to Everything Claude Code](https://x.com/affaanmustafa/status/2012378465664745795)
-- **상세 가이드 (고급):** [The Longform Guide to Everything Claude Code](https://x.com/affaanmustafa/status/2014040193557471352)
+- **요약 가이드 (여기서 시작):** [The Shorthand Guide to ECC](https://x.com/affaanmustafa/status/2012378465664745795)
+- **상세 가이드 (고급):** [The Longform Guide to ECC](https://x.com/affaanmustafa/status/2014040193557471352)
 - **팔로우:** [@affaanmustafa](https://x.com/affaanmustafa)
 - **zenith.chat:** [zenith.chat](https://zenith.chat)
 

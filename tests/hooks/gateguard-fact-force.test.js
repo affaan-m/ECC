@@ -105,6 +105,38 @@ function runBashHook(input, env = {}) {
   };
 }
 
+function runPowerShellHook(input, env = {}) {
+  const rawInput = typeof input === 'string' ? input : JSON.stringify(input);
+  const result = spawnSync(
+    'node',
+    [
+      runner,
+      'pre:powershell:gateguard-fact-force',
+      'scripts/hooks/gateguard-fact-force.js',
+      'standard,strict'
+    ],
+    {
+      input: rawInput,
+      encoding: 'utf8',
+      env: {
+        ...process.env,
+        ECC_HOOK_PROFILE: 'standard',
+        GATEGUARD_STATE_DIR: stateDir,
+        CLAUDE_SESSION_ID: TEST_SESSION_ID,
+        ...env
+      },
+      timeout: 15000,
+      stdio: ['pipe', 'pipe', 'pipe']
+    }
+  );
+
+  return {
+    code: Number.isInteger(result.status) ? result.status : 1,
+    stdout: result.stdout || '',
+    stderr: result.stderr || ''
+  };
+}
+
 function parseOutput(stdout) {
   try {
     return JSON.parse(stdout);
@@ -121,6 +153,577 @@ function loadDirectHook(env = {}) {
     ...env
   });
   return require(hookScript);
+}
+
+
+// Fast, pure classification matrix. These strings are input data, never shell commands.
+function runDdRegressionTests() {
+  const environment = {
+    GATEGUARD_STATE_DIR: stateDir,
+    CLAUDE_SESSION_ID: TEST_SESSION_ID,
+    GATEGUARD_DISABLED: '',
+    ECC_GATEGUARD: 'on',
+    GATEGUARD_BASH_EXTRA_DESTRUCTIVE: '',
+    GATEGUARD_BASH_ROUTINE_DISABLED: '1',
+    GATEGUARD_EXEMPT_GLOBS: '',
+    ECC_HOOKS_ENABLED: 'true',
+    ECC_HOOK_PROFILE: 'standard',
+    ECC_DISABLED_HOOKS: '',
+    ECC_DRY_RUN: '0',
+    ECC_HOOK_CONFIG: path.join(stateDir, 'no-managed-config.json'),
+    CLAUDE_PLUGIN_ROOT: path.resolve(__dirname, '../..'),
+    ECC_PLUGIN_ROOT: path.resolve(__dirname, '../..')
+  };
+  const original = Object.fromEntries(Object.keys(environment).map(key => [key, process.env[key]]));
+  Object.assign(process.env, environment);
+  let hook;
+  let passed = 0;
+  let failed = 0;
+  const check = (name, fn) => {
+    if (test(name, fn)) passed++;
+    else failed++;
+  };
+  const destructive = [
+    // GNU external time option names, prefixes and values stay distinct.
+    "/usr/bin/time -q dd of=output",
+    "/usr/bin/time --quiet dd if=input",
+    "/usr/bin/time --output-file report dd of=output",
+    "/usr/bin/time --output-file=report dd of=output",
+    "/usr/bin/time --output-file=dd dd of=output",
+    "/usr/bin/time --q dd of=output",
+    "/usr/bin/time --qui dd if=input",
+    "/usr/bin/time --output-f=report dd of=output",
+    "/usr/bin/time --o dd dd of=output",
+    "/usr/bin/time --a --f dd --o report --p --q --verb dd of=output",
+    "/usr/bin/time -qfFORMAT dd of=output",
+    "/usr/bin/time -apqvfdd dd if=input",
+    "/usr/bin/time -qo dd dd of=output",
+    "/usr/bin/time --quiet -- dd of=output",
+    "/usr/bin/time --format= --output-file=report --append --portability --quiet --verbose dd of=output",
+    "'time' '--quiet' dd of=output",
+    "command time --q dd of=output",
+    "env time --output-f=report dd of=output",
+    "sudo time -q dd of=output",
+    "find . -exec time --q dd of=output \\;",
+    "timeout 2 /usr/bin/time --q sh -c 'dd of=output'",
+    "/usr/bin/time --output-file='dd of=output' sh -c 'dd if=input'",
+    "/usr/bin/time --f='dd of=output' stdbuf -oL dd of=output",
+    "sh -c '\"time\" --q dd of=output'",
+    "time -- /usr/bin/time --q dd of=output",
+    // Current Bash reserved-time syntax keeps raw option identity.
+    "time -- dd of=output",
+    "time -p -- dd of=output",
+    "time -- command -p dd of=output",
+    "time -p -- exec dd if=input",
+    "time -- A=1 dd of=output",
+    "time -p -- sh -c 'dd of=output'",
+    "time -p -- time -- dd of=output",
+    "'time' '-p' '--' dd of=output",
+    "env time -p -- dd of=output",
+    "time -\\\np -- dd of=output",
+    // Literal launcher argv cases; these strings are never executed.
+    "time dd if=input",
+    "time -p dd of=output",
+    "time command -p dd if=input",
+    "time -p exec dd of=output",
+    "time A=1 dd of=output",
+    "/usr/bin/time dd if=input",
+    "/usr/bin/time -f dd dd of=output",
+    "/usr/bin/time -o dd -apv dd of=output",
+    "/usr/bin/time --format=dd --output=dd --append --portability --verbose dd of=output",
+    "\"time\" -f \"%e\" dd of=output",
+    "'time' -o report dd if=input",
+    "\\time -f dd dd of=output",
+    "command time -f dd dd of=output",
+    "env time -f dd dd of=output",
+    "sudo time -p dd of=output",
+    "find . -exec time -f dd dd of=output \\;",
+    "time -p sh -c 'dd of=output'",
+    "'time' -f dd sh -c 'dd if=input'",
+    "stdbuf -i0 -oL -e0 dd of=output",
+    "stdbuf --input=0 --output=L --error=0 dd if=input",
+    "stdbuf -o L -- dd if=input",
+    "ionice dd of=output",
+    "ionice -c 2 -n 7 -t dd if=input",
+    "ionice -tc2 -n7 dd of=output",
+    "ionice --class=idle --classdata=7 --ignore dd of=output",
+    "ionice -- dd if=input",
+    "setsid dd of=output",
+    "setsid -cfw dd if=input",
+    "setsid --ctty --fork --wait -- dd of=output",
+    "stdbuf -oL sh -c 'dd of=output'",
+    "ionice -c2 sh -c 'dd of=output'",
+    "setsid -w sh -c 'dd of=output'",
+    "time -p stdbuf -oL ionice -c2 setsid -f env -S 'dd of=output'",
+    "sudo -u root stdbuf -oL ionice -c2 setsid dd of=output",
+    "find . -exec stdbuf -oL setsid dd of=output \\;",
+    "find . -exec ionice -c2 setsid dd if=input \\;",
+    "sh -c 'time -p stdbuf -oL dd of=output'",
+    "setsid sh -c 'cat <<EOF\n$(dd of=output)\nEOF'",
+    'dd if=/dev/zero of=/dev/sda',
+    'dd of=/dev/sda bs=1M',
+    'cat /dev/zero | dd of=/dev/sda',
+    'sudo dd of=/dev/sda < /dev/zero',
+    'dd bs=1M of="./output"',
+    "timeout 60 bash -c 'dd if=/dev/zero of=/dev/sda'",
+    "nohup sh -c 'dd if=input'",
+    "nice -n 5 sh -c 'dd if=input'",
+    "xargs sh -c 'dd if=input'",
+    "timeout 2 sh -c 'dd of=output'",
+    "nohup sh -c 'echo $(dd of=output)'",
+    "nice -n 5 sh -c 'cat <<EOF\n$(dd of=output)\nEOF'",
+    'find . -exec dd of=output \\;',
+    'dd if=./image of=./out',
+    'dd of=./out bs=1M if="./image"',
+    "'/bin/dd' if=input of=output",
+    'sudo -u root dd if=input',
+    'command dd if=input of=output',
+    'xargs dd if=input of=output',
+    'xargs -- dd if=input',
+    'xargs -0 -I{} dd if=input',
+    'xargs -n 2 -P4 dd if=input',
+    'xargs -a input --delimiter=, dd if=input',
+    'xargs --max-args 2 dd if=input',
+    'xargs -e dd if=input',
+    'xargs -i dd if=input',
+    'xargs --replace dd if=input',
+    'xargs -J{} dd if=input',
+    'timeout 2 dd if=input of=output',
+    'timeout -k 1 -s TERM 2s dd if=input',
+    'timeout --kill-after=1 --signal=TERM --foreground 2 dd if=input',
+    'timeout -- 2 dd if=input',
+    'nice dd if=input of=output',
+    'nice -n 5 dd if=input',
+    'nice --adjustment=-5 dd if=input',
+    'nice -5 dd if=input',
+    'nice --5 dd if=input',
+    'nohup dd if=input of=output',
+    'nohup -- dd if=input',
+    'command nice -n 2 timeout 3 env A=1 dd if=input',
+    'command -p dd if=input',
+    'command -- dd if=input',
+    'exec dd if=input of=output',
+    'exec -a ddname dd if=input',
+    'exec -addname dd if=input',
+    'exec -cl dd if=input',
+    'exec -- dd if=input',
+    'A=1 command -p exec -a ddname dd if=input',
+    'sudo --user=root dd if=input',
+    'sudo -uroot dd if=input',
+    'sudo -nu root dd if=input',
+    'sudo -nuroot dd if=input',
+    'doas -nu root dd if=input',
+    'sudo -g staff dd if=input',
+    'sudo --group staff dd if=input',
+    'sudo -C 3 dd if=input',
+    'sudo -D /tmp dd if=input',
+    'sudo -- dd if=input',
+    'doas -u root dd if=input',
+    'doas -C /tmp/doas.conf dd if=input',
+    'env -u FOO dd if=input',
+    'env -uFOO dd if=input',
+    'env -C /tmp dd if=input',
+    'env -C/tmp dd if=input',
+    'env --argv0 ddname dd if=input',
+    'env -a ddname dd if=input',
+    'env -addname dd if=input',
+    'env --unset=FOO --chdir=/tmp --argv0=ddname dd if=input',
+    'A=1 env B=2 sudo -u root dd if=input',
+    'sudo A=1 dd if=input',
+    "env -S 'dd if=input of=output'",
+    "env --split-string='dd if=input'",
+    'env -Sdd if=input',
+    "env -iS 'dd if=input'",
+    'env -iuFOO dd if=input',
+    "env -S 'sudo -u root dd' if=input",
+    "env -S 'sh -c \"dd if=input\"'",
+    "env -S 'env -S \"dd if=input\"'",
+    "env -S 'dd\\_if=input'",
+    "env -S 'dd if=input # trailing comment'",
+    String.raw`env -S 'dd "if=input\_file"'`,
+    String.raw`env -S 'dd "if=input\"quote"'`,
+    'echo $(dd if=input of=output)',
+    'echo "$(dd if=./input)"',
+    'echo `dd if=input`',
+    '(dd if=input)',
+    '{ dd if=input; }',
+    'echo $({ (dd if=input); })',
+    "sh -c 'echo $(dd if=input)'",
+    "sh -c 'echo `dd if=input`'",
+    "sh -c '(dd if=input)'",
+    "sh -c 'cat <<EOF\n$(dd if=input)\nEOF'",
+    "sh -c 'sh <<EOF\ndd if=input\nEOF'",
+    'find . -exec dd if=input of=output \\;',
+    'printf note; find . -exec dd if=input \\;',
+    'echo "note; passive text"; find . -exec dd if=input \\;',
+    "sh -c 'printf note; find . -exec dd if=input \\;'",
+    'find . -exec sudo -u root dd if=input \\;',
+    'find . -exec echo {} \\; -exec dd if=input of=output \\;',
+    'find . -exec echo {} + -exec dd if=input \\;',
+    'find . -exec echo + -exec dd if=argument \\; -exec dd if=actual \\;',
+    'find . -execdir dd if=input \\;',
+    'find . -ok dd if=input \\;',
+    'find . -okdir dd if=input \\;',
+    'find . -name -exec -exec dd if=input \\;',
+    "find . -printf '-exec' -exec dd if=input \\;",
+    "find . -fprintf '-exec' '-exec' -exec dd if=input \\;",
+    ['cat <<EOF', '$(dd if=input)', 'EOF'].join('\n'),
+    ['sh <<EOF', 'dd if=input', 'EOF'].join('\n'),
+    ["cat <<'EOF'", 'dd if=input', 'EOF', 'dd if=after'].join('\n'),
+    'sudo -u postgres psql -c "drop table users"',
+    "env -S 'sudo -u postgres psql' -c 'drop table users'",
+    "sh -c 'psql -c \"drop table users\"'",
+    'git push --force origin main',
+    'git push --force-with-lease origin main',
+    `${'env '.repeat(40)}dd if=input`,
+    'git reset --hard',
+    'git stash clear',
+    'git restore tracked.txt',
+    "find . -exec 'rm' {} \\;"
+  ];
+  const passive = [
+    // GNU external time option names, prefixes and values stay distinct.
+    "/usr/bin/time --v dd of=output",
+    "/usr/bin/time --ver dd of=output",
+    "/usr/bin/time --quiet=value dd of=output",
+    "/usr/bin/time --q=value dd of=output",
+    "/usr/bin/time --append=dd dd of=output",
+    "/usr/bin/time --portability=dd dd of=output",
+    "/usr/bin/time --verbose=dd dd of=output",
+    "/usr/bin/time --help dd of=output",
+    "/usr/bin/time --h dd of=output",
+    "/usr/bin/time --he dd of=output",
+    "/usr/bin/time --version dd of=output",
+    "/usr/bin/time --vers dd of=output",
+    "/usr/bin/time -qV dd of=output",
+    "/usr/bin/time --q --help dd of=output",
+    "/usr/bin/time --output-file dd echo of=output",
+    "/usr/bin/time --output-file=dd echo of=output",
+    "/usr/bin/time --output-f=dd echo of=output",
+    "/usr/bin/time --o dd echo of=output",
+    "/usr/bin/time -qfdd echo of=output",
+    "/usr/bin/time --f=dd echo of=output",
+    "/usr/bin/time --output-file dd of=output",
+    "/usr/bin/time --output-file",
+    "/usr/bin/time --quiet --output-file",
+    "/usr/bin/time --unknown dd of=output",
+    "/usr/bin/time --quieter dd of=output",
+    "/usr/bin/time --=dd dd of=output",
+    "/usr/bin/time -- -q dd of=output",
+    "/usr/bin/time echo --quiet dd of=output",
+    "/usr/bin/time --q command dd of=output",
+    "/usr/bin/time --q echo 'dd of=output'",
+    "/usr/bin/time --output-file='sh -c dd of=output' echo safe",
+    "/usr/bin/time -q sh -c 'echo \"dd of=output\"'",
+    "echo '/usr/bin/time --q dd of=output'",
+    "find . -name 'time --q dd of=output' -print",
+    "find . -exec echo time --q dd of=output \\;",
+    "time -q dd of=output",
+    "time --quiet dd of=output",
+    "time --output-file=report dd of=output",
+    // Current Bash reserved-time syntax keeps raw option identity.
+    "time '-p' dd of=output",
+    "time \"-p\" dd of=output",
+    "time \\-p dd of=output",
+    "time -\\p dd of=output",
+    "time '--' dd of=output",
+    "time \"--\" dd of=output",
+    "time \\-- dd of=output",
+    "time -p '--' dd of=output",
+    "time -p \\-- dd of=output",
+    "time -- -p dd of=output",
+    "time -p -p dd of=output",
+    "time -p'' dd of=output",
+    "time --'' dd of=output",
+    "time -- command -v dd of=output",
+    "time -- echo 'dd of=output'",
+    // Literal launcher argv cases; these strings are never executed.
+    "time echo dd if=input",
+    "time -p command -v dd if=input",
+    "time command -pV dd of=output",
+    "time -p exec -a dd echo of=output",
+    "time -f dd of=output",
+    "/usr/bin/time -f dd echo of=output",
+    "/usr/bin/time --format=dd echo if=input",
+    "/usr/bin/time -o dd echo of=output",
+    "/usr/bin/time --output=dd echo if=input",
+    "/usr/bin/time -afdd echo if=input",
+    "/usr/bin/time --help dd of=output",
+    "/usr/bin/time --version dd if=input",
+    "'time' -f dd echo of=output",
+    "\\time -o dd echo if=input",
+    "command time -f dd echo if=input",
+    "env time command dd of=output",
+    "A=1 time command dd of=output",
+    "/usr/bin/time command dd of=output",
+    "'time' command dd of=output",
+    "stdbuf -o dd echo if=input",
+    "stdbuf --input=dd echo of=output",
+    "stdbuf -edd echo of=output",
+    "stdbuf --help dd if=input",
+    "stdbuf --version dd of=output",
+    "stdbuf -oL echo 'dd of=output'",
+    "stdbuf -oL command dd if=input",
+    "ionice -c dd echo of=output",
+    "ionice --classdata=dd echo if=input",
+    "ionice -p 1 dd of=output",
+    "ionice -p1 dd if=input",
+    "ionice --pid=1 dd of=output",
+    "ionice -P 1 dd if=input",
+    "ionice --pgid 1 dd of=output",
+    "ionice -u 1 dd if=input",
+    "ionice --uid=1 dd of=output",
+    "ionice -tc2 -p1 dd of=output",
+    "ionice -h dd if=input",
+    "ionice --help dd of=output",
+    "ionice -V dd of=output",
+    "ionice --version dd if=input",
+    "ionice -c2 echo 'dd if=input'",
+    "ionice -c2 command dd of=output",
+    "setsid -h dd if=input",
+    "setsid --help dd of=output",
+    "setsid -V dd of=output",
+    "setsid --version dd if=input",
+    "setsid -w echo dd of=output",
+    "setsid command dd if=input",
+    "time -p stdbuf -oL ionice -c2 setsid echo 'dd of=output'",
+    "setsid -w sh -c 'echo \"dd of=output\"'",
+    "time -p sh -c 'cat <<EOF\ndd of=output\nEOF'",
+    "echo 'time dd if=input; setsid dd of=output'",
+    "printf '%s' 'stdbuf -oL dd if=input'",
+    "find . -name \"time -p dd of=output\" -print",
+    "find . -exec echo setsid dd of=output \\;",
+    "env -S 'echo time dd if=input; setsid dd of=output'",
+    'echo dd if=input',
+    'echo dd of=/dev/sda',
+    'grep dd of=output file',
+    "printf '%s' 'dd of=output'",
+    'dd count=0',
+    "timeout 2 echo 'sh -c dd of=output'",
+    "timeout 2 sh -c 'echo \"dd of=output\"'",
+    "nohup sh -c 'cat <<EOF\ndd of=output\nEOF'",
+    "nice -n 5 echo 'dd of=output'",
+    "xargs echo 'sh -c dd of=output'",
+    'echo "note; find . -exec dd of=output \\;"',
+    'command -v dd',
+    'command -v dd if=input',
+    'command -V dd if=input',
+    'command -V dd',
+    'command -pv dd',
+    'command -pV dd if=input',
+    'command echo dd if=input',
+    'xargs echo dd if=input',
+    'xargs -I dd echo if=input',
+    'xargs -d dd echo if=input',
+    'xargs --arg-file dd echo if=input',
+    'xargs -edd echo if=input',
+    'xargs --replace=dd echo if=input',
+    'xargs --help dd if=input',
+    'timeout 2 echo dd if=input',
+    'timeout -s dd 2 echo if=input',
+    'timeout --help dd if=input',
+    'nice -n 2 echo dd if=input',
+    'nice --version dd if=input',
+    'nohup echo dd if=input',
+    'nohup --help dd if=input',
+    'xargs command dd if=input',
+    'timeout 2 command dd if=input',
+    'exec -a dd echo if=input',
+    'exec -add echo if=input',
+    'exec echo dd if=input',
+    'command A=1 dd if=input',
+    "echo 'command dd if=input'",
+    "echo 'exec dd if=input'",
+    'sudo command dd if=input',
+    'env command dd if=input',
+    'exec command dd if=input',
+    'grep dd if=/dev/zero file',
+    "printf '%s' 'dd if=input'",
+    'echo add if=1',
+    'echo truncated',
+    'sudo -u dd echo if=input',
+    'sudo --user=dd echo if=input',
+    'sudo -udd echo if=input',
+    'sudo -nu dd echo if=input',
+    'doas -nu dd echo if=input',
+    'env -iu dd echo if=input',
+    'doas -u dd echo if=input',
+    'env -u dd echo if=input',
+    'env -C dd echo if=input',
+    'env --argv0 dd echo if=input',
+    'env -a dd echo if=input',
+    'env -- -u dd if=input',
+    'A=dd echo if=input',
+    'echo sudo -u root dd if=input',
+    "env -S 'echo dd if=input'",
+    String.raw`env -S 'echo "dd if=input\"quote"'`,
+    "env -S 'echo ok; dd if=input'",
+    "env -S 'echo ok | dd if=input'",
+    "env -S 'echo ok & dd if=input'",
+    "env -S 'echo $(dd if=input)'",
+    "env -S 'echo `dd if=input`'",
+    "env -S 'echo # dd if=input'",
+    "env -S 'echo\\c dd if=input'",
+    "env -S 'echo \\$(dd if=input)'",
+    "echo 'env -S dd if=input'",
+    "env -S ''",
+    'env -S',
+    "env -S '\"dd if=input'",
+    "env -S 'dd if=input\\q'",
+    "env -S '${UNREAD_HOST_COMMAND} if=input'",
+    "echo '$(dd if=input)'",
+    "echo '`dd if=input`'",
+    "echo '(dd if=input)'",
+    "echo '{ dd if=input; }'",
+    "sh -c 'echo \"dd if=input\"'",
+    "sh -c 'cat <<EOF\ndd if=input\nEOF'",
+    ["cat <<'EOF'", 'dd if=input; $(dd if=input)', 'EOF'].join('\n'),
+    ['cat <<EOF', 'dd if=input', 'EOF'].join('\n'),
+    ['cat <<EOF', '\\$(dd if=input)', 'EOF'].join('\n'),
+    'psql -c "SELECT \'drop table\' FROM audit_log"',
+    'echo "drop table users"',
+    'git commit -m "drop table users"',
+    'git push --force-with-lease origin feature-branch',
+    'echo "note; find . -exec dd if=input \\;"',
+    "printf '%s' 'note; find . -exec dd if=input \\;'",
+    'echo "note | find . -exec dd if=input \\;"',
+    'echo "note & find . -exec dd if=input \\;"',
+    "find . -name 'x -exec dd if=input' -print",
+    'find . -exec echo -exec dd if=input \\;',
+    'find . -exec echo + -exec dd if=input \\;',
+    "find . -exec echo '-exec dd if=input' \\;",
+    'find . -execdir echo dd if=input \\;',
+    'find . -ok echo -exec dd if=input \\;',
+    'find . -okdir echo dd if=input \\;',
+    'find . -exec command dd if=input \\;',
+    'git status',
+    'git diff --stat',
+    'git restore --staged tracked.txt'
+  ];
+  try {
+    hook = loadDirectHook();
+    // Launcher operands stay data; only the resolved SQL client consumes SQL.
+    const wrappedSqlDestructive = [
+      'timeout 5 psql -c "drop table users"',
+      'time psql -c "truncate audit_log"',
+      '/usr/bin/time -f "%E" psql -c "drop table users"',
+      '/usr/bin/time -q --output-file timing.log mysql -e "delete from sessions"',
+      'nice -n 5 mariadb -e "delete from sessions"',
+      'nohup sqlite3 fixture.db "drop table users"',
+      'stdbuf -oL psql -c "truncate audit_log"',
+      'ionice -c 2 -n 4 psql -c "drop table users"',
+      'setsid -w sqlcmd -Q "drop table users"',
+      'xargs -r -n 1 psql -c "drop table users"',
+      "env -S 'timeout 5 psql' -c 'drop table users'",
+      'timeout 5 nice -n 1 nohup psql -c "drop table users"',
+      'time -p command -- psql -c "truncate audit_log"',
+      "timeout 5 sh -c 'psql -c \"drop table users\"'"
+    ];
+    const wrappedSqlPassive = [
+      'timeout 5 echo "psql -c drop table users"',
+      'time -p printf "%s" "truncate audit_log"',
+      '/usr/bin/time -f "psql drop table" echo ok',
+      '/usr/bin/time -o psql echo "drop table users"',
+      'nice -n psql echo "drop table users"',
+      'ionice -c psql echo "drop table users"',
+      'stdbuf -o psql echo "drop table users"',
+      'xargs -I psql echo "drop table users"',
+      'xargs -E psql echo "drop table users"',
+      'setsid --help psql -c "drop table users"',
+      'ionice -p 123 psql -c "drop table users"',
+      '/usr/bin/time --help psql -c "drop table users"',
+      '/usr/bin/time --version psql -c "drop table users"',
+      'command -v psql "drop table users"',
+      'timeout 5 psql -c "SELECT \'drop table\' AS label"',
+      "time '-p' psql -c 'drop table users'",
+      'env time command psql -c "drop table users"',
+      'echo "timeout 5 psql -c drop table users"'
+    ];
+    for (const [commands, expected] of [
+      [wrappedSqlDestructive, ['gateguard.bash-compatible-destructive']],
+      [wrappedSqlPassive, []]
+    ]) {
+      for (const command of commands) {
+        check(`SQL launcher classification: ${JSON.stringify(command)}`, () => {
+          assert.deepStrictEqual(hook.classifyDestructiveCommand('Bash', command), expected);
+        });
+      }
+    }
+    for (const command of destructive) {
+      check(`dd/preservation destructive: ${JSON.stringify(command)}`, () => {
+        assert.deepStrictEqual(hook.classifyDestructiveCommand('Bash', command), [
+          'gateguard.bash-compatible-destructive'
+        ]);
+      });
+    }
+    for (const command of passive) {
+      check(`dd/preservation passive: ${JSON.stringify(command)}`, () => {
+        assert.deepStrictEqual(hook.classifyDestructiveCommand('Bash', command), []);
+      });
+    }
+    for (const [command, denied] of [
+      ['sudo -u root dd if=input', true],
+      ["sh -c 'echo $(dd if=input)'", true],
+      ['sudo -u dd echo if=input', false],
+      ["env -S 'echo ok; dd if=input'", false],
+      ['find . -exec echo {} \\; -exec dd if=input \\;', true],
+      ['command -pv dd', false],
+      ["timeout 2 sh -c 'dd if=input'", true],
+      ['cat /dev/zero | dd of=/dev/sda', true]
+    ]) {
+      check(`dd hook-input contract: ${command}`, () => {
+        fs.rmSync(stateDir, { recursive: true, force: true });
+        fs.mkdirSync(stateDir, { recursive: true });
+        const input = { tool_name: 'Bash', tool_input: { command } };
+        const result = spawnSync(process.execPath, [runner, 'pre:bash:gateguard-fact-force',
+          'scripts/hooks/gateguard-fact-force.js', 'standard,strict'], {
+          input: JSON.stringify(input), encoding: 'utf8', timeout: 15000,
+          env: { ...process.env, ...environment }, stdio: ['pipe', 'pipe', 'pipe']
+        });
+        assert.ifError(result.error);
+        assert.strictEqual(result.status, 0, result.stderr);
+        const output = JSON.parse(result.stdout);
+        if (denied) {
+          assert.strictEqual(output.hookSpecificOutput.permissionDecision, 'deny');
+          assert.match(output.hookSpecificOutput.permissionDecisionReason, /Destructive/);
+        } else {
+          assert.deepStrictEqual(output, input, 'allow must be actual JSON pass-through, not silence');
+        }
+      });
+    }
+    check('main batch warning and invisible-path sanitizer stay intact', () => {
+      fs.rmSync(stateDir, { recursive: true, force: true });
+      fs.mkdirSync(stateDir, { recursive: true });
+      const result = hook.run({ tool_name: 'Write', tool_input: { file_path: '/src/a\u0091b\u200bc.js' } });
+      assert.strictEqual(result.exitCode, 0);
+      const output = JSON.parse(result.stdout).hookSpecificOutput;
+      assert.strictEqual(output.permissionDecision, 'deny');
+      assert.match(output.permissionDecisionReason, /parallel batch/);
+      assert.ok(!output.permissionDecisionReason.includes('\u0091'));
+      assert.ok(!output.permissionDecisionReason.includes('\u200b'));
+      assert.match(output.permissionDecisionReason, /c\.js/);
+    });
+    check('disabled hook remains silent through the routing wrapper', () => {
+      const result = spawnSync(process.execPath, [runner, 'pre:bash:gateguard-fact-force',
+        'scripts/hooks/gateguard-fact-force.js', 'standard,strict'], {
+        input: JSON.stringify({ tool_name: 'Bash', tool_input: { command: 'dd if=input' } }),
+        encoding: 'utf8', timeout: 15000,
+        env: { ...process.env, ...environment, ECC_DISABLED_HOOKS: 'pre:bash:gateguard-fact-force' },
+        stdio: ['pipe', 'pipe', 'pipe']
+      });
+      assert.ifError(result.error);
+      assert.strictEqual(result.status, 0, result.stderr);
+      assert.strictEqual(result.stdout, '');
+    });
+    return { passed, failed };
+  } finally {
+    fs.rmSync(stateDir, { recursive: true, force: true });
+    for (const [key, value] of Object.entries(original)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+    delete require.cache[require.resolve(hookScript)];
+  }
 }
 
 function runTests() {
@@ -145,6 +748,8 @@ function runTests() {
       assert.ok(output.hookSpecificOutput.permissionDecisionReason.includes('Fact-Forcing Gate'));
       assert.ok(output.hookSpecificOutput.permissionDecisionReason.includes('import/require'));
       assert.ok(output.hookSpecificOutput.permissionDecisionReason.includes('/src/app.js'));
+      assert.ok(output.hookSpecificOutput.permissionDecisionReason.includes('GATEGUARD_EXEMPT_GLOBS'), 'Edit denial should show the path-scoped exemption control');
+      assert.ok(!output.hookSpecificOutput.permissionDecisionReason.includes('GATEGUARD_BASH_ROUTINE_DISABLED'), 'Edit denial should not suggest the routine Bash control');
     })
   )
     passed++;
@@ -207,13 +812,7 @@ function runTests() {
       };
       const result = runHook(input, { GATEGUARD_STATE_DIR: invalidStateDir });
       assert.strictEqual(result.code, 0, 'exit code should be 0');
-      const output = parseOutput(result.stdout);
-      assert.ok(output, 'should produce valid JSON output');
-      if (output.hookSpecificOutput) {
-        assert.notStrictEqual(output.hookSpecificOutput.permissionDecision, 'deny', 'unpersistable state must not deny a retry that can never be recorded');
-      } else {
-        assert.strictEqual(output.tool_name, 'Write', 'pass-through should preserve input');
-      }
+      assert.strictEqual(result.stdout, '', 'fail-open result without an explicit decision must stay silent');
       assert.ok(result.stderr.includes('GateGuard state could not be persisted'), 'should warn that state persistence failed');
     })
   )
@@ -252,6 +851,91 @@ function runTests() {
   )
     passed++;
   else failed++;
+
+  // --- Test 4b: dd targets that do not start with a word character ---
+  /**
+   * #2642: DESTRUCTIVE_SQL_DD carried one trailing \b across every alternation
+   * arm. `dd\s+if=` ends in `=`, so that \b demanded the NEXT character be a
+   * word character: `dd if=x` was denied while the disk-wipe spelling
+   * `dd if=/dev/zero of=/dev/sda` and the relative `dd if=./img` were allowed.
+   * These run through the real hook, since the report is specifically that the
+   * published hook lets the slash-prefixed form through.
+   */
+  for (const command of [
+    'dd if=/dev/zero of=/dev/sda',
+    'dd if=./disk.img of=/dev/sdb',
+    'dd if="/dev/zero" of=/dev/sda',
+    // Wrapped invocations must still resolve to the dd command word.
+    'sudo dd if=/dev/zero of=/dev/sda',
+    // dd operands are order-free; a text pattern anchored on `dd if=` missed
+    // both the reversed and the intervening-option spellings.
+    'dd of=/dev/sda if=/dev/zero',
+    'dd bs=1M if=/dev/zero of=/dev/sda'
+  ]) {
+    clearState();
+    if (
+      test(`denies dd whose input path is not word-initial: ${command}`, () => {
+        const result = runBashHook({ tool_name: 'Bash', tool_input: { command } });
+        assert.strictEqual(result.code, 0, `hook should exit successfully for ${command}`);
+        const output = parseOutput(result.stdout);
+        assert.ok(output, 'hook should produce JSON output');
+        assert.ok(output.hookSpecificOutput, 'hook should return a permission decision');
+        assert.strictEqual(
+          output.hookSpecificOutput.permissionDecision,
+          'deny',
+          `${command} must be gated as destructive`
+        );
+        assert.ok(output.hookSpecificOutput.permissionDecisionReason.includes('Destructive'));
+      })
+    )
+      passed++;
+    else failed++;
+  }
+
+  // --- Test 4c: widening the dd arm must not gate ordinary commands ---
+  /**
+   * SQL keywords retain their word boundaries; dd is checked only at command
+   * position. `truncated`, `add if=` and prose mentioning dd stay passive.
+   */
+  for (const command of [
+    'echo add if=1',
+    'echo truncated output',
+    'git status',
+    // `dd if=` as another command's argument runs no dd at all. The old text
+    // match gated these; the command-word check is what keeps them out.
+    'echo dd if=/dev/zero',
+    'grep dd if=/dev/zero file',
+    'echo dd if=x'
+  ]) {
+    clearState();
+    if (
+      test(`does not gate as destructive: ${command}`, () => {
+        // Prime the session so the separate first-command routine gate cannot
+        // be mistaken for a destructive denial.
+        runBashHook({ tool_name: 'Bash', tool_input: { command: 'printf ready' } });
+        const result = runBashHook({ tool_name: 'Bash', tool_input: { command } });
+        // Assert the hook actually answered before reading the decision: a
+        // crashed or silent hook makes parseOutput return null, and a bare
+        // `if (output)` would let this case pass without testing anything.
+        assert.strictEqual(result.code, 0, `hook should exit 0 for ${command}`);
+        const output = parseOutput(result.stdout);
+        assert.ok(output, `hook should produce JSON output for ${command}`);
+        const decision = output.hookSpecificOutput;
+        if (decision) {
+          const reason = decision.permissionDecisionReason || '';
+          assert.ok(
+            decision.permissionDecision !== 'deny' || !reason.includes('Destructive'),
+            `${command} must not be gated as destructive`
+          );
+        } else {
+          // Pass-through echoes the input back unchanged.
+          assert.strictEqual(output.tool_name, 'Bash', 'pass-through should preserve input');
+        }
+      })
+    )
+      passed++;
+    else failed++;
+  }
 
   // --- Test 5: denies first routine Bash, allows second ---
   clearState();
@@ -453,14 +1137,7 @@ function runTests() {
       });
 
       assert.strictEqual(result.code, 0, 'exit code should be 0');
-      const output = parseOutput(result.stdout);
-      assert.ok(output, 'should produce valid JSON output');
-      if (output.hookSpecificOutput) {
-        assert.notStrictEqual(output.hookSpecificOutput.permissionDecision, 'deny', 'should not deny when hook is disabled');
-      } else {
-        // When disabled, hook passes through raw input
-        assert.strictEqual(output.tool_name, 'Edit', 'pass-through should preserve input');
-      }
+      assert.strictEqual(result.stdout, '', 'disabled wrapper hook must stay silent');
     })
   )
     passed++;
@@ -538,6 +1215,8 @@ function runTests() {
       assert.strictEqual(output.hookSpecificOutput.permissionDecision, 'deny');
       assert.ok(output.hookSpecificOutput.permissionDecisionReason.includes('ECC_GATEGUARD=off'), 'denial reason should show the direct recovery env toggle');
       assert.ok(output.hookSpecificOutput.permissionDecisionReason.includes('ECC_DISABLED_HOOKS'), 'denial reason should mention the existing hook-id disable control');
+      assert.ok(output.hookSpecificOutput.permissionDecisionReason.includes('GATEGUARD_EXEMPT_GLOBS'), 'Edit/Write denial should show the path-scoped exemption control');
+      assert.ok(!output.hookSpecificOutput.permissionDecisionReason.includes('GATEGUARD_BASH_ROUTINE_DISABLED'), 'Edit/Write denial should not suggest the routine Bash control');
     })
   )
     passed++;
@@ -558,6 +1237,9 @@ function runTests() {
       assert.strictEqual(output.hookSpecificOutput.permissionDecision, 'deny');
       assert.ok(reason.includes('pre:bash:gateguard-fact-force'), 'routine Bash denial should show the Bash hook ID');
       assert.ok(!reason.includes('pre:edit-write:gateguard-fact-force'), 'routine Bash denial should not show the Edit/Write hook ID as the targeted disable');
+      assert.ok(reason.includes('GATEGUARD_BASH_ROUTINE_DISABLED=1'), 'routine Bash denial should show the narrow routine-gate control');
+      assert.ok(reason.includes('destructive Bash checks remain active'), 'routine Bash denial should preserve the destructive-check safety boundary');
+      assert.ok(!reason.includes('GATEGUARD_EXEMPT_GLOBS'), 'routine Bash denial should not suggest the Edit/Write path control');
     })
   )
     passed++;
@@ -577,6 +1259,9 @@ function runTests() {
       assert.strictEqual(output.hookSpecificOutput.permissionDecision, 'deny');
       assert.ok(output.hookSpecificOutput.permissionDecisionReason.includes('Destructive command detected'));
       assert.ok(!output.hookSpecificOutput.permissionDecisionReason.includes('ECC_GATEGUARD=off'), 'destructive gate should not advertise disabling GateGuard');
+      assert.ok(!output.hookSpecificOutput.permissionDecisionReason.includes('ECC_DISABLED_HOOKS'), 'destructive gate should not advertise disabling its hook');
+      assert.ok(!output.hookSpecificOutput.permissionDecisionReason.includes('GATEGUARD_BASH_ROUTINE_DISABLED'), 'destructive gate should not advertise the routine-only bypass');
+      assert.ok(!output.hookSpecificOutput.permissionDecisionReason.includes('GATEGUARD_EXEMPT_GLOBS'), 'destructive gate should not advertise the Edit/Write path exemption');
     })
   )
     passed++;
@@ -602,6 +1287,7 @@ function runTests() {
       assert.strictEqual(output.hookSpecificOutput.permissionDecision, 'deny');
       assert.ok(output.hookSpecificOutput.permissionDecisionReason.includes('Fact-Forcing Gate'));
       assert.ok(output.hookSpecificOutput.permissionDecisionReason.includes('/src/multi-a.js'));
+      assert.ok(output.hookSpecificOutput.permissionDecisionReason.includes('GATEGUARD_EXEMPT_GLOBS'), 'MultiEdit denial should show the path-scoped exemption control');
     })
   )
     passed++;
@@ -1478,12 +2164,583 @@ function runTests() {
   else failed++;
 
   if (
-    test('allows git push --force-if-includes as a safety-checked variant', () => {
-      expectAllow('git push --force-with-lease --force-if-includes origin main', 'git push --force-if-includes');
+    test('denies quoted destructive SQL passed to SQL clients (issue #3024)', () => {
+      expectDestructiveDeny('psql -c "drop table users"', 'psql quoted drop table');
+      expectDestructiveDeny("psql -c 'truncate audit_log'", 'psql quoted truncate');
+      expectDestructiveDeny('mysql -e "delete from sessions"', 'mysql quoted delete');
+      expectDestructiveDeny('sqlite3 app.db "DROP TABLE users"', 'sqlite3 quoted drop');
     })
   )
     passed++;
   else failed++;
+
+  if (
+    test('denies quoted destructive SQL through sudo/env wrappers', () => {
+      expectDestructiveDeny('sudo -u postgres psql -c "drop table users"', 'sudo -u psql');
+      expectDestructiveDeny('env PGUSER=postgres psql -c "drop table users"', 'env psql');
+      expectDestructiveDeny('env PGPASSWORD=value psql -c "drop table users"', 'env PGPASSWORD psql');
+      expectDestructiveDeny('env -C /tmp psql -c "drop table users"', 'env -C psql');
+      expectDestructiveDeny('env --chdir /tmp psql -c "drop table users"', 'env --chdir psql');
+    })
+  )
+    passed++;
+  else failed++;
+
+  if (
+    test('denies destructive SQL through wrapper sh -c chains', () => {
+      expectDestructiveDeny('sudo sh -c \'psql -c "drop table users"\'', 'sudo sh -c psql');
+      expectDestructiveDeny('env sh -c \'psql -c "drop table users"\'', 'env sh -c psql');
+    })
+  )
+    passed++;
+  else failed++;
+
+  if (
+    test('allows SQL string literals and non-SQL clients mentioning SQL', () => {
+      expectAllow('psql -c "SELECT \'drop table\' FROM audit_log"', 'SQL string literal');
+      expectAllow('psql -c "SELECT $tag$drop table users$tag$ FROM t"', 'tagged dollar-quote literal');
+      expectAllow('echo "drop table users"', 'echo SQL mention');
+    })
+  )
+    passed++;
+  else failed++;
+
+  if (
+    test('allows destructive SQL prose inside a quoted heredoc', () => {
+      expectAllow(
+        [
+          "cat > migration-notes.md <<'EOF'",
+          'This migration will DROP TABLE old_sessions after verification.',
+          'EOF'
+        ].join('\n'),
+        'quoted heredoc SQL prose'
+      );
+    })
+  )
+    passed++;
+  else failed++;
+
+  if (
+    test('allows destructive prose and separators inside an unquoted heredoc', () => {
+      expectAllow(
+        [
+          'cat > migration-notes.md <<EOF',
+          'Document only: DELETE FROM sessions; rm -rf old-cache',
+          'EOF'
+        ].join('\n'),
+        'unquoted heredoc prose'
+      );
+    })
+  )
+    passed++;
+  else failed++;
+
+  if (
+    test('allows destructive prose inside a tab-stripping heredoc', () => {
+      expectAllow(
+        [
+          'cat > migration-notes.md <<-EOF',
+          '\tTRUNCATE old_sessions; rm -rf old-cache',
+          '\tEOF'
+        ].join('\n'),
+        'tab-stripping heredoc prose'
+      );
+    })
+  )
+    passed++;
+  else failed++;
+
+  if (
+    test('handles multiple heredoc redirections in declaration order', () => {
+      expectAllow(
+        [
+          "cat <<ONE <<'TWO'",
+          'DELETE FROM sessions is documentation here.',
+          'ONE',
+          '$(rm -rf /tmp/example-only)',
+          'TWO'
+        ].join('\n'),
+        'multiple heredoc redirections'
+      );
+    })
+  )
+    passed++;
+  else failed++;
+
+  if (
+    test('fails closed when a shell consumes the heredoc payload', () => {
+      for (const command of [
+        ['bash <<EOF', 'rm -rf /tmp/shell-input-target', 'EOF'].join('\n'),
+        ["sh <<'EOF'", 'git reset --hard', 'EOF'].join('\n'),
+        ['cat <<EOF | sh', 'rm -rf /tmp/piped-shell-target', 'EOF'].join('\n'),
+        ["cat > /tmp/review-script <<'EOF'", 'rm -rf /tmp/persisted-target', 'EOF', 'bash /tmp/review-script'].join('\n')
+      ]) {
+        expectDestructiveDeny(command, 'shell-executed heredoc payload');
+      }
+    })
+  )
+    passed++;
+  else failed++;
+
+  if (
+    test('does not rescan a here-string as a heredoc', () => {
+      expectDestructiveDeny(
+        ['cat <<<EOF', 'rm -rf /tmp/here-string-followup'].join('\n'),
+        'command after here-string'
+      );
+    })
+  )
+    passed++;
+  else failed++;
+
+  if (
+    test('uses shell-correct single-quote escaping while finding heredocs', () => {
+      expectDestructiveDeny(
+        ["echo 'a\\'X'<<EOF 'Y'b\\'", 'rm -rf /tmp/quoted-followup'].join('\n'),
+        'command after quoted non-heredoc text'
+      );
+    })
+  )
+    passed++;
+  else failed++;
+
+  if (
+    test('fails closed on an unclosed heredoc body', () => {
+      expectDestructiveDeny(
+        ['cat <<EOF', 'rm -rf /tmp/unclosed-heredoc'].join('\n'),
+        'unclosed heredoc body'
+      );
+    })
+  )
+    passed++;
+  else failed++;
+
+  if (
+    test('still denies destructive commands after a heredoc terminator', () => {
+      expectDestructiveDeny(
+        [
+          "cat > migration-notes.md <<'EOF'",
+          'DROP TABLE is documentation here.',
+          'EOF',
+          'rm -rf /tmp/real-target'
+        ].join('\n'),
+        'command after heredoc terminator'
+      );
+    })
+  )
+    passed++;
+  else failed++;
+
+  if (
+    test('still denies command substitutions inside an unquoted heredoc', () => {
+      expectDestructiveDeny(
+        [
+          'cat > output.txt <<EOF',
+          '$(rm -rf /tmp/expanded-target)',
+          'EOF'
+        ].join('\n'),
+        'unquoted heredoc command substitution'
+      );
+    })
+  )
+    passed++;
+  else failed++;
+
+  if (
+    test('allows literal command substitutions inside a quoted heredoc', () => {
+      expectAllow(
+        [
+          "cat > example.md <<'EOF'",
+          '$(rm -rf /tmp/example-only)',
+          'EOF'
+        ].join('\n'),
+        'quoted heredoc command-substitution prose'
+      );
+    })
+  )
+    passed++;
+  else failed++;
+
+  if (
+    test('does not mistake an arithmetic shift for a heredoc', () => {
+      expectDestructiveDeny(
+        ['echo $((1 << 2))', 'rm -rf /tmp/real-target'].join('\n'),
+        'command after arithmetic shift'
+      );
+    })
+  )
+    passed++;
+  else failed++;
+
+  if (
+    test('does not mistake a named arithmetic shift operand for a heredoc', () => {
+      expectDestructiveDeny(
+        ['echo $((flags << WIDTH))', 'rm -rf /tmp/real-target'].join('\n'),
+        'command after named arithmetic shift'
+      );
+    })
+  )
+    passed++;
+  else failed++;
+
+  if (
+    test('fails closed on multiline arithmetic shift contexts', () => {
+      for (const arithmetic of [
+        ['((', 'flags << WIDTH', '))'],
+        ['$((', 'flags << WIDTH', '))'],
+        ['$[', 'flags << WIDTH', ']']
+      ]) {
+        expectDestructiveDeny(
+          [...arithmetic, 'rm -rf /tmp/real-target'].join('\n'),
+          'command after multiline arithmetic shift'
+        );
+      }
+    })
+  )
+    passed++;
+  else failed++;
+
+  if (
+    test('does not mistake a conditional string operator for a heredoc', () => {
+      expectDestructiveDeny(
+        ['[[ alpha << omega ]]', 'rm -rf /tmp/real-target'].join('\n'),
+        'command after conditional shift-like operator'
+      );
+    })
+  )
+    passed++;
+  else failed++;
+
+  if (
+    test('does not parse heredocs inside operator-adjacent comments', () => {
+      expectDestructiveDeny(
+        ['true;# <<EOF', 'rm -rf /tmp/real-target'].join('\n'),
+        'command after commented heredoc marker'
+      );
+    })
+  )
+    passed++;
+  else failed++;
+
+  if (
+    test('fails closed on heredoc markers inside multiline quotes', () => {
+      expectDestructiveDeny(
+        ['printf \'%s\' "literal', '<<EOF', 'still literal"', 'rm -rf /tmp/real-target'].join('\n'),
+        'command after multiline quoted heredoc marker'
+      );
+    })
+  )
+    passed++;
+  else failed++;
+
+  if (
+    test('fails closed on ANSI-C quoted heredoc delimiters', () => {
+      expectDestructiveDeny(
+        ["cat <<$'EOF'", 'documentation', 'EOF', 'rm -rf /tmp/real-target'].join('\n'),
+        'command after ANSI-C heredoc'
+      );
+    })
+  )
+    passed++;
+  else failed++;
+
+  if (
+    test('fails closed on escaped heredoc delimiter words', () => {
+      expectDestructiveDeny(
+        ['cat <<E\\', 'OF', 'documentation', 'EOF', 'rm -rf /tmp/real-target'].join('\n'),
+        'command after escaped heredoc delimiter'
+      );
+    })
+  )
+    passed++;
+  else failed++;
+
+  if (
+    test('denies multiline command substitutions inside an unquoted heredoc', () => {
+      expectDestructiveDeny(
+        ['cat <<EOF', '$(', 'rm -rf /tmp/expanded-target', ')', 'EOF'].join('\n'),
+        'multiline unquoted heredoc command substitution'
+      );
+    })
+  )
+    passed++;
+  else failed++;
+
+  if (
+    test('denies multiline backtick substitutions inside an unquoted heredoc', () => {
+      expectDestructiveDeny(
+        ['cat <<EOF', '`', 'rm -rf /tmp/expanded-target', '`', 'EOF'].join('\n'),
+        'multiline unquoted heredoc backtick substitution'
+      );
+    })
+  )
+    passed++;
+  else failed++;
+
+  if (
+    test('denies line-continued command substitutions inside an unquoted heredoc', () => {
+      expectDestructiveDeny(
+        ['cat <<EOF', '$\\', '(', 'rm -rf /tmp/expanded-target', ')', 'EOF'].join('\n'),
+        'line-continued unquoted heredoc command substitution'
+      );
+    })
+  )
+    passed++;
+  else failed++;
+
+  if (
+    test('denies split command names after heredoc line continuation', () => {
+      expectDestructiveDeny(
+        ['cat <<EOF', '$(r\\', 'm -rf /tmp/expanded-target', ')', 'EOF'].join('\n'),
+        'split command name in unquoted heredoc substitution'
+      );
+    })
+  )
+    passed++;
+  else failed++;
+
+  if (
+    test('allows a joined command when tab stripping removes the option separator', () => {
+      expectAllow(
+        ['cat <<-EOF', '\t$(rm\\', '\t-rf /tmp/expanded-target)', 'EOF'].join('\n'),
+        'tab stripping joins rm and -rf into a harmless command name'
+      );
+    })
+  )
+    passed++;
+  else failed++;
+
+  if (
+    test('denies split command names after tab-stripped heredoc continuations', () => {
+      expectDestructiveDeny(
+        ['cat <<-EOF', '\t$(r\\', '\tm -rf /tmp/expanded-target)', 'EOF'].join('\n'),
+        'split command name in tab-stripped unquoted heredoc substitution'
+      );
+    })
+  )
+    passed++;
+  else failed++;
+
+  if (
+    test('fails closed on line-continued unquoted heredoc terminators', () => {
+      expectDestructiveDeny(
+        ['cat <<EOF', 'payload', 'EO\\', 'F', 'rm -rf /tmp/real-target'].join('\n'),
+        'command after line-continued heredoc terminator'
+      );
+    })
+  )
+    passed++;
+  else failed++;
+
+  if (
+    test('allows escaped command-substitution prose in an unquoted heredoc', () => {
+      expectAllow(
+        ['cat <<EOF', '\\$(echo example)', 'DROP TABLE is documentation here.', 'EOF'].join('\n'),
+        'escaped unquoted heredoc command-substitution prose'
+      );
+    })
+  )
+    passed++;
+  else failed++;
+
+  if (
+    test('allows #2886 migration-doc heredoc repro with DROP TABLE prose', () => {
+      expectAllow(
+        [
+          "cat > migration-notes.md <<'EOF'",
+          "This migration will DROP TABLE old_sessions once we've verified nothing reads from it anymore.",
+          'EOF'
+        ].join('\n'),
+        'issue #2886 cat heredoc repro'
+      );
+    })
+  )
+    passed++;
+  else failed++;
+
+  if (
+    test('allows destructive SQL prose inside a tee heredoc', () => {
+      expectAllow(
+        [
+          "tee migration-notes.md <<'EOF'",
+          'This migration will DROP TABLE old_sessions after verification.',
+          'EOF'
+        ].join('\n'),
+        'tee heredoc SQL prose'
+      );
+    })
+  )
+    passed++;
+  else failed++;
+
+  if (
+    test('allows destructive rm prose inside a path-qualified cat heredoc', () => {
+      expectAllow(
+        [
+          "/bin/cat > notes.md <<'EOF'",
+          'Cleanup steps mention rm -rf old-cache; do not run yet.',
+          'EOF'
+        ].join('\n'),
+        'path-qualified cat heredoc prose'
+      );
+    })
+  )
+    passed++;
+  else failed++;
+
+  if (
+    test('allows destructive prose inside a command-wrapped cat heredoc', () => {
+      expectAllow(
+        [
+          "command cat > notes.md <<'EOF'",
+          'Notes: DELETE FROM sessions; truncate staging.',
+          'EOF'
+        ].join('\n'),
+        'command-wrapped cat heredoc prose'
+      );
+    })
+  )
+    passed++;
+  else failed++;
+
+  if (
+    test('still denies real destructive commands (not heredoc prose)', () => {
+      expectDestructiveDeny('rm -rf /tmp/real-destructive-target', 'real rm -rf');
+      expectDestructiveDeny('git reset --hard', 'real git reset --hard');
+      expectDestructiveDeny('drop table old_sessions', 'real drop table command text');
+    })
+  )
+    passed++;
+  else failed++;
+
+  if (
+    test('fails closed when tee pipes heredoc payload into a shell', () => {
+      expectDestructiveDeny(
+        ['tee notes.md <<EOF | bash', 'rm -rf /tmp/tee-piped-shell-target', 'EOF'].join('\n'),
+        'tee piped to shell'
+      );
+    })
+  )
+    passed++;
+  else failed++;
+
+  if (
+    test('denies substitutions inside literal quote characters in an unquoted heredoc', () => {
+      for (const payload of [
+        "'$(rm -rf /tmp/expanded-target)'",
+        '"$(rm -rf /tmp/expanded-target)"',
+        "'`rm -rf /tmp/expanded-target`'"
+      ]) {
+        expectDestructiveDeny(
+          ['cat <<EOF', payload, 'EOF'].join('\n'),
+          'quoted-looking unquoted heredoc substitution'
+        );
+      }
+    })
+  )
+    passed++;
+  else failed++;
+
+  if (
+    test('allows quoted destructive prose inside a harmless heredoc substitution', () => {
+      expectAllow(
+        ['cat <<EOF', "$(printf '%s' 'rm -rf /tmp/example-only')", 'EOF'].join('\n'),
+        'quoted prose inside heredoc substitution'
+      );
+    })
+  )
+    passed++;
+  else failed++;
+
+  if (
+    test('still denies destructive commands after arithmetic shifts', () => {
+      expectDestructiveDeny(
+        ['echo $((1 << 2))', 'rm -rf /tmp/shift-target'].join('\n'),
+        'command after $((...)) arithmetic shift'
+      );
+      expectDestructiveDeny(
+        ['echo $((x << 2))', 'rm -rf /tmp/shift-target'].join('\n'),
+        'command after $((...)) identifier shift'
+      );
+      expectDestructiveDeny(
+        ['(( 1 << 2 ))', 'rm -rf /tmp/shift-target'].join('\n'),
+        'command after ((...)) arithmetic shift'
+      );
+      expectDestructiveDeny(
+        ['echo $[x << 1]', 'rm -rf /tmp/shift-target'].join('\n'),
+        'command after legacy $[...] arithmetic shift'
+      );
+    })
+  )
+    passed++;
+  else failed++;
+
+  if (
+    test('allows git push --force-if-includes as a safety-checked variant on a non-shared branch', () => {
+      expectAllow('git push --force-with-lease --force-if-includes origin feature-branch', 'git push --force-if-includes');
+    })
+  )
+    passed++;
+  else failed++;
+
+  // --- Ref- and history-destroying git commands (issues #3154, #3151) ---
+
+  const destructiveGitCases = [
+    ['git branch -D feature', 'git branch -D'],
+    ['git branch --delete --force feature', 'git branch --delete --force'],
+    ['git branch -d -f feature', 'git branch -d -f'],
+    ['git stash drop', 'git stash drop'],
+    ['git stash drop stash@{0}', 'git stash drop stash@{0}'],
+    ['git stash clear', 'git stash clear'],
+    ['git reflog expire --expire=now --all', 'git reflog expire'],
+    ['git reflog delete HEAD@{2}', 'git reflog delete'],
+    ['git update-ref -d refs/heads/x', 'git update-ref -d'],
+    ['git update-ref --delete refs/heads/x', 'git update-ref --delete'],
+    ['git restore foo.ts', 'git restore <path>'],
+    ['git restore .', 'git restore .'],
+    ['git restore --worktree foo.ts', 'git restore --worktree'],
+    ['git restore -W foo.ts', 'git restore -W'],
+    ['git restore --staged --worktree foo.ts', 'git restore --staged --worktree'],
+    ['git restore -s HEAD foo.ts', 'git restore --source without --staged'],
+    ['git push --force-with-lease origin main', 'git push --force-with-lease to main'],
+    ['git push --force-with-lease origin HEAD:main', 'git push --force-with-lease HEAD:main'],
+    ['git push --force-with-lease origin +refs/heads/master:refs/heads/master', 'git push --force-with-lease +refs/heads/master'],
+    ['git push --force-with-lease --force-if-includes origin main', 'git push --force-with-lease --force-if-includes to main'],
+    ['git push --force-with-lease --repo origin main', 'git push --force-with-lease --repo to main']
+  ];
+  for (const [command, label] of destructiveGitCases) {
+    if (
+      test(`denies ${label} as destructive`, () => {
+        expectDestructiveDeny(command, label);
+      })
+    )
+      passed++;
+    else failed++;
+  }
+
+  const safeGitCases = [
+    ['git branch -d feature', 'git branch -d (refuses when unmerged)'],
+    ['git branch -f feature', 'git branch -f (no delete)'],
+    ['git stash list', 'git stash list'],
+    ['git stash show', 'git stash show'],
+    ['git reflog show', 'git reflog show'],
+    ['git update-ref refs/heads/x abc1234', 'git update-ref without -d'],
+    ['git restore --staged foo.ts', 'git restore --staged'],
+    ['git restore -S foo.ts', 'git restore -S'],
+    ['git restore --source=HEAD --staged foo.ts', 'git restore --source with --staged'],
+    ['git push --force-with-lease origin feature-branch', 'git push --force-with-lease to feature branch'],
+    ['git push --force-with-lease', 'git push --force-with-lease with no refspec'],
+    ['git push --force-with-lease -o ci.skip origin feature-branch', 'git push --force-with-lease with push option']
+  ];
+  for (const [command, label] of safeGitCases) {
+    if (
+      test(`allows ${label}`, () => {
+        expectAllow(command, label);
+      })
+    )
+      passed++;
+    else failed++;
+  }
 
   // --- Review-round-2 findings ---
 
@@ -2167,6 +3424,7 @@ function runTests() {
       assert.ok(!reason.includes('present these facts'), 'no repeated four-fact block');
       assert.ok(!reason.includes('\n'), 'condensed message is a single line');
       assert.ok(reason.includes('ECC_GATEGUARD=off'), 'condensed message keeps a recovery hint');
+      assert.ok(reason.includes('GATEGUARD_EXEMPT_GLOBS'), 'condensed Edit denial keeps the path-scoped recovery hint');
     })
   )
     passed++;
@@ -2182,6 +3440,8 @@ function runTests() {
       const secondReason = second.hookSpecificOutput.permissionDecisionReason;
       assert.ok(firstReason.includes('denial #6'), `expected ordinal 6, got: ${firstReason}`);
       assert.ok(secondReason.includes('denial #7'), `expected ordinal 7, got: ${secondReason}`);
+      assert.ok(firstReason.includes('GATEGUARD_EXEMPT_GLOBS'), 'condensed Write denial keeps the path-scoped recovery hint');
+      assert.ok(!firstReason.includes('GATEGUARD_BASH_ROUTINE_DISABLED'), 'condensed Write denial should not suggest the routine Bash control');
       assert.notStrictEqual(firstReason, secondReason, 'successive denials must differ so they cannot compound verbatim');
     })
   )
@@ -2246,6 +3506,7 @@ function runTests() {
       assert.strictEqual(output.hookSpecificOutput.permissionDecision, 'deny');
       assert.ok(output.hookSpecificOutput.permissionDecisionReason.includes('denial #5'));
       assert.ok(!output.hookSpecificOutput.permissionDecisionReason.includes('present these facts'));
+      assert.ok(output.hookSpecificOutput.permissionDecisionReason.includes('GATEGUARD_EXEMPT_GLOBS'), 'condensed MultiEdit denial keeps the path-scoped recovery hint');
     })
   )
     passed++;
@@ -2384,7 +3645,7 @@ function runTests() {
         tool_name: 'Edit',
         tool_input: { file_path: '/proj/tests/test_x.js', old_string: 'a', new_string: 'b' }
       };
-      const result = runHook(input, { GATEGUARD_EXEMPT_GLOBS: '**/tests/**' });
+      const result = runHook(input, { GATEGUARD_EXEMPT_GLOBS: '**/tests/**', CLAUDE_PROJECT_DIR: '/proj' });
       assert.strictEqual(result.code, 0, 'exit code should be 0');
       const output = parseOutput(result.stdout);
       assert.ok(output, 'should produce valid JSON output');
@@ -2420,7 +3681,7 @@ function runTests() {
       clearState();
       const exempt = runHook(
         { tool_name: 'Write', tool_input: { file_path: '/tmp/x/scratchpad/s.js', content: 'x' } },
-        { GATEGUARD_EXEMPT_GLOBS: globs }
+        { GATEGUARD_EXEMPT_GLOBS: globs, CLAUDE_PROJECT_DIR: '/tmp/x' }
       );
       const exemptOut = parseOutput(exempt.stdout);
       assert.ok(exemptOut, 'should produce JSON output');
@@ -2456,6 +3717,305 @@ function runTests() {
     passed++;
   else failed++;
 
+  for (const { glob, filePath, cwd = '/proj', exempt } of [
+    { glob: 'services/**', filePath: '/proj/services/api.js', exempt: true },
+    { glob: 'services/**', filePath: '/other/services/api.js', exempt: false },
+    { glob: 'services/**', filePath: '/proj/vendor/services/api.js', exempt: false },
+    { glob: 'services/**', filePath: '/proj/my-services/api.js', exempt: false },
+    { glob: '*.md', filePath: '/proj/notes.md/outline.txt', exempt: false },
+    { glob: '*.md', filePath: '/proj/docs/notes.md', exempt: false },
+    { glob: '*.md', filePath: '/other/notes.md', exempt: false },
+    { glob: 'README.md', filePath: '/proj/readme.md', exempt: true },
+    { glob: '*.md', filePath: './notes.md', exempt: true },
+    { glob: '**/*.md', filePath: '/proj/docs/notes.md', exempt: true },
+    { glob: '**/*.md', filePath: '/proj/notes.md', exempt: true },
+    { glob: '**/*.md', filePath: '../other/notes.md', exempt: false },
+    { glob: 'docs/?otes.md', filePath: '/proj/docs/notes.md', exempt: true },
+    { glob: 'docs?notes.md', filePath: '/proj/docs/notes.md', exempt: false },
+    { glob: 'services/**', filePath: 'C:\\proj\\services\\api.js', cwd: 'C:\\proj', exempt: true },
+    { glob: 'services/**', filePath: 'C:\\other\\services\\api.js', cwd: 'C:\\proj', exempt: false },
+    { glob: '/approved/docs/**', filePath: '/approved/docs/notes.md', exempt: true },
+  ]) {
+    clearState();
+    if (test(`scopes exempt glob ${glob} for ${filePath}`, () => {
+      const result = runHook(
+        { cwd, tool_name: 'Edit', tool_input: { file_path: filePath } },
+        { GATEGUARD_EXEMPT_GLOBS: glob, CLAUDE_PROJECT_DIR: cwd }
+      );
+      const output = parseOutput(result.stdout);
+      assert.strictEqual(output?.hookSpecificOutput?.permissionDecision === 'deny', !exempt);
+    })) passed++;
+    else failed++;
+  }
+
+  clearState();
+  if (test('MultiEdit gates outside-project targets even when another target is exempt', () => {
+    const result = runHook({
+      cwd: '/proj', tool_name: 'MultiEdit',
+      tool_input: { edits: [{ file_path: '/proj/docs/a.md' }, { file_path: '/other/docs/b.md' }] }
+    }, { GATEGUARD_EXEMPT_GLOBS: 'docs/**', CLAUDE_PROJECT_DIR: '/proj' });
+    const output = parseOutput(result.stdout);
+    assert.strictEqual(output?.hookSpecificOutput?.permissionDecision, 'deny');
+    assert.ok(output.hookSpecificOutput.permissionDecisionReason.includes('/other/docs/b.md'));
+  })) passed++;
+  else failed++;
+
+  // --- PowerShell tool consumer contract ---
+  if (
+    test('normalizes PowerShell tool-name casing before destructive classification', () => {
+      for (const toolName of ['PowerShell', 'powershell', 'POWERSHELL']) {
+        clearState();
+        const result = runPowerShellHook({
+          tool_name: toolName,
+          tool_input: { command: 'Remove-Item -Force C:/tmp/demo' }
+        });
+        assert.strictEqual(result.code, 0, `${toolName} hook should exit 0`);
+        const output = parseOutput(result.stdout);
+        assert.ok(output, `${toolName} should produce JSON output`);
+        assert.strictEqual(
+          output.hookSpecificOutput?.permissionDecision,
+          'deny',
+          `${toolName} should be denied`
+        );
+        assert.match(
+          output.hookSpecificOutput.permissionDecisionReason,
+          /Destructive command detected/
+        );
+      }
+    })
+  )
+    passed++;
+  else failed++;
+
+  if (
+    test('denies the first routine PowerShell command and allows its retry', () => {
+      clearState();
+      const input = {
+        tool_name: 'PowerShell',
+        tool_input: { command: 'Get-Date' }
+      };
+
+      const first = runPowerShellHook(input);
+      assert.strictEqual(first.code, 0, 'first PowerShell hook should exit 0');
+      const firstOutput = parseOutput(first.stdout);
+      assert.ok(firstOutput, 'first PowerShell attempt should produce JSON output');
+      assert.strictEqual(
+        firstOutput.hookSpecificOutput?.permissionDecision,
+        'deny',
+        'first routine PowerShell command should be denied'
+      );
+      assert.match(
+        firstOutput.hookSpecificOutput.permissionDecisionReason,
+        /pre:powershell:gateguard-fact-force/,
+        'recovery guidance should name the independently configurable PowerShell hook ID'
+      );
+
+      const retry = runPowerShellHook(input);
+      assert.strictEqual(retry.code, 0, 'PowerShell retry should exit 0');
+      const retryOutput = parseOutput(retry.stdout);
+      assert.ok(retryOutput, 'PowerShell retry should produce JSON output');
+      if (retryOutput.hookSpecificOutput) {
+        assert.notStrictEqual(
+          retryOutput.hookSpecificOutput.permissionDecision,
+          'deny',
+          'routine PowerShell retry should be allowed'
+        );
+      } else {
+        assert.strictEqual(retryOutput.tool_name, 'PowerShell');
+      }
+    })
+  )
+    passed++;
+  else failed++;
+
+  if (
+    test('denies direct and nested destructive PowerShell commands', () => {
+      const encodedPayload = Buffer.from(
+        'Remove-Item -Force C:/tmp/demo',
+        'utf16le'
+      ).toString('base64');
+      const commands = [
+        'Remove-Item -Recurse C:/tmp/demo',
+        'rp -Force HKCU:/Software/Demo -Name setting',
+        'Clear-Disk -Number 2 -RemoveData -Confirm:$false',
+        'pwsh -Command "Remove-Item -Force C:/tmp/demo"',
+        'pwsh -Command:"Remove-Item -Force C:/tmp/demo"',
+        `pwsh -EncodedCommand:${encodedPayload}`,
+        "$payload='Remove-Item -Force C:/tmp/demo'; pwsh -Command $payload",
+        "$payload='Remove-Item -Force C:/tmp/demo'; pwsh -Command \"$payload\"",
+        "$payload='Remove-Item -Force C:/tmp/demo'; pwsh -Command \"Write-Output ready; $payload\"",
+        "$payload='Remove-Item'; pwsh -Command $payload -Force C:/tmp/demo",
+        "$cmd='Remove-Item'; Set-Alias zap $cmd; zap -Force C:/tmp/demo",
+        "$cmd='Remove-Item'; Set-Alias -Name zap $cmd; zap -Force C:/tmp/demo",
+        "$cmd='Remove-Item'; Set-Alias -Scope Global -Name zap $cmd; zap -Force C:/tmp/demo",
+        "$cmd='Remove-Item'; New-Alias -Description demo -Name zap $cmd; zap -Force C:/tmp/demo",
+        "$cmd='Remove-Item'; sal -Option AllScope -Name zap $cmd; zap -Force C:/tmp/demo",
+        'Set-Alias -Unknown demo -Name zap Write-Output; zap ok',
+
+        'Set-Alias -Name zap Remove-Item; zap -Force C:/tmp/demo',
+        'Set-Alias -Name zap $cmd; zap -Force C:/tmp/demo',
+        "$cmd='Remove-Item'; Set-Alias -Value $cmd zap; zap -Force C:/tmp/demo",
+        "$payload='Remove-Item -Force C:/tmp/demo'; $payload | pwsh -Command -",
+        "$payload='Remove-Item -Force C:/tmp/demo'; Write-Output $payload | pwsh -Command -",
+        "Set-Alias zap $cmd; zap -Force C:/tmp/demo; $cmd='Write-Output'",
+        "$payload | pwsh -Command -; $payload='Write-Output ok'",
+        'pwsh -Command "Write-Output ready; $runtimePayload"',
+        'pwsh -Command $runtimePayload -Force C:/tmp/demo',
+        'Write-Output "$(Remove-Item -Force C:/tmp/demo)"',
+        '& { Remove-Item -Force C:/tmp/demo }',
+        'if ($true) { Remove-Item -Force C:/tmp/demo }',
+        '@(Remove-Item -Force C:/tmp/demo)',
+        'cmd /c "rd /s /q C:/tmp/demo"',
+        'Remove-Item `\n-Force C:/tmp/demo',
+        '# (\nRemove-Item -Force C:/tmp/demo',
+        '<# ignored <# #> Remove-Item -Force C:/tmp/demo',
+        'function cleanup { Remove-Item -Force C:/tmp/demo }; if ($true) { cleanup }',
+        'cmd /c pwsh -Command "Remove-Item -Force C:/tmp/demo"',
+        '@"\n" # $(Remove-Item -Force C:/tmp/demo)\n"@',
+        '& ‘Remove-Item’ -Force C:/tmp/demo',
+        'Invoke-Expression $runtimeValue',
+        'pwsh -Command "$payload"; $payload = "Write-Output ok"'
+      ];
+
+      for (const command of commands) {
+        clearState();
+        const result = runPowerShellHook({
+          tool_name: 'PowerShell',
+          tool_input: { command }
+        });
+        assert.strictEqual(result.code, 0, `${command} hook should exit 0`);
+        const output = parseOutput(result.stdout);
+        assert.ok(output, `${command} should produce JSON output`);
+        assert.strictEqual(
+          output.hookSpecificOutput?.permissionDecision,
+          'deny',
+          `${command} should be denied`
+        );
+        assert.match(
+          output.hookSpecificOutput.permissionDecisionReason,
+          /Destructive command detected/
+        );
+      }
+    })
+  )
+    passed++;
+  else failed++;
+
+  if (
+    test('allows benign PowerShell after the shared routine shell gate is satisfied', () => {
+      clearState();
+      writeState({ checked: ['__bash_session__'], last_active: Date.now() });
+
+      for (const command of ['Get-ChildItem C:/tmp', 'Remove-Item C:/tmp/notes.txt']) {
+        const result = runPowerShellHook({
+          tool_name: 'PowerShell',
+          tool_input: { command }
+        });
+        assert.strictEqual(result.code, 0, `${command} hook should exit 0`);
+        const output = parseOutput(result.stdout);
+        assert.ok(output, `${command} should produce JSON output`);
+        if (output.hookSpecificOutput) {
+          assert.notStrictEqual(
+            output.hookSpecificOutput.permissionDecision,
+            'deny',
+            `${command} should not receive a destructive denial`
+          );
+        } else {
+          assert.strictEqual(output.tool_name, 'PowerShell');
+        }
+      }
+    })
+  )
+    passed++;
+  else failed++;
+
+  // --- Batch consistency (#3136): a parallel batch of edits to one ---
+  // not-yet-touched file partially applies: the first denial marks the
+  // file checked, so sibling edits in the same batch are allowed. Hooks
+  // see calls one at a time and cannot lock a batch, so the contract is
+  // that the denial itself names the file and warns that batch siblings
+  // may already have been applied.
+  clearState();
+  if (
+    test('first-touch Edit denial warns about applied batch siblings (#3136)', () => {
+      // Two edits to the same unchecked file, sent as a parallel batch.
+      // Each hook invocation is its own process, exactly as in a batch.
+      const editA = {
+        tool_name: 'Edit',
+        tool_input: { file_path: '/src/batch-target.js', old_string: 'a', new_string: 'b' }
+      };
+      const editB = {
+        tool_name: 'Edit',
+        tool_input: { file_path: '/src/batch-target.js', old_string: 'c', new_string: 'd' }
+      };
+
+      const first = parseOutput(runHook(editA).stdout);
+      assert.strictEqual(first.hookSpecificOutput.permissionDecision, 'deny', 'first edit of the batch is gated');
+      const firstReason = first.hookSpecificOutput.permissionDecisionReason;
+      assert.ok(firstReason.includes('/src/batch-target.js'), 'denial names the exact file');
+      assert.ok(
+        firstReason.includes('parallel batch'),
+        'denial warns that batch siblings may already have been applied'
+      );
+      assert.ok(
+        firstReason.includes('Re-read'),
+        'denial tells the agent to re-read the file before building on siblings'
+      );
+
+      // Sibling edit in the same batch: judged against post-denial state,
+      // so it applies. The warning above is what makes this visible.
+      const second = parseOutput(runHook(editB).stdout);
+      if (second && second.hookSpecificOutput) {
+        assert.notStrictEqual(second.hookSpecificOutput.permissionDecision, 'deny', 'batch sibling is not re-gated');
+      }
+    })
+  )
+    passed++;
+  else failed++;
+
+  clearState();
+  if (
+    test('condensed Edit denial also warns about applied batch siblings (#3136)', () => {
+      writeState({ checked: [], last_active: Date.now(), fact_force_denials: 3 });
+      const result = runHook({ tool_name: 'Edit', tool_input: { file_path: '/src/batch-condensed.js' } });
+      const output = parseOutput(result.stdout);
+      assert.strictEqual(output.hookSpecificOutput.permissionDecision, 'deny');
+      const reason = output.hookSpecificOutput.permissionDecisionReason;
+      assert.ok(reason.includes('parallel batch'), 'condensed denial keeps the batch-sibling warning');
+      assert.ok(!reason.includes('\n'), 'condensed denial stays a single line');
+    })
+  )
+    passed++;
+  else failed++;
+
+  clearState();
+  if (
+    test('first-touch Write and MultiEdit denials warn about applied batch siblings (#3136)', () => {
+      const writeOut = parseOutput(
+        runHook({ tool_name: 'Write', tool_input: { file_path: '/src/batch-new.js', content: 'x' } }).stdout
+      );
+      assert.strictEqual(writeOut.hookSpecificOutput.permissionDecision, 'deny');
+      assert.ok(
+        writeOut.hookSpecificOutput.permissionDecisionReason.includes('parallel batch'),
+        'Write denial carries the batch-sibling warning'
+      );
+
+      const multiOut = parseOutput(
+        runHook({
+          tool_name: 'MultiEdit',
+          tool_input: { edits: [{ file_path: '/src/batch-multi.js', old_string: 'a', new_string: 'b' }] }
+        }).stdout
+      );
+      assert.strictEqual(multiOut.hookSpecificOutput.permissionDecision, 'deny');
+      assert.ok(
+        multiOut.hookSpecificOutput.permissionDecisionReason.includes('parallel batch'),
+        'MultiEdit denial carries the batch-sibling warning'
+      );
+    })
+  )
+    passed++;
+  else failed++;
+
   // Cleanup only the temp directory created by this test file.
   try {
     if (fs.existsSync(stateDir)) {
@@ -2465,8 +4025,45 @@ function runTests() {
     console.error(`  [cleanup] failed to remove ${stateDir}: ${err.message}`);
   }
 
+  // --- sanitizePath dangerous invisible unicode regression ---
+  clearState();
+  if (
+    test('sanitizePath strips CI-defined dangerous invisible unicode from denial paths', () => {
+      const file_path =
+        '/src/eu2028\u2028eu2029\u2029app.js\u200bhidden\u2060name\ufefftail\u3164x\u0091c1.js';
+      const input = {
+        tool_name: 'Edit',
+        tool_input: { file_path, old_string: 'foo', new_string: 'bar' }
+      };
+      const result = runHook(input);
+      const output = parseOutput(result.stdout);
+      const reason = String(
+        output && output.hookSpecificOutput
+          ? output.hookSpecificOutput.permissionDecisionReason
+          : ''
+      );
+      for (const bad of ['\u2028', '\u2029', '\u200b', '\u2060', '\ufeff', '\u3164', '\u0091']) {
+        assert.ok(!reason.includes(bad), `denial reason must not carry U+${bad.codePointAt(0).toString(16)} (${bad})`);
+      }
+      assert.ok(reason.includes('app.js'), 'visible path text must remain');
+    })
+  ) {
+    passed++;
+  } else {
+    failed++;
+  }
+
+  const ddResults = runDdRegressionTests();
+  passed += ddResults.passed;
+  failed += ddResults.failed;
   console.log(`\n  ${passed} passed, ${failed} failed\n`);
   process.exit(failed > 0 ? 1 : 0);
 }
 
-runTests();
+if (process.argv.includes('--dd-only')) {
+  const { passed, failed } = runDdRegressionTests();
+  console.log(`\n  ${passed} passed, ${failed} failed\n`);
+  process.exitCode = failed > 0 ? 1 : 0;
+} else {
+  runTests();
+}

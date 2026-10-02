@@ -94,7 +94,7 @@ const DEFAULT_MCP_STARTUP_TIMEOUT_TOML = `startup_timeout_sec = ${DEFAULT_MCP_ST
 // mcp-configs/mcp-servers.json. Existing user-managed entries are never
 // touched by the merge (add-only), except the known-invalid repair below.
 const ECC_SERVERS = {
-  'chrome-devtools': dlxServer('chrome-devtools', 'chrome-devtools-mcp@latest', { startup_timeout_sec: DEFAULT_MCP_STARTUP_TIMEOUT_SEC }, DEFAULT_MCP_STARTUP_TIMEOUT_TOML)
+  'chrome-devtools': dlxServer('chrome-devtools', 'chrome-devtools-mcp@1.10.1', { startup_timeout_sec: DEFAULT_MCP_STARTUP_TIMEOUT_SEC }, DEFAULT_MCP_STARTUP_TIMEOUT_TOML)
 };
 
 // ECC <= 2.0.0 emitted [mcp_servers.exa] with a `url` key. Codex rejects

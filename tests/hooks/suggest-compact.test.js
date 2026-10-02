@@ -694,17 +694,20 @@ function runTests() {
     };
   }
 
-  if (test('suggests compact when context exceeds the 200k-window threshold', () => {
+  if (test('omits the percentage when the context window is assumed', () => {
     const ctx = createContextContext();
     const transcript = writeTranscriptFixture(170000);
     try {
-      const result = runCompactWithInput({ session_id: ctx.sessionId, transcript_path: transcript });
+      const result = runCompactWithInput(
+        { session_id: ctx.sessionId, transcript_path: transcript },
+        { ECC_CONTEXT_WINDOW_TOKENS: '', CLAUDE_CODE_AUTO_COMPACT_WINDOW: '' },
+      );
       assert.strictEqual(result.code, 0, 'Should exit 0');
       assert.ok(result.stdout.trim().length > 0, `Expected stdout payload. Got: "${result.stdout}"`);
       const parsed = JSON.parse(result.stdout);
       const context = parsed.hookSpecificOutput.additionalContext;
       assert.ok(context.includes('Context ~170k tokens'), `Expected token estimate. Got: ${context}`);
-      assert.ok(context.includes('85% of 200k window'), `Expected window percentage. Got: ${context}`);
+      assert.ok(!context.includes('% of'), `Expected no percentage for an assumed window. Got: ${context}`);
     } finally {
       try { fs.unlinkSync(transcript); } catch (_err) { /* ignore */ }
       ctx.cleanup();

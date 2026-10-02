@@ -1,4 +1,4 @@
-# Everything Claude Code (ECC) — Instrucciones para Agentes
+# ECC — Instrucciones para Agentes
 
 Este es un **plugin de IA para codificación listo para producción** que proporciona 63 agentes especializados, 249 skills, 79 comandos y flujos de trabajo de hooks automatizados para el desarrollo de software.
 
@@ -50,13 +50,13 @@ Este es un **plugin de IA para codificación listo para producción** que propor
 ## Orquestación de Agentes
 
 Usa agentes proactivamente sin prompt del usuario:
-- Solicitudes de features complejas → **planner**
-- Código recién escrito/modificado → **code-reviewer**
-- Corrección de bug o nueva feature → **tdd-guide**
-- Decisión arquitectónica → **architect**
-- Código sensible a la seguridad → **security-reviewer**
-- Bucles autónomos / monitoreo de bucles → **loop-operator**
-- Confiabilidad y costo de la configuración del harness → **harness-optimizer**
+- Solicitudes de features complejas → **ecc:planner**
+- Código recién escrito/modificado → **ecc:code-reviewer**
+- Corrección de bug o nueva feature → **ecc:tdd-guide**
+- Decisión arquitectónica → **ecc:architect**
+- Código sensible a la seguridad → **ecc:security-reviewer**
+- Bucles autónomos / monitoreo de bucles → **ecc:loop-operator**
+- Confiabilidad y costo de la configuración del harness → **ecc:harness-optimizer**
 
 Usa ejecución paralela para operaciones independientes — lanza múltiples agentes simultáneamente.
 

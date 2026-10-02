@@ -24,6 +24,7 @@ ALLOWED_SETUP_EXECUTABLES = frozenset({
 # controlled by the cwd= keyword. Scenarios that include these in
 # setup_commands (a common shell-style convention) must be tolerated.
 SHELL_BUILTINS = frozenset({"cd", "pushd", "popd"})
+REPORT_VALUE_LIMIT = 5000
 
 
 @dataclass(frozen=True)
@@ -122,6 +123,66 @@ def _setup_sandbox(sandbox_dir: Path, scenario: Scenario) -> None:
             continue
 
 
+def _redact_home_path(text: str) -> str:
+    """Replace the operator's home directory with a portable placeholder.
+
+    Observations flow into grade() and then into a written report
+    (results/<skill>.md) that's meant to be read, diffed, and shared —
+    an absolute path bakes the operator's username into every tool call
+    that happened to touch anything under $HOME (including the sandbox
+    itself, which lives under a tempdir but scenario setup_commands or
+    an agent's own tool calls can still reference $HOME directly).
+    """
+    home = str(Path.home()).rstrip("/\\")
+    if not home or home == "/" or re.fullmatch(r"[A-Za-z]:", home):
+        return text
+
+    parts = re.split(r"[\\/]+", home)
+    home_pattern = r"[\\/]".join(re.escape(part) for part in parts)
+    right_boundary = r"(?=$|[\\/]|[\s\"'`,;:)}\]])"
+    flags = re.IGNORECASE if re.match(r"^[A-Za-z]:[\\/]", home) else 0
+    pattern = re.compile(
+        rf"(?<![\w.~+-]){home_pattern}{right_boundary}",
+        flags,
+    )
+    return pattern.sub("~", text)
+
+
+def _redact_home_paths(value: object) -> object:
+    """Return a copy with home paths redacted from string keys and leaves.
+
+    Redacted mapping keys receive a stable numeric suffix when two original
+    keys collapse to the same portable value. This preserves every observation
+    without leaking the original home path or silently dropping data.
+    """
+    if isinstance(value, str):
+        return _redact_home_path(value)
+    if isinstance(value, dict):
+        redacted: dict[object, object] = {}
+        for key, item in value.items():
+            redacted_key = _redact_home_path(key) if isinstance(key, str) else key
+            candidate = redacted_key
+            suffix = 2
+            while candidate in redacted:
+                candidate = f"{redacted_key}#{suffix}"
+                suffix += 1
+            redacted[candidate] = _redact_home_paths(item)
+        return redacted
+    if isinstance(value, list):
+        return [_redact_home_paths(item) for item in value]
+    return value
+
+
+def _serialize_report_value(value: object) -> str:
+    """Redact structured report data before encoding and truncating it."""
+    redacted = _redact_home_paths(value)
+    if isinstance(redacted, (dict, list)):
+        serialized = json.dumps(redacted)
+    else:
+        serialized = str(redacted)
+    return serialized[:REPORT_VALUE_LIMIT]
+
+
 def _parse_stream_json(stdout: str) -> list[ObservationEvent]:
     """Parse claude -p stream-json output into ObservationEvents.
 
@@ -147,14 +208,9 @@ def _parse_stream_json(stdout: str) -> list[ObservationEvent]:
                 if block.get("type") == "tool_use":
                     tool_use_id = block.get("id", "")
                     tool_input = block.get("input", {})
-                    input_str = (
-                        json.dumps(tool_input)[:5000]
-                        if isinstance(tool_input, dict)
-                        else str(tool_input)[:5000]
-                    )
                     pending[tool_use_id] = {
                         "tool": block.get("name", "unknown"),
-                        "input": input_str,
+                        "input": _serialize_report_value(tool_input),
                         "order": event_counter,
                     }
                     event_counter += 1
@@ -167,18 +223,13 @@ def _parse_stream_json(stdout: str) -> list[ObservationEvent]:
                     if tool_use_id in pending:
                         info = pending.pop(tool_use_id)
                         output_content = block.get("content", "")
-                        if isinstance(output_content, list):
-                            output_str = json.dumps(output_content)[:5000]
-                        else:
-                            output_str = str(output_content)[:5000]
-
                         events.append(ObservationEvent(
                             timestamp=f"T{info['order']:04d}",
                             event="tool_complete",
                             tool=info["tool"],
                             session=msg.get("session_id", "unknown"),
                             input=info["input"],
-                            output=output_str,
+                            output=_serialize_report_value(output_content),
                         ))
 
     for _tool_use_id, info in pending.items():
