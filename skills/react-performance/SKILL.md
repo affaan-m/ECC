@@ -465,7 +465,7 @@ Use ONLY for known-divergent leaf nodes — never on a tree containing other chi
 
 ### `<Activity>` for show/hide instead of mount/unmount
 
-React 19 `<Activity mode="visible|hidden">` keeps tree state and effects mounted but hides — cheaper than unmount/remount for tabs and accordions.
+React 19.2+ `<Activity mode={isVisible ? "visible" : "hidden"}>` preserves state and DOM while hidden, but cleans up Effects and active subscriptions. React re-creates Effects when the boundary becomes visible again. Use it for tabs and accordions that should retain state; do not rely on hidden Effects continuing to run.
 
 ### Ternary over `&&` for conditional render
 
@@ -491,7 +491,7 @@ preconnect("https://api.example.com");
 
 ### `defer` / `async` on `<script>` tags
 
-`defer` for ordered execution after DOMContentLoaded; `async` for fire-and-forget.
+For parser-inserted external classic scripts, `defer` executes in document order after parsing and before `DOMContentLoaded`; that event waits for evaluation to finish. `async` executes when available without preserving document order. Module scripts are deferred by default, and `defer` has no effect on inline classic scripts.
 
 ## 7. JavaScript Performance (LOW-MEDIUM)
 
@@ -514,7 +514,7 @@ preconnect("https://api.example.com");
 
 ### `useEffectEvent` deps
 
-Values from `useEffectEvent` are stable — do NOT add them to effect deps.
+React 19.2+ Effect Events are excluded from Effect dependencies, but their function identity is intentionally not stable across renders. Call them only from Effects or other Effect Events, keep them local to the component or Hook, and do not pass them to children or use them to hide reactive dependencies. Use a compatible `eslint-plugin-react-hooks` version to enforce these restrictions.
 
 ### Event handler refs
 
@@ -545,11 +545,11 @@ function useLatest<T>(value: T) {
 Many of these rules are now automated:
 
 - **Next.js 13.5+ Optimize Package Imports** — barrel import optimization
-- **React Compiler** (RFC, in canary) — auto-memoization
+- **React Compiler 1.0+** (stable) — build-time auto-memoization when installed and enabled
 - **Turbopack** — faster builds, better tree-shaking
 - **Bundle Analyzer** (`@next/bundle-analyzer`) — visualize first-load JS
 
-When the project ships React Compiler, demote `rerender-*` manual memoization rules to "review-only" — the compiler handles them. Manual `useMemo`/`useCallback` becomes unnecessary noise.
+When React Compiler is enabled for the code under review, check its coverage and diagnostics before adding manual memoization. It reduces the need for `useMemo`, `useCallback`, and `memo`, but installing the package alone does not compile every component. Preserve existing memoization until its callers and behavior have been reviewed; do not remove it solely because the compiler is available.
 
 ## Lighthouse / Web Vitals Mapping
 
