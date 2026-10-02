@@ -3,6 +3,8 @@ pub mod manager;
 pub mod output;
 pub mod runtime;
 pub mod store;
+#[cfg(windows)]
+mod windows_process;
 
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};

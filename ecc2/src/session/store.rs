@@ -229,6 +229,7 @@ impl StateStore {
                 working_dir TEXT NOT NULL DEFAULT '.',
                 state TEXT NOT NULL DEFAULT 'pending',
                 pid INTEGER,
+                pid_creation_time TEXT,
                 worktree_path TEXT,
                 worktree_branch TEXT,
                 worktree_base TEXT,
@@ -562,6 +563,12 @@ impl StateStore {
             self.conn
                 .execute("ALTER TABLE sessions ADD COLUMN pid INTEGER", [])
                 .context("Failed to add pid column to sessions table")?;
+        }
+
+        if !self.has_column("sessions", "pid_creation_time")? {
+            self.conn
+                .execute("ALTER TABLE sessions ADD COLUMN pid_creation_time TEXT", [])
+                .context("Failed to add pid_creation_time column to sessions table")?;
         }
 
         if !self.has_column("sessions", "project")? {
@@ -1315,6 +1322,7 @@ impl StateStore {
             "UPDATE sessions
              SET state = ?1,
                  pid = ?2,
+                 pid_creation_time = CASE WHEN pid = ?2 THEN pid_creation_time ELSE NULL END,
                  updated_at = ?3,
                  last_heartbeat_at = ?3
              WHERE id = ?4",
@@ -1376,16 +1384,27 @@ impl StateStore {
     }
 
     pub fn update_pid(&self, session_id: &str, pid: Option<u32>) -> Result<()> {
+        self.update_pid_with_creation_time(session_id, pid, None)
+    }
+
+    pub fn update_pid_with_creation_time(
+        &self,
+        session_id: &str,
+        pid: Option<u32>,
+        creation_time: Option<u64>,
+    ) -> Result<()> {
         let updated = self.conn.execute(
             "UPDATE sessions
              SET pid = ?1,
                  updated_at = ?2,
-                 last_heartbeat_at = ?2
+                 last_heartbeat_at = ?2,
+                 pid_creation_time = ?4
              WHERE id = ?3",
             rusqlite::params![
                 pid.map(i64::from),
                 chrono::Utc::now().to_rfc3339(),
                 session_id,
+                pid.and(creation_time).map(|value| value.to_string()),
             ],
         )?;
 
@@ -1395,6 +1414,25 @@ impl StateStore {
 
         self.refresh_session_board_meta()?;
         Ok(())
+    }
+
+    pub fn process_creation_time(&self, session_id: &str, pid: u32) -> Result<Option<u64>> {
+        let value: Option<String> = self
+            .conn
+            .query_row(
+                "SELECT pid_creation_time FROM sessions WHERE id = ?1 AND pid = ?2",
+                rusqlite::params![session_id, i64::from(pid)],
+                |row| row.get(0),
+            )
+            .optional()?
+            .flatten();
+        value
+            .map(|value| {
+                value
+                    .parse()
+                    .context("Invalid persisted process creation time")
+            })
+            .transpose()
     }
 
     pub fn clear_worktree(&self, session_id: &str) -> Result<()> {
@@ -4050,11 +4088,7 @@ impl StateStore {
     }
 
     /// Returns at most `limit` output rows newer than `cursor` in insertion order.
-    pub(crate) fn get_output_since(
-        &self,
-        cursor: i64,
-        limit: usize,
-    ) -> Result<SessionOutputBatch> {
+    pub(crate) fn get_output_since(&self, cursor: i64, limit: usize) -> Result<SessionOutputBatch> {
         let cursor = cursor.max(0);
         let limit = i64::try_from(limit.max(1)).unwrap_or(i64::MAX);
         let mut stmt = self.conn.prepare(
@@ -5765,6 +5799,28 @@ mod tests {
     }
 
     #[test]
+    fn process_identity_is_bound_to_pid_and_cleared_on_replacement() -> Result<()> {
+        let tempdir = TestDir::new("store-process-identity")?;
+        let path = tempdir.path().join("state.db");
+        let db = StateStore::open(&path)?;
+        db.insert_session(&build_session("identity", SessionState::Running))?;
+        db.update_pid_with_creation_time("identity", Some(42), Some(u64::MAX))?;
+        assert_eq!(db.process_creation_time("identity", 42)?, Some(u64::MAX));
+        assert_eq!(db.process_creation_time("identity", 43)?, None);
+        db.update_state_and_pid("identity", &SessionState::Running, Some(42))?;
+        assert_eq!(db.process_creation_time("identity", 42)?, Some(u64::MAX));
+        drop(db);
+        let db = StateStore::open(&path)?;
+        assert_eq!(db.process_creation_time("identity", 42)?, Some(u64::MAX));
+        db.update_pid("identity", Some(43))?;
+        assert_eq!(db.process_creation_time("identity", 43)?, None);
+        db.update_pid_with_creation_time("identity", Some(43), Some(123))?;
+        db.update_state_and_pid("identity", &SessionState::Failed, None)?;
+        assert_eq!(db.process_creation_time("identity", 43)?, None);
+        Ok(())
+    }
+
+    #[test]
     fn update_state_rejects_invalid_terminal_transition() -> Result<()> {
         let tempdir = TestDir::new("store-invalid-transition")?;
         let db = StateStore::open(&tempdir.path().join("state.db"))?;
@@ -5818,6 +5874,9 @@ mod tests {
 
         assert!(column_names.iter().any(|column| column == "working_dir"));
         assert!(column_names.iter().any(|column| column == "pid"));
+        assert!(column_names
+            .iter()
+            .any(|column| column == "pid_creation_time"));
         assert!(column_names.iter().any(|column| column == "input_tokens"));
         assert!(column_names.iter().any(|column| column == "output_tokens"));
         assert!(column_names.iter().any(|column| column == "harness"));

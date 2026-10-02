@@ -788,7 +788,7 @@ pub fn enforce_session_heartbeats(
     db: &StateStore,
     cfg: &Config,
 ) -> Result<HeartbeatEnforcementOutcome> {
-    enforce_session_heartbeats_with(db, cfg, kill_process)
+    enforce_session_heartbeats_with(db, cfg, |session| kill_session_process(db, session))
 }
 
 fn enforce_session_heartbeats_with<F>(
@@ -797,7 +797,7 @@ fn enforce_session_heartbeats_with<F>(
     terminate_pid: F,
 ) -> Result<HeartbeatEnforcementOutcome>
 where
-    F: Fn(u32) -> Result<()>,
+    F: Fn(&Session) -> Result<()>,
 {
     let timeout = chrono::Duration::seconds(cfg.session_timeout_secs as i64);
     let now = chrono::Utc::now();
@@ -813,8 +813,20 @@ where
         }
 
         if cfg.auto_terminate_stale_sessions {
-            if let Some(pid) = session.pid {
-                let _ = terminate_pid(pid);
+            if session.pid.is_some() {
+                if let Err(error) = terminate_pid(&session) {
+                    tracing::warn!(
+                        "Session {} could not be safely terminated: {error}",
+                        session.id
+                    );
+                    // A timeout still makes the session stale. Keep its PID and
+                    // identity so an uncertain live process remains tracked.
+                    if session.state != SessionState::Stale {
+                        db.update_state(&session.id, &SessionState::Stale)?;
+                        outcome.stale_sessions.push(session.id.clone());
+                    }
+                    continue;
+                }
             }
             db.update_state_and_pid(&session.id, &SessionState::Failed, None)?;
             outcome.auto_terminated_sessions.push(session.id);
@@ -1237,7 +1249,10 @@ pub fn enforce_budget_hard_limits(
                 SessionState::Pending | SessionState::Running | SessionState::Idle
             )
     }) {
-        stop_session_recorded(db, &session, false)?;
+        if let Err(error) = stop_session_recorded(db, &session, false) {
+            tracing::warn!("Session {} could not be safely paused: {error}", session.id);
+            continue;
+        }
         outcome.paused_sessions.push(session.id);
     }
 
@@ -1302,6 +1317,7 @@ pub fn enforce_conflict_resolution(
     }
 
     let mut paused_once = HashSet::new();
+    let mut failed_pauses = HashSet::new();
 
     for (path, mut entries) in latest_activity_by_path {
         entries.retain(|entry| !matches!(entry.action, super::FileActivityAction::Read));
@@ -1348,6 +1364,11 @@ pub fn enforce_conflict_resolution(
                 conflict_strategy_label(cfg.conflict_resolution.strategy),
                 &summary,
             )?;
+            outcome.created_incidents += 1;
+
+            if failed_pauses.contains(&paused_session_id) {
+                continue;
+            }
 
             if paused_once.insert(paused_session_id.clone()) {
                 if let Some(session) = sessions_by_id.get(&paused_session_id) {
@@ -1358,7 +1379,14 @@ pub fn enforce_conflict_resolution(
                             | SessionState::Idle
                             | SessionState::Stale
                     ) {
-                        stop_session_recorded(db, session, false)?;
+                        if let Err(error) = stop_session_recorded(db, session, false) {
+                            tracing::warn!(
+                                "Session {} could not be safely paused for a conflict: {error}",
+                                session.id
+                            );
+                            failed_pauses.insert(paused_session_id.clone());
+                            continue;
+                        }
                         outcome.paused_sessions.push(paused_session_id.clone());
                     }
                 }
@@ -1403,8 +1431,6 @@ pub fn enforce_conflict_resolution(
                     }
                 }
             }
-
-            outcome.created_incidents += 1;
         }
     }
 
@@ -1518,6 +1544,13 @@ async fn resume_session_with_program(
 
     if session.state == SessionState::Running {
         anyhow::bail!("Session is already running: {}", session.id);
+    }
+
+    if session.pid.is_some() {
+        anyhow::bail!(
+            "Session still has a tracked process; stop it before resuming: {}",
+            session.id
+        );
     }
 
     db.update_state_and_pid(&session.id, &SessionState::Pending, None)?;
@@ -1744,6 +1777,13 @@ pub async fn cleanup_session_worktree(db: &StateStore, id: &str) -> Result<()> {
         return Ok(());
     }
 
+    if session.pid.is_some() {
+        anyhow::bail!(
+            "Session still has a tracked process; stop it before cleaning its worktree: {}",
+            session.id
+        );
+    }
+
     if let Some(worktree) = session.worktree.as_ref() {
         crate::worktree::remove(worktree)?;
         db.clear_worktree(&session.id)?;
@@ -1776,12 +1816,17 @@ pub async fn merge_session_worktree(
 ) -> Result<WorktreeMergeOutcome> {
     let session = resolve_session(db, id)?;
 
-    if matches!(
-        session.state,
-        SessionState::Pending | SessionState::Running | SessionState::Idle | SessionState::Stale
-    ) {
+    if session.pid.is_some()
+        || matches!(
+            session.state,
+            SessionState::Pending
+                | SessionState::Running
+                | SessionState::Idle
+                | SessionState::Stale
+        )
+    {
         anyhow::bail!(
-            "Cannot merge active session {} while it is {}",
+            "Cannot merge session {} while it is active or has a tracked process ({})",
             session.id,
             session.state
         );
@@ -1810,12 +1855,17 @@ pub async fn merge_session_worktree(
 pub async fn rebase_session_worktree(db: &StateStore, id: &str) -> Result<WorktreeRebaseOutcome> {
     let session = resolve_session(db, id)?;
 
-    if matches!(
-        session.state,
-        SessionState::Pending | SessionState::Running | SessionState::Idle | SessionState::Stale
-    ) {
+    if session.pid.is_some()
+        || matches!(
+            session.state,
+            SessionState::Pending
+                | SessionState::Running
+                | SessionState::Idle
+                | SessionState::Stale
+        )
+    {
         anyhow::bail!(
-            "Cannot rebase active session {} while it is {}",
+            "Cannot rebase session {} while it is active or has a tracked process ({})",
             session.id,
             session.state
         );
@@ -2052,6 +2102,11 @@ pub async fn prune_inactive_worktrees(
             SessionState::Pending | SessionState::Running | SessionState::Idle
         ) {
             active_with_worktree_ids.push(session.id);
+            continue;
+        }
+
+        if session.pid.is_some() {
+            retained_session_ids.push(session.id);
             continue;
         }
 
@@ -2306,6 +2361,15 @@ fn classify_merge_queue_report(
 
 pub async fn delete_session(db: &StateStore, id: &str) -> Result<()> {
     let session = resolve_session(db, id)?;
+
+    // Stale/failed sessions may still track a process after termination failed.
+    // Require stop to reconcile it before removing its record or working files.
+    if session.pid.is_some() {
+        anyhow::bail!(
+            "Cannot delete session {} with a tracked process; stop it first",
+            session.id
+        );
+    }
 
     if matches!(
         session.state,
@@ -2731,8 +2795,33 @@ async fn create_session_in_dir(
         .unwrap_or(repo_root);
 
     match spawn_claude_code(agent_program, task, &session.id, working_dir).await {
-        Ok(pid) => {
-            db.update_pid(&session.id, Some(pid))?;
+        Ok(child) => {
+            let pid = child
+                .id()
+                .ok_or_else(|| anyhow::anyhow!("Claude Code did not expose a process id"))?;
+            #[cfg(windows)]
+            let creation_time = match child.raw_handle() {
+                Some(handle) => {
+                    // SAFETY: child owns this process handle through the store update.
+                    match unsafe { super::windows_process::creation_time_from_handle(handle) } {
+                        Ok(value) => Some(value),
+                        Err(error) => {
+                            tracing::warn!("Could not record process identity for session {} (PID {pid}): {error}", session.id);
+                            None
+                        }
+                    }
+                }
+                None => {
+                    tracing::warn!(
+                        "Could not access process handle for session {} (PID {pid})",
+                        session.id
+                    );
+                    None
+                }
+            };
+            #[cfg(not(windows))]
+            let creation_time = None;
+            db.update_pid_with_creation_time(&session.id, Some(pid), creation_time)?;
             db.update_state(&session.id, &SessionState::Running)?;
             Ok(session.id)
         }
@@ -3064,7 +3153,9 @@ fn configure_background_runner_command(command: &mut Command) {
     {
         use std::os::windows::process::CommandExt;
 
-        command.as_std_mut().creation_flags(detached_creation_flags());
+        command
+            .as_std_mut()
+            .creation_flags(detached_creation_flags());
     }
 }
 
@@ -3544,7 +3635,7 @@ async fn spawn_claude_code(
     task: &str,
     session_id: &str,
     working_dir: &Path,
-) -> Result<u32> {
+) -> Result<tokio::process::Child> {
     let mut command = build_agent_command(
         &Config::default(),
         "claude",
@@ -3565,9 +3656,7 @@ async fn spawn_claude_code(
             )
         })?;
 
-    child
-        .id()
-        .ok_or_else(|| anyhow::anyhow!("Claude Code did not expose a process id"))
+    Ok(child)
 }
 
 async fn stop_session_with_options(
@@ -3580,8 +3669,8 @@ async fn stop_session_with_options(
 }
 
 fn stop_session_recorded(db: &StateStore, session: &Session, cleanup_worktree: bool) -> Result<()> {
-    if let Some(pid) = session.pid {
-        kill_process(pid)?;
+    if session.pid.is_some() {
+        kill_session_process(db, session)?;
     }
 
     db.update_pid(&session.id, None)?;
@@ -3605,17 +3694,37 @@ fn kill_process(pid: u32) -> Result<()> {
     Ok(())
 }
 
-#[cfg(windows)]
-fn kill_process(pid: u32) -> Result<()> {
-    let status = std::process::Command::new("taskkill")
-        .args(["/PID", &pid.to_string(), "/T", "/F"])
-        .status()
-        .with_context(|| format!("Failed to invoke taskkill for process {pid}"))?;
+fn kill_session_process(db: &StateStore, session: &Session) -> Result<()> {
+    let Some(pid) = session.pid else {
+        return Ok(());
+    };
+    #[cfg(unix)]
+    {
+        let _ = db;
+        kill_process(pid)
+    }
+    #[cfg(windows)]
+    {
+        let expected = db.process_creation_time(&session.id, pid)?;
+        super::windows_process::with_verified_process(pid, expected, || {
+            let status = std::process::Command::new("taskkill")
+                .args(["/PID", &pid.to_string(), "/T", "/F"])
+                .status()?;
 
-    if status.success() {
-        Ok(())
-    } else {
-        Err(anyhow::anyhow!("taskkill exited with status {status}"))
+            if status.success() {
+                Ok(())
+            } else {
+                Err(std::io::Error::other(format!(
+                    "taskkill exited with status {status}"
+                )))
+            }
+        })
+        .with_context(|| {
+            format!(
+                "Could not safely terminate session {} process {pid}",
+                session.id
+            )
+        })
     }
 }
 
@@ -4217,6 +4326,7 @@ mod tests {
     use anyhow::{Context, Result};
     use chrono::{Duration, Utc};
     use std::fs;
+    #[cfg(unix)]
     use std::os::unix::fs::PermissionsExt;
     use std::path::{Path, PathBuf};
     use std::process::Command as StdCommand;
@@ -4976,8 +5086,8 @@ mod tests {
             metrics: SessionMetrics::default(),
         })?;
 
-        let outcome = enforce_session_heartbeats_with(&db, &cfg, move |pid| {
-            killed_clone.lock().unwrap().push(pid);
+        let outcome = enforce_session_heartbeats_with(&db, &cfg, move |session| {
+            killed_clone.lock().unwrap().push(session.pid.unwrap());
             Ok(())
         })?;
         let session = db.get_session("stale-2")?.expect("session should exist");
@@ -5048,6 +5158,151 @@ mod tests {
         Ok(())
     }
 
+    #[cfg(windows)]
+    #[tokio::test]
+    async fn delete_stale_windows_session_preserves_tracked_process_and_worktree() -> Result<()> {
+        let mut child = StdCommand::new("cmd")
+            .args(["/C", "pause"])
+            .stdin(Stdio::piped())
+            .stdout(Stdio::null())
+            .spawn()?;
+        let result = async {
+            let root = TestDir::new("stale-delete-process")?;
+            let db = StateStore::open(&root.path().join("state.db"))?;
+            let mut session = build_session_record(
+                &db,
+                "task",
+                "claude",
+                false,
+                &build_config(root.path()),
+                root.path(),
+                SessionGrouping::default(),
+            )?;
+            let worktree = root.path().join("retained-worktree");
+            fs::create_dir_all(&worktree)?;
+            let marker = worktree.join("pending.txt");
+            fs::write(&marker, "retain while process is tracked")?;
+            session.state = SessionState::Stale;
+            session.pid = Some(child.id());
+            session.worktree = Some(super::super::WorktreeInfo {
+                path: worktree,
+                branch: "fixture".into(),
+                base_branch: "main".into(),
+            });
+            db.insert_session(&session)?;
+            let result = delete_session(&db, &session.id).await;
+            assert!(result.is_err(), "tracked PID must prevent deletion");
+            assert!(db.get_session(&session.id)?.is_some());
+            assert!(marker.exists());
+            assert!(child.try_wait()?.is_none());
+            Ok::<(), anyhow::Error>(())
+        }
+        .await;
+        let _ = child.kill();
+        let _ = child.wait();
+        result
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn stop_and_heartbeat_do_not_terminate_unverified_windows_processes() -> Result<()> {
+        let mut child = StdCommand::new("cmd")
+            .args(["/C", "pause"])
+            .stdin(Stdio::piped())
+            .stdout(Stdio::null())
+            .spawn()?;
+        let result = (|| -> Result<()> {
+            let root = TestDir::new("unverified-process")?;
+            let db = StateStore::open(&root.path().join("state.db"))?;
+            let mut session = build_session_record(
+                &db,
+                "task",
+                "claude",
+                false,
+                &build_config(root.path()),
+                root.path(),
+                SessionGrouping::default(),
+            )?;
+            session.state = SessionState::Running;
+            session.pid = Some(child.id());
+            session.last_heartbeat_at = Utc::now() - Duration::hours(1);
+            db.insert_session(&session)?;
+            assert!(stop_session_recorded(&db, &session, false).is_err());
+            let mut cfg = build_config(root.path());
+            cfg.auto_terminate_stale_sessions = true;
+            let outcome = enforce_session_heartbeats(&db, &cfg)?;
+            assert!(outcome.auto_terminated_sessions.is_empty());
+            assert_eq!(
+                db.get_session(&session.id)?.unwrap().state,
+                SessionState::Stale
+            );
+            assert_eq!(db.get_session(&session.id)?.unwrap().pid, Some(child.id()));
+            assert_eq!(outcome.stale_sessions, vec![session.id.clone()]);
+            assert!(child.try_wait()?.is_none());
+            // A migrated process can be reconciled once it is verifiably gone;
+            // stopping the live unverified PID above never authorized a kill.
+            child.kill()?;
+            child.wait()?;
+            let stale = db.get_session(&session.id)?.unwrap();
+            stop_session_recorded(&db, &stale, false)?;
+            let stopped = db.get_session(&session.id)?.unwrap();
+            assert_eq!(stopped.state, SessionState::Stopped);
+            assert_eq!(stopped.pid, None);
+            Ok(())
+        })();
+        let _ = child.kill();
+        let _ = child.wait();
+        result
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn stop_windows_process_requires_the_recorded_creation_time() -> Result<()> {
+        use std::os::windows::io::AsRawHandle;
+        let mut child = StdCommand::new("cmd")
+            .args(["/C", "pause"])
+            .stdin(Stdio::piped())
+            .stdout(Stdio::null())
+            .spawn()?;
+        let result = (|| -> Result<()> {
+            let creation = unsafe {
+                super::super::windows_process::creation_time_from_handle(child.as_raw_handle())
+            }?;
+            let root = TestDir::new("verified-process")?;
+            let db = StateStore::open(&root.path().join("state.db"))?;
+            let cfg = build_config(root.path());
+            let mut session = build_session_record(
+                &db,
+                "task",
+                "claude",
+                false,
+                &cfg,
+                root.path(),
+                SessionGrouping::default(),
+            )?;
+            session.state = SessionState::Running;
+            db.insert_session(&session)?;
+            db.update_pid_with_creation_time(&session.id, Some(child.id()), Some(creation + 1))?;
+            let session = db.get_session(&session.id)?.unwrap();
+            stop_session_recorded(&db, &session, false)?;
+            assert!(
+                child.try_wait()?.is_none(),
+                "replacement process must survive"
+            );
+            db.update_pid_with_creation_time(&session.id, Some(child.id()), Some(creation))?;
+            let session = db.get_session(&session.id)?.unwrap();
+            // This fixture uses the direct process path to avoid a second stop
+            // state transition while exercising the real taskkill dispatch.
+            kill_session_process(&db, &session)?;
+            child.wait()?;
+            assert!(child.try_wait()?.is_some());
+            Ok(())
+        })();
+        let _ = child.kill();
+        let _ = child.wait();
+        result
+    }
+
     fn write_fake_claude(root: &Path) -> Result<(PathBuf, PathBuf)> {
         let script_path = root.join("fake-claude.sh");
         let log_path = root.join("fake-claude.log");
@@ -5057,9 +5312,12 @@ mod tests {
         );
 
         fs::write(&script_path, script)?;
-        let mut permissions = fs::metadata(&script_path)?.permissions();
-        permissions.set_mode(0o755);
-        fs::set_permissions(&script_path, permissions)?;
+        #[cfg(unix)]
+        {
+            let mut permissions = fs::metadata(&script_path)?.permissions();
+            permissions.set_mode(0o755);
+            fs::set_permissions(&script_path, permissions)?;
+        }
 
         Ok((script_path, log_path))
     }
@@ -5154,8 +5412,7 @@ mod tests {
 
     #[test]
     fn background_runner_stderr_log_path_is_session_scoped() {
-        let path =
-            background_runner_stderr_log_path(Path::new("/tmp/ecc-repo"), "session-123");
+        let path = background_runner_stderr_log_path(Path::new("/tmp/ecc-repo"), "session-123");
         assert_eq!(
             path,
             PathBuf::from("/tmp/ecc-repo/.claude/ecc2/logs/session-123.runner-stderr.log")
@@ -5920,6 +6177,83 @@ mod tests {
         Ok(())
     }
 
+    #[cfg(windows)]
+    #[test]
+    fn bulk_enforcement_continues_after_unverified_process() -> Result<()> {
+        let root = TestDir::new("bulk-unverified-process")?;
+        let mut cfg = build_config(root.path());
+        cfg.token_budget = 1;
+        cfg.conflict_resolution.notify_lead = false;
+        let db = StateStore::open(&cfg.db_path)?;
+        let now = Utc::now();
+        for id in ["unverified", "safe", "writer"] {
+            let mut session = build_session(id, SessionState::Running, now);
+            if id == "unverified" {
+                session.pid = Some(std::process::id());
+                session.updated_at = now + Duration::seconds(1);
+                session.metrics.tokens_used = 2;
+            }
+            db.insert_session(&session)?;
+        }
+        db.update_metrics(
+            "unverified",
+            &SessionMetrics {
+                tokens_used: 2,
+                ..SessionMetrics::default()
+            },
+        )?;
+        assert_eq!(db.list_sessions()?[0].id, "unverified");
+        let budget = enforce_budget_hard_limits(&db, &cfg)?;
+        assert!(budget.token_budget_exceeded);
+        assert_eq!(budget.paused_sessions.len(), 2);
+        assert!(!budget.paused_sessions.contains(&"unverified".to_string()));
+        assert_eq!(
+            db.get_session("unverified")?.unwrap().pid,
+            Some(std::process::id())
+        );
+        let db = StateStore::open(&root.path().join("conflicts.db"))?;
+        for id in ["unverified", "safe", "writer"] {
+            let mut session = build_session(id, SessionState::Running, now);
+            if id == "unverified" {
+                session.pid = Some(std::process::id());
+            }
+            db.insert_session(&session)?;
+        }
+        let events = root.path().join("metrics.jsonl");
+        let mut lines = Vec::new();
+        for (index, (id, file, timestamp)) in [
+            ("writer", "a.rs", "2026-04-09T00:02:00Z"),
+            ("unverified", "a.rs", "2026-04-09T00:03:00Z"),
+            ("writer", "b.rs", "2026-04-09T00:02:00Z"),
+            ("safe", "b.rs", "2026-04-09T00:03:00Z"),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            lines.push(
+                serde_json::json!({"id":format!("evt-{index}"),"session_id":id,
+                "tool_name":"Edit","input_summary":"fixture","output_summary":"fixture",
+                "timestamp":timestamp,"file_events":[{"path":file,"action":"modify"}]})
+                .to_string(),
+            );
+        }
+        fs::write(&events, lines.join("\n") + "\n")?;
+        db.sync_tool_activity_metrics(&events)?;
+        let conflict = enforce_conflict_resolution(&db, &cfg)?;
+        assert_eq!(conflict.created_incidents, 2);
+        assert_eq!(conflict.paused_sessions, vec!["safe".to_string()]);
+        assert_eq!(
+            db.get_session("safe")?.unwrap().state,
+            SessionState::Stopped
+        );
+        let retained = db.get_session("unverified")?.unwrap();
+        assert_eq!(retained.state, SessionState::Running);
+        assert_eq!(retained.pid, Some(std::process::id()));
+        assert!(db.list_decisions_for_session("unverified", 10)?.is_empty());
+        assert!(stop_session_recorded(&db, &retained, false).is_err());
+        Ok(())
+    }
+
     #[test]
     fn enforce_budget_hard_limits_pauses_sessions_over_profile_token_budget() -> Result<()> {
         let tempdir = TestDir::new("manager-profile-token-budget")?;
@@ -5987,6 +6321,47 @@ mod tests {
         Ok(())
     }
 
+    #[tokio::test]
+    async fn resume_session_preserves_retained_process_tracking() -> Result<()> {
+        let root = TestDir::new("resume-retained-process")?;
+        let cfg = build_config(root.path());
+        let db = StateStore::open(&cfg.db_path)?;
+        for (index, state) in [
+            SessionState::Pending,
+            SessionState::Running,
+            SessionState::Idle,
+            SessionState::Stale,
+            SessionState::Failed,
+            SessionState::Stopped,
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            let id = format!("tracked-{index}");
+            let mut session = build_session(&id, state.clone(), Utc::now());
+            session.working_dir = root.path().to_path_buf();
+            session.pid = Some(31337);
+            db.insert_session(&session)?;
+            db.update_pid_with_creation_time(&id, session.pid, Some(123456789))?;
+            let result = resume_session_with_program(
+                &db,
+                &cfg,
+                &id,
+                Some(&root.path().join("missing-runner")),
+            )
+            .await;
+            let retained = db.get_session(&id)?.context("session must remain")?;
+            assert!(result.is_err());
+            assert_eq!(retained.state, state, "resume must preserve state for {id}");
+            assert_eq!(
+                retained.pid, session.pid,
+                "resume must preserve PID for {id}"
+            );
+            assert_eq!(db.process_creation_time(&id, 31337)?, Some(123456789));
+        }
+        Ok(())
+    }
+
     #[tokio::test(flavor = "current_thread")]
     async fn resume_session_requeues_failed_session() -> Result<()> {
         let tempdir = TestDir::new("manager-resume-session")?;
@@ -6002,7 +6377,7 @@ mod tests {
             agent_type: "claude".to_string(),
             working_dir: tempdir.path().join("resume-working-dir"),
             state: SessionState::Failed,
-            pid: Some(31337),
+            pid: None,
             worktree: None,
             created_at: now - Duration::minutes(1),
             updated_at: now,
@@ -6035,6 +6410,92 @@ mod tests {
                 .as_ref()
         ));
 
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn worktree_operations_preserve_retained_process_tracking() -> Result<()> {
+        for state in [
+            SessionState::Failed,
+            SessionState::Stopped,
+            SessionState::Stale,
+        ] {
+            for action in ["cleanup", "merge", "rebase"] {
+                let root = TestDir::new("worktree-tracked-process")?;
+                let repo = root.path().join("repo");
+                init_git_repo(&repo)?;
+                let cfg = build_config(root.path());
+                let db = StateStore::open(&cfg.db_path)?;
+                let mut session = build_session_record(
+                    &db,
+                    "tracked work",
+                    "claude",
+                    true,
+                    &cfg,
+                    &repo,
+                    SessionGrouping::default(),
+                )?;
+                session.state = state.clone();
+                session.pid = Some(31337);
+                let worktree = session.worktree.clone().context("fixture worktree")?;
+                fs::write(worktree.path.join("feature.txt"), "retained feature\n")?;
+                run_git(&worktree.path, ["add", "feature.txt"])?;
+                run_git(&worktree.path, ["commit", "-qm", "feature"])?;
+                fs::write(repo.join("README.md"), "new base\n")?;
+                run_git(&repo, ["add", "README.md"])?;
+                run_git(&repo, ["commit", "-qm", "base change"])?;
+                db.insert_session(&session)?;
+                db.update_pid_with_creation_time(&session.id, session.pid, Some(123456789))?;
+                let head = worktree::branch_head_oid(&worktree, &worktree.branch)?;
+                let base = worktree::branch_head_oid(&worktree, &worktree.base_branch)?;
+                let result = match action {
+                    "cleanup" => cleanup_session_worktree(&db, &session.id).await,
+                    "merge" => merge_session_worktree(&db, &session.id, true)
+                        .await
+                        .map(|_| ()),
+                    _ => rebase_session_worktree(&db, &session.id).await.map(|_| ()),
+                };
+                assert!(
+                    result.is_err(),
+                    "{action} must reject retained PID in {state}"
+                );
+                let retained = db.get_session(&session.id)?.context("session remains")?;
+                assert_eq!(retained.state, state);
+                assert_eq!(retained.pid, session.pid);
+                assert_eq!(
+                    db.process_creation_time(&session.id, 31337)?,
+                    Some(123456789)
+                );
+                assert_eq!(
+                    retained.worktree.as_ref().map(|w| &w.path),
+                    Some(&worktree.path)
+                );
+                assert_eq!(
+                    fs::read_to_string(worktree.path.join("feature.txt"))?,
+                    "retained feature\n"
+                );
+                assert_eq!(
+                    worktree::branch_head_oid(&worktree, &worktree.branch)?,
+                    head
+                );
+                assert_eq!(
+                    worktree::branch_head_oid(&worktree, &worktree.base_branch)?,
+                    base
+                );
+                let mut prune_cfg = cfg.clone();
+                prune_cfg.worktree_retention_secs = 0;
+                let outcome = prune_inactive_worktrees(&db, &prune_cfg).await?;
+                assert_eq!(outcome.retained_session_ids, vec![session.id.clone()]);
+                assert!(outcome.cleaned_session_ids.is_empty());
+                assert!(worktree.path.join("feature.txt").exists());
+                // Once tracking has been cleared by a successful stop, ordinary
+                // worktree cleanup remains available.
+                db.update_pid(&session.id, None)?;
+                cleanup_session_worktree(&db, &session.id).await?;
+                assert!(db.get_session(&session.id)?.unwrap().worktree.is_none());
+                assert!(!worktree.path.exists());
+            }
+        }
         Ok(())
     }
 
