@@ -374,8 +374,10 @@ kubectl rollout undo deployment/app
 # Vercel: önceki deployment'ı yükselt
 vercel rollback
 
-# Railway: önceki commit'i tekrar deploy et
-railway up --commit <previous-sha>
+# Railway: panelde önceki başarılı deployment'ı seç
+# Service -> Deployments -> önceki deployment menüsü -> Rollback
+# Rollback yalnızca planın saklama süresi içindeki deployment'lar için kullanılabilir.
+# railway up yerel kodu yükler; önceki bir Git commit'ini seçmez.
 
 # Veritabanı: şema/veri değişikliklerini incelenmiş bir telafi migration ile geri alın
 # prisma migrate resolve yalnızca migration geçmişini değiştirir; SQL işlemlerini geri almaz

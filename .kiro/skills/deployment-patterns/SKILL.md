@@ -378,8 +378,10 @@ kubectl rollout undo deployment/app
 # Vercel: promote previous deployment
 vercel rollback
 
-# Railway: redeploy previous commit
-railway up --commit <previous-sha>
+# Railway: use the dashboard for a previous successful deployment
+# Service -> Deployments -> previous deployment's menu -> Rollback
+# Rollback is available only while the deployment is within plan retention.
+# railway up uploads local code; it does not select a previous Git commit.
 
 # Database: reverse schema/data changes with a reviewed compensating migration
 # prisma migrate resolve changes migration history only; it does not undo SQL
