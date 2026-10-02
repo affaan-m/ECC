@@ -88,6 +88,19 @@ test('multiline code spans do not become ownership metadata', () => {
   const damaged = 'Inline ``<!-- ecc-coordination:start -->`\n' + section('{"owner":"second"}');
   assert.throws(() => extractCoordinationState(damaged), /coordination/i);
 });
+test('stray backticks cannot consume code spans across Markdown blocks', () => {
+  for (const newline of ['\n', '\r\n']) {
+    for (const separator of ['\n\n', '\n```text\nfenced example\n```\n', '\n~~~text\nfenced example\n~~~\n']) {
+      const example = ('A stray ` before another block' + separator
+        + 'Inline `<!-- ecc-coordination:start -->` example\n').replace(/\n/g, newline);
+      const body = example + section('{"owner":"existing"}').replace(/\n/g, newline);
+      assert.strictEqual(extractCoordinationState(body).owner, 'existing');
+      const merged = mergeIssueBody({ body }, { owner: 'existing', status: 'claimed' });
+      assert.ok(merged.startsWith(example));
+      assert.strictEqual(extractCoordinationState(merged).status, 'claimed');
+    }
+  }
+});
 test('literal markers in prose, fenced examples and JSON notes remain intact', () => {
   for (const policy of [{}, { sectionMarker: 'custom-marker' }]) {
     const marker = policy.sectionMarker || 'ecc-coordination';

@@ -14,8 +14,13 @@ function coordinationSection(body, policy) {
   const source = String(body || '');
   const marker = escapeRegExp(policy.sectionMarker || DEFAULT_SECTION_MARKER);
   const boundary = new RegExp(`<!--\\s*${marker}:(start|end)\\s*-->`, 'g');
-  const inlineCode = [...source.matchAll(/(?<!`)(`+)(?!`)([\s\S]*?)(?<!`)\1(?!`)/g)]
-    .filter(code => !/\r?\n[ \t]*\r?\n|\r?\n {0,3}(?:`{3,}|~{3,})/.test(code[0]));
+  // Code spans cannot pair delimiters across paragraph or fenced-block boundaries.
+  const inlineCode = source.split(/(^ {0,3}(?:`{3,}|~{3,}).*$|\r?\n[ \t]*\r?\n)/m).reduce((result, block) => {
+    const offset = result.offset;
+    const spans = [...block.matchAll(/(?<!`)(`+)(?!`)([\s\S]*?)(?<!`)\1(?!`)/g)]
+      .map(code => ({ index: offset + code.index, length: code[0].length }));
+    return { offset: offset + block.length, spans: [...result.spans, ...spans] };
+  }, { offset: 0, spans: [] }).spans;
   let boundaries = [];
   let fence = null;
   let fenceStart = 0;
@@ -30,7 +35,7 @@ function coordinationSection(body, policy) {
     if (delimiter) { fence = delimiter[1]; fenceStart = match.index; continue; }
     for (const found of line.matchAll(boundary)) {
       const index = match.index + found.index;
-      if (inlineCode.some(code => index >= code.index && index < code.index + code[0].length)) continue;
+      if (inlineCode.some(code => index >= code.index && index < code.index + code.length)) continue;
       boundaries = [...boundaries, { kind: found[1], index: match.index + found.index,
         length: found[0].length }];
     }
