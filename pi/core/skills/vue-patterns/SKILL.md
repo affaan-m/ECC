@@ -398,7 +398,7 @@ const inputEl = useTemplateRef<HTMLInputElement>("input");
 // "input" matches the ref="input" attribute in template, not the variable name
 ```
 
-Supports dynamic ref IDs: `useTemplateRef(dynamicRefId)`.
+The key is a string bound when `useTemplateRef()` is called, not a reactive ref or getter. A string variable is valid, but changing that variable does not rebind the returned reference. For dynamically selected elements, use a function ref (`:ref="(el) => { /* store or clear el */ }"`) and handle its null value on unmount.
 
 ### `onWatcherCleanup()`
 
@@ -461,7 +461,7 @@ const AsyncComp = defineAsyncComponent({
 | `reactive()` for replaceable state | Replacement breaks reactivity | Use `ref()` instead |
 | Watcher without cleanup | Memory leaks, race conditions | Use `onCleanup` or `onWatcherCleanup()` (Vue 3.5+) |
 | Options API in new Vue 3 code | Ecosystem move to Composition API | Use `<script setup>` |
-| Plain ref for template references | No dynamic ref support, name-matching fragile | Use `useTemplateRef()` (Vue 3.5+) |
+| Expecting `useTemplateRef()` to follow a changing key | It binds to one string key at setup | Use a fixed matching key or a function ref for dynamic assignment |
 
 ## Related Skills
 
