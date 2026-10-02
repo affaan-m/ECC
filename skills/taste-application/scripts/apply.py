@@ -374,6 +374,11 @@ def apply(
         shots.append(s)
         clock += float(t["used"])
 
+    # Validate all overlays before uploading either the base video or a plate.
+    missing = [Path(o) for o in (overlays or []) if not Path(o).is_file()]
+    if missing:
+        raise SystemExit("--overlay not found: " + ", ".join(str(m) for m in missing))
+
     base_video_url = None
     if base_video:
         bp = Path(base_video)
@@ -384,11 +389,6 @@ def apply(
 
     overlay_urls: list[str] = []
     if overlays:
-        # Fail before any paid upload: forge() rejects a missing overlay
-        # later, which would strand every generated take without a manifest.
-        missing = [Path(o) for o in overlays if not Path(o).is_file()]
-        if missing:
-            raise SystemExit("--overlay not found: " + ", ".join(str(m) for m in missing))
         for o in overlays:
             overlay_urls.append(falapi.upload(Path(o)))
         print(f"  overlays       : {len(overlay_urls)}")
