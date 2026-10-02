@@ -64,6 +64,11 @@ pub struct GitStatusEntry {
     pub conflicted: bool,
 }
 
+pub struct GitStatusReport {
+    pub entries: Vec<GitStatusEntry>,
+    pub unavailable_paths: usize,
+}
+
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct DraftPrOptions {
     pub base_branch: Option<String>,
@@ -271,6 +276,14 @@ pub fn diff_summary(worktree: &WorktreeInfo) -> Result<Option<String>> {
 }
 
 pub fn git_status_entries(worktree: &WorktreeInfo) -> Result<Vec<GitStatusEntry>> {
+    let report = git_status_report(worktree)?;
+    if report.unavailable_paths > 0 {
+        anyhow::bail!("Git status contains a non-UTF-8 filename");
+    }
+    Ok(report.entries)
+}
+
+pub fn git_status_report(worktree: &WorktreeInfo) -> Result<GitStatusReport> {
     let output = Command::new("git")
         .arg("-C")
         .arg(&worktree.path)
@@ -283,14 +296,14 @@ pub fn git_status_entries(worktree: &WorktreeInfo) -> Result<Vec<GitStatusEntry>
         anyhow::bail!("git status failed: {stderr}");
     }
 
-    parse_git_status_entries(&output.stdout)
+    parse_git_status_report(&output.stdout)
 }
 
 pub fn stage_path(worktree: &WorktreeInfo, path: &str) -> Result<()> {
     let output = Command::new("git")
         .arg("-C")
         .arg(&worktree.path)
-        .args(["add", "--"])
+        .args(["--literal-pathspecs", "add", "--"])
         .arg(path)
         .output()
         .with_context(|| format!("Failed to stage {}", path))?;
@@ -306,7 +319,7 @@ pub fn unstage_path(worktree: &WorktreeInfo, path: &str) -> Result<()> {
     let output = Command::new("git")
         .arg("-C")
         .arg(&worktree.path)
-        .args(["reset", "HEAD", "--"])
+        .args(["--literal-pathspecs", "reset", "HEAD", "--"])
         .arg(path)
         .output()
         .with_context(|| format!("Failed to unstage {}", path))?;
@@ -339,7 +352,14 @@ pub fn reset_path(worktree: &WorktreeInfo, entry: &GitStatusEntry) -> Result<()>
     let output = Command::new("git")
         .arg("-C")
         .arg(&worktree.path)
-        .args(["restore", "--source=HEAD", "--staged", "--worktree", "--"])
+        .args([
+            "--literal-pathspecs",
+            "restore",
+            "--source=HEAD",
+            "--staged",
+            "--worktree",
+            "--",
+        ])
         .arg(&entry.path)
         .output()
         .with_context(|| format!("Failed to reset {}", entry.path))?;
@@ -1059,6 +1079,7 @@ fn git_diff_patch_text_for_paths(
     command
         .arg("-C")
         .arg(worktree_path)
+        .arg("--literal-pathspecs")
         .arg("diff")
         .args(["--patch", "--find-renames"]);
     command.args(extra_args);
@@ -1092,6 +1113,7 @@ fn git_diff_patch_lines_for_paths(
     command
         .arg("-C")
         .arg(worktree_path)
+        .arg("--literal-pathspecs")
         .arg("diff")
         .args(["--stat", "--patch", "--find-renames"]);
     command.args(extra_args);
@@ -1492,32 +1514,58 @@ fn validate_branch_name(repo_root: &Path, branch: &str) -> Result<()> {
     }
 }
 
-fn parse_git_status_entries(stdout: &[u8]) -> Result<Vec<GitStatusEntry>> {
-    let text = std::str::from_utf8(stdout).context("Git status contains a non-UTF-8 filename")?;
-    let mut records = text.split_terminator('\0');
+fn parse_git_status_report(stdout: &[u8]) -> Result<GitStatusReport> {
+    if stdout.is_empty() {
+        return Ok(GitStatusReport {
+            entries: Vec::new(),
+            unavailable_paths: 0,
+        });
+    }
+    let mut records = stdout
+        .strip_suffix(&[0])
+        .unwrap_or(stdout)
+        .split(|byte| *byte == 0);
+    let mut unavailable_paths = 0;
     let mut entries = Vec::new();
     while let Some(record) = records.next() {
-        let bytes = record.as_bytes();
+        let bytes = record;
         if bytes.len() < 4 || bytes[2] != b' ' {
             anyhow::bail!("Malformed Git status record");
         }
         let index_status = bytes[0] as char;
         let worktree_status = bytes[1] as char;
-        let path = record
-            .get(3..)
-            .context("Malformed Git status path")?
-            .to_string();
-        // Porcelain -z emits destination first, then a separate source for renames/copies.
-        let display_path =
-            if matches!(index_status, 'R' | 'C') || matches!(worktree_status, 'R' | 'C') {
-                let source = records
+        let source = if matches!(index_status, 'R' | 'C') || matches!(worktree_status, 'R' | 'C') {
+            Some(
+                records
                     .next()
                     .filter(|source| !source.is_empty())
-                    .context("Missing Git status rename/copy source")?;
-                format!("{source} -> {path}")
-            } else {
-                path.clone()
-            };
+                    .context("Missing Git status rename/copy source")?,
+            )
+        } else {
+            None
+        };
+        let path = match std::str::from_utf8(&record[3..]) {
+            Ok(path) => path.to_string(),
+            Err(_) => {
+                unavailable_paths += 1;
+                continue;
+            }
+        };
+        let display_path = if let Some(source) = source {
+            match std::str::from_utf8(source) {
+                Ok(source) => format!(
+                    "{} -> {}",
+                    display_git_path(source),
+                    display_git_path(&path)
+                ),
+                Err(_) => {
+                    unavailable_paths += 1;
+                    continue;
+                }
+            }
+        } else {
+            display_git_path(&path)
+        };
         let conflicted = matches!(
             (index_status, worktree_status),
             ('U', _) | (_, 'U') | ('A', 'A') | ('D', 'D')
@@ -1533,7 +1581,31 @@ fn parse_git_status_entries(stdout: &[u8]) -> Result<Vec<GitStatusEntry>> {
             conflicted,
         });
     }
-    Ok(entries)
+    Ok(GitStatusReport {
+        entries,
+        unavailable_paths,
+    })
+}
+
+fn display_git_path(path: &str) -> String {
+    path.chars()
+        .map(|character| match character {
+            '\\' => "\\\\".to_string(),
+            character if character.is_control() || matches!(character, '\u{2028}' | '\u{2029}') => {
+                character.escape_default().to_string()
+            }
+            character => character.to_string(),
+        })
+        .collect()
+}
+
+#[cfg(test)]
+fn parse_git_status_entries(stdout: &[u8]) -> Result<Vec<GitStatusEntry>> {
+    let report = parse_git_status_report(stdout)?;
+    if report.unavailable_paths > 0 {
+        anyhow::bail!("Git status contains a non-UTF-8 filename");
+    }
+    Ok(report.entries)
 }
 
 fn parse_nonempty_lines(stdout: &[u8]) -> Vec<String> {
@@ -2159,14 +2231,77 @@ mod tests {
         assert_eq!(entries.len(), 6);
         assert_eq!(entries[0].path, "name -> destination.txt");
         assert_eq!(entries[1].path, "tab\tname.txt");
+        assert_eq!(entries[1].display_path, "tab\\tname.txt");
         assert_eq!(entries[2].path, "line\nname.txt");
+        assert_eq!(entries[2].display_path, "line\\nname.txt");
         assert_eq!(entries[3].path, "trailing ");
         assert_eq!(entries[4].path, "new name.txt");
         assert_eq!(entries[4].display_path, "old name.txt -> new name.txt");
         assert!(entries[4].staged);
         assert_eq!(entries[5].path, "next.txt");
         assert!(super::parse_git_status_entries(b"R  destination\0").is_err());
+        assert!(super::parse_git_status_entries(b"R  destination\0\0?? ordinary.txt\0").is_err());
         assert!(super::parse_git_status_entries(b"?? invalid\xff\0").is_err());
+        let report = super::parse_git_status_report(
+            b"?? invalid\xff\0R  invalid\xff\0old.txt\0?? ordinary.txt\0?? line\\nname.txt\0",
+        )?;
+        assert_eq!(report.unavailable_paths, 2);
+        assert_eq!(report.entries.len(), 2);
+        assert_eq!(report.entries[0].path, "ordinary.txt");
+        assert_ne!(report.entries[1].display_path, entries[2].display_path);
+        Ok(())
+    }
+
+    #[test]
+    fn git_status_helpers_treat_selected_paths_literally() -> Result<()> {
+        let root = std::env::temp_dir().join(format!("ecc2-status-pathspec-{}", Uuid::new_v4()));
+        let repo = init_repo(&root)?;
+        run_git(&repo, &["config", "core.autocrlf", "false"])?;
+        let worktree = WorktreeInfo {
+            path: repo.clone(),
+            branch: "main".to_string(),
+            base_branch: "main".to_string(),
+        };
+        let selected = "[ab].txt";
+        let other = "a.txt";
+        fs::write(repo.join(selected), "selected baseline\n")?;
+        fs::write(repo.join(other), "other baseline\n")?;
+        stage_path(&worktree, selected)?;
+        assert!(
+            !git_status_entries(&worktree)?
+                .iter()
+                .find(|entry| entry.path == other)
+                .unwrap()
+                .staged
+        );
+        stage_path(&worktree, other)?;
+        unstage_path(&worktree, selected)?;
+        assert!(
+            git_status_entries(&worktree)?
+                .iter()
+                .find(|entry| entry.path == other)
+                .unwrap()
+                .staged
+        );
+        stage_path(&worktree, selected)?;
+        run_git(&repo, &["commit", "-m", "pathspec baseline"])?;
+        fs::write(repo.join(selected), "selected edit\n")?;
+        fs::write(repo.join(other), "other edit must remain\n")?;
+        let entries = git_status_entries(&worktree)?;
+        let entry = entries.iter().find(|entry| entry.path == selected).unwrap();
+        let patch = git_status_patch_view(&worktree, entry)?.unwrap();
+        assert!(patch.patch.contains("selected edit"));
+        assert!(!patch.patch.contains("other edit must remain"));
+        reset_path(&worktree, entry)?;
+        assert_eq!(
+            fs::read_to_string(repo.join(selected))?,
+            "selected baseline\n"
+        );
+        assert_eq!(
+            fs::read_to_string(repo.join(other))?,
+            "other edit must remain\n"
+        );
+        let _ = fs::remove_dir_all(root);
         Ok(())
     }
 

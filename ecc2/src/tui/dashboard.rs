@@ -140,6 +140,7 @@ pub struct Dashboard {
     selected_conflict_protocol: Option<String>,
     selected_merge_readiness: Option<worktree::MergeReadiness>,
     selected_git_status_entries: Vec<worktree::GitStatusEntry>,
+    selected_git_status_warning: Option<String>,
     selected_git_status: usize,
     selected_git_patch: Option<worktree::GitStatusPatchView>,
     selected_git_patch_hunk_offsets_unified: Vec<usize>,
@@ -598,6 +599,7 @@ impl Dashboard {
             selected_conflict_protocol: None,
             selected_merge_readiness: None,
             selected_git_status_entries: Vec::new(),
+            selected_git_status_warning: None,
             selected_git_status: 0,
             selected_git_patch: None,
             selected_git_patch_hunk_offsets_unified: Vec::new(),
@@ -1118,8 +1120,10 @@ impl Dashboard {
         }
     }
 
-    fn empty_git_status_message(&self) -> &'static str {
-        "No staged or unstaged changes for this worktree."
+    fn empty_git_status_message(&self) -> &str {
+        self.selected_git_status_warning
+            .as_deref()
+            .unwrap_or("No staged or unstaged changes for this worktree.")
     }
 
     fn empty_timeline_message(&self) -> &'static str {
@@ -4516,9 +4520,7 @@ impl Dashboard {
         self.session_output_generations = active_session_generations;
 
         let batch = match self.output_cursor {
-            Some(cursor) => self
-                .db
-                .get_output_since(cursor, OUTPUT_DELTA_BATCH_LIMIT),
+            Some(cursor) => self.db.get_output_since(cursor, OUTPUT_DELTA_BATCH_LIMIT),
             None => self.db.get_output_snapshot(OUTPUT_BUFFER_LIMIT),
         };
         let batch = match batch {
@@ -4756,9 +4758,21 @@ impl Dashboard {
     fn sync_selected_git_status(&mut self) {
         let session = self.sessions.get(self.selected_session);
         let worktree = session.and_then(|session| session.worktree.as_ref());
-        self.selected_git_status_entries = worktree
-            .and_then(|worktree| worktree::git_status_entries(worktree).ok())
-            .unwrap_or_default();
+        let (entries, warning) = match worktree.map(worktree::git_status_report) {
+            Some(Ok(report)) => {
+                let warning = (report.unavailable_paths > 0).then(|| {
+                    format!(
+                        "{} non-UTF-8 path(s) unavailable; other files remain selectable",
+                        report.unavailable_paths
+                    )
+                });
+                (report.entries, warning)
+            }
+            Some(Err(error)) => (Vec::new(), Some(format!("Git status unavailable: {error}"))),
+            None => (Vec::new(), None),
+        };
+        self.selected_git_status_entries = entries;
+        self.selected_git_status_warning = warning;
         if self.selected_git_status >= self.selected_git_status_entries.len() {
             self.selected_git_status = self.selected_git_status_entries.len().saturating_sub(1);
         }
@@ -5551,6 +5565,11 @@ impl Dashboard {
                     entry.display_path
                 ))
             })
+            .chain(
+                self.selected_git_status_warning
+                    .iter()
+                    .map(|warning| Line::from(format!("Warning: {warning}"))),
+            )
             .collect()
     }
 
@@ -6595,7 +6614,10 @@ impl Dashboard {
                     format!(" | {branch}")
                 }
             ));
-            lines.push(format!("Task {}", truncate_for_dashboard(&session.task, 48)));
+            lines.push(format!(
+                "Task {}",
+                truncate_for_dashboard(&session.task, 48)
+            ));
             if let Some(meta) = meta {
                 lines.push(format!(
                     "Progress {:>3}% {}",
@@ -6645,7 +6667,14 @@ impl Dashboard {
             }
         }
 
-        let lanes = ["Inbox", "In Progress", "Review", "Blocked", "Done", "Stopped"];
+        let lanes = [
+            "Inbox",
+            "In Progress",
+            "Review",
+            "Blocked",
+            "Done",
+            "Stopped",
+        ];
         for label in lanes {
             let mut lane_sessions = self
                 .sessions
@@ -6771,7 +6800,10 @@ impl Dashboard {
                     session.agent_type,
                     meta.progress_percent,
                     board_progress_bar(meta.progress_percent),
-                    truncate_for_dashboard(meta.status_detail.as_deref().unwrap_or(&session.task), 18),
+                    truncate_for_dashboard(
+                        meta.status_detail.as_deref().unwrap_or(&session.task),
+                        18
+                    ),
                     activity_suffix,
                     backlog_suffix,
                     branch_suffix
@@ -8645,10 +8677,9 @@ fn board_codename(session: &Session) -> String {
         "Fox", "Kite", "Lynx", "Otter", "Rook", "Sprite", "Wisp", "Wolf",
     ];
 
-    let seed = session
-        .id
-        .bytes()
-        .fold(0usize, |acc, byte| acc.wrapping_mul(33).wrapping_add(byte as usize));
+    let seed = session.id.bytes().fold(0usize, |acc, byte| {
+        acc.wrapping_mul(33).wrapping_add(byte as usize)
+    });
     format!(
         "{} {}",
         ADJECTIVES[seed % ADJECTIVES.len()],
@@ -9883,6 +9914,54 @@ mod tests {
         assert!(rendered.contains("Additions"));
         assert!(rendered.contains("-old line"));
         assert!(rendered.contains("+new line"));
+    }
+
+    #[test]
+    fn git_status_reports_unavailable_paths_without_claiming_cleanliness() -> Result<()> {
+        let root = std::env::temp_dir().join(format!("ecc2-git-status-error-{}", Uuid::new_v4()));
+        init_git_repo(&root)?;
+        fs::write(root.join("README.md"), "retain ordinary changes\n")?;
+        let session = Session {
+            working_dir: root.clone(),
+            worktree: Some(WorktreeInfo {
+                path: root.clone(),
+                branch: "main".to_string(),
+                base_branch: "main".to_string(),
+            }),
+            ..sample_session(
+                "focus-12345678",
+                "planner",
+                SessionState::Running,
+                Some("ecc/focus"),
+                512,
+                42,
+            )
+        };
+        let mut dashboard = test_dashboard(vec![session], 0);
+        dashboard.toggle_git_status_mode();
+        #[cfg(unix)]
+        {
+            use std::os::unix::ffi::OsStrExt;
+            fs::write(
+                root.join(std::ffi::OsStr::from_bytes(b"invalid\xff.txt")),
+                "retain invalid path\n",
+            )?;
+            dashboard.sync_selected_git_status();
+            assert!(dashboard
+                .selected_git_status_entries
+                .iter()
+                .any(|entry| entry.path == "README.md"));
+            let rendered = dashboard.rendered_output_text(180, 20);
+            assert!(rendered.contains("README.md"));
+            assert!(rendered.contains("non-UTF-8"));
+        }
+        fs::rename(root.join(".git"), root.join(".git-unavailable"))?;
+        dashboard.sync_selected_git_status();
+        let rendered = dashboard.rendered_output_text(180, 20);
+        assert!(rendered.contains("Git status unavailable"));
+        assert!(!rendered.contains("No staged or unstaged changes"));
+        let _ = fs::remove_dir_all(root);
+        Ok(())
     }
 
     #[test]
@@ -15256,6 +15335,7 @@ diff --git a/src/lib.rs b/src/lib.rs
             selected_conflict_protocol: None,
             selected_merge_readiness: None,
             selected_git_status_entries: Vec::new(),
+            selected_git_status_warning: None,
             selected_git_status: 0,
             selected_git_patch: None,
             selected_git_patch_hunk_offsets_unified: Vec::new(),
