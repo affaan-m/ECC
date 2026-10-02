@@ -100,6 +100,7 @@ skills:
   - logistics-exception-management
   - market-research
   - mcp-server-patterns
+  - module-regression
   - motion-advanced
   - motion-foundations
   - motion-patterns
@@ -157,6 +158,7 @@ skills:
   - tasteforge-video
   - tdd-workflow
   - team-builder
+  - test-collaboration
   - token-budget-advisor
   - unified-memory
   - verification-loop

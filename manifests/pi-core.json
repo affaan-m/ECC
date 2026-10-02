@@ -108,6 +108,7 @@
       "living-docs-governance",
       "make-interfaces-feel-better",
       "mcp-server-patterns",
+      "module-regression",
       "ml-adoption-playbook",
       "mle-workflow",
       "motion-advanced",
@@ -152,6 +153,7 @@
       "swift-protocol-di-testing",
       "swiftui-patterns",
       "tdd-workflow",
+      "test-collaboration",
       "verification-loop",
       "vite-patterns",
       "vue-patterns"
