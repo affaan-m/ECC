@@ -40,8 +40,7 @@ function getCoordinationState(issue, policy = DEFAULT_POLICY) {
   try {
     existing = extractCoordinationState(issue && issue.body, policy);
   } catch (error) {
-    process.stderr.write(`[github-coordination] Warning: ${error.message} (issue #${issue && issue.number})\n`);
-    existing = null;
+    throw new SyntaxError(`${error.message} (issue #${issue && issue.number})`);
   }
   if (existing) {
     return {

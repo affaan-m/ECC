@@ -105,8 +105,9 @@ function applySync(repo, options = {}, context = {}) {
   const syncedAt = new Date().toISOString();
   const results = [];
 
-  for (const issue of issues) {
-    const currentState = getCoordinationState(issue, policy);
+  // Validate the entire captured batch before any GitHub or snapshot write.
+  const prepared = issues.map(issue => ({ issue, currentState: getCoordinationState(issue, policy) }));
+  for (const { issue, currentState } of prepared) {
     const nextState = buildIssueStateFromAction(issue, currentState, 'sync', {
       status: currentState.status,
       validation: currentState.validation,
@@ -314,8 +315,9 @@ function applyUnblock(repo, options = {}, context = {}) {
   const issues = listIssues(repo, { ...options, state: 'all', limit: options.limit || 100 });
   const results = [];
 
-  for (const issue of issues) {
-    const state = getCoordinationState(issue, policy);
+  // Validate the entire captured batch before any GitHub or snapshot write.
+  const prepared = issues.map(issue => ({ issue, state: getCoordinationState(issue, policy) }));
+  for (const { issue, state } of prepared) {
     if (state.status !== 'blocked') {
       continue;
     }
