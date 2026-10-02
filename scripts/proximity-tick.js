@@ -64,6 +64,7 @@ function showHelp() {
       '',
       'Scan agent proximity from the control-pane state and steer/transmit by sending',
       'internal session-to-session messages. --dry-run sends nothing; --watch loops.'
+      , 'Paths beginning with "-" must use an explicit relative path, for example ./-state.db.'
     ].join('\n')
   );
 }
