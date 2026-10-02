@@ -143,7 +143,13 @@ function readJsonl(filePath) {
     .filter(Boolean)
     .reduce((rows, line) => {
       try {
-        rows.push(JSON.parse(line));
+        const record = JSON.parse(line);
+        if (record && typeof record === 'object' && !Array.isArray(record)
+          && ['event', 'status', 'created_at'].every(key => (
+            record[key] === null || record[key] === undefined || typeof record[key] === 'string'
+          ))) {
+          rows.push(record);
+        }
       } catch {
         // Ignore malformed rows so the log remains append-only and resilient.
       }

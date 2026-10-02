@@ -83,12 +83,17 @@ function normalizeExecutionRecord(input, options = {}) {
     skill_version: skillVersion,
     task_description: taskDescription,
     outcome,
-    failure_reason: input.failure_reason || input.failureReason || null,
+    failure_reason: normalizeFailureReason(input.failure_reason || input.failureReason || null),
     tokens_used: toNullableNumber(input.tokens_used ?? input.tokensUsed, 'tokens_used'),
     duration_ms: toNullableNumber(input.duration_ms ?? input.durationMs, 'duration_ms'),
     user_feedback: userFeedback,
     recorded_at: recordedAt,
   };
+}
+
+function normalizeFailureReason(value) {
+  if (value === null || value === undefined || typeof value === 'string') return value;
+  return JSON.stringify(value);
 }
 
 function readJsonl(filePath) {
@@ -102,7 +107,17 @@ function readJsonl(filePath) {
     .filter(Boolean)
     .reduce((rows, line) => {
       try {
-        rows.push(JSON.parse(line));
+        const record = JSON.parse(line);
+        // Parsing alone does not establish the shape used by health/dashboard.
+        // Keep optional historical fields and unknown metadata unchanged.
+        if (record && typeof record === 'object' && !Array.isArray(record)
+          && typeof record.skill_id === 'string' && record.skill_id.trim()
+          && VALID_OUTCOMES.has(record.outcome)
+          && typeof record.recorded_at === 'string' && !Number.isNaN(Date.parse(record.recorded_at))) {
+          rows.push(record.failure_reason !== null && record.failure_reason !== undefined
+            && typeof record.failure_reason !== 'string'
+            ? { ...record, failure_reason: normalizeFailureReason(record.failure_reason) } : record);
+        }
       } catch {
         // Ignore malformed rows so analytics remain best-effort.
       }
