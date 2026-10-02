@@ -27,7 +27,7 @@ if (process.platform === 'win32') {
       'exit 1',
       '',
     ].join('\n'), { mode: 0o755 });
-    for (const mode of ['failure', 'empty', 'success', 'stale-empty', 'failure-second', 'copy-failure', 'publish-failure', 'cleanup-failure']) {
+    for (const mode of ['failure', 'empty', 'success', 'stale-empty', 'failure-second', 'copy-failure', 'publish-failure', 'cleanup-failure', 'directory-mode']) {
       fs.writeFileSync(path.join(bin, 'rm'), ['#!/bin/sh',
         mode === 'cleanup-failure' ? 'case "$2" in */.iconify-prior.*) exit 1;; esac' : '',
         'exec /usr/bin/rm "$@"', '',
@@ -50,12 +50,13 @@ if (process.platform === 'win32') {
       ].join('\n'), { mode: 0o755 });
       const output = path.join(root, mode);
       const imageset = path.join(output, 'icon.imageset');
-      const existing = ['stale-empty', 'failure-second', 'copy-failure', 'publish-failure'].includes(mode);
+      const existing = ['stale-empty', 'failure-second', 'copy-failure', 'publish-failure', 'directory-mode'].includes(mode);
       const filenames = ['icon.png', 'icon@2x.png', 'icon@3x.png'];
       if (existing) {
         fs.mkdirSync(imageset, { recursive: true });
         for (const filename of filenames) fs.writeFileSync(path.join(imageset, filename), 'old icon');
         fs.writeFileSync(path.join(imageset, 'Contents.json'), 'old manifest');
+        if (mode === 'directory-mode') fs.chmodSync(imageset, 0o750);
       }
       const result = spawnSync('bash', [script, 'mdi:test', 'icon', '--output', output], {
         encoding: 'utf8', timeout: 10000,
@@ -63,8 +64,9 @@ if (process.platform === 'win32') {
       });
       try {
         assert.ok(fs.readdirSync(imageset).every(name => !name.startsWith('.iconify.')));
-        if (['success', 'cleanup-failure'].includes(mode)) {
+        if (['success', 'cleanup-failure', 'directory-mode'].includes(mode)) {
           assert.strictEqual(result.status, 0, result.stderr);
+          if (mode === 'directory-mode') assert.strictEqual(fs.statSync(imageset).mode & 0o777, 0o750);
           if (mode === 'cleanup-failure') assert.ok(result.stderr.includes('WARNING: Imageset published'));
           const manifest = JSON.parse(fs.readFileSync(path.join(imageset, 'Contents.json'), 'utf8'));
           assert.strictEqual(manifest.images.length, 3);
@@ -74,6 +76,10 @@ if (process.platform === 'win32') {
         } else {
           assert.notStrictEqual(result.status, 0);
           assert.ok(result.stderr.includes('ERROR'));
+          if (['copy-failure', 'publish-failure'].includes(mode)) {
+            assert.ok(result.stderr.includes('.iconify-publish.'));
+            assert.ok(result.stderr.includes('ecc-iconify.'));
+          }
           if (!['copy-failure', 'publish-failure'].includes(mode)) {
             const source = mode === 'failure-second' ? 'icon@2x.svg' : 'icon.svg';
             assert.ok(fs.existsSync(path.join(imageset, source)), 'keep the downloaded source on conversion failure');

@@ -158,6 +158,10 @@ generate_icon() {
     local imageset_dir="${OUTPUT}/${asset_name}.imageset"
 
     mkdir -p "$imageset_dir"
+    local imageset_mode
+    if ! imageset_mode=$(stat -f '%Lp' "$imageset_dir" 2>/dev/null); then
+        imageset_mode=$(stat -c '%a' "$imageset_dir")
+    fi
     local conversion_dir
     conversion_dir=$(mktemp -d "${TMPDIR:-/tmp}/ecc-iconify.XXXXXX")
 
@@ -190,7 +194,7 @@ generate_icon() {
     local publish_dir
     publish_dir=$(mktemp -d "${OUTPUT}/.iconify-publish.XXXXXX")
     if ! cp -R "${imageset_dir}/." "$publish_dir/" || ! cp "${conversion_dir}/"*.png "$publish_dir/"; then
-        echo "ERROR: Publication preparation failed; prior imageset retained" >&2
+        echo "ERROR: Publication preparation failed; prior imageset retained (publish staging: ${publish_dir}; conversion staging: ${conversion_dir})" >&2
         return 1
     fi
 
@@ -222,12 +226,13 @@ generate_icon() {
 JSONEOF
 
     local prior_dir
+    chmod "$imageset_mode" "$publish_dir"
     prior_dir=$(mktemp -d "${OUTPUT}/.iconify-prior.XXXXXX")
     rmdir "$prior_dir"
     mv "$imageset_dir" "$prior_dir"
     if ! mv "$publish_dir" "$imageset_dir"; then
         mv "$prior_dir" "$imageset_dir" || { echo "ERROR: Restore failed; prior imageset remains at ${prior_dir}" >&2; return 1; }
-        echo "ERROR: Publication failed; prior imageset restored" >&2
+        echo "ERROR: Publication failed; prior imageset restored (publish staging: ${publish_dir}; conversion staging: ${conversion_dir})" >&2
         return 1
     fi
     if ! rm -r "$prior_dir" "$conversion_dir"; then
