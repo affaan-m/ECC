@@ -39,8 +39,21 @@ function test(name, fn) {
 }
 
 try {
+  test('written structured failure reasons remain visible on read', () => {
+    const file = path.join(root, 'written-runs.jsonl');
+    tracker.recordSkillExecution({ skill_id: 'alpha', skill_version: 'v1',
+      task_description: 'fixture failure', outcome: 'failure',
+      failure_reason: { code: 'timeout' }, recorded_at: now,
+    }, { runsFilePath: file });
+    const records = tracker.readSkillExecutionRecords({ runsFilePath: file });
+    assert.strictEqual(records.length, 1);
+    assert.strictEqual(records[0].failure_reason, '{"code":"timeout"}');
+    assert.strictEqual(records[0].outcome, 'failure');
+  });
   test('execution reads ignore invalid shapes and preserve valid metadata and source bytes', () => {
-    assert.deepStrictEqual(tracker.readSkillExecutionRecords({ runsFilePath: runsFile }), [validRun]);
+    assert.deepStrictEqual(tracker.readSkillExecutionRecords({ runsFilePath: runsFile }), [
+      { ...validRun, failure_reason: '{}' }, validRun,
+    ]);
     assert.strictEqual(fs.readFileSync(runsFile, 'utf8'), runsSource);
   });
   test('evolution reads ignore non-object rows without rewriting the append-only log', () => {
@@ -59,7 +72,7 @@ try {
       const payload = JSON.parse(result.stdout);
       if (args.length === 0) {
         assert.strictEqual(payload.skills.length, 1);
-        assert.strictEqual(payload.skills[0].run_count_7d, 1);
+        assert.strictEqual(payload.skills[0].run_count_7d, 2);
         assert.strictEqual(payload.skills[0].success_rate_7d, 1);
         assert.strictEqual(payload.skills[0].pending_amendments, 1);
       } else {
