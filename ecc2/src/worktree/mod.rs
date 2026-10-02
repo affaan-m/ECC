@@ -851,15 +851,22 @@ pub fn has_uncommitted_changes(worktree: &WorktreeInfo) -> Result<bool> {
 
 /// Automatic removal must also preserve ignored local files.
 pub fn has_local_content_for_pruning(worktree: &WorktreeInfo) -> Result<bool> {
-    let output = Command::new("git")
-        .arg("-C")
-        .arg(&worktree.path)
-        .args([
-            "status",
-            "--porcelain=v1",
-            "--untracked-files=all",
-            "--ignored",
-        ])
+    let mut command = Command::new("git");
+    command.arg("-C").arg(&worktree.path).args([
+        "status",
+        "--porcelain=v1",
+        "--untracked-files=all",
+        "--ignored",
+        "--ignore-submodules=none",
+    ]);
+    let root = base_checkout_path(worktree)?;
+    command.arg("--").arg(".");
+    for strategy in detect_shared_dependency_strategies(&root) {
+        if pruning_cache_link_is_shared(worktree, &root, &strategy)? {
+            command.arg(format!(":(top,exclude){}", strategy.dir_name));
+        }
+    }
+    let output = command
         .output()
         .context("Failed to inspect worktree before automatic pruning")?;
     if !output.status.success() {
@@ -869,6 +876,33 @@ pub fn has_local_content_for_pruning(worktree: &WorktreeInfo) -> Result<bool> {
         );
     }
     Ok(!output.stdout.is_empty())
+}
+
+fn pruning_cache_link_is_shared(
+    worktree: &WorktreeInfo,
+    root: &Path,
+    strategy: &SharedDependencyStrategy,
+) -> Result<bool> {
+    if !is_symlink_to(
+        &worktree.path.join(strategy.dir_name),
+        &root.join(strategy.dir_name),
+    )? {
+        return Ok(false);
+    }
+    if dependency_fingerprint(root, &strategy.fingerprint_files)?
+        != dependency_fingerprint(&worktree.path, &strategy.fingerprint_files)?
+    {
+        return Ok(false);
+    }
+    let tracked = Command::new("git")
+        .arg("-C")
+        .arg(&worktree.path)
+        .args(["ls-files", "-z", "--", strategy.dir_name])
+        .output()?;
+    if !tracked.status.success() {
+        anyhow::bail!("Failed to inspect shared cache tracking");
+    }
+    Ok(tracked.stdout.is_empty())
 }
 
 pub fn has_staged_changes(worktree: &WorktreeInfo) -> Result<bool> {
@@ -1652,6 +1686,36 @@ mod tests {
     use std::fs;
     use std::process::Command;
     use uuid::Uuid;
+
+    #[test]
+    fn pruning_status_overrides_submodule_ignore() -> Result<()> {
+        let root = std::env::temp_dir().join(format!("ecc2-prune-submodule-{}", Uuid::new_v4()));
+        let repo = init_repo(&root)?;
+        let child = init_repo(&root.join("child-source"))?;
+        let output = Command::new("git")
+            .arg("-C")
+            .arg(&repo)
+            .args(["-c", "protocol.file.allow=always", "submodule", "add", "--"])
+            .arg(&child)
+            .arg("child")
+            .output()?;
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        run_git(&repo, &["commit", "-m", "add child"])?;
+        run_git(&repo, &["config", "submodule.child.ignore", "all"])?;
+        let worktree = WorktreeInfo {
+            path: repo.clone(),
+            branch: "main".into(),
+            base_branch: "main".into(),
+        };
+        assert!(!has_local_content_for_pruning(&worktree)?);
+        fs::write(repo.join("child/README.md"), "retain submodule changes")?;
+        assert!(has_local_content_for_pruning(&worktree)?);
+        Ok(())
+    }
 
     fn run_git(repo: &Path, args: &[&str]) -> Result<()> {
         let output = Command::new("git")
@@ -2621,6 +2685,7 @@ mod tests {
             .file_type()
             .is_symlink());
         assert_eq!(fs::read_link(&node_modules)?, repo.join("node_modules"));
+        assert!(!has_local_content_for_pruning(&worktree)?);
 
         remove(&worktree)?;
         let _ = fs::remove_dir_all(root);

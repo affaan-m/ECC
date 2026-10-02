@@ -1931,7 +1931,9 @@ pub async fn process_merge_queue(db: &StateStore) -> Result<WorktreeBulkMergeOut
             conflicted_session_ids,
             dirty_worktree_ids,
             blocked_by_queue_session_ids,
+            inspection_failures,
         ) = classify_merge_queue_report(&report);
+        failures.extend(inspection_failures);
 
         return Ok(WorktreeBulkMergeOutcome {
             merged,
@@ -2121,6 +2123,7 @@ pub struct MergeQueueEntry {
     pub state: SessionState,
     pub worktree_health: worktree::WorktreeHealth,
     pub dirty: bool,
+    pub inspection_error: Option<String>,
     pub queue_position: Option<usize>,
     pub ready_to_merge: bool,
     pub blocked_by: Vec<MergeQueueBlocker>,
@@ -2162,11 +2165,15 @@ pub fn build_merge_queue(db: &StateStore) -> Result<MergeQueueReport> {
         });
         let (worktree_health, dirty, inspection_error) = match inspection {
             Ok((health, dirty)) => (health, dirty, None),
-            Err(error) => (worktree::WorktreeHealth::InProgress, true, Some(error)),
+            Err(error) => (
+                worktree::WorktreeHealth::InProgress,
+                false,
+                Some(error.to_string()),
+            ),
         };
         let mut blocked_by = Vec::new();
 
-        if let Some(error) = inspection_error {
+        if let Some(error) = inspection_error.as_ref() {
             blocked_by.push(MergeQueueBlocker {
                 session_id: session.id.clone(),
                 branch: worktree.branch.clone(),
@@ -2277,6 +2284,7 @@ pub fn build_merge_queue(db: &StateStore) -> Result<MergeQueueReport> {
             state: session.state,
             worktree_health,
             dirty,
+            inspection_error,
             queue_position,
             ready_to_merge,
             blocked_by,
@@ -2315,14 +2323,26 @@ fn can_auto_rebase_merge_queue_entry(entry: &MergeQueueEntry) -> bool {
 
 fn classify_merge_queue_report(
     report: &MergeQueueReport,
-) -> (Vec<String>, Vec<String>, Vec<String>, Vec<String>) {
+) -> (
+    Vec<String>,
+    Vec<String>,
+    Vec<String>,
+    Vec<String>,
+    Vec<WorktreeMergeFailure>,
+) {
     let mut active = Vec::new();
     let mut conflicted = Vec::new();
     let mut dirty = Vec::new();
     let mut queue_blocked = Vec::new();
+    let mut failures = Vec::new();
 
     for entry in &report.blocked_entries {
-        if entry.blocked_by.iter().any(|blocker| {
+        if let Some(reason) = entry.inspection_error.as_ref() {
+            failures.push(WorktreeMergeFailure {
+                session_id: entry.session_id.clone(),
+                reason: reason.clone(),
+            });
+        } else if entry.blocked_by.iter().any(|blocker| {
             blocker.session_id == entry.session_id
                 && matches!(
                     blocker.state,
@@ -2342,7 +2362,7 @@ fn classify_merge_queue_report(
         }
     }
 
-    (active, conflicted, dirty, queue_blocked)
+    (active, conflicted, dirty, queue_blocked, failures)
 }
 
 pub async fn delete_session(db: &StateStore, id: &str) -> Result<()> {
@@ -6259,7 +6279,11 @@ mod tests {
         assert_eq!(queue.blocked_entries.len(), 1);
         let unknown = &queue.blocked_entries[0];
         assert_eq!(unknown.session_id, "unknown");
-        assert!(unknown.dirty);
+        assert!(!unknown.dirty);
+        assert!(unknown.inspection_error.is_some());
+        let (_, _, dirty, _, failures) = classify_merge_queue_report(&queue);
+        assert!(dirty.is_empty());
+        assert_eq!(failures[0].session_id, "unknown");
         assert!(!unknown.ready_to_merge);
         assert!(unknown.suggested_action.contains("inspection failed"));
         assert!(!can_auto_rebase_merge_queue_entry(unknown));
