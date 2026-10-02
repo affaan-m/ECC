@@ -2028,9 +2028,6 @@ impl StateStore {
             if !session_tasks.contains_key(&row.session_id) {
                 continue;
             }
-            if !seen_event_ids.insert(row.id.clone()) {
-                continue;
-            }
 
             let file_paths: Vec<String> = row
                 .file_paths
@@ -2085,6 +2082,17 @@ impl StateStore {
             let session_id = row.session_id.clone();
             let trigger_summary = session_tasks.get(&session_id).cloned().unwrap_or_default();
 
+            // Recheck the live session under the same write transaction as its
+            // activity and graph inserts. Another connection cannot delete it
+            // between this check and the dependent writes.
+            let transaction = rusqlite::Transaction::new_unchecked(
+                &self.conn,
+                rusqlite::TransactionBehavior::Immediate,
+            )?;
+            if self.get_session(&session_id)?.is_none() || !seen_event_ids.insert(row.id.clone()) {
+                continue;
+            }
+
             self.conn.execute(
                 "INSERT OR IGNORE INTO tool_log (
                     hook_event_id,
@@ -2117,13 +2125,14 @@ impl StateStore {
                 ],
             )?;
 
+            for event in &file_events {
+                self.sync_context_graph_file_event(&row.session_id, &row.tool_name, event)?;
+            }
+            transaction.commit()?;
             let aggregate = aggregates.entry(session_id).or_default();
             aggregate.tool_calls = aggregate.tool_calls.saturating_add(1);
             for file_path in file_paths {
                 aggregate.file_paths.insert(file_path);
-            }
-            for event in &file_events {
-                self.sync_context_graph_file_event(&row.session_id, &row.tool_name, event)?;
             }
         }
 
@@ -6118,6 +6127,41 @@ mod tests {
         );
         assert_eq!(logs.entries[1].trigger_summary, "sync tools");
 
+        Ok(())
+    }
+
+    #[test]
+    fn sync_tool_activity_metrics_handles_deletion_after_loading_sessions() -> Result<()> {
+        let tempdir = TestDir::new("store-tool-activity-stale-sessions")?;
+        let db = StateStore::open(&tempdir.path().join("state.db"))?;
+        db.insert_session(&build_session("surviving", SessionState::Running))?;
+        db.insert_session(&build_session("deleted", SessionState::Stopped))?;
+        // The first activity insert invalidates the already-loaded session map.
+        // This deterministically exercises the same stale-map boundary as an
+        // external deletion before the next event's write transaction.
+        db.conn.execute_batch(
+            "CREATE TEMP TRIGGER delete_pending_session AFTER INSERT ON tool_log
+             WHEN NEW.hook_event_id = 'first'
+             BEGIN DELETE FROM sessions WHERE id = 'deleted'; END;",
+        )?;
+        let rows = [
+            serde_json::json!({"id":"first", "session_id":"surviving", "tool_name":"Read"}),
+            serde_json::json!({"id":"shared", "session_id":"deleted", "tool_name":"Read"}),
+            serde_json::json!({"id":"shared", "session_id":"surviving", "tool_name":"Write", "file_paths":["current.rs"]}),
+        ];
+        let content = rows
+            .iter()
+            .map(|row| format!("{row}\n"))
+            .collect::<String>();
+        let metrics_path = tempdir.path().join("tool-usage.jsonl");
+        fs::write(&metrics_path, &content)?;
+        db.sync_tool_activity_metrics(&metrics_path)?;
+        assert!(db.get_session("deleted")?.is_none());
+        let surviving = db.get_session("surviving")?.expect("surviving session");
+        assert_eq!(surviving.metrics.tool_calls, 2);
+        assert_eq!(surviving.metrics.files_changed, 1);
+        assert_eq!(db.query_tool_logs("surviving", 1, 10)?.total, 2);
+        assert_eq!(fs::read_to_string(metrics_path)?, content);
         Ok(())
     }
 
