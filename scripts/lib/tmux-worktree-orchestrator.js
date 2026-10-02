@@ -76,7 +76,8 @@ function normalizeSeedPaths(seedPaths, repoRoot) {
       throw new Error(`seedPaths entries cannot replace the worktree root: ${entry}`);
     }
     const firstComponent = normalizedPath.split('/')[0];
-    const gitComponent = process.platform === 'win32' ? firstComponent.toLowerCase() : firstComponent;
+    // Volume case sensitivity varies on macOS and other systems too.
+    const gitComponent = firstComponent.toLowerCase();
     if (gitComponent === '.git') {
       throw new Error(`seedPaths entries cannot replace Git administration files: ${entry}`);
     }

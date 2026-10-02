@@ -205,8 +205,7 @@ test('normalizeSeedPaths rejects paths outside the repo root', () => {
 
 test('seed paths cannot replace the worktree root or Git administration files', () => {
   const repoRoot = path.resolve(os.tmpdir(), 'ecc-seed-validation');
-  const entries = ['.', './', repoRoot, '.git', '.git/config', 'docs/../.git'];
-  if (process.platform === 'win32') entries.push('.GIT', '.Git/config');
+  const entries = ['.', './', repoRoot, '.git', '.git/config', 'docs/../.git', '.GIT', '.Git/config'];
   for (const entry of entries) {
     assert.throws(() => normalizeSeedPaths([entry], repoRoot), /worktree root|Git administration/);
     assert.throws(() => buildOrchestrationPlan({
