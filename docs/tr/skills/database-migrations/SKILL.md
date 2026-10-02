@@ -40,6 +40,8 @@ Herhangi bir migration uygulamadan önce:
 
 ### Güvenli Sütun Ekleme
 
+Nullable sütun → backfill → NOT NULL geçişinde önce tüm yazıcıları NULL olmayan değer sağlayacak şekilde güncelleyin veya atlanan değerler için uygun bir default ayarlayın. Default açık NULL yazımlarını engellemez. Mevcut satırları doldurun ve kısıtı eklemeden önce NULL kalmadığını doğrulayın; dağıtım boyunca yazıcıları uyumlu tutun.
+
 Bu ADD COLUMN ifadeleri yine ACCESS EXCLUSIVE kilidi alır. Transaction süresini kısa tutun ve kilit edinmeyi `lock_timeout` ile sınırlayın. Hızlı default optimizasyonu volatile olmayan ifadeler içindir; volatile ifadeler tabloyu yeniden yazmayı gerektirebilir.
 
 ```sql

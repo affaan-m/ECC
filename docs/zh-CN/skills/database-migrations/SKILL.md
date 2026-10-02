@@ -40,6 +40,8 @@ origin: ECC
 
 ### 安全地添加列
 
+对于可空列 → 回填 → NOT NULL 的迁移，先更新所有写入端以提供非 NULL 值，或为省略的值设置合适默认值。默认值不会阻止显式写入 NULL。回填已有行后，确认没有剩余 NULL 再添加约束；整个部署期间保持写入端兼容。
+
 这些 ADD COLUMN 语句仍会获取 ACCESS EXCLUSIVE 锁。保持事务简短，并用 `lock_timeout` 限制获取锁的等待时间。快速默认值优化适用于非 volatile 表达式；volatile 表达式仍可能要求重写表。
 
 ```sql

@@ -40,6 +40,8 @@ Antes de aplicar cualquier migración:
 
 ### Agregar una Columna de Forma Segura
 
+Para una migración columna nullable → backfill → NOT NULL, primero actualiza todos los escritores para proporcionar valores no nulos, o establece un default adecuado para valores omitidos. El default no impide escrituras explícitas de NULL. Completa el backfill y comprueba que no quedan NULL antes de agregar la restricción; mantén compatibles los escritores durante todo el despliegue.
+
 Estas sentencias ADD COLUMN aún adquieren un bloqueo ACCESS EXCLUSIVE. Mantén corta la transacción y limita la adquisición con `lock_timeout`. La optimización de defaults aplica a expresiones no volátiles; las volátiles pueden exigir reescribir la tabla.
 
 ```sql
