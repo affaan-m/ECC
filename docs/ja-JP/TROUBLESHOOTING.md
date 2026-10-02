@@ -1,6 +1,6 @@
 # トラブルシューティングガイド
 
-Everything Claude Code (ECC) プラグインの一般的な問題と解決策。
+ECC プラグインの一般的な問題と解決策。
 
 ## 目次
 
@@ -264,7 +264,7 @@ mv ~/.claude/plugins/cache ~/.claude/plugins/cache.backup.$(date +%Y%m%d-%H%M%S)
 mkdir -p ~/.claude/plugins/cache
 
 # Marketplaceから再インストール
-# Claude Code → Extensions → Everything Claude Code → Uninstall
+# Claude Code → Extensions → ECC → Uninstall
 # その後Marketplaceから再インストール
 
 # 問題がMarketplace/アカウントアクセスの場合、ECC Toolsのbilling/アカウントリカバリーを別途使用
@@ -275,8 +275,8 @@ claude --version
 # Claude Code 2.0+が必要
 
 # 手動インストール（Marketplaceが失敗する場合）
-git clone https://github.com/affaan-m/everything-claude-code.git
-cp -r everything-claude-code ~/.claude/plugins/ecc
+git clone https://github.com/affaan-m/ECC.git
+cp -r ECC ~/.claude/plugins/ecc
 ```
 
 ### パッケージマネージャー検出の失敗
@@ -407,7 +407,7 @@ find ~/.claude/plugins -name "*.sh" -exec dos2unix {} \;
 
 問題が解決しない場合：
 
-1. **GitHub Issuesを確認**: [github.com/affaan-m/everything-claude-code/issues](https://github.com/affaan-m/everything-claude-code/issues)
+1. **GitHub Issuesを確認**: [github.com/affaan-m/ECC/issues](https://github.com/affaan-m/ECC/issues)
 2. **デバッグログを有効化**:
    ```bash
    export CLAUDE_DEBUG=1

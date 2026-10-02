@@ -1,13 +1,13 @@
 ---
 name: ecc-guide
-description: Answer questions about Everything Claude Code by reading the live repo surface — agents, skills, commands, hooks, rules, install profiles, and docs — instead of memory. Use when the user asks what ECC includes, how to install or reset it, which skill or command fits a task, or how project onboarding works.
+description: Answer questions about ECC by reading the live repo surface — agents, skills, commands, hooks, rules, install profiles, and docs — instead of memory. Use when the user asks what ECC includes, how to install or reset it, which skill or command fits a task, or how project onboarding works.
 metadata:
   origin: community
 ---
 
 # ECC Guide
 
-Use this skill when a user needs help understanding, navigating, installing, or choosing parts of Everything Claude Code.
+Use this skill when a user needs help understanding, navigating, installing, or choosing parts of ECC.
 
 ## When To Use
 

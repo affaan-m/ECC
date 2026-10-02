@@ -323,11 +323,11 @@ function writeCatalogFixture(testDir, options = {}) {
   }, null, 2));
   fs.writeFileSync(
     soulPath,
-    `Everything Claude Code (ECC) is a production-ready AI coding plugin with ${crossHarnessCounts.agents} specialized agents, ${crossHarnessCounts.skills} skills, ${crossHarnessCounts.commands} commands, and automated hook workflows.\n`
+    `ECC is a production-ready AI coding plugin with ${crossHarnessCounts.agents} specialized agents, ${crossHarnessCounts.skills} skills, ${crossHarnessCounts.commands} commands, and automated hook workflows.\n`
   );
   fs.writeFileSync(
     geminiPath,
-    `Everything Claude Code (ECC) is a cross-harness coding system with ${crossHarnessCounts.agents} specialized agents, ${crossHarnessCounts.skills} skills, and ${crossHarnessCounts.commands} commands.\n`
+    `ECC is a cross-harness coding system with ${crossHarnessCounts.agents} specialized agents, ${crossHarnessCounts.skills} skills, and ${crossHarnessCounts.commands} commands.\n`
   );
 
   return { readmePath, agentsPath, zhRootReadmePath, zhDocsReadmePath, zhAgentsPath, pluginJsonPath, marketplaceJsonPath, soulPath, geminiPath };

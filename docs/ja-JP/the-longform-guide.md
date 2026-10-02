@@ -1,10 +1,10 @@
-# Everything Claude Code 長文ガイド
+# ECC 長文ガイド
 
-![Header: The Longform Guide to Everything Claude Code](./assets/images/longform/01-header.png)
+![Header: The Longform Guide to ECC](./assets/images/longform/01-header.png)
 
 ---
 
-> **前提条件**: このガイドは[Everything Claude Code 簡潔ガイド](./the-shortform-guide.md)を基に構成されています。スキル、フック、サブエージェント、MCP、プラグインのセットアップがまだの場合は、先にそちらをお読みください。
+> **前提条件**: このガイドは[ECC 簡潔ガイド](./the-shortform-guide.md)を基に構成されています。スキル、フック、サブエージェント、MCP、プラグインのセットアップがまだの場合は、先にそちらをお読みください。
 
 ![Reference to Shorthand Guide](./assets/images/longform/02-shortform-reference.png)
 *簡潔ガイド - まずこちらを読んでください*
@@ -15,7 +15,7 @@
 
 ここでのテーマ：トークンエコノミクス、メモリ永続化、検証パターン、並列化戦略、そして再利用可能なワークフロー構築の複利効果。これらは10ヶ月以上の日常使用で磨き上げたパターンであり、最初の1時間でコンテキスト劣化に悩まされるか、何時間も生産的なセッションを維持できるかの違いを生みます。
 
-簡潔ガイドと長文ガイドで取り上げたすべてのものはGitHubで利用可能です：`github.com/affaan-m/everything-claude-code`
+簡潔ガイドと長文ガイドで取り上げたすべてのものはGitHubで利用可能です：`github.com/affaan-m/ECC`
 
 ---
 
@@ -40,7 +40,7 @@ MCPを実際に使用せずにCLIをMCPのように機能させるには（そ�
 セッション間でメモリを共有するには、進捗を要約してチェックインし、`.claude`フォルダの`.tmp`ファイルに保存してセッション終了まで追記するスキルまたはコマンドが最善策です。翌日にはそれをコンテキストとして使用し、中断した箇所から再開できます。古いコンテキストが新しい作業を汚染しないよう、各セッションごとに新しいファイルを作成してください。
 
 ![Session Storage File Tree](./assets/images/longform/03-session-storage.png)
-*セッションストレージの例 -> <https://github.com/affaan-m/everything-claude-code/tree/main/examples/sessions>*
+*セッションストレージの例 -> <https://github.com/affaan-m/ECC/tree/main/examples/sessions>*
 
 Claudeが現在の状態を要約するファイルを作成します。レビューし、必要に応じて編集を依頼し、新しく開始。新しい会話では、ファイルパスを提供するだけです。コンテキスト制限に達して複雑な作業を継続する必要がある場合に特に便利です。これらのファイルには以下を含めるべきです：
 - うまくいったアプローチ（エビデンス付きで検証可能）
@@ -82,7 +82,7 @@ alias claude-research='claude --system-prompt "$(cat ~/.claude/contexts/research
 - **Stopフック（セッション終了）**: セッション終了時に学習内容をファイルに永続化
 - **SessionStartフック**: 新しいセッションで前回のコンテキストを自動読み込み
 
-これらのフックを構築し、リポジトリの`github.com/affaan-m/everything-claude-code/tree/main/hooks/memory-persistence`に置いています。
+これらのフックを構築し、リポジトリの`github.com/affaan-m/ECC/tree/main/hooks/memory-persistence`に置いています。
 
 ---
 
@@ -94,7 +94,7 @@ alias claude-research='claude --system-prompt "$(cat ~/.claude/contexts/research
 
 **解決策：** Claude Codeが自明でないことを発見した場合 — デバッグ技術、回避策、プロジェクト固有のパターンなど — その知識を新しいスキルとして保存。次回同様の問題が発生した際、スキルが自動的に読み込まれます。
 
-この機能を実現する継続学習スキルを構築しました：`github.com/affaan-m/everything-claude-code/tree/main/skills/continuous-learning`
+この機能を実現する継続学習スキルを構築しました：`github.com/affaan-m/ECC/tree/main/skills/continuous-learning`
 
 **なぜStopフック（UserPromptSubmitではなく）：**
 
@@ -351,4 +351,4 @@ alias q='cd ~/Desktop/projects'
 
 ---
 
-*両ガイドで取り上げたすべてのものはGitHubの[everything-claude-code](https://github.com/affaan-m/everything-claude-code)で利用可能です*
+*両ガイドで取り上げたすべてのものはGitHubの[ECC](https://github.com/affaan-m/ECC)で利用可能です*

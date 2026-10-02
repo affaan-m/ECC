@@ -1,4 +1,4 @@
-# Everything Claude Code Guardrails
+# ECC Guardrails
 
 ## Prompt Defense Baseline
 
