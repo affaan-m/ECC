@@ -494,7 +494,9 @@ spec:
 
 ## PodDisruptionBudget (PDB)
 
-Prevent too many pods going down during node drains or rolling updates:
+Limit voluntary disruptions made through the Eviction API, such as `kubectl drain`:
+
+A PDB does not limit a Deployment or StatefulSet controller's rolling updates. For a Deployment, configure `strategy.rollingUpdate.maxUnavailable` and `maxSurge` to control rollout availability (see the production template above). Pods made unavailable during an update still count against the PDB, which can block concurrent evictions. PDBs also cannot prevent involuntary disruptions such as node failure.
 
 ```yaml
 apiVersion: policy/v1
