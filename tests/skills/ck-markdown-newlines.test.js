@@ -19,7 +19,12 @@ for (const newline of ['\n', '\r\n']) {
       const contextDir = path.join(ck, 'contexts/sample');
       fs.mkdirSync(project, { recursive: true });
       fs.mkdirSync(contextDir, { recursive: true });
-      const source = markdown.replace(/\n/g, newline);
+      const inputMarkdown = entry === 'migrate' ? markdown
+        .replace('- Change unrelated files', '- Change unrelated files\n  Preserve user data')
+        .replace('- Review complete', '- Review complete\n  Follow-up pending')
+        .replace('- Implement feature', '1. Implement feature\n   Include docs')
+        + '\n## Decisions Made\n| Decision | Why | Date |\n|---|---|---|\n| Keep old\nstate | Preserve data | 2026-10-01 |\n' : markdown;
+      const source = inputMarkdown.replace(/\n/g, newline);
       fs.writeFileSync(path.join(project, 'CLAUDE.md'), source);
       if (entry !== 'init') {
         fs.writeFileSync(path.join(ck, 'projects.json'), JSON.stringify({ [project]: { name: 'sample', contextDir: 'sample' } }));
@@ -41,10 +46,11 @@ for (const newline of ['\n', '\r\n']) {
         assert.strictEqual(data.description, 'Synthetic project');
         assert.strictEqual(data.goal, 'Ship feature');
         assert.deepStrictEqual(data.stack, ['Node.js', 'JavaScript']);
-        assert.deepStrictEqual(data.constraints, ['Change unrelated files']);
+        assert.deepStrictEqual(data.constraints, [entry === 'migrate' ? 'Change unrelated files\nPreserve user data' : 'Change unrelated files']);
         if (entry === 'migrate') {
-          assert.strictEqual(data.sessions[0].leftOff, 'Review complete');
-          assert.deepStrictEqual(data.sessions[0].nextSteps, ['Implement feature']);
+          assert.strictEqual(data.sessions[0].leftOff, 'Review complete\nFollow-up pending');
+          assert.deepStrictEqual(data.sessions[0].nextSteps, ['Implement feature\nInclude docs']);
+          assert.deepStrictEqual(data.sessions[0].decisions, [{what: 'Keep old\nstate', why: 'Preserve data', date: '2026-10-01'}]);
           assert.deepStrictEqual(data.sessions[0].blockers, []);
         }
       }
