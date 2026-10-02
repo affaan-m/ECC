@@ -134,13 +134,18 @@ ALTER SYSTEM SET work_mem = '8MB';
 ALTER SYSTEM SET idle_in_transaction_session_timeout = '30s';
 ALTER SYSTEM SET statement_timeout = '30s';
 
--- Monitoring
-CREATE EXTENSION IF NOT EXISTS pg_stat_statements;
-
 -- Security defaults
 REVOKE ALL ON SCHEMA public FROM public;
 
 SELECT pg_reload_conf();
+```
+
+以下 `compute_query_id` 设置仅适用于 PostgreSQL 14 及以后版本；PostgreSQL 13 及更早版本应省略此设置。
+
+`pg_reload_conf()` 只重新加载支持 reload 的设置；修改 `max_connections` 必须重启服务器。使用 `pg_stat_statements` 前，将它加入 `shared_preload_libraries` 并保留已有条目，内置查询标识使用 `compute_query_id = auto` 或 `on`；如果由外部模块计算查询标识，则设为 `off`。如果修改了预加载列表，重启服务器，然后连接到每个需要统计视图的数据库并执行：
+
+```sql
+CREATE EXTENSION IF NOT EXISTS pg_stat_statements;
 ```
 
 ## 相关
