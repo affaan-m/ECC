@@ -18,6 +18,16 @@ const { resolveControlPaneConfig, buildControlPaneSnapshot } = require('./lib/co
 const { createProximityDispatcher, runProximityTick } = require('./lib/control-pane/proximity');
 const { createEccMessageSink } = require('./lib/control-pane/message-sink');
 
+const MAX_WATCH_SECONDS = Math.floor(0x7fffffff / 1000);
+
+function requireValue(args, index, flag) {
+  const value = args[index + 1];
+  if (typeof value !== 'string' || !value.trim() || value.startsWith('-')) {
+    throw new Error(`${flag} requires a value`);
+  }
+  return value;
+}
+
 function parseArgs(argv) {
   const args = argv.slice(2);
   const parsed = { watchSec: 0, dryRun: false, json: false, help: false, dbPath: null, stateDbPath: null };
@@ -27,15 +37,18 @@ function parseArgs(argv) {
     else if (a === '--dry-run') parsed.dryRun = true;
     else if (a === '--json') parsed.json = true;
     else if (a === '--watch') {
-      const v = Number.parseInt(args[i + 1], 10);
-      if (!Number.isInteger(v) || v <= 0) throw new Error('--watch needs a positive seconds value');
+      const value = requireValue(args, i, a);
+      const v = Number(value);
+      if (!/^\d+$/.test(value) || !Number.isSafeInteger(v) || v <= 0 || v > MAX_WATCH_SECONDS) {
+        throw new Error(`--watch needs a positive seconds value (whole number, at most ${MAX_WATCH_SECONDS})`);
+      }
       parsed.watchSec = v;
       i += 1;
     } else if (a === '--db') {
-      parsed.dbPath = args[i + 1];
+      parsed.dbPath = requireValue(args, i, a);
       i += 1;
     } else if (a === '--state-db') {
-      parsed.stateDbPath = args[i + 1];
+      parsed.stateDbPath = requireValue(args, i, a);
       i += 1;
     } else {
       throw new Error(`Unknown argument: ${a}`);
