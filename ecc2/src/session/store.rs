@@ -3000,10 +3000,11 @@ impl StateStore {
             ],
         )?;
 
+        let id = self.conn.last_insert_rowid();
         self.sync_context_graph_decision(session_id, decision, alternatives, reasoning)?;
 
         Ok(DecisionLogEntry {
-            id: self.conn.last_insert_rowid(),
+            id,
             session_id: session_id.to_string(),
             decision: decision.to_string(),
             alternatives: alternatives.to_vec(),
@@ -4050,11 +4051,7 @@ impl StateStore {
     }
 
     /// Returns at most `limit` output rows newer than `cursor` in insertion order.
-    pub(crate) fn get_output_since(
-        &self,
-        cursor: i64,
-        limit: usize,
-    ) -> Result<SessionOutputBatch> {
+    pub(crate) fn get_output_since(&self, cursor: i64, limit: usize) -> Result<SessionOutputBatch> {
         let cursor = cursor.max(0);
         let limit = i64::try_from(limit.max(1)).unwrap_or(i64::MAX);
         let mut stmt = self.conn.prepare(
@@ -6412,13 +6409,20 @@ mod tests {
             metrics: SessionMetrics::default(),
         })?;
 
-        db.insert_decision(
+        // Unrelated graph writes must not determine the decision log's identity.
+        let source =
+            db.upsert_context_entity(None, "component", "source", None, "", &BTreeMap::new())?;
+        let target =
+            db.upsert_context_entity(None, "component", "target", None, "", &BTreeMap::new())?;
+        db.upsert_context_relation(None, source.id, target.id, "uses", "")?;
+
+        let first = db.insert_decision(
             "session-1",
             "Use sqlite for the shared context graph",
             &["json files".to_string(), "memory only".to_string()],
             "SQLite keeps the audit trail queryable from both CLI and TUI.",
         )?;
-        db.insert_decision(
+        let second = db.insert_decision(
             "session-1",
             "Keep decision logging append-only",
             &["mutable edits".to_string()],
@@ -6427,6 +6431,8 @@ mod tests {
 
         let entries = db.list_decisions_for_session("session-1", 10)?;
         assert_eq!(entries.len(), 2);
+        assert_eq!(first.id, entries[0].id);
+        assert_eq!(second.id, entries[1].id);
         assert_eq!(entries[0].session_id, "session-1");
         assert_eq!(
             entries[0].decision,
