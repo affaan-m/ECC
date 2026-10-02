@@ -53,6 +53,19 @@ test('unclosed example fences cannot hide recorded state', () => {
   assert.throws(() => extractCoordinationState(body), /coordination/i);
   assert.throws(() => mergeIssueBody({ body }, { owner: 'other' }), /coordination/i);
 });
+test('inline marker pairs without a JSON fence refuse mutation', () => {
+  const body = 'Before <!-- ecc-coordination:start -->\n{"owner":"existing"}\n<!-- ecc-coordination:end --> after';
+  assert.throws(() => extractCoordinationState(body), /coordination/i);
+  assert.throws(() => mergeIssueBody({ body }, { owner: 'other' }), /coordination/i);
+});
+test('unfinished examples after valid metadata preserve claimable state', () => {
+  const example = '\n````markdown\nLiteral <!-- ecc-coordination:start -->';
+  const body = section('{"owner":"existing"}') + example;
+  assert.strictEqual(extractCoordinationState(body).owner, 'existing');
+  const merged = mergeIssueBody({ body }, { owner: 'existing', status: 'claimed' });
+  assert.strictEqual(extractCoordinationState(merged).status, 'claimed');
+  assert.ok(merged.includes(example));
+});
 test('literal markers in prose, fenced examples and JSON notes remain intact', () => {
   for (const policy of [{}, { sectionMarker: 'custom-marker' }]) {
     const marker = policy.sectionMarker || 'ecc-coordination';

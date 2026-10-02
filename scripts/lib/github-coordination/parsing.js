@@ -14,7 +14,7 @@ function coordinationSection(body, policy) {
   const source = String(body || '');
   const marker = escapeRegExp(policy.sectionMarker || DEFAULT_SECTION_MARKER);
   const boundary = new RegExp(`<!--\\s*${marker}:(start|end)\\s*-->`, 'g');
-  const boundaries = [];
+  let boundaries = [];
   let fence = null;
   let fenceStart = 0;
   for (const match of source.matchAll(/[^\n]*\n|[^\n]+$/g)) {
@@ -27,13 +27,13 @@ function coordinationSection(body, policy) {
     }
     if (delimiter) { fence = delimiter[1]; fenceStart = match.index; continue; }
     for (const found of line.matchAll(boundary)) {
-      if (line.trim() !== found[0] && found[1] === 'start'
-        && !/^\s*```json[ \t]*\r?\n/.test(source.slice(match.index + found.index + found[0].length))) continue;
       boundaries.push({ kind: found[1], index: match.index + found.index,
         length: found[0].length, standalone: line.trim() === found[0] });
     }
   }
-  if (fence && new RegExp(boundary.source).test(source.slice(fenceStart))) {
+  boundaries = boundaries.filter((entry, index) => !(entry.kind === 'start' && !entry.standalone
+    && boundaries[index + 1]?.kind === 'start'));
+  if (fence && boundaries.length !== 2 && new RegExp(boundary.source).test(source.slice(fenceStart))) {
     throw new SyntaxError('Malformed coordination section inside an unclosed fence');
   }
   if (boundaries.length === 0) return null;
