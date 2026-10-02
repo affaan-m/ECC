@@ -436,13 +436,28 @@ public function test_it_retries_on_timeout(): void
 {
     Http::fake([
         'api.stripe.com/*' => Http::sequence()
+            ->pushFailedConnection('cURL error 28: Operation timed out')
+            ->pushStatus(200),
+    ]);
+
+    $this->assertTrue((new PaymentService())->charge(2999)->success);
+    Http::assertSentCount(2);
+}
+
+public function test_it_retries_on_http_408(): void
+{
+    Http::fake([
+        'api.stripe.com/*' => Http::sequence()
             ->pushStatus(408)
             ->pushStatus(200),
     ]);
 
     $this->assertTrue((new PaymentService())->charge(2999)->success);
+    Http::assertSentCount(2);
 }
 ```
+
+A client-side timeout raises `ConnectionException`; an HTTP 408 is a response. Test these paths separately, and configure `PaymentService` to retry the failure type each test exercises. `pushFailedConnection()` is available in Laravel 11 and 12.
 
 ### Mail Fake
 
