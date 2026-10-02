@@ -13,9 +13,10 @@ function normalizeBodyForComparison(body) {
 function coordinationSection(body, policy) {
   const source = String(body || '');
   const marker = escapeRegExp(policy.sectionMarker || DEFAULT_SECTION_MARKER);
-  const boundary = new RegExp(`^[ \t]*<!--\\s*${marker}:(start|end)\\s*-->[ \t]*$`);
+  const boundary = new RegExp(`<!--\\s*${marker}:(start|end)\\s*-->`, 'g');
   const boundaries = [];
   let fence = null;
+  let fenceStart = 0;
   for (const match of source.matchAll(/[^\n]*\n|[^\n]+$/g)) {
     const line = match[0].replace(/\r?\n$/, '');
     const delimiter = line.match(/^ {0,3}(`{3,}|~{3,})(.*)$/);
@@ -24,11 +25,19 @@ function coordinationSection(body, policy) {
         && delimiter[1].length >= fence.length && !delimiter[2].trim()) fence = null;
       continue;
     }
-    if (delimiter) { fence = delimiter[1]; continue; }
-    const found = line.match(boundary);
-    if (found) boundaries.push({ kind: found[1], index: match.index, length: match[0].length });
+    if (delimiter) { fence = delimiter[1]; fenceStart = match.index; continue; }
+    for (const found of line.matchAll(boundary)) {
+      if (line.trim() !== found[0] && found[1] === 'start'
+        && !/^\s*```json[ \t]*\r?\n/.test(source.slice(match.index + found.index + found[0].length))) continue;
+      boundaries.push({ kind: found[1], index: match.index + found.index,
+        length: found[0].length, standalone: line.trim() === found[0] });
+    }
+  }
+  if (fence && new RegExp(boundary.source).test(source.slice(fenceStart))) {
+    throw new SyntaxError('Malformed coordination section inside an unclosed fence');
   }
   if (boundaries.length === 0) return null;
+  if (boundaries.length === 1 && !boundaries[0].standalone) return null;
   if (boundaries.length !== 2 || boundaries[0].kind !== 'start' || boundaries[1].kind !== 'end') {
     throw new SyntaxError('Malformed coordination section boundaries or JSON fence');
   }

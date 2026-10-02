@@ -38,6 +38,21 @@ test('parse errors never echo the coordination body', () => {
   try { extractCoordinationState(section('TOP_SECRET_FIXTURE not JSON')); assert.fail('expected parse error'); }
   catch (error) { assert.ok(!error.message.includes('TOP_SECRET_FIXTURE')); }
 });
+test('inline legacy boundaries preserve ownership and surrounding prose', () => {
+  const body = 'Before ' + section('{"owner":"existing","notes":"retain"}') + ' after';
+  assert.strictEqual(extractCoordinationState(body).owner, 'existing');
+  const merged = mergeIssueBody({ body }, { owner: 'existing', notes: 'retain', status: 'blocked' });
+  assert.strictEqual(extractCoordinationState(merged).owner, 'existing');
+  assert.strictEqual(extractCoordinationState(merged).notes, 'retain');
+  assert.ok(merged.startsWith('Before '));
+  assert.ok(merged.includes(' after'));
+  assert.strictEqual((merged.match(/ecc-coordination:start/g) || []).length, 1);
+});
+test('unclosed example fences cannot hide recorded state', () => {
+  const body = '````markdown\n' + section('{"owner":"existing"}');
+  assert.throws(() => extractCoordinationState(body), /coordination/i);
+  assert.throws(() => mergeIssueBody({ body }, { owner: 'other' }), /coordination/i);
+});
 test('literal markers in prose, fenced examples and JSON notes remain intact', () => {
   for (const policy of [{}, { sectionMarker: 'custom-marker' }]) {
     const marker = policy.sectionMarker || 'ecc-coordination';
