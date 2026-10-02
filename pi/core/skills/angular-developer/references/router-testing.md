@@ -12,7 +12,10 @@ The `RouterTestingHarness` is the primary tool for testing routing scenarios. Yo
 
 ```ts
 import {TestBed} from '@angular/core/testing';
-import {NavigationEnd, provideRouter, Router} from '@angular/router';
+import {
+  NavigationCancel, NavigationEnd, NavigationError, NavigationSkipped,
+  provideRouter, Router,
+} from '@angular/router';
 import {filter, firstValueFrom} from 'rxjs';
 import {RouterTestingHarness} from '@angular/router/testing';
 import {Dashboard} from './dashboard.component';
@@ -60,10 +63,15 @@ it('should navigate to a hero detail when a hero is selected', async () => {
   const router = TestBed.inject(Router);
   // Subscribe before triggering navigation so its completion cannot be missed.
   const navigationFinished = firstValueFrom(
-    router.events.pipe(filter(event => event instanceof NavigationEnd)),
+    router.events.pipe(filter(event =>
+      event instanceof NavigationEnd || event instanceof NavigationCancel ||
+      event instanceof NavigationError || event instanceof NavigationSkipped,
+    )),
   );
   dashboard.selectHero(heroToSelect);
-  await navigationFinished;
+  const result = await navigationFinished;
+  // Report an unsuccessful navigation immediately instead of waiting for a timeout.
+  expect(result).toBeInstanceOf(NavigationEnd);
   await harness.fixture.whenStable();
   harness.detectChanges();
 
@@ -91,4 +99,4 @@ it('should get the activated component directly', async () => {
 - **Navigate with the Harness:** Use `harness.navigateByUrl(url, ComponentType)` for direct test navigation. It waits for navigation and returns the activated component instance. For component-triggered navigation, await its completion separately.
 - **Access the Router State:** Use `TestBed.inject(Router)` to access the live router instance and assert on its URL.
 - **Get Activated Components:** Use the component returned by `navigateByUrl(url, ComponentType)`, or inspect `harness.routeDebugElement?.componentInstance` after component-triggered navigation. `RouterTestingHarness` is not a CDK harness loader.
-- **Wait for Navigation:** Await the navigation promise or a completion event subscribed to before the action. Then wait for fixture stability and run change detection before asserting on the rendered view.
+- **Wait for Navigation:** Await the navigation promise or a terminal event subscribed to before the action. Include cancellation, error, and skipped events, and assert the expected outcome. Then wait for fixture stability and run change detection before asserting on the rendered view.
