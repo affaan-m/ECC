@@ -18,26 +18,33 @@ try {
     const fs = require('node:fs');
     const path = require('node:path');
     const cp = require('node:child_process');
+    const vm = require('node:vm');
+    const runner = ${JSON.stringify(runner)};
     const root = ${JSON.stringify(__dirname)};
     const names = ['fixture-a.test.js', 'fixture-b.test.js'];
-    const readdir = fs.readdirSync;
-    const exists = fs.existsSync;
-    fs.readdirSync = (dir, options) => path.resolve(dir) === root
+    const fixtureFs = { ...fs,
+      readdirSync: (dir, options) => path.resolve(dir) === root
       ? names.map(name => ({ name, isDirectory: () => false, isFile: () => true }))
-      : readdir(dir, options);
-    fs.existsSync = p => names.some(name => p === path.join(root, name)) || exists(p);
-    cp.spawnSync = (_command, args) => {
+      : fs.readdirSync(dir, options),
+      existsSync: p => names.some(name => p === path.join(root, name)) || fs.existsSync(p),
+    };
+    const fixtureCp = { ...cp, spawnSync: (_command, args) => {
       const first = path.basename(args[0]) === names[0];
       const failure = !first && process.env.ECC_RUNNER_FIXTURE_FAILURE === '1';
       return { status: failure ? 1 : 0, signal: null, error: undefined,
         stdout: first ? 'x'.repeat(256 * 1024) + '\\nEND_BUFFERED_SUITE\\nPassed: 1\\nFailed: 0\\n'
           : (failure ? 'FAIL deliberate-fixture-failure\\nPassed: 0\\nFailed: 1\\n' : 'END_LAST_SUITE\\nPassed: 1\\nFailed: 0\\n'),
         stderr: failure ? 'fixture stderr diagnostic\\n' : '' };
-    };
+    }};
+    vm.runInNewContext(fs.readFileSync(runner, 'utf8'), {
+      require: name => name === 'fs' || name === 'node:fs' ? fixtureFs
+        : name === 'child_process' || name === 'node:child_process' ? fixtureCp : require(name),
+      console, process, __dirname: path.dirname(runner), __filename: runner,
+    }, { filename: runner });
   `);
   for (const failure of [false, true]) {
     try {
-      const result = spawnSync(process.execPath, ['--require', preload, runner], {
+      const result = spawnSync(process.execPath, [preload], {
         encoding: 'utf8', timeout: 10000, maxBuffer: 2 * 1024 * 1024,
         env: { ...process.env, GITHUB_ACTIONS: 'true', ECC_RUNNER_FIXTURE_FAILURE: failure ? '1' : '0' },
       });
