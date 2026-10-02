@@ -491,7 +491,7 @@ preconnect("https://api.example.com");
 
 ### `defer` / `async` on `<script>` tags
 
-For parser-inserted external classic scripts, `defer` executes in document order after parsing and before `DOMContentLoaded` when `async` is absent; that event waits for evaluation to finish. When `async` is present, including with `defer`, the script executes when available without preserving document order and does not delay `DOMContentLoaded`. Module scripts are deferred by default, and `defer` has no effect on inline classic scripts.
+For parser-inserted external classic scripts, `defer` executes in document order after parsing and before `DOMContentLoaded` when `async` is absent; that event waits for evaluation to finish. When `async` is present, including with `defer`, the script executes when available without preserving document order; `DOMContentLoaded` does not wait for an async script, although execution during parsing can postpone the event by blocking parser progress. Module scripts are deferred by default, and `defer` has no effect on inline classic scripts.
 
 ## 7. JavaScript Performance (LOW-MEDIUM)
 
