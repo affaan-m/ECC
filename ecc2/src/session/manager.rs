@@ -1249,7 +1249,10 @@ pub fn enforce_budget_hard_limits(
                 SessionState::Pending | SessionState::Running | SessionState::Idle
             )
     }) {
-        stop_session_recorded(db, &session, false)?;
+        if let Err(error) = stop_session_recorded(db, &session, false) {
+            tracing::warn!("Session {} could not be safely paused: {error}", session.id);
+            continue;
+        }
         outcome.paused_sessions.push(session.id);
     }
 
@@ -1314,6 +1317,7 @@ pub fn enforce_conflict_resolution(
     }
 
     let mut paused_once = HashSet::new();
+    let mut failed_pauses = HashSet::new();
 
     for (path, mut entries) in latest_activity_by_path {
         entries.retain(|entry| !matches!(entry.action, super::FileActivityAction::Read));
@@ -1360,6 +1364,11 @@ pub fn enforce_conflict_resolution(
                 conflict_strategy_label(cfg.conflict_resolution.strategy),
                 &summary,
             )?;
+            outcome.created_incidents += 1;
+
+            if failed_pauses.contains(&paused_session_id) {
+                continue;
+            }
 
             if paused_once.insert(paused_session_id.clone()) {
                 if let Some(session) = sessions_by_id.get(&paused_session_id) {
@@ -1370,7 +1379,14 @@ pub fn enforce_conflict_resolution(
                             | SessionState::Idle
                             | SessionState::Stale
                     ) {
-                        stop_session_recorded(db, session, false)?;
+                        if let Err(error) = stop_session_recorded(db, session, false) {
+                            tracing::warn!(
+                                "Session {} could not be safely paused for a conflict: {error}",
+                                session.id
+                            );
+                            failed_pauses.insert(paused_session_id.clone());
+                            continue;
+                        }
                         outcome.paused_sessions.push(paused_session_id.clone());
                     }
                 }
@@ -1415,8 +1431,6 @@ pub fn enforce_conflict_resolution(
                     }
                 }
             }
-
-            outcome.created_incidents += 1;
         }
     }
 
@@ -2088,6 +2102,11 @@ pub async fn prune_inactive_worktrees(
             SessionState::Pending | SessionState::Running | SessionState::Idle
         ) {
             active_with_worktree_ids.push(session.id);
+            continue;
+        }
+
+        if session.pid.is_some() {
+            retained_session_ids.push(session.id);
             continue;
         }
 
@@ -2781,10 +2800,25 @@ async fn create_session_in_dir(
                 .id()
                 .ok_or_else(|| anyhow::anyhow!("Claude Code did not expose a process id"))?;
             #[cfg(windows)]
-            let creation_time = child.raw_handle().and_then(|handle| {
-                // SAFETY: child owns this process handle through the store update.
-                unsafe { super::windows_process::creation_time_from_handle(handle) }.ok()
-            });
+            let creation_time = match child.raw_handle() {
+                Some(handle) => {
+                    // SAFETY: child owns this process handle through the store update.
+                    match unsafe { super::windows_process::creation_time_from_handle(handle) } {
+                        Ok(value) => Some(value),
+                        Err(error) => {
+                            tracing::warn!("Could not record process identity for session {} (PID {pid}): {error}", session.id);
+                            None
+                        }
+                    }
+                }
+                None => {
+                    tracing::warn!(
+                        "Could not access process handle for session {} (PID {pid})",
+                        session.id
+                    );
+                    None
+                }
+            };
             #[cfg(not(windows))]
             let creation_time = None;
             db.update_pid_with_creation_time(&session.id, Some(pid), creation_time)?;
@@ -6143,6 +6177,83 @@ mod tests {
         Ok(())
     }
 
+    #[cfg(windows)]
+    #[test]
+    fn bulk_enforcement_continues_after_unverified_process() -> Result<()> {
+        let root = TestDir::new("bulk-unverified-process")?;
+        let mut cfg = build_config(root.path());
+        cfg.token_budget = 1;
+        cfg.conflict_resolution.notify_lead = false;
+        let db = StateStore::open(&cfg.db_path)?;
+        let now = Utc::now();
+        for id in ["unverified", "safe", "writer"] {
+            let mut session = build_session(id, SessionState::Running, now);
+            if id == "unverified" {
+                session.pid = Some(std::process::id());
+                session.updated_at = now + Duration::seconds(1);
+                session.metrics.tokens_used = 2;
+            }
+            db.insert_session(&session)?;
+        }
+        db.update_metrics(
+            "unverified",
+            &SessionMetrics {
+                tokens_used: 2,
+                ..SessionMetrics::default()
+            },
+        )?;
+        assert_eq!(db.list_sessions()?[0].id, "unverified");
+        let budget = enforce_budget_hard_limits(&db, &cfg)?;
+        assert!(budget.token_budget_exceeded);
+        assert_eq!(budget.paused_sessions.len(), 2);
+        assert!(!budget.paused_sessions.contains(&"unverified".to_string()));
+        assert_eq!(
+            db.get_session("unverified")?.unwrap().pid,
+            Some(std::process::id())
+        );
+        let db = StateStore::open(&root.path().join("conflicts.db"))?;
+        for id in ["unverified", "safe", "writer"] {
+            let mut session = build_session(id, SessionState::Running, now);
+            if id == "unverified" {
+                session.pid = Some(std::process::id());
+            }
+            db.insert_session(&session)?;
+        }
+        let events = root.path().join("metrics.jsonl");
+        let mut lines = Vec::new();
+        for (index, (id, file, timestamp)) in [
+            ("writer", "a.rs", "2026-04-09T00:02:00Z"),
+            ("unverified", "a.rs", "2026-04-09T00:03:00Z"),
+            ("writer", "b.rs", "2026-04-09T00:02:00Z"),
+            ("safe", "b.rs", "2026-04-09T00:03:00Z"),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            lines.push(
+                serde_json::json!({"id":format!("evt-{index}"),"session_id":id,
+                "tool_name":"Edit","input_summary":"fixture","output_summary":"fixture",
+                "timestamp":timestamp,"file_events":[{"path":file,"action":"modify"}]})
+                .to_string(),
+            );
+        }
+        fs::write(&events, lines.join("\n") + "\n")?;
+        db.sync_tool_activity_metrics(&events)?;
+        let conflict = enforce_conflict_resolution(&db, &cfg)?;
+        assert_eq!(conflict.created_incidents, 2);
+        assert_eq!(conflict.paused_sessions, vec!["safe".to_string()]);
+        assert_eq!(
+            db.get_session("safe")?.unwrap().state,
+            SessionState::Stopped
+        );
+        let retained = db.get_session("unverified")?.unwrap();
+        assert_eq!(retained.state, SessionState::Running);
+        assert_eq!(retained.pid, Some(std::process::id()));
+        assert!(db.list_decisions_for_session("unverified", 10)?.is_empty());
+        assert!(stop_session_recorded(&db, &retained, false).is_err());
+        Ok(())
+    }
+
     #[test]
     fn enforce_budget_hard_limits_pauses_sessions_over_profile_token_budget() -> Result<()> {
         let tempdir = TestDir::new("manager-profile-token-budget")?;
@@ -6304,7 +6415,11 @@ mod tests {
 
     #[tokio::test]
     async fn worktree_operations_preserve_retained_process_tracking() -> Result<()> {
-        for state in [SessionState::Failed, SessionState::Stopped] {
+        for state in [
+            SessionState::Failed,
+            SessionState::Stopped,
+            SessionState::Stale,
+        ] {
             for action in ["cleanup", "merge", "rebase"] {
                 let root = TestDir::new("worktree-tracked-process")?;
                 let repo = root.path().join("repo");
@@ -6367,6 +6482,12 @@ mod tests {
                     worktree::branch_head_oid(&worktree, &worktree.base_branch)?,
                     base
                 );
+                let mut prune_cfg = cfg.clone();
+                prune_cfg.worktree_retention_secs = 0;
+                let outcome = prune_inactive_worktrees(&db, &prune_cfg).await?;
+                assert_eq!(outcome.retained_session_ids, vec![session.id.clone()]);
+                assert!(outcome.cleaned_session_ids.is_empty());
+                assert!(worktree.path.join("feature.txt").exists());
                 // Once tracking has been cleared by a successful stop, ordinary
                 // worktree cleanup remains available.
                 db.update_pid(&session.id, None)?;
