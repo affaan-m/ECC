@@ -5,10 +5,11 @@
 
 const fs = require('fs');
 const path = require('path');
+const { writeFileAtomic } = require('./atomic-write');
+const { acquireSettingsLock } = require('./install/claude-settings-lock');
 
 const {
   getClaudeDir,
-  ensureDir,
   readFile,
   log
 } = require('./utils');
@@ -80,74 +81,90 @@ function loadAliases() {
   }
 }
 
+// Reject callback reentry instead of allowing a nested write to be overwritten
+// by the outer transaction's snapshot.
+const activeWrites = new Set();
+
 /**
- * Save aliases to file with atomic write
- * @param {object} aliases - Aliases object to save
+ * Run a synchronous alias transaction with exclusive access to its snapshot.
+ * Lock acquisition or reentry failure returns the caller's failure value.
+ * Release errors are logged without replacing the callback's result or error:
+ * a successfully published snapshot remains committed even if cleanup fails.
+ * @template T
+ * @param {function(): T} callback - Transaction to execute while holding the lock
+ * @param {T} failure - Result when the transaction cannot start
+ * @returns {T} The transaction result, or failure if it could not start
+ */
+function withAliasesLock(callback, failure) {
+  const aliasesPath = path.resolve(getAliasesPath());
+  if (activeWrites.has(aliasesPath)) {
+    log('[Aliases] Cannot write aliases from inside an alias transaction');
+    return failure;
+  }
+
+  let release;
+  try {
+    release = acquireSettingsLock(aliasesPath, { label: 'session aliases', timeoutMs: 5000 });
+  } catch (error) {
+    log(`[Aliases] Error locking aliases: ${error.message}`);
+    return failure;
+  }
+
+  activeWrites.add(aliasesPath);
+  let result;
+  let primaryError;
+  let callbackFailed = false;
+  let releaseError;
+  try {
+    result = callback();
+  } catch (error) {
+    callbackFailed = true;
+    primaryError = error;
+  } finally {
+    try {
+      release();
+    } catch (error) {
+      releaseError = error;
+    }
+    activeWrites.delete(aliasesPath);
+  }
+  if (releaseError) {
+    log(`[Aliases] Error releasing aliases lock: ${releaseError.message}`);
+  }
+  if (callbackFailed) throw primaryError;
+  return result;
+}
+
+/**
+ * Publish a complete alias snapshot while the caller holds the transaction lock.
+ * @param {object} aliases - Snapshot to publish without mutating the caller
+ * @returns {boolean} Whether atomic replacement succeeded
+ */
+function saveAliasesUnlocked(aliases) {
+  try {
+    const snapshot = {
+      ...aliases,
+      metadata: {
+        totalCount: Object.keys(aliases.aliases).length,
+        lastUpdated: new Date().toISOString()
+      }
+    };
+    writeFileAtomic(getAliasesPath(), JSON.stringify(snapshot, null, 2));
+    return true;
+  } catch (error) {
+    log(`[Aliases] Error saving aliases: ${error.message}`);
+    return false;
+  }
+}
+
+/**
+ * Atomically replace the complete snapshot. This does not merge snapshots
+ * loaded by callers before acquiring the lock; use the mutators for updates.
+ * @param {object} aliases - Complete aliases snapshot
  * @returns {boolean} Success status
  */
 function saveAliases(aliases) {
-  const aliasesPath = getAliasesPath();
-  const tempPath = aliasesPath + '.tmp';
-  const backupPath = aliasesPath + '.bak';
-
-  try {
-    // Update metadata
-    aliases.metadata = {
-      totalCount: Object.keys(aliases.aliases).length,
-      lastUpdated: new Date().toISOString()
-    };
-
-    const content = JSON.stringify(aliases, null, 2);
-
-    // Ensure directory exists
-    ensureDir(path.dirname(aliasesPath));
-
-    // Create backup if file exists
-    if (fs.existsSync(aliasesPath)) {
-      fs.copyFileSync(aliasesPath, backupPath);
-    }
-
-    // Atomic write: write to temp file, then rename
-    fs.writeFileSync(tempPath, content, 'utf8');
-
-    // On Windows, rename fails with EEXIST if destination exists, so delete first.
-    // On Unix/macOS, rename(2) atomically replaces the destination — skip the
-    // delete to avoid an unnecessary non-atomic window between unlink and rename.
-    if (process.platform === 'win32' && fs.existsSync(aliasesPath)) {
-      fs.unlinkSync(aliasesPath);
-    }
-    fs.renameSync(tempPath, aliasesPath);
-
-    // Remove backup on success
-    if (fs.existsSync(backupPath)) {
-      fs.unlinkSync(backupPath);
-    }
-
-    return true;
-  } catch (err) {
-    log(`[Aliases] Error saving aliases: ${err.message}`);
-
-    // Restore from backup if exists
-    if (fs.existsSync(backupPath)) {
-      try {
-        fs.copyFileSync(backupPath, aliasesPath);
-        log('[Aliases] Restored from backup');
-      } catch (restoreErr) {
-        log(`[Aliases] Failed to restore backup: ${restoreErr.message}`);
-      }
-    }
-
-    // Clean up temp file (best-effort)
-    try {
-      if (fs.existsSync(tempPath)) {
-        fs.unlinkSync(tempPath);
-      }
-    } catch {
-      // Non-critical: temp file will be overwritten on next save
-    }
-
-    return false;
-  }
+  return withAliasesLock(() => saveAliasesUnlocked(aliases), false);
 }
 
 /**
@@ -185,7 +202,7 @@ function resolveAlias(alias) {
  * @param {string} title - Optional title for the alias
  * @returns {object} Result with success status and message
  */
-function setAlias(alias, sessionPath, title = null) {
+function setAliasUnlocked(alias, sessionPath, title = null) {
   // Validate alias name
   if (!alias || alias.length === 0) {
     return { success: false, error: 'Alias name cannot be empty' };
@@ -221,7 +238,7 @@ function setAlias(alias, sessionPath, title = null) {
     title: title || null
   };
 
-  if (saveAliases(data)) {
+  if (saveAliasesUnlocked(data)) {
     return {
       success: true,
       isNew,
@@ -278,7 +295,7 @@ function listAliases(options = {}) {
  * @param {string} alias - Alias name to delete
  * @returns {object} Result with success status
  */
-function deleteAlias(alias) {
+function deleteAliasUnlocked(alias) {
   const data = loadAliases();
 
   if (!data.aliases[alias]) {
@@ -288,7 +305,7 @@ function deleteAlias(alias) {
   const deleted = data.aliases[alias];
   delete data.aliases[alias];
 
-  if (saveAliases(data)) {
+  if (saveAliasesUnlocked(data)) {
     return {
       success: true,
       alias,
@@ -305,7 +322,7 @@ function deleteAlias(alias) {
  * @param {string} newAlias - New alias name
  * @returns {object} Result with success status
  */
-function renameAlias(oldAlias, newAlias) {
+function renameAliasUnlocked(oldAlias, newAlias) {
   const data = loadAliases();
 
   if (!data.aliases[oldAlias]) {
@@ -340,7 +357,7 @@ function renameAlias(oldAlias, newAlias) {
   aliasData.updatedAt = new Date().toISOString();
   data.aliases[newAlias] = aliasData;
 
-  if (saveAliases(data)) {
+  if (saveAliasesUnlocked(data)) {
     return {
       success: true,
       oldAlias,
@@ -349,12 +366,8 @@ function renameAlias(oldAlias, newAlias) {
     };
   }
 
-  // Restore old alias and remove new alias on failure
-  data.aliases[oldAlias] = aliasData;
-  delete data.aliases[newAlias];
-  // Attempt to persist the rollback
-  saveAliases(data);
-  return { success: false, error: 'Failed to save renamed alias — rolled back to original' };
+  // Atomic replacement leaves the original snapshot intact on failure.
+  return { success: false, error: 'Failed to save renamed alias' };
 }
 
 /**
@@ -379,7 +392,7 @@ function resolveSessionAlias(aliasOrId) {
  * @param {string|null} title - New title (string or null to clear)
  * @returns {object} Result with success status
  */
-function updateAliasTitle(alias, title) {
+function updateAliasTitleUnlocked(alias, title) {
   if (title !== null && typeof title !== 'string') {
     return { success: false, error: 'Title must be a string or null' };
   }
@@ -393,7 +406,7 @@ function updateAliasTitle(alias, title) {
   data.aliases[alias].title = title || null;
   data.aliases[alias].updatedAt = new Date().toISOString();
 
-  if (saveAliases(data)) {
+  if (saveAliasesUnlocked(data)) {
     return {
       success: true,
       alias,
@@ -431,7 +444,7 @@ function getAliasesForSession(sessionPath) {
  * @param {Function} sessionExists - Function to check if session exists
  * @returns {object} Cleanup result
  */
-function cleanupAliases(sessionExists) {
+function cleanupAliasesUnlocked(sessionExists) {
   if (typeof sessionExists !== 'function') {
     return { totalChecked: 0, removed: 0, removedAliases: [], error: 'sessionExists must be a function' };
   }
@@ -446,7 +459,7 @@ function cleanupAliases(sessionExists) {
     }
   }
 
-  if (removed.length > 0 && !saveAliases(data)) {
+  if (removed.length > 0 && !saveAliasesUnlocked(data)) {
     log('[Aliases] Failed to save after cleanup');
     return {
       success: false,
@@ -463,6 +476,61 @@ function cleanupAliases(sessionExists) {
     removed: removed.length,
     removedAliases: removed
   };
+}
+
+/**
+ * Create or update an alias using the latest snapshot under the transaction lock.
+ * @param {string} alias - Alias name (alphanumeric, dash, underscore)
+ * @param {string} sessionPath - Session directory path
+ * @param {string|null} title - Optional title for the alias
+ * @returns {object} Result with success status and the saved alias details
+ */
+function setAlias(alias, sessionPath, title = null) {
+  return withAliasesLock(() => setAliasUnlocked(alias, sessionPath, title),
+    { success: false, error: 'Failed to save alias' });
+}
+
+/**
+ * Delete an alias without overwriting other writers' completed changes.
+ * @param {string} alias - Alias name to delete
+ * @returns {object} Result with success status and the deleted session path
+ */
+function deleteAlias(alias) {
+  return withAliasesLock(() => deleteAliasUnlocked(alias),
+    { success: false, error: 'Failed to delete alias' });
+}
+
+/**
+ * Rename an existing alias in one locked read-modify-write transaction.
+ * @param {string} oldAlias - Current alias name
+ * @param {string} newAlias - New unused alias name
+ * @returns {object} Result with success status and the renamed alias details
+ */
+function renameAlias(oldAlias, newAlias) {
+  return withAliasesLock(() => renameAliasUnlocked(oldAlias, newAlias),
+    { success: false, error: 'Failed to save renamed alias' });
+}
+
+/**
+ * Update an existing alias title using the latest locked snapshot.
+ * @param {string} alias - Alias name
+ * @param {string|null} title - New title, or null to clear it
+ * @returns {object} Result with success status and the updated title
+ */
+function updateAliasTitle(alias, title) {
+  return withAliasesLock(() => updateAliasTitleUnlocked(alias, title),
+    { success: false, error: 'Failed to update alias title' });
+}
+
+/**
+ * Remove aliases whose sessions no longer exist in a single locked transaction.
+ * The synchronous callback must not write aliases; its exceptions propagate.
+ * @param {function(string): boolean} sessionExists - Check whether a session exists
+ * @returns {object} Checked count, removed aliases, and any operation failure
+ */
+function cleanupAliases(sessionExists) {
+  return withAliasesLock(() => cleanupAliasesUnlocked(sessionExists),
+    { success: false, totalChecked: 0, removed: 0, removedAliases: [], error: 'Failed to save after cleanup' });
 }
 
 module.exports = {

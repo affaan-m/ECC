@@ -18,6 +18,8 @@ const tmpHome = path.join(os.tmpdir(), `ecc-alias-test-${Date.now()}`);
 fs.mkdirSync(path.join(tmpHome, '.claude'), { recursive: true });
 const origHome = process.env.HOME;
 const origUserProfile = process.env.USERPROFILE;
+const origAgentDataHome = process.env.ECC_AGENT_DATA_HOME;
+delete process.env.ECC_AGENT_DATA_HOME;
 process.env.HOME = tmpHome;
 process.env.USERPROFILE = tmpHome; // Windows: os.homedir() uses USERPROFILE
 
@@ -767,18 +769,16 @@ function runTests() {
     assert.strictEqual(resolved.title, 'Original Title');
   })) passed++; else failed++;
 
-  // ── Round 33: saveAliases backup restoration ──
-  console.log('\nsaveAliases backup/restore (Round 33):');
+  // ── Round 33: saveAliases atomic publication ──
+  console.log('\nsaveAliases atomic publication (Round 33):');
 
-  if (test('saveAliases creates backup before write and removes on success', () => {
+  if (test('saveAliases publishes a snapshot without leaving staging files', () => {
     resetAliases();
     aliases.setAlias('backup-test', '/path/backup');
 
-    // After successful save, .bak file should NOT exist
-    const aliasesPath = path.join(tmpHome, '.claude', 'session-aliases.json');
-    const backupPath = aliasesPath + '.bak';
-    assert.ok(!fs.existsSync(backupPath), 'Backup should be removed after successful save');
+    const aliasesPath = aliases.getAliasesPath();
     assert.ok(fs.existsSync(aliasesPath), 'Main aliases file should exist');
+    assert.deepStrictEqual(fs.readdirSync(path.dirname(aliasesPath)), ['session-aliases.json']);
   })) passed++; else failed++;
 
   if (test('saveAliases with non-serializable data returns false and preserves existing file', () => {
@@ -795,7 +795,7 @@ function runTests() {
     const result = aliases.saveAliases(circular);
     assert.strictEqual(result, false, 'Should return false');
 
-    // The file should still have the old content (restored from backup or untouched)
+    // The file should still have the old content (untouched)
     const contentAfter = fs.readFileSync(aliasesPath, 'utf8');
     assert.ok(contentAfter.includes('before-fail'),
       'Original aliases data should be preserved after failed save');
@@ -843,10 +843,10 @@ function runTests() {
     assert.strictEqual(data.metadata.totalCount, 5, 'Metadata count should match actual aliases');
   })) passed++; else failed++;
 
-  // ── Round 56: Windows platform unlink-before-rename code path ──
+  // ── Round 56: Windows platform atomic replacement ──
   console.log('\nRound 56: Windows platform atomic write path:');
 
-  if (test('Windows platform mock: unlinks existing file before rename', () => {
+  if (test('Windows platform mock: replaces existing file without unlinking it', () => {
     resetAliases();
     // First create an alias so the file exists
     const r1 = aliases.setAlias('win-initial', '2026-01-01-abc123-session.tmp');
@@ -854,12 +854,17 @@ function runTests() {
     const aliasesPath = aliases.getAliasesPath();
     assert.ok(fs.existsSync(aliasesPath), 'Aliases file should exist before win32 test');
 
-    // Mock process.platform to 'win32' to trigger the unlink-before-rename path
+    // Check that Windows uses replacement without deleting the published file
+    const originalUnlink = fs.unlinkSync;
+    fs.unlinkSync = function (file) {
+      assert.notStrictEqual(file, aliasesPath, 'Never unlink the published aliases file');
+      return originalUnlink.apply(this, arguments);
+    };
     const origPlatform = Object.getOwnPropertyDescriptor(process, 'platform');
     Object.defineProperty(process, 'platform', { value: 'win32', configurable: true });
 
     try {
-      // This save triggers the Windows code path: unlink existing → rename temp
+      // Replace the snapshot while preserving the original until publication
       const r2 = aliases.setAlias('win-updated', '2026-02-01-def456-session.tmp');
       assert.strictEqual(r2.success, true, 'setAlias should succeed under win32 mock');
 
@@ -875,6 +880,7 @@ function runTests() {
       assert.ok(!fs.existsSync(aliasesPath + '.tmp'), 'No temp file should remain');
       assert.ok(!fs.existsSync(aliasesPath + '.bak'), 'No backup file should remain');
     } finally {
+      fs.unlinkSync = originalUnlink;
       // Restore original platform descriptor
       if (origPlatform) {
         Object.defineProperty(process, 'platform', origPlatform);
@@ -1091,9 +1097,10 @@ function runTests() {
       assert.strictEqual(result.success, false, 'Should fail when save is blocked');
       assert.ok(result.error.includes('Failed to save after cleanup'),
         `Should return cleanup save failure error, got: ${result.error}`);
-      assert.strictEqual(result.removed, 1, 'Should report 1 removed alias');
-      assert.ok(result.removedAliases.some(a => a.name === 'remove-me'),
-        'Should report remove-me in removedAliases');
+      assert.strictEqual(result.removed, 0, 'No cleanup runs without the transaction lock');
+      assert.deepStrictEqual(result.removedAliases, []);
+      assert.strictEqual(result.totalChecked, 0);
+      assert.ok(freshAliases.resolveAlias('remove-me'), 'Published aliases stay unchanged');
     } finally {
       try { fs.chmodSync(isoClaudeDir, 0o755); } catch { /* best-effort */ }
       process.env.HOME = savedHome;
@@ -1210,53 +1217,34 @@ function runTests() {
     resetAliases();
   })) passed++; else failed++;
 
-  // ── Round 90: saveAliases backup restore double failure (inner catch restoreErr) ──
-  console.log('\nRound 90: saveAliases (backup restore double failure):');
-
-  if (test('saveAliases triggers inner restoreErr catch when both save and restore fail', () => {
-    // session-aliases.js lines 131-137: When saveAliases fails (outer catch),
-    // it tries to restore from backup. If the restore ALSO fails, the inner
-    // catch at line 135 logs restoreErr. No existing test creates this double-fault.
-    if (process.platform === 'win32' || process.getuid?.() === 0) {
-      console.log('    (skipped — chmod ineffective on Windows/root)');
-      return;
-    }
-    const isoHome = path.join(os.tmpdir(), `ecc-r90-restore-fail-${Date.now()}`);
-    const claudeDir = path.join(isoHome, '.claude');
-    fs.mkdirSync(claudeDir, { recursive: true });
-
-    // Pre-create a backup file while directory is still writable
-    const backupPath = path.join(claudeDir, 'session-aliases.json.bak');
-    fs.writeFileSync(backupPath, JSON.stringify({ aliases: {}, version: '1.0' }));
-
-    // Make .claude directory read-only (0o555):
-    // 1. writeFileSync(tempPath) → EACCES (can't create file in read-only dir) — outer catch
-    // 2. copyFileSync(backupPath, aliasesPath) → EACCES (can't create target) — inner catch (line 135)
-    fs.chmodSync(claudeDir, 0o555);
-
-    const origH = process.env.HOME;
-    const origP = process.env.USERPROFILE;
-    process.env.HOME = isoHome;
-    process.env.USERPROFILE = isoHome;
-
+  // Failed publication must preserve the original bytes, even under win32.
+  if (test('failed replacement preserves published aliases and removes only its staging file', () => {
+    resetAliases();
+    aliases.setAlias('preserved', '/original');
+    const aliasesPath = aliases.getAliasesPath();
+    const before = fs.readFileSync(aliasesPath, 'utf8');
+    const originalRename = fs.renameSync;
+    const staged = [];
+    fs.renameSync = function (source, target) {
+      if (target === aliasesPath) {
+        staged.push(source);
+        const error = new Error('replacement denied');
+        error.code = 'EPERM';
+        throw error;
+      }
+      return originalRename.apply(this, arguments);
+    };
     try {
-      delete require.cache[require.resolve('../../scripts/lib/session-aliases')];
-      delete require.cache[require.resolve('../../scripts/lib/utils')];
-      const freshAliases = require('../../scripts/lib/session-aliases');
-
-      const result = freshAliases.saveAliases({ aliases: { x: 1 }, version: '1.0' });
-      assert.strictEqual(result, false, 'Should return false when save fails');
-
-      // Backup should still exist (restore also failed, so backup was not consumed)
-      assert.ok(fs.existsSync(backupPath), 'Backup should still exist after double failure');
+      assert.strictEqual(aliases.saveAliases({ aliases: { replacement: { sessionPath: '/new' } } }), false);
+      assert.strictEqual(aliases.renameAlias('preserved', 'changed').success, false);
+      assert.strictEqual(fs.readFileSync(aliasesPath, 'utf8'), before);
+      assert.strictEqual(staged.length, 2, 'Each failed operation attempts one publication');
+      assert.notStrictEqual(staged[0], staged[1], 'Each write has its own staging file');
+      assert.deepStrictEqual(fs.readdirSync(path.dirname(aliasesPath)), ['session-aliases.json']);
     } finally {
-      process.env.HOME = origH;
-      process.env.USERPROFILE = origP;
-      delete require.cache[require.resolve('../../scripts/lib/session-aliases')];
-      delete require.cache[require.resolve('../../scripts/lib/utils')];
-      try { fs.chmodSync(claudeDir, 0o755); } catch { /* best-effort */ }
-      fs.rmSync(isoHome, { recursive: true, force: true });
+      fs.renameSync = originalRename;
     }
+    assert.strictEqual(aliases.setAlias('after-failure', '/next').success, true, 'Lock is released after failure');
   })) passed++; else failed++;
 
   // ── Round 95: renameAlias with same old and new name (self-rename) ──
@@ -1808,6 +1796,158 @@ function runTests() {
     assert.ok(keys.includes('normal'),
       'Object.keys includes normal alias');
   })) passed++; else failed++;
+
+  if (test('cleanup rejects reentrant writes without losing the outer transaction', () => {
+    resetAliases();
+    aliases.setAlias('existing', '/existing');
+    const nested = [];
+    const result = aliases.cleanupAliases(() => {
+      nested.push(aliases.setAlias('nested', '/nested'));
+      nested.push(aliases.deleteAlias('existing'));
+      nested.push(aliases.renameAlias('existing', 'renamed'));
+      nested.push(aliases.updateAliasTitle('existing', 'Nested'));
+      nested.push(aliases.cleanupAliases(() => true));
+      nested.push(aliases.saveAliases({ aliases: {} }));
+      return false;
+    });
+    assert.strictEqual(result.success, true);
+    assert.ok(nested.slice(0, -1).every(value => value.success === false));
+    assert.strictEqual(nested.at(-1), false);
+    assert.deepStrictEqual(aliases.loadAliases().aliases, {});
+    assert.strictEqual(aliases.setAlias('after-cleanup', '/next').success, true);
+  })) passed++; else failed++;
+
+  if (test('cleanup preserves callback errors and releases its lock', () => {
+    resetAliases();
+    aliases.setAlias('existing', '/existing');
+    const primary = new Error('session lookup failed');
+    assert.throws(() => aliases.cleanupAliases(() => { throw primary; }), error => error === primary);
+    assert.ok(aliases.resolveAlias('existing'));
+    assert.ok(!fs.existsSync(aliases.getAliasesPath() + '.ecc.lock'));
+    assert.strictEqual(aliases.setAlias('after-error', '/next').success, true);
+  })) passed++; else failed++;
+
+  if (test('cleanup propagates arbitrary thrown values even if lock release also fails', () => {
+    resetAliases();
+    aliases.setAlias('existing', '/existing');
+    const lockPath = aliases.getAliasesPath() + '.ecc.lock';
+    const originalRename = fs.renameSync;
+    const errors = [null, undefined, false, 0, Object.freeze(new Error('frozen')),
+      new Proxy(new Error('proxy'), { set() { throw new Error('Cannot annotate error'); } })];
+    for (const failRelease of [false, true]) {
+      for (const primary of errors) {
+        let caught = false;
+        fs.renameSync = function (source) {
+          if (failRelease && source === lockPath) throw new Error('release denied');
+          return originalRename.apply(this, arguments);
+        };
+        try {
+          aliases.cleanupAliases(() => { throw primary; });
+        } catch (error) {
+          caught = true;
+          assert.strictEqual(error, primary, 'Original thrown value is preserved');
+        } finally {
+          fs.renameSync = originalRename;
+          fs.rmSync(lockPath, { force: true });
+        }
+        assert.ok(caught, 'Callback failure must propagate');
+      }
+    }
+    assert.strictEqual(aliases.setAlias('after-release-error', '/next').success, true);
+  })) passed++; else failed++;
+
+  if (test('successful writes keep their results when releasing the lock fails', () => {
+    const cases = [
+      {
+        run: () => aliases.setAlias('added', '/added', 'Added'),
+        expected: { success: true, isNew: true, alias: 'added', sessionPath: '/added', title: 'Added' },
+        verify: data => assert.strictEqual(data.added.sessionPath, '/added')
+      },
+      {
+        run: () => aliases.deleteAlias('existing'),
+        expected: { success: true, alias: 'existing', deletedSessionPath: '/existing' },
+        verify: data => assert.deepStrictEqual(data, {})
+      },
+      {
+        run: () => aliases.renameAlias('existing', 'renamed'),
+        expected: { success: true, oldAlias: 'existing', newAlias: 'renamed', sessionPath: '/existing' },
+        verify: data => assert.deepStrictEqual(Object.keys(data), ['renamed'])
+      },
+      {
+        run: () => aliases.updateAliasTitle('existing', 'Updated'),
+        expected: { success: true, alias: 'existing', title: 'Updated' },
+        verify: data => assert.strictEqual(data.existing.title, 'Updated')
+      },
+      {
+        run: () => aliases.cleanupAliases(() => false),
+        expected: { success: true, totalChecked: 1, removed: 1,
+          removedAliases: [{ name: 'existing', sessionPath: '/existing' }] },
+        verify: data => assert.deepStrictEqual(data, {})
+      },
+      {
+        run: () => aliases.saveAliases({ aliases: { replacement: { sessionPath: '/replacement' } } }),
+        expected: true,
+        verify: data => assert.deepStrictEqual(data, { replacement: { sessionPath: '/replacement' } })
+      }
+    ];
+    for (const entry of cases) {
+      resetAliases();
+      aliases.setAlias('existing', '/existing');
+      const lockPath = aliases.getAliasesPath() + '.ecc.lock';
+      const originalRename = fs.renameSync;
+      const originalError = console.error;
+      const warnings = [];
+      try {
+        fs.renameSync = function (source) {
+          if (source === lockPath) throw new Error('release denied');
+          return originalRename.apply(this, arguments);
+        };
+        console.error = message => warnings.push(message);
+        assert.deepStrictEqual(entry.run(), entry.expected);
+        entry.verify(aliases.loadAliases().aliases);
+        assert.ok(warnings.some(message => message.includes('release denied')),
+          'A release failure remains visible to the caller');
+      } finally {
+        fs.renameSync = originalRename;
+        console.error = originalError;
+        fs.rmSync(lockPath, { force: true });
+      }
+      assert.strictEqual(aliases.setAlias('after-release-error', '/next').success, true,
+        'The local reentry guard is cleared after a release failure');
+    }
+  })) passed++; else failed++;
+
+  if (test('a release failure preserves the original operation failure result', () => {
+    resetAliases();
+    aliases.setAlias('existing', '/existing');
+    const lockPath = aliases.getAliasesPath() + '.ecc.lock';
+    const originalRename = fs.renameSync;
+    try {
+      fs.renameSync = function (source) {
+        if (source === lockPath) throw new Error('release denied');
+        return originalRename.apply(this, arguments);
+      };
+      assert.deepStrictEqual(aliases.deleteAlias('missing'),
+        { success: false, error: "Alias 'missing' not found" });
+      assert.ok(aliases.resolveAlias('existing'));
+    } finally {
+      fs.renameSync = originalRename;
+      fs.rmSync(lockPath, { force: true });
+    }
+  })) passed++; else failed++;
+
+  if (test('saveAliases replaces its complete snapshot without mutating the caller', () => {
+    resetAliases();
+    aliases.setAlias('existing', '/existing');
+    const snapshot = { aliases: { replacement: { sessionPath: '/replacement' } }, metadata: { caller: true } };
+    const before = JSON.stringify(snapshot);
+    assert.strictEqual(aliases.saveAliases(snapshot), true);
+    assert.strictEqual(JSON.stringify(snapshot), before);
+    assert.deepStrictEqual(Object.keys(aliases.loadAliases().aliases), ['replacement']);
+  })) passed++; else failed++;
+
+  if (origAgentDataHome === undefined) delete process.env.ECC_AGENT_DATA_HOME;
+  else process.env.ECC_AGENT_DATA_HOME = origAgentDataHome;
 
   // Cleanup — restore both HOME and USERPROFILE (Windows)
   process.env.HOME = origHome;

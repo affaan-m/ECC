@@ -141,22 +141,45 @@ function recoverSettingsLock(lockPath, label = 'Claude settings') {
   }
 }
 
-function acquireSettingsLock(settingsPath, { label = 'Claude settings' } = {}) {
-  const lockPath = `${settingsPath}.ecc.lock`;
-  fs.mkdirSync(path.dirname(settingsPath), { recursive: true });
-  try {
-    return createSettingsLock(lockPath, label);
-  } catch (error) {
-    if (!error || error.code !== 'EEXIST') {
-      throw error;
-    }
+/**
+ * Acquire exclusive settings access, optionally waiting for another writer.
+ * A recovery guard (`.ecc.lock.recover`) is never removed by a contender: if its
+ * owner crashes during recovery, inspect and remove the orphaned guard manually
+ * only after confirming no ECC process is active.
+ * @param {string} settingsPath - Settings file protected by the lock
+ * @param {object} options - Diagnostic label and bounded wait duration
+ * @returns {Function} Release callback for the acquired lock
+ */
+function acquireSettingsLock(settingsPath, { label = 'Claude settings', timeoutMs = 0 } = {}) {
+  if (!Number.isFinite(timeoutMs) || timeoutMs < 0) {
+    throw new TypeError('Lock timeoutMs must be a finite non-negative number.');
   }
-  const recovered = recoverSettingsLock(lockPath, label);
-  if (recovered) return recovered;
-  throw new Error(
-    `Another ECC process is updating ${label}: ${settingsPath}. `
-    + `If no ECC process is active, inspect and remove ${lockPath}.`
-  );
+  const lockPath = `${settingsPath}.ecc.lock`;
+  const deadline = performance.now() + timeoutMs;
+  const sleeper = new Int32Array(new SharedArrayBuffer(4));
+  fs.mkdirSync(path.dirname(settingsPath), { recursive: true });
+  while (true) {
+    try {
+      return createSettingsLock(lockPath, label);
+    } catch (error) {
+      if (!error || error.code !== 'EEXIST') throw error;
+    }
+    try {
+      const recovered = recoverSettingsLock(lockPath, label);
+      if (recovered) return recovered;
+    } catch (error) {
+      // A different writer can acquire or release between inspection and recovery.
+      if (!error || (error.code !== 'EEXIST' && !(timeoutMs > 0 && error.code === 'ENOENT'))) throw error;
+    }
+    const remaining = deadline - performance.now();
+    if (remaining <= 0) {
+      throw new Error(
+        `Another ECC process is updating ${label}: ${settingsPath}. `
+        + `If no ECC process is active, inspect and remove ${lockPath}.`
+      );
+    }
+    Atomics.wait(sleeper, 0, 0, Math.min(10, remaining));
+  }
 }
 
 function runWithSettingsLock(settingsPath, callback) {

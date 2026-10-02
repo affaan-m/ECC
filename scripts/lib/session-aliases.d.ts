@@ -84,8 +84,9 @@ export function getAliasesPath(): string;
 export function loadAliases(): AliasStore;
 
 /**
- * Save aliases to disk with atomic write (temp file + rename).
- * Creates backup before writing; restores on failure.
+ * Atomically replace the complete snapshot under the alias transaction lock.
+ * A failed publication leaves the previous snapshot intact. This does not merge
+ * snapshots loaded before locking; use the mutation functions for updates.
  */
 export function saveAliases(aliases: AliasStore): boolean;
 
