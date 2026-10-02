@@ -49,7 +49,7 @@ function usage(exitCode = 0) {
 
 function readValue(args, index, flagName) {
   const value = args[index + 1];
-  if (!value || value.startsWith('--')) {
+  if (!value || value.startsWith('--') || value === '-h') {
     throw new Error(`${flagName} requires a value`);
   }
   return value;
@@ -96,7 +96,7 @@ const VALUE_FLAGS = new Map([
 
 function parseArgs(argv) {
   const args = argv.slice(2);
-  const parsed = {
+  let parsed = {
     command: null, actor: null, branch: null, configPath: null,
     dbPath: null, dryRun: false, help: false, homeDir: null,
     issueNumber: null, json: false, limit: 100, repo: null,
@@ -104,30 +104,40 @@ function parseArgs(argv) {
     positionals: [],
   };
 
-  if (args.includes('--help') || args.includes('-h')) return { ...parsed, help: true };
-
+  let pendingError = null;
   for (let i = 0; i < args.length; i += 1) {
     const arg = args[i];
+    try {
     if (BOOL_FLAGS.has(arg)) {
-      BOOL_FLAGS.get(arg)(parsed);
+      const next = { ...parsed };
+      BOOL_FLAGS.get(arg)(next);
+      parsed = next;
     } else if (VALUE_FLAGS.has(arg)) {
-      VALUE_FLAGS.get(arg)(parsed, readValue(args, i, arg));
-      i += 1;
+      const next = { ...parsed };
+      const valueIndex = i;
+      if (args[i + 1] && !args[i + 1].startsWith('--')) i += 1;
+      const value = readValue(args, valueIndex, arg);
+      VALUE_FLAGS.get(arg)(next, value);
+      parsed = next;
     } else if (!arg.startsWith('-')) {
-      if (!parsed.command) parsed.command = arg;
-      else parsed.positionals.push(arg);
+      parsed = parsed.command
+        ? { ...parsed, positionals: [...parsed.positionals, arg] }
+        : { ...parsed, command: arg };
     } else {
       throw new Error(`Unknown argument: ${arg}`);
     }
+    } catch (error) { pendingError = pendingError || error; }
   }
 
-  if (!parsed.command) parsed.command = 'sync';
+  if (parsed.help) return parsed;
+  if (pendingError) throw pendingError;
+  if (!parsed.command) parsed = { ...parsed, command: 'sync' };
   if (!COMMANDS.has(parsed.command)) throw new Error(`Unknown command: ${parsed.command}`);
   if (parsed.positionals.length > 1) throw new Error('Unexpected positional arguments.');
   if (parsed.positionals.length === 1) {
     const issue = normalizeIssueNumber(parsed.positionals[0]);
     if (parsed.issueNumber !== null && parsed.issueNumber !== issue) throw new Error('Conflicting issue numbers.');
-    parsed.issueNumber = issue;
+    parsed = { ...parsed, issueNumber: issue };
   }
 
   return parsed;

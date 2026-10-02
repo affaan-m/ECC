@@ -54,6 +54,11 @@ test('default sync and help remain available without a command', () => {
   assert.strictEqual(parse('cliam', '--help').help, true);
   assert.strictEqual(parse('claim', '--issue', 'invalid', '-h').help, true);
 });
+test('a short help token consumed as an actor operand is rejected', () => {
+  assert.throws(() => parse('--actor', '-h'), /requires a value/i);
+  assert.strictEqual(parse('--actor', 'existing', '-h').help, true);
+  assert.strictEqual(parse('cliam', '--limit', 'bad', '--help').help, true);
+});
 test('invalid CLI identities and commands fail before local or GitHub writes', () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-coordination-arguments-'));
   try {
