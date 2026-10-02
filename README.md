@@ -67,6 +67,12 @@
 > [!WARNING]
 > **Official sources only.** Install ECC only from verified channels: the GitHub repository [github.com/affaan-m/ECC](https://github.com/affaan-m/ECC), the npm packages [`ecc-universal`](https://www.npmjs.com/package/ecc-universal) and [`ecc-agentshield`](https://www.npmjs.com/package/ecc-agentshield), the [GitHub App](https://github.com/apps/ecc-tools), the plugin slug `ecc@ecc`, and the project website [ecc.tools](https://ecc.tools). Third-party re-uploads and unofficial mirrors are not maintained or reviewed by the project and may contain malware.
 
+## Demo
+
+<a href="assets/ecc-launch.mp4"><img src="assets/ecc-launch.jpg" width="400" alt="ECC launch video"></a>
+
+A 22-second 1:1 launch video with sound ([captions](assets/ecc-launch.srt)). Click the poster to play.
+
 ## Install with Claude Code
 
 Use the [guided setup](#install-ecc) or [native plugin commands](#claude-code-details). Both install the same `ecc@ecc` plugin. Choose one and do not stack a full manual Claude install on top.
