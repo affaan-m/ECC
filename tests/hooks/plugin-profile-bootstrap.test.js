@@ -76,6 +76,26 @@ test('registered SessionStart discovers a plugin cache inside the active profile
   assert.strictEqual(overridden.stdout, 'active-profile', 'explicit ECC flag keeps its established precedence');
 });
 
+test('active-profile hooks discover legacy caches past missing roots and invalid owners', root => {
+  const config = path.join(root, 'active profile');
+  const cache = path.join(config, 'plugins/cache/everything-claude-code/example/old');
+  const defaultProfile = path.join(root, '.claude');
+  for (const directory of [cache, defaultProfile]) {
+    write(directory, 'scripts/lib/utils.js', '');
+    fs.mkdirSync(path.join(directory, 'skills/continuous-learning-v2'), { recursive: true });
+  }
+  write(cache, 'scripts/lib/resolve-ecc-root.js',
+    "exports.resolveEccRoot=()=>require('path').join(require('os').homedir(),'.claude');");
+  write(cache, 'scripts/hooks/plugin-hook-bootstrap.js', "process.stdout.write('active-legacy-cache');");
+  write(config, 'plugins/cache/everything-claude-code/0-not-an-owner', 'unrelated');
+  for (const invalidCurrentCache of [false, true]) {
+    if (invalidCurrentCache) write(config, 'plugins/cache/ecc', 'not a directory');
+    const result = inline(registry.hooks.SessionStart[0].hooks[0].command, environment(root, config));
+    assert.strictEqual(result.status, 0, result.stderr);
+    assert.strictEqual(result.stdout, 'active-legacy-cache');
+  }
+});
+
 test('every registered hook stops before root lookup when plugin automation is disabled', root => {
   for (const command of commands) {
     const result = inline(command, environment(root, path.join(root, 'missing-profile'), {

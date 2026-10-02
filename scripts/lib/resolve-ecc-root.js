@@ -99,33 +99,35 @@ function resolveEccRoot(options = {}) {
 
   // Plugin cache — Claude Code stores marketplace plugins under
   // ~/.claude/plugins/cache/<plugin-name>/<org>/<version>/
-  try {
-    for (const slug of PLUGIN_CACHE_SLUGS) {
-      const cacheBase = path.join(claudeDir, 'plugins', 'cache', slug);
-      const orgDirs = fs.readdirSync(cacheBase, { withFileTypes: true });
+  for (const slug of PLUGIN_CACHE_SLUGS) {
+    const cacheBase = path.join(claudeDir, 'plugins', 'cache', slug);
+    let orgDirs;
+    try {
+      orgDirs = fs.readdirSync(cacheBase, { withFileTypes: true });
+    } catch {
+      // One absent or unreadable cache must not hide the other plugin slug.
+      continue;
+    }
 
-      for (const orgEntry of orgDirs) {
-        if (!orgEntry.isDirectory()) continue;
-        const orgPath = path.join(cacheBase, orgEntry.name);
+    for (const orgEntry of orgDirs) {
+      if (!orgEntry.isDirectory()) continue;
+      const orgPath = path.join(cacheBase, orgEntry.name);
 
-        let versionDirs;
-        try {
-          versionDirs = fs.readdirSync(orgPath, { withFileTypes: true });
-        } catch {
-          continue;
-        }
+      let versionDirs;
+      try {
+        versionDirs = fs.readdirSync(orgPath, { withFileTypes: true });
+      } catch {
+        continue;
+      }
 
-        for (const verEntry of versionDirs) {
-          if (!verEntry.isDirectory()) continue;
-          const candidate = path.join(orgPath, verEntry.name);
-          if (isRoot(candidate)) {
-            return candidate;
-          }
+      for (const verEntry of versionDirs) {
+        if (!verEntry.isDirectory()) continue;
+        const candidate = path.join(orgPath, verEntry.name);
+        if (isRoot(candidate)) {
+          return candidate;
         }
       }
     }
-  } catch {
-    // Plugin cache doesn't exist or isn't readable — continue to fallback
   }
 
   return claudeDir;
@@ -162,7 +164,7 @@ function normalizePluginRootForPlatform(rootDir, platform = process.platform) {
  *   const _r = <paste INLINE_RESOLVE>;
  *   const sm = require(_r + '/scripts/lib/session-manager');
  */
-const INLINE_RESOLVE = `(function(){var p=require('path'),f=require('fs'),o=require('os');var e=process.env.CLAUDE_PLUGIN_ROOT;if(e&&e.trim())return e.trim();var c=process.env.CLAUDE_CONFIG_DIR;var d=c&&c.trim()?p.resolve(c.trim()):p.join(o.homedir(),'.claude');function R(x){return f.existsSync(p.join(x,'scripts','lib','utils.js'))&&f.existsSync(p.join(x,'skills','continuous-learning-v2'))}function L(x){try{var r=require(p.join(x,'scripts','lib','resolve-ecc-root')).resolveEccRoot();return R(r)&&(!p.isAbsolute(p.relative(d,r))&&p.relative(d,r)!=='..'&&!p.relative(d,r).startsWith('..'+p.sep))?r:(R(x)?x:null)}catch(_){return null}}var r=L(d);if(r)return r;var s=['ecc','ecc@ecc','marketplaces/ecc','everything-claude-code','everything-claude-code@everything-claude-code','marketplaces/everything-claude-code'];for(var i=0;i<s.length;i++){r=L(p.join(d,'plugins',s[i]));if(r)return r}try{var g=['ecc','everything-claude-code'];for(var j=0;j<g.length;j++){var c=p.join(d,'plugins','cache',g[j]);var O=f.readdirSync(c);for(var k=0;k<O.length;k++){var q=p.join(c,O[k]);var V=f.readdirSync(q);for(var m=0;m<V.length;m++){r=L(p.join(q,V[m]));if(r)return r}}}}catch(_){}return d})()`;
+const INLINE_RESOLVE = `(function(){var p=require('path'),f=require('fs'),o=require('os');var e=process.env.CLAUDE_PLUGIN_ROOT;if(e&&e.trim())return e.trim();var c=process.env.CLAUDE_CONFIG_DIR;var d=c&&c.trim()?p.resolve(c.trim()):p.join(o.homedir(),'.claude');function R(x){return f.existsSync(p.join(x,'scripts','lib','utils.js'))&&f.existsSync(p.join(x,'skills','continuous-learning-v2'))}function L(x){try{var r=require(p.join(x,'scripts','lib','resolve-ecc-root')).resolveEccRoot();return R(r)&&(!p.isAbsolute(p.relative(d,r))&&p.relative(d,r)!=='..'&&!p.relative(d,r).startsWith('..'+p.sep))?r:(R(x)?x:null)}catch(_){return null}}var r=L(d);if(r)return r;var s=['ecc','ecc@ecc','marketplaces/ecc','everything-claude-code','everything-claude-code@everything-claude-code','marketplaces/everything-claude-code'];for(var i=0;i<s.length;i++){r=L(p.join(d,'plugins',s[i]));if(r)return r}var g=['ecc','everything-claude-code'];for(var j=0;j<g.length;j++){var c=p.join(d,'plugins','cache',g[j]);var O;try{O=f.readdirSync(c)}catch(_){continue}for(var k=0;k<O.length;k++){var q=p.join(c,O[k]);var V;try{V=f.readdirSync(q)}catch(_){continue}for(var m=0;m<V.length;m++){r=L(p.join(q,V[m]));if(r)return r}}}return d})()`;
 
 module.exports = {
   resolveEccRoot,
