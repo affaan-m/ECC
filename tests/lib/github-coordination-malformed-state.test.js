@@ -72,12 +72,18 @@ test('incomplete inline ownership before a later section refuses mutation', () =
   assert.throws(() => extractCoordinationState(body), /coordination/i);
   assert.throws(() => mergeIssueBody({ body }, { owner: 'other' }), /coordination/i);
 });
+test('fenceless inline start before valid metadata refuses mutation', () => {
+  const body = 'Before <!-- ecc-coordination:start --> prose\nno fence here\n'
+    + section('{"owner":"second"}');
+  assert.throws(() => extractCoordinationState(body), /coordination/i);
+  assert.throws(() => mergeIssueBody({ body }, { owner: 'other' }), /coordination/i);
+});
 test('literal markers in prose, fenced examples and JSON notes remain intact', () => {
   for (const policy of [{}, { sectionMarker: 'custom-marker' }]) {
     const marker = policy.sectionMarker || 'ecc-coordination';
     const notes = `Literal <!-- ${marker}:end --> and triple backticks ` + '```';
     const example = '````markdown\n' + renderCoordinationState({ notes: 'example' }, policy) + '\n````';
-    const narrative = `Inline <!-- ${marker}:start --> example\n${example}\n`;
+    const narrative = `Inline \`<!-- ${marker}:start -->\` example\n${example}\n`;
     assert.strictEqual(extractCoordinationState(narrative, policy), null);
     for (const newline of ['\n', '\r\n']) {
       const body = (narrative + renderCoordinationState({ notes, status: 'blocked' }, policy) + '\nAfter section\n').replace(/\n/g, newline);
