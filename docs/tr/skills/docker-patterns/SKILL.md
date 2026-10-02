@@ -149,6 +149,7 @@ services:
 
   db: !reset null
   redis: !reset null
+  mailpit: !reset null
 ```
 
 `!reset` destekleyen güncel bir Docker Compose sürümü kullanın. Yalnızca derleme hedefini değiştirmek temel servisin komutunu, ortamını ve volume bağlarını korur. Üretim imajının CMD komutunu kullanmak için komutu sıfırlayın, geliştirme bağlarını kaldırın ve çalışma ortamını açıkça ayarlayın. Tek başına `volumes: []` devralınan bağları kaldırmaz.

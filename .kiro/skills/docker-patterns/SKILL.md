@@ -153,6 +153,7 @@ services:
 
   db: !reset null
   redis: !reset null
+  mailpit: !reset null
 ```
 
 Use a current Docker Compose release that supports `!reset`. Changing the build target alone keeps the base service command, environment, and volumes. Reset the command to use the production image CMD, remove development mounts, and set the runtime environment explicitly. An empty `volumes: []` alone does not remove inherited mounts.

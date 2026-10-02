@@ -149,6 +149,7 @@ services:
 
   db: !reset null
   redis: !reset null
+  mailpit: !reset null
 ```
 
 Usa una versión actual de Docker Compose compatible con `!reset`. Cambiar solo el destino de compilación conserva el comando, el entorno y los volúmenes del servicio base. Restablece el comando para usar el CMD de la imagen de producción, elimina los montajes de desarrollo y configura el entorno explícitamente. `volumes: []` por sí solo no elimina los montajes heredados.
