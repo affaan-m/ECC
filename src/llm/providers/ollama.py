@@ -2,7 +2,11 @@
 
 from __future__ import annotations
 
+import json
+import logging
 import os
+import urllib.request
+import uuid
 from typing import Any
 
 from llm.core.interface import (
@@ -15,10 +19,34 @@ from llm.core.interface import (
 from llm.core.types import (
     LLMInput,
     LLMOutput,
+    Message,
     ModelInfo,
     ProviderType,
+    Role,
     ToolCall,
 )
+
+logger = logging.getLogger(__name__)
+
+
+def _messages_payload(messages: list[Message]) -> list[dict[str, Any]]:
+    """Serialize messages, naming the tool each tool result answers.
+
+    Ollama correlates a tool result with its call through ``tool_name``; ids
+    are optional on its side, so the name is what keeps several results apart.
+    """
+    names: dict[str, str] = {}
+    payload = []
+    for msg in messages:
+        item = msg.to_dict()
+        for tc in msg.tool_calls or []:
+            names[tc.id] = tc.name
+        if msg.role == Role.TOOL:
+            tool_name = msg.name or names.get(msg.tool_call_id or "")
+            if tool_name:
+                item["tool_name"] = tool_name
+        payload.append(item)
+    return payload
 
 
 class OllamaProvider(LLMProvider):
@@ -35,7 +63,7 @@ class OllamaProvider(LLMProvider):
             ModelInfo(
                 name="llama3.2",
                 provider=ProviderType.OLLAMA,
-                supports_tools=False,
+                supports_tools=True,
                 supports_vision=False,
                 max_tokens=4096,
                 context_window=128000,
@@ -43,7 +71,7 @@ class OllamaProvider(LLMProvider):
             ModelInfo(
                 name="mistral",
                 provider=ProviderType.OLLAMA,
-                supports_tools=False,
+                supports_tools=True,
                 supports_vision=False,
                 max_tokens=4096,
                 context_window=8192,
@@ -57,18 +85,45 @@ class OllamaProvider(LLMProvider):
                 context_window=16384,
             ),
         ]
+        self._tool_support: dict[str, bool] = {}
+
+    def model_supports_tools(self, model: str) -> bool:
+        """Whether ``model`` declares tool support.
+
+        Catalogued models answer from :attr:`ModelInfo.supports_tools`. Any other
+        model is looked up once through ``/api/show``, whose ``capabilities``
+        list is what the installed model itself declares. Only an answered lookup
+        is cached: a failed one counts as no tool support for that request and
+        is retried on the next.
+        """
+        for info in self._models:
+            if info.name == model:
+                return info.supports_tools
+        if model in self._tool_support:
+            return self._tool_support[model]
+        try:
+            req = urllib.request.Request(
+                f"{self.base_url}/api/show",
+                data=json.dumps({"model": model}).encode("utf-8"),
+                headers={"Content-Type": "application/json"},
+            )
+            with urllib.request.urlopen(req, timeout=10) as response:
+                capabilities = json.loads(response.read().decode("utf-8")).get("capabilities") or []
+        except Exception as e:
+            logger.warning("Could not read capabilities for Ollama model '%s': %s", model, type(e).__name__)
+            return False
+        supports_tools = "tools" in capabilities
+        self._tool_support = {**self._tool_support, model: supports_tools}
+        return supports_tools
 
     def generate(self, input: LLMInput) -> LLMOutput:
-        import json
-        import urllib.request
-
         try:
             url = f"{self.base_url}/api/chat"
             model = input.model or self.default_model
 
             payload: dict[str, Any] = {
                 "model": model,
-                "messages": [msg.to_dict() for msg in input.messages],
+                "messages": _messages_payload(input.messages),
                 "stream": False,
             }
             options: dict[str, Any] = {}
@@ -78,6 +133,11 @@ class OllamaProvider(LLMProvider):
                 options["num_predict"] = input.max_tokens
             if options:
                 payload["options"] = options
+            if input.tools:
+                if self.model_supports_tools(model):
+                    payload["tools"] = [tool.to_openai_tool() for tool in input.tools]
+                else:
+                    logger.warning("Ollama model '%s' does not declare tool support; sending no tools", model)
 
             data = json.dumps(payload).encode("utf-8")
             req = urllib.request.Request(url, data=data, headers={"Content-Type": "application/json"})
@@ -91,7 +151,9 @@ class OllamaProvider(LLMProvider):
             if result.get("message", {}).get("tool_calls"):
                 tool_calls = [
                     ToolCall(
-                        id=tc.get("id", ""),
+                        # Native Ollama calls often carry no id; give each one a
+                        # unique id so its result can be matched to it.
+                        id=tc.get("id") or f"call_{uuid.uuid4().hex[:24]}",
                         name=tc.get("function", {}).get("name", ""),
                         arguments=tc.get("function", {}).get("arguments", {}),
                     )

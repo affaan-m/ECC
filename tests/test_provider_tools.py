@@ -1,7 +1,9 @@
+import asyncio
 import json
 import urllib.request
 from io import BytesIO
 from types import SimpleNamespace
+from typing import Any
 
 import pytest
 
@@ -10,6 +12,7 @@ from llm.providers.claude import ClaudeProvider
 from llm.providers.constants import EMPTY_FILTERED_RESPONSE_ERROR
 from llm.providers.ollama import OllamaProvider
 from llm.providers.openai import OpenAIProvider
+from llm.tools import ReActAgent, ToolExecutor, ToolRegistry
 
 
 def _tool() -> ToolDefinition:
@@ -166,6 +169,187 @@ def test_ollama_provider_serializes_generation_options(
     assert output.content == "ok"
     assert output.model == "llama3.2"
     assert output.stop_reason == "stop"
+
+
+class _FakeOllama:
+    """Serves /api/show and replays queued /api/chat replies, recording requests."""
+
+    def __init__(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        replies: list[dict[str, Any]],
+        capabilities: list[str] | None = None,
+    ) -> None:
+        self.replies = list(replies)
+        self.capabilities = capabilities
+        self.chats: list[dict[str, Any]] = []
+        self.shows: list[str] = []
+        monkeypatch.setattr(urllib.request, "urlopen", self.urlopen)
+
+    def urlopen(self, request: urllib.request.Request, timeout: float) -> BytesIO:
+        body = json.loads(request.data)
+        if request.full_url.endswith("/api/show"):
+            self.shows.append(body["model"])
+            if self.capabilities is None:
+                raise OSError("connection refused")
+            return BytesIO(json.dumps({"capabilities": self.capabilities}).encode())
+        self.chats.append(body)
+        return BytesIO(json.dumps(self.replies.pop(0)).encode())
+
+
+def _ollama_tool_calls(*calls: tuple[str, dict[str, Any]]) -> dict[str, Any]:
+    return {
+        "message": {
+            "content": "",
+            "tool_calls": [{"function": {"name": name, "arguments": args}} for name, args in calls],
+        },
+        "done_reason": "stop",
+    }
+
+
+def _ollama_answer(text: str) -> dict[str, Any]:
+    return {"message": {"content": text}, "done_reason": "stop"}
+
+
+def _lookup_tool() -> ToolDefinition:
+    return ToolDefinition(
+        name="lookup",
+        description="Look up a city",
+        parameters={"type": "object", "properties": {"city": {"type": "string"}}},
+    )
+
+
+def test_ollama_provider_serializes_tools_and_parses_tool_calls(monkeypatch: pytest.MonkeyPatch) -> None:
+    server = _FakeOllama(
+        monkeypatch, [_ollama_tool_calls(("search", {"query": "ollama"}))], capabilities=["completion", "tools"]
+    )
+    provider = OllamaProvider(base_url="http://localhost:11434", default_model="qwen3")
+
+    output = provider.generate(LLMInput(messages=[Message(role=Role.USER, content="hi")], tools=[_tool()]))
+
+    assert server.shows == ["qwen3"]
+    assert server.chats[0]["tools"] == [
+        {
+            "type": "function",
+            "function": {
+                "name": "search",
+                "description": "Search",
+                "parameters": {"type": "object", "properties": {"query": {"type": "string"}}},
+                "strict": True,
+            },
+        }
+    ]
+    assert output.has_tool_calls
+    assert output.tool_calls[0].name == "search"
+    assert output.tool_calls[0].arguments == {"query": "ollama"}
+    assert output.tool_calls[0].id
+
+
+@pytest.mark.parametrize(
+    ("model", "capabilities", "expect_tools", "expect_shows"),
+    [
+        ("llama3.2", None, True, []),
+        ("codellama", None, False, []),
+        ("qwen3", ["completion", "tools"], True, ["qwen3"]),
+        ("gemma3", ["completion", "vision"], False, ["gemma3"]),
+        ("unknown", None, False, ["unknown", "unknown"]),
+    ],
+)
+def test_ollama_provider_sends_tools_only_to_models_that_declare_them(
+    monkeypatch: pytest.MonkeyPatch,
+    model: str,
+    capabilities: list[str] | None,
+    expect_tools: bool,
+    expect_shows: list[str],
+) -> None:
+    server = _FakeOllama(monkeypatch, [_ollama_answer("ok"), _ollama_answer("ok")], capabilities=capabilities)
+    provider = OllamaProvider(default_model=model)
+    request = LLMInput(messages=[Message(role=Role.USER, content="hi")], tools=[_tool()])
+
+    provider.generate(request)
+    provider.generate(request)
+
+    assert all(("tools" in chat) is expect_tools for chat in server.chats)
+    # An answered capability lookup is cached per model; a failed one is retried.
+    assert server.shows == expect_shows
+
+
+def test_ollama_provider_retries_capability_lookup_after_a_failure(monkeypatch: pytest.MonkeyPatch) -> None:
+    server = _FakeOllama(monkeypatch, [_ollama_answer("ok"), _ollama_answer("ok"), _ollama_answer("ok")])
+    provider = OllamaProvider(default_model="qwen3")
+    request = LLMInput(messages=[Message(role=Role.USER, content="hi")], tools=[_tool()])
+
+    provider.generate(request)
+    server.capabilities = ["completion", "tools"]
+    provider.generate(request)
+    provider.generate(request)
+
+    assert ["tools" in chat for chat in server.chats] == [False, True, True]
+    assert server.shows == ["qwen3", "qwen3"]
+
+
+def test_ollama_react_agent_correlates_multiple_calls_without_ids(monkeypatch: pytest.MonkeyPatch) -> None:
+    server = _FakeOllama(
+        monkeypatch,
+        [
+            _ollama_tool_calls(("lookup", {"city": "Hefei"}), ("search", {"query": "weather"})),
+            _ollama_answer("Hefei is sunny."),
+        ],
+        capabilities=["completion", "tools"],
+    )
+    registry = ToolRegistry()
+    registry.register(_lookup_tool(), lambda city: f"city={city}")
+    registry.register(_tool(), lambda query: f"query={query}")
+    agent = ReActAgent(OllamaProvider(default_model="qwen3"), ToolExecutor(registry))
+
+    output = asyncio.run(
+        agent.run(
+            LLMInput(
+                messages=[Message(role=Role.USER, content="Weather in Hefei?")],
+                tools=[_lookup_tool(), _tool()],
+            )
+        )
+    )
+
+    assert output.content == "Hefei is sunny."
+    follow_up = server.chats[1]
+    assert "tools" in follow_up
+    assistant, first, second = follow_up["messages"][1:]
+    ids = [call["id"] for call in assistant["tool_calls"]]
+    assert all(ids) and len(set(ids)) == 2
+    assert [call["function"]["name"] for call in assistant["tool_calls"]] == ["lookup", "search"]
+    assert first == {"role": "tool", "content": "city=Hefei", "tool_call_id": ids[0], "tool_name": "lookup"}
+    assert second == {"role": "tool", "content": "query=weather", "tool_call_id": ids[1], "tool_name": "search"}
+
+
+def test_ollama_react_agent_reports_unknown_tool_under_its_own_name(monkeypatch: pytest.MonkeyPatch) -> None:
+    server = _FakeOllama(
+        monkeypatch,
+        [_ollama_tool_calls(("missing", {}), ("search", {"query": "x"})), _ollama_answer("done")],
+        capabilities=["completion", "tools"],
+    )
+    registry = ToolRegistry()
+    registry.register(_tool(), lambda query: f"query={query}")
+    agent = ReActAgent(OllamaProvider(default_model="qwen3"), ToolExecutor(registry))
+
+    asyncio.run(agent.run(LLMInput(messages=[Message(role=Role.USER, content="go")], tools=[_tool()])))
+
+    results = server.chats[1]["messages"][2:]
+    assert [(r["tool_name"], r["content"]) for r in results] == [
+        ("missing", "Error: Tool 'missing' not found"),
+        ("search", "query=x"),
+    ]
+
+
+def test_ollama_react_agent_without_tool_support_answers_directly(monkeypatch: pytest.MonkeyPatch) -> None:
+    server = _FakeOllama(monkeypatch, [_ollama_answer("I cannot call tools.")])
+    agent = ReActAgent(OllamaProvider(default_model="codellama"), ToolExecutor())
+
+    output = asyncio.run(agent.run(LLMInput(messages=[Message(role=Role.USER, content="hi")], tools=[_tool()])))
+
+    assert output.content == "I cannot call tools."
+    assert "tools" not in server.chats[0]
+    assert server.shows == []
 
 
 def test_claude_provider_serializes_tools_for_messages_api():
