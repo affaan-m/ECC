@@ -66,6 +66,12 @@ test('unfinished examples after valid metadata preserve claimable state', () => 
   assert.strictEqual(extractCoordinationState(merged).status, 'claimed');
   assert.ok(merged.includes(example));
 });
+test('incomplete inline ownership before a later section refuses mutation', () => {
+  const body = 'Before <!-- ecc-coordination:start -->\n```json\n{"owner":"first"}\n```\n'
+    + section('{"owner":"second"}');
+  assert.throws(() => extractCoordinationState(body), /coordination/i);
+  assert.throws(() => mergeIssueBody({ body }, { owner: 'other' }), /coordination/i);
+});
 test('literal markers in prose, fenced examples and JSON notes remain intact', () => {
   for (const policy of [{}, { sectionMarker: 'custom-marker' }]) {
     const marker = policy.sectionMarker || 'ecc-coordination';

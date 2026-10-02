@@ -25,13 +25,18 @@ function coordinationSection(body, policy) {
         && delimiter[1].length >= fence.length && !delimiter[2].trim()) fence = null;
       continue;
     }
-    if (delimiter) { fence = delimiter[1]; fenceStart = match.index; continue; }
+    if (delimiter) {
+      if (delimiter[2].trim() === 'json' && boundaries.at(-1)?.kind === 'start') {
+        boundaries.at(-1).hasJsonFence = true;
+      }
+      fence = delimiter[1]; fenceStart = match.index; continue;
+    }
     for (const found of line.matchAll(boundary)) {
       boundaries.push({ kind: found[1], index: match.index + found.index,
         length: found[0].length, standalone: line.trim() === found[0] });
     }
   }
-  boundaries = boundaries.filter((entry, index) => !(entry.kind === 'start' && !entry.standalone
+  boundaries = boundaries.filter((entry, index) => !(entry.kind === 'start' && !entry.standalone && !entry.hasJsonFence
     && boundaries[index + 1]?.kind === 'start'));
   if (fence && boundaries.length !== 2 && new RegExp(boundary.source).test(source.slice(fenceStart))) {
     throw new SyntaxError('Malformed coordination section inside an unclosed fence');
