@@ -102,10 +102,11 @@ export function withAuth(handler: NextApiHandler): NextApiHandler {
     try {
       const user = await verifyToken(token)
       req.user = user
-      return handler(req, res)
     } catch (error) {
       return res.status(401).json({ error: 'Invalid token' })
     }
+
+    return handler(req, res)
   }
 }
 
