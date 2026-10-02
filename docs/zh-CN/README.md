@@ -1,10 +1,10 @@
 **语言：** [English](../../README.md) | [Português (Brasil)](../pt-BR/README.md) | [简体中文](../../README.zh-CN.md) | [繁體中文](../zh-TW/README.md) | [日本語](../ja-JP/README.md) | [한국어](../ko-KR/README.md) | [Türkçe](../tr/README.md) | [Русский](../ru/README.md) | [Tiếng Việt](../vi-VN/README.md) | [ไทย](../th/README.md) | [Українська](../uk-UA/README.md) | [Polski](../pl/README.md)
 
-# Everything Claude Code
+# ECC
 
-[![Stars](https://img.shields.io/github/stars/affaan-m/everything-claude-code?style=flat)](https://github.com/affaan-m/everything-claude-code/stargazers)
-[![Forks](https://img.shields.io/github/forks/affaan-m/everything-claude-code?style=flat)](https://github.com/affaan-m/everything-claude-code/network/members)
-[![Contributors](https://img.shields.io/github/contributors/affaan-m/everything-claude-code?style=flat)](https://github.com/affaan-m/everything-claude-code/graphs/contributors)
+[![Stars](https://img.shields.io/github/stars/affaan-m/ECC?style=flat)](https://github.com/affaan-m/ECC/stargazers)
+[![Forks](https://img.shields.io/github/forks/affaan-m/ECC?style=flat)](https://github.com/affaan-m/ECC/network/members)
+[![Contributors](https://img.shields.io/github/contributors/affaan-m/ECC?style=flat)](https://github.com/affaan-m/ECC/graphs/contributors)
 [![npm ecc-universal](https://img.shields.io/npm/dw/ecc-universal?label=ecc-universal%20weekly%20downloads\&logo=npm)](https://www.npmjs.com/package/ecc-universal)
 [![npm ecc-agentshield](https://img.shields.io/npm/dw/ecc-agentshield?label=ecc-agentshield%20weekly%20downloads\&logo=npm)](https://www.npmjs.com/package/ecc-agentshield)
 [![GitHub App Install](https://img.shields.io/endpoint?url=https%3A%2F%2Fapi.ecc.tools%2Fbadge%2Finstalls&logo=github)](https://github.com/marketplace/ecc-tools)
@@ -81,6 +81,10 @@
 
 ## 最新动态
 
+### v2.2.3 — pi/core 配置与发布可靠性（2026年10月）
+
+`pi/core` 配置现在仅以 ECC 称呼本项目，发布工作流在校验已发布的包之前会等待 npm 最多五分钟。
+
 ### v2.2.2 — 引导式多 Harness 安装（2026年8月）
 
 新增可审查的 Claude Code、Codex 与 Kimi Code 多 Harness 安装流程，并提供同步的 npm 命令入口。
@@ -139,7 +143,7 @@
 
 ### v1.4.1 — 错误修复 (2026年2月)
 
-* **修复了直觉导入内容丢失问题** — `parse_instinct_file()` 在 `/instinct-import` 期间会静默丢弃 frontmatter 之后的所有内容（Action, Evidence, Examples 部分）。已由社区贡献者 @ericcai0814 修复 ([#148](https://github.com/affaan-m/everything-claude-code/issues/148), [#161](https://github.com/affaan-m/everything-claude-code/pull/161))
+* **修复了直觉导入内容丢失问题** — `parse_instinct_file()` 在 `/instinct-import` 期间会静默丢弃 frontmatter 之后的所有内容（Action, Evidence, Examples 部分）。已由社区贡献者 @ericcai0814 修复 ([#148](https://github.com/affaan-m/ECC/issues/148), [#161](https://github.com/affaan-m/ECC/pull/161))
 
 ### v1.4.0 — 多语言规则、安装向导 & PM2 (2026年2月)
 
@@ -163,7 +167,7 @@
 * **会话管理** — `/sessions` 命令用于查看会话历史
 * **持续学习 v2** — 基于直觉的学习，带有置信度评分、导入/导出、进化
 
-完整的更新日志请参见 [Releases](https://github.com/affaan-m/everything-claude-code/releases)。
+完整的更新日志请参见 [Releases](https://github.com/affaan-m/ECC/releases)。
 
 ***
 
@@ -219,8 +223,8 @@ command -v ecc-memory-mcp
 
 ```bash
 # Clone the repo first
-git clone https://github.com/affaan-m/everything-claude-code.git
-cd everything-claude-code
+git clone https://github.com/affaan-m/ECC.git
+cd ECC
 
 # Install dependencies (pick your package manager)
 npm install        # or: pnpm install | yarn install | bun install
@@ -316,7 +320,7 @@ export ECC_DISABLED_HOOKS="pre:bash:tmux-reminder,post:edit:typecheck"
 此仓库是一个 **Claude Code 插件** - 可以直接安装或手动复制组件。
 
 ```
-everything-claude-code/
+ECC/
 |-- .claude-plugin/   # 插件和市场清单
 |   |-- plugin.json         # 插件元数据和组件路径
 |   |-- marketplace.json    # 用于 /plugin marketplace add 的市场目录
@@ -627,7 +631,7 @@ Claude Code v2.1+ **会自动加载** 任何已安装插件中的 `hooks/hooks.j
 重复的钩子文件检测到：./hooks/hooks.json 解析到已加载的文件
 ```
 
-**历史背景：** 这已导致此仓库中多次修复/还原循环（[#29](https://github.com/affaan-m/everything-claude-code/issues/29), [#52](https://github.com/affaan-m/everything-claude-code/issues/52), [#103](https://github.com/affaan-m/everything-claude-code/issues/103)）。Claude Code 版本之间的行为发生了变化，导致了混淆。我们现在有一个回归测试来防止这种情况再次发生。
+**历史背景：** 这已导致此仓库中多次修复/还原循环（[#29](https://github.com/affaan-m/ECC/issues/29), [#52](https://github.com/affaan-m/ECC/issues/52), [#103](https://github.com/affaan-m/ECC/issues/103)）。Claude Code 版本之间的行为发生了变化，导致了混淆。我们现在有一个回归测试来防止这种情况再次发生。
 
 ***
 
@@ -653,7 +657,7 @@ Claude Code v2.1+ **会自动加载** 任何已安装插件中的 `hooks/hooks.j
     "ecc": {
       "source": {
         "source": "github",
-        "repo": "affaan-m/everything-claude-code"
+        "repo": "affaan-m/ECC"
       }
     }
   },
@@ -669,20 +673,20 @@ Claude Code v2.1+ **会自动加载** 任何已安装插件中的 `hooks/hooks.j
 >
 > ```bash
 > # 首先克隆仓库
-> git clone https://github.com/affaan-m/everything-claude-code.git
+> git clone https://github.com/affaan-m/ECC.git
 >
 > # 选项 A：用户级规则（适用于所有项目）
 > mkdir -p ~/.claude/rules
-> cp -r everything-claude-code/rules/common ~/.claude/rules/common
-> cp -r everything-claude-code/rules/typescript ~/.claude/rules/typescript   # 选择您的技术栈
-> cp -r everything-claude-code/rules/python ~/.claude/rules/python
-> cp -r everything-claude-code/rules/golang ~/.claude/rules/golang
-> cp -r everything-claude-code/rules/php ~/.claude/rules/php
+> cp -r ECC/rules/common ~/.claude/rules/common
+> cp -r ECC/rules/typescript ~/.claude/rules/typescript   # 选择您的技术栈
+> cp -r ECC/rules/python ~/.claude/rules/python
+> cp -r ECC/rules/golang ~/.claude/rules/golang
+> cp -r ECC/rules/php ~/.claude/rules/php
 >
 > # 选项 B：项目级规则（仅适用于当前项目）
 > mkdir -p .claude/rules
-> cp -r everything-claude-code/rules/common .claude/rules/common
-> cp -r everything-claude-code/rules/typescript .claude/rules/typescript     # 选择您的技术栈
+> cp -r ECC/rules/common .claude/rules/common
+> cp -r ECC/rules/typescript .claude/rules/typescript     # 选择您的技术栈
 > ```
 
 ***
@@ -693,32 +697,32 @@ Claude Code v2.1+ **会自动加载** 任何已安装插件中的 `hooks/hooks.j
 
 ```bash
 # Clone the repo
-git clone https://github.com/affaan-m/everything-claude-code.git
+git clone https://github.com/affaan-m/ECC.git
 
 # Copy agents to your Claude config
-cp everything-claude-code/agents/*.md ~/.claude/agents/
+cp ECC/agents/*.md ~/.claude/agents/
 
 # Copy rules (common + language-specific)
-cp -r everything-claude-code/rules/common ~/.claude/rules/common
-cp -r everything-claude-code/rules/typescript ~/.claude/rules/typescript   # pick your stack
-cp -r everything-claude-code/rules/python ~/.claude/rules/python
-cp -r everything-claude-code/rules/golang ~/.claude/rules/golang
-cp -r everything-claude-code/rules/php ~/.claude/rules/php
+cp -r ECC/rules/common ~/.claude/rules/common
+cp -r ECC/rules/typescript ~/.claude/rules/typescript   # pick your stack
+cp -r ECC/rules/python ~/.claude/rules/python
+cp -r ECC/rules/golang ~/.claude/rules/golang
+cp -r ECC/rules/php ~/.claude/rules/php
 
 # Copy maintained commands
-cp everything-claude-code/commands/*.md ~/.claude/commands/
+cp ECC/commands/*.md ~/.claude/commands/
 
 # Retired shims live in legacy-command-shims/commands/.
 # Copy individual files from there only if you still need old names such as /tdd.
 
 # Copy skills (core vs niche)
 # Recommended (new users): core/general skills only
-cp -r everything-claude-code/.agents/skills/* ~/.claude/skills/
-cp -r everything-claude-code/skills/search-first ~/.claude/skills/
+cp -r ECC/.agents/skills/* ~/.claude/skills/
+cp -r ECC/skills/search-first ~/.claude/skills/
 
 # Optional: add niche/framework-specific skills only when needed
 # for s in django-patterns django-tdd laravel-patterns springboot-patterns quarkus-patterns; do
-# cp -r everything-claude-code/skills/$s ~/.claude/skills/
+# cp -r ECC/skills/$s ~/.claude/skills/
 # done
 ```
 
@@ -863,7 +867,7 @@ e2e-testing 技能                              → e2e-runner: 关键用户流�
 <details>
 <summary><b>我的钩子不工作 / 我看到“重复钩子文件”错误</b></summary>
 
-这是最常见的问题。**不要在 `.claude-plugin/plugin.json` 中添加 `"hooks"` 字段。** Claude Code v2.1+ 会自动从已安装的插件加载 `hooks/hooks.json`。显式声明它会导致重复检测错误。参见 [#29](https://github.com/affaan-m/everything-claude-code/issues/29), [#52](https://github.com/affaan-m/everything-claude-code/issues/52), [#103](https://github.com/affaan-m/everything-claude-code/issues/103)。
+这是最常见的问题。**不要在 `.claude-plugin/plugin.json` 中添加 `"hooks"` 字段。** Claude Code v2.1+ 会自动从已安装的插件加载 `hooks/hooks.json`。显式声明它会导致重复检测错误。参见 [#29](https://github.com/affaan-m/ECC/issues/29), [#52](https://github.com/affaan-m/ECC/issues/52), [#103](https://github.com/affaan-m/ECC/issues/103)。
 
 </details>
 
@@ -918,10 +922,10 @@ claude
 
 ```bash
 # Just agents
-cp everything-claude-code/agents/*.md ~/.claude/agents/
+cp ECC/agents/*.md ~/.claude/agents/
 
 # Just rules
-cp -r everything-claude-code/rules/common ~/.claude/rules/common
+cp -r ECC/rules/common ~/.claude/rules/common
 ```
 
 每个组件都是完全独立的。
@@ -935,7 +939,7 @@ cp -r everything-claude-code/rules/common ~/.claude/rules/common
 
 * **Cursor**: 预翻译的配置位于 `.cursor/`。参见 [Cursor IDE 支持](#cursor-ide-支持)。
 * **OpenCode**: `.opencode/` 中的完整插件支持。参见 [OpenCode 支持](#opencode-支持)。
-* **Codex**: 对 macOS 应用和 CLI 的一流支持，带有适配器漂移防护和 SessionStart 回退。参见 PR [#257](https://github.com/affaan-m/everything-claude-code/pull/257)。
+* **Codex**: 对 macOS 应用和 CLI 的一流支持，带有适配器漂移防护和 SessionStart 回退。参见 PR [#257](https://github.com/affaan-m/ECC/pull/257)。
 * **Antigravity**: 为工作流、技能和扁平化规则紧密集成的设置，位于 `.agents/`。参见 [Antigravity 指南](../ANTIGRAVITY-GUIDE.md)。
 * **Claude Code**: 原生支持 — 这是主要目标。
 
@@ -1111,7 +1115,7 @@ Codex macOS 应用：
 | documentation-lookup | 通过 Context7 MCP 获取最新库和框架文档 |
 | e2e-testing | Playwright 端到端测试 |
 | eval-harness | 评估驱动的开发 |
-| everything-claude-code | ECC 项目的开发约定和模式 |
+| ecc-conventions | ECC 项目的开发约定和模式 |
 | exa-search | 通过 Exa MCP 进行网络、代码和公司研究 |
 | fal-ai-media | 图像、视频和音频的统一媒体生成 |
 | frontend-patterns | React/Next.js 模式 |
@@ -1239,7 +1243,7 @@ OpenCode 的插件系统比 Claude Code 更复杂，有 20 多种事件类型：
 **选项 1：直接使用**
 
 ```bash
-cd everything-claude-code
+cd ECC
 opencode
 ```
 
@@ -1292,7 +1296,7 @@ ECC 是**第一个最大化利用每个主要 AI 编码工具的插件**。以�
 | **上下文文件** | CLAUDE.md + AGENTS.md | AGENTS.md | AGENTS.md | AGENTS.md |
 | **秘密检测** | 基于钩子                  | beforeSubmitPrompt 钩子 | 基于沙箱 | 基于钩子 |
 | **自动格式化** | PostToolUse 钩子        | afterFileEdit 钩子 | N/A | file.edited 钩子 |
-| **版本** | 插件 | 插件 | 参考配置 | 2.2.2 |
+| **版本** | 插件 | 插件 | 参考配置 | 2.2.3 |
 
 **关键架构决策：**
 
@@ -1428,7 +1432,7 @@ ECC 是**第一个最大化利用每个主要 AI 编码工具的插件**。以�
 
 ## Star 历史
 
-[![Star History Chart](https://api.star-history.com/svg?repos=affaan-m/everything-claude-code\&type=Date)](https://star-history.com/#affaan-m/everything-claude-code\&Date)
+[![Star History Chart](https://api.star-history.com/svg?repos=affaan-m/ECC\&type=Date)](https://star-history.com/#affaan-m/ECC\&Date)
 
 ***
 

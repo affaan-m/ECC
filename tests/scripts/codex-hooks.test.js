@@ -1167,7 +1167,7 @@ if (
       assert.strictEqual(syncResult.status, 0, `${syncResult.stdout}\n${syncResult.stderr}`);
 
       const syncedAgents = fs.readFileSync(agentsPath, 'utf8');
-      assert.match(syncedAgents, /^# Everything Claude Code \(ECC\) — Agent Instructions/m);
+      assert.match(syncedAgents, /^# ECC — Agent Instructions/m);
       assert.match(syncedAgents, /^# Codex Supplement \(From ECC \.codex\/AGENTS\.md\)/m);
 
       const syncedConfig = fs.readFileSync(configPath, 'utf8');

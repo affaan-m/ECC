@@ -172,7 +172,7 @@ const descChars = skillDescriptions.reduce((n, d) => n + d.length, 0);
 
 fs.writeFileSync(path.join(tmpDir, 'README.md'), `# ecc-pi-core
 
-A curated, Pi-native profile of ECC (Everything Claude Code): ${skillCount} portable
+A curated, Pi-native profile of ECC: ${skillCount} portable
 engineering skills and ${commandCount} pure prompt-workflow commands, with no extensions,
 no hooks, no runtime downloads, and no network or SaaS dependencies.
 

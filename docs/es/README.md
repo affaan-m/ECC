@@ -1372,8 +1372,8 @@ Este proyecto es gratuito y de código abierto. Los patrocinadores ayudan a mant
 
 ## Enlaces
 
-- **Guía Resumida (Empieza aquí):** [La Guía Resumida de Everything Claude Code](https://x.com/affaanmustafa/status/2012378465664745795)
-- **Guía Extensa (Avanzado):** [La Guía Extensa de Everything Claude Code](https://x.com/affaanmustafa/status/2014040193557471352)
+- **Guía Resumida (Empieza aquí):** [La Guía Resumida de ECC](https://x.com/affaanmustafa/status/2012378465664745795)
+- **Guía Extensa (Avanzado):** [La Guía Extensa de ECC](https://x.com/affaanmustafa/status/2014040193557471352)
 - **Guía de Seguridad:** [Guía de Seguridad](../../the-security-guide.md) | [Hilo](https://x.com/affaanmustafa/status/2033263813387223421)
 - **Seguir:** [@affaanmustafa](https://x.com/affaanmustafa)
 

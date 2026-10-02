@@ -86,12 +86,12 @@ Dieses Repo enthält ausschließlich den rohen Code. Die Leitfäden erklären al
 <tr>
 <td width="33%">
 <a href="https://x.com/affaanmustafa/status/2012378465664745795">
-<img src="../../assets/images/guides/shorthand-guide.png" alt="The Shorthand Guide to Everything Claude Code" />
+<img src="../../assets/images/guides/shorthand-guide.png" alt="The Shorthand Guide to ECC" />
 </a>
 </td>
 <td width="33%">
 <a href="https://x.com/affaanmustafa/status/2014040193557471352">
-<img src="../../assets/images/guides/longform-guide.png" alt="The Longform Guide to Everything Claude Code" />
+<img src="../../assets/images/guides/longform-guide.png" alt="The Longform Guide to ECC" />
 </a>
 </td>
 <td width="33%">
@@ -1348,7 +1348,7 @@ Kanonische Anthropic-Skills wie `claude-api`, `frontend-design` und `skill-creat
 | documentation-lookup | Aktuelle Bibliotheks- und Framework-Dokumentation über Context7 MCP |
 | e2e-testing | Playwright-E2E-Tests |
 | eval-harness | Eval-getriebene Entwicklung |
-| everything-claude-code | Entwicklungskonventionen und -Patterns für das Projekt |
+| ecc-conventions | Entwicklungskonventionen und -Patterns für das Projekt |
 | exa-search | Neural Search über Exa MCP für Web-, Code-, Unternehmensrecherche |
 | fal-ai-media | Vereinheitlichte Mediengenerierung für Bilder, Video und Audio |
 | frontend-patterns | React-/Next.js-Patterns |
@@ -1747,8 +1747,8 @@ Dieses Projekt ist kostenlos und Open Source. Sponsoren helfen, es gepflegt und 
 
 ## Links
 
-- **Kurzleitfaden (Hier starten):** [The Shorthand Guide to Everything Claude Code](https://x.com/affaanmustafa/status/2012378465664745795)
-- **Langleitfaden (fortgeschritten):** [The Longform Guide to Everything Claude Code](https://x.com/affaanmustafa/status/2014040193557471352)
+- **Kurzleitfaden (Hier starten):** [The Shorthand Guide to ECC](https://x.com/affaanmustafa/status/2012378465664745795)
+- **Langleitfaden (fortgeschritten):** [The Longform Guide to ECC](https://x.com/affaanmustafa/status/2014040193557471352)
 - **Security-Leitfaden:** [Security-Leitfaden](../../the-security-guide.md) | [Thread](https://x.com/affaanmustafa/status/2033263813387223421)
 - **Folgen:** [@affaanmustafa](https://x.com/affaanmustafa)
 
