@@ -365,7 +365,7 @@ Vite 8 uses Oxc for JavaScript transforms and Rolldown for dependency optimizati
 New builds produce new chunk hashes. Users with active sessions may request deleted filenames. Vite emits `vite:preloadError` for failed dynamic imports; handle that event with an application recovery policy. It does not restore deleted assets automatically. Mitigations:
 
 - Keep old `dist/assets/` files live for a deployment window
-- Handle `vite:preloadError` (or router import errors) with a recovery prompt or controlled reload; serve HTML with `Cache-Control: no-cache` so recovery can obtain the current asset references
+- Handle `vite:preloadError` with a recovery prompt or controlled reload. If the handler takes ownership of recovery, call `event.preventDefault()` to suppress Vite rethrowing the import error, and guard against repeated reloads when the asset remains unavailable. Handle router import errors through the router's error API. Serve HTML with `Cache-Control: no-cache` so recovery can obtain the current asset references
 
 #### Docker and Containers
 
