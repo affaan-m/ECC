@@ -70,10 +70,11 @@ if (app()->environment('production')) {
     request()->server->set('HTTPS', 'on');
 }
 
-// config/app.php for trusted proxies (load balancers)
-// Use specific IP ranges — * trusts all, allowing X-Forwarded-* spoofing
-// AWS: '10.0.0.0/8', '172.16.0.0/12', '192.168.0.0/16'
-'trusted_proxies' => ['10.0.0.0/8', '172.16.0.0/12'],
+// Laravel 11/12: inside bootstrap/app.php's existing withMiddleware callback.
+// $middleware is an Illuminate\Foundation\Configuration\Middleware instance.
+// Replace these documentation IPs with your load balancer's actual IPs/CIDRs.
+// Use only trusted proxy addresses; '*' trusts every calling proxy.
+$middleware->trustProxies(at: ['192.0.2.10', '192.0.2.11']);
 
 // Force HTTPS in production via middleware
 // app/Http/Middleware/ForceHttps.php
