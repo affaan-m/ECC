@@ -180,6 +180,46 @@ function runTests() {
     assert.strictEqual(result.code, 1);
     assert.ok(result.stderr.includes('Unknown argument'));
   })) passed++; else failed++;
+  if (test('accepts an existing leading-dash config but never consumes known flags', () => {
+    const fs = require('fs');
+    const directory = fs.mkdtempSync(path.join(require('os').tmpdir(), 'ecc-plan-dash-'));
+    try {
+      fs.writeFileSync(path.join(directory, '--custom.json'), JSON.stringify({ version: 1, profile: 'core', target: 'cursor' }));
+      const result = run(['--config', '--custom.json', '--json'], { cwd: directory });
+      assert.strictEqual(result.code, 0, result.stderr);
+      assert.strictEqual(JSON.parse(result.stdout).profileId, 'core');
+      fs.writeFileSync(path.join(directory, '--json'), '{}');
+      assert.strictEqual(run(['--config', '--json'], { cwd: directory }).code, 1);
+      assert.strictEqual(run(['--config', '--missing.json'], { cwd: directory }).code, 1);
+    } finally { fs.rmSync(directory, { recursive: true, force: true }); }
+  })) passed++; else failed++;
+
+  if (test('rejects missing option values before printing a default plan', () => {
+    for (const flag of ['--family', '--profile', '--modules', '--with', '--without',
+      '--skill', '--skills', '--config', '--target']) {
+      for (const suffix of [[], ['--json'], ['-h']]) {
+        const result = run(['--profile', 'core', flag, ...suffix]);
+        assert.strictEqual(result.code, 1, `${flag} ${suffix}: ${result.stdout}`);
+        assert.ok(result.stderr.includes(`Missing value for ${flag}`), result.stderr);
+        assert.strictEqual(result.stdout, '');
+      }
+      if (flag !== '--with' && flag !== '--without') {
+        for (const value of ['', '   ']) {
+          const result = run(['--profile', 'core', flag, value]);
+          assert.strictEqual(result.code, 1);
+          assert.ok(result.stderr.includes(`Missing value for ${flag}`), result.stderr);
+        }
+      }
+    }
+  })) passed++; else failed++;
+
+  if (test('preserves explicitly empty component overrides as no-ops', () => {
+    const result = run(['--profile', 'core', '--with', '', '--without', '   ', '--json']);
+    assert.strictEqual(result.code, 0, result.stderr);
+    const parsed = JSON.parse(result.stdout);
+    assert.deepStrictEqual(parsed.includedComponentIds, []);
+    assert.deepStrictEqual(parsed.excludedComponentIds, []);
+  })) passed++; else failed++;
 
   if (test('fails on invalid install target', () => {
     const result = run(['--profile', 'core', '--target', 'not-a-target']);

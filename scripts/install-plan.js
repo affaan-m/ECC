@@ -15,6 +15,10 @@ const {
 } = require('./lib/install/config');
 const { normalizeInstallRequest } = require('./lib/install/request');
 const { describeMissingDependencyError } = require('./lib/missing-dependency');
+const fs = require('fs');
+const KNOWN_FLAGS = new Set(['--help', '-h', '--json', '--list-profiles', '--list-modules',
+  '--list-components', '--family', '--profile', '--modules', '--with', '--skill',
+  '--skills', '--without', '--config', '--target']);
 
 function showHelp() {
   console.log(`
@@ -49,7 +53,16 @@ Options:
 
 function parseArgs(argv) {
   const args = argv.slice(2);
-  const parsed = {
+  function requiredValue(index, allowEmpty = false) {
+    const value = args[index + 1];
+    if (value === undefined || (!allowEmpty && !value.trim())
+      || (value.startsWith('--') && !(args[index] === '--config'
+        && !KNOWN_FLAGS.has(value) && fs.existsSync(value))) || value === '-h') {
+      throw new Error(`Missing value for ${args[index]}`);
+    }
+    return value;
+  }
+  let parsed = {
     json: false,
     help: false,
     profileId: null,
@@ -72,45 +85,45 @@ function parseArgs(argv) {
   for (let index = 0; index < args.length; index += 1) {
     const arg = args[index];
     if (arg === '--help' || arg === '-h') {
-      parsed.help = true;
+      parsed = { ...parsed, help: true };
     } else if (arg === '--json') {
-      parsed.json = true;
+      parsed = { ...parsed, json: true };
     } else if (arg === '--list-profiles') {
-      parsed.listProfiles = true;
+      parsed = { ...parsed, listProfiles: true };
     } else if (arg === '--list-modules') {
-      parsed.listModules = true;
+      parsed = { ...parsed, listModules: true };
     } else if (arg === '--list-components') {
-      parsed.listComponents = true;
+      parsed = { ...parsed, listComponents: true };
     } else if (arg === '--family') {
-      parsed.family = args[index + 1] || null;
+      parsed = { ...parsed, family: requiredValue(index) };
       index += 1;
     } else if (arg === '--profile') {
-      parsed.profileId = args[index + 1] || null;
+      parsed = { ...parsed, profileId: requiredValue(index) };
       index += 1;
     } else if (arg === '--modules') {
-      const raw = args[index + 1] || '';
-      parsed.moduleIds = raw.split(',').map(value => value.trim()).filter(Boolean);
+      const raw = requiredValue(index);
+      parsed = { ...parsed, moduleIds: raw.split(',').map(value => value.trim()).filter(Boolean) };
       index += 1;
     } else if (arg === '--with') {
-      const componentId = args[index + 1] || '';
+      const componentId = requiredValue(index, true);
       if (componentId.trim()) {
-        parsed.includeComponentIds.push(componentId.trim());
+        parsed = { ...parsed, includeComponentIds: [...parsed.includeComponentIds, componentId.trim()] };
       }
       index += 1;
     } else if (arg === '--skill' || arg === '--skills') {
-      parsed.includeComponentIds.push(...normalizeSkillComponentIds(args[index + 1] || ''));
+      parsed = { ...parsed, includeComponentIds: [...parsed.includeComponentIds, ...normalizeSkillComponentIds(requiredValue(index))] };
       index += 1;
     } else if (arg === '--without') {
-      const componentId = args[index + 1] || '';
+      const componentId = requiredValue(index, true);
       if (componentId.trim()) {
-        parsed.excludeComponentIds.push(componentId.trim());
+        parsed = { ...parsed, excludeComponentIds: [...parsed.excludeComponentIds, componentId.trim()] };
       }
       index += 1;
     } else if (arg === '--config') {
-      parsed.configPath = args[index + 1] || null;
+      parsed = { ...parsed, configPath: requiredValue(index) };
       index += 1;
     } else if (arg === '--target') {
-      parsed.target = args[index + 1] || null;
+      parsed = { ...parsed, target: requiredValue(index) };
       index += 1;
     } else {
       throw new Error(`Unknown argument: ${arg}`);

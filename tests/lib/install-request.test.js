@@ -95,6 +95,20 @@ function runTests() {
     );
   })) passed++; else failed++;
 
+  if (test('rejects missing values before normalizing an install request', () => {
+    const flags = ['--target', '--config', '--profile', '--modules', '--with',
+      '--without', '--skill', '--skills', '--locale'];
+    for (const flag of flags) {
+      for (const following of [[], ['--dry-run'], ['--no-hooks'], ['--help'], ['-h']]) {
+        assert.throws(
+          () => parseInstallArgs(['node', 'scripts/install-apply.js', '--profile', 'core', flag, ...following]),
+          error => error.message === `Missing value for ${flag}`,
+          `${flag} followed by ${JSON.stringify(following)} must fail before installation`
+        );
+      }
+    }
+  })) passed++; else failed++;
+
   if (test('normalizes legacy language installs into a canonical request', () => {
     const request = normalizeInstallRequest({
       target: 'claude',
