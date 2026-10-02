@@ -276,6 +276,7 @@ pytest --cov=src --cov-branch
 
 ```python
 import pytest
+import pytest_asyncio
 
 @pytest.mark.asyncio
 async def test_async_fetch_user():
@@ -283,7 +284,7 @@ async def test_async_fetch_user():
     user = await fetch_user("1")
     assert user.name == "Alice"
 
-@pytest.fixture
+@pytest_asyncio.fixture
 async def async_client():
     """Async fixture"""
     client = AsyncClient()

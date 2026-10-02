@@ -400,7 +400,9 @@ async def test_async_function():
 ### Fixture Async
 
 ```python
-@pytest.fixture
+import pytest_asyncio
+
+@pytest_asyncio.fixture
 async def async_client():
     """Fixture async que proporciona cliente de prueba async."""
     app = create_app()
