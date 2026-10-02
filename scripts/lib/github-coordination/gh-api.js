@@ -12,8 +12,9 @@ function normalizeRepo(repo) {
 }
 
 function normalizeIssueNumber(value) {
-  const parsed = Number.parseInt(String(value), 10);
-  if (!Number.isFinite(parsed) || parsed <= 0) {
+  const text = String(value);
+  const parsed = Number(text);
+  if (!/^\d+$/.test(text) || !Number.isSafeInteger(parsed) || parsed <= 0) {
     throw new Error(`Invalid issue number: ${value}`);
   }
   return parsed;

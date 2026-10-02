@@ -39,7 +39,7 @@ function usage(exitCode = 0) {
     '  --config <path>          Optional coordination policy config',
     '  --db <path>              SQLite state store path',
     '  --home <dir>             Override home directory used by the state store',
-    '  --limit <n>              Limit issues scanned by sync/unblock',
+    '  --limit <n>              Positive issue scan limit for sync/unblock (default: 100)',
     '  --dry-run                Preview changes without modifying GitHub or state',
     '  --json                   Emit machine-readable JSON',
     '  --help, -h               Show this help',
@@ -49,10 +49,21 @@ function usage(exitCode = 0) {
 
 function readValue(args, index, flagName) {
   const value = args[index + 1];
-  if (!value || value.startsWith('--')) {
+  if (!value || value.startsWith('-')) {
     throw new Error(`${flagName} requires a value`);
   }
   return value;
+}
+
+const COMMANDS = new Set(['claim', 'sync', 'validate', 'publish', 'review', 'unblock', 'decompose']);
+
+function normalizeLimit(value) {
+  const text = String(value);
+  const limit = Number(text);
+  if (!/^\d+$/.test(text) || !Number.isSafeInteger(limit) || limit <= 0) {
+    throw new Error(`Invalid limit: ${value}. Expected a positive safe integer.`);
+  }
+  return limit;
 }
 
 // Boolean flags: map flag string → setter(parsed)
@@ -75,13 +86,17 @@ const VALUE_FLAGS = new Map([
   ['--review',        (p, v) => { p.review = v; }],
   ['--status',        (p, v) => { p.status = v; }],
   ['--project-state', (p, v) => { p.projectState = v; }],
-  ['--issue',         (p, v) => { p.issueNumber = normalizeIssueNumber(v); }],
-  ['--limit',         (p, v) => { p.limit = normalizeIssueNumber(v); }],
+  ['--issue',         (p, v) => {
+    const issue = normalizeIssueNumber(v);
+    if (p.issueNumber !== null && p.issueNumber !== issue) throw new Error('Conflicting issue numbers.');
+    p.issueNumber = issue;
+  }],
+  ['--limit',         (p, v) => { p.limit = normalizeLimit(v); }],
 ]);
 
 function parseArgs(argv) {
   const args = argv.slice(2);
-  const parsed = {
+  let parsed = {
     command: null, actor: null, branch: null, configPath: null,
     dbPath: null, dryRun: false, help: false, homeDir: null,
     issueNumber: null, json: false, limit: 100, repo: null,
@@ -89,27 +104,40 @@ function parseArgs(argv) {
     positionals: [],
   };
 
-  if (args.length > 0 && !args[0].startsWith('-')) {
-    parsed.command = args.shift();
-  }
-
+  let pendingError = null;
   for (let i = 0; i < args.length; i += 1) {
     const arg = args[i];
+    try {
     if (BOOL_FLAGS.has(arg)) {
-      BOOL_FLAGS.get(arg)(parsed);
+      const next = { ...parsed };
+      BOOL_FLAGS.get(arg)(next);
+      parsed = next;
     } else if (VALUE_FLAGS.has(arg)) {
-      VALUE_FLAGS.get(arg)(parsed, readValue(args, i, arg));
-      i += 1;
+      const next = { ...parsed };
+      const valueIndex = i;
+      if (args[i + 1] && !args[i + 1].startsWith('-')) i += 1;
+      const value = readValue(args, valueIndex, arg);
+      VALUE_FLAGS.get(arg)(next, value);
+      parsed = next;
     } else if (!arg.startsWith('-')) {
-      parsed.positionals.push(arg);
+      parsed = parsed.command !== null
+        ? { ...parsed, positionals: [...parsed.positionals, arg] }
+        : { ...parsed, command: arg };
     } else {
       throw new Error(`Unknown argument: ${arg}`);
     }
+    } catch (error) { pendingError = pendingError || error; }
   }
 
-  if (!parsed.command) parsed.command = 'sync';
-  if (!parsed.issueNumber && parsed.positionals.length > 0) {
-    parsed.issueNumber = normalizeIssueNumber(parsed.positionals[0]);
+  if (parsed.help) return parsed;
+  if (pendingError) throw pendingError;
+  if (parsed.command === null) parsed = { ...parsed, command: 'sync' };
+  if (!COMMANDS.has(parsed.command)) throw new Error(`Unknown command: ${parsed.command}`);
+  if (parsed.positionals.length > 1) throw new Error('Unexpected positional arguments.');
+  if (parsed.positionals.length === 1) {
+    const issue = normalizeIssueNumber(parsed.positionals[0]);
+    if (parsed.issueNumber !== null && parsed.issueNumber !== issue) throw new Error('Conflicting issue numbers.');
+    parsed = { ...parsed, issueNumber: issue };
   }
 
   return parsed;

@@ -94,7 +94,7 @@ async function runTests() {
   let failed = 0;
 
   if (
-    await test('claims an epic issue, updates GitHub state, and caches a work item', async () => {
+    await test('claims an epic with leading flags, updates GitHub state, and caches a work item', async () => {
       const rootDir = createTempDir('github-coordination-claim-');
       const dbPath = path.join(rootDir, 'state.db');
 
@@ -114,7 +114,7 @@ async function runTests() {
           'issue view 12 --repo affaan-m/ECC --json number,title,body,url,state,labels,author,updatedAt,assignees': issueView
         });
 
-        const result = run(['claim', '12', '--repo', 'affaan-m/ECC', '--actor', 'codex', '--db', dbPath, '--json'], {
+        const result = run(['--repo', 'affaan-m/ECC', '--issue', '12', 'claim', '--actor', 'codex', '--db', dbPath, '--json'], {
           cwd: rootDir,
           env: {
             ECC_GH_SHIM: shim.shimPath,
