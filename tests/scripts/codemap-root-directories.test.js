@@ -19,6 +19,8 @@ for (const fixture of [
   { name: 'root directories', prefix: '', expected: 1 },
   { name: 'nested directories', prefix: 'src/', expected: 1 },
   { name: 'similar directory names', prefix: 'my', expected: 0 },
+  { name: 'root framework API routes', prefix: '', expected: 1, apiRoutes: true },
+  { name: 'nested framework API routes', prefix: 'src/', expected: 1, apiRoutes: true },
 ]) {
   const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-codemap-'));
   const root = path.join(temp, 'project');
@@ -31,12 +33,26 @@ for (const fixture of [
       fs.mkdirSync(directory, { recursive: true });
       fs.writeFileSync(path.join(directory, 'index.js'), 'module.exports = {};\n');
     }
+    const apiFiles = ['app/api/route.ts', 'app/api/users/route.ts', 'pages/api/users.ts'];
+    if (fixture.apiRoutes) {
+      for (const file of [...apiFiles, 'app/page.tsx', 'pages/home.tsx']) {
+        const fullPath = path.join(root, fixture.prefix + file);
+        fs.mkdirSync(path.dirname(fullPath), { recursive: true });
+        fs.writeFileSync(fullPath, 'export default function handler() {}\n');
+      }
+    }
     const result = spawnSync(process.execPath, [script], { cwd: root, encoding: 'utf8' });
     assert.strictEqual(result.status, 0, result.stderr);
     for (const [area, dir] of Object.entries(areas)) {
       const doc = fs.readFileSync(path.join(root, 'docs/CODEMAPS', area + '.md'), 'utf8');
-      assert.ok(doc.includes(`**Total Files:** ${fixture.expected}`), `${area}: wrong file count`);
+      const expected = fixture.expected + (fixture.apiRoutes ? (area === 'backend' ? 3 : area === 'frontend' ? 2 : 0) : 0);
+      assert.ok(doc.includes(`**Total Files:** ${expected}`), `${area}: wrong file count`);
       if (fixture.expected) assert.ok(doc.includes(`${fixture.prefix}${dir}/index.js`), `${area}: missing module`);
+      if (fixture.apiRoutes && ['frontend', 'backend'].includes(area)) {
+        for (const file of apiFiles) {
+          assert.strictEqual(doc.includes(`${fixture.prefix}${file}`), area === 'backend', `${file}: wrong area`);
+        }
+      }
     }
     passed += 1;
     console.log(`PASS ${fixture.name}`);

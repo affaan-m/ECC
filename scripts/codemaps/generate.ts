@@ -115,6 +115,11 @@ function classifyFiles(allFiles: string[]): Record<string, AreaInfo> {
 
   for (const file of allFiles) {
     const relPath = rel(file);
+    // Framework API directories are backend even beneath frontend app/pages roots.
+    if (/(?:^|\/)(app|pages)\/api\//i.test(relPath)) {
+      areas.backend.files.push(relPath);
+      continue;
+    }
     for (const [area, patterns] of Object.entries(AREA_PATTERNS)) {
       if (patterns.some((p) => p.test(relPath))) {
         areas[area].files.push(relPath);
