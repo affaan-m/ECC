@@ -365,9 +365,9 @@ track $index) {
 ### Disabling Form Button
 
 ```html
-<button [disabled]="form().invalid() || form().pending()" />
+<button [disabled]="userForm().invalid() || userForm().pending()" />
 <!-- Or -->
-<button [disabled]="taxForm().invalid()" />
+<button [disabled]="userForm().invalid()" />
 ```
 
 Do NOT use `[disabled]` on an input. `[formField]` will do this.
