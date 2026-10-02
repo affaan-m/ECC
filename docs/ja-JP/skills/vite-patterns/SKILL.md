@@ -384,11 +384,15 @@ server: {
 
 ```typescript
 // vite.config.ts — モノレポのファイルアクセス
-server: {
-  fs: {
-    allow: ['..'],                             // 親ディレクトリを明示指定。ワークスペースの自動検出を上書き
+import { defineConfig, searchForWorkspaceRoot } from 'vite'
+
+export default defineConfig({
+  server: {
+    fs: {
+      allow: [searchForWorkspaceRoot(process.cwd()), '..'],
+    },
   },
-}
+})
 ```
 
 ### アンチパターン

@@ -385,11 +385,15 @@ With `server.fs.strict`, Vite defaults to the detected workspace root, falling b
 
 ```typescript
 // vite.config.ts — monorepo file access
-server: {
-  fs: {
-    allow: ['..'],                             // explicit parent only; overrides automatic workspace detection
+import { defineConfig, searchForWorkspaceRoot } from 'vite'
+
+export default defineConfig({
+  server: {
+    fs: {
+      allow: [searchForWorkspaceRoot(process.cwd()), '..'],
+    },
   },
-}
+})
 ```
 
 ### Anti-Patterns
