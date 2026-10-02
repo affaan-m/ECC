@@ -34,7 +34,8 @@ function resolveSessionsDir(options = {}, context = {}) {
     return path.resolve(explicit);
   }
 
-  return path.join(os.homedir(), '.codex', 'sessions');
+  const codexHome = process.env.CODEX_HOME || path.join(os.homedir(), '.codex');
+  return path.resolve(codexHome, 'sessions');
 }
 
 function isRolloutFile(filePath) {

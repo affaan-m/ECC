@@ -195,6 +195,52 @@ test('parseCodexRollout: model fallbacks, objective truncation, corrupt-line ski
   assert.strictEqual(parsed.active, true, 'no record timestamps => falls back to (recent) file mtime');
 });
 
+test('adapter discovers sessions in CODEX_HOME and preserves explicit override precedence', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-codex-home-'));
+  const originalHome = process.env.CODEX_HOME;
+  const originalSessions = process.env.CODEX_SESSIONS_DIR;
+  const originalHomedir = os.homedir;
+  try {
+    const nativeHome = path.join(root, 'native');
+    const customHome = path.join(root, 'custom codex home');
+    const roots = {
+      options: path.join(root, 'options'),
+      context: path.join(root, 'context'),
+      environment: path.join(root, 'environment'),
+      custom: path.join(customHome, 'sessions'),
+      default: path.join(nativeHome, '.codex', 'sessions'),
+    };
+    for (const [id, directory] of Object.entries(roots)) {
+      fs.mkdirSync(directory, { recursive: true });
+      writeRollout(directory, `rollout-${id}.jsonl`, [
+        { type: 'session_meta', payload: { id, cwd: root } },
+      ]);
+    }
+    os.homedir = () => nativeHome;
+    process.env.CODEX_HOME = customHome;
+    process.env.CODEX_SESSIONS_DIR = roots.environment;
+    const snapshot = (options = {}, context = {}) => createCodexWorktreeAdapter({
+      persistSnapshots: false, resolveBranchImpl: () => null, ...options,
+    }).open('codex:latest', { cwd: root, ...context }).getSnapshot();
+
+    assert.strictEqual(snapshot({ sessionsDir: roots.options }, { codexSessionsDir: roots.context }).session.id, 'options');
+    assert.strictEqual(snapshot({}, { codexSessionsDir: roots.context }).session.id, 'context');
+    assert.strictEqual(snapshot().session.id, 'environment');
+    delete process.env.CODEX_SESSIONS_DIR;
+    assert.strictEqual(snapshot().session.id, 'custom');
+    assert.strictEqual(snapshot().workers[0].artifacts.sessionFile, path.join(roots.custom, 'rollout-custom.jsonl'));
+    delete process.env.CODEX_HOME;
+    assert.strictEqual(snapshot().session.id, 'default');
+  } finally {
+    os.homedir = originalHomedir;
+    if (originalHome === undefined) delete process.env.CODEX_HOME;
+    else process.env.CODEX_HOME = originalHome;
+    if (originalSessions === undefined) delete process.env.CODEX_SESSIONS_DIR;
+    else process.env.CODEX_SESSIONS_DIR = originalSessions;
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test('resolveGitBranch returns null when cwd is not a git repo (real path)', () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-codex-nogit-'));
   const fp = path.join(dir, 'rollout-2026-06-02T03-00-00-019eNOGIT00003.jsonl');
