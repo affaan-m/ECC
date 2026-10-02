@@ -11,6 +11,10 @@ compares the decisions. `tests/hooks/gateguard-scenarios.test.js` replays the
 same corpus against the working tree only and fails if any step's decision
 changes.
 
+This checks which questions the gate asks, not whether asking them changes
+what an agent does; [question-effectiveness.md](question-effectiveness.md)
+measures that with real sessions on trapped tasks.
+
 ## What is measured
 
 Every step of a scenario is one hook call. The corpus author labels each step
