@@ -115,7 +115,7 @@ function parseArgs(argv) {
     } else if (VALUE_FLAGS.has(arg)) {
       const next = { ...parsed };
       const valueIndex = i;
-      if (args[i + 1] && !args[i + 1].startsWith('--')) i += 1;
+      if (args[i + 1] && !args[i + 1].startsWith('-')) i += 1;
       const value = readValue(args, valueIndex, arg);
       VALUE_FLAGS.get(arg)(next, value);
       parsed = next;

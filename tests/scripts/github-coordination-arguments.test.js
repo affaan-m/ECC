@@ -56,8 +56,9 @@ test('default sync and help remain available without a command', () => {
   assert.strictEqual(parse('cliam', '--help').help, true);
   assert.strictEqual(parse('claim', '--issue', 'invalid', '-h').help, true);
 });
-test('a short help token consumed as an actor operand is rejected', () => {
-  assert.throws(() => parse('--actor', '-h'), /requires a value/i);
+test('short help remains a flag after an incomplete value option', () => {
+  assert.strictEqual(parse('--actor', '-h').help, true);
+  assert.strictEqual(parse('claim', '--issue', '-h').help, true);
   assert.throws(() => parse('--actor', '-x'), /requires a value/i);
   assert.strictEqual(parse('--actor', 'existing', '-h').help, true);
   assert.strictEqual(parse('cliam', '--limit', 'bad', '--help').help, true);
@@ -79,7 +80,7 @@ test('invalid CLI identities and commands fail before local or GitHub writes', (
       assert.ok(!fs.existsSync(db), 'invalid input must not create or migrate the database');
       assert.ok(!fs.existsSync(log), 'invalid input must not call GitHub');
     }
-    for (const args of [['cliam', '--help'], ['claim', '--issue', 'invalid', '-h']]) {
+    for (const args of [['cliam', '--help'], ['claim', '--issue', 'invalid', '-h'], ['claim', '--issue', '-h']]) {
       const result = spawnSync(process.execPath, [path.resolve(__dirname, '../../scripts/github-coordination.js'),
         ...args, '--repo', 'o/r', '--db', db], {
         cwd: root, env: { ...process.env, ECC_GH_SHIM: shim, ECC_ARGUMENT_LOG: log },
