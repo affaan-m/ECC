@@ -889,6 +889,14 @@ fn pruning_cache_link_is_shared(
     )? {
         return Ok(false);
     }
+    let record = cache_link_record_path(worktree, strategy.dir_name)?;
+    let expected = cache_link_identity(&worktree.path.join(strategy.dir_name))?;
+    match fs::read_to_string(record) {
+        Ok(identity) if identity == expected => {}
+        Ok(_) => return Ok(false),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(false),
+        Err(error) => return Err(error.into()),
+    }
     if dependency_fingerprint(root, &strategy.fingerprint_files)?
         != dependency_fingerprint(&worktree.path, &strategy.fingerprint_files)?
     {
@@ -1394,7 +1402,50 @@ fn sync_shared_dependency_dir(
             worktree.path.display()
         )
     })?;
+    fs::write(
+        cache_link_record_path(worktree, strategy.dir_name)?,
+        cache_link_identity(&worktree_dir)?,
+    )
+    .context("Failed to record the newly created dependency link")?;
     Ok(true)
+}
+
+fn cache_link_record_path(worktree: &WorktreeInfo, name: &str) -> Result<PathBuf> {
+    let output = Command::new("git")
+        .arg("-C")
+        .arg(&worktree.path)
+        .args(["rev-parse", "--absolute-git-dir"])
+        .output()?;
+    if !output.status.success() {
+        anyhow::bail!("Failed to locate worktree-private Git metadata");
+    }
+    let directory = std::str::from_utf8(&output.stdout)?.trim();
+    Ok(PathBuf::from(directory).join(format!("ecc-cache-{name}.ownership")))
+}
+
+#[cfg(unix)]
+fn cache_link_identity(path: &Path) -> Result<String> {
+    use std::os::unix::fs::MetadataExt;
+    let metadata = fs::symlink_metadata(path)?;
+    Ok(format!(
+        "{}:{}:{}:{}",
+        metadata.dev(),
+        metadata.ino(),
+        metadata.ctime(),
+        metadata.ctime_nsec()
+    ))
+}
+
+#[cfg(windows)]
+fn cache_link_identity(path: &Path) -> Result<String> {
+    use std::os::windows::fs::MetadataExt;
+    let metadata = fs::symlink_metadata(path)?;
+    Ok(format!(
+        "{}:{}:{}",
+        metadata.creation_time(),
+        metadata.last_write_time(),
+        metadata.file_attributes()
+    ))
 }
 
 fn dependency_fingerprint(root: &Path, files: &[&str]) -> Result<String> {
@@ -1712,6 +1763,7 @@ mod tests {
             base_branch: "main".into(),
         };
         assert!(!has_local_content_for_pruning(&worktree)?);
+
         fs::write(repo.join("child/README.md"), "retain submodule changes")?;
         assert!(has_local_content_for_pruning(&worktree)?);
         Ok(())
@@ -2685,6 +2737,20 @@ mod tests {
             .file_type()
             .is_symlink());
         assert_eq!(fs::read_link(&node_modules)?, repo.join("node_modules"));
+        assert!(!has_local_content_for_pruning(&worktree)?);
+        let ownership = cache_link_record_path(&worktree, "node_modules")?;
+        let identity = fs::read_to_string(&ownership)?;
+        fs::remove_file(&ownership)?;
+        assert!(
+            has_local_content_for_pruning(&worktree)?,
+            "unrecorded user links are local content"
+        );
+        fs::write(&ownership, "different link identity")?;
+        assert!(
+            has_local_content_for_pruning(&worktree)?,
+            "recreated links must remain protected"
+        );
+        fs::write(&ownership, identity)?;
         assert!(!has_local_content_for_pruning(&worktree)?);
 
         remove(&worktree)?;
