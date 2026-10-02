@@ -77,6 +77,7 @@ XDEBUG_MODE=coverage php artisan test --coverage
 CI 示例（格式化 -> 静态分析 -> 测试）：
 
 ```bash
+set -e
 vendor/bin/pint --test
 vendor/bin/phpstan analyse
 XDEBUG_MODE=coverage php artisan test --coverage
@@ -148,6 +149,7 @@ php artisan queue:work --once --queue=healthcheck
 最小流程：
 
 ```bash
+set -e
 php -v
 composer --version
 php artisan --version
@@ -164,6 +166,7 @@ php artisan queue:failed
 CI 风格流水线：
 
 ```bash
+set -e
 composer validate
 composer dump-autoload -o
 vendor/bin/pint --test
