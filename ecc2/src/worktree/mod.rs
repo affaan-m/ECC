@@ -849,6 +849,28 @@ pub fn has_uncommitted_changes(worktree: &WorktreeInfo) -> Result<bool> {
     Ok(!git_status_short(&worktree.path)?.is_empty())
 }
 
+/// Automatic removal must also preserve ignored local files.
+pub fn has_local_content_for_pruning(worktree: &WorktreeInfo) -> Result<bool> {
+    let output = Command::new("git")
+        .arg("-C")
+        .arg(&worktree.path)
+        .args([
+            "status",
+            "--porcelain=v1",
+            "--untracked-files=all",
+            "--ignored",
+        ])
+        .output()
+        .context("Failed to inspect worktree before automatic pruning")?;
+    if !output.status.success() {
+        anyhow::bail!(
+            "Git pruning status failed: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+    Ok(!output.stdout.is_empty())
+}
+
 pub fn has_staged_changes(worktree: &WorktreeInfo) -> Result<bool> {
     Ok(git_status_entries(worktree)?
         .iter()
@@ -1443,7 +1465,7 @@ fn git_status_short(worktree_path: &Path) -> Result<Vec<String>> {
     let output = Command::new("git")
         .arg("-C")
         .arg(worktree_path)
-        .args(["status", "--short"])
+        .args(["status", "--short", "--untracked-files=all"])
         .output()
         .context("Failed to generate worktree status preview")?;
 

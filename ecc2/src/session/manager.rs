@@ -2068,7 +2068,14 @@ pub async fn prune_inactive_worktrees(
 
         // Automatic pruning must not discard unsaved work or interpret an unknown
         // Git state as clean. Explicit cleanup remains a separate user action.
-        match crate::worktree::has_uncommitted_changes(worktree) {
+        let worktree = worktree.clone();
+        let status = tokio::task::spawn_blocking(move || {
+            crate::worktree::has_local_content_for_pruning(&worktree)
+        })
+        .await
+        .context("Worktree pruning status worker failed")
+        .and_then(|result| result);
+        match status {
             Ok(false) => {}
             Ok(true) => {
                 retained_session_ids.push(session.id);
@@ -2150,11 +2157,26 @@ pub fn build_merge_queue(db: &StateStore) -> Result<MergeQueueReport> {
             continue;
         };
 
-        let worktree_health = worktree::health(&worktree)?;
-        let dirty = worktree::has_uncommitted_changes(&worktree)?;
+        let inspection = worktree::health(&worktree).and_then(|health| {
+            worktree::has_uncommitted_changes(&worktree).map(|dirty| (health, dirty))
+        });
+        let (worktree_health, dirty, inspection_error) = match inspection {
+            Ok((health, dirty)) => (health, dirty, None),
+            Err(error) => (worktree::WorktreeHealth::InProgress, true, Some(error)),
+        };
         let mut blocked_by = Vec::new();
 
-        if matches!(
+        if let Some(error) = inspection_error {
+            blocked_by.push(MergeQueueBlocker {
+                session_id: session.id.clone(),
+                branch: worktree.branch.clone(),
+                state: session.state.clone(),
+                conflicts: Vec::new(),
+                summary: format!("worktree inspection failed: {error}"),
+                conflicting_patch_preview: None,
+                blocker_patch_preview: None,
+            });
+        } else if matches!(
             session.state,
             SessionState::Pending
                 | SessionState::Running
@@ -6107,79 +6129,141 @@ mod tests {
         Ok(())
     }
 
-    #[tokio::test(flavor = "current_thread")]
-    async fn prune_inactive_worktrees_preserves_dirty_active_and_unknown_work() -> Result<()> {
-        let tempdir = TestDir::new("manager-prune-safety")?;
-        let repo_root = tempdir.path().join("repo");
-        init_git_repo(&repo_root)?;
-        let cfg = build_config(tempdir.path());
-        let db = StateStore::open(&cfg.db_path)?;
-        let now = Utc::now();
-        for (id, state, pid) in [
-            ("dirty", SessionState::Stopped, None),
-            ("stale", SessionState::Stale, None),
-            ("tracked", SessionState::Failed, Some(31337)),
-            ("unknown", SessionState::Stopped, None),
-            ("clean", SessionState::Stopped, None),
-        ] {
-            let worktree = crate::worktree::create_for_session_in_repo(id, &cfg, &repo_root)?;
-            if id == "dirty" {
+    fn insert_pruning_fixture(
+        db: &StateStore,
+        cfg: &Config,
+        repo_root: &Path,
+        id: &str,
+        state: SessionState,
+        pid: Option<u32>,
+    ) -> Result<()> {
+        let worktree = crate::worktree::create_for_session_in_repo(id, cfg, repo_root)?;
+        match id {
+            "dirty" => {
                 fs::write(worktree.path.join("uncommitted.txt"), "unsaved work\n")?;
                 fs::write(
                     worktree.path.join("README.md"),
                     "uncommitted tracked edit\n",
                 )?;
             }
-            if id == "unknown" {
-                fs::remove_file(worktree.path.join(".git"))?;
-            }
-            db.insert_session(&Session {
-                id: id.to_string(),
-                task: "prune fixture".to_string(),
-                project: "fixture".to_string(),
-                task_group: "fixture".to_string(),
-                agent_type: "claude".to_string(),
-                working_dir: worktree.path.clone(),
-                state,
-                pid,
-                worktree: Some(worktree),
-                created_at: now,
-                updated_at: now,
-                last_heartbeat_at: now,
-                metrics: SessionMetrics::default(),
-            })?;
+            "untracked" => fs::write(worktree.path.join("uncommitted.txt"), "unsaved work\n")?,
+            "ignored" => fs::write(worktree.path.join(".env"), "retain local configuration\n")?,
+            "unknown" => fs::rename(
+                worktree.path.join(".git"),
+                worktree.path.join(".git-unavailable"),
+            )?,
+            _ => {}
+        }
+        let now = Utc::now();
+        db.insert_session(&Session {
+            id: id.to_string(),
+            task: "prune fixture".to_string(),
+            project: "fixture".to_string(),
+            task_group: "fixture".to_string(),
+            agent_type: "claude".to_string(),
+            working_dir: worktree.path.clone(),
+            state,
+            pid,
+            worktree: Some(worktree),
+            created_at: now,
+            updated_at: now,
+            last_heartbeat_at: now,
+            metrics: SessionMetrics::default(),
+        })?;
+        Ok(())
+    }
+
+    fn assert_retained_pruning_fixture(db: &StateStore, id: &str) -> Result<()> {
+        let session = db.get_session(id)?.context("retained session")?;
+        let worktree = session.worktree.context("retained worktree metadata")?;
+        assert!(worktree.path.is_dir(), "{id} worktree must remain");
+        if id == "tracked" {
+            assert_eq!(session.pid, Some(31337));
+            assert_eq!(session.state, SessionState::Failed);
+        }
+        if id == "dirty" || id == "untracked" {
+            assert_eq!(
+                fs::read_to_string(worktree.path.join("uncommitted.txt"))?,
+                "unsaved work\n"
+            );
+        }
+        if id == "dirty" {
+            assert_eq!(
+                fs::read_to_string(worktree.path.join("README.md"))?,
+                "uncommitted tracked edit\n"
+            );
+        }
+        if id == "ignored" {
+            assert_eq!(
+                fs::read_to_string(worktree.path.join(".env"))?,
+                "retain local configuration\n"
+            );
+        }
+        Ok(())
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn prune_inactive_worktrees_preserves_dirty_active_and_unknown_work() -> Result<()> {
+        let tempdir = TestDir::new("manager-prune-safety")?;
+        let repo_root = tempdir.path().join("repo");
+        init_git_repo(&repo_root)?;
+        run_git(&repo_root, ["config", "status.showUntrackedFiles", "no"])?;
+        fs::write(repo_root.join(".git/info/exclude"), ".env\n")?;
+        let cfg = build_config(tempdir.path());
+        let db = StateStore::open(&cfg.db_path)?;
+        for (id, state, pid) in [
+            ("dirty", SessionState::Stopped, None),
+            ("untracked", SessionState::Stopped, None),
+            ("ignored", SessionState::Stopped, None),
+            ("stale", SessionState::Stale, None),
+            ("tracked", SessionState::Failed, Some(31337)),
+            ("unknown", SessionState::Stopped, None),
+            ("clean", SessionState::Stopped, None),
+        ] {
+            insert_pruning_fixture(&db, &cfg, &repo_root, id, state, pid)?;
         }
         let outcome = prune_inactive_worktrees(&db, &cfg).await?;
         assert_eq!(outcome.cleaned_session_ids, vec!["clean"]);
-        for id in ["dirty", "stale", "tracked", "unknown"] {
-            let session = db.get_session(id)?.context("retained session")?;
-            let worktree = session.worktree.context("retained worktree metadata")?;
-            assert!(worktree.path.is_dir(), "{id} worktree must remain");
-            if id == "tracked" {
-                assert_eq!(session.pid, Some(31337));
-                assert_eq!(session.state, SessionState::Failed);
-            }
-            if id == "dirty" {
-                assert_eq!(
-                    fs::read_to_string(worktree.path.join("uncommitted.txt"))?,
-                    "unsaved work\n"
-                );
-                assert_eq!(
-                    fs::read_to_string(worktree.path.join("README.md"))?,
-                    "uncommitted tracked edit\n"
-                );
-            }
+        for id in [
+            "dirty",
+            "untracked",
+            "ignored",
+            "stale",
+            "tracked",
+            "unknown",
+        ] {
+            assert_retained_pruning_fixture(&db, id)?;
         }
-        assert!(outcome.retained_session_ids.contains(&"dirty".to_string()));
-        assert!(outcome
-            .retained_session_ids
-            .contains(&"unknown".to_string()));
-        assert!(outcome
-            .active_with_worktree_ids
-            .contains(&"stale".to_string()));
-        assert!(outcome
-            .active_with_worktree_ids
-            .contains(&"tracked".to_string()));
+        for id in ["dirty", "untracked", "ignored", "unknown"] {
+            assert!(outcome.retained_session_ids.contains(&id.to_string()));
+        }
+        for id in ["stale", "tracked"] {
+            assert!(outcome.active_with_worktree_ids.contains(&id.to_string()));
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn build_merge_queue_retains_an_unknown_worktree_without_aborting() -> Result<()> {
+        let tempdir = TestDir::new("manager-merge-unknown")?;
+        let repo_root = tempdir.path().join("repo");
+        init_git_repo(&repo_root)?;
+        let cfg = build_config(tempdir.path());
+        let db = StateStore::open(&cfg.db_path)?;
+        for id in ["unknown", "clean"] {
+            insert_pruning_fixture(&db, &cfg, &repo_root, id, SessionState::Stopped, None)?;
+        }
+        let queue = build_merge_queue(&db)?;
+        assert_eq!(queue.ready_entries.len(), 1);
+        assert_eq!(queue.ready_entries[0].session_id, "clean");
+        assert_eq!(queue.blocked_entries.len(), 1);
+        let unknown = &queue.blocked_entries[0];
+        assert_eq!(unknown.session_id, "unknown");
+        assert!(unknown.dirty);
+        assert!(!unknown.ready_to_merge);
+        assert!(unknown.suggested_action.contains("inspection failed"));
+        assert!(!can_auto_rebase_merge_queue_entry(unknown));
+        assert_retained_pruning_fixture(&db, "unknown")?;
         Ok(())
     }
 
