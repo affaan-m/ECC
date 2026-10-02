@@ -33,34 +33,56 @@ function usage() {
     '  node scripts/session-inspect.js latest --target-type claude-history',
     '  node scripts/session-inspect.js skills:health',
     '  node scripts/session-inspect.js skills:amendify --skill api-design',
-    '  node scripts/session-inspect.js claude:a1b2c3d4 --write /tmp/session.json'
+    '  node scripts/session-inspect.js claude:a1b2c3d4 --write /tmp/session.json',
+    '  Prefix new leading-dash filenames with ./ (for example ./--snapshot.json).'
   ].join('\n'));
 }
 
 function parseArgs(argv) {
   const args = argv.slice(2);
-  const target = args.find(argument => !argument.startsWith('--'));
-  const listAdapters = args.includes('--list-adapters');
+  let parsed = {
+    target: null,
+    adapterId: null,
+    targetType: null,
+    writePath: null,
+    listAdapters: false,
+    skillId: null,
+    amendmentId: null,
+    observationsPath: null
+  };
+  const valueOptions = new Map([
+    ['--adapter', 'adapterId'],
+    ['--target-type', 'targetType'],
+    ['--skill', 'skillId'],
+    ['--amendment-id', 'amendmentId'],
+    ['--observations', 'observationsPath'],
+    ['--write', 'writePath']
+  ]);
+  const knownOptions = new Set([...valueOptions.keys(), '--list-adapters']);
 
-  const adapterIndex = args.indexOf('--adapter');
-  const adapterId = adapterIndex >= 0 ? args[adapterIndex + 1] : null;
+  for (let index = 0; index < args.length; index += 1) {
+    const arg = args[index];
+    if (valueOptions.has(arg)) {
+      const value = args[index + 1];
+      const existingPath = ['--write', '--observations'].includes(arg)
+        && value && fs.existsSync(value);
+      if (!value || knownOptions.has(value) || (value.startsWith('--') && !existingPath)) {
+        throw new Error(`Missing value for ${arg}`);
+      }
+      parsed = { ...parsed, [valueOptions.get(arg)]: value };
+      index += 1;
+    } else if (arg === '--list-adapters') {
+      parsed = { ...parsed, listAdapters: true };
+    } else if (arg.startsWith('--')) {
+      throw new Error(`Unknown argument: ${arg}`);
+    } else if (parsed.target !== null) {
+      throw new Error('Only one target may be provided');
+    } else {
+      parsed = { ...parsed, target: arg };
+    }
+  }
 
-  const targetTypeIndex = args.indexOf('--target-type');
-  const targetType = targetTypeIndex >= 0 ? args[targetTypeIndex + 1] : null;
-
-  const skillIndex = args.indexOf('--skill');
-  const skillId = skillIndex >= 0 ? args[skillIndex + 1] : null;
-
-  const amendmentIndex = args.indexOf('--amendment-id');
-  const amendmentId = amendmentIndex >= 0 ? args[amendmentIndex + 1] : null;
-
-  const observationsIndex = args.indexOf('--observations');
-  const observationsPath = observationsIndex >= 0 ? args[observationsIndex + 1] : null;
-
-  const writeIndex = args.indexOf('--write');
-  const writePath = writeIndex >= 0 ? args[writeIndex + 1] : null;
-
-  return { target, adapterId, targetType, writePath, listAdapters, skillId, amendmentId, observationsPath };
+  return parsed;
 }
 
 function inspectSkillLoopTarget(target, options = {}) {
