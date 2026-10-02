@@ -46,6 +46,7 @@ function writeEnglishReadme(root, counts, options = {}) {
   fs.writeFileSync(path.join(root, 'README.md'), `Access to ${counts.agents} agents, ${counts.skills} skills, and ${counts.commands} commands.
 - **Public surface synced to the live repo** - metadata, catalog counts, plugin manifests, and install-facing docs now match the actual OSS surface: ${counts.agents} agents, ${counts.skills} skills, and ${counts.commands} legacy command shims.
 |-- agents/           # ${counts.agents} specialized subagents for delegation
+|-- skills/           # ${counts.skills} reusable workflows loaded on demand
 | Feature | Claude Code | Cursor IDE | Codex CLI | OpenCode |
 | --- | --- | --- | --- | --- |
 | Agents | PASS: ${tableCounts.agents} agents |
@@ -196,6 +197,52 @@ function runTests() {
 
   let passed = 0;
   let failed = 0;
+
+  if (test('checks and repairs every README project-tree count', () => {
+    const testDir = createTestDir();
+    try {
+      writeCatalogFixture(testDir);
+      const readmePath = path.join(testDir, 'README.md');
+      fs.appendFileSync(readmePath, '\n|-- agents/ # 9 specialized subagents for delegation\n|-- skills/ # 8 reusable workflows loaded on demand\n');
+      const mismatches = runCatalogCheck({ root: testDir }).checks.filter(check => !check.ok);
+      assert.deepStrictEqual(mismatches.map(check => [check.category, check.expected]), [['agents', 9], ['skills', 8]]);
+      assert.ok(runCatalogCheck({ root: testDir, writeMode: true }).checks.every(check => check.ok));
+      const repaired = fs.readFileSync(readmePath, 'utf8');
+      assert.ok(repaired.includes('|-- agents/ # 1 specialized subagents for delegation'));
+      assert.ok(repaired.includes('|-- skills/ # 1 reusable workflows loaded on demand'));
+    } finally {
+      cleanupTestDir(testDir);
+    }
+  })) passed++; else failed++;
+
+  if (test('checks and repairs repeated English and Chinese structure entries', () => {
+    const testDir = createTestDir();
+    try {
+      writeCatalogFixture(testDir);
+      fs.appendFileSync(path.join(testDir, 'AGENTS.md'), '\r\nagents/ - 1 specialized subagents\r\n  agents/ - 9 specialized subagents\r\nskills/ - 1 workflow skills and domain knowledge\r\n  skills/ - 8 workflow skills and domain knowledge\r\ncommands/ - 1 slash commands\r\n  commands/ - 7 slash commands\r\n');
+      fs.appendFileSync(path.join(testDir, 'docs', 'zh-CN', 'AGENTS.md'), '\nagents/ - 9 个专业子代理\nskills/ - 8 个工作流技能和领域知识\ncommands/ - 7 个斜杠命令\n');
+      const mismatches = runCatalogCheck({ root: testDir }).checks.filter(check => !check.ok);
+      assert.strictEqual(mismatches.length, 6);
+      assert.ok(runCatalogCheck({ root: testDir, writeMode: true }).checks.every(check => check.ok));
+      assert.ok(runCatalogCheck({ root: testDir }).checks.every(check => check.ok));
+    } finally {
+      cleanupTestDir(testDir);
+    }
+  })) passed++; else failed++;
+
+  if (test('requires the README skills tree marker', () => {
+    const testDir = createTestDir();
+    try {
+      writeCatalogFixture(testDir);
+      const readmePath = path.join(testDir, 'README.md');
+      const readme = fs.readFileSync(readmePath, 'utf8').replace(/^\|-- skills\/.*\n/m, '');
+      fs.writeFileSync(readmePath, readme);
+      assert.throws(() => runCatalogCheck({ root: testDir }), /project tree.*skills/);
+      assert.throws(() => runCatalogCheck({ root: testDir, writeMode: true }), /project tree.*skills/);
+    } finally {
+      cleanupTestDir(testDir);
+    }
+  })) passed++; else failed++;
 
   if (test('builds catalog counts from a supplied root', () => {
     const testDir = createTestDir();
