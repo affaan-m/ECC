@@ -328,7 +328,7 @@ data:
   db-password: czNjcjN0  # base64 of 's3cr3t'
 ```
 
-> **Important:** Base64 encoding does not provide confidentiality. Configure and verify [Kubernetes encryption at rest](https://kubernetes.io/docs/tasks/administer-cluster/encrypt-data/) for stored Secrets. [Sealed Secrets](https://github.com/bitnami/sealed-secrets) encrypts manifests that can be stored in version control; [External Secrets Operator](https://external-secrets.io/latest/introduction/overview/) synchronizes values from an external secret manager. Both controllers create ordinary Kubernetes Secrets, so neither replaces cluster encryption at rest or appropriate access controls.
+> **Important:** Base64 encoding does not provide confidentiality. Configure and verify [Kubernetes encryption at rest](https://github.com/kubernetes/website/blob/main/content/en/docs/tasks/administer-cluster/encrypt-data.md) for stored Secrets. [Sealed Secrets](https://github.com/bitnami/sealed-secrets) encrypts manifests that can be stored in version control; [External Secrets Operator](https://external-secrets.io/latest/introduction/overview/) synchronizes values from an external secret manager. Both controllers create ordinary Kubernetes Secrets, so neither replaces cluster encryption at rest or appropriate access controls.
 
 ---
 
