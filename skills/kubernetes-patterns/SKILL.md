@@ -550,7 +550,7 @@ spec:
   ttlSecondsAfterFinished: 3600   # Auto-delete after 1h
   template:
     spec:
-      restartPolicy: OnFailure    # Never for Jobs (not Always)
+      restartPolicy: OnFailure    # Jobs allow OnFailure or Never, not Always
       containers:
         - name: migrate
           image: ghcr.io/org/my-app:1.0.0
@@ -657,15 +657,15 @@ kubectl describe pod <pod-name> -n my-namespace | grep -A5 "Last State"
 # BAD: Using :latest tag — non-deterministic deployments
 image: myapp:latest
 
-# GOOD: Pin to a specific immutable tag (SHA or semver)
+# BETTER: Use an explicit version tag; tags can still be reassigned
 image: ghcr.io/org/myapp:1.4.2
-# or
+# GOOD: Pin immutable content with the actual image digest
 image: ghcr.io/org/myapp@sha256:abc123...
 
 # ---
 
-# BAD: Running as root
-securityContext: {}    # Defaults to root
+# CHECK: An empty container context does not establish the effective user
+securityContext: {}    # User comes from pod settings or image metadata; may be root
 
 # GOOD: Non-root with explicit UID
 securityContext:
@@ -714,9 +714,11 @@ spec:
 
 # ---
 
-# BAD: restartPolicy: Always in a Job (causes infinite restart loop)
+# BAD: Job pod templates reject restartPolicy: Always at API validation
 spec:
-  restartPolicy: Always   # Use OnFailure or Never for Jobs
+  template:
+    spec:
+      restartPolicy: Always   # Use OnFailure or Never for Jobs
 ```
 
 ---
