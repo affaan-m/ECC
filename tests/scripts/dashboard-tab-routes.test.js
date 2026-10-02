@@ -8,12 +8,14 @@ const script = html.match(/<script>([\s\S]*?)<\/script>/)[1];
 const routing = script.slice(script.indexOf('function handleRoute()'), script.indexOf('// Render Main Dashboard'));
 const tabs = script.slice(script.indexOf('function showTab('), script.indexOf('// Render functions'));
 const names = ['agents', 'skills', 'commands', 'rules', 'mcps', 'hooks'];
+const language = script.slice(script.indexOf('function setLang('), script.indexOf('function toggleLang('));
 let passed = 0;
 let failed = 0;
 
-for (const scenario of ['detail to tab', 'direct tab route', 'tab history return']) {
+for (const scenario of ['detail to tab', 'direct tab route', 'tab history return', 'tab language change']) {
   try {
     let panels = [];
+    let renders = 0;
     const makeNode = name => {
       const node = { dataset: { tab: name }, active: false };
       node.classList = {
@@ -25,24 +27,33 @@ for (const scenario of ['detail to tab', 'direct tab route', 'tab history return
     const navigation = names.map(makeNode);
     const context = vm.createContext({
       location: { hash: '' },
+      localStorage: { setItem: () => {} }, L: { en: { name: 'English' }, ja: { name: 'Japanese' } },
+      applyLang: () => {},
       window: { addEventListener: () => {} },
       document: {
-        querySelectorAll: selector => selector === '.panel' ? panels : navigation,
-        getElementById: id => panels.find(node => node.id === id),
+        querySelectorAll: selector => selector === '.panel' ? panels : selector === '.nav-it' ? navigation : [],
+        getElementById: id => id.startsWith('lang-') ? { classList: { remove: () => {} } } : panels.find(node => node.id === id),
         querySelector: selector => navigation.find(node => selector.includes(`"${node.dataset.tab}"`)),
       },
       renderMain: () => {
+        renders += 1;
         panels = names.map(name => Object.assign(makeNode(name), { id: 'panel-' + name }));
       },
       renderPage: () => { panels = []; },
     });
-    vm.runInContext(routing + tabs, context);
+    vm.runInContext('let lang="en";' + routing + tabs + language, context);
     if (scenario === 'detail to tab') {
       context.location.hash = '#/skills/sample';
       context.handleRoute();
       context.showTab('skills', navigation[1]);
     } else if (scenario === 'direct tab route') {
       context.location.hash = '#/tabs/skills';
+    } else if (scenario === 'tab language change') {
+      context.location.hash = '#/tabs/skills';
+      context.handleRoute();
+      const before = renders;
+      context.setLang('ja');
+      assert.strictEqual(renders, before + 1, 'language change rebuilds tab contents');
     } else {
       context.renderMain();
       context.showTab('skills', navigation[1]);

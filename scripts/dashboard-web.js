@@ -507,6 +507,7 @@ function setLang(l) {
   document.getElementById('lang-label').textContent = (L[l]||L.en).name.split(' ')[0].slice(0,2).toUpperCase();
   document.getElementById('lang-drop').classList.remove('show');
   applyLang();
+  if (location.hash.startsWith('#/tabs/')) renderMain();
   if (!location.hash || location.hash==='#/') renderMain();
   else handleRoute();
 }
