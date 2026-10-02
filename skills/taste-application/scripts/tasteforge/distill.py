@@ -89,6 +89,9 @@ def distill_local(profile: dict[str, Any],
     operator (and any future authorized VLM call) to consume.
     """
     look = dict(profile.get("constraints", {}).get("look", {}))
+    for answer_key, spec_key in _KEY_MAP.items():
+        if answer_key in look:
+            look.setdefault(spec_key, look[answer_key])
 
     grounding_used = False
     grounding_text = ""

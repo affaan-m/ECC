@@ -49,8 +49,17 @@ class LocalDistillTests(unittest.TestCase):
         spec = distill.distill_local(_profile())
         self.assertTrue(spec["source"]["dry_run"])
         self.assertEqual(spec["source"]["provider"], "none")
+        self.assertEqual(spec["palette_description"], "near-black void, bone white, violet bloom")
         self.assertEqual(spec["lighting"], "single hard key")
         self.assertEqual(spec["mood_adjectives"], ["holy", "crystalline"])
+
+    def test_normalized_palette_description_takes_precedence_without_mutating_profile(self) -> None:
+        profile = _profile()
+        profile["constraints"]["look"]["palette_description"] = "warm amber"
+        original = json.loads(json.dumps(profile))
+        spec = distill.distill_local(profile)
+        self.assertEqual(spec["palette_description"], "warm amber")
+        self.assertEqual(profile, original)
 
     def test_grounding_from_grade_states_measurements(self):
         grade = json.loads((FIXTURE / "grade.json").read_text())
