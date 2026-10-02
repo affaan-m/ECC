@@ -275,6 +275,7 @@ async function runTests() {
         const payload = parseJson(result.stdout);
         assert.strictEqual(payload.count, 1);
         assert.strictEqual(payload.items[0].issueNumber, 12);
+        assert.strictEqual(fs.existsSync(dbPath), false, 'dry-run must not create a database');
       } finally {
         cleanup(rootDir);
       }

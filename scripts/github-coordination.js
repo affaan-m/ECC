@@ -170,16 +170,20 @@ async function main() {
     if (!options.repo) throw new Error('Missing --repo <owner/repo>.');
 
     const policy = loadPolicy(process.cwd(), options.configPath);
-    store = await openStore({
-      dbPath: options.dbPath,
-      homeDir: options.homeDir || process.env.HOME || os.homedir(),
-    });
+    // Preview actions do not use snapshots; opening a store would still migrate
+    // and persist it, even when every action skips its own writes.
+    if (!options.dryRun) {
+      store = await openStore({
+        dbPath: options.dbPath,
+        homeDir: options.homeDir || process.env.HOME || os.homedir(),
+      });
+    }
 
     const payload = dispatchCommand(options, { store, policy, rootDir: process.cwd() });
     formatOutput(payload, options);
   } catch (error) {
     console.error(`Error: ${error.message}`);
-    process.exit(1);
+    process.exitCode = 1;
   } finally {
     if (store) store.close();
   }
