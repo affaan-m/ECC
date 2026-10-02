@@ -375,6 +375,14 @@
       ]
     },
     {
+      "id": "capability:documentation-context",
+      "family": "capability",
+      "description": "Optional durable domain-context and ADR handoff workflow.",
+      "modules": [
+        "documentation-context"
+      ]
+    },
+    {
       "id": "capability:documents",
       "family": "capability",
       "description": "Document processing, conversion, and translation skills.",

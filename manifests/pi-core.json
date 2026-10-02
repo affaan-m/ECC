@@ -58,6 +58,7 @@
       "compose-multiplatform-patterns",
       "content-hash-cache-pattern",
       "contract-first",
+      "context-and-decisions",
       "cost-aware-llm-pipeline",
       "council",
       "cpp-coding-standards",
