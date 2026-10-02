@@ -49,7 +49,7 @@ function usage(exitCode = 0) {
 
 function readValue(args, index, flagName) {
   const value = args[index + 1];
-  if (!value || value.startsWith('--') || value === '-h') {
+  if (!value || value.startsWith('-')) {
     throw new Error(`${flagName} requires a value`);
   }
   return value;
@@ -120,7 +120,7 @@ function parseArgs(argv) {
       VALUE_FLAGS.get(arg)(next, value);
       parsed = next;
     } else if (!arg.startsWith('-')) {
-      parsed = parsed.command
+      parsed = parsed.command !== null
         ? { ...parsed, positionals: [...parsed.positionals, arg] }
         : { ...parsed, command: arg };
     } else {
@@ -131,7 +131,7 @@ function parseArgs(argv) {
 
   if (parsed.help) return parsed;
   if (pendingError) throw pendingError;
-  if (!parsed.command) parsed = { ...parsed, command: 'sync' };
+  if (parsed.command === null) parsed = { ...parsed, command: 'sync' };
   if (!COMMANDS.has(parsed.command)) throw new Error(`Unknown command: ${parsed.command}`);
   if (parsed.positionals.length > 1) throw new Error('Unexpected positional arguments.');
   if (parsed.positionals.length === 1) {

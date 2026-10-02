@@ -35,6 +35,8 @@ test('extra positional arguments are rejected rather than ignored', () => {
 });
 test('unknown commands are rejected during argument parsing', () => {
   assert.throws(() => parse('--repo', 'o/r', 'cliam', '--issue', '5'), /unknown command/i);
+  assert.throws(() => parse(''), /unknown command/i);
+  assert.throws(() => parse('', 'sync'), /unknown command/i);
 });
 test('issue identities must be whole positive safe integers', () => {
   for (const value of ['5abc', '5.5', '5e2', '+5', '0', '9007199254740992']) {
@@ -56,6 +58,7 @@ test('default sync and help remain available without a command', () => {
 });
 test('a short help token consumed as an actor operand is rejected', () => {
   assert.throws(() => parse('--actor', '-h'), /requires a value/i);
+  assert.throws(() => parse('--actor', '-x'), /requires a value/i);
   assert.strictEqual(parse('--actor', 'existing', '-h').help, true);
   assert.strictEqual(parse('cliam', '--limit', 'bad', '--help').help, true);
 });
@@ -66,7 +69,7 @@ test('invalid CLI identities and commands fail before local or GitHub writes', (
     const log = path.join(root, 'gh-call');
     const shim = path.join(root, 'gh-shim.js');
     fs.writeFileSync(shim, `require('fs').writeFileSync(process.env.ECC_ARGUMENT_LOG, 'called'); process.exit(3);`);
-    for (const args of [['claim', '5abc'], ['cliam'], ['claim', '5', '--issue', '6'], ['sync', '--limit', '1.5']]) {
+    for (const args of [['claim', '5abc'], ['cliam'], [''], ['sync', '--actor', '-x'], ['claim', '5', '--issue', '6'], ['sync', '--limit', '1.5']]) {
       const result = spawnSync(process.execPath, [path.resolve(__dirname, '../../scripts/github-coordination.js'),
         ...args, '--repo', 'o/r', '--db', db], {
         cwd: root, env: { ...process.env, ECC_GH_SHIM: shim, ECC_ARGUMENT_LOG: log },
