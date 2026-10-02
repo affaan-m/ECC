@@ -41,6 +41,13 @@ async function main() {
     assert.ifError(result.error);
     assert.strictEqual(result.status, 0, result.stderr);
     const payload = JSON.parse(result.stdout);
+    const textResult = spawnSync(process.execPath, [path.resolve(__dirname, '../../scripts/work-items.js'),
+      'sync-github', '--repo', repo, '--limit', '1', '--db', dbPath
+    ], { env: { ...process.env, ECC_GH_SHIM: shim }, cwd: dir, encoding: 'utf8', timeout: 15000 });
+    assert.ifError(textResult.error);
+    assert.strictEqual(textResult.status, 0, textResult.stderr);
+    assert.match(textResult.stdout, /Retained github-fixture-project-issue-5: .*state/i);
+    assert.match(textResult.stdout, /Retained github-fixture-project-issue-6: .*source unavailable/);
     store = await createStateStore({ dbPath });
     function item(kind, number) { return store.getWorkItemById(`github-fixture-project-${kind}-${number}`); }
     function test(name, fn) {
