@@ -124,11 +124,23 @@ function withOutputFixture(fn) {
       return { status: 0, stderr: '' };
     };
   `);
-  const run = (args = [], chosenTemplate = templatePath) => spawnSync(process.execPath, ['--require', preload, scriptPath, chosenTemplate, input, outDir, ...args], {
-    cwd: root,
-    env: { PATH: '', TZ: 'UTC' },
-    encoding: 'utf8', timeout: 3000,
-  });
+  const run = (args = [], chosenTemplate = templatePath) => {
+    const result = spawnSync(process.execPath, ['--require', preload, scriptPath, chosenTemplate, input, outDir, ...args], {
+      cwd: root,
+      env: { PATH: '', TZ: 'UTC' },
+      encoding: 'utf8', timeout: 3000,
+    });
+    assert.ok(!result.error && result.signal === null && Number.isInteger(result.status),
+      `Agreement CLI did not complete: ${JSON.stringify({
+        args,
+        status: result.status,
+        signal: result.signal,
+        error: result.error && { code: result.error.code, message: result.error.message },
+        stdout: result.stdout,
+        stderr: result.stderr,
+      })}`);
+    return result;
+  };
   const setSpec = fields => fs.writeFileSync(input, JSON.stringify({ ...exampleSpec, ...fields }));
   const setFile = file => setSpec({ file });
   const calls = () => fs.existsSync(log) ? fs.readFileSync(log, 'utf8').trim().split('\n').map(JSON.parse) : [];
