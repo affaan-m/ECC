@@ -27,7 +27,15 @@ if (process.platform === 'win32') {
       'exit 1',
       '',
     ].join('\n'), { mode: 0o755 });
-    for (const mode of ['failure', 'empty', 'success', 'stale-empty', 'failure-second']) {
+    for (const mode of ['failure', 'empty', 'success', 'stale-empty', 'failure-second', 'copy-failure', 'publish-failure']) {
+      fs.writeFileSync(path.join(bin, 'cp'), ['#!/bin/sh',
+        mode === 'copy-failure' ? 'case "$1" in */ecc-iconify.*/*.png) /usr/bin/cp "$1" "$4"; exit 1;; esac' : '',
+        'exec /usr/bin/cp "$@"', '',
+      ].join('\n'), { mode: 0o755 });
+      fs.writeFileSync(path.join(bin, 'mv'), ['#!/bin/sh',
+        mode === 'publish-failure' ? 'case "$1" in */.iconify-publish.*) exit 1;; esac' : '',
+        'exec /usr/bin/mv "$@"', '',
+      ].join('\n'), { mode: 0o755 });
       fs.writeFileSync(path.join(bin, 'sips'), [
         '#!/bin/sh',
         mode === 'failure' ? 'exit 1'
@@ -38,7 +46,7 @@ if (process.platform === 'win32') {
       ].join('\n'), { mode: 0o755 });
       const output = path.join(root, mode);
       const imageset = path.join(output, 'icon.imageset');
-      const existing = ['stale-empty', 'failure-second'].includes(mode);
+      const existing = ['stale-empty', 'failure-second', 'copy-failure', 'publish-failure'].includes(mode);
       const filenames = ['icon.png', 'icon@2x.png', 'icon@3x.png'];
       if (existing) {
         fs.mkdirSync(imageset, { recursive: true });
@@ -61,8 +69,10 @@ if (process.platform === 'win32') {
         } else {
           assert.notStrictEqual(result.status, 0);
           assert.ok(result.stderr.includes('ERROR'));
-          const source = mode === 'failure-second' ? 'icon@2x.svg' : 'icon.svg';
-          assert.ok(fs.existsSync(path.join(imageset, source)), 'keep the downloaded source on conversion failure');
+          if (!['copy-failure', 'publish-failure'].includes(mode)) {
+            const source = mode === 'failure-second' ? 'icon@2x.svg' : 'icon.svg';
+            assert.ok(fs.existsSync(path.join(imageset, source)), 'keep the downloaded source on conversion failure');
+          }
           if (existing) {
             assert.strictEqual(fs.readFileSync(path.join(imageset, 'Contents.json'), 'utf8'), 'old manifest');
             for (const filename of filenames) {

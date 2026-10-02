@@ -186,12 +186,16 @@ generate_icon() {
         echo "  ${asset_name}${suffix}.png (${px}x${px})"
     done
 
-    # Publish only after every scale has produced a fresh, nonempty PNG.
-    mv "${conversion_dir}/"*.png "$imageset_dir/"
-    rmdir "$conversion_dir"
+    # Prepare a complete replacement on the destination filesystem.
+    local publish_dir
+    publish_dir=$(mktemp -d "${OUTPUT}/.iconify-publish.XXXXXX")
+    if ! cp -R "${imageset_dir}/." "$publish_dir/" || ! cp "${conversion_dir}/"*.png "$publish_dir/"; then
+        echo "ERROR: Publication preparation failed; prior imageset retained" >&2
+        return 1
+    fi
 
     # Write Contents.json
-    cat > "${imageset_dir}/Contents.json" <<JSONEOF
+    cat > "${publish_dir}/Contents.json" <<JSONEOF
 {
   "images" : [
     {
@@ -216,6 +220,17 @@ generate_icon() {
   }
 }
 JSONEOF
+
+    local prior_dir
+    prior_dir=$(mktemp -d "${OUTPUT}/.iconify-prior.XXXXXX")
+    rmdir "$prior_dir"
+    mv "$imageset_dir" "$prior_dir"
+    if ! mv "$publish_dir" "$imageset_dir"; then
+        mv "$prior_dir" "$imageset_dir" || { echo "ERROR: Restore failed; prior imageset remains at ${prior_dir}" >&2; return 1; }
+        echo "ERROR: Publication failed; prior imageset restored" >&2
+        return 1
+    fi
+    rm -r "$prior_dir" "$conversion_dir"
 
     echo "Output: ${imageset_dir}/"
 }
