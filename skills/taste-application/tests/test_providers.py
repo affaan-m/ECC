@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import subprocess
 import sys
 import unittest
 from pathlib import Path
@@ -43,8 +44,28 @@ class RegistryFailClosedTests(unittest.TestCase):
             )
 
     def test_no_network_modules_imported(self):
-        for mod in ("fal_client", "requests", "http.client", "urllib.request"):
-            self.assertNotIn(mod, sys.modules, f"{mod} must not be imported by tasteforge")
+        # Inspect this import boundary without inheriting other tests' modules.
+        result = subprocess.run(
+            [
+                sys.executable, "-I", "-c",
+                """
+import sys
+sys.path.insert(0, sys.argv[1])
+from tasteforge import providers
+try:
+    providers.get("fal")
+except providers.ProviderNotAuthorizedError:
+    pass
+else:
+    raise AssertionError("unregistered providers must fail closed")
+for name in ("fal_client", "requests", "http.client", "urllib.request"):
+    assert name not in sys.modules, name
+""",
+                str(REPO_ROOT),
+            ],
+            capture_output=True, text=True, timeout=30, check=False,
+        )
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
 
 if __name__ == "__main__":

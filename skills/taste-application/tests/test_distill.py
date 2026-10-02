@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import subprocess
 import sys
 import unittest
 from pathlib import Path
@@ -74,15 +75,28 @@ class FailClosedLiveTests(unittest.TestCase):
         self.assertIn("separately authorized", str(ctx.exception))
 
     def test_no_network_module_imported(self):
-        import sys as _sys
-
-        _sys.modules.pop("fal_client", None)
-        try:
-            distill.distill_live(_profile())
-        except distill.ProviderDisabledError:
-            pass
-        self.assertNotIn("fal_client", _sys.modules)
-        self.assertNotIn("urllib.request", _sys.modules)
+        # Other tests may already have imported HTTP libraries in this process.
+        result = subprocess.run(
+            [
+                sys.executable, "-I", "-c",
+                """
+import sys
+sys.path.insert(0, sys.argv[1])
+from tasteforge import distill
+try:
+    distill.distill_live({})
+except distill.ProviderDisabledError:
+    pass
+else:
+    raise AssertionError("live distillation must fail closed")
+for name in ("fal_client", "requests", "http.client", "urllib.request"):
+    assert name not in sys.modules, name
+""",
+                str(REPO_ROOT),
+            ],
+            capture_output=True, text=True, timeout=30, check=False,
+        )
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
 
 if __name__ == "__main__":
