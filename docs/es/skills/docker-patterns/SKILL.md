@@ -133,6 +133,10 @@ services:
   app:
     build:
       target: production
+    command: !reset null
+    volumes: !reset []
+    environment:
+      NODE_ENV: production
     restart: always
     deploy:
       resources:
@@ -140,6 +144,8 @@ services:
           cpus: "1.0"
           memory: 512M
 ```
+
+Usa una versión actual de Docker Compose compatible con `!reset`. Cambiar solo el destino de compilación conserva el comando, el entorno y los volúmenes del servicio base. Restablece el comando para usar el CMD de la imagen de producción, elimina los montajes de desarrollo y configura el entorno explícitamente. `volumes: []` por sí solo no elimina los montajes heredados.
 
 ```bash
 # Desarrollo (carga override automáticamente)
