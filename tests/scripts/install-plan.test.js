@@ -180,6 +180,19 @@ function runTests() {
     assert.strictEqual(result.code, 1);
     assert.ok(result.stderr.includes('Unknown argument'));
   })) passed++; else failed++;
+  if (test('accepts an existing leading-dash config but never consumes known flags', () => {
+    const fs = require('fs');
+    const directory = fs.mkdtempSync(path.join(require('os').tmpdir(), 'ecc-plan-dash-'));
+    try {
+      fs.writeFileSync(path.join(directory, '--custom.json'), JSON.stringify({ version: 1, profile: 'core', target: 'cursor' }));
+      const result = run(['--config', '--custom.json', '--json'], { cwd: directory });
+      assert.strictEqual(result.code, 0, result.stderr);
+      assert.strictEqual(JSON.parse(result.stdout).profileId, 'core');
+      fs.writeFileSync(path.join(directory, '--json'), '{}');
+      assert.strictEqual(run(['--config', '--json'], { cwd: directory }).code, 1);
+      assert.strictEqual(run(['--config', '--missing.json'], { cwd: directory }).code, 1);
+    } finally { fs.rmSync(directory, { recursive: true, force: true }); }
+  })) passed++; else failed++;
 
   if (test('rejects missing option values before printing a default plan', () => {
     for (const flag of ['--family', '--profile', '--modules', '--with', '--without',
