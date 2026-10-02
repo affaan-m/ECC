@@ -99,8 +99,8 @@ function runTests() {
 
   if (test('accepts leading-dash paths while rejecting following known options', () => {
     for (const flag of ['--write', '--observations']) {
-      const parsed = parseArgs(['node', SCRIPT, flag, '--snapshot.json', 'skills:health']);
-      assert.strictEqual(parsed[flag === '--write' ? 'writePath' : 'observationsPath'], '--snapshot.json');
+      const parsed = parseArgs(['node', SCRIPT, flag, './--snapshot.json', 'skills:health']);
+      assert.strictEqual(parsed[flag === '--write' ? 'writePath' : 'observationsPath'], './--snapshot.json');
       for (const nextFlag of ['--write', '--observations', '--skill', '--list-adapters']) {
         assert.throws(() => parseArgs(['node', SCRIPT, flag, nextFlag]), /Missing value/);
       }
@@ -111,6 +111,15 @@ function runTests() {
       const result = run(['--observations', '--observations.jsonl', 'skills:health'], { cwd: fixture });
       assert.strictEqual(result.code, 0, result.stderr);
       assert.strictEqual(JSON.parse(result.stdout).totalObservations, 0);
+      for (const flag of ['--write', '--observations']) {
+        const invalid = run(['skills:health', flag, '--bogus'], { cwd: fixture });
+        assert.strictEqual(invalid.code, 1);
+        assert.match(invalid.stderr, /Missing value/);
+        assert.strictEqual(fs.existsSync(path.join(fixture, '--bogus')), false);
+      }
+      const written = run(['skills:health', '--write', './--snapshot.json'], { cwd: fixture });
+      assert.strictEqual(written.code, 0, written.stderr);
+      assert.ok(fs.existsSync(path.join(fixture, '--snapshot.json')));
     } finally {
       fs.rmSync(fixture, { recursive: true, force: true });
     }

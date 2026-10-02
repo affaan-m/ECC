@@ -33,7 +33,8 @@ function usage() {
     '  node scripts/session-inspect.js latest --target-type claude-history',
     '  node scripts/session-inspect.js skills:health',
     '  node scripts/session-inspect.js skills:amendify --skill api-design',
-    '  node scripts/session-inspect.js claude:a1b2c3d4 --write /tmp/session.json'
+    '  node scripts/session-inspect.js claude:a1b2c3d4 --write /tmp/session.json',
+    '  Prefix new leading-dash filenames with ./ (for example ./--snapshot.json).'
   ].join('\n'));
 }
 
@@ -63,7 +64,9 @@ function parseArgs(argv) {
     const arg = args[index];
     if (valueOptions.has(arg)) {
       const value = args[index + 1];
-      if (!value || knownOptions.has(value)) {
+      const existingPath = ['--write', '--observations'].includes(arg)
+        && value && fs.existsSync(value);
+      if (!value || knownOptions.has(value) || (value.startsWith('--') && !existingPath)) {
         throw new Error(`Missing value for ${arg}`);
       }
       parsed = { ...parsed, [valueOptions.get(arg)]: value };
