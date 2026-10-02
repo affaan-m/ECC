@@ -12,7 +12,7 @@ paths:
 ## 测试框架
 
 * 单元测试和集成测试首选 **xUnit**
-* 使用 **FluentAssertions** 编写可读性强的断言
+* 使用 **AwesomeAssertions** 编写可读性强的断言
 * 使用 **Moq** 或 **NSubstitute** 来模拟依赖项
 * 当集成测试需要真实基础设施时，使用 **Testcontainers**
 

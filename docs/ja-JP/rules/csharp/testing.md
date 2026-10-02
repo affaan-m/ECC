@@ -11,7 +11,7 @@ paths:
 ## テストフレームワーク
 
 - ユニットテストと統合テストには **xUnit** を優先する
-- 読みやすいアサーションには **FluentAssertions** を使用する
+- 読みやすいアサーションには **AwesomeAssertions** を使用する
 - 依存関係のモックには **Moq** または **NSubstitute** を使用する
 - 統合テストで実際のインフラが必要な場合は **Testcontainers** を使用する
 

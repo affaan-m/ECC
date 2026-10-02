@@ -1,12 +1,12 @@
 ---
 name: csharp-testing
-description: 使用 xUnit、FluentAssertions、模拟、集成测试和测试组织最佳实践的 C# 和 .NET 测试模式。
+description: 使用 xUnit、AwesomeAssertions、模拟、集成测试和测试组织最佳实践的 C# 和 .NET 测试模式。
 origin: ECC
 ---
 
 # C# 测试模式
 
-使用 xUnit、FluentAssertions 和现代测试实践为 .NET 应用程序提供的全面测试模式。
+使用 xUnit、AwesomeAssertions 和现代测试实践为 .NET 应用程序提供的全面测试模式。
 
 ## 何时使用
 
@@ -20,11 +20,23 @@ origin: ECC
 | 工具 | 用途 |
 |---|---|
 | **xUnit** | 测试框架（.NET 首选） |
-| **FluentAssertions** | 可读的断言语法 |
+| **AwesomeAssertions** | 可读的断言语法 |
 | **NSubstitute** 或 **Moq** | 模拟依赖项 |
 | **Testcontainers** | 集成测试中的真实基础设施 |
 | **WebApplicationFactory** | ASP.NET Core 集成测试 |
 | **Bogus** | 生成逼真的测试数据 |
+
+## 断言配置
+
+使用采用 [Apache-2.0 许可证](https://github.com/AwesomeAssertions/AwesomeAssertions/blob/main/LICENSE)的 [AwesomeAssertions](https://awesomeassertions.org/introduction)。在测试项目中添加包并导入命名空间，即可使用下方示例中的 `Should()` 扩展方法。
+
+```bash
+dotnet add tests/MyApp.UnitTests/ package AwesomeAssertions
+```
+
+```csharp
+using AwesomeAssertions;
+```
 
 ## 单元测试结构
 

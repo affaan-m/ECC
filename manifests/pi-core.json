@@ -437,6 +437,7 @@
     "urlAllowlistHosts": [
       "aka.ms",
       "angular.dev",
+      "awesomeassertions.org",
       "aws.amazon.com",
       "bloclibrary.dev",
       "cli.github.com",

@@ -1,13 +1,13 @@
 ---
 name: csharp-testing
-description: C# and .NET testing patterns with xUnit, FluentAssertions, mocking, integration tests, and test organization best practices. Use when writing or reviewing xUnit tests, mocks, or integration tests in a C# / .NET project.
+description: C# and .NET testing patterns with xUnit, AwesomeAssertions, mocking, integration tests, and test organization best practices. Use when writing or reviewing xUnit tests, mocks, or integration tests in a C# / .NET project.
 metadata:
   origin: ECC
 ---
 
 # C# Testing Patterns
 
-Comprehensive testing patterns for .NET applications using xUnit, FluentAssertions, and modern testing practices.
+Comprehensive testing patterns for .NET applications using xUnit, AwesomeAssertions, and modern testing practices.
 
 ## When to Activate
 
@@ -21,11 +21,23 @@ Comprehensive testing patterns for .NET applications using xUnit, FluentAssertio
 | Tool | Purpose |
 |---|---|
 | **xUnit** | Test framework (preferred for .NET) |
-| **FluentAssertions** | Readable assertion syntax |
+| **AwesomeAssertions** | Readable assertion syntax |
 | **NSubstitute** or **Moq** | Mocking dependencies |
 | **Testcontainers** | Real infrastructure in integration tests |
 | **WebApplicationFactory** | ASP.NET Core integration tests |
 | **Bogus** | Realistic test data generation |
+
+## Assertion Setup
+
+Use [AwesomeAssertions](https://awesomeassertions.org/introduction), licensed under [Apache-2.0](https://github.com/AwesomeAssertions/AwesomeAssertions/blob/main/LICENSE). Add the package to your test project and import its namespace for the `Should()` examples below.
+
+```bash
+dotnet add tests/MyApp.UnitTests/ package AwesomeAssertions
+```
+
+```csharp
+using AwesomeAssertions;
+```
 
 ## Unit Test Structure
 

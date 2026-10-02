@@ -1,12 +1,12 @@
 ---
 name: csharp-testing
-description: xUnit、FluentAssertions、モッキング、統合テスト、テスト組織のベストプラクティスを使用したC#と.NETのテストパターン。
+description: xUnit、AwesomeAssertions、モッキング、統合テスト、テスト組織のベストプラクティスを使用したC#と.NETのテストパターン。
 origin: ECC
 ---
 
 # C#テストパターン
 
-xUnit、FluentAssertions、最新のテストプラクティスを使用した.NETアプリケーションの包括的なテストパターン。
+xUnit、AwesomeAssertions、最新のテストプラクティスを使用した.NETアプリケーションの包括的なテストパターン。
 
 ## 起動条件
 
@@ -20,11 +20,23 @@ xUnit、FluentAssertions、最新のテストプラクティスを使用した.N
 | ツール | 目的 |
 |---|---|
 | **xUnit** | テストフレームワーク（.NETに推奨） |
-| **FluentAssertions** | 読みやすいアサーション構文 |
+| **AwesomeAssertions** | 読みやすいアサーション構文 |
 | **NSubstitute**または**Moq** | 依存関係のモッキング |
 | **Testcontainers** | 統合テストでの実際のインフラ |
 | **WebApplicationFactory** | ASP.NET Core統合テスト |
 | **Bogus** | 現実的なテストデータ生成 |
+
+## アサーションの設定
+
+[Apache-2.0 ライセンス](https://github.com/AwesomeAssertions/AwesomeAssertions/blob/main/LICENSE)の [AwesomeAssertions](https://awesomeassertions.org/introduction) を使用します。テストプロジェクトにパッケージを追加し、名前空間をインポートすると、以下の例の `Should()` 拡張メソッドを使用できます。
+
+```bash
+dotnet add tests/MyApp.UnitTests/ package AwesomeAssertions
+```
+
+```csharp
+using AwesomeAssertions;
+```
 
 ## ユニットテスト構造
 
