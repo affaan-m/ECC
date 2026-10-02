@@ -3429,20 +3429,23 @@ impl StateStore {
                 now,
             ],
         )?;
-        let observation_id = self.conn.last_insert_rowid();
         self.compact_context_graph_observations(
             None,
             Some(entity_id),
             DEFAULT_CONTEXT_GRAPH_OBSERVATION_RETENTION,
         )?;
+        // Compaction can retain an older pinned duplicate instead of this insert.
+        // Return the record that actually survives the existing deduplication policy.
         self.conn
             .query_row(
                 "SELECT o.id, o.session_id, o.entity_id, e.entity_type, e.name,
                         o.observation_type, o.priority, o.pinned, o.summary, o.details_json, o.created_at
                  FROM context_graph_observations o
                  JOIN context_graph_entities e ON e.id = o.entity_id
-                 WHERE o.id = ?1",
-                rusqlite::params![observation_id],
+                 WHERE o.entity_id = ?1 AND o.observation_type = ?2 AND o.summary = ?3
+                 ORDER BY o.pinned DESC, o.created_at DESC, o.id DESC
+                 LIMIT 1",
+                rusqlite::params![entity_id, observation_type.trim(), summary.trim()],
                 map_context_graph_observation,
             )
             .map_err(Into::into)
@@ -4050,11 +4053,7 @@ impl StateStore {
     }
 
     /// Returns at most `limit` output rows newer than `cursor` in insertion order.
-    pub(crate) fn get_output_since(
-        &self,
-        cursor: i64,
-        limit: usize,
-    ) -> Result<SessionOutputBatch> {
+    pub(crate) fn get_output_since(&self, cursor: i64, limit: usize) -> Result<SessionOutputBatch> {
         let cursor = cursor.max(0);
         let limit = i64::try_from(limit.max(1)).unwrap_or(i64::MAX);
         let mut stmt = self.conn.prepare(
@@ -6910,6 +6909,51 @@ mod tests {
             .iter()
             .any(|entry| entry.summary == "Newest unpinned memory"));
 
+        Ok(())
+    }
+
+    #[test]
+    fn add_context_observation_returns_the_surviving_duplicate() -> Result<()> {
+        for (old_pinned, new_pinned) in [(false, false), (false, true), (true, false), (true, true)]
+        {
+            let tempdir = TestDir::new("store-context-duplicate-result")?;
+            let db = StateStore::open(&tempdir.path().join("state.db"))?;
+            let entity =
+                db.upsert_context_entity(None, "incident", "recovery", None, "", &BTreeMap::new())?;
+            let original = db.add_context_observation(
+                None,
+                entity.id,
+                "incident_note",
+                ContextObservationPriority::Normal,
+                old_pinned,
+                "Recovery memory",
+                &BTreeMap::from([("source".to_string(), "original".to_string())]),
+            )?;
+            let result = db.add_context_observation(
+                None,
+                entity.id,
+                "incident_note",
+                ContextObservationPriority::High,
+                new_pinned,
+                "Recovery memory",
+                &BTreeMap::from([("source".to_string(), "new".to_string())]),
+            )?;
+            let observations = db.list_context_observations(Some(entity.id), 10)?;
+            assert_eq!(observations.len(), 1);
+            assert_eq!(result.id, observations[0].id);
+            assert_eq!(result.details, observations[0].details);
+            if old_pinned && !new_pinned {
+                assert_eq!(result.id, original.id);
+                assert!(result.pinned);
+                assert_eq!(result.priority, ContextObservationPriority::Normal);
+                assert_eq!(result.details["source"], "original");
+            } else {
+                assert_ne!(result.id, original.id);
+                assert_eq!(result.pinned, new_pinned);
+                assert_eq!(result.priority, ContextObservationPriority::High);
+                assert_eq!(result.details["source"], "new");
+            }
+        }
         Ok(())
     }
 
