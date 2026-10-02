@@ -348,6 +348,7 @@ function readJsonlEntries(transcriptPath) {
   const raw = fs.readFileSync(transcriptPath, 'utf8');
   const entries = [];
   let parseErrors = 0;
+  let invalidRecords = 0;
 
   for (const line of raw.split(/\r?\n/)) {
     if (!line.trim()) {
@@ -357,7 +358,7 @@ function readJsonlEntries(transcriptPath) {
     try {
       const entry = JSON.parse(line);
       if (!entry || typeof entry !== 'object' || Array.isArray(entry)) {
-        parseErrors += 1;
+        invalidRecords += 1;
         continue;
       }
       entries.push(entry);
@@ -366,7 +367,7 @@ function readJsonlEntries(transcriptPath) {
     }
   }
 
-  return { entries, parseErrors };
+  return { entries, parseErrors, invalidRecords };
 }
 
 function readDelaySeconds(input) {
@@ -399,6 +400,9 @@ function buildRecommendation(signals) {
   if (signals.some(signal => signal.type === 'transcript_parse_errors')) {
     return 'Inspect the transcript; some JSONL lines could not be parsed.';
   }
+  if (signals.some(signal => signal.type === 'transcript_invalid_records')) {
+    return 'Inspect the transcript; some JSON values are not supported event records.';
+  }
 
   return 'No stale ScheduleWakeup or Bash waits detected.';
 }
@@ -408,7 +412,7 @@ function analyzeTranscript(transcriptPath, options = {}) {
   const absoluteTranscriptPath = path.resolve(transcriptPath);
   const now = normalizedOptions.nowDate || getNow(normalizedOptions);
   const nowMs = now.getTime();
-  const { entries, parseErrors } = readJsonlEntries(absoluteTranscriptPath);
+  const { entries, parseErrors, invalidRecords } = readJsonlEntries(absoluteTranscriptPath);
   const pendingTools = new Map();
   let latestAssistantProgressAt = null;
   let lastEventAt = null;
@@ -509,6 +513,9 @@ function analyzeTranscript(transcriptPath, options = {}) {
     }
   }
 
+  if (invalidRecords > 0) {
+    signals.push({ count: invalidRecords, type: 'transcript_invalid_records' });
+  }
   if (parseErrors > 0) {
     signals.push({
       count: parseErrors,
@@ -521,6 +528,7 @@ function analyzeTranscript(transcriptPath, options = {}) {
     lastEventAt: toIso(lastEventAt),
     latestWake,
     parseErrors,
+    invalidRecords,
     pendingTools: pendingToolList,
     projectSlug: path.basename(path.dirname(absoluteTranscriptPath)),
     recommendedAction: buildRecommendation(signals),

@@ -409,10 +409,20 @@ function runTests() {
       assert.strictEqual(payload.sessions.length, 1);
       const session = payload.sessions[0];
       assert.strictEqual(session.eventCount, 3);
-      assert.strictEqual(session.parseErrors, 5);
+      assert.strictEqual(session.parseErrors, 0);
+      assert.strictEqual(session.invalidRecords, 5);
       assert.deepStrictEqual(session.pendingTools.map(x => x.toolUseId), ['pending']);
       assert.ok(session.signals.some(x => x.type === 'pending_bash_tool_result'));
-      assert.ok(session.signals.some(x => x.type === 'transcript_parse_errors' && x.count === 5));
+      assert.ok(session.signals.some(x => x.type === 'transcript_invalid_records' && x.count === 5));
+      assert.ok(!session.signals.some(x => x.type === 'transcript_parse_errors'));
+      const resolvedPath = writeTranscript(homeDir, '-invalid-records', 'resolved.jsonl', [
+        toolUse('2026-04-30T09:00:00.000Z', 'resolved', 'finished', 'Bash', { command: 'done' }),
+        null,
+        { timestamp: '2026-04-30T09:01:00.000Z', type: 'tool_result', tool_use_id: 'finished' },
+      ]);
+      const resolved = parsePayload(run(['--transcript', resolvedPath, '--now', NOW, '--json']).stdout).sessions[0];
+      assert.strictEqual(resolved.parseErrors, 0);
+      assert.match(resolved.recommendedAction, /not supported event records/);
       assert.deepStrictEqual(fs.readFileSync(transcriptPath), original);
     } finally {
       fs.rmSync(homeDir, { recursive: true, force: true });
