@@ -294,7 +294,7 @@ This skill is router-agnostic. The patterns above work with React Router, TanSta
 ## Out of Scope (Pointer Sections)
 
 - **Next.js specifics**: App Router data loading, Route Handlers, Middleware, Parallel Routes — separate concern, use Next.js docs
-- **React Native**: Platform-specific patterns are covered by [react-native-patterns](../react-native-patterns/SKILL.md)
+- **React Native**: Platform-specific patterns are covered by the [canonical react-native-patterns skill](../../../skills/react-native-patterns/SKILL.md)
 - **Remix**: Loader/action conventions overlap with RSC but follow Remix docs
 
 ## Related
