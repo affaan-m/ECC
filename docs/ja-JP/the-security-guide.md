@@ -1,6 +1,6 @@
 # エージェンティックセキュリティのすべて 簡潔ガイド
 
-_everything claude code / research / security_
+_ecc / research / security_
 
 ---
 
@@ -248,10 +248,10 @@ rg -n '<!--|<script|data:text/html|base64,'
 
 まだ前のガイドを読んでいない方は、ここから始めてください：
 
-> [Everything Claude Code 簡潔ガイド](https://x.com/affaanmustafa/status/2012378465664745795)
+> [ECC 簡潔ガイド](https://x.com/affaanmustafa/status/2012378465664745795)
 >
-> [Everything Claude Code 長文ガイド](https://x.com/affaanmustafa/status/2014040193557471352)
+> [ECC 長文ガイド](https://x.com/affaanmustafa/status/2014040193557471352)
 
 以下のリポジトリも保存してください：
-- [github.com/affaan-m/everything-claude-code](https://github.com/affaan-m/everything-claude-code)
+- [github.com/affaan-m/ECC](https://github.com/affaan-m/ECC)
 - [github.com/affaan-m/agentshield](https://github.com/affaan-m/agentshield)

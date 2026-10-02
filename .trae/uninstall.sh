@@ -1,7 +1,7 @@
 #!/bin/bash
 #
 # ECC Trae Uninstaller
-# Uninstalls Everything Claude Code workflows from a Trae project.
+# Uninstalls ECC workflows from a Trae project.
 #
 # Usage:
 #   ./uninstall.sh              # Uninstall from current directory

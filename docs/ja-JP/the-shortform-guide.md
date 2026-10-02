@@ -1,4 +1,4 @@
-# Everything Claude Code 簡潔ガイド
+# ECC 簡潔ガイド
 
 ![Header: Anthropic Hackathon Winner - Tips & Tricks for Claude Code](./assets/images/shortform/00-header.png)
 

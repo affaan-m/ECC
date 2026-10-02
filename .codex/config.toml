@@ -1,6 +1,6 @@
 #:schema https://developers.openai.com/codex/config-schema.json
 
-# Everything Claude Code (ECC) — Codex Reference Configuration
+# ECC — Codex Reference Configuration
 #
 # Copy this file to ~/.codex/config.toml for global defaults, or keep it in
 # the project root as .codex/config.toml for project-local settings.

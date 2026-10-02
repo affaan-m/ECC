@@ -1,6 +1,6 @@
 # 关于 Claude Code 的完整长篇指南
 
-![Header: The Longform Guide to Everything Claude Code](../../assets/images/longform/01-header.png)
+![Header: The Longform Guide to ECC](../../assets/images/longform/01-header.png)
 
 ***
 
@@ -15,7 +15,7 @@
 
 这里的主题是：令牌经济、记忆持久性、验证模式、并行化策略，以及构建可重用工作流的复合效应。这些是我在超过 10 个月的日常使用中提炼出的模式，它们决定了你是在第一个小时内就饱受上下文腐化之苦，还是能够保持数小时的高效会话。
 
-简明指南和长篇指南中涵盖的所有内容都可以在 GitHub 上找到：`github.com/affaan-m/everything-claude-code`
+简明指南和长篇指南中涵盖的所有内容都可以在 GitHub 上找到：`github.com/affaan-m/ECC`
 
 ***
 
@@ -40,7 +40,7 @@
 要在会话间共享记忆，最好的方法是使用一个技能或命令来总结和检查进度，然后保存到 `.claude` 文件夹中的一个 `.tmp` 文件中，并在会话结束前不断追加内容。第二天，它可以将其用作上下文，并从中断处继续。为每个会话创建一个新文件，这样你就不会将旧的上下文污染到新的工作中。
 
 ![Session Storage File Tree](../../assets/images/longform/03-session-storage.png)
-*会话存储示例 -> <https://github.com/affaan-m/everything-claude-code/tree/main/examples/sessions>*
+*会话存储示例 -> <https://github.com/affaan-m/ECC/tree/main/examples/sessions>*
 
 Claude 创建一个总结当前状态的文件。审阅它，如果需要则要求编辑，然后重新开始。对于新的对话，只需提供文件路径。当你达到上下文限制并需要继续复杂工作时，这尤其有用。这些文件应包含：
 
@@ -83,7 +83,7 @@ alias claude-research='claude --system-prompt "$(cat ~/.claude/contexts/research
 * **Stop 钩子（会话结束）**：在会话结束时，将学习成果持久化到文件
 * **SessionStart 钩子**：在新会话开始时，自动加载之前的上下文
 
-我已经构建了这些钩子，它们位于仓库的 `github.com/affaan-m/everything-claude-code/tree/main/hooks/memory-persistence`
+我已经构建了这些钩子，它们位于仓库的 `github.com/affaan-m/ECC/tree/main/hooks/memory-persistence`
 
 ***
 
@@ -95,7 +95,7 @@ alias claude-research='claude --system-prompt "$(cat ~/.claude/contexts/research
 
 **解决方案：** 当 Claude Code 发现一些不平凡的事情时——调试技巧、变通方法、某些项目特定的模式——它会将该知识保存为一个新技能。下次出现类似问题时，该技能会自动加载。
 
-我构建了一个实现此功能的持续学习技能：`github.com/affaan-m/everything-claude-code/tree/main/skills/continuous-learning`
+我构建了一个实现此功能的持续学习技能：`github.com/affaan-m/ECC/tree/main/skills/continuous-learning`
 
 **为什么用 Stop 钩子（而不是 UserPromptSubmit）：**
 
@@ -355,4 +355,4 @@ alias q='cd ~/Desktop/projects'
 
 ***
 
-*两份指南中涵盖的所有内容都可以在 GitHub 上的 [everything-claude-code](https://github.com/affaan-m/everything-claude-code) 找到*
+*两份指南中涵盖的所有内容都可以在 GitHub 上的 [ECC](https://github.com/affaan-m/ECC) 找到*
