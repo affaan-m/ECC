@@ -271,6 +271,80 @@ test('a question is answered and the reply is fed back as the next turn', () => 
   assert.strictEqual(result.gateDenials, 2);
 });
 
+test('a timeout on an earlier turn is not cleared by a later clean turn', () => {
+  let call = 0;
+  const execute = () => {
+    call++;
+    if (call === 1) return { stdout: '', status: null, error: { code: 'ETIMEDOUT' } };
+    return streamFor('done');
+  };
+  let asked = 0;
+  const judge = () => {
+    asked++;
+    return asked === 1
+      ? { isQuestion: true, reply: 'carry on', disclosed: [], judgeFailed: false }
+      : { isQuestion: false, reply: INTENT.stonewall, disclosed: [], judgeFailed: false };
+  };
+  const result = session.runConversation(
+    { cwd: '.', stateDir: '.', settingsPath: 's', prompt: 'p', intent: INTENT },
+    { model: 'm', maxTurns: 5, timeoutMs: 1000, userTurns: 2, execute, judge }
+  );
+  assert.strictEqual(result.timedOut, true);
+});
+
+test('the config directory is never isolated, because that hides the credentials', () => {
+  // A per-trial CLAUDE_CONFIG_DIR looks like the right way to stop persisted
+  // sessions piling up, but it makes every turn return "Not logged in", and the
+  // trial is then graded as a coverage hole. Guard against reintroducing it.
+  let seen = 'unset';
+  const execute = (file, args, options) => {
+    seen = options.env.CLAUDE_CONFIG_DIR;
+    return streamFor('done');
+  };
+  const judge = () => ({ isQuestion: false, reply: INTENT.stonewall, disclosed: [], judgeFailed: false });
+  session.runConversation(
+    { cwd: '.', stateDir: '.', settingsPath: 's', prompt: 'p', intent: INTENT },
+    { model: 'm', maxTurns: 5, timeoutMs: 1000, userTurns: 1, execute, judge }
+  );
+  assert.strictEqual(seen, process.env.CLAUDE_CONFIG_DIR);
+});
+
+test('a missing or errored result is a provider error, not a trial', () => {
+  const noResult = () => ({ stdout: JSON.stringify({ type: 'assistant', message: { content: [{ type: 'text', text: 'Not logged in - Please run /login' }] } }), status: 1 });
+  const judge = () => ({ isQuestion: false, reply: INTENT.stonewall, disclosed: [], judgeFailed: false });
+  const result = session.runConversation(
+    { cwd: '.', stateDir: '.', settingsPath: 's', prompt: 'p', intent: INTENT },
+    { model: 'm', maxTurns: 5, timeoutMs: 1000, userTurns: 1, execute: noResult, judge }
+  );
+  assert.strictEqual(result.providerError, true);
+  assert.match(result.providerMessage, /Not logged in/);
+  // The runner turns this into a thrown error rather than a graded row.
+  assert.match(result.providerMessage, /log ?in/i);
+});
+
+test('denials are recorded per turn, so the once-per-session latch is visible', () => {
+  let call = 0;
+  const execute = () => {
+    call++;
+    // The gate fires on the first touch and is silent afterwards because the
+    // file is already marked checked, not because it chose to stay quiet.
+    return call === 1 ? streamFor('which window?', { denials: 2 }) : streamFor('done', { denials: 0 });
+  };
+  let asked = 0;
+  const judge = () => {
+    asked++;
+    return asked === 1
+      ? { isQuestion: true, reply: '400 days, mark them', disclosed: ['window', 'mode'], judgeFailed: false }
+      : { isQuestion: false, reply: INTENT.stonewall, disclosed: [], judgeFailed: false };
+  };
+  const result = session.runConversation(
+    { cwd: '.', stateDir: '.', settingsPath: 's', prompt: 'p', intent: INTENT },
+    { model: 'm', maxTurns: 5, timeoutMs: 1000, userTurns: 2, execute, judge }
+  );
+  assert.deepStrictEqual(result.denialsPerTurn, [2, 0]);
+  assert.strictEqual(result.gateDenials, 2);
+});
+
 test('disclosedDecisive needs every decisive fact, not just one', () => {
   const execute = () => streamFor('how long is the window?');
   const judge = () => ({ isQuestion: true, reply: '400 days', disclosed: ['window'], judgeFailed: false });

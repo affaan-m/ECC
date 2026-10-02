@@ -295,3 +295,32 @@ per user turn.
   independence of whoever writes the next ones.
 - Telling every arm that the user is reachable raises asking across the board,
   which is the right comparison but not the shipped default.
+
+### Scaling a conversation
+
+Three properties matter once a trial is more than one turn, and only the first
+is fully solved.
+
+- **Persisted sessions are cleaned up.** Resuming needs session persistence, so
+  Claude writes a transcript folder per trial workspace under its projects
+  directory. Isolating that with a per-trial `CLAUDE_CONFIG_DIR` does not work:
+  it puts the credentials out of reach and every turn returns "Not logged in",
+  which the harness then grades as a `coverage-hole`. The runner therefore keeps
+  the real config directory and deletes only the folders its own work root
+  created. A trial that is unauthenticated, or whose gated arm edited files with
+  no sign of the hook, stops the run rather than being recorded.
+- **The gate fires once per file per session, so its influence decays.** The
+  hook keeps a `checked` list in session state, and `--resume` keeps one session
+  id for the whole conversation. After the first touch of a file the gate passes
+  it, so in a long conversation almost all of the gate's effect lands in the
+  first turn. `denialsPerTurn` records the denials of each turn separately, so a
+  zero following a non-zero reads as the latch rather than as the gate choosing
+  to stay quiet. `silence-hole` should be read with that column in view, and the
+  hook's `MAX_CHECKED_ENTRIES` pruning can let a file be gated again in a very
+  long session.
+- **Cost grows faster than turn count.** Each turn is a fresh `claude --print
+  --resume`, which replays the conversation so far, so tokens per turn rise as
+  the exchange lengthens. `--user-turns 3` means up to four agent invocations
+  plus one judge call per answer: a 6-scenario, 3-arm, 3-repetition run is 54
+  trials and up to 216 billed invocations, not 54. Raise `--user-turns` only
+  with a reason, and read the per-arm cost before scaling repetitions.

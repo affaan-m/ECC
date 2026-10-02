@@ -12,7 +12,7 @@
 const fs = require('fs');
 const path = require('path');
 const { prepareWorkspace, commitWorkspace, grade, readMetrics } = require('./lib');
-const { ARMS, TRIAL_FILE, armSettings, trialPatch } = require('./arms');
+const { ARMS, TRIAL_FILE, trialPatch } = require('./arms');
 const { runConversation } = require('./session');
 const { classify } = require('./coverage');
 
@@ -107,7 +107,13 @@ function runIntentTrial(trial, { workRoot, armSettingsByName, executable, model,
     disclosed: conversation.disclosed,
     disclosedDecisive: conversation.disclosedDecisive,
     judgeFailed: conversation.judgeFailed,
+    providerError: conversation.providerError,
+    providerMessage: conversation.providerMessage,
+    // Same guard as lib.js: a gated arm whose agent edited files with no metrics
+    // line and no denial means the hook never ran, so the trial proves nothing.
+    hookObserved: !ARMS[trial.arm].gate || conversation.editCalls === 0 || metrics.length > 0 || conversation.gateDenials > 0,
     gateDenials: conversation.gateDenials,
+    denialsPerTurn: conversation.denialsPerTurn,
     questionsAsked: [...new Set(denials.flatMap(event => event.questions || []))].sort(),
     editCalls: conversation.editCalls,
     tools: conversation.tools,

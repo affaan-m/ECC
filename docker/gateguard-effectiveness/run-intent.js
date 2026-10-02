@@ -91,6 +91,32 @@ function readResults(file) {
   return fs.readFileSync(file, 'utf8').split('\n').filter(Boolean).map(line => JSON.parse(line));
 }
 
+// Resuming a session needs persistence, so Claude writes a transcript folder per
+// trial workspace under its projects directory. A per-trial CLAUDE_CONFIG_DIR
+// would isolate those but also hides the credentials, so they are removed here
+// instead. Only folders this run created, named after its own temp work root,
+// are touched.
+function sessionsDir() {
+  const home = process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), '.claude');
+  return path.join(home, 'projects');
+}
+
+function listSessions() {
+  try {
+    return new Set(fs.readdirSync(sessionsDir()));
+  } catch (_) {
+    return new Set();
+  }
+}
+
+function removeTrialSessions(before) {
+  const dir = sessionsDir();
+  for (const entry of listSessions()) {
+    if (before.has(entry) || !entry.includes('gateguard-intent')) continue;
+    fs.rmSync(path.join(dir, entry), { recursive: true, force: true });
+  }
+}
+
 function writeReport(options, rows, meta) {
   const header = `Model: ${meta.model}; judge: ${meta.judgeModel}; hook commit: ${meta.sha}; reps: ${meta.reps}; user turns: ${meta.userTurns}.\n\n`;
   const body = rows.length ? renderHoles(rows) : 'No trials recorded yet.\n';
@@ -181,6 +207,7 @@ function main() {
     fs.writeFileSync(metaFile, `${JSON.stringify(meta, null, 2)}\n`);
     let judgeFailures = 0;
     for (const [index, trial] of trials.entries()) {
+      const sessionsBefore = listSessions();
       const transcript = [];
       const execute = (file, args, spawnOptions) => {
         const result = spawnSync(file, args, spawnOptions);
@@ -203,6 +230,15 @@ function main() {
         transcript.join('\n')
       );
       fs.rmSync(path.join(workRoot, trial.key.replace(/\//g, '__')), { recursive: true, force: true });
+      removeTrialSessions(sessionsBefore);
+      // An unauthenticated or hookless run must not be recorded: graded as data it
+      // looks like a finding (the first such trial was filed as a coverage hole).
+      if (row.providerError && /authenticat|log ?in|oauth/i.test(row.providerMessage || '')) {
+        throw new Error(`${trial.key}: Claude is not signed in (${row.providerMessage}); sign in with the claude CLI and rerun with the same --out`);
+      }
+      if (!row.hookObserved) {
+        throw new Error(`${trial.key}: the gate did not run although the agent edited files; check the hook setup before spending more sessions`);
+      }
       fs.appendFileSync(resultsFile, `${JSON.stringify(row)}\n`);
       rows.push(row);
       writeReport(options, rows, meta);

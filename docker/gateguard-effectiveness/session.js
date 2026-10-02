@@ -77,19 +77,26 @@ function runConversation({ cwd, stateDir, settingsPath, prompt, intent }, option
     execute = spawnSync, judge = userSim.answer, judgeModel = userSim.JUDGE_MODEL
   } = options;
 
+  // The config directory is deliberately NOT isolated. Resuming needs session
+  // persistence, and the obvious fix - a per-trial CLAUDE_CONFIG_DIR - puts the
+  // credentials out of reach: every turn then returns "Not logged in". The
+  // persisted transcripts are cleaned up by the runner instead.
   const env = childEnv(stateDir);
   const usage = emptyUsage();
   const exchange = [];
   const disclosed = new Set();
+  const denialsPerTurn = [];
   let gateDenials = 0;
   let editCalls = 0;
-  let tools = {};
+  const tools = {};
   let judgeFailed = false;
   let asked = false;
   let resumeId = null;
   let input = `${prompt}\n\n${COLLAB_NOTE}\n`;
   let lastStatus = null;
   let timedOut = false;
+  let providerError = false;
+  let providerMessage = null;
 
   for (let turn = 0; turn <= userTurns; turn++) {
     const args = sessionArgs({ model, settingsPath, maxTurns }, resumeId);
@@ -99,9 +106,18 @@ function runConversation({ cwd, stateDir, settingsPath, prompt, intent }, option
       timeout: timeoutMs, killSignal: 'SIGKILL', maxBuffer: 64 * 1024 * 1024
     });
     lastStatus = run.status;
-    timedOut = timedOut || run.error ? /ETIMEDOUT|SIGKILL/.test(String(run.error && run.error.code)) : false;
+    // A timeout on any turn stands: `a || b ? c : false` cleared it on the next clean turn.
+    timedOut = timedOut || /ETIMEDOUT|SIGKILL/.test(String(run.error && run.error.code));
     const stream = parseStream(run.stdout);
+    // Same test as lib.js: a missing or is_error result is a provider failure,
+    // not a trial. Recorded per turn so a failure on any turn invalidates the
+    // conversation rather than being graded as a finding.
+    if (!stream.result || stream.result.is_error === true) {
+      providerError = true;
+      providerMessage = String((stream.result && stream.result.result) || finalText(stream) || '').slice(0, 200) || null;
+    }
     addUsage(usage, stream.result);
+    denialsPerTurn.push(stream.gateDenials);
     gateDenials += stream.gateDenials;
     editCalls += stream.editCalls;
     for (const [name, count] of Object.entries(stream.tools)) tools[name] = (tools[name] || 0) + count;
@@ -127,11 +143,16 @@ function runConversation({ cwd, stateDir, settingsPath, prompt, intent }, option
     disclosed: [...disclosed],
     disclosedDecisive: decisive.length > 0 && decisive.every(id => disclosed.has(id)),
     gateDenials,
+    // Per turn, because the gate marks a file checked once per session: a zero
+    // after a non-zero is the latch, not the gate choosing to stay quiet.
+    denialsPerTurn,
     editCalls,
     tools,
     judgeFailed,
     exitStatus: lastStatus,
     timedOut,
+    providerError,
+    providerMessage,
     ...usage
   };
 }
