@@ -10,7 +10,7 @@
 
 import { readFileSync, existsSync } from 'fs';
 import { resolve, basename } from 'path';
-import { readProjects } from './shared.mjs';
+import { readProjects, extractMarkdownSection as extractSection } from './shared.mjs';
 
 const cwd = process.env.PWD || process.cwd();
 const projects = readProjects();
@@ -30,12 +30,6 @@ function readFile(filename) {
   const p = resolve(cwd, filename);
   if (!existsSync(p)) return null;
   try { return readFileSync(p, 'utf8'); } catch { return null; }
-}
-
-function extractSection(md, heading) {
-  const re = new RegExp(`## ${heading}\\n([\\s\\S]*?)(?=\\n## |$)`);
-  const m = md.match(re);
-  return m ? m[1].trim() : null;
 }
 
 // ── package.json ──────────────────────────────────────────────────────────────
