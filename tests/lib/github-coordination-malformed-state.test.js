@@ -3,7 +3,7 @@ const assert = require('assert');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const { extractCoordinationState, mergeIssueBody } = require('../../scripts/lib/github-coordination/parsing');
+const { extractCoordinationState, mergeIssueBody, renderCoordinationState } = require('../../scripts/lib/github-coordination/parsing');
 const { getCoordinationState } = require('../../scripts/lib/github-coordination/state');
 const actions = require('../../scripts/lib/github-coordination/actions');
 let passed = 0;
@@ -38,6 +38,24 @@ test('parse errors never echo the coordination body', () => {
   try { extractCoordinationState(section('TOP_SECRET_FIXTURE not JSON')); assert.fail('expected parse error'); }
   catch (error) { assert.ok(!error.message.includes('TOP_SECRET_FIXTURE')); }
 });
+test('literal markers in prose, fenced examples and JSON notes remain intact', () => {
+  for (const policy of [{}, { sectionMarker: 'custom-marker' }]) {
+    const marker = policy.sectionMarker || 'ecc-coordination';
+    const notes = `Literal <!-- ${marker}:end --> and triple backticks ` + '```';
+    const example = '````markdown\n' + renderCoordinationState({ notes: 'example' }, policy) + '\n````';
+    const narrative = `Inline <!-- ${marker}:start --> example\n${example}\n`;
+    assert.strictEqual(extractCoordinationState(narrative, policy), null);
+    for (const newline of ['\n', '\r\n']) {
+      const body = (narrative + renderCoordinationState({ notes, status: 'blocked' }, policy) + '\nAfter section\n').replace(/\n/g, newline);
+      assert.strictEqual(extractCoordinationState(body, policy).notes, notes);
+      const merged = mergeIssueBody({ body }, { notes, status: 'claimed' }, policy);
+      assert.strictEqual(extractCoordinationState(merged, policy).status, 'claimed');
+      assert.strictEqual(extractCoordinationState(merged, policy).notes, notes);
+      assert.ok(merged.includes(example.replace(/\n/g, newline)));
+      assert.ok(merged.endsWith('After section\n'));
+    }
+  }
+});
 test('every action refuses damaged state before GitHub or local snapshot writes', () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-coordination-damaged-'));
   const prior = process.env.ECC_GH_SHIM;
@@ -46,9 +64,10 @@ test('every action refuses damaged state before GitHub or local snapshot writes'
     const shim = path.join(root, 'gh.js');
     const issue = { number: 12, title: 'Retain damaged state', body: section('{broken'),
       state: 'OPEN', labels: [], author: { login: 'owner' } };
+    const healthy = { ...issue, number: 11, body: section('{"status":"blocked"}') };
     fs.writeFileSync(shim, `const fs=require('fs');const args=process.argv.slice(2);
 fs.appendFileSync(${JSON.stringify(log)},JSON.stringify(args)+'\\n');
-const issue=${JSON.stringify(issue)};process.stdout.write(JSON.stringify(args[1]==='list'?[issue]:issue));`);
+const issue=${JSON.stringify(issue)};process.stdout.write(JSON.stringify(args[1]==='list'?[${JSON.stringify(healthy)},issue]:issue));`);
     process.env.ECC_GH_SHIM = shim;
     const store = new Proxy({}, { get: () => () => { throw Error('must not write snapshots'); } });
     for (const action of ['Claim', 'Sync', 'Validate', 'Publish', 'Review', 'Unblock', 'Decompose']) {
