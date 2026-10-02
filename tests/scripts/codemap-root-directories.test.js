@@ -35,7 +35,7 @@ for (const fixture of [
     }
     const apiFiles = ['app/api/route.ts', 'app/api/users/route.ts', 'pages/api/users.ts'];
     if (fixture.apiRoutes) {
-      for (const file of [...apiFiles, 'app/page.tsx', 'pages/home.tsx']) {
+      for (const file of [...apiFiles, 'app/page.tsx', 'pages/home.tsx', 'app/api/users/page.tsx']) {
         const fullPath = path.join(root, fixture.prefix + file);
         fs.mkdirSync(path.dirname(fullPath), { recursive: true });
         fs.writeFileSync(fullPath, 'export default function handler() {}\n');
@@ -45,10 +45,11 @@ for (const fixture of [
     assert.strictEqual(result.status, 0, result.stderr);
     for (const [area, dir] of Object.entries(areas)) {
       const doc = fs.readFileSync(path.join(root, 'docs/CODEMAPS', area + '.md'), 'utf8');
-      const expected = fixture.expected + (fixture.apiRoutes ? (area === 'backend' ? 3 : area === 'frontend' ? 2 : 0) : 0);
+      const expected = fixture.expected + (fixture.apiRoutes ? (area === 'backend' ? 3 : area === 'frontend' ? 3 : 0) : 0);
       assert.ok(doc.includes(`**Total Files:** ${expected}`), `${area}: wrong file count`);
       if (fixture.expected) assert.ok(doc.includes(`${fixture.prefix}${dir}/index.js`), `${area}: missing module`);
       if (fixture.apiRoutes && ['frontend', 'backend'].includes(area)) {
+        assert.strictEqual(doc.includes(fixture.prefix + 'app/api/users/page.tsx'), area === 'frontend');
         for (const file of apiFiles) {
           assert.strictEqual(doc.includes(`${fixture.prefix}${file}`), area === 'backend', `${file}: wrong area`);
         }

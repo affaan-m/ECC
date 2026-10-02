@@ -115,6 +115,12 @@ function classifyFiles(allFiles: string[]): Record<string, AreaInfo> {
 
   for (const file of allFiles) {
     const relPath = rel(file);
+    // App Router UI conventions remain frontend even below a directory named api.
+    if (/(?:^|\/)(app)\/api\//i.test(relPath)
+      && /^(page|layout|template|loading|error|global-error|not-found|default)\.(ts|tsx|js|jsx)$/i.test(path.basename(relPath))) {
+      areas.frontend.files.push(relPath);
+      continue;
+    }
     // Framework API directories are backend even beneath frontend app/pages roots.
     if (/(?:^|\/)(app|pages)\/api\//i.test(relPath)) {
       areas.backend.files.push(relPath);
