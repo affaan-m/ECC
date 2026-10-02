@@ -5876,8 +5876,7 @@ fn build_legacy_schedule_draft(
 fn json_string_candidates(value: &serde_json::Value, paths: &[&[&str]]) -> Option<String> {
     paths
         .iter()
-        .find_map(|path| json_lookup(value, path))
-        .and_then(json_to_string)
+        .find_map(|path| json_lookup(value, path).and_then(json_to_string))
 }
 
 fn json_bool_candidates(value: &serde_json::Value, paths: &[&[&str]]) -> Option<bool> {
@@ -11021,6 +11020,38 @@ mod tests {
     }
 
     #[test]
+    fn json_string_candidates_skips_unusable_values() {
+        for unusable in [
+            serde_json::Value::Null,
+            serde_json::json!(true),
+            serde_json::json!({}),
+            serde_json::json!([]),
+            serde_json::json!("   "),
+        ] {
+            let value = serde_json::json!({"task": unusable, "prompt": " fallback "});
+            assert_eq!(
+                json_string_candidates(&value, &[&["task"], &["prompt"]]),
+                Some("fallback".to_string())
+            );
+        }
+        let value = serde_json::json!({"task": {"prompt": "nested task"}, "cron": null, "schedule": "*/15 * * * *"});
+        let draft = build_legacy_schedule_draft(&value, 0, "cron/jobs.json");
+        assert_eq!(draft.task.as_deref(), Some("nested task"));
+        assert_eq!(draft.cron_expr.as_deref(), Some("*/15 * * * *"));
+        assert_eq!(
+            json_string_candidates(
+                &serde_json::json!({"task": "first", "prompt": "later"}),
+                &[&["task"], &["prompt"]]
+            ),
+            Some("first".to_string())
+        );
+        assert_eq!(
+            json_string_candidates(&serde_json::json!({"id": 42}), &[&["id"]]),
+            Some("42".to_string())
+        );
+    }
+
+    #[test]
     fn import_legacy_schedules_dry_run_reports_ready_disabled_and_invalid_jobs() -> Result<()> {
         let tempdir = TestDir::new("legacy-schedule-import-dry-run")?;
         let root = tempdir.path();
@@ -11032,11 +11063,16 @@ mod tests {
                     {
                         "name": "portal-recovery",
                         "cron": "*/15 * * * *",
-                        "prompt": "Check portal-first recovery flow",
+                        "task": {"prompt": "Check portal-first recovery flow"},
                         "agent": "codex",
                         "project": "billing-web",
                         "task_group": "recovery",
                         "use_worktree": false
+                    },
+                    {
+                        "name": "top-level-prompt",
+                        "cron": "0 9 * * *",
+                        "prompt": "Check top-level prompt import"
                     },
                     {
                         "name": "paused-job",
@@ -11058,13 +11094,17 @@ mod tests {
         let report = import_legacy_schedules(&db, &config::Config::default(), root, true)?;
 
         assert!(report.dry_run);
-        assert_eq!(report.jobs_detected, 3);
-        assert_eq!(report.ready_jobs, 1);
+        assert_eq!(report.jobs_detected, 4);
+        assert_eq!(report.ready_jobs, 2);
         assert_eq!(report.imported_jobs, 0);
         assert_eq!(report.disabled_jobs, 1);
         assert_eq!(report.invalid_jobs, 1);
         assert_eq!(report.skipped_jobs, 0);
-        assert_eq!(report.jobs.len(), 3);
+        assert_eq!(report.jobs.len(), 4);
+        assert!(report.jobs.iter().any(|job| {
+            job.task.as_deref() == Some("Check top-level prompt import")
+                && job.command_snippet.is_some()
+        }));
         assert!(report
             .jobs
             .iter()
@@ -11085,11 +11125,16 @@ mod tests {
                     {
                         "name": "portal-recovery",
                         "cron": "*/15 * * * *",
-                        "prompt": "Check portal-first recovery flow",
+                        "task": {"prompt": "Check portal-first recovery flow"},
                         "agent": "codex",
                         "project": "billing-web",
                         "task_group": "recovery",
                         "use_worktree": false
+                    },
+                    {
+                        "name": "top-level-prompt",
+                        "cron": "0 9 * * *",
+                        "prompt": "Check top-level prompt import"
                     }
                 ]
             })
@@ -11106,8 +11151,8 @@ mod tests {
         let report = import_legacy_schedules(&db, &config::Config::default(), root, false)?;
 
         assert!(!report.dry_run);
-        assert_eq!(report.ready_jobs, 1);
-        assert_eq!(report.imported_jobs, 1);
+        assert_eq!(report.ready_jobs, 2);
+        assert_eq!(report.imported_jobs, 2);
         assert_eq!(
             report.jobs[0].status,
             LegacyScheduleImportJobStatus::Imported
@@ -11115,14 +11160,20 @@ mod tests {
         assert!(report.jobs[0].imported_schedule_id.is_some());
 
         let schedules = db.list_scheduled_tasks()?;
-        assert_eq!(schedules.len(), 1);
-        assert_eq!(schedules[0].task, "Check portal-first recovery flow");
-        assert_eq!(schedules[0].agent_type, "codex");
-        assert_eq!(schedules[0].project, "billing-web");
-        assert_eq!(schedules[0].task_group, "recovery");
-        assert!(!schedules[0].use_worktree);
+        assert_eq!(schedules.len(), 2);
+        assert!(schedules
+            .iter()
+            .any(|schedule| schedule.task == "Check top-level prompt import"));
+        let nested = schedules
+            .iter()
+            .find(|schedule| schedule.task == "Check portal-first recovery flow")
+            .expect("nested prompt schedule");
+        assert_eq!(nested.agent_type, "codex");
+        assert_eq!(nested.project, "billing-web");
+        assert_eq!(nested.task_group, "recovery");
+        assert!(!nested.use_worktree);
         assert_eq!(
-            schedules[0].working_dir.canonicalize()?,
+            nested.working_dir.canonicalize()?,
             target_repo.canonicalize()?
         );
 
