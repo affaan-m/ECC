@@ -115,6 +115,22 @@ function runTests() {
 
   // ─── Standard Install ───
 
+  if (test('explicit configDir overrides the environment profile', () => {
+    const homeDir = createTempDir();
+    try {
+      const expected = setupStandardInstall(homeDir);
+      assert.strictEqual(resolveEccRoot({ envRoot: '', homeDir, configDir: expected }), expected);
+    } finally { fs.rmSync(homeDir, { recursive: true, force: true }); }
+  })) passed++; else failed++;
+
+  if (test('whitespace configDir falls back to the default profile', () => {
+    const homeDir = createTempDir();
+    try {
+      const expected = setupStandardInstall(homeDir);
+      assert.strictEqual(resolveEccRoot({ envRoot: '', homeDir, configDir: '  ' }), expected);
+    } finally { fs.rmSync(homeDir, { recursive: true, force: true }); }
+  })) passed++; else failed++;
+
   if (test('finds standard install at ~/.claude/', () => {
     const homeDir = createTempDir();
     try {

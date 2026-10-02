@@ -111,12 +111,27 @@ test('older cached resolvers cannot switch away from the active profile', root =
 
 test('Codex disabled hooks do not require a plugin root', root => {
   const codex = JSON.parse(fs.readFileSync(path.join(repo, 'hooks/codex-hooks.json'), 'utf8'));
-  const result = inline(codex.hooks.SessionStart[0].hooks[0].command, environment(root, root, {
-    PLUGIN_ROOT: undefined, ECC_HOOKS_ENABLED: 'false',
-  }));
+  const cleanEnvironment = Object.fromEntries(Object.entries(environment(root, root, {
+    ECC_HOOKS_ENABLED: 'false',
+  })).filter(([key]) => key !== 'PLUGIN_ROOT'));
+  assert.strictEqual(Object.hasOwn(cleanEnvironment, 'PLUGIN_ROOT'), false);
+  const result = inline(codex.hooks.SessionStart[0].hooks[0].command, cleanEnvironment);
   assert.strictEqual(result.status, 0, result.stderr);
   assert.strictEqual(result.stdout, '');
   assert.strictEqual(result.stderr, '');
+});
+
+test('inline resolver accepts equivalent active-profile path spellings', root => {
+  const config = path.join(root, 'active-profile');
+  write(config, 'scripts/lib/utils.js', '');
+  fs.mkdirSync(path.join(config, 'skills/continuous-learning-v2'), { recursive: true });
+  const equivalent = process.platform === 'win32' ? config.toUpperCase() : path.join(config, '.');
+  write(config, 'scripts/lib/resolve-ecc-root.js', `exports.resolveEccRoot=()=>${JSON.stringify(equivalent)};`);
+  const result = spawnSync(process.execPath, ['-e', `process.stdout.write(String(${INLINE_RESOLVE}))`], {
+    env: environment(root, config), encoding: 'utf8', timeout: 10000,
+  });
+  assert.strictEqual(result.status, 0, result.stderr);
+  assert.strictEqual(result.stdout, equivalent);
 });
 
 test('direct bootstrap honors the global flag before spawning a target', root => {
