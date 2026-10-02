@@ -402,8 +402,8 @@ test('codex lifecycle hook bundle contains only Codex 0.146-supported schema', (
     hooks: sourceSessionStart.hooks.map(handler => ({
       ...handler,
       command: handler.command.replace(
-        'node -e "',
-        'node -e "if(!process.env.PLUGIN_ROOT)throw new Error(\'Missing Codex PLUGIN_ROOT\');process.env.CLAUDE_PLUGIN_ROOT=process.env.PLUGIN_ROOT;'
+        'process.exit(0);',
+        'process.exit(0);if(!process.env.PLUGIN_ROOT)throw new Error(\'Missing Codex PLUGIN_ROOT\');process.env.CLAUDE_PLUGIN_ROOT=process.env.PLUGIN_ROOT;'
       )
     }))
   };

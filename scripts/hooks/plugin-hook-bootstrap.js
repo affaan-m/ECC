@@ -6,6 +6,7 @@ const { spawnSync } = require('child_process');
 const { ensureAgentDataHomeEnv } = require('../lib/agent-data-home');
 const { normalizePluginRootForPlatform } = require('../lib/resolve-ecc-root');
 const { readStdinRaw: readBoundedStdin, resolveMaxStdin } = require('./hook-input');
+const { areHooksEnabled } = require('../lib/hook-flags');
 
 const SHELL_PROBE_TIMEOUT_MS = 2000;
 
@@ -244,6 +245,7 @@ function spawnShell(rootDir, relPath, raw, args, options = {}) {
 }
 
 async function main() {
+  if (!areHooksEnabled()) return;
   const [, , mode, relPath, ...args] = process.argv;
   const maxStdin = resolveMaxStdin(process.env.ECC_HOOK_INPUT_MAX_BYTES, {
     writeDiagnostic: message => process.stderr.write(message)

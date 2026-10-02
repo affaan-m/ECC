@@ -35,13 +35,15 @@ const DEFAULT_SKILL_PROBE = path.join('skills', 'continuous-learning-v2');
  *
  * Tries, in order:
  *   1. CLAUDE_PLUGIN_ROOT env var (set by Claude Code for hooks, or by user)
- *   2. Standard install location (~/.claude/) — when scripts exist there
- *   3. Known plugin roots under ~/.claude/plugins/ (current + legacy slugs)
- *   4. Plugin cache auto-detection — scans ~/.claude/plugins/cache/{ecc,everything-claude-code}/
- *   5. Fallback to ~/.claude/ (original behaviour)
+ *   2. Active config directory (CLAUDE_CONFIG_DIR or ~/.claude/) when usable
+ *   3. Known plugin roots under that directory's plugins/ (current + legacy)
+ *   4. Plugin cache auto-detection under its plugins/cache/ directories
+ *   5. Fallback to the active config directory
  *
  * @param {object} [options]
  * @param {string} [options.homeDir]  Override home directory (for testing)
+ * @param {string} [options.configDir] Active Claude config directory; defaults
+ *                                    to CLAUDE_CONFIG_DIR, then ~/.claude.
  * @param {string} [options.envRoot]  Override CLAUDE_PLUGIN_ROOT (for testing)
  * @param {string} [options.probe]    Relative path used to verify a candidate
  *                                    root contains what the caller needs. When
@@ -63,7 +65,10 @@ function resolveEccRoot(options = {}) {
   }
 
   const homeDir = options.homeDir || os.homedir();
-  const claudeDir = path.join(homeDir, '.claude');
+  const configDir = options.configDir !== undefined ? options.configDir : process.env.CLAUDE_CONFIG_DIR;
+  const claudeDir = typeof configDir === 'string' && configDir.trim()
+    ? path.resolve(configDir.trim())
+    : path.join(homeDir, '.claude');
 
   // Decide whether a candidate directory is a usable ECC root. An explicit
   // caller probe is honored exactly (script consumers know the artifact they
@@ -95,33 +100,35 @@ function resolveEccRoot(options = {}) {
 
   // Plugin cache — Claude Code stores marketplace plugins under
   // ~/.claude/plugins/cache/<plugin-name>/<org>/<version>/
-  try {
-    for (const slug of PLUGIN_CACHE_SLUGS) {
-      const cacheBase = path.join(claudeDir, 'plugins', 'cache', slug);
-      const orgDirs = fs.readdirSync(cacheBase, { withFileTypes: true });
+  for (const slug of PLUGIN_CACHE_SLUGS) {
+    const cacheBase = path.join(claudeDir, 'plugins', 'cache', slug);
+    let orgDirs;
+    try {
+      orgDirs = fs.readdirSync(cacheBase, { withFileTypes: true });
+    } catch {
+      // One absent or unreadable cache must not hide the other plugin slug.
+      continue;
+    }
 
-      for (const orgEntry of orgDirs) {
-        if (!orgEntry.isDirectory()) continue;
-        const orgPath = path.join(cacheBase, orgEntry.name);
+    for (const orgEntry of orgDirs) {
+      if (!orgEntry.isDirectory()) continue;
+      const orgPath = path.join(cacheBase, orgEntry.name);
 
-        let versionDirs;
-        try {
-          versionDirs = fs.readdirSync(orgPath, { withFileTypes: true });
-        } catch {
-          continue;
-        }
+      let versionDirs;
+      try {
+        versionDirs = fs.readdirSync(orgPath, { withFileTypes: true });
+      } catch {
+        continue;
+      }
 
-        for (const verEntry of versionDirs) {
-          if (!verEntry.isDirectory()) continue;
-          const candidate = path.join(orgPath, verEntry.name);
-          if (isRoot(candidate)) {
-            return candidate;
-          }
+      for (const verEntry of versionDirs) {
+        if (!verEntry.isDirectory()) continue;
+        const candidate = path.join(orgPath, verEntry.name);
+        if (isRoot(candidate)) {
+          return candidate;
         }
       }
     }
-  } catch {
-    // Plugin cache doesn't exist or isn't readable — continue to fallback
   }
 
   return claudeDir;
@@ -148,8 +155,8 @@ function normalizePluginRootForPlatform(rootDir, platform = process.platform) {
  * escaped double quotes, so it survives `node -e "..."` quoting on every shell.
  * When CLAUDE_PLUGIN_ROOT is set (as Claude Code does for plugin hooks and
  * commands) it is used directly. Otherwise the inline probes the same set of
- * locations resolveEccRoot() knows about — ~/.claude, the exact plugin roots
- * under ~/.claude/plugins/, and the versioned plugin cache — only far enough to
+ * locations resolveEccRoot() knows about — the active CLAUDE_CONFIG_DIR (or
+ * ~/.claude), its exact plugin roots and versioned plugin cache — far enough to
  * load the committed resolve-ecc-root module, then delegates the authoritative
  * decision to resolveEccRoot(). This keeps discovery behaviour identical to the
  * old inline while centralising the real logic in one tested module.
@@ -158,7 +165,7 @@ function normalizePluginRootForPlatform(rootDir, platform = process.platform) {
  *   const _r = <paste INLINE_RESOLVE>;
  *   const sm = require(_r + '/scripts/lib/session-manager');
  */
-const INLINE_RESOLVE = `(function(){var p=require('path'),f=require('fs'),o=require('os');var e=process.env.CLAUDE_PLUGIN_ROOT;if(e&&e.trim())return e.trim();var d=p.join(o.homedir(),'.claude');function L(x){try{return require(p.join(x,'scripts','lib','resolve-ecc-root')).resolveEccRoot()}catch(_){return null}}var r=L(d);if(r)return r;var s=['ecc','ecc@ecc','marketplaces/ecc','everything-claude-code','everything-claude-code@everything-claude-code','marketplaces/everything-claude-code'];for(var i=0;i<s.length;i++){r=L(p.join(d,'plugins',s[i]));if(r)return r}try{var g=['ecc','everything-claude-code'];for(var j=0;j<g.length;j++){var c=p.join(d,'plugins','cache',g[j]);var O=f.readdirSync(c);for(var k=0;k<O.length;k++){var q=p.join(c,O[k]);var V=f.readdirSync(q);for(var m=0;m<V.length;m++){r=L(p.join(q,V[m]));if(r)return r}}}}catch(_){}return d})()`;
+const INLINE_RESOLVE = `(function(){var p=require('path'),f=require('fs'),o=require('os');var e=process.env.CLAUDE_PLUGIN_ROOT;if(e&&e.trim())return e.trim();var c=process.env.CLAUDE_CONFIG_DIR;var d=c&&c.trim()?p.resolve(c.trim()):p.join(o.homedir(),'.claude');function R(x){return f.existsSync(p.join(x,'scripts','lib','utils.js'))&&f.existsSync(p.join(x,'skills','continuous-learning-v2'))}function L(x){try{var r=require(p.join(x,'scripts','lib','resolve-ecc-root')).resolveEccRoot();return R(r)&&(!p.isAbsolute(p.relative(d,r))&&p.relative(d,r)!=='..'&&!p.relative(d,r).startsWith('..'+p.sep))?r:(R(x)?x:null)}catch(_){return null}}var r=L(d);if(r)return r;var s=['ecc','ecc@ecc','marketplaces/ecc','everything-claude-code','everything-claude-code@everything-claude-code','marketplaces/everything-claude-code'];for(var i=0;i<s.length;i++){r=L(p.join(d,'plugins',s[i]));if(r)return r}var g=['ecc','everything-claude-code'];for(var j=0;j<g.length;j++){var c=p.join(d,'plugins','cache',g[j]);var O;try{O=f.readdirSync(c)}catch(_){continue}for(var k=0;k<O.length;k++){var q=p.join(c,O[k]);var V;try{V=f.readdirSync(q)}catch(_){continue}for(var m=0;m<V.length;m++){r=L(p.join(q,V[m]));if(r)return r}}}return d})()`;
 
 module.exports = {
   resolveEccRoot,
