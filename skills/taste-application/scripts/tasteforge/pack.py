@@ -166,7 +166,7 @@ class StylePack:
             return {}
         try:
             payload = json.loads(path.read_text(encoding="utf-8"))
-        except json.JSONDecodeError as exc:
+        except (json.JSONDecodeError, UnicodeDecodeError) as exc:
             errors.append(f"{path.name}: {exc}")
             return {}
         StylePack._check(path.name, payload, schem, errors)
@@ -191,11 +191,11 @@ def load(path: str | Path) -> StylePack:
         if isinstance(payload, dict):
             sp.manifest = payload
         else:
-            sp.problems.extend(
+            sp.problems = [*sp.problems, *(
                 f"pack.json: {problem}"
                 for problem in schema.validate(payload, schema.PACK_MANIFEST_SCHEMA)
-            )
-    except json.JSONDecodeError as exc:
+            )]
+    except (json.JSONDecodeError, UnicodeDecodeError) as exc:
         sp.manifest = {}
-        sp.problems.append(f"pack.json: {exc}")
+        sp.problems = [*sp.problems, f"pack.json: {exc}"]
     return sp

@@ -51,6 +51,17 @@ class FixturePackTests(unittest.TestCase):
 
 
 class BrokenPackTests(unittest.TestCase):
+    def test_invalid_utf8_metadata_is_reported_without_rewriting_bytes(self) -> None:
+        for filename in ("pack.json", "grade.json", "cadence.json", "spec.json"):
+            with self.subTest(filename=filename), tempfile.TemporaryDirectory() as td:
+                d = self._write(td, json.loads((FIXTURE / "pack.json").read_text()))
+                target = d / filename
+                target.write_bytes(b"\xff")
+                report = pack_mod.load(d).inspect()
+                self.assertEqual(report["validation"]["status"], "invalid")
+                self.assertTrue(any(filename in error for error in report["validation"]["errors"]))
+                self.assertEqual(target.read_bytes(), b"\xff")
+
     def test_unreadable_manifest_reports_only_the_source_error(self) -> None:
         for payload in ("{broken", '["unexpected"]', "null", "42"):
             with self.subTest(payload=payload), tempfile.TemporaryDirectory() as td:
