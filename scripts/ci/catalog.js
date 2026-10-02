@@ -103,17 +103,25 @@ function parseReadmeExpectations(readmeContent) {
     { category: 'commands', mode: 'exact', expected: Number(quickStartMatch[3]), source: 'README.md quick-start summary' }
   );
 
-  const projectTreeAgentsMatch = readmeContent.match(/^\|\s*--\s*agents\/\s*#\s*(\d+)\s+specialized subagents for delegation\s*$/im);
-  if (!projectTreeAgentsMatch) {
-    throw new Error('README.md project tree is missing the agents count');
-  }
+  const projectTreePatterns = [
+    { category: 'agents', regex: /^\|[^\S\r\n]*--[^\S\r\n]*agents\/[^\S\r\n]*#[^\S\r\n]*(\d+)[^\S\r\n]+specialized subagents for delegation[^\S\r\n]*$/gim },
+    { category: 'skills', regex: /^\|[^\S\r\n]*--[^\S\r\n]*skills\/[^\S\r\n]*#[^\S\r\n]*(\d+)[^\S\r\n]+reusable workflows loaded on demand[^\S\r\n]*$/gim }
+  ];
 
-  expectations.push({
-    category: 'agents',
-    mode: 'exact',
-    expected: Number(projectTreeAgentsMatch[1]),
-    source: 'README.md project tree (agents)'
-  });
+  for (const pattern of projectTreePatterns) {
+    const matches = [...readmeContent.matchAll(pattern.regex)];
+    if (matches.length === 0) {
+      throw new Error(`README.md project tree is missing the ${pattern.category} count`);
+    }
+    for (const match of matches) {
+      expectations.push({
+        category: pattern.category,
+        mode: 'exact',
+        expected: Number(match[1]),
+        source: `README.md project tree (${pattern.category})`
+      });
+    }
+  }
 
   const tablePatterns = [
     { category: 'agents', regex: /\|\s*(?:\*\*)?Agents(?:\*\*)?\s*\|\s*(?:(?:PASS:|\u2705)\s*)?(\d+)\s+agents\s*\|/i, source: 'README.md comparison table' },
@@ -241,35 +249,37 @@ function parseAgentsDocExpectations(agentsContent) {
     {
       category: 'agents',
       mode: 'exact',
-      regex: /^\s*agents\/\s*[—–-]\s*(\d+)\s+specialized subagents\s*$/im,
+      regex: /^[^\S\r\n]*agents\/[^\S\r\n]*[—–-][^\S\r\n]*(\d+)[^\S\r\n]+specialized subagents[^\S\r\n]*$/im,
       source: 'AGENTS.md project structure'
     },
     {
       category: 'skills',
       mode: 'minimum',
-      regex: /^\s*skills\/\s*[—–-]\s*(\d+)(\+)?\s+workflow skills and domain knowledge\s*$/im,
+      regex: /^[^\S\r\n]*skills\/[^\S\r\n]*[—–-][^\S\r\n]*(\d+)(\+)?[^\S\r\n]+workflow skills and domain knowledge[^\S\r\n]*$/im,
       source: 'AGENTS.md project structure'
     },
     {
       category: 'commands',
       mode: 'exact',
-      regex: /^\s*commands\/\s*[—–-]\s*(\d+)\s+slash commands\s*$/im,
+      regex: /^[^\S\r\n]*commands\/[^\S\r\n]*[—–-][^\S\r\n]*(\d+)[^\S\r\n]+slash commands[^\S\r\n]*$/im,
       source: 'AGENTS.md project structure'
     }
   ];
 
   for (const pattern of structurePatterns) {
-    const match = agentsContent.match(pattern.regex);
-    if (!match) {
+    const matches = [...agentsContent.matchAll(new RegExp(pattern.regex.source, `${pattern.regex.flags}g`))];
+    if (matches.length === 0) {
       throw new Error(`${pattern.source} is missing the ${pattern.category} entry`);
     }
 
-    expectations.push({
-      category: pattern.category,
-      mode: pattern.mode === 'minimum' && match[2] ? 'minimum' : pattern.mode,
-      expected: Number(match[1]),
-      source: `${pattern.source} (${pattern.category})`
-    });
+    for (const match of matches) {
+      expectations.push({
+        category: pattern.category,
+        mode: pattern.mode === 'minimum' && match[2] ? 'minimum' : pattern.mode,
+        expected: Number(match[1]),
+        source: `${pattern.source} (${pattern.category})`
+      });
+    }
   }
 
   return expectations;
@@ -320,35 +330,37 @@ function parseZhAgentsDocExpectations(agentsContent) {
     {
       category: 'agents',
       mode: 'exact',
-      regex: /^\s*agents\/\s*[—–-]\s*(\d+)\s+个专业子代理\s*$/im,
+      regex: /^[^\S\r\n]*agents\/[^\S\r\n]*[—–-][^\S\r\n]*(\d+)[^\S\r\n]+个专业子代理[^\S\r\n]*$/im,
       source: 'docs/zh-CN/AGENTS.md project structure'
     },
     {
       category: 'skills',
       mode: 'minimum',
-      regex: /^\s*skills\/\s*[—–-]\s*(\d+)(\+)?\s+个工作流技能和领域知识\s*$/im,
+      regex: /^[^\S\r\n]*skills\/[^\S\r\n]*[—–-][^\S\r\n]*(\d+)(\+)?[^\S\r\n]+个工作流技能和领域知识[^\S\r\n]*$/im,
       source: 'docs/zh-CN/AGENTS.md project structure'
     },
     {
       category: 'commands',
       mode: 'exact',
-      regex: /^\s*commands\/\s*[—–-]\s*(\d+)\s+个斜杠命令\s*$/im,
+      regex: /^[^\S\r\n]*commands\/[^\S\r\n]*[—–-][^\S\r\n]*(\d+)[^\S\r\n]+个斜杠命令[^\S\r\n]*$/im,
       source: 'docs/zh-CN/AGENTS.md project structure'
     }
   ];
 
   for (const pattern of structurePatterns) {
-    const match = agentsContent.match(pattern.regex);
-    if (!match) {
+    const matches = [...agentsContent.matchAll(new RegExp(pattern.regex.source, `${pattern.regex.flags}g`))];
+    if (matches.length === 0) {
       throw new Error(`${pattern.source} is missing the ${pattern.category} entry`);
     }
 
-    expectations.push({
-      category: pattern.category,
-      mode: pattern.mode === 'minimum' && match[2] ? 'minimum' : pattern.mode,
-      expected: Number(match[1]),
-      source: `${pattern.source} (${pattern.category})`
-    });
+    for (const match of matches) {
+      expectations.push({
+        category: pattern.category,
+        mode: pattern.mode === 'minimum' && match[2] ? 'minimum' : pattern.mode,
+        expected: Number(match[1]),
+        source: `${pattern.source} (${pattern.category})`
+      });
+    }
   }
 
   return expectations;
@@ -411,9 +423,15 @@ function syncEnglishReadme(content, catalog) {
   );
   nextContent = replaceOrThrow(
     nextContent,
-    /^(\|\s*--\s*agents\/\s*#\s*)(\d+)(\s+specialized subagents for delegation\s*)$/im,
+    /^(\|[^\S\r\n]*--[^\S\r\n]*agents\/[^\S\r\n]*#[^\S\r\n]*)(\d+)([^\S\r\n]+specialized subagents for delegation[^\S\r\n]*)$/gim,
     (_, prefix, __, suffix) => `${prefix}${catalog.agents.count}${suffix}`,
     'README.md project tree (agents)'
+  );
+  nextContent = replaceOrThrow(
+    nextContent,
+    /^(\|[^\S\r\n]*--[^\S\r\n]*skills\/[^\S\r\n]*#[^\S\r\n]*)(\d+)([^\S\r\n]+reusable workflows loaded on demand[^\S\r\n]*)$/gim,
+    (_, prefix, __, suffix) => `${prefix}${catalog.skills.count}${suffix}`,
+    'README.md project tree (skills)'
   );
   nextContent = replaceOrThrow(
     nextContent,
@@ -448,19 +466,19 @@ function syncEnglishAgents(content, catalog) {
   );
   nextContent = replaceOrThrow(
     nextContent,
-    /^(\s*agents\/\s*[—–-]\s*)(\d+)(\s+specialized subagents\s*)$/im,
+    /^([^\S\r\n]*agents\/[^\S\r\n]*[—–-][^\S\r\n]*)(\d+)([^\S\r\n]+specialized subagents[^\S\r\n]*)$/gim,
     (_, prefix, __, suffix) => `${prefix}${catalog.agents.count}${suffix}`,
     'AGENTS.md project structure (agents)'
   );
   nextContent = replaceOrThrow(
     nextContent,
-    /^(\s*skills\/\s*[—–-]\s*)(\d+)(\+?)(\s+workflow skills and domain knowledge\s*)$/im,
+    /^([^\S\r\n]*skills\/[^\S\r\n]*[—–-][^\S\r\n]*)(\d+)(\+?)([^\S\r\n]+workflow skills and domain knowledge[^\S\r\n]*)$/gim,
     (_, prefix, __, plus, suffix) => `${prefix}${catalog.skills.count}${plus}${suffix}`,
     'AGENTS.md project structure (skills)'
   );
   nextContent = replaceOrThrow(
     nextContent,
-    /^(\s*commands\/\s*[—–-]\s*)(\d+)(\s+slash commands\s*)$/im,
+    /^([^\S\r\n]*commands\/[^\S\r\n]*[—–-][^\S\r\n]*)(\d+)([^\S\r\n]+slash commands[^\S\r\n]*)$/gim,
     (_, prefix, __, suffix) => `${prefix}${catalog.commands.count}${suffix}`,
     'AGENTS.md project structure (commands)'
   );
@@ -540,19 +558,19 @@ function syncZhAgents(content, catalog) {
   );
   nextContent = replaceOrThrow(
     nextContent,
-    /^(\s*agents\/\s*[—–-]\s*)(\d+)(\s+个专业子代理\s*)$/im,
+    /^([^\S\r\n]*agents\/[^\S\r\n]*[—–-][^\S\r\n]*)(\d+)([^\S\r\n]+个专业子代理[^\S\r\n]*)$/gim,
     (_, prefix, __, suffix) => `${prefix}${catalog.agents.count}${suffix}`,
     'docs/zh-CN/AGENTS.md project structure (agents)'
   );
   nextContent = replaceOrThrow(
     nextContent,
-    /^(\s*skills\/\s*[—–-]\s*)(\d+)(\+?)(\s+个工作流技能和领域知识\s*)$/im,
+    /^([^\S\r\n]*skills\/[^\S\r\n]*[—–-][^\S\r\n]*)(\d+)(\+?)([^\S\r\n]+个工作流技能和领域知识[^\S\r\n]*)$/gim,
     (_, prefix, __, plus, suffix) => `${prefix}${catalog.skills.count}${plus}${suffix}`,
     'docs/zh-CN/AGENTS.md project structure (skills)'
   );
   nextContent = replaceOrThrow(
     nextContent,
-    /^(\s*commands\/\s*[—–-]\s*)(\d+)(\s+个斜杠命令\s*)$/im,
+    /^([^\S\r\n]*commands\/[^\S\r\n]*[—–-][^\S\r\n]*)(\d+)([^\S\r\n]+个斜杠命令[^\S\r\n]*)$/gim,
     (_, prefix, __, suffix) => `${prefix}${catalog.commands.count}${suffix}`,
     'docs/zh-CN/AGENTS.md project structure (commands)'
   );
