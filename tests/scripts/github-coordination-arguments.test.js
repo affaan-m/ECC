@@ -51,6 +51,8 @@ test('scan limits use their own strict validation and diagnostics', () => {
 test('default sync and help remain available without a command', () => {
   assert.strictEqual(parse('--repo', 'o/r').command, 'sync');
   assert.strictEqual(parse('--help').help, true);
+  assert.strictEqual(parse('cliam', '--help').help, true);
+  assert.strictEqual(parse('claim', '--issue', 'invalid', '-h').help, true);
 });
 test('invalid CLI identities and commands fail before local or GitHub writes', () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-coordination-arguments-'));
@@ -68,6 +70,17 @@ test('invalid CLI identities and commands fail before local or GitHub writes', (
       assert.strictEqual(result.status, 1, result.stderr);
       assert.ok(!fs.existsSync(db), 'invalid input must not create or migrate the database');
       assert.ok(!fs.existsSync(log), 'invalid input must not call GitHub');
+    }
+    for (const args of [['cliam', '--help'], ['claim', '--issue', 'invalid', '-h']]) {
+      const result = spawnSync(process.execPath, [path.resolve(__dirname, '../../scripts/github-coordination.js'),
+        ...args, '--repo', 'o/r', '--db', db], {
+        cwd: root, env: { ...process.env, ECC_GH_SHIM: shim, ECC_ARGUMENT_LOG: log },
+        encoding: 'utf8', timeout: 10000,
+      });
+      assert.strictEqual(result.status, 0, result.stderr);
+      assert.ok(result.stdout.includes('Usage:'));
+      assert.ok(!fs.existsSync(db));
+      assert.ok(!fs.existsSync(log));
     }
   } finally { fs.rmSync(root, { recursive: true, force: true }); }
 });

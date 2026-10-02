@@ -104,6 +104,8 @@ function parseArgs(argv) {
     positionals: [],
   };
 
+  if (args.includes('--help') || args.includes('-h')) return { ...parsed, help: true };
+
   for (let i = 0; i < args.length; i += 1) {
     const arg = args[i];
     if (BOOL_FLAGS.has(arg)) {
