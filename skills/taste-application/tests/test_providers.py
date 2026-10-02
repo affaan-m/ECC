@@ -58,7 +58,7 @@ except providers.ProviderNotAuthorizedError:
     pass
 else:
     raise AssertionError("unregistered providers must fail closed")
-for name in ("fal_client", "requests", "http.client", "urllib.request"):
+for name in ("fal_client", "requests", "httpx", "http.client", "urllib.request"):
     assert name not in sys.modules, name
 """,
                 str(REPO_ROOT),
