@@ -339,12 +339,18 @@ async function withRetry<T>(
 
 // Usage: retry transient network errors, not 4xx
 const data = await withRetry(async () => {
-  const response = await fetch('/api/data')
-  if (!response.ok) {
-    const details = await response.json().catch(() => undefined)
-    throw new AppError('HTTP request failed', 'HTTP_ERROR', response.status, details)
+  const controller = new AbortController()
+  const timeout = setTimeout(() => controller.abort(), 5000)
+  try {
+    const response = await fetch('/api/data', { signal: controller.signal })
+    if (!response.ok) {
+      const details = await response.json().catch(() => undefined)
+      throw new AppError('HTTP request failed', 'HTTP_ERROR', response.status, details)
+    }
+    return await response.json()
+  } finally {
+    clearTimeout(timeout)
   }
-  return response.json()
 }, {
   maxAttempts: 3,
   retryIf: (error) => !(error instanceof AppError && error.statusCode < 500),
