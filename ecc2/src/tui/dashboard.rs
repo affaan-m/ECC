@@ -5912,7 +5912,6 @@ impl Dashboard {
             let max_scroll = self.max_output_scroll();
             let centered = self
                 .selected_git_status
-                .saturating_add(usize::from(self.selected_git_status_warning.is_some()))
                 .saturating_sub(self.last_output_height.max(1).saturating_sub(1) / 2);
             self.output_scroll_offset = centered.min(max_scroll);
             return;
@@ -9953,7 +9952,29 @@ mod tests {
         );
         assert_eq!(
             dashboard.output_scroll_offset,
-            dashboard.max_output_scroll()
+            dashboard.selected_git_status
+        );
+        let selected_path = dashboard.selected_git_status_entries[dashboard.selected_git_status]
+            .display_path
+            .clone();
+        let mut terminal = Terminal::new(TestBackend::new(160, 3))?;
+        terminal.draw(|frame| {
+            dashboard.render_output(frame, ratatui::layout::Rect::new(0, 0, 160, 3))
+        })?;
+        let visible = terminal
+            .backend()
+            .buffer()
+            .content()
+            .iter()
+            .map(|cell| cell.symbol())
+            .collect::<String>();
+        assert!(
+            visible.contains(&selected_path),
+            "selected path must remain visible: {visible}"
+        );
+        assert!(
+            !visible.contains("unavailable path"),
+            "warning follows selected file rows"
         );
         dashboard.selected_git_status_warning = None;
         #[cfg(unix)]
