@@ -142,6 +142,12 @@ function loadSkillTriggers({ repoRoot = DEFAULT_REPO_ROOT } = {}) {
   return { triggers, manifest };
 }
 
+function skillTriggerSourceDigest(registry) {
+  return digestObject(registry.entries.filter(entry => entry.id.startsWith('skill:'))
+    .map(({ id, name, description }) => ({ id, name, description }))
+    .sort((left, right) => left.id < right.id ? -1 : left.id > right.id ? 1 : 0));
+}
+
 function projectionFor(entry, target) {
   return {
     installSupport: entry.declaredInstallTargets.includes(target) ? 'declared' : 'not-declared',
@@ -157,4 +163,4 @@ function explainContextEntry({ repoRoot = DEFAULT_REPO_ROOT, id, target = 'codex
   return { ...entry, target, projection: projectionFor(entry, target), registryDigest: registry.registryDigest };
 }
 
-module.exports = { explainContextEntry, loadContextRegistry, loadSkillTriggers, projectionFor };
+module.exports = { explainContextEntry, loadContextRegistry, loadSkillTriggers, projectionFor, skillTriggerSourceDigest };

@@ -25,7 +25,7 @@
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const { loadContextRegistry } = require('../lib/context-pack-registry');
+const { loadContextRegistry, skillTriggerSourceDigest } = require('../lib/context-pack-registry');
 const { createAuthLease, parseCodexJsonl, parseClaudeJson, providerFamily, readClaudeKeychainToken } = require('../../docker/context-profiles/ai-eval-lib');
 const { digestObject, stableStringify } = require('../lib/context-profile-support');
 
@@ -141,6 +141,7 @@ function main() {
     console.log(`progress: ${Object.keys(triggers).length}/${entries.length} skills have triggers`);
   }
   const manifest = { schemaVersion: 1, id: 'skill-triggers@1', registryDigest: registry.registryDigest,
+    triggerSourceDigest: skillTriggerSourceDigest(registry),
     model: { id: model, ...(family === 'codex' ? { effort: 'low' } : {}),
       source: family === 'codex' ? 'codex-subscription-lease' : 'claude-subscription-login' },
     generatedAt: new Date().toISOString(),
