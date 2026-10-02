@@ -867,9 +867,20 @@ pub fn has_uncommitted_changes(worktree: &WorktreeInfo) -> Result<bool> {
 }
 
 pub fn has_staged_changes(worktree: &WorktreeInfo) -> Result<bool> {
-    Ok(git_status_entries(worktree)?
-        .iter()
-        .any(|entry| entry.staged))
+    let output = Command::new("git")
+        .arg("-C")
+        .arg(&worktree.path)
+        .args(["diff", "--cached", "--quiet", "--exit-code"])
+        .output()
+        .context("Failed to inspect staged changes")?;
+    match output.status.code() {
+        Some(0) => Ok(false),
+        Some(1) => Ok(true),
+        _ => anyhow::bail!(
+            "git diff failed: {}",
+            String::from_utf8_lossy(&output.stderr)
+        ),
+    }
 }
 
 pub fn merge_into_base(worktree: &WorktreeInfo) -> Result<MergeOutcome> {
@@ -1514,6 +1525,35 @@ fn validate_branch_name(repo_root: &Path, branch: &str) -> Result<()> {
     }
 }
 
+fn parse_git_status_entry(record: &[u8], source: Option<&[u8]>) -> Option<GitStatusEntry> {
+    let index_status = record[0] as char;
+    let worktree_status = record[1] as char;
+    let path = std::str::from_utf8(&record[3..]).ok()?.to_string();
+    let display_path = if let Some(source) = source {
+        format!(
+            "{} -> {}",
+            display_git_path(std::str::from_utf8(source).ok()?),
+            display_git_path(&path)
+        )
+    } else {
+        display_git_path(&path)
+    };
+    let conflicted = matches!(
+        (index_status, worktree_status),
+        ('U', _) | (_, 'U') | ('A', 'A') | ('D', 'D')
+    );
+    Some(GitStatusEntry {
+        path,
+        display_path,
+        index_status,
+        worktree_status,
+        staged: index_status != ' ' && index_status != '?',
+        unstaged: worktree_status != ' ' && worktree_status != '?',
+        untracked: index_status == '?' && worktree_status == '?',
+        conflicted,
+    })
+}
+
 fn parse_git_status_report(stdout: &[u8]) -> Result<GitStatusReport> {
     if stdout.is_empty() {
         return Ok(GitStatusReport {
@@ -1544,42 +1584,11 @@ fn parse_git_status_report(stdout: &[u8]) -> Result<GitStatusReport> {
         } else {
             None
         };
-        let path = match std::str::from_utf8(&record[3..]) {
-            Ok(path) => path.to_string(),
-            Err(_) => {
-                unavailable_paths += 1;
-                continue;
-            }
-        };
-        let display_path = if let Some(source) = source {
-            match std::str::from_utf8(source) {
-                Ok(source) => format!(
-                    "{} -> {}",
-                    display_git_path(source),
-                    display_git_path(&path)
-                ),
-                Err(_) => {
-                    unavailable_paths += 1;
-                    continue;
-                }
-            }
+        if let Some(entry) = parse_git_status_entry(record, source) {
+            entries.push(entry);
         } else {
-            display_git_path(&path)
-        };
-        let conflicted = matches!(
-            (index_status, worktree_status),
-            ('U', _) | (_, 'U') | ('A', 'A') | ('D', 'D')
-        );
-        entries.push(GitStatusEntry {
-            path,
-            display_path,
-            index_status,
-            worktree_status,
-            staged: index_status != ' ' && index_status != '?',
-            unstaged: worktree_status != ' ' && worktree_status != '?',
-            untracked: index_status == '?' && worktree_status == '?',
-            conflicted,
-        });
+            unavailable_paths += 1;
+        }
     }
     Ok(GitStatusReport {
         entries,
@@ -1710,6 +1719,32 @@ mod tests {
     use std::fs;
     use std::process::Command;
     use uuid::Uuid;
+
+    #[test]
+    fn staged_changes_do_not_depend_on_untracked_path_decoding() -> Result<()> {
+        let root = std::env::temp_dir().join(format!("ecc2-staged-check-{}", Uuid::new_v4()));
+        let repo = init_repo(&root)?;
+        let worktree = WorktreeInfo {
+            path: repo.clone(),
+            branch: "main".into(),
+            base_branch: "main".into(),
+        };
+        fs::write(repo.join("README.md"), "staged update\n")?;
+        run_git(&repo, &["add", "README.md"])?;
+        #[cfg(unix)]
+        {
+            use std::os::unix::ffi::OsStrExt;
+            fs::write(
+                repo.join(std::ffi::OsStr::from_bytes(b"untracked\xff")),
+                "retain",
+            )?;
+            assert!(git_status_entries(&worktree).is_err());
+        }
+        assert!(has_staged_changes(&worktree)?);
+        run_git(&repo, &["reset", "HEAD", "README.md"])?;
+        assert!(!has_staged_changes(&worktree)?);
+        Ok(())
+    }
 
     fn run_git(repo: &Path, args: &[&str]) -> Result<()> {
         let output = Command::new("git")

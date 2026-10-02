@@ -5912,6 +5912,7 @@ impl Dashboard {
             let max_scroll = self.max_output_scroll();
             let centered = self
                 .selected_git_status
+                .saturating_add(usize::from(self.selected_git_status_warning.is_some()))
                 .saturating_sub(self.last_output_height.max(1).saturating_sub(1) / 2);
             self.output_scroll_offset = centered.min(max_scroll);
             return;
@@ -5928,6 +5929,7 @@ impl Dashboard {
     fn max_output_scroll(&self) -> usize {
         let total_lines = if self.output_mode == OutputMode::GitStatus {
             self.selected_git_status_entries.len()
+                + usize::from(self.selected_git_status_warning.is_some())
         } else if matches!(
             self.output_mode,
             OutputMode::WorktreeDiff | OutputMode::GitPatch
@@ -9939,6 +9941,21 @@ mod tests {
         };
         let mut dashboard = test_dashboard(vec![session], 0);
         dashboard.toggle_git_status_mode();
+        dashboard.selected_git_status_warning = Some("unavailable path".to_string());
+        dashboard.selected_git_status = dashboard
+            .selected_git_status_entries
+            .len()
+            .saturating_sub(1);
+        dashboard.sync_output_scroll(1);
+        assert_eq!(
+            dashboard.max_output_scroll(),
+            dashboard.selected_git_status_entries.len()
+        );
+        assert_eq!(
+            dashboard.output_scroll_offset,
+            dashboard.max_output_scroll()
+        );
+        dashboard.selected_git_status_warning = None;
         #[cfg(unix)]
         {
             use std::os::unix::ffi::OsStrExt;
