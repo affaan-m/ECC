@@ -712,6 +712,37 @@ function runTests() {
     }
   })) passed++; else failed++;
 
+  if (test('Codex apply repair and uninstall use the custom home and ledger', () => {
+    const homeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-codex-lifecycle-'));
+    try {
+      const customRoot = path.join(homeDir, 'active codex');
+      const defaultRoot = path.join(homeDir, '.codex');
+      fs.mkdirSync(defaultRoot);
+      fs.writeFileSync(path.join(defaultRoot, 'keep.txt'), 'user-owned');
+      const env = { ...process.env, HOME: homeDir, USERPROFILE: homeDir, CODEX_HOME: customRoot, ECC_DRY_RUN: '0' };
+      const run = (name, args) => {
+        const child = spawnSync(process.execPath, [path.join(__dirname, '../../scripts', name), ...args], {
+          cwd: homeDir, encoding: 'utf8', env, timeout: 90000,
+        });
+        assert.strictEqual(child.status, 0, child.stderr);
+        return JSON.parse(child.stdout);
+      };
+      run('install-apply.js', ['--target', 'codex', '--skills', 'tdd-workflow', '--no-hooks', '--json']);
+      const ledger = path.join(customRoot, 'ecc-install-state.json');
+      const managed = path.join(customRoot, 'skills/tdd-workflow/SKILL.md');
+      assert.ok(fs.existsSync(ledger));
+      const expected = fs.readFileSync(managed, 'utf8');
+      fs.writeFileSync(managed, 'drifted');
+      assert.strictEqual(run('repair.js', ['--target', 'codex', '--json']).results[0].status, 'repaired');
+      assert.strictEqual(fs.readFileSync(managed, 'utf8'), expected);
+      run('uninstall.js', ['--target', 'codex', '--json']);
+      assert.strictEqual(fs.existsSync(managed), false);
+      assert.strictEqual(fs.existsSync(ledger), false);
+      assert.deepStrictEqual(fs.readdirSync(defaultRoot), ['keep.txt']);
+      assert.strictEqual(fs.readFileSync(path.join(defaultRoot, 'keep.txt'), 'utf8'), 'user-owned');
+    } finally { fs.rmSync(homeDir, { recursive: true, force: true }); }
+  })) passed++; else failed++;
+
   if (test('opencode adapter isolates an explicit home from ambient config overrides', () => {
     const homeDir = '/Users/isolated';
     const registryPath = path.join(__dirname, '..', '..', 'scripts', 'lib', 'install-targets', 'registry.js');
