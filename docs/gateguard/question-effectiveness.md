@@ -153,4 +153,145 @@ folder. `--arms off,gate,main` compares the routing of two commits.
 
 ## Pilot results
 
-Not run yet.
+The pilot ran: 6 scenarios, 4 arms, 3 repetitions, 72 sessions, sonnet, hook
+commit `bdf2dca6`. It returned no information at all.
+
+| Arm | Passed | Mean score | Median denials | Median turns |
+| --- | ---: | ---: | ---: | ---: |
+| `off` | 18/18 | 1.000 | 0 | 4.5 |
+| `gate` | 18/18 | 1.000 | 1 | 6 |
+| `minus-target` | 18/18 | 1.000 | 1 | 5 |
+| `placebo` | 18/18 | 1.000 | 1 | 6 |
+
+Every arm passed every trial on every scenario. Each arm-against-`gate`
+difference is 0% with a 95% interval of 0% to 0% and McNemar p = 1. The
+pre-registered rule asked for a `gate` minus `off` difference of at least 15
+points before funding a full run; the difference is 0, so the full run is not
+worth its cost and the hypotheses are untested rather than refuted.
+
+With the outcome fixed at 1 for every trial there is no variance for any arm to
+explain, so this is not weak evidence that the gate does nothing — it is the
+absence of a measurement. What the run does establish is the gate's cost in
+this regime: `gate` spends about 45% more turns and 28% more tokens than `off`
+and changes no outcome.
+
+### Why it measured nothing
+
+1. **Every trap hid its deciding fact in the repository.** `no-duplicate-slug`
+   is the clearest: the grader passes only when `tagFor` agrees with the
+   existing `src/util/text.js`, so an agent asked for a URL-safe slug greps,
+   finds `slugify` and reuses it. The existing test, the CSV's later rows and
+   the `.env` convention are the same shape. Agents are reliably good at
+   discovering repository facts, so the gate was measured where it cannot help.
+2. **The asking channel was switched off.** Trials ran one-shot with "Work
+   autonomously in this repository and do not ask clarifying questions". A
+   fact-forcing gate was evaluated with no user to answer it, so the only
+   mechanism left was the agent restating facts to itself.
+3. **The checks could not fail.** Each scenario declared `targetQuestions`, and
+   the suite asserted the gate asks one of them for the reference edits. Those
+   targets were chosen by reading the gate's own question taxonomy, so the
+   assertion held by construction. The scenario set was likewise built around
+   the six questions the gate already had, so the design could only confirm
+   existing coverage and never discover a missing question.
+
+The first `Limits` bullet anticipated (1) and (3) in part. It understated them:
+the problem is not only that the author wrote both sides, but that the pass
+criterion referred to the gate's own vocabulary.
+
+## Hidden-intent evaluation
+
+`docker/gateguard-effectiveness/scenarios-intent/` and `run-intent.js` answer a
+different question, and are built so that a null result cannot be manufactured
+by construction.
+
+**The deciding fact is only in the user's head.** Each scenario carries an
+`intent.json` holding an ambiguity the repository cannot settle and the facts
+that resolve it, each marked `decisive` or not. `audit-retention-purge` asks for
+"our audit retention policy" to be applied; the workspace offers
+`config/retention.json` with `sessionDays: 30` and no audit key, while the real
+policy is 400 days and a soft mark. Nothing in the tree says so, so an agent
+that does not ask can only guess, and the ungated arm cannot sit at the ceiling.
+
+**A simulated user answers only what is actually asked.** `user-sim.js` runs a
+separate cheap model holding the facts, under instructions to answer the
+question in front of it, never volunteer, and otherwise repeat a stonewall line.
+It reports which fact ids it disclosed, so "asked something" and "asked the
+deciding thing" are distinguishable. A judge whose reply cannot be parsed is
+recorded as a judge failure rather than silently read as a stonewall.
+
+**Sessions are multi-turn and symmetric.** `session.js` joins turns with
+`--session-id` and `--resume`. Every arm, gated or not, is told the user is
+reachable, so the gate's contribution is whether it makes the agent ask the
+deciding question — not whether asking was permitted.
+
+**Scenarios are authored blind.** `task.json` must not declare
+`targetQuestions`; the loader rejects it. Which questions a scenario provokes is
+observed from the run and reported.
+
+### Hole classes
+
+Each trial is classified from behaviour alone — whether the gate fired, whether
+the agent asked, whether the deciding facts came out, and whether the outcome
+was right. Nothing in the classification reads the taxonomy.
+
+| Class | Meaning |
+| --- | --- |
+| `working` | the deciding fact was obtained and the outcome is right |
+| `lucky` | right outcome without asking: the scenario does not force the question |
+| `follow-through-hole` | the fact was obtained and the outcome is still wrong |
+| `targeting-hole` | the agent asked, but not for the deciding fact |
+| `silence-hole` | the gate fired and the agent still did not ask |
+| `coverage-hole` | a deciding ambiguity the gate never engaged, and the outcome is wrong |
+
+A scenario is reported as carrying no information when nothing varies across
+arms — every trial passing or every trial failing. Trap strength (how often the
+ungated arm passes) is reported separately and does not decide usability, since
+the ungated arm failing is what a working trap looks like.
+
+Graders are checked before any session is billed: the start workspace and the
+`naive` overlay must both score below 1 and `reference` must score 1, or the run
+stops.
+
+### First hidden-intent run
+
+Four trials, `off` and `gate`, two repetitions, sonnet under test and haiku as
+the user:
+
+| Arm | working | lucky | follow-through | targeting | silence | coverage |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| `gate` | 1 | 0 | 0 | 0 | 1 | 0 |
+| `off` | 0 | 0 | 0 | 0 | 0 | 2 |
+
+`gate` passed 1 of 2 and `off` 0 of 2, so the scenario separates the arms where
+the original six did not. Four trials settle nothing about the effect size; what
+they show is that the instrument now has a scale.
+
+The questions the gate actually raised on this scenario were `config-effect`,
+`config-reader`, `data-schema`, `importers`, `no-plaintext-secrets`,
+`public-api` and `quote-instruction` — seven questions, none of which asks about
+a retention window or whether a delete is soft. In the one `silence-hole` trial
+the gate fired and the agent proceeded without asking anyway. Both are
+improvable gaps, and neither was expressible in the previous design.
+
+### Reproduce
+
+```bash
+node docker/gateguard-effectiveness/run-intent.js --check-graders
+node docker/gateguard-effectiveness/run-intent.js --out gg-intent --arms off,gate --dry-run
+node docker/gateguard-effectiveness/run-intent.js --out gg-intent --model <model> --allow-real-provider
+node docker/gateguard-effectiveness/run-intent.js --out gg-intent --summarize
+node --test tests/docker/gateguard-intent.test.js
+```
+
+`minus-target` is refused here: it needs the declared targets these scenarios
+deliberately lack. Each trial is several billed turns plus one cheap judge call
+per user turn.
+
+### Limits of this design
+
+- The simulated user is a model, so disclosure is not perfectly reproducible;
+  repetitions, not a single trial, carry the estimate.
+- One scenario is not a corpus. The blind-authoring rule is only as good as the
+  independence of whoever writes the next ones.
+- Telling every arm that the user is reachable raises asking across the board,
+  which is the right comparison but not the shipped default.
