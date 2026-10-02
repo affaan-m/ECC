@@ -381,7 +381,7 @@ server: {
 
 #### Monorepo File Access
 
-With `server.fs.strict`, Vite defaults to the detected workspace root, falling back to the project root when no workspace is found. Set `server.fs.allow` only when a needed path is outside that boundary; specifying it disables automatic workspace-root detection. Use `searchForWorkspaceRoot()` in the list if you need to preserve the default boundary while adding a path:
+With `server.fs.strict`, Vite defaults to the detected workspace root, falling back to the project root when no workspace is found. Set `server.fs.allow` only when a needed path is outside that boundary; specifying it disables automatic workspace-root detection. Use `searchForWorkspaceRoot(process.cwd())` in the list if you need to preserve the default boundary while adding a path:
 
 ```typescript
 // vite.config.ts — monorepo file access
