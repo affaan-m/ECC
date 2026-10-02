@@ -301,3 +301,146 @@ test('invalid input and oversized bodies fail closed', () => withFixture(repoRoo
     overrides: [{ id: 'skill:feature', requiredResources: ['skills/feature/references/details.md'] }] }));
   assert.throws(() => resolve(repoRoot, { explicitIds: ['skill:feature'] }, { load: true }), /budget/);
 }));
+
+for (const query of [
+  "You shouldn't use feature.",
+  "You can\u2019t use feature.",
+  "For feature, don't use the feature skill.",
+  'For feature, never invoke feature.',
+  'The phrase "Use feature" is an example.',
+  'The phrase "Use feature." is an example.',
+  'The phrase \u201cUse feature\u201d is an example.',
+  'The phrase `Use feature` is an example.',
+  "Don't use the feature skill.",
+  'Don\u2019t use the feature skill.',
+  'Do not use the feature skill.',
+  'Never use the feature skill.',
+  'Can I use the feature skill?',
+  'Should we use the feature skill?',
+  'Why use the feature skill?',
+  'The README says to use the feature skill.',
+  'The docs say use feature.',
+  'The docs say to use feature.',
+  'The docs said use feature.',
+  '"Use the feature skill" is an example.',
+]) {
+  test('indirect name citation needs an agent decision: ' + query, () => withFixture(repoRoot => {
+    const result = resolve(repoRoot, { query }, { load: true });
+    assert.ok(result.candidates.some(candidate => candidate.id === 'skill:feature'));
+    assert.deepEqual(result.loadedIds, []);
+    assert.equal(result.reason, 'agent-selection-required');
+    assert.equal(result.fallback, null);
+  }));
+}
+
+test('a negated citation does not suppress a separate affirmative directive', () => withFixture(repoRoot => {
+  for (const query of [
+    "Don't use feature. Use shared guidance.",
+    'Don\u2019t use feature; please use shared guidance.',
+    'The document says use feature. Use shared guidance.',
+  ]) {
+    const result = resolve(repoRoot, { query }, { load: true });
+    assert.deepEqual(result.loadedIds, ['skill:shared']);
+  }
+}));
+
+test('ordinary and polite directives preserve automatic and explicit selection', () => withFixture(repoRoot => {
+  for (const query of ['Please use the feature skill.', 'Can you use the feature skill?',
+    'Use feature without changing the code.', 'Use feature to document the change.',
+    'Use "feature".', 'Use `feature`.', 'Do use feature.', 'Please can you use feature?']) {
+    assert.deepEqual(resolve(repoRoot, { query }, { load: true }).loadedIds, ['skill:feature']);
+  }
+  for (const field of ['explicitIds', 'proposedIds']) {
+    assert.deepEqual(resolve(repoRoot, { query: 'Should we use feature?', [field]: ['skill:feature'] },
+      { load: true }).loadedIds, ['skill:feature']);
+  }
+}));
+
+for (const prefix of ["Don't use database-migrations.", 'Do not use database-migrations.',
+  'Should we use database-migrations?', 'The README says use database-migrations.']) {
+  test('strong retrieval cannot bypass an indirect citation: ' + prefix, () => {
+    const query = prefix + ' Review a PostgreSQL migration that adds an indexed nullable column without downtime.';
+    const result = resolveTaskContext({ task: task({ query }), load: true });
+    const candidate = result.candidates.find(value => value.id === 'skill:database-migrations');
+    assert.ok(candidate && candidate.bm25 >= 20, 'Exercise the BM25 auto-admission threshold');
+    assert.deepEqual(result.loadedIds, []);
+    assert.equal(result.fallback, null);
+  });
+}
+
+test('routing policy changes invalidate receipts created by the old citation policy', () => withFixture(repoRoot => {
+  const query = "Don't use feature.";
+  const first = resolve(repoRoot, { query, explicitIds: ['skill:feature'] });
+  const { digestObject } = require('../../scripts/lib/context-profile-support');
+  const { compileContextProfile } = require('../../scripts/lib/context-profiles');
+  const plan = compileContextProfile({ repoRoot, selectionMode: 'auto' });
+  const bindingDigest = digestObject({ sessionId: 'session-1', taskId: 'task-1', revision: 1,
+    phase: 'implement', planDigest: plan.planDigest, routingPolicyVersion: 5,
+    triggersDigest: digestObject({}), queryDigest: digestObject(query) });
+  const { receiptDigest: _receiptDigest, ...receipt } = first.receipt;
+  const oldReceipt = { ...receipt, bindingDigest, explicitIds: [],
+    selectionDigest: digestObject({ bindingDigest, selectedIds: ['skill:feature'], explicitIds: [] }) };
+  const previous = { ...oldReceipt, receiptDigest: digestObject(oldReceipt) };
+  const result = resolve(repoRoot, { query }, { previous, load: true });
+  assert.equal(result.reused, false);
+  assert.deepEqual(result.loadedIds, []);
+}));
+
+for (const query of [
+  'Should we use feature? Use feature.',
+  'Use feature. Should we use feature?',
+  'The docs say use feature. Use feature.',
+  'Use feature. The docs say use feature.',
+  'The phrase "Use feature." is an example. Use feature.',
+  'The docs say "Use feature." Use feature.',
+  'The docs say "Should we use feature?" Use feature.',
+  `Use feature. The docs say "don’t use feature."`,
+  'Use feature. The phrase "Use feature." is an example.',
+  "Don't use feature. Use feature.",
+  'The docs say never use feature. Use feature.',
+  'Use feature. The docs say never use feature.',
+  'Use feature to inspect the essay.',
+]) {
+  test('a genuine directive survives surrounding discussion: ' + query, () => withFixture(repoRoot => {
+    const result = resolve(repoRoot, { query }, { load: true });
+    assert.deepEqual(result.loadedIds, ['skill:feature']);
+    assert.equal(result.reason, 'auto-selection');
+    assert.equal(result.receipt.autoSelection.exact, true);
+  }));
+}
+
+for (const query of [
+  "Use feature. Don't use feature.",
+  'Use feature. Never use feature.',
+  "Use feature. Don't use feature. Should we use feature?",
+]) {
+  test('a later rejection withdraws an earlier directive: ' + query, () => withFixture(repoRoot => {
+    const result = resolve(repoRoot, { query }, { load: true });
+    assert.deepEqual(result.loadedIds, []);
+    assert.equal(result.fallback, null);
+  }));
+}
+
+for (const prefix of [
+  "Don't use the database migration skill.",
+  'Don\u2019t use the database migration skill.',
+  'Never use database migration.',
+  'Should we use the database migration skill?',
+  'The docs say use the database migration skill.',
+]) {
+  test('singular named references cannot bypass citation review: ' + prefix, () => {
+    const query = prefix + ' Review a PostgreSQL migration that adds an indexed nullable column without downtime.';
+    const result = resolveTaskContext({ task: task({ query }), load: true });
+    const candidate = result.candidates.find(value => value.id === 'skill:database-migrations');
+    assert.ok(candidate && candidate.bm25 >= 20, 'Exercise the BM25 auto-admission threshold');
+    assert.equal(candidate.exact, false, 'Exercise the non-exact candidate path');
+    assert.deepEqual(result.loadedIds, []);
+    assert.equal(result.fallback, null);
+  });
+}
+
+test('singular forms do not create exact directive admission', () => {
+  const result = resolveTaskContext({ task: task({ query: 'Use the database migration skill.' }), load: true });
+  assert.ok(result.candidates.some(candidate => candidate.id === 'skill:database-migrations'));
+  assert.ok(!result.receipt.autoSelection || !result.receipt.autoSelection.exact);
+});

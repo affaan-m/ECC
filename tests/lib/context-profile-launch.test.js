@@ -155,3 +155,51 @@ test('spawn failures and timeout signals remain unsuccessful without a native ex
     assert.equal(result.taskSuccess, 'unverified');
   }
 }));
+
+for (const query of ["Don't use the feature skill.", 'Don\u2019t use the feature skill.',
+  'Can I use the feature skill?', 'The README says use the feature skill.', 'The docs say use feature.']) {
+  test('indirect citation uses the proposal path and honors decline: ' + query, () => withFixture(repoRoot => {
+    const phases = [];
+    const result = launchTaskContext({ repoRoot, task: { ...input, query, explicitIds: [] },
+      execute(command, args, options) {
+        phases.push(options.phase);
+        if (options.phase === 'selection') return { status: 0, stdout: '{"selectedIds":[]}' };
+        assert.doesNotMatch(options.input, /# feature/);
+        return { status: 0, stdout: 'ok' };
+      } });
+    assert.deepEqual(phases, ['selection', 'task']);
+    assert.equal(result.routingCalls, 1);
+    assert.deepEqual(result.selection.loadedIds, []);
+    assert.equal(result.selection.reason, 'agent-declined-selection');
+  }));
+}
+
+test('a final directive after a question reaches the task with its context', () => withFixture(repoRoot => {
+  const phases = [];
+  const result = launchTaskContext({ repoRoot,
+    task: { ...input, query: 'Should we use feature? Use feature.', explicitIds: [] },
+    execute(command, args, options) {
+      phases.push(options.phase);
+      assert.match(options.input, /# feature/);
+      return { status: 0, stdout: 'ok' };
+    } });
+  assert.deepEqual(phases, ['task']);
+  assert.equal(result.routingCalls, 0);
+  assert.deepEqual(result.selection.loadedIds, ['skill:feature']);
+}));
+
+test('a singular rejected name cannot inject scored context at launch', () => {
+  const phases = [];
+  const query = "Don't use the database migration skill. Review a PostgreSQL migration that adds an indexed nullable column without downtime.";
+  const result = launchTaskContext({ task: { ...input, query, explicitIds: [] },
+    execute(command, args, options) {
+      phases.push(options.phase);
+      if (options.phase === 'selection') return { status: 0, stdout: '{"selectedIds":[]}' };
+      assert.doesNotMatch(options.input, /# Database Migration Patterns/);
+      return { status: 0, stdout: 'ok' };
+    } });
+  assert.deepEqual(phases, ['selection', 'task']);
+  assert.equal(result.routingCalls, 1);
+  assert.deepEqual(result.selection.loadedIds, []);
+  assert.equal(result.selection.fallback, null);
+});
