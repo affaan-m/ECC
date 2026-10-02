@@ -1931,7 +1931,9 @@ pub async fn process_merge_queue(db: &StateStore) -> Result<WorktreeBulkMergeOut
             conflicted_session_ids,
             dirty_worktree_ids,
             blocked_by_queue_session_ids,
+            inspection_failures,
         ) = classify_merge_queue_report(&report);
+        failures.extend(inspection_failures);
 
         return Ok(WorktreeBulkMergeOutcome {
             merged,
@@ -2043,14 +2045,18 @@ pub async fn prune_inactive_worktrees(
     let now = chrono::Utc::now();
 
     for session in sessions {
-        let Some(_) = session.worktree.as_ref() else {
+        let Some(worktree) = session.worktree.as_ref() else {
             continue;
         };
 
         if matches!(
             session.state,
-            SessionState::Pending | SessionState::Running | SessionState::Idle
-        ) {
+            SessionState::Pending
+                | SessionState::Running
+                | SessionState::Idle
+                | SessionState::Stale
+        ) || session.pid.is_some()
+        {
             active_with_worktree_ids.push(session.id);
             continue;
         }
@@ -2060,6 +2066,28 @@ pub async fn prune_inactive_worktrees(
         {
             retained_session_ids.push(session.id);
             continue;
+        }
+
+        // Automatic pruning must not discard unsaved work or interpret an unknown
+        // Git state as clean. Explicit cleanup remains a separate user action.
+        let worktree = worktree.clone();
+        let status = tokio::task::spawn_blocking(move || {
+            crate::worktree::has_local_content_for_pruning(&worktree)
+        })
+        .await
+        .context("Worktree pruning status worker failed")
+        .and_then(|result| result);
+        match status {
+            Ok(false) => {}
+            Ok(true) => {
+                retained_session_ids.push(session.id);
+                continue;
+            }
+            Err(error) => {
+                tracing::warn!("Retaining worktree for session {}: {error}", session.id);
+                retained_session_ids.push(session.id);
+                continue;
+            }
         }
 
         cleanup_session_worktree(db, &session.id).await?;
@@ -2095,6 +2123,7 @@ pub struct MergeQueueEntry {
     pub state: SessionState,
     pub worktree_health: worktree::WorktreeHealth,
     pub dirty: bool,
+    pub inspection_error: Option<String>,
     pub queue_position: Option<usize>,
     pub ready_to_merge: bool,
     pub blocked_by: Vec<MergeQueueBlocker>,
@@ -2131,11 +2160,30 @@ pub fn build_merge_queue(db: &StateStore) -> Result<MergeQueueReport> {
             continue;
         };
 
-        let worktree_health = worktree::health(&worktree)?;
-        let dirty = worktree::has_uncommitted_changes(&worktree)?;
+        let inspection = worktree::health(&worktree).and_then(|health| {
+            worktree::has_uncommitted_changes(&worktree).map(|dirty| (health, dirty))
+        });
+        let (worktree_health, dirty, inspection_error) = match inspection {
+            Ok((health, dirty)) => (health, dirty, None),
+            Err(error) => (
+                worktree::WorktreeHealth::InProgress,
+                false,
+                Some(error.to_string()),
+            ),
+        };
         let mut blocked_by = Vec::new();
 
-        if matches!(
+        if let Some(error) = inspection_error.as_ref() {
+            blocked_by.push(MergeQueueBlocker {
+                session_id: session.id.clone(),
+                branch: worktree.branch.clone(),
+                state: session.state.clone(),
+                conflicts: Vec::new(),
+                summary: format!("worktree inspection failed: {error}"),
+                conflicting_patch_preview: None,
+                blocker_patch_preview: None,
+            });
+        } else if matches!(
             session.state,
             SessionState::Pending
                 | SessionState::Running
@@ -2236,6 +2284,7 @@ pub fn build_merge_queue(db: &StateStore) -> Result<MergeQueueReport> {
             state: session.state,
             worktree_health,
             dirty,
+            inspection_error,
             queue_position,
             ready_to_merge,
             blocked_by,
@@ -2274,14 +2323,26 @@ fn can_auto_rebase_merge_queue_entry(entry: &MergeQueueEntry) -> bool {
 
 fn classify_merge_queue_report(
     report: &MergeQueueReport,
-) -> (Vec<String>, Vec<String>, Vec<String>, Vec<String>) {
+) -> (
+    Vec<String>,
+    Vec<String>,
+    Vec<String>,
+    Vec<String>,
+    Vec<WorktreeMergeFailure>,
+) {
     let mut active = Vec::new();
     let mut conflicted = Vec::new();
     let mut dirty = Vec::new();
     let mut queue_blocked = Vec::new();
+    let mut failures = Vec::new();
 
     for entry in &report.blocked_entries {
-        if entry.blocked_by.iter().any(|blocker| {
+        if let Some(reason) = entry.inspection_error.as_ref() {
+            failures.push(WorktreeMergeFailure {
+                session_id: entry.session_id.clone(),
+                reason: reason.clone(),
+            });
+        } else if entry.blocked_by.iter().any(|blocker| {
             blocker.session_id == entry.session_id
                 && matches!(
                     blocker.state,
@@ -2301,7 +2362,7 @@ fn classify_merge_queue_report(
         }
     }
 
-    (active, conflicted, dirty, queue_blocked)
+    (active, conflicted, dirty, queue_blocked, failures)
 }
 
 pub async fn delete_session(db: &StateStore, id: &str) -> Result<()> {
@@ -3064,7 +3125,9 @@ fn configure_background_runner_command(command: &mut Command) {
     {
         use std::os::windows::process::CommandExt;
 
-        command.as_std_mut().creation_flags(detached_creation_flags());
+        command
+            .as_std_mut()
+            .creation_flags(detached_creation_flags());
     }
 }
 
@@ -5154,8 +5217,7 @@ mod tests {
 
     #[test]
     fn background_runner_stderr_log_path_is_session_scoped() {
-        let path =
-            background_runner_stderr_log_path(Path::new("/tmp/ecc-repo"), "session-123");
+        let path = background_runner_stderr_log_path(Path::new("/tmp/ecc-repo"), "session-123");
         assert_eq!(
             path,
             PathBuf::from("/tmp/ecc-repo/.claude/ecc2/logs/session-123.runner-stderr.log")
@@ -6084,6 +6146,148 @@ mod tests {
         );
         assert!(!worktree_path.exists(), "worktree path should be removed");
 
+        Ok(())
+    }
+
+    fn insert_pruning_fixture(
+        db: &StateStore,
+        cfg: &Config,
+        repo_root: &Path,
+        id: &str,
+        state: SessionState,
+        pid: Option<u32>,
+    ) -> Result<()> {
+        let worktree = crate::worktree::create_for_session_in_repo(id, cfg, repo_root)?;
+        match id {
+            "dirty" => {
+                fs::write(worktree.path.join("uncommitted.txt"), "unsaved work\n")?;
+                fs::write(
+                    worktree.path.join("README.md"),
+                    "uncommitted tracked edit\n",
+                )?;
+            }
+            "untracked" => fs::write(worktree.path.join("uncommitted.txt"), "unsaved work\n")?,
+            "ignored" => fs::write(worktree.path.join(".env"), "retain local configuration\n")?,
+            "unknown" => fs::rename(
+                worktree.path.join(".git"),
+                worktree.path.join(".git-unavailable"),
+            )?,
+            _ => {}
+        }
+        let now = Utc::now();
+        db.insert_session(&Session {
+            id: id.to_string(),
+            task: "prune fixture".to_string(),
+            project: "fixture".to_string(),
+            task_group: "fixture".to_string(),
+            agent_type: "claude".to_string(),
+            working_dir: worktree.path.clone(),
+            state,
+            pid,
+            worktree: Some(worktree),
+            created_at: now,
+            updated_at: now,
+            last_heartbeat_at: now,
+            metrics: SessionMetrics::default(),
+        })?;
+        Ok(())
+    }
+
+    fn assert_retained_pruning_fixture(db: &StateStore, id: &str) -> Result<()> {
+        let session = db.get_session(id)?.context("retained session")?;
+        let worktree = session.worktree.context("retained worktree metadata")?;
+        assert!(worktree.path.is_dir(), "{id} worktree must remain");
+        if id == "tracked" {
+            assert_eq!(session.pid, Some(31337));
+            assert_eq!(session.state, SessionState::Failed);
+        }
+        if id == "dirty" || id == "untracked" {
+            assert_eq!(
+                fs::read_to_string(worktree.path.join("uncommitted.txt"))?,
+                "unsaved work\n"
+            );
+        }
+        if id == "dirty" {
+            assert_eq!(
+                fs::read_to_string(worktree.path.join("README.md"))?,
+                "uncommitted tracked edit\n"
+            );
+        }
+        if id == "ignored" {
+            assert_eq!(
+                fs::read_to_string(worktree.path.join(".env"))?,
+                "retain local configuration\n"
+            );
+        }
+        Ok(())
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn prune_inactive_worktrees_preserves_dirty_active_and_unknown_work() -> Result<()> {
+        let tempdir = TestDir::new("manager-prune-safety")?;
+        let repo_root = tempdir.path().join("repo");
+        init_git_repo(&repo_root)?;
+        run_git(&repo_root, ["config", "status.showUntrackedFiles", "no"])?;
+        fs::write(repo_root.join(".git/info/exclude"), ".env\n")?;
+        let cfg = build_config(tempdir.path());
+        let db = StateStore::open(&cfg.db_path)?;
+        for (id, state, pid) in [
+            ("dirty", SessionState::Stopped, None),
+            ("untracked", SessionState::Stopped, None),
+            ("ignored", SessionState::Stopped, None),
+            ("stale", SessionState::Stale, None),
+            ("tracked", SessionState::Failed, Some(31337)),
+            ("unknown", SessionState::Stopped, None),
+            ("clean", SessionState::Stopped, None),
+        ] {
+            insert_pruning_fixture(&db, &cfg, &repo_root, id, state, pid)?;
+        }
+        let outcome = prune_inactive_worktrees(&db, &cfg).await?;
+        assert_eq!(outcome.cleaned_session_ids, vec!["clean"]);
+        for id in [
+            "dirty",
+            "untracked",
+            "ignored",
+            "stale",
+            "tracked",
+            "unknown",
+        ] {
+            assert_retained_pruning_fixture(&db, id)?;
+        }
+        for id in ["dirty", "untracked", "ignored", "unknown"] {
+            assert!(outcome.retained_session_ids.contains(&id.to_string()));
+        }
+        for id in ["stale", "tracked"] {
+            assert!(outcome.active_with_worktree_ids.contains(&id.to_string()));
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn build_merge_queue_retains_an_unknown_worktree_without_aborting() -> Result<()> {
+        let tempdir = TestDir::new("manager-merge-unknown")?;
+        let repo_root = tempdir.path().join("repo");
+        init_git_repo(&repo_root)?;
+        let cfg = build_config(tempdir.path());
+        let db = StateStore::open(&cfg.db_path)?;
+        for id in ["unknown", "clean"] {
+            insert_pruning_fixture(&db, &cfg, &repo_root, id, SessionState::Stopped, None)?;
+        }
+        let queue = build_merge_queue(&db)?;
+        assert_eq!(queue.ready_entries.len(), 1);
+        assert_eq!(queue.ready_entries[0].session_id, "clean");
+        assert_eq!(queue.blocked_entries.len(), 1);
+        let unknown = &queue.blocked_entries[0];
+        assert_eq!(unknown.session_id, "unknown");
+        assert!(!unknown.dirty);
+        assert!(unknown.inspection_error.is_some());
+        let (_, _, dirty, _, failures) = classify_merge_queue_report(&queue);
+        assert!(dirty.is_empty());
+        assert_eq!(failures[0].session_id, "unknown");
+        assert!(!unknown.ready_to_merge);
+        assert!(unknown.suggested_action.contains("inspection failed"));
+        assert!(!can_auto_rebase_merge_queue_entry(unknown));
+        assert_retained_pruning_fixture(&db, "unknown")?;
         Ok(())
     }
 

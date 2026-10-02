@@ -849,6 +849,70 @@ pub fn has_uncommitted_changes(worktree: &WorktreeInfo) -> Result<bool> {
     Ok(!git_status_short(&worktree.path)?.is_empty())
 }
 
+/// Automatic removal must also preserve ignored local files.
+pub fn has_local_content_for_pruning(worktree: &WorktreeInfo) -> Result<bool> {
+    let mut command = Command::new("git");
+    command.arg("-C").arg(&worktree.path).args([
+        "status",
+        "--porcelain=v1",
+        "--untracked-files=all",
+        "--ignored",
+        "--ignore-submodules=none",
+    ]);
+    let root = base_checkout_path(worktree)?;
+    command.arg("--").arg(".");
+    for strategy in detect_shared_dependency_strategies(&root) {
+        if pruning_cache_link_is_shared(worktree, &root, &strategy)? {
+            command.arg(format!(":(top,exclude){}", strategy.dir_name));
+        }
+    }
+    let output = command
+        .output()
+        .context("Failed to inspect worktree before automatic pruning")?;
+    if !output.status.success() {
+        anyhow::bail!(
+            "Git pruning status failed: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+    Ok(!output.stdout.is_empty())
+}
+
+fn pruning_cache_link_is_shared(
+    worktree: &WorktreeInfo,
+    root: &Path,
+    strategy: &SharedDependencyStrategy,
+) -> Result<bool> {
+    if !is_symlink_to(
+        &worktree.path.join(strategy.dir_name),
+        &root.join(strategy.dir_name),
+    )? {
+        return Ok(false);
+    }
+    let record = cache_link_record_path(worktree, strategy.dir_name)?;
+    let expected = cache_link_identity(&worktree.path.join(strategy.dir_name))?;
+    match fs::read_to_string(record) {
+        Ok(identity) if identity == expected => {}
+        Ok(_) => return Ok(false),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(false),
+        Err(error) => return Err(error.into()),
+    }
+    if dependency_fingerprint(root, &strategy.fingerprint_files)?
+        != dependency_fingerprint(&worktree.path, &strategy.fingerprint_files)?
+    {
+        return Ok(false);
+    }
+    let tracked = Command::new("git")
+        .arg("-C")
+        .arg(&worktree.path)
+        .args(["ls-files", "-z", "--", strategy.dir_name])
+        .output()?;
+    if !tracked.status.success() {
+        anyhow::bail!("Failed to inspect shared cache tracking");
+    }
+    Ok(tracked.stdout.is_empty())
+}
+
 pub fn has_staged_changes(worktree: &WorktreeInfo) -> Result<bool> {
     Ok(git_status_entries(worktree)?
         .iter()
@@ -1331,6 +1395,7 @@ fn sync_shared_dependency_dir(
         return Ok(false);
     }
 
+    let record = cache_link_record_path(worktree, strategy.dir_name)?;
     create_dir_symlink(&root_dir, &worktree_dir).with_context(|| {
         format!(
             "Failed to link shared dependency cache {} into {}",
@@ -1338,7 +1403,63 @@ fn sync_shared_dependency_dir(
             worktree.path.display()
         )
     })?;
+    let identity = cache_link_identity(&worktree_dir)?;
+    if let Err(error) = fs::write(&record, &identity) {
+        if cache_link_identity(&worktree_dir).is_ok_and(|current| current == identity) {
+            remove_symlink(&worktree_dir).with_context(|| {
+                format!(
+                    "Failed to record dependency link ({error}); rollback failed at {}",
+                    worktree_dir.display()
+                )
+            })?;
+        } else {
+            anyhow::bail!(
+                "Failed to record dependency link ({error}); changed path retained at {}",
+                worktree_dir.display()
+            );
+        }
+        return Err(error)
+            .context("Failed to record the newly created dependency link; link rolled back");
+    }
     Ok(true)
+}
+
+fn cache_link_record_path(worktree: &WorktreeInfo, name: &str) -> Result<PathBuf> {
+    let output = Command::new("git")
+        .arg("-C")
+        .arg(&worktree.path)
+        .args(["rev-parse", "--absolute-git-dir"])
+        .output()?;
+    if !output.status.success() {
+        anyhow::bail!("Failed to locate worktree-private Git metadata");
+    }
+    let directory = std::str::from_utf8(&output.stdout)?.trim();
+    Ok(PathBuf::from(directory).join(format!("ecc-cache-{name}.ownership")))
+}
+
+#[cfg(unix)]
+fn cache_link_identity(path: &Path) -> Result<String> {
+    use std::os::unix::fs::MetadataExt;
+    let metadata = fs::symlink_metadata(path)?;
+    Ok(format!(
+        "{}:{}:{}:{}",
+        metadata.dev(),
+        metadata.ino(),
+        metadata.ctime(),
+        metadata.ctime_nsec()
+    ))
+}
+
+#[cfg(windows)]
+fn cache_link_identity(path: &Path) -> Result<String> {
+    use std::os::windows::fs::MetadataExt;
+    let metadata = fs::symlink_metadata(path)?;
+    Ok(format!(
+        "{}:{}:{}",
+        metadata.creation_time(),
+        metadata.last_write_time(),
+        metadata.file_attributes()
+    ))
 }
 
 fn dependency_fingerprint(root: &Path, files: &[&str]) -> Result<String> {
@@ -1443,17 +1564,16 @@ fn git_status_short(worktree_path: &Path) -> Result<Vec<String>> {
     let output = Command::new("git")
         .arg("-C")
         .arg(worktree_path)
-        .args(["status", "--short"])
+        .args(["status", "--short", "--untracked-files=all"])
         .output()
         .context("Failed to generate worktree status preview")?;
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
-        tracing::warn!(
-            "Worktree status preview warning for {}: {stderr}",
+        anyhow::bail!(
+            "Git status failed for {}: {stderr}",
             worktree_path.display()
         );
-        return Ok(Vec::new());
     }
 
     Ok(parse_nonempty_lines(&output.stdout))
@@ -1631,6 +1751,37 @@ mod tests {
     use std::fs;
     use std::process::Command;
     use uuid::Uuid;
+
+    #[test]
+    fn pruning_status_overrides_submodule_ignore() -> Result<()> {
+        let root = std::env::temp_dir().join(format!("ecc2-prune-submodule-{}", Uuid::new_v4()));
+        let repo = init_repo(&root)?;
+        let child = init_repo(&root.join("child-source"))?;
+        let output = Command::new("git")
+            .arg("-C")
+            .arg(&repo)
+            .args(["-c", "protocol.file.allow=always", "submodule", "add", "--"])
+            .arg(&child)
+            .arg("child")
+            .output()?;
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        run_git(&repo, &["commit", "-m", "add child"])?;
+        run_git(&repo, &["config", "submodule.child.ignore", "all"])?;
+        let worktree = WorktreeInfo {
+            path: repo.clone(),
+            branch: "main".into(),
+            base_branch: "main".into(),
+        };
+        assert!(!has_local_content_for_pruning(&worktree)?);
+
+        fs::write(repo.join("child/README.md"), "retain submodule changes")?;
+        assert!(has_local_content_for_pruning(&worktree)?);
+        Ok(())
+    }
 
     fn run_git(repo: &Path, args: &[&str]) -> Result<()> {
         let output = Command::new("git")
@@ -2600,6 +2751,21 @@ mod tests {
             .file_type()
             .is_symlink());
         assert_eq!(fs::read_link(&node_modules)?, repo.join("node_modules"));
+        assert!(!has_local_content_for_pruning(&worktree)?);
+        let ownership = cache_link_record_path(&worktree, "node_modules")?;
+        let identity = fs::read_to_string(&ownership)?;
+        fs::remove_file(&ownership)?;
+        assert!(
+            has_local_content_for_pruning(&worktree)?,
+            "unrecorded user links are local content"
+        );
+        fs::write(&ownership, "different link identity")?;
+        assert!(
+            has_local_content_for_pruning(&worktree)?,
+            "recreated links must remain protected"
+        );
+        fs::write(&ownership, identity)?;
+        assert!(!has_local_content_for_pruning(&worktree)?);
 
         remove(&worktree)?;
         let _ = fs::remove_dir_all(root);
@@ -2642,6 +2808,36 @@ mod tests {
             .is_symlink());
         assert!(repo.join("node_modules/.cache-marker").exists());
 
+        remove(&worktree)?;
+        let _ = fs::remove_dir_all(root);
+        Ok(())
+    }
+
+    #[test]
+    fn sync_shared_dependency_dirs_removes_new_link_when_recording_fails() -> Result<()> {
+        let root =
+            std::env::temp_dir().join(format!("ecc2-cache-record-failure-{}", Uuid::new_v4()));
+        let repo = init_repo(&root)?;
+        fs::write(repo.join("package.json"), "{}\n")?;
+        fs::write(repo.join("package-lock.json"), "{}\n")?;
+        run_git(&repo, &["add", "package.json", "package-lock.json"])?;
+        run_git(&repo, &["commit", "-m", "add dependency fingerprints"])?;
+        let mut cfg = Config::default();
+        cfg.worktree_root = root.join("worktrees");
+        let worktree = create_for_session_in_repo("record-failure", &cfg, &repo)?;
+        fs::create_dir_all(repo.join("node_modules"))?;
+        let shared_marker = repo.join("node_modules/shared.txt");
+        fs::write(&shared_marker, "retain shared cache")?;
+        let record = cache_link_record_path(&worktree, "node_modules")?;
+        fs::create_dir(&record)?;
+        assert!(sync_shared_dependency_dirs(&worktree).is_err());
+        assert!(fs::symlink_metadata(worktree.path.join("node_modules")).is_err());
+        assert!(!has_local_content_for_pruning(&worktree)?);
+        assert_eq!(fs::read_to_string(&shared_marker)?, "retain shared cache");
+        fs::remove_dir(&record)?;
+        assert_eq!(sync_shared_dependency_dirs(&worktree)?.len(), 1);
+        assert!(record.is_file());
+        assert!(!has_local_content_for_pruning(&worktree)?);
         remove(&worktree)?;
         let _ = fs::remove_dir_all(root);
         Ok(())

@@ -9685,6 +9685,7 @@ mod tests {
                 state: session::SessionState::Stopped,
                 worktree_health: worktree::WorktreeHealth::InProgress,
                 dirty: false,
+                inspection_error: None,
                 queue_position: Some(1),
                 ready_to_merge: true,
                 blocked_by: Vec::new(),
@@ -9700,6 +9701,7 @@ mod tests {
                 state: session::SessionState::Stopped,
                 worktree_health: worktree::WorktreeHealth::InProgress,
                 dirty: false,
+                inspection_error: None,
                 queue_position: None,
                 ready_to_merge: false,
                 blocked_by: vec![session::manager::MergeQueueBlocker {
