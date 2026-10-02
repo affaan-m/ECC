@@ -1,6 +1,6 @@
 # Guía de Resolución de Problemas
 
-Problemas comunes y soluciones para el plugin Everything Claude Code (ECC).
+Problemas comunes y soluciones para el plugin ECC.
 
 ## Tabla de Contenidos
 
@@ -264,7 +264,7 @@ mv ~/.claude/plugins/cache ~/.claude/plugins/cache.backup.$(date +%Y%m%d-%H%M%S)
 mkdir -p ~/.claude/plugins/cache
 
 # Reinstalar desde el marketplace
-# Claude Code → Extensions → Everything Claude Code → Uninstall
+# Claude Code → Extensions → ECC → Uninstall
 # Luego reinstalar desde el marketplace
 
 # Si el problema es el acceso al marketplace/cuenta, usa la recuperación de cuenta/facturación de ECC Tools por separado; no uses la reinstalación como sustituto de la recuperación de cuenta
@@ -274,8 +274,8 @@ claude --version
 # Requiere Claude Code 2.0+
 
 # Instalación manual (si el marketplace falla)
-git clone https://github.com/affaan-m/everything-claude-code.git
-cp -r everything-claude-code ~/.claude/plugins/ecc
+git clone https://github.com/affaan-m/ECC.git
+cp -r ECC ~/.claude/plugins/ecc
 ```
 
 ### Falla la Detección del Gestor de Paquetes
@@ -406,7 +406,7 @@ find ~/.claude/plugins -name "*.sh" -exec dos2unix {} \;
 
 Si sigues experimentando problemas:
 
-1. **Revisa los Issues de GitHub**: [github.com/affaan-m/everything-claude-code/issues](https://github.com/affaan-m/everything-claude-code/issues)
+1. **Revisa los Issues de GitHub**: [github.com/affaan-m/ECC/issues](https://github.com/affaan-m/ECC/issues)
 2. **Habilita el Registro de Depuración**:
    ```bash
    export CLAUDE_DEBUG=1

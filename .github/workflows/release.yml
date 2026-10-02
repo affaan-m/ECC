@@ -261,7 +261,7 @@ jobs:
           PACKAGE_VERSION: ${{ needs.verify.outputs.package_version }}
         run: |
           REGISTRY_INTEGRITY=""
-          for ATTEMPT in 1 2 3 4 5 6; do
+          for ATTEMPT in $(seq 1 30); do
             set +e
             REGISTRY_INTEGRITY=$(npm view "${PACKAGE_NAME}@${PACKAGE_VERSION}" dist.integrity 2>&1)
             NPM_STATUS=$?
@@ -269,12 +269,12 @@ jobs:
             if [ "$NPM_STATUS" -eq 0 ]; then
               break
             fi
-            if [ "$ATTEMPT" -eq 6 ]; then
-              echo "::error::Published npm artifact was not readable after six attempts"
+            if [ "$ATTEMPT" -eq 30 ]; then
+              echo "::error::Published npm artifact was not readable after five minutes"
               printf '%s\n' "$REGISTRY_INTEGRITY"
               exit "$NPM_STATUS"
             fi
-            sleep 5
+            sleep 10
           done
           ECC_REGISTRY_INTEGRITY="$REGISTRY_INTEGRITY" node -e "const crypto = require('crypto'); const fs = require('fs'); const expected = process.env.ECC_REGISTRY_INTEGRITY; if (!/^sha512-[A-Za-z0-9+/]+={0,2}$/.test(expected || '')) throw new Error('Invalid published registry integrity'); const actual = 'sha512-' + crypto.createHash('sha512').update(fs.readFileSync(process.env.ECC_RELEASE_PACKAGE)).digest('base64'); if (actual !== expected) throw new Error('Published npm artifact does not match tested candidate')"
 

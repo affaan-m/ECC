@@ -1,4 +1,4 @@
-# Migrating From ECC 1.x (everything-claude-code) To 2.0
+# Migrating From ECC 1.x To 2.0
 
 ECC 2.0 renamed the repo (`affaan-m/everything-claude-code` → `affaan-m/ECC`) and the plugin identifier (`everything-claude-code@everything-claude-code` → `ecc@ecc`). If you installed 1.x, follow this guide to upgrade cleanly. See also the [Naming + Migration Note](../README.md#naming--migration-note) in the README.
 

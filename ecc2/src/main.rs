@@ -12214,7 +12214,7 @@ Customer wiped setup and got charged twice after reinstalling.
         db.insert_session(&session::Session {
             id: "session-1".to_string(),
             task: "knowledge import".to_string(),
-            project: "everything-claude-code".to_string(),
+            project: "ecc".to_string(),
             task_group: "memory".to_string(),
             agent_type: "claude".to_string(),
             working_dir: PathBuf::from("/tmp"),
@@ -12301,7 +12301,7 @@ Guide users to repair before reinstall so wiped setups do not buy twice.
         db.insert_session(&session::Session {
             id: "session-1".to_string(),
             task: "knowledge import".to_string(),
-            project: "everything-claude-code".to_string(),
+            project: "ecc".to_string(),
             task_group: "memory".to_string(),
             agent_type: "claude".to_string(),
             working_dir: PathBuf::from("/tmp"),
@@ -12490,7 +12490,7 @@ INVALID LINE
         db.insert_session(&session::Session {
             id: "session-1".to_string(),
             task: "memory import".to_string(),
-            project: "everything-claude-code".to_string(),
+            project: "ecc".to_string(),
             task_group: "memory".to_string(),
             agent_type: "claude".to_string(),
             working_dir: PathBuf::from("/tmp"),

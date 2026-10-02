@@ -1,6 +1,6 @@
 # Skill 开发指南
 
-一份为 Everything Claude Code (ECC) 创建有效 Skill 的全面指南。
+一份为 ECC 创建有效 Skill 的全面指南。
 
 ## 目录
 
@@ -632,8 +632,8 @@ go build ./examples/...
 ### 1. Fork 并 Clone
 
 ```bash
-gh repo fork affaan-m/everything-claude-code --clone
-cd everything-claude-code
+gh repo fork affaan-m/ECC --clone
+cd ECC
 ```
 
 ### 2. 创建分支

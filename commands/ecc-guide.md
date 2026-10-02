@@ -4,7 +4,7 @@ description: Navigate ECC's current agents, skills, commands, hooks, install pro
 
 # /ecc-guide
 
-Use this command as a conversational map of Everything Claude Code. It should help the user discover the right ECC surface for their task without dumping the entire README or stale catalog counts.
+Use this command as a conversational map of ECC. It should help the user discover the right ECC surface for their task without dumping the entire README or stale catalog counts.
 
 ## Usage
 
