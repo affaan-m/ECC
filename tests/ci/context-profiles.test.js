@@ -5,6 +5,23 @@ const path = require('path');
 const { spawnSync } = require('child_process');
 const ROOT = path.resolve(__dirname, '../..');
 const SCRIPT = path.join(ROOT, 'scripts/ci/validate-context-profiles.js');
+const fs = require('fs');
+const { withFixture, write, update } = require('../lib/helpers/context-fixture');
+const { loadContextRegistry, skillTriggerSourceDigest } = require('../../scripts/lib/context-pack-registry');
+const { digestObject } = require('../../scripts/lib/context-profile-support');
+const { validate } = require('../../scripts/ci/validate-context-profiles');
+
+function seedTriggers(repoRoot, legacy = false) {
+  const registry = loadContextRegistry({ repoRoot });
+  const triggers = { 'skill:feature': ['feature task'] };
+  write(repoRoot, 'manifests/context-packs/skill-triggers@1.json', {
+    schemaVersion: 1, registryDigest: registry.registryDigest,
+    ...(legacy ? {} : { triggerSourceDigest: skillTriggerSourceDigest(registry) }),
+    coverage: { skills: registry.entries.length, withTriggers: 1 },
+    triggers, triggersDigest: digestObject(triggers),
+  });
+  return registry;
+}
 
 const tests = [
   ['validates every profile against every declared target in read-only mode', () => {
@@ -30,6 +47,55 @@ const tests = [
     assert.strictEqual(scripts['context-profiles:check'], 'node scripts/ci/validate-context-profiles.js');
     assert.ok(scripts.test.includes('validate-context-profiles.js'));
   }],
+  ['body and auxiliary resource edits preserve trigger freshness but change the registry', () => withFixture(repoRoot => {
+    const before = seedTriggers(repoRoot);
+    fs.appendFileSync(path.join(repoRoot, 'skills/feature/SKILL.md'), '\nCorrected instructions.\n');
+    write(repoRoot, 'skills/feature/references/details.md', 'Corrected resource.\n');
+    const after = loadContextRegistry({ repoRoot });
+    assert.notStrictEqual(after.registryDigest, before.registryDigest);
+    assert.strictEqual(skillTriggerSourceDigest(after), skillTriggerSourceDigest(before));
+    assert.strictEqual(validate(repoRoot).status, 'success');
+  })],
+  ...['name', 'description'].map(field => [`changed ${field} invalidates triggers`, () => withFixture(repoRoot => {
+    seedTriggers(repoRoot);
+    const file = path.join(repoRoot, 'skills/feature/SKILL.md');
+    const text = fs.readFileSync(file, 'utf8');
+    fs.writeFileSync(file, text.replace(new RegExp(`^${field}:.*$`, 'm'), `${field}: Changed metadata`));
+    assert.throws(() => validate(repoRoot), /Skill triggers manifest is stale/);
+  })]),
+  ['new canonical skills invalidate triggers', () => withFixture(repoRoot => {
+    seedTriggers(repoRoot);
+    write(repoRoot, 'skills/added/SKILL.md', '---\nname: added\ndescription: Added skill.\n---\n');
+    update(repoRoot, 'manifests/install-modules.json', value => ({
+      ...value,
+      modules: value.modules.map((module, index) => index === 0
+        ? { ...module, paths: [...module.paths, 'skills/added'] }
+        : module),
+    }));
+    assert.throws(() => validate(repoRoot), /Skill triggers manifest is stale/);
+  })],
+  ['removed canonical skills invalidate triggers even without their own trigger entry', () => withFixture(repoRoot => {
+    seedTriggers(repoRoot);
+    fs.unlinkSync(path.join(repoRoot, 'skills/shared/SKILL.md'));
+    assert.throws(() => validate(repoRoot), /Skill triggers manifest is stale/);
+  })],
+  ['legacy manifests retain full registry freshness checks', () => withFixture(repoRoot => {
+    seedTriggers(repoRoot, true);
+    assert.strictEqual(validate(repoRoot).status, 'success');
+    fs.appendFileSync(path.join(repoRoot, 'skills/feature/SKILL.md'), '\nChanged body.\n');
+    assert.throws(() => validate(repoRoot), /Skill triggers manifest is stale/);
+  })],
+  ['trigger edits still require a matching trigger digest', () => withFixture(repoRoot => {
+    seedTriggers(repoRoot);
+    update(repoRoot, 'manifests/context-packs/skill-triggers@1.json', value => ({
+      ...value,
+      triggers: {
+        ...value.triggers,
+        'skill:feature': [...value.triggers['skill:feature'], 'unrecorded trigger'],
+      },
+    }));
+    assert.throws(() => validate(repoRoot), /Skill triggers digest mismatch/);
+  })],
 ];
 
 let passed = 0;

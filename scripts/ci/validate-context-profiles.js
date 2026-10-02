@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 'use strict';
 
-const { loadContextRegistry, loadSkillTriggers } = require('../lib/context-pack-registry');
+const { loadContextRegistry, loadSkillTriggers, skillTriggerSourceDigest } = require('../lib/context-pack-registry');
 const { compileContextProfile } = require('../lib/context-profiles');
 const { digestObject } = require('../lib/context-profile-support');
 
@@ -11,7 +11,10 @@ function validate(repoRoot) {
   const known = new Set(registry.entries.map(entry => entry.id));
   const unknown = Object.keys(triggers).filter(id => !known.has(id));
   if (unknown.length) throw new Error(`Skill triggers reference unknown skills: ${unknown.slice(0, 3).join(', ')}`);
-  if (manifest && manifest.registryDigest && manifest.registryDigest !== registry.registryDigest) {
+  const staleTriggers = manifest && (manifest.triggerSourceDigest
+    ? manifest.triggerSourceDigest !== skillTriggerSourceDigest(registry)
+    : manifest.registryDigest && manifest.registryDigest !== registry.registryDigest);
+  if (staleTriggers) {
     throw new Error('Skill triggers manifest is stale: regenerate with scripts/dev/generate-skill-triggers.js');
   }
   if (manifest && manifest.triggersDigest && digestObject(triggers) !== manifest.triggersDigest) {
