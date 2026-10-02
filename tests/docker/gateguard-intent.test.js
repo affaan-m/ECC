@@ -178,9 +178,39 @@ test('a ceiling scenario is excluded from the outcome-class table', () => {
   const report = coverage.renderHoles(rows);
   assert.match(report, /easy: ceiling/);
   assert.match(report, /carry no information/);
-  // Only the informative scenario's gate trial is counted as working.
-  const gateLine = report.split('\n').find(line => line.startsWith('| gate |'));
+  // Only the informative scenario's gate trial is counted as working. Scope the
+  // lookup to the outcome-class table: the effect table also has a `gate` row.
+  const classTable = report.slice(report.indexOf('### Outcome classes'));
+  const gateLine = classTable.split('\n').find(line => line.startsWith('| gate |'));
   assert.strictEqual(gateLine.split('|')[2].trim(), '1', gateLine);
+});
+
+test('a small run is reported as underpowered, not as evidence', () => {
+  // The counts this harness prints look like a result. With a handful of trials
+  // they are not, so the report has to say so next to them.
+  const rows = [
+    row({ scenario: 'works', rep: 1, arm: 'off', passed: false }),
+    row({ scenario: 'works', rep: 1, arm: 'gate', passed: true, turns: 8, costUsd: 0.1 }),
+    row({ scenario: 'works', rep: 2, arm: 'off', passed: false }),
+    row({ scenario: 'works', rep: 2, arm: 'gate', passed: false, turns: 7, costUsd: 0.1 })
+  ];
+  const report = coverage.renderEffect(rows);
+  assert.match(report, /Underpowered: 2 pair\(s\)/);
+  assert.match(report, /not as evidence that `gate` beats `off`/);
+  // The exact paired test must be shown beside the counts.
+  assert.match(report, /McNemar p/);
+  assert.match(report, /\| off \| 2 \|/);
+});
+
+test('the underpowered warning clears once there are enough pairs', () => {
+  const rows = [];
+  for (let rep = 1; rep <= coverage.MIN_PAIRS_FOR_A_CLAIM; rep++) {
+    rows.push(row({ scenario: 'works', rep, arm: 'off', passed: false }));
+    rows.push(row({ scenario: 'works', rep, arm: 'gate', passed: true, turns: 8, costUsd: 0.1 }));
+  }
+  const report = coverage.renderEffect(rows);
+  assert.ok(!/Underpowered/.test(report), report);
+  assert.match(report, /\| gate \| 20\/20 \|/);
 });
 
 test('unengaged reports scenarios the gate never fired on', () => {

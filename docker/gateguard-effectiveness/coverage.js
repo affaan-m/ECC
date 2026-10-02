@@ -12,6 +12,13 @@
 // The questions a scenario provokes are therefore discovered and reported, not
 // declared and asserted.
 
+const { wilson } = require('../context-profiles/ai-eval-lib');
+const { pairedComparison } = require('./lib');
+
+// Rough floor for 80% power on a 40-point pass-rate difference at a two-sided
+// 5% level. Below it the report refuses to let counts stand as evidence.
+const MIN_PAIRS_FOR_A_CLAIM = 20;
+
 /** Outcome classes. The four ending in -hole are the improvable cases. */
 const CLASSES = Object.freeze({
   working: 'the deciding fact was obtained and the outcome is right',
@@ -113,6 +120,53 @@ function pct(value) {
   return `${Math.round(value * 100)}%`;
 }
 
+/**
+ * Effect size and cost, with intervals and an exact paired test.
+ *
+ * The hole classes say what went wrong; they say nothing about whether the
+ * difference between arms is distinguishable from chance. Bare counts read as
+ * evidence, so the interval and the McNemar p-value are printed beside them,
+ * and a run too small to support any claim says so in words.
+ */
+function renderEffect(rows, { referenceArm = 'gate', baselineArm = 'off' } = {}) {
+  const arms = [...new Set(rows.map(row => row.arm))].sort();
+  const lines = ['### Effect and cost', ''];
+  lines.push('| Arm | Passed | Wilson 95% | Mean turns | Mean cost (USD) |', '| --- | ---: | --- | ---: | ---: |');
+  for (const arm of arms) {
+    const own = rows.filter(row => row.arm === arm);
+    if (!own.length) continue;
+    const passes = own.filter(row => row.passed).length;
+    const [low, high] = wilson(passes, own.length);
+    const mean = key => own.reduce((total, row) => total + (Number(row[key]) || 0), 0) / own.length;
+    lines.push(`| ${arm} | ${passes}/${own.length} | ${pct(low)}-${pct(high)} | ${mean('turns').toFixed(1)} | ${mean('costUsd').toFixed(3)} |`);
+  }
+
+  lines.push('', `| Arm vs ${referenceArm} | Pairs | Pass-rate difference (95%) | ${referenceArm} only | Arm only | McNemar p |`);
+  lines.push('| --- | ---: | --- | ---: | ---: | ---: |');
+  let smallest = Infinity;
+  for (const arm of arms.filter(arm => arm !== referenceArm)) {
+    const cmp = pairedComparison(rows, referenceArm, arm);
+    smallest = Math.min(smallest, cmp.pairs);
+    const [low, high] = cmp.interval;
+    lines.push(
+      `| ${arm} | ${cmp.pairs} | ${pct(cmp.passRateDifference)} (${pct(low)} to ${pct(high)}) | ${cmp.onlyReference} | ${cmp.onlyArm} | ${cmp.mcnemarP.toFixed(3)} |`
+    );
+  }
+
+  // 20 trials per arm is the rough floor for 80% power on a 40-point difference
+  // at a two-sided 5% level; a run near this one's size separates nothing.
+  if (Number.isFinite(smallest) && smallest < MIN_PAIRS_FOR_A_CLAIM) {
+    lines.push(
+      '',
+      `Underpowered: ${smallest} pair(s) against \`${referenceArm}\`. At 80% power and a two-sided 5% level, ` +
+        'about 20 trials per arm are needed to detect a 40-point pass-rate difference, about 36 for 30 points, ' +
+        'and about 160 for the 15-point threshold the pilot pre-registered. Read the rows above as a ' +
+        `demonstration that the arms can differ at all, not as evidence that \`${referenceArm}\` beats \`${baselineArm}\`.`
+    );
+  }
+  return `${lines.join('\n')}\n`;
+}
+
 function renderHoles(rows, { baselineArm = 'off' } = {}) {
   const arms = [...new Set(rows.map(row => row.arm))].sort();
   const classes = Object.keys(CLASSES);
@@ -137,6 +191,8 @@ function renderHoles(rows, { baselineArm = 'off' } = {}) {
 
   const usableScenarios = new Set(verdicts.filter(row => row.label === 'informative').map(row => row.scenario));
   const usable = rows.filter(row => usableScenarios.has(row.scenario));
+
+  lines.push('', renderEffect(usable.length ? usable : rows, { baselineArm }).trimEnd());
 
   lines.push('', '### Outcome classes', '');
   lines.push(`| Arm | ${classes.join(' | ')} |`, `| --- | ${classes.map(() => '---:').join(' | ')} |`);
@@ -169,4 +225,7 @@ function renderHoles(rows, { baselineArm = 'off' } = {}) {
   return `${lines.join('\n')}\n`;
 }
 
-module.exports = { CLASSES, classify, tally, difficulty, informative, discoveredQuestions, unengaged, renderHoles };
+module.exports = {
+  CLASSES, MIN_PAIRS_FOR_A_CLAIM, classify, tally, difficulty, informative,
+  discoveredQuestions, unengaged, renderEffect, renderHoles
+};
