@@ -14,6 +14,8 @@ function coordinationSection(body, policy) {
   const source = String(body || '');
   const marker = escapeRegExp(policy.sectionMarker || DEFAULT_SECTION_MARKER);
   const boundary = new RegExp(`<!--\\s*${marker}:(start|end)\\s*-->`, 'g');
+  const inlineCode = [...source.matchAll(/(?<!`)(`+)(?!`)([\s\S]*?)(?<!`)\1(?!`)/g)]
+    .filter(code => !/\r?\n[ \t]*\r?\n|\r?\n {0,3}(?:`{3,}|~{3,})/.test(code[0]));
   let boundaries = [];
   let fence = null;
   let fenceStart = 0;
@@ -26,9 +28,9 @@ function coordinationSection(body, policy) {
       continue;
     }
     if (delimiter) { fence = delimiter[1]; fenceStart = match.index; continue; }
-    const inlineCode = [...line.matchAll(/(`+)(.*?)\1/g)];
     for (const found of line.matchAll(boundary)) {
-      if (inlineCode.some(code => found.index >= code.index && found.index < code.index + code[0].length)) continue;
+      const index = match.index + found.index;
+      if (inlineCode.some(code => index >= code.index && index < code.index + code[0].length)) continue;
       boundaries = [...boundaries, { kind: found[1], index: match.index + found.index,
         length: found[0].length }];
     }

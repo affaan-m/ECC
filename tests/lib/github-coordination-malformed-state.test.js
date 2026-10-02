@@ -78,6 +78,16 @@ test('fenceless inline start before valid metadata refuses mutation', () => {
   assert.throws(() => extractCoordinationState(body), /coordination/i);
   assert.throws(() => mergeIssueBody({ body }, { owner: 'other' }), /coordination/i);
 });
+test('multiline code spans do not become ownership metadata', () => {
+  for (const quote of ['`', '``']) {
+    const example = 'Inline ' + quote + '\n<!-- ecc-coordination:start -->\n' + quote + ' example\n';
+    const body = example + section('{"owner":"existing"}');
+    assert.strictEqual(extractCoordinationState(body).owner, 'existing');
+    assert.ok(mergeIssueBody({ body }, { owner: 'existing' }).startsWith(example));
+  }
+  const damaged = 'Inline ``<!-- ecc-coordination:start -->`\n' + section('{"owner":"second"}');
+  assert.throws(() => extractCoordinationState(damaged), /coordination/i);
+});
 test('literal markers in prose, fenced examples and JSON notes remain intact', () => {
   for (const policy of [{}, { sectionMarker: 'custom-marker' }]) {
     const marker = policy.sectionMarker || 'ecc-coordination';
