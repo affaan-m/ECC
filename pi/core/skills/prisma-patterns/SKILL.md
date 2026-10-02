@@ -123,11 +123,13 @@ const post = await prisma.$transaction(async (tx) => {
 
 Each `PrismaClient` instance opens its own connection pool. Instantiate once.
 
+The adapter examples assume `lib/prisma.ts` imports a `prisma-client` generator with `output = "../generated/prisma"` in `prisma/schema.prisma`. Run `prisma generate` first, then import from `../generated/prisma/client`. Adjust the relative path for your output and importing file; only the legacy `prisma-client-js` generator uses the `@prisma/client` import shown in Option B.
+
 ```ts
 // lib/prisma.ts
 
 // Option A — adapter-based initialization (required by newer Prisma installs)
-import { PrismaClient } from '@prisma/client'; // or the generated client path for your setup
+import { PrismaClient } from '../generated/prisma/client';
 import { PrismaPg } from '@prisma/adapter-pg';
 
 function createPrismaClient() {
@@ -245,8 +247,9 @@ DATABASE_URL="postgresql://user:pass@host/db?pgbouncer=true&connection_limit=1"
 // Vercel, AWS Lambda, and similar serverless runtimes:
 // Size the pool per instance, then account for total instance concurrency.
 
+// lib/prisma.ts — same generated output assumption as the singleton above
 // Adapter-based setup (Prisma ORM 7 / node-postgres pool):
-import { PrismaClient } from '@prisma/client';
+import { PrismaClient } from '../generated/prisma/client';
 import { PrismaPg } from '@prisma/adapter-pg';
 
 const prisma = new PrismaClient({
