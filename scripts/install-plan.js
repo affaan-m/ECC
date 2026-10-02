@@ -49,6 +49,14 @@ Options:
 
 function parseArgs(argv) {
   const args = argv.slice(2);
+  function requiredValue(index, allowEmpty = false) {
+    const value = args[index + 1];
+    if (value === undefined || (!allowEmpty && !value.trim())
+      || value.startsWith('--') || value === '-h') {
+      throw new Error(`Missing value for ${args[index]}`);
+    }
+    return value;
+  }
   const parsed = {
     json: false,
     help: false,
@@ -82,35 +90,35 @@ function parseArgs(argv) {
     } else if (arg === '--list-components') {
       parsed.listComponents = true;
     } else if (arg === '--family') {
-      parsed.family = args[index + 1] || null;
+      parsed.family = requiredValue(index);
       index += 1;
     } else if (arg === '--profile') {
-      parsed.profileId = args[index + 1] || null;
+      parsed.profileId = requiredValue(index);
       index += 1;
     } else if (arg === '--modules') {
-      const raw = args[index + 1] || '';
+      const raw = requiredValue(index);
       parsed.moduleIds = raw.split(',').map(value => value.trim()).filter(Boolean);
       index += 1;
     } else if (arg === '--with') {
-      const componentId = args[index + 1] || '';
+      const componentId = requiredValue(index, true);
       if (componentId.trim()) {
         parsed.includeComponentIds.push(componentId.trim());
       }
       index += 1;
     } else if (arg === '--skill' || arg === '--skills') {
-      parsed.includeComponentIds.push(...normalizeSkillComponentIds(args[index + 1] || ''));
+      parsed.includeComponentIds.push(...normalizeSkillComponentIds(requiredValue(index)));
       index += 1;
     } else if (arg === '--without') {
-      const componentId = args[index + 1] || '';
+      const componentId = requiredValue(index, true);
       if (componentId.trim()) {
         parsed.excludeComponentIds.push(componentId.trim());
       }
       index += 1;
     } else if (arg === '--config') {
-      parsed.configPath = args[index + 1] || null;
+      parsed.configPath = requiredValue(index);
       index += 1;
     } else if (arg === '--target') {
-      parsed.target = args[index + 1] || null;
+      parsed.target = requiredValue(index);
       index += 1;
     } else {
       throw new Error(`Unknown argument: ${arg}`);
