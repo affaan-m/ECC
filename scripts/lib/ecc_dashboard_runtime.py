@@ -12,6 +12,22 @@ import re
 from typing import Optional, Tuple, Dict, List
 
 
+def decode_description_escapes(value: str) -> str:
+    escapes = {'0': '\0', 'a': '\a', 'b': '\b', 't': '\t',
+               'n': '\n', 'v': '\v', 'f': '\f', 'r': '\r',
+               'e': '\x1b', ' ': ' ', '"': '"', '/': '/',
+               '\\': '\\', 'N': '\x85', '_': '\xa0',
+               'L': '\u2028', 'P': '\u2029'}
+    def decode_escape(escape):
+        token = escape.group(1)
+        return chr(int(token[1:], 16)) if token[0] in 'xuU' else escapes[token]
+    try:
+        value = re.sub(r'\\(x[0-9a-fA-F]{2}|u[0-9a-fA-F]{4}|U[0-9a-fA-F]{8}|[0abtnvfre "/\\N_LP])', decode_escape, value)
+    except ValueError:
+        value = ''
+    return value
+
+
 def skill_description(content: str, fallback: str) -> str:
     """Read a skill summary, excluding frontmatter from body fallbacks."""
     lines = content.lstrip('\ufeff').splitlines()
@@ -41,18 +57,7 @@ def skill_description(content: str, fallback: str) -> str:
             elif value.startswith('"'):
                 scalar = re.fullmatch(r'"((?:[^"\\]|\\.)*)"(?:\s+#.*)?\s*', value)
                 value = scalar.group(1) if scalar else ''
-                escapes = {'0': '\0', 'a': '\a', 'b': '\b', 't': '\t',
-                           'n': '\n', 'v': '\v', 'f': '\f', 'r': '\r',
-                           'e': '\x1b', ' ': ' ', '"': '"', '/': '/',
-                           '\\': '\\', 'N': '\x85', '_': '\xa0',
-                           'L': '\u2028', 'P': '\u2029'}
-                def decode_escape(escape):
-                    token = escape.group(1)
-                    return chr(int(token[1:], 16)) if token[0] in 'xuU' else escapes[token]
-                try:
-                    value = re.sub(r'\\(x[0-9a-fA-F]{2}|u[0-9a-fA-F]{4}|U[0-9a-fA-F]{8}|[0abtnvfre "/\\N_LP])', decode_escape, value)
-                except ValueError:
-                    value = ''
+                value = decode_description_escapes(value)
             elif value.startswith("'"):
                 scalar = re.fullmatch(r"'((?:[^']|'')*)'(?:\s+#.*)?\s*", value)
                 value = scalar.group(1).replace("''", "'") if scalar else ''
