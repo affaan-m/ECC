@@ -27,7 +27,11 @@ if (process.platform === 'win32') {
       'exit 1',
       '',
     ].join('\n'), { mode: 0o755 });
-    for (const mode of ['failure', 'empty', 'success', 'stale-empty', 'failure-second', 'copy-failure', 'publish-failure']) {
+    for (const mode of ['failure', 'empty', 'success', 'stale-empty', 'failure-second', 'copy-failure', 'publish-failure', 'cleanup-failure']) {
+      fs.writeFileSync(path.join(bin, 'rm'), ['#!/bin/sh',
+        mode === 'cleanup-failure' ? 'case "$2" in */.iconify-prior.*) exit 1;; esac' : '',
+        'exec /usr/bin/rm "$@"', '',
+      ].join('\n'), { mode: 0o755 });
       fs.writeFileSync(path.join(bin, 'cp'), ['#!/bin/sh',
         mode === 'copy-failure' ? 'case "$1" in */ecc-iconify.*/*.png) /usr/bin/cp "$1" "$4"; exit 1;; esac' : '',
         'exec /usr/bin/cp "$@"', '',
@@ -59,8 +63,9 @@ if (process.platform === 'win32') {
       });
       try {
         assert.ok(fs.readdirSync(imageset).every(name => !name.startsWith('.iconify.')));
-        if (mode === 'success') {
+        if (['success', 'cleanup-failure'].includes(mode)) {
           assert.strictEqual(result.status, 0, result.stderr);
+          if (mode === 'cleanup-failure') assert.ok(result.stderr.includes('WARNING: Imageset published'));
           const manifest = JSON.parse(fs.readFileSync(path.join(imageset, 'Contents.json'), 'utf8'));
           assert.strictEqual(manifest.images.length, 3);
           for (const image of manifest.images) {

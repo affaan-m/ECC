@@ -230,7 +230,9 @@ JSONEOF
         echo "ERROR: Publication failed; prior imageset restored" >&2
         return 1
     fi
-    rm -r "$prior_dir" "$conversion_dir"
+    if ! rm -r "$prior_dir" "$conversion_dir"; then
+        echo "WARNING: Imageset published; temporary cleanup failed (${prior_dir}, ${conversion_dir})" >&2
+    fi
 
     echo "Output: ${imageset_dir}/"
 }
