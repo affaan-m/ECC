@@ -278,8 +278,6 @@ pytest --cov=src --cov-branch
 import pytest
 import pytest_asyncio
 
-import pytest
-
 @pytest.mark.asyncio
 async def test_async_fetch_user():
     """Test async function"""

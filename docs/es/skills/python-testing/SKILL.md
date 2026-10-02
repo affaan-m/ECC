@@ -400,7 +400,6 @@ async def test_async_function():
 ### Fixture Async
 
 ```python
-import pytest
 import pytest_asyncio
 
 @pytest_asyncio.fixture
