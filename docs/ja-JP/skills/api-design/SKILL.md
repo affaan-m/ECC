@@ -410,9 +410,10 @@ const createUserSchema = z.object({
 });
 
 export async function POST(req: NextRequest) {
+  const rawBody = await req.text();
   let body: unknown;
   try {
-    body = await req.json();
+    body = JSON.parse(rawBody);
   } catch (error) {
     if (!(error instanceof SyntaxError)) throw error;
     return NextResponse.json({
