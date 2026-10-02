@@ -11640,8 +11640,10 @@ Route existing installs to portal first before checkout.
             "/tmp/legacy
 notes",
         ] {
-            let mut path_audit = build_legacy_migration_audit_report(root)?;
-            path_audit.source = source.to_string();
+            let path_audit = LegacyMigrationAuditReport {
+                source: source.to_string(),
+                ..build_legacy_migration_audit_report(root)?
+            };
             let path_plan = build_legacy_migration_plan_report(&path_audit);
             let rendered = render_legacy_migration_config_scaffold(&path_plan);
             let parsed: config::Config = toml::from_str(&rendered)?;
