@@ -14,7 +14,7 @@
  * so MCP launcher commands respect the user's configured package manager.
  *
  * Usage:
- *   node merge-mcp-config.js <config.toml> [--dry-run] [--update-mcp]
+ *   node merge-mcp-config.js <config.toml> [--dry-run] [--update-mcp] [--harness codex|grok]
  */
 
 const fs = require('fs');
@@ -204,15 +204,30 @@ function removeServerFromText(raw, serverName, existing) {
 // Main
 // ---------------------------------------------------------------------------
 
+function readFlag(args, name) {
+  const index = args.indexOf(name);
+  if (index === -1) return null;
+  const value = args[index + 1];
+  if (!value || value.startsWith('--')) return null;
+  return value;
+}
+
 function main() {
   const args = process.argv.slice(2);
-  const configPath = args.find(a => !a.startsWith('-'));
+  const harness = readFlag(args, '--harness') || 'codex';
+  const skipIndexes = new Set();
+  const harnessIndex = args.indexOf('--harness');
+  if (harnessIndex !== -1) {
+    skipIndexes.add(harnessIndex);
+    skipIndexes.add(harnessIndex + 1);
+  }
+  const configPath = args.find((arg, index) => !arg.startsWith('-') && !skipIndexes.has(index));
   const dryRun = args.includes('--dry-run');
   const updateMcp = args.includes('--update-mcp');
   const disabledServers = new Set(parseDisabledMcpServers(process.env.ECC_DISABLED_MCPS));
 
   if (!configPath) {
-    console.error('Usage: merge-mcp-config.js <config.toml> [--dry-run] [--update-mcp]');
+    console.error('Usage: merge-mcp-config.js <config.toml> [--dry-run] [--update-mcp] [--harness codex|grok]');
     process.exit(1);
   }
 
@@ -240,17 +255,20 @@ function main() {
   const toRemoveLog = [];
 
   // Repair schema-invalid entries emitted by earlier ECC versions (#2224).
-  for (const [name, invalidUrl] of Object.entries(RETIRED_INVALID_URL_SERVERS)) {
-    const entry = existing[name];
-    const isBrokenEccForm =
-      entry &&
-      typeof entry.url === 'string' &&
-      entry.url === invalidUrl &&
-      typeof entry.command !== 'string';
-    if (isBrokenEccForm) {
-      toRemoveLog.push(`mcp_servers.${name} (invalid url entry from earlier ECC versions)`);
-      raw = removeServerFromText(raw, name, existing);
-      log(`  [repair] mcp_servers.${name} — url is not valid for Codex stdio servers, removing`);
+  // Grok accepts HTTP/SSE `url` transports, so never strip those there.
+  if (harness !== 'grok') {
+    for (const [name, invalidUrl] of Object.entries(RETIRED_INVALID_URL_SERVERS)) {
+      const entry = existing[name];
+      const isBrokenEccForm =
+        entry &&
+        typeof entry.url === 'string' &&
+        entry.url === invalidUrl &&
+        typeof entry.command !== 'string';
+      if (isBrokenEccForm) {
+        toRemoveLog.push(`mcp_servers.${name} (invalid url entry from earlier ECC versions)`);
+        raw = removeServerFromText(raw, name, existing);
+        log(`  [repair] mcp_servers.${name} — url is not valid for Codex stdio servers, removing`);
+      }
     }
   }
 

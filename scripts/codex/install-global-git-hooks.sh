@@ -16,7 +16,7 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 SOURCE_DIR="$REPO_ROOT/scripts/codex-git-hooks"
 DEST_DIR="${ECC_GLOBAL_HOOKS_DIR:-$HOME/.codex/git-hooks}"
 STAMP="$(date +%Y%m%d-%H%M%S)"
-BACKUP_DIR="$HOME/.codex/backups/git-hooks-$STAMP"
+BACKUP_DIR="$(dirname "$DEST_DIR")/backups/git-hooks-$STAMP"
 
 log() {
   printf '[ecc-hooks] %s\n' "$*"

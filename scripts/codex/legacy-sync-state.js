@@ -16,17 +16,31 @@ function readFlag(args, name) {
   return value;
 }
 
+function readRepeatableFlag(args, name) {
+  const values = [];
+  for (let i = 0; i < args.length; i += 1) {
+    if (args[i] !== name) continue;
+    const value = args[i + 1];
+    if (!value || value.startsWith('--')) continue;
+    values.push(value);
+  }
+  return values;
+}
+
 function main(argv = process.argv.slice(2)) {
   const command = argv[0];
   if (command === 'begin') {
-    const codexHome = readFlag(argv, '--codex-home');
+    const harnessHome = readFlag(argv, '--grok-home') || readFlag(argv, '--codex-home');
     const backupDir = readFlag(argv, '--backup-dir');
-    if (!codexHome || !backupDir) throw new Error('begin requires --codex-home and --backup-dir');
+    if (!harnessHome || !backupDir) {
+      throw new Error('begin requires --codex-home or --grok-home, and --backup-dir');
+    }
     process.stdout.write(`${beginLegacySyncState({
-      codexHome,
+      codexHome: harnessHome,
       backupDir,
       previousHooksPath: readFlag(argv, '--previous-hooks-path') || '',
       installedHooksPath: readFlag(argv, '--installed-hooks-path'),
+      extraTrustedRoots: readRepeatableFlag(argv, '--trusted-root'),
     })}\n`);
     return;
   }
@@ -54,7 +68,7 @@ function main(argv = process.argv.slice(2)) {
   throw new Error('Usage: legacy-sync-state.js <begin|record|finalize|rollback> [options]');
 }
 
-module.exports = { main, readFlag };
+module.exports = { main, readFlag, readRepeatableFlag };
 
 if (require.main === module) {
   try {
