@@ -818,8 +818,8 @@ composer audit
 "laravel/framework": "^11.0",
 "spatie/laravel-permission": "^6.0"
 
-# Check for abandoned packages
-composer why-not
+# Check locked dependencies for abandoned packages (Composer 2.8+)
+composer audit --locked --abandoned=fail
 
 # Keep lock file in version control (it pins exact versions)
 # Run `composer update` deliberately, never in CI/CD
