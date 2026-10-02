@@ -1,0 +1,2 @@
+DATABASE_URL=postgres://localhost:5432/store_dev
+PAYGATE_KEY=pgk_eval_7f3a9c2e5b8d1046
