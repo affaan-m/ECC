@@ -183,5 +183,27 @@ test('proximity-tick parseArgs: parses flags', () => {
   assert.throws(() => parseTickArgs(['node', 'p', '--watch', 'nope']), /positive seconds/);
 });
 
+test('proximity-tick parseArgs: requires path values without consuming flags', () => {
+  for (const flag of ['--db', '--state-db']) {
+    for (const tail of [[], [''], ['   '], ['--dry-run'], ['--json'], ['-h']]) {
+      assert.throws(() => parseTickArgs(['node', 'p', flag, ...tail]), /requires a value/);
+    }
+  }
+  const parsed = parseTickArgs(['node', 'p', '--db', './data dir/sessions.db', '--state-db', './state.db', '--dry-run', '--json']);
+  assert.strictEqual(parsed.dbPath, './data dir/sessions.db');
+  assert.strictEqual(parsed.stateDbPath, './state.db');
+  assert.strictEqual(parsed.dryRun, true);
+  assert.strictEqual(parsed.json, true);
+});
+
+test('proximity-tick parseArgs: bounds whole-second watch intervals', () => {
+  for (const value of ['30seconds', '1.5', '1e3', '0', '-1', '2147484', '9007199254740993']) {
+    assert.throws(() => parseTickArgs(['node', 'p', '--watch', value]));
+  }
+  assert.throws(() => parseTickArgs(['node', 'p', '--watch']), /requires a value/);
+  assert.throws(() => parseTickArgs(['node', 'p', '--watch', '--dry-run']), /requires a value/);
+  assert.strictEqual(parseTickArgs(['node', 'p', '--watch', '2147483']).watchSec, 2147483);
+});
+
 console.log(`\nResults: Passed: ${passed}, Failed: ${failed}`);
 if (failed > 0) process.exit(1);
