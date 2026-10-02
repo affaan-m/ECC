@@ -27,7 +27,12 @@ def skill_description(content: str, fallback: str) -> str:
             if not match:
                 continue
             value = match.group(1).strip()
-            if re.fullmatch(r'[>|][+-]?', value):
+            quoted = value.startswith(('"', "'"))
+            if not quoted:
+                value = re.split(r'(^|\s)#', value, maxsplit=1)[0].strip()
+                if value in ('~', 'null', 'Null', 'NULL'):
+                    value = ''
+            if re.fullmatch(r'[>|](?:[1-9][+-]?|[+-][1-9]?)?', value):
                 parts = []
                 for line in lines[index + 1:end]:
                     if line and not line[0].isspace():
@@ -36,11 +41,12 @@ def skill_description(content: str, fallback: str) -> str:
                 value = ' '.join(parts).strip()
             elif value.startswith('"'):
                 try:
-                    value = json.loads(value)
+                    value, _ = json.JSONDecoder().raw_decode(value)
                 except ValueError:
                     value = ''
-            elif value.startswith("'") and value.endswith("'"):
-                value = value[1:-1].replace("''", "'")
+            elif value.startswith("'"):
+                scalar = re.fullmatch(r"'((?:[^']|'')*)'(?:\s+#.*)?\s*", value)
+                value = scalar.group(1).replace("''", "'") if scalar else ''
             if isinstance(value, str) and value.strip():
                 return ' '.join(value.split())[:100]
             break

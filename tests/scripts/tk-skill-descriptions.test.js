@@ -22,6 +22,19 @@ cases = [
  ('empty body', '---\\nname: sample\\n---\\n', 'Sample'),
 ]
 passed = failed = 0
+for name, value, expected in [
+ ('plain comment', 'Plan work # editor note', 'Plan work'),
+ ('comment only', '# TODO', 'Heading'),
+ ('block comment', '>2- # summary\\n  Useful workflow', 'Useful workflow'),
+ ('block sign first', '|+2\\n  Useful workflow', 'Useful workflow'),
+ ('null', 'null', 'Heading'),
+ ('tilde', '~', 'Heading'),
+ ('quoted null', '"null" # note', 'null'),
+ ('quoted hash', '"Useful # workflow" # note', 'Useful # workflow'),
+ ('single quoted hash', "'Useful # workflow' # note", 'Useful # workflow'),
+ ('plain hash', 'Useful#workflow', 'Useful#workflow'),
+]:
+ cases.append((name, '---\\nname: sample\\ndescription: ' + value + '\\n---\\n# Heading\\n', expected))
 for name, content, expected in cases:
  with tempfile.TemporaryDirectory(prefix='ecc-tk-skills-') as root:
   target = Path(root) / 'skills' / 'sample' / 'SKILL.md'
