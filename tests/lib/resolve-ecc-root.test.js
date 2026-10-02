@@ -438,7 +438,10 @@ function runTests() {
     try {
       const resolverDir = path.join(homeDir, '.claude', 'scripts', 'lib');
       fs.mkdirSync(resolverDir, { recursive: true });
-      fs.writeFileSync(path.join(resolverDir, 'resolve-ecc-root.js'), `module.exports = { resolveEccRoot() { return 'delegated:' + process.env.INLINE_RESOLVE_MARKER; } };`);
+      const expectedRoot = path.resolve(resolverDir, '../..');
+      fs.writeFileSync(path.join(resolverDir, 'utils.js'), '');
+      fs.mkdirSync(path.join(expectedRoot, 'skills/continuous-learning-v2'), { recursive: true });
+      fs.writeFileSync(path.join(resolverDir, 'resolve-ecc-root.js'), `module.exports = { resolveEccRoot() { if (process.env.INLINE_RESOLVE_MARKER !== 'ok') throw new Error('missing marker'); return require('path').resolve(__dirname, '../..'); } };`);
       const { execFileSync } = require('child_process');
       const result = execFileSync('node', [
         '-e', `console.log(${INLINE_RESOLVE})`,
@@ -451,7 +454,7 @@ function runTests() {
         },
         encoding: 'utf8',
       }).trim();
-      assert.strictEqual(result, 'delegated:ok');
+      assert.strictEqual(result, expectedRoot);
     } finally {
       fs.rmSync(homeDir, { recursive: true, force: true });
     }
@@ -462,8 +465,11 @@ function runTests() {
     try {
       const resolverDir = path.join(homeDir, '.claude', 'scripts', 'lib');
       fs.mkdirSync(resolverDir, { recursive: true });
+      const expectedRoot = path.resolve(resolverDir, '../..');
+      fs.writeFileSync(path.join(resolverDir, 'utils.js'), '');
+      fs.mkdirSync(path.join(expectedRoot, 'skills/continuous-learning-v2'), { recursive: true });
       fs.writeFileSync(path.join(resolverDir, 'resolve-ecc-root.js'), `const assert = require('assert');
-module.exports = { resolveEccRoot() { assert.strictEqual(process.env.HOME, ${JSON.stringify(homeDir)}); return 'module-loaded'; } };`);
+module.exports = { resolveEccRoot() { assert.strictEqual(process.env.HOME, ${JSON.stringify(homeDir)}); return require('path').resolve(__dirname, '../..'); } };`);
       const { execFileSync } = require('child_process');
       const result = execFileSync('node', [
         '-e', `console.log(${INLINE_RESOLVE})`,
@@ -471,7 +477,7 @@ module.exports = { resolveEccRoot() { assert.strictEqual(process.env.HOME, ${JSO
         env: { PATH: process.env.PATH, HOME: homeDir, USERPROFILE: homeDir },
         encoding: 'utf8',
       }).trim();
-      assert.strictEqual(result, 'module-loaded');
+      assert.strictEqual(result, expectedRoot);
     } finally {
       fs.rmSync(homeDir, { recursive: true, force: true });
     }
@@ -482,7 +488,10 @@ module.exports = { resolveEccRoot() { assert.strictEqual(process.env.HOME, ${JSO
     try {
       const resolverDir = path.join(homeDir, '.claude', 'plugins', 'ecc', 'scripts', 'lib');
       fs.mkdirSync(resolverDir, { recursive: true });
-      fs.writeFileSync(path.join(resolverDir, 'resolve-ecc-root.js'), `module.exports = { resolveEccRoot() { return 'plugin-root'; } };`);
+      const expectedRoot = path.resolve(resolverDir, '../..');
+      fs.writeFileSync(path.join(resolverDir, 'utils.js'), '');
+      fs.mkdirSync(path.join(expectedRoot, 'skills/continuous-learning-v2'), { recursive: true });
+      fs.writeFileSync(path.join(resolverDir, 'resolve-ecc-root.js'), `module.exports = { resolveEccRoot() { return require('path').resolve(__dirname, '../..'); } };`);
       const { execFileSync } = require('child_process');
       const result = execFileSync('node', [
         '-e', `console.log(${INLINE_RESOLVE})`,
@@ -490,7 +499,7 @@ module.exports = { resolveEccRoot() { assert.strictEqual(process.env.HOME, ${JSO
         env: { PATH: process.env.PATH, HOME: homeDir, USERPROFILE: homeDir },
         encoding: 'utf8',
       }).trim();
-      assert.strictEqual(result, 'plugin-root');
+      assert.strictEqual(result, expectedRoot);
     } finally {
       fs.rmSync(homeDir, { recursive: true, force: true });
     }
@@ -504,7 +513,10 @@ module.exports = { resolveEccRoot() { assert.strictEqual(process.env.HOME, ${JSO
         'scripts', 'lib'
       );
       fs.mkdirSync(resolverDir, { recursive: true });
-      fs.writeFileSync(path.join(resolverDir, 'resolve-ecc-root.js'), `module.exports = { resolveEccRoot() { return 'cache-root'; } };`);
+      const expectedRoot = path.resolve(resolverDir, '../..');
+      fs.writeFileSync(path.join(resolverDir, 'utils.js'), '');
+      fs.mkdirSync(path.join(expectedRoot, 'skills/continuous-learning-v2'), { recursive: true });
+      fs.writeFileSync(path.join(resolverDir, 'resolve-ecc-root.js'), `module.exports = { resolveEccRoot() { return require('path').resolve(__dirname, '../..'); } };`);
       const { execFileSync } = require('child_process');
       const result = execFileSync('node', [
         '-e', `console.log(${INLINE_RESOLVE})`,
@@ -512,7 +524,7 @@ module.exports = { resolveEccRoot() { assert.strictEqual(process.env.HOME, ${JSO
         env: { PATH: process.env.PATH, HOME: homeDir, USERPROFILE: homeDir },
         encoding: 'utf8',
       }).trim();
-      assert.strictEqual(result, 'cache-root');
+      assert.strictEqual(result, expectedRoot);
     } finally {
       fs.rmSync(homeDir, { recursive: true, force: true });
     }

@@ -5,7 +5,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const { spawnSync } = require('child_process');
-const { resolveEccRoot } = require('../../scripts/lib/resolve-ecc-root');
+const { resolveEccRoot, INLINE_RESOLVE } = require('../../scripts/lib/resolve-ecc-root');
 
 const repo = path.resolve(__dirname, '../..');
 const registry = JSON.parse(fs.readFileSync(path.join(repo, 'hooks/hooks.json'), 'utf8'));
@@ -85,6 +85,38 @@ test('every registered hook stops before root lookup when plugin automation is d
     assert.strictEqual(result.stdout, '');
     assert.strictEqual(result.stderr, '');
   }
+});
+
+test('older cached resolvers cannot switch away from the active profile', root => {
+  const config = path.join(root, 'active profile');
+  const cache = path.join(config, 'plugins/cache/ecc/example/old');
+  const defaultProfile = path.join(root, '.claude');
+  for (const directory of [cache, defaultProfile]) {
+    write(directory, 'scripts/lib/utils.js', '');
+    fs.mkdirSync(path.join(directory, 'skills/continuous-learning-v2'), { recursive: true });
+  }
+  write(cache, 'scripts/lib/resolve-ecc-root.js',
+    "exports.resolveEccRoot=()=>require('path').join(require('os').homedir(),'.claude');");
+  const probe = () => spawnSync(process.execPath, ['-e', `process.stdout.write(String(${INLINE_RESOLVE}))`], {
+    env: environment(root, config), encoding: 'utf8', timeout: 10000,
+  });
+  const complete = probe();
+  assert.strictEqual(complete.status, 0, complete.stderr);
+  assert.strictEqual(complete.stdout, cache);
+  fs.rmSync(path.join(cache, 'skills/continuous-learning-v2'), { recursive: true });
+  const partial = probe();
+  assert.strictEqual(partial.status, 0, partial.stderr);
+  assert.strictEqual(partial.stdout, config);
+});
+
+test('Codex disabled hooks do not require a plugin root', root => {
+  const codex = JSON.parse(fs.readFileSync(path.join(repo, 'hooks/codex-hooks.json'), 'utf8'));
+  const result = inline(codex.hooks.SessionStart[0].hooks[0].command, environment(root, root, {
+    PLUGIN_ROOT: undefined, ECC_HOOKS_ENABLED: 'false',
+  }));
+  assert.strictEqual(result.status, 0, result.stderr);
+  assert.strictEqual(result.stdout, '');
+  assert.strictEqual(result.stderr, '');
 });
 
 test('direct bootstrap honors the global flag before spawning a target', root => {
