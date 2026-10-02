@@ -29,7 +29,7 @@ origin: ECC
 マイグレーションを適用する前に：
 
 - [ ] マイグレーションはUPとDOWNの両方を持つ（または明示的に不可逆としてマーク）
-- [ ] 大型テーブルの完全テーブルロックなし（並行操作使用）
+- [ ] ロック保持時間と取得タイムアウトを確認し、長時間のテーブルロックを避ける
 - [ ] 新しい列はデフォルトまたはnullable（デフォルトなしでNOT NULLを追加しない）
 - [ ] インデックスは並行して作成（既存テーブルのCREATE TABLEでインライン化しない）
 - [ ] データバックフィルはスキーマ変更から分離したマイグレーション
@@ -40,15 +40,19 @@ origin: ECC
 
 ### 列を安全に追加
 
+nullable列 → バックフィル → NOT NULLの移行では、まずすべての書き込み元を非NULL値を渡すように更新するか、省略値に適切なデフォルトを設定してください。デフォルトは明示的なNULLの書き込みを防ぎません。既存行を埋め、NULLが残っていないことを確認してから制約を追加し、展開中は書き込み元の互換性を保ってください。
+
+これらのADD COLUMNはACCESS EXCLUSIVEロックを取得します。トランザクションを短く保ち、`lock_timeout`でロック取得を制限してください。高速デフォルトは非volatile式に適用され、volatile式ではテーブル書き直しが必要になる場合があります。
+
 ```sql
--- GOOD: Nullable列、ロックなし
+-- GOOD: Nullable列、テーブル書き直しなし。ACCESS EXCLUSIVEロックは取得する
 ALTER TABLE users ADD COLUMN avatar_url TEXT;
 
--- GOOD: デフォルト付きの列（Postgres 11+は即座、書き直しなし）
+-- GOOD: 定数デフォルトはPostgres 11+で書き直しを避けるが、ロックは取得する
 ALTER TABLE users ADD COLUMN is_active BOOLEAN NOT NULL DEFAULT true;
 
--- BAD: 既存テーブルのデフォルトなしで NOT NULL（完全書き直し必須）
-ALTER TABLE users ADD COLUMN is_active BOOLEAN NOT NULL;
+-- BAD: デフォルトなしのNOT NULLは既存行があるとNULL制約違反で失敗する
+ALTER TABLE users ADD COLUMN role TEXT NOT NULL;
 ```
 
 詳細についてはドキュメントを参照してください。
