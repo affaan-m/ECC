@@ -405,6 +405,8 @@ const pgClient = new Client({ connectionString: process.env.DATABASE_URL })
 
 pgClient.on('error', (error) => {
   console.error('PostgreSQL listener connection failed:', error)
+  // Let a process supervisor restart the failed listener.
+  process.exit(1)
 })
 
 pgClient.on('notification', async (msg) => {
