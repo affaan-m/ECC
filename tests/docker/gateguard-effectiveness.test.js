@@ -52,6 +52,17 @@ function gitAvailable() {
   return result.status === 0 && !result.error;
 }
 
+/** Directory of the GNU tar that Git for Windows bundles, or null. GNU tar reads `C:\...` as a remote host:path. */
+function gitBundledGnuTarDir() {
+  if (process.platform !== 'win32') return null;
+  const execPath = spawnSync('git', ['--exec-path'], { encoding: 'utf8' });
+  if (execPath.status !== 0 || execPath.error) return null;
+  // <git>/mingw64/libexec/git-core -> <git>/usr/bin
+  const dir = path.resolve(execPath.stdout.trim(), '..', '..', '..', 'usr', 'bin');
+  const version = spawnSync(path.join(dir, 'tar.exe'), ['--version'], { encoding: 'utf8' });
+  return version.status === 0 && /GNU tar/.test(version.stdout) ? dir : null;
+}
+
 console.log('\n=== Testing gateguard-effectiveness ===\n');
 
 const scenarios = lib.loadScenarios();
@@ -226,6 +237,49 @@ test('arguments require an output folder, a model and the real-provider opt-in',
   assert.deepStrictEqual(options.scenarios, ['a', 'b']);
   assert.deepStrictEqual(options.arms, arms.DEFAULT_ARMS);
 });
+
+test('materializeTree hands tar no host path, only a relative archive name run inside dest', () => {
+  const work = tempDir('gg-eff-tarargs-');
+  try {
+    const dest = path.join(work, 'tree');
+    const calls = [];
+    const spawn = (command, args, options) => {
+      calls.push({ command, args, cwd: options.cwd });
+      if (command === 'git') fs.writeFileSync(args[args.indexOf('-o') + 1], '');
+      if (command === 'tar') fs.mkdirSync(path.join(dest, 'scripts', 'hooks'), { recursive: true });
+      return { status: 0, stdout: '', stderr: '' };
+    };
+    arms.materializeTree(ROOT, 'deadbeef', dest, spawn);
+    const tar = calls.find(call => call.command === 'tar');
+    assert.strictEqual(tar.cwd, dest);
+    for (const arg of tar.args) {
+      assert.ok(!path.isAbsolute(arg) && !/^[A-Za-z]:/.test(arg), `tar argument looks like a host path: ${arg}`);
+    }
+  } finally {
+    fs.rmSync(work, { recursive: true, force: true });
+  }
+});
+
+const gnuTarDir = gitAvailable() ? gitBundledGnuTarDir() : null;
+if (gnuTarDir) {
+  test('materializeTree extracts into a drive-letter destination when GNU tar is first on PATH', () => {
+    const work = tempDir('gg-eff-tar-');
+    const savedPath = process.env.PATH;
+    try {
+      const dest = path.join(work, 'tree');
+      assert.match(dest, /^[A-Za-z]:\\/);
+      process.env.PATH = `${gnuTarDir}${path.delimiter}${savedPath}`;
+      const tree = arms.materializeTree(ROOT, arms.resolveRef(ROOT, 'HEAD'), dest);
+      assert.strictEqual(tree, dest);
+      assert.ok(fs.existsSync(path.join(dest, 'scripts', 'hooks', 'gateguard-fact-force.js')));
+      assert.ok(fs.existsSync(path.join(dest, ...arms.ARM_HOOK.split('/'))));
+      assert.ok(!fs.existsSync(path.join(dest, 'scripts.tar')), 'the archive is removed after extraction');
+    } finally {
+      process.env.PATH = savedPath;
+      fs.rmSync(work, { recursive: true, force: true });
+    }
+  });
+}
 
 if (gitAvailable()) {
   test('a trial wires the arm hook, counts the denial and grades the result (test double for Claude)', () => {

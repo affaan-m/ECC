@@ -45,8 +45,8 @@ function run(rawInput) {
 module.exports = { run };
 `;
 
-function git(repoRoot, args) {
-  const result = spawnSync('git', ['-C', repoRoot, ...args], { encoding: 'utf8', shell: false, timeout: 60000 });
+function git(repoRoot, args, spawn = spawnSync) {
+  const result = spawn('git', ['-C', repoRoot, ...args], { encoding: 'utf8', shell: false, timeout: 60000 });
   if (result.status !== 0 || result.error) throw new Error(`git ${args[0]} failed: ${String(result.stderr || result.error).trim()}`);
   return result.stdout;
 }
@@ -57,12 +57,18 @@ function resolveRef(repoRoot, ref) {
 }
 
 /** Extracts scripts/ at a commit into dest and adds the arm wrapper; returns dest. */
-function materializeTree(repoRoot, sha, dest) {
+function materializeTree(repoRoot, sha, dest, spawn = spawnSync) {
   fs.mkdirSync(dest, { recursive: true });
-  const tar = path.join(dest, 'scripts.tar');
-  git(repoRoot, ['archive', '--format=tar', '-o', tar, sha, 'scripts']);
-  const extract = spawnSync('tar', ['-xf', tar, '-C', dest], { encoding: 'utf8', shell: false, timeout: 60000 });
-  fs.rmSync(tar, { force: true });
+  const tarName = 'scripts.tar';
+  git(repoRoot, ['archive', '--format=tar', '-o', path.join(dest, tarName), sha, 'scripts'], spawn);
+  // Name the archive relatively and run tar with dest as cwd, so no argument carries a
+  // "C:\..." drive letter. GNU tar (Git Bash / MSYS on Windows) reads an archive argument
+  // containing a colon as a "host:path" remote spec and dies with "Cannot connect to C:
+  // resolve failed"; bsdtar (C:\Windows\system32\tar.exe) does not, which is why the
+  // absolute path only broke under GNU tar. A relative -f plus cwd extracts identically
+  // under both and makes -C unnecessary.
+  const extract = spawn('tar', ['-xf', tarName], { cwd: dest, encoding: 'utf8', shell: false, timeout: 60000 });
+  fs.rmSync(path.join(dest, tarName), { force: true });
   if (extract.status !== 0 || extract.error) throw new Error(`tar failed: ${String(extract.stderr || extract.error).trim()}`);
   fs.copyFileSync(path.join(__dirname, 'arm-patch.js'), path.join(dest, 'arm-patch.js'));
   fs.writeFileSync(path.join(dest, ...ARM_HOOK.split('/')), WRAPPER);
