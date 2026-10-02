@@ -378,9 +378,11 @@ vercel rollback
 # Railway: redeploy previous commit
 railway up --commit <previous-sha>
 
-# Database: rollback migration (if reversible)
-npx prisma migrate resolve --rolled-back <migration-name>
+# Database: reverse schema/data changes with a reviewed compensating migration
+# prisma migrate resolve changes migration history only; it does not undo SQL
 ```
+
+For Prisma, reverting an application deployment does not revert the database. Reverse a successful migration with a reviewed compensating migration or a tested restore plan that accounts for data loss and application compatibility. `prisma migrate resolve --rolled-back` records a failed migration as rolled back in migration history; it does not execute reverse SQL and cannot roll back a successfully applied migration. For a failed migration, reconcile any partially applied SQL before marking its history and retrying.
 
 ### Rollback Checklist
 
