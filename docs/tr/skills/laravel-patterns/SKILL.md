@@ -303,7 +303,7 @@ $projects = Project::ownedBy($user->id)->get();
 ```php
 use Illuminate\Support\Facades\DB;
 
-DB::transaction(function (): void {
+DB::transaction(function () use ($order): void {
     $order->update(['status' => 'paid']);
     $order->items()->update(['paid_at' => now()]);
 });
