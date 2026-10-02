@@ -217,6 +217,29 @@ mkdir -p "${XDG_DATA_HOME:-$HOME/.local/share}/ecc-homunculus"/{instincts/{perso
 
 ## Configuration
 
+### Optional Stop delivery
+
+Automatic Stop learning is **off by default**. To consent to an additional model
+continuation at the end of a qualifying session, set `ECC_LEARNING_STOP_ENABLED=1`
+and use `ECC_HOOK_PROFILE=standard` or `strict`. `minimal` never runs this hook,
+even with consent. Global hook disable and `ECC_DISABLED_HOOKS=stop:evaluate-session`
+also take precedence.
+
+The default mode is `ECC_LEARNING_STOP_MODE=v2`. After at least ten user messages,
+the synchronous Stop hook asks the current model to use this maintained skill:
+review evidence, resolve project scope, and save only supported atomic instincts.
+The hook itself does not write instincts or initialize learning directories, and
+does not enable the separate background observer. Model continuation can consume
+tokens and write local learning state; choose this setting only if you want that
+behavior. `stop_hook_active=true` prevents repeated delivery during that continuation.
+The threshold counts human prompts (including genuine metadata-marked prompts),
+excluding tool-result carriers, malformed records, empty turns, and harness echoes.
+
+For existing v1 workflows only, explicitly set **both**
+`ECC_LEARNING_STOP_ENABLED=1` and `ECC_LEARNING_STOP_MODE=v1`. That compatibility
+mode reads `continuous-learning/config.json` and requests legacy learned skills.
+Unset `ECC_LEARNING_STOP_ENABLED` to disable either mode. Unknown modes fail closed.
+
 Edit `config.json` to control the background observer:
 
 ```json
@@ -355,8 +378,8 @@ Hooks fire **100% of the time**, deterministically. This means:
 v2.1 is fully compatible with v2.0 and v1:
 - Existing global instincts can be migrated from `~/.claude/homunculus/instincts/` with `scripts/migrate-homunculus.sh`
 - Existing `~/.claude/skills/learned/` skills from v1 still work
-- Stop hook still runs (but now also feeds into v2)
-- Gradual migration: run both in parallel
+- Optional Stop delivery defaults to v2; legacy v1 delivery requires explicit compatibility mode
+- Neither Stop delivery nor the background observer is enabled by default
 
 ## Privacy
 

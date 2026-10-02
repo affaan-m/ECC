@@ -27,7 +27,12 @@ Automatically evaluates Claude Code sessions on end to extract reusable patterns
 
 ## Status
 
-This v1 skill is still supported, but `continuous-learning-v2` is the preferred path for new installs. Keep v1 when you explicitly want the simpler Stop-hook extraction flow or need compatibility with older learned-skill workflows.
+This deprecated skill is retained only for explicit compatibility. New installs use
+`continuous-learning-v2`. Automatic Stop delivery is disabled by default; existing
+v1 users must set both `ECC_LEARNING_STOP_ENABLED=1` and
+`ECC_LEARNING_STOP_MODE=v1`, with `ECC_HOOK_PROFILE=standard` or `strict`.
+`minimal` never performs automatic learning. Enabling delivery consents to an
+additional model continuation that can consume tokens and write learned state.
 
 ## How It Works
 
@@ -74,26 +79,19 @@ Edit `config.json` to customize:
 
 ## Hook Setup
 
-Add to your `~/.claude/settings.json`:
+The plugin already registers the gated evaluator; do not add a duplicate hook.
+Enable the compatibility mode in the environment used to launch Claude Code:
 
-```json
-{
-  "hooks": {
-    "Stop": [{
-      "matcher": "*",
-      "hooks": [{
-        "type": "command",
-        "command": "~/.claude/skills/continuous-learning/evaluate-session.sh"
-      }]
-    }]
-  }
-}
+```bash
+export ECC_LEARNING_STOP_ENABLED=1
+export ECC_LEARNING_STOP_MODE=v1
+export ECC_HOOK_PROFILE=standard
 ```
 
 ## Why Stop Hook?
 
-- **Lightweight**: Runs once at session end
-- **Non-blocking**: Doesn't add latency to every message
+- **Opt-in**: Delivers once for a qualifying stop; the active continuation does not repeat it
+- **Synchronous**: Adds a model continuation at Stop when explicitly enabled
 - **Complete context**: Has access to full session transcript
 
 ## Related

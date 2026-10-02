@@ -648,7 +648,7 @@ async function runTests() {
     }
   })) passed++; else failed++;
 
-  if (await asyncTest('evaluate-session processes transcript with sufficient messages', async () => {
+  if (await asyncTest('evaluate-session delivers opted-in v2 context for sufficient messages', async () => {
     const testDir = createTestDir();
     const transcriptPath = path.join(testDir, 'transcript.jsonl');
 
@@ -666,10 +666,13 @@ async function runTests() {
     try {
       const result = await runHookWithInput(
         path.join(scriptsDir, 'evaluate-session.js'),
-        { transcript_path: transcriptPath }
+        { transcript_path: transcriptPath },
+        { ECC_LEARNING_STOP_ENABLED: '1', ECC_LEARNING_STOP_MODE: 'v2',
+          ECC_HOOK_PROFILE: 'standard', ECC_HOOKS_ENABLED: 'true', ECC_DISABLED_HOOKS: '' }
       );
 
-      assert.ok(result.stderr.includes('15 messages'), 'Should process session');
+      assert.strictEqual(result.code, 0);
+      assert.ok(JSON.parse(result.stdout).hookSpecificOutput.additionalContext.includes('continuous-learning-v2'));
     } finally {
       cleanupTestDir(testDir);
     }

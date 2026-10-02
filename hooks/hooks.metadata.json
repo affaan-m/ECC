@@ -115,7 +115,7 @@
       {
         "id": "stop:evaluate-session",
         "description": "Evaluate session for extractable patterns",
-        "fingerprint": "664eec4bb68f"
+        "fingerprint": "aa363383aa76"
       },
       {
         "id": "stop:cost-tracker",

@@ -179,10 +179,14 @@ async function asyncTest(name, fn) {
 
 // Run a script and capture output
 function runScript(scriptPath, input = '', env = {}, cwd = process.cwd()) {
+  const learningEnv = ['evaluate-session.js', 'eval-wrapper.js'].includes(path.basename(scriptPath))
+    ? { ECC_LEARNING_STOP_ENABLED: '1', ECC_LEARNING_STOP_MODE: 'v1', ECC_HOOK_PROFILE: 'standard',
+      ECC_HOOKS_ENABLED: 'true', ECC_DISABLED_HOOKS: '' }
+    : {};
   return new Promise((resolve, reject) => {
     const proc = spawn('node', [scriptPath], {
       cwd,
-      env: { ...process.env, ...env },
+      env: { ...process.env, ...learningEnv, ...env },
       stdio: ['pipe', 'pipe', 'pipe']
     });
 
@@ -3857,6 +3861,8 @@ async function runTests() {
     let src = fs.readFileSync(path.join(scriptsDir, 'evaluate-session.js'), 'utf8');
     // Patch require to use absolute path (the temp dir doesn't have ../lib/utils)
     src = src.replace(/require\('\.\.\/lib\/utils'\)/, `require(${JSON.stringify(realUtilsPath)})`);
+    src = src.replace(/require\('\.\.\/lib\/hook-flags'\)/,
+      `require(${JSON.stringify(path.join(scriptsDir, '..', 'lib', 'hook-flags.js'))})`);
     // Patch config file path to point to our test config
     src = src.replace(/const configFile = path\.join\(scriptDir.*?config\.json'\);/, `const configFile = ${JSON.stringify(configPath)};`);
     fs.writeFileSync(wrapperScript, src);
@@ -6100,18 +6106,19 @@ async function runTests() {
 
   if (
     await asyncTest('evaluate-session exits 0 with error message when HOME is non-directory', async () => {
-      if (process.platform === 'win32') {
-        console.log('    (skipped — /dev/null not available on Windows)');
-        return;
-      }
-      // HOME=/dev/null makes ensureDir(learnedSkillsPath) throw ENOTDIR,
-      // which propagates to main().catch — the top-level error boundary
-      const result = await runScript(path.join(scriptsDir, 'evaluate-session.js'), '{}', {
-        HOME: '/dev/null',
-        USERPROFILE: '/dev/null'
-      });
-      assert.strictEqual(result.code, 0, `Should exit 0 (don't block on errors), got ${result.code}`);
-      assert.ok(result.stderr.includes('[ContinuousLearning] Error:'), `stderr should contain [ContinuousLearning] Error:, got: ${result.stderr}`);
+      const testDir = createTestDir();
+      try {
+        const home = path.join(testDir, 'not-a-directory');
+        const transcript = path.join(testDir, 'transcript.jsonl');
+        fs.writeFileSync(home, 'fixture');
+        fs.writeFileSync(transcript, '{"type":"user"}\n'.repeat(12));
+        // A valid transcript enters opted-in v1 compatibility; only then should
+        // its directory error reach the fail-open boundary. Missing input is inert.
+        const result = await runScript(path.join(scriptsDir, 'evaluate-session.js'),
+          JSON.stringify({ transcript_path: transcript }), { HOME: home, USERPROFILE: home });
+        assert.strictEqual(result.code, 0, `Should exit 0 (don't block on errors), got ${result.code}`);
+        assert.ok(result.stderr.includes('[ContinuousLearning] Error:'), `stderr should contain [ContinuousLearning] Error:, got: ${result.stderr}`);
+      } finally { cleanupTestDir(testDir); }
     })
   )
     passed++;

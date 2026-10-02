@@ -284,6 +284,15 @@ Async hooks run in the background. They cannot block tool execution.
 
 Hook logic is implemented in Node.js scripts for cross-platform behavior on Windows, macOS, and Linux. The continuous-learning observer is exposed as a Node-mode hook and delegates to its existing `observe.sh` implementation through a profile-gated runner with Windows-safe fallback behavior.
 
+Stop learning delivery (`stop:evaluate-session`) is disabled by default. Set
+`ECC_LEARNING_STOP_ENABLED=1` to consent to an extra model continuation and possible
+local learned-state writes. It runs only in `standard` and `strict`; `minimal`
+always excludes it. The maintained `continuous-learning-v2` workflow is the default.
+`ECC_LEARNING_STOP_MODE=v1` explicitly selects deprecated compatibility behavior;
+it still requires consent. Global hook disable and per-hook disable take precedence.
+The Stop hook guards `stop_hook_active` to deliver once, and does not enable the
+independent background observer. See the [v2 settings](../skills/continuous-learning-v2/SKILL.md#optional-stop-delivery).
+
 ## Related
 
 - [rules/common/hooks.md](../rules/common/hooks.md) — Hook architecture guidelines

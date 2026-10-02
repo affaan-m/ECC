@@ -4,6 +4,8 @@ const assert = require('assert');
 const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
+const os = require('os');
+const { spawnSync } = require('child_process');
 
 const source = fs.readFileSync(path.join(__dirname, '..', 'run-all.js'), 'utf8');
 
@@ -42,10 +44,33 @@ function run(result, filename = 'sample.test.js', actions = true) {
     if (error !== exit) throw error;
   }
   assert.strictEqual(spawns, 1);
-  return { status, logs, annotations: logs.filter(line => line.startsWith('::error ')) };
+  return { status: fakeProcess.exitCode ?? status, logs, annotations: logs.filter(line => line.startsWith('::error ')) };
 }
 
 const tests = [
+  ['real runner drains delayed stdout and retains failure annotations and totals', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-runner-drain-'));
+    try {
+      const testsDir = path.join(dir, 'tests');
+      fs.mkdirSync(testsDir);
+      const runner = path.join(testsDir, 'run-all.js');
+      fs.writeFileSync(runner, source);
+      fs.writeFileSync(path.join(testsDir, 'sample.test.js'),
+        `console.log('x'.repeat(256 * 1024)); console.log('FAIL final fixture failure\\nPassed: 1, Failed: 1'); process.exitCode = 1;`);
+      const preload = path.join(dir, 'delayed-stdout.js');
+      fs.writeFileSync(preload, `const write = process.stdout.write.bind(process.stdout);
+process.stdout.write = (...args) => { setTimeout(() => write(...args), 20); return false; };`);
+      const result = spawnSync(process.execPath, ['--require', preload, runner], {
+        env: { ...process.env, GITHUB_ACTIONS: 'true' }, encoding: 'utf8',
+        timeout: 10000, maxBuffer: 2 * 1024 * 1024
+      });
+      assert.strictEqual(result.status, 1);
+      assert.ok(result.stdout.includes('x'.repeat(256 * 1024)), 'complete worker output must drain');
+      assert.match(result.stdout, /::error file=tests\/sample.test.js::/);
+      assert.match(result.stdout, /Final Results/);
+      assert.match(result.stdout, /Failed:\s+1/);
+    } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+  }],
   ['nonzero exit overrides a zero-failure summary', () => {
     const result = run({ status: 1, stdout: 'Passed: 2, Failed: 0', stderr: 'Error: late crash' });
     assert.strictEqual(result.status, 1);
