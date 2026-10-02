@@ -34,10 +34,10 @@ function runTests() {
     assert.ok(/no backward transitions/i.test(body), 'missing no-backward rule');
   })) passed++; else failed++;
 
-  if (test('story file is the single authoritative status record', () => {
-    assert.ok(/story file is the single authoritative record/i.test(body),
-      'missing canonical-source statement');
-    assert.ok(/the story file wins/i.test(body), 'missing conflict-resolution rule');
+  if (test('story file is the single source of planning status within the ledger', () => {
+    assert.ok(/story file is the single source of a story's planning status/i.test(body),
+      'missing single-source statement');
+    assert.ok(/the story file\s+wins/i.test(body), 'missing conflict-resolution rule');
   })) passed++; else failed++;
 
   if (test('epic and sprint tables are derived, regenerated on transitions', () => {
@@ -46,6 +46,7 @@ function runTests() {
     assert.ok(/Plain `status` is read-only/i.test(body), 'status must not silently mutate files');
     assert.ok(/show the proposed table diff and require explicit\s+approval/i.test(body),
       'status reconciliation must require approval');
+    assert.ok(/regenerated inside the same\s+batch/i.test(body), 'projections must be part of the batch');
   })) passed++; else failed++;
 
   if (test('done requires confirmed merge to main; review gate before done', () => {
@@ -81,14 +82,34 @@ function runTests() {
     assert.ok(/No silent overwrites/i.test(body), 'missing overwrite approval rule');
   })) passed++; else failed++;
 
-  if (test('uses harness-native file operations, no POSIX-only shell bootstrap', () => {
-    assert.ok(/native filesystem capabilities/i.test(body), 'missing harness-native rule');
-    assert.ok(/portable native directory\s+operation/i.test(body),
-      'missing portable directory-creation contract');
-    assert.ok(/cannot create directories, stop and ask the user/i.test(body),
-      'missing fail-closed directory fallback');
+  if (test('routes every write through the portable ledger helper, no POSIX-only shell', () => {
+    assert.ok(fs.existsSync(path.join(ROOT, 'skills', 'story-lifecycle', 'scripts', 'ledger.js')),
+      'missing scripts/ledger.js');
+    assert.ok(/Every write to `\.stories\/` goes through `scripts\/ledger\.js`/.test(body),
+      'missing single-writer rule');
+    assert.ok(/Never write ledger\s+files directly/i.test(body), 'missing direct-write ban');
+    assert.ok(/If `node` is not available, use the ledger read-only/i.test(body),
+      'missing fail-closed fallback');
     assert.ok(!body.includes('test -d'), 'POSIX test -d must not appear');
     assert.ok(!body.includes('mkdir -p'), 'POSIX mkdir -p must not appear');
+  })) passed++; else failed++;
+
+  if (test('makes story creation collision-safe and all-or-nothing', () => {
+    assert.ok(/\*\*Exclusive lock\.\*\*/.test(body), 'missing exclusive lock guarantee');
+    assert.ok(/\*\*Collision-safe IDs\.\*\*/.test(body), 'missing collision-safe allocation');
+    assert.ok(/\*\*All-or-nothing batches\.\*\*/.test(body), 'missing atomic batch guarantee');
+    assert.ok(/never derive IDs yourself/i.test(body), 'create-stories must use allocate');
+    assert.ok(/all worktrees of one clone/i.test(body), 'missing worktree coverage');
+  })) passed++; else failed++;
+
+  if (test('bounds the ledger to opt-in planning, never canonical ECC state', () => {
+    assert.ok(body.includes('## Authority'), 'missing Authority section');
+    assert.ok(/opt-in planning projection/i.test(body), 'missing opt-in projection statement');
+    assert.ok(/never canonical ECC Task, Evidence,\s+Completion, or Integration state/i.test(body),
+      'missing canonical-state exclusion');
+    assert.ok(/that system stays authoritative/i.test(body), 'external systems must stay authoritative');
+    assert.ok(/`\.stories\/` follows the checkout/.test(body), 'missing branch-local statement');
+    assert.ok(!/single authoritative record/i.test(body), 'ledger must not claim authority');
   })) passed++; else failed++;
 
   if (test('documents the boundary and handoff to issue-backed coordination', () => {
