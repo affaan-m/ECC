@@ -138,6 +138,8 @@ REVOKE ALL ON SCHEMA public FROM public;
 SELECT pg_reload_conf();
 ```
 
+The `compute_query_id` guidance below applies to PostgreSQL 14 and later; omit this setting on PostgreSQL 13 and older.
+
 `pg_reload_conf()` reloads settings that support reload; it does not activate changes to `max_connections`, which require a server restart. Before using `pg_stat_statements`, add it to `shared_preload_libraries` while preserving any existing entries. Use `compute_query_id = auto` or `on` for built-in query identifiers; set it to `off` when an external module computes query IDs. Restart the server if the preload list changed, then connect to each database where the statistics views are needed and run:
 
 ```sql

@@ -133,6 +133,8 @@ REVOKE ALL ON SCHEMA public FROM public;
 SELECT pg_reload_conf();
 ```
 
+아래 `compute_query_id` 지침은 PostgreSQL 14 이상에 적용됩니다. PostgreSQL 13 이하에서는 이 설정을 생략하세요.
+
 `pg_reload_conf()`는 다시 로드할 수 있는 설정만 반영하며, `max_connections` 변경에는 서버 재시작이 필요합니다. `pg_stat_statements`를 사용하기 전에 기존 항목을 유지하면서 `shared_preload_libraries`에 추가하고 내장 쿼리 식별자에는 `compute_query_id = auto` 또는 `on`을 사용하고, 외부 모듈이 쿼리 식별자를 계산한다면 `off`로 설정하세요. 사전 로드 목록을 변경했다면 서버를 재시작한 뒤, 통계 뷰가 필요한 각 데이터베이스에 연결하여 다음을 실행하세요:
 
 ```sql

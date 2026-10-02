@@ -513,6 +513,8 @@ RETURNING *;
 
 ### 1. pg_stat_statementsを有効化
 
+以下の `compute_query_id` 設定は PostgreSQL 14 以降に適用されます。PostgreSQL 13 以前ではこの設定を省略してください。
+
 既存の項目を保持して `shared_preload_libraries` に `pg_stat_statements` を追加し、組み込みのクエリ識別子には `compute_query_id = auto` または `on` を使用し、外部モジュールがクエリ識別子を計算する場合は `off` に設定します。プリロードの一覧を変更した場合はサーバーを再起動します。統計ビューが必要な各データベースに接続して、以下の拡張機能を作成します。`CREATE EXTENSION` だけではモジュールはプリロードされません。
 
 ```sql
