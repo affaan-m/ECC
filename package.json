@@ -107,6 +107,7 @@
     "rules/",
     "schemas/",
     "scripts/catalog.js",
+    "scripts/package.json",
     "scripts/ci/scan-supply-chain-iocs.js",
     "scripts/ci/supply-chain-advisory-sources.js",
     "scripts/consult.js",

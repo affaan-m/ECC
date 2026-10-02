@@ -62,8 +62,13 @@
       "description": "Core slash-command library and command docs.",
       "paths": [
         "commands",
+        "scripts/package.json",
         "scripts/harness-audit.js",
-        "scripts/skills-health.js"
+        "scripts/skills-health.js",
+        "scripts/lib/skill-evolution",
+        "scripts/lib/utils.js",
+        "scripts/lib/agent-data-home.js",
+        "scripts/lib/path-safety.js"
       ],
       "targets": [
         "claude",

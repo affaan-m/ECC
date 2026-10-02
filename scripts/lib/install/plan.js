@@ -236,9 +236,15 @@ function dedupeCopyFileOperations(operations) {
   // (e.g. accumulating `merge-json` writes into a shared config) untouched and
   // in order.
   const lastCopyIndexByDestination = new Map();
+  const nonHookCopiesByDestination = new Map();
   operations.forEach((operation, index) => {
     if (operation.kind === 'copy-file' && operation.destinationPath) {
       lastCopyIndexByDestination.set(operation.destinationPath, index);
+      if (operation.moduleId !== 'hooks-runtime') {
+        const copies = nonHookCopiesByDestination.get(operation.destinationPath) || [];
+        copies.push(operation);
+        nonHookCopiesByDestination.set(operation.destinationPath, copies);
+      }
     }
   });
 
@@ -247,6 +253,17 @@ function dedupeCopyFileOperations(operations) {
       return true;
     }
     return lastCopyIndexByDestination.get(operation.destinationPath) === index;
+  }).map(operation => {
+    if (operation.kind !== 'copy-file' || operation.moduleId !== 'hooks-runtime') return operation;
+    // A shared command dependency must survive a later --no-hooks decision.
+    // Keep the last write and its position, but attribute identical payloads to
+    // the selected non-hook module that also requires them. Different sources
+    // or transforms still obey the original last-writer semantics.
+    const sharedCopy = (nonHookCopiesByDestination.get(operation.destinationPath) || []).find(copy => (
+      copy.sourcePath === operation.sourcePath
+      && copy.contentTransform === operation.contentTransform
+    ));
+    return sharedCopy ? { ...operation, moduleId: sharedCopy.moduleId } : operation;
   });
 }
 
