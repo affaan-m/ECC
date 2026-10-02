@@ -1395,6 +1395,7 @@ fn sync_shared_dependency_dir(
         return Ok(false);
     }
 
+    let record = cache_link_record_path(worktree, strategy.dir_name)?;
     create_dir_symlink(&root_dir, &worktree_dir).with_context(|| {
         format!(
             "Failed to link shared dependency cache {} into {}",
@@ -1402,11 +1403,24 @@ fn sync_shared_dependency_dir(
             worktree.path.display()
         )
     })?;
-    fs::write(
-        cache_link_record_path(worktree, strategy.dir_name)?,
-        cache_link_identity(&worktree_dir)?,
-    )
-    .context("Failed to record the newly created dependency link")?;
+    let identity = cache_link_identity(&worktree_dir)?;
+    if let Err(error) = fs::write(&record, &identity) {
+        if cache_link_identity(&worktree_dir).is_ok_and(|current| current == identity) {
+            remove_symlink(&worktree_dir).with_context(|| {
+                format!(
+                    "Failed to record dependency link ({error}); rollback failed at {}",
+                    worktree_dir.display()
+                )
+            })?;
+        } else {
+            anyhow::bail!(
+                "Failed to record dependency link ({error}); changed path retained at {}",
+                worktree_dir.display()
+            );
+        }
+        return Err(error)
+            .context("Failed to record the newly created dependency link; link rolled back");
+    }
     Ok(true)
 }
 
@@ -2794,6 +2808,36 @@ mod tests {
             .is_symlink());
         assert!(repo.join("node_modules/.cache-marker").exists());
 
+        remove(&worktree)?;
+        let _ = fs::remove_dir_all(root);
+        Ok(())
+    }
+
+    #[test]
+    fn sync_shared_dependency_dirs_removes_new_link_when_recording_fails() -> Result<()> {
+        let root =
+            std::env::temp_dir().join(format!("ecc2-cache-record-failure-{}", Uuid::new_v4()));
+        let repo = init_repo(&root)?;
+        fs::write(repo.join("package.json"), "{}\n")?;
+        fs::write(repo.join("package-lock.json"), "{}\n")?;
+        run_git(&repo, &["add", "package.json", "package-lock.json"])?;
+        run_git(&repo, &["commit", "-m", "add dependency fingerprints"])?;
+        let mut cfg = Config::default();
+        cfg.worktree_root = root.join("worktrees");
+        let worktree = create_for_session_in_repo("record-failure", &cfg, &repo)?;
+        fs::create_dir_all(repo.join("node_modules"))?;
+        let shared_marker = repo.join("node_modules/shared.txt");
+        fs::write(&shared_marker, "retain shared cache")?;
+        let record = cache_link_record_path(&worktree, "node_modules")?;
+        fs::create_dir(&record)?;
+        assert!(sync_shared_dependency_dirs(&worktree).is_err());
+        assert!(fs::symlink_metadata(worktree.path.join("node_modules")).is_err());
+        assert!(!has_local_content_for_pruning(&worktree)?);
+        assert_eq!(fs::read_to_string(&shared_marker)?, "retain shared cache");
+        fs::remove_dir(&record)?;
+        assert_eq!(sync_shared_dependency_dirs(&worktree)?.len(), 1);
+        assert!(record.is_file());
+        assert!(!has_local_content_for_pruning(&worktree)?);
         remove(&worktree)?;
         let _ = fs::remove_dir_all(root);
         Ok(())
