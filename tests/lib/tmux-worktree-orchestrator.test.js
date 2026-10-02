@@ -203,6 +203,48 @@ test('normalizeSeedPaths rejects paths outside the repo root', () => {
   );
 });
 
+test('seed paths cannot replace the worktree root or Git administration files', () => {
+  const repoRoot = path.resolve(os.tmpdir(), 'ecc-seed-validation');
+  const entries = ['.', './', repoRoot, '.git', '.git/config', 'docs/../.git', '.GIT', '.Git/config'];
+  for (const entry of entries) {
+    assert.throws(() => normalizeSeedPaths([entry], repoRoot), /worktree root|Git administration/);
+    assert.throws(() => buildOrchestrationPlan({
+      repoRoot,
+      seedPaths: [entry],
+      launcherCommand: 'echo run',
+      workers: [{ name: 'Docs', task: 'Update docs' }]
+    }), /worktree root|Git administration/);
+    assert.throws(() => buildOrchestrationPlan({
+      repoRoot,
+      launcherCommand: 'echo run',
+      workers: [{ name: 'Docs', task: 'Update docs', seedPaths: [entry] }]
+    }), /worktree root|Git administration/);
+  }
+  assert.deepStrictEqual(normalizeSeedPaths(['.github/workflows', '.claude/plan'], repoRoot),
+    ['.github/workflows', '.claude/plan']);
+});
+
+test('invalid seed metadata is rejected before any overlay writes', () => {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-seed-metadata-'));
+  const repoRoot = path.join(tempRoot, 'repo');
+  const worktreePath = path.join(tempRoot, 'worktree');
+  try {
+    fs.mkdirSync(path.join(repoRoot, '.git'), { recursive: true });
+    fs.mkdirSync(worktreePath);
+    fs.writeFileSync(path.join(repoRoot, '.git', 'config'), 'source metadata');
+    fs.writeFileSync(path.join(repoRoot, 'notes.md'), 'new notes');
+    fs.writeFileSync(path.join(worktreePath, '.git'), 'gitdir: existing-worktree');
+    fs.writeFileSync(path.join(worktreePath, 'notes.md'), 'old notes');
+    assert.throws(() => overlaySeedPaths({
+      repoRoot, worktreePath, seedPaths: ['notes.md', '.git']
+    }), /Git administration/);
+    assert.strictEqual(fs.readFileSync(path.join(worktreePath, '.git'), 'utf8'), 'gitdir: existing-worktree');
+    assert.strictEqual(fs.readFileSync(path.join(worktreePath, 'notes.md'), 'utf8'), 'old notes');
+  } finally {
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+  }
+});
+
 test('materializePlan keeps worker instructions inside the worktree boundary', () => {
   const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-orchestrator-test-'));
 
