@@ -38,8 +38,9 @@ function cleanupTempDir(dirPath) {
   fs.rmSync(dirPath, { recursive: true, force: true });
 }
 
-// The status CLI reconciles install-state found under $HOME, so CLI runs get an
-// empty home instead of the developer's real ~/.claude.
+// The status CLI reconciles install-state found under $HOME and the OpenCode
+// config dirs, so CLI runs get an empty home instead of the developer's real
+// ~/.claude and ~/.config/opencode.
 const ISOLATED_HOME = createTempDir('ecc-state-home-');
 process.on('exit', () => cleanupTempDir(ISOLATED_HOME));
 
@@ -51,6 +52,8 @@ function runNode(scriptPath, args = [], options = {}) {
       ...process.env,
       HOME: ISOLATED_HOME,
       USERPROFILE: ISOLATED_HOME,
+      XDG_CONFIG_HOME: path.join(ISOLATED_HOME, '.config'),
+      OPENCODE_CONFIG_DIR: path.join(ISOLATED_HOME, '.config', 'opencode'),
       ...(options.env || {}),
     },
   });
