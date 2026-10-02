@@ -48,7 +48,7 @@ import { z } from "zod";
 const server = new McpServer({ name: "my-server", version: "1.0.0" });
 ```
 
-使用您的 SDK 版本提供的 API 注册工具和资源：某些版本使用 `server.tool(name, description, schema, handler)`（位置参数），其他版本使用 `server.tool({ name, description, inputSchema }, handler)` 或 `registerTool()`。资源同理——当 API 提供时，在处理程序中包含一个 `uri`。请查阅官方 MCP 文档或 Context7 以获取当前的 `@modelcontextprotocol/sdk` 签名，避免复制粘贴错误。
+使用您的 SDK 版本提供的 API 注册工具和资源。对于 `@modelcontextprotocol/sdk` v1.x，优先使用 `server.registerTool(name, { description, inputSchema }, handler)`；旧版本提供 `server.tool(name, description, schema, handler)`（位置参数）。两种形式都将工具名称作为单独的字符串参数传入。对于资源，当 API 提供时，在处理程序中包含一个 `uri`。请查阅官方 MCP 文档或 Context7 以获取已安装 SDK 的签名，避免复制粘贴错误。
 
 使用 **Zod**（或 SDK 首选的模式格式）进行输入验证。
 
