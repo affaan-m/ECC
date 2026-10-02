@@ -341,7 +341,8 @@ async function withRetry<T>(
 const data = await withRetry(async () => {
   const response = await fetch('/api/data')
   if (!response.ok) {
-    throw new AppError('HTTP request failed', 'HTTP_ERROR', response.status)
+    const details = await response.json().catch(() => undefined)
+    throw new AppError('HTTP request failed', 'HTTP_ERROR', response.status, details)
   }
   return response.json()
 }, {
