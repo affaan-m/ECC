@@ -392,6 +392,43 @@ function runTests() {
     }
   })) passed++; else failed++;
 
+  if (test('retains valid events around non-object JSONL records without changing the transcript', () => {
+    const homeDir = createTempHome();
+    try {
+      const transcriptPath = writeTranscript(homeDir, '-invalid-records', 'session-invalid.jsonl', [
+        toolUse('2026-04-30T09:00:00.000Z', 'session-invalid', 'finished', 'Bash', { command: 'done' }),
+        null, [], 'text', 42, true,
+        { timestamp: '2026-04-30T09:01:00.000Z', type: 'tool_result', tool_use_id: 'finished' },
+        toolUse('2026-04-30T09:02:00.000Z', 'session-invalid', 'pending', 'Bash', { command: 'waiting' }),
+      ]);
+      const original = fs.readFileSync(transcriptPath);
+      const result = run(['--transcript', transcriptPath, '--now', NOW, '--json', '--exit-code']);
+      assert.strictEqual(result.code, 2, result.stderr);
+      const payload = parsePayload(result.stdout);
+      assert.deepStrictEqual(payload.errors, []);
+      assert.strictEqual(payload.sessions.length, 1);
+      const session = payload.sessions[0];
+      assert.strictEqual(session.eventCount, 3);
+      assert.strictEqual(session.parseErrors, 0);
+      assert.strictEqual(session.invalidRecords, 5);
+      assert.deepStrictEqual(session.pendingTools.map(x => x.toolUseId), ['pending']);
+      assert.ok(session.signals.some(x => x.type === 'pending_bash_tool_result'));
+      assert.ok(session.signals.some(x => x.type === 'transcript_invalid_records' && x.count === 5));
+      assert.ok(!session.signals.some(x => x.type === 'transcript_parse_errors'));
+      const resolvedPath = writeTranscript(homeDir, '-invalid-records', 'resolved.jsonl', [
+        toolUse('2026-04-30T09:00:00.000Z', 'resolved', 'finished', 'Bash', { command: 'done' }),
+        null,
+        { timestamp: '2026-04-30T09:01:00.000Z', type: 'tool_result', tool_use_id: 'finished' },
+      ]);
+      const resolved = parsePayload(run(['--transcript', resolvedPath, '--now', NOW, '--json']).stdout).sessions[0];
+      assert.strictEqual(resolved.parseErrors, 0);
+      assert.match(resolved.recommendedAction, /not supported event records/);
+      assert.deepStrictEqual(fs.readFileSync(transcriptPath), original);
+    } finally {
+      fs.rmSync(homeDir, { recursive: true, force: true });
+    }
+  })) passed++; else failed++;
+
   if (test('rejects non-integer limit values', () => {
     const result = run(['--limit', '1.5']);
 
