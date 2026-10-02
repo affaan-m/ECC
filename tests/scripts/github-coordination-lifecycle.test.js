@@ -53,6 +53,8 @@ async function runTests() {
   await test('an action error closes the real store before exiting with failure', async root => {
     const marker = path.join(root, 'closed.txt');
     const probePath = path.join(root, 'probe.js');
+    const shimPath = path.join(root, 'gh-error.js');
+    fs.writeFileSync(shimPath, "process.stderr.write('fixture action read failed'); process.exit(3);");
     fs.writeFileSync(probePath, `
 const fs = require('fs');
 const lib = require(${JSON.stringify(LIBRARY)});
@@ -65,13 +67,14 @@ lib.openStore = async options => {
 };
 require(${JSON.stringify(SCRIPT)}).main();
 `);
-    const result = spawnSync(process.execPath, [probePath, 'invalid-command', '--repo', 'owner/repo', '--db', path.join(root, 'state.db')], {
+    const result = spawnSync(process.execPath, [probePath, 'validate', '12', '--repo', 'owner/repo', '--db', path.join(root, 'state.db')], {
       cwd: root,
+      env: { ...process.env, ECC_GH_SHIM: shimPath },
       encoding: 'utf8',
       timeout: 10000,
     });
     assert.strictEqual(result.status, 1, result.stderr);
-    assert.match(result.stderr, /Unknown command: invalid-command/);
+    assert.match(result.stderr, /fixture action read failed/);
     assert.strictEqual(fs.existsSync(marker), true, 'the finally block must run');
   });
 
