@@ -2089,7 +2089,12 @@ impl StateStore {
                 &self.conn,
                 rusqlite::TransactionBehavior::Immediate,
             )?;
-            if self.get_session(&session_id)?.is_none() || !seen_event_ids.insert(row.id.clone()) {
+            let live_session: bool = transaction.query_row(
+                "SELECT EXISTS(SELECT 1 FROM sessions WHERE id = ?1)",
+                rusqlite::params![session_id],
+                |record| record.get(0),
+            )?;
+            if !live_session || !seen_event_ids.insert(row.id.clone()) {
                 continue;
             }
 
@@ -6136,6 +6141,7 @@ mod tests {
         let db = StateStore::open(&tempdir.path().join("state.db"))?;
         db.insert_session(&build_session("surviving", SessionState::Running))?;
         db.insert_session(&build_session("deleted", SessionState::Stopped))?;
+        db.insert_session(&build_session("deleted-child", SessionState::Running))?;
         // The first activity insert invalidates the already-loaded session map.
         // This deterministically exercises the same stale-map boundary as an
         // external deletion before the next event's write transaction.
@@ -6156,7 +6162,7 @@ mod tests {
         let metrics_path = tempdir.path().join("tool-usage.jsonl");
         fs::write(&metrics_path, &content)?;
         db.sync_tool_activity_metrics(&metrics_path)?;
-        assert!(db.get_session("deleted")?.is_none());
+        assert!(db.get_session("deleted-child")?.is_some());
         let surviving = db.get_session("surviving")?.expect("surviving session");
         assert_eq!(surviving.metrics.tool_calls, 2);
         assert_eq!(surviving.metrics.files_changed, 1);
