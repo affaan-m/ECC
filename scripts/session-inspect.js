@@ -57,12 +57,13 @@ function parseArgs(argv) {
     ['--observations', 'observationsPath'],
     ['--write', 'writePath']
   ]);
+  const knownOptions = new Set([...valueOptions.keys(), '--list-adapters']);
 
   for (let index = 0; index < args.length; index += 1) {
     const arg = args[index];
     if (valueOptions.has(arg)) {
       const value = args[index + 1];
-      if (!value || value.startsWith('--')) {
+      if (!value || knownOptions.has(value)) {
         throw new Error(`Missing value for ${arg}`);
       }
       parsed = { ...parsed, [valueOptions.get(arg)]: value };

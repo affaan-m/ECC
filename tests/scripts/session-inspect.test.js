@@ -97,6 +97,25 @@ function runTests() {
     assert.strictEqual(JSON.parse(result.stdout).schemaVersion, 'ecc.skill-health.v1');
   })) passed++; else failed++;
 
+  if (test('accepts leading-dash paths while rejecting following known options', () => {
+    for (const flag of ['--write', '--observations']) {
+      const parsed = parseArgs(['node', SCRIPT, flag, '--snapshot.json', 'skills:health']);
+      assert.strictEqual(parsed[flag === '--write' ? 'writePath' : 'observationsPath'], '--snapshot.json');
+      for (const nextFlag of ['--write', '--observations', '--skill', '--list-adapters']) {
+        assert.throws(() => parseArgs(['node', SCRIPT, flag, nextFlag]), /Missing value/);
+      }
+    }
+    const fixture = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-inspect-dash-path-'));
+    try {
+      fs.writeFileSync(path.join(fixture, '--observations.jsonl'), '');
+      const result = run(['--observations', '--observations.jsonl', 'skills:health'], { cwd: fixture });
+      assert.strictEqual(result.code, 0, result.stderr);
+      assert.strictEqual(JSON.parse(result.stdout).totalObservations, 0);
+    } finally {
+      fs.rmSync(fixture, { recursive: true, force: true });
+    }
+  })) passed++; else failed++;
+
   if (test('shows usage when no target is provided', () => {
     const result = run();
     assert.strictEqual(result.code, 1);
