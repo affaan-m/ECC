@@ -12,7 +12,7 @@ use super::dashboard::Dashboard;
 use crate::config::Config;
 use crate::session::store::StateStore;
 
-struct TerminalRestore;
+struct TerminalRestore(fn() -> Result<()>);
 
 fn restore_terminal() -> Result<()> {
     // Attempt and report both operations even if one fails.
@@ -31,7 +31,7 @@ fn restore_terminal() -> Result<()> {
 
 impl TerminalRestore {
     fn restore(self) -> Result<()> {
-        restore_terminal()?;
+        (self.0)()?;
         // Successful restoration consumes the guard without repeating cleanup.
         std::mem::forget(self);
         Ok(())
@@ -41,13 +41,13 @@ impl TerminalRestore {
 impl Drop for TerminalRestore {
     fn drop(&mut self) {
         // Failures are reported by restore_terminal; preserve the original error.
-        let _ = restore_terminal();
+        let _ = (self.0)();
     }
 }
 
 pub async fn run(db: StateStore, cfg: Config) -> Result<()> {
     enable_raw_mode()?;
-    let restore = TerminalRestore;
+    let restore = TerminalRestore(restore_terminal);
     let mut stdout = io::stdout();
     execute!(stdout, EnterAlternateScreen)?;
 
@@ -181,4 +181,35 @@ pub async fn run(db: StateStore, cfg: Config) -> Result<()> {
 
     restore.restore()?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::TerminalRestore;
+    use anyhow::Result;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    static RESTORES: AtomicUsize = AtomicUsize::new(0);
+
+    fn count_restore() -> Result<()> {
+        RESTORES.fetch_add(1, Ordering::SeqCst);
+        Ok(())
+    }
+
+    #[test]
+    fn terminal_restore_runs_on_early_errors_and_once_on_success() -> Result<()> {
+        RESTORES.store(0, Ordering::SeqCst);
+        let failure = || -> Result<()> {
+            let _guard = TerminalRestore(count_restore);
+            Err(anyhow::anyhow!(
+                "injected alternate-screen or event-loop failure"
+            ))?;
+            Ok(())
+        };
+        assert!(failure().unwrap_err().to_string().contains("injected"));
+        assert_eq!(RESTORES.load(Ordering::SeqCst), 1);
+        TerminalRestore(count_restore).restore()?;
+        assert_eq!(RESTORES.load(Ordering::SeqCst), 2);
+        Ok(())
+    }
 }
