@@ -53,7 +53,7 @@ class LocalDistillTests(unittest.TestCase):
         self.assertEqual(spec["lighting"], "single hard key")
         self.assertEqual(spec["mood_adjectives"], ["holy", "crystalline"])
 
-    def test_normalized_palette_description_takes_precedence_without_mutating_profile(self):
+    def test_normalized_palette_description_takes_precedence_without_mutating_profile(self) -> None:
         profile = _profile()
         profile["constraints"]["look"]["palette_description"] = "warm amber"
         original = json.loads(json.dumps(profile))
