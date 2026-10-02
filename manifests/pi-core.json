@@ -76,6 +76,7 @@
       "django-tdd",
       "django-verification",
       "docker-patterns",
+      "docs-governance",
       "dotnet-patterns",
       "e2e-testing",
       "error-handling",
