@@ -158,6 +158,12 @@ generate_icon() {
     local imageset_dir="${OUTPUT}/${asset_name}.imageset"
 
     mkdir -p "$imageset_dir"
+    local imageset_mode
+    if ! imageset_mode=$(stat -f '%Lp' "$imageset_dir" 2>/dev/null); then
+        imageset_mode=$(stat -c '%a' "$imageset_dir")
+    fi
+    local conversion_dir
+    conversion_dir=$(mktemp -d "${TMPDIR:-/tmp}/ecc-iconify.XXXXXX")
 
     echo "Generating ${asset_name} from Iconify '${icon_id}':"
 
@@ -171,17 +177,29 @@ generate_icon() {
 
         local svg_url="${API_BASE}/${collection}/${name}.svg?width=${px}&height=${px}&color=%23${COLOR}"
         local svg_file="${imageset_dir}/${asset_name}${suffix}.svg"
-        local png_file="${imageset_dir}/${asset_name}${suffix}.png"
+        local png_file="${conversion_dir}/${asset_name}${suffix}.png"
 
         curl "${CURL_OPTS[@]}" "$svg_url" -o "$svg_file" || { echo "ERROR: Failed to download icon '${icon_id}'"; exit 1; }
-        sips -s format png "$svg_file" --out "$png_file" >/dev/null 2>&1 || echo "WARNING: sips conversion may have failed for ${svg_file}"
+        if ! sips -s format png "$svg_file" --out "$png_file" >/dev/null 2>&1 || [[ ! -s "$png_file" ]]; then
+            echo "ERROR: PNG conversion failed for ${svg_file}; keeping the SVG" >&2
+            echo "Partial conversions retained outside the asset catalog: ${conversion_dir}" >&2
+            return 1
+        fi
         rm "$svg_file"
 
         echo "  ${asset_name}${suffix}.png (${px}x${px})"
     done
 
+    # Prepare a complete replacement on the destination filesystem.
+    local publish_dir
+    publish_dir=$(mktemp -d "${OUTPUT}/.iconify-publish.XXXXXX")
+    if ! cp -R "${imageset_dir}/." "$publish_dir/" || ! cp "${conversion_dir}/"*.png "$publish_dir/"; then
+        echo "ERROR: Publication preparation failed; prior imageset retained (publish staging: ${publish_dir}; conversion staging: ${conversion_dir})" >&2
+        return 1
+    fi
+
     # Write Contents.json
-    cat > "${imageset_dir}/Contents.json" <<JSONEOF
+    cat > "${publish_dir}/Contents.json" <<JSONEOF
 {
   "images" : [
     {
@@ -206,6 +224,20 @@ generate_icon() {
   }
 }
 JSONEOF
+
+    local prior_dir
+    chmod "$imageset_mode" "$publish_dir"
+    prior_dir=$(mktemp -d "${OUTPUT}/.iconify-prior.XXXXXX")
+    rmdir "$prior_dir"
+    mv "$imageset_dir" "$prior_dir"
+    if ! mv "$publish_dir" "$imageset_dir"; then
+        mv "$prior_dir" "$imageset_dir" || { echo "ERROR: Restore failed; prior imageset remains at ${prior_dir}" >&2; return 1; }
+        echo "ERROR: Publication failed; prior imageset restored (publish staging: ${publish_dir}; conversion staging: ${conversion_dir})" >&2
+        return 1
+    fi
+    if ! rm -r "$prior_dir" "$conversion_dir"; then
+        echo "WARNING: Imageset published; temporary cleanup failed (${prior_dir}, ${conversion_dir})" >&2
+    fi
 
     echo "Output: ${imageset_dir}/"
 }
