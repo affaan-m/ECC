@@ -133,6 +133,7 @@ services:
   app:
     build:
       target: production
+    depends_on: !reset {}
     command: !reset null
     volumes: !reset []
     environment:
@@ -145,6 +146,9 @@ services:
         limits:
           cpus: "1.0"
           memory: 512M
+
+  db: !reset null
+  redis: !reset null
 ```
 
 Usa una versión actual de Docker Compose compatible con `!reset`. Cambiar solo el destino de compilación conserva el comando, el entorno y los volúmenes del servicio base. Restablece el comando para usar el CMD de la imagen de producción, elimina los montajes de desarrollo y configura el entorno explícitamente. `volumes: []` por sí solo no elimina los montajes heredados.
@@ -154,6 +158,8 @@ Usa una versión actual de Docker Compose compatible con `!reset`. Cambiar solo 
 docker compose up
 
 # Producción
+export PRODUCTION_DATABASE_URL='<production-postgres-url>'
+export PRODUCTION_REDIS_URL='<production-redis-url>'
 docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
 ```
 

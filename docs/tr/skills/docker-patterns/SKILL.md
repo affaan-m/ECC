@@ -133,6 +133,7 @@ services:
   app:
     build:
       target: production
+    depends_on: !reset {}
     command: !reset null
     volumes: !reset []
     environment:
@@ -145,6 +146,9 @@ services:
         limits:
           cpus: "1.0"
           memory: 512M
+
+  db: !reset null
+  redis: !reset null
 ```
 
 `!reset` destekleyen güncel bir Docker Compose sürümü kullanın. Yalnızca derleme hedefini değiştirmek temel servisin komutunu, ortamını ve volume bağlarını korur. Üretim imajının CMD komutunu kullanmak için komutu sıfırlayın, geliştirme bağlarını kaldırın ve çalışma ortamını açıkça ayarlayın. Tek başına `volumes: []` devralınan bağları kaldırmaz.
@@ -154,6 +158,8 @@ services:
 docker compose up
 
 # Üretim
+export PRODUCTION_DATABASE_URL='<production-postgres-url>'
+export PRODUCTION_REDIS_URL='<production-redis-url>'
 docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
 ```
 

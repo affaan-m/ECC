@@ -124,6 +124,7 @@ services:
   app:
     build:
       target: production
+    depends_on: !reset {}
     command: !reset null
     volumes: !reset []
     environment:
@@ -136,6 +137,9 @@ services:
         limits:
           cpus: "1.0"
           memory: 512M
+
+  db: !reset null
+  redis: !reset null
 ```
 
 Use a current Docker Compose release that supports `!reset`. Changing the build target alone keeps the base service command, environment, and volumes. Reset the command to use the production image CMD, remove development mounts, and set the runtime environment explicitly. An empty `volumes: []` alone does not remove inherited mounts.
@@ -145,6 +149,8 @@ Use a current Docker Compose release that supports `!reset`. Changing the build 
 docker compose up
 
 # Production
+export PRODUCTION_DATABASE_URL='<production-postgres-url>'
+export PRODUCTION_REDIS_URL='<production-redis-url>'
 docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
 ```
 
