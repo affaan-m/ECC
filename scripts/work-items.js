@@ -241,6 +241,7 @@ function buildGithubIssueWorkItem(repo, issue, options = {}) {
 function closeStaleGithubItems(store, repo, activeIds, options = {}) {
   const payload = store.listWorkItems({ limit: options.limit || 10000 });
   const closed = [];
+  const retained = [];
   for (const item of payload.items) {
     if (!item.metadata || item.metadata.syncedBy !== 'ecc-work-items-sync-github') {
       continue;
@@ -249,6 +250,25 @@ function closeStaleGithubItems(store, repo, activeIds, options = {}) {
       continue;
     }
     if (item.status === 'closed' || item.status === 'done') {
+      continue;
+    }
+    // The open lists are bounded by --limit. Absence is not closure evidence;
+    // read the native object's state before changing a previously synced item.
+    const kind = item.source === 'github-pr' ? 'pr' : item.source === 'github-issue' ? 'issue' : null;
+    if (!kind || !/^[1-9]\d*$/.test(String(item.sourceId || ''))) {
+      retained.push({ id: item.id, reason: 'No valid GitHub object identity for a closure lookup' });
+      continue;
+    }
+    let sourceState;
+    try {
+      const source = runGhJson([kind, 'view', String(item.sourceId), '--repo', repo, '--json', 'state']);
+      sourceState = source && source.state;
+    } catch (error) {
+      retained.push({ id: item.id, reason: error.message });
+      continue;
+    }
+    if (sourceState !== 'CLOSED' && !(kind === 'pr' && sourceState === 'MERGED')) {
+      retained.push({ id: item.id, reason: `Source state is ${sourceState || 'unknown'}; retaining local status` });
       continue;
     }
     closed.push(
@@ -263,7 +283,7 @@ function closeStaleGithubItems(store, repo, activeIds, options = {}) {
       })
     );
   }
-  return closed;
+  return { closed, retained };
 }
 
 function syncGithubWorkItems(store, options) {
@@ -302,7 +322,9 @@ function syncGithubWorkItems(store, options) {
     );
   }
 
-  const closedItems = closeStaleGithubItems(store, repo, activeIds, { limit: Math.max(limit * 4, 1000) });
+  const { closed: closedItems, retained: retainedItems } = closeStaleGithubItems(store, repo, activeIds, {
+    limit: Math.max(limit * 4, 1000)
+  });
   return {
     repo,
     syncedAt,
@@ -310,7 +332,8 @@ function syncGithubWorkItems(store, options) {
     issueCount: issues.length,
     closedCount: closedItems.length,
     items,
-    closedItems
+    closedItems,
+    retainedItems
   };
 }
 
@@ -380,6 +403,9 @@ function printGithubSyncResult(payload) {
   console.log(`  Open PRs: ${payload.prCount}`);
   console.log(`  Open issues: ${payload.issueCount}`);
   console.log(`  Closed stale items: ${payload.closedCount}`);
+  for (const item of payload.retainedItems) {
+    console.log(`  Retained ${item.id}: ${item.reason}`);
+  }
   if (payload.items.length === 0 && payload.closedItems.length === 0) {
     console.log('  Work items changed: none');
     return;
