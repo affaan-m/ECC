@@ -660,6 +660,7 @@ image: myapp:latest
 # BETTER: Use an explicit version tag; tags can still be reassigned
 image: ghcr.io/org/myapp:1.4.2
 # GOOD: Pin immutable content with the actual image digest
+# Placeholder below: replace sha256:abc123... with your image's full SHA-256 digest.
 image: ghcr.io/org/myapp@sha256:abc123...
 
 # ---
