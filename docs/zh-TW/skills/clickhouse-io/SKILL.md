@@ -380,9 +380,9 @@ setInterval(etlPipeline, 60 * 60 * 1000)  // 每小時
 // 監聽 PostgreSQL 變更並同步到 ClickHouse
 import { Client } from 'pg'
 
-const pgClient = new Client({ connectionString: process.env.DATABASE_URL })
+const pgClient = new Client({ connectionString: process.env.DATABASE_URL, connectionTimeoutMillis: 5000 })
 
-let pendingWrites: Promise<void>[] = []
+let pendingWrites: Promise<void> = Promise.resolve()
 let stopping = false
 
 pgClient.on('error', async (error) => {
@@ -390,15 +390,14 @@ pgClient.on('error', async (error) => {
   stopping = true
   console.error('PostgreSQL listener connection failed:', error)
   // Drain received writes before a supervisor restarts this listener.
-  await Promise.allSettled(pendingWrites)
+  await pendingWrites
   process.exit(1)
 })
 
 pgClient.on('notification', (msg) => {
   if (stopping || !msg.payload) return
   const write = forwardNotification(msg.payload)
-  pendingWrites = [...pendingWrites, write]
-  void write.finally(() => { pendingWrites = pendingWrites.filter(item => item !== write) })
+  pendingWrites = Promise.all([pendingWrites, write]).then(() => undefined)
 })
 
 async function forwardNotification(payload: string) {
