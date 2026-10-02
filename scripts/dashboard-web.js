@@ -502,6 +502,8 @@ function aType(name) {
 
 // Language
 function setLang(l) {
+  const filters = ['af','sf','cf'].map(id => ({ id, index: Array.from(document.querySelectorAll('#'+id+' button')).findIndex(btn => btn.classList.contains('active')) }));
+  const query = document.getElementById('search')?.value || '';
   lang = l; localStorage.setItem('ecc-lang', l);
   document.querySelectorAll('.lang-drop .li').forEach(el => el.classList.toggle('active', el.dataset.lang === l));
   document.getElementById('lang-label').textContent = (L[l]||L.en).name.split(' ')[0].slice(0,2).toUpperCase();
@@ -510,6 +512,13 @@ function setLang(l) {
   if (location.hash.startsWith('#/tabs/')) renderMain();
   if (!location.hash || location.hash==='#/') renderMain();
   else handleRoute();
+  if (!location.hash || location.hash==='#/' || location.hash.startsWith('#/tabs/')) {
+    if (query) onSearchInput(query);
+    filters.forEach(({id,index}) => {
+      const button = document.querySelectorAll('#'+id+' button')[index];
+      if (button) button.click();
+    });
+  }
 }
 function toggleLang() { document.getElementById('lang-drop').classList.toggle('show'); }
 function applyLang() {

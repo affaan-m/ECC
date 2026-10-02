@@ -12,10 +12,12 @@ const language = script.slice(script.indexOf('function setLang('), script.indexO
 let passed = 0;
 let failed = 0;
 
-for (const scenario of ['detail to tab', 'direct tab route', 'tab history return', 'tab language change']) {
+for (const scenario of ['detail to tab', 'direct tab route', 'tab history return', 'tab language change', 'language preserves search and filter']) {
   try {
     let panels = [];
     let renders = 0;
+    const reapplied = [];
+    const filterButtons = [false, true].map(active => ({ classList: { contains: () => active }, click: () => reapplied.push('filter') }));
     const makeNode = name => {
       const node = { dataset: { tab: name }, active: false };
       node.classList = {
@@ -31,8 +33,8 @@ for (const scenario of ['detail to tab', 'direct tab route', 'tab history return
       applyLang: () => {},
       window: { addEventListener: () => {} },
       document: {
-        querySelectorAll: selector => selector === '.panel' ? panels : selector === '.nav-it' ? navigation : [],
-        getElementById: id => id.startsWith('lang-') ? { classList: { remove: () => {} } } : panels.find(node => node.id === id),
+        querySelectorAll: selector => selector === '.panel' ? panels : selector === '.nav-it' ? navigation : scenario === 'language preserves search and filter' && selector === '#sf button' ? filterButtons : [],
+        getElementById: id => id === 'search' ? { value: scenario === 'language preserves search and filter' ? 'security' : '' } : id.startsWith('lang-') ? { classList: { remove: () => {} } } : panels.find(node => node.id === id),
         querySelector: selector => navigation.find(node => selector.includes(`"${node.dataset.tab}"`)),
       },
       renderMain: () => {
@@ -40,6 +42,7 @@ for (const scenario of ['detail to tab', 'direct tab route', 'tab history return
         panels = names.map(name => Object.assign(makeNode(name), { id: 'panel-' + name }));
       },
       renderPage: () => { panels = []; },
+      onSearchInput: query => reapplied.push(query),
     });
     vm.runInContext('let lang="en";' + routing + tabs + language, context);
     if (scenario === 'detail to tab') {
@@ -48,12 +51,13 @@ for (const scenario of ['detail to tab', 'direct tab route', 'tab history return
       context.showTab('skills', navigation[1]);
     } else if (scenario === 'direct tab route') {
       context.location.hash = '#/tabs/skills';
-    } else if (scenario === 'tab language change') {
+    } else if (scenario === 'tab language change' || scenario === 'language preserves search and filter') {
       context.location.hash = '#/tabs/skills';
       context.handleRoute();
       const before = renders;
       context.setLang('ja');
       assert.strictEqual(renders, before + 1, 'language change rebuilds tab contents');
+      if (scenario === 'language preserves search and filter') assert.deepStrictEqual(reapplied, ['security', 'filter']);
     } else {
       context.renderMain();
       context.showTab('skills', navigation[1]);
