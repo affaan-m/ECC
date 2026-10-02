@@ -7417,8 +7417,10 @@ fn build_legacy_migration_plan_report(
                     "ecc graph recall \"<query>\"".to_string(),
                 ],
                 config_snippets: vec![format!(
-                    "[memory_connectors.hermes_workspace]\nkind = \"markdown_directory\"\npath = \"{}\"\nrecurse = true\ndefault_entity_type = \"legacy_workspace_note\"\ndefault_observation_type = \"legacy_workspace_memory\"",
-                    Path::new(&audit.source).join("workspace").display()
+                    "[memory_connectors.hermes_workspace]\nkind = \"markdown_directory\"\npath = {}\nrecurse = true\ndefault_entity_type = \"legacy_workspace_note\"\ndefault_observation_type = \"legacy_workspace_memory\"",
+                    toml::Value::String(
+                        Path::new(&audit.source).join("workspace").display().to_string(),
+                    )
                 )],
                 notes: artifact.notes.clone(),
             },
@@ -7552,7 +7554,7 @@ fn render_legacy_migration_config_scaffold(plan: &LegacyMigrationPlanReport) -> 
     let mut sections = vec![
         format!(
             "# ECC2 migration scaffold generated from {}\n# Review every section before merging it into a real ecc2.toml.",
-            plan.source
+            plan.source.escape_debug()
         ),
     ];
 
@@ -11624,6 +11626,34 @@ Route existing installs to portal first before checkout.
         assert!(plan_text.contains("Legacy migration plan"));
         assert!(config_text.contains("[memory_connectors.hermes_workspace]"));
         assert!(config_text.contains("[orchestration_templates.legacy_workflow]"));
+        let parsed: config::Config = toml::from_str(&config_text)?;
+        match &parsed.memory_connectors["hermes_workspace"] {
+            config::MemoryConnectorConfig::MarkdownDirectory(settings) => {
+                assert_eq!(settings.path, Path::new(&audit.source).join("workspace"));
+            }
+            _ => panic!("expected markdown directory connector"),
+        }
+
+        for source in [
+            r"C:\Users\operator\legacy",
+            r#"/tmp/legacy "quoted""#,
+            "/tmp/legacy
+notes",
+        ] {
+            let path_audit = LegacyMigrationAuditReport {
+                source: source.to_string(),
+                ..build_legacy_migration_audit_report(root)?
+            };
+            let path_plan = build_legacy_migration_plan_report(&path_audit);
+            let rendered = render_legacy_migration_config_scaffold(&path_plan);
+            let parsed: config::Config = toml::from_str(&rendered)?;
+            match &parsed.memory_connectors["hermes_workspace"] {
+                config::MemoryConnectorConfig::MarkdownDirectory(settings) => {
+                    assert_eq!(settings.path, Path::new(source).join("workspace"));
+                }
+                _ => panic!("expected markdown directory connector"),
+            }
+        }
 
         Ok(())
     }
