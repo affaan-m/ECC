@@ -674,11 +674,13 @@ function runTests() {
     const adapter = getInstallTargetAdapter('codex');
     const homeDir = path.resolve('/Users/isolated');
     const customRoot = path.join(homeDir, 'custom-codex');
-    const input = { homeDir, env: { CODEX_HOME: `  ${customRoot}  ` } };
+    const input = { homeDir, env: { CODEX_HOME: customRoot } };
     assert.strictEqual(adapter.resolveRoot(input), customRoot);
     assert.strictEqual(adapter.getInstallStatePath(input), path.join(customRoot, 'ecc-install-state.json'));
     assert.strictEqual(adapter.resolveRoot({ homeDir, env: {} }), path.join(homeDir, '.codex'));
-    assert.strictEqual(adapter.resolveRoot({ homeDir, env: { CODEX_HOME: '   ' } }), path.join(homeDir, '.codex'));
+    assert.strictEqual(adapter.resolveRoot({ homeDir, env: { CODEX_HOME: '' } }), path.join(homeDir, '.codex'));
+    const spacedRoot = path.join(homeDir, ' custom-codex');
+    assert.strictEqual(adapter.resolveRoot({ homeDir, env: { CODEX_HOME: spacedRoot } }), spacedRoot);
     assert.strictEqual(adapter.resolveRoot({ homeDir }), path.join(homeDir, '.codex'));
   })) passed++; else failed++;
 

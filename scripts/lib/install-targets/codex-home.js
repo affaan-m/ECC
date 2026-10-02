@@ -10,8 +10,8 @@ module.exports = createInstallTargetAdapter({
   resolveRoot(input, baseRoot) {
     const environment = resolveInvocationEnvironment(input);
     const configuredRoot = environment.CODEX_HOME;
-    return typeof configuredRoot === 'string' && configuredRoot.trim() !== ''
-      ? path.resolve(configuredRoot.trim())
+    return typeof configuredRoot === 'string' && configuredRoot !== ''
+      ? path.resolve(configuredRoot)
       : path.join(baseRoot, '.codex');
   },
   installStatePathSegments: ['ecc-install-state.json'],
