@@ -33,6 +33,8 @@ for name, value, expected in [
  ('quoted hash', '"Useful # workflow" # note', 'Useful # workflow'),
  ('single quoted hash', "'Useful # workflow' # note", 'Useful # workflow'),
  ('plain hash', 'Useful#workflow', 'Useful#workflow'),
+ ('YAML hex escape', '"Plan\\\\x20work"', 'Plan work'),
+ ('YAML unicode escape', '"Plan\\\\u0020work"', 'Plan work'),
 ]:
  cases.append((name, '---\\nname: sample\\ndescription: ' + value + '\\n---\\n# Heading\\n', expected))
 for name, content, expected in cases:

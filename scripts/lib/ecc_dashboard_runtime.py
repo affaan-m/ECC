@@ -8,7 +8,6 @@ from __future__ import annotations
 import os
 import platform
 import subprocess
-import json
 import re
 from typing import Optional, Tuple, Dict, List
 
@@ -40,8 +39,18 @@ def skill_description(content: str, fallback: str) -> str:
                     parts.append(line.strip())
                 value = ' '.join(parts).strip()
             elif value.startswith('"'):
+                scalar = re.fullmatch(r'"((?:[^"\\]|\\.)*)"(?:\s+#.*)?\s*', value)
+                value = scalar.group(1) if scalar else ''
+                escapes = {'0': '\0', 'a': '\a', 'b': '\b', 't': '\t',
+                           'n': '\n', 'v': '\v', 'f': '\f', 'r': '\r',
+                           'e': '\x1b', ' ': ' ', '"': '"', '/': '/',
+                           '\\': '\\', 'N': '\x85', '_': '\xa0',
+                           'L': '\u2028', 'P': '\u2029'}
+                def decode_escape(escape):
+                    token = escape.group(1)
+                    return chr(int(token[1:], 16)) if token[0] in 'xuU' else escapes[token]
                 try:
-                    value, _ = json.JSONDecoder().raw_decode(value)
+                    value = re.sub(r'\\(x[0-9a-fA-F]{2}|u[0-9a-fA-F]{4}|U[0-9a-fA-F]{8}|[0abtnvfre "/\\N_LP])', decode_escape, value)
                 except ValueError:
                     value = ''
             elif value.startswith("'"):
