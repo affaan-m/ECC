@@ -38,6 +38,7 @@ skills:
   - compose-multiplatform-patterns
   - configure-ecc
   - contract-first
+  - context-and-decisions
   - content-engine
   - content-hash-cache-pattern
   - context-budget
