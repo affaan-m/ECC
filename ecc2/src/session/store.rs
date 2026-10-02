@@ -2082,6 +2082,9 @@ impl StateStore {
             let session_id = row.session_id.clone();
             let trigger_summary = session_tasks.get(&session_id).cloned().unwrap_or_default();
 
+            if seen_event_ids.contains(&row.id) {
+                continue;
+            }
             // Recheck the live session under the same write transaction as its
             // activity and graph inserts. Another connection cannot delete it
             // between this check and the dependent writes.
@@ -2233,7 +2236,10 @@ impl StateStore {
     }
 
     fn sync_context_graph_session(&self, session_id: &str) -> Result<ContextGraphEntity> {
-        let session = self.get_session(session_id)?;
+        let session = self
+            .list_sessions()?
+            .into_iter()
+            .find(|session| session.id == session_id);
         let mut metadata = BTreeMap::new();
         let persisted_session_id = if session.is_some() {
             Some(session_id)
@@ -6140,6 +6146,10 @@ mod tests {
         let tempdir = TestDir::new("store-tool-activity-stale-sessions")?;
         let db = StateStore::open(&tempdir.path().join("state.db"))?;
         db.insert_session(&build_session("surviving", SessionState::Running))?;
+        let mut prefix_child = build_session("surviving-child", SessionState::Running);
+        prefix_child.task = "another session".to_string();
+        prefix_child.updated_at = Utc::now() + chrono::Duration::seconds(1);
+        db.insert_session(&prefix_child)?;
         db.insert_session(&build_session("deleted", SessionState::Stopped))?;
         db.insert_session(&build_session("deleted-child", SessionState::Running))?;
         // The first activity insert invalidates the already-loaded session map.
@@ -6167,6 +6177,13 @@ mod tests {
         assert_eq!(surviving.metrics.tool_calls, 2);
         assert_eq!(surviving.metrics.files_changed, 1);
         assert_eq!(db.query_tool_logs("surviving", 1, 10)?.total, 2);
+        assert_eq!(db.query_tool_logs("deleted", 1, 10)?.total, 0);
+        assert!(db
+            .list_context_entities(Some("deleted"), Some("session"), 10)?
+            .is_empty());
+        let entities = db.list_context_entities(Some("surviving"), Some("session"), 10)?;
+        assert_eq!(entities.len(), 1);
+        assert_ne!(entities[0].metadata.get("task"), Some(&prefix_child.task));
         assert_eq!(fs::read_to_string(metrics_path)?, content);
         Ok(())
     }
@@ -6230,6 +6247,11 @@ mod tests {
             assert_eq!(logs.entries[0].tool_name, "Write");
             assert!(db.get_session("deleted-session")?.is_none());
             assert!(db.get_session("unknown-session")?.is_none());
+            assert_eq!(db.query_tool_logs("deleted-session", 1, 10)?.total, 0);
+            assert_eq!(db.query_tool_logs("unknown-session", 1, 10)?.total, 0);
+            assert!(db
+                .list_context_entities(Some("unknown-session"), Some("session"), 10)?
+                .is_empty());
             assert_eq!(fs::read_to_string(&metrics_path)?, content);
         }
         Ok(())
