@@ -66,10 +66,12 @@ const tests = [
   ['new canonical skills invalidate triggers', () => withFixture(repoRoot => {
     seedTriggers(repoRoot);
     write(repoRoot, 'skills/added/SKILL.md', '---\nname: added\ndescription: Added skill.\n---\n');
-    update(repoRoot, 'manifests/install-modules.json', value => {
-      value.modules[0].paths.push('skills/added');
-      return value;
-    });
+    update(repoRoot, 'manifests/install-modules.json', value => ({
+      ...value,
+      modules: value.modules.map((module, index) => index === 0
+        ? { ...module, paths: [...module.paths, 'skills/added'] }
+        : module),
+    }));
     assert.throws(() => validate(repoRoot), /Skill triggers manifest is stale/);
   })],
   ['removed canonical skills invalidate triggers even without their own trigger entry', () => withFixture(repoRoot => {
@@ -85,10 +87,13 @@ const tests = [
   })],
   ['trigger edits still require a matching trigger digest', () => withFixture(repoRoot => {
     seedTriggers(repoRoot);
-    update(repoRoot, 'manifests/context-packs/skill-triggers@1.json', value => {
-      value.triggers['skill:feature'].push('unrecorded trigger');
-      return value;
-    });
+    update(repoRoot, 'manifests/context-packs/skill-triggers@1.json', value => ({
+      ...value,
+      triggers: {
+        ...value.triggers,
+        'skill:feature': [...value.triggers['skill:feature'], 'unrecorded trigger'],
+      },
+    }));
     assert.throws(() => validate(repoRoot), /Skill triggers digest mismatch/);
   })],
 ];
