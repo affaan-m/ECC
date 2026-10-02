@@ -10,7 +10,7 @@ description: 電気とガス調達、料金最適化、需要料金管理、再�
   demand charges, evaluating PPAs, or developing energy strategies.
 license: Apache-2.0
 version: 1.0.0
-homepage: https://github.com/affaan-m/everything-claude-code
+homepage: https://github.com/affaan-m/ECC
 origin: ECC
 metadata:
   author: evos

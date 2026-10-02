@@ -1,12 +1,12 @@
 **ภาษา:** [English](../../README.md) | [Português (Brasil)](../pt-BR/README.md) | [简体中文](../../README.zh-CN.md) | [繁體中文](../zh-TW/README.md) | [日本語](../ja-JP/README.md) | [한국어](../ko-KR/README.md) | [Türkçe](../tr/README.md) | [Русский](../ru/README.md) | [Tiếng Việt](../vi-VN/README.md) | **ไทย** | [Deutsch](../de-DE/README.md) | [Українська](../uk-UA/README.md) | [Polski](../pl/README.md)
 
-# Everything Claude Code
+# ECC
 
-![Everything Claude Code — ระบบเพิ่มประสิทธิภาพสำหรับ AI agent harness](../../assets/hero.png)
+![ECC — ระบบเพิ่มประสิทธิภาพสำหรับ AI agent harness](../../assets/hero.png)
 
-[![Stars](https://img.shields.io/github/stars/affaan-m/everything-claude-code?style=flat)](https://github.com/affaan-m/everything-claude-code/stargazers)
-[![Forks](https://img.shields.io/github/forks/affaan-m/everything-claude-code?style=flat)](https://github.com/affaan-m/everything-claude-code/network/members)
-[![Contributors](https://img.shields.io/github/contributors/affaan-m/everything-claude-code?style=flat)](https://github.com/affaan-m/everything-claude-code/graphs/contributors)
+[![Stars](https://img.shields.io/github/stars/affaan-m/ECC?style=flat)](https://github.com/affaan-m/ECC/stargazers)
+[![Forks](https://img.shields.io/github/forks/affaan-m/ECC?style=flat)](https://github.com/affaan-m/ECC/network/members)
+[![Contributors](https://img.shields.io/github/contributors/affaan-m/ECC?style=flat)](https://github.com/affaan-m/ECC/graphs/contributors)
 [![npm ecc-universal](https://img.shields.io/npm/dw/ecc-universal?label=ecc-universal%20weekly%20downloads&logo=npm)](https://www.npmjs.com/package/ecc-universal)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](../../LICENSE)
 
@@ -24,7 +24,7 @@
 
 ---
 
-**Everything Claude Code (ECC) คือระบบเพิ่มประสิทธิภาพสำหรับ AI agent harness จากผู้ชนะ Anthropic Hackathon**
+**ECC คือระบบเพิ่มประสิทธิภาพสำหรับ AI agent harness จากผู้ชนะ Anthropic Hackathon**
 
 ECC ไม่ใช่แค่ชุดไฟล์คอนฟิก แต่เป็นระบบครบวงจร: skills, สัญชาตญาณ (instincts), การจัดการหน่วยความจำ (memory optimization), การเรียนรู้ต่อเนื่อง (continuous learning), การสแกนความปลอดภัย (security scanning) และการพัฒนาที่ตรวจสอบจากแหล่งข้อมูลจริง (research-first development) ทั้งหมดนี้ผ่านการใช้งานจริงมากกว่า 10 เดือนในการสร้างผลิตภัณฑ์จริง
 
@@ -58,7 +58,7 @@ ECC ไม่ใช่แค่ชุดไฟล์คอนฟิก แต่
 
 ECC มีชื่อเรียกในระบบสาธารณะ 3 ชื่อที่ต่างกัน:
 
-- GitHub repo: `affaan-m/everything-claude-code`
+- GitHub repo: `affaan-m/ECC`
 - Claude marketplace plugin: `ecc@ecc`
 - npm package: `ecc-universal`
 
@@ -69,8 +69,8 @@ ECC มีชื่อเรียกในระบบสาธารณะ 3 �
 Plugin ของ Claude Code จะไม่ติดตั้ง `rules/` ให้อัตโนมัติ หากคุณติดตั้งผ่าน plugin **อย่า** รัน full installer เพิ่ม ให้คัดลอกเฉพาะชุด rule ที่ต้องการแทน:
 
 ```bash
-git clone https://github.com/affaan-m/everything-claude-code.git
-cd everything-claude-code
+git clone https://github.com/affaan-m/ECC.git
+cd ECC
 
 mkdir -p ~/.claude/rules/ecc
 cp -R rules/common ~/.claude/rules/ecc/
@@ -78,8 +78,8 @@ cp -R rules/typescript ~/.claude/rules/ecc/
 ```
 
 ```powershell
-git clone https://github.com/affaan-m/everything-claude-code.git
-cd everything-claude-code
+git clone https://github.com/affaan-m/ECC.git
+cd ECC
 
 New-Item -ItemType Directory -Force -Path "$HOME/.claude/rules/ecc" | Out-Null
 Copy-Item -Recurse rules/common "$HOME/.claude/rules/ecc/"
@@ -230,8 +230,8 @@ ECC จะลบเฉพาะไฟล์ที่อยู่ใน install-s
 
 ```bash
 # 1. Fork และ clone
-gh repo fork affaan-m/everything-claude-code --clone
-cd everything-claude-code
+gh repo fork affaan-m/ECC --clone
+cd ECC
 
 # 2. สร้าง branch
 git checkout -b feat/my-contribution
@@ -249,7 +249,7 @@ git add . && git commit -m "feat: add my-skill" && git push -u origin feat/my-co
 
 ## ชุมชน & สนับสนุน
 
-- [GitHub Discussions](https://github.com/affaan-m/everything-claude-code/discussions) — ถาม-ตอบ, โชว์ผลงาน
+- [GitHub Discussions](https://github.com/affaan-m/ECC/discussions) — ถาม-ตอบ, โชว์ผลงาน
 - [GitHub Sponsors](https://github.com/sponsors/affaan-m) — สนับสนุน OSS เริ่มที่ $5/เดือน
 - [ECC Pro](https://ecc.tools/pricing) — private repo + GitHub App ($19/seat/เดือน)
 - [ECC Tools GitHub App](https://github.com/marketplace/ecc-tools) — ติดตั้ง, PR audit, มี free tier

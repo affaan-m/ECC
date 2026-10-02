@@ -2,7 +2,7 @@
 
 > Sponsor status: Atlas Cloud is a past sponsor. This status change leaves the documented integration unchanged.
 
-[Atlas Cloud](https://www.atlascloud.ai/?utm_source=github&utm_medium=link&utm_campaign=everything-claude-code) is a full-modal AI inference platform providing an OpenAI-compatible API for 59+ LLM models, image generation, and video generation.
+[Atlas Cloud](https://www.atlascloud.ai/?utm_source=github&utm_medium=link&utm_campaign=ECC) is a full-modal AI inference platform providing an OpenAI-compatible API for 59+ LLM models, image generation, and video generation.
 
 > Run or self-host any open-source model instead of using a managed API. Itô is ECC's preferred compute sponsor: [open the Itô dashboard to sign in and rent or manage GPUs](https://compute.itomarkets.com). Any GPU provider works. That sponsorship link is passive: it does not invoke an RFQ, reserve capacity, provision compute, or configure serving. Separately, the opt-in `ecc ito find` bridge invokes the explicitly configured canonical Itô CLI and submits a live authenticated RFQ; it does not reserve capacity. Managed inference through Itô is not live yet.
 

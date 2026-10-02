@@ -64,7 +64,7 @@ const BOX_W = 58; // inner width between ║ delimiters
 const boxLine = s => `║${s.padEnd(BOX_W)}║`;
 
 console.log('╔' + '═'.repeat(BOX_W) + '╗');
-console.log(boxLine('           Everything Claude Code - Test Suite'));
+console.log(boxLine('           ECC - Test Suite'));
 console.log('╚' + '═'.repeat(BOX_W) + '╝');
 console.log();
 

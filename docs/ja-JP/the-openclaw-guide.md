@@ -4,7 +4,7 @@
 
 ***
 
-> **これは《Everything Claude Code ガイドシリーズ》の第 3 部です。** 第 1 部は [速習ガイド](the-shortform-guide.md)（セットアップと設定）です。第 2 部は [詳細ガイド](the-longform-guide.md)（高度なパターンとワークフロー）です。本ガイドはセキュリティについて扱います――具体的には、再帰エージェントインフラがセキュリティを二の次にすると何が起きるかを論じます。
+> **これは《ECC ガイドシリーズ》の第 3 部です。** 第 1 部は [速習ガイド](the-shortform-guide.md)（セットアップと設定）です。第 2 部は [詳細ガイド](the-longform-guide.md)（高度なパターンとワークフロー）です。本ガイドはセキュリティについて扱います――具体的には、再帰エージェントインフラがセキュリティを二の次にすると何が起きるかを論じます。
 
 私は OpenClaw を 1 週間使いました。以下がその発見です。
 
@@ -15,7 +15,7 @@
 
 ## OpenClaw を 1 週間使って
 
-まず私の立場を明確にしておきたい。私は AI コーディングツールを作っている。私の everything-claude-code リポジトリには 5 万以上のスターがある。AgentShield を作った。仕事時間のほとんどを、エージェントがシステムとどのように対話するか、そしてその対話がどのように失敗しうるかを考えることに費やしている。
+まず私の立場を明確にしておきたい。私は AI コーディングツールを作っている。私の ECC リポジトリには 5 万以上のスターがある。AgentShield を作った。仕事時間のほとんどを、エージェントがシステムとどのように対話するか、そしてその対話がどのように失敗しうるかを考えることに費やしている。
 
 だから OpenClaw が注目を集め始めたとき、私はすべての新しいツールと同じように扱った。インストールして、いくつかのチャネルに接続し、探索を始めた。壊すためではなく、セキュリティモデルを理解するために。
 
@@ -468,4 +468,4 @@ Andrej Karpathy が何かを「惨事」と呼び、コンピューターでそ�
 
 ***
 
-*Affaan Mustafa ([@affaanmustafa](https://x.com/affaanmustafa)) は AI コーディングツールを構築し、AI インフラセキュリティについて執筆している。彼の everything-claude-code リポジトリは GitHub で 5 万以上のスターを持つ。AgentShield を作成し、Anthropic x Forum Ventures ハッカソンで [zenith.chat](https://zenith.chat) を構築して優勝した。*
+*Affaan Mustafa ([@affaanmustafa](https://x.com/affaanmustafa)) は AI コーディングツールを構築し、AI インフラセキュリティについて執筆している。彼の ECC リポジトリは GitHub で 5 万以上のスターを持つ。AgentShield を作成し、Anthropic x Forum Ventures ハッカソンで [zenith.chat](https://zenith.chat) を構築して優勝した。*

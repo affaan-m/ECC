@@ -93,7 +93,7 @@ Claude Codeのスケジュール済みタスクを使用して、定期的なエ
 mcp__scheduled-tasks__create_scheduled_task({
   name: "daily-pr-review",
   schedule: "0 9 * * 1-5",  # 平日午前9時
-  prompt: "affaan-m/everything-claude-codeのすべてのオープンPRを確認します。各について：CIステータスをチェック、変更を確認、問題にフラグを立てます。メモリに概要を投稿します。",
+  prompt: "affaan-m/ECCのすべてのオープンPRを確認します。各について：CIステータスをチェック、変更を確認、問題にフラグを立てます。メモリに概要を投稿します。",
   project_dir: "/path/to/repo"
 })
 ```

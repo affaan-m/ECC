@@ -1,6 +1,6 @@
 # Troubleshooting Guide
 
-Common issues and solutions for Everything Claude Code (ECC) plugin.
+Common issues and solutions for ECC plugin.
 
 ## Table of Contents
 
@@ -264,7 +264,7 @@ mv ~/.claude/plugins/cache ~/.claude/plugins/cache.backup.$(date +%Y%m%d-%H%M%S)
 mkdir -p ~/.claude/plugins/cache
 
 # Reinstall from marketplace
-# Claude Code → Extensions → Everything Claude Code → Uninstall
+# Claude Code → Extensions → ECC → Uninstall
 # Then reinstall from marketplace
 
 # If the issue is marketplace/account access, use ECC Tools billing/account recovery separately; do not use reinstall as a proxy for account recovery
@@ -274,8 +274,8 @@ claude --version
 # Requires Claude Code 2.0+
 
 # Manual install (if marketplace fails)
-git clone https://github.com/affaan-m/everything-claude-code.git
-cp -r everything-claude-code ~/.claude/plugins/ecc
+git clone https://github.com/affaan-m/ECC.git
+cp -r ECC ~/.claude/plugins/ecc
 ```
 
 ### Package Manager Detection Fails
@@ -444,7 +444,7 @@ find ~/.claude/plugins -name "*.sh" -exec dos2unix {} \;
 
  If you're still experiencing issues:
 
-1. **Check GitHub Issues**: [github.com/affaan-m/everything-claude-code/issues](https://github.com/affaan-m/everything-claude-code/issues)
+1. **Check GitHub Issues**: [github.com/affaan-m/ECC/issues](https://github.com/affaan-m/ECC/issues)
 2. **Enable Debug Logging**:
    ```bash
    export CLAUDE_DEBUG=1

@@ -2,7 +2,7 @@
 
 Community-reported workarounds for current Claude Code bugs that can affect ECC users.
 
-These are upstream Claude Code behaviors, not ECC bugs. The entries below summarize the production-tested workarounds collected in [issue #644](https://github.com/affaan-m/everything-claude-code/issues/644) on Claude Code `v2.1.79` (macOS, heavy hook usage, MCP connectors enabled). Treat them as pragmatic stopgaps until upstream fixes land.
+These are upstream Claude Code behaviors, not ECC bugs. The entries below summarize the production-tested workarounds collected in [issue #644](https://github.com/affaan-m/ECC/issues/644) on Claude Code `v2.1.79` (macOS, heavy hook usage, MCP connectors enabled). Treat them as pragmatic stopgaps until upstream fixes land.
 
 ## Community Workarounds For Open Claude Code Bugs
 
@@ -97,4 +97,4 @@ exit 2
 - [hook-bug-workarounds.md](./hook-bug-workarounds.md) for the shorter hook/compaction/MCP recovery checklist.
 - [hooks/README.md](../hooks/README.md) for ECC's documented hook lifecycle and exit-code behavior.
 - [token-optimization.md](./token-optimization.md) for cost and context management settings.
-- [issue #644](https://github.com/affaan-m/everything-claude-code/issues/644) for the original report and tested environment.
+- [issue #644](https://github.com/affaan-m/ECC/issues/644) for the original report and tested environment.

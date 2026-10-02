@@ -78,7 +78,7 @@ GitHub dependency graph may also show Go module aliases such as `github.com/affa
 Reports are usually out of scope when they only show:
 
 - local command execution where the user already controls the local shell and no higher-privilege trust boundary is crossed
-- screenshots, stale line numbers, or reports against `affaan-m/everything-claude-code` that do not reproduce on current `affaan-m/ECC`
+- screenshots, stale line numbers, or reports against `affaan-m/ECC` that do not reproduce on current `affaan-m/ECC`
 - self-XSS or social engineering with no repository-controlled exploit path
 - dependency graph/package metadata confusion without an install path to an official ECC package
 - vulnerabilities in third-party packages unless ECC pins, installs, or executes them in a way that creates extra impact

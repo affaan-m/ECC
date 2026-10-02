@@ -28,7 +28,7 @@ function writeFile(rootDir, relativePath, content) {
 function seedRepo(rootDir, overrides = {}) {
   const files = {
     'package.json': JSON.stringify({
-      name: 'everything-claude-code',
+      name: 'ecc-universal',
       files: [
         'scripts/observability-readiness.js',
         'scripts/operator-readiness-dashboard.js',

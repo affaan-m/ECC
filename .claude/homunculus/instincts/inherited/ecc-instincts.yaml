@@ -1,16 +1,16 @@
-# Curated instincts for affaan-m/everything-claude-code
-# Import with: /instinct-import .claude/homunculus/instincts/inherited/everything-claude-code-instincts.yaml
+# Curated instincts for affaan-m/ECC
+# Import with: /instinct-import .claude/homunculus/instincts/inherited/ecc-instincts.yaml
 
 ---
-id: everything-claude-code-conventional-commits
-trigger: "when making a commit in everything-claude-code"
+id: ecc-conventional-commits
+trigger: "when making a commit in ECC"
 confidence: 0.9
 domain: git
 source: repo-curation
-source_repo: affaan-m/everything-claude-code
+source_repo: affaan-m/ECC
 ---
 
-# Everything Claude Code Conventional Commits
+# ECC Conventional Commits
 
 ## Action
 
@@ -22,15 +22,15 @@ Use conventional commit prefixes such as `feat:`, `fix:`, `docs:`, `test:`, `cho
 - Release and changelog automation expect readable commit categorization.
 
 ---
-id: everything-claude-code-commit-length
-trigger: "when writing a commit subject in everything-claude-code"
+id: ecc-commit-length
+trigger: "when writing a commit subject in ECC"
 confidence: 0.8
 domain: git
 source: repo-curation
-source_repo: affaan-m/everything-claude-code
+source_repo: affaan-m/ECC
 ---
 
-# Everything Claude Code Commit Length
+# ECC Commit Length
 
 ## Action
 
@@ -42,15 +42,15 @@ Keep commit subjects concise and close to the repository norm of about 70 charac
 - Short, descriptive subjects read well in release notes and PR summaries.
 
 ---
-id: everything-claude-code-js-file-naming
-trigger: "when creating a new JavaScript or TypeScript module in everything-claude-code"
+id: ecc-js-file-naming
+trigger: "when creating a new JavaScript or TypeScript module in ECC"
 confidence: 0.85
 domain: code-style
 source: repo-curation
-source_repo: affaan-m/everything-claude-code
+source_repo: affaan-m/ECC
 ---
 
-# Everything Claude Code JS File Naming
+# ECC JS File Naming
 
 ## Action
 
@@ -62,15 +62,15 @@ Prefer camelCase for JavaScript and TypeScript module filenames, and keep skill 
 - `skills/` and `commands/` directories use kebab-case consistently.
 
 ---
-id: everything-claude-code-test-runner
-trigger: "when adding or updating tests in everything-claude-code"
+id: ecc-test-runner
+trigger: "when adding or updating tests in ECC"
 confidence: 0.9
 domain: testing
 source: repo-curation
-source_repo: affaan-m/everything-claude-code
+source_repo: affaan-m/ECC
 ---
 
-# Everything Claude Code Test Runner
+# ECC Test Runner
 
 ## Action
 
@@ -82,15 +82,15 @@ Use the repository's existing Node-based test flow: targeted `*.test.js` files f
 - Test files follow the `*.test.js` naming pattern across hook, CI, and integration coverage.
 
 ---
-id: everything-claude-code-hooks-change-set
-trigger: "when modifying hooks or hook-adjacent behavior in everything-claude-code"
+id: ecc-hooks-change-set
+trigger: "when modifying hooks or hook-adjacent behavior in ECC"
 confidence: 0.88
 domain: workflow
 source: repo-curation
-source_repo: affaan-m/everything-claude-code
+source_repo: affaan-m/ECC
 ---
 
-# Everything Claude Code Hooks Change Set
+# ECC Hooks Change Set
 
 ## Action
 
@@ -102,15 +102,15 @@ Update the hook script, its configuration, its tests, and its user-facing docume
 - Partial hook changes are a common source of regressions and stale docs.
 
 ---
-id: everything-claude-code-cross-platform-sync
+id: ecc-cross-platform-sync
 trigger: "when shipping a user-visible feature across ECC surfaces"
 confidence: 0.9
 domain: workflow
 source: repo-curation
-source_repo: affaan-m/everything-claude-code
+source_repo: affaan-m/ECC
 ---
 
-# Everything Claude Code Cross Platform Sync
+# ECC Cross Platform Sync
 
 ## Action
 
@@ -122,15 +122,15 @@ Treat the root repo as the source of truth, then mirror shipped changes to `.cur
 - The safest workflow is root-first followed by explicit parity updates.
 
 ---
-id: everything-claude-code-release-sync
-trigger: "when preparing a release for everything-claude-code"
+id: ecc-release-sync
+trigger: "when preparing a release for ECC"
 confidence: 0.86
 domain: workflow
 source: repo-curation
-source_repo: affaan-m/everything-claude-code
+source_repo: affaan-m/ECC
 ---
 
-# Everything Claude Code Release Sync
+# ECC Release Sync
 
 ## Action
 
@@ -142,15 +142,15 @@ Keep package versions, plugin manifests, and release-facing docs synchronized be
 - Version drift causes broken update paths and confusing install surfaces.
 
 ---
-id: everything-claude-code-learning-curation
-trigger: "when importing or evolving instincts for everything-claude-code"
+id: ecc-learning-curation
+trigger: "when importing or evolving instincts for ECC"
 confidence: 0.84
 domain: workflow
 source: repo-curation
-source_repo: affaan-m/everything-claude-code
+source_repo: affaan-m/ECC
 ---
 
-# Everything Claude Code Learning Curation
+# ECC Learning Curation
 
 ## Action
 
