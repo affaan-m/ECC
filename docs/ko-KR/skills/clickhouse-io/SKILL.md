@@ -395,33 +395,73 @@ setInterval(async () => {
 }, 60 * 60 * 1000)  // Every hour
 ```
 
-### 변경 데이터 캡처 (CDC)
+### 변경 알림 (LISTEN/NOTIFY)
 
 ```typescript
 // PostgreSQL 변경을 수신하고 ClickHouse와 동기화
 import { Client } from 'pg'
 
-const pgClient = new Client({ connectionString: process.env.DATABASE_URL })
+const pgClient = new Client({ connectionString: process.env.DATABASE_URL, connectionTimeoutMillis: 5000 })
 
-pgClient.query('LISTEN market_updates')
+let pendingWrites: Promise<void> = Promise.resolve()
+let stopping = false
 
-pgClient.on('notification', async (msg) => {
-  const update = JSON.parse(msg.payload)
+pgClient.on('error', async (error) => {
+  if (stopping) return
+  stopping = true
+  console.error('PostgreSQL listener connection failed:', error)
+  // Drain received writes before a supervisor restarts this listener.
+  await pendingWrites
+  process.exit(1)
+})
 
-  await clickhouse.insert({
-    table: 'market_updates',
-    values: [
-      {
-        market_id: update.id,
-        event_type: update.operation,  // INSERT, UPDATE, DELETE
-        timestamp: new Date(),
-        data: JSON.stringify(update.new_data)
-      }
-    ],
-    format: 'JSONEachRow'
-  })
+pgClient.on('notification', (msg) => {
+  if (stopping || !msg.payload) return
+  const write = forwardNotification(msg.payload)
+  pendingWrites = Promise.all([pendingWrites, write]).then(() => undefined)
+})
+
+async function forwardNotification(payload: string) {
+
+  try {
+    const update = JSON.parse(payload)
+
+    await clickhouse.insert({
+      table: 'market_updates',
+      values: [
+        {
+          market_id: update.id,
+          event_type: update.operation,  // INSERT, UPDATE, DELETE
+          timestamp: new Date(),
+          data: JSON.stringify(update.new_data)
+        }
+      ],
+      format: 'JSONEachRow'
+    })
+  } catch (error) {
+    console.error('Failed to forward market update:', error)
+  }
+}
+
+async function startNotificationListener() {
+  await pgClient.connect()
+  await pgClient.query('LISTEN market_updates')
+}
+
+void startNotificationListener().catch(async (error) => {
+  console.error('Failed to start notification listener:', error)
+  try {
+    await pgClient.end()
+  } catch (closeError) {
+    console.error('Failed to close PostgreSQL listener:', closeError)
+  }
+  process.exitCode = 1
 })
 ```
+
+실패는 기록되지만 이 예제는 실패한 알림을 재시도하거나 재생하지 않습니다. 전달 보장이 필요하면 영속적인 outbox를 사용하세요.
+
+이 예제는 세션이 수신 대기 중일 때 애플리케이션이 보내는 JSON 알림을 전달합니다. 세션이 종료되면 `LISTEN` 등록도 해제되므로 영속적인 CDC나 재생 기능이 아닙니다. 리스너 중단 중 발생한 변경도 보존해야 한다면 논리 디코딩이나 영속적인 outbox를 사용하세요.
 
 ## 모범 사례
 
