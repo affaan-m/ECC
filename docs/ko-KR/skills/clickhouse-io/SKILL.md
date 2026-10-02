@@ -403,17 +403,29 @@ import { Client } from 'pg'
 
 const pgClient = new Client({ connectionString: process.env.DATABASE_URL })
 
-pgClient.on('error', (error) => {
+let pendingWrites: Promise<void>[] = []
+let stopping = false
+
+pgClient.on('error', async (error) => {
+  if (stopping) return
+  stopping = true
   console.error('PostgreSQL listener connection failed:', error)
-  // Let a process supervisor restart the failed listener.
+  // Drain received writes before a supervisor restarts this listener.
+  await Promise.allSettled(pendingWrites)
   process.exit(1)
 })
 
-pgClient.on('notification', async (msg) => {
-  if (!msg.payload) return
+pgClient.on('notification', (msg) => {
+  if (stopping || !msg.payload) return
+  const write = forwardNotification(msg.payload)
+  pendingWrites = [...pendingWrites, write]
+  void write.finally(() => { pendingWrites = pendingWrites.filter(item => item !== write) })
+})
+
+async function forwardNotification(payload: string) {
 
   try {
-    const update = JSON.parse(msg.payload)
+    const update = JSON.parse(payload)
 
     await clickhouse.insert({
       table: 'market_updates',
@@ -430,7 +442,7 @@ pgClient.on('notification', async (msg) => {
   } catch (error) {
     console.error('Failed to forward market update:', error)
   }
-})
+}
 
 async function startNotificationListener() {
   await pgClient.connect()
