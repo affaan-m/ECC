@@ -315,16 +315,71 @@ a single well-aimed question can obtain it, and **anything a grader checks about
 shape is stated in the prompt**. Three of six scenarios sat at floor before that
 change and none does after it.
 
-The correction has a cost of its own, and it bounds the result. Moving shape and
-constraints into the prompt also signposts the ambiguity: prompts now say "the
-dialect our consumer expects" or "the calendar our reports are read against",
-which invites a question in every arm. Ungated pass rates rose accordingly -
-`retry-idempotency` reached 4/4 and is excluded as a ceiling, with
-`csv-export-delimiter` and `soft-limit-overage` at 3/4. So the finding is
-properly stated as: **where the ambiguity is already signposted, the agent asks
-about half the time whatever the gate does.** Whether the gate helps when
-nothing signposts the ambiguity is a different question, and this corpus no
-longer asks it.
+The correction has a cost of its own, and it bounded that result. Moving shape
+and constraints into the prompt also signposted the ambiguity: the prompts said
+"the dialect our consumer expects" and "the calendar our reports are read
+against", which invites a question in every arm. Ungated pass rates rose
+accordingly - `retry-idempotency` reached 4/4 and was excluded as a ceiling,
+with `csv-export-delimiter` and `soft-limit-overage` at 3/4. So that run
+established only this: **where the ambiguity is already signposted, the agent
+asks about half the time whatever the gate does.**
+
+### The unflagged regime
+
+The prompts were then rewritten to read as ordinary tickets, with every phrase
+hinting at an unseen convention removed. Shape a grader checks stayed, stated
+mechanically: `checkQuota` still documents `{ allowed, overage }` and defines
+`overage` as how far usage exceeds the limit, which says nothing about whether
+exceeding it is allowed. Graders, workspaces and intents were untouched, so one
+variable moved. Predicted before the run: this is where the gate should look
+best if it works at all, because the interruption is then the only thing in the
+loop that could surface an unknown.
+
+48 trials, no provider errors, timeouts or judge failures, $6.46. Every scenario
+became informative, with ungated pass rates between 25% and 50%.
+
+| Measure | `gate` | `off` | Discordant | Exact p |
+| --- | ---: | ---: | --- | ---: |
+| Asked the user | 16/24 (47-82%) | 10/24 (24-61%) | 7 vs 1 | 0.070 |
+| Obtained the deciding fact | 16/24 (47-82%) | 10/24 (24-61%) | 7 vs 1 | 0.070 |
+| Passed | 15/24 (43-79%) | 8/24 (18-53%) | 9 vs 2 | 0.065 |
+
+The paired pass-rate difference is 29 points in `gate`'s favour, bootstrap 95%
+interval -54% to -4%. That interval excludes zero while the exact McNemar test
+does not reject at the 5% level; on eleven discordant pairs the percentile
+interval is the less conservative of the two, and the exact test is the one to
+read.
+
+Asking remains necessary: no trial in either arm passed without the deciding
+fact, 0 of 8 for `gate` and 0 of 14 for `off`. With the fact, `gate` passed 15
+of 16 and `off` 8 of 10.
+
+The contrast between regimes is the clearest part, because the gated arm barely
+moved while the ungated arm halved:
+
+| Arm | Passed, signposted | Passed, unflagged |
+| --- | ---: | ---: |
+| `gate` | 15/24 | 15/24 |
+| `off` | 16/24 | 8/24 |
+
+Cost rose with it: `gate` spent 8.7 turns and $0.166 against 5.8 and $0.103,
+about 50% more turns and 61% more cost, and this time mean score favoured the
+gate too, 0.681 against 0.458.
+
+**This is suggestive and not established.** Three measures land at p = 0.065 to
+0.070, consistent with each other and with the mechanism, and the direction was
+predicted in advance. But all three sit just above the conventional threshold,
+and a single further gate-favouring discordant pair would cross it, so extending
+this run is exactly the optional stopping that would make the p-value
+meaningless. Settling it needs a fresh confirmatory run at a sample fixed in
+advance: from the observed discordant rate of 11 in 24 and an 0.82 split, 80%
+power at the 5% level needs about 43 pairs, which is 8 repetitions over these
+six scenarios, 86 trials and roughly $12.
+
+What this does establish is that the earlier null was regime-bound. The gate's
+value, if it has one, is in surfacing an ambiguity nobody has flagged - which is
+the case the first evaluation could not construct, because its traps hid their
+deciding facts in the repository and its prompts forbade asking.
 
 ### Reproduce
 
