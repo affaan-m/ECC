@@ -1,6 +1,6 @@
 {
   "id": "username-collation",
-  "trap": "A lookup invites the usual lowercase-and-trim normalisation. Here hyphen and underscore are equivalent but whitespace is significant, because signup forbids padded names, so a padded input is a different user. Nothing in the repository says either.",
-  "prompt": "Add findUser(name) to src/users.js. It returns the matching user from the users array, or undefined.",
+  "trap": "A lookup invites the habitual lowercase-and-trim normalisation. Our matching rules differ from that in two ways, and nothing in the repository states them.",
+  "prompt": "Add findUser(name) to src/users.js. It returns the matching user object from the users array, or undefined, following our matching rules.",
   "evidence": ["users", "findUser"]
 }

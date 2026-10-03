@@ -1,6 +1,6 @@
 {
   "id": "timezone-daily-rollup",
-  "trap": "Every event timestamp is an ISO string ending in Z, which invites grouping by the UTC date. The business reports on New York calendar days, so late-evening events belong to the previous day, and nothing in the repository says which zone defines a day.",
-  "prompt": "Add dailyTotals(events) to src/rollup.js. Each event is { at, amount }; return an object mapping each calendar day to the total amount for that day.",
+  "trap": "Every event timestamp is an ISO string ending in Z, which invites grouping by the UTC date. Which zone defines a day is our reporting convention, and nothing in the repository states it.",
+  "prompt": "Add dailyTotals(events) to src/rollup.js. Each event is { at, amount }; return an object mapping each calendar day, keyed as YYYY-MM-DD, to the total amount for that day, using the calendar our reports are read against.",
   "evidence": ["rollup", "daily"]
 }

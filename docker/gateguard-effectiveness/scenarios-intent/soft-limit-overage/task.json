@@ -1,6 +1,6 @@
 {
   "id": "soft-limit-overage",
-  "trap": "config/plans.json names a limit per plan, which invites blocking once usage passes it. The limits are soft and the overage is billed, except on the free plan, which blocks only past 110 percent. Nothing in the repository says so.",
-  "prompt": "Add checkQuota(usage, plan) to src/quota.js, applying our plan limits. Return whether the request is allowed.",
+  "trap": "config/plans.json names a limit per plan, which invites blocking once usage passes it. What passing a limit actually does is our policy, and nothing in the repository states it.",
+  "prompt": "Add checkQuota(usage, plan) to src/quota.js, applying our plan limits from config/plans.json. Return an object { allowed, overage }, where allowed is a boolean and overage is the number of units past the plan limit (0 when under it).",
   "evidence": ["quota", "plan"]
 }

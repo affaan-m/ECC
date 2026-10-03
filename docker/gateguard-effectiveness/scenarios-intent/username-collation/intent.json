@@ -1,10 +1,9 @@
 {
   "id": "username-collation",
-  "ambiguity": "You asked for a lookup by name without saying how loosely to match: case, punctuation, or surrounding whitespace.",
+  "ambiguity": "You asked for our matching rules without saying what they are: how case, punctuation and surrounding whitespace are treated.",
   "facts": [
-    { "id": "case", "fact": "Match without regard to case.", "decisive": true },
-    { "id": "punctuation", "fact": "Treat a hyphen and an underscore as the same character; people type either.", "decisive": true },
-    { "id": "whitespace", "fact": "Do not trim the input. Signup rejects names with leading or trailing spaces, so a padded name is somebody who does not exist and must not match.", "decisive": true }
+    { "id": "collation", "fact": "Match without regard to case, treat a hyphen and an underscore as the same character because people type either, and do not trim the input: signup rejects names with leading or trailing spaces, so a padded name is somebody who does not exist and must not match.", "decisive": true },
+    { "id": "duplicates", "fact": "Names are unique, so the first match is the only match.", "decisive": false }
   ],
   "stonewall": "No strong view on that one - use your judgement.",
   "volunteer": false

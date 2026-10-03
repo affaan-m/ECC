@@ -1,9 +1,8 @@
 {
   "id": "soft-limit-overage",
-  "ambiguity": "You asked for the plan limits to be applied without saying what passing a limit does: block the request, or allow it and charge for the excess.",
+  "ambiguity": "You asked for the plan limits to be applied without saying what passing one does: block the request, or allow it and charge for the excess.",
   "facts": [
-    { "id": "soft", "fact": "The limits are soft. Going over is allowed and the excess is billed as overage, reported as an overage amount.", "decisive": true },
-    { "id": "freeplan", "fact": "The free plan is the exception: it blocks once usage passes 110 percent of its limit.", "decisive": true },
+    { "id": "policy", "fact": "The limits are soft: going over is allowed and the excess is billed, so allowed stays true. The free plan is the one exception, and it blocks once usage passes 110 percent of its limit.", "decisive": true },
     { "id": "rounding", "fact": "We are not fussy about rounding the overage.", "decisive": false }
   ],
   "stonewall": "No strong view on that one - use your judgement.",
