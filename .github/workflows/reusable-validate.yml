@@ -19,6 +19,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          fetch-depth: 0
           persist-credentials: false
 
       - name: Setup Node.js
@@ -40,6 +41,31 @@ jobs:
 
       - name: Validate skills
         run: node scripts/ci/validate-skills.js
+
+      - name: Validate skill quality (changed skills)
+        env:
+          PR_BASE_REF: ${{ github.base_ref }}
+          PUSH_BEFORE_SHA: ${{ github.event.before }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        run: |
+          # Pull requests diff against their base branch. Pushes diff against the
+          # commit before the push; new branches (all-zero SHA) and force pushes
+          # (before SHA no longer in history) diff against the default branch so
+          # every commit on the branch is covered, not just the last one.
+          if [ -n "$PR_BASE_REF" ]; then
+            base="origin/$PR_BASE_REF"
+          elif [ -n "$PUSH_BEFORE_SHA" ] && [ -z "${PUSH_BEFORE_SHA//0/}" ]; then
+            base="origin/${DEFAULT_BRANCH:-main}"
+          elif [ -n "$PUSH_BEFORE_SHA" ] && git cat-file -e "$PUSH_BEFORE_SHA^{commit}" 2>/dev/null; then
+            base="$PUSH_BEFORE_SHA"
+          else
+            base="origin/${DEFAULT_BRANCH:-main}"
+          fi
+          git rev-parse --verify --quiet "$base^{commit}" >/dev/null || {
+            echo "ERROR: cannot resolve diff base '$base'" >&2
+            exit 1
+          }
+          node scripts/ci/validate-skill-quality.js --strict --changed "$base"
 
       - name: Validate install manifests
         run: node scripts/ci/validate-install-manifests.js
