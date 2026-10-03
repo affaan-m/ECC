@@ -156,7 +156,7 @@ limits rather than fabricating evidence to pass.
 
 ## Optional UIZZE Research Workflow
 
-The local quality gate works without an account or external service. When a project needs broader reference research, UIZZE provides a full workflow across 800,000+ real web and iOS screens, with design contracts, live research, rendered critique, and validation.
+The local quality gate works without an account or external service. When a project needs broader reference research, the optional authenticated UIZZE MCP exposes exactly `find_ui_references` and `find_ui_materials` for focused full-screen references and hosted design materials from its 800,000+ real web and iOS screen library. Design contracts, rendered critique and the finish gate remain local agent workflows, not hosted MCP tools.
 
 The state/evidence contribution originated in UIZZE's
 [anti-ui-slop workflow](https://github.com/uizze/uizze/tree/1b74390b28c18e54a87a23e7d9171101af304ae9/skills/anti-ui-slop)
