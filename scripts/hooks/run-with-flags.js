@@ -11,9 +11,11 @@
 const fs = require('fs');
 const path = require('path');
 const { spawnSync } = require('child_process');
+const { StringDecoder } = require('string_decoder');
 const { isHookEnabled, isDryRun } = require('../lib/hook-flags');
 const { readStdinRaw: readBoundedStdin, resolveMaxStdin } = require('./hook-input');
 const { buildPreToolUseAdditionalContext } = require('./pretooluse-visible-output');
+const { createHookContextScanner } = require('./hook-input-limits');
 
 const FAIL_CLOSED_ON_TRUNCATION_HOOKS = new Set([
   'pre:powershell:gateguard-fact-force',
@@ -24,13 +26,37 @@ const FAIL_CLOSED_ON_TRUNCATION_HOOKS = new Set([
 const MAX_STDIN = resolveMaxStdin(process.env.ECC_HOOK_INPUT_MAX_BYTES, {
   writeDiagnostic: message => process.stderr.write(message)
 });
+const UPSTREAM_TRUNCATED = /^(1|true|yes)$/i.test(
+  String(process.env.ECC_HOOK_INPUT_TRUNCATED_UPSTREAM || '')
+);
+
+function readUpstreamHookContext() {
+  if (!UPSTREAM_TRUNCATED) return {};
+  try {
+    const parsed = JSON.parse(String(process.env.ECC_HOOK_CONTEXT_JSON || '{}'));
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {};
+  } catch {
+    return {};
+  }
+}
 
 function readStdinRaw() {
+  const contextDecoder = new StringDecoder('utf8');
+  const contextScanner = createHookContextScanner();
+  const upstreamHookContext = readUpstreamHookContext();
   return readBoundedStdin(process.stdin, {
     maxStdin: MAX_STDIN,
-    truncated: /^(1|true|yes)$/i.test(
-      String(process.env.ECC_HOOK_INPUT_TRUNCATED_UPSTREAM || '')
-    )
+    truncated: UPSTREAM_TRUNCATED,
+    onChunk: buffer => contextScanner.push(contextDecoder.write(buffer))
+  }).then(result => {
+    contextScanner.push(contextDecoder.end());
+    const scannedHookContext = contextScanner.context;
+    return {
+      ...result,
+      hookContext: UPSTREAM_TRUNCATED
+        ? { ...scannedHookContext, ...upstreamHookContext }
+        : scannedHookContext
+    };
   });
 }
 
@@ -165,7 +191,7 @@ function buildDryRunPreview(hookId, relScriptPath, profilesCsv, raw) {
 
 async function main() {
   const [, , hookId, relScriptPath, profilesCsv] = process.argv;
-  const { raw, truncated } = await readStdinRaw();
+  const { raw, truncated, hookContext } = await readStdinRaw();
 
   // Oversized payloads: never echo the truncated string — a JSON document
   // cut mid-stream is treated by the harness as a hook failure, blocking the
@@ -260,7 +286,8 @@ async function main() {
         pluginRoot,
         scriptPath,
         truncated,
-        maxStdin: MAX_STDIN
+        maxStdin: MAX_STDIN,
+        ...(truncated ? hookContext : {})
       });
       const result = resolveHookResult(output);
       exitWithStdout(sanitizeEcho(result.stdout), result.exitCode);
