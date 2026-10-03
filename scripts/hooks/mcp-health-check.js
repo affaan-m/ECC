@@ -47,14 +47,22 @@ function envNumber(name, fallback) {
   return Number.isFinite(value) && value >= 0 ? value : fallback;
 }
 
-// Claude Code redirects every profile-local path when CLAUDE_CONFIG_DIR is set.
-// Writing to ~/.claude regardless leaks this profile's data into the default one.
+// Resolve the Claude profile directory the same way everywhere.
+//
+// Duplicated rather than imported on purpose: hooks ship in managed installs
+// that carry top-level `scripts/` without `scripts/lib/` (see #3259), so a
+// require into lib/ would make the hook unloadable there. `~` is expanded the
+// way `scripts/lib/agent-data-home.js` expands it, so a profile written as
+// `~/.claude-work` resolves to one place rather than two.
 function claudeConfigDir() {
   const configured = process.env.CLAUDE_CONFIG_DIR;
-  if (configured && String(configured).trim().length > 0) {
-    return path.resolve(String(configured).trim());
+  const trimmed = configured ? String(configured).trim() : '';
+  if (!trimmed) return path.join(os.homedir(), '.claude');
+  if (trimmed.startsWith('~')) {
+    const remainder = trimmed.slice(1).replace(/^[/\\]+/, '');
+    return remainder ? path.join(os.homedir(), remainder) : os.homedir();
   }
-  return path.join(os.homedir(), '.claude');
+  return path.resolve(trimmed);
 }
 
 function stateFilePath() {

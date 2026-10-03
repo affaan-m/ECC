@@ -567,9 +567,11 @@ function runTests() {
           JSON.stringify({ agentDataHome: path.join(profileDir, 'nested') }),
           'utf8'
         );
+        // readProjectConfigAt canonicalizes, and macOS reaches os.tmpdir()
+        // through a symlink, so compare against the resolved home.
         assert.strictEqual(
           agentDataHome.readProjectConfigAt(configPath),
-          path.join(profileDir, 'nested')
+          path.join(fs.realpathSync(homeDir), '.claude-profile-x', 'nested')
         );
 
         // The old default is no longer a root, and neither is anything outside
