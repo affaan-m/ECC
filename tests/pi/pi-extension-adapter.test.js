@@ -313,6 +313,22 @@ function isDisabledByEnvMirror(value) {
   return typeof value === "string" && DISABLED_VALUES_MIRROR.has(value.trim().toLowerCase())
 }
 
+/**
+ * Mirror of the adapter's `describeAgentPortability` (same three states, same
+ * exact strings). The source-text assertions in the matching test pin the real
+ * function's wording out of `.pi/extensions/index.ts` so this copy cannot drift.
+ */
+function describeAgentPortabilityMirror(agentCount, portability) {
+  if (agentCount === 0) return "NOT FOUND"
+  if (portability.status === "validated") {
+    return `${portability.count} agent(s) validated — portable via scripts/agent-convert.js`
+  }
+  if (portability.status === "failed") {
+    return `${agentCount} agent(s) present but validation FAILED: ${portability.reason}`
+  }
+  return `${agentCount} agent(s) present (unvalidated — ${portability.reason})`
+}
+
 /** Run the Pi adapter regression suite. */
 async function main() {
   console.log("\n=== Testing .pi/extensions/index.ts (Pi thin adapter) ===\n")
@@ -1487,6 +1503,48 @@ async function main() {
           "alone makes an install that loaded 3 of 7 report 7 -- and /ecc-doctor is the one " +
           "place a user looks to find a partial install"
       )
+    }],
+
+    ["/ecc-doctor validates agent portability instead of trusting file existence (source contract)", () => {
+      const start = extensionSource.indexOf("function validateAgentPortability")
+      assert.ok(start !== -1, "expected .pi/extensions/index.ts to define validateAgentPortability")
+      const end = extensionSource.indexOf("\nfunction ", start + 1)
+      const src = end === -1 ? extensionSource.slice(start) : extensionSource.slice(start, end)
+
+      assert.ok(src.includes("execFileSync("), "must use execFileSync (no shell) to run the check")
+      assert.ok(src.includes('"--check"'), "must run agent-convert.js in --check mode")
+      assert.ok(/timeout:\s*AGENT_CHECK_TIMEOUT_MS/.test(src), "must bound the check with a finite timeout")
+      assert.ok(src.includes("resolveHookRuntime()"), "must reuse the node-runtime resolver, not hardcode 'node'")
+      assert.ok(src.includes('"validated"'), "must model the validated state")
+      assert.ok(src.includes('"failed"'), "must model the failed state")
+      assert.ok(src.includes('"unvalidated"'), "must model the unvalidated state")
+      assert.ok(/OK: \(\\d\+\) agents parsed and validated/.test(src), "must parse the real --check output")
+    }],
+
+    ["/ecc-doctor renders three honest agent states (behavioral mirror)", () => {
+      assert.strictEqual(
+        describeAgentPortabilityMirror(68, { status: "validated", count: 68 }),
+        "68 agent(s) validated — portable via scripts/agent-convert.js"
+      )
+      assert.strictEqual(
+        describeAgentPortabilityMirror(68, { status: "failed", reason: "boom" }),
+        "68 agent(s) present but validation FAILED: boom"
+      )
+      assert.strictEqual(
+        describeAgentPortabilityMirror(68, { status: "unvalidated", reason: "no node" }),
+        "68 agent(s) present (unvalidated — no node)"
+      )
+      assert.strictEqual(
+        describeAgentPortabilityMirror(0, { status: "unvalidated", reason: "none" }),
+        "NOT FOUND"
+      )
+
+      assert.ok(
+        extensionSource.includes("agent(s) validated — portable via scripts/agent-convert.js"),
+        "expected the validated line pinned in the source"
+      )
+      assert.ok(extensionSource.includes("validation FAILED:"), "expected the failed line pinned in the source")
+      assert.ok(extensionSource.includes("unvalidated —"), "expected the unvalidated line pinned in the source")
     }],
 
     ["isDisabledByEnv() behavioral mirror: recognizes 0/false/off/none/disabled case- and whitespace-insensitively, and the real function reads ECC_PI_RULES", () => {
