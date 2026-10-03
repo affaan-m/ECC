@@ -252,26 +252,79 @@ Graders are checked before any session is billed: the start workspace and the
 `naive` overlay must both score below 1 and `reference` must score 1, or the run
 stops.
 
-### First hidden-intent run
+### Hidden-intent results
 
-Four trials, `off` and `gate`, two repetitions, sonnet under test and haiku as
-the user:
+Six blind-authored scenarios, `off` and `gate`, four repetitions, 48 trials,
+sonnet under test and haiku as the user. No provider errors, timeouts or judge
+failures, and the hook was observed in every gated trial. $7.14.
 
-| Arm | working | lucky | follow-through | targeting | silence | coverage |
-| --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| `gate` | 1 | 0 | 0 | 0 | 1 | 0 |
-| `off` | 0 | 0 | 0 | 0 | 0 | 2 |
+**The scenarios isolate the mechanism.** Obtaining the deciding fact predicts
+the outcome almost perfectly, and identically in both arms:
 
-`gate` passed 1 of 2 and `off` 0 of 2, so the scenario separates the arms where
-the original six did not. Four trials settle nothing about the effect size; what
-they show is that the instrument now has a scale.
+| Arm | got the fact, passed | did not, passed |
+| --- | ---: | ---: |
+| `gate` | 14/14 | 1/10 |
+| `off` | 14/14 | 2/10 |
 
-The questions the gate actually raised on this scenario were `config-effect`,
-`config-reader`, `data-schema`, `importers`, `no-plaintext-secrets`,
-`public-api` and `quote-instruction` — seven questions, none of which asks about
-a retention window or whether a delete is soft. In the one `silence-hole` trial
-the gate fired and the agent proceeded without asking anyway. Both are
-improvable gaps, and neither was expressible in the previous design.
+So asking the right question is necessary and sufficient here. That is what
+makes the next table a measurement rather than noise.
+
+**The gate does not change whether the agent asks.** Paired by scenario and
+repetition, exact McNemar:
+
+| Measure | `gate` | `off` | Discordant | p |
+| --- | ---: | ---: | --- | ---: |
+| Asked the user | 14/24 (39-76%) | 15/24 (43-79%) | 4 vs 5 | 1.000 |
+| Obtained the deciding fact | 14/24 (39-76%) | 14/24 (39-76%) | 5 vs 5 | 1.000 |
+| Passed | 15/24 (43-79%) | 16/24 (47-82%) | 4 vs 5 | 1.000 |
+
+On the five scenarios that separate any arm, the paired pass-rate difference is
+5 points in `off`'s favour with a 95% interval of -25% to +35%. At 20 pairs the
+design has about 80% power for a 40-point difference, so a large effect is ruled
+out; a 15-to-20-point one is not, and would need roughly 160 pairs.
+
+**The cost is consistent.** `gate` spends 8.3 turns and $0.176 per trial against
+5.9 and $0.121, about 41% more turns and 45% more cost, with mean score slightly
+lower (0.639 against 0.681).
+
+**The gate fires, and firing does not convert into asking.** Denials were
+recorded in 22 of 24 gated trials, so the hook is engaging.
+`timezone-daily-rollup` is the clearest case: the gate fired in all four trials
+and the agent asked the user in none of them. Across the corpus that is seven
+`silence-hole` trials. The questions actually raised were `callers`,
+`config-effect`, `config-reader`, `data-schema`, `importers`, `no-duplicate`,
+`public-api`, `quote-instruction`, `existing-tests` and `under-test` - all about
+code structure, while every deciding fact in this corpus is an external
+contract: a CSV dialect, a reporting timezone, retry safety against a
+non-idempotent endpoint, collation rules, a quota policy. That mismatch is the
+improvable gap, and it was not expressible in the declared-target design.
+
+### What the earlier runs cost to learn
+
+The first six scenarios each declared several decisive facts. Because the
+simulated user answers only what it is asked and never volunteers, and
+`disclosedDecisive` requires every decisive fact, those scenarios could not be
+won: `csv-export-delimiter` was asked about in five of eight trials and the
+deciding set never completed, with `quoting` never disclosed.
+`soft-limit-overage` failed differently, scoring zero in all eight trials even
+when the facts arrived, because its grader demanded an `{ allowed, overage }`
+shape nothing disclosed - it was scoring whether the agent guessed field names.
+
+Hence two rules the scenarios now follow: **one decisive fact per scenario**, so
+a single well-aimed question can obtain it, and **anything a grader checks about
+shape is stated in the prompt**. Three of six scenarios sat at floor before that
+change and none does after it.
+
+The correction has a cost of its own, and it bounds the result. Moving shape and
+constraints into the prompt also signposts the ambiguity: prompts now say "the
+dialect our consumer expects" or "the calendar our reports are read against",
+which invites a question in every arm. Ungated pass rates rose accordingly -
+`retry-idempotency` reached 4/4 and is excluded as a ceiling, with
+`csv-export-delimiter` and `soft-limit-overage` at 3/4. So the finding is
+properly stated as: **where the ambiguity is already signposted, the agent asks
+about half the time whatever the gate does.** Whether the gate helps when
+nothing signposts the ambiguity is a different question, and this corpus no
+longer asks it.
 
 ### Reproduce
 
