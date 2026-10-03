@@ -1,93 +1,170 @@
 # Hooks in Kiro
 
-Kiro supports **two types of hooks**:
+Kiro hooks automate agent and shell actions in response to IDE events.
 
-1. **IDE Hooks** (this directory) - Standalone `.kiro.hook` files that work in the Kiro IDE
-2. **CLI Hooks** - Embedded in agent configuration files for CLI usage
+## Format: v1 JSON (`*.json`)
 
-## IDE Hooks (Standalone Files)
+All hooks are stored as `<hook-id>.json` in `.kiro/hooks/`.
 
-IDE hooks are `.kiro.hook` files in `.kiro/hooks/` that appear in the Agent Hooks panel in the Kiro IDE.
-
-### Format
+### Schema
 
 ```json
 {
-  "version": "1.0.0",
-  "enabled": true,
-  "name": "hook-name",
-  "description": "What this hook does",
-  "when": {
-    "type": "fileEdited",
-    "patterns": ["*.ts", "*.tsx"]
-  },
-  "then": {
-    "type": "runCommand",
-    "command": "npx tsc --noEmit",
-    "timeout": 30
-  }
+  "version": "v1",
+  "hooks": [
+    {
+      "name": "hook-name",
+      "description": "What this hook does",
+      "trigger": "PostFileSave",
+      "matcher": "\\.(ts|tsx)$",
+      "action": {
+        "type": "agent",
+        "prompt": "Prompt sent to the agent when triggered."
+      },
+      "enabled": false
+    }
+  ]
 }
 ```
 
 ### Required Fields
 
-- `version` - Hook version (e.g., "1.0.0")
-- `enabled` - Whether the hook is active (true/false)
-- `name` - Hook identifier (kebab-case)
-- `description` - Human-readable description
-- `when` - Trigger configuration
-- `then` - Action to perform
+| Field | Description |
+|-------|-------------|
+| `version` | Always `"v1"` |
+| `hooks` | Array of hook definitions |
+| `hooks[].name` | Hook identifier (kebab-case) |
+| `hooks[].trigger` | Event that fires the hook (see below) |
+| `hooks[].action` | Action to perform |
+| `hooks[].enabled` | Whether the hook is active (`true` or `false`) |
 
-### Available Trigger Types
+### Optional Fields
 
-- `fileEdited` - When a file matching patterns is edited
-- `fileCreated` - When a file matching patterns is created
-- `fileDeleted` - When a file matching patterns is deleted
-- `userTriggered` - Manual trigger from Agent Hooks panel
-- `promptSubmit` - When user submits a prompt
-- `agentStop` - When agent finishes responding
-- `preToolUse` - Before a tool is executed (requires `toolTypes`)
-- `postToolUse` - After a tool is executed (requires `toolTypes`)
+| Field | Description |
+|-------|-------------|
+| `hooks[].description` | Human-readable description |
+| `hooks[].matcher` | Regex to filter which events fire (depends on trigger) |
+
+### Available Triggers
+
+| Trigger | Fires when | Matcher tested against |
+|---------|-----------|----------------------|
+| `PreToolUse` | Before a tool is executed | Tool name |
+| `PostToolUse` | After a tool is executed | Tool name |
+| `SessionStart` | New session begins | — |
+| `Stop` | Agent finishes responding | — |
+| `UserPromptSubmit` | User submits a prompt | — |
+| `PreTaskExec` | Before a spec task starts | — |
+| `PostTaskExec` | After a spec task completes | — |
+| `PostFileCreate` | File is created | File path |
+| `PostFileSave` | File is saved | File path |
+| `PostFileDelete` | File is deleted | File path |
 
 ### Action Types
 
-- `runCommand` - Execute a shell command
-  - Optional `timeout` field (in seconds)
-- `askAgent` - Send a prompt to the agent
-
-### Environment Variables
-
-When hooks run, these environment variables are available:
-- `$KIRO_HOOK_FILE` - Path to the file that triggered the hook (for file events)
-
-## CLI Hooks (Embedded in Agents)
-
-CLI hooks are embedded in agent configuration files (`.kiro/agents/*.json`) for use with `kiro-cli`.
-
-### Format
-
+**`agent`** — Sends a prompt to the agent:
 ```json
-{
-  "name": "my-agent",
-  "hooks": {
-    "agentSpawn": [
-      {
-        "command": "git status"
-      }
-    ],
-    "postToolUse": [
-      {
-        "matcher": "fs_write",
-        "command": "npx tsc --noEmit"
-      }
-    ]
-  }
-}
+{ "type": "agent", "prompt": "Your instruction here." }
 ```
 
-See `.kiro/agents/tdd-guide-with-hooks.json` for a complete example.
+**`command`** — Runs a shell command:
+```json
+{ "type": "command", "command": "npm run lint" }
+```
+
+### Exit Code Semantics (command actions)
+
+| Exit code | Meaning |
+|-----------|---------|
+| `0` | Success; stdout forwarded for SessionStart/UserPromptSubmit/PreToolUse |
+| `2` | Block the action (PreToolUse, UserPromptSubmit, PreTaskExec); stderr forwarded |
+| Other | Silent failure, no block |
+
+### Matcher Best Practices
+
+Matchers are regex patterns tested against tool names or file paths depending on trigger type.
+
+**Use path-segment boundaries** for directory-based matchers to avoid false positives:
+```json
+"matcher": "(^|/)(auth|api|middleware)(/|$)"
+```
+
+This matches `src/auth/login.ts` but not `authorization.ts` or `rapid-api-client.js`.
+
+**Use anchored extensions** for file-type matchers:
+```json
+"matcher": "\\.(ts|tsx)$"
+```
+
+### Default Activation States
+
+Hooks ship with intentional default states:
+
+| Default | Rationale | Hooks |
+|---------|-----------|-------|
+| **enabled** | Narrow scope, low frequency, high safety value | `git-push-review`, `code-review-on-write`, `doc-file-warning`, `tdd-reminder`, `security-check-on-create` |
+| **disabled** | Fires frequently or per-response; opt in to manage credit usage | `auto-format`, `console-log-check`, `typecheck-on-edit`, `python-lint-on-edit`, `rust-check-on-edit`, `extract-patterns`, `session-summary`, `quality-gate` |
+
+To enable a disabled hook, toggle it in the Agent Hooks panel or set `"enabled": true` in its JSON file.
+
+### Quality Gate
+
+The `quality-gate` hook runs build, lint, type check, and tests via `.kiro/scripts/quality-gate.sh`. It is disabled by default to avoid running the target project's full CI after every spec task.
+
+**Opt-in paths:**
+1. **Steering (recommended):** Use `#quality-gate` in chat to invoke on-demand
+2. **Hook toggle:** Enable in the Agent Hooks panel for automatic PostTaskExec execution
+3. **Manual:** Run `bash .kiro/scripts/quality-gate.sh` in terminal
+
+See `.kiro/steering/quality-gate.md` for details.
+
+---
+
+## Installed Hooks
+
+| Hook | Trigger | Matcher | Default | Description |
+|------|---------|---------|---------|-------------|
+| `auto-format` | PostFileSave | `\.(ts\|tsx\|js)$` | disabled | Format TS/JS files on save |
+| `code-review-on-write` | PostToolUse | `fs_write\|str_replace\|fs_append` | enabled | Quick code review after writes |
+| `console-log-check` | PostFileSave | `\.(js\|ts\|tsx)$` | disabled | Flag console.log statements |
+| `doc-file-warning` | PostFileCreate | `(README\|CHANGELOG\|docs/\|\\.md$)` | enabled | Warn on unintended doc creation |
+| `extract-patterns` | Stop | — | disabled | Suggest patterns for lessons-learned |
+| `git-push-review` | PreToolUse | `execute_bash` | enabled | Review destructive git ops |
+| `python-lint-on-edit` | PostFileSave | `\.py$` | disabled | Lint Python files on save |
+| `quality-gate` | PostTaskExec | — | disabled | Full build/lint/test gate |
+| `rust-check-on-edit` | PostFileSave | `\.rs$` | disabled | Check Rust compilation on save |
+| `security-check-on-create` | PostFileCreate | `(^\|/)(auth\|api\|middleware)(/\|$)` | enabled | Security check in sensitive dirs |
+| `session-summary` | Stop | — | disabled | Summarize session outcomes |
+| `tdd-reminder` | PostFileCreate | `\.(ts\|tsx)$` | enabled | Remind about test coverage |
+| `typecheck-on-edit` | PostFileSave | `\.(ts\|tsx)$` | disabled | Type check TS files on save |
+
+---
+
+## Legacy Format (historical reference)
+
+The `*-legacy.kiro.hook` files in this directory use an older IDE-specific format from pre-1.0 Kiro. They are kept for reference only and are **not installed** by the installer. The v1 JSON files above are authoritative.
+
+If migrating from `.kiro.hook` files, use this mapping:
+
+| Legacy `when.type` | v1 `trigger` |
+|--------------------|--------------|
+| `fileEdited` | `PostFileSave` |
+| `fileCreated` | `PostFileCreate` |
+| `fileDeleted` | `PostFileDelete` |
+| `userTriggered` | Use steering file (see quality-gate pattern) |
+| `promptSubmit` | `UserPromptSubmit` |
+| `agentStop` | `Stop` |
+| `preToolUse` | `PreToolUse` |
+| `postToolUse` | `PostToolUse` |
+
+| Legacy `then.type` | v1 `action.type` |
+|--------------------|-----------------|
+| `askAgent` | `agent` |
+| `runCommand` | `command` |
+
+---
 
 ## Documentation
 
-- IDE Hooks: https://kiro.dev/docs/hooks/
-- CLI Hooks: https://kiro.dev/docs/cli/hooks/
+- Hooks guide: https://kiro.dev/docs/hooks/
+- CLI hooks: https://kiro.dev/docs/cli/hooks/
