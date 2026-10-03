@@ -416,6 +416,27 @@ explicit Compose `--env NAME` flag, understand that the value is inspectable
 and can be exfiltrated for the container lifetime, and remove the exact named
 container immediately after.
 
+### Authenticate Codex Inside the Networked Session
+
+`codex login` binds its OAuth callback server to `127.0.0.1:1455` inside the
+container. A Docker port publish forwards to the container interface, not
+loopback, so the host browser's redirect to `http://localhost:1455` is refused
+without a bridge. The `real-cli-networked` service publishes host
+`127.0.0.1:1455` to container port `1456`; bridge that port to loopback before
+logging in:
+
+```bash
+npm install --global @openai/codex   # the harness image does not ship codex
+node /ecc/docker/plugin-setup/codex-auth-relay.js &
+codex login
+```
+
+Complete the sign-in in the host browser. Each attempt mints a fresh
+`state`/`code`, so always follow the newest printed link. The token stays in
+the disposable container's `~/.codex/auth.json`; removing the named container
+revokes that copy. Only one container can hold host port 1455 at a time
+because the OAuth redirect targets a fixed port.
+
 Run the same focused suite natively on the host:
 
 ```bash
