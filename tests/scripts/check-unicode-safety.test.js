@@ -109,6 +109,21 @@ if (
   passed++;
 else failed++;
 
+if (
+  test('visible ECC statusline glyphs remain allowed', () => {
+    const root = makeTempRoot('ecc-unicode-statusline-');
+    fs.mkdirSync(path.join(root, 'docs'), { recursive: true });
+    const bolt = String.fromCodePoint(0x26A1);
+    const star = String.fromCodePoint(0x2733);
+    fs.writeFileSync(path.join(root, 'docs', 'statusline.md'), `${bolt} quota\n${star} model\n`);
+
+    const result = runCheck(root);
+    assert.strictEqual(result.status, 0, result.stdout + result.stderr);
+  })
+)
+  passed++;
+else failed++;
+
 // Invisible code points newly covered by the denylist. These were missing
 // from the previous denylist and silently passed through both detection and
 // `--write` mode. Each is a documented LLM-prompt-injection vector
