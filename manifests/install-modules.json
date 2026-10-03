@@ -107,6 +107,23 @@
       "stability": "stable"
     },
     {
+      "id": "hermes-hooks",
+      "kind": "hooks",
+      "description": "Hermes-native guard hooks (config protection, console.log warning) plus install guide.",
+      "paths": [
+        "hooks/hermes",
+        "docs/HERMES-HOOKS.md"
+      ],
+      "targets": [
+        "hermes",
+        "openclaw"
+      ],
+      "dependencies": [],
+      "defaultInstall": true,
+      "cost": "light",
+      "stability": "stable"
+    },
+    {
       "id": "platform-configs",
       "kind": "platform",
       "description": "Baseline platform configs, package-manager setup, and MCP catalog.",
