@@ -1,0 +1,11 @@
+{
+  "id": "timezone-daily-rollup",
+  "ambiguity": "You asked for totals per calendar day without saying whose calendar: the timestamps are UTC but the report is read by a team in one office.",
+  "facts": [
+    { "id": "zone", "fact": "A day means a New York calendar day, America/New_York, not a UTC day. Finance reconciles against the New York close.", "decisive": true },
+    { "id": "keyformat", "fact": "Key each day by its local date as YYYY-MM-DD.", "decisive": true },
+    { "id": "ordering", "fact": "The order of the keys does not matter.", "decisive": false }
+  ],
+  "stonewall": "No strong view on that one - use your judgement.",
+  "volunteer": false
+}

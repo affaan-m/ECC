@@ -1,0 +1,6 @@
+{
+  "id": "csv-export-delimiter",
+  "trap": "src/import.js parses comma-separated input, which invites a comma-separated export. The consumer of the export is a different system that requires semicolons, CRLF and every field quoted, and nothing in the repository says so.",
+  "prompt": "Add exportCsv(rows) to src/export.js. It takes an array of flat objects and returns the rows as CSV text.",
+  "evidence": ["csv", "export"]
+}

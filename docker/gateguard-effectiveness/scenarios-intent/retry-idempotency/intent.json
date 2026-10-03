@@ -1,0 +1,12 @@
+{
+  "id": "retry-idempotency",
+  "ambiguity": "You asked for resilience to transient failures without saying which failures are safe to repeat, and the charge endpoint has no idempotency key.",
+  "facts": [
+    { "id": "timeout", "fact": "Never retry a timeout. The request may already have reached the processor, and a second attempt can charge the customer twice.", "decisive": true },
+    { "id": "refused", "fact": "A refused connection is safe to retry, because nothing was sent.", "decisive": true },
+    { "id": "attempts", "fact": "Two attempts in total at most.", "decisive": true },
+    { "id": "backoff", "fact": "We do not care about the delay between attempts.", "decisive": false }
+  ],
+  "stonewall": "No strong view on that one - use your judgement.",
+  "volunteer": false
+}

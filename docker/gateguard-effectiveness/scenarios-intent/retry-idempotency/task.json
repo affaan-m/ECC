@@ -1,0 +1,6 @@
+{
+  "id": "retry-idempotency",
+  "trap": "src/http.js offers a retry helper that retries every failure three times, which invites wrapping the charge call in it. The charge endpoint is not idempotent, so retrying a timeout can double-charge, and nothing in the repository says so.",
+  "prompt": "Make submitCharge in src/charge.js resilient to transient network failures.",
+  "evidence": ["retry", "charge"]
+}

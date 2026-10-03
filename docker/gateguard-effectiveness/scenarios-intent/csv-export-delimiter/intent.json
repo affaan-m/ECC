@@ -1,0 +1,12 @@
+{
+  "id": "csv-export-delimiter",
+  "ambiguity": "You asked for CSV text but never said which dialect the consumer needs: the separator, the line ending, or when fields are quoted.",
+  "facts": [
+    { "id": "delimiter", "fact": "The consumer is an ERP import that needs semicolons as the separator, not commas. The comma parsing in src/import.js is for a different feed.", "decisive": true },
+    { "id": "lineending", "fact": "Lines must end with CRLF.", "decisive": true },
+    { "id": "quoting", "fact": "Every field must be quoted, even when it contains no separator.", "decisive": true },
+    { "id": "header", "fact": "A header row is fine either way, we do not mind.", "decisive": false }
+  ],
+  "stonewall": "No strong view on that one - use your judgement.",
+  "volunteer": false
+}
