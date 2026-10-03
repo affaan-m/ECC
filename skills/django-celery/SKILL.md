@@ -70,7 +70,6 @@ CELERY_TASK_TRACK_STARTED = True
 CELERY_TASK_TIME_LIMIT = 30 * 60        # Hard limit: 30 min
 CELERY_TASK_SOFT_TIME_LIMIT = 25 * 60   # Soft limit: sends SoftTimeLimitExceeded
 CELERY_WORKER_PREFETCH_MULTIPLIER = 1   # Prevent worker hoarding long tasks
-CELERY_TASK_ACKS_LATE = True            # Re-queue on worker crash
 
 # Result persistence
 CELERY_RESULT_EXPIRES = 60 * 60 * 24   # Keep results 24 hours
@@ -199,6 +198,12 @@ def generate_pdf_report(self, report_id: int) -> str:
         raise
 ```
 
+### Delivery Guarantees
+
+Late acknowledgement, worker-loss redelivery, and commit-aware publication are separate
+choices. Read [Delivery Reliability](references/reliability.md) before
+changing acknowledgement settings or publishing tasks from a database transaction.
+
 ## Calling Tasks
 
 ```python
@@ -217,6 +222,23 @@ sync_contact_to_crm.apply_async(args=[contact.pk], queue='high_priority')
 
 # Run synchronously (tests / debugging only)
 result = generate_pdf_report.apply(args=[report.pk])
+```
+
+### Publish After the Database Commits
+
+A task published inside a Django transaction can run before its rows are visible or
+remain queued after rollback. Use `delay_on_commit()` with Celery 5.4 or newer; use
+`transaction.on_commit()` for `apply_async()` options or older versions. See
+[Delivery Reliability](references/reliability.md#publish-after-the-database-commits)
+for custom-base, task-ID, and transactional-outbox boundaries.
+
+```python
+from django.db import transaction
+
+@transaction.atomic
+def create_user(validated_username: str):
+    user = User.objects.create(username=validated_username)
+    send_welcome_email.delay_on_commit(user.pk)
 ```
 
 ## Beat Scheduling (Periodic Tasks)
@@ -266,6 +288,11 @@ PeriodicTask.objects.update_or_create(
 )
 ```
 
+Run only one scheduler for a given schedule to avoid duplicate publications, but this
+does not prevent execution overlap: periodic tasks may overlap. Atomically claim an
+active-run lease with an owner and expiry or recovery path; a unique schedule row
+alone does not serialize executions. Keep the task idempotent if the lease expires.
+
 ## Canvas: Chaining and Grouping Tasks
 
 ```python
@@ -294,7 +321,7 @@ result = chord(
 result.delay()
 ```
 
-## Error Handling and Dead Letter Queue
+## Failure Monitoring
 
 ```python
 # apps/core/tasks.py
@@ -314,29 +341,8 @@ def on_task_failure(sender, task_id, exception, args, kwargs, traceback, einfo, 
         sentry_sdk.capture_exception(exception)
 ```
 
-```python
-# Route failed tasks to dead-letter queue after max retries
-@shared_task(
-    bind=True,
-    max_retries=3,
-    name='payments.charge_card',
-)
-def charge_card(self, order_id: int) -> None:
-    from apps.payments.models import Order, FailedCharge
-
-    try:
-        _do_charge(order_id)
-    except Exception as exc:
-        if self.request.retries >= self.max_retries:
-            # Persist to dead-letter table for manual review
-            FailedCharge.objects.create(
-                order_id=order_id,
-                error=str(exc),
-                task_id=self.request.id,
-            )
-            return  # Don't raise — task is permanently failed
-        raise self.retry(exc=exc)
-```
+Returning after recording a final error makes Celery record `SUCCESS`; persist and
+re-raise instead. Broker dead-letter queues are not Django model error logs.
 
 ## Testing Celery Tasks
 
@@ -362,7 +368,11 @@ class TestSendWelcomeEmail:
         send_welcome_email(99999)  # Non-existent user — must not raise
 ```
 
-### Integration Testing with CELERY_TASK_ALWAYS_EAGER
+### Django Integration Path with Eager Mode
+
+Eager mode is a worker emulation, not a worker integration test. Use it to verify
+that a Django request selects the expected task and arguments, but do not use it as
+evidence for serialization, routing, acknowledgement, retry, or worker-loss behavior.
 
 ```python
 # config/settings/test.py
@@ -381,6 +391,14 @@ def test_registration_triggers_welcome_email(client):
     assert response.status_code == 201
     mock_email.send_welcome.assert_called_once()
 ```
+
+### Worker Integration with a Real Broker
+
+Use Celery's `celery_worker` pytest fixture with a real broker and result backend for
+the delivery boundary. Cover serialization, routing, retry behavior, and any
+acknowledgement or redelivery options the application enables. Keep this suite
+separate from fast unit tests so a passing eager-mode test is never mistaken for
+worker evidence.
 
 ### Testing Retries
 
@@ -428,14 +446,27 @@ def charge_and_fulfill(order_id):
     order.charge()     # May charge twice if task retries!
     order.fulfill()
 
-# GOOD: Idempotent with status guard
-@shared_task
-def charge_and_fulfill(order_id):
-    order = Order.objects.select_for_update().get(pk=order_id)
-    if order.status != Order.Status.PENDING:
-        return  # Already processed
-    order.charge()
-    order.fulfill()
+# GOOD: Claim ownership before external I/O, then finalize only as that owner
+from django.db import transaction
+from apps.payments.gateway import gateway
+
+@shared_task(bind=True, acks_late=True)
+def charge_and_fulfill(self, order_id):
+    attempt_id = self.request.id  # Stable across Celery retry and redelivery
+    with transaction.atomic():
+        order = Order.objects.select_for_update().get(pk=order_id)
+        if not order.claim_or_resume_charge(attempt_id):
+            return
+
+    # The adapter validates provider data and returns the same charge on retry.
+    receipt = gateway.charge(order_id, idempotency_key=f'order:{order_id}')
+
+    with transaction.atomic():
+        order = Order.objects.select_for_update().get(pk=order_id)
+        if order.charge_attempt_id != attempt_id:
+            return
+        order.record_charge(receipt)
+        order.fulfill()
 ```
 
 ## Production Checklist
@@ -443,13 +474,23 @@ def charge_and_fulfill(order_id):
 | Check | Setting |
 |-------|---------|
 | Worker restarts on crash | `supervisord` or `systemd` unit |
-| `CELERY_TASK_ACKS_LATE = True` | Re-queue tasks on worker crash |
+| Late acknowledgement | Per task, only after proving idempotency; duplicates remain possible |
+| Worker-loss redelivery | `task_reject_on_worker_lost`, opt in only with poison-task protection |
 | `CELERY_WORKER_PREFETCH_MULTIPLIER = 1` | Fair distribution of long tasks |
 | Separate queues per priority | `-Q default,high_priority,low_priority` |
 | `CELERY_TASK_SOFT_TIME_LIMIT` set | Graceful timeout before hard kill |
 | Sentry integration | Capture all `task_failure` signals |
 | Flower or other monitor | Visibility into queue depths |
-| Beat runs on single node only | Prevents duplicate scheduled task execution |
+| Beat runs on single node only | Prevents duplicate scheduled task publication |
+| Periodic-task locking | Prevents overlapping execution when required |
+
+## References
+
+- [Celery task acknowledgement and idempotency](https://docs.celeryq.dev/en/stable/userguide/tasks.html)
+- [Celery configuration defaults](https://docs.celeryq.dev/en/stable/userguide/configuration.html)
+- [Celery with Django transaction handling](https://docs.celeryq.dev/en/stable/django/first-steps-with-django.html)
+- [Celery periodic tasks](https://docs.celeryq.dev/en/stable/userguide/periodic-tasks.html)
+- [Celery testing guide](https://docs.celeryq.dev/en/stable/userguide/testing.html)
 
 ## Related Skills
 
