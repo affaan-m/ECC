@@ -53,7 +53,7 @@ cron = "0.17"
 uuid = { version = "1", features = ["v4"] }
 
 # Directory paths
-dirs = "6"
+dirs = "7"
 
 [profile.release]
 lto = true
