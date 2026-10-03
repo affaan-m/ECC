@@ -19,10 +19,20 @@ const fs = require('fs');
 const path = require('path');
 const os = require('os');
 
+// Claude Code redirects every profile-local path when CLAUDE_CONFIG_DIR is set.
+// Writing to ~/.claude regardless leaks this profile's data into the default one.
+function claudeConfigDir() {
+  const configured = process.env.CLAUDE_CONFIG_DIR;
+  if (configured && String(configured).trim().length > 0) {
+    return path.resolve(String(configured).trim());
+  }
+  return path.join(os.homedir(), '.claude');
+}
+
 function stateDir() {
   const override = process.env.ECC_PLAN_CANVAS_STATE_DIR;
   if (override && override.trim()) return path.resolve(override.trim());
-  return path.join(os.homedir(), '.claude', 'plan-canvas');
+  return path.join(claudeConfigDir(), 'plan-canvas');
 }
 
 function openSessions() {

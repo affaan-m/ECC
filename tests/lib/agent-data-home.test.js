@@ -497,6 +497,50 @@ function runTests() {
     });
   })) passed++; else failed++;
 
+  if (test('getDefaultClaudeAgentDataHome follows CLAUDE_CONFIG_DIR', () => {
+    // Claude Code points every profile-local path at CLAUDE_CONFIG_DIR. Ignoring
+    // it writes this profile's session data, logs and metrics into the default
+    // ~/.claude, where another profile reads them back.
+    withIsolatedCwd(() => {
+      withEnv({
+        CLAUDE_CONFIG_DIR: path.join(os.tmpdir(), 'ecc-profile-x'),
+        ECC_AGENT_DATA_HOME: undefined,
+      }, () => {
+        const agentDataHome = require('../../scripts/lib/agent-data-home');
+        assert.strictEqual(
+          agentDataHome.getDefaultClaudeAgentDataHome(),
+          path.join(os.tmpdir(), 'ecc-profile-x')
+        );
+      });
+    });
+  })) passed++; else failed++;
+
+  if (test('getDefaultClaudeAgentDataHome falls back to ~/.claude without the env', () => {
+    withIsolatedCwd(() => {
+      withEnv({ CLAUDE_CONFIG_DIR: undefined, ECC_AGENT_DATA_HOME: undefined }, () => {
+        const agentDataHome = require('../../scripts/lib/agent-data-home');
+        assert.strictEqual(
+          agentDataHome.getDefaultClaudeAgentDataHome(),
+          path.join(os.homedir(), '.claude')
+        );
+      });
+    });
+  })) passed++; else failed++;
+
+  if (test('a blank CLAUDE_CONFIG_DIR is ignored rather than resolving to cwd', () => {
+    // An empty or whitespace value would otherwise resolve to the process cwd and
+    // scatter profile data through whatever directory the session started in.
+    withIsolatedCwd(() => {
+      withEnv({ CLAUDE_CONFIG_DIR: '   ', ECC_AGENT_DATA_HOME: undefined }, () => {
+        const agentDataHome = require('../../scripts/lib/agent-data-home');
+        assert.strictEqual(
+          agentDataHome.getDefaultClaudeAgentDataHome(),
+          path.join(os.homedir(), '.claude')
+        );
+      });
+    });
+  })) passed++; else failed++;
+
   console.log(`\n=== Test Results ===\nPassed: ${passed}\nFailed: ${failed}\n`);
   if (failed > 0) process.exit(1);
 }

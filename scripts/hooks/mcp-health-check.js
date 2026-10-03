@@ -47,11 +47,21 @@ function envNumber(name, fallback) {
   return Number.isFinite(value) && value >= 0 ? value : fallback;
 }
 
+// Claude Code redirects every profile-local path when CLAUDE_CONFIG_DIR is set.
+// Writing to ~/.claude regardless leaks this profile's data into the default one.
+function claudeConfigDir() {
+  const configured = process.env.CLAUDE_CONFIG_DIR;
+  if (configured && String(configured).trim().length > 0) {
+    return path.resolve(String(configured).trim());
+  }
+  return path.join(os.homedir(), '.claude');
+}
+
 function stateFilePath() {
   if (process.env.ECC_MCP_HEALTH_STATE_PATH) {
     return path.resolve(process.env.ECC_MCP_HEALTH_STATE_PATH);
   }
-  return path.join(os.homedir(), '.claude', 'mcp-health-cache.json');
+  return path.join(claudeConfigDir(), 'mcp-health-cache.json');
 }
 
 function configPaths() {

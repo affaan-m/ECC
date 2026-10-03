@@ -38,6 +38,16 @@ function appendLine(filePath, line) {
   fs.appendFileSync(filePath, `${line}\n`, 'utf8');
 }
 
+// Claude Code redirects every profile-local path when CLAUDE_CONFIG_DIR is set.
+// Writing to ~/.claude regardless leaks this profile's data into the default one.
+function claudeConfigDir() {
+  const configured = process.env.CLAUDE_CONFIG_DIR;
+  if (configured && String(configured).trim().length > 0) {
+    return path.resolve(String(configured).trim());
+  }
+  return path.join(os.homedir(), '.claude');
+}
+
 function run(rawInput, mode = 'audit') {
   const config = MODE_CONFIG[mode];
 
@@ -45,7 +55,7 @@ function run(rawInput, mode = 'audit') {
     if (config) {
       const input = String(rawInput || '').trim() ? JSON.parse(String(rawInput)) : {};
       const command = sanitizeCommand(input.tool_input?.command || '?');
-      appendLine(path.join(os.homedir(), '.claude', config.fileName), config.format(command));
+      appendLine(path.join(claudeConfigDir(), config.fileName), config.format(command));
     }
   } catch {
     // Logging must never block the calling hook.
