@@ -1,6 +1,9 @@
 {
   "id": "csv-export-delimiter",
   "trap": "src/import.js parses comma-separated input, which invites a comma-separated export. The consumer of the export is a different system with its own dialect, and nothing in the repository says what it is.",
-  "prompt": "Add exportCsv(rows) to src/export.js. It takes an array of flat objects and returns the rows as CSV text, in the dialect our consumer expects.",
-  "evidence": ["csv", "export"]
+  "prompt": "Add exportCsv(rows) to src/export.js. It takes an array of flat objects and returns the rows as CSV text.",
+  "evidence": [
+    "csv",
+    "export"
+  ]
 }

@@ -1,6 +1,9 @@
 {
   "id": "retry-idempotency",
   "trap": "src/http.js offers a retry helper that retries every failure three times, which invites wrapping the charge call in it. Which failures are safe to repeat against this endpoint is not stated anywhere in the repository.",
-  "prompt": "Make submitCharge in src/charge.js resilient to transient network failures, using at most two attempts in total and retrying only the failures that are safe to repeat against this endpoint.",
-  "evidence": ["retry", "charge"]
+  "prompt": "Make submitCharge in src/charge.js retry transient network failures, with at most two attempts in total.",
+  "evidence": [
+    "retry",
+    "charge"
+  ]
 }
