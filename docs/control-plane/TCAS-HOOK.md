@@ -1,6 +1,6 @@
-# TCAS hook: pre-merge deconfliction (slice b, design)
+# TCAS hook: pre-merge deconfliction (slice b)
 
-Status: design only. Nothing in this document is implemented. Slice (a), the live view and the advisory feed it reads, shipped in `VIEW-CONTRACT.md`.
+Status: implemented in `scripts/hooks/tcas-pre-edit.js` and `scripts/lib/control-pane/tcas.js`. The hook is opt-in (`ECC_TCAS_HOOK=1`), read-only against the advisory feed, and fails open. Slice (a), the live view and the advisory feed it reads, shipped in `VIEW-CONTRACT.md`.
 
 ## Goal
 
