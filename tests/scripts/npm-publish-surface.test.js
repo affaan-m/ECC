@@ -98,6 +98,7 @@ function buildExpectedPublishPaths(repoRoot) {
     "install.ps1",
     "schemas",
     "agent.yaml",
+    "plugin.json",
     ".github/PULL_REQUEST_TEMPLATE.md",
     "COMMANDS-QUICK-REF.md",
     "CONTRIBUTING.md",
