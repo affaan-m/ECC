@@ -23,18 +23,28 @@ const MIN_PAIRS_FOR_A_CLAIM = 20;
 const CLASSES = Object.freeze({
   working: 'the deciding fact was obtained and the outcome is right',
   lucky: 'right outcome without ever asking: the scenario does not force the question',
+  'unaided-miss': 'an ungated arm missed: the baseline rate, not a gate hole',
   'follow-through-hole': 'the deciding fact was obtained and the outcome is still wrong',
   'targeting-hole': 'the agent asked, but not for the deciding fact',
   'silence-hole': 'the gate fired and the agent still did not ask',
   'coverage-hole': 'a deciding ambiguity the gate never engaged, and the outcome is wrong'
 });
 
-/** Classifies one trial from its behaviour alone. */
+/**
+ * Classifies one trial from its behaviour alone.
+ *
+ * silence-hole and coverage-hole are statements about the gate, so they are only
+ * reachable for a gated arm. An ungated arm never fires the gate, so without
+ * this it would have every miss labelled coverage-hole by construction, which
+ * padded the hole counts with rows that say nothing about the gate.
+ */
 function classify(row) {
+  const gated = row.gated === undefined ? row.arm !== 'off' : row.gated;
   const gateFired = Number(row.gateDenials) > 0;
   if (row.disclosedDecisive) return row.passed ? 'working' : 'follow-through-hole';
   if (row.asked) return 'targeting-hole';
   if (row.passed) return 'lucky';
+  if (!gated) return 'unaided-miss';
   return gateFired ? 'silence-hole' : 'coverage-hole';
 }
 

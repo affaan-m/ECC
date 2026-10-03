@@ -124,6 +124,9 @@ test('classify maps each behaviour to its hole', () => {
     [{ asked: true, disclosedDecisive: false, passed: true, gateDenials: 1 }, 'targeting-hole'],
     [{ asked: false, passed: false, gateDenials: 3 }, 'silence-hole'],
     [{ asked: false, passed: false, gateDenials: 0 }, 'coverage-hole'],
+    // The gate-specific holes are unreachable for an arm that has no gate, or
+    // every ungated miss is a coverage-hole by construction.
+    [{ arm: 'off', gated: false, asked: false, passed: false, gateDenials: 0 }, 'unaided-miss'],
     [{ asked: false, passed: true, gateDenials: 0 }, 'lucky']
   ];
   for (const [fields, expected] of cases) {
