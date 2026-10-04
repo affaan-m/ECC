@@ -317,11 +317,24 @@ class Document < ApplicationRecord
 end
 ```
 
-Attach to a private service and serve through a signed, expiring URL. A public bucket
-makes every upload world-readable regardless of the checks above.
+Attach to a private service — a public bucket makes every upload world-readable regardless
+of the checks above.
 
 ```ruby
 has_one_attached :file, service: :private_documents
+```
+
+`rails_blob_url` and `url_for(attachment)` are stable references that never expire; they
+redirect to a short-lived service URL, so anyone holding one keeps access. Serve
+user-scoped files from your own controller that authorizes each request:
+
+```ruby
+class DocumentFilesController < ApplicationController
+  def show
+    document = current_user.documents.find(params[:id])
+    redirect_to document.file.blob.url(expires_in: 5.minutes), allow_other_host: true
+  end
+end
 ```
 
 Never interpolate a user-supplied path into `send_file`:
