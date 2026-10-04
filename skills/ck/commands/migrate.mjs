@@ -38,15 +38,18 @@ function parseDecisionsTable(text) {
   if (!text) return [];
   const rows = [];
   let pending = '';
-  for (const line of text.split('\n')) {
+  const lines = text.split('\n');
+  for (const [index, line] of lines.entries()) {
     if (!pending && (!line.trimStart().startsWith('|') || line.match(/^[|\s:-]+$/))) continue;
     pending += (pending ? '\n' : '') + line.trim();
     const parts = pending.split(/(?<!\\)\|/).slice(1);
     const cols = (pending.endsWith('|') ? parts.slice(0, -1) : parts).map(c => c.trim().replace(/\\\|/g, '|'));
     if (cols.length < 3) continue;
+    const nextLine = lines[index + 1]?.trim();
+    if (!pending.endsWith('|') && nextLine && !nextLine.startsWith('|')) continue;
     pending = '';
     if (cols.length >= 1 && !cols[0].startsWith('Decision') && !cols[0].startsWith('_')) {
-      rows.push({ what: cols[0] || '', why: cols[1] || '', date: cols[2] || '' });
+      rows.push({ what: cols[0] || '', why: cols[1] || '', date: (cols[2] || '').replace(/\s*\n\s*/g, '') });
     }
   }
   return rows;
