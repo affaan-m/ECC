@@ -384,7 +384,7 @@ add_index :webhook_deliveries, %i[provider delivery_id], unique: true
 ```
 
 The job marks `processed_at` when it finishes. Jobs retry, so `perform` must be
-idempotent for the same reason.
+idempotent for the same reason. Requires a stable id in the signed body.
 
 Keep CORS narrow — never reflect an arbitrary origin alongside credentials:
 
