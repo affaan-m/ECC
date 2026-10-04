@@ -332,6 +332,8 @@ route; apps using direct uploads need a replacement route:
 
 ```ruby
 get "documents/:id/file", to: "document_files#show", as: :document_file
+# Rails' direct-upload endpoint has no authentication of its own. This example uses a
+# hand-rolled session sign-in; see Devise or the Rails 8 generator for their equivalents.
 constraints ->(req) { req.session[:user_id].present? } do
   post "uploads", to: "active_storage/direct_uploads#create", as: :rails_direct_uploads
 end
