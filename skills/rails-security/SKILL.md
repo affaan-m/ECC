@@ -326,7 +326,8 @@ has_one_attached :file, service: :private_documents
 
 `rails_blob_url` and `url_for(attachment)` are stable references that never expire; they
 redirect to a short-lived service URL, so anyone holding one keeps access. Serve
-user-scoped files from your own controller that authorizes each request:
+user-scoped files from your own controller that authorizes each request, with
+`config.active_storage.draw_routes = false`:
 
 ```ruby
 class DocumentFilesController < ApplicationController
