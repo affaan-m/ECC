@@ -104,6 +104,24 @@ interface AreaInfo {
   directories: string[];
 }
 
+/** Identify App Router conventions from the file's owning package. */
+function belongsToNextProject(file: string): boolean {
+  let directory = path.dirname(file);
+  while (true) {
+    const manifest = path.join(directory, 'package.json');
+    if (fs.existsSync(manifest)) {
+      try {
+        const pkg = JSON.parse(fs.readFileSync(manifest, 'utf8'));
+        return Boolean(pkg.dependencies?.next || pkg.devDependencies?.next);
+      } catch {
+        return false;
+      }
+    }
+    if (directory === ROOT || directory === path.dirname(directory)) return false;
+    directory = path.dirname(directory);
+  }
+}
+
 function classifyFiles(allFiles: string[]): Record<string, AreaInfo> {
   const areas: Record<string, AreaInfo> = {
     frontend:     { name: 'Frontend', files: [], entryPoints: [], directories: [] },
@@ -117,7 +135,8 @@ function classifyFiles(allFiles: string[]): Record<string, AreaInfo> {
     const relPath = rel(file);
     // App Router UI conventions remain frontend even below a directory named api.
     if (/(?:^|\/)(app)\/api\//i.test(relPath)
-      && /^(page|layout|template|loading|error|global-error|not-found|default)\.(ts|tsx|js|jsx)$/i.test(path.basename(relPath))) {
+      && /^(page|layout|template|loading|error|global-error|not-found|default)\.(ts|tsx|js|jsx)$/i.test(path.basename(relPath))
+      && belongsToNextProject(file)) {
       areas.frontend.files.push(relPath);
       continue;
     }

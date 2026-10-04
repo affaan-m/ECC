@@ -21,11 +21,18 @@ for (const fixture of [
   { name: 'similar directory names', prefix: 'my', expected: 0 },
   { name: 'root framework API routes', prefix: '', expected: 1, apiRoutes: true },
   { name: 'nested framework API routes', prefix: 'src/', expected: 1, apiRoutes: true },
+  { name: 'ordinary backend error module', prefix: 'src/', expected: 1, backendError: true },
+  { name: 'Next declared as a development dependency', prefix: '', expected: 1, apiRoutes: true, devNext: true },
+  { name: 'nested non-Next package owns its error module', prefix: 'src/', expected: 1, backendError: true, nestedPackage: true },
 ]) {
   const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-codemap-'));
   const root = path.join(temp, 'project');
   try {
     fs.mkdirSync(root);
+    fs.writeFileSync(path.join(root, 'package.json'), JSON.stringify({
+      dependencies: (fixture.apiRoutes && !fixture.devNext) || fixture.nestedPackage ? { next: '15.0.0' } : { express: '5.0.0' },
+      devDependencies: fixture.devNext ? { next: '15.0.0' } : {},
+    }));
     const script = path.join(temp, 'generate.cjs');
     fs.writeFileSync(script, compiled);
     for (const dir of Object.values(areas)) {
@@ -41,13 +48,25 @@ for (const fixture of [
         fs.writeFileSync(fullPath, 'export default function handler() {}\n');
       }
     }
+    if (fixture.backendError) {
+      const directory = path.join(root, fixture.prefix + 'app/api');
+      fs.mkdirSync(directory, { recursive: true });
+      if (fixture.nestedPackage) {
+        fs.writeFileSync(path.join(root, fixture.prefix, 'package.json'), JSON.stringify({ dependencies: { express: '5.0.0' } }));
+      }
+      fs.writeFileSync(path.join(directory, 'error.ts'), 'export function errorHandler() {}\n');
+    }
     const result = spawnSync(process.execPath, [script], { cwd: root, encoding: 'utf8' });
     assert.strictEqual(result.status, 0, result.stderr);
     for (const [area, dir] of Object.entries(areas)) {
       const doc = fs.readFileSync(path.join(root, 'docs/CODEMAPS', area + '.md'), 'utf8');
-      const expected = fixture.expected + (fixture.apiRoutes ? (area === 'backend' ? 3 : area === 'frontend' ? 3 : 0) : 0);
+      const expected = fixture.expected + (fixture.apiRoutes ? (area === 'backend' ? 3 : area === 'frontend' ? 3 : 0) : 0)
+        + (fixture.backendError && area === 'backend' ? 1 : 0);
       assert.ok(doc.includes(`**Total Files:** ${expected}`), `${area}: wrong file count`);
       if (fixture.expected) assert.ok(doc.includes(`${fixture.prefix}${dir}/index.js`), `${area}: missing module`);
+      if (fixture.backendError && ['frontend', 'backend'].includes(area)) {
+        assert.strictEqual(doc.includes(fixture.prefix + 'app/api/error.ts'), area === 'backend');
+      }
       if (fixture.apiRoutes && ['frontend', 'backend'].includes(area)) {
         assert.strictEqual(doc.includes(fixture.prefix + 'app/api/users/page.tsx'), area === 'frontend');
         for (const file of apiFiles) {
