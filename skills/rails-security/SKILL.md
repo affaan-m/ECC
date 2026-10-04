@@ -287,14 +287,15 @@ does not apply; token or session-cookie APIs still need it.
 
 ## File Uploads
 
-The `content_type` a client sends is attacker-controlled. Validate against what the file
-actually contains, and constrain size:
+The `content_type` a client sends is attacker-controlled. Validate the detected type,
+the extension, and the size, and choose the storage destination deliberately:
 
 ```ruby
 class Document < ApplicationRecord
   has_one_attached :file
 
   ALLOWED = %w[application/pdf image/png image/jpeg].freeze
+  ALLOWED_EXTENSIONS = %w[.pdf .png .jpg .jpeg].freeze
   MAX_BYTES = 10.megabytes
 
   validate :acceptable_file
@@ -309,8 +310,18 @@ class Document < ApplicationRecord
     # identify sets content_type from the file's own bytes, not the client's header.
     file.blob.identify unless file.blob.identified?
     errors.add(:file, "type not allowed") unless ALLOWED.include?(file.blob.content_type)
+
+    extension = File.extname(file.blob.filename.to_s).downcase
+    errors.add(:file, "extension not allowed") unless ALLOWED_EXTENSIONS.include?(extension)
   end
 end
+```
+
+Attach to a private service and serve through a signed, expiring URL. A public bucket
+makes every upload world-readable regardless of the checks above.
+
+```ruby
+has_one_attached :file, service: :private_documents
 ```
 
 Never interpolate a user-supplied path into `send_file`:
@@ -452,7 +463,7 @@ confidence threshold.
 - [ ] No raw SQL string interpolation; `order` and `pluck` inputs allowlisted
 - [ ] Every `html_safe` and `raw` reviewed
 - [ ] CSRF exemptions scoped to specific actions with another auth mechanism
-- [ ] Uploads validated by detected type and size
+- [ ] Uploads validated by detected type, extension, and size, and stored on a private service
 - [ ] Auth endpoints rate-limited; webhook signatures compared in constant time
 - [ ] No secrets in version control; master key excluded
 - [ ] `bundle-audit` and `brakeman` clean
