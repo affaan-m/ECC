@@ -188,8 +188,18 @@ function runTests() {
       const result = run(['--config', '--custom.json', '--json'], { cwd: directory });
       assert.strictEqual(result.code, 0, result.stderr);
       assert.strictEqual(JSON.parse(result.stdout).profileId, 'core');
-      fs.writeFileSync(path.join(directory, '--json'), '{}');
-      assert.strictEqual(run(['--config', '--json'], { cwd: directory }).code, 1);
+      const installScript = path.join(__dirname, '..', '..', 'scripts', 'install-apply.js');
+      const install = execFileSync('node', [installScript, '--config', '--custom.json', '--dry-run', '--json'], {
+        cwd: directory, encoding: 'utf8', timeout: 10000, maxBuffer: 32 * 1024 * 1024,
+      });
+      assert.ok(install.includes('core'));
+      for (const flag of ['--json', '--dry-run', '--locale', '--enable-hooks', '--no-hooks']) {
+        fs.writeFileSync(path.join(directory, flag), '{}');
+        assert.strictEqual(run(['--config', flag], { cwd: directory }).code, 1);
+        assert.throws(() => execFileSync('node', [installScript, '--config', flag, '--dry-run'], {
+          cwd: directory, encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'], timeout: 10000,
+        }), /Missing value for --config/);
+      }
       assert.strictEqual(run(['--config', '--missing.json'], { cwd: directory }).code, 1);
     } finally { fs.rmSync(directory, { recursive: true, force: true }); }
   })) passed++; else failed++;

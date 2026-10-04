@@ -13,12 +13,8 @@ const {
   findDefaultInstallConfigPath,
   loadInstallConfig,
 } = require('./lib/install/config');
-const { normalizeInstallRequest } = require('./lib/install/request');
+const { normalizeInstallRequest, isLeadingDashConfig } = require('./lib/install/request');
 const { describeMissingDependencyError } = require('./lib/missing-dependency');
-const fs = require('fs');
-const KNOWN_FLAGS = new Set(['--help', '-h', '--json', '--list-profiles', '--list-modules',
-  '--list-components', '--family', '--profile', '--modules', '--with', '--skill',
-  '--skills', '--without', '--config', '--target']);
 
 function showHelp() {
   console.log(`
@@ -56,8 +52,7 @@ function parseArgs(argv) {
   function requiredValue(index, allowEmpty = false) {
     const value = args[index + 1];
     if (value === undefined || (!allowEmpty && !value.trim())
-      || (value.startsWith('--') && !(args[index] === '--config'
-        && !KNOWN_FLAGS.has(value) && fs.existsSync(value))) || value === '-h') {
+      || (value.startsWith('--') && !isLeadingDashConfig(args[index], value)) || value === '-h') {
       throw new Error(`Missing value for ${args[index]}`);
     }
     return value;

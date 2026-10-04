@@ -1,9 +1,18 @@
 'use strict';
 
+const fs = require('fs');
 const { validateInstallModuleIds, LOCALE_ALIAS_TO_COMPONENT_ID, listSupportedLocales } = require('../install-manifests');
 const { resolveHookConsentFlags } = require('./hook-consent');
 
 const LEGACY_INSTALL_TARGETS = ['claude', 'claude-project', 'cursor', 'antigravity'];
+const KNOWN_FLAGS = new Set(['--help', '-h', '--json', '--list-profiles', '--list-modules',
+  '--list-components', '--family', '--profile', '--modules', '--with', '--skill',
+  '--skills', '--without', '--config', '--target', '--locale', '--enable-hooks',
+  '--no-hooks', '--dry-run']);
+
+function isLeadingDashConfig(flag, value) {
+  return flag === '--config' && !KNOWN_FLAGS.has(value) && fs.existsSync(value);
+}
 
 function dedupeStrings(values) {
   return [...new Set((Array.isArray(values) ? values : []).map(value => String(value).trim()).filter(Boolean))];
@@ -22,7 +31,7 @@ function parseInstallArgs(argv) {
   function requiredValue(index, allowEmpty = false) {
     const value = args[index + 1];
     if (value === undefined || (!allowEmpty && !value.trim())
-      || value.startsWith('--') || value === '-h') {
+      || (value.startsWith('--') && !isLeadingDashConfig(args[index], value)) || value === '-h') {
       throw new Error(`Missing value for ${args[index]}`);
     }
     return value;
@@ -169,6 +178,7 @@ function normalizeInstallRequest(options = {}) {
 }
 
 module.exports = {
+  isLeadingDashConfig,
   LEGACY_INSTALL_TARGETS,
   normalizeInstallRequest,
   parseInstallArgs,
