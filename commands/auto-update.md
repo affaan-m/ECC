@@ -18,7 +18,7 @@ node "$ECC_ROOT/scripts/auto-update.js" --dry-run
 node "$ECC_ROOT/scripts/auto-update.js" --target cursor
 
 # Override the ECC repo root explicitly
-node "$ECC_ROOT/scripts/auto-update.js" --repo-root /path/to/everything-claude-code
+node "$ECC_ROOT/scripts/auto-update.js" --repo-root /path/to/ECC
 ```
 
 ## Notes

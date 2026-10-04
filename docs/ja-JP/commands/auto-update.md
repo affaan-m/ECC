@@ -18,7 +18,7 @@ node "$ECC_ROOT/scripts/auto-update.js" --dry-run
 node "$ECC_ROOT/scripts/auto-update.js" --target cursor
 
 # ECCリポジトリルートを明示的に上書き
-node "$ECC_ROOT/scripts/auto-update.js" --repo-root /path/to/everything-claude-code
+node "$ECC_ROOT/scripts/auto-update.js" --repo-root /path/to/ECC
 ```
 
 ## ノート

@@ -1,4 +1,4 @@
-# Contributing to Everything Claude Code
+# Contributing to ECC
 
 Thanks for wanting to contribute! This repo is a community resource for Claude Code users.
 

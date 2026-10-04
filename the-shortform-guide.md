@@ -1,4 +1,4 @@
-# The Shorthand Guide to Everything Claude Code
+# The Shorthand Guide to ECC
 
 ![Header: Anthropic Hackathon Winner - Tips & Tricks for Claude Code](./assets/images/shortform/00-header.png)
 

@@ -114,7 +114,7 @@ const ROADMAP_SCHEMA = {
 const GUARDRAILS = [
   'CONSTRAINTS: research/triage only. Do NOT modify any code, do NOT open/close/merge PRs, do NOT post comments,',
   'do NOT send any external message. Return findings as data only.',
-  'Brand it "ECC" (never "everything claude code"). AgentShield was FEATURED at a hackathon, never say it "won".',
+  'Brand it "ECC" only (never the retired expanded name). AgentShield was FEATURED at a hackathon, never say it "won".',
   'AgentShield npm package is "ecc-agentshield". Local clone: ~/GitHub/ECC/agentshield. ECC repo: affaan-m/ECC. AgentShield repo: affaan-m/agentshield.',
   'You have Bash (gh CLI), Read, Grep, Glob, and web tools (load via ToolSearch: WebSearch / firecrawl / exa).'
 ].join(' ');
@@ -129,7 +129,7 @@ const surveyThunks = [
     ),
   () =>
     agent(
-      `${GUARDRAILS}\n\nSURVEY the CURRENT state of ECC Pro / paid surface. Read in ~/GitHub/ECC/everything-claude-code: scripts/lib/control-pane/* (control pane, proximity, viz), scripts/lib/agent-proximity/*, docs/design/agent-proximity.md, README.md, any pricing/Pro/Enterprise mentions. Determine: what is free vs what is positioned as Pro/Enterprise today, what monetizable surfaces exist (control pane, 3D agent-airspace observability, shared knowledge, JIT team workflows, kanban), and where the paid value story is thin. area="ecc-pro-surface".`,
+      `${GUARDRAILS}\n\nSURVEY the CURRENT state of ECC Pro / paid surface. Read in ~/GitHub/ECC: scripts/lib/control-pane/* (control pane, proximity, viz), scripts/lib/agent-proximity/*, docs/design/agent-proximity.md, README.md, any pricing/Pro/Enterprise mentions. Determine: what is free vs what is positioned as Pro/Enterprise today, what monetizable surfaces exist (control pane, 3D agent-airspace observability, shared knowledge, JIT team workflows, kanban), and where the paid value story is thin. area="ecc-pro-surface".`,
       { label: 'survey:ecc-pro-surface', phase: 'Survey', agentType: 'general-purpose', schema: CAPABILITY_SCHEMA }
     ),
   () =>
