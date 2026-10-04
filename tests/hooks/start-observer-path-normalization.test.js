@@ -5,18 +5,20 @@
 
 'use strict';
 
-const bashBinary = process.env.ECC_TEST_BASH || 'bash';
-
-if (process.platform === 'win32' && !process.env.ECC_TEST_BASH) {
-  console.log('Skipping bash-dependent observer path test on Windows');
-  process.exit(0);
-}
-
 const assert = require('assert');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const { spawnSync } = require('child_process');
+
+// Git Bash is installed on Windows CI runners; use it instead of silently
+// skipping the lexical and space-containing path cases with the symlink case.
+const gitBash = process.platform === 'win32'
+  ? [process.env.ProgramFiles, process.env.ProgramW6432, 'C:/Program Files']
+    .filter(Boolean).map(root => path.join(root, 'Git', 'bin', 'bash.exe'))
+    .find(candidate => fs.existsSync(candidate))
+  : null;
+const bashBinary = process.env.ECC_TEST_BASH || gitBash || (process.platform === 'win32' ? 'bash.exe' : 'bash');
 
 const repoRoot = path.resolve(__dirname, '..', '..');
 const launcher = path.join(
@@ -40,6 +42,7 @@ function storageFor(configuredRoot) {
   const result = spawnSync(bashBinary, [launcher, 'status'], {
     cwd: repoRoot,
     encoding: 'utf8',
+    timeout: 10000,
     env: {
       ...process.env,
       HOME: path.join(testRoot, 'home'),
@@ -47,6 +50,7 @@ function storageFor(configuredRoot) {
     },
   });
 
+  assert.ifError(result.error);
   assert.ok(result.status === 0 || result.status === 1, result.stderr);
   const match = result.stdout.match(/^Storage: (.+)$/m);
   assert.ok(match, `launcher did not report its storage directory:\n${result.stdout}`);
@@ -93,8 +97,9 @@ try {
     console.log('PASS: observer storage key is stable across symlink and .. aliases');
   } catch (error) {
     if (!['EPERM', 'EACCES', 'ENOSYS'].includes(error.code)) throw error;
-    console.log('PASS: observer storage key is stable across .. aliases (symlink unavailable)');
+    console.log(`SKIP: observer symlink identity assertions (${error.code}: symlink unavailable)`);
   }
+  console.log('PASS: observer storage key is stable across lexical aliases and paths containing spaces');
 } finally {
   fs.rmSync(testRoot, { recursive: true, force: true });
 }
