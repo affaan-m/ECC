@@ -381,6 +381,42 @@ value, if it has one, is in surfacing an ambiguity nobody has flagged - which is
 the case the first evaluation could not construct, because its traps hid their
 deciding facts in the repository and its prompts forbade asking.
 
+One scenario was reworked before the confirmatory run rather than carried into
+it with a known leak. `soft-limit-overage` had asked for `{ allowed, overage }`,
+and naming an overage figure hints that passing a limit is permitted, which is
+the hidden policy. Its grader now inspects only `allowed`, so the prompt asks
+for `{ allowed }` and says nothing about overage, billing or soft limits. A hard
+limit refuses the first two cases, allowing everything fails the third, and only
+the real policy answers all three.
+
+### Confirmatory run, pre-registered
+
+Written before the run, and not revised after it. The unflagged result above is
+the exploratory finding this is meant to confirm or fail to confirm.
+
+- **Hypothesis.** On unflagged prompts, `gate` passes more trapped tasks than
+  `off`.
+- **Primary outcome.** `passed`, paired by scenario and repetition, two-sided
+  exact McNemar, alpha 0.05. Nothing else decides the claim.
+- **Sample, fixed now.** Six scenarios, `off` and `gate`, eight repetitions: 48
+  pairs and 96 trials. 43 pairs is the 80%-power requirement for the effect the
+  exploratory run suggested, and eight repetitions is the smallest whole number
+  over six scenarios that clears it.
+- **No extension.** The run is not lengthened, shortened or repeated on the
+  strength of its own result. A near-miss stays a near-miss.
+- **Frozen inputs.** Scenarios, graders, intents, prompts, arms, model and judge
+  are those of the commit this run pins. No scenario is added, removed or edited
+  once it starts.
+- **Secondary, reported but not claim-bearing.** `asked`, `disclosedDecisive`,
+  turns and cost, each with the same paired test. These describe the mechanism;
+  they do not establish it.
+- **Validity rule.** Trials with a provider error or timeout are excluded and
+  counted. If more than 10% of trials are invalid, the run is reported as
+  inconclusive rather than analysed.
+- **Reporting rule.** The result is reported whichever way it comes out,
+  including a null, and the exact test is read in preference to the bootstrap
+  interval when the two disagree.
+
 ### Reproduce
 
 ```bash
