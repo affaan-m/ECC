@@ -332,6 +332,8 @@ route; apps using direct uploads need a replacement route:
 
 ```ruby
 get "documents/:id/file", to: "document_files#show", as: :document_file
+# Re-draw the direct-upload endpoint behind your own authentication.
+post "uploads", to: "active_storage/direct_uploads#create", as: :rails_direct_uploads
 
 class DocumentFilesController < ApplicationController
   def show
