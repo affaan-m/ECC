@@ -17,6 +17,7 @@ const path = require('path');
 const { assertWithinTrustedRoot } = require('./path-safety');
 
 const AGENT_DATA_HOME_ENV = 'ECC_AGENT_DATA_HOME';
+const CLAUDE_CONFIG_DIR_ENV = 'CLAUDE_CONFIG_DIR';
 const DEFAULT_CLAUDE_DIR_NAME = '.claude';
 const DEFAULT_CURSOR_ECC_DIR_SEGMENTS = ['.cursor', 'ecc'];
 const PROJECT_CONFIG_RELATIVE = path.join('.cursor', 'ecc-agent-data.json');
@@ -92,6 +93,15 @@ function getDefaultCursorAgentDataHome() {
 }
 
 function getDefaultClaudeAgentDataHome() {
+  // Claude Code points every profile-local path at CLAUDE_CONFIG_DIR when it is
+  // set, so a session launched under a second profile must not keep reading and
+  // writing the default ~/.claude. This moves the trusted root with it, which is
+  // the same trust ECC_AGENT_DATA_HOME already gets: both come from whoever
+  // launched the session, not from the project.
+  const configDir = process.env[CLAUDE_CONFIG_DIR_ENV];
+  if (configDir && String(configDir).trim().length > 0) {
+    return expandHomePath(String(configDir).trim(), process.cwd());
+  }
   return path.join(getHomeDirFromEnv(), DEFAULT_CLAUDE_DIR_NAME);
 }
 
@@ -228,6 +238,7 @@ function getCursorSessionEnvPayload(options = {}) {
 
 module.exports = {
   AGENT_DATA_HOME_ENV,
+  CLAUDE_CONFIG_DIR_ENV,
   DEFAULT_CLAUDE_DIR_NAME,
   DEFAULT_CURSOR_ECC_DIR_SEGMENTS,
   PROJECT_CONFIG_RELATIVE,

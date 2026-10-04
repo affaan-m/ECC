@@ -497,6 +497,105 @@ function runTests() {
     });
   })) passed++; else failed++;
 
+  if (test('getDefaultClaudeAgentDataHome follows CLAUDE_CONFIG_DIR', () => {
+    // Claude Code points every profile-local path at CLAUDE_CONFIG_DIR. Ignoring
+    // it writes this profile's session data, logs and metrics into the default
+    // ~/.claude, where another profile reads them back.
+    withIsolatedCwd(() => {
+      withEnv({
+        CLAUDE_CONFIG_DIR: path.join(os.tmpdir(), 'ecc-profile-x'),
+        ECC_AGENT_DATA_HOME: undefined,
+      }, () => {
+        const agentDataHome = require('../../scripts/lib/agent-data-home');
+        assert.strictEqual(
+          agentDataHome.getDefaultClaudeAgentDataHome(),
+          path.join(os.tmpdir(), 'ecc-profile-x')
+        );
+      });
+    });
+  })) passed++; else failed++;
+
+  if (test('getDefaultClaudeAgentDataHome falls back to ~/.claude without the env', () => {
+    withIsolatedCwd(() => {
+      withEnv({ CLAUDE_CONFIG_DIR: undefined, ECC_AGENT_DATA_HOME: undefined }, () => {
+        const agentDataHome = require('../../scripts/lib/agent-data-home');
+        assert.strictEqual(
+          agentDataHome.getDefaultClaudeAgentDataHome(),
+          path.join(os.homedir(), '.claude')
+        );
+      });
+    });
+  })) passed++; else failed++;
+
+  if (test('a blank CLAUDE_CONFIG_DIR is ignored rather than resolving to cwd', () => {
+    // An empty or whitespace value would otherwise resolve to the process cwd and
+    // scatter profile data through whatever directory the session started in.
+    withIsolatedCwd(() => {
+      withEnv({ CLAUDE_CONFIG_DIR: '   ', ECC_AGENT_DATA_HOME: undefined }, () => {
+        const agentDataHome = require('../../scripts/lib/agent-data-home');
+        assert.strictEqual(
+          agentDataHome.getDefaultClaudeAgentDataHome(),
+          path.join(os.homedir(), '.claude')
+        );
+      });
+    });
+  })) passed++; else failed++;
+
+  if (test('security: the trusted root moves with CLAUDE_CONFIG_DIR but still confines the project config', () => {
+    // getDefaultClaudeAgentDataHome() is not only a default: it is one of the two
+    // roots resolveAllowedProjectConfigHome() will accept. Following
+    // CLAUDE_CONFIG_DIR moves that boundary with the profile, so the containment
+    // it enforces has to hold at the new location and nowhere else.
+    const projectDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-agent-data-home-cfgdir-'));
+    const homeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-agent-data-home-cfgdir-user-'));
+    const profileDir = path.join(homeDir, '.claude-profile-x');
+    const configPath = path.join(projectDir, '.cursor', 'ecc-agent-data.json');
+    fs.mkdirSync(path.dirname(configPath), { recursive: true });
+
+    try {
+      withEnv({
+        ECC_AGENT_DATA_HOME: undefined,
+        CLAUDE_CONFIG_DIR: profileDir,
+        HOME: homeDir,
+        USERPROFILE: undefined,
+      }, () => {
+        const agentDataHome = require('../../scripts/lib/agent-data-home');
+
+        // Inside the relocated root: accepted.
+        fs.writeFileSync(
+          configPath,
+          JSON.stringify({ agentDataHome: path.join(profileDir, 'nested') }),
+          'utf8'
+        );
+        // readProjectConfigAt canonicalizes, and macOS reaches os.tmpdir()
+        // through a symlink, so compare against the resolved home.
+        assert.strictEqual(
+          agentDataHome.readProjectConfigAt(configPath),
+          path.join(fs.realpathSync(homeDir), '.claude-profile-x', 'nested')
+        );
+
+        // The old default is no longer a root, and neither is anything outside
+        // the new one. A traversal out of the relocated root stays rejected.
+        const outside = [
+          path.join(homeDir, '.claude'),
+          path.join(profileDir, '..', 'escaped'),
+          path.join(homeDir, 'arbitrary-agent-data'),
+        ];
+        for (const candidate of outside) {
+          fs.writeFileSync(configPath, JSON.stringify({ agentDataHome: candidate }), 'utf8');
+          const { result, messages } = captureConsoleErrors(
+            () => agentDataHome.readProjectConfigAt(configPath)
+          );
+          assert.strictEqual(result, null, `expected rejection for ${candidate}`);
+          assert.ok(messages.some(message => message.includes('Ignoring unsafe agent data project config')));
+        }
+      });
+    } finally {
+      fs.rmSync(projectDir, { recursive: true, force: true });
+      fs.rmSync(homeDir, { recursive: true, force: true });
+    }
+  })) passed++; else failed++;
+
   console.log(`\n=== Test Results ===\nPassed: ${passed}\nFailed: ${failed}\n`);
   if (failed > 0) process.exit(1);
 }
