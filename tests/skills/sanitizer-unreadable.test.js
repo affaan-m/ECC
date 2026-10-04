@@ -523,14 +523,27 @@ run('tr or cmp missing: scan problem and unknown count', () => {
 });
 
 // 12. sort missing ----------------------------------------------------------------------------------
-run('sort missing: the count line is still printed and correct', () => {
-  const root = makeTemp('san-nosort-');
-  write(root, 'book.docx', SIG.pk03);
+run('sort, cut or uniq missing: the count is still correct and the missing tally is said out loud', () => {
+  for (const tool of ['sort', 'cut', 'uniq']) {
+    const root = makeTemp('san-notally-');
+    write(root, 'book.docx', SIG.pk03);
+    write(root, 'doc.pdf', SIG.pdf);
+    write(root, 'plain.txt', 'hello\n');
+    const r = scan(root, makeBin({ omit: [tool] }));
+    assert.strictEqual(r.count, '2', tool + ': ' + r.stdout);
+    assert.strictEqual(r.records.length, 2);
+    assert.ok(r.lines.some((l) => l.startsWith('No tally: ')), tool + ': a missing tally must not be silent: ' + r.stdout);
+  }
+});
+
+run('a signature read that fails after one byte lists the file as unverified, not as a short text file', () => {
+  const root = makeTemp('san-sigfail-');
   write(root, 'doc.pdf', SIG.pdf);
-  write(root, 'plain.txt', 'hello\n');
-  const r = scan(root, makeBin({ omit: ['sort'] }));
-  assert.strictEqual(r.count, '2');
-  assert.strictEqual(r.records.length, 2);
+  // dd stand-in: hand over the first byte, then fail
+  const bin = makeBin({ shims: { dd: 'for a in "$@"; do case $a in if=*) f=${a#if=} ;; esac; done\nIFS= read -r -n 1 c < "$f"\nprintf %s "$c"\nexit 1' } });
+  const r = scan(root, bin);
+  assert.strictEqual(r.count, '1', r.stdout);
+  assert.strictEqual(labelOf(r, 'doc.pdf'), 'detector error, unverified');
 });
 
 // Manifest location ---------------------------------------------------------------------------------

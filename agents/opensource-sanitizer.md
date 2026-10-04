@@ -191,7 +191,7 @@ step7_walk() {
         continue
       fi
       label= ctl=
-      sig=$(LC_ALL=C dd if="$f" bs=8 count=1 2>/dev/null | od -An -tx1 | tr -d " \n")
+      sig=$(set -o pipefail; LC_ALL=C dd if="$f" bs=8 count=1 2>/dev/null | od -An -tx1 | tr -d " \n") || sig=
       case $sig in
         504b0304*|504b0506*|504b0708*) label="ZIP/OOXML container (PK: docx, xlsx, pptx, odt, jar)";;
         d0cf11e0a1b11ae1*)             label="OLE compound document (legacy doc/xls/ppt/msi)";;
@@ -277,8 +277,15 @@ step7_walk | {
   if [ -z "$ended" ]; then
     problems=$((problems + 1)); echo "Scan problem: the walk ended early, so some files were not checked"
   fi
-  # Tally by type, from the second column only.
-  [ "$n" -eq 0 ] || { cut -f2 "$manifest" | LC_ALL=C sort | uniq -c; } 2>/dev/null
+  # Tally by type, from the second column only. It needs cut, sort and uniq; the count does not.
+  if [ "$n" -gt 0 ]; then
+    tally=$({ cut -f2 "$manifest" | LC_ALL=C sort | uniq -c; } 2>/dev/null)
+    if [ -n "$tally" ]; then
+      printf "%s\n" "$tally"
+    else
+      echo "No tally: cut, sort or uniq is missing. The count is unaffected."
+    fi
+  fi
   if [ "$problems" -gt 0 ]; then
     echo "Unreadable count: unknown ($n listed, $problems scan problems)"
   else
@@ -346,8 +353,9 @@ Generate `SANITIZATION_REPORT.md` in the project directory:
 - 1 PDF
 - 1 ZIP/OOXML container (PK: docx, xlsx, pptx, odt, jar)
 
-{One bullet per tally line Step 7 printed, as above, then each `Scan problem:` line it printed. If
-the count is unknown, or Step 7 printed no count, say the scan did not finish.}
+{One bullet per tally line Step 7 printed, as above, or its `No tally` line, then each
+`Scan problem:` line it printed. If the count is unknown, or Step 7 printed no count, say the scan
+did not finish.}
 
 The pipeline gate acts on this count, not on the verdict. The paths are in
 `{project-dir}.UNREADABLE_FILES.txt`, beside the project directory, and this section carries no
