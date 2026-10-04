@@ -464,9 +464,59 @@ and roughly $48. The design was powered for the exploratory estimate of 29
 points, so if 15 is nearer the truth this run was underpowered for it by a
 factor of nearly four.
 
-**Standing conclusion.** Across 240 billed trials the gate's benefit is not
-established, its direction has been positive in both unflagged runs, and its
-cost is a consistent 37 to 45% in turns and spend. "Not confirmed" is not "no
+### Adding an external-contract question did not help
+
+Every question the gate raised across the corpus was about code structure, while
+every deciding fact was an external contract, so an `external-contract` question
+was added for code changes whose profile touches data and the 48-pair design was
+rerun. 96 trials, none invalid, $11.25. This run is exploratory, not
+confirmatory: the question was designed after seeing which questions these
+scenarios needed, so the corpus is no longer blind to it.
+
+The headline looks like a win and is not one. `gate` 23 of 48 against `off` 13
+of 48, paired difference 21 points, exact McNemar p = 0.021. But the comparison
+moved because the baseline fell, not because the gate rose:
+
+| Arm | Before the question | After |
+| --- | ---: | ---: |
+| `gate` | 25/48 | 23/48 |
+| `off` | 18/48 | 13/48 |
+
+The scenarios, prompts, graders and model alias were identical across the two
+runs, and `off` has no gate, so nothing in the change could touch it. `gate`
+went **down**, from 25 to 23. An intervention meant to raise the gated arm did
+not raise it, and reporting p = 0.021 as evidence for it would be wrong.
+
+The two scenarios where the question cannot fire make a natural control, because
+they have no data for the profile to detect:
+
+| Scenario | New question fired | `gate` before -> after |
+| --- | ---: | ---: |
+| audit-retention-purge | 3/8 | 3/8 -> 2/8 |
+| csv-export-delimiter | 6/8 | 4/8 -> 3/8 |
+| soft-limit-overage | 6/8 | 2/8 -> 3/8 |
+| timezone-daily-rollup | 3/8 | 4/8 -> 3/8 |
+| retry-idempotency | **0/8** | 8/8 -> 5/8 |
+| username-collation | **0/8** | 4/8 -> 7/8 |
+
+The two controls moved by -3 and +3, which is larger than any movement among the
+four the question did reach (-1, -1, +1, -1). Run-to-run noise on eight trials
+is about plus or minus three, and every effect the intervention could have had
+is smaller than that.
+
+Within the run, gated trials where the question fired passed 11 of 18 against 12
+of 30 where it did not, but that contrast is between different scenarios of
+different difficulty, and whether the question fires depends on what the agent
+did, so it is a selection effect rather than a measurement.
+
+The question is kept, because it asks something the gate genuinely never asked
+and the corpus says that kind of answer decides the outcome. What is not claimed
+is that adding it improved anything measurable here. A fair test needs scenarios
+authored blind to it.
+
+**Standing conclusion.** Across 336 billed trials the gate's benefit is not
+established, its direction has been positive in the unflagged runs, and its cost
+is a consistent 35 to 45% in turns and spend. "Not confirmed" is not "no
 effect", and a 15-point improvement would be worth having; but it has not been
 demonstrated, and nothing here licenses claiming it has. The evidence that does
 hold is narrower and more useful than a verdict on the gate: the deciding fact
