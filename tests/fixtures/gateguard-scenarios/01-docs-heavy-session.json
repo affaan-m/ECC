@@ -951,6 +951,7 @@
         "callers",
         "no-duplicate",
         "data-schema",
+        "external-contract",
         "quote-instruction"
       ]
     },
@@ -1019,6 +1020,7 @@
         "callers",
         "no-duplicate",
         "data-schema",
+        "external-contract",
         "quote-instruction"
       ]
     },

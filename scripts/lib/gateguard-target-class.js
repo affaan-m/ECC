@@ -156,6 +156,8 @@ const QUESTION_TEXT = Object.freeze({
   'no-duplicate': `Confirm no existing file serves the same purpose ${SEARCH_THE_TREE}`,
   'data-schema':
     'If this file reads/writes data files, show field names, structure, and date format (use redacted or synthetic values, not raw production data)',
+  'external-contract':
+    'Name what outside this repository decides the format, units, timezone or protocol semantics here (the consumer, the producer, or a stated convention), or state that the choice is unconstrained',
   loader: 'Name the harness/loader that reads this file (Claude Code, Codex, Cursor, OpenCode, …) and when it loads it',
   'behaviour-change': 'Describe what agent behaviour changes as a result',
   'no-duplicate-instruction': `Confirm no existing instruction, skill, or agent file already covers this ${SEARCH_THE_TREE}`,
@@ -189,7 +191,11 @@ function codeQuestionIds(isWrite, profile) {
   const surface = !known || profile.touchesPublicSurface !== false;
   const data = !known || profile.touchesData !== false;
   const opening = isWrite ? ['callers', 'no-duplicate'] : surface ? ['importers', 'public-api'] : ['local-callers'];
-  return data ? [...opening, 'data-schema'] : opening;
+  // A change that handles data is usually constrained by something outside the
+  // tree - a consumer's dialect, a reporting timezone, a protocol's semantics -
+  // and the repository cannot settle it. data-schema asks what the change
+  // touches; external-contract asks who decides what it has to be.
+  return data ? [...opening, 'data-schema', 'external-contract'] : opening;
 }
 
 /** True when a class's questions depend on the change profile. */
@@ -209,7 +215,7 @@ function questionText(id) {
 }
 
 const CODE_CONDENSED_HINT =
-  "briefly state importers/callers, affected API, data schemas if any, and the user's verbatim instruction, then retry.";
+  "briefly state importers/callers, affected API, data schemas if any, what outside the repository fixes the format or semantics, and the user's verbatim instruction, then retry.";
 
 const CONDENSED_PHRASES = Object.freeze({
   importers: 'the files that import this file',
@@ -218,6 +224,7 @@ const CONDENSED_PHRASES = Object.freeze({
   callers: 'the file(s) and line(s) that will call it',
   'no-duplicate': 'that no existing file serves the same purpose',
   'data-schema': 'the data schemas it reads or writes',
+  'external-contract': 'what outside the repository fixes the format or semantics',
   'quote-instruction': "the user's verbatim instruction"
 });
 

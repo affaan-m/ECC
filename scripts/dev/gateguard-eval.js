@@ -24,6 +24,7 @@ const QUESTION_IDS = Object.freeze([
   'callers',
   'no-duplicate',
   'data-schema',
+  'external-contract',
   'loader',
   'behaviour-change',
   'no-duplicate-instruction',

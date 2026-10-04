@@ -67,6 +67,7 @@
       "relevantQuestions": [
         "local-callers",
         "data-schema",
+        "external-contract",
         "quote-instruction"
       ]
     },
@@ -135,6 +136,7 @@
       "relevantQuestions": [
         "local-callers",
         "data-schema",
+        "external-contract",
         "quote-instruction"
       ]
     },
@@ -204,6 +206,7 @@
         "importers",
         "public-api",
         "data-schema",
+        "external-contract",
         "quote-instruction"
       ]
     },
@@ -271,6 +274,7 @@
         "callers",
         "no-duplicate",
         "data-schema",
+        "external-contract",
         "quote-instruction"
       ]
     },
@@ -339,6 +343,7 @@
       "relevantQuestions": [
         "local-callers",
         "data-schema",
+        "external-contract",
         "quote-instruction"
       ]
     }

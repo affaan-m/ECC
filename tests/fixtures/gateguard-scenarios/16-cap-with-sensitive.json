@@ -274,6 +274,7 @@
         "importers",
         "public-api",
         "data-schema",
+        "external-contract",
         "quote-instruction"
       ]
     },

@@ -324,21 +324,21 @@ test('every non-code class has questions and a condensed hint; code has neither'
 test('questionIdsFor gives stable ids per class, action and change profile', () => {
   const known = (touchesPublicSurface, touchesData) => ({ known: true, language: 'js', touchesPublicSurface, touchesData, trivial: false });
   const table = [
-    ['code', false, null, ['importers', 'public-api', 'data-schema', 'quote-instruction']],
-    ['code', true, null, ['callers', 'no-duplicate', 'data-schema', 'quote-instruction']],
-    ['code', false, { known: false, touchesPublicSurface: false, touchesData: false }, ['importers', 'public-api', 'data-schema', 'quote-instruction']],
-    ['code', false, known(true, true), ['importers', 'public-api', 'data-schema', 'quote-instruction']],
+    ['code', false, null, ['importers', 'public-api', 'data-schema', 'external-contract', 'quote-instruction']],
+    ['code', true, null, ['callers', 'no-duplicate', 'data-schema', 'external-contract', 'quote-instruction']],
+    ['code', false, { known: false, touchesPublicSurface: false, touchesData: false }, ['importers', 'public-api', 'data-schema', 'external-contract', 'quote-instruction']],
+    ['code', false, known(true, true), ['importers', 'public-api', 'data-schema', 'external-contract', 'quote-instruction']],
     ['code', false, known(true, false), ['importers', 'public-api', 'quote-instruction']],
-    ['code', false, known(false, true), ['local-callers', 'data-schema', 'quote-instruction']],
+    ['code', false, known(false, true), ['local-callers', 'data-schema', 'external-contract', 'quote-instruction']],
     ['code', false, known(false, false), ['local-callers', 'quote-instruction']],
     ['code', true, known(false, false), ['callers', 'no-duplicate', 'quote-instruction']],
-    ['code', true, known(true, true), ['callers', 'no-duplicate', 'data-schema', 'quote-instruction']],
+    ['code', true, known(true, true), ['callers', 'no-duplicate', 'data-schema', 'external-contract', 'quote-instruction']],
     ['instruction', false, known(false, false), ['loader', 'behaviour-change', 'no-duplicate-instruction', 'quote-instruction']],
     ['test', true, known(false, false), ['under-test', 'existing-tests', 'quote-instruction']],
     ['prose', true, null, ['supersedes', 'linked-from', 'why-new-file', 'quote-instruction']],
     ['prose', false, null, ['references', 'corrects-or-adds', 'quote-instruction']],
     ['config', false, known(false, false), ['config-reader', 'config-effect', 'no-plaintext-secrets', 'quote-instruction']],
-    ['__proto__', false, null, ['importers', 'public-api', 'data-schema', 'quote-instruction']]
+    ['__proto__', false, null, ['importers', 'public-api', 'data-schema', 'external-contract', 'quote-instruction']]
   ];
   for (const [cls, isWrite, profile, expected] of table) {
     const ids = questionIdsFor(cls, isWrite, profile);
@@ -363,7 +363,7 @@ test('condensedHintFor matches the question set', () => {
 
 test('code condensed hints name exactly the questions of the change profile', () => {
   const known = (touchesPublicSurface, touchesData) => ({ known: true, language: 'js', touchesPublicSurface, touchesData, trivial: false });
-  const ids = ['importers', 'public-api', 'local-callers', 'callers', 'no-duplicate', 'data-schema', 'quote-instruction'];
+  const ids = ['importers', 'public-api', 'local-callers', 'callers', 'no-duplicate', 'data-schema', 'external-contract', 'quote-instruction'];
   for (const id of ids) assert.ok(condensedQuestionPhrase(id), `${id} has a phrase`);
   for (const isWrite of [false, true]) {
     for (const [s, d] of [[true, true], [true, false], [false, true], [false, false]]) {
@@ -404,7 +404,7 @@ test('code condensed hints read as one sentence', () => {
   );
   assert.strictEqual(
     condensedHintFor('code', false, known(true, true)),
-    "briefly state the files that import this file, the public functions/classes affected, the data schemas it reads or writes, and the user's verbatim instruction, then retry."
+    "briefly state the files that import this file, the public functions/classes affected, the data schemas it reads or writes, what outside the repository fixes the format or semantics, and the user's verbatim instruction, then retry."
   );
   assert.strictEqual(
     condensedHintFor('code', true, known(true, false)),
@@ -422,11 +422,11 @@ test('code condensed hints keep the data and duplicate checks when the profile a
   }
 });
 
-test('code condensed Edit hint for an unknown profile is unchanged', () => {
-  const legacy = "briefly state importers/callers, affected API, data schemas if any, and the user's verbatim instruction, then retry.";
+test('code condensed Edit hint for an unknown profile names every question asked', () => {
+  const expected = "briefly state importers/callers, affected API, data schemas if any, what outside the repository fixes the format or semantics, and the user's verbatim instruction, then retry.";
   for (const profile of [null, undefined, { known: false, touchesPublicSurface: false, touchesData: false }, 'x']) {
-    assert.strictEqual(condensedHintFor('code', false, profile), legacy);
-    assert.strictEqual(condensedHintFor('__proto__', false, profile), legacy);
+    assert.strictEqual(condensedHintFor('code', false, profile), expected);
+    assert.strictEqual(condensedHintFor('__proto__', false, profile), expected);
   }
 });
 
@@ -434,7 +434,7 @@ test('code condensed Write hint for an unknown profile asks every creation quest
   for (const profile of [null, undefined, { known: false, touchesPublicSurface: false, touchesData: false }, 'x']) {
     assert.strictEqual(
       condensedHintFor('code', true, profile),
-      "briefly state the file(s) and line(s) that will call it, that no existing file serves the same purpose, the data schemas it reads or writes, and the user's verbatim instruction, then retry."
+      "briefly state the file(s) and line(s) that will call it, that no existing file serves the same purpose, the data schemas it reads or writes, what outside the repository fixes the format or semantics, and the user's verbatim instruction, then retry."
     );
   }
   assert.strictEqual(condensedQuestionPhrase('constructor'), '');
