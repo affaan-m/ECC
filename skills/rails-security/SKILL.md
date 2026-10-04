@@ -27,6 +27,7 @@ decisions about which control to reach for, see the Ruby security rules —
 # config/environments/production.rb
 Rails.application.configure do
   config.force_ssl = true
+  # Only use when all requests pass through a proxy that rejects or redirects HTTP.
   config.assume_ssl = true # behind a proxy that terminates TLS
 
   # Reject requests with unexpected Host headers.
