@@ -345,11 +345,26 @@ class WebhooksController < ApplicationController
       return head :unauthorized
     end
 
-    ProcessWebhookJob.perform_later(request.raw_post)
+    # A valid signature proves authenticity, not freshness. Dedupe on the
+    # provider's delivery id so a replayed delivery does not repeat the work.
+    delivery = WebhookDelivery.create_or_find_by!(
+      provider: "billing",
+      delivery_id: request.headers.fetch("X-Delivery-Id")
+    )
+    return head :ok if delivery.processed_at?
+
+    ProcessWebhookJob.perform_later(delivery.id, request.raw_post)
     head :ok
   end
 end
 ```
+
+```ruby
+add_index :webhook_deliveries, %i[provider delivery_id], unique: true
+```
+
+The job marks `processed_at` when it finishes. Jobs retry, so `perform` must be
+idempotent for the same reason.
 
 Keep CORS narrow — never reflect an arbitrary origin alongside credentials:
 
