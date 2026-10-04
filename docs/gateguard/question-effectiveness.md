@@ -417,6 +417,62 @@ the exploratory finding this is meant to confirm or fail to confirm.
   including a null, and the exact test is read in preference to the bootstrap
   interval when the two disagree.
 
+### Confirmatory result: not confirmed
+
+96 trials as planned, none invalid - no provider error, timeout or judge
+failure, and the hook observed in every gated trial. $12.42. All six scenarios
+informative, with ungated pass rates from 13% to 75%.
+
+**Primary outcome.** `passed`: `gate` 25 of 48 (52%), `off` 18 of 48 (38%). On
+48 pairs the discordant split is 15 in `gate`'s favour against 8, and the exact
+two-sided McNemar p is **0.210**. At the pre-registered alpha of 0.05 the
+hypothesis is **not confirmed**. The bootstrap interval agrees this time, -15%
+with a 95% range of -33% to +4%, which includes zero, so there is no tension
+between the two tests to adjudicate.
+
+**Secondary measures,** reported and not claim-bearing: asked the user 29/48
+against 22/48 (p = 0.230), obtained the deciding fact 27/48 against 21/48
+(p = 0.327). Both point the same way as the primary and neither reaches
+significance.
+
+**The mechanism is intact and is the one durable finding across every run.** No
+trial in either arm passed without the deciding fact - 0 of 21 for `gate`, 0 of
+27 for `off` - and with the fact, `gate` passed 25 of 27 and `off` 18 of 21.
+Obtaining the fact is necessary and very nearly sufficient; the gate simply does
+not reliably cause it.
+
+**The cost is the most reliable number in the evaluation.** `gate` spent 8.2
+turns and $0.151 per trial against 6.0 and $0.108, about 37% more turns and 40%
+more cost. That has held within a few points across every run, flagged and
+unflagged, null and suggestive.
+
+**The effect shrank on replication,** which is what a near-threshold result
+usually does:
+
+| Run | `gate` | `off` | Difference | Discordant | Exact p |
+| --- | ---: | ---: | ---: | --- | ---: |
+| Exploratory, unflagged | 15/24 (63%) | 8/24 (33%) | +29 pts | 9 vs 2 | 0.065 |
+| Confirmatory, unflagged | 25/48 (52%) | 18/48 (38%) | +15 pts | 15 vs 8 | 0.210 |
+
+The two runs are not pooled. The protocol differs - the quota scenario's leak
+was closed between them - and combining them after seeing both results would be
+the same post-hoc choice the pre-registration exists to prevent.
+
+**What would settle it.** The confirmatory point estimate of 15 points, with its
+observed discordant rate, needs about **177 pairs** for 80% power: 354 trials
+and roughly $48. The design was powered for the exploratory estimate of 29
+points, so if 15 is nearer the truth this run was underpowered for it by a
+factor of nearly four.
+
+**Standing conclusion.** Across 240 billed trials the gate's benefit is not
+established, its direction has been positive in both unflagged runs, and its
+cost is a consistent 37 to 45% in turns and spend. "Not confirmed" is not "no
+effect", and a 15-point improvement would be worth having; but it has not been
+demonstrated, and nothing here licenses claiming it has. The evidence that does
+hold is narrower and more useful than a verdict on the gate: the deciding fact
+decides the outcome, and the gate's questions are aimed at code structure while
+every deciding fact in this corpus is an external contract.
+
 ### Reproduce
 
 ```bash
