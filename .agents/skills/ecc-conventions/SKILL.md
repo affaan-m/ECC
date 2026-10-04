@@ -1,16 +1,16 @@
 ---
-name: everything-claude-code
-description: Development conventions and patterns for everything-claude-code. JavaScript project with conventional commits.
+name: ecc-conventions
+description: Development conventions and patterns for ECC. JavaScript project with conventional commits.
 license: MIT
 ---
 
-# Everything Claude Code Conventions
+# ECC Conventions
 
-> Generated from [affaan-m/everything-claude-code](https://github.com/affaan-m/everything-claude-code) on 2026-03-20
+> Generated from [affaan-m/ECC](https://github.com/affaan-m/ECC) on 2026-03-20
 
 ## Overview
 
-This skill teaches Claude the development patterns and conventions used in everything-claude-code.
+This skill teaches Claude the development patterns and conventions used in ECC.
 
 ## Tech Stack
 

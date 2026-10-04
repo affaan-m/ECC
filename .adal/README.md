@@ -1,6 +1,6 @@
 # ECC for AdaL CLI
 
-This directory contains the ECC (Everything Claude Code) configuration for the AdaL CLI harness.
+This directory contains the ECC configuration for the AdaL CLI harness.
 
 ## What is installed
 

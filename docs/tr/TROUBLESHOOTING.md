@@ -1,6 +1,6 @@
 # Sorun Giderme Rehberi
 
-Everything Claude Code (ECC) eklentisi için yaygın sorunlar ve çözümler.
+ECC eklentisi için yaygın sorunlar ve çözümler.
 
 ## İçindekiler
 
@@ -256,7 +256,7 @@ mv ~/.claude/plugins/cache ~/.claude/plugins/cache.backup.$(date +%Y%m%d-%H%M%S)
 mkdir -p ~/.claude/plugins/cache
 
 # Marketplace'ten yeniden kur
-# Claude Code → Extensions → Everything Claude Code → Uninstall
+# Claude Code → Extensions → ECC → Uninstall
 # Ardından marketplace'ten yeniden kur
 
 # Claude Code sürümünü kontrol et
@@ -264,8 +264,8 @@ claude --version
 # Claude Code 2.0+ gerektirir
 
 # Manuel kurulum (marketplace başarısız olursa)
-git clone https://github.com/affaan-m/everything-claude-code.git
-cp -r everything-claude-code ~/.claude/plugins/ecc
+git clone https://github.com/affaan-m/ECC.git
+cp -r ECC ~/.claude/plugins/ecc
 ```
 
 ### Paket Yöneticisi Algılama Başarısız
@@ -396,7 +396,7 @@ find ~/.claude/plugins -name "*.sh" -exec dos2unix {} \;
 
 Hala sorunlar yaşıyorsanız:
 
-1. **GitHub Issues'ı Kontrol Edin**: [github.com/affaan-m/everything-claude-code/issues](https://github.com/affaan-m/everything-claude-code/issues)
+1. **GitHub Issues'ı Kontrol Edin**: [github.com/affaan-m/ECC/issues](https://github.com/affaan-m/ECC/issues)
 2. **Debug Logging'i Etkinleştirin**:
    ```bash
    export CLAUDE_DEBUG=1
