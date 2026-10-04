@@ -18,6 +18,7 @@ import { readFileSync, writeFileSync, existsSync } from 'fs';
 import { resolve } from 'path';
 import { homedir } from 'os';
 import { spawnSync } from 'child_process';
+import { extractMarkdownSection } from '../commands/shared.mjs';
 
 const CK_HOME         = resolve(homedir(), '.claude', 'ck');
 const PROJECTS_FILE   = resolve(CK_HOME, 'projects.json');
@@ -64,8 +65,8 @@ function extractClaudeMdGoal(projectPath) {
   if (!existsSync(p)) return null;
   try {
     const md = readFileSync(p, 'utf8');
-    const m = md.match(/## Current Goal\n([\s\S]*?)(?=\n## |$)/);
-    return m ? m[1].trim().split('\n')[0].trim() : null;
+    const goal = extractMarkdownSection(md, 'Current Goal');
+    return goal ? goal.split('\n')[0].trim() : null;
   } catch { return null; }
 }
 
