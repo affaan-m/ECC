@@ -330,6 +330,8 @@ user-scoped files from your own controller that authorizes each request, with
 `config.active_storage.draw_routes = false`:
 
 ```ruby
+get "documents/:id/file", to: "document_files#show", as: :document_file
+
 class DocumentFilesController < ApplicationController
   def show
     document = current_user.documents.find(params[:id])
