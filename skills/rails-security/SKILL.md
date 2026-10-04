@@ -356,12 +356,8 @@ class WebhooksController < ApplicationController
       return head :unauthorized
     end
 
-    # A valid signature proves authenticity, not freshness. Dedupe on the
-    # provider's delivery id so a replayed delivery does not repeat the work.
-    delivery = WebhookDelivery.create_or_find_by!(
-      provider: "billing",
-      delivery_id: request.headers.fetch("X-Delivery-Id")
-    )
+    event_id = JSON.parse(request.raw_post).fetch("id")
+    delivery = WebhookDelivery.create_or_find_by!(provider: "billing", delivery_id: event_id)
     return head :ok if delivery.processed_at?
 
     ProcessWebhookJob.perform_later(delivery.id, request.raw_post)
