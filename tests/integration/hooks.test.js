@@ -678,17 +678,30 @@ async function runTests() {
   if (await asyncTest('PostToolUse PR hook extracts PR URL', async () => {
     const hookCommand = getHookCommandById(hooks, 'PostToolUse', 'post:dispatcher:async');
     const testDir = createTestDir();
+    const homunculusEnv = getTestHomunculusEnv(testDir);
     try {
       const result = await runHookCommand(hookCommand, {
         hook_event_name: 'PostToolUse',
         tool_name: 'Bash',
         tool_input: { command: 'gh pr create --title "Test"' },
         tool_output: { output: 'Creating pull request...\nhttps://github.com/owner/repo/pull/123' }
-      }, { HOME: testDir, USERPROFILE: testDir });
+      }, {
+        HOME: testDir,
+        USERPROFILE: testDir,
+        XDG_DATA_HOME: homunculusEnv.XDG_DATA_HOME,
+        // This fixture owns PR URL extraction, not the observer lifecycle.
+        // Keep unrelated observation writes out of its cleanup boundary.
+        ECC_DISABLED_HOOKS: [process.env.ECC_DISABLED_HOOKS, 'post:observe:continuous-learning']
+          .filter(Boolean).join(',')
+      });
 
       assert.ok(
         result.stderr.includes('PR created') || result.stderr.includes('github.com'),
         'Should extract and log PR URL'
+      );
+      assert.strictEqual(
+        fs.existsSync(homunculusEnv.homunculusDir), false,
+        'PR URL fixture must not create observation state or start an observer'
       );
     } finally {
       cleanupTestDir(testDir);
