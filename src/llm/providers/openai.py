@@ -22,12 +22,25 @@ from llm.core.types import (
     ToolCall,
 )
 from llm.providers.constants import EMPTY_FILTERED_RESPONSE_ERROR
+from llm.providers.reasoning import prefilled_reasoning_from_env, strip_reasoning
 
 
 class OpenAIProvider(LLMProvider):
     provider_type = ProviderType.OPENAI
 
-    def __init__(self, api_key: str | None = None, base_url: str | None = None) -> None:
+    def __init__(
+        self,
+        api_key: str | None = None,
+        base_url: str | None = None,
+        prefilled_reasoning: bool | None = None,
+    ) -> None:
+        # Set for self-hosted servers whose chat template prefills <think>, so
+        # replies arrive as "...</think>answer" without the opening tag.
+        self.prefilled_reasoning = (
+            prefilled_reasoning
+            if prefilled_reasoning is not None
+            else prefilled_reasoning_from_env("OPENAI_PREFILLED_REASONING")
+        )
         self.client = OpenAI(
             api_key=api_key or os.environ.get("OPENAI_API_KEY"),
             base_url=base_url,
@@ -105,7 +118,7 @@ class OpenAIProvider(LLMProvider):
                 }
 
             return LLMOutput(
-                content=choice.message.content or "",
+                content=strip_reasoning(choice.message.content or "", prefilled=self.prefilled_reasoning),
                 tool_calls=tool_calls,
                 model=response.model,
                 usage=usage,
