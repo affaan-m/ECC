@@ -205,6 +205,9 @@ function runTests() {
       k1: { file: '/work/leaked.md', status: 'open', pendingFeedback: [] },
     });
     const result = runHook('plan-canvas-sessions.js', { home, profile });
+    // Silence is the assertion here, and a hook that crashed before writing is
+    // also silent, so the exit status has to be checked first.
+    assert.strictEqual(result.status, 0, `SessionStart failed: ${result.stderr}`);
     assert.strictEqual(result.stdout.trim(), '');
   }));
 
