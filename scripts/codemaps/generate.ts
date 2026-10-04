@@ -35,25 +35,25 @@ const TODAY = new Date().toISOString().split('T')[0];
 // Patterns used to classify files into codemap areas
 const AREA_PATTERNS: Record<string, RegExp[]> = {
   frontend: [
-    /\/(app|pages|components|hooks|contexts|ui|views|layouts|styles)\//i,
+    /(?:^|\/)(app|pages|components|hooks|contexts|ui|views|layouts|styles)\//i,
     /\.(tsx|jsx|css|scss|sass|less|vue|svelte)$/i,
   ],
   backend: [
-    /\/(api|routes|controllers|middleware|server|services|handlers)\//i,
+    /(?:^|\/)(api|routes|controllers|middleware|server|services|handlers)\//i,
     /\.(route|controller|handler|middleware|service)\.(ts|js)$/i,
   ],
   database: [
-    /\/(models|schemas|migrations|prisma|drizzle|db|database|repositories)\//i,
+    /(?:^|\/)(models|schemas|migrations|prisma|drizzle|db|database|repositories)\//i,
     /\.(model|schema|migration|seed)\.(ts|js)$/i,
     /prisma\/schema\.prisma$/,
     /schema\.sql$/,
   ],
   integrations: [
-    /\/(integrations?|third-party|external|plugins?|adapters?|connectors?)\//i,
+    /(?:^|\/)(integrations?|third-party|external|plugins?|adapters?|connectors?)\//i,
     /\.(integration|adapter|connector)\.(ts|js)$/i,
   ],
   workers: [
-    /\/(workers?|jobs?|queues?|tasks?|cron|background)\//i,
+    /(?:^|\/)(workers?|jobs?|queues?|tasks?|cron|background)\//i,
     /\.(worker|job|queue|task|cron)\.(ts|js)$/i,
   ],
 };
@@ -104,6 +104,24 @@ interface AreaInfo {
   directories: string[];
 }
 
+/** Identify App Router conventions from the file's owning package. */
+function belongsToNextProject(file: string): boolean {
+  let directory = path.dirname(file);
+  while (true) {
+    const manifest = path.join(directory, 'package.json');
+    if (fs.existsSync(manifest)) {
+      try {
+        const pkg = JSON.parse(fs.readFileSync(manifest, 'utf8'));
+        return Boolean(pkg.dependencies?.next || pkg.devDependencies?.next);
+      } catch {
+        return false;
+      }
+    }
+    if (directory === ROOT || directory === path.dirname(directory)) return false;
+    directory = path.dirname(directory);
+  }
+}
+
 function classifyFiles(allFiles: string[]): Record<string, AreaInfo> {
   const areas: Record<string, AreaInfo> = {
     frontend:     { name: 'Frontend', files: [], entryPoints: [], directories: [] },
@@ -115,6 +133,18 @@ function classifyFiles(allFiles: string[]): Record<string, AreaInfo> {
 
   for (const file of allFiles) {
     const relPath = rel(file);
+    // App Router UI conventions remain frontend even below a directory named api.
+    if (/(?:^|\/)(app)\/api\//i.test(relPath)
+      && /^(page|layout|template|loading|error|global-error|not-found|default)\.(ts|tsx|js|jsx)$/i.test(path.basename(relPath))
+      && belongsToNextProject(file)) {
+      areas.frontend.files.push(relPath);
+      continue;
+    }
+    // Framework API directories are backend even beneath frontend app/pages roots.
+    if (/(?:^|\/)(app|pages)\/api\//i.test(relPath)) {
+      areas.backend.files.push(relPath);
+      continue;
+    }
     for (const [area, patterns] of Object.entries(AREA_PATTERNS)) {
       if (patterns.some((p) => p.test(relPath))) {
         areas[area].files.push(relPath);
