@@ -203,6 +203,96 @@ async function main() {
     ])
   }
 
+  // Exercise the reports users supply, including fallback after an unsupported file.
+  assert.ok(tools.checkcoverage, "Expected the compiled check-coverage tool")
+  const rawCoverage = {
+    "src/example.ts": {
+      statementMap: {
+        0: { start: { line: 1, column: 0 }, end: { line: 1, column: 5 } },
+        1: { start: { line: 1, column: 6 }, end: { line: 1, column: 9 } },
+        2: { start: { line: 2, column: 0 }, end: { line: 3, column: 5 } },
+      },
+      s: { 0: 0, 1: 3, 2: 0 },
+    },
+  }
+  for (const reportPath of ["coverage/coverage-final.json", ".nyc_output/coverage.json"]) {
+    tests.push([
+      `check-coverage: reads raw Istanbul line hits from ${reportPath}`,
+      async () => withTempProject([reportPath], async projectDir => {
+        fs.writeFileSync(path.join(projectDir, reportPath), JSON.stringify(rawCoverage))
+        const parsed = JSON.parse(await tools.checkcoverage.execute({ threshold: 50, format: "json" }, createMockContext(projectDir)))
+        assert.strictEqual(parsed.success, true)
+        assert.strictEqual(parsed.coverageFile, reportPath)
+        assert.deepStrictEqual(parsed.total, { lines: 2, covered: 1, percentage: 50 })
+        assert.deepStrictEqual(parsed.rawData.files, [{ file: "src/example.ts", lines: 2, covered: 1, percentage: 50 }])
+      }),
+    ])
+  }
+  tests.push([
+    "check-coverage: skips unsupported summary and aggregates valid raw files",
+    async () => withTempProject(["coverage/coverage-summary.json", "coverage/coverage-final.json"], async projectDir => {
+      fs.writeFileSync(path.join(projectDir, "coverage/coverage-summary.json"), '{"unexpected":true}')
+      fs.writeFileSync(path.join(projectDir, "coverage/coverage-final.json"), JSON.stringify({
+        ...rawCoverage,
+        "src/other.ts": { statementMap: { 0: { start: { line: 1, column: 0 }, end: { line: 1, column: 2 } } }, s: { 0: 1 } },
+      }))
+      const parsed = JSON.parse(await tools.checkcoverage.execute({ threshold: 60 }, createMockContext(projectDir)))
+      assert.strictEqual(parsed.success, true)
+      assert.strictEqual(parsed.coverageFile, "coverage/coverage-final.json")
+      assert.strictEqual(parsed.total.lines, 3)
+      assert.strictEqual(parsed.total.covered, 2)
+      assert.ok(Math.abs(parsed.total.percentage - 200 / 3) < 1e-10)
+    }),
+  ])
+  tests.push([
+    "check-coverage: accepts summary metrics and handles zero executable lines",
+    async () => withTempProject(["coverage/coverage-summary.json"], async projectDir => {
+      const lines = { total: 0, covered: 0, skipped: 0, pct: 100 }
+      fs.writeFileSync(path.join(projectDir, "coverage/coverage-summary.json"), JSON.stringify({ total: { lines }, "empty.ts": { lines } }))
+      const parsed = JSON.parse(await tools.checkcoverage.execute({}, createMockContext(projectDir)))
+      assert.strictEqual(parsed.success, true)
+      assert.deepStrictEqual(parsed.total, { lines: 0, covered: 0, percentage: 100 })
+    }),
+  ])
+  for (const [name, report] of [
+    ["missing hit entries", { statementMap: { 0: { start: { line: 1 } }, 1: { start: { line: 2 } } }, s: { 0: 1 } }],
+    ["orphan hit entries", { statementMap: { 0: { start: { line: 1 } } }, s: { 0: 1, 1: 1 } }],
+    ["fractional hits", { statementMap: { 0: { start: { line: 1 } } }, s: { 0: 0.5 } }],
+    ["negative hits", { statementMap: { 0: { start: { line: 1 } } }, s: { 0: -1 } }],
+    ["invalid locations", { statementMap: { 0: { start: { line: 0 } } }, s: { 0: 1 } }],
+  ]) {
+    tests.push([
+      `check-coverage: rejects ${name} and falls back to valid NYC data`,
+      async () => withTempProject(["coverage/coverage-final.json", ".nyc_output/coverage.json"], async projectDir => {
+        fs.writeFileSync(path.join(projectDir, "coverage/coverage-final.json"), JSON.stringify({ "bad.ts": report }))
+        fs.writeFileSync(path.join(projectDir, ".nyc_output/coverage.json"), JSON.stringify(rawCoverage))
+        const parsed = JSON.parse(await tools.checkcoverage.execute({ threshold: 100 }, createMockContext(projectDir)))
+        assert.strictEqual(parsed.coverageFile, ".nyc_output/coverage.json")
+        assert.strictEqual(parsed.success, false)
+        assert.deepStrictEqual(parsed.total, { lines: 2, covered: 1, percentage: 50 })
+      }),
+    ])
+  }
+  tests.push([
+    "check-coverage: accepts genuinely empty raw statement records",
+    async () => withTempProject(["coverage/coverage-final.json"], async projectDir => {
+      fs.writeFileSync(path.join(projectDir, "coverage/coverage-final.json"), JSON.stringify({ "empty.ts": { statementMap: {}, s: {} } }))
+      const parsed = JSON.parse(await tools.checkcoverage.execute({ threshold: 100 }, createMockContext(projectDir)))
+      assert.strictEqual(parsed.success, true)
+      assert.deepStrictEqual(parsed.total, { lines: 0, covered: 0, percentage: 100 })
+    }),
+  ])
+  tests.push([
+    "check-coverage: rejects malformed metrics instead of treating them as measured zero coverage",
+    async () => withTempProject(["coverage/coverage-summary.json"], async projectDir => {
+      fs.writeFileSync(path.join(projectDir, "coverage/coverage-summary.json"), '{"total":{"lines":{"total":2,"covered":3}}}')
+      const parsed = JSON.parse(await tools.checkcoverage.execute({}, createMockContext(projectDir)))
+      assert.strictEqual(parsed.success, false)
+      assert.strictEqual(parsed.error, "No coverage report found")
+      assert.strictEqual(parsed.total, undefined)
+    }),
+  ])
+
   // Test git-summary tool
   if (tools.gitsummary) {
     tests.push([
