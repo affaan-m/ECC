@@ -180,6 +180,56 @@ function runTests() {
     assert.strictEqual(result.code, 1);
     assert.ok(result.stderr.includes('Unknown argument'));
   })) passed++; else failed++;
+  if (test('accepts an existing leading-dash config but never consumes known flags', () => {
+    const fs = require('fs');
+    const directory = fs.mkdtempSync(path.join(require('os').tmpdir(), 'ecc-plan-dash-'));
+    try {
+      fs.writeFileSync(path.join(directory, '--custom.json'), JSON.stringify({ version: 1, profile: 'core', target: 'cursor' }));
+      const result = run(['--config', '--custom.json', '--json'], { cwd: directory });
+      assert.strictEqual(result.code, 0, result.stderr);
+      assert.strictEqual(JSON.parse(result.stdout).profileId, 'core');
+      const installScript = path.join(__dirname, '..', '..', 'scripts', 'install-apply.js');
+      const install = execFileSync('node', [installScript, '--config', '--custom.json', '--dry-run', '--json'], {
+        cwd: directory, encoding: 'utf8', timeout: 10000, maxBuffer: 32 * 1024 * 1024,
+      });
+      assert.ok(install.includes('core'));
+      for (const flag of ['--json', '--dry-run', '--locale', '--enable-hooks', '--no-hooks']) {
+        fs.writeFileSync(path.join(directory, flag), '{}');
+        assert.strictEqual(run(['--config', flag], { cwd: directory }).code, 1);
+        assert.throws(() => execFileSync('node', [installScript, '--config', flag, '--dry-run'], {
+          cwd: directory, encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'], timeout: 10000,
+        }), /Missing value for --config/);
+      }
+      assert.strictEqual(run(['--config', '--missing.json'], { cwd: directory }).code, 1);
+    } finally { fs.rmSync(directory, { recursive: true, force: true }); }
+  })) passed++; else failed++;
+
+  if (test('rejects missing option values before printing a default plan', () => {
+    for (const flag of ['--family', '--profile', '--modules', '--with', '--without',
+      '--skill', '--skills', '--config', '--target']) {
+      for (const suffix of [[], ['--json'], ['-h']]) {
+        const result = run(['--profile', 'core', flag, ...suffix]);
+        assert.strictEqual(result.code, 1, `${flag} ${suffix}: ${result.stdout}`);
+        assert.ok(result.stderr.includes(`Missing value for ${flag}`), result.stderr);
+        assert.strictEqual(result.stdout, '');
+      }
+      if (flag !== '--with' && flag !== '--without') {
+        for (const value of ['', '   ']) {
+          const result = run(['--profile', 'core', flag, value]);
+          assert.strictEqual(result.code, 1);
+          assert.ok(result.stderr.includes(`Missing value for ${flag}`), result.stderr);
+        }
+      }
+    }
+  })) passed++; else failed++;
+
+  if (test('preserves explicitly empty component overrides as no-ops', () => {
+    const result = run(['--profile', 'core', '--with', '', '--without', '   ', '--json']);
+    assert.strictEqual(result.code, 0, result.stderr);
+    const parsed = JSON.parse(result.stdout);
+    assert.deepStrictEqual(parsed.includedComponentIds, []);
+    assert.deepStrictEqual(parsed.excludedComponentIds, []);
+  })) passed++; else failed++;
 
   if (test('fails on invalid install target', () => {
     const result = run(['--profile', 'core', '--target', 'not-a-target']);

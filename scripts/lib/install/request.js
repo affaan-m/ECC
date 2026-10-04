@@ -1,9 +1,18 @@
 'use strict';
 
+const fs = require('fs');
 const { validateInstallModuleIds, LOCALE_ALIAS_TO_COMPONENT_ID, listSupportedLocales } = require('../install-manifests');
 const { resolveHookConsentFlags } = require('./hook-consent');
 
 const LEGACY_INSTALL_TARGETS = ['claude', 'claude-project', 'cursor', 'antigravity'];
+const KNOWN_FLAGS = new Set(['--help', '-h', '--json', '--list-profiles', '--list-modules',
+  '--list-components', '--family', '--profile', '--modules', '--with', '--skill',
+  '--skills', '--without', '--config', '--target', '--locale', '--enable-hooks',
+  '--no-hooks', '--dry-run']);
+
+function isLeadingDashConfig(flag, value) {
+  return flag === '--config' && !KNOWN_FLAGS.has(value) && fs.existsSync(value);
+}
 
 function dedupeStrings(values) {
   return [...new Set((Array.isArray(values) ? values : []).map(value => String(value).trim()).filter(Boolean))];
@@ -17,6 +26,16 @@ function normalizeSkillComponentIds(rawValue) {
 
 function parseInstallArgs(argv) {
   const args = argv.slice(2);
+  // Explicit empty component overrides remain no-ops; an absent value or a
+  // following option must never silently change install intent.
+  function requiredValue(index, allowEmpty = false) {
+    const value = args[index + 1];
+    if (value === undefined || (!allowEmpty && !value.trim())
+      || (value.startsWith('--') && !isLeadingDashConfig(args[index], value)) || value === '-h') {
+      throw new Error(`Missing value for ${args[index]}`);
+    }
+    return value;
+  }
   const parsed = {
     target: null,
     dryRun: false,
@@ -37,39 +56,35 @@ function parseInstallArgs(argv) {
     const arg = args[index];
 
     if (arg === '--target') {
-      parsed.target = args[index + 1] || null;
+      parsed.target = requiredValue(index);
       index += 1;
     } else if (arg === '--config') {
-      parsed.configPath = args[index + 1] || null;
+      parsed.configPath = requiredValue(index);
       index += 1;
     } else if (arg === '--profile') {
-      parsed.profileId = args[index + 1] || null;
+      parsed.profileId = requiredValue(index);
       index += 1;
     } else if (arg === '--modules') {
-      const raw = args[index + 1] || '';
+      const raw = requiredValue(index);
       parsed.moduleIds = dedupeStrings(raw.split(','));
       index += 1;
     } else if (arg === '--with') {
-      const componentId = args[index + 1] || '';
+      const componentId = requiredValue(index, true);
       if (componentId.trim()) {
         parsed.includeComponentIds.push(componentId.trim());
       }
       index += 1;
     } else if (arg === '--skill' || arg === '--skills') {
-      parsed.includeComponentIds.push(...normalizeSkillComponentIds(args[index + 1] || ''));
+      parsed.includeComponentIds.push(...normalizeSkillComponentIds(requiredValue(index)));
       index += 1;
     } else if (arg === '--without') {
-      const componentId = args[index + 1] || '';
+      const componentId = requiredValue(index, true);
       if (componentId.trim()) {
         parsed.excludeComponentIds.push(componentId.trim());
       }
       index += 1;
     } else if (arg === '--locale') {
-      const locale = args[index + 1] || '';
-      if (!locale || locale.startsWith('--')) {
-        throw new Error('Missing value for --locale');
-      }
-      parsed.locale = locale;
+      parsed.locale = requiredValue(index);
       index += 1;
     } else if (arg === '--enable-hooks') {
       parsed.enableHooks = true;
@@ -163,6 +178,7 @@ function normalizeInstallRequest(options = {}) {
 }
 
 module.exports = {
+  isLeadingDashConfig,
   LEGACY_INSTALL_TARGETS,
   normalizeInstallRequest,
   parseInstallArgs,
