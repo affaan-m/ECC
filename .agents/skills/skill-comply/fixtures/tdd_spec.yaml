@@ -1,0 +1,44 @@
+id: tdd-workflow
+name: TDD Workflow Compliance
+source_rule: rules/common/testing.md
+version: "2.0"
+
+steps:
+  - id: write_test
+    description: "Write test file BEFORE implementation"
+    required: true
+    detector:
+      description: "A Write or Edit to a test file (filename contains 'test')"
+      before_step: write_impl
+
+  - id: run_test_red
+    description: "Run test and confirm FAIL (RED phase)"
+    required: true
+    detector:
+      description: "Run pytest or test command that produces a FAIL/ERROR result"
+      after_step: write_test
+      before_step: write_impl
+
+  - id: write_impl
+    description: "Write minimal implementation (GREEN phase)"
+    required: true
+    detector:
+      description: "Write or Edit an implementation file (not a test file)"
+      after_step: run_test_red
+
+  - id: run_test_green
+    description: "Run test and confirm PASS (GREEN phase)"
+    required: true
+    detector:
+      description: "Run pytest or test command that produces a PASS result"
+      after_step: write_impl
+
+  - id: refactor
+    description: "Refactor (IMPROVE phase)"
+    required: false
+    detector:
+      description: "Edit a source file for refactoring after tests pass"
+      after_step: run_test_green
+
+scoring:
+  threshold_promote_to_hook: 0.6

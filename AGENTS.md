@@ -1,6 +1,6 @@
 # ECC — Agent Instructions
 
-This is a **production-ready AI coding plugin** providing 68 specialized agents, 293 skills, 94 commands, and automated hook workflows for software development.
+This is a **production-ready AI coding plugin** providing 72 specialized agents, 293 skills, 94 commands, and automated hook workflows for software development.
 
 **Version:** 2.2.3
 
@@ -84,6 +84,10 @@ This is a **production-ready AI coding plugin** providing 68 specialized agents,
 | gan-planner | Expand a prompt into a full product specification | Starting a GAN harness session |
 | gan-generator | Implement features per spec, iterate on evaluator feedback | GAN harness implementation phase |
 | gan-evaluator | Test running application via Playwright and score it | GAN harness evaluation phase |
+| context-steward | Context & project memory steward | Session start, onboarding, context drift prevention |
+| systematic-debugger | Disciplined 5-phase defect isolation | Logic bugs, complex test failures, regression hunting |
+| task-decomposer | Epic and multi-file task decomposition | Large feature breakdowns, DAG task generation |
+| workflow-guardian | TDD, immutability, and security gatekeeper | Pre-commit quality gating, security reviews |
 
 ## Agent Orchestration
 
@@ -108,6 +112,10 @@ Use agents proactively without user prompt:
 - UI component design → **ecc:a11y-architect**
 - Open-source release prep → **ecc:opensource-forker** → **ecc:opensource-sanitizer** → **ecc:opensource-packager**
 - Agent output quality check → **ecc:agent-evaluator**
+- Session start or architecture context drift → **ecc:context-steward**
+- Logic bug or unexpected test failure → **ecc:systematic-debugger**
+- Large feature decomposition → **ecc:task-decomposer**
+- Quality, TDD, and security gating → **ecc:workflow-guardian**
 
 Use parallel execution for independent operations — launch multiple agents simultaneously.
 
@@ -200,7 +208,7 @@ Troubleshoot failures: check test isolation → verify mocks → fix implementat
 ## Project Structure
 
 ```
-agents/          — 68 specialized subagents
+agents/          — 72 specialized subagents
 skills/          — 293 workflow skills and domain knowledge
 commands/        — 94 slash commands
 hooks/           — Trigger-based automations
