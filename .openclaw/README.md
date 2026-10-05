@@ -1,6 +1,6 @@
 # ECC for OpenClaw
 
-This directory contains the ECC (Everything Claude Code) configuration for the OpenClaw harness.
+This directory contains the ECC configuration for the OpenClaw harness.
 
 ## What is installed
 

@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
  * ECC CodeBuddy Installer (Cross-platform Node.js version)
- * Installs Everything Claude Code workflows into a CodeBuddy project.
+ * Installs ECC workflows into a CodeBuddy project.
  *
  * Usage:
  *   node install.js              # Install to current directory

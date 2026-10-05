@@ -1,6 +1,6 @@
-# Everything Claude Code for Kiro
+# ECC for Kiro
 
-Bring [Everything Claude Code](https://github.com/anthropics/courses/tree/master/everything-claude-code) (ECC) workflows to [Kiro](https://kiro.dev). This repository provides custom agents, skills, hooks, steering files, and scripts that can be installed into any Kiro project with a single command.
+Bring [ECC](https://github.com/affaan-m/ECC) workflows to [Kiro](https://kiro.dev). This repository provides custom agents, skills, hooks, steering files, and scripts that can be installed into any Kiro project with a single command.
 
 ## Quick Start
 

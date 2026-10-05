@@ -64,7 +64,7 @@ Produces a plan with parallel steps where possible (e.g., "implement Anthropic p
 
 ## Installation
 
-This skill ships with Everything Claude Code. No separate installation is needed when ECC is installed.
+This skill ships with ECC. No separate installation is needed when ECC is installed.
 
 ### Full ECC install
 
@@ -77,7 +77,7 @@ test -f skills/blueprint/SKILL.md
 To update later, review the ECC diff before updating:
 
 ```bash
-cd /path/to/everything-claude-code
+cd /path/to/ECC
 git fetch origin main
 git log --oneline HEAD..origin/main       # review new commits before updating
 git checkout <reviewed-full-sha>          # pin to a specific reviewed commit

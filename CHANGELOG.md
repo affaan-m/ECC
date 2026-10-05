@@ -22,6 +22,20 @@
 - GateGuard gates a MultiEdit call as its `tool_input.file_path` when its entries do not name their own path, which is the tool's own shape; such calls were never gated before, including on sensitive files.
 - GateGuard gates NotebookEdit as a first-touch edit of its `notebook_path`; notebooks were never gated before.
 
+## 2.2.3 - 2026-10-01
+
+### Changed
+
+#### Naming
+
+- `pi/core` refers to the project as ECC only. The generated README and the bundled `blueprint` skill no longer expand the name; profile contents, package name (`ecc-pi-core`) and paths are unchanged.
+
+### Fixed
+
+#### Release workflow
+
+- Poll the npm registry for up to five minutes after `npm publish` before verifying the published artifact, so a slow registry no longer fails the run before `latest` is promoted and the GitHub Release is created.
+
 ## 2.2.2 - 2026-09-15
 
 ### Added

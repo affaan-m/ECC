@@ -98,14 +98,14 @@ commands/ - ${counts.commands} slash commands
 function writeCrossHarnessIdentityDocs(root, counts) {
   fs.writeFileSync(
     path.join(root, 'SOUL.md'),
-    `Everything Claude Code (ECC) is a production-ready AI coding plugin with ${counts.agents} specialized agents, ${counts.skills} skills, ${counts.commands} commands, and automated hook workflows.\n`
+    `ECC is a production-ready AI coding plugin with ${counts.agents} specialized agents, ${counts.skills} skills, ${counts.commands} commands, and automated hook workflows.\n`
   );
 
   const geminiDir = path.join(root, '.gemini');
   fs.mkdirSync(geminiDir, { recursive: true });
   fs.writeFileSync(
     path.join(geminiDir, 'GEMINI.md'),
-    `Everything Claude Code (ECC) is a cross-harness coding system with ${counts.agents} specialized agents, ${counts.skills} skills, and ${counts.commands} commands.\n`
+    `ECC is a cross-harness coding system with ${counts.agents} specialized agents, ${counts.skills} skills, and ${counts.commands} commands.\n`
   );
 }
 

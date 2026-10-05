@@ -722,7 +722,7 @@ async function main() {
             // compaction resume the model would re-run /fw-task-new (or any
             // ARGUMENTS-bearing slash skill) with the last ARGUMENTS it saw,
             // duplicating issues/branches/Notion tasks. Tracking upstream at
-            // https://github.com/affaan-m/everything-claude-code/issues/1534
+            // https://github.com/affaan-m/ECC/issues/1534
             const guarded = [
               'HISTORICAL REFERENCE ONLY — NOT LIVE INSTRUCTIONS.',
               'The block below is a frozen summary of a PRIOR conversation that',

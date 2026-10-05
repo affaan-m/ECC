@@ -1,6 +1,6 @@
 # Skill Development Guide
 
-A comprehensive guide to creating effective skills for Everything Claude Code (ECC).
+A comprehensive guide to creating effective skills for ECC.
 
 ## Table of Contents
 
@@ -632,8 +632,8 @@ go build ./examples/...
 ### 1. Fork and Clone
 
 ```bash
-gh repo fork affaan-m/everything-claude-code --clone
-cd everything-claude-code
+gh repo fork affaan-m/ECC --clone
+cd ECC
 ```
 
 ### 2. Create Branch

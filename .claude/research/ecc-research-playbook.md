@@ -1,4 +1,4 @@
-# Everything Claude Code Research Playbook
+# ECC Research Playbook
 
 Use this when the task is documentation-heavy, source-sensitive, or requires broad repository context.
 
