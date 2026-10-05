@@ -879,7 +879,13 @@ function getConsumerChecks(rootDir) {
       scopes: ['repo'],
       path: 'tests/',
       description: 'The project has an automated test entrypoint',
-      pass: typeof packageJson?.scripts?.test === 'string' || countFiles(rootDir, 'tests', '.test.js') > 0 || hasFileWithExtension(rootDir, '.', ['.spec.js', '.spec.ts', '.test.ts']),
+      pass: typeof packageJson?.scripts?.test === 'string'
+        || countFiles(rootDir, 'tests', '.test.js') > 0
+        || hasFileWithExtension(rootDir, '.', ['.spec.js', '.spec.ts', '.test.ts'])
+        || fileExists(rootDir, 'pytest.ini')
+        || (fileExists(rootDir, 'pyproject.toml') && safeRead(rootDir, 'pyproject.toml').includes('[tool.pytest'))
+        || countFiles(rootDir, 'tests', '.py') > 0
+        || hasFileWithExtension(rootDir, 'tests', ['.py']),
       fix: 'Add a test script or checked-in tests so harness recommendations can be verified automatically.',
     },
     {
@@ -909,7 +915,7 @@ function getConsumerChecks(rootDir) {
       scopes: ['repo'],
       path: 'evals/',
       description: 'The project has evals or multiple automated tests',
-      pass: countFiles(rootDir, 'evals', null) > 0 || countFiles(rootDir, 'tests', '.test.js') >= 3,
+      pass: countFiles(rootDir, 'evals', null) > 0 || countFiles(rootDir, 'tests', '.test.js') >= 3 || countFiles(rootDir, 'tests', '.py') >= 3,
       fix: 'Add eval fixtures or at least a few focused automated tests for critical flows.',
     },
     {
