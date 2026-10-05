@@ -188,6 +188,32 @@ async function coldTests() {
     test('fresh processes decide every step as the worker does', () => {
       assert.deepStrictEqual(cold.map(step => step.decision), warm.steps.map(step => step.decision));
     });
+
+    // A hook that throws used to end the fresh-process pass, so neither the report
+    // nor the SARIF output was written for a run that had hit one bad step.
+    const throwingDir = fs.mkdtempSync(path.join(os.tmpdir(), 'gateguard-eval-throw-'));
+    try {
+      const throwingHook = path.join(throwingDir, 'throwing-hook.js');
+      fs.writeFileSync(throwingHook, "'use strict';\nmodule.exports = { run() { throw new Error('boom'); } };\n");
+      const warmThrow = summarize(await runCorpus(throwingHook, scenarios));
+      let coldThrow = null;
+      let escaped = null;
+      try {
+        coldThrow = measureColdLatency(throwingHook, scenarios);
+      } catch (error) {
+        escaped = error;
+      }
+      test('a hook that throws does not end the fresh-process pass', () => {
+        assert.strictEqual(escaped, null, escaped && escaped.message);
+        assert.strictEqual(coldThrow.length, scenarios[0].steps.length);
+        assert.ok(coldThrow.every(step => step.error === 'boom'), JSON.stringify(coldThrow.map(step => step.error)));
+      });
+      test('a throwing step is decided as the worker decides it, so it is no disagreement', () => {
+        assert.deepStrictEqual(coldThrow.map(step => step.decision), warmThrow.steps.map(step => step.decision));
+      });
+    } finally {
+      fs.rmSync(throwingDir, { recursive: true, force: true });
+    }
   } finally {
     fs.rmSync(corpusDir, { recursive: true, force: true });
   }

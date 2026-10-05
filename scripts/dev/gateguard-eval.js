@@ -309,13 +309,22 @@ async function runCorpus(hookFile, scenarios) {
 // --- cold latency ---
 // see docs/gateguard/evaluation.md#latency
 
+// A hook that throws is recorded the way workerMain records it - the raw payload
+// stands in for the result, so the step reads as an allow - rather than ending the
+// run. Otherwise one throwing step aborted the whole replay and no report was written.
 const COLD_PROBE = [
   "const { performance } = require('perf_hooks');",
   'const started = performance.now();',
-  'const hook = require(process.argv[1]);',
-  'const result = hook.run(process.argv[2]);',
+  'let result;',
+  'let error = null;',
+  'try {',
+  '  result = require(process.argv[1]).run(process.argv[2]);',
+  '} catch (thrown) {',
+  '  error = String(thrown && thrown.message ? thrown.message : thrown);',
+  '  result = process.argv[2];',
+  '}',
   'const ms = performance.now() - started;',
-  'process.stdout.write(JSON.stringify({ ms, result: result === undefined ? null : result }));'
+  'process.stdout.write(JSON.stringify({ ms, result: result === undefined ? null : result, error }));'
 ].join('\n');
 
 /** Replay every scenario with one fresh Node process per step; returns per-step require+run latency and decisions. */
@@ -331,15 +340,27 @@ function measureColdLatency(hookFile, scenarios) {
           fs.appendFileSync(prepared.transcript, step.records.map(record => `${JSON.stringify(record)}\n`).join(''), 'utf8');
         }
         const raw = JSON.stringify(step.payload);
-        const stdout = execFileSync(process.execPath, ['-e', COLD_PROBE, hookFile, raw], {
-          env: prepared.env,
-          encoding: 'utf8',
-          maxBuffer: 16 * 1024 * 1024,
-          stdio: ['ignore', 'pipe', 'ignore']
+        let probe;
+        try {
+          probe = JSON.parse(execFileSync(process.execPath, ['-e', COLD_PROBE, hookFile, raw], {
+            env: prepared.env,
+            encoding: 'utf8',
+            maxBuffer: 16 * 1024 * 1024,
+            stdio: ['ignore', 'pipe', 'ignore']
+          }));
+        } catch (failed) {
+          // The process died or wrote nothing parseable, so there is no latency to
+          // report; the step still counts, as an allow, matching a throwing hook.
+          probe = { ms: null, result: raw, error: String(failed && failed.message ? failed.message : failed) };
+        }
+        const output = hookOutput(probe.result);
+        steps.push({
+          scenario: scenario.name,
+          step: step.id,
+          latencyMs: probe.ms,
+          decision: output.decision === 'deny' ? 'deny' : 'allow',
+          error: probe.error || null
         });
-        const { ms, result } = JSON.parse(stdout);
-        const output = hookOutput(result);
-        steps.push({ scenario: scenario.name, step: step.id, latencyMs: ms, decision: output.decision === 'deny' ? 'deny' : 'allow' });
       }
     }
     return steps;
@@ -349,7 +370,8 @@ function measureColdLatency(hookFile, scenarios) {
 }
 
 function coldSummary(coldSteps, warmSteps) {
-  const sorted = coldSteps.map(step => step.latencyMs).sort((a, b) => a - b);
+  // A step whose process died has no latency; it still counts toward disagreements.
+  const sorted = coldSteps.map(step => step.latencyMs).filter(Number.isFinite).sort((a, b) => a - b);
   const warmDecisions = new Map(warmSteps.map(step => [`${step.scenario}/${step.step}`, step.decision]));
   const disagreements = coldSteps.filter(step => warmDecisions.get(`${step.scenario}/${step.step}`) !== step.decision).length;
   return {
