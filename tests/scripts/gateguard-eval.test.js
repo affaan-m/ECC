@@ -9,7 +9,9 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const { pathToFileURL } = require('url');
-const { parseArgs, renderSarif, loadCorpus, runCorpus, summarize, measureColdLatency } = require('../../scripts/dev/gateguard-eval');
+const {
+  parseArgs, renderSarif, renderMarkdown, loadCorpus, runCorpus, summarize, measureColdLatency, coldSummary, gateFails
+} = require('../../scripts/dev/gateguard-eval');
 
 let passed = 0;
 let failed = 0;
@@ -170,6 +172,46 @@ test('--no-cold turns off the fresh-process pass', () => {
   assert.strictEqual(parseArgs(['--no-cold']).cold, false);
 });
 
+// A fresh-process failure is recorded as an allow. Where the worker also allowed the
+// step it is no disagreement, so before failures were counted on their own it left
+// no trace in the report, the latency or the exit status.
+test('a fresh-process failure on a step the worker allows is still counted', () => {
+  const cold = coldSummary(
+    [{ scenario: 's', step: 'a', latencyMs: null, decision: 'allow', error: 'killed' }],
+    [{ scenario: 's', step: 'a', decision: 'allow' }]
+  );
+  assert.strictEqual(cold.disagreements, 0);
+  assert.strictEqual(cold.errors, 1);
+  assert.strictEqual(cold.samples, 0);
+  assert.strictEqual(cold.p50Ms, null, 'no measured step must not read as a 0 ms latency');
+});
+
+test('a fresh-process failure fails the gate when nothing else does', () => {
+  const clean = report([step()]);
+  clean.hooks[0].summary.cold = { p50Ms: 1, p90Ms: 1, p95Ms: 1, samples: 1, errors: 0, disagreements: 0 };
+  assert.strictEqual(gateFails(clean), false);
+  const failed = report([step()]);
+  failed.hooks[0].summary.cold = { p50Ms: null, p90Ms: null, p95Ms: null, samples: 0, errors: 1, disagreements: 0 };
+  assert.strictEqual(gateFails(failed), true);
+});
+
+test('the report names fresh-process failures and invents no latency', () => {
+  // summarize([]) is the real summary shape with every count at zero, so this keeps
+  // working as metrics are added, which a hand-built totals object would not.
+  const working = { ...summarize([]), cold: { p50Ms: null, p90Ms: null, p95Ms: null, samples: 0, errors: 1, disagreements: 0 } };
+  const failed = {
+    corpus: { scenarios: 0, steps: 0 },
+    hooks: [
+      { label: 'working tree', ref: null, summary: working },
+      { label: 'upstream/main', ref: 'upstream/main', summary: summarize([]) }
+    ]
+  };
+  const text = renderMarkdown(failed);
+  assert.match(text, /1 step\(s\) failed in a fresh process/);
+  assert.match(text, /no valid sample/);
+  assert.ok(!/fresh process \(ms\)[^\n]*\b0\.00\b/.test(text), 'a latency was reported with no measured step');
+});
+
 async function coldTests() {
   const corpusDir = fs.mkdtempSync(path.join(os.tmpdir(), 'gateguard-eval-corpus-'));
   try {
@@ -210,6 +252,9 @@ async function coldTests() {
       });
       test('a throwing step is decided as the worker decides it, so it is no disagreement', () => {
         assert.deepStrictEqual(coldThrow.map(step => step.decision), warmThrow.steps.map(step => step.decision));
+      });
+      test('every throwing step is reported as a fresh-process failure', () => {
+        assert.strictEqual(coldSummary(coldThrow, warmThrow.steps).errors, coldThrow.length);
       });
     } finally {
       fs.rmSync(throwingDir, { recursive: true, force: true });

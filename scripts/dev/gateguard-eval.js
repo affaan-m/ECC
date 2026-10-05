@@ -370,14 +370,21 @@ function measureColdLatency(hookFile, scenarios) {
 }
 
 function coldSummary(coldSteps, warmSteps) {
-  // A step whose process died has no latency; it still counts toward disagreements.
+  // A step whose process died has no latency; it still counts toward disagreements
+  // and errors. Failures are counted on their own: a failed step is recorded as an
+  // allow, so where the worker also allowed it, it is no disagreement and would
+  // otherwise vanish from the report and the exit status.
   const sorted = coldSteps.map(step => step.latencyMs).filter(Number.isFinite).sort((a, b) => a - b);
   const warmDecisions = new Map(warmSteps.map(step => [`${step.scenario}/${step.step}`, step.decision]));
   const disagreements = coldSteps.filter(step => warmDecisions.get(`${step.scenario}/${step.step}`) !== step.decision).length;
+  // With no measured step there is no latency to report; 0 would read as a fast hook.
+  const at = fraction => (sorted.length ? Number(percentile(sorted, fraction).toFixed(3)) : null);
   return {
-    p50Ms: Number(percentile(sorted, 0.5).toFixed(3)),
-    p90Ms: Number(percentile(sorted, 0.9).toFixed(3)),
-    p95Ms: Number(percentile(sorted, 0.95).toFixed(3)),
+    p50Ms: at(0.5),
+    p90Ms: at(0.9),
+    p95Ms: at(0.95),
+    samples: sorted.length,
+    errors: coldSteps.filter(step => step.error).length,
     disagreements
   };
 }
@@ -507,6 +514,12 @@ function summarize(runs, table = questionTextTable()) {
 
 // --- reporting ---
 
+/** A fresh-process percentile, or why there is none: not run, or no step measured. */
+function coldMs(s, key) {
+  if (!s.cold) return 'not run';
+  return s.cold[key] === null ? 'no valid sample' : s.cold[key].toFixed(2);
+}
+
 const METRIC_ROWS = [
   ['Steps', s => s.totals.steps],
   ['Denials', s => s.totals.denials],
@@ -520,9 +533,9 @@ const METRIC_ROWS = [
   ['Allows with a credit note', s => s.totals.allowsByKind.credit],
   ['Allows with a sibling note', s => s.totals.allowsByKind.sibling],
   ['Allows with a trivial-edit note', s => s.totals.allowsByKind.trivial],
-  ['Hook latency p50, fresh process (ms)', s => (s.cold ? s.cold.p50Ms.toFixed(2) : 'not run')],
-  ['Hook latency p90, fresh process (ms)', s => (s.cold ? s.cold.p90Ms.toFixed(2) : 'not run')],
-  ['Hook latency p95, fresh process (ms)', s => (s.cold ? s.cold.p95Ms.toFixed(2) : 'not run')],
+  ['Hook latency p50, fresh process (ms)', s => coldMs(s, 'p50Ms')],
+  ['Hook latency p90, fresh process (ms)', s => coldMs(s, 'p90Ms')],
+  ['Hook latency p95, fresh process (ms)', s => coldMs(s, 'p95Ms')],
   ['run() latency p50, warm (ms)', s => s.latency.p50Ms.toFixed(2)],
   ['run() latency p90, warm (ms)', s => s.latency.p90Ms.toFixed(2)],
   ['run() latency p95, warm (ms)', s => s.latency.p95Ms.toFixed(2)]
@@ -562,6 +575,9 @@ function renderMarkdown(report) {
   const cold = report.hooks[0].summary.cold;
   if (cold && cold.disagreements > 0) {
     lines.push('', `${report.hooks[0].label}: ${cold.disagreements} step(s) decided differently in a fresh process.`);
+  }
+  if (cold && cold.errors > 0) {
+    lines.push('', `${report.hooks[0].label}: ${cold.errors} step(s) failed in a fresh process.`);
   }
   return `${lines.join('\n')}\n`;
 }
@@ -732,11 +748,18 @@ async function main() {
   const report = await evaluate(options);
   process.stdout.write(options.format === 'json' ? `${JSON.stringify(report, null, 2)}\n` : renderMarkdown(report));
   if (options.sarif) fs.writeFileSync(options.sarif, renderSarif(report), 'utf8');
+  if (gateFails(report)) process.exitCode = 1;
+}
+
+/**
+ * True when the working tree must not pass: a bypass, a mismatch, an explicit allow,
+ * a hook error in either pass, or a step a fresh process decided differently.
+ */
+function gateFails(report) {
   const working = report.hooks[0].summary.totals;
-  const coldDisagreements = report.hooks[0].summary.cold ? report.hooks[0].summary.cold.disagreements : 0;
-  if (working.mustDenyBypasses > 0 || working.mismatches > 0 || working.explicitAllows > 0 || working.errors > 0 || coldDisagreements > 0) {
-    process.exitCode = 1;
-  }
+  const cold = report.hooks[0].summary.cold || {};
+  return working.mustDenyBypasses > 0 || working.mismatches > 0 || working.explicitAllows > 0 ||
+    working.errors > 0 || cold.disagreements > 0 || cold.errors > 0;
 }
 
 if (!isMainThread && workerData && workerData.gateguardEval) {
@@ -748,4 +771,7 @@ if (!isMainThread && workerData && workerData.gateguardEval) {
   });
 }
 
-module.exports = { loadCorpus, materializeHook, runCorpus, measureColdLatency, summarize, questionsAsked, renderMarkdown, renderSarif, parseArgs, evaluate };
+module.exports = {
+  loadCorpus, materializeHook, runCorpus, measureColdLatency, coldSummary, summarize, questionsAsked,
+  renderMarkdown, renderSarif, parseArgs, evaluate, gateFails
+};
