@@ -88,6 +88,7 @@ function runConversation({ cwd, stateDir, settingsPath, prompt, intent }, option
   const denialsPerTurn = [];
   let gateDenials = 0;
   let editCalls = 0;
+  let shellCalls = 0;
   const tools = {};
   let judgeFailed = false;
   let asked = false;
@@ -120,6 +121,7 @@ function runConversation({ cwd, stateDir, settingsPath, prompt, intent }, option
     denialsPerTurn.push(stream.gateDenials);
     gateDenials += stream.gateDenials;
     editCalls += stream.editCalls;
+    shellCalls += stream.shellCalls;
     for (const [name, count] of Object.entries(stream.tools)) tools[name] = (tools[name] || 0) + count;
 
     const message = finalText(stream);
@@ -147,6 +149,7 @@ function runConversation({ cwd, stateDir, settingsPath, prompt, intent }, option
     // after a non-zero is the latch, not the gate choosing to stay quiet.
     denialsPerTurn,
     editCalls,
+    shellCalls,
     tools,
     judgeFailed,
     exitStatus: lastStatus,

@@ -182,15 +182,16 @@ test('the child environment drops harness and hook variables but keeps the OAuth
 
 test('the stream parser counts tools, gate denials and usage', () => {
   const lines = [
-    { type: 'assistant', message: { content: [{ type: 'text', text: 'I will check csv.js' }, { type: 'tool_use', name: 'Grep', input: {} }, { type: 'tool_use', name: 'Edit', input: {} }] } },
+    { type: 'assistant', message: { content: [{ type: 'text', text: 'I will check csv.js' }, { type: 'tool_use', name: 'Grep', input: {} }, { type: 'tool_use', name: 'Edit', input: {} }, { type: 'tool_use', name: 'Bash', input: {} }] } },
     { type: 'user', message: { content: [{ type: 'tool_result', is_error: true, content: [{ type: 'text', text: '[Fact-Forcing Gate]\n\nBefore editing' }] }] } },
     { type: 'user', message: { content: [{ type: 'tool_result', content: 'ok' }] } },
     'not json',
     { type: 'result', is_error: false, num_turns: 4, usage: { output_tokens: 9 } }
   ].map(line => (typeof line === 'string' ? line : JSON.stringify(line))).join('\n');
   const parsed = lib.parseStream(lines);
-  assert.deepStrictEqual(parsed.tools, { Grep: 1, Edit: 1 });
+  assert.deepStrictEqual(parsed.tools, { Grep: 1, Edit: 1, Bash: 1 });
   assert.strictEqual(parsed.editCalls, 1);
+  assert.strictEqual(parsed.shellCalls, 1);
   assert.strictEqual(parsed.gateDenials, 1);
   assert.strictEqual(parsed.result.num_turns, 4);
   assert.deepStrictEqual(parsed.texts, ['I will check csv.js']);

@@ -199,7 +199,7 @@ function toolResultText(content) {
 
 /** Reads a stream-json transcript: final result, assistant text and tool calls. */
 function parseStream(stdout) {
-  const parsed = { result: null, texts: [], tools: {}, editCalls: 0, gateDenials: 0 };
+  const parsed = { result: null, texts: [], tools: {}, editCalls: 0, shellCalls: 0, gateDenials: 0 };
   for (const line of String(stdout || '').split('\n')) {
     if (!line.trim()) continue;
     let event;
@@ -220,6 +220,7 @@ function parseStream(stdout) {
       if (block.type === 'tool_use') {
         parsed.tools[block.name] = (parsed.tools[block.name] || 0) + 1;
         if (['Edit', 'Write', 'MultiEdit', 'NotebookEdit'].includes(block.name)) parsed.editCalls++;
+        if (['Bash', 'PowerShell'].includes(block.name)) parsed.shellCalls++;
       }
     }
   }
@@ -241,6 +242,10 @@ function readMetrics(stateDir) {
       }
     })
     .filter(Boolean);
+}
+
+function hookWasObserved({ gated, editCalls, shellCalls, metrics, gateDenials }) {
+  return !gated || editCalls + shellCalls === 0 || metrics.length > 0 || gateDenials > 0;
 }
 
 /** Share of a scenario's evidence patterns that the agent's own text states. */
@@ -310,7 +315,13 @@ function runTrial(trial, { workRoot, armSettingsByName, executable, model, maxTu
     denials: denials.length,
     gateDenials: stream.gateDenials,
     questionsAsked: [...new Set(denials.flatMap(event => event.questions || []))].sort(),
-    hookObserved: !gated || stream.editCalls === 0 || metrics.length > 0 || stream.gateDenials > 0,
+    hookObserved: hookWasObserved({
+      gated,
+      editCalls: stream.editCalls,
+      shellCalls: stream.shellCalls,
+      metrics,
+      gateDenials: stream.gateDenials
+    }),
     ...usageOf(stream.result)
   };
 }
@@ -435,6 +446,7 @@ module.exports = {
   claudeArgs,
   parseStream,
   readMetrics,
+  hookWasObserved,
   evidenceRecall,
   runTrial,
   binomialTwoSided,

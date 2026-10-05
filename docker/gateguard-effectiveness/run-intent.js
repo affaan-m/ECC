@@ -15,7 +15,7 @@ const { spawnSync } = require('child_process');
 const { schedule } = require('./lib');
 const { ARMS, armSettings, resolveRef, materializeTree } = require('./arms');
 const { loadIntentScenarios, graderIsSound, runIntentTrial, SUPPORTED_ARMS } = require('./intent-eval');
-const { renderHoles, difficulty } = require('./coverage');
+const { renderHoles, difficulty, isValidTrial } = require('./coverage');
 
 const REPO_ROOT = path.resolve(__dirname, '..', '..');
 
@@ -91,6 +91,10 @@ function readResults(file) {
   return fs.readFileSync(file, 'utf8').split('\n').filter(Boolean).map(line => JSON.parse(line));
 }
 
+function completedTrialKeys(rows) {
+  return new Set(rows.filter(isValidTrial).map(row => row.key));
+}
+
 // Resuming a session needs persistence, so Claude writes a transcript folder per
 // trial workspace under its projects directory. A per-trial CLAUDE_CONFIG_DIR
 // would isolate those but also hides the credentials, so they are removed here
@@ -123,7 +127,13 @@ function writeReport(options, rows, meta) {
   fs.writeFileSync(path.join(options.out, 'holes.md'), header + body);
   fs.writeFileSync(
     path.join(options.out, 'summary.json'),
-    `${JSON.stringify({ meta, difficulty: difficulty(rows), rows: rows.length }, null, 2)}\n`
+    `${JSON.stringify({
+      meta,
+      difficulty: difficulty(rows.filter(isValidTrial)),
+      rows: rows.length,
+      validRows: rows.filter(isValidTrial).length,
+      invalidRows: rows.filter(row => !isValidTrial(row)).length
+    }, null, 2)}\n`
   );
   return header + body;
 }
@@ -197,7 +207,9 @@ function main() {
     const armSettingsByName = Object.fromEntries(
       options.arms.map(arm => [arm, armSettings(ARMS[arm].gate ? treeRoots[ARMS[arm].tree] : null)])
     );
-    const done = new Set(rows.map(row => row.key));
+    // Failed attempts remain in results.jsonl for audit, but the scheduled key
+    // is complete only after a valid trial has been recorded.
+    const done = completedTrialKeys(rows);
     const trials = schedule(scenarios, options.arms, options.reps, options.seed).filter(trial => !done.has(trial.key));
     process.stderr.write(`${trials.length} trials to run (${done.size} already recorded)\n`);
     if (options.dryRun) {
@@ -264,4 +276,4 @@ if (require.main === module) {
   }
 }
 
-module.exports = { parseArgs, writeReport, checkGraders };
+module.exports = { parseArgs, writeReport, checkGraders, completedTrialKeys };

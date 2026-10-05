@@ -24,7 +24,7 @@ const userSim = require(path.join(DIR, 'user-sim'));
 const session = require(path.join(DIR, 'session'));
 const coverage = require(path.join(DIR, 'coverage'));
 const intentEval = require(path.join(DIR, 'intent-eval'));
-const { parseArgs } = require(path.join(DIR, 'run-intent'));
+const { parseArgs, completedTrialKeys } = require(path.join(DIR, 'run-intent'));
 
 let passed = 0;
 let failed = 0;
@@ -70,7 +70,7 @@ test('every shipped hidden-intent scenario loads and declares a decisive fact', 
   const scenarios = intentEval.loadIntentScenarios();
   assert.ok(scenarios.length > 0, 'no hidden-intent scenarios found');
   for (const scenario of scenarios) {
-    assert.ok(userSim.decisiveFacts(scenario.intent).length > 0, `${scenario.id} has no decisive fact`);
+    assert.strictEqual(userSim.decisiveFacts(scenario.intent).length, 1, `${scenario.id} must have exactly one decisive fact`);
     assert.strictEqual(scenario.targetQuestions, undefined, `${scenario.id} declares targetQuestions`);
   }
 });
@@ -98,7 +98,34 @@ test('an intent with no decisive fact is rejected', () => {
     JSON.stringify({ ...INTENT, facts: [{ id: 'ordering', fact: 'Order does not matter.', decisive: false }] })
   );
   fs.writeFileSync(path.join(scenario, 'grader.cjs'), 'console.log("ECC_EVAL_SCORE {\\"score\\":0}");');
-  assert.throws(() => intentEval.loadIntentScenarios(dir), /no decisive fact/);
+  assert.throws(() => intentEval.loadIntentScenarios(dir), /exactly one decisive fact; found 0/);
+});
+
+test('an intent with multiple decisive facts is rejected', () => {
+  const dir = tempDir('gg-multidecisive-');
+  const scenario = path.join(dir, 'multi');
+  fs.mkdirSync(path.join(scenario, 'workspace'), { recursive: true });
+  fs.writeFileSync(path.join(scenario, 'task.json'), JSON.stringify({ id: 'multi', trap: 't', prompt: 'p', evidence: ['e'] }));
+  fs.writeFileSync(path.join(scenario, 'intent.json'), JSON.stringify(INTENT));
+  fs.writeFileSync(path.join(scenario, 'grader.cjs'), 'console.log("ECC_EVAL_SCORE {\\"score\\":0}");');
+  assert.throws(() => intentEval.loadIntentScenarios(dir), /exactly one decisive fact; found 2/);
+});
+
+test('invalid trial attempts do not complete their scheduled key', () => {
+  const rows = [
+    { key: 's/1/gate', providerError: true },
+    { key: 's/2/gate', timedOut: true },
+    { key: 's/3/gate', judgeFailed: true },
+    { key: 's/4/gate' }
+  ];
+  assert.deepStrictEqual([...completedTrialKeys(rows)], ['s/4/gate']);
+});
+
+test('a gated shell edit without hook output is not observed', () => {
+  const { hookWasObserved } = require(path.join(DIR, 'lib'));
+  assert.strictEqual(hookWasObserved({ gated: true, editCalls: 0, shellCalls: 1, metrics: [], gateDenials: 0 }), false);
+  assert.strictEqual(hookWasObserved({ gated: true, editCalls: 0, shellCalls: 1, metrics: [{ decision: 'allow' }], gateDenials: 0 }), true);
+  assert.strictEqual(hookWasObserved({ gated: false, editCalls: 0, shellCalls: 1, metrics: [], gateDenials: 0 }), true);
 });
 
 // --- graders must discriminate, or the trial is worthless ---
@@ -186,6 +213,28 @@ test('a ceiling scenario is excluded from the outcome-class table', () => {
   const classTable = report.slice(report.indexOf('### Outcome classes'));
   const gateLine = classTable.split('\n').find(line => line.startsWith('| gate |'));
   assert.strictEqual(gateLine.split('|')[2].trim(), '1', gateLine);
+});
+
+test('invalid attempts are excluded and counted in the report', () => {
+  const rows = [];
+  for (let rep = 1; rep <= 5; rep++) {
+    rows.push(row({ scenario: 'works', rep, arm: 'off', passed: false }));
+    rows.push(row({ scenario: 'works', rep, arm: 'gate', passed: true, turns: 8, costUsd: 0.1 }));
+  }
+  rows.push(row({ scenario: 'other', rep: 1, arm: 'gate', passed: false, providerError: true }));
+  const report = coverage.renderHoles(rows);
+  assert.match(report, /Excluded 1\/11 invalid trial attempt/);
+  assert.match(report, /\| gate \| 5\/5 \|/);
+});
+
+test('more than ten percent invalid trials make the report inconclusive', () => {
+  const rows = Array.from({ length: 10 }, (_, i) => row({
+    scenario: 'works', rep: i, arm: i % 2 ? 'gate' : 'off',
+    passed: false, providerError: i < 2
+  }));
+  const report = coverage.renderHoles(rows);
+  assert.match(report, /INCONCLUSIVE: 2\/10 trial attempts were invalid/);
+  assert.doesNotMatch(report, /### Effect and cost/);
 });
 
 test('a small run is reported as underpowered, not as evidence', () => {

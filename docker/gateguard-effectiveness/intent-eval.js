@@ -11,7 +11,7 @@
 
 const fs = require('fs');
 const path = require('path');
-const { prepareWorkspace, commitWorkspace, grade, readMetrics } = require('./lib');
+const { prepareWorkspace, commitWorkspace, grade, readMetrics, hookWasObserved } = require('./lib');
 const { ARMS, TRIAL_FILE, trialPatch } = require('./arms');
 const { runConversation } = require('./session');
 const { classify } = require('./coverage');
@@ -39,11 +39,13 @@ function loadIntentScenarios(dir = SCENARIO_DIR, ids = null) {
       if (!Array.isArray(spec.evidence) || !spec.evidence.length) throw new Error(`scenario ${spec.id} has no evidence`);
       if (typeof intent.ambiguity !== 'string' || !intent.ambiguity) throw new Error(`scenario ${spec.id} intent has no ambiguity`);
       if (typeof intent.stonewall !== 'string' || !intent.stonewall) throw new Error(`scenario ${spec.id} intent has no stonewall`);
-      if (!Array.isArray(intent.facts) || !intent.facts.some(fact => fact.decisive)) {
-        throw new Error(`scenario ${spec.id} intent has no decisive fact`);
-      }
+      if (!Array.isArray(intent.facts)) throw new Error(`scenario ${spec.id} intent has no decisive fact`);
       for (const fact of intent.facts) {
         if (!fact.id || typeof fact.fact !== 'string' || !fact.fact) throw new Error(`scenario ${spec.id} has a malformed fact`);
+      }
+      const decisiveCount = intent.facts.filter(fact => fact.decisive === true).length;
+      if (decisiveCount !== 1) {
+        throw new Error(`scenario ${spec.id} intent must have exactly one decisive fact; found ${decisiveCount}`);
       }
       return {
         ...spec,
@@ -109,9 +111,14 @@ function runIntentTrial(trial, { workRoot, armSettingsByName, executable, model,
     judgeFailed: conversation.judgeFailed,
     providerError: conversation.providerError,
     providerMessage: conversation.providerMessage,
-    // Same guard as lib.js: a gated arm whose agent edited files with no metrics
-    // line and no denial means the hook never ran, so the trial proves nothing.
-    hookObserved: !ARMS[trial.arm].gate || conversation.editCalls === 0 || metrics.length > 0 || conversation.gateDenials > 0,
+    // Any hook-matched edit or shell call requires observable hook output.
+    hookObserved: hookWasObserved({
+      gated: ARMS[trial.arm].gate,
+      editCalls: conversation.editCalls,
+      shellCalls: conversation.shellCalls,
+      metrics,
+      gateDenials: conversation.gateDenials
+    }),
     gateDenials: conversation.gateDenials,
     denialsPerTurn: conversation.denialsPerTurn,
     questionsAsked: [...new Set(denials.flatMap(event => event.questions || []))].sort(),

@@ -18,6 +18,11 @@ const { pairedComparison } = require('./lib');
 // Rough floor for 80% power on a 40-point pass-rate difference at a two-sided
 // 5% level. Below it the report refuses to let counts stand as evidence.
 const MIN_PAIRS_FOR_A_CLAIM = 20;
+const MAX_INVALID_TRIAL_FRACTION = 0.1;
+
+function isValidTrial(row) {
+  return !row.providerError && !row.timedOut && !row.judgeFailed;
+}
 
 /** Outcome classes. The four ending in -hole are the improvable cases. */
 const CLASSES = Object.freeze({
@@ -178,6 +183,20 @@ function renderEffect(rows, { referenceArm = 'gate', baselineArm = 'off' } = {})
 }
 
 function renderHoles(rows, { baselineArm = 'off' } = {}) {
+  const invalid = rows.filter(row => !isValidTrial(row));
+  const invalidFraction = rows.length ? invalid.length / rows.length : 0;
+  const validity = rows.length
+    ? `Excluded ${invalid.length}/${rows.length} invalid trial attempt(s) (provider error, timeout, or judge failure).`
+    : 'No trial attempts recorded.';
+  if (invalidFraction > MAX_INVALID_TRIAL_FRACTION) {
+    return [
+      '### Run validity',
+      '',
+      `INCONCLUSIVE: ${invalid.length}/${rows.length} trial attempts were invalid, above the 10% limit. Arm comparisons are suppressed.`,
+      ''
+    ].join('\n');
+  }
+  rows = rows.filter(isValidTrial);
   const arms = [...new Set(rows.map(row => row.arm))].sort();
   const classes = Object.keys(CLASSES);
   const lines = [];
@@ -186,6 +205,7 @@ function renderHoles(rows, { baselineArm = 'off' } = {}) {
   const verdicts = informative(rows);
 
   lines.push('### Trap strength and usability', '');
+  lines.push(validity, '');
   lines.push('| Scenario | Ungated passed | Rate | Trap | Separates arms |', '| --- | ---: | ---: | --- | --- |');
   const verdictOf = Object.fromEntries(verdicts.map(row => [row.scenario, row.label]));
   for (const row of strength) {
@@ -236,6 +256,6 @@ function renderHoles(rows, { baselineArm = 'off' } = {}) {
 }
 
 module.exports = {
-  CLASSES, MIN_PAIRS_FOR_A_CLAIM, classify, tally, difficulty, informative,
+  CLASSES, MIN_PAIRS_FOR_A_CLAIM, MAX_INVALID_TRIAL_FRACTION, isValidTrial, classify, tally, difficulty, informative,
   discoveredQuestions, unengaged, renderEffect, renderHoles
 };
