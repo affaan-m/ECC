@@ -5,10 +5,10 @@
  * These tests deliberately assert nothing about which question the gate raises.
  * The previous suite did, using targets copied from the gate's own taxonomy, so
  * it passed by construction. What is asserted here are properties that can
- * actually fail: that scenarios are authored blind, that every grader separates
+ * actually fail: that scenarios do not encode target questions, that every grader separates
  * the start, the trap and a correct solution, that behaviour is classified into
- * the right hole, and that a scenario carrying no information is excluded from
- * arm comparison instead of being reported as a result.
+ * the right hole, and that non-informative outcome classes are kept descriptive
+ * while every valid predeclared scenario remains in the primary comparison.
  */
 
 'use strict';
@@ -24,7 +24,8 @@ const userSim = require(path.join(DIR, 'user-sim'));
 const session = require(path.join(DIR, 'session'));
 const coverage = require(path.join(DIR, 'coverage'));
 const intentEval = require(path.join(DIR, 'intent-eval'));
-const { parseArgs, completedTrialKeys } = require(path.join(DIR, 'run-intent'));
+const { parseArgs, completedTrialKeys, writeAtomic } = require(path.join(DIR, 'run-intent'));
+const evidence = require(path.join(DIR, 'evidence'));
 
 let passed = 0;
 let failed = 0;
@@ -64,9 +65,9 @@ function row(overrides) {
   };
 }
 
-// --- scenarios are authored blind to the taxonomy ---
+// --- scenario files do not encode taxonomy targets ---
 
-test('every shipped hidden-intent scenario loads and declares a decisive fact', () => {
+test('every shipped hidden-intent scenario has one decisive fact and no declared target questions', () => {
   const scenarios = intentEval.loadIntentScenarios();
   assert.ok(scenarios.length > 0, 'no hidden-intent scenarios found');
   for (const scenario of scenarios) {
@@ -75,7 +76,7 @@ test('every shipped hidden-intent scenario loads and declares a decisive fact', 
   }
 });
 
-test('a scenario that declares targetQuestions is rejected', () => {
+test('a scenario that declares targetQuestions is rejected without asserting author blindness', () => {
   const dir = tempDir('gg-blind-');
   const scenario = path.join(dir, 'leaky');
   fs.mkdirSync(path.join(scenario, 'workspace'), { recursive: true });
@@ -85,7 +86,7 @@ test('a scenario that declares targetQuestions is rejected', () => {
   );
   fs.writeFileSync(path.join(scenario, 'intent.json'), JSON.stringify(INTENT));
   fs.writeFileSync(path.join(scenario, 'grader.cjs'), 'console.log("ECC_EVAL_SCORE {\\"score\\":0}");');
-  assert.throws(() => intentEval.loadIntentScenarios(dir), /authored blind to the taxonomy/);
+  assert.throws(() => intentEval.loadIntentScenarios(dir), /must not encode gate-taxonomy targets/);
 });
 
 test('an intent with no decisive fact is rejected', () => {
@@ -119,6 +120,40 @@ test('invalid trial attempts do not complete their scheduled key', () => {
     { key: 's/4/gate' }
   ];
   assert.deepStrictEqual([...completedTrialKeys(rows)], ['s/4/gate']);
+});
+
+test('report files are replaced atomically without leaving temporary files', () => {
+  const dir = tempDir('gg-atomic-');
+  const file = path.join(dir, 'report.json');
+  writeAtomic(file, 'first');
+  writeAtomic(file, 'second');
+  assert.strictEqual(fs.readFileSync(file, 'utf8'), 'second');
+  assert.deepStrictEqual(fs.readdirSync(dir), ['report.json']);
+});
+
+test('evidence validation rejects unknown, mismatched and duplicate valid scheduled rows', () => {
+  const trial = { key: 'probe/gate/1', scenario: { id: 'probe' }, arm: 'gate', rep: 1 };
+  assert.deepStrictEqual([...evidence.validateRows([{ key: trial.key, scenario: 'probe', arm: 'gate', rep: 1 }], [trial])], [trial.key]);
+  assert.throws(() => evidence.validateRows([{ key: 'other/gate/1' }], [trial]), /unknown scheduled key/);
+  assert.throws(() => evidence.validateRows([{ key: trial.key, scenario: 'other', arm: 'gate', rep: 1 }], [trial]), /does not match/);
+  const valid = { key: trial.key, scenario: 'probe', arm: 'gate', rep: 1 };
+  assert.throws(() => evidence.validateRows([valid, valid], [trial]), /duplicate valid result/);
+});
+
+test('evidence manifest detects missing or modified artifacts', () => {
+  const out = tempDir('gg-evidence-');
+  fs.mkdirSync(path.join(out, 'transcripts'));
+  fs.writeFileSync(path.join(out, 'transcripts', 'trial.jsonl'), 'trial output\n');
+  const row = {
+    key: 'probe/gate/1', transcript: 'transcripts/trial.jsonl',
+    transcriptSha256: evidence.hashFile(path.join(out, 'transcripts', 'trial.jsonl'))
+  };
+  fs.writeFileSync(path.join(out, 'results.jsonl'), `${JSON.stringify(row)}\n`);
+  const manifest = evidence.buildManifest({ meta: {}, configuration: {}, scenarioFingerprints: {}, sourceFingerprints: {}, outDir: out, rows: [row] });
+  fs.writeFileSync(path.join(out, 'evidence.json'), JSON.stringify(manifest));
+  assert.strictEqual(Object.keys(evidence.verifyManifest(out).files).length, 2);
+  fs.appendFileSync(path.join(out, 'results.jsonl'), 'tampered\n');
+  assert.throws(() => evidence.verifyManifest(out), /checksum mismatch/);
 });
 
 test('a gated shell edit without hook output is not observed', () => {
@@ -167,7 +202,7 @@ test('a right outcome reached without asking is lucky, not working', () => {
   assert.strictEqual(coverage.classify(row({ passed: true, asked: false, disclosedDecisive: false })), 'lucky');
 });
 
-// --- non-informative scenarios are excluded, not reported as results ---
+// --- outcome variation is descriptive, never a primary-selection rule ---
 
 test('trap strength is read from the ungated arm alone', () => {
   const rows = [
@@ -198,7 +233,7 @@ test('usability is judged across arms, so an ungated arm that fails is not disca
   assert.deepStrictEqual(byScenario, { works: 'informative', unreached: 'floor', toothless: 'ceiling' });
 });
 
-test('a ceiling scenario is excluded from the outcome-class table', () => {
+test('a ceiling scenario remains in the primary comparison but not mechanism counts', () => {
   const rows = [
     row({ scenario: 'easy', arm: 'off', passed: true }),
     row({ scenario: 'easy', arm: 'gate', passed: true, asked: true, disclosedDecisive: true, gateDenials: 1 }),
@@ -207,12 +242,22 @@ test('a ceiling scenario is excluded from the outcome-class table', () => {
   ];
   const report = coverage.renderHoles(rows);
   assert.match(report, /easy: ceiling/);
-  assert.match(report, /carry no information/);
+  assert.match(report, /descriptive only/);
+  const effectTable = report.slice(report.indexOf('### Effect and cost'), report.indexOf('### Outcome classes'));
+  assert.match(effectTable, /\| gate \| 2\/2 \|/);
+  assert.match(effectTable, /\| off \| 2 \|/);
   // Only the informative scenario's gate trial is counted as working. Scope the
   // lookup to the outcome-class table: the effect table also has a `gate` row.
   const classTable = report.slice(report.indexOf('### Outcome classes'));
   const gateLine = classTable.split('\n').find(line => line.startsWith('| gate |'));
   assert.strictEqual(gateLine.split('|')[2].trim(), '1', gateLine);
+});
+
+test('partial schedules suppress primary comparisons until every planned trial is valid', () => {
+  const rows = [row({ key: 'probe/gate/1', scenario: 'probe', arm: 'gate', rep: 1, passed: true })];
+  const report = coverage.renderHoles(rows, { expectedTrialKeys: ['probe/gate/1', 'probe/off/1'] });
+  assert.match(report, /INCOMPLETE: 1\/2 scheduled trials have valid results/);
+  assert.doesNotMatch(report, /### Effect and cost/);
 });
 
 test('invalid attempts are excluded and counted in the report', () => {
@@ -468,6 +513,8 @@ test('minus-target is refused: it needs declared targets these scenarios lack', 
 test('real sessions require the explicit flag', () => {
   assert.throws(() => parseArgs(['--out', 'o', '--model', 'm']), /--allow-real-provider/);
   assert.doesNotThrow(() => parseArgs(['--out', 'o', '--dry-run']));
+  assert.throws(() => parseArgs(['--out', 'o', '--arms', 'off', '--dry-run']), /needs the gate arm/);
+  assert.strictEqual(parseArgs(['--out', 'o', '--verify']).verifyOnly, true);
 });
 
 console.log(`\nPassed: ${passed}`);

@@ -224,9 +224,14 @@ recorded as a judge failure rather than silently read as a stonewall.
 reachable, so the gate's contribution is whether it makes the agent ask the
 deciding question — not whether asking was permitted.
 
-**Scenarios are authored blind.** `task.json` must not declare
-`targetQuestions`; the loader rejects it. Which questions a scenario provokes is
-observed from the run and reported.
+**Scenario files do not encode gate targets.** `task.json` must not declare
+`targetQuestions`; the loader rejects it, and questions a scenario provokes are
+observed from the run. This is a file-format guard, not evidence of blind or
+independent authorship: the authors knew the taxonomy, and the later
+`external-contract` question was added after inspecting this corpus. Results
+for that question are exploratory. A confirmatory corpus needs independent
+authors who have not seen the taxonomy or interim results, with scenarios frozen
+before evaluation.
 
 ### Hole classes
 
@@ -254,20 +259,28 @@ stops.
 
 ### Hidden-intent results
 
-Six blind-authored scenarios, `off` and `gate`, four repetitions, 48 trials,
+Six scenarios authored by someone familiar with the taxonomy, `off` and `gate`, four repetitions, 48 trials,
 sonnet under test and haiku as the user. No provider errors, timeouts or judge
 failures, and the hook was observed in every gated trial. $7.14.
 
-**The scenarios isolate the mechanism.** Obtaining the deciding fact predicts
-the outcome almost perfectly, and identically in both arms:
+The numeric runs in this section are historical aggregates: their row-level
+results and transcripts are not in this repository, so they cannot be
+independently recomputed here. Some were originally summarized after excluding
+floor/ceiling scenarios. The current runner instead includes every valid
+predeclared scenario/repetition pair in the primary comparison; do not treat
+these old aggregate tables as output from the current analysis protocol.
+
+**Disclosure was associated with passing in this corpus.** In this initial run,
+28/28 trials that disclosed the deciding facts passed, while 3/20 that did not
+disclose them also passed:
 
 | Arm | got the fact, passed | did not, passed |
 | --- | ---: | ---: |
 | `gate` | 14/14 | 1/10 |
 | `off` | 14/14 | 2/10 |
 
-So asking the right question is necessary and sufficient here. That is what
-makes the next table a measurement rather than noise.
+This small observational comparison is consistent with the intended mechanism;
+it does not establish that disclosure is necessary, sufficient, or causal.
 
 **The gate does not change whether the agent asks.** Paired by scenario and
 repetition, exact McNemar:
@@ -279,9 +292,10 @@ repetition, exact McNemar:
 | Passed | 15/24 (43-79%) | 16/24 (47-82%) | 4 vs 5 | 1.000 |
 
 On the five scenarios that separate any arm, the paired pass-rate difference is
-5 points in `off`'s favour with a 95% interval of -25% to +35%. At 20 pairs the
-design has about 80% power for a 40-point difference, so a large effect is ruled
-out; a 15-to-20-point one is not, and would need roughly 160 pairs.
+5 points in `off`'s favour with a 95% interval of -25% to +35%. This interval
+does not exclude a large benefit. Under the stated assumptions, 20 pairs has
+about 80% power to detect a 40-point difference; it does not imply that a
+non-significant result rules out that effect.
 
 **The cost is consistent.** `gate` spends 8.3 turns and $0.176 per trial against
 5.9 and $0.121, about 41% more turns and 45% more cost, with mean score slightly
@@ -350,9 +364,9 @@ does not reject at the 5% level; on eleven discordant pairs the percentile
 interval is the less conservative of the two, and the exact test is the one to
 read.
 
-Asking remains necessary: no trial in either arm passed without the deciding
-fact, 0 of 8 for `gate` and 0 of 14 for `off`. With the fact, `gate` passed 15
-of 16 and `off` 8 of 10.
+In this run, no trial passed without the deciding fact (0 of 8 for `gate`, 0 of
+14 for `off`). With the fact, `gate` passed 15 of 16 and `off` 8 of 10. This
+observed association is not proof that asking is necessary or sufficient.
 
 The contrast between regimes is the clearest part, because the gated arm barely
 moved while the ungated arm halved:
@@ -435,19 +449,20 @@ against 22/48 (p = 0.230), obtained the deciding fact 27/48 against 21/48
 (p = 0.327). Both point the same way as the primary and neither reaches
 significance.
 
-**The mechanism is intact and is the one durable finding across every run.** No
-trial in either arm passed without the deciding fact - 0 of 21 for `gate`, 0 of
-27 for `off` - and with the fact, `gate` passed 25 of 27 and `off` 18 of 21.
-Obtaining the fact is necessary and very nearly sufficient; the gate simply does
-not reliably cause it.
+**Observed disclosure remained strongly associated with passing.** No trial in
+either arm passed without the deciding fact - 0 of 21 for `gate`, 0 of 27 for
+`off` - and with the fact, `gate` passed 25 of 27 and `off` 18 of 21. This is
+consistent with the proposed mechanism, but scenario-level observational data
+do not establish necessity, sufficiency, or causal mediation. The gate did not
+reliably cause disclosure in this run.
 
 **The cost is the most reliable number in the evaluation.** `gate` spent 8.2
 turns and $0.151 per trial against 6.0 and $0.108, about 37% more turns and 40%
 more cost. That has held within a few points across every run, flagged and
 unflagged, null and suggestive.
 
-**The effect shrank on replication,** which is what a near-threshold result
-usually does:
+The point estimate was smaller in the later run; these runs are not pooled, and
+this difference alone does not establish a trend:
 
 | Run | `gate` | `off` | Difference | Discordant | Exact p |
 | --- | ---: | ---: | ---: | --- | ---: |
@@ -471,7 +486,7 @@ every deciding fact was an external contract, so an `external-contract` question
 was added for code changes whose profile touches data and the 48-pair design was
 rerun. 96 trials, none invalid, $11.25. This run is exploratory, not
 confirmatory: the question was designed after seeing which questions these
-scenarios needed, so the corpus is no longer blind to it.
+scenarios needed, so this corpus is not independent of that design choice.
 
 The headline looks like a win and is not one. `gate` 23 of 48 against `off` 13
 of 48, paired difference 21 points, exact McNemar p = 0.021. But the comparison
@@ -510,26 +525,27 @@ different difficulty, and whether the question fires depends on what the agent
 did, so it is a selection effect rather than a measurement.
 
 The question is kept, because it asks something the gate genuinely never asked
-and the corpus says that kind of answer decides the outcome. What is not claimed
-is that adding it improved anything measurable here. A fair test needs scenarios
-authored blind to it.
+and the corpus suggests that kind of answer matters. What is not claimed is
+that adding it improved anything measurable here. A fair test needs scenarios
+written by independent authors who have not seen that question or these results.
 
 **Standing conclusion.** Across 336 billed trials the gate's benefit is not
 established, its direction has been positive in the unflagged runs, and its cost
 is a consistent 35 to 45% in turns and spend. "Not confirmed" is not "no
 effect", and a 15-point improvement would be worth having; but it has not been
 demonstrated, and nothing here licenses claiming it has. The evidence that does
-hold is narrower and more useful than a verdict on the gate: the deciding fact
-decides the outcome, and the gate's questions are aimed at code structure while
-every deciding fact in this corpus is an external contract.
+hold is narrower than a verdict on the gate: disclosure of the deciding fact
+was strongly associated with passing, and the gate's questions were aimed at
+code structure while the deciding facts in this corpus were external contracts.
 
 ### Reproduce
 
 ```bash
 node docker/gateguard-effectiveness/run-intent.js --check-graders
-node docker/gateguard-effectiveness/run-intent.js --out gg-intent --arms off,gate --dry-run
-node docker/gateguard-effectiveness/run-intent.js --out gg-intent --model <model> --allow-real-provider
-node docker/gateguard-effectiveness/run-intent.js --out gg-intent --summarize
+node docker/gateguard-effectiveness/run-intent.js --out gg-confirmatory --candidate-ref <frozen-commit-sha> --arms off,gate --scenarios audit-retention-purge,csv-export-delimiter,retry-idempotency,soft-limit-overage,timezone-daily-rollup,username-collation --reps 8 --user-turns 3 --max-turns 40 --timeout-min 15 --seed 11 --dry-run
+node docker/gateguard-effectiveness/run-intent.js --out gg-confirmatory --candidate-ref <frozen-commit-sha> --arms off,gate --scenarios audit-retention-purge,csv-export-delimiter,retry-idempotency,soft-limit-overage,timezone-daily-rollup,username-collation --reps 8 --user-turns 3 --max-turns 40 --timeout-min 15 --seed 11 --model <model> --judge-model haiku --allow-real-provider
+node docker/gateguard-effectiveness/run-intent.js --out gg-confirmatory --summarize
+node docker/gateguard-effectiveness/run-intent.js --out gg-confirmatory --verify
 node --test tests/docker/gateguard-intent.test.js
 ```
 
@@ -541,8 +557,17 @@ per user turn.
 
 - The simulated user is a model, so disclosure is not perfectly reproducible;
   repetitions, not a single trial, carry the estimate.
-- One scenario is not a corpus. The blind-authoring rule is only as good as the
-  independence of whoever writes the next ones.
+- No external independent author has produced a frozen confirmatory corpus yet.
+  Absence of `targetQuestions` prevents explicit labels leaking through the
+  task file, but does not make authorship blind.
+- Historical trial rows and transcript bundles are not committed, so the
+  historical aggregate claims cannot be independently re-rendered from this
+  repository. New runs write `evidence.json` with input fingerprints and
+  artifact checksums. `--verify` detects later file changes; it is not a
+  signature or proof of provenance.
+- Primary arm comparisons use every valid predeclared scenario/repetition pair.
+  Floor/ceiling classifications and hole counts are descriptive secondary
+  summaries and must not select the primary comparison subset.
 - Telling every arm that the user is reachable raises asking across the board,
   which is the right comparison but not the shipped default.
 

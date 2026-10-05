@@ -9,6 +9,7 @@
 // reports the holes rather than asserting coverage.
 
 const fs = require('fs');
+const crypto = require('crypto');
 const os = require('os');
 const path = require('path');
 const { spawnSync } = require('child_process');
@@ -16,6 +17,7 @@ const { schedule } = require('./lib');
 const { ARMS, armSettings, resolveRef, materializeTree } = require('./arms');
 const { loadIntentScenarios, graderIsSound, runIntentTrial, SUPPORTED_ARMS } = require('./intent-eval');
 const { renderHoles, difficulty, isValidTrial } = require('./coverage');
+const evidence = require('./evidence');
 
 const REPO_ROOT = path.resolve(__dirname, '..', '..');
 
@@ -35,7 +37,8 @@ const USAGE = [
   '  --seed <n>              arm order seed (default: 11)',
   '  --check-graders         confirm every grader separates start, trap and reference, then exit',
   '  --dry-run               print the schedule without running sessions',
-  '  --summarize             only rebuild holes.md from results.jsonl'
+  '  --summarize             rebuild the report from results.jsonl',
+  '  --verify                verify evidence.json checksums and exit'
 ].join('\n');
 
 function parseArgs(argv) {
@@ -43,7 +46,7 @@ function parseArgs(argv) {
     out: null, model: null, judgeModel: 'haiku', claude: 'claude',
     arms: ['off', 'gate', 'placebo'], scenarios: null, reps: 3, userTurns: 3,
     candidateRef: 'HEAD', mainRef: 'upstream/main', maxTurns: 40, timeoutMin: 15, seed: 11,
-    allowRealProvider: false, dryRun: false, summarizeOnly: false, checkGraders: false, help: false
+    allowRealProvider: false, dryRun: false, summarizeOnly: false, verifyOnly: false, checkGraders: false, help: false
   };
   const list = value => value.split(',').map(item => item.trim()).filter(Boolean);
   const positive = (value, name) => {
@@ -73,13 +76,18 @@ function parseArgs(argv) {
     else if (arg === '--check-graders') options.checkGraders = true;
     else if (arg === '--dry-run') options.dryRun = true;
     else if (arg === '--summarize') options.summarizeOnly = true;
+    else if (arg === '--verify') options.verifyOnly = true;
     else if (arg === '--help' || arg === '-h') options.help = true;
     else throw new Error(`unknown argument: ${arg}\n\n${USAGE}`);
   }
   const unsupported = options.arms.filter(arm => !SUPPORTED_ARMS.includes(arm));
   if (unsupported.length) throw new Error(`arm not supported for hidden-intent scenarios: ${unsupported.join(', ')}`);
+  if (!options.verifyOnly && !options.help && !options.checkGraders &&
+      (!options.arms.includes('gate') || options.arms.length < 2)) {
+    throw new Error('the effectiveness comparison needs the gate arm and at least one comparator arm');
+  }
   if (!options.help && !options.checkGraders && !options.out) throw new Error(`--out is required\n\n${USAGE}`);
-  if (!options.help && !options.checkGraders && !options.dryRun && !options.summarizeOnly) {
+  if (!options.help && !options.checkGraders && !options.dryRun && !options.summarizeOnly && !options.verifyOnly) {
     if (!options.model) throw new Error(`--model is required\n\n${USAGE}`);
     if (!options.allowRealProvider) throw new Error(`real sessions need --allow-real-provider\n\n${USAGE}`);
   }
@@ -88,7 +96,25 @@ function parseArgs(argv) {
 
 function readResults(file) {
   if (!fs.existsSync(file)) return [];
-  return fs.readFileSync(file, 'utf8').split('\n').filter(Boolean).map(line => JSON.parse(line));
+  return fs.readFileSync(file, 'utf8').split('\n').flatMap((line, index) => {
+    if (!line) return [];
+    try {
+      return [JSON.parse(line)];
+    } catch (error) {
+      throw new Error(`results.jsonl line ${index + 1} is malformed; preserve the file for recovery (${error.message})`);
+    }
+  });
+}
+
+function writeAtomic(file, contents) {
+  const temporary = path.join(path.dirname(file), `.${path.basename(file)}.${crypto.randomUUID()}.tmp`);
+  try {
+    fs.writeFileSync(temporary, contents, { flag: 'wx' });
+    fs.renameSync(temporary, file);
+  } catch (error) {
+    if (fs.existsSync(temporary)) fs.rmSync(temporary, { force: true });
+    throw error;
+  }
 }
 
 function completedTrialKeys(rows) {
@@ -123,17 +149,38 @@ function removeTrialSessions(before) {
 
 function writeReport(options, rows, meta) {
   const header = `Model: ${meta.model}; judge: ${meta.judgeModel}; hook commit: ${meta.sha}; reps: ${meta.reps}; user turns: ${meta.userTurns}.\n\n`;
-  const body = rows.length ? renderHoles(rows) : 'No trials recorded yet.\n';
-  fs.writeFileSync(path.join(options.out, 'holes.md'), header + body);
-  fs.writeFileSync(
+  const configuration = meta.configuration;
+  const expectedTrials = configuration
+    ? schedule(configuration.scenarios.map(id => ({ id })), configuration.arms, configuration.reps, configuration.seed)
+    : [];
+  const validKeys = new Set(rows.filter(isValidTrial).map(row => row.key));
+  const body = configuration
+    ? renderHoles(rows, { expectedTrialKeys: expectedTrials.map(trial => trial.key) })
+    : rows.length ? renderHoles(rows) : 'No trials recorded yet.\n';
+  writeAtomic(path.join(options.out, 'holes.md'), header + body);
+  writeAtomic(
     path.join(options.out, 'summary.json'),
     `${JSON.stringify({
       meta,
       difficulty: difficulty(rows.filter(isValidTrial)),
       rows: rows.length,
+      expectedTrials: expectedTrials.length || null,
+      validScheduledTrials: validKeys.size,
+      complete: expectedTrials.length ? validKeys.size === expectedTrials.length : null,
       validRows: rows.filter(isValidTrial).length,
       invalidRows: rows.filter(row => !isValidTrial(row)).length
     }, null, 2)}\n`
+  );
+  writeAtomic(
+    path.join(options.out, 'evidence.json'),
+    `${JSON.stringify(evidence.buildManifest({
+      meta,
+      configuration: meta.configuration,
+      scenarioFingerprints: meta.scenarioFingerprints,
+      sourceFingerprints: meta.sourceFingerprints,
+      outDir: options.out,
+      rows
+    }), null, 2)}\n`
   );
   return header + body;
 }
@@ -160,6 +207,21 @@ function main() {
     process.stdout.write(`${USAGE}\n`);
     return;
   }
+  if (options.verifyOnly) {
+    const manifest = evidence.verifyManifest(options.out);
+    process.stdout.write(`Evidence verified: ${Object.keys(manifest.files).length} artifact(s), schema ${manifest.schemaVersion}.\n`);
+    return;
+  }
+  const savedMetaFile = options.out && path.join(options.out, 'meta.json');
+  if (options.summarizeOnly && savedMetaFile && fs.existsSync(savedMetaFile)) {
+    const saved = JSON.parse(fs.readFileSync(savedMetaFile, 'utf8'));
+    const config = saved.configuration;
+    if (config) Object.assign(options, {
+      model: config.model, judgeModel: config.judgeModel, arms: config.arms,
+      scenarios: config.scenarios, reps: config.reps, userTurns: config.userTurns,
+      maxTurns: config.maxTurns, timeoutMin: config.timeoutMin, seed: config.seed
+    });
+  }
   const scenarios = loadIntentScenarios(undefined, options.scenarios);
   if (options.checkGraders) {
     checkGraders(scenarios);
@@ -171,22 +233,42 @@ function main() {
   const metaFile = path.join(options.out, 'meta.json');
   const trees = { candidate: resolveRef(REPO_ROOT, options.candidateRef) };
   if (options.arms.includes('main')) trees.main = resolveRef(REPO_ROOT, options.mainRef);
+  const configuration = {
+    model: options.model, judgeModel: options.judgeModel, candidateSha: trees.candidate, mainSha: trees.main || null,
+    reps: options.reps, userTurns: options.userTurns, arms: options.arms, scenarios: scenarios.map(scenario => scenario.id),
+    maxTurns: options.maxTurns, timeoutMin: options.timeoutMin, seed: options.seed
+  };
   const meta = {
     model: options.model, judgeModel: options.judgeModel, sha: trees.candidate, mainSha: trees.main || null,
     reps: options.reps, userTurns: options.userTurns, arms: options.arms,
-    scenarios: scenarios.map(scenario => scenario.id), maxTurns: options.maxTurns
+    scenarios: scenarios.map(scenario => scenario.id), maxTurns: options.maxTurns, timeoutMin: options.timeoutMin,
+    seed: options.seed, configuration,
+    scenarioFingerprints: Object.fromEntries(scenarios.map(scenario => [scenario.id, evidence.hashDirectory(scenario.root)])),
+    sourceFingerprints: Object.fromEntries([
+      'run-intent.js', 'coverage.js', 'intent-eval.js', 'lib.js', 'session.js', 'user-sim.js', 'arms.js', 'evidence.js',
+      '../context-profiles/ai-eval-lib.js'
+    ].map(name => [name, evidence.hashFile(path.resolve(__dirname, name))]))
   };
   if (fs.existsSync(metaFile)) {
     const previous = JSON.parse(fs.readFileSync(metaFile, 'utf8'));
-    for (const key of ['model', 'judgeModel', 'sha', 'maxTurns', 'userTurns']) {
-      if (!options.summarizeOnly && !options.dryRun && previous[key] !== meta[key]) {
-        throw new Error(`--out was started with ${key}=${previous[key]}; use a new --out`);
-      }
+    if (!options.summarizeOnly && !options.dryRun && (
+      JSON.stringify(previous.configuration) !== JSON.stringify(configuration) ||
+      JSON.stringify(previous.scenarioFingerprints) !== JSON.stringify(meta.scenarioFingerprints) ||
+      JSON.stringify(previous.sourceFingerprints) !== JSON.stringify(meta.sourceFingerprints)
+    )) {
+      throw new Error('--out was started with a different experiment configuration; use a new --out');
     }
   }
   const rows = readResults(resultsFile);
+  const planned = schedule(scenarios, options.arms, options.reps, options.seed);
+  evidence.validateRows(rows, planned);
   if (options.summarizeOnly) {
-    process.stdout.write(writeReport(options, rows, JSON.parse(fs.readFileSync(metaFile, 'utf8'))));
+    const previous = JSON.parse(fs.readFileSync(metaFile, 'utf8'));
+    if (JSON.stringify(previous.scenarioFingerprints) !== JSON.stringify(meta.scenarioFingerprints) ||
+        JSON.stringify(previous.sourceFingerprints) !== JSON.stringify(meta.sourceFingerprints)) {
+      throw new Error('--summarize cannot use changed scenario or harness inputs; preserve the original run inputs or use a new --out');
+    }
+    process.stdout.write(writeReport(options, rows, previous));
     return;
   }
 
@@ -210,13 +292,13 @@ function main() {
     // Failed attempts remain in results.jsonl for audit, but the scheduled key
     // is complete only after a valid trial has been recorded.
     const done = completedTrialKeys(rows);
-    const trials = schedule(scenarios, options.arms, options.reps, options.seed).filter(trial => !done.has(trial.key));
+    const trials = planned.filter(trial => !done.has(trial.key));
     process.stderr.write(`${trials.length} trials to run (${done.size} already recorded)\n`);
     if (options.dryRun) {
       for (const trial of trials) process.stdout.write(`${trial.key}\n`);
       return;
     }
-    fs.writeFileSync(metaFile, `${JSON.stringify(meta, null, 2)}\n`);
+    writeAtomic(metaFile, `${JSON.stringify(meta, null, 2)}\n`);
     let judgeFailures = 0;
     for (const [index, trial] of trials.entries()) {
       const sessionsBefore = listSessions();
@@ -237,10 +319,15 @@ function main() {
         userTurns: options.userTurns,
         execute
       });
+      const attemptId = crypto.randomUUID();
+      const transcriptName = `${trial.key.replace(/\//g, '__')}__${attemptId}.jsonl`;
+      row.attemptId = attemptId;
+      row.transcript = `transcripts/${transcriptName}`;
       fs.writeFileSync(
-        path.join(options.out, 'transcripts', `${trial.key.replace(/\//g, '__')}.jsonl`),
+        path.join(options.out, row.transcript),
         transcript.join('\n')
       );
+      row.transcriptSha256 = evidence.hashFile(path.join(options.out, row.transcript));
       fs.rmSync(path.join(workRoot, trial.key.replace(/\//g, '__')), { recursive: true, force: true });
       removeTrialSessions(sessionsBefore);
       // An unauthenticated or hookless run must not be recorded: graded as data it
@@ -276,4 +363,4 @@ if (require.main === module) {
   }
 }
 
-module.exports = { parseArgs, writeReport, checkGraders, completedTrialKeys };
+module.exports = { parseArgs, writeReport, checkGraders, completedTrialKeys, writeAtomic };

@@ -31,7 +31,7 @@ function loadIntentScenarios(dir = SCENARIO_DIR, ids = null) {
       const intent = JSON.parse(fs.readFileSync(path.join(root, 'intent.json'), 'utf8'));
       if (spec.id !== entry.name) throw new Error(`scenario ${entry.name} declares id ${spec.id}`);
       if (spec.targetQuestions) {
-        throw new Error(`scenario ${spec.id} declares targetQuestions; hidden-intent scenarios are authored blind to the taxonomy`);
+        throw new Error(`scenario ${spec.id} declares targetQuestions; hidden-intent scenarios must not encode gate-taxonomy targets`);
       }
       for (const key of ['trap', 'prompt']) {
         if (typeof spec[key] !== 'string' || !spec[key]) throw new Error(`scenario ${spec.id} is missing ${key}`);

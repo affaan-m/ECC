@@ -82,7 +82,8 @@ function difficulty(rows, { baselineArm = 'off' } = {}) {
 }
 
 /**
- * Whether a scenario separates any arm from any other, judged across every arm.
+ * Descriptive outcome range across all arms. This is post-treatment information
+ * and must not determine which scenarios enter the primary arm comparison.
  *
  * Only a scenario where nothing varies is uninformative: every trial passing
  * (the trap does not bite) or every trial failing (nothing reaches it). Judging
@@ -182,7 +183,7 @@ function renderEffect(rows, { referenceArm = 'gate', baselineArm = 'off' } = {})
   return `${lines.join('\n')}\n`;
 }
 
-function renderHoles(rows, { baselineArm = 'off' } = {}) {
+function renderHoles(rows, { baselineArm = 'off', expectedTrialKeys = null } = {}) {
   const invalid = rows.filter(row => !isValidTrial(row));
   const invalidFraction = rows.length ? invalid.length / rows.length : 0;
   const validity = rows.length
@@ -197,6 +198,19 @@ function renderHoles(rows, { baselineArm = 'off' } = {}) {
     ].join('\n');
   }
   rows = rows.filter(isValidTrial);
+  if (expectedTrialKeys) {
+    const validKeys = new Set(rows.map(row => row.key));
+    const missing = expectedTrialKeys.filter(key => !validKeys.has(key));
+    if (missing.length) {
+      return [
+        '### Run validity',
+        '',
+        `${validity}`,
+        `INCOMPLETE: ${validKeys.size}/${expectedTrialKeys.length} scheduled trials have valid results. Primary arm comparisons are suppressed until the fixed schedule is complete.`,
+        ''
+      ].join('\n');
+    }
+  }
   const arms = [...new Set(rows.map(row => row.arm))].sort();
   const classes = Object.keys(CLASSES);
   const lines = [];
@@ -215,16 +229,17 @@ function renderHoles(rows, { baselineArm = 'off' } = {}) {
   lines.push('');
   lines.push(
     dead.length
-      ? `${dead.length} of ${verdicts.length} scenarios carry no information (${dead.map(row => `${row.scenario}: ${row.label}`).join('; ')}). Arm comparisons below exclude them.`
+      ? `${dead.length} of ${verdicts.length} scenarios show no outcome variation (${dead.map(row => `${row.scenario}: ${row.label}`).join('; ')}). This is descriptive only; all valid predeclared scenarios remain in the primary arm comparison.`
       : `All ${verdicts.length} scenarios separate at least one arm from another.`
   );
 
   const usableScenarios = new Set(verdicts.filter(row => row.label === 'informative').map(row => row.scenario));
   const usable = rows.filter(row => usableScenarios.has(row.scenario));
 
-  lines.push('', renderEffect(usable.length ? usable : rows, { baselineArm }).trimEnd());
+  lines.push('', renderEffect(rows, { baselineArm }).trimEnd());
 
   lines.push('', '### Outcome classes', '');
+  lines.push('Descriptive mechanism counts below include only scenarios with outcome variation; they are not the primary comparison.', '');
   lines.push(`| Arm | ${classes.join(' | ')} |`, `| --- | ${classes.map(() => '---:').join(' | ')} |`);
   for (const arm of arms) {
     const counts = tally(usable.filter(row => row.arm === arm));

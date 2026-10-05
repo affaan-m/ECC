@@ -18,13 +18,22 @@ node docker/gateguard-effectiveness/run.js --out gg-eff --model <model> --allow-
 
 `run-intent.js` — effectiveness. Multi-turn sessions over `scenarios-intent/`,
 where the deciding fact exists only in a simulated user's hidden intent, so an
-agent that does not ask can only guess. Scenarios are authored blind to the
-gate's question taxonomy, and the report classifies each trial into a hole worth
-fixing.
+agent that does not ask can only guess. Scenario files omit declared gate
+question targets, but this does not establish blind or independent authorship:
+the authors knew the taxonomy, and the external-contract question was added
+after inspecting this corpus. Treat those results as exploratory. The report
+classifies behavior into descriptive hole categories.
+
+Each run writes `meta.json`, raw `results.jsonl`, transcripts, `summary.json`,
+`holes.md`, and `evidence.json`. The evidence manifest fingerprints the frozen
+scenario and harness inputs and hashes the output artifacts. Verify an output
+directory with `--verify`; this detects later file changes but is not a
+cryptographic signature or proof of who ran the experiment.
 
 ```bash
 node docker/gateguard-effectiveness/run-intent.js --check-graders
 node docker/gateguard-effectiveness/run-intent.js --out gg-intent --arms off,gate --dry-run
 node docker/gateguard-effectiveness/run-intent.js --out gg-intent --model <model> --allow-real-provider
 node docker/gateguard-effectiveness/run-intent.js --out gg-intent --summarize
+node docker/gateguard-effectiveness/run-intent.js --out gg-intent --verify
 ```
