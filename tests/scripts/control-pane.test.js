@@ -698,6 +698,10 @@ async function runTests() {
           assert.strictEqual(claim.item.status, 'running');
           assert.strictEqual(claim.item.metadata.assigneeKind, 'human');
 
+          const takeover = await post(app, 'wi-1/claim', { owner: 'bob', as: 'agent' });
+          assert.strictEqual(takeover.status, 400);
+          assert.match((await takeover.json()).error, /already owned by alice/);
+
           const move = await post(app, 'wi-2/move', { lane: 'blocked' }).then(r => r.json());
           assert.strictEqual(move.ok, true);
           assert.strictEqual(move.item.status, 'blocked');
@@ -706,6 +710,7 @@ async function runTests() {
           const snapshot = await fetchLocal(`${app.url}/api/snapshot`).then(r => r.json());
           const byId = id => snapshot.workItems.items.find(i => i.id === id);
           assert.strictEqual(byId('wi-1').assigneeKind, 'human');
+          assert.strictEqual(byId('wi-1').owner, 'alice');
           assert.strictEqual(byId('wi-2').kanbanState, 'blocked');
 
           // Invalid lane is a 400.

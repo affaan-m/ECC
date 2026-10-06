@@ -120,10 +120,20 @@ async function run() {
       assert.strictEqual(payload.reason, 'no-unassigned-open-items');
     });
 
-    await test('claim of a specific id works and rejects a missing id', async () => {
-      const owned = runClaim(dbPath, ['wi-owned', '--owner', 'carol']);
+    await test('claim by id preserves another owner and lets the current owner reclaim', async () => {
+      const denied = runClaim(dbPath, ['wi-owned', '--owner', 'carol']);
+      assert.notStrictEqual(denied.status, 0, 'a different owner must be refused');
+      assert.match(denied.stderr, /already owned by codex/);
+
+      const current = await createStateStore({ dbPath });
+      try {
+        assert.strictEqual(current.getWorkItemById('wi-owned').owner, 'codex');
+      } finally {
+        current.close();
+      }
+      const owned = runClaim(dbPath, ['wi-owned', '--owner', 'codex']);
       assert.strictEqual(owned.status, 0, owned.stderr);
-      assert.strictEqual(JSON.parse(owned.stdout).item.owner, 'carol', 'explicit id can be re-claimed');
+      assert.strictEqual(JSON.parse(owned.stdout).item.owner, 'codex');
 
       const missing = runClaim(dbPath, ['nope-404', '--owner', 'carol']);
       assert.notStrictEqual(missing.status, 0, 'missing id should fail');
