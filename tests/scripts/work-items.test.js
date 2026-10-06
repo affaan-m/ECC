@@ -140,6 +140,80 @@ async function run() {
       assert.ok(/not found/i.test(missing.stderr), 'reports not found');
     });
 
+    await test('GitHub sync separates authors from assignments and retains local claims', async () => {
+      const childProcess = require('child_process');
+      const modulePath = require.resolve('../../scripts/work-items');
+      const cachedModule = require.cache[modulePath];
+      const originalSpawn = childProcess.spawnSync;
+      const issues = [
+        { number: 101, title: 'Available issue', author: { login: 'reporter' }, assignees: [] },
+        { number: 102, title: 'Assigned issue', author: { login: 'reporter' }, assignees: [{ login: 'assignee' }] },
+        { number: 104, title: 'Legacy local owner', author: { login: 'reporter' }, assignees: [] }
+      ];
+      const prs = [{ number: 103, title: 'Review work', author: { login: 'contributor' }, assignees: [] }];
+      childProcess.spawnSync = (command, args, options) => command === 'gh'
+        ? { status: 0, stdout: JSON.stringify(args[0] === 'pr' ? prs : issues), stderr: '' }
+        : originalSpawn(command, args, options);
+      delete require.cache[modulePath];
+      const { syncGithubWorkItems, buildGithubIssueWorkItem } = require(modulePath);
+      const store = await createStateStore({ dbPath: path.join(dir, 'imports.db') });
+      const { claimWorkItem } = require('../../scripts/lib/control-pane/work-item-mutations');
+      try {
+        store.upsertWorkItem({ id: buildGithubIssueWorkItem('example/repo', issues[0]).id,
+          title: 'Legacy author-only issue', source: 'github-issue', sourceId: '101',
+          owner: 'reporter', status: 'needs-review',
+          metadata: { repo: 'example/repo', syncedBy: 'ecc-work-items-sync-github' } });
+        store.upsertWorkItem({ id: buildGithubIssueWorkItem('example/repo', issues[2]).id,
+          title: 'Legacy local owner', source: 'github-issue', sourceId: '104',
+          owner: 'legacy-operator', status: 'needs-review',
+          metadata: { repo: 'example/repo', syncedBy: 'ecc-work-items-sync-github' } });
+        const synced = syncGithubWorkItems(store, { githubRepo: 'example/repo', limit: 20 });
+        const available = synced.items.find(item => item.sourceId === '101');
+        const assigned = synced.items.find(item => item.sourceId === '102');
+        const pr = synced.items.find(item => item.sourceId === '103');
+        assert.strictEqual(available.owner, null);
+        assert.strictEqual(available.metadata.authorLogin, 'reporter');
+        assert.strictEqual(pr.owner, null);
+        assert.strictEqual(pr.metadata.authorLogin, 'contributor');
+        assert.strictEqual(assigned.owner, 'assignee');
+        const legacyOwner = synced.items.find(item => item.sourceId === '104');
+        assert.strictEqual(legacyOwner.owner, 'legacy-operator');
+        assert.throws(() => claimWorkItem(store, { id: legacyOwner.id, owner: 'operator' }), /already owned/);
+        assert.throws(() => claimWorkItem(store, { id: assigned.id, owner: 'operator' }), /already owned/);
+        claimWorkItem(store, { id: pr.id, owner: 'reviewer' });
+        const claimed = claimWorkItem(store, { owner: 'operator', assigneeKind: 'agent', sessionId: 'local-session' });
+        assert.strictEqual(claimed.item.id, available.id);
+        assert.strictEqual(claimed.item.owner, 'operator');
+        syncGithubWorkItems(store, { githubRepo: 'example/repo', limit: 20 });
+        assert.strictEqual(store.getWorkItemById(available.id).owner, 'operator');
+        assert.strictEqual(store.getWorkItemById(available.id).metadata.authorLogin, 'reporter');
+        assert.strictEqual(store.getWorkItemById(available.id).metadata.assigneeKind, 'agent');
+        assert.strictEqual(store.getWorkItemById(available.id).sessionId, 'local-session');
+      } finally {
+        store.close();
+        childProcess.spawnSync = originalSpawn;
+        if (cachedModule) require.cache[modulePath] = cachedModule;
+        else delete require.cache[modulePath];
+      }
+    });
+
+    await test('ambiguous legacy owners need synchronization while genuine legacy owners stay protected', async () => {
+      const store = await createStateStore({ dbPath: path.join(dir, 'legacy.db') });
+      const { claimWorkItem } = require('../../scripts/lib/control-pane/work-item-mutations');
+      const legacy = { source: 'github-issue', status: 'needs-review', owner: 'reporter',
+        metadata: { repo: 'legacy/repo', syncedBy: 'ecc-work-items-sync-github' } };
+      try {
+        store.upsertWorkItem({ ...legacy, id: 'legacy-author', title: 'Legacy author only' });
+        store.upsertWorkItem({ ...legacy, id: 'legacy-running', title: 'Legacy claim', status: 'running' });
+        store.upsertWorkItem({ ...legacy, id: 'legacy-explicit', title: 'Explicit assignee',
+          metadata: { ...legacy.metadata, assigneeKind: 'human' } });
+        assert.throws(() => claimWorkItem(store, { id: 'legacy-author', owner: 'worker' }), /already owned/);
+        assert.strictEqual(claimWorkItem(store, { owner: 'worker' }).claimed, false);
+        assert.throws(() => claimWorkItem(store, { id: 'legacy-running', owner: 'worker' }), /already owned/);
+        assert.throws(() => claimWorkItem(store, { id: 'legacy-explicit', owner: 'worker' }), /already owned/);
+      } finally { store.close(); }
+    });
+
     await test('claim requires --owner and validates --as', async () => {
       const noOwner = runClaim(dbPath, ['wi-done']);
       assert.notStrictEqual(noOwner.status, 0);

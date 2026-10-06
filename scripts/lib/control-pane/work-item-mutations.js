@@ -32,6 +32,21 @@ function priorityRank(priority) {
   return PRIORITY_RANK[String(priority || '').toLowerCase()] ?? 2;
 }
 
+/** Preserve explicit claims while upgrading old sync records that stored authors as owners. */
+function normalizeImportedOwnership(item, verifiedAuthorLogin = null) {
+  const metadata = item.metadata || {};
+  const importedStatus = item.source === 'github-issue'
+    ? item.status === 'needs-review'
+    : item.source === 'github-pr' && ['needs-review', 'blocked'].includes(item.status);
+  if (item.owner && item.owner === verifiedAuthorLogin && importedStatus
+    && metadata.syncedBy === 'ecc-work-items-sync-github'
+    && !Object.prototype.hasOwnProperty.call(metadata, 'authorLogin')
+    && !metadata.claimOwnerSource && !metadata.assigneeKind && !item.sessionId) {
+    return { ...item, owner: null, metadata: { ...metadata, authorLogin: item.owner } };
+  }
+  return item;
+}
+
 /**
  * Resolve which work item a claim targets: an explicit id, otherwise the
  * highest-priority unassigned open item (the JIT pickup queue).
@@ -71,7 +86,7 @@ function claimWorkItem(store, { id, owner, assigneeKind, sessionId, status } = {
   if (target.owner && target.owner !== owner) {
     throw new Error(`Work item ${target.id} is already owned by ${target.owner}; cannot claim.`);
   }
-  const metadata = { ...(target.metadata || {}) };
+  const metadata = { ...(target.metadata || {}), claimOwnerSource: 'local' };
   if (kind) {
     metadata.assigneeKind = kind;
   }
@@ -118,6 +133,7 @@ module.exports = {
   VALID_ASSIGNEE_KINDS,
   isOpenStatus,
   priorityRank,
+  normalizeImportedOwnership,
   selectClaimTarget,
   claimWorkItem,
   moveWorkItem

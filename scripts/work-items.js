@@ -4,7 +4,7 @@
 const os = require('os');
 const { spawnSync } = require('child_process');
 const { createStateStore } = require('./lib/state-store');
-const { claimWorkItem } = require('./lib/control-pane/work-item-mutations');
+const { claimWorkItem, normalizeImportedOwnership } = require('./lib/control-pane/work-item-mutations');
 
 const VALUE_FLAGS = new Set([
   '--as',
@@ -35,6 +35,10 @@ Usage:
   node scripts/work-items.js close <id> [--status done] [--db <path>] [--json]
   node scripts/work-items.js claim [<id>] --owner <name> [--as agent|human] [--db <path>] [--json]
   node scripts/work-items.js sync-github --repo <owner/repo> [--db <path>] [--json]
+
+GitHub authorship is metadata; assignees and local claims determine ownership.
+Local claims survive synchronization. Older author-only imports are upgraded
+during synchronization; existing running/classified owners stay protected.
 
 Track Linear, GitHub, handoff, and manual roadmap items in the ECC SQLite state
 store so "ecc status" can include linked work and blocked operator follow-up.
@@ -192,6 +196,23 @@ function githubAuthorLogin(item) {
   return item && item.author && item.author.login ? item.author.login : null;
 }
 
+function githubAssignees(item) {
+  return (Array.isArray(item.assignees) ? item.assignees : []).map(assignee => assignee.login).filter(Boolean);
+}
+
+function mergeGithubOwnership(store, payload) {
+  const previous = store.getWorkItemById(payload.id);
+  if (!previous) return payload;
+  const existing = normalizeImportedOwnership(previous, payload.metadata.authorLogin);
+  const metadata = existing.metadata || {};
+  if (existing.owner && (metadata.claimOwnerSource === 'local'
+    || !Object.prototype.hasOwnProperty.call(metadata, 'authorLogin'))) {
+    return { ...payload, owner: existing.owner, sessionId: existing.sessionId,
+      metadata: { ...metadata, ...payload.metadata, claimOwnerSource: 'local' } };
+  }
+  return payload;
+}
+
 function buildGithubPrWorkItem(repo, pr, options = {}) {
   return {
     id: githubWorkItemId(repo, 'pr', pr.number),
@@ -201,12 +222,14 @@ function buildGithubPrWorkItem(repo, pr, options = {}) {
     status: githubPrStatus(pr),
     priority: pr.isDraft || pr.mergeStateStatus === 'DIRTY' ? 'high' : 'normal',
     url: pr.url || null,
-    owner: githubAuthorLogin(pr),
+    owner: githubAssignees(pr)[0] || null,
     repoRoot: options.repoRoot || process.cwd(),
     sessionId: options.sessionId || null,
     metadata: {
       repo,
       type: 'pull_request',
+      authorLogin: githubAuthorLogin(pr),
+      assignees: githubAssignees(pr),
       mergeStateStatus: pr.mergeStateStatus || null,
       isDraft: Boolean(pr.isDraft),
       headRefName: pr.headRefName || null,
@@ -225,12 +248,14 @@ function buildGithubIssueWorkItem(repo, issue, options = {}) {
     status: 'needs-review',
     priority: 'normal',
     url: issue.url || null,
-    owner: githubAuthorLogin(issue),
+    owner: githubAssignees(issue)[0] || null,
     repoRoot: options.repoRoot || process.cwd(),
     sessionId: options.sessionId || null,
     metadata: {
       repo,
       type: 'issue',
+      authorLogin: githubAuthorLogin(issue),
+      assignees: githubAssignees(issue),
       labels: Array.isArray(issue.labels) ? issue.labels.map(label => label.name || label).filter(Boolean) : [],
       sourceUpdatedAt: issue.updatedAt || null,
       syncedBy: 'ecc-work-items-sync-github'
@@ -273,14 +298,14 @@ function syncGithubWorkItems(store, options) {
   }
 
   const limit = normalizeLimit(options.limit);
-  const prs = runGhJson(['pr', 'list', '--repo', repo, '--state', 'open', '--limit', String(limit), '--json', 'number,title,author,url,updatedAt,mergeStateStatus,isDraft,headRefName']);
-  const issues = runGhJson(['issue', 'list', '--repo', repo, '--state', 'open', '--limit', String(limit), '--json', 'number,title,author,url,updatedAt,labels']);
+  const prs = runGhJson(['pr', 'list', '--repo', repo, '--state', 'open', '--limit', String(limit), '--json', 'number,title,author,assignees,url,updatedAt,mergeStateStatus,isDraft,headRefName']);
+  const issues = runGhJson(['issue', 'list', '--repo', repo, '--state', 'open', '--limit', String(limit), '--json', 'number,title,author,assignees,url,updatedAt,labels']);
 
   const syncedAt = new Date().toISOString();
   const activeIds = new Set();
   const items = [];
   for (const pr of prs) {
-    const payload = buildGithubPrWorkItem(repo, pr, options);
+    const payload = mergeGithubOwnership(store, buildGithubPrWorkItem(repo, pr, options));
     activeIds.add(payload.id);
     items.push(
       store.upsertWorkItem({
@@ -291,7 +316,7 @@ function syncGithubWorkItems(store, options) {
     );
   }
   for (const issue of issues) {
-    const payload = buildGithubIssueWorkItem(repo, issue, options);
+    const payload = mergeGithubOwnership(store, buildGithubIssueWorkItem(repo, issue, options));
     activeIds.add(payload.id);
     items.push(
       store.upsertWorkItem({
