@@ -4,7 +4,7 @@
 const os = require('os');
 const { spawnSync } = require('child_process');
 const { createStateStore } = require('./lib/state-store');
-const { claimWorkItem, normalizeImportedOwnership } = require('./lib/control-pane/work-item-mutations');
+const { claimWorkItem, isOpenStatus } = require('./lib/control-pane/work-item-mutations');
 
 const VALUE_FLAGS = new Set([
   '--as',
@@ -37,8 +37,9 @@ Usage:
   node scripts/work-items.js sync-github --repo <owner/repo> [--db <path>] [--json]
 
 GitHub authorship is metadata; assignees and local claims determine ownership.
-Local claims survive synchronization. Older author-only imports are upgraded
-during synchronization; existing running/classified owners stay protected.
+Recorded local claims and active status survive synchronization. Ambiguous legacy
+ownership is preserved unless a current GitHub assignment or explicit local
+upsert --owner reconciles it; authorship or status alone never proves a claim.
 
 Track Linear, GitHub, handoff, and manual roadmap items in the ECC SQLite state
 store so "ecc status" can include linked work and blocked operator follow-up.
@@ -201,14 +202,20 @@ function githubAssignees(item) {
 }
 
 function mergeGithubOwnership(store, payload) {
-  const previous = store.getWorkItemById(payload.id);
-  if (!previous) return payload;
-  const existing = normalizeImportedOwnership(previous, payload.metadata.authorLogin);
+  const existing = store.getWorkItemById(payload.id);
+  if (!existing || !existing.owner) return payload;
   const metadata = existing.metadata || {};
-  if (existing.owner && (metadata.claimOwnerSource === 'local'
-    || !Object.prototype.hasOwnProperty.call(metadata, 'authorLogin'))) {
+  const localClaim = metadata.claimOwnerSource === 'local';
+  const ambiguous = metadata.ownershipAmbiguous === true
+    || !Object.prototype.hasOwnProperty.call(metadata, 'authorLogin');
+  // An explicit current GitHub assignment governs unproven legacy records.
+  // Do not infer a local claim from authorship, lane moves, or status alone.
+  if (!localClaim && payload.owner) return payload;
+  if (localClaim || ambiguous) {
     return { ...payload, owner: existing.owner, sessionId: existing.sessionId,
-      metadata: { ...metadata, ...payload.metadata, claimOwnerSource: 'local' } };
+      status: isOpenStatus(existing.status) ? existing.status : payload.status,
+      metadata: { ...metadata, ...payload.metadata,
+        ownershipAmbiguous: !localClaim } };
   }
   return payload;
 }
@@ -350,6 +357,12 @@ function buildUpsertPayload(options, existing = null) {
     throw new Error('Missing --title for a new work item.');
   }
 
+  const currentMetadata = options.metadataJson !== undefined
+    ? parseMetadataJson(options.metadataJson) : ((existing && existing.metadata) ?? null);
+  const metadata = options.owner !== undefined && options.owner !== null
+    ? { ...(currentMetadata || {}), claimOwnerSource: 'local', ownershipAmbiguous: false }
+    : currentMetadata;
+
   return {
     id,
     source: options.source ?? (existing && existing.source) ?? 'manual',
@@ -361,7 +374,7 @@ function buildUpsertPayload(options, existing = null) {
     owner: options.owner ?? (existing && existing.owner) ?? null,
     repoRoot: options.repoRoot ?? (existing && existing.repoRoot) ?? process.cwd(),
     sessionId: options.sessionId ?? (existing && existing.sessionId) ?? null,
-    metadata: options.metadataJson !== undefined ? parseMetadataJson(options.metadataJson) : ((existing && existing.metadata) ?? null),
+    metadata,
     createdAt: existing ? existing.createdAt : undefined,
     updatedAt: new Date().toISOString()
   };
@@ -373,6 +386,9 @@ function printWorkItem(item) {
   console.log(`ID: ${item.id}`);
   console.log(`Priority: ${item.priority || '(none)'}`);
   console.log(`Owner: ${item.owner || '(unassigned)'}`);
+  if (item.metadata?.ownershipAmbiguous) {
+    console.log('Ownership needs review: set the intended GitHub assignee or use upsert --owner.');
+  }
   console.log(`Repo: ${item.repoRoot || '(none)'}`);
   console.log(`Session: ${item.sessionId || '(none)'}`);
   console.log(`Updated: ${item.updatedAt}`);
@@ -393,6 +409,7 @@ function printWorkItemList(payload) {
     console.log(`  - ${item.source}/${sourceId} ${item.status}: ${item.title}`);
     console.log(`    ID: ${item.id}`);
     console.log(`    Owner: ${item.owner || '(unassigned)'}`);
+    if (item.metadata?.ownershipAmbiguous) console.log('    Ownership needs review; reconcile with a GitHub assignee or explicit upsert --owner.');
     console.log(`    Updated: ${item.updatedAt}`);
     if (item.url) {
       console.log(`    URL: ${item.url}`);

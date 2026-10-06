@@ -159,10 +159,6 @@ async function run() {
       const store = await createStateStore({ dbPath: path.join(dir, 'imports.db') });
       const { claimWorkItem } = require('../../scripts/lib/control-pane/work-item-mutations');
       try {
-        store.upsertWorkItem({ id: buildGithubIssueWorkItem('example/repo', issues[0]).id,
-          title: 'Legacy author-only issue', source: 'github-issue', sourceId: '101',
-          owner: 'reporter', status: 'needs-review',
-          metadata: { repo: 'example/repo', syncedBy: 'ecc-work-items-sync-github' } });
         store.upsertWorkItem({ id: buildGithubIssueWorkItem('example/repo', issues[2]).id,
           title: 'Legacy local owner', source: 'github-issue', sourceId: '104',
           owner: 'legacy-operator', status: 'needs-review',
@@ -178,6 +174,8 @@ async function run() {
         assert.strictEqual(assigned.owner, 'assignee');
         const legacyOwner = synced.items.find(item => item.sourceId === '104');
         assert.strictEqual(legacyOwner.owner, 'legacy-operator');
+        assert.strictEqual(legacyOwner.metadata.claimOwnerSource, undefined);
+        assert.strictEqual(legacyOwner.metadata.ownershipAmbiguous, true);
         assert.throws(() => claimWorkItem(store, { id: legacyOwner.id, owner: 'operator' }), /already owned/);
         assert.throws(() => claimWorkItem(store, { id: assigned.id, owner: 'operator' }), /already owned/);
         claimWorkItem(store, { id: pr.id, owner: 'reviewer' });
@@ -186,6 +184,7 @@ async function run() {
         assert.strictEqual(claimed.item.owner, 'operator');
         syncGithubWorkItems(store, { githubRepo: 'example/repo', limit: 20 });
         assert.strictEqual(store.getWorkItemById(available.id).owner, 'operator');
+        assert.strictEqual(store.getWorkItemById(available.id).status, 'running');
         assert.strictEqual(store.getWorkItemById(available.id).metadata.authorLogin, 'reporter');
         assert.strictEqual(store.getWorkItemById(available.id).metadata.assigneeKind, 'agent');
         assert.strictEqual(store.getWorkItemById(available.id).sessionId, 'local-session');
@@ -213,6 +212,67 @@ async function run() {
         assert.throws(() => claimWorkItem(store, { id: 'legacy-explicit', owner: 'worker' }), /already owned/);
       } finally { store.close(); }
     });
+
+    for (const scenario of ['old-author-claim', 'lane-move-assignee', 'remote-close']) {
+      await test(`GitHub ownership reconciliation: ${scenario}`, async () => {
+        const cp = require('child_process');
+        const modulePath = require.resolve('../../scripts/work-items');
+        const cached = require.cache[modulePath];
+        const original = cp.spawnSync;
+        let issues = [{ number: 201, title: 'Tracked work', author: { login: 'reporter' },
+          assignees: scenario === 'lane-move-assignee' ? [{ login: 'assignee' }] : [] }];
+        cp.spawnSync = (command, args, options) => command === 'gh'
+          ? { status: 0, stdout: JSON.stringify(args[0] === 'pr' ? [] : issues), stderr: '' }
+          : original(command, args, options);
+        delete require.cache[modulePath];
+        const { syncGithubWorkItems, buildGithubIssueWorkItem, buildUpsertPayload } = require(modulePath);
+        const { claimWorkItem, moveWorkItem } = require('../../scripts/lib/control-pane/work-item-mutations');
+        const store = await createStateStore({ dbPath: path.join(dir, `${scenario}.db`) });
+        const id = buildGithubIssueWorkItem('reconcile/repo', issues[0]).id;
+        const sync = () => syncGithubWorkItems(store, { githubRepo: 'reconcile/repo', limit: 20 });
+        try {
+          if (scenario !== 'remote-close') {
+            store.upsertWorkItem({ id, title: 'Legacy work', source: 'github-issue', sourceId: '201',
+              owner: 'reporter', status: 'needs-review',
+              metadata: { repo: 'reconcile/repo', syncedBy: 'ecc-work-items-sync-github' } });
+          }
+          if (scenario === 'lane-move-assignee') {
+            moveWorkItem(store, { id, lane: 'running' });
+            sync(); sync();
+            assert.strictEqual(store.getWorkItemById(id).owner, 'assignee');
+            assert.strictEqual(store.getWorkItemById(id).metadata.claimOwnerSource, undefined);
+            assert.strictEqual(claimWorkItem(store, { id, owner: 'assignee' }).claimed, true);
+          } else if (scenario === 'old-author-claim') {
+            sync(); sync();
+            const prior = store.getWorkItemById(id);
+            assert.strictEqual(prior.owner, 'reporter', 'an indistinguishable old claim must remain protected');
+            assert.strictEqual(prior.metadata.claimOwnerSource, undefined);
+            assert.strictEqual(prior.metadata.ownershipAmbiguous, true);
+            assert.throws(() => claimWorkItem(store, { id, owner: 'operator' }), /already owned/);
+            store.upsertWorkItem(buildUpsertPayload({ id, owner: 'intended-owner' }, prior));
+            sync();
+            assert.strictEqual(store.getWorkItemById(id).owner, 'intended-owner');
+            assert.strictEqual(store.getWorkItemById(id).metadata.claimOwnerSource, 'local');
+            assert.strictEqual(store.getWorkItemById(id).metadata.ownershipAmbiguous, false);
+          } else {
+            sync();
+            claimWorkItem(store, { id, owner: 'operator', assigneeKind: 'agent', sessionId: 'claim-session' });
+            sync();
+            assert.strictEqual(store.getWorkItemById(id).status, 'running');
+            issues = [];
+            sync();
+            const closed = store.getWorkItemById(id);
+            assert.strictEqual(closed.status, 'closed');
+            assert.strictEqual(closed.owner, 'operator');
+            assert.strictEqual(closed.sessionId, 'claim-session');
+          }
+        } finally {
+          store.close(); cp.spawnSync = original;
+          if (cached) require.cache[modulePath] = cached;
+          else delete require.cache[modulePath];
+        }
+      });
+    }
 
     await test('claim requires --owner and validates --as', async () => {
       const noOwner = runClaim(dbPath, ['wi-done']);
