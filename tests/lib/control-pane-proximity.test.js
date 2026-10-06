@@ -153,6 +153,7 @@ test('quoted staged paths and untracked paths share identity, and untracked fail
       const wt = path.join(dir, name);
       git(repo, 'worktree', 'add', '-q', '-b', name, wt, 'main');
       fs.writeFileSync(path.join(wt, file), `export const value = '${name}';\n`);
+      if (name === 'a') fs.writeFileSync(path.join(wt, 'README'), 'changed\n');
       return { id: name, worktree: { path: wt, base: 'main' } };
     });
     git(worktrees[0].worktree.path, 'add', file);
@@ -169,7 +170,14 @@ test('quoted staged paths and untracked paths share identity, and untracked fail
       const fresh = require(modulePath);
       const [tracked] = fresh.sessionsToAgents([worktrees[0]]);
       assert.ok(tracked, `${code}: tracked changes must survive`);
-      assert.deepStrictEqual(tracked.files.map(entry => entry.path), [file]);
+      assert.deepStrictEqual(tracked.files.map(entry => entry.path).sort(), ['README', file].sort());
+      childProcess.execFileSync = (command, args, options) => {
+        if (args.includes('--name-only')) throw Object.assign(new Error('tracked names unavailable'), { code });
+        return originalExec(command, args, options);
+      };
+      delete require.cache[modulePath];
+      const partial = require(modulePath).sessionsToAgents([worktrees[0]]);
+      assert.deepStrictEqual(partial[0].files.map(entry => entry.path), ['README']);
     }
   } finally {
     childProcess.execFileSync = originalExec;
@@ -219,6 +227,18 @@ test('parseDiffRanges: extracts new-side line ranges per file', () => {
     [11, 13],
     [44, 44]
   ]);
+});
+
+test('diff headers isolate quoted/deleted hunks and preserve trailing-space paths', () => {
+  const ranges = parseDiffRanges([
+    'diff --git a/first.js b/first.js', '+++ b/first.js', '@@ -1 +1 @@',
+    'diff --git "a/café.js" "b/café.js"', '+++ "b/café.js"', '@@ -20 +20 @@',
+    'diff --git a/deleted.js b/deleted.js', '+++ /dev/null', '@@ -30 +0,0 @@',
+    'diff --git a/trailing b/trailing', '+++ b/trailing ', '@@ -40 +40 @@',
+  ].join('\n'));
+  assert.deepStrictEqual(ranges.get('first.js'), [[1, 1]]);
+  assert.deepStrictEqual(ranges.get('trailing '), [[40, 40]]);
+  assert.strictEqual(ranges.has('trailing'), false);
 });
 
 test('line-range channel: same file but disjoint ranges ⇒ no resolution', () => {

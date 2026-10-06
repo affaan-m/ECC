@@ -28,9 +28,13 @@ function parseDiffRanges(diff) {
   const byFile = new Map();
   let current = null;
   for (const line of String(diff || '').split('\n')) {
+    if (line.startsWith('diff --git ')) {
+      current = null;
+      continue;
+    }
     const fileMatch = line.match(/^\+\+\+ b\/(.+)$/);
     if (fileMatch) {
-      const name = fileMatch[1].trim();
+      const name = fileMatch[1].replace(/\t$/, '');
       current = name === '/dev/null' ? null : name;
       if (current && !byFile.has(current)) byFile.set(current, []);
       continue;
@@ -80,8 +84,12 @@ function defaultWorkingSetFor(session) {
   try {
     const ranges = parseDiffRanges(runGitDiff(wt.path, base, ['--unified=0']));
     // Deletions, binary changes and quoted paths have no usable new-side hunks.
-    for (const file of runGitDiff(wt.path, base, ['--name-only', '-z']).split('\0').filter(Boolean)) {
-      if (!ranges.has(file)) ranges.set(file, []);
+    try {
+      for (const file of runGitDiff(wt.path, base, ['--name-only', '-z']).split('\0').filter(Boolean)) {
+        if (!ranges.has(file)) ranges.set(file, []);
+      }
+    } catch {
+      // Preserve ranges already read if the supplementary filename probe fails.
     }
     for (const file of untrackedFiles(wt.path)) ranges.set(file, []);
     return [...ranges.entries()].map(([path, lines]) => (lines.length > 0 ? { path, lines } : { path }));
