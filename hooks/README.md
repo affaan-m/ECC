@@ -13,6 +13,7 @@ User request → Claude picks a tool → PreToolUse hook runs → Tool executes 
 - **Stop** hooks run after each Claude response.
 - **SessionStart/SessionEnd** hooks run at session lifecycle boundaries.
 - **PreCompact** hooks run before context compaction, useful for saving state.
+- **UserPromptSubmit** hooks run when the user submits a prompt, before Claude sees it. Their JSON output can inject `additionalContext` for the turn (used by `user-prompt:context-gate` to enforce an end-of-session checkpoint protocol at high context usage). At or above the gate threshold the advisory hooks defer: `suggest-compact` and `ecc-context-monitor` suppress their `/compact` suggestions and context warnings (via `scripts/lib/context-gate-state.js`) so the gate owns end-of-session messaging without contradiction; when the gate cannot evaluate usage (missing/unreadable transcript) they fall back to their own warnings.
 
 ## Hooks in This Plugin
 

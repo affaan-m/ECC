@@ -894,6 +894,95 @@ function runTests() {
   })) passed++;
   else failed++;
 
+  // ── Context-gate deference ──
+
+  console.log('\nContext-gate deference:');
+
+  if (test('context suggestion stays silent while the context-gate is active', () => {
+    // 190k of an assumed 200k window = 95% >= the 90% gate threshold; the
+    // gate owns this band, so no /compact suggestion may fire.
+    const ctx = createContextContext();
+    const transcript = writeTranscriptFixture(190000);
+    try {
+      const result = runCompactWithInput(
+        { session_id: ctx.sessionId, transcript_path: transcript },
+        { ECC_CONTEXT_WINDOW_TOKENS: '', CLAUDE_CODE_AUTO_COMPACT_WINDOW: '' }
+      );
+      assert.strictEqual(result.code, 0);
+      assert.strictEqual(result.stdout.trim(), '', `Expected silence in the gate band. Got: "${result.stdout}"`);
+    } finally {
+      try { fs.unlinkSync(transcript); } catch (_err) { /* ignore */ }
+      ctx.cleanup();
+    }
+  })) passed++;
+  else failed++;
+
+  if (test('ECC_CONTEXT_GATE_PCT=0 restores the context suggestion', () => {
+    const ctx = createContextContext();
+    const transcript = writeTranscriptFixture(190000);
+    try {
+      const result = runCompactWithInput(
+        { session_id: ctx.sessionId, transcript_path: transcript },
+        { ECC_CONTEXT_WINDOW_TOKENS: '', CLAUDE_CODE_AUTO_COMPACT_WINDOW: '', ECC_CONTEXT_GATE_PCT: '0' }
+      );
+      assert.ok(
+        result.stdout.includes('Context ~190k tokens'),
+        `Expected suggestion with the gate disabled. Got: "${result.stdout}"`
+      );
+    } finally {
+      try { fs.unlinkSync(transcript); } catch (_err) { /* ignore */ }
+      ctx.cleanup();
+    }
+  })) passed++;
+  else failed++;
+
+  if (test('tool-count suggestion stays silent while the context-gate is active', () => {
+    const ctx = createContextContext();
+    const transcript = writeTranscriptFixture(190000);
+    ctx.cleanup();
+    fs.writeFileSync(ctx.counterFile, '49');
+    // Pre-mark the context bucket so only the count signal is in play.
+    fs.writeFileSync(ctx.bucketFile, '1000000');
+    try {
+      const result = runCompactWithInput(
+        { session_id: ctx.sessionId, transcript_path: transcript },
+        { ECC_CONTEXT_WINDOW_TOKENS: '', CLAUDE_CODE_AUTO_COMPACT_WINDOW: '' }
+      );
+      assert.strictEqual(result.code, 0);
+      assert.strictEqual(result.stdout.trim(), '', `Count message must not fire in the gate band. Got: "${result.stdout}"`);
+      assert.ok(
+        !result.stderr.includes('50 tool calls reached'),
+        `Count message must not be logged in the gate band. Got stderr: ${result.stderr}`
+      );
+    } finally {
+      try { fs.unlinkSync(transcript); } catch (_err) { /* ignore */ }
+      ctx.cleanup();
+    }
+  })) passed++;
+  else failed++;
+
+  if (test('tool-count suggestion fires again when the gate is disabled', () => {
+    const ctx = createContextContext();
+    const transcript = writeTranscriptFixture(190000);
+    ctx.cleanup();
+    fs.writeFileSync(ctx.counterFile, '49');
+    fs.writeFileSync(ctx.bucketFile, '1000000');
+    try {
+      const result = runCompactWithInput(
+        { session_id: ctx.sessionId, transcript_path: transcript },
+        { ECC_CONTEXT_WINDOW_TOKENS: '', CLAUDE_CODE_AUTO_COMPACT_WINDOW: '', ECC_CONTEXT_GATE_PCT: '0' }
+      );
+      assert.ok(
+        result.stdout.includes('50 tool calls reached'),
+        `Expected count message with the gate disabled. Got: "${result.stdout}"`
+      );
+    } finally {
+      try { fs.unlinkSync(transcript); } catch (_err) { /* ignore */ }
+      ctx.cleanup();
+    }
+  })) passed++;
+  else failed++;
+
   // Summary
   console.log(`
 Results: Passed: ${passed}, Failed: ${failed}`);
