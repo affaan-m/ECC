@@ -174,10 +174,6 @@ function withoutOpenCodeHookActivation(operation) {
   };
 }
 
-function transformOpenCodeHookActivationOperations(operations) {
-  return (Array.isArray(operations) ? operations : []).map(withoutOpenCodeHookActivation);
-}
-
 function planSelectsHookRuntime(plan = {}) {
   return (
     Array.isArray(plan.selectedModuleIds)
@@ -189,17 +185,26 @@ function planSelectsHookRuntime(plan = {}) {
 }
 
 function disableUnselectedOpenCodeHooks(plan) {
-  if (plan.target !== 'opencode' || planSelectsHookRuntime(plan)) {
+  if (plan.target !== 'opencode') {
     return plan;
   }
+  const runtimeSelected = planSelectsHookRuntime(plan);
+  const transformOperations = operations => (Array.isArray(operations) ? operations : []).map(operation => {
+    // The source barrel is needed by the published package, but OpenCode scans
+    // plugins/index.ts and plugins/ecc-hooks.ts independently in home installs.
+    if (!runtimeSelected || normalizeOperationPath(operation.sourceRelativePath) === '.opencode/plugins/index.ts') {
+      return withoutOpenCodeHookActivation(operation);
+    }
+    return operation;
+  });
 
   return {
     ...plan,
-    operations: transformOpenCodeHookActivationOperations(plan.operations),
+    operations: transformOperations(plan.operations),
     statePreview: plan.statePreview
       ? {
         ...plan.statePreview,
-        operations: transformOpenCodeHookActivationOperations(plan.statePreview.operations),
+        operations: transformOperations(plan.statePreview.operations),
       }
       : plan.statePreview,
   };

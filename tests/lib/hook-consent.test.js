@@ -148,7 +148,9 @@ function runTests() {
     const pending = withHookConsent(selected, null);
     assert.throws(() => assertHookConsentReady(pending), /automatic hook runtime/);
     const enabled = withHookConsent(selected, 'enabled');
-    assert.ok(enabled.operations.every(operation => operation.contentTransform === undefined));
+    for (const operation of [...enabled.operations, ...enabled.statePreview.operations]) {
+      assert.strictEqual(operation.contentTransform, operation.sourceRelativePath.endsWith('/index.ts') ? 'opencode-disable-plugin-entrypoint' : undefined);
+    }
     assert.doesNotThrow(() => assertHookConsentReady(enabled));
     const declined = withHookConsent(selected, 'declined');
     assert.strictEqual(declined.operations.length, 2);
