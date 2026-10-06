@@ -12,7 +12,7 @@ Dikkatli kullan:
 - Güvenilir, iyi tanımlanmış planlar için etkinleştir
 - Keşifsel çalışmalar için devre dışı bırak
 - Asla dangerously-skip-permissions flag'i kullanma
-- Bunun yerine `~/.claude.json` içinde `allowedTools` yapılandır
+- Bunun yerine `~/.claude/settings.json` (veya projenin `.claude/settings.json` dosyası) içinde `permissions.allow` kurallarını yapılandır
 
 ## TodoWrite En İyi Uygulamalar
 
