@@ -1725,10 +1725,15 @@ Add to `~/.claude/settings.json`:
 }
 ```
 
+The effort setting requires a model that supports effort controls. On Amazon Bedrock,
+Google Cloud's Agent Platform, and Microsoft Foundry, the `sonnet` alias currently
+resolves to Sonnet 4.5, which does not support effort controls. Select an effort-capable
+model available from your provider, or omit `CLAUDE_CODE_EFFORT_LEVEL`.
+
 | Setting | Default | Recommended | Impact |
 |---------|---------|-------------|--------|
 | `model` | opus | **sonnet** | ~60% cost reduction; handles 80%+ of coding tasks |
-| `CLAUDE_CODE_EFFORT_LEVEL` | Model-dependent | **medium** | Controls adaptive reasoning depth; lower effort trades reasoning depth for latency and cost |
+| `CLAUDE_CODE_EFFORT_LEVEL` | Model-dependent | **medium**, if supported | Controls adaptive reasoning depth on models that support effort controls; lower effort trades reasoning depth for latency and cost |
 | `CLAUDE_AUTOCOMPACT_PCT_OVERRIDE` | 95 | **50** | Compacts earlier, better quality in long sessions |
 | `ECC_CONTEXT_MONITOR_COST_WARNINGS` | on | **off for subscription users** | Suppresses agent-facing API-rate estimate warnings while keeping context/scope/loop warnings |
 

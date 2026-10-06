@@ -22,12 +22,17 @@ Add to your `~/.claude/settings.json`:
 }
 ```
 
+The effort setting requires a model that supports effort controls. On Amazon Bedrock,
+Google Cloud's Agent Platform, and Microsoft Foundry, the `sonnet` alias currently
+resolves to Sonnet 4.5, which does not support effort controls. Select an effort-capable
+model available from your provider, or omit `CLAUDE_CODE_EFFORT_LEVEL`.
+
 ### What each setting does
 
 | Setting | Default | Recommended | Effect |
 |---------|---------|-------------|--------|
 | `model` | opus | **sonnet** | Sonnet handles ~80% of coding tasks well. Switch to Opus with `/model opus` for complex reasoning. ~60% cost reduction. |
-| `CLAUDE_CODE_EFFORT_LEVEL` | Model-dependent | **medium** | Sets adaptive reasoning effort. Adjust it for task complexity; supported levels depend on the model. |
+| `CLAUDE_CODE_EFFORT_LEVEL` | Model-dependent | **medium**, if supported | Sets adaptive reasoning effort on models that support effort controls. Adjust it for task complexity; supported levels depend on the model. |
 | `CLAUDE_CODE_SUBAGENT_MODEL` | _(inherits main)_ | **haiku** | Subagents (Task tool) run on this model. Haiku is ~80% cheaper and sufficient for exploration, file reading, and test running. |
 | `ECC_CONTEXT_MONITOR_COST_WARNINGS` | on | **off for subscription users** | Suppresses agent-facing API-rate estimate warnings while keeping context exhaustion, scope, and loop warnings. |
 
@@ -154,7 +159,7 @@ The `configure-ecc` install wizard could offer to set these environment variable
 /cost                      # Check spending
 
 # Environment variables (add to ~/.claude/settings.json "env" block)
-CLAUDE_CODE_EFFORT_LEVEL=medium
+CLAUDE_CODE_EFFORT_LEVEL=medium  # Only for models that support effort controls
 CLAUDE_CODE_SUBAGENT_MODEL=haiku
 CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1
 ```

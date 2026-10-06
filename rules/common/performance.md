@@ -39,7 +39,7 @@ rather than a fixed token budget. Available levels depend on the model.
 Control thinking via:
 - **Effort**: Use `/effort` in a session, `--effort <level>` at launch, or `CLAUDE_CODE_EFFORT_LEVEL`. Save a per-model level in `modelSettings` in `~/.claude/settings.json`; the older user-level `effortLevel` key does not apply to Opus 5.5 or newer models.
 - **Toggle**: Option+T (macOS) / Alt+T (Windows/Linux), or `alwaysThinkingEnabled` in settings. These cannot disable thinking on Opus 5.5, Sonnet 5.5, or Fable models.
-- **Fixed budget**: A positive `MAX_THINKING_TOKENS` does not cap adaptive reasoning. On Opus 4.6 or Sonnet 4.6, set `CLAUDE_CODE_DISABLE_ADAPTIVE_THINKING=1` to use a fixed budget with `MAX_THINKING_TOKENS`.
+- **Fixed budget**: Claude Code ignores positive `MAX_THINKING_TOKENS` values on adaptive reasoning models. On Opus 4.6 or Sonnet 4.6, set `CLAUDE_CODE_DISABLE_ADAPTIVE_THINKING=1` to use a fixed budget with `MAX_THINKING_TOKENS`.
 - **Verbose mode**: Ctrl+O to see thinking output
 
 See [Claude Code model configuration](https://code.claude.com/docs/en/model-config#adjust-effort-level)
