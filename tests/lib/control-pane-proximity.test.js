@@ -54,6 +54,55 @@ const changedFilesFor = session =>
     'no-worktree': []
   })[session.id] || [];
 
+test('real worktrees expose committed, staged, unstaged and untracked work before commit', () => {
+  const fs = require('fs');
+  const os = require('os');
+  const path = require('path');
+  const { execFileSync } = require('child_process');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-proximity-worktree-'));
+  const repo = path.join(dir, 'repo');
+  const git = (cwd, ...args) => execFileSync('git', ['-C', cwd, ...args], { stdio: 'pipe' });
+  try {
+    fs.mkdirSync(repo);
+    git(repo, 'init', '-q', '-b', 'main');
+    git(repo, 'config', 'user.name', 'proximity-test');
+    git(repo, 'config', 'user.email', 'proximity-test@example.com');
+    fs.writeFileSync(path.join(repo, 'shared.js'), 'const value = 1;\n');
+    fs.writeFileSync(path.join(repo, '.gitignore'), 'ignored.js\n');
+    git(repo, 'add', '.');
+    git(repo, 'commit', '-qm', 'base');
+    const worktrees = ['a', 'b'].map(name => {
+      const wt = path.join(dir, name);
+      git(repo, 'worktree', 'add', '-q', '-b', name, wt, 'main');
+      fs.writeFileSync(path.join(wt, 'shared.js'), `const value = '${name}';\n`);
+      fs.writeFileSync(path.join(wt, 'new.js'), `export const name = '${name}';\n`);
+      fs.writeFileSync(path.join(wt, 'ignored.js'), 'ignored\n');
+      return { id: name, worktree: { path: wt, base: 'main' } };
+    });
+    git(worktrees[0].worktree.path, 'add', 'shared.js');
+    fs.writeFileSync(path.join(repo, 'upstream.js'), 'upstream only\n');
+    git(repo, 'add', '.');
+    git(repo, 'commit', '-qm', 'advance base');
+    const assertWorkingSets = () => {
+      const agents = sessionsToAgents(worktrees);
+      assert.strictEqual(agents.length, 2);
+      for (const agent of agents) {
+        assert.deepStrictEqual(agent.files.map(f => f.path).sort(), ['new.js', 'shared.js']);
+        assert.deepStrictEqual(agent.files.find(f => f.path === 'shared.js').lines, [[1, 1]]);
+        assert.strictEqual(agent.files.find(f => f.path === 'new.js').lines, undefined);
+      }
+      const snapshot = buildProximitySnapshot(worktrees, { repoRoot: repo, graph: { adjacency: {} } });
+      assert.strictEqual(snapshot.counts.agents, 2);
+      assert.ok(snapshot.advisories.some(a => a.level === 'resolution'));
+    };
+    assertWorkingSets();
+    git(worktrees[0].worktree.path, 'commit', '-qm', 'commit staged edit');
+    assertWorkingSets();
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test('sessionsToAgents: only worktree sessions with edits participate', () => {
   const agents = sessionsToAgents(sessions, { changedFilesFor });
   assert.deepStrictEqual(agents.map(a => a.agentId).sort(), ['docs-bot', 'lead-hermes', 'worker-kb']);

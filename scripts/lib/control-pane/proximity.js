@@ -45,13 +45,22 @@ function parseDiffRanges(diff) {
   return byFile;
 }
 
-function runGitDiff(worktreePath, base, extraArgs) {
-  return execFileSync('git', ['-C', worktreePath, 'diff', ...extraArgs, `${base}...HEAD`], {
+function runGit(worktreePath, args) {
+  return execFileSync('git', ['-C', worktreePath, ...args], {
     encoding: 'utf8',
     timeout: 5000,
     maxBuffer: 8 * 1024 * 1024,
     stdio: ['ignore', 'pipe', 'ignore']
   });
+}
+
+function runGitDiff(worktreePath, base, extraArgs) {
+  const mergeBase = runGit(worktreePath, ['merge-base', '--', base, 'HEAD']).trim();
+  return runGit(worktreePath, ['diff', ...extraArgs, mergeBase, '--']);
+}
+
+function untrackedFiles(worktreePath) {
+  return runGit(worktreePath, ['ls-files', '--others', '--exclude-standard', '-z']).split('\0').filter(Boolean);
 }
 
 /**
@@ -65,6 +74,7 @@ function defaultWorkingSetFor(session) {
   const base = wt.base || 'HEAD';
   try {
     const ranges = parseDiffRanges(runGitDiff(wt.path, base, ['--unified=0']));
+    for (const file of untrackedFiles(wt.path)) ranges.set(file, []);
     return [...ranges.entries()].map(([path, lines]) => (lines.length > 0 ? { path, lines } : { path }));
   } catch {
     return [];
@@ -79,10 +89,7 @@ function defaultChangedFilesFor(session) {
   if (!wt || !wt.path) return [];
   const base = wt.base || 'HEAD';
   try {
-    return runGitDiff(wt.path, base, ['--name-only'])
-      .split('\n')
-      .map(s => s.trim())
-      .filter(Boolean);
+    return [...new Set([...runGitDiff(wt.path, base, ['--name-only', '-z']).split('\0').filter(Boolean), ...untrackedFiles(wt.path)])];
   } catch {
     return [];
   }

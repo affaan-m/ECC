@@ -149,3 +149,8 @@ the renderer draws), and pairwise `links` with risk (the edges to color).
   escalation wired to live session diffs.
 - v2: cross-machine airspace over Tailscale (teammate agents enter the same
   space); the recorded "N agents, M humans, zero merge conflicts" demo.
+
+The control pane compares each worktree against the merge base of its declared base
+and HEAD. Committed, staged, and unstaged tracked edits carry changed line ranges.
+Untracked files that Git does not ignore participate as whole-file working sets.
+Changes made only on the base branch after the worktree diverged do not participate.
