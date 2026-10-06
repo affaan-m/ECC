@@ -15,6 +15,34 @@ const { execFileSync } = require('child_process');
 const { scanAirspace, buildProximityTriggers } = require('../agent-proximity');
 const { buildDependencyGraph } = require('../agent-proximity/graph');
 
+/** Decode Git C-style path escapes as bytes before UTF-8 decoding. */
+function decodeGitPath(header) {
+  const value = header.replace(/\t$/, '');
+  if (!value.startsWith('"')) return value;
+  if (!value.endsWith('"')) return null;
+  const parts = [];
+  let literal = '';
+  const escaped = { a: 7, b: 8, t: 9, n: 10, v: 11, f: 12, r: 13, '"': 34, '\\': 92 };
+  for (let i = 1; i < value.length - 1; i += 1) {
+    const character = value[i];
+    if (character !== '\\') { literal += character; continue; }
+    if (literal) { parts.push(Buffer.from(literal, 'utf8')); literal = ''; }
+    const next = value[++i];
+    if (/[0-7]/.test(next || '')) {
+      let octal = next;
+      while (octal.length < 3 && /[0-7]/.test(value[i + 1] || '')) octal += value[++i];
+      const byte = parseInt(octal, 8);
+      if (byte > 255) return null;
+      parts.push(Buffer.from([byte]));
+    } else {
+      if (!Object.prototype.hasOwnProperty.call(escaped, next)) return null;
+      parts.push(Buffer.from([escaped[next]]));
+    }
+  }
+  if (literal) parts.push(Buffer.from(literal, 'utf8'));
+  return Buffer.concat(parts).toString('utf8');
+}
+
 /**
  * Parse `git diff --unified=0` output into per-file NEW-side line ranges. Hunk
  * headers look like `@@ -a,b +c,d @@`; we keep the +c,d (new) side so the overlap
@@ -32,10 +60,9 @@ function parseDiffRanges(diff) {
       current = null;
       continue;
     }
-    const fileMatch = line.match(/^\+\+\+ b\/(.+)$/);
-    if (fileMatch) {
-      const name = fileMatch[1].replace(/\t$/, '');
-      current = name === '/dev/null' ? null : name;
+    if (line.startsWith('+++ ')) {
+      const gitPath = decodeGitPath(line.slice(4));
+      current = gitPath && gitPath.startsWith('b/') ? gitPath.slice(2) : null;
       if (current && !byFile.has(current)) byFile.set(current, []);
       continue;
     }
@@ -60,7 +87,7 @@ function runGit(worktreePath, args) {
 
 function runGitDiff(worktreePath, base, extraArgs) {
   const mergeBase = runGit(worktreePath, ['merge-base', '--', base, 'HEAD']).trim();
-  return runGit(worktreePath, ['diff', ...extraArgs, mergeBase, '--']);
+  return runGit(worktreePath, ['-c', 'core.quotePath=false', 'diff', ...extraArgs, mergeBase, '--']);
 }
 
 function untrackedFiles(worktreePath) {

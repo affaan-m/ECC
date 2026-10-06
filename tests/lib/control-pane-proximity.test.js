@@ -148,7 +148,7 @@ test('quoted staged paths and untracked paths share identity, and untracked fail
     fs.writeFileSync(path.join(repo, 'README'), 'base\n');
     git(repo, 'add', '.');
     git(repo, 'commit', '-qm', 'base');
-    const file = 'café"résumé.js';
+    const file = process.platform === 'win32' ? 'café-résumé.js' : 'café"résumé.js';
     const worktrees = ['a', 'b'].map(name => {
       const wt = path.join(dir, name);
       git(repo, 'worktree', 'add', '-q', '-b', name, wt, 'main');
@@ -177,7 +177,7 @@ test('quoted staged paths and untracked paths share identity, and untracked fail
       };
       delete require.cache[modulePath];
       const partial = require(modulePath).sessionsToAgents([worktrees[0]]);
-      assert.deepStrictEqual(partial[0].files.map(entry => entry.path), ['README']);
+      assert.deepStrictEqual(partial[0].files.map(entry => entry.path).sort(), ['README', file].sort());
     }
   } finally {
     childProcess.execFileSync = originalExec;
@@ -239,6 +239,48 @@ test('diff headers isolate quoted/deleted hunks and preserve trailing-space path
   assert.deepStrictEqual(ranges.get('first.js'), [[1, 1]]);
   assert.deepStrictEqual(ranges.get('trailing '), [[40, 40]]);
   assert.strictEqual(ranges.has('trailing'), false);
+});
+
+test('quoted Git headers decode UTF-8 octal bytes, quotes and control escapes into exact paths', () => {
+  const ranges = parseDiffRanges([
+    'diff --git "a/café.js" "b/café.js"',
+    '+++ "b/caf\\303\\251\\"r\\303\\251sum\\303\\251\\tname.js"', '@@ -4,2 +4,2 @@',
+    'diff --git a/other.js b/other.js', '+++ b/other.js', '@@ -8 +8 @@',
+  ].join('\n'));
+  assert.deepStrictEqual(ranges.get('café"résumé\tname.js'), [[4, 5]]);
+  assert.deepStrictEqual(ranges.get('other.js'), [[8, 8]]);
+});
+
+test('real quoted filenames retain disjoint hunk ranges rather than whole-file collisions', () => {
+  const fs = require('fs');
+  const os = require('os');
+  const path = require('path');
+  const { execFileSync } = require('child_process');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-proximity-quoted-lines-'));
+  const repo = path.join(dir, 'repo');
+  const git = (cwd, ...args) => execFileSync('git', ['-C', cwd, ...args], { stdio: 'pipe' });
+  const file = process.platform === 'win32' ? 'café-résumé.js' : 'café"résumé\tname.js';
+  try {
+    fs.mkdirSync(repo);
+    git(repo, 'init', '-q', '-b', 'main');
+    git(repo, 'config', 'user.name', 'proximity-test');
+    git(repo, 'config', 'user.email', 'proximity-test@example.com');
+    const original = Array.from({ length: 40 }, (_, i) => `const line${i} = ${i};`);
+    fs.writeFileSync(path.join(repo, file), `${original.join('\n')}\n`);
+    git(repo, 'add', '.'); git(repo, 'commit', '-qm', 'base');
+    const sessions = ['a', 'b'].map((name, index) => {
+      const wt = path.join(dir, name);
+      git(repo, 'worktree', 'add', '-q', '-b', name, wt, 'main');
+      const lines = original.map((line, i) => i === index * 39 ? `${line} // edit` : line);
+      fs.writeFileSync(path.join(wt, file), `${lines.join('\n')}\n`);
+      return { id: name, worktree: { path: wt, base: 'main' } };
+    });
+    const agents = sessionsToAgents(sessions);
+    assert.deepStrictEqual(agents[0].files, [{ weight: 1, path: file, lines: [[1, 1]] }]);
+    assert.deepStrictEqual(agents[1].files, [{ weight: 1, path: file, lines: [[40, 40]] }]);
+    const snapshot = buildProximitySnapshot(sessions, { repoRoot: repo, graph: { adjacency: {} } });
+    assert.ok(!snapshot.advisories.some(advisory => advisory.level === 'resolution'));
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });
 
 test('line-range channel: same file but disjoint ranges ⇒ no resolution', () => {
