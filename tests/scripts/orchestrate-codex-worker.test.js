@@ -53,9 +53,10 @@ process.exit(Number(process.env.ECC_TEST_EXIT));
     const env = { ...process.env,
       PATH: `${binDir}${path.delimiter}${process.env.PATH}`,
       ECC_TEST_CAPTURE: captureFile,
-      ECC_TEST_EXIT: String(exitCode),
-      ECC_CODEX_APPROVAL_POLICY: policy || 'never'
+      ECC_TEST_EXIT: String(exitCode)
     };
+    if (policy === undefined) delete env.ECC_CODEX_APPROVAL_POLICY;
+    else env.ECC_CODEX_APPROVAL_POLICY = policy;
     const result = spawnSync('bash', [SCRIPT, taskFile, handoffFile, statusFile], {
       cwd: tempRoot, env, encoding: 'utf8', timeout: 10000
     });
@@ -73,6 +74,7 @@ process.exit(Number(process.env.ECC_TEST_EXIT));
 test('starts a worker with the current CLI grammar and configured model', () => {
   const result = runWorker();
   assert.strictEqual(result.status, 0, result.stderr);
+  assert.strictEqual(result.args[result.args.indexOf('--ask-for-approval') + 1], 'never');
   assert.ok(!result.args.includes('-m') && !result.args.includes('--model'),
     'Worker should inherit the configured model rather than pin a retired model');
   assert.ok(result.handoff.includes('Completed the focused task.'));
