@@ -60,7 +60,12 @@ function runGitDiff(worktreePath, base, extraArgs) {
 }
 
 function untrackedFiles(worktreePath) {
-  return runGit(worktreePath, ['ls-files', '--others', '--exclude-standard', '-z']).split('\0').filter(Boolean);
+  try {
+    return runGit(worktreePath, ['ls-files', '--others', '--exclude-standard', '-z']).split('\0').filter(Boolean);
+  } catch {
+    // Keep successful tracked-file diffs when this optional probe is unavailable.
+    return [];
+  }
 }
 
 /**
@@ -74,6 +79,10 @@ function defaultWorkingSetFor(session) {
   const base = wt.base || 'HEAD';
   try {
     const ranges = parseDiffRanges(runGitDiff(wt.path, base, ['--unified=0']));
+    // Deletions, binary changes and quoted paths have no usable new-side hunks.
+    for (const file of runGitDiff(wt.path, base, ['--name-only', '-z']).split('\0').filter(Boolean)) {
+      if (!ranges.has(file)) ranges.set(file, []);
+    }
     for (const file of untrackedFiles(wt.path)) ranges.set(file, []);
     return [...ranges.entries()].map(([path, lines]) => (lines.length > 0 ? { path, lines } : { path }));
   } catch {

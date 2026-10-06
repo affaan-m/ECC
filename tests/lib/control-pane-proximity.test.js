@@ -103,6 +103,81 @@ test('real worktrees expose committed, staged, unstaged and untracked work befor
   }
 });
 
+test('real Git working sets retain tracked deletions and binary changes', () => {
+  const fs = require('fs');
+  const os = require('os');
+  const path = require('path');
+  const { execFileSync } = require('child_process');
+  const repo = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-proximity-delete-'));
+  const git = (...args) => execFileSync('git', ['-C', repo, ...args], { stdio: 'pipe' });
+  try {
+    git('init', '-q', '-b', 'main');
+    git('config', 'user.name', 'proximity-test');
+    git('config', 'user.email', 'proximity-test@example.com');
+    fs.writeFileSync(path.join(repo, 'deleted.js'), 'export const value = 1;\n');
+    fs.writeFileSync(path.join(repo, 'binary.bin'), Buffer.from([0, 1, 2]));
+    git('add', '.');
+    git('commit', '-qm', 'base');
+    fs.unlinkSync(path.join(repo, 'deleted.js'));
+    fs.writeFileSync(path.join(repo, 'binary.bin'), Buffer.from([0, 3, 4]));
+    const [agent] = sessionsToAgents([{ id: 'delete', worktree: { path: repo, base: 'main' } }]);
+    assert.ok(agent, 'an agent with only non-text tracked changes still participates');
+    assert.deepStrictEqual(agent.files.map(f => f.path).sort(), ['binary.bin', 'deleted.js']);
+    assert.ok(agent.files.every(f => f.lines === undefined));
+  } finally {
+    fs.rmSync(repo, { recursive: true, force: true });
+  }
+});
+
+test('quoted staged paths and untracked paths share identity, and untracked failures keep tracked edits', () => {
+  const fs = require('fs');
+  const os = require('os');
+  const path = require('path');
+  const childProcess = require('child_process');
+  const originalExec = childProcess.execFileSync;
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-proximity-quoted-'));
+  const repo = path.join(dir, 'repo');
+  const git = (cwd, ...args) => originalExec('git', ['-C', cwd, ...args], { stdio: 'pipe' });
+  const modulePath = require.resolve('../../scripts/lib/control-pane/proximity');
+  const cachedModule = require.cache[modulePath];
+  try {
+    fs.mkdirSync(repo);
+    git(repo, 'init', '-q', '-b', 'main');
+    git(repo, 'config', 'user.name', 'proximity-test');
+    git(repo, 'config', 'user.email', 'proximity-test@example.com');
+    fs.writeFileSync(path.join(repo, 'README'), 'base\n');
+    git(repo, 'add', '.');
+    git(repo, 'commit', '-qm', 'base');
+    const file = 'café"résumé.js';
+    const worktrees = ['a', 'b'].map(name => {
+      const wt = path.join(dir, name);
+      git(repo, 'worktree', 'add', '-q', '-b', name, wt, 'main');
+      fs.writeFileSync(path.join(wt, file), `export const value = '${name}';\n`);
+      return { id: name, worktree: { path: wt, base: 'main' } };
+    });
+    git(worktrees[0].worktree.path, 'add', file);
+    const snapshot = buildProximitySnapshot(worktrees, { repoRoot: repo, graph: { adjacency: {} } });
+    assert.strictEqual(snapshot.counts.agents, 2);
+    assert.ok(snapshot.advisories.some(advisory => advisory.level === 'resolution'));
+    assert.ok(snapshot.agents.every(agent => agent.files.includes(file)));
+    for (const code of ['EACCES', 'ETIMEDOUT', 'ENOBUFS']) {
+      childProcess.execFileSync = (command, args, options) => {
+        if (args.includes('ls-files')) throw Object.assign(new Error('untracked probe unavailable'), { code });
+        return originalExec(command, args, options);
+      };
+      delete require.cache[modulePath];
+      const fresh = require(modulePath);
+      const [tracked] = fresh.sessionsToAgents([worktrees[0]]);
+      assert.ok(tracked, `${code}: tracked changes must survive`);
+      assert.deepStrictEqual(tracked.files.map(entry => entry.path), [file]);
+    }
+  } finally {
+    childProcess.execFileSync = originalExec;
+    require.cache[modulePath] = cachedModule;
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test('sessionsToAgents: only worktree sessions with edits participate', () => {
   const agents = sessionsToAgents(sessions, { changedFilesFor });
   assert.deepStrictEqual(agents.map(a => a.agentId).sort(), ['docs-bot', 'lead-hermes', 'worker-kb']);
