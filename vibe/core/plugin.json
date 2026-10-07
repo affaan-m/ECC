@@ -1,0 +1,30 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "ecc",
+  "version": "2.2.3",
+  "description": "Harness-native ECC plugin for Mistral Vibe: 68 subagents, 83 user-invocable command skills, 22 rule knowledge packs, and curated pre-tool hooks, generated from the canonical ECC sources.",
+  "author": {
+    "name": "Affaan Mustafa",
+    "url": "https://x.com/affaanmustafa"
+  },
+  "homepage": "https://ecc.tools",
+  "repository": "https://github.com/affaan-m/ECC",
+  "license": "MIT",
+  "keywords": [
+    "vibe",
+    "mistral-vibe",
+    "agents",
+    "skills",
+    "hooks",
+    "tdd",
+    "code-review",
+    "security",
+    "best-practices"
+  ],
+  "extensions": {
+    "ai.mistral.vibe": {
+      "schemaVersion": 1,
+      "toolNamespace": "ecc"
+    }
+  }
+}

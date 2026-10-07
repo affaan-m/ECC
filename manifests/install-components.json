@@ -38,7 +38,8 @@
       "family": "baseline",
       "description": "Platform configs, package-manager setup, and MCP catalog defaults.",
       "modules": [
-        "platform-configs"
+        "platform-configs",
+        "vibe-core"
       ]
     },
     {

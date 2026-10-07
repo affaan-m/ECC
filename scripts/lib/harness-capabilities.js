@@ -215,6 +215,23 @@ const HARNESS_CAPABILITIES = deepFreeze([
     aliases: ['adal-cli'],
   },
   {
+    id: 'vibe',
+    label: 'Mistral Vibe',
+    targetIds: ['vibe'],
+    channel: 'managed-home',
+    installMode: 'managed-home',
+    guidedReady: false,
+    availability: 'advanced',
+    destination: '~/.vibe/plugins/ecc',
+    scopes: [scope('home', 'vibe', '~/.vibe/plugins/ecc')],
+    hooks: hooks(
+      'adapter-configured',
+      true,
+      'ECC pre-tool hooks run through the Vibe hook bridge from the installed plugin root.'
+    ),
+    aliases: ['mistral-vibe'],
+  },
+  {
     id: 'hermes',
     label: 'Hermes',
     targetIds: ['hermes'],

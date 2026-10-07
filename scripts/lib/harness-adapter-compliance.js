@@ -157,6 +157,41 @@ const ADAPTER_RECORDS = Object.freeze([
     ],
   },
   {
+    id: 'mistral-vibe',
+    harness: 'Mistral Vibe',
+    state: 'Adapter-backed',
+    supported_assets: [
+      'Native Agent Plugins 1.0 payload (vibe/core/)',
+      'canonical ECC skills (skills/) installed selectively from the repo',
+      'command shims converted to user-invocable skills',
+      'agents converted to Vibe subagent TOML profiles',
+      'rules converted to knowledge folders',
+      'pre-tool hooks through the Vibe hook bridge',
+    ],
+    unsupported_surfaces: [
+      'Vibe exposes only pre_tool, post_tool, and post_agent hooks; Claude Code UserPromptSubmit, SessionStart, SessionEnd, PreCompact, and Stop surfaces have no equivalent',
+      'Claude Code slash-command argument substitution ($ARGUMENTS) is approximated: the text typed after the skill name flows through the user turn',
+    ],
+    install_or_onramp: [
+      '`npm run build:vibe && ./install.sh --profile developer --target vibe`',
+    ],
+    verification_commands: [
+      '`node scripts/build-vibe.js --check`',
+      '`npm run harness:adapters -- --check`',
+    ],
+    risk_notes: [
+      'The hook bridge maps Claude Code exit-2 blocking to Vibe structured deny responses; every other failure path stays fail-open like the Vibe default.',
+      'Regenerate vibe/core with scripts/build-vibe.js after editing agents, commands, rules, or the hook curation; CI fails on drift.',
+    ],
+    last_verified_at: '2026-10-07',
+    owner: 'ECC maintainers',
+    source_docs: [
+      'manifests/vibe.json',
+      'vibe/core/README.md',
+      'scripts/lib/install-targets/vibe-home.js',
+    ],
+  },
+  {
     id: 'cursor',
     harness: 'Cursor',
     state: 'Adapter-backed',

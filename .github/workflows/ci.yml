@@ -215,6 +215,15 @@ jobs:
         run: node scripts/ci/validate-install-manifests.js
         continue-on-error: false
 
+      # Rebuild runs the payload safety checks (frontmatter, TOML escaping,
+      # home-path scan, hook runtime closure); the diff check proves the
+      # committed vibe/core payload is up to date.
+      - name: Rebuild vibe/core and verify it is up to date
+        run: |
+          node scripts/build-vibe.js
+          git diff --exit-code vibe/core
+        continue-on-error: false
+
       - name: Validate workflow security
         run: node scripts/ci/validate-workflow-security.js
         continue-on-error: false

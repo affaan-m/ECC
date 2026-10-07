@@ -36,10 +36,17 @@ function readState(plan) {
 
 for (const adapter of listInstallTargetAdapters()) {
   test(`${adapter.target}: preserve user files through preview, install, reinstall and uninstall`, context => {
-    const nativeTarget = ['codex', 'gemini', 'opencode'].includes(adapter.target);
+    // Payload-native targets copy their generated platform payload instead of
+    // the raw rules sources; every other target exercises the rules module.
+    const payloadModuleId = {
+      codex: 'platform-configs',
+      gemini: 'platform-configs',
+      opencode: 'platform-configs',
+      vibe: 'vibe-core',
+    }[adapter.target];
     const resolved = createManifestInstallPlan({
       ...context, target: adapter.target,
-      moduleIds: [nativeTarget ? 'platform-configs' : 'rules-core'],
+      moduleIds: [payloadModuleId || 'rules-core'],
       // This test exercises ownership of source files, not plugin compilation.
       exemptValidationCodes: ['opencode-plugin-not-built'],
     });
