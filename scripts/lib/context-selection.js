@@ -26,9 +26,14 @@ const AUTO_ADMIT_MARGIN = 1.5;
 const FALLBACK_MIN_BM25 = 12;
 const FALLBACK_MIN_TERMS = 2;
 const FALLBACK_MARGIN = 1.1;
+// Both tiers also require at least one matched term in the skill's name or
+// curated triggers. Description-only overlap on common words (two, both, same)
+// can clear the score bars without naming the skill's subject.
+const MIN_ANCHOR_TERMS = 1;
 // v4: an explicit empty proposal (decline) is honored; the tier-2 fallback no
 // longer overrides declines at the launch/selection call sites.
-const ROUTING_POLICY_VERSION = 4;
+// v5: implicit admission requires a name or trigger anchor term.
+const ROUTING_POLICY_VERSION = 5;
 const TASK_KEYS = new Set(['sessionId', 'taskId', 'revision', 'phase', 'query', 'explicitIds', 'proposedIds', 'noWorkflow']);
 
 function validateTask(task) {
@@ -210,6 +215,7 @@ function resolveTaskContext({ repoRoot = DEFAULT_REPO_ROOT, task, profileId = 'l
       const top = candidates[0];
       const second = candidates[1];
       if (top.bm25 >= AUTO_ADMIT_MIN_BM25 && top.matchedTerms.length >= AUTO_ADMIT_MIN_TERMS
+        && top.anchorTerms.length >= MIN_ANCHOR_TERMS
         && (!second || top.bm25 >= AUTO_ADMIT_MARGIN * (second.bm25 || 0))) {
         autoSelection = { id: top.id, bm25: top.bm25, matchedTerms: top.matchedTerms.length, exact: false };
       }
@@ -221,6 +227,7 @@ function resolveTaskContext({ repoRoot = DEFAULT_REPO_ROOT, task, profileId = 'l
     const top = candidates[0];
     const second = candidates[1];
     if (top.bm25 >= FALLBACK_MIN_BM25 && top.matchedTerms.length >= FALLBACK_MIN_TERMS
+      && top.anchorTerms.length >= MIN_ANCHOR_TERMS
       && (!second || top.bm25 >= FALLBACK_MARGIN * (second.bm25 || 0))) {
       fallback = { id: top.id, bm25: top.bm25, matchedTerms: top.matchedTerms.length };
     }
