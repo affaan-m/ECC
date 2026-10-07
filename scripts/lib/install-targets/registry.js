@@ -12,6 +12,7 @@ const kimiProject = require('./kimi-project');
 const openclawHome = require('./openclaw-home');
 const opencodeHome = require('./opencode-home');
 const qwenHome = require('./qwen-home');
+const vibeHome = require('./vibe-home');
 const zedProject = require('./zed-project');
 const { resolveInvocationEnvironment } = require('../invocation-environment');
 
@@ -31,6 +32,7 @@ const ADAPTERS = Object.freeze([
   qwenHome,
   zedProject,
   adalProject,
+  vibeHome,
 ]);
 
 function listInstallTargetAdapters() {

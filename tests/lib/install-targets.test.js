@@ -1441,6 +1441,90 @@ function runTests() {
     }
   })) passed++; else failed++;
 
+  if (test('lists the vibe adapter', () => {
+    const adapters = listInstallTargetAdapters();
+    assert.ok(adapters.some(adapter => adapter.target === 'vibe'), 'Should include vibe target');
+    const vibeAdapter = getInstallTargetAdapter('vibe');
+    assert.strictEqual(vibeAdapter.id, 'vibe-home');
+    assert.strictEqual(vibeAdapter.kind, 'home');
+  })) passed++; else failed++;
+
+  if (test('resolves vibe adapter root and install-state path from home dir', () => {
+    const adapter = getInstallTargetAdapter('vibe');
+    const homeDir = '/Users/example';
+    const root = adapter.resolveRoot({ homeDir, repoRoot: '/repo/ecc' });
+    const statePath = adapter.getInstallStatePath({ homeDir, repoRoot: '/repo/ecc' });
+
+    assert.strictEqual(root, path.join(homeDir, '.vibe', 'plugins', 'ecc'));
+    assert.strictEqual(
+      statePath,
+      path.join(homeDir, '.vibe', 'plugins', 'ecc', 'ecc-install-state.json')
+    );
+  })) passed++; else failed++;
+
+  if (test('plans the vibe payload sync and selective skills, ignoring non-skill paths', () => {
+    const repoRoot = path.join(__dirname, '..', '..');
+
+    const plan = planInstallTargetScaffold({
+      target: 'vibe',
+      repoRoot,
+      homeDir: '/Users/example',
+      modules: [
+        {
+          id: 'vibe-core',
+          paths: ['vibe/core'],
+        },
+        {
+          id: 'workflow-quality',
+          paths: ['skills/tdd-workflow'],
+        },
+        {
+          id: 'agents-core',
+          paths: ['.agents', 'agents', 'AGENTS.md'],
+        },
+      ],
+    });
+
+    assert.strictEqual(plan.adapter.id, 'vibe-home');
+    assert.strictEqual(plan.targetRoot, path.join('/Users/example', '.vibe', 'plugins', 'ecc'));
+
+    assert.ok(
+      plan.operations.some(operation => (
+        normalizedRelativePath(operation.sourceRelativePath) === 'vibe/core'
+        && operation.strategy === 'sync-root-children'
+      )),
+      'Should sync the vibe/core payload children into the plugin root'
+    );
+    assert.ok(
+      plan.operations.some(operation => (
+        normalizedRelativePath(operation.sourceRelativePath) === 'skills/tdd-workflow'
+        && operation.destinationPath === path.join('/Users/example', '.vibe', 'plugins', 'ecc', 'skills', 'tdd-workflow')
+      )),
+      'Should install selected skills directly into the plugin skills directory'
+    );
+    assert.ok(
+      !plan.operations.some(operation => normalizedRelativePath(operation.sourceRelativePath) === 'agents'),
+      'Should not copy raw agent markdown sources into the Vibe plugin'
+    );
+  })) passed++; else failed++;
+
+  if (test('reports a missing vibe payload as a validation error with a build hint', () => {
+    const adapter = getInstallTargetAdapter('vibe');
+    const issues = adapter.validate({ homeDir: '/Users/example', repoRoot: path.join(os.tmpdir(), 'ecc-vibe-missing-payload') });
+
+    assert.strictEqual(issues.length, 1);
+    assert.strictEqual(issues[0].code, 'vibe-plugin-not-built');
+    assert.ok(issues[0].message.includes('node scripts/build-vibe.js'), 'Should hint the build command');
+  })) passed++; else failed++;
+
+  if (test('accepts the vibe payload when it is built', () => {
+    const adapter = getInstallTargetAdapter('vibe');
+    const repoRoot = path.join(__dirname, '..', '..');
+    const issues = adapter.validate({ homeDir: '/Users/example', repoRoot });
+
+    assert.deepStrictEqual(issues, []);
+  })) passed++; else failed++;
+
   console.log(`\nResults: Passed: ${passed}, Failed: ${failed}`);
   process.exit(failed > 0 ? 1 : 0);
 }

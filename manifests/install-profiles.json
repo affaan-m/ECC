@@ -27,7 +27,8 @@
         "commands-core",
         "hooks-runtime",
         "platform-configs",
-        "workflow-quality"
+        "workflow-quality",
+        "vibe-core"
       ]
     },
     "developer": {
@@ -41,7 +42,8 @@
         "workflow-quality",
         "framework-language",
         "database",
-        "orchestration"
+        "orchestration",
+        "vibe-core"
       ]
     },
     "security": {
@@ -53,7 +55,8 @@
         "hooks-runtime",
         "platform-configs",
         "workflow-quality",
-        "security"
+        "security",
+        "vibe-core"
       ]
     },
     "research": {
@@ -67,7 +70,8 @@
         "workflow-quality",
         "research-apis",
         "business-content",
-        "social-distribution"
+        "social-distribution",
+        "vibe-core"
       ]
     },
     "full": {
@@ -99,7 +103,8 @@
         "devops-infra",
         "machine-learning",
         "supply-chain-domain",
-        "document-processing"
+        "document-processing",
+        "vibe-core"
       ]
     }
   }

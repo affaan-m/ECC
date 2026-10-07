@@ -21,7 +21,7 @@ const { startTerminalSpinner } = require('./lib/terminal-spinner');
 const { showTerminalWelcome } = require('./lib/terminal-welcome');
 const { stripAnsi } = require('./lib/utils');
 
-const ADVANCED_HARNESSES = 'Cursor, Antigravity, Gemini CLI, OpenCode, CodeBuddy, JoyCode, Qwen Code, Zed, Hermes, and OpenClaw';
+const ADVANCED_HARNESSES = 'Cursor, Antigravity, Gemini CLI, OpenCode, CodeBuddy, JoyCode, Qwen Code, Zed, Hermes, OpenClaw, and Mistral Vibe';
 
 function showHelp(output = process.stdout) {
   output.write(`

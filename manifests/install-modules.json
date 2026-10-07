@@ -20,7 +20,8 @@
         "hermes",
         "openclaw",
         "kimi",
-        "adal"
+        "adal",
+        "vibe"
       ],
       "dependencies": [],
       "defaultInstall": true,
@@ -49,7 +50,8 @@
         "hermes",
         "openclaw",
         "kimi",
-        "adal"
+        "adal",
+        "vibe"
       ],
       "dependencies": [],
       "defaultInstall": true,
@@ -78,7 +80,8 @@
         "hermes",
         "openclaw",
         "kimi",
-        "adal"
+        "adal",
+        "vibe"
       ],
       "dependencies": [],
       "defaultInstall": true,
@@ -99,7 +102,8 @@
         "claude-project",
         "cursor",
         "opencode",
-        "codebuddy"
+        "codebuddy",
+        "vibe"
       ],
       "dependencies": [],
       "defaultInstall": true,
@@ -142,12 +146,28 @@
         "hermes",
         "openclaw",
         "kimi",
-        "adal"
+        "adal",
+        "vibe"
       ],
       "dependencies": [],
       "defaultInstall": true,
       "cost": "light",
       "stability": "stable"
+    },
+    {
+      "id": "vibe-core",
+      "kind": "platform",
+      "description": "Generated native Mistral Vibe plugin payload (plugin manifest, subagent TOMLs, command skills, rule knowledge, hook bridge) installed under ~/.vibe/plugins/ecc/.",
+      "paths": [
+        "vibe/core"
+      ],
+      "targets": [
+        "vibe"
+      ],
+      "dependencies": [],
+      "defaultInstall": true,
+      "cost": "medium",
+      "stability": "beta"
     },
     {
       "id": "framework-language",
@@ -235,7 +255,8 @@
         "codebuddy",
         "joycode",
         "qwen",
-        "zed"
+        "zed",
+        "vibe"
       ],
       "dependencies": [
         "rules-core",
@@ -270,7 +291,8 @@
         "codebuddy",
         "joycode",
         "qwen",
-        "zed"
+        "zed",
+        "vibe"
       ],
       "dependencies": [
         "platform-configs"
@@ -301,7 +323,8 @@
         "hermes",
         "openclaw",
         "kimi",
-        "adal"
+        "adal",
+        "vibe"
       ],
       "dependencies": [
         "platform-configs"
@@ -377,7 +400,8 @@
         "hermes",
         "openclaw",
         "kimi",
-        "adal"
+        "adal",
+        "vibe"
       ],
       "dependencies": [
         "skill-unified-memory"
@@ -410,7 +434,8 @@
         "codebuddy",
         "joycode",
         "qwen",
-        "zed"
+        "zed",
+        "vibe"
       ],
       "dependencies": [
         "workflow-quality",
@@ -456,7 +481,8 @@
         "codebuddy",
         "joycode",
         "qwen",
-        "zed"
+        "zed",
+        "vibe"
       ],
       "dependencies": [
         "workflow-quality"
@@ -490,7 +516,8 @@
         "codebuddy",
         "joycode",
         "qwen",
-        "zed"
+        "zed",
+        "vibe"
       ],
       "dependencies": [
         "platform-configs"
@@ -529,7 +556,8 @@
         "codebuddy",
         "joycode",
         "qwen",
-        "zed"
+        "zed",
+        "vibe"
       ],
       "dependencies": [
         "platform-configs"
@@ -573,7 +601,8 @@
         "codebuddy",
         "joycode",
         "qwen",
-        "zed"
+        "zed",
+        "vibe"
       ],
       "dependencies": [
         "platform-configs"
@@ -601,7 +630,8 @@
         "codebuddy",
         "joycode",
         "qwen",
-        "zed"
+        "zed",
+        "vibe"
       ],
       "dependencies": [
         "research-apis",
@@ -632,7 +662,8 @@
         "codebuddy",
         "joycode",
         "qwen",
-        "zed"
+        "zed",
+        "vibe"
       ],
       "dependencies": [],
       "defaultInstall": false,
@@ -663,7 +694,8 @@
         "hermes",
         "openclaw",
         "kimi",
-        "adal"
+        "adal",
+        "vibe"
       ],
       "dependencies": [
         "platform-configs"
@@ -693,7 +725,8 @@
         "zed",
         "hermes",
         "openclaw",
-        "kimi"
+        "kimi",
+        "vibe"
       ],
       "dependencies": [
         "platform-configs"
@@ -721,7 +754,8 @@
         "codebuddy",
         "joycode",
         "qwen",
-        "zed"
+        "zed",
+        "vibe"
       ],
       "dependencies": [
         "business-content"
@@ -756,7 +790,8 @@
         "codebuddy",
         "joycode",
         "qwen",
-        "zed"
+        "zed",
+        "vibe"
       ],
       "dependencies": [
         "platform-configs"
@@ -781,7 +816,8 @@
         "claude",
         "claude-project",
         "codex",
-        "opencode"
+        "opencode",
+        "vibe"
       ],
       "dependencies": [
         "commands-core",
@@ -814,7 +850,8 @@
         "codebuddy",
         "joycode",
         "qwen",
-        "zed"
+        "zed",
+        "vibe"
       ],
       "dependencies": [
         "platform-configs"
@@ -875,7 +912,8 @@
         "codebuddy",
         "joycode",
         "qwen",
-        "zed"
+        "zed",
+        "vibe"
       ],
       "dependencies": [
         "platform-configs"
@@ -917,7 +955,8 @@
         "codebuddy",
         "joycode",
         "qwen",
-        "zed"
+        "zed",
+        "vibe"
       ],
       "dependencies": [
         "platform-configs"
@@ -946,7 +985,8 @@
         "codebuddy",
         "joycode",
         "qwen",
-        "zed"
+        "zed",
+        "vibe"
       ],
       "dependencies": [
         "framework-language",
@@ -983,7 +1023,8 @@
         "codebuddy",
         "joycode",
         "qwen",
-        "zed"
+        "zed",
+        "vibe"
       ],
       "dependencies": [
         "platform-configs"
@@ -1010,7 +1051,8 @@
         "codebuddy",
         "joycode",
         "qwen",
-        "zed"
+        "zed",
+        "vibe"
       ],
       "dependencies": [
         "platform-configs"

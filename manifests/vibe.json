@@ -1,0 +1,136 @@
+{
+  "description": "Native Mistral Vibe plugin profile for ECC, regenerated into vibe/core/ by scripts/build-vibe.js. The payload is an Agent Plugins 1.0 package: plugin.json, command-derived skills, subagent TOMLs converted from agents/, knowledge folders from rules/, and a curated pre-tool hook bridge. Canonical skills/ are NOT copied into the payload; the vibe install target installs them directly from the repo so selective profiles stay granular.",
+  "profile": {
+    "dir": "vibe/core",
+    "pluginName": "ecc",
+    "toolNamespace": "ecc",
+    "license": "MIT",
+    "keywords": [
+      "vibe",
+      "mistral-vibe",
+      "agents",
+      "skills",
+      "hooks",
+      "tdd",
+      "code-review",
+      "security",
+      "best-practices"
+    ]
+  },
+  "commands": {
+    "exclude": {
+      "ecc-guide": "superseded by the canonical skill skills/ecc-guide (skills-first surface policy); the command is a legacy shim",
+      "marketing-campaign": "superseded by the canonical skill skills/marketing-campaign (skills-first surface policy); the command is a legacy shim",
+      "orch-add-feature": "superseded by the canonical skill skills/orch-add-feature (skills-first surface policy); the command is a legacy shim",
+      "orch-build-mvp": "superseded by the canonical skill skills/orch-build-mvp (skills-first surface policy); the command is a legacy shim",
+      "orch-change-feature": "superseded by the canonical skill skills/orch-change-feature (skills-first surface policy); the command is a legacy shim",
+      "orch-fix-defect": "superseded by the canonical skill skills/orch-fix-defect (skills-first surface policy); the command is a legacy shim",
+      "orch-refine-code": "superseded by the canonical skill skills/orch-refine-code (skills-first surface policy); the command is a legacy shim",
+      "plan-canvas": "superseded by the canonical skill skills/plan-canvas (skills-first surface policy); the command is a legacy shim",
+      "security-scan": "superseded by the canonical skill skills/security-scan (skills-first surface policy); the command is a legacy shim",
+      "kotlin-review": "uses Claude Code dynamic shell context injection (backtick-bang), which the Vibe skill invocation contract does not support",
+      "rust-test": "uses Claude Code dynamic shell context injection (backtick-bang), which the Vibe skill invocation contract does not support"
+    }
+  },
+  "agents": {
+    "toolMapping": {
+      "Read": "read_file",
+      "Grep": "grep",
+      "Glob": "grep",
+      "Bash": "bash",
+      "Write": "write_file",
+      "Edit": "edit"
+    },
+    "droppedTools": [
+      "WebSearch and WebFetch grants are dropped: Vibe reaches the web through connectors, not agent tool grants",
+      "mcp__* grants are dropped: MCP tool names are server-specific and do not resolve inside a Vibe plugin"
+    ],
+    "droppedModel": "The Claude Code model field (sonnet/opus/haiku) has no Vibe equivalent; subagents inherit the session's active model"
+  },
+  "knowledge": {
+    "rulesRoot": "rules",
+    "skipFiles": ["README.md"],
+    "icon": "book"
+  },
+  "hooks": {
+    "include": [
+      {
+        "name": "pre-bash-dispatcher",
+        "type": "pre_tool",
+        "match": "bash",
+        "runner": "scripts/hooks/pre-bash-dispatcher.js",
+        "timeout": 15,
+        "description": "ECC pre-bash guard pipeline: block --no-verify, tmux dev reminders, commit quality, and gateguard fact-force checks."
+      },
+      {
+        "name": "pre-write-doc-file-warning",
+        "type": "pre_tool",
+        "match": "write_file",
+        "runner": "scripts/hooks/doc-file-warning.js",
+        "timeout": 10,
+        "description": "Warns when a write targets ECC's own documentation files."
+      }
+    ],
+    "exclude": [
+      {
+        "surface": "PostToolUse observers (observe-runner, ecc-context-monitor, posttooluse-dispatcher)",
+        "reason": "Claude Code async hook execution (async: true) has no Vibe equivalent; every Vibe hook runs synchronously in the tool-call chain"
+      },
+      {
+        "surface": "Stop hooks (7 entries in hooks/hooks.json)",
+        "reason": "They read Claude Code session transcript state; Vibe post_agent payloads do not carry the same transcript schema (follow-up work)"
+      },
+      {
+        "surface": "UserPromptSubmit / SessionStart / SessionEnd / PreCompact hooks",
+        "reason": "Vibe exposes only pre_tool, post_tool, and post_agent hook events"
+      },
+      {
+        "surface": "mcp__* PreToolUse guards",
+        "reason": "MCP tool names are namespaced differently in Vibe (connector_<name>_<tool>) and do not match the Claude Code mcp__ prefix matchers"
+      },
+      {
+        "surface": "PowerShell pre-tool guards",
+        "reason": "Vibe routes Windows shells through git_bash or powershell tools; the PowerShell guard pair is deferred until the mapping is verified on Windows"
+      }
+    ]
+  },
+  "safety": {
+    "semantics": [
+      "payload files must not be symlinks",
+      "no absolute per-user home paths in payload text files (/Users/..., /home/<user>, C:\\Users\\...)",
+      "every generated skill directory has SKILL.md with frontmatter name equal to the directory name and a non-empty description",
+      "no duplicate skill names across the payload and the canonical skills the installer adds",
+      "agent TOML instructions must not contain TOML multi-line literal delimiters",
+      "knowledge folder names match ^[a-z0-9][a-z0-9-]*$ and descriptions are 5-300 characters",
+      "plugin.json only uses Agent Plugins 1.0 schema fields (extra fields are rejected by the loader)",
+      "hook runner scripts must resolve their dependencies with relative require() paths or Node builtins only"
+    ],
+    "scanAllowlist": [
+      {
+        "path": "skills/resume-session/SKILL.md",
+        "pattern": "/Users/you",
+        "reason": "example placeholder path in the command body, not a real user path"
+      },
+      {
+        "path": "ai.mistral.vibe/agents/opensource-forker.toml",
+        "pattern": "/home/username",
+        "reason": "example placeholder path in agent instructions, not a real user path"
+      },
+      {
+        "path": "ai.mistral.vibe/agents/opensource-packager.toml",
+        "pattern": "/home/user",
+        "reason": "example placeholder path in agent instructions, not a real user path"
+      },
+      {
+        "path": "ai.mistral.vibe/agents/opensource-sanitizer.toml",
+        "pattern": "/home/user",
+        "reason": "example placeholder path in agent instructions, not a real user path"
+      },
+      {
+        "path": "scripts/hooks/auto-tmux-dev.js",
+        "pattern": "/home/user",
+        "reason": "example placeholder path in a comment of the shared pre-bash runner, not a real user path"
+      }
+    ]
+  }
+}

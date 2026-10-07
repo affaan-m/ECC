@@ -64,6 +64,7 @@
     ".opencode/",
     ".opencode/dist/",
     ".pi/",
+    "vibe/core/",
     ".openclaw/",
     ".qwen/",
     ".zed/",
@@ -501,6 +502,7 @@
     "test": "node scripts/ci/check-unicode-safety.js && node scripts/ci/validate-agents.js && node scripts/ci/validate-commands.js && node scripts/ci/validate-rules.js && node scripts/ci/validate-skills.js && node scripts/ci/validate-hooks.js && node scripts/ci/check-hooks-schema-keys.js && node scripts/ci/validate-install-manifests.js && node scripts/ci/validate-context-profiles.js && node scripts/ci/validate-no-personal-paths.js && npm run catalog:check && npm run command-registry:check && node tests/run-all.js",
     "coverage": "c8 --all --include=\"scripts/**/*.js\" --include=\"scripts/**/*.mjs\" --check-coverage --lines 80 --functions 80 --branches 79 --statements 80 --reporter=text --reporter=lcov node tests/run-all.js",
     "build:opencode": "node scripts/build-opencode.js",
+    "build:vibe": "node scripts/build-vibe.js",
     "prepack": "npm run build:opencode",
     "dashboard": "python3 ./ecc_dashboard.py",
     "dashboard:web": "node scripts/dashboard-web.js"

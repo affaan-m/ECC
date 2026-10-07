@@ -160,7 +160,7 @@ Generate `SANITIZATION_REPORT.md` in the project directory:
 
 ## Critical Findings (Must Fix Before Release)
 
-1. **[SECRETS]** `src/config.py:42` — Hardcoded database password: `DB_P...` (truncated)
+1. **[SECRETS]** `src/config.py:42` — Hardcoded database credential (value truncated from the example report)
 2. **[INTERNAL]** `docker-compose.yml:15` — References internal domain
 
 ## Warnings (Review Before Release)
