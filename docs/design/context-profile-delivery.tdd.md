@@ -97,4 +97,13 @@ The 77-prompt routing corpus from #2945 (52 direct, 25 paraphrased) found one wr
 - Corpus result: zero loads outside the expected set; 19 implicit admissions become 17. The other dropped admission, `skill:cost-tracking`, now defers to the bounded proposal instead of loading.
 - The existing nine-query auto/agent corpus, fallback, launch, evaluation and retrieval suites pass unchanged.
 
+## Prompt suggestions
+
+The suggest-only prompt hook from #2945 now reads a generation-bound metadata index instead of its own catalog cache.
+
+- RED: routing-index and hook cases fail before the modules exist. GREEN adds a stored-vector key to the entry shape, a stale-source refusal and the session-start builder; all 16 cases pass, with a retrieval case proving stored vectors rank identically to computed ones.
+- The resolver path took 300 to 500 ms per prompt from a source checkout, almost all in rehashing 293 skills and 584 files. Loading Ajv lazily and storing vectors moved the hook's own work to about 95 to 110 ms on a Full Claude index (276 entries, 1.8 MB); wrapper invocations measured 140 to 180 ms against a 71 ms disabled baseline on Linux x64.
+- Selection, retrieval, profile CLI and hook-wrapper suites pass unchanged.
+- No interactive Claude or Codex session loaded the hook; suggestion quality is bounded by the resolver ranking measured above.
+
 These boundaries keep the shipped behavior distinct from the M1 release gate. Authenticated outcome observations, a complete Tier 2 disk diff, live-install migration, other-provider activation, whole-context token truth and release defaults remain unverified until their explicit prerequisites are available.

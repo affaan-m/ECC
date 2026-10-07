@@ -62,7 +62,7 @@ test('a missing index is a diagnostic, never an error or a rebuild', () => fixtu
 test('a tampered index or exhausted budget fails open to no suggestion', () => fixture(({ stateRoot, env }) => {
   assert.equal(stdout(hook.run(PROMPT, {}, { ...env, ECC_CONTEXT_SUGGEST_BUDGET_MS: '0' })), '');
   const directory = path.join(stateRoot, 'routing');
-  const file = path.join(directory, fs.readdirSync(directory)[0]);
+  const file = path.join(directory, fs.readdirSync(directory).find(name => name.endsWith('.json')));
   fs.writeFileSync(file, '{"schemaVersion":"ecc.context-routing-index.v1"}');
   const result = hook.run(PROMPT, {}, env);
   assert.equal(stdout(result), '');
@@ -76,3 +76,17 @@ test('the hook runs through run-with-flags and returns its text on stdout', () =
   assert.equal(result.status, 0);
   assert.match(result.stdout, /skill:feature/);
 }));
+
+test('the session-start builder indexes the current generation once and stays silent when disabled', () => {
+  const builder = require('../../scripts/hooks/context-routing-index');
+  const parent = fs.mkdtempSync(path.join(fs.realpathSync(os.tmpdir()), 'ecc-routing-builder-'));
+  const stateRoot = path.join(parent, 'managed');
+  try {
+    assert.equal(builder.run('{}', {}, {}), '');
+    store.applyStore({ stateRoot, target: 'claude' });
+    const env = { ECC_CONTEXT_STATE_ROOT: stateRoot };
+    assert.match(builder.run('{}', {}, env).stderr, /built/);
+    assert.equal(routing.routingIndexStatus(stateRoot).status, 'current');
+    assert.equal(builder.run('{}', {}, env), '');
+  } finally { fs.rmSync(parent, { recursive: true, force: true }); }
+});

@@ -30,7 +30,7 @@ test('the index is bound to the current managed generation and holds only admiss
   const ids = index.entries.map(entry => entry.id);
   assert.ok(ids.includes('skill:feature'));
   assert.equal(ids.includes('skill:shared'), false);
-  assert.deepEqual(Object.keys(index.entries[0]).sort(), ['description', 'id', 'name', 'ownerModuleId', 'packId']);
+  assert.deepEqual(Object.keys(index.entries[0]).sort(), ['dense', 'description', 'id', 'name', 'ownerModuleId', 'packId']);
   if (process.platform !== 'win32') assert.equal(fs.statSync(written.path).mode & 0o077, 0);
 }));
 
@@ -98,3 +98,9 @@ test('the profile CLI writes and inspects the index for a stored profile', () =>
     assert.equal(JSON.parse(cli('routing-index', '--state-root', stateRoot, '--dry-run').stdout).routing.status, 'current');
   } finally { fs.rmSync(parent, { recursive: true, force: true }); }
 });
+
+test('an index is never built from sources that differ from the stored generation', () => fixture(({ repoRoot, stateRoot }) => {
+  store.applyStore({ repoRoot, stateRoot, target: 'claude' });
+  assert.throws(() => routing.writeRoutingIndex({ stateRoot }), /stale/);
+  assert.equal(fs.existsSync(path.join(stateRoot, 'routing')), false);
+}));

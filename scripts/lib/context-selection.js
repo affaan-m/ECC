@@ -140,6 +140,39 @@ function validatePrevious(previous) {
   }
 }
 
+function admissibility(byId, excluded, reader) {
+  return id => {
+    try {
+      const closure = selectedClosure([id], new Set(), byId, excluded, reader);
+      readSelected(closure, byId, reader);
+      return true;
+    } catch (error) {
+      // Only known admission denials remove a suggestion. Source drift and
+      // malformed policy still fail closed instead of disappearing from view.
+      if (/manual-only|requires native authority|is excluded|exceeds the skill limit|32000-byte budget|not UTF-8 text/.test(error.message)) return false;
+      throw error;
+    }
+  };
+}
+
+/** Entries the resolver could suggest for a profile: not excluded and admissible
+ * without explicit selection. Metadata only; bodies are never returned. */
+function routingEntries({ repoRoot = DEFAULT_REPO_ROOT, profileId = 'lean@1', target = 'codex',
+  selectionMode = 'auto', include = [], exclude = [] } = {}) {
+  const plan = compileContextProfile({ repoRoot, profileId, target, selectionMode, include, exclude });
+  const registry = loadContextRegistry({ repoRoot });
+  const { triggers } = loadSkillTriggers({ repoRoot });
+  if (registry.registryDigest !== plan.registryDigest) throw new Error('Registry changed during routing index build');
+  const byId = new Map(registry.entries.map(entry => [entry.id, entry]));
+  const excluded = new Set(plan.excludedIds);
+  const admissible = admissibility(byId, excluded, createSourceReader(repoRoot));
+  const entries = registry.entries.filter(entry => !excluded.has(entry.id) && admissible(entry.id))
+    .map(entry => ({ id: entry.id, name: entry.name, description: entry.description,
+      ownerModuleId: entry.ownerModuleId, packId: entry.packId, ...(triggers[entry.id] ? { triggers: triggers[entry.id] } : {}) }));
+  return { profileId: plan.profileId, target, selectionMode, planDigest: plan.planDigest, registryDigest: registry.registryDigest,
+    routingPolicyVersion: ROUTING_POLICY_VERSION, triggersDigest: digestObject(triggers), entries };
+}
+
 /** Pure task-scoped resolver. Returned context never invokes a native skill or changes permissions. */
 function resolveTaskContext({ repoRoot = DEFAULT_REPO_ROOT, task, profileId = 'lean@1', target = 'codex',
   selectionMode = 'auto', include = [], exclude = [], load = false, previous = null, expectedDigest = null } = {}) {
@@ -164,18 +197,7 @@ function resolveTaskContext({ repoRoot = DEFAULT_REPO_ROOT, task, profileId = 'l
     queryDigest: digestObject(task.query || '') });
   const reused = Boolean(previous && previous.bindingDigest === bindingDigest && !task.noWorkflow
     && ['selected', 'none'].includes(previous.decision) && !explicitIds.length && !proposedIds.length);
-  const admissible = id => {
-    try {
-      const closure = selectedClosure([id], new Set(), byId, excluded, reader);
-      readSelected(closure, byId, reader);
-      return true;
-    } catch (error) {
-      // Only known admission denials remove a suggestion. Source drift and
-      // malformed policy still fail closed instead of disappearing from view.
-      if (/manual-only|requires native authority|is excluded|exceeds the skill limit|32000-byte budget|not UTF-8 text/.test(error.message)) return false;
-      throw error;
-    }
-  };
+  const admissible = admissibility(byId, excluded, reader);
   const { candidates } = task.noWorkflow || selectionMode === 'manual' || reused
     ? { candidates: [] } : candidatesFor(task.query || '', registry.entries, excluded, admissible, triggers);
   // Auto admission: free-text routing loads the ranked top skill only on
@@ -277,4 +299,4 @@ function resolveDeclinedFallback(options, selection) {
     receipt: { ...receiptValue, receiptDigest: digestObject(receiptValue) } };
 }
 
-module.exports = { resolveTaskContext, resolveDeclinedFallback };
+module.exports = { resolveTaskContext, resolveDeclinedFallback, routingEntries };
