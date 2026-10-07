@@ -64,7 +64,7 @@ test('Claude preview is deterministic and never invokes the provider or creates 
   assert.deepEqual(first, native().previewNativeProfile(options));
   assert.equal(first.target, 'claude');
   assert.equal(first.status, 'proposed');
-  assert.deepEqual(first.supportedProviderVersions, ['2.1.292']);
+  assert.deepEqual(first.supportedProviderVersions, ['>=2.1.292 <2.2.0']);
   assert.equal(fs.existsSync(options.nativeRoot), false);
 }));
 
@@ -90,7 +90,16 @@ test('Claude prepare verifies session-only discovery and records the host token 
   assert.equal(native().getNativeProfileStatus(options).status, 'ready');
 }));
 
-for (const version of ['2.1.291 (Claude Code)', '2.1.292', '2.1.292 (Claude Code) extra', '2.1.2920 (Claude Code)']) {
+for (const version of ['2.1.293 (Claude Code)', '2.1.1000 (Claude Code)']) {
+  test(`Claude version gate admits later 2.1 patch "${version}" and records it exactly`, () => fixture(options => {
+    const result = native().prepareNativeProfile(options, provider({ version }));
+    assert.equal(result.providerVersion, version.split(' ')[0]);
+    assert.equal(native().getNativeProfileStatus(options).providerVersion, version.split(' ')[0]);
+  }));
+}
+
+for (const version of ['2.1.291 (Claude Code)', '2.1.292', '2.1.292 (Claude Code) extra', '2.2.0 (Claude Code)',
+  '2.1.292-beta (Claude Code)', '3.1.292 (Claude Code)', '02.1.292 (Claude Code)']) {
   test(`Claude version gate rejects "${version}" before plugin calls`, () => fixture(options => {
     const dependency = provider({ version });
     assert.throws(() => native().prepareNativeProfile(options, dependency), /version/i);
