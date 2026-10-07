@@ -14,15 +14,35 @@ const { digestObject, stableStringify, validateSchema } = require('./context-pro
 const { discoverSync } = require('./context-profile-native-discovery');
 const { fingerprintExecutable, resolveExecutable } = require('./context-profile-native-executable');
 
-const VERSION = '0.154.0';
-// 0.155.1: credential-free native-probe verified Lean, include, Full exclusion and resource relocation.
-const SUPPORTED_VERSIONS = ['0.154.0', '0.155.1'];
 const DIGEST = /^[a-f0-9]{64}$/;
 const ID = /^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/;
-const KEYS = new Set(['stateRoot', 'nativeRoot', 'expectedRevision', 'expectedCarrierDigest', 'codexPath']);
-const CONTROLS = ['marketplace', 'project', 'home/.agents', 'home/.codex/config.toml',
-  'home/.codex/AGENTS.md', 'home/.codex/AGENTS.override.md', 'home/.codex/hooks.json',
-  'home/.codex/requirements.toml', 'home/.codex/plugins', 'home/.codex/skills'];
+const KEYS = new Set(['stateRoot', 'nativeRoot', 'expectedRevision', 'expectedCarrierDigest', 'codexPath', 'claudePath']);
+const PLUGIN = 'ecc-context-carrier';
+// Claude loads the carrier per session with --plugin-dir; nothing is installed.
+// Official marketplace auto-install would add plugins to the isolated home.
+const CLAUDE_ISOLATION_ENV = Object.freeze({ CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: '1',
+  CLAUDE_CODE_DISABLE_OFFICIAL_MARKETPLACE_AUTOINSTALL: '1' });
+const PROVIDERS = Object.freeze({
+  codex: { label: 'Codex', command: 'codex', executableKey: 'codexPath',
+    // 0.155.1: credential-free native-probe verified Lean, include, Full exclusion and resource relocation.
+    versions: ['0.154.0', '0.155.1'], versionOutput: version => `codex-cli ${version}`,
+    bootstrapPath: 'home/.codex/AGENTS.md',
+    controls: ['marketplace', 'project', 'home/.agents', 'home/.codex/config.toml',
+      'home/.codex/AGENTS.md', 'home/.codex/AGENTS.override.md', 'home/.codex/hooks.json',
+      'home/.codex/requirements.toml', 'home/.codex/plugins', 'home/.codex/skills'] },
+  // 2.1.292: credential-free probe verified Lean and Full session-only discovery and host projections.
+  claude: { label: 'Claude', command: 'claude', executableKey: 'claudePath',
+    versions: ['2.1.292'], versionOutput: version => `${version} (Claude Code)`,
+    bootstrapPath: 'home/.claude/CLAUDE.md',
+    // Provider runtime state (.claude.json, projects, backups, plugin bookkeeping)
+    // is not skill discovery state; plugin registration is re-verified on prepare.
+    controls: ['plugin', 'project', 'home/.claude/CLAUDE.md', 'home/.claude/settings.json',
+      'home/.claude/settings.local.json', 'home/.claude/skills', 'home/.claude/agents', 'home/.claude/commands'] },
+});
+const providerFor = target => {
+  if (!Object.hasOwn(PROVIDERS, target)) throw new Error('Native preparation requires a configured, recovered Codex or Claude managed store');
+  return PROVIDERS[target];
+};
 const exists = file => Boolean(fs.lstatSync(file, { throwIfNoEntry: false }));
 const equal = (a, b) => stableStringify(a) === stableStringify(b);
 const inside = (a, b) => a === b || a.startsWith(`${b}${path.sep}`);
@@ -50,9 +70,10 @@ function inputs(options) {
   if (!options || typeof options !== 'object' || Array.isArray(options)) throw new Error('Native profile options must be an object');
   for (const key of Object.keys(options)) if (!KEYS.has(key)) throw new Error(`Unknown native profile option: ${key}`);
   const { nativeRoot, stateRoot } = options;
+  const providerHomes = [path.join(os.homedir(), '.codex'), process.env.CODEX_HOME,
+    path.join(os.homedir(), '.claude'), process.env.CLAUDE_CONFIG_DIR].filter(Boolean);
   if (typeof nativeRoot !== 'string' || !path.isAbsolute(nativeRoot) || path.resolve(nativeRoot) !== nativeRoot
-    || nativeRoot === path.parse(nativeRoot).root || nativeRoot === os.homedir()
-    || nativeRoot === path.join(os.homedir(), '.codex') || nativeRoot === process.env.CODEX_HOME) {
+    || nativeRoot === path.parse(nativeRoot).root || nativeRoot === os.homedir() || providerHomes.includes(nativeRoot)) {
     throw new Error('nativeRoot must be an explicit dedicated isolated root');
   }
   if (typeof stateRoot !== 'string' || !path.isAbsolute(stateRoot)) throw new Error('Managed stateRoot is required');
@@ -62,7 +83,7 @@ function inputs(options) {
   const canonicalNative = exists(nativeRoot) ? fs.realpathSync(nativeRoot)
     : path.join(fs.realpathSync(path.dirname(nativeRoot)), path.basename(nativeRoot));
   const normalized = value => process.platform === 'win32' || process.platform === 'darwin' ? value.toLowerCase() : value;
-  const forbidden = [os.homedir(), path.join(os.homedir(), '.codex'), process.env.CODEX_HOME].filter(Boolean);
+  const forbidden = [os.homedir(), ...providerHomes];
   if (forbidden.some(file => normalized(exists(file) ? fs.realpathSync(file) : file) === normalized(canonicalNative))) {
     throw new Error('nativeRoot must be an explicit dedicated isolated root');
   }
@@ -73,10 +94,14 @@ function inputs(options) {
     throw new Error('Invalid native expected revision');
   }
   if (options.expectedCarrierDigest !== undefined && !DIGEST.test(options.expectedCarrierDigest)) throw new Error('Invalid native expected carrier digest');
-  if (options.codexPath !== undefined && (typeof options.codexPath !== 'string'
-    || (options.codexPath !== 'codex' && !path.isAbsolute(options.codexPath)))) throw new Error('codexPath must be codex or an absolute executable path');
+  for (const { command, executableKey } of Object.values(PROVIDERS)) {
+    const value = options[executableKey];
+    if (value !== undefined && (typeof value !== 'string' || (value !== command && !path.isAbsolute(value)))) {
+      throw new Error(`${executableKey} must be ${command} or an absolute executable path`);
+    }
+  }
   io.inspect(nativeRoot, true);
-  return { ...options, codexPath: options.codexPath || 'codex' };
+  return { ...options, codexPath: options.codexPath || 'codex', claudePath: options.claudePath || 'claude' };
 }
 
 function owner(options, create = false) {
@@ -96,9 +121,10 @@ function owner(options, create = false) {
 
 function currentStore(options) {
   const current = getStoreStatus({ stateRoot: options.stateRoot });
-  if (!current.configured || current.recoveryRequired || current.target !== 'codex') {
-    throw new Error('Native preparation requires a configured, recovered Codex managed store');
+  if (!current.configured || current.recoveryRequired) {
+    throw new Error('Native preparation requires a configured, recovered Codex or Claude managed store');
   }
+  providerFor(current.target);
   if (options.expectedCarrierDigest && current.carrierDigest !== options.expectedCarrierDigest) throw new Error('Managed carrier digest changed since preview');
   return current;
 }
@@ -123,8 +149,8 @@ function readState(options) {
   return state;
 }
 
-function snapshot(root) {
-  return CONTROLS.map(relative => {
+function snapshot(root, provider) {
+  return provider.controls.map(relative => {
     const file = path.join(root, relative);
     if (relative === 'home/.codex/config.toml') {
       // Provider-owned runtime config: compare discovery-relevant state only
@@ -148,36 +174,48 @@ function snapshot(root) {
 function loadReceipt(options, state, { allowRefresh = false } = {}) {
   const root = generation(options, state.generationId);
   const receipt = io.readJson(path.join(root, 'receipt.json'));
+  // Receipts written before Claude support carry no target and are Codex receipts.
+  const target = receipt.target ?? 'codex';
   if (digestObject(receipt) !== state.generationReceiptDigest || receipt.schemaVersion !== 'ecc.native-context-receipt.v1'
-    || receipt.generationId !== state.generationId || !SUPPORTED_VERSIONS.includes(receipt.providerVersion)
+    || receipt.generationId !== state.generationId || !Object.hasOwn(PROVIDERS, target)
+    || !PROVIDERS[target].versions.includes(receipt.providerVersion)
     || receipt.bindingDigest !== digestObject({ nativeRoot: options.nativeRoot, stateRoot: options.stateRoot })) {
     throw new Error('Native receipt integrity failed');
   }
+  const provider = PROVIDERS[target];
   const carrier = io.readJson(path.join(root, 'carrier.json'));
   validateSchema(carrier, 'context-carrier.schema.json');
   const { carrierDigest, ...body } = carrier;
   if (carrierDigest !== receipt.carrierDigest || digestObject(body) !== carrierDigest) throw new Error('Native carrier digest integrity failed');
-  if (!equal(snapshot(root), receipt.controls)) throw new Error('Native discovery configuration or skill bytes changed');
+  if (!equal(snapshot(root, provider), receipt.controls)) throw new Error('Native discovery configuration or skill bytes changed');
   if (!allowRefresh && (!receipt.executable || !equal(fingerprintExecutable(receipt.executable.path), receipt.executable))) {
-    throw new Error('Native Codex executable changed since preparation');
+    throw new Error(`Native ${provider.label} executable changed since preparation`);
   }
   if (receipt.bootstrap) {
     if (receipt.bootstrap.stateRoot !== options.stateRoot || receipt.bootstrap.nativeRoot !== options.nativeRoot
       || receipt.bootstrap.carrierDigest !== receipt.carrierDigest) throw new Error('Interactive root binding integrity failed');
     if (!allowRefresh) require('./context-profile-interactive').verifyBootstrap(receipt.bootstrap);
   }
-  return { receipt, carrier, root };
+  return { receipt, carrier, root, target };
+}
+
+function providerPaths(target, root) {
+  if (target === 'claude') {
+    return { codexHome: null, claudeConfigDir: root && path.join(root, 'home/.claude'), pluginDir: root && path.join(root, 'plugin') };
+  }
+  return { codexHome: root && path.join(root, 'home/.codex') };
 }
 
 function response(options, state, current, pending = false, allowRefresh = false) {
   const base = { schemaVersion: 'ecc.native-context-status.v1', nativeRoot: options.nativeRoot,
     stateRoot: options.stateRoot, active: false, ready: false, revision: state?.revision || 0,
-    status: pending ? 'recovery-required' : 'unconfigured', target: 'codex',
-    providerVersion: VERSION, home: null, codexHome: null, carrierDigest: null, storeRevision: null,
+    status: pending ? 'recovery-required' : 'unconfigured', target: current.target,
+    providerVersion: providerFor(current.target).versions[0], home: null, ...providerPaths(current.target, null),
+    carrierDigest: null, storeRevision: null,
     currentStoreRevision: current.revision, currentCarrierDigest: current.carrierDigest,
     discovery: 'unobserved', currentSessionChanged: false, credentialsCopied: false };
   if (!state) return base;
-  const { receipt, carrier, root } = loadReceipt(options, state, { allowRefresh });
+  const { receipt, carrier, root, target } = loadReceipt(options, state, { allowRefresh });
   let bindingsMatch = true;
   if (allowRefresh) {
     try {
@@ -185,12 +223,14 @@ function response(options, state, current, pending = false, allowRefresh = false
       if (receipt.bootstrap) require('./context-profile-interactive').verifyBootstrap(receipt.bootstrap);
     } catch { bindingsMatch = false; }
   }
-  const matches = state.storeRevision === current.revision && receipt.carrierDigest === current.carrierDigest;
+  const matches = state.storeRevision === current.revision && receipt.carrierDigest === current.carrierDigest
+    && target === current.target;
   return { ...base, status: pending ? 'recovery-required' : !bindingsMatch ? 'refresh-required' : matches ? 'ready' : 'stale',
-    ready: matches && bindingsMatch && !pending, providerVersion: receipt.providerVersion, bootstrap: receipt.bootstrap || null,
-    home: path.join(root, 'home'), codexHome: path.join(root, 'home/.codex'),
+    ready: matches && bindingsMatch && !pending, target, providerVersion: receipt.providerVersion, bootstrap: receipt.bootstrap || null,
+    home: path.join(root, 'home'), ...providerPaths(target, root),
     carrierDigest: receipt.carrierDigest, storeRevision: state.storeRevision,
-    codexPath: receipt.executable.path, executable: receipt.executable.path, executableDigest: receipt.executable.digest,
+    [PROVIDERS[target].executableKey]: receipt.executable.path, executable: receipt.executable.path, executableDigest: receipt.executable.digest,
+    ...(receipt.nativeObservation ? { nativeObservation: receipt.nativeObservation } : {}),
     selectedIds: carrier.selectedIds, discovery: 'verified', evidenceScope: 'native-preparation-with-current-file-integrity',
     activation: 'isolated-home-ready-for-new-session', modelInvocation: 'unobserved' };
 }
@@ -208,33 +248,90 @@ function previewNativeProfile(input) {
     exists(path.join(options.nativeRoot, 'pending.json')) || exists(path.join(options.nativeRoot, '.lock')), true)
     : response(options, null, current);
   if (options.expectedRevision !== undefined && options.expectedRevision !== before.revision) throw new Error('Native revision changed since preview');
+  const provider = providerFor(current.target);
   return { ...before, status: 'proposed', ready: false, proposedCarrierDigest: current.carrierDigest,
-    proposedStoreRevision: current.revision, requiredProviderVersion: VERSION, supportedProviderVersions: [...SUPPORTED_VERSIONS] };
+    proposedStoreRevision: current.revision, requiredProviderVersion: provider.versions[0], supportedProviderVersions: [...provider.versions] };
 }
 
-function environment(root) {
-  const env = { PATH: process.env.PATH, HOME: path.join(root, 'home'), CODEX_HOME: path.join(root, 'home/.codex'), LANG: 'C.UTF-8' };
+function environment(root, target) {
+  const env = { PATH: process.env.PATH, HOME: path.join(root, 'home'), LANG: 'C.UTF-8',
+    ...(target === 'claude' ? { CLAUDE_CONFIG_DIR: path.join(root, 'home/.claude'), ...CLAUDE_ISOLATION_ENV }
+      : { CODEX_HOME: path.join(root, 'home/.codex') }) };
   if (process.platform === 'win32' && process.env.SystemRoot) env.SystemRoot = process.env.SystemRoot;
   return env;
 }
 
 function command(options, root, args, dependencies) {
-  if (options.executableBinding && !equal(fingerprintExecutable(options.codexPath), options.executableBinding)) {
+  const { label } = providerFor(options.target);
+  if (options.executableBinding && !equal(fingerprintExecutable(options.executablePath), options.executableBinding)) {
     throw new Error('Native executable changed before provider call');
   }
-  const result = (dependencies.execute || spawnSync)(options.codexPath, args, {
-    cwd: path.join(root, 'project'), env: environment(root), encoding: 'utf8', shell: false,
+  const result = (dependencies.execute || spawnSync)(options.executablePath, args, {
+    cwd: path.join(root, 'project'), env: environment(root, options.target), encoding: 'utf8', shell: false,
     timeout: 30000, killSignal: 'SIGKILL', maxBuffer: 2 * 1024 * 1024 });
-  if (result.error || result.status !== 0) throw new Error('Native Codex command failed; isolated attempt retained for recovery');
-  if (typeof result.stdout !== 'string' || Buffer.byteLength(result.stdout) > 2 * 1024 * 1024) throw new Error('Native Codex command output exceeded its bound');
+  if (result.error || result.status !== 0) throw new Error(`Native ${label} command failed; isolated attempt retained for recovery`);
+  if (typeof result.stdout !== 'string' || Buffer.byteLength(result.stdout) > 2 * 1024 * 1024) throw new Error(`Native ${label} command output exceeded its bound`);
   return result.stdout.trim();
 }
 
+function verifyFiles(directory, carrier) {
+  const observed = io.inventory(directory).files.sort((a, b) => a.path.localeCompare(b.path));
+  const expected = carrier.files.map(file => ({ path: file.destinationPath, bytes: file.bytes, digest: file.digest }))
+    .sort((a, b) => a.path.localeCompare(b.path));
+  if (!equal(observed, expected)) throw new Error('Native installed file set or digest mismatch');
+}
+
+function parseJson(text, message) {
+  try { return JSON.parse(text); } catch { throw new Error(message); }
+}
+
+function componentLine(lines, label) {
+  const match = lines.map(line => line.trim()).map(line => new RegExp(`^${label} \\((\\d+)\\)(?:\\s+(.*))?$`).exec(line)).find(Boolean);
+  if (!match) throw new Error('Native Claude component discovery mismatch');
+  return { count: Number(match[1]), rest: match[2] || '' };
+}
+
+// `claude plugin details` has no JSON form; the pinned version fixes this layout.
+function parsePluginDetails(text) {
+  const lines = text.split(/\r?\n/);
+  const skills = componentLine(lines, 'Skills');
+  const names = skills.count ? skills.rest.split(',').map(name => name.trim()) : [];
+  const counts = ['Agents', 'Hooks', 'MCP servers', 'LSP servers'].map(label => componentLine(lines, label).count);
+  const projection = lines.map(line => /^\s*Always-on:\s+~?(\d{1,3}(?:,\d{3})*|\d+)(k?) tok\b/.exec(line)).find(Boolean);
+  if (!projection) throw new Error('Native Claude token projection is unparseable');
+  const tokens = Number(projection[1].replace(/,/g, '')) * (projection[2] ? 1000 : 1);
+  return { skills: names.length === skills.count ? names.sort() : null, extraComponents: counts.some(count => count !== 0), tokens };
+}
+
+function verifyClaude(options, root, carrier, dependencies) {
+  if (command(options, root, ['--version'], dependencies) !== PROVIDERS.claude.versionOutput(options.providerVersion)) {
+    throw new Error('Native Claude version changed since verification');
+  }
+  const pluginDir = path.join(root, 'plugin');
+  const report = parseJson(command(options, root, ['plugin', 'validate', '--json', pluginDir], dependencies), 'Native Claude plugin validation failed');
+  if (report?.success !== true || !Array.isArray(report.manifest?.errors) || report.manifest.errors.length
+    || !Array.isArray(report.contents) || report.contents.some(item => Array.isArray(item?.errors) && item.errors.length)) {
+    throw new Error('Native Claude plugin validation failed');
+  }
+  const listed = parseJson(command(options, root, ['--plugin-dir', pluginDir, 'plugin', 'list', '--json'], dependencies),
+    'Native Claude plugin discovery mismatch');
+  if (!Array.isArray(listed) || listed.length !== 1 || listed[0]?.id !== `${PLUGIN}@inline` || listed[0].scope !== 'session'
+    || listed[0].enabled !== true || listed[0].installPath !== pluginDir) throw new Error('Native Claude plugin discovery mismatch');
+  const details = parsePluginDetails(command(options, root, ['--plugin-dir', pluginDir, 'plugin', 'details', PLUGIN], dependencies));
+  if (details.extraComponents || !equal(details.skills, carrier.entries.map(entry => entry.name).sort())) {
+    throw new Error('Native Claude component discovery mismatch');
+  }
+  verifyFiles(pluginDir, carrier);
+  return { surface: 'plugin-always-on-listing', method: `claude-plugin-details@${options.providerVersion}`,
+    tokens: details.tokens, approximate: true };
+}
+
 function verifyNative(options, root, carrier, dependencies) {
+  if (options.target === 'claude') return verifyClaude(options, root, carrier, dependencies);
   if (command(options, root, ['--version'], dependencies) !== `codex-cli ${options.providerVersion}`) throw new Error('Native Codex version changed since verification');
-  const env = environment(root); const marketplaceName = `ecc-context-${carrier.carrierDigest.slice(0, 16)}`;
+  const env = environment(root, 'codex'); const marketplaceName = `ecc-context-${carrier.carrierDigest.slice(0, 16)}`;
   const cache = path.join(env.CODEX_HOME, 'plugins/cache', marketplaceName, 'ecc-context-carrier/local');
-  const result = (dependencies.discover || discoverSync)(options.codexPath, { cwd: path.join(root, 'project'), env });
+  const result = (dependencies.discover || discoverSync)(options.executablePath, { cwd: path.join(root, 'project'), env });
   if (!result || !Array.isArray(result.data) || result.data.length !== 1 || !equal(result.data[0].errors, [])
     || result.data[0].cwd !== path.join(root, 'project')
     || !Array.isArray(result.data[0].skills)) throw new Error('Native skill discovery shape, project binding or parser errors');
@@ -249,10 +346,8 @@ function verifyNative(options, root, carrier, dependencies) {
     const name = skill.name.slice('ecc-context-carrier:'.length);
     if (!skill.enabled || skill.path !== path.join(cache, 'skills', name, 'SKILL.md')) throw new Error('Native skill discovery enabled state or path mismatch');
   }
-  const observed = io.inventory(cache).files.sort((a, b) => a.path.localeCompare(b.path));
-  const expected = carrier.files.map(file => ({ path: file.destinationPath, bytes: file.bytes, digest: file.digest }))
-    .sort((a, b) => a.path.localeCompare(b.path));
-  if (!equal(observed, expected)) throw new Error('Native installed file set or digest mismatch');
+  verifyFiles(cache, carrier);
+  return null;
 }
 
 function checkpoint(dependencies, point) { if (dependencies.onCheckpoint) dependencies.onCheckpoint(point); }
@@ -296,19 +391,38 @@ function publish(options, before, current, generationId, receipt, dependencies) 
   return response(options, state, current);
 }
 
-function register(options, root, carrier, current, dependencies) {
-  for (const relative of ['home', 'home/.codex', 'project', 'marketplace', 'marketplace/.agents', 'marketplace/.agents/plugins', 'marketplace/carrier']) {
-    io.mkdir(path.join(root, relative));
-  }
-  const version = command(options, root, ['--version'], dependencies);
-  const providerVersion = SUPPORTED_VERSIONS.find(value => version === `codex-cli ${value}`);
-  if (!providerVersion) throw new Error(`Native Codex version must be exactly ${SUPPORTED_VERSIONS.join(' or ')}`);
+function copyCarrier(root, destination, carrier, current) {
   for (const file of carrier.files) {
-    const relative = `marketplace/carrier/${file.destinationPath}`;
+    const relative = `${destination}/${file.destinationPath}`;
     const bytes = io.read(path.join(current.generationRoot, file.destinationPath));
     if (io.hash(bytes) !== file.digest || bytes.length !== file.bytes) throw new Error('Managed carrier source digest changed');
     io.ensureParents(root, relative); io.writeExclusive(path.join(root, relative), bytes);
   }
+}
+
+function providerVersionFor(options, root, dependencies) {
+  const provider = providerFor(options.target);
+  const version = command(options, root, ['--version'], dependencies);
+  const providerVersion = provider.versions.find(value => version === provider.versionOutput(value));
+  if (!providerVersion) throw new Error(`Native ${provider.label} version must be exactly ${provider.versions.join(' or ')}`);
+  return providerVersion;
+}
+
+function registerClaude(options, root, carrier, current, dependencies) {
+  for (const relative of ['home', 'home/.claude', 'project', 'plugin']) io.mkdir(path.join(root, relative));
+  const providerVersion = providerVersionFor(options, root, dependencies);
+  copyCarrier(root, 'plugin', carrier, current);
+  checkpoint(dependencies, 'registered');
+  return { providerVersion, nativeObservation: verifyNative({ ...options, providerVersion }, root, carrier, dependencies) };
+}
+
+function register(options, root, carrier, current, dependencies) {
+  if (options.target === 'claude') return registerClaude(options, root, carrier, current, dependencies);
+  for (const relative of ['home', 'home/.codex', 'project', 'marketplace', 'marketplace/.agents', 'marketplace/.agents/plugins', 'marketplace/carrier']) {
+    io.mkdir(path.join(root, relative));
+  }
+  const providerVersion = providerVersionFor(options, root, dependencies);
+  copyCarrier(root, 'marketplace/carrier', carrier, current);
   const name = `ecc-context-${carrier.carrierDigest.slice(0, 16)}`;
   io.writeExclusive(path.join(root, 'marketplace/.agents/plugins/marketplace.json'), io.jsonBytes({ name,
     plugins: [{ name: 'ecc-context-carrier', source: { source: 'local', path: './carrier' },
@@ -317,22 +431,23 @@ function register(options, root, carrier, current, dependencies) {
   command(options, root, ['plugin', 'add', `ecc-context-carrier@${name}`, '--json'], dependencies);
   checkpoint(dependencies, 'registered');
   verifyNative({ ...options, providerVersion }, root, carrier, dependencies);
-  return providerVersion;
+  return { providerVersion, nativeObservation: null };
 }
 
 function prepareNativeProfile(input, dependencies = {}) {
   let options = inputs(input); const current = currentStore(options);
   previewNativeProfile(options);
-  const executable = resolveExecutable(options.codexPath);
+  const provider = providerFor(current.target);
+  const executable = resolveExecutable(options[provider.executableKey], provider.command);
   owner(options, true);
-  options = { ...options, codexPath: executable.path, executableBinding: executable };
+  options = { ...options, target: current.target, executablePath: executable.path, executableBinding: executable };
   return locked(options, false, () => {
     if (exists(path.join(options.nativeRoot, 'pending.json'))) throw new Error('Native attempt requires recovery');
     const before = readState(options);
     if (options.expectedRevision !== undefined && options.expectedRevision !== (before?.revision || 0)) throw new Error('Native revision changed since preview');
     const previous = before ? loadReceipt(options, before, { allowRefresh: true }) : null;
     const bootstrap = require('./context-profile-interactive').bootstrapFor(options, current);
-    if (before && before.storeRevision === current.revision) {
+    if (before && before.storeRevision === current.revision && previous.target === current.target) {
       if (previous.receipt.carrierDigest === current.carrierDigest && equal(previous.receipt.executable, executable) && equal(previous.receipt.bootstrap, bootstrap.binding)) {
         verifyNative({ ...options, providerVersion: previous.receipt.providerVersion }, previous.root, previous.carrier, dependencies);
         recheckStore(options, current);
@@ -350,11 +465,13 @@ function prepareNativeProfile(input, dependencies = {}) {
     const { carrierDigest, ...body } = carrier;
     if (carrierDigest !== current.carrierDigest || digestObject(body) !== carrierDigest) throw new Error('Managed carrier descriptor changed before native registration');
     io.writeExclusive(path.join(root, 'carrier.json'), io.jsonBytes(carrier));
-    const providerVersion = register(options, root, carrier, current, dependencies);
-    io.writeExclusive(path.join(root, 'home/.codex/AGENTS.md'), bootstrap.bytes);
+    const { providerVersion, nativeObservation } = register(options, root, carrier, current, dependencies);
+    io.writeExclusive(path.join(root, provider.bootstrapPath), bootstrap.bytes);
     const receipt = { schemaVersion: 'ecc.native-context-receipt.v1', generationId,
       bindingDigest: digestObject({ nativeRoot: options.nativeRoot, stateRoot: options.stateRoot }),
-      carrierDigest: carrier.carrierDigest, providerVersion, executable, bootstrap: bootstrap.binding, controls: snapshot(root) };
+      ...(current.target === 'codex' ? {} : { target: current.target }),
+      carrierDigest: carrier.carrierDigest, providerVersion, executable, bootstrap: bootstrap.binding,
+      ...(nativeObservation ? { nativeObservation } : {}), controls: snapshot(root, provider) };
     io.writeExclusive(path.join(root, 'receipt.json'), io.jsonBytes(receipt));
     checkpoint(dependencies, 'verified');
     return publish(options, before, current, generationId, receipt, dependencies);
@@ -373,8 +490,11 @@ function rollbackNativeProfile(input, dependencies = {}) {
     const receipt = io.readJson(path.join(root, 'receipt.json'));
     const previous = loadReceipt(options, { generationId: before.previousGenerationId,
       generationReceiptDigest: before.previousGenerationReceiptDigest });
-    if (receipt.carrierDigest !== current.carrierDigest) throw new Error('Rollback the managed store to the previous native carrier first');
-    verifyNative({ ...options, providerVersion: receipt.providerVersion, codexPath: receipt.executable.path, executableBinding: receipt.executable }, root, previous.carrier, dependencies);
+    if (receipt.carrierDigest !== current.carrierDigest || previous.target !== current.target) {
+      throw new Error('Rollback the managed store to the previous native carrier first');
+    }
+    verifyNative({ ...options, target: previous.target, providerVersion: receipt.providerVersion,
+      executablePath: receipt.executable.path, executableBinding: receipt.executable }, root, previous.carrier, dependencies);
     io.atomicJson(path.join(options.nativeRoot, 'pending.json'), { schemaVersion: 'ecc.native-context-pending.v1',
       before, generationId: before.previousGenerationId, carrierDigest: current.carrierDigest, storeRevision: current.revision });
     return publish(options, before, current, before.previousGenerationId, receipt, dependencies);
@@ -400,4 +520,5 @@ function recoverNativeProfile(input) {
   });
 }
 
-module.exports = { getNativeProfileStatus, prepareNativeProfile, previewNativeProfile, recoverNativeProfile, rollbackNativeProfile };
+module.exports = { CLAUDE_ISOLATION_ENV, getNativeProfileStatus, prepareNativeProfile, previewNativeProfile,
+  recoverNativeProfile, rollbackNativeProfile };

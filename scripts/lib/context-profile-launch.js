@@ -9,6 +9,7 @@ function isolatedEnvironment(nativeEnvironment) {
     USERPROFILE: nativeEnvironment.home,
     ...(nativeEnvironment.codexHome ? { CODEX_HOME: nativeEnvironment.codexHome } : {}),
     ...(nativeEnvironment.claudeConfigDir ? { CLAUDE_CONFIG_DIR: nativeEnvironment.claudeConfigDir } : {}),
+    ...(nativeEnvironment.pluginDir ? require('./context-profile-native').CLAUDE_ISOLATION_ENV : {}),
     TMPDIR: nativeEnvironment.home, LANG: 'C.UTF-8' };
   if (process.platform === 'win32' && process.env.SystemRoot) env.SystemRoot = process.env.SystemRoot;
   return env;
@@ -22,11 +23,11 @@ function launchTaskContext({ task, target = 'codex', dryRun = false, execute = s
   if (!Object.hasOwn(adapters, target)) throw new Error(`Unsupported task launcher target: ${target}`);
   if (!task || typeof task.query !== 'string' || !task.query.trim()) throw new Error('Task launch requires a non-empty query');
   if (nativeEnvironment) {
-    const launchKeys = target === 'claude'
-      ? { directory: nativeEnvironment.claudeConfigDir, executable: nativeEnvironment.claudePath }
-      : { directory: nativeEnvironment.codexHome, executable: nativeEnvironment.codexPath };
-    if (!path.isAbsolute(nativeEnvironment.home || '') || !path.isAbsolute(launchKeys.directory || '')
-      || !path.isAbsolute(launchKeys.executable || '')
+    const launchPaths = target === 'claude'
+      ? [nativeEnvironment.claudeConfigDir, nativeEnvironment.claudePath,
+        ...(nativeEnvironment.pluginDir === undefined ? [] : [nativeEnvironment.pluginDir])]
+      : [nativeEnvironment.codexHome, nativeEnvironment.codexPath];
+    if (![nativeEnvironment.home, ...launchPaths].every(value => path.isAbsolute(value || ''))
       || !/^[a-f0-9]{64}$/.test(nativeEnvironment.executableDigest || '')) throw new Error('Invalid isolated native launch environment');
   }
   let selection = bare
@@ -34,7 +35,8 @@ function launchTaskContext({ task, target = 'codex', dryRun = false, execute = s
       selectionMode: 'manual', reason: 'bare-baseline', receipt: { bindingDigest: 'bare' } }
     : resolveTaskContext({ ...selectionOptions, task, target, load: !dryRun });
   const adapter = { ...adapters[target],
-    ...(nativeEnvironment ? { command: nativeEnvironment.codexPath || nativeEnvironment.claudePath } : {}) };
+    ...(nativeEnvironment ? { command: target === 'claude' ? nativeEnvironment.claudePath : nativeEnvironment.codexPath } : {}),
+    ...(nativeEnvironment?.pluginDir && target === 'claude' ? { args: ['--plugin-dir', nativeEnvironment.pluginDir, ...adapters.claude.args] } : {}) };
   function verifyLaunch() {
     assertCurrent();
     if (nativeEnvironment && require('./context-profile-native-executable').fingerprintExecutable(adapter.command).digest

@@ -80,18 +80,19 @@ function startInteractiveProfile({ stateRoot, nativeRoot, dryRun = false } = {},
   if (carrier.carrierDigest !== stored.carrierDigest) throw new Error('Stored profile source is stale; set and prepare the current generation before starting');
   const current = native.getNativeProfileStatus(input);
   if (!current.ready || current.revision !== prepared.revision) throw new Error('Native generation changed before interactive launch');
-  const env = { PATH: process.env.PATH, HOME: current.home, USERPROFILE: current.home,
-    CODEX_HOME: current.codexHome, LANG: 'C.UTF-8' };
+  const claude = current.target === 'claude';
+  const env = { PATH: process.env.PATH, HOME: current.home, USERPROFILE: current.home, LANG: 'C.UTF-8',
+    ...(claude ? { CLAUDE_CONFIG_DIR: current.claudeConfigDir, ...native.CLAUDE_ISOLATION_ENV } : { CODEX_HOME: current.codexHome }) };
   // Terminal capabilities are needed by the TUI; credentials and provider overrides are not inherited.
   for (const key of ['TERM', 'COLORTERM', 'TERM_PROGRAM', 'SystemRoot']) {
     if (process.env[key]) env[key] = process.env[key];
   }
-  const bootstrapDigest = io.hash(io.read(path.join(current.codexHome, 'AGENTS.md')));
-  const result = (dependencies.execute || spawnSync)(current.codexPath, [], {
+  const bootstrapDigest = io.hash(io.read(claude ? path.join(current.claudeConfigDir, 'CLAUDE.md') : path.join(current.codexHome, 'AGENTS.md')));
+  const result = (dependencies.execute || spawnSync)(current.executable, claude ? ['--plugin-dir', current.pluginDir] : [], {
     cwd: process.cwd(), env, shell: false, stdio: 'inherit' });
   return { schemaVersion: 'ecc.interactive-profile.v1', status: result.error || result.status !== 0 ? 'failed' : 'exited',
     launched: !result.error, exitCode: result.status ?? null, signal: result.signal || null,
-    ...(result.error ? { error: 'Native interactive Codex could not be started' } : {}),
+    ...(result.error ? { error: `Native interactive ${claude ? 'Claude' : 'Codex'} could not be started` } : {}),
     nativeRevision: current.revision, providerVersion: current.providerVersion,
     bootstrapDigest,
     credentialsCopied: false, taskSuccess: 'unverified', enforcement: 'prompt-advisory' };

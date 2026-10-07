@@ -88,4 +88,13 @@ Current combined verification after recovery:
 - The default sandbox checkout's 5,000-path capture limit truncated a real Tier 1 install diff and failed closed. The reviewed ECC-029 sandbox implementation raises the bounded cap to 50,000, passes its 26-case boundary suite, and produced both final reports. The driver receipt binds its 51-file implementation digest `a84e09ab848b8cd05f33792c13734f7aabe16bfe16d50d8f8292eb5261a93c3a`.
 - No real AI outcome call ran because `CODEX_API_KEY` was absent. Host ChatGPT authentication was neither copied nor exposed to the disposable evaluator.
 
+## Isolated Claude native generations
+
+Session-only Claude discovery adapts the ownership and receipt intent of #2788 to the existing native store; it never writes a marketplace or user settings.
+
+- RED: 22 cases fail before the provider adapter (preview, prepare, version gate, nine discovery corruptions, details mismatch, static integrity, runtime-state tolerance, provider-home roots, Codex-to-Claude staleness, task launch and interactive start).
+- GREEN: all 22 pass. Codex native (39), interactive (8), launch (12), auto launch (5), evaluation (31), store (31) and profile CLI suites pass unchanged; Codex receipts keep their shape, and evaluator Claude launches without a plugin directory keep their arguments and environment.
+- Credential-free real run on Linux x64 with Claude Code 2.1.292 and the actual registry: Lean prepared ready with three skills and a 398-token always-on projection; Full prepared ready with 293 skills and 35,658 tokens; Full excluding `skill:python-patterns` verified 292 skills without it at 35,561 tokens. Switching profiles reported `stale`, and native rollback restored the Lean generation. `run --dry-run` resolved the pinned binary with `--plugin-dir`; `start --dry-run` proposed the Claude generation.
+- No authenticated model call, interactive turn or native skill invocation ran. The projection is the host's estimate for the plugin listing, not whole-context truth.
+
 These boundaries keep the shipped behavior distinct from the M1 release gate. Authenticated outcome observations, a complete Tier 2 disk diff, live-install migration, other-provider activation, whole-context token truth and release defaults remain unverified until their explicit prerequisites are available.
