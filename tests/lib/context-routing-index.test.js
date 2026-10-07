@@ -104,3 +104,15 @@ test('an index is never built from sources that differ from the stored generatio
   assert.throws(() => routing.writeRoutingIndex({ stateRoot }), /stale/);
   assert.equal(fs.existsSync(path.join(stateRoot, 'routing')), false);
 }));
+
+test('actual registry: suggestions need a name or trigger anchor like implicit admission', () => {
+  const parent = fs.mkdtempSync(path.join(fs.realpathSync(os.tmpdir()), 'ecc-routing-anchor-'));
+  const stateRoot = path.join(parent, 'managed');
+  try {
+    store.applyStore({ stateRoot, target: 'claude' });
+    routing.writeRoutingIndex({ stateRoot });
+    const index = routing.readRoutingIndex(stateRoot);
+    assert.deepEqual(routing.suggestContext(index, 'two services both think they own the same record'), []);
+    assert.equal(routing.suggestContext(index, 'add keyboard focus handling to our react settings form')[0].id, 'skill:frontend-a11y');
+  } finally { fs.rmSync(parent, { recursive: true, force: true }); }
+});
