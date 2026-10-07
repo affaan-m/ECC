@@ -103,10 +103,11 @@ function routingIndexStatus(stateRoot) {
 const CONTROL_CHARACTERS = new RegExp('[\\u0000-\\u001f\\u007f-\\u009f\\u2028\\u2029]+', 'g');
 const singleLine = text => String(text).replace(CONTROL_CHARACTERS, ' ').replace(/\s+/g, ' ').trim();
 
-/** Rank index entries for a prompt. IDs and one-line descriptions only. */
+/** Rank index entries for a prompt. IDs and one-line descriptions only; like
+ * implicit admission, a suggestion needs a name or trigger anchor term. */
 function suggestContext(index, prompt, { limit = MAX_SUGGESTIONS } = {}) {
   return searchRetrieval(buildRetrievalIndex(index.entries), prompt, { limit: Math.min(limit, MAX_SUGGESTIONS) })
-    .filter(candidate => /^skill:[a-z0-9]+(?:-[a-z0-9]+)*$/.test(candidate.id))
+    .filter(candidate => /^skill:[a-z0-9]+(?:-[a-z0-9]+)*$/.test(candidate.id) && (candidate.exact || candidate.anchorTerms.length > 0))
     .map(candidate => {
       const description = singleLine(candidate.description);
       return { id: candidate.id,

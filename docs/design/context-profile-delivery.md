@@ -64,7 +64,7 @@ The task call sends the query and selected reference content on standard input t
 
 ## Prompt suggestions (opt-in hook)
 
-Ordinary interactive turns can receive advisory skill suggestions from a UserPromptSubmit hook. The hook prints up to three skill IDs with one-line descriptions and the `resolve` command to load one; it never returns a skill body, changes the saved mode or selection, or grants authority. Loading still goes through `resolve`, which re-verifies canonical sources.
+Ordinary interactive turns can receive advisory skill suggestions from a UserPromptSubmit hook. The hook prints up to three skill IDs with one-line descriptions and the `resolve` command to load one. Like implicit admission, a suggestion needs a matched term in the skill name or curated triggers, or an exact name; it never returns a skill body, changes the saved mode or selection, or grants authority. Loading still goes through `resolve`, which re-verifies canonical sources.
 
 `ecc profile routing-index --state-root <store>` writes a metadata index for the current managed generation: the entries the resolver could suggest (not excluded, admissible without explicit selection), their curated triggers and precomputed retrieval vectors. Building refuses a store whose generation no longer matches the canonical sources. A small pointer named by the generation binds the index to the state receipt; the entries file is named by the SHA-256 of its bytes. A `set`, `mode` or `rollback` retires the index until it is rebuilt, and the hook then stays silent with a stderr diagnostic. `--dry-run` reports whether the current index exists.
 
