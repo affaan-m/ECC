@@ -536,13 +536,13 @@
     "node": ">=18"
   },
   "overrides": {
-    "fast-uri": "3.1.7",
+    "fast-uri": "3.1.8",
     "markdown-it": "14.3.0",
     "js-yaml": "4.3.2",
     "@humanfs/node": "0.16.8"
   },
   "resolutions": {
-    "fast-uri": "3.1.7",
+    "fast-uri": "3.1.8",
     "markdown-it": "14.3.0",
     "js-yaml": "4.3.2",
     "@humanfs/node": "0.16.8"
