@@ -34,7 +34,7 @@ All artifacts are written inside the audited project, under `docs/retro/<slice>/
 
 | File | Phase | Purpose |
 |------|-------|---------|
-| `gap-register.md` | 0-6 | The state machine. The only file required to resume mid-stream. |
+| `gap-register.md` | 0-6 | The state machine — perimeter, `Current phase:` marker, and rows. The only file required to resume mid-stream. |
 | `baseline-audit.md` | 1 | Reviewer findings, test/CI snapshot, TODO inventory. |
 | `reconstructed-spec.md` | 2 | What the code actually does today (Requirements + Invariants). |
 | `target-design.md` | 4 | Target shape for the slice and the fix sequence. |
@@ -57,7 +57,7 @@ Any of these is a valid slice:
 | Names a dependency or tech choice | Everything that touches it |
 | Names nothing | The 2-3 hottest paths by churn — propose them and let the user pick |
 
-Record the perimeter at the top of `gap-register.md` before anything else: paths in scope, entry points, callers, blast radius. Budget the slice at roughly 15 files or 2,000 lines; if the user's pick is bigger, cut it into named sub-slices and register each as its own row of work. A slice too big to audit in one session is a slice that never finishes.
+Record the perimeter at the top of `gap-register.md` before anything else: paths in scope, entry points, callers, blast radius. Budget the slice at roughly 15 files or 2,000 lines; if the user's pick is bigger, cut it into named sub-slices and register each as its own row of work. A slice too big to audit in one session is a slice that never finishes. Keep a `Current phase:` marker beside the perimeter and advance it each time a phase completes.
 
 ### Phase 1 — Present-State Audit
 
@@ -153,7 +153,8 @@ When every row is `done` or `wont-fix`:
 Any session can start in the middle. Read `docs/retro/<slice>/gap-register.md` first:
 
 - Register exists with a row `in-progress` → Phase 5, finish that row.
-- Register exists, all rows closed → Phase 6.
+- Register exists with at least one row, all rows closed → Phase 6.
+- Register exists, rows open, none in progress → resume at the `Current phase:` marker (Phase 3 register awaiting triage, or Phase 4 backlog awaiting its first row).
 - No register, but `baseline-audit.md` exists → Phase 2.
 - No artifacts at all → Phase 0 with the user.
 
