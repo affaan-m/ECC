@@ -111,6 +111,14 @@ function findTsConfigDir(filePath) {
   return null;
 }
 
+function diagnosticMatchesFile(line, paths) {
+  const normalizedLine = line.replace(/\\/g, '/');
+  for (const candidate of paths) {
+    if (normalizedLine.includes(candidate.replace(/\\/g, '/'))) return true;
+  }
+  return false;
+}
+
 function typecheckBatch(tsConfigDir, editedFiles, timeoutMs) {
   const isWin = process.platform === 'win32';
   const npxBin = isWin ? 'npx.cmd' : 'npx';
@@ -147,7 +155,7 @@ function typecheckBatch(tsConfigDir, editedFiles, timeoutMs) {
     const relPath = path.relative(tsConfigDir, filePath);
     const candidates = new Set([filePath, relPath]);
     const relevantLines = lines
-      .filter(line => { for (const c of candidates) { if (line.includes(c)) return true; } return false; })
+      .filter(line => diagnosticMatchesFile(line, candidates))
       .slice(0, 10);
     if (relevantLines.length > 0) {
       process.stderr.write(`[Hook] TypeScript errors in ${path.basename(filePath)}:\n`);
@@ -248,4 +256,4 @@ if (require.main === module) {
   });
 }
 
-module.exports = { run, parseAccumulator, isPluginClonePath };
+module.exports = { run, parseAccumulator, isPluginClonePath, diagnosticMatchesFile };
