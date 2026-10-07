@@ -65,7 +65,7 @@ updating `.stories/` for that initiative.
   sprints/
     sprint-<n>.md      # one file per sprint
   <story-id>.md        # individual story files at root
-  .gitignore           # ignores .lock, .txn/, .ids/ (written by `init`)
+  .gitignore           # ignores .lock, .lock.break, .txn/, .ids/ (written by `init`)
 ```
 
 ## Naming and path contract
@@ -127,6 +127,17 @@ Guarantees the helper enforces:
   backed-up file and deletes every file the batch created. Until then, `status` reports
   `recoveryPending: true`, and the next write command restores a consistent ledger
   before it does anything else.
+- **Stale locks.** A lock whose process is dead (same host) is removed only under a
+  second exclusive lock, `.stories/.lock.break`, after a re-read, so a live lock is never
+  deleted. If a process dies while holding `.lock.break`, writers time out with code `3`;
+  delete `.lock.break` by hand only after checking that no ledger command is running.
+- **Valid transitions and sprints.** `apply` rejects a new story whose status is not
+  `todo`, any status change other than one step forward, and a `Sprint` value that is not
+  `unassigned` or an existing `sprints/sprint-<n>.md`.
+- **Confinement.** The helper refuses to run if `.stories/` or its `epics/`, `sprints/`,
+  `.txn/`, or `.ids/` directory is a symlink, and refuses to read or write any epic,
+  sprint, or story file that is a symlink. Recovery accepts only regular `backup-<n>`
+  files inside `.stories/.txn/`. A batch that names the same file twice is refused.
 
 ## Commands
 

@@ -58,6 +58,17 @@ function createStories(root, titles, tag = 'batch') {
   return { ids, input: writeJson(root, `${tag}.json`, { create }) };
 }
 
+// Windows allows symlinks only with admin rights or Developer Mode; skip rather than fail there.
+class Skip extends Error {}
+function symlink(target, file, type) {
+  try {
+    fs.symlinkSync(target, file, type);
+  } catch (err) {
+    if (err.code === 'EPERM' && process.platform === 'win32') throw new Skip('symlinks not permitted');
+    throw err;
+  }
+}
+
 const read = (root, rel) => fs.readFileSync(path.join(root, '.stories', rel), 'utf8');
 const storyFiles = (root) => fs.readdirSync(path.join(root, '.stories')).filter((f) => /-\d+\.md$/.test(f)).sort();
 
@@ -195,6 +206,147 @@ const tests = [
     assert.strictEqual(new Set(ids).size, 160, 'duplicate story IDs allocated across worktrees');
   }],
 
+  ['symlinked ledger directories are refused before any write', () => {
+    const root = newRepo();
+    const outside = fs.mkdtempSync(path.join(os.tmpdir(), 'story-outside-'));
+    fs.rmSync(path.join(root, '.stories', 'sprints'), { recursive: true });
+    symlink(outside, path.join(root, '.stories', 'sprints'), 'dir');
+    const input = writeJson(root, 's.json', { create: { 'sprints/sprint-1.md': '# Sprint 1\n' } });
+    const r = run(root, ['apply', '--input', input]);
+    assert.strictEqual(r.code, 2);
+    assert.match(r.err, /symlinked ledger directory/);
+    assert.deepStrictEqual(fs.readdirSync(outside), []);
+  }],
+
+  ['recover rejects journal backups outside .txn/', () => {
+    const root = newRepo();
+    const txn = path.join(root, '.stories', '.txn');
+    fs.writeFileSync(path.join(root, 'private.txt'), 'SECRET');
+    fs.mkdirSync(txn);
+    fs.writeFileSync(path.join(txn, 'journal.json'), JSON.stringify({ entries: [{ path: 'epics/auth-flow.md', backup: '../../private.txt' }] }));
+    assert.strictEqual(run(root, ['recover']).code, 2);
+    assert.ok(!read(root, 'epics/auth-flow.md').includes('SECRET'));
+  }],
+
+  ['recover never writes through a symlinked ledger target', () => {
+    const root = newRepo();
+    const txn = path.join(root, '.stories', '.txn');
+    const victim = path.join(root, 'victim.txt');
+    fs.writeFileSync(victim, 'ORIGINAL');
+    symlink(victim, path.join(root, '.stories', 'auth-flow-1.md'));
+    fs.mkdirSync(txn);
+    fs.writeFileSync(path.join(txn, 'backup-0'), 'PLANTED');
+    fs.writeFileSync(path.join(txn, 'journal.json'), JSON.stringify({ entries: [{ path: 'auth-flow-1.md', backup: 'backup-0' }] }));
+    assert.strictEqual(run(root, ['recover']).code, 2);
+    assert.strictEqual(fs.readFileSync(victim, 'utf8'), 'ORIGINAL');
+  }],
+
+  ['symlinked ledger files are never read into or written through the ledger', () => {
+    const root = newRepo();
+    const { ids, input } = createStories(root, ['Login', 'Logout']);
+    run(root, ['apply', '--input', input]);
+    const outside = path.join(root, 'other-repo-story.md');
+    fs.writeFileSync(outside, story(ids[1], 'PRIVATE-TITLE'));
+    fs.rmSync(path.join(root, '.stories', `${ids[1]}.md`));
+    symlink(outside, path.join(root, '.stories', `${ids[1]}.md`));
+    const status = run(root, ['status']);
+    assert.strictEqual(status.code, 2);
+    assert.match(status.err, /symlinked ledger file/);
+    assert.strictEqual(run(root, ['reconcile']).code, 2);
+    const update = writeJson(root, 'u.json', { update: { [`${ids[1]}.md`]: story(ids[1], 'Logout', { status: 'in-progress' }) } });
+    assert.strictEqual(run(root, ['apply', '--input', update]).code, 2);
+    assert.ok(!read(root, 'epics/auth-flow.md').includes('PRIVATE-TITLE'));
+    assert.strictEqual(fs.readFileSync(outside, 'utf8'), story(ids[1], 'PRIVATE-TITLE'));
+  }],
+
+  ['recover never follows symlinks planted in .txn/', () => {
+    const root = newRepo();
+    const txn = path.join(root, '.stories', '.txn');
+    const outside = path.join(root, 'outside.txt');
+    fs.writeFileSync(outside, 'ORIGINAL');
+    fs.mkdirSync(txn);
+    fs.writeFileSync(path.join(txn, 'journal.json'), JSON.stringify({ entries: [{ path: 'auth-flow-1.md', backup: 'backup-0' }] }));
+    symlink(outside, path.join(txn, 'backup-0'));
+    assert.strictEqual(run(root, ['recover']).code, 2, 'symlinked backup must be refused');
+    assert.ok(!fs.existsSync(path.join(root, '.stories', 'auth-flow-1.md')));
+
+    fs.rmSync(path.join(txn, 'backup-0'));
+    fs.writeFileSync(path.join(txn, 'backup-0'), 'GOOD');
+    symlink(outside, path.join(txn, 'restore.tmp'));
+    assert.strictEqual(run(root, ['recover']).code, 0);
+    assert.strictEqual(fs.readFileSync(outside, 'utf8'), 'ORIGINAL');
+    assert.ok(fs.lstatSync(path.join(root, '.stories', 'auth-flow-1.md')).isFile());
+  }],
+
+  ['a leftover .lock.break makes writers time out instead of spinning', () => {
+    const root = newRepo();
+    fs.writeFileSync(path.join(root, '.stories', '.lock'), JSON.stringify({ pid: 2 ** 22 + 1, host: os.hostname(), at: 'stale' }));
+    fs.writeFileSync(path.join(root, '.stories', '.lock.break'), '1');
+    const r = spawnSync(process.execPath, [LEDGER, 'reconcile', '--root', root, '--wait-ms', '200'], { encoding: 'utf8', timeout: 5000 });
+    assert.strictEqual(r.status, 3, `expected lock timeout, got ${r.status} ${r.signal}`);
+    assert.match(r.stderr, /\.lock\.break is held/);
+  }],
+
+  ['symlinked .ids registry is refused outside git', () => {
+    const root = newRepo();
+    fs.rmSync(path.join(root, '.git'), { recursive: true });
+    const outside = fs.mkdtempSync(path.join(os.tmpdir(), 'story-ids-'));
+    symlink(outside, path.join(root, '.stories', '.ids'), 'dir');
+    assert.strictEqual(run(root, ['allocate', '--epic', 'auth-flow']).code, 2);
+    assert.deepStrictEqual(fs.readdirSync(outside), []);
+  }],
+
+  ['a batch naming the same file twice is refused', () => {
+    const root = newRepo();
+    const input = writeJson(root, 'dup.json', { create: { 'sprints\\sprint-1.md': '# A\n', 'sprints/sprint-1.md': '# B\n' } });
+    const r = run(root, ['apply', '--input', input]);
+    assert.strictEqual(r.code, 2);
+    assert.match(r.err, /duplicate path/);
+    assert.ok(!fs.existsSync(path.join(root, '.stories', 'sprints', 'sprint-1.md')));
+  }],
+
+  ['a waiter that saw a stale lock never deletes the live lock that replaced it', () => {
+    const root = newRepo();
+    const lock = path.join(root, '.stories', '.lock');
+    fs.writeFileSync(lock, JSON.stringify({ pid: 2 ** 22 + 1, host: os.hostname(), at: 'stale' }));
+    // Preload: right after the waiter reads the stale lock, another writer wins and holds a live lock.
+    const preload = path.join(root, 'race.js');
+    fs.writeFileSync(preload, `const fs = require('fs'); const orig = fs.readFileSync; let raced = false;
+fs.readFileSync = function (p, ...a) { const r = orig.call(fs, p, ...a);
+  if (!raced && String(p).endsWith('.lock')) { raced = true; fs.unlinkSync(p);
+    fs.writeFileSync(p, JSON.stringify({ pid: ${process.pid}, host: require('os').hostname(), at: 'live' }), { flag: 'wx' }); }
+  return r; };`);
+    const r = spawnSync(process.execPath, ['-r', preload, LEDGER, 'allocate', '--epic', 'auth-flow', '--root', root, '--wait-ms', '200'], { encoding: 'utf8' });
+    assert.strictEqual(r.status, 3, `expected lock timeout, got ${r.status}: ${r.stderr}`);
+    assert.ok(fs.readFileSync(lock, 'utf8').includes('live'), 'live lock was deleted');
+  }],
+
+  ['story status moves forward one step at a time and new stories start as todo', () => {
+    const root = newRepo();
+    const [id] = run(root, ['allocate', '--epic', 'auth-flow']).out.ids;
+    const put = (kind, status) => run(root, ['apply', '--input', writeJson(root, 't.json', { [kind]: { [`${id}.md`]: story(id, 'Login', { status }) } })]).code;
+    assert.strictEqual(put('create', 'done'), 2);
+    assert.strictEqual(put('create', 'todo'), 0);
+    assert.strictEqual(put('update', 'done'), 2, 'todo -> done skips steps');
+    for (const status of ['in-progress', 'in-progress', 'review', 'done']) assert.strictEqual(put('update', status), 0, status);
+    assert.strictEqual(put('update', 'todo'), 2, 'done -> todo moves backward');
+    assert.ok(read(root, 'epics/auth-flow.md').includes(`| ${id} | Login | done |`));
+  }],
+
+  ['stories can only be assigned to an existing sprint', () => {
+    const root = newRepo();
+    const { ids, input } = createStories(root, ['Login']);
+    run(root, ['apply', '--input', input]);
+    for (const sprint of ['2', 'bogus']) {
+      const plan = writeJson(root, 'p.json', { update: { [`${ids[0]}.md`]: story(ids[0], 'Login', { sprint }) } });
+      assert.strictEqual(run(root, ['apply', '--input', plan]).code, 2, sprint);
+    }
+    fs.writeFileSync(path.join(root, '.stories', `${ids[0]}.md`), story(ids[0], 'Login', { sprint: '7' }));
+    const status = run(root, ['status']);
+    assert.strictEqual(status.code, 2);
+    assert.match(status.err, /sprint 7 does not exist/);
+  }],
+
   ['ledger paths are confined to .stories/ file shapes', () => {
     const dir = path.join(os.tmpdir(), '.stories');
     for (const bad of ['../x-1.md', 'epics/../../x.md', 'Auth-1.md', 'a/b-1.md', 'epics/a.txt', 'sprints/sprint-0.md', '/abs-1.md']) {
@@ -214,6 +366,10 @@ const tests = [
       console.log(`  ✓ ${name}`);
       passed++;
     } catch (error) {
+      if (error instanceof Skip) {
+        console.log(`  - ${name} (skipped: ${error.message})`);
+        continue;
+      }
       console.log(`  ✗ ${name}`);
       console.log(`    Error: ${error.message}`);
       failed++;
