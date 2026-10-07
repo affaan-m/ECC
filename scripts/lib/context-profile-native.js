@@ -25,14 +25,17 @@ const CLAUDE_ISOLATION_ENV = Object.freeze({ CLAUDE_CODE_DISABLE_NONESSENTIAL_TR
 const PROVIDERS = Object.freeze({
   codex: { label: 'Codex', command: 'codex', executableKey: 'codexPath',
     // 0.155.1: credential-free native-probe verified Lean, include, Full exclusion and resource relocation.
-    versions: ['0.154.0', '0.155.1'], versionOutput: version => `codex-cli ${version}`,
+    requiredVersion: '0.154.0', versions: ['0.154.0', '0.155.1'], parseVersion: output => /^codex-cli (\S+)$/.exec(output)?.[1] ?? null,
+    admits(version) { return this.versions.includes(version); },
     bootstrapPath: 'home/.codex/AGENTS.md',
     controls: ['marketplace', 'project', 'home/.agents', 'home/.codex/config.toml',
       'home/.codex/AGENTS.md', 'home/.codex/AGENTS.override.md', 'home/.codex/hooks.json',
       'home/.codex/requirements.toml', 'home/.codex/plugins', 'home/.codex/skills'] },
-  // 2.1.292: credential-free probe verified Lean and Full session-only discovery and host projections.
+  // 2.1.292 and 2.1.293: credential-free probes verified Lean and Full session-only discovery and
+  // host projections. Later 2.1 patches are admitted; every check fails closed on output drift.
   claude: { label: 'Claude', command: 'claude', executableKey: 'claudePath',
-    versions: ['2.1.292'], versionOutput: version => `${version} (Claude Code)`,
+    requiredVersion: '2.1.292', versions: ['>=2.1.292 <2.2.0'], parseVersion: output => /^(2\.1\.(0|[1-9]\d*)) \(Claude Code\)$/.exec(output)?.[1] ?? null,
+    admits(version) { return /^2\.1\.(0|[1-9]\d*)$/.test(version) && Number(version.split('.')[2]) >= 292; },
     bootstrapPath: 'home/.claude/CLAUDE.md',
     // Provider runtime state (.claude.json, projects, backups, plugin bookkeeping)
     // is not skill discovery state; plugin registration is re-verified on prepare.
@@ -178,7 +181,7 @@ function loadReceipt(options, state, { allowRefresh = false } = {}) {
   const target = receipt.target ?? 'codex';
   if (digestObject(receipt) !== state.generationReceiptDigest || receipt.schemaVersion !== 'ecc.native-context-receipt.v1'
     || receipt.generationId !== state.generationId || !Object.hasOwn(PROVIDERS, target)
-    || !PROVIDERS[target].versions.includes(receipt.providerVersion)
+    || !PROVIDERS[target].admits(receipt.providerVersion)
     || receipt.bindingDigest !== digestObject({ nativeRoot: options.nativeRoot, stateRoot: options.stateRoot })) {
     throw new Error('Native receipt integrity failed');
   }
@@ -210,7 +213,7 @@ function response(options, state, current, pending = false, allowRefresh = false
   const base = { schemaVersion: 'ecc.native-context-status.v1', nativeRoot: options.nativeRoot,
     stateRoot: options.stateRoot, active: false, ready: false, revision: state?.revision || 0,
     status: pending ? 'recovery-required' : 'unconfigured', target: current.target,
-    providerVersion: providerFor(current.target).versions[0], home: null, ...providerPaths(current.target, null),
+    providerVersion: providerFor(current.target).requiredVersion, home: null, ...providerPaths(current.target, null),
     carrierDigest: null, storeRevision: null,
     currentStoreRevision: current.revision, currentCarrierDigest: current.carrierDigest,
     discovery: 'unobserved', currentSessionChanged: false, credentialsCopied: false };
@@ -250,7 +253,8 @@ function previewNativeProfile(input) {
   if (options.expectedRevision !== undefined && options.expectedRevision !== before.revision) throw new Error('Native revision changed since preview');
   const provider = providerFor(current.target);
   return { ...before, status: 'proposed', ready: false, proposedCarrierDigest: current.carrierDigest,
-    proposedStoreRevision: current.revision, requiredProviderVersion: provider.versions[0], supportedProviderVersions: [...provider.versions] };
+    proposedStoreRevision: current.revision, requiredProviderVersion: provider.requiredVersion,
+    supportedProviderVersions: [...provider.versions] };
 }
 
 function environment(root, target) {
@@ -304,7 +308,7 @@ function parsePluginDetails(text) {
 }
 
 function verifyClaude(options, root, carrier, dependencies) {
-  if (command(options, root, ['--version'], dependencies) !== PROVIDERS.claude.versionOutput(options.providerVersion)) {
+  if (PROVIDERS.claude.parseVersion(command(options, root, ['--version'], dependencies)) !== options.providerVersion) {
     throw new Error('Native Claude version changed since verification');
   }
   const pluginDir = path.join(root, 'plugin');
@@ -403,8 +407,10 @@ function copyCarrier(root, destination, carrier, current) {
 function providerVersionFor(options, root, dependencies) {
   const provider = providerFor(options.target);
   const version = command(options, root, ['--version'], dependencies);
-  const providerVersion = provider.versions.find(value => version === provider.versionOutput(value));
-  if (!providerVersion) throw new Error(`Native ${provider.label} version must be exactly ${provider.versions.join(' or ')}`);
+  const providerVersion = provider.parseVersion(version);
+  if (!providerVersion || !provider.admits(providerVersion)) {
+    throw new Error(`Native ${provider.label} version must be ${provider.versions.join(' or ')}`);
+  }
   return providerVersion;
 }
 
