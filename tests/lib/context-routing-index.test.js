@@ -116,3 +116,14 @@ test('actual registry: suggestions need a name or trigger anchor like implicit a
     assert.equal(routing.suggestContext(index, 'add keyboard focus handling to our react settings form')[0].id, 'skill:frontend-a11y');
   } finally { fs.rmSync(parent, { recursive: true, force: true }); }
 });
+
+test('stored vectors use a compact little-endian encoding that decodes exactly', () => fixture(({ repoRoot, stateRoot }) => {
+  const { sparseDense } = require('../../scripts/lib/context-retrieval');
+  store.applyStore({ repoRoot, stateRoot, target: 'claude' });
+  const { path: file } = routing.writeRoutingIndex({ repoRoot, stateRoot });
+  const stored = JSON.parse(fs.readFileSync(file, 'utf8')).entries[0];
+  assert.deepEqual(Object.keys(stored.dense).sort(), ['indexes', 'values']);
+  const decoded = routing.readRoutingIndex(stateRoot).entries.find(entry => entry.id === stored.id);
+  const { dense: _dense, ...metadata } = decoded;
+  assert.deepEqual(decoded.dense, sparseDense(metadata));
+}));
