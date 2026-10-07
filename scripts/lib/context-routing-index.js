@@ -42,6 +42,30 @@ function currentBinding(stateRoot) {
   return { root, generationDigest: state.generationDigest, receiptDigest: state.receiptDigest };
 }
 
+// Stored vectors are little-endian uint16 dimensions and float64 weights in
+// base64: half the size of JSON pairs and exact on any platform.
+function encodeDense(pairs) {
+  const indexes = Buffer.alloc(pairs.length * 2);
+  const values = Buffer.alloc(pairs.length * 8);
+  pairs.forEach(([dimension, value], position) => {
+    indexes.writeUInt16LE(dimension, position * 2);
+    values.writeDoubleLE(value, position * 8);
+  });
+  return { indexes: indexes.toString('base64'), values: values.toString('base64') };
+}
+
+function decodeDense(dense) {
+  if (!dense || typeof dense.indexes !== 'string' || typeof dense.values !== 'string') return null;
+  const indexes = Buffer.from(dense.indexes, 'base64');
+  const values = Buffer.from(dense.values, 'base64');
+  if (indexes.length % 2 || values.length !== indexes.length * 4) return null;
+  const pairs = new Array(indexes.length / 2);
+  for (let position = 0; position < pairs.length; position++) {
+    pairs[position] = [indexes.readUInt16LE(position * 2), values.readDoubleLE(position * 8)];
+  }
+  return pairs;
+}
+
 // routing/<generation>.json is a small pointer bound to the state receipt; the
 // entries live in routing/indexes/<sha256 of bytes>.json so readers verify them
 // by hashing raw bytes instead of re-serializing a large object.
@@ -62,7 +86,7 @@ function writeRoutingIndex({ stateRoot, repoRoot = DEFAULT_REPO_ROOT } = {}) {
   const routing = routingEntries({ repoRoot, profileId: status.profileId, target: status.target,
     selectionMode: status.selectionMode, include: status.include, exclude: status.exclude });
   const bytes = io.jsonBytes({ schemaVersion: SCHEMA, generationDigest: binding.generationDigest, receiptDigest: binding.receiptDigest,
-    ...routing, entries: routing.entries.map(entry => ({ ...entry, dense: sparseDense(entry) })) });
+    ...routing, entries: routing.entries.map(entry => ({ ...entry, dense: encodeDense(sparseDense(entry)) })) });
   const digest = io.hash(bytes);
   const file = entriesPath(root, digest);
   io.mkdir(path.join(root, 'routing')); io.mkdir(path.dirname(file));
@@ -89,6 +113,10 @@ function readRoutingIndex(stateRoot) {
   const index = JSON.parse(bytes.toString('utf8'));
   if (index.schemaVersion !== SCHEMA || index.generationDigest !== binding.generationDigest
     || index.receiptDigest !== binding.receiptDigest || !Array.isArray(index.entries)) throw invalid();
+  for (const entry of index.entries) {
+    entry.dense = decodeDense(entry.dense);
+    if (!entry.dense) throw invalid();
+  }
   return index;
 }
 

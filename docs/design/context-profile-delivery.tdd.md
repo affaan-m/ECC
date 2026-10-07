@@ -104,6 +104,7 @@ The suggest-only prompt hook from #2945 now reads a generation-bound metadata in
 - RED: routing-index and hook cases fail before the modules exist. GREEN adds a stored-vector key to the entry shape, a stale-source refusal and the session-start builder; all 16 cases pass, with a retrieval case proving stored vectors rank identically to computed ones.
 - The resolver path took 300 to 500 ms per prompt from a source checkout, almost all in rehashing 293 skills and 584 files. Loading Ajv lazily and storing vectors moved the hook's own work to about 95 to 110 ms on a Full Claude index (276 entries, 1.8 MB); wrapper invocations measured 140 to 180 ms against a 71 ms disabled baseline on Linux x64.
 - RED: on the full registry the function-word prompt still produced three unanchored suggestions. GREEN applies the routing policy v5 anchor to suggestions; the prompt now yields none and a React keyboard-focus prompt still leads with `skill:frontend-a11y`.
+- Stored vectors moved from JSON pairs to little-endian base64 (RED: format test fails; GREEN: exact decode). The Full index shrank from 1.8 MB to 0.97 MB, its parse from 26 ms to 6 ms, and hook work to about 89 to 98 ms; wrapper invocations measured 149 to 190 ms against a 61 ms disabled baseline. The resolver's two registry reads are left intact as its source-consistency check.
 - Selection, retrieval, profile CLI and hook-wrapper suites pass unchanged.
 - No interactive Claude or Codex session loaded the hook; suggestion quality is bounded by the resolver ranking measured above.
 
