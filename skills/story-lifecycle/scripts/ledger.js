@@ -14,6 +14,7 @@ const EPIC_FILE = /^epics\/([a-z0-9]+(?:-[a-z0-9]+)*)\.md$/;
 const SPRINT_FILE = /^sprints\/sprint-([1-9][0-9]*)\.md$/;
 const STATUSES = ['todo', 'in-progress', 'review', 'done'];
 const SPRINT_VALUE = /^(unassigned|[1-9][0-9]*)$/;
+const POINTS = ['1', '2', '3', '5', '8'];
 const BACKUP = /^backup-[0-9]+$/;
 const DERIVED = '<!-- Derived from story files';
 
@@ -161,6 +162,7 @@ function parseStory(rel, md) {
   if (field(md, 'ID') !== id || field(md, 'Epic') !== epic) throw new LedgerError(`${rel}: ID/Epic fields must match file name`);
   if (!story.title || !STATUSES.includes(story.status)) throw new LedgerError(`${rel}: missing title or invalid status`);
   if (!SPRINT_VALUE.test(story.sprint || '')) throw new LedgerError(`${rel}: Sprint must be unassigned or a sprint number`);
+  if (!POINTS.includes(story.points)) throw new LedgerError(`${rel}: Points must be one of ${POINTS.join(', ')}`);
   return story;
 }
 
@@ -199,7 +201,7 @@ function project(dir, pending = {}) {
   for (const rel of sprints) {
     const inSprint = stories.filter((s) => s.sprint === rel.match(SPRINT_FILE)[1]);
     const rows = inSprint.map((s) => `| ${s.id} | ${s.title} | ${s.points} | ${s.status} |`);
-    const total = inSprint.reduce((sum, s) => sum + (Number(s.points) || 0), 0);
+    const total = inSprint.reduce((sum, s) => sum + Number(s.points), 0);
     const next = replaceTable(read(rel), rel, '| ID | Title | Points | Status |\n| --- | --- | --- | --- |', rows)
       .replace(/^## Total Points:.*$/m, `## Total Points: ${total}`);
     if (next !== read(rel)) derived[rel] = next;

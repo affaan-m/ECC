@@ -347,6 +347,20 @@ fs.readFileSync = function (p, ...a) { const r = orig.call(fs, p, ...a);
     assert.match(status.err, /sprint 7 does not exist/);
   }],
 
+  ['story points must be one of 1, 2, 3, 5, 8 so sprint totals stay exact', () => {
+    const root = newRepo();
+    const [id] = run(root, ['allocate', '--epic', 'auth-flow']).out.ids;
+    for (const points of ['bogus', '4', '-3', '1e3', '0', '']) {
+      const input = writeJson(root, 'pts.json', { create: { [`${id}.md`]: story(id, 'Login', { points }) } });
+      assert.strictEqual(run(root, ['apply', '--input', input]).code, 2, `Points=${points}`);
+    }
+    assert.deepStrictEqual(storyFiles(root), []);
+    fs.writeFileSync(path.join(root, '.stories', `${id}.md`), story(id, 'Login', { points: 'bogus' }));
+    const status = run(root, ['status']);
+    assert.strictEqual(status.code, 2);
+    assert.match(status.err, /Points must be one of/);
+  }],
+
   ['ledger paths are confined to .stories/ file shapes', () => {
     const dir = path.join(os.tmpdir(), '.stories');
     for (const bad of ['../x-1.md', 'epics/../../x.md', 'Auth-1.md', 'a/b-1.md', 'epics/a.txt', 'sprints/sprint-0.md', '/abs-1.md']) {

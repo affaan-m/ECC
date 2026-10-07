@@ -132,8 +132,9 @@ Guarantees the helper enforces:
   deleted. If a process dies while holding `.lock.break`, writers time out with code `3`;
   delete `.lock.break` by hand only after checking that no ledger command is running.
 - **Valid transitions and sprints.** `apply` rejects a new story whose status is not
-  `todo`, any status change other than one step forward, and a `Sprint` value that is not
-  `unassigned` or an existing `sprints/sprint-<n>.md`.
+  `todo`, any status change other than one step forward, a `Sprint` value that is not
+  `unassigned` or an existing `sprints/sprint-<n>.md`, and a `Points` value other than
+  `1`, `2`, `3`, `5`, or `8`.
 - **Confinement.** The helper refuses to run if `.stories/` or its `epics/`, `sprints/`,
   `.txn/`, or `.ids/` directory is a symlink, and refuses to read or write any epic,
   sprint, or story file that is a symlink. Recovery accepts only regular `backup-<n>`
