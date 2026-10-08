@@ -523,6 +523,8 @@ data class Connection(val session: DefaultWebSocketSession) {
 ### 基本的なルートテスト
 
 ```kotlin
+import io.ktor.serialization.kotlinx.json.json
+
 class UserRoutesTest : FunSpec({
     test("GET /users returns list of users") {
         testApplication {
@@ -530,6 +532,12 @@ class UserRoutesTest : FunSpec({
                 install(Koin) { modules(testModule) }
                 configureSerialization()
                 configureRouting()
+            }
+
+            val client = createClient {
+                install(io.ktor.client.plugins.contentnegotiation.ContentNegotiation) {
+                    json()
+                }
             }
 
             val response = client.get("/users")
@@ -585,6 +593,8 @@ class UserRoutesTest : FunSpec({
 ### 認証ルートのテスト
 
 ```kotlin
+import io.ktor.serialization.kotlinx.json.json
+
 class AuthenticatedRoutesTest : FunSpec({
     test("protected route requires JWT") {
         testApplication {
@@ -593,6 +603,12 @@ class AuthenticatedRoutesTest : FunSpec({
                 configureSerialization()
                 configureAuthentication()
                 configureRouting()
+            }
+
+            val client = createClient {
+                install(io.ktor.client.plugins.contentnegotiation.ContentNegotiation) {
+                    json()
+                }
             }
 
             val response = client.post("/users") {

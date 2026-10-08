@@ -725,12 +725,20 @@ kover {
 ### Ktor testApplication Testing
 
 ```kotlin
+import io.ktor.serialization.kotlinx.json.json
+
 class ApiRoutesTest : FunSpec({
     test("GET /users returns list") {
         testApplication {
             application {
                 configureRouting()
                 configureSerialization()
+            }
+
+            val client = createClient {
+                install(io.ktor.client.plugins.contentnegotiation.ContentNegotiation) {
+                    json()
+                }
             }
 
             val response = client.get("/users")
@@ -746,6 +754,12 @@ class ApiRoutesTest : FunSpec({
             application {
                 configureRouting()
                 configureSerialization()
+            }
+
+            val client = createClient {
+                install(io.ktor.client.plugins.contentnegotiation.ContentNegotiation) {
+                    json()
+                }
             }
 
             val response = client.post("/users") {
