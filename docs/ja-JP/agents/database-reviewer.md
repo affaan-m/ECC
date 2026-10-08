@@ -35,7 +35,29 @@ psql -c "SELECT relname, pg_size_pretty(pg_total_relation_size(relid)) FROM pg_s
 psql -c "SELECT indexrelname, idx_scan, idx_tup_read FROM pg_stat_user_indexes ORDER BY idx_scan DESC;"
 
 # 外部キーの欠落しているインデックスを見つける
-psql -c "SELECT conrelid::regclass, a.attname FROM pg_constraint c JOIN pg_attribute a ON a.attrelid = c.conrelid AND a.attnum = ANY(c.conkey) WHERE c.contype = 'f' AND NOT EXISTS (SELECT 1 FROM pg_index i WHERE i.indrelid = c.conrelid AND a.attnum = ANY(i.indkey));"
+psql <<'SQL'
+-- 有効な非部分B-treeの先頭キーに外部キー全列がない候補を確認
+SELECT c.conrelid::regclass AS table_name, c.conname AS constraint_name
+FROM pg_constraint c
+WHERE c.contype = 'f'
+  AND NOT EXISTS (
+    SELECT 1
+    FROM pg_index i
+    JOIN pg_class idx ON idx.oid = i.indexrelid
+    JOIN pg_am am ON am.oid = idx.relam
+    WHERE i.indrelid = c.conrelid
+      AND i.indisvalid AND i.indisready AND i.indislive
+      AND i.indpred IS NULL
+      AND am.amname = 'btree'
+      AND i.indnkeyatts >= cardinality(c.conkey)
+      AND ARRAY(
+        SELECT key.attnum
+        FROM unnest(i.indkey::smallint[]) WITH ORDINALITY AS key(attnum, position)
+        WHERE key.position <= cardinality(c.conkey)
+        ORDER BY key.attnum
+      ) = ARRAY(SELECT attnum FROM unnest(c.conkey) AS fk(attnum) ORDER BY attnum)
+  );
+SQL
 
 # テーブルの肥大化をチェック
 psql -c "SELECT relname, n_dead_tup, last_vacuum, last_autovacuum FROM pg_stat_user_tables WHERE n_dead_tup > 1000 ORDER BY n_dead_tup DESC;"

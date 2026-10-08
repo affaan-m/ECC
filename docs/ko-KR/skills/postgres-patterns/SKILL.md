@@ -94,13 +94,26 @@ WHERE id = (
 
 ```sql
 -- Find unindexed foreign keys
-SELECT conrelid::regclass, a.attname
+-- 외래 키 전체 열을 선두 키로 갖는 유효한 비부분 B-tree가 없는 후보 검토
+SELECT c.conrelid::regclass AS table_name, c.conname AS constraint_name
 FROM pg_constraint c
-JOIN pg_attribute a ON a.attrelid = c.conrelid AND a.attnum = ANY(c.conkey)
 WHERE c.contype = 'f'
   AND NOT EXISTS (
-    SELECT 1 FROM pg_index i
-    WHERE i.indrelid = c.conrelid AND a.attnum = ANY(i.indkey)
+    SELECT 1
+    FROM pg_index i
+    JOIN pg_class idx ON idx.oid = i.indexrelid
+    JOIN pg_am am ON am.oid = idx.relam
+    WHERE i.indrelid = c.conrelid
+      AND i.indisvalid AND i.indisready AND i.indislive
+      AND i.indpred IS NULL
+      AND am.amname = 'btree'
+      AND i.indnkeyatts >= cardinality(c.conkey)
+      AND ARRAY(
+        SELECT key.attnum
+        FROM unnest(i.indkey::smallint[]) WITH ORDINALITY AS key(attnum, position)
+        WHERE key.position <= cardinality(c.conkey)
+        ORDER BY key.attnum
+      ) = ARRAY(SELECT attnum FROM unnest(c.conkey) AS fk(attnum) ORDER BY attnum)
   );
 
 -- Find slow queries
