@@ -64,6 +64,7 @@ pub fn add(a: i32, b: i32) -> i32 { a + b }
 
 ```rust
 // src/user.rs
+#[derive(Debug)]
 pub struct User {
     pub name: String,
     pub email: String,
