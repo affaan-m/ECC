@@ -31,6 +31,17 @@ OBSERVER_LOOP_SCRIPT="${SCRIPT_DIR}/observer-loop.sh"
 source "${SKILL_ROOT}/scripts/detect-project.sh"
 PYTHON_CMD="${CLV2_PYTHON_CMD:-}"
 
+# Align the observer loop's working directory with its storage paths. A symlink
+# followed by .. can make Bash's logical cd select a different directory from
+# filesystem access, breaking the Windows relative analysis-file path.
+if [ -d "$PROJECT_DIR" ]; then
+  _CLV2_CANONICAL_PROJECT_DIR=$(cd -P "$PROJECT_DIR" 2>/dev/null && pwd -P) || _CLV2_CANONICAL_PROJECT_DIR=""
+  if [ -n "$_CLV2_CANONICAL_PROJECT_DIR" ]; then
+    PROJECT_DIR="$_CLV2_CANONICAL_PROJECT_DIR"
+  fi
+fi
+unset _CLV2_CANONICAL_PROJECT_DIR
+
 # ─────────────────────────────────────────────
 # Configuration
 # ─────────────────────────────────────────────
