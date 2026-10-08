@@ -33,7 +33,9 @@ let failed = 0;
 // Use a unique session ID for tests so we don't pollute real sessions
 const TEST_SESSION_ID = `test-${Date.now()}`;
 const origSessionId = process.env.CLAUDE_SESSION_ID;
+const origEccSessionId = process.env.ECC_SESSION_ID;
 process.env.CLAUDE_SESSION_ID = TEST_SESSION_ID;
+delete process.env.ECC_SESSION_ID;
 
 function getAccumFile() {
   return path.join(os.tmpdir(), `ecc-edited-${TEST_SESSION_ID}.txt`);
@@ -233,6 +235,91 @@ if (test('stop hook passes stdin through unchanged', () => {
   assert.strictEqual(result.toString(), input);
 })) passed++; else failed++;
 
+console.log('\nsession-scoped accumulator regression (#3460)');
+
+function withPayloadSessions(fn) {
+  const sessionA = `${TEST_SESSION_ID}-payload-a`;
+  const sessionB = `${TEST_SESSION_ID}-payload-b`;
+  const fileA = path.join(os.tmpdir(), `ecc-edited-${sessionA}.txt`);
+  const fileB = path.join(os.tmpdir(), `ecc-edited-${sessionB}.txt`);
+  try {
+    cleanAccumFile();
+    fn({ sessionA, sessionB, fileA, fileB });
+  } finally {
+    for (const file of [fileA, fileB]) fs.rmSync(file, { force: true });
+    cleanAccumFile();
+  }
+}
+
+if (test('stdin session IDs isolate edits from sibling sessions in the same cwd', () => {
+  withPayloadSessions(({ sessionA, sessionB, fileA, fileB }) => {
+    accumulator.run(JSON.stringify({ session_id: sessionA, tool_input: { file_path: '/nonexistent/a.ts' } }));
+    accumulator.run(JSON.stringify({ session_id: sessionB, tool_input: { file_path: '/nonexistent/b.ts' } }));
+    assert.strictEqual(fs.readFileSync(fileA, 'utf8'), '/nonexistent/a.ts\n');
+    assert.strictEqual(fs.readFileSync(fileB, 'utf8'), '/nonexistent/b.ts\n');
+    assert.ok(!fs.existsSync(getAccumFile()), 'stdin must override the environment session');
+  });
+})) passed++; else failed++;
+
+if (test('Stop consumes only its stdin session accumulator and preserves pass-through', () => {
+  withPayloadSessions(({ sessionA, sessionB, fileA, fileB }) => {
+    fs.writeFileSync(fileA, '/nonexistent/a.ts\n');
+    fs.writeFileSync(fileB, '/nonexistent/b.ts\n');
+    const stopHook = require('../../scripts/hooks/stop-format-typecheck');
+    const inputA = JSON.stringify({ session_id: sessionA, stop_reason: 'end_turn' });
+    assert.strictEqual(stopHook.run(inputA), inputA);
+    assert.ok(!fs.existsSync(fileA), 'completed session accumulator must be removed');
+    assert.strictEqual(fs.readFileSync(fileB, 'utf8'), '/nonexistent/b.ts\n');
+    stopHook.run(JSON.stringify({ session_id: sessionB }));
+    assert.ok(!fs.existsSync(fileB), 'second session should consume its own accumulator');
+  });
+})) passed++; else failed++;
+
+if (test('MultiEdit uses the same stdin session accumulator for every edit', () => {
+  withPayloadSessions(({ sessionA, fileA }) => {
+    accumulator.run(JSON.stringify({
+      session_id: sessionA,
+      tool_input: { edits: [{ file_path: '/nonexistent/a.ts' }, { file_path: '/nonexistent/b.js' }] }
+    }));
+    assert.strictEqual(fs.readFileSync(fileA, 'utf8'), '/nonexistent/a.ts\n/nonexistent/b.js\n');
+  });
+})) passed++; else failed++;
+
+if (test('ECC_SESSION_ID precedes CLAUDE_SESSION_ID while preserving legacy filenames', () => {
+  const rawId = `${TEST_SESSION_ID}/ecc.with spaces`;
+  const safeId = rawId.replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 64);
+  const file = path.join(os.tmpdir(), `ecc-edited-${safeId}.txt`);
+  process.env.ECC_SESSION_ID = rawId;
+  try {
+    cleanAccumFile();
+    accumulator.run(JSON.stringify({ tool_input: { file_path: '/nonexistent/ecc.ts' } }));
+    assert.strictEqual(fs.readFileSync(file, 'utf8'), '/nonexistent/ecc.ts\n');
+    assert.ok(!fs.existsSync(getAccumFile()));
+    const stopHook = require('../../scripts/hooks/stop-format-typecheck');
+    assert.strictEqual(stopHook.run('malformed JSON'), 'malformed JSON');
+    assert.ok(!fs.existsSync(file), 'malformed Stop input must retain the environment fallback');
+  } finally {
+    delete process.env.ECC_SESSION_ID;
+    fs.rmSync(file, { force: true });
+    cleanAccumFile();
+  }
+})) passed++; else failed++;
+
+if (test('stdin IDs keep the existing filename sanitizer and length limit', () => {
+  const rawId = `${TEST_SESSION_ID}/../nested\\session ${'x'.repeat(100)}`;
+  const safeId = rawId.replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 64);
+  const file = path.join(os.tmpdir(), `ecc-edited-${safeId}.txt`);
+  try {
+    accumulator.run(JSON.stringify({ session_id: rawId, tool_input: { file_path: '/nonexistent/safe.ts' } }));
+    assert.strictEqual(fs.readFileSync(file, 'utf8'), '/nonexistent/safe.ts\n');
+    require('../../scripts/hooks/stop-format-typecheck').run(JSON.stringify({ session_id: rawId }));
+    assert.ok(!fs.existsSync(file));
+  } finally {
+    fs.rmSync(file, { force: true });
+    cleanAccumFile();
+  }
+})) passed++; else failed++;
+
 // --- Plugin and marketplace clones are read, not owned: never format them ---
 
 const FAKE_HOME = path.join(path.sep, 'home', 'someone');
@@ -278,6 +365,11 @@ if (origSessionId === undefined) {
   delete process.env.CLAUDE_SESSION_ID;
 } else {
   process.env.CLAUDE_SESSION_ID = origSessionId;
+}
+if (origEccSessionId === undefined) {
+  delete process.env.ECC_SESSION_ID;
+} else {
+  process.env.ECC_SESSION_ID = origEccSessionId;
 }
 
 console.log(`\n=== Test Results ===`);

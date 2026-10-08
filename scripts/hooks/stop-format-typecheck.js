@@ -23,6 +23,7 @@ const os = require('os');
 const path = require('path');
 
 const { findProjectRoot, detectFormatter, resolveFormatterBin } = require('../lib/resolve-formatter');
+const { resolveHookSessionId } = require('../lib/hook-session');
 
 const MAX_STDIN = 1024 * 1024;
 // Total ms budget reserved for all batches (leaves headroom below the 300s Stop timeout)
@@ -60,9 +61,9 @@ function isPluginClonePath(filePath, cwd = process.cwd(), homeDir = os.homedir()
   });
 }
 
-function getAccumFile() {
+function getAccumFile(rawSessionId) {
   const raw =
-    process.env.CLAUDE_SESSION_ID ||
+    rawSessionId ||
     crypto.createHash('sha1').update(process.cwd()).digest('hex').slice(0, 12);
   const sessionId = raw.replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 64);
   return path.join(os.tmpdir(), `ecc-edited-${sessionId}.txt`);
@@ -156,8 +157,8 @@ function typecheckBatch(tsConfigDir, editedFiles, timeoutMs) {
   }
 }
 
-function main() {
-  const accumFile = getAccumFile();
+function main(sessionId) {
+  const accumFile = getAccumFile(sessionId);
 
   let raw;
   try {
@@ -212,7 +213,7 @@ function main() {
  */
 function run(rawInput) {
   try {
-    main();
+    main(resolveHookSessionId(rawInput));
   } catch (err) {
     process.stderr.write(`[Hook] stop-format-typecheck error: ${err.message}\n`);
   }

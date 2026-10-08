@@ -23,6 +23,7 @@ const {
   log
 } = require('../lib/utils');
 const { resolveProjectContext, writeSessionLease, resolveSessionId, getHomunculusDir } = require('../lib/observer-sessions');
+const { resolveHookSessionId } = require('../lib/hook-session');
 const { getPackageManager, getSelectionPrompt } = require('../lib/package-manager');
 const { listAliases } = require('../lib/session-aliases');
 const { detectProjectType } = require('../lib/project-detect');
@@ -179,6 +180,10 @@ function getSessionStartMode(rawInput) {
   } catch {
     log(`[SessionStart] Invalid stdin payload; skipping previous session summary injection. Length: ${input.length}`);
     return SESSION_START_MODE_INVALID;
+  }
+
+  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
+    return SESSION_START_MODE_SKIP;
   }
 
   const supportedModes = new Set(['startup', 'resume', 'clear', 'compact']);
@@ -649,7 +654,8 @@ async function main() {
   const maxContextChars = getSessionStartMaxContextChars();
   const explicitContextDisabled = isSessionStartContextDisabled();
   const shouldInjectContext = !explicitContextDisabled && maxContextChars !== 0;
-  const sessionStartMode = getSessionStartMode(fs.readFileSync(0, 'utf8'));
+  const rawInput = fs.readFileSync(0, 'utf8');
+  const sessionStartMode = getSessionStartMode(rawInput);
 
   // Ensure directories exist
   ensureDir(sessionsDir);
@@ -665,7 +671,7 @@ async function main() {
     }
   }
 
-  const observerSessionId = resolveSessionId();
+  const observerSessionId = resolveSessionId(resolveHookSessionId(rawInput));
   if (observerSessionId) {
     writeSessionLease(observerContext, observerSessionId, {
       hook: 'SessionStart',
@@ -673,7 +679,7 @@ async function main() {
     });
     log(`[SessionStart] Registered observer lease for ${observerSessionId}`);
   } else {
-    log('[SessionStart] No CLAUDE_SESSION_ID available; skipping observer lease registration');
+    log('[SessionStart] No session ID available; skipping observer lease registration');
   }
 
   if (explicitContextDisabled) {
