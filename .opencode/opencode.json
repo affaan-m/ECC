@@ -136,61 +136,6 @@
         "bash": true
       }
     },
-    "go-reviewer": {
-      "description": "Expert Go code reviewer specializing in idiomatic Go, concurrency patterns, error handling, and performance.",
-      "mode": "subagent",
-      "prompt": "{file:prompts/agents/go-reviewer.txt}",
-      "tools": {
-        "read": true,
-        "bash": true,
-        "write": false,
-        "edit": false
-      }
-    },
-    "go-build-resolver": {
-      "description": "Go build, vet, and compilation error resolution specialist. Fixes Go build errors with minimal changes.",
-      "mode": "subagent",
-      "prompt": "{file:prompts/agents/go-build-resolver.txt}",
-      "tools": {
-        "read": true,
-        "write": true,
-        "edit": true,
-        "bash": true
-      }
-    },
-    "database-reviewer": {
-      "description": "PostgreSQL database specialist for query optimization, schema design, security, and performance. Incorporates Supabase best practices.",
-      "mode": "subagent",
-      "prompt": "{file:prompts/agents/database-reviewer.txt}",
-      "tools": {
-        "read": true,
-        "write": true,
-        "edit": true,
-        "bash": true
-      }
-    },
-    "cpp-reviewer": {
-      "description": "Expert C++ code reviewer specializing in memory safety, modern C++ idioms, concurrency, and performance. Use for all C++ code changes.",
-      "mode": "subagent",
-      "prompt": "{file:prompts/agents/cpp-reviewer.txt}",
-      "tools": {
-        "read": true,
-        "bash": true,
-        "write": false,
-        "edit": false
-      }
-    },
-    "cpp-build-resolver": {
-      "description": "C++ build, CMake, and compilation error resolution specialist. Fixes build errors, linker issues, and template errors with minimal changes.",
-      "mode": "subagent",
-      "prompt": "{file:prompts/agents/cpp-build-resolver.txt}",
-      "tools": {
-        "read": true,
-        "write": true,
-        "edit": true,
-        "bash": true
-      }
-    },
     "docs-lookup": {
       "description": "Documentation specialist using Context7 MCP to fetch current library and API documentation with code examples.",
       "mode": "subagent",
@@ -212,50 +157,6 @@
         "edit": true
       }
     },
-    "java-reviewer": {
-      "description": "Expert Java and Spring Boot code reviewer specializing in layered architecture, JPA patterns, security, and concurrency.",
-      "mode": "subagent",
-      "prompt": "{file:prompts/agents/java-reviewer.txt}",
-      "tools": {
-        "read": true,
-        "bash": true,
-        "write": false,
-        "edit": false
-      }
-    },
-    "java-build-resolver": {
-      "description": "Java/Maven/Gradle build, compilation, and dependency error resolution specialist. Fixes build errors with minimal changes.",
-      "mode": "subagent",
-      "prompt": "{file:prompts/agents/java-build-resolver.txt}",
-      "tools": {
-        "read": true,
-        "write": true,
-        "edit": true,
-        "bash": true
-      }
-    },
-    "kotlin-reviewer": {
-      "description": "Kotlin and Android/KMP code reviewer. Reviews Kotlin code for idiomatic patterns, coroutine safety, Compose best practices.",
-      "mode": "subagent",
-      "prompt": "{file:prompts/agents/kotlin-reviewer.txt}",
-      "tools": {
-        "read": true,
-        "bash": true,
-        "write": false,
-        "edit": false
-      }
-    },
-    "kotlin-build-resolver": {
-      "description": "Kotlin/Gradle build, compilation, and dependency error resolution specialist. Fixes Kotlin build errors with minimal changes.",
-      "mode": "subagent",
-      "prompt": "{file:prompts/agents/kotlin-build-resolver.txt}",
-      "tools": {
-        "read": true,
-        "write": true,
-        "edit": true,
-        "bash": true
-      }
-    },
     "loop-operator": {
       "description": "Operate autonomous agent loops, monitor progress, and intervene safely when loops stall.",
       "mode": "subagent",
@@ -264,50 +165,6 @@
         "read": true,
         "bash": true,
         "edit": true
-      }
-    },
-    "php-reviewer": {
-      "description": "Expert PHP code reviewer specializing in PSR-12 compliance, PHP type system, Eloquent ORM patterns, security, and performance.",
-      "mode": "subagent",
-      "prompt": "{file:prompts/agents/php-reviewer.txt}",
-      "tools": {
-        "read": true,
-        "bash": true,
-        "write": false,
-        "edit": false
-      }
-    },
-    "python-reviewer": {
-      "description": "Expert Python code reviewer specializing in PEP 8 compliance, Pythonic idioms, type hints, security, and performance.",
-      "mode": "subagent",
-      "prompt": "{file:prompts/agents/python-reviewer.txt}",
-      "tools": {
-        "read": true,
-        "bash": true,
-        "write": false,
-        "edit": false
-      }
-    },
-    "rust-reviewer": {
-      "description": "Expert Rust code reviewer specializing in idiomatic Rust, ownership, lifetimes, concurrency, and performance.",
-      "mode": "subagent",
-      "prompt": "{file:prompts/agents/rust-reviewer.txt}",
-      "tools": {
-        "read": true,
-        "bash": true,
-        "write": false,
-        "edit": false
-      }
-    },
-    "rust-build-resolver": {
-      "description": "Rust build, Cargo, and compilation error resolution specialist. Fixes Rust build errors with minimal changes.",
-      "mode": "subagent",
-      "prompt": "{file:prompts/agents/rust-build-resolver.txt}",
-      "tools": {
-        "read": true,
-        "write": true,
-        "edit": true,
-        "bash": true
       }
     }
   },
@@ -397,24 +254,6 @@
     "setup-pm": {
       "description": "Configure package manager",
       "template": "{file:commands/setup-pm.md}\n\n$ARGUMENTS"
-    },
-    "go-review": {
-      "description": "Go code review",
-      "template": "{file:commands/go-review.md}\n\n$ARGUMENTS",
-      "agent": "go-reviewer",
-      "subtask": true
-    },
-    "go-test": {
-      "description": "Go TDD workflow",
-      "template": "{file:commands/go-test.md}\n\n$ARGUMENTS",
-      "agent": "tdd-guide",
-      "subtask": true
-    },
-    "go-build": {
-      "description": "Fix Go build errors",
-      "template": "{file:commands/go-build.md}\n\n$ARGUMENTS",
-      "agent": "go-build-resolver",
-      "subtask": true
     },
     "skill-create": {
       "description": "Generate skills from git history",

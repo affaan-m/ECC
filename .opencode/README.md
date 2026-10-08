@@ -72,7 +72,7 @@ a pointer to this command if the build step is missing.
 
 ## Features
 
-### Agents (26)
+### Agents (13)
 
 | Agent | Description |
 |-------|-------------|
@@ -86,24 +86,11 @@ a pointer to this command if the build step is missing.
 | e2e-runner | E2E testing |
 | doc-updater | Documentation |
 | refactor-cleaner | Dead code cleanup |
-| go-reviewer | Go code review |
-| go-build-resolver | Go build errors |
-| database-reviewer | Database optimization |
 | docs-lookup | Documentation lookup via Context7 |
 | harness-optimizer | Harness config tuning |
-| java-reviewer | Java code review |
-| java-build-resolver | Java build errors |
-| kotlin-reviewer | Kotlin code review |
-| kotlin-build-resolver | Kotlin build errors |
 | loop-operator | Autonomous loop execution |
-| php-reviewer | PHP code review |
-| python-reviewer | Python code review |
-| rust-reviewer | Rust code review |
-| rust-build-resolver | Rust build errors |
-| cpp-reviewer | C++ code review |
-| cpp-build-resolver | C++ build errors |
 
-### Commands (26)
+### Commands (23)
 
 | Command | Description |
 |---------|-------------|
@@ -123,9 +110,6 @@ a pointer to this command if the build step is missing.
 | `/update-codemaps` | Update codemaps |
 | `/test-coverage` | Coverage analysis |
 | `/setup-pm` | Package manager |
-| `/go-review` | Go code review |
-| `/go-test` | Go TDD |
-| `/go-build` | Go build fix |
 | `/skill-create` | Generate skills |
 | `/instinct-status` | View instincts |
 | `/instinct-import` | Import instincts |
@@ -163,7 +147,6 @@ a pointer to this command if the build step is missing.
 | security-audit | Security vulnerability scan |
 | format-code | Detect formatter and return command |
 | lint-check | Detect linter and return command |
-| git-summary | Generate git summary with branch, status, and diff |
 | changed-files | List files changed in session as a navigable tree |
 | dependency-analyzer | Analyze dependencies for outdated, vulnerable, and unused packages |
 
@@ -229,8 +212,8 @@ Full configuration in `opencode.json`:
     "skills/tdd-workflow/SKILL.md",
     "skills/security-review/SKILL.md"
   ],
-  "agent": { /* 12 agents */ },
-  "command": { /* 24 commands */ }
+  "agent": { /* 13 agents */ },
+  "command": { /* 23 commands */ }
 }
 ```
 

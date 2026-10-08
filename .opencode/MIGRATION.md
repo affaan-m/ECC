@@ -250,9 +250,6 @@ After migration, ALL 23 commands are available:
 | `/update-codemaps` | Update codemaps |
 | `/test-coverage` | Check test coverage |
 | `/setup-pm` | Configure package manager |
-| `/go-review` | Go code review |
-| `/go-test` | Go TDD workflow |
-| `/go-build` | Fix Go build errors |
 | `/skill-create` | Generate skills from git history |
 | `/instinct-status` | View learned instincts |
 | `/instinct-import` | Import instincts |
@@ -274,9 +271,6 @@ After migration, ALL 23 commands are available:
 | `e2e-runner` | E2E testing |
 | `doc-updater` | Documentation |
 | `refactor-cleaner` | Dead code cleanup |
-| `go-reviewer` | Go code review |
-| `go-build-resolver` | Go build errors |
-| `database-reviewer` | Database optimization |
 
 ## Plugin Installation
 

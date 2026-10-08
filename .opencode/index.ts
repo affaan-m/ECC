@@ -3,7 +3,7 @@
  *
  * This package provides the published ECC OpenCode plugin module:
  * - Plugin hooks (auto-format, TypeScript check, console.log warning, env injection, etc.)
- * - Custom tools (run-tests, check-coverage, security-audit, format-code, lint-check, git-summary)
+ * - Custom tools (run-tests, check-coverage, security-audit, format-code, lint-check)
  * - Bundled reference config/assets for the wider ECC OpenCode setup
  *
  * Usage:
