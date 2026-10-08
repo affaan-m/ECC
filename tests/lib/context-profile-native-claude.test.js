@@ -109,6 +109,12 @@ for (const version of ['2.1.291 (Claude Code)', '2.1.292', '2.1.292 (Claude Code
 
 const corruptions = {
   'validation error': [{ validate: report => ({ ...report, success: false, manifest: { errors: [{ path: 'skills' }] } }) }, /plugin validation failed/],
+  'null validation entry': [{ validate: report => ({ ...report, contents: [null] }) }, /plugin validation failed/],
+  'validation entry without errors': [{ validate: report => ({ ...report, contents: [{ type: 'skill' }] }) }, /plugin validation failed/],
+  'validation entry with non-array errors': [{ validate: report => ({ ...report, contents: [{ type: 'skill', errors: 'bad' }] }) },
+    /plugin validation failed/],
+  'validation entry error': [{ validate: report => ({ ...report, contents: [{ type: 'skill', errors: [{ path: 'name' }] }] }) },
+    /plugin validation failed/],
   'extra plugin': [{ list: plugins => [...plugins, { id: 'other@market', scope: 'user', enabled: true, installPath: '/elsewhere' }] }, /plugin discovery mismatch/],
   'moved plugin': [{ list: plugins => [{ ...plugins[0], installPath: '/elsewhere' }] }, /plugin discovery mismatch/],
   'disabled plugin': [{ list: plugins => [{ ...plugins[0], enabled: false }] }, /plugin discovery mismatch/],
