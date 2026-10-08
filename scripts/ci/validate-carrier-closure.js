@@ -16,11 +16,13 @@
 
 const fs = require('node:fs');
 const path = require('node:path');
+const { builtinModules } = require('node:module');
 const { planContextCarrier } = require('../lib/context-carriers');
 const { loadContextRegistry } = require('../lib/context-pack-registry');
 const { DEFAULT_REPO_ROOT } = require('../lib/context-profile-support');
 
 const PROFILES = Object.freeze(['lean@1', 'full@1']);
+const BUILTINS = new Set(builtinModules);
 const SCRIPT_EXTENSIONS = new Set(['.js', '.cjs', '.mjs']);
 const MARK = '\u0000';
 const SLOT = `${MARK}(\\d+)${MARK}`;
@@ -145,13 +147,17 @@ function renderExpression(text, literals) {
 function extractReferences(rawSource) {
   const { code, literals } = scanSource(rawSource);
   const specifiers = new Set();
+  const packages = new Set();
   const dynamic = new Set();
-  const relative = value => typeof value === 'string' && value.startsWith('.');
   const literalAt = match => literals[Number(match[1])];
 
   for (const pattern of [CALL_PATTERN, FROM_PATTERN, SIDE_EFFECT_PATTERN]) {
     collect(pattern, code, match => {
-      if (relative(literalAt(match))) specifiers.add(literalAt(match));
+      const value = literalAt(match);
+      if (value.startsWith('.') || value.startsWith('/')) specifiers.add(value);
+      else if (!value.startsWith('node:') && !BUILTINS.has(value.split('/')[0])) {
+        packages.add(value.startsWith('@') ? value.split('/').slice(0, 2).join('/') : value.split('/')[0]);
+      }
     });
   }
   collect(DIRNAME_JOIN_PATTERN, code, match => {
@@ -164,10 +170,11 @@ function extractReferences(rawSource) {
     if (new RegExp(`^${SLOT}$`).test(argument) || STATIC_JOIN_PATTERN.test(argument)) return;
     dynamic.add(renderExpression(argument, literals));
   });
-  return { specifiers: [...specifiers], dynamic: [...dynamic] };
+  return { specifiers: [...specifiers], packages: [...packages], dynamic: [...dynamic] };
 }
 
 function candidateDestinations(destinationPath, specifier) {
+  if (specifier.startsWith('/')) return { base: specifier, candidates: null };
   const base = path.posix.join(path.posix.dirname(destinationPath), specifier);
   if (base === '..' || base.startsWith('../')) return { base, candidates: null };
   const candidates = destinationPath.endsWith('.mjs')
@@ -191,7 +198,7 @@ function inspectProjection(carrier, profileId, read, report) {
   const planned = new Set(carrier.files.map(file => file.destinationPath));
   const scripts = carrier.files.filter(file => SCRIPT_EXTENSIONS.has(path.posix.extname(file.destinationPath)));
   for (const file of scripts) {
-    const { specifiers, dynamic } = extractReferences(read(file));
+    const { specifiers, packages, dynamic } = extractReferences(read(file));
     const location = {
       target: carrier.target, layout: carrier.layout.id, profileId,
       file: file.destinationPath, source: file.sourcePath || null,
@@ -209,7 +216,11 @@ function inspectProjection(carrier, profileId, read, report) {
     }
     for (const expression of dynamic) {
       report.dynamicCount += 1;
-      report.warnings.push({ ...location, expression });
+      report.warnings.push({ ...location, kind: 'dynamic', expression });
+    }
+    for (const name of packages) {
+      report.packageCount += 1;
+      report.warnings.push({ ...location, kind: 'package', package: name });
     }
   }
   report.plannedFileCount += carrier.files.length;
@@ -220,7 +231,7 @@ function validate(repoRoot = DEFAULT_REPO_ROOT) {
   const registry = loadContextRegistry({ repoRoot });
   const read = sourceReader(repoRoot);
   const report = {
-    plannedFileCount: 0, scriptCount: 0, specifierCount: 0, resolvedCount: 0, dynamicCount: 0,
+    plannedFileCount: 0, scriptCount: 0, specifierCount: 0, resolvedCount: 0, dynamicCount: 0, packageCount: 0,
     failures: [], warnings: [],
   };
   const layouts = [];
@@ -262,13 +273,15 @@ function main(args = process.argv.slice(2)) {
     if (args.includes('--json')) {
       console.log(JSON.stringify(result, null, 2));
     } else {
-      for (const line of uniqueLines(result.warnings, w => `${w.file} -> ${w.expression}`)) {
-        console.warn(`Dynamic require, not resolvable statically: ${line}`);
+      for (const line of uniqueLines(result.warnings, w => (w.kind === 'package'
+        ? `Package import, not shipped in carriers: ${w.file} -> ${w.package}`
+        : `Dynamic require, not resolvable statically: ${w.file} -> ${w.expression}`))) {
+        console.warn(line);
       }
       for (const line of uniqueLines(result.failures, f => `${f.layout} ${f.profileId}: ${f.file} -> ${f.specifier} (${f.reason})`)) {
         console.error(line);
       }
-      console.log(`Carrier closure ${result.status}: ${result.layouts.length} layouts x ${result.profiles.length} profiles = ${result.projectionCount} projections, ${result.plannedFileCount} planned files, ${result.scriptCount} scripts, ${result.resolvedCount}/${result.specifierCount} relative specifiers resolved, ${result.failures.length} escapes, ${result.dynamicCount} dynamic requires. Load smoke: deferred.`);
+      console.log(`Carrier closure ${result.status}: ${result.layouts.length} layouts x ${result.profiles.length} profiles = ${result.projectionCount} projections, ${result.plannedFileCount} planned files, ${result.scriptCount} scripts, ${result.resolvedCount}/${result.specifierCount} relative specifiers resolved, ${result.failures.length} escapes, ${result.dynamicCount} dynamic requires, ${result.packageCount} package imports. Load smoke: deferred.`);
     }
     return result.status === 'success' ? 0 : 1;
   } catch (error) {
