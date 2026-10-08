@@ -34,6 +34,8 @@ const DIRNAME_JOIN_PATTERN = new RegExp(
 const DYNAMIC_PATTERN = /\b(?:require|import)\s*\(\s*((?:[^()]|\([^()]*\))+)\)/g;
 const STATIC_JOIN_PATTERN = new RegExp(`^path\\.join\\s*\\(\\s*__dirname\\s*(?:,\\s*${SLOT}\\s*)+\\)$`);
 const SLOT_PATTERN = new RegExp(SLOT, 'g');
+// Closes an interpolation; no keyword pattern can match across it.
+const CLOSE = `${MARK}${MARK}`;
 const ESCAPE_PATTERN = /\\(?:u\{([0-9a-fA-F]+)\}|u([0-9a-fA-F]{4})|x([0-9a-fA-F]{2})|(\r\n|[\s\S]))/g;
 const SIMPLE_ESCAPES = Object.freeze({ n: '\n', r: '\r', t: '\t', b: '\b', f: '\f', v: '\v', 0: '\0' });
 const LINE_CONTINUATIONS = new Set(['\n', '\r', '\r\n', '\u2028', '\u2029']);
@@ -136,7 +138,7 @@ function scanSource(rawSource) {
     if (open && open.type === 'interpolation') {
       if (char === '{') open.depth += 1;
       else if (char === '}') {
-        if (open.depth === 0) { stack.pop(); index += 1; code += ' '; continue; }
+        if (open.depth === 0) { stack.pop(); index += 1; code += CLOSE; continue; }
         open.depth -= 1;
       }
     }
@@ -157,7 +159,7 @@ function collect(pattern, code, handler) {
 }
 
 function renderExpression(text, literals) {
-  return text.replace(SLOT_PATTERN, (_whole, slotIndex) => `'${literals[Number(slotIndex)]}'`).trim();
+  return text.replace(SLOT_PATTERN, (_whole, slotIndex) => `'${literals[Number(slotIndex)]}'`).split(CLOSE).join(' ').trim();
 }
 
 /**
