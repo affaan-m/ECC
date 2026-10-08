@@ -107,7 +107,7 @@ def process_items(items: List[str]) -> Dict[str, int]:
 ### Type Aliases and TypeVar
 
 ```python
-from typing import TypeVar, Union
+from typing import Optional, TypeVar, Union
 
 # Type alias for complex types
 JSON = Union[dict[str, Any], list[Any], str, int, float, bool, None]
@@ -118,7 +118,7 @@ def parse_json(data: str) -> JSON:
 # Generic types
 T = TypeVar('T')
 
-def first(items: list[T]) -> T | None:
+def first(items: list[T]) -> Optional[T]:
     """Return the first item or None if list is empty."""
     return items[0] if items else None
 ```
@@ -482,8 +482,12 @@ def process_all(datasets: list[list[int]]) -> list[int]:
 
 ### Async/Await for Concurrent I/O
 
+With `return_exceptions=True`, failed or cancelled requests are retained as
+exception objects in the result mapping, so callers must handle those values.
+
 ```python
 import asyncio
+from typing import Union
 
 async def fetch_async(url: str) -> str:
     """Fetch a URL asynchronously."""
@@ -492,7 +496,7 @@ async def fetch_async(url: str) -> str:
         async with session.get(url) as response:
             return await response.text()
 
-async def fetch_all(urls: list[str]) -> dict[str, str]:
+async def fetch_all(urls: list[str]) -> dict[str, Union[str, BaseException]]:
     """Fetch multiple URLs concurrently."""
     tasks = [fetch_async(url) for url in urls]
     results = await asyncio.gather(*tasks, return_exceptions=True)
