@@ -892,7 +892,7 @@ function applyInstallPlanLocked(plan, dependencies = {}, settingsLockHeld = fals
             sourceRel: operation.sourceRelativePath,
             index: linkIndex,
           })
-          : transformed;
+          : namespaced;
         const writeOptions = getOpenCodeActivationWriteOptions(operation, activationSnapshot);
         if (writeOptions.expectedContent) {
           writeFileNoFollow(operation.destinationPath, installedContent, {
