@@ -140,13 +140,18 @@ ALTER SYSTEM SET work_mem = '8MB';
 ALTER SYSTEM SET idle_in_transaction_session_timeout = '30s';
 ALTER SYSTEM SET statement_timeout = '30s';
 
--- Monitoreo
-CREATE EXTENSION IF NOT EXISTS pg_stat_statements;
-
 -- Valores predeterminados de seguridad
 REVOKE ALL ON SCHEMA public FROM public;
 
 SELECT pg_reload_conf();
+```
+
+Las instrucciones sobre `compute_query_id` se aplican a PostgreSQL 14 y posteriores; omite este parámetro en PostgreSQL 13 y anteriores.
+
+`pg_reload_conf()` recarga los parámetros que admiten recarga; los cambios en `max_connections` requieren reiniciar el servidor. Antes de usar `pg_stat_statements`, añádelo a `shared_preload_libraries` conservando las entradas existentes. Usa `compute_query_id = auto` u `on` para los identificadores integrados; configúralo en `off` si un módulo externo calcula los identificadores de consulta. Reinicia el servidor si cambió la lista de precarga; después, conecta a cada base de datos que necesite las vistas de estadísticas y ejecuta:
+
+```sql
+CREATE EXTENSION IF NOT EXISTS pg_stat_statements;
 ```
 
 ## Relacionado
