@@ -152,6 +152,11 @@ for (const [label, source, expected] of SCANNER_CASES) {
   });
 }
 
+test('scanner: an identifier named from before a template chunk is not an import', () => {
+  assert.deepEqual(validator().extractReferences('const s = `${from} is shipped as ${to}`;'),
+    { specifiers: [], packages: [], dynamic: [] });
+});
+
 test('unknown flags are rejected', () => {
   const result = childProcess.spawnSync(process.execPath, [SCRIPT_PATH, '--write'], {
     cwd: REPO_ROOT, encoding: 'utf8', timeout: 120_000,
