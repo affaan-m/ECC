@@ -192,12 +192,15 @@ Pi coding agent:
 pi --no-extensions --extension pi/core
 \`\`\`
 
-Offline load test (as run in CI):
+From the ECC repository root, run the offline load test used in CI
+(requires the Pi CLI on PATH):
 
 \`\`\`sh
-PI_OFFLINE=1 pi --offline --mode rpc --no-session --no-context-files --no-extensions \\
-  --extension pi/core </dev/null >/dev/null
+node scripts/ci/pi-core-load-test.js
 \`\`\`
+
+The test loads skills and prompt templates explicitly, sends the RPC
+\`get_commands\` request, and verifies that all ${commandCount} curated commands load.
 
 ## Regenerate
 
