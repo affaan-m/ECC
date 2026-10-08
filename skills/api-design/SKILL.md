@@ -411,7 +411,19 @@ const createUserSchema = z.object({
 });
 
 export async function POST(req: NextRequest) {
-  const body = await req.json();
+  const rawBody = await req.text();
+  let body: unknown;
+  try {
+    body = JSON.parse(rawBody);
+  } catch (error) {
+    if (!(error instanceof SyntaxError)) throw error;
+    return NextResponse.json({
+      error: {
+        code: "invalid_json",
+        message: "Invalid JSON request body",
+      },
+    }, { status: 400 });
+  }
   const parsed = createUserSchema.safeParse(body);
 
   if (!parsed.success) {
