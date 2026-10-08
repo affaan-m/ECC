@@ -44,6 +44,7 @@ GET /api/markets?status=active&sort=volume&limit=20&offset=0
 interface MarketRepository {
   findAll(filters?: MarketFilters): Promise<Market[]>
   findById(id: string): Promise<Market | null>
+  findByIds(ids: string[]): Promise<Market[]>
   create(data: CreateMarketDto): Promise<Market>
   update(id: string, data: UpdateMarketDto): Promise<Market>
   delete(id: string): Promise<void>
