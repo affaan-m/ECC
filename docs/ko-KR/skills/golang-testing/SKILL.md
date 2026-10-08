@@ -551,11 +551,13 @@ go test -race -coverprofile=coverage.out ./...
 
 ### 생성된 코드를 커버리지에서 제외
 
-```go
-//go:generate mockgen -source=interface.go -destination=mock_interface.go
+`//go:generate`는 파일을 커버리지에서 제외하지 않으며, `-tags=!generate`도 커버리지 필터가 아닙니다. 빌드 제약은 컴파일할 소스 파일을 선택하므로 테스트에 필요한 생성된 mock을 제거하지 마세요.
 
-// In coverage profile, exclude with build tags:
-// go test -cover -tags=!generate ./...
+생성된 코드가 별도 패키지에 있다면 모든 테스트를 계속 실행하면서 `-coverpkg`로 애플리케이션 패키지를 선택하세요(아래 패키지 경로는 프로젝트에 맞게 조정하세요). 선택 단위는 패키지입니다. 같은 패키지 안의 생성된 파일에는 빌드 태그 대신 명시적인 보고서 필터링 정책이 필요합니다.
+
+```bash
+go test -coverpkg=./internal/service,./internal/handler -coverprofile=coverage.out ./...
+go tool cover -func=coverage.out
 ```
 
 ## HTTP 핸들러 테스팅
