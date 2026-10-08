@@ -97,18 +97,26 @@ function policyFor(entry, reader) {
     dynamic: /!`/.test(source) };
 }
 
+// Admission denials carry stable codes so callers can tell a skill that may
+// not be selected from a source that failed verification.
+function denied(message, code) {
+  const error = new Error(message);
+  error.code = code;
+  return error;
+}
+
 function selectedClosure(ids, explicit, byId, excluded, reader) {
   const selected = new Set();
   function visit(id) {
     if (!byId.has(id)) throw new Error(`Unknown context ID: ${id}`);
-    if (excluded.has(id)) throw new Error(`Context ID is excluded: ${id}`);
+    if (excluded.has(id)) throw denied(`Context ID is excluded: ${id}`, 'ECC_CONTEXT_EXCLUDED');
     if (selected.has(id)) return;
     const entry = byId.get(id);
     const policy = policyFor(entry, reader);
-    if (policy.manualOnly && !explicit.has(id)) throw new Error(`Context ID is manual-only: ${id}`);
-    if (policy.authority || policy.dynamic) throw new Error(`Context requires native authority or dynamic-content review: ${id}`);
+    if (policy.manualOnly && !explicit.has(id)) throw denied(`Context ID is manual-only: ${id}`, 'ECC_CONTEXT_MANUAL_ONLY');
+    if (policy.authority || policy.dynamic) throw denied(`Context requires native authority or dynamic-content review: ${id}`, 'ECC_CONTEXT_AUTHORITY');
     selected.add(id);
-    if (selected.size > MAX_SELECTED) throw new Error('Task selection exceeds the skill limit');
+    if (selected.size > MAX_SELECTED) throw denied('Task selection exceeds the skill limit', 'ECC_CONTEXT_SKILL_LIMIT');
     entry.dependencies.forEach(visit);
   }
   ids.forEach(visit);
@@ -122,7 +130,7 @@ function readSelected(ids, byId, reader) {
     return [...new Set([entry.sourcePath, ...entry.requiredResources])].map(sourcePath => {
       const actual = verifiedResource(entry, sourcePath, reader);
       total += actual.bytes;
-      if (total > MAX_CONTEXT_BYTES) throw new Error('Task context exceeds the 32000-byte budget; choose a narrower immediate step');
+      if (total > MAX_CONTEXT_BYTES) throw denied('Task context exceeds the 32000-byte budget; choose a narrower immediate step', 'ECC_CONTEXT_BYTE_BUDGET');
       const content = actual.content.toString('utf8');
       if (!Buffer.from(content, 'utf8').equals(actual.content) || content.includes('\0')) throw new Error('Required context resource is not UTF-8 text');
       return { id, path: sourcePath, digest: actual.digest, bytes: actual.bytes, content };
@@ -140,6 +148,9 @@ function validatePrevious(previous) {
   }
 }
 
+const ADMISSION_DENIALS = new Set(['ECC_CONTEXT_EXCLUDED', 'ECC_CONTEXT_MANUAL_ONLY', 'ECC_CONTEXT_AUTHORITY',
+  'ECC_CONTEXT_SKILL_LIMIT', 'ECC_CONTEXT_BYTE_BUDGET']);
+
 function admissibility(byId, excluded, reader) {
   return id => {
     try {
@@ -147,9 +158,9 @@ function admissibility(byId, excluded, reader) {
       readSelected(closure, byId, reader);
       return true;
     } catch (error) {
-      // Only known admission denials remove a suggestion. Source drift and
-      // malformed policy still fail closed instead of disappearing from view.
-      if (/manual-only|requires native authority|is excluded|exceeds the skill limit|32000-byte budget|not UTF-8 text/.test(error.message)) return false;
+      // Only coded admission denials remove a suggestion. Source drift,
+      // malformed policy and non-UTF-8 resources fail the build instead.
+      if (ADMISSION_DENIALS.has(error.code)) return false;
       throw error;
     }
   };
@@ -189,7 +200,7 @@ function resolveTaskContext({ repoRoot = DEFAULT_REPO_ROOT, task, profileId = 'l
   const proposedIds = [...(task.proposedIds || [])].sort();
   [...explicitIds, ...proposedIds].forEach(id => {
     if (!byId.has(id)) throw new Error(`Unknown context ID: ${id}`);
-    if (excluded.has(id)) throw new Error(`Context ID is excluded: ${id}`);
+    if (excluded.has(id)) throw denied(`Context ID is excluded: ${id}`, 'ECC_CONTEXT_EXCLUDED');
   });
   const taskBinding = { sessionId: task.sessionId, taskId: task.taskId, revision: task.revision, phase: task.phase };
   const bindingDigest = digestObject({ ...taskBinding, planDigest: plan.planDigest,

@@ -14,6 +14,13 @@ const POINTER_SCHEMA = 'ecc.context-routing-pointer.v1';
 const DIGEST = /^[a-f0-9]{64}$/;
 const MAX_SUGGESTIONS = 3;
 const MAX_DESCRIPTION = 120;
+// A Full index is under 1 MiB; these bounds keep a prompt-time read proportional
+// to a real registry even when the store holds something else.
+const MAX_POINTER_BYTES = 4096;
+const MAX_INDEX_BYTES = 4 * 1024 * 1024;
+const MAX_ENTRIES = 2048;
+const SKILL_ID = /^skill:[a-z0-9]+(?:-[a-z0-9]+)*$/;
+const ENTRY_KEYS = new Set(['id', 'name', 'description', 'ownerModuleId', 'packId', 'triggers', 'dense']);
 
 function checkedRoot(stateRoot) {
   if (typeof stateRoot !== 'string' || !path.isAbsolute(stateRoot) || path.resolve(stateRoot) !== stateRoot) {
@@ -24,7 +31,7 @@ function checkedRoot(stateRoot) {
 
 // Reads only the ownership marker, state pointer and its receipt: enough to
 // bind an index to the current generation without rehashing the payload.
-function currentBinding(stateRoot) {
+function readBinding(stateRoot) {
   const root = checkedRoot(stateRoot);
   const marker = { schemaVersion: 'ecc.context-store.v1', destinationDigest: digestObject({ root }) };
   const markerFile = path.join(root, 'store.json');
@@ -39,7 +46,8 @@ function currentBinding(stateRoot) {
   if (digestObject(receipt) !== state.receiptDigest || receipt.generationDigest !== state.generationDigest) {
     throw new Error('Managed receipt and state integrity mismatch');
   }
-  return { root, generationDigest: state.generationDigest, receiptDigest: state.receiptDigest };
+  return { root, generationDigest: state.generationDigest, receiptDigest: state.receiptDigest,
+    revision: receipt.revision, selectionMode: receipt.selection?.selectionMode || null };
 }
 
 // Stored vectors are little-endian uint16 dimensions and float64 weights in
@@ -77,7 +85,7 @@ function writeRoutingIndex({ stateRoot, repoRoot = DEFAULT_REPO_ROOT } = {}) {
   const root = checkedRoot(stateRoot);
   const status = require('./context-profile-store').getStoreStatus({ stateRoot: root });
   if (!status.configured || status.recoveryRequired) throw new Error('Routing index requires a configured, recovered managed store');
-  const binding = currentBinding(root);
+  const binding = readBinding(root);
   if (binding.receiptDigest !== status.receiptDigest) throw new Error('Managed state changed during routing index build');
   const carrier = require('./context-carriers').planContextCarrier({ repoRoot, profileId: status.profileId, target: status.target,
     selectionMode: status.selectionMode, include: status.include, exclude: status.exclude });
@@ -85,6 +93,9 @@ function writeRoutingIndex({ stateRoot, repoRoot = DEFAULT_REPO_ROOT } = {}) {
   const { routingEntries } = require('./context-selection');
   const routing = routingEntries({ repoRoot, profileId: status.profileId, target: status.target,
     selectionMode: status.selectionMode, include: status.include, exclude: status.exclude });
+  if (routing.planDigest !== carrier.planDigest || routing.registryDigest !== carrier.registryDigest) {
+    throw new Error('Skill sources changed during routing index build; run it again');
+  }
   const bytes = io.jsonBytes({ schemaVersion: SCHEMA, generationDigest: binding.generationDigest, receiptDigest: binding.receiptDigest,
     ...routing, entries: routing.entries.map(entry => ({ ...entry, dense: encodeDense(sparseDense(entry)) })) });
   const digest = io.hash(bytes);
@@ -92,37 +103,53 @@ function writeRoutingIndex({ stateRoot, repoRoot = DEFAULT_REPO_ROOT } = {}) {
   io.mkdir(path.join(root, 'routing')); io.mkdir(path.dirname(file));
   if (!io.inspect(file, true).stat) io.writeExclusive(file, bytes);
   else if (!io.read(file).equals(bytes)) throw new Error('Routing index content changed under its digest');
-  if (currentBinding(root).receiptDigest !== binding.receiptDigest) throw new Error('Managed state changed during routing index build');
+  if (readBinding(root).receiptDigest !== binding.receiptDigest) throw new Error('Managed state changed during routing index build');
   const pointer = { schemaVersion: POINTER_SCHEMA, generationDigest: binding.generationDigest,
     receiptDigest: binding.receiptDigest, indexDigest: digest, bytes: bytes.length };
   io.atomicJson(pointerPath(root, binding.generationDigest), { ...pointer, pointerDigest: digestObject(pointer) });
   return { status: 'written', path: file, generationDigest: binding.generationDigest, entries: routing.entries.length };
 }
 
-/** Return the index for the current generation, null when none was built. */
-function readRoutingIndex(stateRoot) {
-  const binding = currentBinding(stateRoot);
+const optionalString = value => value === undefined || typeof value === 'string';
+
+function validEntry(entry) {
+  return entry !== null && typeof entry === 'object' && !Array.isArray(entry)
+    && Object.keys(entry).every(key => ENTRY_KEYS.has(key))
+    && typeof entry.id === 'string' && SKILL_ID.test(entry.id) && typeof entry.description === 'string'
+    && optionalString(entry.name) && optionalString(entry.ownerModuleId) && optionalString(entry.packId)
+    && (entry.triggers === undefined || (Array.isArray(entry.triggers) && entry.triggers.every(trigger => typeof trigger === 'string')));
+}
+
+/** Return the index for the current generation, or null when none was built
+ * for this state. A pointer left by an earlier state of the same generation
+ * (after a rollback or mode change) is retired, not corrupt. */
+function readRoutingIndex(stateRoot, binding = readBinding(stateRoot)) {
+  if (binding.root !== checkedRoot(stateRoot)) throw new Error('Routing binding belongs to a different store');
   const file = pointerPath(binding.root, binding.generationDigest);
   if (!io.inspect(path.dirname(file), true).stat || !io.inspect(file, true).stat) return null;
   const invalid = () => new Error('Routing index integrity mismatch; rebuild it with ecc profile routing-index');
+  if (io.inspect(file).stat.size > MAX_POINTER_BYTES) throw invalid();
   const { pointerDigest, ...pointer } = io.readJson(file);
   if (pointer.schemaVersion !== POINTER_SCHEMA || digestObject(pointer) !== pointerDigest || !DIGEST.test(pointer.indexDigest || '')
-    || pointer.generationDigest !== binding.generationDigest || pointer.receiptDigest !== binding.receiptDigest) throw invalid();
-  const bytes = io.read(entriesPath(binding.root, pointer.indexDigest));
+    || !DIGEST.test(pointer.receiptDigest || '') || pointer.generationDigest !== binding.generationDigest
+    || !Number.isSafeInteger(pointer.bytes) || pointer.bytes <= 0 || pointer.bytes > MAX_INDEX_BYTES) throw invalid();
+  if (pointer.receiptDigest !== binding.receiptDigest) return null;
+  const entriesFile = entriesPath(binding.root, pointer.indexDigest);
+  if (io.inspect(entriesFile).stat.size !== pointer.bytes) throw invalid();
+  const bytes = io.read(entriesFile);
   if (bytes.length !== pointer.bytes || io.hash(bytes) !== pointer.indexDigest) throw invalid();
   const index = JSON.parse(bytes.toString('utf8'));
   if (index.schemaVersion !== SCHEMA || index.generationDigest !== binding.generationDigest
-    || index.receiptDigest !== binding.receiptDigest || !Array.isArray(index.entries)) throw invalid();
-  for (const entry of index.entries) {
-    entry.dense = decodeDense(entry.dense);
-    if (!entry.dense) throw invalid();
-  }
-  return index;
+    || index.receiptDigest !== binding.receiptDigest || !Array.isArray(index.entries) || index.entries.length > MAX_ENTRIES
+    || !index.entries.every(validEntry)) throw invalid();
+  const entries = index.entries.map(entry => ({ ...entry, dense: decodeDense(entry.dense) }));
+  if (entries.some(entry => !entry.dense)) throw invalid();
+  return { ...index, entries };
 }
 
 function routingIndexStatus(stateRoot) {
-  const binding = currentBinding(stateRoot);
-  const index = readRoutingIndex(stateRoot);
+  const binding = readBinding(stateRoot);
+  const index = readRoutingIndex(stateRoot, binding);
   return { status: index ? 'current' : 'missing', path: pointerPath(binding.root, binding.generationDigest),
     generationDigest: binding.generationDigest, entries: index ? index.entries.length : 0 };
 }
@@ -134,8 +161,10 @@ const singleLine = text => String(text).replace(CONTROL_CHARACTERS, ' ').replace
 /** Rank index entries for a prompt. IDs and one-line descriptions only; like
  * implicit admission, a suggestion needs a name or trigger anchor term. */
 function suggestContext(index, prompt, { limit = MAX_SUGGESTIONS } = {}) {
-  return searchRetrieval(buildRetrievalIndex(index.entries), prompt, { limit: Math.min(limit, MAX_SUGGESTIONS) })
-    .filter(candidate => /^skill:[a-z0-9]+(?:-[a-z0-9]+)*$/.test(candidate.id) && (candidate.exact || candidate.anchorTerms.length > 0))
+  // Filter before trimming so unanchored matches cannot crowd out anchored ones.
+  return searchRetrieval(buildRetrievalIndex(index.entries), prompt, { limit: index.entries.length })
+    .filter(candidate => SKILL_ID.test(candidate.id) && (candidate.exact || candidate.anchorTerms.length > 0))
+    .slice(0, Math.min(limit, MAX_SUGGESTIONS))
     .map(candidate => {
       const description = singleLine(candidate.description);
       return { id: candidate.id,
@@ -143,4 +172,4 @@ function suggestContext(index, prompt, { limit = MAX_SUGGESTIONS } = {}) {
     });
 }
 
-module.exports = { readRoutingIndex, routingIndexStatus, suggestContext, writeRoutingIndex };
+module.exports = { readBinding, readRoutingIndex, routingIndexStatus, suggestContext, writeRoutingIndex };
