@@ -2,8 +2,8 @@
 
 ## Available Agents
 
-ECC agents ship with the `ecc@ecc` plugin, not in `~/.claude/agents/`.
-They are invoked through the Agent tool with a plugin-scoped `subagent_type`:
+ECC agents come either from the `ecc@ecc` plugin (plugin-scoped names, `ecc:<name>`) or from a manual install into `~/.claude/agents/` (bare names, `<name>`). Use the name that matches the install you have; the manual installer strips the `ecc:` prefix from copied files.
+They are invoked through the Agent tool with that `subagent_type`:
 
 ```text
 Agent(subagent_type: "ecc:planner", prompt: "...")
