@@ -77,6 +77,7 @@ XDEBUG_MODE=coverage php artisan test --coverage
 Ejemplo de pipeline CI (formato -> análisis estático -> pruebas):
 
 ```bash
+set -e
 vendor/bin/pint --test
 vendor/bin/phpstan analyse
 XDEBUG_MODE=coverage php artisan test --coverage
@@ -148,6 +149,7 @@ Ejecutar esto solo en entornos que no sean producción donde procesar un job de 
 Flujo mínimo:
 
 ```bash
+set -e
 php -v
 composer --version
 php artisan --version
@@ -164,6 +166,7 @@ php artisan queue:failed
 Pipeline estilo CI:
 
 ```bash
+set -e
 composer validate
 composer dump-autoload -o
 vendor/bin/pint --test

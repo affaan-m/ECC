@@ -77,6 +77,7 @@ XDEBUG_MODE=coverage php artisan test --coverage
 CI örneği (format -> static analiz -> testler):
 
 ```bash
+set -e
 vendor/bin/pint --test
 vendor/bin/phpstan analyse
 XDEBUG_MODE=coverage php artisan test --coverage
@@ -148,6 +149,7 @@ Bunu sadece test job'u işlemenin güvenli olduğu non-production ortamlarında 
 Minimal akış:
 
 ```bash
+set -e
 php -v
 composer --version
 php artisan --version
@@ -164,6 +166,7 @@ php artisan queue:failed
 CI tarzı pipeline:
 
 ```bash
+set -e
 composer validate
 composer dump-autoload -o
 vendor/bin/pint --test
