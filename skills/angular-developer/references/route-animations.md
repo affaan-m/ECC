@@ -40,10 +40,14 @@ Use the `::view-transition-old()` and `::view-transition-new()` pseudo-elements.
 Use `onViewTransitionCreated` to skip transitions or customize behavior based on the navigation context.
 
 ```ts
+import {inject} from '@angular/core';
+import {Router, withViewTransitions} from '@angular/router';
+
 withViewTransitions({
-  onViewTransitionCreated: ({transition, from, to}) => {
-    // Skip animation for specific routes
-    if (to.url === '/no-animation') {
+  onViewTransitionCreated: ({transition}) => {
+    // The callback runs in an injection context; use the navigation's final URL.
+    const targetUrl = inject(Router).currentNavigation()?.finalUrl;
+    if (targetUrl?.toString() === '/no-animation') {
       transition.skipTransition();
     }
   },
