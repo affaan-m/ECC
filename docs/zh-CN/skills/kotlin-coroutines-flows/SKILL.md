@@ -179,7 +179,7 @@ withContext(Dispatchers.IO) { database.query() }
 withContext(Dispatchers.Main) { updateUi() }
 ```
 
-在 KMP 中，使用 `Dispatchers.Default` 和 `Dispatchers.Main`（在所有平台上可用）。`Dispatchers.IO` 仅适用于 JVM/Android——在其他平台上使用 `Dispatchers.Default` 或通过依赖注入提供。
+在 KMP 中，`Dispatchers.Default` 是公共 API。`Dispatchers.IO` 支持 JVM/Android 和 Native，但不支持 JS/Wasm。共享代码中的阻塞操作应注入适合目标平台的 dispatcher，不要把 `Default` 当作 IO 线程池。`Dispatchers.Main` 需要平台支持：JVM 需要 Android、JavaFX 或 Swing dispatcher 模块；Native 在 Darwin 目标上提供 Main，其他 Native 目标不可用。
 
 ## 取消
 
