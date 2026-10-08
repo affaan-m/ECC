@@ -257,12 +257,14 @@ public sealed class RequestTimingMiddleware
 ## 最小 API 模式
 
 ```csharp
+using Microsoft.AspNetCore.Http.HttpResults;
+
 // Organized with route groups
 var orders = app.MapGroup("/api/orders")
     .RequireAuthorization()
     .WithTags("Orders");
 
-orders.MapGet("/{id:guid}", async (
+orders.MapGet("/{id:guid}", async Task<Results<Ok<Order>, NotFound>> (
     Guid id,
     IOrderRepository repository,
     CancellationToken cancellationToken) =>
@@ -273,14 +275,14 @@ orders.MapGet("/{id:guid}", async (
         : TypedResults.NotFound();
 });
 
-orders.MapPost("/", async (
+orders.MapPost("/", async Task<Results<Created<Order>, BadRequest<string>>> (
     CreateOrderRequest request,
     IOrderService service,
     CancellationToken cancellationToken) =>
 {
     var result = await service.PlaceOrderAsync(request, cancellationToken);
     return result.IsSuccess
-        ? TypedResults.Created($"/api/orders/{result.Value!.Id}", result.Value)
+        ? TypedResults.Created($"/api/orders/{result.Value!.Id}", result.Value!)
         : TypedResults.BadRequest(result.Error);
 });
 ```
