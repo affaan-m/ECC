@@ -40,11 +40,12 @@ Gradle (yapılandırılmışsa):
 
 ## Faz 3: Testler + Kapsam
 
+Önce [springboot-tdd](../springboot-tdd/SKILL.md) içindeki verify aşaması raporunu ve %80 satır kapsamı kontrolünü yapılandırın. Yalnızca rapor oluşturmak bir eşik uygulamaz. Gradle için görevi çalıştırmadan önce aynı minimumu `jacocoTestCoverageVerification` (`counter = "LINE"`, `value = "COVEREDRATIO"`, `minimum = 0.80`) içinde yapılandırın.
+
 ```bash
-mvn -T 4 test
-mvn jacoco:report   # 80%+ kapsam doğrula
+mvn -T 4 verify
 # veya
-./gradlew test jacocoTestReport
+./gradlew test jacocoTestReport jacocoTestCoverageVerification
 ```
 
 Rapor:

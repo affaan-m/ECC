@@ -551,12 +551,7 @@ go test -race -coverprofile=coverage.out ./...
 
 ### Oluşturulan Kodu Coverage'dan Hariç Tutma
 
-```go
-//go:generate mockgen -source=interface.go -destination=mock_interface.go
-
-// Coverage profile'ında, build tag'leri ile hariç tut:
-// go test -cover -tags=!generate ./...
-```
+`//go:generate` dosyaları coverage dışında bırakmaz; `-tags=!generate` bir coverage filtresi değildir. Build kısıtları derlenecek kaynak dosyaları seçer; testlerin ihtiyaç duyduğu oluşturulmuş mock'ları kaldırmayın.
 
 ## HTTP Handler Testleri
 

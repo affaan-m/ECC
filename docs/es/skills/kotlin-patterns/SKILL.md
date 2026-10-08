@@ -590,6 +590,8 @@ detekt {
 ### Tipo Result para Operaciones de Dominio
 
 ```kotlin
+import kotlinx.coroutines.CancellationException
+
 // Bien: Usar Result de Kotlin o una sealed class personalizada
 suspend fun createUser(request: CreateUserRequest): Result<User> = runCatching {
     require(request.name.isNotBlank()) { "Name cannot be blank" }
@@ -602,6 +604,8 @@ suspend fun createUser(request: CreateUserRequest): Result<User> = runCatching {
     )
     userRepository.save(user)
     user
+}.onFailure { error ->
+    if (error is CancellationException) throw error
 }
 
 // Bien: Encadenar resultados

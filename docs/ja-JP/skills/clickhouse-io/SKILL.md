@@ -54,6 +54,14 @@ ORDER BY (user_id, event_id, timestamp)
 PRIMARY KEY (user_id, event_id);
 ```
 
+重複排除には短い `PRIMARY KEY` ではなく、完全な `ORDER BY` タプル `(user_id, event_id, timestamp)` が使われます。この例ではイベント時刻は不変で、再送時にも同じソートキーと月別パーティションを維持すると仮定します。バックグラウンドのマージは非同期でパーティション内に限定されるため、重複のない読み取りには `FINAL` などのクエリ時の重複排除が必要です。読み取りのたびにディスク上のマージを強制しないでください。
+
+```sql
+SELECT user_id, event_id, timestamp, properties
+FROM user_events FINAL
+WHERE user_id = 'user-123';
+```
+
 ### AggregatingMergeTree（事前集計）
 
 ```sql
@@ -288,6 +296,7 @@ GROUP BY date
 ORDER BY date;
 
 -- リテンション分析
+-- 各ユーザーの最初の観測活動日をコホートとし、日ごとに一度だけ数える
 SELECT
     signup_date,
     countIf(days_since_signup = 0) AS day_0,
@@ -295,13 +304,12 @@ SELECT
     countIf(days_since_signup = 7) AS day_7,
     countIf(days_since_signup = 30) AS day_30
 FROM (
-    SELECT
+    SELECT DISTINCT
         user_id,
-        min(toDate(timestamp)) AS signup_date,
+        min(toDate(timestamp)) OVER (PARTITION BY user_id) AS signup_date,
         toDate(timestamp) AS activity_date,
         dateDiff('day', signup_date, activity_date) AS days_since_signup
     FROM events
-    GROUP BY user_id, activity_date
 )
 GROUP BY signup_date
 ORDER BY signup_date DESC;
@@ -374,7 +382,7 @@ async function etlPipeline() {
 setInterval(etlPipeline, 60 * 60 * 1000)  // 1時間ごと
 ```
 
-### 変更データキャプチャ（CDC）
+### 変更通知（LISTEN/NOTIFY）
 
 ```typescript
 // PostgreSQLの変更をリッスンしてClickHouseに同期
@@ -382,25 +390,54 @@ import { Client } from 'pg'
 
 const pgClient = new Client({ connectionString: process.env.DATABASE_URL })
 
-pgClient.query('LISTEN market_updates')
+pgClient.on('error', (error) => {
+  console.error('PostgreSQL listener connection failed:', error)
+})
 
-pgClient.on('notification', async (msg) => {
-  const update = JSON.parse(msg.payload)
+pgClient.on('notification', (msg) => {
+  if (!msg.payload) return
+  void forwardNotification(msg.payload)
+})
 
-  await clickhouse.insert({
-    table: 'market_updates',
-    values: [
-      {
-        market_id: update.id,
-        event_type: update.operation,  // INSERT, UPDATE, DELETE
-        timestamp: new Date(),
-        data: JSON.stringify(update.new_data)
-      }
-    ],
-    format: 'JSONEachRow'
-  })
+async function forwardNotification(payload: string) {
+
+  try {
+    const update = JSON.parse(payload)
+
+    await clickhouse.insert({
+      table: 'market_updates',
+      values: [
+        {
+          market_id: update.id,
+          event_type: update.operation,  // INSERT, UPDATE, DELETE
+          timestamp: new Date(),
+          data: JSON.stringify(update.new_data)
+        }
+      ],
+      format: 'JSONEachRow'
+    })
+  } catch (error) {
+    console.error('Failed to forward market update:', error)
+  }
+}
+
+async function startNotificationListener() {
+  await pgClient.connect()
+  await pgClient.query('LISTEN market_updates')
+}
+
+void startNotificationListener().catch(async (error) => {
+  console.error('Failed to start notification listener:', error)
+  try {
+    await pgClient.end()
+  } catch (closeError) {
+    console.error('Failed to close PostgreSQL listener:', closeError)
+  }
+  process.exitCode = 1
 })
 ```
+
+この例は、セッションがリッスンしている間にアプリケーションが送信する JSON 通知を転送します。`LISTEN` の登録はセッション終了時に解除されるため、永続的な CDC や再生機能ではありません。リスナー停止中の変更も保持する必要がある場合は、論理デコーディングまたは永続的な outbox を使用します。
 
 ## ベストプラクティス
 
@@ -421,7 +458,7 @@ pgClient.on('notification', async (msg) => {
 
 ### 4. 避けるべき
 - SELECT *（列を指定）
-- FINAL（代わりにクエリ前にデータをマージ）
+- 重複排除が不要な読み取りでの不要な `FINAL`（正確性に必要なら `FINAL` または同等のクエリ時の重複排除を維持）
 - JOINが多すぎる（分析用に非正規化）
 - 小さな頻繁な挿入（代わりにバッチ処理）
 

@@ -422,6 +422,7 @@ import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.advanceTimeBy
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 
 class FlowServiceTest : FunSpec({
@@ -447,11 +448,13 @@ class FlowServiceTest : FunSpec({
             val job = launch {
                 service.searchUsers(queries).collect { results.add(it) }
             }
+            runCurrent()
 
             queries.emit("a")
             queries.emit("ab")
             queries.emit("abc") // Only this should trigger search
             advanceTimeBy(500)
+            runCurrent()
 
             results shouldHaveSize 1
             job.cancel()
@@ -463,8 +466,14 @@ class FlowServiceTest : FunSpec({
 #### TestDispatcher
 
 ```kotlin
+import io.kotest.core.spec.style.FunSpec
+import io.kotest.matchers.shouldBe
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.StandardTestDispatcher
-import kotlinx.coroutines.test.advanceUntilIdle
+import kotlinx.coroutines.test.advanceTimeBy
+import kotlinx.coroutines.test.runCurrent
+import kotlinx.coroutines.test.runTest
 
 class DispatcherTest : FunSpec({
     test("uses test dispatcher for controlled execution") {
@@ -480,6 +489,7 @@ class DispatcherTest : FunSpec({
 
             completed shouldBe false
             advanceTimeBy(1000)
+            runCurrent()
             completed shouldBe true
         }
     }
@@ -715,12 +725,20 @@ kover {
 ### Ktor testApplication Testing
 
 ```kotlin
+import io.ktor.serialization.kotlinx.json.json
+
 class ApiRoutesTest : FunSpec({
     test("GET /users returns list") {
         testApplication {
             application {
                 configureRouting()
                 configureSerialization()
+            }
+
+            val client = createClient {
+                install(io.ktor.client.plugins.contentnegotiation.ContentNegotiation) {
+                    json()
+                }
             }
 
             val response = client.get("/users")
@@ -736,6 +754,12 @@ class ApiRoutesTest : FunSpec({
             application {
                 configureRouting()
                 configureSerialization()
+            }
+
+            val client = createClient {
+                install(io.ktor.client.plugins.contentnegotiation.ContentNegotiation) {
+                    json()
+                }
             }
 
             val response = client.post("/users") {

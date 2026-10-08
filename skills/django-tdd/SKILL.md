@@ -22,7 +22,7 @@ Test-driven development for Django applications using pytest, factory_boy, and D
 
 ```python
 # Step 1: RED - Write failing test
-def test_user_creation():
+def test_user_creation(db):
     user = User.objects.create_user(email='test@example.com', password='testpass123')
     assert user.email == 'test@example.com'
     assert user.check_password('testpass123')
@@ -216,20 +216,20 @@ class ProductFactory(factory.django.DjangoModelFactory):
 import pytest
 from tests.factories import ProductFactory, UserFactory
 
-def test_product_creation():
+def test_product_creation(db):
     """Test product creation using factory."""
     product = ProductFactory(price=100.00, stock=50)
     assert product.price == 100.00
     assert product.stock == 50
     assert product.is_active is True
 
-def test_product_with_tags():
+def test_product_with_tags(db):
     """Test product with tags."""
     tags = [TagFactory(name='electronics'), TagFactory(name='new')]
     product = ProductFactory(tags=tags)
     assert product.tags.count() == 2
 
-def test_multiple_products():
+def test_multiple_products(db):
     """Test creating multiple products."""
     products = ProductFactory.create_batch(10)
     assert len(products) == 10
@@ -503,9 +503,9 @@ class TestProductAPI:
         assert response.status_code == status.HTTP_201_CREATED
         assert response.data['name'] == 'Test Product'
 
-    def test_update_product(self, authenticated_api_client, db):
+    def test_update_product(self, authenticated_api_client, user, db):
         """Test updating a product."""
-        product = ProductFactory(created_by=authenticated_api_client.user)
+        product = ProductFactory(created_by=user)
 
         url = reverse('api:product-detail', kwargs={'pk': product.id})
         data = {'name': 'Updated Product'}
@@ -515,9 +515,9 @@ class TestProductAPI:
         assert response.status_code == status.HTTP_200_OK
         assert response.data['name'] == 'Updated Product'
 
-    def test_delete_product(self, authenticated_api_client, db):
+    def test_delete_product(self, authenticated_api_client, user, db):
         """Test deleting a product."""
-        product = ProductFactory(created_by=authenticated_api_client.user)
+        product = ProductFactory(created_by=user)
 
         url = reverse('api:product-detail', kwargs={'pk': product.id})
         response = authenticated_api_client.delete(url)

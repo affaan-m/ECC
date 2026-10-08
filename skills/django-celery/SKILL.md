@@ -70,7 +70,7 @@ CELERY_TASK_TRACK_STARTED = True
 CELERY_TASK_TIME_LIMIT = 30 * 60        # Hard limit: 30 min
 CELERY_TASK_SOFT_TIME_LIMIT = 25 * 60   # Soft limit: sends SoftTimeLimitExceeded
 CELERY_WORKER_PREFETCH_MULTIPLIER = 1   # Prevent worker hoarding long tasks
-CELERY_TASK_ACKS_LATE = True            # Re-queue on worker crash
+CELERY_TASK_ACKS_LATE = True            # Acknowledge after execution; tasks must be idempotent
 
 # Result persistence
 CELERY_RESULT_EXPIRES = 60 * 60 * 24   # Keep results 24 hours
@@ -84,6 +84,8 @@ INSTALLED_APPS += [
     'django_celery_beat',
 ]
 ```
+
+Late acknowledgement requires idempotent tasks because messages can be delivered more than once. `CELERY_TASK_ACKS_LATE` alone does not guarantee redelivery when the executing child process exits or is killed: Celery normally acknowledges those messages even with late acknowledgement enabled. If that failure mode must requeue selected tasks, evaluate the task-level `reject_on_worker_lost=True` attribute. `CELERY_TASK_REJECT_ON_WORKER_LOST = True` changes the application-wide default for tasks without an explicit override; evaluate that broader scope separately. Use safeguards against repeated crashes and poison-message loops. Do not enable it blindly for non-idempotent side effects.
 
 ### Running Workers
 
@@ -443,7 +445,8 @@ def charge_and_fulfill(order_id):
 | Check | Setting |
 |-------|---------|
 | Worker restarts on crash | `supervisord` or `systemd` unit |
-| `CELERY_TASK_ACKS_LATE = True` | Re-queue tasks on worker crash |
+| `CELERY_TASK_ACKS_LATE = True` | Acknowledge after execution; require idempotent tasks |
+| Redelivery after executing child loss, when required | Evaluate task-level `reject_on_worker_lost=True`; application-wide default: `CELERY_TASK_REJECT_ON_WORKER_LOST = True`; prevent crash/redelivery loops |
 | `CELERY_WORKER_PREFETCH_MULTIPLIER = 1` | Fair distribution of long tasks |
 | Separate queues per priority | `-Q default,high_priority,low_priority` |
 | `CELERY_TASK_SOFT_TIME_LIMIT` set | Graceful timeout before hard kill |

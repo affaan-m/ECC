@@ -294,12 +294,12 @@ r = Redis(connection_pool=pool)
 ### Cluster Mode
 
 ```python
-from redis.cluster import RedisCluster
+from redis.cluster import ClusterNode, RedisCluster
 
 r = RedisCluster(
-    startup_nodes=[{"host": "redis-1", "port": 6379}],
+    startup_nodes=[ClusterNode("redis-1", 6379)],
     decode_responses=True,
-    skip_full_coverage_check=True,
+    require_full_coverage=False,
 )
 ```
 

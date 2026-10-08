@@ -180,6 +180,7 @@ sub divide($x, $y) {
 ```perl
 # Good: Moo class
 package User;
+use v5.36;
 use Moo;
 use Types::Standard qw(Str Int ArrayRef);
 use namespace::autoclean;
@@ -220,6 +221,7 @@ sub name { return $_[0]->{name} }
 
 ```perl
 package Role::Serializable;
+use v5.36;
 use Moo::Role;
 use JSON::MaybeXS qw(encode_json);
 requires 'TO_HASH';
@@ -227,6 +229,7 @@ sub to_json($self) { encode_json($self->TO_HASH) }
 1;
 
 package User;
+use v5.36;
 use Moo;
 with 'Role::Serializable';
 has name  => (is => 'ro', required => 1);

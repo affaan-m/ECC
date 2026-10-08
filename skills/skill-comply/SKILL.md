@@ -35,12 +35,16 @@ Measures whether coding agents actually follow skills, rules, or agent definitio
 # Full run
 uv run python -m scripts.run ~/.claude/rules/common/testing.md
 
-# Dry run (no cost, spec + scenarios only)
+# Dry run (spec + scenarios only; still uses model calls)
 uv run python -m scripts.run --dry-run ~/.claude/skills/search-first/SKILL.md
 
 # Custom models
 uv run python -m scripts.run --gen-model haiku --model sonnet <path>
 ```
+
+`--dry-run` still calls the generation model to create the spec and scenarios,
+so it can consume usage or incur charges. It skips scenario execution, grading,
+and report generation.
 
 ## Key Concept: Prompt Independence
 

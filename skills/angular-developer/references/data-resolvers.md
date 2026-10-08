@@ -34,7 +34,8 @@ Add the resolver under the `resolve` key.
 
 ```ts
 private route = inject(ActivatedRoute);
-data = toSignal(this.route.data);
+// ActivatedRoute.data emits its current value synchronously on subscription.
+data = toSignal(this.route.data, {requireSync: true});
 user = computed(() => this.data().user);
 ```
 

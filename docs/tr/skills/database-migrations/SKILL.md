@@ -29,7 +29,7 @@ origin: ECC
 Herhangi bir migration uygulamadan önce:
 
 - [ ] Migration UP ve DOWN'a sahip (veya açıkça geri alınamaz olarak işaretlenmiş)
-- [ ] Büyük tablolarda tam tablo kilitleri yok (concurrent operasyonlar kullan)
+- [ ] Kilit süresini ve edinme timeout değerini incele; uzun süreli tablo kilitlerinden kaçın
 - [ ] Yeni sütunlar varsayılanlara sahip veya nullable (varsayılan olmadan NOT NULL asla ekleme)
 - [ ] İndeksler concurrent oluşturuluyor (mevcut tablolar için CREATE TABLE ile inline değil)
 - [ ] Veri backfill şema değişikliğinden ayrı bir migration
@@ -40,16 +40,18 @@ Herhangi bir migration uygulamadan önce:
 
 ### Güvenli Sütun Ekleme
 
+Bu ADD COLUMN ifadeleri yine ACCESS EXCLUSIVE kilidi alır. Transaction süresini kısa tutun ve kilit edinmeyi `lock_timeout` ile sınırlayın. Hızlı default optimizasyonu volatile olmayan ifadeler içindir; volatile ifadeler tabloyu yeniden yazmayı gerektirebilir.
+
 ```sql
--- İYİ: Nullable sütun, kilit yok
+-- İYİ: Nullable sütun, yeniden yazma yok; ACCESS EXCLUSIVE kilidi alır
 ALTER TABLE users ADD COLUMN avatar_url TEXT;
 
--- İYİ: Varsayılanlı sütun (Postgres 11+ anlık, yeniden yazma yok)
+-- İYİ: Sabit default Postgres 11+ üzerinde yeniden yazmayı önler; yine kilit alır
 ALTER TABLE users ADD COLUMN is_active BOOLEAN NOT NULL DEFAULT true;
 
--- KÖTÜ: Mevcut tabloda varsayılansız NOT NULL (tam yeniden yazma gerektirir)
+-- KÖTÜ: Varsayılansız NOT NULL, tabloda satırlar varsa başarısız olur
 ALTER TABLE users ADD COLUMN role TEXT NOT NULL;
--- Bu tabloyu kilitler ve her satırı yeniden yazar
+-- Mevcut satırlar yeni kısıtı ihlal eden NULL değerini alır
 ```
 
 ### Kesinti Olmadan İndeks Ekleme
@@ -313,7 +315,7 @@ Gün 7: Migration eski status sütununu kaldırır
 |-------------|-------------|-----------------|
 | Üretimde manuel SQL | Denetim izi yok, tekrarlanamaz | Her zaman migration dosyaları kullan |
 | Deploy edilmiş migration'ları düzenleme | Ortamlar arası sapma yaratır | Bunun yerine yeni migration oluştur |
-| Varsayılansız NOT NULL | Tabloyu kilitler, tüm satırları yeniden yazar | Nullable ekle, backfill et, sonra kısıt ekle |
+| Varsayılansız NOT NULL | Dolu tabloda mevcut satırlar NULL aldığı için başarısız olur | Nullable ekle, backfill et, sonra kısıt ekle |
 | Büyük tabloda inline indeks | Build sırasında yazmaları engeller | CREATE INDEX CONCURRENTLY |
 | Tek migration'da şema + veri | Rollback zor, uzun transaction'lar | Ayrı migration'lar |
 | Kodu kaldırmadan önce sütun kaldırma | Eksik sütunda uygulama hataları | Önce kodu kaldır, sonra sütunu sonraki deploy'da kaldır |

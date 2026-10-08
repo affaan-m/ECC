@@ -23,8 +23,8 @@ Build tool and dev server patterns for Vite 8+ projects. Covers configuration, e
 ## How It Works
 
 - **Dev mode** serves source files as native ESM — no bundling. Transforms happen on-demand per module request, which is why cold starts are fast and HMR is precise.
-- **Build mode** uses Rolldown (v7+) or Rollup (v5–v6) to bundle the app for production with tree-shaking, code-splitting, and Oxc-based minification.
-- **Dependency pre-bundling** converts CJS/UMD deps to ESM once via esbuild and caches the result under `node_modules/.vite`, so subsequent starts skip the work.
+- **Build mode** in Vite 8 uses Rolldown for bundling and Oxc for JavaScript transformation/minification. Standard Vite 5–7 uses Rollup; `rolldown-vite` was a separate technical preview for Vite 6/7.
+- **Dependency pre-bundling** in Vite 8 uses Rolldown to convert CJS/UMD deps to ESM and caches the result under `node_modules/.vite`. Earlier standard releases used esbuild; do not assume that pipeline when configuring Vite 8.
 - **Plugins** share a unified interface across dev and build — the same plugin object works for both the dev server's on-demand transforms and the production pipeline.
 - **Environment variables** are statically inlined at build time. `VITE_`-prefixed vars become public constants in the bundle; everything unprefixed is invisible to client code.
 
@@ -37,12 +37,13 @@ Build tool and dev server patterns for Vite 8+ projects. Covers configuration, e
 ```typescript
 // vite.config.ts
 import { defineConfig } from 'vite'
+import { fileURLToPath } from 'node:url'
 import react from '@vitejs/plugin-react'
 
 export default defineConfig({
   plugins: [react()],
   resolve: {
-    alias: { '@': new URL('./src', import.meta.url).pathname },
+    alias: { '@': fileURLToPath(new URL('./src', import.meta.url)) },
   },
 })
 ```
@@ -357,11 +358,11 @@ optimizeDeps: {
 
 #### Dev Does Not Match Build
 
-Dev uses esbuild/Rolldown for transforms; build uses Rolldown for bundling. CJS libraries can behave differently between the two. Always verify with `vite build && vite preview` before deploying.
+Vite 8 uses Oxc for JavaScript transforms and Rolldown for dependency optimization and production bundling. Dev still serves source modules on demand, so development and production behavior can differ. Verify with `vite build && vite preview` before deploying.
 
 #### Stale Chunks After Deployment
 
-New builds produce new chunk hashes. Users with active sessions request old filenames that no longer exist. Vite has no built-in solution. Mitigations:
+New builds produce new chunk hashes. Users with active sessions may request deleted filenames. Vite emits `vite:preloadError` for failed dynamic imports; handle that event with an application recovery policy. It does not restore deleted assets automatically. Mitigations:
 
 - Keep old `dist/assets/` files live for a deployment window
 - Catch dynamic import errors in your router and force a page reload
@@ -380,21 +381,25 @@ server: {
 
 #### Monorepo File Access
 
-Vite restricts file serving to the project root. Packages outside root are blocked:
+With `server.fs.strict`, Vite defaults to the detected workspace root, falling back to the project root when no workspace is found. Set `server.fs.allow` only when a needed path is outside that boundary; specifying it disables automatic workspace-root detection. Use `searchForWorkspaceRoot(process.cwd())` in the list if you need to preserve the default boundary while adding a path:
 
 ```typescript
 // vite.config.ts — monorepo file access
-server: {
-  fs: {
-    allow: ['..'],                             // allow parent directory (workspace root)
+import { defineConfig, searchForWorkspaceRoot } from 'vite'
+
+export default defineConfig({
+  server: {
+    fs: {
+      allow: [searchForWorkspaceRoot(process.cwd()), '..'],
+    },
   },
-}
+})
 ```
 
 ### Anti-Patterns
 
 ```typescript
-// BAD: Setting envPrefix to '' exposes ALL env vars (including secrets) to the client
+// BAD: Vite rejects envPrefix: '' with an error to prevent exposing all env vars
 envPrefix: ''
 
 // BAD: Assuming require() works in application source code — Vite is ESM-first

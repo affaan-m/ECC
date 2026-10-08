@@ -374,12 +374,16 @@ kubectl rollout undo deployment/app
 # Vercel: promote previous deployment
 vercel rollback
 
-# Railway: redeploy previous commit
-railway up --commit <previous-sha>
+# Railway：在控制台选择之前成功的部署
+# Service -> Deployments -> 之前部署的菜单 -> Rollback
+# 只有仍在套餐保留期内的部署才能使用 Rollback。
+# railway up 上传本地代码，不会选择之前的 Git 提交。
 
-# Database: rollback migration (if reversible)
-npx prisma migrate resolve --rolled-back <migration-name>
+# 数据库：使用经过审查的补偿迁移撤销 schema/data 变更
+# prisma migrate resolve 只更新迁移历史，不会执行逆向 SQL
 ```
+
+对于 Prisma，回退应用部署不会回退数据库。应使用经过审查的补偿迁移，或考虑数据丢失和应用兼容性的已验证恢复方案，撤销成功迁移的影响。`prisma migrate resolve --rolled-back` 只在迁移历史中将失败迁移标记为已回滚；它不会执行逆向 SQL，也不能回滚成功应用的迁移。对于失败迁移，应先处理部分应用的 SQL，再标记历史并重试。
 
 ### 回滚检查清单
 

@@ -438,6 +438,8 @@ detekt {
 ### Domain Operasyonları İçin Result Tipi
 
 ```kotlin
+import kotlinx.coroutines.CancellationException
+
 // İyi: Kotlin'in Result'ını veya özel sealed class kullan
 suspend fun createUser(request: CreateUserRequest): Result<User> = runCatching {
     require(request.name.isNotBlank()) { "Name cannot be blank" }
@@ -450,6 +452,8 @@ suspend fun createUser(request: CreateUserRequest): Result<User> = runCatching {
     )
     userRepository.save(user)
     user
+}.onFailure { error ->
+    if (error is CancellationException) throw error
 }
 
 // İyi: Result'ları zincirle

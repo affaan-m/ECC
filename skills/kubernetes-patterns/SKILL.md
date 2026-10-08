@@ -323,12 +323,12 @@ metadata:
   name: my-app-secrets
   namespace: my-namespace
 type: Opaque
-# Values are base64-encoded (NOT encrypted — use Sealed Secrets or ESO for real encryption)
+# Values are base64-encoded; configure cluster encryption at rest separately
 data:
   db-password: czNjcjN0  # base64 of 's3cr3t'
 ```
 
-> **Important:** Raw Kubernetes Secrets are only base64-encoded, not encrypted at rest unless your cluster has encryption configured. Use [Sealed Secrets](https://github.com/bitnami-labs/sealed-secrets) or [External Secrets Operator](https://external-secrets.io) for production.
+> **Important:** Base64 encoding does not provide confidentiality. Configure and verify [Kubernetes encryption at rest](https://github.com/kubernetes/website/blob/main/content/en/docs/tasks/administer-cluster/encrypt-data.md) for stored Secrets. [Sealed Secrets](https://github.com/bitnami-labs/sealed-secrets) encrypts manifests that can be stored in version control; [External Secrets Operator](https://external-secrets.io) synchronizes values from an external secret manager. Both controllers create ordinary Kubernetes Secrets, so neither replaces cluster encryption at rest or appropriate access controls.
 
 ---
 
@@ -494,7 +494,9 @@ spec:
 
 ## PodDisruptionBudget (PDB)
 
-Prevent too many pods going down during node drains or rolling updates:
+Limit voluntary disruptions made through the Eviction API, such as `kubectl drain`:
+
+A PDB does not limit a Deployment or StatefulSet controller's rolling updates. For a Deployment, configure `strategy.rollingUpdate.maxUnavailable` and `maxSurge` to control rollout availability (see the production template above). Pods made unavailable during an update still count against the PDB, which can block concurrent evictions. PDBs also cannot prevent involuntary disruptions such as node failure.
 
 ```yaml
 apiVersion: policy/v1
@@ -550,7 +552,7 @@ spec:
   ttlSecondsAfterFinished: 3600   # Auto-delete after 1h
   template:
     spec:
-      restartPolicy: OnFailure    # Never for Jobs (not Always)
+      restartPolicy: OnFailure    # Jobs allow OnFailure or Never, not Always
       containers:
         - name: migrate
           image: ghcr.io/org/my-app:1.0.0
@@ -657,15 +659,15 @@ kubectl describe pod <pod-name> -n my-namespace | grep -A5 "Last State"
 # BAD: Using :latest tag — non-deterministic deployments
 image: myapp:latest
 
-# GOOD: Pin to a specific immutable tag (SHA or semver)
+# BETTER: Use an explicit version tag; tags can still be reassigned
 image: ghcr.io/org/myapp:1.4.2
-# or
+# GOOD: Pin immutable content with the actual image digest
 image: ghcr.io/org/myapp@sha256:abc123...
 
 # ---
 
-# BAD: Running as root
-securityContext: {}    # Defaults to root
+# CHECK: An empty container context does not establish the effective user
+securityContext: {}    # User comes from pod settings or image metadata; may be root
 
 # GOOD: Non-root with explicit UID
 securityContext:
@@ -714,9 +716,11 @@ spec:
 
 # ---
 
-# BAD: restartPolicy: Always in a Job (causes infinite restart loop)
+# BAD: Job pod templates reject restartPolicy: Always at API validation
 spec:
-  restartPolicy: Always   # Use OnFailure or Never for Jobs
+  template:
+    spec:
+      restartPolicy: Always   # Use OnFailure or Never for Jobs
 ```
 
 ---
@@ -731,7 +735,8 @@ spec:
 - [ ] Dedicated ServiceAccount per app, not `default`
 - [ ] `automountServiceAccountToken: false` unless needed
 - [ ] RBAC follows least privilege (use `Role`, not `ClusterRole` unless needed)
-- [ ] Secrets managed via Sealed Secrets or External Secrets Operator
+- [ ] Secret manifests sealed or values synchronized from an external secret manager
+- [ ] Encryption at rest configured and verified for Kubernetes Secrets
 
 ### Reliability
 - [ ] All 3 probe types configured (startup + liveness + readiness)

@@ -532,7 +532,8 @@ func ProcessRequest(data []byte) []byte {
 
     buf.Write(data)
     // Process...
-    return buf.Bytes()
+    // バッファをプールに返す前にコピーする。Bytes は内部ストレージを共有する。
+    return append([]byte(nil), buf.Bytes()...)
 }
 ```
 

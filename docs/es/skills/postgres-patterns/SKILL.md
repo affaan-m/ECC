@@ -94,13 +94,26 @@ WHERE id = (
 
 ```sql
 -- Encontrar claves foráneas sin índice
-SELECT conrelid::regclass, a.attname
+-- Revisar candidatas sin índice B-tree válido, no parcial, con prefijo de la clave externa
+SELECT c.conrelid::regclass AS table_name, c.conname AS constraint_name
 FROM pg_constraint c
-JOIN pg_attribute a ON a.attrelid = c.conrelid AND a.attnum = ANY(c.conkey)
 WHERE c.contype = 'f'
   AND NOT EXISTS (
-    SELECT 1 FROM pg_index i
-    WHERE i.indrelid = c.conrelid AND a.attnum = ANY(i.indkey)
+    SELECT 1
+    FROM pg_index i
+    JOIN pg_class idx ON idx.oid = i.indexrelid
+    JOIN pg_am am ON am.oid = idx.relam
+    WHERE i.indrelid = c.conrelid
+      AND i.indisvalid AND i.indisready AND i.indislive
+      AND i.indpred IS NULL
+      AND am.amname = 'btree'
+      AND i.indnkeyatts >= cardinality(c.conkey)
+      AND ARRAY(
+        SELECT key.attnum
+        FROM unnest(i.indkey::smallint[]) WITH ORDINALITY AS key(attnum, position)
+        WHERE key.position <= cardinality(c.conkey)
+        ORDER BY key.attnum
+      ) = ARRAY(SELECT attnum FROM unnest(c.conkey) AS fk(attnum) ORDER BY attnum)
   );
 
 -- Encontrar consultas lentas
@@ -127,13 +140,18 @@ ALTER SYSTEM SET work_mem = '8MB';
 ALTER SYSTEM SET idle_in_transaction_session_timeout = '30s';
 ALTER SYSTEM SET statement_timeout = '30s';
 
--- Monitoreo
-CREATE EXTENSION IF NOT EXISTS pg_stat_statements;
-
 -- Valores predeterminados de seguridad
 REVOKE ALL ON SCHEMA public FROM public;
 
 SELECT pg_reload_conf();
+```
+
+Las instrucciones sobre `compute_query_id` se aplican a PostgreSQL 14 y posteriores; omite este parámetro en PostgreSQL 13 y anteriores.
+
+`pg_reload_conf()` recarga los parámetros que admiten recarga; los cambios en `max_connections` requieren reiniciar el servidor. Antes de usar `pg_stat_statements`, añádelo a `shared_preload_libraries` conservando las entradas existentes. Usa `compute_query_id = auto` u `on` para los identificadores integrados; configúralo en `off` si un módulo externo calcula los identificadores de consulta. Reinicia el servidor si cambió la lista de precarga; después, conecta a cada base de datos que necesite las vistas de estadísticas y ejecuta:
+
+```sql
+CREATE EXTENSION IF NOT EXISTS pg_stat_statements;
 ```
 
 ## Relacionado

@@ -48,7 +48,7 @@ import { z } from "zod";
 const server = new McpServer({ name: "my-server", version: "1.0.0" });
 ```
 
-Register tools and resources using the API your SDK version provides: some versions use `server.tool(name, description, schema, handler)` (positional args), others use `server.tool({ name, description, inputSchema }, handler)` or `registerTool()`. Same for resources — include a `uri` in the handler when the API provides it. Check the official MCP docs or Context7 for the current `@modelcontextprotocol/sdk` signatures to avoid copy-paste errors.
+Register tools and resources using the API your SDK version provides. For `@modelcontextprotocol/sdk` v1.11.4 and later v1 releases, prefer `server.registerTool(name, { description, inputSchema }, handler)`; earlier v1 releases use `server.tool(name, description, schema, handler)` (positional args). Both forms take the tool name as a separate string argument. For resources, include a `uri` in the handler when the API provides it. Check the official MCP docs or Context7 for your installed SDK's signatures to avoid copy-paste errors.
 
 Use **Zod** (or the SDK’s preferred schema format) for input validation.
 

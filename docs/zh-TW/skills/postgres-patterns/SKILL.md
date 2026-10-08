@@ -93,13 +93,26 @@ WHERE id = (
 
 ```sql
 -- 找出未建索引的外鍵
-SELECT conrelid::regclass, a.attname
+-- 檢查缺少以完整外鍵欄位為前導鍵的有效非部分 B-tree 索引的候選
+SELECT c.conrelid::regclass AS table_name, c.conname AS constraint_name
 FROM pg_constraint c
-JOIN pg_attribute a ON a.attrelid = c.conrelid AND a.attnum = ANY(c.conkey)
 WHERE c.contype = 'f'
   AND NOT EXISTS (
-    SELECT 1 FROM pg_index i
-    WHERE i.indrelid = c.conrelid AND a.attnum = ANY(i.indkey)
+    SELECT 1
+    FROM pg_index i
+    JOIN pg_class idx ON idx.oid = i.indexrelid
+    JOIN pg_am am ON am.oid = idx.relam
+    WHERE i.indrelid = c.conrelid
+      AND i.indisvalid AND i.indisready AND i.indislive
+      AND i.indpred IS NULL
+      AND am.amname = 'btree'
+      AND i.indnkeyatts >= cardinality(c.conkey)
+      AND ARRAY(
+        SELECT key.attnum
+        FROM unnest(i.indkey::smallint[]) WITH ORDINALITY AS key(attnum, position)
+        WHERE key.position <= cardinality(c.conkey)
+        ORDER BY key.attnum
+      ) = ARRAY(SELECT attnum FROM unnest(c.conkey) AS fk(attnum) ORDER BY attnum)
   );
 
 -- 找出慢查詢
@@ -126,13 +139,18 @@ ALTER SYSTEM SET work_mem = '8MB';
 ALTER SYSTEM SET idle_in_transaction_session_timeout = '30s';
 ALTER SYSTEM SET statement_timeout = '30s';
 
--- 監控
-CREATE EXTENSION IF NOT EXISTS pg_stat_statements;
-
 -- 安全預設值
 REVOKE ALL ON SCHEMA public FROM public;
 
 SELECT pg_reload_conf();
+```
+
+以下 `compute_query_id` 設定僅適用於 PostgreSQL 14 及以後版本；PostgreSQL 13 及更早版本應省略此設定。
+
+`pg_reload_conf()` 只重新載入支援 reload 的設定；修改 `max_connections` 必須重新啟動伺服器。使用 `pg_stat_statements` 前，將它加入 `shared_preload_libraries` 並保留既有項目，內建查詢識別碼使用 `compute_query_id = auto` 或 `on`；若由外部模組計算查詢識別碼，則設為 `off`。若修改了預載入清單，重新啟動伺服器，然後連線到每個需要統計檢視的資料庫並執行：
+
+```sql
+CREATE EXTENSION IF NOT EXISTS pg_stat_statements;
 ```
 
 ## 相關

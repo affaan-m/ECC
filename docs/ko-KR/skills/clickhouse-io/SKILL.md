@@ -64,6 +64,14 @@ ORDER BY (user_id, event_id, timestamp)
 PRIMARY KEY (user_id, event_id);
 ```
 
+중복 제거에는 짧은 `PRIMARY KEY`가 아니라 전체 `ORDER BY` 튜플 `(user_id, event_id, timestamp)`가 사용됩니다. 이 예제는 이벤트 시간이 불변이어서 재시도에도 같은 정렬 키와 월별 파티션을 유지한다고 가정합니다. 백그라운드 병합은 비동기이며 파티션 내부에서 수행되므로, 중복 없는 조회에는 `FINAL` 같은 쿼리 시점 중복 제거가 필요합니다. 조회마다 디스크 병합을 강제하지 마세요.
+
+```sql
+SELECT user_id, event_id, timestamp, properties
+FROM user_events FINAL
+WHERE user_id = 'user-123';
+```
+
 ### AggregatingMergeTree (사전 집계)
 
 ```sql
@@ -298,6 +306,7 @@ GROUP BY date
 ORDER BY date;
 
 -- 리텐션 분석
+-- 각 사용자의 최초 관측 활동일을 코호트로 사용하고, 사용자별 하루 한 번만 집계
 SELECT
     signup_date,
     countIf(days_since_signup = 0) AS day_0,
@@ -305,13 +314,12 @@ SELECT
     countIf(days_since_signup = 7) AS day_7,
     countIf(days_since_signup = 30) AS day_30
 FROM (
-    SELECT
+    SELECT DISTINCT
         user_id,
-        min(toDate(timestamp)) AS signup_date,
+        min(toDate(timestamp)) OVER (PARTITION BY user_id) AS signup_date,
         toDate(timestamp) AS activity_date,
         dateDiff('day', signup_date, activity_date) AS days_since_signup
     FROM events
-    GROUP BY user_id, activity_date
 )
 GROUP BY signup_date
 ORDER BY signup_date DESC;
@@ -395,7 +403,7 @@ setInterval(async () => {
 }, 60 * 60 * 1000)  // Every hour
 ```
 
-### 변경 데이터 캡처 (CDC)
+### 변경 알림 (LISTEN/NOTIFY)
 
 ```typescript
 // PostgreSQL 변경을 수신하고 ClickHouse와 동기화
@@ -403,25 +411,54 @@ import { Client } from 'pg'
 
 const pgClient = new Client({ connectionString: process.env.DATABASE_URL })
 
-pgClient.query('LISTEN market_updates')
+pgClient.on('error', (error) => {
+  console.error('PostgreSQL listener connection failed:', error)
+})
 
-pgClient.on('notification', async (msg) => {
-  const update = JSON.parse(msg.payload)
+pgClient.on('notification', (msg) => {
+  if (!msg.payload) return
+  void forwardNotification(msg.payload)
+})
 
-  await clickhouse.insert({
-    table: 'market_updates',
-    values: [
-      {
-        market_id: update.id,
-        event_type: update.operation,  // INSERT, UPDATE, DELETE
-        timestamp: new Date(),
-        data: JSON.stringify(update.new_data)
-      }
-    ],
-    format: 'JSONEachRow'
-  })
+async function forwardNotification(payload: string) {
+
+  try {
+    const update = JSON.parse(payload)
+
+    await clickhouse.insert({
+      table: 'market_updates',
+      values: [
+        {
+          market_id: update.id,
+          event_type: update.operation,  // INSERT, UPDATE, DELETE
+          timestamp: new Date(),
+          data: JSON.stringify(update.new_data)
+        }
+      ],
+      format: 'JSONEachRow'
+    })
+  } catch (error) {
+    console.error('Failed to forward market update:', error)
+  }
+}
+
+async function startNotificationListener() {
+  await pgClient.connect()
+  await pgClient.query('LISTEN market_updates')
+}
+
+void startNotificationListener().catch(async (error) => {
+  console.error('Failed to start notification listener:', error)
+  try {
+    await pgClient.end()
+  } catch (closeError) {
+    console.error('Failed to close PostgreSQL listener:', closeError)
+  }
+  process.exitCode = 1
 })
 ```
+
+이 예제는 세션이 수신 대기 중일 때 애플리케이션이 보내는 JSON 알림을 전달합니다. 세션이 종료되면 `LISTEN` 등록도 해제되므로 영속적인 CDC나 재생 기능이 아닙니다. 리스너 중단 중 발생한 변경도 보존해야 한다면 논리 디코딩이나 영속적인 outbox를 사용하세요.
 
 ## 모범 사례
 
@@ -442,7 +479,7 @@ pgClient.on('notification', async (msg) => {
 
 ### 4. 피해야 할 것
 - SELECT * (컬럼을 명시)
-- FINAL (쿼리 전에 데이터를 병합)
+- 중복 제거가 필요 없는 조회에서 불필요한 `FINAL` 사용 (정확성에 필요하면 `FINAL` 또는 동등한 쿼리 시점 중복 제거 유지)
 - 너무 많은 JOIN (분석을 위해 비정규화)
 - 작은 빈번한 삽입 (배치 처리)
 

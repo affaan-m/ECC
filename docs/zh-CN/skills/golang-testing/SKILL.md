@@ -551,12 +551,7 @@ go test -race -coverprofile=coverage.out ./...
 
 ### 从覆盖率中排除生成的代码
 
-```go
-//go:generate mockgen -source=interface.go -destination=mock_interface.go
-
-// In coverage profile, exclude with build tags:
-// go test -cover -tags=!generate ./...
-```
+`//go:generate` 不会把文件排除在覆盖率之外，`-tags=!generate` 也不是覆盖率过滤器。构建约束决定编译哪些源文件；不要移除测试所需的生成 mock。
 
 ## HTTP 处理器测试
 

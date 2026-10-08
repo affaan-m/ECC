@@ -533,7 +533,8 @@ func ProcessRequest(data []byte) []byte {
 
     buf.Write(data)
     // İşle...
-    return buf.Bytes()
+    // Buffer'ı pool'a döndürmeden önce kopyalayın; Bytes aynı depolamayı paylaşır.
+    return append([]byte(nil), buf.Bytes()...)
 }
 ```
 

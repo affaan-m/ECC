@@ -22,8 +22,8 @@ Vite 8+ プロジェクトのビルドツールおよびデベロップメント
 ## 動作の仕組み
 
 - **デベロップメントモード**はソースファイルをネイティブESMとして提供します（バンドルなし）。変換はモジュールリクエストごとにオンデマンドで行われるため、コールドスタートが速くHMRが精確です。
-- **ビルドモード**はRolldown（v7+）またはRollup（v5〜v6）を使用して、ツリーシェイキング、コード分割、Oxcベースのミニファイでアプリを本番用にバンドルします。
-- **依存関係の事前バンドル**はesbuildを通じてCJS/UMD依存関係をESMに一度変換し、結果を `node_modules/.vite` にキャッシュします。これにより後続の起動では処理をスキップできます。
+- **ビルドモード**ではVite 8がRolldownでバンドルし、OxcでJavaScriptを変換・ミニファイします。通常のVite 5〜7はRollupを使用します。`rolldown-vite` はVite 6/7向けの別の技術プレビューでした。
+- **依存関係の事前バンドル**ではVite 8がRolldownでCJS/UMDをESMに変換し、`node_modules/.vite` にキャッシュします。以前の通常リリースはesbuildを使用していました。Vite 8の設定ではこの違いを考慮してください。
 - **プラグイン**はデベロップメントとビルドにわたって統一されたインターフェースを共有します。同じプラグインオブジェクトが、デベロップメントサーバーのオンデマンド変換と本番パイプラインの両方で機能します。
 - **環境変数**はビルド時に静的にインライン化されます。`VITE_` プレフィックス付きの変数はバンドル内のパブリック定数になり、プレフィックスなしのものはクライアントコードから見えません。
 
@@ -36,12 +36,13 @@ Vite 8+ プロジェクトのビルドツールおよびデベロップメント
 ```typescript
 // vite.config.ts
 import { defineConfig } from 'vite'
+import { fileURLToPath } from 'node:url'
 import react from '@vitejs/plugin-react'
 
 export default defineConfig({
   plugins: [react()],
   resolve: {
-    alias: { '@': new URL('./src', import.meta.url).pathname },
+    alias: { '@': fileURLToPath(new URL('./src', import.meta.url)) },
   },
 })
 ```
@@ -356,11 +357,11 @@ optimizeDeps: {
 
 #### デベロップメントとビルドが一致しない
 
-デベロップメントは変換にesbuild/Rolldownを使用し、ビルドはバンドルにRolldownを使用します。CJSライブラリは両者で異なる動作をする場合があります。デプロイ前に必ず `vite build && vite preview` で確認してください。
+Vite 8はJavaScript変換にOxc、依存関係の最適化と本番バンドルにRolldownを使用します。開発時はソースモジュールをオンデマンドで提供するため、本番と動作が異なる場合があります。デプロイ前に `vite build && vite preview` で確認してください。
 
 #### デプロイ後の古いチャンク
 
-新しいビルドは新しいチャンクハッシュを生成します。アクティブなセッションを持つユーザーは、もはや存在しない古いファイル名をリクエストします。Viteには組み込みの解決策がありません。緩和策：
+新しいビルドは新しいチャンクハッシュを生成し、既存セッションが削除済みのファイルを要求する場合があります。Viteはダイナミックインポート失敗時に `vite:preloadError` を発行します。アプリの復旧方針に沿って処理してください。削除されたアセットを自動で復元する機能ではありません。緩和策：
 
 - デプロイメントウィンドウ中は古い `dist/assets/` ファイルを保持する
 - ルーターでダイナミックインポートエラーをキャッチしてページをリロードする
@@ -379,21 +380,25 @@ server: {
 
 #### モノレポのファイルアクセス
 
-Viteはプロジェクトルートへのファイル提供を制限します。ルート外のパッケージはブロックされます：
+`server.fs.strict` が有効な場合、Viteは検出したワークスペースルートを既定の範囲にし、検出できなければプロジェクトルートを使用します。必要なパスが範囲外の場合だけ `server.fs.allow` を指定してください。指定するとワークスペースの自動検出は無効になります。既定の範囲を保ちながらパスを追加するには、リストに `searchForWorkspaceRoot(process.cwd())` を含めます：
 
 ```typescript
 // vite.config.ts — モノレポのファイルアクセス
-server: {
-  fs: {
-    allow: ['..'],                             // 親ディレクトリ（ワークスペースルート）を許可
+import { defineConfig, searchForWorkspaceRoot } from 'vite'
+
+export default defineConfig({
+  server: {
+    fs: {
+      allow: [searchForWorkspaceRoot(process.cwd()), '..'],
+    },
   },
-}
+})
 ```
 
 ### アンチパターン
 
 ```typescript
-// BAD: envPrefix を '' にすると全ての環境変数（シークレットを含む）がクライアントに公開される
+// BAD: 全環境変数の公開を防ぐため、Viteは envPrefix: '' をエラーで拒否する
 envPrefix: ''
 
 // BAD: アプリケーションソースコードで require() が動くと思い込む — ViteはESMファースト

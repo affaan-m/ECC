@@ -54,6 +54,14 @@ ORDER BY (user_id, event_id, timestamp)
 PRIMARY KEY (user_id, event_id);
 ```
 
+去重依據完整的 `ORDER BY` 元組 `(user_id, event_id, timestamp)`，而不是較短的 `PRIMARY KEY`。此範例假設事件時間戳記不變，使重試保持相同排序鍵和月份分割區。背景合併非同步發生，且僅在分割區內進行；需要無重複結果時，應使用 `FINAL` 等查詢時去重。不要在每次讀取前強制磁碟合併。
+
+```sql
+SELECT user_id, event_id, timestamp, properties
+FROM user_events FINAL
+WHERE user_id = 'user-123';
+```
+
 ### AggregatingMergeTree（預聚合）
 
 ```sql
@@ -288,6 +296,7 @@ GROUP BY date
 ORDER BY date;
 
 -- 留存分析
+-- 以每位使用者首次觀測到的活動日期劃分群組，每位使用者每天只計一次
 SELECT
     signup_date,
     countIf(days_since_signup = 0) AS day_0,
@@ -295,13 +304,12 @@ SELECT
     countIf(days_since_signup = 7) AS day_7,
     countIf(days_since_signup = 30) AS day_30
 FROM (
-    SELECT
+    SELECT DISTINCT
         user_id,
-        min(toDate(timestamp)) AS signup_date,
+        min(toDate(timestamp)) OVER (PARTITION BY user_id) AS signup_date,
         toDate(timestamp) AS activity_date,
         dateDiff('day', signup_date, activity_date) AS days_since_signup
     FROM events
-    GROUP BY user_id, activity_date
 )
 GROUP BY signup_date
 ORDER BY signup_date DESC;
@@ -374,7 +382,7 @@ async function etlPipeline() {
 setInterval(etlPipeline, 60 * 60 * 1000)  // 每小時
 ```
 
-### 變更資料捕獲（CDC）
+### 變更通知（LISTEN/NOTIFY）
 
 ```typescript
 // 監聽 PostgreSQL 變更並同步到 ClickHouse
@@ -382,25 +390,54 @@ import { Client } from 'pg'
 
 const pgClient = new Client({ connectionString: process.env.DATABASE_URL })
 
-pgClient.query('LISTEN market_updates')
+pgClient.on('error', (error) => {
+  console.error('PostgreSQL listener connection failed:', error)
+})
 
-pgClient.on('notification', async (msg) => {
-  const update = JSON.parse(msg.payload)
+pgClient.on('notification', (msg) => {
+  if (!msg.payload) return
+  void forwardNotification(msg.payload)
+})
 
-  await clickhouse.insert({
-    table: 'market_updates',
-    values: [
-      {
-        market_id: update.id,
-        event_type: update.operation,  // INSERT, UPDATE, DELETE
-        timestamp: new Date(),
-        data: JSON.stringify(update.new_data)
-      }
-    ],
-    format: 'JSONEachRow'
-  })
+async function forwardNotification(payload: string) {
+
+  try {
+    const update = JSON.parse(payload)
+
+    await clickhouse.insert({
+      table: 'market_updates',
+      values: [
+        {
+          market_id: update.id,
+          event_type: update.operation,  // INSERT, UPDATE, DELETE
+          timestamp: new Date(),
+          data: JSON.stringify(update.new_data)
+        }
+      ],
+      format: 'JSONEachRow'
+    })
+  } catch (error) {
+    console.error('Failed to forward market update:', error)
+  }
+}
+
+async function startNotificationListener() {
+  await pgClient.connect()
+  await pgClient.query('LISTEN market_updates')
+}
+
+void startNotificationListener().catch(async (error) => {
+  console.error('Failed to start notification listener:', error)
+  try {
+    await pgClient.end()
+  } catch (closeError) {
+    console.error('Failed to close PostgreSQL listener:', closeError)
+  }
+  process.exitCode = 1
 })
 ```
+
+此範例在工作階段監聽期間轉送應用程式發出的 JSON 通知。`LISTEN` 註冊隨工作階段結束而清除，因此不提供持久 CDC 或重播。需要保留監聽器停機期間的變更時，應使用邏輯解碼或持久 outbox。
 
 ## 最佳實務
 
@@ -421,7 +458,7 @@ pgClient.on('notification', async (msg) => {
 
 ### 4. 避免
 - SELECT *（指定欄位）
-- FINAL（改為在查詢前合併資料）
+- 對不需要去重的讀取使用不必要的 `FINAL`（正確性需要時保留 `FINAL` 或等效查詢時去重）
 - 太多 JOINs（為分析反正規化）
 - 小量頻繁插入（改用批量）
 

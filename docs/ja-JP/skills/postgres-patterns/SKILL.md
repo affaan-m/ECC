@@ -93,13 +93,26 @@ WHERE id = (
 
 ```sql
 -- インデックスのない外部キーを検索
-SELECT conrelid::regclass, a.attname
+-- 有効な非部分B-treeの先頭キーに外部キー全列がない候補を確認
+SELECT c.conrelid::regclass AS table_name, c.conname AS constraint_name
 FROM pg_constraint c
-JOIN pg_attribute a ON a.attrelid = c.conrelid AND a.attnum = ANY(c.conkey)
 WHERE c.contype = 'f'
   AND NOT EXISTS (
-    SELECT 1 FROM pg_index i
-    WHERE i.indrelid = c.conrelid AND a.attnum = ANY(i.indkey)
+    SELECT 1
+    FROM pg_index i
+    JOIN pg_class idx ON idx.oid = i.indexrelid
+    JOIN pg_am am ON am.oid = idx.relam
+    WHERE i.indrelid = c.conrelid
+      AND i.indisvalid AND i.indisready AND i.indislive
+      AND i.indpred IS NULL
+      AND am.amname = 'btree'
+      AND i.indnkeyatts >= cardinality(c.conkey)
+      AND ARRAY(
+        SELECT key.attnum
+        FROM unnest(i.indkey::smallint[]) WITH ORDINALITY AS key(attnum, position)
+        WHERE key.position <= cardinality(c.conkey)
+        ORDER BY key.attnum
+      ) = ARRAY(SELECT attnum FROM unnest(c.conkey) AS fk(attnum) ORDER BY attnum)
   );
 
 -- 低速クエリを検索
@@ -126,13 +139,18 @@ ALTER SYSTEM SET work_mem = '8MB';
 ALTER SYSTEM SET idle_in_transaction_session_timeout = '30s';
 ALTER SYSTEM SET statement_timeout = '30s';
 
--- モニタリング
-CREATE EXTENSION IF NOT EXISTS pg_stat_statements;
-
 -- セキュリティデフォルト
 REVOKE ALL ON SCHEMA public FROM public;
 
 SELECT pg_reload_conf();
+```
+
+以下の `compute_query_id` 設定は PostgreSQL 14 以降に適用されます。PostgreSQL 13 以前ではこの設定を省略してください。
+
+`pg_reload_conf()` は再読み込み可能な設定だけを反映します。`max_connections` の変更にはサーバーの再起動が必要です。`pg_stat_statements` を使用する前に、既存の項目を保持して `shared_preload_libraries` に追加し、組み込みのクエリ識別子には `compute_query_id = auto` または `on` を使用し、外部モジュールがクエリ識別子を計算する場合は `off` に設定します。プリロードの一覧を変更した場合はサーバーを再起動し、統計ビューが必要な各データベースに接続して次を実行します:
+
+```sql
+CREATE EXTENSION IF NOT EXISTS pg_stat_statements;
 ```
 
 ## 関連

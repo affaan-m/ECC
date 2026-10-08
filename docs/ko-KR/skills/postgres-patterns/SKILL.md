@@ -94,13 +94,26 @@ WHERE id = (
 
 ```sql
 -- Find unindexed foreign keys
-SELECT conrelid::regclass, a.attname
+-- 외래 키 전체 열을 선두 키로 갖는 유효한 비부분 B-tree가 없는 후보 검토
+SELECT c.conrelid::regclass AS table_name, c.conname AS constraint_name
 FROM pg_constraint c
-JOIN pg_attribute a ON a.attrelid = c.conrelid AND a.attnum = ANY(c.conkey)
 WHERE c.contype = 'f'
   AND NOT EXISTS (
-    SELECT 1 FROM pg_index i
-    WHERE i.indrelid = c.conrelid AND a.attnum = ANY(i.indkey)
+    SELECT 1
+    FROM pg_index i
+    JOIN pg_class idx ON idx.oid = i.indexrelid
+    JOIN pg_am am ON am.oid = idx.relam
+    WHERE i.indrelid = c.conrelid
+      AND i.indisvalid AND i.indisready AND i.indislive
+      AND i.indpred IS NULL
+      AND am.amname = 'btree'
+      AND i.indnkeyatts >= cardinality(c.conkey)
+      AND ARRAY(
+        SELECT key.attnum
+        FROM unnest(i.indkey::smallint[]) WITH ORDINALITY AS key(attnum, position)
+        WHERE key.position <= cardinality(c.conkey)
+        ORDER BY key.attnum
+      ) = ARRAY(SELECT attnum FROM unnest(c.conkey) AS fk(attnum) ORDER BY attnum)
   );
 
 -- Find slow queries
@@ -127,13 +140,18 @@ ALTER SYSTEM SET work_mem = '8MB';
 ALTER SYSTEM SET idle_in_transaction_session_timeout = '30s';
 ALTER SYSTEM SET statement_timeout = '30s';
 
--- Monitoring
-CREATE EXTENSION IF NOT EXISTS pg_stat_statements;
-
 -- Security defaults
 REVOKE ALL ON SCHEMA public FROM public;
 
 SELECT pg_reload_conf();
+```
+
+아래 `compute_query_id` 지침은 PostgreSQL 14 이상에 적용됩니다. PostgreSQL 13 이하에서는 이 설정을 생략하세요.
+
+`pg_reload_conf()`는 다시 로드할 수 있는 설정만 반영하며, `max_connections` 변경에는 서버 재시작이 필요합니다. `pg_stat_statements`를 사용하기 전에 기존 항목을 유지하면서 `shared_preload_libraries`에 추가하고 내장 쿼리 식별자에는 `compute_query_id = auto` 또는 `on`을 사용하고, 외부 모듈이 쿼리 식별자를 계산한다면 `off`로 설정하세요. 사전 로드 목록을 변경했다면 서버를 재시작한 뒤, 통계 뷰가 필요한 각 데이터베이스에 연결하여 다음을 실행하세요:
+
+```sql
+CREATE EXTENSION IF NOT EXISTS pg_stat_statements;
 ```
 
 ## 관련 항목

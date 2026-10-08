@@ -30,7 +30,7 @@ Safe, reversible database schema changes for production systems.
 Before applying any migration:
 
 - [ ] Migration has both UP and DOWN (or is explicitly marked irreversible)
-- [ ] No full table locks on large tables (use concurrent operations)
+- [ ] Lock duration and acquisition timeout reviewed; avoid long-running table locks
 - [ ] New columns have defaults or are nullable (never add NOT NULL without default)
 - [ ] Indexes created concurrently (not inline with CREATE TABLE for existing tables)
 - [ ] Data backfill is a separate migration from schema change
@@ -41,16 +41,18 @@ Before applying any migration:
 
 ### Adding a Column Safely
 
+These ADD COLUMN statements still acquire an ACCESS EXCLUSIVE lock. Keep the transaction short and bound lock acquisition with `lock_timeout`. The fast-default optimization applies to non-volatile defaults; volatile expressions can require a table rewrite.
+
 ```sql
--- GOOD: Nullable column, no lock
+-- GOOD: Nullable column, no table rewrite; still takes ACCESS EXCLUSIVE
 ALTER TABLE users ADD COLUMN avatar_url TEXT;
 
--- GOOD: Column with default (Postgres 11+ is instant, no rewrite)
+-- GOOD: Constant default avoids a table rewrite on Postgres 11+; still locks
 ALTER TABLE users ADD COLUMN is_active BOOLEAN NOT NULL DEFAULT true;
 
--- BAD: NOT NULL without default on existing table (requires full rewrite)
+-- BAD: NOT NULL without default fails when the table already has rows
 ALTER TABLE users ADD COLUMN role TEXT NOT NULL;
--- This locks the table and rewrites every row
+-- Existing rows receive NULL, which violates the new constraint
 ```
 
 ### Adding an Index Without Downtime
@@ -424,7 +426,7 @@ Day 7: Migration drops old status column
 |-------------|-------------|-----------------|
 | Manual SQL in production | No audit trail, unrepeatable | Always use migration files |
 | Editing deployed migrations | Causes drift between environments | Create new migration instead |
-| NOT NULL without default | Locks table, rewrites all rows | Add nullable, backfill, then add constraint |
+| NOT NULL without default | Fails on a populated table because existing rows are NULL | Add nullable, backfill, then add constraint |
 | Inline index on large table | Blocks writes during build | CREATE INDEX CONCURRENTLY |
 | Schema + data in one migration | Hard to rollback, long transactions | Separate migrations |
 | Dropping column before removing code | Application errors on missing column | Remove code first, drop column next deploy |

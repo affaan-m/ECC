@@ -84,27 +84,36 @@ Most pages do not need context or a global store. Resist abstraction until dupli
 ## Server / Client Components (RSC)
 
 ```tsx
+// app/products/[id]/page.tsx — Next.js App Router 15+
 // Server Component - default, async, never ships JS for itself
-export default async function ProductPage({ params }: { params: { id: string } }) {
-  const product = await db.product.findUnique({ where: { id: params.id } });
+export default async function ProductPage({ params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params;
+  const product = await db.product.findUnique({ where: { id } });
   if (!product) notFound();
   return <ProductView product={product} />;
 }
 
-// Client Component - opt in with "use client"
+```
+
+```tsx
+// app/products/AddToCartButton.tsx — React 19 async transition
 "use client";
+import { useTransition } from "react";
+import { addToCart } from "./actions"; // Server Action from a module-level "use server" file
 export function AddToCartButton({ productId }: { productId: string }) {
   const [pending, startTransition] = useTransition();
   return (
     <button
       disabled={pending}
-      onClick={() => startTransition(() => addToCart(productId))}
+      onClick={() => startTransition(async () => { await addToCart(productId); })}
     >
       {pending ? "Adding..." : "Add to cart"}
     </button>
   );
 }
 ```
+
+Next.js 14 and earlier use synchronous page params. React 18 transitions do not track an async Action's pending lifetime; use explicit loading state for that version. Keep server and client examples in separate files.
 
 Boundaries:
 
@@ -130,21 +139,42 @@ Boundaries:
 
 ### React 19 form actions (preferred for new code)
 
-> **React 19+**: This example uses `useActionState`. For React 18, use `useFormState` from `react-dom` instead.
+`useActionState` requires React 19. For stable React 18, use a conventional submit handler and explicit state; `useFormState` was a Canary API, not a stable React 18 replacement.
 
-```tsx
-"use client";
-import { useActionState } from "react";
+Define an importable Server Action in a separate server module. This example updates the authenticated user's own profile; `auth` and `db` are application-provided server dependencies.
 
-const initial = { error: null as string | null };
+```ts
+// app/profile/actions.ts
+"use server";
+import { z } from "zod";
+import { auth } from "@/lib/auth";
+import { db } from "@/lib/db";
 
-async function updateUserAction(_prev: typeof initial, formData: FormData) {
-  "use server";
-  const parsed = UserSchema.safeParse(Object.fromEntries(formData));
+const UserSchema = z.object({ name: z.string().trim().min(1) });
+
+export async function updateUserAction(
+  _prev: { error: string | null },
+  formData: FormData,
+): Promise<{ error: string | null }> {
+  const session = await auth();
+  if (!session?.user?.id) return { error: "Unauthorized" };
+  const parsed = UserSchema.safeParse({ name: formData.get("name") });
   if (!parsed.success) return { error: "Invalid input" };
-  await db.user.update({ where: { id: parsed.data.id }, data: parsed.data });
+  await db.user.update({
+    where: { id: session.user.id },
+    data: { name: parsed.data.name },
+  });
   return { error: null };
 }
+```
+
+```tsx
+// app/profile/UserForm.tsx
+"use client";
+import { useActionState } from "react";
+import { updateUserAction } from "./actions";
+
+const initial = { error: null as string | null };
 
 export function UserForm() {
   const [state, formAction, pending] = useActionState(updateUserAction, initial);
@@ -157,6 +187,8 @@ export function UserForm() {
   );
 }
 ```
+
+Do not define inline `"use server"` functions inside a `"use client"` module. Validate inputs and enforce authorization in the Server Action itself; never trust a submitted user ID as authorization.
 
 ### Controlled inputs
 
@@ -261,7 +293,7 @@ This skill is router-agnostic. The patterns above work with React Router, TanSta
 ## Out of Scope (Pointer Sections)
 
 - **Next.js specifics**: App Router data loading, Route Handlers, Middleware, Parallel Routes — separate concern, use Next.js docs
-- **React Native**: Platform-specific patterns differ enough to warrant a separate `react-native-patterns` skill (not present yet)
+- **React Native**: Platform-specific patterns are covered by the [canonical react-native-patterns skill](../../../skills/react-native-patterns/SKILL.md)
 - **Remix**: Loader/action conventions overlap with RSC but follow Remix docs
 
 ## Related

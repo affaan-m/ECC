@@ -485,7 +485,10 @@ async def test_async_with_fixture(async_client):
 ### 非同期フィクスチャ
 
 ```python
-@pytest.fixture
+import pytest
+import pytest_asyncio
+
+@pytest_asyncio.fixture
 async def async_client():
     """Async fixture providing async test client."""
     app = create_app()
@@ -683,15 +686,40 @@ def test_create_user(client):
 
 ### データベース操作のテスト
 
+この SQLAlchemy 2.x fixture は、SAVEPOINT をサポートするバックエンドと実際のトランザクション制御を備えた engine を必要とします。Python 3.12+ の SQLite では `create_engine(..., connect_args={"autocommit": False})` を設定してください。古いドライバーでは SQLAlchemy の SQLite トランザクション設定を使用します。テストが `session.commit()` を呼び出しても、外側のトランザクションはロールバックされます。
+
+Python 3.11 以前の SQLite では、engine の接続を開く前に次の代替設定を使用します。上記の `autocommit=False` 設定とは併用しないでください:
+
 ```python
+from sqlalchemy import create_engine, event
+
+engine = create_engine("sqlite://")
+
+@event.listens_for(engine, "connect")
+def disable_driver_begin(dbapi_connection, connection_record):
+    dbapi_connection.isolation_level = None
+
+@event.listens_for(engine, "begin")
+def emit_begin(connection):
+    connection.exec_driver_sql("BEGIN")
+```
+
+```python
+import pytest
+from sqlalchemy.orm import Session
+
 @pytest.fixture
 def db_session():
     """Create a test database session."""
-    session = Session(bind=engine)
-    session.begin_nested()
-    yield session
-    session.rollback()
-    session.close()
+    with engine.connect() as connection:
+        transaction = connection.begin()
+        try:
+            with Session(
+                bind=connection, join_transaction_mode="create_savepoint"
+            ) as session:
+                yield session
+        finally:
+            transaction.rollback()
 
 def test_create_user(db_session):
     user = User(name="Alice", email="alice@example.com")

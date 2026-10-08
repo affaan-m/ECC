@@ -131,6 +131,25 @@ Maven snippet:
       <phase>verify</phase>
       <goals><goal>report</goal></goals>
     </execution>
+    <execution>
+      <id>check</id>
+      <phase>verify</phase>
+      <goals><goal>check</goal></goals>
+      <configuration>
+        <rules>
+          <rule>
+            <element>BUNDLE</element>
+            <limits>
+              <limit>
+                <counter>LINE</counter>
+                <value>COVEREDRATIO</value>
+                <minimum>0.80</minimum>
+              </limit>
+            </limits>
+          </rule>
+        </rules>
+      </configuration>
+    </execution>
   </executions>
 </plugin>
 ```
@@ -153,7 +172,7 @@ class MarketBuilder {
 
 ## CI Commands
 
-- Maven: `mvn -T 4 test` or `mvn verify`
-- Gradle: `./gradlew test jacocoTestReport`
+- Maven: `mvn -T 4 test` runs tests; `mvn verify` also generates the report and enforces the configured 80% line coverage gate.
+- Gradle: `./gradlew test jacocoTestReport` runs tests and generates a report. To enforce coverage, configure an 80% rule for `jacocoTestCoverageVerification` (`counter = "LINE"`, `value = "COVEREDRATIO"`, `minimum = 0.80`) and run that task as well.
 
 **Remember**: Keep tests fast, isolated, and deterministic. Test behavior, not implementation details.

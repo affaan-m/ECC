@@ -99,13 +99,26 @@ WHERE id = (
 
 ```sql
 -- Find unindexed foreign keys
-SELECT conrelid::regclass, a.attname
+-- Review candidates lacking a valid, non-partial B-tree left-prefix index
+SELECT c.conrelid::regclass AS table_name, c.conname AS constraint_name
 FROM pg_constraint c
-JOIN pg_attribute a ON a.attrelid = c.conrelid AND a.attnum = ANY(c.conkey)
 WHERE c.contype = 'f'
   AND NOT EXISTS (
-    SELECT 1 FROM pg_index i
-    WHERE i.indrelid = c.conrelid AND a.attnum = ANY(i.indkey)
+    SELECT 1
+    FROM pg_index i
+    JOIN pg_class idx ON idx.oid = i.indexrelid
+    JOIN pg_am am ON am.oid = idx.relam
+    WHERE i.indrelid = c.conrelid
+      AND i.indisvalid AND i.indisready AND i.indislive
+      AND i.indpred IS NULL
+      AND am.amname = 'btree'
+      AND i.indnkeyatts >= cardinality(c.conkey)
+      AND ARRAY(
+        SELECT key.attnum
+        FROM unnest(i.indkey::smallint[]) WITH ORDINALITY AS key(attnum, position)
+        WHERE key.position <= cardinality(c.conkey)
+        ORDER BY key.attnum
+      ) = ARRAY(SELECT attnum FROM unnest(c.conkey) AS fk(attnum) ORDER BY attnum)
   );
 
 -- Find slow queries
@@ -132,13 +145,18 @@ ALTER SYSTEM SET work_mem = '8MB';
 ALTER SYSTEM SET idle_in_transaction_session_timeout = '30s';
 ALTER SYSTEM SET statement_timeout = '30s';
 
--- Monitoring
-CREATE EXTENSION IF NOT EXISTS pg_stat_statements;
-
 -- Security defaults
 REVOKE ALL ON SCHEMA public FROM public;
 
 SELECT pg_reload_conf();
+```
+
+The `compute_query_id` guidance below applies to PostgreSQL 14 and later; omit this setting on PostgreSQL 13 and older.
+
+`pg_reload_conf()` reloads settings that support reload; it does not activate changes to `max_connections`, which require a server restart. Before using `pg_stat_statements`, add it to `shared_preload_libraries` while preserving any existing entries. Use `compute_query_id = auto` or `on` for built-in query identifiers; set it to `off` when an external module computes query IDs. Restart the server if the preload list changed, then connect to each database where the statistics views are needed and run:
+
+```sql
+CREATE EXTENSION IF NOT EXISTS pg_stat_statements;
 ```
 
 ## Related

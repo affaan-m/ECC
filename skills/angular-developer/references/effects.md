@@ -63,10 +63,10 @@ export class Chart {
       earlyRead: () => {
         return this.canvas().nativeElement.getBoundingClientRect().width;
       },
-      // 2. Write to the DOM (receives the result of the previous phase)
+      // 2. Write to the DOM (receives a Signal containing the previous phase result)
       write: (width) => {
         // NEVER read from the DOM in the write phase.
-        setupChart(this.canvas().nativeElement, width);
+        setupChart(this.canvas().nativeElement, width());
       }
     });
   }

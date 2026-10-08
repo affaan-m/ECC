@@ -94,13 +94,26 @@ WHERE id = (
 
 ```sql
 -- İndekslenmemiş foreign key'leri bul
-SELECT conrelid::regclass, a.attname
+-- Geçerli, partial olmayan ve FK sütunlarını sol önek olarak kullanan B-tree bulunmayan adayları incele
+SELECT c.conrelid::regclass AS table_name, c.conname AS constraint_name
 FROM pg_constraint c
-JOIN pg_attribute a ON a.attrelid = c.conrelid AND a.attnum = ANY(c.conkey)
 WHERE c.contype = 'f'
   AND NOT EXISTS (
-    SELECT 1 FROM pg_index i
-    WHERE i.indrelid = c.conrelid AND a.attnum = ANY(i.indkey)
+    SELECT 1
+    FROM pg_index i
+    JOIN pg_class idx ON idx.oid = i.indexrelid
+    JOIN pg_am am ON am.oid = idx.relam
+    WHERE i.indrelid = c.conrelid
+      AND i.indisvalid AND i.indisready AND i.indislive
+      AND i.indpred IS NULL
+      AND am.amname = 'btree'
+      AND i.indnkeyatts >= cardinality(c.conkey)
+      AND ARRAY(
+        SELECT key.attnum
+        FROM unnest(i.indkey::smallint[]) WITH ORDINALITY AS key(attnum, position)
+        WHERE key.position <= cardinality(c.conkey)
+        ORDER BY key.attnum
+      ) = ARRAY(SELECT attnum FROM unnest(c.conkey) AS fk(attnum) ORDER BY attnum)
   );
 
 -- Yavaş sorguları bul
@@ -127,13 +140,18 @@ ALTER SYSTEM SET work_mem = '8MB';
 ALTER SYSTEM SET idle_in_transaction_session_timeout = '30s';
 ALTER SYSTEM SET statement_timeout = '30s';
 
--- İzleme
-CREATE EXTENSION IF NOT EXISTS pg_stat_statements;
-
 -- Güvenlik varsayılanları
 REVOKE ALL ON SCHEMA public FROM public;
 
 SELECT pg_reload_conf();
+```
+
+Aşağıdaki `compute_query_id` yönergesi PostgreSQL 14 ve sonrası içindir; PostgreSQL 13 ve öncesinde bu ayarı kullanmayın.
+
+`pg_reload_conf()` yalnızca yeniden yüklenebilen ayarları yükler; `max_connections` değişiklikleri sunucunun yeniden başlatılmasını gerektirir. `pg_stat_statements` kullanmadan önce mevcut girdileri koruyarak onu `shared_preload_libraries` listesine ekleyin. Yerleşik sorgu kimlikleri için `compute_query_id = auto` veya `on` kullanın; sorgu kimliklerini harici bir modül hesaplıyorsa `off` olarak ayarlayın. Ön yükleme listesi değiştiyse sunucuyu yeniden başlatın; ardından istatistik görünümlerinin gerektiği her veritabanına bağlanıp çalıştırın:
+
+```sql
+CREATE EXTENSION IF NOT EXISTS pg_stat_statements;
 ```
 
 ## İlgili

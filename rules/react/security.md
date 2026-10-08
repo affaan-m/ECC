@@ -38,7 +38,7 @@ Audit checklist for every `dangerouslySetInnerHTML` call:
 
 ## Unsafe URL Schemes
 
-`javascript:` and `data:` URLs in `href`, `src`, and `xlink:href` execute arbitrary code.
+Validate schemes for user-provided navigation and resource URLs. Whether a URL can execute code depends on its scheme, the element, and browser behavior; do not treat every `data:` resource as executable.
 
 ```tsx
 // CRITICAL: javascript: URL injection
@@ -57,7 +57,7 @@ function safeUrl(url: string): string | undefined {
 <a href={safeUrl(user.website)}>Visit</a>
 ```
 
-React warns about `javascript:` URLs in `href` in development mode, but does not block them at runtime. `data:` URLs and other schemes also slip through. Always validate.
+React 19 blocks `javascript:` URLs in `src` and `href`; older React versions may only warn. This does not replace an application-specific scheme allowlist for other URLs. See the [React 19 upgrade guide](https://react.dev/blog/2024/04/25/react-19-upgrade-guide#other-breaking-changes).
 
 ## `target="_blank"` Without `rel`
 
@@ -142,18 +142,20 @@ frame-ancestors 'none';
 - For SSR with inline scripts (Next.js streaming, hydration data), use per-request nonces — both Next.js and Remix support nonce injection
 - `style-src 'unsafe-inline'` is often unavoidable for CSS-in-JS libraries — document the tradeoff
 
-## Prototype Pollution via Object Spread
+## Unvalidated State Updates
 
 ```tsx
 // WRONG: untrusted JSON spread directly into state
 const update = await req.json();
-setState({ ...state, ...update });    // attacker controls __proto__
+setState({ ...state, ...update });    // untrusted keys can overwrite application state
 
 // CORRECT: parse with a schema, or guard keys
 const Allowed = z.object({ name: z.string(), email: z.string().email() });
 const parsed = Allowed.parse(await req.json());
 setState({ ...state, ...parsed });
 ```
+
+Object spread copies own enumerable properties without invoking target setters. A JSON `__proto__` key becomes an own data property here; it does not change the new object's prototype. Keep schema validation to restrict permitted state fields. See [CopyDataProperties](https://tc39.es/ecma262/#sec-copydataproperties).
 
 ## SSR Template Injection
 

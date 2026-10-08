@@ -532,7 +532,8 @@ func ProcessRequest(data []byte) []byte {
 
     buf.Write(data)
     // 處理...
-    return buf.Bytes()
+    // 歸還緩衝區到 pool 前先複製；Bytes 與緩衝區共用底層儲存空間。
+    return append([]byte(nil), buf.Bytes()...)
 }
 ```
 

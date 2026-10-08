@@ -44,6 +44,7 @@ GET /api/markets?status=active&sort=volume&limit=20&offset=0
 interface MarketRepository {
   findAll(filters?: MarketFilters): Promise<Market[]>
   findById(id: string): Promise<Market | null>
+  findByIds(ids: string[]): Promise<Market[]>
   create(data: CreateMarketDto): Promise<Market>
   update(id: string, data: UpdateMarketDto): Promise<Market>
   delete(id: string): Promise<void>
@@ -115,10 +116,11 @@ export function withAuth(handler: NextApiHandler): NextApiHandler {
     try {
       const user = await verifyToken(token)
       req.user = user
-      return handler(req, res)
     } catch (error) {
       return res.status(401).json({ error: 'Invalid token' })
     }
+
+    return handler(req, res)
   }
 }
 

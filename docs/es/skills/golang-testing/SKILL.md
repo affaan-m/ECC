@@ -551,12 +551,7 @@ go test -race -coverprofile=coverage.out ./...
 
 ### Excluir Código Generado de la Cobertura
 
-```go
-//go:generate mockgen -source=interface.go -destination=mock_interface.go
-
-// En el perfil de cobertura, excluir con build tags:
-// go test -cover -tags=!generate ./...
-```
+`//go:generate` no excluye archivos de la cobertura, y `-tags=!generate` no es un filtro de cobertura. Las restricciones de compilación seleccionan archivos fuente; no elimines mocks generados que necesitan las pruebas.
 
 ## Pruebas de Handlers HTTP
 
