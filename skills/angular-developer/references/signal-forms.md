@@ -365,9 +365,9 @@ track $index) {
 ### Disabling Form Button
 
 ```html
-<button [disabled]="form().invalid() || form().pending()" />
+<button [disabled]="userForm().invalid() || userForm().pending()" />
 <!-- Or -->
-<button [disabled]="taxForm.invalid()" />
+<button [disabled]="userForm().invalid()" />
 ```
 
 Do NOT use `[disabled]` on an input. `[formField]` will do this.
@@ -468,40 +468,45 @@ userForm = form(this.userModel, (s) => {
 
 ### Conditional Validation
 
+Apply a rule to one field based on another field's value. This component requires
+the last name unless the first name is `admin`:
+
 ```ts
-form(
-  data,
-  (path) => {
+import {Component, signal} from '@angular/core';
+import {applyWhen, form, required} from '@angular/forms/signals';
+
+@Component({selector: 'app-profile-form', template: ''})
+export class ProfileForm {
+  model = signal({firstName: '', lastName: ''});
+  profileForm = form(this.model, (path) => {
     applyWhen(
-      name,
-      ({value}) => value() !== 'admin',
-      (namePath) => {
-        validate(namePath.last /* ... */);
-        disable(namePath.last /* ... */);
-      },
+      path.lastName,
+      ({valueOf}) => valueOf(path.firstName) !== 'admin',
+      (lastNamePath) => required(lastNamePath),
     );
-  },
-  {injector: TestBed.inject(Injector)},
-);
+  });
+}
 ```
 
-`applyWhen` passes the path mapped to the first argument.
-If you need parent field, just pass it to `applyWhen`:
+`applyWhen` passes the path supplied as its first argument to the schema callback.
+To apply rules to children of a group, pass the group's path and access those
+children through the callback's path:
 
 ```ts
-form(
-  data,
-  (path) => {
+import {Component, signal} from '@angular/core';
+import {applyWhen, form, required} from '@angular/forms/signals';
+
+@Component({selector: 'app-cat-form', template: ''})
+export class CatForm {
+  model = signal({cat: {name: '', nickname: ''}});
+  catForm = form(this.model, (path) => {
     applyWhen(
-      cat,
+      path.cat,
       ({value}) => value().name !== 'admin',
-      (catPath) => {
-        require(cat.catPath /* ... */);
-      },
+      (catPath) => required(catPath.nickname),
     );
-  },
-  {injector: TestBed.inject(Injector)},
-);
+  });
+}
 ```
 
 ## Common Pitfalls (DO NOT DO THESE)
