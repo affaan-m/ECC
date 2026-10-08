@@ -19,7 +19,7 @@ Expo Router is Expo's built-in, file-based router (`app/` directory); React Navi
 
 ```tsx
 // app/user/[id].tsx
-import { useLocalSearchParams, router } from 'expo-router'
+import { Redirect, useLocalSearchParams } from 'expo-router'
 import { z } from 'zod'
 
 const Params = z.object({ id: z.string().uuid() })
@@ -29,8 +29,7 @@ export default function UserScreen() {
   // during render and crash the screen. Redirect instead of throwing.
   const parsed = Params.safeParse(useLocalSearchParams())
   if (!parsed.success) {
-    router.replace('/not-found')
-    return null
+    return <Redirect href="/not-found" />
   }
   return <UserProfile userId={parsed.data.id} />
 }
