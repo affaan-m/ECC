@@ -20,7 +20,7 @@ pytest、factory_boy、Django REST Frameworkを使用したDjangoアプリケー
 
 ```python
 # ステップ1: RED - 失敗するテストを書く
-def test_user_creation():
+def test_user_creation(db):
     user = User.objects.create_user(email='test@example.com', password='testpass123')
     assert user.email == 'test@example.com'
     assert user.check_password('testpass123')
@@ -214,20 +214,20 @@ class ProductFactory(factory.django.DjangoModelFactory):
 import pytest
 from tests.factories import ProductFactory, UserFactory
 
-def test_product_creation():
+def test_product_creation(db):
     """ファクトリーを使用した製品作成をテスト。"""
     product = ProductFactory(price=100.00, stock=50)
     assert product.price == 100.00
     assert product.stock == 50
     assert product.is_active is True
 
-def test_product_with_tags():
+def test_product_with_tags(db):
     """タグ付き製品をテスト。"""
     tags = [TagFactory(name='electronics'), TagFactory(name='new')]
     product = ProductFactory(tags=tags)
     assert product.tags.count() == 2
 
-def test_multiple_products():
+def test_multiple_products(db):
     """複数の製品作成をテスト。"""
     products = ProductFactory.create_batch(10)
     assert len(products) == 10
@@ -501,9 +501,9 @@ class TestProductAPI:
         assert response.status_code == status.HTTP_201_CREATED
         assert response.data['name'] == 'Test Product'
 
-    def test_update_product(self, authenticated_api_client, db):
+    def test_update_product(self, authenticated_api_client, user, db):
         """製品更新をテスト。"""
-        product = ProductFactory(created_by=authenticated_api_client.user)
+        product = ProductFactory(created_by=user)
 
         url = reverse('api:product-detail', kwargs={'pk': product.id})
         data = {'name': 'Updated Product'}
@@ -513,9 +513,9 @@ class TestProductAPI:
         assert response.status_code == status.HTTP_200_OK
         assert response.data['name'] == 'Updated Product'
 
-    def test_delete_product(self, authenticated_api_client, db):
+    def test_delete_product(self, authenticated_api_client, user, db):
         """製品削除をテスト。"""
-        product = ProductFactory(created_by=authenticated_api_client.user)
+        product = ProductFactory(created_by=user)
 
         url = reverse('api:product-detail', kwargs={'pk': product.id})
         response = authenticated_api_client.delete(url)
