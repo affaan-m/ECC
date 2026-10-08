@@ -368,9 +368,20 @@ open cover_db/coverage.html
 # Specific thresholds
 cover -test -report text | grep 'Total'
 
-# CI-friendly: fail under threshold
-cover -test && cover -report text -select '^lib/' \
-  | perl -ne 'if (/Total.*?(\d+\.\d+)/) { exit 1 if $1 < 80 }'
+# Bash CI gate: require at least 80% statement coverage for lib/
+set -euo pipefail
+cover -test
+cover -report text -coverage statement -prefer_lib -select_re '^lib/' \
+  | perl -ne '
+      if (/^\s*Total\s+(\d+(?:\.\d+)?)\s/) {
+          $seen++;
+          $failed ||= $1 < 80 || $1 > 100;
+      }
+      END {
+          die "Missing or ambiguous statement coverage total\n" unless $seen == 1;
+          exit($failed ? 1 : 0);
+      }
+    '
 ```
 
 ### 集成测试
