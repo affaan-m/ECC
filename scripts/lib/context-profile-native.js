@@ -314,7 +314,7 @@ function verifyClaude(options, root, carrier, dependencies) {
   const pluginDir = path.join(root, 'plugin');
   const report = parseJson(command(options, root, ['plugin', 'validate', '--json', pluginDir], dependencies), 'Native Claude plugin validation failed');
   if (report?.success !== true || !Array.isArray(report.manifest?.errors) || report.manifest.errors.length
-    || !Array.isArray(report.contents) || report.contents.some(item => Array.isArray(item?.errors) && item.errors.length)) {
+    || !Array.isArray(report.contents) || !report.contents.every(item => Array.isArray(item?.errors) && item.errors.length === 0)) {
     throw new Error('Native Claude plugin validation failed');
   }
   const listed = parseJson(command(options, root, ['--plugin-dir', pluginDir, 'plugin', 'list', '--json'], dependencies),
