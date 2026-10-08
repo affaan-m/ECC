@@ -1,13 +1,13 @@
 ---
 name: prisma-patterns
-description: Prisma ORM patterns for TypeScript backends — schema design, query optimization, transactions, pagination, and critical traps like updateMany returning count not records, $transaction timeouts, migrate dev resetting the DB, @updatedAt skipped on bulk writes, and serverless connection exhaustion. Use when writing a Prisma schema or query, or debugging transactions, migrations, or serverless connection limits.
+description: Prisma ORM patterns for TypeScript backends — schema design, query optimization, transactions, pagination, and critical traps like updateMany returning count not records, $transaction timeouts, migrate dev resetting the DB, Prisma-managed timestamp behavior, and serverless connection exhaustion. Use when writing a Prisma schema or query, or debugging transactions, migrations, or serverless connection limits.
 metadata:
   origin: ECC
 ---
 
 # Prisma Patterns
 
-Production patterns and non-obvious traps for Prisma ORM in TypeScript backends.
+Production patterns and non-obvious traps for Prisma ORM in TypeScript backends. These examples use the Prisma ORM 5–7 schema and Client APIs; consult the migration guide before applying them to Prisma ORM 8.
 
 > **Check your version before applying patterns.** The Prisma API surface has evolved across major releases:
 >
@@ -16,10 +16,10 @@ Production patterns and non-obvious traps for Prisma ORM in TypeScript backends.
 > ```
 >
 > Notable API differences across versions:
-> - `relationJoins` can load relations via JOIN rather than separate queries, but may cause row explosion on large 1:N relations or deep `include` — benchmark both approaches
+> - `relationJoins` enables database-level relation loading with JSON aggregation on supported providers; benchmark `join` and `query` for your workload
 > - `omit` field modifier and `prisma.$extends` Client Extensions API were added
-> - **Newer installs**: the package may be named `prisma` instead of `@prisma/client`; `PrismaClient` may require a driver adapter (e.g. `@prisma/adapter-pg`); `datasource.url` may live in `prisma.config.ts` instead of `schema.prisma`
-> - CLI commands (`migrate dev`, `migrate deploy`, `generate`) are unchanged across versions
+> - **Newer installs**: the `prisma` package supplies the CLI; import the Client from `@prisma/client` or your configured generated output path. `PrismaClient` may require a driver adapter (e.g. `@prisma/adapter-pg`); `datasource.url` may live in `prisma.config.ts` instead of `schema.prisma`
+> - Prisma ORM 5–7 use `migrate dev`, `migrate deploy`, and `generate`; flags and configuration differ across versions, so check the installed command's `--help`
 
 ## When to Activate
 
@@ -60,7 +60,7 @@ model User {
 
 - Add `@@index` on every foreign key and column used in `WHERE` or `ORDER BY`.
 - Declare `deletedAt DateTime?` upfront when soft delete is a foreseeable requirement — adding it later requires a migration on a live table.
-- `updatedAt @updatedAt` is set automatically by Prisma on `update` and `upsert` only (see Anti-Patterns for bulk update trap).
+- `updatedAt @updatedAt` is managed by Prisma Client, including nonempty `updateMany` writes. Raw SQL and other database writers bypass this Client behavior (see Anti-Patterns).
 
 ### `include` vs `select`
 
@@ -69,7 +69,7 @@ model User {
 | Returns | All scalar fields + specified relations | Only specified fields |
 | Use when | You need most fields plus a relation | Hot paths, large tables, avoiding over-fetch |
 | Performance | May over-fetch on wide tables | Minimal payload, faster on large datasets |
-| Prisma 5 note | Uses JOIN by default (`relationJoins`) | Same |
+| Relation loading | `join` by default only when `relationJoins` is enabled on a supported provider; otherwise `query` | Same for selected relations |
 
 ```ts
 // include — all columns + relation
@@ -123,11 +123,13 @@ const post = await prisma.$transaction(async (tx) => {
 
 Each `PrismaClient` instance opens its own connection pool. Instantiate once.
 
+The adapter examples assume `lib/prisma.ts` imports a `prisma-client` generator with `output = "../generated/prisma"` in `prisma/schema.prisma`. Run `prisma generate` first, then import from `../generated/prisma/client`. Adjust the relative path for your output and importing file; only the legacy `prisma-client-js` generator uses the `@prisma/client` import shown in Option B.
+
 ```ts
 // lib/prisma.ts
 
 // Option A — adapter-based initialization (required by newer Prisma installs)
-import { PrismaClient } from '@prisma/client'; // or the generated client path for your setup
+import { PrismaClient } from '../generated/prisma/client';
 import { PrismaPg } from '@prisma/adapter-pg';
 
 function createPrismaClient() {
@@ -167,11 +169,11 @@ for (const user of users) {
   const posts = await prisma.post.findMany({ where: { authorId: user.id } });
 }
 
-// GOOD: single query
+// GOOD: eager load relations without a query for every user
 const users = await prisma.user.findMany({ include: { posts: true } });
 ```
 
-With Prisma 5+ `relationJoins`, the `include` form uses a single JOIN. On large 1:N sets this may increase result set size — benchmark both approaches if the relation can return many rows per parent.
+On supported providers, enable `relationJoins` and regenerate the Client to use `relationLoadStrategy: 'join'` (the default with the flag). Without that flag, `include` uses the `query` strategy: one query per table, merged in the application. Neither strategy requires a query for every user. Benchmark both with your actual relations and workload.
 
 ## Code Examples
 
@@ -231,10 +233,10 @@ Catch at the service boundary and translate to domain errors. Never expose raw P
 
 ### Connection Pool — Serverless
 
-Embed connection params directly in `DATABASE_URL` — string concatenation breaks if the URL already has query parameters (e.g. `?schema=public`):
+For Prisma ORM 6 and earlier using the built-in engine pool, embed pool parameters directly in `DATABASE_URL`. Prisma ORM 7 driver adapters use the underlying driver's pool options instead; URL parameters such as `connection_limit` do not configure `PrismaPg`'s pool.
 
 ```bash
-# .env — preferred: embed params in the URL
+# .env — Prisma ORM 6 and earlier with the built-in engine pool
 DATABASE_URL="postgresql://user:pass@host/db?connection_limit=1&pool_timeout=20"
 
 # With an external pooler (PgBouncer, Supabase pooler)
@@ -243,17 +245,22 @@ DATABASE_URL="postgresql://user:pass@host/db?pgbouncer=true&connection_limit=1"
 
 ```ts
 // Vercel, AWS Lambda, and similar serverless runtimes:
-// cap pool to 1 per instance; connection_limit and pool_timeout controlled via DATABASE_URL
+// Size the pool per instance, then account for total instance concurrency.
 
-// Adapter-based setup (if your Prisma install requires an adapter):
-import { PrismaClient } from '@prisma/client';
+// lib/prisma.ts — same generated output assumption as the singleton above
+// Adapter-based setup (Prisma ORM 7 / node-postgres pool):
+import { PrismaClient } from '../generated/prisma/client';
 import { PrismaPg } from '@prisma/adapter-pg';
 
 const prisma = new PrismaClient({
-  adapter: new PrismaPg({ connectionString: process.env.DATABASE_URL }),
+  adapter: new PrismaPg({
+    connectionString: process.env.DATABASE_URL,
+    max: 1, // node-postgres pool limit per instance
+    connectionTimeoutMillis: 20_000, // milliseconds; tune for the workload
+  }),
 });
 
-// Direct setup (if your Prisma install does not require an adapter):
+// Built-in engine setup (Prisma ORM 6 and earlier; use URL pool parameters):
 // const prisma = new PrismaClient();
 ```
 
@@ -307,16 +314,17 @@ npx prisma migrate dev --name add_column
 # Safe everywhere except local solo dev
 npx prisma migrate deploy
 
-# Check drift without applying
+# Prisma ORM 6: inspect differences without applying them (requires a shadow DB)
+# Prisma ORM 7 uses different flags/configuration; check `prisma migrate diff --help`.
 npx prisma migrate diff \
   --from-migrations ./prisma/migrations \
   --to-schema-datamodel ./prisma/schema.prisma \
   --shadow-database-url "$SHADOW_DATABASE_URL"
 ```
 
-### Manually editing a migration file breaks future deploys
+### Editing an applied migration creates a history conflict
 
-Prisma checksums every migration file. Editing after apply causes `P3006 checksum mismatch` on every environment where the original already ran. Create a new migration instead.
+Prisma tracks checksums of applied migrations. Editing an applied file creates a migration history conflict: `migrate dev` can request a reset, while `migrate deploy` warns about modified applied migrations. `P3006` specifically means a migration failed to apply cleanly to the shadow database, not a checksum mismatch. Restore the applied file and create a new migration for the intended change.
 
 ### Breaking schema changes require multi-step migration
 
@@ -339,15 +347,15 @@ npx prisma migrate dev --name make_new_column_required  # local only
 npx prisma migrate deploy                               # staging / production
 ```
 
-### `@updatedAt` does not fire on `updateMany`
+### `@updatedAt` is managed by Prisma Client, not a database trigger
 
-`@updatedAt` is set automatically only on `update` and `upsert`. Bulk writes leave it stale.
+Prisma updates `@updatedAt` automatically for nonempty Client writes, including `updateMany`. An empty update leaves the timestamp unchanged, and an explicitly supplied timestamp takes precedence. Raw SQL and external writers must maintain the column themselves, or use a database trigger.
 
 ```ts
-// BAD: updatedAt stays at its old value
+// Prisma automatically updates the schema's @updatedAt field
 await prisma.post.updateMany({ where: { authorId }, data: { published: true } });
 
-// GOOD
+// Explicit timestamp override when the application requires a chosen time
 await prisma.post.updateMany({
   where: { authorId },
   data: { published: true, updatedAt: new Date() },
@@ -356,18 +364,18 @@ await prisma.post.updateMany({
 
 ### Soft delete + `findUniqueOrThrow` leaks deleted records
 
-`findUniqueOrThrow` throws `P2025` only when the row does not exist in the DB. Soft-deleted rows still exist and are returned without error.
+`findUniqueOrThrow` throws `P2025` when no record matches its filter. A lookup by `id` alone still returns a soft-deleted row; include the soft-delete condition to exclude it.
 
-`findUniqueOrThrow` requires a unique constraint field in `where` — adding `deletedAt: null` alongside `id` breaks the type because `{ id, deletedAt }` is not a compound unique constraint. Use `findFirstOrThrow` instead.
+In Prisma ORM 5+, `WhereUniqueInput` accepts additional non-unique filters as long as at least one unique field appears outside boolean operators. `{ id, deletedAt: null }` is valid and excludes soft-deleted rows without a compound unique constraint. This was available under `extendedWhereUnique` in 4.5–4.16; on older Clients without that feature, use `findFirstOrThrow`.
 
 ```ts
 // BAD: returns soft-deleted user
 const user = await prisma.user.findUniqueOrThrow({ where: { id } });
 
-// BAD: Prisma type error — { id, deletedAt } is not a unique constraint
+// GOOD: Prisma ORM 5+ — unique id plus a soft-delete filter
 const user = await prisma.user.findUniqueOrThrow({ where: { id, deletedAt: null } });
 
-// GOOD: findFirstOrThrow supports arbitrary where conditions
+// Also valid: arbitrary filters, including older Clients without extendedWhereUnique
 const user = await prisma.user.findFirstOrThrow({ where: { id, deletedAt: null } });
 ```
 
@@ -388,10 +396,10 @@ await prisma.post.deleteMany({ where: { authorId: userId } });
 | `migrate deploy` in CI/CD, `migrate dev` only locally | `migrate dev` can reset the DB on drift |
 | Map entities to response DTOs | Prevents leaking internal fields |
 | Catch `PrismaClientKnownRequestError` at service boundary | Translate to domain errors |
-| Prefer `*OrThrow` methods over manual null checks | Throws P2025 automatically; use `findFirstOrThrow` when filtering non-unique fields |
-| `connection_limit=1` + external pooler in serverless | Prevents connection exhaustion |
+| Prefer `*OrThrow` methods over manual null checks | Throws P2025 automatically; use `findFirstOrThrow` when there is no unique lookup key |
+| Bound each serverless pool and account for instance concurrency | Use URL pool parameters for the built-in engine or driver options such as `PrismaPg.max` for adapters |
 | Always provide `where` on `deleteMany` | Prevents accidental table wipe |
-| Set `updatedAt: new Date()` manually in `updateMany` | `@updatedAt` skips bulk writes |
+| Let Prisma manage `@updatedAt`; maintain it for raw SQL/external writers | Nonempty Client `updateMany` writes update it automatically; the database does not |
 
 ## Related Skills
 
