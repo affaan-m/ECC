@@ -54,6 +54,14 @@ ORDER BY (user_id, event_id, timestamp)
 PRIMARY KEY (user_id, event_id);
 ```
 
+重複排除には短い `PRIMARY KEY` ではなく、完全な `ORDER BY` タプル `(user_id, event_id, timestamp)` が使われます。この例ではイベント時刻は不変で、再送時にも同じソートキーと月別パーティションを維持すると仮定します。バックグラウンドのマージは非同期でパーティション内に限定されるため、重複のない読み取りには `FINAL` などのクエリ時の重複排除が必要です。読み取りのたびにディスク上のマージを強制しないでください。
+
+```sql
+SELECT user_id, event_id, timestamp, properties
+FROM user_events FINAL
+WHERE user_id = 'user-123';
+```
+
 ### AggregatingMergeTree（事前集計）
 
 ```sql
@@ -461,7 +469,7 @@ void startNotificationListener().catch(async (error) => {
 
 ### 4. 避けるべき
 - SELECT *（列を指定）
-- FINAL（代わりにクエリ前にデータをマージ）
+- 重複排除が不要な読み取りでの不要な `FINAL`（正確性に必要なら `FINAL` または同等のクエリ時の重複排除を維持）
 - JOINが多すぎる（分析用に非正規化）
 - 小さな頻繁な挿入（代わりにバッチ処理）
 

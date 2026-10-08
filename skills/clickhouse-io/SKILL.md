@@ -65,6 +65,14 @@ ORDER BY (user_id, event_id, timestamp)
 PRIMARY KEY (user_id, event_id);
 ```
 
+Deduplication uses the complete `ORDER BY` tuple `(user_id, event_id, timestamp)`, not the shorter `PRIMARY KEY`. This example assumes an immutable event timestamp, so retries keep the same sorting key and monthly partition. Background merges are asynchronous and operate within a partition; duplicate-free reads require query-time deduplication such as `FINAL`. Do not force a disk merge before each read.
+
+```sql
+SELECT user_id, event_id, timestamp, properties
+FROM user_events FINAL
+WHERE user_id = 'user-123';
+```
+
 ### AggregatingMergeTree (Pre-aggregation)
 
 ```sql
@@ -472,7 +480,7 @@ This example forwards application-emitted JSON notifications while the session i
 
 ### 4. Avoid
 - SELECT * (specify columns)
-- FINAL (merge data before query instead)
+- Unnecessary `FINAL` on reads that do not need deduplication (retain `FINAL` or equivalent query-time deduplication when correctness requires it)
 - Too many JOINs (denormalize for analytics)
 - Small frequent inserts (batch instead)
 

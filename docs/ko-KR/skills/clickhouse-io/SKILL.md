@@ -64,6 +64,14 @@ ORDER BY (user_id, event_id, timestamp)
 PRIMARY KEY (user_id, event_id);
 ```
 
+중복 제거에는 짧은 `PRIMARY KEY`가 아니라 전체 `ORDER BY` 튜플 `(user_id, event_id, timestamp)`가 사용됩니다. 이 예제는 이벤트 시간이 불변이어서 재시도에도 같은 정렬 키와 월별 파티션을 유지한다고 가정합니다. 백그라운드 병합은 비동기이며 파티션 내부에서 수행되므로, 중복 없는 조회에는 `FINAL` 같은 쿼리 시점 중복 제거가 필요합니다. 조회마다 디스크 병합을 강제하지 마세요.
+
+```sql
+SELECT user_id, event_id, timestamp, properties
+FROM user_events FINAL
+WHERE user_id = 'user-123';
+```
+
 ### AggregatingMergeTree (사전 집계)
 
 ```sql
@@ -482,7 +490,7 @@ void startNotificationListener().catch(async (error) => {
 
 ### 4. 피해야 할 것
 - SELECT * (컬럼을 명시)
-- FINAL (쿼리 전에 데이터를 병합)
+- 중복 제거가 필요 없는 조회에서 불필요한 `FINAL` 사용 (정확성에 필요하면 `FINAL` 또는 동등한 쿼리 시점 중복 제거 유지)
 - 너무 많은 JOIN (분석을 위해 비정규화)
 - 작은 빈번한 삽입 (배치 처리)
 
