@@ -337,7 +337,20 @@ async function withRetry<T>(
 }
 
 // 使用例: 一時的なネットワークエラーはリトライ、4xxはリトライしない
-const data = await withRetry(() => fetch('/api/data').then(r => r.json()), {
+const data = await withRetry(async () => {
+  const controller = new AbortController()
+  const timeout = setTimeout(() => controller.abort(), 5000)
+  try {
+    const response = await fetch('/api/data', { signal: controller.signal })
+    if (!response.ok) {
+      const details = await response.json().catch(() => undefined)
+      throw new AppError('HTTP request failed', 'HTTP_ERROR', response.status, details)
+    }
+    return await response.json()
+  } finally {
+    clearTimeout(timeout)
+  }
+}, {
   maxAttempts: 3,
   retryIf: (error) => !(error instanceof AppError && error.statusCode < 500),
 })
