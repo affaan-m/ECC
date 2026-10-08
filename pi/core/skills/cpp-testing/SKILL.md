@@ -238,8 +238,9 @@ Clang + llvm-cov:
 ```bash
 cmake -S . -B build-llvm -DENABLE_COVERAGE=ON -DCMAKE_CXX_COMPILER=clang++
 cmake --build build-llvm -j
-LLVM_PROFILE_FILE="build-llvm/default.profraw" ctest --test-dir build-llvm
-llvm-profdata merge -sparse build-llvm/default.profraw -o build-llvm/default.profdata
+profile_dir="$(mktemp -d "$(pwd)/build-llvm/profiles.XXXXXX")"
+LLVM_PROFILE_FILE="$profile_dir/%p.profraw" ctest --test-dir build-llvm --output-on-failure
+llvm-profdata merge -sparse "$profile_dir"/*.profraw -o build-llvm/default.profdata
 llvm-cov report build-llvm/example_tests -instr-profile=build-llvm/default.profdata
 ```
 
