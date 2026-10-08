@@ -787,10 +787,12 @@ class DocumentIntegrationTest {
 ```
 
 Kapsam ile testleri çalıştırın:
+Kapsam kontrolünden önce `quarkus-tdd` içindeki JaCoCo eklentisini yapılandırın. Kurallar `check` yürütmesine aittir; `jacoco:check@check` bu kuralları seçer (Maven 3.3.1+). Seçici olmadan `jacoco:check`, `default-cli` kullanır ve bu yürütme yapılandırmasını devralmaz.
+
 ```bash
 mvn clean test
 mvn jacoco:report
-mvn jacoco:check
+mvn jacoco:check@check
 
 # Rapor: target/site/jacoco/index.html
 ```
