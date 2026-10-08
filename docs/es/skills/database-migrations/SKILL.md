@@ -29,7 +29,7 @@ Cambios de esquema de base de datos seguros y reversibles para sistemas de produ
 Antes de aplicar cualquier migración:
 
 - [ ] La migración tiene tanto UP como DOWN (o está marcada explícitamente como irreversible)
-- [ ] Sin bloqueos de tabla completa en tablas grandes (usar operaciones concurrentes)
+- [ ] Revisar duración y timeout de adquisición de bloqueos; evitar bloqueos de tabla prolongados
 - [ ] Las nuevas columnas tienen valores predeterminados o son nullable (nunca agregar NOT NULL sin valor predeterminado)
 - [ ] Índices creados de forma concurrente (no en línea con CREATE TABLE para tablas existentes)
 - [ ] El backfill de datos es una migración separada del cambio de esquema
@@ -40,16 +40,20 @@ Antes de aplicar cualquier migración:
 
 ### Agregar una Columna de Forma Segura
 
+Para una migración columna nullable → backfill → NOT NULL, primero actualiza todos los escritores para proporcionar valores no nulos, o establece un default adecuado para valores omitidos. El default no impide escrituras explícitas de NULL. Completa el backfill y comprueba que no quedan NULL antes de agregar la restricción; mantén compatibles los escritores durante todo el despliegue.
+
+Estas sentencias ADD COLUMN aún adquieren un bloqueo ACCESS EXCLUSIVE. Mantén corta la transacción y limita la adquisición con `lock_timeout`. La optimización de defaults aplica a expresiones no volátiles; las volátiles pueden exigir reescribir la tabla.
+
 ```sql
--- BIEN: Columna nullable, sin bloqueo
+-- BIEN: Columna nullable, sin reescritura; adquiere ACCESS EXCLUSIVE
 ALTER TABLE users ADD COLUMN avatar_url TEXT;
 
--- BIEN: Columna con valor predeterminado (Postgres 11+ es instantáneo, sin reescritura)
+-- BIEN: Default constante evita reescritura en Postgres 11+; todavía bloquea
 ALTER TABLE users ADD COLUMN is_active BOOLEAN NOT NULL DEFAULT true;
 
--- MAL: NOT NULL sin valor predeterminado en tabla existente (requiere reescritura completa)
+-- MAL: NOT NULL sin default falla si la tabla ya contiene filas
 ALTER TABLE users ADD COLUMN role TEXT NOT NULL;
--- Esto bloquea la tabla y reescribe cada fila
+-- Las filas existentes reciben NULL, que viola la nueva restricción
 ```
 
 ### Agregar un Índice Sin Tiempo de Inactividad
@@ -423,7 +427,7 @@ Día 7: Migración elimina columna status antigua
 |-------------|-------------|-----------------|
 | SQL manual en producción | Sin historial de auditoría, no repetible | Siempre usar archivos de migración |
 | Editar migraciones desplegadas | Causa deriva entre entornos | Crear nueva migración en su lugar |
-| NOT NULL sin valor predeterminado | Bloquea tabla, reescribe todas las filas | Agregar nullable, backfill, luego agregar restricción |
+| NOT NULL sin valor predeterminado | Falla en una tabla poblada porque las filas existentes reciben NULL | Agregar nullable, backfill, luego agregar restricción |
 | Índice en línea en tabla grande | Bloquea escrituras durante la construcción | CREATE INDEX CONCURRENTLY |
 | Esquema + datos en una migración | Difícil de revertir, transacciones largas | Migraciones separadas |
 | Eliminar columna antes de eliminar código | Errores de aplicación por columna faltante | Eliminar código primero, eliminar columna en el próximo despliegue |
