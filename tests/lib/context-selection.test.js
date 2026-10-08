@@ -319,3 +319,18 @@ test('invalid input and oversized bodies fail closed', () => withFixture(repoRoo
     overrides: [{ id: 'skill:feature', requiredResources: ['skills/feature/references/details.md'] }] }));
   assert.throws(() => resolve(repoRoot, { explicitIds: ['skill:feature'] }, { load: true }), /budget/);
 }));
+
+test('routing entries drop only coded admission denials; a corrupt source still fails the build', () => withFixture(root => {
+  const { routingEntries } = require('../../scripts/lib/context-selection');
+  write(root, 'skills/shared/SKILL.md', '---\nname: shared\ndescription: Shared helper\ndisable-model-invocation: true\n---\nShared');
+  assert.equal(routingEntries({ repoRoot: root, target: 'claude' }).entries.some(entry => entry.id === 'skill:shared'), false);
+  const file = path.join(root, 'skills/feature/SKILL.md');
+  fs.writeFileSync(file, Buffer.concat([fs.readFileSync(file), Buffer.from([0xff, 0x0a])]));
+  assert.throws(() => routingEntries({ repoRoot: root, target: 'claude' }), /UTF-8/);
+}));
+
+test('admission denials carry stable codes', () => withFixture(root => {
+  write(root, 'skills/shared/SKILL.md', '---\nname: shared\ndescription: Shared helper\ndisable-model-invocation: true\n---\nShared');
+  assert.throws(() => resolve(root, { query: 'shared', proposedIds: ['skill:shared'] }, { load: true }),
+    error => error.code === 'ECC_CONTEXT_MANUAL_ONLY');
+}));

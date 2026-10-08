@@ -90,3 +90,27 @@ test('the session-start builder indexes the current generation once and stays si
     assert.equal(builder.run('{}', {}, env), '');
   } finally { fs.rmSync(parent, { recursive: true, force: true }); }
 });
+
+test('manual mode is silent before the index is read, even when it is missing or corrupt', () => {
+  fixture(({ env }) => assert.deepEqual(hook.run(PROMPT, {}, env), ''), { mode: 'manual', index: false });
+  fixture(({ stateRoot, env }) => {
+    const directory = path.join(stateRoot, 'routing');
+    fs.writeFileSync(path.join(directory, fs.readdirSync(directory).find(name => name.endsWith('.json'))), '{');
+    assert.deepEqual(hook.run(PROMPT, {}, env), '');
+  }, { mode: 'manual' });
+});
+
+test('loading advice matches the saved mode', () => {
+  fixture(({ env }) => {
+    const text = stdout(hook.run(PROMPT, {}, env));
+    assert.match(text, /skill:feature/);
+    assert.match(text, /--load/);
+  });
+  fixture(({ stateRoot, env }) => {
+    const text = stdout(hook.run(PROMPT, {}, env));
+    assert.match(text, /skill:feature/);
+    assert.doesNotMatch(text, /--load/);
+    assert.match(text, /suggest mode/i);
+    assert.ok(text.includes(`ecc profile mode auto --state-root ${JSON.stringify(stateRoot)}`));
+  }, { mode: 'suggest' });
+});

@@ -127,3 +127,78 @@ test('stored vectors use a compact little-endian encoding that decodes exactly',
   const { dense: _dense, ...metadata } = decoded;
   assert.deepEqual(decoded.dense, sparseDense(metadata));
 }));
+
+function republish(stateRoot, change) {
+  const io = require('../../scripts/lib/context-profile-store-fs');
+  const { digestObject } = require('../../scripts/lib/context-profile-support');
+  const directory = path.join(stateRoot, 'routing');
+  const pointerFile = path.join(directory, fs.readdirSync(directory).find(name => name.endsWith('.json')));
+  const { pointerDigest: _digest, ...pointer } = JSON.parse(fs.readFileSync(pointerFile, 'utf8'));
+  const index = JSON.parse(fs.readFileSync(path.join(directory, 'indexes', `${pointer.indexDigest}.json`), 'utf8'));
+  const bytes = io.jsonBytes(change(index));
+  const indexDigest = io.hash(bytes);
+  fs.writeFileSync(path.join(directory, 'indexes', `${indexDigest}.json`), bytes);
+  const next = { ...change.pointer?.(pointer) || pointer, indexDigest, bytes: bytes.length };
+  fs.writeFileSync(pointerFile, JSON.stringify({ ...next, pointerDigest: digestObject(next) }));
+}
+
+test('rollback to an indexed generation retires its old pointer instead of failing', () => fixture(({ repoRoot, stateRoot }) => {
+  store.applyStore({ repoRoot, stateRoot, target: 'claude' });
+  routing.writeRoutingIndex({ repoRoot, stateRoot });
+  store.applyStore({ repoRoot, stateRoot, target: 'claude', profileId: 'full@1' });
+  store.rollbackStore({ stateRoot, expectedRevision: store.getStoreStatus({ stateRoot }).revision });
+  assert.equal(routing.readRoutingIndex(stateRoot), null);
+  assert.equal(routing.routingIndexStatus(stateRoot).status, 'missing');
+  routing.writeRoutingIndex({ repoRoot, stateRoot });
+  assert.equal(routing.routingIndexStatus(stateRoot).status, 'current');
+}));
+
+const MALFORMED = {
+  'non-string id': entry => ({ ...entry, id: 42 }),
+  'id outside the skill namespace': entry => ({ ...entry, id: 'agent:planner' }),
+  'non-string name': entry => ({ ...entry, name: 5 }),
+  'non-string description': entry => ({ ...entry, description: {} }),
+  'non-array triggers': entry => ({ ...entry, triggers: 'review' }),
+  'non-string trigger': entry => ({ ...entry, triggers: [1] }),
+  'non-string owner module': entry => ({ ...entry, ownerModuleId: [] }),
+};
+for (const [label, change] of Object.entries(MALFORMED)) {
+  test(`a digest-consistent index with a ${label} entry fails as an integrity error`, () => fixture(({ repoRoot, stateRoot }) => {
+    store.applyStore({ repoRoot, stateRoot, target: 'claude' });
+    routing.writeRoutingIndex({ repoRoot, stateRoot });
+    republish(stateRoot, index => ({ ...index, entries: [change(index.entries[0]), ...index.entries.slice(1)] }));
+    assert.throws(() => routing.readRoutingIndex(stateRoot), /integrity/);
+  }));
+}
+
+test('an index larger than the read bound fails before it is read', () => fixture(({ repoRoot, stateRoot }) => {
+  store.applyStore({ repoRoot, stateRoot, target: 'claude' });
+  routing.writeRoutingIndex({ repoRoot, stateRoot });
+  const filler = Array.from({ length: 6000 }, (_, position) => ({ id: `skill:filler-${position}`, name: `filler-${position}`,
+    description: 'x'.repeat(900), ownerModuleId: 'm', packId: 'p', dense: { indexes: '', values: '' } }));
+  republish(stateRoot, index => ({ ...index, entries: [...index.entries, ...filler] }));
+  assert.throws(() => routing.readRoutingIndex(stateRoot), /integrity|bound/);
+}));
+
+test('an anchored suggestion is not hidden by unanchored candidates ranked above it', () => {
+  const filler = position => ({ id: `skill:filler-${position}`, name: `filler-${position}`,
+    description: `migrate database schema safely today with care number ${position}`, ownerModuleId: 'm', packId: 'p' });
+  const index = { entries: [1, 2, 3, 4].map(filler)
+    .concat({ id: 'skill:schema-tool', name: 'schema-tool', description: 'Generic helper', ownerModuleId: 'm', packId: 'p' }) };
+  assert.deepEqual(routing.suggestContext(index, 'migrate database schema safely today').map(item => item.id), ['skill:schema-tool']);
+});
+
+test('a skill edited during the build never publishes an index under the stored generation', () => fixture(({ repoRoot, stateRoot }) => {
+  store.applyStore({ repoRoot, stateRoot, target: 'claude' });
+  const selection = require('../../scripts/lib/context-selection');
+  const original = selection.routingEntries;
+  selection.routingEntries = options => {
+    const file = path.join(repoRoot, 'skills/feature/SKILL.md');
+    fs.writeFileSync(file, fs.readFileSync(file, 'utf8').replace(/description: .*/, 'description: Edited mid-build'));
+    return original(options);
+  };
+  try {
+    assert.throws(() => routing.writeRoutingIndex({ repoRoot, stateRoot }), /changed|stale/);
+  } finally { selection.routingEntries = original; }
+  assert.equal(routing.readRoutingIndex(stateRoot), null);
+}));
