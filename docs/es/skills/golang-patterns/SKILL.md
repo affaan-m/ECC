@@ -533,7 +533,8 @@ func ProcessRequest(data []byte) []byte {
 
     buf.Write(data)
     // Procesar...
-    return buf.Bytes()
+    // Copia antes de devolver el búfer al pool; Bytes comparte su almacenamiento.
+    return append([]byte(nil), buf.Bytes()...)
 }
 ```
 
