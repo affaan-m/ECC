@@ -14,7 +14,11 @@ function toRelative(p: string): string {
   const normalized = path.normalize(p)
   if (path.isAbsolute(normalized) && worktreeRoot) {
     const rel = path.relative(worktreeRoot, normalized)
-    return rel.startsWith("..") ? normalized : rel
+    const escapes =
+      rel === ".." ||
+      rel.startsWith(".." + path.sep) ||
+      path.isAbsolute(rel)
+    return escapes ? normalized : rel
   }
   return normalized
 }

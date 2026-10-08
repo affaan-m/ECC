@@ -51,6 +51,62 @@ interface TodoEvent {
 }
 
 /**
+ * Shell metacharacters that could be used to chain, redirect, substitute,
+ * or otherwise inject additional commands. If a bash command contains any
+ * of these, it is NEVER auto-approved -- the user must confirm.
+ *
+ * Covers: ; & | ` $ ( ) { } < > \ " '  and line breaks.
+ */
+const SHELL_METACHARS = /[;&|`$(){}<>\\"'\n\r]/
+
+/**
+ * The argument portion of a simple command: whitespace-separated tokens that
+ * contain no shell metacharacters. Anchored by the callers on both ends.
+ */
+const SAFE_ARGS = String.raw`(?:\s+[^\s;&|` + "`" + String.raw`$(){}<>\\"'\n\r]+)*`
+
+/**
+ * Verify that `cmd` is a single, simple command matching one of the
+ * allowlisted anchored patterns.
+ *
+ * Defence in depth:
+ *   1. Reject any command that contains shell metacharacters at all.
+ *      This kills command chaining (`;`, `&&`, `||`, `|`), command
+ *      substitution (`$()`, backticks), redirects (`<`, `>`), heredocs,
+ *      variable expansion (`$VAR`, `${VAR}`), and quoting tricks.
+ *   2. Match the *entire* trimmed command against the anchored patterns.
+ *      This kills prefix-only bypasses like `prettier-evil` or
+ *      `npm testX`, and trailing-junk bypasses.
+ */
+function isSafeSimpleCommand(cmd: string, patterns: readonly RegExp[]): boolean {
+  const trimmed = cmd.trim()
+  if (!trimmed) return false
+  if (SHELL_METACHARS.test(trimmed)) return false
+  return patterns.some((re) => re.test(trimmed))
+}
+
+// Anchored allowlist patterns for auto-approved formatters.
+// Each pattern matches exactly one command with optional simple args.
+const FORMATTER_CMDS: readonly RegExp[] = [
+  new RegExp(`^(?:npx\\s+)?prettier${SAFE_ARGS}$`),
+  new RegExp(`^npx\\s+@biomejs/biome${SAFE_ARGS}$`),
+  new RegExp(`^black${SAFE_ARGS}$`),
+  new RegExp(`^gofmt${SAFE_ARGS}$`),
+  new RegExp(`^rustfmt${SAFE_ARGS}$`),
+  new RegExp(`^swift-format${SAFE_ARGS}$`),
+]
+
+// Anchored allowlist patterns for auto-approved test runners.
+const TEST_CMDS: readonly RegExp[] = [
+  new RegExp(`^npm\\s+test${SAFE_ARGS}$`),
+  new RegExp(`^npx\\s+vitest${SAFE_ARGS}$`),
+  new RegExp(`^npx\\s+jest${SAFE_ARGS}$`),
+  new RegExp(`^pytest${SAFE_ARGS}$`),
+  new RegExp(`^go\\s+test${SAFE_ARGS}$`),
+  new RegExp(`^cargo\\s+test${SAFE_ARGS}$`),
+]
+
+/**
  * Read ECC version from package.json
  * Falls back to a default if package.json cannot be read
  */
@@ -581,6 +637,13 @@ export const ECCHooksPlugin: ECCHooksPluginFn = async ({
      *
      * Triggers: When permission is requested
      * Action: Auto-approve reads, formatters, and test commands; log all for audit
+     *
+     * SECURITY: bash auto-approval is gated by `isSafeSimpleCommand`,
+     * which rejects any command containing shell metacharacters and then
+     * matches the *entire* trimmed command against anchored allowlist
+     * patterns. This prevents command chaining (`prettier; rm -rf /`),
+     * pipes (`prettier | curl evil`), substitution (`prettier $(curl evil)`),
+     * redirects, and prefix-only bypasses (`prettier-evil`, `npm testX`).
      */
     "permission.ask": async (event: PermissionEvent) => {
       log("info", `[ECC] Permission requested for: ${event.tool}`)
@@ -597,19 +660,26 @@ export const ECCHooksPlugin: ECCHooksPluginFn = async ({
         }
 
         // Auto-approve: read/search tools
+        // NOTE: this trusts the tool name as reported by OpenCode. If your
+        // OpenCode version does not namespace tool names per plugin, a
+        // third-party plugin could register a tool called "read" that is
+        // not actually read-only. Consider tightening to an explicit
+        // allowlist of fully-qualified tool IDs if the platform supports it.
         if (["read", "glob", "grep", "search", "list"].includes(event.tool)) {
           log("debug", `[ECC] Auto-approved read-only tool: ${event.tool}`)
           return { approved: true, reason: "Read-only operation" }
         }
 
-        // Auto-approve: formatters
-        if (event.tool === "bash" && /^(npx )?(@biomejs\/biome|prettier|black|gofmt|rustfmt|swift-format)/.test(cmd)) {
+        // Auto-approve: formatters.
+        // Command must be a single simple command with no shell metacharacters.
+        if (event.tool === "bash" && isSafeSimpleCommand(cmd, FORMATTER_CMDS)) {
           log("debug", `[ECC] Auto-approved formatter: ${cmd}`)
           return { approved: true, reason: "Formatter execution" }
         }
 
-        // Auto-approve: test execution
-        if (event.tool === "bash" && /^(npm test|npx vitest|npx jest|pytest|go test|cargo test)/.test(cmd)) {
+        // Auto-approve: test execution.
+        // Command must be a single simple command with no shell metacharacters.
+        if (event.tool === "bash" && isSafeSimpleCommand(cmd, TEST_CMDS)) {
           log("debug", `[ECC] Auto-approved test execution: ${cmd}`)
           return { approved: true, reason: "Test execution" }
         }
