@@ -56,9 +56,27 @@ test('a dynamic require warns without failing', () => withFixture(root => {
   assert.equal(result.status, 'success');
   assert.deepEqual(result.failures, []);
   assert.ok(result.warnings.length > 0);
-  assert.ok(result.warnings.every(warning => warning.expression === 'process.env.ECC_PLUGIN_PATH'));
+  assert.ok(result.warnings.every(warning => warning.kind === 'dynamic' && warning.expression === 'process.env.ECC_PLUGIN_PATH'));
   assert.ok(result.warnings.every(warning => warning.file.endsWith('skills/ecc-guide/scripts/tool.js')));
   assert.equal(result.dynamicCount, result.warnings.length);
+}));
+
+test('an absolute require leaves the carrier tree and fails', () => withFixture(root => {
+  plantSkillScript(root, "'use strict';\n\nrequire('/opt/shared/helper');\n");
+  const result = validator().validate(root);
+  assert.equal(result.status, 'failure');
+  assert.ok(specifiersOf(result.failures).includes('/opt/shared/helper'));
+  assert.ok(result.failures.every(failure => failure.reason === 'outside-carrier-tree'));
+}));
+
+test('a package import warns because carriers ship no node_modules; builtins do not', () => withFixture(root => {
+  plantSkillScript(root, "'use strict';\n\nconst yaml = require('js-yaml');\nconst { x } = require('@scope/pkg/deep');\n"
+    + "const fs = require('node:fs');\nconst path = require('path');\nmodule.exports = { yaml, x, fs, path };\n");
+  const result = validator().validate(root);
+  assert.equal(result.status, 'success');
+  const packages = result.warnings.filter(warning => warning.kind === 'package').map(warning => warning.package);
+  assert.deepEqual([...new Set(packages)].sort(), ['@scope/pkg', 'js-yaml']);
+  assert.equal(result.packageCount, packages.length);
 }));
 
 test('a require shape quoted inside a string literal is not a dependency', () => withFixture(root => {
