@@ -323,12 +323,12 @@ metadata:
   name: my-app-secrets
   namespace: my-namespace
 type: Opaque
-# Values are base64-encoded (NOT encrypted — use Sealed Secrets or ESO for real encryption)
+# Values are base64-encoded; configure cluster encryption at rest separately
 data:
   db-password: czNjcjN0  # base64 of 's3cr3t'
 ```
 
-> **Important:** Raw Kubernetes Secrets are only base64-encoded, not encrypted at rest unless your cluster has encryption configured. Use [Sealed Secrets](https://github.com/bitnami-labs/sealed-secrets) or [External Secrets Operator](https://external-secrets.io) for production.
+> **Important:** Base64 encoding does not provide confidentiality. Configure and verify [Kubernetes encryption at rest](https://github.com/kubernetes/website/blob/main/content/en/docs/tasks/administer-cluster/encrypt-data.md) for stored Secrets. [Sealed Secrets](https://github.com/bitnami/sealed-secrets) encrypts manifests that can be stored in version control; [External Secrets Operator](https://external-secrets.io/latest/introduction/overview/) synchronizes values from an external secret manager. Both controllers create ordinary Kubernetes Secrets, so neither replaces cluster encryption at rest or appropriate access controls.
 
 ---
 
@@ -736,7 +736,8 @@ spec:
 - [ ] Dedicated ServiceAccount per app, not `default`
 - [ ] `automountServiceAccountToken: false` unless needed
 - [ ] RBAC follows least privilege (use `Role`, not `ClusterRole` unless needed)
-- [ ] Secrets managed via Sealed Secrets or External Secrets Operator
+- [ ] Secret manifests sealed or values synchronized from an external secret manager
+- [ ] Encryption at rest configured and verified for Kubernetes Secrets
 
 ### Reliability
 - [ ] All 3 probe types configured (startup + liveness + readiness)
