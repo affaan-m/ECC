@@ -69,6 +69,24 @@ test('an absolute require leaves the carrier tree and fails', () => withFixture(
   assert.ok(result.failures.every(failure => failure.reason === 'outside-carrier-tree'));
 }));
 
+for (const specifier of ['C:/shared/helper', 'C:\\shared\\helper', '\\\\server\\share\\helper', 'file:///opt/helper.js']) {
+  test(`an absolute Windows or file URL require fails: ${specifier}`, () => withFixture(root => {
+    plantSkillScript(root, `'use strict';\n\nrequire(${JSON.stringify(specifier)});\n`);
+    const result = validator().validate(root);
+    assert.equal(result.status, 'failure');
+    assert.ok(result.failures.length > 0);
+    assert.ok(result.failures.every(failure => failure.reason === 'outside-carrier-tree'));
+    assert.deepEqual(result.warnings, []);
+  }));
+}
+
+test('a directory require resolves through index.json', () => withFixture(root => {
+  write(root, 'skills/ecc-guide/scripts/data/index.json', '{}\n');
+  plantSkillScript(root, "'use strict';\n\nmodule.exports = require('./data');\n");
+  const result = validator().validate(root);
+  assert.equal(result.status, 'success', JSON.stringify(result.failures));
+}));
+
 test('a package import warns because carriers ship no node_modules; builtins do not', () => withFixture(root => {
   plantSkillScript(root, "'use strict';\n\nconst yaml = require('js-yaml');\nconst { x } = require('@scope/pkg/deep');\n"
     + "const fs = require('node:fs');\nconst path = require('path');\nmodule.exports = { yaml, x, fs, path };\n");
@@ -120,6 +138,12 @@ const SCANNER_CASES = [
   ['multi-line import', "import {\n  a,\n  b\n} from\n  './multi';", ['./multi']],
   ['re-export', 'export * from "./reexport.js";', ['./reexport.js']],
   ['path.join from __dirname', "require(path.join(__dirname, '..', 'lib', 'x.js'));", ['./../lib/x.js']],
+  ['whitespace before the call paren', "require ('./spaced'); require\n('./newline'); import ('./spaced-import');",
+    ['./spaced', './newline', './spaced-import']],
+  ['whitespace inside path.join from __dirname', "require (path.join (__dirname, 'lib', 'y.js'));", ['./lib/y.js']],
+  ['unicode escape in a specifier', "require('\\u002e./escaped');", ['../escaped']],
+  ['hex and braced escapes in a specifier', "require('\\x2e/a'); require(`\\u{2e}/b`);", ['./a', './b']],
+  ['escaped quote and backslash', "require('./it\\'s'); require('.\\\\win');", ["./it's", '.\\win']],
 ];
 
 for (const [label, source, expected] of SCANNER_CASES) {
