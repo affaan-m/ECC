@@ -374,12 +374,16 @@ kubectl rollout undo deployment/app
 # Vercel: promover despliegue anterior
 vercel rollback
 
-# Railway: volver a desplegar commit anterior
-railway up --commit <previous-sha>
+# Railway: selecciona un despliegue anterior exitoso en el panel
+# Service -> Deployments -> menú del despliegue anterior -> Rollback
+# Rollback solo está disponible dentro del periodo de retención del plan.
+# railway up carga código local; no selecciona un commit anterior de Git.
 
-# Base de datos: revertir migración (si es reversible)
-npx prisma migrate resolve --rolled-back <migration-name>
+# Base de datos: revertir cambios de esquema/datos con una migración compensatoria revisada
+# prisma migrate resolve solo cambia el historial; no deshace SQL
 ```
+
+En Prisma, revertir el despliegue de la aplicación no revierte la base de datos. Revierte una migración exitosa con una migración compensatoria revisada o un plan de restauración probado que contemple la pérdida de datos y la compatibilidad de la aplicación. `prisma migrate resolve --rolled-back` marca una migración fallida como revertida en el historial; no ejecuta SQL inverso ni puede revertir una migración aplicada correctamente. Para una migración fallida, resuelve el SQL aplicado parcialmente antes de marcar su historial y reintentarlo.
 
 ### Lista de Verificación de Rollback
 
