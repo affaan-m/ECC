@@ -53,7 +53,61 @@ function runTests() {
     assert.ok(components.some(component => component.id === 'locale:de-de'));
     assert.ok(components.some(component => component.id === 'locale:uk-ua'));
     assert.ok(components.some(component => component.id === 'locale:pl'));
+    assert.ok(components.some(component => component.id === 'locale:ar'));
     assert.ok(components.every(component => component.family === 'locale'));
+  })) passed++; else failed++;
+
+  if (test('locale:ar resolves to the Arabic translated docs module', () => {
+    const homeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'locale-plan-ar-'));
+    try {
+      const plan = resolveInstallPlan({
+        includeComponentIds: ['locale:ar'],
+        target: 'claude',
+        homeDir,
+      });
+
+      assert.deepStrictEqual(plan.selectedModuleIds, ['docs-ar']);
+      assert.ok(
+        plan.operations.some(operation => (
+          normalizePlanPath(operation.sourceRelativePath) === 'docs/ar'
+          && normalizePlanPath(operation.destinationPath).endsWith('/.claude/docs/ar')
+        )),
+        'Should map docs/ar to ~/.claude/docs/ar'
+      );
+    } finally {
+      fs.rmSync(homeDir, { recursive: true, force: true });
+    }
+  })) passed++; else failed++;
+
+  if (test('end-to-end: --locale ar-SA dry-run includes docs-ar operations', () => {
+    const homeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'locale-dry-run-ar-'));
+    const projectDir = fs.mkdtempSync(path.join(os.tmpdir(), 'locale-dry-run-ar-project-'));
+
+    try {
+      const output = runInstallApply([
+        '--locale', 'ar-SA',
+        '--dry-run',
+        '--json',
+      ], {
+        cwd: projectDir,
+        env: { HOME: homeDir },
+      });
+      const json = JSON.parse(output);
+
+      assert.strictEqual(json.plan.mode, 'manifest');
+      assert.deepStrictEqual(json.plan.includedComponentIds, ['locale:ar']);
+      assert.deepStrictEqual(json.plan.selectedModuleIds, ['docs-ar']);
+      assert.ok(
+        json.plan.operations.some(operation => (
+          normalizePlanPath(operation.sourceRelativePath) === 'docs/ar/README.md'
+          && normalizePlanPath(operation.destinationPath).endsWith('/.claude/docs/ar/README.md')
+        )),
+        'Should copy translated README into ~/.claude/docs/ar'
+      );
+    } finally {
+      fs.rmSync(homeDir, { recursive: true, force: true });
+      fs.rmSync(projectDir, { recursive: true, force: true });
+    }
   })) passed++; else failed++;
 
   if (test('locale:pl resolves to the Polish translated docs module', () => {
@@ -321,6 +375,38 @@ function runTests() {
       const state = JSON.parse(fs.readFileSync(statePath, 'utf8'));
       assert.deepStrictEqual(state.request.includeComponents, ['locale:ja']);
       assert.deepStrictEqual(state.resolution.selectedModules, ['docs-ja-jp']);
+    } finally {
+      fs.rmSync(homeDir, { recursive: true, force: true });
+      fs.rmSync(projectDir, { recursive: true, force: true });
+    }
+  })) passed++; else failed++;
+
+  if (test('end-to-end: --locale ar installs translated docs cleanly', () => {
+    const homeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'locale-install-ar-'));
+    const projectDir = fs.mkdtempSync(path.join(os.tmpdir(), 'locale-install-ar-project-'));
+
+    try {
+      runInstallApply([
+        '--locale', 'ar',
+      ], {
+        cwd: projectDir,
+        env: { HOME: homeDir },
+      });
+
+      const claudeRoot = path.join(homeDir, '.claude');
+      assert.ok(
+        fs.existsSync(path.join(claudeRoot, 'docs', 'ar', 'README.md')),
+        'Should install Arabic README under docs/ar'
+      );
+      assert.ok(
+        !fs.existsSync(path.join(claudeRoot, 'skills', 'configure-ecc', 'SKILL.md')),
+        'Locale-only install should not install English skills'
+      );
+
+      const statePath = path.join(claudeRoot, 'ecc', 'install-state.json');
+      const state = JSON.parse(fs.readFileSync(statePath, 'utf8'));
+      assert.deepStrictEqual(state.request.includeComponents, ['locale:ar']);
+      assert.deepStrictEqual(state.resolution.selectedModules, ['docs-ar']);
     } finally {
       fs.rmSync(homeDir, { recursive: true, force: true });
       fs.rmSync(projectDir, { recursive: true, force: true });
