@@ -320,14 +320,12 @@ test('actual registry: function-word overlap alone never auto-selects a skill', 
   assert.equal(result.fallback, null);
 });
 
-test('actual registry: auto selection loads only expected skills across the routing prompt corpus', () => {
-  const corpus = require('../fixtures/context-selection/routing-prompts.json');
-  const wrong = [];
-  for (const [index, { query, expected }] of [...corpus.direct, ...corpus.paraphrased].entries()) {
-    const result = resolveTaskContext({ task: task({ taskId: `corpus-${index}`, query }), load: false });
-    if (result.selectedIds.some(id => !expected.includes(id))) wrong.push(`${query} -> ${result.selectedIds.join(', ')}`);
-  }
-  assert.deepEqual(wrong, []);
+test('actual registry: the routing corpus clears every quality gate with no wrong loads', () => {
+  const result = require('../../scripts/ci/evaluate-context-routing').evaluate();
+  assert.deepEqual(result.wrongLoads, []);
+  assert.deepEqual(result.breaches, []);
+  assert.equal(result.status, 'pass');
+  assert.equal(result.sets.direct.prompts + result.sets.paraphrased.prompts, 77);
 });
 
 test('actual registry: a simple factual question needs no context', () => {
