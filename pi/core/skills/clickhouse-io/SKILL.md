@@ -399,24 +399,15 @@ setInterval(etlPipeline, 60 * 60 * 1000)  // Every hour
 // Listen to PostgreSQL changes and sync to ClickHouse
 import { Client } from 'pg'
 
-const pgClient = new Client({ connectionString: process.env.DATABASE_URL, connectionTimeoutMillis: 5000 })
+const pgClient = new Client({ connectionString: process.env.DATABASE_URL })
 
-let pendingWrites: Promise<void> = Promise.resolve()
-let stopping = false
-
-pgClient.on('error', async (error) => {
-  if (stopping) return
-  stopping = true
+pgClient.on('error', (error) => {
   console.error('PostgreSQL listener connection failed:', error)
-  // Drain received writes before a supervisor restarts this listener.
-  await pendingWrites
-  process.exit(1)
 })
 
 pgClient.on('notification', (msg) => {
-  if (stopping || !msg.payload) return
-  const write = forwardNotification(msg.payload)
-  pendingWrites = Promise.all([pendingWrites, write]).then(() => undefined)
+  if (!msg.payload) return
+  void forwardNotification(msg.payload)
 })
 
 async function forwardNotification(payload: string) {
@@ -456,8 +447,6 @@ void startNotificationListener().catch(async (error) => {
   process.exitCode = 1
 })
 ```
-
-Failures are reported, but this example does not retry or replay failed notifications; use a durable outbox when delivery must be guaranteed.
 
 This example forwards application-emitted JSON notifications while the session is listening. `LISTEN` registrations end with the session, so this is not durable CDC or replay. Use logical decoding or a durable outbox when changes must survive listener downtime.
 

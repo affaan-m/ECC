@@ -388,24 +388,15 @@ setInterval(etlPipeline, 60 * 60 * 1000)  // 1時間ごと
 // PostgreSQLの変更をリッスンしてClickHouseに同期
 import { Client } from 'pg'
 
-const pgClient = new Client({ connectionString: process.env.DATABASE_URL, connectionTimeoutMillis: 5000 })
+const pgClient = new Client({ connectionString: process.env.DATABASE_URL })
 
-let pendingWrites: Promise<void> = Promise.resolve()
-let stopping = false
-
-pgClient.on('error', async (error) => {
-  if (stopping) return
-  stopping = true
+pgClient.on('error', (error) => {
   console.error('PostgreSQL listener connection failed:', error)
-  // Drain received writes before a supervisor restarts this listener.
-  await pendingWrites
-  process.exit(1)
 })
 
 pgClient.on('notification', (msg) => {
-  if (stopping || !msg.payload) return
-  const write = forwardNotification(msg.payload)
-  pendingWrites = Promise.all([pendingWrites, write]).then(() => undefined)
+  if (!msg.payload) return
+  void forwardNotification(msg.payload)
 })
 
 async function forwardNotification(payload: string) {
@@ -445,8 +436,6 @@ void startNotificationListener().catch(async (error) => {
   process.exitCode = 1
 })
 ```
-
-失敗は記録されますが、この例は失敗した通知を再試行・再生しません。配信を保証する必要がある場合は永続的な outbox を使用します。
 
 この例は、セッションがリッスンしている間にアプリケーションが送信する JSON 通知を転送します。`LISTEN` の登録はセッション終了時に解除されるため、永続的な CDC や再生機能ではありません。リスナー停止中の変更も保持する必要がある場合は、論理デコーディングまたは永続的な outbox を使用します。
 

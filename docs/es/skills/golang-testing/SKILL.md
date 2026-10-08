@@ -553,13 +553,6 @@ go test -race -coverprofile=coverage.out ./...
 
 `//go:generate` no excluye archivos de la cobertura, y `-tags=!generate` no es un filtro de cobertura. Las restricciones de compilación seleccionan archivos fuente; no elimines mocks generados que necesitan las pruebas.
 
-Si el código generado está en paquetes separados, selecciona los paquetes de la aplicación con `-coverpkg` y sigue ejecutando todas las pruebas (adapta estas rutas a tu proyecto). La selección es por paquete; los archivos generados dentro del mismo paquete necesitan una política explícita de filtrado de informes, no un atajo con build tags.
-
-```bash
-go test -coverpkg=./internal/service,./internal/handler -coverprofile=coverage.out ./...
-go tool cover -func=coverage.out
-```
-
 ## Pruebas de Handlers HTTP
 
 ```go

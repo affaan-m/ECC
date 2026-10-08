@@ -243,7 +243,7 @@ Run axe in component tests for every interactive component. Catches:
 - Missing alt text on images
 - Heading order violations
 
-Color contrast is not covered by `jest-axe` in JSDOM, including inline styles: that rule is disabled because JSDOM lacks the required rendering support. Check contrast with axe in a real browser (for example, Playwright) and include manual checks for states that automated rules cannot assess.
+Color contrast is not covered by `jest-axe` in JSDOM, including inline styles: that rule is disabled because JSDOM lacks the required rendering support. Check contrast with axe in a real browser (for example, Playwright).
 
 Cross-link: [skills/accessibility/SKILL.md](../accessibility/SKILL.md) for the broader a11y testing playbook.
 

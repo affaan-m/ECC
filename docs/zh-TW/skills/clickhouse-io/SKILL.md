@@ -388,24 +388,15 @@ setInterval(etlPipeline, 60 * 60 * 1000)  // 每小時
 // 監聽 PostgreSQL 變更並同步到 ClickHouse
 import { Client } from 'pg'
 
-const pgClient = new Client({ connectionString: process.env.DATABASE_URL, connectionTimeoutMillis: 5000 })
+const pgClient = new Client({ connectionString: process.env.DATABASE_URL })
 
-let pendingWrites: Promise<void> = Promise.resolve()
-let stopping = false
-
-pgClient.on('error', async (error) => {
-  if (stopping) return
-  stopping = true
+pgClient.on('error', (error) => {
   console.error('PostgreSQL listener connection failed:', error)
-  // Drain received writes before a supervisor restarts this listener.
-  await pendingWrites
-  process.exit(1)
 })
 
 pgClient.on('notification', (msg) => {
-  if (stopping || !msg.payload) return
-  const write = forwardNotification(msg.payload)
-  pendingWrites = Promise.all([pendingWrites, write]).then(() => undefined)
+  if (!msg.payload) return
+  void forwardNotification(msg.payload)
 })
 
 async function forwardNotification(payload: string) {
@@ -445,8 +436,6 @@ void startNotificationListener().catch(async (error) => {
   process.exitCode = 1
 })
 ```
-
-錯誤會被記錄，但此範例不會重試或重播失敗的通知；需要保證投遞時，應使用持久 outbox。
 
 此範例在工作階段監聽期間轉送應用程式發出的 JSON 通知。`LISTEN` 註冊隨工作階段結束而清除，因此不提供持久 CDC 或重播。需要保留監聽器停機期間的變更時，應使用邏輯解碼或持久 outbox。
 

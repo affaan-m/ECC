@@ -399,24 +399,15 @@ setInterval(etlPipeline, 60 * 60 * 1000)  // Every hour
 // Listen to PostgreSQL changes and sync to ClickHouse
 import { Client } from 'pg'
 
-const pgClient = new Client({ connectionString: process.env.DATABASE_URL, connectionTimeoutMillis: 5000 })
+const pgClient = new Client({ connectionString: process.env.DATABASE_URL })
 
-let pendingWrites: Promise<void> = Promise.resolve()
-let stopping = false
-
-pgClient.on('error', async (error) => {
-  if (stopping) return
-  stopping = true
+pgClient.on('error', (error) => {
   console.error('PostgreSQL listener connection failed:', error)
-  // Drain received writes before a supervisor restarts this listener.
-  await pendingWrites
-  process.exit(1)
 })
 
 pgClient.on('notification', (msg) => {
-  if (stopping || !msg.payload) return
-  const write = forwardNotification(msg.payload)
-  pendingWrites = Promise.all([pendingWrites, write]).then(() => undefined)
+  if (!msg.payload) return
+  void forwardNotification(msg.payload)
 })
 
 async function forwardNotification(payload: string) {
@@ -456,8 +447,6 @@ void startNotificationListener().catch(async (error) => {
   process.exitCode = 1
 })
 ```
-
-错误会被记录，但此示例不会重试或重放失败的通知；需要保证投递时，应使用持久 outbox。
 
 此示例在会话监听期间转发应用发出的 JSON 通知。`LISTEN` 注册随会话结束而清除，因此不提供持久 CDC 或重放。需要保留监听器停机期间的变更时，应使用逻辑解码或持久 outbox。
 

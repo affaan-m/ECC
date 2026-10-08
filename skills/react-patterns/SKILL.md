@@ -181,8 +181,7 @@ export function UserForm() {
   const [state, formAction, pending] = useActionState(updateUserAction, initial);
   return (
     <form action={formAction}>
-      <label htmlFor="profile-name">Name</label>
-      <input id="profile-name" name="name" required />
+      <input name="name" required />
       <button type="submit" disabled={pending}>Save</button>
       {state.error && <p role="alert">{state.error}</p>}
     </form>

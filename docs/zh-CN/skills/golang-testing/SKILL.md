@@ -553,13 +553,6 @@ go test -race -coverprofile=coverage.out ./...
 
 `//go:generate` 不会把文件排除在覆盖率之外，`-tags=!generate` 也不是覆盖率过滤器。构建约束决定编译哪些源文件；不要移除测试所需的生成 mock。
 
-当生成代码位于独立包时，用 `-coverpkg` 选择需要统计的应用包，同时仍运行全部测试（请按项目调整以下包路径）。这只能按包选择；同一包中的生成文件需要明确的报告过滤策略，不能用构建标签代替。
-
-```bash
-go test -coverpkg=./internal/service,./internal/handler -coverprofile=coverage.out ./...
-go tool cover -func=coverage.out
-```
-
 ## HTTP 处理器测试
 
 ```go

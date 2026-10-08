@@ -155,7 +155,7 @@ const parsed = Allowed.parse(await req.json());
 setState({ ...state, ...parsed });
 ```
 
-Object spread copies own enumerable properties without invoking target setters. A JSON `__proto__` key becomes an own data property here; it does not change the new object's prototype. Keep schema validation to restrict permitted state fields. Separately audit setter-based assignment and unsafe deep merges for prototype pollution. See [CopyDataProperties](https://tc39.es/ecma262/#sec-copydataproperties).
+Object spread copies own enumerable properties without invoking target setters. A JSON `__proto__` key becomes an own data property here; it does not change the new object's prototype. Keep schema validation to restrict permitted state fields. See [CopyDataProperties](https://tc39.es/ecma262/#sec-copydataproperties).
 
 ## SSR Template Injection
 

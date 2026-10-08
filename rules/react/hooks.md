@@ -95,7 +95,7 @@ useEffect(() => {
 
 Missing cleanup = race conditions when deps change, memory leaks on unmount.
 
-Handle request rejections, including cleanup cancellation, and ignore results from an aborted effect. Include reactive callbacks in the dependencies; keep their identities stable when appropriate.
+Handle request rejections, including cleanup cancellation, and ignore results from an aborted effect. Include reactive callbacks in the dependencies.
 
 ## `useMemo` and `useCallback` — When Worth It
 

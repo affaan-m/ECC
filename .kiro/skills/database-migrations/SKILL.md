@@ -45,8 +45,6 @@ Before applying any migration:
 
 ### Adding a Column Safely
 
-For a nullable-column → backfill → NOT NULL migration, first update all writers to provide a non-null value, or set an appropriate default for omitted values. A default does not prevent explicit NULL writes. Backfill existing rows, then verify no NULLs remain before adding the constraint; keep writers compatible throughout the rollout.
-
 These ADD COLUMN statements still acquire an ACCESS EXCLUSIVE lock. Keep the transaction short and bound lock acquisition with `lock_timeout`. The fast-default optimization applies to non-volatile defaults; volatile expressions can require a table rewrite.
 
 ```sql
