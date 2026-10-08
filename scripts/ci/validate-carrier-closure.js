@@ -26,15 +26,36 @@ const BUILTINS = new Set(builtinModules);
 const SCRIPT_EXTENSIONS = new Set(['.js', '.cjs', '.mjs']);
 const MARK = '\u0000';
 const SLOT = `${MARK}(\\d+)${MARK}`;
-const CALL_PATTERN = new RegExp(`\\b(?:require|import)\\(\\s*${SLOT}\\s*\\)`, 'g');
+const CALL_PATTERN = new RegExp(`\\b(?:require|import)\\s*\\(\\s*${SLOT}\\s*\\)`, 'g');
 const FROM_PATTERN = new RegExp(`\\bfrom\\s*${SLOT}`, 'g');
 const SIDE_EFFECT_PATTERN = new RegExp(`\\bimport\\s*${SLOT}`, 'g');
 const DIRNAME_JOIN_PATTERN = new RegExp(
-  `\\brequire\\(\\s*path\\.join\\(\\s*__dirname\\s*((?:,\\s*${SLOT}\\s*)+)\\)\\s*\\)`, 'g');
-const DYNAMIC_PATTERN = /\b(?:require|import)\(\s*((?:[^()]|\([^()]*\))+)\)/g;
-const STATIC_JOIN_PATTERN = new RegExp(`^path\\.join\\(\\s*__dirname\\s*(?:,\\s*${SLOT}\\s*)+\\)$`);
+  `\\brequire\\s*\\(\\s*path\\.join\\s*\\(\\s*__dirname\\s*((?:,\\s*${SLOT}\\s*)+)\\)\\s*\\)`, 'g');
+const DYNAMIC_PATTERN = /\b(?:require|import)\s*\(\s*((?:[^()]|\([^()]*\))+)\)/g;
+const STATIC_JOIN_PATTERN = new RegExp(`^path\\.join\\s*\\(\\s*__dirname\\s*(?:,\\s*${SLOT}\\s*)+\\)$`);
 const SLOT_PATTERN = new RegExp(SLOT, 'g');
+const ESCAPE_PATTERN = /\\(?:u\{([0-9a-fA-F]+)\}|u([0-9a-fA-F]{4})|x([0-9a-fA-F]{2})|(\r\n|[\s\S]))/g;
+const SIMPLE_ESCAPES = Object.freeze({ n: '\n', r: '\r', t: '\t', b: '\b', f: '\f', v: '\v', 0: '\0' });
+const LINE_CONTINUATIONS = new Set(['\n', '\r', '\r\n', '\u2028', '\u2029']);
 const REGEX_PRECEDES = /(?:[([{,;:=!&|?+\-*/%~^<>]|\b(?:return|typeof|case|in|of|new|delete|void|instanceof|do|else|yield|await))$/;
+
+/** Cook a raw string or template chunk the way the JavaScript parser would. */
+function decodeEscapes(raw) {
+  return raw.replace(ESCAPE_PATTERN, (whole, braced, unicode, hex, other) => {
+    if (braced !== undefined) {
+      const codePoint = parseInt(braced, 16);
+      return codePoint <= 0x10ffff ? String.fromCodePoint(codePoint) : whole;
+    }
+    if (unicode !== undefined) return String.fromCharCode(parseInt(unicode, 16));
+    if (hex !== undefined) return String.fromCharCode(parseInt(hex, 16));
+    if (LINE_CONTINUATIONS.has(other)) return '';
+    return SIMPLE_ESCAPES[other] ?? other;
+  });
+}
+
+function isAbsoluteSpecifier(value) {
+  return value.startsWith('/') || value.startsWith('\\\\') || /^[A-Za-z]:[\\/]/.test(value) || /^file:/i.test(value);
+}
 
 function readRegexLiteral(source, start) {
   let index = start + 1;
@@ -63,7 +84,7 @@ function scanSource(rawSource) {
   const stack = [];
   let code = '';
   let index = 0;
-  const slot = value => { code += `${MARK}${literals.push(value) - 1}${MARK}`; };
+  const slot = value => { code += `${MARK}${literals.push(decodeEscapes(value)) - 1}${MARK}`; };
   const frame = () => (stack.length ? stack[stack.length - 1] : null);
 
   while (index < source.length) {
@@ -154,7 +175,7 @@ function extractReferences(rawSource) {
   for (const pattern of [CALL_PATTERN, FROM_PATTERN, SIDE_EFFECT_PATTERN]) {
     collect(pattern, code, match => {
       const value = literalAt(match);
-      if (value.startsWith('.') || value.startsWith('/')) specifiers.add(value);
+      if (value.startsWith('.') || isAbsoluteSpecifier(value)) specifiers.add(value);
       else if (!value.startsWith('node:') && !BUILTINS.has(value.split('/')[0])) {
         packages.add(value.startsWith('@') ? value.split('/').slice(0, 2).join('/') : value.split('/')[0]);
       }
@@ -174,12 +195,12 @@ function extractReferences(rawSource) {
 }
 
 function candidateDestinations(destinationPath, specifier) {
-  if (specifier.startsWith('/')) return { base: specifier, candidates: null };
-  const base = path.posix.join(path.posix.dirname(destinationPath), specifier);
+  if (isAbsoluteSpecifier(specifier)) return { base: specifier, candidates: null };
+  const base = path.posix.join(path.posix.dirname(destinationPath), specifier.replace(/\\/g, '/'));
   if (base === '..' || base.startsWith('../')) return { base, candidates: null };
   const candidates = destinationPath.endsWith('.mjs')
     ? [base]
-    : [base, `${base}.js`, `${base}.cjs`, `${base}.mjs`, `${base}.json`, `${base}/index.js`];
+    : [base, `${base}.js`, `${base}.cjs`, `${base}.mjs`, `${base}.json`, `${base}/index.js`, `${base}/index.json`];
   return { base, candidates };
 }
 
