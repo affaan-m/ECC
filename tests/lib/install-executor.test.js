@@ -161,6 +161,7 @@ function writeManifestSourceFixture(root) {
   writeFile(root, path.join('src', 'stray.pyd'), 'ignored\n');
   writeFile(root, path.join('src', 'nested', 'ecc-install-state.json'), '{}\n');
   writeFile(root, path.join('rules', 'common', 'coding-style.md'), '# Common\n');
+  writeFile(root, path.join('rules', 'common', 'agents.md'), 'Use the `ecc:planner` agent.\n');
   writeFile(root, path.join('skills', 'demo', 'SKILL.md'), '# Demo\n');
   writeFile(root, 'standalone.txt', 'standalone\n');
   writeFile(root, path.join('runtime', 'ecc', 'install-state.json'), '{}\n');
@@ -683,6 +684,11 @@ function runTests() {
       assert.ok(fs.existsSync(path.join(homeDir, '.claude', 'src', 'app.js')));
       assert.ok(fs.existsSync(path.join(homeDir, '.claude', 'standalone.txt')));
       assert.ok(fs.existsSync(path.join(homeDir, '.claude', 'plugin.json')));
+      const installedAgentsRule = fs.readFileSync(
+        path.join(homeDir, '.claude', 'rules', 'ecc', 'common', 'agents.md'),
+        'utf8'
+      );
+      assert.strictEqual(installedAgentsRule, 'Use the `planner` agent.\n');
       const state = JSON.parse(fs.readFileSync(path.join(homeDir, '.claude', 'ecc', 'install-state.json'), 'utf8'));
       assert.strictEqual(state.request.profile, 'minimal');
       assert.deepStrictEqual(state.resolution.selectedModules, ['fixture-core']);
