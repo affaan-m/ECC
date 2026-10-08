@@ -298,5 +298,61 @@ test('runCodexReview spawns the resolved command with prefix args first', () => 
   assert.deepStrictEqual(spawn.calls[1].args.slice(0, 3), ['C:\\codex.js', '--ask-for-approval', 'never']);
 });
 
+const fixJson = JSON.stringify({ summary: 'fixed', fixed: [{ title: 'Bug', file: 'a.js', change: 'guard' }], skipped: [] });
+
+test('buildCodexArgs uses workspace-write only when asked and refuses full access', () => {
+  const base = { cwd: '/r', model: 'm', outputFile: 'o', schemaFile: 's' };
+
+  const writeArgs = codex.buildCodexArgs({ ...base, sandbox: 'workspace-write' });
+
+  assert.strictEqual(writeArgs[writeArgs.indexOf('--sandbox') + 1], 'workspace-write');
+  assert.ok(writeArgs.includes('--ignore-user-config'));
+  assert.throws(() => codex.buildCodexArgs({ ...base, sandbox: 'danger-full-access' }), /sandbox/);
+});
+
+test('buildCodexArgs keeps workspace-write off /tmp, $TMPDIR, and the network', () => {
+  const base = { cwd: '/r', model: 'm', outputFile: 'o', schemaFile: 's' };
+
+  const writeArgs = codex.buildCodexArgs({ ...base, sandbox: 'workspace-write' });
+  const readArgs = codex.buildCodexArgs(base);
+
+  assert.ok(writeArgs.includes('sandbox_workspace_write.exclude_tmpdir_env_var=true'));
+  assert.ok(writeArgs.includes('sandbox_workspace_write.exclude_slash_tmp=true'));
+  assert.ok(writeArgs.includes('sandbox_workspace_write.network_access=false'));
+  assert.ok(!readArgs.some((arg) => arg.startsWith('sandbox_workspace_write.')));
+});
+
+test('runCodexFix runs in a workspace-write sandbox and returns the parsed fix result', () => {
+  const calls = [];
+  const spawnSync = (cmd, args, options) => {
+    calls.push({ cmd, args, options });
+    if (args.includes('mcp') && args.includes('list')) return { status: 0, stdout: '[]', stderr: '' };
+    fs.writeFileSync(args[args.indexOf('--output-last-message') + 1], fixJson, 'utf8');
+    return { status: 0, stdout: '', stderr: '' };
+  };
+
+  const result = codex.runCodexFix(
+    { prompt: 'fix this', cwd: os.tmpdir(), model: 'gpt-6-astra', timeoutMs: 60_000 },
+    { spawnSync, env: { PATH: '/bin', OPENAI_API_KEY: 'sk-secret' } }
+  );
+
+  assert.strictEqual(result.fixed.length, 1);
+  const execArgs = calls[1].args;
+  assert.strictEqual(execArgs[execArgs.indexOf('--sandbox') + 1], 'workspace-write');
+  assert.strictEqual(calls[1].options.input, 'fix this');
+  assert.strictEqual(calls[1].options.env.OPENAI_API_KEY, undefined);
+});
+
+test('runCodexFix labels failures as fix failures', () => {
+  const spawnSync = (cmd, args) => (args.includes('mcp')
+    ? { status: 0, stdout: '[]', stderr: '' }
+    : { status: 1, stdout: '', stderr: 'boom' });
+
+  assert.throws(
+    () => codex.runCodexFix({ prompt: 'p', cwd: os.tmpdir(), model: 'm', timeoutMs: 60_000 }, { spawnSync, env: {} }),
+    /Codex fix failed: boom/
+  );
+});
+
 console.log(`\n${passed} passed, ${failed} failed`);
 process.exit(failed > 0 ? 1 : 0);

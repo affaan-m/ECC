@@ -293,15 +293,26 @@ function safeRealpath(target) {
   }
 }
 
+/**
+ * Canonical, platform-native paths keep the containment check honest when
+ * /tmp is a symlink or when git reports a forward-slash path on Windows.
+ * @param {{cwd?: string, runGit?: Function, realpathSync?: Function}} [deps]
+ * @returns {{cwd: string, root: string}}
+ */
+function resolveRepoRoot(deps = {}) {
+  const realpath = deps.realpathSync || safeRealpath;
+  const cwd = realpath(path.resolve(deps.cwd || process.cwd()));
+  const runGitIn = deps.runGit || defaultRunGit;
+  const root = realpath(path.resolve(runGitIn(['rev-parse', '--show-toplevel'], cwd).trim() || cwd));
+  return { cwd, root };
+}
+
 function collectChanges(scope, deps = {}) {
   const realpath = deps.realpathSync || safeRealpath;
-  // Canonical, platform-native paths keep the containment check honest when
-  // /tmp is a symlink or when git reports a forward-slash path on Windows.
-  const cwd = realpath(path.resolve(deps.cwd || process.cwd()));
   const runGitIn = deps.runGit || defaultRunGit;
   // Always work from the repository root so paths are root-relative and
   // untracked files outside the current subdirectory are not missed.
-  const root = realpath(path.resolve(runGitIn(['rev-parse', '--show-toplevel'], cwd).trim() || cwd));
+  const { cwd, root } = resolveRepoRoot(deps);
   const runGit = (args, options) => runGitIn(args, root, options);
   const io = {
     readFile: deps.readFile || ((file) => fs.readFileSync(file, 'utf8')),
@@ -340,4 +351,5 @@ module.exports = {
   defaultRunGit,
   describeScope,
   parseScope,
+  resolveRepoRoot,
 };

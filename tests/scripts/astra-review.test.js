@@ -158,6 +158,74 @@ test('runCli passes model, prompt, and timeout through to the reviewer', () => {
   assert.ok(seen.prompt.includes('git show sha:<path>'));
 });
 
+const savedVerdict = JSON.stringify({ model: 'gpt-6-astra', verdict: 'FAIL', review: failingReview });
+const fixResult = { summary: 'fixed', fixed: [{ title: 'Bug', file: 'a.js', change: 'guard' }], skipped: [] };
+
+function fixDeps(overrides = {}) {
+  return baseDeps({
+    readFile: () => savedVerdict,
+    resolveRepoRoot: () => '/repo-root',
+    runCodexFix: () => fixResult,
+    ...overrides,
+  });
+}
+
+test('parseArgs accepts --fix-findings and refuses to combine it with a scope flag', () => {
+  const options = cli.parseArgs(['--fix-findings', '/tmp/v.json'], {});
+
+  assert.strictEqual(options.fixFindings, '/tmp/v.json');
+  assert.throws(() => cli.parseArgs(['--fix-findings', '/tmp/v.json', '--base', 'main'], {}), /--fix-findings/);
+});
+
+test('runCli fix mode --dry-run prints the fix prompt and never calls Codex', () => {
+  let called = false;
+  const deps = fixDeps({ runCodexFix: () => { called = true; return fixResult; } });
+
+  const code = cli.runCli(cli.parseArgs(['--fix-findings', '/tmp/v.json', '--dry-run'], {}), deps);
+
+  assert.strictEqual(code, cli.EXIT_PASS);
+  assert.strictEqual(called, false);
+  assert.ok(deps.stdout.text().includes('[HIGH] a.js:1 — Bug'));
+});
+
+test('runCli fix mode refuses to call Codex without consent', () => {
+  let called = false;
+  const deps = fixDeps({ runCodexFix: () => { called = true; return fixResult; } });
+
+  const code = cli.runCli(cli.parseArgs(['--fix-findings', '/tmp/v.json'], {}), deps);
+
+  assert.strictEqual(code, cli.EXIT_ERROR);
+  assert.strictEqual(called, false);
+});
+
+test('runCli fix mode sends the findings to Astra at the repo root and prints the fix report', () => {
+  let seen = null;
+  let readPath = null;
+  const deps = fixDeps({
+    readFile: (file) => { readPath = file; return savedVerdict; },
+    runCodexFix: (input) => { seen = input; return fixResult; },
+  });
+
+  const code = cli.runCli(cli.parseArgs(['--fix-findings', '/tmp/v.json', '--consent-to-openai', '--instructions', 'keep API'], {}), deps);
+
+  assert.strictEqual(code, cli.EXIT_PASS);
+  assert.strictEqual(readPath, '/tmp/v.json');
+  assert.strictEqual(seen.cwd, '/repo-root');
+  assert.strictEqual(seen.model, 'gpt-6-astra');
+  assert.ok(seen.prompt.includes('keep API'));
+  assert.ok(deps.stdout.text().includes('# Astra Fix (gpt-6-astra)'));
+});
+
+test('runCli fix mode --json prints the fix payload', () => {
+  const deps = fixDeps();
+
+  cli.runCli(cli.parseArgs(['--fix-findings', '/tmp/v.json', '--consent-to-openai', '--json'], {}), deps);
+
+  const payload = JSON.parse(deps.stdout.text());
+  assert.strictEqual(payload.mode, 'fix');
+  assert.strictEqual(payload.fix.fixed.length, 1);
+});
+
 function fakeReportIo({ renameFails = false, writeFails = false } = {}) {
   const events = [];
   return {

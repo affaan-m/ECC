@@ -1,6 +1,7 @@
 /**
  * Astra review: invoke the Codex CLI (ChatGPT login) with GPT-6-Astra
- * in a read-only sandbox and return the parsed structured verdict.
+ * in a read-only sandbox and return the parsed structured verdict. The fix
+ * fallback reuses the same isolation with a workspace-write sandbox.
  */
 
 'use strict';
@@ -10,12 +11,21 @@ const os = require('os');
 const path = require('path');
 const { spawnSync } = require('child_process');
 const { REVIEW_SCHEMA, parseReviewOutput } = require('./prompt');
+const { FIX_SCHEMA, parseFixOutput } = require('./fix');
 
 const DEFAULT_MODEL = 'gpt-6-astra';
 const DEFAULT_TIMEOUT_MS = 300_000;
 const MIN_TIMEOUT_MS = 30_000;
 const MAX_TIMEOUT_MS = 900_000;
 const MAX_OUTPUT_BUFFER = 4 * 1024 * 1024;
+// danger-full-access is never allowed: the fixer must stay inside the repository.
+const ALLOWED_SANDBOXES = Object.freeze(['read-only', 'workspace-write']);
+// workspace-write also allows /tmp and $TMPDIR by default; the fixer gets the repository only.
+const WORKSPACE_WRITE_LIMITS = Object.freeze([
+  'sandbox_workspace_write.exclude_tmpdir_env_var=true',
+  'sandbox_workspace_write.exclude_slash_tmp=true',
+  'sandbox_workspace_write.network_access=false',
+]);
 
 const ENV_ALLOWLIST = Object.freeze([
   'PATH', 'HOME', 'USERPROFILE', 'CODEX_HOME',
@@ -46,26 +56,34 @@ const MCP_LIST_TIMEOUT_MS = 15_000;
  * longer sees user-level servers, a bare `<name>.enabled=false` would create an
  * entry without a transport and Codex rejects it; the override therefore
  * carries an inert stdio transport alongside enabled=false.
- * @param {{cwd: string, model: string, outputFile: string, schemaFile: string, mcpServers?: string[]}} input
+ * @param {{cwd: string, model: string, outputFile: string, schemaFile: string, mcpServers?: string[], sandbox?: string}} input
  * @returns {string[]}
  */
 function buildCodexArgs(input) {
+  const sandbox = input.sandbox || 'read-only';
+  if (!ALLOWED_SANDBOXES.includes(sandbox)) {
+    throw new Error(`sandbox must be one of ${ALLOWED_SANDBOXES.join(', ')} (got ${sandbox})`);
+  }
   const mcpDisables = (input.mcpServers || []).flatMap((name) => {
     if (!MCP_SERVER_NAME.test(name)) {
       throw new Error(`cannot isolate MCP server name "${name}" (only letters, digits, - and _ can be disabled via codex -c); rename or disable it in the Codex config first`);
     }
     return ['--config', `mcp_servers.${name}={command="true",enabled=false}`];
   });
+  const writeLimits = sandbox === 'workspace-write'
+    ? WORKSPACE_WRITE_LIMITS.flatMap((setting) => ['--config', setting])
+    : [];
   return [
     '--ask-for-approval', 'never',
     'exec',
     '--ignore-user-config',
-    '--sandbox', 'read-only',
+    '--sandbox', sandbox,
     '--cd', input.cwd,
     '--color', 'never',
     '--skip-git-repo-check',
     '-m', input.model,
     '--config', 'web_search="disabled"',
+    ...writeLimits,
     ...mcpDisables,
     '--output-schema', input.schemaFile,
     '--output-last-message', input.outputFile,
@@ -130,9 +148,9 @@ function resolveCodexCommand(deps = {}) {
   return { command: 'codex', prefixArgs: [] };
 }
 
-function translateSpawnError(error) {
+function translateSpawnError(error, task = 'review') {
   if (error.code === 'ENOENT') return new Error('Codex CLI is not installed (install: npm i -g @openai/codex)');
-  if (error.code === 'ETIMEDOUT') return new Error('Codex review timed out');
+  if (error.code === 'ETIMEDOUT') return new Error(`Codex ${task} timed out`);
   return new Error(`Codex invocation failed: ${error.message}`);
 }
 
@@ -148,12 +166,14 @@ function readLastMessage(outputFile) {
 }
 
 /**
+ * Shared Codex exec runner: isolated environment, MCP servers disabled,
+ * structured output enforced by `schema` and validated by `parse`.
  * @param {{prompt: string, cwd: string, model: string, timeoutMs: number}} input
- * @param {{spawnSync?: Function, env?: object, resolveCodexCommand?: Function}} [deps]
- * @returns {object} Parsed review
+ * @param {{task: string, sandbox: string, schema: object, parse: Function}} mode
+ * @param {{spawnSync?: Function, env?: object, resolveCodexCommand?: Function}} deps
  */
-function runCodexReview(input, deps = {}) {
-  if (!input.prompt || !input.prompt.trim()) throw new Error('review prompt is empty');
+function runCodexExec(input, mode, deps) {
+  if (!input.prompt || !input.prompt.trim()) throw new Error(`${mode.task} prompt is empty`);
   if (input.timeoutMs < MIN_TIMEOUT_MS || input.timeoutMs > MAX_TIMEOUT_MS) {
     throw new Error(`timeout must be between ${MIN_TIMEOUT_MS / 1000} and ${MAX_TIMEOUT_MS / 1000} seconds`);
   }
@@ -161,14 +181,16 @@ function runCodexReview(input, deps = {}) {
   const spawn = deps.spawnSync || spawnSync;
   const environment = buildEnvironment(deps.env || process.env);
   const launcher = (deps.resolveCodexCommand || resolveCodexCommand)({ env: environment });
-  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-astra-review-'));
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), `ecc-astra-${mode.task}-`));
   const outputFile = path.join(tempDir, 'last-message.txt');
-  const schemaFile = path.join(tempDir, 'review-schema.json');
+  const schemaFile = path.join(tempDir, `${mode.task}-schema.json`);
 
   try {
-    fs.writeFileSync(schemaFile, JSON.stringify(REVIEW_SCHEMA), 'utf8');
+    fs.writeFileSync(schemaFile, JSON.stringify(mode.schema), 'utf8');
     const mcpServers = listConfiguredMcpServers(launcher, { spawnSync: spawn, env: environment });
-    const args = buildCodexArgs({ cwd: input.cwd, model: input.model, outputFile, schemaFile, mcpServers });
+    const args = buildCodexArgs({
+      cwd: input.cwd, model: input.model, outputFile, schemaFile, mcpServers, sandbox: mode.sandbox,
+    });
     const result = spawn(launcher.command, [...launcher.prefixArgs, ...args], {
       cwd: input.cwd,
       env: environment,
@@ -179,15 +201,38 @@ function runCodexReview(input, deps = {}) {
       windowsHide: true,
     });
 
-    if (result.error) throw translateSpawnError(result.error);
+    if (result.error) throw translateSpawnError(result.error, mode.task);
     if (result.status !== 0) {
       const detail = (result.stderr || '').trim().split('\n').slice(-1)[0];
-      throw new Error(`Codex review failed${detail ? `: ${detail}` : ''}`);
+      throw new Error(`Codex ${mode.task} failed${detail ? `: ${detail}` : ''}`);
     }
-    return parseReviewOutput(readLastMessage(outputFile));
+    return mode.parse(readLastMessage(outputFile));
   } finally {
     fs.rmSync(tempDir, { recursive: true, force: true });
   }
+}
+
+/**
+ * @param {{prompt: string, cwd: string, model: string, timeoutMs: number}} input
+ * @param {{spawnSync?: Function, env?: object, resolveCodexCommand?: Function}} [deps]
+ * @returns {object} Parsed review
+ */
+function runCodexReview(input, deps = {}) {
+  return runCodexExec(input, {
+    task: 'review', sandbox: 'read-only', schema: REVIEW_SCHEMA, parse: parseReviewOutput,
+  }, deps);
+}
+
+/**
+ * Fallback writer: Astra edits the working tree to fix confirmed findings.
+ * @param {{prompt: string, cwd: string, model: string, timeoutMs: number}} input
+ * @param {{spawnSync?: Function, env?: object, resolveCodexCommand?: Function}} [deps]
+ * @returns {object} Parsed fix result
+ */
+function runCodexFix(input, deps = {}) {
+  return runCodexExec(input, {
+    task: 'fix', sandbox: 'workspace-write', schema: FIX_SCHEMA, parse: parseFixOutput,
+  }, deps);
 }
 
 module.exports = {
@@ -199,5 +244,6 @@ module.exports = {
   buildEnvironment,
   listConfiguredMcpServers,
   resolveCodexCommand,
+  runCodexFix,
   runCodexReview,
 };

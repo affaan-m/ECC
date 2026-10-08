@@ -12,6 +12,11 @@
  *   --files <f1> [f2 ...]    full contents of explicit files
  *   --files-from-commit <sha> current contents of the files <sha> touched (repair rounds)
  *
+ * Fix mode (fallback writer when the Claude fixer is out of quota):
+ *   --fix-findings <file>    Astra edits the working tree to fix the findings in <file>
+ *                            (an --output verdict, a {findings} object, or an array);
+ *                            Claude must verify the diff, run tests, and re-review
+ *
  * Options:
  *   --model <slug>           default: gpt-6-astra (or ECC_ASTRA_MODEL)
  *   --timeout-seconds <n>    30-900, default 300
@@ -29,8 +34,9 @@
 const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
-const { collectChanges, describeScope, parseScope } = require('./lib/astra-review/scope');
+const { collectChanges, describeScope, parseScope, resolveRepoRoot } = require('./lib/astra-review/scope');
 const { buildPrompt, effectiveVerdict, formatReport } = require('./lib/astra-review/prompt');
+const { buildFixPrompt, formatFixReport, loadFindings } = require('./lib/astra-review/fix');
 const codex = require('./lib/astra-review/codex');
 
 const EXIT_PASS = 0;
@@ -68,7 +74,7 @@ function writeReport(file, content, io = fs) {
 
 function usage() {
   return fs.readFileSync(__filename, 'utf8').split('\n')
-    .slice(2, 23)
+    .slice(2, 29)
     .map((line) => line.replace(/^ \* ?/, ''))
     .join('\n');
 }
@@ -86,7 +92,7 @@ function takeValue(argv, index, flag) {
  */
 function parseArgs(argv, env = process.env) {
   let options = {
-    base: null, commit: null, files: [], filesFromCommit: null,
+    base: null, commit: null, files: [], filesFromCommit: null, fixFindings: null,
     model: env.ECC_ASTRA_MODEL || codex.DEFAULT_MODEL,
     timeoutMs: codex.DEFAULT_TIMEOUT_MS,
     instructions: '',
@@ -111,6 +117,7 @@ function parseArgs(argv, env = process.env) {
       if (files.length === 0) throw new Error('--files requires at least one path');
       options = { ...options, files };
     }
+    else if (arg === '--fix-findings') { options = { ...options, fixFindings: takeValue(argv, index, arg) }; index += 1; }
     else if (arg === '--model') { options = { ...options, model: takeValue(argv, index, arg) }; index += 1; }
     else if (arg === '--timeout-seconds') {
       const seconds = Number(takeValue(argv, index, arg));
@@ -132,12 +139,51 @@ function parseArgs(argv, env = process.env) {
   }
 
   if (!/^[a-z0-9][a-z0-9._-]*$/i.test(options.model)) throw new Error(`invalid model slug: ${options.model}`);
-  return { ...options, scope: parseScope(options) };
+  const scope = parseScope(options);
+  if (options.fixFindings && scope.kind !== 'uncommitted') {
+    throw new Error('--fix-findings cannot be combined with --base, --commit, --files, or --files-from-commit');
+  }
+  return { ...options, scope };
+}
+
+function refuseWithoutConsent(options, stderr) {
+  if (options.consent) return false;
+  stderr.write('Refusing to send code to OpenAI without --consent-to-openai (or ECC_ASTRA_CONSENT=1).\n');
+  return true;
+}
+
+/**
+ * Fix mode: Astra writes, Claude verifies. Exit 0 means Astra finished, not
+ * that the code is correct; the caller must still test and re-review.
+ * @returns {number} Exit code
+ */
+function runFix(options, deps, io) {
+  const readFile = deps.readFile || ((file) => fs.readFileSync(file, 'utf8'));
+  const findRoot = deps.resolveRepoRoot || (() => resolveRepoRoot({ cwd: io.cwd }).root);
+  const fixer = deps.runCodexFix || codex.runCodexFix;
+
+  const findings = loadFindings(readFile(options.fixFindings));
+  const prompt = buildFixPrompt({ findings, extraInstructions: options.instructions });
+  if (options.dryRun) {
+    io.stdout.write(`${prompt}\n`);
+    return EXIT_PASS;
+  }
+  if (refuseWithoutConsent(options, io.stderr)) return EXIT_ERROR;
+
+  io.stderr.write(`[astra-review] asking ${options.model} to fix ${findings.length} finding(s) in the working tree...\n`);
+  const result = fixer({ prompt, cwd: findRoot(), model: options.model, timeoutMs: options.timeoutMs });
+  const payload = { mode: 'fix', model: options.model, findings, fix: result };
+
+  if (options.output) io.writeFile(options.output, `${JSON.stringify(payload, null, 2)}\n`);
+  io.stdout.write(options.json
+    ? `${JSON.stringify(payload, null, 2)}\n`
+    : formatFixReport(result, { model: options.model, findings }));
+  return EXIT_PASS;
 }
 
 /**
  * @param {object} options - From parseArgs
- * @param {{cwd?: string, collectChanges?: Function, runCodexReview?: Function, stdout?: object, stderr?: object, writeFile?: Function}} [deps]
+ * @param {{cwd?: string, collectChanges?: Function, runCodexReview?: Function, runCodexFix?: Function, readFile?: Function, resolveRepoRoot?: Function, stdout?: object, stderr?: object, writeFile?: Function}} [deps]
  * @returns {number} Exit code
  */
 function runCli(options, deps = {}) {
@@ -152,6 +198,7 @@ function runCli(options, deps = {}) {
     stdout.write(`${usage()}\n`);
     return EXIT_PASS;
   }
+  if (options.fixFindings) return runFix(options, deps, { cwd, stdout, stderr, writeFile });
 
   const changes = collect(options.scope, { cwd });
   const scopeLabel = describeScope(options.scope);
@@ -173,10 +220,7 @@ function runCli(options, deps = {}) {
     stdout.write(`${prompt}\n`);
     return EXIT_PASS;
   }
-  if (!options.consent) {
-    stderr.write('Refusing to send code to OpenAI without --consent-to-openai (or ECC_ASTRA_CONSENT=1).\n');
-    return EXIT_ERROR;
-  }
+  if (refuseWithoutConsent(options, stderr)) return EXIT_ERROR;
 
   stderr.write(`[astra-review] sending ${changes.files.length} file(s) (${scopeLabel}) to ${options.model}...\n`);
   const repoRoot = changes.root || cwd;

@@ -137,6 +137,7 @@ node "$ECC/scripts/astra-review.js" --consent-to-openai --json \
 | `--instructions "<text>"` | extra reviewer instructions appended to the rubric |
 | `--output <file>` | also write the JSON verdict to `<file>` (atomic, owner-only) |
 | `--json` | print JSON instead of the markdown report |
+| `--fix-findings <file>` | fix mode: Astra edits the working tree to fix the findings in `<file>` (see below); no scope flag allowed |
 
 Exit codes: `0` PASS or nothing to review, `1` FAIL (any CRITICAL or HIGH finding), `2` usage or runtime error.
 
@@ -168,6 +169,25 @@ The eight rubric criteria are Correctness, Security, Error handling, Input valid
 3. The review runs again with a fresh reviewer. Default and `--base` scopes already include the repairs. After a `--commit` review the repair round uses `--files-from-commit <rev>`.
 4. After three rounds with CRITICAL/HIGH findings left, the loop stops and hands you the list. Nothing is pushed.
 
+### Who writes the fixes
+
+The command runs on Opus. Opus verifies every finding, reviews every diff, and runs the tests; the fixes themselves go to a writer:
+
+| Situation | Writer |
+|-----------|--------|
+| Normal | a Fable subagent (`model: "fable"`) |
+| The Fable Agent call fails with an API error of type `rate_limit` or HTTP 429 (words in a successful result never count) | Astra, via `astra-review.js --fix-findings <confirmed.json>` in a `workspace-write` sandbox |
+| Fable fails for any other reason | Opus, directly |
+
+The switch is automatic and Fable is not retried for the rest of the session. In fix mode Astra keeps the review isolation (no web search, no network, MCP disabled, user config ignored, no API keys) but may edit files inside the repository; `/tmp` and `$TMPDIR` are excluded from the writable roots. It never commits or pushes. Before the writer runs, Opus snapshots `git diff --binary HEAD` and the untracked file list, so it can tell the writer's hunks from your own uncommitted work and revert only the former. Astra's report lists fixed and skipped findings; Opus treats that as a claim and checks the diff against the snapshot before the tests and the next review round.
+
+```bash
+node "$ECC/scripts/astra-review.js" --fix-findings confirmed.json --dry-run           # show the fix prompt
+node "$ECC/scripts/astra-review.js" --consent-to-openai --fix-findings confirmed.json  # let Astra fix
+```
+
+`confirmed.json` is the `--output` payload, a `{"findings": [...]}` object, or a bare array of findings.
+
 Astra tends to keep finding real but narrower edge cases on each round. Treat the third-round list as input for your own judgement rather than a reason to loop forever.
 
 ## Gating a push
@@ -198,7 +218,7 @@ Kept out:
 - MCP servers: every server reported by `codex mcp list` is disabled by name with an inert transport, and the user-level Codex config is not loaded. An empty `mcp_servers` table would not clear inherited servers, which is why each one is named.
 - Web search (disabled for the reviewer).
 - Files outside the repository: symlinks are serialized as `(symlink -> target)` instead of followed, and paths whose resolved parent directory leaves the repository are refused.
-- Writes: the sandbox is read-only and approvals are never requested.
+- Writes: the review sandbox is read-only and approvals are never requested. Only the Fable-limit fix mode uses `workspace-write`, with `/tmp`, `$TMPDIR`, and the network excluded, so the repository is the only writable root.
 
 Patches are collected with `--no-ext-diff --no-textconv`, so a configured external diff tool cannot blank them.
 

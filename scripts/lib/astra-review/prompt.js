@@ -260,5 +260,7 @@ module.exports = {
   buildPrompt,
   effectiveVerdict,
   formatReport,
+  normalizeFinding,
   parseReviewOutput,
+  stripCodeFences,
 };
