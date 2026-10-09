@@ -51,6 +51,11 @@ const {
   prepareExcludedPathsReconciliation,
 } = require('./excluded-paths-reconciliation');
 const { buildInstallIndex, rewriteRelativeLinks } = require('./link-rewrite');
+const { stripPluginNamespace } = require('./plugin-namespace');
+
+// Manual installs place agents, commands and skills at bare names; the
+// ecc@ecc plugin namespaces them as `ecc:<name>`.
+const MANUAL_CLAUDE_TARGETS = new Set(['claude', 'claude-project']);
 const { adaptAntigravityAgent } = require('./antigravity-agent');
 
 function isMarkdownPath(filePath) {
@@ -874,17 +879,20 @@ function applyInstallPlanLocked(plan, dependencies = {}, settingsLockHeld = fals
         && operation.sourceRelativePath
         && isMarkdownPath(operation.destinationPath)
       );
-      if (operation.kind === 'copy-file' && (operation.contentTransform || needsLinkRewrite)) {
+      const stripNamespace = MANUAL_CLAUDE_TARGETS.has(plan.adapter?.target)
+        && isMarkdownPath(operation.destinationPath);
+      if (operation.kind === 'copy-file' && (operation.contentTransform || needsLinkRewrite || stripNamespace)) {
         const transformed = transformInstallContent(
           operation,
           fs.readFileSync(operation.sourcePath, 'utf8')
         );
+        const namespaced = stripNamespace ? stripPluginNamespace(transformed) : transformed;
         const installedContent = needsLinkRewrite
-          ? rewriteRelativeLinks(transformed, {
+          ? rewriteRelativeLinks(namespaced, {
             sourceRel: operation.sourceRelativePath,
             index: linkIndex,
           })
-          : transformed;
+          : namespaced;
         const writeOptions = getOpenCodeActivationWriteOptions(operation, activationSnapshot);
         if (writeOptions.expectedContent) {
           writeFileNoFollow(operation.destinationPath, installedContent, {
