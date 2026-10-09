@@ -53,6 +53,41 @@ for (const fileName of getCommandFiles()) {
   });
 }
 
+test('argument-hint is never an unquoted YAML flow sequence', () => {
+  const offenders = [];
+
+  for (const fileName of getCommandFiles()) {
+    const content = fs.readFileSync(path.join(commandsDir, fileName), 'utf8');
+    const frontmatter = parseFrontmatter(content);
+    if (!frontmatter) {
+      continue;
+    }
+
+    for (const line of frontmatter.split(/\r?\n/)) {
+      const match = line.match(/^argument-hint:\s*(.*)$/);
+      if (!match) {
+        continue;
+      }
+
+      const value = match[1].trim();
+      // An unquoted leading '[' makes YAML parse the value as a flow sequence.
+      // Harnesses that type-check argument-hint as a string then reject the whole
+      // file, and the slash command disappears from the catalog without a
+      // user-visible error. Other keys are deliberately not covered: allowed-tools
+      // is a legitimate list.
+      if (/^[[{]/.test(value) && !/^["']/.test(value)) {
+        offenders.push(`${fileName}: ${line.trim()}`);
+      }
+    }
+  }
+
+  assert.deepStrictEqual(
+    offenders,
+    [],
+    'argument-hint must be quoted when it starts with [ or { so YAML parses it as a string'
+  );
+});
+
 if (failed > 0) {
   console.log(`\nFailed: ${failed}`);
   process.exit(1);
