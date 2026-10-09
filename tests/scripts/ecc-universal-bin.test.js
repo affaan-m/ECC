@@ -12,6 +12,7 @@ const os = require('os');
 const path = require('path');
 const { spawnSync } = require('child_process');
 const { getNpmPackEntry } = require('../lib/npm-pack-output');
+const { toRelativeTarPath } = require('../lib/helpers/windows-test-env');
 
 const repoRoot = path.join(__dirname, '..', '..');
 const packageJson = JSON.parse(
@@ -170,8 +171,8 @@ function prepareLocalPackedProject(packageManager) {
     });
   }
   fs.mkdirSync(modulesDirectory, { recursive: true });
-  run('tar', ['-xzf', fixture.archivePath, '-C', modulesDirectory], {
-    cwd: projectDirectory,
+  run('tar', ['-xzf', toRelativeTarPath(modulesDirectory, fixture.archivePath)], {
+    cwd: modulesDirectory,
     timeout: archiveExtractionTimeoutMs,
   });
   fs.renameSync(extractedDirectory, packageDirectory);
