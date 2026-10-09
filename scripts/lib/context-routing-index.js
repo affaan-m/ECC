@@ -96,13 +96,16 @@ function writeRoutingIndex({ stateRoot, repoRoot = DEFAULT_REPO_ROOT } = {}) {
   if (routing.planDigest !== carrier.planDigest || routing.registryDigest !== carrier.registryDigest) {
     throw new Error('Skill sources changed during routing index build; run it again');
   }
-  const bytes = io.jsonBytes({ schemaVersion: SCHEMA, generationDigest: binding.generationDigest, receiptDigest: binding.receiptDigest,
-    ...routing, entries: routing.entries.map(entry => ({ ...entry, dense: encodeDense(sparseDense(entry)) })) });
+  const index = { schemaVersion: SCHEMA, generationDigest: binding.generationDigest, receiptDigest: binding.receiptDigest,
+    ...routing, entries: routing.entries.map(entry => ({ ...entry, dense: encodeDense(sparseDense(entry)) })) };
+  const bytes = io.jsonBytes(index);
   const digest = io.hash(bytes);
   const file = entriesPath(root, digest);
   io.mkdir(path.join(root, 'routing')); io.mkdir(path.dirname(file));
-  if (!io.inspect(file, true).stat) io.writeExclusive(file, bytes);
-  else if (!io.read(file).equals(bytes)) throw new Error('Routing index content changed under its digest');
+  // Temp file and rename, so an interrupted build never leaves partial bytes
+  // under a digest name; a file whose bytes do not hash to its name (left by
+  // an interrupted in-place write) is replaced rather than trusted.
+  if (!io.inspect(file, true).stat || io.hash(io.read(file)) !== digest) io.atomicJson(file, index);
   if (readBinding(root).receiptDigest !== binding.receiptDigest) throw new Error('Managed state changed during routing index build');
   const pointer = { schemaVersion: POINTER_SCHEMA, generationDigest: binding.generationDigest,
     receiptDigest: binding.receiptDigest, indexDigest: digest, bytes: bytes.length };
