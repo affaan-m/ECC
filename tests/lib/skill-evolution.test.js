@@ -559,17 +559,65 @@ function runTests() {
       const summary = health.summarizeHealthReport(report);
       assert.deepStrictEqual(summary, {
         total_skills: 6,
-        healthy_skills: 5,
+        measured_skills: 2,
+        healthy_skills: 1,
         declining_skills: 1,
+        unmeasured_skills: 4,
       });
 
       const human = health.formatHealthReport(report, { json: false });
       assert.match(human, /alpha/);
       assert.match(human, /worsening/);
-      assert.match(
-        human,
-        new RegExp(`Skills: ${summary.total_skills} total, ${summary.healthy_skills} healthy, ${summary.declining_skills} declining`)
+      // Built from values rather than interpolated into a RegExp: the numbers are
+      // internally generated, but a literal comparison needs no pattern engine.
+      assert.ok(
+        human.includes(
+          `Skills: ${summary.total_skills} total, ${summary.measured_skills} measured, ` +
+          `${summary.healthy_skills} healthy, ${summary.declining_skills} declining, ` +
+          `${summary.unmeasured_skills} unmeasured`
+        ),
+        'summary line must report measured and unmeasured counts'
       );
+    })) passed++; else failed++;
+
+    if (test('does not report unmeasured skills as healthy (#2463)', () => {
+      // A runs file that does not exist: skills are still discovered, so this
+      // is exactly the "discovered but never executed" state.
+      const emptyReport = health.collectSkillHealth({
+        repoRoot,
+        homeDir,
+        runsFilePath: path.join(homeDir, '.claude', 'state', 'no-such-runs.jsonl'),
+        now,
+        warnThreshold: 0.1,
+      });
+
+      const summary = health.summarizeHealthReport(emptyReport);
+      assert.ok(summary.total_skills > 0, 'expected discovered skills');
+      assert.strictEqual(summary.total_skills, summary.unmeasured_skills);
+      assert.strictEqual(summary.measured_skills, 0);
+      assert.strictEqual(summary.declining_skills, 0);
+      assert.strictEqual(
+        summary.healthy_skills,
+        0,
+        'a skill with no runs is unmeasured, never healthy'
+      );
+
+      // Healthy + declining must account for every measured skill, so a partial
+      // coverage state cannot over-report.
+      const partial = health.summarizeHealthReport({
+        skills: [
+          { skill_id: 'a', run_count_30d: 4, declining: false },
+          { skill_id: 'b', run_count_30d: 2, declining: true },
+          { skill_id: 'c', run_count_30d: 0, declining: false },
+        ],
+      });
+      assert.deepStrictEqual(partial, {
+        total_skills: 3,
+        measured_skills: 2,
+        healthy_skills: 1,
+        declining_skills: 1,
+        unmeasured_skills: 1,
+      });
     })) passed++; else failed++;
 
     if (test('treats an unsnapshotted SKILL.md as v1 and orders last_run by actual time', () => {

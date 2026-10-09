@@ -16,8 +16,25 @@
 import type { PluginInput } from "@opencode-ai/plugin"
 import * as fs from "fs"
 import * as path from "path"
+import { fileURLToPath, pathToFileURL } from "url"
 import changedFilesTool from "../tools/changed-files.ts"
 import dependencyAnalyzerTool from "../tools/dependency-analyzer.ts"
+
+/**
+ * Directory of this module.
+ *
+ * The plugin is ESM: tsc compiles it to .opencode/dist/plugins/*.js and OpenCode
+ * loads the .ts directly, so `__dirname` is not defined there. Reading it used to
+ * throw inside a try/catch and silently degrade the reported ECC version to the
+ * default. `import.meta.url` is the ESM source of truth; the `__dirname` check is
+ * kept first only so a CJS consumer of this module still resolves correctly.
+ */
+function resolvePluginDir(): string {
+  if (typeof __dirname === "string" && __dirname) return __dirname
+  return path.dirname(fileURLToPath(import.meta.url))
+}
+
+const PLUGIN_DIR = resolvePluginDir()
 
 /**
  * Type definitions for better type safety
@@ -51,17 +68,84 @@ interface TodoEvent {
 }
 
 /**
- * Read ECC version from package.json
- * Falls back to a default if package.json cannot be read
+ * Artifacts that identify an ECC root, one per capability this plugin needs.
+ *
+ * These are required runtime files, never optional content: `skills/` belongs to
+ * the optional `workflow-quality` module, so probing for a skill rejected
+ * supported modular installs (e.g. `platform-configs` + `hooks-runtime` without
+ * `workflow-quality`) that still ship both the plugin and the tracker — silently
+ * disabling skill telemetry and the shell root export for those users.
+ *
+ * Each probe is the exact artifact the caller is about to use, so detection is
+ * layout detection rather than an authenticity control: a directory only
+ * qualifies because it contains what we are going to read.
  */
-function getECCVersion(): string {
-  try {
-    const packageJsonPath = path.resolve(__dirname, "../../package.json")
-    const packageJson = JSON.parse(fs.readFileSync(packageJsonPath, "utf-8"))
-    return packageJson.version || "2.0.0"
-  } catch {
-    return "2.0.0"
+const ECC_ROOT_PROBES = {
+  // scripts/lib/utils.js is the shared library every scripts/ module requires.
+  root: [path.join("scripts", "lib", "utils.js")],
+  // What the skill-run telemetry hook imports at runtime.
+  skillTracker: [path.join("scripts", "hooks", "skill-run-tracker.js")],
+  // What the resolver embedded in commands requires once they read
+  // CLAUDE_PLUGIN_ROOT, and the version lookup for shell.env.
+  resolver: [path.join("scripts", "lib", "resolve-ecc-root.js")],
+} as const
+
+/**
+ * Walk upwards from `startDir` looking for an ancestor that contains every
+ * relative path in `probes`.
+ *
+ * The plugin ships in three layouts — `<root>/plugins` (installed), `<root>/dist/plugins`
+ * (compiled) and `<repo>/.opencode/plugins` (repo checkout) — so the number of
+ * levels back to the root is not fixed. Probing beats a hardcoded `..`: a wrong
+ * root would make every command resolve against a directory that has no scripts.
+ *
+ * The walk is bounded to 5 levels so it cannot wander into unrelated ancestors.
+ *
+ * Returns null when no ancestor qualifies, so callers can leave the capability
+ * disabled instead of advertising a root that does not hold the artifact.
+ */
+function findEccRootDir(startDir: string, probes: readonly string[]): string | null {
+  let current = startDir
+  for (let depth = 0; depth < 5; depth += 1) {
+    if (probes.every((probe) => fs.existsSync(path.join(current, probe)))) {
+      return current
+    }
+    const parent = path.dirname(current)
+    if (parent === current) break
+    current = parent
   }
+  return null
+}
+
+/**
+ * Read the ECC version from package.json.
+ *
+ * Candidates are tried in order — the resolved ECC root first, then the two
+ * plausible parent depths of the plugin — because the layout differs between an
+ * installed root (`<root>/plugins`), the compiled bundle (`<root>/dist/plugins`)
+ * and a repo checkout (`<repo>/.opencode/plugins`). Falls back to a default if
+ * no package.json can be read.
+ */
+function getECCVersion(eccRootDir?: string | null): string {
+  const candidates = [
+    eccRootDir,
+    path.resolve(PLUGIN_DIR, ".."),
+    path.resolve(PLUGIN_DIR, "..", ".."),
+  ]
+
+  for (const candidate of candidates) {
+    if (!candidate) continue
+    try {
+      const packageJson = JSON.parse(fs.readFileSync(path.join(candidate, "package.json"), "utf-8"))
+      if (typeof packageJson.version === "string" && packageJson.version) {
+        return packageJson.version
+      }
+    } catch {
+      // Try the next candidate.
+    }
+  }
+
+  return "2.0.0"
 }
 
 type ECCHooksPluginFn = (input: PluginInput) => Promise<Record<string, unknown>>
@@ -129,6 +213,60 @@ export const ECCHooksPlugin: ECCHooksPluginFn = async ({
         log(
           "warn",
           "[ECC] changed-files tracking disabled: could not load the changed-files store. " +
+            "Run `ecc repair --target opencode` to restore the missing files. Other ECC hooks are unaffected."
+        )
+      )
+      .catch(() => {})
+  }
+
+  // Claude Code routes post:skill:track through
+  // scripts/hooks/posttooluse-dispatcher.js, which OpenCode never invokes.
+  // Without a caller here, nothing ever writes skill-runs.jsonl and
+  // `skills-health.js --dashboard` has no data to report on any skill (#2463).
+  //
+  // The tracker module is reused rather than reimplemented so its identifier
+  // validation, length bounds and "never persist prompt text" guarantees stay
+  // the ones that were written and audited for the Claude Code path.
+  //
+  // Loaded lazily, for the same reason as the store above: this file is
+  // OpenCode's startup entry point, and a static import of a missing module
+  // crashes the plugin -- and with it the whole session -- before any hook can
+  // run (#2530). A runtime file URL also keeps tsc from resolving a relative
+  // specifier that exists in no compiled layout.
+  type SkillRunTrackerModule = { run?: (payload: unknown) => void }
+  let recordSkillRun: ((payload: unknown) => void) | undefined
+  // Detection is scoped to the tracker itself, so a modular install that omits
+  // optional content still gets telemetry.
+  const trackerRoot = findEccRootDir(PLUGIN_DIR, ECC_ROOT_PROBES.skillTracker)
+  // The root advertised to commands is a different question: those commands
+  // require the resolver, so a root without it would break them again.
+  const eccRoot =
+    findEccRootDir(PLUGIN_DIR, ECC_ROOT_PROBES.resolver) ?? findEccRootDir(PLUGIN_DIR, ECC_ROOT_PROBES.root)
+  try {
+    const trackerPath = trackerRoot
+      ? path.join(trackerRoot, "scripts", "hooks", "skill-run-tracker.js")
+      : null
+    if (!trackerPath || !fs.existsSync(trackerPath)) {
+      throw new Error("skill-run-tracker.js not found")
+    }
+    // CJS module loaded from ESM: run() is on the namespace in Node/Bun, but a
+    // transpiled default export must stay supported.
+    const loaded = (await import(pathToFileURL(trackerPath).href)) as SkillRunTrackerModule & {
+      default?: SkillRunTrackerModule
+    }
+    const entry = typeof loaded.run === "function" ? loaded : loaded.default
+    if (!entry || typeof entry.run !== "function") {
+      throw new Error("skill-run-tracker.js exposes no run()")
+    }
+    recordSkillRun = entry.run
+  } catch {
+    // Same deferred-log rationale as the store above: guarantee that a
+    // telemetry failure can never escape this catch and abort startup.
+    Promise.resolve()
+      .then(() =>
+        log(
+          "warn",
+          "[ECC] skill-run telemetry disabled: could not load scripts/hooks/skill-run-tracker.js. " +
             "Run `ecc repair --target opencode` to restore the missing files. Other ECC hooks are unaffected."
         )
       )
@@ -263,6 +401,25 @@ export const ECCHooksPlugin: ECCHooksPluginFn = async ({
         input.args?.toString().includes("gh pr create")
       ) {
         log("info", "[ECC] PR created - check GitHub Actions status")
+      }
+
+      // Skill telemetry (#2463). OpenCode's tool is named `skill`, so the
+      // harness-side name is matched here (case-insensitively) and the payload
+      // is handed over in the shape the tracker already understands.
+      if (
+        hookEnabled("post:skill:track", ["standard", "strict"]) &&
+        typeof input.tool === "string" &&
+        input.tool.trim().toLowerCase() === "skill"
+      ) {
+        try {
+          recordSkillRun?.({
+            tool_name: "Skill",
+            tool_input: input.args ?? {},
+            tool_response: output,
+          })
+        } catch {
+          // Telemetry is best-effort; never let it affect the tool result.
+        }
       }
     },
 
@@ -483,7 +640,7 @@ export const ECCHooksPlugin: ECCHooksPluginFn = async ({
      */
     "shell.env": async (_input: { cwd: string }, output: { env: Record<string, string> }) => {
       const env: Record<string, string> = {
-        ECC_VERSION: getECCVersion(),
+        ECC_VERSION: getECCVersion(eccRoot),
         ECC_PLUGIN: "true",
         ECC_HOOK_PROFILE: currentProfile,
         ECC_DISABLED_HOOKS: process.env.ECC_DISABLED_HOOKS || "",
@@ -521,6 +678,25 @@ export const ECCHooksPlugin: ECCHooksPluginFn = async ({
       if (detected.length > 0) {
         env.DETECTED_LANGUAGES = detected.join(",")
         env.PRIMARY_LANGUAGE = detected[0]
+      }
+
+      // resolve-ecc-root.js only probes ~/.claude and Claude Code's plugin
+      // cache, so under OpenCode it fell back to ~/.claude and every command
+      // carrying the inlined resolver failed to find its scripts. That resolver
+      // reads CLAUDE_PLUGIN_ROOT first, so exporting the root here fixes them
+      // through the mechanism ECC already provides -- rather than editing the
+      // command files that embed the locator.
+      //
+      // Only set when a root actually exists, and never replace a root someone
+      // else already chose: neither the process environment (set by the user)
+      // nor `output.env` (set by an earlier plugin). The final merge below
+      // overwrites output.env, so checking it only in `env` would clobber it.
+      const rootAlreadySet = Boolean(
+        (process.env.CLAUDE_PLUGIN_ROOT || "").trim() ||
+          (output.env?.CLAUDE_PLUGIN_ROOT || "").trim()
+      )
+      if (eccRoot && !rootAlreadySet) {
+        env.CLAUDE_PLUGIN_ROOT = eccRoot
       }
 
       // OpenCode reads the supplied output object and ignores callback return values.

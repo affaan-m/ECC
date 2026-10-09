@@ -328,6 +328,18 @@ function renderVersionTimelinePanel(skillsById, options = {}) {
   };
 }
 
+/**
+ * Render the full skill-health dashboard: header, coverage warning and panels.
+ *
+ * Coverage is stated explicitly because the 30-day window can empty out while
+ * runs are still retained, so "unmeasured" must not be reported as "never
+ * recorded" (#2463).
+ *
+ * @param {object} [options]
+ * @param {string} [options.now] ISO timestamp used as the evaluation instant
+ * @param {string} [options.panel] render only this panel
+ * @returns {{text: string, data: object}}
+ */
 function renderDashboard(options = {}) {
   const now = options.now || new Date().toISOString();
   const nowMs = Date.parse(now);
@@ -359,11 +371,30 @@ function renderDashboard(options = {}) {
   const header = [
     'ECC Skill Health Dashboard',
     `Generated: ${now}`,
-    `Skills: ${summary.total_skills} total, ${summary.healthy_skills} healthy, ${summary.declining_skills} declining`,
+    `Skills: ${summary.total_skills} total, ${summary.measured_skills} measured, ${summary.healthy_skills} healthy, ${summary.declining_skills} declining, ${summary.unmeasured_skills} unmeasured`,
     '',
   ];
 
   textParts.push(header.join('\n'));
+
+  if (summary.unmeasured_skills > 0) {
+    // The window can empty out while runs are still retained, so "unmeasured"
+    // must not be reported as "never recorded" (#2463). Three distinct states,
+    // because "no recent runs" alone does not say which one applies.
+    const recentRuns = health.filterRecordsWithinDays(records, nowMs, 30).length;
+    const coverageNote = records.length === 0
+      ? 'Nothing has ever been recorded, so the panels below are not a signal about skill health.'
+      : recentRuns === 0
+        ? `All ${records.length} retained run${records.length === 1 ? '' : 's'} are older than the 30-day window: coverage aged out rather than never existing. The panels below still show that history.`
+        : `Coverage is partial: ${recentRuns} recent run${recentRuns === 1 ? '' : 's'} inside the window, ${records.length - recentRuns} older one${records.length - recentRuns === 1 ? '' : 's'} retained outside it. Only the measured skills can be judged.`;
+
+    textParts.push([
+      `WARNING: ${summary.unmeasured_skills} of ${summary.total_skills} skills have no recorded run in the last 30 days.`,
+      'This dashboard can say nothing about them: no telemetry is an absence of evidence,',
+      'not a healthy result. Their success rate reads "n/a", which means unknown.',
+      coverageNote,
+    ].join('\n'));
+  }
 
   if (selectedPanel) {
     const result = panelRenderers[selectedPanel]();

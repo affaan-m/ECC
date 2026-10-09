@@ -16,8 +16,9 @@
  * skill id is an identifier, not free text, so anything that does not look like
  * one is dropped rather than written through.
  *
- * Best-effort: never blocks tool execution. Runs under the PostToolUse
- * dispatcher, which owns stdin, pass-through, and exit codes.
+ * Best-effort: never blocks tool execution. Under Claude Code it runs via the
+ * PostToolUse dispatcher, which owns stdin, pass-through, and exit codes; under
+ * OpenCode the ecc-hooks plugin calls run() directly with an equivalent payload.
  *
  * Cross-platform (Windows, macOS, Linux); CommonJS.
  */
@@ -102,6 +103,28 @@ function deriveOutcome(payload) {
   return 'success';
 }
 
+const SKILL_TOOL_NAME = 'skill';
+
+/**
+ * Report whether a hook payload describes a skill tool invocation.
+ *
+ * Claude Code names the tool `Skill`; OpenCode and other harnesses name it
+ * `skill`. Comparing the raw string meant a case difference silently disabled
+ * the whole write side again — the hook ran, dropped every event, and the
+ * dashboard kept reporting unmeasured skills with no hint why.
+ *
+ * @param {{tool_name?: unknown} | null} payload
+ * @returns {boolean}
+ */
+function isSkillToolCall(payload) {
+  if (!payload || typeof payload !== 'object') {
+    return false;
+  }
+
+  const toolName = payload.tool_name;
+  return typeof toolName === 'string' && toolName.trim().toLowerCase() === SKILL_TOOL_NAME;
+}
+
 function buildRecord(payload) {
   const skillId = extractSkillId(payload.tool_input);
   if (!skillId) {
@@ -130,12 +153,22 @@ function buildRecord(payload) {
   };
 }
 
+/**
+ * Record a skill invocation from a hook payload.
+ *
+ * Accepts the raw JSON string Claude Code's dispatcher reads from stdin, or an
+ * already-parsed payload for in-process callers such as the OpenCode plugin.
+ * Non-skill tools and unparsable input are ignored.
+ *
+ * @param {string | object | null | undefined} rawInput
+ * @returns {void}
+ */
 function run(rawInput) {
   try {
     const payload = typeof rawInput === 'string'
       ? (rawInput.trim() ? JSON.parse(rawInput) : {})
       : rawInput;
-    if (payload && typeof payload === 'object' && payload.tool_name === 'Skill') {
+    if (isSkillToolCall(payload)) {
       const record = buildRecord(payload);
       if (record) {
         recordSkillExecution(record);
@@ -146,4 +179,4 @@ function run(rawInput) {
   }
 }
 
-module.exports = { buildRecord, deriveOutcome, extractSkillId, run };
+module.exports = { buildRecord, deriveOutcome, extractSkillId, isSkillToolCall, run };

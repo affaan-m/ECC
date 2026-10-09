@@ -358,6 +358,179 @@ function runTests() {
       }, /Unknown panel/);
     })) passed++; else failed++;
 
+    // A panel that reports every never-used skill as healthy is worse than an
+    // empty one: it looks like evidence and never raises an alert (#2463).
+    if (test('renderDashboard warns that unmeasured skills say nothing about health', () => {
+      const result = dashboard.renderDashboard({
+        skillsRoot,
+        learnedRoot,
+        importedRoot,
+        homeDir,
+        runsFilePath: path.join(homeDir, '.claude', 'state', 'no-such-runs.jsonl'),
+        now,
+        warnThreshold: 0.1,
+      });
+
+      const summary = result.data.summary;
+      assert.ok(summary.unmeasured_skills > 0, 'expected unmeasured skills');
+      assert.ok(
+        result.text.includes('WARNING'),
+        'expected an explicit warning when skills have no telemetry'
+      );
+      assert.match(result.text, /unmeasured/);
+      assert.strictEqual(
+        summary.healthy_skills,
+        0,
+        'skills without runs must not be counted as healthy'
+      );
+    })) passed++; else failed++;
+
+    // Isolated roots so the full-coverage case is guaranteed rather than
+    // conditional: every discovered skill needs a run inside the 30-day window.
+    if (test('renderDashboard omits the warning once every skill is measured', () => {
+      const coveredRoot = createTempDir('ecc-dashboard-covered-');
+      const coveredLearned = createTempDir('ecc-dashboard-covered-');
+      const coveredImported = createTempDir('ecc-dashboard-covered-');
+      const coveredRuns = path.join(homeDir, '.claude', 'state', 'covered-skill-runs.jsonl');
+      try {
+        for (const name of ['covered-a', 'covered-b']) {
+          createSkill(coveredRoot, name, `# ${name}\n`);
+        }
+        appendJsonl(coveredRuns, ['covered-a', 'covered-b'].map(skill_id => ({
+          skill_id,
+          skill_version: 'v1',
+          task_description: `Skill invocation: ${skill_id}`,
+          outcome: 'success',
+          recorded_at: now,
+        })));
+
+        const result = dashboard.renderDashboard({
+          skillsRoot: coveredRoot,
+          learnedRoot: coveredLearned,
+          importedRoot: coveredImported,
+          homeDir,
+          runsFilePath: coveredRuns,
+          now,
+          warnThreshold: 0.1,
+        });
+
+        assert.strictEqual(result.data.summary.unmeasured_skills, 0);
+        assert.strictEqual(result.data.summary.measured_skills, 2);
+        assert.ok(
+          !result.text.includes('WARNING'),
+          'no warning expected when every skill has a run in the window'
+        );
+        assert.strictEqual(
+          result.data.summary.total_skills,
+          result.data.summary.measured_skills + result.data.summary.unmeasured_skills,
+          'measured and unmeasured must partition the total'
+        );
+      } finally {
+        cleanupTempDir(coveredRoot);
+        cleanupTempDir(coveredLearned);
+        cleanupTempDir(coveredImported);
+      }
+    })) passed++; else failed++;
+
+    // The 30-day window can empty out while runs are still retained. Saying
+    // "nothing has ever been recorded" then is factually wrong.
+    if (test('the unmeasured warning distinguishes aged-out coverage from no history', () => {
+      const agedRuns = path.join(homeDir, '.claude', 'state', 'aged-skill-runs.jsonl');
+      const agedOut = new Date(Date.parse(now) - (60 * 24 * 60 * 60 * 1000)).toISOString();
+      appendJsonl(agedRuns, [{
+        skill_id: 'alpha',
+        skill_version: 'v1',
+        task_description: 'Skill invocation: alpha',
+        outcome: 'failure',
+        recorded_at: agedOut,
+      }]);
+
+      const result = dashboard.renderDashboard({
+        skillsRoot,
+        learnedRoot,
+        importedRoot,
+        homeDir,
+        runsFilePath: agedRuns,
+        now,
+        warnThreshold: 0.1,
+      });
+
+      assert.ok(result.data.summary.unmeasured_skills > 0, 'expected unmeasured skills');
+      assert.ok(result.text.includes('WARNING'), 'expected the warning');
+      assert.ok(
+        result.text.includes('aged out'),
+        'retained history outside the window must be described as aged out'
+      );
+      assert.ok(
+        !result.text.includes('Nothing has ever been recorded'),
+        'must not claim there is no history when runs are retained'
+      );
+    })) passed++; else failed++;
+
+    // Mixed coverage is the common case: some skills used recently, others not.
+// It must not be described as aged out, nor as having no history at all.
+    if (test('the unmeasured warning describes partial coverage as partial', () => {
+      const mixedRuns = path.join(homeDir, '.claude', 'state', 'mixed-skill-runs.jsonl');
+      appendJsonl(mixedRuns, [
+        {
+          skill_id: 'alpha',
+          skill_version: 'v1',
+          task_description: 'Skill invocation: alpha',
+          outcome: 'success',
+          recorded_at: now,
+        },
+        {
+          skill_id: 'beta',
+          skill_version: 'v1',
+          task_description: 'Skill invocation: beta',
+          outcome: 'success',
+          recorded_at: new Date(Date.parse(now) - (60 * 24 * 60 * 60 * 1000)).toISOString(),
+        },
+      ]);
+
+      const result = dashboard.renderDashboard({
+        skillsRoot,
+        learnedRoot,
+        importedRoot,
+        homeDir,
+        runsFilePath: mixedRuns,
+        now,
+        warnThreshold: 0.1,
+      });
+
+      assert.ok(result.text.includes('WARNING'), 'expected the warning');
+      assert.ok(
+        result.text.includes('Coverage is partial'),
+        'mixed recent and aged runs must be reported as partial coverage'
+      );
+      assert.ok(
+        !result.text.includes('aged out'),
+        'coverage is not aged out while recent runs exist'
+      );
+      assert.ok(
+        !result.text.includes('Nothing has ever been recorded'),
+        'runs are retained, so history is not missing'
+      );
+    })) passed++; else failed++;
+
+    // With no runs at all the stronger statement is the accurate one.
+    if (test('the unmeasured warning says nothing was ever recorded when there is no history', () => {
+      const result = dashboard.renderDashboard({
+        skillsRoot,
+        learnedRoot,
+        importedRoot,
+        homeDir,
+        runsFilePath: path.join(homeDir, '.claude', 'state', 'definitely-absent.jsonl'),
+        now,
+        warnThreshold: 0.1,
+      });
+
+      assert.ok(
+        result.text.includes('Nothing has ever been recorded'),
+        'an empty record set must be reported as missing telemetry'
+      );
+    })) passed++; else failed++;
+
     console.log('\nCLI integration:');
 
     if (test('CLI --dashboard --json returns valid JSON with all panels', () => {
