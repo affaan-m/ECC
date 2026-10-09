@@ -26,12 +26,14 @@ const BUILTINS = new Set(builtinModules);
 const SCRIPT_EXTENSIONS = new Set(['.js', '.cjs', '.mjs']);
 const MARK = '\u0000';
 const SLOT = `${MARK}(\\d+)${MARK}`;
-const CALL_PATTERN = new RegExp(`\\b(require|import)\\s*\\(\\s*${SLOT}\\s*\\)`, 'g');
+// `obj.require(`, `obj?.import(` and `obj . require(` are method calls, not module loads.
+const NOT_MEMBER = '(?<!\\.\\s*)';
+const CALL_PATTERN = new RegExp(`${NOT_MEMBER}\\b(require|import)\\s*\\(\\s*${SLOT}\\s*\\)`, 'g');
 const FROM_PATTERN = new RegExp(`\\bfrom\\s*${SLOT}`, 'g');
 const SIDE_EFFECT_PATTERN = new RegExp(`\\bimport\\s*${SLOT}`, 'g');
 const DIRNAME_JOIN_PATTERN = new RegExp(
-  `\\brequire\\s*\\(\\s*path\\.join\\s*\\(\\s*__dirname\\s*((?:,\\s*${SLOT}\\s*)+)\\)\\s*\\)`, 'g');
-const DYNAMIC_PATTERN = /\b(?:require|import)\s*\(\s*((?:[^()]|\([^()]*\))+)\)/g;
+  `${NOT_MEMBER}\\brequire\\s*\\(\\s*path\\.join\\s*\\(\\s*__dirname\\s*((?:,\\s*${SLOT}\\s*)+)\\)\\s*\\)`, 'g');
+const CALL_OPEN_PATTERN = new RegExp(`${NOT_MEMBER}\\b(?:require|import)\\s*\\(`, 'g');
 const STATIC_JOIN_PATTERN = new RegExp(`^path\\.join\\s*\\(\\s*__dirname\\s*(?:,\\s*${SLOT}\\s*)+\\)$`);
 const SLOT_PATTERN = new RegExp(SLOT, 'g');
 // Closes an interpolation; no keyword pattern can match across it.
@@ -182,6 +184,27 @@ function collect(pattern, code, handler) {
   }
 }
 
+/**
+ * The argument text of every `require(...)`/`import(...)` call, matched to
+ * its closing paren at any nesting depth. Strings are already slots, so a
+ * paren inside one cannot unbalance the count.
+ */
+function callArguments(code) {
+  const found = [];
+  collect(CALL_OPEN_PATTERN, code, match => {
+    const start = match.index + match[0].length;
+    let depth = 1;
+    let cursor = start;
+    while (cursor < code.length && depth > 0) {
+      if (code[cursor] === '(') depth += 1;
+      else if (code[cursor] === ')') depth -= 1;
+      cursor += 1;
+    }
+    if (depth === 0) found.push(code.slice(start, cursor - 1).trim());
+  });
+  return found;
+}
+
 function renderExpression(text, literals) {
   return text.replace(SLOT_PATTERN, (_whole, slotIndex) => `'${literals[Number(slotIndex)]}'`).split(CLOSE).join(' ').trim();
 }
@@ -220,11 +243,10 @@ function extractReferences(rawSource) {
     collect(SLOT_PATTERN, match[1], slotMatch => segments.push(literals[Number(slotMatch[1])]));
     specifiers.add(`./${segments.join('/')}`);
   });
-  collect(DYNAMIC_PATTERN, code, match => {
-    const argument = match[1].trim();
-    if (new RegExp(`^${SLOT}$`).test(argument) || STATIC_JOIN_PATTERN.test(argument)) return;
+  for (const argument of callArguments(code)) {
+    if (!argument || new RegExp(`^${SLOT}$`).test(argument) || STATIC_JOIN_PATTERN.test(argument)) continue;
     dynamic.add(renderExpression(argument, literals));
-  });
+  }
   return { specifiers: [...specifiers], imports: [...imports], packages: [...packages], dynamic: [...dynamic] };
 }
 
