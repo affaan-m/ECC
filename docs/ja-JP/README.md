@@ -20,6 +20,7 @@
 <p align="center">
   <strong>Language:</strong>
   <a href="../../README.md">English</a> |
+  <a href="../ar/README.md">العربية</a> |
   <a href="../pt-BR/README.md">Português (Brasil)</a> |
   <a href="../../README.zh-CN.md">简体中文</a> |
   <a href="../zh-TW/README.md">繁體中文</a> |

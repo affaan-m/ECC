@@ -205,7 +205,7 @@
     {
       "id": "capability:ito-compute",
       "family": "capability",
-      "description": "Authenticated It\u00f4 GPU inventory, RFQ, status, device revocation, and explicitly gated node-qualification workflows through the separately installed canonical CLI.",
+      "description": "Authenticated Itô GPU inventory, RFQ, status, device revocation, and explicitly gated node-qualification workflows through the separately installed canonical CLI.",
       "modules": [
         "ito-compute"
       ]
@@ -684,6 +684,14 @@
       "description": "Polish (pl) translated reference docs installed to ~/.claude/docs/pl/.",
       "modules": [
         "docs-pl"
+      ]
+    },
+    {
+      "id": "locale:ar",
+      "family": "locale",
+      "description": "Arabic (ar) translated reference docs installed to ~/.claude/docs/ar/.",
+      "modules": [
+        "docs-ar"
       ]
     }
   ]
