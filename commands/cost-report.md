@@ -1,6 +1,6 @@
 ---
 description: Generate a local Claude Code cost report from the ECC cost-tracker metrics log. Use for a terminal summary or CSV export of tracked spend; the cost-tracking skill covers the same metrics log for on-demand cost/budget questions asked in conversation.
-argument-hint: [csv]
+argument-hint: "[csv]"
 ---
 
 # Cost Report
