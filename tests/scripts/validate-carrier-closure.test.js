@@ -137,6 +137,13 @@ test('an extensionless require resolves to a .json file', () => withFixture(root
   assert.equal(result.status, 'success', JSON.stringify(result.failures));
 }));
 
+test('an object method named require is not a module load', () => withFixture(root => {
+  plantSkillScript(root, "const records = { require: name => name };\nmodule.exports = records.require('./label');\n");
+  const result = validator().validate(root);
+  assert.equal(result.status, 'success', JSON.stringify(result.failures));
+  assert.deepEqual(result.warnings, []);
+}));
+
 test('a tagged template named from is not an import', () => withFixture(root => {
   plantSkillScript(root, 'const from = parts => parts[0];\nmodule.exports = from`./helper`;\n');
   const result = validator().validate(root);
@@ -221,7 +228,15 @@ const SCANNER_CASES = [
     "const n = obj?. while(x) / 2, q = \"/\"; require('./after-optional');", ['./after-optional']],
   ['a tagged template named from', 'const from = p => p[0]; const s = from`./helper`;', []],
   ['a template import() is still a dependency', 'import(`./templated`);', ['./templated']],
+  ['member calls named require or import',
+    "r.require('./label'); obj?.import('./x'); obj . require('./y'); obj.\nimport('./z'); require('./real');", ['./real']],
 ];
+
+test('scanner: computed arguments nested more than one level deep still warn', () => {
+  const { dynamic } = validator().extractReferences(
+    "require(path.join(__dirname, getName())); require(a(b(c()))); obj.require(hidden());");
+  assert.deepEqual(dynamic.sort(), ['a(b(c()))', 'path.join(__dirname, getName())']);
+});
 
 for (const [label, source, expected] of SCANNER_CASES) {
   test(`scanner: ${label}`, () => {
