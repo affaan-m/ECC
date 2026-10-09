@@ -39,9 +39,9 @@ const CLOSE = `${MARK}${MARK}`;
 const ESCAPE_PATTERN = /\\(?:u\{([0-9a-fA-F]+)\}|u([0-9a-fA-F]{4})|x([0-9a-fA-F]{2})|(\r\n|[\s\S]))/g;
 const SIMPLE_ESCAPES = Object.freeze({ n: '\n', r: '\r', t: '\t', b: '\b', f: '\f', v: '\v', 0: '\0' });
 const LINE_CONTINUATIONS = new Set(['\n', '\r', '\r\n', '\u2028', '\u2029']);
-const REGEX_PRECEDES = /(?:[([{,;:=!&|?+\-*/%~^<>]|\b(?:return|typeof|case|in|of|new|delete|void|instanceof|do|else|yield|await))$/;
-// A `(` opening a statement condition; `a.if(` is a method call, not one.
-const CONTROL_OPENS = /(?:^|[^.\w$])(?:if|while|for|with)$/;
+// `}` ends a block, so a slash after it starts a statement: a regex.
+const REGEX_PRECEDES = /(?:[([{},;:=!&|?+\-*/%~^<>]|\b(?:return|typeof|case|in|of|new|delete|void|instanceof|do|else|yield|await))$/;
+const CONDITION_KEYWORD = /(?:^|[^\w$])(if|while|for|with)$/;
 
 /** Cook a raw string or template chunk the way the JavaScript parser would. */
 function decodeEscapes(raw) {
@@ -59,6 +59,16 @@ function decodeEscapes(raw) {
 
 function isAbsoluteSpecifier(value) {
   return value.startsWith('/') || value.startsWith('\\\\') || /^[A-Za-z]:[\\/]/.test(value) || /^file:/i.test(value);
+}
+
+/**
+ * Whether code ends with a keyword whose `(` opens a statement condition.
+ * `obj.if(`, `obj?. while(` and `obj.` + newline + `if(` are method calls,
+ * so the token before the keyword, ignoring whitespace, must not be a dot.
+ */
+function opensCondition(code) {
+  const match = CONDITION_KEYWORD.exec(code);
+  return Boolean(match) && !code.slice(0, code.length - match[1].length).trimEnd().endsWith('.');
 }
 
 function readRegexLiteral(source, start) {
@@ -92,7 +102,13 @@ function scanSource(rawSource) {
   let closedCondition = false;
   let code = '';
   let index = 0;
-  const slot = value => { code += `${MARK}${literals.push(decodeEscapes(value)) - 1}${MARK}`; };
+  // Slots cut from template literals; `from` and `import` need a quoted string.
+  const templates = new Set();
+  const slot = (value, fromTemplate = false) => {
+    const slotIndex = literals.push(decodeEscapes(value)) - 1;
+    if (fromTemplate) templates.add(slotIndex);
+    code += `${MARK}${slotIndex}${MARK}`;
+  };
   const frame = () => (stack.length ? stack[stack.length - 1] : null);
 
   while (index < source.length) {
@@ -102,9 +118,9 @@ function scanSource(rawSource) {
 
     if (open && open.type === 'template') {
       if (char === '\\') { open.text += source.substr(index, 2); index += 2; continue; }
-      if (char === '`') { stack.pop(); slot(open.text); index += 1; continue; }
+      if (char === '`') { stack.pop(); slot(open.text, true); index += 1; continue; }
       if (char === '$' && next === '{') {
-        slot(open.text);
+        slot(open.text, true);
         open.text = '';
         stack.push({ type: 'interpolation', depth: 0 });
         index += 2;
@@ -148,13 +164,13 @@ function scanSource(rawSource) {
         open.depth -= 1;
       }
     }
-    if (char === '(') parens.push(CONTROL_OPENS.test(code.trimEnd()));
+    if (char === '(') parens.push(opensCondition(code.trimEnd()));
     else if (char === ')') closedCondition = parens.pop() === true;
     code += char;
     index += 1;
   }
-  if (frame() && frame().type === 'template') slot(frame().text);
-  return { code, literals };
+  if (frame() && frame().type === 'template') slot(frame().text, true);
+  return { code, literals, templates };
 }
 
 function collect(pattern, code, handler) {
@@ -177,7 +193,7 @@ function renderExpression(text, literals) {
  * or static `import`/`from`, which Node resolves by exact path.
  */
 function extractReferences(rawSource) {
-  const { code, literals } = scanSource(rawSource);
+  const { code, literals, templates } = scanSource(rawSource);
   const specifiers = new Set();
   const imports = new Set();
   const packages = new Set();
@@ -192,8 +208,12 @@ function extractReferences(rawSource) {
     }
   };
   collect(CALL_PATTERN, code, match => record(literals[Number(match[2])], match[1] === 'import'));
+  // Static `from` and side-effect `import` take only a quoted string, so a
+  // template there (a tag named `from`, say) is not an import.
   for (const pattern of [FROM_PATTERN, SIDE_EFFECT_PATTERN]) {
-    collect(pattern, code, match => record(literals[Number(match[1])], true));
+    collect(pattern, code, match => {
+      if (!templates.has(Number(match[1]))) record(literals[Number(match[1])], true);
+    });
   }
   collect(DIRNAME_JOIN_PATTERN, code, match => {
     const segments = [];
@@ -210,8 +230,9 @@ function extractReferences(rawSource) {
 
 /**
  * The planned paths that would satisfy a specifier, or the failure reason
- * when none can. CommonJS `require` searches extensions and directory
- * indexes; ESM (`import`, or any `.mjs` file) resolves only the exact path.
+ * when none can. CommonJS `require` tries the path, then `.js` and `.json`,
+ * then a directory's `index.js` and `index.json` (`.cjs` and `.mjs` must be
+ * named); ESM (`import`, or any `.mjs` file) resolves only the exact path.
  * A relative backslash is not a separator on Linux or macOS, so it is
  * rejected rather than normalized.
  */
@@ -222,7 +243,7 @@ function candidateDestinations(destinationPath, specifier, exact) {
   if (base === '..' || base.startsWith('../')) return { base, candidates: null, reason: 'outside-carrier-tree' };
   const candidates = exact
     ? [base]
-    : [base, `${base}.js`, `${base}.cjs`, `${base}.mjs`, `${base}.json`, `${base}/index.js`, `${base}/index.json`];
+    : [base, `${base}.js`, `${base}.json`, `${base}/index.js`, `${base}/index.json`];
   return { base, candidates, reason: null };
 }
 
