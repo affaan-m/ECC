@@ -44,8 +44,8 @@
       },
       {
         "id": "pre:edit-write:gateguard-fact-force",
-        "description": "Fact-forcing gate: block first Edit/Write/MultiEdit per file and demand investigation (importers, data schemas, user instruction) before allowing",
-        "fingerprint": "32c4a312b4c2"
+        "description": "Fact-forcing gate: deny the first Edit/Write/MultiEdit/NotebookEdit of each file with questions chosen by target class and by what the change touches; a completed search naming the file in the current turn, a comment or whitespace-only edit, or a same-turn sibling of a new file already gated passes with a note instead; sensitive targets (secrets, keys, auth/payment code, migrations, CI workflows) and hard-linked files are always gated, also in subagents",
+        "fingerprint": "45fbef2d7f27"
       }
     ],
     "PreCompact": [

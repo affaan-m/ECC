@@ -1,0 +1,463 @@
+{
+  "name": "bugfix-after-scoped-search",
+  "description": "Bug fix preceded by a scoped rg that names the file, then a test edit, a mutating first command and read-only git.",
+  "files": {
+    "src/parser/tokenizer.js": "'use strict';\n\nfunction columnOf(index, lineStart) {\n  return index - lineStart;\n}\n\nfunction tokenize(text) {\n  return text.split(/\\s+/).map((word, index) => ({ word, column: columnOf(index, 0) }));\n}\n\nmodule.exports = { tokenize };\n",
+    "src/parser/lexer.js": "'use strict';\n\nconst { tokenize } = require('./tokenizer');\n\nmodule.exports = { lex: text => tokenize(text) };\n",
+    "tests/parser/tokenizer.test.js": "'use strict';\n\nconst { tokenize } = require('../../src/parser/tokenizer');\n\ntest('columns', () => expect(tokenize('a b')[0].column).toBe(0));\n"
+  },
+  "steps": [
+    {
+      "id": "rg-tokenizer",
+      "note": "Read-only first shell command.",
+      "transcript": [
+        {
+          "type": "user",
+          "uuid": "bugfix-after-scoped-search-001",
+          "sessionId": "sess-bugfix",
+          "isSidechain": false,
+          "promptId": "prompt-bugfix-1",
+          "message": {
+            "role": "user",
+            "content": "Column numbers in tokenizer errors are off by one; fix it and update the test."
+          }
+        },
+        {
+          "type": "assistant",
+          "uuid": "bugfix-after-scoped-search-002",
+          "sessionId": "sess-bugfix",
+          "isSidechain": false,
+          "message": {
+            "id": "msg_bugfixafterscopedsearch_01",
+            "type": "message",
+            "role": "assistant",
+            "model": "claude-sonnet-4-5",
+            "content": [
+              {
+                "type": "tool_use",
+                "id": "toolu_bugfixafterscopedsearch_001",
+                "name": "Bash",
+                "input": {
+                  "command": "rg -n \"tokenizer\" src tests",
+                  "description": "Find tokenizer users"
+                }
+              }
+            ]
+          }
+        }
+      ],
+      "payload": {
+        "session_id": "sess-bugfix",
+        "transcript_path": "{{transcript}}",
+        "cwd": "{{root}}",
+        "permission_mode": "default",
+        "hook_event_name": "PreToolUse",
+        "tool_name": "Bash",
+        "tool_input": {
+          "command": "rg -n \"tokenizer\" src tests",
+          "description": "Find tokenizer users"
+        },
+        "tool_use_id": "toolu_bugfixafterscopedsearch_001"
+      },
+      "expect": "allow",
+      "mustDeny": false,
+      "redundant": true
+    },
+    {
+      "id": "edit-tokenizer",
+      "note": "The scoped rg already found every user of the file.",
+      "transcript": [
+        {
+          "type": "user",
+          "uuid": "bugfix-after-scoped-search-003",
+          "sessionId": "sess-bugfix",
+          "isSidechain": false,
+          "promptId": "prompt-bugfix-1",
+          "message": {
+            "role": "user",
+            "content": [
+              {
+                "type": "tool_result",
+                "tool_use_id": "toolu_bugfixafterscopedsearch_001",
+                "content": "ok"
+              }
+            ]
+          }
+        },
+        {
+          "type": "assistant",
+          "uuid": "bugfix-after-scoped-search-004",
+          "sessionId": "sess-bugfix",
+          "isSidechain": false,
+          "message": {
+            "id": "msg_bugfixafterscopedsearch_02",
+            "type": "message",
+            "role": "assistant",
+            "model": "claude-sonnet-4-5",
+            "content": [
+              {
+                "type": "tool_use",
+                "id": "toolu_bugfixafterscopedsearch_002",
+                "name": "Read",
+                "input": {
+                  "file_path": "{{root}}/src/parser/tokenizer.js"
+                }
+              }
+            ]
+          }
+        },
+        {
+          "type": "user",
+          "uuid": "bugfix-after-scoped-search-005",
+          "sessionId": "sess-bugfix",
+          "isSidechain": false,
+          "promptId": "prompt-bugfix-1",
+          "message": {
+            "role": "user",
+            "content": [
+              {
+                "type": "tool_result",
+                "tool_use_id": "toolu_bugfixafterscopedsearch_002",
+                "content": "ok"
+              }
+            ]
+          }
+        },
+        {
+          "type": "assistant",
+          "uuid": "bugfix-after-scoped-search-006",
+          "sessionId": "sess-bugfix",
+          "isSidechain": false,
+          "message": {
+            "id": "msg_bugfixafterscopedsearch_03",
+            "type": "message",
+            "role": "assistant",
+            "model": "claude-sonnet-4-5",
+            "content": [
+              {
+                "type": "tool_use",
+                "id": "toolu_bugfixafterscopedsearch_003",
+                "name": "Edit",
+                "input": {
+                  "file_path": "{{root}}/src/parser/tokenizer.js",
+                  "old_string": "  return index - lineStart;",
+                  "new_string": "  return index - lineStart + 1;"
+                }
+              }
+            ]
+          }
+        }
+      ],
+      "payload": {
+        "session_id": "sess-bugfix",
+        "transcript_path": "{{transcript}}",
+        "cwd": "{{root}}",
+        "permission_mode": "default",
+        "hook_event_name": "PreToolUse",
+        "tool_name": "Edit",
+        "tool_input": {
+          "file_path": "{{root}}/src/parser/tokenizer.js",
+          "old_string": "  return index - lineStart;",
+          "new_string": "  return index - lineStart + 1;"
+        },
+        "tool_use_id": "toolu_bugfixafterscopedsearch_003"
+      },
+      "expect": "allow",
+      "mustDeny": false,
+      "redundant": true,
+      "relevantQuestions": [
+        "local-callers",
+        "quote-instruction"
+      ]
+    },
+    {
+      "id": "edit-tokenizer-again",
+      "transcript": [
+        {
+          "type": "user",
+          "uuid": "bugfix-after-scoped-search-007",
+          "sessionId": "sess-bugfix",
+          "isSidechain": false,
+          "promptId": "prompt-bugfix-1",
+          "message": {
+            "role": "user",
+            "content": [
+              {
+                "type": "tool_result",
+                "tool_use_id": "toolu_bugfixafterscopedsearch_003",
+                "content": "ok"
+              }
+            ]
+          }
+        },
+        {
+          "type": "assistant",
+          "uuid": "bugfix-after-scoped-search-008",
+          "sessionId": "sess-bugfix",
+          "isSidechain": false,
+          "message": {
+            "id": "msg_bugfixafterscopedsearch_04",
+            "type": "message",
+            "role": "assistant",
+            "model": "claude-sonnet-4-5",
+            "content": [
+              {
+                "type": "tool_use",
+                "id": "toolu_bugfixafterscopedsearch_004",
+                "name": "Edit",
+                "input": {
+                  "file_path": "{{root}}/src/parser/tokenizer.js",
+                  "old_string": "function columnOf(index, lineStart) {",
+                  "new_string": "function columnOf(index, lineStart = 0) {"
+                }
+              }
+            ]
+          }
+        }
+      ],
+      "payload": {
+        "session_id": "sess-bugfix",
+        "transcript_path": "{{transcript}}",
+        "cwd": "{{root}}",
+        "permission_mode": "default",
+        "hook_event_name": "PreToolUse",
+        "tool_name": "Edit",
+        "tool_input": {
+          "file_path": "{{root}}/src/parser/tokenizer.js",
+          "old_string": "function columnOf(index, lineStart) {",
+          "new_string": "function columnOf(index, lineStart = 0) {"
+        },
+        "tool_use_id": "toolu_bugfixafterscopedsearch_004"
+      },
+      "expect": "allow",
+      "mustDeny": false,
+      "redundant": false
+    },
+    {
+      "id": "edit-tokenizer-test",
+      "note": "rg tokenizer src tests already searched the test directory for the module the test is named after.",
+      "transcript": [
+        {
+          "type": "user",
+          "uuid": "bugfix-after-scoped-search-009",
+          "sessionId": "sess-bugfix",
+          "isSidechain": false,
+          "promptId": "prompt-bugfix-1",
+          "message": {
+            "role": "user",
+            "content": [
+              {
+                "type": "tool_result",
+                "tool_use_id": "toolu_bugfixafterscopedsearch_004",
+                "content": "ok"
+              }
+            ]
+          }
+        },
+        {
+          "type": "assistant",
+          "uuid": "bugfix-after-scoped-search-010",
+          "sessionId": "sess-bugfix",
+          "isSidechain": false,
+          "message": {
+            "id": "msg_bugfixafterscopedsearch_05",
+            "type": "message",
+            "role": "assistant",
+            "model": "claude-sonnet-4-5",
+            "content": [
+              {
+                "type": "tool_use",
+                "id": "toolu_bugfixafterscopedsearch_005",
+                "name": "Read",
+                "input": {
+                  "file_path": "{{root}}/tests/parser/tokenizer.test.js"
+                }
+              }
+            ]
+          }
+        },
+        {
+          "type": "user",
+          "uuid": "bugfix-after-scoped-search-011",
+          "sessionId": "sess-bugfix",
+          "isSidechain": false,
+          "promptId": "prompt-bugfix-1",
+          "message": {
+            "role": "user",
+            "content": [
+              {
+                "type": "tool_result",
+                "tool_use_id": "toolu_bugfixafterscopedsearch_005",
+                "content": "ok"
+              }
+            ]
+          }
+        },
+        {
+          "type": "assistant",
+          "uuid": "bugfix-after-scoped-search-012",
+          "sessionId": "sess-bugfix",
+          "isSidechain": false,
+          "message": {
+            "id": "msg_bugfixafterscopedsearch_06",
+            "type": "message",
+            "role": "assistant",
+            "model": "claude-sonnet-4-5",
+            "content": [
+              {
+                "type": "tool_use",
+                "id": "toolu_bugfixafterscopedsearch_006",
+                "name": "Edit",
+                "input": {
+                  "file_path": "{{root}}/tests/parser/tokenizer.test.js",
+                  "old_string": ".toBe(0));",
+                  "new_string": ".toBe(1));"
+                }
+              }
+            ]
+          }
+        }
+      ],
+      "payload": {
+        "session_id": "sess-bugfix",
+        "transcript_path": "{{transcript}}",
+        "cwd": "{{root}}",
+        "permission_mode": "default",
+        "hook_event_name": "PreToolUse",
+        "tool_name": "Edit",
+        "tool_input": {
+          "file_path": "{{root}}/tests/parser/tokenizer.test.js",
+          "old_string": ".toBe(0));",
+          "new_string": ".toBe(1));"
+        },
+        "tool_use_id": "toolu_bugfixafterscopedsearch_006"
+      },
+      "expect": "allow",
+      "mustDeny": false,
+      "redundant": true
+    },
+    {
+      "id": "npm-test",
+      "note": "First command that is not read-only.",
+      "transcript": [
+        {
+          "type": "user",
+          "uuid": "bugfix-after-scoped-search-013",
+          "sessionId": "sess-bugfix",
+          "isSidechain": false,
+          "promptId": "prompt-bugfix-1",
+          "message": {
+            "role": "user",
+            "content": [
+              {
+                "type": "tool_result",
+                "tool_use_id": "toolu_bugfixafterscopedsearch_006",
+                "content": "ok"
+              }
+            ]
+          }
+        },
+        {
+          "type": "assistant",
+          "uuid": "bugfix-after-scoped-search-014",
+          "sessionId": "sess-bugfix",
+          "isSidechain": false,
+          "message": {
+            "id": "msg_bugfixafterscopedsearch_07",
+            "type": "message",
+            "role": "assistant",
+            "model": "claude-sonnet-4-5",
+            "content": [
+              {
+                "type": "tool_use",
+                "id": "toolu_bugfixafterscopedsearch_007",
+                "name": "Bash",
+                "input": {
+                  "command": "npm test -- tests/parser",
+                  "description": "Run parser tests"
+                }
+              }
+            ]
+          }
+        }
+      ],
+      "payload": {
+        "session_id": "sess-bugfix",
+        "transcript_path": "{{transcript}}",
+        "cwd": "{{root}}",
+        "permission_mode": "default",
+        "hook_event_name": "PreToolUse",
+        "tool_name": "Bash",
+        "tool_input": {
+          "command": "npm test -- tests/parser",
+          "description": "Run parser tests"
+        },
+        "tool_use_id": "toolu_bugfixafterscopedsearch_007"
+      },
+      "expect": "deny",
+      "mustDeny": false,
+      "redundant": false
+    },
+    {
+      "id": "git-diff-stat",
+      "transcript": [
+        {
+          "type": "user",
+          "uuid": "bugfix-after-scoped-search-015",
+          "sessionId": "sess-bugfix",
+          "isSidechain": false,
+          "promptId": "prompt-bugfix-1",
+          "message": {
+            "role": "user",
+            "content": [
+              {
+                "type": "tool_result",
+                "tool_use_id": "toolu_bugfixafterscopedsearch_007",
+                "content": "ok"
+              }
+            ]
+          }
+        },
+        {
+          "type": "assistant",
+          "uuid": "bugfix-after-scoped-search-016",
+          "sessionId": "sess-bugfix",
+          "isSidechain": false,
+          "message": {
+            "id": "msg_bugfixafterscopedsearch_08",
+            "type": "message",
+            "role": "assistant",
+            "model": "claude-sonnet-4-5",
+            "content": [
+              {
+                "type": "tool_use",
+                "id": "toolu_bugfixafterscopedsearch_008",
+                "name": "Bash",
+                "input": {
+                  "command": "git diff --stat",
+                  "description": "Show diff summary"
+                }
+              }
+            ]
+          }
+        }
+      ],
+      "payload": {
+        "session_id": "sess-bugfix",
+        "transcript_path": "{{transcript}}",
+        "cwd": "{{root}}",
+        "permission_mode": "default",
+        "hook_event_name": "PreToolUse",
+        "tool_name": "Bash",
+        "tool_input": {
+          "command": "git diff --stat",
+          "description": "Show diff summary"
+        },
+        "tool_use_id": "toolu_bugfixafterscopedsearch_008"
+      },
+      "expect": "allow",
+      "mustDeny": false,
+      "redundant": false
+    }
+  ]
+}

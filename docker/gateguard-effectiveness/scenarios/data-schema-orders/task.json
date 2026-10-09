@@ -1,0 +1,14 @@
+{
+  "id": "data-schema-orders",
+  "question": "data-schema",
+  "targetQuestions": [
+    "data-schema"
+  ],
+  "trap": "data/orders.csv is semicolon-separated with day-first dates and decimal commas; the first thirty rows have days of 12 or less, so a month-first reading looks valid until later rows.",
+  "prompt": "Add src/revenue.js exporting monthlyRevenue(), which reads data/orders.csv and returns revenue per month as an object like { '2026-01': 123.45 }, in dollars rounded to cents.",
+  "evidence": [
+    "DD/MM|day[- ]first|day/month|day, month",
+    "semicolon|';'|\";\"",
+    "decimal comma|comma as (the )?decimal|',' (as|for) (the )?decimal"
+  ]
+}

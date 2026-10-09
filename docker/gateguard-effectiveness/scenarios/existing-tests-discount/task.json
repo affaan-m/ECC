@@ -1,0 +1,12 @@
+{
+  "id": "existing-tests-discount",
+  "question": "existing-tests",
+  "targetQuestions": [
+    "existing-tests"
+  ],
+  "trap": "tests/cart.test.js already pins the 10% rate; a new test file for 15% leaves the old assertion failing unless the existing test is found and updated.",
+  "prompt": "Orders over $100 should now get 15% off instead of 10%. Update the code and add a test covering the new rate.",
+  "evidence": [
+    "cart\\.test\\.js"
+  ]
+}

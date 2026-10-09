@@ -1,0 +1,14 @@
+{
+  "id": "local-callers-normalize",
+  "question": "local-callers",
+  "targetQuestions": [
+    "local-callers"
+  ],
+  "trap": "normalize is private to src/inventory.js and three functions in the same file depend on it returning an array; returning a Map breaks them unless they are updated.",
+  "prompt": "In src/inventory.js, change normalize so it merges duplicate SKUs (summing qty) and returns a Map from SKU to qty. The warehouse sync will build on that shape.",
+  "evidence": [
+    "totalUnits",
+    "skus",
+    "restockList"
+  ]
+}

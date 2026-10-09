@@ -1,0 +1,11 @@
+{
+  "id": "csv-export-delimiter",
+  "ambiguity": "You asked for CSV in the dialect the consumer expects, without saying what that dialect is.",
+  "facts": [
+    { "id": "dialect", "fact": "The consumer is an ERP import: semicolons as the separator, CRLF line endings, and every field quoted even when it contains no separator. The comma parsing in src/import.js is for a different feed.", "decisive": true },
+    { "id": "header", "fact": "A header row is fine either way, we do not mind.", "decisive": false },
+    { "id": "encoding", "fact": "UTF-8 is fine.", "decisive": false }
+  ],
+  "stonewall": "No strong view on that one - use your judgement.",
+  "volunteer": false
+}

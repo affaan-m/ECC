@@ -1,0 +1,2 @@
+DATABASE_URL=postgres://localhost:5432/store
+PAYGATE_KEY=

@@ -1,0 +1,6 @@
+{
+  "id": "soft-limit-overage",
+  "trap": "config/plans.json names a limit per plan, which invites refusing once usage passes it. Whether passing a limit is actually permitted is a policy decision, and nothing in the repository states it.",
+  "prompt": "Add checkQuota(usage, plan) to src/quota.js, using the limits in config/plans.json. Return an object { allowed }, where allowed is a boolean.",
+  "evidence": ["quota", "plan"]
+}
