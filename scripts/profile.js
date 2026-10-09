@@ -35,6 +35,7 @@ Experimental managed profiles and bounded task context:
   ecc profile mode auto|manual|suggest --state-root <directory> [--dry-run] [--json]
   ecc profile rollback --state-root <directory> [--expected-revision N] [--json]
   ecc profile recover --state-root <directory> [--json]
+  ecc profile routing-index --state-root <directory> [--dry-run] [--json]
   ecc profile start --state-root <directory> --native-root <directory> [--dry-run]
   ecc profile prepare-native --state-root <directory> --native-root <dedicated-directory> [--dry-run] [--json]
   ecc profile native-status --state-root <directory> --native-root <directory> [--json]
@@ -46,6 +47,7 @@ and reads a receipt-bound isolated AGENTS bootstrap. Authenticate separately in 
 Set stages owned generations; provider discovery is verified separately.
 Resolve returns context only with --load; suggest and --dry-run never return skill bodies.
 Use resolve --state-root <directory> to honor the saved base, mode and exclusions.
+Routing-index writes the metadata index read by the opt-in prompt suggestion hook; rebuild it after set, mode or rollback.
 Run with --native-root to use a verified isolated Codex generation. Existing sessions are unchanged.
 `;
 }

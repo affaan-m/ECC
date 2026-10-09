@@ -278,6 +278,24 @@ test('actual registry: a near-tied wrong top candidate exposes no fallback', () 
   assert.equal(result.fallback, null);
 });
 
+test('actual registry: function-word overlap alone never auto-selects a skill', () => {
+  const result = resolveTaskContext({ task: task({ query: 'two services both think they own the same record' }), load: true });
+  assert.deepEqual(result.selectedIds, []);
+  assert.deepEqual(result.loadedIds, []);
+  assert.equal(result.reason, 'agent-selection-required');
+  assert.equal(result.fallback, null);
+});
+
+test('actual registry: auto selection loads only expected skills across the routing prompt corpus', () => {
+  const corpus = require('../fixtures/context-selection/routing-prompts.json');
+  const wrong = [];
+  for (const [index, { query, expected }] of [...corpus.direct, ...corpus.paraphrased].entries()) {
+    const result = resolveTaskContext({ task: task({ taskId: `corpus-${index}`, query }), load: false });
+    if (result.selectedIds.some(id => !expected.includes(id))) wrong.push(`${query} -> ${result.selectedIds.join(', ')}`);
+  }
+  assert.deepEqual(wrong, []);
+});
+
 test('actual registry: a simple factual question needs no context', () => {
   const result = resolveTaskContext({ task: task({ query: 'What is the capital of Japan?' }), load: true });
   assert.deepEqual(result.selectedIds, []);
@@ -300,4 +318,19 @@ test('invalid input and oversized bodies fail closed', () => withFixture(repoRoo
   update(repoRoot, 'manifests/context-packs/skill-registry@1.json', value => ({ ...value,
     overrides: [{ id: 'skill:feature', requiredResources: ['skills/feature/references/details.md'] }] }));
   assert.throws(() => resolve(repoRoot, { explicitIds: ['skill:feature'] }, { load: true }), /budget/);
+}));
+
+test('routing entries drop only coded admission denials; a corrupt source still fails the build', () => withFixture(root => {
+  const { routingEntries } = require('../../scripts/lib/context-selection');
+  write(root, 'skills/shared/SKILL.md', '---\nname: shared\ndescription: Shared helper\ndisable-model-invocation: true\n---\nShared');
+  assert.equal(routingEntries({ repoRoot: root, target: 'claude' }).entries.some(entry => entry.id === 'skill:shared'), false);
+  const file = path.join(root, 'skills/feature/SKILL.md');
+  fs.writeFileSync(file, Buffer.concat([fs.readFileSync(file), Buffer.from([0xff, 0x0a])]));
+  assert.throws(() => routingEntries({ repoRoot: root, target: 'claude' }), /UTF-8/);
+}));
+
+test('admission denials carry stable codes', () => withFixture(root => {
+  write(root, 'skills/shared/SKILL.md', '---\nname: shared\ndescription: Shared helper\ndisable-model-invocation: true\n---\nShared');
+  assert.throws(() => resolve(root, { query: 'shared', proposedIds: ['skill:shared'] }, { load: true }),
+    error => error.code === 'ECC_CONTEXT_MANUAL_ONLY');
 }));

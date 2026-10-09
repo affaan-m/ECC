@@ -26,9 +26,14 @@ const AUTO_ADMIT_MARGIN = 1.5;
 const FALLBACK_MIN_BM25 = 12;
 const FALLBACK_MIN_TERMS = 2;
 const FALLBACK_MARGIN = 1.1;
+// Both tiers also require at least one matched term in the skill's name or
+// curated triggers. Description-only overlap on common words (two, both, same)
+// can clear the score bars without naming the skill's subject.
+const MIN_ANCHOR_TERMS = 1;
 // v4: an explicit empty proposal (decline) is honored; the tier-2 fallback no
 // longer overrides declines at the launch/selection call sites.
-const ROUTING_POLICY_VERSION = 4;
+// v5: implicit admission requires a name or trigger anchor term.
+const ROUTING_POLICY_VERSION = 5;
 const TASK_KEYS = new Set(['sessionId', 'taskId', 'revision', 'phase', 'query', 'explicitIds', 'proposedIds', 'noWorkflow']);
 
 function validateTask(task) {
@@ -92,18 +97,26 @@ function policyFor(entry, reader) {
     dynamic: /!`/.test(source) };
 }
 
+// Admission denials carry stable codes so callers can tell a skill that may
+// not be selected from a source that failed verification.
+function denied(message, code) {
+  const error = new Error(message);
+  error.code = code;
+  return error;
+}
+
 function selectedClosure(ids, explicit, byId, excluded, reader) {
   const selected = new Set();
   function visit(id) {
     if (!byId.has(id)) throw new Error(`Unknown context ID: ${id}`);
-    if (excluded.has(id)) throw new Error(`Context ID is excluded: ${id}`);
+    if (excluded.has(id)) throw denied(`Context ID is excluded: ${id}`, 'ECC_CONTEXT_EXCLUDED');
     if (selected.has(id)) return;
     const entry = byId.get(id);
     const policy = policyFor(entry, reader);
-    if (policy.manualOnly && !explicit.has(id)) throw new Error(`Context ID is manual-only: ${id}`);
-    if (policy.authority || policy.dynamic) throw new Error(`Context requires native authority or dynamic-content review: ${id}`);
+    if (policy.manualOnly && !explicit.has(id)) throw denied(`Context ID is manual-only: ${id}`, 'ECC_CONTEXT_MANUAL_ONLY');
+    if (policy.authority || policy.dynamic) throw denied(`Context requires native authority or dynamic-content review: ${id}`, 'ECC_CONTEXT_AUTHORITY');
     selected.add(id);
-    if (selected.size > MAX_SELECTED) throw new Error('Task selection exceeds the skill limit');
+    if (selected.size > MAX_SELECTED) throw denied('Task selection exceeds the skill limit', 'ECC_CONTEXT_SKILL_LIMIT');
     entry.dependencies.forEach(visit);
   }
   ids.forEach(visit);
@@ -117,7 +130,7 @@ function readSelected(ids, byId, reader) {
     return [...new Set([entry.sourcePath, ...entry.requiredResources])].map(sourcePath => {
       const actual = verifiedResource(entry, sourcePath, reader);
       total += actual.bytes;
-      if (total > MAX_CONTEXT_BYTES) throw new Error('Task context exceeds the 32000-byte budget; choose a narrower immediate step');
+      if (total > MAX_CONTEXT_BYTES) throw denied('Task context exceeds the 32000-byte budget; choose a narrower immediate step', 'ECC_CONTEXT_BYTE_BUDGET');
       const content = actual.content.toString('utf8');
       if (!Buffer.from(content, 'utf8').equals(actual.content) || content.includes('\0')) throw new Error('Required context resource is not UTF-8 text');
       return { id, path: sourcePath, digest: actual.digest, bytes: actual.bytes, content };
@@ -133,6 +146,42 @@ function validatePrevious(previous) {
     || (previous.decision !== undefined && !['pending', 'selected', 'none'].includes(previous.decision))) {
     throw new Error('Invalid task context receipt');
   }
+}
+
+const ADMISSION_DENIALS = new Set(['ECC_CONTEXT_EXCLUDED', 'ECC_CONTEXT_MANUAL_ONLY', 'ECC_CONTEXT_AUTHORITY',
+  'ECC_CONTEXT_SKILL_LIMIT', 'ECC_CONTEXT_BYTE_BUDGET']);
+
+function admissibility(byId, excluded, reader) {
+  return id => {
+    try {
+      const closure = selectedClosure([id], new Set(), byId, excluded, reader);
+      readSelected(closure, byId, reader);
+      return true;
+    } catch (error) {
+      // Only coded admission denials remove a suggestion. Source drift,
+      // malformed policy and non-UTF-8 resources fail the build instead.
+      if (ADMISSION_DENIALS.has(error.code)) return false;
+      throw error;
+    }
+  };
+}
+
+/** Entries the resolver could suggest for a profile: not excluded and admissible
+ * without explicit selection. Metadata only; bodies are never returned. */
+function routingEntries({ repoRoot = DEFAULT_REPO_ROOT, profileId = 'lean@1', target = 'codex',
+  selectionMode = 'auto', include = [], exclude = [] } = {}) {
+  const plan = compileContextProfile({ repoRoot, profileId, target, selectionMode, include, exclude });
+  const registry = loadContextRegistry({ repoRoot });
+  const { triggers } = loadSkillTriggers({ repoRoot });
+  if (registry.registryDigest !== plan.registryDigest) throw new Error('Registry changed during routing index build');
+  const byId = new Map(registry.entries.map(entry => [entry.id, entry]));
+  const excluded = new Set(plan.excludedIds);
+  const admissible = admissibility(byId, excluded, createSourceReader(repoRoot));
+  const entries = registry.entries.filter(entry => !excluded.has(entry.id) && admissible(entry.id))
+    .map(entry => ({ id: entry.id, name: entry.name, description: entry.description,
+      ownerModuleId: entry.ownerModuleId, packId: entry.packId, ...(triggers[entry.id] ? { triggers: triggers[entry.id] } : {}) }));
+  return { profileId: plan.profileId, target, selectionMode, planDigest: plan.planDigest, registryDigest: registry.registryDigest,
+    routingPolicyVersion: ROUTING_POLICY_VERSION, triggersDigest: digestObject(triggers), entries };
 }
 
 /** Pure task-scoped resolver. Returned context never invokes a native skill or changes permissions. */
@@ -151,7 +200,7 @@ function resolveTaskContext({ repoRoot = DEFAULT_REPO_ROOT, task, profileId = 'l
   const proposedIds = [...(task.proposedIds || [])].sort();
   [...explicitIds, ...proposedIds].forEach(id => {
     if (!byId.has(id)) throw new Error(`Unknown context ID: ${id}`);
-    if (excluded.has(id)) throw new Error(`Context ID is excluded: ${id}`);
+    if (excluded.has(id)) throw denied(`Context ID is excluded: ${id}`, 'ECC_CONTEXT_EXCLUDED');
   });
   const taskBinding = { sessionId: task.sessionId, taskId: task.taskId, revision: task.revision, phase: task.phase };
   const bindingDigest = digestObject({ ...taskBinding, planDigest: plan.planDigest,
@@ -159,18 +208,7 @@ function resolveTaskContext({ repoRoot = DEFAULT_REPO_ROOT, task, profileId = 'l
     queryDigest: digestObject(task.query || '') });
   const reused = Boolean(previous && previous.bindingDigest === bindingDigest && !task.noWorkflow
     && ['selected', 'none'].includes(previous.decision) && !explicitIds.length && !proposedIds.length);
-  const admissible = id => {
-    try {
-      const closure = selectedClosure([id], new Set(), byId, excluded, reader);
-      readSelected(closure, byId, reader);
-      return true;
-    } catch (error) {
-      // Only known admission denials remove a suggestion. Source drift and
-      // malformed policy still fail closed instead of disappearing from view.
-      if (/manual-only|requires native authority|is excluded|exceeds the skill limit|32000-byte budget|not UTF-8 text/.test(error.message)) return false;
-      throw error;
-    }
-  };
+  const admissible = admissibility(byId, excluded, reader);
   const { candidates } = task.noWorkflow || selectionMode === 'manual' || reused
     ? { candidates: [] } : candidatesFor(task.query || '', registry.entries, excluded, admissible, triggers);
   // Auto admission: free-text routing loads the ranked top skill only on
@@ -210,6 +248,7 @@ function resolveTaskContext({ repoRoot = DEFAULT_REPO_ROOT, task, profileId = 'l
       const top = candidates[0];
       const second = candidates[1];
       if (top.bm25 >= AUTO_ADMIT_MIN_BM25 && top.matchedTerms.length >= AUTO_ADMIT_MIN_TERMS
+        && top.anchorTerms.length >= MIN_ANCHOR_TERMS
         && (!second || top.bm25 >= AUTO_ADMIT_MARGIN * (second.bm25 || 0))) {
         autoSelection = { id: top.id, bm25: top.bm25, matchedTerms: top.matchedTerms.length, exact: false };
       }
@@ -221,6 +260,7 @@ function resolveTaskContext({ repoRoot = DEFAULT_REPO_ROOT, task, profileId = 'l
     const top = candidates[0];
     const second = candidates[1];
     if (top.bm25 >= FALLBACK_MIN_BM25 && top.matchedTerms.length >= FALLBACK_MIN_TERMS
+      && top.anchorTerms.length >= MIN_ANCHOR_TERMS
       && (!second || top.bm25 >= FALLBACK_MARGIN * (second.bm25 || 0))) {
       fallback = { id: top.id, bm25: top.bm25, matchedTerms: top.matchedTerms.length };
     }
@@ -270,4 +310,4 @@ function resolveDeclinedFallback(options, selection) {
     receipt: { ...receiptValue, receiptDigest: digestObject(receiptValue) } };
 }
 
-module.exports = { resolveTaskContext, resolveDeclinedFallback };
+module.exports = { resolveTaskContext, resolveDeclinedFallback, routingEntries };

@@ -52,7 +52,7 @@ A task input contains caller-assigned `sessionId`, `taskId`, positive integer `r
 }
 ```
 
-Auto uses explicit user IDs first, then a completed pinned decision, an unambiguous ranked match, one cited skill name, or admitted agent-proposed IDs. Ambiguous free text shortlists up to five candidates for a bounded proposal. Manual uses explicit IDs; suggest emits a proposal without bodies. `--load` returns selected UTF-8 instructions and declared required resources, capped at 32,000 bytes across at most eight skills. `--task-input -` accepts one UTF-8 JSON object on standard input, capped at 65,536 bytes. These byte caps are output and transport bounds, not native tokenizer results.
+Auto uses explicit user IDs first, then a completed pinned decision, an unambiguous ranked match anchored by a term in the skill name or curated triggers, one cited skill name, or admitted agent-proposed IDs. Ambiguous free text shortlists up to five candidates for a bounded proposal. Manual uses explicit IDs; suggest emits a proposal without bodies. `--load` returns selected UTF-8 instructions and declared required resources, capped at 32,000 bytes across at most eight skills. `--task-input -` accepts one UTF-8 JSON object on standard input, capped at 65,536 bytes. These byte caps are output and transport bounds, not native tokenizer results.
 
 Save the returned `selection.receipt` as a separate JSON document to use `--previous receipt.json`. `--expected-digest` can bind a load to a prior selection digest. Source, trigger content, routing-policy version, profile, mode, exclusions, session, task revision, phase, and a digest of the query invalidate stale reuse. A pending proposal cannot be reused as a completed decision. Receipts are integrity checks for local operation, not an authorization signature.
 
@@ -61,6 +61,28 @@ An agent can call the resolver at task boundaries and read the returned context.
 `run` is the explicit task-launch boundary. Ambiguous Auto routing makes one provider proposal call over candidate IDs and descriptions. It accepts zero or one known candidate, then rechecks source bindings, saved state, exclusions and admission policy before loading bodies. Invalid or stale proposals stop before task execution. The proposal has a 30-second timeout and 64 KiB output bound. Codex uses an ephemeral, filesystem-read-only agent session with inherited tools and configuration; the prompt's request to avoid tools is advisory, not enforced tool isolation. Claude disables tools and session persistence for this proposal. Task text is sent to the configured provider, so its normal authentication and data-handling policy apply.
 
 The task call sends the query and selected reference content on standard input to `codex exec -` or `claude --print`, with no added task permissions or hook overrides. Current-provider launches inherit the provider process environment. An isolated native launch passes only the pinned home paths, `PATH`, a fixed locale, a private temporary directory, and required Windows system root; caller credentials, proxy settings, runtime injection and unrelated secrets are excluded. Its timeout is 90 seconds after a proposal or 120 seconds without one, uses an uncatchable termination signal, and captures at most 1 MiB. Dry run reports the pending proposal without a provider call. A zero provider exit code records process completion; task success and native skill invocation remain unverified. Routine interactive turns outside this launcher do not gain automatic routing.
+
+## Prompt suggestions (opt-in hook)
+
+Ordinary interactive turns can receive advisory skill suggestions from a UserPromptSubmit hook. The hook prints up to three skill IDs with one-line descriptions and the `resolve` command to load one. Like implicit admission, a suggestion needs a matched term in the skill name or curated triggers, or an exact name; it never returns a skill body, changes the saved mode or selection, or grants authority. Loading still goes through `resolve`, which re-verifies canonical sources.
+
+`ecc profile routing-index --state-root <store>` writes a metadata index for the current managed generation: the entries the resolver could suggest (not excluded, admissible without explicit selection), their curated triggers and precomputed retrieval vectors in a compact little-endian encoding. Building refuses a store whose generation no longer matches the canonical sources. A small pointer named by the generation binds the index to the state receipt; the entries file is named by the SHA-256 of its bytes. A `set`, `mode` or `rollback` retires the index until it is rebuilt, and the hook then stays silent with a stderr diagnostic; returning to an earlier generation reports its old index as missing, so the SessionStart builder rebuilds it. Reads validate every entry's fields and are bounded at 4 MiB and 2,048 entries. A build fails if skill sources change while it runs, and a non-UTF-8 skill source fails it instead of disappearing. `--dry-run` reports whether the current index exists.
+
+The hook is inert unless `ECC_CONTEXT_STATE_ROOT` names the store, and it is not registered by default. It is also silent in manual mode (checked before the index is read), for slash commands, prompts under 12 characters and malformed input, and suppresses output once its 150 ms budget (`ECC_CONTEXT_SUGGEST_BUDGET_MS`) is spent. The budget is checked between steps and cannot interrupt a stalled read, so the snippet sets Claude Code's own `timeout` as the hard bound. In suggest mode the hook names the `ecc profile mode auto` command instead of `resolve --load`, because suggest mode never returns bodies. An optional async SessionStart hook builds a missing index. To opt in, add to Claude settings, with `<ecc-root>` the ECC installation:
+
+```json
+{
+  "env": { "ECC_CONTEXT_STATE_ROOT": "/absolute/dedicated/profile-store" },
+  "hooks": {
+    "UserPromptSubmit": [{ "hooks": [{ "type": "command", "timeout": 2,
+      "command": "node \"<ecc-root>/scripts/hooks/run-with-flags.js\" user-prompt:context-suggestions scripts/hooks/context-prompt-suggestions.js" }] }],
+    "SessionStart": [{ "hooks": [{ "type": "command", "async": true, "timeout": 30,
+      "command": "node \"<ecc-root>/scripts/hooks/run-with-flags.js\" session:context-routing-index scripts/hooks/context-routing-index.js" }] }]
+  }
+}
+```
+
+Both hooks honor `ECC_HOOKS_ENABLED`, `ECC_HOOK_PROFILE` and `ECC_DISABLED_HOOKS` through `run-with-flags`.
 
 ## Isolated native Codex generations
 
@@ -80,7 +102,7 @@ Real execution requires an explicit flag and provider authentication. Codex uses
 
 ## Community integration
 
-Jeffrey Montoya's [#2788](https://github.com/affaan-m/ECC/pull/2788) informed whole-tree staging, ownership receipts and reversible generations. LovePlayCode's [#2844](https://github.com/affaan-m/ECC/pull/2844) informed deterministic grouping and explicit exclusion. Jeffrey's [#2945](https://github.com/affaan-m/ECC/pull/2945) informed bounded ID/description ranking and deterministic ties. Canonical source digests replace independent routing-cache authority. [#2740](https://github.com/affaan-m/ECC/pull/2740) remains aligned with native context meters and truthful measurement labels.
+Jeffrey Montoya's [#2788](https://github.com/affaan-m/ECC/pull/2788) informed whole-tree staging, ownership receipts and reversible generations. LovePlayCode's [#2844](https://github.com/affaan-m/ECC/pull/2844) informed deterministic grouping and explicit exclusion. Jeffrey's [#2945](https://github.com/affaan-m/ECC/pull/2945) informed bounded ID/description ranking, deterministic ties and the suggest-only prompt hook. Canonical source digests replace independent routing-cache authority. [#2740](https://github.com/affaan-m/ECC/pull/2740) remains aligned with native context meters and truthful measurement labels.
 
 These are attributed adaptations of concepts; contributor commits have not been silently relabeled as our implementation. Source PR disposition remains separate.
 
