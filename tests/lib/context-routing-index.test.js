@@ -188,6 +188,38 @@ test('an anchored suggestion is not hidden by unanchored candidates ranked above
   assert.deepEqual(routing.suggestContext(index, 'migrate database schema safely today').map(item => item.id), ['skill:schema-tool']);
 });
 
+test('an index file left partial by an interrupted build is replaced on the next build', () => fixture(({ repoRoot, stateRoot }) => {
+  store.applyStore({ repoRoot, stateRoot, target: 'claude' });
+  const { path: file } = routing.writeRoutingIndex({ repoRoot, stateRoot });
+  const bytes = fs.readFileSync(file);
+  // A build that stops mid-write leaves a partial file under the digest name
+  // and has not yet published the pointer.
+  const directory = path.join(stateRoot, 'routing');
+  fs.rmSync(path.join(directory, fs.readdirSync(directory).find(name => name.endsWith('.json'))));
+  fs.writeFileSync(file, bytes.subarray(0, Math.floor(bytes.length / 2)));
+  assert.equal(routing.readRoutingIndex(stateRoot), null);
+  routing.writeRoutingIndex({ repoRoot, stateRoot });
+  assert.ok(fs.readFileSync(file).equals(bytes));
+  assert.equal(routing.routingIndexStatus(stateRoot).status, 'current');
+}));
+
+test('a source edited after entries are read leaves an index that matches the stored generation', () => fixture(({ repoRoot, stateRoot }) => {
+  store.applyStore({ repoRoot, stateRoot, target: 'claude' });
+  const selection = require('../../scripts/lib/context-selection');
+  const original = selection.routingEntries;
+  const skill = path.join(repoRoot, 'skills/feature/SKILL.md');
+  const stored = fs.readFileSync(skill, 'utf8').match(/description: (.*)/)[1];
+  selection.routingEntries = options => {
+    const routed = original(options);
+    fs.writeFileSync(skill, fs.readFileSync(skill, 'utf8').replace(/description: .*/, 'description: Edited after entries'));
+    return routed;
+  };
+  try { routing.writeRoutingIndex({ repoRoot, stateRoot }); } finally { selection.routingEntries = original; }
+  assert.equal(routing.readRoutingIndex(stateRoot).entries.find(entry => entry.id === 'skill:feature').description, stored);
+  // The drift is the generation's, and the next build reports it.
+  assert.throws(() => routing.writeRoutingIndex({ repoRoot, stateRoot }), /stale/);
+}));
+
 test('a skill edited during the build never publishes an index under the stored generation', () => fixture(({ repoRoot, stateRoot }) => {
   store.applyStore({ repoRoot, stateRoot, target: 'claude' });
   const selection = require('../../scripts/lib/context-selection');
