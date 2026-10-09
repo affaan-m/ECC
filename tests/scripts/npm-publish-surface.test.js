@@ -221,6 +221,7 @@ function main() {
         "scripts/lib/nasiko-release.js",
         "scripts/lib/memory-vault-format.js",
         "scripts/lib/memory-vault.js",
+        "scripts/lib/hook-session.js",
         "scripts/discussion-audit.js",
         "scripts/operator-readiness-dashboard.js",
         "scripts/preview-pack-smoke.js",
