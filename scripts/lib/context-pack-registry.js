@@ -26,8 +26,8 @@ function validateModules(document) {
   return document.modules;
 }
 
-function discoverSkills(reader, root) {
-  return reader.list(root).filter(name => {
+function discoverSkills(reader, root, names = reader.list(root)) {
+  return names.filter(name => {
     const skillRoot = `${root}/${name}`;
     if (isExcludedResource(skillRoot)) return false;
     const absolute = reader.resolve(skillRoot);
@@ -125,6 +125,36 @@ function loadContextRegistry({ repoRoot = DEFAULT_REPO_ROOT } = {}) {
   return { ...value, registryDigest: digestObject(value) };
 }
 
+/** Throws unless a previously loaded registry still matches the current
+ * declaration sources (registry manifest and install-module ownership) and
+ * skill inventory. A caller reusing a registry snapshot must call this so a
+ * changed dependency, required-resource, ownership, or inventory declaration
+ * is rejected rather than silently served from the old snapshot. Skill and
+ * resource bytes are verified separately when they are read. */
+function assertRegistryCurrent(registry, { repoRoot = DEFAULT_REPO_ROOT } = {}) {
+  if (!registry || registry.schemaVersion !== 'ecc.context-registry.v1'
+    || !Array.isArray(registry.sourceDigests) || !Array.isArray(registry.entries)) {
+    throw new Error('Invalid context registry');
+  }
+  const reader = createSourceReader(repoRoot);
+  const manifest = reader.json(REGISTRY_PATH);
+  const expectedSources = [REGISTRY_PATH, manifest.inventory.source];
+  const recorded = registry.sourceDigests.map(source => source && source.path);
+  if (recorded.length !== expectedSources.length || recorded.some((source, index) => source !== expectedSources[index])
+    || registry.sourceDigests.some(source => reader.read(source.path).digest !== source.digest)) {
+    throw new Error('Registry changed during task selection');
+  }
+  // One listing of the skills root; only names the snapshot lacks get the
+  // per-directory skill check, so an unchanged inventory costs one readdir.
+  const root = manifest.inventory.skillsRoot;
+  const loaded = new Set(registry.entries.map(entry => entry.id));
+  const listed = new Set(reader.list(root));
+  const unknown = [...listed].filter(name => !loaded.has(`skill:${name}`));
+  if ([...loaded].some(id => !listed.has(id.slice('skill:'.length))) || discoverSkills(reader, root, unknown).length) {
+    throw new Error('Registry changed during task selection');
+  }
+}
+
 function loadSkillTriggers({ repoRoot = DEFAULT_REPO_ROOT } = {}) {
   const file = path.join(repoRoot, TRIGGERS_PATH);
   if (!fs.existsSync(file) || !fs.statSync(file).isFile()) return { triggers: {}, manifest: null };
@@ -157,4 +187,4 @@ function explainContextEntry({ repoRoot = DEFAULT_REPO_ROOT, id, target = 'codex
   return { ...entry, target, projection: projectionFor(entry, target), registryDigest: registry.registryDigest };
 }
 
-module.exports = { explainContextEntry, loadContextRegistry, loadSkillTriggers, projectionFor };
+module.exports = { assertRegistryCurrent, explainContextEntry, loadContextRegistry, loadSkillTriggers, projectionFor };

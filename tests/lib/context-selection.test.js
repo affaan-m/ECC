@@ -6,6 +6,7 @@ const path = require('node:path');
 const test = require('node:test');
 const { withFixture, write, update } = require('./helpers/context-fixture');
 const { resolveTaskContext, resolveDeclinedFallback } = require('../../scripts/lib/context-selection');
+const { loadContextRegistry } = require('../../scripts/lib/context-pack-registry');
 
 const task = (values = {}) => ({ sessionId: 'session-1', taskId: 'task-1', revision: 1,
   phase: 'implement', query: '', explicitIds: [], proposedIds: [], ...values });
@@ -71,9 +72,9 @@ for (const load of [false, true]) {
     let alteredReads = 0;
     context.mock.method(fs, 'openSync', (filename, ...args) => {
       const descriptor = originalOpen(filename, ...args);
-      // First compile the profile, then reload the canonical registry. Only
-      // the subsequent policy read observes replacement bytes.
-      if (filename === policyPath && ++policyOpens === 3) changedDescriptor = descriptor;
+      // The canonical registry is loaded once and shared with the profile
+      // compiler. Only the subsequent policy read observes replacement bytes.
+      if (filename === policyPath && ++policyOpens === 2) changedDescriptor = descriptor;
       return descriptor;
     });
     context.mock.method(fs, 'readSync', (descriptor, buffer, offset, length, position) => {
@@ -90,7 +91,7 @@ for (const load of [false, true]) {
     try {
       assert.throws(() => resolve(repoRoot, { proposedIds: ['skill:feature'] }, { load }),
         /Context source changed during selection/);
-      assert.equal(policyOpens, 3);
+      assert.equal(policyOpens, 2);
       assert.equal(alteredReads, 1);
     } finally { context.mock.restoreAll(); }
   }));
@@ -301,3 +302,51 @@ test('invalid input and oversized bodies fail closed', () => withFixture(repoRoo
     overrides: [{ id: 'skill:feature', requiredResources: ['skills/feature/references/details.md'] }] }));
   assert.throws(() => resolve(repoRoot, { explicitIds: ['skill:feature'] }, { load: true }), /budget/);
 }));
+
+test('a passed registry is reused without changing the resolution', () => withFixture(repoRoot => {
+  const registry = loadContextRegistry({ repoRoot });
+  const input = { query: 'use the feature skill for this change' };
+  const loaded = resolve(repoRoot, input, { load: true });
+  const reused = resolve(repoRoot, input, { load: true, registry });
+  assert.deepEqual(reused, loaded);
+}));
+
+test('a stale passed registry fails closed instead of serving old bytes', () => withFixture(repoRoot => {
+  const registry = loadContextRegistry({ repoRoot });
+  write(repoRoot, 'skills/feature/SKILL.md', '---\nname: feature\ndescription: Help with feature.\n---\n\n# feature\n\nChanged after the registry was loaded.\n');
+  assert.throws(() => resolve(repoRoot, { query: 'use the feature skill for this change' }, { registry }),
+    /Context source changed during selection/);
+  assert.throws(() => resolve(repoRoot, { explicitIds: ['skill:feature'] }, { load: true, registry }),
+    /Context source changed during selection/);
+}));
+
+test('a passed registry is rejected once its declarations or inventory change', () => {
+  const query = { query: 'use the feature skill for this change' };
+  // A required resource declared after the snapshot was loaded.
+  withFixture(repoRoot => {
+    const registry = loadContextRegistry({ repoRoot });
+    update(repoRoot, 'manifests/context-packs/skill-registry@1.json', value => ({ ...value,
+      overrides: [{ id: 'skill:feature', requiredResources: ['skills/feature/references/details.md'] }] }));
+    assert.throws(() => resolve(repoRoot, { explicitIds: ['skill:feature'] }, { load: true, registry }),
+      /Registry changed during task selection/);
+    assert.deepEqual(resolve(repoRoot, { explicitIds: ['skill:feature'] }, { load: true }).resources.map(r => r.path).sort(),
+      ['skills/feature/SKILL.md', 'skills/feature/references/details.md']);
+  });
+  // A skill added or removed after the snapshot was loaded.
+  withFixture(repoRoot => {
+    const registry = loadContextRegistry({ repoRoot });
+    write(repoRoot, 'skills/extra/SKILL.md', '---\nname: extra\ndescription: Help with extra.\n---\n');
+    assert.throws(() => resolve(repoRoot, query, { registry }), /Registry changed during task selection/);
+  });
+  withFixture(repoRoot => {
+    const registry = loadContextRegistry({ repoRoot });
+    fs.rmSync(path.join(repoRoot, 'skills', 'shared'), { recursive: true, force: true });
+    assert.throws(() => resolve(repoRoot, query, { registry }), /Registry changed during task selection/);
+  });
+  // A snapshot whose recorded sources were stripped cannot skip the check.
+  withFixture(repoRoot => {
+    const registry = { ...loadContextRegistry({ repoRoot }), sourceDigests: [] };
+    assert.throws(() => resolve(repoRoot, query, { registry }), /Registry changed during task selection/);
+    assert.throws(() => resolve(repoRoot, query, { registry: { entries: [] } }), /Invalid context registry/);
+  });
+});

@@ -96,8 +96,11 @@ Measured with `lean@1` on Node v24.19.0, Windows 11, 293-skill registry:
 | `prompts.json` (52) | 0.923 (48/52) | 0.923 (48/52) | 0.372 (58/156) |
 | `prompts-adversarial.json` (25) | 0.160 (4/25) | 0.160 (4/25) | 0.067 (5/75) |
 
-End-to-end hook latency, fresh process with live resolution: 1439, 1607, and
-1686 ms.
+End-to-end hook latency, fresh process with live resolution: 1056, 963, 988,
+1013, and 953 ms (p50 988 ms).
+That is down from 1439 to 1686 ms before `resolveTaskContext` loaded the
+registry once and shared it with the profile compiler; it used to hash the
+sources twice per call.
 
 Read these numbers plainly:
 
@@ -119,9 +122,11 @@ node scripts/ci/skill-router-eval.js --json --profile full@1
 node scripts/ci/skill-router-eval.js --min-prompt-hit-rate 0.9 --min-precision-at-3 0.3   # gate
 ```
 
-Within one evaluator process the registry load is memoized, because its sources
-cannot change mid-run. Latency is measured separately, end to end, through the
-real hook entrypoint (`--latency-samples`, default 3).
+The evaluator loads the registry once per run and passes it to every call
+through the resolver's `registry` option, because its sources cannot change
+mid-run. Reads still verify each source digest. Latency is measured
+separately, end to end, through the real hook entrypoint (`--latency-samples`,
+default 3).
 
 Do not tune against the adversarial fixture by adding its phrasing to skill
 descriptions or trigger manifests. That would move the number without moving

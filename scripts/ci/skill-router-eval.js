@@ -19,10 +19,11 @@
  *                        per suggestion across the (up to) three returned.
  *
  * Suggestions come from scripts/lib/skill-router.js, the same function the
- * hook's resolver child calls. The canonical registry load is memoized for
- * this process only: its sources cannot change mid-run, and reloading it
- * for every prompt would only re-measure hashing. Latency is therefore
- * measured separately, end to end through the real hook entrypoint, on
+ * hook's resolver child calls. The evaluator loads the canonical registry
+ * once per root and passes it to every call through the resolver's
+ * `registry` option: its sources cannot change mid-run, and reloading it for
+ * every prompt would only re-measure hashing. Latency is therefore measured
+ * separately, end to end through the real hook entrypoint, on
  * --latency-samples prompts.
  */
 
@@ -35,20 +36,24 @@ const { spawnSync } = require('child_process');
 
 const repoRoot = path.resolve(__dirname, '..', '..');
 
-// Memoize before anything requires context-selection: it and
-// context-profiles bind loadContextRegistry at require time.
-const registryModule = require('../lib/context-pack-registry');
-const loadRegistryUncached = registryModule.loadContextRegistry;
-const registryMemo = new Map();
-registryModule.loadContextRegistry = (options = {}) => {
-  const key = path.resolve(options.repoRoot || repoRoot);
-  if (!registryMemo.has(key)) {
-    registryMemo.set(key, loadRegistryUncached(options));
-  }
-  return registryMemo.get(key);
-};
-
+const { loadContextRegistry } = require('../lib/context-pack-registry');
 const { suggestSkills, DEFAULT_PROFILE_ID } = require('../lib/skill-router');
+
+const registries = new Map();
+
+/**
+ * The canonical registry for `root`, loaded once per evaluator process.
+ *
+ * @param {string} root ECC root.
+ * @returns {object} A loadContextRegistry() result.
+ */
+function registryFor(root) {
+  const key = path.resolve(root);
+  if (!registries.has(key)) {
+    registries.set(key, loadContextRegistry({ repoRoot: key }));
+  }
+  return registries.get(key);
+}
 
 const HOOK_PATH = path.join(repoRoot, 'scripts', 'hooks', 'skill-router.js');
 
@@ -101,7 +106,7 @@ function loadFixture(fixturePath, root = repoRoot) {
   if (!Array.isArray(prompts) || prompts.length === 0) {
     throw new Error('fixture has no prompts');
   }
-  const known = new Set(registryModule.loadContextRegistry({ repoRoot: root }).entries.map(entry => entry.id));
+  const known = new Set(registryFor(root).entries.map(entry => entry.id));
   const normalized = prompts.map((entry, index) => {
     if (!entry || typeof entry.prompt !== 'string' || !Array.isArray(entry.expected) || entry.expected.length === 0) {
       throw new Error(`fixture prompt ${index} needs a prompt string and a non-empty expected array`);
@@ -126,13 +131,14 @@ function loadFixture(fixturePath, root = repoRoot) {
  * @returns {object} Counts, metrics, and misses.
  */
 function evaluatePrompts(prompts, { profileId = DEFAULT_PROFILE_ID, root = repoRoot } = {}) {
+  const registry = registryFor(root);
   let routedPrompts = 0;
   let promptHits = 0;
   let returned = 0;
   let relevant = 0;
   const misses = [];
   for (const entry of prompts) {
-    const ids = suggestSkills(entry.prompt, { repoRoot: root, profileId }).suggestions.map(s => s.id);
+    const ids = suggestSkills(entry.prompt, { repoRoot: root, profileId, registry }).suggestions.map(s => s.id);
     const relevantHere = ids.filter(id => entry.expected.includes(id)).length;
     returned += ids.length;
     relevant += relevantHere;

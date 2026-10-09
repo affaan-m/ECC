@@ -72,11 +72,13 @@ function taskFor(prompt, sessionId) {
  * @param {string} [options.profileId] Context profile id or alias (lean@1, full@1, lean, full).
  * @param {string} [options.sessionId] Harness session id.
  * @param {number} [options.maxResults] Suggestion cap.
+ * @param {object} [options.registry] A loadContextRegistry() result to reuse.
  * @returns {{profileId: string, reason: string, suggestions: Array<{id: string, description: string, score: number}>}}
  */
 function suggestSkills(prompt, options = {}) {
   const selection = resolveTaskContext({
     ...(options.repoRoot ? { repoRoot: options.repoRoot } : {}),
+    ...(options.registry ? { registry: options.registry } : {}),
     task: taskFor(prompt, options.sessionId),
     profileId: options.profileId || DEFAULT_PROFILE_ID,
     selectionMode: 'suggest',

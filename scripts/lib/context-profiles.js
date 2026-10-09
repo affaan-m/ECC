@@ -1,6 +1,6 @@
 'use strict';
 
-const { loadContextRegistry, projectionFor, explainContextEntry } = require('./context-pack-registry');
+const { assertRegistryCurrent, loadContextRegistry, projectionFor, explainContextEntry } = require('./context-pack-registry');
 const {
   DEFAULT_REPO_ROOT, compilerDigest, createSourceReader, digestObject,
   normalizeMetadataText, stableStringify, validateSchema, validateTarget,
@@ -86,13 +86,18 @@ function estimateMetadata(entries, target, profile) {
   };
 }
 
+/** `registry`, when given, must be a loadContextRegistry() result for the
+ * same repoRoot; it lets a caller that already loaded one skip re-hashing.
+ * It is rejected unless its declaration sources and skill inventory are
+ * still current (assertRegistryCurrent). */
 function compileContextProfile({
   repoRoot = DEFAULT_REPO_ROOT, profileId = 'lean@1', selectionMode = 'manual',
-  target = 'codex', include = [], exclude = [],
+  target = 'codex', include = [], exclude = [], registry: loadedRegistry = null,
 } = {}) {
   validateTarget(target);
   if (!MODES.includes(selectionMode)) throw new Error(`Unknown selection mode: ${selectionMode}`);
-  const registry = loadContextRegistry({ repoRoot });
+  if (loadedRegistry) assertRegistryCurrent(loadedRegistry, { repoRoot });
+  const registry = loadedRegistry || loadContextRegistry({ repoRoot });
   const profile = loadContextProfile(profileId, { repoRoot });
   if (profile.registryId !== registry.id) throw new Error('Profile registry ID mismatch');
   const selected = resolveSelection(registry, profile, include, exclude);
