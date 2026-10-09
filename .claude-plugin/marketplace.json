@@ -11,7 +11,7 @@
     {
       "name": "ecc",
       "source": "./",
-      "description": "Harness-native ECC operator layer - 68 agents, 293 skills, 94 legacy command shims, reusable hooks, rules, selective install profiles, and production-ready workflows for Claude Code,",
+      "description": "Harness-native ECC operator layer - 68 agents, 293 skills, 94 legacy command shims, reusable hooks, rules, selective install profiles, and production-ready workflows for Claude Code, Codex, OpenCode, Cursor, and related agent harnesses",
       "version": "2.2.3",
       "author": {
         "name": "Affaan Mustafa",
@@ -45,9 +45,12 @@
     },
     {
       "name": "warppay402-gateway",
-      "source": "https://github.com/Warppay402/warppay402-claude-plugin",
+      "source": {
+        "source": "github",
+        "repo": "Warppay402/warppay402-claude-plugin"
+      },
       "description": "29 Web3 developer tools, PDF extraction, web scraping, and Aerodrome LP/swaps monetized via x402 USDC micropayments.",
-      "version": "1.1.0",
+      "version": "1.0.1",
       "author": {
         "name": "WarpPay402",
         "email": "warppay.402@gmail.com"
