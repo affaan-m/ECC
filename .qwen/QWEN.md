@@ -6,9 +6,9 @@ This file provides Qwen Code with the baseline ECC workflow, review standards, a
 
 ECC is a cross-harness coding system with 68 specialized agents, 293 skills, and 94 commands.
 
-The Qwen target installs the full managed manifest surface into `~/.qwen/`: `rules/`, `agents/`, `commands/`, `skills/`, and `mcp-configs/`. Qwen Code loads both `~/.qwen/QWEN.md` and `~/.qwen/AGENTS.md` at the home level, so this file carries Qwen-specific guidance and leaves repo-wide operating rules to `AGENTS.md`.
+The Qwen target installs the full managed manifest surface into `~/.qwen/`: `rules/`, `agents/`, `commands/`, `skills/`, and `mcp-configs/`. This file carries Qwen-specific guidance; repo-wide operating rules live in `AGENTS.md`. Qwen Code 0.25.0 loads both at the home level under default settings, but `AGENTS.md` is not the documented default context filename, so set `context.fileName` if a later release stops loading it.
 
-For install layout, updating, and uninstalling, see `docs/QWEN-GUIDE.md`.
+`docs/QWEN-GUIDE.md` covers install layout, updating, and uninstalling. It lives in the ECC repository and is **not** copied into `~/.qwen/`, so read it from a checkout or from <https://github.com/affaan-m/ecc/blob/main/docs/QWEN-GUIDE.md>.
 
 ## Core Workflow
 
@@ -57,15 +57,15 @@ ECC skills, rules, and agent prompts are authored against Claude Code tool names
 | `WebFetch` | `web_fetch` |
 | `TodoWrite` | `todo_write` |
 | `Task` | `agent` |
-| `WebSearch` | not available; use `web_fetch` against a known URL |
+| `WebSearch` | `web_search` where the provider supports it; otherwise `web_fetch` against a known URL |
 
 Invoke a skill with the `skill` tool using the plain kebab-case name exactly as the session catalog lists it. Dispatch a subagent with the `agent` tool; top-level subagents run in the background and report through a completion notification rather than returning inline.
 
-Some Qwen Code tools are deferred until their schema is reviewed — reach them with `tool_search`, then invoke them with `tool_call`. `web_fetch`, `send_message`, `task_stop`, and `record_artifact` are deferred by default, so a skill that names one of those is still actionable.
+Some Qwen Code tools are deferred until their schema is reviewed — reach them with `tool_search`, then invoke them with `tool_call`. `web_fetch`, `web_search`, `send_message`, `task_stop`, and `record_artifact` are deferred by default, so a skill that names one of those is still actionable.
 
 ## Not Available On This Target
 
-Hook runtime files are intentionally not selected for Qwen until its hook/event contract is confirmed (see the Scope section of `docs/QWEN-GUIDE.md`). Hook-driven ECC features therefore do not run here: do not report a hook-enforced guard, format-on-save pass, or cost-tracking metric as active. `mcp-configs/` ships connector baselines but is not merged into Qwen's own settings, so an MCP-backed skill needs its server registered before it can work.
+Hook runtime files are intentionally not selected for Qwen until its hook/event contract is confirmed (see the Scope section of `docs/QWEN-GUIDE.md` in the ECC repository). Hook-driven ECC features therefore do not run here: do not report a hook-enforced guard, format-on-save pass, or cost-tracking metric as active. `mcp-configs/` ships connector baselines but is not merged into Qwen's own settings, so an MCP-backed skill needs its server registered before it can work.
 
 ## ECC Areas To Reuse
 
