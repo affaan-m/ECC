@@ -135,7 +135,7 @@ Re-run:
 node scripts/ci/skill-router-eval.js
 node scripts/ci/skill-router-eval.js --fixture tests/fixtures/skill-router/prompts-adversarial.json
 node scripts/ci/skill-router-eval.js --json --profile full@1
-node scripts/ci/skill-router-eval.js --min-prompt-hit-rate 0.9 --min-precision-at-3 0.3   # gate
+node scripts/ci/skill-router-eval.js --min-prompt-hit-rate 0.85 --min-precision-at-3 0.5 --latency-samples 0   # gate at the test floors
 ```
 
 The evaluator loads the registry once per run and passes it to every call
