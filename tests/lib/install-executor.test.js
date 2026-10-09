@@ -990,9 +990,13 @@ function runTests() {
       for (const name of OPENCODE_ENTRYPOINTS) {
         assert.strictEqual(
           fs.readFileSync(path.join(homeDir, '.config', 'opencode', 'plugins', name), 'utf8'),
-          fs.readFileSync(path.join(REPO_ROOT, '.opencode', 'plugins', name), 'utf8')
+          name === 'index.ts' ? INERT_OPENCODE_PLUGIN : fs.readFileSync(path.join(REPO_ROOT, '.opencode', 'plugins', name), 'utf8')
         );
       }
+      assert.strictEqual(
+        enabledPlan.statePreview.operations.find(operation => operation.sourceRelativePath.split(path.sep).join('/') === '.opencode/plugins/index.ts').contentTransform,
+        'opencode-disable-plugin-entrypoint'
+      );
       applyInstallPlanDirect(declinedPlan);
       const declinedState = JSON.parse(fs.readFileSync(declinedPlan.installStatePath, 'utf8'));
       assert.strictEqual(declinedState.request.hookConsent, 'declined');
