@@ -6,7 +6,7 @@ const assert = require('assert');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const { spawnSync } = require('child_process');
+const { spawn, spawnSync } = require('child_process');
 
 const {
   createStateStore,
@@ -339,6 +339,123 @@ async function runTests() {
     }
   })) passed += 1; else failed += 1;
 
+  if (await test('refreshes stale handles and never republishes stale state on close', async () => {
+    const dir = createTempDir('ecc-state-handles-');
+    const dbPath = path.join(dir, 'state.db');
+    const first = await createStateStore({ dbPath });
+    const second = await createStateStore({ dbPath });
+    try {
+      first._database.exec('CREATE TABLE concurrency_test (id INTEGER PRIMARY KEY)');
+      first._database.exec('INSERT INTO concurrency_test VALUES (1)');
+      second._database.exec('INSERT INTO concurrency_test VALUES (2)');
+      assert.deepStrictEqual(first._database.prepare('SELECT id FROM concurrency_test ORDER BY id').all(), [{ id: 1 }, { id: 2 }]);
+      assert.throws(() => first._database.transaction(() => {
+        first._database.exec('INSERT INTO concurrency_test VALUES (3)');
+        throw new Error('rollback');
+      })(), /rollback/);
+      first._database.exec('INSERT INTO concurrency_test VALUES (4)');
+      first.close();
+      second.close();
+      const reopened = await createStateStore({ dbPath });
+      assert.strictEqual(reopened._database.prepare('SELECT COUNT(*) AS count FROM concurrency_test').get().count, 3);
+      reopened.close();
+    } finally {
+      cleanupTempDir(dir);
+    }
+  })) passed += 1; else failed += 1;
+
+  if (await test('uses one persisted snapshot for each report and caches unchanged reads', async () => {
+    const dir = createTempDir('ecc-state-read-snapshot-');
+    const dbPath = path.join(dir, 'state.db');
+    const first = await createStateStore({ dbPath });
+    const second = await createStateStore({ dbPath });
+    const originalRead = fs.readFileSync;
+    let fileReads = 0;
+    try {
+      second.upsertSession({ id: 'one', adapterId: 'manual', harness: 'codex', state: 'active' });
+      let committed = false;
+      fs.readFileSync = function(target, ...args) {
+        const data = originalRead.call(this, target, ...args);
+        if (typeof target === 'number') {
+          fileReads += 1;
+          if (!committed) {
+            // Publish after the reader has obtained the old bytes but before
+            // the report's count and row queries. Both must use those bytes.
+            committed = true;
+            second.upsertSession({ id: 'two', adapterId: 'manual', harness: 'codex', state: 'active' });
+          }
+        }
+        return data;
+      };
+      const report = first.listRecentSessions();
+      assert.strictEqual(committed, true);
+      assert.strictEqual(report.totalCount, 1);
+      assert.strictEqual(report.sessions.length, 1);
+      const next = first.listRecentSessions();
+      assert.strictEqual(next.totalCount, 2);
+      assert.strictEqual(next.sessions.length, 2);
+      fileReads = 0;
+      first.getStatus();
+      first.getStatus();
+      assert.strictEqual(fileReads, 0, 'unchanged reports should reuse the loaded database');
+    } finally {
+      fs.readFileSync = originalRead;
+      first.close();
+      second.close();
+      cleanupTempDir(dir);
+    }
+  })) passed += 1; else failed += 1;
+
+  if (await test('preserves all commits from concurrent processes including fresh migrations', async () => {
+    const dir = createTempDir('ecc-state-processes-');
+    const dbPath = path.join(dir, 'state.db');
+    const modulePath = path.join(__dirname, '..', '..', 'scripts', 'lib', 'state-store');
+    const writer = `
+      const { createStateStore } = require(process.argv[1]);
+      (async () => {
+        const store = await createStateStore({ dbPath: process.argv[2] });
+        store._database.exec('CREATE TABLE IF NOT EXISTS concurrency_test (id INTEGER PRIMARY KEY)');
+        for (let i = 0; i < 50; i++) {
+          store._database.transaction(() => {
+            store._database.exec('INSERT INTO concurrency_test VALUES (' + (Number(process.argv[3]) + i) + ')');
+          })();
+        }
+        store.close();
+      })().catch(error => { console.error(error); process.exitCode = 1; });
+    `;
+    const children = [];
+    const completions = [];
+    try {
+      await Promise.all([0, 50, 100].map(offset => new Promise((resolve, reject) => {
+        const child = spawn(process.execPath, ['-e', writer, modulePath, dbPath, String(offset)]);
+        children.push(child);
+        completions.push(new Promise(resolveClose => child.once('close', resolveClose)));
+        const deadline = setTimeout(() => {
+          child.kill('SIGKILL');
+          reject(new Error('writer timed out after 30000ms'));
+        }, 30000);
+        let stderr = '';
+        child.stderr.on('data', chunk => { stderr += chunk; });
+        child.on('error', reject);
+        child.on('close', code => {
+          clearTimeout(deadline);
+          if (code === 0) resolve();
+          else reject(new Error(stderr || 'writer exit ' + code));
+        });
+      })));
+      const store = await createStateStore({ dbPath });
+      assert.strictEqual(store._database.prepare('SELECT COUNT(*) AS count FROM concurrency_test').get().count, 150);
+      assert.strictEqual(store.getAppliedMigrations().length, 2);
+      store.close();
+    } finally {
+      for (const child of children) {
+        if (child.exitCode === null && child.signalCode === null) child.kill('SIGKILL');
+      }
+      await Promise.all(completions);
+      cleanupTempDir(dir);
+    }
+  })) passed += 1; else failed += 1;
+
   if (await test('preserves SQLite special database names like :memory:', async () => {
     const tempDir = createTempDir('ecc-state-memory-');
     const previousCwd = process.cwd();
@@ -441,6 +558,40 @@ async function runTests() {
       assert.strictEqual(detail.decisions.length, 1);
       assert.deepStrictEqual(detail.decisions[0].alternatives, ['json-files', 'memory-only']);
     } finally {
+      cleanupTempDir(testDir);
+    }
+  })) passed += 1; else failed += 1;
+
+  if (await test('keeps foreign keys enabled after publishing and reusing a file-backed connection', async () => {
+    const testDir = createTempDir('ecc-state-foreign-keys-');
+    const dbPath = path.join(testDir, 'state.db');
+    let store;
+    try {
+      await seedStore(dbPath);
+      store = await createStateStore({ dbPath });
+      // Publish a valid write, then reuse that exact cached connection.
+      store.insertSkillRun({
+        id: 'valid-after-export', skillId: 'tdd-workflow', skillVersion: '1.0.0',
+        sessionId: 'session-active', taskDescription: 'Valid write', outcome: 'success',
+        createdAt: '2026-03-15T09:00:00.000Z',
+      });
+      assert.throws(() => store.insertSkillRun({
+        id: 'orphan-skill-run', skillId: 'tdd-workflow', skillVersion: '1.0.0',
+        sessionId: 'missing-session', taskDescription: 'Invalid write', outcome: 'success',
+        createdAt: '2026-03-15T09:01:00.000Z',
+      }), /FOREIGN KEY constraint failed/);
+      assert.throws(() => store.insertDecision({
+        id: 'orphan-decision', sessionId: 'missing-session', title: 'Invalid decision',
+        rationale: 'Must reject a missing session', alternatives: [], status: 'active',
+        createdAt: '2026-03-15T09:02:00.000Z',
+      }), /FOREIGN KEY constraint failed/);
+      store.close();
+      store = await createStateStore({ dbPath });
+      assert.deepStrictEqual(store._database.prepare('PRAGMA foreign_key_check').all(), []);
+      assert.strictEqual(store._database.prepare('SELECT COUNT(*) AS count FROM skill_runs WHERE id = ?').get('orphan-skill-run').count, 0);
+      assert.strictEqual(store._database.prepare('SELECT COUNT(*) AS count FROM decisions WHERE id = ?').get('orphan-decision').count, 0);
+    } finally {
+      if (store) store.close();
       cleanupTempDir(testDir);
     }
   })) passed += 1; else failed += 1;

@@ -175,15 +175,16 @@ function getAppliedMigrations(db) {
 function applyMigrations(db) {
   ensureMigrationTable(db);
 
-  const appliedVersions = new Set(
-    db.prepare('SELECT version FROM schema_migrations').all().map(row => row.version)
-  );
   const insertMigration = db.prepare(`
     INSERT INTO schema_migrations (version, name, applied_at)
     VALUES (@version, @name, @applied_at)
   `);
 
   const applyPending = db.transaction(() => {
+    const appliedVersions = new Set(
+      db.prepare('SELECT version FROM schema_migrations').all().map(row => row.version)
+    );
+
     for (const migration of MIGRATIONS) {
       if (appliedVersions.has(migration.version)) {
         continue;

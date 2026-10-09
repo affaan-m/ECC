@@ -5,6 +5,7 @@ const crypto = require('crypto');
 const os = require('os');
 const path = require('path');
 const initSqlJs = require('sql.js');
+const { acquireSettingsLock } = require('../install/claude-settings-lock');
 
 const { applyMigrations, getAppliedMigrations } = require('./migrations');
 const { createQueryApi } = require('./queries');
@@ -108,7 +109,11 @@ function assertSafeDatabaseFile(dbPath) {
   return stats;
 }
 
-function readDatabaseFile(dbPath) {
+function databaseIdentity(stats) {
+  return stats ? `${stats.dev}:${stats.ino}:${stats.size}:${stats.mtimeMs}:${stats.ctimeMs}` : null;
+}
+
+function readDatabaseSnapshot(dbPath) {
   assertSafeDatabaseFile(dbPath);
   const noFollow = fs.constants.O_NOFOLLOW || 0;
   const fileDescriptor = fs.openSync(dbPath, fs.constants.O_RDONLY | noFollow);
@@ -117,10 +122,14 @@ function readDatabaseFile(dbPath) {
     if (!stats.isFile()) {
       throw stateStorePathError(dbPath, 'database path is not a regular file');
     }
-    return fs.readFileSync(fileDescriptor);
+    return { data: fs.readFileSync(fileDescriptor), identity: databaseIdentity(stats) };
   } finally {
     fs.closeSync(fileDescriptor);
   }
+}
+
+function readDatabaseFile(dbPath) {
+  return readDatabaseSnapshot(dbPath).data;
 }
 
 function syncDirectory(directoryPath) {
@@ -201,22 +210,89 @@ function resolveStateStorePath(options = {}) {
  * IMPORTANT: sql.js db.export() implicitly ends any active transaction, so
  * we must defer all disk writes until after the transaction commits.
  */
-function wrapSqlJsDatabase(rawDb, dbPath) {
+function wrapSqlJsDatabase(rawDb, dbPath, SQL) {
   let inTransaction = false;
+  let closed = false;
+  let snapshotDepth = 0;
+  let loadedIdentity;
+
+  // sql.js holds a private snapshot rather than a shared SQLite connection.
+  // Serialize reload + mutation + publication, not just the final rename.
+  function refreshFromDisk() {
+    if (closed) throw new Error('State store is closed');
+    if (dbPath === ':memory:' || inTransaction || snapshotDepth > 0) return;
+    const stats = assertSafeDatabaseFile(dbPath);
+    if (databaseIdentity(stats) === loadedIdentity) return;
+    // Capture identity from the same descriptor as the bytes: another process
+    // may atomically replace the path between the initial stat and open.
+    const snapshot = stats ? readDatabaseSnapshot(dbPath) : { data: undefined, identity: null };
+    const nextDb = new SQL.Database(snapshot.data);
+    nextDb.run('PRAGMA foreign_keys = ON');
+    rawDb.close();
+    rawDb = nextDb;
+    loadedIdentity = snapshot.identity;
+  }
+
+  function withWriteLock(fn) {
+    if (closed) throw new Error('State store is closed');
+    if (dbPath === ':memory:' || inTransaction) return fn();
+    const deadline = Date.now() + 10000;
+    let release;
+    while (!release) {
+      try {
+        release = acquireSettingsLock(dbPath, { label: 'state store' });
+      } catch (error) {
+        // Contention is expected for hooks sharing one state.db. Never retry
+        // permissions/path errors, and never publish after a lock timeout.
+        if (!error.message.startsWith('Another ECC process is updating state store:')
+          && error.code !== 'ENOENT' && error.code !== 'EEXIST') throw error;
+        if (Date.now() >= deadline) throw error;
+        Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 10);
+      }
+    }
+    try {
+      refreshFromDisk();
+      return fn();
+    } finally {
+      release();
+    }
+  }
 
   function saveToDisk() {
     if (dbPath === ':memory:' || inTransaction) {
       return;
     }
-    const data = rawDb.export();
+    // If publication fails, a later operation must reload persisted state.
+    loadedIdentity = undefined;
+    let data;
+    try {
+      data = rawDb.export();
+    } finally {
+      // sql.js export closes and reopens the connection, resetting pragmas.
+      // Cached reuse must retain enforcement even if publication fails.
+      rawDb.run('PRAGMA foreign_keys = ON');
+    }
     const buffer = Buffer.from(data);
     writeDatabaseFileAtomic(dbPath, buffer);
+    loadedIdentity = databaseIdentity(assertSafeDatabaseFile(dbPath));
   }
 
   const db = {
+    readSnapshot(fn) {
+      refreshFromDisk();
+      snapshotDepth += 1;
+      try {
+        return fn();
+      } finally {
+        snapshotDepth -= 1;
+      }
+    },
+
     exec(sql) {
-      rawDb.run(sql);
-      saveToDisk();
+      return withWriteLock(() => {
+        rawDb.run(sql);
+        saveToDisk();
+      });
     },
 
     pragma(pragmaStr) {
@@ -230,6 +306,7 @@ function wrapSqlJsDatabase(rawDb, dbPath) {
     prepare(sql) {
       return {
         all(...positionalArgs) {
+          refreshFromDisk();
           const stmt = rawDb.prepare(sql);
           if (positionalArgs.length === 1 && typeof positionalArgs[0] !== 'object') {
             stmt.bind([positionalArgs[0]]);
@@ -246,6 +323,7 @@ function wrapSqlJsDatabase(rawDb, dbPath) {
         },
 
         get(...positionalArgs) {
+          refreshFromDisk();
           const stmt = rawDb.prepare(sql);
           if (positionalArgs.length === 1 && typeof positionalArgs[0] !== 'object') {
             stmt.bind([positionalArgs[0]]);
@@ -262,23 +340,25 @@ function wrapSqlJsDatabase(rawDb, dbPath) {
         },
 
         run(namedParams) {
-          const stmt = rawDb.prepare(sql);
-          if (namedParams && typeof namedParams === 'object' && !Array.isArray(namedParams)) {
-            const sqlJsParams = {};
-            for (const [key, value] of Object.entries(namedParams)) {
-              sqlJsParams[`@${key}`] = value === undefined ? null : value;
+          return withWriteLock(() => {
+            const stmt = rawDb.prepare(sql);
+            if (namedParams && typeof namedParams === 'object' && !Array.isArray(namedParams)) {
+              const sqlJsParams = {};
+              for (const [key, value] of Object.entries(namedParams)) {
+                sqlJsParams[`@${key}`] = value === undefined ? null : value;
+              }
+              stmt.bind(sqlJsParams);
             }
-            stmt.bind(sqlJsParams);
-          }
-          stmt.step();
-          stmt.free();
-          saveToDisk();
+            stmt.step();
+            stmt.free();
+            saveToDisk();
+          });
         },
       };
     },
 
     transaction(fn) {
-      return (...args) => {
+      return (...args) => withWriteLock(() => {
         rawDb.run('BEGIN');
         inTransaction = true;
         try {
@@ -296,12 +376,12 @@ function wrapSqlJsDatabase(rawDb, dbPath) {
           inTransaction = false;
           throw error;
         }
-      };
+      });
     },
 
     close() {
-      saveToDisk();
       rawDb.close();
+      closed = true;
     },
   };
 
@@ -321,13 +401,8 @@ async function openDatabase(SQL, dbPath) {
     rawDb = new SQL.Database();
   }
 
-  const db = wrapSqlJsDatabase(rawDb, dbPath);
+  const db = wrapSqlJsDatabase(rawDb, dbPath, SQL);
   db.pragma('foreign_keys = ON');
-  try {
-    db.pragma('journal_mode = WAL');
-  } catch (_error) {
-    // Some SQLite environments reject WAL for in-memory or readonly contexts.
-  }
   return db;
 }
 
@@ -337,6 +412,9 @@ async function createStateStore(options = {}) {
   const db = await openDatabase(SQL, dbPath);
   const appliedMigrations = applyMigrations(db);
   const queryApi = createQueryApi(db);
+  const snapshotApi = Object.fromEntries(Object.entries(queryApi).map(([name, fn]) => [
+    name, /^(get|list)/.test(name) ? (...args) => db.readSnapshot(() => fn(...args)) : fn,
+  ]));
 
   return {
     dbPath,
@@ -348,7 +426,7 @@ async function createStateStore(options = {}) {
     },
     validateEntity,
     assertValidEntity,
-    ...queryApi,
+    ...snapshotApi,
     _database: db,
     _migrations: appliedMigrations,
   };
