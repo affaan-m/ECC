@@ -171,12 +171,14 @@ function searchRetrieval(index, query, { limit = 5 } = {}) {
     .slice(0, limit)
     .map(([document, score]) => {
       const matched = [...new Set(queryTokens)].filter(term => document.weighted.has(term));
+      const anchorTerms = matched.filter(term => document.fields.name.includes(term) || document.fields.triggers.includes(term));
       const exact = anchored.has(document);
       return { id: document.entry.id, score: Math.round(score * 10000) / 10000, exact,
         exactAlias: exact ? anchored.get(document) : undefined,
         dense: Math.round((dense.get(document) || 0) * 10000) / 10000,
         bm25: Math.round((bm25.get(document) || 0) * 10000) / 10000,
         matchedTerms: matched,
+        anchorTerms,
         description: document.entry.description.slice(0, 2048),
         descriptionTruncated: document.entry.description.length > 2048 };
     });

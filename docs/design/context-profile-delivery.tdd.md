@@ -88,4 +88,13 @@ Current combined verification after recovery:
 - The default sandbox checkout's 5,000-path capture limit truncated a real Tier 1 install diff and failed closed. The reviewed ECC-029 sandbox implementation raises the bounded cap to 50,000, passes its 26-case boundary suite, and produced both final reports. The driver receipt binds its 51-file implementation digest `a84e09ab848b8cd05f33792c13734f7aabe16bfe16d50d8f8292eb5261a93c3a`.
 - No real AI outcome call ran because `CODEX_API_KEY` was absent. Host ChatGPT authentication was neither copied nor exposed to the disposable evaluator.
 
+## Auto-admission anchor (routing policy v5)
+
+The 77-prompt routing corpus from #2945 (52 direct, 25 paraphrased) found one wrong implicit load. "two services both think they own the same record" admitted `skill:santa-method` on four description-only words (`two`, `both`, `they`, `same`) with BM25 24.3 and a 1.94 margin, clearing every v4 bar.
+
+- RED: the prompt and the corpus check fail against v4 (`skill:santa-method` loaded).
+- GREEN: auto admission and the tier-2 fallback also require one matched term in the skill name or curated triggers. Exact directive citations are unchanged.
+- Corpus result: zero loads outside the expected set; 19 implicit admissions become 17. The other dropped admission, `skill:cost-tracking`, now defers to the bounded proposal instead of loading.
+- The existing nine-query auto/agent corpus, fallback, launch, evaluation and retrieval suites pass unchanged.
+
 These boundaries keep the shipped behavior distinct from the M1 release gate. Authenticated outcome observations, a complete Tier 2 disk diff, live-install migration, other-provider activation, whole-context token truth and release defaults remain unverified until their explicit prerequisites are available.
