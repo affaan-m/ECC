@@ -37,7 +37,8 @@ Desktop.ini
 *.sublime-workspace
 
 # Node
-node_modules/
+# No trailing slash: a symlinked node_modules is not a directory to git.
+node_modules
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
