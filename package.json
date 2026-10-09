@@ -124,6 +124,7 @@
     "scripts/memory.js",
     "scripts/memory-mcp.mjs",
     "scripts/gemini-adapt-agents.js",
+    "scripts/qwen-adapt-agents.js",
     "scripts/harness-adapter-compliance.js",
     "scripts/harness-audit.js",
     "scripts/eval-harness.js",

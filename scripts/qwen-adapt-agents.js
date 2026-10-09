@@ -59,7 +59,17 @@ function parseArgs(argv) {
     return { help: true };
   }
 
-  const positional = argv.filter(arg => !arg.startsWith('-'));
+  const positional = [];
+  for (const arg of argv) {
+    if (arg.startsWith('-')) {
+      // Reject rather than ignore. This script rewrites files in place, so
+      // silently discarding an unrecognized flag would let `--dry-run` — or any
+      // mistyped option — modify every installed agent and still exit 0.
+      throw new Error(`Unknown option: ${arg}`);
+    }
+    positional.push(arg);
+  }
+
   if (positional.length > 1) {
     throw new Error('Expected at most one agents directory argument');
   }
@@ -126,7 +136,13 @@ function adaptColor(line) {
 }
 
 function adaptFrontmatter(text) {
-  const match = text.match(/^---\n([\s\S]*?)\n---(\n|$)/);
+  // Normalize CRLF first. Matching only LF would silently skip a Windows-saved
+  // agent and report it as already compatible while `tools: Read` and
+  // `color: teal` stayed in place. The original ending style is restored below.
+  const usesCrlf = text.includes('\r\n');
+  const source = usesCrlf ? text.replace(/\r\n/g, '\n') : text;
+
+  const match = source.match(/^---\n([\s\S]*?)\n---(\n|$)/);
   if (!match) {
     return { text, changed: false };
   }
@@ -174,8 +190,10 @@ function adaptFrontmatter(text) {
     return { text, changed: false };
   }
 
+  const adapted = `---\n${updatedLines.join('\n')}\n---${match[2]}${source.slice(match[0].length)}`;
+
   return {
-    text: `---\n${updatedLines.join('\n')}\n---${match[2]}${text.slice(match[0].length)}`,
+    text: usesCrlf ? adapted.replace(/\n/g, '\r\n') : adapted,
     changed: true,
   };
 }

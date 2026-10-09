@@ -313,6 +313,57 @@ function runTests() {
     }
   })) passed++; else failed++;
 
+  if (test('adapts a CRLF agent and preserves its line endings', () => {
+    const tempDir = createTempDir();
+    const agentsDir = path.join(tempDir, '.qwen', 'agents');
+
+    try {
+      writeAgent(
+        agentsDir,
+        'windows.md',
+        ['---', 'name: windows', 'tools: Read, Bash', 'color: teal', '---', '', 'Body line'].join('\r\n')
+      );
+
+      const result = run([agentsDir]);
+      assert.strictEqual(result.code, 0, result.stderr);
+      // A CRLF-only match used to report "already compatible" while leaving
+      // Read/Bash/teal in place, so assert the update actually happened.
+      assert.ok(result.stdout.includes('Updated 1 agent file(s)'), result.stdout);
+
+      const updated = readAgent(agentsDir, 'windows.md');
+      assert.ok(updated.includes('tools: read_file, run_shell_command'));
+      assert.ok(updated.includes('color: cyan'));
+      assert.ok(!updated.includes('Read,'));
+      assert.ok(updated.includes('\r\n'), 'CRLF endings were lost');
+      assert.ok(!/[^\r]\n/.test(updated), 'found a bare LF in a CRLF file');
+    } finally {
+      cleanupTempDir(tempDir);
+    }
+  })) passed++; else failed++;
+
+  if (test('rejects an unknown flag without modifying any file', () => {
+    const tempDir = createTempDir();
+    const agentsDir = path.join(tempDir, '.qwen', 'agents');
+
+    try {
+      writeAgent(
+        agentsDir,
+        'architect.md',
+        ['---', 'name: architect', 'tools: Read, Bash', '---', '', 'Body'].join('\n')
+      );
+      const before = readAgent(agentsDir, 'architect.md');
+
+      const result = run(['--dry-run', agentsDir]);
+      assert.strictEqual(result.code, 1);
+      assert.ok(result.stderr.includes('Unknown option: --dry-run'), result.stderr);
+      // The point of rejecting: a flag that looks like a preview must not
+      // rewrite installed agents and still exit 0.
+      assert.strictEqual(readAgent(agentsDir, 'architect.md'), before);
+    } finally {
+      cleanupTempDir(tempDir);
+    }
+  })) passed++; else failed++;
+
   console.log(`\nResults: Passed: ${passed}, Failed: ${failed}`);
   process.exit(failed > 0 ? 1 : 0);
 }
