@@ -128,17 +128,21 @@ function loadFixture(fixturePath, root = repoRoot) {
  * @param {object} [options] Options.
  * @param {string} [options.profileId] Context profile to resolve against.
  * @param {string} [options.root] ECC root.
+ * @param {(prompt: string) => string[]} [options.suggest] Suggested IDs for a
+ *   prompt; defaults to the router's own suggestSkills.
  * @returns {object} Counts, metrics, and misses.
  */
-function evaluatePrompts(prompts, { profileId = DEFAULT_PROFILE_ID, root = repoRoot } = {}) {
-  const registry = registryFor(root);
+function evaluatePrompts(prompts, { profileId = DEFAULT_PROFILE_ID, root = repoRoot, suggest } = {}) {
+  const suggestIds = suggest
+    || (prompt => suggestSkills(prompt, { repoRoot: root, profileId, registry: registryFor(root) })
+      .suggestions.map(s => s.id));
   let routedPrompts = 0;
   let promptHits = 0;
   let returned = 0;
   let relevant = 0;
   const misses = [];
   for (const entry of prompts) {
-    const ids = suggestSkills(entry.prompt, { repoRoot: root, profileId, registry }).suggestions.map(s => s.id);
+    const ids = suggestIds(entry.prompt);
     const relevantHere = ids.filter(id => entry.expected.includes(id)).length;
     returned += ids.length;
     relevant += relevantHere;

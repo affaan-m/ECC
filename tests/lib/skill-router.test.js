@@ -21,6 +21,14 @@ test('suggestions come from the canonical registry, capped at three', () => with
   }
 }));
 
+test('candidates below the resolver evidence bar are not suggested', () => withFixture(repoRoot => {
+  // The resolver ranks configure-ecc here on one weak, non-exact term; the
+  // two exact name anchors survive.
+  const ids = suggestSkills('feature shared configure work', { repoRoot }).suggestions.map(s => s.id);
+  assert.deepEqual(ids, ['skill:feature', 'skill:shared']);
+  assert.deepEqual(suggestSkills('help with work on things', { repoRoot }).suggestions, []);
+}));
+
 test('suggest mode selects and loads nothing', () => withFixture(repoRoot => {
   // A query naming exactly one skill is admitted in auto mode; suggest mode
   // must still leave it a proposal.

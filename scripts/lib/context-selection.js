@@ -26,6 +26,18 @@ const AUTO_ADMIT_MARGIN = 1.5;
 const FALLBACK_MIN_BM25 = 12;
 const FALLBACK_MIN_TERMS = 2;
 const FALLBACK_MARGIN = 1.1;
+
+function meetsFallbackBar(candidate) {
+  return candidate.bm25 >= FALLBACK_MIN_BM25 && candidate.matchedTerms.length >= FALLBACK_MIN_TERMS;
+}
+
+/** Whether a ranked candidate carries enough local evidence to show as a
+ * suggestion: an exact canonical-name anchor, or the tier-2 fallback's
+ * absolute bar (without its margin, which compares a single pick against the
+ * runner-up). Candidates below it are ranking noise, not proposals. */
+function hasSuggestionEvidence(candidate) {
+  return Boolean(candidate && (candidate.exact || meetsFallbackBar(candidate)));
+}
 // v4: an explicit empty proposal (decline) is honored; the tier-2 fallback no
 // longer overrides declines at the launch/selection call sites.
 const ROUTING_POLICY_VERSION = 4;
@@ -225,8 +237,7 @@ function resolveTaskContext({ repoRoot = DEFAULT_REPO_ROOT, task, profileId = 'l
     && !explicitIds.length && !proposedIds.length && candidates.length && !exactAnchors.length) {
     const top = candidates[0];
     const second = candidates[1];
-    if (top.bm25 >= FALLBACK_MIN_BM25 && top.matchedTerms.length >= FALLBACK_MIN_TERMS
-      && (!second || top.bm25 >= FALLBACK_MARGIN * (second.bm25 || 0))) {
+    if (meetsFallbackBar(top) && (!second || top.bm25 >= FALLBACK_MARGIN * (second.bm25 || 0))) {
       fallback = { id: top.id, bm25: top.bm25, matchedTerms: top.matchedTerms.length };
     }
   }
@@ -275,4 +286,4 @@ function resolveDeclinedFallback(options, selection) {
     receipt: { ...receiptValue, receiptDigest: digestObject(receiptValue) } };
 }
 
-module.exports = { resolveTaskContext, resolveDeclinedFallback };
+module.exports = { hasSuggestionEvidence, resolveTaskContext, resolveDeclinedFallback };

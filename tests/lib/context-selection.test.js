@@ -5,7 +5,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const test = require('node:test');
 const { withFixture, write, update } = require('./helpers/context-fixture');
-const { resolveTaskContext, resolveDeclinedFallback } = require('../../scripts/lib/context-selection');
+const { hasSuggestionEvidence, resolveTaskContext, resolveDeclinedFallback } = require('../../scripts/lib/context-selection');
 const { loadContextRegistry } = require('../../scripts/lib/context-pack-registry');
 
 const task = (values = {}) => ({ sessionId: 'session-1', taskId: 'task-1', revision: 1,
@@ -302,6 +302,15 @@ test('invalid input and oversized bodies fail closed', () => withFixture(repoRoo
     overrides: [{ id: 'skill:feature', requiredResources: ['skills/feature/references/details.md'] }] }));
   assert.throws(() => resolve(repoRoot, { explicitIds: ['skill:feature'] }, { load: true }), /budget/);
 }));
+
+test('suggestion evidence is an exact name anchor or the fallback absolute bar', () => {
+  const candidate = (values = {}) => ({ id: 'skill:feature', exact: false, bm25: 12, matchedTerms: ['a', 'b'], ...values });
+  assert.equal(hasSuggestionEvidence(candidate()), true);
+  assert.equal(hasSuggestionEvidence(candidate({ bm25: 11.9 })), false);
+  assert.equal(hasSuggestionEvidence(candidate({ matchedTerms: ['a'] })), false);
+  assert.equal(hasSuggestionEvidence(candidate({ exact: true, bm25: 1, matchedTerms: ['a'] })), true);
+  assert.equal(hasSuggestionEvidence(null), false);
+});
 
 test('a passed registry is reused without changing the resolution', () => withFixture(repoRoot => {
   const registry = loadContextRegistry({ repoRoot });

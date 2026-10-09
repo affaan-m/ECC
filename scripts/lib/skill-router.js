@@ -19,7 +19,7 @@
 
 'use strict';
 
-const { resolveTaskContext } = require('./context-selection');
+const { hasSuggestionEvidence, resolveTaskContext } = require('./context-selection');
 
 const DEFAULT_PROFILE_ID = 'lean@1';
 const MAX_SUGGESTIONS = 3;
@@ -87,7 +87,10 @@ function suggestSkills(prompt, options = {}) {
   return {
     profileId: selection.profileId,
     reason: selection.reason,
+    // The resolver ranks every candidate it finds; only those meeting its own
+    // evidence bar are worth a line of the user's context.
     suggestions: selection.candidates
+      .filter(hasSuggestionEvidence)
       .slice(0, options.maxResults ?? MAX_SUGGESTIONS)
       .map(candidate => ({ id: candidate.id, description: candidate.description, score: candidate.score })),
   };
