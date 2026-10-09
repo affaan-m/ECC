@@ -635,8 +635,12 @@ function runTests() {
         );
       }
 
+      // findPluginInstall also reads USERPROFILE and os.homedir() (USERPROFILE
+      // on Windows), so isolating HOME alone lets a real install win.
       const originalHome = process.env.HOME;
+      const originalUserProfile = process.env.USERPROFILE;
       process.env.HOME = homeDir;
+      process.env.USERPROFILE = homeDir;
       try {
         const found = findPluginInstall(projectRoot);
         assert.ok(found);
@@ -646,6 +650,11 @@ function runTests() {
           delete process.env.HOME;
         } else {
           process.env.HOME = originalHome;
+        }
+        if (originalUserProfile === undefined) {
+          delete process.env.USERPROFILE;
+        } else {
+          process.env.USERPROFILE = originalUserProfile;
         }
       }
     } finally {
