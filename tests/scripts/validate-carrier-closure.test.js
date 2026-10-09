@@ -118,6 +118,32 @@ test('an extensionless require still resolves through the CommonJS extension sea
   assert.equal(result.status, 'success', JSON.stringify(result.failures));
 }));
 
+// An extensionless require searches only .js, .json and .node, then a
+// directory's index; .cjs and .mjs must be named explicitly.
+for (const extension of ['cjs', 'mjs']) {
+  test(`an extensionless require does not resolve to a .${extension} file`, () => withFixture(root => {
+    write(root, `skills/ecc-guide/scripts/helper.${extension}`, 'module.exports = 1;\n');
+    plantSkillScript(root, "module.exports = require('./helper');\n");
+    const result = validator().validate(root);
+    assert.equal(result.status, 'failure');
+    assert.ok(result.failures.every(failure => failure.reason === 'unplanned-target'));
+  }));
+}
+
+test('an extensionless require resolves to a .json file', () => withFixture(root => {
+  write(root, 'skills/ecc-guide/scripts/helper.json', '{}\n');
+  plantSkillScript(root, "module.exports = require('./helper');\n");
+  const result = validator().validate(root);
+  assert.equal(result.status, 'success', JSON.stringify(result.failures));
+}));
+
+test('a tagged template named from is not an import', () => withFixture(root => {
+  plantSkillScript(root, 'const from = parts => parts[0];\nmodule.exports = from`./helper`;\n');
+  const result = validator().validate(root);
+  assert.equal(result.status, 'success', JSON.stringify(result.failures));
+  assert.deepEqual(result.warnings, []);
+}));
+
 test('a backslash-separated relative require fails: Linux and macOS read it as one filename', () => withFixture(root => {
   write(root, 'skills/ecc-guide/scripts/lib/helper.js', 'module.exports = 1;\n');
   plantSkillScript(root, "module.exports = require('./lib\\\\helper.js');\n");
@@ -188,6 +214,13 @@ const SCANNER_CASES = [
   ['regex after a while condition', "while (more) /\"/.test(s); require('./after-while');", ['./after-while']],
   ['division after a method named if', "const v = a.if(x) / 2, q = \"/\"; require('./after-method');", ['./after-method']],
   ['division after a call inside a condition', "if (f(a) / 2 > 1) { q = \"/\"; } require('./after-nested');", ['./after-nested']],
+  ['regex after a block', "if (ok) {} /\"/.test(text); require('./after-block');", ['./after-block']],
+  ['division after a method named if across a line break',
+    "const n = obj.\nif(x) / 2, q = \"/\"; require('./after-spaced-method');", ['./after-spaced-method']],
+  ['division after an optional-chained method named while',
+    "const n = obj?. while(x) / 2, q = \"/\"; require('./after-optional');", ['./after-optional']],
+  ['a tagged template named from', 'const from = p => p[0]; const s = from`./helper`;', []],
+  ['a template import() is still a dependency', 'import(`./templated`);', ['./templated']],
 ];
 
 for (const [label, source, expected] of SCANNER_CASES) {
