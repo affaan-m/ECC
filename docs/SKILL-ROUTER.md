@@ -123,8 +123,10 @@ node scripts/ci/skill-router-eval.js --min-prompt-hit-rate 0.9 --min-precision-a
 ```
 
 The evaluator loads the registry once per run and passes it to every call
-through the resolver's `registry` option, because its sources cannot change
-mid-run. Reads still verify each source digest. Latency is measured
+through the resolver's `registry` option. Each resolution checks that the
+registry's declaration sources and skill inventory are still current, and
+verifies skill source digests when they are read; it fails closed if anything
+changed after the registry was loaded. Latency is measured
 separately, end to end, through the real hook entrypoint (`--latency-samples`,
 default 3).
 

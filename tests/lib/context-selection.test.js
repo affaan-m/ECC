@@ -343,6 +343,13 @@ test('a passed registry is rejected once its declarations or inventory change', 
     fs.rmSync(path.join(repoRoot, 'skills', 'shared'), { recursive: true, force: true });
     assert.throws(() => resolve(repoRoot, query, { registry }), /Registry changed during task selection/);
   });
+  // A recorded skill whose SKILL.md was deleted while its directory stayed.
+  withFixture(repoRoot => {
+    const registry = loadContextRegistry({ repoRoot });
+    fs.rmSync(path.join(repoRoot, 'skills', 'shared', 'SKILL.md'));
+    assert.throws(() => resolve(repoRoot, query, { registry }), /Registry changed during task selection/);
+    assert.ok(!loadContextRegistry({ repoRoot }).entries.some(entry => entry.id === 'skill:shared'));
+  });
   // A snapshot whose recorded sources were stripped cannot skip the check.
   withFixture(repoRoot => {
     const registry = { ...loadContextRegistry({ repoRoot }), sourceDigests: [] };

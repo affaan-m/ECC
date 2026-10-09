@@ -153,6 +153,13 @@ function assertRegistryCurrent(registry, { repoRoot = DEFAULT_REPO_ROOT } = {}) 
   if ([...loaded].some(id => !listed.has(id.slice('skill:'.length))) || discoverSkills(reader, root, unknown).length) {
     throw new Error('Registry changed during task selection');
   }
+  // A recorded skill whose directory survives but whose SKILL.md is gone
+  // would be dropped by a fresh load. Existence only: bytes and symbolic
+  // links are checked by the source reader when the skill is read.
+  const base = fs.realpathSync(repoRoot);
+  const missingSource = registry.entries.some(entry => entry.sourcePath !== `${root}/${entry.id.slice('skill:'.length)}/SKILL.md`
+    || !fs.lstatSync(path.join(base, entry.sourcePath), { throwIfNoEntry: false })?.isFile());
+  if (missingSource) throw new Error('Registry changed during task selection');
 }
 
 function loadSkillTriggers({ repoRoot = DEFAULT_REPO_ROOT } = {}) {

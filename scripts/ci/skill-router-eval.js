@@ -21,8 +21,9 @@
  * Suggestions come from scripts/lib/skill-router.js, the same function the
  * hook's resolver child calls. The evaluator loads the canonical registry
  * once per root and passes it to every call through the resolver's
- * `registry` option: its sources cannot change mid-run, and reloading it for
- * every prompt would only re-measure hashing. Latency is therefore measured
+ * `registry` option, because reloading it for every prompt would only
+ * re-measure hashing; each resolution still fails closed if a source changed
+ * after it was loaded. Latency is therefore measured
  * separately, end to end through the real hook entrypoint, on
  * --latency-samples prompts.
  */
