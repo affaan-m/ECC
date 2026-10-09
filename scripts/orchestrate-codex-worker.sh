@@ -48,20 +48,16 @@ fi
 
 write_status "running" "- Task file: \`$task_file\`"
 
-# SECURITY: never auto-approve agent tool execution. The worker prompt is built
-# from a task file that may contain LLM-generated or third-party content
-# (indirect prompt injection). `codex exec -p yolo` would execute
-# rm -rf / exfiltration commands without confirmation.
-# Default to the most restrictive approval mode; allow an explicit operator
-# override only via env (e.g. ECC_CODEX_APPROVAL_MODE=on-request for trusted runs).
-# Codex profiles (-p) and approval policies (--ask-for-approval) are
-# independent concepts. SECURITY: default to never approving untrusted
-# tool execution; operators can override via env.
+# Keep the configured sandbox; do not bypass approvals or sandboxing for task
+# files that may contain third-party content. Non-interactive runs default to
+# never prompting for approvals. This does not disable commands allowed by the
+# sandbox. Operators can request approvals with ECC_CODEX_APPROVAL_POLICY.
+# Approval policies (--ask-for-approval) are separate from Codex profiles (-p).
 APPROVAL_POLICY="${ECC_CODEX_APPROVAL_POLICY:-never}"
 case "$APPROVAL_POLICY" in
-  never|on-request|on-failure) ;;
+  never|on-request) ;;
   *)
-    echo "[ECC worker] Refusing to run: unsupported ECC_CODEX_APPROVAL_POLICY='$APPROVAL_POLICY' (expected never|on-request|on-failure)" >&2
+    echo "[ECC worker] Refusing to run: unsupported ECC_CODEX_APPROVAL_POLICY='$APPROVAL_POLICY' (expected never|on-request)" >&2
     write_status "failed" "- Error: unsupported approval policy"
     exit 1
     ;;
@@ -109,7 +105,9 @@ Task file: $task_file
 $(cat "$task_file")
 EOF
 
-if codex exec --ask-for-approval "$APPROVAL_POLICY" -m gpt-5.4 --color never -C "$(pwd)" -o "$output_file" - < "$prompt_file"; then
+# Approval is a global option. Inherit the operator's configured model instead
+# of pinning a model that may be unavailable or retired.
+if codex --ask-for-approval "$APPROVAL_POLICY" exec --color never -C "$(pwd)" -o "$output_file" - < "$prompt_file"; then
   {
     echo "# Handoff"
     echo
