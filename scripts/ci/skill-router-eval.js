@@ -80,6 +80,22 @@ function ratio(numerator, denominator) {
 }
 
 /**
+ * Whether a result meets the requested floors, compared on the raw counts:
+ * the reported ratios are rounded to three places for display, and a value
+ * just below a floor must not round up past it.
+ *
+ * @param {{prompts: number, promptHits: number, suggestionsReturned: number, relevantSuggestions: number}} result
+ *   Counts from evaluatePrompts.
+ * @param {{minPromptHitRate: number, minPrecisionAt3: number}} floors Requested floors.
+ * @returns {boolean} True when both floors are met.
+ */
+function meetsFloors(result, { minPromptHitRate, minPrecisionAt3 }) {
+  const hitRate = result.prompts === 0 ? 0 : result.promptHits / result.prompts;
+  const precision = result.suggestionsReturned === 0 ? 0 : result.relevantSuggestions / result.suggestionsReturned;
+  return hitRate >= minPromptHitRate && precision >= minPrecisionAt3;
+}
+
+/**
  * Nearest-rank percentile of a sample.
  *
  * @param {number[]} values Sample values (need not be pre-sorted).
@@ -262,13 +278,13 @@ function main() {
     }
   }
 
-  if (report.promptHitRate < options.minPromptHitRate || report.precisionAt3 < options.minPrecisionAt3) {
+  if (!meetsFloors(report, options)) {
     console.error(`skill-router-eval: below threshold (prompt hit rate ${report.promptHitRate} < ${options.minPromptHitRate} or precision@3 ${report.precisionAt3} < ${options.minPrecisionAt3})`);
     process.exitCode = 1;
   }
 }
 
-module.exports = { canonicalId, evaluatePrompts, loadFixture, ratio };
+module.exports = { canonicalId, evaluatePrompts, loadFixture, meetsFloors, ratio };
 
 if (require.main === module) {
   main();

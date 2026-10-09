@@ -5,7 +5,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const test = require('node:test');
 const { withFixture } = require('../lib/helpers/context-fixture');
-const { canonicalId, evaluatePrompts, loadFixture, ratio } = require('../../scripts/ci/skill-router-eval');
+const { canonicalId, evaluatePrompts, loadFixture, meetsFloors, ratio } = require('../../scripts/ci/skill-router-eval');
 
 const repoRoot = path.resolve(__dirname, '../..');
 const fixtures = path.join(repoRoot, 'tests', 'fixtures', 'skill-router');
@@ -42,6 +42,19 @@ test('precision@3 counts suggestions, not prompts', () => {
   assert.deepEqual(result.misses.map(miss => miss.prompt), ['nothing relevant', 'silent']);
 });
 
+test('floors compare raw counts, so a rounded-up ratio cannot pass a floor it misses', () => {
+  // 46/52 = 0.8846..., reported as 0.885 after rounding.
+  const result = { prompts: 52, promptHits: 46, suggestionsReturned: 94, relevantSuggestions: 52 };
+  assert.equal(ratio(result.promptHits, result.prompts), 0.885);
+  assert.equal(meetsFloors(result, { minPromptHitRate: 0.885, minPrecisionAt3: 0 }), false);
+  assert.equal(meetsFloors(result, { minPromptHitRate: 0.884, minPrecisionAt3: 0 }), true);
+  // 52/94 = 0.5531..., reported as 0.553.
+  assert.equal(meetsFloors(result, { minPromptHitRate: 0, minPrecisionAt3: 0.5532 }), false);
+  assert.equal(meetsFloors(result, { minPromptHitRate: 0, minPrecisionAt3: 0.553 }), true);
+  assert.equal(meetsFloors({ prompts: 0, promptHits: 0, suggestionsReturned: 0, relevantSuggestions: 0 },
+    { minPromptHitRate: 0, minPrecisionAt3: 0 }), true);
+});
+
 test('fixture IDs must exist in the canonical registry', () => withFixture(root => {
   const file = path.join(root, 'bad-fixture.json');
   fs.writeFileSync(file, JSON.stringify({ prompts: [{ prompt: 'help with it', expected: ['not-a-skill'] }] }));
@@ -56,9 +69,9 @@ for (const [name, floor] of Object.entries(FLOORS)) {
     const result = evaluatePrompts(prompts);
     assert.equal(result.prompts, prompts.length);
     assert.ok(result.suggestionsReturned <= prompts.length * 3);
-    assert.ok(result.promptHitRate >= floor.promptHitRate,
+    assert.ok(meetsFloors(result, { minPromptHitRate: floor.promptHitRate, minPrecisionAt3: 0 }),
       `${name}: prompt hit rate ${result.promptHitRate} fell below ${floor.promptHitRate}`);
-    assert.ok(result.precisionAt3 >= floor.precisionAt3,
+    assert.ok(meetsFloors(result, { minPromptHitRate: 0, minPrecisionAt3: floor.precisionAt3 }),
       `${name}: precision@3 ${result.precisionAt3} fell below ${floor.precisionAt3}`);
     assert.ok(result.routedPrompts / result.prompts <= floor.maxRoutedShare,
       `${name}: ${result.routedPrompts}/${result.prompts} prompts got suggestions, above ${floor.maxRoutedShare}`);
