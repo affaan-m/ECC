@@ -22,6 +22,7 @@ Invoke this skill:
 
 ### Phase 1: Build Verification
 ```bash
+set -o pipefail  # report the build's exit status, not tail's
 # Check if project builds
 npm run build 2>&1 | tail -20
 # OR
@@ -44,6 +45,7 @@ Report all type errors. Fix critical ones before continuing.
 
 ### Phase 3: Lint Check
 ```bash
+set -o pipefail
 # JavaScript/TypeScript
 npm run lint 2>&1 | head -30
 
@@ -53,6 +55,7 @@ ruff check . 2>&1 | head -30
 
 ### Phase 4: Test Suite
 ```bash
+set -o pipefail
 # Run tests with coverage
 npm run test -- --coverage 2>&1 | tail -50
 
