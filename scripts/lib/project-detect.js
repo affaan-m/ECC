@@ -84,6 +84,11 @@ const LANGUAGE_RULES = [
     type: 'php',
     markers: ['composer.json', 'composer.lock'],
     extensions: ['.php']
+  },
+  {
+    type: 'dart',
+    markers: ['pubspec.yaml', 'pubspec.lock'],
+    extensions: ['.dart']
   }
 ];
 
@@ -129,7 +134,10 @@ const FRAMEWORK_RULES = [
   { framework: 'symfony', language: 'php', markers: ['symfony.lock'], packageKeys: ['symfony/framework-bundle'] },
 
   // Elixir frameworks
-  { framework: 'phoenix', language: 'elixir', markers: [], packageKeys: ['phoenix'] }
+  { framework: 'phoenix', language: 'elixir', markers: [], packageKeys: ['phoenix'] },
+
+  // Dart frameworks
+  { framework: 'flutter', language: 'dart', markers: [], packageKeys: [], customCheck: hasFlutterSdkDependency }
 ];
 
 /**
@@ -331,6 +339,27 @@ function getElixirDeps(projectDir) {
 }
 
 /**
+ * Check whether pubspec.yaml declares the Flutter SDK as a dependency,
+ * which distinguishes a Flutter app from a plain Dart package.
+ * @param {string} projectDir - Project root directory
+ * @returns {boolean}
+ */
+function hasFlutterSdkDependency(projectDir) {
+  try {
+    const pubspecPath = path.join(projectDir, 'pubspec.yaml');
+    if (!fs.existsSync(pubspecPath)) return false;
+    const content = fs.readFileSync(pubspecPath, 'utf8');
+    // Matches the standard Flutter pubspec shape:
+    //   dependencies:
+    //     flutter:
+    //       sdk: flutter
+    return /^\s*flutter:\s*$/m.test(content) && /sdk:\s*flutter/.test(content);
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Detect project languages and frameworks
  * @param {string} [projectDir] - Project directory (defaults to cwd)
  * @returns {{ languages: string[], frameworks: string[], primary: string, projectDir: string }}
@@ -409,7 +438,9 @@ function detectProjectType(projectDir) {
       });
     }
 
-    if (hasMarker || hasDep) {
+    const hasCustom = typeof rule.customCheck === 'function' ? rule.customCheck(projectDir) : false;
+
+    if (hasMarker || hasDep || hasCustom) {
       frameworks.push(rule.framework);
     }
   }
