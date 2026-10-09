@@ -26,7 +26,7 @@ const BUILTINS = new Set(builtinModules);
 const SCRIPT_EXTENSIONS = new Set(['.js', '.cjs', '.mjs']);
 const MARK = '\u0000';
 const SLOT = `${MARK}(\\d+)${MARK}`;
-const CALL_PATTERN = new RegExp(`\\b(?:require|import)\\s*\\(\\s*${SLOT}\\s*\\)`, 'g');
+const CALL_PATTERN = new RegExp(`\\b(require|import)\\s*\\(\\s*${SLOT}\\s*\\)`, 'g');
 const FROM_PATTERN = new RegExp(`\\bfrom\\s*${SLOT}`, 'g');
 const SIDE_EFFECT_PATTERN = new RegExp(`\\bimport\\s*${SLOT}`, 'g');
 const DIRNAME_JOIN_PATTERN = new RegExp(
@@ -40,6 +40,8 @@ const ESCAPE_PATTERN = /\\(?:u\{([0-9a-fA-F]+)\}|u([0-9a-fA-F]{4})|x([0-9a-fA-F]
 const SIMPLE_ESCAPES = Object.freeze({ n: '\n', r: '\r', t: '\t', b: '\b', f: '\f', v: '\v', 0: '\0' });
 const LINE_CONTINUATIONS = new Set(['\n', '\r', '\r\n', '\u2028', '\u2029']);
 const REGEX_PRECEDES = /(?:[([{,;:=!&|?+\-*/%~^<>]|\b(?:return|typeof|case|in|of|new|delete|void|instanceof|do|else|yield|await))$/;
+// A `(` opening a statement condition; `a.if(` is a method call, not one.
+const CONTROL_OPENS = /(?:^|[^.\w$])(?:if|while|for|with)$/;
 
 /** Cook a raw string or template chunk the way the JavaScript parser would. */
 function decodeEscapes(raw) {
@@ -84,6 +86,10 @@ function scanSource(rawSource) {
   const source = String(rawSource || '');
   const literals = [];
   const stack = [];
+  // Whether each open paren began a statement condition, and whether the
+  // last one closed did: `/` after `if (...)` starts a regex, not division.
+  const parens = [];
+  let closedCondition = false;
   let code = '';
   let index = 0;
   const slot = value => { code += `${MARK}${literals.push(decodeEscapes(value)) - 1}${MARK}`; };
@@ -117,7 +123,7 @@ function scanSource(rawSource) {
       index = index === -1 ? source.length : index + 2;
       continue;
     }
-    if (char === '/' && REGEX_PRECEDES.test(code.trimEnd())) {
+    if (char === '/' && (REGEX_PRECEDES.test(code.trimEnd()) || (closedCondition && code.trimEnd().endsWith(')')))) {
       index = readRegexLiteral(source, index);
       code += ' ';
       continue;
@@ -142,6 +148,8 @@ function scanSource(rawSource) {
         open.depth -= 1;
       }
     }
+    if (char === '(') parens.push(CONTROL_OPENS.test(code.trimEnd()));
+    else if (char === ')') closedCondition = parens.pop() === true;
     code += char;
     index += 1;
   }
@@ -165,23 +173,27 @@ function renderExpression(text, literals) {
 /**
  * Extract the relative module specifiers a script declares, plus the
  * non-literal `require`/`import` arguments that cannot be resolved without
- * running the code.
+ * running the code. `imports` lists the specifiers reached through `import()`
+ * or static `import`/`from`, which Node resolves by exact path.
  */
 function extractReferences(rawSource) {
   const { code, literals } = scanSource(rawSource);
   const specifiers = new Set();
+  const imports = new Set();
   const packages = new Set();
   const dynamic = new Set();
-  const literalAt = match => literals[Number(match[1])];
 
-  for (const pattern of [CALL_PATTERN, FROM_PATTERN, SIDE_EFFECT_PATTERN]) {
-    collect(pattern, code, match => {
-      const value = literalAt(match);
-      if (value.startsWith('.') || isAbsoluteSpecifier(value)) specifiers.add(value);
-      else if (!value.startsWith('node:') && !BUILTINS.has(value.split('/')[0])) {
-        packages.add(value.startsWith('@') ? value.split('/').slice(0, 2).join('/') : value.split('/')[0]);
-      }
-    });
+  const record = (value, viaImport) => {
+    if (value.startsWith('.') || isAbsoluteSpecifier(value)) {
+      specifiers.add(value);
+      if (viaImport) imports.add(value);
+    } else if (!value.startsWith('node:') && !BUILTINS.has(value.split('/')[0])) {
+      packages.add(value.startsWith('@') ? value.split('/').slice(0, 2).join('/') : value.split('/')[0]);
+    }
+  };
+  collect(CALL_PATTERN, code, match => record(literals[Number(match[2])], match[1] === 'import'));
+  for (const pattern of [FROM_PATTERN, SIDE_EFFECT_PATTERN]) {
+    collect(pattern, code, match => record(literals[Number(match[1])], true));
   }
   collect(DIRNAME_JOIN_PATTERN, code, match => {
     const segments = [];
@@ -193,17 +205,25 @@ function extractReferences(rawSource) {
     if (new RegExp(`^${SLOT}$`).test(argument) || STATIC_JOIN_PATTERN.test(argument)) return;
     dynamic.add(renderExpression(argument, literals));
   });
-  return { specifiers: [...specifiers], packages: [...packages], dynamic: [...dynamic] };
+  return { specifiers: [...specifiers], imports: [...imports], packages: [...packages], dynamic: [...dynamic] };
 }
 
-function candidateDestinations(destinationPath, specifier) {
-  if (isAbsoluteSpecifier(specifier)) return { base: specifier, candidates: null };
-  const base = path.posix.join(path.posix.dirname(destinationPath), specifier.replace(/\\/g, '/'));
-  if (base === '..' || base.startsWith('../')) return { base, candidates: null };
-  const candidates = destinationPath.endsWith('.mjs')
+/**
+ * The planned paths that would satisfy a specifier, or the failure reason
+ * when none can. CommonJS `require` searches extensions and directory
+ * indexes; ESM (`import`, or any `.mjs` file) resolves only the exact path.
+ * A relative backslash is not a separator on Linux or macOS, so it is
+ * rejected rather than normalized.
+ */
+function candidateDestinations(destinationPath, specifier, exact) {
+  if (isAbsoluteSpecifier(specifier)) return { base: specifier, candidates: null, reason: 'outside-carrier-tree' };
+  if (specifier.includes('\\')) return { base: specifier, candidates: null, reason: 'non-portable-separator' };
+  const base = path.posix.join(path.posix.dirname(destinationPath), specifier);
+  if (base === '..' || base.startsWith('../')) return { base, candidates: null, reason: 'outside-carrier-tree' };
+  const candidates = exact
     ? [base]
     : [base, `${base}.js`, `${base}.cjs`, `${base}.mjs`, `${base}.json`, `${base}/index.js`, `${base}/index.json`];
-  return { base, candidates };
+  return { base, candidates, reason: null };
 }
 
 function sourceReader(repoRoot) {
@@ -221,16 +241,19 @@ function inspectProjection(carrier, profileId, read, report) {
   const planned = new Set(carrier.files.map(file => file.destinationPath));
   const scripts = carrier.files.filter(file => SCRIPT_EXTENSIONS.has(path.posix.extname(file.destinationPath)));
   for (const file of scripts) {
-    const { specifiers, packages, dynamic } = extractReferences(read(file));
+    const { specifiers, imports, packages, dynamic } = extractReferences(read(file));
+    const exactOnly = new Set(imports);
+    const isModule = file.destinationPath.endsWith('.mjs');
     const location = {
       target: carrier.target, layout: carrier.layout.id, profileId,
       file: file.destinationPath, source: file.sourcePath || null,
     };
     for (const specifier of specifiers) {
       report.specifierCount += 1;
-      const { base, candidates } = candidateDestinations(file.destinationPath, specifier);
+      const exact = isModule || exactOnly.has(specifier);
+      const { base, candidates, reason } = candidateDestinations(file.destinationPath, specifier, exact);
       if (!candidates) {
-        report.failures.push({ ...location, specifier, resolved: base, reason: 'outside-carrier-tree' });
+        report.failures.push({ ...location, specifier, resolved: base, reason });
       } else if (candidates.some(candidate => planned.has(candidate))) {
         report.resolvedCount += 1;
       } else {
