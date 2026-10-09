@@ -70,7 +70,7 @@ function runTests() {
     assert.ok(result.stdout.includes('Usage:'));
   })) passed++; else failed++;
 
-  if (test('maps Claude Code tool names to Qwen Code ids and drops WebSearch', () => {
+  if (test('maps Claude Code tool names to Qwen Code ids', () => {
     const tempDir = createTempDir();
     const agentsDir = path.join(tempDir, '.qwen', 'agents');
 
@@ -95,12 +95,11 @@ function runTests() {
       assert.ok(result.stdout.includes('Updated 1 agent file(s)'));
 
       const updated = readAgent(agentsDir, 'gan-planner.md');
-      // Edit maps to `edit`, not Gemini's `replace`.
-      assert.ok(updated.includes('tools: read_file, write_file, edit, run_shell_command, grep_search, glob, web_fetch'));
-      // Qwen Code has no web search tool, so the entry is dropped rather than
-      // left advertising a capability the agent cannot use.
+      // Edit maps to `edit`, not Gemini's `replace`. WebSearch maps to
+      // `web_search`, not Gemini's `google_web_search`.
+      assert.ok(updated.includes('tools: read_file, write_file, edit, run_shell_command, grep_search, glob, web_search, web_fetch'));
       assert.ok(!updated.includes('WebSearch'));
-      assert.ok(!updated.includes('web_search'));
+      assert.ok(!updated.includes('WebFetch'));
     } finally {
       cleanupTempDir(tempDir);
     }

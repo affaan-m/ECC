@@ -9,8 +9,7 @@ const { normalizeAgentTools } = require('./lib/agent-tools');
 // entries deliberately differ from gemini-adapt-agents.js:
 //
 //   Edit      -> edit            (Gemini uses `replace`)
-//   WebSearch -> dropped         (Gemini has `google_web_search`; Qwen has no
-//                                 web search tool, only `web_fetch`)
+//   WebSearch -> web_search      (Gemini uses `google_web_search`)
 //   mcp__*    -> unchanged       (Gemini lowercases to mcp_server_tool; Qwen
 //                                 keeps the double-underscore form)
 const TOOL_NAME_MAP = new Map([
@@ -24,13 +23,15 @@ const TOOL_NAME_MAP = new Map([
   ['Grep', 'grep_search'],
   ['Glob', 'glob'],
   ['WebFetch', 'web_fetch'],
+  // `web_search` is a deferred tool and only resolves for providers that offer a
+  // search agent, so it is not universally present. Mapping it is still the
+  // better default than dropping it: where the provider supports it the agent
+  // gains the capability, and where it does not Qwen Code ignores an unresolvable
+  // entry in `tools:` without warning.
+  ['WebSearch', 'web_search'],
   ['TodoWrite', 'todo_write'],
   ['Task', 'agent'],
 ]);
-
-// Tools with no Qwen Code equivalent. Silently keeping them would leave an agent
-// definition advertising a capability it cannot use.
-const TOOL_NAME_DROP = new Set(['WebSearch']);
 
 // Qwen Code supports `color:`, but only this palette. An unlisted value is
 // dropped at load time with a SUBAGENT_MANAGER warning, so remap where the
@@ -48,8 +49,8 @@ function usage() {
     '  node scripts/qwen-adapt-agents.js [agents-dir]',
     '',
     "Defaults to .qwen/agents under the current working directory.",
-    'Rewrites tools: to Qwen Code tool ids, drops tools Qwen Code does not have,',
-    'and remaps color: values outside the Qwen Code palette.',
+    'Rewrites tools: to Qwen Code tool ids and remaps color: values outside the',
+    'Qwen Code palette.',
   ].join('\n');
 }
 
@@ -92,10 +93,6 @@ function adaptToolName(toolName) {
   const mapped = TOOL_NAME_MAP.get(toolName);
   if (mapped) {
     return mapped;
-  }
-
-  if (TOOL_NAME_DROP.has(toolName)) {
-    return null;
   }
 
   // Qwen Code keeps the mcp__server__tool shape, so MCP entries pass through.
