@@ -8,7 +8,7 @@ Practical settings and habits to reduce token consumption, extend session qualit
 
 ## Recommended Settings
 
-These are recommended defaults for most users. Power users can tune values further based on their workload — for example, setting `MAX_THINKING_TOKENS` lower for simple tasks or higher for complex architectural work.
+Tune reasoning effort to your task and model: lower effort can reduce latency and cost, while higher effort suits complex work. Available levels and defaults depend on the model; see [Claude Code model configuration](https://code.claude.com/docs/en/model-config#adjust-effort-level).
 
 Add to your `~/.claude/settings.json`:
 
@@ -16,20 +16,29 @@ Add to your `~/.claude/settings.json`:
 {
   "model": "sonnet",
   "env": {
-    "MAX_THINKING_TOKENS": "10000",
+    "CLAUDE_CODE_EFFORT_LEVEL": "medium",
     "CLAUDE_CODE_SUBAGENT_MODEL": "haiku"
   }
 }
 ```
+
+The effort setting requires a model that supports effort controls. On Amazon Bedrock,
+Google Cloud's Agent Platform, and Microsoft Foundry, the `sonnet` alias currently
+resolves to Sonnet 4.5, which does not support effort controls. Select an effort-capable
+model available from your provider, or omit `CLAUDE_CODE_EFFORT_LEVEL`.
 
 ### What each setting does
 
 | Setting | Default | Recommended | Effect |
 |---------|---------|-------------|--------|
 | `model` | opus | **sonnet** | Sonnet handles ~80% of coding tasks well. Switch to Opus with `/model opus` for complex reasoning. ~60% cost reduction. |
-| `MAX_THINKING_TOKENS` | 31,999 | **10,000** | Extended thinking reserves up to 31,999 output tokens per request for internal reasoning. Reducing this cuts hidden cost by ~70%. Set to `0` to disable for trivial tasks. |
+| `CLAUDE_CODE_EFFORT_LEVEL` | Model-dependent | **medium**, if supported | Sets adaptive reasoning effort on models that support effort controls. Adjust it for task complexity; supported levels depend on the model. |
 | `CLAUDE_CODE_SUBAGENT_MODEL` | _(inherits main)_ | **haiku** | Subagents (Task tool) run on this model. Haiku is ~80% cheaper and sufficient for exploration, file reading, and test running. |
 | `ECC_CONTEXT_MONITOR_COST_WARNINGS` | on | **off for subscription users** | Suppresses agent-facing API-rate estimate warnings while keeping context exhaustion, scope, and loop warnings. |
+
+### Fixed thinking budgets
+
+`MAX_THINKING_TOKENS` applies to fixed-budget thinking. For Opus 4.6 or Sonnet 4.6, set `CLAUDE_CODE_DISABLE_ADAPTIVE_THINKING=1` to use this mode before setting a positive budget. A positive value is ignored on adaptive reasoning models, so it does not provide a general cost cap. See the [environment variable reference](https://code.claude.com/docs/en/env-vars).
 
 ### Community note on auto-compaction overrides
 
@@ -37,7 +46,7 @@ Some recent Claude Code builds have community reports that `CLAUDE_AUTOCOMPACT_P
 
 ### Toggling extended thinking
 
-- **Alt+T** (Windows/Linux) or **Option+T** (macOS) — toggle on/off
+- **Alt+T** (Windows/Linux) or **Option+T** (macOS) — toggle on/off where supported. Opus 5.5, Sonnet 5.5, and Fable models always think.
 - **Ctrl+O** — see thinking output (verbose mode)
 
 ---
@@ -150,7 +159,7 @@ The `configure-ecc` install wizard could offer to set these environment variable
 /cost                      # Check spending
 
 # Environment variables (add to ~/.claude/settings.json "env" block)
-MAX_THINKING_TOKENS=10000
+CLAUDE_CODE_EFFORT_LEVEL=medium  # Only for models that support effort controls
 CLAUDE_CODE_SUBAGENT_MODEL=haiku
 CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1
 ```

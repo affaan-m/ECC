@@ -1718,19 +1718,26 @@ Add to `~/.claude/settings.json`:
 {
   "model": "sonnet",
   "env": {
-    "MAX_THINKING_TOKENS": "10000",
+    "CLAUDE_CODE_EFFORT_LEVEL": "medium",
     "CLAUDE_AUTOCOMPACT_PCT_OVERRIDE": "50",
     "CLAUDE_CODE_SUBAGENT_MODEL": "haiku"
   }
 }
 ```
 
+The effort setting requires a model that supports effort controls. On Amazon Bedrock,
+Google Cloud's Agent Platform, and Microsoft Foundry, the `sonnet` alias currently
+resolves to Sonnet 4.5, which does not support effort controls. Select an effort-capable
+model available from your provider, or omit `CLAUDE_CODE_EFFORT_LEVEL`.
+
 | Setting | Default | Recommended | Impact |
 |---------|---------|-------------|--------|
 | `model` | opus | **sonnet** | ~60% cost reduction; handles 80%+ of coding tasks |
-| `MAX_THINKING_TOKENS` | 31,999 | **10,000** | ~70% reduction in hidden thinking cost per request |
+| `CLAUDE_CODE_EFFORT_LEVEL` | Model-dependent | **medium**, if supported | Controls adaptive reasoning depth on models that support effort controls; lower effort trades reasoning depth for latency and cost |
 | `CLAUDE_AUTOCOMPACT_PCT_OVERRIDE` | 95 | **50** | Compacts earlier, better quality in long sessions |
 | `ECC_CONTEXT_MONITOR_COST_WARNINGS` | on | **off for subscription users** | Suppresses agent-facing API-rate estimate warnings while keeping context/scope/loop warnings |
+
+For fixed-budget models, `MAX_THINKING_TOKENS` controls the thinking budget. On Opus 4.6 or Sonnet 4.6, also set `CLAUDE_CODE_DISABLE_ADAPTIVE_THINKING=1` to use that mode. A positive token value does not cap adaptive reasoning; see the [performance rule](rules/common/performance.md#extended-thinking--plan-mode).
 
 Switch to Opus only when you need deep architectural reasoning:
 ```
