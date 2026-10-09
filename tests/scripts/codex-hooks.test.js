@@ -11,6 +11,7 @@ const TOML = require('@iarna/toml');
 
 const repoRoot = path.join(__dirname, '..', '..');
 const installScript = path.join(repoRoot, 'scripts', 'codex', 'install-global-git-hooks.sh');
+const preCommitHook = path.join(repoRoot, 'scripts', 'codex-git-hooks', 'pre-commit');
 const prePushHook = path.join(repoRoot, 'scripts', 'codex-git-hooks', 'pre-push');
 const pluginCacheCheckScript = path.join(repoRoot, 'scripts', 'codex', 'check-plugin-cache.js');
 const mergeCodexConfigScript = path.join(repoRoot, 'scripts', 'codex', 'merge-codex-config.js');
@@ -163,6 +164,65 @@ if (
 )
   passed++;
 else failed++;
+
+function runHermeticPreCommit({ content = 'safe text\n', filename = 'sample.txt', scanner = false, env = {} } = {}) {
+  const tempDir = createTempDir('codex-pre-commit-');
+  try {
+    const bashEnv = path.join(tempDir, 'bash-env');
+    const binDir = path.join(tempDir, 'bin');
+    fs.mkdirSync(binDir);
+    const hookEnv = makeHermeticCodexEnv(tempDir, path.join(tempDir, '.codex'), {
+      PATH: process.env.PATH,
+      GIT_CONFIG_NOSYSTEM: '1',
+      MSYS_NO_PATHCONV: '1',
+      ECC_SKIP_GIT_HOOKS: '0',
+      ECC_SKIP_PRECOMMIT: '0',
+      ...env,
+    });
+    const initialized = spawnSync('git', ['init', '--quiet'], { cwd: tempDir, env: hookEnv });
+    assert.strictEqual(initialized.status, 0, initialized.stderr?.toString());
+    if (content !== null) {
+      fs.writeFileSync(path.join(tempDir, filename), content);
+      const staged = spawnSync('git', ['add', '--', filename], { cwd: tempDir, env: hookEnv });
+      assert.strictEqual(staged.status, 0, staged.stderr?.toString());
+    }
+    // Keep real Git/awk available, while hiding every installed ripgrep binary.
+    fs.writeFileSync(bashEnv, `
+git_path="$(command -v git)"
+awk_path="$(command -v awk)"
+git() { "$git_path" "$@"; }
+awk() { "$awk_path" "$@"; }
+unset -f rg
+PATH="${toBashPath(binDir)}"
+${scanner ? 'rg() { return 1; }' : ''}
+`);
+    return runBash(preCommitHook, {
+      env: { ...hookEnv, BASH_ENV: toBashPath(bashEnv) },
+      cwd: tempDir,
+      preservePath: false,
+    });
+  } finally {
+    cleanup(tempDir);
+  }
+}
+
+for (const [name, options, status, diagnostic] of [
+  ['blocks safe staged text when ripgrep is missing', {}, 1, /ripgrep.*required/i],
+  ['blocks a staged token when ripgrep is missing', { content: `token = "ghp_${'a'.repeat(36)}"\n` }, 1, /ripgrep.*required/i],
+  ['allows a successful scan with no findings', { scanner: true }, 0, null],
+  ['allows an empty index without ripgrep', { content: null }, 0, null],
+  ['allows excluded lockfiles without ripgrep', { filename: 'yarn.lock' }, 0, null],
+  ['preserves the pre-commit bypass warning', { env: { ECC_SKIP_PRECOMMIT: '1' } }, 0, /hook bypassed via env/],
+  ['preserves the global bypass warning', { env: { ECC_SKIP_GIT_HOOKS: '1' } }, 0, /hook bypassed via env/],
+]) {
+  if (test(`pre-commit ${name}`, () => {
+    const result = runHermeticPreCommit(options);
+    assert.strictEqual(result.status, status, `${result.stdout}\n${result.stderr}`);
+    if (diagnostic) assert.match(result.stderr, diagnostic);
+    else assert.strictEqual(result.stderr, '');
+  })) passed++;
+  else failed++;
+}
 
 function runHermeticPrePush({
   failScript = null,

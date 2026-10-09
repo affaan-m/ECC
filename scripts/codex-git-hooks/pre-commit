@@ -36,6 +36,11 @@ scan_added_lines() {
     return 0
   fi
 
+  if ! command -v rg >/dev/null 2>&1; then
+    printf '[ECC pre-commit] ripgrep (rg) is required for secret scanning; install it and ensure it is on PATH when Git runs the hook.\n' >&2
+    exit 1
+  fi
+
   if hits="$(printf '%s\n' "$added_lines" | rg -n --pcre2 "$regex" 2>/dev/null)"; then
     printf '\n[ECC pre-commit] Potential secret detected (%s) in %s\n' "$name" "$file" >&2
     printf '%s\n' "$hits" | head -n 3 >&2
