@@ -115,4 +115,11 @@ Review follow-up, October 8:
 - Budget: a worker thread would make the 150 ms budget a hard bound but measured 135 to 150 ms for the same work (about 85 ms in process), so it would suppress most suggestions. The hook keeps in-process checks between steps, the read bounds cap the work at a real registry's size, and the documented snippet sets Claude Code's `timeout` as the outer bound.
 - Full Claude index, auto mode, Linux x64 Node 22.22.0: wrapper invocations 108 to 122 ms against 29 to 45 ms with the hook disabled.
 
+Review follow-up, October 9:
+
+- RED (1 case fails): a build interrupted while writing the entries file left partial bytes under its digest name, and every later build refused them, so the index could not be restored. GREEN writes the file through the store's temporary-file-and-rename path and replaces a digest-named file whose bytes do not hash to its name.
+- Sources edited after the entries are read: a new case pins that the published index still matches the stored generation and that the next build reports the generation stale. A final source recheck before the pointer would only discard a correct index. The triggers manifest, though, is not bound to the generation: an edit to it after `ecc profile set` reaches the next index unnoticed. Binding it is a store change, left open.
+- Schema validation stays manual on the read path. On Windows x64, Node 24, loading Ajv took about 44 ms and compiling an index schema about 20 ms in a fresh process, against 22 ms for loading the whole routing module. That would cost the prompt-time read about 64 ms of its 150 ms budget, so Ajv stays off the prompt path, as `validateSchema` already documents.
+- Budget: the October 8 decision stands. On the same Windows machine a prototype worker measured 64 to 77 ms against about 55 ms in process, and stopped a simulated 600 ms read at 152 ms. That gap is smaller than the Linux measurement above, so the trade-off may be worth revisiting with numbers from both platforms.
+
 These boundaries keep the shipped behavior distinct from the M1 release gate. Authenticated outcome observations, a complete Tier 2 disk diff, live-install migration, other-provider activation, whole-context token truth and release defaults remain unverified until their explicit prerequisites are available.
