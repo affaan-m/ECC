@@ -166,6 +166,7 @@
     "skills/agent-architecture-audit/",
     "skills/agent-harness-construction/",
     "skills/agent-introspection-debugging/",
+    "skills/agent-runtime-gateway-smoke-test/",
     "skills/agent-sort/",
     "skills/agentic-engineering/",
     "skills/agentic-os/",

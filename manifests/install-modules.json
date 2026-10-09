@@ -855,6 +855,7 @@
         "skills/autonomous-agent-harness",
         "skills/gan-style-harness",
         "skills/hermes-imports",
+        "skills/agent-runtime-gateway-smoke-test",
         "skills/openclaw-persona-forge",
         "skills/opensource-pipeline",
         "skills/orch-add-feature",
