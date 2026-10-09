@@ -5,6 +5,7 @@ const path = require('path');
 const { spawnSync } = require('child_process');
 const { ensureAgentDataHomeEnv } = require('../lib/agent-data-home');
 const { normalizePluginRootForPlatform } = require('../lib/resolve-ecc-root');
+const { resolveWindowsBashCandidates } = require('../lib/windows-bash');
 const { readStdinRaw: readBoundedStdin, resolveMaxStdin } = require('./hook-input');
 
 const SHELL_PROBE_TIMEOUT_MS = 2000;
@@ -108,7 +109,8 @@ function findShellBinary() {
     // bash.exe / conhost.exe processes the way MSYS2/Git Bash does.
     // Note: PowerShell is only suitable for .ps1 scripts; callers that need
     // to run .sh scripts (e.g. observe-runner.js) must not use this function.
-    candidates.push('pwsh.exe', 'powershell.exe', 'bash.exe', 'bash');
+    // Bash is named by absolute path so a WSL launcher earlier on PATH is skipped.
+    candidates.push('pwsh.exe', 'powershell.exe', ...resolveWindowsBashCandidates(['bash.exe', 'bash']));
   } else {
     candidates.push('bash', 'sh');
   }
@@ -142,7 +144,9 @@ function findBashBinary() {
   if (process.env.BASH && process.env.BASH.trim() && !isPowerShellBin(process.env.BASH.trim())) {
     candidates.push(process.env.BASH.trim());
   }
-  candidates.push('bash.exe', 'bash');
+  // On Windows these resolve to absolute paths that exclude WSL launchers;
+  // elsewhere they stay bare names.
+  candidates.push(...resolveWindowsBashCandidates(['bash.exe', 'bash']));
 
   for (const candidate of candidates) {
     const probe = spawnSync(candidate, ['-c', ':'], {
