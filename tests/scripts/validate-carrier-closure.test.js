@@ -87,6 +87,46 @@ test('a directory require resolves through index.json', () => withFixture(root =
   assert.equal(result.status, 'success', JSON.stringify(result.failures));
 }));
 
+// Node resolves import() and static imports by exact path: no extension
+// search and no directory index, even when the calling file is CommonJS.
+for (const [label, planned, source] of [
+  ['an extensionless import()', 'helper.js', "module.exports = import('./helper');\n"],
+  ['a directory import() through index.json', 'data/index.json', "module.exports = import('./data');\n"],
+  ['a directory import() through index.js', 'data/index.js', "module.exports = import('./data');\n"],
+  ['an extensionless static import', 'helper.js', "import helper from './helper';\nexport default helper;\n"],
+]) {
+  test(`${label} fails even when the require form would resolve`, () => withFixture(root => {
+    write(root, `skills/ecc-guide/scripts/${planned}`, planned.endsWith('.json') ? '{}\n' : 'module.exports = 1;\n');
+    plantSkillScript(root, source);
+    const result = validator().validate(root);
+    assert.equal(result.status, 'failure');
+    assert.ok(result.failures.every(failure => failure.reason === 'unplanned-target'));
+  }));
+}
+
+test('an import() naming the planned file exactly resolves', () => withFixture(root => {
+  write(root, 'skills/ecc-guide/scripts/helper.js', 'module.exports = 1;\n');
+  plantSkillScript(root, "module.exports = import('./helper.js');\n");
+  const result = validator().validate(root);
+  assert.equal(result.status, 'success', JSON.stringify(result.failures));
+}));
+
+test('an extensionless require still resolves through the CommonJS extension search', () => withFixture(root => {
+  write(root, 'skills/ecc-guide/scripts/helper.js', 'module.exports = 1;\n');
+  plantSkillScript(root, "module.exports = require('./helper');\n");
+  const result = validator().validate(root);
+  assert.equal(result.status, 'success', JSON.stringify(result.failures));
+}));
+
+test('a backslash-separated relative require fails: Linux and macOS read it as one filename', () => withFixture(root => {
+  write(root, 'skills/ecc-guide/scripts/lib/helper.js', 'module.exports = 1;\n');
+  plantSkillScript(root, "module.exports = require('./lib\\\\helper.js');\n");
+  const result = validator().validate(root);
+  assert.equal(result.status, 'failure');
+  assert.ok(specifiersOf(result.failures).includes('./lib\\helper.js'));
+  assert.ok(result.failures.every(failure => failure.reason === 'non-portable-separator'));
+}));
+
 test('a package import warns because carriers ship no node_modules; builtins do not', () => withFixture(root => {
   plantSkillScript(root, "'use strict';\n\nconst yaml = require('js-yaml');\nconst { x } = require('@scope/pkg/deep');\n"
     + "const fs = require('node:fs');\nconst path = require('path');\nmodule.exports = { yaml, x, fs, path };\n");
@@ -144,6 +184,10 @@ const SCANNER_CASES = [
   ['unicode escape in a specifier', "require('\\u002e./escaped');", ['../escaped']],
   ['hex and braced escapes in a specifier', "require('\\x2e/a'); require(`\\u{2e}/b`);", ['./a', './b']],
   ['escaped quote and backslash', "require('./it\\'s'); require('.\\\\win');", ["./it's", '.\\win']],
+  ['regex after an if condition', "if (ok) /['\"]/.test(text); require('./missing');", ['./missing']],
+  ['regex after a while condition', "while (more) /\"/.test(s); require('./after-while');", ['./after-while']],
+  ['division after a method named if', "const v = a.if(x) / 2, q = \"/\"; require('./after-method');", ['./after-method']],
+  ['division after a call inside a condition', "if (f(a) / 2 > 1) { q = \"/\"; } require('./after-nested');", ['./after-nested']],
 ];
 
 for (const [label, source, expected] of SCANNER_CASES) {
@@ -154,7 +198,14 @@ for (const [label, source, expected] of SCANNER_CASES) {
 
 test('scanner: an identifier named from before a template chunk is not an import', () => {
   assert.deepEqual(validator().extractReferences('const s = `${from} is shipped as ${to}`;'),
-    { specifiers: [], packages: [], dynamic: [] });
+    { specifiers: [], imports: [], packages: [], dynamic: [] });
+});
+
+test('scanner: import() and static imports are reported apart from require', () => {
+  const { specifiers, imports } = validator().extractReferences(
+    "require('./a'); import('./b'); import c from './c'; import './d'; require(path.join(__dirname, 'e.js'));");
+  assert.deepEqual(specifiers.sort(), ['./a', './b', './c', './d', './e.js']);
+  assert.deepEqual(imports.sort(), ['./b', './c', './d']);
 });
 
 test('unknown flags are rejected', () => {
