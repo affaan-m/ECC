@@ -42,6 +42,33 @@
         "best-practices"
       ],
       "strict": false
+    },
+    {
+      "name": "warppay402-gateway",
+      "source": {
+        "source": "github",
+        "repo": "Warppay402/warppay402-claude-plugin"
+      },
+      "description": "29 Web3 developer tools, PDF extraction, web scraping, and Aerodrome LP/swaps monetized via x402 USDC micropayments.",
+      "version": "1.0.1",
+      "author": {
+        "name": "WarpPay402",
+        "email": "warppay.402@gmail.com"
+      },
+      "homepage": "https://www.warppay402.com",
+      "repository": "https://github.com/Warppay402/warppay402-claude-plugin",
+      "license": "MIT",
+      "category": "developer-tools",
+      "tags": [
+        "mcp",
+        "web3",
+        "x402",
+        "base",
+        "solana",
+        "arc",
+        "arbitrum"
+      ],
+      "strict": false
     }
   ]
 }
