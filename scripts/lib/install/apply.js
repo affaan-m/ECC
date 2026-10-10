@@ -51,26 +51,10 @@ const {
   prepareExcludedPathsReconciliation,
 } = require('./excluded-paths-reconciliation');
 const { buildInstallIndex, rewriteRelativeLinks } = require('./link-rewrite');
-const { adaptAntigravityAgent } = require('./antigravity-agent');
+const { transformInstallContent } = require('./content-transform');
 
 function isMarkdownPath(filePath) {
   return /\.(md|mdx|markdown)$/i.test(String(filePath || ''));
-}
-
-function transformInstallContent(operation, content) {
-  if (!operation.contentTransform) {
-    return content;
-  }
-  if (operation.contentTransform === 'antigravity-agent-frontmatter') {
-    return adaptAntigravityAgent(content, operation.sourceRelativePath);
-  }
-  if (operation.contentTransform === 'opencode-disable-ecc-hooks') {
-    return disableOpenCodeHookPluginRegistration(content, operation.sourceRelativePath);
-  }
-  if (operation.contentTransform === 'opencode-disable-plugin-entrypoint') {
-    return getDisabledOpenCodePluginContent();
-  }
-  throw new Error(`Unknown install content transform: ${operation.contentTransform}`);
 }
 
 // Map every copy-file operation to { sourceRel, destRel } so relative links in

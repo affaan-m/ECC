@@ -2,7 +2,7 @@
 'use strict';
 
 /**
- * Merge the non-MCP Codex baseline from `.codex/config.toml` into a target
+ * Merge the non-MCP Codex baseline from `.codex/user-config.example.toml` into a target
  * `config.toml` without overwriting existing user choices.
  *
  * Strategy: add-only.
@@ -219,7 +219,7 @@ function main() {
     process.exit(1);
   }
 
-  const referencePath = path.join(__dirname, '..', '..', '.codex', 'config.toml');
+  const referencePath = path.join(__dirname, '..', '..', '.codex', 'user-config.example.toml');
   if (!fs.existsSync(referencePath)) {
     console.error(`[ecc-codex] Reference config not found: ${referencePath}`);
     process.exit(1);

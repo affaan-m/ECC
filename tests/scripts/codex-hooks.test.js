@@ -812,7 +812,7 @@ if (
   test('merge-codex-config no-ops when the Codex baseline is already present', () => {
     const tempDir = createTempDir('codex-merge-noop-');
     const configPath = path.join(tempDir, 'config.toml');
-    const original = fs.readFileSync(path.join(repoRoot, '.codex', 'config.toml'), 'utf8');
+    const original = fs.readFileSync(path.join(repoRoot, '.codex', 'user-config.example.toml'), 'utf8');
 
     try {
       fs.writeFileSync(configPath, original);

@@ -6,6 +6,15 @@
  * Usage: node scripts/dashboard-web.js [port]
  * Open http://localhost:3456
  *
+ * The server only binds to loopback and has no authentication, by design --
+ * it is meant to be viewed on the same machine it runs on. To check it from
+ * another device you control (a tablet, a laptop), use standard SSH local
+ * port forwarding instead of exposing the port itself:
+ *   ssh -L 3456:127.0.0.1:3456 <user>@<this-machine> -p <ssh-port>
+ * then open http://127.0.0.1:3456 on the *remote* device. This requires
+ * only SSH access you already control on your own machine -- nothing here
+ * opens the dashboard to the network.
+ *
  * Contribution: https://github.com/affaan-m/ECC
  */
 
@@ -20,6 +29,7 @@ const {
 } = require('./lib/loopback-guard');
 const { normalizeAgentTools } = require('./lib/agent-tools');
 const { readHooksConfig } = require('./lib/hooks-config');
+const { getClaudeDir } = require('./lib/utils');
 
 const DEFAULT_HOST = '127.0.0.1';
 
@@ -44,9 +54,7 @@ const PORT = parsePort(process.argv[2] || process.env.ECC_DASHBOARD_PORT || '345
 const HOST = resolveDashboardHost();
 const ROOT = path.resolve(__dirname, '..');
 
-function readFrontmatter(p) {
-  try {
-    const c = fs.readFileSync(p, 'utf8');
+function parseFrontmatter(c) {
     const m = c.match(/^---\n([\s\S]*?)\n---/);
     if (!m) return {};
     const fm = {};
@@ -63,9 +71,18 @@ function readFrontmatter(p) {
     }
     fm._body = c.replace(/^---[\s\S]*?---\n*/, '').trim();
     return fm;
-  } catch { return {}; }
 }
-function readSkill(p) { try { const c = fs.readFileSync(p, 'utf8'); const fm = readFrontmatter(p); return { d: fm.description || '', b: c.replace(/^---[\s\S]*?---\n*/, '').trim() }; } catch { return { d: '', b: '' }; } }
+function readFrontmatter(p) {
+  try { return parseFrontmatter(fs.readFileSync(p, 'utf8')); }
+  catch { return {}; }
+}
+function readSkill(p) {
+  try {
+    const c = fs.readFileSync(p, 'utf8');
+    const fm = parseFrontmatter(c);
+    return { d: fm.description || '', b: c.replace(/^---[\s\S]*?---\n*/, '').trim() };
+  } catch { return { d: '', b: '' }; }
+}
 
 function loadAgents(_root) {
   const root = _root || ROOT;
@@ -437,6 +454,7 @@ function renderHTML(data) {
   <button class="nav-it" data-tab="rules" onclick="showTab('rules',this)"><span id="nav-rules"> Rules</span> <span class="ct" id="nav-ct-rules"></span></button>
   <button class="nav-it" data-tab="mcps" onclick="showTab('mcps',this)"><span id="nav-mcps"> MCPs</span> <span class="ct" id="nav-ct-mcps"></span></button>
   <button class="nav-it" data-tab="hooks" onclick="showTab('hooks',this)"><span id="nav-hooks"> Hooks</span> <span class="ct" id="nav-ct-hooks"></span></button>
+  <button class="nav-it" data-tab="activity" onclick="showTab('activity',this)"><span id="nav-activity"> Activity</span> <span class="ct" id="nav-ct-activity">live</span></button>
 </div>
 
 <div class="out" id="app"></div>
@@ -562,7 +580,7 @@ window.addEventListener('hashchange', handleRoute);
 // Render Main Dashboard
 function renderMain() {
   const app = document.getElementById('app');
-  app.innerHTML = '<div class="stats" id="stats-bar"></div><div class="panel active" id="panel-agents"></div><div class="panel" id="panel-skills"></div><div class="panel" id="panel-commands"></div><div class="panel" id="panel-rules"></div><div class="panel" id="panel-mcps"></div><div class="panel" id="panel-hooks"></div>';
+  app.innerHTML = '<div class="stats" id="stats-bar"></div><div class="panel active" id="panel-agents"></div><div class="panel" id="panel-skills"></div><div class="panel" id="panel-commands"></div><div class="panel" id="panel-rules"></div><div class="panel" id="panel-mcps"></div><div class="panel" id="panel-hooks"></div><div class="panel" id="panel-activity"></div>';
 
   document.getElementById('stats-bar').innerHTML =
     '<div class="stat c0" onclick="showTab(\\'agents\\',document.querySelector(\\'.nav-it[data-tab=\\\\"agents\\\"]\\'))"><div class="num">'+AGENTS.length+'</div><div class="lbl">'+t('agents')+'</div></div>' +
@@ -811,6 +829,88 @@ document.addEventListener('keydown', e => { if((e.metaKey||e.ctrlKey)&&e.key==='
 setLang(lang);
 handleRoute();
 </script>
+<script>
+(function () {
+  var TOOL_KIND = { Skill: 'kind-skill', Agent: 'kind-agent' };
+  var timer = null;
+
+  function esc(s) {
+    return String(s == null ? '' : s).replace(/[&<>"]/g, function (c) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c];
+    });
+  }
+
+  function rowHtml(e) {
+    var kindClass = TOOL_KIND[e.tool_name] || 'kind-plain';
+    var time = '';
+    try { time = new Date(e.timestamp).toLocaleTimeString(); } catch (err) { time = ''; }
+    return '<div class="act-row ' + kindClass + '">' +
+      '<span class="act-time">' + esc(time) + '</span>' +
+      '<span class="act-tool">' + esc(e.tool_name) + '</span>' +
+      '<span class="act-summary">' + esc(e.input_summary) + '</span>' +
+      '<span class="act-session">' + esc((e.session_id || '').slice(0, 8)) + '</span>' +
+      '</div>';
+  }
+
+  function renderActivity() {
+    var panel = document.getElementById('panel-activity');
+    if (!panel) return;
+    fetch('/api/activity')
+      .then(function (r) {
+        if (!r.ok) throw new Error('Activity request failed');
+        return r.json();
+      })
+      .then(function (data) {
+        var entries = (data && data.entries) || [];
+        var skillCount = entries.filter(function (e) { return e.tool_name === 'Skill'; }).length;
+        var agentCount = entries.filter(function (e) { return e.tool_name === 'Agent'; }).length;
+        var summary = '<div class="act-summary-bar">' +
+          '<span>Last ' + entries.length + ' tool calls</span>' +
+          '<span class="act-pill act-pill-skill">Skill: ' + skillCount + '</span>' +
+          '<span class="act-pill act-pill-agent">Agent: ' + agentCount + '</span>' +
+          '</div>';
+        if (!entries.length) {
+          panel.innerHTML = summary + '<div class="act-empty">No recorded tool calls yet. This reads metrics/tool-usage.jsonl in the active ECC agent data directory, written by the session-activity-tracker PostToolUse hook. Requires that hook in the active session.</div>';
+          return;
+        }
+        panel.innerHTML = summary + '<div class="act-feed">' + entries.map(rowHtml).join('') + '</div>';
+      })
+      .catch(function () {
+        panel.innerHTML = '<div class="act-empty">Could not load activity feed.</div>';
+      });
+  }
+
+  var style = document.createElement('style');
+  style.textContent =
+    '.act-summary-bar{display:flex;gap:12px;align-items:center;padding:10px 0;font-size:13px;color:var(--muted,#888)}' +
+    '.act-pill{padding:2px 8px;border-radius:10px;font-size:12px;font-weight:600}' +
+    '.act-pill-skill{background:rgba(80,160,255,.15);color:#4a9eff}' +
+    '.act-pill-agent{background:rgba(160,100,255,.15);color:#a066ff}' +
+    '.act-feed{display:flex;flex-direction:column;gap:2px;font-family:ui-monospace,monospace;font-size:12.5px}' +
+    '.act-row{display:grid;grid-template-columns:90px 90px 1fr 90px;gap:10px;padding:5px 8px;border-radius:4px;align-items:center}' +
+    '.act-row.kind-skill{background:rgba(80,160,255,.08)}' +
+    '.act-row.kind-agent{background:rgba(160,100,255,.08)}' +
+    '.act-time{opacity:.6}' +
+    '.act-tool{font-weight:600}' +
+    '.act-summary{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;opacity:.85}' +
+    '.act-session{opacity:.5;text-align:right}' +
+    '.act-empty{padding:24px 8px;opacity:.6;font-size:13px}';
+  document.head.appendChild(style);
+
+  var origShowTab = window.showTab;
+  window.showTab = function (name, btn) {
+    origShowTab(name, btn);
+    if (name === 'activity') {
+      renderActivity();
+      if (timer) clearInterval(timer);
+      timer = setInterval(renderActivity, 3000);
+    } else if (timer) {
+      clearInterval(timer);
+      timer = null;
+    }
+  };
+})();
+</script>
 </body></html>`;
   /* eslint-enable no-useless-escape */
 }
@@ -829,6 +929,43 @@ function sendHtml(res, statusCode, html) {
     'Cache-Control': 'no-store',
   });
   res.end(html);
+}
+
+const MAX_ACTIVITY_LOG_BYTES = 256 * 1024;
+
+function loadActivity(limit = 200, logPath = path.join(getClaudeDir(), 'metrics', 'tool-usage.jsonl')) {
+  let fd;
+  let text;
+  try {
+    fd = fs.openSync(logPath, 'r');
+    const stat = fs.fstatSync(fd);
+    if (!stat.isFile()) return [];
+    const length = Math.min(stat.size, MAX_ACTIVITY_LOG_BYTES);
+    const start = stat.size - length;
+    const buffer = Buffer.alloc(length);
+    const bytesRead = fs.readSync(fd, buffer, 0, length, start);
+    text = buffer.toString('utf8', 0, bytesRead);
+    // A bounded tail may start inside a JSON row or a multibyte character.
+    if (start > 0) text = text.slice(text.indexOf('\n') + 1);
+  } catch {
+    return [];
+  } finally {
+    if (fd !== undefined) fs.closeSync(fd);
+  }
+  const lines = text.split('\n').filter(Boolean);
+  const start = Math.max(0, lines.length - limit);
+  const out = [];
+  for (let i = lines.length - 1; i >= start; i -= 1) {
+    try {
+      const row = JSON.parse(lines[i]);
+      if (row && !Array.isArray(row) && typeof row.session_id === 'string' && typeof row.tool_name === 'string') {
+        out.push(row);
+      }
+    } catch {
+      // Skip unparseable lines rather than fail the whole feed.
+    }
+  }
+  return out;
 }
 
 function loadDashboardData(root) {
@@ -877,6 +1014,21 @@ function createDashboardServer({
       url = new URL(req.url, `http://${DEFAULT_HOST}`);
     } catch {
       return sendJson(res, 400, { error: 'Bad request' });
+    }
+
+    if (url.pathname === '/api/activity') {
+      let entries;
+      try {
+        entries = loadActivity();
+      } catch (error) {
+        reportDashboardFailure(
+          reportError,
+          '[ECC] Failed to load activity log:',
+          error
+        );
+        return sendJson(res, 500, { error: 'Internal server error' });
+      }
+      return sendJson(res, 200, { entries });
     }
 
     if (url.pathname === '/api/data') {
@@ -940,6 +1092,7 @@ module.exports = {
   createDashboardServer,
   listenDashboardServer,
   loadAgents,
+  loadActivity,
   loadCommands,
   loadHooks,
   loadMcps,

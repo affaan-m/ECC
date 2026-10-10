@@ -1994,6 +1994,154 @@ else {
   }
 }
 
+// Contributor carry-forward regressions for #2858 and #2897.
+for (const [name, command, expected] of [
+  [
+    "blocks include.path config override",
+    "git -c include.path=/tmp/evil.conf commit -m x",
+    2
+  ],
+  [
+    "blocks quoted include.path config",
+    "git \"-c\" \"include.path=/tmp/evil.conf\" push origin main",
+    2
+  ],
+  [
+    "blocks inline include.path config",
+    "git -cinclude.path=/tmp/evil.conf commit -m x",
+    2
+  ],
+  [
+    "blocks include.path config-env",
+    "git --config-env=include.path=EVIL commit -m x",
+    2
+  ],
+  [
+    "blocks separated include.path config-env",
+    "git --config-env include.path=EVIL commit -m x",
+    2
+  ],
+  [
+    "blocks case-insensitive include.path",
+    "git -c INCLUDE.PATH=/tmp/evil.conf commit -m x",
+    2
+  ],
+  [
+    "blocks conditional include capability",
+    "git -c includeIf.gitdir:**/.path=/tmp/evil.conf commit -m x",
+    2
+  ],
+  [
+    "blocks counted include.path environment",
+    "GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=include.path GIT_CONFIG_VALUE_0=/tmp/evil.conf git commit -m x",
+    2
+  ],
+  [
+    "blocks encoded include.path parameters",
+    "GIT_CONFIG_PARAMETERS=\"'include.path'='/tmp/evil.conf'\" git commit -m x",
+    2
+  ],
+  [
+    "allows unrelated config value",
+    "git -c user.name=ECC commit -m x",
+    0
+  ],
+  [
+    "allows include setting outside protected command",
+    "git -c include.path=/tmp/evil.conf status",
+    0
+  ],
+  [
+    "blocks env long inline split-string",
+    "env --split-string='git commit --no-verify -m x'",
+    2
+  ],
+  [
+    "blocks env split-string after ignore-environment",
+    "env -i --split-string='git commit --no-verify -m x'",
+    2
+  ],
+  [
+    "blocks env separated long split-string",
+    "env --split-string 'git commit --no-verify -m x'",
+    2
+  ],
+  [
+    "blocks env attached short split-string",
+    "env -S'git commit --no-verify -m x'",
+    2
+  ],
+  [
+    "blocks appended argv after env split-string",
+    "env --split-string='git commit' --no-verify -m x",
+    2
+  ],
+  [
+    "allows quoted bypass text passed through env printf",
+    "env --split-string=\"printf '%s' 'git commit --no-verify -m x'\"",
+    0
+  ]
+]) {
+  if (test(name, () => {
+    const result = runHook({ tool_input: { command } });
+    assert.strictEqual(result.code, expected, result.stderr);
+  })) passed++; else failed++;
+}
+
+for (const n of [100, 1000, 4000]) {
+  for (const tail of ['git status', 'git commit --no-verify']) {
+    if (test(`literal env split copies stay within the input quota at ${n}: ${tail}`, () => {
+      const command = 'env ' + '-S -i '.repeat(n) + tail;
+      const quota = 24 * (command.length + 1) + 4096;
+      const result = countedClassification(command);
+      assert.strictEqual(result.result.exitCode, 2, JSON.stringify(result));
+      assert.match(result.result.stderr, /work budget/);
+      assert.ok(result.copiedElements <= quota, JSON.stringify(result));
+      assert.ok(result.copiedElements <= result.spent, JSON.stringify(result));
+      // The rejected charge may exceed the quota, but allocation must not run.
+      assert.ok(result.spent >= quota && result.spent <= quota + 2 * (2 * n + 4) + 1, JSON.stringify(result));
+    })) passed++; else failed++;
+  }
+}
+for (const n of [0, 1, 2, 4]) {
+  if (test(`shallow literal env splits allow harmless argv at ${n}`, () => {
+    const command = 'env ' + '-S -i '.repeat(n) + 'git status';
+    const result = countedClassification(command);
+    assert.strictEqual(result.result.exitCode, 0, JSON.stringify(result));
+    assert.ok(result.copiedElements <= result.spent, JSON.stringify(result));
+  })) passed++; else failed++;
+}
+
+const quoteSplitPayload = payload => `'${payload.replace(/'/g, `'\\''`)}'`;
+const escapedSplitCases = [
+  ['unquoted escaped separators', 'git\\_commit\\_--no-verify', 2],
+  ['single-quoted literal separators', "'git\\_commit\\_--no-verify'", 0],
+  ['double-quoted escaped separators', '"git\\_commit\\_--no-verify"', 2],
+  ['mixed quoted escaped separators', 'git\\_commit\\_"--no-verify"', 2],
+  ['unsupported stop escape', 'printf ok\\c ignored', 2],
+  ['unsupported double-quoted stop escape', 'printf "ok\\c" ignored', 2],
+  ['single-quoted stop data', "printf '%s' 'ok\\c'", 0],
+  ['single-quoted separator data', "printf '%s' 'git\\_commit\\_--no-verify'", 0],
+  ['single-quoted newline format', "printf '%s\\n' 'git commit --no-verify'", 0],
+  ['unsupported newline escape', 'printf ok\\n', 2],
+  ['unsupported tab escape', 'printf ok\\t', 2],
+  ['unsupported escaped backslash', 'printf ok\\\\_', 2],
+  ['unsupported single-quoted backslash escape', "printf '%s' 'ok\\\\_'", 2],
+  ['unsupported single-quoted apostrophe escape', "printf '%s' 'ok\\'data'", 2],
+];
+for (const [name, payload, expected] of escapedSplitCases) {
+  for (const option of ['-S ', '-S', '--split-string=', '--split-string ']) {
+    if (test(`env escape boundary ${name}: ${option}`, () => {
+      const command = 'env ' + option + quoteSplitPayload(payload);
+      for (const input of [command, JSON.stringify({ tool_input: { command } })]) {
+        const result = runHook(input);
+        assert.strictEqual(result.code, expected, result.stderr);
+        if (expected === 2) assert.match(result.stderr, /Unsupported env split-string escape/);
+      }
+    })) passed++; else failed++;
+  }
+}
+
 console.log('─'.repeat(50));
 console.log(`Passed: ${passed}  Failed: ${failed}`);
 

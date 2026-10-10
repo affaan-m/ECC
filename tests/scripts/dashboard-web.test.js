@@ -8,6 +8,7 @@ const os = require('os');
 const path = require('path');
 const http = require('http');
 const net = require('net');
+const vm = require('vm');
 
 const SCRIPT = path.join(__dirname, '..', '..', 'scripts', 'dashboard-web.js');
 
@@ -16,6 +17,131 @@ let testPassed = 0;
 let testFailed = 0;
 const asyncTests = [];
 const REQUEST_TIMEOUT_MS = 5000;
+
+for (const override of ['ECC_AGENT_DATA_HOME', 'CLAUDE_CONFIG_DIR']) {
+  asyncTest(`activity HTTP feed reads real hook output with ${override}`, async () => {
+    const { spawnSync } = require('child_process');
+    const dir = createTempDir('ecc-activity-override-');
+    const saved = Object.fromEntries(['ECC_AGENT_DATA_HOME', 'CLAUDE_CONFIG_DIR', 'CURSOR_VERSION', 'CURSOR_PROJECT_DIR'].map(key => [key, process.env[key]]));
+    try {
+      for (const key of Object.keys(saved)) delete process.env[key];
+      process.env[override] = dir;
+      const payload = { session_id: `override-${override}`, tool_name: 'Read', tool_input: { file_path: 'fixture.txt' } };
+      const result = spawnSync(process.execPath, [path.resolve(__dirname, '../../scripts/hooks/session-activity-tracker.js')], {
+        input: JSON.stringify(payload), encoding: 'utf8', timeout: 10000, env: process.env,
+      });
+      assert.strictEqual(result.status, 0, result.stderr);
+      assert.ok(fs.existsSync(path.join(dir, 'metrics', 'tool-usage.jsonl')));
+      await withDashboardServer(async port => {
+        const response = await requestDashboard(port, { path: '/api/activity' });
+        assert.strictEqual(response.statusCode, 200);
+        const { entries } = JSON.parse(response.body);
+        assert.strictEqual(entries.length, 1);
+        assert.strictEqual(entries[0].session_id, payload.session_id);
+        assert.strictEqual(entries[0].tool_name, 'Read');
+      });
+    } finally {
+      for (const [key, value] of Object.entries(saved)) {
+        if (value === undefined) delete process.env[key];
+        else process.env[key] = value;
+      }
+      cleanup(dir);
+    }
+  });
+}
+
+test('renderHTML emits executable scripts without syntax errors', () => {
+  const { renderHTML } = require(SCRIPT);
+  const html = renderHTML({ agents: [], skills: [], commands: [], rules: [], mcps: [], hooks: [] });
+  const scripts = [...html.matchAll(/<script>([\s\S]*?)<\/script>/g)];
+  assert.ok(scripts.length > 0);
+  for (const script of scripts) new vm.Script(script[1]);
+});
+
+asyncTest('served activity UI shows HTTP failures as errors and preserves healthy empty and populated feeds', async () => {
+  const dir = createTempDir('ecc-activity-response-');
+  const savedDataHome = process.env.ECC_AGENT_DATA_HOME;
+  const originalClose = fs.closeSync;
+  try {
+    process.env.ECC_AGENT_DATA_HOME = dir;
+    const log = path.join(dir, 'metrics', 'tool-usage.jsonl');
+    writeFile(dir, 'metrics/tool-usage.jsonl', '');
+    const reported = [];
+    await withDashboardServer(async port => {
+      const page = await requestDashboard(port);
+      assert.strictEqual(page.statusCode, 200);
+      const script = [...page.body.matchAll(/<script>([\s\S]*?)<\/script>/g)]
+        .find(match => match[1].includes('function renderActivity()'))[1];
+      async function renderFeed() {
+        let status;
+        let jsonReads = 0;
+        const html = await new Promise((resolve, reject) => {
+          const timeout = setTimeout(() => reject(new Error('Activity UI did not render')), REQUEST_TIMEOUT_MS);
+          const panel = { set innerHTML(value) { clearTimeout(timeout); resolve(value); } };
+          const context = vm.createContext({
+            document: { getElementById: () => panel, createElement: () => ({}), head: { appendChild() {} } },
+            window: { showTab() {} }, setInterval() {}, clearInterval() {},
+            fetch: async url => {
+              const response = await fetch(`http://127.0.0.1:${port}${url}`);
+              status = response.status;
+              return { ok: response.ok, json() { jsonReads++; return response.json(); } };
+            },
+          });
+          new vm.Script(script).runInContext(context);
+          context.window.showTab('activity');
+        });
+        return { html, status, jsonReads };
+      }
+      // A descriptor-close failure escapes loadActivity's read catch and drives
+      // the real server's generic HTTP 500 response without leaking its detail.
+      fs.closeSync = fd => { originalClose(fd); throw new Error('private close detail'); };
+      const failed = await renderFeed();
+      fs.closeSync = originalClose;
+      assert.strictEqual(failed.status, 500);
+      assert.match(failed.html, /Could not load activity feed/);
+      assert.doesNotMatch(failed.html, /No recorded tool calls|private close detail/);
+      assert.strictEqual(failed.jsonReads, 0);
+      assert.strictEqual(reported.length, 1);
+      const empty = await renderFeed();
+      assert.strictEqual(empty.status, 200);
+      assert.match(empty.html, /No recorded tool calls yet/);
+      assert.strictEqual(empty.jsonReads, 1);
+      fs.writeFileSync(log, JSON.stringify({ session_id: 'response-fixture', tool_name: 'Read', input_summary: 'visible activity' }) + '\n');
+      const populated = await renderFeed();
+      assert.strictEqual(populated.status, 200);
+      assert.match(populated.html, /visible activity/);
+      assert.doesNotMatch(populated.html, /Could not load activity feed|No recorded tool calls/);
+    }, { reportError: (message, error) => reported.push({ message, error }) });
+  } finally {
+    fs.closeSync = originalClose;
+    if (savedDataHome === undefined) delete process.env.ECC_AGENT_DATA_HOME;
+    else process.env.ECC_AGENT_DATA_HOME = savedDataHome;
+    cleanup(dir);
+  }
+});
+
+test('activity loading bounds large logs and ignores malformed rows', () => {
+  const { loadActivity } = require(SCRIPT);
+  withTempDir('ecc-activity-', dir => {
+    const log = path.join(dir, 'usage.jsonl');
+    const row = name => JSON.stringify({ session_id: 'fixture', tool_name: name });
+    fs.writeFileSync(log, 'x'.repeat(1024 * 1024) + '\n' + row('Read') + '\nnull\n{"session_id":42,"tool_name":"Read"}\nnot-json\n' + row('Skill') + '\n');
+    const originalRead = fs.readSync;
+    let bytesRequested = 0;
+    fs.readSync = (...args) => {
+      bytesRequested += args[3];
+      return originalRead(...args);
+    };
+    let rows;
+    try { rows = loadActivity(200, log); }
+    finally { fs.readSync = originalRead; }
+    assert.ok(bytesRequested <= 256 * 1024);
+    assert.deepStrictEqual(rows.map(entry => entry.tool_name), ['Skill', 'Read']);
+    fs.writeFileSync(log, row('Edit') + '\n');
+    assert.deepStrictEqual(loadActivity(200, log).map(entry => entry.tool_name), ['Edit']);
+    assert.deepStrictEqual(loadActivity(200, path.join(dir, 'missing')), []);
+  });
+});
 
 function test(name, fn) {
   try {
@@ -359,6 +485,28 @@ test('readSkill parses skill frontmatter and body', () => {
   assert.ok(skill.b.includes('# Skill Workflow'));
   assert.ok(!skill.b.includes('---')); // frontmatter stripped from body
   cleanup(testRoot);
+});
+
+test('readSkill reads each skill file only once', () => {
+  const { readSkill } = require(SCRIPT);
+  testRoot = createTempDir('ecc-test-');
+  const skillPath = path.join(testRoot, 'SKILL.md');
+  writeFile(testRoot, 'SKILL.md', '---\ndescription: A test skill\n---\nbody');
+  const originalReadFileSync = fs.readFileSync;
+  let readCount = 0;
+  fs.readFileSync = (...args) => {
+    readCount++;
+    return originalReadFileSync(...args);
+  };
+
+  try {
+    readSkill(skillPath);
+  } finally {
+    fs.readFileSync = originalReadFileSync;
+    cleanup(testRoot);
+  }
+
+  assert.strictEqual(readCount, 1);
 });
 
 test('readSkill returns empty defaults for missing file', () => {

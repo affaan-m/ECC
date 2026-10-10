@@ -23,7 +23,7 @@ Agent(subagent_type: "ecc:planner", prompt: "...")
 | ecc:rust-reviewer | Rust code review | Rust projects |
 | ecc:harmonyos-app-resolver | HarmonyOS app development | HarmonyOS/ArkTS projects |
 
-For the full roster of 68 agents, see `/ecc:ecc-guide`.
+For the full roster of 69 agents, see `/ecc:ecc-guide`.
 
 ## Immediate Agent Usage
 
