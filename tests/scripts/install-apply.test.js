@@ -169,6 +169,7 @@ function runTests() {
       assert.ok(fs.existsSync(path.join(claudeRoot, 'rules', 'ecc', 'typescript', 'testing.md')));
       assert.ok(fs.existsSync(path.join(claudeRoot, 'commands', 'plan.md')));
       assert.ok(fs.existsSync(path.join(claudeRoot, 'scripts', 'hooks', 'session-end.js')));
+      assert.ok(fs.existsSync(path.join(claudeRoot, 'scripts', 'hooks', 'hookify-runtime.js')));
       assert.ok(fs.existsSync(path.join(claudeRoot, 'scripts', 'lib', 'utils.js')));
       assert.ok(fs.existsSync(path.join(claudeRoot, 'skills', 'tdd-workflow', 'SKILL.md')));
       assert.ok(fs.existsSync(path.join(claudeRoot, 'skills', 'coding-standards', 'SKILL.md')));
@@ -255,6 +256,38 @@ function runTests() {
       const mcpConfig = readJson(path.join(projectDir, '.cursor', 'mcp.json'));
       assert.strictEqual(hooksConfig.version, 1);
       assert.ok(hooksConfig.hooks.sessionStart, 'Should keep Cursor sessionStart hooks');
+      assert.strictEqual(
+        hooksConfig.hooks.sessionStart[0].command,
+        'node .cursor/hooks/session-start.js',
+        'Cursor sessionStart should use the event-level dispatcher'
+      );
+      for (const [eventName, entries] of Object.entries(hooksConfig.hooks)) {
+        assert.strictEqual(
+          entries.length,
+          1,
+          `Installed Cursor event ${eventName} should use one dispatcher`
+        );
+      }
+
+      const installedShellDispatcher = path.join(
+        projectDir,
+        '.cursor',
+        'hooks',
+        'before-shell-execution.js'
+      );
+      const blocked = spawnSync(process.execPath, [installedShellDispatcher], {
+        cwd: projectDir,
+        env: { ...process.env, HOME: homeDir, USERPROFILE: homeDir },
+        input: JSON.stringify({ command: 'git commit --no-verify -m test' }),
+        encoding: 'utf8',
+        timeout: DEFAULT_INSTALL_APPLY_TIMEOUT_MS,
+      });
+      assert.strictEqual(
+        blocked.status,
+        2,
+        `Installed Cursor dispatcher should preserve blocking exit codes: ${blocked.stderr}`
+      );
+      assert.match(blocked.stderr, /BLOCKED/);
       assert.ok(mcpConfig.mcpServers['chrome-devtools'], 'Should install shared MCP servers into Cursor');
 
       const statePath = path.join(projectDir, '.cursor', 'ecc-install-state.json');
@@ -931,12 +964,12 @@ function runTests() {
     const projectDir = createTempDir('install-apply-project-');
 
     try {
-      const result = run(['--target', 'cursor', '--modules', 'platform-configs', '--enable-hooks'], {
+      const result = run(['--target', 'cursor', '--modules', 'platform-configs'], {
         cwd: projectDir,
         homeDir,
       });
       assert.strictEqual(result.code, 0, result.stderr);
-      assert.ok(fs.existsSync(path.join(projectDir, '.cursor', 'hooks.json')));
+      assert.ok(!fs.existsSync(path.join(projectDir, '.cursor', 'hooks.json')));
       assert.ok(fs.existsSync(path.join(projectDir, '.cursor', 'rules', 'common-agents.mdc')));
       assert.ok(!fs.existsSync(path.join(projectDir, '.cursor', 'rules', 'common-agents.md')));
 
@@ -947,6 +980,7 @@ function runTests() {
       assert.deepStrictEqual(state.request.excludeComponents, []);
       assert.strictEqual(state.request.legacyMode, false);
       assert.ok(state.resolution.selectedModules.includes('platform-configs'));
+      assert.ok(!fs.existsSync(path.join(projectDir, '.cursor', 'hooks')));
       assert.ok(
         !state.operations.some(operation => operation.destinationPath.endsWith('ecc-install-state.json')),
         'Manifest copy operations should not include generated install-state files'
@@ -980,6 +1014,9 @@ function runTests() {
       const settings = readJson(path.join(claudeRoot, 'settings.json'));
       assert.strictEqual(settings.includeCoAuthoredBy, false);
       assert.ok(settings.hooks.SessionStart.some(entry => entry.id === 'session:start'));
+      assert.ok(settings.hooks.PreToolUse.some(entry => entry.id === 'pre:hookify-runtime'));
+      assert.ok(settings.hooks.UserPromptSubmit.some(entry => entry.id === 'prompt:hookify-runtime'));
+      assert.ok(settings.hooks.Stop.some(entry => entry.id === 'stop:hookify-runtime'));
 
       const state = readJson(path.join(claudeRoot, 'ecc', 'install-state.json'));
       const settingsOperation = state.operations.find(operation => (
@@ -1151,9 +1188,13 @@ function runTests() {
       assert.strictEqual(settings.includeCoAuthoredBy, false, 'Claude co-author attribution should be disabled by default');
       assert.deepStrictEqual(settings.env, { MY_VAR: '1' }, 'existing env should be preserved');
       assert.deepStrictEqual(
-        settings.hooks.UserPromptSubmit,
-        [{ matcher: '*', hooks: [{ type: 'command', command: 'echo custom-submit' }] }],
+        settings.hooks.UserPromptSubmit[0],
+        { matcher: '*', hooks: [{ type: 'command', command: 'echo custom-submit' }] },
         'unrelated existing hooks should be preserved'
+      );
+      assert.ok(
+        settings.hooks.UserPromptSubmit.some(entry => entry.id === 'prompt:hookify-runtime'),
+        'managed Hookify prompt runtime should be registered alongside user hooks'
       );
       assert.deepStrictEqual(
         settings.hooks.PreToolUse[0],

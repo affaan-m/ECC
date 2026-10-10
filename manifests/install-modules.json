@@ -12,6 +12,7 @@
         "claude",
         "claude-project",
         "cursor",
+        "copilot",
         "antigravity",
         "codebuddy",
         "joycode",
@@ -42,6 +43,7 @@
         "cursor",
         "antigravity",
         "codex",
+        "copilot",
         "codebuddy",
         "joycode",
         "qwen",
@@ -69,6 +71,7 @@
         "claude",
         "claude-project",
         "cursor",
+        "copilot",
         "antigravity",
         "opencode",
         "codebuddy",
@@ -107,6 +110,23 @@
       "stability": "stable"
     },
     {
+      "id": "hermes-hooks",
+      "kind": "hooks",
+      "description": "Hermes-native guard hooks (config protection, console.log warning) plus install guide.",
+      "paths": [
+        "hooks/hermes",
+        "docs/HERMES-HOOKS.md"
+      ],
+      "targets": [
+        "hermes",
+        "openclaw"
+      ],
+      "dependencies": [],
+      "defaultInstall": true,
+      "cost": "light",
+      "stability": "stable"
+    },
+    {
       "id": "platform-configs",
       "kind": "platform",
       "description": "Baseline platform configs, package-manager setup, and MCP catalog.",
@@ -122,6 +142,10 @@
         "mcp-configs",
         "scripts/auto-update.js",
         "scripts/setup-package-manager.js",
+        "scripts/lib/package-manager.js",
+        "scripts/lib/utils.js",
+        "scripts/lib/agent-data-home.js",
+        "scripts/lib/path-safety.js",
         ".hermes",
         ".openclaw",
         ".kimi",
@@ -131,6 +155,7 @@
         "claude",
         "claude-project",
         "cursor",
+        "copilot",
         "antigravity",
         "codex",
         "gemini",
@@ -158,6 +183,7 @@
         "skills/angular-developer",
         "skills/api-design",
         "skills/backend-patterns",
+        "skills/bengali-nlp",
         "skills/coding-standards",
         "skills/compose-multiplatform-patterns",
         "skills/contract-first",
@@ -231,6 +257,7 @@
         "cursor",
         "antigravity",
         "codex",
+        "copilot",
         "opencode",
         "codebuddy",
         "joycode",
@@ -242,6 +269,11 @@
         "agents-core",
         "commands-core",
         "platform-configs"
+      ],
+      "optionalDependencies": [
+        "rules-core",
+        "agents-core",
+        "commands-core"
       ],
       "defaultInstall": false,
       "cost": "medium",
@@ -255,6 +287,7 @@
         "skills/clickhouse-io",
         "skills/database-migrations",
         "skills/jpa-patterns",
+        "skills/mybatis-patterns",
         "skills/mysql-patterns",
         "skills/postgres-patterns",
         "skills/prisma-patterns",
@@ -266,6 +299,7 @@
         "cursor",
         "antigravity",
         "codex",
+        "copilot",
         "opencode",
         "codebuddy",
         "joycode",
@@ -292,6 +326,7 @@
         "cursor",
         "antigravity",
         "codex",
+        "copilot",
         "gemini",
         "opencode",
         "codebuddy",
@@ -392,7 +427,39 @@
         "skills/repo-scan",
         "skills/rules-distill",
         "skills/santa-method",
-        "skills/git-workflow"
+        "skills/git-workflow",
+        "skills/conventional-commit-review"
+      ],
+      "targets": [
+        "claude",
+        "claude-project",
+        "cursor",
+        "antigravity",
+        "codex",
+        "copilot",
+        "opencode",
+        "codebuddy",
+        "joycode",
+        "qwen",
+        "zed",
+        "hermes",
+        "openclaw",
+        "kimi",
+        "adal"
+      ],
+      "dependencies": [
+        "skill-unified-memory"
+      ],
+      "defaultInstall": true,
+      "cost": "medium",
+      "stability": "stable"
+    },
+    {
+      "id": "documentation-governance",
+      "kind": "skills",
+      "description": "Optional documentation-governance routing and deterministic read-only audits.",
+      "paths": [
+        "skills/docs-governance"
       ],
       "targets": [
         "claude",
@@ -411,11 +478,11 @@
         "adal"
       ],
       "dependencies": [
-        "skill-unified-memory"
+        "workflow-quality"
       ],
-      "defaultInstall": true,
-      "cost": "medium",
-      "stability": "stable"
+      "defaultInstall": false,
+      "cost": "light",
+      "stability": "beta"
     },
     {
       "id": "optimization-workflows",
@@ -437,6 +504,7 @@
         "cursor",
         "antigravity",
         "codex",
+        "copilot",
         "opencode",
         "codebuddy",
         "joycode",
@@ -456,12 +524,14 @@
       "kind": "skills",
       "description": "Security review and security-focused framework guidance.",
       "paths": [
+        "skills/agent-security-hardening",
         "skills/defi-amm-security",
         "skills/django-security",
         "skills/healthcare-phi-compliance",
         "skills/hipaa-compliance",
         "skills/laravel-security",
         "skills/llm-trading-agent-security",
+        "skills/mcp-dependency-review",
         "skills/nodejs-keccak256",
         "skills/perl-security",
         "skills/quarkus-security",
@@ -483,6 +553,7 @@
         "cursor",
         "antigravity",
         "codex",
+        "copilot",
         "opencode",
         "codebuddy",
         "joycode",
@@ -504,6 +575,7 @@
         "skills/deep-research",
         "skills/exa-search",
         "skills/research-ops",
+        "skills/osint-investigation",
         "skills/scientific-db-pubmed-database",
         "skills/scientific-db-uspto-database",
         "skills/scientific-pkg-gget",
@@ -517,6 +589,7 @@
         "cursor",
         "antigravity",
         "codex",
+        "copilot",
         "opencode",
         "codebuddy",
         "joycode",
@@ -556,6 +629,7 @@
         "cursor",
         "antigravity",
         "codex",
+        "copilot",
         "opencode",
         "codebuddy",
         "joycode",
@@ -590,6 +664,7 @@
         "skills/messages-ops",
         "skills/project-flow-ops",
         "skills/terminal-ops",
+        "skills/token-card",
         "skills/unified-notifications-ops",
         "skills/workspace-surface-audit",
         "skills/mailtrap-email-integration"
@@ -600,6 +675,7 @@
         "cursor",
         "antigravity",
         "codex",
+        "copilot",
         "opencode",
         "codebuddy",
         "joycode",
@@ -628,6 +704,7 @@
         "cursor",
         "antigravity",
         "codex",
+        "copilot",
         "opencode",
         "codebuddy",
         "joycode",
@@ -685,6 +762,7 @@
         "cursor",
         "antigravity",
         "codex",
+        "copilot",
         "gemini",
         "opencode",
         "codebuddy",
@@ -716,6 +794,7 @@
         "cursor",
         "antigravity",
         "codex",
+        "copilot",
         "gemini",
         "opencode",
         "codebuddy",
@@ -748,6 +827,7 @@
         "cursor",
         "antigravity",
         "codex",
+        "copilot",
         "opencode",
         "codebuddy",
         "joycode",
@@ -783,6 +863,7 @@
         "claude-project",
         "cursor",
         "codex",
+        "copilot",
         "opencode",
         "codebuddy",
         "joycode",
@@ -818,6 +899,9 @@
         "commands-core",
         "platform-configs"
       ],
+      "optionalDependencies": [
+        "commands-core"
+      ],
       "defaultInstall": false,
       "cost": "medium",
       "stability": "beta"
@@ -841,6 +925,7 @@
         "cursor",
         "antigravity",
         "codex",
+        "copilot",
         "opencode",
         "codebuddy",
         "joycode",
@@ -875,6 +960,7 @@
         "skills/dynamic-workflow-mode",
         "skills/enterprise-agent-ops",
         "skills/nanoclaw-repl",
+        "skills/prompt-caching-strategy",
         "skills/prompt-optimizer",
         "skills/ralphinho-rfc-pipeline",
         "skills/regex-vs-llm-structured-text",
@@ -902,6 +988,7 @@
         "cursor",
         "antigravity",
         "codex",
+        "copilot",
         "opencode",
         "codebuddy",
         "joycode",
@@ -944,6 +1031,7 @@
         "cursor",
         "antigravity",
         "codex",
+        "copilot",
         "opencode",
         "codebuddy",
         "joycode",
@@ -973,6 +1061,7 @@
         "cursor",
         "antigravity",
         "codex",
+        "copilot",
         "opencode",
         "codebuddy",
         "joycode",
@@ -1010,6 +1099,7 @@
         "cursor",
         "antigravity",
         "codex",
+        "copilot",
         "opencode",
         "codebuddy",
         "joycode",
@@ -1037,6 +1127,7 @@
         "cursor",
         "antigravity",
         "codex",
+        "copilot",
         "opencode",
         "codebuddy",
         "joycode",
@@ -1176,6 +1267,22 @@
       "dependencies": [],
       "defaultInstall": false,
       "cost": "heavy",
+      "stability": "stable"
+    },
+    {
+      "id": "docs-bn",
+      "kind": "docs",
+      "description": "Bengali (bn) translated reference documentation.",
+      "paths": [
+        "docs/bn"
+      ],
+      "targets": [
+        "claude",
+        "claude-project"
+      ],
+      "dependencies": [],
+      "defaultInstall": false,
+      "cost": "light",
       "stability": "stable"
     },
     {

@@ -10,7 +10,7 @@
     "active": { "const": false },
     "disposition": { "const": "proposed" },
     "nativeSupport": { "const": "unobserved" },
-    "target": { "enum": ["adal", "antigravity", "claude", "claude-project", "codebuddy", "codex", "cursor", "gemini", "hermes", "joycode", "kimi", "openclaw", "opencode", "pi", "qwen", "zed"] },
+    "target": { "enum": ["adal", "antigravity", "claude", "claude-project", "codebuddy", "codex", "copilot", "cursor", "gemini", "hermes", "joycode", "kimi", "openclaw", "opencode", "pi", "qwen", "zed"] },
     "profileId": { "enum": ["lean@1", "full@1"] },
     "selectionMode": { "enum": ["manual", "suggest", "auto"] },
     "registryDigest": { "$ref": "#/definitions/digest" },

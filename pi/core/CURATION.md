@@ -1,6 +1,6 @@
 # Curation
 
-pi/core includes 125 of 295 skills and 24 of 94 commands from the root of ECC.
+pi/core includes 130 of 304 skills and 24 of 95 commands from the root of ECC.
 Everything excluded is listed here with its reason.
 
 ## Rules
@@ -189,6 +189,10 @@ Exclude anything that:
 | `windows-desktop-e2e` | niche Windows desktop automation; pip installs at runtime |
 | `workspace-surface-audit` | ECC harness surface audit |
 | `x-api` | wraps X/Twitter SaaS API |
+| `prompt-caching-strategy` | Provider-specific cache economics and runtime measurement are outside the curated Pi core. |
+| `osint-investigation` | External source investigation and evidence collection are outside the curated offline Pi core. |
+| `mcp-dependency-review` | MCP server configuration and selector review are outside the curated Pi core. |
+| `token-card` | Requires a downloaded tokenchit CLI and reads provider session logs. |
 
 ## Excluded commands
 
@@ -264,6 +268,7 @@ Exclude anything that:
 | `skill-create` | Claude Code skill authoring plus instincts |
 | `skill-health` | ECC skill analytics dashboard |
 | `vue-review` | invokes ECC agent roster (vue-reviewer) |
+| `token-card` | Requires the tokenchit CLI and provider session logs via the token-card skill. |
 
 ## Renames
 

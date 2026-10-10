@@ -9,10 +9,10 @@ For repo navigation, surface ownership, and PR diff packet guidance, read
 
 | Task Type | Recommended Model |
 |-----------|------------------|
-| Routine coding, tests, formatting | GPT 5.5 |
-| Complex features, architecture | GPT 5.5 |
-| Debugging, refactoring | GPT 5.5 |
-| Security review | GPT 5.5 |
+| Routine coding, tests, formatting | GPT-6 Luna medium |
+| Complex features, architecture | GPT-6 Sol high |
+| Debugging, refactoring | GPT-6 Sol high |
+| Security review | GPT-6 Sol high |
 
 ## Skills Discovery
 

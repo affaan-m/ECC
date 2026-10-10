@@ -1997,6 +1997,7 @@ function runTests() {
       const expectedContent = `${JSON.stringify({
         ...sourceConfig,
         plugin: sourceConfig.plugin.filter(plugin => plugin !== './plugins'),
+        skills: { ...sourceConfig.skills, paths: ['./skills'] },
       }, null, 2)}\n`;
       fs.mkdirSync(targetRoot, { recursive: true });
       fs.writeFileSync(destinationPath, expectedContent, 'utf8');

@@ -24,6 +24,7 @@ skills:
   - autonomous-loops
   - backend-patterns
   - benchmark
+  - bengali-nlp
   - blueprint
   - browser-qa
   - bun-runtime
@@ -61,6 +62,7 @@ skills:
   - dmux-workflows
   - docker-patterns
   - documentation-lookup
+  - docs-governance
   - e2e-testing
   - energy-procurement
   - enterprise-agent-ops
@@ -99,8 +101,10 @@ skills:
   - liquid-glass-design
   - logistics-exception-management
   - market-research
+  - mcp-dependency-review
   - mcp-server-patterns
   - module-regression
+  - mybatis-patterns
   - motion-advanced
   - motion-foundations
   - motion-patterns
@@ -108,6 +112,7 @@ skills:
   - nextjs-turbopack
   - nutrient-document-processing
   - nuxt4-patterns
+  - osint-investigation
   - perl-patterns
   - perl-security
   - perl-testing
@@ -160,6 +165,7 @@ skills:
   - team-builder
   - test-collaboration
   - token-budget-advisor
+  - token-card
   - unified-memory
   - verification-loop
   - video-editing
@@ -258,6 +264,7 @@ commands:
   - skill-create
   - skill-health
   - test-coverage
+  - token-card
   - update-codemaps
   - update-docs
   - vue-review

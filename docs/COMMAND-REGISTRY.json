@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "totalCommands": 94,
+  "totalCommands": 95,
   "commands": [
     {
       "command": "aside",
@@ -991,6 +991,17 @@
       "path": "commands/test-coverage.md"
     },
     {
+      "command": "token-card",
+      "description": "Render a token-usage stat card from local agent session logs and commit it to the repo. Invokes the token-card skill.",
+      "type": "general",
+      "primaryAgents": [],
+      "allAgents": [],
+      "skills": [
+        "token-card"
+      ],
+      "path": "commands/token-card.md"
+    },
+    {
       "command": "update-codemaps",
       "description": "Scan project structure and generate token-lean architecture codemaps.",
       "type": "planning",
@@ -1029,7 +1040,7 @@
   "statistics": {
     "byType": {
       "build": 2,
-      "general": 10,
+      "general": 11,
       "orchestration": 11,
       "planning": 2,
       "refactoring": 1,

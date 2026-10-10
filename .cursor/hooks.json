@@ -5,7 +5,7 @@
       {
         "command": "node .cursor/hooks/session-start.js",
         "event": "sessionStart",
-        "description": "Load previous context and detect environment"
+        "description": "Set the Cursor data root, load previous context, and detect the environment"
       }
     ],
     "sessionEnd": [
@@ -17,14 +17,9 @@
     ],
     "beforeShellExecution": [
       {
-        "command": "node .cursor/hooks/before-shell-execution-block-no-verify.js",
-        "event": "beforeShellExecution",
-        "description": "Block git hook-bypass flag to protect pre-commit, commit-msg, and pre-push hooks from being skipped"
-      },
-      {
         "command": "node .cursor/hooks/before-shell-execution.js",
         "event": "beforeShellExecution",
-        "description": "Tmux dev server blocker, tmux reminder, git push review"
+        "description": "Dispatch git hook-bypass protection, dev-server blocking, tmux reminders, and git push review"
       }
     ],
     "afterShellExecution": [
@@ -38,7 +33,7 @@
       {
         "command": "node .cursor/hooks/after-file-edit.js",
         "event": "afterFileEdit",
-        "description": "Auto-format, TypeScript check, console.log warning, and frontend design-quality reminder"
+        "description": "Accumulate JS/TS edits, warn on console.log, and run the frontend design-quality reminder"
       }
     ],
     "beforeMCPExecution": [
@@ -108,7 +103,8 @@
       {
         "command": "node .cursor/hooks/stop.js",
         "event": "stop",
-        "description": "Console.log audit on all modified files"
+        "description": "Batch format and typecheck edits, audit console.log usage, and persist session state",
+        "timeout": 300
       }
     ]
   }
