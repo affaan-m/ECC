@@ -2813,6 +2813,23 @@ async function runTests() {
   else failed++;
 
   if (
+    test('hooks.json routes NotebookEdit to the edit-write GateGuard entry only', () => {
+      const hooks = readHooksConfig(path.join(__dirname, '..', '..', 'hooks', 'hooks.json'));
+      const gateRoute = hooks.hooks.PreToolUse.find(entry => entry.id === 'pre:edit-write:gateguard-fact-force');
+      assert.ok(gateRoute, 'edit-write GateGuard route should exist');
+      assert.deepStrictEqual(gateRoute.matcher.split('|').sort(), ['Edit', 'MultiEdit', 'NotebookEdit', 'Write']);
+      assert.strictEqual(gateRoute.hooks.length, 1, 'the GateGuard entry runs no other hook');
+      assert.ok(gateRoute.hooks[0].command.includes('pre:edit-write:gateguard-fact-force'));
+      const others = hooks.hooks.PreToolUse.filter(entry => entry !== gateRoute && entry.matcher !== '.*');
+      for (const entry of others) {
+        assert.ok(!entry.matcher.split('|').includes('NotebookEdit'), `${entry.id} should not start matching NotebookEdit`);
+      }
+    })
+  )
+    passed++;
+  else failed++;
+
+  if (
     test('configured PowerShell routes enforce denial and emit redacted governance evidence', () => {
       const root = path.join(__dirname, '..', '..');
       const hooks = readHooksConfig(path.join(root, 'hooks', 'hooks.json'));

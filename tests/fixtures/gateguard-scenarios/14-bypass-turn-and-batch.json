@@ -1,0 +1,840 @@
+{
+  "name": "bypass-turn-and-batch",
+  "description": "Searches that do not count for the pending edit: same batch, previous turn, before a compaction, Read only, error result, no result, and relative searches after a cd.",
+  "files": {
+    "src/queue/worker.js": "function workerTick(state) {\n  return state;\n}\n",
+    "src/queue/scheduler.js": "function schedulerTick(state) {\n  return state;\n}\n",
+    "src/queue/dispatcher.js": "function dispatcherTick(state) {\n  return state;\n}\n",
+    "src/queue/throttle.js": "function throttleTick(state) {\n  return state;\n}\n",
+    "src/queue/backoff.js": "function backoffTick(state) {\n  return state;\n}\n",
+    "src/queue/retrier.js": "function retrierTick(state) {\n  return state;\n}\n",
+    "src/queue/poller.js": "function pollerTick(state) {\n  return state;\n}\n"
+  },
+  "steps": [
+    {
+      "id": "same-batch-search",
+      "note": "The search result was not seen when the edit was decided.",
+      "transcript": [
+        {
+          "type": "user",
+          "uuid": "bypass-turn-and-batch-001",
+          "sessionId": "sess-bypass-turns",
+          "isSidechain": false,
+          "promptId": "prompt-turns-1",
+          "message": {
+            "role": "user",
+            "content": "Count ticks in every queue component."
+          }
+        },
+        {
+          "type": "assistant",
+          "uuid": "bypass-turn-and-batch-002",
+          "sessionId": "sess-bypass-turns",
+          "isSidechain": false,
+          "message": {
+            "id": "msg_bypassturnandbatch_01",
+            "type": "message",
+            "role": "assistant",
+            "model": "claude-sonnet-4-5",
+            "content": [
+              {
+                "type": "tool_use",
+                "id": "toolu_bypassturnandbatch_001",
+                "name": "Grep",
+                "input": {
+                  "pattern": "worker",
+                  "path": "{{root}}/src"
+                }
+              }
+            ]
+          }
+        },
+        {
+          "type": "user",
+          "uuid": "bypass-turn-and-batch-003",
+          "sessionId": "sess-bypass-turns",
+          "isSidechain": false,
+          "promptId": "prompt-turns-1",
+          "message": {
+            "role": "user",
+            "content": [
+              {
+                "type": "tool_result",
+                "tool_use_id": "toolu_bypassturnandbatch_001",
+                "content": "ok"
+              }
+            ]
+          }
+        },
+        {
+          "type": "assistant",
+          "uuid": "bypass-turn-and-batch-004",
+          "sessionId": "sess-bypass-turns",
+          "isSidechain": false,
+          "message": {
+            "id": "msg_bypassturnandbatch_01",
+            "type": "message",
+            "role": "assistant",
+            "model": "claude-sonnet-4-5",
+            "content": [
+              {
+                "type": "tool_use",
+                "id": "toolu_bypassturnandbatch_002",
+                "name": "Edit",
+                "input": {
+                  "file_path": "{{root}}/src/queue/worker.js",
+                  "old_string": "  return state;",
+                  "new_string": "  return { ...state, ticks: state.ticks + 1 };"
+                }
+              }
+            ]
+          }
+        }
+      ],
+      "payload": {
+        "session_id": "sess-bypass-turns",
+        "transcript_path": "{{transcript}}",
+        "cwd": "{{root}}",
+        "permission_mode": "default",
+        "hook_event_name": "PreToolUse",
+        "tool_name": "Edit",
+        "tool_input": {
+          "file_path": "{{root}}/src/queue/worker.js",
+          "old_string": "  return state;",
+          "new_string": "  return { ...state, ticks: state.ticks + 1 };"
+        },
+        "tool_use_id": "toolu_bypassturnandbatch_002"
+      },
+      "expect": "deny",
+      "mustDeny": true,
+      "redundant": false,
+      "relevantQuestions": [
+        "local-callers",
+        "quote-instruction"
+      ]
+    },
+    {
+      "id": "previous-turn-search",
+      "transcript": [
+        {
+          "type": "user",
+          "uuid": "bypass-turn-and-batch-005",
+          "sessionId": "sess-bypass-turns",
+          "isSidechain": false,
+          "promptId": "prompt-turns-1",
+          "message": {
+            "role": "user",
+            "content": [
+              {
+                "type": "tool_result",
+                "tool_use_id": "toolu_bypassturnandbatch_002",
+                "content": "ok"
+              }
+            ]
+          }
+        },
+        {
+          "type": "assistant",
+          "uuid": "bypass-turn-and-batch-006",
+          "sessionId": "sess-bypass-turns",
+          "isSidechain": false,
+          "message": {
+            "id": "msg_bypassturnandbatch_02",
+            "type": "message",
+            "role": "assistant",
+            "model": "claude-sonnet-4-5",
+            "content": [
+              {
+                "type": "tool_use",
+                "id": "toolu_bypassturnandbatch_003",
+                "name": "Grep",
+                "input": {
+                  "pattern": "scheduler",
+                  "path": "{{root}}/src"
+                }
+              }
+            ]
+          }
+        },
+        {
+          "type": "user",
+          "uuid": "bypass-turn-and-batch-007",
+          "sessionId": "sess-bypass-turns",
+          "isSidechain": false,
+          "promptId": "prompt-turns-1",
+          "message": {
+            "role": "user",
+            "content": [
+              {
+                "type": "tool_result",
+                "tool_use_id": "toolu_bypassturnandbatch_003",
+                "content": "ok"
+              }
+            ]
+          }
+        },
+        {
+          "type": "user",
+          "uuid": "bypass-turn-and-batch-008",
+          "sessionId": "sess-bypass-turns",
+          "isSidechain": false,
+          "promptId": "prompt-turns-2",
+          "message": {
+            "role": "user",
+            "content": "Go ahead and apply it to the scheduler too."
+          }
+        },
+        {
+          "type": "assistant",
+          "uuid": "bypass-turn-and-batch-009",
+          "sessionId": "sess-bypass-turns",
+          "isSidechain": false,
+          "message": {
+            "id": "msg_bypassturnandbatch_03",
+            "type": "message",
+            "role": "assistant",
+            "model": "claude-sonnet-4-5",
+            "content": [
+              {
+                "type": "tool_use",
+                "id": "toolu_bypassturnandbatch_004",
+                "name": "Edit",
+                "input": {
+                  "file_path": "{{root}}/src/queue/scheduler.js",
+                  "old_string": "  return state;",
+                  "new_string": "  return { ...state, ticks: state.ticks + 1 };"
+                }
+              }
+            ]
+          }
+        }
+      ],
+      "payload": {
+        "session_id": "sess-bypass-turns",
+        "transcript_path": "{{transcript}}",
+        "cwd": "{{root}}",
+        "permission_mode": "default",
+        "hook_event_name": "PreToolUse",
+        "tool_name": "Edit",
+        "tool_input": {
+          "file_path": "{{root}}/src/queue/scheduler.js",
+          "old_string": "  return state;",
+          "new_string": "  return { ...state, ticks: state.ticks + 1 };"
+        },
+        "tool_use_id": "toolu_bypassturnandbatch_004"
+      },
+      "expect": "deny",
+      "mustDeny": true,
+      "redundant": false,
+      "relevantQuestions": [
+        "local-callers",
+        "quote-instruction"
+      ]
+    },
+    {
+      "id": "search-before-compaction",
+      "transcript": [
+        {
+          "type": "user",
+          "uuid": "bypass-turn-and-batch-010",
+          "sessionId": "sess-bypass-turns",
+          "isSidechain": false,
+          "promptId": "prompt-turns-2",
+          "message": {
+            "role": "user",
+            "content": [
+              {
+                "type": "tool_result",
+                "tool_use_id": "toolu_bypassturnandbatch_004",
+                "content": "ok"
+              }
+            ]
+          }
+        },
+        {
+          "type": "assistant",
+          "uuid": "bypass-turn-and-batch-011",
+          "sessionId": "sess-bypass-turns",
+          "isSidechain": false,
+          "message": {
+            "id": "msg_bypassturnandbatch_04",
+            "type": "message",
+            "role": "assistant",
+            "model": "claude-sonnet-4-5",
+            "content": [
+              {
+                "type": "tool_use",
+                "id": "toolu_bypassturnandbatch_005",
+                "name": "Grep",
+                "input": {
+                  "pattern": "dispatcher",
+                  "path": "{{root}}/src"
+                }
+              }
+            ]
+          }
+        },
+        {
+          "type": "user",
+          "uuid": "bypass-turn-and-batch-012",
+          "sessionId": "sess-bypass-turns",
+          "isSidechain": false,
+          "promptId": "prompt-turns-2",
+          "message": {
+            "role": "user",
+            "content": [
+              {
+                "type": "tool_result",
+                "tool_use_id": "toolu_bypassturnandbatch_005",
+                "content": "ok"
+              }
+            ]
+          }
+        },
+        {
+          "type": "system",
+          "subtype": "compact_boundary",
+          "uuid": "bypass-turn-and-batch-compact",
+          "sessionId": "sess-bypass-turns",
+          "isSidechain": false,
+          "content": "Conversation compacted"
+        },
+        {
+          "type": "assistant",
+          "uuid": "bypass-turn-and-batch-013",
+          "sessionId": "sess-bypass-turns",
+          "isSidechain": false,
+          "message": {
+            "id": "msg_bypassturnandbatch_05",
+            "type": "message",
+            "role": "assistant",
+            "model": "claude-sonnet-4-5",
+            "content": [
+              {
+                "type": "tool_use",
+                "id": "toolu_bypassturnandbatch_006",
+                "name": "Edit",
+                "input": {
+                  "file_path": "{{root}}/src/queue/dispatcher.js",
+                  "old_string": "  return state;",
+                  "new_string": "  return { ...state, ticks: state.ticks + 1 };"
+                }
+              }
+            ]
+          }
+        }
+      ],
+      "payload": {
+        "session_id": "sess-bypass-turns",
+        "transcript_path": "{{transcript}}",
+        "cwd": "{{root}}",
+        "permission_mode": "default",
+        "hook_event_name": "PreToolUse",
+        "tool_name": "Edit",
+        "tool_input": {
+          "file_path": "{{root}}/src/queue/dispatcher.js",
+          "old_string": "  return state;",
+          "new_string": "  return { ...state, ticks: state.ticks + 1 };"
+        },
+        "tool_use_id": "toolu_bypassturnandbatch_006"
+      },
+      "expect": "deny",
+      "mustDeny": true,
+      "redundant": false,
+      "relevantQuestions": [
+        "local-callers",
+        "quote-instruction"
+      ]
+    },
+    {
+      "id": "read-only-evidence",
+      "note": "Read is required before Edit, so it is never evidence.",
+      "transcript": [
+        {
+          "type": "user",
+          "uuid": "bypass-turn-and-batch-014",
+          "sessionId": "sess-bypass-turns",
+          "isSidechain": false,
+          "promptId": "prompt-turns-2",
+          "message": {
+            "role": "user",
+            "content": [
+              {
+                "type": "tool_result",
+                "tool_use_id": "toolu_bypassturnandbatch_006",
+                "content": "ok"
+              }
+            ]
+          }
+        },
+        {
+          "type": "assistant",
+          "uuid": "bypass-turn-and-batch-015",
+          "sessionId": "sess-bypass-turns",
+          "isSidechain": false,
+          "message": {
+            "id": "msg_bypassturnandbatch_06",
+            "type": "message",
+            "role": "assistant",
+            "model": "claude-sonnet-4-5",
+            "content": [
+              {
+                "type": "tool_use",
+                "id": "toolu_bypassturnandbatch_007",
+                "name": "Read",
+                "input": {
+                  "file_path": "{{root}}/src/queue/throttle.js"
+                }
+              }
+            ]
+          }
+        },
+        {
+          "type": "user",
+          "uuid": "bypass-turn-and-batch-016",
+          "sessionId": "sess-bypass-turns",
+          "isSidechain": false,
+          "promptId": "prompt-turns-2",
+          "message": {
+            "role": "user",
+            "content": [
+              {
+                "type": "tool_result",
+                "tool_use_id": "toolu_bypassturnandbatch_007",
+                "content": "ok"
+              }
+            ]
+          }
+        },
+        {
+          "type": "assistant",
+          "uuid": "bypass-turn-and-batch-017",
+          "sessionId": "sess-bypass-turns",
+          "isSidechain": false,
+          "message": {
+            "id": "msg_bypassturnandbatch_07",
+            "type": "message",
+            "role": "assistant",
+            "model": "claude-sonnet-4-5",
+            "content": [
+              {
+                "type": "tool_use",
+                "id": "toolu_bypassturnandbatch_008",
+                "name": "Read",
+                "input": {
+                  "file_path": "{{root}}/src/queue/worker.js"
+                }
+              }
+            ]
+          }
+        },
+        {
+          "type": "user",
+          "uuid": "bypass-turn-and-batch-018",
+          "sessionId": "sess-bypass-turns",
+          "isSidechain": false,
+          "promptId": "prompt-turns-2",
+          "message": {
+            "role": "user",
+            "content": [
+              {
+                "type": "tool_result",
+                "tool_use_id": "toolu_bypassturnandbatch_008",
+                "content": "ok"
+              }
+            ]
+          }
+        },
+        {
+          "type": "assistant",
+          "uuid": "bypass-turn-and-batch-019",
+          "sessionId": "sess-bypass-turns",
+          "isSidechain": false,
+          "message": {
+            "id": "msg_bypassturnandbatch_08",
+            "type": "message",
+            "role": "assistant",
+            "model": "claude-sonnet-4-5",
+            "content": [
+              {
+                "type": "tool_use",
+                "id": "toolu_bypassturnandbatch_009",
+                "name": "Edit",
+                "input": {
+                  "file_path": "{{root}}/src/queue/throttle.js",
+                  "old_string": "  return state;",
+                  "new_string": "  return { ...state, ticks: state.ticks + 1 };"
+                }
+              }
+            ]
+          }
+        }
+      ],
+      "payload": {
+        "session_id": "sess-bypass-turns",
+        "transcript_path": "{{transcript}}",
+        "cwd": "{{root}}",
+        "permission_mode": "default",
+        "hook_event_name": "PreToolUse",
+        "tool_name": "Edit",
+        "tool_input": {
+          "file_path": "{{root}}/src/queue/throttle.js",
+          "old_string": "  return state;",
+          "new_string": "  return { ...state, ticks: state.ticks + 1 };"
+        },
+        "tool_use_id": "toolu_bypassturnandbatch_009"
+      },
+      "expect": "deny",
+      "mustDeny": true,
+      "redundant": false,
+      "relevantQuestions": [
+        "local-callers",
+        "quote-instruction"
+      ]
+    },
+    {
+      "id": "error-result-search",
+      "transcript": [
+        {
+          "type": "user",
+          "uuid": "bypass-turn-and-batch-020",
+          "sessionId": "sess-bypass-turns",
+          "isSidechain": false,
+          "promptId": "prompt-turns-2",
+          "message": {
+            "role": "user",
+            "content": [
+              {
+                "type": "tool_result",
+                "tool_use_id": "toolu_bypassturnandbatch_009",
+                "content": "ok"
+              }
+            ]
+          }
+        },
+        {
+          "type": "assistant",
+          "uuid": "bypass-turn-and-batch-021",
+          "sessionId": "sess-bypass-turns",
+          "isSidechain": false,
+          "message": {
+            "id": "msg_bypassturnandbatch_09",
+            "type": "message",
+            "role": "assistant",
+            "model": "claude-sonnet-4-5",
+            "content": [
+              {
+                "type": "tool_use",
+                "id": "toolu_bypassturnandbatch_010",
+                "name": "Grep",
+                "input": {
+                  "pattern": "backoff",
+                  "path": "{{root}}/src"
+                }
+              }
+            ]
+          }
+        },
+        {
+          "type": "user",
+          "uuid": "bypass-turn-and-batch-022",
+          "sessionId": "sess-bypass-turns",
+          "isSidechain": false,
+          "promptId": "prompt-turns-2",
+          "message": {
+            "role": "user",
+            "content": [
+              {
+                "type": "tool_result",
+                "tool_use_id": "toolu_bypassturnandbatch_010",
+                "content": "<tool_use_error>Path does not exist</tool_use_error>",
+                "is_error": true
+              }
+            ]
+          }
+        },
+        {
+          "type": "assistant",
+          "uuid": "bypass-turn-and-batch-023",
+          "sessionId": "sess-bypass-turns",
+          "isSidechain": false,
+          "message": {
+            "id": "msg_bypassturnandbatch_10",
+            "type": "message",
+            "role": "assistant",
+            "model": "claude-sonnet-4-5",
+            "content": [
+              {
+                "type": "tool_use",
+                "id": "toolu_bypassturnandbatch_011",
+                "name": "Edit",
+                "input": {
+                  "file_path": "{{root}}/src/queue/backoff.js",
+                  "old_string": "  return state;",
+                  "new_string": "  return { ...state, ticks: state.ticks + 1 };"
+                }
+              }
+            ]
+          }
+        }
+      ],
+      "payload": {
+        "session_id": "sess-bypass-turns",
+        "transcript_path": "{{transcript}}",
+        "cwd": "{{root}}",
+        "permission_mode": "default",
+        "hook_event_name": "PreToolUse",
+        "tool_name": "Edit",
+        "tool_input": {
+          "file_path": "{{root}}/src/queue/backoff.js",
+          "old_string": "  return state;",
+          "new_string": "  return { ...state, ticks: state.ticks + 1 };"
+        },
+        "tool_use_id": "toolu_bypassturnandbatch_011"
+      },
+      "expect": "deny",
+      "mustDeny": true,
+      "redundant": false,
+      "relevantQuestions": [
+        "local-callers",
+        "quote-instruction"
+      ]
+    },
+    {
+      "id": "search-without-result",
+      "transcript": [
+        {
+          "type": "user",
+          "uuid": "bypass-turn-and-batch-024",
+          "sessionId": "sess-bypass-turns",
+          "isSidechain": false,
+          "promptId": "prompt-turns-2",
+          "message": {
+            "role": "user",
+            "content": [
+              {
+                "type": "tool_result",
+                "tool_use_id": "toolu_bypassturnandbatch_011",
+                "content": "ok"
+              }
+            ]
+          }
+        },
+        {
+          "type": "assistant",
+          "uuid": "bypass-turn-and-batch-025",
+          "sessionId": "sess-bypass-turns",
+          "isSidechain": false,
+          "message": {
+            "id": "msg_bypassturnandbatch_11",
+            "type": "message",
+            "role": "assistant",
+            "model": "claude-sonnet-4-5",
+            "content": [
+              {
+                "type": "tool_use",
+                "id": "toolu_bypassturnandbatch_012",
+                "name": "Grep",
+                "input": {
+                  "pattern": "retrier",
+                  "path": "{{root}}/src"
+                }
+              }
+            ]
+          }
+        },
+        {
+          "type": "assistant",
+          "uuid": "bypass-turn-and-batch-026",
+          "sessionId": "sess-bypass-turns",
+          "isSidechain": false,
+          "message": {
+            "id": "msg_bypassturnandbatch_12",
+            "type": "message",
+            "role": "assistant",
+            "model": "claude-sonnet-4-5",
+            "content": [
+              {
+                "type": "tool_use",
+                "id": "toolu_bypassturnandbatch_013",
+                "name": "Edit",
+                "input": {
+                  "file_path": "{{root}}/src/queue/retrier.js",
+                  "old_string": "  return state;",
+                  "new_string": "  return { ...state, ticks: state.ticks + 1 };"
+                }
+              }
+            ]
+          }
+        }
+      ],
+      "payload": {
+        "session_id": "sess-bypass-turns",
+        "transcript_path": "{{transcript}}",
+        "cwd": "{{root}}",
+        "permission_mode": "default",
+        "hook_event_name": "PreToolUse",
+        "tool_name": "Edit",
+        "tool_input": {
+          "file_path": "{{root}}/src/queue/retrier.js",
+          "old_string": "  return state;",
+          "new_string": "  return { ...state, ticks: state.ticks + 1 };"
+        },
+        "tool_use_id": "toolu_bypassturnandbatch_013"
+      },
+      "expect": "deny",
+      "mustDeny": true,
+      "redundant": false,
+      "relevantQuestions": [
+        "local-callers",
+        "quote-instruction"
+      ]
+    },
+    {
+      "id": "relative-search-after-cd",
+      "note": "The shell cwd after cd is unknown to the hook.",
+      "transcript": [
+        {
+          "type": "user",
+          "uuid": "bypass-turn-and-batch-027",
+          "sessionId": "sess-bypass-turns",
+          "isSidechain": false,
+          "promptId": "prompt-turns-2",
+          "message": {
+            "role": "user",
+            "content": [
+              {
+                "type": "tool_result",
+                "tool_use_id": "toolu_bypassturnandbatch_013",
+                "content": "ok"
+              }
+            ]
+          }
+        },
+        {
+          "type": "assistant",
+          "uuid": "bypass-turn-and-batch-028",
+          "sessionId": "sess-bypass-turns",
+          "isSidechain": false,
+          "message": {
+            "id": "msg_bypassturnandbatch_13",
+            "type": "message",
+            "role": "assistant",
+            "model": "claude-sonnet-4-5",
+            "content": [
+              {
+                "type": "tool_use",
+                "id": "toolu_bypassturnandbatch_014",
+                "name": "Bash",
+                "input": {
+                  "command": "cd src/queue"
+                }
+              }
+            ]
+          }
+        },
+        {
+          "type": "user",
+          "uuid": "bypass-turn-and-batch-029",
+          "sessionId": "sess-bypass-turns",
+          "isSidechain": false,
+          "promptId": "prompt-turns-2",
+          "message": {
+            "role": "user",
+            "content": [
+              {
+                "type": "tool_result",
+                "tool_use_id": "toolu_bypassturnandbatch_014",
+                "content": "ok"
+              }
+            ]
+          }
+        },
+        {
+          "type": "assistant",
+          "uuid": "bypass-turn-and-batch-030",
+          "sessionId": "sess-bypass-turns",
+          "isSidechain": false,
+          "message": {
+            "id": "msg_bypassturnandbatch_14",
+            "type": "message",
+            "role": "assistant",
+            "model": "claude-sonnet-4-5",
+            "content": [
+              {
+                "type": "tool_use",
+                "id": "toolu_bypassturnandbatch_015",
+                "name": "Bash",
+                "input": {
+                  "command": "rg -n poller ."
+                }
+              }
+            ]
+          }
+        },
+        {
+          "type": "user",
+          "uuid": "bypass-turn-and-batch-031",
+          "sessionId": "sess-bypass-turns",
+          "isSidechain": false,
+          "promptId": "prompt-turns-2",
+          "message": {
+            "role": "user",
+            "content": [
+              {
+                "type": "tool_result",
+                "tool_use_id": "toolu_bypassturnandbatch_015",
+                "content": "ok"
+              }
+            ]
+          }
+        },
+        {
+          "type": "assistant",
+          "uuid": "bypass-turn-and-batch-032",
+          "sessionId": "sess-bypass-turns",
+          "isSidechain": false,
+          "message": {
+            "id": "msg_bypassturnandbatch_15",
+            "type": "message",
+            "role": "assistant",
+            "model": "claude-sonnet-4-5",
+            "content": [
+              {
+                "type": "tool_use",
+                "id": "toolu_bypassturnandbatch_016",
+                "name": "Edit",
+                "input": {
+                  "file_path": "{{root}}/src/queue/poller.js",
+                  "old_string": "  return state;",
+                  "new_string": "  return { ...state, ticks: state.ticks + 1 };"
+                }
+              }
+            ]
+          }
+        }
+      ],
+      "payload": {
+        "session_id": "sess-bypass-turns",
+        "transcript_path": "{{transcript}}",
+        "cwd": "{{root}}",
+        "permission_mode": "default",
+        "hook_event_name": "PreToolUse",
+        "tool_name": "Edit",
+        "tool_input": {
+          "file_path": "{{root}}/src/queue/poller.js",
+          "old_string": "  return state;",
+          "new_string": "  return { ...state, ticks: state.ticks + 1 };"
+        },
+        "tool_use_id": "toolu_bypassturnandbatch_016"
+      },
+      "expect": "deny",
+      "mustDeny": true,
+      "redundant": false,
+      "relevantQuestions": [
+        "local-callers",
+        "quote-instruction"
+      ]
+    }
+  ]
+}

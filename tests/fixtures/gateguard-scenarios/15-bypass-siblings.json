@@ -1,0 +1,718 @@
+{
+  "name": "bypass-siblings",
+  "description": "New files that must not collapse into an earlier gate: dot directories, other classes in the same directory, and a symlinked directory that leads into auth code.",
+  "files": {
+    "src/auth/session.js": "module.exports = {};\n",
+    "src/plugins/registry.ts": "export const registry = [];\n"
+  },
+  "dirs": [
+    ".github/scripts",
+    ".claude/hooks"
+  ],
+  "symlinks": {
+    "src/helpers": "auth"
+  },
+  "steps": [
+    {
+      "id": "dot-dir-first",
+      "transcript": [
+        {
+          "type": "user",
+          "uuid": "bypass-siblings-001",
+          "sessionId": "sess-bypass-siblings",
+          "isSidechain": false,
+          "promptId": "prompt-siblings-1",
+          "message": {
+            "role": "user",
+            "content": "Add release tooling, a plugin loader and token helpers."
+          }
+        },
+        {
+          "type": "assistant",
+          "uuid": "bypass-siblings-002",
+          "sessionId": "sess-bypass-siblings",
+          "isSidechain": false,
+          "message": {
+            "id": "msg_bypasssiblings_01",
+            "type": "message",
+            "role": "assistant",
+            "model": "claude-sonnet-4-5",
+            "content": [
+              {
+                "type": "tool_use",
+                "id": "toolu_bypasssiblings_001",
+                "name": "Write",
+                "input": {
+                  "file_path": "{{root}}/.github/scripts/release-notes.js",
+                  "content": "module.exports = { releaseNotes: () => 0 };\n"
+                }
+              }
+            ]
+          }
+        }
+      ],
+      "payload": {
+        "session_id": "sess-bypass-siblings",
+        "transcript_path": "{{transcript}}",
+        "cwd": "{{root}}",
+        "permission_mode": "default",
+        "hook_event_name": "PreToolUse",
+        "tool_name": "Write",
+        "tool_input": {
+          "file_path": "{{root}}/.github/scripts/release-notes.js",
+          "content": "module.exports = { releaseNotes: () => 0 };\n"
+        },
+        "tool_use_id": "toolu_bypasssiblings_001"
+      },
+      "expect": "deny",
+      "mustDeny": false,
+      "redundant": false,
+      "relevantQuestions": [
+        "callers",
+        "no-duplicate",
+        "quote-instruction"
+      ]
+    },
+    {
+      "id": "dot-dir-sibling",
+      "transcript": [
+        {
+          "type": "user",
+          "uuid": "bypass-siblings-003",
+          "sessionId": "sess-bypass-siblings",
+          "isSidechain": false,
+          "promptId": "prompt-siblings-1",
+          "message": {
+            "role": "user",
+            "content": [
+              {
+                "type": "tool_result",
+                "tool_use_id": "toolu_bypasssiblings_001",
+                "content": "ok"
+              }
+            ]
+          }
+        },
+        {
+          "type": "assistant",
+          "uuid": "bypass-siblings-004",
+          "sessionId": "sess-bypass-siblings",
+          "isSidechain": false,
+          "message": {
+            "id": "msg_bypasssiblings_02",
+            "type": "message",
+            "role": "assistant",
+            "model": "claude-sonnet-4-5",
+            "content": [
+              {
+                "type": "tool_use",
+                "id": "toolu_bypasssiblings_002",
+                "name": "Write",
+                "input": {
+                  "file_path": "{{root}}/.github/scripts/changelog-check.js",
+                  "content": "module.exports = { changelogCheck: () => 0 };\n"
+                }
+              }
+            ]
+          }
+        }
+      ],
+      "payload": {
+        "session_id": "sess-bypass-siblings",
+        "transcript_path": "{{transcript}}",
+        "cwd": "{{root}}",
+        "permission_mode": "default",
+        "hook_event_name": "PreToolUse",
+        "tool_name": "Write",
+        "tool_input": {
+          "file_path": "{{root}}/.github/scripts/changelog-check.js",
+          "content": "module.exports = { changelogCheck: () => 0 };\n"
+        },
+        "tool_use_id": "toolu_bypasssiblings_002"
+      },
+      "expect": "deny",
+      "mustDeny": true,
+      "redundant": false,
+      "relevantQuestions": [
+        "callers",
+        "no-duplicate",
+        "quote-instruction"
+      ]
+    },
+    {
+      "id": "hooks-dir-first",
+      "transcript": [
+        {
+          "type": "user",
+          "uuid": "bypass-siblings-005",
+          "sessionId": "sess-bypass-siblings",
+          "isSidechain": false,
+          "promptId": "prompt-siblings-1",
+          "message": {
+            "role": "user",
+            "content": [
+              {
+                "type": "tool_result",
+                "tool_use_id": "toolu_bypasssiblings_002",
+                "content": "ok"
+              }
+            ]
+          }
+        },
+        {
+          "type": "assistant",
+          "uuid": "bypass-siblings-006",
+          "sessionId": "sess-bypass-siblings",
+          "isSidechain": false,
+          "message": {
+            "id": "msg_bypasssiblings_03",
+            "type": "message",
+            "role": "assistant",
+            "model": "claude-sonnet-4-5",
+            "content": [
+              {
+                "type": "tool_use",
+                "id": "toolu_bypasssiblings_003",
+                "name": "Write",
+                "input": {
+                  "file_path": "{{root}}/.claude/hooks/pre-edit.js",
+                  "content": "module.exports = { preEdit: () => 0 };\n"
+                }
+              }
+            ]
+          }
+        }
+      ],
+      "payload": {
+        "session_id": "sess-bypass-siblings",
+        "transcript_path": "{{transcript}}",
+        "cwd": "{{root}}",
+        "permission_mode": "default",
+        "hook_event_name": "PreToolUse",
+        "tool_name": "Write",
+        "tool_input": {
+          "file_path": "{{root}}/.claude/hooks/pre-edit.js",
+          "content": "module.exports = { preEdit: () => 0 };\n"
+        },
+        "tool_use_id": "toolu_bypasssiblings_003"
+      },
+      "expect": "deny",
+      "mustDeny": false,
+      "redundant": false,
+      "relevantQuestions": [
+        "callers",
+        "no-duplicate",
+        "quote-instruction"
+      ]
+    },
+    {
+      "id": "hooks-dir-sibling",
+      "transcript": [
+        {
+          "type": "user",
+          "uuid": "bypass-siblings-007",
+          "sessionId": "sess-bypass-siblings",
+          "isSidechain": false,
+          "promptId": "prompt-siblings-1",
+          "message": {
+            "role": "user",
+            "content": [
+              {
+                "type": "tool_result",
+                "tool_use_id": "toolu_bypasssiblings_003",
+                "content": "ok"
+              }
+            ]
+          }
+        },
+        {
+          "type": "assistant",
+          "uuid": "bypass-siblings-008",
+          "sessionId": "sess-bypass-siblings",
+          "isSidechain": false,
+          "message": {
+            "id": "msg_bypasssiblings_04",
+            "type": "message",
+            "role": "assistant",
+            "model": "claude-sonnet-4-5",
+            "content": [
+              {
+                "type": "tool_use",
+                "id": "toolu_bypasssiblings_004",
+                "name": "Write",
+                "input": {
+                  "file_path": "{{root}}/.claude/hooks/post-edit.js",
+                  "content": "module.exports = { postEdit: () => 0 };\n"
+                }
+              }
+            ]
+          }
+        }
+      ],
+      "payload": {
+        "session_id": "sess-bypass-siblings",
+        "transcript_path": "{{transcript}}",
+        "cwd": "{{root}}",
+        "permission_mode": "default",
+        "hook_event_name": "PreToolUse",
+        "tool_name": "Write",
+        "tool_input": {
+          "file_path": "{{root}}/.claude/hooks/post-edit.js",
+          "content": "module.exports = { postEdit: () => 0 };\n"
+        },
+        "tool_use_id": "toolu_bypasssiblings_004"
+      },
+      "expect": "deny",
+      "mustDeny": true,
+      "redundant": false,
+      "relevantQuestions": [
+        "callers",
+        "no-duplicate",
+        "quote-instruction"
+      ]
+    },
+    {
+      "id": "code-first",
+      "transcript": [
+        {
+          "type": "user",
+          "uuid": "bypass-siblings-009",
+          "sessionId": "sess-bypass-siblings",
+          "isSidechain": false,
+          "promptId": "prompt-siblings-1",
+          "message": {
+            "role": "user",
+            "content": [
+              {
+                "type": "tool_result",
+                "tool_use_id": "toolu_bypasssiblings_004",
+                "content": "ok"
+              }
+            ]
+          }
+        },
+        {
+          "type": "assistant",
+          "uuid": "bypass-siblings-010",
+          "sessionId": "sess-bypass-siblings",
+          "isSidechain": false,
+          "message": {
+            "id": "msg_bypasssiblings_05",
+            "type": "message",
+            "role": "assistant",
+            "model": "claude-sonnet-4-5",
+            "content": [
+              {
+                "type": "tool_use",
+                "id": "toolu_bypasssiblings_005",
+                "name": "Write",
+                "input": {
+                  "file_path": "{{root}}/src/plugins/loader.ts",
+                  "content": "export function loadPlugin(name: string) {\n  return registry.find(p => p === name);\n}\n"
+                }
+              }
+            ]
+          }
+        }
+      ],
+      "payload": {
+        "session_id": "sess-bypass-siblings",
+        "transcript_path": "{{transcript}}",
+        "cwd": "{{root}}",
+        "permission_mode": "default",
+        "hook_event_name": "PreToolUse",
+        "tool_name": "Write",
+        "tool_input": {
+          "file_path": "{{root}}/src/plugins/loader.ts",
+          "content": "export function loadPlugin(name: string) {\n  return registry.find(p => p === name);\n}\n"
+        },
+        "tool_use_id": "toolu_bypasssiblings_005"
+      },
+      "expect": "deny",
+      "mustDeny": false,
+      "redundant": false,
+      "relevantQuestions": [
+        "callers",
+        "no-duplicate",
+        "quote-instruction"
+      ]
+    },
+    {
+      "id": "test-beside-code",
+      "transcript": [
+        {
+          "type": "user",
+          "uuid": "bypass-siblings-011",
+          "sessionId": "sess-bypass-siblings",
+          "isSidechain": false,
+          "promptId": "prompt-siblings-1",
+          "message": {
+            "role": "user",
+            "content": [
+              {
+                "type": "tool_result",
+                "tool_use_id": "toolu_bypasssiblings_005",
+                "content": "ok"
+              }
+            ]
+          }
+        },
+        {
+          "type": "assistant",
+          "uuid": "bypass-siblings-012",
+          "sessionId": "sess-bypass-siblings",
+          "isSidechain": false,
+          "message": {
+            "id": "msg_bypasssiblings_06",
+            "type": "message",
+            "role": "assistant",
+            "model": "claude-sonnet-4-5",
+            "content": [
+              {
+                "type": "tool_use",
+                "id": "toolu_bypasssiblings_006",
+                "name": "Write",
+                "input": {
+                  "file_path": "{{root}}/src/plugins/loader.test.ts",
+                  "content": "test('loads', () => expect(loadPlugin('a')).toBeUndefined());\n"
+                }
+              }
+            ]
+          }
+        }
+      ],
+      "payload": {
+        "session_id": "sess-bypass-siblings",
+        "transcript_path": "{{transcript}}",
+        "cwd": "{{root}}",
+        "permission_mode": "default",
+        "hook_event_name": "PreToolUse",
+        "tool_name": "Write",
+        "tool_input": {
+          "file_path": "{{root}}/src/plugins/loader.test.ts",
+          "content": "test('loads', () => expect(loadPlugin('a')).toBeUndefined());\n"
+        },
+        "tool_use_id": "toolu_bypasssiblings_006"
+      },
+      "expect": "deny",
+      "mustDeny": true,
+      "redundant": false
+    },
+    {
+      "id": "config-beside-code",
+      "transcript": [
+        {
+          "type": "user",
+          "uuid": "bypass-siblings-013",
+          "sessionId": "sess-bypass-siblings",
+          "isSidechain": false,
+          "promptId": "prompt-siblings-1",
+          "message": {
+            "role": "user",
+            "content": [
+              {
+                "type": "tool_result",
+                "tool_use_id": "toolu_bypasssiblings_006",
+                "content": "ok"
+              }
+            ]
+          }
+        },
+        {
+          "type": "assistant",
+          "uuid": "bypass-siblings-014",
+          "sessionId": "sess-bypass-siblings",
+          "isSidechain": false,
+          "message": {
+            "id": "msg_bypasssiblings_07",
+            "type": "message",
+            "role": "assistant",
+            "model": "claude-sonnet-4-5",
+            "content": [
+              {
+                "type": "tool_use",
+                "id": "toolu_bypasssiblings_007",
+                "name": "Write",
+                "input": {
+                  "file_path": "{{root}}/src/plugins/plugins.json",
+                  "content": "{ \"enabled\": [] }\n"
+                }
+              }
+            ]
+          }
+        }
+      ],
+      "payload": {
+        "session_id": "sess-bypass-siblings",
+        "transcript_path": "{{transcript}}",
+        "cwd": "{{root}}",
+        "permission_mode": "default",
+        "hook_event_name": "PreToolUse",
+        "tool_name": "Write",
+        "tool_input": {
+          "file_path": "{{root}}/src/plugins/plugins.json",
+          "content": "{ \"enabled\": [] }\n"
+        },
+        "tool_use_id": "toolu_bypasssiblings_007"
+      },
+      "expect": "deny",
+      "mustDeny": true,
+      "redundant": false
+    },
+    {
+      "id": "instruction-beside-code",
+      "transcript": [
+        {
+          "type": "user",
+          "uuid": "bypass-siblings-015",
+          "sessionId": "sess-bypass-siblings",
+          "isSidechain": false,
+          "promptId": "prompt-siblings-1",
+          "message": {
+            "role": "user",
+            "content": [
+              {
+                "type": "tool_result",
+                "tool_use_id": "toolu_bypasssiblings_007",
+                "content": "ok"
+              }
+            ]
+          }
+        },
+        {
+          "type": "assistant",
+          "uuid": "bypass-siblings-016",
+          "sessionId": "sess-bypass-siblings",
+          "isSidechain": false,
+          "message": {
+            "id": "msg_bypasssiblings_08",
+            "type": "message",
+            "role": "assistant",
+            "model": "claude-sonnet-4-5",
+            "content": [
+              {
+                "type": "tool_use",
+                "id": "toolu_bypasssiblings_008",
+                "name": "Write",
+                "input": {
+                  "file_path": "{{root}}/src/plugins/AGENTS.md",
+                  "content": "# Plugin agents\n"
+                }
+              }
+            ]
+          }
+        }
+      ],
+      "payload": {
+        "session_id": "sess-bypass-siblings",
+        "transcript_path": "{{transcript}}",
+        "cwd": "{{root}}",
+        "permission_mode": "default",
+        "hook_event_name": "PreToolUse",
+        "tool_name": "Write",
+        "tool_input": {
+          "file_path": "{{root}}/src/plugins/AGENTS.md",
+          "content": "# Plugin agents\n"
+        },
+        "tool_use_id": "toolu_bypasssiblings_008"
+      },
+      "expect": "deny",
+      "mustDeny": true,
+      "redundant": false
+    },
+    {
+      "id": "prose-beside-code",
+      "transcript": [
+        {
+          "type": "user",
+          "uuid": "bypass-siblings-017",
+          "sessionId": "sess-bypass-siblings",
+          "isSidechain": false,
+          "promptId": "prompt-siblings-1",
+          "message": {
+            "role": "user",
+            "content": [
+              {
+                "type": "tool_result",
+                "tool_use_id": "toolu_bypasssiblings_008",
+                "content": "ok"
+              }
+            ]
+          }
+        },
+        {
+          "type": "assistant",
+          "uuid": "bypass-siblings-018",
+          "sessionId": "sess-bypass-siblings",
+          "isSidechain": false,
+          "message": {
+            "id": "msg_bypasssiblings_09",
+            "type": "message",
+            "role": "assistant",
+            "model": "claude-sonnet-4-5",
+            "content": [
+              {
+                "type": "tool_use",
+                "id": "toolu_bypasssiblings_009",
+                "name": "Write",
+                "input": {
+                  "file_path": "{{root}}/src/plugins/notes.md",
+                  "content": "# Notes\n"
+                }
+              }
+            ]
+          }
+        }
+      ],
+      "payload": {
+        "session_id": "sess-bypass-siblings",
+        "transcript_path": "{{transcript}}",
+        "cwd": "{{root}}",
+        "permission_mode": "default",
+        "hook_event_name": "PreToolUse",
+        "tool_name": "Write",
+        "tool_input": {
+          "file_path": "{{root}}/src/plugins/notes.md",
+          "content": "# Notes\n"
+        },
+        "tool_use_id": "toolu_bypasssiblings_009"
+      },
+      "expect": "deny",
+      "mustDeny": true,
+      "redundant": false
+    },
+    {
+      "id": "symlinked-auth-first",
+      "note": "src/helpers is a symlink to src/auth.",
+      "transcript": [
+        {
+          "type": "user",
+          "uuid": "bypass-siblings-019",
+          "sessionId": "sess-bypass-siblings",
+          "isSidechain": false,
+          "promptId": "prompt-siblings-1",
+          "message": {
+            "role": "user",
+            "content": [
+              {
+                "type": "tool_result",
+                "tool_use_id": "toolu_bypasssiblings_009",
+                "content": "ok"
+              }
+            ]
+          }
+        },
+        {
+          "type": "assistant",
+          "uuid": "bypass-siblings-020",
+          "sessionId": "sess-bypass-siblings",
+          "isSidechain": false,
+          "message": {
+            "id": "msg_bypasssiblings_10",
+            "type": "message",
+            "role": "assistant",
+            "model": "claude-sonnet-4-5",
+            "content": [
+              {
+                "type": "tool_use",
+                "id": "toolu_bypasssiblings_010",
+                "name": "Write",
+                "input": {
+                  "file_path": "{{root}}/src/helpers/token-cache.js",
+                  "content": "module.exports = { tokenCache: () => 0 };\n"
+                }
+              }
+            ]
+          }
+        }
+      ],
+      "payload": {
+        "session_id": "sess-bypass-siblings",
+        "transcript_path": "{{transcript}}",
+        "cwd": "{{root}}",
+        "permission_mode": "default",
+        "hook_event_name": "PreToolUse",
+        "tool_name": "Write",
+        "tool_input": {
+          "file_path": "{{root}}/src/helpers/token-cache.js",
+          "content": "module.exports = { tokenCache: () => 0 };\n"
+        },
+        "tool_use_id": "toolu_bypasssiblings_010"
+      },
+      "expect": "deny",
+      "mustDeny": true,
+      "redundant": false,
+      "relevantQuestions": [
+        "callers",
+        "no-duplicate",
+        "quote-instruction"
+      ]
+    },
+    {
+      "id": "symlinked-auth-sibling",
+      "transcript": [
+        {
+          "type": "user",
+          "uuid": "bypass-siblings-021",
+          "sessionId": "sess-bypass-siblings",
+          "isSidechain": false,
+          "promptId": "prompt-siblings-1",
+          "message": {
+            "role": "user",
+            "content": [
+              {
+                "type": "tool_result",
+                "tool_use_id": "toolu_bypasssiblings_010",
+                "content": "ok"
+              }
+            ]
+          }
+        },
+        {
+          "type": "assistant",
+          "uuid": "bypass-siblings-022",
+          "sessionId": "sess-bypass-siblings",
+          "isSidechain": false,
+          "message": {
+            "id": "msg_bypasssiblings_11",
+            "type": "message",
+            "role": "assistant",
+            "model": "claude-sonnet-4-5",
+            "content": [
+              {
+                "type": "tool_use",
+                "id": "toolu_bypasssiblings_011",
+                "name": "Write",
+                "input": {
+                  "file_path": "{{root}}/src/helpers/token-store.js",
+                  "content": "module.exports = { tokenStore: () => 0 };\n"
+                }
+              }
+            ]
+          }
+        }
+      ],
+      "payload": {
+        "session_id": "sess-bypass-siblings",
+        "transcript_path": "{{transcript}}",
+        "cwd": "{{root}}",
+        "permission_mode": "default",
+        "hook_event_name": "PreToolUse",
+        "tool_name": "Write",
+        "tool_input": {
+          "file_path": "{{root}}/src/helpers/token-store.js",
+          "content": "module.exports = { tokenStore: () => 0 };\n"
+        },
+        "tool_use_id": "toolu_bypasssiblings_011"
+      },
+      "expect": "deny",
+      "mustDeny": true,
+      "redundant": false,
+      "relevantQuestions": [
+        "callers",
+        "no-duplicate",
+        "quote-instruction"
+      ]
+    }
+  ]
+}

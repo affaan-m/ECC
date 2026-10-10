@@ -126,6 +126,7 @@
     "scripts/memory.js",
     "scripts/memory-mcp.mjs",
     "scripts/gemini-adapt-agents.js",
+    "scripts/gateguard-report.js",
     "scripts/github-coordination.js",
     "scripts/harness-adapter-compliance.js",
     "scripts/harness-audit.js",

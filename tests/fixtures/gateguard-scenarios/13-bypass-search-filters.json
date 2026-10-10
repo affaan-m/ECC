@@ -1,0 +1,2048 @@
+{
+  "name": "bypass-search-filters",
+  "description": "Searches that mention the target but never searched it: exclusion globs, bracket classes, PowerShell -Exclude spellings, stdin searches, the target as operand, another directory, a generic stem, a missed include and a directory-qualified include of another directory; then four controls whose filters leave the target in scope.",
+  "files": {
+    "src/rates/converter.js": "function converterValue(x) {\n  return x;\n}\n",
+    "src/rates/rounding.js": "function roundingValue(x) {\n  return x;\n}\n",
+    "src/rates/currency.js": "function currencyValue(x) {\n  return x;\n}\n",
+    "src/rates/ledger.js": "function ledgerValue(x) {\n  return x;\n}\n",
+    "src/rates/formatter.js": "function formatterValue(x) {\n  return x;\n}\n",
+    "src/rates/exchange.js": "function exchangeValue(x) {\n  return x;\n}\n",
+    "src/rates/quotes.js": "function quotesValue(x) {\n  return x;\n}\n",
+    "src/rates/spread.js": "function spreadValue(x) {\n  return x;\n}\n",
+    "src/rates/margins.js": "function marginsValue(x) {\n  return x;\n}\n",
+    "src/rates/pricing.js": "function pricingValue(x) {\n  return x;\n}\n",
+    "src/rates/fallback.js": "function fallbackValue(x) {\n  return x;\n}\n",
+    "src/rates/index.js": "function indexValue(x) {\n  return x;\n}\n",
+    "src/rates/tariff.js": "function tariffValue(x) {\n  return x;\n}\n",
+    "src/rates/bands.js": "function bandsValue(x) {\n  return x;\n}\n",
+    "src/rates/settle.js": "function settleValue(x) {\n  return x;\n}\n",
+    "src/rates/clearing.js": "function clearingValue(x) {\n  return x;\n}\n",
+    "src/rates/netting.js": "function nettingValue(x) {\n  return x;\n}\n",
+    "lib/rates/fallback.js": "function fallbackValue(x) {\n  return x;\n}\n",
+    "lib/rates/sweep.js": "function sweepValue(x) {\n  return x;\n}\n",
+    "src/rates/sweep.js": "function sweepValue(x) {\n  return x;\n}\n"
+  },
+  "steps": [
+    {
+      "id": "rg-exclusion-glob",
+      "transcript": [
+        {
+          "type": "user",
+          "uuid": "bypass-search-filters-001",
+          "sessionId": "sess-bypass-filters",
+          "isSidechain": false,
+          "promptId": "prompt-filters-1",
+          "message": {
+            "role": "user",
+            "content": "Tighten rounding across the rates module."
+          }
+        },
+        {
+          "type": "assistant",
+          "uuid": "bypass-search-filters-002",
+          "sessionId": "sess-bypass-filters",
+          "isSidechain": false,
+          "message": {
+            "id": "msg_bypasssearchfilters_01",
+            "type": "message",
+            "role": "assistant",
+            "model": "claude-sonnet-4-5",
+            "content": [
+              {
+                "type": "tool_use",
+                "id": "toolu_bypasssearchfilters_001",
+                "name": "Bash",
+                "input": {
+                  "command": "rg -n converter -g '!src/rates/**' src"
+                }
+              }
+            ]
+          }
+        },
+        {
+          "type": "user",
+          "uuid": "bypass-search-filters-003",
+          "sessionId": "sess-bypass-filters",
+          "isSidechain": false,
+          "promptId": "prompt-filters-1",
+          "message": {
+            "role": "user",
+            "content": [
+              {
+                "type": "tool_result",
+                "tool_use_id": "toolu_bypasssearchfilters_001",
+                "content": "ok"
+              }
+            ]
+          }
+        },
+        {
+          "type": "assistant",
+          "uuid": "bypass-search-filters-004",
+          "sessionId": "sess-bypass-filters",
+          "isSidechain": false,
+          "message": {
+            "id": "msg_bypasssearchfilters_02",
+            "type": "message",
+            "role": "assistant",
+            "model": "claude-sonnet-4-5",
+            "content": [
+              {
+                "type": "tool_use",
+                "id": "toolu_bypasssearchfilters_002",
+                "name": "Edit",
+                "input": {
+                  "file_path": "{{root}}/src/rates/converter.js",
+                  "old_string": "  return x;",
+                  "new_string": "  return Math.round(x * 100) / 100;"
+                }
+              }
+            ]
+          }
+        }
+      ],
+      "payload": {
+        "session_id": "sess-bypass-filters",
+        "transcript_path": "{{transcript}}",
+        "cwd": "{{root}}",
+        "permission_mode": "default",
+        "hook_event_name": "PreToolUse",
+        "tool_name": "Edit",
+        "tool_input": {
+          "file_path": "{{root}}/src/rates/converter.js",
+          "old_string": "  return x;",
+          "new_string": "  return Math.round(x * 100) / 100;"
+        },
+        "tool_use_id": "toolu_bypasssearchfilters_002"
+      },
+      "expect": "deny",
+      "mustDeny": true,
+      "redundant": false,
+      "relevantQuestions": [
+        "local-callers",
+        "quote-instruction"
+      ]
+    },
+    {
+      "id": "grep-tool-exclusion-glob",
+      "transcript": [
+        {
+          "type": "user",
+          "uuid": "bypass-search-filters-005",
+          "sessionId": "sess-bypass-filters",
+          "isSidechain": false,
+          "promptId": "prompt-filters-1",
+          "message": {
+            "role": "user",
+            "content": [
+              {
+                "type": "tool_result",
+                "tool_use_id": "toolu_bypasssearchfilters_002",
+                "content": "ok"
+              }
+            ]
+          }
+        },
+        {
+          "type": "assistant",
+          "uuid": "bypass-search-filters-006",
+          "sessionId": "sess-bypass-filters",
+          "isSidechain": false,
+          "message": {
+            "id": "msg_bypasssearchfilters_03",
+            "type": "message",
+            "role": "assistant",
+            "model": "claude-sonnet-4-5",
+            "content": [
+              {
+                "type": "tool_use",
+                "id": "toolu_bypasssearchfilters_003",
+                "name": "Grep",
+                "input": {
+                  "pattern": "rounding",
+                  "path": "{{root}}/src",
+                  "glob": "!**/rounding.js"
+                }
+              }
+            ]
+          }
+        },
+        {
+          "type": "user",
+          "uuid": "bypass-search-filters-007",
+          "sessionId": "sess-bypass-filters",
+          "isSidechain": false,
+          "promptId": "prompt-filters-1",
+          "message": {
+            "role": "user",
+            "content": [
+              {
+                "type": "tool_result",
+                "tool_use_id": "toolu_bypasssearchfilters_003",
+                "content": "ok"
+              }
+            ]
+          }
+        },
+        {
+          "type": "assistant",
+          "uuid": "bypass-search-filters-008",
+          "sessionId": "sess-bypass-filters",
+          "isSidechain": false,
+          "message": {
+            "id": "msg_bypasssearchfilters_04",
+            "type": "message",
+            "role": "assistant",
+            "model": "claude-sonnet-4-5",
+            "content": [
+              {
+                "type": "tool_use",
+                "id": "toolu_bypasssearchfilters_004",
+                "name": "Edit",
+                "input": {
+                  "file_path": "{{root}}/src/rates/rounding.js",
+                  "old_string": "  return x;",
+                  "new_string": "  return Math.round(x * 100) / 100;"
+                }
+              }
+            ]
+          }
+        }
+      ],
+      "payload": {
+        "session_id": "sess-bypass-filters",
+        "transcript_path": "{{transcript}}",
+        "cwd": "{{root}}",
+        "permission_mode": "default",
+        "hook_event_name": "PreToolUse",
+        "tool_name": "Edit",
+        "tool_input": {
+          "file_path": "{{root}}/src/rates/rounding.js",
+          "old_string": "  return x;",
+          "new_string": "  return Math.round(x * 100) / 100;"
+        },
+        "tool_use_id": "toolu_bypasssearchfilters_004"
+      },
+      "expect": "deny",
+      "mustDeny": true,
+      "redundant": false,
+      "relevantQuestions": [
+        "local-callers",
+        "quote-instruction"
+      ]
+    },
+    {
+      "id": "bracket-class-exclusion",
+      "transcript": [
+        {
+          "type": "user",
+          "uuid": "bypass-search-filters-009",
+          "sessionId": "sess-bypass-filters",
+          "isSidechain": false,
+          "promptId": "prompt-filters-1",
+          "message": {
+            "role": "user",
+            "content": [
+              {
+                "type": "tool_result",
+                "tool_use_id": "toolu_bypasssearchfilters_004",
+                "content": "ok"
+              }
+            ]
+          }
+        },
+        {
+          "type": "assistant",
+          "uuid": "bypass-search-filters-010",
+          "sessionId": "sess-bypass-filters",
+          "isSidechain": false,
+          "message": {
+            "id": "msg_bypasssearchfilters_05",
+            "type": "message",
+            "role": "assistant",
+            "model": "claude-sonnet-4-5",
+            "content": [
+              {
+                "type": "tool_use",
+                "id": "toolu_bypasssearchfilters_005",
+                "name": "Bash",
+                "input": {
+                  "command": "rg -n currency --glob '!src/[r]ates/*' src"
+                }
+              }
+            ]
+          }
+        },
+        {
+          "type": "user",
+          "uuid": "bypass-search-filters-011",
+          "sessionId": "sess-bypass-filters",
+          "isSidechain": false,
+          "promptId": "prompt-filters-1",
+          "message": {
+            "role": "user",
+            "content": [
+              {
+                "type": "tool_result",
+                "tool_use_id": "toolu_bypasssearchfilters_005",
+                "content": "ok"
+              }
+            ]
+          }
+        },
+        {
+          "type": "assistant",
+          "uuid": "bypass-search-filters-012",
+          "sessionId": "sess-bypass-filters",
+          "isSidechain": false,
+          "message": {
+            "id": "msg_bypasssearchfilters_06",
+            "type": "message",
+            "role": "assistant",
+            "model": "claude-sonnet-4-5",
+            "content": [
+              {
+                "type": "tool_use",
+                "id": "toolu_bypasssearchfilters_006",
+                "name": "Edit",
+                "input": {
+                  "file_path": "{{root}}/src/rates/currency.js",
+                  "old_string": "  return x;",
+                  "new_string": "  return Math.round(x * 100) / 100;"
+                }
+              }
+            ]
+          }
+        }
+      ],
+      "payload": {
+        "session_id": "sess-bypass-filters",
+        "transcript_path": "{{transcript}}",
+        "cwd": "{{root}}",
+        "permission_mode": "default",
+        "hook_event_name": "PreToolUse",
+        "tool_name": "Edit",
+        "tool_input": {
+          "file_path": "{{root}}/src/rates/currency.js",
+          "old_string": "  return x;",
+          "new_string": "  return Math.round(x * 100) / 100;"
+        },
+        "tool_use_id": "toolu_bypasssearchfilters_006"
+      },
+      "expect": "deny",
+      "mustDeny": true,
+      "redundant": false,
+      "relevantQuestions": [
+        "local-callers",
+        "quote-instruction"
+      ]
+    },
+    {
+      "id": "negated-bracket-class-exclusion",
+      "transcript": [
+        {
+          "type": "user",
+          "uuid": "bypass-search-filters-013",
+          "sessionId": "sess-bypass-filters",
+          "isSidechain": false,
+          "promptId": "prompt-filters-1",
+          "message": {
+            "role": "user",
+            "content": [
+              {
+                "type": "tool_result",
+                "tool_use_id": "toolu_bypasssearchfilters_006",
+                "content": "ok"
+              }
+            ]
+          }
+        },
+        {
+          "type": "assistant",
+          "uuid": "bypass-search-filters-014",
+          "sessionId": "sess-bypass-filters",
+          "isSidechain": false,
+          "message": {
+            "id": "msg_bypasssearchfilters_07",
+            "type": "message",
+            "role": "assistant",
+            "model": "claude-sonnet-4-5",
+            "content": [
+              {
+                "type": "tool_use",
+                "id": "toolu_bypasssearchfilters_007",
+                "name": "Bash",
+                "input": {
+                  "command": "rg -n ledger --glob '!**/l[!x]dger.js' src"
+                }
+              }
+            ]
+          }
+        },
+        {
+          "type": "user",
+          "uuid": "bypass-search-filters-015",
+          "sessionId": "sess-bypass-filters",
+          "isSidechain": false,
+          "promptId": "prompt-filters-1",
+          "message": {
+            "role": "user",
+            "content": [
+              {
+                "type": "tool_result",
+                "tool_use_id": "toolu_bypasssearchfilters_007",
+                "content": "ok"
+              }
+            ]
+          }
+        },
+        {
+          "type": "assistant",
+          "uuid": "bypass-search-filters-016",
+          "sessionId": "sess-bypass-filters",
+          "isSidechain": false,
+          "message": {
+            "id": "msg_bypasssearchfilters_08",
+            "type": "message",
+            "role": "assistant",
+            "model": "claude-sonnet-4-5",
+            "content": [
+              {
+                "type": "tool_use",
+                "id": "toolu_bypasssearchfilters_008",
+                "name": "Edit",
+                "input": {
+                  "file_path": "{{root}}/src/rates/ledger.js",
+                  "old_string": "  return x;",
+                  "new_string": "  return Math.round(x * 100) / 100;"
+                }
+              }
+            ]
+          }
+        }
+      ],
+      "payload": {
+        "session_id": "sess-bypass-filters",
+        "transcript_path": "{{transcript}}",
+        "cwd": "{{root}}",
+        "permission_mode": "default",
+        "hook_event_name": "PreToolUse",
+        "tool_name": "Edit",
+        "tool_input": {
+          "file_path": "{{root}}/src/rates/ledger.js",
+          "old_string": "  return x;",
+          "new_string": "  return Math.round(x * 100) / 100;"
+        },
+        "tool_use_id": "toolu_bypasssearchfilters_008"
+      },
+      "expect": "deny",
+      "mustDeny": true,
+      "redundant": false,
+      "relevantQuestions": [
+        "local-callers",
+        "quote-instruction"
+      ]
+    },
+    {
+      "id": "powershell-exclude-prefix",
+      "transcript": [
+        {
+          "type": "user",
+          "uuid": "bypass-search-filters-017",
+          "sessionId": "sess-bypass-filters",
+          "isSidechain": false,
+          "promptId": "prompt-filters-1",
+          "message": {
+            "role": "user",
+            "content": [
+              {
+                "type": "tool_result",
+                "tool_use_id": "toolu_bypasssearchfilters_008",
+                "content": "ok"
+              }
+            ]
+          }
+        },
+        {
+          "type": "assistant",
+          "uuid": "bypass-search-filters-018",
+          "sessionId": "sess-bypass-filters",
+          "isSidechain": false,
+          "message": {
+            "id": "msg_bypasssearchfilters_09",
+            "type": "message",
+            "role": "assistant",
+            "model": "claude-sonnet-4-5",
+            "content": [
+              {
+                "type": "tool_use",
+                "id": "toolu_bypasssearchfilters_009",
+                "name": "PowerShell",
+                "input": {
+                  "command": "Get-ChildItem -Path src -Recurse -Exc formatter.js"
+                }
+              }
+            ]
+          }
+        },
+        {
+          "type": "user",
+          "uuid": "bypass-search-filters-019",
+          "sessionId": "sess-bypass-filters",
+          "isSidechain": false,
+          "promptId": "prompt-filters-1",
+          "message": {
+            "role": "user",
+            "content": [
+              {
+                "type": "tool_result",
+                "tool_use_id": "toolu_bypasssearchfilters_009",
+                "content": "ok"
+              }
+            ]
+          }
+        },
+        {
+          "type": "assistant",
+          "uuid": "bypass-search-filters-020",
+          "sessionId": "sess-bypass-filters",
+          "isSidechain": false,
+          "message": {
+            "id": "msg_bypasssearchfilters_10",
+            "type": "message",
+            "role": "assistant",
+            "model": "claude-sonnet-4-5",
+            "content": [
+              {
+                "type": "tool_use",
+                "id": "toolu_bypasssearchfilters_010",
+                "name": "Edit",
+                "input": {
+                  "file_path": "{{root}}/src/rates/formatter.js",
+                  "old_string": "  return x;",
+                  "new_string": "  return Math.round(x * 100) / 100;"
+                }
+              }
+            ]
+          }
+        }
+      ],
+      "payload": {
+        "session_id": "sess-bypass-filters",
+        "transcript_path": "{{transcript}}",
+        "cwd": "{{root}}",
+        "permission_mode": "default",
+        "hook_event_name": "PreToolUse",
+        "tool_name": "Edit",
+        "tool_input": {
+          "file_path": "{{root}}/src/rates/formatter.js",
+          "old_string": "  return x;",
+          "new_string": "  return Math.round(x * 100) / 100;"
+        },
+        "tool_use_id": "toolu_bypasssearchfilters_010"
+      },
+      "expect": "deny",
+      "mustDeny": true,
+      "redundant": false,
+      "relevantQuestions": [
+        "local-callers",
+        "quote-instruction"
+      ]
+    },
+    {
+      "id": "powershell-exclude-colon",
+      "transcript": [
+        {
+          "type": "user",
+          "uuid": "bypass-search-filters-021",
+          "sessionId": "sess-bypass-filters",
+          "isSidechain": false,
+          "promptId": "prompt-filters-1",
+          "message": {
+            "role": "user",
+            "content": [
+              {
+                "type": "tool_result",
+                "tool_use_id": "toolu_bypasssearchfilters_010",
+                "content": "ok"
+              }
+            ]
+          }
+        },
+        {
+          "type": "assistant",
+          "uuid": "bypass-search-filters-022",
+          "sessionId": "sess-bypass-filters",
+          "isSidechain": false,
+          "message": {
+            "id": "msg_bypasssearchfilters_11",
+            "type": "message",
+            "role": "assistant",
+            "model": "claude-sonnet-4-5",
+            "content": [
+              {
+                "type": "tool_use",
+                "id": "toolu_bypasssearchfilters_011",
+                "name": "PowerShell",
+                "input": {
+                  "command": "Get-ChildItem src -Recurse -ex:exchange*"
+                }
+              }
+            ]
+          }
+        },
+        {
+          "type": "user",
+          "uuid": "bypass-search-filters-023",
+          "sessionId": "sess-bypass-filters",
+          "isSidechain": false,
+          "promptId": "prompt-filters-1",
+          "message": {
+            "role": "user",
+            "content": [
+              {
+                "type": "tool_result",
+                "tool_use_id": "toolu_bypasssearchfilters_011",
+                "content": "ok"
+              }
+            ]
+          }
+        },
+        {
+          "type": "assistant",
+          "uuid": "bypass-search-filters-024",
+          "sessionId": "sess-bypass-filters",
+          "isSidechain": false,
+          "message": {
+            "id": "msg_bypasssearchfilters_12",
+            "type": "message",
+            "role": "assistant",
+            "model": "claude-sonnet-4-5",
+            "content": [
+              {
+                "type": "tool_use",
+                "id": "toolu_bypasssearchfilters_012",
+                "name": "Edit",
+                "input": {
+                  "file_path": "{{root}}/src/rates/exchange.js",
+                  "old_string": "  return x;",
+                  "new_string": "  return Math.round(x * 100) / 100;"
+                }
+              }
+            ]
+          }
+        }
+      ],
+      "payload": {
+        "session_id": "sess-bypass-filters",
+        "transcript_path": "{{transcript}}",
+        "cwd": "{{root}}",
+        "permission_mode": "default",
+        "hook_event_name": "PreToolUse",
+        "tool_name": "Edit",
+        "tool_input": {
+          "file_path": "{{root}}/src/rates/exchange.js",
+          "old_string": "  return x;",
+          "new_string": "  return Math.round(x * 100) / 100;"
+        },
+        "tool_use_id": "toolu_bypasssearchfilters_012"
+      },
+      "expect": "deny",
+      "mustDeny": true,
+      "redundant": false,
+      "relevantQuestions": [
+        "local-callers",
+        "quote-instruction"
+      ]
+    },
+    {
+      "id": "powershell-exclude-comma-list",
+      "transcript": [
+        {
+          "type": "user",
+          "uuid": "bypass-search-filters-025",
+          "sessionId": "sess-bypass-filters",
+          "isSidechain": false,
+          "promptId": "prompt-filters-1",
+          "message": {
+            "role": "user",
+            "content": [
+              {
+                "type": "tool_result",
+                "tool_use_id": "toolu_bypasssearchfilters_012",
+                "content": "ok"
+              }
+            ]
+          }
+        },
+        {
+          "type": "assistant",
+          "uuid": "bypass-search-filters-026",
+          "sessionId": "sess-bypass-filters",
+          "isSidechain": false,
+          "message": {
+            "id": "msg_bypasssearchfilters_13",
+            "type": "message",
+            "role": "assistant",
+            "model": "claude-sonnet-4-5",
+            "content": [
+              {
+                "type": "tool_use",
+                "id": "toolu_bypasssearchfilters_013",
+                "name": "PowerShell",
+                "input": {
+                  "command": "Select-String -Pattern quotes -Path src\\rates\\* -Exclude spread.js, quotes.js"
+                }
+              }
+            ]
+          }
+        },
+        {
+          "type": "user",
+          "uuid": "bypass-search-filters-027",
+          "sessionId": "sess-bypass-filters",
+          "isSidechain": false,
+          "promptId": "prompt-filters-1",
+          "message": {
+            "role": "user",
+            "content": [
+              {
+                "type": "tool_result",
+                "tool_use_id": "toolu_bypasssearchfilters_013",
+                "content": "ok"
+              }
+            ]
+          }
+        },
+        {
+          "type": "assistant",
+          "uuid": "bypass-search-filters-028",
+          "sessionId": "sess-bypass-filters",
+          "isSidechain": false,
+          "message": {
+            "id": "msg_bypasssearchfilters_14",
+            "type": "message",
+            "role": "assistant",
+            "model": "claude-sonnet-4-5",
+            "content": [
+              {
+                "type": "tool_use",
+                "id": "toolu_bypasssearchfilters_014",
+                "name": "Edit",
+                "input": {
+                  "file_path": "{{root}}/src/rates/quotes.js",
+                  "old_string": "  return x;",
+                  "new_string": "  return Math.round(x * 100) / 100;"
+                }
+              }
+            ]
+          }
+        }
+      ],
+      "payload": {
+        "session_id": "sess-bypass-filters",
+        "transcript_path": "{{transcript}}",
+        "cwd": "{{root}}",
+        "permission_mode": "default",
+        "hook_event_name": "PreToolUse",
+        "tool_name": "Edit",
+        "tool_input": {
+          "file_path": "{{root}}/src/rates/quotes.js",
+          "old_string": "  return x;",
+          "new_string": "  return Math.round(x * 100) / 100;"
+        },
+        "tool_use_id": "toolu_bypasssearchfilters_014"
+      },
+      "expect": "deny",
+      "mustDeny": true,
+      "redundant": false,
+      "relevantQuestions": [
+        "local-callers",
+        "quote-instruction"
+      ]
+    },
+    {
+      "id": "grep-of-piped-stdin",
+      "transcript": [
+        {
+          "type": "user",
+          "uuid": "bypass-search-filters-029",
+          "sessionId": "sess-bypass-filters",
+          "isSidechain": false,
+          "promptId": "prompt-filters-1",
+          "message": {
+            "role": "user",
+            "content": [
+              {
+                "type": "tool_result",
+                "tool_use_id": "toolu_bypasssearchfilters_014",
+                "content": "ok"
+              }
+            ]
+          }
+        },
+        {
+          "type": "assistant",
+          "uuid": "bypass-search-filters-030",
+          "sessionId": "sess-bypass-filters",
+          "isSidechain": false,
+          "message": {
+            "id": "msg_bypasssearchfilters_15",
+            "type": "message",
+            "role": "assistant",
+            "model": "claude-sonnet-4-5",
+            "content": [
+              {
+                "type": "tool_use",
+                "id": "toolu_bypasssearchfilters_015",
+                "name": "Bash",
+                "input": {
+                  "command": "cat src/rates/spread.js | grep -n spread"
+                }
+              }
+            ]
+          }
+        },
+        {
+          "type": "user",
+          "uuid": "bypass-search-filters-031",
+          "sessionId": "sess-bypass-filters",
+          "isSidechain": false,
+          "promptId": "prompt-filters-1",
+          "message": {
+            "role": "user",
+            "content": [
+              {
+                "type": "tool_result",
+                "tool_use_id": "toolu_bypasssearchfilters_015",
+                "content": "ok"
+              }
+            ]
+          }
+        },
+        {
+          "type": "assistant",
+          "uuid": "bypass-search-filters-032",
+          "sessionId": "sess-bypass-filters",
+          "isSidechain": false,
+          "message": {
+            "id": "msg_bypasssearchfilters_16",
+            "type": "message",
+            "role": "assistant",
+            "model": "claude-sonnet-4-5",
+            "content": [
+              {
+                "type": "tool_use",
+                "id": "toolu_bypasssearchfilters_016",
+                "name": "Edit",
+                "input": {
+                  "file_path": "{{root}}/src/rates/spread.js",
+                  "old_string": "  return x;",
+                  "new_string": "  return Math.round(x * 100) / 100;"
+                }
+              }
+            ]
+          }
+        }
+      ],
+      "payload": {
+        "session_id": "sess-bypass-filters",
+        "transcript_path": "{{transcript}}",
+        "cwd": "{{root}}",
+        "permission_mode": "default",
+        "hook_event_name": "PreToolUse",
+        "tool_name": "Edit",
+        "tool_input": {
+          "file_path": "{{root}}/src/rates/spread.js",
+          "old_string": "  return x;",
+          "new_string": "  return Math.round(x * 100) / 100;"
+        },
+        "tool_use_id": "toolu_bypasssearchfilters_016"
+      },
+      "expect": "deny",
+      "mustDeny": true,
+      "redundant": false,
+      "relevantQuestions": [
+        "local-callers",
+        "quote-instruction"
+      ]
+    },
+    {
+      "id": "grep-of-redirected-stdin",
+      "transcript": [
+        {
+          "type": "user",
+          "uuid": "bypass-search-filters-033",
+          "sessionId": "sess-bypass-filters",
+          "isSidechain": false,
+          "promptId": "prompt-filters-1",
+          "message": {
+            "role": "user",
+            "content": [
+              {
+                "type": "tool_result",
+                "tool_use_id": "toolu_bypasssearchfilters_016",
+                "content": "ok"
+              }
+            ]
+          }
+        },
+        {
+          "type": "assistant",
+          "uuid": "bypass-search-filters-034",
+          "sessionId": "sess-bypass-filters",
+          "isSidechain": false,
+          "message": {
+            "id": "msg_bypasssearchfilters_17",
+            "type": "message",
+            "role": "assistant",
+            "model": "claude-sonnet-4-5",
+            "content": [
+              {
+                "type": "tool_use",
+                "id": "toolu_bypasssearchfilters_017",
+                "name": "Bash",
+                "input": {
+                  "command": "grep -n margins < src/rates/margins.js"
+                }
+              }
+            ]
+          }
+        },
+        {
+          "type": "user",
+          "uuid": "bypass-search-filters-035",
+          "sessionId": "sess-bypass-filters",
+          "isSidechain": false,
+          "promptId": "prompt-filters-1",
+          "message": {
+            "role": "user",
+            "content": [
+              {
+                "type": "tool_result",
+                "tool_use_id": "toolu_bypasssearchfilters_017",
+                "content": "ok"
+              }
+            ]
+          }
+        },
+        {
+          "type": "assistant",
+          "uuid": "bypass-search-filters-036",
+          "sessionId": "sess-bypass-filters",
+          "isSidechain": false,
+          "message": {
+            "id": "msg_bypasssearchfilters_18",
+            "type": "message",
+            "role": "assistant",
+            "model": "claude-sonnet-4-5",
+            "content": [
+              {
+                "type": "tool_use",
+                "id": "toolu_bypasssearchfilters_018",
+                "name": "Edit",
+                "input": {
+                  "file_path": "{{root}}/src/rates/margins.js",
+                  "old_string": "  return x;",
+                  "new_string": "  return Math.round(x * 100) / 100;"
+                }
+              }
+            ]
+          }
+        }
+      ],
+      "payload": {
+        "session_id": "sess-bypass-filters",
+        "transcript_path": "{{transcript}}",
+        "cwd": "{{root}}",
+        "permission_mode": "default",
+        "hook_event_name": "PreToolUse",
+        "tool_name": "Edit",
+        "tool_input": {
+          "file_path": "{{root}}/src/rates/margins.js",
+          "old_string": "  return x;",
+          "new_string": "  return Math.round(x * 100) / 100;"
+        },
+        "tool_use_id": "toolu_bypasssearchfilters_018"
+      },
+      "expect": "deny",
+      "mustDeny": true,
+      "redundant": false,
+      "relevantQuestions": [
+        "local-callers",
+        "quote-instruction"
+      ]
+    },
+    {
+      "id": "search-of-the-target-itself",
+      "note": "Reading the target is not a search for its users.",
+      "transcript": [
+        {
+          "type": "user",
+          "uuid": "bypass-search-filters-037",
+          "sessionId": "sess-bypass-filters",
+          "isSidechain": false,
+          "promptId": "prompt-filters-1",
+          "message": {
+            "role": "user",
+            "content": [
+              {
+                "type": "tool_result",
+                "tool_use_id": "toolu_bypasssearchfilters_018",
+                "content": "ok"
+              }
+            ]
+          }
+        },
+        {
+          "type": "assistant",
+          "uuid": "bypass-search-filters-038",
+          "sessionId": "sess-bypass-filters",
+          "isSidechain": false,
+          "message": {
+            "id": "msg_bypasssearchfilters_19",
+            "type": "message",
+            "role": "assistant",
+            "model": "claude-sonnet-4-5",
+            "content": [
+              {
+                "type": "tool_use",
+                "id": "toolu_bypasssearchfilters_019",
+                "name": "Bash",
+                "input": {
+                  "command": "rg -n pricing src/rates/pricing.js"
+                }
+              }
+            ]
+          }
+        },
+        {
+          "type": "user",
+          "uuid": "bypass-search-filters-039",
+          "sessionId": "sess-bypass-filters",
+          "isSidechain": false,
+          "promptId": "prompt-filters-1",
+          "message": {
+            "role": "user",
+            "content": [
+              {
+                "type": "tool_result",
+                "tool_use_id": "toolu_bypasssearchfilters_019",
+                "content": "ok"
+              }
+            ]
+          }
+        },
+        {
+          "type": "assistant",
+          "uuid": "bypass-search-filters-040",
+          "sessionId": "sess-bypass-filters",
+          "isSidechain": false,
+          "message": {
+            "id": "msg_bypasssearchfilters_20",
+            "type": "message",
+            "role": "assistant",
+            "model": "claude-sonnet-4-5",
+            "content": [
+              {
+                "type": "tool_use",
+                "id": "toolu_bypasssearchfilters_020",
+                "name": "Edit",
+                "input": {
+                  "file_path": "{{root}}/src/rates/pricing.js",
+                  "old_string": "  return x;",
+                  "new_string": "  return Math.round(x * 100) / 100;"
+                }
+              }
+            ]
+          }
+        }
+      ],
+      "payload": {
+        "session_id": "sess-bypass-filters",
+        "transcript_path": "{{transcript}}",
+        "cwd": "{{root}}",
+        "permission_mode": "default",
+        "hook_event_name": "PreToolUse",
+        "tool_name": "Edit",
+        "tool_input": {
+          "file_path": "{{root}}/src/rates/pricing.js",
+          "old_string": "  return x;",
+          "new_string": "  return Math.round(x * 100) / 100;"
+        },
+        "tool_use_id": "toolu_bypasssearchfilters_020"
+      },
+      "expect": "deny",
+      "mustDeny": true,
+      "redundant": false,
+      "relevantQuestions": [
+        "local-callers",
+        "quote-instruction"
+      ]
+    },
+    {
+      "id": "search-of-another-directory",
+      "transcript": [
+        {
+          "type": "user",
+          "uuid": "bypass-search-filters-041",
+          "sessionId": "sess-bypass-filters",
+          "isSidechain": false,
+          "promptId": "prompt-filters-1",
+          "message": {
+            "role": "user",
+            "content": [
+              {
+                "type": "tool_result",
+                "tool_use_id": "toolu_bypasssearchfilters_020",
+                "content": "ok"
+              }
+            ]
+          }
+        },
+        {
+          "type": "assistant",
+          "uuid": "bypass-search-filters-042",
+          "sessionId": "sess-bypass-filters",
+          "isSidechain": false,
+          "message": {
+            "id": "msg_bypasssearchfilters_21",
+            "type": "message",
+            "role": "assistant",
+            "model": "claude-sonnet-4-5",
+            "content": [
+              {
+                "type": "tool_use",
+                "id": "toolu_bypasssearchfilters_021",
+                "name": "Bash",
+                "input": {
+                  "command": "rg -n fallback lib"
+                }
+              }
+            ]
+          }
+        },
+        {
+          "type": "user",
+          "uuid": "bypass-search-filters-043",
+          "sessionId": "sess-bypass-filters",
+          "isSidechain": false,
+          "promptId": "prompt-filters-1",
+          "message": {
+            "role": "user",
+            "content": [
+              {
+                "type": "tool_result",
+                "tool_use_id": "toolu_bypasssearchfilters_021",
+                "content": "ok"
+              }
+            ]
+          }
+        },
+        {
+          "type": "assistant",
+          "uuid": "bypass-search-filters-044",
+          "sessionId": "sess-bypass-filters",
+          "isSidechain": false,
+          "message": {
+            "id": "msg_bypasssearchfilters_22",
+            "type": "message",
+            "role": "assistant",
+            "model": "claude-sonnet-4-5",
+            "content": [
+              {
+                "type": "tool_use",
+                "id": "toolu_bypasssearchfilters_022",
+                "name": "Edit",
+                "input": {
+                  "file_path": "{{root}}/src/rates/fallback.js",
+                  "old_string": "  return x;",
+                  "new_string": "  return Math.round(x * 100) / 100;"
+                }
+              }
+            ]
+          }
+        }
+      ],
+      "payload": {
+        "session_id": "sess-bypass-filters",
+        "transcript_path": "{{transcript}}",
+        "cwd": "{{root}}",
+        "permission_mode": "default",
+        "hook_event_name": "PreToolUse",
+        "tool_name": "Edit",
+        "tool_input": {
+          "file_path": "{{root}}/src/rates/fallback.js",
+          "old_string": "  return x;",
+          "new_string": "  return Math.round(x * 100) / 100;"
+        },
+        "tool_use_id": "toolu_bypasssearchfilters_022"
+      },
+      "expect": "deny",
+      "mustDeny": true,
+      "redundant": false,
+      "relevantQuestions": [
+        "local-callers",
+        "quote-instruction"
+      ]
+    },
+    {
+      "id": "generic-stem",
+      "transcript": [
+        {
+          "type": "user",
+          "uuid": "bypass-search-filters-045",
+          "sessionId": "sess-bypass-filters",
+          "isSidechain": false,
+          "promptId": "prompt-filters-1",
+          "message": {
+            "role": "user",
+            "content": [
+              {
+                "type": "tool_result",
+                "tool_use_id": "toolu_bypasssearchfilters_022",
+                "content": "ok"
+              }
+            ]
+          }
+        },
+        {
+          "type": "assistant",
+          "uuid": "bypass-search-filters-046",
+          "sessionId": "sess-bypass-filters",
+          "isSidechain": false,
+          "message": {
+            "id": "msg_bypasssearchfilters_23",
+            "type": "message",
+            "role": "assistant",
+            "model": "claude-sonnet-4-5",
+            "content": [
+              {
+                "type": "tool_use",
+                "id": "toolu_bypasssearchfilters_023",
+                "name": "Bash",
+                "input": {
+                  "command": "rg -n index src/rates"
+                }
+              }
+            ]
+          }
+        },
+        {
+          "type": "user",
+          "uuid": "bypass-search-filters-047",
+          "sessionId": "sess-bypass-filters",
+          "isSidechain": false,
+          "promptId": "prompt-filters-1",
+          "message": {
+            "role": "user",
+            "content": [
+              {
+                "type": "tool_result",
+                "tool_use_id": "toolu_bypasssearchfilters_023",
+                "content": "ok"
+              }
+            ]
+          }
+        },
+        {
+          "type": "assistant",
+          "uuid": "bypass-search-filters-048",
+          "sessionId": "sess-bypass-filters",
+          "isSidechain": false,
+          "message": {
+            "id": "msg_bypasssearchfilters_24",
+            "type": "message",
+            "role": "assistant",
+            "model": "claude-sonnet-4-5",
+            "content": [
+              {
+                "type": "tool_use",
+                "id": "toolu_bypasssearchfilters_024",
+                "name": "Edit",
+                "input": {
+                  "file_path": "{{root}}/src/rates/index.js",
+                  "old_string": "  return x;",
+                  "new_string": "  return Math.round(x * 100) / 100;"
+                }
+              }
+            ]
+          }
+        }
+      ],
+      "payload": {
+        "session_id": "sess-bypass-filters",
+        "transcript_path": "{{transcript}}",
+        "cwd": "{{root}}",
+        "permission_mode": "default",
+        "hook_event_name": "PreToolUse",
+        "tool_name": "Edit",
+        "tool_input": {
+          "file_path": "{{root}}/src/rates/index.js",
+          "old_string": "  return x;",
+          "new_string": "  return Math.round(x * 100) / 100;"
+        },
+        "tool_use_id": "toolu_bypasssearchfilters_024"
+      },
+      "expect": "deny",
+      "mustDeny": true,
+      "redundant": false,
+      "relevantQuestions": [
+        "local-callers",
+        "quote-instruction"
+      ]
+    },
+    {
+      "id": "include-glob-misses-target",
+      "transcript": [
+        {
+          "type": "user",
+          "uuid": "bypass-search-filters-049",
+          "sessionId": "sess-bypass-filters",
+          "isSidechain": false,
+          "promptId": "prompt-filters-1",
+          "message": {
+            "role": "user",
+            "content": [
+              {
+                "type": "tool_result",
+                "tool_use_id": "toolu_bypasssearchfilters_024",
+                "content": "ok"
+              }
+            ]
+          }
+        },
+        {
+          "type": "assistant",
+          "uuid": "bypass-search-filters-050",
+          "sessionId": "sess-bypass-filters",
+          "isSidechain": false,
+          "message": {
+            "id": "msg_bypasssearchfilters_25",
+            "type": "message",
+            "role": "assistant",
+            "model": "claude-sonnet-4-5",
+            "content": [
+              {
+                "type": "tool_use",
+                "id": "toolu_bypasssearchfilters_025",
+                "name": "Grep",
+                "input": {
+                  "pattern": "tariff",
+                  "path": "{{root}}/src",
+                  "glob": "*.py"
+                }
+              }
+            ]
+          }
+        },
+        {
+          "type": "user",
+          "uuid": "bypass-search-filters-051",
+          "sessionId": "sess-bypass-filters",
+          "isSidechain": false,
+          "promptId": "prompt-filters-1",
+          "message": {
+            "role": "user",
+            "content": [
+              {
+                "type": "tool_result",
+                "tool_use_id": "toolu_bypasssearchfilters_025",
+                "content": "ok"
+              }
+            ]
+          }
+        },
+        {
+          "type": "assistant",
+          "uuid": "bypass-search-filters-052",
+          "sessionId": "sess-bypass-filters",
+          "isSidechain": false,
+          "message": {
+            "id": "msg_bypasssearchfilters_26",
+            "type": "message",
+            "role": "assistant",
+            "model": "claude-sonnet-4-5",
+            "content": [
+              {
+                "type": "tool_use",
+                "id": "toolu_bypasssearchfilters_026",
+                "name": "Edit",
+                "input": {
+                  "file_path": "{{root}}/src/rates/tariff.js",
+                  "old_string": "  return x;",
+                  "new_string": "  return Math.round(x * 100) / 100;"
+                }
+              }
+            ]
+          }
+        }
+      ],
+      "payload": {
+        "session_id": "sess-bypass-filters",
+        "transcript_path": "{{transcript}}",
+        "cwd": "{{root}}",
+        "permission_mode": "default",
+        "hook_event_name": "PreToolUse",
+        "tool_name": "Edit",
+        "tool_input": {
+          "file_path": "{{root}}/src/rates/tariff.js",
+          "old_string": "  return x;",
+          "new_string": "  return Math.round(x * 100) / 100;"
+        },
+        "tool_use_id": "toolu_bypasssearchfilters_026"
+      },
+      "expect": "deny",
+      "mustDeny": true,
+      "redundant": false,
+      "relevantQuestions": [
+        "local-callers",
+        "quote-instruction"
+      ]
+    },
+    {
+      "id": "find-negated-name",
+      "transcript": [
+        {
+          "type": "user",
+          "uuid": "bypass-search-filters-053",
+          "sessionId": "sess-bypass-filters",
+          "isSidechain": false,
+          "promptId": "prompt-filters-1",
+          "message": {
+            "role": "user",
+            "content": [
+              {
+                "type": "tool_result",
+                "tool_use_id": "toolu_bypasssearchfilters_026",
+                "content": "ok"
+              }
+            ]
+          }
+        },
+        {
+          "type": "assistant",
+          "uuid": "bypass-search-filters-054",
+          "sessionId": "sess-bypass-filters",
+          "isSidechain": false,
+          "message": {
+            "id": "msg_bypasssearchfilters_27",
+            "type": "message",
+            "role": "assistant",
+            "model": "claude-sonnet-4-5",
+            "content": [
+              {
+                "type": "tool_use",
+                "id": "toolu_bypasssearchfilters_027",
+                "name": "Bash",
+                "input": {
+                  "command": "find src -not -name 'bands.js' -name '*.js'"
+                }
+              }
+            ]
+          }
+        },
+        {
+          "type": "user",
+          "uuid": "bypass-search-filters-055",
+          "sessionId": "sess-bypass-filters",
+          "isSidechain": false,
+          "promptId": "prompt-filters-1",
+          "message": {
+            "role": "user",
+            "content": [
+              {
+                "type": "tool_result",
+                "tool_use_id": "toolu_bypasssearchfilters_027",
+                "content": "ok"
+              }
+            ]
+          }
+        },
+        {
+          "type": "assistant",
+          "uuid": "bypass-search-filters-056",
+          "sessionId": "sess-bypass-filters",
+          "isSidechain": false,
+          "message": {
+            "id": "msg_bypasssearchfilters_28",
+            "type": "message",
+            "role": "assistant",
+            "model": "claude-sonnet-4-5",
+            "content": [
+              {
+                "type": "tool_use",
+                "id": "toolu_bypasssearchfilters_028",
+                "name": "Edit",
+                "input": {
+                  "file_path": "{{root}}/src/rates/bands.js",
+                  "old_string": "  return x;",
+                  "new_string": "  return Math.round(x * 100) / 100;"
+                }
+              }
+            ]
+          }
+        }
+      ],
+      "payload": {
+        "session_id": "sess-bypass-filters",
+        "transcript_path": "{{transcript}}",
+        "cwd": "{{root}}",
+        "permission_mode": "default",
+        "hook_event_name": "PreToolUse",
+        "tool_name": "Edit",
+        "tool_input": {
+          "file_path": "{{root}}/src/rates/bands.js",
+          "old_string": "  return x;",
+          "new_string": "  return Math.round(x * 100) / 100;"
+        },
+        "tool_use_id": "toolu_bypasssearchfilters_028"
+      },
+      "expect": "deny",
+      "mustDeny": true,
+      "redundant": false,
+      "relevantQuestions": [
+        "local-callers",
+        "quote-instruction"
+      ]
+    },
+    {
+      "id": "exclusion-elsewhere-still-credits",
+      "note": "Control: the filter does not cover the target, so the search counts.",
+      "transcript": [
+        {
+          "type": "user",
+          "uuid": "bypass-search-filters-057",
+          "sessionId": "sess-bypass-filters",
+          "isSidechain": false,
+          "promptId": "prompt-filters-1",
+          "message": {
+            "role": "user",
+            "content": [
+              {
+                "type": "tool_result",
+                "tool_use_id": "toolu_bypasssearchfilters_028",
+                "content": "ok"
+              }
+            ]
+          }
+        },
+        {
+          "type": "assistant",
+          "uuid": "bypass-search-filters-058",
+          "sessionId": "sess-bypass-filters",
+          "isSidechain": false,
+          "message": {
+            "id": "msg_bypasssearchfilters_29",
+            "type": "message",
+            "role": "assistant",
+            "model": "claude-sonnet-4-5",
+            "content": [
+              {
+                "type": "tool_use",
+                "id": "toolu_bypasssearchfilters_029",
+                "name": "Bash",
+                "input": {
+                  "command": "rg -n settle -g '!src/legacy/**' src"
+                }
+              }
+            ]
+          }
+        },
+        {
+          "type": "user",
+          "uuid": "bypass-search-filters-059",
+          "sessionId": "sess-bypass-filters",
+          "isSidechain": false,
+          "promptId": "prompt-filters-1",
+          "message": {
+            "role": "user",
+            "content": [
+              {
+                "type": "tool_result",
+                "tool_use_id": "toolu_bypasssearchfilters_029",
+                "content": "ok"
+              }
+            ]
+          }
+        },
+        {
+          "type": "assistant",
+          "uuid": "bypass-search-filters-060",
+          "sessionId": "sess-bypass-filters",
+          "isSidechain": false,
+          "message": {
+            "id": "msg_bypasssearchfilters_30",
+            "type": "message",
+            "role": "assistant",
+            "model": "claude-sonnet-4-5",
+            "content": [
+              {
+                "type": "tool_use",
+                "id": "toolu_bypasssearchfilters_030",
+                "name": "Edit",
+                "input": {
+                  "file_path": "{{root}}/src/rates/settle.js",
+                  "old_string": "  return x;",
+                  "new_string": "  return Math.round(x * 100) / 100;"
+                }
+              }
+            ]
+          }
+        }
+      ],
+      "payload": {
+        "session_id": "sess-bypass-filters",
+        "transcript_path": "{{transcript}}",
+        "cwd": "{{root}}",
+        "permission_mode": "default",
+        "hook_event_name": "PreToolUse",
+        "tool_name": "Edit",
+        "tool_input": {
+          "file_path": "{{root}}/src/rates/settle.js",
+          "old_string": "  return x;",
+          "new_string": "  return Math.round(x * 100) / 100;"
+        },
+        "tool_use_id": "toolu_bypasssearchfilters_030"
+      },
+      "expect": "allow",
+      "mustDeny": false,
+      "redundant": true,
+      "relevantQuestions": [
+        "local-callers",
+        "quote-instruction"
+      ]
+    },
+    {
+      "id": "powershell-filter-names-target",
+      "note": "Control: the filter does not cover the target, so the search counts.",
+      "transcript": [
+        {
+          "type": "user",
+          "uuid": "bypass-search-filters-061",
+          "sessionId": "sess-bypass-filters",
+          "isSidechain": false,
+          "promptId": "prompt-filters-1",
+          "message": {
+            "role": "user",
+            "content": [
+              {
+                "type": "tool_result",
+                "tool_use_id": "toolu_bypasssearchfilters_030",
+                "content": "ok"
+              }
+            ]
+          }
+        },
+        {
+          "type": "assistant",
+          "uuid": "bypass-search-filters-062",
+          "sessionId": "sess-bypass-filters",
+          "isSidechain": false,
+          "message": {
+            "id": "msg_bypasssearchfilters_31",
+            "type": "message",
+            "role": "assistant",
+            "model": "claude-sonnet-4-5",
+            "content": [
+              {
+                "type": "tool_use",
+                "id": "toolu_bypasssearchfilters_031",
+                "name": "PowerShell",
+                "input": {
+                  "command": "Get-ChildItem -Path src -Recurse -Exclude *.md -Filter clearing*"
+                }
+              }
+            ]
+          }
+        },
+        {
+          "type": "user",
+          "uuid": "bypass-search-filters-063",
+          "sessionId": "sess-bypass-filters",
+          "isSidechain": false,
+          "promptId": "prompt-filters-1",
+          "message": {
+            "role": "user",
+            "content": [
+              {
+                "type": "tool_result",
+                "tool_use_id": "toolu_bypasssearchfilters_031",
+                "content": "ok"
+              }
+            ]
+          }
+        },
+        {
+          "type": "assistant",
+          "uuid": "bypass-search-filters-064",
+          "sessionId": "sess-bypass-filters",
+          "isSidechain": false,
+          "message": {
+            "id": "msg_bypasssearchfilters_32",
+            "type": "message",
+            "role": "assistant",
+            "model": "claude-sonnet-4-5",
+            "content": [
+              {
+                "type": "tool_use",
+                "id": "toolu_bypasssearchfilters_032",
+                "name": "Edit",
+                "input": {
+                  "file_path": "{{root}}/src/rates/clearing.js",
+                  "old_string": "  return x;",
+                  "new_string": "  return Math.round(x * 100) / 100;"
+                }
+              }
+            ]
+          }
+        }
+      ],
+      "payload": {
+        "session_id": "sess-bypass-filters",
+        "transcript_path": "{{transcript}}",
+        "cwd": "{{root}}",
+        "permission_mode": "default",
+        "hook_event_name": "PreToolUse",
+        "tool_name": "Edit",
+        "tool_input": {
+          "file_path": "{{root}}/src/rates/clearing.js",
+          "old_string": "  return x;",
+          "new_string": "  return Math.round(x * 100) / 100;"
+        },
+        "tool_use_id": "toolu_bypasssearchfilters_032"
+      },
+      "expect": "allow",
+      "mustDeny": false,
+      "redundant": true,
+      "relevantQuestions": [
+        "local-callers",
+        "quote-instruction"
+      ]
+    },
+    {
+      "id": "include-glob-matches-target",
+      "note": "Control: the filter does not cover the target, so the search counts.",
+      "transcript": [
+        {
+          "type": "user",
+          "uuid": "bypass-search-filters-065",
+          "sessionId": "sess-bypass-filters",
+          "isSidechain": false,
+          "promptId": "prompt-filters-1",
+          "message": {
+            "role": "user",
+            "content": [
+              {
+                "type": "tool_result",
+                "tool_use_id": "toolu_bypasssearchfilters_032",
+                "content": "ok"
+              }
+            ]
+          }
+        },
+        {
+          "type": "assistant",
+          "uuid": "bypass-search-filters-066",
+          "sessionId": "sess-bypass-filters",
+          "isSidechain": false,
+          "message": {
+            "id": "msg_bypasssearchfilters_33",
+            "type": "message",
+            "role": "assistant",
+            "model": "claude-sonnet-4-5",
+            "content": [
+              {
+                "type": "tool_use",
+                "id": "toolu_bypasssearchfilters_033",
+                "name": "Grep",
+                "input": {
+                  "pattern": "netting",
+                  "path": "{{root}}/src",
+                  "glob": "*.js"
+                }
+              }
+            ]
+          }
+        },
+        {
+          "type": "user",
+          "uuid": "bypass-search-filters-067",
+          "sessionId": "sess-bypass-filters",
+          "isSidechain": false,
+          "promptId": "prompt-filters-1",
+          "message": {
+            "role": "user",
+            "content": [
+              {
+                "type": "tool_result",
+                "tool_use_id": "toolu_bypasssearchfilters_033",
+                "content": "ok"
+              }
+            ]
+          }
+        },
+        {
+          "type": "assistant",
+          "uuid": "bypass-search-filters-068",
+          "sessionId": "sess-bypass-filters",
+          "isSidechain": false,
+          "message": {
+            "id": "msg_bypasssearchfilters_34",
+            "type": "message",
+            "role": "assistant",
+            "model": "claude-sonnet-4-5",
+            "content": [
+              {
+                "type": "tool_use",
+                "id": "toolu_bypasssearchfilters_034",
+                "name": "Edit",
+                "input": {
+                  "file_path": "{{root}}/src/rates/netting.js",
+                  "old_string": "  return x;",
+                  "new_string": "  return Math.round(x * 100) / 100;"
+                }
+              }
+            ]
+          }
+        }
+      ],
+      "payload": {
+        "session_id": "sess-bypass-filters",
+        "transcript_path": "{{transcript}}",
+        "cwd": "{{root}}",
+        "permission_mode": "default",
+        "hook_event_name": "PreToolUse",
+        "tool_name": "Edit",
+        "tool_input": {
+          "file_path": "{{root}}/src/rates/netting.js",
+          "old_string": "  return x;",
+          "new_string": "  return Math.round(x * 100) / 100;"
+        },
+        "tool_use_id": "toolu_bypasssearchfilters_034"
+      },
+      "expect": "allow",
+      "mustDeny": false,
+      "redundant": true,
+      "relevantQuestions": [
+        "local-callers",
+        "quote-instruction"
+      ]
+    },
+    {
+      "id": "path-include-other-directory",
+      "note": "A directory-qualified include limits the search to another directory.",
+      "transcript": [
+        {
+          "type": "user",
+          "uuid": "bypass-search-filters-069",
+          "sessionId": "sess-bypass-filters",
+          "isSidechain": false,
+          "promptId": "prompt-filters-1",
+          "message": {
+            "role": "user",
+            "content": [
+              {
+                "type": "tool_result",
+                "tool_use_id": "toolu_bypasssearchfilters_034",
+                "content": "ok"
+              }
+            ]
+          }
+        },
+        {
+          "type": "assistant",
+          "uuid": "bypass-search-filters-070",
+          "sessionId": "sess-bypass-filters",
+          "isSidechain": false,
+          "message": {
+            "id": "msg_bypasssearchfilters_35",
+            "type": "message",
+            "role": "assistant",
+            "model": "claude-sonnet-4-5",
+            "content": [
+              {
+                "type": "tool_use",
+                "id": "toolu_bypasssearchfilters_035",
+                "name": "Bash",
+                "input": {
+                  "command": "rg -g 'src/**' sweep ."
+                }
+              }
+            ]
+          }
+        },
+        {
+          "type": "user",
+          "uuid": "bypass-search-filters-071",
+          "sessionId": "sess-bypass-filters",
+          "isSidechain": false,
+          "promptId": "prompt-filters-1",
+          "message": {
+            "role": "user",
+            "content": [
+              {
+                "type": "tool_result",
+                "tool_use_id": "toolu_bypasssearchfilters_035",
+                "content": "ok"
+              }
+            ]
+          }
+        },
+        {
+          "type": "assistant",
+          "uuid": "bypass-search-filters-072",
+          "sessionId": "sess-bypass-filters",
+          "isSidechain": false,
+          "message": {
+            "id": "msg_bypasssearchfilters_36",
+            "type": "message",
+            "role": "assistant",
+            "model": "claude-sonnet-4-5",
+            "content": [
+              {
+                "type": "tool_use",
+                "id": "toolu_bypasssearchfilters_036",
+                "name": "Edit",
+                "input": {
+                  "file_path": "{{root}}/lib/rates/sweep.js",
+                  "old_string": "  return x;",
+                  "new_string": "  return Math.round(x * 100) / 100;"
+                }
+              }
+            ]
+          }
+        }
+      ],
+      "payload": {
+        "session_id": "sess-bypass-filters",
+        "transcript_path": "{{transcript}}",
+        "cwd": "{{root}}",
+        "permission_mode": "default",
+        "hook_event_name": "PreToolUse",
+        "tool_name": "Edit",
+        "tool_input": {
+          "file_path": "{{root}}/lib/rates/sweep.js",
+          "old_string": "  return x;",
+          "new_string": "  return Math.round(x * 100) / 100;"
+        },
+        "tool_use_id": "toolu_bypasssearchfilters_036"
+      },
+      "expect": "deny",
+      "mustDeny": true,
+      "redundant": false,
+      "relevantQuestions": [
+        "local-callers",
+        "quote-instruction"
+      ]
+    },
+    {
+      "id": "path-include-matches-target",
+      "note": "Control: the directory-qualified include covers the target, so the search counts.",
+      "transcript": [
+        {
+          "type": "user",
+          "uuid": "bypass-search-filters-073",
+          "sessionId": "sess-bypass-filters",
+          "isSidechain": false,
+          "promptId": "prompt-filters-1",
+          "message": {
+            "role": "user",
+            "content": [
+              {
+                "type": "tool_result",
+                "tool_use_id": "toolu_bypasssearchfilters_036",
+                "content": "ok"
+              }
+            ]
+          }
+        },
+        {
+          "type": "assistant",
+          "uuid": "bypass-search-filters-074",
+          "sessionId": "sess-bypass-filters",
+          "isSidechain": false,
+          "message": {
+            "id": "msg_bypasssearchfilters_37",
+            "type": "message",
+            "role": "assistant",
+            "model": "claude-sonnet-4-5",
+            "content": [
+              {
+                "type": "tool_use",
+                "id": "toolu_bypasssearchfilters_037",
+                "name": "Bash",
+                "input": {
+                  "command": "rg -g 'src/**' sweep ."
+                }
+              }
+            ]
+          }
+        },
+        {
+          "type": "user",
+          "uuid": "bypass-search-filters-075",
+          "sessionId": "sess-bypass-filters",
+          "isSidechain": false,
+          "promptId": "prompt-filters-1",
+          "message": {
+            "role": "user",
+            "content": [
+              {
+                "type": "tool_result",
+                "tool_use_id": "toolu_bypasssearchfilters_037",
+                "content": "ok"
+              }
+            ]
+          }
+        },
+        {
+          "type": "assistant",
+          "uuid": "bypass-search-filters-076",
+          "sessionId": "sess-bypass-filters",
+          "isSidechain": false,
+          "message": {
+            "id": "msg_bypasssearchfilters_38",
+            "type": "message",
+            "role": "assistant",
+            "model": "claude-sonnet-4-5",
+            "content": [
+              {
+                "type": "tool_use",
+                "id": "toolu_bypasssearchfilters_038",
+                "name": "Edit",
+                "input": {
+                  "file_path": "{{root}}/src/rates/sweep.js",
+                  "old_string": "  return x;",
+                  "new_string": "  return Math.round(x * 100) / 100;"
+                }
+              }
+            ]
+          }
+        }
+      ],
+      "payload": {
+        "session_id": "sess-bypass-filters",
+        "transcript_path": "{{transcript}}",
+        "cwd": "{{root}}",
+        "permission_mode": "default",
+        "hook_event_name": "PreToolUse",
+        "tool_name": "Edit",
+        "tool_input": {
+          "file_path": "{{root}}/src/rates/sweep.js",
+          "old_string": "  return x;",
+          "new_string": "  return Math.round(x * 100) / 100;"
+        },
+        "tool_use_id": "toolu_bypasssearchfilters_038"
+      },
+      "expect": "allow",
+      "mustDeny": false,
+      "redundant": true,
+      "relevantQuestions": [
+        "local-callers",
+        "quote-instruction"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,336 @@
+{
+  "name": "exported-members",
+  "description": "Edits to members of exported containers whose declaration line is outside the snippet.",
+  "files": {
+    "src/api/options.ts": "export interface Options {\n  timeout: number;\n  retries: number;\n}\n",
+    "src/api/color.ts": "export enum Color {\n  Red,\n  Green,\n}\n",
+    "src/api/index.js": "module.exports = {\n  parse,\n  format,\n};\n",
+    "pkg/settings.py": "from dataclasses import dataclass\n\n\n@dataclass\nclass Settings:\n    timeout: int = 5\n    retries: int = 3\n",
+    "crates/api/src/kind.rs": "pub enum Kind {\n    Small,\n    Large,\n}\n",
+    "src/api/client.ts": "export class Client {\n  get(path: string) {\n    return fetchIt(path);\n  }\n}\n"
+  },
+  "steps": [
+    {
+      "id": "ts-interface-member",
+      "note": "A property of an exported interface is public API.",
+      "transcript": [
+        {
+          "type": "user",
+          "uuid": "exported-members-000",
+          "sessionId": "sess-exported-members",
+          "isSidechain": false,
+          "promptId": "prompt-exportedmembers-1",
+          "message": {
+            "role": "user",
+            "content": "Update the API option types and enums."
+          }
+        },
+        {
+          "type": "assistant",
+          "uuid": "exported-members-001",
+          "sessionId": "sess-exported-members",
+          "isSidechain": false,
+          "message": {
+            "id": "msg_exportedmembers_01",
+            "type": "message",
+            "role": "assistant",
+            "model": "claude-sonnet-4-5",
+            "content": [
+              {
+                "type": "tool_use",
+                "id": "toolu_exportedmembers_001",
+                "name": "Edit",
+                "input": {
+                  "file_path": "{{root}}/src/api/options.ts",
+                  "old_string": "  timeout: number;",
+                  "new_string": "  timeout?: number;"
+                }
+              }
+            ]
+          }
+        }
+      ],
+      "payload": {
+        "session_id": "sess-exported-members",
+        "transcript_path": "{{transcript}}",
+        "cwd": "{{root}}",
+        "permission_mode": "default",
+        "hook_event_name": "PreToolUse",
+        "tool_name": "Edit",
+        "tool_input": {
+          "file_path": "{{root}}/src/api/options.ts",
+          "old_string": "  timeout: number;",
+          "new_string": "  timeout?: number;"
+        },
+        "tool_use_id": "toolu_exportedmembers_001"
+      },
+      "expect": "deny",
+      "mustDeny": false,
+      "redundant": false,
+      "relevantQuestions": [
+        "importers",
+        "public-api",
+        "quote-instruction"
+      ]
+    },
+    {
+      "id": "ts-enum-variant",
+      "note": "Removing a variant of an exported enum breaks importers.",
+      "transcript": [
+        {
+          "type": "assistant",
+          "uuid": "exported-members-002",
+          "sessionId": "sess-exported-members",
+          "isSidechain": false,
+          "message": {
+            "id": "msg_exportedmembers_02",
+            "type": "message",
+            "role": "assistant",
+            "model": "claude-sonnet-4-5",
+            "content": [
+              {
+                "type": "tool_use",
+                "id": "toolu_exportedmembers_002",
+                "name": "Edit",
+                "input": {
+                  "file_path": "{{root}}/src/api/color.ts",
+                  "old_string": "  Green,\n",
+                  "new_string": ""
+                }
+              }
+            ]
+          }
+        }
+      ],
+      "payload": {
+        "session_id": "sess-exported-members",
+        "transcript_path": "{{transcript}}",
+        "cwd": "{{root}}",
+        "permission_mode": "default",
+        "hook_event_name": "PreToolUse",
+        "tool_name": "Edit",
+        "tool_input": {
+          "file_path": "{{root}}/src/api/color.ts",
+          "old_string": "  Green,\n",
+          "new_string": ""
+        },
+        "tool_use_id": "toolu_exportedmembers_002"
+      },
+      "expect": "deny",
+      "mustDeny": false,
+      "redundant": false,
+      "relevantQuestions": [
+        "importers",
+        "public-api",
+        "quote-instruction"
+      ]
+    },
+    {
+      "id": "js-export-list-entry",
+      "note": "Dropping a name from module.exports.",
+      "transcript": [
+        {
+          "type": "assistant",
+          "uuid": "exported-members-003",
+          "sessionId": "sess-exported-members",
+          "isSidechain": false,
+          "message": {
+            "id": "msg_exportedmembers_03",
+            "type": "message",
+            "role": "assistant",
+            "model": "claude-sonnet-4-5",
+            "content": [
+              {
+                "type": "tool_use",
+                "id": "toolu_exportedmembers_003",
+                "name": "Edit",
+                "input": {
+                  "file_path": "{{root}}/src/api/index.js",
+                  "old_string": "  format,\n",
+                  "new_string": ""
+                }
+              }
+            ]
+          }
+        }
+      ],
+      "payload": {
+        "session_id": "sess-exported-members",
+        "transcript_path": "{{transcript}}",
+        "cwd": "{{root}}",
+        "permission_mode": "default",
+        "hook_event_name": "PreToolUse",
+        "tool_name": "Edit",
+        "tool_input": {
+          "file_path": "{{root}}/src/api/index.js",
+          "old_string": "  format,\n",
+          "new_string": ""
+        },
+        "tool_use_id": "toolu_exportedmembers_003"
+      },
+      "expect": "deny",
+      "mustDeny": false,
+      "redundant": false,
+      "relevantQuestions": [
+        "importers",
+        "public-api",
+        "quote-instruction"
+      ]
+    },
+    {
+      "id": "py-dataclass-field",
+      "note": "A dataclass field is part of the constructor.",
+      "transcript": [
+        {
+          "type": "assistant",
+          "uuid": "exported-members-004",
+          "sessionId": "sess-exported-members",
+          "isSidechain": false,
+          "message": {
+            "id": "msg_exportedmembers_04",
+            "type": "message",
+            "role": "assistant",
+            "model": "claude-sonnet-4-5",
+            "content": [
+              {
+                "type": "tool_use",
+                "id": "toolu_exportedmembers_004",
+                "name": "Edit",
+                "input": {
+                  "file_path": "{{root}}/pkg/settings.py",
+                  "old_string": "    timeout: int = 5",
+                  "new_string": "    timeout: float = 5.0"
+                }
+              }
+            ]
+          }
+        }
+      ],
+      "payload": {
+        "session_id": "sess-exported-members",
+        "transcript_path": "{{transcript}}",
+        "cwd": "{{root}}",
+        "permission_mode": "default",
+        "hook_event_name": "PreToolUse",
+        "tool_name": "Edit",
+        "tool_input": {
+          "file_path": "{{root}}/pkg/settings.py",
+          "old_string": "    timeout: int = 5",
+          "new_string": "    timeout: float = 5.0"
+        },
+        "tool_use_id": "toolu_exportedmembers_004"
+      },
+      "expect": "deny",
+      "mustDeny": false,
+      "redundant": false,
+      "relevantQuestions": [
+        "importers",
+        "public-api",
+        "quote-instruction"
+      ]
+    },
+    {
+      "id": "rust-pub-enum-variant",
+      "note": "Removing a variant of a pub enum breaks callers.",
+      "transcript": [
+        {
+          "type": "assistant",
+          "uuid": "exported-members-005",
+          "sessionId": "sess-exported-members",
+          "isSidechain": false,
+          "message": {
+            "id": "msg_exportedmembers_05",
+            "type": "message",
+            "role": "assistant",
+            "model": "claude-sonnet-4-5",
+            "content": [
+              {
+                "type": "tool_use",
+                "id": "toolu_exportedmembers_005",
+                "name": "Edit",
+                "input": {
+                  "file_path": "{{root}}/crates/api/src/kind.rs",
+                  "old_string": "    Large,\n",
+                  "new_string": ""
+                }
+              }
+            ]
+          }
+        }
+      ],
+      "payload": {
+        "session_id": "sess-exported-members",
+        "transcript_path": "{{transcript}}",
+        "cwd": "{{root}}",
+        "permission_mode": "default",
+        "hook_event_name": "PreToolUse",
+        "tool_name": "Edit",
+        "tool_input": {
+          "file_path": "{{root}}/crates/api/src/kind.rs",
+          "old_string": "    Large,\n",
+          "new_string": ""
+        },
+        "tool_use_id": "toolu_exportedmembers_005"
+      },
+      "expect": "deny",
+      "mustDeny": false,
+      "redundant": false,
+      "relevantQuestions": [
+        "importers",
+        "public-api",
+        "quote-instruction"
+      ]
+    },
+    {
+      "id": "ts-method-body",
+      "note": "A method body of an exported class stays a local change.",
+      "transcript": [
+        {
+          "type": "assistant",
+          "uuid": "exported-members-006",
+          "sessionId": "sess-exported-members",
+          "isSidechain": false,
+          "message": {
+            "id": "msg_exportedmembers_06",
+            "type": "message",
+            "role": "assistant",
+            "model": "claude-sonnet-4-5",
+            "content": [
+              {
+                "type": "tool_use",
+                "id": "toolu_exportedmembers_006",
+                "name": "Edit",
+                "input": {
+                  "file_path": "{{root}}/src/api/client.ts",
+                  "old_string": "    return fetchIt(path);",
+                  "new_string": "    return fetchIt(path, { cache: false });"
+                }
+              }
+            ]
+          }
+        }
+      ],
+      "payload": {
+        "session_id": "sess-exported-members",
+        "transcript_path": "{{transcript}}",
+        "cwd": "{{root}}",
+        "permission_mode": "default",
+        "hook_event_name": "PreToolUse",
+        "tool_name": "Edit",
+        "tool_input": {
+          "file_path": "{{root}}/src/api/client.ts",
+          "old_string": "    return fetchIt(path);",
+          "new_string": "    return fetchIt(path, { cache: false });"
+        },
+        "tool_use_id": "toolu_exportedmembers_006"
+      },
+      "expect": "deny",
+      "mustDeny": false,
+      "redundant": false,
+      "relevantQuestions": [
+        "local-callers",
+        "quote-instruction"
+      ]
+    }
+  ]
+}
