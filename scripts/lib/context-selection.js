@@ -28,8 +28,136 @@ const FALLBACK_MIN_TERMS = 2;
 const FALLBACK_MARGIN = 1.1;
 // v4: an explicit empty proposal (decline) is honored; the tier-2 fallback no
 // longer overrides declines at the launch/selection call sites.
-const ROUTING_POLICY_VERSION = 4;
+// v5: indirect name citations cannot bypass review through exact or scored admission.
+// v6: ordered directives and singular named references share the same admission guard.
+// v7: independent directives scope negation and imperatives allow question punctuation.
+// v8: only recognized request/rejection scopes can authorize coordinated directives.
+// v9: neutral task preambles do not suppress a later explicit skill request.
+// v10: illustrative instructions do not supply or withdraw a direct request.
+// v11: a contrastive current-task instruction ends the preceding example scope.
+const ROUTING_POLICY_VERSION = 11;
 const TASK_KEYS = new Set(['sessionId', 'taskId', 'revision', 'phase', 'query', 'explicitIds', 'proposedIds', 'noWorkflow']);
+
+const DIRECTIVE_VERB = /\b(use|apply|invoke|run|follow|load)\s+(the\s+)?/i;
+const DIRECTIVE_REQUEST = /^(?:please )?(?:(?:can|could|would|will) you (?:please )?|do )?(?:use|apply|invoke|run|follow|load)\b/;
+const DIRECTIVE_REJECTION = /^(?:please )?(?:(?:(?:do )?not|never) (?:use|apply|invoke|run|follow|load)\b|avoid\b)/;
+const DIRECTIVE_NAME_PREFIX = new RegExp(DIRECTIVE_REQUEST.source + '\\s+(?:the\\s+)?(?:skill\\s*)?$');
+const QUESTION_START = /^(?!do not\b)(can|could|would|should|shall|will|may|might|must|ought|do|does|did|is|are|why|how|what|when|where|which)\b/;
+const REPORTED_INSTRUCTION = /\b(say|says|said|reads|told|mentions?|quoted?|document|states?|stated|recommends?|recommended|asserts?|asserted)\b/;
+const EXAMPLE_PREFIX = /^(?:for (?:example|instance)|as an example|to illustrate)\b/;
+const CURRENT_TASK_SUFFIX = /\bfor (?:this|the current) task$/;
+// Subject-led statements may describe someone else's instructions or intentions.
+const SUBJECT_PREFIX = /^(?:the|a|an|i|you|he|she|it|we|they|my|your|his|her|its|our|their|this|that|these|those)\b/;
+// Rejections keep their whole list until another instruction/question begins.
+const INSTRUCTION_BOUNDARY = /(?:,\s*(?:(?:and|but)\s+)?|\s+(?:and|but)\s+)(?=(?:please\s+)?(?:do\s+(?:not\s+)?|not\s+|never\s+)?(?:use|apply|invoke|run|follow|load)\b|(?:can|could|would|should|shall|will|may|might|must|ought|do|does|did|is|are|why|how|what|when|where|which)\b)/i;
+// Admission additionally checks intervening scopes, including unknown wording.
+const ADMISSION_BOUNDARY = /(?:,\s*(?:(?:and|but)\s+)?|\s+(?:and|but)\s+)(?=\S)/i;
+
+/** Track example spans without discarding the connectors between instructions.
+ * A contrast inside an example remains illustrative unless its instruction
+ * explicitly addresses the current task. Earlier non-example scopes stay intact.
+ * @param {string} text Normalized clause with comma boundaries preserved.
+ * @param {string[]} names Known candidate aliases whose internal connectors are names.
+ * @returns {Array<{start: number, text: string, example: boolean}>} Ordered scopes.
+ */
+function citationScopes(text, names) {
+  const mentions = names.flatMap(name => [...text.matchAll(new RegExp('\\b' + name + '\\b', 'g'))]
+    .map(mention => ({ start: mention.index, end: mention.index + name.length })));
+  const boundaries = [...text.matchAll(new RegExp(ADMISSION_BOUNDARY.source, 'gi'))]
+    .filter(boundary => !mentions.some(mention => boundary.index > mention.start && boundary.index < mention.end));
+  let example = false;
+  return [0, ...boundaries.map(boundary => boundary.index + boundary[0].length)].map((start, index) => {
+    const scope = text.slice(start, boundaries[index]?.index ?? text.length);
+    const currentTask = CURRENT_TASK_SUFFIX.test(scope)
+      && (DIRECTIVE_REQUEST.test(scope) || DIRECTIVE_REJECTION.test(scope));
+    if (currentTask && /\bbut\b/.test(boundaries[index - 1]?.[0] || '')) example = false;
+    if (EXAMPLE_PREFIX.test(scope)) example = true;
+    return { start, text: scope, example };
+  });
+}
+
+/** Normalize citation names while preserving contracted negation as a separate word.
+ * @param {string} text Raw query text or a registry alias.
+ * @returns {string} Lowercase alphanumeric words with negation preserved.
+ */
+const normalizedQueryName = text => text.replace(/n['\u2019]t\b/gi, ' not')
+  .replace(/([a-z0-9])([A-Z])/g, '$1 $2').replace(/_/g, ' ')
+  .toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+
+/** Return canonical/native aliases plus conservative singular forms. Singular
+ * multiword aliases only guard indirect references; they never create exact admission.
+ * @param {object} candidate Ranked skill candidate with its canonical ID and exact alias.
+ * @param {string} nativeName Registry name that may be absent from exact retrieval.
+ * @returns {Array<{name: string, exact: boolean}>} Normalized names and admission eligibility.
+ */
+function citationAliases(candidate, nativeName) {
+  const names = [...new Set([candidate.exactAlias, candidate.id.slice('skill:'.length), nativeName]
+    .filter(Boolean).map(normalizedQueryName).filter(Boolean))];
+  return names.flatMap(name => [{ name, exact: true },
+    ...(/\s\w+[^s]s$/.test(name) ? [{ name: name.slice(0, -1), exact: false }] : [])]);
+}
+
+/** Classify a retrieval candidate's references in query order. Genuine later
+ * directives/rejections replace earlier instructions; questions, quotations and
+ * reported speech do not withdraw a directive. Returns directive, indirect or none.
+ * @param {object} candidate Ranked skill candidate with its canonical ID and exact alias.
+ * @param {string} query Task text to classify without loading skill contents.
+ * @param {string} nativeName Registry name, including aliases absent from exact retrieval.
+ * @param {string[]} names All candidate aliases, used to preserve names across scopes.
+ * @returns {'directive'|'indirect'|'none'} Admission evidence for this skill only.
+ */
+function citationFor(candidate, query, nativeName, names) {
+  const aliases = citationAliases(candidate, nativeName);
+  let citation = 'none';
+  // Mask quoted instructions before splitting clauses so punctuation inside a
+  // quotation cannot look like a separate instruction. Quoted names remain usable.
+  const unquoted = query.replace(/"[^"]*"|\u201c[^\u201d]*\u201d|(?:^|[\s(:])'[^']*'|\u2018[^\u2019]*\u2019|\x60[^\x60]*\x60/g, part => {
+    const text = normalizedQueryName(part);
+    const instruction = DIRECTIVE_VERB.test(text);
+    // Quoting a task qualifier cannot turn an illustrative instruction into a request.
+    if (!instruction && !CURRENT_TASK_SUFFIX.test(text)) return part;
+    if (instruction && aliases.some(({ name }) => new RegExp('\\b' + name + '\\b').test(text))) citation = 'indirect';
+    return part.replace(/[^.!?;\n]/g, ' ');
+  });
+  // Keep the illustrative abbreviation together when its periods would split clauses.
+  const expanded = unquoted.replace(/\be\.g\.(?=\s|[,;:!?]|$)/gi, 'for example');
+  for (const clause of expanded.match(/[^.!?;\n]+[.!?;\n]*/g) || []) {
+    // Keep comma boundaries for directive scope without changing alias normalization.
+    const text = clause.split(',').map(normalizedQueryName).join(', ');
+    const clauseScopes = citationScopes(text, names);
+    const mentions = aliases.flatMap(({ name, exact }) => [...text.matchAll(new RegExp('\\b' + name + '\\b', 'g'))]
+      .map(mention => ({ index: mention.index, exact }))).sort((a, b) => a.index - b.index);
+    for (const mention of mentions) {
+      const prefix = text.slice(0, mention.index);
+      const precedingScopes = clauseScopes.filter(scope => scope.start <= mention.index);
+      const example = precedingScopes.at(-1)?.example;
+      const scopes = precedingScopes.filter(scope => !scope.example)
+        .map(scope => scope.text.slice(0, mention.index - scope.start));
+      const instructionPrefix = prefix.split(INSTRUCTION_BOUNDARY).at(-1);
+      // A task preamble such as "fix the bug" does not change a later request.
+      // Only preceding scopes may be neutral: an embedded instruction, question,
+      // or subject-led statement still needs review. The final scope must remain
+      // a direct request; neutral text never supplies admission evidence itself.
+      const instruction = scopes.every((scope, index) => DIRECTIVE_REQUEST.test(scope) || DIRECTIVE_REJECTION.test(scope)
+        || (index < scopes.length - 1 && !DIRECTIVE_VERB.test(scope)
+          && !QUESTION_START.test(scope) && !REPORTED_INSTRUCTION.test(scope) && !SUBJECT_PREFIX.test(scope)));
+      const question = (!DIRECTIVE_REQUEST.test(text) && QUESTION_START.test(text))
+        || (!DIRECTIVE_REQUEST.test(instructionPrefix)
+          && (QUESTION_START.test(instructionPrefix) || clause.includes('?')));
+      if (example || question || scopes.some(scope => REPORTED_INSTRUCTION.test(scope)) || /^\s*["'\u201c\u2018\x60]/.test(clause)) {
+        if (citation === 'none') citation = 'indirect';
+      } else if (/\b(do not|never|no|not|avoid)\b/.test(instructionPrefix)) {
+        citation = 'indirect';
+      } else if (!instruction) {
+        if (citation === 'none') citation = 'indirect';
+      } else if (mention.exact && candidate.exact
+        && DIRECTIVE_NAME_PREFIX.test(scopes.at(-1))) {
+        citation = 'directive';
+      }
+    }
+  }
+  return citation;
+}
 
 function validateTask(task) {
   if (!task || typeof task !== 'object' || Array.isArray(task)) throw new Error('Task must be an object');
@@ -135,7 +263,13 @@ function validatePrevious(previous) {
   }
 }
 
-/** Pure task-scoped resolver. Returned context never invokes a native skill or changes permissions. */
+/** Resolve task-scoped skill context without invoking native skills or changing permissions.
+ * @param {object} [options] Repository, task, profile, and selection constraints.
+ * @param {object} options.task Task identity, query, and explicit or proposed skill IDs.
+ * @param {boolean} [options.load=false] Include verified resource contents in the result.
+ * @param {object|null} [options.previous=null] Receipt reusable only when its binding matches.
+ * @returns {object} Selection decision, candidates, verified resources, and a bound receipt.
+ */
 function resolveTaskContext({ repoRoot = DEFAULT_REPO_ROOT, task, profileId = 'lean@1', target = 'codex',
   selectionMode = 'auto', include = [], exclude = [], load = false, previous = null, expectedDigest = null } = {}) {
   validateTask(task);
@@ -179,28 +313,11 @@ function resolveTaskContext({ repoRoot = DEFAULT_REPO_ROOT, task, profileId = 'l
   // questions, negations, reported speech, multiple cited names — never admit
   // implicitly. Everything else keeps the bounded-proposal path so the
   // primary agent decides ambiguous cases during work it was already doing.
-  const DIRECTIVE_VERB = /\b(use|apply|invoke|run|follow|load)\s+(the\s+)?/i;
-  const normalizedQueryName = text => text.replace(/([a-z0-9])([A-Z])/g, '$1 $2').replace(/_/g, ' ')
-    .toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
-  const directiveCitation = candidate => {
-    if (!candidate || !candidate.exact) return false;
-    const text = normalizedQueryName(task.query || '');
-    const aliases = [...new Set([candidate.exactAlias,
-      candidate.id.slice('skill:'.length).toLowerCase(),
-      candidate.id.slice('skill:'.length).toLowerCase().replace(/-/g, ' ')].filter(Boolean))];
-    for (const name of aliases) {
-      const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-      const pattern = new RegExp(`${DIRECTIVE_VERB.source}(skill\\s*:?\\s*)?${escaped}(\\s+(skill|workflow|guidance))?\\b`, 'i');
-      const match = pattern.exec(text);
-      if (!match) continue;
-      const window = text.slice(Math.max(0, match.index - 28), match.index);
-      if (/\b(do not|don't|never|no)\b/.test(window)) return false;
-      if (/\b(says|said|reads|told|document)\b/i.test(task.query || '')) return false;
-      return true;
-    }
-    return false;
-  };
-  const exactAnchors = candidates.filter(directiveCitation);
+  const names = [...new Set(candidates.flatMap(candidate => citationAliases(candidate, byId.get(candidate.id).name)
+    .map(alias => alias.name)))];
+  const citations = new Map(candidates.map(candidate => [candidate.id,
+    citationFor(candidate, task.query || '', byId.get(candidate.id).name, names)]));
+  const exactAnchors = candidates.filter(candidate => citations.get(candidate.id) === 'directive');
   let autoSelection = null;
   if (!task.noWorkflow && selectionMode === 'auto' && !reused && !explicitIds.length && !proposedIds.length && candidates.length) {
     if (exactAnchors.length === 1) {
@@ -209,7 +326,7 @@ function resolveTaskContext({ repoRoot = DEFAULT_REPO_ROOT, task, profileId = 'l
     } else if (!exactAnchors.length) {
       const top = candidates[0];
       const second = candidates[1];
-      if (top.bm25 >= AUTO_ADMIT_MIN_BM25 && top.matchedTerms.length >= AUTO_ADMIT_MIN_TERMS
+      if (citations.get(top.id) !== 'indirect' && top.bm25 >= AUTO_ADMIT_MIN_BM25 && top.matchedTerms.length >= AUTO_ADMIT_MIN_TERMS
         && (!second || top.bm25 >= AUTO_ADMIT_MARGIN * (second.bm25 || 0))) {
         autoSelection = { id: top.id, bm25: top.bm25, matchedTerms: top.matchedTerms.length, exact: false };
       }
@@ -220,7 +337,7 @@ function resolveTaskContext({ repoRoot = DEFAULT_REPO_ROOT, task, profileId = 'l
     && !explicitIds.length && !proposedIds.length && candidates.length && !exactAnchors.length) {
     const top = candidates[0];
     const second = candidates[1];
-    if (top.bm25 >= FALLBACK_MIN_BM25 && top.matchedTerms.length >= FALLBACK_MIN_TERMS
+    if (citations.get(top.id) !== 'indirect' && top.bm25 >= FALLBACK_MIN_BM25 && top.matchedTerms.length >= FALLBACK_MIN_TERMS
       && (!second || top.bm25 >= FALLBACK_MARGIN * (second.bm25 || 0))) {
       fallback = { id: top.id, bm25: top.bm25, matchedTerms: top.matchedTerms.length };
     }
