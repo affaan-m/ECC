@@ -1,6 +1,6 @@
 # ECC — Agent Talimatları
 
-Bu, yazılım geliştirme için 71 özel agent, 302 skill, 95 command ve otomatik hook iş akışları sağlayan **üretime hazır bir AI kodlama eklentisidir**.
+Bu, yazılım geliştirme için 71 özel agent, 303 skill, 96 command ve otomatik hook iş akışları sağlayan **üretime hazır bir AI kodlama eklentisidir**.
 
 **Sürüm:** 2.2.3
 
@@ -142,8 +142,8 @@ Başarısızlık sorunlarını giderin: test izolasyonunu kontrol edin → mockl
 
 ```
 agents/          — 71 özel subagent
-skills/          — 302 iş akışı skillleri ve alan bilgisi
-commands/        — 95 slash command
+skills/          — 303 iş akışı skillleri ve alan bilgisi
+commands/        — 96 slash command
 hooks/           — Tetikleyici tabanlı otomasyonlar
 rules/           — Her zaman uyulması gereken kurallar (ortak + dile özel)
 scripts/         — Platformlar arası Node.js yardımcı programları

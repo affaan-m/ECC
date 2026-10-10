@@ -309,6 +309,7 @@
       "security-scan": "wraps AgentShield commercial product",
       "seo": "SEO/marketing",
       "skill-comply": "runs agent rosters for compliance checks",
+      "skill-host-compat": "runs an ECC repo CI script (scripts/ci/validate-skill-host-compat.js)",
       "skill-scout": "network searches of skill marketplaces",
       "skill-stocktake": "subagent-based Claude skill audit",
       "social-graph-ranker": "social graph (X and LinkedIn)",
@@ -438,6 +439,7 @@
       "setup-pm.md": "runs an ECC repo script (scripts/setup-package-manager.js)",
       "skill-create.md": "Claude Code skill authoring plus instincts",
       "skill-health.md": "ECC skill analytics dashboard",
+      "skill-host-compat.md": "runs an ECC repo CI script (scripts/ci/validate-skill-host-compat.js)",
       "vue-review.md": "invokes ECC agent roster (vue-reviewer)",
       "token-card.md": "Requires the tokenchit CLI and provider session logs via the token-card skill."
     }

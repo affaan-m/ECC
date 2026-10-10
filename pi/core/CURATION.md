@@ -1,6 +1,6 @@
 # Curation
 
-pi/core includes 128 of 302 skills and 24 of 95 commands from the root of ECC.
+pi/core includes 128 of 303 skills and 24 of 96 commands from the root of ECC.
 Everything excluded is listed here with its reason.
 
 ## Rules
@@ -163,6 +163,7 @@ Exclude anything that:
 | `security-scan` | wraps AgentShield commercial product |
 | `seo` | SEO/marketing |
 | `skill-comply` | runs agent rosters for compliance checks |
+| `skill-host-compat` | runs an ECC repo CI script (scripts/ci/validate-skill-host-compat.js) |
 | `skill-scout` | network searches of skill marketplaces |
 | `skill-stocktake` | subagent-based Claude skill audit |
 | `social-graph-ranker` | social graph (X and LinkedIn) |
@@ -267,6 +268,7 @@ Exclude anything that:
 | `setup-pm` | runs an ECC repo script (scripts/setup-package-manager.js) |
 | `skill-create` | Claude Code skill authoring plus instincts |
 | `skill-health` | ECC skill analytics dashboard |
+| `skill-host-compat` | runs an ECC repo CI script (scripts/ci/validate-skill-host-compat.js) |
 | `vue-review` | invokes ECC agent roster (vue-reviewer) |
 | `token-card` | Requires the tokenchit CLI and provider session logs via the token-card skill. |
 
