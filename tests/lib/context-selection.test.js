@@ -434,6 +434,45 @@ test('ordinary and polite directives preserve automatic and explicit selection',
   }
 }));
 
+for (const [query, expectedId] of [
+  ['Fix the bug, use feature', 'skill:feature'],
+  ['Fix the bug and use feature.', 'skill:feature'],
+  ['Please fix the bug, please use feature.', 'skill:feature'],
+  ['Write the regression test, use feature.', 'skill:feature'],
+  ['Investigate the bug but use feature.', 'skill:feature'],
+  ['For this task, use feature.', 'skill:feature'],
+  ["Fix the bug, don't use feature and use shared guidance.", 'skill:shared'],
+]) {
+  test('a general task preamble preserves a later directive: ' + query, () => withFixture(repoRoot => {
+    const result = resolve(repoRoot, { query }, { load: true });
+    assert.deepEqual(result.selectedIds, [expectedId]);
+    assert.deepEqual(result.loadedIds, [expectedId]);
+    assert.equal(result.reason, 'auto-selection');
+    assert.equal(result.receipt.autoSelection.exact, true);
+  }));
+}
+
+for (const query of [
+  'Fix the bug, shall we use feature?',
+  'Fix the bug, the spec states do not use feature and use shared guidance.',
+  'The docs say fix the bug and use feature.',
+  'Can we fix the bug and use feature?',
+  'The spec stipulates: fix the bug and use feature.',
+  'Our policy stipulates repair the bug and use feature.',
+  'Fix the bug, ought we to repair it and use feature?',
+  'Fix the bug, must we repair it and use feature?',
+  'Fix the bug, feature.',
+]) {
+  test('a general task preamble cannot promote an indirect citation: ' + query, () => withFixture(repoRoot => {
+    const result = resolve(repoRoot, { query }, { load: true });
+    assert.ok(result.candidates.some(candidate => candidate.id === 'skill:feature'));
+    assert.deepEqual(result.selectedIds, []);
+    assert.deepEqual(result.loadedIds, []);
+    assert.equal(result.reason, 'agent-selection-required');
+    assert.equal(result.fallback, null);
+  }));
+}
+
 for (const prefix of ["Don't use database-migrations.", 'Do not use database-migrations.',
   'Should we use database-migrations?', 'The README says use database-migrations.']) {
   test('strong retrieval cannot bypass an indirect citation: ' + prefix, () => {
@@ -467,25 +506,30 @@ test('routing policy changes invalidate receipts created by the old citation pol
   assert.equal(result.fallback, null);
 }));
 
-test('an old empty selection is reconsidered when directive policy changes', () => withFixture(repoRoot => {
-  const query = "Don't use feature, use shared guidance.";
-  const first = resolve(repoRoot, { query });
-  const { digestObject } = require('../../scripts/lib/context-profile-support');
-  const { compileContextProfile } = require('../../scripts/lib/context-profiles');
-  const plan = compileContextProfile({ repoRoot, selectionMode: 'auto' });
-  const bindingDigest = digestObject({ sessionId: 'session-1', taskId: 'task-1', revision: 1,
-    phase: 'implement', planDigest: plan.planDigest, routingPolicyVersion: 6,
-    triggersDigest: digestObject({}), queryDigest: digestObject(query) });
-  const { receiptDigest: _receiptDigest, autoSelection: _autoSelection, ...receipt } = first.receipt;
-  const oldReceipt = { ...receipt, bindingDigest, decision: 'none', selectedIds: [], explicitIds: [],
-    loadedIds: [], resources: [], selectionDigest: digestObject({ bindingDigest, selectedIds: [], explicitIds: [] }) };
-  const previous = { ...oldReceipt, receiptDigest: digestObject(oldReceipt) };
-  const result = resolve(repoRoot, { query }, { previous, load: true });
-  assert.equal(result.reused, false);
-  assert.notEqual(result.receipt.bindingDigest, previous.bindingDigest);
-  assert.deepEqual(result.loadedIds, ['skill:shared']);
-  assert.equal(result.reason, 'auto-selection');
-}));
+for (const [routingPolicyVersion, query, expectedId] of [
+  [6, "Don't use feature, use shared guidance.", 'skill:shared'],
+  [8, 'Fix the bug, use feature', 'skill:feature'],
+]) {
+  test('an old policy ' + routingPolicyVersion + ' empty selection is reconsidered after policy changes', () => withFixture(repoRoot => {
+    const first = resolve(repoRoot, { query });
+    const { digestObject } = require('../../scripts/lib/context-profile-support');
+    const { compileContextProfile } = require('../../scripts/lib/context-profiles');
+    const plan = compileContextProfile({ repoRoot, selectionMode: 'auto' });
+    const bindingDigest = digestObject({ sessionId: 'session-1', taskId: 'task-1', revision: 1,
+      phase: 'implement', planDigest: plan.planDigest, routingPolicyVersion,
+      triggersDigest: digestObject({}), queryDigest: digestObject(query) });
+    const { receiptDigest: _receiptDigest, autoSelection: _autoSelection, ...receipt } = first.receipt;
+    const oldReceipt = { ...receipt, bindingDigest, decision: 'none', selectedIds: [], explicitIds: [],
+      loadedIds: [], resources: [], selectionDigest: digestObject({ bindingDigest, selectedIds: [], explicitIds: [] }) };
+    const previous = { ...oldReceipt, receiptDigest: digestObject(oldReceipt) };
+    const result = resolve(repoRoot, { query }, { previous, load: true });
+    assert.equal(result.reused, false);
+    assert.notEqual(result.receipt.bindingDigest, previous.bindingDigest);
+    assert.deepEqual(result.selectedIds, [expectedId]);
+    assert.deepEqual(result.loadedIds, [expectedId]);
+    assert.equal(result.reason, 'auto-selection');
+  }));
+}
 
 for (const query of [
   'Should we use feature? Use feature.',

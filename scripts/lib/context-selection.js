@@ -32,26 +32,36 @@ const FALLBACK_MARGIN = 1.1;
 // v6: ordered directives and singular named references share the same admission guard.
 // v7: independent directives scope negation and imperatives allow question punctuation.
 // v8: only recognized request/rejection scopes can authorize coordinated directives.
-const ROUTING_POLICY_VERSION = 8;
+// v9: neutral task preambles do not suppress a later explicit skill request.
+const ROUTING_POLICY_VERSION = 9;
 const TASK_KEYS = new Set(['sessionId', 'taskId', 'revision', 'phase', 'query', 'explicitIds', 'proposedIds', 'noWorkflow']);
 
 const DIRECTIVE_VERB = /\b(use|apply|invoke|run|follow|load)\s+(the\s+)?/i;
 const DIRECTIVE_REQUEST = /^(?:please )?(?:(?:can|could|would|will) you (?:please )?|do )?(?:use|apply|invoke|run|follow|load)\b/;
 const DIRECTIVE_REJECTION = /^(?:please )?(?:(?:(?:do )?not|never) (?:use|apply|invoke|run|follow|load)\b|avoid\b)/;
 const DIRECTIVE_NAME_PREFIX = new RegExp(DIRECTIVE_REQUEST.source + '\\s+(?:the\\s+)?(?:skill\\s*)?$');
-const QUESTION_START = /^(?!do not\b)(can|could|would|should|shall|will|may|might|do|does|did|is|are|why|how|what|when|where|which)\b/;
+const QUESTION_START = /^(?!do not\b)(can|could|would|should|shall|will|may|might|must|ought|do|does|did|is|are|why|how|what|when|where|which)\b/;
 const REPORTED_INSTRUCTION = /\b(say|says|said|reads|told|mentions?|quoted?|document|states?|stated|recommends?|recommended|asserts?|asserted)\b/;
+// Subject-led statements may describe someone else's instructions or intentions.
+const SUBJECT_PREFIX = /^(?:the|a|an|i|you|he|she|it|we|they|my|your|his|her|its|our|their|this|that|these|those)\b/;
 // Rejections keep their whole list until another instruction/question begins.
-const INSTRUCTION_BOUNDARY = /(?:,\s*(?:(?:and|but)\s+)?|\s+(?:and|but)\s+)(?=(?:please\s+)?(?:do\s+(?:not\s+)?|not\s+|never\s+)?(?:use|apply|invoke|run|follow|load)\b|(?:can|could|would|should|shall|will|may|might|do|does|did|is|are|why|how|what|when|where|which)\b)/i;
+const INSTRUCTION_BOUNDARY = /(?:,\s*(?:(?:and|but)\s+)?|\s+(?:and|but)\s+)(?=(?:please\s+)?(?:do\s+(?:not\s+)?|not\s+|never\s+)?(?:use|apply|invoke|run|follow|load)\b|(?:can|could|would|should|shall|will|may|might|must|ought|do|does|did|is|are|why|how|what|when|where|which)\b)/i;
 // Admission additionally checks intervening scopes, including unknown wording.
 const ADMISSION_BOUNDARY = /(?:,\s*(?:(?:and|but)\s+)?|\s+(?:and|but)\s+)(?=\S)/i;
-/** Normalize citation names while preserving contracted negation as a separate word. */
+/** Normalize citation names while preserving contracted negation as a separate word.
+ * @param {string} text Raw query text or a registry alias.
+ * @returns {string} Lowercase alphanumeric words with negation preserved.
+ */
 const normalizedQueryName = text => text.replace(/n['\u2019]t\b/gi, ' not')
   .replace(/([a-z0-9])([A-Z])/g, '$1 $2').replace(/_/g, ' ')
   .toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
 
 /** Return canonical/native aliases plus conservative singular forms. Singular
- * multiword aliases only guard indirect references; they never create exact admission. */
+ * multiword aliases only guard indirect references; they never create exact admission.
+ * @param {object} candidate Ranked skill candidate with its canonical ID and exact alias.
+ * @param {string} nativeName Registry name that may be absent from exact retrieval.
+ * @returns {Array<{name: string, exact: boolean}>} Normalized names and admission eligibility.
+ */
 function citationAliases(candidate, nativeName) {
   const names = [...new Set([candidate.exactAlias, candidate.id.slice('skill:'.length), nativeName]
     .filter(Boolean).map(normalizedQueryName).filter(Boolean))];
@@ -87,10 +97,13 @@ function citationFor(candidate, query, nativeName) {
       const prefix = text.slice(0, mention.index);
       const scopes = prefix.split(ADMISSION_BOUNDARY);
       const instructionPrefix = prefix.split(INSTRUCTION_BOUNDARY).at(-1);
-      // Unknown scopes cannot authorize a later "and use ...". Positive scope
-      // evidence is required for admission, while existing rejection forms remain
-      // usable and indirect discussion cannot withdraw an earlier directive.
-      const instruction = scopes.every(scope => DIRECTIVE_REQUEST.test(scope) || DIRECTIVE_REJECTION.test(scope));
+      // A task preamble such as "fix the bug" does not change a later request.
+      // Only preceding scopes may be neutral: an embedded instruction, question,
+      // or subject-led statement still needs review. The final scope must remain
+      // a direct request; neutral text never supplies admission evidence itself.
+      const instruction = scopes.every((scope, index) => DIRECTIVE_REQUEST.test(scope) || DIRECTIVE_REJECTION.test(scope)
+        || (index < scopes.length - 1 && !DIRECTIVE_VERB.test(scope)
+          && !QUESTION_START.test(scope) && !REPORTED_INSTRUCTION.test(scope) && !SUBJECT_PREFIX.test(scope)));
       const question = (!DIRECTIVE_REQUEST.test(text) && QUESTION_START.test(text))
         || (!DIRECTIVE_REQUEST.test(instructionPrefix)
           && (QUESTION_START.test(instructionPrefix) || clause.includes('?')));
@@ -213,7 +226,13 @@ function validatePrevious(previous) {
   }
 }
 
-/** Pure task-scoped resolver. Returned context never invokes a native skill or changes permissions. */
+/** Resolve task-scoped skill context without invoking native skills or changing permissions.
+ * @param {object} [options] Repository, task, profile, and selection constraints.
+ * @param {object} options.task Task identity, query, and explicit or proposed skill IDs.
+ * @param {boolean} [options.load=false] Include verified resource contents in the result.
+ * @param {object|null} [options.previous=null] Receipt reusable only when its binding matches.
+ * @returns {object} Selection decision, candidates, verified resources, and a bound receipt.
+ */
 function resolveTaskContext({ repoRoot = DEFAULT_REPO_ROOT, task, profileId = 'lean@1', target = 'codex',
   selectionMode = 'auto', include = [], exclude = [], load = false, previous = null, expectedDigest = null } = {}) {
   validateTask(task);
