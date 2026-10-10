@@ -255,6 +255,45 @@ const ADAPTER_RECORDS = Object.freeze([
     ],
   },
   {
+    id: 'deepseek-harness',
+    harness: 'DeepSeek Harness',
+    state: 'Adapter-backed',
+    supported_assets: [
+      'canonical ECC skills (skills/) via native DSH skill roots',
+      'command hooks through the first-party @deepseek-ai/dsh-hooks-claude-code bridge (20 commands on 4 of 7 bridged events)',
+      'hooks config generator (scripts/dsh/generate-hooks-config.js)',
+      'profile patch mounting with compose-time validation',
+    ],
+    unsupported_surfaces: [
+      'Claude slash commands and ECC subagent surfaces have no DSH equivalent; workflows are covered by skills',
+      'PreCompact, PostToolUseFailure, and SessionEnd hook events have no bridge counterpart',
+      'no dedicated installer target; setup is documented manual configuration',
+    ],
+    install_or_onramp: [
+      'link the curated catalog: ln -s /path/to/ECC/skills/<skill> ~/.dsh/skills/<skill>',
+      'generate the hooks config: node scripts/dsh/generate-hooks-config.js --ecc-root /path/to/ECC --out ~/.dsh/ecc/hooks-dsh.json',
+      'mount a bare - insert: entry for @deepseek-ai/dsh-hooks-claude-code in ~/.dsh/profiles/<profile>/cordis.patch.yml',
+    ],
+    verification_commands: [
+      '`node tests/scripts/dsh-generate-hooks-config.test.js`',
+      '`node scripts/ci/validate-skills.js`',
+      '`dsh --profile <profile> --dump-config` (compose-time validation)',
+    ],
+    risk_notes: [
+      'Hook commands embed the ECC checkout path; regenerate the hooks config after moving the repo',
+      'Keep the tool-name matcher mapping (Bash to bash, Edit/MultiEdit to edit) in sync with DSH tool names',
+      'A plain top-level patch entry is silently dropped; additions require a bare insert entry',
+    ],
+    last_verified_at: '2026-10-01',
+    owner: 'ECC maintainers',
+    source_docs: [
+      'docs/DEEPSEEK-HARNESS-GUIDE.md',
+      'skills/deepseek-harness-setup/SKILL.md',
+      'scripts/dsh/generate-hooks-config.js',
+      'tests/scripts/dsh-generate-hooks-config.test.js',
+    ],
+  },
+  {
     id: 'orca',
     harness: 'Orca',
     state: 'Reference-only',
