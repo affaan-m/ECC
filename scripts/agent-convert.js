@@ -42,7 +42,7 @@ function requireValue(argv, index, flag) {
 }
 
 function parseArgs(argv) {
-  let args = { from: 'claude', to: 'pi', json: false, dryRun: false, check: false, out: null };
+  let args = { from: 'claude', to: 'pi', json: false, dryRun: false, check: false, out: null, allowLossy: false };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     if (a === '--from') {
@@ -55,6 +55,8 @@ function parseArgs(argv) {
       args = { ...args, json: true };
     } else if (a === '--dry-run') {
       args = { ...args, dryRun: true };
+    } else if (a === '--allow-lossy') {
+      args = { ...args, allowLossy: true };
     } else if (a === '--check') {
       args = { ...args, check: true };
     } else if (a === '--out') {
@@ -88,6 +90,7 @@ Options:
   --json            Machine-readable summary on stdout
   --out <dir>       Write emitted files to a directory
   --dry-run         With --out, report writes without writing
+  --allow-lossy    Emit lossy conversions (e.g. Cursor Edit/Write-only) as writable
   --check           Validate parsing only (no emit)
 `);
 }
@@ -128,7 +131,7 @@ function main() {
     process.exit(0);
   }
 
-  const { results, warnings, notes } = EMITTERS[args.to](irs);
+  const { results, warnings, notes, skipped } = EMITTERS[args.to](irs, { allowLossy: args.allowLossy });
 
   // Progress lines must never corrupt machine-readable stdout.
   const progress = msg => {
@@ -157,6 +160,7 @@ function main() {
     converted: results.length,
     warnings: warnings.length,
     warningsDetail: warnings,
+    skipped: skipped ? skipped.length : 0,
     notes,
   };
 

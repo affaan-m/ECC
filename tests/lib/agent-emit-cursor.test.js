@@ -1,15 +1,17 @@
 /**
  * Tests for the ECC Agent IR → Cursor emitter (scripts/lib/agent-emit-cursor.js).
  *
- * Cursor restricts subagents via a binary `readonly` flag, not a tools list, so
- * these tests assert the permission boundary through `readonly`.
+ * Cursor restricts subagents via a binary `readonly` flag with no per-tool
+ * allowlist, so these tests assert the permission boundary AND the lossy
+ * conversion rejection (Edit/Write-only or empty sources cannot be faithfully
+ * represented and must be skipped unless --allow-lossy is passed).
  */
 
 const assert = require("assert")
 const yaml = require("js-yaml")
 
 const { parseAllAgents } = require("../../scripts/lib/agent-ir")
-const { emitAllCursorAgents } = require("../../scripts/lib/agent-emit-cursor")
+const { emitAllCursorAgents, emitCursorAgent, classifyCursorAuthority } = require("../../scripts/lib/agent-emit-cursor")
 
 function runTest(name, fn) {
   try {
@@ -29,10 +31,11 @@ function main() {
 
   let irs
   let results
+  let skipped
   let warnings
   try {
     irs = parseAllAgents()
-    ;({ results, warnings } = emitAllCursorAgents(irs))
+    ;({ results, skipped, warnings } = emitAllCursorAgents(irs))
   } catch (error) {
     console.log(`  ✗ setup failed: ${error.message}`)
     console.log("\nPassed: 0")
@@ -43,40 +46,65 @@ function main() {
   const byId = new Map(irs.map(ir => [ir.id, ir]))
 
   const tests = [
-    ["emits all 68 agents", () => {
-      assert.strictEqual(results.length, 68)
+    ["every agent is either emitted or explicitly skipped", () => {
+      assert.strictEqual(results.length + skipped.length, 68, "emitted + skipped must equal 68")
     }],
 
-    ["emits a readonly flag, not a tools scalar", () => {
+    ["emitted frontmatter uses the binary readonly flag, not a tools scalar", () => {
       for (const r of results) {
         const match = r.markdown.match(/^---\r?\n([\s\S]*?)\r?\n---/)
         const fm = yaml.load(match[1])
         assert.strictEqual(typeof fm.readonly, "boolean", `${r.id}: readonly must be boolean`)
-        assert.strictEqual(fm.tools, undefined, `${r.id}: must not emit a tools scalar (Cursor uses readonly)`)
+        assert.strictEqual(fm.tools, undefined, `${r.id}: must not emit a tools scalar`)
         assert.ok(/^[a-z0-9-]+$/.test(fm.name), `${r.id}: name must be lowercase/hyphens`)
       }
     }],
 
-    ["read-only source agents are emitted readonly: true", () => {
+    ["read-only sources are emitted readonly: true", () => {
       for (const r of results) {
         const source = byId.get(r.id)
-        const mutating = ["Bash", "Edit", "Write"].some(t => source.tools.includes(t))
-        if (!mutating) {
-          assert.strictEqual(r.readOnly, true, `${r.id}: read-only source must emit readonly: true`)
+        if (classifyCursorAuthority(source.tools) === "readonly") {
+          assert.strictEqual(r.readOnly, true, `${r.id}: read-only source must be readonly: true`)
         }
       }
-      const planner = results.find(r => r.id === "planner")
-      assert.strictEqual(planner.readOnly, true, "planner (Read, Grep, Glob) must be readonly")
     }],
 
-    ["write-capable source agents are emitted readonly: false", () => {
-      const resolver = results.find(r => r.id === "build-error-resolver")
-      assert.strictEqual(resolver.readOnly, false, "build-error-resolver (has Bash/Edit/Write) must not be readonly")
+    ["Bash sources are emitted readonly: false", () => {
+      for (const r of results) {
+        const source = byId.get(r.id)
+        if (classifyCursorAuthority(source.tools) === "writable") {
+          assert.strictEqual(r.readOnly, false, `${r.id}: Bash source must be readonly: false`)
+        }
+      }
     }],
 
-    ["mcp__* tools are flagged, never granted", () => {
+    ["Edit/Write-only and empty sources are skipped by default (lossy)", () => {
+      const lossy = irs.filter(ir => classifyCursorAuthority(ir.tools) === "lossy").map(ir => ir.id)
+      for (const id of lossy) {
+        assert.ok(skipped.some(s => s.id === id), `${id}: lossy source must be skipped by default`)
+        assert.ok(!results.some(r => r.id === id), `${id}: lossy source must not be emitted by default`)
+      }
+      assert.ok(lossy.length > 0, "expected at least one lossy agent")
+    }],
+
+    ["empty allowlist is skipped", () => {
+      const out = emitCursorAgent({ id: "x", name: "x", description: "x", tools: [], body: "hi" })
+      assert.strictEqual(out.skipped, true, "empty allowlist must be skipped")
+    }],
+
+    ["--allow-lossy emits lossy sources as writable with a warning", () => {
+      const lossyIrs = irs.filter(ir => classifyCursorAuthority(ir.tools) === "lossy")
+      const { results: allowed, warnings: w } = emitAllCursorAgents(irs, { allowLossy: true })
+      for (const ir of lossyIrs) {
+        const r = allowed.find(x => x.id === ir.id)
+        assert.ok(r, `${ir.id}: lossy source must be emitted under --allow-lossy`)
+        assert.strictEqual(r.readOnly, false, `${ir.id}: --allow-lossy emits writable`)
+      }
+      assert.ok(w.some(x => x.includes("lossy conversion")), "lossy conversion must warn under --allow-lossy")
+    }],
+
+    ["mcp__* tools are flagged", () => {
       assert.ok(warnings.some(w => w.includes("docs-lookup") && w.includes("MCP tool")), "docs-lookup MCP must warn")
-      assert.ok(!results.some(r => /tools:/.test(r.markdown)), "no tools scalar should ever be emitted")
     }],
 
     ["model tier is preserved as a comment", () => {

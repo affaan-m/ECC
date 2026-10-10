@@ -1,15 +1,17 @@
 /**
  * Tests for the ECC Agent IR → OpenCode emitter (scripts/lib/agent-emit-opencode.js).
  *
- * OpenCode requires `tools` to be a *mapping* (tool -> boolean), not a scalar,
- * and these tests assert both the shape and the permission boundary.
+ * Verified against OpenCode v2.0.25: agents use `description` / `mode` /
+ * `permission` (a mapping), the filename is the agent name, and permissions
+ * MERGE with global config (global default `*: allow`). These tests assert the
+ * DENY BASELINE: `"*": deny` first, then only source-authorized grants.
  */
 
 const assert = require("assert")
 const yaml = require("js-yaml")
 
 const { parseAllAgents } = require("../../scripts/lib/agent-ir")
-const { emitAllOpenCodeAgents } = require("../../scripts/lib/agent-emit-opencode")
+const { emitOpenCodeAgent, emitAllOpenCodeAgents } = require("../../scripts/lib/agent-emit-opencode")
 
 function runTest(name, fn) {
   try {
@@ -21,6 +23,12 @@ function runTest(name, fn) {
     console.error(`    ${error.message}`)
     return false
   }
+}
+
+function parseFrontmatter(markdown) {
+  const match = markdown.match(/^---\r?\n([\s\S]*?)\r?\n---/)
+  assert.ok(match, "emitted markdown must start with a frontmatter block")
+  return yaml.load(match[1])
 }
 
 function main() {
@@ -47,49 +55,66 @@ function main() {
       assert.strictEqual(results.length, 68)
     }],
 
-    ["tools is a YAML mapping, not a scalar", () => {
+    ["frontmatter uses description/mode/permission, no name field, no tools field", () => {
       for (const r of results) {
-        const match = r.markdown.match(/^---\r?\n([\s\S]*?)\r?\n---/)
-        const fm = yaml.load(match[1])
-        assert.strictEqual(typeof fm.tools, "object", `${r.id}: tools must be a mapping`)
-        assert.ok(!Array.isArray(fm.tools), `${r.id}: tools must not be a list`)
+        const fm = parseFrontmatter(r.markdown)
         assert.strictEqual(fm.mode, "subagent", `${r.id}: mode must be subagent`)
+        assert.ok(fm.description.length > 0, `${r.id}: missing description`)
+        assert.strictEqual(fm.name, undefined, `${r.id}: name is the filename, not a frontmatter field`)
+        assert.strictEqual(fm.tools, undefined, `${r.id}: tools is deprecated, must not be emitted`)
+        assert.strictEqual(typeof fm.permission, "object", `${r.id}: permission must be a mapping`)
       }
     }],
 
-    ["read-only source agents disable bash/edit/write", () => {
+    ["permission is a deny baseline (*: deny first)", () => {
+      for (const r of results) {
+        const fm = parseFrontmatter(r.markdown)
+        const keys = Object.keys(fm.permission)
+        assert.strictEqual(keys[0], "*", `${r.id}: '*' must be the first permission key`)
+        assert.strictEqual(fm.permission["*"], "deny", `${r.id}: '*' must be deny`)
+      }
+    }],
+
+    ["read-only source grants only read-only keys (no bash/edit)", () => {
       for (const r of results) {
         const source = byId.get(r.id)
-        const match = r.markdown.match(/^---\r?\n([\s\S]*?)\r?\n---/)
-        const fm = yaml.load(match[1])
-        if (!source.tools.includes("Bash")) assert.strictEqual(fm.tools.bash, false, `${r.id}: bash must be false`)
-        if (!source.tools.includes("Edit")) assert.strictEqual(fm.tools.edit, false, `${r.id}: edit must be false`)
-        if (!source.tools.includes("Write")) assert.strictEqual(fm.tools.write, false, `${r.id}: write must be false`)
+        const fm = parseFrontmatter(r.markdown)
+        if (!source.tools.includes("Bash")) assert.notStrictEqual(fm.permission.bash, "allow", `${r.id}: bash must not be allowed`)
+        if (!source.tools.includes("Edit") && !source.tools.includes("Write")) {
+          assert.notStrictEqual(fm.permission.edit, "allow", `${r.id}: edit must not be allowed`)
+        }
       }
     }],
 
-    ["planner is read, grep, glob only", () => {
+    ["planner grants read, grep, glob only", () => {
       const planner = results.find(r => r.id === "planner")
-      const fm = yaml.load(planner.markdown.match(/^---\r?\n([\s\S]*?)\r?\n---/)[1])
-      assert.deepStrictEqual(fm.tools, { read: true, grep: true, glob: true, bash: false, edit: false, write: false })
+      const fm = parseFrontmatter(planner.markdown)
+      assert.strictEqual(fm.permission.read, "allow", "read must be allowed")
+      assert.strictEqual(fm.permission.grep, "allow", "grep must be allowed")
+      assert.strictEqual(fm.permission.glob, "allow", "glob must be allowed")
+      assert.strictEqual(fm.permission.bash, undefined, "bash must not be granted")
+      assert.strictEqual(fm.permission.edit, undefined, "edit must not be granted")
     }],
 
-    ["write-capable agents enable bash/edit/write", () => {
+    ["write-capable source grants bash and edit", () => {
       const resolver = results.find(r => r.id === "build-error-resolver")
-      const fm = yaml.load(resolver.markdown.match(/^---\r?\n([\s\S]*?)\r?\n---/)[1])
-      assert.strictEqual(fm.tools.bash, true, "bash must be true")
-      assert.strictEqual(fm.tools.edit, true, "edit must be true")
-      assert.strictEqual(fm.tools.write, true, "write must be true")
+      const fm = parseFrontmatter(resolver.markdown)
+      assert.strictEqual(fm.permission.bash, "allow", "bash must be allowed")
+      assert.strictEqual(fm.permission.edit, "allow", "edit must be allowed")
     }],
 
-    ["WebSearch is flagged; WebFetch maps to webfetch", () => {
-      assert.ok(warnings.some(w => w.includes("unmapped tool: WebSearch")), "WebSearch must be flagged")
-      const searcher = results.find(r => r.id === "docs-lookup")
-      assert.ok(searcher.tools.includes("read"), "docs-lookup read mapped")
+    ["a no-tools source emits only the deny baseline (grants nothing)", () => {
+      const { markdown } = emitOpenCodeAgent({ id: "x", name: "x", description: "x", tools: [], body: "hi" })
+      const fm = parseFrontmatter(markdown)
+      assert.deepStrictEqual(fm.permission, { "*": "deny" }, "no-tools source must deny everything and grant nothing")
     }],
 
-    ["mcp__* tools are flagged, never enabled", () => {
+    ["mcp__* and WebSearch are denied by the baseline and warned", () => {
       assert.ok(warnings.some(w => w.includes("docs-lookup") && w.includes("MCP tool")), "docs-lookup MCP must warn")
+      assert.ok(!warnings.some(w => w.includes("unmapped tool")), "every non-mcp Claude tool must map to an OpenCode permission key")
+      const docsLookup = results.find(r => r.id === "docs-lookup")
+      const fm = parseFrontmatter(docsLookup.markdown)
+      assert.strictEqual(fm.permission["*"], "deny", "mcp tools must be caught by the deny baseline")
     }],
 
     ["emission is deterministic", () => {
