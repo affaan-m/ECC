@@ -407,7 +407,6 @@ function runHermeticPythonPrePush({
     ECC_PREPUSH_RUN_CHECKS: '1',
     ECC_SKIP_GIT_HOOKS: '0',
     ECC_SKIP_PREPUSH: '0',
-    ECC_PREPUSH_RUN_CHECKS: '1',
     MSYS_NO_PATHCONV: '1',
     ...(venvDir === null || trackVenv ? {} : { VIRTUAL_ENV: toBashPath(venvDir) }),
     ...(override === null ? {} : { ECC_PYTEST_CMD: override }),
