@@ -18,6 +18,8 @@ const fs = require('fs');
 const MAX_TRANSCRIPT_CHARS = 7000;
 const MAX_TURNS = 25;
 const LLM_TIMEOUT_MS = 90000;
+// Leave the Stop hook time to persist its mechanical fallback after a timeout.
+const HOOK_FINISH_RESERVE_MS = 1000;
 
 function getLLMModel() {
   return process.env.ECC_LLM_SUMMARY_MODEL || 'haiku';
@@ -109,11 +111,28 @@ function getContextRemainingPct(transcriptPath) {
  * Generate a session summary using `claude -p`.
  * Returns the summary string, or null on failure or when recursion guard is active.
  */
-function generateSessionSummary(transcriptPath) {
-  if (process.env.ECC_SKIP_LLM_SUMMARY) return null;
+function generateSessionSummary(transcriptPath, { onSkip = () => {} } = {}) {
+  if (process.env.ECC_SKIP_LLM_SUMMARY) {
+    onSkip('ECC_SKIP_LLM_SUMMARY');
+    return null;
+  }
 
   const conversation = extractConversationText(transcriptPath);
   if (!conversation) return null;
+
+  let timeout = LLM_TIMEOUT_MS;
+  if (process.env.ECC_HOOK_DEADLINE_MS !== undefined) {
+    const deadline = Number(process.env.ECC_HOOK_DEADLINE_MS);
+    if (!Number.isSafeInteger(deadline) || deadline <= 0) {
+      onSkip('invalid lifecycle deadline');
+      return null;
+    }
+    timeout = Math.min(timeout, deadline - Date.now() - HOOK_FINISH_RESERVE_MS);
+    if (timeout <= 0) {
+      onSkip('insufficient lifecycle time budget');
+      return null;
+    }
+  }
 
   const prompt = [
     'Below is a conversation log from a Claude Code coding session.',
@@ -159,7 +178,7 @@ function generateSessionSummary(transcriptPath) {
         ECC_SKIP_LLM_SUMMARY: '1',
         ECC_LLM_SUMMARY_SUBPROCESS: '1'
       },
-      timeout: LLM_TIMEOUT_MS,
+      timeout,
       shell: process.platform === 'win32'
     });
 

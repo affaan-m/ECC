@@ -299,6 +299,21 @@ async function main() {
   }
 
   // Legacy path: spawn a child Node process for hooks without run() export
+  // Direct runner invocations also need a deadline. Preserve an earlier
+  // bootstrap deadline instead of granting another full 30 seconds.
+  const inheritedDeadline = Number(process.env.ECC_HOOK_DEADLINE_MS);
+  const deadline = Math.min(
+    Date.now() + 30000,
+    Number.isSafeInteger(inheritedDeadline) && inheritedDeadline > 0
+      ? inheritedDeadline
+      : Infinity
+  );
+  const remaining = deadline - Date.now();
+  if (remaining <= 0) {
+    writeStderr(`[Hook] lifecycle time budget exhausted for ${hookId}; skipping legacy hook`);
+    exitWithStdout('', 0);
+    return;
+  }
   const result = spawnSync(process.execPath, [scriptPath], {
     input: raw,
     encoding: 'utf8',
@@ -308,10 +323,11 @@ async function main() {
       ECC_PLUGIN_ROOT: pluginRoot,
       ECC_HOOK_ID: hookId,
       ECC_HOOK_INPUT_TRUNCATED: truncated ? '1' : '0',
-      ECC_HOOK_INPUT_MAX_BYTES: String(MAX_STDIN)
+      ECC_HOOK_INPUT_MAX_BYTES: String(MAX_STDIN),
+      ECC_HOOK_DEADLINE_MS: String(deadline)
     },
     cwd: process.cwd(),
-    timeout: 30000
+    timeout: remaining
   });
 
   const legacyStdout = sanitizeEcho(resolveLegacySpawnStdout(result));

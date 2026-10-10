@@ -37,11 +37,19 @@ function countOccurrences(haystack, needle) {
   return n;
 }
 
+function isolatedHomeEnv(home) {
+  return {
+    ...process.env, HOME: home, USERPROFILE: home,
+    ECC_AGENT_DATA_HOME: path.join(home, '.claude'),
+    CLAUDE_CONFIG_DIR: path.join(home, '.claude')
+  };
+}
+
 function runHook(home, transcript, env = {}) {
-  return spawnSync('node', [script], {
+  return spawnSync(process.execPath, [script], {
     encoding: 'utf8',
     input: transcript ? JSON.stringify({ transcript_path: transcript }) : '',
-    env: { ...process.env, HOME: home, USERPROFILE: home, CLAUDE_SESSION_ID: '', ...env },
+    env: { ...isolatedHomeEnv(home), CLAUDE_SESSION_ID: '', ...env },
     timeout: 10000,
   });
 }
@@ -96,7 +104,7 @@ function runTests() {
       const res = spawnSync('node', [script], {
         encoding: 'utf8',
         input: JSON.stringify({ transcript_path: transcript }),
-        env: { ...process.env, HOME: home, USERPROFILE: home, CLAUDE_SESSION_ID: '' },
+        env: { ...isolatedHomeEnv(home), CLAUDE_SESSION_ID: '' },
         timeout: 10000,
       });
       assert.strictEqual(res.status || 0, 0, `hook exited ${res.status}: ${res.stderr}`);
@@ -225,7 +233,7 @@ function runTests() {
       const res = spawnSync('node', [script], {
         encoding: 'utf8',
         input: '{not-json',
-        env: { ...process.env, HOME: home, USERPROFILE: home, CLAUDE_SESSION_ID: 'fallback-session-12345678', CLAUDE_TRANSCRIPT_PATH: '' },
+        env: { ...isolatedHomeEnv(home), CLAUDE_SESSION_ID: 'fallback-session-12345678', CLAUDE_TRANSCRIPT_PATH: '' },
         timeout: 10000,
       });
       assert.strictEqual(res.status || 0, 0, `hook exited ${res.status}: ${res.stderr}`);
@@ -236,6 +244,114 @@ function runTests() {
       fs.rmSync(home, { recursive: true, force: true });
     }
   }) ? passed++ : failed++);
+
+  (test('persists mechanical resume state when the LLM budget is exhausted', () => {
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-session-budget-'));
+    try {
+      const uuid = '12345678-1234-4234-8234-123456789abc';
+      const transcript = path.join(home, `${uuid}.jsonl`);
+      fs.writeFileSync(transcript, JSON.stringify({ type: 'user', content: 'Keep this task resumable' }) + '\n');
+      const bin = path.join(home, 'empty-bin');
+      fs.mkdirSync(bin);
+      const res = runHook(home, transcript, {
+        ECC_LLM_SUMMARY_INTERVAL: '1', ECC_HOOK_DEADLINE_MS: '1',
+        ECC_SKIP_LLM_SUMMARY: '', ECC_LLM_SUMMARY_SUBPROCESS: '', PATH: bin
+      });
+      assert.strictEqual(res.status, 0, res.stderr);
+      assert.match(res.stderr, /LLM summary skipped.*insufficient lifecycle time budget/);
+      assert.doesNotMatch(res.stderr, /LLM summary failed/);
+      assert.match(fs.readFileSync(sessionFileFor(home, uuid), 'utf8'), /Keep this task resumable/);
+    } finally {
+      fs.rmSync(home, { recursive: true, force: true });
+    }
+  }) ? passed++ : failed++);
+
+  (test('logs an explicit LLM disable as skipped and persists mechanical resume state', () => {
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-session-skip-'));
+    try {
+      const uuid = '12345678-1234-4234-8234-123456789abc';
+      const transcript = path.join(home, `${uuid}.jsonl`);
+      const bin = path.join(home, 'empty-bin');
+      fs.mkdirSync(bin);
+      fs.writeFileSync(transcript, JSON.stringify({ type: 'user', content: 'Save context with LLM disabled' }) + '\n');
+      const res = runHook(home, transcript, {
+        ECC_LLM_SUMMARY_INTERVAL: '1', ECC_SKIP_LLM_SUMMARY: '1',
+        ECC_LLM_SUMMARY_SUBPROCESS: '', PATH: bin
+      });
+      assert.strictEqual(res.status, 0, res.stderr);
+      assert.match(res.stderr, /LLM summary skipped.*ECC_SKIP_LLM_SUMMARY/);
+      assert.doesNotMatch(res.stderr, /LLM summary failed/);
+      assert.match(fs.readFileSync(sessionFileFor(home, uuid), 'utf8'), /Save context with LLM disabled/);
+    } finally {
+      fs.rmSync(home, { recursive: true, force: true });
+    }
+  }) ? passed++ : failed++);
+
+  for (const inherited of ['', String(Date.now() + 300000), '1']) {
+    (test(`direct legacy runner bounds the deadline ${inherited || '(unset)'}`, () => {
+      const home = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-runner-budget-'));
+      try {
+        const relative = 'legacy.js';
+        fs.writeFileSync(path.join(home, relative), "process.stdout.write(JSON.stringify({deadline:Number(process.env.ECC_HOOK_DEADLINE_MS),now:Date.now()}));\n");
+        const runner = path.resolve(__dirname, '../../scripts/hooks/run-with-flags.js');
+        const res = spawnSync(process.execPath, [runner, 'session:stop:session-end', relative, 'standard'], {
+          input: '{}', encoding: 'utf8', timeout: 5000,
+          env: {
+            ...isolatedHomeEnv(home), CLAUDE_PLUGIN_ROOT: home,
+            ECC_HOOK_PROFILE: 'standard', ECC_DISABLED_HOOKS: '', ECC_HOOK_DRY_RUN: '',
+            ECC_HOOK_DEADLINE_MS: inherited
+          }
+        });
+        assert.strictEqual(res.status, 0, res.stderr);
+        if (inherited === '1') {
+          assert.strictEqual(res.stdout, '');
+          assert.match(res.stderr, /time budget exhausted/);
+        } else {
+          const result = JSON.parse(res.stdout);
+          assert.ok(result.deadline > result.now);
+          assert.ok(result.deadline - result.now <= 30000, 'Inherited far-future deadlines must not extend the runner budget');
+        }
+      } finally {
+        fs.rmSync(home, { recursive: true, force: true });
+      }
+    }) ? passed++ : failed++);
+  }
+
+  // A local stand-in exercises the actual bootstrap -> runner -> Stop hook ->
+  // child timeout chain without invoking Claude or using authentication.
+  if (process.platform !== 'win32') {
+    (test('times out a slow summarizer before lifecycle expiry and saves fallback', () => {
+      const home = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-session-budget-'));
+      try {
+        const uuid = '12345678-1234-4234-8234-123456789abc';
+        const transcript = path.join(home, `${uuid}.jsonl`);
+        const bin = path.join(home, 'bin');
+        fs.mkdirSync(bin);
+        fs.writeFileSync(transcript, JSON.stringify({ type: 'user', content: 'Persist after a slow summary' }) + '\n');
+        fs.writeFileSync(path.join(bin, 'claude'), `#!${process.execPath}\nrequire('fs').writeFileSync(${JSON.stringify(path.join(home, 'started'))}, 'started');\nsetTimeout(() => console.log('late summary'), 5000);\n`, { mode: 0o755 });
+        const root = path.resolve(__dirname, '../..');
+        const bootstrap = path.join(root, 'scripts/hooks/lifecycle-hook-bootstrap.js');
+        const res = spawnSync(process.execPath, [bootstrap, 'session:stop:session-end', 'scripts/hooks/session-end.js', 'minimal,standard,strict', '2500'], {
+          encoding: 'utf8', input: JSON.stringify({ transcript_path: transcript }),
+          env: {
+            ...isolatedHomeEnv(home), PATH: bin,
+            CLAUDE_PLUGIN_ROOT: root, ECC_HOOK_PROFILE: 'standard',
+            ECC_LLM_SUMMARY_INTERVAL: '1', ECC_SKIP_LLM_SUMMARY: '',
+            ECC_LLM_SUMMARY_SUBPROCESS: '', ECC_HOOK_DEADLINE_MS: '1',
+            ECC_DISABLED_HOOKS: '', ECC_HOOK_DRY_RUN: ''
+          },
+          timeout: 7000
+        });
+        assert.strictEqual(res.status, 0, res.stderr);
+        assert.ok(fs.existsSync(path.join(home, 'started')), 'Fresh bootstrap must replace an inherited expired deadline');
+        assert.match(res.stderr, /LLM summary failed; falling back/);
+        assert.doesNotMatch(res.stderr, /lifecycle runner failed/);
+        assert.match(fs.readFileSync(sessionFileFor(home, uuid), 'utf8'), /Persist after a slow summary/);
+      } finally {
+        fs.rmSync(home, { recursive: true, force: true });
+      }
+    }) ? passed++ : failed++);
+  }
 
   console.log(`\nResults: Passed: ${passed}, Failed: ${failed}`);
   process.exit(failed > 0 ? 1 : 0);
