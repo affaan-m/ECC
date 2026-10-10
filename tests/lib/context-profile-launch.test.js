@@ -157,7 +157,19 @@ test('spawn failures and timeout signals remain unsuccessful without a native ex
 }));
 
 for (const query of ["Don't use the feature skill.", 'Don\u2019t use the feature skill.',
-  'Can I use the feature skill?', 'The README says use the feature skill.', 'The docs say use feature.']) {
+  'Can I use the feature skill?', 'The README says use the feature skill.', 'The docs say use feature.',
+  'The docs say do not use feature and use shared guidance.',
+  'The docs say do not use feature, use shared guidance, okay?',
+  'Should we avoid feature and use shared guidance?',
+  'Should we avoid feature, use shared guidance?',
+  'Use standard tools, should we use feature?',
+  'Please use the existing code, can I use feature?',
+  'Use standard tools and should we use feature?',
+  'Use standard tools but should we use feature?',
+  'Do not use feature and shared guidance.',
+  "Use feature, don't use feature.",
+  "Use feature and don't use feature.",
+  "Use feature but don't use feature."]) {
   test('indirect citation uses the proposal path and honors decline: ' + query, () => withFixture(repoRoot => {
     const phases = [];
     const result = launchTaskContext({ repoRoot, task: { ...input, query, explicitIds: [] },
@@ -165,12 +177,45 @@ for (const query of ["Don't use the feature skill.", 'Don\u2019t use the feature
         phases.push(options.phase);
         if (options.phase === 'selection') return { status: 0, stdout: '{"selectedIds":[]}' };
         assert.doesNotMatch(options.input, /# feature/);
+        assert.doesNotMatch(options.input, /# shared/);
         return { status: 0, stdout: 'ok' };
       } });
     assert.deepEqual(phases, ['selection', 'task']);
     assert.equal(result.routingCalls, 1);
     assert.deepEqual(result.selection.loadedIds, []);
     assert.equal(result.selection.reason, 'agent-declined-selection');
+  }));
+}
+
+for (const [query, skill] of [
+  ["Don't use feature, use shared guidance.", 'shared'],
+  ["Don't use feature and use shared guidance.", 'shared'],
+  ["Don't use feature but use shared guidance.", 'shared'],
+  ["Don't use feature, use shared guidance, okay?", 'shared'],
+  ["Don't use feature and use shared guidance, okay?", 'shared'],
+  ["Don't use feature but use shared guidance, okay?", 'shared'],
+  ['Do not use feature, please use shared guidance?', 'shared'],
+  ['Do not use feature and please use shared guidance?', 'shared'],
+  ['Do not use feature but please use shared guidance?', 'shared'],
+  ["Don't use feature, use feature.", 'feature'],
+  ['Use feature?', 'feature'],
+  ['Please use feature?', 'feature'],
+  ['Use feature to fix the bug, okay?', 'feature'],
+]) {
+  test('an unambiguous final directive injects context without a proposal: ' + query, () => withFixture(repoRoot => {
+    const phases = [];
+    const result = launchTaskContext({ repoRoot, task: { ...input, query, explicitIds: [] },
+      execute(command, args, options) {
+        phases.push(options.phase);
+        if (options.phase === 'selection') return { status: 0, stdout: '{"selectedIds":[]}' };
+        assert.match(options.input, new RegExp('# ' + skill));
+        assert.doesNotMatch(options.input, new RegExp('# ' + (skill === 'shared' ? 'feature' : 'shared')));
+        return { status: 0, stdout: 'ok' };
+      } });
+    assert.deepEqual(phases, ['task']);
+    assert.equal(result.routingCalls, 0);
+    assert.deepEqual(result.selection.loadedIds, ['skill:' + skill]);
+    assert.equal(result.selection.reason, 'auto-selection');
   }));
 }
 

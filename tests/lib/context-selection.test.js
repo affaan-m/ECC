@@ -344,6 +344,74 @@ test('a negated citation does not suppress a separate affirmative directive', ()
   }
 }));
 
+for (const query of [
+  "Don't use feature, use shared guidance.",
+  "Don't use feature and use shared guidance.",
+  "Don't use feature but use shared guidance.",
+  'Do not use feature, please use shared guidance.',
+  'Don\u2019t use feature, and please use shared guidance.',
+  "Don't use feature, do use shared guidance.",
+  "Don't use feature, use shared guidance, okay?",
+  "Don't use feature and use shared guidance, okay?",
+  "Don't use feature but use shared guidance, okay?",
+  'Do not use feature, please use shared guidance?',
+  'Do not use feature and please use shared guidance?',
+  'Do not use feature but please use shared guidance?',
+]) {
+  test('a new directive scopes an earlier rejection: ' + query, () => withFixture(repoRoot => {
+    const result = resolve(repoRoot, { query }, { load: true });
+    assert.deepEqual(result.selectedIds, ['skill:shared']);
+    assert.deepEqual(result.loadedIds, ['skill:shared']);
+    assert.equal(result.reason, 'auto-selection');
+    assert.equal(result.receipt.autoSelection.exact, true);
+  }));
+}
+
+for (const query of [
+  'The docs say do not use feature and use shared guidance.',
+  'The docs say do not use feature, use shared guidance.',
+  'The docs say do not use feature, use shared guidance, okay?',
+  'Should we avoid feature and use shared guidance?',
+  'Should we avoid feature, use shared guidance?',
+  'Do not use feature and shared guidance.',
+  'Do not use feature, shared guidance.',
+]) {
+  test('a connector preserves indirect or negated context: ' + query, () => withFixture(repoRoot => {
+    const result = resolve(repoRoot, { query }, { load: true });
+    assert.ok(result.candidates.some(candidate => candidate.id === 'skill:shared'));
+    assert.deepEqual(result.selectedIds, []);
+    assert.deepEqual(result.loadedIds, []);
+    assert.equal(result.reason, 'agent-selection-required');
+    assert.equal(result.fallback, null);
+  }));
+}
+
+for (const query of [
+  'Use standard tools, should we use feature?',
+  'Please use the existing code, can I use feature?',
+  'Use standard tools and should we use feature?',
+  'Use standard tools but should we use feature?',
+]) {
+  test('a generic directive does not authorize a later question: ' + query, () => withFixture(repoRoot => {
+    const result = resolve(repoRoot, { query }, { load: true });
+    assert.ok(result.candidates.some(candidate => candidate.id === 'skill:feature'));
+    assert.deepEqual(result.selectedIds, []);
+    assert.deepEqual(result.loadedIds, []);
+    assert.equal(result.reason, 'agent-selection-required');
+    assert.equal(result.fallback, null);
+  }));
+}
+
+for (const query of ['Use feature?', 'Please use feature?', 'Use feature to fix the bug, okay?']) {
+  test('an imperative with question punctuation remains a directive: ' + query, () => withFixture(repoRoot => {
+    const result = resolve(repoRoot, { query }, { load: true });
+    assert.deepEqual(result.selectedIds, ['skill:feature']);
+    assert.deepEqual(result.loadedIds, ['skill:feature']);
+    assert.equal(result.reason, 'auto-selection');
+    assert.equal(result.receipt.autoSelection.exact, true);
+  }));
+}
+
 test('ordinary and polite directives preserve automatic and explicit selection', () => withFixture(repoRoot => {
   for (const query of ['Please use the feature skill.', 'Can you use the feature skill?',
     'Use feature without changing the code.', 'Use feature to document the change.',
@@ -375,7 +443,7 @@ test('routing policy changes invalidate receipts created by the old citation pol
   const { compileContextProfile } = require('../../scripts/lib/context-profiles');
   const plan = compileContextProfile({ repoRoot, selectionMode: 'auto' });
   const bindingDigest = digestObject({ sessionId: 'session-1', taskId: 'task-1', revision: 1,
-    phase: 'implement', planDigest: plan.planDigest, routingPolicyVersion: 5,
+    phase: 'implement', planDigest: plan.planDigest, routingPolicyVersion: 6,
     triggersDigest: digestObject({}), queryDigest: digestObject(query) });
   const { receiptDigest: _receiptDigest, ...receipt } = first.receipt;
   const oldReceipt = { ...receipt, bindingDigest, explicitIds: [],
@@ -386,9 +454,30 @@ test('routing policy changes invalidate receipts created by the old citation pol
   assert.deepEqual(result.loadedIds, []);
 }));
 
+test('an old empty selection is reconsidered when directive policy changes', () => withFixture(repoRoot => {
+  const query = "Don't use feature, use shared guidance.";
+  const first = resolve(repoRoot, { query });
+  const { digestObject } = require('../../scripts/lib/context-profile-support');
+  const { compileContextProfile } = require('../../scripts/lib/context-profiles');
+  const plan = compileContextProfile({ repoRoot, selectionMode: 'auto' });
+  const bindingDigest = digestObject({ sessionId: 'session-1', taskId: 'task-1', revision: 1,
+    phase: 'implement', planDigest: plan.planDigest, routingPolicyVersion: 6,
+    triggersDigest: digestObject({}), queryDigest: digestObject(query) });
+  const { receiptDigest: _receiptDigest, autoSelection: _autoSelection, ...receipt } = first.receipt;
+  const oldReceipt = { ...receipt, bindingDigest, decision: 'none', selectedIds: [], explicitIds: [],
+    loadedIds: [], resources: [], selectionDigest: digestObject({ bindingDigest, selectedIds: [], explicitIds: [] }) };
+  const previous = { ...oldReceipt, receiptDigest: digestObject(oldReceipt) };
+  const result = resolve(repoRoot, { query }, { previous, load: true });
+  assert.equal(result.reused, false);
+  assert.notEqual(result.receipt.bindingDigest, previous.bindingDigest);
+  assert.deepEqual(result.loadedIds, ['skill:shared']);
+  assert.equal(result.reason, 'auto-selection');
+}));
+
 for (const query of [
   'Should we use feature? Use feature.',
   'Use feature. Should we use feature?',
+  'Use feature, should we use feature?',
   'The docs say use feature. Use feature.',
   'Use feature. The docs say use feature.',
   'The phrase "Use feature." is an example. Use feature.',
@@ -397,6 +486,9 @@ for (const query of [
   `Use feature. The docs say "don’t use feature."`,
   'Use feature. The phrase "Use feature." is an example.',
   "Don't use feature. Use feature.",
+  "Don't use feature, use feature.",
+  "Don't use feature and use feature.",
+  "Don't use feature but use feature.",
   'The docs say never use feature. Use feature.',
   'Use feature. The docs say never use feature.',
   'Use feature to inspect the essay.',
@@ -411,6 +503,9 @@ for (const query of [
 
 for (const query of [
   "Use feature. Don't use feature.",
+  "Use feature, don't use feature.",
+  "Use feature and don't use feature.",
+  "Use feature but don't use feature.",
   'Use feature. Never use feature.',
   "Use feature. Don't use feature. Should we use feature?",
 ]) {

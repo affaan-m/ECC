@@ -30,10 +30,15 @@ const FALLBACK_MARGIN = 1.1;
 // longer overrides declines at the launch/selection call sites.
 // v5: indirect name citations cannot bypass review through exact or scored admission.
 // v6: ordered directives and singular named references share the same admission guard.
-const ROUTING_POLICY_VERSION = 6;
+// v7: independent directives scope negation and imperatives allow question punctuation.
+const ROUTING_POLICY_VERSION = 7;
 const TASK_KEYS = new Set(['sessionId', 'taskId', 'revision', 'phase', 'query', 'explicitIds', 'proposedIds', 'noWorkflow']);
 
 const DIRECTIVE_VERB = /\b(use|apply|invoke|run|follow|load)\s+(the\s+)?/i;
+const DIRECTIVE_REQUEST = /^(?:please )?(?:(?:can|could|would|will) you (?:please )?|do )?(?:use|apply|invoke|run|follow|load)\b/;
+const QUESTION_START = /^(?!do not\b)(can|could|would|should|may|might|do|does|did|is|are|why|how|what|when|where|which)\b/;
+const INSTRUCTION_BOUNDARY = /(?:,\s*(?:(?:and|but)\s+)?|\s+(?:and|but)\s+)(?=(?:please\s+)?(?:do\s+(?:not\s+)?|not\s+|never\s+)?(?:use|apply|invoke|run|follow|load)\b|(?:can|could|would|should|may|might|do|does|did|is|are|why|how|what|when|where|which)\b)/i;
+/** Normalize citation names while preserving contracted negation as a separate word. */
 const normalizedQueryName = text => text.replace(/n['\u2019]t\b/gi, ' not')
   .replace(/([a-z0-9])([A-Z])/g, '$1 $2').replace(/_/g, ' ')
   .toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
@@ -67,19 +72,23 @@ function citationFor(candidate, query, nativeName) {
     return part.replace(/[^.!?;\n]/g, ' ');
   });
   for (const clause of unquoted.match(/[^.!?;\n]+[.!?;\n]*/g) || []) {
-    const text = normalizedQueryName(clause);
+    // Keep comma boundaries for directive scope without changing alias normalization.
+    const text = clause.split(',').map(normalizedQueryName).join(', ');
     const mentions = aliases.flatMap(({ name, exact }) => [...text.matchAll(new RegExp('\\b' + name + '\\b', 'g'))]
       .map(mention => ({ index: mention.index, exact }))).sort((a, b) => a.index - b.index);
-    const polite = /^(?:(?:please )?(?:can|could|would|will) you (?:please )?|do )(?:use|apply|invoke|run|follow|load)\b/.test(text);
-    const question = !polite && (clause.includes('?')
-      || (!/^do not\b/.test(text)
-        && /^(can|could|would|should|may|might|do|does|did|is|are|why|how|what|when|where|which)\b/.test(text)));
+    const request = DIRECTIVE_REQUEST.test(text);
+    const interrogative = !request && QUESTION_START.test(text);
     for (const mention of mentions) {
       const prefix = text.slice(0, mention.index);
+      // A directive or question after a connector starts its own scope.
+      // Lists without another verb and reported speech keep their guards.
+      const instructionPrefix = prefix.split(INSTRUCTION_BOUNDARY).at(-1);
+      const question = interrogative || (!DIRECTIVE_REQUEST.test(instructionPrefix)
+        && (QUESTION_START.test(instructionPrefix) || (!request && clause.includes('?'))));
       if (question || /^\s*["'\u201c\u2018\x60]/.test(clause)
         || /\b(say|says|said|reads|told|mentions?|quoted?|document)\b/.test(prefix)) {
         if (citation === 'none') citation = 'indirect';
-      } else if (/\b(do not|never|no|not|avoid)\b/.test(prefix)) {
+      } else if (/\b(do not|never|no|not|avoid)\b/.test(instructionPrefix)) {
         citation = 'indirect';
       } else if (mention.exact && candidate.exact
         && new RegExp(DIRECTIVE_VERB.source + '(skill\\s*:?\\s*)?$', 'i').test(prefix)) {
