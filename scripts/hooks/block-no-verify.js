@@ -267,6 +267,7 @@ function assignmentValues(prior, operand, append, dynamic, budget) {
 }
 
 class UnsupportedEnvSplitEscape extends Error {}
+class UnsupportedSedEscape extends Error {}
 
 function validateEnvSplitEscapes(payload, budget) {
   let quote = null;
@@ -460,6 +461,232 @@ function shellRole(words, budget, shell) {
   return { kind: 'shell', stdin: stdin || i === words.length };
 }
 
+// --- GNU sed execution model -------------------------------------------------
+// sed is a text transformer, not a shell: its script operand and file operands
+// are data. Two constructs break that: the `e` command (with or without an
+// operand, the operand or pattern space is run through the shell) and an `s`
+// command carrying the `e` flag (the substituted pattern space is run through
+// the shell). Scripts using them make sed a shell-equivalent receiver; every
+// other invocation keeps its operands out of the executable scan. Anything the
+// literal parser cannot confidently read falls back to today's opaque default.
+
+// Skip an optional address (or range) before a command letter. Returns the
+// index of the command letter, or -1 when an address starts but cannot be
+// confidently consumed.
+function skipSedAddress(script, i, budget) {
+  const n = script.length;
+  function one(i) {
+    if (i >= n) return -1;
+    const c = script[i];
+    if (c === '$') return i + 1;
+    if (/[0-9]/.test(c)) {
+      let j = i;
+      while (j < n && /[0-9]/.test(script[j])) { budget.spend(); j++; }
+      return j;
+    }
+    const delimChar = c === '/' ? '/' : (c === '\\' ? script[i + 1] : null);
+    if (delimChar) {
+      let j = c === '/' ? i + 1 : i + 2;
+      while (j < n) {
+        budget.spend();
+        if (script[j] === '\\') { j += 2; continue; }
+        if (script[j] === delimChar) return j + 1;
+        if (script[j] === '\n') return -1;
+        j++;
+      }
+      return -1;
+    }
+    return -1;
+  }
+  const first = one(i);
+  if (first === -1) return i; // no address; the command letter is at i
+  let j = first;
+  if (script[j] === ',') {
+    const second = one(j + 1);
+    if (second === -1) return -1;
+    j = second;
+  }
+  if (script[j] === '!') j++;
+  return j;
+}
+
+// Read one delimiter-bounded sed section (pattern, replacement or
+// transliteration set) starting at script[start]. Returns the index of the
+// closing delimiter, or -1 when the section cannot be confidently read.
+function readSedDelimited(script, start, delim, budget) {
+  let j = start;
+  while (j < script.length) {
+    budget.spend();
+    if (script[j] === '\\') { j += 2; continue; }
+    if (script[j] === delim) return j;
+    if (script[j] === '\n') return -1;
+    j++;
+  }
+  return -1;
+}
+
+// Parse one sed s-command (or y-command, which shares the shape but takes no
+// flags) at script[i]. Returns { end, replacement, exec }, or null when the
+// shape is not confidently literal.
+function parseSedSubstitution(script, i, budget, transliterate = false) {
+  const delim = script[i + 1];
+  if (delim === undefined || /[a-zA-Z0-9\\\s]/.test(delim)) return null;
+  const patternEnd = readSedDelimited(script, i + 2, delim, budget);
+  if (patternEnd === -1) return null;
+  const replacementEnd = readSedDelimited(script, patternEnd + 1, delim, budget);
+  if (replacementEnd === -1) return null;
+  const replacement = script.slice(patternEnd + 1, replacementEnd);
+  let j = replacementEnd + 1;
+  if (transliterate) return { end: j, replacement: '', exec: false };
+  // GNU flag letters. `e` executes; `E` only selects extended regex and must
+  // not be treated as execution. `w file` appends a filename operand (data).
+  let exec = false;
+  while (j < script.length && /[0-9gGpPiImMe]/.test(script[j])) {
+    budget.spend();
+    if (script[j] === 'e') exec = true;
+    j++;
+  }
+  if (script[j] === 'w') {
+    while (j < script.length && script[j] !== '\n') { budget.spend(); j++; }
+  }
+  return { end: j, replacement, exec };
+}
+
+// Exec-bearing fragments (the s///e replacement, the e command operand) are
+// decoded by GNU sed before execution: \xHH, \oOOO, \dNNN, case operations and
+// even unknown escapes like \g all rewrite the text. Decoding that surface
+// faithfully is out of scope, so any backslash in an executed fragment keeps
+// the hook from proving safety — the caller blocks, mirroring the env -S
+// escape precedent rather than pretending to interpret sed.
+function assertSedLiteral(text) {
+  if (text.includes('\\')) throw new UnsupportedSedEscape();
+}
+
+// The `e` command: with an operand, the operand runs through the shell; bare,
+// the pattern space (input data) does.
+function readSedExecute(script, i, budget) {
+  let j = i + 1;
+  while (j < script.length && (script[j] === ' ' || script[j] === '\t')) { budget.spend(); j++; }
+  if (j < script.length && script[j] !== '\n' && script[j] !== ';') {
+    let end = j;
+    while (end < script.length && script[end] !== '\n') { budget.spend(); end++; }
+    const operand = script.slice(j, end);
+    // A trailing backslash is an escaped newline: GNU sed joins the next line
+    // into this one operand, which the literal check below refuses.
+    assertSedLiteral(operand);
+    return { end, parts: [operand], stdinExec: true };
+  }
+  return { end: j, parts: [], stdinExec: true };
+}
+
+// Text, label and filename operands run to end of line; all are data.
+function readSedLineOperand(script, i, budget) {
+  let end = i + 1;
+  while (end < script.length && script[end] !== '\n') { budget.spend(); end++; }
+  return { end, parts: [], stdinExec: false };
+}
+
+function readSedCommand(script, i, budget) {
+  const letter = script[i];
+  if (letter === 's') {
+    const sub = parseSedSubstitution(script, i, budget);
+    if (!sub) return null;
+    if (!sub.exec) return { end: sub.end, parts: [], stdinExec: false };
+    // The executed text also carries matched input data (&, backrefs), so a
+    // piping producer must be treated as a shell source too.
+    assertSedLiteral(sub.replacement);
+    return { end: sub.end, parts: sub.replacement ? [sub.replacement] : [], stdinExec: true };
+  }
+  if (letter === 'y') {
+    const sub = parseSedSubstitution(script, i, budget, true);
+    return sub ? { end: sub.end, parts: [], stdinExec: false } : null;
+  }
+  if (letter === 'e') return readSedExecute(script, i, budget);
+  if ('acirwWb:tTqQ'.includes(letter)) return readSedLineOperand(script, i, budget);
+  if ('dDgGhHlnNpPxFzv='.includes(letter)) return { end: i + 1, parts: [], stdinExec: false };
+  return null; // unmodeled command letter: keep the opaque default
+}
+
+// Returns { parts, stdinExec } where parts are literal script fragments sed
+// will hand to the shell, or null when the script cannot be confidently read.
+function sedExecParts(script, budget) {
+  if (script.includes('\u0000')) return null; // expansion residue: not literal
+  const parts = [];
+  let stdinExec = false;
+  let i = 0;
+  while (i < script.length) {
+    budget.spend();
+    const c = script[i];
+    if (c === ' ' || c === '\t' || c === '\n' || c === ';' || c === '{' || c === '}') { i++; continue; }
+    if (c === '#') {
+      while (i < script.length && script[i] !== '\n') { budget.spend(); i++; }
+      continue;
+    }
+    if (c === '\\') return null; // escape in command position: unmodeled
+    const addressed = skipSedAddress(script, i, budget);
+    if (addressed === -1) return null;
+    if (addressed >= script.length) break;
+    const step = readSedCommand(script, addressed, budget);
+    if (!step || step.end <= addressed) return null;
+    parts.push(...step.parts);
+    stdinExec ||= step.stdinExec;
+    i = step.end;
+  }
+  return { parts, stdinExec };
+}
+
+// Model sed's argv: which operands are scripts, which are file names (data).
+// GNU sed collects -e/--expression scripts from ANY argv position — a later -e
+// after positional operands still executes — so options are parsed through the
+// whole argv. When any script option is given, every positional is a file;
+// otherwise the first positional is the script (verified against GNU sed 4.9).
+// Returns the script strings, or null when the invocation shape is unmodeled —
+// the caller then keeps today's opaque default instead of guessing.
+function sedScriptParts(words, budget) {
+  const scripts = [];
+  const positionals = [];
+  let i = 1;
+  while (i < words.length) {
+    const raw = words[i].value;
+    budget.spend(raw.length + 1);
+    if (raw === '--') {
+      // Options end here, but the operands do not: with no script option
+      // given, the first operand after -- is still the script (GNU sed 4.9
+      // verified). Keep collecting them.
+      i++;
+      while (i < words.length) { positionals.push(words[i].value); budget.spend(words[i].value.length + 1); i++; }
+      break;
+    }
+    if (raw === '--expression') {
+      if (!words[i + 1]) return null;
+      scripts.push(words[i + 1].value); i += 2; continue;
+    }
+    if (raw.startsWith('--expression=')) { scripts.push(raw.slice('--expression='.length)); i++; continue; }
+    if (raw.startsWith('--')) {
+      if (['--quiet', '--silent', '--null-data', '--zero-terminated', '--posix', '--regexp-extended', '--sandbox', '--separate', '--unbuffered', '--follow-symlinks'].includes(raw)) { i++; continue; }
+      return null; // --file=, --in-place variants, unknown long options
+    }
+    if (raw.startsWith('-') && raw.length > 1) {
+      if (raw === '-e') {
+        if (!words[i + 1]) return null;
+        scripts.push(words[i + 1].value); i += 2; continue;
+      }
+      if (raw === '-f') return null; // script comes from a file we cannot read
+      if (/^-l[0-9]+$/.test(raw)) { i++; continue; }
+      if (/^-[nsEruzb]+$/.test(raw)) { i++; continue; }
+      return null; // -i suffix ambiguity, unknown/attached short options
+    }
+    positionals.push(raw); i++; // operands: first becomes the script only when no script option was given
+  }
+  if (!scripts.length) {
+    if (!positionals.length) return null; // no script operand at all
+    scripts.push(positionals[0]);
+  }
+  // With any -e/--expression present, every positional is a file: data,
+  // deliberately left uninspected.
+  return scripts;
+}
+
 function commandRole(words, budget) {
   if (!words.length) return { kind: 'data' };
   budget.spend(words[0].value.length + 1);
@@ -469,6 +696,23 @@ function commandRole(words, budget) {
   if (name === 'eval') {
     for (const word of words) budget.spend(word.value.length + 3);
     return { kind: 'shell', code: words.slice(words[1]?.value === '--' ? 2 : 1).map(word => word.value).join(' '), stdin: false };
+  }
+  if (name === 'sed') {
+    const scripts = sedScriptParts(words, budget);
+    if (!scripts) return { kind: 'opaque', stdin: true };
+    const parts = [];
+    let stdinExec = false;
+    for (const script of scripts) {
+      const parsed = sedExecParts(script, budget);
+      if (!parsed) return { kind: 'opaque', stdin: true };
+      parts.push(...parsed.parts);
+      stdinExec ||= parsed.stdinExec;
+    }
+    if (parts.length || stdinExec) return { kind: 'sedExec', stdin: true, parts };
+    // Pure text transformation: script and file operands are data. This is the
+    // specific false positive the #3051 tests pin: file names that merely
+    // contain "git ..." never execute.
+    return { kind: 'data' };
   }
   if (DATA_COMMANDS.has(name)) return { kind: 'data' };
   return { kind: 'opaque', stdin: true };
@@ -718,6 +962,14 @@ function checkCommand(input) {
             }
             else childEnvironments.push({ code: role.code, opaque: false, environment });
           }
+          if (role.kind === 'sedExec') {
+            // Fragments sed will hand to the shell are scanned as real shell
+            // source, not as opaque text — this closes the GNU sed `e` gap.
+            for (const part of role.parts) {
+              budget.spend(part.length + 1);
+              childEnvironments.push({ code: part, opaque: false, environment });
+            }
+          }
           if (role.stdin) {
             for (const redirect of command.redirects) {
               if (redirect.operator === '<<<') childEnvironments.push({ code: redirect.word.value, opaque: role.kind === 'opaque', environment });
@@ -746,6 +998,9 @@ function checkCommand(input) {
   } catch (error) {
     if (error instanceof UnsupportedEnvSplitEscape) {
       return { blocked: true, reason: 'BLOCKED: Unsupported env split-string escape; hook-bypass safety could not be established.' };
+    }
+    if (error instanceof UnsupportedSedEscape) {
+      return { blocked: true, reason: 'BLOCKED: Unsupported sed script escape; hook-bypass safety could not be established.' };
     }
     if (!(error instanceof RangeError)) throw error;
     return { blocked: true, reason: 'BLOCKED: Shell analysis work budget exceeded; hook-bypass safety could not be established.' };

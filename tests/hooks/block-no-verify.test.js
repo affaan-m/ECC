@@ -2142,6 +2142,59 @@ for (const [name, payload, expected] of escapedSplitCases) {
   }
 }
 
+// --- GNU sed execution model (#3051 test intent) ---
+// sed is a text transformer: its script operand and file operands are data,
+// except the `e` command and the s///e flag, which run text through the shell.
+// Ported from the #3051 litmus set: quoted-as-data stays data, real execution
+// is blocked, and unmodeled invocations keep the conservative opaque default.
+
+const sedCases = [
+  // False positives fixed: non-executing sed operands are data.
+  ['sed filename is data (the #3051 false positive)', "sed 's/x/y/' 'e git commit --no-verify'", 0],
+  ['non-executing script containing a git command is data', "sed 's/x/git commit --no-verify/'", 0],
+  ['file operand containing git is data', "sed 's/eee/zzz/' 'git commit --no-verify.txt'", 0],
+  ['benign line-range script is data', "sed -n '1,3p' file.txt", 0],
+  ['s///e replacement is shell source', "printf x | sed 's/x/git commit --no-verify/e'", 2],
+  ['s///e replacement still blocked further downstream', "printf x | sed 's/x/git commit --no-verify/e' | cat", 2],
+  ['e command operand is shell source', "sed -e 'e git commit --no-verify'", 2],
+  ['bare e consumes piped source as shell code', "printf 'git commit --no-verify' | sed -e 'e'", 2],
+  ['--expression= form is modeled', "sed --expression='s/x/git commit --no-verify/e'", 2],
+  // Conservative defaults preserved: unmodeled invocations stay opaque.
+  ['-f scripts are unreadable: opaque default', "sed -f script.sed 'git commit --no-verify'", 2],
+  ['-i suffix ambiguity: opaque default', "sed -i 's/a/b/' 'git commit --no-verify'", 2],
+  // Litmus anchors from the #3051 direction check (existing behavior pinned).
+  ['quoted-as-data through echo stays allowed', 'echo "git commit --no-verify"', 0],
+  ['direct --no-verify stays blocked', 'git commit --no-verify -m x', 2],
+  ['mixed quoting smuggling a real flag stays blocked', "git commit '--no-verify' -m x", 2],
+  // GNU sed collects -e scripts from any argv position (CodeRabbit finding on
+  // this PR): an execution construct after positional operands still executes.
+  ['later -e script after positional operands is scanned', "printf x | sed -e 's/x/y/' - -e 's/y/git commit --no-verify/e'", 2],
+  ['later -e after a positional script operand is scanned', "sed 's/x/y/' -e 'e git commit --no-verify'", 2],
+  ['later --expression= after positionals is scanned', "sed 's/x/y/' --expression='s/x/git commit --no-verify/e'", 2],
+  ['-- ends options: later tokens are file operands', "sed -e 's/x/y/' -- 'git commit --no-verify'", 0],
+  // With no script option before --, the first operand after -- is still the
+  // script (Greptile P1 on this PR, GNU sed 4.9 verified).
+  ['first operand after -- is still the script', "printf x | sed -- 's/x/git commit --no-verify/e'", 2],
+  ['file operands after the -- script stay data', "sed -- 's/x/y/' 'git commit --no-verify'", 0],
+  // GNU sed decodes escapes in exec-bearing fragments before execution
+  // (Greptile P1 findings on this PR): decoding that surface faithfully is out
+  // of scope, so escaped fragments are conservatively blocked instead.
+  ['hex escape decoding bypass is conservatively blocked', "printf x | sed 's/x/\\x67it commit --no-verify/e'", 2],
+  ['unknown escape decoding bypass is conservatively blocked', "printf x | sed 's/x/\\git commit --no-verify/e'", 2],
+  ['escaped-newline continued e operand is conservatively blocked', "printf x | sed -e 'e git commit \\\n--no-verify'", 2],
+  ['octal escape decoding bypass is conservatively blocked', "printf x | sed 's/x/\\147it commit --no-verify/e'", 2],
+  ['backslash in a non-executing script stays data', "sed 's/a\\/b/c/' 'git commit --no-verify'", 0]
+];
+for (const [name, command, expected] of sedCases) {
+  if (test(`sed model ${name}`, () => {
+    for (const input of [command, JSON.stringify({ tool_input: { command } })]) {
+      const result = runHook(input);
+      assert.strictEqual(result.code, expected, `expected exit ${expected}, got ${result.code}: ${result.stderr}`);
+      if (expected === 2) assert.match(result.stderr, /BLOCKED/);
+    }
+  })) passed++; else failed++;
+}
+
 console.log('─'.repeat(50));
 console.log(`Passed: ${passed}  Failed: ${failed}`);
 
