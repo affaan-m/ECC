@@ -103,16 +103,16 @@ function parseReadmeExpectations(readmeContent) {
     { category: 'commands', mode: 'exact', expected: Number(quickStartMatch[3]), source: 'README.md quick-start summary' }
   );
 
-  const projectTreeAgentsMatch = readmeContent.match(/^\|\s*--\s*agents\/\s*#\s*(\d+)\s+specialized subagents for delegation\s*$/im);
-  if (!projectTreeAgentsMatch) {
+  const projectTreeAgentsMatches = [...readmeContent.matchAll(/^\|\s*--\s*agents\/\s*#\s*(\d+)\s+specialized subagents for delegation\s*$/gim)];
+  if (!projectTreeAgentsMatches.length) {
     throw new Error('README.md project tree is missing the agents count');
   }
 
-  expectations.push({
+  for (const [index, match] of projectTreeAgentsMatches.entries()) expectations.push({
     category: 'agents',
     mode: 'exact',
-    expected: Number(projectTreeAgentsMatch[1]),
-    source: 'README.md project tree (agents)'
+    expected: Number(match[1]),
+    source: `README.md project tree ${index + 1} (agents)`
   });
 
   const tablePatterns = [
@@ -411,7 +411,7 @@ function syncEnglishReadme(content, catalog) {
   );
   nextContent = replaceOrThrow(
     nextContent,
-    /^(\|\s*--\s*agents\/\s*#\s*)(\d+)(\s+specialized subagents for delegation\s*)$/im,
+    /^(\|\s*--\s*agents\/\s*#\s*)(\d+)(\s+specialized subagents for delegation\s*)$/gim,
     (_, prefix, __, suffix) => `${prefix}${catalog.agents.count}${suffix}`,
     'README.md project tree (agents)'
   );

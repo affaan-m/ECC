@@ -581,6 +581,10 @@ const DD_LAUNCHER_OPTIONS = {
   setsid: {
     values: new Set(), optional: new Set(),
     flags: new Set(['-c', '--ctty', '-f', '--fork', '-w', '--wait'])
+  },
+  taskset: {
+    values: new Set(), optional: new Set(),
+    flags: new Set(['-a', '--all-tasks', '-c', '--cpu-list'])
   }
 };
 
@@ -633,8 +637,9 @@ function ddLauncherCommandIndex(argv, index, name) {
     }
     index += consumesNext ? 2 : 1;
   }
-  // timeout's duration is data, followed by exactly one executable position.
-  return name === 'timeout' ? index + 1 : index;
+  // timeout's duration and taskset's mask or CPU list are data, followed by
+  // exactly one executable position.
+  return name === 'timeout' || name === 'taskset' ? index + 1 : index;
 }
 
 /**
@@ -768,6 +773,30 @@ function unwrapLeadWrappers(tokens, allowShellBuiltins = true, allowDdLaunchers 
 }
 
 /**
+ * The command lines `su` may run through the target user's shell: the value of
+ * every `-c`/`--command`, or of a short-option cluster ending in `c` (`-lc`).
+ * `su` runs only the last one, so each is checked rather than guessing which
+ * wins. `su` passes the arguments after `--` to that shell, which runs a `-c`
+ * there too, so the scan does not stop at `--`.
+ *
+ * @param {string[]} argv command argv starting at `su`
+ * @returns {string[]}
+ */
+function suCommandLines(argv) {
+  const commandLines = [];
+  for (let i = 1; i < argv.length; i += 1) {
+    const arg = argv[i];
+    if (arg.startsWith('--command=')) {
+      commandLines.push(arg.slice('--command='.length));
+    } else if ((arg === '--command' || /^-[A-Za-z]*c$/.test(arg)) && i + 1 < argv.length) {
+      commandLines.push(argv[i + 1]);
+      i += 1;
+    }
+  }
+  return commandLines;
+}
+
+/**
  * Detect destructive SQL passed as (possibly quoted) arguments to a known
  * SQL client. Operates on dequoted tokens from `quoteAwareSegments`, so
  * `psql -c "drop table users"` joins back to matchable text.
@@ -787,12 +816,15 @@ function isDestructiveSqlClient(tokens) {
  * separators, quoted `find -exec`, and `sh -c`/`bash -c` wrappers that evade
  * the quote-stripping path (GHSA-4v57-ph3x-gf55).
  *
+ * Past the recursion limit the nested command is not visible, so the check
+ * fails closed: a guard that allowed it would be bypassed by one more level.
+ *
  * @param {string} raw
  * @param {number} [depth] recursion guard for shell -c wrappers
  * @returns {boolean}
  */
 function isDestructiveQuoteAware(raw, depth = 0) {
-  if (depth > 4) return false;
+  if (depth > 4) return true;
   // The outer command was preprocessed already; shell -c introduces a new
   // program whose literal heredoc data must also stay outside execution.
   const executable = depth === 0 ? raw : stripHeredocBodies(raw);
@@ -805,10 +837,17 @@ function isDestructiveQuoteAware(raw, depth = 0) {
       if (isDestructiveSqlClient(tokens)) return true;
       if (isDestructiveFindExec(tokens)) return true;
       const argv = unwrapLeadWrappers(tokens, true, true);
-      if (SHELL_WRAPPERS.has(commandBasename(argv[0]))) {
-        const ci = argv.indexOf('-c', 1);
+      const base = commandBasename(argv[0]);
+      if (SHELL_WRAPPERS.has(base)) {
+        // `-c`, or a short-option cluster that includes it (`-lc`, `-ec`).
+        const ci = argv.findIndex((arg, i) => i > 0 && /^-[A-Za-z]*c[A-Za-z]*$/.test(arg));
         if (ci !== -1 && argv[ci + 1] && isDestructiveQuoteAware(argv[ci + 1], depth + 1)) {
           return true;
+        }
+      }
+      if (base === 'su') {
+        for (const commandLine of suCommandLines(argv)) {
+          if (isDestructiveQuoteAware(commandLine, depth + 1)) return true;
         }
       }
     }
@@ -1500,6 +1539,30 @@ function getFullDenialBudget() {
   return DEFAULT_FULL_DENIALS;
 }
 
+const MAX_DENIALS_PATTERN = /^\d+$/;
+
+/**
+ * Session-wide ceiling on Edit/Write/MultiEdit fact-force denials, from
+ * GATEGUARD_FACT_FORCE_MAX_DENIALS. Opt-in: unset keeps the existing behavior
+ * of denying every new path, and the destructive-Bash gate is unaffected
+ * either way.
+ *
+ * The value is validated whole rather than with Number.parseInt, because a
+ * prefix parse turns '3.5', '3oops', and '0x3' into finite caps and would
+ * quietly weaken the gate on a typo. Anything that is not a complete
+ * non-negative decimal integer leaves the gate uncapped.
+ *
+ * @returns {number} the denial ceiling, or Number.POSITIVE_INFINITY when uncapped
+ */
+function getMaxDenialBudget() {
+  const raw = (process.env.GATEGUARD_FACT_FORCE_MAX_DENIALS || '').trim();
+  if (!MAX_DENIALS_PATTERN.test(raw)) {
+    return Number.POSITIVE_INFINITY;
+  }
+  const parsed = Number(raw);
+  return Number.isSafeInteger(parsed) ? parsed : Number.POSITIVE_INFINITY;
+}
+
 function getDenialCount(state) {
   const n = Number(state && state.fact_force_denials);
   return Number.isFinite(n) && n >= 0 ? Math.floor(n) : 0;
@@ -1554,9 +1617,11 @@ function isChecked(key) {
 
 // --- Sanitize file path against injection ---
 
-// Unicode policy for sanitizePath, mirroring the repo-wide dangerous set in
-// scripts/ci/check-unicode-safety.js. Named so the ranges stay auditable and
-// drift against the CI policy is visible in one place.
+// Unicode policy for sanitizePath starts with the repo-wide dangerous set in
+// scripts/ci/check-unicode-safety.js and adds display-ambiguity characters such
+// as soft hyphen. Source text may use those legitimately, but denial paths must
+// remain visually unambiguous. Named constants keep that stricter boundary
+// auditable.
 const ASCII_CONTROL_MAX = 0x1f;
 const ASCII_DELETE = 0x7f;
 const C1_CONTROLS = [0x80, 0x9f]; // Unicode C1 control block (U+0080..U+009F)
@@ -1566,6 +1631,7 @@ const BIDI_ISOLATES = [0x2066, 0x2069]; // LRI..PDI
 const ZERO_WIDTHS = [0x200b, 0x200d]; // ZWSP..ZWJ
 const WORD_JOINER = 0x2060;
 const BYTE_ORDER_MARK = 0xfeff;
+const SOFT_HYPHEN = 0x00ad;
 const VARIATION_SELECTORS = [0xfe00, 0xfe0f];
 const VARIATION_SUPPLEMENTS = [0xe0100, 0xe01ef]; // MONGOLIAN..TAGS (VS17..VS256)
 const TAG_BLOCK = [0xe0000, 0xe007f]; // ASCII-smuggling tag characters
@@ -1599,6 +1665,7 @@ function sanitizePath(filePath) {
       inRange(code, ZERO_WIDTHS) ||
       code === WORD_JOINER ||
       code === BYTE_ORDER_MARK ||
+      code === SOFT_HYPHEN ||
       inRange(code, VARIATION_SELECTORS) ||
       inRange(code, VARIATION_SUPPLEMENTS) ||
       inRange(code, TAG_BLOCK) ||
@@ -1756,7 +1823,7 @@ function condensedGateMsg(action, filePath, ordinal) {
     `[Fact-Forcing Gate] (denial #${ordinal} this session) First ${action} of ${safe}: ` +
     "briefly state importers/callers, affected API, data schemas if any, and the user's verbatim instruction, then retry. " +
     `${batchSiblingWarning(safe)} ` +
-    '(Use GATEGUARD_EXEMPT_GLOBS for path-scoped exemptions; ECC_GATEGUARD=off disables this gate.)'
+    '(Use GATEGUARD_EXEMPT_GLOBS for path-scoped exemptions; GATEGUARD_FACT_FORCE_MAX_DENIALS caps denials per session; ECC_GATEGUARD=off disables this gate.)'
   );
 }
 
@@ -1875,6 +1942,9 @@ function run(rawInput) {
       if (!ok) {
         return allowWithStateWarning();
       }
+      if (denials > getMaxDenialBudget()) {
+        return rawInput;
+      }
       if (denials > getFullDenialBudget()) {
         const action = toolName === 'Edit' ? 'edit' : 'creation';
         return denyResult(condensedGateMsg(action, filePath, denials), { includeRecoveryHint: false });
@@ -1899,6 +1969,9 @@ function run(rawInput) {
         const { ok, denials } = markCheckedAndCountDenial(filePath);
         if (!ok) {
           return allowWithStateWarning();
+        }
+        if (denials > getMaxDenialBudget()) {
+          return rawInput;
         }
         if (denials > getFullDenialBudget()) {
           return denyResult(condensedGateMsg('edit', filePath, denials), { includeRecoveryHint: false });

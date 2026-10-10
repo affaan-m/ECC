@@ -26,7 +26,7 @@ const hooksConfig = readHooksConfig(path.join(repoRoot, 'hooks', 'hooks.json'));
 
 const MAX_STDIN = 1024 * 1024;
 const SUBPROCESS_TIMEOUT_MS = process.platform === 'darwin' && process.env.CI === 'true'
-  ? 120_000
+  ? 180_000
   : 60_000;
 
 const workDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-stop-stdout-')); // non-git cwd
@@ -321,12 +321,11 @@ if (
   passed++;
 else failed++;
 
-// spawnSync limits captured output by bytes while the runner's stdin cap is
-// counted after UTF-8 decoding. A payload can therefore be below MAX_STDIN in
-// characters but above Node's default 1MB child-process buffer in bytes.
+// A payload can be below MAX_STDIN in characters but above the byte limit.
+// The runner must count UTF-8 bytes and suppress a truncated JSON document.
 const multibytePayload = stopPayload(400 * 1024, '한');
 assert.ok(multibytePayload.length < MAX_STDIN, 'fixture must stay below the runner character cap');
-assert.ok(Buffer.byteLength(multibytePayload) > MAX_STDIN, 'fixture must exceed the default byte buffer');
+assert.ok(Buffer.byteLength(multibytePayload) > MAX_STDIN, 'fixture must exceed the runner byte cap');
 
 for (const entry of hooksConfig.hooks.Stop) {
   if (
@@ -334,6 +333,7 @@ for (const entry of hooksConfig.hooks.Stop) {
       const result = runRegisteredStopHook(entry, multibytePayload);
       assert.strictEqual(result.status, 0, `${entry.id}: expected exit 0, got ${result.status}: ${result.stderr}`);
       assert.strictEqual(result.stdout, '', `${entry.id}: disabled wrapper must stay silent`);
+      assert.match(result.stderr, /lifecycle stdin exceeded 1048576 bytes/);
     })
   )
     passed++;

@@ -187,6 +187,14 @@
       ]
     },
     {
+      "id": "capability:documentation-governance",
+      "family": "capability",
+      "description": "Optional documentation routing and deterministic read-only integrity audits.",
+      "modules": [
+        "documentation-governance"
+      ]
+    },
+    {
       "id": "capability:prediction-markets",
       "family": "capability",
       "description": "Public, non-advisory prediction-market and Ito basket research workflows with gated Ito API access.",
@@ -591,6 +599,14 @@
       ]
     },
     {
+      "id": "skill:osint-investigation",
+      "family": "skill",
+      "description": "Adaptive public-source investigation with tool selection, evidence tracking, visual verification, and falsification.",
+      "modules": [
+        "research-apis"
+      ]
+    },
+    {
       "id": "skill:deep-research",
       "family": "skill",
       "description": "Deep research and investigation workflows.",
@@ -668,6 +684,14 @@
       "description": "Traditional Chinese (zh-TW) translated reference docs installed to ~/.claude/docs/zh-TW/.",
       "modules": [
         "docs-zh-tw"
+      ]
+    },
+    {
+      "id": "locale:bn",
+      "family": "locale",
+      "description": "Bengali (bn) translated reference documentation installed to ~/.claude/docs/bn/.",
+      "modules": [
+        "docs-bn"
       ]
     },
     {

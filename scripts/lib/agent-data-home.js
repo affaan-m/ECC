@@ -92,6 +92,8 @@ function getDefaultCursorAgentDataHome() {
 }
 
 function getDefaultClaudeAgentDataHome() {
+  const fromClaudeConfigDir = expandHomePath(process.env.CLAUDE_CONFIG_DIR);
+  if (fromClaudeConfigDir) return fromClaudeConfigDir;
   return path.join(getHomeDirFromEnv(), DEFAULT_CLAUDE_DIR_NAME);
 }
 
@@ -114,6 +116,8 @@ function resolveAllowedProjectConfigHome(candidate) {
   const allowedRoots = [
     getDefaultCursorAgentDataHome(),
     getDefaultClaudeAgentDataHome(),
+    // Keep ~/.claude eligible when CLAUDE_CONFIG_DIR points elsewhere.
+    path.join(getHomeDirFromEnv(), DEFAULT_CLAUDE_DIR_NAME),
   ];
 
   for (const allowedRoot of allowedRoots) {

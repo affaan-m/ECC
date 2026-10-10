@@ -1,0 +1,122 @@
+#:schema https://developers.openai.com/codex/config-schema.json
+
+# ECC user-install reference (a separate TOML document).
+# Legacy add-only sync and the native Codex home installer use this file.
+# Review these existing defaults and integrations before choosing to install them.
+# This is not the project config; .codex/config.toml contains project guidance.
+# Neither reference certifies effective permissions or runtime compatibility.
+# CLI overrides, supported Codex versions and administrator policy still matter.
+# https://developers.openai.com/codex/config-reference
+# https://developers.openai.com/codex/multi-agent
+
+# Model selection
+# Leave `model` and `model_provider` unset so Codex CLI uses its current
+# built-in defaults. Uncomment and pin them only if you intentionally want
+# user-level model overrides.
+
+# Existing ECC user-level runtime defaults.
+approval_policy = "on-request"
+sandbox_mode = "workspace-write"
+web_search = "live"
+
+# Optional external notification command, preserved from the user reference.
+notify = [
+  "terminal-notifier",
+  "-title", "Codex ECC",
+  "-message", "Task completed!",
+  "-sound", "default",
+]
+
+# Existing ECC instruction key retained for sync compatibility.
+# Check the configuration reference for your supported Codex version.
+persistent_instructions = "Follow project AGENTS.md guidelines. Use available MCP servers when they can help."
+
+# Optional instruction-file override; consult the supported version's semantics.
+# model_instructions_file = "/absolute/path/to/instructions.md"
+
+# MCP servers
+# Existing user-install registrations are preserved here as data.
+# Installing or running a server is a separate choice; no package pins are changed.
+[mcp_servers.github]
+command = "npx"
+args = ["-y", "@modelcontextprotocol/server-github"]
+startup_timeout_sec = 30
+
+[mcp_servers.context7]
+command = "npx"
+# Canonical Codex section name is `context7`; the package itself remains
+# `@upstash/context7-mcp`.
+args = ["-y", "@upstash/context7-mcp@latest"]
+startup_timeout_sec = 30
+
+[mcp_servers.exa]
+command = "npx"
+args = ["-y", "mcp-remote", "https://mcp.exa.ai/mcp"]
+startup_timeout_sec = 30
+
+[mcp_servers.memory]
+command = "npx"
+args = ["-y", "@modelcontextprotocol/server-memory"]
+startup_timeout_sec = 30
+
+[mcp_servers.playwright]
+command = "npx"
+args = ["-y", "@playwright/mcp@latest", "--extension"]
+startup_timeout_sec = 30
+
+[mcp_servers.sequential-thinking]
+command = "npx"
+args = ["-y", "@modelcontextprotocol/server-sequential-thinking"]
+startup_timeout_sec = 30
+
+# Additional MCP servers (uncomment as needed):
+# [mcp_servers.supabase]
+# command = "npx"
+# args = ["-y", "supabase-mcp-server@latest", "--read-only"]
+#
+# [mcp_servers.firecrawl]
+# command = "npx"
+# args = ["-y", "firecrawl-mcp"]
+#
+# [mcp_servers.fal-ai]
+# command = "npx"
+# args = ["-y", "fal-ai-mcp-server"]
+#
+# [mcp_servers.cloudflare]
+# command = "npx"
+# args = ["-y", "@cloudflare/mcp-server-cloudflare"]
+
+[features]
+# Preserve ECC's explicit multi-agent setting.
+multi_agent = true
+
+# Named profiles are available for explicit selection; defining one does not select it.
+# The default above remains on-request. Approval and sandbox policy are separate.
+# Select a supported profile explicitly with `codex -p <name>`.
+[profiles.strict]
+approval_policy = "on-request"
+sandbox_mode = "read-only"
+web_search = "cached"
+
+[profiles.yolo]
+approval_policy = "never"
+sandbox_mode = "workspace-write"
+web_search = "live"
+
+[agents]
+# Multi-agent role limits and local role definitions.
+# These map to `.codex/agents/*.toml` and mirror the repo's explorer/reviewer/docs workflow.
+max_threads = 6
+max_depth = 1
+
+[agents.explorer]
+description = "Read-only codebase explorer for gathering evidence before changes are proposed."
+config_file = "agents/explorer.toml"
+
+[agents.reviewer]
+description = "PR reviewer focused on correctness, security, and missing tests."
+config_file = "agents/reviewer.toml"
+
+[agents.docs_researcher]
+description = "Documentation specialist that verifies APIs, framework behavior, and release notes."
+config_file = "agents/docs-researcher.toml"

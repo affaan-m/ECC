@@ -5,6 +5,7 @@ const crypto = require('crypto');
 const os = require('os');
 const path = require('path');
 const initSqlJs = require('sql.js');
+const { withStateStoreLock, recordCleanupError } = require('./file-lock');
 
 const { applyMigrations, getAppliedMigrations } = require('./migrations');
 const { createQueryApi } = require('./queries');
@@ -26,9 +27,9 @@ function stateStorePathError(targetPath, detail) {
   return new Error(`Unsafe state-store path '${targetPath}': ${detail}`);
 }
 
-function lstatIfPresent(targetPath) {
+function lstatIfPresent(targetPath, options) {
   try {
-    return fs.lstatSync(targetPath);
+    return fs.lstatSync(targetPath, options);
   } catch (error) {
     if (error && error.code === 'ENOENT') {
       return null;
@@ -99,8 +100,8 @@ function ensurePrivateDirectory(directoryPath) {
   return absolutePath;
 }
 
-function assertSafeDatabaseFile(dbPath) {
-  const stats = lstatIfPresent(dbPath);
+function assertSafeDatabaseFile(dbPath, options) {
+  const stats = lstatIfPresent(dbPath, options);
   assertNotSymlink(dbPath, stats);
   if (stats && !stats.isFile()) {
     throw stateStorePathError(dbPath, 'database path is not a regular file');
@@ -113,14 +114,23 @@ function readDatabaseFile(dbPath) {
   const noFollow = fs.constants.O_NOFOLLOW || 0;
   const fileDescriptor = fs.openSync(dbPath, fs.constants.O_RDONLY | noFollow);
   try {
-    const stats = fs.fstatSync(fileDescriptor);
+    const stats = fs.fstatSync(fileDescriptor, { bigint: true });
     if (!stats.isFile()) {
       throw stateStorePathError(dbPath, 'database path is not a regular file');
     }
-    return fs.readFileSync(fileDescriptor);
+    return { bytes: fs.readFileSync(fileDescriptor), identity: stats };
   } finally {
     fs.closeSync(fileDescriptor);
   }
+}
+
+function sameDatabaseSnapshot(left, right) {
+  if (!left || !right || left.ino !== right.ino) return false;
+  // Windows path stats can omit the device reported by the open descriptor.
+  const sameDevice = left.dev === right.dev
+    || (process.platform === 'win32' && (left.dev === 0n || right.dev === 0n));
+  return sameDevice && left.size === right.size
+    && left.mtimeNs === right.mtimeNs && left.ctimeNs === right.ctimeNs;
 }
 
 function syncDirectory(directoryPath) {
@@ -201,142 +211,240 @@ function resolveStateStorePath(options = {}) {
  * IMPORTANT: sql.js db.export() implicitly ends any active transaction, so
  * we must defer all disk writes until after the transaction commits.
  */
-function wrapSqlJsDatabase(rawDb, dbPath) {
+function wrapSqlJsDatabase(SQL, dbPath, trustedReads = new WeakSet()) {
+  let rawDb = null;
+  let closed = false;
+  let inSnapshot = false;
+  let dirty = false;
   let inTransaction = false;
+  let needsSnapshotComparison = false;
+  let snapshotBytes = null;
+  let readCacheIdentity = null;
+  let cacheableSnapshot = false;
 
-  function saveToDisk() {
-    if (dbPath === ':memory:' || inTransaction) {
-      return;
+  function reload() {
+    const cachedIdentity = readCacheIdentity;
+    readCacheIdentity = null;
+    if (dbPath === ':memory:' && rawDb) return;
+    const current = dbPath !== ':memory:' ? assertSafeDatabaseFile(dbPath, { bigint: true }) : null;
+    if (rawDb && sameDatabaseSnapshot(cachedIdentity, current)) return cachedIdentity;
+    const snapshot = current ? readDatabaseFile(dbPath) : null;
+    const bytes = snapshot ? snapshot.bytes : undefined;
+    // sql.js can use its input buffer as writable backing storage.
+    const originalBytes = bytes ? Buffer.from(bytes) : null;
+    const latest = new SQL.Database(bytes);
+    try {
+      latest.run('PRAGMA foreign_keys = ON');
+      if (rawDb) {
+        const previous = rawDb;
+        rawDb = null;
+        try { previous.close(); }
+        catch (error) { closed = true; throw error; }
+      }
+    } catch (error) {
+      // The replacement is not adopted until both initialization and the old
+      // handle's close succeed. Never reuse an uncertain previous handle.
+      try { latest.close(); } catch (closeError) { recordCleanupError(error, 'closeError', closeError); }
+      throw error;
     }
-    const data = rawDb.export();
-    const buffer = Buffer.from(data);
-    writeDatabaseFileAtomic(dbPath, buffer);
+    rawDb = latest;
+    snapshotBytes = originalBytes;
+    return snapshot && snapshot.identity;
+  }
+
+  // Hold one lock from reload through commit. Nested statements and public
+  // query methods reuse the snapshot, including a transaction's reads.
+  function withSnapshot(callback) {
+    if (closed) throw new Error('State store is closed');
+    if (inSnapshot) return callback();
+    const execute = () => {
+      const identity = reload();
+      inSnapshot = true;
+      dirty = false;
+      needsSnapshotComparison = false;
+      cacheableSnapshot = true;
+      try {
+        const result = callback();
+        if (result && typeof result.then === 'function') {
+          throw new Error('State-store operations must be synchronous');
+        }
+        if ((dirty || needsSnapshotComparison) && dbPath !== ':memory:') {
+          // Prepared get/all statements and PRAGMAs can also write. Compare
+          // database bytes instead of guessing from SQL syntax, while keeping
+          // read-only queries from rewriting the file. Export only here:
+          // exporting inside a transaction would implicitly end it before
+          // our commit/rollback boundary.
+          const data = Buffer.from(rawDb.export());
+          if (dirty || !snapshotBytes || !data.equals(snapshotBytes)) {
+            writeDatabaseFileAtomic(dbPath, data);
+          }
+        }
+        // Only a successful snapshot of trusted SELECTs can retain its handle.
+        // Export and generic SQL may reset connection settings or alter state;
+        // those paths must reload before the next operation, even on failure.
+        if (cacheableSnapshot && !dirty && !needsSnapshotComparison) readCacheIdentity = identity;
+        return result;
+      } finally {
+        inSnapshot = false;
+        dirty = false;
+        needsSnapshotComparison = false;
+        cacheableSnapshot = false;
+      }
+    };
+    try {
+      return dbPath === ':memory:' ? execute() : withStateStoreLock(dbPath, execute);
+    } catch (error) {
+      readCacheIdentity = null;
+      throw error;
+    }
+  }
+
+  function query(sql, positionalArgs, firstOnly, trustedRead) {
+    return withSnapshot(() => {
+      if (!trustedRead) needsSnapshotComparison = true;
+      const stmt = rawDb.prepare(sql);
+      try {
+        if (positionalArgs.length === 1 && typeof positionalArgs[0] !== 'object') {
+          stmt.bind([positionalArgs[0]]);
+        } else if (positionalArgs.length > 1) {
+          stmt.bind(positionalArgs);
+        }
+        if (firstOnly) return stmt.step() ? stmt.getAsObject() : null;
+        const rows = [];
+        while (stmt.step()) rows.push(stmt.getAsObject());
+        return rows;
+      } finally {
+        stmt.free();
+      }
+    });
+  }
+
+  function runStatement(sql, namedParams) {
+    return withSnapshot(() => {
+      needsSnapshotComparison = true;
+      const stmt = rawDb.prepare(sql);
+      try {
+        if (namedParams && typeof namedParams === 'object' && !Array.isArray(namedParams)) {
+          stmt.bind(Object.fromEntries(Object.entries(namedParams)
+            .map(([key, value]) => [`@${key}`, value === undefined ? null : value])));
+        }
+        stmt.step();
+        dirty = true;
+      } finally {
+        stmt.free();
+      }
+    });
+  }
+
+  function transact(fn, args) {
+    if (inTransaction) throw new Error('Nested state-store transactions are not supported');
+    cacheableSnapshot = false;
+    rawDb.run('BEGIN');
+    inTransaction = true;
+    const previouslyDirty = dirty;
+    try {
+      const result = fn(...args);
+      if (result && typeof result.then === 'function') {
+        throw new Error('State-store transactions must be synchronous');
+      }
+      rawDb.run('COMMIT');
+      return result;
+    } catch (error) {
+      try {
+        rawDb.run('ROLLBACK');
+      } catch (rollbackError) {
+        // Never reuse an uncertain transaction, including an in-memory store.
+        closed = true;
+        try { rawDb.close(); } catch (closeError) { recordCleanupError(error, 'closeError', closeError); }
+        rawDb = null;
+        recordCleanupError(error, 'rollbackError', rollbackError);
+      }
+      dirty = previouslyDirty;
+      throw error;
+    } finally {
+      inTransaction = false;
+    }
   }
 
   const db = {
+    withSnapshot,
     exec(sql) {
-      rawDb.run(sql);
-      saveToDisk();
+      return withSnapshot(() => {
+        needsSnapshotComparison = true;
+        rawDb.run(sql);
+        dirty = true;
+      });
     },
 
     pragma(pragmaStr) {
-      try {
+      return withSnapshot(() => {
+        needsSnapshotComparison = true;
         rawDb.run(`PRAGMA ${pragmaStr}`);
-      } catch (_error) {
-        // Ignore unsupported pragmas (e.g. WAL for in-memory databases).
-      }
+      });
     },
 
     prepare(sql) {
-      return {
+      const statement = {
         all(...positionalArgs) {
-          const stmt = rawDb.prepare(sql);
-          if (positionalArgs.length === 1 && typeof positionalArgs[0] !== 'object') {
-            stmt.bind([positionalArgs[0]]);
-          } else if (positionalArgs.length > 1) {
-            stmt.bind(positionalArgs);
-          }
-
-          const rows = [];
-          while (stmt.step()) {
-            rows.push(stmt.getAsObject());
-          }
-          stmt.free();
-          return rows;
+          return query(sql, positionalArgs, false, trustedReads.has(statement));
         },
 
         get(...positionalArgs) {
-          const stmt = rawDb.prepare(sql);
-          if (positionalArgs.length === 1 && typeof positionalArgs[0] !== 'object') {
-            stmt.bind([positionalArgs[0]]);
-          } else if (positionalArgs.length > 1) {
-            stmt.bind(positionalArgs);
-          }
-
-          let row = null;
-          if (stmt.step()) {
-            row = stmt.getAsObject();
-          }
-          stmt.free();
-          return row;
+          return query(sql, positionalArgs, true, trustedReads.has(statement));
         },
 
         run(namedParams) {
-          const stmt = rawDb.prepare(sql);
-          if (namedParams && typeof namedParams === 'object' && !Array.isArray(namedParams)) {
-            const sqlJsParams = {};
-            for (const [key, value] of Object.entries(namedParams)) {
-              sqlJsParams[`@${key}`] = value === undefined ? null : value;
-            }
-            stmt.bind(sqlJsParams);
-          }
-          stmt.step();
-          stmt.free();
-          saveToDisk();
+          return runStatement(sql, namedParams);
         },
       };
+      return statement;
     },
 
     transaction(fn) {
-      return (...args) => {
-        rawDb.run('BEGIN');
-        inTransaction = true;
-        try {
-          const result = fn(...args);
-          rawDb.run('COMMIT');
-          inTransaction = false;
-          saveToDisk();
-          return result;
-        } catch (error) {
-          try {
-            rawDb.run('ROLLBACK');
-          } catch (_rollbackError) {
-            // Transaction may already be rolled back.
-          }
-          inTransaction = false;
-          throw error;
-        }
-      };
+      return (...args) => withSnapshot(() => transact(fn, args));
     },
 
     close() {
-      saveToDisk();
-      rawDb.close();
+      if (inSnapshot) throw new Error('Cannot close a state store during an operation');
+      if (closed) return;
+      closed = true;
+      readCacheIdentity = null;
+      if (rawDb) rawDb.close();
     },
   };
 
   return db;
 }
 
-async function openDatabase(SQL, dbPath) {
+function openDatabase(SQL, dbPath, trustedReads) {
   if (dbPath !== ':memory:') {
     ensurePrivateDirectory(path.dirname(dbPath));
   }
 
-  let rawDb;
-  if (dbPath !== ':memory:' && assertSafeDatabaseFile(dbPath)) {
-    const fileBuffer = readDatabaseFile(dbPath);
-    rawDb = new SQL.Database(fileBuffer);
-  } else {
-    rawDb = new SQL.Database();
-  }
-
-  const db = wrapSqlJsDatabase(rawDb, dbPath);
-  db.pragma('foreign_keys = ON');
-  try {
-    db.pragma('journal_mode = WAL');
-  } catch (_error) {
-    // Some SQLite environments reject WAL for in-memory or readonly contexts.
-  }
-  return db;
+  return wrapSqlJsDatabase(SQL, dbPath, trustedReads);
 }
 
 async function createStateStore(options = {}) {
   const dbPath = resolveStateStorePath(options);
   const SQL = await initSqlJs();
-  const db = await openDatabase(SQL, dbPath);
-  const appliedMigrations = applyMigrations(db);
-  const queryApi = createQueryApi(db);
+  const trustedReads = new WeakSet();
+  const db = openDatabase(SQL, dbPath, trustedReads);
+  let appliedMigrations;
+  try {
+    appliedMigrations = db.withSnapshot(() => applyMigrations(db));
+  } catch (error) {
+    try { db.close(); } catch (closeError) { recordCleanupError(error, 'closeError', closeError); }
+    throw error;
+  }
+  const queryApi = createQueryApi(db, {
+    prepareRead(sql) {
+      const statement = db.prepare(sql);
+      trustedReads.add(statement);
+      return statement;
+    },
+  });
+  const synchronizedQueries = Object.fromEntries(Object.entries(queryApi)
+    .map(([name, query]) => [name, (...args) => db.withSnapshot(() => query(...args))]));
 
   return {
     dbPath,
@@ -344,11 +452,11 @@ async function createStateStore(options = {}) {
       db.close();
     },
     getAppliedMigrations() {
-      return getAppliedMigrations(db);
+      return db.withSnapshot(() => getAppliedMigrations(db));
     },
     validateEntity,
     assertValidEntity,
-    ...queryApi,
+    ...synchronizedQueries,
     _database: db,
     _migrations: appliedMigrations,
   };

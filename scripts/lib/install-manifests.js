@@ -5,7 +5,7 @@ const { getInstallTargetAdapter, planInstallTargetScaffold } = require('./instal
 const { resolveInvocationEnvironment } = require('./invocation-environment');
 
 const DEFAULT_REPO_ROOT = path.join(__dirname, '../..');
-const SUPPORTED_INSTALL_TARGETS = ['claude', 'claude-project', 'cursor', 'antigravity', 'codex', 'gemini', 'opencode', 'codebuddy', 'joycode', 'qwen', 'zed', 'hermes', 'openclaw', 'kimi', 'adal'];
+const SUPPORTED_INSTALL_TARGETS = ['claude', 'claude-project', 'cursor', 'antigravity', 'codex', 'copilot', 'gemini', 'opencode', 'codebuddy', 'joycode', 'qwen', 'zed', 'hermes', 'openclaw', 'kimi', 'adal'];
 const COMPONENT_FAMILY_PREFIXES = {
   baseline: 'baseline:',
   language: 'lang:',
@@ -15,7 +15,7 @@ const COMPONENT_FAMILY_PREFIXES = {
   skill: 'skill:',
   locale: 'locale:',
 };
-const SUPPORTED_LOCALES = Object.freeze(['ja', 'zh-CN', 'ko-KR', 'pt-BR', 'ru', 'tr', 'vi-VN', 'zh-TW', 'de-DE', 'uk-UA', 'pl']);
+const SUPPORTED_LOCALES = Object.freeze(['ja', 'zh-CN', 'ko-KR', 'pt-BR', 'ru', 'tr', 'vi-VN', 'zh-TW', 'de-DE', 'uk-UA', 'pl', 'bn']);
 const LOCALE_ALIAS_TO_COMPONENT_ID = Object.freeze({
   'ja': 'locale:ja',
   'ja-JP': 'locale:ja',
@@ -35,7 +35,9 @@ const LOCALE_ALIAS_TO_COMPONENT_ID = Object.freeze({
   'uk-UA': 'locale:uk-ua',
   'uk': 'locale:uk-ua',
   'pl': 'locale:pl',
-  'pl-PL': 'locale:pl'
+  'pl-PL': 'locale:pl',
+  'bn': 'locale:bn',
+  'bn-BD': 'locale:bn'
 });
 
 function listSupportedLocales() {
@@ -325,6 +327,12 @@ function loadInstallManifests(options = {}) {
 
   for (const module of modules) {
     readModuleTargetsOrThrow(module);
+    if (module.optionalDependencies !== undefined && (
+      !Array.isArray(module.optionalDependencies)
+      || module.optionalDependencies.some(id => !module.dependencies.includes(id))
+    )) {
+      throw new Error(`Install module ${module.id} optionalDependencies must be an array of declared dependency ids`);
+    }
   }
 
   const modulesById = new Map(modules.map(module => [module.id, module]));
@@ -633,7 +641,7 @@ function resolveInstallPlan(options = {}) {
   const visitingIds = new Set();
   const resolvedIds = new Set();
 
-  function resolveModule(moduleId, dependencyOf, rootRequesterId) {
+  function resolveModule(moduleId, dependencyOf, optional = false) {
     const module = manifests.modulesById.get(moduleId);
     if (!module) {
       throw new Error(`Unknown install module: ${moduleId}`);
@@ -657,8 +665,9 @@ function resolveInstallPlan(options = {}) {
 
     if (!supportsTarget) {
       if (dependencyOf) {
-        skippedTargetIds.add(rootRequesterId || dependencyOf);
-        return false;
+        // Only explicitly optional edges may be omitted for this target.
+        skippedTargetIds.add(moduleId);
+        return optional;
       }
       skippedTargetIds.add(moduleId);
       return false;
@@ -677,24 +686,36 @@ function resolveInstallPlan(options = {}) {
       const dependencyResolved = resolveModule(
         dependencyId,
         moduleId,
-        rootRequesterId || moduleId
+        (module.optionalDependencies || []).includes(dependencyId)
       );
       if (!dependencyResolved) {
         visitingIds.delete(moduleId);
-        if (!dependencyOf) {
-          skippedTargetIds.add(moduleId);
-        }
+        skippedTargetIds.add(moduleId);
         return false;
       }
     }
     visitingIds.delete(moduleId);
     resolvedIds.add(moduleId);
-    selectedIds.add(moduleId);
     return true;
   }
 
+  // Resolution may visit supported dependencies before a later required edge fails.
+  // Select only the closure of successful requests, so failed requests leave no
+  // orphan modules while shared dependencies remain available to successful ones.
+  function selectResolvedModule(moduleId) {
+    if (!resolvedIds.has(moduleId) || selectedIds.has(moduleId)) {
+      return;
+    }
+    selectedIds.add(moduleId);
+    for (const dependencyId of manifests.modulesById.get(moduleId).dependencies) {
+      selectResolvedModule(dependencyId);
+    }
+  }
+
   for (const moduleId of effectiveRequestedIds) {
-    resolveModule(moduleId, null, moduleId);
+    if (resolveModule(moduleId, null)) {
+      selectResolvedModule(moduleId);
+    }
   }
 
   const selectedModules = manifests.modules.filter(module => selectedIds.has(module.id));

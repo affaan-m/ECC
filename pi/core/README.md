@@ -1,6 +1,6 @@
 # ecc-pi-core
 
-A curated, Pi-native profile of ECC: 124 portable
+A curated, Pi-native profile of ECC: 129 portable
 engineering skills and 24 pure prompt-workflow commands, with no extensions,
 no hooks, no runtime downloads, and no network or SaaS dependencies.
 

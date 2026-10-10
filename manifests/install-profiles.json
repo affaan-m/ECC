@@ -81,6 +81,7 @@
         "framework-language",
         "database",
         "workflow-quality",
+        "documentation-governance",
         "skill-unified-memory",
         "security",
         "research-apis",
@@ -100,7 +101,8 @@
         "machine-learning",
         "supply-chain-domain",
         "document-processing",
-        "documentation-change-impact"
+        "documentation-change-impact",
+        "hermes-hooks"
       ]
     }
   }
