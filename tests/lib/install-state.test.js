@@ -423,27 +423,66 @@ function runTests() {
   if (test('concurrent writeInstallState calls always leave a complete valid state', () => {
     const testDir = createTestDir();
     const statePath = path.join(testDir, 'ecc-install-state.json');
-    const markers = ['2026-03-01T00:00:00Z', '2026-03-02T00:00:00Z', '2026-03-03T00:00:00Z', '2026-03-04T00:00:00Z'];
+    const markers = [
+      '2026-03-01T00:00:00Z', '2026-03-02T00:00:00Z', '2026-03-03T00:00:00Z',
+      '2026-03-04T00:00:00Z', '2026-03-05T00:00:00Z', '2026-03-06T00:00:00Z',
+      '2026-03-07T00:00:00Z', '2026-03-08T00:00:00Z', '2026-03-09T00:00:00Z',
+    ];
 
     try {
       writeInstallState(statePath, makeState(testDir, statePath, markers[0]));
-      const { spawnSync } = require('child_process');
-      const script = 'const {readInstallState, writeInstallState} = require(process.env.REPO_ROOT + "/scripts/lib/install-state");' +
+      const { spawn } = require('child_process');
+      const script = 'const fs = require("fs");' +
+        'const {readInstallState, writeInstallState} = require(process.env.REPO_ROOT + "/scripts/lib/install-state");' +
         'const state = readInstallState(process.env.STATE_PATH);' +
         'state.lastValidatedAt = process.env.MARKER;' +
-        'writeInstallState(process.env.STATE_PATH, state);';
-      for (const marker of markers.slice(1)) {
-        const child = spawnSync(process.execPath, ['-e', script], {
-          encoding: 'utf8',
-          timeout: 30000,
+        'writeInstallState(process.env.STATE_PATH, state);' +
+        'fs.writeFileSync(process.env.DONE_FILE, "ok");';
+      const children = markers.slice(1).map(marker => {
+        const tag = marker.replace(/:/g, '-');
+        const doneFile = path.join(testDir, `done-${tag}.marker`);
+        const errFile = path.join(testDir, `err-${tag}.log`);
+        const errFd = fs.openSync(errFile, 'w');
+        const child = spawn(process.execPath, ['-e', script], {
+          stdio: ['ignore', 'ignore', errFd],
           env: {
             ...process.env,
             REPO_ROOT: path.join(__dirname, '..', '..'),
             STATE_PATH: statePath,
             MARKER: marker,
+            DONE_FILE: doneFile,
           },
         });
-        assert.strictEqual(child.status, 0, child.stderr);
+        fs.closeSync(errFd);
+        return { child, marker, doneFile, errFile };
+      });
+      assert.ok(
+        children.some(entry => entry.child.exitCode === null),
+        'expected writers to still be running right after launch'
+      );
+      let midRead = null;
+      try {
+        midRead = readInstallState(statePath);
+      } catch (_error) {
+        midRead = null;
+      }
+      const deadline = Date.now() + 60000;
+      for (;;) {
+        const pending = children.filter(entry => !fs.existsSync(entry.doneFile));
+        if (pending.length === 0) break;
+        if (Date.now() > deadline) {
+          const details = children.map(entry =>
+            `${entry.marker}: ${fs.existsSync(entry.doneFile) ? 'done' : 'PENDING'} ${fs.readFileSync(entry.errFile, 'utf8')}`
+          ).join('\n');
+          throw new Error(`timed out waiting for concurrent writers\n${details}`);
+        }
+        Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 10);
+      }
+      for (const entry of children) {
+        assert.strictEqual(fs.readFileSync(entry.errFile, 'utf8'), '', `writer ${entry.marker} failed`);
+      }
+      if (midRead !== null) {
+        assert.ok(markers.includes(midRead.lastValidatedAt));
       }
       const final = readInstallState(statePath);
       assert.ok(markers.includes(final.lastValidatedAt));

@@ -77,6 +77,7 @@ function testInstallForms() {
       const result = runEcc(args, context);
       assert.strictEqual(result.status, 0, result.stderr);
       assert.deepStrictEqual(walkFiles(context.homeDir), []);
+      assert.deepStrictEqual(walkFiles(context.projectRoot), []);
       assert.deepStrictEqual(findStateFiles(context.homeDir), []);
     });
   }
