@@ -49,7 +49,7 @@ AI agents are powerful development tools, but they introduce unique security con
 **Why**: It's easier to maintain security from the start than to retrofit it later.
 
 **Practice**:
-- Enable auto-inclusion security steering files
+- Enable always-inclusion security steering files
 - Use TDD workflow with security test cases
 - Include security requirements in planning phase
 - Document security decisions in lessons-learned
@@ -81,7 +81,7 @@ Plan a user authentication feature with these security requirements:
 **Risk**: May introduce vulnerabilities like SQL injection, XSS, or insecure deserialization.
 
 **Mitigation**:
-- Enable security steering files (auto-loaded)
+- Enable security steering files (always-loaded)
 - Use git-push-review hook to catch issues before commit
 - Run security-reviewer agent after implementation
 - Include security test cases in TDD workflow
@@ -203,7 +203,7 @@ Plan a user authentication feature with these security requirements:
 **Key Rules to Include**:
 ```markdown
 ---
-inclusion: auto
+inclusion: always
 description: Security best practices and vulnerability prevention
 ---
 
@@ -434,7 +434,7 @@ For production:
 
 ### Before Starting Development
 
-- [ ] Security steering files enabled (auto-inclusion)
+- [ ] Security steering files enabled (always-inclusion)
 - [ ] Security-focused hooks enabled (git-push-review, console-log-check)
 - [ ] MCP servers reviewed and configured securely
 - [ ] Secrets management strategy in place
