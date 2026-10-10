@@ -257,10 +257,16 @@ async function main() {
     const isPeriodicTurn = summary.totalMessages > 0 && summary.totalMessages % safeInterval === 0;
     if (isContextLow || isPeriodicTurn) {
       log(`[SessionEnd] LLM summary triggered (context: ${contextPct ?? 'unknown'}%, messages: ${summary.totalMessages})`);
-      llmSummary = generateSessionSummary(transcriptPath);
+      let skipped = false;
+      llmSummary = generateSessionSummary(transcriptPath, {
+        onSkip: reason => {
+          skipped = true;
+          log(`[SessionEnd] LLM summary skipped (${reason}); falling back to mechanical extraction`);
+        }
+      });
       if (llmSummary) {
         log('[SessionEnd] LLM summary generated successfully');
-      } else {
+      } else if (!skipped) {
         log('[SessionEnd] LLM summary failed; falling back to mechanical extraction');
       }
     }

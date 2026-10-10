@@ -80,6 +80,7 @@ async function main() {
     writeStderr(`[Hook] lifecycle stdin exceeded ${maxStdin} bytes; forwarded a bounded prefix`);
   }
 
+  const timeout = resolveTimeout(timeoutValue);
   const result = spawnSync(
     process.execPath,
     [runner, hookId, relScriptPath, profilesCsv || 'minimal,standard,strict'],
@@ -92,10 +93,11 @@ async function main() {
         ECC_PLUGIN_ROOT: resolvedRoot,
         ECC_HOOK_INPUT_MAX_BYTES: String(maxStdin),
         ECC_HOOK_INPUT_TRUNCATED_UPSTREAM: truncated ? '1' : '0',
-        ECC_HOOK_CONTEXT_JSON: JSON.stringify(hookContext)
+        ECC_HOOK_CONTEXT_JSON: JSON.stringify(hookContext),
+        ECC_HOOK_DEADLINE_MS: String(Date.now() + timeout)
       },
       cwd: process.cwd(),
-      timeout: resolveTimeout(timeoutValue),
+      timeout,
       maxBuffer: 16 * 1024 * 1024,
       windowsHide: true
     }
