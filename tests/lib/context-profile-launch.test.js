@@ -160,9 +160,17 @@ for (const query of ["Don't use the feature skill.", 'Don\u2019t use the feature
   'Can I use the feature skill?', 'The README says use the feature skill.', 'The docs say use feature.',
   'The docs say do not use feature and use shared guidance.',
   'The docs say do not use feature, use shared guidance, okay?',
+  'The spec states do not use feature and use shared guidance.',
+  'The spec stated do not use feature, use shared guidance.',
+  'The spec recommends we do not use feature and use shared guidance.',
+  'The spec asserts we should not use feature and use shared guidance.',
+  'Use standard tools, the spec stipulates do not use feature and use shared guidance.',
   'Should we avoid feature and use shared guidance?',
   'Should we avoid feature, use shared guidance?',
   'Use standard tools, should we use feature?',
+  'Use standard tools, shall we use feature?',
+  'Use standard tools, will we use feature?',
+  'Use standard tools, ought we to use feature?',
   'Please use the existing code, can I use feature?',
   'Use standard tools and should we use feature?',
   'Use standard tools but should we use feature?',
@@ -182,7 +190,9 @@ for (const query of ["Don't use the feature skill.", 'Don\u2019t use the feature
       } });
     assert.deepEqual(phases, ['selection', 'task']);
     assert.equal(result.routingCalls, 1);
+    assert.deepEqual(result.selection.selectedIds, []);
     assert.deepEqual(result.selection.loadedIds, []);
+    assert.equal(result.selection.fallback, null);
     assert.equal(result.selection.reason, 'agent-declined-selection');
   }));
 }
@@ -201,6 +211,11 @@ for (const [query, skill] of [
   ['Use feature?', 'feature'],
   ['Please use feature?', 'feature'],
   ['Use feature to fix the bug, okay?', 'feature'],
+  ['Use feature. Shall we use feature?', 'feature'],
+  ['Use feature, shall we use shared guidance?', 'feature'],
+  ['Shall we use shared guidance? Use feature.', 'feature'],
+  ['Use feature. The spec states do not use feature and use shared guidance.', 'feature'],
+  ['The spec states do not use feature and use shared guidance. Use feature.', 'feature'],
 ]) {
   test('an unambiguous final directive injects context without a proposal: ' + query, () => withFixture(repoRoot => {
     const phases = [];

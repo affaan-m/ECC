@@ -371,6 +371,13 @@ for (const query of [
   'The docs say do not use feature and use shared guidance.',
   'The docs say do not use feature, use shared guidance.',
   'The docs say do not use feature, use shared guidance, okay?',
+  'Use standard tools, the spec states do not use feature and use shared guidance.',
+  'The spec states do not use feature and use shared guidance.',
+  'The spec stated do not use feature, use shared guidance.',
+  'The spec recommends we do not use feature and use shared guidance.',
+  'The spec asserts we should not use feature and use shared guidance.',
+  'Use standard tools, the spec stipulates do not use feature and use shared guidance.',
+  'Use the documentation that says do not use feature and use shared guidance.',
   'Should we avoid feature and use shared guidance?',
   'Should we avoid feature, use shared guidance?',
   'Do not use feature and shared guidance.',
@@ -388,6 +395,9 @@ for (const query of [
 
 for (const query of [
   'Use standard tools, should we use feature?',
+  'Use standard tools, shall we use feature?',
+  'Use standard tools, will we use feature?',
+  'Use standard tools, ought we to use feature?',
   'Please use the existing code, can I use feature?',
   'Use standard tools and should we use feature?',
   'Use standard tools but should we use feature?',
@@ -437,13 +447,13 @@ for (const prefix of ["Don't use database-migrations.", 'Do not use database-mig
 }
 
 test('routing policy changes invalidate receipts created by the old citation policy', () => withFixture(repoRoot => {
-  const query = "Don't use feature.";
+  const query = 'Use standard tools, shall we use feature?';
   const first = resolve(repoRoot, { query, explicitIds: ['skill:feature'] });
   const { digestObject } = require('../../scripts/lib/context-profile-support');
   const { compileContextProfile } = require('../../scripts/lib/context-profiles');
   const plan = compileContextProfile({ repoRoot, selectionMode: 'auto' });
   const bindingDigest = digestObject({ sessionId: 'session-1', taskId: 'task-1', revision: 1,
-    phase: 'implement', planDigest: plan.planDigest, routingPolicyVersion: 6,
+    phase: 'implement', planDigest: plan.planDigest, routingPolicyVersion: 7,
     triggersDigest: digestObject({}), queryDigest: digestObject(query) });
   const { receiptDigest: _receiptDigest, ...receipt } = first.receipt;
   const oldReceipt = { ...receipt, bindingDigest, explicitIds: [],
@@ -451,7 +461,10 @@ test('routing policy changes invalidate receipts created by the old citation pol
   const previous = { ...oldReceipt, receiptDigest: digestObject(oldReceipt) };
   const result = resolve(repoRoot, { query }, { previous, load: true });
   assert.equal(result.reused, false);
+  assert.notEqual(result.receipt.bindingDigest, previous.bindingDigest);
+  assert.deepEqual(result.selectedIds, []);
   assert.deepEqual(result.loadedIds, []);
+  assert.equal(result.fallback, null);
 }));
 
 test('an old empty selection is reconsidered when directive policy changes', () => withFixture(repoRoot => {
@@ -478,8 +491,14 @@ for (const query of [
   'Should we use feature? Use feature.',
   'Use feature. Should we use feature?',
   'Use feature, should we use feature?',
+  'Use feature. Shall we use feature?',
+  'Use feature, shall we use shared guidance?',
+  'Shall we use shared guidance? Use feature.',
   'The docs say use feature. Use feature.',
   'Use feature. The docs say use feature.',
+  'Use feature. The spec states do not use feature and use shared guidance.',
+  'Use feature. Use the warning that says never use feature.',
+  'The spec states do not use feature and use shared guidance. Use feature.',
   'The phrase "Use feature." is an example. Use feature.',
   'The docs say "Use feature." Use feature.',
   'The docs say "Should we use feature?" Use feature.',
@@ -503,6 +522,11 @@ for (const query of [
 
 for (const query of [
   "Use feature. Don't use feature.",
+  'Use feature. Avoid feature.',
+  'Use feature. You should not use feature.',
+  'Use feature. You shouldn\u2019t use feature.',
+  'Use feature, no feature.',
+  'Use feature. For this task, do not use feature.',
   "Use feature, don't use feature.",
   "Use feature and don't use feature.",
   "Use feature but don't use feature.",
@@ -515,6 +539,18 @@ for (const query of [
     assert.equal(result.fallback, null);
   }));
 }
+
+test('a later grouped rejection withdraws a previously requested skill', () => withFixture(repoRoot => {
+  for (const query of ["Use shared. Don't use feature and shared guidance.",
+    'Use shared. Do not use feature and our shared guidance.',
+    'Use shared. Do not use feature and the existing shared guidance.',
+    'Use shared. Do not use feature, manual, and shared guidance.',
+    "Use shared. Don't use feature and the shared skill."]) {
+    const result = resolve(repoRoot, { query }, { load: true });
+    assert.deepEqual(result.loadedIds, [], query);
+    assert.equal(result.fallback, null);
+  }
+}));
 
 for (const prefix of [
   "Don't use the database migration skill.",

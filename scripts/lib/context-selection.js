@@ -31,13 +31,20 @@ const FALLBACK_MARGIN = 1.1;
 // v5: indirect name citations cannot bypass review through exact or scored admission.
 // v6: ordered directives and singular named references share the same admission guard.
 // v7: independent directives scope negation and imperatives allow question punctuation.
-const ROUTING_POLICY_VERSION = 7;
+// v8: only recognized request/rejection scopes can authorize coordinated directives.
+const ROUTING_POLICY_VERSION = 8;
 const TASK_KEYS = new Set(['sessionId', 'taskId', 'revision', 'phase', 'query', 'explicitIds', 'proposedIds', 'noWorkflow']);
 
 const DIRECTIVE_VERB = /\b(use|apply|invoke|run|follow|load)\s+(the\s+)?/i;
 const DIRECTIVE_REQUEST = /^(?:please )?(?:(?:can|could|would|will) you (?:please )?|do )?(?:use|apply|invoke|run|follow|load)\b/;
-const QUESTION_START = /^(?!do not\b)(can|could|would|should|may|might|do|does|did|is|are|why|how|what|when|where|which)\b/;
-const INSTRUCTION_BOUNDARY = /(?:,\s*(?:(?:and|but)\s+)?|\s+(?:and|but)\s+)(?=(?:please\s+)?(?:do\s+(?:not\s+)?|not\s+|never\s+)?(?:use|apply|invoke|run|follow|load)\b|(?:can|could|would|should|may|might|do|does|did|is|are|why|how|what|when|where|which)\b)/i;
+const DIRECTIVE_REJECTION = /^(?:please )?(?:(?:(?:do )?not|never) (?:use|apply|invoke|run|follow|load)\b|avoid\b)/;
+const DIRECTIVE_NAME_PREFIX = new RegExp(DIRECTIVE_REQUEST.source + '\\s+(?:the\\s+)?(?:skill\\s*)?$');
+const QUESTION_START = /^(?!do not\b)(can|could|would|should|shall|will|may|might|do|does|did|is|are|why|how|what|when|where|which)\b/;
+const REPORTED_INSTRUCTION = /\b(say|says|said|reads|told|mentions?|quoted?|document|states?|stated|recommends?|recommended|asserts?|asserted)\b/;
+// Rejections keep their whole list until another instruction/question begins.
+const INSTRUCTION_BOUNDARY = /(?:,\s*(?:(?:and|but)\s+)?|\s+(?:and|but)\s+)(?=(?:please\s+)?(?:do\s+(?:not\s+)?|not\s+|never\s+)?(?:use|apply|invoke|run|follow|load)\b|(?:can|could|would|should|shall|will|may|might|do|does|did|is|are|why|how|what|when|where|which)\b)/i;
+// Admission additionally checks intervening scopes, including unknown wording.
+const ADMISSION_BOUNDARY = /(?:,\s*(?:(?:and|but)\s+)?|\s+(?:and|but)\s+)(?=\S)/i;
 /** Normalize citation names while preserving contracted negation as a separate word. */
 const normalizedQueryName = text => text.replace(/n['\u2019]t\b/gi, ' not')
   .replace(/([a-z0-9])([A-Z])/g, '$1 $2').replace(/_/g, ' ')
@@ -76,22 +83,25 @@ function citationFor(candidate, query, nativeName) {
     const text = clause.split(',').map(normalizedQueryName).join(', ');
     const mentions = aliases.flatMap(({ name, exact }) => [...text.matchAll(new RegExp('\\b' + name + '\\b', 'g'))]
       .map(mention => ({ index: mention.index, exact }))).sort((a, b) => a.index - b.index);
-    const request = DIRECTIVE_REQUEST.test(text);
-    const interrogative = !request && QUESTION_START.test(text);
     for (const mention of mentions) {
       const prefix = text.slice(0, mention.index);
-      // A directive or question after a connector starts its own scope.
-      // Lists without another verb and reported speech keep their guards.
+      const scopes = prefix.split(ADMISSION_BOUNDARY);
       const instructionPrefix = prefix.split(INSTRUCTION_BOUNDARY).at(-1);
-      const question = interrogative || (!DIRECTIVE_REQUEST.test(instructionPrefix)
-        && (QUESTION_START.test(instructionPrefix) || (!request && clause.includes('?'))));
-      if (question || /^\s*["'\u201c\u2018\x60]/.test(clause)
-        || /\b(say|says|said|reads|told|mentions?|quoted?|document)\b/.test(prefix)) {
+      // Unknown scopes cannot authorize a later "and use ...". Positive scope
+      // evidence is required for admission, while existing rejection forms remain
+      // usable and indirect discussion cannot withdraw an earlier directive.
+      const instruction = scopes.every(scope => DIRECTIVE_REQUEST.test(scope) || DIRECTIVE_REJECTION.test(scope));
+      const question = (!DIRECTIVE_REQUEST.test(text) && QUESTION_START.test(text))
+        || (!DIRECTIVE_REQUEST.test(instructionPrefix)
+          && (QUESTION_START.test(instructionPrefix) || clause.includes('?')));
+      if (question || REPORTED_INSTRUCTION.test(prefix) || /^\s*["'\u201c\u2018\x60]/.test(clause)) {
         if (citation === 'none') citation = 'indirect';
       } else if (/\b(do not|never|no|not|avoid)\b/.test(instructionPrefix)) {
         citation = 'indirect';
+      } else if (!instruction) {
+        if (citation === 'none') citation = 'indirect';
       } else if (mention.exact && candidate.exact
-        && new RegExp(DIRECTIVE_VERB.source + '(skill\\s*:?\\s*)?$', 'i').test(prefix)) {
+        && DIRECTIVE_NAME_PREFIX.test(scopes.at(-1))) {
         citation = 'directive';
       }
     }
