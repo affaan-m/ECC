@@ -112,7 +112,10 @@ function getContextRemainingPct(transcriptPath) {
  * Returns the summary string, or null on failure or when recursion guard is active.
  */
 function generateSessionSummary(transcriptPath, { onSkip = () => {} } = {}) {
-  if (process.env.ECC_SKIP_LLM_SUMMARY) return null;
+  if (process.env.ECC_SKIP_LLM_SUMMARY) {
+    onSkip('ECC_SKIP_LLM_SUMMARY');
+    return null;
+  }
 
   const conversation = extractConversationText(transcriptPath);
   if (!conversation) return null;

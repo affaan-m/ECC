@@ -266,6 +266,27 @@ function runTests() {
     }
   }) ? passed++ : failed++);
 
+  (test('logs an explicit LLM disable as skipped and persists mechanical resume state', () => {
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-session-skip-'));
+    try {
+      const uuid = '12345678-1234-4234-8234-123456789abc';
+      const transcript = path.join(home, `${uuid}.jsonl`);
+      const bin = path.join(home, 'empty-bin');
+      fs.mkdirSync(bin);
+      fs.writeFileSync(transcript, JSON.stringify({ type: 'user', content: 'Save context with LLM disabled' }) + '\n');
+      const res = runHook(home, transcript, {
+        ECC_LLM_SUMMARY_INTERVAL: '1', ECC_SKIP_LLM_SUMMARY: '1',
+        ECC_LLM_SUMMARY_SUBPROCESS: '', PATH: bin
+      });
+      assert.strictEqual(res.status, 0, res.stderr);
+      assert.match(res.stderr, /LLM summary skipped.*ECC_SKIP_LLM_SUMMARY/);
+      assert.doesNotMatch(res.stderr, /LLM summary failed/);
+      assert.match(fs.readFileSync(sessionFileFor(home, uuid), 'utf8'), /Save context with LLM disabled/);
+    } finally {
+      fs.rmSync(home, { recursive: true, force: true });
+    }
+  }) ? passed++ : failed++);
+
   for (const inherited of ['', String(Date.now() + 300000), '1']) {
     (test(`direct legacy runner bounds the deadline ${inherited || '(unset)'}`, () => {
       const home = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-runner-budget-'));

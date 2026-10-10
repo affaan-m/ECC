@@ -185,6 +185,21 @@ test('returns null when ECC_SKIP_LLM_SUMMARY is set', () => {
   else delete process.env.ECC_SKIP_LLM_SUMMARY;
 });
 
+test('reports the explicit recursion guard as a deliberate skip', () => {
+  const orig = process.env.ECC_SKIP_LLM_SUMMARY;
+  process.env.ECC_SKIP_LLM_SUMMARY = '1';
+  try {
+    const skipped = [];
+    assert.strictEqual(generateSessionSummary('/nonexistent.jsonl', {
+      onSkip: reason => skipped.push(reason)
+    }), null);
+    assert.deepStrictEqual(skipped, ['ECC_SKIP_LLM_SUMMARY']);
+  } finally {
+    if (orig !== undefined) process.env.ECC_SKIP_LLM_SUMMARY = orig;
+    else delete process.env.ECC_SKIP_LLM_SUMMARY;
+  }
+});
+
 test('returns null for missing transcript (no conversation to summarize)', () => {
   const orig = process.env.ECC_SKIP_LLM_SUMMARY;
   delete process.env.ECC_SKIP_LLM_SUMMARY;
