@@ -60,6 +60,7 @@
       "compose-multiplatform-patterns",
       "content-hash-cache-pattern",
       "contract-first",
+      "context-and-decisions",
       "conventional-commit-review",
       "cost-aware-llm-pipeline",
       "council",
