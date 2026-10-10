@@ -103,6 +103,7 @@ skills:
   - market-research
   - mcp-dependency-review
   - mcp-server-patterns
+  - module-regression
   - mybatis-patterns
   - motion-advanced
   - motion-foundations
@@ -162,6 +163,7 @@ skills:
   - tasteforge-video
   - tdd-workflow
   - team-builder
+  - test-collaboration
   - token-budget-advisor
   - token-card
   - unified-memory

@@ -383,6 +383,14 @@
       ]
     },
     {
+      "id": "capability:documentation-test-regression",
+      "family": "capability",
+      "description": "Optional test-collaboration and module-regression workflow.",
+      "modules": [
+        "documentation-test-regression"
+      ]
+    },
+    {
       "id": "capability:documents",
       "family": "capability",
       "description": "Document processing, conversion, and translation skills.",

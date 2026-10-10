@@ -101,6 +101,7 @@
         "machine-learning",
         "supply-chain-domain",
         "document-processing",
+        "documentation-test-regression",
         "hermes-hooks"
       ]
     }
