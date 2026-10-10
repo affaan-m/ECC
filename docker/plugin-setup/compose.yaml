@@ -76,6 +76,9 @@ services:
     profiles:
       - networked
     network_mode: default
+    # Codex OAuth callback bridge: host browser -> codex-auth-relay.js -> loopback.
+    ports:
+      - "127.0.0.1:1455:1456"
     image: ecc-plugin-setup:debian
 
   real-cli-ubuntu:
