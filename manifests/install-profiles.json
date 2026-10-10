@@ -101,6 +101,7 @@
         "machine-learning",
         "supply-chain-domain",
         "document-processing",
+        "documentation-change-impact",
         "hermes-hooks"
       ]
     }
