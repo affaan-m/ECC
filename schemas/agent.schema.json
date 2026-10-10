@@ -1,0 +1,59 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "ecc.agent-ir.v1",
+  "title": "ECC Agent IR",
+  "description": "Canonical harness-neutral representation of an ECC agent, produced from a source harness definition (e.g. agents/*.md Claude frontmatter). Emitters consume this IR and produce native agent/subagent definitions per harness. The `tools` array holds source tool names verbatim (lossless); each emitter maps them through its own tool table.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "id",
+    "name",
+    "description",
+    "tools",
+    "body"
+  ],
+  "properties": {
+    "schema": {
+      "const": "ecc.agent-ir.v1"
+    },
+    "id": {
+      "type": "string",
+      "description": "Stable canonical id; the source filename stem (kebab-case).",
+      "pattern": "^[a-z0-9-]+$"
+    },
+    "name": {
+      "type": "string",
+      "description": "Agent name from the source frontmatter."
+    },
+    "description": {
+      "type": "string",
+      "description": "Agent description from the source frontmatter."
+    },
+    "model": {
+      "type": "string",
+      "description": "Source model tier, when present. Claude aliases only in v1.",
+      "enum": ["haiku", "sonnet", "opus"]
+    },
+    "tools": {
+      "type": "array",
+      "description": "Source tool names verbatim (Claude tool identifiers such as Read, Grep, Glob, Bash, Edit, Write, WebSearch, WebFetch, mcp__*).",
+      "items": {
+        "type": "string"
+      }
+    },
+    "color": {
+      "type": "string",
+      "description": "Optional source-only metadata (Claude color tag); emitters may ignore it."
+    },
+    "body": {
+      "type": "string",
+      "description": "The agent system prompt / markdown body after the frontmatter."
+    },
+    "frontmatter": {
+      "type": "object",
+      "description": "Lossless raw source frontmatter for round-trip fidelity and forward compatibility.",
+      "additionalProperties": true
+    }
+  }
+}
