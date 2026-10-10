@@ -11,6 +11,7 @@
 
 const assert = require('assert');
 const fs = require('fs');
+const os = require('os');
 const path = require('path');
 const { spawnSync } = require('child_process');
 
@@ -54,7 +55,14 @@ if (fs.existsSync(manifestPath) && fs.existsSync(hooksPath)) {
   test('release tooling updates and stages the Qoder manifest', () => {
     assert.ok(releaseScript.includes('QODER_PLUGIN_JSON=".qoder-plugin/plugin.json"'));
     assert.ok(releaseScript.includes('update_version "$QODER_PLUGIN_JSON"'));
-    assert.ok(releaseScript.includes('git add ') && releaseScript.includes('"$QODER_PLUGIN_JSON"'));
+    const gitAddLine = releaseScript
+      .split(/\r?\n/)
+      .find(line => /^\s*git add\b/.test(line));
+    assert.ok(gitAddLine, 'Expected release tooling to contain a git add command');
+    assert.ok(
+      gitAddLine.includes('"$QODER_PLUGIN_JSON"'),
+      'Expected the git add command to stage the Qoder manifest'
+    );
   });
 
   test('manifest reuses canonical plugin resources', () => {
@@ -98,26 +106,71 @@ if (fs.existsSync(manifestPath) && fs.existsSync(hooksPath)) {
   test('declared Qoder SessionStart launcher executes from QODER_PLUGIN_ROOT', () => {
     const hook = hooks.hooks.SessionStart[0].hooks[0];
     const args = hook.args.map(value => value.replace('${QODER_PLUGIN_ROOT}', repoRoot));
-    const result = spawnSync(hook.command, args, {
-      cwd: repoRoot,
-      env: {
-        ...process.env,
-        QODER_PLUGIN_ROOT: repoRoot,
-        ECC_HOOKS_ENABLED: 'false',
-      },
-      input: JSON.stringify({
-        hook_event_name: 'SessionStart',
-        source: 'startup',
-        cwd: repoRoot,
-      }),
-      encoding: 'utf8',
-      timeout: 10000,
-      windowsHide: true,
-    });
+    const isolatedRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-qoder-hook-'));
+    const isolatedHome = path.join(isolatedRoot, 'home');
+    const isolatedCwd = path.join(isolatedRoot, 'project');
+    const agentDataHome = path.join(isolatedRoot, 'agent-data');
+    const learnedSkillsDir = path.join(agentDataHome, 'skills', 'learned');
+    const contextSentinel = 'QODER_SESSION_START_CONTEXT_SENTINEL';
+    fs.mkdirSync(isolatedHome, { recursive: true });
+    fs.mkdirSync(isolatedCwd, { recursive: true });
+    fs.mkdirSync(learnedSkillsDir, { recursive: true });
+    fs.writeFileSync(
+      path.join(learnedSkillsDir, 'qoder-hook.md'),
+      `# Qoder Hook Verification\n\n## When to Use\n\n${contextSentinel}\n`
+    );
 
-    assert.ifError(result.error);
-    assert.strictEqual(result.signal, null);
-    assert.strictEqual(result.status, 0, result.stderr);
+    const {
+      CLAUDE_PLUGIN_ROOT: _claudePluginRoot,
+      CLAUDE_CONFIG_DIR: _claudeConfigDir,
+      CLAUDE_SESSION_ID: _claudeSessionId,
+      ECC_PLUGIN_ROOT: _eccPluginRoot,
+      CODEX_PLUGIN_ROOT: _codexPluginRoot,
+      PLUGIN_ROOT: _pluginRoot,
+      ...baseEnv
+    } = process.env;
+
+    try {
+      const result = spawnSync(hook.command, args, {
+        cwd: isolatedCwd,
+        env: {
+          ...baseEnv,
+          HOME: isolatedHome,
+          USERPROFILE: isolatedHome,
+          ECC_AGENT_DATA_HOME: agentDataHome,
+          XDG_DATA_HOME: path.join(isolatedRoot, 'xdg-data'),
+          QODER_PLUGIN_ROOT: repoRoot,
+          CLAUDE_PROJECT_DIR: isolatedCwd,
+          ECC_HOOKS_ENABLED: 'true',
+          ECC_HOOK_PROFILE: 'standard',
+          ECC_DISABLED_HOOKS: '',
+          ECC_DRY_RUN: '0',
+          ECC_SESSION_START_CONTEXT: 'on',
+          ECC_SESSION_RETENTION_DAYS: '0',
+        },
+        input: JSON.stringify({
+          hook_event_name: 'SessionStart',
+          source: 'startup',
+          cwd: isolatedCwd,
+        }),
+        encoding: 'utf8',
+        timeout: 10000,
+        windowsHide: true,
+      });
+
+      assert.ifError(result.error);
+      assert.strictEqual(result.signal, null);
+      assert.strictEqual(result.status, 0, result.stderr);
+      assert.ok(result.stdout.trim(), 'Expected SessionStart to emit a payload');
+      const output = JSON.parse(result.stdout);
+      assert.strictEqual(output.hookSpecificOutput?.hookEventName, 'SessionStart');
+      assert.ok(
+        output.hookSpecificOutput?.additionalContext.includes(contextSentinel),
+        'Expected the enabled Qoder hook to inject isolated SessionStart context'
+      );
+    } finally {
+      fs.rmSync(isolatedRoot, { recursive: true, force: true });
+    }
   });
 }
 
