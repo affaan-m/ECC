@@ -2142,6 +2142,41 @@ for (const [name, payload, expected] of escapedSplitCases) {
   }
 }
 
+// --- GNU sed execution model (#3051 test intent) ---
+// sed is a text transformer: its script operand and file operands are data,
+// except the `e` command and the s///e flag, which run text through the shell.
+// Ported from the #3051 litmus set: quoted-as-data stays data, real execution
+// is blocked, and unmodeled invocations keep the conservative opaque default.
+
+const sedCases = [
+  // False positives fixed: non-executing sed operands are data.
+  ['sed filename is data (the #3051 false positive)', "sed 's/x/y/' 'e git commit --no-verify'", 0],
+  ['non-executing script containing a git command is data', "sed 's/x/git commit --no-verify/'", 0],
+  ['file operand containing git is data', "sed 's/eee/zzz/' 'git commit --no-verify.txt'", 0],
+  ['benign line-range script is data', "sed -n '1,3p' file.txt", 0],
+  ['s///e replacement is shell source', "printf x | sed 's/x/git commit --no-verify/e'", 2],
+  ['s///e replacement still blocked further downstream', "printf x | sed 's/x/git commit --no-verify/e' | cat", 2],
+  ['e command operand is shell source', "sed -e 'e git commit --no-verify'", 2],
+  ['bare e consumes piped source as shell code', "printf 'git commit --no-verify' | sed -e 'e'", 2],
+  ['--expression= form is modeled', "sed --expression='s/x/git commit --no-verify/e'", 2],
+  // Conservative defaults preserved: unmodeled invocations stay opaque.
+  ['-f scripts are unreadable: opaque default', "sed -f script.sed 'git commit --no-verify'", 2],
+  ['-i suffix ambiguity: opaque default', "sed -i 's/a/b/' 'git commit --no-verify'", 2],
+  // Litmus anchors from the #3051 direction check (existing behavior pinned).
+  ['quoted-as-data through echo stays allowed', 'echo "git commit --no-verify"', 0],
+  ['direct --no-verify stays blocked', 'git commit --no-verify -m x', 2],
+  ['mixed quoting smuggling a real flag stays blocked', "git commit '--no-verify' -m x", 2]
+];
+for (const [name, command, expected] of sedCases) {
+  if (test(`sed model ${name}`, () => {
+    for (const input of [command, JSON.stringify({ tool_input: { command } })]) {
+      const result = runHook(input);
+      assert.strictEqual(result.code, expected, `expected exit ${expected}, got ${result.code}: ${result.stderr}`);
+      if (expected === 2) assert.match(result.stderr, /BLOCKED/);
+    }
+  })) passed++; else failed++;
+}
+
 console.log('─'.repeat(50));
 console.log(`Passed: ${passed}  Failed: ${failed}`);
 

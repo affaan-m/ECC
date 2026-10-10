@@ -460,6 +460,198 @@ function shellRole(words, budget, shell) {
   return { kind: 'shell', stdin: stdin || i === words.length };
 }
 
+// --- GNU sed execution model -------------------------------------------------
+// sed is a text transformer, not a shell: its script operand and file operands
+// are data. Two constructs break that: the `e` command (with or without an
+// operand, the operand or pattern space is run through the shell) and an `s`
+// command carrying the `e` flag (the substituted pattern space is run through
+// the shell). Scripts using them make sed a shell-equivalent receiver; every
+// other invocation keeps its operands out of the executable scan. Anything the
+// literal parser cannot confidently read falls back to today's opaque default.
+
+// Parse one sed s-command at script[i] (script[i] === 's'). Returns
+// { end, replacement, exec } or null when the shape is not confidently literal.
+function parseSedSubstitution(script, i, budget) {
+  const delim = script[i + 1];
+  if (delim === undefined || /[a-zA-Z0-9\\\s]/.test(delim)) return null;
+  let j = i + 2;
+  while (j < script.length) {
+    budget.spend();
+    if (script[j] === '\\') { j += 2; continue; }
+    if (script[j] === delim) break;
+    if (script[j] === '\n') return null;
+    j++;
+  }
+  if (script[j] !== delim) return null;
+  const replacementStart = ++j;
+  while (j < script.length) {
+    budget.spend();
+    if (script[j] === '\\') { j += 2; continue; }
+    if (script[j] === delim) break;
+    if (script[j] === '\n') return null;
+    j++;
+  }
+  if (script[j] !== delim) return null;
+  const replacement = script.slice(replacementStart, j);
+  j++;
+  // GNU flag letters. `e` executes; `E` only selects extended regex and must
+  // not be treated as execution. `w file` appends a filename operand (data).
+  let exec = false;
+  while (j < script.length && /[0-9gGpPiImMe]/.test(script[j])) {
+    budget.spend();
+    if (script[j] === 'e') exec = true;
+    j++;
+  }
+  if (script[j] === 'w') {
+    while (j < script.length && script[j] !== '\n') { budget.spend(); j++; }
+  }
+  return { end: j, replacement, exec };
+}
+
+// Skip an optional address (or range) before a command letter. Returns the
+// index of the command letter, or -1 when an address starts but cannot be
+// confidently consumed.
+function skipSedAddress(script, i, budget) {
+  const n = script.length;
+  function one(i) {
+    if (i >= n) return -1;
+    const c = script[i];
+    if (c === '$') return i + 1;
+    if (/[0-9]/.test(c)) {
+      let j = i;
+      while (j < n && /[0-9]/.test(script[j])) { budget.spend(); j++; }
+      return j;
+    }
+    const delimChar = c === '/' ? '/' : (c === '\\' ? script[i + 1] : null);
+    if (delimChar) {
+      let j = c === '/' ? i + 1 : i + 2;
+      while (j < n) {
+        budget.spend();
+        if (script[j] === '\\') { j += 2; continue; }
+        if (script[j] === delimChar) return j + 1;
+        if (script[j] === '\n') return -1;
+        j++;
+      }
+      return -1;
+    }
+    return -1;
+  }
+  const first = one(i);
+  if (first === -1) return i; // no address; the command letter is at i
+  let j = first;
+  if (script[j] === ',') {
+    const second = one(j + 1);
+    if (second === -1) return -1;
+    j = second;
+  }
+  if (script[j] === '!') j++;
+  return j;
+}
+
+// Returns { parts, stdinExec } where parts are literal script fragments sed
+// will hand to the shell, or null when the script cannot be confidently read.
+function sedExecParts(script, budget) {
+  if (script.includes('\u0000')) return null; // expansion residue: not literal
+  const parts = [];
+  let stdinExec = false;
+  const n = script.length;
+  let i = 0;
+  while (i < n) {
+    budget.spend();
+    const c = script[i];
+    if (c === ' ' || c === '\t' || c === '\n' || c === ';' || c === '{' || c === '}') { i++; continue; }
+    if (c === '#') {
+      while (i < n && script[i] !== '\n') { budget.spend(); i++; }
+      continue;
+    }
+    if (c === '\\') return null; // escape in command position: unmodeled
+    const addressed = skipSedAddress(script, i, budget);
+    if (addressed === -1) return null;
+    if (addressed >= n) break;
+    i = addressed;
+    const letter = script[i];
+    if (letter === 's') {
+      const sub = parseSedSubstitution(script, i, budget);
+      if (!sub) return null;
+      if (sub.exec) {
+        if (sub.replacement) parts.push(sub.replacement);
+        // The executed text also carries matched input data (&, backrefs),
+        // so a piping producer must be treated as a shell source too.
+        stdinExec = true;
+      }
+      i = sub.end;
+      continue;
+    }
+    if (letter === 'y') {
+      const first = parseSedSubstitution(script, i, budget);
+      if (!first) return null;
+      i = first.end;
+      continue;
+    }
+    if (letter === 'e') {
+      let j = i + 1;
+      while (j < n && (script[j] === ' ' || script[j] === '\t')) { budget.spend(); j++; }
+      stdinExec = true;
+      if (j < n && script[j] !== '\n' && script[j] !== ';') {
+        let end = j;
+        while (end < n && script[end] !== '\n') { budget.spend(); end++; }
+        parts.push(script.slice(j, end));
+        i = end;
+      } else i = j;
+      continue;
+    }
+    // Text, label and filename operands run to end of line; all are data.
+    if ('acirwWb:tTqQ'.includes(letter)) {
+      let end = i + 1;
+      while (end < n && script[end] !== '\n') { budget.spend(); end++; }
+      i = end;
+      continue;
+    }
+    if ('dDgGhHlnNpPxFzv='.includes(letter)) { i++; continue; }
+    return null; // unmodeled command letter: keep the opaque default
+  }
+  return { parts, stdinExec };
+}
+
+// Model sed's argv: which operands are scripts, which are file names (data).
+// Returns the script strings, or null when the invocation shape is unmodeled —
+// the caller then keeps today's opaque default instead of guessing.
+function sedScriptParts(words, budget) {
+  const scripts = [];
+  let i = 1;
+  while (i < words.length) {
+    const raw = words[i].value;
+    budget.spend(raw.length + 1);
+    if (raw === '--') { i++; break; }
+    if (raw === '--expression') {
+      if (!words[i + 1]) return null;
+      scripts.push(words[i + 1].value); i += 2; continue;
+    }
+    if (raw.startsWith('--expression=')) { scripts.push(raw.slice('--expression='.length)); i++; continue; }
+    if (raw.startsWith('--')) {
+      if (['--quiet', '--silent', '--null-data', '--zero-terminated', '--posix', '--regexp-extended', '--sandbox', '--separate', '--unbuffered', '--follow-symlinks'].includes(raw)) { i++; continue; }
+      return null; // --file=, --in-place variants, unknown long options
+    }
+    if (raw.startsWith('-') && raw.length > 1) {
+      if (raw === '-e') {
+        if (!words[i + 1]) return null;
+        scripts.push(words[i + 1].value); i += 2; continue;
+      }
+      if (raw === '-f') return null; // script comes from a file we cannot read
+      if (/^-l[0-9]+$/.test(raw)) { i++; continue; }
+      if (/^-[nsEruzb]+$/.test(raw)) { i++; continue; }
+      return null; // -i suffix ambiguity and unknown short options
+    }
+    break; // first positional operand
+  }
+  if (!scripts.length) {
+    if (i >= words.length) return null; // no script operand at all
+    scripts.push(words[i].value);
+  }
+  // Remaining operands are file names: data, deliberately left uninspected.
+  return scripts;
+}
+
 function commandRole(words, budget) {
   if (!words.length) return { kind: 'data' };
   budget.spend(words[0].value.length + 1);
@@ -469,6 +661,23 @@ function commandRole(words, budget) {
   if (name === 'eval') {
     for (const word of words) budget.spend(word.value.length + 3);
     return { kind: 'shell', code: words.slice(words[1]?.value === '--' ? 2 : 1).map(word => word.value).join(' '), stdin: false };
+  }
+  if (name === 'sed') {
+    const scripts = sedScriptParts(words, budget);
+    if (!scripts) return { kind: 'opaque', stdin: true };
+    const parts = [];
+    let stdinExec = false;
+    for (const script of scripts) {
+      const parsed = sedExecParts(script, budget);
+      if (!parsed) return { kind: 'opaque', stdin: true };
+      parts.push(...parsed.parts);
+      stdinExec ||= parsed.stdinExec;
+    }
+    if (parts.length || stdinExec) return { kind: 'sedExec', stdin: true, parts };
+    // Pure text transformation: script and file operands are data. This is the
+    // specific false positive the #3051 tests pin: file names that merely
+    // contain "git ..." never execute.
+    return { kind: 'data' };
   }
   if (DATA_COMMANDS.has(name)) return { kind: 'data' };
   return { kind: 'opaque', stdin: true };
@@ -717,6 +926,14 @@ function checkCommand(input) {
               sameShellCode = role.code;
             }
             else childEnvironments.push({ code: role.code, opaque: false, environment });
+          }
+          if (role.kind === 'sedExec') {
+            // Fragments sed will hand to the shell are scanned as real shell
+            // source, not as opaque text — this closes the GNU sed `e` gap.
+            for (const part of role.parts) {
+              budget.spend(part.length + 1);
+              childEnvironments.push({ code: part, opaque: false, environment });
+            }
           }
           if (role.stdin) {
             for (const redirect of command.redirects) {
