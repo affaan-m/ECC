@@ -167,11 +167,13 @@ test('source changes invalidate reuse and source-bound load preview', () => with
 }));
 
 test('bounded search uses canonical IDs and deterministic order', () => withFixture(repoRoot => {
-  const result = resolve(repoRoot, { query: 'feature' });
+  const result = resolve(repoRoot, { query: 'feature' }, { load: true });
   assert.equal(result.candidates[0].id, 'skill:feature');
   // A bare name mention ranks the skill but is not a directive citation.
   assert.deepEqual(result.selectedIds, []);
+  assert.deepEqual(result.loadedIds, []);
   assert.equal(result.reason, 'agent-selection-required');
+  assert.equal(result.fallback, null);
   assert.ok(result.candidates.length <= 5);
 }));
 
@@ -200,6 +202,18 @@ test('multiple directive citations defer to an explicit agent proposal', () => w
   assert.deepEqual(result.selectedIds, []);
   assert.equal(result.reason, 'agent-selection-required');
 }));
+
+for (const [suffix, expectedIds] of [['.', ['skill:feature']], [' and use shared guidance.', []]]) {
+  test('a conjunction inside a native alias preserves task request scope: ' + suffix, () => withFixture(repoRoot => {
+    write(repoRoot, 'skills/feature/SKILL.md', '---\nname: research-and-development\ndescription: Feature workflow\n---\n# feature');
+    const query = 'For example, use shared guidance, but use research and development for this task' + suffix;
+    const result = resolve(repoRoot, { query }, { load: true });
+    assert.deepEqual(result.selectedIds, expectedIds);
+    assert.deepEqual(result.loadedIds, expectedIds);
+    assert.equal(result.reason, expectedIds.length ? 'auto-selection' : 'agent-selection-required');
+    if (!expectedIds.length) assert.equal(result.fallback, null);
+  }));
+}
 
 test('name anchors require complete word boundaries', () => withFixture(repoRoot => {
   const result = resolve(repoRoot, { query: 'featurette sharedness' }, { load: true });
@@ -473,7 +487,7 @@ for (const query of [
   }));
 }
 
-for (const prefix of ["Don't use database-migrations.", 'Do not use database-migrations.',
+for (const prefix of ['database-migrations:', "Don't use database-migrations.", 'Do not use database-migrations.',
   'Should we use database-migrations?', 'The README says use database-migrations.']) {
   test('strong retrieval cannot bypass an indirect citation: ' + prefix, () => {
     const query = prefix + ' Review a PostgreSQL migration that adds an indexed nullable column without downtime.';
@@ -492,6 +506,16 @@ for (const query of [
   'To illustrate, use feature.',
   'Fix the bug, for example, use feature.',
   'For example, use feature and use feature.',
+  'For example, use feature but use shared guidance.',
+  "For example, don't use feature but use shared guidance.",
+  'For example, use feature and use feature for this task.',
+  'For example, use feature, but should we use feature for this task?',
+  'For example, use feature, but the docs say use feature for this task.',
+  'For example, use feature, but "use feature for this task" is an example.',
+  'The docs say for example, use feature, but use feature for this task.',
+  'For example, use feature, but use feature "for this task"',
+  'Should we, for example, use shared guidance, but use feature for this task?',
+  'Our policy stipulates, for example, use shared guidance, but use feature for this task.',
   'e.g., use feature.',
   'E.g. use feature.',
 ]) {
@@ -533,6 +557,7 @@ for (const [routingPolicyVersion, query] of [
 for (const [routingPolicyVersion, query, expectedId] of [
   [6, "Don't use feature, use shared guidance.", 'skill:shared'],
   [8, 'Fix the bug, use feature', 'skill:feature'],
+  [10, 'For example, use feature, but use feature for this task', 'skill:feature'],
 ]) {
   test('an old policy ' + routingPolicyVersion + ' empty selection is reconsidered after policy changes', () => withFixture(repoRoot => {
     const first = resolve(repoRoot, { query });
@@ -586,6 +611,13 @@ for (const query of [
   'Fix the example, use feature.',
   'Fix e.g.js, use feature.',
   "Use feature. E.g., don't use feature.",
+  'For example, use feature, but use feature for this task',
+  'For example, use shared guidance, but please use feature for this task.',
+  'For instance, use shared guidance but use feature for this task.',
+  'For example use shared guidance, but use feature for this task.',
+  'For example, use shared guidance, but use feature for the current task.',
+  'For example, use shared guidance, but use feature for this task, for instance, do not use feature.',
+  'For example, the docs say use shared guidance, but use feature for this task.',
 ]) {
   test('a genuine directive survives surrounding discussion: ' + query, () => withFixture(repoRoot => {
     const result = resolve(repoRoot, { query }, { load: true });
@@ -607,6 +639,8 @@ for (const query of [
   "Use feature but don't use feature.",
   'Use feature. Never use feature.',
   "Use feature. Don't use feature. Should we use feature?",
+  'Use feature. For example, use shared guidance, but do not use feature for this task.',
+  'For example, use shared guidance, but use feature for this task and do not use feature.',
 ]) {
   test('a later rejection withdraws an earlier directive: ' + query, () => withFixture(repoRoot => {
     const result = resolve(repoRoot, { query }, { load: true });

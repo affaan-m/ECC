@@ -189,6 +189,18 @@ for (const query of ["Don't use the feature skill.", 'Don\u2019t use the feature
   'To illustrate, use feature.',
   'Fix the bug, for example, use feature.',
   'For example, use feature and use feature.',
+  'For example, use feature but use shared guidance.',
+  "For example, don't use feature but use shared guidance.",
+  'For example, use feature and use feature for this task.',
+  'For example, use feature, but should we use feature for this task?',
+  'For example, use feature, but the docs say use feature for this task.',
+  'For example, use feature, but "use feature for this task" is an example.',
+  'The docs say for example, use feature, but use feature for this task.',
+  'For example, use feature, but use feature "for this task"',
+  'Should we, for example, use shared guidance, but use feature for this task?',
+  'Our policy stipulates, for example, use shared guidance, but use feature for this task.',
+  'Use feature. For example, use shared guidance, but do not use feature for this task.',
+  'For example, use shared guidance, but use feature for this task and do not use feature.',
   'e.g., use feature.',
   'E.g. use feature.',
   'Do not use feature and shared guidance.',
@@ -247,6 +259,13 @@ for (const [query, skill] of [
   ['Fix the example, use feature.', 'feature'],
   ['Fix e.g.js, use feature.', 'feature'],
   ["Use feature. E.g., don't use feature.", 'feature'],
+  ['For example, use feature, but use feature for this task', 'feature'],
+  ['For example, use shared guidance, but please use feature for this task.', 'feature'],
+  ['For instance, use shared guidance but use feature for this task.', 'feature'],
+  ['For example use shared guidance, but use feature for this task.', 'feature'],
+  ['For example, use shared guidance, but use feature for the current task.', 'feature'],
+  ['For example, use shared guidance, but use feature for this task, for instance, do not use feature.', 'feature'],
+  ['For example, the docs say use shared guidance, but use feature for this task.', 'feature'],
 ]) {
   test('an unambiguous final directive injects context without a proposal: ' + query, () => withFixture(repoRoot => {
     const phases = [];
@@ -278,6 +297,28 @@ test('a final directive after a question reaches the task with its context', () 
   assert.equal(result.routingCalls, 0);
   assert.deepEqual(result.selection.loadedIds, ['skill:feature']);
 }));
+
+for (const [suffix, expectedIds] of [['.', ['skill:feature']], [' and use shared guidance.', []]]) {
+  test('a conjunction inside a native alias preserves launch scope: ' + suffix, () => withFixture(repoRoot => {
+    fs.writeFileSync(path.join(repoRoot, 'skills/feature/SKILL.md'),
+      '---\nname: research-and-development\ndescription: Feature workflow\n---\n# feature');
+    const query = 'For example, use shared guidance, but use research and development for this task' + suffix;
+    const phases = [];
+    const result = launchTaskContext({ repoRoot, task: { ...input, query, explicitIds: [] },
+      execute(command, args, options) {
+        phases.push(options.phase);
+        if (options.phase === 'selection') return { status: 0, stdout: '{"selectedIds":[]}' };
+        if (expectedIds.length) assert.match(options.input, /# feature/);
+        else assert.doesNotMatch(options.input, /# feature/);
+        assert.doesNotMatch(options.input, /# shared/);
+        return { status: 0, stdout: 'ok' };
+      } });
+    assert.deepEqual(phases, expectedIds.length ? ['task'] : ['selection', 'task']);
+    assert.deepEqual(result.selection.selectedIds, expectedIds);
+    assert.deepEqual(result.selection.loadedIds, expectedIds);
+    assert.equal(result.selection.reason, expectedIds.length ? 'auto-selection' : 'agent-declined-selection');
+  }));
+}
 
 test('a singular rejected name cannot inject scored context at launch', () => {
   const phases = [];

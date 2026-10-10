@@ -34,7 +34,8 @@ const FALLBACK_MARGIN = 1.1;
 // v8: only recognized request/rejection scopes can authorize coordinated directives.
 // v9: neutral task preambles do not suppress a later explicit skill request.
 // v10: illustrative instructions do not supply or withdraw a direct request.
-const ROUTING_POLICY_VERSION = 10;
+// v11: a contrastive current-task instruction ends the preceding example scope.
+const ROUTING_POLICY_VERSION = 11;
 const TASK_KEYS = new Set(['sessionId', 'taskId', 'revision', 'phase', 'query', 'explicitIds', 'proposedIds', 'noWorkflow']);
 
 const DIRECTIVE_VERB = /\b(use|apply|invoke|run|follow|load)\s+(the\s+)?/i;
@@ -44,12 +45,37 @@ const DIRECTIVE_NAME_PREFIX = new RegExp(DIRECTIVE_REQUEST.source + '\\s+(?:the\
 const QUESTION_START = /^(?!do not\b)(can|could|would|should|shall|will|may|might|must|ought|do|does|did|is|are|why|how|what|when|where|which)\b/;
 const REPORTED_INSTRUCTION = /\b(say|says|said|reads|told|mentions?|quoted?|document|states?|stated|recommends?|recommended|asserts?|asserted)\b/;
 const EXAMPLE_PREFIX = /^(?:for (?:example|instance)|as an example|to illustrate)\b/;
+const CURRENT_TASK_SUFFIX = /\bfor (?:this|the current) task$/;
 // Subject-led statements may describe someone else's instructions or intentions.
 const SUBJECT_PREFIX = /^(?:the|a|an|i|you|he|she|it|we|they|my|your|his|her|its|our|their|this|that|these|those)\b/;
 // Rejections keep their whole list until another instruction/question begins.
 const INSTRUCTION_BOUNDARY = /(?:,\s*(?:(?:and|but)\s+)?|\s+(?:and|but)\s+)(?=(?:please\s+)?(?:do\s+(?:not\s+)?|not\s+|never\s+)?(?:use|apply|invoke|run|follow|load)\b|(?:can|could|would|should|shall|will|may|might|must|ought|do|does|did|is|are|why|how|what|when|where|which)\b)/i;
 // Admission additionally checks intervening scopes, including unknown wording.
 const ADMISSION_BOUNDARY = /(?:,\s*(?:(?:and|but)\s+)?|\s+(?:and|but)\s+)(?=\S)/i;
+
+/** Track example spans without discarding the connectors between instructions.
+ * A contrast inside an example remains illustrative unless its instruction
+ * explicitly addresses the current task. Earlier non-example scopes stay intact.
+ * @param {string} text Normalized clause with comma boundaries preserved.
+ * @param {string[]} names Known candidate aliases whose internal connectors are names.
+ * @returns {Array<{start: number, text: string, example: boolean}>} Ordered scopes.
+ */
+function citationScopes(text, names) {
+  const mentions = names.flatMap(name => [...text.matchAll(new RegExp('\\b' + name + '\\b', 'g'))]
+    .map(mention => ({ start: mention.index, end: mention.index + name.length })));
+  const boundaries = [...text.matchAll(new RegExp(ADMISSION_BOUNDARY.source, 'gi'))]
+    .filter(boundary => !mentions.some(mention => boundary.index > mention.start && boundary.index < mention.end));
+  let example = false;
+  return [0, ...boundaries.map(boundary => boundary.index + boundary[0].length)].map((start, index) => {
+    const scope = text.slice(start, boundaries[index]?.index ?? text.length);
+    const currentTask = CURRENT_TASK_SUFFIX.test(scope)
+      && (DIRECTIVE_REQUEST.test(scope) || DIRECTIVE_REJECTION.test(scope));
+    if (currentTask && /\bbut\b/.test(boundaries[index - 1]?.[0] || '')) example = false;
+    if (EXAMPLE_PREFIX.test(scope)) example = true;
+    return { start, text: scope, example };
+  });
+}
+
 /** Normalize citation names while preserving contracted negation as a separate word.
  * @param {string} text Raw query text or a registry alias.
  * @returns {string} Lowercase alphanumeric words with negation preserved.
@@ -77,17 +103,20 @@ function citationAliases(candidate, nativeName) {
  * @param {object} candidate Ranked skill candidate with its canonical ID and exact alias.
  * @param {string} query Task text to classify without loading skill contents.
  * @param {string} nativeName Registry name, including aliases absent from exact retrieval.
+ * @param {string[]} names All candidate aliases, used to preserve names across scopes.
  * @returns {'directive'|'indirect'|'none'} Admission evidence for this skill only.
  */
-function citationFor(candidate, query, nativeName) {
+function citationFor(candidate, query, nativeName, names) {
   const aliases = citationAliases(candidate, nativeName);
   let citation = 'none';
   // Mask quoted instructions before splitting clauses so punctuation inside a
   // quotation cannot look like a separate instruction. Quoted names remain usable.
   const unquoted = query.replace(/"[^"]*"|\u201c[^\u201d]*\u201d|(?:^|[\s(:])'[^']*'|\u2018[^\u2019]*\u2019|\x60[^\x60]*\x60/g, part => {
     const text = normalizedQueryName(part);
-    if (!DIRECTIVE_VERB.test(text)) return part;
-    if (aliases.some(({ name }) => new RegExp('\\b' + name + '\\b').test(text))) citation = 'indirect';
+    const instruction = DIRECTIVE_VERB.test(text);
+    // Quoting a task qualifier cannot turn an illustrative instruction into a request.
+    if (!instruction && !CURRENT_TASK_SUFFIX.test(text)) return part;
+    if (instruction && aliases.some(({ name }) => new RegExp('\\b' + name + '\\b').test(text))) citation = 'indirect';
     return part.replace(/[^.!?;\n]/g, ' ');
   });
   // Keep the illustrative abbreviation together when its periods would split clauses.
@@ -95,13 +124,16 @@ function citationFor(candidate, query, nativeName) {
   for (const clause of expanded.match(/[^.!?;\n]+[.!?;\n]*/g) || []) {
     // Keep comma boundaries for directive scope without changing alias normalization.
     const text = clause.split(',').map(normalizedQueryName).join(', ');
+    const clauseScopes = citationScopes(text, names);
     const mentions = aliases.flatMap(({ name, exact }) => [...text.matchAll(new RegExp('\\b' + name + '\\b', 'g'))]
       .map(mention => ({ index: mention.index, exact }))).sort((a, b) => a.index - b.index);
     for (const mention of mentions) {
       const prefix = text.slice(0, mention.index);
-      const scopes = prefix.split(ADMISSION_BOUNDARY);
+      const precedingScopes = clauseScopes.filter(scope => scope.start <= mention.index);
+      const example = precedingScopes.at(-1)?.example;
+      const scopes = precedingScopes.filter(scope => !scope.example)
+        .map(scope => scope.text.slice(0, mention.index - scope.start));
       const instructionPrefix = prefix.split(INSTRUCTION_BOUNDARY).at(-1);
-      const example = scopes.some(scope => EXAMPLE_PREFIX.test(scope));
       // A task preamble such as "fix the bug" does not change a later request.
       // Only preceding scopes may be neutral: an embedded instruction, question,
       // or subject-led statement still needs review. The final scope must remain
@@ -112,7 +144,7 @@ function citationFor(candidate, query, nativeName) {
       const question = (!DIRECTIVE_REQUEST.test(text) && QUESTION_START.test(text))
         || (!DIRECTIVE_REQUEST.test(instructionPrefix)
           && (QUESTION_START.test(instructionPrefix) || clause.includes('?')));
-      if (example || question || REPORTED_INSTRUCTION.test(prefix) || /^\s*["'\u201c\u2018\x60]/.test(clause)) {
+      if (example || question || scopes.some(scope => REPORTED_INSTRUCTION.test(scope)) || /^\s*["'\u201c\u2018\x60]/.test(clause)) {
         if (citation === 'none') citation = 'indirect';
       } else if (/\b(do not|never|no|not|avoid)\b/.test(instructionPrefix)) {
         citation = 'indirect';
@@ -281,7 +313,10 @@ function resolveTaskContext({ repoRoot = DEFAULT_REPO_ROOT, task, profileId = 'l
   // questions, negations, reported speech, multiple cited names — never admit
   // implicitly. Everything else keeps the bounded-proposal path so the
   // primary agent decides ambiguous cases during work it was already doing.
-  const citations = new Map(candidates.map(candidate => [candidate.id, citationFor(candidate, task.query || '', byId.get(candidate.id).name)]));
+  const names = [...new Set(candidates.flatMap(candidate => citationAliases(candidate, byId.get(candidate.id).name)
+    .map(alias => alias.name)))];
+  const citations = new Map(candidates.map(candidate => [candidate.id,
+    citationFor(candidate, task.query || '', byId.get(candidate.id).name, names)]));
   const exactAnchors = candidates.filter(candidate => citations.get(candidate.id) === 'directive');
   let autoSelection = null;
   if (!task.noWorkflow && selectionMode === 'auto' && !reused && !explicitIds.length && !proposedIds.length && candidates.length) {
