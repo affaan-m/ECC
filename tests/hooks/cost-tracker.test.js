@@ -670,6 +670,58 @@ function runTests() {
     );
   }) ? passed++ : failed++);
 
+  (test('prices Claude 5.5 generations and Haiku long prompts per request', () => {
+    const priceMessages = messages => {
+      const tmpHome = makeTempDir();
+      const sessionId = `generation-rate-${process.pid}-${Date.now()}`;
+      const transcriptPath = path.join(tmpHome, 'session.jsonl');
+      writeTranscript(transcriptPath, messages.map(message => ({ type: 'assistant', message })));
+      try {
+        removeHarnessCostCache(sessionId);
+        const result = runScript(
+          { session_id: sessionId, transcript_path: transcriptPath }, withTempHome(tmpHome)
+        );
+        assert.strictEqual(result.code, 0, result.stderr);
+        return JSON.parse(fs.readFileSync(path.join(tmpHome, '.claude', 'metrics', 'costs.jsonl'), 'utf8').trim());
+      } finally {
+        removeHarnessCostCache(sessionId);
+        fs.rmSync(tmpHome, { recursive: true, force: true });
+      }
+    };
+    const message = (model, input, output, id) => ({
+      model, id, usage: { input_tokens: input, output_tokens: output }
+    });
+    assert.strictEqual(priceMessages([message('claude-opus-5-5', 1000, 1000)]).estimated_cost_usd, 0.024);
+    assert.strictEqual(priceMessages([message('claude-haiku-5-5', 1000, 1000)]).estimated_cost_usd, 0.0006);
+    assert.strictEqual(priceMessages([message('claude-haiku-5-5', 100000, 1000)]).estimated_cost_usd, 0.0105);
+    assert.strictEqual(priceMessages([message('claude-haiku-5-5', 100001, 1000)]).estimated_cost_usd, 0.052501);
+    assert.strictEqual(priceMessages([message('claude-opus-5-50', 1000, 1000)]).estimated_cost_usd, 0.03);
+    assert.strictEqual(priceMessages([message('claude-haiku-5-50', 1000, 1000)]).estimated_cost_usd, 0.006);
+    assert.strictEqual(priceMessages([{
+      model: 'claude-opus-5-5',
+      usage: { cache_creation_input_tokens: 1000, cache_read_input_tokens: 1000 }
+    }]).estimated_cost_usd, 0.0052);
+    assert.strictEqual(priceMessages([{
+      model: 'claude-sonnet-5-5', usage: { cache_read_input_tokens: 1000 }
+    }]).estimated_cost_usd, 0.0001);
+    assert.strictEqual(priceMessages([{
+      model: 'claude-haiku-5-5',
+      usage: { cache_creation_input_tokens: 1000, cache_read_input_tokens: 1000 }
+    }]).estimated_cost_usd, 0.000135);
+    assert.strictEqual(priceMessages([{
+      model: 'claude-haiku-5-5',
+      usage: { input_tokens: 50000, output_tokens: 1000, cache_read_input_tokens: 50001 }
+    }]).estimated_cost_usd, 0.03, 'cached prompt tokens count toward the long-prompt threshold');
+    const first = message('claude-haiku-5-5', 60000, 1000, 'first');
+    const second = message('claude-haiku-5-5', 60000, 1000, 'second');
+    const row = priceMessages([first, first, second]);
+    assert.strictEqual(row.input_tokens, 120000, 'deduplicate usage before selecting each request tier');
+    assert.strictEqual(row.estimated_cost_usd, 0.013, 'session totals must not select the long-prompt tier');
+    assert.strictEqual(priceMessages([
+      message('claude-haiku-5-5', 1000, 1000), message('claude-opus-5-5', 1000, 1000)
+    ]).estimated_cost_usd, 0.0246, 'each request retains its own model rates');
+  }) ? passed++ : failed++);
+
   // 11. Ignores stale harness-cost cache and falls back to transcript estimate
   (test('ignores stale harness-cost cache (>300s) and uses transcript estimate', () => {
     const tmpHome = makeTempDir();
