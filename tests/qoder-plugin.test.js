@@ -148,6 +148,7 @@ if (fs.existsSync(manifestPath) && fs.existsSync(hooksPath)) {
           ECC_DISABLED_HOOKS: '',
           ECC_DRY_RUN: '0',
           ECC_SESSION_START_CONTEXT: 'on',
+          ECC_SESSION_START_MAX_CHARS: '8000',
           ECC_SESSION_RETENTION_DAYS: '0',
         },
         input: JSON.stringify({
