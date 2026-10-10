@@ -183,6 +183,14 @@ for (const query of ["Don't use the feature skill.", 'Don\u2019t use the feature
   'Fix the bug, ought we to repair it and use feature?',
   'Fix the bug, must we repair it and use feature?',
   'Fix the bug, feature.',
+  'For example, use feature',
+  'For instance, use feature.',
+  'As an example, use feature.',
+  'To illustrate, use feature.',
+  'Fix the bug, for example, use feature.',
+  'For example, use feature and use feature.',
+  'e.g., use feature.',
+  'E.g. use feature.',
   'Do not use feature and shared guidance.',
   "Use feature, don't use feature.",
   "Use feature and don't use feature.",
@@ -232,6 +240,13 @@ for (const [query, skill] of [
   ['Shall we use shared guidance? Use feature.', 'feature'],
   ['Use feature. The spec states do not use feature and use shared guidance.', 'feature'],
   ['The spec states do not use feature and use shared guidance. Use feature.', 'feature'],
+  ['Use feature. For example, use shared guidance.', 'feature'],
+  ['For example, use shared guidance. Use feature.', 'feature'],
+  ["Use feature. For example, don't use feature.", 'feature'],
+  ['Use feature to build an example.', 'feature'],
+  ['Fix the example, use feature.', 'feature'],
+  ['Fix e.g.js, use feature.', 'feature'],
+  ["Use feature. E.g., don't use feature.", 'feature'],
 ]) {
   test('an unambiguous final directive injects context without a proposal: ' + query, () => withFixture(repoRoot => {
     const phases = [];

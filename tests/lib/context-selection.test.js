@@ -485,26 +485,50 @@ for (const prefix of ["Don't use database-migrations.", 'Do not use database-mig
   });
 }
 
-test('routing policy changes invalidate receipts created by the old citation policy', () => withFixture(repoRoot => {
-  const query = 'Use standard tools, shall we use feature?';
-  const first = resolve(repoRoot, { query, explicitIds: ['skill:feature'] });
-  const { digestObject } = require('../../scripts/lib/context-profile-support');
-  const { compileContextProfile } = require('../../scripts/lib/context-profiles');
-  const plan = compileContextProfile({ repoRoot, selectionMode: 'auto' });
-  const bindingDigest = digestObject({ sessionId: 'session-1', taskId: 'task-1', revision: 1,
-    phase: 'implement', planDigest: plan.planDigest, routingPolicyVersion: 7,
-    triggersDigest: digestObject({}), queryDigest: digestObject(query) });
-  const { receiptDigest: _receiptDigest, ...receipt } = first.receipt;
-  const oldReceipt = { ...receipt, bindingDigest, explicitIds: [],
-    selectionDigest: digestObject({ bindingDigest, selectedIds: ['skill:feature'], explicitIds: [] }) };
-  const previous = { ...oldReceipt, receiptDigest: digestObject(oldReceipt) };
-  const result = resolve(repoRoot, { query }, { previous, load: true });
-  assert.equal(result.reused, false);
-  assert.notEqual(result.receipt.bindingDigest, previous.bindingDigest);
-  assert.deepEqual(result.selectedIds, []);
-  assert.deepEqual(result.loadedIds, []);
-  assert.equal(result.fallback, null);
-}));
+for (const query of [
+  'For example, use feature',
+  'For instance, use feature.',
+  'As an example, use feature.',
+  'To illustrate, use feature.',
+  'Fix the bug, for example, use feature.',
+  'For example, use feature and use feature.',
+  'e.g., use feature.',
+  'E.g. use feature.',
+]) {
+  test('an illustrative citation needs an agent decision: ' + query, () => withFixture(repoRoot => {
+    const result = resolve(repoRoot, { query }, { load: true });
+    assert.ok(result.candidates.some(candidate => candidate.id === 'skill:feature'));
+    assert.deepEqual(result.selectedIds, []);
+    assert.deepEqual(result.loadedIds, []);
+    assert.equal(result.reason, 'agent-selection-required');
+    assert.equal(result.fallback, null);
+  }));
+}
+
+for (const [routingPolicyVersion, query] of [
+  [7, 'Use standard tools, shall we use feature?'],
+  [9, 'For example, use feature'],
+]) {
+  test('an old policy ' + routingPolicyVersion + ' selected receipt is invalidated after policy changes', () => withFixture(repoRoot => {
+    const first = resolve(repoRoot, { query, explicitIds: ['skill:feature'] });
+    const { digestObject } = require('../../scripts/lib/context-profile-support');
+    const { compileContextProfile } = require('../../scripts/lib/context-profiles');
+    const plan = compileContextProfile({ repoRoot, selectionMode: 'auto' });
+    const bindingDigest = digestObject({ sessionId: 'session-1', taskId: 'task-1', revision: 1,
+      phase: 'implement', planDigest: plan.planDigest, routingPolicyVersion,
+      triggersDigest: digestObject({}), queryDigest: digestObject(query) });
+    const { receiptDigest: _receiptDigest, ...receipt } = first.receipt;
+    const oldReceipt = { ...receipt, bindingDigest, explicitIds: [],
+      selectionDigest: digestObject({ bindingDigest, selectedIds: ['skill:feature'], explicitIds: [] }) };
+    const previous = { ...oldReceipt, receiptDigest: digestObject(oldReceipt) };
+    const result = resolve(repoRoot, { query }, { previous, load: true });
+    assert.equal(result.reused, false);
+    assert.notEqual(result.receipt.bindingDigest, previous.bindingDigest);
+    assert.deepEqual(result.selectedIds, []);
+    assert.deepEqual(result.loadedIds, []);
+    assert.equal(result.fallback, null);
+  }));
+}
 
 for (const [routingPolicyVersion, query, expectedId] of [
   [6, "Don't use feature, use shared guidance.", 'skill:shared'],
@@ -555,6 +579,13 @@ for (const query of [
   'The docs say never use feature. Use feature.',
   'Use feature. The docs say never use feature.',
   'Use feature to inspect the essay.',
+  'Use feature. For example, use shared guidance.',
+  'For example, use shared guidance. Use feature.',
+  "Use feature. For example, don't use feature.",
+  'Use feature to build an example.',
+  'Fix the example, use feature.',
+  'Fix e.g.js, use feature.',
+  "Use feature. E.g., don't use feature.",
 ]) {
   test('a genuine directive survives surrounding discussion: ' + query, () => withFixture(repoRoot => {
     const result = resolve(repoRoot, { query }, { load: true });

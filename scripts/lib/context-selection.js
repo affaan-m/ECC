@@ -33,7 +33,8 @@ const FALLBACK_MARGIN = 1.1;
 // v7: independent directives scope negation and imperatives allow question punctuation.
 // v8: only recognized request/rejection scopes can authorize coordinated directives.
 // v9: neutral task preambles do not suppress a later explicit skill request.
-const ROUTING_POLICY_VERSION = 9;
+// v10: illustrative instructions do not supply or withdraw a direct request.
+const ROUTING_POLICY_VERSION = 10;
 const TASK_KEYS = new Set(['sessionId', 'taskId', 'revision', 'phase', 'query', 'explicitIds', 'proposedIds', 'noWorkflow']);
 
 const DIRECTIVE_VERB = /\b(use|apply|invoke|run|follow|load)\s+(the\s+)?/i;
@@ -42,6 +43,7 @@ const DIRECTIVE_REJECTION = /^(?:please )?(?:(?:(?:do )?not|never) (?:use|apply|
 const DIRECTIVE_NAME_PREFIX = new RegExp(DIRECTIVE_REQUEST.source + '\\s+(?:the\\s+)?(?:skill\\s*)?$');
 const QUESTION_START = /^(?!do not\b)(can|could|would|should|shall|will|may|might|must|ought|do|does|did|is|are|why|how|what|when|where|which)\b/;
 const REPORTED_INSTRUCTION = /\b(say|says|said|reads|told|mentions?|quoted?|document|states?|stated|recommends?|recommended|asserts?|asserted)\b/;
+const EXAMPLE_PREFIX = /^(?:for (?:example|instance)|as an example|to illustrate)\b/;
 // Subject-led statements may describe someone else's instructions or intentions.
 const SUBJECT_PREFIX = /^(?:the|a|an|i|you|he|she|it|we|they|my|your|his|her|its|our|their|this|that|these|those)\b/;
 // Rejections keep their whole list until another instruction/question begins.
@@ -88,7 +90,9 @@ function citationFor(candidate, query, nativeName) {
     if (aliases.some(({ name }) => new RegExp('\\b' + name + '\\b').test(text))) citation = 'indirect';
     return part.replace(/[^.!?;\n]/g, ' ');
   });
-  for (const clause of unquoted.match(/[^.!?;\n]+[.!?;\n]*/g) || []) {
+  // Keep the illustrative abbreviation together when its periods would split clauses.
+  const expanded = unquoted.replace(/\be\.g\.(?=\s|[,;:!?]|$)/gi, 'for example');
+  for (const clause of expanded.match(/[^.!?;\n]+[.!?;\n]*/g) || []) {
     // Keep comma boundaries for directive scope without changing alias normalization.
     const text = clause.split(',').map(normalizedQueryName).join(', ');
     const mentions = aliases.flatMap(({ name, exact }) => [...text.matchAll(new RegExp('\\b' + name + '\\b', 'g'))]
@@ -97,6 +101,7 @@ function citationFor(candidate, query, nativeName) {
       const prefix = text.slice(0, mention.index);
       const scopes = prefix.split(ADMISSION_BOUNDARY);
       const instructionPrefix = prefix.split(INSTRUCTION_BOUNDARY).at(-1);
+      const example = scopes.some(scope => EXAMPLE_PREFIX.test(scope));
       // A task preamble such as "fix the bug" does not change a later request.
       // Only preceding scopes may be neutral: an embedded instruction, question,
       // or subject-led statement still needs review. The final scope must remain
@@ -107,7 +112,7 @@ function citationFor(candidate, query, nativeName) {
       const question = (!DIRECTIVE_REQUEST.test(text) && QUESTION_START.test(text))
         || (!DIRECTIVE_REQUEST.test(instructionPrefix)
           && (QUESTION_START.test(instructionPrefix) || clause.includes('?')));
-      if (question || REPORTED_INSTRUCTION.test(prefix) || /^\s*["'\u201c\u2018\x60]/.test(clause)) {
+      if (example || question || REPORTED_INSTRUCTION.test(prefix) || /^\s*["'\u201c\u2018\x60]/.test(clause)) {
         if (citation === 'none') citation = 'indirect';
       } else if (/\b(do not|never|no|not|avoid)\b/.test(instructionPrefix)) {
         citation = 'indirect';
