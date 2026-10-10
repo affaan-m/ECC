@@ -461,6 +461,79 @@ test('codex plugin presentation assets exist and ship in npm package', () => {
   }
 });
 
+// ── Root Agent Plugins manifest ───────────────────────────────────────────────
+// Per the Agent Plugins 1.0.0 spec and https://developers.openai.com/plugins/build/plugins
+// - plugin.json at the plugin ROOT is the portable manifest directories read
+// - OpenAI listing metadata lives under extensions["com.openai"], not a top-level interface
+// - .codex-plugin/plugin.json stays as the documented compatibility overlay
+console.log('\n=== plugin.json (Agent Plugins root manifest) ===\n');
+
+const rootPluginPath = path.join(repoRoot, 'plugin.json');
+
+test('root plugin.json exists', () => {
+  assert.ok(fs.existsSync(rootPluginPath), 'Expected plugin.json at the plugin root for Agent Plugins consumers');
+});
+
+const rootPlugin = loadJsonObject(rootPluginPath, 'plugin.json');
+
+test('root plugin.json declares the Agent Plugins 1.0.0 schema', () => {
+  assert.strictEqual(
+    rootPlugin.$schema,
+    'https://agent-plugins.org/schemas/1.0.0/plugin.schema.json',
+    'Directories resolve the portable manifest through the published Agent Plugins schema'
+  );
+});
+
+test('root plugin.json identity matches package.json and the Codex overlay', () => {
+  assert.strictEqual(rootPlugin.name, 'ecc');
+  assert.strictEqual(rootPlugin.version, expectedVersion);
+  assert.strictEqual(rootPlugin.name, codexPlugin.name);
+  assert.strictEqual(rootPlugin.version, codexPlugin.version);
+  assert.strictEqual(rootPlugin.repository, 'https://github.com/affaan-m/ECC');
+  assert.strictEqual(rootPlugin.license, 'MIT');
+});
+
+test('root plugin.json keeps skills and mcpServers as resolvable string paths', () => {
+  for (const field of ['skills', 'mcpServers']) {
+    assert.strictEqual(typeof rootPlugin[field], 'string', `${field} must be a string path per the Agent Plugins spec`);
+    assert.ok(rootPlugin[field].startsWith('./'), `${field} must be relative to the plugin root, got ${rootPlugin[field]}`);
+    assert.ok(fs.existsSync(path.join(repoRoot, rootPlugin[field].replace(/^\.\//, ''))), `${field} target missing: ${rootPlugin[field]}`);
+  }
+});
+
+test('root plugin.json nests OpenAI metadata under extensions["com.openai"]', () => {
+  assert.ok(!('interface' in rootPlugin), 'A top-level interface key is invalid in the portable manifest; nest it under extensions["com.openai"]');
+  const openai = rootPlugin.extensions && rootPlugin.extensions['com.openai'];
+  assert.ok(openai && typeof openai === 'object', 'Expected extensions["com.openai"] object');
+  assert.ok(openai.interface && typeof openai.interface === 'object', 'Expected extensions["com.openai"].interface object');
+  assert.ok(fs.existsSync(path.join(repoRoot, openai.hooks.replace(/^\.\//, ''))), `OpenAI hooks target missing: ${openai.hooks}`);
+});
+
+test('root plugin.json presentation matches the Codex overlay it supersedes', () => {
+  const openaiInterface = rootPlugin.extensions['com.openai'].interface;
+  for (const field of ['displayName', 'developerName', 'category', 'brandColor', 'composerIcon', 'logo']) {
+    assert.strictEqual(
+      openaiInterface[field],
+      codexPlugin.interface[field],
+      `extensions["com.openai"].interface.${field} must stay in sync with the .codex-plugin overlay`
+    );
+  }
+  assert.ok(Array.isArray(openaiInterface.defaultPrompt) && openaiInterface.defaultPrompt.length >= 3, 'Expected at least three starter prompts for the directory listing');
+});
+
+test('plugin directory policy URLs are ECC-owned and shared by both manifests', () => {
+  const openaiInterface = rootPlugin.extensions['com.openai'].interface;
+  for (const field of ['websiteURL', 'privacyPolicyURL', 'termsOfServiceURL']) {
+    const url = openaiInterface[field];
+    assert.ok(url && url.startsWith('https://ecc.tools'), `${field} must point at an ECC-owned page, got ${url}`);
+    assert.strictEqual(url, codexPlugin.interface[field], `${field} must stay in sync with the .codex-plugin overlay`);
+  }
+});
+
+test('root plugin.json ships in the npm package', () => {
+  assert.ok(new Set(rootPackage.files).has('plugin.json'), 'Expected package.json files to include plugin.json');
+});
+
 // ── .mcp.json at plugin root ──────────────────────────────────────────────────
 // Per official docs: keep .mcp.json at plugin root, NOT inside .codex-plugin/
 console.log('\n=== .mcp.json (plugin root) ===\n');
