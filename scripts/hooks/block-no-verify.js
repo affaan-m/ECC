@@ -267,6 +267,7 @@ function assignmentValues(prior, operand, append, dynamic, budget) {
 }
 
 class UnsupportedEnvSplitEscape extends Error {}
+class UnsupportedSedEscape extends Error {}
 
 function validateEnvSplitEscapes(payload, budget) {
   let quote = null;
@@ -469,45 +470,6 @@ function shellRole(words, budget, shell) {
 // other invocation keeps its operands out of the executable scan. Anything the
 // literal parser cannot confidently read falls back to today's opaque default.
 
-// Parse one sed s-command at script[i] (script[i] === 's'). Returns
-// { end, replacement, exec } or null when the shape is not confidently literal.
-function parseSedSubstitution(script, i, budget) {
-  const delim = script[i + 1];
-  if (delim === undefined || /[a-zA-Z0-9\\\s]/.test(delim)) return null;
-  let j = i + 2;
-  while (j < script.length) {
-    budget.spend();
-    if (script[j] === '\\') { j += 2; continue; }
-    if (script[j] === delim) break;
-    if (script[j] === '\n') return null;
-    j++;
-  }
-  if (script[j] !== delim) return null;
-  const replacementStart = ++j;
-  while (j < script.length) {
-    budget.spend();
-    if (script[j] === '\\') { j += 2; continue; }
-    if (script[j] === delim) break;
-    if (script[j] === '\n') return null;
-    j++;
-  }
-  if (script[j] !== delim) return null;
-  const replacement = script.slice(replacementStart, j);
-  j++;
-  // GNU flag letters. `e` executes; `E` only selects extended regex and must
-  // not be treated as execution. `w file` appends a filename operand (data).
-  let exec = false;
-  while (j < script.length && /[0-9gGpPiImMe]/.test(script[j])) {
-    budget.spend();
-    if (script[j] === 'e') exec = true;
-    j++;
-  }
-  if (script[j] === 'w') {
-    while (j < script.length && script[j] !== '\n') { budget.spend(); j++; }
-  }
-  return { end: j, replacement, exec };
-}
-
 // Skip an optional address (or range) before a command letter. Returns the
 // index of the command letter, or -1 when an address starts but cannot be
 // confidently consumed.
@@ -548,67 +510,127 @@ function skipSedAddress(script, i, budget) {
   return j;
 }
 
+// Read one delimiter-bounded sed section (pattern, replacement or
+// transliteration set) starting at script[start]. Returns the index of the
+// closing delimiter, or -1 when the section cannot be confidently read.
+function readSedDelimited(script, start, delim, budget) {
+  let j = start;
+  while (j < script.length) {
+    budget.spend();
+    if (script[j] === '\\') { j += 2; continue; }
+    if (script[j] === delim) return j;
+    if (script[j] === '\n') return -1;
+    j++;
+  }
+  return -1;
+}
+
+// Parse one sed s-command (or y-command, which shares the shape but takes no
+// flags) at script[i]. Returns { end, replacement, exec }, or null when the
+// shape is not confidently literal.
+function parseSedSubstitution(script, i, budget, transliterate = false) {
+  const delim = script[i + 1];
+  if (delim === undefined || /[a-zA-Z0-9\\\s]/.test(delim)) return null;
+  const patternEnd = readSedDelimited(script, i + 2, delim, budget);
+  if (patternEnd === -1) return null;
+  const replacementEnd = readSedDelimited(script, patternEnd + 1, delim, budget);
+  if (replacementEnd === -1) return null;
+  const replacement = script.slice(patternEnd + 1, replacementEnd);
+  let j = replacementEnd + 1;
+  if (transliterate) return { end: j, replacement: '', exec: false };
+  // GNU flag letters. `e` executes; `E` only selects extended regex and must
+  // not be treated as execution. `w file` appends a filename operand (data).
+  let exec = false;
+  while (j < script.length && /[0-9gGpPiImMe]/.test(script[j])) {
+    budget.spend();
+    if (script[j] === 'e') exec = true;
+    j++;
+  }
+  if (script[j] === 'w') {
+    while (j < script.length && script[j] !== '\n') { budget.spend(); j++; }
+  }
+  return { end: j, replacement, exec };
+}
+
+// Exec-bearing fragments (the s///e replacement, the e command operand) are
+// decoded by GNU sed before execution: \xHH, \oOOO, \dNNN, case operations and
+// even unknown escapes like \g all rewrite the text. Decoding that surface
+// faithfully is out of scope, so any backslash in an executed fragment keeps
+// the hook from proving safety — the caller blocks, mirroring the env -S
+// escape precedent rather than pretending to interpret sed.
+function assertSedLiteral(text) {
+  if (text.includes('\\')) throw new UnsupportedSedEscape();
+}
+
+// The `e` command: with an operand, the operand runs through the shell; bare,
+// the pattern space (input data) does.
+function readSedExecute(script, i, budget) {
+  let j = i + 1;
+  while (j < script.length && (script[j] === ' ' || script[j] === '\t')) { budget.spend(); j++; }
+  if (j < script.length && script[j] !== '\n' && script[j] !== ';') {
+    let end = j;
+    while (end < script.length && script[end] !== '\n') { budget.spend(); end++; }
+    const operand = script.slice(j, end);
+    // A trailing backslash is an escaped newline: GNU sed joins the next line
+    // into this one operand, which the literal check below refuses.
+    assertSedLiteral(operand);
+    return { end, parts: [operand], stdinExec: true };
+  }
+  return { end: j, parts: [], stdinExec: true };
+}
+
+// Text, label and filename operands run to end of line; all are data.
+function readSedLineOperand(script, i, budget) {
+  let end = i + 1;
+  while (end < script.length && script[end] !== '\n') { budget.spend(); end++; }
+  return { end, parts: [], stdinExec: false };
+}
+
+function readSedCommand(script, i, budget) {
+  const letter = script[i];
+  if (letter === 's') {
+    const sub = parseSedSubstitution(script, i, budget);
+    if (!sub) return null;
+    if (!sub.exec) return { end: sub.end, parts: [], stdinExec: false };
+    // The executed text also carries matched input data (&, backrefs), so a
+    // piping producer must be treated as a shell source too.
+    assertSedLiteral(sub.replacement);
+    return { end: sub.end, parts: sub.replacement ? [sub.replacement] : [], stdinExec: true };
+  }
+  if (letter === 'y') {
+    const sub = parseSedSubstitution(script, i, budget, true);
+    return sub ? { end: sub.end, parts: [], stdinExec: false } : null;
+  }
+  if (letter === 'e') return readSedExecute(script, i, budget);
+  if ('acirwWb:tTqQ'.includes(letter)) return readSedLineOperand(script, i, budget);
+  if ('dDgGhHlnNpPxFzv='.includes(letter)) return { end: i + 1, parts: [], stdinExec: false };
+  return null; // unmodeled command letter: keep the opaque default
+}
+
 // Returns { parts, stdinExec } where parts are literal script fragments sed
 // will hand to the shell, or null when the script cannot be confidently read.
 function sedExecParts(script, budget) {
   if (script.includes('\u0000')) return null; // expansion residue: not literal
   const parts = [];
   let stdinExec = false;
-  const n = script.length;
   let i = 0;
-  while (i < n) {
+  while (i < script.length) {
     budget.spend();
     const c = script[i];
     if (c === ' ' || c === '\t' || c === '\n' || c === ';' || c === '{' || c === '}') { i++; continue; }
     if (c === '#') {
-      while (i < n && script[i] !== '\n') { budget.spend(); i++; }
+      while (i < script.length && script[i] !== '\n') { budget.spend(); i++; }
       continue;
     }
     if (c === '\\') return null; // escape in command position: unmodeled
     const addressed = skipSedAddress(script, i, budget);
     if (addressed === -1) return null;
-    if (addressed >= n) break;
-    i = addressed;
-    const letter = script[i];
-    if (letter === 's') {
-      const sub = parseSedSubstitution(script, i, budget);
-      if (!sub) return null;
-      if (sub.exec) {
-        if (sub.replacement) parts.push(sub.replacement);
-        // The executed text also carries matched input data (&, backrefs),
-        // so a piping producer must be treated as a shell source too.
-        stdinExec = true;
-      }
-      i = sub.end;
-      continue;
-    }
-    if (letter === 'y') {
-      const first = parseSedSubstitution(script, i, budget);
-      if (!first) return null;
-      i = first.end;
-      continue;
-    }
-    if (letter === 'e') {
-      let j = i + 1;
-      while (j < n && (script[j] === ' ' || script[j] === '\t')) { budget.spend(); j++; }
-      stdinExec = true;
-      if (j < n && script[j] !== '\n' && script[j] !== ';') {
-        let end = j;
-        while (end < n && script[end] !== '\n') { budget.spend(); end++; }
-        parts.push(script.slice(j, end));
-        i = end;
-      } else i = j;
-      continue;
-    }
-    // Text, label and filename operands run to end of line; all are data.
-    if ('acirwWb:tTqQ'.includes(letter)) {
-      let end = i + 1;
-      while (end < n && script[end] !== '\n') { budget.spend(); end++; }
-      i = end;
-      continue;
-    }
-    if ('dDgGhHlnNpPxFzv='.includes(letter)) { i++; continue; }
-    return null; // unmodeled command letter: keep the opaque default
+    if (addressed >= script.length) break;
+    const step = readSedCommand(script, addressed, budget);
+    if (!step || step.end <= addressed) return null;
+    parts.push(...step.parts);
+    stdinExec ||= step.stdinExec;
+    i = step.end;
   }
   return { parts, stdinExec };
 }
@@ -969,6 +991,9 @@ function checkCommand(input) {
   } catch (error) {
     if (error instanceof UnsupportedEnvSplitEscape) {
       return { blocked: true, reason: 'BLOCKED: Unsupported env split-string escape; hook-bypass safety could not be established.' };
+    }
+    if (error instanceof UnsupportedSedEscape) {
+      return { blocked: true, reason: 'BLOCKED: Unsupported sed script escape; hook-bypass safety could not be established.' };
     }
     if (!(error instanceof RangeError)) throw error;
     return { blocked: true, reason: 'BLOCKED: Shell analysis work budget exceeded; hook-bypass safety could not be established.' };

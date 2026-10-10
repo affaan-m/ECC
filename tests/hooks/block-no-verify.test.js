@@ -2171,7 +2171,15 @@ const sedCases = [
   ['later -e script after positional operands is scanned', "printf x | sed -e 's/x/y/' - -e 's/y/git commit --no-verify/e'", 2],
   ['later -e after a positional script operand is scanned', "sed 's/x/y/' -e 'e git commit --no-verify'", 2],
   ['later --expression= after positionals is scanned', "sed 's/x/y/' --expression='s/x/git commit --no-verify/e'", 2],
-  ['-- ends options: later tokens are file operands', "sed -e 's/x/y/' -- 'git commit --no-verify'", 0]
+  ['-- ends options: later tokens are file operands', "sed -e 's/x/y/' -- 'git commit --no-verify'", 0],
+  // GNU sed decodes escapes in exec-bearing fragments before execution
+  // (Greptile P1 findings on this PR): decoding that surface faithfully is out
+  // of scope, so escaped fragments are conservatively blocked instead.
+  ['hex escape decoding bypass is conservatively blocked', "printf x | sed 's/x/\\x67it commit --no-verify/e'", 2],
+  ['unknown escape decoding bypass is conservatively blocked', "printf x | sed 's/x/\\git commit --no-verify/e'", 2],
+  ['escaped-newline continued e operand is conservatively blocked', "printf x | sed -e 'e git commit \\\n--no-verify'", 2],
+  ['octal escape decoding bypass is conservatively blocked', "printf x | sed 's/x/\\147it commit --no-verify/e'", 2],
+  ['backslash in a non-executing script stays data', "sed 's/a\\/b/c/' 'git commit --no-verify'", 0]
 ];
 for (const [name, command, expected] of sedCases) {
   if (test(`sed model ${name}`, () => {
