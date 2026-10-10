@@ -461,6 +461,33 @@ test('codex plugin presentation assets exist and ship in npm package', () => {
   }
 });
 
+// ── Qoder plugin manifest ─────────────────────────────────────────────────────
+console.log('\n=== .qoder-plugin/plugin.json ===\n');
+
+const qoderPluginPath = path.join(repoRoot, '.qoder-plugin', 'plugin.json');
+const qoderPlugin = loadJsonObject(qoderPluginPath, '.qoder-plugin/plugin.json');
+
+test('qoder plugin.json version matches package.json', () => {
+  assert.strictEqual(qoderPlugin.name, 'ecc');
+  assert.strictEqual(qoderPlugin.version, expectedVersion);
+});
+
+test('qoder plugin references canonical resources inside the bundle', () => {
+  for (const field of ['skills', 'commands', 'mcpServers', 'hooks']) {
+    assert.strictEqual(typeof qoderPlugin[field], 'string', `Expected Qoder manifest ${field} path`);
+    const target = path.resolve(repoRoot, qoderPlugin[field]);
+    assert.ok(target === repoRoot || target.startsWith(repoRoot + path.sep), `${field} escapes the Qoder bundle`);
+    assert.ok(fs.existsSync(target), `${field} target is missing: ${qoderPlugin[field]}`);
+  }
+});
+
+test('qoder native surface ships in npm package', () => {
+  const packageFiles = new Set(rootPackage.files);
+  assert.ok(packageFiles.has('.qoder-plugin/'));
+  assert.ok(packageFiles.has('hooks/'));
+  assert.ok(packageFiles.has('scripts/hooks/'));
+});
+
 // ── .mcp.json at plugin root ──────────────────────────────────────────────────
 // Per official docs: keep .mcp.json at plugin root, NOT inside .codex-plugin/
 console.log('\n=== .mcp.json (plugin root) ===\n');

@@ -138,7 +138,7 @@ Instead of rebuilding that process in every prompt, you install it once and make
 
 > Optimize the context window. Persist everything else.
 
-ECC is MIT-licensed open source. It works best with Claude Code today, has a supported Codex sync path, and provides capability-limited adapters for Cursor, OpenCode, Gemini, Zed, GitHub Copilot, Antigravity, Qwen, and other harnesses. See the [support status matrix](#platform-support) before assuming feature parity.
+ECC is MIT-licensed open source. It works best with Claude Code today, has native Codex and Qoder plugin paths, and provides capability-limited adapters for Cursor, OpenCode, Gemini, Zed, GitHub Copilot, Antigravity, Qwen, and other harnesses. See the [support status matrix](#platform-support) before assuming feature parity.
 
 Access to 71 agents, 302 skills, and 95 legacy command shims, plus hooks, rules, memory, continuous learning, and AgentShield security scanning. The agents are specialized for planning, review, build repair, security, architecture, and domain work.
 
@@ -382,6 +382,31 @@ Pre-manifest installations are handled conservatively: ECC removes its marked `A
 You can also open the ECC repository directly in Codex for a project-local setup. Codex reads the root `AGENTS.md` and the trusted project configuration in `.codex/` without a global sync. Do not add the native marketplace plugin on top of the sync flow.
 
 For repo navigation, surface ownership, and PR diff packet guidance, read the [Codex ECC Navigation Map](docs/CODEX-NAVIGATION-GUIDE.md). See the [.codex plugin notes](.codex-plugin/README.md) for native lifecycle details.
+
+### Qoder CLI and IDE
+
+ECC ships a native Qoder plugin that reuses the canonical 302 skills, 71 agents,
+95 legacy command shims, and the pinned `chrome-devtools` MCP definition. From a
+reviewed checkout, validate and install it with Qoder CLI:
+
+```bash
+qoder plugins validate . --strict
+qoder plugins install .
+qoder plugins list
+```
+
+For Qoder IDE, upload a ZIP of the repository root. The ZIP root must contain
+`.qoder-plugin/` together with `skills/`, `agents/`, `commands/`, `hooks/`,
+`scripts/`, and `.mcp.json`; uploading only the manifest directory or one
+`SKILL.md` omits required resources.
+
+The universal Node.js 18+ requirement applies to Qoder's non-interactive hook
+environment. The MCP server also requires `npx` and network access on first use.
+Qoder receives one reviewed, cross-platform `SessionStart` bootstrap using
+`QODER_PLUGIN_ROOT` and exec-form arguments. ECC does not copy the full Claude
+hook profile into Qoder: blocking tool hooks, async stop jobs, and
+Claude-specific matchers remain outside this initial native integration. See
+the [.qoder-plugin notes](.qoder-plugin/README.md) for the exact boundary.
 
 ### Other agents and editors
 
@@ -1292,6 +1317,7 @@ Treat `stable`, `beta`, `experimental`, and `instruction-only` below as capabili
 |---|---|---|---|
 | Claude Code | Stable primary | Plugin or selective installer | The plugin advertises the installed catalog to the model; use a selective/manual profile when context footprint matters. Optional shell-backed skills are not portable to every OS. |
 | Codex | Supported native plugin | Codex marketplace plugin or repo config | Native hooks require an explicit trust decision and do not use Claude's hook profiles. The legacy sync is compatibility-only. |
+| Qoder | Supported native plugin | Local plugin directory in Qoder CLI or ZIP upload in Qoder IDE | Loads the canonical skills, agents, commands, and MCP config; only the reviewed SessionStart hook is enabled, and Node.js 18+ must be on the non-interactive PATH. |
 | Cursor | Beta project adapter | Selective installer into `.cursor/` | Agent discovery varies by Cursor build; hook events use profile-gated dispatchers, but full Claude feature parity is not claimed. |
 | OpenCode | Beta built plugin | Build plugin, then selective installer | ECC ships a subset of the catalog; connect a provider and select a model in OpenCode ([#2617](https://github.com/affaan-m/ECC/issues/2617)). |
 | GitHub Copilot Chat | Instruction-only | Checked-in instructions and prompt files | ECC hooks are not adapted. |
