@@ -20,6 +20,7 @@ const manifestPath = path.join(repoRoot, '.qoder-plugin', 'plugin.json');
 const hooksPath = path.join(repoRoot, 'hooks', 'qoder-hooks.json');
 const packageJson = JSON.parse(fs.readFileSync(path.join(repoRoot, 'package.json'), 'utf8'));
 const releaseScript = fs.readFileSync(path.join(repoRoot, 'scripts', 'release.sh'), 'utf8');
+const HOOK_TIMEOUT_BUFFER_MS = 5000;
 
 let passed = 0;
 let failed = 0;
@@ -96,6 +97,7 @@ if (fs.existsSync(manifestPath) && fs.existsSync(hooksPath)) {
     assert.strictEqual(hook.type, 'command');
     assert.strictEqual(hook.command, 'node');
     assert.ok(Array.isArray(hook.args));
+    assert.ok(Number.isInteger(hook.timeout) && hook.timeout > 0);
     assert.strictEqual(hook.args[0], '${QODER_PLUGIN_ROOT}/scripts/hooks/plugin-hook-bootstrap.js');
     assert.deepStrictEqual(hook.args.slice(1), [
       'node',
@@ -154,7 +156,7 @@ if (fs.existsSync(manifestPath) && fs.existsSync(hooksPath)) {
           cwd: isolatedCwd,
         }),
         encoding: 'utf8',
-        timeout: 10000,
+        timeout: hook.timeout * 1000 + HOOK_TIMEOUT_BUFFER_MS,
         windowsHide: true,
       });
 
