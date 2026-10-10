@@ -7,6 +7,7 @@
 'use strict';
 
 const path = require('path');
+const { StringDecoder } = require('string_decoder');
 const { isHookEnabled } = require('../lib/hook-flags');
 const { readStdinRaw: readBoundedStdin, resolveMaxStdin } = require('./hook-input');
 const { runPostBash } = require('./bash-hook-dispatcher');
@@ -20,6 +21,8 @@ const { run: runObserve } = require('./observe-runner');
 const { run: runMetricsBridge } = require('./ecc-metrics-bridge');
 const { run: runContextMonitor } = require('./ecc-context-monitor');
 const { run: runSkillRunTracker } = require('./skill-run-tracker');
+const { run: runHookify } = require('./hookify-runtime');
+const { createHookContextScanner } = require('./hook-input-limits');
 
 const MAX_STDIN = resolveMaxStdin(process.env.ECC_HOOK_INPUT_MAX_BYTES, {
   writeDiagnostic: message => process.stderr.write(message)
@@ -29,6 +32,16 @@ const UPSTREAM_TRUNCATED = /^(1|true|yes)$/i.test(
 );
 
 const SYNC_HOOKS = [
+  {
+    id: 'post:hookify-runtime',
+    matcher: '*',
+    profiles: 'minimal,standard,strict',
+    script: 'scripts/hooks/hookify-runtime.js',
+    run(raw, options) {
+      const result = runHookify(raw, options);
+      return result.stdout === raw ? { ...result, stdout: '' } : result;
+    }
+  },
   { id: 'post:edit:design-quality-check', matcher: 'Edit|Write|MultiEdit', profiles: 'standard,strict', script: 'scripts/hooks/design-quality-check.js', run: runDesignQualityCheck },
   { id: 'post:edit:accumulator', matcher: 'Edit|Write|MultiEdit', profiles: 'standard,strict', script: 'scripts/hooks/post-edit-accumulator.js', run: runPostEditAccumulator },
   { id: 'post:edit:console-warn', matcher: 'Edit', profiles: 'standard,strict', script: 'scripts/hooks/post-edit-console-warn.js', run: runConsoleWarn },
@@ -133,30 +146,75 @@ function appendLine(current, next) {
   return current + (String(next).endsWith('\n') ? String(next) : `${next}\n`);
 }
 
-function parseAdditionalContext(stdout) {
+function parseStructuredOutput(stdout) {
   try {
     const parsed = JSON.parse(stdout);
     const output = parsed?.hookSpecificOutput;
+    if (parsed?.decision === 'block' && typeof parsed.reason === 'string') {
+      return {
+        isBlocked: true,
+        blockReason: parsed.reason,
+        additionalContext: output?.hookEventName === 'PostToolUse'
+          && typeof output.additionalContext === 'string'
+          ? output.additionalContext
+          : '',
+      };
+    }
     if (output?.hookEventName !== 'PostToolUse') return null;
-    return typeof output.additionalContext === 'string' ? output.additionalContext : null;
+    if (typeof output.additionalContext !== 'string') return null;
+    return { isBlocked: false, blockReason: null, additionalContext: output.additionalContext };
   } catch {
     return null;
   }
+}
+
+function mergeBlockingOutputs(outputs, structured) {
+  const blockOutputs = structured.filter(output => output?.isBlocked);
+  const contexts = structured
+    .filter(output => output !== null)
+    .map(output => output.additionalContext)
+    .filter(Boolean);
+  const blocked = {
+    decision: 'block',
+    reason: blockOutputs.map(output => output.blockReason).join('\n\n'),
+  };
+  if (contexts.length > 0) {
+    blocked.hookSpecificOutput = {
+      hookEventName: 'PostToolUse',
+      additionalContext: contexts.join('\n'),
+    };
+  }
+  const rawOutputIds = outputs
+    .filter((_output, index) => structured[index] === null)
+    .map(output => output.id);
+  return {
+    stdout: JSON.stringify(blocked),
+    warning: rawOutputIds.length > 0
+      ? '[Hook] raw stdout from ' + rawOutputIds.join(', ') + ' dropped in favor of a blocking decision'
+      : '',
+  };
 }
 
 function mergeHookStdout(outputs) {
   if (outputs.length === 0) return { stdout: '', warning: '' };
   if (outputs.length === 1) return { stdout: outputs[0].stdout, warning: '' };
 
-  const contexts = outputs.map(output => parseAdditionalContext(output.stdout));
-  if (contexts.every(context => context !== null)) {
+  const structured = outputs.map(output => parseStructuredOutput(output.stdout));
+  const blockOutputs = structured.filter(output => output?.isBlocked);
+  if (blockOutputs.length > 0) {
+    return mergeBlockingOutputs(outputs, structured);
+  }
+  if (structured.every(output => output !== null)) {
+    const contexts = structured.map(output => output.additionalContext).filter(Boolean);
+    const mergedOutput = {};
+    if (contexts.length > 0) {
+      mergedOutput.hookSpecificOutput = {
+        hookEventName: 'PostToolUse',
+        additionalContext: contexts.join('\n'),
+      };
+    }
     return {
-      stdout: JSON.stringify({
-        hookSpecificOutput: {
-          hookEventName: 'PostToolUse',
-          additionalContext: contexts.join('\n')
-        }
-      }),
+      stdout: JSON.stringify(mergedOutput),
       warning: ''
     };
   }
@@ -194,6 +252,10 @@ function runHooks(raw, hooks, options = {}) {
           hookId: hook.id,
           pluginRoot,
           scriptPath: path.join(pluginRoot, hook.script || ''),
+          cwd: options.cwd || process.cwd(),
+          env,
+          hookEventName: 'PostToolUse',
+          toolName,
           truncated: options.truncated === true,
           maxStdin: MAX_STDIN
         })
@@ -211,13 +273,24 @@ function runHooks(raw, hooks, options = {}) {
 
   const merged = mergeHookStdout(outputs);
   if (merged.warning) stderr = appendLine(stderr, merged.warning);
-  return { stdout: merged.stdout, stderr, exitCode };
+  const mergedDecision = parseStructuredOutput(merged.stdout);
+  // Structured blocking decisions must reach Claude on a successful command
+  // hook exit. An unrelated sibling hook failure must not downgrade the block
+  // into a generic non-blocking hook error.
+  const finalExitCode = mergedDecision?.isBlocked ? 0 : exitCode;
+  return { stdout: merged.stdout, stderr, exitCode: finalExitCode };
 }
 
 function readStdinRaw() {
+  const contextDecoder = new StringDecoder('utf8');
+  const contextScanner = createHookContextScanner();
   return readBoundedStdin(process.stdin, {
     maxStdin: MAX_STDIN,
-    truncated: UPSTREAM_TRUNCATED
+    truncated: UPSTREAM_TRUNCATED,
+    onChunk: buffer => contextScanner.push(contextDecoder.write(buffer))
+  }).then(result => {
+    contextScanner.push(contextDecoder.end());
+    return { ...result, hookContext: contextScanner.context };
   });
 }
 
@@ -227,7 +300,7 @@ function resolveMainStdout(_raw, result, _options = {}) {
 
 async function main(options = {}) {
   const mode = process.argv[2] === 'async' ? 'async' : 'sync';
-  const { raw, truncated } = await readStdinRaw();
+  const { raw, truncated, hookContext } = await readStdinRaw();
   const dispatcherId = `post:dispatcher:${mode}`;
   const dispatcherEnabled = isEnabled(
     {
@@ -238,7 +311,10 @@ async function main(options = {}) {
   );
   const configuredHooks = options.hookListOverride || (mode === 'async' ? ASYNC_HOOKS : SYNC_HOOKS);
   const hooks = dispatcherEnabled ? configuredHooks : [];
-  const result = runHooks(raw, hooks, { truncated });
+  const result = runHooks(raw, hooks, {
+    truncated,
+    ...(truncated && hookContext.toolName ? { toolName: hookContext.toolName } : {}),
+  });
   if (truncated) {
     process.stderr.write(`[Hook] stdin exceeded ${MAX_STDIN} bytes for PostToolUse ${mode}; suppressing pass-through\n`);
   }
@@ -263,6 +339,7 @@ module.exports = {
   cli,
   matchesTool,
   main,
+  mergeBlockingOutputs,
   mergeHookStdout,
   normalizeResult,
   resolveMainStdout,

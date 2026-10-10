@@ -86,8 +86,9 @@ function listFiles(dir, base) {
     if (entry.isSymbolicLink()) {
       fail(`symlink found in profile source: ${rel}`);
     } else if (entry.isDirectory()) {
+      if (['__pycache__', '.pytest_cache'].includes(entry.name)) continue;
       out.push(...listFiles(full, rel));
-    } else if (entry.isFile()) {
+    } else if (entry.isFile() && !/\.(pyc|pyo|pyd)$/i.test(entry.name)) {
       out.push({ full, rel });
     }
   }

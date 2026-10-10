@@ -53,6 +53,7 @@
                 "cursor",
                 "antigravity",
                 "codex",
+                "copilot",
                 "gemini",
                 "opencode",
                 "codebuddy",
@@ -68,6 +69,15 @@
           },
           "dependencies": {
             "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^[a-z0-9-]+$"
+            }
+          },
+          "optionalDependencies": {
+            "description": "Subset of dependencies that may be omitted when unsupported by the selected target. Supported dependencies are still installed.",
+            "type": "array",
+            "uniqueItems": true,
             "items": {
               "type": "string",
               "pattern": "^[a-z0-9-]+$"

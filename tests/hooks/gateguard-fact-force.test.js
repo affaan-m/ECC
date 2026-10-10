@@ -2211,6 +2211,46 @@ function runTests() {
   else failed++;
 
   if (
+    test('denies destructive SQL through shell flag clusters, su and taskset', () => {
+      expectDestructiveDeny('bash -lc "psql -c \'drop table users\'"', 'bash -lc psql');
+      expectDestructiveDeny('sh -ec "psql -c \'drop table users\'"', 'sh -ec psql');
+      expectDestructiveDeny('sudo su postgres -c "psql -c \'drop table users\'"', 'sudo su -c psql');
+      expectDestructiveDeny('su - postgres -c "psql -c \'drop table users\'"', 'su - user -c psql');
+      expectDestructiveDeny('su -lc "psql -c \'drop table users\'" postgres', 'su -lc psql');
+      expectDestructiveDeny('su --command="psql -c \'drop table users\'" postgres', 'su --command= psql');
+      expectDestructiveDeny('su postgres -- -c "psql -c \'drop table users\'"', 'su -c after --');
+      expectDestructiveDeny('su postgres -c "echo ok" -c "psql -c \'drop table users\'"', 'su runs its last -c');
+      expectDestructiveDeny('su -c "psql -c \'drop table users\'" -c "echo ok" postgres', 'su -c with a later harmless -c');
+      expectDestructiveDeny('taskset -c 0 psql -c "drop table users"', 'taskset -c psql');
+      expectDestructiveDeny('taskset 0x3 psql -c "drop table users"', 'taskset mask psql');
+    })
+  )
+    passed++;
+  else failed++;
+
+  if (
+    test('denies a command nested past the shell -c recursion limit', () => {
+      // Each level quotes the one inside it. Past the limit the command is not
+      // visible, so the check fails closed instead of allowing it.
+      let command = 'psql -c "drop table users"';
+      for (let level = 0; level < 6; level += 1) command = `sh -c ${JSON.stringify(command)}`;
+      expectDestructiveDeny(command, 'sh -c nested six deep');
+    })
+  )
+    passed++;
+  else failed++;
+
+  if (
+    test('allows harmless commands under shell flag clusters, su and taskset', () => {
+      expectAllow('bash -lc "psql -c \'select count(*) from users\'"', 'bash -lc select');
+      expectAllow('su postgres -c "psql -c \'select 1\'"', 'su -c select');
+      expectAllow('taskset -c 0 git status', 'taskset git status');
+    })
+  )
+    passed++;
+  else failed++;
+
+  if (
     test('allows SQL string literals and non-SQL clients mentioning SQL', () => {
       expectAllow('psql -c "SELECT \'drop table\' FROM audit_log"', 'SQL string literal');
       expectAllow('psql -c "SELECT $tag$drop table users$tag$ FROM t"', 'tagged dollar-quote literal');
@@ -3553,6 +3593,7 @@ function runTests() {
   clearState();
   if (
     test('denies at the exact budget and passes through on the next path', () => {
+      // Budget 3: the 3rd denial is still a denial; the 4th path is allowed.
       writeState({ checked: [], last_active: Date.now(), fact_force_denials: 2 });
       const atLimit = runHook(
         { tool_name: 'Edit', tool_input: { file_path: '/src/at-budget.js' } },
@@ -3603,6 +3644,7 @@ function runTests() {
   clearState();
   if (
     test('condensed denial names the session-wide denial cap', () => {
+      // Budget above the full-block budget so a condensed denial is still reached.
       writeState({ checked: [], last_active: Date.now(), fact_force_denials: 5 });
       const result = runHook(
         { tool_name: 'Edit', tool_input: { file_path: '/src/condensed-budget.js' } },
@@ -7367,7 +7409,7 @@ function runTests() {
   if (
     test('sanitizePath strips CI-defined dangerous invisible unicode from denial paths', () => {
       const file_path =
-        '/src/eu2028\u2028eu2029\u2029app.js\u200bhidden\u2060name\ufefftail\u3164x\u0091c1.js';
+        '/src/eu2028\u2028eu2029\u2029app.js\u200bhidden\u2060name\ufefftail\u00adsoft\u3164x\u0091c1.js';
       const input = {
         tool_name: 'Edit',
         tool_input: { file_path, old_string: 'foo', new_string: 'bar' }
@@ -7379,7 +7421,7 @@ function runTests() {
           ? output.hookSpecificOutput.permissionDecisionReason
           : ''
       );
-      for (const bad of ['\u2028', '\u2029', '\u200b', '\u2060', '\ufeff', '\u3164', '\u0091']) {
+      for (const bad of ['\u2028', '\u2029', '\u200b', '\u2060', '\ufeff', '\u00ad', '\u3164', '\u0091']) {
         assert.ok(!reason.includes(bad), `denial reason must not carry U+${bad.codePointAt(0).toString(16)} (${bad})`);
       }
       assert.ok(reason.includes('app.js'), 'visible path text must remain');

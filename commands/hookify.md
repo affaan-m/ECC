@@ -48,3 +48,5 @@ Message shown when rule triggers.
 ### Step 4: Confirm
 
 Report created rules and how to manage them with `/hookify-list` and `/hookify-configure`.
+ECC's built-in hook runtime enforces enabled rules automatically; no separate
+Hookify plugin or Python runtime is required.

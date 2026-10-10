@@ -46,6 +46,18 @@
         "id": "pre:edit-write:gateguard-fact-force",
         "description": "Fact-forcing gate: deny the first Edit/Write/MultiEdit/NotebookEdit of each file with questions chosen by target class and by what the change touches; a completed search naming the file in the current turn, a comment or whitespace-only edit, or a same-turn sibling of a new file already gated passes with a note instead; sensitive targets (secrets, keys, auth/payment code, migrations, CI workflows) and hard-linked files are always gated, also in subagents",
         "fingerprint": "45fbef2d7f27"
+      },
+      {
+        "id": "pre:hookify-runtime",
+        "description": "Evaluate project-local Hookify rules before Bash, PowerShell, and file tools run",
+        "fingerprint": "65b5a5d6bbd5"
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "id": "prompt:hookify-runtime",
+        "description": "Evaluate project-local Hookify prompt rules before a user prompt is processed",
+        "fingerprint": "89b4809a5a7e"
       }
     ],
     "PreCompact": [
@@ -92,6 +104,11 @@
       }
     ],
     "Stop": [
+      {
+        "id": "stop:hookify-runtime",
+        "description": "Evaluate project-local Hookify completion rules before Claude stops",
+        "fingerprint": "7dd7cbc0df5f"
+      },
       {
         "id": "stop:plan-canvas-pending",
         "description": "Deliver undelivered Plan Canvas browser feedback before the agent stops",

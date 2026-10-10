@@ -407,6 +407,28 @@ function runTests() {
     fs.rmSync(tmpHome, { recursive: true, force: true });
   }) ? passed++ : failed++);
 
+  (test('reads session_id from stdin JSON when no session env var is set', () => {
+    // Claude Code does not set CLAUDE_SESSION_ID for hook subprocesses in
+    // real invocations -- the session id only arrives via stdin JSON.
+    const tmpHome = makeTempDir();
+    const input = {
+      session_id: 'stdin-session-only',
+      tool_name: 'Read',
+      tool_input: { file_path: path.join(tmpHome, 'foo.txt') },
+    };
+    const result = runScript(input, {
+      ...withTempHome(tmpHome),
+      CLAUDE_HOOK_EVENT_NAME: 'PostToolUse',
+    });
+    assert.strictEqual(result.code, 0);
+
+    const metricsFile = path.join(tmpHome, '.claude', 'metrics', 'tool-usage.jsonl');
+    const row = JSON.parse(fs.readFileSync(metricsFile, 'utf8').trim());
+    assert.strictEqual(row.session_id, 'stdin-session-only');
+
+    fs.rmSync(tmpHome, { recursive: true, force: true });
+  }) ? passed++ : failed++);
+
   (test('handles invalid JSON gracefully', () => {
     const tmpHome = makeTempDir();
     const invalidInput = 'not valid json {{{';

@@ -32,7 +32,8 @@
   <a href="../de-DE/README.md">Deutsch</a> |
   <a href="../es/README.md">Español</a> |
   <a href="../uk-UA/README.md">Українська</a> |
-  <a href="../pl/README.md">Polski</a>
+  <a href="../pl/README.md">Polski</a> |
+  <a href="../bn/README.md">বাংলা</a>
 </p>
 
 <p align="center">
@@ -820,7 +821,7 @@ ECC/
 |   |-- plugin.json         # Plugin メタデータとコンポーネントパス
 |   |-- marketplace.json    # /plugin marketplace add 用のマーケットプレイスカタログ
 |
-|-- agents/           # 委譲用の 67 の専門サブエージェント
+|-- agents/           # 委譲用の 69 の専門サブエージェント
 |   |-- planner.md           # 機能実装の計画
 |   |-- architect.md         # システム設計の意思決定
 |   |-- tdd-guide.md         # テスト駆動開発
@@ -847,6 +848,7 @@ ECC/
 |   |-- kotlin-reviewer.md   # Kotlin/Android/KMP コードレビュー
 |   |-- kotlin-build-resolver.md # Kotlin/Gradle ビルドエラー
 |   |-- harmonyos-app-resolver.md # HarmonyOS/ArkTS アプリ開発
+|   |-- ruby-reviewer.md     # Ruby/Rails コードレビュー
 |   |-- rust-reviewer.md     # Rust コードレビュー
 |   |-- rust-build-resolver.md # Rust ビルドエラーの解決
 |   |-- pytorch-build-resolver.md # PyTorch/CUDA トレーニングエラー

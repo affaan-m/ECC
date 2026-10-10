@@ -42,6 +42,8 @@ const LANGUAGE_REVIEWER = {
   kotlin: 'ecc:kotlin-reviewer',
   swift: 'ecc:swift-reviewer',
   php: 'ecc:php-reviewer',
+  ruby: 'ecc:ruby-reviewer',
+  rails: 'ecc:ruby-reviewer',
   csharp: 'ecc:csharp-reviewer',
   fsharp: 'ecc:fsharp-reviewer',
   react: 'ecc:react-reviewer',
