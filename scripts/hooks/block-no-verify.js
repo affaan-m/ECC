@@ -649,7 +649,14 @@ function sedScriptParts(words, budget) {
   while (i < words.length) {
     const raw = words[i].value;
     budget.spend(raw.length + 1);
-    if (raw === '--') break; // remaining operands are files (data)
+    if (raw === '--') {
+      // Options end here, but the operands do not: with no script option
+      // given, the first operand after -- is still the script (GNU sed 4.9
+      // verified). Keep collecting them.
+      i++;
+      while (i < words.length) { positionals.push(words[i].value); budget.spend(words[i].value.length + 1); i++; }
+      break;
+    }
     if (raw === '--expression') {
       if (!words[i + 1]) return null;
       scripts.push(words[i + 1].value); i += 2; continue;

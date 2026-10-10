@@ -2172,6 +2172,10 @@ const sedCases = [
   ['later -e after a positional script operand is scanned', "sed 's/x/y/' -e 'e git commit --no-verify'", 2],
   ['later --expression= after positionals is scanned', "sed 's/x/y/' --expression='s/x/git commit --no-verify/e'", 2],
   ['-- ends options: later tokens are file operands', "sed -e 's/x/y/' -- 'git commit --no-verify'", 0],
+  // With no script option before --, the first operand after -- is still the
+  // script (Greptile P1 on this PR, GNU sed 4.9 verified).
+  ['first operand after -- is still the script', "printf x | sed -- 's/x/git commit --no-verify/e'", 2],
+  ['file operands after the -- script stay data', "sed -- 's/x/y/' 'git commit --no-verify'", 0],
   // GNU sed decodes escapes in exec-bearing fragments before execution
   // (Greptile P1 findings on this PR): decoding that surface faithfully is out
   // of scope, so escaped fragments are conservatively blocked instead.
