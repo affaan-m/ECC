@@ -20,6 +20,8 @@ The command targets the following paths **relative to the directory where it is 
 
 **At the start of Phase 1, the command explicitly lists which paths were found and scanned.**
 
+Directories named `.trash` are excluded from both scan modes: archived skills are not part of the live inventory. If an older `results.json` contains `.trash` entries, start a new Full Stocktake using the cache initialization below before resuming Quick Scan. An ordinary save merges entries and does not remove archived records.
+
 ### Targeting a specific project
 
 To include project-level skills, run from that project's root directory:
@@ -37,6 +39,8 @@ If the project has no `.claude/skills/` directory, only global skills and comman
 |------|---------|---------|
 | Quick Scan | `results.json` exists (default) | 5–10 min |
 | Full Stocktake | `results.json` absent, or `/skill-stocktake full` | 20–30 min |
+
+The shell scripts require Bash, Node.js, and `jq` on `PATH`.
 
 **Results cache:** `~/.claude/skills/skill-stocktake/results.json`
 
@@ -59,7 +63,47 @@ Re-evaluate only skills that have changed since the last run (5–10 min).
 
 ### Phase 1 — Inventory
 
-Run: `bash ~/.claude/skills/skill-stocktake/scripts/scan.sh`
+Run this entire block in **one Bash invocation**. It prints the inventory for the agent and initializes a new full run only when there is no unfinished run to resume:
+
+```bash
+(
+  set -euo pipefail
+  SCAN_JSON=$(bash ~/.claude/skills/skill-stocktake/scripts/scan.sh)
+  printf '%s\n' "$SCAN_JSON"
+  RESULTS_JSON=~/.claude/skills/skill-stocktake/results.json
+
+  CACHE_STATUS=""
+  if [[ -f "$RESULTS_JSON" ]]; then
+    CACHE_STATUS=$(jq -r '.batch_progress.status // ""' "$RESULTS_JSON")
+  fi
+  if [[ "$CACHE_STATUS" == "in_progress" ]]; then
+    RESUMED_RESULTS=$(jq --slurpfile saved "$RESULTS_JSON" '
+      . as $inventory | $saved[0]
+      | .skills = (.skills | to_entries
+        | map(.key = (.value.path // .key))
+        | map(select(. as $entry
+          | $entry.value.mtime != null
+            and any($inventory.skills[];
+              .path == $entry.key and .mtime == $entry.value.mtime)))
+        | from_entries)
+      | .mode = "full"
+      | .batch_progress = {
+          total: ($inventory.skills | length),
+          evaluated: (.skills | length), status: "in_progress"
+        }
+    ' <<< "$SCAN_JSON")
+    bash ~/.claude/skills/skill-stocktake/scripts/save-results.sh \
+      "$RESULTS_JSON" --replace <<< "$RESUMED_RESULTS"
+  else
+    INITIAL_RESULTS=$(printf '%s\n' "$SCAN_JSON" | jq '{
+      mode: "full", skills: {},
+      batch_progress: {total: (.skills | length), evaluated: 0, status: "in_progress"}
+    }')
+    bash ~/.claude/skills/skill-stocktake/scripts/save-results.sh \
+      "$RESULTS_JSON" --replace <<< "$INITIAL_RESULTS"
+  fi
+)
+```
 
 The script enumerates skill files, extracts frontmatter, and collects UTC mtimes.
 Project dir is auto-detected from `$PWD/.claude/skills`; pass it explicitly only if needed.
@@ -74,35 +118,42 @@ Scanning:
 | Skill | 7d use | 30d use | Description |
 |-------|--------|---------|-------------|
 
+Usage counts come from the optional `~/.claude/observations.jsonl` file (overridable with `SKILL_STOCKTAKE_OBSERVATIONS`), which Claude Code does not create by default. When the file is absent, `use_7d` and `use_30d` are JSON `null`; display them as **unmeasured** in inventory and summary tables. A numeric `0` means the file exists but contains no matching Read observations in that window. Missing usage data is never evidence for retiring a skill.
+
+`--replace` writes a complete cache snapshot. A new run starts with an empty evaluation; a resumed run instead keeps a saved evaluation only when its path is still live and its saved, non-null mtime matches the fresh inventory. Changed skills and entries without an mtime require re-evaluation. It removes archived/deleted entries and refreshes the progress counts even when no new batch remains. Existing name-keyed entries are normalized using their saved `path`. Never use the empty initialization payload for a resume. Later chunks, completion updates, and Quick Scans must omit `--replace` so they merge into the current run instead of losing earlier results.
+
 ### Phase 2 — Quality Evaluation
 
-Launch an Agent tool subagent (**general-purpose agent**) with the full inventory and checklist:
+Launch an Agent tool subagent (**general-purpose agent**) with the actual JSON emitted by Phase 1 and the checklist below. Copy the inventory values into the prompt itself; shell variables do not carry over into Agent calls. Include the full inventory for overlap checks and explicitly identify the paths in the current batch to evaluate. Do not send literal inventory or checklist placeholders.
 
-```text
-Agent(
-  subagent_type="general-purpose",
-  prompt="
-Evaluate the following skill inventory against the checklist.
+The subagent reads each assigned skill, applies the checklist, and returns a JSON object with a `skills` map keyed by the inventory path. Each entry includes its `path`, scanned `mtime`, `verdict`, and self-contained `reason`. Use the same path keys across all batches so merging results cannot overwrite a different skill with the same name.
 
-[INVENTORY]
+**Chunk guidance:** Process ~20 skills per subagent invocation to keep context manageable. After each chunk, wrap its returned `skills` map with `mode: "full"` and `batch_progress: {total, evaluated, status: "in_progress"}`. Set `total` to the inventory size and `evaluated` to the cumulative number of distinct evaluated paths, including saved batches. Assign this JSON to `CHUNK_RESULTS` and run the following command in the **same Bash invocation as that assignment**:
 
-[CHECKLIST]
+```bash
+bash ~/.claude/skills/skill-stocktake/scripts/save-results.sh \
+  ~/.claude/skills/skill-stocktake/results.json <<< "$CHUNK_RESULTS"
+```
 
-Return JSON for each skill:
-{ \"verdict\": \"Keep\"|\"Improve\"|\"Update\"|\"Retire\"|\"Merge into [X]\", \"reason\": \"...\" }
-"
+After all skills are evaluated, persist completion before proceeding to Phase 3:
+
+```bash
+(
+  set -euo pipefail
+  RESULTS_JSON=~/.claude/skills/skill-stocktake/results.json
+  COMPLETED_RESULTS=$(jq -e '
+    if (.skills | length) == .batch_progress.total then
+      {skills: {}, mode: "full", batch_progress: (.batch_progress + {
+        evaluated: (.skills | length), status: "completed"
+      })}
+    else error("Inventory still has unevaluated skills") end
+  ' "$RESULTS_JSON")
+  bash ~/.claude/skills/skill-stocktake/scripts/save-results.sh \
+    "$RESULTS_JSON" <<< "$COMPLETED_RESULTS"
 )
 ```
 
-The subagent reads each skill, applies the checklist, and returns per-skill JSON:
-
-`{ "verdict": "Keep"|"Improve"|"Update"|"Retire"|"Merge into [X]", "reason": "..." }`
-
-**Chunk guidance:** Process ~20 skills per subagent invocation to keep context manageable. Save intermediate results to `results.json` (`status: "in_progress"`) after each chunk.
-
-After all skills are evaluated: set `status: "completed"`, proceed to Phase 3.
-
-**Resume detection:** If `status: "in_progress"` is found on startup, resume from the first unevaluated skill.
+**Resume detection:** If `status: "in_progress"` is found on startup, run Phase 1 to reconcile the saved results with the fresh inventory, then evaluate only paths absent from the reconciled `skills` map. If none remain, persist completion immediately. Completed evaluations are preserved only for surviving paths with matching, non-null mtimes; new or changed skills and entries without an mtime require evaluation.
 
 Each skill is evaluated against this checklist:
 
@@ -110,7 +161,7 @@ Each skill is evaluated against this checklist:
 - [ ] Content overlap with other skills checked
 - [ ] Overlap with MEMORY.md / CLAUDE.md checked
 - [ ] Freshness of technical references verified (use WebSearch if tool names / CLI flags / APIs are present)
-- [ ] Usage frequency considered
+- [ ] Usage frequency considered when measured; missing observations marked unmeasured, not treated as zero
 ```
 
 Verdict criteria:
@@ -178,7 +229,7 @@ Obtain via Bash: `date -u +%Y-%m-%dT%H:%M:%SZ`. Never use a date-only approximat
     "status": "completed"
   },
   "skills": {
-    "skill-name": {
+    "~/.claude/skills/skill-name/SKILL.md": {
       "path": "~/.claude/skills/skill-name/SKILL.md",
       "verdict": "Keep",
       "reason": "Concrete, actionable, unique value for X workflow",

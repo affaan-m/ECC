@@ -43,6 +43,56 @@ Scan all component directories and estimate token consumption:
 - Estimate schema overhead at ~500 tokens per tool
 - Flag: servers with >20 tools, servers that wrap simple CLI commands (`gh`, `git`, `npm`, `supabase`, `vercel`)
 
+**Persisted-record bytes** (optional)
+
+For a local file diagnostic, explicitly select a stable, regular JSONL file or a snapshot you
+intend to inspect. Replace the example path below; this does not find or reconnect a session.
+The snippet prints aggregate byte counts only. It reads one line at a time, so memory use depends
+on the largest record; avoid very large records and actively growing files.
+
+```sh
+python3 - "/path/to/selected-session.jsonl" <<'EOF'
+import json
+import sys
+
+total = attachment = other = unclassified = 0
+try:
+    with open(sys.argv[1], "rb") as source:
+        for raw in source:
+            size = len(raw)
+            total += size
+            try:
+                record = json.loads(raw.decode("utf-8"))
+            except (UnicodeDecodeError, json.JSONDecodeError):
+                unclassified += size
+                continue
+            record_type = record.get("type") if isinstance(record, dict) else None
+            if not isinstance(record_type, str):
+                unclassified += size
+            elif record_type == "attachment":
+                attachment += size
+            else:
+                other += size
+except OSError:
+    print("Cannot read selected JSONL file.", file=sys.stderr)
+    raise SystemExit(1)
+
+pct = attachment * 100.0 / total if total else 0.0
+print(f"persisted {total}B | attachment records {attachment}B ({pct:.1f}%) | "
+      f"other records {other}B | unclassified {unclassified}B")
+EOF
+```
+
+The three categories add up to the original file bytes, including line endings and blank lines.
+`attachment` is an exact record-type filter, not a guarantee about a harness's current internal
+schema. Other records have a different string `type`; malformed JSON, invalid UTF-8, nonobject
+values, missing or non-string types, and blank lines are unclassified. Neither category means
+"conversation," and the percentage is only a share of persisted bytes.
+
+These counts do not establish active context, remaining room, token usage, billing, or what a
+reconnect loads. For current harness-reported context and usage, use the version-appropriate
+[`/context` and `/usage` commands (`/cost` is an alias)](https://code.claude.com/docs/en/commands).
+
 **CLAUDE.md** (project + user-level)
 - Count tokens per file in the CLAUDE.md chain
 - Flag: combined total >300 lines

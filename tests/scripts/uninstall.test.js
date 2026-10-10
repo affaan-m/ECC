@@ -132,6 +132,59 @@ function runTests() {
     }
   })) passed++; else failed++;
 
+  if (test('uninstalls the project hook module boundary and preserves user Claude package data', () => {
+    const homeDir = createTempDir('uninstall-claude-project-esm-home-');
+    const projectRoot = createTempDir('uninstall-claude-project-esm-');
+    const claudeRoot = path.join(projectRoot, '.claude');
+    const userPackagePath = path.join(claudeRoot, 'package.json');
+    const scriptsPackagePath = path.join(claudeRoot, 'scripts', 'package.json');
+    const hooksPackagePath = path.join(claudeRoot, 'scripts', 'hooks', 'package.json');
+    const libPackagePath = path.join(claudeRoot, 'scripts', 'lib', 'package.json');
+    const statePath = path.join(claudeRoot, 'ecc', 'install-state.json');
+    const userPackage = '{"name":"user-claude-config","type":"module"}\n';
+    const userScriptsPackage = '{"name":"user-claude-scripts","type":"module"}\n';
+
+    try {
+      fs.writeFileSync(path.join(projectRoot, 'package.json'), '{"type":"module"}\n');
+      fs.mkdirSync(path.dirname(scriptsPackagePath), { recursive: true });
+      fs.writeFileSync(userPackagePath, userPackage);
+      fs.writeFileSync(scriptsPackagePath, userScriptsPackage);
+
+      execFileSync(
+        'node',
+        [INSTALL_SCRIPT, '--target', 'claude-project', '--profile', 'core', '--enable-hooks'],
+        {
+          cwd: projectRoot,
+          env: {
+            ...process.env,
+            HOME: homeDir,
+            USERPROFILE: homeDir,
+          },
+          encoding: 'utf8',
+          stdio: ['pipe', 'pipe', 'pipe'],
+          timeout: CLI_TIMEOUT_MS,
+        }
+      );
+      assert.deepStrictEqual(JSON.parse(fs.readFileSync(hooksPackagePath, 'utf8')), { type: 'commonjs' });
+      assert.deepStrictEqual(JSON.parse(fs.readFileSync(libPackagePath, 'utf8')), { type: 'commonjs' });
+      assert.strictEqual(fs.readFileSync(scriptsPackagePath, 'utf8'), userScriptsPackage);
+
+      const uninstallResult = run(['--target', 'claude-project'], {
+        cwd: projectRoot,
+        homeDir,
+      });
+      assert.strictEqual(uninstallResult.code, 0, uninstallResult.stderr);
+      assert.strictEqual(fs.readFileSync(userPackagePath, 'utf8'), userPackage);
+      assert.strictEqual(fs.readFileSync(scriptsPackagePath, 'utf8'), userScriptsPackage);
+      assert.ok(!fs.existsSync(hooksPackagePath));
+      assert.ok(!fs.existsSync(libPackagePath));
+      assert.ok(!fs.existsSync(statePath));
+    } finally {
+      cleanup(homeDir);
+      cleanup(projectRoot);
+    }
+  })) passed++; else failed++;
+
   if (test('reverses non-copy operations and keeps unrelated files', () => {
     const homeDir = createTempDir('uninstall-home-');
     const projectRoot = createTempDir('uninstall-project-');

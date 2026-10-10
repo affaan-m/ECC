@@ -1,107 +1,26 @@
 #:schema https://developers.openai.com/codex/config-schema.json
 
-# Everything Claude Code (ECC) — Codex Reference Configuration
+# ECC project-scoped reference: guidance, features and local role definitions.
+# Trusted-project loading, precedence and supported keys depend on the Codex
+# version and higher-level policy. Omitted settings inherit other config layers.
+# This file does not certify effective permissions or prevent configured tools
+# from running. The referenced role files retain their read-only sandbox requests.
 #
-# Copy this file to ~/.codex/config.toml for global defaults, or keep it in
-# the project root as .codex/config.toml for project-local settings.
-#
-# Official docs:
-# - https://developers.openai.com/codex/config-reference
-# - https://developers.openai.com/codex/multi-agent
+# Explicit user installs use the separate user-config.example.toml reference.
+# Do not copy this project file as an equivalent user-level baseline. The user
+# reference preserves ECC's existing runtime defaults, profiles and integrations;
+# review them before installation. Current Codex docs ignore notify/profiles in
+# project config; that is not a universal claim about older versions.
+# https://developers.openai.com/codex/config-reference
+# https://developers.openai.com/codex/multi-agent
 
-# Model selection
-# Leave `model` and `model_provider` unset so Codex CLI uses its current
-# built-in defaults. Uncomment and pin them only if you intentionally want
-# repo-local or global model overrides.
-
-# Top-level runtime settings (current Codex schema)
-approval_policy = "on-request"
-sandbox_mode = "workspace-write"
-web_search = "live"
-
-# External notifications receive a JSON payload on stdin.
-notify = [
-  "terminal-notifier",
-  "-title", "Codex ECC",
-  "-message", "Task completed!",
-  "-sound", "default",
-]
-
-# Persistent instructions are appended to every prompt (additive, unlike
-# model_instructions_file which replaces AGENTS.md).
+# Leave top-level model and model_provider unset to inherit other/default choices.
+# Existing ECC instruction key retained for sync compatibility, without claiming
+# support in every Codex version. Consult the supported version's reference.
 persistent_instructions = "Follow project AGENTS.md guidelines. Use available MCP servers when they can help."
 
-# model_instructions_file replaces built-in instructions instead of AGENTS.md,
-# so leave it unset unless you intentionally want a single override file.
-# model_instructions_file = "/absolute/path/to/instructions.md"
-
-# MCP servers
-# Keep the default project set lean. API-backed servers inherit credentials from
-# the launching environment or can be supplied by a user-level ~/.codex/config.toml.
-[mcp_servers.github]
-command = "npx"
-args = ["-y", "@modelcontextprotocol/server-github"]
-startup_timeout_sec = 30
-
-[mcp_servers.context7]
-command = "npx"
-# Canonical Codex section name is `context7`; the package itself remains
-# `@upstash/context7-mcp`.
-args = ["-y", "@upstash/context7-mcp@latest"]
-startup_timeout_sec = 30
-
-[mcp_servers.exa]
-command = "npx"
-args = ["-y", "mcp-remote", "https://mcp.exa.ai/mcp"]
-startup_timeout_sec = 30
-
-[mcp_servers.memory]
-command = "npx"
-args = ["-y", "@modelcontextprotocol/server-memory"]
-startup_timeout_sec = 30
-
-[mcp_servers.playwright]
-command = "npx"
-args = ["-y", "@playwright/mcp@latest", "--extension"]
-startup_timeout_sec = 30
-
-[mcp_servers.sequential-thinking]
-command = "npx"
-args = ["-y", "@modelcontextprotocol/server-sequential-thinking"]
-startup_timeout_sec = 30
-
-# Additional MCP servers (uncomment as needed):
-# [mcp_servers.supabase]
-# command = "npx"
-# args = ["-y", "supabase-mcp-server@latest", "--read-only"]
-#
-# [mcp_servers.firecrawl]
-# command = "npx"
-# args = ["-y", "firecrawl-mcp"]
-#
-# [mcp_servers.fal-ai]
-# command = "npx"
-# args = ["-y", "fal-ai-mcp-server"]
-#
-# [mcp_servers.cloudflare]
-# command = "npx"
-# args = ["-y", "@cloudflare/mcp-server-cloudflare"]
-
 [features]
-# Codex multi-agent collaboration is stable and on by default in current builds.
-# Keep the explicit toggle here so the repo documents its expectation clearly.
 multi_agent = true
-
-# Profiles — switch with `codex -p <name>`
-[profiles.strict]
-approval_policy = "on-request"
-sandbox_mode = "read-only"
-web_search = "cached"
-
-[profiles.yolo]
-approval_policy = "never"
-sandbox_mode = "workspace-write"
-web_search = "live"
 
 [agents]
 # Multi-agent role limits and local role definitions.

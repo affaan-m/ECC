@@ -40,12 +40,24 @@
       {
         "id": "pre:mcp-health-check",
         "description": "Check MCP server health before MCP tool execution and block unhealthy MCP calls",
-        "fingerprint": "922686364d01"
+        "fingerprint": "a68881c27a83"
       },
       {
         "id": "pre:edit-write:gateguard-fact-force",
         "description": "Fact-forcing gate: block first Edit/Write/MultiEdit per file and demand investigation (importers, data schemas, user instruction) before allowing",
         "fingerprint": "32c4a312b4c2"
+      },
+      {
+        "id": "pre:hookify-runtime",
+        "description": "Evaluate project-local Hookify rules before Bash, PowerShell, and file tools run",
+        "fingerprint": "65b5a5d6bbd5"
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "id": "prompt:hookify-runtime",
+        "description": "Evaluate project-local Hookify prompt rules before a user prompt is processed",
+        "fingerprint": "89b4809a5a7e"
       }
     ],
     "PreCompact": [
@@ -83,7 +95,7 @@
       {
         "id": "post:mcp-health-check",
         "description": "Track failed MCP tool calls, mark unhealthy servers, and attempt reconnect",
-        "fingerprint": "9e25549c1229"
+        "fingerprint": "edbf5346288f"
       },
       {
         "id": "post:skill:track",
@@ -92,6 +104,11 @@
       }
     ],
     "Stop": [
+      {
+        "id": "stop:hookify-runtime",
+        "description": "Evaluate project-local Hookify completion rules before Claude stops",
+        "fingerprint": "7dd7cbc0df5f"
+      },
       {
         "id": "stop:plan-canvas-pending",
         "description": "Deliver undelivered Plan Canvas browser feedback before the agent stops",

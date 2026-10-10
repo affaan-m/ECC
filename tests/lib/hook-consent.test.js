@@ -7,8 +7,11 @@ const assert = require('assert');
 const {
   HOOK_CAPABILITY_GROUPS,
   assertHookConsentReady,
+  disableOpenCodeHookPluginRegistration,
   formatHookCapabilityDisclosure,
+  getRecordedHookConsent,
   isHookRuntimeOperation,
+  isOpenCodePluginEntrypoint,
   planMaterializesHookRuntime,
   resolveHookConsentFlags,
   withHookConsent,
@@ -98,13 +101,65 @@ function runTests() {
         sourceRelativePath: '.opencode/plugins/ecc-hooks.ts',
         destinationPath: '/root/.config/opencode/plugins/ecc-hooks.ts',
       }),
-      false
+      true
     );
+    assert.strictEqual(isHookRuntimeOperation({
+      kind: 'copy-file',
+      moduleId: 'platform-configs',
+      sourceRelativePath: '.opencode/opencode.json',
+    }), true);
+    assert.strictEqual(isHookRuntimeOperation({
+      kind: 'copy-file',
+      moduleId: 'platform-configs',
+      sourceRelativePath: '.opencode/opencode.json',
+      contentTransform: 'opencode-disable-ecc-hooks',
+    }), false);
+    assert.strictEqual(isHookRuntimeOperation({
+      kind: 'merge-json',
+      moduleId: 'platform-configs',
+      sourceRelativePath: '.opencode/opencode.json',
+      contentTransform: 'opencode-disable-ecc-hooks',
+    }), true);
     assert.strictEqual(isHookRuntimeOperation({ sourceRelativePath: 'rules/common.md' }), false);
     assert.strictEqual(
       isHookRuntimeOperation({ sourceRelativePath: 'skills/webhooks-guide.md' }),
       false
     );
+  })) passed++; else failed++;
+
+  if (test('OpenCode auto-discovered entrypoints require selected runtime and consent', () => {
+    const entrypoints = ['.opencode/plugins/ecc-hooks.ts', '.opencode/plugins/index.ts'];
+    const operations = entrypoints.map(sourceRelativePath => ({
+      kind: 'copy-file', moduleId: 'platform-configs', sourceRelativePath,
+    }));
+    const base = {
+      target: 'opencode', operations, selectedModuleIds: ['platform-configs'],
+      statePreview: { operations, request: {}, resolution: { selectedModules: ['platform-configs'] } },
+    };
+    for (const decision of [null, 'enabled', 'declined']) {
+      const plan = withHookConsent(base, decision);
+      for (const operation of [...plan.operations, ...plan.statePreview.operations]) {
+        assert.strictEqual(operation.contentTransform, 'opencode-disable-plugin-entrypoint');
+        assert.strictEqual(isHookRuntimeOperation(operation), false);
+      }
+      assert.doesNotThrow(() => assertHookConsentReady(plan));
+    }
+    const selected = { ...base, selectedModuleIds: ['platform-configs', 'hooks-runtime'] };
+    const pending = withHookConsent(selected, null);
+    assert.throws(() => assertHookConsentReady(pending), /automatic hook runtime/);
+    const enabled = withHookConsent(selected, 'enabled');
+    assert.ok(enabled.operations.every(operation => operation.contentTransform === undefined));
+    assert.doesNotThrow(() => assertHookConsentReady(enabled));
+    const declined = withHookConsent(selected, 'declined');
+    assert.strictEqual(declined.operations.length, 2);
+    assert.ok(declined.operations.every(operation => (
+      operation.contentTransform === 'opencode-disable-plugin-entrypoint'
+    )));
+    assert.ok(operations.every(operation => operation.contentTransform === undefined), 'Input plan stays unchanged');
+    assert.strictEqual(isHookRuntimeOperation({
+      kind: 'copy-file', moduleId: 'platform-configs',
+      sourceRelativePath: '.opencode/plugins/helpers/readme.md',
+    }), false);
   })) passed++; else failed++;
 
   if (test('detects hook materialization from plan operations only', () => {
@@ -114,6 +169,57 @@ function runTests() {
       selectedModuleIds: ['rules-core'],
     }), false);
     assert.strictEqual(planMaterializesHookRuntime({}), false);
+  })) passed++; else failed++;
+
+  if (test('removes only ECC hook activation from OpenCode config', () => {
+    const transformed = disableOpenCodeHookPluginRegistration(JSON.stringify({
+      plugin: ['./plugins', 'example-plugin'],
+      instructions: ['AGENTS.md'],
+    }), '.opencode/opencode.json');
+    assert.deepStrictEqual(JSON.parse(transformed), {
+      plugin: ['example-plugin'],
+      instructions: ['AGENTS.md'],
+    });
+    assert.deepStrictEqual(JSON.parse(disableOpenCodeHookPluginRegistration(
+      JSON.stringify({ instructions: ['AGENTS.md'] }),
+      '.opencode/opencode.json'
+    )), {
+      instructions: ['AGENTS.md'],
+    });
+  })) passed++; else failed++;
+
+  if (test('historical OpenCode activation bytes alone do not imply hook consent', () => {
+    const state = {
+      request: {}, resolution: { selectedModules: ['platform-configs'] },
+      operations: [
+        { kind: 'copy-file', moduleId: 'platform-configs', sourceRelativePath: '.opencode/opencode.json' },
+        { kind: 'copy-file', moduleId: 'platform-configs', sourceRelativePath: '.opencode/plugins/ecc-hooks.ts' },
+      ],
+    };
+    assert.strictEqual(getRecordedHookConsent(state), null);
+    assert.strictEqual(getRecordedHookConsent({ ...state, request: { hookConsent: 'declined' } }), 'declined');
+    assert.strictEqual(getRecordedHookConsent({ ...state, request: { hookConsent: 'enabled' } }), 'enabled');
+    assert.strictEqual(getRecordedHookConsent({ ...state, resolution: { selectedModules: ['hooks-runtime'] } }), 'enabled');
+    assert.strictEqual(getRecordedHookConsent({ operations: [{ kind: 'update-claude-settings' }] }), 'enabled');
+  })) passed++; else failed++;
+
+  if (test('source classification covers nested JavaScript but refuses package metadata deactivation', () => {
+    for (const extension of ['ts', 'js', 'mjs', 'cjs']) {
+      for (const sourceRelativePath of [`.opencode/plugins/custom/index.${extension}`,
+        `.OPENCODE\\DIST\\PLUGINS\\CUSTOM\\INDEX.${extension.toUpperCase()}`]) {
+        const operation = { kind: 'copy-file', moduleId: 'platform-configs', sourceRelativePath };
+        assert.strictEqual(isOpenCodePluginEntrypoint(operation), true, sourceRelativePath);
+        const plan = withHookConsent({ target: 'opencode', operations: [operation], selectedModuleIds: [] });
+        assert.strictEqual(plan.operations[0].contentTransform, 'opencode-disable-plugin-entrypoint');
+      }
+    }
+    const operation = { kind: 'copy-file', sourceRelativePath: '.opencode/plugins/custom/package.json' };
+    for (const decision of [null, 'declined']) {
+      assert.throws(() => withHookConsent({ target: 'opencode', operations: [operation], selectedModuleIds: [] }, decision),
+        /unsupported.*package/i);
+    }
+    assert.strictEqual(isOpenCodePluginEntrypoint(operation), false);
+    assert.strictEqual(isOpenCodePluginEntrypoint({ sourceRelativePath: '.opencode/plugins/lib/utility.js' }), false);
   })) passed++; else failed++;
 
   if (test('formats one numbered disclosure line per capability group', () => {

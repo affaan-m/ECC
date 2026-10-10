@@ -1,6 +1,6 @@
 ---
 name: gateguard
-description: Fact-forcing gate that blocks Edit/Write/Bash (including MultiEdit) and demands concrete investigation (importers, data schemas, user instruction) before allowing the action. Measurably improves output quality by +2.25 points vs ungated agents.
+description: "PreToolUse fact-forcing gate that denies the first Edit/Write/Bash (including MultiEdit) attempt until the agent presents concrete facts (importers, data schemas, verbatim user instruction), then allows retry; A/B-tested at +2.25 quality points. Use when enabling or configuring the GateGuard hook, exempting paths via env vars, or handling first-touch denials."
 metadata:
   origin: community
 ---
@@ -137,6 +137,7 @@ load-bearing destructive-Bash checks keep running:
 | `GATEGUARD_BASH_ROUTINE_DISABLED` | unset (gate on) | Disables the **routine-Bash** gate only. The destructive-Bash gate (`rm -rf`, `git reset --hard`, `drop table`, `dd if=`, …) is unaffected. |
 | `GATEGUARD_EXEMPT_GLOBS` | unset (no exemptions) | Comma-separated globs; a matching Edit/Write/MultiEdit target skips first-touch fact-forcing. Intended for low-import-value trees (tests, generated artifacts, scratch dirs) where "who imports this / what schema" carries no signal. |
 | `GATEGUARD_FACT_FORCE_FULL_DENIALS` | `3` | How many denials emit the full four-fact block before later ones condense to a single line. `0` condenses from the very first denial. |
+| `GATEGUARD_FACT_FORCE_MAX_DENIALS` | unset (no cap) | Caps the total number of new-path Edit/Write/MultiEdit denials in a session. After the configured number of denials, new paths are allowed instead of denied; destructive Bash stays gated independently. The cap is best effort when hooks run concurrently: a lost count update can add a denial, but never lets a new path through early. Opt-in — unset, or any value that is not a whole non-negative integer, preserves the existing deny-every-new-path behaviour. Unlike `GATEGUARD_FACT_FORCE_FULL_DENIALS`, which only controls message detail, this changes whether the operation is blocked. |
 | `GATEGUARD_BASH_EXTRA_DESTRUCTIVE` | unset | Extra destructive-command patterns, as regex source, added to the built-in set. A malformed regex is treated as unset (built-ins still apply) and logged once to stderr. |
 | `GATEGUARD_STATE_DIR` | `~/.gateguard` | Where per-session gate state is kept. If state cannot be persisted the gate allows the operation rather than looping, and names this variable in the warning. |
 

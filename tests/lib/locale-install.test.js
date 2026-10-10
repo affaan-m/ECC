@@ -52,7 +52,61 @@ function runTests() {
     assert.ok(components.some(component => component.id === 'locale:zh-cn'));
     assert.ok(components.some(component => component.id === 'locale:de-de'));
     assert.ok(components.some(component => component.id === 'locale:uk-ua'));
+    assert.ok(components.some(component => component.id === 'locale:pl'));
     assert.ok(components.every(component => component.family === 'locale'));
+  })) passed++; else failed++;
+
+  if (test('locale:pl resolves to the Polish translated docs module', () => {
+    const homeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'locale-plan-pl-'));
+    try {
+      const plan = resolveInstallPlan({
+        includeComponentIds: ['locale:pl'],
+        target: 'claude',
+        homeDir,
+      });
+
+      assert.deepStrictEqual(plan.selectedModuleIds, ['docs-pl']);
+      assert.ok(
+        plan.operations.some(operation => (
+          normalizePlanPath(operation.sourceRelativePath) === 'docs/pl'
+          && normalizePlanPath(operation.destinationPath).endsWith('/.claude/docs/pl')
+        )),
+        'Should map docs/pl to ~/.claude/docs/pl'
+      );
+    } finally {
+      fs.rmSync(homeDir, { recursive: true, force: true });
+    }
+  })) passed++; else failed++;
+
+  if (test('end-to-end: --locale pl-PL dry-run includes docs-pl operations', () => {
+    const homeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'locale-dry-run-pl-'));
+    const projectDir = fs.mkdtempSync(path.join(os.tmpdir(), 'locale-dry-run-pl-project-'));
+
+    try {
+      const output = runInstallApply([
+        '--locale', 'pl-PL',
+        '--dry-run',
+        '--json',
+      ], {
+        cwd: projectDir,
+        env: { HOME: homeDir },
+      });
+      const json = JSON.parse(output);
+
+      assert.strictEqual(json.plan.mode, 'manifest');
+      assert.deepStrictEqual(json.plan.includedComponentIds, ['locale:pl']);
+      assert.deepStrictEqual(json.plan.selectedModuleIds, ['docs-pl']);
+      assert.ok(
+        json.plan.operations.some(operation => (
+          normalizePlanPath(operation.sourceRelativePath) === 'docs/pl/README.md'
+          && normalizePlanPath(operation.destinationPath).endsWith('/.claude/docs/pl/README.md')
+        )),
+        'Should copy translated README into ~/.claude/docs/pl'
+      );
+    } finally {
+      fs.rmSync(homeDir, { recursive: true, force: true });
+      fs.rmSync(projectDir, { recursive: true, force: true });
+    }
   })) passed++; else failed++;
 
   if (test('locale:uk-ua resolves to the Ukrainian translated docs module', () => {

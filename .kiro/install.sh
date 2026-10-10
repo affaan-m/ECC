@@ -1,7 +1,7 @@
 #!/bin/bash
 #
 # ECC Kiro Installer
-# Installs Everything Claude Code workflows into a Kiro project.
+# Installs ECC workflows into a Kiro project.
 #
 # Usage:
 #   ./install.sh              # Install to current directory

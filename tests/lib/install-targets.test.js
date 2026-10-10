@@ -231,9 +231,11 @@ function runTests() {
       normalizedRelativePath(operation.sourceRelativePath) === '.cursor/rules/common-coding-style.md'
     ));
 
-    assert.ok(hooksJson, 'Should preserve non-rule Cursor platform config files');
-    assert.strictEqual(hooksJson.strategy, 'preserve-relative-path');
-    assert.strictEqual(hooksJson.destinationPath, path.join(projectRoot, '.cursor', 'hooks.json'));
+    assert.strictEqual(
+      hooksJson,
+      undefined,
+      'Platform configs should not register hooks without hooks-runtime'
+    );
     assert.ok(mcpJson, 'Should materialize a Cursor MCP config from the shared root MCP config');
     assert.strictEqual(mcpJson.kind, 'merge-json');
     assert.strictEqual(mcpJson.strategy, 'merge-json');
@@ -395,11 +397,10 @@ function runTests() {
       'Should not preserve .md Cursor platform rule files'
     );
     assert.ok(
-      plan.operations.some(operation => (
-        normalizedRelativePath(operation.sourceRelativePath) === '.cursor/hooks.json'
-        && operation.destinationPath === path.join(projectRoot, '.cursor', 'hooks.json')
+      !plan.operations.some(operation => (
+        operation.destinationPath === path.join(projectRoot, '.cursor', 'hooks.json')
       )),
-      'Should preserve non-rule Cursor platform config files'
+      'Should not register Cursor hooks without hooks-runtime'
     );
     assert.ok(
       plan.operations.some(operation => (
@@ -478,6 +479,14 @@ function runTests() {
       normalizedRelativePath(hooksDestinations[0].sourceRelativePath),
       '.cursor/hooks',
       'Should prefer native Cursor hooks over generic hooks-runtime hooks'
+    );
+    const hooksConfig = plan.operations.find(operation => (
+      operation.destinationPath === path.join(projectRoot, '.cursor', 'hooks.json')
+    ));
+    assert.strictEqual(
+      normalizedRelativePath(hooksConfig.sourceRelativePath),
+      '.cursor/hooks.json',
+      'Should register the native Cursor hook config through hooks-runtime'
     );
   })) passed++; else failed++;
 

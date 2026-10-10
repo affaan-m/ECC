@@ -1,7 +1,7 @@
 ---
 name: database-reviewer
 description: PostgreSQL 数据库专家，专注于查询优化、模式设计、安全性和性能。在编写 SQL、创建迁移、设计模式或排查数据库性能问题时，请主动使用。融合了 Supabase 最佳实践。
-tools: ["Read", "Write", "Edit", "Bash", "Grep", "Glob"]
+tools: ["Read", "Grep", "Glob", "Bash"]
 model: sonnet
 ---
 

@@ -2,7 +2,7 @@
 name: opensource-packager
 description: 为经过清理的项目生成完整的开源打包文件。生成 CLAUDE.md、setup.sh、README.md、LICENSE、CONTRIBUTING.md 和 GitHub 问题模板。使任何仓库都能立即与 Claude Code 配合使用。这是 opensource-pipeline 技能的第三阶段。
 tools: ["Read", "Write", "Edit", "Bash", "Grep", "Glob"]
-model: sonnet
+model: haiku
 ---
 
 # 开源打包工具

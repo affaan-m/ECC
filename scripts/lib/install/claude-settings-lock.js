@@ -5,6 +5,7 @@ const fs = require('fs');
 const path = require('path');
 
 const INVALID_LOCK_STALE_MS = 5 * 60 * 1000;
+const acquiredLockIdentities = new WeakMap();
 
 function sameFileIdentity(left, right) {
   if (left.ino !== right.ino) {
@@ -19,7 +20,7 @@ function sameFileIdentity(left, right) {
   return left.dev === right.dev;
 }
 
-function createSettingsLock(lockPath) {
+function createSettingsLock(lockPath, label = 'Claude settings') {
   const tempPath = `${lockPath}.create-${process.pid}-${crypto.randomBytes(8).toString('hex')}`;
   let descriptor;
   let ownedStats;
@@ -43,18 +44,28 @@ function createSettingsLock(lockPath) {
   fs.rmSync(tempPath, { force: true });
 
   let released = false;
-  return () => {
+  const release = () => {
     if (released) return;
     const quarantinePath = `${lockPath}.release-${process.pid}-${crypto.randomBytes(8).toString('hex')}`;
     fs.renameSync(lockPath, quarantinePath);
     const quarantinedStats = fs.lstatSync(quarantinePath, { bigint: true });
     if (!sameFileIdentity(quarantinedStats, ownedStats)) {
       if (!fs.existsSync(lockPath)) fs.renameSync(quarantinePath, lockPath);
-      throw new Error(`Refusing to release a changed Claude settings lock: ${lockPath}`);
+      throw new Error(`Refusing to release a changed ${label} lock: ${lockPath}`);
     }
     released = true;
     fs.rmSync(quarantinePath, { force: true });
   };
+  // Retain the identity observed through the creation descriptor. A pathname
+  // sampled after publication may already refer to a replacement lock.
+  acquiredLockIdentities.set(release, Object.freeze({ dev: ownedStats.dev, ino: ownedStats.ino }));
+  return release;
+}
+
+function getSettingsLockIdentity(release) {
+  const identity = acquiredLockIdentities.get(release);
+  if (!identity) throw new Error('No acquired settings lock identity for this release function.');
+  return identity;
 }
 
 function inspectSettingsLock(lockPath) {
@@ -91,7 +102,7 @@ function processIsAlive(pid) {
   }
 }
 
-function recoverSettingsLock(lockPath) {
+function recoverSettingsLock(lockPath, label = 'Claude settings') {
   const recoveryPath = `${lockPath}.recover`;
   try {
     fs.mkdirSync(recoveryPath, { mode: 0o700 });
@@ -106,7 +117,7 @@ function recoverSettingsLock(lockPath) {
     try {
       inspected = inspectSettingsLock(lockPath);
     } catch (error) {
-      if (error && error.code === 'ENOENT') return createSettingsLock(lockPath);
+      if (error && error.code === 'ENOENT') return createSettingsLock(lockPath, label);
       throw error;
     }
     const validOwner = Number.isSafeInteger(inspected.metadata && inspected.metadata.pid)
@@ -123,27 +134,27 @@ function recoverSettingsLock(lockPath) {
       return null;
     }
     fs.rmSync(quarantinePath, { force: true });
-    return createSettingsLock(lockPath);
+    return createSettingsLock(lockPath, label);
   } finally {
     fs.rmSync(recoveryPath, { recursive: true, force: true });
     fs.rmSync(quarantinePath, { force: true });
   }
 }
 
-function acquireSettingsLock(settingsPath) {
+function acquireSettingsLock(settingsPath, { label = 'Claude settings' } = {}) {
   const lockPath = `${settingsPath}.ecc.lock`;
   fs.mkdirSync(path.dirname(settingsPath), { recursive: true });
   try {
-    return createSettingsLock(lockPath);
+    return createSettingsLock(lockPath, label);
   } catch (error) {
     if (!error || error.code !== 'EEXIST') {
       throw error;
     }
   }
-  const recovered = recoverSettingsLock(lockPath);
+  const recovered = recoverSettingsLock(lockPath, label);
   if (recovered) return recovered;
   throw new Error(
-    `Another ECC process is updating Claude settings: ${settingsPath}. `
+    `Another ECC process is updating ${label}: ${settingsPath}. `
     + `If no ECC process is active, inspect and remove ${lockPath}.`
   );
 }
@@ -175,6 +186,7 @@ function runWithSettingsLock(settingsPath, callback) {
 
 module.exports = {
   acquireSettingsLock,
+  getSettingsLockIdentity,
   runWithSettingsLock,
   sameFileIdentity,
 };

@@ -81,7 +81,9 @@ require_file "$CONFIG_FILE" "Global config.toml"
 require_file "$AGENTS_FILE" "Global AGENTS.md"
 
 if [[ -f "$AGENTS_FILE" ]]; then
-  if search_file '^# Everything Claude Code \(ECC\)' "$AGENTS_FILE"; then
+  # Accept the current "# ECC" heading and the legacy expanded-name heading
+  # that older syncs wrote into existing ~/.codex/AGENTS.md files.
+  if search_file '^# (ECC|Everything Claude Code \(ECC\))( |$)' "$AGENTS_FILE"; then
     ok "AGENTS contains ECC root instructions"
   else
     fail "AGENTS missing ECC root instructions"

@@ -2,10 +2,13 @@
 'use strict';
 
 const path = require('path');
+const { StringDecoder } = require('string_decoder');
 const { spawnSync } = require('child_process');
 const { ensureAgentDataHomeEnv } = require('../lib/agent-data-home');
 const { normalizePluginRootForPlatform } = require('../lib/resolve-ecc-root');
 const { readStdinRaw: readBoundedStdin, resolveMaxStdin } = require('./hook-input');
+
+const { createHookContextScanner } = require('./hook-input-limits');
 
 const SHELL_PROBE_TIMEOUT_MS = 2000;
 
@@ -170,6 +173,7 @@ function spawnNode(rootDir, relPath, raw, args, options = {}) {
     ECC_PLUGIN_ROOT: rootDir,
     ECC_HOOK_INPUT_MAX_BYTES: String(options.maxStdin),
     ECC_HOOK_INPUT_TRUNCATED_UPSTREAM: options.truncated ? '1' : '0',
+    ECC_HOOK_CONTEXT_JSON: JSON.stringify(options.hookContext || {}),
   };
   const result = spawnSync(process.execPath, [resolveTarget(rootDir, relPath), ...args], {
     input: raw,
@@ -202,6 +206,7 @@ function spawnShell(rootDir, relPath, raw, args, options = {}) {
     ECC_PLUGIN_ROOT: rootDir,
     ECC_HOOK_INPUT_MAX_BYTES: String(options.maxStdin),
     ECC_HOOK_INPUT_TRUNCATED_UPSTREAM: options.truncated ? '1' : '0',
+    ECC_HOOK_CONTEXT_JSON: JSON.stringify(options.hookContext || {}),
   };
   const scriptPath = resolveTarget(rootDir, relPath);
   const isPs = isPowerShellBin(shell);
@@ -248,7 +253,14 @@ async function main() {
   const maxStdin = resolveMaxStdin(process.env.ECC_HOOK_INPUT_MAX_BYTES, {
     writeDiagnostic: message => process.stderr.write(message)
   });
-  const { raw, truncated } = await readBoundedStdin(process.stdin, { maxStdin });
+  const contextDecoder = new StringDecoder('utf8');
+  const contextScanner = createHookContextScanner();
+  const { raw, truncated } = await readBoundedStdin(process.stdin, {
+    maxStdin,
+    onChunk: buffer => contextScanner.push(contextDecoder.write(buffer)),
+  });
+  contextScanner.push(contextDecoder.end());
+  const hookContext = contextScanner.context;
   const rootDir = normalizePluginRootForPlatform(
     process.env.CLAUDE_PLUGIN_ROOT || process.env.ECC_PLUGIN_ROOT
   );
@@ -268,9 +280,9 @@ async function main() {
   let result;
   try {
     if (mode === 'node') {
-      result = spawnNode(rootDir, relPath, raw, args, { maxStdin, truncated });
+      result = spawnNode(rootDir, relPath, raw, args, { maxStdin, truncated, hookContext });
     } else if (mode === 'shell') {
-      result = spawnShell(rootDir, relPath, raw, args, { maxStdin, truncated });
+      result = spawnShell(rootDir, relPath, raw, args, { maxStdin, truncated, hookContext });
     } else {
       writeStderr(`[Hook] unknown bootstrap mode: ${mode}; emitting empty stdout\n`);
       process.exitCode = 0;

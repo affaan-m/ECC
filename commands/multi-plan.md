@@ -1,5 +1,5 @@
 ---
-description: Create a multi-model implementation plan without modifying production code.
+description: Create a multi-model (Codex + Antigravity) implementation plan without modifying production code. Requires the external ccg-workflow runtime, not part of the base ECC install (see Prerequisite below). Use when the user explicitly wants dual-model plan drafts; for a single-model plan with no extra runtime use /plan.
 ---
 
 # Plan - Multi-Model Collaborative Planning

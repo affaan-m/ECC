@@ -307,6 +307,17 @@ function runTests() {
     }
   })) passed++; else failed++;
 
+  if (test('sameRepoIdentity compares full-width filesystem IDs', () => {
+    const originalStat = fs.statSync;
+    try {
+      fs.statSync = (file, options) => {
+        assert.equal(options?.bigint, true);
+        return { dev: 1n, ino: file.endsWith('first') ? 9007199254740993n : 9007199254740994n };
+      };
+      assert.ok(!utils.sameRepoIdentity('/missing/first', '/missing/second'));
+    } finally { fs.statSync = originalStat; }
+  })) passed++; else failed++;
+
   // sanitizeSessionId tests
   console.log('\nsanitizeSessionId:');
 

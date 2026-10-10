@@ -46,6 +46,7 @@ function writeEnglishReadme(root, counts, options = {}) {
   fs.writeFileSync(path.join(root, 'README.md'), `Access to ${counts.agents} agents, ${counts.skills} skills, and ${counts.commands} commands.
 - **Public surface synced to the live repo** - metadata, catalog counts, plugin manifests, and install-facing docs now match the actual OSS surface: ${counts.agents} agents, ${counts.skills} skills, and ${counts.commands} legacy command shims.
 |-- agents/           # ${counts.agents} specialized subagents for delegation
+|-- agents/           # ${counts.agents + 1} specialized subagents for delegation
 | Feature | Claude Code | Cursor IDE | Codex CLI | OpenCode |
 | --- | --- | --- | --- | --- |
 | Agents | PASS: ${tableCounts.agents} agents |
@@ -93,6 +94,20 @@ skills/ - ${counts.skills}${plus} workflow skills and domain knowledge
 commands/ - ${counts.commands} slash commands
 \`\`\`
 `);
+}
+
+function writeCrossHarnessIdentityDocs(root, counts) {
+  fs.writeFileSync(
+    path.join(root, 'SOUL.md'),
+    `ECC is a production-ready AI coding plugin with ${counts.agents} specialized agents, ${counts.skills} skills, ${counts.commands} commands, and automated hook workflows.\n`
+  );
+
+  const geminiDir = path.join(root, '.gemini');
+  fs.mkdirSync(geminiDir, { recursive: true });
+  fs.writeFileSync(
+    path.join(geminiDir, 'GEMINI.md'),
+    `ECC is a cross-harness coding system with ${counts.agents} specialized agents, ${counts.skills} skills, and ${counts.commands} commands.\n`
+  );
 }
 
 function writeZhRootReadme(root, counts) {
@@ -158,6 +173,7 @@ function writeCatalogFixture(root, options = {}) {
 
   writeEnglishReadme(root, documentedCounts, { unrelatedSkillsCount });
   writeEnglishAgents(root, documentedCounts, { skillsMinimum });
+  writeCrossHarnessIdentityDocs(root, documentedCounts);
   writeZhRootReadme(root, documentedCounts);
   writeZhDocsReadme(root, documentedCounts, { unrelatedSkillsCount });
   writeZhAgents(root, documentedCounts, { skillsMinimum });
@@ -224,6 +240,8 @@ function runTests() {
       assert.ok(formatted.includes('README.md quick-start summary'));
       assert.ok(formatted.includes('README.md project tree'));
       assert.ok(formatted.includes('AGENTS.md summary'));
+      assert.ok(formatted.includes('SOUL.md'));
+      assert.ok(formatted.includes('.gemini/GEMINI.md'));
       assert.ok(formatted.includes('.claude-plugin/plugin.json description'));
       assert.ok(formatted.includes('.claude-plugin/marketplace.json plugin description'));
       assert.ok(formatted.includes('README.zh-CN.md quick-start summary'));
@@ -250,6 +268,8 @@ function runTests() {
 
       const readme = fs.readFileSync(path.join(testDir, 'README.md'), 'utf8');
       const agentsDoc = fs.readFileSync(path.join(testDir, 'AGENTS.md'), 'utf8');
+      const soulDoc = fs.readFileSync(path.join(testDir, 'SOUL.md'), 'utf8');
+      const geminiDoc = fs.readFileSync(path.join(testDir, '.gemini', 'GEMINI.md'), 'utf8');
       const zhReadme = fs.readFileSync(path.join(testDir, 'docs', 'zh-CN', 'README.md'), 'utf8');
       const zhAgentsDoc = fs.readFileSync(path.join(testDir, 'docs', 'zh-CN', 'AGENTS.md'), 'utf8');
       const pluginJson = fs.readFileSync(path.join(testDir, '.claude-plugin', 'plugin.json'), 'utf8');
@@ -258,9 +278,12 @@ function runTests() {
       assert.ok(readme.includes('Access to 1 agents, 1 skills, and 1 legacy command shims'));
       assert.ok(readme.includes('actual OSS surface: 7 agents, 7 skills, and 7 legacy command shims'));
       assert.ok(readme.includes('|-- agents/           # 1 specialized subagents for delegation'));
+      assert.strictEqual((readme.match(/# 1 specialized subagents for delegation/g) || []).length, 2);
       assert.ok(readme.includes('| Skills | 42 | .agents/skills/ |'));
       assert.ok(agentsDoc.includes('providing 1 specialized agents, 1+ skills, 1 commands'));
       assert.ok(agentsDoc.includes('skills/ - 1+ workflow skills and domain knowledge'));
+      assert.ok(soulDoc.includes('with 1 specialized agents, 1 skills, 1 commands'));
+      assert.ok(geminiDoc.includes('with 1 specialized agents, 1 skills, and 1 commands'));
       assert.ok(zhReadme.includes('| 技能 | 42 | .agents/skills/ |'));
       assert.ok(zhAgentsDoc.includes('提供 1 个专业代理、1+ 项技能、1 条命令'));
       assert.ok(zhAgentsDoc.includes('skills/ - 1+ 个工作流技能和领域知识'));

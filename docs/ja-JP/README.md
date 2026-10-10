@@ -31,7 +31,9 @@
   <a href="../th/README.md">ไทย</a> |
   <a href="../de-DE/README.md">Deutsch</a> |
   <a href="../es/README.md">Español</a> |
-  <a href="../uk-UA/README.md">Українська</a>
+  <a href="../uk-UA/README.md">Українська</a> |
+  <a href="../pl/README.md">Polski</a> |
+  <a href="../bn/README.md">বাংলা</a>
 </p>
 
 <p align="center">
@@ -109,12 +111,14 @@
 <p align="center" aria-label="Partners and sponsors">
   <a href="https://www.coderabbit.ai" title="CodeRabbit"><img src="../../assets/images/sponsors/coderabbit.png" height="54" alt="CodeRabbit" /></a>&nbsp;&nbsp;&nbsp;
   <a href="https://www.greptile.com/go/ecc" title="Greptile"><img src="../../assets/images/sponsors/greptile.png" height="54" alt="Greptile" /></a>&nbsp;&nbsp;&nbsp;
-  <a href="https://www.atlascloud.ai/?utm_source=github&amp;utm_medium=link&amp;utm_campaign=ECC" title="Atlas Cloud"><picture><source media="(prefers-color-scheme: dark)" srcset="../../assets/images/sponsors/atlascloud-dark.svg" /><img src="../../assets/images/sponsors/atlascloud.svg" width="154" alt="Atlas Cloud" /></picture></a>&nbsp;&nbsp;&nbsp;
   <a href="https://platform.kimi.ai?aff=ecc" title="Moonshot AI - Kimi"><picture><source media="(prefers-color-scheme: dark)" srcset="../../assets/images/sponsors/moonshot-dark.png" /><img src="../../assets/images/sponsors/moonshot.png" width="132" alt="Moonshot AI - Kimi" /></picture></a>&nbsp;&nbsp;&nbsp;
-  <a href="https://compute.itomarkets.com" title="Itô Markets"><picture><source media="(prefers-color-scheme: light)" srcset="../../assets/images/sponsors/ito-transparent-light.png" /><img src="../../assets/images/sponsors/ito-transparent.png" width="96" alt="Itô Markets" /></picture></a>
+  <a href="https://compute.itomarkets.com" title="Itô Markets"><picture><source media="(prefers-color-scheme: light)" srcset="../../assets/images/sponsors/ito-transparent-light.png" /><img src="../../assets/images/sponsors/ito-transparent.png" width="96" alt="Itô Markets" /></picture></a>&nbsp;&nbsp;&nbsp;
+  <a href="https://serpapi.com/github-ecc" title="SerpApi: Web Search API"><picture><source media="(prefers-color-scheme: dark)" srcset="../../assets/images/sponsors/serpapi-logo-dark-mode.svg" /><img src="../../assets/images/sponsors/serpapi-logo-light-mode.svg" width="200" alt="SerpApi: Web Search API" /></picture></a>
 </p>
 
-<sub><strong>コミュニティスポンサー:</strong> <a href="https://github.com/mikejmorgan-ai">Mike Morgan</a> · <a href="https://github.com/jasonwu513">@jasonwu513</a> · <a href="https://github.com/1anter">@1anter</a> · <a href="https://github.com/massimotodaro">@massimotodaro</a> · <a href="https://github.com/meadmccabe">@meadmccabe</a></sub>
+<sub><strong>過去のスポンサー:</strong> <a href="https://www.atlascloud.ai/?utm_source=github&amp;utm_medium=link&amp;utm_campaign=ECC">Atlas Cloud</a> · <a href="https://github.com/mikejmorgan-ai">Mike Morgan (inactive)</a></sub>
+
+<sub><strong>コミュニティスポンサー:</strong> <a href="https://github.com/jasonwu513">@jasonwu513</a> · <a href="https://github.com/1anter">@1anter</a> · <a href="https://github.com/massimotodaro">@massimotodaro</a> · <a href="https://github.com/meadmccabe">@meadmccabe</a></sub>
 
 <sub><a href="https://github.com/sponsors/affaan-m"><strong>スポンサーになる</strong></a> · <a href="../../SPONSORS.md">スポンサーティア</a> · <a href="../../SPONSORING.md">スポンサーシッププログラム</a></sub>
 
@@ -136,13 +140,13 @@ plan -> test -> implement -> review -> verify -> remember -> improve
 
 ECC は MIT ライセンスのオープンソースです。現時点では Claude Code で最もよく機能し、サポート対象の Codex 同期パスを備え、Cursor、OpenCode、Gemini、Zed、GitHub Copilot、Antigravity、Qwen、その他のハーネス向けには機能が限定されたアダプターを提供しています。機能の同等性を前提にする前に、[サポート状況マトリクス](#プラットフォームサポート)を確認してください。
 
-68 の agents、292 の skills、95 のレガシー command シムに加えて、hooks、rules、メモリ、継続的学習、AgentShield セキュリティスキャンを利用できます。agents は計画、レビュー、ビルド修復、セキュリティ、アーキテクチャ、ドメイン作業に特化しています。
+68 の agents、293 の skills、94 のレガシー command シムに加えて、hooks、rules、メモリ、継続的学習、AgentShield セキュリティスキャンを利用できます。agents は計画、レビュー、ビルド修復、セキュリティ、アーキテクチャ、ドメイン作業に特化しています。
 
 | 含まれるもの     |        数 | 得られるもの                                                                          |
 | ---------------- | ----------: | ------------------------------------------------------------------------------------ |
 | Agents           |   68 agents | 計画、レビュー、ビルド修復、セキュリティ、アーキテクチャ、ドメイン作業                |
-| Skills           |  292 skills | TDD、リサーチ、セキュリティ、ドキュメント、フロントエンド、データ、ML、運用など       |
-| Commands         | 95 commands | ECC が skills ファーストの構成へ移行する間の便利なエントリーポイント                  |
+| Skills           |  293 skills | TDD、リサーチ、セキュリティ、ドキュメント、フロントエンド、データ、ML、運用など       |
+| Commands         | 94 commands | ECC が skills ファーストの構成へ移行する間の便利なエントリーポイント                  |
 | Hooks とメモリ   |     ランタイム | 強制、セッションサマリー、継続的学習、instincts、コンテキスト制御                  |
 | Rules            |   選択式 | 言語やプロジェクトごとに選ぶ、常時ロードされる標準                                    |
 | AgentShield      |    同梱 | プロンプト、hooks、MCP 設定、パーミッション、シークレット、agent ファイルのスキャン    |
@@ -376,7 +380,7 @@ cd ECC
 | Qwen CLI | `./install.sh --profile minimal --target qwen` | [Qwen ガイド](../QWEN-GUIDE.md)を参照 |
 | Hermes | `./install.sh --profile minimal --target hermes` | [Hermes セットアップガイド](../HERMES-SETUP.md)を参照 |
 | OpenClaw | `./install.sh --profile minimal --target openclaw` | 管理されたホームディレクトリインストール |
-| Kimi Code CLI | `./install.sh --profile minimal --target kimi` | プロジェクトローカルの `.kimi-code/` インストール · [Kimi Code を入手](https://www.kimi.com/code?aff=ecc) |
+| Kimi Code CLI | `./install.sh --profile minimal --target kimi` | プロジェクトローカルの `.kimi-code/` インストール · [Kimi Code を入手](https://www.kimi.ai/code?aff=ecc) |
 | CodeBuddy | `./install.sh --profile minimal --target codebuddy` | プロジェクトローカルの `.codebuddy/` インストール |
 | JoyCode | `./install.sh --profile minimal --target joycode` | プロジェクトローカルの `.joycode/` インストール |
 
@@ -794,7 +798,7 @@ Kimi Code はインストールされた `.kimi-code/AGENTS.md` の指示と `.k
 ```text
 ECC/
 |-- agents/           # 委譲用の 68 の専門サブエージェント
-|-- skills/           # オンデマンドで読み込まれる 292 の再利用可能なワークフロー
+|-- skills/           # オンデマンドで読み込まれる 293 の再利用可能なワークフロー
 |-- commands/         # メンテナンスされている 94 のスラッシュコマンドシム
 |-- rules/            # オプトインの共通標準と言語別標準
 |-- hooks/            # ランタイムの自動化と強制
@@ -817,7 +821,7 @@ ECC/
 |   |-- plugin.json         # Plugin メタデータとコンポーネントパス
 |   |-- marketplace.json    # /plugin marketplace add 用のマーケットプレイスカタログ
 |
-|-- agents/           # 委譲用の 67 の専門サブエージェント
+|-- agents/           # 委譲用の 69 の専門サブエージェント
 |   |-- planner.md           # 機能実装の計画
 |   |-- architect.md         # システム設計の意思決定
 |   |-- tdd-guide.md         # テスト駆動開発
@@ -844,6 +848,7 @@ ECC/
 |   |-- kotlin-reviewer.md   # Kotlin/Android/KMP コードレビュー
 |   |-- kotlin-build-resolver.md # Kotlin/Gradle ビルドエラー
 |   |-- harmonyos-app-resolver.md # HarmonyOS/ArkTS アプリ開発
+|   |-- ruby-reviewer.md     # Ruby/Rails コードレビュー
 |   |-- rust-reviewer.md     # Rust コードレビュー
 |   |-- rust-build-resolver.md # Rust ビルドエラーの解決
 |   |-- pytorch-build-resolver.md # PyTorch/CUDA トレーニングエラー

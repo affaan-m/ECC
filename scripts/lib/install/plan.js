@@ -7,6 +7,7 @@ const { execFileSync } = require('child_process');
 const { resolveInstallPlan } = require('../install-manifests');
 const { getInstallTargetAdapter } = require('../install-targets/registry');
 const { resolveInvocationEnvironment } = require('../invocation-environment');
+const { disableUnselectedOpenCodeHooks } = require('./hook-consent');
 const { readHooksConfig } = require('../hooks-config');
 const {
   materializeManagedHooks,
@@ -103,6 +104,11 @@ function buildCopyFileOperation({
   strategy,
   contentTransform,
 }) {
+  // Copilot's agent and workflow transforms are textual. Their directories may
+  // also contain binary assets and executable helpers, which must keep bytes.
+  const applicableTransform = (contentTransform === 'copilot-workflow-paths'
+    || contentTransform === 'copilot-agent-frontmatter')
+    && !/\.md$/i.test(sourceRelativePath) ? undefined : contentTransform;
   return {
     kind: 'copy-file',
     moduleId,
@@ -112,7 +118,7 @@ function buildCopyFileOperation({
     strategy,
     ownership: 'managed',
     scaffoldOnly: false,
-    ...(contentTransform ? { contentTransform } : {}),
+    ...(applicableTransform ? { contentTransform: applicableTransform } : {}),
   };
 }
 
@@ -315,7 +321,7 @@ function createManifestInstallPlan(options = {}) {
     source
   });
 
-  return {
+  return disableUnselectedOpenCodeHooks({
     mode: options.mode || 'manifest',
     sourceRoot,
     target,
@@ -341,7 +347,7 @@ function createManifestInstallPlan(options = {}) {
     excludedModuleIds: plan.excludedModuleIds,
     operations,
     statePreview
-  };
+  });
 }
 
 module.exports = {

@@ -31,7 +31,9 @@
   <a href="docs/th/README.md">ไทย</a> |
   <a href="docs/de-DE/README.md">Deutsch</a> |
   <a href="docs/es/README.md">Español</a> |
-  <a href="docs/uk-UA/README.md">Українська</a>
+  <a href="docs/uk-UA/README.md">Українська</a> |
+  <a href="docs/pl/README.md">Polski</a> |
+  <a href="docs/bn/README.md">বাংলা</a>
 </p>
 
 <p align="center">
@@ -114,9 +116,9 @@ Use the [guided setup](#install-ecc) or [native plugin commands](#claude-code-de
   <a href="https://serpapi.com/github-ecc" title="SerpApi: Web Search API"><picture><source media="(prefers-color-scheme: dark)" srcset="assets/images/sponsors/serpapi-logo-dark-mode.svg" /><img src="assets/images/sponsors/serpapi-logo-light-mode.svg" width="200" alt="SerpApi: Web Search API" /></picture></a>
 </p>
 
-<sub><strong>Past sponsors:</strong> <a href="https://www.atlascloud.ai/?utm_source=github&amp;utm_medium=link&amp;utm_campaign=ECC">Atlas Cloud</a></sub>
+<sub><strong>Past sponsors:</strong> <a href="https://www.atlascloud.ai/?utm_source=github&amp;utm_medium=link&amp;utm_campaign=ECC">Atlas Cloud</a> · <a href="https://github.com/mikejmorgan-ai">Mike Morgan (inactive)</a></sub>
 
-<sub><strong>Community sponsors:</strong> <a href="https://github.com/mikejmorgan-ai">Mike Morgan</a> · <a href="https://github.com/jasonwu513">@jasonwu513</a> · <a href="https://github.com/1anter">@1anter</a> · <a href="https://github.com/massimotodaro">@massimotodaro</a> · <a href="https://github.com/meadmccabe">@meadmccabe</a></sub>
+<sub><strong>Community sponsors:</strong> <a href="https://github.com/jasonwu513">@jasonwu513</a> · <a href="https://github.com/1anter">@1anter</a> · <a href="https://github.com/massimotodaro">@massimotodaro</a> · <a href="https://github.com/meadmccabe">@meadmccabe</a></sub>
 
 <sub><a href="https://github.com/sponsors/affaan-m"><strong>Become a Sponsor</strong></a> · <a href="SPONSORS.md">Sponsor Tiers</a> · <a href="SPONSORING.md">Sponsorship Program</a></sub>
 
@@ -138,13 +140,13 @@ Instead of rebuilding that process in every prompt, you install it once and make
 
 ECC is MIT-licensed open source. It works best with Claude Code today, has a supported Codex sync path, and provides capability-limited adapters for Cursor, OpenCode, Gemini, Zed, GitHub Copilot, Antigravity, Qwen, and other harnesses. See the [support status matrix](#platform-support) before assuming feature parity.
 
-Access to 68 agents, 293 skills, and 95 legacy command shims, plus hooks, rules, memory, continuous learning, and AgentShield security scanning. The agents are specialized for planning, review, build repair, security, architecture, and domain work.
+Access to 71 agents, 303 skills, and 96 legacy command shims, plus hooks, rules, memory, continuous learning, and AgentShield security scanning. The agents are specialized for planning, review, build repair, security, architecture, and domain work.
 
 | Included         |       Count | What it gives you                                                                    |
 | ---------------- | ----------: | ------------------------------------------------------------------------------------ |
-| Agents           |   68 agents | Planning, review, build repair, security, architecture, and domain work              |
-| Skills           |  293 skills | TDD, research, security, docs, frontend, data, ML, operations, and more              |
-| Commands         | 95 commands | Convenient entry points while ECC moves to a skills-first surface                    |
+| Agents           |   71 agents | Planning, review, build repair, security, architecture, and domain work              |
+| Skills           |  303 skills | TDD, research, security, docs, frontend, data, ML, operations, and more              |
+| Commands         | 96 commands | Convenient entry points while ECC moves to a skills-first surface                    |
 | Hooks and memory |     Runtime | Enforcement, session summaries, continuous learning, instincts, and context controls |
 | Rules            |   Selective | Always-loaded standards you choose by language or project                            |
 | AgentShield      |    Included | Scanning for prompts, hooks, MCP config, permissions, secrets, and agent files       |
@@ -170,8 +172,33 @@ Access to 68 agents, 293 skills, and 95 legacy command shims, plus hooks, rules,
 For Claude Code plugin setup, updates, scope changes, and hook-profile changes:
 
 ```bash
-npx ecc-universal@2.2.2 setup
+npx ecc-universal@2.2.3 setup
 ```
+
+#### Windows first-time walkthrough
+
+If you are new to command-line tools, use this copy-and-paste path:
+
+1. Install Node.js 18 or newer, Git, and Claude Code.
+2. Open **PowerShell** from the Windows Start menu.
+3. Confirm that each prerequisite is available:
+
+   ```powershell
+   node --version
+   git --version
+   claude --version
+   ```
+
+4. Run the guided installer:
+
+   ```powershell
+   npx ecc-universal@2.2.3 setup
+   ```
+
+5. For a typical personal setup, choose **Global user**, choose **Standard** hooks, and confirm.
+6. Start a new Claude Code session and run `/plugin list` to verify that `ecc@ecc` is enabled.
+
+This path does not require cloning the repository. If any prerequisite command is not found, install or repair that prerequisite before rerunning ECC setup.
 
 If npm reports a version or cache error, confirm the registry version before retrying:
 
@@ -183,12 +210,12 @@ ECC 2.2 supports the same guided setup through modern package runners:
 
 | Package runner | Guided setup command |
 |---|---|
-| npm / npx | `npx ecc-universal@2.2.2 setup` |
-| pnpm | `pnpm dlx ecc-universal@2.2.2 setup` |
-| Yarn 2+ | `yarn dlx ecc-universal@2.2.2 setup` |
-| Bun | `bunx ecc-universal@2.2.2 setup` |
+| npm / npx | `npx ecc-universal@2.2.3 setup` |
+| pnpm | `pnpm dlx ecc-universal@2.2.3 setup` |
+| Yarn 2+ | `yarn dlx ecc-universal@2.2.3 setup` |
+| Bun | `bunx ecc-universal@2.2.3 setup` |
 
-The examples select [the published ECC 2.2.2 release](https://www.npmjs.com/package/ecc-universal/v/2.2.2), matching this repository's release version. A version pin is not a security audit or an integrity check. Review the release source and registry integrity before running package code; use a reviewed checkout for unreleased changes.
+The examples select [the published ECC 2.2.3 release](https://www.npmjs.com/package/ecc-universal/v/2.2.3), matching this repository's release version. A version pin is not a security audit or an integrity check. Review the release source and registry integrity before running package code; use a reviewed checkout for unreleased changes.
 
 Yarn Classic 1 does not provide `yarn dlx`; use `npx`, install the package globally, or upgrade Yarn for a temporary one-shot run.
 
@@ -197,7 +224,7 @@ The wizard inventories the official marketplace and every native Claude install 
 To configure more than one coding agent in one reviewed flow, use the multi-harness wizard:
 
 ```bash
-npx ecc-universal@2.2.2 install --guided
+npx ecc-universal@2.2.3 install --guided
 ```
 
 It lets you select any combination of Claude Code, Codex, and Kimi Code, shows each install channel and destination, preflights every selection before the first write, and asks for one final confirmation.
@@ -211,7 +238,7 @@ It lets you select any combination of Claude Code, Codex, and Kimi Code, shows e
 For automation, make every provider-specific choice explicit:
 
 ```bash
-npx ecc-universal@2.2.2 install --guided \
+npx ecc-universal@2.2.3 install --guided \
   --harness claude --harness codex --harness kimi \
   --claude-scope local --claude-hooks standard \
   --profile core --yes
@@ -220,16 +247,16 @@ npx ecc-universal@2.2.2 install --guided \
 Verify the native guided Codex path and managed Kimi path without writing first:
 
 ```bash
-npx ecc-universal@2.2.2 install --guided --harness codex --dry-run
-npx ecc-universal@2.2.2 install --profile core --target kimi --dry-run
+npx ecc-universal@2.2.3 install --guided --harness codex --dry-run
+npx ecc-universal@2.2.3 install --profile core --target kimi --dry-run
 ```
 
 Additional package-name commands are also available through the 2.2 alias:
 
 ```bash
-npx ecc-universal@2.2.2 consult "security reviews" --target claude
-npx ecc-universal@2.2.2 install --profile minimal --target claude --with capability:machine-learning
-npx ecc-universal@2.2.2 doctor --target kimi
+npx ecc-universal@2.2.3 consult "security reviews" --target claude
+npx ecc-universal@2.2.3 install --profile minimal --target claude --with capability:machine-learning
+npx ecc-universal@2.2.3 doctor --target kimi
 ```
 
 Do not use `npx ecc-install --profile minimal --target claude`: `ecc-install` is a binary name inside `ecc-universal`, not a separately published npm package.
@@ -378,11 +405,12 @@ cd ECC
 | Qwen CLI | `./install.sh --profile minimal --target qwen` | See the [Qwen guide](docs/QWEN-GUIDE.md) |
 | Hermes | `./install.sh --profile minimal --target hermes` | See the [Hermes setup guide](docs/HERMES-SETUP.md) |
 | OpenClaw | `./install.sh --profile minimal --target openclaw` | Managed home-directory install |
-| Kimi Code CLI | `./install.sh --profile minimal --target kimi` | Project-local `.kimi-code/` install · [Get Kimi Code](https://www.kimi.com/code?aff=ecc) |
+| Kimi Code CLI | `./install.sh --profile minimal --target kimi` | Project-local `.kimi-code/` install · [Get Kimi Code](https://www.kimi.ai/code?aff=ecc) |
 | CodeBuddy | `./install.sh --profile minimal --target codebuddy` | Project-local `.codebuddy/` install |
 | JoyCode | `./install.sh --profile minimal --target joycode` | Project-local `.joycode/` install |
+| GitHub Copilot | `./install.sh --profile full --target copilot` | Installs skills to `.github/skills/` and agents to `.github/agents/` for Copilot CLI |
 
-GitHub Copilot support is already included in this repository. `.github/copilot-instructions.md` provides the instruction layer, `.github/prompts/` contains the reusable `/plan`, `/tdd`, `/security-review`, `/build-fix`, and `/refactor` prompts, and `.vscode/settings.json` enables `chat.promptFiles`.
+GitHub Copilot support is already included in this repository. `.github/copilot-instructions.md` provides the instruction layer, `.github/prompts/` contains the reusable `/plan`, `/tdd`, `/security-review`, `/build-fix`, and `/refactor` prompts, and `.vscode/settings.json` enables `chat.promptFiles`. GitHub Copilot CLI additionally discovers the `.agents/skills/` subset from a plain clone with no setup; see [Platform Support](#platform-support) for the full catalog and agents.
 
 For a harness without a native ECC target, use the [manual adaptation guide](docs/MANUAL-ADAPTATION-GUIDE.md). It explains how to carry a small set of ECC skills and workflow instructions into chat-style tools without pretending hooks or native skill discovery are available.
 
@@ -401,7 +429,7 @@ Deep per-harness notes (feature parity, hook adapters, limitations) live in [Pla
 Use this when you want ECC's rules, agents, commands, platform config, and core workflows without runtime hooks:
 
 ```bash
-npx ecc-universal@2.2.2 install --profile minimal --target claude
+npx ecc-universal@2.2.3 install --profile minimal --target claude
 ```
 
 From a source checkout, the equivalent command is:
@@ -463,6 +491,7 @@ Manual component-by-component copying also works. Each component is fully indepe
 
 ```bash
 # Just agents
+mkdir -p ~/.claude/agents
 cp agents/*.md ~/.claude/agents/
 
 # Rules directories (common + language-specific)
@@ -507,7 +536,7 @@ Use this only when you are intentionally skipping the plugin path:
 ```bash
 git clone https://github.com/affaan-m/ECC.git
 cd ECC
-./install.sh --profile full
+./install.sh --profile full --enable-hooks
 ```
 
 Windows:
@@ -515,8 +544,10 @@ Windows:
 ```powershell
 git clone https://github.com/affaan-m/ECC.git
 cd ECC
-.\install.ps1 --profile full
+.\install.ps1 --profile full --enable-hooks
 ```
+
+These examples enable the automatic hook runtime. To install without hooks, replace `--enable-hooks` with `--no-hooks`.
 
 If you choose this path, stop there. Do not also run `/plugin install`.
 
@@ -586,11 +617,11 @@ If you installed from the universal package, run these commands from the same
 project directory used for installation:
 
 ```bash
-npx ecc-universal@2.2.2 list-installed
-npx ecc-universal@2.2.2 doctor
-npx ecc-universal@2.2.2 repair
-npx ecc-universal@2.2.2 uninstall --dry-run
-npx ecc-universal@2.2.2 uninstall
+npx ecc-universal@2.2.3 list-installed
+npx ecc-universal@2.2.3 doctor
+npx ecc-universal@2.2.3 repair
+npx ecc-universal@2.2.3 uninstall --dry-run
+npx ecc-universal@2.2.3 uninstall
 ```
 
 From a source checkout, inspect the managed state before reinstalling:
@@ -779,7 +810,7 @@ The `ito-compute-cli` package is currently unpublished. Build it locally from th
 
 ## What's New
 
-Current release: **2.2.2** (2026-08-31). Highlights of the 2.2 line:
+Current release: **2.2.3** (2026-10-01). Highlights of the 2.2 line:
 
 - Guided, manifest-driven setup across Claude Code, Codex, and Kimi Code, with install-state ownership, doctor, repair, and uninstall.
 - Native Antigravity install, a thin Pi adapter, and the packed-artifact release gate tested on Linux, macOS, and Windows.
@@ -795,8 +826,8 @@ Stable graduation of the 2.0 line: control-pane substrate, worktree lifecycle se
 
 ```text
 ECC/
-|-- agents/           # 68 specialized subagents for delegation
-|-- skills/           # 292 reusable workflows loaded on demand
+|-- agents/           # 71 specialized subagents for delegation
+|-- skills/           # 293 reusable workflows loaded on demand
 |-- commands/         # 94 maintained slash-command shims
 |-- rules/            # opt-in common and language standards
 |-- hooks/            # runtime automation and enforcement
@@ -819,7 +850,7 @@ ECC/
 |   |-- plugin.json         # Plugin metadata and component paths
 |   |-- marketplace.json    # Marketplace catalog for /plugin marketplace add
 |
-|-- agents/           # 67 specialized subagents for delegation
+|-- agents/           # 71 specialized subagents for delegation
 |   |-- planner.md           # Feature implementation planning
 |   |-- architect.md         # System design decisions
 |   |-- tdd-guide.md         # Test-driven development
@@ -846,6 +877,7 @@ ECC/
 |   |-- kotlin-reviewer.md   # Kotlin/Android/KMP code review
 |   |-- kotlin-build-resolver.md # Kotlin/Gradle build errors
 |   |-- harmonyos-app-resolver.md # HarmonyOS/ArkTS app development
+|   |-- ruby-reviewer.md     # Ruby/Rails code review
 |   |-- rust-reviewer.md     # Rust code review
 |   |-- rust-build-resolver.md # Rust build error resolution
 |   |-- pytorch-build-resolver.md # PyTorch/CUDA training errors
@@ -860,6 +892,7 @@ ECC/
 |   |-- article-writing/            # Long-form writing in a supplied voice without generic AI tone
 |   |-- content-engine/             # Multi-platform social content and repurposing workflows
 |   |-- market-research/            # Source-attributed market, competitor, and investor research
+|   |-- osint-investigation/        # OSINT methodology: competing hypotheses, falsification, visual and evidence verification
 |   |-- investor-materials/         # Pitch decks, one-pagers, memos, and financial models
 |   |-- investor-outreach/          # Personalized fundraising outreach and follow-up
 |   |-- continuous-learning/        # Legacy v1 Stop-hook pattern extraction
@@ -912,7 +945,6 @@ ECC/
 |   |-- swift-protocol-di-testing/  # Protocol-based DI for testable Swift code
 |   |-- search-first/               # Research-before-coding workflow
 |   |-- skill-stocktake/            # Audit skills and commands for quality
-|   |-- skill-host-compat/          # Lint skills for Codex-safe frontmatter and substitutions
 |   |-- liquid-glass-design/        # iOS 26 Liquid Glass design system
 |   |-- foundation-models-on-device/ # Apple on-device LLM with FoundationModels
 |   |-- swift-concurrency-6-2/      # Swift 6.2 Approachable Concurrency
@@ -939,7 +971,6 @@ ECC/
 |   |-- go-test.md          # /go-test - Go TDD workflow
 |   |-- go-build.md         # /go-build - Fix Go build errors
 |   |-- skill-create.md     # /skill-create - Generate skills from git history
-|   |-- skill-host-compat.md # /skill-host-compat - Lint skills for Codex/Cursor copies
 |   |-- instinct-status.md  # /instinct-status - View learned instincts
 |   |-- instinct-import.md  # /instinct-import - Import instincts
 |   |-- instinct-export.md  # /instinct-export - Export instincts
@@ -1198,7 +1229,7 @@ ECC's Memory Vault gives Claude, Codex, Hermes, OpenClaw, Kimi, and other harnes
 Skill-only, minimal, manual, and Claude plugin installs do not put the Memory Vault runtime on `PATH`. Install the npm runtime separately before using the CLI or optional MCP server:
 
 ```bash
-npm install -g ecc-universal@2.2.2
+npm install -g ecc-universal@2.2.3
 ecc memory init --scope project
 ecc memory search "authentication migration" --target-harness codex
 ecc memory doctor
@@ -1261,9 +1292,10 @@ Treat `stable`, `beta`, `experimental`, and `instruction-only` below as capabili
 |---|---|---|---|
 | Claude Code | Stable primary | Plugin or selective installer | The plugin advertises the installed catalog to the model; use a selective/manual profile when context footprint matters. Optional shell-backed skills are not portable to every OS. |
 | Codex | Supported native plugin | Codex marketplace plugin or repo config | Native hooks require an explicit trust decision and do not use Claude's hook profiles. The legacy sync is compatibility-only. |
-| Cursor | Beta project adapter | Selective installer into `.cursor/` | Agent discovery varies by Cursor build, and ECC's installer paths do not yet expose identical hook sets ([#2419](https://github.com/affaan-m/ECC/issues/2419)). |
+| Cursor | Beta project adapter | Selective installer into `.cursor/` | Agent discovery varies by Cursor build; hook events use profile-gated dispatchers, but full Claude feature parity is not claimed. |
 | OpenCode | Beta built plugin | Build plugin, then selective installer | ECC ships a subset of the catalog; connect a provider and select a model in OpenCode ([#2617](https://github.com/affaan-m/ECC/issues/2617)). |
-| GitHub Copilot | Instruction-only | Checked-in instructions and prompt files | No ECC hooks, runtime agents, delegation, or native skill discovery. |
+| GitHub Copilot Chat | Instruction-only | Checked-in instructions and prompt files | ECC hooks are not adapted. |
+| GitHub Copilot CLI | Beta project adapter | `--target copilot` places skills and adapted agents in `.github/` | ECC hooks, rules, and command shims are not installed by this target. |
 | Gemini, Zed, Antigravity, Qwen, Hermes, OpenClaw, Kimi, CodeBuddy, JoyCode | Experimental/minimal adapters | Harness-specific selective target | File placement and instruction portability are tested; full Claude feature parity is not claimed. |
 
 <details>
@@ -1372,16 +1404,16 @@ See [affaan-m/ECC#2065](https://github.com/affaan-m/ECC/issues/2065).
 | Capability | Claude Code | Codex | Cursor | OpenCode | GitHub Copilot |
 |---|---|---|---|---|---|
 | Instructions | Native | Native `AGENTS.md` | Project rules | Plugin instructions | Native instruction file |
-| Skills | Native installed set | Native plugin set | Build-dependent/project set | Built subset | Prompt/instruction references only |
-| Agents/delegation | Native agents | Codex multi-agent roles; Claude agent files are not installed as roles | Build-dependent project agents | Plugin agents | Not supported |
-| ECC hooks | Native plugin hooks | Native reviewed subset with explicit trust | Cursor hook adapter; install-path differences remain | Plugin events | Not supported |
+| Skills | Native installed set | Native plugin set | Build-dependent/project set | Built subset | Native discovery (Copilot CLI) from `.github/skills/`, `.agents/skills/`, `.claude/skills/` |
+| Agents/delegation | Native agents | Codex multi-agent roles; Claude agent files are not installed as roles | Build-dependent project agents | Plugin agents | Copilot CLI custom agents via `.github/agents/` and `--agent` |
+| ECC hooks | Native plugin hooks | Native reviewed subset with explicit trust | Cursor hook adapter; install-path differences remain | Plugin events | Not ported; Copilot CLI has its own plugin hook system |
 | MCP configuration | Available, explicit activation | Native plugin manifest; legacy sync can merge TOML | Explicit project/user config | Provider/plugin config | Not supplied by ECC |
-| Parity with Claude Code | Primary reference | Partial | Partial | Partial | Not a parity target |
+| Parity with Claude Code | Primary reference | Partial | Partial | Partial | Partial |
 
 **Key architectural decisions:**
 - **AGENTS.md** at root is the universal cross-tool file (read by Claude Code, Cursor, Codex, and OpenCode; GitHub Copilot uses `.github/copilot-instructions.md` instead)
 - **DRY adapter pattern** lets Cursor reuse Claude Code's hook scripts without duplication
-- **Skills format** (SKILL.md with YAML frontmatter) works across Claude Code, Codex, and OpenCode
+- **Skills format** (SKILL.md with YAML frontmatter) works across Claude Code, Codex, OpenCode, and GitHub Copilot CLI
 - Codex's narrower native hook set is supplemented by `AGENTS.md`, optional `model_instructions_file` overrides, and sandbox permissions
 
 <details>
@@ -1406,7 +1438,7 @@ ECC provides Cursor IDE support with hooks, rules, agents, skills, commands, and
 | Component | Count | Details |
 |-----------|-------|---------|
 | Hook Events | 15 | sessionStart, beforeShellExecution, afterFileEdit, beforeMCPExecution, beforeSubmitPrompt, and 10 more |
-| Hook Scripts | 16 | Thin Node.js scripts delegating to `scripts/hooks/` via shared adapter |
+| Hook Entrypoints | 15 | Thin Node.js event dispatchers delegating to `scripts/hooks/` via shared adapter |
 | Rules | 34 | 9 common (alwaysApply) + 25 language-specific (TypeScript, Python, Go, Swift, PHP) |
 | Agents | 48 | `.cursor/agents/ecc-*.md` when installed; prefixed to avoid collisions with user or marketplace agents |
 | Skills | Shared + Bundled | `.cursor/skills/` for translated additions |
@@ -1440,7 +1472,7 @@ Continuous learning v2 instincts remain separate under `CLV2_HOMUNCULUS_DIR` (de
 
 #### Hook architecture (DRY adapter pattern)
 
-Cursor has **more hook events than Claude Code** (20 vs 8). The `.cursor/hooks/adapter.js` module transforms Cursor's stdin JSON to Claude Code's format, allowing existing `scripts/hooks/*.js` to be reused without duplication.
+Cursor has **more hook events than Claude Code** (20 vs 8). The `.cursor/hooks/adapter.js` module transforms Cursor's stdin JSON to Claude Code's format, allowing existing `scripts/hooks/*.js` to be reused without duplication. Each Cursor event is registered with one event-level dispatcher so enabled checks run in a deterministic order and remain compatible with Cursor versions that execute only the first matching entry. The adapter resolves the shared runtime from both the ECC checkout and an installed project's `.cursor/scripts/` tree.
 
 ```
 Cursor stdin JSON -> adapter.js -> transforms -> scripts/hooks/*.js
@@ -1448,8 +1480,8 @@ Cursor stdin JSON -> adapter.js -> transforms -> scripts/hooks/*.js
 ```
 
 Key hooks:
-- **beforeShellExecution**: Blocks dev servers outside tmux (exit 2), git push review
-- **afterFileEdit**: Auto-format + TypeScript check + console.log warning
+- **beforeShellExecution**: Blocks git hook bypasses and dev servers outside tmux (exit 2), then adds profile-gated shell reminders
+- **afterFileEdit / stop**: Accumulates edited JS/TS files and runs one profile-gated format/typecheck batch at Stop, alongside the console.log audit
 - **beforeSubmitPrompt**: Detects secrets (sk-, ghp_, AKIA patterns) in prompts
 - **beforeTabFileRead**: Blocks Tab from reading .env, .key, .pem files (exit 2)
 - **beforeMCPExecution / afterMCPExecution**: MCP audit logging
@@ -1492,9 +1524,14 @@ npm install && bash scripts/sync-ecc-to-codex.sh
 cp .codex/config.toml ~/.codex/config.toml
 ```
 
-The sync script safely merges ECC MCP servers into your existing `~/.codex/config.toml` using an **add-only** strategy: it never removes or modifies your existing servers. Run with `--dry-run` to preview changes, or `--update-mcp` to force-refresh ECC servers to the latest recommended config.
+Normal MCP sync preserves existing server settings and warns when they differ from ECC's recommendation. An existing `chrome-devtools-mcp@latest` entry therefore stays unchanged; updating the repository alone does not adopt the recommended `chrome-devtools-mcp@1.10.1` pin. Existing legacy-sync users can preview and explicitly apply the refresh from the updated ECC checkout:
 
-For Context7, ECC uses the canonical Codex section name `[mcp_servers.context7]` while still launching the `@upstash/context7-mcp` package. If you already have a legacy `[mcp_servers.context7-mcp]` entry, `--update-mcp` migrates it to the canonical section name.
+```bash
+bash scripts/sync-ecc-to-codex.sh --dry-run --update-mcp
+bash scripts/sync-ecc-to-codex.sh --update-mcp
+```
+
+Review the preview before applying: `--update-mcp` replaces the entire recommended `chrome-devtools` server section, including custom command arguments and nested settings. Unrelated user-managed servers remain in place. Retired defaults such as Context7 are not refreshed or migrated by this flag.
 
 Codex macOS app:
 - Open this repository as your workspace.
@@ -1510,7 +1547,7 @@ Codex macOS app:
 | Config | 1 | `.codex/config.toml`: top-level approvals/sandbox/web_search, MCP servers, notifications, profiles |
 | AGENTS.md | 2 | Root (universal) + `.codex/AGENTS.md` (Codex-specific supplement) |
 | Skills | 32 | `.agents/skills/`: SKILL.md + agents/openai.yaml per skill |
-| MCP Servers | 6 | GitHub, Context7, Exa, Memory, Playwright, Sequential Thinking (7 with Supabase via `--update-mcp` sync) |
+| MCP Servers | 6 legacy reference entries | GitHub, Context7, Exa, Memory, Playwright, Sequential Thinking. Current managed sync recommends `chrome-devtools`; see the explicit refresh instructions above. |
 | Profiles | 2 | `strict` (read-only sandbox) and `yolo` (full auto-approve) |
 | Agent Roles | 3 | `.codex/agents/`: explorer, reviewer, docs-researcher |
 
@@ -1593,7 +1630,7 @@ opencode
 
 **Option 2: Install as npm package**
 ```bash
-npm install ecc-universal@2.2.2
+npm install ecc-universal@2.2.3
 ```
 
 Then add to your `opencode.json`:
@@ -1620,7 +1657,7 @@ For the full ECC OpenCode setup, either:
 <details>
 <summary><strong>GitHub Copilot support in depth</strong></summary>
 
-ECC provides **GitHub Copilot support** for VS Code via Copilot Chat's native instruction and prompt file system. No extra tooling required.
+ECC supports **GitHub Copilot** on two surfaces: Copilot Chat in VS Code, via its native instruction and prompt file system, and **GitHub Copilot CLI**, which discovers the shared skills already present in this repository. The optional `copilot` install target places canonical skills and adapted agents in the CLI's native project directories.
 
 #### What's included for GitHub Copilot
 
@@ -1641,6 +1678,99 @@ To use the workflow prompts in Copilot Chat:
 2. Click the **paperclip / attach** icon and select **Prompt...**, or type `/` and choose a prompt.
 3. Select the prompt (e.g. `plan`, `tdd`, `security-review`).
 
+#### Copilot CLI: skills and agents
+
+GitHub Copilot CLI discovers `SKILL.md` skills from `.github/skills/`,
+`.agents/skills/`, `.claude/skills/`, `~/.copilot/skills/`, and
+`~/.agents/skills/`, and custom agents from `.github/agents/`. ECC's skill and
+skill frontmatter is compatible. The managed `copilot` target adapts agent
+frontmatter to `name` and `description`, removing Claude-specific model and
+tool keys. Raw manual agent copies can retain unsupported metadata.
+
+Because ECC ships a skill subset in `.agents/skills/`, a plain clone of this
+repository is picked up by Copilot CLI with no configuration at all:
+
+```bash
+git clone https://github.com/affaan-m/ECC.git && cd ECC
+copilot skill list
+# The inventory depends on the checkout and CLI version.
+```
+
+In the contributor's September 2026 checkout, Copilot CLI 1.0.83 reported all 42 under `Project skills` with `source:
+"project"` and `enabled: true`. The three from `.claude/commands/` are Claude
+command files that Copilot surfaces as skills; they are reported with `path`
+set to the `.claude/commands` directory rather than to a per-skill subdirectory.
+
+To check this with a temporary npm-distributed CLI, run the pinned build
+against a throwaway clone:
+
+```bash
+git clone --depth 1 https://github.com/affaan-m/ECC.git && cd ECC
+npx -y @github/copilot@1.0.82 skill list --json | jq '[.[] | select(.source=="project")] | length'
+# Count the current inventory rather than assuming a fixed total.
+```
+
+That checkout's 39 + 3 split was reported by 1.0.82 from npm and by 1.0.83 installed
+locally, so the behaviour is not specific to one build or install method.
+
+To expose the full catalog, place `skills/` where Copilot CLI looks:
+
+```bash
+mkdir -p .github/skills
+cp -r skills/. .github/skills/
+copilot skill list --json > copilot-skills.json
+jq '[.[] | select(.path | contains(".github/skills"))] | length' copilot-skills.json
+# Compare with the current canonical skill catalog.
+```
+
+Filter on the path rather than on `source`: the CLI can also discover skills
+from other project locations and de-duplicates entries with the same skill
+name. Counts depend on the checkout and CLI version. The file redirection also
+avoids truncated large JSON output observed with Copilot CLI 1.0.82 on macOS.
+
+Copilot registers a skill under the `name` in its `SKILL.md` frontmatter, not
+its directory name, so catalog folders whose names differ from their frontmatter
+(for example `scientific-db-pubmed-database`, which declares
+`name: pubmed-database`) still load — they are just listed under the frontmatter
+name.
+
+Agents work the same way:
+
+```bash
+./install.sh --profile full --target copilot
+copilot --agent architect -p "Review this module's boundaries"
+```
+
+The contributor verified native discovery with Copilot CLI 1.0.83. Manually
+copied agent files that declare a Claude model
+name (`model: opus`, `model: sonnet`) emit a warning and fall back to the
+session's default model, so remove or remap `model:` if you want to pin one.
+
+#### Installing with the `copilot` target
+
+The steps above copy files by hand. The `copilot` install target does the same
+placement and additionally rewrites agent frontmatter so no warning is emitted:
+
+```bash
+./install.sh --profile full --target copilot
+# Windows: ./install.ps1 --profile full --target copilot
+```
+
+That writes skills to `.github/skills/`, agents to `.github/agents/`, and an
+install-state file to `.github/ecc-install-state.json`. Nothing is written
+outside `.github/`.
+
+The `full` profile selects the modules declared for Copilot. It can place fewer
+skills than a manual copy of the entire canonical catalog because modules
+that require another host's runtime are excluded. List the resulting native
+inventory to see what this checkout installs; a count is not a capability grant.
+
+Claude-only agent frontmatter (`model`, `tools`, `color`) is dropped during the
+copy: Copilot resolves the model from your own configuration, and it governs
+tool access per session through `--allow-tool`/`--deny-tool` rather than through
+agent frontmatter. ECC's rules, commands, and hooks are not installed by this
+target.
+
 #### Feature coverage
 
 | ECC Feature | Copilot equivalent |
@@ -1653,12 +1783,24 @@ To use the workflow prompts in Copilot Chat:
 | Build error resolution | `build-fix` prompt |
 | Refactoring | `refactor` prompt |
 | Commit message format | Per-task instruction in `settings.json` |
-| Hooks / automation | Not supported (Copilot has no hook system) |
-| Agents / delegation | Not supported (Copilot has no subagent API) |
+| Skills | Native discovery in Copilot CLI (`.github/skills/`, `.agents/skills/`) |
+| Agents / delegation | Copilot CLI custom agents (`.github/agents/`, `--agent`) |
+| Hooks / automation | ECC's hooks are not ported (Copilot CLI has its own plugin hook system) |
 
 #### Limitations
 
-GitHub Copilot does not have a hook system or a subagent API, so ECC's hook automations (auto-format, TypeScript check, session persistence, dev-server guard) and agent delegation are unavailable. The instruction and prompt layer still brings the full ECC coding philosophy (standards, security, TDD, and workflow) into every Copilot Chat session.
+ECC's hook automations (auto-format, TypeScript check, session persistence,
+dev-server guard) are written against Claude Code's hook event model and are
+not ported to Copilot. Copilot CLI does expose a hook system through its plugin
+format, but ECC does not currently ship a Copilot plugin, so none of ECC's hooks
+run there.
+
+ECC also does not install rules, commands, or hooks for Copilot. The `copilot`
+target installs skills and agents only. Skills that shell out to bundled
+scripts assume the same interpreters as on Claude Code. Copilot Chat in VS Code
+does not read `.github/skills/` or `.github/agents/`; those paths are Copilot
+CLI surfaces. The instruction and prompt layer is what carries ECC's coding
+philosophy into Copilot Chat sessions.
 </details>
 
 <details>

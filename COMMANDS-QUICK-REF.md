@@ -194,6 +194,11 @@ These lifecycle commands are also available through the `ecc` CLI.
 
 ## Docs & Research
 
+For public-source investigations starting from sparse clues, use the
+[`osint-investigation` skill](skills/osint-investigation/SKILL.md) to extract
+overlooked leads, connect fragmented evidence, and test competing explanations
+through deliberate falsification and visual verification.
+
 | Command | What it does |
 |---------|-------------|
 | `/ecc-guide` | Navigate ECC's current agents, skills, commands, hooks, install profiles, and docs from the live repository surface |
@@ -225,6 +230,7 @@ These lifecycle commands are also available through the `ecc` CLI.
 | `/setup-pm` | Configure package manager (npm / pnpm / yarn / bun) |
 | `/auto-update` | Pull the latest ECC repo changes and reinstall the current managed targets |
 | `/cost-report` | Generate a local Claude Code cost report from a cost-tracker SQLite database |
+| `/token-card` | Render a token-usage stat card from local agent session logs and commit it to the repo |
 | `/security-scan` | Run AgentShield against agent, hook, MCP, permission, and secret surfaces |
 | `/jira` | Retrieve a Jira ticket, analyze requirements, update status, or add comments |
 | `/pr` | Create a GitHub PR from current branch with unpushed commits |

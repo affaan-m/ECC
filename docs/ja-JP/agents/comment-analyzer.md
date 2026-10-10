@@ -1,7 +1,7 @@
 ---
 name: comment-analyzer
 description: コードコメントの正確性、完全性、保守性、コメント劣化リスクを分析します。
-model: sonnet
+model: haiku
 tools: [Read, Grep, Glob]
 ---
 

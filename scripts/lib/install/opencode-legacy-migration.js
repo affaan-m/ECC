@@ -4,7 +4,7 @@ const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
 
-const { readInstallState } = require('../install-state');
+const { readInstallState, validateInstallState } = require('../install-state');
 const { assertWithinTrustedRoot } = require('../path-safety');
 
 const OPENCODE_TARGET = 'opencode';
@@ -65,10 +65,14 @@ function inspectLegacyOpencodeState(location) {
     return { status: 'absent', state: null, error: null };
   }
   try {
-    if (!pathExists(location.installStatePath)) {
+    if (!pathExists(location.targetRoot)) {
       return { status: 'absent', state: null, error: null };
     }
     const rootStat = fs.lstatSync(location.targetRoot);
+    if (!rootStat.isDirectory() || rootStat.isSymbolicLink()) {
+      return { status: 'invalid', state: null, error: null };
+    }
+    if (!pathExists(location.installStatePath)) return { status: 'absent', state: null, error: null };
     const stateStat = fs.lstatSync(location.installStatePath);
     if (
       !rootStat.isDirectory()
@@ -78,7 +82,11 @@ function inspectLegacyOpencodeState(location) {
     ) {
       return { status: 'invalid', state: null, error: null };
     }
-    const state = readInstallState(location.installStatePath);
+    const { content } = hashFileNoFollow(location.installStatePath);
+    let state;
+    try { state = JSON.parse(content.toString('utf8')); }
+    catch { return { status: 'invalid', state: null, error: null }; }
+    if (!validateInstallState(state).valid) return { status: 'invalid', state: null, error: null };
     const isOpencode = state.target.target === OPENCODE_TARGET
       || state.target.id === 'opencode-home';
     if (
@@ -98,17 +106,19 @@ function inspectLegacyOpencodeState(location) {
   }
 }
 
-function hashFileNoFollow(filePath) {
+function hashFileNoFollow(filePath, fileSystem = fs) {
+  // The filesystem seam supplies operations, never the read-only access policy.
   const flags = fs.constants.O_RDONLY | (fs.constants.O_NOFOLLOW || 0);
-  const descriptor = fs.openSync(filePath, flags);
+  // Read-only opens ignore mode; adapters still receive an owner-only default.
+  const descriptor = fileSystem.openSync(filePath, flags, 0o600);
   try {
-    const before = fs.fstatSync(descriptor, { bigint: true });
+    const before = fileSystem.fstatSync(descriptor, { bigint: true });
     if (!before.isFile()) {
       throw new Error(`Refusing to read a non-file at ${filePath}`);
     }
-    const content = fs.readFileSync(descriptor);
-    const after = fs.fstatSync(descriptor, { bigint: true });
-    const finalPathStat = fs.lstatSync(filePath, { bigint: true });
+    const content = fileSystem.readFileSync(descriptor);
+    const after = fileSystem.fstatSync(descriptor, { bigint: true });
+    const finalPathStat = fileSystem.lstatSync(filePath, { bigint: true });
     const unchanged = before.dev === after.dev
       && before.ino === after.ino
       && before.size === after.size
@@ -123,11 +133,12 @@ function hashFileNoFollow(filePath) {
       throw new Error(`Refusing to read a file that changed during validation: ${filePath}`);
     }
     return {
+      content,
       digest: crypto.createHash('sha256').update(content).digest('hex'),
       stat: after,
     };
   } finally {
-    fs.closeSync(descriptor);
+    fileSystem.closeSync(descriptor);
   }
 }
 
@@ -202,7 +213,7 @@ function verifyManagedLegacyFile(operation, location, sourceRoot) {
   if (source.digest !== destination.digest) {
     return { retainedPath: destinationPath };
   }
-  return { destinationPath, stat: destination.stat };
+  return { destinationPath, digest: destination.digest, stat: destination.stat };
 }
 
 function pathExistsWith(fileSystem, filePath) {
@@ -256,6 +267,13 @@ function removeVerifiedLegacyFile(entry, location, fileSystem = fs) {
       );
       identityError.code = 'ESTALE';
       throw identityError;
+    }
+    // Recheck bytes after quarantine: an in-place edit retains the same inode.
+    // Production cleanup entries carry the digest verified against ledger/source.
+    if (entry.digest && hashFileNoFollow(quarantinePath, fileSystem).digest !== entry.digest) {
+      const changed = new Error(`Legacy OpenCode file changed during quarantine: ${safePath}`);
+      changed.code = 'ESTALE';
+      throw changed;
     }
     fileSystem.rmSync(quarantinePath);
     fileSystem.rmdirSync(quarantineDir);
@@ -393,6 +411,8 @@ function cleanupLegacyOpencodeInstall(plan) {
 module.exports = {
   cleanupLegacyOpencodeInstall,
   getLegacyOpencodeLocation,
+  getLegacyLocationForPlan,
   inspectLegacyOpencodeState,
   removeVerifiedLegacyFile,
+  verifyManagedLegacyFile,
 };

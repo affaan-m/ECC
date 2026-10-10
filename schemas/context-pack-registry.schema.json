@@ -1,0 +1,42 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "ECC context registry declaration",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "id", "inventory", "overrides"],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "id": { "const": "skill-registry@1" },
+    "inventory": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["source", "skillsRoot"],
+      "properties": {
+        "source": { "const": "manifests/install-modules.json" },
+        "skillsRoot": { "const": "skills" }
+      }
+    },
+    "overrides": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id"],
+        "properties": {
+          "id": { "$ref": "#/definitions/skillId" },
+          "dependencies": {
+            "type": "array", "uniqueItems": true,
+            "items": { "$ref": "#/definitions/skillId" }
+          },
+          "requiredResources": {
+            "type": "array", "uniqueItems": true,
+            "items": { "type": "string", "minLength": 1, "maxLength": 4096 }
+          }
+        }
+      }
+    }
+  },
+  "definitions": {
+    "skillId": { "type": "string", "pattern": "^skill:[a-z0-9]+(?:-[a-z0-9]+)*$" }
+  }
+}

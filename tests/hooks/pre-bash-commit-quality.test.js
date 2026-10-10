@@ -504,6 +504,32 @@ if (test('measures length of the full message past an apostrophe (not the trunca
   assert.strictEqual(res.message, subject);
   assert.ok(res.issues.some(i => i.type === 'length'), 'full (>72) message should trigger a length issue');
 })) passed++; else failed++;
-
+if (test('handles hash-prefixed python comments and string false-positives', () => {
+  inTempRepo(repoDir => {
+    writeAndStage(repoDir, 'script.py', [
+      '# console.log("commented out");',
+      '# debugger',
+      '# TODO: python unreferenced',
+      '# TODO: python issue #456',
+      'const str = "# TODO: string false positive";', // Greptile string limitation
+      ''
+    ].join('\n'));
+    
+    const input = JSON.stringify({ tool_input: { command: 'git commit -m "fix(hooks): python hash comments"' } });
+    
+    const origConsoleError = console.error;
+    let stderr = '';
+    console.error = msg => { stderr += msg + '\n'; };
+    
+    const result = hook.evaluate(input);
+    console.error = origConsoleError;
+    
+    assert.strictEqual(result.exitCode, 0, 'warning-only issues should not block');
+    assert.ok(stderr.includes('INFO Line 3:'), `expected python TODO warning`);
+    assert.ok(!stderr.includes('INFO Line 4'), 'referenced python TODO should not warn');
+    assert.ok(!stderr.includes('ERROR Line 2'), 'commented debugger should not error');
+    assert.ok(stderr.includes('INFO Line 5:'), `expected string limitation warning`);
+  });
+})) passed++; else failed++;
 console.log(`\nResults: Passed: ${passed}, Failed: ${failed}, Skipped: ${skipped}`);
 process.exit(failed > 0 ? 1 : 0);

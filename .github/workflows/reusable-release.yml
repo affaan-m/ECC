@@ -18,6 +18,8 @@ on:
         type: string
 
 permissions:
+  actions: read
+  checks: read
   contents: read
 
 jobs:
@@ -25,6 +27,8 @@ jobs:
     name: Verify Release
     runs-on: ubuntu-latest
     outputs:
+      release_sha: ${{ steps.release_gate.outputs.release_sha }}
+      tag_object_sha: ${{ steps.release_gate.outputs.tag_object_sha }}
       already_published: ${{ steps.npm_publish_state.outputs.already_published }}
       dist_tag: ${{ steps.npm_publish_state.outputs.dist_tag }}
       publish_tag: ${{ steps.npm_publish_state.outputs.publish_tag }}
@@ -56,6 +60,13 @@ jobs:
         with:
           node-version: '20.x'
           registry-url: 'https://registry.npmjs.org'
+
+      - name: Verify signed tag and exact-SHA CI gates
+        id: release_gate
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ inputs.tag }}
+        run: RELEASE_SHA="$(git rev-parse HEAD)" node scripts/ci/verify-release-gates.js
 
       - name: Install dependencies
         run: npm ci --ignore-scripts
@@ -208,6 +219,25 @@ jobs:
           ECC_RELEASE_SHA256: ${{ needs.verify.outputs.package_sha256 }}
         run: node -e "const crypto = require('crypto'); const fs = require('fs'); const file = process.env.ECC_RELEASE_PACKAGE; const expected = process.env.ECC_RELEASE_SHA256; if (!/^ecc-universal-[0-9A-Za-z.+-]+\.tgz$/.test(file || '')) throw new Error('Unexpected packed filename'); if (!/^[a-f0-9]{64}$/.test(expected || '')) throw new Error('Invalid packed SHA-256'); const archives = fs.readdirSync('.').filter(name => name.endsWith('.tgz')); if (archives.length !== 1 || archives[0] !== file) throw new Error('Expected exactly one downloaded archive'); const actual = crypto.createHash('sha256').update(fs.readFileSync(file)).digest('hex'); if (actual !== expected) throw new Error('Downloaded publish artifact SHA-256 mismatch')"
 
+      - name: Checkout verified gate source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.verify.outputs.release_sha }}
+          path: release-gate-source
+          persist-credentials: false
+          sparse-checkout: scripts/ci/verify-release-gates.js
+          sparse-checkout-cone-mode: false
+
+      # This read-only API check uses the existing publish job token. It is a
+      # snapshot; preventing subsequent tag movement requires protected tags.
+      - name: Recheck verified tag before publish
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ inputs.tag }}
+          RELEASE_SHA: ${{ needs.verify.outputs.release_sha }}
+          RELEASE_TAG_OBJECT_SHA: ${{ needs.verify.outputs.tag_object_sha }}
+        run: node release-gate-source/scripts/ci/verify-release-gates.js --tag-only
+
       - name: Publish npm package
         if: needs.verify.outputs.already_published != 'true'
         env:
@@ -223,7 +253,7 @@ jobs:
           PACKAGE_VERSION: ${{ needs.verify.outputs.package_version }}
         run: |
           REGISTRY_INTEGRITY=""
-          for ATTEMPT in 1 2 3 4 5 6; do
+          for ATTEMPT in $(seq 1 30); do
             set +e
             REGISTRY_INTEGRITY=$(npm view "${PACKAGE_NAME}@${PACKAGE_VERSION}" dist.integrity 2>&1)
             NPM_STATUS=$?
@@ -231,12 +261,12 @@ jobs:
             if [ "$NPM_STATUS" -eq 0 ]; then
               break
             fi
-            if [ "$ATTEMPT" -eq 6 ]; then
-              echo "::error::Published npm artifact was not readable after six attempts"
+            if [ "$ATTEMPT" -eq 30 ]; then
+              echo "::error::Published npm artifact was not readable after five minutes"
               printf '%s\n' "$REGISTRY_INTEGRITY"
               exit "$NPM_STATUS"
             fi
-            sleep 5
+            sleep 10
           done
           ECC_REGISTRY_INTEGRITY="$REGISTRY_INTEGRITY" node -e "const crypto = require('crypto'); const fs = require('fs'); const expected = process.env.ECC_REGISTRY_INTEGRITY; if (!/^sha512-[A-Za-z0-9+/]+={0,2}$/.test(expected || '')) throw new Error('Invalid published registry integrity'); const actual = 'sha512-' + crypto.createHash('sha512').update(fs.readFileSync(process.env.ECC_RELEASE_PACKAGE)).digest('base64'); if (actual !== expected) throw new Error('Published npm artifact does not match tested candidate')"
 

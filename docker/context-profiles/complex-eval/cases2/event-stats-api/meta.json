@@ -1,0 +1,11 @@
+{
+  "id": "event-stats-api",
+  "category": "correctness-and-performance",
+  "manualIds": ["skill:backend-patterns"],
+  "checkTimeoutMs": 120000,
+  "selection": {
+    "id": "complex-event-stats-api",
+    "category": "complex-correctness-performance",
+    "expectedIds": ["skill:backend-patterns"]
+  }
+}

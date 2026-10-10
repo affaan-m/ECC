@@ -1,4 +1,4 @@
-**Idioma:** [English](../../README.md) | [Português (Brasil)](../pt-BR/README.md) | [简体中文](../../README.zh-CN.md) | [繁體中文](../zh-TW/README.md) | [日本語](../ja-JP/README.md) | [한국어](../ko-KR/README.md) | [Türkçe](../tr/README.md) | [Русский](../ru/README.md) | [Tiếng Việt](../vi-VN/README.md) | [ไทย](../th/README.md) | [Deutsch](../de-DE/README.md) | **Español** | [Українська](../uk-UA/README.md)
+**Idioma:** [English](../../README.md) | [Português (Brasil)](../pt-BR/README.md) | [简体中文](../../README.zh-CN.md) | [繁體中文](../zh-TW/README.md) | [日本語](../ja-JP/README.md) | [한국어](../ko-KR/README.md) | [Türkçe](../tr/README.md) | [Русский](../ru/README.md) | [Tiếng Việt](../vi-VN/README.md) | [ไทย](../th/README.md) | [Deutsch](../de-DE/README.md) | **Español** | [Українська](../uk-UA/README.md) | [Polski](../pl/README.md) | [বাংলা](../bn/README.md)
 
 # ECC
 
@@ -28,7 +28,7 @@
 **Language / 语言 / 語言 / Dil / Язык / Ngôn ngữ / Idioma**
 
 [**English**](../../README.md) | [Português (Brasil)](../pt-BR/README.md) | [简体中文](../../README.zh-CN.md) | [繁體中文](../zh-TW/README.md) | [日本語](../ja-JP/README.md) | [한국어](../ko-KR/README.md)
- | [Türkçe](../tr/README.md) | [Русский](../ru/README.md) | [Tiếng Việt](../vi-VN/README.md) | [ไทย](../th/README.md) | [Deutsch](../de-DE/README.md) | **Español** | [Українська](../uk-UA/README.md)
+ | [Türkçe](../tr/README.md) | [Русский](../ru/README.md) | [Tiếng Việt](../vi-VN/README.md) | [ไทย](../th/README.md) | [Deutsch](../de-DE/README.md) | **Español** | [Українська](../uk-UA/README.md) | [Polski](../pl/README.md) | [বাংলা](../bn/README.md)
 
 </div>
 
@@ -1372,8 +1372,8 @@ Este proyecto es gratuito y de código abierto. Los patrocinadores ayudan a mant
 
 ## Enlaces
 
-- **Guía Resumida (Empieza aquí):** [La Guía Resumida de Everything Claude Code](https://x.com/affaanmustafa/status/2012378465664745795)
-- **Guía Extensa (Avanzado):** [La Guía Extensa de Everything Claude Code](https://x.com/affaanmustafa/status/2014040193557471352)
+- **Guía Resumida (Empieza aquí):** [La Guía Resumida de ECC](https://x.com/affaanmustafa/status/2012378465664745795)
+- **Guía Extensa (Avanzado):** [La Guía Extensa de ECC](https://x.com/affaanmustafa/status/2014040193557471352)
 - **Guía de Seguridad:** [Guía de Seguridad](../../the-security-guide.md) | [Hilo](https://x.com/affaanmustafa/status/2033263813387223421)
 - **Seguir:** [@affaanmustafa](https://x.com/affaanmustafa)
 

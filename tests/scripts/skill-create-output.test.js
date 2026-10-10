@@ -176,7 +176,7 @@ function runTests() {
     const output = new SkillCreateOutput('repo');
     const logs = captureLog(() => output.footer());
     const combined = logs.join('\n');
-    assert.ok(combined.includes('Everything Claude Code'), 'Should include project name');
+    assert.ok(combined.includes('ECC'), 'Should include project name');
   })) passed++; else failed++;
 
   // progressBar edge cases (tests the clamp fix)

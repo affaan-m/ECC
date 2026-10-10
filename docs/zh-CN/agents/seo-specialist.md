@@ -1,7 +1,7 @@
 ---
 name: seo-specialist
 description: SEO专家，负责技术SEO审计、页面优化、结构化数据、核心网页指标以及内容/关键词映射。用于网站审计、元标签审查、架构标记、站点地图和robots问题以及SEO修复计划。
-tools: ["Read", "Grep", "Glob", "Bash", "WebSearch", "WebFetch"]
+tools: ["Read", "Grep", "Glob", "WebSearch", "WebFetch"]
 model: sonnet
 ---
 

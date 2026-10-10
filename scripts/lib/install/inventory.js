@@ -6,6 +6,7 @@ const path = require('path');
 const { isWithinRoot, realpathNearestExisting } = require('../path-safety');
 
 const CURRENT_PLUGIN_ID = 'ecc@ecc';
+// Legacy plugin ids, kept so existing installs are still recognized.
 const LEGACY_PLUGIN_IDS = new Set([
   'everything-claude-code@everything-claude-code',
   'everything-claude-code@ecc',
@@ -49,6 +50,7 @@ function findManualClaudePlugin(options = {}) {
     ['ecc', 'plugin.json'],
     ['ecc@ecc', '.claude-plugin', 'plugin.json'],
     ['ecc@ecc', 'plugin.json'],
+    // Legacy install dir, kept for existing installs.
     ['everything-claude-code', '.claude-plugin', 'plugin.json'],
     ['everything-claude-code', 'plugin.json'],
   ];

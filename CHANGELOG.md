@@ -1,6 +1,28 @@
 # Changelog
 
+## 2.2.3 - 2026-10-01
+
+### Changed
+
+#### Naming
+
+- `pi/core` refers to the project as ECC only. The generated README and the bundled `blueprint` skill no longer expand the name; profile contents, package name (`ecc-pi-core`) and paths are unchanged.
+
+### Fixed
+
+#### Release workflow
+
+- Poll the npm registry for up to five minutes after `npm publish` before verifying the published artifact, so a slow registry no longer fails the run before `latest` is promoted and the GitHub Release is created.
+
 ## 2.2.2 - 2026-09-15
+
+### Added
+
+#### Pi core profile
+
+- Add `pi/core/`, a curated Pi-native skills+prompts-only profile for downstream packagers that mirror GitHub Releases: 123 portable engineering skills and 24 pure prompt-workflow commands, no extensions, no hooks, no runtime downloads, and no network or SaaS dependencies. The profile is generated deterministically from the explicit include/exclude lists in `manifests/pi-core.json` by `scripts/build-pi-core.js` and committed so release tarballs contain it verbatim; `pi/core/CURATION.md` lists every excluded skill and command with its reason.
+- The build fails on safety violations: non-allowlisted URL hosts, pipe-to-shell or fetch-and-run download forms, secrets or tokens, absolute per-user home paths, symlinks, invalid SKILL.md frontmatter, and duplicate skill names. The `council` skill ships as `ecc-council` inside pi/core to avoid catalog name clashes.
+- CI rebuilds pi/core and verifies it is committed up to date, then installs the Pi coding agent CLI and proves the profile loads fully offline (`PI_OFFLINE=1`), asserting every curated command is actually registered. The release workflow verifies VERSION matches the tag and that pi/core is current.
 
 ### Fixed
 

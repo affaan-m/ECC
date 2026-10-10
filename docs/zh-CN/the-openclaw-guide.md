@@ -4,7 +4,7 @@
 
 ***
 
-> **这是《Everything Claude Code 指南系列》的第 3 部分。** 第 1 部分是 [速成指南](the-shortform-guide.md)（设置和配置）。第 2 部分是 [长篇指南](the-longform-guide.md)（高级模式和工作流程）。本指南是关于安全性的——具体来说，当递归智能体基础设施将其视为次要问题时会发生什么。
+> **这是《ECC 指南系列》的第 3 部分。** 第 1 部分是 [速成指南](the-shortform-guide.md)（设置和配置）。第 2 部分是 [长篇指南](the-longform-guide.md)（高级模式和工作流程）。本指南是关于安全性的——具体来说，当递归智能体基础设施将其视为次要问题时会发生什么。
 
 我使用 OpenClaw 一周。以下是我的发现。
 
@@ -15,7 +15,7 @@
 
 ## 使用 OpenClaw 一周
 
-我想先说明我的观点。我构建 AI 编码工具。我的 everything-claude-code 仓库有 5 万多个星标。我创建了 AgentShield。我大部分工作时间都在思考智能体应如何与系统交互，以及这些交互可能出错的方式。
+我想先说明我的观点。我构建 AI 编码工具。我的 ECC 仓库有 5 万多个星标。我创建了 AgentShield。我大部分工作时间都在思考智能体应如何与系统交互，以及这些交互可能出错的方式。
 
 因此，当 OpenClaw 开始获得关注时，我像对待所有新工具一样：安装它，连接到几个频道，然后开始探测。不是为了破坏它。而是为了理解其安全模型。
 
@@ -468,4 +468,4 @@ OpenClaw 可以演变成这样。基础已经存在。社区积极参与。团�
 
 ***
 
-*Affaan Mustafa ([@affaanmustafa](https://x.com/affaanmustafa)) 构建 AI 编程工具并撰写关于 AI 基础设施安全的文章。他的 everything-claude-code 仓库在 GitHub 上拥有 5 万多个星标。他创建了 AgentShield 并凭借构建 [zenith.chat](https://zenith.chat) 赢得了 Anthropic x Forum Ventures 黑客松。*
+*Affaan Mustafa ([@affaanmustafa](https://x.com/affaanmustafa)) 构建 AI 编程工具并撰写关于 AI 基础设施安全的文章。他的 ECC 仓库在 GitHub 上拥有 5 万多个星标。他创建了 AgentShield 并凭借构建 [zenith.chat](https://zenith.chat) 赢得了 Anthropic x Forum Ventures 黑客松。*

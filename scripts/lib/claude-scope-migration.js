@@ -149,15 +149,13 @@ function validateExpectedScopes(plugins, expectedScopes, options = {}) {
   return installed;
 }
 
-function plannedActions(migration, destinationScope, marketplaceAction, hookConfiguration) {
+function plannedActions(migration, destinationScope, marketplaceAction) {
   const actions = [];
   if (migration.mode === 'migrate') {
     actions.push(marketplaceAction);
     actions.push([
       'plugin', 'install', CURRENT_PLUGIN_ID,
       '--scope', destinationScope,
-      '--config', `hooks_enabled=${hookConfiguration.hooks_enabled}`,
-      '--config', `hook_profile=${hookConfiguration.hook_profile}`,
     ]);
   }
   actions.push(['plugin', 'list', '--json']);
@@ -348,8 +346,7 @@ function migrateClaudePluginScope(options = {}, dependencies = {}) {
       plannedActions: plannedActions(
         migration,
         options.scope,
-        marketplaceAction,
-        hookConfiguration
+        marketplaceAction
       ),
       pluginId: CURRENT_PLUGIN_ID,
       sourceScope: migration.sourceScope,

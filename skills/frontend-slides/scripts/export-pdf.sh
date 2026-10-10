@@ -136,7 +136,7 @@ cat > "$TEMP_SCRIPT" << 'EXPORT_SCRIPT'
 import { chromium } from 'playwright';
 import { createServer } from 'http';
 import { readFileSync, existsSync, mkdirSync, unlinkSync, writeFileSync } from 'fs';
-import { join, extname, resolve } from 'path';
+import { join, extname, resolve, sep } from 'path';
 import { execSync } from 'child_process';
 
 const SERVE_DIR = process.argv[2];
@@ -166,10 +166,25 @@ const MIME_TYPES = {
   '.eot': 'application/vnd.ms-fontobject',
 };
 
+// Every request is confined to the deck directory: resolve the decoded path
+// against SERVE_ROOT and refuse anything that escapes it (../, %2e%2e, %2f).
+const SERVE_ROOT = resolve(SERVE_DIR);
 const server = createServer((req, res) => {
   // Decode URL-encoded characters (e.g., %20 -> space) so filenames with spaces resolve correctly
-  const decodedUrl = decodeURIComponent(req.url);
-  let filePath = join(SERVE_DIR, decodedUrl === '/' ? HTML_FILE : decodedUrl);
+  let decodedUrl;
+  try {
+    decodedUrl = decodeURIComponent((req.url || '/').split('?')[0]);
+  } catch {
+    res.writeHead(400);
+    res.end('Bad request');
+    return;
+  }
+  const filePath = resolve(SERVE_ROOT, '.' + (decodedUrl === '/' ? '/' + HTML_FILE : decodedUrl));
+  if (filePath !== SERVE_ROOT && !filePath.startsWith(SERVE_ROOT + sep)) {
+    res.writeHead(403);
+    res.end('Forbidden');
+    return;
+  }
   try {
     const content = readFileSync(filePath);
     const ext = extname(filePath).toLowerCase();
@@ -181,9 +196,9 @@ const server = createServer((req, res) => {
   }
 });
 
-// Find a free port
+// Find a free port on loopback only; the deck is rendered by the local headless browser
 const port = await new Promise((resolve) => {
-  server.listen(0, () => resolve(server.address().port));
+  server.listen(0, '127.0.0.1', () => resolve(server.address().port));
 });
 
 console.log(`  Local server on port ${port}`);

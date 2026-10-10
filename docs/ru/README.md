@@ -1,12 +1,12 @@
-**Язык:** [English](../../README.md) | [Português (Brasil)](../pt-BR/README.md) | [简体中文](../../README.zh-CN.md) | [繁體中文](../zh-TW/README.md) | [日本語](../ja-JP/README.md) | [한국어](../ko-KR/README.md) | [Türkçe](../tr/README.md) | **Русский** | [Tiếng Việt](../vi-VN/README.md) | [ไทย](../th/README.md) | [Deutsch](../de-DE/README.md) | [Українська](../uk-UA/README.md)
+**Язык:** [English](../../README.md) | [Português (Brasil)](../pt-BR/README.md) | [简体中文](../../README.zh-CN.md) | [繁體中文](../zh-TW/README.md) | [日本語](../ja-JP/README.md) | [한국어](../ko-KR/README.md) | [Türkçe](../tr/README.md) | **Русский** | [Tiếng Việt](../vi-VN/README.md) | [ไทย](../th/README.md) | [Deutsch](../de-DE/README.md) | [Українська](../uk-UA/README.md) | [Polski](../pl/README.md) | [বাংলা](../bn/README.md)
 
-# Everything Claude Code
+# ECC
 
-![Everything Claude Code — система повышения эффективности сред агентного ИИ](../../assets/hero.png)
+![ECC — система повышения эффективности сред агентного ИИ](../../assets/hero.png)
 
-[![Stars](https://img.shields.io/github/stars/affaan-m/everything-claude-code?style=flat)](https://github.com/affaan-m/everything-claude-code/stargazers)
-[![Forks](https://img.shields.io/github/forks/affaan-m/everything-claude-code?style=flat)](https://github.com/affaan-m/everything-claude-code/network/members)
-[![Contributors](https://img.shields.io/github/contributors/affaan-m/everything-claude-code?style=flat)](https://github.com/affaan-m/everything-claude-code/graphs/contributors)
+[![Stars](https://img.shields.io/github/stars/affaan-m/ECC?style=flat)](https://github.com/affaan-m/ECC/stargazers)
+[![Forks](https://img.shields.io/github/forks/affaan-m/ECC?style=flat)](https://github.com/affaan-m/ECC/network/members)
+[![Contributors](https://img.shields.io/github/contributors/affaan-m/ECC?style=flat)](https://github.com/affaan-m/ECC/graphs/contributors)
 [![npm ecc-universal](https://img.shields.io/npm/dw/ecc-universal?label=ecc-universal%20weekly%20downloads&logo=npm)](https://www.npmjs.com/package/ecc-universal)
 [![npm ecc-agentshield](https://img.shields.io/npm/dw/ecc-agentshield?label=ecc-agentshield%20weekly%20downloads&logo=npm)](https://www.npmjs.com/package/ecc-agentshield)
 [![GitHub App Install](https://img.shields.io/endpoint?url=https%3A%2F%2Fapi.ecc.tools%2Fbadge%2Finstalls&logo=github)](https://github.com/marketplace/ecc-tools)
@@ -27,7 +27,7 @@
 
 **Язык / 语言 / 語言 / Dil / Ngôn ngữ**
 
-[**English**](../../README.md) | [Português (Brasil)](../pt-BR/README.md) | [简体中文](../../README.zh-CN.md) | [繁體中文](../zh-TW/README.md) | [日本語](../ja-JP/README.md) | [한국어](../ko-KR/README.md) | [Türkçe](../tr/README.md) | **Русский** | [Tiếng Việt](../vi-VN/README.md) | [ไทย](../th/README.md) | [Deutsch](../de-DE/README.md) | [Українська](../uk-UA/README.md)
+[**English**](../../README.md) | [Português (Brasil)](../pt-BR/README.md) | [简体中文](../../README.zh-CN.md) | [繁體中文](../zh-TW/README.md) | [日本語](../ja-JP/README.md) | [한국어](../ko-KR/README.md) | [Türkçe](../tr/README.md) | **Русский** | [Tiếng Việt](../vi-VN/README.md) | [ไทย](../th/README.md) | [Deutsch](../de-DE/README.md) | [Українська](../uk-UA/README.md) | [Polski](../pl/README.md) | [বাংলা](../bn/README.md)
 
 </div>
 
@@ -51,12 +51,12 @@ ECC v2.0.0-rc.1 добавляет публичную историю опера�
 <tr>
 <td width="33%">
 <a href="https://x.com/affaanmustafa/status/2012378465664745795">
-<img src="../../assets/images/guides/shorthand-guide.png" alt="Краткое руководство по Everything Claude Code" />
+<img src="../../assets/images/guides/shorthand-guide.png" alt="Краткое руководство по ECC" />
 </a>
 </td>
 <td width="33%">
 <a href="https://x.com/affaanmustafa/status/2014040193557471352">
-<img src="../../assets/images/guides/longform-guide.png" alt="Подробное руководство по Everything Claude Code" />
+<img src="../../assets/images/guides/longform-guide.png" alt="Подробное руководство по ECC" />
 </a>
 </td>
 <td width="33%">
@@ -136,7 +136,7 @@ ECC v2.0.0-rc.1 добавляет публичную историю опера�
 
 ### v1.4.1 — Исправление ошибки (февраль 2026)
 
-- **Исправлена потеря содержимого при импорте инстинктов** — `parse_instinct_file()` незаметно отбрасывал всё содержимое после frontmatter (разделы Action, Evidence, Examples) во время `/instinct-import`. ([#148](https://github.com/affaan-m/everything-claude-code/issues/148), [#161](https://github.com/affaan-m/everything-claude-code/pull/161))
+- **Исправлена потеря содержимого при импорте инстинктов** — `parse_instinct_file()` незаметно отбрасывал всё содержимое после frontmatter (разделы Action, Evidence, Examples) во время `/instinct-import`. ([#148](https://github.com/affaan-m/ECC/issues/148), [#161](https://github.com/affaan-m/ECC/pull/161))
 
 ### v1.4.0 — Многоязычные правила, мастер установки и PM2 (февраль 2026)
 
@@ -160,7 +160,7 @@ ECC v2.0.0-rc.1 добавляет публичную историю опера�
 - **Управление сессиями** — команда `/sessions` для истории сессий
 - **Непрерывное обучение v2** — обучение на основе инстинктов с оценкой уверенности, импортом/экспортом и эволюцией
 
-Полный журнал изменений смотрите в [Releases](https://github.com/affaan-m/everything-claude-code/releases).
+Полный журнал изменений смотрите в [Releases](https://github.com/affaan-m/ECC/releases).
 
 ---
 
@@ -232,7 +232,7 @@ npx ecc-universal consult "security reviews" --target claude
 
 У ECC теперь три публичных идентификатора, и они не взаимозаменяемы:
 
-- исходный репозиторий GitHub: `affaan-m/everything-claude-code`
+- исходный репозиторий GitHub: `affaan-m/ECC`
 - идентификатор Claude marketplace/plugin: `ecc@ecc`
 - npm-пакет: `ecc-universal`
 
@@ -252,8 +252,8 @@ npx ecc-universal consult "security reviews" --target claude
 
 ```bash
 # Сначала клонируйте репозиторий
-git clone https://github.com/affaan-m/everything-claude-code.git
-cd everything-claude-code
+git clone https://github.com/affaan-m/ECC.git
+cd ECC
 
 # Установите зависимости (выберите пакетный менеджер)
 npm install        # или: pnpm install | yarn install | bun install
@@ -442,7 +442,7 @@ export ECC_SESSION_START_CONTEXT=off
 Этот репозиторий — **плагин Claude Code**: установите его напрямую или скопируйте компоненты вручную.
 
 ```
-everything-claude-code/
+ECC/
 |-- .claude-plugin/   # Манифесты плагина и marketplace
 |   |-- plugin.json         # Метаданные плагина и пути компонентов
 |   |-- marketplace.json    # Каталог marketplace для /plugin marketplace add
@@ -751,7 +751,7 @@ Claude Code v2.1+ **автоматически загружает** `hooks/hooks
 Duplicate hooks file detected: ./hooks/hooks.json resolves to already-loaded file
 ```
 
-**История:** это уже приводило к повторяющимся циклам fix/revert в репозитории ([#29](https://github.com/affaan-m/everything-claude-code/issues/29), [#52](https://github.com/affaan-m/everything-claude-code/issues/52), [#103](https://github.com/affaan-m/everything-claude-code/issues/103)). Поведение менялось между версиями Claude Code, что вызывало путаницу. Теперь есть регрессионный тест, который не даёт вернуть эту ошибку.
+**История:** это уже приводило к повторяющимся циклам fix/revert в репозитории ([#29](https://github.com/affaan-m/ECC/issues/29), [#52](https://github.com/affaan-m/ECC/issues/52), [#103](https://github.com/affaan-m/ECC/issues/103)). Поведение менялось между версиями Claude Code, что вызывало путаницу. Теперь есть регрессионный тест, который не даёт вернуть эту ошибку.
 
 ---
 
@@ -777,7 +777,7 @@ Duplicate hooks file detected: ./hooks/hooks.json resolves to already-loaded fil
     "ecc": {
       "source": {
         "source": "github",
-        "repo": "affaan-m/everything-claude-code"
+        "repo": "affaan-m/ECC"
       }
     }
   },
@@ -793,20 +793,20 @@ Duplicate hooks file detected: ./hooks/hooks.json resolves to already-loaded fil
 >
 > ```bash
 > # Сначала клонируйте репозиторий
-> git clone https://github.com/affaan-m/everything-claude-code.git
+> git clone https://github.com/affaan-m/ECC.git
 >
 > # Вариант A: правила user-level (применяются ко всем проектам)
 > mkdir -p ~/.claude/rules/ecc
-> cp -r everything-claude-code/rules/common ~/.claude/rules/ecc/
-> cp -r everything-claude-code/rules/typescript ~/.claude/rules/ecc/   # выберите свой стек
-> cp -r everything-claude-code/rules/python ~/.claude/rules/ecc/
-> cp -r everything-claude-code/rules/golang ~/.claude/rules/ecc/
-> cp -r everything-claude-code/rules/php ~/.claude/rules/ecc/
+> cp -r ECC/rules/common ~/.claude/rules/ecc/
+> cp -r ECC/rules/typescript ~/.claude/rules/ecc/   # выберите свой стек
+> cp -r ECC/rules/python ~/.claude/rules/ecc/
+> cp -r ECC/rules/golang ~/.claude/rules/ecc/
+> cp -r ECC/rules/php ~/.claude/rules/ecc/
 >
 > # Вариант B: правила project-level (применяются только к текущему проекту)
 > mkdir -p .claude/rules/ecc
-> cp -r everything-claude-code/rules/common .claude/rules/ecc/
-> cp -r everything-claude-code/rules/typescript .claude/rules/ecc/     # выберите свой стек
+> cp -r ECC/rules/common .claude/rules/ecc/
+> cp -r ECC/rules/typescript .claude/rules/ecc/     # выберите свой стек
 > ```
 
 ---
@@ -817,35 +817,35 @@ Duplicate hooks file detected: ./hooks/hooks.json resolves to already-loaded fil
 
 ```bash
 # Клонировать репозиторий
-git clone https://github.com/affaan-m/everything-claude-code.git
+git clone https://github.com/affaan-m/ECC.git
 
 # Скопировать агентов в ваш конфиг Claude
-cp everything-claude-code/agents/*.md ~/.claude/agents/
+cp ECC/agents/*.md ~/.claude/agents/
 
 # Скопировать директории правил (common + language-specific)
 mkdir -p ~/.claude/rules/ecc
-cp -r everything-claude-code/rules/common ~/.claude/rules/ecc/
-cp -r everything-claude-code/rules/typescript ~/.claude/rules/ecc/   # выберите свой стек
-cp -r everything-claude-code/rules/python ~/.claude/rules/ecc/
-cp -r everything-claude-code/rules/golang ~/.claude/rules/ecc/
-cp -r everything-claude-code/rules/php ~/.claude/rules/ecc/
+cp -r ECC/rules/common ~/.claude/rules/ecc/
+cp -r ECC/rules/typescript ~/.claude/rules/ecc/   # выберите свой стек
+cp -r ECC/rules/python ~/.claude/rules/ecc/
+cp -r ECC/rules/golang ~/.claude/rules/ecc/
+cp -r ECC/rules/php ~/.claude/rules/ecc/
 
 # Сначала скопировать навыки (основной рабочий интерфейс)
 # Рекомендуется для новых пользователей: только core/general skills
 mkdir -p ~/.claude/skills
-cp -r everything-claude-code/.agents/skills/* ~/.claude/skills/
-cp -r everything-claude-code/skills/search-first ~/.claude/skills/
+cp -r ECC/.agents/skills/* ~/.claude/skills/
+cp -r ECC/skills/search-first ~/.claude/skills/
 # Claude Code загружает навыки только из прямых подкаталогов ~/.claude/skills.
 # Не вкладывайте ручную установку в ~/.claude/skills/ecc/.
 
 # Опционально: добавляйте нишевые/framework-specific skills только при необходимости
 # for s in django-patterns django-tdd laravel-patterns springboot-patterns; do
-# cp -r everything-claude-code/skills/$s ~/.claude/skills/
+# cp -r ECC/skills/$s ~/.claude/skills/
 # done
 
 # Опционально: сохранить поддерживаемую slash-command совместимость во время миграции
 mkdir -p ~/.claude/commands
-cp everything-claude-code/commands/*.md ~/.claude/commands/
+cp ECC/commands/*.md ~/.claude/commands/
 
 # Retired shims находятся в legacy-command-shims/commands/.
 # Копируйте отдельные файлы оттуда только если вам всё ещё нужны старые имена вроде /tdd.
@@ -1019,7 +1019,7 @@ e2e-testing skill                             → e2e-runner: тесты кри�
 <details>
 <summary><b>Хуки не работают / я вижу ошибки "Duplicate hooks file"</b></summary>
 
-Это самая частая проблема. **НЕ добавляйте поле `"hooks"` в `.claude-plugin/plugin.json`.** Claude Code v2.1+ автоматически загружает `hooks/hooks.json` из установленных плагинов. Явное объявление вызывает ошибки обнаружения дубликатов. См. [#29](https://github.com/affaan-m/everything-claude-code/issues/29), [#52](https://github.com/affaan-m/everything-claude-code/issues/52), [#103](https://github.com/affaan-m/everything-claude-code/issues/103).
+Это самая частая проблема. **НЕ добавляйте поле `"hooks"` в `.claude-plugin/plugin.json`.** Claude Code v2.1+ автоматически загружает `hooks/hooks.json` из установленных плагинов. Явное объявление вызывает ошибки обнаружения дубликатов. См. [#29](https://github.com/affaan-m/ECC/issues/29), [#52](https://github.com/affaan-m/ECC/issues/52), [#103](https://github.com/affaan-m/ECC/issues/103).
 </details>
 
 <details>
@@ -1064,11 +1064,11 @@ claude
 
 ```bash
 # Только агенты
-cp everything-claude-code/agents/*.md ~/.claude/agents/
+cp ECC/agents/*.md ~/.claude/agents/
 
 # Только правила
 mkdir -p ~/.claude/rules/ecc/
-cp -r everything-claude-code/rules/common ~/.claude/rules/ecc/
+cp -r ECC/rules/common ~/.claude/rules/ecc/
 ```
 
 Каждый компонент полностью независим.
@@ -1081,7 +1081,7 @@ cp -r everything-claude-code/rules/common ~/.claude/rules/ecc/
 - **Cursor**: предварительно адаптированные конфиги в `.cursor/`. См. [Поддержка Cursor IDE](#поддержка-cursor-ide).
 - **Gemini CLI**: экспериментальная project-local поддержка через `.gemini/GEMINI.md` и общий plumbing установщика.
 - **OpenCode**: полная поддержка плагина в `.opencode/`. См. [Поддержка OpenCode](#поддержка-opencode).
-- **Codex**: первоклассная поддержка macOS app и CLI, с guards против adapter drift и SessionStart fallback. См. PR [#257](https://github.com/affaan-m/everything-claude-code/pull/257).
+- **Codex**: первоклассная поддержка macOS app и CLI, с guards против adapter drift и SessionStart fallback. См. PR [#257](https://github.com/affaan-m/ECC/pull/257).
 - **Antigravity**: плотная настройка для workflows, skills, agents и flattened rules в `.agents/`. См. [Antigravity Guide](../ANTIGRAVITY-GUIDE.md).
 - **Ненативные среды**: ручной fallback path для Grok и похожих интерфейсов. См. [Manual Adaptation Guide](../MANUAL-ADAPTATION-GUIDE.md).
 - **Claude Code**: нативно — это основная цель.
@@ -1276,7 +1276,7 @@ Skills в `.agents/skills/` автоматически загружаются Co
 | documentation-lookup | Актуальные docs библиотек и фреймворков через Context7 MCP |
 | e2e-testing | Playwright E2E tests |
 | eval-harness | Eval-driven development |
-| everything-claude-code | Development conventions и patterns для проекта |
+| ecc-conventions | Development conventions и patterns для проекта |
 | exa-search | Neural search через Exa MCP для web, code, company research |
 | fal-ai-media | Unified media generation для images, video и audio |
 | frontend-patterns | React/Next.js patterns |
@@ -1404,7 +1404,7 @@ opencode
 
 **Вариант 1: использовать напрямую**
 ```bash
-cd everything-claude-code
+cd ECC
 opencode
 ```
 
@@ -1573,7 +1573,7 @@ Agent Teams создаёт несколько context windows. Каждый уч
 
 ## Проекты сообщества
 
-Проекты, построенные на Everything Claude Code или вдохновлённые им:
+Проекты, построенные на ECC или вдохновлённые им:
 
 | Проект | Описание |
 |--------|----------|
@@ -1593,14 +1593,14 @@ Agent Teams создаёт несколько context windows. Каждый уч
 
 ## История звёзд
 
-[![Star History Chart](https://api.star-history.com/svg?repos=affaan-m/everything-claude-code&type=Date)](https://star-history.com/#affaan-m/everything-claude-code&Date)
+[![Star History Chart](https://api.star-history.com/svg?repos=affaan-m/ECC&type=Date)](https://star-history.com/#affaan-m/ECC&Date)
 
 ---
 
 ## Ссылки
 
-- **Краткое руководство (начните здесь):** [The Shorthand Guide to Everything Claude Code](https://x.com/affaanmustafa/status/2012378465664745795)
-- **Подробное руководство (продвинутый уровень):** [The Longform Guide to Everything Claude Code](https://x.com/affaanmustafa/status/2014040193557471352)
+- **Краткое руководство (начните здесь):** [The Shorthand Guide to ECC](https://x.com/affaanmustafa/status/2012378465664745795)
+- **Подробное руководство (продвинутый уровень):** [The Longform Guide to ECC](https://x.com/affaanmustafa/status/2014040193557471352)
 - **Руководство по безопасности:** [Security Guide](../../the-security-guide.md) | [Тред](https://x.com/affaanmustafa/status/2033263813387223421)
 - **Подписаться:** [@affaanmustafa](https://x.com/affaanmustafa)
 

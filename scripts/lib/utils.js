@@ -195,9 +195,11 @@ function sameRepoIdentity(a, b) {
   if (!a || !b) return false;
   if (normalizeRepoPath(a) === normalizeRepoPath(b)) return true;
   try {
-    const sa = fs.statSync(a);
-    const sb = fs.statSync(b);
-    return sa.ino !== 0 && sa.dev === sb.dev && sa.ino === sb.ino;
+    // Windows file IDs can exceed Number.MAX_SAFE_INTEGER; rounded IDs may
+    // otherwise make distinct files look identical.
+    const sa = fs.statSync(a, { bigint: true });
+    const sb = fs.statSync(b, { bigint: true });
+    return sa.ino !== 0n && sa.dev === sb.dev && sa.ino === sb.ino;
   } catch {
     return false;
   }

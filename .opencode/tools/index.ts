@@ -4,7 +4,7 @@
  * These tools extend OpenCode with additional capabilities.
  */
 
-// Re-export all tools
+// OpenCode loads these sources in place; tsc rewrites .ts imports for dist.
 export { default as runTests } from "./run-tests.ts"
 export { default as checkCoverage } from "./check-coverage.ts"
 export { default as securityAudit } from "./security-audit.ts"

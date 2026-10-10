@@ -1,0 +1,36 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "ECC read-only context profile",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "id", "description", "registryId", "selection", "budget"],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "id": { "enum": ["lean@1", "full@1"] },
+    "description": { "type": "string", "minLength": 1, "maxLength": 2000 },
+    "registryId": { "const": "skill-registry@1" },
+    "selection": {
+      "type": "object", "additionalProperties": false,
+      "required": ["eager", "required", "remainder"],
+      "properties": {
+        "eager": { "oneOf": [{ "const": "all" }, { "$ref": "#/definitions/skillIds" }] },
+        "required": { "$ref": "#/definitions/skillIds" },
+        "remainder": { "const": "routed" }
+      }
+    },
+    "budget": {
+      "type": "object", "additionalProperties": false,
+      "required": ["tokens", "mode"],
+      "properties": {
+        "tokens": { "const": 8000 },
+        "mode": { "enum": ["blocking", "report-only"] }
+      }
+    }
+  },
+  "definitions": {
+    "skillIds": {
+      "type": "array", "uniqueItems": true,
+      "items": { "type": "string", "pattern": "^skill:[a-z0-9]+(?:-[a-z0-9]+)*$" }
+    }
+  }
+}
