@@ -614,15 +614,20 @@ function sedExecParts(script, budget) {
 }
 
 // Model sed's argv: which operands are scripts, which are file names (data).
+// GNU sed collects -e/--expression scripts from ANY argv position — a later -e
+// after positional operands still executes — so options are parsed through the
+// whole argv. When any script option is given, every positional is a file;
+// otherwise the first positional is the script (verified against GNU sed 4.9).
 // Returns the script strings, or null when the invocation shape is unmodeled —
 // the caller then keeps today's opaque default instead of guessing.
 function sedScriptParts(words, budget) {
   const scripts = [];
+  const positionals = [];
   let i = 1;
   while (i < words.length) {
     const raw = words[i].value;
     budget.spend(raw.length + 1);
-    if (raw === '--') { i++; break; }
+    if (raw === '--') break; // remaining operands are files (data)
     if (raw === '--expression') {
       if (!words[i + 1]) return null;
       scripts.push(words[i + 1].value); i += 2; continue;
@@ -640,15 +645,16 @@ function sedScriptParts(words, budget) {
       if (raw === '-f') return null; // script comes from a file we cannot read
       if (/^-l[0-9]+$/.test(raw)) { i++; continue; }
       if (/^-[nsEruzb]+$/.test(raw)) { i++; continue; }
-      return null; // -i suffix ambiguity and unknown short options
+      return null; // -i suffix ambiguity, unknown/attached short options
     }
-    break; // first positional operand
+    positionals.push(raw); i++; // operands: first becomes the script only when no script option was given
   }
   if (!scripts.length) {
-    if (i >= words.length) return null; // no script operand at all
-    scripts.push(words[i].value);
+    if (!positionals.length) return null; // no script operand at all
+    scripts.push(positionals[0]);
   }
-  // Remaining operands are file names: data, deliberately left uninspected.
+  // With any -e/--expression present, every positional is a file: data,
+  // deliberately left uninspected.
   return scripts;
 }
 

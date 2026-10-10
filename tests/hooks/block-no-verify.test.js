@@ -2165,7 +2165,13 @@ const sedCases = [
   // Litmus anchors from the #3051 direction check (existing behavior pinned).
   ['quoted-as-data through echo stays allowed', 'echo "git commit --no-verify"', 0],
   ['direct --no-verify stays blocked', 'git commit --no-verify -m x', 2],
-  ['mixed quoting smuggling a real flag stays blocked', "git commit '--no-verify' -m x", 2]
+  ['mixed quoting smuggling a real flag stays blocked', "git commit '--no-verify' -m x", 2],
+  // GNU sed collects -e scripts from any argv position (CodeRabbit finding on
+  // this PR): an execution construct after positional operands still executes.
+  ['later -e script after positional operands is scanned', "printf x | sed -e 's/x/y/' - -e 's/y/git commit --no-verify/e'", 2],
+  ['later -e after a positional script operand is scanned', "sed 's/x/y/' -e 'e git commit --no-verify'", 2],
+  ['later --expression= after positionals is scanned', "sed 's/x/y/' --expression='s/x/git commit --no-verify/e'", 2],
+  ['-- ends options: later tokens are file operands', "sed -e 's/x/y/' -- 'git commit --no-verify'", 0]
 ];
 for (const [name, command, expected] of sedCases) {
   if (test(`sed model ${name}`, () => {
