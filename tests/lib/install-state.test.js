@@ -434,9 +434,11 @@ function runTests() {
       const { spawn } = require('child_process');
       const script = 'const fs = require("fs");' +
         'const {readInstallState, writeInstallState} = require(process.env.REPO_ROOT + "/scripts/lib/install-state");' +
+        'for (let round = 0; round < 30; round += 1) {' +
         'const state = readInstallState(process.env.STATE_PATH);' +
         'state.lastValidatedAt = process.env.MARKER;' +
         'writeInstallState(process.env.STATE_PATH, state);' +
+        '}' +
         'fs.writeFileSync(process.env.DONE_FILE, "ok");';
       const children = markers.slice(1).map(marker => {
         const tag = marker.replace(/:/g, '-');
@@ -456,18 +458,10 @@ function runTests() {
         fs.closeSync(errFd);
         return { child, marker, doneFile, errFile };
       });
-      assert.ok(
-        children.some(entry => entry.child.exitCode === null),
-        'expected writers to still be running right after launch'
-      );
-      let midRead = null;
-      try {
-        midRead = readInstallState(statePath);
-      } catch (_error) {
-        midRead = null;
-      }
-      const deadline = Date.now() + 60000;
+      const deadline = Date.now() + 120000;
       for (;;) {
+        const snapshot = readInstallState(statePath);
+        assert.ok(markers.includes(snapshot.lastValidatedAt));
         const pending = children.filter(entry => !fs.existsSync(entry.doneFile));
         if (pending.length === 0) break;
         if (Date.now() > deadline) {
@@ -480,9 +474,6 @@ function runTests() {
       }
       for (const entry of children) {
         assert.strictEqual(fs.readFileSync(entry.errFile, 'utf8'), '', `writer ${entry.marker} failed`);
-      }
-      if (midRead !== null) {
-        assert.ok(markers.includes(midRead.lastValidatedAt));
       }
       const final = readInstallState(statePath);
       assert.ok(markers.includes(final.lastValidatedAt));
