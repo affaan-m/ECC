@@ -341,8 +341,8 @@ function readInstallState(filePath) {
 
 function writeInstallState(filePath, state) {
   assertValidInstallState(state, filePath);
-  fs.mkdirSync(path.dirname(filePath), { recursive: true });
-  fs.writeFileSync(filePath, `${JSON.stringify(state, null, 2)}\n`);
+  const { writeFileAtomic } = require('./atomic-write');
+  writeFileAtomic(filePath, `${JSON.stringify(state, null, 2)}\n`);
   return state;
 }
 

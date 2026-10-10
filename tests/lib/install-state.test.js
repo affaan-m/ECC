@@ -328,6 +328,131 @@ function runTests() {
     }
   })) passed++; else failed++;
 
+  function makeState(targetRoot, statePath, marker) {
+    return createInstallState({
+      adapter: { id: 'claude-home' },
+      targetRoot,
+      installStatePath: statePath,
+      request: {
+        profile: 'core',
+        modules: [],
+        legacyLanguages: [],
+        legacyMode: false,
+      },
+      resolution: {
+        selectedModules: ['rules-core'],
+        skippedModules: [],
+      },
+      operations: [],
+      source: {
+        repoVersion: CURRENT_PACKAGE_VERSION,
+        repoCommit: 'abc123',
+        manifestVersion: 1,
+      },
+      lastValidatedAt: marker,
+    });
+  }
+
+  function listStagingFiles(dirPath) {
+    return fs.readdirSync(dirPath).filter(name => name.includes('.tmp'));
+  }
+
+  if (test('writeInstallState preserves the previous valid state when rename fails', () => {
+    const testDir = createTestDir();
+    const statePath = path.join(testDir, 'ecc-install-state.json');
+
+    try {
+      writeInstallState(statePath, makeState(testDir, statePath, '2026-01-01T00:00:00Z'));
+      const originalRenameSync = fs.renameSync;
+      fs.renameSync = () => { throw new Error('injected rename failure'); };
+      try {
+        assert.throws(
+          () => writeInstallState(statePath, makeState(testDir, statePath, '2026-02-01T00:00:00Z')),
+          /injected rename failure/
+        );
+      } finally {
+        fs.renameSync = originalRenameSync;
+      }
+      assert.strictEqual(readInstallState(statePath).lastValidatedAt, '2026-01-01T00:00:00Z');
+      assert.deepStrictEqual(listStagingFiles(testDir), []);
+    } finally {
+      cleanupTestDir(testDir);
+    }
+  })) passed++; else failed++;
+
+  if (test('writeInstallState cleans up staging files when the write fails', () => {
+    const testDir = createTestDir();
+    const statePath = path.join(testDir, 'ecc-install-state.json');
+
+    try {
+      const originalWriteFileSync = fs.writeFileSync;
+      fs.writeFileSync = () => { throw new Error('injected write failure'); };
+      try {
+        assert.throws(
+          () => writeInstallState(statePath, makeState(testDir, statePath, '2026-01-01T00:00:00Z')),
+          /injected write failure/
+        );
+      } finally {
+        fs.writeFileSync = originalWriteFileSync;
+      }
+      assert.ok(!fs.existsSync(statePath));
+      assert.deepStrictEqual(listStagingFiles(testDir), []);
+    } finally {
+      cleanupTestDir(testDir);
+    }
+  })) passed++; else failed++;
+
+  if (test('writeInstallState replaces symlinks instead of following them', () => {
+    if (process.platform === 'win32') return;
+    const testDir = createTestDir();
+    const statePath = path.join(testDir, 'ecc-install-state.json');
+    const targetPath = path.join(testDir, 'link-target.json');
+    fs.writeFileSync(targetPath, '{"untouched":true}\n');
+
+    try {
+      fs.symlinkSync(targetPath, statePath);
+      writeInstallState(statePath, makeState(testDir, statePath, '2026-01-01T00:00:00Z'));
+      assert.ok(fs.lstatSync(statePath).isFile());
+      assert.strictEqual(readInstallState(statePath).lastValidatedAt, '2026-01-01T00:00:00Z');
+      assert.strictEqual(fs.readFileSync(targetPath, 'utf8'), '{"untouched":true}\n');
+    } finally {
+      cleanupTestDir(testDir);
+    }
+  })) passed++; else failed++;
+
+  if (test('concurrent writeInstallState calls always leave a complete valid state', () => {
+    const testDir = createTestDir();
+    const statePath = path.join(testDir, 'ecc-install-state.json');
+    const markers = ['2026-03-01T00:00:00Z', '2026-03-02T00:00:00Z', '2026-03-03T00:00:00Z', '2026-03-04T00:00:00Z'];
+
+    try {
+      writeInstallState(statePath, makeState(testDir, statePath, markers[0]));
+      const { spawnSync } = require('child_process');
+      const script = 'const {readInstallState, writeInstallState} = require(process.env.REPO_ROOT + "/scripts/lib/install-state");' +
+        'const state = readInstallState(process.env.STATE_PATH);' +
+        'state.lastValidatedAt = process.env.MARKER;' +
+        'writeInstallState(process.env.STATE_PATH, state);';
+      for (const marker of markers.slice(1)) {
+        const child = spawnSync(process.execPath, ['-e', script], {
+          encoding: 'utf8',
+          timeout: 30000,
+          env: {
+            ...process.env,
+            REPO_ROOT: path.join(__dirname, '..', '..'),
+            STATE_PATH: statePath,
+            MARKER: marker,
+          },
+        });
+        assert.strictEqual(child.status, 0, child.stderr);
+      }
+      const final = readInstallState(statePath);
+      assert.ok(markers.includes(final.lastValidatedAt));
+      assert.deepStrictEqual(listStagingFiles(testDir), []);
+    } finally {
+      cleanupTestDir(testDir);
+    }
+  })) passed++; else failed++;
+
   console.log(`\nResults: Passed: ${passed}, Failed: ${failed}`);
   process.exit(failed > 0 ? 1 : 0);
 }
