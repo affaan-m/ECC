@@ -26,6 +26,35 @@ Dynamic workflow mode should produce a task-local harness only when the harness 
 - **Eval**: at least one pass/fail check tied to the task, not only "it ran".
 - **Handoff**: a short artifact that tells the next operator what happened, what is blocked, and how to resume.
 
+### Preserve Input Boundaries
+
+Make two independent parts of `Inputs` explicit before discovery or execution:
+
+- **Action-to-tool bindings**: which tool may read, write, or publish for each
+  operation. A tool being available does not authorize it for another action.
+- **Entity scope**: selected account, project, workspace, period, and exclusions,
+  separately from search filters such as a shared payee, label, or name.
+
+Carry both into executor instructions and the handoff. Apply the entity boundary
+to discovery, batch preparation, and remaining-work reports, not only to writes.
+If a required boundary is ambiguous, hold that group and ask for the missing
+boundary. Continue independent work whose scope is already clear.
+
+If the selected tool lacks an operation, report the limitation and hold that
+operation rather than silently substituting another tool. An explicit later
+exception changes only the authorized actions, entities, and phase; record that
+change without retroactively treating earlier substitutions as authorized.
+
+Use synthetic cases when evaluating this contract:
+
+| Case | Expected routing |
+| --- | --- |
+| Tool A may read; tool B is selected for writes but cannot update RECORD_A | Report B's limitation; no fallback write through A |
+| User later permits A to update RECORD_A only | A may perform that update; other writes retain their existing bindings |
+| PAYEE_X appears under ACCOUNT_A and ACCOUNT_B; only A is selected and B is deferred | Discovery, executable batch, and remainder include ACCOUNT_A only |
+
+These are harness eval specifications, not claims of a live connector test.
+
 ## Dynamic Harness Decision Tree
 
 1. **One-shot task**: keep it inline. Do not invent a harness.
@@ -49,6 +78,8 @@ Inputs:
 - Repo or workspace:
 - External systems:
 - Credentials policy:
+- Action-to-tool bindings (read/write/publish):
+- Selected entities, period, and exclusions (separate from search filters):
 
 Loop:
 1. Discover current state.
@@ -65,6 +96,7 @@ Eval:
 Handoff:
 - Status:
 - Evidence:
+- Preserved tool bindings and entity scope; explicit changes and their phase:
 - Next action:
 ```
 
