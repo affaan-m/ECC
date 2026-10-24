@@ -13,11 +13,48 @@ ECC 2.0 renamed the repo (`affaan-m/everything-claude-code` → `affaan-m/ECC`) 
 /plugin uninstall everything-claude-code@everything-claude-code
 ```
 
-Then remove any leftover 1.x folders (see below) and restart the session.
+If you registered 1.x through `settings.json`, also [migrate its marketplace declaration](#migrating-a-settingsjson-marketplace-declaration). Then review any leftover 1.x folders (see below) and restart the session.
 
 ## "I now see two ECC plugins"
 
 Expected. `ecc@ecc` and `everything-claude-code@everything-claude-code` are treated as separate plugins by Claude Code. Uninstall the old one; keep only `ecc@ecc`. Running both duplicates skills, commands, and hook executions.
+
+## Migrating a `settings.json` marketplace declaration
+
+Uninstalling the old plugin does not itself replace a persistent `extraKnownMarketplaces` declaration. Migrate the marketplace even if you do not want to enable the ECC plugin.
+
+1. Back up the settings files that declare `everything-claude-code` (user `~/.claude/settings.json`, project `.claude/settings.json`, or local `.claude/settings.local.json`). Check each applicable scope; ask your administrator to update managed declarations. Preserve unrelated marketplaces, settings, and plugin enablement choices.
+2. In `/plugin`, inspect the installed plugins associated with the old `everything-claude-code` marketplace. Record anything you need to reinstall and back up any plugin data you need. Removing a marketplace can uninstall **all plugins from it**, remove their enablement entries, and delete their saved configuration/data. Move any plugins you still need to their intended marketplace before retiring the old one; the new ECC identifier is `ecc@ecc`.
+3. Retire the old registration through Claude Code's supported controls: open `/plugin` → **Marketplaces**, select `everything-claude-code`, and remove it after reviewing the affected plugins. The shell equivalent is:
+
+   ```bash
+   claude plugin marketplace remove everything-claude-code
+   ```
+
+   Use the name reported by `claude plugin marketplace list`, not the repository URL. If the old entry is already absent, skip removal. See Claude Code's [marketplace command reference](https://code.claude.com/docs/en/plugins/cli-reference#plugin-marketplace-remove) for scope options and removal effects.
+4. In each settings file that declared the old marketplace, remove any remaining `extraKnownMarketplaces["everything-claude-code"]` entry and merge in the current declaration below. Do not replace the whole settings file or leave both keys behind:
+
+   ```json
+   {
+     "extraKnownMarketplaces": {
+       "ecc": {
+         "source": {
+           "source": "github",
+           "repo": "affaan-m/ECC"
+         }
+       }
+     }
+   }
+   ```
+
+   This snippet registers the marketplace only. If you previously enabled the old plugin and want to continue using it, install `ecc@ecc` and use `"ecc@ecc": true` in `enabledPlugins` at the intended scope. If you kept it disabled, preserve `"ecc@ecc": false`; if you did not enable it, do not add an enablement entry just to repair the marketplace. Remove any obsolete `everything-claude-code@everything-claude-code` enablement entry while preserving unrelated entries.
+5. Restart Claude Code and run `/plugin marketplace list` (or `claude plugin marketplace list --json` from the shell). Confirm that the legacy ECC marketplace is absent and `ecc` points to `affaan-m/ECC`; unrelated marketplaces should remain. In the JSON output, check that ECC's `installLocation` directory exists and its `.claude-plugin/marketplace.json` declares `"name": "ecc"`. Use `/plugin` to confirm the plugin's enabled/disabled state matches your choice. If the old marketplace returns, recheck the settings scopes for a remaining declaration rather than repeatedly deleting its cache.
+
+### Abandoned temporary marketplace clones
+
+If plugin storage is unexpectedly large, inspect both `~/.claude/plugins/marketplaces/` and `~/.claude/plugins/cache/` for `temp_git*` directories. A temporary-looking name alone does not prove a directory is abandoned. Compare its path against registered marketplace locations and installed plugin paths, and inspect its Git remote/configuration to identify its source. A former ECC URL is evidence of that clone's source, not proof that ECC caused repeated cloning.
+
+Close Claude Code sessions and ensure no install/update process is using a directory before considering cleanup. Back up anything needed and remove only individually verified abandoned clones. Do not blanket-delete the plugin registry, `known_marketplaces.json`, `installed_plugins.json`, active marketplaces, or active plugin caches. If you cannot establish that a directory is unused, leave it in place. Marketplace migration repairs stale declarations; it does not establish or fix Claude Code's temporary-clone cleanup behavior.
 
 ## Leftover folders after uninstalling 1.x
 
