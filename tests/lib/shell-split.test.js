@@ -1,5 +1,6 @@
 'use strict';
 const assert = require('assert');
+const { spawnSync } = require('child_process');
 const { splitShellSegments } = require('../../scripts/lib/shell-split');
 
 console.log('=== Testing shell-split.js ===\n');
@@ -69,9 +70,26 @@ test('escaped double quote inside double quotes', () => {
   const segs = splitShellSegments('echo "hello \\"world\\"" && echo bye');
   assert.strictEqual(segs.length, 2);
 });
-test('escaped single quote inside single quotes', () => {
-  const segs = splitShellSegments("echo 'hello \\'world\\'' && echo bye");
-  assert.strictEqual(segs.length, 2);
+test('a backslash inside single quotes cannot escape the closing quote', () => {
+  assert.deepStrictEqual(splitShellSegments("echo 'x\\'; npm run dev"), ["echo 'x\\'", 'npm run dev']);
+  assert.deepStrictEqual(splitShellSegments("echo 'x\\'\nnpm run dev"), ["echo 'x\\'", 'npm run dev']);
+});
+test('ANSI-C quotes keep escaped apostrophes and shell operators as data', () => {
+  const actualLaunch = "export x=$'it\\'s here'; npm run dev";
+  const literalInstruction = "echo $'x\\' && npm run dev'";
+  assert.deepStrictEqual(splitShellSegments(actualLaunch), ["export x=$'it\\'s here'", 'npm run dev']);
+  assert.deepStrictEqual(splitShellSegments("export x=$'it\\'s here'\nnpm run dev"), ["export x=$'it\\'s here'", 'npm run dev']);
+  assert.deepStrictEqual(splitShellSegments(literalInstruction), [literalInstruction]);
+  if (process.platform !== 'win32') {
+    const syntax = spawnSync('/bin/bash', ['-n', '-c', actualLaunch], { encoding: 'utf8' });
+    assert.strictEqual(syntax.status, 0, syntax.stderr);
+    const value = spawnSync('/bin/bash', ['-c', "export x=$'it\\'s here'; printf '%s' \"$x\""], { encoding: 'utf8' });
+    assert.strictEqual(value.status, 0, value.stderr);
+    assert.strictEqual(value.stdout, "it's here");
+    const text = spawnSync('/bin/bash', ['-c', literalInstruction], { encoding: 'utf8' });
+    assert.strictEqual(text.status, 0, text.stderr);
+    assert.strictEqual(text.stdout, "x' && npm run dev\n");
+  }
 });
 
 // Escaped operators outside quotes
@@ -144,6 +162,9 @@ test('a here-document delimiter is a shell word, read without its quotes', () =>
   // $'...' decodes its escapes: $'E\x4fF' is EOF, and $'it\'s' is it's
   assert.deepStrictEqual(splitShellSegments("cat <<$'E\\x4fF'\nE\\x4fF\nnpm run dev\nEOF\nls"), ["cat <<$'E\\x4fF'", 'ls']);
   assert.deepStrictEqual(splitShellSegments("cat <<$'it\\'s'\nnpm run dev\nit's\nls"), ["cat <<$'it\\'s'", 'ls']);
+  // Bash keeps a double-quoted delimiter open across an escaped quote.
+  assert.deepStrictEqual(splitShellSegments('cat <<E"F\\"O"\nEF"O\nnpm run dev'), ['cat <<E"F\\"O"', 'npm run dev']);
+  assert.deepStrictEqual(splitShellSegments('cat <<EO\\\nF\nEOF\nnpm run dev'), ['cat <<EO\\\nF', 'npm run dev']);
   // Hex and octal escapes are bytes, so both of these are the UTF-8 delimiter é
   assert.deepStrictEqual(splitShellSegments("cat <<$'\\xc3\\xa9'\n\u00c3\u00a9\nnpm run dev\n\u00e9\nls"), ["cat <<$'\\xc3\\xa9'", 'ls']);
   assert.deepStrictEqual(splitShellSegments("cat <<$'\\303\\251'\nnpm run dev\n\u00e9\nls"), ["cat <<$'\\303\\251'", 'ls']);
