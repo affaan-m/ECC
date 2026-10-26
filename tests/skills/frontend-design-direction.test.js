@@ -8,6 +8,7 @@ const { spawnSync } = require('node:child_process');
 const { test } = require('node:test');
 const script = path.resolve(__dirname, '../../skills/frontend-design-direction/scripts/check-evidence.js');
 const { checkEvidence } = require(script);
+const { trySymlink } = require('../lib/helpers/symlink-support');
 
 function report() {
   const observation = { status: 'pass', evidence: 'Observed in the local test run.' };
@@ -118,8 +119,8 @@ test('CLI requires a nonempty local artifact and fails safely on invalid input',
     assert.equal(run(input).status, 1, 'empty artifact must fail');
     fs.writeFileSync(path.join(dir, 'render.png'), 'nonempty local artifact');
     fs.writeFileSync(path.join(external, 'render.png'), 'nonempty external artifact');
-    fs.symlinkSync(path.join(dir, 'render.png'), path.join(dir, 'linked.png'));
-    fs.symlinkSync(path.join(external, 'render.png'), path.join(dir, 'outside'));
+    if (!trySymlink(path.join(dir, 'render.png'), path.join(dir, 'linked.png'))) return;
+    if (!trySymlink(path.join(external, 'render.png'), path.join(dir, 'outside'))) return;
     fs.symlinkSync(external, path.join(dir, 'external-dir'), 'junction');
     for (const artifact of ['.', 'https://example.com/render.png', path.join(dir, 'render.png'),
       '../render.png', 'C:\\render.png', 'linked.png', 'outside', 'external-dir/render.png']) {

@@ -7,6 +7,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const { spawnSync } = require('child_process');
+const { trySymlink } = require('./helpers/symlink-support');
 
 const {
   createStateStore,
@@ -399,7 +400,7 @@ async function runTests() {
 
     try {
       fs.writeFileSync(targetPath, 'do not overwrite');
-      fs.symlinkSync(targetPath, dbPath);
+      if (!trySymlink(targetPath, dbPath)) return;
 
       await assert.rejects(
         () => createStateStore({ dbPath }),
@@ -419,7 +420,7 @@ async function runTests() {
 
     try {
       fs.mkdirSync(outsideDir);
-      fs.symlinkSync(outsideDir, linkedParent, process.platform === 'win32' ? 'junction' : 'dir');
+      if (!trySymlink(outsideDir, linkedParent, process.platform === 'win32' ? 'junction' : 'dir')) return;
 
       await assert.rejects(
         () => createStateStore({ dbPath }),
