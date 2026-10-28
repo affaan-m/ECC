@@ -18,6 +18,8 @@
 # Perfect for email attachments, printing, or embedding in documents.
 set -euo pipefail
 
+SCRIPT_DIR=$(CDPATH= cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+
 # --- Colors ---
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -123,6 +125,9 @@ TEMP_SCRIPT="$TEMP_DIR/export-slides.mjs"
 SERVE_DIR=$(dirname "$INPUT_HTML")
 HTML_FILENAME=$(basename "$INPUT_HTML")
 
+# The export script imports the hardened static server from this skill folder
+cp "$SCRIPT_DIR/static-server.mjs" "$TEMP_DIR/static-server.mjs"
+
 cat > "$TEMP_SCRIPT" << 'EXPORT_SCRIPT'
 // export-slides.mjs - Playwright script to export HTML slides to PDF
 //
@@ -134,10 +139,10 @@ cat > "$TEMP_SCRIPT" << 'EXPORT_SCRIPT'
 // 5. Generates a PDF with all slides as landscape pages
 
 import { chromium } from 'playwright';
-import { createServer } from 'http';
 import { readFileSync, existsSync, mkdirSync, unlinkSync, writeFileSync } from 'fs';
-import { join, extname, resolve, sep } from 'path';
+import { join, extname, resolve } from 'path';
 import { execSync } from 'child_process';
+import { startStaticServer } from './static-server.mjs';
 
 const SERVE_DIR = process.argv[2];
 const HTML_FILE = process.argv[3];
@@ -146,60 +151,12 @@ const SCREENSHOT_DIR = process.argv[5];
 const VP_WIDTH = parseInt(process.argv[6]) || 1920;
 const VP_HEIGHT = parseInt(process.argv[7]) || 1080;
 
-// --- Simple static file server ---
-// (We need HTTP so that Google Fonts and relative assets load correctly)
+// --- Loopback-only static file server ---
+// (We need HTTP so that Google Fonts and relative assets load correctly.
+// static-server.mjs binds 127.0.0.1, rejects foreign Host headers, and refuses
+// any path or symlink that resolves outside SERVE_DIR.)
 
-const MIME_TYPES = {
-  '.html': 'text/html',
-  '.css': 'text/css',
-  '.js': 'application/javascript',
-  '.json': 'application/json',
-  '.png': 'image/png',
-  '.jpg': 'image/jpeg',
-  '.jpeg': 'image/jpeg',
-  '.gif': 'image/gif',
-  '.svg': 'image/svg+xml',
-  '.webp': 'image/webp',
-  '.woff': 'font/woff',
-  '.woff2': 'font/woff2',
-  '.ttf': 'font/ttf',
-  '.eot': 'application/vnd.ms-fontobject',
-};
-
-// Every request is confined to the deck directory: resolve the decoded path
-// against SERVE_ROOT and refuse anything that escapes it (../, %2e%2e, %2f).
-const SERVE_ROOT = resolve(SERVE_DIR);
-const server = createServer((req, res) => {
-  // Decode URL-encoded characters (e.g., %20 -> space) so filenames with spaces resolve correctly
-  let decodedUrl;
-  try {
-    decodedUrl = decodeURIComponent((req.url || '/').split('?')[0]);
-  } catch {
-    res.writeHead(400);
-    res.end('Bad request');
-    return;
-  }
-  const filePath = resolve(SERVE_ROOT, '.' + (decodedUrl === '/' ? '/' + HTML_FILE : decodedUrl));
-  if (filePath !== SERVE_ROOT && !filePath.startsWith(SERVE_ROOT + sep)) {
-    res.writeHead(403);
-    res.end('Forbidden');
-    return;
-  }
-  try {
-    const content = readFileSync(filePath);
-    const ext = extname(filePath).toLowerCase();
-    res.writeHead(200, { 'Content-Type': MIME_TYPES[ext] || 'application/octet-stream' });
-    res.end(content);
-  } catch {
-    res.writeHead(404);
-    res.end('Not found');
-  }
-});
-
-// Find a free port on loopback only; the deck is rendered by the local headless browser
-const port = await new Promise((resolve) => {
-  server.listen(0, '127.0.0.1', () => resolve(server.address().port));
-});
+const { server, port } = await startStaticServer({ serveDir: SERVE_DIR, indexFile: HTML_FILE });
 
 console.log(`  Local server on port ${port}`);
 
@@ -211,7 +168,7 @@ const page = await browser.newPage({
 });
 
 // Load the presentation
-await page.goto(`http://localhost:${port}/`, { waitUntil: 'networkidle' });
+await page.goto(`http://127.0.0.1:${port}/`, { waitUntil: 'networkidle' });
 
 // Wait for fonts to load
 await page.evaluate(() => document.fonts.ready);
