@@ -5381,10 +5381,13 @@ mod tests {
             metrics: SessionMetrics::default(),
         })?;
 
-        let low = create_remote_dispatch_request(
+        let low = create_remote_dispatch_request_inner(
             &db,
             &cfg,
+            RemoteDispatchKind::Standard,
+            &repo_root,
             "Low priority cleanup",
+            None,
             Some("lead"),
             TaskPriority::Low,
             "claude",
@@ -5394,10 +5397,13 @@ mod tests {
             "cli",
             None,
         )?;
-        let critical = create_remote_dispatch_request(
+        let critical = create_remote_dispatch_request_inner(
             &db,
             &cfg,
+            RemoteDispatchKind::Standard,
+            &repo_root,
             "Critical production incident",
+            None,
             Some("lead"),
             TaskPriority::Critical,
             "claude",

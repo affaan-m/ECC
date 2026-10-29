@@ -12,7 +12,7 @@
 - 신뢰할 수 있는, 잘 정의된 계획에서만 활성화
 - 탐색적 작업에서는 비활성화
 - dangerously-skip-permissions 플래그를 절대 사용하지 않기
-- 대신 `~/.claude.json`에서 `allowedTools`를 설정
+- 대신 `~/.claude/settings.json`(또는 프로젝트의 `.claude/settings.json`)에서 `permissions.allow` 규칙을 설정
 
 ## TodoWrite 모범 사례
 

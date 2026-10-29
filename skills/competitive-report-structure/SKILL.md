@@ -1,11 +1,6 @@
 ---
 name: competitive-report-structure
-description: >-
-  Use after benchmark-methodology has produced scored competitor profile cards.
-  Assembles findings into a decision-grade report: landscape map, competitor
-  profiles, benchmarking matrix, white-space analysis, strategic recommendations,
-  and team alignment trigger questions. Final step in the three-skill competitive
-  pipeline.
+description: Assemble scored competitor profile cards (from benchmark-methodology) into a decision-grade competitive report with landscape map, competitor tiers, benchmarking matrix, white-space analysis, strategic recommendations, and team alignment trigger questions. Use when presenting competitive findings to leadership or a board, writing a competitive landscape report, or as the final step of the competitive analysis pipeline.
 ---
 
 # Competitive Report Structure

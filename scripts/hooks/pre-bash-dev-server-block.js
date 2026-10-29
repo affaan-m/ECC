@@ -56,7 +56,9 @@ function readToken(input, startIndex) {
         continue;
       }
 
-      if (ch === '\\' && quote === '"' && index + 1 < input.length) {
+      // Inside double quotes, bash drops a backslash only before $ ` " \ or a
+      // newline, so `"echo ready\;"` keeps its `\;` for tmux.
+      if (ch === '\\' && quote === '"' && index + 1 < input.length && '$`"\\\n'.includes(input[index + 1])) {
         token += input[index + 1];
         index += 2;
         continue;
@@ -104,7 +106,7 @@ function normalizeCommandWord(token) {
   return base.replace(/\.(cmd|exe|bat)$/i, '');
 }
 
-function getLeadingCommandWord(segment) {
+function getLeadingCommand(segment) {
   let index = 0;
   let activeWrapper = null;
   let skipNextValue = false;
@@ -145,7 +147,7 @@ function getLeadingCommandWord(segment) {
       continue;
     }
 
-    return normalizedToken;
+    return { word: normalizedToken, end: index };
   }
 
   return null;
@@ -160,7 +162,19 @@ process.stdin.on('data', chunk => {
   }
 });
 
-const TMUX_LAUNCHER = /^\s*tmux\s+(new|new-session|new-window|split-window)\b/;
+// tmux commands, and their aliases, that run their shell command in a tmux pane,
+// where its output stays readable. run-shell and `tmux -c` run it without one.
+const TMUX_PANE_COMMANDS = new Set([
+  'new-session', 'new',
+  'new-window', 'neww',
+  'split-window', 'splitw',
+  'respawn-pane', 'respawnp',
+  'respawn-window', 'respawnw',
+  'send-keys', 'send'
+]);
+// tmux's own options that take a value (`-L work`, `-Lwork`, or the last of a
+// cluster such as `-vL work`).
+const TMUX_OPTION_VALUE_LETTERS = new Set(['f', 'L', 'S', 'T']);
 // Trailing (?![\w-]) rather than \b: \b treats a hyphen as a word boundary, so
 // `dev\b` matches the `dev` prefix of distinct scripts like `dev-setup` /
 // `dev-docs` / `dev-build` and wrongly blocks them. The lookahead still matches
@@ -199,10 +213,51 @@ function collectCheckSegments(cmd) {
   return segments;
 }
 
+/**
+ * Return true when the tmux invocation that starts at `index` runs the dev
+ * server in a pane. The tmux commands follow tmux's own options (`-L work`,
+ * `-f conf`), and the executable may come through a path or an env prefix, so
+ * this reads the parsed tokens instead of the start of the segment. A sequence
+ * (`new-session -d \; run-shell ...`) is exempt only when every command in it
+ * that runs the dev server is a pane command.
+ */
+function isTmuxPaneLaunch(segment, index) {
+  const tokens = [];
+  for (let parsed = readToken(segment, index); parsed; parsed = readToken(segment, parsed.end)) {
+    if (parsed.token) tokens.push(parsed.token);
+  }
+
+  let next = 0;
+  for (; next < tokens.length && isOptionToken(tokens[next]); next++) {
+    const letters = tokens[next].slice(1);
+    for (let i = 0; i < letters.length; i++) {
+      // -c runs its shell command without a pane.
+      if (letters[i] === 'c') return false;
+      if (TMUX_OPTION_VALUE_LETTERS.has(letters[i])) {
+        if (i === letters.length - 1) next++;
+        break;
+      }
+    }
+  }
+
+  // tmux ends a command at a `;` argument and at a `;` that ends an argument
+  // (`'npm run dev;'`); an escaped `\;` at the end stays literal.
+  const commands = [[]];
+  for (const token of tokens.slice(next)) {
+    const ends = token.endsWith(';') && !token.endsWith('\\;');
+    const value = ends ? token.slice(0, -1) : token;
+    if (value) commands[commands.length - 1].push(value);
+    if (ends) commands.push([]);
+  }
+  const devCommands = commands.filter(command => DEV_PATTERN.test(command.join(' ')));
+  return devCommands.length > 0 && devCommands.every(command => TMUX_PANE_COMMANDS.has(command[0]));
+}
+
 function isBlockedDevSegment(segment) {
-  const commandWord = getLeadingCommandWord(segment);
-  if (!commandWord || !DEV_COMMAND_WORDS.has(commandWord)) return false;
-  return DEV_PATTERN.test(segment) && !TMUX_LAUNCHER.test(segment);
+  const command = getLeadingCommand(segment);
+  if (!command || !DEV_COMMAND_WORDS.has(command.word)) return false;
+  if (!DEV_PATTERN.test(segment)) return false;
+  return !(command.word === 'tmux' && isTmuxPaneLaunch(segment, command.end));
 }
 
 process.stdin.on('end', () => {

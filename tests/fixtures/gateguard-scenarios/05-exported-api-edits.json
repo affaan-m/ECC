@@ -1,0 +1,465 @@
+{
+  "name": "exported-api-edits",
+  "description": "Signature changes of exported symbols in JS, Python, Go, Rust, Java and a declaration file.",
+  "files": {
+    "src/api/client.js": "export function fetchUser(id) {\n  return request(`/users/${id}`);\n}\n",
+    "pkg/store/service.py": "def load_user(user_id):\n    return {\"id\": user_id}\n",
+    "internal/codec/codec.go": "package codec\n\nfunc Encode(v string) string {\n\treturn v\n}\n",
+    "crates/core/src/lib.rs": "pub fn parse(input: &str) -> Vec<Token> {\n    lex(input)\n}\n",
+    "app/src/main/java/com/acme/OrderService.java": "public class OrderService {\n  public List<Order> findOrders(String customerId) {\n    return repo.find(customerId);\n  }\n}\n",
+    "src/api/types.d.ts": "export interface User {\n  id: string;\n  name: string;\n}\n"
+  },
+  "steps": [
+    {
+      "id": "edit-js-export",
+      "transcript": [
+        {
+          "type": "user",
+          "uuid": "exported-api-edits-001",
+          "sessionId": "sess-exported",
+          "isSidechain": false,
+          "promptId": "prompt-exported-1",
+          "message": {
+            "role": "user",
+            "content": "Add an options argument to the public user and order APIs."
+          }
+        },
+        {
+          "type": "assistant",
+          "uuid": "exported-api-edits-002",
+          "sessionId": "sess-exported",
+          "isSidechain": false,
+          "message": {
+            "id": "msg_exportedapiedits_01",
+            "type": "message",
+            "role": "assistant",
+            "model": "claude-sonnet-4-5",
+            "content": [
+              {
+                "type": "tool_use",
+                "id": "toolu_exportedapiedits_001",
+                "name": "Read",
+                "input": {
+                  "file_path": "{{root}}/src/api/client.js"
+                }
+              }
+            ]
+          }
+        },
+        {
+          "type": "user",
+          "uuid": "exported-api-edits-003",
+          "sessionId": "sess-exported",
+          "isSidechain": false,
+          "promptId": "prompt-exported-1",
+          "message": {
+            "role": "user",
+            "content": [
+              {
+                "type": "tool_result",
+                "tool_use_id": "toolu_exportedapiedits_001",
+                "content": "ok"
+              }
+            ]
+          }
+        },
+        {
+          "type": "assistant",
+          "uuid": "exported-api-edits-004",
+          "sessionId": "sess-exported",
+          "isSidechain": false,
+          "message": {
+            "id": "msg_exportedapiedits_02",
+            "type": "message",
+            "role": "assistant",
+            "model": "claude-sonnet-4-5",
+            "content": [
+              {
+                "type": "tool_use",
+                "id": "toolu_exportedapiedits_002",
+                "name": "Edit",
+                "input": {
+                  "file_path": "{{root}}/src/api/client.js",
+                  "old_string": "export function fetchUser(id) {",
+                  "new_string": "export function fetchUser(id, options = {}) {"
+                }
+              }
+            ]
+          }
+        }
+      ],
+      "payload": {
+        "session_id": "sess-exported",
+        "transcript_path": "{{transcript}}",
+        "cwd": "{{root}}",
+        "permission_mode": "default",
+        "hook_event_name": "PreToolUse",
+        "tool_name": "Edit",
+        "tool_input": {
+          "file_path": "{{root}}/src/api/client.js",
+          "old_string": "export function fetchUser(id) {",
+          "new_string": "export function fetchUser(id, options = {}) {"
+        },
+        "tool_use_id": "toolu_exportedapiedits_002"
+      },
+      "expect": "deny",
+      "mustDeny": false,
+      "redundant": false,
+      "relevantQuestions": [
+        "importers",
+        "public-api",
+        "quote-instruction"
+      ]
+    },
+    {
+      "id": "edit-python-public-def",
+      "transcript": [
+        {
+          "type": "user",
+          "uuid": "exported-api-edits-005",
+          "sessionId": "sess-exported",
+          "isSidechain": false,
+          "promptId": "prompt-exported-1",
+          "message": {
+            "role": "user",
+            "content": [
+              {
+                "type": "tool_result",
+                "tool_use_id": "toolu_exportedapiedits_002",
+                "content": "ok"
+              }
+            ]
+          }
+        },
+        {
+          "type": "assistant",
+          "uuid": "exported-api-edits-006",
+          "sessionId": "sess-exported",
+          "isSidechain": false,
+          "message": {
+            "id": "msg_exportedapiedits_03",
+            "type": "message",
+            "role": "assistant",
+            "model": "claude-sonnet-4-5",
+            "content": [
+              {
+                "type": "tool_use",
+                "id": "toolu_exportedapiedits_003",
+                "name": "Edit",
+                "input": {
+                  "file_path": "{{root}}/pkg/store/service.py",
+                  "old_string": "def load_user(user_id):",
+                  "new_string": "def load_user(user_id, *, cache=None):"
+                }
+              }
+            ]
+          }
+        }
+      ],
+      "payload": {
+        "session_id": "sess-exported",
+        "transcript_path": "{{transcript}}",
+        "cwd": "{{root}}",
+        "permission_mode": "default",
+        "hook_event_name": "PreToolUse",
+        "tool_name": "Edit",
+        "tool_input": {
+          "file_path": "{{root}}/pkg/store/service.py",
+          "old_string": "def load_user(user_id):",
+          "new_string": "def load_user(user_id, *, cache=None):"
+        },
+        "tool_use_id": "toolu_exportedapiedits_003"
+      },
+      "expect": "deny",
+      "mustDeny": false,
+      "redundant": false,
+      "relevantQuestions": [
+        "importers",
+        "public-api",
+        "quote-instruction"
+      ]
+    },
+    {
+      "id": "edit-go-exported-func",
+      "transcript": [
+        {
+          "type": "user",
+          "uuid": "exported-api-edits-007",
+          "sessionId": "sess-exported",
+          "isSidechain": false,
+          "promptId": "prompt-exported-1",
+          "message": {
+            "role": "user",
+            "content": [
+              {
+                "type": "tool_result",
+                "tool_use_id": "toolu_exportedapiedits_003",
+                "content": "ok"
+              }
+            ]
+          }
+        },
+        {
+          "type": "assistant",
+          "uuid": "exported-api-edits-008",
+          "sessionId": "sess-exported",
+          "isSidechain": false,
+          "message": {
+            "id": "msg_exportedapiedits_04",
+            "type": "message",
+            "role": "assistant",
+            "model": "claude-sonnet-4-5",
+            "content": [
+              {
+                "type": "tool_use",
+                "id": "toolu_exportedapiedits_004",
+                "name": "Edit",
+                "input": {
+                  "file_path": "{{root}}/internal/codec/codec.go",
+                  "old_string": "func Encode(v string) string {",
+                  "new_string": "func Encode(v string, strict bool) string {"
+                }
+              }
+            ]
+          }
+        }
+      ],
+      "payload": {
+        "session_id": "sess-exported",
+        "transcript_path": "{{transcript}}",
+        "cwd": "{{root}}",
+        "permission_mode": "default",
+        "hook_event_name": "PreToolUse",
+        "tool_name": "Edit",
+        "tool_input": {
+          "file_path": "{{root}}/internal/codec/codec.go",
+          "old_string": "func Encode(v string) string {",
+          "new_string": "func Encode(v string, strict bool) string {"
+        },
+        "tool_use_id": "toolu_exportedapiedits_004"
+      },
+      "expect": "deny",
+      "mustDeny": false,
+      "redundant": false,
+      "relevantQuestions": [
+        "importers",
+        "public-api",
+        "quote-instruction"
+      ]
+    },
+    {
+      "id": "edit-rust-pub-fn",
+      "transcript": [
+        {
+          "type": "user",
+          "uuid": "exported-api-edits-009",
+          "sessionId": "sess-exported",
+          "isSidechain": false,
+          "promptId": "prompt-exported-1",
+          "message": {
+            "role": "user",
+            "content": [
+              {
+                "type": "tool_result",
+                "tool_use_id": "toolu_exportedapiedits_004",
+                "content": "ok"
+              }
+            ]
+          }
+        },
+        {
+          "type": "assistant",
+          "uuid": "exported-api-edits-010",
+          "sessionId": "sess-exported",
+          "isSidechain": false,
+          "message": {
+            "id": "msg_exportedapiedits_05",
+            "type": "message",
+            "role": "assistant",
+            "model": "claude-sonnet-4-5",
+            "content": [
+              {
+                "type": "tool_use",
+                "id": "toolu_exportedapiedits_005",
+                "name": "Edit",
+                "input": {
+                  "file_path": "{{root}}/crates/core/src/lib.rs",
+                  "old_string": "pub fn parse(input: &str) -> Vec<Token> {",
+                  "new_string": "pub fn parse(input: &str, opts: &Options) -> Vec<Token> {"
+                }
+              }
+            ]
+          }
+        }
+      ],
+      "payload": {
+        "session_id": "sess-exported",
+        "transcript_path": "{{transcript}}",
+        "cwd": "{{root}}",
+        "permission_mode": "default",
+        "hook_event_name": "PreToolUse",
+        "tool_name": "Edit",
+        "tool_input": {
+          "file_path": "{{root}}/crates/core/src/lib.rs",
+          "old_string": "pub fn parse(input: &str) -> Vec<Token> {",
+          "new_string": "pub fn parse(input: &str, opts: &Options) -> Vec<Token> {"
+        },
+        "tool_use_id": "toolu_exportedapiedits_005"
+      },
+      "expect": "deny",
+      "mustDeny": false,
+      "redundant": false,
+      "relevantQuestions": [
+        "importers",
+        "public-api",
+        "quote-instruction"
+      ]
+    },
+    {
+      "id": "edit-java-public-method",
+      "transcript": [
+        {
+          "type": "user",
+          "uuid": "exported-api-edits-011",
+          "sessionId": "sess-exported",
+          "isSidechain": false,
+          "promptId": "prompt-exported-1",
+          "message": {
+            "role": "user",
+            "content": [
+              {
+                "type": "tool_result",
+                "tool_use_id": "toolu_exportedapiedits_005",
+                "content": "ok"
+              }
+            ]
+          }
+        },
+        {
+          "type": "assistant",
+          "uuid": "exported-api-edits-012",
+          "sessionId": "sess-exported",
+          "isSidechain": false,
+          "message": {
+            "id": "msg_exportedapiedits_06",
+            "type": "message",
+            "role": "assistant",
+            "model": "claude-sonnet-4-5",
+            "content": [
+              {
+                "type": "tool_use",
+                "id": "toolu_exportedapiedits_006",
+                "name": "Edit",
+                "input": {
+                  "file_path": "{{root}}/app/src/main/java/com/acme/OrderService.java",
+                  "old_string": "  public List<Order> findOrders(String customerId) {",
+                  "new_string": "  public List<Order> findOrders(String customerId, int limit) {"
+                }
+              }
+            ]
+          }
+        }
+      ],
+      "payload": {
+        "session_id": "sess-exported",
+        "transcript_path": "{{transcript}}",
+        "cwd": "{{root}}",
+        "permission_mode": "default",
+        "hook_event_name": "PreToolUse",
+        "tool_name": "Edit",
+        "tool_input": {
+          "file_path": "{{root}}/app/src/main/java/com/acme/OrderService.java",
+          "old_string": "  public List<Order> findOrders(String customerId) {",
+          "new_string": "  public List<Order> findOrders(String customerId, int limit) {"
+        },
+        "tool_use_id": "toolu_exportedapiedits_006"
+      },
+      "expect": "deny",
+      "mustDeny": false,
+      "redundant": false,
+      "relevantQuestions": [
+        "importers",
+        "public-api",
+        "quote-instruction"
+      ]
+    },
+    {
+      "id": "multiedit-declaration-file",
+      "transcript": [
+        {
+          "type": "user",
+          "uuid": "exported-api-edits-013",
+          "sessionId": "sess-exported",
+          "isSidechain": false,
+          "promptId": "prompt-exported-1",
+          "message": {
+            "role": "user",
+            "content": [
+              {
+                "type": "tool_result",
+                "tool_use_id": "toolu_exportedapiedits_006",
+                "content": "ok"
+              }
+            ]
+          }
+        },
+        {
+          "type": "assistant",
+          "uuid": "exported-api-edits-014",
+          "sessionId": "sess-exported",
+          "isSidechain": false,
+          "message": {
+            "id": "msg_exportedapiedits_07",
+            "type": "message",
+            "role": "assistant",
+            "model": "claude-sonnet-4-5",
+            "content": [
+              {
+                "type": "tool_use",
+                "id": "toolu_exportedapiedits_007",
+                "name": "MultiEdit",
+                "input": {
+                  "file_path": "{{root}}/src/api/types.d.ts",
+                  "edits": [
+                    {
+                      "file_path": "{{root}}/src/api/types.d.ts",
+                      "old_string": "  name: string;",
+                      "new_string": "  name: string;\n  email?: string;"
+                    }
+                  ]
+                }
+              }
+            ]
+          }
+        }
+      ],
+      "payload": {
+        "session_id": "sess-exported",
+        "transcript_path": "{{transcript}}",
+        "cwd": "{{root}}",
+        "permission_mode": "default",
+        "hook_event_name": "PreToolUse",
+        "tool_name": "MultiEdit",
+        "tool_input": {
+          "file_path": "{{root}}/src/api/types.d.ts",
+          "edits": [
+            {
+              "file_path": "{{root}}/src/api/types.d.ts",
+              "old_string": "  name: string;",
+              "new_string": "  name: string;\n  email?: string;"
+            }
+          ]
+        },
+        "tool_use_id": "toolu_exportedapiedits_007"
+      },
+      "expect": "deny",
+      "mustDeny": false,
+      "redundant": false,
+      "relevantQuestions": [
+        "importers",
+        "public-api",
+        "quote-instruction"
+      ]
+    }
+  ]
+}

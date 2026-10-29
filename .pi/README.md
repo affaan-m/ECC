@@ -90,14 +90,22 @@ The `extensions/index.ts` file handles:
 4. **Context injection** — Parses `hookSpecificOutput.additionalContext` from the SessionStart
    hook and appends it to the system prompt on the next `before_agent_start`, wrapped in an
    `<ecc-session-context>` block. Non-JSON hook output is tolerated, not treated as an error
-5. **Hook isolation** — Failing, missing, or slow hooks degrade to a warning and never
-   terminate the Pi session. Hook execution is bounded by a timeout and an output limit
+5. **Hook isolation** — Failing, missing, slow, or misconfigured hooks degrade to
+   a warning and never terminate the Pi session. Hook execution is bounded by a
+   timeout and an output limit
 6. **Package resolution** — Resolves hook scripts from the installed package via `__dirname`,
    never from `process.cwd()`, so a global install works from any project directory. Hooks
    still *run* in the user's project directory, so project detection stays correct
 
 All hook execution is non-shell (`execFile` without shell interpretation), so paths containing
 spaces, tabs, or shell metacharacters are safe.
+
+Hook runtime selection uses the host `process.execPath` only under Node.
+Without an override, compiled OMP/Bun falls back to `node` instead of
+recursively launching the OMP binary as a hook runner. Set `ECC_HOOK_NODE` to
+an explicit absolute Node executable path when `node` is not available on
+`PATH`.
+Relative values are rejected when the hook runs and surfaced as a warning.
 
 ## Scope
 

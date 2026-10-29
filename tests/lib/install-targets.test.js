@@ -13,6 +13,7 @@ const {
   listInstallTargetAdapters,
   planInstallTargetScaffold,
 } = require('../../scripts/lib/install-targets/registry');
+const { isForeignPlatformPath } = require('../../scripts/lib/install-targets/helpers');
 const { resolveInvocationEnvironment } = require('../../scripts/lib/invocation-environment');
 
 function normalizedRelativePath(value) {
@@ -65,7 +66,7 @@ function runTests() {
 
   if (test('resolves claude adapter root and install-state path from home dir', () => {
     const adapter = getInstallTargetAdapter('claude');
-    const homeDir = '/Users/example';
+    const homeDir = path.resolve('/Users/example');
     const root = adapter.resolveRoot({ homeDir, repoRoot: '/repo/ecc' });
     const statePath = adapter.getInstallStatePath({ homeDir, repoRoot: '/repo/ecc' });
 
@@ -162,7 +163,7 @@ function runTests() {
 
   if (test('plans namespaced Claude rules and flat discoverable skills', () => {
     const repoRoot = path.join(__dirname, '..', '..');
-    const homeDir = '/Users/example';
+    const homeDir = path.resolve('/Users/example');
 
     const plan = planInstallTargetScaffold({
       target: 'claude',
@@ -231,9 +232,11 @@ function runTests() {
       normalizedRelativePath(operation.sourceRelativePath) === '.cursor/rules/common-coding-style.md'
     ));
 
-    assert.ok(hooksJson, 'Should preserve non-rule Cursor platform config files');
-    assert.strictEqual(hooksJson.strategy, 'preserve-relative-path');
-    assert.strictEqual(hooksJson.destinationPath, path.join(projectRoot, '.cursor', 'hooks.json'));
+    assert.strictEqual(
+      hooksJson,
+      undefined,
+      'Platform configs should not register hooks without hooks-runtime'
+    );
     assert.ok(mcpJson, 'Should materialize a Cursor MCP config from the shared root MCP config');
     assert.strictEqual(mcpJson.kind, 'merge-json');
     assert.strictEqual(mcpJson.strategy, 'merge-json');
@@ -395,11 +398,10 @@ function runTests() {
       'Should not preserve .md Cursor platform rule files'
     );
     assert.ok(
-      plan.operations.some(operation => (
-        normalizedRelativePath(operation.sourceRelativePath) === '.cursor/hooks.json'
-        && operation.destinationPath === path.join(projectRoot, '.cursor', 'hooks.json')
+      !plan.operations.some(operation => (
+        operation.destinationPath === path.join(projectRoot, '.cursor', 'hooks.json')
       )),
-      'Should preserve non-rule Cursor platform config files'
+      'Should not register Cursor hooks without hooks-runtime'
     );
     assert.ok(
       plan.operations.some(operation => (
@@ -478,6 +480,14 @@ function runTests() {
       normalizedRelativePath(hooksDestinations[0].sourceRelativePath),
       '.cursor/hooks',
       'Should prefer native Cursor hooks over generic hooks-runtime hooks'
+    );
+    const hooksConfig = plan.operations.find(operation => (
+      operation.destinationPath === path.join(projectRoot, '.cursor', 'hooks.json')
+    ));
+    assert.strictEqual(
+      normalizedRelativePath(hooksConfig.sourceRelativePath),
+      '.cursor/hooks.json',
+      'Should register the native Cursor hook config through hooks-runtime'
     );
   })) passed++; else failed++;
 
@@ -692,6 +702,61 @@ function runTests() {
     assert.strictEqual(
       JSON.parse(child.stdout),
       path.join(path.resolve(homeDir), '.config', 'opencode')
+    );
+  })) passed++; else failed++;
+
+  if (test('claude adapter honors CLAUDE_CONFIG_DIR over the default home directory', () => {
+    const adapter = getInstallTargetAdapter('claude');
+    const homeDir = '/Users/example';
+    const claudeConfigDir = '/private/claude-profile';
+
+    assert.strictEqual(
+      adapter.resolveRoot({ homeDir, env: { CLAUDE_CONFIG_DIR: claudeConfigDir } }),
+      path.resolve(claudeConfigDir)
+    );
+    assert.strictEqual(
+      adapter.getInstallStatePath({ homeDir, env: { CLAUDE_CONFIG_DIR: claudeConfigDir } }),
+      path.join(path.resolve(claudeConfigDir), 'ecc', 'install-state.json')
+    );
+  })) passed++; else failed++;
+
+  if (test('claude adapter falls back to home/.claude when CLAUDE_CONFIG_DIR is unset or blank', () => {
+    const adapter = getInstallTargetAdapter('claude');
+    const homeDir = path.resolve('/Users/example');
+
+    assert.strictEqual(
+      adapter.resolveRoot({ homeDir, env: {} }),
+      path.join(homeDir, '.claude')
+    );
+    assert.strictEqual(
+      adapter.resolveRoot({ homeDir, env: { CLAUDE_CONFIG_DIR: '   ' } }),
+      path.join(homeDir, '.claude')
+    );
+  })) passed++; else failed++;
+
+  if (test('plans claude install under CLAUDE_CONFIG_DIR, keeping operations in the redirected root', () => {
+    const repoRoot = path.join(__dirname, '..', '..');
+    const homeDir = '/Users/example';
+    const claudeConfigDir = '/private/claude-profile';
+
+    const plan = planInstallTargetScaffold({
+      target: 'claude',
+      repoRoot,
+      homeDir,
+      env: { CLAUDE_CONFIG_DIR: claudeConfigDir },
+      modules: [
+        { id: 'rules-core', paths: ['rules'] },
+        { id: 'docs-core', paths: ['docs'] },
+      ],
+    });
+
+    assert.strictEqual(plan.targetRoot, path.resolve(claudeConfigDir));
+    assert.ok(
+      plan.operations.every(operation => (
+        operation.destinationPath === plan.targetRoot
+        || operation.destinationPath.startsWith(`${plan.targetRoot}${path.sep}`)
+      )),
+      'Should keep every managed operation inside the CLAUDE_CONFIG_DIR root'
     );
   })) passed++; else failed++;
 
@@ -1243,6 +1308,50 @@ function runTests() {
     );
   })) passed++; else failed++;
 
+  if (test('opencode adapter skips the foreign Pi harness directory', () => {
+    const repoRoot = path.join(__dirname, '..', '..');
+    const homeDir = path.join(os.tmpdir(), 'ecc-opencode-pi-home');
+
+    const plan = planInstallTargetScaffold({
+      target: 'opencode',
+      repoRoot,
+      homeDir,
+      exemptValidationCodes: ['opencode-plugin-not-built'],
+      modules: [
+        {
+          id: 'platform-configs',
+          paths: ['.opencode', '.pi', 'mcp-configs'],
+        },
+      ],
+    });
+
+    assert.ok(
+      plan.operations.some(operation => (
+        normalizedRelativePath(operation.sourceRelativePath) === 'mcp-configs'
+      )),
+      'Should still include non-foreign mcp-configs path (guards against empty-plan regression)'
+    );
+    assert.ok(
+      !plan.operations.some(operation => (
+        normalizedRelativePath(operation.sourceRelativePath) === '.pi'
+        || normalizedRelativePath(operation.sourceRelativePath).startsWith('.pi/')
+      )),
+      'Should skip the Pi harness directory, which Pi consumes via `pi install`'
+    );
+  })) passed++; else failed++;
+
+  if (test('every install target treats .pi as a foreign platform path', () => {
+    for (const adapter of listInstallTargetAdapters()) {
+      for (const sourcePath of ['.pi', '.pi/extensions/index.ts', '.pi/README.md']) {
+        assert.strictEqual(
+          isForeignPlatformPath(sourcePath, adapter.target),
+          true,
+          `${adapter.target} should treat ${sourcePath} as foreign`
+        );
+      }
+    }
+  })) passed++; else failed++;
+
   if (test('resolves opencode adapter root and install-state path from home dir', () => {
     const adapter = getInstallTargetAdapter('opencode');
     const homeDir = '/Users/example';
@@ -1438,6 +1547,60 @@ function runTests() {
       } else {
         delete require.cache[registryPath];
       }
+    }
+  })) passed++; else failed++;
+
+  if (test('convertWindowsPathToWSL converts Windows paths on WSL', () => {
+    const { convertWindowsPathToWSL, resetWSLDetection, setWSLForTesting } = require('../../scripts/lib/install-targets/helpers');
+    setWSLForTesting(true);
+    try {
+      assert.strictEqual(convertWindowsPathToWSL('C:\\Users\\test\\.claude'), '/mnt/c/Users/test/.claude');
+      assert.strictEqual(convertWindowsPathToWSL('D:/Projects'), '/mnt/d/Projects');
+      assert.strictEqual(convertWindowsPathToWSL('C:\\Path\\With\\Backslashes'), '/mnt/c/Path/With/Backslashes');
+    } finally {
+      resetWSLDetection();
+    }
+  })) passed++; else failed++;
+
+  if (test('convertWindowsPathToWSL returns original path when not on WSL', () => {
+    const { convertWindowsPathToWSL, resetWSLDetection, setWSLForTesting } = require('../../scripts/lib/install-targets/helpers');
+    setWSLForTesting(false);
+    try {
+      assert.strictEqual(convertWindowsPathToWSL('C:\\Users\\test\\.claude'), 'C:\\Users\\test\\.claude');
+      assert.strictEqual(convertWindowsPathToWSL('/home/user/.claude'), '/home/user/.claude');
+    } finally {
+      resetWSLDetection();
+    }
+  })) passed++; else failed++;
+
+  if (test('convertWindowsPathToWSL handles non-string input', () => {
+    const { convertWindowsPathToWSL, resetWSLDetection, setWSLForTesting } = require('../../scripts/lib/install-targets/helpers');
+    setWSLForTesting(true);
+    try {
+      assert.strictEqual(convertWindowsPathToWSL(null), null);
+      assert.strictEqual(convertWindowsPathToWSL(undefined), undefined);
+      assert.strictEqual(convertWindowsPathToWSL(123), 123);
+    } finally {
+      resetWSLDetection();
+    }
+  })) passed++; else failed++;
+
+  if (test('claude adapter converts CLAUDE_CONFIG_DIR Windows path to WSL path on WSL', () => {
+    const adapter = getInstallTargetAdapter('claude');
+    const homeDir = '/home/user';
+    const windowsConfigDir = 'C:\\Users\\test\\.claude';
+    const expectedWslPath = '/mnt/c/Users/test/.claude';
+
+    // Mock WSL detection
+    const { setWSLForTesting } = require('../../scripts/lib/install-targets/helpers');
+    setWSLForTesting(true);
+    try {
+      const resolved = adapter.resolveRoot({ homeDir, env: { CLAUDE_CONFIG_DIR: windowsConfigDir } });
+      assert.strictEqual(resolved, path.resolve(expectedWslPath));
+      const statePath = adapter.getInstallStatePath({ homeDir, env: { CLAUDE_CONFIG_DIR: windowsConfigDir } });
+      assert.strictEqual(statePath, path.join(path.resolve(expectedWslPath), 'ecc', 'install-state.json'));
+    } finally {
+      setWSLForTesting(null);
     }
   })) passed++; else failed++;
 

@@ -135,7 +135,8 @@ function scanAirspace(agents, graph = {}, options = {}) {
         b: b.agentId,
         risk: verdict.risk,
         distance: verdict.distance,
-        level: verdict.level
+        level: verdict.level,
+        channels: verdict.channels
       });
       if (verdict.level !== 'clear') {
         advisories.push({ a: a.agentId, b: b.agentId, ...verdict });

@@ -1,20 +1,17 @@
 #!/usr/bin/env node
 'use strict';
 
-const fs = require('fs');
 const path = require('path');
+const { StringDecoder } = require('string_decoder');
 const { spawnSync } = require('child_process');
 const { ensureAgentDataHomeEnv } = require('../lib/agent-data-home');
+const { normalizePluginRootForPlatform } = require('../lib/resolve-ecc-root');
+const { resolveWindowsBashCandidates } = require('../lib/windows-bash');
+const { readStdinRaw: readBoundedStdin, resolveMaxStdin } = require('./hook-input');
+
+const { createHookContextScanner } = require('./hook-input-limits');
 
 const SHELL_PROBE_TIMEOUT_MS = 2000;
-
-function readStdinRaw() {
-  try {
-    return fs.readFileSync(0, 'utf8');
-  } catch (_error) {
-    return '';
-  }
-}
 
 function writeStderr(stderr) {
   if ((typeof stderr === 'string' || Buffer.isBuffer(stderr)) && stderr.length > 0) {
@@ -78,20 +75,6 @@ function passthrough(result) {
   }
 }
 
-function normalizePluginRootForPlatform(rootDir, platform = process.platform) {
-  if (platform !== 'win32' || typeof rootDir !== 'string') {
-    return rootDir;
-  }
-
-  const match = rootDir.match(/^\/([a-zA-Z])(?:\/(.*))?$/);
-  if (!match) {
-    return rootDir;
-  }
-
-  const [, driveLetter, rest = ''] = match;
-  return `${driveLetter.toUpperCase()}:/${rest}`;
-}
-
 function resolveTarget(rootDir, relPath) {
   const resolvedRoot = path.resolve(rootDir);
   const resolvedTarget = path.resolve(rootDir, relPath);
@@ -129,7 +112,8 @@ function findShellBinary() {
     // bash.exe / conhost.exe processes the way MSYS2/Git Bash does.
     // Note: PowerShell is only suitable for .ps1 scripts; callers that need
     // to run .sh scripts (e.g. observe-runner.js) must not use this function.
-    candidates.push('pwsh.exe', 'powershell.exe', 'bash.exe', 'bash');
+    // Bash is named by absolute path so a WSL launcher earlier on PATH is skipped.
+    candidates.push('pwsh.exe', 'powershell.exe', ...resolveWindowsBashCandidates(['bash.exe', 'bash']));
   } else {
     candidates.push('bash', 'sh');
   }
@@ -163,7 +147,9 @@ function findBashBinary() {
   if (process.env.BASH && process.env.BASH.trim() && !isPowerShellBin(process.env.BASH.trim())) {
     candidates.push(process.env.BASH.trim());
   }
-  candidates.push('bash.exe', 'bash');
+  // On Windows these resolve to absolute paths that exclude WSL launchers;
+  // elsewhere they stay bare names.
+  candidates.push(...resolveWindowsBashCandidates(['bash.exe', 'bash']));
 
   for (const candidate of candidates) {
     const probe = spawnSync(candidate, ['-c', ':'], {
@@ -183,12 +169,15 @@ function findBashBinary() {
   return null;
 }
 
-function spawnNode(rootDir, relPath, raw, args) {
+function spawnNode(rootDir, relPath, raw, args, options = {}) {
   ensureAgentDataHomeEnv();
   const hookEnv = {
     ...process.env,
     CLAUDE_PLUGIN_ROOT: rootDir,
     ECC_PLUGIN_ROOT: rootDir,
+    ECC_HOOK_INPUT_MAX_BYTES: String(options.maxStdin),
+    ECC_HOOK_INPUT_TRUNCATED_UPSTREAM: options.truncated ? '1' : '0',
+    ECC_HOOK_CONTEXT_JSON: JSON.stringify(options.hookContext || {}),
   };
   const result = spawnSync(process.execPath, [resolveTarget(rootDir, relPath), ...args], {
     input: raw,
@@ -204,7 +193,7 @@ function spawnNode(rootDir, relPath, raw, args) {
 // (all hooks use 'node' mode). It is provided for third-party plugins that
 // register shell-backed hooks. Plugins should supply .ps1 scripts on Windows
 // and .sh scripts on Unix; mixing them will produce a skip with a stderr warning.
-function spawnShell(rootDir, relPath, raw, args) {
+function spawnShell(rootDir, relPath, raw, args, options = {}) {
   const shell = findShellBinary();
   if (!shell) {
     return {
@@ -219,6 +208,9 @@ function spawnShell(rootDir, relPath, raw, args) {
     ...process.env,
     CLAUDE_PLUGIN_ROOT: rootDir,
     ECC_PLUGIN_ROOT: rootDir,
+    ECC_HOOK_INPUT_MAX_BYTES: String(options.maxStdin),
+    ECC_HOOK_INPUT_TRUNCATED_UPSTREAM: options.truncated ? '1' : '0',
+    ECC_HOOK_CONTEXT_JSON: JSON.stringify(options.hookContext || {}),
   };
   const scriptPath = resolveTarget(rootDir, relPath);
   const isPs = isPowerShellBin(shell);
@@ -260,11 +252,21 @@ function spawnShell(rootDir, relPath, raw, args) {
   return withComparisonInput(result, Buffer.from(raw, 'utf8'));
 }
 
-function main() {
+async function main() {
   const [, , mode, relPath, ...args] = process.argv;
-  const raw = readStdinRaw();
+  const maxStdin = resolveMaxStdin(process.env.ECC_HOOK_INPUT_MAX_BYTES, {
+    writeDiagnostic: message => process.stderr.write(message)
+  });
+  const contextDecoder = new StringDecoder('utf8');
+  const contextScanner = createHookContextScanner();
+  const { raw, truncated } = await readBoundedStdin(process.stdin, {
+    maxStdin,
+    onChunk: buffer => contextScanner.push(contextDecoder.write(buffer)),
+  });
+  contextScanner.push(contextDecoder.end());
+  const hookContext = contextScanner.context;
   const rootDir = normalizePluginRootForPlatform(
-    process.env.CLAUDE_PLUGIN_ROOT || process.env.ECC_PLUGIN_ROOT
+    process.env.QODER_PLUGIN_ROOT || process.env.CLAUDE_PLUGIN_ROOT || process.env.ECC_PLUGIN_ROOT
   );
 
   if (!mode || !relPath || !rootDir) {
@@ -275,12 +277,16 @@ function main() {
     return;
   }
 
+  if (truncated) {
+    process.stderr.write(`[Hook] bootstrap: stdin exceeded ${maxStdin} bytes; forwarded a bounded prefix\n`);
+  }
+
   let result;
   try {
     if (mode === 'node') {
-      result = spawnNode(rootDir, relPath, raw, args);
+      result = spawnNode(rootDir, relPath, raw, args, { maxStdin, truncated, hookContext });
     } else if (mode === 'shell') {
-      result = spawnShell(rootDir, relPath, raw, args);
+      result = spawnShell(rootDir, relPath, raw, args, { maxStdin, truncated, hookContext });
     } else {
       writeStderr(`[Hook] unknown bootstrap mode: ${mode}; emitting empty stdout\n`);
       process.exitCode = 0;
@@ -317,7 +323,10 @@ function main() {
 // exports (tests), require.main is a real, different module, so main() stays
 // dormant.
 if (require.main === module || require.main === undefined) {
-  main();
+  main().catch(error => {
+    writeStderr(`[Hook] bootstrap failed: ${error.message}\n`);
+    process.exitCode = 0;
+  });
 }
 
 module.exports = {

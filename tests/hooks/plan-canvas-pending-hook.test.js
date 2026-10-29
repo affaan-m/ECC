@@ -11,6 +11,9 @@ const assert = require('assert');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
+const http = require('http');
+const { createSessionStore } = require('../../scripts/lib/plan-canvas/sessions');
+const { createPlanCanvasServer } = require('../../scripts/lib/plan-canvas/server');
 
 const HOOK = path.join(__dirname, '..', '..', 'scripts', 'hooks', 'plan-canvas-pending.js');
 
@@ -175,6 +178,118 @@ async function runTests() {
     const hook = loadHook(path.join(os.tmpdir(), 'plan-canvas-does-not-exist-xyz'));
     assert.strictEqual((await hook.run('not json')).stdout, 'not json');
     assert.strictEqual((await hook.run('{}')).exitCode, 0);
+  })) passed++; else failed++;
+
+  if (await test('actual loopback server drains only the current project using an opaque fixed-shape URL', async () => {
+    const root = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'plan-canvas-ipc-')));
+    const stateDir = path.join(root, 'state');
+    const project = path.join(root, 'project');
+    const other = path.join(root, 'other');
+    fs.mkdirSync(project); fs.mkdirSync(other);
+    const artifact = path.join(project, 'plan.md');
+    const otherArtifact = path.join(other, 'plan.md');
+    fs.writeFileSync(artifact, '# Plan'); fs.writeFileSync(otherArtifact, '# Other');
+    const store = createSessionStore({ stateDir });
+    const own = store.open(artifact).session;
+    const foreign = store.open(otherArtifact).session;
+    store.queueFeedback(own.key, [{ kind: 'chat', text: 'OWN_FEEDBACK' }]);
+    store.queueFeedback(foreign.key, [{ kind: 'chat', text: 'OTHER_FEEDBACK' }]);
+    const canvas = createPlanCanvasServer({ store, idleTimeoutMs: 0 });
+    const requests = [];
+    canvas.server.prependListener('request', req => requests.push({ path: req.url, host: req.headers.host }));
+    let closed = false;
+    try {
+      const bound = await canvas.listen(0);
+      assert.ok(bound.port > 0, 'ephemeral listen0 is recorded as its actual assigned port');
+      fs.writeFileSync(path.join(stateDir, 'server.json'), JSON.stringify({ pid: process.pid, port: bound.port, version: 'test' }));
+      const hook = loadHook(stateDir);
+      const raw = JSON.stringify({ cwd: project });
+      const result = await hook.run(raw);
+      assert.strictEqual(JSON.parse(result.stdout).decision, 'block');
+      assert.ok(result.stdout.includes('OWN_FEEDBACK'));
+      assert.ok(!result.stdout.includes('OTHER_FEEDBACK'));
+      assert.deepStrictEqual(store.get(own.key).pendingFeedback, []);
+      assert.strictEqual(store.get(foreign.key).pendingFeedback.length, 1);
+      assert.deepStrictEqual(requests, [{ path: `/api/await?key=${own.key}&timeoutMs=0`, host: `127.0.0.1:${bound.port}` }]);
+      assert.match(own.key, /^[a-f0-9]{12}$/);
+      assert.strictEqual((await hook.run(raw)).stdout, raw, 'empty queue passes through');
+      await canvas.close(); closed = true;
+      // Stale but valid locator fails open, preserving the queued feedback.
+      store.queueFeedback(own.key, [{ kind: 'chat', text: 'OFFLINE_FEEDBACK' }]);
+      assert.strictEqual((await hook.run(raw)).stdout, raw);
+      assert.strictEqual(readPending(stateDir, own.key).length, 1);
+      fs.unlinkSync(path.join(stateDir, 'server.json'));
+      const fallback = await hook.run(raw);
+      assert.ok(JSON.parse(fallback.stdout).reason.includes('OFFLINE_FEEDBACK'));
+      assert.deepStrictEqual(readPending(stateDir, own.key), [], 'missing locator still drains offline file queue');
+      assert.strictEqual(readPending(stateDir, foreign.key).length, 1, 'offline fallback preserves other project queue');
+    } finally {
+      if (!closed) await canvas.close();
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  })) passed++; else failed++;
+
+  if (await test('HTTP errors and redirects fail open without following another destination', async () => {
+    const root = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'plan-canvas-http-failure-')));
+    const stateDir = path.join(root, 'state');
+    const artifact = path.join(root, 'plan.md');
+    fs.writeFileSync(artifact, '# Plan');
+    let status = 302;
+    let requests = 0;
+    const server = http.createServer((_req, res) => {
+      requests++;
+      res.writeHead(status, { 'Content-Type': 'application/json', Location: 'http://example.invalid/should-not-follow' });
+      res.end(JSON.stringify({ status: 'feedback', items: [{ kind: 'chat', text: 'UNTRUSTED_ERROR_BODY' }] }));
+    });
+    try {
+      await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+      const port = server.address().port;
+      writeState(stateDir, { aaaaaaaaaaaa: sessionRecord('aaaaaaaaaaaa', artifact, [{ kind: 'chat', text: 'KEEP' }]) });
+      fs.writeFileSync(path.join(stateDir, 'server.json'), JSON.stringify({ port }));
+      const hook = loadHook(stateDir);
+      const raw = JSON.stringify({ cwd: root });
+      for (status of [302, 500]) {
+        assert.strictEqual((await hook.run(raw)).stdout, raw);
+        assert.strictEqual(readPending(stateDir, 'aaaaaaaaaaaa').length, 1);
+      }
+      assert.strictEqual(requests, 2, 'each attempt makes one loopback request; redirects are not followed');
+    } finally {
+      await new Promise(resolve => server.close(resolve));
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  })) passed++; else failed++;
+
+  if (await test('invalid keys and malformed locator ports make no HTTP request and preserve feedback', async () => {
+    const root = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'plan-canvas-invalid-ipc-')));
+    const stateDir = path.join(root, 'state');
+    const artifact = path.join(root, 'plan.md');
+    fs.writeFileSync(artifact, '# Plan');
+    const hook = loadHook(stateDir);
+    const originalRequest = http.request;
+    let calls = 0;
+    http.request = () => { calls++; throw new Error('unexpected HTTP request'); };
+    try {
+      for (const port of [0, -1, 65536, 1.5, '4321', null]) {
+        writeState(stateDir, { aaaaaaaaaaaa: sessionRecord('aaaaaaaaaaaa', artifact, [{ kind: 'chat', text: 'KEEP' }]) });
+        fs.writeFileSync(path.join(stateDir, 'server.json'), JSON.stringify({ port }));
+        const raw = JSON.stringify({ cwd: root });
+        assert.strictEqual((await hook.run(raw)).stdout, raw);
+        assert.strictEqual(readPending(stateDir, 'aaaaaaaaaaaa').length, 1);
+        assert.strictEqual(await hook.drainViaServer(port, 'aaaaaaaaaaaa'), null);
+      }
+      fs.writeFileSync(path.join(stateDir, 'server.json'), JSON.stringify({ port: 4321 }));
+      for (const key of ['bad?key=SECRET&other=1', 'A'.repeat(12), 'a'.repeat(13), 'a'.repeat(12) + '\n', 'a'.repeat(12) + '\r\n', 'a'.repeat(100000), {}, null]) {
+        writeState(stateDir, { aaaaaaaaaaaa: sessionRecord(key, artifact, [{ kind: 'chat', text: 'KEEP' }]) });
+        const raw = JSON.stringify({ cwd: root });
+        assert.strictEqual((await hook.run(raw)).stdout, raw);
+        assert.strictEqual(readPending(stateDir, 'aaaaaaaaaaaa').length, 1);
+        assert.strictEqual(await hook.drainViaServer(4321, key), null);
+      }
+      assert.strictEqual(calls, 0);
+    } finally {
+      http.request = originalRequest;
+      fs.rmSync(root, { recursive: true, force: true });
+    }
   })) passed++; else failed++;
 
   if (originalStateDir === undefined) delete process.env.ECC_PLAN_CANVAS_STATE_DIR;

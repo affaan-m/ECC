@@ -359,6 +359,7 @@
       ],
       "rules": ["common"],
       "skills": [
+        "rails-patterns",
         "tdd-workflow",
         "verification-loop"
       ],
@@ -483,6 +484,33 @@
       "permissions": {
         "allow": ["python *", "pip install *", "pytest *", "ruff *", "black *", "mypy *"],
         "deny": []
+      }
+    },
+    {
+      "id": "fastapi",
+      "name": "FastAPI (Python)",
+      "indicators": [
+        { "file": "requirements.txt", "contains": "fastapi" },
+        { "file": "pyproject.toml", "contains": "fastapi" }
+      ],
+      "rules": ["common", "python"],
+      "skills": [
+        "fastapi-patterns",
+        "api-design",
+        "python-patterns",
+        "python-testing",
+        "tdd-workflow",
+        "verification-loop"
+      ],
+      "commands": {
+        "build": ["pip install -r requirements.txt", "pip install -e ."],
+        "test": ["pytest", "python -m pytest"],
+        "lint": ["ruff check .", "mypy ."],
+        "format": ["ruff format .", "black ."]
+      },
+      "permissions": {
+        "allow": ["python *", "pip install *", "pytest *", "ruff *", "black *", "mypy *"],
+        "deny": ["pip install --user *"]
       }
     },
     {

@@ -304,7 +304,7 @@ Authorization: Bearer eyJhbGciOiJIUzI1NiIs...
 
 # API key (for server-to-server)
 GET /api/v1/data
-X-API-Key: sk_live_abc123
+X-API-Key: sk_live_...
 ```
 
 ### Authorization Patterns

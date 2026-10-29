@@ -12,8 +12,9 @@ function normalizeRepo(repo) {
 }
 
 function normalizeIssueNumber(value) {
-  const parsed = Number.parseInt(String(value), 10);
-  if (!Number.isFinite(parsed) || parsed <= 0) {
+  const text = String(value).trim();
+  const parsed = Number(text);
+  if (!/^\+?\d+$/.test(text) || !Number.isSafeInteger(parsed) || parsed <= 0) {
     throw new Error(`Invalid issue number: ${value}`);
   }
   return parsed;
@@ -102,7 +103,7 @@ function listIssues(repo, options = {}) {
   const { owner, name } = normalizeRepo(repo);
   const limit = Number.isFinite(options.limit) ? options.limit : 100;
   const state = options.state || 'all';
-  return runGhJson([
+  const args = [
     'issue',
     'list',
     '--repo',
@@ -111,9 +112,12 @@ function listIssues(repo, options = {}) {
     state,
     '--limit',
     String(limit),
+    ...(options.label ? ['--label', options.label] : []),
+    ...(options.search ? ['--search', options.search] : []),
     '--json',
     'number,title,body,url,state,labels,author,updatedAt,assignees',
-  ], options) || [];
+  ];
+  return runGhJson(args, options) || [];
 }
 
 function editIssue(repo, issueNumber, options = {}) {

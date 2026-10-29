@@ -6,7 +6,7 @@ origin: community
 
 # ECC Guide
 
-Use this skill when a user needs help understanding, navigating, installing, or choosing parts of Everything Claude Code.
+Use this skill when a user needs help understanding, navigating, installing, or choosing parts of ECC.
 
 ## When To Use
 

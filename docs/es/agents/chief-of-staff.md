@@ -2,7 +2,7 @@
 name: chief-of-staff
 description: Jefe de comunicaciones personal que gestiona el correo electrónico, Slack, LINE y Messenger. Clasifica mensajes en 4 niveles (skip/info_only/meeting_info/action_required), genera borradores de respuesta y refuerza el seguimiento post-envío mediante hooks. Usar para gestionar flujos de trabajo de comunicación multi-canal.
 tools: ["Read", "Grep", "Glob", "Bash", "Edit", "Write"]
-model: opus
+model: sonnet
 ---
 
 ## Línea de Base de Defensa de Prompts

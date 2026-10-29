@@ -78,3 +78,43 @@ handoffs.
 
 The `ecc.hud-status.v1` payload is the common outer contract these surfaces can
 project into before ECC grows a dedicated full-screen HUD.
+
+## State Store Concurrency And Recovery
+
+ECC's file-backed state store serializes each synchronous query or transaction
+with a sibling `<database>.ecc-state.lock` file. It checks the current database
+under that lock and publishes successful writes before releasing it. A handle
+can reuse its last successful read snapshot when the file identity, size, and
+modification/change timestamps match. Fixed SELECTs in the query API avoid
+reloading or exporting an unchanged database; query results are still computed
+afresh. Generic SQL, transactions, exports, and failed operations invalidate
+reuse. Changes from another writer trigger a reload on the next operation.
+Queries use one snapshot; closing a handle never writes an older snapshot back.
+All concurrent writers must use this adapter; older ECC versions and external
+SQLite writers do not participate in this locking protocol.
+
+An operation waits up to five seconds before reporting `STATE_STORE_BUSY`.
+Retry when the other operation finishes. Locks are never stolen based on age:
+a paused process may still be writing. After an abnormal exit, stop all ECC
+processes using that database, inspect the PID and hostname in the lock file,
+and remove only the leftover `.ecc-state.lock` file before retrying. Do not
+remove the database itself. In-memory stores do not create lock files.
+
+The control-pane HTTP server runs board claims and moves in one-shot workers,
+so waiting for another writer does not stall health checks or snapshots. A
+mutation that times out while lock creation reports `EEXIST` returns HTTP 503
+with `code: STATE_STORE_BUSY` and `Retry-After: 1`. On Windows, lock creation
+also retries `EPERM` within the same deadline because deletion may still be
+pending. If the final attempt still reports `EPERM`, the original permission
+error is preserved rather than replaced with busy or leftover-lock recovery
+advice. Invalid mutations continue to return HTTP 400. Each worker
+closes its store before reporting the result and exits naturally, including
+when the requesting browser disconnects, to avoid interrupting a write.
+
+At most two board-mutation workers may exist in a server process, shared
+across database paths and server instances. Admission happens before worker
+creation. When both slots are occupied, extra requests receive the same
+retryable HTTP 503 immediately; they are not queued or executed later.
+A slot remains occupied until the worker actually exits, including after a
+result, error, or browser disconnect. Construction failure releases the slot
+immediately. This bounds waiting workers even while the database is locked.

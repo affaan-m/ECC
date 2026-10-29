@@ -7,7 +7,7 @@ const assert = require('assert');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const { spawnSync } = require('child_process');
+const { spawnSync, spawn } = require('child_process');
 
 const { createStateStore } = require('../../scripts/lib/state-store');
 
@@ -122,12 +122,41 @@ async function run() {
 
     await test('claim of a specific id works and rejects a missing id', async () => {
       const owned = runClaim(dbPath, ['wi-owned', '--owner', 'carol']);
-      assert.strictEqual(owned.status, 0, owned.stderr);
-      assert.strictEqual(JSON.parse(owned.stdout).item.owner, 'carol', 'explicit id can be re-claimed');
+      assert.notStrictEqual(owned.status, 0, 'an explicit id must not replace another owner');
+      assert.match(owned.stderr, /already owned/i);
+      const store = await createStateStore({ dbPath });
+      try { assert.strictEqual(store.getWorkItemById('wi-owned').owner, 'codex'); } finally { store.close(); }
 
       const missing = runClaim(dbPath, ['nope-404', '--owner', 'carol']);
       assert.notStrictEqual(missing.status, 0, 'missing id should fail');
       assert.ok(/not found/i.test(missing.stderr), 'reports not found');
+    });
+
+    await test('repeat claim by the same owner is idempotent', async () => {
+      const before = await createStateStore({ dbPath });
+      let original;
+      try { original = before.getWorkItemById('wi-owned'); } finally { before.close(); }
+      const repeated = runClaim(dbPath, ['wi-owned', '--owner', original.owner, '--as', 'human']);
+      assert.strictEqual(repeated.status, 0, repeated.stderr);
+      assert.deepStrictEqual(JSON.parse(repeated.stdout).item, original);
+    });
+
+    await test('concurrent explicit claims have one winner and preserve its owner', async () => {
+      const setup = await createStateStore({ dbPath });
+      try { setup.upsertWorkItem({ id: 'wi-race', source: 'manual', title: 'Race', status: 'open', owner: null }); } finally { setup.close(); }
+      const results = await Promise.all(['left', 'right'].map(owner => new Promise((resolve, reject) => {
+        const child = spawn(process.execPath, [CLI, 'claim', 'wi-race', '--owner', owner, '--db', dbPath, '--json']);
+        let stdout = ''; let stderr = '';
+        child.stdout.on('data', chunk => { stdout += chunk; });
+        child.stderr.on('data', chunk => { stderr += chunk; });
+        child.on('error', reject);
+        child.on('close', status => resolve({ owner, status, stdout, stderr }));
+      })));
+      const winners = results.filter(result => result.status === 0);
+      assert.strictEqual(winners.length, 1, JSON.stringify(results));
+      assert.match(results.find(result => result.status !== 0).stderr, /already owned/i);
+      const store = await createStateStore({ dbPath });
+      try { assert.strictEqual(store.getWorkItemById('wi-race').owner, winners[0].owner); } finally { store.close(); }
     });
 
     await test('claim requires --owner and validates --as', async () => {

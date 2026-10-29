@@ -75,12 +75,14 @@
       "modules": [
         "rules-core",
         "agents-core",
+        "shared-script-utils",
         "commands-core",
         "hooks-runtime",
         "platform-configs",
         "framework-language",
         "database",
         "workflow-quality",
+        "documentation-governance",
         "skill-unified-memory",
         "security",
         "research-apis",
@@ -88,6 +90,7 @@
         "operator-workflows",
         "optimization-workflows",
         "prediction-market-skills",
+        "operator-desk-patterns",
         "ito-compute",
         "nasiko-control-plane",
         "social-distribution",
@@ -98,7 +101,11 @@
         "devops-infra",
         "machine-learning",
         "supply-chain-domain",
-        "document-processing"
+        "document-processing",
+        "documentation-context",
+        "hermes-hooks",
+        "documentation-change-impact",
+        "documentation-test-regression"
       ]
     }
   }

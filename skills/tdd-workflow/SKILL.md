@@ -1,6 +1,6 @@
 ---
 name: tdd-workflow
-description: Use this skill when writing new features, fixing bugs, or refactoring code. Enforces test-driven development with 80%+ coverage including unit, integration, and E2E tests.
+description: "Test-driven development workflow: write a failing test first, watch it fail, implement the smallest change to green, then refactor with 80%+ coverage across unit, integration, and E2E tests. Use when writing a new feature, fixing a bug, refactoring, or when told to write failing tests first."
 argument-hint: <path/to/*.plan.md>
 metadata:
   origin: ECC
@@ -232,7 +232,7 @@ Recommended path:
 Store the evidence report in the project's standard documentation directory, for example:
 
 ```text
-docs/testing/<plan-or-task-name>.tdd.md
+docs/releases/<version>/<plan-or-task-name>.tdd.md
 .github/tdd/<plan-or-task-name>.tdd.md
 .claude/tdd/<plan-or-task-name>.tdd.md
 ```

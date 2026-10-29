@@ -1,5 +1,5 @@
 ---
-name: gget
+name: scientific-pkg-gget
 description: ゲノムデータベースへのクイック検索、配列検索、BLAST スタイルの検索、エンリッチメントチェック、および再現可能なバイオインフォマティクス証拠ログのための gget CLI および Python ワークフロー。
 origin: community
 ---

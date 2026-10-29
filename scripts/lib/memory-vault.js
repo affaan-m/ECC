@@ -443,6 +443,12 @@ function publicMemoryFileError(error) {
   };
 }
 
+function incompleteMemoryLookupError() {
+  const error = new Error('Memory lookup is incomplete. Inspect the authorized vault before retrying.');
+  error.code = 'ECC_MEMORY_INCOMPLETE';
+  return error;
+}
+
 function readMemoryFiles(options = {}) {
   const roots = options.roots || resolveVaultRoots(options);
   const scopes = normalizeScopes(options.scopes || DEFAULT_RECALL_SCOPES);
@@ -461,7 +467,13 @@ function readMemoryFiles(options = {}) {
       break;
     }
     const root = assertMemoryRootSafe(roots, scope);
-    const walked = walkMemoryRoot(root, MAX_FILES - visitedCount);
+    let walked;
+    try {
+      walked = walkMemoryRoot(root, MAX_FILES - visitedCount);
+    } catch {
+      // Directory open/read/close failures cannot establish a complete lookup.
+      throw incompleteMemoryLookupError();
+    }
     visitedCount += walked.visitedCount;
     truncated = truncated || walked.truncated;
     skippedSymlinkCount += walked.skippedSymlinkCount;
@@ -659,6 +671,9 @@ function readMemoryById(id, options = {}) {
     ? validateSlug(options.targetHarness, 'target harness')
     : null;
   const loaded = readMemoryFiles(options);
+  if (loaded.truncated || loaded.invalidFileCount > 0) {
+    throw incompleteMemoryLookupError();
+  }
   const matches = loaded.entries
     .filter(entry => entry.memory.id === memoryId)
     .filter(entry => (

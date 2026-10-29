@@ -2,7 +2,7 @@
 name: opensource-forker
 description: あらゆるプロジェクトをオープンソース化のためにフォークします。ファイルのコピー、シークレットと認証情報の除去（20以上のパターン）、内部参照のプレースホルダー置換、.env.exampleの生成、git履歴のクリーンアップを行います。opensource-pipelineスキルの第1ステージです。
 tools: ["Read", "Write", "Edit", "Bash", "Grep", "Glob"]
-model: sonnet
+model: haiku
 ---
 
 ## プロンプト防御ベースライン

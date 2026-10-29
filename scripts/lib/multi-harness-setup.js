@@ -373,7 +373,12 @@ async function applyPreflightedManagedPlan(entry) {
     : preflightManagedPlan(entry.preview.plan);
   const ownedDestinations = new Set(preview.ownershipSnapshot.destinations);
   let expectedStateFingerprint = preview.ownershipSnapshot.stateFingerprint;
-  let operationIndex = 0;
+  // Several ordered JSON merges may share one destination. Preserve each
+  // operation's preview instead of collapsing that sequence to one path entry.
+  const expectedOperations = new Map(preview.plan.operations.map((operation, index) => [
+    operation, preview.operations[index],
+  ]));
+  const writtenDestinations = new Set();
   const assertStateUnchanged = () => (
     assertInstallStateUnchanged(preview.plan, expectedStateFingerprint)
   );
@@ -381,26 +386,41 @@ async function applyPreflightedManagedPlan(entry) {
     assertStateUnchanged();
     expectedStateFingerprint = fingerprintInstallStateValue(state);
   };
+  const assertOperationUnchanged = operation => {
+    const destination = canonicalPath(operation.destinationPath);
+    const expected = expectedOperations.get(operation);
+    const currentClassification = classifyManagedOperation(operation, ownedDestinations);
+    const expectedClassification = operation.kind === 'merge-json'
+      && writtenDestinations.has(destination)
+      ? 'managed-json-update'
+      : expected && expected.classification;
+    if (
+      !expected
+      || expected.kind !== operation.kind
+      || canonicalPath(expected.destinationPath) !== destination
+      || expectedClassification !== currentClassification
+    ) {
+      throw new Error(
+        `Refusing to write ${operation.destinationPath}: destination changed after Kimi preflight.`
+      );
+    }
+    return destination;
+  };
 
   const result = require('./install-executor').applyInstallPlan(preview.plan, {
-    beforeInstallStateRead: assertStateUnchanged,
+    beforeInstallStateRead() {
+      assertStateUnchanged();
+      // Check the original preview before ownership filtering can skip a late
+      // collision. Guided setup must report the changed plan as a failure.
+      for (const operation of preview.plan.operations) {
+        assertOperationUnchanged(operation);
+      }
+    },
     beforeOperationWrite({ operation }) {
       assertStateUnchanged();
-      const expected = preview.operations[operationIndex];
-      const currentClassification = classifyManagedOperation(operation, ownedDestinations);
-      const destination = canonicalPath(operation.destinationPath);
-      if (
-        !expected
-        || expected.kind !== operation.kind
-        || canonicalPath(expected.destinationPath) !== destination
-        || expected.classification !== currentClassification
-      ) {
-        throw new Error(
-          `Refusing to write ${operation.destinationPath}: destination changed after Kimi preflight.`
-        );
-      }
+      const destination = assertOperationUnchanged(operation);
       ownedDestinations.add(destination);
-      operationIndex += 1;
+      writtenDestinations.add(destination);
     },
     beforeInstallStateWrite: prepareInstallStateWrite,
   });

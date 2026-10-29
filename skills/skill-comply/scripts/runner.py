@@ -6,6 +6,7 @@ import json
 import re
 import shlex
 import shutil
+import stat
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
@@ -49,7 +50,7 @@ def run_scenario(
 
     result = subprocess.run(
         [
-            "claude", "-p", scenario.prompt,
+            "claude", "-p",
             "--model", model,
             "--max-turns", str(max_turns),
             "--add-dir", str(sandbox_dir),
@@ -57,8 +58,9 @@ def run_scenario(
             "--output-format", "stream-json",
             "--verbose",
         ],
+        input=scenario.prompt,
         capture_output=True,
-        text=True,
+        encoding="utf-8",
         timeout=timeout,
         cwd=sandbox_dir,
     )
@@ -90,17 +92,40 @@ def run_scenario(
     )
 
 
+def _validate_sandbox_base() -> None:
+    """Reject links at the base itself; trusted parent aliases remain usable.
+
+    This is a point-in-time preflight, not protection against concurrent
+    replacement of filesystem entries during setup.
+    """
+    try:
+        metadata = SANDBOX_BASE.lstat()
+    except FileNotFoundError:
+        return
+    reparse_point = getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0x400)
+    if stat.S_ISLNK(metadata.st_mode) or getattr(metadata, "st_file_attributes", 0) & reparse_point:
+        raise ValueError("Sandbox base must not be a symlink or directory reparse point")
+    if not stat.S_ISDIR(metadata.st_mode):
+        raise ValueError("Sandbox base must be a directory")
+
+
 def _safe_sandbox_dir(scenario_id: str) -> Path:
     """Sanitize scenario ID and ensure path stays within sandbox base."""
+    _validate_sandbox_base()
     safe_id = re.sub(r"[^a-zA-Z0-9\-_]", "_", scenario_id)
     path = SANDBOX_BASE / safe_id
+    resolved_path = path.resolve()
+    resolved_base = SANDBOX_BASE.resolve()
+    if not safe_id or resolved_path == resolved_base:
+        raise ValueError("Scenario sandbox must be a subdirectory of the sandbox base")
     # Validate path stays within sandbox base (raises ValueError on traversal)
-    path.resolve().relative_to(SANDBOX_BASE.resolve())
+    resolved_path.relative_to(resolved_base)
     return path
 
 
 def _setup_sandbox(sandbox_dir: Path, scenario: Scenario) -> None:
     """Create sandbox directory and run setup commands."""
+    _validate_sandbox_base()
     if sandbox_dir.exists():
         shutil.rmtree(sandbox_dir)
     sandbox_dir.mkdir(parents=True)

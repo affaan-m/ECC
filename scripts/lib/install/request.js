@@ -4,6 +4,7 @@ const { validateInstallModuleIds, LOCALE_ALIAS_TO_COMPONENT_ID, listSupportedLoc
 const { resolveHookConsentFlags } = require('./hook-consent');
 
 const LEGACY_INSTALL_TARGETS = ['claude', 'claude-project', 'cursor', 'antigravity'];
+const LOCALE_COMPONENT_IDS = new Set(Object.values(LOCALE_ALIAS_TO_COMPONENT_ID));
 
 function dedupeStrings(values) {
   return [...new Set((Array.isArray(values) ? values : []).map(value => String(value).trim()).filter(Boolean))];
@@ -88,6 +89,12 @@ function parseInstallArgs(argv) {
     }
   }
 
+  const dryRunEnv = process.env.ECC_DRY_RUN;
+  if (dryRunEnv !== undefined && dryRunEnv !== '0' && dryRunEnv !== '1') {
+    throw new Error('ECC_DRY_RUN must be "1" or "0" when set');
+  }
+  parsed.dryRun = parsed.dryRun || dryRunEnv === '1';
+
   return parsed;
 }
 
@@ -97,6 +104,7 @@ function normalizeInstallRequest(options = {}) {
     : null;
   const profileId = options.profileId || config?.profileId || null;
   const target = options.target || config?.target || 'claude';
+  const supportsLocale = target === 'claude' || target === 'claude-project';
   const moduleIds = validateInstallModuleIds(
     dedupeStrings([...(config?.moduleIds || []), ...(options.moduleIds || [])])
   );
@@ -107,7 +115,7 @@ function normalizeInstallRequest(options = {}) {
       `Unsupported locale: "${locale}". Supported locales: ${listSupportedLocales().join(', ')}`
     );
   }
-  if (locale && target !== 'claude' && target !== 'claude-project') {
+  if (locale && !supportsLocale) {
     throw new Error('--locale can only be used with --target claude or --target claude-project');
   }
   const requestedIncludeComponentIds = dedupeStrings([
@@ -133,7 +141,8 @@ function normalizeInstallRequest(options = {}) {
   const hasManifestBaseSelection = Boolean(profileId) || moduleIds.length > 0 || includeComponentIds.length > 0;
   const hasNonLocaleManifestSelection = Boolean(profileId)
     || moduleIds.length > 0
-    || requestedIncludeComponentIds.length > 0
+    // Install-state persists --locale as a component; auto-update replays it via --with.
+    || requestedIncludeComponentIds.some(id => !supportsLocale || !LOCALE_COMPONENT_IDS.has(id))
     || excludeComponentIds.length > 0;
   const usingManifestMode = hasManifestBaseSelection || excludeComponentIds.length > 0;
 

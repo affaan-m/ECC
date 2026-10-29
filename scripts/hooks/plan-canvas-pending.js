@@ -33,11 +33,39 @@ const path = require('path');
 // server is wedged. Falling back to the state file keeps delivery working.
 const SERVER_TIMEOUT_MS = 1000;
 const MAX_ITEMS_REPORTED = 20;
+const SESSION_KEY_PATTERN = /^[a-f0-9]{12}$/;
+const LOOPBACK_HOST = '127.0.0.1';
+
+function validServerPort(port) {
+  return Number.isInteger(port) && port >= 1 && port <= 65535;
+}
+
+function validSessionKey(key) {
+  return typeof key === 'string' && SESSION_KEY_PATTERN.test(key);
+}
+
+// Resolve the Claude profile directory the same way everywhere.
+//
+// Duplicated rather than imported on purpose: hooks ship in managed installs
+// that carry top-level `scripts/` without `scripts/lib/` (see #3259), so a
+// require into lib/ would make the hook unloadable there. `~` is expanded the
+// way `scripts/lib/agent-data-home.js` expands it, so a profile written as
+// `~/.claude-work` resolves to one place rather than two.
+function claudeConfigDir() {
+  const configured = process.env.CLAUDE_CONFIG_DIR;
+  const trimmed = configured ? String(configured).trim() : '';
+  if (!trimmed) return path.join(os.homedir(), '.claude');
+  if (trimmed.startsWith('~')) {
+    const remainder = trimmed.slice(1).replace(/^[/\\]+/, '');
+    return remainder ? path.join(os.homedir(), remainder) : os.homedir();
+  }
+  return path.resolve(trimmed);
+}
 
 function stateDir() {
   const override = process.env.ECC_PLAN_CANVAS_STATE_DIR;
   if (override && override.trim()) return path.resolve(override.trim());
-  return path.join(os.homedir(), '.claude', 'plan-canvas');
+  return path.join(claudeConfigDir(), 'plan-canvas');
 }
 
 function readState() {
@@ -52,9 +80,11 @@ function readState() {
 function readServerPort() {
   try {
     const info = JSON.parse(fs.readFileSync(path.join(stateDir(), 'server.json'), 'utf8'));
-    return Number.isInteger(info.port) ? info.port : null;
-  } catch {
-    return null;
+    return info && !Array.isArray(info) && validServerPort(info.port) ? info.port : undefined;
+  } catch (error) {
+    // A missing locator permits offline delivery; malformed metadata does not
+    // establish that the server is down, so leave its queue untouched.
+    return error.code === 'ENOENT' ? null : undefined;
   }
 }
 
@@ -71,7 +101,7 @@ function isInside(dir, file) {
 function pendingSessions(state, cwd, env = process.env) {
   const scopeAll = String(env.ECC_PLAN_CANVAS_STOP_SCOPE || '').trim().toLowerCase() === 'all';
   return Object.values((state && state.sessions) || {})
-    .filter(session => session && session.status !== 'ended')
+    .filter(session => session && validSessionKey(session.key) && typeof session.file === 'string' && session.file.length > 0 && session.status !== 'ended')
     .filter(session => Array.isArray(session.pendingFeedback) && session.pendingFeedback.length > 0)
     .filter(session => (scopeAll ? true : isInside(cwd, session.file)))
     .sort((a, b) => String(a.updatedAt || '').localeCompare(String(b.updatedAt || '')));
@@ -83,16 +113,25 @@ function pendingSessions(state, cwd, env = process.env) {
  * makes /api/await return immediately instead of long polling.
  */
 function drainViaServer(port, key) {
+  // Expected local IPC: server.json locates the bound loopback port; the only
+  // file-derived query value is a non-secret 12-hex artifact identifier.
+  // Validate at the HTTP boundary as well as during session selection.
+  if (!validServerPort(port) || !validSessionKey(key)) return Promise.resolve(null);
   return new Promise(resolve => {
     const req = http.request(
       {
-        host: '127.0.0.1',
+        host: LOOPBACK_HOST,
         port,
         method: 'GET',
-        path: `/api/await?key=${encodeURIComponent(key)}&timeoutMs=0`,
+        path: `/api/await?key=${key}&timeoutMs=0`,
         agent: false
       },
       res => {
+        if (res.statusCode !== 200) {
+          res.resume();
+          resolve(null);
+          return;
+        }
         let data = '';
         res.on('data', chunk => {
           data += chunk;
@@ -214,7 +253,9 @@ async function run(rawInput) {
   const sessions = pendingSessions(state, payload.cwd || process.cwd());
   if (sessions.length === 0) return passThrough;
 
-  const delivered = await collectDeliveries(sessions, readServerPort());
+  const port = readServerPort();
+  if (port === undefined) return passThrough;
+  const delivered = await collectDeliveries(sessions, port);
   if (delivered.length === 0) return passThrough;
 
   return {
@@ -223,4 +264,4 @@ async function run(rawInput) {
   };
 }
 
-module.exports = { run, pendingSessions, describeItem, buildReason, drainViaFile };
+module.exports = { run, pendingSessions, describeItem, buildReason, drainViaFile, drainViaServer };

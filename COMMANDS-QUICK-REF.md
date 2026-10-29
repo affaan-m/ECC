@@ -17,6 +17,7 @@
 | `/build-fix` | Detect and fix build errors — delegates to the right build-resolver agent automatically |
 | `/quality-gate` | Quality gate check against project standards |
 | `/santa-loop` | Adversarial dual-review convergence loop — two independent model reviewers must both approve before code ships |
+| `/astra-review` | Send Claude-written code to GPT-6-Astra (ChatGPT, via Codex CLI) for an independent cross-provider review, then fix what it finds |
 
 ---
 
@@ -180,6 +181,7 @@ These lifecycle commands are also available through the `ecc` CLI.
 | `/instinct-import` | Import instincts from a file or URL |
 | `/skill-create` | Analyse local git history → generate a reusable skill |
 | `/skill-health` | Skill portfolio health dashboard with analytics |
+| `/skill-host-compat` | Lint skills for Codex-safe frontmatter and Claude substitutions |
 
 ---
 
@@ -192,6 +194,11 @@ These lifecycle commands are also available through the `ecc` CLI.
 ---
 
 ## Docs & Research
+
+For public-source investigations starting from sparse clues, use the
+[`osint-investigation` skill](skills/osint-investigation/SKILL.md) to extract
+overlooked leads, connect fragmented evidence, and test competing explanations
+through deliberate falsification and visual verification.
 
 | Command | What it does |
 |---------|-------------|
@@ -224,6 +231,7 @@ These lifecycle commands are also available through the `ecc` CLI.
 | `/setup-pm` | Configure package manager (npm / pnpm / yarn / bun) |
 | `/auto-update` | Pull the latest ECC repo changes and reinstall the current managed targets |
 | `/cost-report` | Generate a local Claude Code cost report from a cost-tracker SQLite database |
+| `/token-card` | Render a token-usage stat card from local agent session logs and commit it to the repo |
 | `/security-scan` | Run AgentShield against agent, hook, MCP, permission, and secret surfaces |
 | `/jira` | Retrieve a Jira ticket, analyze requirements, update status, or add comments |
 | `/pr` | Create a GitHub PR from current branch with unpushed commits |

@@ -118,7 +118,7 @@ function canonicalPlan(homeDir, env) {
 
 console.log('\n=== Testing OpenCode legacy migration ===\n');
 
-test('legacy inspection distinguishes absent, invalid, and unreadable state', () => {
+test('legacy inspection distinguishes absent and invalid state without claiming ownership', () => {
   const homeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'opencode-legacy-inspect-'));
   try {
     const location = getLegacyOpencodeLocation(homeDir);
@@ -131,9 +131,9 @@ test('legacy inspection distinguishes absent, invalid, and unreadable state', ()
     fs.rmSync(location.installStatePath, { recursive: true, force: true });
 
     fs.writeFileSync(location.installStatePath, '{not-json', 'utf8');
-    const unreadable = inspectLegacyOpencodeState(location);
-    assert.strictEqual(unreadable.status, 'unreadable');
-    assert.ok(unreadable.error.includes(location.installStatePath));
+    const malformed = inspectLegacyOpencodeState(location);
+    assert.strictEqual(malformed.status, 'invalid');
+    assert.strictEqual(malformed.error, null);
 
     assert.deepStrictEqual(cleanupLegacyOpencodeInstall(null), {
       detected: false,

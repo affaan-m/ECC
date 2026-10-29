@@ -288,6 +288,17 @@
         "edit": false
       }
     },
+    "ruby-reviewer": {
+      "description": "Expert Ruby and Rails code reviewer specializing in idiomatic Ruby, Active Record query safety, Rails security defaults, and RSpec/Minitest quality.",
+      "mode": "subagent",
+      "prompt": "{file:prompts/agents/ruby-reviewer.txt}",
+      "tools": {
+        "read": true,
+        "bash": true,
+        "write": false,
+        "edit": false
+      }
+    },
     "rust-reviewer": {
       "description": "Expert Rust code reviewer specializing in idiomatic Rust, ownership, lifetimes, concurrency, and performance.",
       "mode": "subagent",

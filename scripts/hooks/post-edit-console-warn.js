@@ -11,7 +11,7 @@
 
 const { readFile } = require('../lib/utils');
 
-const MAX_STDIN = 1024 * 1024; // 1MB limit
+const MAX_DIRECT_STDIN_BYTES = 16 * 1024 * 1024;
 function run(data) {
   const warnings = [];
   try {
@@ -47,14 +47,24 @@ function run(data) {
 
 if (require.main === module) {
   let data = '';
+  let stdinBytes = 0;
+  let oversized = false;
   process.stdin.setEncoding('utf8');
   process.stdin.on('data', chunk => {
-    if (data.length < MAX_STDIN) {
-      const remaining = MAX_STDIN - data.length;
-      data += chunk.substring(0, remaining);
+    if (oversized) return;
+    stdinBytes += Buffer.byteLength(chunk, 'utf8');
+    if (stdinBytes > MAX_DIRECT_STDIN_BYTES) {
+      data = '';
+      oversized = true;
+      return;
     }
+    data += chunk;
   });
   process.stdin.on('end', () => {
+    if (oversized) {
+      process.exitCode = 0;
+      return;
+    }
     const result = run(data);
     if (result.stderr) process.stderr.write(`${result.stderr}\n`);
     process.stdout.write(result.stdout);

@@ -517,6 +517,48 @@ impl Config {
             .context("deserialize merged ECC 2.0 config")
     }
 
+    #[cfg(test)]
+    fn config_root() -> PathBuf {
+        // Each test thread gets its own scratch root, so `Config::save()` can
+        // never overwrite the developer's real config.
+        struct TestConfigRoot(PathBuf);
+
+        impl TestConfigRoot {
+            fn new() -> Self {
+                let path = std::env::temp_dir()
+                    .join(format!("ecc2-test-config-{}", uuid::Uuid::new_v4()));
+                std::fs::create_dir(&path).expect("create private ECC 2 test config root");
+                #[cfg(unix)]
+                {
+                    use std::os::unix::fs::PermissionsExt;
+                    std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o700))
+                        .expect("restrict ECC 2 test config root permissions");
+                }
+                Self(path)
+            }
+        }
+
+        impl Drop for TestConfigRoot {
+            fn drop(&mut self) {
+                if let Err(error) = std::fs::remove_dir_all(&self.0) {
+                    if error.kind() != std::io::ErrorKind::NotFound {
+                        eprintln!(
+                            "failed to remove ECC 2 test config root {}: {error}",
+                            self.0.display()
+                        );
+                    }
+                }
+            }
+        }
+
+        thread_local! {
+            static ROOT: TestConfigRoot = TestConfigRoot::new();
+        }
+
+        ROOT.with(|root| root.0.clone())
+    }
+
+    #[cfg(not(test))]
     fn config_root() -> PathBuf {
         dirs::config_dir().unwrap_or_else(|| {
             dirs::home_dir()
@@ -525,6 +567,12 @@ impl Config {
         })
     }
 
+    #[cfg(test)]
+    fn legacy_global_config_path() -> PathBuf {
+        Self::config_root().join(".claude").join("ecc2.toml")
+    }
+
+    #[cfg(not(test))]
     fn legacy_global_config_path() -> PathBuf {
         dirs::home_dir()
             .unwrap_or_else(|| PathBuf::from("."))
@@ -1093,6 +1141,51 @@ focus_metrics = "e"
         );
 
         let _ = std::fs::remove_dir_all(tempdir);
+    }
+
+    #[test]
+    fn config_path_under_test_is_sandboxed_away_from_user_config() {
+        let path = Config::config_path();
+        assert!(
+            path.starts_with(std::env::temp_dir()),
+            "tests must never resolve the real user config, got {}",
+            path.display()
+        );
+    }
+
+    #[test]
+    fn legacy_config_path_under_test_is_sandboxed_away_from_user_home() {
+        let path = Config::legacy_global_config_path();
+        assert!(
+            path.starts_with(std::env::temp_dir()),
+            "tests must never read the real legacy user config, got {}",
+            path.display()
+        );
+        assert!(path.ends_with(".claude/ecc2.toml"));
+    }
+
+    #[test]
+    fn config_path_under_test_is_stable_within_a_test() {
+        assert_eq!(Config::config_path(), Config::config_path());
+    }
+
+    #[test]
+    fn config_path_under_test_is_distinct_across_test_threads() {
+        let current = Config::config_path();
+        let other = std::thread::spawn(Config::config_path)
+            .join()
+            .expect("config path thread should complete");
+        assert_ne!(current, other);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn config_root_under_test_is_owner_only() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let root = Config::config_root();
+        let mode = std::fs::metadata(root).unwrap().permissions().mode() & 0o777;
+        assert_eq!(mode, 0o700);
     }
 
     #[test]

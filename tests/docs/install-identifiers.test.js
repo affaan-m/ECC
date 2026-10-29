@@ -26,6 +26,7 @@ const publicInstallDocs = [
   'README.zh-CN.md',
   'docs/pt-BR/README.md',
   'docs/zh-CN/README.md',
+  'docs/ar/README.md',
   'docs/ja-JP/skills/configure-ecc/SKILL.md',
   'docs/zh-CN/skills/configure-ecc/SKILL.md',
 ];

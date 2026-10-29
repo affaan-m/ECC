@@ -7,6 +7,7 @@ const crypto = require('crypto');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
+const { createFileSystemLoader } = require('./helpers/load-with-file-system');
 
 const {
   buildDoctorReport,
@@ -23,6 +24,11 @@ const {
   readInstallState,
   writeInstallState,
 } = require('../../scripts/lib/install-state');
+const {
+  assertClaudeSettingsPath,
+  materializeManagedHooks,
+} = require('../../scripts/lib/install/claude-settings');
+const { readHooksConfig } = require('../../scripts/lib/hooks-config');
 
 const REPO_ROOT = path.join(__dirname, '..', '..');
 const CURRENT_PACKAGE_VERSION = JSON.parse(
@@ -50,6 +56,10 @@ function createTempDir(prefix) {
 
 function cleanup(dirPath) {
   fs.rmSync(dirPath, { recursive: true, force: true });
+}
+
+function formatJson(value) {
+  return `${JSON.stringify(value, null, 2)}\n`;
 }
 
 function writeState(filePath, options) {
@@ -100,6 +110,61 @@ function writeCursorState(projectRoot, overrides = {}) {
   };
 }
 
+function writeClaudeState(homeDir, overrides = {}) {
+  const targetRoot = overrides.targetRoot || path.join(homeDir, '.claude');
+  const installStatePath = overrides.installStatePath
+    || path.join(targetRoot, 'ecc', 'install-state.json');
+  const options = {
+    adapter: { id: 'claude-home', target: 'claude', kind: 'home' },
+    targetRoot,
+    installStatePath,
+    request: {
+      profile: null,
+      modules: [],
+      includeComponents: [],
+      excludeComponents: [],
+      legacyLanguages: [],
+      legacyMode: true,
+      hookConsent: 'enabled',
+      ...(overrides.request || {}),
+    },
+    resolution: {
+      selectedModules: ['legacy-claude-install'],
+      skippedModules: [],
+      ...(overrides.resolution || {}),
+    },
+    operations: overrides.operations || [],
+    source: {
+      repoVersion: CURRENT_PACKAGE_VERSION,
+      repoCommit: 'abc123',
+      manifestVersion: CURRENT_MANIFEST_VERSION,
+      ...(overrides.source || {}),
+    },
+  };
+
+  writeState(installStatePath, options);
+  return {
+    targetRoot,
+    installStatePath,
+    state: options,
+  };
+}
+
+function managedHookEntry(id, command) {
+  return {
+    id,
+    matcher: '.*',
+    hooks: [{ type: 'command', command }],
+  };
+}
+
+function currentManagedHooks(targetRoot) {
+  return materializeManagedHooks(
+    readHooksConfig(path.join(REPO_ROOT, 'hooks', 'hooks.json')),
+    targetRoot
+  );
+}
+
 function createOpencodeStateOptions(homeDir, overrides = {}) {
   const targetRoot = overrides.targetRoot || path.join(homeDir, '.config', 'opencode');
   const installStatePath = overrides.installStatePath || path.join(targetRoot, 'ecc-install-state.json');
@@ -142,6 +207,53 @@ function writeOpencodeState(homeDir, overrides = {}) {
   };
 }
 
+function writeRecordedOpenCodeActivation(homeDir, sourceRoot = REPO_ROOT) {
+  const targetRoot = path.join(homeDir, '.config', 'opencode');
+  const operations = ['opencode.json', 'plugins/ecc-hooks.ts', 'plugins/index.ts'].map(relativePath => {
+    const sourceRelativePath = `.opencode/${relativePath}`;
+    const content = fs.readFileSync(path.join(sourceRoot, sourceRelativePath));
+    const destinationPath = path.join(targetRoot, relativePath);
+    fs.mkdirSync(path.dirname(destinationPath), { recursive: true });
+    fs.writeFileSync(destinationPath, content);
+    return {
+      kind: 'copy-file', moduleId: 'platform-configs', sourceRelativePath, destinationPath,
+      ownership: 'managed', scaffoldOnly: false, strategy: 'preserve-relative-path',
+      contentSha256: crypto.createHash('sha256').update(content).digest('hex'),
+    };
+  });
+  return writeOpencodeState(homeDir, {
+    request: { modules: ['platform-configs'], hookConsent: null },
+    resolution: { selectedModules: ['platform-configs'] },
+    operations,
+  });
+}
+
+// These race fixtures read public source as inert bytes into a private source
+// tree. Fake payload construction must never move/write repository build output.
+function withPrivateOpenCodeSource(homeDir, callback) {
+  const sourceRoot = path.join(homeDir, 'source');
+  fs.mkdirSync(path.join(sourceRoot, 'manifests'), { recursive: true });
+  const files = {
+    'package.json': { name: 'private-opencode-race-fixture', version: CURRENT_PACKAGE_VERSION },
+    'manifests/install-modules.json': { version: CURRENT_MANIFEST_VERSION, modules: [{
+      id: 'platform-configs', kind: 'platform', description: 'Private race fixture.',
+      paths: ['.opencode'], targets: ['opencode'], dependencies: [],
+      defaultInstall: false, cost: 'light', stability: 'stable',
+    }] },
+    'manifests/install-profiles.json': { version: 1, profiles: {} },
+    'manifests/install-components.json': { version: 1, components: [] },
+  };
+  for (const [relative, value] of Object.entries(files)) {
+    fs.writeFileSync(path.join(sourceRoot, relative), formatJson(value));
+  }
+  for (const relative of ['opencode.json', 'plugins/ecc-hooks.ts', 'plugins/index.ts']) {
+    const destination = path.join(sourceRoot, '.opencode', relative);
+    fs.mkdirSync(path.dirname(destination), { recursive: true });
+    fs.copyFileSync(path.join(REPO_ROOT, '.opencode', relative), destination);
+  }
+  callback(sourceRoot);
+}
+
 function withTemporarilyMovedPath(filePath, callback) {
   if (!fs.existsSync(filePath)) {
     try {
@@ -171,8 +283,10 @@ function withTemporarilyMovedPath(filePath, callback) {
 function managedOperation(kind, destinationPath, overrides = {}) {
   const operation = {
     kind,
-    moduleId: 'test-module',
-    sourceRelativePath: 'rules/common/coding-style.md',
+    moduleId: kind === 'update-claude-settings' ? 'hooks-runtime' : 'test-module',
+    sourceRelativePath: kind === 'update-claude-settings'
+      ? 'hooks/hooks.json'
+      : 'rules/common/coding-style.md',
     destinationPath,
     strategy: kind,
     ownership: 'managed',
@@ -1869,6 +1983,361 @@ function runTests() {
     }
   })) passed++; else failed++;
 
+  if (test('doctor dispatches the OpenCode hook-disable content transform consistently', () => {
+    const projectRoot = createTempDir('install-lifecycle-opencode-transform-');
+
+    try {
+      const targetRoot = path.join(projectRoot, '.cursor');
+      const installStatePath = path.join(targetRoot, 'ecc-install-state.json');
+      const destinationPath = path.join(targetRoot, 'opencode.json');
+      const sourceConfig = JSON.parse(fs.readFileSync(
+        path.join(REPO_ROOT, '.opencode', 'opencode.json'),
+        'utf8'
+      ));
+      const expectedContent = `${JSON.stringify({
+        ...sourceConfig,
+        plugin: sourceConfig.plugin.filter(plugin => plugin !== './plugins'),
+        skills: { ...sourceConfig.skills, paths: ['./skills'] },
+      }, null, 2)}\n`;
+      fs.mkdirSync(targetRoot, { recursive: true });
+      fs.writeFileSync(destinationPath, expectedContent, 'utf8');
+      writeState(installStatePath, createCursorStateOptions(projectRoot, {
+        targetRoot,
+        installStatePath,
+        operations: [{
+          kind: 'copy-file',
+          moduleId: 'platform-configs',
+          sourceRelativePath: '.opencode/opencode.json',
+          destinationPath,
+          strategy: 'preserve-relative-path',
+          ownership: 'managed',
+          scaffoldOnly: false,
+          contentTransform: 'opencode-disable-ecc-hooks',
+        }],
+      }));
+
+      const report = buildDoctorReport({
+        repoRoot: REPO_ROOT,
+        homeDir: projectRoot,
+        projectRoot,
+        targets: ['cursor'],
+      });
+
+      assert.strictEqual(report.results.length, 1);
+      assert.ok(!report.results[0].issues.some(issue => (
+        issue.code === 'drifted-managed-files'
+        || issue.code === 'unverified-managed-operations'
+      )));
+    } finally {
+      cleanup(projectRoot);
+    }
+  })) passed++; else failed++;
+
+  if (test('OpenCode doctor and repair keep auto-discovered plugin entrypoints inert after declined consent', () => {
+    const homeDir = createTempDir('install-lifecycle-opencode-inert-');
+    try {
+      withTemporarilyMovedPath(path.join(REPO_ROOT, '.opencode', 'dist'), () => {
+        const plan = createInstallPlanFromRequest({
+          mode: 'manifest', target: 'opencode', profileId: null,
+          moduleIds: ['platform-configs'], includeComponentIds: [], excludeComponentIds: [],
+          legacyLanguages: [], hookConsent: 'declined',
+        }, {
+          sourceRoot: REPO_ROOT, homeDir, projectRoot: homeDir,
+          exemptValidationCodes: ['opencode-plugin-not-built'],
+        });
+        applyInstallPlan(plan);
+        const pluginPaths = ['ecc-hooks.ts', 'index.ts'].map(name => path.join(plan.targetRoot, 'plugins', name));
+        for (const pluginPath of pluginPaths) {
+          assert.strictEqual(fs.readFileSync(pluginPath, 'utf8'), 'export default async () => ({});\n');
+          fs.unlinkSync(pluginPath);
+        }
+        const before = buildDoctorReport({ repoRoot: REPO_ROOT, homeDir, projectRoot: homeDir, targets: ['opencode'] });
+        assert.ok(before.results[0].issues.some(issue => issue.code === 'missing-managed-files'));
+        let buildCalls = 0;
+        const repaired = repairInstalledStates({
+          repoRoot: REPO_ROOT, homeDir, projectRoot: homeDir, targets: ['opencode'],
+          buildOpencodePayload(repoRoot) {
+            buildCalls += 1;
+            const distDir = path.join(repoRoot, '.opencode', 'dist');
+            fs.mkdirSync(path.join(distDir, 'plugins'), { recursive: true });
+            fs.mkdirSync(path.join(distDir, 'tools'), { recursive: true });
+            fs.writeFileSync(path.join(distDir, 'index.js'), 'module.exports = {};\n');
+          },
+        });
+        assert.strictEqual(buildCalls, 1, 'Only the injected inert builder is used');
+        assert.strictEqual(repaired.results[0].status, 'repaired');
+        for (const pluginPath of pluginPaths) {
+          assert.strictEqual(fs.readFileSync(pluginPath, 'utf8'), 'export default async () => ({});\n');
+        }
+        const state = readInstallState(plan.installStatePath);
+        assert.strictEqual(state.request.hookConsent, 'declined');
+        for (const pluginPath of pluginPaths) {
+          const operation = state.operations.find(candidate => candidate.destinationPath === pluginPath);
+          assert.strictEqual(operation.contentTransform, 'opencode-disable-plugin-entrypoint');
+        }
+        const after = buildDoctorReport({ repoRoot: REPO_ROOT, homeDir, projectRoot: homeDir, targets: ['opencode'] });
+        assert.ok(!after.results[0].issues.some(issue => (
+          ['missing-managed-files', 'drifted-managed-files', 'unverified-managed-operations'].includes(issue.code)
+        )));
+      });
+    } finally {
+      cleanup(homeDir);
+    }
+  })) passed++; else failed++;
+
+  if (test('OpenCode repair disables older auto-discovered activation without inferring consent', () => {
+    const homeDir = createTempDir('install-lifecycle-opencode-old-activation-');
+    try {
+      withTemporarilyMovedPath(path.join(REPO_ROOT, '.opencode', 'dist'), () => {
+        const recorded = writeRecordedOpenCodeActivation(homeDir);
+        const result = repairInstalledStates({
+          repoRoot: REPO_ROOT, homeDir, projectRoot: homeDir, targets: ['opencode'],
+          buildOpencodePayload(repoRoot) {
+            const distDir = path.join(repoRoot, '.opencode', 'dist');
+            fs.mkdirSync(path.join(distDir, 'plugins'), { recursive: true });
+            fs.mkdirSync(path.join(distDir, 'tools'), { recursive: true });
+            fs.writeFileSync(path.join(distDir, 'index.js'), 'module.exports = {};\n');
+          },
+        });
+        assert.strictEqual(result.results[0].status, 'repaired');
+        for (const name of ['ecc-hooks.ts', 'index.ts']) {
+          assert.strictEqual(fs.readFileSync(path.join(recorded.targetRoot, 'plugins', name), 'utf8'), 'export default async () => ({});\n');
+        }
+        assert.ok(!JSON.parse(fs.readFileSync(path.join(recorded.targetRoot, 'opencode.json'), 'utf8')).plugin.includes('./plugins'));
+        const state = readInstallState(recorded.installStatePath);
+        assert.notStrictEqual(state.request.hookConsent, 'enabled');
+        assert.ok(!state.resolution.selectedModules.includes('hooks-runtime'));
+        for (const operation of state.operations.filter(operation => (
+          ['.opencode/plugins/ecc-hooks.ts', '.opencode/plugins/index.ts'].includes(operation.sourceRelativePath)
+        ))) {
+          assert.strictEqual(operation.contentTransform, 'opencode-disable-plugin-entrypoint');
+        }
+      });
+    } finally {
+      cleanup(homeDir);
+    }
+  })) passed++; else failed++;
+
+  if (test('OpenCode repair refuses modified activation before building or restoring missing files', () => {
+    const homeDir = createTempDir('install-lifecycle-opencode-modified-activation-');
+    try {
+      withTemporarilyMovedPath(path.join(REPO_ROOT, '.opencode', 'dist'), () => {
+        const recorded = writeRecordedOpenCodeActivation(homeDir);
+        const pluginPath = path.join(recorded.targetRoot, 'plugins', 'ecc-hooks.ts');
+        const missingPath = path.join(recorded.targetRoot, 'plugins', 'index.ts');
+        const configPath = path.join(recorded.targetRoot, 'opencode.json');
+        fs.appendFileSync(pluginPath, '// user custom hook\n');
+        fs.unlinkSync(missingPath);
+        const before = [pluginPath, configPath, recorded.installStatePath].map(filePath => fs.readFileSync(filePath));
+        let buildCalls = 0;
+        const result = repairInstalledStates({
+          repoRoot: REPO_ROOT, homeDir, projectRoot: homeDir, targets: ['opencode'],
+          buildOpencodePayload() {
+            buildCalls += 1;
+            throw new Error('Guard must run before the builder');
+          },
+        });
+        assert.strictEqual(result.results[0].status, 'error');
+        assert.match(result.results[0].error, /OpenCode hook|OpenCode.*activation|OpenCode.*plugin/i);
+        assert.strictEqual(buildCalls, 0);
+        assert.strictEqual(fs.existsSync(missingPath), false);
+        assert.deepStrictEqual([pluginPath, configPath, recorded.installStatePath].map(filePath => fs.readFileSync(filePath)), before);
+        assert.strictEqual(fs.existsSync(path.join(REPO_ROOT, '.opencode', 'dist')), false);
+      });
+    } finally {
+      cleanup(homeDir);
+    }
+  })) passed++; else failed++;
+
+  if (test('OpenCode repair rejects recorded non-plugin sources at missing activation destinations before building', () => {
+    for (const kind of ['render-template', 'copy-file']) {
+      const homeDir = createTempDir('install-lifecycle-opencode-disguised-');
+      try {
+        withTemporarilyMovedPath(path.join(REPO_ROOT, '.opencode', 'dist'), () => {
+          const targetRoot = path.join(homeDir, '.config', 'opencode');
+          const destinationPath = path.join(targetRoot, 'plugins', 'index.ts');
+          const recorded = writeOpencodeState(homeDir, {
+            request: { modules: ['platform-configs'], hookConsent: 'declined', legacyMode: true },
+            resolution: { selectedModules: ['platform-configs'] },
+            operations: [managedOperation(kind, destinationPath, {
+              moduleId: 'platform-configs',
+              sourceRelativePath: '.claude-plugin/plugin.json.template',
+              ...(kind === 'render-template' ? { renderedContent: 'globalThis.unconsentedHook = true;\n' } : {}),
+            })],
+          });
+          const stateBefore = fs.readFileSync(recorded.installStatePath);
+          let buildCalls = 0;
+          const result = repairInstalledStates({
+            repoRoot: REPO_ROOT, homeDir, projectRoot: homeDir, targets: ['opencode'],
+            buildOpencodePayload() { buildCalls += 1; throw new Error('Unsafe activation must fail before building'); },
+          });
+          assert.strictEqual(result.results[0].status, 'error', kind);
+          assert.match(result.results[0].error, /OpenCode hook.*unsupported activation operation/i);
+          assert.strictEqual(buildCalls, 0);
+          assert.strictEqual(fs.existsSync(destinationPath), false);
+          assert.strictEqual(fs.existsSync(path.dirname(destinationPath)), false);
+          assert.strictEqual(fs.existsSync(path.join(REPO_ROOT, '.opencode', 'dist')), false);
+          assert.strictEqual(crypto.createHash('sha256').update(fs.readFileSync(recorded.installStatePath)).digest('hex'), crypto.createHash('sha256').update(stateBefore).digest('hex'), 'Failed repair must not refresh install-state');
+        });
+      } finally {
+        cleanup(homeDir);
+      }
+    }
+  })) passed++; else failed++;
+
+  if (test('OpenCode repair preserves activation bytes changed between health inspection and write', () => {
+    const homeDir = createTempDir('install-lifecycle-opencode-health-race-');
+    const fileSystem = { ...fs };
+    const cacheEntry = require.cache[require.resolve('../../scripts/lib/install-lifecycle')];
+    const isolatedRepair = createFileSystemLoader(fileSystem)(
+      require.resolve('../../scripts/lib/install-lifecycle')
+    ).repairInstalledStates;
+    const originalOpenSync = fs.openSync;
+    const originalReadFileSync = fs.readFileSync;
+    const originalCloseSync = fs.closeSync;
+    const descriptors = new Set();
+    try {
+      withPrivateOpenCodeSource(homeDir, sourceRoot => {
+        const recorded = writeRecordedOpenCodeActivation(homeDir, sourceRoot);
+        const pluginPath = path.join(recorded.targetRoot, 'plugins', 'ecc-hooks.ts');
+        const canonicalPluginPath = fs.realpathSync(pluginPath);
+        const changedContent = 'globalThis.userChangedHook = true;\n';
+        const stateBefore = fs.readFileSync(recorded.installStatePath);
+        let changed = false;
+        fileSystem.openSync = function trackActivationDescriptor(candidate, ...args) {
+          const descriptor = originalOpenSync.call(fs, candidate, ...args);
+          if (typeof candidate === 'string' && [pluginPath, canonicalPluginPath].includes(path.resolve(candidate))) descriptors.add(descriptor);
+          return descriptor;
+        };
+        fileSystem.closeSync = function releaseActivationDescriptor(descriptor) {
+          descriptors.delete(descriptor);
+          return originalCloseSync.call(fs, descriptor);
+        };
+        fileSystem.readFileSync = function mutateAfterHealthRead(candidate, ...args) {
+          const content = originalReadFileSync.call(fs, candidate, ...args);
+          // Lifecycle reads pass an encoding argument; the consent snapshot
+          // reads the descriptor as raw bytes with no second argument.
+          if (!changed && descriptors.has(candidate) && args.length > 0) {
+            changed = true;
+            fs.writeFileSync(pluginPath, changedContent);
+          }
+          return content;
+        };
+        let result;
+        try {
+          result = isolatedRepair({
+            repoRoot: sourceRoot, homeDir, projectRoot: homeDir, targets: ['opencode'],
+            buildOpencodePayload(repoRoot) {
+              const distDir = path.join(repoRoot, '.opencode', 'dist');
+              fs.mkdirSync(path.join(distDir, 'plugins'), { recursive: true });
+              fs.mkdirSync(path.join(distDir, 'tools'), { recursive: true });
+              fs.writeFileSync(path.join(distDir, 'index.js'), 'module.exports = {};\n');
+            },
+          });
+        } finally {
+          fileSystem.openSync = originalOpenSync;
+          fileSystem.readFileSync = originalReadFileSync;
+          fileSystem.closeSync = originalCloseSync;
+        }
+        assert.strictEqual(changed, true, 'The health-read boundary was exercised');
+        assert.strictEqual(result.results[0].status, 'error');
+        assert.match(result.results[0].error, /OpenCode hook.*changed after preflight/i);
+        assert.strictEqual(fs.readFileSync(pluginPath, 'utf8'), changedContent);
+        const previousState = JSON.parse(stateBefore.toString('utf8'));
+        const checkpointState = readInstallState(recorded.installStatePath);
+        const priorOperation = previousState.operations.find(operation => operation.destinationPath === pluginPath);
+        const checkpointOperation = checkpointState.operations.find(operation => operation.destinationPath === pluginPath);
+        assert.strictEqual(checkpointOperation.contentSha256, priorOperation.contentSha256, 'Failure checkpoint must not adopt raced activation bytes');
+        assert.strictEqual(checkpointState.request.hookConsent, previousState.request.hookConsent);
+        assert.notStrictEqual(result.results[0].stateRefreshed, true);
+      });
+    } finally {
+      fileSystem.openSync = originalOpenSync;
+      fileSystem.readFileSync = originalReadFileSync;
+      fileSystem.closeSync = originalCloseSync;
+      cleanup(homeDir);
+      assert.strictEqual(descriptors.size, 0, 'Every tracked descriptor must close');
+      assert.strictEqual(fs.openSync, originalOpenSync, 'Native fs must remain untouched');
+      assert.strictEqual(fs.closeSync, originalCloseSync);
+      assert.strictEqual(require.cache[require.resolve('../../scripts/lib/install-lifecycle')], cacheEntry);
+    }
+  })) passed++; else failed++;
+
+  if (test('OpenCode repair rejects an active alias introduced during writes before refreshing state', () => {
+    const homeDir = createTempDir('install-lifecycle-opencode-alias-race-');
+    const fileSystem = { ...fs };
+    const cacheEntry = require.cache[require.resolve('../../scripts/lib/install-lifecycle')];
+    const isolatedRepair = createFileSystemLoader(fileSystem)(
+      require.resolve('../../scripts/lib/install-lifecycle')
+    ).repairInstalledStates;
+    const originalOpenSync = fs.openSync;
+    const originalWriteFileSync = fs.writeFileSync;
+    const originalWriteSync = fs.writeSync;
+    const originalCloseSync = fs.closeSync;
+    const descriptors = new Set();
+    try {
+      withPrivateOpenCodeSource(homeDir, sourceRoot => {
+        const recorded = writeRecordedOpenCodeActivation(homeDir, sourceRoot);
+        const pluginPath = path.join(recorded.targetRoot, 'plugins', 'index.ts');
+        const canonicalPluginPath = fs.realpathSync(pluginPath);
+        const aliasPath = path.join(recorded.targetRoot, 'plugins', 'index.js');
+        const aliasContent = fs.readFileSync(path.join(sourceRoot, '.opencode', 'plugins', 'index.ts'), 'utf8');
+        const stateBefore = fs.readFileSync(recorded.installStatePath);
+        let inserted = false;
+        fileSystem.openSync = function trackPluginWriteDescriptor(candidate, ...args) {
+          const descriptor = originalOpenSync.call(fs, candidate, ...args);
+          if (typeof candidate === 'string' && [pluginPath, canonicalPluginPath].includes(path.resolve(candidate))) descriptors.add(descriptor);
+          return descriptor;
+        };
+        fileSystem.closeSync = function releasePluginWriteDescriptor(descriptor) {
+          descriptors.delete(descriptor);
+          return originalCloseSync.call(fs, descriptor);
+        };
+        fileSystem.writeSync = function insertAliasAfterPluginWrite(candidate, ...args) {
+          const result = originalWriteSync.call(fs, candidate, ...args);
+          if (!inserted && descriptors.has(candidate)) {
+            inserted = true;
+            originalWriteFileSync.call(fs, aliasPath, aliasContent);
+          }
+          return result;
+        };
+        let result;
+        try {
+          result = isolatedRepair({
+            repoRoot: sourceRoot, homeDir, projectRoot: homeDir, targets: ['opencode'],
+            buildOpencodePayload(repoRoot) {
+              const distDir = path.join(repoRoot, '.opencode', 'dist');
+              fs.mkdirSync(path.join(distDir, 'plugins'), { recursive: true });
+              fs.mkdirSync(path.join(distDir, 'tools'), { recursive: true });
+              fs.writeFileSync(path.join(distDir, 'index.js'), 'module.exports = {};\n');
+            },
+          });
+        } finally {
+          fileSystem.openSync = originalOpenSync;
+          fileSystem.writeSync = originalWriteSync;
+          fileSystem.closeSync = originalCloseSync;
+        }
+        assert.strictEqual(inserted, true, 'The plugin-write boundary was exercised');
+        assert.strictEqual(result.results[0].status, 'error');
+        assert.match(result.results[0].error, /OpenCode hook activation remains active/i);
+        assert.strictEqual(fs.readFileSync(aliasPath, 'utf8'), aliasContent);
+        const checkpointState = readInstallState(recorded.installStatePath);
+        assert.ok(!checkpointState.operations.some(operation => operation.destinationPath === aliasPath), 'Failed repair must not adopt the raced alias');
+        assert.strictEqual(checkpointState.request.hookConsent, JSON.parse(stateBefore.toString('utf8')).request.hookConsent);
+        assert.notStrictEqual(result.results[0].stateRefreshed, true);
+      });
+    } finally {
+      fileSystem.openSync = originalOpenSync;
+      fileSystem.writeSync = originalWriteSync;
+      fileSystem.closeSync = originalCloseSync;
+      cleanup(homeDir);
+      assert.strictEqual(descriptors.size, 0, 'Every tracked descriptor must close');
+      assert.strictEqual(fs.openSync, originalOpenSync, 'Native fs must remain untouched');
+      assert.strictEqual(fs.closeSync, originalCloseSync);
+      assert.strictEqual(require.cache[require.resolve('../../scripts/lib/install-lifecycle')], cacheEntry);
+    }
+  })) passed++; else failed++;
+
   if (test('doctor infers enabled hooks from older manifest install-state records', () => {
     const homeDir = createTempDir('install-lifecycle-home-');
     const projectRoot = createTempDir('install-lifecycle-project-');
@@ -3228,6 +3697,465 @@ function runTests() {
       cleanup(homeDir);
       cleanup(unsupportedProjectRoot);
       cleanup(missingPayloadProjectRoot);
+    }
+  })) passed++; else failed++;
+
+  if (test('doctor inspects update-claude-settings hooks by event and id', () => {
+    const homeDir = createTempDir('install-lifecycle-claude-home-');
+    const projectRoot = createTempDir('install-lifecycle-project-');
+
+    try {
+      const targetRoot = path.join(homeDir, '.claude');
+      const settingsPath = path.join(targetRoot, 'settings.json');
+      const managedHooks = currentManagedHooks(targetRoot);
+      const stopEntry = managedHooks.Stop[0];
+      fs.mkdirSync(targetRoot, { recursive: true });
+      fs.writeFileSync(settingsPath, formatJson({
+        theme: 'dark',
+        hooks: {
+          Stop: [
+            { id: 'user:stop', matcher: 'Bash', hooks: [{ type: 'command', command: 'user' }] },
+            ...managedHooks.Stop,
+          ],
+          ...Object.fromEntries(Object.entries(managedHooks).filter(([event]) => event !== 'Stop')),
+        },
+      }));
+      writeClaudeState(homeDir, {
+        operations: [
+          managedOperation('update-claude-settings', settingsPath, {
+            sourceRelativePath: 'hooks/hooks.json',
+            strategy: 'update-claude-settings',
+            managedHooks,
+          }),
+        ],
+      });
+
+      let report = buildDoctorReport({
+        repoRoot: REPO_ROOT,
+        homeDir,
+        projectRoot,
+        targets: ['claude'],
+      });
+      assert.strictEqual(report.results[0].status, 'ok');
+
+      fs.writeFileSync(settingsPath, formatJson({
+        theme: 'dark',
+        hooks: {
+          ...managedHooks,
+          Stop: [
+            { id: 'user:stop', matcher: 'Bash', hooks: [{ type: 'command', command: 'user' }] },
+            { ...stopEntry, description: 'drifted' },
+            ...managedHooks.Stop.slice(1),
+          ],
+        },
+      }));
+      report = buildDoctorReport({
+        repoRoot: REPO_ROOT,
+        homeDir,
+        projectRoot,
+        targets: ['claude'],
+      });
+      assert.strictEqual(report.results[0].status, 'warning');
+      assert.ok(report.results[0].issues.some(issue => issue.code === 'drifted-managed-files'));
+
+      fs.writeFileSync(settingsPath, formatJson({
+        theme: 'dark',
+        hooks: {
+          ...managedHooks,
+          Stop: managedHooks.Stop.filter(entry => entry.id !== stopEntry.id),
+        },
+      }));
+      report = buildDoctorReport({
+        repoRoot: REPO_ROOT,
+        homeDir,
+        projectRoot,
+        targets: ['claude'],
+      });
+      assert.strictEqual(report.results[0].status, 'error');
+      assert.ok(report.results[0].issues.some(issue => issue.code === 'missing-managed-files'));
+    } finally {
+      cleanup(homeDir);
+      cleanup(projectRoot);
+    }
+  })) passed++; else failed++;
+
+  if (test('doctor and repair surface malformed Claude settings errors', () => {
+    const homeDir = createTempDir('install-lifecycle-claude-home-');
+    const projectRoot = createTempDir('install-lifecycle-project-');
+
+    try {
+      const targetRoot = path.join(homeDir, '.claude');
+      const settingsPath = path.join(targetRoot, 'settings.json');
+      const managedHooks = currentManagedHooks(targetRoot);
+      fs.mkdirSync(targetRoot, { recursive: true });
+      fs.writeFileSync(settingsPath, '{ invalid json\n');
+      writeClaudeState(homeDir, {
+        operations: [
+          managedOperation('update-claude-settings', settingsPath, {
+            sourceRelativePath: 'hooks/hooks.json',
+            strategy: 'update-claude-settings',
+            managedHooks,
+          }),
+        ],
+      });
+
+      const report = buildDoctorReport({
+        repoRoot: REPO_ROOT,
+        homeDir,
+        projectRoot,
+        targets: ['claude'],
+      });
+      const issue = report.results[0].issues.find(candidate => (
+        candidate.code === 'invalid-claude-settings'
+      ));
+      assert.strictEqual(report.results[0].status, 'error');
+      assert.ok(issue, 'doctor should report an invalid Claude settings issue');
+      assert.match(issue.message, /Failed to inspect Claude settings/);
+
+      const repair = repairInstalledStates({
+        repoRoot: REPO_ROOT,
+        homeDir,
+        projectRoot,
+        targets: ['claude'],
+      });
+      assert.strictEqual(repair.results[0].status, 'error');
+      assert.match(repair.results[0].error, /Failed to inspect Claude settings/);
+      assert.strictEqual(fs.readFileSync(settingsPath, 'utf8'), '{ invalid json\n');
+    } finally {
+      cleanup(homeDir);
+      cleanup(projectRoot);
+    }
+  })) passed++; else failed++;
+
+  if (test('repair restores managed Claude hooks while preserving user settings and hooks', () => {
+    const homeDir = createTempDir('install-lifecycle-claude-home-');
+    const projectRoot = createTempDir('install-lifecycle-project-');
+
+    try {
+      const targetRoot = path.join(homeDir, '.claude');
+      const settingsPath = path.join(targetRoot, 'settings.json');
+      const userHook = {
+        id: 'user:stop',
+        matcher: 'Bash',
+        hooks: [{ type: 'command', command: 'user-command' }],
+      };
+      const managedHooks = currentManagedHooks(targetRoot);
+      const stopEntry = managedHooks.Stop[0];
+      fs.mkdirSync(targetRoot, { recursive: true });
+      fs.writeFileSync(settingsPath, formatJson({
+        theme: 'dark',
+        hooks: {
+          ...managedHooks,
+          Stop: [
+            userHook,
+            { ...stopEntry, description: 'drifted' },
+            ...managedHooks.Stop.slice(1),
+          ],
+        },
+      }));
+      writeClaudeState(homeDir, {
+        operations: [
+          managedOperation('update-claude-settings', settingsPath, {
+            sourceRelativePath: 'hooks/hooks.json',
+            strategy: 'update-claude-settings',
+            managedHooks,
+          }),
+        ],
+      });
+
+      const result = repairInstalledStates({
+        repoRoot: REPO_ROOT,
+        homeDir,
+        projectRoot,
+        targets: ['claude'],
+      });
+
+      assert.strictEqual(result.results[0].status, 'repaired');
+      assert.ok(result.results[0].repairedPaths.includes(settingsPath));
+      assert.deepStrictEqual(JSON.parse(fs.readFileSync(settingsPath, 'utf8')), {
+        theme: 'dark',
+        hooks: {
+          ...managedHooks,
+          Stop: [userHook, ...managedHooks.Stop],
+        },
+      });
+    } finally {
+      cleanup(homeDir);
+      cleanup(projectRoot);
+    }
+  })) passed++; else failed++;
+
+  if (test('repair creates missing Claude settings with private permissions', () => {
+    if (process.platform === 'win32') {
+      console.log('    (POSIX file modes unsupported on this platform; skipping)');
+      return;
+    }
+    const homeDir = createTempDir('install-lifecycle-claude-home-');
+    const projectRoot = createTempDir('install-lifecycle-project-');
+
+    try {
+      const targetRoot = path.join(homeDir, '.claude');
+      const settingsPath = path.join(targetRoot, 'settings.json');
+      const managedHooks = currentManagedHooks(targetRoot);
+      fs.mkdirSync(targetRoot, { recursive: true });
+      writeClaudeState(homeDir, {
+        operations: [
+          managedOperation('update-claude-settings', settingsPath, {
+            sourceRelativePath: 'hooks/hooks.json',
+            strategy: 'update-claude-settings',
+            managedHooks,
+          }),
+        ],
+      });
+
+      const result = repairInstalledStates({
+        repoRoot: REPO_ROOT,
+        homeDir,
+        projectRoot,
+        targets: ['claude'],
+      });
+
+      assert.strictEqual(result.results[0].status, 'repaired');
+      const descriptor = fs.openSync(settingsPath, 'r');
+      try {
+        assert.strictEqual(fs.fstatSync(descriptor).mode & 0o777, 0o600);
+        assert.deepStrictEqual(JSON.parse(fs.readFileSync(descriptor, 'utf8')).hooks, managedHooks);
+      } finally {
+        fs.closeSync(descriptor);
+      }
+    } finally {
+      cleanup(homeDir);
+      cleanup(projectRoot);
+    }
+  })) passed++; else failed++;
+
+  if (test('repair removes retired managed hooks using the recorded ownership snapshot', () => {
+    const homeDir = createTempDir('install-lifecycle-claude-home-');
+    const projectRoot = createTempDir('install-lifecycle-project-');
+
+    try {
+      const targetRoot = path.join(homeDir, '.claude');
+      const settingsPath = path.join(targetRoot, 'settings.json');
+      const currentHooks = currentManagedHooks(targetRoot);
+      const retiredHook = managedHookEntry('ecc:retired', 'node retired.js');
+      const recordedHooks = {
+        ...currentHooks,
+        Stop: [...currentHooks.Stop, retiredHook],
+      };
+      fs.mkdirSync(targetRoot, { recursive: true });
+      fs.writeFileSync(settingsPath, formatJson({
+        theme: 'dark',
+        hooks: recordedHooks,
+      }));
+      writeClaudeState(homeDir, {
+        operations: [
+          managedOperation('update-claude-settings', settingsPath, {
+            managedHooks: recordedHooks,
+          }),
+        ],
+      });
+
+      const result = repairInstalledStates({
+        repoRoot: REPO_ROOT,
+        homeDir,
+        projectRoot,
+        targets: ['claude'],
+      });
+
+      assert.strictEqual(result.results[0].status, 'repaired');
+      const repaired = JSON.parse(fs.readFileSync(settingsPath, 'utf8'));
+      assert.ok(!repaired.hooks.Stop.some(entry => entry.id === 'ecc:retired'));
+      assert.deepStrictEqual(repaired.hooks, currentHooks);
+      const state = readInstallState(path.join(targetRoot, 'ecc', 'install-state.json'));
+      const settingsOperation = state.operations.find(operation => (
+        operation.kind === 'update-claude-settings'
+      ));
+      assert.deepStrictEqual(settingsOperation.managedHooks, currentHooks);
+    } finally {
+      cleanup(homeDir);
+      cleanup(projectRoot);
+    }
+  })) passed++; else failed++;
+
+  if (test('uninstall removes only unchanged managed Claude hooks and reports drift as partial', () => {
+    const homeDir = createTempDir('install-lifecycle-claude-home-');
+    const projectRoot = createTempDir('install-lifecycle-project-');
+
+    try {
+      const targetRoot = path.join(homeDir, '.claude');
+      const settingsPath = path.join(targetRoot, 'settings.json');
+      const managedHooks = {
+        SessionStart: [managedHookEntry('ecc:start', 'node managed-start.js')],
+        Stop: [managedHookEntry('ecc:stop', 'node managed-stop.js')],
+      };
+      const userHook = {
+        id: 'user:stop',
+        matcher: 'Bash',
+        hooks: [{ type: 'command', command: 'user-command' }],
+      };
+      const driftedHook = managedHookEntry('ecc:stop', 'node user-edited-stop.js');
+      fs.mkdirSync(targetRoot, { recursive: true });
+      fs.writeFileSync(settingsPath, formatJson({
+        theme: 'dark',
+        hooks: {
+          SessionStart: managedHooks.SessionStart,
+          Stop: [userHook, driftedHook],
+        },
+      }));
+      const { installStatePath } = writeClaudeState(homeDir, {
+        operations: [
+          managedOperation('update-claude-settings', settingsPath, {
+            sourceRelativePath: 'hooks/hooks.json',
+            strategy: 'update-claude-settings',
+            managedHooks,
+          }),
+        ],
+      });
+
+      const result = uninstallInstalledStates({
+        homeDir,
+        projectRoot,
+        targets: ['claude'],
+      });
+
+      assert.strictEqual(result.results[0].status, 'partial');
+      assert.deepStrictEqual(result.results[0].retainedPaths, [settingsPath]);
+      assert.ok(fs.existsSync(installStatePath));
+      assert.deepStrictEqual(JSON.parse(fs.readFileSync(settingsPath, 'utf8')), {
+        theme: 'dark',
+        hooks: {
+          Stop: [userHook, driftedHook],
+        },
+      });
+    } finally {
+      cleanup(homeDir);
+      cleanup(projectRoot);
+    }
+  })) passed++; else failed++;
+
+  if (test('uninstall clears empty hook containers but preserves unrelated Claude settings', () => {
+    const homeDir = createTempDir('install-lifecycle-claude-home-');
+    const projectRoot = createTempDir('install-lifecycle-project-');
+
+    try {
+      const targetRoot = path.join(homeDir, '.claude');
+      const settingsPath = path.join(targetRoot, 'settings.json');
+      const managedHooks = {
+        Stop: [managedHookEntry('ecc:stop', 'node managed-stop.js')],
+      };
+      fs.mkdirSync(targetRoot, { recursive: true });
+      fs.writeFileSync(settingsPath, formatJson({
+        theme: 'dark',
+        hooks: managedHooks,
+      }));
+      const { installStatePath } = writeClaudeState(homeDir, {
+        operations: [
+          managedOperation('update-claude-settings', settingsPath, {
+            sourceRelativePath: 'hooks/hooks.json',
+            strategy: 'update-claude-settings',
+            managedHooks,
+          }),
+        ],
+      });
+
+      const result = uninstallInstalledStates({
+        homeDir,
+        projectRoot,
+        targets: ['claude'],
+      });
+
+      assert.strictEqual(result.results[0].status, 'uninstalled');
+      assert.deepStrictEqual(JSON.parse(fs.readFileSync(settingsPath, 'utf8')), {
+        theme: 'dark',
+      });
+      assert.ok(!fs.existsSync(installStatePath));
+    } finally {
+      cleanup(homeDir);
+      cleanup(projectRoot);
+    }
+  })) passed++; else failed++;
+
+  if (test('Claude settings lifecycle refuses a final-symlink destination', () => {
+    const homeDir = createTempDir('install-lifecycle-claude-home-');
+    const projectRoot = createTempDir('install-lifecycle-project-');
+
+    try {
+      const targetRoot = path.join(homeDir, '.claude');
+      const victimPath = path.join(targetRoot, 'victim.json');
+      const settingsPath = path.join(targetRoot, 'settings.json');
+      const managedHooks = {
+        Stop: [managedHookEntry('ecc:stop', 'node managed-stop.js')],
+      };
+      fs.mkdirSync(targetRoot, { recursive: true });
+      fs.writeFileSync(victimPath, formatJson({ sentinel: true, hooks: managedHooks }));
+      try {
+        fs.symlinkSync(victimPath, settingsPath, 'file');
+      } catch {
+        console.log('    (file symlink unsupported on this platform; skipping)');
+        return;
+      }
+      writeClaudeState(homeDir, {
+        operations: [
+          managedOperation('update-claude-settings', settingsPath, {
+            sourceRelativePath: 'hooks/hooks.json',
+            strategy: 'update-claude-settings',
+            managedHooks,
+          }),
+        ],
+      });
+
+      const doctor = buildDoctorReport({
+        repoRoot: REPO_ROOT,
+        homeDir,
+        projectRoot,
+        targets: ['claude'],
+      });
+      const repair = repairInstalledStates({
+        repoRoot: REPO_ROOT,
+        homeDir,
+        projectRoot,
+        targets: ['claude'],
+      });
+      const uninstall = uninstallInstalledStates({
+        homeDir,
+        projectRoot,
+        targets: ['claude'],
+      });
+
+      assert.strictEqual(doctor.results[0].status, 'error');
+      assert.ok(doctor.results[0].issues.some(issue => (
+        issue.code === 'unsafe-managed-destination'
+      )));
+      assert.strictEqual(repair.results[0].status, 'error');
+      assert.match(repair.results[0].error, /final symlink/);
+      assert.strictEqual(uninstall.results[0].status, 'error');
+      assert.match(uninstall.results[0].error, /final symlink/);
+      assert.deepStrictEqual(JSON.parse(fs.readFileSync(victimPath, 'utf8')), {
+        sentinel: true,
+        hooks: managedHooks,
+      });
+    } finally {
+      cleanup(homeDir);
+      cleanup(projectRoot);
+    }
+  })) passed++; else failed++;
+
+  if (test('Claude settings path validation refuses a non-canonical destination', () => {
+    const homeDir = createTempDir('install-lifecycle-claude-home-');
+    const projectRoot = createTempDir('install-lifecycle-project-');
+
+    try {
+      const targetRoot = path.join(homeDir, '.claude');
+      const destinationPath = path.join(targetRoot, 'settings.local.json');
+      fs.mkdirSync(targetRoot, { recursive: true });
+      assert.throws(
+        () => assertClaudeSettingsPath(destinationPath, targetRoot),
+        /outside the canonical settings file/
+      );
+      assert.ok(!fs.existsSync(destinationPath));
+    } finally {
+      cleanup(homeDir);
+      cleanup(projectRoot);
     }
   })) passed++; else failed++;
 

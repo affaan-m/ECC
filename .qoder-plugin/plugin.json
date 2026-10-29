@@ -1,0 +1,27 @@
+{
+  "name": "ecc",
+  "displayName": "ECC",
+  "version": "2.2.3",
+  "description": "Harness-native engineering workflows for Qoder: canonical skills and agents, legacy command shims, a reviewed SessionStart hook, and optional MCP tooling.",
+  "author": {
+    "name": "Affaan Mustafa",
+    "url": "https://x.com/affaanmustafa"
+  },
+  "homepage": "https://ecc.tools",
+  "repository": "https://github.com/affaan-m/ECC",
+  "license": "MIT",
+  "keywords": [
+    "qoder",
+    "agents",
+    "skills",
+    "tdd",
+    "code-review",
+    "security",
+    "workflow",
+    "automation"
+  ],
+  "skills": "./skills/",
+  "commands": "./commands/",
+  "mcpServers": "./.mcp.json",
+  "hooks": "./hooks/qoder-hooks.json"
+}

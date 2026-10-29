@@ -1,0 +1,7 @@
+interface:
+  display_name: "ECC"
+  short_description: "Repo workflows and conventions for ECC"
+  brand_color: "#0EA5E9"
+  default_prompt: "Use $ecc-conventions to follow this repository's conventions and workflows."
+policy:
+  allow_implicit_invocation: true

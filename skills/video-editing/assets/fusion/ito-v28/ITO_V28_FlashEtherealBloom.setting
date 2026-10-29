@@ -1,0 +1,7 @@
+{
+ Tools = ordered() {
+  ITO_V28_FlashGain = BrightnessContrast { Inputs = { Gain = Input { Value = 1.22, }, Contrast = Input { Value = 1.16, }, } },
+  ITO_V28_FlashBloom = SoftGlow { Inputs = { Gain = Input { Value = 0.72, }, GlowSize = Input { Value = 18.0, }, Input = Input { SourceOp = "ITO_V28_FlashGain", Source = "Output", }, } },
+  ITO_V28_FlashColor = ColorGain { Inputs = { GainRed = Input { Value = 0.93, }, GainGreen = Input { Value = 1.04, }, GainBlue = Input { Value = 1.16, }, Input = Input { SourceOp = "ITO_V28_FlashBloom", Source = "Output", }, } }
+ }
+}

@@ -4,7 +4,7 @@ description: >
   キャリアポートフォリオの管理、運賃交渉、キャリアパフォーマンスの追跡、貨物割り当て、戦略的なキャリア関係の維持のための成文化された専門知識。15年以上の経験を持つ輸送マネージャーに情報。スコアカーディングフレームワーク、RFPプロセス、市場情報、コンプライアンス調査を含みます。キャリアの管理、料金交渉、キャリアパフォーマンスの評価、または運賃戦略の構築を行うときに使用します。
 license: Apache-2.0
 version: 1.0.0
-homepage: https://github.com/affaan-m/everything-claude-code
+homepage: https://github.com/affaan-m/ECC
 origin: ECC
 metadata:
   author: evos

@@ -97,6 +97,7 @@ function parsePluginList(stdout) {
       plugin.id === CURRENT_PLUGIN_ID
       || String(plugin.id || '').startsWith('ecc@')
       || LEGACY_PLUGIN_IDS.has(plugin.id)
+      // Legacy install id prefix, kept for existing installs.
       || String(plugin.id || '').startsWith('everything-claude-code@')
     );
     if (!isRelevant) continue;
@@ -400,6 +401,7 @@ function currentEccPlugins(plugins) {
 function assertNoConflictingEccPlugins(plugins) {
   const legacy = plugins.find(plugin => (
     LEGACY_PLUGIN_IDS.has(plugin?.id)
+    // Legacy install id prefix, kept for existing installs.
     || String(plugin?.id || '').startsWith('everything-claude-code@')
   ));
   if (legacy) {
@@ -570,7 +572,6 @@ function verifyPluginAtScope(options) {
 
 function ensurePluginAtScope(options) {
   const run = options.run || runClaude;
-  const configuredHooks = options.hookConfiguration || hookOptions(options.hooks);
   if (options.installed) {
     run(
       ['plugin', 'update', CURRENT_PLUGIN_ID, '--scope', options.scope],
@@ -582,8 +583,6 @@ function ensurePluginAtScope(options) {
     [
       'plugin', 'install', CURRENT_PLUGIN_ID,
       '--scope', options.scope,
-      '--config', `hooks_enabled=${configuredHooks.hooks_enabled}`,
-      '--config', `hook_profile=${configuredHooks.hook_profile}`,
     ],
     { cwd: options.projectRoot, phase: 'plugin-install' }
   );

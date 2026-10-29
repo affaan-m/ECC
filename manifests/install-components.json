@@ -187,6 +187,14 @@
       ]
     },
     {
+      "id": "capability:documentation-governance",
+      "family": "capability",
+      "description": "Optional documentation routing and deterministic read-only integrity audits.",
+      "modules": [
+        "documentation-governance"
+      ]
+    },
+    {
       "id": "capability:prediction-markets",
       "family": "capability",
       "description": "Public, non-advisory prediction-market and Ito basket research workflows with gated Ito API access.",
@@ -195,9 +203,17 @@
       ]
     },
     {
+      "id": "capability:operator-desk-patterns",
+      "family": "capability",
+      "description": "Operator desk patterns for agents that draft, gate, and paper external counterparty interactions.",
+      "modules": [
+        "operator-desk-patterns"
+      ]
+    },
+    {
       "id": "capability:ito-compute",
       "family": "capability",
-      "description": "Authenticated Itô GPU inventory, RFQ, status, device revocation, and explicitly gated node-qualification workflows through the separately installed canonical CLI.",
+      "description": "Authenticated It\u00f4 GPU inventory, RFQ, status, device revocation, and explicitly gated node-qualification workflows through the separately installed canonical CLI.",
       "modules": [
         "ito-compute"
       ]
@@ -364,6 +380,14 @@
       "description": "Supply chain, logistics, procurement, and manufacturing domain skills.",
       "modules": [
         "supply-chain-domain"
+      ]
+    },
+    {
+      "id": "capability:documentation-context",
+      "family": "capability",
+      "description": "Optional durable domain-context and ADR handoff workflow.",
+      "modules": [
+        "documentation-context"
       ]
     },
     {
@@ -575,6 +599,14 @@
       ]
     },
     {
+      "id": "skill:osint-investigation",
+      "family": "skill",
+      "description": "Adaptive public-source investigation with tool selection, evidence tracking, visual verification, and falsification.",
+      "modules": [
+        "research-apis"
+      ]
+    },
+    {
       "id": "skill:deep-research",
       "family": "skill",
       "description": "Deep research and investigation workflows.",
@@ -655,6 +687,14 @@
       ]
     },
     {
+      "id": "locale:bn",
+      "family": "locale",
+      "description": "Bengali (bn) translated reference documentation installed to ~/.claude/docs/bn/.",
+      "modules": [
+        "docs-bn"
+      ]
+    },
+    {
       "id": "locale:de-de",
       "family": "locale",
       "description": "German (de-DE) translated reference docs installed to ~/.claude/docs/de-DE/.",
@@ -668,6 +708,38 @@
       "description": "Ukrainian (uk-UA) translated reference docs installed to ~/.claude/docs/uk-UA/.",
       "modules": [
         "docs-uk-ua"
+      ]
+    },
+    {
+      "id": "locale:pl",
+      "family": "locale",
+      "description": "Polish (pl) translated reference docs installed to ~/.claude/docs/pl/.",
+      "modules": [
+        "docs-pl"
+      ]
+    },
+    {
+      "id": "locale:ar",
+      "family": "locale",
+      "description": "Arabic (ar) translated reference docs installed to ~/.claude/docs/ar/.",
+      "modules": [
+        "docs-ar"
+      ]
+    },
+    {
+      "id": "capability:documentation-change-impact",
+      "family": "capability",
+      "description": "Optional read-only change-impact analysis workflow.",
+      "modules": [
+        "documentation-change-impact"
+      ]
+    },
+    {
+      "id": "capability:documentation-test-regression",
+      "family": "capability",
+      "description": "Optional test-collaboration and module-regression workflow.",
+      "modules": [
+        "documentation-test-regression"
       ]
     }
   ]

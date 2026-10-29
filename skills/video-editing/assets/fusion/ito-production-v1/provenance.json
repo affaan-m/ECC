@@ -1,0 +1,45 @@
+{
+  "bundle": "ITO_Production_v1",
+  "classification": "visually approved restrained starting presets; review each shot",
+  "files": {
+    "ITO_PROD_HighlightBloom.setting": "859f20d4c3e29a91367cc0c1e4472be5f85919d7953957549a0afde5bac74ba1",
+    "ITO_PROD_RGBFringe.setting": "81aa1cde3412782d6ec4e0ca815ba52f1eaca1065df96d813a0885f72a9add9b",
+    "ITO_PROD_LumaHalo.setting": "fa767774ef6a20d52422f8dfea7f1577a1308261212d730cdba39a4df2169186",
+    "install_ito_production_v1.lua": "fcde297435ac97ae7b9f01b65615ed7b0cd6622774a9952b1a041d642808d2b8"
+  },
+  "native_verification": {
+    "interpreter": "DaVinci Resolve bundled fuscript -l lua",
+    "actual_install_passed": true,
+    "second_idempotent_run_passed": true,
+    "prior_v22_and_v28_preserved": true,
+    "import_api": "TimelineItem.ImportFusionComp",
+    "saved_and_reopened": true,
+    "parameter_and_connection_readback_passed": true,
+    "renders": {
+      "count": 6,
+      "width": 1920,
+      "height": 1080,
+      "frames_each": 30,
+      "fps": 30,
+      "fully_decoded": true,
+      "new_black_border_pixels": 0,
+      "border_width_pixels": 4
+    },
+    "visual_review": "Two-source full-frame and detail contacts approved before installation; installed bytes matched approved previews.",
+    "alpha_scope": "Graph routing and disabled alpha processing only; H264 proof renders do not contain alpha.",
+    "main_film_modified": false,
+    "scope": "Prior native verification reported by the video owner; packaging does not rerun the native application."
+  },
+  "limitations": [
+    "Starting strengths require shot-specific taste review.",
+    "LumaHalo uses a per-frame Sobel/luminance mask, not object detection or tracking."
+  ],
+  "evidence_sha256": {
+    "installation_verification.json": "a49d1dc7a1efec4e4f2d5e21b8bca8e8ec4553cda669ae4bc85b0017c9f2658e",
+    "final_receipt.json": "19faa40f6bd52954a72faecb044b2f79c040a7a81b0b8302842316a1da6ce794",
+    "final_pixel_qc.json": "1355db7b73b69a9502cb274c977098fb8b8eeb583679ab53ddd8344a37822448",
+    "final_main_restore.json": "c2ead0f4151f467da0cd75b80c96658b68df5c38cfd4980b41ecd82d018066b8",
+    "production_preview_pixel_qc.json": "25c2d3f79caf8e6313d790101190269be1d5e1bb13e18e2861b313c8a593b0dc",
+    "VALIDATION.md": "00deff144c000dcfedc84d794377d97f870989fd2f7a7b4fde9f70a5b52b3d0f"
+  }
+}

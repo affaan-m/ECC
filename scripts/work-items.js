@@ -399,13 +399,13 @@ function claimWorkItemCli(store, options) {
   if (assigneeKind && assigneeKind !== 'agent' && assigneeKind !== 'human') {
     throw new Error("--as must be 'agent' or 'human'.");
   }
-  return claimWorkItem(store, {
+  return store._database.transaction(() => claimWorkItem(store, {
     id: resolveWorkItemId(options),
     owner: options.owner,
     assigneeKind,
     sessionId: options.sessionId,
     status: options.status
-  });
+  }))();
 }
 
 async function main() {

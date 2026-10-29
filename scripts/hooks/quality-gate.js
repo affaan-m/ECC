@@ -17,6 +17,7 @@
 const fs = require('fs');
 const path = require('path');
 const { spawnSync } = require('child_process');
+const { getLinterInvocation } = require('./pre-bash-commit-quality');
 
 const { findProjectRoot, detectFormatter, resolveFormatterBin } = require('../lib/resolve-formatter');
 
@@ -31,10 +32,13 @@ const MAX_STDIN = 1024 * 1024;
  * @returns {import('child_process').SpawnSyncReturns<string>}
  */
 function exec(command, args, cwd = process.cwd()) {
-  return spawnSync(command, args, {
+  // Reuse the Windows shim runner so .cmd formatters receive literal paths.
+  const invocation = getLinterInvocation(command, args);
+  return spawnSync(invocation.command, invocation.args, {
+    ...invocation.options,
+    shell: false,
     cwd,
-    encoding: 'utf8',
-    env: process.env,
+    env: invocation.options.env || process.env,
     timeout: 15000
   });
 }

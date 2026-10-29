@@ -124,12 +124,19 @@ const { data } = await supabase
   .select('*')
   .eq('email', userEmail)
 
-// Or with raw SQL
+// Or with raw SQL -- the value goes in the params array, never in the
+// string. Use your driver's placeholder syntax (Postgres numbers its
+// placeholders, MySQL uses "?").
 await db.query(
-  'SELECT * FROM users WHERE email = $1',
+  'SELECT * FROM users WHERE email = ?',
   [userEmail]
 )
 ```
+
+<!-- Do not write a literal dollar-sign-N placeholder anywhere in this file.
+     Invoking this skill with arguments substitutes it away, and the example
+     above then renders as concatenated SQL -- the exact anti-pattern this
+     section warns against. Use "?" and name the Postgres form in prose. -->
 
 #### Verification Steps
 - [ ] All database queries use parameterized queries

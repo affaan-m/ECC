@@ -26,7 +26,7 @@ policy belongs in `AGENTS.md` and `CONTRIBUTING.md`.
 |---------|---------------|-----------|
 | `AGENTS.md` | Cross-harness operating rules | Read before any repo work |
 | `.codex/AGENTS.md` | Codex-only guidance | Read after root instructions |
-| `.codex/config.toml` | Codex sandbox, MCP, profiles, agent roles | Inspect when setup or MCP behavior matters |
+| `.codex/config.toml` | Project guidance and agent roles | Inspect when setup or MCP behavior matters |
 | `.codex/agents/` | Codex multi-agent role layers | Use for explorer, reviewer, and docs researcher roles |
 | `.agents/skills/` | Codex-facing skill copies | Use when Codex needs native skill loading |
 | `skills/` | Canonical skill source | Update first for new workflow knowledge |
@@ -165,3 +165,16 @@ npm run command-registry:check
 npm run catalog:check
 node tests/run-all.js
 ```
+
+## Named user profiles
+
+Codex CLI 0.134 and later loads `codex -p strict` and `codex -p yolo` from
+`<CODEX_HOME>/strict.config.toml` and `<CODEX_HOME>/yolo.config.toml`. ECC ships
+those files beside its user reference. The receipt-backed home installer and
+legacy sync preserve existing customized profile files.
+
+For an existing config with `[profiles.<name>]`, review and move its settings
+into `<name>.config.toml`, then remove the old table and any top-level `profile`
+selector. ECC's add-only legacy merger leaves those user choices untouched.
+Verify the migration locally with `codex -p <name> mcp list`; this checks
+configuration loading without invoking a model or certifying its runtime.

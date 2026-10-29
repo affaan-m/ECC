@@ -9,6 +9,7 @@ const path = require('path');
 const { execFileSync } = require('child_process');
 
 const { getFallbackSessionRecordingPath } = require('../../scripts/lib/session-adapters/canonical-session');
+const { parseArgs } = require('../../scripts/session-inspect');
 
 const SCRIPT = path.join(__dirname, '..', '..', 'scripts', 'session-inspect.js');
 
@@ -64,10 +65,27 @@ function runTests() {
   let passed = 0;
   let failed = 0;
 
+  if (test('does not mistake option values for the positional target', () => {
+    for (const flag of ['--adapter', '--target-type', '--skill', '--amendment-id', '--observations', '--write']) {
+      for (const args of [[flag, 'value', 'claude:latest'], ['claude:latest', flag, 'value']]) {
+        assert.strictEqual(parseArgs(['node', SCRIPT, ...args]).target, 'claude:latest');
+      }
+    }
+    assert.strictEqual(parseArgs(['node', SCRIPT, '--adapter', 'claude-history']).target, undefined);
+  })) passed++; else failed++;
+
   if (test('shows usage when no target is provided', () => {
     const result = run();
     assert.strictEqual(result.code, 1);
     assert.ok(result.stdout.includes('Usage:'));
+  })) passed++; else failed++;
+
+  if (test('rejects missing values for every value-taking option', () => {
+    for (const flag of ['--adapter', '--target-type', '--skill', '--amendment-id', '--observations', '--write']) {
+      for (const args of [[flag], [flag, '--write', 'out.json', 'claude:latest'], [flag, 'value', flag]]) {
+        assert.throws(() => parseArgs(['node', SCRIPT, ...args]), { message: `Missing value for ${flag}` });
+      }
+    }
   })) passed++; else failed++;
 
   if (test('lists registered adapters', () => {
@@ -152,14 +170,25 @@ function runTests() {
         '# Inspect Session\n\n**Branch:** feat/session-inspect\n'
       );
 
-      const result = run(['claude:latest', '--write', outputPath], {
-        env: { HOME: homeDir }
-      });
-
-      assert.strictEqual(result.code, 0, result.stderr);
-      assert.ok(fs.existsSync(outputPath));
-      const written = JSON.parse(fs.readFileSync(outputPath, 'utf8'));
-      assert.strictEqual(written.adapterId, 'claude-history');
+      for (const args of [
+        ['claude:latest', '--adapter', 'claude-history', '--write', outputPath],
+        ['--adapter', 'claude-history', '--write', outputPath, 'claude:latest'],
+        ['--write', outputPath, 'claude:latest', '--adapter', 'claude-history'],
+      ]) {
+        fs.rmSync(outputPath, { force: true });
+        const result = run(args, {
+          env: { HOME: homeDir, ECC_SESSION_RECORDING_DIR: outputDir }
+        });
+        assert.strictEqual(result.code, 0, result.stderr);
+        assert.ok(fs.existsSync(outputPath));
+        const written = JSON.parse(fs.readFileSync(outputPath, 'utf8'));
+        assert.strictEqual(written.adapterId, 'claude-history');
+      }
+      fs.rmSync(outputPath, { force: true });
+      const invalid = run(['--adapter', '--write', outputPath, 'claude:latest'], { env: { HOME: homeDir } });
+      assert.strictEqual(invalid.code, 1);
+      assert.match(invalid.stderr, /Missing value for --adapter/);
+      assert.ok(!fs.existsSync(outputPath));
     } finally {
       fs.rmSync(homeDir, { recursive: true, force: true });
       fs.rmSync(outputDir, { recursive: true, force: true });

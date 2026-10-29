@@ -1,6 +1,6 @@
 # La Guía Breve de Todo sobre Seguridad Agéntica
 
-_everything claude code / investigación / seguridad_
+_ecc / investigación / seguridad_
 
 ---
 
@@ -447,10 +447,10 @@ Escanea tu configuración: [github.com/affaan-m/agentshield](https://github.com/
 
 Si no has leído las guías anteriores, empieza aquí:
 
-> [La Guía Breve de Everything Claude Code](./the-shortform-guide.md)
+> [La Guía Breve de ECC](./the-shortform-guide.md)
 >
-> [La Guía Extendida de Everything Claude Code](./the-longform-guide.md)
+> [La Guía Extendida de ECC](./the-longform-guide.md)
 
 también guarda estos repositorios:
-- [github.com/affaan-m/everything-claude-code](https://github.com/affaan-m/everything-claude-code)
+- [github.com/affaan-m/ECC](https://github.com/affaan-m/ECC)
 - [github.com/affaan-m/agentshield](https://github.com/affaan-m/agentshield)

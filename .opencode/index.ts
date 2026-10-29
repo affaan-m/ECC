@@ -37,4 +37,4 @@
 // Export the main plugin
 // opencode's legacy plugin loader iterates every module export and throws if
 // any is not a plugin function, so only the plugin function may be exported.
-export { default } from "./plugins/index.js"
+export { default } from "./plugins/index.ts"

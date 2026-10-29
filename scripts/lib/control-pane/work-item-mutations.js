@@ -68,6 +68,12 @@ function claimWorkItem(store, { id, owner, assigneeKind, sessionId, status } = {
   if (!isOpenStatus(target.status)) {
     throw new Error(`Work item ${target.id} is already done; cannot claim.`);
   }
+  if (target.owner) {
+    if (target.owner !== owner) {
+      throw new Error(`Work item ${target.id} is already owned by ${target.owner}; cannot claim.`);
+    }
+    return { claimed: true, item: target };
+  }
   const metadata = { ...(target.metadata || {}) };
   if (kind) {
     metadata.assigneeKind = kind;

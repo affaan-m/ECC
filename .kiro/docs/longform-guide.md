@@ -41,9 +41,10 @@ Skills provide structured guidance for complex, multi-step processes.
 
 ### 3. Steering Files as Persistent Context
 
-Steering files inject rules and patterns into every conversation:
+Steering files inject rules and patterns into conversations:
 
-- **Auto-inclusion**: Always-on rules (coding style, security, testing)
+- **Always-inclusion**: Always-on rules (coding style, security, testing)
+- **Auto-inclusion**: Files are automatically included when your request matches the description.
 - **File-match**: Conditional rules based on file type (TypeScript patterns for .ts files)
 - **Manual**: Context modes you invoke explicitly (dev-mode, review-mode)
 
@@ -146,7 +147,7 @@ The `lessons-learned.md` steering file acts as your project's evolving knowledge
 
 ```markdown
 ---
-inclusion: auto
+inclusion: always
 description: Project-specific patterns and decisions
 ---
 
@@ -236,9 +237,9 @@ If an agent's output isn't quite right, provide specific feedback and let it ite
 
 Don't try to describe a complex workflow in a single prompt. Use skills that encode best practices.
 
-### 8. Combine Auto and Manual Steering
+### 8. Combine Steering Inclusion Modes
 
-Use auto-inclusion for universal rules, file-match for language-specific patterns, and manual for context switching.
+Use always-inclusion for universal rules, auto-inclusion for context-heavy guidance that should only load when relevant, file-match for language-specific patterns, and manual for context switching.
 
 ## Common Pitfalls
 

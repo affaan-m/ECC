@@ -2,29 +2,36 @@
 
 ## Agentes Disponibles
 
-Ubicados en `~/.claude/agents/`:
+Los agentes de ECC se distribuyen con el plugin `ecc@ecc`, no en `~/.claude/agents/`.
+Se invocan a través de la herramienta Agent con un `subagent_type` con ámbito de plugin:
+
+```text
+Agent(subagent_type: "ecc:planner", prompt: "...")
+```
 
 | Agente | Propósito | Cuándo Usar |
 |--------|-----------|-------------|
-| planner | Planificación de implementación | Features complejas, refactoring |
-| architect | Diseño de sistemas | Decisiones arquitectónicas |
-| tdd-guide | Desarrollo guiado por pruebas | Nuevas features, corrección de bugs |
-| code-reviewer | Revisión de código | Después de escribir código |
-| security-reviewer | Análisis de seguridad | Antes de los commits |
-| build-error-resolver | Corrección de errores de build | Cuando el build falla |
-| e2e-runner | Testing E2E | Flujos de usuario críticos |
-| refactor-cleaner | Limpieza de código muerto | Mantenimiento de código |
-| doc-updater | Documentación | Actualización de docs |
-| rust-reviewer | Revisión de código Rust | Proyectos Rust |
-| harmonyos-app-resolver | Desarrollo de apps HarmonyOS | Proyectos HarmonyOS/ArkTS |
+| ecc:planner | Planificación de implementación | Features complejas, refactoring |
+| ecc:architect | Diseño de sistemas | Decisiones arquitectónicas |
+| ecc:tdd-guide | Desarrollo guiado por pruebas | Nuevas features, corrección de bugs |
+| ecc:code-reviewer | Revisión de código | Después de escribir código |
+| ecc:security-reviewer | Análisis de seguridad | Antes de los commits |
+| ecc:build-error-resolver | Corrección de errores de build | Cuando el build falla |
+| ecc:e2e-runner | Testing E2E | Flujos de usuario críticos |
+| ecc:refactor-cleaner | Limpieza de código muerto | Mantenimiento de código |
+| ecc:doc-updater | Documentación | Actualización de docs |
+| ecc:rust-reviewer | Revisión de código Rust | Proyectos Rust |
+| ecc:harmonyos-app-resolver | Desarrollo de apps HarmonyOS | Proyectos HarmonyOS/ArkTS |
+
+Para el roster completo de 68 agentes, ver `/ecc:ecc-guide`.
 
 ## Uso Inmediato de Agentes
 
 Sin necesidad de prompt del usuario:
-1. Solicitudes de features complejas - Usar el agente **planner**
-2. Código recién escrito/modificado - Usar el agente **code-reviewer**
-3. Corrección de bug o nueva feature - Usar el agente **tdd-guide**
-4. Decisión arquitectónica - Usar el agente **architect**
+1. Solicitudes de features complejas - Usar el agente **ecc:planner**
+2. Código recién escrito/modificado - Usar el agente **ecc:code-reviewer**
+3. Corrección de bug o nueva feature - Usar el agente **ecc:tdd-guide**
+4. Decisión arquitectónica - Usar el agente **ecc:architect**
 
 ## Ejecución Paralela de Tareas
 

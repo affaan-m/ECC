@@ -1,5 +1,5 @@
 ---
-name: literature-review
+name: scientific-thinking-literature-review
 description: 学術、生物医学、技術、科学的なトピックに対するシステマティックな文献レビューワークフロー。検索計画、ソースのスクリーニング、統合、引用確認、証拠ログを含む。
 origin: community
 ---

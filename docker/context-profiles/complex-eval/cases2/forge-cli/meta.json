@@ -1,0 +1,11 @@
+{
+  "id": "forge-cli",
+  "category": "spec-thoroughness",
+  "manualIds": ["skill:tdd-workflow"],
+  "checkTimeoutMs": 30000,
+  "selection": {
+    "id": "complex-forge-cli",
+    "category": "complex-spec-thoroughness",
+    "expectedIds": ["skill:tdd-workflow"]
+  }
+}
