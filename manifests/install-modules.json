@@ -554,7 +554,8 @@
         "skills/healthcare-cdss-patterns",
         "skills/healthcare-emr-patterns",
         "skills/healthcare-eval-harness",
-        "skills/safety-guard"
+        "skills/safety-guard",
+        "skills/web-perimeter-owasp-2025-audit"
       ],
       "targets": [
         "claude",
