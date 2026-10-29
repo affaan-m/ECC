@@ -1,0 +1,8 @@
+{
+  "schemaVersion": 1,
+  "maxDescriptionChars": 600,
+  "maxListingTokens": 31834,
+  "targetListingTokens": 8000,
+  "method": "utf8-bytes-div-4@1",
+  "note": "Ratchet for the always-on skill discovery metadata. maxListingTokens may only go down: trim a skill's description, then lower the ceiling to the new total in the same commit. targetListingTokens mirrors the budget declared by manifests/context-profiles/full@1.json (report-only today), so the progress line shows how far the shipped set is from a discoverable fit."
+}
