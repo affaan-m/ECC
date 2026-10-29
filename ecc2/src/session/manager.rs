@@ -245,6 +245,20 @@ pub fn create_scheduled_task(
     )
 }
 
+/// Replace only the instruction text on a native schedule. Keep ID, timing,
+/// agent/profile, worktree and other immutable scheduling fields unchanged.
+pub fn update_scheduled_task_text(
+    db: &StateStore,
+    schedule_id: i64,
+    task: &str,
+) -> Result<ScheduledTask> {
+    anyhow::ensure!(schedule_id > 0, "Schedule ID must be positive");
+    anyhow::ensure!(!task.trim().is_empty(), "Schedule task must not be empty");
+    anyhow::ensure!(task.len() <= 16 * 1024, "Schedule task exceeds 16 KiB");
+    db.update_scheduled_task_text(schedule_id, task)?
+        .with_context(|| format!("Scheduled task not found: {schedule_id}"))
+}
+
 pub fn list_scheduled_tasks(db: &StateStore) -> Result<Vec<ScheduledTask>> {
     db.list_scheduled_tasks()
 }

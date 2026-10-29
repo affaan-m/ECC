@@ -538,6 +538,17 @@ enum ScheduleCommands {
         #[arg(long)]
         json: bool,
     },
+    /// Update only the instructions for one existing schedule
+    Update {
+        /// Existing schedule ID; never creates another schedule
+        schedule_id: i64,
+        /// Replacement task instructions (preserves timing and agent identity)
+        #[arg(short, long)]
+        task: String,
+        /// Emit machine-readable JSON instead of the human summary
+        #[arg(long)]
+        json: bool,
+    },
     /// List scheduled tasks
     List {
         /// Emit machine-readable JSON instead of the human summary
@@ -2682,6 +2693,17 @@ async fn main() -> Result<()> {
                     println!(
                         "- {} [{}] | {}",
                         schedule.task, schedule.agent_type, schedule.cron_expr
+                    );
+                }
+            }
+            ScheduleCommands::Update { schedule_id, task, json } => {
+                let schedule = session::manager::update_scheduled_task_text(&db, schedule_id, &task)?;
+                if json {
+                    println!("{}", serde_json::to_string_pretty(&schedule)?);
+                } else {
+                    println!(
+                        "Updated schedule {} without changing its next run {}",
+                        schedule.id, schedule.next_run_at.to_rfc3339()
                     );
                 }
             }
@@ -8900,6 +8922,33 @@ mod tests {
             }
             _ => panic!("expected schedule add subcommand"),
         }
+    }
+
+    #[test]
+    fn cli_parses_native_schedule_update_without_identity_mutation_options() {
+        let cli = Cli::try_parse_from([
+            "ecc", "schedule", "update", "16", "--task",
+            "Read original ECC native READY items", "--json",
+        ])
+        .expect("native schedule update must parse");
+        match cli.command {
+            Some(Commands::Schedule {
+                command: ScheduleCommands::Update { schedule_id, task, json }
+            }) => {
+                assert_eq!(schedule_id, 16);
+                assert!(task.contains("READY items"));
+                assert!(json);
+            }
+            _ => panic!("expected native existing schedule update"),
+        }
+        assert!(Cli::try_parse_from([
+            "ecc", "schedule", "update", "16", "--task",
+            "New instructions", "--cron", "* * * * *",
+        ]).is_err(), "schedule update must not mutate cron");
+        assert!(Cli::try_parse_from([
+            "ecc", "schedule", "update", "16", "--task",
+            "New instructions", "--agent", "codex",
+        ]).is_err(), "schedule update must not mutate the agent");
     }
 
     #[test]

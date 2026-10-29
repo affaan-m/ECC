@@ -1562,6 +1562,22 @@ impl StateStore {
             .ok_or_else(|| anyhow::anyhow!("Scheduled task {id} was not found after insert"))
     }
 
+    /// Update instructions in place; preserve the existing ID and due time.
+    pub fn update_scheduled_task_text(
+        &self,
+        schedule_id: i64,
+        task: &str,
+    ) -> Result<Option<ScheduledTask>> {
+        let modified = self.conn.execute(
+            "UPDATE scheduled_tasks SET task = ?2, updated_at = ?3 WHERE id = ?1",
+            rusqlite::params![schedule_id, task, chrono::Utc::now().to_rfc3339()],
+        )?;
+        if modified == 0 {
+            return Ok(None);
+        }
+        self.get_scheduled_task(schedule_id)
+    }
+
     pub fn list_scheduled_tasks(&self) -> Result<Vec<ScheduledTask>> {
         let mut stmt = self.conn.prepare(
             "SELECT id, cron_expr, task, agent_type, profile_name, working_dir, project, task_group,
@@ -7033,6 +7049,44 @@ mod tests {
         assert_eq!(db.delete_scheduled_task(inserted.id)?, 1);
         assert!(db.get_scheduled_task(inserted.id)?.is_none());
 
+        Ok(())
+    }
+
+    #[test]
+    fn scheduled_task_update_keeps_original_identity_and_next_due_time() -> Result<()> {
+        let tempdir = TestDir::new("store-schedule-inplace-update")?;
+        let db = StateStore::open(&tempdir.path().join("state.db"))?;
+        let next = Utc::now() + ChronoDuration::minutes(2);
+        let original = db.insert_scheduled_task(
+            "*/2 * * * *",
+            "Old instructions",
+            "claude",
+            Some("lead-profile"),
+            tempdir.path(),
+            "pace",
+            "g0",
+            false,
+            next,
+        )?;
+        let updated = crate::session::manager::update_scheduled_task_text(
+            &db, original.id, "Read ECC native READY items",
+        )?;
+        assert_eq!(updated.id, original.id);
+        assert_eq!(updated.task, "Read ECC native READY items");
+        assert_eq!(updated.cron_expr, original.cron_expr);
+        assert_eq!(updated.next_run_at, original.next_run_at);
+        assert_eq!(updated.last_run_at, original.last_run_at);
+        assert_eq!(updated.agent_type, original.agent_type);
+        assert_eq!(updated.profile_name, original.profile_name);
+        assert_eq!(updated.working_dir, original.working_dir);
+        assert_eq!(updated.project, original.project);
+        assert_eq!(updated.task_group, original.task_group);
+        assert_eq!(updated.use_worktree, original.use_worktree);
+        assert_eq!(db.list_scheduled_tasks()?.len(), 1);
+        assert!(crate::session::manager::update_scheduled_task_text(&db, original.id, " ").is_err());
+        assert!(crate::session::manager::update_scheduled_task_text(&db, original.id, &"x".repeat(16385)).is_err());
+        assert!(crate::session::manager::update_scheduled_task_text(&db, original.id + 1, "valid task").is_err());
+        assert_eq!(db.list_scheduled_tasks()?.len(), 1);
         Ok(())
     }
 
