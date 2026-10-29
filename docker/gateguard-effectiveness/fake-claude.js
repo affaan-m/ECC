@@ -22,6 +22,19 @@ function copyTree(from, to) {
   }
 }
 
+/** Parses command line into arguments while handling quoted tokens and spaces safely without a shell */
+function splitCommand(command) {
+  const tokens = [];
+  const regex = /[^\s"']+|"([^"]*)"|'([^']*)'/g;
+  let match;
+  while ((match = regex.exec(command)) !== null) {
+    if (match[1] !== undefined) tokens.push(match[1]);
+    else if (match[2] !== undefined) tokens.push(match[2]);
+    else tokens.push(match[0]);
+  }
+  return tokens;
+}
+
 const overlay = process.env.FAKE_CLAUDE_OVERLAY;
 const firstFile = dir => {
   for (const entry of fs.readdirSync(dir, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name))) {
@@ -46,12 +59,21 @@ const group = (settings.hooks && settings.hooks.PreToolUse || []).find(entry => 
 if (group && process.env.FAKE_CLAUDE_SKIP_HOOK !== '1') {
   const env = { ...process.env, CLAUDE_PROJECT_DIR: process.cwd() };
   const payload = { session_id: 'fake', cwd: process.cwd(), hook_event_name: 'PreToolUse', tool_name: toolName, tool_input: input, tool_use_id: 't1' };
-  const [cmd, ...cmdArgs] = group.hooks[0].command.trim().split(/\s+/);
+  const [cmd, ...cmdArgs] = splitCommand(group.hooks[0].command);
   const result = spawnSync(cmd, cmdArgs, { shell: false, input: JSON.stringify(payload), env, encoding: 'utf8' });
+  if (result.error) {
+    emit({ type: 'result', is_error: true, result: `Hook execution failed: ${result.error.message}`, num_turns: 1, duration_ms: 100, total_cost_usd: 0, usage: {}, modelUsage: {} });
+    process.exit(0);
+  }
   let output = {};
-  try {
-    output = result.stdout ? JSON.parse(result.stdout) : {};
-  } catch {}
+  if (result.stdout) {
+    try {
+      output = JSON.parse(result.stdout);
+    } catch (err) {
+      emit({ type: 'result', is_error: true, result: `Hook parse error: ${err.message}`, num_turns: 1, duration_ms: 100, total_cost_usd: 0, usage: {}, modelUsage: {} });
+      process.exit(0);
+    }
+  }
   if (output.hookSpecificOutput && output.hookSpecificOutput.permissionDecision === 'deny') denial = output.hookSpecificOutput.permissionDecisionReason;
 }
 emit({ type: 'user', message: { content: [{ type: 'tool_result', tool_use_id: 't1', is_error: Boolean(denial), content: denial || 'ok' }] } });
