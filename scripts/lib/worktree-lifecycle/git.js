@@ -60,23 +60,23 @@ function createGitRunner(repoRoot, runImpl = defaultRunImpl) {
       return succeeds(['show-ref', '--verify', '--quiet', `refs/heads/${branch}`]);
     },
 
-    // Porcelain worktree list -> [{ path, branch, head, detached, bare }]
+    // Git 2.36+ NUL-delimited porcelain preserves whitespace within paths.
     listWorktrees() {
-      const result = run(['worktree', 'list', '--porcelain']);
+      const result = run(['worktree', 'list', '--porcelain', '-z']);
       if (result.status !== 0) {
-        return [];
+        const reason = (result.stderr || '').trim() || `git exited with status ${result.status}`;
+        throw new Error(`Unable to list worktrees safely (Git 2.36+ required): ${reason}`);
       }
 
       const worktrees = [];
       let current = null;
 
-      for (const rawLine of (result.stdout || '').split('\n')) {
-        const line = rawLine.trim();
+      for (const line of (result.stdout || '').split('\0')) {
         if (line.startsWith('worktree ')) {
           if (current) {
             worktrees.push(current);
           }
-          current = { path: line.slice('worktree '.length).trim(), branch: null, head: null, detached: false, bare: false };
+          current = { path: line.slice('worktree '.length), branch: null, head: null, detached: false, bare: false };
         } else if (current && line.startsWith('branch ')) {
           current.branch = line.slice('branch '.length).replace(/^refs\/heads\//, '').trim();
         } else if (current && line.startsWith('HEAD ')) {

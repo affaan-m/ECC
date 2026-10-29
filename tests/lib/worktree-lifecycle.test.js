@@ -83,12 +83,12 @@ test('classifyWorktree maps git facts to lifecycle states', () => {
 
 test('git.listWorktrees parses porcelain output', () => {
   const git = fakeGit('/repo', {
-    'worktree list --porcelain': {
+    'worktree list --porcelain -z': {
       stdout: [
         'worktree /repo', 'HEAD abc', 'branch refs/heads/main', '',
         'worktree /repo/.wt/feature', 'HEAD def', 'branch refs/heads/feature', '',
         'worktree /repo/.wt/detached', 'HEAD 999', 'detached', ''
-      ].join('\n')
+      ].join('\0')
     }
   });
   const list = git.listWorktrees();
@@ -114,6 +114,17 @@ test('git.predictMergeConflicts: clean merge (exit 0) and conflict (exit !=0)', 
   assert.deepStrictEqual(result.files, ['src/app.js', 'src/util.js']);
 });
 
+test('git.listWorktrees fails instead of returning an empty successful listing', () => {
+  for (const result of [
+    { status: 129, stdout: '', stderr: "error: unknown switch `z'" },
+    { status: 128, stdout: '', stderr: 'fatal: not a git repository' }
+  ]) {
+    const git = createGitRunner('/repo', () => result);
+    assert.throws(() => git.listWorktrees(), error =>
+      error.message.includes('Git 2.36+') && error.message.includes(result.stderr));
+  }
+});
+
 test('git.aheadBehind + lastCommitMs parse rev-list/log output', () => {
   const git = fakeGit('/repo', {
     'rev-list --left-right --count main...feature': { stdout: '3\t5\n' },
@@ -129,7 +140,7 @@ function fullRepoGit() {
   const recent = Math.floor((NOW - 1 * DAY) / 1000);
   const old = Math.floor((NOW - 30 * DAY) / 1000);
   return fakeGit('/repo', {
-    'worktree list --porcelain': {
+    'worktree list --porcelain -z': {
       stdout: [
         'worktree /repo', 'HEAD a', 'branch refs/heads/main', '',
         'worktree /repo/.wt/ready', 'HEAD b', 'branch refs/heads/ready', '',
@@ -137,7 +148,7 @@ function fullRepoGit() {
         'worktree /repo/.wt/merged', 'HEAD d', 'branch refs/heads/merged', '',
         'worktree /repo/.wt/stale', 'HEAD e', 'branch refs/heads/stale', '',
         'worktree /repo/.wt/dirty', 'HEAD f', 'branch refs/heads/dirty', ''
-      ].join('\n')
+      ].join('\0')
     },
     // ready: 2 ahead, clean merge
     'rev-list --left-right --count main...ready': { stdout: '0\t2\n' },
@@ -222,13 +233,54 @@ test('CLI usage() and main(--help) print help', () => {
 
 test('empty-queue branches: no conflicts / no stale render friendly messages', () => {
   const git = fakeGit('/repo', {
-    'worktree list --porcelain': { stdout: 'worktree /repo\nHEAD a\nbranch refs/heads/main\n' }
+    'worktree list --porcelain -z': { stdout: 'worktree /repo\0HEAD a\0branch refs/heads/main\0' }
   });
   const report = buildLifecycleReport('/repo', { baseBranch: 'main', nowMs: NOW }, { git });
   assert.ok(formatReport(report, { conflictsOnly: true }).includes('No worktrees would conflict'));
   assert.ok(formatReport(report, { staleOnly: true }).includes('No stale worktrees'));
 });
 
+
+test('real git: whitespace in worktree paths cannot turn dirty work into cleanup candidates', () => {
+  if (process.platform === 'win32') {
+    console.log('  (skipped POSIX newline/trailing-space path fixture on Windows)');
+    return;
+  }
+  const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-wl-paths-')));
+  const env = { ...process.env, GIT_CONFIG_NOSYSTEM: '1', GIT_CONFIG_GLOBAL: os.devNull };
+  for (const key of ['GIT_DIR', 'GIT_WORK_TREE', 'GIT_INDEX_FILE', 'GIT_COMMON_DIR', 'GIT_PREFIX']) delete env[key];
+  const git = args => execFileSync('git', args, { cwd: root, env, encoding: 'utf8' });
+  try {
+    git(['init', '-q', '-b', 'main']);
+    git(['-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.invalid',
+      '-c', 'commit.gpgsign=false', 'commit', '-q', '--allow-empty', '-m', 'fixture']);
+    const fixtures = [
+      { name: 'newline\nworker', branch: 'dirty-newline', dirty: true },
+      { name: 'trailing ', branch: 'dirty-trailing', dirty: true },
+      { name: 'ordinary-clean', branch: 'clean-control', dirty: false }
+    ];
+    for (const fixture of fixtures) {
+      const directory = path.join(root, fixture.name);
+      git(['worktree', 'add', '-q', '-b', fixture.branch, directory]);
+      if (fixture.dirty) fs.writeFileSync(path.join(directory, 'dirty.txt'), 'uncommitted fixture\n');
+    }
+    const report = JSON.parse(execFileSync(process.execPath, [
+      path.join(__dirname, '..', '..', 'scripts', 'worktree-lifecycle.js'), '--repo', root, '--json'
+    ], { env, encoding: 'utf8' }));
+    const plan = planCleanup(report);
+    for (const fixture of fixtures) {
+      const directory = path.join(root, fixture.name);
+      const worktree = report.worktrees.find(entry => entry.branch === fixture.branch);
+      assert.strictEqual(worktree.path, directory);
+      assert.strictEqual(worktree.state, fixture.dirty ? STATES.DIRTY : STATES.MERGED);
+      assert.strictEqual(worktree.dirty, fixture.dirty);
+      assert.strictEqual(plan.remove.some(entry => entry.path === directory), !fixture.dirty);
+      assert.strictEqual(plan.keep.some(entry => entry.path === directory), fixture.dirty);
+    }
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
 
 test('real git: createGitRunner drives an actual repo (covers default spawn path)', () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-wl-realgit-'));
