@@ -55,7 +55,7 @@ jobs:
           persist-credentials: false
 
       - name: Setup Node.js ${{ matrix.node }}
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: ${{ matrix.node }}
 
@@ -173,7 +173,7 @@ jobs:
       # Upload test artifacts on failure
       - name: Upload test artifacts
         if: failure()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: test-results-${{ matrix.os }}-node${{ matrix.node }}-${{ matrix.pm }}-${{ matrix.scope }}
           path: |
@@ -195,7 +195,7 @@ jobs:
           persist-credentials: false
 
       - name: Setup Node.js
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: '20.x'
 
@@ -209,7 +209,7 @@ jobs:
           node -e "const crypto = require('crypto'); const fs = require('fs'); const data = JSON.parse(fs.readFileSync('npm-pack.json', 'utf8')); const file = data[0]?.filename; if (!/^ecc-universal-[0-9A-Za-z.+-]+\.tgz$/.test(file || '')) throw new Error('Unexpected packed filename'); const archives = fs.readdirSync('.').filter(name => name.endsWith('.tgz')); if (archives.length !== 1 || archives[0] !== file) throw new Error('Expected exactly one packed archive'); const digest = crypto.createHash('sha256').update(fs.readFileSync(file)).digest('hex'); fs.appendFileSync(process.env.GITHUB_OUTPUT, 'package_file=' + file + '\npackage_sha256=' + digest + '\n')"
 
       - name: Upload exact installer artifact
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: ecc-ci-installer-artifact
           path: ${{ steps.pack.outputs.package_file }}
@@ -232,12 +232,12 @@ jobs:
           persist-credentials: false
 
       - name: Setup Node.js
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: '20.x'
 
       - name: Download exact installer artifact
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: ecc-ci-installer-artifact
           path: release-artifacts
@@ -260,7 +260,7 @@ jobs:
           persist-credentials: false
 
       - name: Setup Node.js
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: '20.x'
 
@@ -327,7 +327,7 @@ jobs:
           persist-credentials: false
 
       - name: Setup Node.js
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: '20.x'
 
@@ -398,7 +398,7 @@ jobs:
           persist-credentials: false
 
       - name: Setup Node.js
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: '20.x'
 
@@ -427,7 +427,7 @@ jobs:
           persist-credentials: false
 
       - name: Setup Node.js
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: '20.x'
 
@@ -446,7 +446,7 @@ jobs:
 
       - name: Upload coverage report
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: coverage-ubuntu-node20-npm
           path: coverage/
@@ -463,7 +463,7 @@ jobs:
           persist-credentials: false
 
       - name: Setup Node.js
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: '20.x'
 
