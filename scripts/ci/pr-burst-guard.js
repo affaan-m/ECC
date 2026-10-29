@@ -86,15 +86,22 @@ function strongestWindow(rows, current, policy, eventTime) {
   return { ...peak, excess: peak.denied ? peak.excess : [...excess.values()] };
 }
 
-/** Open-PR cap: keep the author's oldest `maxOpen` open PRs, close the rest. PRs the burst
- *  guard already closed in this run are treated as closed so nothing is mutated twice. */
-function capExcess(openRows, current, policy, alreadyClosed = new Set()) {
+/** Opened events may reconcile newer excess PRs when their own checks were
+ *  cancelled. Reopening consumes a new slot but never revisits its older peers. */
+function capExcess(openRows, current, policy, alreadyClosed = new Set(), action = 'opened') {
   validatePolicy(policy);
   const open = [...new Map([...openRows, current].map(pr => [pr.number, pr])).values()]
     .filter(pr => pr.user.id === current.user.id && pr.state === 'open' && !alreadyClosed.has(pr.number))
     .sort((a, b) => Date.parse(a.created_at) - Date.parse(b.created_at) || a.number - b.number);
+  const currentIndex = open.findIndex(pr => pr.number === current.number);
+  const currentTime = Date.parse(current.created_at);
+  const excess = open.length <= policy.maxOpen ? []
+    : action === 'reopened' ? currentIndex < 0 ? [] : [open[currentIndex]]
+      : open.filter((pr, index) => index >= policy.maxOpen
+        && (Date.parse(pr.created_at) > currentTime
+          || Date.parse(pr.created_at) === currentTime && pr.number >= current.number));
   return { openCount: open.length, maxOpen: policy.maxOpen,
-    capExcess: open.slice(policy.maxOpen).map(pr => ({ number: pr.number, state: pr.state })) };
+    capExcess: excess.map(pr => ({ number: pr.number, state: pr.state })) };
 }
 
 const CAP_MARKER = '<!-- ecc-pr-open-cap -->';
@@ -107,7 +114,7 @@ async function enforceCap(api, root, pr, current, result) {
     await api('POST', `${root}/issues/${pr.number}/comments`, { body: [CAP_MARKER,
       `Closed automatically: @${current.user.login} has ${result.openCount} open pull requests in this repository, above the limit of ${result.maxOpen} per contributor.`,
       '', 'Get existing PRs merged, or close the ones you no longer need, then reopen this one. The limit is about review capacity, not the quality of this patch.',
-      'Contributors with repository write access are exempt. Policy: `.github/PR_MODERATION.md`.'].join('\n') });
+      'The cap applies to all authors. Repository collaborators remain exempt from burst and denied-account moderation. Policy: `.github/PR_MODERATION.md`.'].join('\n') });
   } catch (error) {
     result.errors.push(`#${pr.number}: ${error.message}`);
   }
@@ -177,19 +184,25 @@ async function moderate({ api, blockAPI, repository, number, action = 'opened', 
     if (error.status !== 404) throw error;
     permission = 'none';
   }
-  if (['admin', 'maintain', 'write'].includes(permission)) return { exempt: true, author: current.user.login };
-  // Anchor opened events to GitHub's creation time so Actions queue delays cannot erase a burst.
-  const end = action === 'opened' ? Date.parse(current.created_at) : now;
-  const since = end - policy.windowMinutes * 60000;
-  const rows = await listPages(api, `${root}/pulls?state=all&sort=created&direction=desc`,
-    batch => batch.some(pr => Date.parse(pr.created_at) < since));
-  // Inspect later windows too: delivery order and replaced pending runs must not
-  // let an older event conceal a newer burst already present in the API snapshot.
-  const result = { ...strongestWindow(rows, current, policy, end), author: current.user.login,
-    dryRun, errors: [], blockStatus: 'Below blocking threshold' };
+  const burstExempt = ['admin', 'maintain', 'write'].includes(permission);
+  let result;
+  if (burstExempt) {
+    result = { author: current.user.login, burstExempt, dryRun, errors: [],
+      excess: [], blockStatus: 'Exempt from burst threshold' };
+  } else {
+    // Anchor opened events to GitHub's creation time so Actions queue delays cannot erase a burst.
+    const end = action === 'opened' ? Date.parse(current.created_at) : now;
+    const since = end - policy.windowMinutes * 60000;
+    const rows = await listPages(api, `${root}/pulls?state=all&sort=created&direction=desc`,
+      batch => batch.some(pr => Date.parse(pr.created_at) < since));
+    // Inspect later windows too: delivery order and replaced pending runs must not
+    // let an older event conceal a newer burst already present in the API snapshot.
+    result = { ...strongestWindow(rows, current, policy, end), author: current.user.login,
+      burstExempt, dryRun, errors: [], blockStatus: 'Below blocking threshold' };
+  }
   // Total open PRs is a separate, unwindowed list: the burst scan stops at the window edge.
   const openRows = await listPages(api, `${root}/pulls?state=open&sort=created&direction=desc`);
-  Object.assign(result, capExcess(openRows, current, policy, new Set(result.excess.map(pr => pr.number))));
+  Object.assign(result, capExcess(openRows, current, policy, new Set(result.excess.map(pr => pr.number)), action));
   if (dryRun) {
     if (result.block) result.blockStatus = 'Dry run: would attempt owner-scoped blocking';
     return result;

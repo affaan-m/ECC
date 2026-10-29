@@ -4,11 +4,12 @@ on:
   pull_request_target:
     types: [opened, reopened]
 
-# Process one author's ledger serially. A newer pending event replaces an older
-# pending event; each run reads all PR states instead of relying on event counts.
+# Queue up to 100 pending events per author. The burst scan still handles
+# delayed or out-of-order API snapshots.
 concurrency:
   group: pr-burst-${{ github.repository }}-${{ github.event.pull_request.user.id }}
   cancel-in-progress: false
+  queue: max
 
 permissions:
   contents: read
