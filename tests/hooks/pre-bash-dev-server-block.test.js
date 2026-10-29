@@ -262,6 +262,47 @@ function runTests() {
     }) ? passed++ : failed++);
   }
 
+  // --- Newlines ---
+
+  if (!isWindows) {
+    (test('blocks a dev server started on a later line of a multi-line command', () => {
+      const result = runScript('cd app\nnpm run dev');
+      assert.strictEqual(result.code, 2, `Expected exit code 2, got ${result.code}`);
+    }) ? passed++ : failed++);
+
+    (test('blocks a dev server after a here-document with an ANSI-C quoted delimiter', () => {
+      const result = runScript("cat <<$'EOF'\ntext\nEOF\nnpm run dev");
+      assert.strictEqual(result.code, 2, `Expected exit code 2, got ${result.code}`);
+    }) ? passed++ : failed++);
+
+    (test('blocks a dev server started by a substitution in a here-document body', () => {
+      for (const command of ["npm --version <<EOF\n'$(npm run dev)'\nEOF", "cat <<EOF\n'$(npm run dev)'\nEOF"]) {
+        const result = runScript(command);
+        assert.strictEqual(result.code, 2, `Expected exit code 2 for ${JSON.stringify(command)}, got ${result.code}`);
+      }
+    }) ? passed++ : failed++);
+  }
+
+  (test('allows a here-document that only mentions a dev server', () => {
+    const result = runScript('cat <<EOF > README.md\nStart it with:\nnpm run dev\nEOF');
+    assert.strictEqual(result.code, 0, `Expected exit code 0, got ${result.code}`);
+  }) ? passed++ : failed++);
+
+  (test('allows a here-document body that follows an operator', () => {
+    const result = runScript('cat <<EOF &&\nnpm run dev\nEOF\necho done');
+    assert.strictEqual(result.code, 0, `Expected exit code 0, got ${result.code}`);
+  }) ? passed++ : failed++);
+
+  (test('allows a here-document body whose ANSI-C quoted delimiter has an escape', () => {
+    const result = runScript("cat <<$'E\\x4fF'\nE\\x4fF\nnpm run dev\nEOF");
+    assert.strictEqual(result.code, 0, `Expected exit code 0, got ${result.code}`);
+  }) ? passed++ : failed++);
+
+  (test('allows a here-document body fed to a package manager command', () => {
+    const result = runScript('npm --version <<EOF && cat\nnpm run dev\nEOF');
+    assert.strictEqual(result.code, 0, `Expected exit code 0, got ${result.code}`);
+  }) ? passed++ : failed++);
+
   // --- Edge cases ---
 
   (test('empty/invalid input passes through (exit code 0)', () => {
