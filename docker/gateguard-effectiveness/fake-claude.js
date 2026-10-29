@@ -46,8 +46,12 @@ const group = (settings.hooks && settings.hooks.PreToolUse || []).find(entry => 
 if (group && process.env.FAKE_CLAUDE_SKIP_HOOK !== '1') {
   const env = { ...process.env, CLAUDE_PROJECT_DIR: process.cwd() };
   const payload = { session_id: 'fake', cwd: process.cwd(), hook_event_name: 'PreToolUse', tool_name: toolName, tool_input: input, tool_use_id: 't1' };
-  const result = spawnSync(group.hooks[0].command, { shell: true, input: JSON.stringify(payload), env, encoding: 'utf8' });
-  const output = result.stdout ? JSON.parse(result.stdout) : {};
+  const [cmd, ...cmdArgs] = group.hooks[0].command.trim().split(/\s+/);
+  const result = spawnSync(cmd, cmdArgs, { shell: false, input: JSON.stringify(payload), env, encoding: 'utf8' });
+  let output = {};
+  try {
+    output = result.stdout ? JSON.parse(result.stdout) : {};
+  } catch {}
   if (output.hookSpecificOutput && output.hookSpecificOutput.permissionDecision === 'deny') denial = output.hookSpecificOutput.permissionDecisionReason;
 }
 emit({ type: 'user', message: { content: [{ type: 'tool_result', tool_use_id: 't1', is_error: Boolean(denial), content: denial || 'ok' }] } });
