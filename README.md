@@ -409,6 +409,21 @@ hook profile into Qoder: blocking tool hooks, async stop jobs, and
 Claude-specific matchers remain outside this initial native integration. See
 the [.qoder-plugin notes](.qoder-plugin/README.md) for the exact boundary.
 
+### Continue CLI (`cn`)
+
+This fork installs ECC's rules, skills, slash commands, agents, MCP servers and
+git-hook guardrails into the [Continue CLI](https://docs.continue.dev/cli/overview):
+
+```bash
+npm i -g @continuedev/cli        # then run `cn` once to finish its setup
+./install-continue.sh            # Windows: .\install-continue.ps1
+./install-continue.sh --langs python,typescript --skills developer
+```
+
+See [CONTINUE-CLI.md](CONTINUE-CLI.md) for options, usage (`/plan`,
+`ecc-agent code-reviewer`, headless `ecc-prompt`), update, uninstall and
+current `cn` limitations.
+
 ### Other agents and editors
 
 <details>
