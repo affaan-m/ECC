@@ -167,24 +167,55 @@ function findFileIssues(filePath) {
 }
 
 /**
+ * The body of the here-document that `value` starts with, as in `$(cat <<'EOF'`, or null.
+ * It ends at the line that holds only the delimiter, after leading tabs for <<-, which also
+ * strips them from the body.
+ * @param {string} value
+ * @returns {string|null}
+ */
+function heredocBody(value) {
+  const opener = /^\$\(\s*cat\s+<<(-?)\s*(['"]?)([A-Za-z_][\w.-]*)\2[ \t]*\r?\n/.exec(value);
+  if (!opener) return null;
+  const [, stripTabs, , delimiter] = opener;
+  const lines = value.slice(opener[0].length).split('\n').map(line => {
+    const text = line.replace(/\r$/, '');
+    return stripTabs ? text.replace(/^\t+/, '') : text;
+  });
+  const end = lines.indexOf(delimiter);
+  return end === -1 ? null : lines.slice(0, end).join('\n');
+}
+
+/**
  * Validate commit message format
  * @param {string} command 
  * @returns {object|null} Validation result or null if no message to validate
  */
 function validateCommitMessage(command) {
   // Extract commit message from command (quote-aware: when quoted, capture to the
-  // matching closing quote, consuming escaped chars (\") so an embedded escaped
-  // quote does not truncate the subject, and allowing the OTHER quote char inside
-  // the body; when unquoted, capture the full remaining tail, not just the first token)
-  const messageMatch = command.match(/(?:-m|--message)[=\s]+(?:"((?:\\.|[^"\\])*)"|'((?:\\.|[^'\\])*)'|([^"']+?)\s*$)/);
+  // matching closing quote, consuming escaped chars (\", and a backslash before a
+  // newline) so an embedded escaped quote does not truncate the subject, and allowing
+  // the OTHER quote char inside the body; when unquoted, capture the full remaining
+  // tail, not just the first token)
+  const messageMatch = command.match(/(?:-m|--message)[=\s]+(?:"((?:\\[\s\S]|[^"\\])*)"|'((?:\\.|[^'\\])*)'|([^"']+?)\s*$)/);
   if (!messageMatch) return null;
   
-  const message = messageMatch[1] ?? messageMatch[2] ?? messageMatch[3];
+  // A message written as -m "$(cat <<'EOF' ... EOF)", as Claude Code writes them, is the
+  // body of that here-document. It is read from the command itself, since it may hold quotes.
+  const heredoc = messageMatch[1]?.startsWith('$(')
+    ? heredocBody(command.slice(messageMatch.index + messageMatch[0].indexOf('"') + 1))
+    : null;
+  // In double quotes, Bash drops the backslash before $ ` " \ and drops a backslash-newline,
+  // a line continuation, altogether. Before any other character the backslash stays.
+  const doubleQuoted = messageMatch[1]?.replace(/\\([\n$`"\\])/g, (escape, next) => (next === '\n' ? '' : next));
+  const message = heredoc ?? doubleQuoted ?? messageMatch[2] ?? messageMatch[3];
+  // The format rules apply to the subject: git drops leading blank lines and trailing
+  // whitespace, and the first line left is the subject.
+  const subject = (message.split('\n').find(line => line.trim()) || '').trimEnd();
   const issues = [];
   
   // Check conventional commit format
   const conventionalCommit = /^(feat|fix|docs|style|refactor|test|chore|build|ci|perf|revert)(\(.+\))?:\s*.+/;
-  if (!conventionalCommit.test(message)) {
+  if (!conventionalCommit.test(subject)) {
     issues.push({
       type: 'format',
       message: 'Commit message does not follow conventional commit format',
@@ -193,17 +224,17 @@ function validateCommitMessage(command) {
   }
   
   // Check message length
-  if (message.length > 72) {
+  if (subject.length > 72) {
     issues.push({
       type: 'length',
-      message: `Commit message too long (${message.length} chars, max 72)`,
+      message: `Commit message too long (${subject.length} chars, max 72)`,
       suggestion: 'Keep the first line under 72 characters'
     });
   }
   
   // Check for lowercase first letter (conventional)
-  if (conventionalCommit.test(message)) {
-    const afterColon = message.split(':')[1];
+  if (conventionalCommit.test(subject)) {
+    const afterColon = subject.split(':')[1];
     if (afterColon && /^[A-Z]/.test(afterColon.trim())) {
       issues.push({
         type: 'capitalization',
@@ -214,7 +245,7 @@ function validateCommitMessage(command) {
   }
   
   // Check for trailing period
-  if (message.endsWith('.')) {
+  if (subject.endsWith('.')) {
     issues.push({
       type: 'punctuation',
       message: 'Commit message should not end with a period',

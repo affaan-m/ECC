@@ -495,7 +495,7 @@ if (test('captures full single-quoted -m message containing a double quote', () 
 if (test('captures full double-quoted -m message with escaped inner quotes (not truncated)', () => {
   const res = hook.validateCommitMessage('git commit -m "fix: say \\"hello\\" to the user"');
   assert.ok(res, 'expected a validation result');
-  assert.strictEqual(res.message, 'fix: say \\"hello\\" to the user');
+  assert.strictEqual(res.message, 'fix: say "hello" to the user');
 })) passed++; else failed++;
 
 if (test('measures length of the full message past an apostrophe (not the truncated prefix)', () => {
@@ -504,6 +504,80 @@ if (test('measures length of the full message past an apostrophe (not the trunca
   assert.strictEqual(res.message, subject);
   assert.ok(res.issues.some(i => i.type === 'length'), 'full (>72) message should trigger a length issue');
 })) passed++; else failed++;
+// --- Subject line and here-document messages ---
+
+if (test('checks only the subject line of a multi-line message', () => {
+  const res = hook.validateCommitMessage(
+    'git commit -m "fix: handle empty input\n\nThe parser crashed on an empty string. It now returns an empty list."'
+  );
+  assert.deepStrictEqual(res.issues, []);
+})) passed++; else failed++;
+
+if (test('reads the here-document message that Claude Code writes', () => {
+  const body = 'feat(hooks): add a check\n\nA body line that says why, and quotes "the case" it covers.';
+  const res = hook.validateCommitMessage(`git commit -m "$(cat <<'EOF'\n${body}\nEOF\n)"`);
+  assert.strictEqual(res.message, body);
+  assert.deepStrictEqual(res.issues, []);
+})) passed++; else failed++;
+
+if (test('still reports a bad subject inside a here-document', () => {
+  const res = hook.validateCommitMessage('git commit -m "$(cat <<EOF\nUpdate stuff.\n\nbody\nEOF\n)"');
+  assert.deepStrictEqual(res.issues.map(i => i.type), ['format', 'punctuation']);
+})) passed++; else failed++;
+
+if (test('drops a line continuation from a double-quoted message, as Bash does', () => {
+  const res = hook.validateCommitMessage('git commit -m "\\\nfix: handle empty input"');
+  assert.strictEqual(res.message, 'fix: handle empty input');
+  assert.deepStrictEqual(res.issues, []);
+  // An escaped backslash before a newline is one backslash, and the newline stays
+  assert.strictEqual(hook.validateCommitMessage('git commit -m "fix: path C:\\\\\nbody"').message, 'fix: path C:\\\nbody');
+  // Bash removes the backslash only before $ ` " \ and a newline; before a CR it stays
+  assert.strictEqual(hook.validateCommitMessage('git commit -m "fix: keep path\\\r\nbody."').message, 'fix: keep path\\\r\nbody.');
+  assert.deepStrictEqual(hook.validateCommitMessage('git commit -m "fix: keep path\\\r\nbody."').issues, []);
+  assert.strictEqual(hook.validateCommitMessage('git commit -m "fix: cost \\$5 in \\d+ steps"').message, 'fix: cost $5 in \\d+ steps');
+})) passed++; else failed++;
+
+if (test('reads a here-document whose body has a backslash at the end of a line', () => {
+  const res = hook.validateCommitMessage('git commit -m "$(cat <<\'EOF\'\nUpdate stuff.\n\nC:\\build\\\nEOF\n)"');
+  assert.ok(res, 'expected a validation result');
+  assert.strictEqual(res.message, 'Update stuff.\n\nC:\\build\\');
+  assert.deepStrictEqual(res.issues.map(i => i.type), ['format', 'punctuation']);
+})) passed++; else failed++;
+
+if (test('ends a here-document only at a line that holds just the delimiter', () => {
+  const res = hook.validateCommitMessage(
+    'git commit -m "$(cat <<\'EOF\'\nfix: keep reading\n\n  EOF\nEOF \nmore body\nEOF\n)"'
+  );
+  assert.strictEqual(res.message, 'fix: keep reading\n\n  EOF\nEOF \nmore body');
+})) passed++; else failed++;
+
+if (test('reads a <<- here-document without its leading tabs', () => {
+  const res = hook.validateCommitMessage('git commit -m "$(cat <<-"END"\n\tfix: tabbed subject\n\tEND\n)"');
+  assert.strictEqual(res.message, 'fix: tabbed subject');
+  assert.deepStrictEqual(res.issues, []);
+})) passed++; else failed++;
+
+if (test('needs the description on the subject line itself', () => {
+  const res = hook.validateCommitMessage('git commit -m "feat:\nadd a check"');
+  assert.ok(res.issues.some(i => i.type === 'format'), 'a subject with nothing after the colon is not conventional');
+})) passed++; else failed++;
+
+if (test('passes a valid here-document commit message end to end', () => {
+  inTempRepo(repoDir => {
+    writeAndStage(repoDir, 'index.js', 'const clean = true;\n');
+    const input = JSON.stringify({
+      tool_input: {
+        command: `git commit -m "$(cat <<'EOF'\nfix(hooks): read the message body\n\nA longer explanation that runs well past seventy-two characters in total.\nEOF\n)"`
+      }
+    });
+    const { result, stderr } = captureConsoleError(() => hook.evaluate(input));
+
+    assert.strictEqual(result.exitCode, 0);
+    assert.ok(!stderr.includes('Commit Message Issues'), `expected no message warnings, got: ${stderr}`);
+    assert.ok(stderr.includes('All checks passed'), `expected a pass, got: ${stderr}`);
+  });
+})) passed++; else failed++;
+
 if (test('handles hash-prefixed python comments and string false-positives', () => {
   inTempRepo(repoDir => {
     writeAndStage(repoDir, 'script.py', [
