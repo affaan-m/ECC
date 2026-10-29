@@ -815,20 +815,54 @@ function commandRole(words, budget) {
   return { kind: 'opaque', stdin: true };
 }
 
+// A brace group or subshell writes what its own commands print into the pipe:
+// `{ echo 'git push --no-verify'; } | sh` feeds sh like `echo ... | sh`. The
+// writes form one stream, so they are also read joined in order:
+// `{ printf 'git pu'; printf 'sh --no-verify'; } | sh`.
+function groupSources(scope, budget) {
+  const written = [];
+  for (const inner of scanShell(scope.body, budget).commands) {
+    if (!inner.pipeTo) written.push(...pipelineSources(inner, budget));
+  }
+  if (written.length > 1) written.push({ text: written.map(source => source.text).join(''), opaque: written.some(source => source.opaque) });
+  return written;
+}
+
+// printf writes the whitespace escapes of its format as the characters they
+// name, so `printf 'git push --no-verify\n'` ends its flag at the newline. As for
+// $'...' in shell-scan, only word boundaries are decoded, not numeric escapes.
+const PRINTF_SPACE_ESCAPES = { n: '\n', t: '\t', r: '\r', v: '\v', f: '\f', '\\': '\\' };
+
+// echo reads options only before its first operand, so `echo 'git commit' -n`
+// prints `git commit -n`. Its output ends with a newline unless an -n option
+// asks it not to, so two echoes in a group write two lines, not one command.
+function echoText(words) {
+  let first = 1;
+  while (first < words.length && /^-[neE]+$/.test(words[first].value)) first++;
+  const text = words.slice(first).map(word => word.value).join(' ');
+  return words.slice(1, first).some(word => word.value.includes('n')) ? text : `${text}\n`;
+}
+
+function printfText(words) {
+  const format = words[1]?.value || '';
+  if (format === '%s') return words.slice(2).map(word => word.value).join('');
+  if (format === '%s\\n') return words.slice(2).map(word => `${word.value}\n`).join('');
+  const decoded = format.replace(/\\([ntrvf\\])/g, (escape, c) => PRINTF_SPACE_ESCAPES[c]);
+  return [decoded, ...words.slice(2).map(word => word.value)].join(' ');
+}
+
 // Literal producers only. Unmodeled transformations remain conservative rather
 // than executing a formatter, interpreter, shell or user-supplied command.
 function pipelineSources(command, budget) {
   const sources = [];
   for (let current = command; current; current = current.pipeFrom) {
+    if (current.closedScope) sources.push(...groupSources(current.closedScope, budget));
     budget.spend(current.words.length + 1);
     const { words } = executableWords(current.words, budget);
     for (const word of words) budget.spend(word.value.length + 3);
     const name = basename(words[0]?.value || '');
-    if (name === 'echo') sources.push({ text: words.slice(1).filter(word => !/^-[neE]+$/.test(word.value)).map(word => word.value).join(' ') });
-    if (name === 'printf') {
-      const format = words[1]?.value || '';
-      if (format !== '-v') sources.push({ text: (format === '%s' || format === '%s\\n') ? words.slice(2).map(word => word.value).join('\n') : words.slice(1).map(word => word.value).join(' ') });
-    }
+    if (name === 'echo') sources.push({ text: echoText(words) });
+    if (name === 'printf' && words[1]?.value !== '-v') sources.push({ text: printfText(words) });
     if (!DATA_COMMANDS.has(name)) {
       // Foreign transformations can introduce literal bypasses into executable
       // stdin. Treat their punctuation as delimiters, not as proved shell syntax.

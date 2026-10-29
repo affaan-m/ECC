@@ -449,12 +449,15 @@ function markFunctionDefinition(scan) {
 }
 
 function openScope(scan, c, incomingPipe) {
-  scan.scope = { parent: scan.scope, isolated: c === '(' || incomingPipe, conditional: false, pipelineLast: c === '{' && incomingPipe };
+  scan.scope = { parent: scan.scope, isolated: c === '(' || incomingPipe, conditional: false, pipelineLast: c === '{' && incomingPipe, bodyStart: scan.i + 1 };
   scan.current.scope = scan.scope;
 }
 
 function closeScope(scan) {
   const closedScope = scan.scope;
+  // The source text between the braces or parentheses, for a reader of the
+  // group's output.
+  closedScope.body = scan.input.slice(closedScope.bodyStart, scan.i);
   scan.scope = closedScope.parent;
   scan.current.scope = scan.scope;
   scan.current.closedScope = closedScope;
