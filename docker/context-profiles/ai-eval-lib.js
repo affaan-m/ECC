@@ -75,6 +75,37 @@ function validateCorpusIds(cases) {
 
 // Complex corpora hold a few realistic multi-file tasks with scored hidden graders. Sample gates
 // are descriptive at this size, so the distinct-task minimum relaxes to the corpus itself.
+function invalidComplexStep(step) {
+  return typeof step.query !== 'string' || !bounded(Buffer.byteLength(step.query), 1, 8192)
+    || typeof step.check !== 'string' || !bounded(Buffer.byteLength(step.check), 1, 65536)
+    || (step.checkTimeoutMs !== undefined && !bounded(step.checkTimeoutMs, 1, 120000))
+    || (step.manualIds !== undefined && (!Array.isArray(step.manualIds) || step.manualIds.length > 3));
+}
+
+function validateComplexTaskFiles(task) {
+  const files = Object.entries(task.files || {});
+  if (!Array.isArray(task.manualIds) || task.manualIds.length > 3 || !bounded(files.length, 1, 24)
+    || files.some(([file, content]) => !safeRelative(file) || typeof content !== 'string' || Buffer.byteLength(content) > 65536)) {
+    throw new Error('Invalid corpus task');
+  }
+}
+
+function validateComplexTask(task) {
+  if (!/^[a-z][a-z0-9-]{0,63}$/.test(task.id)) throw new Error('Invalid corpus case');
+  if (task.steps === undefined
+    && (typeof task.query !== 'string' || !bounded(Buffer.byteLength(task.query), 1, 8192))) throw new Error('Invalid corpus case');
+  validateComplexTaskFiles(task);
+  if (task.steps !== undefined) {
+    // Stepped (chained) task: sequential tickets graded in one accumulating workspace.
+    if (!Array.isArray(task.steps) || !bounded(task.steps.length, 2, 8) || task.steps.some(invalidComplexStep)) {
+      throw new Error('Invalid corpus task');
+    }
+  } else if (typeof task.check !== 'string' || !bounded(Buffer.byteLength(task.check), 1, 65536)
+    || (task.checkTimeoutMs !== undefined && !bounded(task.checkTimeoutMs, 1, 120000))) {
+    throw new Error('Invalid corpus task');
+  }
+}
+
 function validateComplexCorpus(corpus) {
   if (!Array.isArray(corpus.selection) || !Array.isArray(corpus.tasks)
     || !bounded(corpus.selection.length, 0, 50) || !bounded(corpus.tasks.length, 1, 10)
@@ -83,29 +114,7 @@ function validateComplexCorpus(corpus) {
   }
   validateCorpusIds(corpus.selection);
   if (new Set(corpus.tasks.map(c => c.id)).size !== corpus.tasks.length) throw new Error('Duplicate corpus ID');
-  for (const task of corpus.tasks) {
-    if (!/^[a-z][a-z0-9-]{0,63}$/.test(task.id)) throw new Error('Invalid corpus case');
-    if (task.steps === undefined
-      && (typeof task.query !== 'string' || !bounded(Buffer.byteLength(task.query), 1, 8192))) throw new Error('Invalid corpus case');
-    const files = Object.entries(task.files || {});
-    if (!Array.isArray(task.manualIds) || task.manualIds.length > 3 || !bounded(files.length, 1, 24)
-      || files.some(([file, content]) => !safeRelative(file) || typeof content !== 'string' || Buffer.byteLength(content) > 65536)) {
-      throw new Error('Invalid corpus task');
-    }
-    if (task.steps !== undefined) {
-      // Stepped (chained) task: sequential tickets graded in one accumulating workspace.
-      if (!Array.isArray(task.steps) || !bounded(task.steps.length, 2, 8)
-        || task.steps.some(step => typeof step.query !== 'string' || !bounded(Buffer.byteLength(step.query), 1, 8192)
-          || typeof step.check !== 'string' || !bounded(Buffer.byteLength(step.check), 1, 65536)
-          || (step.checkTimeoutMs !== undefined && !bounded(step.checkTimeoutMs, 1, 120000))
-          || (step.manualIds !== undefined && (!Array.isArray(step.manualIds) || step.manualIds.length > 3)))) {
-        throw new Error('Invalid corpus task');
-      }
-    } else if (typeof task.check !== 'string' || !bounded(Buffer.byteLength(task.check), 1, 65536)
-      || (task.checkTimeoutMs !== undefined && !bounded(task.checkTimeoutMs, 1, 120000))) {
-      throw new Error('Invalid corpus task');
-    }
-  }
+  for (const task of corpus.tasks) validateComplexTask(task);
 }
 
 function sourceSnapshot(repoRoot) {
@@ -601,36 +610,50 @@ function launchEnvironment(launch) {
     TMPDIR: launch.home, LANG: 'C.UTF-8' };
 }
 
+// One provider call. A throwing provider still records its elapsed time and
+// restores the environment; only source drift propagates as itself.
+function callProvider(state, environment, request, started) {
+  try {
+    return state.provider(request);
+  } catch (error) {
+    state.metrics.push({ phase: request.phase, elapsedMs: Date.now() - started, usage: null });
+    if (error?.code === 'source-drift') throw error;
+    return fail('provider-failed');
+  } finally { environment.restore(); }
+}
+
+function parseProviderOutput(state, raw) {
+  const parsed = state.family === 'claude' ? parseClaudeJson(raw?.stdout) : parseCodexJsonl(raw?.stdout);
+  const succeeded = raw?.status === 0 && !raw?.error;
+  return { parsed, succeeded };
+}
+
+function adapterCall(state, cwd, environment, args, options) {
+  if (state.calls >= state.maxCalls) fail('call-budget');
+  state.assertCurrent();
+  environment.verify();
+  const remaining = state.deadline - Date.now();
+  if (remaining <= 0) fail('deadline');
+  const phase = options.phase || (args.includes('read-only') ? 'selection' : 'task');
+  state.calls++;
+  const started = Date.now();
+  // Coding tasks outgrow the launcher's interactive default, so the evaluator's own call bound governs them.
+  const timeoutMs = Math.min(phase === 'task' ? state.callTimeoutMs : options.timeout, state.callTimeoutMs, remaining);
+  const env = options.env || launchEnvironment(environment.launch);
+  const raw = callProvider(state, environment,
+    { phase, input: options.input, cwd, env, timeoutMs, maxBuffer: 1024 * 1024 }, started);
+  const elapsedMs = Date.now() - started;
+  const { parsed, succeeded } = parseProviderOutput(state, raw);
+  state.metrics.push({ phase, elapsedMs, usage: parsed.valid && succeeded ? parsed.usage : null });
+  if (Date.now() >= state.deadline || elapsedMs > timeoutMs) fail('deadline');
+  state.assertCurrent();
+  if (!succeeded) fail('provider-failed');
+  if (!parsed.valid) fail(parsed.error ? 'provider-failed' : 'invalid-jsonl');
+  return { status: 0, stdout: parsed.text };
+}
+
 function executeAdapter(state, cwd, environment) {
-  return (_command, args, options) => {
-    if (state.calls >= state.maxCalls) fail('call-budget');
-    state.assertCurrent();
-    environment.verify();
-    const remaining = state.deadline - Date.now();
-    if (remaining <= 0) fail('deadline');
-    const phase = options.phase || (args.includes('read-only') ? 'selection' : 'task');
-    state.calls++;
-    const started = Date.now();
-    let raw;
-    // Coding tasks outgrow the launcher's interactive default, so the evaluator's own call bound governs them.
-    const timeoutMs = Math.min(phase === 'task' ? state.callTimeoutMs : options.timeout, state.callTimeoutMs, remaining);
-    const env = options.env || launchEnvironment(environment.launch);
-    try {
-      raw = state.provider({ phase, input: options.input, cwd, env, timeoutMs, maxBuffer: 1024 * 1024 });
-    } catch (error) {
-      state.metrics.push({ phase, elapsedMs: Date.now() - started, usage: null });
-      if (error?.code === 'source-drift') throw error;
-      fail('provider-failed');
-    } finally { environment.restore(); }
-    const elapsedMs = Date.now() - started;
-    const parsed = state.family === 'claude' ? parseClaudeJson(raw?.stdout) : parseCodexJsonl(raw?.stdout);
-    state.metrics.push({ phase, elapsedMs, usage: parsed.valid && raw?.status === 0 && !raw?.error ? parsed.usage : null });
-    if (Date.now() >= state.deadline || elapsedMs > timeoutMs) fail('deadline');
-    state.assertCurrent();
-    if (raw?.status !== 0 || raw?.error) fail('provider-failed');
-    if (!parsed.valid) fail(parsed.error ? 'provider-failed' : 'invalid-jsonl');
-    return { status: 0, stdout: parsed.text };
-  };
+  return (_command, args, options) => adapterCall(state, cwd, environment, args, options);
 }
 
 function selectionProbe(item, repoRoot, execute, environment, target) {
@@ -661,48 +684,63 @@ function selectionProbe(item, repoRoot, execute, environment, target) {
 // Full relies on native discovery of the whole install; the Lean arms receive ECC-selected skill bodies;
 // ecc-legacy runs bare against the pinned pre-scoping skill library; Baseline runs the bare task query.
 // Stepped tasks run each ticket in the same accumulating workspace, grading after every step.
-function outcomeTrial(item, arm, repeat, repoRoot, execute, cwd, environment, target, harvest, metrics = null) {
-  const launchStep = (query, manualIds) => {
-    const task = { sessionId: 'ecc-eval', taskId: item.id, revision: 1, phase: 'evaluate', query };
-    return launchTaskContext({ repoRoot, execute, nativeEnvironment: environment.launch, target,
-      bare: arm === 'baseline' || arm === 'ecc-legacy',
-      task: { ...task, ...(arm === 'manual-lean' && manualIds?.length ? { explicitIds: manualIds } : {}) },
-      profileId: arm === 'full' ? 'full@1' : 'lean@1', selectionMode: arm === 'auto-lean' ? 'auto' : 'manual' });
-  };
-  try {
-    if (!item.steps) {
-      const result = launchStep(item.query, item.manualIds);
-      if (harvest) harvest(arm, item.id, repeat, environment);
-      const verdict = runScoredCheck(cwd, item.check, item.checkTimeoutMs);
-      const passed = result.status === 'completed' && verdict.passed && verdict.score >= 0.999;
-      return { id: item.id, arm, repeat, passed, score: result.status === 'completed' ? verdict.score : 0,
-        selectedIds: result.selection.selectedIds, failure: passed ? null : 'hidden-check' };
-    }
-    const steps = [];
-    const selectedIds = [];
-    for (let index = 0; index < item.steps.length; index++) {
-      const step = item.steps[index];
-      const start = metrics ? metrics.length : 0;
-      const result = launchStep(step.query, step.manualIds || item.manualIds);
-      if (harvest) harvest(arm, `${item.id}--step${index + 1}`, repeat, environment);
-      if (result.status !== 'completed') {
-        // A failed ticket ends the chain; remaining tickets are unscored.
-        steps.push({ score: 0, ...(metrics ? metricsSince(metrics, start) : {}) });
-        for (let rest = index + 1; rest < item.steps.length; rest++) {
-          steps.push({ score: 0, ...(metrics ? metricsSince(metrics, metrics.length) : {}) });
-        }
-        break;
+// `trial` carries repoRoot, execute, cwd, environment, target, harvest (or null)
+// and metrics (or null) for one task trial.
+function launchTrialStep(item, arm, trial, query, manualIds) {
+  const task = { sessionId: 'ecc-eval', taskId: item.id, revision: 1, phase: 'evaluate', query };
+  return launchTaskContext({ repoRoot: trial.repoRoot, execute: trial.execute,
+    nativeEnvironment: trial.environment.launch, target: trial.target,
+    bare: arm === 'baseline' || arm === 'ecc-legacy',
+    task: { ...task, ...(arm === 'manual-lean' && manualIds?.length ? { explicitIds: manualIds } : {}) },
+    profileId: arm === 'full' ? 'full@1' : 'lean@1', selectionMode: arm === 'auto-lean' ? 'auto' : 'manual' });
+}
+
+function stepMetrics(metrics, start) {
+  return metrics ? metricsSince(metrics, start) : {};
+}
+
+function singleStepTrial(item, arm, repeat, trial) {
+  const { cwd, environment, harvest } = trial;
+  const result = launchTrialStep(item, arm, trial, item.query, item.manualIds);
+  if (harvest) harvest(arm, item.id, repeat, environment);
+  const verdict = runScoredCheck(cwd, item.check, item.checkTimeoutMs);
+  const passed = result.status === 'completed' && verdict.passed && verdict.score >= 0.999;
+  return { id: item.id, arm, repeat, passed, score: result.status === 'completed' ? verdict.score : 0,
+    selectedIds: result.selection.selectedIds, failure: passed ? null : 'hidden-check' };
+}
+
+function steppedTrial(item, arm, repeat, trial) {
+  const { cwd, environment, harvest, metrics } = trial;
+  const steps = [];
+  const selectedIds = [];
+  for (let index = 0; index < item.steps.length; index++) {
+    const step = item.steps[index];
+    const start = metrics ? metrics.length : 0;
+    const result = launchTrialStep(item, arm, trial, step.query, step.manualIds || item.manualIds);
+    if (harvest) harvest(arm, `${item.id}--step${index + 1}`, repeat, environment);
+    if (result.status !== 'completed') {
+      // A failed ticket ends the chain; remaining tickets are unscored.
+      steps.push({ score: 0, ...stepMetrics(metrics, start) });
+      for (let rest = index + 1; rest < item.steps.length; rest++) {
+        steps.push({ score: 0, ...stepMetrics(metrics, metrics ? metrics.length : 0) });
       }
-      selectedIds.push(...result.selection.selectedIds);
-      const verdict = runScoredCheck(cwd, step.check, step.checkTimeoutMs, index + 1);
-      steps.push({ score: verdict.passed ? verdict.score : 0, ...(metrics ? metricsSince(metrics, start) : {}) });
+      break;
     }
-    const score = steps.reduce((sum, step) => sum + step.score, 0) / item.steps.length;
-    const passed = steps.length === item.steps.length && steps.every(step => step.score >= 0.999);
-    return { id: item.id, arm, repeat, passed, score, selectedIds: [...new Set(selectedIds)], steps,
-      failure: passed ? null : 'hidden-check' };
+    selectedIds.push(...result.selection.selectedIds);
+    const verdict = runScoredCheck(cwd, step.check, step.checkTimeoutMs, index + 1);
+    steps.push({ score: verdict.passed ? verdict.score : 0, ...stepMetrics(metrics, start) });
+  }
+  const score = steps.reduce((sum, step) => sum + step.score, 0) / item.steps.length;
+  const passed = steps.length === item.steps.length && steps.every(step => step.score >= 0.999);
+  return { id: item.id, arm, repeat, passed, score, selectedIds: [...new Set(selectedIds)], steps,
+    failure: passed ? null : 'hidden-check' };
+}
+
+function outcomeTrial(item, arm, repeat, trial) {
+  try {
+    return item.steps ? steppedTrial(item, arm, repeat, trial) : singleStepTrial(item, arm, repeat, trial);
   } catch (error) {
-    if (harvest) harvest(arm, item.id, repeat, environment);
+    if (trial.harvest) trial.harvest(arm, item.id, repeat, trial.environment);
     return { id: item.id, arm, repeat, passed: false, score: 0, selectedIds: [], failure: failureCode(error) };
   }
 }
@@ -753,10 +791,10 @@ function createHarvester(artifactDir, envs) {
   };
 }
 
-function runEvaluation({ repoRoot = DEFAULT_REPO_ROOT, corpus = loadCorpus(), registration,
-  repeats = 1, provider, family, allowRealProvider = false, allowCredentialedTools = false,
-  executable, model, effort, authHome, environments,
-  arms = undefined, artifactDir = null, maxCalls = 300, deadlineMs = 3600000, callTimeoutMs = 300000 } = {}) {
+// Validate the caller's bounds and opt-ins and settle on the provider family.
+function resolveEvaluationFamily(options) {
+  const { provider, allowRealProvider, maxCalls, deadlineMs, callTimeoutMs, registration,
+    family, executable, effort, allowCredentialedTools } = options;
   if (!provider && !allowRealProvider) throw new Error('Evaluation requires an injected provider or explicit opt-in');
   if (!bounded(maxCalls, 1, 2000) || !bounded(deadlineMs, 1, 8 * 3600000)
     || !bounded(callTimeoutMs, 1, 600000)) throw new Error('Invalid call or deadline bound');
@@ -766,21 +804,97 @@ function runEvaluation({ repoRoot = DEFAULT_REPO_ROOT, corpus = loadCorpus(), re
   if (!provider && resolvedFamily === 'claude' && !allowCredentialedTools) {
     throw new Error('Claude task tools can read provider credentials; explicit credentialed-tool opt-in is required');
   }
+  return resolvedFamily;
+}
+
+function pinEvaluation(options, resolvedFamily) {
+  const { repoRoot, corpus, repeats, model, executable, effort, arms, provider, registration } = options;
   const pin = preregister({ repoRoot, corpus, repeats, model, executable, effort, arms });
   if (!provider && resolvedFamily === 'codex' && pin.arms.includes('ecc-legacy')) {
     throw new Error('Codex real evaluation requires --arms without ecc-legacy; the pinned legacy skills arm is Claude-only');
   }
   if (registration && !isDeepStrictEqual(registration, pin)) throw new Error('Registration pin mismatch');
-  const injected = Boolean(provider);
-  const liveProvider = provider || (resolvedFamily === 'claude'
+  return pin;
+}
+
+function createLiveProvider(resolvedFamily, options) {
+  const { allowRealProvider, allowCredentialedTools, executable, model, effort, authHome, artifactDir } = options;
+  return resolvedFamily === 'claude'
     ? createClaudeProvider({ allowRealProvider, allowCredentialedTools, executable, model,
       persistSessions: Boolean(artifactDir) })
-    : createCodexProvider({ allowRealProvider, executable, model, effort, authHome }));
-  const state = { calls: 0, metrics: [], maxCalls, callTimeoutMs, family: resolvedFamily,
+    : createCodexProvider({ allowRealProvider, executable, model, effort, authHome });
+}
+
+function createEvaluationState(options, plan) {
+  const { repoRoot, corpus, maxCalls, callTimeoutMs, deadlineMs } = options;
+  const { pin, resolvedFamily, liveProvider } = plan;
+  return { calls: 0, metrics: [], maxCalls, callTimeoutMs, family: resolvedFamily,
     deadline: Date.now() + deadlineMs, provider: liveProvider,
     assertCurrent() {
       if (digestObject(corpus) !== pin.corpusDigest || sourceSnapshot(repoRoot).sourceDigest !== pin.sourceDigest) fail('source-drift');
     } };
+}
+
+function planEvaluation(options) {
+  const resolvedFamily = resolveEvaluationFamily(options);
+  const pin = pinEvaluation(options, resolvedFamily);
+  const injected = Boolean(options.provider);
+  const liveProvider = options.provider || createLiveProvider(resolvedFamily, options);
+  const plan = { resolvedFamily, pin, injected, liveProvider };
+  plan.state = createEvaluationState(options, plan);
+  return plan;
+}
+
+function prepareEvaluationEnvironments(options, plan, installRoot) {
+  const { repoRoot, executable } = options;
+  const { injected, resolvedFamily, pin } = plan;
+  if (injected) return syntheticEnvironments(installRoot);
+  if (resolvedFamily !== 'claude') return prepareEnvironments({ repoRoot, executable, root: installRoot });
+  return prepareClaudeEnvironments({ repoRoot, executable, root: installRoot,
+    ...(pin.arms.includes('ecc-legacy')
+      ? { legacySource: exportLegacySource({ repoRoot, destination: path.join(installRoot, 'legacy-source') }) }
+      : {}) });
+}
+
+function describeInstalls(envs) {
+  return Object.fromEntries(Object.entries(envs).map(([name, env]) => [name,
+    { profileId: env.profileId, skills: env.skills, ...(env.sourceSha ? { sourceSha: env.sourceSha } : {}) }]));
+}
+
+function runSelectionProbes(run, selection) {
+  const { corpus, repoRoot, state, temp, envs, resolvedFamily } = run;
+  for (const item of corpus.selection) {
+    const cwd = path.join(temp, `${item.id}--selection`);
+    fs.mkdirSync(cwd);
+    const start = state.metrics.length;
+    selection.push({ ...selectionProbe(item, repoRoot, executeAdapter(state, cwd, envs.lean), envs.lean, resolvedFamily),
+      ...metricsSince(state.metrics, start) });
+  }
+}
+
+function runOutcomeTrials(run, outcomes) {
+  const { corpus, pin, repoRoot, state, temp, envs, resolvedFamily, harvest } = run;
+  for (const scheduled of pin.order) {
+    const item = corpus.tasks.find(c => c.id === scheduled.id);
+    for (const arm of scheduled.arms) {
+      const cwd = path.join(temp, `${item.id}--${arm}--${scheduled.repeat}`);
+      const environment = envs[['full', 'baseline', 'ecc-legacy'].includes(arm) ? arm : 'lean'];
+      fs.mkdirSync(cwd);
+      writeWorkspace(cwd, item.files);
+      const start = state.metrics.length;
+      const trial = { repoRoot, execute: executeAdapter(state, cwd, environment), cwd, environment,
+        target: resolvedFamily, harvest, metrics: state.metrics };
+      outcomes.push({ ...outcomeTrial(item, arm, scheduled.repeat, trial), ...metricsSince(state.metrics, start) });
+      fs.rmSync(cwd, { recursive: true, force: true });
+    }
+  }
+}
+
+// Prepare installs in a private temp root, run every selection probe and task
+// trial, and always remove the root afterwards.
+function executeEvaluation(options, plan) {
+  const { repoRoot, corpus, environments, artifactDir } = options;
+  const { resolvedFamily, pin, injected, state } = plan;
   const temp = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-ai-eval-')));
   const selection = [];
   const outcomes = [];
@@ -789,57 +903,55 @@ function runEvaluation({ repoRoot = DEFAULT_REPO_ROOT, corpus = loadCorpus(), re
   try {
     const installRoot = path.join(temp, 'installs');
     fs.mkdirSync(installRoot, { mode: 0o700 });
-    const envs = environments || (injected ? syntheticEnvironments(installRoot)
-      : resolvedFamily === 'claude'
-        ? prepareClaudeEnvironments({ repoRoot, executable, root: installRoot,
-          ...(pin.arms.includes('ecc-legacy')
-            ? { legacySource: exportLegacySource({ repoRoot, destination: path.join(installRoot, 'legacy-source') }) }
-            : {}) })
-        : prepareEnvironments({ repoRoot, executable, root: installRoot }));
-    installs = Object.fromEntries(Object.entries(envs).map(([name, env]) => [name,
-      { profileId: env.profileId, skills: env.skills, ...(env.sourceSha ? { sourceSha: env.sourceSha } : {}) }]));
+    const envs = environments || prepareEvaluationEnvironments(options, plan, installRoot);
+    installs = describeInstalls(envs);
     harvester = artifactDir && resolvedFamily === 'claude' && !injected ? createHarvester(artifactDir, envs) : null;
     const harvest = harvester ? (arm, id, repeat, env) => harvester.record(arm, id, repeat, env) : null;
-    for (const item of corpus.selection) {
-      const cwd = path.join(temp, `${item.id}--selection`);
-      fs.mkdirSync(cwd);
-      const start = state.metrics.length;
-      selection.push({ ...selectionProbe(item, repoRoot, executeAdapter(state, cwd, envs.lean), envs.lean, resolvedFamily),
-        ...metricsSince(state.metrics, start) });
-    }
-    for (const scheduled of pin.order) {
-      const item = corpus.tasks.find(c => c.id === scheduled.id);
-      for (const arm of scheduled.arms) {
-        const cwd = path.join(temp, `${item.id}--${arm}--${scheduled.repeat}`);
-        const environment = envs[['full', 'baseline', 'ecc-legacy'].includes(arm) ? arm : 'lean'];
-        fs.mkdirSync(cwd);
-        writeWorkspace(cwd, item.files);
-        const start = state.metrics.length;
-        outcomes.push({ ...outcomeTrial(item, arm, scheduled.repeat, repoRoot,
-          executeAdapter(state, cwd, environment), cwd, environment, resolvedFamily, harvest, state.metrics),
-          ...metricsSince(state.metrics, start) });
-        fs.rmSync(cwd, { recursive: true, force: true });
-      }
-    }
+    const run = { corpus, pin, repoRoot, state, temp, envs, resolvedFamily, harvest };
+    runSelectionProbes(run, selection);
+    runOutcomeTrials(run, outcomes);
     if (harvester) harvester.writeIndex();
   } finally { if (harvester) harvester.writeIndex(); fs.rmSync(temp, { recursive: true, force: true }); }
+  return { selection, outcomes, installs, harvester };
+}
+
+function summarizeSelection(selection) {
+  const selectionSuccesses = selection.filter(row => row.passed).length;
+  return { n: selection.length, successes: selectionSuccesses,
+    categories: [...new Set(selection.map(row => row.category))].map(category => ({ category,
+      n: selection.filter(row => row.category === category).length,
+      successes: selection.filter(row => row.category === category && row.passed).length })),
+    interval: wilson(selectionSuccesses, selection.length), method: 'wilson-95-descriptive-purposive-sample' };
+}
+
+function buildEvaluationReport(options, plan, run) {
+  const { maxCalls, deadlineMs, callTimeoutMs } = options;
+  const { pin, injected, liveProvider, state, resolvedFamily } = plan;
+  const { selection, outcomes, installs, harvester } = run;
   const summary = summarize(outcomes, pin.arms);
   const insufficient = summary.distinctTasks < pin.minimumDistinctTasks || selection.length < pin.minimumDistinctTasks;
-  const selectionSuccesses = selection.filter(row => row.passed).length;
   return { schemaVersion: 'ecc.context-eval.v2', registration: pin,
     evidence: injected ? 'injected-provider' : resolvedFamily === 'claude' ? 'claude-json' : 'codex-jsonl', installs,
     authentication: injected ? 'injected' : liveProvider.authentication, credentialsRetained: false,
     calls: state.calls, bounds: { maxCalls, deadlineMs, callTimeoutMs }, selection, outcomes, summary,
-    selectionSummary: { n: selection.length, successes: selectionSuccesses,
-      categories: [...new Set(selection.map(row => row.category))].map(category => ({ category,
-        n: selection.filter(row => row.category === category).length,
-        successes: selection.filter(row => row.category === category && row.passed).length })),
-      interval: wilson(selectionSuccesses, selection.length), method: 'wilson-95-descriptive-purposive-sample' },
+    selectionSummary: summarizeSelection(selection),
     gate: { status: insufficient ? 'insufficient-sample' : injected ? 'synthetic-only' : 'review-required',
       nonInferioritySupported: !insufficient && !injected && summary.pairs.every(p => p.interval[0] >= -pin.nonInferiorityMargin),
       releaseApproved: false }, nativeInvocation: 'unobserved',
     measurementScope: 'native-install-hidden-graded-coding-tasks',
     artifactRetention: harvester ? 'session-jsonl-per-task-trial' : 'none', ...metricsSince(state.metrics, 0) };
+}
+
+function runEvaluation({ repoRoot = DEFAULT_REPO_ROOT, corpus = loadCorpus(), registration,
+  repeats = 1, provider, family, allowRealProvider = false, allowCredentialedTools = false,
+  executable, model, effort, authHome, environments,
+  arms = undefined, artifactDir = null, maxCalls = 300, deadlineMs = 3600000, callTimeoutMs = 300000 } = {}) {
+  const options = { repoRoot, corpus, registration, repeats, provider, family, allowRealProvider,
+    allowCredentialedTools, executable, model, effort, authHome, environments, arms, artifactDir,
+    maxCalls, deadlineMs, callTimeoutMs };
+  const plan = planEvaluation(options);
+  const run = executeEvaluation(options, plan);
+  return buildEvaluationReport(options, plan, run);
 }
 
 module.exports = { loadCorpus, preregister, runEvaluation, parseCodexJsonl, parseClaudeJson, summarize, wilson,

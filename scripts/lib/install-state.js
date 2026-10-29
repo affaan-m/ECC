@@ -1,4 +1,3 @@
-const fs = require('fs');
 const path = require('path');
 const {
   CLAUDE_HOOKS_CONFIG_PATH,
@@ -24,7 +23,8 @@ function cloneJsonValue(value) {
 
 function readJson(filePath, label) {
   try {
-    return JSON.parse(fs.readFileSync(filePath, 'utf8'));
+    const { readFileWithSharingRetry } = require('./atomic-write');
+    return JSON.parse(readFileWithSharingRetry(filePath, 'utf8'));
   } catch (error) {
     throw new Error(`Failed to read ${label}: ${error.message}`);
   }
@@ -341,8 +341,8 @@ function readInstallState(filePath) {
 
 function writeInstallState(filePath, state) {
   assertValidInstallState(state, filePath);
-  fs.mkdirSync(path.dirname(filePath), { recursive: true });
-  fs.writeFileSync(filePath, `${JSON.stringify(state, null, 2)}\n`);
+  const { writeFileAtomic } = require('./atomic-write');
+  writeFileAtomic(filePath, `${JSON.stringify(state, null, 2)}\n`);
   return state;
 }
 

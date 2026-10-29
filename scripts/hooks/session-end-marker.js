@@ -13,6 +13,7 @@ const {
   stopObserverForContext,
   resolveSessionId
 } = require('../lib/observer-sessions');
+const { resolveHookSessionId } = require('../lib/hook-session');
 
 function log(message) {
   process.stderr.write(`[SessionEnd] ${message}\n`);
@@ -20,10 +21,10 @@ function log(message) {
 
 function run(rawInput) {
   const output = rawInput || '';
-  const sessionId = resolveSessionId();
+  const sessionId = resolveSessionId(resolveHookSessionId(output));
 
   if (!sessionId) {
-    log('No CLAUDE_SESSION_ID available; skipping observer cleanup');
+    log('No session ID available; skipping observer cleanup');
     return output;
   }
 

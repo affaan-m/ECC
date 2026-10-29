@@ -215,7 +215,7 @@ function runTests() {
           legacyMode: false,
         },
         resolution: {
-          selectedModules: ['platform-configs'],
+          selectedModules: ['platform-configs', 'shared-script-utils'],
           skippedModules: [],
         },
         operations: [
@@ -298,7 +298,7 @@ function runTests() {
         cwd: projectRoot,
         homeDir,
       });
-      assert.strictEqual(doctorAfter.code, 0, doctorAfter.stderr);
+      assert.strictEqual(doctorAfter.code, 0, doctorAfter.stdout + doctorAfter.stderr);
       assert.ok(doctorAfter.stdout.includes('Status: OK'));
     } finally {
       cleanup(homeDir);
@@ -331,7 +331,7 @@ function runTests() {
           legacyMode: false,
         },
         resolution: {
-          selectedModules: ['platform-configs'],
+          selectedModules: ['platform-configs', 'shared-script-utils'],
           skippedModules: [],
         },
         operations: [

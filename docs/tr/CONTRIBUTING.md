@@ -1,4 +1,4 @@
-# Everything Claude Code'a Katkıda Bulunma
+# ECC'ye Katkıda Bulunma
 
 Katkıda bulunmak istediğiniz için teşekkürler! Bu repo, Claude Code kullanıcıları için bir topluluk kaynağıdır.
 
@@ -51,8 +51,8 @@ Faydalı workflow'ları çağıran slash command'lar:
 
 ```bash
 # 1. Fork ve clone
-gh repo fork affaan-m/everything-claude-code --clone
-cd everything-claude-code
+gh repo fork affaan-m/ECC --clone
+cd ECC
 
 # 2. Branch oluştur
 git checkout -b feat/my-contribution
@@ -453,7 +453,7 @@ Bunu nasıl test ettiniz.
 
 ## Sorularınız mı var?
 
-- **Issue'lar:** [github.com/affaan-m/everything-claude-code/issues](https://github.com/affaan-m/everything-claude-code/issues)
+- **Issue'lar:** [github.com/affaan-m/ECC/issues](https://github.com/affaan-m/ECC/issues)
 - **X/Twitter:** [@affaanmustafa](https://x.com/affaanmustafa)
 
 ---

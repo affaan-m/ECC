@@ -322,7 +322,7 @@ function getLinterInvocation(command, args, platform = process.platform) {
 function runLinterCommand(command, args) {
   try {
     const invocation = getLinterInvocation(command, args);
-    return spawnSync(invocation.command, invocation.args, invocation.options);
+    return spawnSync(invocation.command, invocation.args, { ...invocation.options, shell: false });
   } catch (error) {
     return { status: null, stdout: '', stderr: '', error };
   }

@@ -18,20 +18,35 @@ permissions:
 
 jobs:
   test:
-    name: Test (${{ matrix.os }}, Node ${{ matrix.node }}, ${{ matrix.pm }})
+    name: Test (${{ matrix.os }}, Node ${{ matrix.node }}, ${{ matrix.pm }}, ${{ matrix.scope }})
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 30
+    # The serial Windows full lane reaches its final installer cases at about
+    # 30 minutes; retain a bounded completion window.
+    timeout-minutes: 45
 
     strategy:
       fail-fast: false
+      # Two kinds of lane. `full` runs the whole suite; `pm` runs only the suites
+      # that read CLAUDE_CODE_PACKAGE_MANAGER, which is all the package-manager
+      # axis ever changed. The old 33-way cross product ran the full suite 33
+      # times per push, with Windows lanes at 30 to 40 minutes each.
       matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
-        node: ['18.x', '20.x', '22.x']
-        pm: [npm, pnpm, yarn, bun]
-        exclude:
-          # Bun has limited Windows support
-          - os: windows-latest
-            pm: bun
+        include:
+          # Full suite: Linux on every supported Node line, current LTS on Windows and macOS.
+          - { os: ubuntu-latest, node: '18.x', pm: npm, scope: full }
+          - { os: ubuntu-latest, node: '20.x', pm: npm, scope: full }
+          - { os: ubuntu-latest, node: '22.x', pm: npm, scope: full }
+          - { os: windows-latest, node: '22.x', pm: npm, scope: full }
+          - { os: macos-latest, node: '22.x', pm: npm, scope: full }
+          # Package-manager lanes on current LTS. Bun has limited Windows support.
+          - { os: ubuntu-latest, node: '22.x', pm: pnpm, scope: pm }
+          - { os: ubuntu-latest, node: '22.x', pm: yarn, scope: pm }
+          - { os: ubuntu-latest, node: '22.x', pm: bun, scope: pm }
+          - { os: windows-latest, node: '22.x', pm: pnpm, scope: pm }
+          - { os: windows-latest, node: '22.x', pm: yarn, scope: pm }
+          - { os: macos-latest, node: '22.x', pm: pnpm, scope: pm }
+          - { os: macos-latest, node: '22.x', pm: yarn, scope: pm }
+          - { os: macos-latest, node: '22.x', pm: bun, scope: pm }
 
     steps:
       - name: Checkout
@@ -43,6 +58,37 @@ jobs:
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: ${{ matrix.node }}
+
+      - name: Install and verify ripgrep (Linux)
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y ripgrep
+          rg --version
+          printf 'ecc-pcre2-probe\n' | rg --pcre2 -- '^ecc-pcre2-probe$'
+
+      - name: Install and verify ripgrep (macOS)
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          if ! command -v rg >/dev/null 2>&1; then brew install ripgrep; fi
+          rg --version
+          printf 'ecc-pcre2-probe\n' | rg --pcre2 -- '^ecc-pcre2-probe$'
+
+      - name: Install and verify ripgrep (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          if (-not (Get-Command rg -ErrorAction SilentlyContinue)) {
+            choco install ripgrep --yes --no-progress
+            if ($LASTEXITCODE -ne 0) { throw 'ripgrep installation failed' }
+          }
+          rg --version
+          if ($LASTEXITCODE -ne 0) { throw 'ripgrep executable is unavailable' }
+          # PowerShell writes CRLF to native stdin; retain anchored matching.
+          'ecc-pcre2-probe' | rg --pcre2 --crlf -- '^ecc-pcre2-probe$'
+          if ($LASTEXITCODE -ne 0) { throw 'ripgrep PCRE2 support is required' }
 
       # Package manager setup
       - name: Setup pnpm
@@ -92,18 +138,37 @@ jobs:
             *) echo "Unsupported package manager: ${{ matrix.pm }}" && exit 1 ;;
           esac
 
-      # Run tests
+      # Run tests. Full lanes run every file through a 4-process pool on Linux
+      # and macOS; Windows stays serial because its process spawn and temp-dir
+      # cleanup are the flaky part. pm lanes derive their file list from the
+      # suites that actually read the package-manager variable, so the lane
+      # cannot drift out of date as tests are added.
       - name: Run tests
-        run: node tests/run-all.js
+        shell: bash
+        run: |
+          if [ "${{ matrix.scope }}" = "pm" ]; then
+            ECC_TEST_ONLY=$(grep -rlE --include='*.test.js' 'CLAUDE(_CODE)?_PACKAGE_MANAGER' tests | sed 's#^tests/##' | sort | paste -sd, -)
+            export ECC_TEST_ONLY
+            echo "pm lane files: $ECC_TEST_ONLY"
+          fi
+          # Suites that run scripts/build-opencode.js, or rename a checkout path
+          # to a .backup-<pid> copy and restore it, mutate the shared checkout;
+          # suites that assert a wall-clock budget cannot share cores with the
+          # pool. Both groups run last, one at a time.
+          ECC_TEST_SERIAL=$(grep -rlE --include='*.test.js' 'build-opencode|\.backup-|dist\.backup|time budget' tests | sed 's#^tests/##' | sort | paste -sd, -)
+          export ECC_TEST_SERIAL
+          echo "serial after the pool: $ECC_TEST_SERIAL"
+          node tests/run-all.js
         env:
           CLAUDE_CODE_PACKAGE_MANAGER: ${{ matrix.pm }}
+          ECC_TEST_JOBS: ${{ runner.os == 'Windows' && '1' || '4' }}
 
       # Upload test artifacts on failure
       - name: Upload test artifacts
         if: failure()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: test-results-${{ matrix.os }}-node${{ matrix.node }}-${{ matrix.pm }}
+          name: test-results-${{ matrix.os }}-node${{ matrix.node }}-${{ matrix.pm }}-${{ matrix.scope }}
           path: |
             tests/
             !tests/node_modules/
@@ -211,6 +276,10 @@ jobs:
         run: node scripts/ci/validate-skills.js
         continue-on-error: false
 
+      - name: Validate skill host compatibility
+        run: node scripts/ci/validate-skill-host-compat.js
+        continue-on-error: false
+
       - name: Validate install manifests
         run: node scripts/ci/validate-install-manifests.js
         continue-on-error: false
@@ -238,6 +307,44 @@ jobs:
       - name: Validate no personal paths
         run: node scripts/ci/validate-no-personal-paths.js
         continue-on-error: false
+
+  pi-core:
+    name: Pi Core Profile
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '20.x'
+
+      # Rebuild runs frontmatter validation and the pi/core safety checks
+      # (no callable endpoints, no runtime downloads, no secrets, no absolute
+      # home paths, no symlinks, no duplicate skill names); the diff check
+      # proves the committed profile is up to date.
+      - name: Rebuild pi/core and verify it is up to date
+        run: |
+          node scripts/build-pi-core.js
+          git diff --exit-code pi/core
+
+      - name: Install Pi coding agent CLI
+        run: npm install --global --ignore-scripts --no-audit --no-fund @mariozechner/pi-coding-agent@0.73.1
+
+      # --extension only loads a package's pi.extensions entries; pi/core is a
+      # skills+prompts-only package, so the equivalent --skill/--prompt-template
+      # resource flags are used. The load-test script additionally asserts via
+      # RPC that every curated command actually loaded.
+      - name: Offline load test with the Pi CLI
+        run: |
+          PI_OFFLINE=1 pi --offline --mode rpc --no-session --no-context-files --no-extensions \
+            --skill pi/core/skills --prompt-template pi/core/commands </dev/null >/dev/null
+          node scripts/ci/pi-core-load-test.js
 
   python-tests:
     name: Python Lint, Type Check & Test
@@ -304,7 +411,7 @@ jobs:
   coverage:
     name: Coverage
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 20
 
     steps:
       - name: Checkout
@@ -319,6 +426,13 @@ jobs:
 
       - name: Install dependencies
         run: npm ci --ignore-scripts
+
+      - name: Install and verify ripgrep
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y ripgrep
+          rg --version
+          printf 'ecc-pcre2-probe\n' | rg --pcre2 -- '^ecc-pcre2-probe$'
 
       - name: Run coverage
         run: npm run coverage

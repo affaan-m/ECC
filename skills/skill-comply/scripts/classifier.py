@@ -14,6 +14,10 @@ from scripts.parser import ComplianceSpec, ObservationEvent
 PROMPTS_DIR = Path(__file__).parent.parent / "prompts"
 
 
+class ClassifierParseError(RuntimeError):
+    """Raised when the classifier output cannot be parsed."""
+
+
 def classify_events(
     spec: ComplianceSpec,
     trace: list[ObservationEvent],
@@ -36,7 +40,7 @@ def classify_events(
         for i, event in enumerate(trace)
     )
 
-    prompt_template = (PROMPTS_DIR / "classifier.md").read_text()
+    prompt_template = (PROMPTS_DIR / "classifier.md").read_text(encoding="utf-8")
     prompt = (
         prompt_template
         .replace("{steps_description}", steps_desc)
@@ -44,9 +48,10 @@ def classify_events(
     )
 
     result = subprocess.run(
-        ["claude", "-p", prompt, "--model", model, "--output-format", "text"],
+        ["claude", "-p", "--model", model, "--output-format", "text"],
+        input=prompt,
         capture_output=True,
-        text=True,
+        encoding="utf-8",
         timeout=60,
     )
 
@@ -73,13 +78,18 @@ def _parse_classification(text: str) -> dict[str, list[int]]:
     try:
         parsed = json.loads(cleaned)
         if not isinstance(parsed, dict):
-            logger.warning("Classifier returned non-dict JSON: %s", type(parsed).__name__)
-            return {}
-        return {
-            k: [int(i) for i in v]
-            for k, v in parsed.items()
-            if isinstance(v, list)
-        }
-    except (json.JSONDecodeError, ValueError, TypeError) as e:
-        logger.warning("Failed to parse classification output: %s", e)
-        return {}
+            raise ClassifierParseError(
+                f"classifier returned non-dict JSON: {type(parsed).__name__}"
+            )
+        for value in parsed.values():
+            if not isinstance(value, list):
+                raise ClassifierParseError(
+                    f"classifier returned non-list JSON value: {type(value).__name__}"
+                )
+            if any(isinstance(i, bool) or (isinstance(i, float) and not i.is_integer()) for i in value):
+                raise ValueError("tool call indices must be whole numbers, not booleans")
+        return {k: [int(i) for i in v] for k, v in parsed.items()}
+    except (json.JSONDecodeError, ValueError, TypeError, OverflowError) as e:
+        raise ClassifierParseError(
+            f"failed to parse classification output: {e}"
+        ) from e

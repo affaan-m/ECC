@@ -1,0 +1,39 @@
+name: PR Burst Guard
+
+on:
+  pull_request_target:
+    types: [opened, reopened]
+
+# Process one author's ledger serially. A newer pending event replaces an older
+# pending event; each run reads all PR states instead of relying on event counts.
+concurrency:
+  group: pr-burst-${{ github.repository }}-${{ github.event.pull_request.user.id }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write
+
+jobs:
+  moderate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      # pull_request_target's SHA is the trusted default branch, never a PR head.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+          sparse-checkout: |
+            .github/pr-burst-policy.json
+            scripts/ci/pr-burst-guard.js
+          sparse-checkout-cone-mode: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '20.x'
+      - name: Enforce PR submission policy
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          PR_MODERATION_BLOCK_TOKEN: ${{ secrets.PR_MODERATION_BLOCK_TOKEN }}
+        run: node scripts/ci/pr-burst-guard.js

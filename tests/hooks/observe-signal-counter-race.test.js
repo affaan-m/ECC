@@ -6,8 +6,8 @@
  * every N observations (#521). The bump used a plain read-modify-write with no
  * locking, so concurrent hook invocations could read the same value, both
  * increment, and lose a write — the observer then fired at unpredictable
- * intervals. The fix serializes the read-modify-write with an atomic mkdir
- * lock.
+ * intervals. The fix serializes the read-modify-write with an OS-released
+ * file lock.
  *
  * These tests drive the real observe.sh (reusing the stub harness from
  * observer-memory.test.js) and assert the lock's invariant: with the reset
@@ -68,9 +68,8 @@ const observeShPath = path.join(repoRoot, 'skills', 'continuous-learning-v2', 'h
 
 const isWindows = process.platform === 'win32';
 const hasPython = !isWindows && spawnSync('python3', ['--version']).status === 0;
-// When the runner has flock the lock is exact (blocking, kernel auto-release);
-// without it observe.sh uses a best-effort mkdir spin that may drop at most one
-// increment under pathological contention.
+// Both lock implementations wait for at most two seconds, then drop an optional
+// tick under pathological contention.
 const hasFlock = !isWindows && spawnSync('bash', ['-c', 'command -v flock']).status === 0;
 
 // Build a self-contained observe.sh sandbox (stub detect-project.sh +
@@ -129,7 +128,7 @@ function buildSandbox() {
 }
 
 // Run observe.sh once against the sandbox. Resolves when the process exits.
-function runObserve(testObserve, projectDir) {
+function runObserve(testObserve, projectDir, extraEnv = {}) {
   const input = JSON.stringify({
     tool_name: 'Read',
     tool_input: { file_path: '/tmp/test.txt' },
@@ -147,7 +146,8 @@ function runObserve(testObserve, projectDir) {
         CLAUDE_PROJECT_DIR: projectDir,
         // Reset threshold far above the invocation count, so no reset fires and
         // the final counter equals the number of invocations.
-        ECC_OBSERVER_SIGNAL_EVERY_N: '100000'
+        ECC_OBSERVER_SIGNAL_EVERY_N: '100000',
+        ...extraEnv
       },
       stdio: ['pipe', 'ignore', 'pipe']
     });
@@ -184,18 +184,6 @@ function readCounter(projectDir) {
 }
 
 console.log('\n=== observe.sh signal-counter race regression (#2296) ===\n');
-
-test('observe.sh uses a lock around the throttle-counter update', () => {
-  const content = fs.readFileSync(observeShPath, 'utf8');
-  assert.ok(
-    content.includes('SIGNAL_COUNTER_LOCK'),
-    'observe.sh should define a lock for the signal counter'
-  );
-  assert.ok(
-    /flock 8\b/.test(content) || /mkdir "\$SIGNAL_COUNTER_LOCK"/.test(content),
-    'observe.sh should acquire the counter lock via flock or an atomic mkdir'
-  );
-});
 
 test('observe.sh guards against a corrupt (non-integer) counter file', () => {
   const content = fs.readFileSync(observeShPath, 'utf8');
@@ -241,15 +229,96 @@ async function runConcurrent() {
         `with flock the counter must be exactly ${K}, got ${counter}`
       );
     } else {
-      // mkdir fallback is best-effort: it may drop at most one increment if its
+      // The portable fallback may drop at most one increment if its
       // bounded spin is exhausted, but never the multi-increment loss the
       // unlocked code exhibited.
       assert.ok(
         counter >= K - 1,
-        `mkdir fallback should keep the counter >= ${K - 1}, got ${counter}`
+        `portable fallback should keep the counter >= ${K - 1}, got ${counter}`
       );
     }
   } finally {
+    cleanupDir(testDir);
+  }
+}
+
+async function runStrandedLock() {
+  const { testDir, projectDir, testObserve } = buildSandbox();
+  try {
+    // Windows TerminateProcess cannot run the shell's cleanup traps. Preserve
+    // that exact leftover, and make each external sleep as slow as MSYS2.
+    const stale = path.join(projectDir, '.observer-signal-counter.lock');
+    fs.mkdirSync(stale);
+    fs.writeFileSync(path.join(projectDir, '.observer-signal-counter'), '7\n');
+    const bashEnv = path.join(testDir, 'no-flock.sh');
+    fs.writeFileSync(bashEnv, [
+      'command() {',
+      '  if [ "$1" = "-v" ] && { [ "$2" = "flock" ] || [ "$2" = "lockfile" ]; }; then return 1; fi',
+      '  builtin command "$@"',
+      '}',
+      'sleep() { /bin/sleep 0.08; }',
+      ''
+    ].join('\n'));
+    const started = Date.now();
+    await runObserve(testObserve, projectDir, { BASH_ENV: bashEnv });
+    assert.ok(Date.now() - started < 3000, 'stale lock must not consume the runner timeout');
+    assert.strictEqual(readCounter(projectDir), 8, 'a leftover legacy directory must not freeze signalling');
+    assert.ok(fs.statSync(stale).isDirectory(), 'legacy lock must be left untouched');
+  } finally {
+    cleanupDir(testDir);
+  }
+}
+
+async function runCounterBoundary(initial, threshold, expected, forcePython) {
+  const { testDir, projectDir, testObserve } = buildSandbox();
+  try {
+    if (initial !== null) {
+      fs.writeFileSync(path.join(projectDir, '.observer-signal-counter'), initial);
+    }
+    const extraEnv = { ECC_OBSERVER_SIGNAL_EVERY_N: String(threshold) };
+    if (forcePython || !hasFlock) {
+      const bashEnv = path.join(testDir, 'no-flock.sh');
+      const fixture = forcePython
+        ? 'command() { if [ "$1" = "-v" ] && [ "$2" = "flock" ]; then return 1; fi; builtin command "$@"; }\n'
+        // Exercise the real shell counter on macOS with an inherited-fd OS
+        // lock fixture. Native GNU flock remains a Linux platform check.
+        : `flock() { python3 -c 'import fcntl,sys; fcntl.flock(int(sys.argv[-1]), fcntl.LOCK_UN if sys.argv[1] == "-u" else fcntl.LOCK_EX)' "$@"; }\n`;
+      fs.writeFileSync(bashEnv, fixture);
+      extraEnv.BASH_ENV = bashEnv;
+    }
+    await runObserve(testObserve, projectDir, extraEnv);
+    assert.strictEqual(readCounter(projectDir), expected);
+  } finally {
+    cleanupDir(testDir);
+  }
+}
+
+async function runKilledOwner() {
+  const { testDir, projectDir, testObserve } = buildSandbox();
+  let owner;
+  try {
+    fs.writeFileSync(path.join(projectDir, '.observer-signal-counter'), '7\n');
+    const guard = path.join(projectDir, '.observer-signal-counter.lock.v2');
+    const bashEnv = path.join(testDir, 'no-flock.sh');
+    fs.writeFileSync(bashEnv, 'command() { if [ "$1" = "-v" ] && [ "$2" = "flock" ]; then return 1; fi; builtin command "$@"; }\n');
+    owner = spawn('python3', ['-u', '-c',
+      'import fcntl,sys,time\nf=open(sys.argv[1], "a+b")\nfcntl.flock(f,fcntl.LOCK_EX)\nprint("locked",flush=True)\ntime.sleep(30)', guard]);
+    await new Promise((resolve, reject) => {
+      owner.once('error', reject);
+      owner.stdout.once('data', resolve);
+    });
+    const started = Date.now();
+    await runObserve(testObserve, projectDir, { BASH_ENV: bashEnv });
+    assert.ok(Date.now() - started < 4000, 'busy OS lock must stay within the runner budget');
+    assert.strictEqual(readCounter(projectDir), 7, 'busy lock must not allow an unlocked update');
+    const closed = new Promise(resolve => owner.once('close', resolve));
+    owner.kill('SIGKILL');
+    await closed;
+    await runObserve(testObserve, projectDir, { BASH_ENV: bashEnv });
+    assert.strictEqual(readCounter(projectDir), 8, 'OS must release a killed owner without cleanup traps');
+    assert.ok(fs.statSync(guard).isFile(), 'persistent guard bytes must not retain lock ownership');
+  } finally {
+    if (owner) owner.kill('SIGKILL');
     cleanupDir(testDir);
   }
 }
@@ -258,6 +327,19 @@ async function runConcurrent() {
   if (!isWindows && hasPython) {
     await asyncTest('sequential invocations increment the counter exactly once each', runSequential);
     await asyncTest('concurrent invocations never lose a counter increment', runConcurrent);
+    await asyncTest('stranded mkdir lock cannot delay or freeze later observations', runStrandedLock);
+    await asyncTest('busy lock skips safely and a killed owner releases it automatically', runKilledOwner);
+    for (const forcePython of [false, true]) {
+      const label = forcePython ? 'Python fallback' : hasFlock ? 'flock' : 'shell counter with OS-lock fixture';
+      await asyncTest(`${label} applies threshold one to a missing first counter`,
+        () => runCounterBoundary(null, 1, 0, forcePython));
+      await asyncTest(`${label} resets a malformed counter before incrementing`,
+        () => runCounterBoundary('invalid\n', 2, 1, forcePython));
+      await asyncTest(`${label} resets an oversized counter before incrementing`,
+        () => runCounterBoundary('9'.repeat(5000) + '\n', 2, 1, forcePython));
+      await asyncTest(`${label} parses leading-zero counters as decimal`,
+        () => runCounterBoundary('08\n', 20, 9, forcePython));
+    }
   } else {
     console.log('  - skipping shell-execution tests (requires non-Windows + python3)');
   }

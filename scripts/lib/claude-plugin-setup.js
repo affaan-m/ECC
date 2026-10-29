@@ -97,6 +97,7 @@ function parsePluginList(stdout) {
       plugin.id === CURRENT_PLUGIN_ID
       || String(plugin.id || '').startsWith('ecc@')
       || LEGACY_PLUGIN_IDS.has(plugin.id)
+      // Legacy install id prefix, kept for existing installs.
       || String(plugin.id || '').startsWith('everything-claude-code@')
     );
     if (!isRelevant) continue;
@@ -400,6 +401,7 @@ function currentEccPlugins(plugins) {
 function assertNoConflictingEccPlugins(plugins) {
   const legacy = plugins.find(plugin => (
     LEGACY_PLUGIN_IDS.has(plugin?.id)
+    // Legacy install id prefix, kept for existing installs.
     || String(plugin?.id || '').startsWith('everything-claude-code@')
   ));
   if (legacy) {

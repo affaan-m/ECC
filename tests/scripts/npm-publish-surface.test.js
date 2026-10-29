@@ -36,6 +36,26 @@ function isCoveredByAncestor(target, roots) {
   return false
 }
 
+// `node scripts/<name>.js`, tolerating quoted ECC_ROOT or SKILL_DIR prefixes.
+const SCRIPT_INVOCATION_RE =
+  /node\s+["']?(?:\$\{?(?:ECC_ROOT|SKILL_DIR)\}?\/)?scripts\/([A-Za-z0-9._/-]+\.js)["']?/g
+
+function collectCommandScriptReferences(repoRoot) {
+  const commandsDir = path.join(repoRoot, "commands")
+  if (!fs.existsSync(commandsDir)) {
+    return []
+  }
+
+  const references = []
+  for (const file of fs.readdirSync(commandsDir).filter((name) => name.endsWith(".md"))) {
+    const content = fs.readFileSync(path.join(commandsDir, file), "utf8")
+    for (const match of content.matchAll(SCRIPT_INVOCATION_RE)) {
+      references.push({ script: `scripts/${match[1]}`, command: file })
+    }
+  }
+  return references
+}
+
 function buildExpectedPublishPaths(repoRoot) {
   const modules = JSON.parse(
     fs.readFileSync(path.join(repoRoot, "manifests", "install-modules.json"), "utf8")
@@ -47,10 +67,15 @@ function buildExpectedPublishPaths(repoRoot) {
     "scripts/eval-harness.js",
     "examples/eval-harness",
     "scripts/feedback.js",
+    "scripts/agent-convert.js",
     "scripts/catalog.js",
     "scripts/ci/scan-supply-chain-iocs.js",
     "scripts/ci/supply-chain-advisory-sources.js",
+    "scripts/ci/validate-skill-host-compat.js",
+    "scripts/ci/validate-skills.js",
     "scripts/consult.js",
+    "scripts/astra-review.js",
+    "scripts/dsh/generate-hooks-config.js",
     "scripts/profile.js",
     "scripts/control-pane.js",
     "scripts/dashboard-web.js",
@@ -80,9 +105,12 @@ function buildExpectedPublishPaths(repoRoot) {
     "scripts/harness-adapter-compliance.js",
     "scripts/session-inspect.js",
     "scripts/setup.js",
+    "scripts/github-coordination.js",
     "scripts/uninstall.js",
     "scripts/welcome.js",
     "scripts/gemini-adapt-agents.js",
+    "scripts/qwen-adapt-agents.js",
+    "scripts/gateguard-report.js",
     "scripts/sync-ecc-to-codex.sh",
     "scripts/codex/legacy-sync-state.js",
     "scripts/codex/install-global-git-hooks.sh",
@@ -92,6 +120,7 @@ function buildExpectedPublishPaths(repoRoot) {
     "scripts/codex/merge-codex-config.js",
     "scripts/codex/merge-mcp-config.js",
     ".codex-plugin",
+    ".qoder-plugin",
     "plugins/ecc",
     ".mcp.json",
     "install.sh",
@@ -153,6 +182,20 @@ function main() {
     ["package.json files align to the module graph and explicit runtime allowlist", () => {
       assert.deepStrictEqual(actualPublishPaths, expectedPublishPaths)
     }],
+    ["every scripts/*.js a published command invokes is on the publish surface", () => {
+      // commands/ ships in full, so a command that tells an agent to run a script
+      // that npm never packages breaks only after install. See issue #3270.
+      const publishRoots = new Set(actualPublishPaths)
+      const unpublished = collectCommandScriptReferences(repoRoot)
+        .filter(({ script }) => !publishRoots.has(script) && !isCoveredByAncestor(script, publishRoots))
+        .map(({ script, command }) => `${script} (invoked by commands/${command})`)
+
+      assert.deepStrictEqual(
+        [...new Set(unpublished)].sort(),
+        [],
+        `published commands invoke unpublished scripts: ${[...new Set(unpublished)].join(", ")}`
+      )
+    }],
     ["npm pack --ignore-scripts publishes the reduced runtime surface (prepack not tested)", () => {
       const cache = fs.mkdtempSync(path.join(os.tmpdir(), "ecc-pack-surface-"))
       let result
@@ -174,6 +217,7 @@ function main() {
       const packagedPaths = new Set(packEntry?.files?.map((file) => file.path) ?? [])
 
       for (const requiredPath of [
+        "skills/frontend-design-direction/scripts/check-evidence.js",
         "scripts/eval-harness.js",
         "scripts/lib/eval-harness/index.js",
         "examples/eval-harness/run-example.js",
@@ -188,7 +232,11 @@ function main() {
         "scripts/catalog.js",
         "scripts/ci/scan-supply-chain-iocs.js",
         "scripts/ci/supply-chain-advisory-sources.js",
+        "scripts/ci/validate-skill-host-compat.js",
+        "scripts/ci/validate-skills.js",
         "scripts/consult.js",
+    "scripts/astra-review.js",
+    "scripts/dsh/generate-hooks-config.js",
         "scripts/profile.js",
         "scripts/lib/context-profiles.js",
         "scripts/lib/context-pack-registry.js",
@@ -213,6 +261,9 @@ function main() {
         "docs/design/context-carriers.md",
         "docs/design/context-profile-delivery.md",
         "scripts/control-pane.js",
+        "scripts/lib/control-pane/work-item-runner.js",
+        "scripts/lib/control-pane/work-item-worker.js",
+        "scripts/lib/state-store/file-lock.js",
         "scripts/feedback.js",
         "scripts/ito.js",
         "scripts/memory.js",
@@ -223,6 +274,7 @@ function main() {
         "scripts/lib/instinct-store.js",
         "scripts/lib/memory-vault-format.js",
         "scripts/lib/memory-vault.js",
+        "scripts/lib/hook-session.js",
         "scripts/discussion-audit.js",
         "scripts/operator-readiness-dashboard.js",
         "scripts/preview-pack-smoke.js",
@@ -237,12 +289,14 @@ function main() {
         "scripts/codex-git-hooks/pre-commit",
         "scripts/codex-git-hooks/pre-push",
         "scripts/setup.js",
+        "scripts/github-coordination.js",
         "scripts/codex/check-plugin-cache.js",
         ".gemini/GEMINI.md",
         ".qwen/QWEN.md",
         ".claude-plugin/plugin.json",
         ".github/PULL_REQUEST_TEMPLATE.md",
         ".codex-plugin/plugin.json",
+        ".qoder-plugin/plugin.json",
         ".agents/skills/unified-memory/SKILL.md",
         ".agents/skills/unified-memory/agents/openai.yaml",
         ".cursor/skills/unified-memory/SKILL.md",
@@ -261,7 +315,13 @@ function main() {
         "schemas/memory.schema.json",
         "skills/backend-patterns/SKILL.md",
         "skills/skill-comply/SKILL.md",
+        "skills/skill-host-compat/SKILL.md",
         "skills/unified-memory/SKILL.md",
+        "scripts/agent-convert.js",
+        "scripts/lib/agent-ir.js",
+        "scripts/lib/agent-tool-map.js",
+        "scripts/lib/agent-emit-pi.js",
+        "schemas/agent.schema.json",
       ]) {
         assert.ok(
           packagedPaths.has(requiredPath),

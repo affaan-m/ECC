@@ -1,5 +1,5 @@
 ---
-inclusion: auto
+inclusion: always
 name: security
 description: Security best practices including mandatory checks, secret management, and security response protocol.
 ---

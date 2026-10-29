@@ -1,5 +1,5 @@
 ---
-inclusion: auto
+inclusion: always
 name: testing
 description: Testing requirements including 80% coverage, TDD workflow, and test types.
 ---

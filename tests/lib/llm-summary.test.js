@@ -185,6 +185,21 @@ test('returns null when ECC_SKIP_LLM_SUMMARY is set', () => {
   else delete process.env.ECC_SKIP_LLM_SUMMARY;
 });
 
+test('reports the explicit recursion guard as a deliberate skip', () => {
+  const orig = process.env.ECC_SKIP_LLM_SUMMARY;
+  process.env.ECC_SKIP_LLM_SUMMARY = '1';
+  try {
+    const skipped = [];
+    assert.strictEqual(generateSessionSummary('/nonexistent.jsonl', {
+      onSkip: reason => skipped.push(reason)
+    }), null);
+    assert.deepStrictEqual(skipped, ['ECC_SKIP_LLM_SUMMARY']);
+  } finally {
+    if (orig !== undefined) process.env.ECC_SKIP_LLM_SUMMARY = orig;
+    else delete process.env.ECC_SKIP_LLM_SUMMARY;
+  }
+});
+
 test('returns null for missing transcript (no conversation to summarize)', () => {
   const orig = process.env.ECC_SKIP_LLM_SUMMARY;
   delete process.env.ECC_SKIP_LLM_SUMMARY;
@@ -201,6 +216,58 @@ test('marks the spawned summarizer so its Stop hook cannot create resume state',
 });
 
 // --- Results ---
+// Execute the real helper with a controlled clock and child-process boundary.
+// These cases never invoke Claude or use the developer's authentication.
+function summaryProbe(deadline, now = 100000, spawnResult = { status: 0, stdout: 'summary' }) {
+  const vm = require('vm');
+  const source = fs.readFileSync(path.join(__dirname, '../../scripts/lib/llm-summary.js'), 'utf8');
+  const calls = [];
+  const env = deadline === undefined ? {} : { ECC_HOOK_DEADLINE_MS: String(deadline) };
+  const sandbox = {
+    module: { exports: {} },
+    process: { env, platform: process.platform },
+    Date: { now: () => now },
+    require: name => name === 'child_process'
+      ? { spawnSync: (...args) => { calls.push(args); return spawnResult; } }
+      : require(name)
+  };
+  vm.runInNewContext(source, sandbox, { filename: path.join(__dirname, '../../scripts/lib/llm-summary.js') });
+  const skipped = [];
+  const result = sandbox.module.exports.generateSessionSummary(
+    writeTranscript([userEntry('Preserve mechanical resume state')]),
+    { onSkip: reason => skipped.push(reason) }
+  );
+  return { calls, skipped, result };
+}
+
+test('limits summarizer to remaining hook budget minus persistence reserve', () => {
+  const probe = summaryProbe(105000);
+  assert.strictEqual(probe.result, 'summary');
+  assert.strictEqual(probe.calls[0][2].timeout, 4000);
+  assert.strictEqual(probe.skipped.length, 0);
+});
+
+test('retains the standalone timeout and caps longer inherited budgets', () => {
+  assert.strictEqual(summaryProbe(undefined).calls[0][2].timeout, 90000);
+  assert.strictEqual(summaryProbe(300000).calls[0][2].timeout, 90000);
+});
+
+for (const deadline of [99999, 100000, 100999, 101000, '', -1, 'invalid', 'Infinity', '1.5', Number.MAX_SAFE_INTEGER + 1]) {
+  test(`skips summarizer with exhausted or invalid deadline ${deadline}`, () => {
+    const probe = summaryProbe(deadline);
+    assert.strictEqual(probe.result, null);
+    assert.strictEqual(probe.calls.length, 0, 'No child should start without a safe budget');
+    assert.strictEqual(probe.skipped.length, 1, 'Skip must be distinguishable from Claude failure');
+  });
+}
+
+test('keeps process failures distinct from deliberate budget skips', () => {
+  const probe = summaryProbe(105000, 100000, { status: 1, stdout: '' });
+  assert.strictEqual(probe.result, null);
+  assert.strictEqual(probe.calls.length, 1);
+  assert.strictEqual(probe.skipped.length, 0);
+});
+
 console.log('\n=== Test Results ===');
 console.log(`Passed: ${passed}`);
 console.log(`Failed: ${failed}`);

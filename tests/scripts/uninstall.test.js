@@ -152,7 +152,7 @@ function runTests() {
 
       execFileSync(
         'node',
-        [INSTALL_SCRIPT, '--target', 'claude-project', '--profile', 'core', '--enable-hooks'],
+        [INSTALL_SCRIPT, '--target', 'claude-project', '--modules', 'hooks-runtime', '--enable-hooks'],
         {
           cwd: projectRoot,
           env: {

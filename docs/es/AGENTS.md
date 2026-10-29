@@ -1,4 +1,4 @@
-# Everything Claude Code (ECC) — Instrucciones para Agentes
+# ECC — Instrucciones para Agentes
 
 Este es un **plugin de IA para codificación listo para producción** que proporciona 63 agentes especializados, 249 skills, 79 comandos y flujos de trabajo de hooks automatizados para el desarrollo de software.
 

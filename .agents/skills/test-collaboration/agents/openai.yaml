@@ -1,0 +1,7 @@
+interface:
+  display_name: "Test Collaboration"
+  short_description: "Connect requirements and defects to executable test evidence"
+  brand_color: "#10B981"
+  default_prompt: "Use $test-collaboration to inventory test assets and connect requirements, contracts, and defects to executable evidence."
+policy:
+  allow_implicit_invocation: true

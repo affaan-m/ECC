@@ -105,3 +105,14 @@ test('actual registry: every candidate carries matched terms and a fused score',
     assert.equal(candidate.description, candidate.description.slice(0, 2048));
   }
 });
+
+test('precomputed dense vectors rank identically to computed ones', () => {
+  const { sparseDense } = require('../../scripts/lib/context-retrieval');
+  const { entries } = loadContextRegistry({ repoRoot: DEFAULT_REPO_ROOT });
+  const computed = buildRetrievalIndex(entries);
+  const stored = buildRetrievalIndex(JSON.parse(JSON.stringify(entries.map(entry => ({ ...entry, dense: sparseDense(entry) })))));
+  for (const query of ['review a postgres migration that adds an indexed column', 'navigate faster', 'two services own one record']) {
+    assert.deepEqual(searchRetrieval(stored, query, { limit: 15 }), searchRetrieval(computed, query, { limit: 15 }));
+  }
+  assert.throws(() => buildRetrievalIndex([{ ...entries[0], dense: [[2048, 1]] }]), /dense vector/);
+});

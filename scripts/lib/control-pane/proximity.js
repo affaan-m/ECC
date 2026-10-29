@@ -15,6 +15,34 @@ const { execFileSync } = require('child_process');
 const { scanAirspace, buildProximityTriggers } = require('../agent-proximity');
 const { buildDependencyGraph } = require('../agent-proximity/graph');
 
+/** Decode Git C-style path escapes as bytes before UTF-8 decoding. */
+function decodeGitPath(header) {
+  const value = header.replace(/\t$/, '');
+  if (!value.startsWith('"')) return value;
+  if (!value.endsWith('"')) return null;
+  const parts = [];
+  let literal = '';
+  const escaped = { a: 7, b: 8, t: 9, n: 10, v: 11, f: 12, r: 13, '"': 34, '\\': 92 };
+  for (let i = 1; i < value.length - 1; i += 1) {
+    const character = value[i];
+    if (character !== '\\') { literal += character; continue; }
+    if (literal) { parts.push(Buffer.from(literal, 'utf8')); literal = ''; }
+    const next = value[++i];
+    if (/[0-7]/.test(next || '')) {
+      let octal = next;
+      while (octal.length < 3 && /[0-7]/.test(value[i + 1] || '')) octal += value[++i];
+      const byte = parseInt(octal, 8);
+      if (byte > 255) return null;
+      parts.push(Buffer.from([byte]));
+    } else {
+      if (!Object.prototype.hasOwnProperty.call(escaped, next)) return null;
+      parts.push(Buffer.from([escaped[next]]));
+    }
+  }
+  if (literal) parts.push(Buffer.from(literal, 'utf8'));
+  return Buffer.concat(parts).toString('utf8');
+}
+
 /**
  * Parse `git diff --unified=0` output into per-file NEW-side line ranges. Hunk
  * headers look like `@@ -a,b +c,d @@`; we keep the +c,d (new) side so the overlap
@@ -28,10 +56,13 @@ function parseDiffRanges(diff) {
   const byFile = new Map();
   let current = null;
   for (const line of String(diff || '').split('\n')) {
-    const fileMatch = line.match(/^\+\+\+ b\/(.+)$/);
-    if (fileMatch) {
-      const name = fileMatch[1].trim();
-      current = name === '/dev/null' ? null : name;
+    if (line.startsWith('diff --git ')) {
+      current = null;
+      continue;
+    }
+    if (line.startsWith('+++ ')) {
+      const gitPath = decodeGitPath(line.slice(4));
+      current = gitPath && gitPath.startsWith('b/') ? gitPath.slice(2) : null;
       if (current && !byFile.has(current)) byFile.set(current, []);
       continue;
     }
@@ -45,13 +76,27 @@ function parseDiffRanges(diff) {
   return byFile;
 }
 
-function runGitDiff(worktreePath, base, extraArgs) {
-  return execFileSync('git', ['-C', worktreePath, 'diff', ...extraArgs, `${base}...HEAD`], {
+function runGit(worktreePath, args) {
+  return execFileSync('git', ['-C', worktreePath, ...args], {
     encoding: 'utf8',
     timeout: 5000,
     maxBuffer: 8 * 1024 * 1024,
     stdio: ['ignore', 'pipe', 'ignore']
   });
+}
+
+function runGitDiff(worktreePath, base, extraArgs) {
+  const mergeBase = runGit(worktreePath, ['merge-base', '--', base, 'HEAD']).trim();
+  return runGit(worktreePath, ['-c', 'core.quotePath=false', 'diff', ...extraArgs, mergeBase, '--']);
+}
+
+function untrackedFiles(worktreePath) {
+  try {
+    return runGit(worktreePath, ['ls-files', '--others', '--exclude-standard', '-z']).split('\0').filter(Boolean);
+  } catch {
+    // Keep successful tracked-file diffs when this optional probe is unavailable.
+    return [];
+  }
 }
 
 /**
@@ -65,6 +110,15 @@ function defaultWorkingSetFor(session) {
   const base = wt.base || 'HEAD';
   try {
     const ranges = parseDiffRanges(runGitDiff(wt.path, base, ['--unified=0']));
+    // Deletions, binary changes and quoted paths have no usable new-side hunks.
+    try {
+      for (const file of runGitDiff(wt.path, base, ['--name-only', '-z']).split('\0').filter(Boolean)) {
+        if (!ranges.has(file)) ranges.set(file, []);
+      }
+    } catch {
+      // Preserve ranges already read if the supplementary filename probe fails.
+    }
+    for (const file of untrackedFiles(wt.path)) ranges.set(file, []);
     return [...ranges.entries()].map(([path, lines]) => (lines.length > 0 ? { path, lines } : { path }));
   } catch {
     return [];
@@ -79,10 +133,7 @@ function defaultChangedFilesFor(session) {
   if (!wt || !wt.path) return [];
   const base = wt.base || 'HEAD';
   try {
-    return runGitDiff(wt.path, base, ['--name-only'])
-      .split('\n')
-      .map(s => s.trim())
-      .filter(Boolean);
+    return [...new Set([...runGitDiff(wt.path, base, ['--name-only', '-z']).split('\0').filter(Boolean), ...untrackedFiles(wt.path)])];
   } catch {
     return [];
   }

@@ -1,0 +1,503 @@
+{
+  "description": "Routing prompts from community PR #2945 (Jeffrey Montoya). Paraphrased prompts avoid the target skill vocabulary. Auto admission may load nothing, but anything it loads must be in expected.",
+  "direct": [
+    {
+      "query": "apply react patterns when refactoring this component",
+      "expected": [
+        "skill:react-patterns"
+      ]
+    },
+    {
+      "query": "this react list re-renders on every keystroke, can you look at the performance",
+      "expected": [
+        "skill:react-patterns",
+        "skill:react-performance"
+      ]
+    },
+    {
+      "query": "write react testing library tests for the checkout form",
+      "expected": [
+        "skill:react-testing"
+      ]
+    },
+    {
+      "query": "set up a new nextjs app using turbopack",
+      "expected": [
+        "skill:nextjs-turbopack"
+      ]
+    },
+    {
+      "query": "migrate this component from react to vue",
+      "expected": [
+        "skill:ui-to-vue",
+        "skill:vue-patterns"
+      ]
+    },
+    {
+      "query": "review my vue composables for best practices",
+      "expected": [
+        "skill:vue-patterns"
+      ]
+    },
+    {
+      "query": "add a database migration that renames the users table column",
+      "expected": [
+        "skill:database-migrations"
+      ]
+    },
+    {
+      "query": "optimize this slow postgres query with the right indexes",
+      "expected": [
+        "skill:postgres-patterns"
+      ]
+    },
+    {
+      "query": "design the prisma schema for orders and line items",
+      "expected": [
+        "skill:prisma-patterns"
+      ]
+    },
+    {
+      "query": "cache these lookups in redis with a sensible ttl",
+      "expected": [
+        "skill:redis-patterns"
+      ]
+    },
+    {
+      "query": "write pytest tests for the payment module",
+      "expected": [
+        "skill:python-testing"
+      ]
+    },
+    {
+      "query": "make this python script follow idiomatic python patterns",
+      "expected": [
+        "skill:python-patterns"
+      ]
+    },
+    {
+      "query": "build a fastapi endpoint with dependency injection and pydantic models",
+      "expected": [
+        "skill:fastapi-patterns"
+      ]
+    },
+    {
+      "query": "set up celery tasks in my django project",
+      "expected": [
+        "skill:django-celery",
+        "skill:django-patterns"
+      ]
+    },
+    {
+      "query": "harden this django app against common security issues",
+      "expected": [
+        "skill:django-security"
+      ]
+    },
+    {
+      "query": "write go unit tests with table driven cases",
+      "expected": [
+        "skill:golang-testing"
+      ]
+    },
+    {
+      "query": "review this golang service for idiomatic error handling and concurrency",
+      "expected": [
+        "skill:error-handling",
+        "skill:golang-patterns"
+      ]
+    },
+    {
+      "query": "write rust tests for the parser crate",
+      "expected": [
+        "skill:rust-testing"
+      ]
+    },
+    {
+      "query": "make this rust code more idiomatic with proper ownership",
+      "expected": [
+        "skill:rust-patterns"
+      ]
+    },
+    {
+      "query": "review kotlin coroutines and flows usage in this repository",
+      "expected": [
+        "skill:kotlin-coroutines-flows"
+      ]
+    },
+    {
+      "query": "add ktor routes for the new api",
+      "expected": [
+        "skill:kotlin-ktor-patterns"
+      ]
+    },
+    {
+      "query": "write swiftui views for the settings screen",
+      "expected": [
+        "skill:swiftui-patterns"
+      ]
+    },
+    {
+      "query": "fix swift concurrency warnings with actors",
+      "expected": [
+        "skill:swift-actor-persistence",
+        "skill:swift-concurrency-6-2"
+      ]
+    },
+    {
+      "query": "set up a spring boot service with tdd",
+      "expected": [
+        "skill:springboot-patterns",
+        "skill:springboot-tdd"
+      ]
+    },
+    {
+      "query": "review this laravel app for security problems",
+      "expected": [
+        "skill:laravel-security"
+      ]
+    },
+    {
+      "query": "build a nestjs module with providers and guards",
+      "expected": [
+        "skill:nestjs-patterns"
+      ]
+    },
+    {
+      "query": "write the dockerfile and docker compose for this service",
+      "expected": [
+        "skill:docker-patterns"
+      ]
+    },
+    {
+      "query": "deploy this to kubernetes with proper health checks",
+      "expected": [
+        "skill:kubernetes-patterns"
+      ]
+    },
+    {
+      "query": "plan a safe deployment with rollback for this release",
+      "expected": [
+        "skill:deployment-patterns"
+      ]
+    },
+    {
+      "query": "run a security review of the auth flow",
+      "expected": [
+        "skill:security-review",
+        "skill:security-scan"
+      ]
+    },
+    {
+      "query": "scan the repo for secrets and vulnerable dependencies",
+      "expected": [
+        "skill:security-scan"
+      ]
+    },
+    {
+      "query": "check this page for accessibility issues like contrast and keyboard navigation",
+      "expected": [
+        "skill:accessibility",
+        "skill:frontend-a11y"
+      ]
+    },
+    {
+      "query": "improve the design direction of the landing page frontend",
+      "expected": [
+        "skill:frontend-design-direction",
+        "skill:frontend-patterns"
+      ]
+    },
+    {
+      "query": "write e2e tests for the signup flow with playwright",
+      "expected": [
+        "skill:browser-qa",
+        "skill:e2e-testing"
+      ]
+    },
+    {
+      "query": "use tdd workflow to implement the pricing calculator",
+      "expected": [
+        "skill:tdd-workflow"
+      ]
+    },
+    {
+      "query": "design a rest api with versioning and pagination",
+      "expected": [
+        "skill:api-design"
+      ]
+    },
+    {
+      "query": "write an architecture decision record for choosing kafka over sqs",
+      "expected": [
+        "skill:architecture-decision-records"
+      ]
+    },
+    {
+      "query": "set up a git workflow with feature branches and conventional commits",
+      "expected": [
+        "skill:git-workflow"
+      ]
+    },
+    {
+      "query": "open a github pull request and handle the review comments",
+      "expected": [
+        "skill:github-ops"
+      ]
+    },
+    {
+      "query": "create a jira ticket and link it to this branch",
+      "expected": [
+        "skill:jira-integration"
+      ]
+    },
+    {
+      "query": "build an mcp server that exposes our internal api as tools",
+      "expected": [
+        "skill:mcp-server-patterns"
+      ]
+    },
+    {
+      "query": "do deep research on competitors in the market for this product",
+      "expected": [
+        "skill:competitive-platform-analysis",
+        "skill:deep-research",
+        "skill:market-research"
+      ]
+    },
+    {
+      "query": "improve the seo of the marketing site",
+      "expected": [
+        "skill:seo"
+      ]
+    },
+    {
+      "query": "write a blog article about our launch",
+      "expected": [
+        "skill:article-writing"
+      ]
+    },
+    {
+      "query": "set up a wireguard vpn on my homelab",
+      "expected": [
+        "skill:homelab-wireguard-vpn"
+      ]
+    },
+    {
+      "query": "configure pihole dns for the home network",
+      "expected": [
+        "skill:homelab-pihole-dns"
+      ]
+    },
+    {
+      "query": "diagnose bgp session flapping on the edge router",
+      "expected": [
+        "skill:network-bgp-diagnostics"
+      ]
+    },
+    {
+      "query": "track token costs of this session and reduce them",
+      "expected": [
+        "skill:context-budget",
+        "skill:cost-tracking",
+        "skill:token-budget-advisor"
+      ]
+    },
+    {
+      "query": "record a manim video explaining the algorithm",
+      "expected": [
+        "skill:manim-video"
+      ]
+    },
+    {
+      "query": "make a remotion video for the product demo",
+      "expected": [
+        "skill:remotion-video-creation"
+      ]
+    },
+    {
+      "query": "onboard me to this codebase and explain the structure",
+      "expected": [
+        "skill:code-tour",
+        "skill:codebase-onboarding"
+      ]
+    },
+    {
+      "query": "audit hipaa compliance for the patient data pipeline",
+      "expected": [
+        "skill:healthcare-phi-compliance",
+        "skill:hipaa-compliance"
+      ]
+    }
+  ],
+  "paraphrased": [
+    {
+      "query": "the page jumps around when I tab through the form",
+      "expected": [
+        "skill:accessibility",
+        "skill:frontend-a11y"
+      ]
+    },
+    {
+      "query": "screen readers announce our buttons as just button",
+      "expected": [
+        "skill:accessibility",
+        "skill:frontend-a11y"
+      ]
+    },
+    {
+      "query": "everything grinds to a halt once we hit about ten thousand rows",
+      "expected": [
+        "skill:database-migrations",
+        "skill:postgres-patterns"
+      ]
+    },
+    {
+      "query": "the numbers in the dashboard disagree with what finance has",
+      "expected": [
+        "skill:benchmark-methodology",
+        "skill:production-audit"
+      ]
+    },
+    {
+      "query": "it works on my machine but falls over in the pipeline",
+      "expected": [
+        "skill:delivery-gate",
+        "skill:deployment-patterns"
+      ]
+    },
+    {
+      "query": "we keep shipping the same bug over and over",
+      "expected": [
+        "skill:ai-regression-testing",
+        "skill:tdd-workflow"
+      ]
+    },
+    {
+      "query": "nobody can tell me why this function exists",
+      "expected": [
+        "skill:code-tour",
+        "skill:codebase-onboarding"
+      ]
+    },
+    {
+      "query": "the new hire took three weeks to make their first change",
+      "expected": [
+        "skill:code-tour",
+        "skill:codebase-onboarding"
+      ]
+    },
+    {
+      "query": "our secrets ended up in the repo again",
+      "expected": [
+        "skill:security-review",
+        "skill:security-scan"
+      ]
+    },
+    {
+      "query": "someone deleted production data and we could not get it back",
+      "expected": [
+        "skill:database-migrations",
+        "skill:production-audit"
+      ]
+    },
+    {
+      "query": "the model keeps confidently making things up",
+      "expected": [
+        "skill:eval-harness",
+        "skill:verification-loop"
+      ]
+    },
+    {
+      "query": "every conversation starts from scratch and forgets what we agreed",
+      "expected": [
+        "skill:strategic-compact"
+      ]
+    },
+    {
+      "query": "the thing is technically correct but nobody wants to use it",
+      "expected": [
+        "skill:make-interfaces-feel-better",
+        "skill:product-lens"
+      ]
+    },
+    {
+      "query": "we argue about the same decision every quarter",
+      "expected": [
+        "skill:architecture-decision-records"
+      ]
+    },
+    {
+      "query": "our estimates are always wrong by a factor of three",
+      "expected": [
+        "skill:intent-driven-development",
+        "skill:plan-canvas"
+      ]
+    },
+    {
+      "query": "the build takes so long people stopped running it",
+      "expected": [
+        "skill:delivery-gate"
+      ]
+    },
+    {
+      "query": "two services both think they own the same record",
+      "expected": [
+        "skill:api-design",
+        "skill:contract-first"
+      ]
+    },
+    {
+      "query": "it gets slower every time someone adds a feature",
+      "expected": [
+        "skill:plankton-code-quality",
+        "skill:repo-scan"
+      ]
+    },
+    {
+      "query": "customers notice problems before our alerts do",
+      "expected": [
+        "skill:production-audit"
+      ]
+    },
+    {
+      "query": "half the flags in this file do nothing any more",
+      "expected": [
+        "skill:config-gc",
+        "skill:plankton-code-quality"
+      ]
+    },
+    {
+      "query": "the handover doc is a year out of date",
+      "expected": [
+        "skill:living-docs-governance"
+      ]
+    },
+    {
+      "query": "we cannot tell which change caused the slowdown",
+      "expected": [
+        "skill:benchmark-methodology",
+        "skill:production-audit"
+      ]
+    },
+    {
+      "query": "the same three people are the only ones who can deploy",
+      "expected": [
+        "skill:deployment-patterns"
+      ]
+    },
+    {
+      "query": "our tests pass but the feature is broken for real users",
+      "expected": [
+        "skill:browser-qa",
+        "skill:e2e-testing"
+      ]
+    },
+    {
+      "query": "this file is four thousand lines and everyone is scared of it",
+      "expected": [
+        "skill:plankton-code-quality"
+      ]
+    }
+  ]
+}

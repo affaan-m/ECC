@@ -5,7 +5,7 @@ metadata:
   origin: ECC
 ---
 
-# Configure Everything Claude Code
+# Configure ECC
 
 Run a conversational wizard inside the current harness. Inventory first, collect
 only supported choices, preview, confirm once, apply non-interactively, verify,

@@ -5,7 +5,7 @@ const fs = require('node:fs');
 const { createSourceReader } = require('./context-profile-support');
 
 const NATIVE_COMMANDS = ['prepare-native', 'native-status', 'native-rollback', 'native-recover'];
-const COMMANDS = ['start', 'resolve', 'run', 'set', 'mode', 'status', 'rollback', 'recover', ...NATIVE_COMMANDS];
+const COMMANDS = ['start', 'resolve', 'run', 'set', 'mode', 'status', 'rollback', 'recover', 'routing-index', ...NATIVE_COMMANDS];
 const VALUE_FLAGS = ['--task-input', '--previous', '--expected-digest', '--state-root', '--expected-revision',
   '--target', '--selection', '--include', '--exclude', '--native-root'];
 
@@ -119,8 +119,9 @@ function execute(options) {
         stateRoot: options['state-root'], nativeRoot: options['native-root'] }) : null;
       if (native && !native.ready) throw new Error('Prepare or recover the native generation before launching');
       return { launch: require('./context-profile-launch').launchTaskContext({ ...launchInput, dryRun: options.dryRun,
-        nativeEnvironment: native ? { home: native.home, codexHome: native.codexHome,
-          codexPath: native.codexPath, executableDigest: native.executableDigest } : null,
+        nativeEnvironment: native ? { home: native.home, executableDigest: native.executableDigest,
+          ...(native.target === 'claude' ? { claudeConfigDir: native.claudeConfigDir, claudePath: native.claudePath, pluginDir: native.pluginDir }
+            : { codexHome: native.codexHome, codexPath: native.codexPath }) } : null,
         assertCurrent() {
           if (stored) {
             const current = require('./context-profile-store').getStoreStatus({ stateRoot: options['state-root'] });
@@ -135,6 +136,11 @@ function execute(options) {
         } }) };
     }
     return { selection: resolveTaskContext(input) };
+  }
+  if (options.command === 'routing-index') {
+    const routing = require('./context-routing-index');
+    return { routing: options.dryRun ? routing.routingIndexStatus(options['state-root'])
+      : routing.writeRoutingIndex({ stateRoot: options['state-root'] }) };
   }
   const store = require('./context-profile-store');
   const common = { stateRoot: options['state-root'],
@@ -162,9 +168,10 @@ function run(argv) {
   const options = parse(argv);
   const value = execute(options);
   return { schemaVersion: 'ecc.profile-operation.v1', status: (value.launch?.status === 'failed' || value.interactive?.status === 'failed') ? 'error' : 'success',
-    summary: options.command === 'start' ? 'Opt-in interactive Codex uses the verified isolated generation and inherited terminal. Context selection remains advisory.'
+    summary: options.command === 'start' ? 'Opt-in interactive session uses the verified isolated generation and inherited terminal. Context selection remains advisory.'
       : options.command === 'run' ? 'Task launch uses selected context and the provider configuration. Inspect the launch result.'
       : options.command === 'resolve' ? 'Task context resolved within the selected profile.'
+      : options.command === 'routing-index' ? 'Routing index inspected. Prompt suggestions stay advisory; resolve verifies sources before loading.'
       : 'Managed profile generation inspected. Native activation is a separate provider boundary.',
     activation: value.selection?.activation || 'unobserved', next_actions: [], artifacts: [], ...value };
 }

@@ -25,12 +25,12 @@ Run or self-host any open-source model. Itô partners with ECC on compute, while
 | Sponsor | Active period |
 |---------|---------------|
 | [**Atlas Cloud**](https://www.atlascloud.ai/?utm_source=github&utm_medium=link&utm_campaign=ECC) | 2026 |
+| [Mike Morgan](https://github.com/mikejmorgan-ai) (inactive) | 2026 |
 
 ## Team Sponsors — $200/mo
 
 | Sponsor | Since |
 |---------|-------|
-| [Mike Morgan](https://github.com/mikejmorgan-ai) | 2026 |
 
 *[Become a Team sponsor](https://github.com/sponsors/affaan-m) to be listed in SPONSORS.md.*
 

@@ -4,11 +4,12 @@
  * Cross-platform (Windows, macOS, Linux) project type detection
  * by inspecting files in the working directory.
  *
- * Resolves: https://github.com/affaan-m/everything-claude-code/issues/293
+ * Resolves: https://github.com/affaan-m/ECC/issues/293
  */
 
 const fs = require('fs');
 const path = require('path');
+const yaml = require('js-yaml');
 
 /**
  * Language detection rules.
@@ -84,6 +85,11 @@ const LANGUAGE_RULES = [
     type: 'php',
     markers: ['composer.json', 'composer.lock'],
     extensions: ['.php']
+  },
+  {
+    type: 'dart',
+    markers: ['pubspec.yaml', 'pubspec.lock'],
+    extensions: ['.dart']
   }
 ];
 
@@ -129,7 +135,10 @@ const FRAMEWORK_RULES = [
   { framework: 'symfony', language: 'php', markers: ['symfony.lock'], packageKeys: ['symfony/framework-bundle'] },
 
   // Elixir frameworks
-  { framework: 'phoenix', language: 'elixir', markers: [], packageKeys: ['phoenix'] }
+  { framework: 'phoenix', language: 'elixir', markers: [], packageKeys: ['phoenix'] },
+
+  // Dart frameworks
+  { framework: 'flutter', language: 'dart', markers: [], packageKeys: [], customCheck: hasFlutterSdkDependency }
 ];
 
 /**
@@ -331,6 +340,27 @@ function getElixirDeps(projectDir) {
 }
 
 /**
+ * Check whether pubspec.yaml declares the Flutter SDK as a dependency,
+ * which distinguishes a Flutter app from a plain Dart package.
+ * @param {string} projectDir - Project root directory
+ * @returns {boolean}
+ */
+function hasFlutterSdkDependency(projectDir) {
+  try {
+    const pubspecPath = path.join(projectDir, 'pubspec.yaml');
+    if (!fs.existsSync(pubspecPath)) return false;
+    const content = fs.readFileSync(pubspecPath, 'utf8');
+    const pubspec = yaml.load(content, { schema: yaml.JSON_SCHEMA });
+    // Only a declared Flutter SDK dependency identifies the framework.
+    // Unrelated configuration, comments, and strings must not count.
+    return pubspec?.dependencies?.flutter?.sdk === 'flutter'
+      || pubspec?.dev_dependencies?.flutter?.sdk === 'flutter';
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Detect project languages and frameworks
  * @param {string} [projectDir] - Project directory (defaults to cwd)
  * @returns {{ languages: string[], frameworks: string[], primary: string, projectDir: string }}
@@ -409,7 +439,9 @@ function detectProjectType(projectDir) {
       });
     }
 
-    if (hasMarker || hasDep) {
+    const hasCustom = typeof rule.customCheck === 'function' ? rule.customCheck(projectDir) : false;
+
+    if (hasMarker || hasDep || hasCustom) {
       frameworks.push(rule.framework);
     }
   }

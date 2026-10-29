@@ -6,12 +6,13 @@ const path = require('path');
 const { assertWithinTrustedRoot } = require('../path-safety');
 
 function isCodexUserConfig(plan, operation) {
-  if (plan.adapter.id !== 'codex-home' || operation.kind !== 'copy-file') {
+  if (!plan.adapter || plan.adapter.id !== 'codex-home' || operation.kind !== 'copy-file') {
     return false;
   }
   const relativePath = path.relative(plan.targetRoot, operation.destinationPath);
   const name = process.platform === 'win32' ? relativePath.toLowerCase() : relativePath;
-  return name === 'config.toml' || name === (process.platform === 'win32' ? 'agents.md' : 'AGENTS.md');
+  return name === 'config.toml' || name === 'strict.config.toml' || name === 'yolo.config.toml'
+    || name === (process.platform === 'win32' ? 'agents.md' : 'AGENTS.md');
 }
 
 function readConfigDigest(plan, destinationPath) {

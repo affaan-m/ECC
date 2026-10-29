@@ -1,5 +1,5 @@
 ---
-inclusion: auto
+inclusion: always
 name: git-workflow
 description: Git workflow guidelines for conventional commits and pull request process
 ---

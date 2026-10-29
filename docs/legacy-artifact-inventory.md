@@ -62,7 +62,7 @@ Expected result:
 
 ## Workspace-Level Legacy Repos
 
-These sibling repositories live outside the tracked `everything-claude-code`
+These sibling repositories live outside the tracked `ECC`
 checkout. They are source material for future salvage passes, not installable
 release assets.
 

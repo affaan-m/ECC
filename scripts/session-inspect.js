@@ -39,7 +39,13 @@ function usage() {
 
 function parseArgs(argv) {
   const args = argv.slice(2);
-  const target = args.find(argument => !argument.startsWith('--'));
+  const valueOptions = ['--adapter', '--target-type', '--skill', '--amendment-id', '--observations', '--write'];
+  for (const [index, argument] of args.entries()) {
+    if (valueOptions.includes(argument) && (!args[index + 1] || args[index + 1].startsWith('--'))) {
+      throw new Error(`Missing value for ${argument}`);
+    }
+  }
+  const target = args.find((argument, index) => !argument.startsWith('--') && !valueOptions.includes(args[index - 1]));
   const listAdapters = args.includes('--list-adapters');
 
   const adapterIndex = args.indexOf('--adapter');

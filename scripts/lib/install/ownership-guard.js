@@ -37,10 +37,10 @@ function comparablePath(filePath) {
  *
  * All managed targets share this ownership boundary (#2964).
  */
-function prepareUserOwnedFileGuard(plan, migration) {
-  const previousState = pathExists(plan.installStatePath)
-    ? readInstallState(plan.installStatePath)
-    : null;
+function prepareUserOwnedFileGuard(plan, migration, recordedState) {
+  const previousState = recordedState === undefined
+    ? (pathExists(plan.installStatePath) ? readInstallState(plan.installStatePath) : null)
+    : recordedState;
   if (previousState && (
     previousState.target.id !== plan.adapter.id
     || comparablePath(previousState.target.root) !== comparablePath(plan.targetRoot)

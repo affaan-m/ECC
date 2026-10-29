@@ -1,6 +1,6 @@
-# Everything Claude Code 簡潔ガイド
+# ECC 簡潔ガイド
 
-![Header: Anthropic Hackathon Winner - Tips & Tricks for Claude Code](./assets/images/shortform/00-header.png)
+![Header: Anthropic Hackathon Winner - Tips & Tricks for Claude Code](https://raw.githubusercontent.com/affaan-m/ECC/main/assets/images/shortform/00-header.png)
 
 ---
 
@@ -16,7 +16,7 @@
 
 Opus 4.5での長いコーディングセッション後にデッドコードや散らかった.mdファイルを整理したい？`/refactor-clean`を実行。テストが必要？`/tdd`、`/e2e`、`/test-coverage`。これらのスラッシュエントリーは便利ですが、真に持続的な単位は基盤となるスキルです。スキルにはコードマップも含められます — コンテキストを探索に消費せずにClaude がコードベースを素早くナビゲートする方法です。
 
-![Terminal showing chained commands](./assets/images/shortform/02-chaining-commands.jpeg)
+![Terminal showing chained commands](https://raw.githubusercontent.com/affaan-m/ECC/main/assets/images/shortform/02-chaining-commands.jpeg)
 *コマンドの連鎖実行*
 
 ECCは依然として`commands/`レイヤーを提供していますが、マイグレーション中のレガシースラッシュエントリー互換性と考えるのが最適です。持続的なロジックはスキルに置くべきです。
@@ -66,7 +66,7 @@ ECCは依然として`commands/`レイヤーを提供していますが、マイ
 }
 ```
 
-![PostToolUse hook feedback](./assets/images/shortform/03-posttooluse-hook.png)
+![PostToolUse hook feedback](https://raw.githubusercontent.com/affaan-m/ECC/main/assets/images/shortform/03-posttooluse-hook.png)
 *PostToolUseフック実行中のClaude Codeでのフィードバック例*
 
 **プロヒント：** JSONを手動で書く代わりに`hookify`プラグインを使ってフックを会話的に作成できます。`/hookify`を実行して欲しいものを説明してください。
@@ -129,7 +129,7 @@ MCPはClaudeを外部サービスに直接接続します。APIの置き換え�
 
 **例：** Supabase MCPにより、Claudeはコピー&ペーストなしで特定のデータを取得し、上流で直接SQLを実行できます。データベース、デプロイメントプラットフォームなども同様です。
 
-![Supabase MCP listing tables](./assets/images/shortform/04-supabase-mcp.jpeg)
+![Supabase MCP listing tables](https://raw.githubusercontent.com/affaan-m/ECC/main/assets/images/shortform/04-supabase-mcp.jpeg)
 *Supabase MCPがpublicスキーマ内のテーブルを一覧表示している例*
 
 **Claude内のChrome：** Claudeがブラウザを自律的に制御する組み込みプラグインMCP — クリックして動作を確認できます。
@@ -138,7 +138,7 @@ MCPはClaudeを外部サービスに直接接続します。APIの置き換え�
 
 MCPは厳選してください。すべてのMCPをユーザー設定に入れていますが、**未使用のものはすべて無効化**しています。`/plugins`に移動してスクロールするか、`/mcp`を実行してください。
 
-![/plugins interface](./assets/images/shortform/05-plugins-interface.jpeg)
+![/plugins interface](https://raw.githubusercontent.com/affaan-m/ECC/main/assets/images/shortform/05-plugins-interface.jpeg)
 */pluginsを使用してMCPのインストール状況とステータスを確認*
 
 圧縮前の200kコンテキストウィンドウも、有効なツールが多すぎると70kにしかならない場合があります。パフォーマンスが大幅に低下します。
@@ -168,7 +168,7 @@ claude plugin marketplace add https://github.com/mixedbread-ai/mgrep
 # Claudeを開き、/plugins を実行、新しいマーケットプレイスを見つけてインストール
 ```
 
-![Marketplaces tab showing mgrep](./assets/images/shortform/06-marketplaces-mgrep.jpeg)
+![Marketplaces tab showing mgrep](https://raw.githubusercontent.com/affaan-m/ECC/main/assets/images/shortform/06-marketplaces-mgrep.jpeg)
 *新しくインストールされたMixedbread-Grepマーケットプレイスの表示*
 
 **LSPプラグイン**は、エディタ外でClaude Codeを頻繁に使用する場合に特に便利です。Language Server Protocolにより、IDEを開かずにClaudeにリアルタイムの型チェック、定義ジャンプ、インテリジェント補完を提供します。
@@ -237,7 +237,7 @@ mgrep --web "Next.js 15 app router changes"  # Web検索
 
 GitHub ActionsでPRにコードレビューを設定。設定すればClaudeがPRを自動的にレビューできます。
 
-![Claude bot approving a PR](./assets/images/shortform/08-github-pr-review.jpeg)
+![Claude bot approving a PR](https://raw.githubusercontent.com/affaan-m/ECC/main/assets/images/shortform/08-github-pr-review.jpeg)
 *Claudeがバグ修正PRを承認*
 
 ### サンドボックス
@@ -262,7 +262,7 @@ GitHub ActionsでPRにコードレビューを設定。設定すればClaudeがP
 - **最小限のリソース使用** — 重い操作中にClaudeとRAM/CPUを競合しない。Opus実行時に重要
 - **Vimモード** — お好みならフルVimキーバインド
 
-![Zed Editor with custom commands](./assets/images/shortform/09-zed-editor.jpeg)
+![Zed Editor with custom commands](https://raw.githubusercontent.com/affaan-m/ECC/main/assets/images/shortform/09-zed-editor.jpeg)
 *CMD+Shift+Rでカスタムコマンドドロップダウンを表示するZedエディタ。右下にフォローモードが牛眼として表示。*
 
 **エディタに依存しないヒント：**
@@ -277,7 +277,7 @@ GitHub ActionsでPRにコードレビューを設定。設定すればClaudeがP
 
 これも実用的な選択肢でClaude Codeとうまく連携します。`\ide`でLSP機能を有効にしたターミナル形式（プラグインでやや冗長になりました）、またはエディタにより統合されたマッチするUIの拡張機能を選択できます。
 
-![VS Code Claude Code Extension](./assets/images/shortform/10-vscode-extension.jpeg)
+![VS Code Claude Code Extension](https://raw.githubusercontent.com/affaan-m/ECC/main/assets/images/shortform/10-vscode-extension.jpeg)
 *VS Code拡張機能はClaude CodeのネイティブグラフィカルインターフェースをIDE内に直接統合して提供。*
 
 ---
@@ -361,7 +361,7 @@ mgrep@Mixedbread-Grep                  # より良い検索
 
 ユーザー、ディレクトリ、ダーティインジケーター付きgitブランチ、残りコンテキスト%、モデル、時間、Todoカウントを表示：
 
-![Custom status line](./assets/images/shortform/11-statusline.jpeg)
+![Custom status line](https://raw.githubusercontent.com/affaan-m/ECC/main/assets/images/shortform/11-statusline.jpeg)
 *Macルートディレクトリでのステータスライン例*
 
 ```

@@ -7,6 +7,55 @@ const {
 } = require('../install/claude-settings');
 const { METADATA_FILENAME } = require('../hooks-config');
 
+// Memoized WSL detection (avoids repeated /proc/version reads)
+let _isWSL = null;
+function isWSL() {
+  if (_isWSL !== null) return _isWSL;
+  if (process.platform !== 'linux') {
+    _isWSL = false;
+    return false;
+  }
+  try {
+    _isWSL = fs.readFileSync('/proc/version', 'utf8').toLowerCase().includes('microsoft');
+  } catch {
+    _isWSL = false;
+  }
+  return _isWSL;
+}
+
+// Reset WSL detection memoization (for testing only)
+function resetWSLDetection() {
+  _isWSL = null;
+}
+
+// Set WSL detection for testing (for testing only)
+function setWSLForTesting(value) {
+  _isWSL = value;
+}
+
+// Windows path pattern: drive letter followed by :\ or :/
+const WINDOWS_PATH_PATTERN = /^[A-Za-z]:[\\/]/;
+
+// Compact WSL conversion snippet for inline resolvers embedded in commands and hooks.
+// Uses 8 backslashes in regex source so it preserves shell escaping when inlined into `node -e "..."`.
+const INLINE_WSL_CONVERSION = `try{if(o.platform()==='linux'){var v=f.readFileSync('/proc/version','utf8').toLowerCase();if(v.includes('microsoft')){var m=d.match(/^([A-Za-z]):[\\\\\\\\/]/);if(m){var dl=m[1].toLowerCase();d='/mnt/'+dl+d.slice(2).replace(/\\\\\\\\/g,'/')}}}}catch(_){}`;
+
+/**
+ * Convert a Windows path to a WSL path.
+ * Example: "C:\Users\name" -> "/mnt/c/Users/name"
+ * Example: "D:/Projects" -> "/mnt/d/Projects"
+ * Returns the original path if it's not a Windows path or not on WSL.
+ */
+function convertWindowsPathToWSL(windowsPath) {
+  if (!isWSL()) return windowsPath;
+  if (typeof windowsPath !== 'string') return windowsPath;
+  const trimmed = windowsPath.trim();
+  if (!WINDOWS_PATH_PATTERN.test(trimmed)) return trimmed;
+  const driveLetter = trimmed[0].toLowerCase();
+  const rest = trimmed.slice(2).replace(/\\/g, '/');
+  return `/mnt/${driveLetter}${rest}`;
+}
+
 const PLATFORM_SOURCE_PATH_OWNERS = Object.freeze({
   '.claude-plugin': 'claude',
   '.codex': 'codex',
@@ -18,6 +67,9 @@ const PLATFORM_SOURCE_PATH_OWNERS = Object.freeze({
   '.joycode': 'joycode',
   '.opencode': 'opencode',
   '.openclaw': 'openclaw',
+  // Pi loads ECC through `pi install`, not install-apply, so `.pi` is
+  // foreign to every install target.
+  '.pi': 'pi',
   '.codebuddy': 'codebuddy',
   '.qwen': 'qwen',
   '.zed': 'zed',
@@ -438,4 +490,9 @@ module.exports = {
   isForeignPlatformPath,
   normalizeRelativePath,
   planClaudeHooksOperations,
+  isWSL,
+  resetWSLDetection,
+  setWSLForTesting,
+  convertWindowsPathToWSL,
+  INLINE_WSL_CONVERSION,
 };

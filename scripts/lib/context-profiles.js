@@ -86,13 +86,28 @@ function estimateMetadata(entries, target, profile) {
   };
 }
 
-function compileContextProfile({
+function validatePlanOptions({ selectionMode = 'manual', target = 'codex' }) {
+  validateTarget(target);
+  if (!MODES.includes(selectionMode)) throw new Error(`Unknown selection mode: ${selectionMode}`);
+}
+
+function compileContextProfile(options = {}) {
+  return compileContextProfileWithRegistry(options).plan;
+}
+
+// Keep registry reuse inside this call to the canonical loader. Callers can
+// consume the snapshot, but cannot supply a cached or caller-built registry.
+function compileContextProfileWithRegistry({ repoRoot = DEFAULT_REPO_ROOT, ...options } = {}) {
+  validatePlanOptions(options);
+  const registry = loadContextRegistry({ repoRoot });
+  return { registry, plan: compileContextPlan(registry, { repoRoot, ...options }) };
+}
+
+function compileContextPlan(registry, {
   repoRoot = DEFAULT_REPO_ROOT, profileId = 'lean@1', selectionMode = 'manual',
   target = 'codex', include = [], exclude = [],
 } = {}) {
-  validateTarget(target);
-  if (!MODES.includes(selectionMode)) throw new Error(`Unknown selection mode: ${selectionMode}`);
-  const registry = loadContextRegistry({ repoRoot });
+  validatePlanOptions({ selectionMode, target });
   const profile = loadContextProfile(profileId, { repoRoot });
   if (profile.registryId !== registry.id) throw new Error('Profile registry ID mismatch');
   const selected = resolveSelection(registry, profile, include, exclude);
@@ -130,4 +145,4 @@ function compileContextProfile({
   return plan;
 }
 
-module.exports = { compileContextProfile, explainContextEntry, loadContextProfile };
+module.exports = { compileContextProfile, compileContextProfileWithRegistry, explainContextEntry, loadContextProfile };

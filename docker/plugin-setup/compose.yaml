@@ -14,7 +14,7 @@ x-real-cli: &real-cli
   tmpfs:
     - /tmp:rw,nosuid,nodev,exec,size=${ECC_TMPFS_SIZE:-2g},uid=1000,gid=1000,mode=0700
     - /workspace:rw,nosuid,nodev,noexec,size=${ECC_WORKSPACE_SIZE:-1g},uid=1000,gid=1000,mode=0700
-  environment:
+  environment: &real-cli-environment
     CLAUDE_CONFIG_DIR: /tmp/ecc-claude-config
     DISABLE_AUTOUPDATER: "1"
     HOME: /tmp/ecc-home
@@ -76,6 +76,14 @@ services:
     profiles:
       - networked
     network_mode: default
+    environment:
+      <<: *real-cli-environment
+      NPM_CONFIG_PREFIX: /tmp/ecc-npm
+      PATH: /tmp/ecc-npm/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+    # Codex OAuth callback bridge: host browser -> codex-auth-relay.js -> loopback.
+    # compose run requires --service-ports to publish this mapping.
+    ports:
+      - "127.0.0.1:1455:1456"
     image: ecc-plugin-setup:debian
 
   real-cli-ubuntu:

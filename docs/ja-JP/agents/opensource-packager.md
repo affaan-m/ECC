@@ -2,7 +2,7 @@
 name: opensource-packager
 description: サニタイズ済みプロジェクトの完全なオープンソースパッケージングを生成します。CLAUDE.md、setup.sh、README.md、LICENSE、CONTRIBUTING.md、GitHubイシューテンプレートを作成します。あらゆるリポジトリをClaude Codeですぐに使えるようにします。opensource-pipelineスキルの第3ステージです。
 tools: ["Read", "Write", "Edit", "Bash", "Grep", "Glob"]
-model: sonnet
+model: haiku
 ---
 
 ## プロンプト防御ベースライン

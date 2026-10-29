@@ -14,11 +14,14 @@ function nativeFormat(header) {
     || header.subarray(0, 2).toString() === 'MZ';
 }
 
-function resolveExecutable(command) {
+const LABELS = { codex: 'Codex', claude: 'Claude Code' };
+
+function resolveExecutable(command, name = 'codex') {
+  if (!Object.hasOwn(LABELS, name)) throw new Error(`Unsupported native executable: ${name}`);
   const candidate = path.isAbsolute(command) ? command : (process.env.PATH || '').split(path.delimiter)
-    .filter(directory => path.isAbsolute(directory)).map(directory => path.join(directory, process.platform === 'win32' ? 'codex.exe' : 'codex'))
+    .filter(directory => path.isAbsolute(directory)).map(directory => path.join(directory, process.platform === 'win32' ? `${name}.exe` : name))
     .find(file => fs.existsSync(file));
-  if (!candidate) throw new Error('Native Codex executable was not found');
+  if (!candidate) throw new Error(`Native ${LABELS[name]} executable was not found`);
   let executable = fs.realpathSync(candidate);
   const before = io.inspect(executable);
   if (!before.stat.isFile() || before.stat.nlink !== 1 || before.stat.size < 4 || before.stat.size > MAX_BYTES) {
@@ -33,7 +36,7 @@ function resolveExecutable(command) {
   } finally { fs.closeSync(fd); }
   if (!nativeFormat(header)) {
     // Supported npm distribution: bind its platform binary, never only its JS shim.
-    if (path.basename(executable) !== 'codex.js') throw new Error('Native adapter requires a native Codex executable');
+    if (name !== 'codex' || path.basename(executable) !== 'codex.js') throw new Error(`Native adapter requires a native ${LABELS[name]} executable`);
     const packageName = `@openai/codex-${process.platform}-${process.arch}`;
     let manifest;
     try { manifest = createRequire(executable).resolve(`${packageName}/package.json`); }

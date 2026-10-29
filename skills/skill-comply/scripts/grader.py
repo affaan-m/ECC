@@ -183,7 +183,7 @@ def grade(
     detected_required = sum(1 for s in required_steps if s.detected)
     total_required = len(required_steps)
 
-    compliance_rate = detected_required / total_required if total_required > 0 else 0.0
+    compliance_rate = detected_required / total_required if total_required > 0 else 1.0
 
     return ComplianceResult(
         spec_id=spec.id,

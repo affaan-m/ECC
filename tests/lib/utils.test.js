@@ -1271,7 +1271,9 @@ function runTests() {
     `;
     const result = execFileSync('node', ['-e', harness], {
       ...stdinOpts,
-      timeout: 2000
+      // Budget for starting the outer Node process on a loaded Windows host.
+      // The writer/child deadline above still bounds the actual drain to 1.5s.
+      timeout: 15000
     });
     assert.deepStrictEqual(JSON.parse(result), {});
   })) passed++; else failed++;

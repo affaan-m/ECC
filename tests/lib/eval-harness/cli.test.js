@@ -8,7 +8,9 @@ const vm = require('vm');
 const { test, tempDir, cleanup, finish } = require('./helpers');
 const harness = require('../../../scripts/lib/eval-harness');
 const cli = path.resolve(__dirname, '../../../scripts/eval-harness.js');
-const run = args => spawnSync(process.execPath, [cli, ...args], { encoding: 'utf8', timeout: 3000 });
+// Allow bounded process startup under loaded native runners; still fail hangs.
+const CLI_TIMEOUT_MS = 15000;
+const run = args => spawnSync(process.execPath, [cli, ...args], { encoding: 'utf8', timeout: CLI_TIMEOUT_MS });
 
 // Exercise spawn failures without starting an example, mutating the real
 // process object, or depending on a host-specific missing executable.
@@ -76,11 +78,26 @@ test('dangling receipt value flags are usage errors before reading missing input
     for (const flag of ['--artifact', '--gate', '--out']) {
       for (const tail of [[flag], [flag, '--artifact']]) {
         const result = run([...command, ...tail]);
-        assert.strictEqual(result.status, 2, `${tail}: ${result.stderr}`);
+        assert.strictEqual(result.status, 2, `${tail}: ${result.error?.code || result.signal || result.stderr}`);
         assert.match(result.stderr, /needs a value/);
       }
     }
   }
+});
+
+test('usage validation survives a bounded slow child startup', () => {
+  const dir = tempDir('cli-slow-start');
+  try {
+    const preload = path.join(dir, 'startup-delay.cjs');
+    fs.writeFileSync(preload, 'Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 3500);\n');
+    const result = spawnSync(process.execPath, ['--require', preload, cli,
+      'receipt', 'verify', '/absent-receipt', '/absent-capsule', '--out'], {
+      encoding: 'utf8', timeout: CLI_TIMEOUT_MS,
+    });
+    assert.strictEqual(result.status, 2, result.error?.code || result.signal || result.stderr);
+    assert.strictEqual(result.stdout, '');
+    assert.match(result.stderr, /needs a value/);
+  } finally { cleanup(dir); }
 });
 
 test('invalid output flag does not cause producer projection writes', () => {

@@ -320,12 +320,34 @@ test('published carrier schema validates outputs and rejects extra or capability
 }));
 
 test('real canonical inventory projects every selected bundled resource without relying on mirrors', () => {
-  const carrier = plan({ repoRoot: REPO_ROOT, profileId: 'full@1', target: 'opencode' });
   const registry = registryLibrary.loadContextRegistry({ repoRoot: REPO_ROOT });
-  assert.deepEqual(carrier.selectedIds, registry.entries.map(entry => entry.id));
-  assert.equal(carrier.files.filter(file => file.kind === 'copy').length,
-    registry.entries.reduce((count, entry) => count + entry.resources.length, 0));
-  assert.ok(carrier.files.every(file => file.kind !== 'copy' || file.sourcePath.startsWith('skills/')));
-  assert.ok(carrier.files.some(file => file.destinationPath === '.opencode/skills/gget/SKILL.md'
-    && file.skillId === 'skill:scientific-pkg-gget'));
+  const renamed = [
+    ['scientific-db-pubmed-database', 'pubmed-database'],
+    ['scientific-db-uspto-database', 'uspto-database'],
+    ['scientific-pkg-gget', 'gget'],
+    ['scientific-thinking-literature-review', 'literature-review'],
+    ['scientific-thinking-scholar-evaluation', 'scholar-evaluation'],
+  ];
+  for (const target of Object.keys(LAYOUTS)) {
+    const carrier = plan({ repoRoot: REPO_ROOT, profileId: 'full@1', target });
+    assert.deepEqual(carrier.selectedIds, registry.entries.map(entry => entry.id));
+    assert.equal(carrier.files.filter(file => file.kind === 'copy').length,
+      registry.entries.reduce((count, entry) => count + entry.resources.length, 0));
+    assert.ok(carrier.files.every(file => file.kind !== 'copy' || file.sourcePath.startsWith('skills/')));
+    for (const [name, previousName] of renamed) {
+      const entry = registry.entries.find(value => value.id === `skill:${name}`);
+      assert.ok(entry, `missing renamed scientific skill: ${name}`);
+      const copies = carrier.files.filter(file => file.kind === 'copy' && file.skillId === entry.id);
+      assert.deepEqual(copies.map(({ sourcePath, destinationPath, digest, bytes }) => (
+        { sourcePath, destinationPath, digest, bytes }
+      )), entry.resources.map(resource => ({
+        sourcePath: resource.path,
+        destinationPath: `${LAYOUTS[target].skillRoot}/${name}/${resource.path.slice(`skills/${name}/`.length)}`,
+        digest: resource.digest, bytes: resource.bytes,
+      })));
+      assert.equal(carrier.files.some(file => file.destinationPath.startsWith(
+        `${LAYOUTS[target].skillRoot}/${previousName}/`
+      )), false, `old native folder must not be duplicated: ${target}/${previousName}`);
+    }
+  }
 });

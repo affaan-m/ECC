@@ -134,10 +134,20 @@ function runTests() {
       'release.sh should detect metadata that already declares the requested version'
     );
     assert.ok(
-      source.includes('echo "  git tag \\"v$VERSION\\""') &&
+      source.includes('echo "  git tag -s \\"v$VERSION\\" -m \\"Release v$VERSION\\""') &&
         source.includes('echo "  git push origin \\"v$VERSION\\""'),
       'same-version guidance should point maintainers to the tag-driven publish path'
     );
+  })) passed++; else failed++;
+
+  if (test('release signs an annotated tag and stops before push if signing fails', () => {
+    assert.match(source, /^set -euo pipefail$/m);
+    const tagCommand = 'git tag -s "v$VERSION" -m "Release v$VERSION"';
+    const tagIndex = source.indexOf('\n' + tagCommand + '\n');
+    const pushIndex = source.indexOf('\ngit push origin main "v$VERSION"');
+    assert.ok(tagIndex > source.indexOf('git commit -m'), 'sign after the release commit');
+    assert.ok(pushIndex > tagIndex, 'push only after successful signing');
+    assert.doesNotMatch(source.slice(tagIndex, pushIndex), /\|\||set \+e/);
   })) passed++; else failed++;
 
   if (test('release workflows mark prerelease tags as GitHub prereleases', () => {

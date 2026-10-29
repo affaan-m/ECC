@@ -1,6 +1,6 @@
 # ECC for GitHub Copilot
 
-Everything Claude Code (ECC) baseline rules for GitHub Copilot Chat in VS Code.
+ECC baseline rules for GitHub Copilot Chat in VS Code.
 These instructions are always active. Use the prompts in `.github/prompts/` for deeper workflows.
 
 ## Core Workflow

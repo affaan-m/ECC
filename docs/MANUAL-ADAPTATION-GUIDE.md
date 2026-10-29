@@ -73,7 +73,7 @@ You do not need extra tooling to do this.
 Use the repo directly:
 
 ```bash
-cd /path/to/everything-claude-code
+cd /path/to/ECC
 
 sed -n '1,220p' skills/tdd-workflow/SKILL.md > /tmp/ecc-context.md
 printf '\n\n---\n\n' >> /tmp/ecc-context.md
@@ -208,7 +208,7 @@ So the rule is simple:
 
 ## Related Work
 
-- [Issue #1186](https://github.com/affaan-m/everything-claude-code/issues/1186)
-- [Discussion #1077](https://github.com/affaan-m/everything-claude-code/discussions/1077)
+- [Issue #1186](https://github.com/affaan-m/ECC/issues/1186)
+- [Discussion #1077](https://github.com/affaan-m/ECC/discussions/1077)
 - [Antigravity Guide](./ANTIGRAVITY-GUIDE.md)
 - [Troubleshooting](./TROUBLESHOOTING.md)

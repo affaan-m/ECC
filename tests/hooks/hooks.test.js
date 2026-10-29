@@ -233,6 +233,14 @@ function createTestDir() {
   return fs.mkdtempSync(path.join(os.tmpdir(), 'hooks-test-'));
 }
 
+function fixtureGitOptions(cwd) {
+  const env = { ...process.env };
+  for (const name of Object.keys(env)) {
+    if (name.toUpperCase().startsWith('GIT_')) delete env[name];
+  }
+  return { cwd, env };
+}
+
 // Clean up test directory
 function cleanupTestDir(testDir) {
   const retryableCodes = new Set(['EPERM', 'EBUSY', 'ENOTEMPTY']);
@@ -1196,6 +1204,74 @@ async function runTests() {
       assert.strictEqual(result.code, 0, 'Should exit 0 on invalid JSON');
       // Should still pass through the data
       assert.ok(result.stdout.includes('not valid json'), 'Should pass through invalid data');
+    })
+  )
+    passed++;
+  else failed++;
+
+  if (
+    await asyncTest('finds console.log in a modified file when the session runs in a subdirectory', async () => {
+      // git reports paths from the repository root, not from the session's directory.
+      const repo = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-console-log-'));
+      try {
+        const appDir = path.join(repo, 'packages', 'app');
+        fs.mkdirSync(path.join(appDir, 'src'), { recursive: true });
+        execFileSync('git', ['init', '-q'], fixtureGitOptions(repo));
+        fs.writeFileSync(path.join(appDir, 'src', 'a.ts'), 'export const a = 1;\n');
+        execFileSync('git', ['add', '-A'], fixtureGitOptions(repo));
+        execFileSync('git', ['-c', 'user.email=t@t.local', '-c', 'user.name=t', '-c', 'commit.gpgsign=false', 'commit', '-q', '-m', 'seed'], fixtureGitOptions(repo));
+        fs.writeFileSync(path.join(appDir, 'src', 'a.ts'), 'export const a = 1;\nconsole.log(a);\n');
+
+        const result = await runScript(path.join(scriptsDir, 'check-console-log.js'), '{}', {}, appDir);
+        assert.strictEqual(result.code, 0);
+        assert.ok(result.stderr.includes('console.log found in packages/app/src/a.ts'), `Should warn about the file, got: ${result.stderr}`);
+
+        // diff.relative would make git report paths from the session's directory.
+        execFileSync('git', ['config', 'diff.relative', 'true'], fixtureGitOptions(repo));
+        const relative = await runScript(path.join(scriptsDir, 'check-console-log.js'), '{}', {}, appDir);
+        assert.ok(relative.stderr.includes('console.log found in packages/app/src/a.ts'), `Should warn with diff.relative, got: ${relative.stderr}`);
+      } finally {
+        fs.rmSync(repo, { recursive: true, force: true });
+      }
+    })
+  )
+    passed++;
+  else failed++;
+
+  if (
+    await asyncTest('uses the session repository despite inherited Git environment overrides', async () => {
+      const root = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-console-git-env-'));
+      try {
+        const makeRepo = (name, file) => {
+          const repo = path.join(root, name);
+          fs.mkdirSync(path.join(repo, 'src'), { recursive: true });
+          execFileSync('git', ['init', '-q'], fixtureGitOptions(repo));
+          fs.writeFileSync(path.join(repo, 'src', file), 'export const value = 1;\n');
+          execFileSync('git', ['add', '-A'], fixtureGitOptions(repo));
+          execFileSync('git', ['-c', 'user.email=t@t.local', '-c', 'user.name=t', '-c', 'commit.gpgsign=false', 'commit', '-q', '-m', 'seed'], fixtureGitOptions(repo));
+          return repo;
+        };
+        const sessionRepo = makeRepo('session', 'local.ts');
+        const foreignRepo = makeRepo('foreign', 'foreign.ts');
+        fs.writeFileSync(path.join(foreignRepo, 'src', 'foreign.ts'), 'console.log("foreign");\n');
+        const env = {
+          GIT_DIR: path.join(foreignRepo, '.git'),
+          GIT_WORK_TREE: foreignRepo,
+          GIT_INDEX_FILE: path.join(foreignRepo, '.git', 'index')
+        };
+
+        const clean = await runScript(path.join(scriptsDir, 'check-console-log.js'), '{}', env, sessionRepo);
+        assert.strictEqual(clean.code, 0);
+        assert.ok(!clean.stderr.includes('console.log found'), `foreign repository leaked into hook: ${clean.stderr}`);
+
+        fs.writeFileSync(path.join(sessionRepo, 'src', 'local.ts'), 'console.log("local");\n');
+        const local = await runScript(path.join(scriptsDir, 'check-console-log.js'), '{}', env, sessionRepo);
+        assert.strictEqual(local.code, 0);
+        assert.ok(local.stderr.includes('console.log found in src/local.ts'), local.stderr);
+        assert.ok(!local.stderr.includes('foreign.ts'), local.stderr);
+      } finally {
+        fs.rmSync(root, { recursive: true, force: true });
+      }
     })
   )
     passed++;
@@ -2749,6 +2825,31 @@ async function runTests() {
   else failed++;
 
   if (
+    test('MCP health-check hooks use anchored ^mcp__ matcher (no wildcard spawns)', () => {
+      const hooksPath = path.join(__dirname, '..', '..', 'hooks', 'hooks.json');
+      const hooks = readHooksConfig(hooksPath);
+
+      const preMcp = hooks.hooks.PreToolUse.filter(entry => JSON.stringify(entry).includes('pre:mcp-health-check'));
+      assert.strictEqual(preMcp.length, 1, 'Should define exactly one PreToolUse mcp-health-check entry');
+      assert.strictEqual(
+        preMcp[0].matcher,
+        '^mcp__',
+        `PreToolUse mcp-health-check matcher must be anchored '^mcp__' so it only spawns on genuine MCP tool names (got ${preMcp[0].matcher})`
+      );
+
+      const postMcp = hooks.hooks.PostToolUseFailure.filter(entry => JSON.stringify(entry).includes('post:mcp-health-check'));
+      assert.strictEqual(postMcp.length, 1, 'Should define exactly one PostToolUseFailure mcp-health-check entry');
+      assert.strictEqual(
+        postMcp[0].matcher,
+        '^mcp__',
+        `PostToolUseFailure mcp-health-check matcher must be anchored '^mcp__' so it only spawns on genuine MCP tool failures (got ${postMcp[0].matcher})`
+      );
+    })
+  )
+    passed++;
+  else failed++;
+
+  if (
     test('hooks.json gives PowerShell dedicated GateGuard and governance routes', () => {
       const hooksPath = path.join(__dirname, '..', '..', 'hooks', 'hooks.json');
       const hooks = readHooksConfig(hooksPath);
@@ -2782,6 +2883,23 @@ async function runTests() {
         hooks.hooks.PostToolUse.every(entry => entry.matcher === '.*'),
         'Top-level PostToolUse dispatchers should preserve current-main wildcard matchers'
       );
+    })
+  )
+    passed++;
+  else failed++;
+
+  if (
+    test('hooks.json routes NotebookEdit to the edit-write GateGuard entry only', () => {
+      const hooks = readHooksConfig(path.join(__dirname, '..', '..', 'hooks', 'hooks.json'));
+      const gateRoute = hooks.hooks.PreToolUse.find(entry => entry.id === 'pre:edit-write:gateguard-fact-force');
+      assert.ok(gateRoute, 'edit-write GateGuard route should exist');
+      assert.deepStrictEqual(gateRoute.matcher.split('|').sort(), ['Edit', 'MultiEdit', 'NotebookEdit', 'Write']);
+      assert.strictEqual(gateRoute.hooks.length, 1, 'the GateGuard entry runs no other hook');
+      assert.ok(gateRoute.hooks[0].command.includes('pre:edit-write:gateguard-fact-force'));
+      const others = hooks.hooks.PreToolUse.filter(entry => entry !== gateRoute && entry.matcher !== '.*');
+      for (const entry of others) {
+        assert.ok(!entry.matcher.split('|').includes('NotebookEdit'), `${entry.id} should not start matching NotebookEdit`);
+      }
     })
   )
     passed++;
@@ -3035,7 +3153,7 @@ async function runTests() {
     test('plugin.json does NOT have explicit hooks declaration', () => {
       // Claude Code automatically loads hooks/hooks.json by convention.
       // Explicitly declaring it in plugin.json causes a duplicate detection error.
-      // See: https://github.com/affaan-m/everything-claude-code/issues/103
+      // See: https://github.com/affaan-m/ECC/issues/103
       const pluginPath = path.join(__dirname, '..', '..', '.claude-plugin', 'plugin.json');
       const plugin = JSON.parse(fs.readFileSync(pluginPath, 'utf8'));
 

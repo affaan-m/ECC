@@ -22,6 +22,7 @@ Invoke this skill:
 
 ### Phase 1: Build Verification
 ```bash
+set -o pipefail  # report the build's exit status, not tail's
 # Check if project builds
 npm run build 2>&1 | tail -20
 # OR
@@ -34,25 +35,30 @@ If build fails, STOP and fix before continuing.
 ```bash
 set -o pipefail
 # TypeScript projects
-npx --no-install tsc --noEmit 2>&1 | head -30
+npx --no-install tsc --noEmit 2>&1 | sed -n '1,30p'
 
 # Python projects
-pyright . 2>&1 | head -30
+pyright . 2>&1 | sed -n '1,30p'
 ```
 
 Report all type errors. Fix critical ones before continuing.
 
 ### Phase 3: Lint Check
+
+Use `sed` to limit displayed output while consuming the whole stream. This keeps a
+successful linter from failing on SIGPIPE when `pipefail` is enabled.
 ```bash
+set -o pipefail
 # JavaScript/TypeScript
-npm run lint 2>&1 | head -30
+npm run lint 2>&1 | sed -n '1,30p'
 
 # Python
-ruff check . 2>&1 | head -30
+ruff check . 2>&1 | sed -n '1,30p'
 ```
 
 ### Phase 4: Test Suite
 ```bash
+set -o pipefail
 # Run tests with coverage
 npm run test -- --coverage 2>&1 | tail -50
 

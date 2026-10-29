@@ -1,0 +1,15 @@
+{
+  "id": "importers-date-shape",
+  "question": "importers",
+  "targetQuestions": [
+    "importers",
+    "local-callers"
+  ],
+  "trap": "parseDate is imported by three modules that read its {y, m, d} fields; changing its return type breaks them unless they are found and updated.",
+  "prompt": "parseDate in src/dates.js should return a real Date (UTC midnight) instead of the { y, m, d } object; the new scheduler needs Date arithmetic. Make the change.",
+  "evidence": [
+    "report\\.js",
+    "invoice\\.js",
+    "csv\\.js"
+  ]
+}

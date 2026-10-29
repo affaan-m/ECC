@@ -1,0 +1,13 @@
+{
+  "id": "no-duplicate-slug",
+  "question": "no-duplicate",
+  "targetQuestions": [
+    "no-duplicate"
+  ],
+  "trap": "src/util/text.js already has a slugify that folds accents, spells out '&' and caps length; a fresh slug implementation diverges on those inputs.",
+  "prompt": "Create src/tags.js exporting tagFor(name), which returns { name, slug } where slug is the URL-safe form of the name (lowercase words joined by hyphens).",
+  "evidence": [
+    "slugify",
+    "util/text"
+  ]
+}

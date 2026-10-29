@@ -7,6 +7,7 @@ const { execFileSync } = require('child_process');
 const { resolveInstallPlan } = require('../install-manifests');
 const { getInstallTargetAdapter } = require('../install-targets/registry');
 const { resolveInvocationEnvironment } = require('../invocation-environment');
+const { disableUnselectedOpenCodeHooks } = require('./hook-consent');
 const { readHooksConfig } = require('../hooks-config');
 const {
   materializeManagedHooks,
@@ -103,6 +104,11 @@ function buildCopyFileOperation({
   strategy,
   contentTransform,
 }) {
+  // Copilot's agent and workflow transforms are textual. Their directories may
+  // also contain binary assets and executable helpers, which must keep bytes.
+  const applicableTransform = (contentTransform === 'copilot-workflow-paths'
+    || contentTransform === 'copilot-agent-frontmatter')
+    && !/\.md$/i.test(sourceRelativePath) ? undefined : contentTransform;
   return {
     kind: 'copy-file',
     moduleId,
@@ -112,7 +118,7 @@ function buildCopyFileOperation({
     strategy,
     ownership: 'managed',
     scaffoldOnly: false,
-    ...(contentTransform ? { contentTransform } : {}),
+    ...(applicableTransform ? { contentTransform: applicableTransform } : {}),
   };
 }
 
@@ -281,7 +287,17 @@ function createManifestInstallPlan(options = {}) {
   const adapter = getInstallTargetAdapter(target);
   const materializedOperations = plan.operations.flatMap(operation => (
     materializeScaffoldOperation(sourceRoot, operation)
-  ));
+  )).map(operation => {
+    // Persist this projection so install, doctor and repair compare the same
+    // native component names rather than restoring plugin-only references.
+    if (['claude', 'claude-project'].includes(target)
+      && operation.kind === 'copy-file'
+      && /\.(md|mdx|markdown)$/i.test(operation.destinationPath)
+      && !operation.contentTransform) {
+      return { ...operation, contentTransform: 'claude-manual-plugin-namespace' };
+    }
+    return operation;
+  });
   const ruleLanguages = Array.isArray(options.ruleLanguages) ? [...options.ruleLanguages] : [];
   const operations = dedupeCopyFileOperations(
     options.legacyMode && target === 'antigravity'
@@ -315,7 +331,7 @@ function createManifestInstallPlan(options = {}) {
     source
   });
 
-  return {
+  return disableUnselectedOpenCodeHooks({
     mode: options.mode || 'manifest',
     sourceRoot,
     target,
@@ -341,7 +357,7 @@ function createManifestInstallPlan(options = {}) {
     excludedModuleIds: plan.excludedModuleIds,
     operations,
     statePreview
-  };
+  });
 }
 
 module.exports = {

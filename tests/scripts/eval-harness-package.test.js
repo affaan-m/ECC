@@ -8,6 +8,7 @@ const path = require('path');
 const { spawnSync } = require('child_process');
 const { getNpmPackEntry } = require('../lib/npm-pack-output');
 const { test, tempDir, cleanup, finish, runNpm } = require('../lib/eval-harness/helpers');
+const { toRelativeTarPath } = require('../lib/helpers/windows-test-env');
 
 const repo = path.resolve(__dirname, '../..');
 const work = tempDir('package smoke');
@@ -61,7 +62,7 @@ try {
     assert.ok(archive, 'packing must succeed before extracting');
     const extract = path.join(work, 'extracted');
     fs.mkdirSync(extract);
-    const unpack = command('tar', ['-xzf', archive, '-C', extract]);
+    const unpack = command('tar', ['-xzf', toRelativeTarPath(extract, archive)], { cwd: extract });
     assert.strictEqual(unpack.status, 0, unpack.error?.message || unpack.stderr);
     const installed = path.join(extract, 'package');
     assert.ok(!fs.existsSync(path.join(installed, 'node_modules')));

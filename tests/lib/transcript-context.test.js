@@ -18,6 +18,8 @@ const {
   DEFAULT_CONTEXT_THRESHOLD_STANDARD,
   DEFAULT_CONTEXT_THRESHOLD_LARGE,
   DEFAULT_CONTEXT_INTERVAL_TOKENS,
+  DEFAULT_TRANSCRIPT_TAIL_BYTES,
+  readFileTail,
   readLatestContextTokens,
   resolveContextWindowTokens,
   resolveContextThreshold,
@@ -43,12 +45,14 @@ function test(desc, fn) {
   }
 }
 
+const transcriptRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-transcript-context-'));
+process.on('exit', () => fs.rmSync(transcriptRoot, { recursive: true, force: true }));
 let fixtureSeq = 0;
 
 function writeTranscript(lines) {
   fixtureSeq += 1;
-  const filePath = path.join(os.tmpdir(), `transcript-context-test-${process.pid}-${fixtureSeq}.jsonl`);
-  fs.writeFileSync(filePath, lines.join('\n') + '\n');
+  const filePath = path.join(transcriptRoot, `transcript-context-test-${process.pid}-${fixtureSeq}.jsonl`);
+  fs.writeFileSync(filePath, lines.join('\n') + '\n', { flag: 'wx', mode: 0o600 });
   return filePath;
 }
 
@@ -109,7 +113,7 @@ test('returns null for a transcript with no usage records', () => {
 });
 
 test('returns null for a missing transcript file', () => {
-  assert.strictEqual(readLatestContextTokens(path.join(os.tmpdir(), 'definitely-missing.jsonl')), null);
+  assert.strictEqual(readLatestContextTokens(path.join(transcriptRoot, 'definitely-missing.jsonl')), null);
 });
 
 test('returns null for empty or non-string paths', () => {
@@ -321,6 +325,20 @@ test('returns -1 when the threshold is disabled (0)', () => {
 
 test('returns -1 for non-finite token counts', () => {
   assert.strictEqual(computeContextBucket(NaN, 160000, 60000), -1);
+});
+
+// ── readFileTail ──
+console.log('\nreadFileTail:');
+
+test('is exported and returns the trailing bytes with a truncation flag', () => {
+  assert.strictEqual(typeof readFileTail, 'function');
+  assert.strictEqual(DEFAULT_TRANSCRIPT_TAIL_BYTES, 256 * 1024);
+  const file = tracked(writeTranscript(['first-line', 'second', 'third']));
+  const whole = readFileTail(file, 1024);
+  assert.deepStrictEqual(whole, { text: 'first-line\nsecond\nthird\n', truncated: false });
+  const tail = readFileTail(file, 6);
+  assert.deepStrictEqual(tail, { text: 'third\n', truncated: true });
+  assert.strictEqual(readFileTail(path.join(transcriptRoot, `missing-${process.pid}.jsonl`), 10), null);
 });
 
 // ── formatWindowLabel ──

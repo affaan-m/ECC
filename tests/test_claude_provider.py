@@ -39,6 +39,41 @@ def make_response(content: list[SimpleNamespace], stop_reason: str = "tool_use")
 
 
 @pytest.mark.unit
+@pytest.mark.parametrize(
+    ("default_model", "request_model", "expected_model"),
+    [
+        (None, None, "claude-sonnet-4-6"),
+        (None, "claude-haiku-4-5", "claude-haiku-4-5"),
+        ("claude-haiku-4-5", None, "claude-haiku-4-5"),
+        ("claude-opus-4-8", None, "claude-opus-4-8"),
+        ("claude-haiku-4-5", "claude-opus-4-8", "claude-opus-4-8"),
+    ],
+)
+def test_generate_respects_configured_default_and_request_model(
+    default_model: str | None, request_model: str | None, expected_model: str
+) -> None:
+    provider_options = {"api_key": "test-key"}
+    if default_model is not None:
+        provider_options["default_model"] = default_model
+    provider = ClaudeProvider(**provider_options)
+    client = FakeClient(make_response([SimpleNamespace(type="text", text="ok")]))
+    provider.client = client
+    expected_default = default_model or "claude-sonnet-4-6"
+
+    assert provider.get_default_model() == expected_default
+
+    provider.generate(
+        LLMInput(messages=[Message(role=Role.USER, content="Hi")], model=request_model)
+    )
+
+    assert client.messages.last_params["model"] == expected_model
+    if expected_model == "claude-opus-4-8":
+        assert client.messages.last_params["thinking"] == {"type": "adaptive"}
+        assert "temperature" not in client.messages.last_params
+    assert provider.get_default_model() == expected_default
+
+
+@pytest.mark.unit
 def test_generate_collects_text_and_tool_use_blocks() -> None:
     provider = make_provider(
         make_response(

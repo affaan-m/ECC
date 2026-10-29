@@ -1,4 +1,4 @@
-# Contributing to Everything Claude Code
+# Contributing to ECC
 
 Thanks for wanting to contribute! This repo is a community resource for Claude Code users.
 
@@ -14,6 +14,10 @@ Thanks for wanting to contribute! This repo is a community resource for Claude C
 - [MCP and documentation (e.g. Context7)](#mcp-and-documentation-eg-context7)
 - [Cross-Harness and Translations](#cross-harness-and-translations)
 - [Pull Request Process](#pull-request-process)
+- [Releases](#releases)
+- [Guidelines](#guidelines)
+- [File Naming](#file-naming)
+- [Questions?](#questions)
 
 ---
 
@@ -430,7 +434,31 @@ Translations live under `docs/` (e.g. `docs/zh-CN`, `docs/zh-TW`, `docs/ja-JP`).
 
 ---
 
+## Issue submission
+
+Please submit at most five Issues within any 20-minute period and keep at
+most ten Issues open at once. The [Issue moderation policy](.github/ISSUE_MODERATION.md)
+explains the automatic closure, reopening, and maintainer alert rules. Existing
+open Issues stay open when the policy takes effect.
+
 ## Pull Request Process
+
+### Submission volume
+
+Please submit at most five PRs within any 20-minute period. Automated moderation
+closes and locks excess PRs, including drafts. More than ten submissions within
+20 minutes triggers a maintainer alert and an account-block attempt. Closed PRs
+still count toward the window. Contributors with repository write access bypass
+this policy. Maintainers can review exceptions through the moderation alert.
+
+Please also keep at most ten PRs open at a time. When you open or reopen a PR
+above that cap, automation closes the newest ones with a comment explaining the
+count. Get existing PRs merged or close the ones you no longer need, then reopen.
+Ten open PRs is more than any one reviewer can keep in flight, so this keeps
+review time on the work you care about most.
+
+See the [moderation runbook](.github/PR_MODERATION.md)
+for activation, credential requirements, and recovery.
 
 ### 1. PR Title Format
 
@@ -481,6 +509,27 @@ Run `npm test` locally. It is the same gauntlet CI runs, and it catches almost e
 1. Maintainers review within 48 hours
 2. Address feedback if requested
 3. Once approved, merged to main
+
+---
+
+## Releases
+
+Releases are cut on a regular cadence, roughly every two weeks, plus out-of-band
+patches for security or data-loss fixes.
+
+1. Sync the version everywhere: `VERSION`, `package.json`, and (via
+   `node scripts/build-pi-core.js`) `pi/core/package.json`.
+2. Update `CHANGELOG.md` and write reviewed release notes at
+   `docs/releases/<version>/release-notes.md` (required by the release workflow).
+3. Tag `vX.Y.Z` on `main` and push the tag. The `release.yml` workflow verifies
+   the tag is exactly on `origin/main`, checks the VERSION/pi/core sync, tests
+   the exact packed artifact on Linux, macOS, and Windows, publishes to npm with
+   provenance, verifies registry bytes, and creates the GitHub Release from the
+   reviewed notes.
+
+Tags and GitHub Releases are immutable once published: downstream packagers poll
+`/releases`, download `archive/refs/tags/vX.Y.Z.tar.gz`, and pin its sha256.
+Never move or re-tag a published version; ship a new patch version instead.
 
 ---
 

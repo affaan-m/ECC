@@ -11,6 +11,7 @@ const TOML = require('@iarna/toml');
 
 const repoRoot = path.join(__dirname, '..', '..');
 const installScript = path.join(repoRoot, 'scripts', 'codex', 'install-global-git-hooks.sh');
+const preCommitHook = path.join(repoRoot, 'scripts', 'codex-git-hooks', 'pre-commit');
 const prePushHook = path.join(repoRoot, 'scripts', 'codex-git-hooks', 'pre-push');
 const pluginCacheCheckScript = path.join(repoRoot, 'scripts', 'codex', 'check-plugin-cache.js');
 const mergeCodexConfigScript = path.join(repoRoot, 'scripts', 'codex', 'merge-codex-config.js');
@@ -163,6 +164,91 @@ if (
 )
   passed++;
 else failed++;
+
+function runHermeticPreCommit({ content = 'safe text\n', filename = 'sample.txt', scanner = false, env = {} } = {}) {
+  const tempDir = createTempDir('codex-pre-commit-');
+  try {
+    const bashEnv = path.join(tempDir, 'bash-env');
+    const binDir = path.join(tempDir, 'bin');
+    const callsPath = path.join(tempDir, 'scanner-calls');
+    fs.mkdirSync(binDir);
+    const hookEnv = makeHermeticCodexEnv(tempDir, path.join(tempDir, '.codex'), {
+      PATH: process.env.PATH,
+      GIT_CONFIG_NOSYSTEM: '1',
+      MSYS_NO_PATHCONV: '1',
+      ECC_SKIP_GIT_HOOKS: '0',
+      ECC_SKIP_PRECOMMIT: '0',
+      ...env,
+    });
+    const initialized = spawnSync('git', ['init', '--quiet'], { cwd: tempDir, env: hookEnv });
+    assert.strictEqual(initialized.status, 0, initialized.stderr?.toString());
+    if (content !== null) {
+      fs.writeFileSync(path.join(tempDir, filename), content);
+      const staged = spawnSync('git', ['add', '--', filename], { cwd: tempDir, env: hookEnv });
+      assert.strictEqual(staged.status, 0, staged.stderr?.toString());
+    }
+    // Synthetic scanners drain staged input before returning so pipefail sees their intended status.
+    // Keep real Git/awk available, while hiding every installed ripgrep binary.
+    fs.writeFileSync(bashEnv, `
+git_path="$(command -v git)"
+awk_path="$(command -v awk)"
+head_path="$(command -v head)"
+cat_path="$(command -v cat)"
+rg_path="$(type -P rg || true)"
+${scanner === 'real' ? `if [[ -z "$rg_path" ]]; then
+printf 'Real scanner fixture requires ripgrep with PCRE2 support on PATH.\\n' >&2
+exit 97
+fi` : ''}
+git() { "$git_path" "$@"; }
+awk() { "$awk_path" "$@"; }
+head() { "$head_path" "$@"; }
+cat() { "$cat_path" "$@"; }
+unset -f rg
+${scanner === 'real' ? '# Preserve dependencies used by an actual scanner executable or wrapper.' : `PATH="${toBashPath(binDir)}"`}
+${scanner ? `rg() {
+printf '%s\\n' "$*" >> "${toBashPath(callsPath)}"
+${scanner === 'real' ? '' : 'cat >/dev/null; '}${scanner === 'real' ? '"$rg_path" "$@"' : scanner === 'finding' ? "printf '1:synthetic-scanner-finding\\n'; return 0;" : scanner === 'error' ? 'return 2;' : 'return 1;'}
+}` : ''}
+`);
+    const result = runBash(preCommitHook, {
+      env: { ...hookEnv, BASH_ENV: toBashPath(bashEnv) },
+      cwd: tempDir,
+      preservePath: false,
+    });
+    result.scannerCalls = fs.existsSync(callsPath) ? fs.readFileSync(callsPath, 'utf8').trim().split('\n') : [];
+    return result;
+  } finally {
+    cleanup(tempDir);
+  }
+}
+
+for (const [name, options, status, diagnostic] of [
+  ['blocks safe staged text when ripgrep is missing', {}, 1, /ripgrep.*required/i],
+  ['blocks a staged token when ripgrep is missing', { content: `token = "ghp_${'a'.repeat(36)}"\n` }, 1, /ripgrep.*required/i],
+  ['allows a successful scan with no findings', { scanner: true }, 0, null],
+  ['blocks a finding reported by an invoked scanner', { scanner: 'finding' }, 1, /Potential secret detected/],
+  ['blocks an invoked scanner error', { scanner: 'error' }, 1, /scanner failed.*exit 2/i],
+  ['allows safe text through the real scanner', { scanner: 'real' }, 0, null],
+  ['blocks a token through the real scanner', { scanner: 'real', content: `token = "ghp_${'a'.repeat(36)}"\n` }, 1, /Potential secret detected/],
+  ['blocks a private key through the real scanner', { scanner: 'real', content: '-----BEGIN PRIVATE KEY-----\n' }, 1, /private key block/],
+  ['blocks an RSA private key through the real scanner', { scanner: 'real', content: '-----BEGIN RSA PRIVATE KEY-----\n' }, 1, /private key block/],
+  ['allows an empty index without ripgrep', { content: null }, 0, null],
+  ['allows excluded lockfiles without ripgrep', { filename: 'yarn.lock' }, 0, null],
+  ['preserves the pre-commit bypass warning', { env: { ECC_SKIP_PRECOMMIT: '1' } }, 0, /hook bypassed via env/],
+  ['preserves the global bypass warning', { env: { ECC_SKIP_GIT_HOOKS: '1' } }, 0, /hook bypassed via env/],
+]) {
+  if (test(`pre-commit ${name}`, () => {
+    const result = runHermeticPreCommit(options);
+    assert.strictEqual(result.status, status, `${result.stdout}\n${result.stderr}`);
+    if (diagnostic) assert.match(result.stderr, diagnostic);
+    else assert.strictEqual(result.stderr, '');
+    if (options.scanner) {
+      assert.ok(result.scannerCalls.length > 0, 'The scanner must actually execute');
+      assert.ok(result.scannerCalls.every(call => call.startsWith('-n --pcre2 -- ')), 'Regex must follow the option terminator');
+    }
+  })) passed++;
+  else failed++;
+}
 
 function runHermeticPrePush({
   failScript = null,
@@ -453,7 +539,7 @@ else failed++;
 // A case-folded spelling, because macOS resolves `$venv/bin/python` to a committed
 // `Python` while git matches index pathspecs case-sensitively. Skipped where the
 // filesystem is case-sensitive and the two names cannot collide.
-if (fs.existsSync(__filename.toUpperCase()) || fs.existsSync(__filename.toLowerCase())) {
+if (fs.existsSync(__filename.toUpperCase()) && fs.existsSync(__filename.toLowerCase())) {
   if (
     test('pre-push refuses a tracked interpreter committed under a folded case', () => {
       const { result, calls } = runHermeticPythonPrePush({
@@ -796,8 +882,7 @@ if (
       assert.strictEqual(parsed.sandbox_mode, 'workspace-write');
       assert.strictEqual(parsed.web_search, 'live');
       assert.strictEqual(parsed.features.multi_agent, true);
-      assert.strictEqual(parsed.profiles.strict.approval_policy, 'on-request');
-      assert.strictEqual(parsed.profiles.yolo.approval_policy, 'never');
+      assert.strictEqual(parsed.profiles, undefined, 'Do not emit legacy profile tables');
       assert.strictEqual(parsed.agents.max_threads, 6);
       assert.strictEqual(parsed.agents.explorer.config_file, 'agents/explorer.toml');
     } finally {
@@ -812,7 +897,7 @@ if (
   test('merge-codex-config no-ops when the Codex baseline is already present', () => {
     const tempDir = createTempDir('codex-merge-noop-');
     const configPath = path.join(tempDir, 'config.toml');
-    const original = fs.readFileSync(path.join(repoRoot, '.codex', 'config.toml'), 'utf8');
+    const original = fs.readFileSync(path.join(repoRoot, '.codex', 'user-config.example.toml'), 'utf8');
 
     try {
       fs.writeFileSync(configPath, original);
@@ -917,7 +1002,13 @@ if (
       const merged = fs.readFileSync(configPath, 'utf8');
       const parsed = TOML.parse(merged);
       assert.strictEqual(parsed.mcp_servers['chrome-devtools'].command, 'npx');
-      assert.deepStrictEqual(parsed.mcp_servers['chrome-devtools'].args, ['chrome-devtools-mcp@latest']);
+      assert.deepStrictEqual(parsed.mcp_servers['chrome-devtools'].args, ['chrome-devtools-mcp@1.10.1']);
+      const rootMcp = JSON.parse(fs.readFileSync(path.join(repoRoot, '.mcp.json'), 'utf8'));
+      const rootPackages = rootMcp.mcpServers['chrome-devtools'].args.filter(arg =>
+        arg.startsWith('chrome-devtools-mcp@'));
+      assert.deepStrictEqual(rootPackages, parsed.mcp_servers['chrome-devtools'].args,
+        'root MCP and generated Codex TOML must use the same connector pin');
+      assert.deepStrictEqual(rootPackages, ['chrome-devtools-mcp@1.10.1']);
       assert.strictEqual(parsed.mcp_servers['chrome-devtools'].startup_timeout_sec, 30);
       // No retired server may be (re-)emitted — exa's url form broke Codex (#2224).
       assert.strictEqual(parsed.mcp_servers.exa, undefined);
@@ -929,6 +1020,51 @@ if (
       assert.match(second.stdout, /\[ok\] mcp_servers\.chrome-devtools/);
       assert.match(second.stdout, /All ECC MCP servers already present/);
       assert.strictEqual(fs.readFileSync(configPath, 'utf8'), merged);
+    } finally {
+      cleanup(tempDir);
+    }
+  })
+)
+  passed++;
+else failed++;
+
+if (
+  test('merge-mcp-config preserves an existing latest entry until explicit recommendation refresh', () => {
+    const tempDir = createTempDir('mcp-merge-explicit-refresh-');
+    const configPath = path.join(tempDir, 'config.toml');
+    const original = [
+      '# User-maintained configuration',
+      '[mcp_servers.chrome-devtools]',
+      'command = "npx"',
+      'args = ["chrome-devtools-mcp@latest", "--custom-browser-argument"]',
+      'startup_timeout_sec = 75',
+      '[mcp_servers.chrome-devtools.env]',
+      'CUSTOM_BROWSER_SETTING = "preserve-until-explicit-refresh"',
+      '',
+      '[mcp_servers.user_tool]',
+      'command = "custom-launcher"',
+      'args = ["--user-setting"]',
+      '',
+    ].join('\n');
+
+    try {
+      fs.writeFileSync(configPath, original);
+      const preserved = runNode(mergeMcpConfigScript, [configPath], deterministicPackageEnv);
+      assert.strictEqual(preserved.status, 0, `${preserved.stdout}\n${preserved.stderr}`);
+      assert.match(preserved.stderr, /chrome-devtools differs from ECC recommendation/);
+      assert.match(preserved.stderr, /--update-mcp to refresh/);
+      assert.strictEqual(fs.readFileSync(configPath, 'utf8'), original,
+        'normal sync must preserve existing latest and customized settings byte-for-byte');
+
+      const refreshed = runNode(mergeMcpConfigScript, [configPath, '--update-mcp'], deterministicPackageEnv);
+      assert.strictEqual(refreshed.status, 0, `${refreshed.stdout}\n${refreshed.stderr}`);
+      assert.match(refreshed.stdout, /\[update\] mcp_servers\.chrome-devtools/);
+      const updated = TOML.parse(fs.readFileSync(configPath, 'utf8'));
+      assert.deepStrictEqual(updated.mcp_servers['chrome-devtools'], {
+        command: 'npx', args: ['chrome-devtools-mcp@1.10.1'], startup_timeout_sec: 30,
+      }, 'explicit refresh replaces the whole recommended section, including custom subsettings');
+      assert.deepStrictEqual(updated.mcp_servers.user_tool, TOML.parse(original).mcp_servers.user_tool,
+        'unrelated user-managed server settings remain untouched');
     } finally {
       cleanup(tempDir);
     }
@@ -1116,7 +1252,7 @@ if (
       assert.strictEqual(syncResult.status, 0, `${syncResult.stdout}\n${syncResult.stderr}`);
 
       const syncedAgents = fs.readFileSync(agentsPath, 'utf8');
-      assert.match(syncedAgents, /^# Everything Claude Code \(ECC\) — Agent Instructions/m);
+      assert.match(syncedAgents, /^# ECC — Agent Instructions/m);
       assert.match(syncedAgents, /^# Codex Supplement \(From ECC \.codex\/AGENTS\.md\)/m);
 
       const syncedConfig = fs.readFileSync(configPath, 'utf8');
@@ -1127,9 +1263,12 @@ if (
       assert.ok(!Object.prototype.hasOwnProperty.call(parsedConfig, 'multi_agent'));
       assert.ok(parsedConfig.features);
       assert.strictEqual(parsedConfig.features.multi_agent, true);
-      assert.ok(parsedConfig.profiles);
-      assert.strictEqual(parsedConfig.profiles.strict.approval_policy, 'on-request');
-      assert.strictEqual(parsedConfig.profiles.yolo.approval_policy, 'never');
+      assert.strictEqual(parsedConfig.profiles, undefined);
+      for (const name of ['strict', 'yolo']) {
+        assert.ok(fs.existsSync(path.join(codexDir, `${name}.config.toml`)));
+      }
+      assert.strictEqual(TOML.parse(fs.readFileSync(path.join(codexDir, 'strict.config.toml'), 'utf8')).approval_policy, 'on-request');
+      assert.strictEqual(TOML.parse(fs.readFileSync(path.join(codexDir, 'yolo.config.toml'), 'utf8')).approval_policy, 'never');
       assert.ok(parsedConfig.agents);
       assert.strictEqual(parsedConfig.agents.max_threads, 6);
       assert.strictEqual(parsedConfig.agents.max_depth, 1);

@@ -61,7 +61,7 @@ What helps:
 What helps:
 
 - Reduce tool-definition pressure with `ENABLE_TOOL_SEARCH=auto:5` if your setup supports it.
-- Lower `MAX_THINKING_TOKENS` for routine work.
+- Lower the supported effort level (for example, `/effort low`) for routine work on adaptive-reasoning models. `MAX_THINKING_TOKENS=0` disables thinking; nonzero values cap fixed-budget thinking only when adaptive thinking is disabled.
 - Route subagent work to a cheaper model such as `CLAUDE_CODE_SUBAGENT_MODEL=haiku` if your setup exposes that knob.
 - Disable unused MCP servers per project.
 - Compact manually at natural breakpoints instead of waiting for auto-compaction.
@@ -71,4 +71,4 @@ What helps:
 - [TROUBLESHOOTING.md](./TROUBLESHOOTING.md)
 - [token-optimization.md](./token-optimization.md)
 - [hooks/README.md](../hooks/README.md)
-- [issue #644](https://github.com/affaan-m/everything-claude-code/issues/644)
+- [issue #644](https://github.com/affaan-m/ECC/issues/644)

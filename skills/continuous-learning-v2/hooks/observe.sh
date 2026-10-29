@@ -273,7 +273,7 @@ import json, sys, os, re
 # prevent the catastrophic backtracking that pegged python at 100% CPU (#2278).
 _SECRET_RE = re.compile(
     r"(?i)(api[_-]?key|token|secret|password|authorization|credentials?|auth)"
-    r"""(["'"'"'\s:=]{1,8})"""
+    r"""(["'"'"'\s:=\\]{1,8})"""
     r"((?:bearer|basic|token|bot)\s+)?"
     r"([A-Za-z0-9_\-/.+=]{8,256})"
 )
@@ -336,14 +336,15 @@ observation = {
     "project_name": os.environ.get("PROJECT_NAME_ENV", "global")
 }
 
-# Scrub secrets: match common key=value, key: value, and key"value patterns
+# Scrub secrets, including JSON-escaped quotes/backslashes in serialized tool I/O.
+# This is defense in depth; arbitrary content still requires a metadata-only capture boundary.
 # Includes optional auth scheme (e.g., "Bearer", "Basic") before token
 # Linear-time secret matcher. Bounded quantifiers and a fixed set of auth
 # schemes (instead of a generic [A-Za-z]+\s+ that overlapped the value class)
 # prevent the catastrophic backtracking that pegged python at 100% CPU (#2278).
 _SECRET_RE = re.compile(
     r"(?i)(api[_-]?key|token|secret|password|authorization|credentials?|auth)"
-    r"""(["'"'"'\s:=]{1,8})"""
+    r"""(["'"'"'\s:=\\]{1,8})"""
     r"((?:bearer|basic|token|bot)\s+)?"
     r"([A-Za-z0-9_\-/.+=]{8,256})"
 )
@@ -569,7 +570,10 @@ fi
 # which caused runaway parallel Claude analysis processes.
 SIGNAL_EVERY_N="${ECC_OBSERVER_SIGNAL_EVERY_N:-20}"
 SIGNAL_COUNTER_FILE="${PROJECT_DIR}/.observer-signal-counter"
-SIGNAL_COUNTER_LOCK="${SIGNAL_COUNTER_FILE}.lock"
+# Use a regular-file OS lock. Keep legacy mkdir locks untouched: a killed
+# Windows process cannot run shell traps, and reclaiming those directories can
+# race a live owner. The versioned file makes a stranded directory irrelevant.
+SIGNAL_COUNTER_LOCK="${SIGNAL_COUNTER_FILE}.lock.v2"
 ACTIVITY_FILE="${PROJECT_DIR}/.observer-last-activity"
 
 touch "$ACTIVITY_FILE" 2>/dev/null || true
@@ -578,28 +582,25 @@ touch "$ACTIVITY_FILE" 2>/dev/null || true
 # tool call (which can fire every second), so concurrent invocations previously
 # raced on this counter: both read the same value, both incremented, and one
 # write was lost, signaling the observer at unpredictable intervals (#2296).
-# Prefer flock (a kernel advisory lock the OS releases automatically if the hook
-# is killed); fall back to the atomic mkdir lock this script already uses for
-# the lazy-start path above. Both wrap the same read-modify-write below.
+# Prefer flock; Python supplies the same OS-released lock on macOS and Windows.
 should_signal=0
 
 _clv2_bump_signal_counter() {
+  counter=0
   if [ -f "$SIGNAL_COUNTER_FILE" ]; then
-    counter=$(cat "$SIGNAL_COUNTER_FILE" 2>/dev/null || echo 0)
-    # Guard against a corrupt counter file: a non-integer value would abort the
-    # hook under `set -e` at the arithmetic below.
-    case "$counter" in
-      ''|*[!0-9]*) counter=0 ;;
-    esac
-    counter=$((counter + 1))
-    if [ "$counter" -ge "$SIGNAL_EVERY_N" ]; then
-      should_signal=1
-      counter=0
-    fi
-    echo "$counter" > "$SIGNAL_COUNTER_FILE"
-  else
-    echo "1" > "$SIGNAL_COUNTER_FILE"
+    counter=$(head -c 20 "$SIGNAL_COUNTER_FILE" 2>/dev/null || echo 0)
   fi
+  # Bound parsing and avoid shell arithmetic overflow on corrupt local state.
+  case "$counter" in
+    ''|*[!0-9]*) counter=0 ;;
+  esac
+  if [ "${#counter}" -gt 18 ]; then counter=0; fi
+  counter=$((10#$counter + 1))
+  if [ "$counter" -ge "$SIGNAL_EVERY_N" ]; then
+    should_signal=1
+    counter=0
+  fi
+  echo "$counter" > "$SIGNAL_COUNTER_FILE"
 }
 
 if command -v flock >/dev/null 2>&1 && exec 8>"$SIGNAL_COUNTER_LOCK" 2>/dev/null; then
@@ -613,38 +614,61 @@ if command -v flock >/dev/null 2>&1 && exec 8>"$SIGNAL_COUNTER_LOCK" 2>/dev/null
   fi
   exec 8>&- 2>/dev/null || true
 else
-  # No flock (e.g. macOS): atomic mkdir lock with a bounded spin so the hook
-  # never blocks indefinitely. A trap releases the lock on every exit path --
-  # including the async-timeout SIGTERM -- so a killed hook does not strand the
-  # directory. We deliberately do NOT hand-roll PID-based stale reclaim:
-  # re-verifying then removing another process's lock is racy and can delete a
-  # live re-acquirer's directory, reintroducing the very race this fixes.
-  _signal_lock_held=0
-  _signal_lock_spins=0
-  while [ "$_signal_lock_spins" -lt 100 ]; do
-    if mkdir "$SIGNAL_COUNTER_LOCK" 2>/dev/null; then
-      # EXIT cleans up on normal completion. INT/TERM must release AND exit:
-      # a signal trap that only released the lock would otherwise fall through
-      # and continue the read-modify-write without ownership.
-      trap 'rmdir "$SIGNAL_COUNTER_LOCK" 2>/dev/null || true' EXIT
-      trap 'rmdir "$SIGNAL_COUNTER_LOCK" 2>/dev/null || true; exit 130' INT
-      trap 'rmdir "$SIGNAL_COUNTER_LOCK" 2>/dev/null || true; exit 143' TERM
-      _signal_lock_held=1
-      break
-    fi
-    _signal_lock_spins=$((_signal_lock_spins + 1))
-    sleep 0.02
-  done
-  if [ "$_signal_lock_held" -eq 1 ]; then
-    # Bump only under the held lock -- never an unlocked read-modify-write.
-    _clv2_bump_signal_counter
-    rmdir "$SIGNAL_COUNTER_LOCK" 2>/dev/null || true
-    trap - EXIT INT TERM
-  fi
-  # If the lock could not be acquired within the spin budget we skip this tick
-  # rather than racing on an unlocked counter. Dropping one throttle tick under
-  # extreme contention only delays the next observer signal slightly; it never
-  # corrupts the counter or signals spuriously.
+  # One interpreter, monotonic elapsed-time wait, no MSYS2 sleep subprocesses.
+  # Both fcntl and msvcrt release ownership even on SIGKILL/TerminateProcess.
+  # If locking is unavailable or busy, skip the optional tick without an
+  # unlocked update. Observation capture above has already completed.
+  should_signal=$("$PYTHON_CMD" - "$SIGNAL_COUNTER_LOCK" "$SIGNAL_COUNTER_FILE" "$SIGNAL_EVERY_N" <<'PY'
+import os
+import re
+import sys
+import time
+
+try:
+    if os.name == "nt":
+        import msvcrt
+        # Git Bash passes /c/... paths to native Windows Python unchanged.
+        for index in (1, 2):
+            sys.argv[index] = re.sub(r"^/([A-Za-z])/", r"\1:/", sys.argv[index])
+        def acquire(handle):
+            handle.seek(0)
+            msvcrt.locking(handle.fileno(), msvcrt.LK_NBLCK, 1)
+    else:
+        import fcntl
+        def acquire(handle):
+            fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+
+    with open(sys.argv[1], "a+b") as guard:
+        if os.name == "nt" and os.fstat(guard.fileno()).st_size == 0:
+            guard.write(b"0")
+            guard.flush()
+        deadline = time.monotonic() + 2.0
+        while True:
+            try:
+                acquire(guard)
+                break
+            except OSError:
+                if time.monotonic() >= deadline:
+                    print(0)
+                    sys.exit(0)
+                time.sleep(0.02)
+        try:
+            with open(sys.argv[2], encoding="ascii") as source:
+                value = source.read(20).strip()
+        except FileNotFoundError:
+            value = ""
+        counter = int(value) if 0 < len(value) <= 18 and value.isascii() and value.isdigit() else 0
+        counter += 1
+        signal = int(counter >= int(sys.argv[3]))
+        if signal:
+            counter = 0
+        with open(sys.argv[2], "w", encoding="ascii") as target:
+            target.write(str(counter) + "\n")
+        print(signal)
+except (ImportError, OSError, ValueError):
+    print(0)
+PY
+  ) || should_signal=0
 fi
 
 # Signal observer if running and throttle allows (check both project-scoped and global observer, deduplicate)

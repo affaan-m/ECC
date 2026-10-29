@@ -78,7 +78,7 @@ Type `/` in chat and select from the menu, or use:
 
 ## Steering Files
 
-### Auto-Loaded (Always Active)
+### Always-Loaded (Always Active)
 
 - `coding-style.md` - Code organization and naming
 - `development-workflow.md` - Dev process and PR workflow
@@ -267,9 +267,10 @@ cat .kiro/skills/skill-name/SKILL.md
 
 ### Steering File Not Loading
 
-1. Check frontmatter: `inclusion: auto` or `fileMatch` or `manual`
+1. Check frontmatter: `inclusion: always` or `auto` or `fileMatch` or `manual`
 2. For fileMatch, verify pattern: `fileMatchPattern: "*.ts,*.tsx"`
-3. For manual, invoke with: `#filename`
+3. For auto, verify `name` and `description` are set and the description matches your request
+4. For manual, invoke with: `#filename`
 
 ### Script Not Executing
 
@@ -326,7 +327,7 @@ Instructions for the agent...
 1. Create `.kiro/steering/my-rules.md`:
 ```markdown
 ---
-inclusion: auto
+inclusion: always
 description: My custom rules
 ---
 
@@ -335,7 +336,7 @@ description: My custom rules
 Rules and patterns...
 ```
 
-2. Auto-loaded in every conversation
+2. Always-loaded in every conversation
 
 ### Add Your Own Hook
 

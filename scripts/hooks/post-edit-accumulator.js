@@ -18,15 +18,16 @@ const crypto = require('crypto');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
+const { resolveHookSessionId } = require('../lib/hook-session');
 
 const MAX_STDIN = 1024 * 1024;
 
-function getAccumFile() {
+function getAccumFile(rawSessionId) {
   const raw =
-    process.env.CLAUDE_SESSION_ID ||
+    rawSessionId ||
     crypto.createHash('sha1').update(process.cwd()).digest('hex').slice(0, 12);
   // Strip path separators and traversal sequences so the value is safe to embed
-  // directly in a filename regardless of what CLAUDE_SESSION_ID contains.
+  // directly in a filename regardless of the hook session ID source.
   const sessionId = raw.replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 64);
   return path.join(os.tmpdir(), `ecc-edited-${sessionId}.txt`);
 }
@@ -37,9 +38,9 @@ function getAccumFile() {
  */
 const JS_TS_EXT = /\.(ts|tsx|js|jsx)$/;
 
-function appendPath(filePath) {
+function appendPath(filePath, sessionId) {
   if (filePath && JS_TS_EXT.test(filePath)) {
-    fs.appendFileSync(getAccumFile(), filePath + '\n', 'utf8');
+    fs.appendFileSync(getAccumFile(sessionId), filePath + '\n', 'utf8');
   }
 }
 
@@ -50,12 +51,13 @@ function appendPath(filePath) {
 function run(rawInput) {
   try {
     const input = JSON.parse(rawInput);
+    const sessionId = resolveHookSessionId(rawInput);
     // Edit / Write: single file_path
-    appendPath(input.tool_input?.file_path);
+    appendPath(input.tool_input?.file_path, sessionId);
     // MultiEdit: array of edits, each with its own file_path
     const edits = input.tool_input?.edits;
     if (Array.isArray(edits)) {
-      for (const edit of edits) appendPath(edit?.file_path);
+      for (const edit of edits) appendPath(edit?.file_path, sessionId);
     }
   } catch {
     // Invalid input — pass through

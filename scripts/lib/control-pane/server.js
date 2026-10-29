@@ -11,20 +11,7 @@ const { renderControlPaneHtml } = require('./ui');
 const { renderProximityVizHtml } = require('./proximity-viz');
 const { renderControlPlaneViewHtml } = require('./control-plane-view-ui');
 const { createControlPlaneViewSource } = require('./control-plane-view');
-const { claimWorkItem, moveWorkItem } = require('./work-item-mutations');
-
-// Run a single write against the local work-item store, then close it. Kept
-// thin so the loopback-only server can mutate the JIT board without holding a
-// long-lived handle.
-async function withStateStore(stateDbPath, fn) {
-  const { createStateStore } = require('../state-store');
-  const store = await createStateStore({ dbPath: stateDbPath });
-  try {
-    return await fn(store);
-  } finally {
-    store.close();
-  }
-}
+const { runWorkItemMutation } = require('./work-item-runner');
 
 // Host/Origin gating lives in scripts/lib/loopback-guard.js so every ECC
 // loopback server shares one hardened implementation; re-exported below to
@@ -349,19 +336,25 @@ function createControlPaneServer(options = {}) {
         const id = decodeURIComponent((claimMatch || moveMatch)[1]);
         const body = await readRequestJson(req);
         try {
-          const result = await withStateStore(resolvedConfig.stateDbPath, store =>
+          const result = await runWorkItemMutation(resolvedConfig.stateDbPath,
+            claimMatch ? 'claim' : 'move',
             claimMatch
-              ? claimWorkItem(store, {
+              ? {
                   id,
                   owner: body.owner,
                   assigneeKind: body.as || body.assigneeKind,
                   sessionId: body.sessionId
-                })
-              : moveWorkItem(store, { id, lane: body.lane })
+                }
+              : { id, lane: body.lane }
           );
           sendJson(res, 200, { ok: true, ...result });
         } catch (mutationError) {
-          sendJson(res, 400, { ok: false, error: mutationError.message });
+          if (mutationError.code === 'STATE_STORE_BUSY') {
+            res.setHeader('Retry-After', '1');
+            sendJson(res, 503, { ok: false, code: mutationError.code, error: mutationError.message });
+          } else {
+            sendJson(res, 400, { ok: false, error: mutationError.message });
+          }
         }
         return;
       }

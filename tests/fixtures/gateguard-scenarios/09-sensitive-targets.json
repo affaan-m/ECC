@@ -1,0 +1,651 @@
+{
+  "name": "sensitive-targets",
+  "description": "Secrets, auth code, CI workflows, migrations and keys, including a symlinked alias and searches that would otherwise credit.",
+  "files": {
+    "src/auth/session.js": "'use strict';\n\nfunction sign(payload, key) {\n  return hmac(key, payload);\n}\n\nmodule.exports = { sign };\n",
+    "src/auth/token.js": "// token helpers\nfunction mint() {\n  return random(32);\n}\n",
+    ".github/workflows/ci.yml": "name: ci\n# run tests\non: [push]\n",
+    "db/migrations/0001_init.sql": "CREATE TABLE users (id INT);\n",
+    "certs/server.pem": "-----BEGIN CERTIFICATE-----\nMIIB\n-----END CERTIFICATE-----\n"
+  },
+  "symlinks": {
+    "lib/vault": "../src/auth"
+  },
+  "steps": [
+    {
+      "id": "edit-auth-after-search",
+      "note": "A crediting search never credits a sensitive target.",
+      "transcript": [
+        {
+          "type": "user",
+          "uuid": "sensitive-targets-001",
+          "sessionId": "sess-sensitive",
+          "isSidechain": false,
+          "promptId": "prompt-sensitive-1",
+          "message": {
+            "role": "user",
+            "content": "Rotate the session signing key handling and update CI."
+          }
+        },
+        {
+          "type": "assistant",
+          "uuid": "sensitive-targets-002",
+          "sessionId": "sess-sensitive",
+          "isSidechain": false,
+          "message": {
+            "id": "msg_sensitivetargets_01",
+            "type": "message",
+            "role": "assistant",
+            "model": "claude-sonnet-4-5",
+            "content": [
+              {
+                "type": "tool_use",
+                "id": "toolu_sensitivetargets_001",
+                "name": "Grep",
+                "input": {
+                  "pattern": "session",
+                  "path": "{{root}}/src/auth"
+                }
+              }
+            ]
+          }
+        },
+        {
+          "type": "user",
+          "uuid": "sensitive-targets-003",
+          "sessionId": "sess-sensitive",
+          "isSidechain": false,
+          "promptId": "prompt-sensitive-1",
+          "message": {
+            "role": "user",
+            "content": [
+              {
+                "type": "tool_result",
+                "tool_use_id": "toolu_sensitivetargets_001",
+                "content": "ok"
+              }
+            ]
+          }
+        },
+        {
+          "type": "assistant",
+          "uuid": "sensitive-targets-004",
+          "sessionId": "sess-sensitive",
+          "isSidechain": false,
+          "message": {
+            "id": "msg_sensitivetargets_02",
+            "type": "message",
+            "role": "assistant",
+            "model": "claude-sonnet-4-5",
+            "content": [
+              {
+                "type": "tool_use",
+                "id": "toolu_sensitivetargets_002",
+                "name": "Read",
+                "input": {
+                  "file_path": "{{root}}/src/auth/session.js"
+                }
+              }
+            ]
+          }
+        },
+        {
+          "type": "user",
+          "uuid": "sensitive-targets-005",
+          "sessionId": "sess-sensitive",
+          "isSidechain": false,
+          "promptId": "prompt-sensitive-1",
+          "message": {
+            "role": "user",
+            "content": [
+              {
+                "type": "tool_result",
+                "tool_use_id": "toolu_sensitivetargets_002",
+                "content": "ok"
+              }
+            ]
+          }
+        },
+        {
+          "type": "assistant",
+          "uuid": "sensitive-targets-006",
+          "sessionId": "sess-sensitive",
+          "isSidechain": false,
+          "message": {
+            "id": "msg_sensitivetargets_03",
+            "type": "message",
+            "role": "assistant",
+            "model": "claude-sonnet-4-5",
+            "content": [
+              {
+                "type": "tool_use",
+                "id": "toolu_sensitivetargets_003",
+                "name": "Edit",
+                "input": {
+                  "file_path": "{{root}}/src/auth/session.js",
+                  "old_string": "  return hmac(key, payload);",
+                  "new_string": "  return hmac(rotate(key), payload);"
+                }
+              }
+            ]
+          }
+        }
+      ],
+      "payload": {
+        "session_id": "sess-sensitive",
+        "transcript_path": "{{transcript}}",
+        "cwd": "{{root}}",
+        "permission_mode": "default",
+        "hook_event_name": "PreToolUse",
+        "tool_name": "Edit",
+        "tool_input": {
+          "file_path": "{{root}}/src/auth/session.js",
+          "old_string": "  return hmac(key, payload);",
+          "new_string": "  return hmac(rotate(key), payload);"
+        },
+        "tool_use_id": "toolu_sensitivetargets_003"
+      },
+      "expect": "deny",
+      "mustDeny": true,
+      "redundant": false,
+      "relevantQuestions": [
+        "importers",
+        "public-api",
+        "data-schema",
+        "external-contract",
+        "quote-instruction"
+      ]
+    },
+    {
+      "id": "write-env",
+      "transcript": [
+        {
+          "type": "user",
+          "uuid": "sensitive-targets-007",
+          "sessionId": "sess-sensitive",
+          "isSidechain": false,
+          "promptId": "prompt-sensitive-1",
+          "message": {
+            "role": "user",
+            "content": [
+              {
+                "type": "tool_result",
+                "tool_use_id": "toolu_sensitivetargets_003",
+                "content": "ok"
+              }
+            ]
+          }
+        },
+        {
+          "type": "assistant",
+          "uuid": "sensitive-targets-008",
+          "sessionId": "sess-sensitive",
+          "isSidechain": false,
+          "message": {
+            "id": "msg_sensitivetargets_04",
+            "type": "message",
+            "role": "assistant",
+            "model": "claude-sonnet-4-5",
+            "content": [
+              {
+                "type": "tool_use",
+                "id": "toolu_sensitivetargets_004",
+                "name": "Write",
+                "input": {
+                  "file_path": "{{root}}/.env",
+                  "content": "SESSION_KEY=example\n"
+                }
+              }
+            ]
+          }
+        }
+      ],
+      "payload": {
+        "session_id": "sess-sensitive",
+        "transcript_path": "{{transcript}}",
+        "cwd": "{{root}}",
+        "permission_mode": "default",
+        "hook_event_name": "PreToolUse",
+        "tool_name": "Write",
+        "tool_input": {
+          "file_path": "{{root}}/.env",
+          "content": "SESSION_KEY=example\n"
+        },
+        "tool_use_id": "toolu_sensitivetargets_004"
+      },
+      "expect": "deny",
+      "mustDeny": true,
+      "redundant": false
+    },
+    {
+      "id": "workflow-comment-only",
+      "transcript": [
+        {
+          "type": "user",
+          "uuid": "sensitive-targets-009",
+          "sessionId": "sess-sensitive",
+          "isSidechain": false,
+          "promptId": "prompt-sensitive-1",
+          "message": {
+            "role": "user",
+            "content": [
+              {
+                "type": "tool_result",
+                "tool_use_id": "toolu_sensitivetargets_004",
+                "content": "ok"
+              }
+            ]
+          }
+        },
+        {
+          "type": "assistant",
+          "uuid": "sensitive-targets-010",
+          "sessionId": "sess-sensitive",
+          "isSidechain": false,
+          "message": {
+            "id": "msg_sensitivetargets_05",
+            "type": "message",
+            "role": "assistant",
+            "model": "claude-sonnet-4-5",
+            "content": [
+              {
+                "type": "tool_use",
+                "id": "toolu_sensitivetargets_005",
+                "name": "Edit",
+                "input": {
+                  "file_path": "{{root}}/.github/workflows/ci.yml",
+                  "old_string": "# run tests\n",
+                  "new_string": "# Run the full test suite.\n"
+                }
+              }
+            ]
+          }
+        }
+      ],
+      "payload": {
+        "session_id": "sess-sensitive",
+        "transcript_path": "{{transcript}}",
+        "cwd": "{{root}}",
+        "permission_mode": "default",
+        "hook_event_name": "PreToolUse",
+        "tool_name": "Edit",
+        "tool_input": {
+          "file_path": "{{root}}/.github/workflows/ci.yml",
+          "old_string": "# run tests\n",
+          "new_string": "# Run the full test suite.\n"
+        },
+        "tool_use_id": "toolu_sensitivetargets_005"
+      },
+      "expect": "deny",
+      "mustDeny": true,
+      "redundant": false
+    },
+    {
+      "id": "edit-symlink-alias",
+      "note": "lib/vault is a symlink to src/auth.",
+      "transcript": [
+        {
+          "type": "user",
+          "uuid": "sensitive-targets-011",
+          "sessionId": "sess-sensitive",
+          "isSidechain": false,
+          "promptId": "prompt-sensitive-1",
+          "message": {
+            "role": "user",
+            "content": [
+              {
+                "type": "tool_result",
+                "tool_use_id": "toolu_sensitivetargets_005",
+                "content": "ok"
+              }
+            ]
+          }
+        },
+        {
+          "type": "assistant",
+          "uuid": "sensitive-targets-012",
+          "sessionId": "sess-sensitive",
+          "isSidechain": false,
+          "message": {
+            "id": "msg_sensitivetargets_06",
+            "type": "message",
+            "role": "assistant",
+            "model": "claude-sonnet-4-5",
+            "content": [
+              {
+                "type": "tool_use",
+                "id": "toolu_sensitivetargets_006",
+                "name": "Bash",
+                "input": {
+                  "command": "rg -n token lib/vault"
+                }
+              }
+            ]
+          }
+        },
+        {
+          "type": "user",
+          "uuid": "sensitive-targets-013",
+          "sessionId": "sess-sensitive",
+          "isSidechain": false,
+          "promptId": "prompt-sensitive-1",
+          "message": {
+            "role": "user",
+            "content": [
+              {
+                "type": "tool_result",
+                "tool_use_id": "toolu_sensitivetargets_006",
+                "content": "ok"
+              }
+            ]
+          }
+        },
+        {
+          "type": "assistant",
+          "uuid": "sensitive-targets-014",
+          "sessionId": "sess-sensitive",
+          "isSidechain": false,
+          "message": {
+            "id": "msg_sensitivetargets_07",
+            "type": "message",
+            "role": "assistant",
+            "model": "claude-sonnet-4-5",
+            "content": [
+              {
+                "type": "tool_use",
+                "id": "toolu_sensitivetargets_007",
+                "name": "Edit",
+                "input": {
+                  "file_path": "{{root}}/lib/vault/token.js",
+                  "old_string": "  return random(32);",
+                  "new_string": "  return random(64);"
+                }
+              }
+            ]
+          }
+        }
+      ],
+      "payload": {
+        "session_id": "sess-sensitive",
+        "transcript_path": "{{transcript}}",
+        "cwd": "{{root}}",
+        "permission_mode": "default",
+        "hook_event_name": "PreToolUse",
+        "tool_name": "Edit",
+        "tool_input": {
+          "file_path": "{{root}}/lib/vault/token.js",
+          "old_string": "  return random(32);",
+          "new_string": "  return random(64);"
+        },
+        "tool_use_id": "toolu_sensitivetargets_007"
+      },
+      "expect": "deny",
+      "mustDeny": true,
+      "redundant": false,
+      "relevantQuestions": [
+        "importers",
+        "public-api",
+        "data-schema",
+        "external-contract",
+        "quote-instruction"
+      ]
+    },
+    {
+      "id": "write-migration",
+      "transcript": [
+        {
+          "type": "user",
+          "uuid": "sensitive-targets-015",
+          "sessionId": "sess-sensitive",
+          "isSidechain": false,
+          "promptId": "prompt-sensitive-1",
+          "message": {
+            "role": "user",
+            "content": [
+              {
+                "type": "tool_result",
+                "tool_use_id": "toolu_sensitivetargets_007",
+                "content": "ok"
+              }
+            ]
+          }
+        },
+        {
+          "type": "assistant",
+          "uuid": "sensitive-targets-016",
+          "sessionId": "sess-sensitive",
+          "isSidechain": false,
+          "message": {
+            "id": "msg_sensitivetargets_08",
+            "type": "message",
+            "role": "assistant",
+            "model": "claude-sonnet-4-5",
+            "content": [
+              {
+                "type": "tool_use",
+                "id": "toolu_sensitivetargets_008",
+                "name": "Write",
+                "input": {
+                  "file_path": "{{root}}/db/migrations/0002_add_index.sql",
+                  "content": "CREATE INDEX users_id ON users (id);\n"
+                }
+              }
+            ]
+          }
+        }
+      ],
+      "payload": {
+        "session_id": "sess-sensitive",
+        "transcript_path": "{{transcript}}",
+        "cwd": "{{root}}",
+        "permission_mode": "default",
+        "hook_event_name": "PreToolUse",
+        "tool_name": "Write",
+        "tool_input": {
+          "file_path": "{{root}}/db/migrations/0002_add_index.sql",
+          "content": "CREATE INDEX users_id ON users (id);\n"
+        },
+        "tool_use_id": "toolu_sensitivetargets_008"
+      },
+      "expect": "deny",
+      "mustDeny": true,
+      "redundant": false
+    },
+    {
+      "id": "write-migration-sibling",
+      "note": "Sensitive directories never collapse.",
+      "transcript": [
+        {
+          "type": "user",
+          "uuid": "sensitive-targets-017",
+          "sessionId": "sess-sensitive",
+          "isSidechain": false,
+          "promptId": "prompt-sensitive-1",
+          "message": {
+            "role": "user",
+            "content": [
+              {
+                "type": "tool_result",
+                "tool_use_id": "toolu_sensitivetargets_008",
+                "content": "ok"
+              }
+            ]
+          }
+        },
+        {
+          "type": "assistant",
+          "uuid": "sensitive-targets-018",
+          "sessionId": "sess-sensitive",
+          "isSidechain": false,
+          "message": {
+            "id": "msg_sensitivetargets_09",
+            "type": "message",
+            "role": "assistant",
+            "model": "claude-sonnet-4-5",
+            "content": [
+              {
+                "type": "tool_use",
+                "id": "toolu_sensitivetargets_009",
+                "name": "Write",
+                "input": {
+                  "file_path": "{{root}}/db/migrations/0003_backfill.sql",
+                  "content": "UPDATE users SET id = id;\n"
+                }
+              }
+            ]
+          }
+        }
+      ],
+      "payload": {
+        "session_id": "sess-sensitive",
+        "transcript_path": "{{transcript}}",
+        "cwd": "{{root}}",
+        "permission_mode": "default",
+        "hook_event_name": "PreToolUse",
+        "tool_name": "Write",
+        "tool_input": {
+          "file_path": "{{root}}/db/migrations/0003_backfill.sql",
+          "content": "UPDATE users SET id = id;\n"
+        },
+        "tool_use_id": "toolu_sensitivetargets_009"
+      },
+      "expect": "deny",
+      "mustDeny": true,
+      "redundant": false
+    },
+    {
+      "id": "edit-certificate",
+      "transcript": [
+        {
+          "type": "user",
+          "uuid": "sensitive-targets-019",
+          "sessionId": "sess-sensitive",
+          "isSidechain": false,
+          "promptId": "prompt-sensitive-1",
+          "message": {
+            "role": "user",
+            "content": [
+              {
+                "type": "tool_result",
+                "tool_use_id": "toolu_sensitivetargets_009",
+                "content": "ok"
+              }
+            ]
+          }
+        },
+        {
+          "type": "assistant",
+          "uuid": "sensitive-targets-020",
+          "sessionId": "sess-sensitive",
+          "isSidechain": false,
+          "message": {
+            "id": "msg_sensitivetargets_10",
+            "type": "message",
+            "role": "assistant",
+            "model": "claude-sonnet-4-5",
+            "content": [
+              {
+                "type": "tool_use",
+                "id": "toolu_sensitivetargets_010",
+                "name": "Edit",
+                "input": {
+                  "file_path": "{{root}}/certs/server.pem",
+                  "old_string": "MIIB",
+                  "new_string": "MIIC"
+                }
+              }
+            ]
+          }
+        }
+      ],
+      "payload": {
+        "session_id": "sess-sensitive",
+        "transcript_path": "{{transcript}}",
+        "cwd": "{{root}}",
+        "permission_mode": "default",
+        "hook_event_name": "PreToolUse",
+        "tool_name": "Edit",
+        "tool_input": {
+          "file_path": "{{root}}/certs/server.pem",
+          "old_string": "MIIB",
+          "new_string": "MIIC"
+        },
+        "tool_use_id": "toolu_sensitivetargets_010"
+      },
+      "expect": "deny",
+      "mustDeny": true,
+      "redundant": false
+    },
+    {
+      "id": "auth-comment-only",
+      "note": "Sensitive targets are never trivial.",
+      "transcript": [
+        {
+          "type": "user",
+          "uuid": "sensitive-targets-021",
+          "sessionId": "sess-sensitive",
+          "isSidechain": false,
+          "promptId": "prompt-sensitive-1",
+          "message": {
+            "role": "user",
+            "content": [
+              {
+                "type": "tool_result",
+                "tool_use_id": "toolu_sensitivetargets_010",
+                "content": "ok"
+              }
+            ]
+          }
+        },
+        {
+          "type": "assistant",
+          "uuid": "sensitive-targets-022",
+          "sessionId": "sess-sensitive",
+          "isSidechain": false,
+          "message": {
+            "id": "msg_sensitivetargets_11",
+            "type": "message",
+            "role": "assistant",
+            "model": "claude-sonnet-4-5",
+            "content": [
+              {
+                "type": "tool_use",
+                "id": "toolu_sensitivetargets_011",
+                "name": "Edit",
+                "input": {
+                  "file_path": "{{root}}/src/auth/token.js",
+                  "old_string": "// token helpers\nfunction mint() {",
+                  "new_string": "// Token helpers.\nfunction mint() {"
+                }
+              }
+            ]
+          }
+        }
+      ],
+      "payload": {
+        "session_id": "sess-sensitive",
+        "transcript_path": "{{transcript}}",
+        "cwd": "{{root}}",
+        "permission_mode": "default",
+        "hook_event_name": "PreToolUse",
+        "tool_name": "Edit",
+        "tool_input": {
+          "file_path": "{{root}}/src/auth/token.js",
+          "old_string": "// token helpers\nfunction mint() {",
+          "new_string": "// Token helpers.\nfunction mint() {"
+        },
+        "tool_use_id": "toolu_sensitivetargets_011"
+      },
+      "expect": "deny",
+      "mustDeny": true,
+      "redundant": false,
+      "relevantQuestions": [
+        "importers",
+        "public-api",
+        "data-schema",
+        "external-contract",
+        "quote-instruction"
+      ]
+    }
+  ]
+}

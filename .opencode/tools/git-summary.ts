@@ -4,7 +4,7 @@
  * Returns branch/status/log/diff details for the active repository.
  */
 
-import { tool, type ToolDefinition } from "@opencode-ai/plugin/tool"
+import { tool, type ToolDefinition } from "./tool.ts"
 import { execFileSync } from "child_process"
 
 // Conservative subset of git's allowed ref-name characters. Rejects shell

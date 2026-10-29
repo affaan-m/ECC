@@ -478,7 +478,7 @@ target-specific semantics.
 
 ## Design Constraints
 
-1. Keep `everything-claude-code` as the canonical source repo.
+1. Keep `ECC` as the canonical source repo.
 2. Preserve existing `install.sh` flows during migration.
 3. Support home-scoped and project-scoped targets from the same planner.
 4. Make uninstall/repair/doctor possible without guessing.
@@ -703,7 +703,7 @@ Suggested payload:
     "skippedModules": []
   },
   "source": {
-    "repoVersion": "2.2.2",
+    "repoVersion": "2.2.3",
     "repoCommit": "git-sha",
     "manifestVersion": 1
   },
