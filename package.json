@@ -546,7 +546,7 @@
   "dependencies": {
     "@iarna/toml": "2.2.5",
     "ajv": "8.20.0",
-    "js-yaml": "4.3.2",
+    "js-yaml": "5.5.0",
     "sql.js": "1.14.2",
     "zod": "4.6.7"
   },
@@ -581,7 +581,7 @@
   "overrides": {
     "fast-uri": "3.1.9",
     "markdown-it": "14.3.3",
-    "js-yaml": "4.3.2",
+    "js-yaml": "5.5.0",
     "@humanfs/node": "0.16.8",
     "brace-expansion": "5.0.12",
     "katex": "0.18.2",
@@ -591,7 +591,7 @@
   "resolutions": {
     "fast-uri": "3.1.9",
     "markdown-it": "14.3.3",
-    "js-yaml": "4.3.2",
+    "js-yaml": "5.5.0",
     "@humanfs/node": "0.16.8",
     "brace-expansion": "5.0.12",
     "katex": "0.18.2",
