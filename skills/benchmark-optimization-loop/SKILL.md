@@ -5,7 +5,6 @@ description: >-
 license: MIT
 metadata:
   origin: ECC
-tools: Read, Write, Edit, Bash, Grep, Glob
 ---
 
 # Benchmark Optimization Loop
@@ -21,6 +20,12 @@ Use for goal-driven implementation changes that need repeated measured
 comparisons, or to establish the benchmark and plan for such a task. Reuse an
 existing adequate regression check for a one-off fix; do not add a search loop
 without a reason.
+
+## Tool Requirements
+
+Use the host's already-authorized Read, Write, Edit, Bash, Grep, and Glob tools
+or their equivalents. Loading this workflow does not grant tools or expand
+existing permissions.
 
 ## Required Baseline
 
@@ -139,12 +144,15 @@ install a scheduler or grant release authority.
 
 ## Related Skills and Sources
 
+Reuse related skills when available in the host's installed profile; optional
+references below link to ECC's canonical sources.
+
 - [benchmark](../benchmark/SKILL.md) collects browser/API/build performance
   baselines; reuse it when those measurements serve the chosen goal.
-- [eval-harness](../eval-harness/SKILL.md) provides agent capability/regression
+- [eval-harness](https://github.com/affaan-m/ECC/blob/main/skills/eval-harness/SKILL.md) provides agent capability/regression
   evals and grader methods; reuse an appropriate existing evaluator.
-- [loop-design-check](../loop-design-check/SKILL.md) designs or reviews feedback
+- [loop-design-check](https://github.com/affaan-m/ECC/blob/main/skills/loop-design-check/SKILL.md) designs or reviews feedback
   loops and runaway prevention; this skill conducts the measured search.
-- [benchmark-methodology](../benchmark-methodology/SKILL.md) scores competitors
+- [benchmark-methodology](https://github.com/affaan-m/ECC/blob/main/skills/benchmark-methodology/SKILL.md) scores competitors
   for competitive analysis, rather than implementation variants.
 - [Sources and scope](references/sources.md) records this extension's provenance.
