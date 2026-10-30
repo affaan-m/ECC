@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "totalCommands": 97,
+  "totalCommands": 98,
   "commands": [
     {
       "command": "aside",
@@ -407,6 +407,18 @@
         "continuous-learning-v2"
       ],
       "path": "commands/instinct-status.md"
+    },
+    {
+      "command": "issue-review",
+      "description": "Review a GitHub issue the way /code-review reviews a PR — verify the report against the codebase, find duplicates and prior fixes, score completeness, assign severity, and draft a reply. Posting is opt-in. Pass an issue number, URL, or owner/repo#N.",
+      "type": "review",
+      "primaryAgents": [],
+      "allAgents": [],
+      "skills": [
+        "github-ops",
+        "issue-review"
+      ],
+      "path": "commands/issue-review.md"
     },
     {
       "command": "jira",
@@ -1064,7 +1076,7 @@
       "orchestration": 12,
       "planning": 2,
       "refactoring": 1,
-      "review": 15,
+      "review": 16,
       "testing": 53
     },
     "topAgents": [

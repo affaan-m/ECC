@@ -1,0 +1,38 @@
+{
+  "schema_version": "ecc.evaluator-rag.report.v1",
+  "scenario_id": "prepared-verifier-effect-state",
+  "run_id": "illustrative-verifier-effect-state",
+  "read_only": true,
+  "result": "illustrative_expected_result",
+  "findings": [
+    {
+      "id": "two-state-axes",
+      "severity": "warning",
+      "summary": "An accepted effect and verifier_error can coexist; verifier failure does not authorize replay or rollback."
+    },
+    {
+      "id": "independent-mechanisms",
+      "severity": "info",
+      "summary": "Output columns, YAML shape, method-specific payload fields, command boundaries and identifier representation require distinct evidence."
+    }
+  ],
+  "score_basis": "illustrative_expected_rubric_not_external_validation",
+  "scores": {
+    "accepted_effect_preservation": 1,
+    "read_contract_correction": 1,
+    "unknown_outcome_reconciliation": 1,
+    "preflight_dispatch_safety": 1,
+    "mechanism_attribution": 1
+  },
+  "evidence_coverage": {
+    "illustrative_acceptance_gates": 5,
+    "total_acceptance_gates": 5,
+    "source_reported_mechanisms": 3,
+    "executed_external_checks": 0,
+    "limits": "The reporter read source accounts, not original command bytes, logs or current device state. Corrections are source-reported; ECC activation/version and causal contribution are unknown. Separate mechanisms must not be assigned one root cause."
+  },
+  "recommended_next_action": {
+    "candidate_id": "correct-read-preserve-effect",
+    "action": "Repair the read/check contract while retaining accepted outcome; reconcile unknown effects before any retry."
+  }
+}

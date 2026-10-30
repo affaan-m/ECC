@@ -66,6 +66,14 @@ The audit does not determine whether prose is true, whether a requirement is
 satisfied, whether a task is complete, or whether a change should be merged.
 Warnings explicitly require semantic review.
 
+Module auditing is opt-in through explicit `--module` directories with scope
+`modules` or `full`. Local `AGENTS.md` and `CONTEXT.md` are conventional evidence
+locations, not mandatory per-directory artifacts. Ancestor and mapped sources
+are shared candidates whose applicability must be confirmed manually; the audit
+does not equate a file's existence with instruction loading or business coverage.
+Module responsibilities, code/contract boundaries and vocabulary require source
+and test evidence after the contained-path and source-relative link checks.
+
 For link checks, any `scheme://` destination is external. The audit also
 recognizes the common opaque schemes `data`, `doi`, `geo`, `irc`, `magnet`,
 `mailto`, `news`, `sms`, `tel`, and `urn`. Other colon-shaped destinations are

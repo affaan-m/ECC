@@ -90,6 +90,7 @@ skills:
   - inventory-demand-planning
   - investor-materials
   - investor-outreach
+  - issue-review
   - iterative-retrieval
   - java-coding-standards
   - jpa-patterns
@@ -108,6 +109,7 @@ skills:
   - market-research
   - mcp-dependency-review
   - mcp-server-patterns
+  - module-governance
   - module-regression
   - mybatis-patterns
   - motion-advanced
@@ -172,6 +174,7 @@ skills:
   - test-collaboration
   - token-budget-advisor
   - token-card
+  - typescript-patterns
   - unified-memory
   - verification-loop
   - video-editing
@@ -217,6 +220,7 @@ commands:
   - instinct-export
   - instinct-import
   - instinct-status
+  - issue-review
   - jira
   - kotlin-build
   - kotlin-review

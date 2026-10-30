@@ -33,7 +33,7 @@ Strategic compaction at logical boundaries:
 
 The `suggest-compact.js` script runs on PreToolUse (Edit/Write) and combines two signals:
 
-1. **Context size (primary)** — Reads the latest `usage` record from the session transcript (`transcript_path` in the hook payload) and sums `input_tokens + cache_read_input_tokens + cache_creation_input_tokens` (the true context size of the turn). Suggests `/compact` at a window-scaled threshold — 160k tokens on a 200k window, 250k on a 1M window (detected from a `[1m]` model marker, or inferred when observed tokens already exceed 200k) — and re-reminds after every additional 60k tokens of context growth
+1. **Context size (primary)** — Reads the latest `usage` record from the session transcript (`transcript_path` in the hook payload) and sums `input_tokens + cache_read_input_tokens + cache_creation_input_tokens` (the true context size of the turn). Suggests `/compact` at a window-scaled threshold — 160k tokens on a 200k window, 250k on a 1M window (detected from a `[1m]` model marker, or inferred when observed tokens already exceed 200k) — and re-reminds after every additional 60k tokens of context growth. A valid native compaction budget can lower the default reminder threshold to 80% of that budget; model-capacity percentages still use the resolved model window
 2. **Tool-call count (secondary)** — Counts tool invocations in session; suggests at a configurable threshold (default: 50 calls), then every 25 calls after
 
 Tool count alone is a weak proxy for window pressure: a few large file reads or MCP responses can fill the window in very few calls, while many tiny calls can cross 50 with a near-empty window. The context-size signal fires when it actually matters.
@@ -65,13 +65,15 @@ Tool count alone is a weak proxy for window pressure: a few large file reads or 
 
 Environment variables:
 - `COMPACT_THRESHOLD` — Tool calls before first suggestion (default: 50)
-- `COMPACT_CONTEXT_THRESHOLD` — Context tokens before the context-size suggestion (default: 160000 on a 200k window, 250000 on a 1M window; `0` disables the context signal)
+- `COMPACT_CONTEXT_THRESHOLD` — Context tokens before the context-size suggestion (default: 160000 on a 200k window, 250000 on a 1M window, capped at 80% of a valid native compaction budget when earlier). An explicit positive threshold overrides that default cap; `0` disables the context signal.
 - `COMPACT_CONTEXT_INTERVAL` — Additional context tokens before the suggestion repeats (default: 60000)
 - `COMPACT_STATE_TTL_DAYS` — Days before stale per-session state files in the temp dir are swept (default: 14)
 - `ECC_CONTEXT_WINDOW_TOKENS` — Explicit context-window size, in tokens, overriding auto-detection. Set this for large-window models whose reported id lacks a `[1m]` marker (e.g. 400k Opus 4.x, or a new 1M-window model family) so the threshold scales to the real window instead of defaulting to 200k and overstating context usage.
-- `CLAUDE_CODE_AUTO_COMPACT_WINDOW` — Claude Code's native window-size override, in tokens; honored as a fallback when `ECC_CONTEXT_WINDOW_TOKENS` is unset.
+- `CLAUDE_CODE_AUTO_COMPACT_WINDOW` — Claude Code's native auto-compact trigger, which may be smaller than the model's context window. For context-window resolution, ECC uses it only as a last-resort fallback, after an explicit ECC override, a `[1m]` model marker, a known large-window model family, and inference from observed tokens above 200k. It is not an exact model-capacity declaration.
 
-> The context window is otherwise auto-detected from a `[1m]` model marker or inferred when observed tokens already exceed 200k. On a large-window model that carries neither signal, set one of the overrides above so the `/compact` suggestion fires at the right point.
+> Window precedence is: `ECC_CONTEXT_WINDOW_TOKENS`, then the `[1m]` marker, a known large-window model family, observed tokens above 200k, the native auto-compact fallback, and finally the inferred 200k default. Set `ECC_CONTEXT_WINDOW_TOKENS` when you know the actual window and automatic detection lacks that information; do not treat the native compact trigger as proof of model capacity.
+
+The Stop-hook summary scheduler protects resume state before compaction. It uses the earlier of confirmed capacity and a valid native compaction budget. When capacity is inferred, it uses only a valid native budget, or treats the remaining budget as unknown if none is provided. Model-capacity resolution remains separate. The default `/compact` reminder threshold independently uses the earlier of its window-scaled default and 80% of a valid native compaction budget. An explicit `COMPACT_CONTEXT_THRESHOLD`, including `0`, remains authoritative.
 
 ## Compaction Decision Guide
 

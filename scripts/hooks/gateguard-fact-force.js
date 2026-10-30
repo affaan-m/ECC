@@ -179,6 +179,27 @@ function getExtraDestructiveRegex() {
 // `**` across segments, `?` a single char.
 let exemptCacheKey = null;
 let exemptCacheRegexes = null;
+function exemptGlobRegex(glob) {
+  let source = '';
+  for (let index = 0; index < glob.length; index++) {
+    const char = glob[index];
+    if (char === '*' && glob[index + 1] === '*') {
+      index++;
+      if (glob[index + 1] === '/') {
+        source += '(?:.*/)?';
+        index++;
+      } else source += '.*';
+    } else if (char === '*') source += '[^/]*';
+    else if (char === '?') source += '[^/]';
+    else source += char.replace(/[.+^${}()|[\]\\]/g, '\\$&');
+  }
+  try {
+    return new RegExp(`^${source}$`);
+  } catch (_) {
+    return null;
+  }
+}
+
 function getExemptMatchers() {
   const raw = process.env.GATEGUARD_EXEMPT_GLOBS || '';
   if (raw === exemptCacheKey) {
@@ -187,42 +208,59 @@ function getExemptMatchers() {
   exemptCacheKey = raw;
   exemptCacheRegexes = raw
     .split(',')
-    .map(s => normalizeForMatch(s.trim()))
+    .map(s => s.trim().replace(/\\/g, '/'))
     .filter(Boolean)
-    .map(glob => {
-      let source = '';
-      for (let index = 0; index < glob.length; index++) {
-        const char = glob[index];
-        if (char === '*' && glob[index + 1] === '*') {
-          index++;
-          if (glob[index + 1] === '/') {
-            source += '(?:.*/)?';
-            index++;
-          } else source += '.*';
-        } else if (char === '*') source += '[^/]*';
-        else if (char === '?') source += '[^/]';
-        else source += char.replace(/[.+^${}()|[\]\\]/g, '\\$&');
-      }
-      try {
-        return { regex: new RegExp(`^${source}$`), absolute: path.posix.isAbsolute(glob) || path.win32.isAbsolute(glob) };
-      } catch (_) {
-        return null;
-      }
+    .map(written => {
+      const glob = normalizeForMatch(written);
+      const regex = exemptGlobRegex(glob);
+      return regex ? { written, regex, absolute: path.posix.isAbsolute(glob) || path.win32.isAbsolute(glob) } : null;
     })
     .filter(Boolean);
   return exemptCacheRegexes;
 }
 
+function matchesExemptGlob(target, projectRoot, paths, absoluteRegexFor = matcher => matcher.regex) {
+  const relative = paths.relative(projectRoot, target);
+  const contained = relative !== '..' && !relative.startsWith(`..${paths.sep}`) && !paths.isAbsolute(relative);
+  return getExemptMatchers().some(matcher => {
+    if (!matcher.absolute) return contained && matcher.regex.test(normalizeForMatch(relative));
+    const regex = absoluteRegexFor(matcher);
+    return Boolean(regex) && regex.test(normalizeForMatch(target));
+  });
+}
+
+// An absolute glob as it reads once its literal leading directories are
+// symlink-resolved (`/tmp/...` is `/private/tmp/...` on macOS). Null when that
+// prefix has no real location.
+function realAbsoluteGlobRegex(glob, isWin) {
+  const segments = glob.split('/');
+  const wild = segments.findIndex(segment => /[*?]/.test(segment));
+  const literal = wild === -1 ? segments.length - 1 : wild;
+  const prefix = segments.slice(0, literal).join('/') || '/';
+  const realPrefix = targetClass().realLocationOf(isWin ? prefix.replace(/\//g, '\\') : prefix, isWin);
+  if (!realPrefix) return null;
+  const rest = segments.slice(literal).join('/');
+  return exemptGlobRegex(normalizeForMatch(`${realPrefix.replace(/[\\/]$/, '')}/${rest}`));
+}
+
+// The path as written and its real location must both match: a symlink inside
+// an exempt tree does not exempt its target. See docs/gateguard/design-notes.md#exempt-globs
 function isExemptPath(filePath, data) {
   const projectRoot = process.env.CLAUDE_PROJECT_DIR || data.cwd || process.cwd();
   if (typeof projectRoot !== 'string' || typeof filePath !== 'string') return false;
-  const paths = targetClass().WINDOWS_PATH_PATTERN.test(projectRoot) ? path.win32 : path.posix;
+  const isWin = targetClass().WINDOWS_PATH_PATTERN.test(projectRoot);
+  const paths = isWin ? path.win32 : path.posix;
   if (!paths.isAbsolute(projectRoot)) return false;
   const target = paths.resolve(projectRoot, filePath);
-  const relative = paths.relative(projectRoot, target);
-  const contained = relative !== '..' && !relative.startsWith(`..${paths.sep}`) && !paths.isAbsolute(relative);
-  return getExemptMatchers().some(({ regex, absolute }) =>
-    absolute ? regex.test(normalizeForMatch(target)) : contained && regex.test(normalizeForMatch(relative))
+  if (!matchesExemptGlob(target, projectRoot, paths)) return false;
+  // A Windows-style path has no real location on a POSIX host (and vice versa).
+  if (isWin !== (process.platform === 'win32')) return true;
+  const realTarget = targetClass().realLocationOf(target, isWin);
+  if (!realTarget) return false;
+  if (realTarget === target) return true;
+  const realRoot = targetClass().realLocationOf(projectRoot, isWin) || projectRoot;
+  return matchesExemptGlob(realTarget, realRoot, paths, matcher =>
+    matcher.regex.test(normalizeForMatch(realTarget)) ? matcher.regex : realAbsoluteGlobRegex(matcher.written, isWin)
   );
 }
 
@@ -514,9 +552,77 @@ const SUDO_VALUE_FLAGS = new Set([
   '--type',
   '-T',
   '--command-timeout',
+  '-R',
+  '--chroot',
+  '-a',
+  '--auth-type',
+  '-c',
+  '--login-class',
 ]);
 
-const DOAS_VALUE_FLAGS = new Set(['-u', '-C']);
+const DOAS_VALUE_FLAGS = new Set(['-u', '-C', '-a']);
+// Option letters that take no value (sudo's getopt string
+// "+Aa:BbC:c:D:Eeg:Hh::iKklNnPp:R:r:SsT:t:U:u:Vv", doas's "+a:C:Lnsu:").
+const SUDO_BOOLEAN_FLAGS = new Set('ABbEeHiKklNnPSsVv'.split('').map(c => `-${c}`));
+const DOAS_BOOLEAN_FLAGS = new Set(['-L', '-n', '-s']);
+// Modes that list, validate, edit, check config or report instead of running
+// the command operand: `sudo -l rm -rf x` only checks whether rm is permitted.
+const SUDO_NON_EXEC_FLAGS = new Set([
+  '-l', '--list', '-v', '--validate', '-K', '--remove-timestamp', '-V', '--version', '-e', '--edit',
+  '--help',
+]);
+const DOAS_NON_EXEC_FLAGS = new Set(['-L', '-C']);
+
+/**
+ * True when a privilege-wrapper option puts it in a mode that does not run the
+ * command operand. A short cluster is read left to right: a value flag ends it
+ * (the rest is its value, so `-ul` is user `l` and `-R/live` is a chroot), and
+ * an unknown letter ends it too, so an unrecognized option never turns a
+ * command into a non-executing one.
+ */
+function isNonExecPrivilegeOption(arg, valueFlags, nonExecFlags, booleanFlags) {
+  if (arg.startsWith('--')) {
+    const separator = arg.indexOf('=');
+    return nonExecFlags.has(separator === -1 ? arg : arg.slice(0, separator));
+  }
+  for (let i = 1; i < arg.length; i += 1) {
+    const name = `-${arg[i]}`;
+    if (nonExecFlags.has(name)) return true;
+    if (valueFlags.has(name) || !booleanFlags.has(name)) return false;
+  }
+  return false;
+}
+
+// Every sudo long option (parse_args.c sudo_long_opts). getopt_long accepts a
+// unique prefix, so `--use root` is `--user root` and `--chro /x` is `--chroot /x`.
+const SUDO_LONG_OPTIONS = [
+  '--background', '--preserve-env', '--edit', '--set-home', '--login', '--remove-timestamp',
+  '--list', '--preserve-groups', '--shell', '--other-user', '--validate', '--askpass',
+  '--auth-type', '--bell', '--close-from', '--login-class', '--chdir', '--group', '--help',
+  '--host', '--reset-timestamp', '--no-update', '--non-interactive', '--prompt', '--chroot',
+  '--role', '--stdin', '--command-timeout', '--type', '--user', '--version',
+];
+
+/**
+ * Expand a unique sudo long-option prefix to its full name, keeping any
+ * attached `=value`. Exact names, ambiguous prefixes (sudo rejects those with
+ * a usage error and runs nothing) and non-long arguments come back unchanged.
+ */
+function canonicalSudoLongOption(arg) {
+  if (!arg.startsWith('--') || arg === '--') return arg;
+  const separator = arg.indexOf('=');
+  const name = separator === -1 ? arg : arg.slice(0, separator);
+  if (SUDO_LONG_OPTIONS.includes(name)) return arg;
+  const matches = SUDO_LONG_OPTIONS.filter(option => option.startsWith(name));
+  if (matches.length !== 1) return arg;
+  return separator === -1 ? matches[0] : `${matches[0]}${arg.slice(separator)}`;
+}
+
+// sudo accepts VAR=value environment assignments between its options
+// (parse_args.c is_envar: not starting with '/' or '=', containing '=').
+function isSudoEnvAssignment(arg) {
+  return arg[0] !== '/' && arg[0] !== '=' && arg.includes('=');
+}
 const EXEC_VALUE_FLAGS = new Set(['-a']);
 const ENV_VALUE_FLAGS = new Set(['-u', '--unset', '-C', '--chdir', '-a', '--argv0', '-S', '--split-string']);
 const SHELL_ASSIGNMENT = /^[A-Za-z_][A-Za-z0-9_]*=/;
@@ -792,14 +898,21 @@ function unwrapLeadWrappers(tokens, allowShellBuiltins = true, allowDdLaunchers 
     allowShellBuiltins = false;
     allowAssignments = true;
     const valueFlags = base === 'sudo' ? SUDO_VALUE_FLAGS : DOAS_VALUE_FLAGS;
+    const nonExecFlags = base === 'sudo' ? SUDO_NON_EXEC_FLAGS : DOAS_NON_EXEC_FLAGS;
+    const booleanFlags = base === 'sudo' ? SUDO_BOOLEAN_FLAGS : DOAS_BOOLEAN_FLAGS;
     index += 1;
     while (index < argv.length) {
-      const flag = argv[index];
+      const flag = base === 'sudo' ? canonicalSudoLongOption(argv[index]) : argv[index];
       if (flag === '--') {
         index += 1;
         break;
       }
+      if (base === 'sudo' && isSudoEnvAssignment(flag)) {
+        index += 1;
+        continue;
+      }
       if (flag === '-' || !flag.startsWith('-')) break;
+      if (isNonExecPrivilegeOption(flag, valueFlags, nonExecFlags, booleanFlags)) return true;
       const option = wrapperValueOption(flag, valueFlags);
       index += option && option.value === undefined ? 2 : 1;
     }
@@ -926,8 +1039,7 @@ function isDestructiveQuoteAware(raw, depth = 0) {
   for (const body of collectExecutableBodies(executable)) {
     for (const tokens of quoteAwareSegments(body)) {
       if (tokens.length === 0) continue;
-      if (isDestructiveRm(tokens)) return true;
-      if (isDestructiveGit(tokens)) return true;
+      if (isDestructiveRmOrGit(tokens)) return true;
       if (isDestructiveDd(tokens)) return true;
       if (isDestructiveSqlClient(tokens)) return true;
       if (isDestructiveFindExec(tokens)) return true;
@@ -984,6 +1096,23 @@ function commandBasename(token) {
 function isDestructiveDd(tokens, allowShellBuiltins = true) {
   const argv = unwrapLeadWrappers(tokens, allowShellBuiltins, true);
   return commandBasename(argv[0]) === 'dd' && argv.slice(1).some(operand => /^(?:if|of)=/i.test(operand));
+}
+
+/**
+ * rm/Git check on the segment as written and on the command it actually runs.
+ * Both detectors key on argv[0], so `sudo rm -rf build`, `command rm -rf build`
+ * and `env git reset --hard` read as calls to the wrapper and passed (#2832).
+ * unwrapLeadWrappers resolves the wrapped command word the same way the dd
+ * and `sh -c` paths already do. Argument text is left alone: in
+ * `echo sudo rm -rf x` the resolved command is still `echo`.
+ *
+ * @param {string[]} tokens
+ * @returns {boolean}
+ */
+function isDestructiveRmOrGit(tokens) {
+  if (isDestructiveRm(tokens) || isDestructiveGit(tokens)) return true;
+  const argv = unwrapLeadWrappers(tokens, true, true);
+  return argv.length > 0 && (isDestructiveRm(argv) || isDestructiveGit(argv));
 }
 
 /**
@@ -1392,9 +1521,7 @@ function isDestructiveBash(command) {
     const stripped = stripQuotedStrings(segment);
     if (DESTRUCTIVE_SQL.test(stripped)) return true;
     if (extra && extra.test(stripped)) return true;
-    const tokens = tokenize(segment);
-    if (isDestructiveRm(tokens)) return true;
-    if (isDestructiveGit(tokens)) return true;
+    if (isDestructiveRmOrGit(tokenize(segment))) return true;
   }
 
   // Quote-aware pass: closes the quoted-command-word, newline-separator,

@@ -11,7 +11,7 @@ const { assertFilePostimage } = require('./helpers/assert-file-postimage');
 const fileSystem = { ...fs };
 const load = createFileSystemLoader(fileSystem);
 const { applyInstallPlan } = load(require.resolve('../../scripts/lib/install/apply'));
-const { withHookConsent } = require('../../scripts/lib/install/hook-consent');
+const { getDisabledOpenCodePluginContent, withHookConsent } = require('../../scripts/lib/install/hook-consent');
 const { repairInstalledStates, buildDoctorReport } = load(require.resolve('../../scripts/lib/install-lifecycle'));
 const { createInstallState, readInstallState, writeInstallState } = require('../../scripts/lib/install-state');
 const { withOpenCodeInstallLocks } = load(require.resolve('../../scripts/lib/install/opencode-install-lock'));
@@ -325,7 +325,7 @@ function runTests() {
       assert.ok(!state.resolution.selectedModules.includes('hooks-runtime'));
       assert.notStrictEqual(state.request.hookConsent, 'enabled');
       assert.strictEqual(fs.readFileSync(path.join(value.canonicalRoot, 'plugins/ecc-hooks.ts'), 'utf8'),
-        'export default async () => ({});\n');
+        getDisabledOpenCodePluginContent());
       assert.deepStrictEqual(JSON.parse(fs.readFileSync(path.join(value.canonicalRoot, 'opencode.json'))).plugin, []);
       for (const relative of ['opencode.json', 'plugins/ecc-hooks.ts', 'ecc-install-state.json']) {
         assert.strictEqual(fs.existsSync(path.join(value.legacyRoot, relative)), false);
@@ -333,6 +333,44 @@ function runTests() {
       assertBothLocksReleased(value);
     });
   }
+  test('a legacy root holding the pre-fix declined factory stub still migrates', value => {
+    const state = addLegacyActivations(value, 'declined');
+    const oldStub = 'export default async () => ({});\n';
+    const stubPath = path.join(value.legacyRoot, 'plugins/ecc-hooks.ts');
+    fs.writeFileSync(stubPath, oldStub);
+    state.operations.find(operation => operation.destinationPath === stubPath).contentSha256 = sha256(oldStub);
+    writeInstallState(value.legacyStatePath, state);
+    const result = repair(value, buildInertPayload);
+    // The inert legacy file must be gone: OpenCode scans plugin paths independently.
+    assert.strictEqual(result.results[0].status, 'repaired', JSON.stringify(result));
+    assert.strictEqual(fs.existsSync(stubPath), false);
+    assert.strictEqual(fs.readFileSync(path.join(value.canonicalRoot, 'plugins/ecc-hooks.ts'), 'utf8'),
+      getDisabledOpenCodePluginContent());
+  });
+  test('a retained pre-fix declined factory stub never reports a successful repair', value => {
+    const state = addLegacyActivations(value, 'declined');
+    const oldStub = 'export default async () => ({});\n';
+    const stubPath = path.join(value.legacyRoot, 'plugins/ecc-hooks.ts');
+    fs.writeFileSync(stubPath, oldStub);
+    state.operations.find(operation => operation.destinationPath === stubPath).contentSha256 = sha256(oldStub);
+    writeInstallState(value.legacyStatePath, state);
+    const originalRename = fileSystem.renameSync;
+    let renameAttempted = false;
+    fileSystem.renameSync = (from, ...args) => {
+      if (from === stubPath) {
+        renameAttempted = true;
+        throw Object.assign(new Error('Synthetic removal denial'), { code: 'EACCES' });
+      }
+      return originalRename(from, ...args);
+    };
+    try {
+      const result = repair(value, buildInertPayload);
+      assert.ok(renameAttempted, 'The stub removal was attempted');
+      assert.strictEqual(result.results[0].status, 'error', JSON.stringify(result));
+      assert.strictEqual(fs.readFileSync(stubPath, 'utf8'), oldStub);
+    } finally { fileSystem.renameSync = originalRename; }
+    assertBothLocksReleased(value);
+  });
   for (const defect of ['modified', 'missing-digest', 'source-mismatch', 'source-missing', 'symlink', 'unrecorded-alias', 'merge-json']) {
     test(`legacy ${defect} activation refuses before build and preserves ownership`, value => {
       const state = addLegacyActivations(value);

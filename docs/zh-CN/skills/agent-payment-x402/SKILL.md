@@ -305,6 +305,158 @@ curl -s https://api.mainnet-beta.solana.com -X POST -H 'Content-Type: applicatio
 
 这个问题在向新开通的钱包或托管钱包付款时最容易出现，这类钱包往往还没有该资产的 ATA。
 
+**卖方：每个支付授权只运行一次路由。** 中间件先验证支付，再运行处理程序，然后结算。验证不会消耗授权（结算才会），因此同一笔已签名的支付同时发送多次，每次都能通过验证，每次都会运行处理程序。结算器只结算其中一份副本，其余副本收到不带响应的 402，所以没有人能免费获得输出。但处理程序中的每个副作用（LLM 调用、排队任务、链上交易）都会按副本数重复发生。在一个生产卖方（Python `x402` 2.9.0、FastAPI）上，同一授权并发发送三次，处理程序运行了三次，结算一次。放在处理程序内的付费调用计数器也会以同样方式高估收入；应在结算后计数。更广泛的验证到结算竞态在 [x402#1169](https://github.com/x402-foundation/x402/issues/1169) 中讨论。
+
+在结算器验证授权之后、处理程序运行之前，将每个授权只认领一次。资源服务器的 `onAfterVerify` 钩子恰好在这一时刻运行，从中返回的 `abort` 会变成 402，处理程序不会运行：
+
+```typescript
+import { createHash } from "node:crypto";
+import express from "express";
+import { paymentMiddleware, x402ResourceServer } from "@x402/express";
+import { HTTPFacilitatorClient } from "@x402/core/server";
+import { ExactEvmScheme } from "@x402/evm/exact/server";
+import { getBase64Encoder, getTransactionDecoder } from "@solana/kit";
+import { createClient } from "redis";
+
+// Use a shared, durable, non-evicting claim store. Atomic insertion alone
+// does not preserve claims after a store reset or eviction; test that operational
+// contract separately before claiming durable replay protection.
+// The claim store must never be what takes the seller down. With the offline
+// queue disabled, a command sent while disconnected fails at once; the queue
+// cap does the same when the store is connected but not replying; the error
+// listener stops a client error from crashing the process; and the connection
+// is made in the background, so startup never waits on it.
+const redis = createClient({
+  url: process.env.REDIS_URL,
+  disableOfflineQueue: true,
+  commandsQueueMaxLength: 1_000,
+  socket: { connectTimeout: 2_000 },
+});
+redis.on("error", (err) => console.warn(`replay store: ${err.message}`));
+redis.connect().catch(() => {});
+
+const CLAIM_MIN_S = 900;          // longer than maxTimeoutSeconds plus your slowest handler run
+const CLAIM_MAX_S = 366 * 86_400; // ceiling for a signer-chosen expiry
+const CLAIM_TIMEOUT_MS = 250;     // a slow store must not stall paid requests
+// When the store is unavailable: refuse before the handler runs (true), or run
+// it without duplicate protection (false). Fail open only if the handler is
+// idempotent or has its own side-effect boundary.
+const FAIL_CLOSED = true;
+
+// Identifies a verified authorization, however its JSON is encoded, and keeps
+// the claim until the authorization can no longer settle: the signer picks
+// that expiry, and verification does not cap it at maxTimeoutSeconds.
+function claimOf(
+  paymentPayload: { payload: Record<string, any> },
+  requirements: { network: string; asset: string },
+): { key: string; until: number } | undefined {
+  const now = Math.floor(Date.now() / 1000);
+  const keep = (expiry: unknown) => {
+    // Reject authorizations beyond our retention contract; never shorten a
+    // live authorization's claim lifetime and silently reopen its replay window.
+    const validUntil = BigInt(String(expiry));
+    if (validUntil < 0n || validUntil + 60n > BigInt(now + CLAIM_MAX_S)) {
+      throw new Error("Authorization expiry exceeds the replay retention horizon");
+    }
+    return Math.max(now + CLAIM_MIN_S, Number(validUntil + 60n));
+  };
+  const p = paymentPayload.payload;
+  if (p.authorization?.nonce) {
+    // EVM exact, EIP-3009: each token contract accepts a (from, nonce) once.
+    const { from, nonce, validBefore } = p.authorization;
+    const asset = requirements.asset.toLowerCase();
+    return {
+      key: `x402:${requirements.network}:${asset}:${from.toLowerCase()}:${nonce.toLowerCase()}`,
+      until: keep(validBefore),
+    };
+  }
+  if (p.permit2Authorization?.nonce !== undefined) {
+    // EVM exact, Permit2: uint256 nonces per owner, across tokens. The signed
+    // value is BigInt(nonce), so "1", "01" and "0x1" are one authorization.
+    const { from, nonce, deadline } = p.permit2Authorization;
+    return {
+      key: `x402:${requirements.network}:permit2:${from.toLowerCase()}:${BigInt(nonce)}`,
+      until: keep(deadline),
+    };
+  }
+  if (typeof p.transaction === "string") {
+    // SVM exact: hash the message the payer signed, not the whole transaction.
+    // The fee payer's signature slot is outside the payer's signature.
+    const tx = getTransactionDecoder().decode(getBase64Encoder().encode(p.transaction));
+    const digest = createHash("sha256").update(new Uint8Array(tx.messageBytes)).digest("hex");
+    return { key: `x402:${requirements.network}:${digest}`, until: now + CLAIM_MIN_S };
+  }
+  return undefined;
+}
+
+function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
+  return Promise.race([
+    promise,
+    new Promise<T>((_, reject) => setTimeout(reject, ms, new Error("timeout")).unref()),
+  ]);
+}
+
+const resourceServer = new x402ResourceServer(
+  new HTTPFacilitatorClient({ url: process.env.FACILITATOR_URL }),
+)
+  .register("eip155:8453", new ExactEvmScheme())
+  .onAfterVerify(async ({ paymentPayload, requirements, result }) => {
+    if (!result.isValid) return; // an invalid payment never takes a claim
+    let claim: ReturnType<typeof claimOf>;
+    let set: Promise<string | null> | undefined;
+    try {
+      claim = claimOf(paymentPayload, requirements);
+      if (!claim) {
+        return { abort: true, reason: "claim_unsupported", message: "Authorization cannot be guarded." };
+      }
+      // NX is atomic: of two simultaneous copies exactly one wins.
+      set = redis.set(claim.key, "1", {
+        condition: "NX",
+        expiration: { type: "EXAT", value: claim.until },
+      });
+      if ((await withTimeout(set, CLAIM_TIMEOUT_MS)) === "OK") return;
+      return {
+        abort: true,
+        reason: "payment_replayed",
+        message: "This payment authorization was already presented.",
+      };
+    } catch {
+      // Return, don't throw: the resource server logs and skips a hook that
+      // throws, which would run the handler unguarded.
+      if (FAIL_CLOSED) {
+        // A write that timed out can still land. This request is refused and
+        // the handler never runs, so release a late claim, or the retry
+        // would be refused as a replay of work that never happened.
+        set?.then((reply) => (reply === "OK" && claim ? redis.del(claim.key) : 0)).catch(() => {});
+        return { abort: true, reason: "claim_unavailable", message: "Retry shortly." };
+      }
+    }
+  });
+
+const app = express();
+app.use(express.json());
+app.use(
+  paymentMiddleware(
+    {
+      "POST /report": {
+        accepts: [{ scheme: "exact", price: "$0.01", network: "eip155:8453", payTo: process.env.PAY_TO! }],
+      },
+    },
+    resourceServer,
+  ),
+);
+app.post("/report", async (req, res, next) => {
+  try {
+    res.json(await buildReport(req.body));
+  } catch (error) {
+    // Keep the claim: a failed handler may already have performed side effects.
+    next(error);
+  }
+});
+```
+
+任何支持原子条件插入的存储都可以：DynamoDB 带 `attribute_not_exists` 的 `PutItem`，或 Postgres 的唯一索引。有两件事守卫不会替你决定。存储不可用时，`FAIL_CLOSED` 以可用性为代价保住“每个授权只运行一次”的保证；失败开放（fail open）能让路由继续服务，但在存储恢复之前每个副本都会运行处理程序，因此只应用于幂等的处理程序。另外，`payment_replayed` 表示该授权之前已被提交过，并不表示第一次尝试失败：如果客户端丢失了第一次的响应，工作可能已经执行、支付可能已经结算，因此在签署新授权之前应先核对原始请求的结果。这只能阻止同一授权的重复副本。在验证和结算之间使支付失效的付款方（例如转走资金）仍能触发一次处理程序运行；对于高成本路由，应在执行工作前先锁定资金。
+
 **发现。** 实现 x402 集市扩展的结算器会公开 `/discovery/resources` 端点——可在 `https://api.cdp.coinbase.com/platform/v2/x402/discovery/resources` 查询 CDP 目录，在 `https://facilitator.payai.network/discovery/resources` 查询 PayAI 目录。对于 Solana 可付费服务，还有 Solana 基金会的精选目录 [pay.sh](https://pay.sh)。
 
 ## 示例

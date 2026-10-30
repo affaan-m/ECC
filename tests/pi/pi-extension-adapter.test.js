@@ -73,6 +73,13 @@ function stripComments(source) {
   return source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "")
 }
 
+// Hook scripts write homunculus observations under the home directory, so
+// runner calls get an empty home instead of the developer's real one unless a
+// test passes its own HOME.
+const ISOLATED_HOME = fs.mkdtempSync(path.join(os.tmpdir(), "ecc-pi-home-"))
+const ISOLATED_HOME_ENV = { HOME: ISOLATED_HOME, USERPROFILE: ISOLATED_HOME }
+process.on("exit", () => fs.rmSync(ISOLATED_HOME, { recursive: true, force: true }))
+
 /**
  * Invokes ECC's hook runner like the adapter (`runEccHook` in
  * .pi/extensions/index.ts): it uses the test host's Node executable with the
@@ -85,7 +92,7 @@ function runHookRunner(eccRoot, hookId, relScript, profiles, payload, extraEnv, 
     encoding: "utf8",
     cwd: cwd || eccRoot,
     timeout: 30000,
-    env: { ...process.env, CLAUDE_PLUGIN_ROOT: eccRoot, ECC_PLUGIN_ROOT: eccRoot, ...extraEnv },
+    env: { ...process.env, ...ISOLATED_HOME_ENV, CLAUDE_PLUGIN_ROOT: eccRoot, ECC_PLUGIN_ROOT: eccRoot, ...extraEnv },
   })
 }
 

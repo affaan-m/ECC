@@ -1,0 +1,33 @@
+{
+  "schema_version": "ecc.evaluator-rag.trace.v1",
+  "scenario_id": "prepared-verifier-effect-state",
+  "run_id": "illustrative-verifier-effect-state",
+  "read_only": true,
+  "illustrative": true,
+  "events": [
+    {
+      "phase": "observation",
+      "summary": "Synthetic OP_A is accepted; the following verifier lacks a required column."
+    },
+    {
+      "phase": "retrieval",
+      "summary": "Compare prepared argv with its output contract and read the stored operation identity/outcome separately."
+    },
+    {
+      "phase": "proposal",
+      "candidate_ids": [
+        "correct-read-preserve-effect",
+        "reapply-after-verifier-error"
+      ]
+    },
+    {
+      "phase": "verification",
+      "summary": "Expected rubric: keep OP_A accepted and apply_count=1, correct only the read; hold unknown OP_B; block not-dispatched OP_C on preflight."
+    },
+    {
+      "phase": "promotion",
+      "promoted_candidate_id": "correct-read-preserve-effect",
+      "summary": "Illustrative selection only; no commands are executed and no external state is changed."
+    }
+  ]
+}

@@ -246,4 +246,4 @@ interface HookInput {
 
 - [rules/common/hooks.md](../rules/common/hooks.md) — フックアーキテクチャのガイドライン
 - [skills/strategic-compact/](../skills/strategic-compact/) — 戦略的コンパクションのスキル
-- [scripts/hooks/](../scripts/hooks/) — フックスクリプトの実装
+- [scripts/hooks/](../../../scripts/hooks/) — フックスクリプトの実装

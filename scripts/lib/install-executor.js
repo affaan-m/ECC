@@ -201,7 +201,8 @@ function addMatchingRuleOperations(operations, options) {
         sourcePath,
         sourceRelativePath,
         destinationPath,
-        strategy: options.strategy || 'flatten-copy'
+        strategy: options.strategy || 'flatten-copy',
+        contentTransform: options.contentTransform,
       })
     );
   }
@@ -391,7 +392,8 @@ function planAntigravityLegacyInstall(context) {
     sourceRelativeDir: path.join('rules', 'common'),
     destinationDir: path.join(targetRoot, 'rules'),
     matcher: fileName => fileName.endsWith('.md'),
-    rename: fileName => `common-${fileName}`
+    rename: fileName => `common-${fileName}`,
+    contentTransform: 'antigravity-rule-frontmatter',
   });
 
   for (const language of context.languages) {
@@ -412,7 +414,8 @@ function planAntigravityLegacyInstall(context) {
       sourceRelativeDir: path.join('rules', language),
       destinationDir: path.join(targetRoot, 'rules'),
       matcher: fileName => fileName.endsWith('.md'),
-      rename: fileName => `${language}-${fileName}`
+      rename: fileName => `${language}-${fileName}`,
+      contentTransform: 'antigravity-rule-frontmatter',
     });
   }
 

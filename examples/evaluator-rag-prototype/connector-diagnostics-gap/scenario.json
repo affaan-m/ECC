@@ -1,0 +1,106 @@
+{
+  "schema_version": "ecc.evaluator-rag.scenario.v1",
+  "scenario_id": "connector-diagnostics-gap",
+  "title": "Inspect an existing connector before designing another monitor",
+  "mode": "read_only_prototype",
+  "objective": "Identify the smallest demonstrated diagnostics gap before recommending a new subsystem.",
+  "sources": [
+    {
+      "kind": "repo_doc",
+      "path": "skills/search-first/SKILL.md",
+      "purpose": "Existing research, reuse and minimal-extension guidance"
+    },
+    {
+      "kind": "public_feedback",
+      "url": "https://github.com/affaan-m/ECC/issues/3680",
+      "purpose": "Reported workflow observation; not an ECC reproduction"
+    },
+    {
+      "kind": "public_feedback",
+      "url": "https://github.com/affaan-m/ECC/issues/3680#issuecomment-6436640503",
+      "purpose": "Reported management-transport versus collection example; synthetic variant, not historical reproduction"
+    },
+    {
+      "kind": "public_feedback",
+      "url": "https://github.com/affaan-m/ECC/issues/3680#issuecomment-6455507941",
+      "purpose": "Reported premature target-dependent work and explicit stop; synthetic control only"
+    },
+    {
+      "kind": "public_feedback",
+      "url": "https://github.com/affaan-m/ECC/issues/3680#issuecomment-6456519404",
+      "purpose": "Later explicit scope revision separates fact storage from document filling; synthetic continuation only"
+    }
+  ],
+  "evidence_limits": "The reported connector configuration, original request, ECC activation/version and causal contribution are unverified. All connector capabilities below are synthetic evaluation inputs.",
+  "inputs": {
+    "request": "Explain connection failures, permission denials and repeated throttling using the connector already in use.",
+    "inspected_capabilities": [
+      {
+        "path": "connector/diagnostics/connection",
+        "observed": "Returns endpoint reachability and last connection error"
+      },
+      {
+        "path": "connector/diagnostics/access",
+        "observed": "Returns permission-denial details"
+      },
+      {
+        "path": "connector/diagnostics/requests",
+        "observed": "Returns per-request throttle events, without an aggregate count in the inspected path"
+      }
+    ],
+    "unavailable_channels": [
+      "Historical deployment settings could not be read"
+    ],
+    "remaining_requirement": "A count of throttle events over the requested interval",
+    "management_preparation": {
+      "management_access": "existing_mcp_api_reads",
+      "continuous_collection": "not_configured",
+      "unavailable_path": {
+        "path": "server A SSH",
+        "blocks": [
+          "host-level checks on server A"
+        ]
+      },
+      "independent_preparation": [
+        "prepare monitoring templates",
+        "map existing management capabilities",
+        "inspect the existing notification channel"
+      ]
+    },
+    "target_contract": {
+      "development_authorized": true,
+      "documented_variants": [
+        "separate payment document",
+        "document payment section"
+      ],
+      "target_sample": "unread",
+      "mandatory_fields": "unconfirmed",
+      "independent_work": [
+        "fact storage",
+        "fact validation"
+      ],
+      "scope_sequence": [
+        "development authorized",
+        "explicit stop",
+        "explicit scope revision authorizes fact storage and validation; document filling remains separate"
+      ]
+    }
+  },
+  "retrieval_questions": [
+    "Which actual connector paths were examined?",
+    "What requested behavior is missing from those paths?",
+    "Can the existing events satisfy the gap with a bounded query?",
+    "What evidence would justify a separate background component?"
+  ],
+  "forbidden_actions": [
+    "deploying a background monitor from this evaluator",
+    "treating unavailable research as proof of missing capability",
+    "claiming the reported incident is a reproduced ECC defect"
+  ],
+  "acceptance_gates": [
+    "name examined capability and evidence scope",
+    "state the observed limitation separately from unknown settings",
+    "choose the smallest extension supported by available events",
+    "justify any new background component with a demonstrated unmet requirement"
+  ]
+}

@@ -40,7 +40,7 @@
 要在会话间共享记忆，最好的方法是使用一个技能或命令来总结和检查进度，然后保存到 `.claude` 文件夹中的一个 `.tmp` 文件中，并在会话结束前不断追加内容。第二天，它可以将其用作上下文，并从中断处继续。为每个会话创建一个新文件，这样你就不会将旧的上下文污染到新的工作中。
 
 ![Session Storage File Tree](../../assets/images/longform/03-session-storage.png)
-*会话存储示例 -> <https://github.com/affaan-m/ECC/tree/main/examples/sessions>*
+*会话存储示例 -> <https://github.com/affaan-m/ECC/blob/main/commands/save-session.md#session-file-format>*
 
 Claude 创建一个总结当前状态的文件。审阅它，如果需要则要求编辑，然后重新开始。对于新的对话，只需提供文件路径。当你达到上下文限制并需要继续复杂工作时，这尤其有用。这些文件应包含：
 
