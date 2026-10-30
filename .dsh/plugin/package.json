@@ -1,0 +1,20 @@
+{
+  "name": "dsh-cc-hooks",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Run ECC's Claude Code hooks on every DeepSeek Harness extension point: all seven events ECC uses, with tool-name translation, PreToolUse context re-delivery, and a synthesized transcript_path.",
+  "type": "module",
+  "main": "./index.js",
+  "exports": {
+    ".": "./index.js"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  },
+  "scripts": {
+    "test": "node test.mjs"
+  },
+  "license": "MIT"
+}
