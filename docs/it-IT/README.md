@@ -436,7 +436,7 @@ cd ECC
 | Kimi Code CLI | `./install.sh --profile minimal --target kimi` | Installazione locale al progetto in `.kimi-code/` · [Ottieni Kimi Code](https://www.kimi.ai/code?aff=ecc) |
 | CodeBuddy | `./install.sh --profile minimal --target codebuddy` | Installazione locale al progetto in `.codebuddy/` |
 | JoyCode | `./install.sh --profile minimal --target joycode` | Installazione locale al progetto in `.joycode/` |
-| GitHub Copilot | `./install.sh --profile full --target copilot` | Installa le skill in `.github/skills/` e gli agent in `.github/agents/` per Copilot CLI |
+| GitHub Copilot | `./install.sh --profile full --target copilot` | Installa le skill in `.github/skills/`, gli agent in `.github/agents/` e le regole in `.github/instructions/ecc/` per Copilot CLI |
 
 Il supporto a GitHub Copilot è già incluso in questo repository. `.github/copilot-instructions.md` fornisce il livello di istruzioni, `.github/prompts/` contiene i prompt riutilizzabili `/plan`, `/tdd`, `/security-review`, `/build-fix` e `/refactor`, e `.vscode/settings.json` abilita `chat.promptFiles`. GitHub Copilot CLI individua inoltre il sottoinsieme `.agents/skills/` da un semplice clone, senza alcuna configurazione; consulta [Supporto alle piattaforme](#supporto-alle-piattaforme) per il catalogo completo e gli agent.
 
@@ -1331,7 +1331,7 @@ Considera `stable`, `beta`, `experimental` e `instruction-only` qui sotto come d
 | Cursor | Beta, adapter di progetto | Installer selettivo in `.cursor/` | L'individuazione degli agent varia a seconda della build di Cursor; gli eventi degli hook usano dispatcher vincolati al profilo, ma non si dichiara la piena parità di funzionalità con Claude. |
 | OpenCode | Beta, plugin compilato | Compila il plugin, poi usa l'installer selettivo | ECC include un sottoinsieme del catalogo; collega un provider e seleziona un modello in OpenCode ([#2617](https://github.com/affaan-m/ECC/issues/2617)). |
 | GitHub Copilot Chat | Instruction-only | Istruzioni e file di prompt versionati nel repo | Gli hook di ECC non sono adattati. |
-| GitHub Copilot CLI | Beta, adapter di progetto | `--target copilot` colloca le skill e gli agent adattati in `.github/` | Questo target non installa gli hook, le regole e gli shim di comandi di ECC. |
+| GitHub Copilot CLI | Beta, adapter di progetto | `--target copilot` colloca le skill, gli agent adattati e le regole convertite in `.github/` | Questo target non installa gli hook e gli shim di comandi di ECC. |
 | Gemini, Zed, Antigravity, Qwen, Hermes, OpenClaw, Kimi, CodeBuddy, JoyCode | Adapter experimental/minimal | Target selettivo specifico per harness | Sono testati il posizionamento dei file e la portabilità delle istruzioni; non si dichiara la piena parità di funzionalità con Claude. |
 
 <details>
@@ -1693,7 +1693,7 @@ Per la configurazione completa di ECC per OpenCode, puoi:
 <details>
 <summary><strong>Supporto a GitHub Copilot in profondità</strong></summary>
 
-ECC supporta **GitHub Copilot** su due superfici: Copilot Chat in VS Code, tramite il suo sistema nativo di file di istruzioni e prompt, e **GitHub Copilot CLI**, che individua le skill condivise già presenti in questo repository. Il target di installazione opzionale `copilot` colloca le skill canoniche e gli agent adattati nelle directory di progetto native della CLI.
+ECC supporta **GitHub Copilot** su due superfici: Copilot Chat in VS Code, tramite il suo sistema nativo di file di istruzioni e prompt, e **GitHub Copilot CLI**, che individua le skill condivise già presenti in questo repository. Il target di installazione opzionale `copilot` colloca le skill canoniche, gli agent adattati e le regole convertite nelle directory di progetto native della CLI.
 
 #### Cosa è incluso per GitHub Copilot
 
@@ -1792,7 +1792,8 @@ posizionamento e in più riscrive il frontmatter degli agent in modo che non ven
 # Windows: ./install.ps1 --profile full --target copilot
 ```
 
-Questo scrive le skill in `.github/skills/`, gli agent in `.github/agents/` e un file di
+Questo scrive le skill in `.github/skills/`, gli agent in `.github/agents/`, le regole in
+`.github/instructions/ecc/` come file `.instructions.md` e un file di
 install-state in `.github/ecc-install-state.json`. Non viene scritto nulla fuori da `.github/`.
 
 Il profilo `full` seleziona i moduli dichiarati per Copilot. Può collocare meno
@@ -1803,8 +1804,10 @@ per vedere cosa installa questo checkout; un conteggio non equivale a una conces
 Il frontmatter degli agent specifico di Claude (`model`, `tools`, `color`) viene scartato durante la
 copia: Copilot ricava il modello dalla tua configurazione e governa
 l'accesso ai tool per sessione tramite `--allow-tool`/`--deny-tool` anziché tramite il
-frontmatter degli agent. Le regole, i comandi e gli hook di ECC non vengono installati da questo
-target.
+frontmatter degli agent. Le regole vengono installate in `.github/instructions/ecc/` come file
+`.instructions.md`, con il frontmatter `paths:` in stile Claude convertito nella lista di glob
+`applyTo:` di Copilot (le regole senza `paths` diventano `applyTo: "**"`). I comandi e gli hook di
+ECC non vengono installati da questo target.
 
 #### Copertura delle funzionalità
 
@@ -1820,6 +1823,7 @@ target.
 | Formato dei messaggi di commit | Istruzione per singolo compito in `settings.json` |
 | Skill | Individuazione nativa in Copilot CLI (`.github/skills/`, `.agents/skills/`) |
 | Agent / delega | Agent personalizzati di Copilot CLI (`.github/agents/`, `--agent`) |
+| Regole | Istruzioni specifiche per percorso (`.github/instructions/ecc/`, glob `applyTo:`) |
 | Hook / automazione | Gli hook di ECC non sono portati (Copilot CLI ha un proprio sistema di hook per plugin) |
 
 #### Limitazioni
@@ -1830,8 +1834,8 @@ non sono portate su Copilot. Copilot CLI espone effettivamente un sistema di hoo
 di plugin, ma ECC al momento non distribuisce un plugin per Copilot, quindi nessuno degli hook di ECC
 viene eseguito lì.
 
-ECC inoltre non installa regole, comandi o hook per Copilot. Il target `copilot`
-installa solo skill e agent. Le skill che invocano script inclusi presuppongono gli stessi interpreti
+ECC inoltre non installa comandi o hook per Copilot. Il target `copilot`
+installa skill, agent e regole. Le skill che invocano script inclusi presuppongono gli stessi interpreti
 di Claude Code. Copilot Chat in VS Code non legge `.github/skills/` né `.github/agents/`; quei percorsi sono
 superfici di Copilot CLI. È il livello di istruzioni e prompt a portare la filosofia di codifica di ECC
 nelle sessioni di Copilot Chat.
