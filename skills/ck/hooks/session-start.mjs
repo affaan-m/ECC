@@ -15,14 +15,17 @@
  */
 
 import { readFileSync, writeFileSync, existsSync } from 'fs';
-import { resolve } from 'path';
+import { resolve, dirname } from 'path';
 import { homedir } from 'os';
 import { spawnSync } from 'child_process';
+import { fileURLToPath } from 'url';
 
 const CK_HOME         = resolve(homedir(), '.claude', 'ck');
 const PROJECTS_FILE   = resolve(CK_HOME, 'projects.json');
 const CURRENT_SESSION = resolve(CK_HOME, 'current-session.json');
-const SKILL_FILE      = resolve(homedir(), '.claude', 'skills', 'ck', 'SKILL.md');
+// Resolve SKILL.md next to this hook, so plugin installs work as well as ~/.claude/skills/ck.
+const SKILL_DIR       = resolve(dirname(fileURLToPath(import.meta.url)), '..');
+const SKILL_FILE      = resolve(SKILL_DIR, 'SKILL.md');
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -85,7 +88,13 @@ function main() {
   const sessionId = readSessionId();
 
   // Load skill (always inject — now only ~50 lines)
-  const skill = existsSync(SKILL_FILE) ? readFileSync(SKILL_FILE, 'utf8') : '';
+  // The host does not expand ${CLAUDE_SKILL_DIR} in hook output, so fill it in here.
+  // SKILL.md uses it inside double-quoted bash, so escape the characters bash
+  // still interprets there; the callback keeps `$&` etc. in the path literal.
+  const shellSkillDir = SKILL_DIR.replace(/[\\$`"]/g, '\\$&');
+  const skill = existsSync(SKILL_FILE)
+    ? readFileSync(SKILL_FILE, 'utf8').replaceAll('${CLAUDE_SKILL_DIR}', () => shellSkillDir)
+    : '';
 
   const projects = readJson(PROJECTS_FILE) || {};
   const entry = projects[cwd];

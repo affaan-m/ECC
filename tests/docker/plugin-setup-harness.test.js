@@ -274,10 +274,9 @@ test('uses one shell-free focused runner across Linux, macOS, and Windows', () =
   const packageJson = read(files.packageJson);
   const platformRunner = read(files.platformRunner);
 
-  assert.match(
-    ci,
-    /os:\s*\[ubuntu-latest,\s*windows-latest,\s*macos-latest\]/
-  );
+  for (const os of ['ubuntu-latest', 'windows-latest', 'macos-latest']) {
+    assert.match(ci, new RegExp(`os:\\s*${os},[^}]*scope:\\s*full`), `${os} must run the full suite`);
+  }
   assert.match(
     packageJson,
     /"test:plugin-setup-platform":\s*"node docker\/plugin-setup\/run-platform-tests\.js"/

@@ -32,8 +32,8 @@ EOF
 
 mkdir -p "$(dirname "$handoff_file")" "$(dirname "$status_file")"
 
-if [[ ! -r "$task_file" ]]; then
-  write_status "failed" "- Error: task file is missing or unreadable (\`$task_file\`)"
+if [[ ! -f "$task_file" || ! -r "$task_file" ]]; then
+  write_status "failed" "- Error: task file is missing, unreadable, or not a regular file (\`$task_file\`)"
   {
     echo "# Handoff"
     echo
@@ -41,12 +41,56 @@ if [[ ! -r "$task_file" ]]; then
     echo "- Branch: \`$(git rev-parse --abbrev-ref HEAD)\`"
     echo "- Worktree: \`$(pwd)\`"
     echo
-    echo "Task file is missing or unreadable: \`$task_file\`"
+    echo "Task file is missing, unreadable, or not a regular file: \`$task_file\`"
   } > "$handoff_file"
   exit 1
 fi
 
 write_status "running" "- Task file: \`$task_file\`"
+
+# Keep the configured sandbox; do not bypass approvals or sandboxing for task
+# files that may contain third-party content. Non-interactive runs default to
+# never prompting for approvals. This does not disable commands allowed by the
+# sandbox. Operators can request approvals with ECC_CODEX_APPROVAL_POLICY.
+# Approval policies (--ask-for-approval) are separate from Codex profiles (-p).
+APPROVAL_POLICY="${ECC_CODEX_APPROVAL_POLICY:-never}"
+case "$APPROVAL_POLICY" in
+  never|on-request) ;;
+  *)
+    echo "[ECC worker] Refusing to run: unsupported ECC_CODEX_APPROVAL_POLICY='$APPROVAL_POLICY' (expected never|on-request)" >&2
+    write_status "failed" "- Error: unsupported approval policy"
+    exit 1
+    ;;
+esac
+
+# Contain the task file to the current worktree so a malicious launcher cannot
+# point the worker at /etc/passwd or a sibling checkout.
+canonical_path() {
+  local candidate="$1"
+  if command -v cygpath >/dev/null 2>&1; then
+    # Native Node callers supply C:\ paths (sometimes 8.3 names), whereas
+    # MSYS pwd returns /c/ paths. Expand and normalize both before comparison.
+    candidate="$(cygpath -a -m -l "$candidate")" || return 1
+    candidate="$(cygpath -a -u "$candidate")" || return 1
+  fi
+  # Only existing paths are valid. Resolve symlinks and never fall back to
+  # an uncanonicalized string if the platform cannot resolve the path.
+  realpath "$candidate" 2>/dev/null || readlink -f "$candidate" 2>/dev/null
+}
+
+if ! task_real="$(canonical_path "$task_file")" || ! work_real="$(canonical_path "$(pwd -P)")"; then
+  echo "[ECC worker] Refusing to run: cannot resolve task file or worktree" >&2
+  write_status "failed" "- Error: cannot resolve task file or worktree"
+  exit 1
+fi
+case "$task_real" in
+  "$work_real"/*) ;;
+  *)
+    echo "[ECC worker] Refusing to run: task file outside worktree: $task_file" >&2
+    write_status "failed" "- Error: task file outside worktree"
+    exit 1
+    ;;
+esac
 
 prompt_file="$(mktemp)"
 output_file="$(mktemp)"
@@ -77,7 +121,9 @@ Task file: $task_file
 $(cat "$task_file")
 EOF
 
-if codex exec -p yolo -m gpt-5.4 --color never -C "$(pwd)" -o "$output_file" - < "$prompt_file"; then
+# Approval is a global option. Inherit the operator's configured model instead
+# of pinning a model that may be unavailable or retired.
+if codex --ask-for-approval "$APPROVAL_POLICY" exec --color never -C "$(pwd)" -o "$output_file" - < "$prompt_file"; then
   {
     echo "# Handoff"
     echo

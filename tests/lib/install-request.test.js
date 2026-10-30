@@ -63,6 +63,26 @@ function runTests() {
     assert.deepStrictEqual(parsed.languages, []);
   })) passed++; else failed++;
 
+  if (test('parses explicit hook consent flags', () => {
+    const enabled = parseInstallArgs([
+      'node',
+      'scripts/install-apply.js',
+      '--profile', 'core',
+      '--enable-hooks',
+    ]);
+    const declined = parseInstallArgs([
+      'node',
+      'scripts/install-apply.js',
+      '--profile', 'core',
+      '--no-hooks',
+    ]);
+
+    assert.strictEqual(enabled.enableHooks, true);
+    assert.strictEqual(enabled.noHooks, false);
+    assert.strictEqual(declined.enableHooks, false);
+    assert.strictEqual(declined.noHooks, true);
+  })) passed++; else failed++;
+
   if (test('requires a --locale value', () => {
     assert.throws(
       () => parseInstallArgs([
@@ -123,6 +143,60 @@ function runTests() {
     assert.deepStrictEqual(request.includeComponentIds, ['locale:ja']);
   })) passed++; else failed++;
 
+  if (test('accepts canonical locale components with legacy languages on Claude targets', () => {
+    for (const target of ['claude', 'claude-project']) {
+      const request = normalizeInstallRequest(parseInstallArgs([
+        'node', 'install-apply.js', '--target', target,
+        '--with', 'locale:zh-cn', '--with', 'locale:ja',
+        'typescript', '--no-hooks',
+      ]));
+      assert.strictEqual(request.mode, 'legacy-compat');
+      assert.deepStrictEqual(request.includeComponentIds, ['locale:zh-cn', 'locale:ja']);
+      assert.deepStrictEqual(request.legacyLanguages, ['typescript']);
+      assert.strictEqual(request.hookConsent, 'declined');
+    }
+  })) passed++; else failed++;
+
+  if (test('accepts config-backed locale components with legacy languages', () => {
+    const request = normalizeInstallRequest({
+      languages: ['typescript'],
+      config: { target: 'claude', includeComponentIds: ['locale:zh-cn'] },
+    });
+    assert.strictEqual(request.mode, 'legacy-compat');
+    assert.deepStrictEqual(request.includeComponentIds, ['locale:zh-cn']);
+  })) passed++; else failed++;
+
+  if (test('keeps non-locale manifest selections incompatible with legacy languages', () => {
+    const invalidSelections = [
+      { profileId: 'core' },
+      { moduleIds: ['rules-core'] },
+      { includeComponentIds: ['locale:zh-cn', 'skill:tdd-workflow'] },
+      { includeComponentIds: ['locale:fr'] },
+      { includeComponentIds: ['locale:zh-CN'] },
+      { excludeComponentIds: ['skill:tdd-workflow'] },
+      { config: { includeComponentIds: ['skill:tdd-workflow'] } },
+      { target: 'cursor' },
+      { target: 'antigravity' },
+    ];
+    for (const selection of invalidSelections) {
+      assert.throws(() => normalizeInstallRequest({
+        target: 'claude', languages: ['typescript'],
+        includeComponentIds: ['locale:zh-cn'], ...selection,
+      }), /cannot be combined/, JSON.stringify(selection));
+    }
+  })) passed++; else failed++;
+
+  if (test('locale components without legacy languages retain manifest mode', () => {
+    for (const profileId of [null, 'core']) {
+      const request = normalizeInstallRequest({
+        target: 'claude', profileId, includeComponentIds: ['locale:zh-cn'],
+      });
+      assert.strictEqual(request.mode, 'manifest');
+      assert.strictEqual(request.profileId, profileId);
+      assert.deepStrictEqual(request.includeComponentIds, ['locale:zh-cn']);
+    }
+  })) passed++; else failed++;
+
   if (test('rejects unsupported locale codes', () => {
     assert.throws(
       () => normalizeInstallRequest({
@@ -160,12 +234,14 @@ function runTests() {
       moduleIds: [],
       includeComponentIds: ['lang:typescript'],
       excludeComponentIds: ['capability:media'],
-      languages: []
+      languages: [],
+      enableHooks: true,
     });
 
     assert.strictEqual(request.mode, 'manifest');
     assert.strictEqual(request.target, 'cursor');
     assert.strictEqual(request.profileId, 'developer');
+    assert.strictEqual(request.hookConsent, 'enabled');
     assert.deepStrictEqual(request.includeComponentIds, ['lang:typescript']);
     assert.deepStrictEqual(request.excludeComponentIds, ['capability:media']);
     assert.deepStrictEqual(request.legacyLanguages, []);
@@ -224,6 +300,21 @@ function runTests() {
         languages: ['typescript']
       }),
       /cannot be combined/
+    );
+  })) passed++; else failed++;
+
+  if (test('rejects --no-hooks with an explicit hooks-runtime selection', () => {
+    assert.throws(
+      () => normalizeInstallRequest({
+        target: 'claude',
+        profileId: null,
+        moduleIds: ['hooks-runtime'],
+        includeComponentIds: [],
+        excludeComponentIds: [],
+        languages: [],
+        noHooks: true,
+      }),
+      /--no-hooks cannot be combined/
     );
   })) passed++; else failed++;
 

@@ -9,20 +9,9 @@ const { buildControlPaneAction } = require('./actions');
 const { buildControlPaneSnapshot, resolveControlPaneConfig } = require('./state');
 const { renderControlPaneHtml } = require('./ui');
 const { renderProximityVizHtml } = require('./proximity-viz');
-const { claimWorkItem, moveWorkItem } = require('./work-item-mutations');
-
-// Run a single write against the local work-item store, then close it. Kept
-// thin so the loopback-only server can mutate the JIT board without holding a
-// long-lived handle.
-async function withStateStore(stateDbPath, fn) {
-  const { createStateStore } = require('../state-store');
-  const store = await createStateStore({ dbPath: stateDbPath });
-  try {
-    return await fn(store);
-  } finally {
-    store.close();
-  }
-}
+const { renderControlPlaneViewHtml } = require('./control-plane-view-ui');
+const { createControlPlaneViewSource } = require('./control-plane-view');
+const { runWorkItemMutation } = require('./work-item-runner');
 
 // Host/Origin gating lives in scripts/lib/loopback-guard.js so every ECC
 // loopback server shares one hardened implementation; re-exported below to
@@ -185,6 +174,24 @@ function createControlPaneServer(options = {}) {
   const baseQuery = options.query || '';
   const allowedHostnames = buildAllowedHostnames(host);
 
+  // Live control-plane view: sessions + proximity scan + coordination
+  // inventory, joined as tasks/lanes/events with a 2D projection. The view
+  // source owns the rolling projection window so z-scores span ticks.
+  const viewSource = createControlPlaneViewSource({
+    projection: options.projection || {},
+    viewOptions: options.viewOptions || {},
+    buildSnapshot: () =>
+      buildControlPaneSnapshot({
+        repoRoot,
+        dbPath: resolvedConfig.dbPath,
+        stateDbPath: resolvedConfig.stateDbPath,
+        config: resolvedConfig,
+        allowActions,
+        includeProximity: true,
+        proximityOptions: options.proximityOptions
+      })
+  });
+
   const server = http.createServer(async (req, res) => {
     try {
       if (!isAllowedHostHeader(req.headers.host, allowedHostnames)) {
@@ -257,6 +264,29 @@ function createControlPaneServer(options = {}) {
         return;
       }
 
+      // Control-plane live view: 2D projection + advisory events + inventory.
+      if (req.method === 'GET' && requestUrl.pathname === '/control-plane') {
+        sendText(res, 200, renderControlPlaneViewHtml(), 'text/html; charset=utf-8');
+        return;
+      }
+
+      if (req.method === 'GET' && requestUrl.pathname === '/api/control-plane') {
+        sendJson(res, 200, await viewSource.build());
+        return;
+      }
+
+      if (req.method === 'GET' && requestUrl.pathname === '/api/control-plane/events') {
+        const view = await viewSource.build();
+        sendJson(res, 200, {
+          schemaVersion: view.schemaVersion,
+          generatedAt: view.generatedAt,
+          thresholds: view.thresholds,
+          events: view.events,
+          counts: { events: view.counts.events, advisories: view.counts.advisories, resolutions: view.counts.resolutions }
+        });
+        return;
+      }
+
       const actionMatch = requestUrl.pathname.match(/^\/api\/actions\/([^/]+)$/);
       if (req.method === 'POST' && actionMatch) {
         if (!allowActions) {
@@ -306,19 +336,25 @@ function createControlPaneServer(options = {}) {
         const id = decodeURIComponent((claimMatch || moveMatch)[1]);
         const body = await readRequestJson(req);
         try {
-          const result = await withStateStore(resolvedConfig.stateDbPath, store =>
+          const result = await runWorkItemMutation(resolvedConfig.stateDbPath,
+            claimMatch ? 'claim' : 'move',
             claimMatch
-              ? claimWorkItem(store, {
+              ? {
                   id,
                   owner: body.owner,
                   assigneeKind: body.as || body.assigneeKind,
                   sessionId: body.sessionId
-                })
-              : moveWorkItem(store, { id, lane: body.lane })
+                }
+              : { id, lane: body.lane }
           );
           sendJson(res, 200, { ok: true, ...result });
         } catch (mutationError) {
-          sendJson(res, 400, { ok: false, error: mutationError.message });
+          if (mutationError.code === 'STATE_STORE_BUSY') {
+            res.setHeader('Retry-After', '1');
+            sendJson(res, 503, { ok: false, code: mutationError.code, error: mutationError.message });
+          } else {
+            sendJson(res, 400, { ok: false, error: mutationError.message });
+          }
         }
         return;
       }

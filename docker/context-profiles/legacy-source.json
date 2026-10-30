@@ -1,0 +1,5 @@
+{
+  "ref": "origin/main",
+  "sha": "e482e579415fde18357cafce70f177ae19fd7f03",
+  "note": "Pre-ECC-029 ECC source for the ecc-legacy evaluation arm: the typical current user install (full skill library, no scoping layer). Pinned so runs are reproducible; advance deliberately."
+}

@@ -14,7 +14,8 @@
  */
 
 const fs = require('fs');
-const { isGitRepo, getGitModifiedFiles, readFile, log } = require('../lib/utils');
+const path = require('path');
+const { isGitRepo, getGitModifiedFiles, readFile, log, runCommand } = require('../lib/utils');
 
 // Files where console.log is expected and should not trigger warnings
 const EXCLUDED_PATTERNS = [
@@ -26,29 +27,43 @@ const EXCLUDED_PATTERNS = [
   /__mocks__\//,
 ];
 
-const MAX_STDIN = 1024 * 1024; // 1MB limit
+const MAX_DIRECT_STDIN_BYTES = 16 * 1024 * 1024;
+
+// This Stop hook inspects the session's working directory. Inherited GIT_*
+// variables from another Git process can silently redirect discovery and diff
+// commands to a different repository, so give every Git call the same clean env.
+function sessionGitOptions() {
+  const env = { ...process.env };
+  for (const name of Object.keys(env)) {
+    if (name.toUpperCase().startsWith('GIT_')) delete env[name];
+  }
+  return { env };
+}
+
 let data = '';
-let truncated = false;
+let stdinBytes = 0;
+let oversized = false;
 process.stdin.setEncoding('utf8');
 
 process.stdin.on('data', chunk => {
-  if (data.length < MAX_STDIN) {
-    const remaining = MAX_STDIN - data.length;
-    data += chunk.substring(0, remaining);
-    if (chunk.length > remaining) truncated = true;
-  } else {
-    truncated = true;
+  if (oversized) return;
+  stdinBytes += Buffer.byteLength(chunk, 'utf8');
+  if (stdinBytes > MAX_DIRECT_STDIN_BYTES) {
+    data = '';
+    oversized = true;
+    return;
   }
+  data += chunk;
 });
 
 /**
  * Echo stdin back (ECC pass-through convention), then exit once the pipe has
- * flushed. Truncated stdin is never echoed: a JSON document cut mid-stream is
- * reported by the harness as a Stop hook JSON validation failure (#2090).
+ * flushed. Direct/legacy entrypoints preserve complete supported payloads up
+ * to 16MiB; the production runner applies its stricter bounded-input policy.
  */
 function passThroughAndExit() {
-  if (truncated) {
-    log('[Hook] check-console-log: stdin exceeded 1MB; suppressing pass-through (fail-open)');
+  if (oversized) {
+    log('[Hook] check-console-log: direct stdin exceeded 16MiB; suppressing pass-through');
     process.exit(0);
   }
   if (!data) {
@@ -59,19 +74,23 @@ function passThroughAndExit() {
 
 process.stdin.on('end', () => {
   try {
-    if (!isGitRepo()) {
+    const gitOptions = sessionGitOptions();
+    if (!isGitRepo(gitOptions)) {
       passThroughAndExit();
       return;
     }
 
-    const files = getGitModifiedFiles(['\\.tsx?$', '\\.jsx?$'])
-      .filter(f => fs.existsSync(f))
+    // git reports paths from the repository root, and the session can run in a
+    // subdirectory of it, so read each file from the root.
+    const root = runCommand('git rev-parse --show-toplevel', gitOptions).output;
+    const files = getGitModifiedFiles(['\\.tsx?$', '\\.jsx?$'], gitOptions)
+      .filter(f => fs.existsSync(path.join(root, f)))
       .filter(f => !EXCLUDED_PATTERNS.some(pattern => pattern.test(f)));
 
     let hasConsole = false;
 
     for (const file of files) {
-      const content = readFile(file);
+      const content = readFile(path.join(root, file));
       if (content && content.includes('console.log')) {
         log(`[Hook] WARNING: console.log found in ${file}`);
         hasConsole = true;
@@ -85,6 +104,6 @@ process.stdin.on('end', () => {
     log(`[Hook] check-console-log error: ${err.message}`);
   }
 
-  // Always output the original data (unless truncated)
+  // Always output the complete original data.
   passThroughAndExit();
 });

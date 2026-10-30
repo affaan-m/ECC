@@ -21,4 +21,4 @@ PR을 만들 때:
 5. 새 브랜치인 경우 `-u` 플래그와 함께 push
 
 > git 작업 전 전체 개발 프로세스(계획, TDD, 코드 리뷰)는
-> [development-workflow.md](./development-workflow.md)를 참고하세요.
+> [development-workflow.md](https://github.com/affaan-m/ECC/blob/main/rules/common/development-workflow.md)를 참고하세요.

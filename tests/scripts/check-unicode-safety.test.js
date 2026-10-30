@@ -198,6 +198,24 @@ if (
   passed++;
 else failed++;
 
+if (
+  test('skips tool cache directories (.pytest_cache, .ruff_cache, .turbo, .cache)', () => {
+    const root = makeTempRoot('ecc-unicode-cache-');
+    for (const cacheDir of ['.pytest_cache', '.ruff_cache', '.turbo', '.cache']) {
+      fs.mkdirSync(path.join(root, cacheDir), { recursive: true });
+      fs.writeFileSync(
+        path.join(root, cacheDir, 'cache-data.json'),
+        `{"cached": "${rocketEmoji}"}\n`
+      );
+    }
+
+    const result = runCheck(root);
+    assert.strictEqual(result.status, 0, result.stdout + result.stderr);
+  })
+)
+  passed++;
+else failed++;
+
 console.log(`\nPassed: ${passed}`);
 console.log(`Failed: ${failed}`);
 process.exit(failed > 0 ? 1 : 0);

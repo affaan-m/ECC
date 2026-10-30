@@ -61,7 +61,13 @@ function makeFixture() {
 
 function run(mode, { home, proj }, stdin = '', extraEnv = {}) {
   return spawnSync(PYTHON, [SCRIPT, mode], {
-    env: { ...process.env, CONFIG_HEALTH_USER_HOME: home, CLAUDE_PROJECT_DIR: proj, ...extraEnv },
+    env: {
+      ...process.env,
+      CONFIG_HEALTH_USER_HOME: home,
+      CLAUDE_PROJECT_DIR: proj,
+      CLAUDE_CONFIG_DIR: '',
+      ...extraEnv,
+    },
     input: stdin,
     encoding: 'utf8',
   });
@@ -69,6 +75,56 @@ function run(mode, { home, proj }, stdin = '', extraEnv = {}) {
 
 function writeSettings(home, content) {
   fs.writeFileSync(path.join(home, '.claude', 'settings.json'), content, 'utf8');
+}
+
+// Install-lifecycle fixture: a disposable HOME and Claude data root, so the
+// real installer/repair/uninstaller run without touching the user's config.
+function makeInstallFixture() {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'config-health-install-'));
+  const home = path.join(root, 'home');
+  const config = path.join(root, 'claude');
+  const proj = path.join(root, 'proj');
+  fs.mkdirSync(home, { recursive: true });
+  fs.mkdirSync(config, { recursive: true });
+  fs.mkdirSync(proj, { recursive: true });
+  return { root, home, config, proj };
+}
+
+function installEnv(fx, extraEnv = {}) {
+  return {
+    HOME: fx.home,
+    USERPROFILE: fx.home,
+    CLAUDE_CONFIG_DIR: fx.config,
+    CONFIG_HEALTH_USER_HOME: fx.home,
+    CLAUDE_PROJECT_DIR: fx.proj,
+    ...extraEnv,
+  };
+}
+
+function runNode(scriptRel, args, env) {
+  return spawnSync(process.execPath, [path.join(__dirname, '..', '..', scriptRel), ...args], {
+    cwd: path.join(__dirname, '..', '..'),
+    env: { ...process.env, ...env },
+    encoding: 'utf8',
+    timeout: 120000,
+  });
+}
+
+function runInstalled(mode, fx, extraEnv = {}) {
+  return spawnSync(PYTHON, [path.join(fx.config, 'scripts', 'config-health.py'), mode], {
+    env: { ...process.env, ...installEnv(fx, extraEnv) },
+    encoding: 'utf8',
+    timeout: 120000,
+  });
+}
+
+function runInstalledWithInput(mode, fx, input, extraEnv = {}) {
+  return spawnSync(PYTHON, [path.join(fx.config, 'scripts', 'config-health.py'), mode], {
+    env: { ...process.env, ...installEnv(fx, extraEnv) },
+    input,
+    encoding: 'utf8',
+    timeout: 120000,
+  });
 }
 
 const HOOKS_JSON = (scriptPath) => JSON.stringify({
@@ -1031,6 +1087,170 @@ function runTests() {
     const r = run('--startup', fx);
     const hits = (r.stdout.match(/dup\.py/g) || []).length;
     assert.strictEqual(hits, 1, `expected one finding for a repeated token, got ${hits}`);
+  });
+
+  t('CLAUDE_CONFIG_DIR moves the audited user settings file', () => {
+    const fx = makeFixture();
+    const configDir = path.join(fx.root, 'config');
+    fs.mkdirSync(configDir, { recursive: true });
+    fs.writeFileSync(
+      path.join(configDir, 'settings.json'),
+      ONE_HOOK('python3 ~/.claude/scripts/from-config.py'),
+      'utf8'
+    );
+    writeSettings(fx.home, ONE_HOOK('python3 ~/.claude/scripts/from-home.py'));
+
+    const r = run('--startup', fx, '', { CLAUDE_CONFIG_DIR: configDir });
+    assert.strictEqual(r.status, 0, `expected exit 0, got ${r.status}`);
+    assert.ok(r.stdout.includes('from-config.py'),
+      `expected the settings in $CLAUDE_CONFIG_DIR to be audited, got: ${r.stdout.trim()}`);
+    assert.ok(!r.stdout.includes('from-home.py'),
+      'settings under ~/.claude must not be audited when CLAUDE_CONFIG_DIR is set');
+
+    const check = run('--check', fx, '', { CLAUDE_CONFIG_DIR: configDir });
+    assert.ok(check.stdout.includes('$CLAUDE_CONFIG_DIR resolved to'),
+      '--check must name the non-default data root it resolved');
+  });
+
+  t('CLAUDE_CONFIG_DIR moves the rule-health log', () => {
+    const fx = makeFixture();
+    const configDir = path.join(fx.root, 'config');
+    const dataDir = path.join(configDir, 'session-data');
+    fs.mkdirSync(dataDir, { recursive: true });
+    const records = Array.from({ length: 5 }, (_, index) => JSON.stringify({
+      ts: `2026-10-2${index}T00:00:00Z`,
+      tool_calls: 6,
+      configured_rule: 0,
+    }));
+    fs.writeFileSync(path.join(dataDir, 'rule-health.jsonl'), records.join('\n') + '\n', 'utf8');
+
+    const homeData = path.join(fx.home, '.claude', 'session-data');
+    fs.mkdirSync(homeData, { recursive: true });
+    fs.writeFileSync(
+      path.join(homeData, 'rule-health.jsonl'),
+      records.map(line => line.replace('configured_rule', 'home_rule')).join('\n') + '\n',
+      'utf8'
+    );
+
+    const r = run('--startup', fx, '', { CLAUDE_CONFIG_DIR: configDir });
+    assert.strictEqual(r.status, 0, `expected exit 0, got ${r.status}`);
+    assert.ok(r.stdout.includes('configured_rule'),
+      `expected staleness to be read from $CLAUDE_CONFIG_DIR, got: ${r.stdout.trim()}`);
+    assert.ok(!r.stdout.includes('home_rule'),
+      'the rule-health log under ~/.claude must not be read when CLAUDE_CONFIG_DIR is set');
+  });
+
+  t('installed module survives install, startup, repair, and uninstall in a disposable home', () => {
+    const fx = makeInstallFixture();
+    const env = installEnv(fx);
+    const installedScript = path.join(fx.config, 'scripts', 'config-health.py');
+    const installedSkill = path.join(fx.config, 'skills', 'config-health', 'SKILL.md');
+    const settingsPath = path.join(fx.config, 'settings.json');
+
+    const install = runNode('scripts/install-apply.js',
+      ['--target', 'claude', '--modules', 'config-health', '--json'], env);
+    assert.strictEqual(install.status, 0,
+      `install failed: ${(install.stderr || install.stdout).trim()}`);
+    assert.ok(fs.existsSync(installedScript),
+      `installed script missing at ${installedScript}`);
+    assert.ok(fs.existsSync(installedSkill),
+      `installed skill missing at ${installedSkill}`);
+
+    const installedSettings = fs.existsSync(settingsPath)
+      ? fs.readFileSync(settingsPath, 'utf8')
+      : '';
+    assert.ok(!installedSettings.includes('config-health.py --pretool'),
+      'the default install must not add a per-tool hook');
+
+    // The opt-in pre-tool path must work from the disposable project install,
+    // not only from the in-repo fixture.
+    fs.writeFileSync(settingsPath,
+      ONE_HOOK(`python3 "${installedScript}" --pretool`), 'utf8');
+    const pretoolProject = runInstalledWithInput('--pretool', fx, '{"tool_name":"Edit"}');
+    assert.strictEqual(pretoolProject.status, 0,
+      `installed project pre-tool must exit 0, got ${pretoolProject.status}`);
+    assert.strictEqual(pretoolProject.stdout, '',
+      `installed project pre-tool stdout must stay clean: ${pretoolProject.stdout.trim()}`);
+    assert.ok(!pretoolProject.stderr.includes('references missing script'),
+      `installed project pre-tool must not warn: ${pretoolProject.stderr.trim()}`);
+
+    // The same pre-tool path with a plugin-root command, from the same
+    // disposable install.
+    const pluginRoot = path.join(fx.root, 'plugin');
+    fs.mkdirSync(path.join(pluginRoot, 'scripts', 'hooks'), { recursive: true });
+    fs.writeFileSync(path.join(pluginRoot, 'scripts', 'hooks', 'guard.py'), '', 'utf8');
+    fs.writeFileSync(settingsPath, PLUGIN_HOOKS_JSON('scripts/hooks/guard.py'), 'utf8');
+    const pretoolPlugin = runInstalledWithInput('--pretool', fx, '{"tool_name":"Edit"}',
+      { CLAUDE_PLUGIN_ROOT: pluginRoot });
+    assert.strictEqual(pretoolPlugin.status, 0,
+      `installed plugin pre-tool must exit 0, got ${pretoolPlugin.status}`);
+    assert.strictEqual(pretoolPlugin.stdout, '',
+      `installed plugin pre-tool stdout must stay clean: ${pretoolPlugin.stdout.trim()}`);
+    assert.ok(!pretoolPlugin.stderr.includes('references missing script'),
+      `installed plugin pre-tool must not warn: ${pretoolPlugin.stderr.trim()}`);
+
+    fs.writeFileSync(settingsPath, PLUGIN_HOOKS_JSON('scripts/ghost.py'), 'utf8');
+    const startup = runInstalled('--startup', fx, { CLAUDE_PLUGIN_ROOT: pluginRoot });
+    assert.strictEqual(startup.status, 0,
+      `startup must stay non-blocking, got ${startup.status}`);
+    assert.ok(startup.stdout.includes('references missing script'),
+      `a real missing plugin script must warn, got: ${startup.stdout.trim()}`);
+    assert.ok(startup.stdout.includes('ghost.py'),
+      'the warning must name the missing plugin script');
+
+    fs.writeFileSync(settingsPath,
+      ONE_HOOK('python3 "${CONFIG_HEALTH_TEST_UNSET_ROOT}/scripts/x.py"'), 'utf8');
+    const check = runInstalled('--check', fx);
+    assert.strictEqual(check.status, 0, `--check exits 0, got ${check.status}`);
+    assert.ok(check.stdout.includes('hook path(s) not audited'),
+      `an unresolved provider root must be reported as unjudged, got: ${check.stdout.trim()}`);
+    assert.ok(!check.stdout.includes('references missing script'),
+      'an unresolved provider root must not be reported as a missing script');
+
+    fs.unlinkSync(installedScript);
+    const repair = runNode('scripts/repair.js', ['--target', 'claude', '--json'], env);
+    assert.strictEqual(repair.status, 0,
+      `repair failed: ${(repair.stderr || repair.stdout).trim()}`);
+    assert.ok(fs.existsSync(installedScript), 'repair must restore the installed script');
+
+    const uninstall = runNode('scripts/uninstall.js', ['--target', 'claude', '--json'], env);
+    assert.strictEqual(uninstall.status, 0,
+      `uninstall failed: ${(uninstall.stderr || uninstall.stdout).trim()}`);
+    assert.ok(!fs.existsSync(installedScript), 'uninstall must remove the installed script');
+    assert.ok(!fs.existsSync(installedSkill), 'uninstall must remove the installed skill');
+  });
+
+  t('project install runs the pre-tool workflow from a disposable project', () => {
+    const fx = makeInstallFixture();
+    const env = installEnv(fx);
+    const installScript = path.join(__dirname, '..', '..', 'scripts', 'install-apply.js');
+
+    const install = spawnSync(process.execPath,
+      [installScript, '--target', 'claude-project', '--modules', 'config-health', '--json'],
+      { cwd: fx.proj, env: { ...process.env, ...env }, encoding: 'utf8', timeout: 120000 });
+    assert.strictEqual(install.status, 0,
+      `project install failed: ${(install.stderr || install.stdout).trim()}`);
+
+    const installedScript = path.join(fx.proj, '.claude', 'scripts', 'config-health.py');
+    const settingsPath = path.join(fx.proj, '.claude', 'settings.json');
+    assert.ok(fs.existsSync(installedScript),
+      `project install must place the script at ${installedScript}`);
+
+    fs.writeFileSync(settingsPath,
+      ONE_HOOK('python3 .claude/scripts/config-health.py --pretool'), 'utf8');
+    const pretool = spawnSync(PYTHON, [installedScript, '--pretool'], {
+      cwd: fx.proj,
+      env: { ...process.env, ...env, CLAUDE_PROJECT_DIR: fx.proj },
+      input: '{"tool_name":"Edit"}',
+      encoding: 'utf8',
+      timeout: 120000,
+    });
+    assert.strictEqual(pretool.status, 0,
+      `project pre-tool must exit 0, got ${pretool.status}`);
+    assert.strictEqual(pretool.stdout, '',
+      `project pre-tool stdout must stay clean: ${pretool.stdout.trim()}`);
+    assert.ok(!pretool.stderr.includes('references missing script'),
+      `project pre-tool must not warn: ${pretool.stderr.trim()}`);
   });
 
   console.log(`\n  ${passed}/${total} passed`);

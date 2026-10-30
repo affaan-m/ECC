@@ -9,8 +9,21 @@ const path = require('path');
 const fs = require('fs');
 const os = require('os');
 const { spawnSync } = require('child_process');
+const { getCostSnapshotPath } = require('../../scripts/lib/session-cost-snapshot');
 
 const script = path.join(__dirname, '..', '..', 'scripts', 'hooks', 'cost-tracker.js');
+
+// Harness caches belong to a real private root shared by parent and hook child.
+const cacheRoot = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-cost-cache-')));
+// cost-tracker.js appends to ~/.claude/metrics/costs.jsonl and writes cost
+// snapshots there, so runs get an empty home instead of the developer's real
+// one unless a test passes withTempHome().
+const ISOLATED_HOME = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-cost-home-'));
+const ISOLATED_HOME_ENV = { HOME: ISOLATED_HOME, USERPROFILE: ISOLATED_HOME };
+process.on('exit', () => fs.rmSync(ISOLATED_HOME, { recursive: true, force: true }));
+const savedTempEnvironment = Object.fromEntries(['TMPDIR', 'TMP', 'TEMP']
+  .map(name => [name, process.env[name]]));
+for (const name of Object.keys(savedTempEnvironment)) process.env[name] = cacheRoot;
 
 function test(name, fn) {
   try {
@@ -49,9 +62,52 @@ function runScript(input, envOverrides = {}) {
     encoding: 'utf8',
     input: inputStr,
     timeout: 10000,
-    env: { ...process.env, ...envOverrides },
+    env: { ...process.env, ...ISOLATED_HOME_ENV, ...envOverrides, TMPDIR: cacheRoot, TMP: cacheRoot, TEMP: cacheRoot },
   });
   return { code: result.status || 0, stdout: result.stdout || '', stderr: result.stderr || '' };
+}
+
+function removeHarnessCostCache(sessionId) {
+  const cachePath = path.join(cacheRoot, `harness-cost-${sessionId}.json`);
+  try {
+    fs.unlinkSync(cachePath);
+  } catch (err) {
+    if (err.code !== 'ENOENT') throw err;
+  }
+}
+
+function assertSonnet5CacheCost(cacheUsage, expectedCost, description) {
+  const tmpHome = makeTempDir();
+  const sessionId = `sonnet5-${description}-${process.pid}-${Date.now()}`;
+  const transcriptPath = path.join(tmpHome, 'session.jsonl');
+  writeTranscript(transcriptPath, [{
+    type: 'assistant',
+    message: {
+      id: `msg_sonnet5_${description}`,
+      model: 'claude-sonnet-5',
+      usage: {
+        input_tokens: 1_000_000,
+        output_tokens: 1_000_000,
+        ...cacheUsage,
+      },
+    },
+  }]);
+
+  try {
+    removeHarnessCostCache(sessionId);
+    const result = runScript(
+      { session_id: sessionId, transcript_path: transcriptPath },
+      withTempHome(tmpHome)
+    );
+    assert.strictEqual(result.code, 0, `Expected exit code 0, got ${result.code}`);
+
+    const metricsFile = path.join(tmpHome, '.claude', 'metrics', 'costs.jsonl');
+    const row = JSON.parse(fs.readFileSync(metricsFile, 'utf8').trim());
+    assert.strictEqual(row.estimated_cost_usd, expectedCost, description);
+  } finally {
+    removeHarnessCostCache(sessionId);
+    fs.rmSync(tmpHome, { recursive: true, force: true });
+  }
 }
 
 function runTests() {
@@ -70,6 +126,39 @@ function runTests() {
     const result = runScript(input);
     assert.strictEqual(result.code, 0, `Expected exit code 0, got ${result.code}`);
     assert.strictEqual(result.stdout, inputStr, 'Expected stdout to match original input');
+  }) ? passed++ : failed++);
+
+  (test('keeps JSONL authoritative when the snapshot path cannot be published', () => {
+    const tmpHome = makeTempDir();
+    const metricsDir = path.join(tmpHome, '.claude', 'metrics');
+    const blockedSnapshotPath = getCostSnapshotPath(
+      metricsDir,
+      'snapshot-failure'
+    );
+    fs.mkdirSync(blockedSnapshotPath, { recursive: true });
+
+    try {
+      const result = runScript(
+        { session_id: 'snapshot-failure' },
+        withTempHome(tmpHome)
+      );
+      assert.strictEqual(result.code, 0, result.stderr);
+      const rows = fs.readFileSync(path.join(metricsDir, 'costs.jsonl'), 'utf8')
+        .trim()
+        .split('\n')
+        .map(line => JSON.parse(line));
+      assert.strictEqual(rows.at(-1).session_id, 'snapshot-failure');
+      assert.match(result.stderr, /cost-snapshot.*publication failed/);
+
+      const second = runScript(
+        { session_id: 'snapshot-failure' },
+        withTempHome(tmpHome)
+      );
+      assert.strictEqual(second.code, 0, second.stderr);
+      assert.strictEqual(second.stderr, '', 'identical persistent failure should warn only once');
+    } finally {
+      fs.rmSync(tmpHome, { recursive: true, force: true });
+    }
   }) ? passed++ : failed++);
 
   // 2. Creates metrics file when given transcript usage data
@@ -111,6 +200,7 @@ function runTests() {
     assert.strictEqual(result.code, 0, `Expected exit code 0, got ${result.code}`);
 
     const metricsFile = path.join(tmpHome, '.claude', 'metrics', 'costs.jsonl');
+    const metricsDir = path.dirname(metricsFile);
     assert.ok(fs.existsSync(metricsFile), `Expected metrics file to exist at ${metricsFile}`);
 
     const content = fs.readFileSync(metricsFile, 'utf8').trim();
@@ -125,6 +215,12 @@ function runTests() {
     assert.ok(row.timestamp, 'Expected timestamp to be present');
     assert.ok(typeof row.estimated_cost_usd === 'number', 'Expected estimated_cost_usd to be a number');
     assert.ok(row.estimated_cost_usd > 0, 'Expected estimated_cost_usd to be positive');
+
+    const snapshotFile = getCostSnapshotPath(metricsDir, 'session-from-hook');
+    assert.ok(fs.existsSync(snapshotFile), 'Expected an O(1) per-session cost snapshot');
+    const snapshot = JSON.parse(fs.readFileSync(snapshotFile, 'utf8'));
+    assert.strictEqual(snapshot.schema_version, 'ecc.cost-snapshot.v1');
+    assert.deepStrictEqual(snapshot.row, row, 'Snapshot must mirror the appended cumulative row');
 
     fs.rmSync(tmpHome, { recursive: true, force: true });
   }) ? passed++ : failed++);
@@ -162,6 +258,57 @@ function runTests() {
     assert.strictEqual(row.cache_write_tokens, 200, 'Expected cache write counted once per message.id');
     assert.strictEqual(row.cache_read_tokens, 300, 'Expected cache read counted once per message.id');
 
+    fs.rmSync(tmpHome, { recursive: true, force: true });
+  }) ? passed++ : failed++);
+
+  (test('normalizes malformed negative and non-finite transcript usage', () => {
+    const tmpHome = makeTempDir();
+    const transcriptPath = path.join(tmpHome, 'session.jsonl');
+    writeTranscript(transcriptPath, [{
+      type: 'assistant',
+      message: {
+        id: 'msg_invalid_usage',
+        model: 'claude-sonnet-4-20250514',
+        usage: {
+          input_tokens: -100,
+          output_tokens: 'Infinity',
+          cache_creation_input_tokens: -20,
+          cache_read_input_tokens: 'not-a-number',
+        },
+      },
+    }, {
+      type: 'assistant',
+      message: {
+        id: 'msg_overflow_1',
+        model: 'claude-sonnet-4-20250514',
+        usage: { input_tokens: 1e308, output_tokens: 0 },
+      },
+    }, {
+      type: 'assistant',
+      message: {
+        id: 'msg_overflow_2',
+        model: 'claude-sonnet-4-20250514',
+        usage: { input_tokens: 1e308, output_tokens: 0 },
+      },
+    }]);
+
+    const result = runScript(
+      { session_id: 'invalid-usage', transcript_path: transcriptPath },
+      withTempHome(tmpHome)
+    );
+    assert.strictEqual(result.code, 0, result.stderr);
+    const metricsFile = path.join(tmpHome, '.claude', 'metrics', 'costs.jsonl');
+    const recorded = JSON.parse(fs.readFileSync(metricsFile, 'utf8').trim());
+    assert.deepStrictEqual(
+      {
+        input: recorded.input_tokens,
+        output: recorded.output_tokens,
+        cacheWrite: recorded.cache_write_tokens,
+        cacheRead: recorded.cache_read_tokens,
+        cost: recorded.estimated_cost_usd,
+      },
+      { input: 0, output: 0, cacheWrite: 0, cacheRead: 0, cost: 0 }
+    );
     fs.rmSync(tmpHome, { recursive: true, force: true });
   }) ? passed++ : failed++);
 
@@ -270,7 +417,7 @@ function runTests() {
         },
       },
     ]);
-    const harnessCachePath = path.join(os.tmpdir(), `harness-cost-${sessionId}.json`);
+    const harnessCachePath = path.join(cacheRoot, `harness-cost-${sessionId}.json`);
     const nowEpoch = Math.floor(Date.now() / 1000);
     fs.writeFileSync(
       harnessCachePath,
@@ -297,7 +444,311 @@ function runTests() {
     }
   }) ? passed++ : failed++);
 
-  // 9. Ignores stale harness-cost cache and falls back to transcript estimate
+  // 9. Prices Sonnet 5 at the documented $2/$10 rate.
+  (test('prices Sonnet 5 at $12 per 1M input + 1M output tokens', () => {
+    const tmpHome = makeTempDir();
+    const sessionId = `sonnet5-${process.pid}-${Date.now()}`;
+    const transcriptPath = path.join(tmpHome, 'session.jsonl');
+    writeTranscript(transcriptPath, [
+      {
+        type: 'assistant',
+        message: {
+          id: 'msg_sonnet5',
+          model: 'claude-sonnet-5',
+          usage: { input_tokens: 1_000_000, output_tokens: 1_000_000 },
+        },
+      },
+    ]);
+
+    fs.writeFileSync(
+      path.join(cacheRoot, `harness-cost-${sessionId}.json`),
+      JSON.stringify({ ts: Math.floor(Date.now() / 1000), cost_usd: 999 }),
+      'utf8'
+    );
+
+    try {
+      removeHarnessCostCache(sessionId);
+      const result = runScript(
+        { session_id: sessionId, transcript_path: transcriptPath },
+        withTempHome(tmpHome)
+      );
+      assert.strictEqual(result.code, 0, `Expected exit code 0, got ${result.code}`);
+
+      const metricsFile = path.join(tmpHome, '.claude', 'metrics', 'costs.jsonl');
+      const row = JSON.parse(fs.readFileSync(metricsFile, 'utf8').trim());
+      assert.strictEqual(row.estimated_cost_usd, 12, 'Expected Sonnet 5 1M/1M to cost $12.00');
+    } finally {
+      removeHarnessCostCache(sessionId);
+      fs.rmSync(tmpHome, { recursive: true, force: true });
+    }
+  }) ? passed++ : failed++);
+
+  // 9b. Sonnet 5 cache write/read tokens use the correct rates.
+  (test('prices Sonnet 5 cache tokens at the documented rates', () => {
+    const tmpHome = makeTempDir();
+    const sessionId = `sonnet5-cache-${process.pid}-${Date.now()}`;
+    const transcriptPath = path.join(tmpHome, 'session.jsonl');
+    writeTranscript(transcriptPath, [
+      {
+        type: 'assistant',
+        message: {
+          id: 'msg_sonnet5_cache',
+          model: 'claude-sonnet-5',
+          usage: {
+            input_tokens: 1_000_000,
+            output_tokens: 1_000_000,
+            cache_creation_input_tokens: 1_000_000,
+            cache_read_input_tokens: 1_000_000,
+          },
+        },
+      },
+    ]);
+
+    try {
+      removeHarnessCostCache(sessionId);
+      const result = runScript(
+        { session_id: sessionId, transcript_path: transcriptPath },
+        withTempHome(tmpHome)
+      );
+      assert.strictEqual(result.code, 0, `Expected exit code 0, got ${result.code}`);
+
+      const metricsFile = path.join(tmpHome, '.claude', 'metrics', 'costs.jsonl');
+      const row = JSON.parse(fs.readFileSync(metricsFile, 'utf8').trim());
+      assert.strictEqual(row.estimated_cost_usd, 14.7, 'Expected Sonnet 5 1M input + 1M output + 1M cache write + 1M cache read to cost $14.70');
+    } finally {
+      removeHarnessCostCache(sessionId);
+      fs.rmSync(tmpHome, { recursive: true, force: true });
+    }
+  }) ? passed++ : failed++);
+
+  // 9c. Cache write/read rates are independently covered.
+  (test('prices Sonnet 5 cache writes at $2.50 per 1M tokens', () => {
+    assertSonnet5CacheCost(
+      { cache_creation_input_tokens: 1_000_000 },
+      14.5,
+      'cache-write'
+    );
+  }) ? passed++ : failed++);
+
+  (test('prices Sonnet 5 cache reads at $0.20 per 1M tokens', () => {
+    assertSonnet5CacheCost(
+      { cache_read_input_tokens: 1_000_000 },
+      12.2,
+      'cache-read'
+    );
+  }) ? passed++ : failed++);
+
+  // 10. Sonnet 4.6 keeps the existing $3/$15 rate and is not mistaken for Sonnet 5.
+  (test('prices Sonnet 4.6 at $18 per 1M input + 1M output tokens', () => {
+    const tmpHome = makeTempDir();
+    const sessionId = `sonnet46-${process.pid}-${Date.now()}`;
+    const transcriptPath = path.join(tmpHome, 'session.jsonl');
+    writeTranscript(transcriptPath, [
+      {
+        type: 'assistant',
+        message: {
+          id: 'msg_sonnet46',
+          model: 'claude-sonnet-4-6',
+          usage: { input_tokens: 1_000_000, output_tokens: 1_000_000 },
+        },
+      },
+    ]);
+
+    try {
+      removeHarnessCostCache(sessionId);
+      const result = runScript(
+        { session_id: sessionId, transcript_path: transcriptPath },
+        withTempHome(tmpHome)
+      );
+      assert.strictEqual(result.code, 0, `Expected exit code 0, got ${result.code}`);
+
+      const metricsFile = path.join(tmpHome, '.claude', 'metrics', 'costs.jsonl');
+      const row = JSON.parse(fs.readFileSync(metricsFile, 'utf8').trim());
+      assert.strictEqual(row.estimated_cost_usd, 18, 'Expected Sonnet 4.6 1M/1M to remain $18.00');
+    } finally {
+      removeHarnessCostCache(sessionId);
+      fs.rmSync(tmpHome, { recursive: true, force: true });
+    }
+  }) ? passed++ : failed++);
+
+  // 10b. Dated Sonnet 5 IDs are matched correctly.
+  (test('prices dated Sonnet 5 IDs at $12', () => {
+    const tmpHome = makeTempDir();
+    const sessionId = `sonnet5-dated-${process.pid}-${Date.now()}`;
+    const transcriptPath = path.join(tmpHome, 'session.jsonl');
+    writeTranscript(transcriptPath, [
+      {
+        type: 'assistant',
+        message: {
+          id: 'msg_sonnet5_dated',
+          model: 'claude-sonnet-5-20261001',
+          usage: { input_tokens: 1_000_000, output_tokens: 1_000_000 },
+        },
+      },
+    ]);
+
+    try {
+      removeHarnessCostCache(sessionId);
+      const result = runScript(
+        { session_id: sessionId, transcript_path: transcriptPath },
+        withTempHome(tmpHome)
+      );
+      assert.strictEqual(result.code, 0, `Expected exit code 0, got ${result.code}`);
+
+      const metricsFile = path.join(tmpHome, '.claude', 'metrics', 'costs.jsonl');
+      const row = JSON.parse(fs.readFileSync(metricsFile, 'utf8').trim());
+      assert.strictEqual(row.estimated_cost_usd, 12, 'Expected dated Sonnet 5 1M/1M to cost $12.00');
+    } finally {
+      removeHarnessCostCache(sessionId);
+      fs.rmSync(tmpHome, { recursive: true, force: true });
+    }
+  }) ? passed++ : failed++);
+
+  // 10c. Near-miss Sonnet 5 IDs fall back to standard Sonnet rates.
+  (test('rejects claude-sonnet-50 as a Sonnet 5 near-miss', () => {
+    const tmpHome = makeTempDir();
+    const sessionId = `sonnet50-near-miss-${process.pid}-${Date.now()}`;
+    const transcriptPath = path.join(tmpHome, 'session.jsonl');
+    writeTranscript(transcriptPath, [
+      {
+        type: 'assistant',
+        message: {
+          id: 'msg_sonnet50',
+          model: 'claude-sonnet-50',
+          usage: { input_tokens: 1_000_000, output_tokens: 1_000_000 },
+        },
+      },
+    ]);
+
+    try {
+      removeHarnessCostCache(sessionId);
+      const result = runScript(
+        { session_id: sessionId, transcript_path: transcriptPath },
+        withTempHome(tmpHome)
+      );
+      assert.strictEqual(result.code, 0, `Expected exit code 0, got ${result.code}`);
+
+      const metricsFile = path.join(tmpHome, '.claude', 'metrics', 'costs.jsonl');
+      const row = JSON.parse(fs.readFileSync(metricsFile, 'utf8').trim());
+      assert.strictEqual(row.estimated_cost_usd, 18, 'Expected claude-sonnet-50 near-miss to fall back to $18.00 Sonnet rate');
+    } finally {
+      removeHarnessCostCache(sessionId);
+      fs.rmSync(tmpHome, { recursive: true, force: true });
+    }
+  }) ? passed++ : failed++);
+
+  // 10d. Opus 4.0's dated ID has no explicit minor segment. It must retain
+  // the legacy $15/$75 rate while Opus 4.5 uses the current $5/$25 rate.
+  (test('distinguishes the dated Opus 4.0 snapshot from current Opus 4.x', () => {
+    const priceModel = model => {
+      const tmpHome = makeTempDir();
+      const sessionId = `opus-rate-${process.pid}-${Date.now()}-${model}`;
+      const transcriptPath = path.join(tmpHome, 'session.jsonl');
+      writeTranscript(transcriptPath, [
+        {
+          type: 'assistant',
+          message: {
+            id: `msg_${model}`,
+            model,
+            usage: { input_tokens: 1_000_000, output_tokens: 1_000_000 },
+          },
+        },
+      ]);
+
+      try {
+        removeHarnessCostCache(sessionId);
+        const result = runScript(
+          { session_id: sessionId, transcript_path: transcriptPath },
+          withTempHome(tmpHome)
+        );
+        assert.strictEqual(result.code, 0, `Expected exit code 0, got ${result.code}`);
+        const metricsFile = path.join(tmpHome, '.claude', 'metrics', 'costs.jsonl');
+        return JSON.parse(fs.readFileSync(metricsFile, 'utf8').trim()).estimated_cost_usd;
+      } finally {
+        removeHarnessCostCache(sessionId);
+        fs.rmSync(tmpHome, { recursive: true, force: true });
+      }
+    };
+
+    assert.strictEqual(
+      priceModel('claude-opus-4-20250514'),
+      90,
+      'Expected dated Opus 4.0 to retain the legacy $15/$75 rate'
+    );
+    assert.strictEqual(
+      priceModel('claude-opus-4-5-20251101'),
+      30,
+      'Expected Opus 4.5 to use the current $5/$25 rate'
+    );
+  }) ? passed++ : failed++);
+
+  (test('prices Claude 5.5 generations and Haiku long prompts per request', () => {
+    const priceMessages = messages => {
+      const tmpHome = makeTempDir();
+      const sessionId = `generation-rate-${process.pid}-${Date.now()}`;
+      const transcriptPath = path.join(tmpHome, 'session.jsonl');
+      writeTranscript(transcriptPath, messages.map(message => ({ type: 'assistant', message })));
+      try {
+        removeHarnessCostCache(sessionId);
+        const result = runScript(
+          { session_id: sessionId, transcript_path: transcriptPath }, withTempHome(tmpHome)
+        );
+        assert.strictEqual(result.code, 0, result.stderr);
+        return JSON.parse(fs.readFileSync(path.join(tmpHome, '.claude', 'metrics', 'costs.jsonl'), 'utf8').trim());
+      } finally {
+        removeHarnessCostCache(sessionId);
+        fs.rmSync(tmpHome, { recursive: true, force: true });
+      }
+    };
+    const message = (model, input, output, id) => ({
+      model, id, usage: { input_tokens: input, output_tokens: output }
+    });
+    assert.strictEqual(priceMessages([message('claude-opus-5-5', 1000, 1000)]).estimated_cost_usd, 0.024);
+    assert.strictEqual(priceMessages([message('claude-haiku-5-5', 1000, 1000)]).estimated_cost_usd, 0.0006);
+    assert.strictEqual(priceMessages([message('claude-haiku-5-5', 100000, 1000)]).estimated_cost_usd, 0.0105);
+    assert.strictEqual(priceMessages([message('claude-haiku-5-5', 100001, 1000)]).estimated_cost_usd, 0.052501);
+    assert.strictEqual(priceMessages([message('claude-opus-5-50', 1000, 1000)]).estimated_cost_usd, 0.03);
+    assert.strictEqual(priceMessages([message('claude-haiku-5-50', 1000, 1000)]).estimated_cost_usd, 0.006);
+    assert.strictEqual(priceMessages([{
+      model: 'claude-opus-5-5',
+      usage: { cache_creation_input_tokens: 1000, cache_read_input_tokens: 1000 }
+    }]).estimated_cost_usd, 0.0052);
+    assert.strictEqual(priceMessages([{
+      model: 'claude-sonnet-5-5', usage: { cache_read_input_tokens: 1000 }
+    }]).estimated_cost_usd, 0.0001);
+    assert.strictEqual(priceMessages([{
+      model: 'claude-haiku-5-5',
+      usage: { cache_creation_input_tokens: 1000, cache_read_input_tokens: 1000 }
+    }]).estimated_cost_usd, 0.000135);
+    assert.strictEqual(priceMessages([{
+      model: 'claude-haiku-5-5',
+      usage: { input_tokens: 50000, output_tokens: 1000, cache_read_input_tokens: 50001 }
+    }]).estimated_cost_usd, 0.03, 'cached prompt tokens count toward the long-prompt threshold');
+    assert.strictEqual(priceMessages([{
+      model: 'claude-haiku-5-5',
+      usage: { input_tokens: 50000, cache_creation_input_tokens: 50001 }
+    }]).estimated_cost_usd, 0.056251, 'cache writes count toward and use the long-prompt tier');
+    for (const laterModel of [undefined, 'unknown']) {
+      const original = message('claude-haiku-5-5', 500, 500, 'duplicate');
+      const later = message(laterModel, 1000, 1000, 'duplicate');
+      const mixed = priceMessages([
+        original, later, message('claude-opus-5-5', 1000, 1000, 'other')
+      ]);
+      assert.strictEqual(mixed.input_tokens, 2000, 'the latest duplicate usage replaces earlier usage');
+      assert.strictEqual(mixed.estimated_cost_usd, 0.0246,
+        'a duplicate without a known model retains its earlier request model');
+    }
+    const first = message('claude-haiku-5-5', 60000, 1000, 'first');
+    const second = message('claude-haiku-5-5', 60000, 1000, 'second');
+    const row = priceMessages([first, first, second]);
+    assert.strictEqual(row.input_tokens, 120000, 'deduplicate usage before selecting each request tier');
+    assert.strictEqual(row.estimated_cost_usd, 0.013, 'session totals must not select the long-prompt tier');
+    assert.strictEqual(priceMessages([
+      message('claude-haiku-5-5', 1000, 1000), message('claude-opus-5-5', 1000, 1000)
+    ]).estimated_cost_usd, 0.0246, 'each request retains its own model rates');
+  }) ? passed++ : failed++);
+
+  // 11. Ignores stale harness-cost cache and falls back to transcript estimate
   (test('ignores stale harness-cost cache (>300s) and uses transcript estimate', () => {
     const tmpHome = makeTempDir();
     const sessionId = 'harness-stale-' + Date.now();
@@ -311,7 +762,7 @@ function runTests() {
         },
       },
     ]);
-    const harnessCachePath = path.join(os.tmpdir(), `harness-cost-${sessionId}.json`);
+    const harnessCachePath = path.join(cacheRoot, `harness-cost-${sessionId}.json`);
     const staleEpoch = Math.floor(Date.now() / 1000) - 3600;
     fs.writeFileSync(
       harnessCachePath,
@@ -339,7 +790,14 @@ function runTests() {
   }) ? passed++ : failed++);
 
   console.log(`\nResults: Passed: ${passed}, Failed: ${failed}`);
-  process.exit(failed > 0 ? 1 : 0);
+  process.exitCode = failed > 0 ? 1 : 0;
 }
 
-runTests();
+try {
+  runTests();
+} finally {
+  for (const [name, value] of Object.entries(savedTempEnvironment)) {
+    if (value === undefined) delete process.env[name]; else process.env[name] = value;
+  }
+  fs.rmSync(cacheRoot, { recursive: true, force: true });
+}

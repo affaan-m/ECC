@@ -7,8 +7,11 @@ const { normalizeAgentTools } = require('./lib/agent-tools');
 
 const TOOL_NAME_MAP = new Map([
   ['Read', 'read_file'],
+  ['ReadFile', 'read_file'],
+  ['NotebookRead', 'read_file'],
   ['Write', 'write_file'],
   ['Edit', 'replace'],
+  ['MultiEdit', 'replace'],
   ['Bash', 'run_shell_command'],
   ['Grep', 'grep_search'],
   ['Glob', 'glob'],
@@ -33,7 +36,17 @@ function parseArgs(argv) {
     return { help: true };
   }
 
-  const positional = argv.filter(arg => !arg.startsWith('-'));
+  const positional = [];
+  for (const arg of argv) {
+    if (arg.startsWith('-')) {
+      // Reject rather than ignore. This script rewrites files in place, so
+      // silently discarding an unrecognized flag would let `--dry-run` — or any
+      // mistyped option — modify every installed agent and still exit 0.
+      throw new Error(`Unknown option: ${arg}`);
+    }
+    positional.push(arg);
+  }
+
   if (positional.length > 1) {
     throw new Error('Expected at most one agents directory argument');
   }
@@ -54,13 +67,59 @@ function ensureDirectory(dirPath) {
   }
 }
 
+function stripUnquotedYamlComment(value) {
+  let quote = null;
+  let escaped = false;
+
+  for (let index = 0; index < value.length; index += 1) {
+    const character = value[index];
+
+    if (quote === '"') {
+      if (escaped) {
+        escaped = false;
+      } else if (character === '\\') {
+        escaped = true;
+      } else if (character === '"') {
+        quote = null;
+      }
+      continue;
+    }
+
+    if (quote === "'") {
+      if (character === "'") {
+        if (value[index + 1] === "'") {
+          index += 1;
+        } else {
+          quote = null;
+        }
+      }
+      continue;
+    }
+
+    if (character === '"' || character === "'") {
+      quote = character;
+      continue;
+    }
+
+    if (character === '#' && (index === 0 || /\s/.test(value[index - 1]))) {
+      return value.slice(0, index).trim();
+    }
+  }
+
+  return value.trim();
+}
+
 function parseToolList(line) {
   const match = line.match(/^\s*tools\s*:\s*(.*)$/);
   if (!match) {
     return null;
   }
 
-  return normalizeAgentTools(match[1]);
+  const rawValue = stripUnquotedYamlComment(match[1]);
+  return {
+    isEmptyScalar: rawValue === '',
+    tools: normalizeAgentTools(rawValue),
+  };
 }
 
 function adaptToolName(toolName) {
@@ -85,22 +144,51 @@ function formatToolLine(tools) {
 }
 
 function adaptFrontmatter(text) {
-  const match = text.match(/^---\n([\s\S]*?)\n---(\n|$)/);
+  // Match both LF and CRLF frontmatter delimiters while keeping the body slice
+  // completely untouched so mixed line endings in the body are preserved verbatim.
+  const match = text.match(/^---(\r?\n)([\s\S]*?)\r?\n---(\r?\n|$)/);
   if (!match) {
     return { text, changed: false };
   }
 
+  const headerEol = match[1];
+  const trailingFenceEol = match[3];
+  const originalBody = text.slice(match[0].length);
+
   let changed = false;
   const updatedLines = [];
+  const lines = match[2].replace(/\r\n/g, '\n').split('\n');
 
-  for (const line of match[1].split('\n')) {
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index];
     if (/^\s*color\s*:/.test(line)) {
       changed = true;
       continue;
     }
 
-    const tools = parseToolList(line);
-    if (tools) {
+    const parsedTools = parseToolList(line);
+    let tools = parsedTools ? parsedTools.tools : null;
+    if (parsedTools && parsedTools.isEmptyScalar) {
+      const sequenceItems = [];
+      let lookahead = index;
+      while (lookahead + 1 < lines.length && /^(?:\s*#|\s*$|(?:\s*-\s+.*))/.test(lines[lookahead + 1])) {
+        lookahead += 1;
+        const itemMatch = lines[lookahead].match(/^\s*-\s+(.*)$/);
+        if (itemMatch) {
+          const cleanedItem = stripUnquotedYamlComment(itemMatch[1]);
+          if (cleanedItem) {
+            sequenceItems.push(cleanedItem);
+          }
+        }
+      }
+      if (sequenceItems.length > 0) {
+        index = lookahead;
+        changed = true;
+        tools = normalizeAgentTools(sequenceItems);
+      }
+    }
+
+    if (tools && tools.length > 0) {
       const adaptedTools = [];
       const seen = new Set();
 
@@ -127,8 +215,10 @@ function adaptFrontmatter(text) {
     return { text, changed: false };
   }
 
+  const adaptedHeader = `---${headerEol}${updatedLines.join(headerEol)}${headerEol}---${trailingFenceEol}`;
+
   return {
-    text: `---\n${updatedLines.join('\n')}\n---${match[2]}${text.slice(match[0].length)}`,
+    text: `${adaptedHeader}${originalBody}`,
     changed: true,
   };
 }
@@ -139,15 +229,19 @@ function adaptAgents(dirPath) {
   let updated = 0;
   let unchanged = 0;
 
-  for (const entry of fs.readdirSync(dirPath, { withFileTypes: true })) {
+  const prepared = [];
+  for (const entry of fs.readdirSync(dirPath, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name))) {
     if (!entry.isFile() || !entry.name.endsWith('.md')) {
       continue;
     }
 
-    const filePath = path.join(dirPath, entry.name);
+    const filePath = path.join(dirPath, path.basename(entry.name));
     const original = fs.readFileSync(filePath, 'utf8');
     const adapted = adaptFrontmatter(original);
+    prepared.push({ filePath, adapted });
+  }
 
+  for (const { filePath, adapted } of prepared) {
     if (adapted.changed) {
       fs.writeFileSync(filePath, adapted.text);
       updated += 1;
@@ -170,9 +264,13 @@ function main() {
   console.log(`Updated ${result.updated} agent file(s); ${result.unchanged} already compatible`);
 }
 
-try {
-  main();
-} catch (error) {
-  console.error(error.message);
-  process.exit(1);
+if (require.main === module) {
+  try {
+    main();
+  } catch (error) {
+    console.error(error.message);
+    process.exit(1);
+  }
 }
+
+module.exports = { adaptFrontmatter };

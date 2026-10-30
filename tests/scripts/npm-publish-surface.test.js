@@ -5,7 +5,9 @@
 const assert = require("assert")
 const fs = require("fs")
 const path = require("path")
-const { spawnSync } = require("child_process")
+const os = require("os")
+const { runNpm } = require("../lib/eval-harness/helpers")
+const { getNpmPackEntry } = require("../lib/npm-pack-output")
 
 function runTest(name, fn) {
   try {
@@ -34,6 +36,26 @@ function isCoveredByAncestor(target, roots) {
   return false
 }
 
+// `node scripts/<name>.js`, tolerating quoted ECC_ROOT or SKILL_DIR prefixes.
+const SCRIPT_INVOCATION_RE =
+  /node\s+["']?(?:\$\{?(?:ECC_ROOT|SKILL_DIR)\}?\/)?scripts\/([A-Za-z0-9._/-]+\.js)["']?/g
+
+function collectCommandScriptReferences(repoRoot) {
+  const commandsDir = path.join(repoRoot, "commands")
+  if (!fs.existsSync(commandsDir)) {
+    return []
+  }
+
+  const references = []
+  for (const file of fs.readdirSync(commandsDir).filter((name) => name.endsWith(".md"))) {
+    const content = fs.readFileSync(path.join(commandsDir, file), "utf8")
+    for (const match of content.matchAll(SCRIPT_INVOCATION_RE)) {
+      references.push({ script: `scripts/${match[1]}`, command: file })
+    }
+  }
+  return references
+}
+
 function buildExpectedPublishPaths(repoRoot) {
   const modules = JSON.parse(
     fs.readFileSync(path.join(repoRoot, "manifests", "install-modules.json"), "utf8")
@@ -42,11 +64,19 @@ function buildExpectedPublishPaths(repoRoot) {
   const extraPaths = [
     "manifests",
     "scripts/ecc.js",
+    "scripts/eval-harness.js",
+    "examples/eval-harness",
     "scripts/feedback.js",
+    "scripts/agent-convert.js",
     "scripts/catalog.js",
     "scripts/ci/scan-supply-chain-iocs.js",
     "scripts/ci/supply-chain-advisory-sources.js",
+    "scripts/ci/validate-skill-host-compat.js",
+    "scripts/ci/validate-skills.js",
     "scripts/consult.js",
+    "scripts/astra-review.js",
+    "scripts/dsh/generate-hooks-config.js",
+    "scripts/profile.js",
     "scripts/control-pane.js",
     "scripts/dashboard-web.js",
     "scripts/discussion-audit.js",
@@ -62,6 +92,7 @@ function buildExpectedPublishPaths(repoRoot) {
     "scripts/loop-status.js",
     "scripts/memory.js",
     "scripts/memory-mcp.mjs",
+    "scripts/nasiko.js",
     "scripts/observability-readiness.js",
     "scripts/plan-canvas.js",
     "scripts/operator-readiness-dashboard.js",
@@ -74,14 +105,22 @@ function buildExpectedPublishPaths(repoRoot) {
     "scripts/harness-adapter-compliance.js",
     "scripts/session-inspect.js",
     "scripts/setup.js",
+    "scripts/github-coordination.js",
     "scripts/uninstall.js",
     "scripts/welcome.js",
     "scripts/gemini-adapt-agents.js",
+    "scripts/qwen-adapt-agents.js",
+    "scripts/gateguard-report.js",
     "scripts/sync-ecc-to-codex.sh",
+    "scripts/codex/legacy-sync-state.js",
+    "scripts/codex/install-global-git-hooks.sh",
+    "scripts/codex/check-codex-global-state.sh",
+    "scripts/codex-git-hooks",
     "scripts/codex/check-plugin-cache.js",
     "scripts/codex/merge-codex-config.js",
     "scripts/codex/merge-mcp-config.js",
     ".codex-plugin",
+    ".qoder-plugin",
     "plugins/ecc",
     ".mcp.json",
     "install.sh",
@@ -97,7 +136,11 @@ function buildExpectedPublishPaths(repoRoot) {
     "assets/images/community",
     "docs/CODEX-NAVIGATION-GUIDE.md",
     "docs/COMMAND-AGENT-MAP.md",
+    "docs/ROADMAP.md",
     "docs/design/ecc-memory-vault.md",
+    "docs/design/context-profiles.md",
+    "docs/design/context-carriers.md",
+    "docs/design/context-profile-delivery.md",
     "assets/images/sponsors",
   ]
   const exclusionPaths = [
@@ -112,8 +155,12 @@ function buildExpectedPublishPaths(repoRoot) {
     [...modules.flatMap((module) => module.paths || []), ...extraPaths, ...exclusionPaths].map(normalizePublishPath)
   )
 
+  // npm needs an explicit entry to include this gitignored build output.
+  const requiredBuildPaths = [".opencode/dist"]
+
   return [...combined]
     .filter((publishPath) => !isCoveredByAncestor(publishPath, combined))
+    .concat(requiredBuildPaths)
     .sort()
 }
 
@@ -135,29 +182,97 @@ function main() {
     ["package.json files align to the module graph and explicit runtime allowlist", () => {
       assert.deepStrictEqual(actualPublishPaths, expectedPublishPaths)
     }],
-    ["npm pack publishes the reduced runtime surface", () => {
-      const result = spawnSync("npm", ["pack", "--dry-run", "--json"], {
-        cwd: repoRoot,
-        encoding: "utf8",
-        shell: process.platform === "win32",
-      })
+    ["every scripts/*.js a published command invokes is on the publish surface", () => {
+      // commands/ ships in full, so a command that tells an agent to run a script
+      // that npm never packages breaks only after install. See issue #3270.
+      const publishRoots = new Set(actualPublishPaths)
+      const unpublished = collectCommandScriptReferences(repoRoot)
+        .filter(({ script }) => !publishRoots.has(script) && !isCoveredByAncestor(script, publishRoots))
+        .map(({ script, command }) => `${script} (invoked by commands/${command})`)
+
+      assert.deepStrictEqual(
+        [...new Set(unpublished)].sort(),
+        [],
+        `published commands invoke unpublished scripts: ${[...new Set(unpublished)].join(", ")}`
+      )
+    }],
+    ["npm pack --ignore-scripts publishes the reduced runtime surface (prepack not tested)", () => {
+      const cache = fs.mkdtempSync(path.join(os.tmpdir(), "ecc-pack-surface-"))
+      let result
+      try {
+        result = runNpm(["pack", "--dry-run", "--json", "--ignore-scripts", "--offline", "--cache", cache], {
+          cwd: repoRoot,
+          encoding: "utf8",
+          timeout: 60000,
+          maxBuffer: 16 * 1024 * 1024,
+          env: { ...process.env, NODE_PATH: "", NODE_OPTIONS: "" },
+        })
+      } finally {
+        fs.rmSync(cache, { recursive: true, force: true })
+      }
       assert.strictEqual(result.status, 0, result.error?.message || result.stderr)
 
       const packOutput = JSON.parse(result.stdout)
-      const packagedPaths = new Set(packOutput[0]?.files?.map((file) => file.path) ?? [])
+      const packEntry = getNpmPackEntry(packOutput, packageJson.name)
+      const packagedPaths = new Set(packEntry?.files?.map((file) => file.path) ?? [])
 
       for (const requiredPath of [
+        "skills/frontend-design-direction/scripts/check-evidence.js",
+        "scripts/eval-harness.js",
+        "scripts/lib/eval-harness/index.js",
+        "examples/eval-harness/run-example.js",
+        "examples/eval-harness/gate.config.json",
+        "examples/eval-harness/taskset.json",
+        "examples/eval-harness/variants/baseline/run.js",
+        "examples/eval-harness/variants/baseline/variant.json",
+        "examples/eval-harness/variants/candidate/run.js",
+        "examples/eval-harness/variants/candidate/variant.json",
+        "examples/eval-harness/variants/reward-hack/run.js",
+        "examples/eval-harness/variants/reward-hack/variant.json",
         "scripts/catalog.js",
         "scripts/ci/scan-supply-chain-iocs.js",
         "scripts/ci/supply-chain-advisory-sources.js",
+        "scripts/ci/validate-skill-host-compat.js",
+        "scripts/ci/validate-skills.js",
         "scripts/consult.js",
+    "scripts/astra-review.js",
+    "scripts/dsh/generate-hooks-config.js",
+        "scripts/profile.js",
+        "scripts/lib/context-profiles.js",
+        "scripts/lib/context-pack-registry.js",
+        "scripts/lib/context-profile-support.js",
+        "scripts/lib/context-carriers.js",
+        "scripts/lib/context-selection.js",
+        "scripts/lib/context-profile-commands.js",
+        "scripts/lib/context-profile-launch.js",
+        "scripts/lib/context-profile-proposal.js",
+        "scripts/lib/context-profile-native.js",
+        "scripts/lib/context-profile-native-discovery.js",
+        "scripts/lib/context-profile-native-executable.js",
+        "scripts/lib/context-profile-store.js",
+        "scripts/lib/context-profile-store-fs.js",
+        "schemas/context-profile.schema.json",
+        "schemas/context-pack-registry.schema.json",
+        "schemas/context-carrier.schema.json",
+        "manifests/context-profiles/lean@1.json",
+        "manifests/context-profiles/full@1.json",
+        "manifests/context-packs/skill-registry@1.json",
+        "docs/design/context-profiles.md",
+        "docs/design/context-carriers.md",
+        "docs/design/context-profile-delivery.md",
         "scripts/control-pane.js",
+        "scripts/lib/control-pane/work-item-runner.js",
+        "scripts/lib/control-pane/work-item-worker.js",
+        "scripts/lib/state-store/file-lock.js",
         "scripts/feedback.js",
         "scripts/ito.js",
         "scripts/memory.js",
         "scripts/memory-mcp.mjs",
+        "scripts/nasiko.js",
+        "scripts/lib/nasiko-release.js",
         "scripts/lib/memory-vault-format.js",
         "scripts/lib/memory-vault.js",
+        "scripts/lib/hook-session.js",
         "scripts/discussion-audit.js",
         "scripts/operator-readiness-dashboard.js",
         "scripts/preview-pack-smoke.js",
@@ -166,13 +281,20 @@ function main() {
         "scripts/work-items.js",
         "scripts/platform-audit.js",
         "scripts/sync-ecc-to-codex.sh",
+        "scripts/codex/legacy-sync-state.js",
+        "scripts/codex/install-global-git-hooks.sh",
+        "scripts/codex/check-codex-global-state.sh",
+        "scripts/codex-git-hooks/pre-commit",
+        "scripts/codex-git-hooks/pre-push",
         "scripts/setup.js",
+        "scripts/github-coordination.js",
         "scripts/codex/check-plugin-cache.js",
         ".gemini/GEMINI.md",
         ".qwen/QWEN.md",
         ".claude-plugin/plugin.json",
         ".github/PULL_REQUEST_TEMPLATE.md",
         ".codex-plugin/plugin.json",
+        ".qoder-plugin/plugin.json",
         ".agents/skills/unified-memory/SKILL.md",
         ".agents/skills/unified-memory/agents/openai.yaml",
         ".cursor/skills/unified-memory/SKILL.md",
@@ -185,11 +307,19 @@ function main() {
         "assets/images/community/heart.svg",
         "docs/CODEX-NAVIGATION-GUIDE.md",
         "docs/COMMAND-AGENT-MAP.md",
+        "docs/ROADMAP.md",
         "docs/design/ecc-memory-vault.md",
         "schemas/install-state.schema.json",
         "schemas/memory.schema.json",
         "skills/backend-patterns/SKILL.md",
+        "skills/skill-comply/SKILL.md",
+        "skills/skill-host-compat/SKILL.md",
         "skills/unified-memory/SKILL.md",
+        "scripts/agent-convert.js",
+        "scripts/lib/agent-ir.js",
+        "scripts/lib/agent-tool-map.js",
+        "scripts/lib/agent-emit-pi.js",
+        "schemas/agent.schema.json",
       ]) {
         assert.ok(
           packagedPaths.has(requiredPath),
@@ -202,7 +332,6 @@ function main() {
         "examples/CLAUDE.md",
         "plugins/README.md",
         "scripts/ci/catalog.js",
-        "skills/skill-comply/SKILL.md",
       ]) {
         assert.ok(
           !packagedPaths.has(excludedPath),
@@ -218,6 +347,10 @@ function main() {
         assert.ok(
           !/\.py[cod]$/.test(packagedPath),
           `npm pack should not include Python bytecode file ${packagedPath}`
+        )
+        assert.ok(
+          !packagedPath.includes(".pytest_cache/"),
+          `npm pack should not include pytest cache path ${packagedPath}`
         )
       }
     }],

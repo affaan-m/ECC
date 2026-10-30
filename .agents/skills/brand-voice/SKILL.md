@@ -1,6 +1,7 @@
 ---
 name: brand-voice
 description: Build a source-derived writing style profile from real posts, essays, launch notes, docs, or site copy, then reuse that profile across content, outreach, and social workflows. Use when the user wants voice consistency without generic AI writing tropes.
+license: MIT
 ---
 
 # Brand Voice

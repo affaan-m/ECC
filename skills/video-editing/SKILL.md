@@ -24,6 +24,26 @@ AI video editing is useful when you stop asking it to create the whole video and
 
 ## The Pipeline
 
+For measured reference-driven work, chain `taste-distillation` into
+`taste-application`, then return here for the editor and final-output review.
+The standalone taste skills can use existing footage; generation is optional.
+
+Before live editor or DAW changes, save a versioned project checkpoint and
+verify the file exists. Save and verify another checkpoint after the changes.
+An API readback proves the current in-memory state, not that it was saved.
+Keep rendered media, editable projects, and creative approval as separate
+states in the handoff.
+
+For MIDI-driven audio, check pitches against the receiving rack's note mapping
+and audition the result; successful clip creation can still produce silence.
+For reconstructed projects, validate through native load and save, sort events
+in timeline order, verify sample links and mute states, then check and audition
+the exact exported audio for unintended silence. XML parsing alone does not
+prove that the DAW accepted every clip or produced audible output.
+Check a bridge's capability handshake before invoking newer commands. Do not
+enable upload or training-data telemetry as a side effect of a creative task;
+use a supported local control path when consent or capability is absent.
+
 ```
 Screen Studio / raw footage
   → Claude / Codex
@@ -303,6 +323,12 @@ identify the 5 most engaging 30-second clips for social media."
 4. **Remotion for repeatability.** If you'll do it more than once, make it a Remotion component.
 5. **Generate selectively.** Only use AI generation for assets that don't exist, not for everything.
 6. **Taste is the last layer.** AI clears repetitive work. You make the final creative calls.
+
+## Native Fusion Presets
+
+[ITO Production v1](assets/fusion/ito-production-v1/README.md) provides restrained highlight bloom, opposing RGB spatial offsets and a luminance/edge halo. The exact files passed prior native import, save/reopen and short motion-render checks after two-source visual review. These are starting values requiring shot-specific review; the halo does not detect or track subjects.
+
+[ITO V28](assets/fusion/ito-v28/README.md) contains preserved, native-verified Fusion graph snippets and an idempotent Lua installer. These are technical compatibility examples, **not recommended production defaults**: their documented visual limitations require tuning and taste review before use. See the bundle provenance for the scope of prior import and render checks.
 
 ## Related Skills
 

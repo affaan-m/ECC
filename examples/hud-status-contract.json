@@ -4,9 +4,9 @@
   "context": {
     "harness": "codex",
     "model": "gpt-5",
-    "repo": "affaan-m/everything-claude-code",
+    "repo": "affaan-m/ECC",
     "branch": "main",
-    "worktree": "/repo/everything-claude-code",
+    "worktree": "/repo/ECC",
     "sessionId": "session-active",
     "contextWindow": {
       "remainingPct": 62,
@@ -52,7 +52,7 @@
       {
         "name": "CI",
         "status": "pass",
-        "url": "https://github.com/affaan-m/everything-claude-code/actions"
+        "url": "https://github.com/affaan-m/ECC/actions"
       }
     ]
   },
@@ -106,7 +106,7 @@
       "latestStatusUpdateId": "status-update-id"
     },
     "GitHub": {
-      "repo": "affaan-m/everything-claude-code",
+      "repo": "affaan-m/ECC",
       "latestPullRequest": 1820
     },
     "handoff": {

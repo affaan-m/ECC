@@ -1,0 +1,167 @@
+{
+  "name": "cold-writes",
+  "description": "Writes and edits with no investigation: first without any transcript, then in a transcript turn with no searches.",
+  "files": {
+    "src/services/__init__.py": "",
+    "src/services/notifier.py": "def notify(user, message):\n    return f\"{user}: {message}\"\n"
+  },
+  "steps": [
+    {
+      "id": "write-mailer",
+      "note": "Reads a template file from disk.",
+      "transcript": [],
+      "payload": {
+        "session_id": "sess-cold",
+        "cwd": "{{root}}",
+        "permission_mode": "default",
+        "hook_event_name": "PreToolUse",
+        "tool_name": "Write",
+        "tool_input": {
+          "file_path": "{{root}}/src/services/mailer.py",
+          "content": "import smtplib\n\n\ndef send_template(path, to):\n    with open(path) as handle:\n        body = handle.read()\n    smtplib.SMTP(\"localhost\").sendmail(\"noreply\", [to], body)\n"
+        },
+        "tool_use_id": "toolu_coldwrites_001"
+      },
+      "expect": "deny",
+      "mustDeny": false,
+      "redundant": false,
+      "relevantQuestions": [
+        "callers",
+        "no-duplicate",
+        "data-schema",
+        "external-contract",
+        "quote-instruction"
+      ]
+    },
+    {
+      "id": "edit-mailer",
+      "transcript": [],
+      "payload": {
+        "session_id": "sess-cold",
+        "cwd": "{{root}}",
+        "permission_mode": "default",
+        "hook_event_name": "PreToolUse",
+        "tool_name": "Edit",
+        "tool_input": {
+          "file_path": "{{root}}/src/services/mailer.py",
+          "old_string": "\"localhost\"",
+          "new_string": "\"mail.internal\""
+        },
+        "tool_use_id": "toolu_coldwrites_002"
+      },
+      "expect": "allow",
+      "mustDeny": false,
+      "redundant": false
+    },
+    {
+      "id": "write-sms",
+      "note": "Sibling within the no-transcript window.",
+      "transcript": [],
+      "payload": {
+        "session_id": "sess-cold",
+        "cwd": "{{root}}",
+        "permission_mode": "default",
+        "hook_event_name": "PreToolUse",
+        "tool_name": "Write",
+        "tool_input": {
+          "file_path": "{{root}}/src/services/sms.py",
+          "content": "def send_sms(number, text):\n    return (number, text)\n"
+        },
+        "tool_use_id": "toolu_coldwrites_003"
+      },
+      "expect": "allow",
+      "mustDeny": false,
+      "redundant": true,
+      "relevantQuestions": [
+        "callers",
+        "no-duplicate",
+        "quote-instruction"
+      ]
+    },
+    {
+      "id": "edit-notifier-signature",
+      "transcript": [],
+      "payload": {
+        "session_id": "sess-cold",
+        "cwd": "{{root}}",
+        "permission_mode": "default",
+        "hook_event_name": "PreToolUse",
+        "tool_name": "Edit",
+        "tool_input": {
+          "file_path": "{{root}}/src/services/notifier.py",
+          "old_string": "def notify(user, message):",
+          "new_string": "def notify(user, message, channel=\"email\"):"
+        },
+        "tool_use_id": "toolu_coldwrites_004"
+      },
+      "expect": "deny",
+      "mustDeny": false,
+      "redundant": false,
+      "relevantQuestions": [
+        "importers",
+        "public-api",
+        "quote-instruction"
+      ]
+    },
+    {
+      "id": "write-cleanup-job",
+      "transcript": [
+        {
+          "type": "user",
+          "uuid": "cold-writes-001",
+          "sessionId": "sess-cold",
+          "isSidechain": false,
+          "promptId": "prompt-cold-1",
+          "message": {
+            "role": "user",
+            "content": "Add a cleanup job."
+          }
+        },
+        {
+          "type": "assistant",
+          "uuid": "cold-writes-002",
+          "sessionId": "sess-cold",
+          "isSidechain": false,
+          "message": {
+            "id": "msg_coldwrites_01",
+            "type": "message",
+            "role": "assistant",
+            "model": "claude-sonnet-4-5",
+            "content": [
+              {
+                "type": "tool_use",
+                "id": "toolu_coldwrites_005",
+                "name": "Write",
+                "input": {
+                  "file_path": "{{root}}/src/jobs/cleanup.go",
+                  "content": "package jobs\n\nfunc Cleanup(paths []string) int {\n\treturn len(paths)\n}\n"
+                }
+              }
+            ]
+          }
+        }
+      ],
+      "payload": {
+        "session_id": "sess-cold-2",
+        "transcript_path": "{{transcript}}",
+        "cwd": "{{root}}",
+        "permission_mode": "default",
+        "hook_event_name": "PreToolUse",
+        "tool_name": "Write",
+        "tool_input": {
+          "file_path": "{{root}}/src/jobs/cleanup.go",
+          "content": "package jobs\n\nfunc Cleanup(paths []string) int {\n\treturn len(paths)\n}\n"
+        },
+        "tool_use_id": "toolu_coldwrites_005"
+      },
+      "expect": "deny",
+      "mustDeny": false,
+      "redundant": false,
+      "relevantQuestions": [
+        "callers",
+        "no-duplicate",
+        "quote-instruction"
+      ]
+    }
+  ]
+}

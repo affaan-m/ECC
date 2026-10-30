@@ -1,6 +1,6 @@
 # ECC for Kimi Code CLI
 
-This directory documents ECC (Everything Claude Code) support for its tested Kimi Code CLI compatibility target. The managed adapter is verified against Kimi Code 0.31.x (`@moonshot-ai/kimi-code`); newer provider releases are outside this adapter's verified range.
+This directory documents ECC support for its tested Kimi Code CLI compatibility target. The managed adapter is verified against Kimi Code 0.31.x (`@moonshot-ai/kimi-code`); newer provider releases are outside this adapter's verified range.
 
 ## What Kimi Code discovers natively
 

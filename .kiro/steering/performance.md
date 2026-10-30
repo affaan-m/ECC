@@ -1,5 +1,5 @@
 ---
-inclusion: auto
+inclusion: always
 name: performance
 description: Performance optimization guidelines including model selection strategy, context window management, and build troubleshooting
 ---

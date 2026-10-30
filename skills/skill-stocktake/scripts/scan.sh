@@ -13,6 +13,27 @@
 
 set -euo pipefail
 
+sort_nul_file() {
+  local input_file="$1"
+  local sorted_file="${input_file}.sorted"
+  node -e '
+    const fs = require("fs");
+    const input = fs.readFileSync(0);
+    const records = [];
+    let start = 0;
+    for (let index = 0; index < input.length; index += 1) {
+      if (input[index] === 0) {
+        records.push(input.subarray(start, index + 1));
+        start = index + 1;
+      }
+    }
+    if (start < input.length) records.push(input.subarray(start));
+    records.sort(Buffer.compare);
+    process.stdout.write(Buffer.concat(records));
+  ' <"$input_file" >"$sorted_file"
+  mv "$sorted_file" "$input_file"
+}
+
 GLOBAL_DIR="${SKILL_STOCKTAKE_GLOBAL_DIR:-$HOME/.claude/skills}"
 CWD_SKILLS_DIR="${SKILL_STOCKTAKE_PROJECT_DIR:-${1:-$PWD/.claude/skills}}"
 # Path to JSONL file containing tool-use observations (optional; used for usage frequency counts).
@@ -57,7 +78,7 @@ date_ago() {
 count_obs() {
   local file="$1" cutoff="$2"
   if [[ ! -f "$OBSERVATIONS" ]]; then
-    echo 0
+    echo null
     return
   fi
   jq -r --arg p "$file" --arg c "$cutoff" \
@@ -83,9 +104,12 @@ scan_dir_to_json() {
   # Pre-aggregate observation counts in two passes (one per window) instead of
   # calling jq per-file — reduces from O(n*m) to O(n+m) jq invocations.
   local obs_7d_counts obs_30d_counts
+  # Zero is meaningful only when an observations file is available.
+  local usage_default=null
   obs_7d_counts=""
   obs_30d_counts=""
   if [[ -f "$OBSERVATIONS" ]]; then
+    usage_default=0
     obs_7d_counts=$(jq -r --arg c "$c7" \
       'select(.tool=="Read" and .timestamp>=$c) | .path' \
       "$OBSERVATIONS" 2>/dev/null | sort | uniq -c)
@@ -95,17 +119,39 @@ scan_dir_to_json() {
   fi
 
   local i=0
-  while IFS= read -r file; do
+  local find_out="$tmpdir/.find-stdout"
+  local find_err="$tmpdir/.find-stderr"
+  # Capture find's exit status and stderr instead of discarding them: with -L,
+  # a broken symlink or unreadable directory makes find skip that entry AND
+  # exit non-zero, which would otherwise silently under-count skills.
+  # NUL-delimited (-print0 / sort_nul_file / read -d '') so a path containing a
+  # literal newline can't desync record boundaries — paths here are untrusted.
+  # Archived skills are not live inventory; prune the entire trash subtree.
+  if ! find -L "$dir" -type d -name ".trash" -prune -o -name "SKILL.md" -type f -print0 >"$find_out" 2>"$find_err"; then
+    echo "Error: find encountered errors while scanning $dir; refusing an incomplete inventory:" >&2
+    cat "$find_err" >&2
+    return 1
+  fi
+  sort_nul_file "$find_out"
+
+  while IFS= read -r -d '' file; do
     local name desc mtime u7 u30 dp
     name=$(extract_field "$file" "name")
     desc=$(extract_field "$file" "description")
     mtime=$(date -u -r "$file" +%Y-%m-%dT%H:%M:%SZ)
-    # Use awk exact field match to avoid substring false-positives from grep -F.
-    # uniq -c output format: "   N /path/to/file" — path is always field 2.
-    u7=$(echo "$obs_7d_counts" | awk -v f="$file" '$2 == f {print $1}' | head -1)
-    u7="${u7:-0}"
-    u30=$(echo "$obs_30d_counts" | awk -v f="$file" '$2 == f {print $1}' | head -1)
-    u30="${u30:-0}"
+    if [[ "$file" == *[[:space:]]* ]]; then
+      # The aggregated fast path is line-delimited. Preserve unusual paths by
+      # falling back to the structured JSON matcher for this record.
+      u7=$(count_obs "$file" "$c7")
+      u30=$(count_obs "$file" "$c30")
+    else
+      # Use awk exact field match to avoid substring false-positives from grep -F.
+      # uniq -c output format: "   N /path/to/file" — path is always field 2.
+      u7=$(echo "$obs_7d_counts" | awk -v f="$file" '$2 == f {print $1}' | head -1)
+      u7="${u7:-$usage_default}"
+      u30=$(echo "$obs_30d_counts" | awk -v f="$file" '$2 == f {print $1}' | head -1)
+      u30="${u30:-$usage_default}"
+    fi
     dp="${file/#$HOME/~}"
 
     jq -n \
@@ -118,7 +164,7 @@ scan_dir_to_json() {
       '{path:$path,name:$name,description:$description,use_7d:$use_7d,use_30d:$use_30d,mtime:$mtime}' \
       > "$tmpdir/$i.json"
     i=$((i+1))
-  done < <(find "$dir" -name "*.md" -type f 2>/dev/null | sort)
+  done < "$find_out"
 
   if [[ $i -eq 0 ]]; then
     echo "[]"

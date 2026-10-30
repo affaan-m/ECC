@@ -1,0 +1,304 @@
+{
+  "name": "hard-linked-targets",
+  "description": "Edits of files with a second hard-linked name: a credited-looking alias, a comment-only change and a subagent edit, with a single-link control.",
+  "files": {
+    "src/reports/writer.py": "def write_report(rows):\n    # one row per line\n    return '\\n'.join(rows)\n",
+    "src/reports/format_rows.py": "def format_rows(rows):\n    return [str(r) for r in rows]\n",
+    "src/cache/keys.py": "def cache_key(user):\n    return f'user:{user}'\n"
+  },
+  "hardlinks": {
+    "tools/report_writer.py": "src/reports/writer.py",
+    "vendor/cache_keys.py": "src/cache/keys.py"
+  },
+  "steps": [
+    {
+      "id": "edit-linked-alias-after-search",
+      "note": "tools/report_writer.py is a second name for src/reports/writer.py; the Grep that names it does not count.",
+      "transcript": [
+        {
+          "type": "user",
+          "uuid": "hard-linked-targets-001",
+          "sessionId": "sess-hardlink",
+          "isSidechain": false,
+          "promptId": "prompt-hardlink-1",
+          "message": {
+            "role": "user",
+            "content": "Make the report writer join rows with CRLF."
+          }
+        },
+        {
+          "type": "assistant",
+          "uuid": "hard-linked-targets-002",
+          "sessionId": "sess-hardlink",
+          "isSidechain": false,
+          "message": {
+            "id": "msg_hardlinkedtargets_01",
+            "type": "message",
+            "role": "assistant",
+            "model": "claude-sonnet-4-5",
+            "content": [
+              {
+                "type": "tool_use",
+                "id": "toolu_hardlinkedtargets_001",
+                "name": "Grep",
+                "input": {
+                  "pattern": "report_writer|format_rows",
+                  "path": "{{root}}"
+                }
+              }
+            ]
+          }
+        },
+        {
+          "type": "user",
+          "uuid": "hard-linked-targets-003",
+          "sessionId": "sess-hardlink",
+          "isSidechain": false,
+          "promptId": "prompt-hardlink-1",
+          "message": {
+            "role": "user",
+            "content": [
+              {
+                "type": "tool_result",
+                "tool_use_id": "toolu_hardlinkedtargets_001",
+                "content": "tools/report_writer.py\nsrc/reports/format_rows.py"
+              }
+            ]
+          }
+        },
+        {
+          "type": "assistant",
+          "uuid": "hard-linked-targets-004",
+          "sessionId": "sess-hardlink",
+          "isSidechain": false,
+          "message": {
+            "id": "msg_hardlinkedtargets_02",
+            "type": "message",
+            "role": "assistant",
+            "model": "claude-sonnet-4-5",
+            "content": [
+              {
+                "type": "tool_use",
+                "id": "toolu_hardlinkedtargets_002",
+                "name": "Edit",
+                "input": {
+                  "file_path": "{{root}}/tools/report_writer.py",
+                  "old_string": "'\\n'.join(rows)",
+                  "new_string": "'\\r\\n'.join(rows)"
+                }
+              }
+            ]
+          }
+        }
+      ],
+      "payload": {
+        "session_id": "sess-hardlink",
+        "transcript_path": "{{transcript}}",
+        "cwd": "{{root}}",
+        "permission_mode": "default",
+        "hook_event_name": "PreToolUse",
+        "tool_name": "Edit",
+        "tool_input": {
+          "file_path": "{{root}}/tools/report_writer.py",
+          "old_string": "'\\n'.join(rows)",
+          "new_string": "'\\r\\n'.join(rows)"
+        },
+        "tool_use_id": "toolu_hardlinkedtargets_002"
+      },
+      "expect": "deny",
+      "mustDeny": true,
+      "redundant": false,
+      "relevantQuestions": [
+        "importers",
+        "public-api",
+        "data-schema",
+        "external-contract",
+        "quote-instruction"
+      ]
+    },
+    {
+      "id": "edit-single-link-control",
+      "note": "Control: a single-link file named by the same search is credited.",
+      "transcript": [
+        {
+          "type": "user",
+          "uuid": "hard-linked-targets-005",
+          "sessionId": "sess-hardlink",
+          "isSidechain": false,
+          "promptId": "prompt-hardlink-1",
+          "message": {
+            "role": "user",
+            "content": [
+              {
+                "type": "tool_result",
+                "tool_use_id": "toolu_hardlinkedtargets_002",
+                "content": "denied"
+              }
+            ]
+          }
+        },
+        {
+          "type": "assistant",
+          "uuid": "hard-linked-targets-006",
+          "sessionId": "sess-hardlink",
+          "isSidechain": false,
+          "message": {
+            "id": "msg_hardlinkedtargets_03",
+            "type": "message",
+            "role": "assistant",
+            "model": "claude-sonnet-4-5",
+            "content": [
+              {
+                "type": "tool_use",
+                "id": "toolu_hardlinkedtargets_003",
+                "name": "Edit",
+                "input": {
+                  "file_path": "{{root}}/src/reports/format_rows.py",
+                  "old_string": "str(r)",
+                  "new_string": "repr(r)"
+                }
+              }
+            ]
+          }
+        }
+      ],
+      "payload": {
+        "session_id": "sess-hardlink",
+        "transcript_path": "{{transcript}}",
+        "cwd": "{{root}}",
+        "permission_mode": "default",
+        "hook_event_name": "PreToolUse",
+        "tool_name": "Edit",
+        "tool_input": {
+          "file_path": "{{root}}/src/reports/format_rows.py",
+          "old_string": "str(r)",
+          "new_string": "repr(r)"
+        },
+        "tool_use_id": "toolu_hardlinkedtargets_003"
+      },
+      "expect": "allow",
+      "mustDeny": false,
+      "redundant": true
+    },
+    {
+      "id": "comment-only-linked-original",
+      "note": "Comment-only change to the other name of the linked file: no trivial pass.",
+      "transcript": [
+        {
+          "type": "user",
+          "uuid": "hard-linked-targets-007",
+          "sessionId": "sess-hardlink",
+          "isSidechain": false,
+          "promptId": "prompt-hardlink-1",
+          "message": {
+            "role": "user",
+            "content": [
+              {
+                "type": "tool_result",
+                "tool_use_id": "toolu_hardlinkedtargets_003",
+                "content": "ok"
+              }
+            ]
+          }
+        },
+        {
+          "type": "assistant",
+          "uuid": "hard-linked-targets-008",
+          "sessionId": "sess-hardlink",
+          "isSidechain": false,
+          "message": {
+            "id": "msg_hardlinkedtargets_04",
+            "type": "message",
+            "role": "assistant",
+            "model": "claude-sonnet-4-5",
+            "content": [
+              {
+                "type": "tool_use",
+                "id": "toolu_hardlinkedtargets_004",
+                "name": "Edit",
+                "input": {
+                  "file_path": "{{root}}/src/cache/keys.py",
+                  "old_string": "def cache_key(user):",
+                  "new_string": "def cache_key(user):  # stable across deploys"
+                }
+              }
+            ]
+          }
+        }
+      ],
+      "payload": {
+        "session_id": "sess-hardlink",
+        "transcript_path": "{{transcript}}",
+        "cwd": "{{root}}",
+        "permission_mode": "default",
+        "hook_event_name": "PreToolUse",
+        "tool_name": "Edit",
+        "tool_input": {
+          "file_path": "{{root}}/src/cache/keys.py",
+          "old_string": "def cache_key(user):",
+          "new_string": "def cache_key(user):  # stable across deploys"
+        },
+        "tool_use_id": "toolu_hardlinkedtargets_004"
+      },
+      "expect": "deny",
+      "mustDeny": true,
+      "redundant": false,
+      "relevantQuestions": [
+        "importers",
+        "public-api",
+        "data-schema",
+        "external-contract",
+        "quote-instruction"
+      ]
+    },
+    {
+      "id": "subagent-linked-vendor-copy",
+      "note": "A subagent editing a hard-linked file is gated; ordinary subagent edits still pass.",
+      "transcript": [
+        {
+          "type": "user",
+          "uuid": "hard-linked-targets-009",
+          "sessionId": "sess-hardlink",
+          "isSidechain": false,
+          "promptId": "prompt-hardlink-1",
+          "message": {
+            "role": "user",
+            "content": [
+              {
+                "type": "tool_result",
+                "tool_use_id": "toolu_hardlinkedtargets_004",
+                "content": "denied"
+              }
+            ]
+          }
+        }
+      ],
+      "payload": {
+        "session_id": "sess-hardlink",
+        "transcript_path": "{{transcript}}",
+        "cwd": "{{root}}",
+        "permission_mode": "default",
+        "hook_event_name": "PreToolUse",
+        "tool_name": "Edit",
+        "tool_input": {
+          "file_path": "{{root}}/vendor/cache_keys.py",
+          "old_string": "f'user:{user}'",
+          "new_string": "f'u:{user}'"
+        },
+        "tool_use_id": "toolu_hardlinkedtargets_005",
+        "agent_id": "agent-cache",
+        "agent_type": "general-purpose"
+      },
+      "expect": "deny",
+      "mustDeny": true,
+      "redundant": false,
+      "relevantQuestions": [
+        "importers",
+        "public-api",
+        "data-schema",
+        "external-contract",
+        "quote-instruction"
+      ]
+    }
+  ]
+}

@@ -12,7 +12,7 @@ Usar con precaución:
 - Habilitar para planes bien definidos y de confianza
 - Deshabilitar para trabajo exploratorio
 - Nunca usar la flag dangerously-skip-permissions
-- Configurar `allowedTools` en `~/.claude.json` en su lugar
+- Configurar reglas `permissions.allow` en `~/.claude/settings.json` (o en el `.claude/settings.json` del proyecto) en su lugar
 
 ## Buenas Prácticas de TodoWrite
 

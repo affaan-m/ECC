@@ -1,0 +1,43 @@
+{
+  "schema_version": "ecc.evaluator-rag.trace.v1",
+  "scenario_id": "connector-diagnostics-gap",
+  "run_id": "illustrative-connector-gap",
+  "read_only": true,
+  "illustrative": true,
+  "events": [
+    {
+      "phase": "observation",
+      "summary": "Synthetic request needs three diagnostics; the connector is already in use."
+    },
+    {
+      "phase": "retrieval",
+      "summary": "The supplied fixture covers connection and permission diagnostics and per-request throttle events; deployment settings remain unknown."
+    },
+    {
+      "phase": "proposal",
+      "candidate_ids": [
+        "bounded-event-summary",
+        "new-monitor-without-inventory"
+      ]
+    },
+    {
+      "phase": "verification",
+      "summary": "Expected rubric comparison only: accept a bounded aggregate over existing events; reject a separate daemon justified only by unavailable settings."
+    },
+    {
+      "phase": "verification",
+      "variant": "management_preparation",
+      "summary": "Expected rubric only: existing MCP/API reads support template/map preparation and inspection of the existing notification channel. Unavailable server A SSH blocks only its host-level checks; collection readiness, delivery and change authority remain unestablished."
+    },
+    {
+      "phase": "verification",
+      "variant": "target_contract",
+      "summary": "Expected rubric only: hold document filling for the target sample and mandatory-field mapping; explicit stop leaves the candidate unfinished. Later explicit scope revision permits independent fact storage and validation while document filling remains separate; it does not erase the earlier sequencing error."
+    },
+    {
+      "phase": "promotion",
+      "promoted_candidate_id": "bounded-event-summary",
+      "summary": "Illustrative playbook selection; no connector, service or settings are changed."
+    }
+  ]
+}

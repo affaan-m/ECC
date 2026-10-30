@@ -21,4 +21,4 @@ Ao criar PRs:
 5. Fazer push com a flag `-u` se for uma nova branch
 
 > Para o processo de desenvolvimento completo (planejamento, TDD, revisão de código) antes de operações git,
-> veja [development-workflow.md](./development-workflow.md).
+> veja [development-workflow.md](https://github.com/affaan-m/ECC/blob/main/rules/common/development-workflow.md).

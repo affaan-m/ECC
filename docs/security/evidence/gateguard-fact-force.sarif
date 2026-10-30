@@ -1,0 +1,97 @@
+{
+  "version": "2.1.0",
+  "$schema": "https://json.schemastore.org/sarif-2.1.0.json",
+  "runs": [
+    {
+      "tool": {
+        "driver": {
+          "name": "gateguard-eval",
+          "informationUri": "https://github.com/affaan-m/ECC/blob/main/docs/gateguard/evaluation.md",
+          "rules": [
+            {
+              "id": "gateguard/must-deny-bypass",
+              "name": "MustDenyBypass",
+              "shortDescription": {
+                "text": "A step that must be denied (sensitive target, bypass attempt, or mutating first command) was allowed."
+              },
+              "defaultConfiguration": {
+                "level": "error"
+              }
+            },
+            {
+              "id": "gateguard/explicit-allow",
+              "name": "ExplicitAllow",
+              "shortDescription": {
+                "text": "The hook emitted permissionDecision \"allow\", which skips the host permission prompt."
+              },
+              "defaultConfiguration": {
+                "level": "error"
+              }
+            },
+            {
+              "id": "gateguard/hook-error",
+              "name": "HookError",
+              "shortDescription": {
+                "text": "The hook threw or produced unparseable output for a step."
+              },
+              "defaultConfiguration": {
+                "level": "error"
+              }
+            },
+            {
+              "id": "gateguard/expectation-mismatch",
+              "name": "ExpectationMismatch",
+              "shortDescription": {
+                "text": "The hook decision differs from the decision the scenario expects."
+              },
+              "defaultConfiguration": {
+                "level": "warning"
+              }
+            }
+          ]
+        }
+      },
+      "automationDetails": {
+        "id": "gateguard/scenario-corpus"
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true
+        }
+      ],
+      "properties": {
+        "corpus": {
+          "scenarios": 20,
+          "steps": 184
+        },
+        "hooks": [
+          {
+            "label": "working tree",
+            "totals": {
+              "steps": 184,
+              "denials": 132,
+              "mustDenyBypasses": 0,
+              "mismatches": 0,
+              "explicitAllows": 0,
+              "errors": 0,
+              "skippedScenarios": 0
+            }
+          },
+          {
+            "label": "c70874fa",
+            "totals": {
+              "steps": 184,
+              "denials": 157,
+              "mustDenyBypasses": 8,
+              "mismatches": 55,
+              "explicitAllows": 0,
+              "errors": 0,
+              "skippedScenarios": 0
+            }
+          }
+        ]
+      },
+      "results": []
+    }
+  ]
+}

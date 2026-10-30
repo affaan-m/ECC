@@ -17,7 +17,11 @@ const CURRENT_PACKAGE_VERSION = JSON.parse(
   fs.readFileSync(path.join(__dirname, '..', '..', 'package.json'), 'utf8')
 ).version;
 
-const { resolveEccRoot, INLINE_RESOLVE } = require('../../scripts/lib/resolve-ecc-root');
+const {
+  resolveEccRoot,
+  normalizePluginRootForPlatform,
+  INLINE_RESOLVE
+} = require('../../scripts/lib/resolve-ecc-root');
 
 // Sentinel ECC skill that resolveEccRoot() requires (alongside the script tree)
 // before accepting a root for skill consumers. Kept in sync with the module's
@@ -401,6 +405,17 @@ function runTests() {
     assert.ok(INLINE_RESOLVE.length > 50, 'Should be a substantial inline expression');
   })) passed++; else failed++;
 
+  if (test('normalizes Git Bash drive roots for Windows lifecycle loaders', () => {
+    assert.strictEqual(
+      normalizePluginRootForPlatform('/c/Users/x/.claude/plugins/ecc', 'win32'),
+      'C:/Users/x/.claude/plugins/ecc'
+    );
+    assert.strictEqual(
+      normalizePluginRootForPlatform('/workspace/ecc', 'win32'),
+      '/workspace/ecc'
+    );
+  })) passed++; else failed++;
+
   if (test('INLINE_RESOLVE does not contain spread, nested arrays, or escaped quotes', () => {
     assert.ok(!INLINE_RESOLVE.includes('...'));
     assert.ok(!INLINE_RESOLVE.includes('[['));
@@ -516,6 +531,52 @@ module.exports = { resolveEccRoot() { assert.strictEqual(process.env.HOME, ${JSO
       assert.strictEqual(result, path.join(homeDir, '.claude'));
     } finally {
       fs.rmSync(homeDir, { recursive: true, force: true });
+    }
+  })) passed++; else failed++;
+
+  // ─── WSL Path Conversion ───
+
+  if (test('resolveEccRoot converts Windows CLAUDE_CONFIG_DIR to WSL path on WSL', () => {
+    const { setWSLForTesting, resetWSLDetection } = require('../../scripts/lib/install-targets/helpers');
+    setWSLForTesting(true);
+    try {
+      const homeDir = createTempDir();
+      try {
+        const result = resolveEccRoot({
+          homeDir,
+          envRoot: '',
+          configDir: 'C:\\Users\\test\\.claude'
+        });
+        // On WSL, 'C:\\Users\\test\\.claude' is converted to '/mnt/c/Users/test/.claude'.
+        // No install exists at the converted path, so resolveEccRoot falls back to it.
+        assert.strictEqual(result, path.resolve('/mnt/c/Users/test/.claude'));
+      } finally {
+        fs.rmSync(homeDir, { recursive: true, force: true });
+      }
+    } finally {
+      resetWSLDetection();
+    }
+  })) passed++; else failed++;
+
+  if (test('resolveEccRoot returns original path when not on WSL', () => {
+    const { setWSLForTesting, resetWSLDetection } = require('../../scripts/lib/install-targets/helpers');
+    setWSLForTesting(false);
+    try {
+      const homeDir = createTempDir();
+      try {
+        const result = resolveEccRoot({
+          homeDir,
+          envRoot: '',
+          configDir: 'C:\\Users\\test\\.claude'
+        });
+        // Not on WSL: Windows path is not converted. On Linux, path.resolve treats
+        // it as a relative path, resolving against the current working directory.
+        assert.strictEqual(result, path.resolve('C:\\Users\\test\\.claude'));
+      } finally {
+        fs.rmSync(homeDir, { recursive: true, force: true });
+      }
+    } finally {
+      resetWSLDetection();
     }
   })) passed++; else failed++;
 

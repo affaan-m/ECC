@@ -1,6 +1,6 @@
-# Everything Claude Code for CodeBuddy
+# ECC for CodeBuddy
 
-Bring Everything Claude Code (ECC) workflows to CodeBuddy IDE. This repository provides custom commands, agents, skills, and rules that can be installed into any CodeBuddy project using the unified Target Adapter architecture.
+Bring ECC workflows to CodeBuddy IDE. This repository provides custom commands, agents, skills, and rules that can be installed into any CodeBuddy project using the unified Target Adapter architecture.
 
 ## Quick Start (Recommended)
 

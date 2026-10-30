@@ -84,7 +84,24 @@ function applySync(repo, options = {}, context = {}) {
   assertValidRepo(repo);
   const policy = context.policy || loadPolicy(context.rootDir || process.cwd(), options.configPath);
   const store = context.store || null;
-  const issues = listIssues(repo, { ...options, state: options.state || 'all', limit: options.limit || 100 });
+  const labelIssues = listIssues(repo, {
+    ...options,
+    state: options.state || 'all',
+    limit: options.limit || 100,
+    label: policy.labels && policy.labels.epic,
+  });
+  const marker = policy.sectionMarker || 'ecc-coordination';
+  const coordinatedIssues = listIssues(repo, {
+    ...options,
+    state: options.state || 'all',
+    limit: options.limit || 100,
+    search: `in:body "${marker}:start"`,
+  });
+  const issues = Array.from(
+    new Map(
+      [...labelIssues, ...coordinatedIssues].map(issue => [String(issue.number), issue])
+    ).values()
+  );
   const syncedAt = new Date().toISOString();
   const results = [];
 

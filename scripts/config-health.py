@@ -44,6 +44,7 @@ Env inputs (what the findings depend on, and nothing else):
   - the working directory — the fallback project dir when CLAUDE_PROJECT_DIR is
     unset, and the fallback user home when CONFIG_HEALTH_USER_HOME is unset
   - CONFIG_HEALTH_USER_HOME  — user home; also what `~` and $HOME resolve to
+  - CLAUDE_CONFIG_DIR        — Claude data root; default <user_home>/.claude
   - CLAUDE_PROJECT_DIR       — project dir
   - CONFIG_HEALTH_PLUGIN_ROOT / CLAUDE_PLUGIN_ROOT — plugin root
 
@@ -61,7 +62,7 @@ Hook command placeholders:
 Install: cp to ~/.claude/scripts/config-health.py
 Wire (in your settings.json hooks — merge, don't replace):
   SessionStart:  python3 ~/.claude/scripts/config-health.py --startup
-  PreToolUse:    python3 ~/.claude/scripts/config-health.py --pretool
+  PreToolUse:    optional, opt-in only: python3 .../config-health.py --pretool
 """
 from __future__ import annotations
 
@@ -87,7 +88,8 @@ STALENESS_WINDOW = 5
 # Minimum tool calls for a session to be "complex enough" to expect rule markers.
 MIN_TOOL_CALLS_FOR_CHECK = 5
 # Rule-health log written by the earlier Stop-hook monitor (read-only here).
-RULE_HEALTH_LOG = '.claude/session-data/rule-health.jsonl'
+# Relative to the Claude data root, which is CLAUDE_CONFIG_DIR or ~/.claude.
+RULE_HEALTH_LOG = 'session-data/rule-health.jsonl'
 # Metadata keys in each rule-health record, not rule counters.
 NON_RULE_KEYS = {'ts', 'date', 'time', 'tool_calls', 'edits'}
 
@@ -448,6 +450,19 @@ def resolve_dirs():
     return user_home, project_dir
 
 
+def claude_data_dir(user_home):
+    """Claude's user data root: CLAUDE_CONFIG_DIR when set, else ~/.claude.
+
+    Claude Code reads user settings from this directory, and launchers move it
+    with CLAUDE_CONFIG_DIR. Reading ~/.claude unconditionally would audit a
+    file the harness is not loading, which is worse than not auditing at all.
+    """
+    configured = os.environ.get('CLAUDE_CONFIG_DIR')
+    if configured:
+        return os.path.abspath(os.path.expanduser(configured))
+    return os.path.join(user_home, '.claude')
+
+
 def read_text(path):
     """Read a file defensively; return None on any read/decode error."""
     if not os.path.exists(path):
@@ -774,13 +789,14 @@ def audit_rule_references(project_dir):
     return findings
 
 
-def audit_guard_staleness(user_home):
+def audit_guard_staleness(claude_dir):
     """Flag rules that stopped firing in recent sessions.
 
     Only fires when a rule-health.jsonl log exists (written by the earlier
     Stop-hook monitor). No log → no staleness judgment (avoids false positives).
+    The log lives under the Claude data root, not necessarily ~/.claude.
     """
-    log_path = os.path.join(user_home, RULE_HEALTH_LOG)
+    log_path = os.path.join(claude_dir, RULE_HEALTH_LOG)
     content = read_text(log_path)
     if content is None:
         return []
@@ -853,8 +869,9 @@ def audit_hook_settings(user_home, project_dir, stats=None):
     """
     env = placeholder_env(project_dir, user_home)
     findings = []
+    claude_dir = claude_data_dir(user_home)
     user_settings, _ = read_settings(
-        os.path.join(user_home, '.claude', 'settings.json'), stats, 'user')
+        os.path.join(claude_dir, 'settings.json'), stats, 'user')
     project_settings, _ = read_settings(
         os.path.join(project_dir, '.claude', 'settings.json'), stats, 'project')
     # Both settings may be absent or malformed — each is handled independently
@@ -867,14 +884,17 @@ def audit_hook_settings(user_home, project_dir, stats=None):
             )
     if stats is not None and env.get(PLUGIN_ROOT_ENV):
         stats['plugin_root'] = env[PLUGIN_ROOT_ENV]
+    if stats is not None and os.environ.get('CLAUDE_CONFIG_DIR'):
+        stats['claude_dir'] = claude_dir
     return env, findings
 
 
 def run_startup_audit(user_home, project_dir, stats=None):
     """SessionStart audit: hook wiring + rule references + guard staleness."""
+    claude_dir = claude_data_dir(user_home)
     _, findings = audit_hook_settings(user_home, project_dir, stats)
     findings.extend(audit_rule_references(project_dir))
-    findings.extend(audit_guard_staleness(user_home))
+    findings.extend(audit_guard_staleness(claude_dir))
     return findings
 
 
@@ -978,6 +998,12 @@ def check_mode():
               'by the user home or plugin root, not the project — a broken '
               'project-scoped hook is indistinguishable from a healthy '
               'plugin one here'.format(other_root))
+    claude_dir = stats.get('claude_dir')
+    if claude_dir:
+        # Name the non-default root so a settings file the harness is not
+        # loading is diagnosable instead of silently audited.
+        print('config-health: [info] $CLAUDE_CONFIG_DIR resolved to '
+              + claude_dir)
     plugin_root = stats.get('plugin_root')
     if plugin_root:
         # With more than one plugin installed, the provider's

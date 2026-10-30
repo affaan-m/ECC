@@ -1,10 +1,6 @@
 'use strict';
 const assert = require('assert');
-const {
-  extractCommandSubstitutions,
-  extractSubshellGroups,
-  extractBraceGroups,
-} = require('../../scripts/lib/shell-substitution');
+const { extractCommandSubstitutions, extractSubshellGroups, extractBraceGroups } = require('../../scripts/lib/shell-substitution');
 
 console.log('=== Testing shell-substitution.js ===\n');
 
@@ -65,6 +61,12 @@ test('double-quoted body extracted, single-quoted body ignored', () => {
 });
 test('single quotes inside a $() body are preserved', () => {
   assert.deepStrictEqual(extractCommandSubstitutions("x=$(echo 'a b')"), ["echo 'a b'"]);
+});
+test('literal outer quotes do not suppress substitutions', () => {
+  assert.deepStrictEqual(extractCommandSubstitutions("'$(whoami)'", { literalOuterQuotes: true }), ['whoami']);
+});
+test('literal outer quotes preserve shell quoting inside a substitution', () => {
+  assert.deepStrictEqual(extractCommandSubstitutions("'$(echo '$(ignored)')'", { literalOuterQuotes: true }), ["echo '$(ignored)'"]);
 });
 
 console.log('\nextractCommandSubstitutions - escaped substitutions:');
@@ -152,6 +154,30 @@ test('double-quoted parens are literal (bash only honors $() there)', () => {
 test('extracts a bare (...) group while skipping an adjacent $()', () => {
   assert.deepStrictEqual(extractSubshellGroups('$(a) (b)'), ['b']);
 });
+test('a double-quoted string ending in an escaped backslash still closes', () => {
+  assert.deepStrictEqual(extractSubshellGroups('echo "C:\\\\"; (npm run dev)'), ['npm run dev']);
+});
+test('a single-quoted string ending in a backslash still closes', () => {
+  assert.deepStrictEqual(extractSubshellGroups("echo 'C:\\'; (npm run dev)"), ['npm run dev']);
+});
+test("an escaped apostrophe does not close a $'...' string", () => {
+  assert.deepStrictEqual(extractSubshellGroups("echo $'it\\'s'; (rm -rf /tmp/x)"), ['rm -rf /tmp/x']);
+});
+test("an escaped $ before a quote opens a plain single-quoted string", () => {
+  assert.deepStrictEqual(extractSubshellGroups("echo \\$'C:\\'; (npm run dev)"), ['npm run dev']);
+});
+test('a $() span ending a quote after a backslash still closes', () => {
+  assert.deepStrictEqual(extractSubshellGroups('x=$(echo "C:\\\\"); (npm run dev)'), ['npm run dev']);
+});
+test('a (...) body with a quote ending in a backslash keeps its nested group', () => {
+  assert.deepStrictEqual(extractSubshellGroups("(echo 'C:\\'; (npm run dev))"), [
+    "echo 'C:\\'; (npm run dev)",
+    'npm run dev'
+  ]);
+});
+test("a (...) body with an escaped apostrophe in $'...' still closes", () => {
+  assert.deepStrictEqual(extractSubshellGroups("(echo $'it\\'s'; npm run dev)"), ["echo $'it\\'s'; npm run dev"]);
+});
 
 console.log('\nextractSubshellGroups - security-relevant:');
 test('surfaces a destructive command inside a subshell', () => {
@@ -170,6 +196,15 @@ test('(...) subshell — trailing backslash not doubled', () => {
 console.log('\nextractBraceGroups - basics:');
 test('extracts a { ...; } body', () => {
   assert.deepStrictEqual(extractBraceGroups('{ npm run dev; }'), [' npm run dev; ']);
+});
+test('extracts a { ...; } body after a string ending in an escaped backslash', () => {
+  assert.deepStrictEqual(extractBraceGroups('echo "C:\\\\"; { npm run dev; }'), [' npm run dev; ']);
+});
+test("extracts a { ...; } body after an escaped apostrophe in $'...'", () => {
+  assert.deepStrictEqual(extractBraceGroups("echo $'it\\'s'; { rm -rf /tmp/x; }"), [' rm -rf /tmp/x; ']);
+});
+test('a { ...; } body with a quote ending in a backslash still closes', () => {
+  assert.deepStrictEqual(extractBraceGroups('{ echo "C:\\\\"; }; { npm run dev; }'), [' echo "C:\\\\"; ', ' npm run dev; ']);
 });
 test('nested brace group returns outer body then inner body', () => {
   assert.deepStrictEqual(extractBraceGroups('{ a; { b; }; }'), [' a; { b; }; ', ' b; ']);

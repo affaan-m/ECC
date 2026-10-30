@@ -43,9 +43,12 @@ const PROTECTED_FILES = new Set([
   'prettier.config.js',
   'prettier.config.cjs',
   'prettier.config.mjs',
-  // Biome
+  // Biome's discovered filenames. Custom --config-path/extends targets need
+  // reference context; an arbitrary biome.* basename is not sufficient.
   'biome.json',
   'biome.jsonc',
+  '.biome.json',
+  '.biome.jsonc',
   // Ruff (Python)
   '.ruff.toml',
   'ruff.toml',
@@ -57,10 +60,74 @@ const PROTECTED_FILES = new Set([
   '.stylelintrc',
   '.stylelintrc.json',
   '.stylelintrc.yml',
+  '.stylelintrc.yaml',
+  '.stylelintrc.js',
+  '.stylelintrc.cjs',
+  '.stylelintrc.mjs',
+  // Stylelint's current spelling; only the legacy `.stylelintrc*` forms were
+  // listed, so a project using the documented `stylelint.config.js` had no
+  // protection at all.
+  'stylelint.config.js',
+  'stylelint.config.cjs',
+  'stylelint.config.mjs',
+  'stylelint.config.ts',
+  'stylelint.config.mts',
+  'stylelint.config.cts',
   '.markdownlint.json',
+  '.markdownlint.jsonc',
   '.markdownlint.yaml',
-  '.markdownlintrc'
+  '.markdownlint.yml',
+  '.markdownlint.cjs',
+  '.markdownlint.mjs',
+  '.markdownlintrc',
+  // markdownlint-cli2 reads its own config names, not `.markdownlint.*`.
+  '.markdownlint-cli2.jsonc',
+  '.markdownlint-cli2.yaml',
+  '.markdownlint-cli2.cjs',
+  '.markdownlint-cli2.mjs',
+  // Ignore files are the cheapest way to make a check pass without touching
+  // the code OR the config: adding one path to .eslintignore silences the
+  // failing file outright. Blocking the config while leaving its ignore list
+  // open left the hook's whole purpose one line away from being defeated.
+  // First-time creation stays allowed by the same existence check below.
+  '.eslintignore',
+  '.prettierignore',
+  '.stylelintignore',
+  '.markdownlintignore'
 ]);
+
+/**
+ * Exact basenames only catch a tool's canonical entry point. Real repos split
+ * flat config across files: a shared `eslint.config.base.mjs` holding the
+ * ignore list and rule severities, imported by per-workspace
+ * `eslint.config.mjs` files. That is the common monorepo shape, and matching
+ * basenames alone protected the leaves while leaving the trunk -- the file that
+ * actually carries the rules -- freely editable.
+ *
+ * These patterns cover `<tool>.config.<qualifier>.<ext>` and
+ * `.<tool>rc.<qualifier>.<ext>` for the linters and formatters listed above.
+ * They are case-insensitive for the same reason the Set lookup above is.
+ *
+ * Deliberately NOT matched: build and test tooling -- `vite.config.ts`,
+ * `vitest.config.ts`, `jest.config.js`, `playwright.config.ts`,
+ * `tsconfig.json`. This hook exists to stop a LINTER config being weakened in
+ * place of fixing the code; editing a bundler or test-runner config is
+ * ordinary work, and sweeping those in would make the hook obstructive.
+ */
+const PROTECTED_PATTERNS = [
+  // eslint.config.base.mjs, prettier.config.shared.cjs, stylelint.config.local.js ...
+  /^(eslint|prettier|stylelint|commitlint|oxlint)\.config(\.[A-Za-z0-9_-]+)*\.(js|mjs|cjs|ts|mts|cts)$/i,
+  // .eslintrc.base.json, .prettierrc.shared.yml ... Prettier also reads
+  // `.prettierrc.ts`, `.mts`, `.cts` and `.json5`.
+  /^\.(eslintrc|prettierrc|stylelintrc|markdownlintrc)(\.[A-Za-z0-9_-]+)*\.(js|cjs|mjs|ts|mts|cts|json|jsonc|json5|yml|yaml|toml)$/i,
+];
+
+function isProtectedName(basename) {
+  const lower = basename.toLowerCase();
+  return PROTECTED_FILES.has(basename)
+    || PROTECTED_FILES.has(lower)
+    || PROTECTED_PATTERNS.some((re) => re.test(basename));
+}
 
 function parseInput(inputOrRaw) {
   if (typeof inputOrRaw === 'string') {
@@ -90,9 +157,28 @@ function run(inputOrRaw, options = {}) {
   }
 
   const input = parseInput(inputOrRaw);
-  const filePath = input?.tool_input?.file_path || input?.tool_input?.file || '';
-  if (!filePath) return { exitCode: 0 };
+  for (const filePath of targetPaths(input?.tool_input)) {
+    const blocked = checkTarget(filePath);
+    if (blocked) return blocked;
+  }
+  return { exitCode: 0 };
+}
 
+/**
+ * Every path the tool call would write. A MultiEdit entry may carry its own
+ * `file_path`; one without falls back to the top-level path, the same rule
+ * GateGuard applies (#3761). Checking only the top-level path let a batch
+ * edit an existing config through `edits[].file_path`.
+ */
+function targetPaths(toolInput) {
+  const shared = toolInput?.file_path || toolInput?.file || '';
+  const edits = Array.isArray(toolInput?.edits) ? toolInput.edits : [];
+  const entryPaths = edits.map(edit => (edit && typeof edit === 'object' ? edit.file_path : undefined));
+  const candidates = [shared, ...entryPaths].filter(p => typeof p === 'string' && p);
+  return [...new Set(candidates)];
+}
+
+function checkTarget(filePath) {
   const basename = path.basename(filePath);
   // Match case-insensitively. Every PROTECTED_FILES entry is lowercase, and on
   // case-insensitive filesystems (macOS APFS/HFS+, Windows NTFS) a write to
@@ -101,7 +187,7 @@ function run(inputOrRaw, options = {}) {
   // silently overwrite the real config while the guard returned exit 0.
   // On genuinely case-sensitive filesystems this only costs a false positive
   // on a distinct file that differs from a protected name by case alone.
-  if (PROTECTED_FILES.has(basename) || PROTECTED_FILES.has(basename.toLowerCase())) {
+  if (isProtectedName(basename)) {
     // Allow first-time creation — there's no existing config to weaken.
     // The hook's purpose is blocking modifications; writing a brand-new
     // config file in a project that has none is a legitimate bootstrap
@@ -127,7 +213,7 @@ function run(inputOrRaw, options = {}) {
     }
 
     if (!exists) {
-      return { exitCode: 0 };
+      return null;
     }
 
     return {
@@ -140,7 +226,7 @@ function run(inputOrRaw, options = {}) {
     };
   }
 
-  return { exitCode: 0 };
+  return null;
 }
 
 module.exports = { run };

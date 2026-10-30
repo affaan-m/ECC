@@ -1,0 +1,1 @@
+This internal paste-sharing service failed a security review, but the auditors didn't itemize the findings. Review the implementation against the API contract in the README, find every place the code violates the documented security behavior or is otherwise exploitable, and fix all of them without breaking the documented API. `npm test` must stay green.

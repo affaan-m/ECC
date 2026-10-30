@@ -118,7 +118,7 @@ _PROVIDER_TEMPLATE_MAP: dict[str, dict[str, Any]] = {
 
 
 def get_provider_builder(provider_name: str) -> PromptBuilder:
-    config_dict = _PROVIDER_TEMPLATE_MAP.get(provider_name.lower(), {})
+    config_dict = _PROVIDER_TEMPLATE_MAP.get(provider_name.strip().lower(), {})
     config = PromptConfig(**config_dict)
     return PromptBuilder(config)
 

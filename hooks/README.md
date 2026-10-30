@@ -9,7 +9,8 @@ User request → Claude picks a tool → PreToolUse hook runs → Tool executes 
 ```
 
 - **PreToolUse** hooks run before the tool executes. They can **block** (exit code 2) or **warn** (stderr without blocking).
-- **PostToolUse** hooks run after the tool completes. They can analyze output but cannot block.
+- **PostToolUse** hooks run after the tool completes. They can analyze output and return feedback before Claude continues.
+- **UserPromptSubmit** hooks run before Claude processes a user prompt.
 - **Stop** hooks run after each Claude response.
 - **SessionStart/SessionEnd** hooks run at session lifecycle boundaries.
 - **PreCompact** hooks run before context compaction, useful for saving state.
@@ -19,6 +20,10 @@ User request → Claude picks a tool → PreToolUse hook runs → Tool executes 
 Memory persistence lifecycle definitions live in `hooks/memory-persistence/`.
 The executable hook graph remains `hooks/hooks.json`; the memory persistence directory is the stable contract for SessionStart, PreCompact, observation, activity tracking, and SessionEnd behavior.
 
+Stable hook IDs and descriptions live in `hooks/hooks.metadata.json`, aligned by event and index with `hooks/hooks.json`. Claude Code validates a plugin's `hooks.json` against its own schema and reports any other key (`$schema`, `id`, `description`) as unknown at load time, so `hooks.json` carries only what the harness accepts. ECC's installer, validator, and dashboard merge the sidecar back in through `scripts/lib/hooks-config.js`; `node scripts/ci/validate-hooks.js` fails if the two files drift apart, and `node scripts/ci/check-hooks-schema-keys.js` fails if `hooks.json` or `hooks/codex-hooks.json` carry any key outside their loader's documented set.
+
+Each sidecar entry also carries a `fingerprint` of the matcher entry it describes (matcher plus hook commands), so reordering `hooks.json` without reordering the sidecar, or editing a command without updating the sidecar, is caught rather than silently swapping IDs. When reordering hooks, move the matching sidecar entries first. Then run `node scripts/ci/validate-hooks.js --update-fingerprints` to refresh changed commands and commit both files. The updater rejects known fingerprints at different positions and writes only after validation succeeds.
+
 ## Installing These Hooks Manually
 
 For Claude Code manual installs, do not paste the raw repo `hooks.json` into `~/.claude/settings.json` or copy it directly into `~/.claude/hooks/hooks.json`. The checked-in file is plugin/repo-oriented and is meant to be installed through the ECC installer or loaded as a plugin.
@@ -26,14 +31,18 @@ For Claude Code manual installs, do not paste the raw repo `hooks.json` into `~/
 Use the installer instead so hook commands are rewritten against your actual Claude root:
 
 ```bash
-bash ./install.sh --target claude --modules hooks-runtime
+bash ./install.sh --target claude --modules hooks-runtime --enable-hooks
 ```
 
 ```powershell
-pwsh -File .\install.ps1 --target claude --modules hooks-runtime
+pwsh -File .\install.ps1 --target claude --modules hooks-runtime --enable-hooks
 ```
 
-That installs resolved hooks to `~/.claude/hooks/hooks.json`. On Windows, the Claude config root is `%USERPROFILE%\\.claude`.
+That installs the hook scripts under `~/.claude/` and registers the resolved
+hook entries in `~/.claude/settings.json`. Existing user settings and hook
+entries are preserved, while ECC-owned entries are tracked by stable ID for
+idempotent updates and safe uninstall. On Windows, the Claude config root is
+`%USERPROFILE%\.claude`.
 
 ### PreToolUse Hooks
 
@@ -45,6 +54,7 @@ That installs resolved hooks to `~/.claude/hooks/hooks.json`. On Windows, the Cl
 | **Pre-commit quality check** | `Bash` | Runs quality checks before `git commit`: lints staged files, validates commit message format when provided via `-m/--message`, detects console.log/debugger/secrets | 2 (blocks critical) / 0 (warns) |
 | **Doc file warning** | `Write` | Warns about non-standard `.md`/`.txt` files (allows README, CLAUDE, CONTRIBUTING, CHANGELOG, LICENSE, SKILL, docs/, skills/); cross-platform path handling | 0 (warns) |
 | **Strategic compact** | `Edit\|Write` | Suggests manual `/compact` at logical intervals (every ~50 tool calls) | 0 (warns) |
+| **Hookify runtime** | `.*` | Evaluates enabled project-local Hookify rules before shell and file tools | 0 (structured warn/block decision) |
 
 ### PostToolUse Hooks
 
@@ -57,14 +67,17 @@ That installs resolved hooks to `~/.claude/hooks/hooks.json`. On Windows, the Cl
 | **Prettier format** | `Edit` | Auto-formats JS/TS files with Prettier after edits |
 | **TypeScript check** | `Edit` | Runs `tsc --noEmit` after editing `.ts`/`.tsx` files |
 | **console.log warning** | `Edit` | Warns about `console.log` statements in edited files |
+| **Hookify runtime** | `.*` | Evaluates project-local Hookify rules against completed shell and file tools |
 
 ### Lifecycle Hooks
 
 | Hook | Event | What It Does |
 |------|-------|-------------|
 | **Session start** | `SessionStart` | Loads previous context and detects package manager |
+| **Hookify prompt rules** | `UserPromptSubmit` | Evaluates prompt rules before the user prompt reaches Claude |
 | **Plan Canvas sessions** | `SessionStart` | Surfaces open Plan Canvas browser reviews so a fresh session can resume the loop |
 | **Pre-compact** | `PreCompact` | Saves state before context compaction |
+| **Hookify completion rules** | `Stop` | Warns or requests another turn when an enabled completion rule matches |
 | **Console.log audit** | `Stop` | Checks all modified files for `console.log` after each response |
 | **Session summary** | `Stop` | Persists session state when transcript path is available |
 | **Pattern extraction** | `Stop` | Evaluates session for extractable patterns (continuous learning) |
@@ -106,6 +119,24 @@ export ECC_HOOK_PROFILE=standard
 # Disable specific hook IDs (comma-separated)
 export ECC_DISABLED_HOOKS="pre:bash:tmux-reminder,post:edit:typecheck"
 
+# Lower the hook input cap in bytes (default and maximum: 1048576).
+# run-with-flags.js adds runner-level fail-closed handling for
+# pre:edit-write:gateguard-fact-force and pre:mcp-health-check because they
+# cannot inspect the complete request. Other safety hooks, including the Bash
+# dispatcher and config protection, retain their own fail-closed behavior.
+# If a trusted tool call legitimately exceeds the cap, retry with a smaller
+# input or temporarily set ECC_GATEGUARD=off (or GATEGUARD_DISABLED=1) for
+# GateGuard, or ECC_MCP_HEALTH_FAIL_OPEN=yes for MCP health, then restore it.
+# These switches reduce only the named protection while enabled; they do not
+# bypass the Bash dispatcher or config-protection checks.
+export ECC_HOOK_INPUT_MAX_BYTES=524288
+
+# Stop waiting for hook input after this many idle milliseconds when the
+# caller never closes stdin (default: 3000; 0 disables the deadline).
+# Input that is not yet a complete JSON object is treated as incomplete, so
+# fail-closed safety hooks block instead of hanging until the harness kills them.
+export ECC_HOOK_INPUT_IDLE_TIMEOUT_MS=1500
+
 # Disable only GateGuard during setup or recovery
 export ECC_GATEGUARD=off
 
@@ -137,9 +168,32 @@ The Claude plugin exposes the same choices as the personal `hooks_enabled` and
 `hook_profile` settings. Run `ecc setup --mode claude-plugin` to install or
 update the plugin and change those preferences.
 
+### Hookify Rule Runtime
+
+ECC loads enabled `.claude/hookify.*.local.md` files directly; no separate
+Hookify plugin or Python runtime is required. Rules support `bash`, `file`,
+`prompt`, `stop`, and `all` events, plus either a simple regex `pattern` or an
+AND-combined `conditions` list. `warn` adds visible context for Claude while
+allowing the action. `block` denies a matching `PreToolUse` call and uses the
+event's blocking decision contract for prompt, post-tool, and stop events.
+
+Rule loading is project-scoped and bounded. Symlinked, oversized, malformed,
+or unsafe-regex rule files are skipped with a diagnostic instead of breaking
+the entire hook chain. Every regex evaluation also has a 25 ms hard timeout.
+Stop rules ignore `stop_hook_active: true` to avoid continuation loops.
+
+Files tracked by Git are disabled by default because opening a repository must
+not activate repository-authored instructions. Locally created, gitignored
+rules continue to work automatically. To review and explicitly trust tracked
+rules, set `ECC_HOOKIFY_ALLOW_TRACKED=1`; messages are still labeled as
+untrusted local rule data when passed to Claude.
+
 ### Writing Your Own Hook
 
-Hooks are shell commands that receive tool input as JSON on stdin and must output JSON on stdout.
+Hooks are shell commands that receive tool input as JSON on stdin. A hook with
+no decision or context to return should leave stdout empty. Only explicit hook
+output, such as a deny decision or `additionalContext`, should be written to
+stdout; the input payload must not be echoed as a no-op response.
 
 **Basic structure:**
 
@@ -161,8 +215,7 @@ process.stdin.on('end', () => {
   // Block (PreToolUse only): exit with code 2
   // process.exit(2);
 
-  // Always output the original data to stdout
-  console.log(data);
+  // No opinion: leave stdout empty.
 });
 ```
 
@@ -213,7 +266,7 @@ Async hooks run in the background. They cannot block tool execution.
   "matcher": "Edit",
   "hooks": [{
     "type": "command",
-    "command": "node -e \"let d='';process.stdin.on('data',c=>d+=c);process.stdin.on('end',()=>{const i=JSON.parse(d);const ns=i.tool_input?.new_string||'';if(/TODO|FIXME|HACK/.test(ns)){console.error('[Hook] New TODO/FIXME added - consider creating an issue')}console.log(d)})\""
+    "command": "node -e \"let d='';process.stdin.on('data',c=>d+=c);process.stdin.on('end',()=>{const i=JSON.parse(d);const ns=i.tool_input?.new_string||'';if(/TODO|FIXME|HACK/.test(ns)){console.error('[Hook] New TODO/FIXME added - consider creating an issue')}})\""
   }],
   "description": "Warn when adding TODO/FIXME comments"
 }
@@ -226,7 +279,7 @@ Async hooks run in the background. They cannot block tool execution.
   "matcher": "Write",
   "hooks": [{
     "type": "command",
-    "command": "node -e \"let d='';process.stdin.on('data',c=>d+=c);process.stdin.on('end',()=>{const i=JSON.parse(d);const c=i.tool_input?.content||'';const lines=c.split('\\n').length;if(lines>800){console.error('[Hook] BLOCKED: File exceeds 800 lines ('+lines+' lines)');console.error('[Hook] Split into smaller, focused modules');process.exit(2)}console.log(d)})\""
+    "command": "node -e \"let d='';process.stdin.on('data',c=>d+=c);process.stdin.on('end',()=>{const i=JSON.parse(d);const c=i.tool_input?.content||'';const lines=c.split('\\n').length;if(lines>800){console.error('[Hook] BLOCKED: File exceeds 800 lines ('+lines+' lines)');console.error('[Hook] Split into smaller, focused modules');process.exit(2)}})\""
   }],
   "description": "Block creation of files larger than 800 lines"
 }
@@ -239,7 +292,7 @@ Async hooks run in the background. They cannot block tool execution.
   "matcher": "Edit",
   "hooks": [{
     "type": "command",
-    "command": "node -e \"let d='';process.stdin.on('data',c=>d+=c);process.stdin.on('end',()=>{const i=JSON.parse(d);const p=i.tool_input?.file_path||'';if(/\\.py$/.test(p)){const{execFileSync}=require('child_process');try{execFileSync('ruff',['format',p],{stdio:'pipe'})}catch(e){}}console.log(d)})\""
+    "command": "node -e \"let d='';process.stdin.on('data',c=>d+=c);process.stdin.on('end',()=>{const i=JSON.parse(d);const p=i.tool_input?.file_path||'';if(/\\.py$/.test(p)){const{execFileSync}=require('child_process');try{execFileSync('ruff',['format',p],{stdio:'pipe'})}catch(e){}}})\""
   }],
   "description": "Auto-format Python files with ruff after edits"
 }
@@ -252,7 +305,7 @@ Async hooks run in the background. They cannot block tool execution.
   "matcher": "Write",
   "hooks": [{
     "type": "command",
-    "command": "node -e \"const fs=require('fs');let d='';process.stdin.on('data',c=>d+=c);process.stdin.on('end',()=>{const i=JSON.parse(d);const p=i.tool_input?.file_path||'';if(/src\\/.*\\.(ts|js)$/.test(p)&&!/\\.test\\.|\\.spec\\./.test(p)){const testPath=p.replace(/\\.(ts|js)$/,'.test.$1');if(!fs.existsSync(testPath)){console.error('[Hook] No test file found for: '+p);console.error('[Hook] Expected: '+testPath);console.error('[Hook] Consider writing tests first (/tdd)')}}console.log(d)})\""
+    "command": "node -e \"const fs=require('fs');let d='';process.stdin.on('data',c=>d+=c);process.stdin.on('end',()=>{const i=JSON.parse(d);const p=i.tool_input?.file_path||'';if(/src\\/.*\\.(ts|js)$/.test(p)&&!/\\.test\\.|\\.spec\\./.test(p)){const testPath=p.replace(/\\.(ts|js)$/,'.test.$1');if(!fs.existsSync(testPath)){console.error('[Hook] No test file found for: '+p);console.error('[Hook] Expected: '+testPath);console.error('[Hook] Consider writing tests first (/tdd)')}}})\""
   }],
   "description": "Remind to create tests when adding new source files"
 }

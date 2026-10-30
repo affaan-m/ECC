@@ -5,7 +5,7 @@ metadata:
   origin: ECC
 ---
 
-# 配置 Everything Claude Code
+# 配置 ECC
 
 在当前工具内运行对话式向导：先检查，只收集受支持的选项，预览，只确认
 一次，以非交互方式执行，验证，最后才显示欢迎信息。不要把 ECC 克隆到

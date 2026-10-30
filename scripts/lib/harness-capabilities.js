@@ -109,10 +109,27 @@ const HARNESS_CAPABILITIES = deepFreeze([
     installMode: 'managed-project',
     guidedReady: false,
     availability: 'advanced',
-    destination: './.agent',
-    scopes: [scope('project', 'antigravity', './.agent')],
+    destination: './.agents',
+    scopes: [scope('project', 'antigravity', './.agents')],
     hooks: hooks('not-configured', false, 'ECC hooks are not configured by this adapter.'),
     aliases: ['google-antigravity'],
+  },
+  {
+    id: 'copilot',
+    label: 'GitHub Copilot',
+    targetIds: ['copilot'],
+    channel: 'managed-project',
+    installMode: 'managed-project',
+    guidedReady: false,
+    availability: 'advanced',
+    destination: './.github',
+    scopes: [scope('project', 'copilot', './.github')],
+    hooks: hooks(
+      'not-configured',
+      false,
+      'ECC hooks target Claude Code events and are not installed for Copilot.'
+    ),
+    aliases: ['github-copilot', 'copilot-cli'],
   },
   {
     id: 'gemini',
@@ -135,8 +152,9 @@ const HARNESS_CAPABILITIES = deepFreeze([
     installMode: 'managed-home',
     guidedReady: false,
     availability: 'advanced',
-    destination: '~/.opencode',
-    scopes: [scope('home', 'opencode', '~/.opencode')],
+    destination: '~/.config/opencode',
+    destinationResolution: 'OPENCODE_CONFIG_DIR, then XDG_CONFIG_HOME/opencode, then ~/.config/opencode',
+    scopes: [scope('home', 'opencode', '~/.config/opencode')],
     hooks: hooks(
       'adapter-opt-in',
       false,
@@ -201,6 +219,19 @@ const HARNESS_CAPABILITIES = deepFreeze([
     aliases: [],
   },
   {
+    id: 'adal',
+    label: 'AdaL CLI',
+    targetIds: ['adal'],
+    channel: 'managed-project',
+    installMode: 'managed-project',
+    guidedReady: false,
+    availability: 'advanced',
+    destination: './.adal',
+    scopes: [scope('project', 'adal', './.adal')],
+    hooks: hooks('not-configured', false, 'ECC hooks are not configured by this adapter.'),
+    aliases: ['adal-cli'],
+  },
+  {
     id: 'hermes',
     label: 'Hermes',
     targetIds: ['hermes'],
@@ -249,7 +280,7 @@ for (const harness of HARNESS_CAPABILITIES) {
 function expectedRootForAdapter(adapter) {
   const homeDir = path.resolve('/__ecc_catalog_home__');
   const projectRoot = path.resolve('/__ecc_catalog_project__');
-  const absoluteRoot = adapter.resolveRoot({ homeDir, projectRoot });
+  const absoluteRoot = adapter.resolveRoot({ homeDir, projectRoot, env: {} });
   const baseRoot = adapter.kind === 'home' ? homeDir : projectRoot;
   const prefix = adapter.kind === 'home' ? '~/' : './';
   return `${prefix}${path.relative(baseRoot, absoluteRoot).replace(/\\/g, '/')}`;

@@ -175,6 +175,52 @@ function writeManagedState(plan, overrides = {}) {
     }
   });
 
+  await test('rejects managed preflight plans without an install-state path', () => {
+    const root = tempDir('ecc-guided-missing-state-');
+    try {
+      const source = path.join(root, 'source.md');
+      writeFile(source, 'ecc\n');
+      const plan = managedPlan(root, [{
+        kind: 'copy-file',
+        sourcePath: source,
+        destinationPath: path.join(root, 'AGENTS.md'),
+      }]);
+      delete plan.installStatePath;
+
+      assert.throws(
+        () => preflightManagedPlan(plan),
+        /install-state path is required/i
+      );
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  await test('rejects an identical copy source that is a symbolic link', () => {
+    if (process.platform === 'win32') return;
+    const root = tempDir('ecc-guided-source-symlink-');
+    try {
+      const realSource = path.join(root, 'real-source.md');
+      const linkedSource = path.join(root, 'linked-source.md');
+      const destination = path.join(root, 'AGENTS.md');
+      writeFile(realSource, 'same\n');
+      writeFile(destination, 'same\n');
+      fs.symlinkSync(realSource, linkedSource);
+      const plan = managedPlan(root, [{
+        kind: 'copy-file',
+        sourcePath: linkedSource,
+        destinationPath: destination,
+      }]);
+
+      assert.throws(
+        () => preflightManagedPlan(plan),
+        /symbolic link|regular non-symlink/i
+      );
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   await test('rejects valid install-state from a different managed target identity', () => {
     const root = tempDir('ecc-guided-forged-target-');
     try {
@@ -522,6 +568,76 @@ function writeManagedState(plan, overrides = {}) {
       fs.rmSync(root, { recursive: true, force: true });
     }
   });
+
+  await test('preserves an initially identical user file without shifting later write checks', async () => {
+    const root = tempDir('ecc-guided-identical-preserved-');
+    const projection = require('../../scripts/lib/install-state-store-sync');
+    const originalProjection = projection.projectCanonicalInstallState;
+    // This case verifies canonical ownership, not the optional derived cache.
+    projection.projectCanonicalInstallState = async () => ({ status: 'projected' });
+    try {
+      const source = path.join(root, 'source.md');
+      const userFile = path.join(root, '.kimi-code', 'rules', 'existing.md');
+      const newFile = path.join(root, '.kimi-code', 'rules', 'new.md');
+      writeFile(source, 'ecc\n');
+      writeFile(userFile, 'ecc\n');
+      const plan = managedPlan(root, [
+        stateOperation(userFile, { sourcePath: source }),
+        stateOperation(newFile, { sourcePath: source }),
+      ]);
+      const result = await applyMultiHarnessPlan({
+        harnesses: [{ id: 'kimi', preview: preflightManagedPlan(plan) }],
+        request: { harnesses: ['kimi'] },
+      });
+      assert.strictEqual(result.status, 'complete');
+      assert.strictEqual(fs.readFileSync(userFile, 'utf8'), 'ecc\n');
+      assert.strictEqual(fs.readFileSync(newFile, 'utf8'), 'ecc\n');
+      const state = JSON.parse(fs.readFileSync(plan.installStatePath, 'utf8'));
+      assert.ok(!state.operations.some(operation => operation.destinationPath === userFile));
+      assert.ok(state.operations.some(operation => operation.destinationPath === newFile));
+    } finally {
+      projection.projectCanonicalInstallState = originalProjection;
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  for (const existing of [false, true]) {
+    await test(`applies ordered JSON merges to the same ${existing ? 'existing' : 'new'} destination`, async () => {
+      const root = tempDir('ecc-guided-repeated-json-');
+      const projection = require('../../scripts/lib/install-state-store-sync');
+      const originalProjection = projection.projectCanonicalInstallState;
+      projection.projectCanonicalInstallState = async () => ({ status: 'projected' });
+      try {
+        const destination = path.join(root, '.kimi-code', 'mcp.json');
+        if (existing) writeFile(destination, JSON.stringify({ userSetting: true }));
+        const plan = managedPlan(root, [
+          stateOperation(destination, {
+            kind: 'merge-json',
+            mergePayload: { servers: { first: { command: 'first' } }, sequence: 'first' },
+            strategy: 'merge-json',
+          }),
+          stateOperation(destination, {
+            kind: 'merge-json',
+            mergePayload: { servers: { second: { command: 'second' } }, sequence: 'second' },
+            strategy: 'merge-json',
+          }),
+        ]);
+        const result = await applyMultiHarnessPlan({
+          harnesses: [{ id: 'kimi', preview: preflightManagedPlan(plan) }],
+          request: { harnesses: ['kimi'] },
+        });
+        assert.strictEqual(result.status, 'complete', JSON.stringify(result.failure));
+        assert.deepStrictEqual(JSON.parse(fs.readFileSync(destination, 'utf8')), {
+          ...(existing ? { userSetting: true } : {}),
+          servers: { first: { command: 'first' }, second: { command: 'second' } },
+          sequence: 'second',
+        });
+      } finally {
+        projection.projectCanonicalInstallState = originalProjection;
+        fs.rmSync(root, { recursive: true, force: true });
+      }
+    });
+  }
 
   await test('refuses conflicting JSON created after preview but before apply', async () => {
     const root = tempDir('ecc-guided-late-json-collision-');

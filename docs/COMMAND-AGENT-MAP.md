@@ -8,6 +8,7 @@ This document lists each slash command and the primary agent(s) or skills it inv
 | `/plan-canvas` | — (skill: plan-canvas) | Browser review canvas for plan artifacts: annotate, chat, approve/request changes |
 | `/tdd` | tdd-guide | Test-driven development |
 | `/code-review` | code-reviewer | Quality and security review |
+| `/issue-review` | — (skill: issue-review) | GitHub issue review: verify against the codebase, duplicates, prior fixes, severity, draft reply |
 | `/build-fix` | build-error-resolver | Fix build/type errors |
 | `/e2e` | e2e-runner | Playwright E2E tests |
 | `/refactor-clean` | refactor-cleaner | Dead code removal |
@@ -37,6 +38,7 @@ This document lists each slash command and the primary agent(s) or skills it inv
 | `/promote` | — | continuous-learning-v2 |
 | `/projects` | — | continuous-learning-v2 |
 | `/skill-create` | — | skill-create-output script, git history |
+| `/skill-host-compat` | — | validate-skill-host-compat.js, Codex/Cursor skill lint |
 | `/checkpoint` | — | verification-loop skill |
 | `/verify` | — | verification-loop skill |
 | `/eval` | — | eval-harness skill |
@@ -71,8 +73,16 @@ This document lists each slash command and the primary agent(s) or skills it inv
 - **verification-loop**: `/checkpoint`, `/verify`
 - **eval-harness**: `/eval`
 - **security-scan**: `/security-scan` (runs AgentShield)
+- **skill-host-compat**: `/skill-host-compat`
+- **issue-review**: `/issue-review`
 - **strategic-compact**: suggested at compaction points (hooks)
 - **unified-memory**: `ecc memory ...` and the opt-in `ecc-memory-mcp` server
+
+## Direct-Use Skills
+
+| Skill | Purpose | Entry point |
+|-------|---------|-------------|
+| [osint-investigation](../skills/osint-investigation/SKILL.md) | Public-source investigation methodology: competing hypotheses, falsification, visual verification, and evidence tracking | Invoke the self-contained skill directly using available host capabilities. |
 
 ## How to use this map
 

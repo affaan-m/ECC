@@ -162,6 +162,22 @@ function runTests() {
     }
   })) passed++; else failed++;
 
+  if (test('managed hook config accepts a leading UTF-8 BOM', () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-hook-flags-bom-'));
+    const configPath = path.join(root, 'setup.json');
+    const env = { ECC_HOOK_CONFIG: configPath };
+    try {
+      fs.writeFileSync(configPath, '\uFEFF' + JSON.stringify({
+        hooks: { enabled: false, profile: 'minimal', note: 'keep\uFEFFinside' },
+      }));
+      assert.strictEqual(areHooksEnabled(env), false);
+      assert.strictEqual(getHookProfile(env), 'minimal');
+      assert.strictEqual(readManagedHookConfig(env).note, 'keep\uFEFFinside');
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  })) passed++; else failed++;
+
   if (test('a hook evaluation reads managed config only once', () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-hook-flags-read-once-'));
     const configPath = path.join(root, 'setup.json');
@@ -247,7 +263,7 @@ function runTests() {
         encoding: 'utf8',
       });
       assert.strictEqual(result.status, 0, result.stderr);
-      assert.strictEqual(result.stdout, raw);
+      assert.strictEqual(result.stdout, '', 'disabled wrapper hooks must not echo stdin');
       assert.ok(!fs.existsSync(markerPath), 'disabled wrapper hook must not execute');
     } finally {
       fs.rmSync(root, { recursive: true, force: true });

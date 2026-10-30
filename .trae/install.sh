@@ -1,7 +1,7 @@
 #!/bin/bash
 #
 # ECC Trae Installer
-# Installs Everything Claude Code workflows into a Trae project.
+# Installs ECC workflows into a Trae project.
 #
 # Usage:
 #   ./install.sh              # Install to current directory

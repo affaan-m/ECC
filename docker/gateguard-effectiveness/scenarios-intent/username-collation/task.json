@@ -1,0 +1,9 @@
+{
+  "id": "username-collation",
+  "trap": "A lookup invites the habitual lowercase-and-trim normalisation. Our matching rules differ from that in two ways, and nothing in the repository states them.",
+  "prompt": "Add findUser(name) to src/users.js. It returns the matching user object from the users array, or undefined.",
+  "evidence": [
+    "users",
+    "findUser"
+  ]
+}

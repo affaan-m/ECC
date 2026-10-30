@@ -48,7 +48,7 @@ origin: ECC
 
 ## 输出约定
 
-生成一个可复用的`VOICE PROFILE`代码块，供下游技能直接调用。使用[references/voice-profile-schema.md](references/voice-profile-schema.md)中的架构。
+生成一个可复用的`VOICE PROFILE`代码块，供下游技能直接调用。使用[references/voice-profile-schema.md](https://github.com/affaan-m/ECC/blob/main/skills/brand-voice/references/voice-profile-schema.md)中的架构。
 
 保持档案结构化且足够简短，以便在会话上下文中复用。重点不是文学批评，而是操作复用。
 

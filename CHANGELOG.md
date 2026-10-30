@@ -4,11 +4,117 @@
 
 ### Changed
 
+- GateGuard first-touch denials ask questions that fit the target: by class (instruction, test, prose, config, code) on its project-relative path, and for code by what the change touches. An edit that changes no public declaration asks for the in-module call sites instead of importers and public API, and the data-schema question is dropped when the change handles no data. Changes the hook cannot read with confidence keep the original four questions word for word.
+- GateGuard's external-contract question ("name what outside this repository decides the format, units, timezone or protocol semantics") is opt-in through `GATEGUARD_EXTERNAL_CONTRACT_QUESTION`. Hidden-intent trials did not show it helps, so by default a code change that handles data asks only the data-schema question, and an unreadable change gets the original four questions and condensed hint.
+- GateGuard credits investigation that already happened: a completed, non-error `Glob`, `Grep`, `LS`, or search-style Bash/PowerShell command in the current human turn that names the target and whose scope contains it passes the first touch with a note. `Read` never counts, nor do searches in the same batch, before a compaction, with error results, or whose filters exclude the target or limit the search to another directory. When a denial follows a search that nearly counted, it names that search and why it did not count.
+- GateGuard passes comment and whitespace-only edits of code, test and prose files with a note, without marking the file checked, so the next change that alters code is still gated.
+- GateGuard asks once for a batch of new files: after a new file is denied, later new files of the same class in the same real directory within the same human turn pass with a note.
+- Read-only shell commands (`ls`, `cat`, `rg`, `git status`/`log`/`diff`, `Get-ChildItem`, …) no longer use up the once-per-session routine shell gate; the first other command is still gated (#2573).
+- GateGuard session state keyed by a session id or transcript path now expires after 8 idle hours instead of 30 minutes; the project-directory fallback keeps 30 minutes.
+- Add opt-in `GATEGUARD_FACT_FORCE_MAX_DENIALS`, a per-session denial cap: once that many first-touch denials have been issued, further new paths pass through (counted in `cap_allows`). Unset keeps the current behaviour; a malformed value is reported once on stderr and leaves the gate uncapped (#2755, thanks @SulimanAbdulrazzaq; closes #2608).
+- GateGuard loads its target-classification, transcript, search-matching and change-profile modules only on the calls that use them, and parses only the searches that name the target, so shell commands and edits of already checked files stay within a few milliseconds of the previous hook.
+- Add a development-only harness, `docker/gateguard-effectiveness/`, that runs real Claude sessions on six trapped coding tasks with no gate, the gate, the gate without the question meant to catch each trap, and a placebo gate, and grades the results with hidden graders (see `docs/gateguard/question-effectiveness.md`).
+- Report that harness's pilot: 72 sessions in which every arm passed every trial, so it measured the gate's cost (about 45% more turns) and nothing about its effect. Add a second runner, `run-intent.js`, for exploratory effectiveness measurements: the deciding fact exists only in a simulated user's hidden intent and sessions are multi-turn. Scenario files omit declared gate-question targets, but the authors knew the taxonomy and this is not blind authorship.
+- Add opt-in `GATEGUARD_METRICS` decision metrics (codes only, never paths, commands or content) and `scripts/gateguard-report.js` to summarise them.
+- Sensitive targets (`.env*`, keys and certificates, `credentials*`, `secrets.*`, `auth`/`security`/`payment(s)`/`billing`/`migrations` path segments, `.github/workflows/`) and files with more than one hard link get none of these allowances, judged on the path as written and its real location, and are gated in subagents too. `GATEGUARD_EXEMPT_GLOBS` still takes precedence.
+- Newly denied: a subagent's first touch of a sensitive or hard-linked file, and the first NotebookEdit of each notebook. Every other rule only removes denials and never returns an `allow` decision. See `skills/gateguard/SKILL.md`.
+
+### Fixed
+
+- Context-size detection keeps a complete usage record at the start of the transcript tail, so a boundary-aligned record still triggers the strategic-compact reminder. Partial records remain excluded.
+- GateGuard keys checked files by canonical path, resolving relative targets against the tool `cwd`, so `a.py`, `./a.py`, and the absolute path (or differently cased and separated Windows spellings) share one first touch. Keys from earlier state files are still honoured.
+- GateGuard gates a MultiEdit call as its `tool_input.file_path` when its entries do not name their own path, which is the tool's own shape; such calls were never gated before, including on sensitive files.
+- GateGuard gates NotebookEdit as a first-touch edit of its `notebook_path`; notebooks were never gated before.
+- GateGuard prior-search credit no longer counts a search that never saw the target. File-type filters (`rg -t`/`-T`/`--type`/`--type-not`, `fd -e`/`--extension`, the Grep tool's `type`), the Glob tool's pattern, shell glob operands, and git pathspecs now filter like include globs, so `rg -t py tokenizer src` or `Glob **/tokenizer.py` no longer credits `tokenizer.js`. A search confined to the target's own file name (`Glob **/tokenizer.js`, `find -name tokenizer.js`, Grep `glob: 'tokenizer.js'`) is a lookup and never credits it. PowerShell searches keep backslashes as path separators.
+- GateGuard no longer passes an edit as comment-only when its text contains U+2028, U+2029, or U+0085, which end a JavaScript or C# line comment.
+- Claude Code home installs (`ecc install --target claude` and `install.sh`) now install under `CLAUDE_CONFIG_DIR` when it is set, matching the directory Claude Code reads its user-level config from. Previously ECC wrote to `~/.claude` regardless, so when `CLAUDE_CONFIG_DIR` redirected the config root the install never loaded ("installs, but nothing loads"); the settings.json, plugin.json, hook commands, bundle and install state were all stranded in `~/.claude` while Claude Code read an empty `CLAUDE_CONFIG_DIR`. The claude-home adapter now resolves its root the same way the runtime does (`CLAUDE_CONFIG_DIR || ~/.claude`), consistent with the opencode adapter and `resolveClaudePaths`.
+- `GATEGUARD_EXEMPT_GLOBS` judges the target's real location as well as the path as written, so a symlink inside an exempt tree no longer exempts the first touch of a file it points to outside the globs (#3655).
+- Hooks run again on native Windows. Claude Code runs each hook as `bash.exe -c "<command>"` through the Windows command line, and that extra unescape layer collapsed the backslashes in the inline plugin-root resolver's WSL path conversion, so every hook failed with `SyntaxError: missing ) after argument list` before its script started. The resolver now contains no backslash (it builds the separator with `String.fromCharCode(92)`), and a test runs the shipped SessionStart command with backslashes collapsed the same way (#3746).
+
+## 2.2.3 - 2026-10-01
+
+### Changed
+
+#### Naming
+
+- `pi/core` refers to the project as ECC only. The generated README and the bundled `blueprint` skill no longer expand the name; profile contents, package name (`ecc-pi-core`) and paths are unchanged.
+
+### Fixed
+
+#### Release workflow
+
+- Poll the npm registry for up to five minutes after `npm publish` before verifying the published artifact, so a slow registry no longer fails the run before `latest` is promoted and the GitHub Release is created.
+
+## 2.2.2 - 2026-09-15
+
+### Added
+
+#### Pi core profile
+
+- Add `pi/core/`, a curated Pi-native skills+prompts-only profile for downstream packagers that mirror GitHub Releases: 123 portable engineering skills and 24 pure prompt-workflow commands, no extensions, no hooks, no runtime downloads, and no network or SaaS dependencies. The profile is generated deterministically from the explicit include/exclude lists in `manifests/pi-core.json` by `scripts/build-pi-core.js` and committed so release tarballs contain it verbatim; `pi/core/CURATION.md` lists every excluded skill and command with its reason.
+- The build fails on safety violations: non-allowlisted URL hosts, pipe-to-shell or fetch-and-run download forms, secrets or tokens, absolute per-user home paths, symlinks, invalid SKILL.md frontmatter, and duplicate skill names. The `council` skill ships as `ecc-council` inside pi/core to avoid catalog name clashes.
+- CI rebuilds pi/core and verifies it is committed up to date, then installs the Pi coding agent CLI and proves the profile loads fully offline (`PI_OFFLINE=1`), asserting every curated command is actually registered. The release workflow verifies VERSION matches the tag and that pi/core is current.
+
+### Fixed
+
+#### Packaging
+
+- Explicitly include the compiled OpenCode payload in the npm package and verify that packing builds it from a clean state with lifecycle scripts enabled.
+
+#### Memory and MCP
+
+- Distinguish incomplete memory reads from missing records and classify directory traversal failures (`90ef62cb`, `8321021c`).
+- Accept the reserved `_meta` parameter on memory MCP ping requests (`380f4b35`).
+
+#### Hooks and Windows compatibility
+
+- Keep `hooks.json` within Claude Code's schema by moving stable hook metadata into a validated sidecar (`1ac07903`).
+- Handle stuck optional values and long-option prefixes in the no-verify guard (`4f373874`).
+- Support Windows linter paths and ESLint 9 (`2083c983`).
+- Tolerate missing Windows device IDs in settings updates while retaining full-precision inode checks and strict matching when both device IDs are available (`d3af582b`).
+
+#### Workflow guidance and catalog
+
+- Filter epic sync issues by label (`3033436d`).
+- Remove instructions to auto-merge dependency bumps and synchronize localized merge authority (`22d7ed51`, `678c6dea`).
+- Keep common naming and Boolean guidance language-neutral (`072e4684`, `a0ecb793`, `013ed0a8`).
+- Distinguish the `prp-pr` command alias (`cc91c24f`).
+- Correct Rails skill discovery, invoice tax calculation order, and framework documentation (`b6ddd13a`).
+- Remove Serply and Squish catalog entries (`c4904e3f`).
+
+#### Dependency security
+
+- Update `lru` to 0.18.2 for RUSTSEC-2026-0253 (`4fc950c4`).
+- Update `js-yaml` to 4.3.2 for GHSA-2883-xcg3-v3hh (`549c1469`).
+
+## 2.2.0 - 2026-08-25
+
+### Added
+
+- Guided, manifest-driven setup across supported harnesses, with exact install-state ownership, health checks, repair, and uninstall workflows.
+- Native Antigravity 2.0 installation under `.agents/`, including rules, workflows, skills, and adapted agents, plus a cross-platform installation guide.
+- New workflow and operator capabilities including the Itô skill family, an experimental Nasiko CLI lifecycle bridge, multi-model council review, dev-team collaboration, agent evaluation, living-docs governance, secure terminal opening, and TasteForge multimodal workflows.
+- A thin Pi adapter and expanded cross-harness support, release artifact lifecycle testing, Docker-based CLI testing, and stronger Python validation.
+
+### Changed
+
 - Default MCP connector set reduced to a single connector (`chrome-devtools`) per the new connector policy (`docs/MCP-CONNECTOR-POLICY.md`). The six previous defaults (`github`, `context7`, `exa`, `memory`, `playwright`, `sequential-thinking`) were retired after the June 2026 audit: their jobs are covered by skills wrapping CLIs/REST APIs (`github-ops`, `documentation-lookup`, `exa-search`, e2e skills) or by harness-native features (memory, extended thinking, web search). All six remain opt-in via `mcp-configs/mcp-servers.json`.
+- OpenCode home installs now use its canonical `~/.config/opencode` location, safely discover and migrate unchanged ECC-managed files from legacy `~/.opencode` installs, and preserve modified legacy files for review. Bundled agents inherit the model selected by the user instead of pinning an Anthropic provider.
+- `skill-comply` is now part of the install manifest and npm distribution, with generated Python caches excluded from both install and package surfaces.
+- Release automation now verifies the tag is exactly on `origin/main`, fails closed on npm registry errors, tests the exact packed artifact across Linux, macOS, and Windows, publishes stable versions to a staging dist-tag, verifies registry bytes before promoting `latest`, creates the GitHub Release after promotion, and uses reviewed release notes.
 
 ### Fixed
 
 - `ecc memory` writes and `--body-file` reads failed on Windows under Node 22.12-22.16 and 24.0-24.1. libuv resolved path-based `stat()`/`lstat()` through `GetFileInformationByName` without setting the volume serial, while `fstat()` reported it, so the memory vault's TOCTOU guard rejected every operation. Fixed upstream in libuv 1.51.0; the guard no longer depends on the runtime's patch level. The guard's stat calls now request `BigInt` values, so Windows file IDs past `Number.MAX_SAFE_INTEGER` can no longer collapse two distinct files into one identity.
+- Selective reinstall now merges the prior ownership ledger, so later module additions do not orphan files from earlier installs and uninstall removes the complete managed surface.
+- Legacy Codex sync uninstall now uses ownership evidence, preserves user files, and requires an explicit opt-in for weaker marker-only cleanup.
+- The experimental Nasiko CLI lifecycle bridge now recovers locks only after confirming the recorded owner is dead, preserves replacement locks, strictly rejects malformed tar sizes, padding, terminators, and trailing data, and fails uninstall when staged files remain.
+- Hook, plan-canvas, session, memory, observer, skill-evolution, Discord delivery, and Windows compatibility regressions fixed across the runtime.
+
+### Release audit
+
+- Audited the complete delta from `v2.1.0`: 108 commits across 530 files, with 40,299 insertions and 4,679 deletions on the pre-release baseline.
+- The release gate installs and exercises the exact npm archive, including cumulative ownership, doctor, drift detection, repair, uninstall, and user-file preservation.
 
 ## 2.0.0 - 2026-06-09
 

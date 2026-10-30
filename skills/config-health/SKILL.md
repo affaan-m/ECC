@@ -1,6 +1,6 @@
 ---
 name: config-health
-description: Runtime configuration integrity monitoring for Claude Code. Detects config drift, rule staleness, and hook wiring gaps during sessions. Complements delivery-gate with session-duration soft monitoring.
+description: Runtime configuration integrity monitoring for Claude Code. Detects config drift, rule staleness, and hook wiring gaps at startup, with an optional per-tool mode. Complements delivery-gate with startup soft monitoring.
 metadata:
   origin: ECC
 ---
@@ -15,12 +15,12 @@ A real-time monitoring layer. delivery-gate blocks at session end; config-health
 - When hooks silently stop firing
 - When config rules accumulate but you're unsure which still work
 - At session startup for config integrity scan
-- Before high-risk Edit/Write operations
+- Optionally before high-risk Edit/Write operations; this is opt-in, not default
 
 ## How It Works
 
 Session Start → config-health scans rules/hooks (soft warnings, never blocks)
-Session Work → config-health monitors hook wiring (PreToolUse guard)
+Session Work → optional PreToolUse guard, only if you wire it yourself
 Session End → delivery-gate verifies (hard block, exit 2)
 
 Boundary: "Can this be fixed retroactively?" Config drift → config-health warns. Missing growth-log → delivery-gate blocks (hard exit 2).
@@ -28,18 +28,19 @@ Boundary: "Can this be fixed retroactively?" Config drift → config-health warn
 ## What It Monitors
 
 1. Hook Wiring Audit: every script a hook command references, checked against
-   disk. Runs at session start, and on every tool call the PreToolUse `matcher`
-   selects (with the wiring documented below, that is Edit and Write).
+   disk. Runs at session start by default. An optional PreToolUse mode can also
+   run it per matched Edit/Write call; that mode is not part of the default
+   wiring and is not recommended unless you want the recurring cost.
 2. Rule Health: every `rules/*.md` referenced from `CLAUDE.md` exists.
 3. Guard Staleness: rules whose fire counter has been zero across the last five
    sessions recorded in `rule-health.jsonl` — the last five *records*, then
    filtered down to the ones complex enough to judge, so a verdict needs at
    least five records in total.
 
-Nothing here is tool-gated. An earlier revision ran the wiring audit only for
-a hardcoded list of "mutating" tools; it was dead code under this repo's own
-wiring and it traded a property that can be proved for one that cannot, so it
-was removed. See [PreToolUse Cost](#pretool-cost).
+The default wiring is SessionStart only. PreToolUse is available as an opt-in
+mode, but it is not recommended by default: it adds a fresh-process parse of
+this script to every matched Edit and Write without adding tool-specific
+evidence. See [PreToolUse Cost](#pretool-cost).
 
 ## Hook Paths
 
@@ -99,9 +100,14 @@ process environment:
 | Variable | Effect |
 |----------|--------|
 | `CONFIG_HEALTH_USER_HOME` | user home; also what `~` and `$HOME` resolve to |
+| `CLAUDE_CONFIG_DIR` | Claude data root; user settings and the rule-health log; default `~/.claude` |
 | `CLAUDE_PROJECT_DIR` | project dir |
 | `CONFIG_HEALTH_PLUGIN_ROOT` | pins the plugin root |
 | `CLAUDE_PLUGIN_ROOT` | plugin root; `CONFIG_HEALTH_PLUGIN_ROOT` wins |
+
+When a launcher sets `CLAUDE_CONFIG_DIR`, `~/.claude/settings.json` is not the
+file Claude loads. The monitor reads `$CLAUDE_CONFIG_DIR/settings.json` instead,
+and `--check` prints the root it resolved.
 
 **More than one plugin installed?** The provider sets `CLAUDE_PLUGIN_ROOT` to
 the root of the plugin that is *running*, so a settings line wired for a second
@@ -123,15 +129,12 @@ worth acting on rather than ignoring:
 Set `CONFIG_HEALTH_PLUGIN_ROOT` in the hook's `env` block, or wire those hooks
 with `~` or `$HOME`, if you want them covered.
 
-## PreToolUse Cost
+## PreToolUse Cost (opt-in)
 
-`--pretool` runs once per matched tool call — the calls the PreToolUse
-`matcher` selects, which under the wiring below is every Edit and every Write,
-not every tool the harness can make — in a fresh process, and the audit runs on
+`--pretool` is opt-in. If you wire it, it runs once per matched tool call —
+typically every Edit and every Write — in a fresh process, and the audit runs on
 every one of them. "Does this script exist" is a property of the settings files,
-not of the call about to run, so gating it on a tool-class list trades a
-property that can be proved (every matched call is verified) for one that cannot (a
-mutation is imminent).
+not of the call about to run, so a per-tool hook adds no tool-specific evidence.
 
 Measured on this repository's **real 23 hook commands**, Python 3.12 on
 Windows, interleaved A/B so scheduler drift cancels, median of 30 paired runs:
@@ -157,9 +160,9 @@ Net: **+4.1 ms on a ~55 ms hook invocation, about 8%**, and the honest
 attribution is script size, not the audit. Stripping every docstring recovers
 0.15 ms of the compile, so it is the code, not the prose.
 
-If that 8% matters, drop `--pretool` from your wiring and keep `--startup`: the
-audit then runs once per session instead of once per matched tool call, and the
-parse cost goes with it.
+This is why the default wiring keeps only `--startup`: the audit runs once per
+session instead of once per matched tool call, and the parse cost goes with it.
+Opt in only if the per-call check is worth about 8% on each matched call.
 
 The hook payload is drained and discarded, never parsed and never printed. Its
 size cannot change the verdict. `timeout` in the hook wiring, not the read, is
@@ -187,22 +190,38 @@ one finding, still exit 0 — **provided `CLAUDE_PLUGIN_ROOT` (or
 it the token is unresolvable and there is no finding either way.
 
 What this monitor reads: `settings.json` (user and project), `CLAUDE.md` (in
-the project dir), and `~/.claude/session-data/rule-health.jsonl`. It reads no
-documentation to find references, and it does not count how many places a
-script is wired.
+the project dir), and `$CLAUDE_CONFIG_DIR/session-data/rule-health.jsonl`
+(default `~/.claude/session-data/rule-health.jsonl`). It reads no documentation
+to find references, and it does not count how many places a script is wired.
 
 ## Install
 
-**ECC users:** install the `config-health` module (`npx ecc-install --modules config-health` or the `full` profile). It is a **Claude-only** module (SessionStart/PreToolUse hooks) — it does not target other harnesses, so it stays isolated from shared 13-harness modules.
+**ECC users:** install the `config-health` module (`npx ecc-install --modules config-health` or the `full` profile). It is a **Claude-only** module with a SessionStart hook by default; PreToolUse is opt-in. It does not target other harnesses, so it stays isolated from shared 13-harness modules.
 
-**Standalone:** copy `scripts/config-health.py` to `~/.claude/scripts/config-health.py` and verify it exists before enabling.
+**Standalone:** copy `scripts/config-health.py` to
+`${CLAUDE_CONFIG_DIR:-~/.claude}/scripts/config-health.py` and verify it exists
+before enabling. If your launcher sets `CLAUDE_CONFIG_DIR`, use that path in the
+hook command; `~/.claude` is not the file Claude loads in that setup.
+
 **Important:** Merge these hook entries into your existing `hooks` object — do not replace it, or you will lose hooks like delivery-gate.
+
+Default (SessionStart only):
 
 ```json
 {
   "hooks": {
-    "SessionStart": [{"hooks": [{"type": "command", "command": "python3 ~/.claude/scripts/config-health.py --startup", "timeout": 5000}]}],
-    "PreToolUse": [{"matcher": "Edit|Write", "hooks": [{"type": "command", "command": "python3 ~/.claude/scripts/config-health.py --pretool", "timeout": 3000}]}]
+    "SessionStart": [{"hooks": [{"type": "command", "command": "python3 ~/.claude/scripts/config-health.py --startup", "timeout": 60}]}]
+  }
+}
+```
+
+Optional per-tool mode (opt-in; adds a fresh process on every matched Edit and
+Write; not recommended by default):
+
+```json
+{
+  "hooks": {
+    "PreToolUse": [{"matcher": "Edit|Write", "hooks": [{"type": "command", "command": "python3 ~/.claude/scripts/config-health.py --pretool", "timeout": 60}]}]
   }
 }
 ```
@@ -224,4 +243,4 @@ script is wired.
 
 | File | Purpose | Hook |
 |------|---------|------|
-| scripts/config-health.py | Rule health, hook audit, staleness | SessionStart + PreToolUse |
+| scripts/config-health.py | Rule health, hook audit, staleness | SessionStart; PreToolUse opt-in |

@@ -31,7 +31,7 @@ function writeFile(rootDir, relativePath, content) {
 function seedRepo(rootDir, overrides = {}) {
   const files = {
     'package.json': JSON.stringify({
-      name: 'everything-claude-code',
+      name: 'ecc-universal',
       scripts: {
         'platform:audit': 'node scripts/platform-audit.js',
         'discussion:audit': 'node scripts/discussion-audit.js',

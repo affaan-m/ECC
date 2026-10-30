@@ -1,0 +1,11 @@
+{
+  "id": "idempotent-webhooks",
+  "category": "concurrency-trap",
+  "manualIds": ["skill:error-handling"],
+  "checkTimeoutMs": 60000,
+  "selection": {
+    "id": "complex-idempotent-webhooks",
+    "category": "complex-concurrency-trap",
+    "expectedIds": ["skill:error-handling"]
+  }
+}
