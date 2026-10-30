@@ -587,6 +587,31 @@ function runTests() {
     })
   );
 
+  results.push(
+    test('requiring config-protection in-process does not attach stdin listeners or echo stdin', () => {
+      return withOwnedDirectory(fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-config-protect-require-')), tmpDir => {
+        const protectedPath = path.join(tmpDir, '.eslintrc.js');
+        fs.writeFileSync(protectedPath, 'module.exports = {};');
+        const configProtectionPath = path.join(__dirname, '..', '..', 'scripts', 'hooks', 'config-protection.js');
+        const script = [
+          'const beforeData = process.stdin.listenerCount("data");',
+          'const beforeEnd = process.stdin.listenerCount("end");',
+          `const mod = require(${JSON.stringify(configProtectionPath)});`,
+          'if (typeof mod.run !== "function") process.exit(3);',
+          'if (process.stdin.listenerCount("data") !== beforeData || process.stdin.listenerCount("end") !== beforeEnd) process.exit(4);'
+        ].join('');
+        const result = spawnSync(process.execPath, ['-e', script], {
+          input: JSON.stringify({ tool_name: 'Write', tool_input: { file_path: protectedPath } }),
+          encoding: 'utf8',
+          timeout: 5000
+        });
+        assert.strictEqual(result.status, 0, `require() should not attach stdin listeners or run the CLI handler (exit ${result.status}): ${result.stderr}`);
+        assert.strictEqual(result.stdout, '', 'require() must not echo stdin');
+        assert.strictEqual(result.stderr, '', 'require() must not execute the stdin fallback block');
+      });
+    })
+  );
+
   const passed = results.filter(result => result === 'passed').length;
   const failed = results.filter(result => result === 'failed').length;
   const skipped = results.filter(result => result === 'skipped').length;
