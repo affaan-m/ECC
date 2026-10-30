@@ -104,16 +104,23 @@ export CLV2_PYTHON_CMD="${CLV2_PYTHON_CMD:-$PYTHON_CMD}"
 # If cwd is a subdirectory inside a git repo, resolve it to the repo root so
 # observations attach to the project instead of a nested path.
 STDIN_CWD=$(echo "$INPUT_JSON" | "$PYTHON_CMD" -c '
-import json, sys
+import json, os, sys
 try:
     data = json.load(sys.stdin)
     cwd = data.get("cwd", "")
-    print(cwd)
-except(KeyError, TypeError, ValueError):
+    cwd = cwd[:4096] if isinstance(cwd, str) else ""
+    if isinstance(cwd, str) and os.path.isabs(cwd) and os.path.isdir(cwd):
+        print(os.path.realpath(cwd))
+    else:
+        print("")
+except (KeyError, OSError, TypeError, ValueError):
     print("")
 ' 2>/dev/null || echo "")
 
-# If cwd was provided in stdin, use it for project detection
+# Only a validated, absolute payload cwd may select a project. Missing,
+# relative, or non-existent paths must not fall through to detect-project.sh's
+# inherited-process-cwd discovery, which can attach an observation to an
+# unrelated repository that happened to launch the hook.
 if [ -n "$STDIN_CWD" ] && [ -d "$STDIN_CWD" ]; then
   _GIT_ROOT=$(git -C "$STDIN_CWD" rev-parse --show-toplevel 2>/dev/null || true)
   if [ -n "$_GIT_ROOT" ]; then
@@ -123,6 +130,9 @@ if [ -n "$STDIN_CWD" ] && [ -d "$STDIN_CWD" ]; then
     unset CLAUDE_PROJECT_DIR
     export CLV2_NO_PROJECT=1
   fi
+else
+  unset CLAUDE_PROJECT_DIR
+  export CLV2_NO_PROJECT=1
 fi
 
 # ─────────────────────────────────────────────
@@ -232,6 +242,7 @@ try:
     session_id = data.get("session_id", "unknown")
     tool_use_id = data.get("tool_use_id", "")
     cwd = data.get("cwd", "")
+    cwd = cwd[:4096] if isinstance(cwd, str) else ""
 
     # Truncate large inputs/outputs
     if isinstance(tool_input, dict):
@@ -325,6 +336,7 @@ timestamp=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
 
 export PROJECT_ID_ENV="$PROJECT_ID"
 export PROJECT_NAME_ENV="$PROJECT_NAME"
+export OBSERVATION_CWD_ENV="$STDIN_CWD"
 export TIMESTAMP="$timestamp"
 
 echo "$PARSED" | "$PYTHON_CMD" -c '
@@ -381,6 +393,14 @@ def scrub(val):
         return None
     val = _SECRET_RE.sub(lambda m: m.group(1) + m.group(2) + (m.group(3) or "") + "[REDACTED]", str(val))
     return _SECRET_VALUE_RE.sub(lambda m: (m.group(2) or "") + "[REDACTED]", val)
+
+# Prefer the canonical cwd that passed the project-selection boundary. Retain a
+# bounded rejected string as diagnostic metadata without ever using it to select
+# a project. Apply the same secret scrubber as tool I/O because path components
+# can still contain credentials or tokens (for example, generated checkout names).
+cwd = os.environ.get("OBSERVATION_CWD_ENV", "") or parsed.get("cwd", "")
+if cwd:
+    observation["cwd"] = scrub(cwd)
 
 if parsed["input"]:
     observation["input"] = scrub(parsed["input"])
@@ -532,15 +552,17 @@ print(str(cfg.get('observer', {}).get('enabled', False)).lower())
   fi
 fi
 
-# Check both project-scoped AND global PID files (with stale PID recovery)
+# Observers are deliberately scope-pinned: each project (and the global scope)
+# owns a distinct PROJECT_DIR, PID file, observation stream, and lazy-start lock.
+# An observer from another scope cannot consume this observation stream and must
+# not suppress startup or receive signals for the current scope.
 if [ "$OBSERVER_ENABLED" = "true" ]; then
   # Clean up stale PID files first.
   # `if` context (not `|| true`) so `set -e` stays satisfied while we still
-  # capture whether either PID file pointed at a live observer.
+  # capture whether this scope's PID file pointed at a live observer.
   OBSERVER_ALIVE=false
   OBSERVER_DIED=false
   if _CHECK_OBSERVER_RUNNING "${PROJECT_DIR}/.observer.pid"; then OBSERVER_ALIVE=true; fi
-  if _CHECK_OBSERVER_RUNNING "${CONFIG_DIR}/.observer.pid"; then OBSERVER_ALIVE=true; fi
 
   # A live observer clears the streak so a later one-off crash does not inherit
   # an old count. This is an idempotent unlink, not a read-modify-write, so it
@@ -551,15 +573,14 @@ if [ "$OBSERVER_ENABLED" = "true" ]; then
   fi
 
   # Check if observer is now running after cleanup
-  if [ ! -f "${PROJECT_DIR}/.observer.pid" ] && [ ! -f "${CONFIG_DIR}/.observer.pid" ]; then
+  if [ ! -f "${PROJECT_DIR}/.observer.pid" ]; then
     # Use flock if available (Linux), fallback for macOS
     if command -v flock >/dev/null 2>&1; then
       (
         flock -n 9 || exit 0
-        # Double-check PID files after acquiring lock
+        # Double-check this scope's PID file after acquiring the lock.
         _CHECK_OBSERVER_RUNNING "${PROJECT_DIR}/.observer.pid" || true
-        _CHECK_OBSERVER_RUNNING "${CONFIG_DIR}/.observer.pid" || true
-        if [ ! -f "${PROJECT_DIR}/.observer.pid" ] && [ ! -f "${CONFIG_DIR}/.observer.pid" ]; then
+        if [ ! -f "${PROJECT_DIR}/.observer.pid" ]; then
           _START_OBSERVER_LOGGED
         fi
       ) 9>"$LAZY_START_LOCK"
@@ -571,8 +592,7 @@ if [ "$OBSERVER_ENABLED" = "true" ]; then
           trap '_REMOVE_FILE_IF_PRESENT "$LAZY_START_LOCK"' EXIT
           lockfile -r 1 -l 30 "$LAZY_START_LOCK" 2>/dev/null || exit 0
           _CHECK_OBSERVER_RUNNING "${PROJECT_DIR}/.observer.pid" || true
-          _CHECK_OBSERVER_RUNNING "${CONFIG_DIR}/.observer.pid" || true
-          if [ ! -f "${PROJECT_DIR}/.observer.pid" ] && [ ! -f "${CONFIG_DIR}/.observer.pid" ]; then
+          if [ ! -f "${PROJECT_DIR}/.observer.pid" ]; then
             _START_OBSERVER_LOGGED
           fi
           _REMOVE_FILE_IF_PRESENT "$LAZY_START_LOCK"
@@ -583,8 +603,7 @@ if [ "$OBSERVER_ENABLED" = "true" ]; then
           trap 'rmdir "${LAZY_START_LOCK}.d" 2>/dev/null || true' EXIT
           mkdir "${LAZY_START_LOCK}.d" 2>/dev/null || exit 0
           _CHECK_OBSERVER_RUNNING "${PROJECT_DIR}/.observer.pid" || true
-          _CHECK_OBSERVER_RUNNING "${CONFIG_DIR}/.observer.pid" || true
-          if [ ! -f "${PROJECT_DIR}/.observer.pid" ] && [ ! -f "${CONFIG_DIR}/.observer.pid" ]; then
+          if [ ! -f "${PROJECT_DIR}/.observer.pid" ]; then
             _START_OBSERVER_LOGGED
           fi
         )
@@ -699,29 +718,22 @@ PY
   ) || should_signal=0
 fi
 
-# Signal observer if running and throttle allows (check both project-scoped and global observer, deduplicate)
+# Signal only the observer that owns the current observation stream.
 if [ "$should_signal" -eq 1 ]; then
-  signaled_pids=" "
-  for pid_file in "${PROJECT_DIR}/.observer.pid" "${CONFIG_DIR}/.observer.pid"; do
-    if [ -f "$pid_file" ]; then
-      observer_pid=$(cat "$pid_file" 2>/dev/null || true)
-      # Validate PID is a positive integer (>1)
-      case "$observer_pid" in
-        ''|*[!0-9]*|0|1)
-          _REMOVE_FILE_IF_PRESENT "$pid_file"
-          continue
-          ;;
-      esac
-      # Deduplicate: skip if already signaled this pass
-      case "$signaled_pids" in
-        *" $observer_pid "*) continue ;;
-      esac
-      if kill -0 "$observer_pid" 2>/dev/null; then
-        kill -USR1 "$observer_pid" 2>/dev/null || true
-        signaled_pids="${signaled_pids}${observer_pid} "
-      fi
+  pid_file="${PROJECT_DIR}/.observer.pid"
+  if [ -f "$pid_file" ]; then
+    observer_pid=$(cat "$pid_file" 2>/dev/null || true)
+    # Validate PID is a positive integer (>1)
+    case "$observer_pid" in
+      ''|*[!0-9]*|0|1)
+        _REMOVE_FILE_IF_PRESENT "$pid_file"
+        observer_pid=""
+        ;;
+    esac
+    if [ -n "$observer_pid" ] && kill -0 "$observer_pid" 2>/dev/null; then
+      kill -USR1 "$observer_pid" 2>/dev/null || true
     fi
-  done
+  fi
 fi
 
 exit 0

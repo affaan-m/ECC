@@ -86,17 +86,20 @@ function gitInit(dir) {
   assert.strictEqual(commitResult.status, 0, commitResult.stderr);
 }
 
-function runObserve({ homeDir, cwd, args = ['post'], extraEnv = {} }) {
-  const payload = JSON.stringify({
+function runObserve({ homeDir, cwd, runCwd = repoRoot, args = ['post'], extraEnv = {} }) {
+  const payloadData = {
     tool_name: 'Read',
     tool_input: { file_path: 'README.md' },
     tool_response: 'ok',
     session_id: 'session-subdir-test',
-    cwd,
-  });
+  };
+  if (cwd !== undefined) {
+    payloadData.cwd = cwd;
+  }
+  const payload = JSON.stringify(payloadData);
 
   return spawnSync('bash', [observeShPath, ...args], {
-    cwd: repoRoot,
+    cwd: runCwd,
     encoding: 'utf8',
     input: payload,
     env: {
@@ -137,6 +140,14 @@ test('observe.sh resolves cwd to git root before setting CLAUDE_PROJECT_DIR', ()
   assert.ok(
     content.includes('export CLV2_NO_PROJECT=1'),
     'observe.sh should mark non-git cwd payloads as global instead of registering raw cwd'
+  );
+  assert.ok(
+    !content.includes('_CHECK_OBSERVER_RUNNING "${CONFIG_DIR}/.observer.pid"'),
+    'project observations must not treat an unrelated global observer as their observer'
+  );
+  assert.ok(
+    !content.includes('for pid_file in "${PROJECT_DIR}/.observer.pid" "${CONFIG_DIR}/.observer.pid"'),
+    'a project hook must signal only the observer for its current scope'
   );
 });
 
@@ -198,8 +209,10 @@ test('observe.sh writes project metadata for the git root when cwd is a subdirec
     fs.mkdirSync(homeDir, { recursive: true });
     fs.mkdirSync(subDir, { recursive: true });
     gitInit(repoDir);
+    const nonCanonicalCwd = `${subDir}${path.sep}..${path.sep}components`;
+    const canonicalCwd = fs.realpathSync(nonCanonicalCwd);
 
-    const result = runObserve({ homeDir, cwd: subDir });
+    const result = runObserve({ homeDir, cwd: nonCanonicalCwd });
     assert.strictEqual(result.status, 0, result.stderr);
 
     const { metadata, projectDir } = readSingleProjectMetadata(homeDir);
@@ -211,6 +224,12 @@ test('observe.sh writes project metadata for the git root when cwd is a subdirec
 
     const observationsPath = path.join(projectDir, 'observations.jsonl');
     assert.ok(fs.existsSync(observationsPath), 'observe.sh should append an observation');
+    const observation = JSON.parse(fs.readFileSync(observationsPath, 'utf8').trim());
+    assert.strictEqual(
+      process.platform === 'win32' ? observation.cwd.toLowerCase() : observation.cwd,
+      process.platform === 'win32' ? canonicalCwd.toLowerCase() : canonicalCwd,
+      'observation should persist the canonical cwd used for project detection'
+    );
   } finally {
     cleanupDir(testRoot);
   }
@@ -274,6 +293,132 @@ test('observe.sh records non-git cwd payloads globally without project registry 
     );
     assert.ok(fs.existsSync(observationsPath), 'non-git cwd should still record a global observation');
   } finally {
+    cleanupDir(testRoot);
+  }
+});
+
+test('observe.sh does not infer a project from inherited cwd when payload cwd is missing', () => {
+  const testRoot = createTempDir();
+
+  try {
+    const homeDir = path.join(testRoot, 'home');
+    const inheritedRepo = path.join(testRoot, 'inherited-repo');
+    fs.mkdirSync(homeDir, { recursive: true });
+    fs.mkdirSync(inheritedRepo, { recursive: true });
+    gitInit(inheritedRepo);
+
+    const result = runObserve({ homeDir, cwd: undefined, runCwd: inheritedRepo });
+    assert.strictEqual(result.status, 0, result.stderr);
+
+    const homunculusDir = path.join(homeDir, '.local', 'share', 'ecc-homunculus');
+    assert.ok(!fs.existsSync(path.join(homunculusDir, 'projects.json')));
+    assert.ok(fs.existsSync(path.join(homunculusDir, 'observations.jsonl')));
+  } finally {
+    cleanupDir(testRoot);
+  }
+});
+
+test('observe.sh rejects invalid and relative payload cwd without inherited project fallback', () => {
+  for (const payloadCwd of ['does-not-exist', '.']) {
+    const testRoot = createTempDir();
+
+    try {
+      const homeDir = path.join(testRoot, 'home');
+      const inheritedRepo = path.join(testRoot, 'inherited-repo');
+      fs.mkdirSync(homeDir, { recursive: true });
+      fs.mkdirSync(inheritedRepo, { recursive: true });
+      gitInit(inheritedRepo);
+
+      const result = runObserve({ homeDir, cwd: payloadCwd, runCwd: inheritedRepo });
+      assert.strictEqual(result.status, 0, result.stderr);
+
+      const homunculusDir = path.join(homeDir, '.local', 'share', 'ecc-homunculus');
+      assert.ok(
+        !fs.existsSync(path.join(homunculusDir, 'projects.json')),
+        `${payloadCwd} must not register the inherited git repository`
+      );
+      const observation = JSON.parse(
+        fs.readFileSync(path.join(homunculusDir, 'observations.jsonl'), 'utf8').trim()
+      );
+      assert.strictEqual(
+        observation.cwd,
+        payloadCwd,
+        'rejected cwd should remain available as scrubbed diagnostic metadata'
+      );
+    } finally {
+      cleanupDir(testRoot);
+    }
+  }
+});
+
+test('observe.sh scrubs secrets from persisted cwd metadata', () => {
+  const testRoot = createTempDir();
+
+  try {
+    const homeDir = path.join(testRoot, 'home');
+    const repoDir = path.join(testRoot, 'repo');
+    const secretDir = path.join(repoDir, 'token=abcdefghijklmnop');
+    fs.mkdirSync(homeDir, { recursive: true });
+    fs.mkdirSync(secretDir, { recursive: true });
+    gitInit(repoDir);
+
+    const result = runObserve({ homeDir, cwd: secretDir });
+    assert.strictEqual(result.status, 0, result.stderr);
+
+    const { projectDir } = readSingleProjectMetadata(homeDir);
+    const observation = JSON.parse(
+      fs.readFileSync(path.join(projectDir, 'observations.jsonl'), 'utf8').trim()
+    );
+    assert.ok(observation.cwd.includes('token=[REDACTED]'));
+    assert.ok(!observation.cwd.includes('abcdefghijklmnop'));
+  } finally {
+    cleanupDir(testRoot);
+  }
+});
+
+test('a live global observer does not suppress the current project observer', () => {
+  const testRoot = createTempDir();
+  let projectObserverPid;
+
+  try {
+    const homeDir = path.join(testRoot, 'home');
+    const repoDir = path.join(testRoot, 'repo');
+    const configPath = path.join(testRoot, 'config.json');
+    const homunculusDir = path.join(homeDir, '.local', 'share', 'ecc-homunculus');
+    fs.mkdirSync(homeDir, { recursive: true });
+    fs.mkdirSync(repoDir, { recursive: true });
+    fs.mkdirSync(homunculusDir, { recursive: true });
+    gitInit(repoDir);
+    fs.writeFileSync(
+      configPath,
+      JSON.stringify({
+        observer: { enabled: true, run_interval_minutes: 1, min_observations_to_analyze: 20 },
+      })
+    );
+    fs.writeFileSync(path.join(homunculusDir, '.observer.pid'), `${process.pid}\n`);
+
+    const result = runObserve({
+      homeDir,
+      cwd: repoDir,
+      extraEnv: { CLV2_CONFIG: configPath },
+    });
+    assert.strictEqual(result.status, 0, result.stderr);
+
+    const { projectDir } = readSingleProjectMetadata(homeDir);
+    const projectPidPath = path.join(projectDir, '.observer.pid');
+    assert.ok(fs.existsSync(projectPidPath), 'current project should start its own observer');
+    projectObserverPid = Number.parseInt(fs.readFileSync(projectPidPath, 'utf8').trim(), 10);
+    assert.ok(Number.isSafeInteger(projectObserverPid) && projectObserverPid > 1);
+    assert.notStrictEqual(projectObserverPid, process.pid);
+    process.kill(projectObserverPid, 0);
+  } finally {
+    if (projectObserverPid) {
+      try {
+        process.kill(projectObserverPid, 'SIGTERM');
+      } catch {
+        // The observer may already have exited; cleanup is best-effort.
+      }
+    }
     cleanupDir(testRoot);
   }
 });
