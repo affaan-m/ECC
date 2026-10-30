@@ -41,6 +41,7 @@ schedule   summarises Sheets /
 |---|---|---|
 | **Scraping** | `requests` + `BeautifulSoup` | No cost, covers 80% of public sites |
 | **JS-rendered sites** | `playwright` (free) | When HTML fetching fails |
+| **JS-rendered sites (optional)** | Firecrawl (`firecrawl-py`) | Rendered HTML without installing Chromium in CI; free plan includes 1,000 credits a month |
 | **AI enrichment** | Gemini Flash via REST API | 500 req/day, 1M tokens/day — free |
 | **Storage** | Notion API | Free tier, great UI for review |
 | **Schedule** | GitHub Actions cron | Free for public repos |
@@ -690,6 +691,19 @@ with sync_playwright() as p:
 soup = BeautifulSoup(html, "lxml")
 ```
 
+### Pattern 6: JS-Rendered Pages (Firecrawl, optional)
+
+An alternative to Pattern 5 when you'd rather not install Chromium in the Actions runner. Set `FIRECRAWL_API_KEY` in `.env` locally. In GitHub Actions, add the repository secret and map `FIRECRAWL_API_KEY: ${{ secrets.FIRECRAWL_API_KEY }}` under the Run agent step's `env`.
+
+```python
+import os
+from firecrawl import Firecrawl
+
+app = Firecrawl(api_key=os.environ["FIRECRAWL_API_KEY"], origin="ecc")
+doc = app.scrape(url, formats=["html"])
+soup = BeautifulSoup(doc.html, "lxml")
+```
+
 ---
 
 ## Anti-Patterns to Avoid
@@ -702,7 +716,7 @@ soup = BeautifulSoup(html, "lxml")
 | Storing secrets in code | Security risk | Always use `.env` + GitHub Secrets |
 | No deduplication | Duplicate rows pile up | Always check URL before pushing |
 | Ignoring `robots.txt` | Legal/ethical risk | Respect crawl rules; use public APIs when available |
-| JS-rendered sites with `requests` | Empty response | Use Playwright or look for the underlying API |
+| JS-rendered sites with `requests` | Empty response | Use Playwright (or Firecrawl, Pattern 6), or look for the underlying API |
 | `maxOutputTokens` too low | Truncated JSON, parse error | Use 2048+ for batch responses |
 
 ---
@@ -731,6 +745,7 @@ python-dotenv==1.0.1
 pyyaml==6.0.2
 notion-client==2.2.1   # if using Notion
 # playwright==1.40.0   # uncomment for JS-rendered sites
+# firecrawl-py==4.54.0 # optional, Pattern 6
 ```
 
 ---
