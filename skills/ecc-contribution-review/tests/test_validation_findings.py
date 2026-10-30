@@ -65,6 +65,51 @@ class ValidationFindingsTests(unittest.TestCase):
         self.assertIn("observation_shape_invalid", [item["code"] for item in faults])
         self.assertIn("unsafe_generated_authority", [item["code"] for item in contradictions])
 
+    def test_missing_claims_require_review_without_false_contradictions(self):
+        fields = [key for key in observation() if key.startswith("claims")]
+        for field in [*fields, "requestedEffects", "claimedAuthority"]:
+            with self.subTest(field=field):
+                data = observation()
+                del data[field]
+                packet = compile_contract(data, Path("observation.json"))
+                self.assertEqual("require_review", packet["controllerDecision"]["decision"])
+                faults, contradictions = validate(data)
+                self.assertIn("observation_envelope_incomplete", [item["code"] for item in faults])
+                self.assertEqual([], contradictions)
+
+    def test_missing_nested_members_require_review_but_preserve_present_claims(self):
+        for section in ("claimedAuthority", "requestedEffects"):
+            for field in observation()[section]:
+                with self.subTest(section=section, field=field):
+                    data = observation()
+                    del data[section][field]
+                    faults, contradictions = validate(data)
+                    self.assertIn("observation_shape_invalid", [item["code"] for item in faults])
+                    self.assertEqual([], contradictions)
+                    packet = compile_contract(data, Path("observation.json"))
+                    self.assertEqual("require_review", packet["controllerDecision"]["decision"])
+                    remaining = next(iter(data[section]))
+                    data[section][remaining] = True
+                    packet = compile_contract(data, Path("observation.json"))
+                    self.assertEqual("reject", packet["controllerDecision"]["decision"])
+
+    def test_missing_field_preserves_explicit_claims_and_authority(self):
+        changes = (
+            ("claimsPushPerformed", True, "push_claim_forbidden"),
+            ("claimedAuthority", {"mayCommit": True}, "unsafe_generated_authority"),
+            ("requestedEffects", {"pushRequested": True}, "external_action_requested"),
+        )
+        for field, value, code in changes:
+            with self.subTest(field=field):
+                data = observation()
+                del data["claimsCommitCreated"]
+                data[field] = value
+                data["validationMatrix"][0]["gateId"] = []
+                packet = compile_contract(data, Path("observation.json"))
+                self.assertEqual("reject", packet["controllerDecision"]["decision"])
+                self.assertIn(code, packet["controllerDecision"]["reasonCodes"])
+                self.assertNotIn("commit_claim_forbidden", packet["controllerDecision"]["reasonCodes"])
+
     def test_invalid_top_level_section_does_not_hide_authority(self):
         data = observation()
         data["validationMatrix"] = None

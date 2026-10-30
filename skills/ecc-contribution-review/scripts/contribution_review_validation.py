@@ -539,22 +539,24 @@ def _validate_authority(observation: dict[str, Any], contradictions: list[dict[s
         ("claimsPullRequestOpened", "pull_request_claim_forbidden"),
     )
     for field, code in forbidden_claims:
-        if observation.get(field) is not False:
+        if field in observation and observation[field] is not False:
             contradictions = add_issue(
                 contradictions, code, 2,
                 "The compiler cannot claim repository or external effects.",
             )
     requested_effects = observation.get("requestedEffects")
-    if not isinstance(requested_effects, dict) or set(requested_effects) != EFFECT_FIELDS or any(
-        value is not False for value in requested_effects.values()
+    if "requestedEffects" in observation and (
+        not isinstance(requested_effects, dict)
+        or any(value is not False for value in requested_effects.values())
     ):
         contradictions = add_issue(
             contradictions, "external_action_requested", 6,
             "Compilation cannot request source, test, catalog, Git, PR, or memory effects.",
         )
     claimed_authority = observation.get("claimedAuthority")
-    if not isinstance(claimed_authority, dict) or set(claimed_authority) != AUTHORITY_FIELDS or any(
-        value is not False for value in claimed_authority.values()
+    if "claimedAuthority" in observation and (
+        not isinstance(claimed_authority, dict)
+        or any(value is not False for value in claimed_authority.values())
     ):
         contradictions = add_issue(
             contradictions, "unsafe_generated_authority", 6,
@@ -610,6 +612,10 @@ def _valid_envelope(observation: Any, faults: list[dict[str, Any]]) -> tuple[boo
         faults = add_issue(faults, "observation_shape_invalid", 1,
                   "Declared maps and arrays must retain their documented shapes.")
         return False, faults
+    for field, expected in (("requestedEffects", EFFECT_FIELDS), ("claimedAuthority", AUTHORITY_FIELDS)):
+        if set(observation[field]) != expected:
+            faults = add_issue(faults, "observation_shape_invalid", 1,
+                               "Authority and effect maps must contain all documented fields.")
     return True, faults
 
 
