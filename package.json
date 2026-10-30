@@ -551,6 +551,14 @@
     "sql.js": "1.14.2",
     "zod": "4.6.7"
   },
+  "peerDependencies": {
+    "@opencode-ai/plugin": ">=1.0.0"
+  },
+  "peerDependenciesMeta": {
+    "@opencode-ai/plugin": {
+      "optional": true
+    }
+  },
   "pi": {
     "extensions": [
       "./.pi/extensions/index.ts"
