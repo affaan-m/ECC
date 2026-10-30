@@ -116,6 +116,17 @@ function runTests() {
   })) passed++;
   else failed++;
 
+  if (test('detects npm from npm-shrinkwrap.json', () => {
+    const testDir = createTestDir();
+    try {
+      fs.writeFileSync(path.join(testDir, 'npm-shrinkwrap.json'), '{}');
+      assert.strictEqual(pm.detectFromLockFile(testDir), 'npm');
+    } finally {
+      cleanupTestDir(testDir);
+    }
+  })) passed++;
+  else failed++;
+
   if (test('detects pnpm from pnpm-lock.yaml', () => {
     const testDir = createTestDir();
     try {
@@ -295,6 +306,32 @@ function runTests() {
       }
     }
   })) passed++;
+  else failed++;
+
+  if (test('shrinkwrap overrides global preference but not an explicit packageManager', () => withIsolatedHome(isolatedHome => {
+    const originalEnv = process.env.CLAUDE_PACKAGE_MANAGER;
+    const projectDir = path.join(isolatedHome, 'project');
+    fs.mkdirSync(projectDir);
+    try {
+      delete process.env.CLAUDE_PACKAGE_MANAGER;
+      pm.setPreferredPackageManager('pnpm');
+      fs.writeFileSync(path.join(projectDir, 'npm-shrinkwrap.json'), '{}');
+      fs.writeFileSync(path.join(projectDir, 'package.json'), '{}');
+      const detected = pm.getPackageManager({ projectDir });
+      assert.strictEqual(detected.name, 'npm');
+      assert.strictEqual(detected.source, 'lock-file');
+      assert.strictEqual(pm.getRunCommand('install', { projectDir }), 'npm install');
+
+      fs.writeFileSync(path.join(projectDir, 'package.json'), JSON.stringify({ packageManager: 'yarn@4.0.0' }));
+      const configured = pm.getPackageManager({ projectDir });
+      assert.strictEqual(configured.name, 'yarn');
+      assert.strictEqual(configured.source, 'package.json');
+      assert.strictEqual(pm.getRunCommand('install', { projectDir }), 'yarn');
+    } finally {
+      if (originalEnv !== undefined) process.env.CLAUDE_PACKAGE_MANAGER = originalEnv;
+      else delete process.env.CLAUDE_PACKAGE_MANAGER;
+    }
+  }))) passed++;
   else failed++;
 
   // getRunCommand tests

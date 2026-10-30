@@ -14,6 +14,7 @@ const PACKAGE_MANAGERS = {
   npm: {
     name: 'npm',
     lockFile: 'package-lock.json',
+    lockFileAliases: ['npm-shrinkwrap.json'],
     installCmd: 'npm install',
     runCmd: 'npm run',
     execCmd: 'npx',
