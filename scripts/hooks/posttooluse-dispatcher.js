@@ -10,6 +10,7 @@ const path = require('path');
 const { StringDecoder } = require('string_decoder');
 const { isHookEnabled } = require('../lib/hook-flags');
 const { readStdinRaw: readBoundedStdin, resolveMaxStdin } = require('./hook-input');
+const { installHookWatchdog } = require('./hook-watchdog');
 const { runPostBash } = require('./bash-hook-dispatcher');
 const { run: runQualityGate } = require('./quality-gate');
 const { run: runDesignQualityCheck } = require('./design-quality-check');
@@ -325,6 +326,7 @@ async function main(options = {}) {
 }
 
 function cli(options = {}) {
+  installHookWatchdog({ label: 'PostToolUse dispatcher' });
   main(options).catch(error => {
     process.stderr.write(`[Hook] PostToolUse dispatcher failed: ${error.message}\n`);
     process.exitCode = 0;

@@ -14,6 +14,7 @@ const { spawnSync } = require('child_process');
 const { StringDecoder } = require('string_decoder');
 const { isHookEnabled, isDryRun } = require('../lib/hook-flags');
 const { readStdinRaw: readBoundedStdin, resolveMaxStdin } = require('./hook-input');
+const { installHookWatchdog } = require('./hook-watchdog');
 const { buildPreToolUseAdditionalContext } = require('./pretooluse-visible-output');
 const { createHookContextScanner } = require('./hook-input-limits');
 
@@ -343,6 +344,7 @@ async function main() {
   exitWithStdout(legacyStdout, Number.isInteger(result.status) ? result.status : 0);
 }
 
+installHookWatchdog({ label: 'run-with-flags' });
 main().catch(err => {
   process.stderr.write(`[Hook] run-with-flags error: ${err.message}\n`);
   process.exit(0);
