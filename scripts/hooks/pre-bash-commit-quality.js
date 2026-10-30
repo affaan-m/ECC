@@ -183,7 +183,7 @@ function validateCommitMessage(command) {
   const issues = [];
   
   // Check conventional commit format
-  const conventionalCommit = /^(feat|fix|docs|style|refactor|test|chore|build|ci|perf|revert)(\(.+\))?:\s*.+/;
+  const conventionalCommit = /^(feat|fix|docs|style|refactor|test|chore|build|ci|perf|revert)(\(.+\))?!?:\s*.+/;
   if (!conventionalCommit.test(message)) {
     issues.push({
       type: 'format',
