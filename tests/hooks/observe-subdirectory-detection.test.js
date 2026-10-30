@@ -209,8 +209,10 @@ test('observe.sh writes project metadata for the git root when cwd is a subdirec
     fs.mkdirSync(homeDir, { recursive: true });
     fs.mkdirSync(subDir, { recursive: true });
     gitInit(repoDir);
+    const nonCanonicalCwd = `${subDir}${path.sep}..${path.sep}components`;
+    const canonicalCwd = fs.realpathSync(nonCanonicalCwd);
 
-    const result = runObserve({ homeDir, cwd: subDir });
+    const result = runObserve({ homeDir, cwd: nonCanonicalCwd });
     assert.strictEqual(result.status, 0, result.stderr);
 
     const { metadata, projectDir } = readSingleProjectMetadata(homeDir);
@@ -224,8 +226,8 @@ test('observe.sh writes project metadata for the git root when cwd is a subdirec
     assert.ok(fs.existsSync(observationsPath), 'observe.sh should append an observation');
     const observation = JSON.parse(fs.readFileSync(observationsPath, 'utf8').trim());
     assert.strictEqual(
-      normalizeComparablePath(observation.cwd),
-      normalizeComparablePath(subDir),
+      process.platform === 'win32' ? observation.cwd.toLowerCase() : observation.cwd,
+      process.platform === 'win32' ? canonicalCwd.toLowerCase() : canonicalCwd,
       'observation should persist the canonical cwd used for project detection'
     );
   } finally {
