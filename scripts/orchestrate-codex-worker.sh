@@ -32,8 +32,8 @@ EOF
 
 mkdir -p "$(dirname "$handoff_file")" "$(dirname "$status_file")"
 
-if [[ ! -r "$task_file" ]]; then
-  write_status "failed" "- Error: task file is missing or unreadable (\`$task_file\`)"
+if [[ ! -f "$task_file" || ! -r "$task_file" ]]; then
+  write_status "failed" "- Error: task file is missing, unreadable, or not a regular file (\`$task_file\`)"
   {
     echo "# Handoff"
     echo
@@ -41,7 +41,7 @@ if [[ ! -r "$task_file" ]]; then
     echo "- Branch: \`$(git rev-parse --abbrev-ref HEAD)\`"
     echo "- Worktree: \`$(pwd)\`"
     echo
-    echo "Task file is missing or unreadable: \`$task_file\`"
+    echo "Task file is missing, unreadable, or not a regular file: \`$task_file\`"
   } > "$handoff_file"
   exit 1
 fi

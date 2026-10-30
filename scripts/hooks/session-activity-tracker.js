@@ -562,9 +562,8 @@ function summarizeOutput(toolOutput) {
 }
 
 function buildActivityRow(input, env = process.env) {
-  // Same env-var-reliance bug as the session id below: Claude Code doesn't
-  // set CLAUDE_HOOK_EVENT_NAME for hook subprocesses either. Real hook stdin
-  // payloads carry hook_event_name as a JSON field -- prefer that.
+  // Claude Code does not set CLAUDE_HOOK_EVENT_NAME for hook subprocesses.
+  // Real hook stdin payloads carry hook_event_name as a JSON field.
   const hookEvent = String(
     input?.hook_event_name || env.CLAUDE_HOOK_EVENT_NAME || ''
   ).trim();
@@ -573,12 +572,11 @@ function buildActivityRow(input, env = process.env) {
   }
 
   const toolName = String(input?.tool_name || '').trim();
-  // Claude Code does not set CLAUDE_SESSION_ID as an environment variable for
-  // hook subprocesses -- the session id is only available in the hook's own
-  // stdin JSON payload. Prefer that; keep the env vars as a fallback for any
-  // caller that does set them. Sanitized the same way as the sibling hooks
-  // (cost-tracker.js, ecc-context-monitor.js, ecc-metrics-bridge.js,
-  // gateguard-fact-force.js) that already use this exact fallback order.
+  // The payload identifies the actual harness conversation. Preserve it ahead
+  // of inherited environment IDs, which may belong to a parent or concurrent
+  // session. Correlating that conversation with a native ECC session requires
+  // an explicit binding, not an ownership guess from the environment.
+  // Sanitize candidates separately so invalid values retain safe fallbacks.
   const sessionId =
     sanitizeSessionId(input?.session_id) ||
     sanitizeSessionId(env.ECC_SESSION_ID) ||

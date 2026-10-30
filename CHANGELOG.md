@@ -21,12 +21,15 @@
 
 ### Fixed
 
+- Context-size detection keeps a complete usage record at the start of the transcript tail, so a boundary-aligned record still triggers the strategic-compact reminder. Partial records remain excluded.
 - GateGuard keys checked files by canonical path, resolving relative targets against the tool `cwd`, so `a.py`, `./a.py`, and the absolute path (or differently cased and separated Windows spellings) share one first touch. Keys from earlier state files are still honoured.
 - GateGuard gates a MultiEdit call as its `tool_input.file_path` when its entries do not name their own path, which is the tool's own shape; such calls were never gated before, including on sensitive files.
 - GateGuard gates NotebookEdit as a first-touch edit of its `notebook_path`; notebooks were never gated before.
 - GateGuard prior-search credit no longer counts a search that never saw the target. File-type filters (`rg -t`/`-T`/`--type`/`--type-not`, `fd -e`/`--extension`, the Grep tool's `type`), the Glob tool's pattern, shell glob operands, and git pathspecs now filter like include globs, so `rg -t py tokenizer src` or `Glob **/tokenizer.py` no longer credits `tokenizer.js`. A search confined to the target's own file name (`Glob **/tokenizer.js`, `find -name tokenizer.js`, Grep `glob: 'tokenizer.js'`) is a lookup and never credits it. PowerShell searches keep backslashes as path separators.
 - GateGuard no longer passes an edit as comment-only when its text contains U+2028, U+2029, or U+0085, which end a JavaScript or C# line comment.
 - Claude Code home installs (`ecc install --target claude` and `install.sh`) now install under `CLAUDE_CONFIG_DIR` when it is set, matching the directory Claude Code reads its user-level config from. Previously ECC wrote to `~/.claude` regardless, so when `CLAUDE_CONFIG_DIR` redirected the config root the install never loaded ("installs, but nothing loads"); the settings.json, plugin.json, hook commands, bundle and install state were all stranded in `~/.claude` while Claude Code read an empty `CLAUDE_CONFIG_DIR`. The claude-home adapter now resolves its root the same way the runtime does (`CLAUDE_CONFIG_DIR || ~/.claude`), consistent with the opencode adapter and `resolveClaudePaths`.
+- `GATEGUARD_EXEMPT_GLOBS` judges the target's real location as well as the path as written, so a symlink inside an exempt tree no longer exempts the first touch of a file it points to outside the globs (#3655).
+- Hooks run again on native Windows. Claude Code runs each hook as `bash.exe -c "<command>"` through the Windows command line, and that extra unescape layer collapsed the backslashes in the inline plugin-root resolver's WSL path conversion, so every hook failed with `SyntaxError: missing ) after argument list` before its script started. The resolver now contains no backslash (it builds the separator with `String.fromCharCode(92)`), and a test runs the shipped SessionStart command with backslashes collapsed the same way (#3746).
 
 ## 2.2.3 - 2026-10-01
 

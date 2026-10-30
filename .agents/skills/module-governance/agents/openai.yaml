@@ -1,0 +1,6 @@
+interface:
+  display_name: "Module Governance"
+  short_description: "Connect module rules, context, and contracts"
+  default_prompt: "Use $module-governance to establish or maintain module documentation using existing project knowledge owners."
+policy:
+  allow_implicit_invocation: true

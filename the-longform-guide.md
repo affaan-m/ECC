@@ -40,7 +40,7 @@ With lazy loading, the context window issue is mostly solved. But token usage an
 For sharing memory across sessions, a skill or command that summarizes and checks in on progress then saves to a `.tmp` file in your `.claude` folder and appends to it until the end of your session is the best bet. The next day it can use that as context and pick up where you left off, create a new file for each session so you don't pollute old context into new work.
 
 ![Session Storage File Tree](./assets/images/longform/03-session-storage.png)
-*Example of session storage -> <https://github.com/affaan-m/ECC/tree/main/examples/sessions>*
+*Example of session storage -> <https://github.com/affaan-m/ECC/blob/main/commands/save-session.md#session-file-format>*
 
 Claude creates a file summarizing current state. Review it, ask for edits if needed, then start fresh. For the new conversation, just provide the file path. Particularly useful when you're hitting context limits and need to continue complex work. These files should contain:
 - What approaches worked (verifiably with evidence)

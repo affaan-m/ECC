@@ -398,6 +398,22 @@ function realTargetPath(resolved, paths) {
   return realDir ? paths.join(realDir, paths.basename(resolved)) : null;
 }
 
+/**
+ * Real (symlink-resolved) location of an absolute host-style path; a missing
+ * file resolves through its nearest existing ancestor. Null when the path is
+ * not host-style or its real location cannot be determined.
+ */
+function realLocationOf(nativePath, isWin) {
+  try {
+    if (typeof nativePath !== 'string' || !isHostPathStyle(isWin)) return null;
+    const paths = isWin ? path.win32 : path.posix;
+    if (!paths.isAbsolute(nativePath)) return null;
+    return realTargetPath(paths.resolve(nativePath), paths);
+  } catch (_) {
+    return null;
+  }
+}
+
 function isMissingEntry(nativePath) {
   try {
     fs.lstatSync(nativePath);
@@ -453,5 +469,6 @@ module.exports = {
   collapseGateDir,
   isSensitiveTarget,
   isSensitiveTargetFor,
-  isHardLinkedTargetFor
+  isHardLinkedTargetFor,
+  realLocationOf
 };

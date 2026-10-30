@@ -41,7 +41,11 @@ function checkRuntime(runtimeRoot, extension, loader, installedHome = false) {
       // the hooks module is initialized exactly once; published package entry
       // imports continue to expose the actual plugin.
       const active = installedHome === "true" ? await load("plugins/ecc-hooks") : entry
-      if (installedHome === "true") assert.deepEqual(await entry.default({}), {})
+      // The inert stub is a V2 definition object (id + setup), not a factory.
+      if (installedHome === "true") {
+        assert.equal(entry.default.id, "ecc-hooks")
+        assert.equal(typeof entry.default.setup, "function")
+      }
       const plugin = await active.default({
         client: { app: { log: (event) => logs.push(event.body) } },
         $: () => { throw new Error("Unexpected shell execution") },

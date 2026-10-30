@@ -68,6 +68,7 @@ def operator(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Iterator[Operat
     home.joinpath(".llm.env").write_text(HOME_CONFIG)
     guard.joinpath("sitecustomize.py").write_text(NETWORK_GUARD)
     env = {
+        **({"SYSTEMROOT": os.environ["SYSTEMROOT"]} if "SYSTEMROOT" in os.environ else {}),
         "HOME": str(home),
         "PATH": os.defpath,
         "PYTHONPATH": os.pathsep.join((str(guard), str(SOURCE))),

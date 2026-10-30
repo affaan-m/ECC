@@ -40,7 +40,7 @@ Lazy loading ile, context window sorunu çoğunlukla çözülmüştür. Ancak to
 Oturumlar arasında memory paylaşımı için, ilerlemeyi özetleyen ve kontrol eden, ardından `.claude` klasörünüzde bir `.tmp` dosyasına kaydeden ve oturumunuz sonuna kadar ona ekleyen bir skill veya command en iyi bahistir. Ertesi gün bunu context olarak kullanabilir ve kaldığı yerden devam edebilir, her oturum için yeni bir dosya oluşturun böylece eski context'i yeni işe kirletmezsiniz.
 
 ![Session Storage File Tree](../../assets/images/longform/03-session-storage.png)
-*Oturum depolama örneği -> <https://github.com/affaan-m/ECC/tree/main/examples/sessions>*
+*Oturum depolama örneği -> <https://github.com/affaan-m/ECC/blob/main/commands/save-session.md#session-file-format>*
 
 Claude mevcut durumu özetleyen bir dosya oluşturur. İnceleyin, gerekirse düzenlemeler isteyin, ardından yeniden başlayın. Yeni konuşma için, sadece dosya yolunu sağlayın. Özellikle context limitlerini aşarken ve karmaşık işi sürdürmeniz gerektiğinde kullanışlıdır. Bu dosyalar şunları içermelidir:
 - Hangi yaklaşımların işe yaradığı (kanıtla doğrulanabilir)
