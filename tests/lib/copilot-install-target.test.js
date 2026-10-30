@@ -137,6 +137,18 @@ test('skills are planned into .github/skills with installed helper references', 
   );
 });
 
+test('declared helpers share one managed CommonJS boundary owned by their module', () => {
+  const operations = planFor([{ id: 'commands-core', paths: [
+    'scripts/setup-package-manager.js', 'scripts/lib/package-manager.js'
+  ] }]);
+  const boundaries = operations.filter(operation => operation.destinationPath.endsWith('package.json'));
+  assert.strictEqual(boundaries.length, 1);
+  assert.strictEqual(boundaries[0].sourceRelativePath, 'manifests/install-assets/commonjs-scripts-package.json');
+  assert.strictEqual(boundaries[0].destinationPath, path.join('/project', '.github', 'ecc', 'scripts', 'package.json'));
+  assert.strictEqual(boundaries[0].moduleId, 'commands-core');
+  assert.strictEqual(boundaries[0].ownership, 'managed');
+});
+
 test('rule transform converts paths frontmatter to applyTo', () => {
   const source = [
     '---',
@@ -350,7 +362,7 @@ test('repair and uninstall preserve user-owned agents across project adapters', 
   }
 });
 
-test('normal installed Copilot TDD command runs from the project with a complete managed helper closure', () => {
+test('installed Copilot TDD command runs in an ESM project with a complete managed helper closure', () => {
   const fs = require('fs');
   const os = require('os');
   const { spawnSync } = require('child_process');
@@ -363,6 +375,8 @@ test('normal installed Copilot TDD command runs from the project with a complete
     fs.mkdirSync(path.join(project, 'scripts'));
     fs.writeFileSync(path.join(project, 'scripts', 'setup-package-manager.js'), 'USER PROJECT SENTINEL\n');
     fs.writeFileSync(path.join(project, 'pnpm-lock.yaml'), 'lockfileVersion: 9.0\n');
+    const projectPackage = '{"type":"module"}\n';
+    fs.writeFileSync(path.join(project, 'package.json'), projectPackage);
     const plan = createManifestInstallPlan({ target: 'copilot', moduleIds: ['workflow-quality'], projectRoot: project, homeDir, env });
     applyInstallPlan(plan);
     const skill = fs.readFileSync(path.join(project, '.github', 'skills', 'tdd-workflow', 'SKILL.md'), 'utf8');
@@ -396,29 +410,46 @@ test('normal installed Copilot TDD command runs from the project with a complete
     assert.ok(!plan.operations.some(operation => operation.kind === 'update-claude-settings'
       || /[\\/]\.github[\\/]hooks[\\/]|[\\/]ecc[\\/]scripts[\\/]hooks[\\/]|settings\.json$|hooks\.json$/.test(operation.destinationPath)), 'Copilot must not register hooks');
     assert.strictEqual(fs.readFileSync(path.join(project, 'scripts', 'setup-package-manager.js'), 'utf8'), 'USER PROJECT SENTINEL\n');
+    const boundary = path.join(project, '.github', 'ecc', 'scripts', 'package.json');
+    const installedState = JSON.parse(fs.readFileSync(plan.installStatePath, 'utf8'));
+    assert.ok(installedState.operations.some(operation => operation.destinationPath === boundary));
+    assert.deepStrictEqual(JSON.parse(fs.readFileSync(boundary, 'utf8')), { type: 'commonjs' });
+    fs.unlinkSync(boundary);
     const options = { repoRoot: REPO_ROOT, projectRoot: project, homeDir, targets: ['copilot'], env };
     const repair = repairInstalledStates(options);
     assert.strictEqual(repair.summary.errorCount, 0, JSON.stringify(repair));
+    const repaired = spawnSync(process.execPath, [command[1], '--detect'], { cwd: project, env, encoding: 'utf8', timeout: 15000 });
+    assert.strictEqual(repaired.status, 0, repaired.stderr);
+    assert.match(repaired.stdout, /pnpm/);
     const uninstall = uninstallInstalledStates(options);
     assert.strictEqual(uninstall.summary.errorCount, 0, JSON.stringify(uninstall));
     assert.ok(!fs.existsSync(path.join(project, '.github', 'ecc', 'scripts', 'lib', 'package-manager.js')));
+    assert.ok(!fs.existsSync(boundary));
+    assert.strictEqual(fs.readFileSync(path.join(project, 'package.json'), 'utf8'), projectPackage);
 
     const userProject = path.join(project, 'user-project');
     const userHelper = path.join(userProject, '.github', 'ecc', 'scripts', 'setup-package-manager.js');
     fs.mkdirSync(path.dirname(userHelper), { recursive: true });
     fs.writeFileSync(userHelper, 'USER OWNED HELPER SENTINEL\n');
+    const userBoundary = path.join(path.dirname(userHelper), 'package.json');
+    const userPackage = '{"type":"commonjs","private":true}\n';
+    fs.writeFileSync(userBoundary, userPackage);
     const userPlan = createManifestInstallPlan({ target: 'copilot', moduleIds: ['workflow-quality'], projectRoot: userProject, homeDir, env });
     applyInstallPlan(userPlan);
     assert.strictEqual(fs.readFileSync(userHelper, 'utf8'), 'USER OWNED HELPER SENTINEL\n');
+    assert.strictEqual(fs.readFileSync(userBoundary, 'utf8'), userPackage);
     const userOptions = { ...options, projectRoot: userProject };
     const userRepair = repairInstalledStates(userOptions);
     assert.strictEqual(userRepair.summary.errorCount, 0);
     assert.strictEqual(fs.readFileSync(userHelper, 'utf8'), 'USER OWNED HELPER SENTINEL\n');
+    assert.strictEqual(fs.readFileSync(userBoundary, 'utf8'), userPackage);
     const state = JSON.parse(fs.readFileSync(userPlan.installStatePath, 'utf8'));
-    assert.ok(!state.operations.some(operation => operation.destinationPath === userHelper));
+    assert.ok(!state.operations.some(operation => operation.destinationPath === userHelper
+      || operation.destinationPath === userBoundary));
     const userUninstall = uninstallInstalledStates(userOptions);
     assert.strictEqual(userUninstall.summary.errorCount, 0);
     assert.strictEqual(fs.readFileSync(userHelper, 'utf8'), 'USER OWNED HELPER SENTINEL\n');
+    assert.strictEqual(fs.readFileSync(userBoundary, 'utf8'), userPackage);
   } finally {
     fs.rmSync(project, { recursive: true, force: true });
   }

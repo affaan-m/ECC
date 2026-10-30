@@ -137,7 +137,7 @@ module.exports = createInstallTargetAdapter({
     const { repoRoot, projectRoot, homeDir } = input;
     const targetRoot = adapter.resolveRoot({ repoRoot, projectRoot, homeDir });
 
-    return modules.flatMap(module => {
+    const operations = modules.flatMap(module => {
       const paths = Array.isArray(module.paths) ? module.paths : [];
       return paths
         .filter(supportsCopilotSourcePath)
@@ -148,5 +148,13 @@ module.exports = createInstallTargetAdapter({
           repoRoot
         ));
     });
+    const helper = operations.find(operation => COPILOT_HELPER_PATHS.has(operation.sourceRelativePath));
+    if (!helper) return operations;
+    // Keep managed helpers executable when the host project uses ES modules.
+    return [...operations, createManagedOperation({
+      moduleId: helper.moduleId,
+      sourceRelativePath: 'manifests/install-assets/commonjs-scripts-package.json',
+      destinationPath: path.join(targetRoot, 'ecc', 'scripts', 'package.json'),
+    })];
   },
 });
