@@ -3,12 +3,17 @@
 const assert = require('assert');
 const { execFileSync } = require('child_process');
 const fs = require('fs');
+const os = require('os');
 const path = require('path');
 const {
   ADAPTER_RECORDS,
+  MATRIX_BLOCK_END,
+  MATRIX_BLOCK_START,
   extractMatrixBlock,
   renderMarkdownTable,
   validateAdapterRecords,
+  validateDocumentation,
+  validateSourceDocs,
 } = require('../../scripts/lib/harness-adapter-compliance');
 
 const repoRoot = path.resolve(__dirname, '..', '..');
@@ -41,16 +46,39 @@ test('adapter compliance matrix covers the required harness surfaces', () => {
     'Claude Code',
     'Codex',
     'OpenCode',
+    'Pi',
     'Cursor',
     'Gemini',
     'Zed',
     'dmux',
+    'DeepSeek Harness',
+    'Antigravity',
+    'Qwen Code',
+    'GitHub Copilot',
+    'Hermes',
     'Orca',
     'Superset',
     'Ghast',
     'Terminal-only'
   ]) {
     assert.ok(source.includes(harness), `Expected matrix to include ${harness}`);
+  }
+});
+
+test('shipped first-party install targets are represented as Adapter-backed records', () => {
+  const expectedTargets = [
+    ['antigravity', '`./install.sh --profile minimal --target antigravity`', 'docs/ANTIGRAVITY-GUIDE.md'],
+    ['qwen', '`./install.sh --target qwen --profile minimal`', 'docs/QWEN-GUIDE.md'],
+    ['copilot', '`./install.sh --profile minimal --target copilot`', 'scripts/lib/install-targets/copilot-project.js'],
+    ['hermes', '`./install.sh --profile minimal --target hermes`', 'docs/HERMES-HOOKS.md'],
+  ];
+
+  for (const [id, onramp, sourceDoc] of expectedTargets) {
+    const record = ADAPTER_RECORDS.find(entry => entry.id === id);
+    assert.ok(record, `Expected adapter record for ${id}`);
+    assert.strictEqual(record.state, 'Adapter-backed', `${id} should be Adapter-backed`);
+    assert.ok(record.install_or_onramp.includes(onramp), `${id} should include installer onramp ${onramp}`);
+    assert.ok(record.source_docs.includes(sourceDoc), `${id} should reference ${sourceDoc}`);
   }
 });
 
@@ -144,6 +172,118 @@ test('GA roadmap records the matrix and validator as current evidence', () => {
   assert.ok(source.includes('docs/architecture/harness-adapter-compliance.md'));
   assert.ok(source.includes('npm run harness:adapters -- --check'));
   assert.ok(source.includes('scripts/lib/harness-adapter-compliance.js'));
+});
+
+test('every committed adapter source_doc exists inside the repository root', () => {
+  assert.deepStrictEqual(validateSourceDocs(ADAPTER_RECORDS, { repoRoot }), []);
+});
+
+test('validateSourceDocs and validateDocumentation accept leading-dot segments and reject missing or traversal paths', () => {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-adapter-compliance-'));
+
+  try {
+    const validDoc = path.join(tempRoot, 'docs', 'GUIDE.md');
+    const doubleDotSegmentDoc = path.join(tempRoot, '..notes', 'GUIDE.md');
+    fs.mkdirSync(path.dirname(validDoc), { recursive: true });
+    fs.mkdirSync(path.dirname(doubleDotSegmentDoc), { recursive: true });
+    fs.writeFileSync(validDoc, '# Guide\n');
+    fs.writeFileSync(doubleDotSegmentDoc, '# Notes\n');
+
+    const baseRecord = {
+      id: 'sample',
+      harness: 'Sample',
+      state: 'Adapter-backed',
+      supported_assets: ['skills'],
+      unsupported_surfaces: ['hooks'],
+      install_or_onramp: ['`./install.sh --target sample`'],
+      verification_commands: ['`npm test`'],
+      risk_notes: ['None'],
+      last_verified_at: '2026-10-30',
+      owner: 'ECC maintainers',
+      source_docs: ['docs/GUIDE.md', '..notes/GUIDE.md'],
+    };
+
+    assert.deepStrictEqual(validateSourceDocs([baseRecord], { repoRoot: tempRoot }), []);
+
+    const missingErrors = validateSourceDocs(
+      [{ ...baseRecord, source_docs: ['docs/MISSING.md'] }],
+      { repoRoot: tempRoot }
+    );
+    assert.strictEqual(missingErrors.length, 1);
+    assert.match(missingErrors[0], /sample: missing source_doc docs\/MISSING\.md/);
+
+    for (const unsafePath of ['..', '../outside.md', 'docs/../../outside.md', '/etc/passwd', 'C:/outside.md']) {
+      const traversalErrors = validateSourceDocs(
+        [{ ...baseRecord, source_docs: [unsafePath] }],
+        { repoRoot: tempRoot }
+      );
+      assert.strictEqual(traversalErrors.length, 1, `Expected error for ${unsafePath}`);
+      assert.match(traversalErrors[0], /must be a repo-relative path without '\.\.'/);
+    }
+
+    const matrixDoc = path.join(tempRoot, 'docs', 'architecture', 'harness-adapter-compliance.md');
+    fs.mkdirSync(path.dirname(matrixDoc), { recursive: true });
+    const badRecords = [{ ...baseRecord, source_docs: ['docs/MISSING.md'] }];
+    fs.writeFileSync(
+      matrixDoc,
+      `${MATRIX_BLOCK_START}\n${renderMarkdownTable(badRecords)}\n${MATRIX_BLOCK_END}\n`
+    );
+
+    const docErrors = validateDocumentation({
+      repoRoot: tempRoot,
+      docPath: matrixDoc,
+      records: badRecords,
+      checkSourceDocs: true,
+    });
+    assert.strictEqual(docErrors.length, 1);
+    assert.match(docErrors[0], /sample: missing source_doc docs\/MISSING\.md/);
+  } finally {
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+  }
+});
+
+test('validateSourceDocs rejects a symlinked source_doc escaping the repository root', () => {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-adapter-symlink-'));
+  const outsideRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-adapter-outside-'));
+
+  try {
+    fs.mkdirSync(path.join(tempRoot, 'docs'), { recursive: true });
+    const outsideFile = path.join(outsideRoot, 'secret.md');
+    fs.writeFileSync(outsideFile, 'outside\n');
+    const symlinkDoc = path.join(tempRoot, 'docs', 'escaped-link.md');
+
+    try {
+      fs.symlinkSync(outsideFile, symlinkDoc, 'file');
+    } catch (error) {
+      if (process.platform === 'win32' && error.code === 'EPERM') {
+        console.log('    SKIP symbolic-link fixture: Windows privilege unavailable');
+        return;
+      }
+      throw error;
+    }
+
+    const symlinkErrors = validateSourceDocs(
+      [{
+        id: 'sample',
+        harness: 'Sample',
+        state: 'Adapter-backed',
+        supported_assets: ['skills'],
+        unsupported_surfaces: ['hooks'],
+        install_or_onramp: ['`./install.sh --target sample`'],
+        verification_commands: ['`npm test`'],
+        risk_notes: ['None'],
+        last_verified_at: '2026-10-30',
+        owner: 'ECC maintainers',
+        source_docs: ['docs/escaped-link.md'],
+      }],
+      { repoRoot: tempRoot }
+    );
+    assert.strictEqual(symlinkErrors.length, 1);
+    assert.match(symlinkErrors[0], /resolves outside repository root/);
+  } finally {
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+    fs.rmSync(outsideRoot, { recursive: true, force: true });
+  }
 });
 
 if (failed > 0) {
