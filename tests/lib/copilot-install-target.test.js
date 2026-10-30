@@ -432,7 +432,7 @@ test('installed Copilot TDD command runs in an ESM project with a complete manag
     fs.mkdirSync(path.dirname(userHelper), { recursive: true });
     fs.writeFileSync(userHelper, 'USER OWNED HELPER SENTINEL\n');
     const userBoundary = path.join(path.dirname(userHelper), 'package.json');
-    const userPackage = '{"type":"module","private":true}\n';
+    const userPackage = '{"type":"commonjs","private":true}\n';
     fs.writeFileSync(userBoundary, userPackage);
     const userPlan = createManifestInstallPlan({ target: 'copilot', moduleIds: ['workflow-quality'], projectRoot: userProject, homeDir, env });
     applyInstallPlan(userPlan);
