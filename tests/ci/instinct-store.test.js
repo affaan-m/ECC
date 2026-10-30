@@ -291,6 +291,41 @@ function runTests() {
     }), 'prohibition');
   })) passed++; else failed++;
 
+  if (test('instinctMatchKind does not treat the verb before a quoted command as forbidden', () => {
+    const { instinctMatchKind } = loadStore();
+    const instinct = {
+      id: 'no-hard-reset-only',
+      confidence: 0.91,
+      trigger: 'when cleaning a checkout',
+      content: 'NEVER run `git reset --hard`',
+    };
+    assert.strictEqual(instinctMatchKind(instinct, { command: 'npm run test' }), null);
+    assert.strictEqual(instinctMatchKind(instinct, { command: 'git reset --hard' }), 'prohibition');
+  })) passed++; else failed++;
+
+  if (test('instinctMatchKind does not forbid the name an instinct recommends', () => {
+    const { instinctMatchKind } = loadStore();
+    const instinct = {
+      id: 'prefer-barwidget',
+      confidence: 0.91,
+      trigger: 'when rendering widgets',
+      content: 'Never use `fooWidget`, always prefer `barWidget`',
+    };
+    assert.strictEqual(instinctMatchKind(instinct, {
+      file_path: '/src/view.js',
+      content: 'barWidget()',
+    }), 'guidance');
+    assert.strictEqual(instinctMatchKind(instinct, {
+      file_path: '/src/view.js',
+      old_string: 'fooWidget()',
+      new_string: 'barWidget()',
+    }), 'guidance');
+    assert.strictEqual(instinctMatchKind(instinct, {
+      file_path: '/src/view.js',
+      content: 'fooWidget()',
+    }), 'prohibition');
+  })) passed++; else failed++;
+
   if (test('getInstinctConfidenceThreshold rejects hex and exponent overrides', () => {
     withEnv({ ECC_INSTINCT_CONFIDENCE_THRESHOLD: undefined }, () => {
       const { getInstinctConfidenceThreshold, DEFAULT_INSTINCT_CONFIDENCE_THRESHOLD } = loadStore();

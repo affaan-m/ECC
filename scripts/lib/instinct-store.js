@@ -29,6 +29,9 @@ const NEVER_TOKEN_STOPWORDS = new Set([
   'a', 'an', 'any', 'be', 'call', 'do', 'ever', 'get', 'have', 'include',
   'let', 'make', 'put', 'set', 'use', 'write',
 ]);
+// Words that end the prohibited part of a sentence: in "Never use `foo`,
+// always prefer `bar`" only `foo` is forbidden.
+const AFFIRMATIVE_MARKER_RE = /\b(?:always|prefer|preferring|instead|rather|but)\b/i;
 
 /**
  * Resolve the minimum confidence an instinct needs to be injected at
@@ -271,9 +274,27 @@ function splitClauses(text) {
   return clauses;
 }
 
+// Quoted spans are blanked to the same length so marker positions found in
+// the mask line up with the clause itself.
+function maskQuotedSpans(text) {
+  return text.replace(QUOTED_IDENTIFIER_RE, match => ' '.repeat(match.length));
+}
+
+// The forbidden part of a clause runs from its start through the prohibition
+// and stops at the first affirmative marker after it.
+function prohibitedPart(clause) {
+  const masked = maskQuotedSpans(clause);
+  const marker = PROHIBITION_MARKER_RE.exec(masked);
+  if (!marker) return '';
+  const afterMarker = marker.index + marker[0].length;
+  const affirmative = AFFIRMATIVE_MARKER_RE.exec(masked.slice(afterMarker));
+  return affirmative ? clause.slice(0, afterMarker + affirmative.index) : clause;
+}
+
 function extractProhibitedClauses(text) {
   return splitClauses(String(text || ''))
-    .filter(clause => PROHIBITION_MARKER_RE.test(clause));
+    .map(prohibitedPart)
+    .filter(Boolean);
 }
 
 function extractNeverTokens(text) {
@@ -282,6 +303,10 @@ function extractNeverTokens(text) {
   NEVER_TOKEN_RE.lastIndex = 0;
   let match;
   while ((match = NEVER_TOKEN_RE.exec(source)) !== null) {
+    // Words right before a quoted span only introduce it ("NEVER run
+    // `git reset --hard`"); the quoted span is what is forbidden, and it is
+    // matched as a quoted identifier.
+    if (/^\s*["'`]/.test(source.slice(match.index + match[0].length))) continue;
     const token = match[1].split(/\s+/)
       .find((word) => !NEVER_TOKEN_STOPWORDS.has(word.toLowerCase()));
     if (token) tokens.push(token);
