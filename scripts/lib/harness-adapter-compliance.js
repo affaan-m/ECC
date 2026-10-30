@@ -635,7 +635,10 @@ function extractMatrixBlock(markdown) {
 
 function isWithinRootPath(rootPath, candidatePath) {
   const relative = path.relative(rootPath, candidatePath);
-  return Boolean(relative) && !relative.startsWith('..') && !path.isAbsolute(relative);
+  return Boolean(relative)
+    && relative !== '..'
+    && !relative.startsWith(`..${path.sep}`)
+    && !path.isAbsolute(relative);
 }
 
 function isSafeRelativeSourceDocPath(trimmedEntry, normalizedEntry) {

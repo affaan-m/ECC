@@ -178,14 +178,16 @@ test('every committed adapter source_doc exists inside the repository root', () 
   assert.deepStrictEqual(validateSourceDocs(ADAPTER_RECORDS, { repoRoot }), []);
 });
 
-test('validateSourceDocs and validateDocumentation reject missing, traversal, and escaping source_docs', () => {
+test('validateSourceDocs and validateDocumentation accept leading-dot segments and reject missing or traversal paths', () => {
   const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-adapter-compliance-'));
-  const outsideRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-adapter-outside-'));
 
   try {
     const validDoc = path.join(tempRoot, 'docs', 'GUIDE.md');
+    const doubleDotSegmentDoc = path.join(tempRoot, '..notes', 'GUIDE.md');
     fs.mkdirSync(path.dirname(validDoc), { recursive: true });
+    fs.mkdirSync(path.dirname(doubleDotSegmentDoc), { recursive: true });
     fs.writeFileSync(validDoc, '# Guide\n');
+    fs.writeFileSync(doubleDotSegmentDoc, '# Notes\n');
 
     const baseRecord = {
       id: 'sample',
@@ -198,7 +200,7 @@ test('validateSourceDocs and validateDocumentation reject missing, traversal, an
       risk_notes: ['None'],
       last_verified_at: '2026-10-30',
       owner: 'ECC maintainers',
-      source_docs: ['docs/GUIDE.md'],
+      source_docs: ['docs/GUIDE.md', '..notes/GUIDE.md'],
     };
 
     assert.deepStrictEqual(validateSourceDocs([baseRecord], { repoRoot: tempRoot }), []);
@@ -210,7 +212,7 @@ test('validateSourceDocs and validateDocumentation reject missing, traversal, an
     assert.strictEqual(missingErrors.length, 1);
     assert.match(missingErrors[0], /sample: missing source_doc docs\/MISSING\.md/);
 
-    for (const unsafePath of ['../outside.md', 'docs/../../outside.md', '/etc/passwd', 'C:/outside.md']) {
+    for (const unsafePath of ['..', '../outside.md', 'docs/../../outside.md', '/etc/passwd', 'C:/outside.md']) {
       const traversalErrors = validateSourceDocs(
         [{ ...baseRecord, source_docs: [unsafePath] }],
         { repoRoot: tempRoot }
@@ -235,26 +237,49 @@ test('validateSourceDocs and validateDocumentation reject missing, traversal, an
     });
     assert.strictEqual(docErrors.length, 1);
     assert.match(docErrors[0], /sample: missing source_doc docs\/MISSING\.md/);
+  } finally {
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+  }
+});
 
+test('validateSourceDocs rejects a symlinked source_doc escaping the repository root', () => {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-adapter-symlink-'));
+  const outsideRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-adapter-outside-'));
+
+  try {
+    fs.mkdirSync(path.join(tempRoot, 'docs'), { recursive: true });
     const outsideFile = path.join(outsideRoot, 'secret.md');
     fs.writeFileSync(outsideFile, 'outside\n');
     const symlinkDoc = path.join(tempRoot, 'docs', 'escaped-link.md');
-    let symlinkCreated = false;
+
     try {
       fs.symlinkSync(outsideFile, symlinkDoc, 'file');
-      symlinkCreated = true;
-    } catch (_error) {
-      // Unprivileged Windows environments may disallow file symlinks.
+    } catch (error) {
+      if (process.platform === 'win32' && error.code === 'EPERM') {
+        console.log('    SKIP symbolic-link fixture: Windows privilege unavailable');
+        return;
+      }
+      throw error;
     }
 
-    if (symlinkCreated) {
-      const symlinkErrors = validateSourceDocs(
-        [{ ...baseRecord, source_docs: ['docs/escaped-link.md'] }],
-        { repoRoot: tempRoot }
-      );
-      assert.strictEqual(symlinkErrors.length, 1);
-      assert.match(symlinkErrors[0], /resolves outside repository root/);
-    }
+    const symlinkErrors = validateSourceDocs(
+      [{
+        id: 'sample',
+        harness: 'Sample',
+        state: 'Adapter-backed',
+        supported_assets: ['skills'],
+        unsupported_surfaces: ['hooks'],
+        install_or_onramp: ['`./install.sh --target sample`'],
+        verification_commands: ['`npm test`'],
+        risk_notes: ['None'],
+        last_verified_at: '2026-10-30',
+        owner: 'ECC maintainers',
+        source_docs: ['docs/escaped-link.md'],
+      }],
+      { repoRoot: tempRoot }
+    );
+    assert.strictEqual(symlinkErrors.length, 1);
+    assert.match(symlinkErrors[0], /resolves outside repository root/);
   } finally {
     fs.rmSync(tempRoot, { recursive: true, force: true });
     fs.rmSync(outsideRoot, { recursive: true, force: true });
