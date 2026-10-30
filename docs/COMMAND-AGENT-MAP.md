@@ -8,6 +8,7 @@ This document lists each slash command and the primary agent(s) or skills it inv
 | `/plan-canvas` | — (skill: plan-canvas) | Browser review canvas for plan artifacts: annotate, chat, approve/request changes |
 | `/tdd` | tdd-guide | Test-driven development |
 | `/code-review` | code-reviewer | Quality and security review |
+| `/issue-review` | — (skill: issue-review) | GitHub issue review: verify against the codebase, duplicates, prior fixes, severity, draft reply |
 | `/build-fix` | build-error-resolver | Fix build/type errors |
 | `/e2e` | e2e-runner | Playwright E2E tests |
 | `/refactor-clean` | refactor-cleaner | Dead code removal |
@@ -73,6 +74,7 @@ This document lists each slash command and the primary agent(s) or skills it inv
 - **eval-harness**: `/eval`
 - **security-scan**: `/security-scan` (runs AgentShield)
 - **skill-host-compat**: `/skill-host-compat`
+- **issue-review**: `/issue-review`
 - **strategic-compact**: suggested at compaction points (hooks)
 - **unified-memory**: `ecc memory ...` and the opt-in `ecc-memory-mcp` server
 

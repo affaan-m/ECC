@@ -105,6 +105,7 @@
         "documentation-context",
         "hermes-hooks",
         "documentation-change-impact",
+        "documentation-module-governance",
         "documentation-test-regression"
       ]
     }

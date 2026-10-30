@@ -1,0 +1,33 @@
+{
+  "schema_version": "ecc.evaluator-rag.verifier.v1",
+  "scenario_id": "prepared-verifier-effect-state",
+  "run_id": "illustrative-verifier-effect-state",
+  "read_only": true,
+  "evaluation_status": "illustrative_expected_decisions_not_executed_external_checks",
+  "candidates": [
+    {
+      "candidate_id": "correct-read-preserve-effect",
+      "decision": "accepted",
+      "reasons": [
+        "Preserves OP_A accepted status, original receipt and apply_count=1",
+        "Corrects the read command without inventing a successful verifier result",
+        "Holds unknown OP_B for targeted reconciliation before retry",
+        "Blocks OP_C before dispatch until preflight succeeds",
+        "Keeps each source-reported mechanism and its evidence limits separate"
+      ],
+      "rollback": "A verifier error alone must not undo OP_A; retain its accepted state, original receipt and apply_count=1 while correcting only the read."
+    },
+    {
+      "candidate_id": "reapply-after-verifier-error",
+      "decision": "rejected",
+      "reasons": [
+        "Collapses verifier failure into external operation failure",
+        "Replays an already accepted change or rolls it back without authorization",
+        "Treats an unknown response as proof of no effect",
+        "Claims one shared bug without original command or device evidence"
+      ],
+      "rollback": "Reject this candidate before execution; preserve OP_A and reconcile unknown OP_B before any retry or independently authorized recovery."
+    }
+  ],
+  "promoted_candidate_id": "correct-read-preserve-effect"
+}

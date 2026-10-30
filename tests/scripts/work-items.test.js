@@ -132,6 +132,110 @@ async function run() {
       assert.ok(/not found/i.test(missing.stderr), 'reports not found');
     });
 
+    await test('claim rejects unadmitted needs-review, blocked, hold, and unowned running items', async () => {
+      const statuses = ['needs-review', 'blocked', 'hold', 'running', 'in-progress'];
+      const setup = await createStateStore({ dbPath });
+      try {
+        for (const status of statuses) {
+          setup.upsertWorkItem({ id: `wi-gate-${status}`, source: 'manual', title: `Gate ${status}`, status, owner: null, metadata: {} });
+        }
+      } finally { setup.close(); }
+      for (const status of statuses) {
+        const result = runClaim(dbPath, [`wi-gate-${status}`, '--owner', 'gate-worker', '--as', 'agent']);
+        assert.notStrictEqual(result.status, 0, `${status} must not be claimable`);
+        assert.match(result.stderr, /not READY/i);
+        const store = await createStateStore({ dbPath });
+        try { assert.strictEqual(store.getWorkItemById(`wi-gate-${status}`).status, status); } finally { store.close(); }
+      }
+    });
+
+    await test('automatic claim skips higher-priority unready work and picks READY', async () => {
+      const setup = await createStateStore({ dbPath });
+      try {
+        setup.upsertWorkItem({ id: 'wi-unassigned-high', source: 'manual', title: 'Needs review', status: 'needs-review', priority: 'critical', owner: null, metadata: {} });
+        setup.upsertWorkItem({ id: 'wi-unassigned-low', source: 'manual', title: 'Blocked', status: 'blocked', priority: 'high', owner: null, metadata: {} });
+        setup.upsertWorkItem({ id: 'wi-auto-blocked-high', source: 'manual', title: 'High priority blocked', status: 'blocked', priority: 'critical', owner: null, metadata: {} });
+        setup.upsertWorkItem({ id: 'wi-auto-ready-low', source: 'manual', title: 'Low priority READY', status: 'ready', priority: 'low', owner: null, metadata: {} });
+      } finally { setup.close(); }
+      const result = runClaim(dbPath, ['--owner', 'auto-worker', '--as', 'agent']);
+      assert.strictEqual(result.status, 0, result.stderr);
+      const payload = JSON.parse(result.stdout);
+      assert.strictEqual(payload.claimed, true);
+      assert.strictEqual(payload.item.id, 'wi-auto-ready-low');
+      assert.strictEqual(payload.item.status, 'running');
+    });
+
+    await test('automatic claim returns empty when all unowned items are unready', async () => {
+      const setup = await createStateStore({ dbPath });
+      try {
+        setup.upsertWorkItem({ id: 'wi-unassigned-high', source: 'manual', title: 'Needs review', status: 'needs-review', priority: 'critical', owner: null, metadata: {} });
+        setup.upsertWorkItem({ id: 'wi-unassigned-low', source: 'manual', title: 'Hold', status: 'hold', priority: 'high', owner: null, metadata: {} });
+      } finally { setup.close(); }
+      const result = runClaim(dbPath, ['--owner', 'auto-worker', '--as', 'agent']);
+      assert.strictEqual(result.status, 0, result.stderr);
+      const payload = JSON.parse(result.stdout);
+      assert.deepStrictEqual(payload, { claimed: false, reason: 'no-unassigned-open-items' });
+    });
+
+    await test('claim accepts an explicitly ready item', async () => {
+      const setup = await createStateStore({ dbPath });
+      try { setup.upsertWorkItem({ id: 'wi-explicit-ready', source: 'manual', title: 'Approved', status: 'ready', owner: null, metadata: {} }); }
+      finally { setup.close(); }
+      const result = runClaim(dbPath, ['wi-explicit-ready', '--owner', 'approved-worker', '--as', 'agent']);
+      assert.strictEqual(result.status, 0, result.stderr);
+      const payload = JSON.parse(result.stdout);
+      assert.strictEqual(payload.claimed, true);
+      assert.strictEqual(payload.item.status, 'running');
+      assert.strictEqual(payload.item.owner, 'approved-worker');
+    });
+
+    await test('repeat claim by the same owner preserves legacy in-progress idempotence', async () => {
+      const setup = await createStateStore({ dbPath });
+      try {
+        setup.upsertWorkItem({ id: 'wi-legacy-in-progress', source: 'manual', title: 'Legacy active work', status: 'in-progress', owner: 'legacy-worker', metadata: {} });
+      } finally { setup.close(); }
+      const before = await createStateStore({ dbPath });
+      let original;
+      try { original = before.getWorkItemById('wi-legacy-in-progress'); } finally { before.close(); }
+      const result = runClaim(dbPath, ['wi-legacy-in-progress', '--owner', 'legacy-worker', '--as', 'agent']);
+      assert.strictEqual(result.status, 0, result.stderr);
+      assert.deepStrictEqual(JSON.parse(result.stdout).item, original);
+    });
+
+    await test('automatic claim finds older READY work beyond 100 newer unready items', async () => {
+      const store = await createStateStore({ dbPath });
+      try {
+        for (let i = 0; i < 105; i++) {
+          store.upsertWorkItem({
+            id: `wi-new-unready-${i}`, source: 'manual', title: 'Unready',
+            status: 'needs-review', priority: 'critical', owner: null,
+            createdAt: '2026-10-01T00:00:00.000Z', updatedAt: '2026-10-01T00:00:00.000Z'
+          });
+        }
+        store.upsertWorkItem({
+          id: 'wi-old-critical-ready', source: 'manual', title: 'Old critical READY',
+          status: 'ready', priority: 'critical', owner: null,
+          createdAt: '2025-01-01T00:00:00.000Z', updatedAt: '2025-01-01T00:00:00.000Z'
+        });
+        store.upsertWorkItem({
+          id: 'wi-old-low-ready', source: 'manual', title: 'Old low READY',
+          status: 'ready', priority: 'low', owner: null,
+          createdAt: '2025-02-01T00:00:00.000Z', updatedAt: '2025-02-01T00:00:00.000Z'
+        });
+        const newest = store.listWorkItems({ limit: 100 });
+        assert.ok(newest.totalCount > 100);
+        assert.ok(!newest.items.some(item => item.id === 'wi-old-critical-ready'));
+      } finally { store.close(); }
+
+      const first = runClaim(dbPath, ['--owner', 'critical-worker', '--as', 'agent']);
+      assert.strictEqual(first.status, 0, first.stderr);
+      assert.strictEqual(JSON.parse(first.stdout).item.id, 'wi-old-critical-ready');
+
+      const second = runClaim(dbPath, ['--owner', 'low-worker', '--as', 'agent']);
+      assert.strictEqual(second.status, 0, second.stderr);
+      assert.strictEqual(JSON.parse(second.stdout).item.id, 'wi-old-low-ready');
+    });
+
     await test('repeat claim by the same owner is idempotent', async () => {
       const before = await createStateStore({ dbPath });
       let original;

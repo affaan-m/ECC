@@ -1,16 +1,16 @@
 {
   "coverage": {
-    "skills": 311,
-    "withTriggers": 34
+    "skills": 314,
+    "withTriggers": 35
   },
-  "generatedAt": "2026-10-29T00:24:25.600Z",
+  "generatedAt": "2026-10-30T00:01:34.569Z",
   "id": "skill-triggers@1",
   "model": {
     "effort": null,
     "id": "hand-seeded",
     "source": "manual-curation-pending-regeneration"
   },
-  "registryDigest": "64a7cdc061f1df0dbcd02a7554347dde59cd4b9c9afee5da4602569ea6aab8b2",
+  "registryDigest": "e5e5a181953328568a2d4a0c6b32abb961f737f78f0a357f934c8c5b0d0f196b",
   "schemaVersion": 1,
   "triggers": {
     "skill:agent-runtime-gateway-smoke-test": [
@@ -293,6 +293,20 @@
       "regression test first",
       "write a regression test"
     ],
+    "skill:typescript-patterns": [
+      "strict typescript compiler configuration",
+      "fix cascading type errors",
+      "remove any and tighten types",
+      "design discriminated unions",
+      "narrow unknown at api boundary",
+      "review typescript pull request",
+      "refactor to strict mode",
+      "generics for caller dependent types",
+      "async error handling patterns",
+      "validate config with type guards",
+      "bounded concurrency mapper",
+      "module boundary exports"
+    ],
     "skill:verification-loop": [
       "pre pr checks",
       "verification report",
@@ -301,5 +315,5 @@
       "before creating a pr"
     ]
   },
-  "triggersDigest": "aaea2b6feb88489b1652c1be094303adc984b849b8859a568925d7fce5cbeddf"
+  "triggersDigest": "e771839812428dfa1ea215cb8d43606cf2e310cd3745155ee91e8bf575b3513c"
 }

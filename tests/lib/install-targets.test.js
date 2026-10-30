@@ -547,6 +547,24 @@ function runTests() {
       )),
       'Should flatten common rules for antigravity'
     );
+    const ruleOperation = sourcePath => plan.operations.find(operation => (
+      normalizedRelativePath(operation.sourceRelativePath) === sourcePath
+    ));
+    assert.strictEqual(
+      ruleOperation('rules/common/coding-style.md').contentTransform,
+      'antigravity-rule-frontmatter',
+      'Should give common rules an Antigravity activation trigger'
+    );
+    assert.strictEqual(
+      ruleOperation('rules/python/coding-style.md').contentTransform,
+      'antigravity-rule-frontmatter',
+      'Should give language rules an Antigravity activation trigger'
+    );
+    assert.strictEqual(
+      ruleOperation('rules/README.md').contentTransform,
+      undefined,
+      'Should leave the rules README without an activation trigger'
+    );
     assert.ok(
       plan.operations.every(operation => !['.agents', 'AGENTS.md'].includes(operation.sourceRelativePath)),
       'Should exclude Codex-only .agents metadata and root AGENTS.md'

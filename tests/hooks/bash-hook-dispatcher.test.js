@@ -11,6 +11,13 @@ const { spawnSync } = require('child_process');
 const preDispatcher = path.join(__dirname, '..', '..', 'scripts', 'hooks', 'pre-bash-dispatcher.js');
 const postDispatcher = path.join(__dirname, '..', '..', 'scripts', 'hooks', 'post-bash-dispatcher.js');
 
+// The post-Bash dispatcher appends to ~/.claude/bash-commands.log and
+// ~/.claude/cost-tracker.log, so runs get an empty home instead of the
+// developer's real one unless a test passes its own HOME.
+const ISOLATED_HOME = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-bash-dispatcher-home-'));
+const ISOLATED_HOME_ENV = { HOME: ISOLATED_HOME, USERPROFILE: ISOLATED_HOME };
+process.on('exit', () => fs.rmSync(ISOLATED_HOME, { recursive: true, force: true }));
+
 function test(name, fn) {
   try {
     fn();
@@ -29,6 +36,7 @@ function runScript(scriptPath, input, env = {}) {
     encoding: 'utf8',
     env: {
       ...process.env,
+      ...ISOLATED_HOME_ENV,
       ...env,
     },
     timeout: 10000,

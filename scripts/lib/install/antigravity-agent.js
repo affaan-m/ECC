@@ -1,9 +1,14 @@
 'use strict';
 
+const { normalizeAgentTools } = require('../agent-tools');
+
 const TOOL_NAMES = Object.freeze({
   Read: 'view_file',
+  ReadFile: 'view_file',
+  NotebookRead: 'view_file',
   Write: 'write_to_file',
   Edit: 'replace_file_content',
+  MultiEdit: 'replace_file_content',
   Grep: 'grep_search',
   Glob: 'find_by_name',
   Bash: 'run_command',
@@ -18,7 +23,8 @@ const MODEL_NAMES = Object.freeze({
 });
 
 function splitFrontmatter(source, label) {
-  const match = String(source || '').match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n/);
+  const raw = String(source || '');
+  const match = raw.match(/^---(\r?\n)([\s\S]*?)\r?\n---(\r?\n)/);
   if (!match) {
     throw new Error(`Cannot adapt Antigravity agent ${label}: missing YAML frontmatter`);
   }
@@ -26,27 +32,27 @@ function splitFrontmatter(source, label) {
   // Keep YAML loading behind the transform boundary. Public help commands load
   // the installer graph without executing a transform, including in hermetic
   // packed-artifact checks where runtime dependencies are intentionally absent.
-  const frontmatter = require('js-yaml').load(match[1]);
+  const frontmatter = require('js-yaml').load(match[2]);
   if (!frontmatter || typeof frontmatter !== 'object' || Array.isArray(frontmatter)) {
     throw new Error(`Cannot adapt Antigravity agent ${label}: frontmatter must be an object`);
   }
 
   return {
     frontmatter,
-    body: source.slice(match[0].length),
+    body: raw.slice(match[0].length),
+    headerEol: match[1],
+    trailingFenceEol: match[3],
   };
 }
 
 function normalizeToolNames(value) {
-  const names = Array.isArray(value) ? value : String(value || '').split(',');
-  return [...new Set(names
-    .map(name => String(name).trim())
+  return [...new Set(normalizeAgentTools(value)
     .filter(name => Object.hasOwn(TOOL_NAMES, name))
     .map(name => TOOL_NAMES[name]))];
 }
 
 function adaptAntigravityAgent(source, label = '<unknown>') {
-  const { frontmatter, body } = splitFrontmatter(source, label);
+  const { frontmatter, body, headerEol, trailingFenceEol } = splitFrontmatter(source, label);
   const { color: _claudeColor, ...supportedFrontmatter } = frontmatter;
   const adapted = { ...supportedFrontmatter };
   if (Object.hasOwn(frontmatter, 'tools')) {
@@ -59,10 +65,13 @@ function adaptAntigravityAgent(source, label = '<unknown>') {
   }
   const serialized = require('js-yaml')
     .dump(adapted, { lineWidth: -1, noRefs: true })
-    .trimEnd();
-  return `---\n${serialized}\n---\n${body}`;
+    .trimEnd()
+    .replace(/\n/g, headerEol);
+  return `---${headerEol}${serialized}${headerEol}---${trailingFenceEol}${body}`;
 }
 
 module.exports = {
   adaptAntigravityAgent,
+  MODEL_NAMES,
+  TOOL_NAMES,
 };

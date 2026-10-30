@@ -31,6 +31,9 @@ const SUBPROCESS_TIMEOUT_MS = process.platform === 'darwin' && process.env.CI ==
 
 const workDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-stop-stdout-')); // non-git cwd
 const dataHome = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-stop-data-'));
+// Stop hooks also write learned skills under the home directory; give them
+// an empty one instead of the developer's real one.
+const homeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-stop-home-'));
 
 function test(name, fn) {
   try {
@@ -58,6 +61,8 @@ function stopPayload(messageCharacters, character = 'm') {
 function hookEnv() {
   const env = {
     ...process.env,
+    HOME: homeDir,
+    USERPROFILE: homeDir,
     ECC_HOOK_PROFILE: 'standard',
     ECC_AGENT_DATA_HOME: dataHome,
     CLAUDE_SESSION_ID: `stop-stdout-test-${process.pid}`
@@ -448,6 +453,7 @@ else failed++;
 try {
   fs.rmSync(workDir, { recursive: true, force: true });
   fs.rmSync(dataHome, { recursive: true, force: true });
+  fs.rmSync(homeDir, { recursive: true, force: true });
 } catch {
   /* best-effort cleanup */
 }

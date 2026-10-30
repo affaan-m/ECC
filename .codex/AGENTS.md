@@ -5,6 +5,9 @@ This supplements the root `AGENTS.md` with Codex-specific guidance.
 For repo navigation, surface ownership, and PR diff packet guidance, read
 `docs/CODEX-NAVIGATION-GUIDE.md` after this supplement.
 
+For native cache dependency installation and Codex 0.164.0 executable-link
+rejections, use the [runtime dependency procedure](../.codex-plugin/README.md#runtime-dependencies-and-codex-01640-cache-checks).
+
 ## Model Recommendations
 
 | Task Type | Recommended Model |

@@ -980,7 +980,7 @@ async function runTests() {
       assert.strictEqual(syncPayload.issueCount, 1);
       assert.strictEqual(syncPayload.closedCount, 0);
       assert.strictEqual(syncPayload.items.length, 3);
-      assert.strictEqual(syncPayload.items[0].id, 'github-affaan-m-ecc-pr-3');
+      assert.strictEqual(syncPayload.items[0].id, 'github-affaan-m%2Fecc-pr-3');
       assert.strictEqual(syncPayload.items[0].status, 'blocked');
       assert.strictEqual(syncPayload.items[1].status, 'needs-review');
       assert.strictEqual(syncPayload.items[2].metadata.labels[0], 'release');

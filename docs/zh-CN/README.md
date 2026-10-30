@@ -8,7 +8,7 @@
 [![npm ecc-universal](https://img.shields.io/npm/dw/ecc-universal?label=ecc-universal%20weekly%20downloads\&logo=npm)](https://www.npmjs.com/package/ecc-universal)
 [![npm ecc-agentshield](https://img.shields.io/npm/dw/ecc-agentshield?label=ecc-agentshield%20weekly%20downloads\&logo=npm)](https://www.npmjs.com/package/ecc-agentshield)
 [![GitHub App Install](https://img.shields.io/endpoint?url=https%3A%2F%2Fapi.ecc.tools%2Fbadge%2Finstalls&logo=github)](https://github.com/marketplace/ecc-tools)
-[![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![License](https://img.shields.io/badge/license-MIT-blue.svg)](../../LICENSE)
 ![Shell](https://img.shields.io/badge/-Shell-4EAA25?logo=gnu-bash\&logoColor=white)
 ![TypeScript](https://img.shields.io/badge/-TypeScript-3178C6?logo=typescript\&logoColor=white)
 ![Python](https://img.shields.io/badge/-Python-3776AB?logo=python\&logoColor=white)
@@ -264,7 +264,7 @@ Copy-Item -Recurse rules/typescript "$HOME/.claude/rules/"
 /plugin list ecc@ecc
 ```
 
-**搞定！** 你现在可以使用 71 个智能体、311 项技能和 97 个命令了。
+**搞定！** 你现在可以使用 71 个智能体、314 项技能和 98 个命令了。
 
 ***
 
@@ -1177,8 +1177,8 @@ opencode
 | 功能特性 | Claude Code   | OpenCode | 状态 |
 |---------|---------------|----------|--------|
 | 智能体 | PASS: 71 个    | PASS: 12 个 | **Claude Code 领先** |
-| 命令 | PASS: 97 个    | PASS: 35 个 | **Claude Code 领先** |
-| 技能 | PASS: 311 项   | PASS: 37 项 | **Claude Code 领先** |
+| 命令 | PASS: 98 个    | PASS: 35 个 | **Claude Code 领先** |
+| 技能 | PASS: 314 项   | PASS: 37 项 | **Claude Code 领先** |
 | 钩子 | PASS: 8 种事件类型 | PASS: 11 种事件 | **OpenCode 更多！** |
 | 规则 | PASS: 29 条    | PASS: 13 条指令 | **Claude Code 领先** |
 | MCP 服务器 | PASS: 14 个    | PASS: 完整 | **完全对等** |
@@ -1285,8 +1285,8 @@ ECC 是**第一个最大化利用每个主要 AI 编码工具的插件**。以�
 | 功能特性 | Claude Code           | Cursor IDE | Codex CLI | OpenCode |
 |---------|-----------------------|------------|-----------|----------|
 | **智能体** | 71                    | 共享 (AGENTS.md) | 共享 (AGENTS.md) | 12 |
-| **命令** | 97                    | 共享 | 基于指令 | 35 |
-| **技能** | 311                   | 共享 | 10 (原生格式) | 37 |
+| **命令** | 98                    | 共享 | 基于指令 | 35 |
+| **技能** | 314                   | 共享 | 10 (原生格式) | 37 |
 | **钩子事件** | 8 种类型                 | 15 种类型 | SessionStart（1 种类型） | 11 种类型 |
 | **钩子脚本** | 20+ 个脚本               | 16 个脚本 (DRY 适配器) | 1 个 SessionStart 引导脚本 | 插件钩子 |
 | **规则** | 34 (通用 + 语言)          | 34 (YAML 前页) | 基于指令 | 13 条指令 |

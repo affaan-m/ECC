@@ -1,0 +1,61 @@
+{
+  "schema_version": "ecc.evaluator-rag.report.v1",
+  "scenario_id": "connector-diagnostics-gap",
+  "run_id": "illustrative-connector-gap",
+  "read_only": true,
+  "result": "illustrative_expected_result",
+  "findings": [
+    {
+      "id": "remaining-gap",
+      "severity": "info",
+      "summary": "Only interval aggregation is absent from the inspected path; retention and deployed settings remain unknown."
+    },
+    {
+      "id": "no-daemon-evidence",
+      "severity": "warning",
+      "summary": "A separate monitor needs evidence that a bounded query or thin extension cannot meet the requirement."
+    },
+    {
+      "id": "partial-management-dependency",
+      "severity": "warning",
+      "summary": "Management-preparation variant separates existing MCP/API access from unconfigured continuous collection: defer only SSH-dependent host checks and continue independent templates, capability mapping and notification-channel inspection. Management reads do not establish collection readiness, notification delivery or change authority."
+    },
+    {
+      "id": "target-contract-dependency",
+      "severity": "warning",
+      "summary": "An unread target sample blocks dependent document filling, not independently authorized fact storage after explicit scope revision. A stopped candidate is not promoted."
+    }
+  ],
+  "recommended_next_action": {
+    "candidate_id": "bounded-event-summary",
+    "action": "Check event retention and query support, then propose the smallest necessary summary extension."
+  },
+  "scoring": {
+    "status": "not_performed",
+    "scores": null,
+    "reason": "Illustrative expected decisions only; no model benchmark or connector checks were executed."
+  },
+  "evidence_coverage": {
+    "kind": "synthetic_fixture_only",
+    "sources": [
+      "scenario.json#/inputs/inspected_capabilities",
+      "scenario.json#/inputs/unavailable_channels",
+      "trace.json#/events",
+      "candidate-playbook.md#worked-comparison",
+      "scenario.json#/inputs/management_preparation",
+      "scenario.json#/inputs/target_contract"
+    ],
+    "covered": [
+      "Connection and permission diagnostics plus per-request throttle events support the bounded-summary decision.",
+      "Unavailable settings are preserved as unknown rather than evidence of absent capability.",
+      "Management-preparation inputs separate blocked host checks from independent preparation and preserve collection, delivery and authority limits.",
+      "Synthetic target-contract sequence preserves the explicit stop, reassesses dependencies after revised authorization, and keeps later acceptance separate from the earlier sequencing mistake."
+    ],
+    "gaps": [
+      "Event retention and deployed settings are unknown.",
+      "The historical incident and ECC causal contribution are unverified; no connector was executed.",
+      "Management access, collection, SSH and notification behavior are synthetic inputs, not live checks.",
+      "No target sample, original candidate code, source-system execution or deployed recovery was inspected."
+    ]
+  }
+}

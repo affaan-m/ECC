@@ -94,6 +94,19 @@ Review each changed file for:
 - Missing error handling
 - Potential edge cases
 
+## Target Acceptance
+
+When the requested outcome requires deployment or target-environment verification,
+report target acceptance separately from local checks. Record the environment and
+installed version when known, the evidence, and the next permitted check or precise
+access dependency. Passing local checks, review, merge, or release does not establish
+target acceptance. Report VERIFIED or FAILED for an executed target check, with its evidence.
+Do not access production or make external changes without authorization. For
+local-only tasks, mark target acceptance as not applicable.
+
+For example: local checks PASS; staging verification NOT PERFORMED (no access);
+next step: an authorized maintainer runs the staging smoke test.
+
 ## Output Format
 
 After running all phases, produce a verification report:
@@ -110,6 +123,8 @@ Security:  [PASS/FAIL] (X issues)
 Diff:      [X files changed]
 
 Overall:   [READY/NOT READY] for PR
+Target:    [VERIFIED/FAILED/NOT PERFORMED/NOT APPLICABLE] (environment/version, evidence)
+Next permitted step: [check or access dependency; none if complete/not applicable]
 
 Issues to Fix:
 1. ...

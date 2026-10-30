@@ -168,8 +168,14 @@ function runTests() {
 
       assert.strictEqual(result.status, 0);
       assert.strictEqual(result.stdout, 'raw-input');
-      assert.ok(result.stderr.includes('Security monitor exited with status 1'));
-      assert.ok(result.stderr.includes('spawned but failed'));
+      const diagnostics = JSON.stringify({
+        status: result.status,
+        signal: result.signal,
+        stderr: result.stderr,
+        error: result.error ? result.error.message : null,
+      });
+      assert.ok(result.stderr.includes('Security monitor exited with status 1'), diagnostics);
+      assert.ok(result.stderr.includes('spawned but failed'), diagnostics);
     } finally {
       cleanup(tempDir);
     }
