@@ -1,6 +1,8 @@
 use anyhow::{Context, Result};
 use serde::Serialize;
 use sha2::{Digest, Sha256};
+#[cfg(test)]
+use std::cell::Cell;
 use std::fs;
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -8,6 +10,21 @@ use std::process::{Command, Stdio};
 
 use crate::config::Config;
 use crate::session::WorktreeInfo;
+
+#[cfg(test)]
+thread_local! {
+    static GIT_STATUS_ENTRIES_CALL_COUNT: Cell<usize> = const { Cell::new(0) };
+}
+
+#[cfg(test)]
+pub(crate) fn reset_git_status_entries_call_count() {
+    GIT_STATUS_ENTRIES_CALL_COUNT.set(0);
+}
+
+#[cfg(test)]
+pub(crate) fn git_status_entries_call_count() -> usize {
+    GIT_STATUS_ENTRIES_CALL_COUNT.get()
+}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum MergeReadinessStatus {
@@ -271,6 +288,9 @@ pub fn diff_summary(worktree: &WorktreeInfo) -> Result<Option<String>> {
 }
 
 pub fn git_status_entries(worktree: &WorktreeInfo) -> Result<Vec<GitStatusEntry>> {
+    #[cfg(test)]
+    GIT_STATUS_ENTRIES_CALL_COUNT.set(GIT_STATUS_ENTRIES_CALL_COUNT.get() + 1);
+
     let output = Command::new("git")
         .arg("-C")
         .arg(&worktree.path)
