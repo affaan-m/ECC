@@ -298,6 +298,140 @@ const ADAPTER_RECORDS = Object.freeze([
     ],
   },
   {
+    id: 'antigravity',
+    harness: 'Antigravity',
+    state: 'Adapter-backed',
+    supported_assets: [
+      'flattened workspace rules (.agents/rules/) with always_on and glob activation frontmatter',
+      'slash workflows (.agents/workflows/) projected from commands/',
+      'canonical ECC skills (.agents/skills/<name>/SKILL.md)',
+      'custom agents (.agents/agents/) with adapted flash/pro models and tool allowlists',
+    ],
+    unsupported_surfaces: [
+      'Claude runtime hooks and MCP configs are not installed by the Antigravity project target',
+      'Unsupported Claude tool names are omitted from custom agents because unmapped tool identifiers can stall execution',
+    ],
+    install_or_onramp: [
+      '`./install.sh --profile minimal --target antigravity`',
+      '`npx ecc-universal install --profile minimal --target antigravity`',
+    ],
+    verification_commands: [
+      '`node tests/lib/antigravity-install-target.test.js`',
+      '`node tests/lib/antigravity-rule.test.js`',
+      '`node scripts/doctor.js --target antigravity`',
+    ],
+    risk_notes: [
+      'Do not copy the repository .agents/ Codex packaging tree wholesale or rename legacy .agent/ directories manually because ecc-install-state.json records absolute managed paths.',
+    ],
+    last_verified_at: '2026-10-30',
+    owner: 'ECC maintainers',
+    source_docs: [
+      'docs/ANTIGRAVITY-GUIDE.md',
+      'scripts/lib/install-targets/antigravity-project.js',
+      'scripts/lib/install/antigravity-agent.js',
+      'scripts/lib/install/antigravity-rule.js',
+      'tests/lib/antigravity-install-target.test.js',
+    ],
+  },
+  {
+    id: 'qwen',
+    harness: 'Qwen Code',
+    state: 'Adapter-backed',
+    supported_assets: [
+      'Qwen home instructions (~/.qwen/QWEN.md)',
+      'canonical ECC skills, commands, rules, and MCP configs under ~/.qwen/',
+      'managed custom agents (~/.qwen/agents/) with Qwen tool IDs, palette colors, and model: inherit',
+    ],
+    unsupported_surfaces: [
+      'Claude hook runtime parity is not claimed or installed',
+      'Empty or null agent tools lists are rejected because Qwen Code treats an empty list in named-agent files as inheriting all parent tools rather than deny-all',
+    ],
+    install_or_onramp: [
+      '`./install.sh --target qwen --profile minimal`',
+      '`qwen extensions install https://github.com/affaan-m/ECC:ecc` (extension path; conditional rules only)',
+    ],
+    verification_commands: [
+      '`node tests/scripts/qwen-adapt-agents.test.js`',
+      '`node tests/lib/install-targets.test.js`',
+    ],
+    risk_notes: [
+      'Do not layer a full managed ~/.qwen install over an active Qwen extension install unintentionally, and do not add artificial paths: ["**/*"] globs to common rules.',
+    ],
+    last_verified_at: '2026-10-30',
+    owner: 'ECC maintainers',
+    source_docs: [
+      'docs/QWEN-GUIDE.md',
+      'scripts/lib/install-targets/qwen-home.js',
+      'scripts/qwen-adapt-agents.js',
+      'tests/scripts/qwen-adapt-agents.test.js',
+    ],
+  },
+  {
+    id: 'copilot',
+    harness: 'GitHub Copilot',
+    state: 'Adapter-backed',
+    supported_assets: [
+      'project-local skills (.github/skills/) with projected helper paths',
+      'custom agents (.github/agents/) restricted to name and description frontmatter',
+      'path-scoped instructions (.github/instructions/ecc/**/*.instructions.md) with applyTo glob mapping',
+      'managed package-manager detection helpers under .github/ecc/scripts/',
+    ],
+    unsupported_surfaces: [
+      'Claude runtime hooks and slash commands are not installed because Copilot CLI governs tool permissions at the session level and lacks slash-command argument substitution',
+      'Agent model, tools, and color fields are omitted from Copilot custom agent frontmatter',
+    ],
+    install_or_onramp: [
+      '`./install.sh --profile minimal --target copilot`',
+    ],
+    verification_commands: [
+      '`node tests/lib/copilot-install-target.test.js`',
+      '`node tests/lib/install-targets.test.js`',
+    ],
+    risk_notes: [
+      'Copilot CLI governs tool permissions via session --allow-tool and --deny-tool flags rather than per-agent frontmatter allowlists.',
+    ],
+    last_verified_at: '2026-10-30',
+    owner: 'ECC maintainers',
+    source_docs: [
+      'scripts/lib/install-targets/copilot-project.js',
+      'scripts/lib/install/copilot-agent.js',
+      'scripts/lib/install/copilot-rule.js',
+      'tests/lib/copilot-install-target.test.js',
+    ],
+  },
+  {
+    id: 'hermes',
+    harness: 'Hermes',
+    state: 'Adapter-backed',
+    supported_assets: [
+      'managed home rules, skills, commands, and MCP configs under ~/.hermes/',
+      'opt-in self-contained Python hooks (config-protection.py and check-console-log.py) via --modules hermes-hooks --enable-hooks',
+    ],
+    unsupported_surfaces: [
+      'Full 24-command Claude hook runtime is not installed; Hermes uses its own ~/.hermes/config.yaml event mapping and consent allowlist',
+      'Installer never mutates ~/.hermes/config.yaml automatically',
+    ],
+    install_or_onramp: [
+      '`./install.sh --profile minimal --target hermes`',
+      '`./install.sh --target hermes --modules hermes-hooks --enable-hooks`',
+    ],
+    verification_commands: [
+      '`node tests/hermes-hooks.test.js`',
+      '`node tests/lib/install-targets.test.js`',
+    ],
+    risk_notes: [
+      'Register hooks manually in ~/.hermes/config.yaml using expanded paths because Hermes resolves hook commands verbatim without ~ expansion, and never commit raw ~/.hermes exports.',
+    ],
+    last_verified_at: '2026-10-30',
+    owner: 'ECC maintainers',
+    source_docs: [
+      'docs/HERMES-HOOKS.md',
+      'docs/architecture/cross-harness.md',
+      'scripts/lib/install-targets/hermes-home.js',
+      'tests/hermes-hooks.test.js',
+    ],
+  },
+  {
     id: 'orca',
     harness: 'Orca',
     state: 'Reference-only',
@@ -499,18 +633,89 @@ function extractMatrixBlock(markdown) {
   return normalized.slice(start + MATRIX_BLOCK_START.length, end).trim();
 }
 
+function isWithinRootPath(rootPath, candidatePath) {
+  const relative = path.relative(rootPath, candidatePath);
+  return Boolean(relative) && !relative.startsWith('..') && !path.isAbsolute(relative);
+}
+
+function isSafeRelativeSourceDocPath(trimmedEntry, normalizedEntry) {
+  const segments = normalizedEntry.split('/');
+  return !path.isAbsolute(trimmedEntry)
+    && !/^[A-Za-z]:/.test(normalizedEntry)
+    && !segments.includes('..')
+    && !segments.includes('.');
+}
+
+function validateSingleSourceDoc(label, docEntry, repoRoot, canonicalRepoRoot) {
+  if (typeof docEntry !== 'string' || !docEntry.trim()) {
+    return null;
+  }
+
+  const trimmedEntry = docEntry.trim();
+  const normalizedEntry = trimmedEntry.replace(/\\/g, '/');
+  if (!isSafeRelativeSourceDocPath(trimmedEntry, normalizedEntry)) {
+    return `${label}: source_doc ${trimmedEntry} must be a repo-relative path without '..'`;
+  }
+
+  const resolved = path.resolve(repoRoot, normalizedEntry);
+  if (!isWithinRootPath(repoRoot, resolved)) {
+    return `${label}: source_doc ${trimmedEntry} resolves outside repository root`;
+  }
+
+  let canonicalResolved;
+  try {
+    canonicalResolved = fs.realpathSync(resolved);
+  } catch (_error) {
+    return `${label}: missing source_doc ${trimmedEntry}`;
+  }
+
+  if (!isWithinRootPath(canonicalRepoRoot, canonicalResolved)) {
+    return `${label}: source_doc ${trimmedEntry} resolves outside repository root`;
+  }
+
+  return null;
+}
+
+function validateSourceDocs(records = ADAPTER_RECORDS, options = {}) {
+  const repoRoot = path.resolve(options.repoRoot || path.resolve(__dirname, '..', '..'));
+  const canonicalRepoRoot = fs.existsSync(repoRoot) ? fs.realpathSync(repoRoot) : repoRoot;
+  const errors = [];
+
+  for (const record of records) {
+    const label = record?.id || 'unknown';
+    const sourceDocs = Array.isArray(record?.source_docs) ? record.source_docs : [];
+
+    for (const docEntry of sourceDocs) {
+      const error = validateSingleSourceDoc(label, docEntry, repoRoot, canonicalRepoRoot);
+      if (error) {
+        errors.push(error);
+      }
+    }
+  }
+
+  return errors;
+}
+
 function validateDocumentation(options = {}) {
-  const repoRoot = options.repoRoot || path.resolve(__dirname, '..', '..');
+  const repoRoot = path.resolve(options.repoRoot || path.resolve(__dirname, '..', '..'));
   const docPath = options.docPath || path.join(repoRoot, 'docs', 'architecture', 'harness-adapter-compliance.md');
+  const records = options.records || ADAPTER_RECORDS;
+  const checkSourceDocs = options.checkSourceDocs !== undefined
+    ? Boolean(options.checkSourceDocs)
+    : !options.docPath;
   const errors = [];
   const source = fs.readFileSync(docPath, 'utf8');
   const actual = extractMatrixBlock(source);
-  const expected = renderMarkdownTable();
+  const expected = renderMarkdownTable(records);
 
   if (actual === null) {
     errors.push(`missing matrix block markers in ${path.relative(repoRoot, docPath)}`);
   } else if (actual !== expected) {
     errors.push(`matrix block in ${path.relative(repoRoot, docPath)} is not generated from adapter records`);
+  }
+
+  if (checkSourceDocs) {
+    errors.push(...validateSourceDocs(records, { repoRoot }));
   }
 
   return errors;
@@ -527,4 +732,5 @@ module.exports = {
   renderStateTable,
   validateAdapterRecords,
   validateDocumentation,
+  validateSourceDocs,
 };
