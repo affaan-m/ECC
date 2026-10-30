@@ -209,6 +209,13 @@ if (test('reports invalid and long commit messages without blocking when files a
   });
 })) passed++; else failed++;
 
+if (test('accepts the ! breaking-change marker with and without a scope', () => {
+  for (const subject of ['feat!: drop node 18 support', 'feat(api)!: remove legacy endpoint']) {
+    const res = hook.validateCommitMessage(`git commit -m "${subject}"`);
+    assert.deepStrictEqual(res.issues, [], `${subject} should be conventional`);
+  }
+})) passed++; else failed++;
+
 if (test('blocks commits with staged secret patterns across checkable files', () => {
   inTempRepo(repoDir => {
     writeAndStage(repoDir, 'index.js', [
