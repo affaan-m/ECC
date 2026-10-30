@@ -149,7 +149,7 @@ Accesso a 71 agent, 314 skill e 98 shim di comandi legacy, oltre a hook, regole,
 | --- | ---: | --- |
 | Agent | 71 agent | Pianificazione, review, riparazione delle build, sicurezza, architettura e lavoro di dominio |
 | Skill | 314 skill | TDD, ricerca, sicurezza, documentazione, frontend, dati, ML, operations e altro ancora |
-| Comandi | 97 comandi | Punti di ingresso comodi mentre ECC passa a un'interfaccia basata prima di tutto sulle skill |
+| Comandi | 98 comandi | Punti di ingresso comodi mentre ECC passa a un'interfaccia basata prima di tutto sulle skill |
 | Hook e memoria | Runtime | Applicazione delle regole, riepiloghi di sessione, apprendimento continuo, instinct e controlli sul contesto |
 | Regole | Selettivo | Standard sempre caricati, che scegli per linguaggio o progetto |
 | AgentShield | Incluso | Scansione di prompt, hook, configurazione MCP, permessi, segreti e file degli agent |
@@ -639,7 +639,8 @@ Senza `ccg-workflow`, questi comandi `multi-*` non funzioneranno correttamente.
 <details>
 <summary><strong>Astra review richiede la Codex CLI</strong></summary>
 
-`/astra-review` invia il codice scritto da Claude a GPT-6-Astra per una review indipendente tra provider diversi. Esegue la [Codex CLI](https://github.com/openai/codex) installata in locale con il tuo login ChatGPT (`codex login`); non serve alcuna chiave API di OpenAI, e le chiavi API presenti nel tuo ambiente non vengono inoltrate. Invocare il comando equivale a dare il consenso a inviare quel diff a OpenAI. Configurazione, scope, push gating e risoluzione dei problemi sono descritti nella [Guida ad Astra Review](../../docs/ASTRA-REVIEW-GUIDE.md).
+`/ecc:astra-review` (per chi usa il plugin) o `/astra-review` (installazione manuale) invia il codice scritto da Claude a GPT-6-Astra per una review indipendente tra provider diversi. Esegue la [Codex CLI](https://github.com/openai/codex) installata in locale con il tuo login ChatGPT (`codex login`); non serve alcuna chiave API di OpenAI, e le chiavi API presenti nel tuo ambiente non vengono inoltrate. Invocare il comando equivale a dare il consenso a inviare quel diff a OpenAI. Configurazione, scope, push gating e risoluzione dei problemi sono descritti nella [Guida ad Astra Review](../../docs/ASTRA-REVIEW-GUIDE.md).
+
 </details>
 
 <details>
