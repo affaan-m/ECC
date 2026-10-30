@@ -106,7 +106,8 @@
         "hermes-hooks",
         "documentation-change-impact",
         "documentation-module-governance",
-        "documentation-test-regression"
+        "documentation-test-regression",
+        "ecc-contribution-review"
       ]
     }
   }

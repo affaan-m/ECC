@@ -1,0 +1,54 @@
+{
+  "errors": [],
+  "generated_at": "2026-10-30T16:00:48Z",
+  "metrics": {
+    "_totals": {
+      "CONFIDENCE.HIGH": 0,
+      "CONFIDENCE.LOW": 0,
+      "CONFIDENCE.MEDIUM": 0,
+      "CONFIDENCE.UNDEFINED": 0,
+      "SEVERITY.HIGH": 0,
+      "SEVERITY.LOW": 0,
+      "SEVERITY.MEDIUM": 0,
+      "SEVERITY.UNDEFINED": 0,
+      "loc": 915,
+      "nosec": 0,
+      "skipped_tests": 0
+    },
+    "skills/ecc-contribution-review/scripts/compile_contribution_review.py": {
+      "CONFIDENCE.HIGH": 0,
+      "CONFIDENCE.LOW": 0,
+      "CONFIDENCE.MEDIUM": 0,
+      "CONFIDENCE.UNDEFINED": 0,
+      "SEVERITY.HIGH": 0,
+      "SEVERITY.LOW": 0,
+      "SEVERITY.MEDIUM": 0,
+      "SEVERITY.UNDEFINED": 0,
+      "loc": 324,
+      "nosec": 0,
+      "skipped_tests": 0
+    },
+    "skills/ecc-contribution-review/scripts/contribution_review_validation.py": {
+      "CONFIDENCE.HIGH": 0,
+      "CONFIDENCE.LOW": 0,
+      "CONFIDENCE.MEDIUM": 0,
+      "CONFIDENCE.UNDEFINED": 0,
+      "SEVERITY.HIGH": 0,
+      "SEVERITY.LOW": 0,
+      "SEVERITY.MEDIUM": 0,
+      "SEVERITY.UNDEFINED": 0,
+      "loc": 591,
+      "nosec": 0,
+      "skipped_tests": 0
+    }
+  },
+  "results": [],
+  "source_provenance": {
+    "scanner": "bandit",
+    "sha256": {
+      "skills/ecc-contribution-review/scripts/compile_contribution_review.py": "51be6d82e222eb7dcf35f6c2db55dd06dd04a480d6c5734d2e671bac1bbb820c",
+      "skills/ecc-contribution-review/scripts/contribution_review_validation.py": "34420b91f55c5e2f1619e7f82d0d0ef920ffe119cbf2013e5ea7f7d62d382f35"
+    },
+    "version": "1.9.4"
+  }
+}

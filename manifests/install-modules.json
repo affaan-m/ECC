@@ -1452,6 +1452,35 @@
       "stability": "beta"
     },
     {
+      "id": "ecc-contribution-review",
+      "kind": "skills",
+      "description": "Optional skill contribution review packet workflow for ECC repositories.",
+      "paths": [
+        "skills/ecc-contribution-review"
+      ],
+      "targets": [
+        "claude",
+        "claude-project",
+        "cursor",
+        "antigravity",
+        "codex",
+        "copilot",
+        "opencode",
+        "codebuddy",
+        "joycode",
+        "qwen",
+        "zed",
+        "hermes",
+        "openclaw",
+        "kimi",
+        "adal"
+      ],
+      "dependencies": [],
+      "defaultInstall": false,
+      "cost": "light",
+      "stability": "beta"
+    },
+    {
       "id": "shared-script-utils",
       "kind": "platform",
       "description": "Shared utility files required by installed commands and platform tools.",

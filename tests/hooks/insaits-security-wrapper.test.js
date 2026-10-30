@@ -45,6 +45,8 @@ function writeFakePython(binDir) {
     "  process.exit(2);",
     "}",
     "if (mode === 'error') {",
+    // Drain stdin so spawnSync observes the intended exit status, not EPIPE.
+    "  fs.readFileSync(0, 'utf8');",
     "  process.stderr.write('spawned but failed\\n');",
     "  process.exit(1);",
     "}",
@@ -147,6 +149,25 @@ function runTests() {
       assert.strictEqual(result.status, 2);
       assert.strictEqual(result.stdout, 'blocked by monitor\n');
       assert.strictEqual(result.stderr, 'monitor warning\n');
+    } finally {
+      cleanup(tempDir);
+    }
+  })) passed++; else failed++;
+
+  if (test('error fixture consumes piped input before exiting', () => {
+    const tempDir = createTempDir();
+    try {
+      const binDir = path.join(tempDir, 'bin');
+      writeFakePython(binDir);
+      const result = spawnSync(process.execPath, [path.join(binDir, 'fake-python.js')], {
+        input: 'x'.repeat(512 * 1024),
+        encoding: 'utf8',
+        env: { ...process.env, FAKE_INSAITS_MODE: 'error' },
+        timeout: 10000,
+      });
+      assert.ifError(result.error);
+      assert.strictEqual(result.status, 1);
+      assert.strictEqual(result.stderr, 'spawned but failed\n');
     } finally {
       cleanup(tempDir);
     }

@@ -205,6 +205,7 @@
       "counterparty-channel-discipline": "agent messaging ops policy",
       "crosspost": "social/marketing distribution",
       "customer-billing-ops": "billing/ops skill over connected billing tools",
+      "ecc-contribution-review": "ECC-specific contribution packet compiler over repository manifests and cross-harness review evidence",
       "customs-trade-compliance": "customs/trade niche domain",
       "data-scraper-agent": "scheduled network scraping agent",
       "deep-research": "requires firecrawl and exa SaaS MCP tools",
