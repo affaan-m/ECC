@@ -784,6 +784,14 @@ function sedScriptParts(words, budget) {
   return scripts;
 }
 
+// A Node invocation with a literal script operand does not make its remaining
+// argv or stdin JavaScript source by itself. Eval, stdin mode, options before
+// the script, and dynamic operands stay opaque and conservatively scanned.
+function isLiteralNodeScript(words, name) {
+  return (name === 'node' || name === 'node.exe') && words[1]
+    && !words[1].dynamic && words[1].value !== '-' && !words[1].value.startsWith('-');
+}
+
 function commandRole(words, budget) {
   if (!words.length) return { kind: 'data' };
   budget.spend(words[0].value.length + 1);
@@ -811,7 +819,7 @@ function commandRole(words, budget) {
     // contain "git ..." never execute.
     return { kind: 'data' };
   }
-  if (DATA_COMMANDS.has(name)) return { kind: 'data' };
+  if (DATA_COMMANDS.has(name) || isLiteralNodeScript(words, name)) return { kind: 'data' };
   return { kind: 'opaque', stdin: true };
 }
 
