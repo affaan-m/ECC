@@ -4128,7 +4128,6 @@ impl Dashboard {
         self.ensure_selected_pane_visible();
         self.sync_selected_output();
         self.sync_selected_diff();
-        self.sync_selected_git_status();
         self.sync_selected_messages();
         self.sync_selected_lineage();
         self.refresh_logs();
@@ -9921,6 +9920,45 @@ mod tests {
         let rendered = dashboard.rendered_output_text(180, 20);
         assert!(rendered.contains("Git status"));
         assert!(rendered.contains("README.md"));
+
+        let _ = fs::remove_dir_all(root);
+        Ok(())
+    }
+
+    #[test]
+    fn refresh_reads_selected_git_status_once() -> Result<()> {
+        let root = std::env::temp_dir().join(format!("ecc2-git-status-refresh-{}", Uuid::new_v4()));
+        init_git_repo(&root)?;
+        fs::write(root.join("README.md"), "changed during dashboard refresh\n")?;
+
+        let mut session = sample_session(
+            "focus-12345678",
+            "planner",
+            SessionState::Running,
+            Some("ecc/focus"),
+            512,
+            42,
+        );
+        session.working_dir = root.clone();
+        session.worktree = Some(WorktreeInfo {
+            path: root.clone(),
+            branch: "main".to_string(),
+            base_branch: "main".to_string(),
+        });
+        let mut dashboard = test_dashboard(vec![session.clone()], 0);
+        dashboard.db.insert_session(&session)?;
+
+        worktree::reset_git_status_entries_call_count();
+        dashboard.refresh();
+
+        assert_eq!(
+            worktree::git_status_entries_call_count(),
+            1,
+            "one dashboard refresh should load the selected worktree status once"
+        );
+        assert_eq!(dashboard.selected_git_status_entries.len(), 1);
+        assert_eq!(dashboard.selected_git_status_entries[0].path, "README.md");
+        assert!(dashboard.selected_git_status_entries[0].unstaged);
 
         let _ = fs::remove_dir_all(root);
         Ok(())
