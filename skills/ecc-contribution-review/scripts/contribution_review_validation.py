@@ -90,13 +90,14 @@ def safe_repo_path(value: Any) -> bool:
     return not path.is_absolute() and path.as_posix() == value
 
 
-def add_issue(issues: list[dict[str, Any]], code: str, plane: int, detail: str) -> None:
-    if code not in {issue["code"] for issue in issues}:
-        issues.append({"code": code, "plane": plane, "detail": detail})
+def add_issue(issues: list[dict[str, Any]], code: str, plane: int, detail: str) -> list[dict[str, Any]]:
+    if code in {issue["code"] for issue in issues}:
+        return list(issues)
+    return [*issues, {"code": code, "plane": plane, "detail": detail}]
 
 
 
-def _validate_repo(observation: dict[str, Any], faults: list[dict[str, Any]]) -> None:
+def _validate_repo(observation: dict[str, Any], faults: list[dict[str, Any]]) -> list[dict[str, Any]]:
     repo = observation["repoIdentity"]
     repo_fields = {
         "rootName", "rootPathRef", "branch", "baseSha256", "headSha256",
@@ -114,11 +115,12 @@ def _validate_repo(observation: dict[str, Any], faults: list[dict[str, Any]]) ->
         or any(not is_sha256(repo.get(key)) for key in repo_fields if key.endswith("Sha256"))
         or repo.get("baseSha256") == repo.get("headSha256")
     ):
-        add_issue(faults, "repo_identity_failed", 2,
+        faults = add_issue(faults, "repo_identity_failed", 2,
                   "Active ECC root, non-default branch, distinct base/head, manifests, catalog, policy, and checkpoint hashes are required.")
+    return faults
 
 
-def _validate_intent(observation: dict[str, Any], faults: list[dict[str, Any]]) -> None:
+def _validate_intent(observation: dict[str, Any], faults: list[dict[str, Any]]) -> list[dict[str, Any]]:
     intent = observation["changeIntent"]
     intent_fields = {
         "changeId", "changeKind", "canonicalSurface", "canonicalPath",
@@ -143,11 +145,12 @@ def _validate_intent(observation: dict[str, Any], faults: list[dict[str, Any]]) 
         or not intent.get("evidenceRefs")
         or not isinstance(intent.get("counterevidenceRefs"), list)
     ):
-        add_issue(faults, "change_intent_failed", 1,
+        faults = add_issue(faults, "change_intent_failed", 1,
                   "A bounded non-breaking skills-first change with explicit scopes and evidence refs is required.")
+    return faults
 
 
-def _validate_surface(observation: dict[str, Any], faults: list[dict[str, Any]]) -> None:
+def _validate_surface(observation: dict[str, Any], faults: list[dict[str, Any]]) -> list[dict[str, Any]]:
     surface = observation["surfaceContract"]
     surface_fields = {
         "canonicalFirst", "generatedRootsExcluded", "curatedSkill",
@@ -169,11 +172,12 @@ def _validate_surface(observation: dict[str, Any], faults: list[dict[str, Any]])
         or not isinstance(surface.get("evidenceRefs"), list)
         or not surface.get("evidenceRefs")
     ):
-        add_issue(faults, "canonical_surface_failed", 6,
+        faults = add_issue(faults, "canonical_surface_failed", 6,
                   "Curated skills/ must lead; generated roots must be excluded; manifest, docs, and intentional mirrors are required.")
+    return faults
 
 
-def _validate_artifacts(observation: dict[str, Any], faults: list[dict[str, Any]]) -> None:
+def _validate_artifacts(observation: dict[str, Any], faults: list[dict[str, Any]]) -> list[dict[str, Any]]:
     intent = observation["changeIntent"]
     artifacts = observation["artifactRecords"]
     artifact_fields = {
@@ -186,7 +190,7 @@ def _validate_artifacts(observation: dict[str, Any], faults: list[dict[str, Any]
         if not isinstance(artifact, dict):
             artifact_bad = True
             continue
-        artifact_paths.append(artifact.get("path"))
+        artifact_paths = [*artifact_paths, artifact.get("path")]
         source_of_truth = artifact.get("role") == "canonical-skill"
         if (
             set(artifact) != artifact_fields
@@ -213,8 +217,9 @@ def _validate_artifacts(observation: dict[str, Any], faults: list[dict[str, Any]
         or canonical_artifacts[0].get("path") != intent.get("canonicalPath")
         or artifact_bad
     ):
-        add_issue(faults, "artifact_graph_failed", 2,
+        faults = add_issue(faults, "artifact_graph_failed", 2,
                   "Six unique, extant, hash-bound artifacts with one exact canonical source are required.")
+    return faults
 
 
 def _parity_targets_valid(targets: list[Any], canonical_content: Any) -> bool:
@@ -234,7 +239,7 @@ def _parity_targets_valid(targets: list[Any], canonical_content: Any) -> bool:
         for item in targets
     )
 
-def _validate_parity(observation: dict[str, Any], faults: list[dict[str, Any]]) -> None:
+def _validate_parity(observation: dict[str, Any], faults: list[dict[str, Any]]) -> list[dict[str, Any]]:
     artifacts = observation["artifactRecords"]
     parity = observation["harnessParity"]
     parity_fields = {
@@ -274,11 +279,12 @@ def _validate_parity(observation: dict[str, Any], faults: list[dict[str, Any]]) 
         or not parity.get("evidenceRefs")
         or parity_artifacts_bad
     ):
-        add_issue(faults, "harness_parity_failed", 3,
+        faults = add_issue(faults, "harness_parity_failed", 3,
                   "Claude, Codex, and Cursor surfaces must retain normalized content identity with explicit adaptations and no drift.")
+    return faults
 
 
-def _validate_catalog(observation: dict[str, Any], faults: list[dict[str, Any]]) -> None:
+def _validate_catalog(observation: dict[str, Any], faults: list[dict[str, Any]]) -> list[dict[str, Any]]:
     catalog = observation["catalogContract"]
     catalog_fields = {
         "filesystemAgents", "documentedAgents", "filesystemSkills", "documentedSkills",
@@ -318,11 +324,12 @@ def _validate_catalog(observation: dict[str, Any], faults: list[dict[str, Any]])
         or not isinstance(catalog.get("evidenceRefs"), list)
         or not catalog.get("evidenceRefs")
     ):
-        add_issue(faults, "catalog_reconciliation_failed", 3,
+        faults = add_issue(faults, "catalog_reconciliation_failed", 3,
                   "Filesystem/documented counts, manifest coverage, intentional exceptions, catalog, and registry checks must reconcile.")
+    return faults
 
 
-def _validate_gates(observation: dict[str, Any], faults: list[dict[str, Any]]) -> None:
+def _validate_gates(observation: dict[str, Any], faults: list[dict[str, Any]]) -> list[dict[str, Any]]:
     validation = observation["validationMatrix"]
     validation_fields = {"gateId", "commandArgv", "expectedExit", "observedExit", "evidenceRefs"}
     if (
@@ -341,11 +348,12 @@ def _validate_gates(observation: dict[str, Any], faults: list[dict[str, Any]]) -
             for item in validation
         )
     ):
-        add_issue(faults, "validation_matrix_failed", 5,
+        faults = add_issue(faults, "validation_matrix_failed", 5,
                   "Eight exact argv gates must be recorded green with evidence references.")
+    return faults
 
 
-def _validate_tdd(observation: dict[str, Any], faults: list[dict[str, Any]]) -> None:
+def _validate_tdd(observation: dict[str, Any], faults: list[dict[str, Any]]) -> list[dict[str, Any]]:
     tdd = observation["tddContract"]
     tdd_fields = {
         "redObserved", "failingTestIds", "greenObserved", "refactorObserved",
@@ -370,11 +378,12 @@ def _validate_tdd(observation: dict[str, Any], faults: list[dict[str, Any]]) -> 
         or not isinstance(tdd.get("evidenceRefs"), list)
         or not tdd.get("evidenceRefs")
     ):
-        add_issue(faults, "tdd_contract_failed", 4,
+        faults = add_issue(faults, "tdd_contract_failed", 4,
                   "Observed RED/GREEN/REFACTOR, named failures, passing behavior tests, and at least 80 percent coverage are required.")
+    return faults
 
 
-def _validate_security(observation: dict[str, Any], faults: list[dict[str, Any]]) -> None:
+def _validate_security(observation: dict[str, Any], faults: list[dict[str, Any]]) -> list[dict[str, Any]]:
     security = observation["securityContract"]
     security_fields = {
         "secretsDetected", "personalPathsDetected", "unsafePermissionsDetected",
@@ -393,11 +402,12 @@ def _validate_security(observation: dict[str, Any], faults: list[dict[str, Any]]
         or not isinstance(security.get("evidenceRefs"), list)
         or not security.get("evidenceRefs")
     ):
-        add_issue(faults, "security_contract_failed", 6,
+        faults = add_issue(faults, "security_contract_failed", 6,
                   "Secret, path, permission, hook, prompt-injection, supply-chain, and authority observations are required.")
+    return faults
 
 
-def _validate_budget(observation: dict[str, Any], faults: list[dict[str, Any]]) -> None:
+def _validate_budget(observation: dict[str, Any], faults: list[dict[str, Any]]) -> list[dict[str, Any]]:
     budget = observation["budgetContract"]
     budget_fields = {
         "maximumChangedFiles", "observedChangedFiles", "maximumChangedLines",
@@ -421,11 +431,12 @@ def _validate_budget(observation: dict[str, Any], faults: list[dict[str, Any]]) 
         or not isinstance(budget.get("evidenceRefs"), list)
         or not budget.get("evidenceRefs")
     ):
-        add_issue(faults, "change_budget_failed", 6,
+        faults = add_issue(faults, "change_budget_failed", 6,
                   "Changed-file, changed-line, and test-runtime budgets must be nonnegative and bounded.")
+    return faults
 
 
-def _validate_commit(observation: dict[str, Any], faults: list[dict[str, Any]]) -> None:
+def _validate_commit(observation: dict[str, Any], faults: list[dict[str, Any]]) -> list[dict[str, Any]]:
     commit = observation["commitContract"]
     commit_fields = {
         "type", "scope", "subject", "subjectLength", "conventional", "commitCreated",
@@ -445,11 +456,12 @@ def _validate_commit(observation: dict[str, Any], faults: list[dict[str, Any]]) 
         or not isinstance(commit.get("evidenceRefs"), list)
         or not commit.get("evidenceRefs")
     ):
-        add_issue(faults, "commit_contract_failed", 6,
+        faults = add_issue(faults, "commit_contract_failed", 6,
                   "A concise conventional commit proposal is required; commit, push, and PR effects must remain false.")
+    return faults
 
 
-def _validate_probes(observation: dict[str, Any], faults: list[dict[str, Any]]) -> None:
+def _validate_probes(observation: dict[str, Any], faults: list[dict[str, Any]]) -> list[dict[str, Any]]:
     probes = observation["failureProbes"]
     probe_fields = {"probeId", "failureMode", "expectedOutcome", "observedOutcome", "evidenceRefs"}
     if (
@@ -468,11 +480,12 @@ def _validate_probes(observation: dict[str, Any], faults: list[dict[str, Any]]) 
             for item in probes
         )
     ):
-        add_issue(faults, "failure_probe_coverage_failed", 5,
+        faults = add_issue(faults, "failure_probe_coverage_failed", 5,
                   "All twelve ECC contribution probes must match expected outcomes and cite evidence.")
+    return faults
 
 
-def _validate_checkpoint(observation: dict[str, Any], faults: list[dict[str, Any]]) -> None:
+def _validate_checkpoint(observation: dict[str, Any], faults: list[dict[str, Any]]) -> list[dict[str, Any]]:
     repo = observation["repoIdentity"]
     checkpoint = observation["checkpointContract"]
     checkpoint_fields = {
@@ -491,11 +504,12 @@ def _validate_checkpoint(observation: dict[str, Any], faults: list[dict[str, Any
         or not isinstance(checkpoint.get("remainingUnknowns"), list)
         or not checkpoint.get("remainingUnknowns")
     ):
-        add_issue(faults, "checkpoint_contract_failed", 5,
+        faults = add_issue(faults, "checkpoint_contract_failed", 5,
                   "Exact repository, policy, checkpoint, runner, state, and unknown identities are required.")
+    return faults
 
 
-def _validate_runners(observation: dict[str, Any], faults: list[dict[str, Any]]) -> None:
+def _validate_runners(observation: dict[str, Any], faults: list[dict[str, Any]]) -> list[dict[str, Any]]:
     runners = observation["runnerProposals"]
     runner_fields = {"role", "argv"}
     if (
@@ -510,11 +524,12 @@ def _validate_runners(observation: dict[str, Any], faults: list[dict[str, Any]])
             for item in runners
         )
     ):
-        add_issue(faults, "runner_proposals_invalid", 5,
+        faults = add_issue(faults, "runner_proposals_invalid", 5,
                   "Seven typed non-shell argv proposals are required.")
+    return faults
 
 
-def _validate_authority(observation: dict[str, Any], contradictions: list[dict[str, Any]]) -> None:
+def _validate_authority(observation: dict[str, Any], contradictions: list[dict[str, Any]]) -> list[dict[str, Any]]:
     forbidden_claims = (
         ("claimsSourceFilesWrittenByController", "file_write_claim_forbidden"),
         ("claimsTestsExecutedByController", "test_execution_claim_forbidden"),
@@ -525,29 +540,27 @@ def _validate_authority(observation: dict[str, Any], contradictions: list[dict[s
     )
     for field, code in forbidden_claims:
         if observation.get(field) is not False:
-            contradictions.append({
-                "code": code,
-                "plane": 2,
-                "detail": "The compiler cannot claim repository or external effects.",
-            })
-    requested_effects = observation["requestedEffects"]
-    if set(requested_effects) != EFFECT_FIELDS or any(
+            contradictions = add_issue(
+                contradictions, code, 2,
+                "The compiler cannot claim repository or external effects.",
+            )
+    requested_effects = observation.get("requestedEffects")
+    if not isinstance(requested_effects, dict) or set(requested_effects) != EFFECT_FIELDS or any(
         value is not False for value in requested_effects.values()
     ):
-        contradictions.append({
-            "code": "external_action_requested",
-            "plane": 6,
-            "detail": "Compilation cannot request source, test, catalog, Git, PR, or memory effects.",
-        })
-    claimed_authority = observation["claimedAuthority"]
-    if set(claimed_authority) != AUTHORITY_FIELDS or any(
+        contradictions = add_issue(
+            contradictions, "external_action_requested", 6,
+            "Compilation cannot request source, test, catalog, Git, PR, or memory effects.",
+        )
+    claimed_authority = observation.get("claimedAuthority")
+    if not isinstance(claimed_authority, dict) or set(claimed_authority) != AUTHORITY_FIELDS or any(
         value is not False for value in claimed_authority.values()
     ):
-        contradictions.append({
-            "code": "unsafe_generated_authority",
-            "plane": 6,
-            "detail": "Generated authority must remain false.",
-        })
+        contradictions = add_issue(
+            contradictions, "unsafe_generated_authority", 6,
+            "Generated authority must remain false.",
+        )
+    return contradictions
 
 
 def _valid_timestamp(value: Any) -> bool:
@@ -562,7 +575,7 @@ def _valid_timestamp(value: Any) -> bool:
     return stamp.tzinfo is not None and stamp.utcoffset() is not None
 
 
-def _valid_envelope(observation: Any, faults: list[dict[str, Any]]) -> bool:
+def _valid_envelope(observation: Any, faults: list[dict[str, Any]]) -> tuple[bool, list[dict[str, Any]]]:
     required = {
         "schemaVersion", "observedAt", "subjectRef", "repoIdentity", "changeIntent",
         "surfaceContract", "artifactRecords", "harnessParity", "catalogContract",
@@ -573,17 +586,17 @@ def _valid_envelope(observation: Any, faults: list[dict[str, Any]]) -> bool:
         "claimsPullRequestOpened", "requestedEffects", "claimedAuthority",
     }
     if not isinstance(observation, dict) or not required.issubset(observation):
-        add_issue(faults, "observation_envelope_incomplete", 1,
+        faults = add_issue(faults, "observation_envelope_incomplete", 1,
                   "Required ECC contribution observations are missing.")
-        return False
+        return False, faults
 
     if observation.get("schemaVersion") != "1.0.0":
-        add_issue(faults, "schema_version_unsupported", 1, "Only schema version 1.0.0 is supported.")
+        faults = add_issue(faults, "schema_version_unsupported", 1, "Only schema version 1.0.0 is supported.")
     if not _valid_timestamp(observation.get("observedAt")):
-        add_issue(faults, "observed_at_invalid", 1, "An ISO 8601 observation timestamp with a timezone is required.")
+        faults = add_issue(faults, "observed_at_invalid", 1, "An ISO 8601 observation timestamp with a timezone is required.")
     subject = observation.get("subjectRef")
     if not isinstance(subject, str) or not subject.strip():
-        add_issue(faults, "subject_ref_invalid", 1, "A nonempty subject reference string is required.")
+        faults = add_issue(faults, "subject_ref_invalid", 1, "A nonempty subject reference string is required.")
 
     map_fields = (
         "repoIdentity", "changeIntent", "surfaceContract", "harnessParity",
@@ -594,43 +607,30 @@ def _valid_envelope(observation: Any, faults: list[dict[str, Any]]) -> bool:
     if any(not isinstance(observation[field], dict) for field in map_fields) or any(
         not isinstance(observation[field], list) for field in list_fields
     ):
-        add_issue(faults, "observation_shape_invalid", 1,
+        faults = add_issue(faults, "observation_shape_invalid", 1,
                   "Declared maps and arrays must retain their documented shapes.")
-        return False
-    return True
+        return False, faults
+    return True, faults
 
-
-def _validate(observation: Any) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
-    faults: list[dict[str, Any]] = []
-    contradictions: list[dict[str, Any]] = []
-    if not _valid_envelope(observation, faults):
-        return faults, contradictions
-    _validate_repo(observation, faults)
-    _validate_intent(observation, faults)
-    _validate_surface(observation, faults)
-    _validate_artifacts(observation, faults)
-    _validate_parity(observation, faults)
-    _validate_catalog(observation, faults)
-    _validate_gates(observation, faults)
-    _validate_tdd(observation, faults)
-    _validate_security(observation, faults)
-    _validate_budget(observation, faults)
-    _validate_commit(observation, faults)
-    _validate_probes(observation, faults)
-    _validate_checkpoint(observation, faults)
-    _validate_runners(observation, faults)
-    _validate_authority(observation, contradictions)
-    return faults, contradictions
 
 def validate(observation: Any) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
-    """Validate an untrusted JSON value without letting malformed shapes crash the CLI."""
-    try:
-        return _validate(observation)
-    except (AttributeError, TypeError, ValueError):
-        fault = {
-            "code": "observation_shape_invalid",
-            "plane": 1,
-            "detail": "Observation values must match the documented JSON types.",
-        }
-        return [fault], []
-
+    """Retain independent diagnostics even when one untrusted section is malformed."""
+    valid_envelope, faults = _valid_envelope(observation, [])
+    contradictions = _validate_authority(observation, []) if isinstance(observation, dict) else []
+    if not valid_envelope:
+        return faults, contradictions
+    validators = (
+        _validate_repo, _validate_intent, _validate_surface, _validate_artifacts,
+        _validate_parity, _validate_catalog, _validate_gates, _validate_tdd,
+        _validate_security, _validate_budget, _validate_commit, _validate_probes,
+        _validate_checkpoint, _validate_runners,
+    )
+    for validator in validators:
+        try:
+            faults = validator(observation, faults)
+        except (AttributeError, TypeError, ValueError):
+            faults = add_issue(
+                faults, "observation_shape_invalid", 1,
+                "Observation values must match the documented JSON types.",
+            )
+    return faults, contradictions

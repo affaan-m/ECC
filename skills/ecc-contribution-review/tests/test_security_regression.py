@@ -79,6 +79,8 @@ class SecurityRegressionTests(unittest.TestCase):
                 "tests/test_security_evidence.py",
                 "tests/record_security_evidence.py",
                 "tests/test_review_regressions.py",
+                "tests/test_packet_review_fixes.py",
+                "tests/test_validation_findings.py",
                 "agents/openai.yaml",
             )
         }

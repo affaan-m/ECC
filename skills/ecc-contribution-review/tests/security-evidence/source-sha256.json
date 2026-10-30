@@ -1,10 +1,12 @@
 {
   "skills/ecc-contribution-review/agents/openai.yaml": "43a1fec439fa8ef2b1bb57f938a61df11ef78ef3c2e901038b8836868cb8e3b1",
-  "skills/ecc-contribution-review/scripts/compile_contribution_review.py": "8c74b2f5aad224cdc7ba731dd7a60ba7ff9c92091f591f13b87177a62f2b763c",
-  "skills/ecc-contribution-review/scripts/contribution_review_validation.py": "a69156be6608c3f9a74d68e2fa0b815e77d44e68ffafd9a183fdefadbbfd5dd3",
+  "skills/ecc-contribution-review/scripts/compile_contribution_review.py": "51be6d82e222eb7dcf35f6c2db55dd06dd04a480d6c5734d2e671bac1bbb820c",
+  "skills/ecc-contribution-review/scripts/contribution_review_validation.py": "f56d3a9a01a3393a41b3a546cbfe6b64cb7a28745b5e78939832d8bb40c7b932",
   "skills/ecc-contribution-review/tests/record_security_evidence.py": "527d5a4bb922fee759768e6f46f40404344075f314dfe045ed6e293aff0ff6c7",
   "skills/ecc-contribution-review/tests/test_compile_contribution_review.py": "609e562330237f1cbd92ee500a4c2773b749c196085e6c8bef39dbc4d4c05cba",
+  "skills/ecc-contribution-review/tests/test_packet_review_fixes.py": "391f763657e48accfba29814100d284aee986200d9d10d6aa578d051fdb1d160",
   "skills/ecc-contribution-review/tests/test_review_regressions.py": "956f8e7fb026a73a59226053bac167581bbf1644666824f81510396eb025f202",
   "skills/ecc-contribution-review/tests/test_security_evidence.py": "e3d1d2f82612efa45343ab696aca84951b965ecbe6057051ea17633a7729ac76",
-  "skills/ecc-contribution-review/tests/test_security_regression.py": "db28d20929428567f2be0a1aa194797a8ff5c2731d26700c91bc62b0df7fe3fd"
+  "skills/ecc-contribution-review/tests/test_security_regression.py": "6ff109c9d052bd6d8bf9a2e2dcd37f238e0d53c833c57caf051f54c6eff4b4d8",
+  "skills/ecc-contribution-review/tests/test_validation_findings.py": "7f1b93cfcb73b688a4e4ed09e95801ed385c67978e3e423f4b7adc060b0086e5"
 }

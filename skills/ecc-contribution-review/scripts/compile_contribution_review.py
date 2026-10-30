@@ -300,9 +300,12 @@ def compile_contract(
         **_packet_memory(data),
         "returnReceipt": output_receipt,
     }
-    artifact["semanticChecksum"] = checksum(artifact)
-    artifact["returnReceipt"]["semanticChecksum"] = artifact["semanticChecksum"]
-    return artifact
+    semantic_checksum = checksum(artifact)
+    return {
+        **artifact,
+        "semanticChecksum": semantic_checksum,
+        "returnReceipt": {**output_receipt, "semanticChecksum": semantic_checksum},
+    }
 
 
 def main() -> int:
