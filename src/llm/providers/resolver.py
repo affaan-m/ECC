@@ -13,6 +13,7 @@ from llm.providers.claude import ClaudeProvider
 from llm.providers.model_config import read_model_env
 from llm.providers.ollama import OllamaProvider
 from llm.providers.openai import OpenAIProvider
+from llm.providers.orcarouter import OrcaRouterProvider
 
 _PROVIDER_MAP: dict[ProviderType, type[LLMProvider]] = {
     ProviderType.ASTRAFLOW: AstraflowProvider,
@@ -21,6 +22,7 @@ _PROVIDER_MAP: dict[ProviderType, type[LLMProvider]] = {
     ProviderType.CLAUDE: ClaudeProvider,
     ProviderType.OPENAI: OpenAIProvider,
     ProviderType.OLLAMA: OllamaProvider,
+    ProviderType.ORCAROUTER: OrcaRouterProvider,
 }
 
 # Only built-in adapters have a known default_model constructor contract.

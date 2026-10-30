@@ -21,6 +21,7 @@ class ProviderType(str, Enum):
     ASTRAFLOW = "astraflow"
     ASTRAFLOW_CN = "astraflow_cn"
     ATLAS = "atlas"
+    ORCAROUTER = "orcarouter"
 
 
 @dataclass(frozen=True)
