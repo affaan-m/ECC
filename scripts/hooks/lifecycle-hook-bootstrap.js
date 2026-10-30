@@ -7,6 +7,7 @@ const fs = require('fs');
 const { spawnSync } = require('child_process');
 const { normalizePluginRootForPlatform } = require('../lib/resolve-ecc-root');
 const { readStdinRaw, resolveMaxStdin } = require('./hook-input');
+const { installHookWatchdog } = require('./hook-watchdog');
 const { createHookContextScanner } = require('./hook-input-limits');
 
 const DEFAULT_TIMEOUT_MS = 30000;
@@ -124,6 +125,7 @@ async function main() {
 }
 
 function cli() {
+  installHookWatchdog({ label: 'lifecycle hook bootstrap' });
   main().catch(error => {
     writeStderr(`[Hook] lifecycle bootstrap failed: ${error.message}`);
     process.exitCode = 0;
