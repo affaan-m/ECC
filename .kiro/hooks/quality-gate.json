@@ -1,0 +1,15 @@
+{
+    "version": "v1",
+    "hooks": [
+        {
+            "name": "quality-gate",
+            "description": "Run a full quality gate check (build, type check, lint, tests) after a spec task completes. Disabled by default — opt in via steering or enable manually in the Agent Hooks panel.",
+            "trigger": "PostTaskExec",
+            "action": {
+                "type": "command",
+                "command": "bash .kiro/scripts/quality-gate.sh"
+            },
+            "enabled": false
+        }
+    ]
+}
