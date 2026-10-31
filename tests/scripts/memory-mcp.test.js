@@ -451,8 +451,9 @@ async function main() {
   await test('starts when the npm bin invokes the server through a symlink', async () => {
     const binRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-memory-bin-'));
     const binPath = path.join(binRoot, 'ecc-memory-mcp');
-    if (!trySymlink(SERVER, binPath)) return;
     try {
+      // Inside the cleanup scope, so a refusal still removes binRoot.
+      if (!trySymlink(SERVER, binPath)) return;
       await withClient(async client => {
         const tools = await client.listTools();
         assert.strictEqual(tools.tools.length, 4);

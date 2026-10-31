@@ -356,8 +356,9 @@ test('rejects a vault path that traverses a symlink before creating directories'
   const fixture = createFixture();
   const outside = path.join(fixture.root, 'outside');
   fs.mkdirSync(outside);
-  if (!trySymlink(outside, path.join(fixture.projectRoot, '.ecc'))) return;
   try {
+    // Inside the cleanup scope, so a refusal still removes the fixture.
+    if (!trySymlink(outside, path.join(fixture.projectRoot, '.ecc'))) return;
     assert.throws(
       () => saveMemory(
         { title: 'Escaped note', body: 'must stay in the project' },
