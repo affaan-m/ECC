@@ -594,7 +594,7 @@ function runTests() {
       registerLeaseFor(testDir, homunculusDir, sessionId);
       const result = withOptInConfig(true, () => runEvaluatePayload(
         stopPayload(transcript, sessionId, testDir),
-        { CLV2_HOMUNCULUS_DIR: homunculusDir, CLAUDE_PROJECT_DIR: testDir, TMPDIR: notADir }
+        { CLV2_HOMUNCULUS_DIR: homunculusDir, CLAUDE_PROJECT_DIR: testDir, TMPDIR: notADir, TEMP: notADir, TMP: notADir }
       ));
       assert.strictEqual(result.stdout, '', 'A failed marker write must fail closed, never deliver');
       assert.ok(result.stderr.includes('could not record delivery marker'), 'Marker failure must be logged');
