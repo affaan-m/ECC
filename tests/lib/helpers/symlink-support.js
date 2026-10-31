@@ -4,15 +4,20 @@ const fs = require('fs');
 
 const UNSUPPORTED_CODES = new Set(['EPERM', 'EACCES', 'ENOSYS']);
 
-// Creating symlinks needs Developer Mode or admin rights on Windows. Returns
-// false (after logging a skip notice) when the OS refuses; rethrows anything else.
-function trySymlink(target, linkPath, type) {
+// Creating symlinks needs Developer Mode or admin rights on Windows, and some
+// filesystems have no symlink support at all. Returns false (after logging a
+// skip notice) when the OS refuses; rethrows anything else.
+//
+// deps follows the injection shape collectResources already uses, so the
+// refusal branches can be driven without replacing methods on the shared fs
+// and console objects.
+function trySymlink(target, linkPath, type, deps = {}) {
   try {
-    fs.symlinkSync(target, linkPath, type);
+    (deps.symlinkSync || fs.symlinkSync)(target, linkPath, type);
     return true;
   } catch (error) {
     if (!UNSUPPORTED_CODES.has(error.code)) throw error;
-    console.log('    (symlink unsupported on this platform; skipping)');
+    (deps.log || console.log)('    (symlink unsupported on this platform; skipping)');
     return false;
   }
 }

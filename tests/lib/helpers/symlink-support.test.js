@@ -1,70 +1,85 @@
 'use strict';
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
-const fs = require('node:fs');
+const path = require('node:path');
 const { trySymlink } = require('./symlink-support');
 
 // A host that permits symlinks only ever exercises the success branch, so the
-// skip and rethrow paths are driven with a stand-in. The helper looks up
-// fs.symlinkSync at call time, and require('fs') and require('node:fs') return
-// the same module object, so replacing the property here is what it sees.
-function withSymlinkSync(fake, run) {
-  const originalSymlink = fs.symlinkSync;
-  const originalLog = console.log;
-  const logged = [];
-  fs.symlinkSync = fake;
-  console.log = message => logged.push(message);
-  try {
-    return run(logged);
-  } finally {
-    fs.symlinkSync = originalSymlink;
-    console.log = originalLog;
-  }
+// skip and rethrow paths are driven through injected stand-ins. Nothing here
+// touches the shared fs or console objects, and each recorder replaces its
+// array rather than appending to it.
+function recorder(behaviour) {
+  let calls = [];
+  let logs = [];
+  return {
+    deps: {
+      symlinkSync: (...args) => {
+        calls = [...calls, args];
+        return behaviour(...args);
+      },
+      log: message => {
+        logs = [...logs, message];
+      },
+    },
+    get calls() { return calls; },
+    get logs() { return logs; },
+  };
 }
 
-const throwing = code => () => {
+const created = () => undefined;
+
+const refusing = code => () => {
   const error = new Error(`stand-in ${code}`);
   if (code) error.code = code;
   throw error;
 };
 
 test('reports success and forwards every argument unchanged', () => {
-  const calls = [];
-  withSymlinkSync((...args) => calls.push(args), logged => {
-    assert.equal(trySymlink('target', 'link', 'junction'), true);
-    assert.deepEqual(calls, [['target', 'link', 'junction']]);
-    assert.deepEqual(logged, [], 'a created link must not print a skip notice');
-  });
+  const spy = recorder(created);
+  assert.equal(trySymlink('target', 'link', 'junction', spy.deps), true);
+  assert.deepEqual(spy.calls, [['target', 'link', 'junction']]);
+  assert.deepEqual(spy.logs, [], 'a created link must not print a skip notice');
 });
 
-test('omits the type argument when the caller does', () => {
-  const calls = [];
-  withSymlinkSync((...args) => calls.push(args), () => {
-    trySymlink('target', 'link');
-    assert.deepEqual(calls, [['target', 'link', undefined]]);
-  });
+test('passes the type through as undefined when the caller omits it', () => {
+  const spy = recorder(created);
+  trySymlink('target', 'link', undefined, spy.deps);
+  assert.deepEqual(spy.calls, [['target', 'link', undefined]]);
 });
 
 for (const code of ['EPERM', 'EACCES', 'ENOSYS']) {
   test(`treats ${code} as an unsupported platform and skips`, () => {
-    withSymlinkSync(throwing(code), logged => {
-      assert.equal(trySymlink('target', 'link'), false);
-      assert.equal(logged.length, 1, 'exactly one skip notice');
-      assert.match(logged[0], /symlink unsupported/);
-    });
+    const spy = recorder(refusing(code));
+    assert.equal(trySymlink('target', 'link', undefined, spy.deps), false);
+    assert.equal(spy.logs.length, 1, 'exactly one skip notice');
+    assert.match(spy.logs[0], /symlink unsupported/);
   });
 }
 
 test('rethrows an unrelated error unchanged rather than skipping', () => {
-  withSymlinkSync(throwing('EEXIST'), logged => {
-    assert.throws(() => trySymlink('target', 'link'), /stand-in EEXIST/);
-    assert.deepEqual(logged, [], 'a real failure must not look like a skip');
-  });
+  const spy = recorder(refusing('EEXIST'));
+  assert.throws(() => trySymlink('target', 'link', undefined, spy.deps), /stand-in EEXIST/);
+  assert.deepEqual(spy.logs, [], 'a real failure must not look like a skip');
 });
 
 test('rethrows an error that carries no code', () => {
-  withSymlinkSync(throwing(undefined), logged => {
-    assert.throws(() => trySymlink('target', 'link'), /stand-in undefined/);
-    assert.deepEqual(logged, []);
-  });
+  const spy = recorder(refusing(undefined));
+  assert.throws(() => trySymlink('target', 'link', undefined, spy.deps), /stand-in undefined/);
+  assert.deepEqual(spy.logs, []);
+});
+
+test('reaches the real fs.symlinkSync when no stand-in is given', () => {
+  // Linking into a directory that does not exist. The outcome depends on the
+  // host, and either one proves the default dependency resolved: ENOENT where
+  // symlinks are permitted, or a recorded refusal where the OS blocks them
+  // before it ever looks at the parent directory. Only `log` is injected, to
+  // keep a real skip notice out of the suite's output.
+  const linkPath = path.join('no-such-directory-here', 'link');
+  let outcome;
+  try {
+    outcome = trySymlink('target', linkPath, undefined, { log: () => {} });
+  } catch (error) {
+    outcome = error.code;
+  }
+  assert.ok(outcome === 'ENOENT' || outcome === false, `unexpected outcome: ${outcome}`);
 });
