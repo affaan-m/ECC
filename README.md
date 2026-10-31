@@ -384,6 +384,21 @@ You can also open the ECC repository directly in Codex for a project-local setup
 
 For repo navigation, surface ownership, and PR diff packet guidance, read the [Codex ECC Navigation Map](docs/CODEX-NAVIGATION-GUIDE.md). See the [.codex plugin notes](.codex-plugin/README.md) for native lifecycle details.
 
+### Grok Build
+
+Grok Build does not yet have a native ECC plugin target. `scripts/sync-ecc-to-grok.sh` is the copied-configuration path into `~/.grok`, parallel to the legacy Codex sync. It preserves existing Codex `source-command-*` skills in `~/.agents/skills`, copies missing native skills from repo `.agents/skills`, and installs slash commands into `~/.grok/commands` using the unprefixed command name unless a Grok builtin or a different preexisting skill already owns that name. Run Grok once first so `~/.grok/config.toml` exists, then:
+
+```bash
+git clone https://github.com/affaan-m/ECC.git
+cd ECC
+npm install
+bash scripts/sync-ecc-to-grok.sh --dry-run
+bash scripts/sync-ecc-to-grok.sh
+```
+
+`ecc auto-update` gates Grok copied-config overlays: it probes whether upstream now ships a grok install target or plugin, then perforated-restores the overlay, detaches it, or passes through. Check necessity with `node scripts/grok/check-grok-fixture.js`.
+
+For repo navigation after that sync, read the [Grok ECC Navigation Map](docs/GROK-NAVIGATION-GUIDE.md).
 ### Qoder CLI and IDE
 
 ECC ships a native Qoder plugin that reuses the canonical skills, agents,
@@ -412,7 +427,7 @@ the [.qoder-plugin notes](.qoder-plugin/README.md) for the exact boundary.
 ### Other agents and editors
 
 <details>
-<summary><strong>Cursor, OpenCode, Gemini, Zed, Antigravity, Qwen, Hermes, OpenClaw, Kimi, CodeBuddy, JoyCode, Copilot</strong></summary>
+<summary><strong>Cursor, OpenCode, Gemini, Zed, Antigravity, Qwen, Hermes, OpenClaw, Kimi, CodeBuddy, JoyCode, Copilot, Grok Build</strong></summary>
 
 Clone ECC once, then choose the target that matches your harness:
 
@@ -434,6 +449,7 @@ cd ECC
 | Kimi Code CLI | `./install.sh --profile minimal --target kimi` | Project-local `.kimi-code/` install · [Get Kimi Code](https://www.kimi.ai/code?aff=ecc) |
 | CodeBuddy | `./install.sh --profile minimal --target codebuddy` | Project-local `.codebuddy/` install |
 | JoyCode | `./install.sh --profile minimal --target joycode` | Project-local `.joycode/` install |
+| Grok Build | `bash scripts/sync-ecc-to-grok.sh` | Copied config into `~/.grok`; run Grok once first so `config.toml` exists |
 | GitHub Copilot | `./install.sh --profile full --target copilot` | Installs skills to `.github/skills/` and agents to `.github/agents/` for Copilot CLI |
 
 GitHub Copilot support is already included in this repository. `.github/copilot-instructions.md` provides the instruction layer, `.github/prompts/` contains the reusable `/plan`, `/tdd`, `/security-review`, `/build-fix`, and `/refactor` prompts, and `.vscode/settings.json` enables `chat.promptFiles`. GitHub Copilot CLI additionally discovers the `.agents/skills/` subset from a plain clone with no setup; see [Platform Support](#platform-support) for the full catalog and agents.
