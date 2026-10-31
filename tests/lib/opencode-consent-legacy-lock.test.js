@@ -238,7 +238,8 @@ function runTests() {
       if (unrelated === 'file') fs.writeFileSync(value.legacyRoot, 'user file');
       else if (unrelated === 'symlink') {
         fs.mkdirSync(value.canonicalRoot, { recursive: true });
-        fs.symlinkSync(value.canonicalRoot, value.legacyRoot, process.platform === 'win32' ? 'junction' : 'dir');
+        if (!trySymlink(value.canonicalRoot, value.legacyRoot,
+          process.platform === 'win32' ? 'junction' : 'dir')) return;
       } else {
         fs.mkdirSync(value.legacyRoot, { recursive: true });
         if (unrelated === 'malformed-state') fs.writeFileSync(value.legacyStatePath, '{malformed');

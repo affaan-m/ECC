@@ -88,7 +88,8 @@ test('task file adapter reads structured status, labels mtime, skips symlinks an
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'coordination-test-'));
   try {
     fs.mkdirSync(path.join(dir, 'worker')); fs.writeFileSync(path.join(dir, 'worker', 'STATUS.md'), '- State: running\n- Updated: 2026-09-08T06:29:00Z\n');
-    if (!trySymlink(path.join(dir, 'worker'), path.join(dir, 'linked'))) return;
+    // The task count holds with or without the link, so a refusal must not skip the rest.
+    trySymlink(path.join(dir, 'worker'), path.join(dir, 'linked'));
     const r = collectTaskFiles(dir); assert.equal(r.tasks.length, 1); assert.equal(r.tasks[0].status, 'running');
     assert.ok(r.tasks[0].statusFileModifiedAt); assert.equal(r.tasks[0].heartbeatAt, '2026-09-08T06:29:00Z');
     fs.writeFileSync(path.join(dir, 'large.json'), ' '.repeat(1024 * 1024 + 1));
