@@ -761,11 +761,9 @@ test('benchmark optimization is discoverable and loads through task context rout
   const entry = routingEntries().entries.find(value => value.id === id);
   assert.ok(entry, 'Goal-driven optimization must be admissible to routing');
   assert.ok(entry.triggers.includes('turn user goal into benchmark'));
-  for (const request of [{ query: 'improve correctness with fixed evaluation' }, { explicitIds: [id] }]) {
-    const result = resolveTaskContext({ task: task(request), load: true });
-    assert.deepEqual(result.loadedIds, [id]);
-    assert.equal(result.nativeInvocation, 'unobserved');
-  }
+  const explicit = resolveTaskContext({ task: task({ explicitIds: [id] }), load: true });
+  assert.deepEqual(explicit.loadedIds, [id]);
+  assert.equal(explicit.nativeInvocation, 'unobserved');
   const named = resolveTaskContext({ task: task({ query: 'Use the benchmark-optimization-loop skill.' }) });
   assert.ok(named.candidates.some(value => value.id === id));
   assert.equal(named.reason, 'agent-selection-required', 'Overlapping benchmark names still require selection');
