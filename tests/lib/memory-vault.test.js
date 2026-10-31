@@ -5,6 +5,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const { spawnSync } = require('child_process');
+const { trySymlink } = require('./helpers/symlink-support');
 
 const {
   MAX_DIAGNOSTICS,
@@ -276,7 +277,7 @@ test('never follows a pre-existing destination symlink during create-only public
     fs.mkdirSync(notes, { recursive: true });
     fs.writeFileSync(outside, 'outside sentinel');
     const destination = path.join(notes, 'mem_20260726_01kexample.md');
-    fs.symlinkSync(outside, destination);
+    if (!trySymlink(outside, destination)) return;
 
     assert.throws(
       () => saveMemory(
@@ -355,8 +356,9 @@ test('rejects a vault path that traverses a symlink before creating directories'
   const fixture = createFixture();
   const outside = path.join(fixture.root, 'outside');
   fs.mkdirSync(outside);
-  fs.symlinkSync(outside, path.join(fixture.projectRoot, '.ecc'));
   try {
+    // Inside the cleanup scope, so a refusal still removes the fixture.
+    if (!trySymlink(outside, path.join(fixture.projectRoot, '.ecc'))) return;
     assert.throws(
       () => saveMemory(
         { title: 'Escaped note', body: 'must stay in the project' },
@@ -377,7 +379,7 @@ test('rejects a symlinked ancestor when roots come back from initializeVault', (
   try {
     const initialized = initializeVault({ roots: fixture.roots, scopes: ['project'] });
     fs.rmSync(path.join(fixture.projectRoot, '.ecc'), { recursive: true, force: true });
-    fs.symlinkSync(outside, path.join(fixture.projectRoot, '.ecc'));
+    if (!trySymlink(outside, path.join(fixture.projectRoot, '.ecc'))) return;
 
     assert.throws(
       () => saveMemory(
@@ -564,8 +566,9 @@ test('opens regular text files without following a stable symlink', () => {
   const link = path.join(root, 'link.md');
   try {
     fs.writeFileSync(target, 'safe');
-    fs.symlinkSync(target, link);
+    // This reads only the target, so it must run even where the link is refused.
     assert.strictEqual(readRegularTextFile(target, { maxBytes: 16 }), 'safe');
+    if (!trySymlink(target, link)) return;
     assert.throws(
       () => readRegularTextFile(link, { maxBytes: 16 }),
       /non-symlink|symbolic link|symlink/i

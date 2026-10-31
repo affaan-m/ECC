@@ -17,6 +17,7 @@ const os = require('os');
 const path = require('path');
 const { spawnSync } = require('child_process');
 const { resolvePython } = require('./lib/helpers/windows-test-env');
+const { trySymlink } = require('./lib/helpers/symlink-support');
 
 const repoRoot = path.resolve(__dirname, '..');
 const GUARD = path.join(repoRoot, 'hooks', 'hermes', 'config-protection.py');
@@ -111,7 +112,7 @@ run('blocks existing case-variant protected names on every filesystem', () => {
 run('blocks a dangling symlink to a protected name', () => {
   const dangling = path.join(tmp, 'eslint.config.cjs');
   try { fs.unlinkSync(dangling); } catch { /* not present yet */ }
-  fs.symlinkSync(path.join(tmp, 'does-not-exist-at-all'), dangling);
+  if (!trySymlink(path.join(tmp, 'does-not-exist-at-all'), dangling)) return;
   // Sanity: the link itself exists (lstat succeeds) but resolves nowhere —
   // os.path.exists() is False here, which is exactly the bypass being pinned.
   assert.ok(fs.lstatSync(dangling).isSymbolicLink(), 'symlink must exist for the case to be real');

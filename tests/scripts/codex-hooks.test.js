@@ -8,6 +8,7 @@ const os = require('os');
 const path = require('path');
 const { spawnSync } = require('child_process');
 const TOML = require('@iarna/toml');
+const { trySymlink } = require('../lib/helpers/symlink-support');
 
 const repoRoot = path.join(__dirname, '..', '..');
 const installScript = path.join(repoRoot, 'scripts', 'codex', 'install-global-git-hooks.sh');
@@ -458,7 +459,7 @@ function runHermeticPythonPrePush({
   // `bin/python`, so git is asked about a path it has never indexed.
   if (trackedSymlinkVenv) {
     writeExecutable(path.join(projectDir, 'bin', 'python'), `#!/bin/sh\n${record}\nexit 0\n`);
-    fs.symlinkSync('.', path.join(projectDir, '.venv'));
+    if (!trySymlink('.', path.join(projectDir, '.venv'))) return null;
     const added = spawnSync('git', ['add', '-f', '--', 'bin/python', '.venv'], { cwd: projectDir });
     assert.strictEqual(added.status, 0, added.stderr?.toString());
   }
@@ -558,7 +559,9 @@ if (fs.existsSync(__filename.toUpperCase()) && fs.existsSync(__filename.toLowerC
 
 if (
   test('pre-push refuses a tracked interpreter reached through a committed symlink', () => {
-    const { result, calls } = runHermeticPythonPrePush({ trackedSymlinkVenv: true });
+    const run = runHermeticPythonPrePush({ trackedSymlinkVenv: true });
+    if (!run) return;
+    const { result, calls } = run;
     assert.strictEqual(result.status, 0, `${result.stdout}\n${result.stderr}`);
     assert.deepStrictEqual(calls, [], JSON.stringify(calls));
     assert.match(result.stdout, /the repository ships it/);

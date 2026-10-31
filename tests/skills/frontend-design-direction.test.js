@@ -8,6 +8,7 @@ const { spawnSync } = require('node:child_process');
 const { test } = require('node:test');
 const script = path.resolve(__dirname, '../../skills/frontend-design-direction/scripts/check-evidence.js');
 const { checkEvidence } = require(script);
+const { trySymlink } = require('../lib/helpers/symlink-support');
 
 function report() {
   const observation = { status: 'pass', evidence: 'Observed in the local test run.' };
@@ -118,11 +119,16 @@ test('CLI requires a nonempty local artifact and fails safely on invalid input',
     assert.equal(run(input).status, 1, 'empty artifact must fail');
     fs.writeFileSync(path.join(dir, 'render.png'), 'nonempty local artifact');
     fs.writeFileSync(path.join(external, 'render.png'), 'nonempty external artifact');
-    fs.symlinkSync(path.join(dir, 'render.png'), path.join(dir, 'linked.png'));
-    fs.symlinkSync(path.join(external, 'render.png'), path.join(dir, 'outside'));
-    fs.symlinkSync(external, path.join(dir, 'external-dir'), 'junction');
-    for (const artifact of ['.', 'https://example.com/render.png', path.join(dir, 'render.png'),
-      '../render.png', 'C:\\render.png', 'linked.png', 'outside', 'external-dir/render.png']) {
+    // The link-based cases join the list only where the OS allows the link, so a
+    // refusal narrows this list instead of skipping the gate and input checks below.
+    const artifacts = [
+      '.', 'https://example.com/render.png', path.join(dir, 'render.png'),
+      '../render.png', 'C:\\render.png',
+      ...(trySymlink(path.join(dir, 'render.png'), path.join(dir, 'linked.png')) ? ['linked.png'] : []),
+      ...(trySymlink(path.join(external, 'render.png'), path.join(dir, 'outside')) ? ['outside'] : []),
+      ...(trySymlink(external, path.join(dir, 'external-dir'), 'junction') ? ['external-dir/render.png'] : []),
+    ];
+    for (const artifact of artifacts) {
       fs.writeFileSync(input, JSON.stringify({ ...report(), renderedEvidence: [{ viewport: '390x844', artifact, observation: 'Checked.' }] }));
       assert.equal(run(input).status, 1, 'directories and remote artifacts must fail');
     }
