@@ -1,7 +1,7 @@
 {
   "coverage": {
     "skills": 314,
-    "withTriggers": 34
+    "withTriggers": 35
   },
   "generatedAt": "2026-10-30T00:01:34.569Z",
   "id": "skill-triggers@1",
@@ -10,7 +10,7 @@
     "id": "hand-seeded",
     "source": "manual-curation-pending-regeneration"
   },
-  "registryDigest": "6f213dc845937b4093bc018d041b25b538d88d78451b9d799ad614989b360ee4",
+  "registryDigest": "e5e5a181953328568a2d4a0c6b32abb961f737f78f0a357f934c8c5b0d0f196b",
   "schemaVersion": 1,
   "triggers": {
     "skill:agent-runtime-gateway-smoke-test": [
@@ -47,6 +47,16 @@
       "static file server",
       "url path handling",
       "file server"
+    ],
+    "skill:benchmark-optimization-loop": [
+      "turn user goal into benchmark",
+      "optimize task completion rate",
+      "compare implementation variants",
+      "improve correctness with fixed evaluation",
+      "reduce cost per resolved task",
+      "run bounded recursive optimization",
+      "verify improvement on independent cases",
+      "keep best measured admissible result"
     ],
     "skill:browser-qa": [
       "deployed feature test",
@@ -305,5 +315,5 @@
       "before creating a pr"
     ]
   },
-  "triggersDigest": "953728cb51ef7726f8a4969efecaec294d37772fcddf8544cd9ee45bff4945ee"
+  "triggersDigest": "e771839812428dfa1ea215cb8d43606cf2e310cd3745155ee91e8bf575b3513c"
 }
