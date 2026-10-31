@@ -90,6 +90,24 @@ Add to your `~/.claude/settings.json`:
 }
 ```
 
+## Stop Delivery (opt-in)
+
+By default the Stop hook only logs to stderr (the debug log); the model
+never sees the signal. To actually deliver it, set
+`"stop_nudge_opt_in": true` in `config.json`. Delivery then works through
+the native Stop contract (`decision: "block"` + `reason`) and only when
+every gate passes:
+
+- the session reached the message threshold;
+- the session holds a lease written by SessionStart (the registered
+  native lifecycle check: unregistered sessions never deliver);
+- this is a first Stop, not a re-fired one (`stop_hook_active` passes
+  through untouched, so the hook cannot loop);
+- no nudge was already delivered for this session (once per session).
+
+Blocking the stop gives the model one extra turn to extract patterns and
+save them; the next stop passes through and the session ends normally.
+
 ## Why Stop Hook?
 
 - **Lightweight**: Runs once at session end
