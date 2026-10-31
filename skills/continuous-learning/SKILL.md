@@ -90,6 +90,13 @@ Add to your `~/.claude/settings.json`:
 }
 ```
 
+The shell entry above only counts messages and logs to stderr; it never
+delivers a nudge to the model and does not read `stop_nudge_opt_in`.
+Delivery requires the JavaScript evaluator
+(`scripts/hooks/evaluate-session.js`) registered through the plugin
+hooks, which also registers the SessionStart hook that writes the lease
+delivery depends on.
+
 ## Stop Delivery (opt-in)
 
 By default the Stop hook only logs to stderr (the debug log); the model
@@ -103,14 +110,21 @@ every gate passes:
   native lifecycle check: unregistered sessions never deliver);
 - this is a first Stop, not a re-fired one (`stop_hook_active` passes
   through untouched, so the hook cannot loop);
-- no nudge was already delivered for this session (once per session).
+- no nudge was already delivered for this session (once per session);
+- the delivery marker was recorded: if the marker cannot be written,
+  delivery is skipped rather than sent without once-per-session
+  protection;
+- the hook is registered synchronously: an async Stop registration cannot
+  block, so the delivery entry must not carry `"async": true`.
 
-Blocking the stop gives the model one extra turn to extract patterns and
-save them; the next stop passes through and the session ends normally.
+Stop fires whenever Claude finishes responding, not only when the session
+closes. Blocking the first eligible Stop gives the model one extra turn
+to extract patterns and save them; later Stops in the same session pass
+through without ending the session by themselves.
 
 ## Why Stop Hook?
 
-- **Lightweight**: Runs once at session end
+- **Lightweight**: Runs when Claude finishes responding
 - **Non-blocking**: Doesn't add latency to every message
 - **Complete context**: Has access to full session transcript
 

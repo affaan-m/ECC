@@ -163,17 +163,25 @@ function deliverStopNudge({ input, stdinData, messageCount, learnedSkillsPath, s
     log('[ContinuousLearning] Skipping delivery: no SessionStart lease for this session');
     return;
   }
+  // The session id is sanitized upstream by resolveSessionId, so the
+  // marker filename cannot traverse out of the temp dir.
   const markerFile = path.join(getTempDir(), `${DELIVERY_MARKER_PREFIX}${sessionId}`);
-  if (fs.existsSync(markerFile)) {
-    log('[ContinuousLearning] Stop nudge already delivered for this session, skipping');
-    return;
-  }
+  // Claim the marker atomically: 'wx' fails when a nudge was already
+  // delivered (EEXIST) and closes the check-then-create gap. Any other
+  // write failure fails closed: without a marker, a later Stop would stay
+  // eligible, so skipping delivery is the only shape that keeps the
+  // once-per-session promise. stop_hook_active bounds only the re-fired
+  // Stop for one turn, not later turns, so it cannot stand in for the
+  // marker.
   try {
-    fs.writeFileSync(markerFile, `${new Date().toISOString()}\n`);
+    fs.writeFileSync(markerFile, `${new Date().toISOString()}\n`, { flag: 'wx' });
   } catch (err) {
-    // The re-fired Stop (stop_hook_active) still bounds repeats to one extra
-    // turn, so deliver anyway rather than silently dropping the nudge.
-    log(`[ContinuousLearning] Warning: could not record delivery marker: ${err.message}`);
+    if (err.code === 'EEXIST') {
+      log('[ContinuousLearning] Stop nudge already delivered for this session, skipping');
+    } else {
+      log(`[ContinuousLearning] Warning: could not record delivery marker, skipping delivery: ${err.message}`);
+    }
+    return;
   }
   output({
     decision: 'block',

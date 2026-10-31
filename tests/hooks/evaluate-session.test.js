@@ -65,7 +65,8 @@ function createTranscript(dir, messageCount) {
 /**
  * Run evaluate-session.js with stdin providing the transcript_path.
  * Uses spawnSync to capture both stdout and stderr regardless of exit code.
- * Returns { code, stdout, stderr }.
+ * Returns { code, stdout, stderr }; code is null when the child did not
+ * exit normally (spawn failure, signal, timeout), never coerced to 0.
  */
 function runEvaluate(stdinJson) {
   const result = spawnSync('node', [evaluateScript], {
@@ -75,7 +76,7 @@ function runEvaluate(stdinJson) {
     env: isolatedEnv(),
   });
   return {
-    code: result.status || 0,
+    code: result.error || result.signal ? null : result.status,
     stdout: result.stdout || '',
     stderr: result.stderr || '',
   };
@@ -450,8 +451,9 @@ function runTests() {
       timeout: 10000,
       env,
     });
+    // A spawn failure, signal, or timeout must never read as success.
     return {
-      code: result.status || 0,
+      code: result.error || result.signal ? null : result.status,
       stdout: result.stdout || '',
       stderr: result.stderr || '',
     };
@@ -563,7 +565,7 @@ function runTests() {
         `Reason must carry the session signal. Got: ${parsed.reason}`
       );
       assert.ok(
-        parsed.reason.includes('learned'),
+        parsed.reason.includes(ISOLATED_HOME) && parsed.reason.includes('learned'),
         `Reason must name where learned skills go. Got: ${parsed.reason}`
       );
       const second = withOptInConfig(true, () => runEvaluatePayload(
@@ -575,6 +577,48 @@ function runTests() {
       cleanupTestDir(testDir);
       fs.rmSync(homunculusDir, { recursive: true, force: true });
     }
+  })) passed++; else failed++;
+
+  if (test('skips delivery when the delivery marker cannot be written', () => {
+    const testDir = createTestDir();
+    const transcript = createTranscript(testDir, 12);
+    const homunculusDir = fs.mkdtempSync(path.join(os.tmpdir(), 'eval-delivery-home-'));
+    const sessionId = 'delivery-marker-fail-1';
+    const marker = deliveryMarkerPath(sessionId);
+    // A regular file as TMPDIR makes the marker path uncreatable (ENOTDIR)
+    // even as root, so the write fails while no marker exists.
+    const notADir = path.join(testDir, 'not-a-dir');
+    try {
+      fs.rmSync(marker, { force: true });
+      fs.writeFileSync(notADir, 'not a directory\n');
+      registerLeaseFor(testDir, homunculusDir, sessionId);
+      const result = withOptInConfig(true, () => runEvaluatePayload(
+        stopPayload(transcript, sessionId, testDir),
+        { CLV2_HOMUNCULUS_DIR: homunculusDir, CLAUDE_PROJECT_DIR: testDir, TMPDIR: notADir }
+      ));
+      assert.strictEqual(result.stdout, '', 'A failed marker write must fail closed, never deliver');
+      assert.ok(result.stderr.includes('could not record delivery marker'), 'Marker failure must be logged');
+    } finally {
+      fs.rmSync(marker, { force: true });
+      cleanupTestDir(testDir);
+      fs.rmSync(homunculusDir, { recursive: true, force: true });
+    }
+  })) passed++; else failed++;
+
+  if (test('stop:evaluate-session registration is synchronous (no async flag)', () => {
+    const hooksConfig = JSON.parse(fs.readFileSync(
+      path.join(__dirname, '..', '..', 'hooks', 'hooks.json'), 'utf8'
+    ));
+    let entry = null;
+    for (const group of hooksConfig.hooks.Stop) {
+      for (const hook of group.hooks || []) {
+        if (typeof hook.command === 'string' && hook.command.includes('stop:evaluate-session')) {
+          entry = hook;
+        }
+      }
+    }
+    assert.ok(entry, 'stop:evaluate-session must be registered in hooks.json');
+    assert.notStrictEqual(entry.async, true, 'An async Stop registration cannot block, so delivery must stay synchronous');
   })) passed++; else failed++;
 
   if (test('emits no stdout when stop_hook_active is true, even with opt-in + lease', () => {
