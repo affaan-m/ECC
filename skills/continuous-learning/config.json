@@ -1,5 +1,6 @@
 {
   "min_session_length": 10,
+  "stop_nudge_opt_in": false,
   "extraction_threshold": "medium",
   "auto_approve": false,
   "learned_skills_path": "~/.claude/skills/learned/",
