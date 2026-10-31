@@ -241,3 +241,8 @@ selection, and its subagents inherit the invoking primary agent's model.
 ## License
 
 MIT
+
+Home-target installations keep `plugins/index.ts` inert even with hooks enabled.
+OpenCode automatically loads `plugins/ecc-hooks.ts`; loading the barrel as well
+would initialize every ECC hook twice. The source and published package barrel
+remain available for module imports.

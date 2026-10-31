@@ -1,4 +1,4 @@
-# La Guía Resumida de Everything Claude Code
+# La Guía Resumida de ECC
 
 ![Encabezado: Ganador del Hackathon de Anthropic - Tips y Trucos para Claude Code](../../assets/images/shortform/00-header.png)
 

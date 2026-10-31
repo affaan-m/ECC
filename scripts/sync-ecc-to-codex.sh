@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
-# Sync Everything Claude Code (ECC) assets into a local Codex CLI setup.
+# Sync ECC assets into a local Codex CLI setup.
 # - Backs up ~/.codex config and AGENTS.md
 # - Merges ECC AGENTS.md into existing AGENTS.md (marker-based, preserves user content)
 # - Generates prompt files from commands/*.md
@@ -335,6 +335,16 @@ for agent_file in "$CODEX_AGENTS_SRC"/*.toml; do
   else
     record_managed_path "$dest"
     run_or_echo cp "$agent_file" "$dest"
+  fi
+done
+
+# Named profiles are independent user configuration. Seed only absent files;
+# customized or legacy choices require explicit user migration, never overwrite.
+for profile_name in strict yolo; do
+  profile_dest="$CODEX_HOME/$profile_name.config.toml"
+  if [[ ! -e "$profile_dest" && ! -L "$profile_dest" ]]; then
+    record_managed_path "$profile_dest"
+    run_or_echo cp "$REPO_ROOT/.codex/$profile_name.config.toml" "$profile_dest"
   fi
 done
 

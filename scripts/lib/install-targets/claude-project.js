@@ -9,6 +9,7 @@ const {
 } = require('./helpers');
 
 const CLAUDE_ECC_NAMESPACE = 'ecc';
+const CLAUDE_PROJECT_COMMONJS_PACKAGE = 'manifests/install-assets/claude-project-scripts-package.json';
 
 function getClaudeManagedDestinationPath(adapter, sourceRelativePath, input) {
   const normalizedSourcePath = normalizeRelativePath(sourceRelativePath);
@@ -63,9 +64,9 @@ module.exports = createInstallTargetAdapter({
       homeDir: input.homeDir,
     };
 
-    return modules.flatMap(module => {
+    const operations = modules.flatMap(module => {
       const paths = Array.isArray(module.paths) ? module.paths : [];
-      return paths
+      const moduleOperations = paths
         .filter(p => !isForeignPlatformPath(p, 'claude'))
         .flatMap(sourceRelativePath => {
           if (
@@ -93,6 +94,32 @@ module.exports = createInstallTargetAdapter({
 
           return [adapter.createScaffoldOperation(module.id, sourceRelativePath, planningInput)];
         });
+
+      if (module.id !== 'hooks-runtime') {
+        return moduleOperations;
+      }
+
+      return [
+        ...['hooks', 'lib'].map(directory => createRemappedOperation(
+          adapter,
+          module.id,
+          CLAUDE_PROJECT_COMMONJS_PACKAGE,
+          path.join(adapter.resolveRoot(planningInput), 'scripts', directory, 'package.json'),
+          { strategy: 'preserve-relative-path' }
+        )),
+        ...moduleOperations,
+      ];
     });
+    if (!operations.some(operation => operation.moduleId === 'commands-core'
+      && normalizeRelativePath(operation.sourceRelativePath).startsWith('scripts/'))) return operations;
+    // Standalone command entries and their helpers need the same scope even
+    // when hooks are excluded. Reuse the shared boundary asset and owner.
+    return [...operations, createRemappedOperation(
+      adapter,
+      'commands-core',
+      'manifests/install-assets/commonjs-scripts-package.json',
+      path.join(adapter.resolveRoot(planningInput), 'scripts', 'package.json'),
+      { strategy: 'preserve-relative-path' }
+    )];
   },
 });

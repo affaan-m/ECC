@@ -6,7 +6,7 @@
  * Supports cross-platform command generation.
  */
 
-import { tool, type ToolDefinition } from "@opencode-ai/plugin/tool"
+import { tool, type ToolDefinition } from "./tool.ts"
 import * as path from "path"
 import * as fs from "fs"
 

@@ -71,7 +71,7 @@ Adopt from Orca, Superset, dmux, and Ghast:
 
 Repo work:
 
-- `everything-claude-code`: extend the adapter compliance matrix and public
+- `ECC`: extend the adapter compliance matrix and public
   scorecard onramp.
 - `ecc2`: surface session/worktree state through a stable local payload before
   adding hosted telemetry.
@@ -129,7 +129,7 @@ Adopt from Meta-Harness, Autocontext, and Hermes Agent:
 
 Repo work:
 
-- `everything-claude-code`: document scenario specs, verifier contracts, and
+- `ECC`: document scenario specs, verifier contracts, and
   playbook promotion rules.
 - `ECC-Tools`: map analyzer findings to PR comments, check runs, and Linear
   tasks without flooding the workspace.

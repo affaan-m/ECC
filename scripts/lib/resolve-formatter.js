@@ -32,7 +32,16 @@ const PRETTIER_CONFIGS = [
   '.prettierrc.toml',
   'prettier.config.js',
   'prettier.config.cjs',
-  'prettier.config.mjs'
+  'prettier.config.mjs',
+  // The rest of the names Prettier's config searcher looks for
+  // (src/config/prettier-config/config-searcher.js).
+  '.prettierrc.json5',
+  '.prettierrc.ts',
+  '.prettierrc.mts',
+  '.prettierrc.cts',
+  'prettier.config.ts',
+  'prettier.config.mts',
+  'prettier.config.cts'
 ];
 
 const PROJECT_ROOT_MARKERS = ['package.json', ...BIOME_CONFIGS, ...PRETTIER_CONFIGS];

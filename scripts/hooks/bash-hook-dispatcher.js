@@ -2,6 +2,7 @@
 'use strict';
 
 const { isHookEnabled } = require('../lib/hook-flags');
+const { readStdinRaw } = require('./hook-input');
 const {
   buildPreToolUseAdditionalContext,
   combineAdditionalContext,
@@ -71,21 +72,6 @@ const POST_BASH_HOOKS = [
     run: rawInput => runBuildComplete(rawInput),
   },
 ];
-
-function readStdinRaw() {
-  return new Promise(resolve => {
-    let raw = '';
-    process.stdin.setEncoding('utf8');
-    process.stdin.on('data', chunk => {
-      if (raw.length < MAX_STDIN) {
-        const remaining = MAX_STDIN - raw.length;
-        raw += chunk.substring(0, remaining);
-      }
-    });
-    process.stdin.on('end', () => resolve(raw));
-    process.stdin.on('error', () => resolve(raw));
-  });
-}
 
 function normalizeHookResult(previousRaw, output) {
   if (typeof output === 'string' || Buffer.isBuffer(output)) {
@@ -183,7 +169,19 @@ function runPostBash(rawInput) {
 
 async function main() {
   const mode = process.argv[2];
-  const raw = await readStdinRaw();
+  // The shared reader also settles on close and on an idle deadline, so a
+  // parent that never closes stdin cannot hang the dispatcher (#3665).
+  const { raw, truncated } = await readStdinRaw(process.stdin, { maxStdin: MAX_STDIN });
+  if (truncated) {
+    // Safety hooks cannot inspect a partial request, so pre-Bash fails closed.
+    // Post-Bash has nothing left to block and must not echo a partial payload.
+    const blocking = mode !== 'post';
+    process.stderr.write(
+      `[Hook] incomplete stdin for bash-hook-dispatcher ${blocking ? 'pre' : 'post'}; ` +
+        (blocking ? 'blocking because safety checks require the complete request\n' : 'skipping post-Bash hooks\n')
+    );
+    process.exit(blocking ? 2 : 0);
+  }
 
   const result = mode === 'post'
     ? runPostBash(raw)

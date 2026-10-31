@@ -17,6 +17,7 @@
 const assert = require('assert');
 const fs = require('fs');
 const path = require('path');
+const { readHooksConfig } = require('../scripts/lib/hooks-config');
 
 const repoRoot = path.resolve(__dirname, '..');
 const packageJsonPath = path.join(repoRoot, 'package.json');
@@ -394,7 +395,7 @@ test('codex lifecycle hook bundle contains only Codex 0.146-supported schema', (
     }
   }
 
-  const claudeConfig = loadJsonObject(path.join(repoRoot, 'hooks', 'hooks.json'), 'hooks/hooks.json');
+  const claudeConfig = readHooksConfig(path.join(repoRoot, 'hooks', 'hooks.json'), 'hooks/hooks.json');
   const sourceSessionStart = claudeConfig.hooks.SessionStart.find(group => group.id === 'session:start');
   const expectedSessionStart = {
     ...sourceSessionStart,
@@ -458,6 +459,33 @@ test('codex plugin presentation assets exist and ship in npm package', () => {
     assert.ok(fs.existsSync(path.join(repoRoot, packagePath)), `Expected interface.${field} asset to exist: ${packagePath}`);
     assert.ok(packageFiles.has(packagePath), `Expected package.json files to include interface.${field} asset: ${packagePath}`);
   }
+});
+
+// ── Qoder plugin manifest ─────────────────────────────────────────────────────
+console.log('\n=== .qoder-plugin/plugin.json ===\n');
+
+const qoderPluginPath = path.join(repoRoot, '.qoder-plugin', 'plugin.json');
+const qoderPlugin = loadJsonObject(qoderPluginPath, '.qoder-plugin/plugin.json');
+
+test('qoder plugin.json version matches package.json', () => {
+  assert.strictEqual(qoderPlugin.name, 'ecc');
+  assert.strictEqual(qoderPlugin.version, expectedVersion);
+});
+
+test('qoder plugin references canonical resources inside the bundle', () => {
+  for (const field of ['skills', 'commands', 'mcpServers', 'hooks']) {
+    assert.strictEqual(typeof qoderPlugin[field], 'string', `Expected Qoder manifest ${field} path`);
+    const target = path.resolve(repoRoot, qoderPlugin[field]);
+    assert.ok(target === repoRoot || target.startsWith(repoRoot + path.sep), `${field} escapes the Qoder bundle`);
+    assert.ok(fs.existsSync(target), `${field} target is missing: ${qoderPlugin[field]}`);
+  }
+});
+
+test('qoder native surface ships in npm package', () => {
+  const packageFiles = new Set(rootPackage.files);
+  assert.ok(packageFiles.has('.qoder-plugin/'));
+  assert.ok(packageFiles.has('hooks/'));
+  assert.ok(packageFiles.has('scripts/hooks/'));
 });
 
 // ── .mcp.json at plugin root ──────────────────────────────────────────────────

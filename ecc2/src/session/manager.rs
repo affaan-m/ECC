@@ -245,6 +245,20 @@ pub fn create_scheduled_task(
     )
 }
 
+/// Replace only the instruction text on a native schedule. Keep ID, timing,
+/// agent/profile, worktree and other immutable scheduling fields unchanged.
+pub fn update_scheduled_task_text(
+    db: &StateStore,
+    schedule_id: i64,
+    task: &str,
+) -> Result<ScheduledTask> {
+    anyhow::ensure!(schedule_id > 0, "Schedule ID must be positive");
+    anyhow::ensure!(!task.trim().is_empty(), "Schedule task must not be empty");
+    anyhow::ensure!(task.len() <= 16 * 1024, "Schedule task exceeds 16 KiB");
+    db.update_scheduled_task_text(schedule_id, task)?
+        .with_context(|| format!("Scheduled task not found: {schedule_id}"))
+}
+
 pub fn list_scheduled_tasks(db: &StateStore) -> Result<Vec<ScheduledTask>> {
     db.list_scheduled_tasks()
 }
@@ -883,8 +897,15 @@ pub async fn assign_session_with_profile_and_grouping(
     profile_name: Option<&str>,
     grouping: SessionGrouping,
 ) -> Result<AssignmentOutcome> {
-    let repo_root =
-        std::env::current_dir().context("Failed to resolve current working directory")?;
+    // Native assignment belongs to the recorded Lead, not the operator's
+    // shell (which may be outside the project and lack its model settings).
+    let repo_root = resolve_session(db, lead_id)?.working_dir;
+    // A relative historical path cannot be safely rebased against an arbitrary
+    // operator cwd: doing so would reintroduce the original misrouting defect.
+    anyhow::ensure!(
+        repo_root.is_absolute(),
+        "Lead working directory must be absolute before assignment: {lead_id}"
+    );
     assign_session_in_dir_with_runner_program(
         db,
         cfg,
@@ -928,7 +949,9 @@ pub async fn drain_inbox(
             use_worktree,
             &repo_root,
             &runner_program,
-            None,
+            // A configured worker default must not be replaced by the
+            // coordinator's own profile when draining independent handoffs.
+            cfg.default_agent_profile.as_deref(),
             SessionGrouping::default(),
         )
         .await?;
@@ -1091,6 +1114,9 @@ pub async fn rebalance_team_backlog(
         }
 
         let message_budget = limit.saturating_sub(outcomes.len());
+        // Only unassigned intake work may move. Native assignment notices
+        // already belong to the running/queued delegate and must never be
+        // replayed onto another worker by the load balancer.
         let messages = db.unread_task_handoffs_for_session(&delegate.id, message_budget)?;
 
         for message in messages {
@@ -1131,7 +1157,7 @@ pub async fn rebalance_team_backlog(
                 use_worktree,
                 &repo_root,
                 &runner_program,
-                None,
+                cfg.default_agent_profile.as_deref(),
                 SessionGrouping::default(),
             )
             .await?;
@@ -2948,7 +2974,7 @@ fn send_task_handoff(
         routing_reason
     );
 
-    crate::comms::send(
+    crate::comms::send_native_assignment(
         db,
         &from_session.id,
         to_session_id,
@@ -3128,6 +3154,9 @@ fn build_agent_command(
                     command.arg("--append-system-prompt").arg(prompt);
                 }
             }
+            // Claude's variadic options (such as --add-dir) must not consume
+            // the task, including when the task itself begins with a dash.
+            command.arg("--");
         }
         HarnessKind::Codex => {
             command
@@ -4304,6 +4333,71 @@ mod tests {
     }
 
     #[test]
+    fn build_agent_command_delimits_claude_prompt() {
+        let cfg = Config::default();
+        let cases = [
+            (None, vec![]),
+            (Some(SessionAgentProfile::default()), vec![]),
+            (
+                Some(SessionAgentProfile {
+                    add_dirs: vec![PathBuf::from("docs")],
+                    ..Default::default()
+                }),
+                vec!["--add-dir", "docs"],
+            ),
+            (
+                Some(SessionAgentProfile {
+                    add_dirs: vec![PathBuf::from("docs"), PathBuf::from("shared specs")],
+                    ..Default::default()
+                }),
+                vec!["--add-dir", "docs", "--add-dir", "shared specs"],
+            ),
+            (
+                Some(SessionAgentProfile {
+                    allowed_tools: vec!["Read".to_string(), "Edit".to_string()],
+                    ..Default::default()
+                }),
+                vec!["--allowed-tools", "Read,Edit"],
+            ),
+            (
+                Some(SessionAgentProfile {
+                    disallowed_tools: vec!["Bash".to_string()],
+                    ..Default::default()
+                }),
+                vec!["--disallowed-tools", "Bash"],
+            ),
+        ];
+
+        for (profile, flags) in cases {
+            for agent in ["claude", "claude-code"] {
+                for task in ["review this change", "--help"] {
+                    let command = build_agent_command(
+                        &cfg,
+                        agent,
+                        Path::new("claude"),
+                        task,
+                        "sess-1234",
+                        Path::new("/tmp/repo"),
+                        profile.as_ref(),
+                    );
+                    let args = command
+                        .as_std()
+                        .get_args()
+                        .map(|value| value.to_string_lossy().to_string())
+                        .collect::<Vec<_>>();
+                    let expected = ["--print", "--name", "ecc-sess-1234"]
+                        .into_iter()
+                        .chain(flags.iter().copied())
+                        .chain(["--", task])
+                        .collect::<Vec<_>>();
+
+                    assert_eq!(args, expected, "agent={agent}, profile={profile:?}");
+                }
+            }
+        }
+    }
+
+    #[test]
     fn build_agent_command_applies_profile_runner_flags_for_claude() {
         let cfg = Config::default();
         let profile = SessionAgentProfile {
@@ -4356,6 +4450,7 @@ mod tests {
                 "1.25",
                 "--append-system-prompt",
                 "Review thoroughly.",
+                "--",
                 "review this change",
             ]
         );
@@ -5381,10 +5476,13 @@ mod tests {
             metrics: SessionMetrics::default(),
         })?;
 
-        let low = create_remote_dispatch_request(
+        let low = create_remote_dispatch_request_inner(
             &db,
             &cfg,
+            RemoteDispatchKind::Standard,
+            &repo_root,
             "Low priority cleanup",
+            None,
             Some("lead"),
             TaskPriority::Low,
             "claude",
@@ -5394,10 +5492,13 @@ mod tests {
             "cli",
             None,
         )?;
-        let critical = create_remote_dispatch_request(
+        let critical = create_remote_dispatch_request_inner(
             &db,
             &cfg,
+            RemoteDispatchKind::Standard,
+            &repo_root,
             "Critical production incident",
+            None,
             Some("lead"),
             TaskPriority::Critical,
             "claude",
@@ -6850,6 +6951,78 @@ mod tests {
     }
 
     #[tokio::test(flavor = "current_thread")]
+    async fn native_assign_uses_lead_working_dir_not_operator_cwd() -> Result<()> {
+        let tempdir = TestDir::new("manager-assign-lead-cwd")?;
+        let repo_root = tempdir.path().join("original-lead-repo");
+        init_git_repo(&repo_root)?;
+        let foreign_dir = tempdir.path().join("operator-outside-repo");
+        fs::create_dir_all(&foreign_dir)?;
+        let mut cfg = build_config(tempdir.path());
+        cfg.max_parallel_sessions = 3;
+        cfg.max_parallel_worktrees = 0; // queue without launching a test process
+        let db = StateStore::open(&cfg.db_path)?;
+        let now = Utc::now();
+        db.insert_session(&Session {
+            id: "lead".to_string(),
+            task: "original lead task".to_string(),
+            project: "original-project".to_string(),
+            task_group: "general".to_string(),
+            agent_type: "claude".to_string(),
+            working_dir: repo_root.clone(),
+            state: SessionState::Running,
+            pid: Some(42),
+            worktree: None,
+            created_at: now,
+            updated_at: now,
+            last_heartbeat_at: now,
+            metrics: SessionMetrics::default(),
+        })?;
+        let _cwd_guard = crate::test_support::CurrentDirGuard::enter(&foreign_dir)?;
+        let outcome = assign_session_with_profile_and_grouping(
+            &db,
+            &cfg,
+            "lead",
+            "One independent change",
+            "claude",
+            true,
+            None,
+            SessionGrouping::default(),
+        )
+        .await?;
+        assert_eq!(outcome.action, AssignmentAction::Spawned);
+        let delegate = db
+            .get_session(&outcome.session_id)?
+            .context("missing queued delegate")?;
+        assert_eq!(
+            delegate.working_dir, repo_root,
+            "never inherit caller working directory"
+        );
+        assert_eq!(delegate.state, SessionState::Pending);
+
+        let mut relative_lead = db.get_session("lead")?.context("missing original lead")?;
+        relative_lead.id = "relative-lead".to_string();
+        relative_lead.working_dir = PathBuf::from("relative-project");
+        db.insert_session(&relative_lead)?;
+        let result = assign_session_with_profile_and_grouping(
+            &db,
+            &cfg,
+            "relative-lead",
+            "Must never dispatch from operator cwd",
+            "claude",
+            true,
+            None,
+            SessionGrouping::default(),
+        )
+        .await;
+        let error = result.err().context("relative Lead path must fail closed")?;
+        assert!(
+            format!("{error:#}").contains("must be absolute"),
+            "error must describe the invalid persisted Lead working directory"
+        );
+        Ok(())
+    }
+
+    #[tokio::test(flavor = "current_thread")]
     async fn assign_session_reuses_idle_delegate_when_available() -> Result<()> {
         let tempdir = TestDir::new("manager-assign-reuse-idle")?;
         let repo_root = tempdir.path().join("repo");
@@ -7414,6 +7587,93 @@ mod tests {
     }
 
     #[tokio::test(flavor = "current_thread")]
+    async fn drain_inbox_uses_configured_worker_profile_not_lead_profile() -> Result<()> {
+        let tempdir = TestDir::new("manager-inbox-worker-profile")?;
+        let repo_root = tempdir.path().join("repo");
+        init_git_repo(&repo_root)?;
+        let mut cfg = build_config(tempdir.path());
+        cfg.max_parallel_worktrees = 0; // queue without launching a model process
+        cfg.default_agent_profile = Some("pace_dev".to_string());
+        cfg.agent_profiles.insert(
+            "pace_dev".to_string(),
+            crate::config::AgentProfileConfig {
+                agent: Some("claude".to_string()),
+                model: Some("dev-model".to_string()),
+                ..Default::default()
+            },
+        );
+        cfg.agent_profiles.insert(
+            "pace_lead".to_string(),
+            crate::config::AgentProfileConfig {
+                agent: Some("claude".to_string()),
+                model: Some("lead-model".to_string()),
+                ..Default::default()
+            },
+        );
+        let db = StateStore::open(&cfg.db_path)?;
+        let now = Utc::now();
+        db.insert_session(&Session {
+            id: "lead".to_string(),
+            task: "single coordinator".to_string(),
+            project: "workspace".to_string(),
+            task_group: "general".to_string(),
+            agent_type: "claude".to_string(),
+            working_dir: repo_root.clone(),
+            state: SessionState::Running,
+            pid: Some(42),
+            worktree: None,
+            created_at: now,
+            updated_at: now,
+            last_heartbeat_at: now,
+            metrics: SessionMetrics::default(),
+        })?;
+        db.upsert_session_profile(
+            "lead",
+            &SessionAgentProfile {
+                profile_name: "pace_lead".to_string(),
+                agent: Some("claude".to_string()),
+                model: Some("lead-model".to_string()),
+                allowed_tools: Vec::new(),
+                disallowed_tools: Vec::new(),
+                permission_mode: None,
+                add_dirs: Vec::new(),
+                max_budget_usd: None,
+                token_budget: None,
+                append_system_prompt: None,
+            },
+        )?;
+        let message = serde_json::to_string(&MessageType::TaskHandoff {
+            task: "Independent implementation".to_string(),
+            context: "Owner-authored work".to_string(),
+            priority: TaskPriority::High,
+        })?;
+        db.send_message("owner", "lead", &message, "task_handoff")?;
+
+        let routed = drain_inbox(&db, &cfg, "lead", "claude", true, 1).await?;
+        assert_eq!(routed.len(), 1);
+        assert_eq!(routed[0].action, AssignmentAction::Spawned);
+        let worker = db
+            .get_session_profile(&routed[0].session_id)?
+            .context("assigned worker must have an explicit profile")?;
+        assert_eq!(worker.profile_name, "pace_dev");
+        assert_eq!(worker.model.as_deref(), Some("dev-model"));
+        assert_eq!(db.get_session(&routed[0].session_id)?.unwrap().state, SessionState::Pending);
+
+        // Preserve the original inheritance behavior when no worker default
+        // is configured; do not silently change other deployments.
+        let mut legacy_cfg = cfg.clone();
+        legacy_cfg.default_agent_profile = None;
+        db.send_message("owner", "lead", &message, "task_handoff")?;
+        let legacy_route = drain_inbox(&db, &legacy_cfg, "lead", "claude", true, 1).await?;
+        assert_eq!(legacy_route.len(), 1);
+        let legacy_worker = db
+            .get_session_profile(&legacy_route[0].session_id)?
+            .context("legacy inherited worker must retain a profile")?;
+        assert_eq!(legacy_worker.profile_name, "pace_lead");
+        Ok(())
+    }
+
+    #[tokio::test(flavor = "current_thread")]
     async fn drain_inbox_routes_unread_task_handoffs_and_marks_them_read() -> Result<()> {
         let tempdir = TestDir::new("manager-drain-inbox")?;
         let repo_root = tempdir.path().join("repo");
@@ -7653,6 +7913,135 @@ mod tests {
     }
 
     #[tokio::test(flavor = "current_thread")]
+    async fn template_launch_notice_is_not_a_second_dispatch_request() -> Result<()> {
+        let tempdir = TestDir::new("manager-template-no-recursion")?;
+        let repo_root = tempdir.path().join("repo");
+        init_git_repo(&repo_root)?;
+        let mut cfg = build_config(tempdir.path());
+        cfg.auto_create_worktrees = false;
+        cfg.orchestration_templates.insert(
+            "two-step".to_string(),
+            crate::config::OrchestrationTemplateConfig {
+                steps: vec![
+                    crate::config::OrchestrationTemplateStepConfig {
+                        name: Some("first".to_string()),
+                        task: "First task".to_string(),
+                        worktree: Some(false),
+                        ..Default::default()
+                    },
+                    crate::config::OrchestrationTemplateStepConfig {
+                        name: Some("second".to_string()),
+                        task: "Second task".to_string(),
+                        worktree: Some(false),
+                        ..Default::default()
+                    },
+                ],
+                ..Default::default()
+            },
+        );
+        let db = StateStore::open(&cfg.db_path)?;
+        let _cwd_guard = crate::test_support::CurrentDirGuard::enter(&repo_root)?;
+        let launch = launch_orchestration_template(
+            &db, &cfg, "two-step", None, None, BTreeMap::new(),
+        ).await?;
+        assert_eq!(launch.created.len(), 2);
+        let second_id = &launch.created[1].session_id;
+        assert_eq!(db.unread_task_handoff_count(second_id)?, 1);
+        assert!(db.unread_task_handoff_targets(10)?.is_empty());
+        let tick = auto_dispatch_backlog(&db, &cfg, "claude", false, 10).await?;
+        assert!(tick.is_empty());
+        assert!(db.delegated_children(second_id, 10)?.is_empty());
+        Ok(())
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn auto_dispatch_does_not_recursively_route_assigned_handoffs() -> Result<()> {
+        let tempdir = TestDir::new("manager-auto-dispatch-no-recursion")?;
+        let repo_root = tempdir.path().join("repo");
+        init_git_repo(&repo_root)?;
+
+        let mut cfg = build_config(tempdir.path());
+        cfg.auto_dispatch_limit_per_session = 5;
+        cfg.auto_create_worktrees = false;
+        let db = StateStore::open(&cfg.db_path)?;
+        let now = Utc::now();
+        db.insert_session(&Session {
+            id: "parent".to_string(),
+            task: "parent task".to_string(),
+            project: "workspace".to_string(),
+            task_group: "general".to_string(),
+            agent_type: "claude".to_string(),
+            working_dir: repo_root,
+            state: SessionState::Running,
+            pid: Some(42),
+            worktree: None,
+            created_at: now - Duration::minutes(3),
+            updated_at: now - Duration::minutes(3),
+            last_heartbeat_at: now - Duration::minutes(3),
+            metrics: SessionMetrics::default(),
+        })?;
+        db.send_message(
+            "operator",
+            "parent",
+            "{\"task\":\"Handle incoming request\",\"context\":\"External handoff\"}",
+            "task_handoff",
+        )?;
+
+        let first_tick = auto_dispatch_backlog(&db, &cfg, "claude", cfg.auto_create_worktrees, 10).await?;
+        assert_eq!(first_tick.len(), 1);
+        assert_eq!(first_tick[0].routed.len(), 1);
+        let child_id = first_tick[0].routed[0].session_id.clone();
+        assert!(db.get_session(&child_id)?.unwrap().worktree.is_none());
+        assert_eq!(
+            db.latest_task_handoff_source(&child_id)?.as_deref(),
+            Some("parent")
+        );
+        assert_eq!(db.unread_task_handoff_count(&child_id)?, 1);
+        assert!(db.unread_task_handoff_targets(10)?.is_empty());
+
+        // Native direct delegation emits a different internal handoff format.
+        // It must not be automatically delegated a second time either.
+        let native_notice = serde_json::to_string(&crate::comms::MessageType::TaskHandoff {
+            task: "parent task".to_string(),
+            context: "Delegated from parent [claude] | cwd /repo".to_string(),
+            priority: crate::comms::TaskPriority::Normal,
+        })?;
+        db.send_native_assignment_notice("parent", &child_id, &native_notice)?;
+        assert_eq!(db.unread_task_handoff_count(&child_id)?, 2);
+        let second_tick = auto_dispatch_backlog(&db, &cfg, "claude", cfg.auto_create_worktrees, 10).await?;
+        assert!(second_tick.is_empty());
+        assert_eq!(db.delegated_children("parent", 10)?, vec![child_id.clone()]);
+        assert!(db.delegated_children(&child_id, 10)?.is_empty());
+        assert_eq!(
+            db.latest_task_handoff_source(&child_id)?.as_deref(),
+            Some("parent")
+        );
+
+        db.send_message(
+            "operator",
+            &child_id,
+            "{\"task\":\"Explain the phrase spawned new delegate\",\"context\":\"Intentional delegation\"}",
+            "task_handoff",
+        )?;
+        assert_eq!(db.unread_task_handoff_count(&child_id)?, 3);
+        let explicit_tick = auto_dispatch_backlog(&db, &cfg, "claude", cfg.auto_create_worktrees, 10).await?;
+        assert!(explicit_tick
+            .iter()
+            .any(|outcome| { outcome.lead_session_id == child_id && outcome.routed.len() == 1 }));
+        let grandchildren = db.delegated_children(&child_id, 10)?;
+        assert_eq!(grandchildren.len(), 1);
+        let grandchild_id = grandchildren[0].clone();
+        assert_eq!(
+            db.latest_task_handoff_source(&grandchild_id)?.as_deref(),
+            Some(child_id.as_str())
+        );
+        assert_eq!(db.unread_task_handoff_count(&grandchild_id)?, 1);
+        assert!(db.unread_task_handoff_targets(10)?.is_empty());
+
+        Ok(())
+    }
+
+    #[tokio::test(flavor = "current_thread")]
     async fn coordinate_backlog_reports_remaining_backlog_after_limited_pass() -> Result<()> {
         let tempdir = TestDir::new("manager-coordinate-backlog")?;
         let repo_root = tempdir.path().join("repo");
@@ -7698,10 +8087,15 @@ mod tests {
 
         assert_eq!(outcome.dispatched.len(), 1);
         assert_eq!(outcome.rebalanced.len(), 0);
-        assert_eq!(outcome.remaining_backlog_sessions, 2);
-        assert_eq!(outcome.remaining_backlog_messages, 2);
-        assert_eq!(outcome.remaining_absorbable_sessions, 2);
+        // Only the untouched external intake remains dispatchable. The new
+        // child's assignment stays visible as load, never a recursive task.
+        assert_eq!(outcome.remaining_backlog_sessions, 1);
+        assert_eq!(outcome.remaining_backlog_messages, 1);
+        assert_eq!(outcome.remaining_absorbable_sessions, 1);
         assert_eq!(outcome.remaining_saturated_sessions, 0);
+        let child_id = &outcome.dispatched[0].routed[0].session_id;
+        assert_eq!(db.unread_task_handoff_count(child_id)?, 1);
+        assert!(db.unread_task_handoffs_for_session(child_id, 10)?.is_empty());
 
         Ok(())
     }
@@ -7773,12 +8167,100 @@ mod tests {
 
         let outcome = coordinate_backlog(&db, &cfg, "claude", true, 10).await?;
 
-        assert_eq!(outcome.remaining_backlog_sessions, 2);
-        assert_eq!(outcome.remaining_backlog_messages, 2);
-        assert_eq!(outcome.remaining_absorbable_sessions, 1);
+        // The saturated lead still has one independent request. The
+        // delegate's generated assignment contributes load, not fresh intake.
+        assert_eq!(outcome.remaining_backlog_sessions, 1);
+        assert_eq!(outcome.remaining_backlog_messages, 1);
+        assert_eq!(outcome.remaining_absorbable_sessions, 0);
         assert_eq!(outcome.remaining_saturated_sessions, 1);
+        assert_eq!(db.unread_task_handoff_count("delegate")?, 1);
+        assert!(db.unread_task_handoffs_for_session("delegate", 10)?.is_empty());
 
         Ok(())
+    }
+
+    async fn assert_rebalanced_worker_profile(default_profile: Option<&str>) -> Result<()> {
+        let tempdir = TestDir::new("manager-rebalance-worker-profile")?;
+        let repo_root = tempdir.path().join("repo");
+        init_git_repo(&repo_root)?;
+        let mut cfg = build_config(tempdir.path());
+        cfg.max_parallel_worktrees = 0; // persist a queued worker without launching a model
+        cfg.max_parallel_sessions = 2;
+        cfg.default_agent_profile = default_profile.map(ToOwned::to_owned);
+        for (name, model) in [("pace_lead", "lead-model"), ("pace_dev", "dev-model")] {
+            cfg.agent_profiles.insert(
+                name.to_string(),
+                crate::config::AgentProfileConfig {
+                    agent: Some("claude".to_string()),
+                    model: Some(model.to_string()),
+                    ..Default::default()
+                },
+            );
+        }
+        let db = StateStore::open(&cfg.db_path)?;
+        let now = Utc::now();
+        for (id, state) in [
+            ("lead", SessionState::Running),
+            ("busy-worker", SessionState::Idle),
+        ] {
+            db.insert_session(&Session {
+                working_dir: repo_root.clone(),
+                ..build_session(id, state, now)
+            })?;
+        }
+        db.upsert_session_profile("lead", &cfg.resolve_agent_profile("pace_lead")?)?;
+        db.send_native_assignment_notice(
+            "lead", "busy-worker",
+            r#"{"task":"Existing assignment","context":"Assigned by lead [claude] | cwd /repo | spawned new delegate"}"#,
+        )?;
+        db.send_message(
+            "lead",
+            "busy-worker",
+            r#"{"task":"Independent implementation","context":"Delegated from lead"}"#,
+            "task_handoff",
+        )?;
+
+        let outcomes = rebalance_team_backlog(&db, &cfg, "lead", "claude", true, 1).await?;
+        assert_eq!(outcomes.len(), 1);
+        assert_eq!(outcomes[0].action, AssignmentAction::Spawned);
+        assert_eq!(outcomes[0].from_session_id, "busy-worker");
+        assert_eq!(outcomes[0].task, "Independent implementation");
+        let worker_id = &outcomes[0].session_id;
+        assert_ne!(worker_id, "lead");
+        assert_ne!(worker_id, "busy-worker");
+        assert_eq!(
+            db.get_session(worker_id)?.unwrap().state,
+            SessionState::Pending
+        );
+        let profile = db
+            .get_session_profile(worker_id)?
+            .context("queued worker profile")?;
+        assert_eq!(profile.profile_name, default_profile.unwrap_or("pace_lead"));
+        assert_eq!(
+            profile.model.as_deref(),
+            Some(if default_profile.is_some() {
+                "dev-model"
+            } else {
+                "lead-model"
+            })
+        );
+        assert_eq!(
+            db.get_session_profile("lead")?.unwrap().profile_name,
+            "pace_lead"
+        );
+        assert_eq!(db.unread_task_handoff_count("busy-worker")?, 1);
+        assert_eq!(db.unread_task_handoff_count(worker_id)?, 1);
+        Ok(())
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn rebalance_team_backlog_uses_configured_profile_for_queued_worker() -> Result<()> {
+        assert_rebalanced_worker_profile(Some("pace_dev")).await
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn rebalance_team_backlog_inherits_lead_without_default_worker_profile() -> Result<()> {
+        assert_rebalanced_worker_profile(None).await
     }
 
     #[tokio::test(flavor = "current_thread")]
@@ -7841,7 +8323,7 @@ mod tests {
         db.send_message(
             "lead",
             "worker-a",
-            "{\"task\":\"Review auth flow\",\"context\":\"Delegated from lead\"}",
+            "{\"task\":\"Review auth flow\",\"context\":\"Assigned by lead [claude] | cwd /repo | spawned new delegate\"}",
             "task_handoff",
         )?;
         db.send_message(

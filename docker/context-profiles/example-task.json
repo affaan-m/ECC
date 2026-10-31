@@ -1,0 +1,7 @@
+{
+  "sessionId": "local-auto-canary",
+  "taskId": "python-patterns-explanation",
+  "revision": 1,
+  "phase": "explain",
+  "query": "Explain Python patterns for a short, readable list comprehension. Give one example and describe when a plain loop is clearer. Do not modify files or run commands."
+}

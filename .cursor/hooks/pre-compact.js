@@ -1,7 +1,13 @@
 #!/usr/bin/env node
-const { readStdin, runExistingHook, transformToClaude } = require('./adapter');
+const { readStdin, runExistingHook, transformToClaude, hookEnabled } = require('./adapter');
 readStdin().then(raw => {
-  const claudeInput = JSON.parse(raw || '{}');
-  runExistingHook('pre-compact.js', transformToClaude(claudeInput));
+  try {
+    const claudeInput = JSON.parse(raw || '{}');
+    if (hookEnabled('pre:compact', ['standard', 'strict'])) {
+      runExistingHook('pre-compact.js', transformToClaude(claudeInput));
+    }
+  } catch {
+    // PreCompact is advisory; malformed payloads fail open.
+  }
   process.stdout.write(raw);
 }).catch(() => process.exit(0));

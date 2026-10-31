@@ -1,7 +1,7 @@
 ---
 name: conversation-analyzer
 description: 使用此代理分析对话记录，以找到值得通过钩子预防的行为。由不带参数的 /hookify 触发。
-model: sonnet
+model: haiku
 tools: [Read, Grep]
 ---
 

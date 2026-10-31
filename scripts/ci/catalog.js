@@ -18,6 +18,8 @@ const path = require('path');
 const ROOT = path.join(__dirname, '../..');
 const README_PATH = path.join(ROOT, 'README.md');
 const AGENTS_PATH = path.join(ROOT, 'AGENTS.md');
+const SOUL_PATH = path.join(ROOT, 'SOUL.md');
+const GEMINI_PATH = path.join(ROOT, '.gemini', 'GEMINI.md');
 const README_ZH_CN_PATH = path.join(ROOT, 'README.zh-CN.md');
 const DOCS_ZH_CN_README_PATH = path.join(ROOT, 'docs', 'zh-CN', 'README.md');
 const DOCS_ZH_CN_AGENTS_PATH = path.join(ROOT, 'docs', 'zh-CN', 'AGENTS.md');
@@ -85,6 +87,23 @@ function replaceOrThrow(content, regex, replacer, source) {
   return content.replace(regex, replacer);
 }
 
+function countMarkers(content, regex) {
+  return [...content.matchAll(regex)].length;
+}
+
+function replaceAllOrThrow(content, regex, replacer, source, expectedCount) {
+  const found = countMarkers(content, regex);
+  if (found === 0) {
+    throw new Error(`${source} is missing the expected catalog marker`);
+  }
+
+  if (expectedCount !== undefined && found !== expectedCount) {
+    throw new Error(`${source} expected ${expectedCount} marker(s), found ${found}`);
+  }
+
+  return content.replace(regex, replacer);
+}
+
 function parseReadmeExpectations(readmeContent) {
   const expectations = [];
 
@@ -101,17 +120,28 @@ function parseReadmeExpectations(readmeContent) {
     { category: 'commands', mode: 'exact', expected: Number(quickStartMatch[3]), source: 'README.md quick-start summary' }
   );
 
-  const projectTreeAgentsMatch = readmeContent.match(/^\|\s*--\s*agents\/\s*#\s*(\d+)\s+specialized subagents for delegation\s*$/im);
-  if (!projectTreeAgentsMatch) {
-    throw new Error('README.md project tree is missing the agents count');
-  }
+  const projectTreePatterns = [
+    { category: 'agents', regex: /^\|\s*--\s*agents\/\s*#\s*(\d+)\s+specialized subagents for delegation\s*$/gim, source: 'README.md project tree (agents)' },
+    { category: 'commands', regex: /^\|\s*--\s*commands\/\s*#\s*(\d+)\s+maintained slash-command shims\s*$/gim, source: 'README.md project tree (commands)' },
+    { category: 'skills', regex: /^\|\s*--\s*skills\/\s*#\s*(\d+)\s+reusable workflows loaded on demand\s*$/gim, source: 'README.md project tree (skills)' }
+  ];
 
-  expectations.push({
-    category: 'agents',
-    mode: 'exact',
-    expected: Number(projectTreeAgentsMatch[1]),
-    source: 'README.md project tree (agents)'
-  });
+  for (const pattern of projectTreePatterns) {
+    const matches = [...readmeContent.matchAll(pattern.regex)];
+
+    if (matches.length === 0) {
+      throw new Error(`${pattern.source} is missing the ${pattern.category} count`);
+    }
+
+    for (const match of matches) {
+      expectations.push({
+        category: pattern.category,
+        mode: 'exact',
+        expected: Number(match[1]),
+        source: `${pattern.source} block ${readmeContent.slice(0, match.index).split('\n').length}`
+      });
+    }
+  }
 
   const tablePatterns = [
     { category: 'agents', regex: /\|\s*(?:\*\*)?Agents(?:\*\*)?\s*\|\s*(?:(?:PASS:|\u2705)\s*)?(\d+)\s+agents\s*\|/i, source: 'README.md comparison table' },
@@ -264,13 +294,53 @@ function parseAgentsDocExpectations(agentsContent) {
 
     expectations.push({
       category: pattern.category,
-      mode: pattern.mode === 'minimum' && match[2] ? 'minimum' : pattern.mode,
+      mode: pattern.mode === 'minimum' ? (match[2] ? 'minimum' : 'exact') : pattern.mode,
       expected: Number(match[1]),
       source: `${pattern.source} (${pattern.category})`
     });
   }
 
   return expectations;
+}
+
+function parseCrossHarnessIdentityExpectations(content, source) {
+  const match = content.match(/with\s+(\d+)\s+specialized agents,\s+(\d+)\s+skills,\s+(?:and\s+)?(\d+)\s+commands/i);
+  if (!match) {
+    throw new Error(`${source} is missing the catalog summary line`);
+  }
+
+  return [
+    { category: 'agents', mode: 'exact', expected: Number(match[1]), source },
+    { category: 'skills', mode: 'exact', expected: Number(match[2]), source },
+    { category: 'commands', mode: 'exact', expected: Number(match[3]), source },
+  ];
+}
+
+/**
+ * Build a replacer for a summary line whose capture groups alternate between
+ * literal text and the agent, skill, and command counts. `groupCount` is the
+ * number of capture groups in the regex; `countGroups` lists the 1-based
+ * groups that hold the three counts, in that order. Every other group is
+ * written back verbatim.
+ */
+function catalogCountReplacer(catalog, groupCount, countGroups) {
+  const counts = [catalog.agents.count, catalog.skills.count, catalog.commands.count];
+  return (...args) => {
+    const groups = args.slice(1, groupCount + 1);
+    countGroups.forEach((groupIndex, position) => {
+      groups[groupIndex - 1] = counts[position];
+    });
+    return groups.join('');
+  };
+}
+
+function syncCrossHarnessIdentity(content, catalog, source) {
+  return replaceOrThrow(
+    content,
+    /(with\s+)(\d+)(\s+specialized agents,\s+)(\d+)(\s+skills,\s+(?:and\s+)?)(\d+)(\s+commands)/i,
+    catalogCountReplacer(catalog, 7, [2, 4, 6]),
+    source
+  );
 }
 
 function parseZhAgentsDocExpectations(agentsContent) {
@@ -319,7 +389,7 @@ function parseZhAgentsDocExpectations(agentsContent) {
 
     expectations.push({
       category: pattern.category,
-      mode: pattern.mode === 'minimum' && match[2] ? 'minimum' : pattern.mode,
+      mode: pattern.mode === 'minimum' ? (match[2] ? 'minimum' : 'exact') : pattern.mode,
       expected: Number(match[1]),
       source: `${pattern.source} (${pattern.category})`
     });
@@ -383,11 +453,23 @@ function syncEnglishReadme(content, catalog) {
       `${prefix}${catalog.agents.count}${agentsSuffix}${catalog.skills.count}${skillsSuffix}${catalog.commands.count} legacy command shims`,
     'README.md quick-start summary'
   );
-  nextContent = replaceOrThrow(
+  nextContent = replaceAllOrThrow(
     nextContent,
-    /^(\|\s*--\s*agents\/\s*#\s*)(\d+)(\s+specialized subagents for delegation\s*)$/im,
+    /^(\|\s*--\s*agents\/\s*#\s*)(\d+)(\s+specialized subagents for delegation\s*)$/gim,
     (_, prefix, __, suffix) => `${prefix}${catalog.agents.count}${suffix}`,
     'README.md project tree (agents)'
+  );
+  nextContent = replaceAllOrThrow(
+    nextContent,
+    /^(\|\s*--\s*commands\/\s*#\s*)(\d+)(\s+maintained slash-command shims\s*)$/gim,
+    (_, prefix, __, suffix) => `${prefix}${catalog.commands.count}${suffix}`,
+    'README.md project tree (commands)'
+  );
+  nextContent = replaceAllOrThrow(
+    nextContent,
+    /^(\|\s*--\s*skills\/\s*#\s*)(\d+)(\s+reusable workflows loaded on demand\s*)$/gim,
+    (_, prefix, __, suffix) => `${prefix}${catalog.skills.count}${suffix}`,
+    'README.md project tree (skills)'
   );
   nextContent = replaceOrThrow(
     nextContent,
@@ -416,8 +498,7 @@ function syncEnglishAgents(content, catalog) {
   nextContent = replaceOrThrow(
     nextContent,
     /(providing\s+)(\d+)(\s+specialized agents,\s+)(\d+)(\+?)(\s+skills,\s+)(\d+)(\s+commands)/i,
-    (_, prefix, __, agentsSuffix, ___, skillsPlus, skillsSuffix, ____, commandsSuffix) =>
-      `${prefix}${catalog.agents.count}${agentsSuffix}${catalog.skills.count}${skillsPlus}${skillsSuffix}${catalog.commands.count}${commandsSuffix}`,
+    catalogCountReplacer(catalog, 8, [2, 4, 7]),
     'AGENTS.md summary'
   );
   nextContent = replaceOrThrow(
@@ -446,8 +527,7 @@ function syncZhRootReadme(content, catalog) {
   return replaceOrThrow(
     content,
     /(你现在可以使用\s+)(\d+)(\s+个代理、\s*)(\d+)(\s*个技能和\s*)(\d+)(\s*个命令[。.!！]?)/i,
-    (_, prefix, __, agentsSuffix, ___, skillsSuffix, ____, commandsSuffix) =>
-      `${prefix}${catalog.agents.count}${agentsSuffix}${catalog.skills.count}${skillsSuffix}${catalog.commands.count}${commandsSuffix}`,
+    catalogCountReplacer(catalog, 7, [2, 4, 6]),
     'README.zh-CN.md quick-start summary'
   );
 }
@@ -458,8 +538,7 @@ function syncZhDocsReadme(content, catalog) {
   nextContent = replaceOrThrow(
     nextContent,
     /(你现在可以使用\s+)(\d+)(\s+个智能体、\s*)(\d+)(\s*项技能和\s*)(\d+)(\s*个命令了[。.!！]?)/i,
-    (_, prefix, __, agentsSuffix, ___, skillsSuffix, ____, commandsSuffix) =>
-      `${prefix}${catalog.agents.count}${agentsSuffix}${catalog.skills.count}${skillsSuffix}${catalog.commands.count}${commandsSuffix}`,
+    catalogCountReplacer(catalog, 7, [2, 4, 6]),
     'docs/zh-CN/README.md quick-start summary'
   );
   nextContent = replaceOrThrow(
@@ -508,8 +587,7 @@ function syncZhAgents(content, catalog) {
   nextContent = replaceOrThrow(
     nextContent,
     /(提供\s+)(\d+)(\s+个专业代理、\s*)(\d+)(\+?)(\s*项技能、\s*)(\d+)(\s+条命令)/i,
-    (_, prefix, __, agentsSuffix, ___, skillsPlus, skillsSuffix, ____, commandsSuffix) =>
-      `${prefix}${catalog.agents.count}${agentsSuffix}${catalog.skills.count}${skillsPlus}${skillsSuffix}${catalog.commands.count}${commandsSuffix}`,
+    catalogCountReplacer(catalog, 8, [2, 4, 7]),
     'docs/zh-CN/AGENTS.md summary'
   );
   nextContent = replaceOrThrow(
@@ -550,8 +628,7 @@ function syncCatalogDescription(content, catalog, source, getDescription, setDes
   const nextDescription = replaceOrThrow(
     description,
     /(\d+)(\s+agents,\s+)(\d+)(\s+skills,\s+)(\d+)(\s+legacy command shims?)/i,
-    (_, __, agentsSuffix, ___, skillsSuffix, ____, commandsSuffix) =>
-      `${catalog.agents.count}${agentsSuffix}${catalog.skills.count}${skillsSuffix}${catalog.commands.count}${commandsSuffix}`,
+    catalogCountReplacer(catalog, 6, [1, 3, 5]),
     source
   );
 
@@ -563,6 +640,8 @@ function createDocumentSpecs(paths = {}) {
   const {
     readmePath = README_PATH,
     agentsPath = AGENTS_PATH,
+    soulPath = SOUL_PATH,
+    geminiPath = GEMINI_PATH,
     zhRootReadmePath = README_ZH_CN_PATH,
     zhDocsReadmePath = DOCS_ZH_CN_README_PATH,
     zhDocsAgentsPath = DOCS_ZH_CN_AGENTS_PATH,
@@ -580,6 +659,16 @@ function createDocumentSpecs(paths = {}) {
       filePath: agentsPath,
       parseExpectations: parseAgentsDocExpectations,
       syncContent: syncEnglishAgents,
+    },
+    {
+      filePath: soulPath,
+      parseExpectations: content => parseCrossHarnessIdentityExpectations(content, 'SOUL.md'),
+      syncContent: (content, catalog) => syncCrossHarnessIdentity(content, catalog, 'SOUL.md'),
+    },
+    {
+      filePath: geminiPath,
+      parseExpectations: content => parseCrossHarnessIdentityExpectations(content, '.gemini/GEMINI.md'),
+      syncContent: (content, catalog) => syncCrossHarnessIdentity(content, catalog, '.gemini/GEMINI.md'),
     },
     {
       filePath: zhRootReadmePath,
@@ -633,6 +722,8 @@ function createDocumentSpecsForRoot(root) {
   return createDocumentSpecs({
     readmePath: path.join(root, 'README.md'),
     agentsPath: path.join(root, 'AGENTS.md'),
+    soulPath: path.join(root, 'SOUL.md'),
+    geminiPath: path.join(root, '.gemini', 'GEMINI.md'),
     zhRootReadmePath: path.join(root, 'README.zh-CN.md'),
     zhDocsReadmePath: path.join(root, 'docs', 'zh-CN', 'README.md'),
     zhDocsAgentsPath: path.join(root, 'docs', 'zh-CN', 'AGENTS.md'),
@@ -742,6 +833,7 @@ module.exports = {
   formatExpectation,
   main,
   parseAgentsDocExpectations,
+  parseCrossHarnessIdentityExpectations,
   parseCatalogDescriptionExpectations,
   parseReadmeExpectations,
   parseZhAgentsDocExpectations,
@@ -751,6 +843,7 @@ module.exports = {
   syncCatalogDescription,
   syncEnglishAgents,
   syncEnglishReadme,
+  syncCrossHarnessIdentity,
   syncZhAgents,
   syncZhDocsReadme,
   syncZhRootReadme,

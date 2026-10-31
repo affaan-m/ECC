@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-ECC Dashboard - Everything Claude Code GUI
+ECC Dashboard GUI
 Cross-platform TkInter application for managing ECC components
 """
 
@@ -291,7 +291,7 @@ class ECCDashboard(tk.Tk):
         super().__init__()
         
         self.project_path = get_project_path()
-        self.title("ECC Dashboard - Everything Claude Code")
+        self.title("ECC Dashboard")
         
         maximize_window(self)
         
@@ -812,7 +812,7 @@ Usage: This skill is automatically activated when working with related technolog
         about_frame.pack(fill=tk.X, padx=10, pady=10)
         
         about_text = """ECC Dashboard v1.0.0
-Everything Claude Code GUI
+ECC GUI
 
 A cross-platform desktop application for 
 managing and exploring ECC components.

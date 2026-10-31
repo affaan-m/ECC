@@ -193,10 +193,10 @@ export interface CommandResult {
 export function runCommand(cmd: string, options?: ExecSyncOptions): CommandResult;
 
 /** Check if the current directory is inside a git repository */
-export function isGitRepo(): boolean;
+export function isGitRepo(options?: ExecSyncOptions): boolean;
 
 /**
  * Get git modified files (staged + unstaged), optionally filtered by regex patterns.
  * Invalid regex patterns are silently skipped.
  */
-export function getGitModifiedFiles(patterns?: string[]): string[];
+export function getGitModifiedFiles(patterns?: string[], options?: ExecSyncOptions): string[];

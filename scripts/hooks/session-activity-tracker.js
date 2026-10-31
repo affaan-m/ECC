@@ -11,6 +11,7 @@
 const crypto = require('crypto');
 const path = require('path');
 const { spawnSync } = require('child_process');
+const { sanitizeSessionId } = require('../lib/session-bridge');
 const {
   appendFile,
   getClaudeDir,
@@ -561,13 +562,26 @@ function summarizeOutput(toolOutput) {
 }
 
 function buildActivityRow(input, env = process.env) {
-  const hookEvent = String(env.CLAUDE_HOOK_EVENT_NAME || '').trim();
+  // Claude Code does not set CLAUDE_HOOK_EVENT_NAME for hook subprocesses.
+  // Real hook stdin payloads carry hook_event_name as a JSON field.
+  const hookEvent = String(
+    input?.hook_event_name || env.CLAUDE_HOOK_EVENT_NAME || ''
+  ).trim();
   if (hookEvent && hookEvent !== 'PostToolUse') {
     return null;
   }
 
   const toolName = String(input?.tool_name || '').trim();
-  const sessionId = String(env.ECC_SESSION_ID || env.CLAUDE_SESSION_ID || '').trim();
+  // The payload identifies the actual harness conversation. Preserve it ahead
+  // of inherited environment IDs, which may belong to a parent or concurrent
+  // session. Correlating that conversation with a native ECC session requires
+  // an explicit binding, not an ownership guess from the environment.
+  // Sanitize candidates separately so invalid values retain safe fallbacks.
+  const sessionId =
+    sanitizeSessionId(input?.session_id) ||
+    sanitizeSessionId(env.ECC_SESSION_ID) ||
+    sanitizeSessionId(env.CLAUDE_SESSION_ID) ||
+    '';
   if (!toolName || !sessionId) {
     return null;
   }

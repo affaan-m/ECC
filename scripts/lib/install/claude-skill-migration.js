@@ -243,6 +243,7 @@ function createDisabledMigration(plan, previousState) {
     bridgeState: finalState,
     finalState,
     legacyOperationsToRemove: [],
+    retainedLegacyOperations: [],
     requiresBridgeState: plan.operations.length > 0,
   };
 }
@@ -380,6 +381,10 @@ function prepareClaudeSkillMigration(plan) {
     bridgeState: states.bridgeState,
     finalState: states.finalState,
     legacyOperationsToRemove: states.legacyOperationsToRemove,
+    // Nested legacy copies this migration deliberately keeps (user-owned flat
+    // conflicts, or skills this plan does not install). Stale-operation
+    // reconciliation must not treat them as obsolete.
+    retainedLegacyOperations: [...classification.retainedLegacyOperations],
     requiresBridgeState: states.requiresBridgeState,
   };
 }

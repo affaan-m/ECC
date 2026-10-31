@@ -28,6 +28,31 @@ pub struct StateStore {
     conn: Connection,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct SessionOutputRecord {
+    pub id: i64,
+    pub session_id: String,
+    pub line: OutputLine,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct SessionOutputBatch {
+    pub cursor: i64,
+    pub records: Vec<SessionOutputRecord>,
+}
+
+/// Converts one persisted output row into the dashboard's typed record.
+fn output_record_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<SessionOutputRecord> {
+    let stream: String = row.get(2)?;
+    let text: String = row.get(3)?;
+    let timestamp: String = row.get(4)?;
+    Ok(SessionOutputRecord {
+        id: row.get(0)?,
+        session_id: row.get(1)?,
+        line: OutputLine::new(OutputStream::from_db_value(&stream), text, timestamp),
+    })
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct HarnessAuditEntry {
     pub id: i64,
@@ -255,7 +280,8 @@ impl StateStore {
                 content TEXT NOT NULL,
                 msg_type TEXT NOT NULL DEFAULT 'info',
                 read INTEGER DEFAULT 0,
-                timestamp TEXT NOT NULL
+                timestamp TEXT NOT NULL,
+                provenance TEXT NOT NULL DEFAULT 'legacy'
             );
 
             CREATE TABLE IF NOT EXISTS session_output (
@@ -516,10 +542,23 @@ impl StateStore {
             ",
         )?;
         self.ensure_session_columns()?;
+        self.ensure_message_columns()?;
         self.ensure_harness_eval_columns()?;
         self.ensure_harness_candidate_aliases()?;
         self.ensure_session_board_columns()?;
         self.refresh_session_board_meta()?;
+        Ok(())
+    }
+
+    // Existing rows are untagged; keep their historical classification after
+    // a safe in-place schema upgrade, while tagging all new messages.
+    fn ensure_message_columns(&self) -> Result<()> {
+        if !self.has_column("messages", "provenance")? {
+            self.conn.execute(
+                "ALTER TABLE messages ADD COLUMN provenance TEXT NOT NULL DEFAULT 'legacy'",
+                [],
+            ).context("Failed to add message provenance column")?;
+        }
         Ok(())
     }
 
@@ -1537,6 +1576,22 @@ impl StateStore {
             .ok_or_else(|| anyhow::anyhow!("Scheduled task {id} was not found after insert"))
     }
 
+    /// Update instructions in place; preserve the existing ID and due time.
+    pub fn update_scheduled_task_text(
+        &self,
+        schedule_id: i64,
+        task: &str,
+    ) -> Result<Option<ScheduledTask>> {
+        let modified = self.conn.execute(
+            "UPDATE scheduled_tasks SET task = ?2, updated_at = ?3 WHERE id = ?1",
+            rusqlite::params![schedule_id, task, chrono::Utc::now().to_rfc3339()],
+        )?;
+        if modified == 0 {
+            return Ok(None);
+        }
+        self.get_scheduled_task(schedule_id)
+    }
+
     pub fn list_scheduled_tasks(&self) -> Result<Vec<ScheduledTask>> {
         let mut stmt = self.conn.prepare(
             "SELECT id, cron_expr, task, agent_type, profile_name, working_dir, project, task_group,
@@ -1981,6 +2036,9 @@ impl StateStore {
             .into_iter()
             .map(|session| (session.id, session.task))
             .collect::<HashMap<_, _>>();
+        let mut persisted_event_owner = self
+            .conn
+            .prepare("SELECT session_id FROM tool_log WHERE hook_event_id = ?1")?;
 
         for line in reader.lines() {
             let line = line?;
@@ -1996,6 +2054,25 @@ impl StateStore {
                 || row.session_id.trim().is_empty()
                 || row.tool_name.trim().is_empty()
             {
+                continue;
+            }
+            // The shared Claude tool-activity feed can contain sessions that
+            // were never registered with ECC2 (for example, an existing
+            // standalone Claude Code session). tool_log.session_id has a
+            // foreign key to sessions(id), so ignore those external records
+            // without making the entire sessions/status command fail.
+            // Do this before deduplication: an unknown session must not
+            // reserve an event id for an ECC2-owned session.
+            if !session_tasks.contains_key(&row.session_id) {
+                continue;
+            }
+            // A session registered after an earlier sync must not steal an
+            // event ID already persisted for another session, or suppress the
+            // owner's later row when this feed is replayed.
+            let persisted_owner = persisted_event_owner
+                .query_row([&row.id], |record| record.get::<_, String>(0))
+                .optional()?;
+            if persisted_owner.is_some_and(|owner| owner != row.session_id) {
                 continue;
             }
             if !seen_event_ids.insert(row.id.clone()) {
@@ -2577,10 +2654,27 @@ impl StateStore {
     }
 
     pub fn send_message(&self, from: &str, to: &str, content: &str, msg_type: &str) -> Result<()> {
+        self.send_message_with_provenance(from, to, content, msg_type, "external")
+    }
+
+    /// Only the native dispatcher uses this operation for generated notices;
+    /// user-supplied task context cannot grant internal provenance.
+    pub(crate) fn send_native_assignment_notice(&self, from: &str, to: &str, content: &str) -> Result<()> {
+        self.send_message_with_provenance(from, to, content, "task_handoff", "native_assignment")
+    }
+
+    fn send_message_with_provenance(
+        &self,
+        from: &str,
+        to: &str,
+        content: &str,
+        msg_type: &str,
+        provenance: &str,
+    ) -> Result<()> {
         self.conn.execute(
-            "INSERT INTO messages (from_session, to_session, content, msg_type, timestamp)
-             VALUES (?1, ?2, ?3, ?4, ?5)",
-            rusqlite::params![from, to, content, msg_type, chrono::Utc::now().to_rfc3339()],
+            "INSERT INTO messages (from_session, to_session, content, msg_type, timestamp, provenance)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            rusqlite::params![from, to, content, msg_type, chrono::Utc::now().to_rfc3339(), provenance],
         )?;
         self.sync_context_graph_message(from, to, content, msg_type)?;
         self.refresh_session_board_meta()?;
@@ -2748,62 +2842,93 @@ impl StateStore {
             .map_err(Into::into)
     }
 
-    pub fn unread_task_handoffs_for_session(
+    /// Read the original message and provenance from one SQLite snapshot.
+    /// Both capacity accounting and dispatch use the same priority order.
+    fn unread_task_handoffs_with_provenance(
         &self,
         session_id: &str,
-        limit: usize,
-    ) -> Result<Vec<SessionMessage>> {
+    ) -> Result<Vec<(SessionMessage, String)>> {
         let mut stmt = self.conn.prepare(
-            "SELECT id, from_session, to_session, content, msg_type, read, timestamp
+            "SELECT id, from_session, to_session, content, msg_type, read, timestamp, provenance
              FROM messages
              WHERE to_session = ?1 AND msg_type = 'task_handoff' AND read = 0
              ORDER BY id ASC",
         )?;
-
         let messages = stmt.query_map(rusqlite::params![session_id], |row| {
             let timestamp: String = row.get(6)?;
-
-            Ok(SessionMessage {
-                id: row.get(0)?,
-                from_session: row.get(1)?,
-                to_session: row.get(2)?,
-                content: row.get(3)?,
-                msg_type: row.get(4)?,
-                read: row.get::<_, i64>(5)? != 0,
-                timestamp: chrono::DateTime::parse_from_rfc3339(&timestamp)
-                    .unwrap_or_default()
-                    .with_timezone(&chrono::Utc),
-            })
+            Ok((
+                SessionMessage {
+                    id: row.get(0)?,
+                    from_session: row.get(1)?,
+                    to_session: row.get(2)?,
+                    content: row.get(3)?,
+                    msg_type: row.get(4)?,
+                    read: row.get::<_, i64>(5)? != 0,
+                    timestamp: chrono::DateTime::parse_from_rfc3339(&timestamp)
+                        .unwrap_or_default()
+                        .with_timezone(&chrono::Utc),
+                },
+                row.get::<_, String>(7)?,
+            ))
         })?;
-
         let mut messages = messages.collect::<Result<Vec<_>, _>>()?;
-        messages.sort_by(|left, right| {
+        messages.sort_by(|(left, _), (right, _)| {
             let left_priority = comms::handoff_priority(&left.content);
             let right_priority = comms::handoff_priority(&right.content);
             Reverse(left_priority)
                 .cmp(&Reverse(right_priority))
                 .then_with(|| left.id.cmp(&right.id))
         });
-        messages.truncate(limit);
         Ok(messages)
     }
 
+    pub fn unread_task_handoffs_for_rebalance(
+        &self,
+        session_id: &str,
+        limit: usize,
+    ) -> Result<Vec<SessionMessage>> {
+        let mut messages = self.unread_task_handoffs_with_provenance(session_id)?;
+        messages.truncate(limit);
+        Ok(messages.into_iter().map(|(message, _)| message).collect())
+    }
+
+    /// Only independent incoming work is dispatchable; assignment messages
+    /// remain visible to the backlog balancer and load accounting.
+    pub fn unread_task_handoffs_for_session(
+        &self,
+        session_id: &str,
+        limit: usize,
+    ) -> Result<Vec<SessionMessage>> {
+        if limit == 0 {
+            return Ok(Vec::new());
+        }
+        let messages = self.unread_task_handoffs_with_provenance(session_id)?;
+        Ok(messages
+            .into_iter()
+            .filter(|(message, provenance)| {
+                !is_assignment_handoff(&message.content, &message.from_session, provenance)
+            })
+            .take(limit)
+            .map(|(message, _)| message)
+            .collect())
+    }
+
     pub fn unread_task_handoff_count(&self, session_id: &str) -> Result<usize> {
-        self.conn
-            .query_row(
-                "SELECT COUNT(*)
-                 FROM messages
-                 WHERE to_session = ?1 AND msg_type = 'task_handoff' AND read = 0",
-                rusqlite::params![session_id],
-                |row| row.get::<_, i64>(0),
-            )
-            .map(|count| count as usize)
-            .map_err(Into::into)
+        // Load, board and rebalance count all unread assignments; only the
+        // dispatch target query suppresses ECC-generated notifications.
+        self.conn.query_row(
+            "SELECT COUNT(*) FROM messages
+             WHERE to_session = ?1 AND msg_type = 'task_handoff' AND read = 0",
+            rusqlite::params![session_id],
+            |row| row.get::<_, i64>(0),
+        )
+        .map(|count| count as usize)
+        .map_err(Into::into)
     }
 
     pub fn unread_task_handoff_targets(&self, limit: usize) -> Result<Vec<(String, usize)>> {
         let mut stmt = self.conn.prepare(
-            "SELECT to_session, content, id
+            "SELECT to_session, content, id, from_session, provenance
              FROM messages
              WHERE msg_type = 'task_handoff' AND read = 0
              ORDER BY id ASC",
@@ -2814,10 +2939,15 @@ impl StateStore {
                 row.get::<_, String>(0)?,
                 row.get::<_, String>(1)?,
                 row.get::<_, i64>(2)?,
+                row.get::<_, String>(3)?,
+                row.get::<_, String>(4)?,
             ))
         })?;
         let mut aggregated: HashMap<String, (usize, comms::TaskPriority, i64)> = HashMap::new();
-        for (to_session, content, id) in targets.collect::<Result<Vec<_>, _>>()? {
+        for (to_session, content, id, sender, provenance) in targets.collect::<Result<Vec<_>, _>>()? {
+            if is_assignment_handoff(&content, &sender, &provenance) {
+                continue;
+            }
             let priority = comms::handoff_priority(&content);
             aggregated
                 .entry(to_session)
@@ -4000,6 +4130,53 @@ impl StateStore {
         Ok(lines)
     }
 
+    /// Returns a bounded recent-output snapshot and its highest persisted row ID.
+    pub(crate) fn get_output_snapshot(
+        &self,
+        limit_per_session: usize,
+    ) -> Result<SessionOutputBatch> {
+        let limit_per_session = i64::try_from(limit_per_session.max(1)).unwrap_or(i64::MAX);
+        let mut stmt = self.conn.prepare(
+            "SELECT id, session_id, stream, line, timestamp
+             FROM (
+                 SELECT id, session_id, stream, line, timestamp,
+                        ROW_NUMBER() OVER (PARTITION BY session_id ORDER BY id DESC) AS row_num
+                 FROM session_output
+             )
+             WHERE row_num <= ?1
+             ORDER BY id ASC",
+        )?;
+        let records = stmt
+            .query_map(rusqlite::params![limit_per_session], output_record_from_row)?
+            .collect::<Result<Vec<_>, _>>()?;
+        let cursor = records.last().map(|record| record.id).unwrap_or(0);
+
+        Ok(SessionOutputBatch { cursor, records })
+    }
+
+    /// Returns at most `limit` output rows newer than `cursor` in insertion order.
+    pub(crate) fn get_output_since(
+        &self,
+        cursor: i64,
+        limit: usize,
+    ) -> Result<SessionOutputBatch> {
+        let cursor = cursor.max(0);
+        let limit = i64::try_from(limit.max(1)).unwrap_or(i64::MAX);
+        let mut stmt = self.conn.prepare(
+            "SELECT id, session_id, stream, line, timestamp
+             FROM session_output
+             WHERE id > ?1
+             ORDER BY id ASC
+             LIMIT ?2",
+        )?;
+        let records = stmt
+            .query_map(rusqlite::params![cursor, limit], output_record_from_row)?
+            .collect::<Result<Vec<_>, _>>()?;
+        let cursor = records.last().map(|record| record.id).unwrap_or(cursor);
+
+        Ok(SessionOutputBatch { cursor, records })
+    }
+
     pub fn insert_tool_log(
         &self,
         session_id: &str,
@@ -4864,6 +5041,47 @@ fn routing_activity_suffix(context: &str) -> Option<&'static str> {
     } else {
         None
     }
+}
+
+/// ECC's own assignment and direct-delegation notices are task handoffs for
+/// worker inboxes/lineage, not new requests to recursively create delegates.
+/// Match the actual sender and generated context, not task keywords.
+fn is_assignment_handoff(content: &str, sender: &str, provenance: &str) -> bool {
+    // User-authored content is never trusted to declare native provenance.
+    // Legacy notices retain the old sender/context heuristic for safe restart.
+    match provenance {
+        "native_assignment" => return true,
+        "external" => return false,
+        _ => {}
+    }
+    let Some(comms::MessageType::TaskHandoff { context, .. }) = comms::parse(content) else {
+        return false;
+    };
+    // The native delegate CLI uses a short sender ID, and does not append a
+    // routing reason. Both forms are internal notifications, not new work.
+    if context.starts_with(&format!("Delegated from {} [", sender.chars().take(8).collect::<String>()))
+        && context.contains("] | cwd ")
+    {
+        return true;
+    }
+    let expected_prefix = format!("Assigned by {sender} [");
+    if !context.starts_with(&expected_prefix) || !context.contains("] | cwd ") {
+        return false;
+    }
+
+    // Template steps are already queued with their own runner; their handoff
+    // is lineage/notification, never a second intake request.
+    if context.contains(" | template ") {
+        return true;
+    }
+    [
+        "reused idle delegate",
+        "spawned new delegate",
+        "reused active delegate at capacity",
+        "spawned fallback delegate",
+    ]
+    .iter()
+    .any(|reason| context.ends_with(&format!(" | {reason}")))
 }
 
 fn extract_task_handoff_context(content: &str) -> Option<String> {
@@ -6049,6 +6267,106 @@ mod tests {
     }
 
     #[test]
+    fn sync_tool_activity_metrics_skips_sessions_not_registered_with_ecc2() -> Result<()> {
+        let tempdir = TestDir::new("store-unregistered-tool-activity")?;
+        let db = StateStore::open(&tempdir.path().join("state.db"))?;
+        let now = Utc::now();
+        db.insert_session(&Session {
+            id: "ecc-owned".to_string(),
+            task: "registered task".to_string(),
+            project: "workspace".to_string(),
+            task_group: "general".to_string(),
+            agent_type: "claude".to_string(),
+            working_dir: PathBuf::from("/tmp"),
+            state: SessionState::Running,
+            pid: None,
+            worktree: None,
+            created_at: now,
+            updated_at: now,
+            last_heartbeat_at: now,
+            metrics: SessionMetrics::default(),
+        })?;
+
+        let metrics_path = tempdir.path().join("tool-activity.jsonl");
+        fs::write(
+            &metrics_path,
+            concat!(
+                "{\"id\":\"owned-1\",\"session_id\":\"standalone-claude\",\"tool_name\":\"Write\",\"file_paths\":[\"outside.txt\"]}\n",
+                "{\"id\":\"owned-1\",\"session_id\":\"ecc-owned\",\"tool_name\":\"Read\",\"file_paths\":[\"inside.txt\"]}\n"
+            ),
+        )?;
+
+        // The orphan deliberately shares the owned event ID, so filtering
+        // after deduplication would incorrectly hide the registered event.
+        // Previously, the first row violated tool_log.session_id's FK and
+        // prevented sessions/status from reading any valid ECC2 sessions.
+        db.sync_tool_activity_metrics(&metrics_path)?;
+        db.sync_tool_activity_metrics(&metrics_path)?;
+        let known = db.get_session("ecc-owned")?.expect("registered session");
+        assert_eq!(known.metrics.tool_calls, 1);
+        assert_eq!(known.metrics.files_changed, 1);
+        let logs = db.query_tool_logs("ecc-owned", 1, 10)?;
+        assert_eq!(logs.total, 1);
+        assert_eq!(logs.entries[0].tool_name, "Read");
+        let total_logs = db
+            .conn
+            .query_row("SELECT COUNT(*) FROM tool_log", [], |r| r.get::<_, i64>(0))?;
+        assert_eq!(total_logs, 1);
+        assert!(db.get_session("standalone-claude")?.is_none());
+
+        // Registration must not let the first row steal an event already
+        // persisted for another session while this same feed remains intact.
+        let registered_later = Session {
+            id: "standalone-claude".to_string(),
+            ..known
+        };
+        db.insert_session(&registered_later)?;
+        db.sync_tool_activity_metrics(&metrics_path)?;
+        db.sync_tool_activity_metrics(&metrics_path)?;
+        let owner = db.get_session("ecc-owned")?.expect("persisted event owner");
+        assert_eq!(owner.metrics.tool_calls, 1);
+        assert_eq!(owner.metrics.files_changed, 1);
+        let conflicting = db
+            .get_session("standalone-claude")?
+            .expect("registered later");
+        assert_eq!(conflicting.metrics.tool_calls, 0);
+        assert_eq!(conflicting.metrics.files_changed, 0);
+        assert_eq!(db.query_tool_logs("ecc-owned", 1, 10)?.total, 1);
+        assert_eq!(db.query_tool_logs("standalone-claude", 1, 10)?.total, 0);
+
+        // A distinct event for the newly registered session still imports.
+        fs::write(
+            &metrics_path,
+            concat!(
+                "{\"id\":\"external-1\",\"session_id\":\"standalone-claude\",\"tool_name\":\"Write\",\"file_paths\":[\"outside.txt\"]}\n",
+                "{\"id\":\"owned-1\",\"session_id\":\"ecc-owned\",\"tool_name\":\"Read\",\"file_paths\":[\"inside.txt\"]}\n"
+            ),
+        )?;
+        db.sync_tool_activity_metrics(&metrics_path)?;
+        db.sync_tool_activity_metrics(&metrics_path)?;
+        db.sync_tool_activity_metrics(&metrics_path)?;
+        let later = db
+            .get_session("standalone-claude")?
+            .expect("registered later");
+        assert_eq!(later.metrics.tool_calls, 1);
+        assert_eq!(later.metrics.files_changed, 1);
+        let later_logs = db.query_tool_logs("standalone-claude", 1, 10)?;
+        assert_eq!(later_logs.total, 1);
+        assert_eq!(later_logs.entries[0].tool_name, "Write");
+        let total_logs = db
+            .conn
+            .query_row("SELECT COUNT(*) FROM tool_log", [], |r| r.get::<_, i64>(0))?;
+        assert_eq!(total_logs, 2);
+        let violations =
+            db.conn
+                .query_row("SELECT COUNT(*) FROM pragma_foreign_key_check", [], |row| {
+                    row.get::<_, i64>(0)
+                })?;
+        assert_eq!(violations, 0);
+        Ok(())
+    }
+
+    #[test]
     fn list_file_activity_expands_logged_file_paths() -> Result<()> {
         let tempdir = TestDir::new("store-file-activity")?;
         let db = StateStore::open(&tempdir.path().join("state.db"))?;
@@ -6922,6 +7240,158 @@ mod tests {
     }
 
     #[test]
+    fn internal_assignment_notice_is_non_dispatchable_but_visible_in_load() -> Result<()> {
+        let tempdir = TestDir::new("store-assignment-notice")?;
+        let db = StateStore::open(&tempdir.path().join("state.db"))?;
+        db.insert_session(&build_session("lead", SessionState::Running))?;
+        db.insert_session(&build_session("worker", SessionState::Running))?;
+
+        let internal = serde_json::to_string(&comms::MessageType::TaskHandoff {
+            task: "Implement the first work item".to_string(),
+            context: "Assigned by lead [claude] | cwd /repo | spawned new delegate".to_string(),
+            priority: comms::TaskPriority::Normal,
+        })?;
+        db.send_native_assignment_notice("lead", "worker", &internal)?;
+        let native_delegate = serde_json::to_string(&comms::MessageType::TaskHandoff {
+            task: "Implement the first work item".to_string(),
+            context: "Delegated from lead [claude] | cwd /repo".to_string(),
+            priority: comms::TaskPriority::Normal,
+        })?;
+        db.send_native_assignment_notice("lead", "worker", &native_delegate)?;
+        let template_notice = serde_json::to_string(&comms::MessageType::TaskHandoff {
+            task: "Run template step".to_string(),
+            context: "Assigned by lead [claude] | cwd /repo | template release | build".to_string(),
+            priority: comms::TaskPriority::Normal,
+        })?;
+        db.send_native_assignment_notice("lead", "worker", &template_notice)?;
+        assert_eq!(db.unread_task_handoff_count("worker")?, 3);
+        assert!(db.unread_task_handoff_targets(10)?.is_empty());
+        assert_eq!(db.unread_task_handoffs_for_rebalance("worker", 10)?.len(), 3);
+        assert!(db
+            .unread_task_handoffs_for_session("worker", 10)?
+            .is_empty());
+        assert_eq!(
+            db.latest_task_handoff_source("worker")?.as_deref(),
+            Some("lead")
+        );
+
+        // The CLI shortens the source to its first eight characters regardless
+        // of its actual length; the inbox filter must use the same rule.
+        let long_sender = "lead-987654321";
+        db.insert_session(&build_session(long_sender, SessionState::Running))?;
+        let long_notice = serde_json::to_string(&comms::MessageType::TaskHandoff {
+            task: "Implement another item".to_string(),
+            context: "Delegated from lead-987 [claude] | cwd /repo".to_string(),
+            priority: comms::TaskPriority::Normal,
+        })?;
+        db.send_native_assignment_notice(long_sender, "worker", &long_notice)?;
+        assert_eq!(db.unread_task_handoff_count("worker")?, 4);
+        assert!(db.unread_task_handoff_targets(10)?.is_empty());
+
+        // Even a matching routing phrase in a user message is not an internal
+        // assignment when the actual sender differs from the generated context.
+        db.send_message("operator", "worker", &internal, "task_handoff")?;
+        db.send_message("operator", "worker", &native_delegate, "task_handoff")?;
+        db.send_message(
+            "operator",
+            "worker",
+            r#"{"task":"Explain spawned new delegate","context":"Explicit task"}"#,
+            "task_handoff",
+        )?;
+        assert_eq!(db.unread_task_handoff_count("worker")?, 7);
+        assert_eq!(db.unread_task_handoff_targets(10)?, vec![("worker".to_string(), 3)]);
+        assert_eq!(db.unread_task_handoffs_for_session("worker", 10)?.len(), 3);
+
+        // The original notification remains available to the human/agent inbox,
+        // even though it never spawns a recursive grandchild.
+        let all = db.list_messages_for_session("worker", 10)?;
+        assert_eq!(all.iter().filter(|message| message.msg_type == "task_handoff").count(), 7);
+        Ok(())
+    }
+
+    #[test]
+    fn independently_authored_template_context_is_dispatchable() -> Result<()> {
+        let tempdir = TestDir::new("store-manual-template-context")?;
+        let db = StateStore::open(&tempdir.path().join("state.db"))?;
+        db.insert_session(&build_session("lead", SessionState::Running))?;
+        db.insert_session(&build_session("worker", SessionState::Idle))?;
+
+        // The same authenticated lead may send an explicit independent task
+        // whose user-provided context looks like a template notification.
+        // User content is not reliable proof of native internal provenance.
+        let manual = serde_json::to_string(&comms::MessageType::TaskHandoff {
+            task: "Implement an independent requested change".to_string(),
+            context: "Assigned by lead [claude] | cwd /repo | template release | build"
+                .to_string(),
+            priority: comms::TaskPriority::Normal,
+        })?;
+        db.send_message("lead", "worker", &manual, "task_handoff")?;
+
+        db.send_native_assignment_notice("lead", "worker", &manual)?;
+        assert_eq!(db.unread_task_handoff_count("worker")?, 2);
+        assert_eq!(
+            db.unread_task_handoff_targets(10)?,
+            vec![("worker".to_string(), 1)],
+            "independently authored handoff must remain dispatchable"
+        );
+        assert_eq!(db.unread_task_handoffs_for_session("worker", 10)?.len(), 1);
+        let recorded: Vec<String> = db
+            .conn
+            .prepare("SELECT provenance FROM messages ORDER BY id")?
+            .query_map([], |row| row.get(0))?
+            .collect::<std::result::Result<_, _>>()?;
+        assert_eq!(recorded, vec!["external", "native_assignment"]);
+        Ok(())
+    }
+
+    #[test]
+    fn legacy_template_notice_remains_suppressed_after_provenance_upgrade() -> Result<()> {
+        let tempdir = TestDir::new("store-legacy-message-provenance")?;
+        let path = tempdir.path().join("state.db");
+        let old_notice = serde_json::to_string(&comms::MessageType::TaskHandoff {
+            task: "Old template task".to_string(),
+            context: "Assigned by lead [claude] | cwd /repo | template release | build"
+                .to_string(),
+            priority: comms::TaskPriority::Normal,
+        })?;
+        {
+            let old_db = rusqlite::Connection::open(&path)?;
+            old_db.execute_batch(
+                "CREATE TABLE messages (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    from_session TEXT NOT NULL,
+                    to_session TEXT NOT NULL,
+                    content TEXT NOT NULL,
+                    msg_type TEXT NOT NULL DEFAULT 'info',
+                    read INTEGER DEFAULT 0,
+                    timestamp TEXT NOT NULL
+                )",
+            )?;
+            old_db.execute(
+                "INSERT INTO messages (from_session, to_session, content, msg_type, timestamp)
+                 VALUES ('lead', 'worker', ?1, 'task_handoff', '2026-10-01T00:00:00Z')",
+                [&old_notice],
+            )?;
+        }
+        let db = StateStore::open(&path)?;
+        db.insert_session(&build_session("lead", SessionState::Running))?;
+        db.insert_session(&build_session("worker", SessionState::Idle))?;
+        assert!(db.has_column("messages", "provenance")?);
+        let old_provenance: String = db.conn.query_row(
+            "SELECT provenance FROM messages WHERE id = 1",
+            [],
+            |row| row.get(0),
+        )?;
+        assert_eq!(old_provenance, "legacy");
+        assert!(db.unread_task_handoff_targets(10)?.is_empty());
+
+        // The same content sent AFTER migration is explicitly external work.
+        db.send_message("lead", "worker", &old_notice, "task_handoff")?;
+        assert_eq!(db.unread_task_handoff_targets(10)?, vec![("worker".to_string(), 1)]);
+        Ok(())
+    }
+
+    #[test]
     fn scheduled_tasks_round_trip_and_advance_runs() -> Result<()> {
         let tempdir = TestDir::new("store-scheduled-tasks")?;
         let db = StateStore::open(&tempdir.path().join("state.db"))?;
@@ -6961,6 +7431,51 @@ mod tests {
         assert_eq!(db.delete_scheduled_task(inserted.id)?, 1);
         assert!(db.get_scheduled_task(inserted.id)?.is_none());
 
+        Ok(())
+    }
+
+    #[test]
+    fn scheduled_task_update_keeps_original_identity_and_next_due_time() -> Result<()> {
+        let tempdir = TestDir::new("store-schedule-inplace-update")?;
+        let db = StateStore::open(&tempdir.path().join("state.db"))?;
+        let next = Utc::now() + ChronoDuration::minutes(2);
+        let original = db.insert_scheduled_task(
+            "*/2 * * * *",
+            "Old instructions",
+            "claude",
+            Some("lead-profile"),
+            tempdir.path(),
+            "pace",
+            "g0",
+            false,
+            next,
+        )?;
+        let previous_run = Utc::now() - ChronoDuration::minutes(2);
+        db.record_scheduled_task_run(original.id, previous_run, next)?;
+        let original = db
+            .get_scheduled_task(original.id)?
+            .context("recorded schedule must exist before update")?;
+        assert_eq!(original.last_run_at, Some(previous_run));
+
+        let updated = crate::session::manager::update_scheduled_task_text(
+            &db, original.id, "Read ECC native READY items",
+        )?;
+        assert_eq!(updated.id, original.id);
+        assert_eq!(updated.task, "Read ECC native READY items");
+        assert_eq!(updated.cron_expr, original.cron_expr);
+        assert_eq!(updated.next_run_at, original.next_run_at);
+        assert_eq!(updated.last_run_at, original.last_run_at);
+        assert_eq!(updated.agent_type, original.agent_type);
+        assert_eq!(updated.profile_name, original.profile_name);
+        assert_eq!(updated.working_dir, original.working_dir);
+        assert_eq!(updated.project, original.project);
+        assert_eq!(updated.task_group, original.task_group);
+        assert_eq!(updated.use_worktree, original.use_worktree);
+        assert_eq!(db.list_scheduled_tasks()?.len(), 1);
+        assert!(crate::session::manager::update_scheduled_task_text(&db, original.id, " ").is_err());
+        assert!(crate::session::manager::update_scheduled_task_text(&db, original.id, &"x".repeat(16385)).is_err());
+        assert!(crate::session::manager::update_scheduled_task_text(&db, original.id + 1, "valid task").is_err());
+        assert_eq!(db.list_scheduled_tasks()?.len(), 1);
         Ok(())
     }
 
@@ -7378,6 +7893,69 @@ mod tests {
         assert_eq!(texts.first().copied(), Some("line-5"));
         let expected_last_line = format!("line-{}", OUTPUT_BUFFER_LIMIT + 4);
         assert_eq!(texts.last().copied(), Some(expected_last_line.as_str()));
+
+        Ok(())
+    }
+
+    #[test]
+    fn output_cursor_reads_a_bounded_snapshot_then_only_new_rows() -> Result<()> {
+        let tempdir = TestDir::new("store-output-cursor")?;
+        let db = StateStore::open(&tempdir.path().join("state.db"))?;
+
+        db.insert_session(&build_session("session-1", SessionState::Running))?;
+        db.insert_session(&build_session("session-2", SessionState::Running))?;
+        db.append_output_line("session-1", OutputStream::Stdout, "one-a")?;
+        db.append_output_line("session-2", OutputStream::Stderr, "two-a")?;
+        db.append_output_line("session-1", OutputStream::Stdout, "one-b")?;
+        db.append_output_line("session-2", OutputStream::Stdout, "two-b")?;
+        db.append_output_line("session-1", OutputStream::Stdout, "one-c")?;
+
+        let snapshot = db.get_output_snapshot(2)?;
+        assert_eq!(snapshot.cursor, 5);
+        assert_eq!(
+            snapshot
+                .records
+                .iter()
+                .map(|record| (record.session_id.as_str(), record.line.text.as_str()))
+                .collect::<Vec<_>>(),
+            vec![
+                ("session-2", "two-a"),
+                ("session-1", "one-b"),
+                ("session-2", "two-b"),
+                ("session-1", "one-c"),
+            ]
+        );
+
+        db.append_output_line("session-2", OutputStream::Stderr, "two-c")?;
+        db.append_output_line("session-1", OutputStream::Stdout, "one-d")?;
+        let delta = db.get_output_since(snapshot.cursor, 1)?;
+        assert_eq!(delta.cursor, 6);
+        assert_eq!(delta.records.len(), 1);
+        assert_eq!(delta.records[0].session_id, "session-2");
+        assert_eq!(delta.records[0].line.text, "two-c");
+
+        let next = db.get_output_since(delta.cursor, 1)?;
+        assert_eq!(next.cursor, 7);
+        assert_eq!(next.records.len(), 1);
+        assert_eq!(next.records[0].session_id, "session-1");
+        assert_eq!(next.records[0].line.text, "one-d");
+
+        let empty = db.get_output_since(next.cursor, 1)?;
+        assert_eq!(empty.cursor, next.cursor);
+        assert!(empty.records.is_empty());
+
+        let query_plan = db
+            .conn
+            .prepare(
+                "EXPLAIN QUERY PLAN SELECT id FROM session_output WHERE id > ?1 ORDER BY id ASC",
+            )?
+            .query_map(rusqlite::params![snapshot.cursor], |row| {
+                row.get::<_, String>(3)
+            })?
+            .collect::<Result<Vec<_>, _>>()?;
+        assert!(query_plan
+            .iter()
+            .any(|detail| detail.contains("INTEGER PRIMARY KEY") && detail.contains("rowid>?")));
 
         Ok(())
     }

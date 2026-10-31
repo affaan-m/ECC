@@ -5,6 +5,8 @@ use serde::{Deserialize, Serialize};
 use tokio::sync::broadcast;
 
 pub const OUTPUT_BUFFER_LIMIT: usize = 1000;
+/// Maximum number of cross-process output rows applied during one dashboard refresh.
+pub const OUTPUT_DELTA_BATCH_LIMIT: usize = 4096;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum OutputStream {
@@ -111,16 +113,6 @@ impl SessionOutputStore {
             session_id: session_id.to_string(),
             line,
         });
-    }
-
-    pub fn replace_lines(&self, session_id: &str, lines: Vec<OutputLine>) {
-        let mut buffer: VecDeque<OutputLine> = lines.into_iter().collect();
-
-        while buffer.len() > self.capacity {
-            let _ = buffer.pop_front();
-        }
-
-        self.lock_buffers().insert(session_id.to_string(), buffer);
     }
 
     pub fn lines(&self, session_id: &str) -> Vec<OutputLine> {

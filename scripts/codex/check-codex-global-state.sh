@@ -81,7 +81,9 @@ require_file "$CONFIG_FILE" "Global config.toml"
 require_file "$AGENTS_FILE" "Global AGENTS.md"
 
 if [[ -f "$AGENTS_FILE" ]]; then
-  if search_file '^# Everything Claude Code \(ECC\)' "$AGENTS_FILE"; then
+  # Accept the current "# ECC" heading and the legacy expanded-name heading
+  # that older syncs wrote into existing ~/.codex/AGENTS.md files.
+  if search_file '^# (ECC|Everything Claude Code \(ECC\))( |$)' "$AGENTS_FILE"; then
     ok "AGENTS contains ECC root instructions"
   else
     fail "AGENTS missing ECC root instructions"
@@ -104,8 +106,10 @@ if [[ -f "$CONFIG_FILE" ]]; then
   else
     warn "persistent_instructions is not set (recommended but optional)"
   fi
-  check_config_pattern '^\[profiles\.strict\]' "profiles.strict exists"
-  check_config_pattern '^\[profiles\.yolo\]' "profiles.yolo exists"
+  require_file "$CODEX_HOME/strict.config.toml" "strict named profile"
+  require_file "$CODEX_HOME/yolo.config.toml" "yolo named profile"
+  check_config_absent '^[[:space:]]*\[profiles[.]' "legacy profile tables are absent (migrate to named .config.toml files)"
+  check_config_absent '^[[:space:]]*profile[[:space:]]*=' "legacy profile selector is absent"
 
   # Current default connector set (docs/MCP-CONNECTOR-POLICY.md): exactly
   # one connector. Former defaults (github, memory, sequential-thinking,

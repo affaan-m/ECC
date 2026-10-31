@@ -284,6 +284,11 @@ models()
 
 ## Related Skills
 
+- `tasteforge-video` — Offline taste distillation and modality planning. Its
+  endpoint candidates and request manifests are reference-only, not submitted
+  jobs or saved Fal workflows. A TasteForge handoff does not authorize upload
+  or generation; use a separately authorized provider workflow and verify its
+  current endpoint schema before executing.
 - `videodb` — Video processing, editing, and streaming
 - `video-editing` — AI-powered video editing workflows
 - `content-engine` — Content creation for social platforms

@@ -249,6 +249,9 @@ async function runTests() {
           ECC_MCP_CONFIG_PATH: null,
           ECC_MCP_HEALTH_STATE_PATH: null,
           ECC_MCP_HEALTH_TIMEOUT_MS: '100',
+          // Workspace configs are untrusted by default; this test uses a
+          // temp dir it created itself, so opt in explicitly.
+          ECC_MCP_ALLOW_WORKSPACE_PROBE: '1',
           HOME: homeDir,
           USERPROFILE: homeDir
         },
@@ -619,6 +622,7 @@ async function runTests() {
           CLAUDE_HOOK_EVENT_NAME: 'PreToolUse',
           ECC_MCP_CONFIG_PATH: configPath,
           ECC_MCP_HEALTH_STATE_PATH: statePath,
+          ECC_MCP_RECONNECT_ALLOW: '1',
           ECC_MCP_RECONNECT_COMMAND: `${JSON.stringify(process.execPath)} ${JSON.stringify(reconnectScript)}`,
           ECC_MCP_HEALTH_TIMEOUT_MS: '1000',
           ECC_MCP_HEALTH_BACKOFF_MS: '10'
@@ -682,6 +686,7 @@ async function runTests() {
           CLAUDE_HOOK_EVENT_NAME: 'PostToolUseFailure',
           ECC_MCP_CONFIG_PATH: configPath,
           ECC_MCP_HEALTH_STATE_PATH: statePath,
+          ECC_MCP_RECONNECT_ALLOW: '1',
           ECC_MCP_RECONNECT_COMMAND: `node ${JSON.stringify(reconnectScript)}`,
           ECC_MCP_HEALTH_TIMEOUT_MS: '1000'
         }
@@ -773,6 +778,7 @@ async function runTests() {
         {
           CLAUDE_HOOK_EVENT_NAME: 'PostToolUseFailure',
           ECC_MCP_HEALTH_STATE_PATH: statePath,
+          ECC_MCP_RECONNECT_ALLOW: '1',
           ECC_MCP_RECONNECT_COMMAND: `${JSON.stringify(process.execPath)} ${JSON.stringify(reconnectScript)}`
         }
       );
@@ -810,6 +816,7 @@ async function runTests() {
           CLAUDE_HOOK_EVENT_NAME: 'PostToolUseFailure',
           ECC_MCP_HEALTH_STATE_PATH: statePath,
           ECC_MCP_CONFIG_PATH: path.join(tempDir, 'missing.json'),
+          ECC_MCP_RECONNECT_ALLOW: '1',
           ECC_MCP_RECONNECT_COMMAND: null,
           ECC_MCP_RECONNECT_FOO_BAR: `${JSON.stringify(process.execPath)} ${JSON.stringify(reconnectScript)} ${JSON.stringify(markerFile)} {server}`
         }

@@ -132,7 +132,7 @@ async fn maybe_auto_dispatch(db: &StateStore, cfg: &Config) -> Result<usize> {
                 db,
                 cfg,
                 &cfg.default_agent,
-                true,
+                cfg.auto_create_worktrees,
                 cfg.max_parallel_sessions,
             )
         },
@@ -155,7 +155,7 @@ async fn coordinate_backlog_cycle(db: &StateStore, cfg: &Config) -> Result<()> {
                         db,
                         cfg,
                         &cfg.default_agent,
-                        true,
+                        cfg.auto_create_worktrees,
                         cfg.max_parallel_sessions,
                     )
                 },
@@ -170,7 +170,7 @@ async fn coordinate_backlog_cycle(db: &StateStore, cfg: &Config) -> Result<()> {
                         db,
                         cfg,
                         &cfg.default_agent,
-                        true,
+                        cfg.auto_create_worktrees,
                         cfg.max_parallel_sessions,
                     )
                 },
@@ -320,7 +320,7 @@ async fn maybe_auto_rebalance(db: &StateStore, cfg: &Config) -> Result<usize> {
                 db,
                 cfg,
                 &cfg.default_agent,
-                true,
+                cfg.auto_create_worktrees,
                 cfg.max_parallel_sessions,
             )
         },

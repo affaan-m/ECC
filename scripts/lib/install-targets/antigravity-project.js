@@ -12,9 +12,25 @@ const SUPPORTED_SOURCE_PREFIXES = ['rules', 'commands', 'agents', 'skills'];
 
 function supportsAntigravitySourcePath(sourceRelativePath) {
   const normalizedPath = normalizeRelativePath(sourceRelativePath);
+  if (normalizedPath.split('/').includes('..')) return false;
   return SUPPORTED_SOURCE_PREFIXES.some(prefix => (
     normalizedPath === prefix || normalizedPath.startsWith(`${prefix}/`)
   ));
+}
+
+// Rule packs live one level down (rules/common/, rules/python/, ...). The
+// top-level rules/README.md is installer documentation and stays inert.
+function isRulePackMarkdown(sourceRelativePath) {
+  const segments = normalizeRelativePath(sourceRelativePath).split('/');
+  return segments[0] === 'rules'
+    && segments.length >= 3
+    && /\.md$/i.test(segments[segments.length - 1]);
+}
+
+function withAntigravityRuleTrigger(operation) {
+  return isRulePackMarkdown(operation.sourceRelativePath)
+    ? { ...operation, contentTransform: 'antigravity-rule-frontmatter' }
+    : operation;
 }
 
 module.exports = createInstallTargetAdapter({
@@ -59,7 +75,7 @@ module.exports = createInstallTargetAdapter({
               repoRoot,
               sourceRelativePath: normalizedSourcePath,
               destinationDir: path.join(targetRoot, 'rules'),
-            });
+            }).map(withAntigravityRuleTrigger);
           }
 
           if (

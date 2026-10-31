@@ -2,7 +2,7 @@
 name: chief-of-staff
 description: メール、Slack、LINE、Messengerをトリアージするパーソナルコミュニケーションチーフオブスタッフ。メッセージを4つのティア（skip/info_only/meeting_info/action_required）に分類し、返信ドラフトを生成し、送信後のフォロースルーをフックで強制します。マルチチャネルコミュニケーションワークフローの管理時に使用します。
 tools: ["Read", "Grep", "Glob", "Bash", "Edit", "Write"]
-model: opus
+model: sonnet
 ---
 
 ## プロンプト防御ベースライン

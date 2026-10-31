@@ -18,6 +18,7 @@ $ARGUMENTS
 ## Delegation
 
 Apply the `context-budget` skill.
-- Pass through `--verbose` if the user supplied it.
-- Assume a 200K context window unless the user specified otherwise.
-- Return the skill's inventory, issue detection, and prioritized savings report without re-implementing the scan here.
+- Without an explicit audit request, return the harness's native live-context command and do not scan files or call tools.
+- Treat an explicit `--audit`, “audit installed components,” or equivalent unambiguous audit wording as opt-in. `--verbose` alone stays on the native live-context path.
+- Pass through `--audit` and `--verbose` only when the user supplied them.
+- Keep any explicit audit bounded to the scope and safety rules in the canonical skill.

@@ -410,7 +410,7 @@ function renderControlPaneHtml() {
   </div>
   <div id="app" hidden></div>
   <script>
-    const state = { query: '' };
+    const state = { query: '', shownQuery: '' };
     const $ = selector => document.querySelector(selector);
     const escapeHtml = value => String(value ?? '').replace(/[&<>"']/g, char => ({
       '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
@@ -434,6 +434,31 @@ function renderControlPaneHtml() {
       if (!target) return;
       target.hidden = true;
       target.textContent = '';
+    }
+
+    // The board keeps the last snapshot on screen, so a failed refresh has to
+    // say that the data is no longer live, and since when.
+    let loadedAt = null;
+    // Loads are numbered as they start and finish in any order. The board shows
+    // the newest data any load brought, and the error box the outcome of the
+    // newest load that has finished, so a load that finishes late can neither
+    // replace newer data nor overrule a newer outcome.
+    const SNAPSHOT_DEADLINE_MS = 10000;
+    const SNAPSHOT_POLL_INTERVAL_MS = 15000;
+    let snapshotsInFlight = 0;
+    let loadsStarted = 0;
+    let newestFinished = 0;
+    let shownLoad = 0;
+    let failure = null;
+    function showRefreshFailure(error) {
+      const since = loadedAt
+        ? ' The data below is from ' + loadedAt.toLocaleString() + '.'
+        : '';
+      showError('#app', 'Live refresh failed.' + since + '\\n' + formatError(error));
+    }
+    function showFailure() {
+      if (failure.live) showRefreshFailure(failure.error);
+      else showError('#app', failure.error);
     }
 
     async function readJsonResponse(response) {
@@ -471,18 +496,17 @@ function renderControlPaneHtml() {
         ['Unread', summary.unreadMessages],
         ['Tokens', fmt.format(summary.totalTokens || 0)],
       ];
-      $('#metrics').innerHTML = items.map(([label, value]) =>
+      return items.map(([label, value]) =>
         '<div class="metric"><span>' + escapeHtml(label) + '</span><strong>' + escapeHtml(value) + '</strong></div>'
       ).join('');
     }
 
     function renderSessions(sessions) {
       if (!sessions.length) {
-        $('#sessions').innerHTML = '<div class="empty">No ECC2 sessions found.</div>';
-        return;
+        return '<div class="empty">No ECC2 sessions found.</div>';
       }
 
-      $('#sessions').innerHTML = '<table><thead><tr><th>State</th><th>Session</th><th>Harness</th><th>Worktree</th><th>Updated</th></tr></thead><tbody>' +
+      return '<table><thead><tr><th>State</th><th>Session</th><th>Harness</th><th>Worktree</th><th>Updated</th></tr></thead><tbody>' +
         sessions.map(session => '<tr>' +
           '<td>' + statePill(session.state) + '</td>' +
           '<td><strong>' + escapeHtml(session.id) + '</strong><br><span class="subtle">' + escapeHtml(session.task) + '</span></td>' +
@@ -493,13 +517,13 @@ function renderControlPaneHtml() {
       '</tbody></table>';
     }
 
-    function renderWorkItems(workItems) {
+    function renderWorkItems(workItems, allowActions) {
       const summary = workItems || { totalCount: 0, openCount: 0, blockedCount: 0, doneCount: 0, kanban: {}, items: [] };
       const items = Array.isArray(summary.items) ? summary.items : [];
       const kanban = summary.kanban || {};
       const needsAssignment = Array.isArray(summary.needsAssignment) ? summary.needsAssignment : [];
       const assignment = summary.assignment || { agent: 0, human: 0, unassigned: 0 };
-      $('#work-item-count').textContent = summary.openCount + ' open / ' + summary.blockedCount + ' blocked'
+      const count = summary.openCount + ' open / ' + summary.blockedCount + ' blocked'
         + ' / ' + (assignment.agent || 0) + ' agent / ' + (assignment.human || 0) + ' human'
         + (needsAssignment.length ? ' / ' + needsAssignment.length + ' need owner' : '');
 
@@ -509,11 +533,10 @@ function renderControlPaneHtml() {
       ).join('') + '</div>';
 
       if (!items.length) {
-        $('#work-items').innerHTML = laneHtml + '<div class="empty">No agent work items found.</div>';
-        return;
+        return { count, html: laneHtml + '<div class="empty">No agent work items found.</div>' };
       }
 
-      $('#work-items').innerHTML = laneHtml + items.slice(0, 8).map(item => {
+      const html = laneHtml + items.slice(0, 8).map(item => {
         const branch = item.branch || (item.metadata && item.metadata.branch) || '';
         const mergeGate = item.mergeGate || (item.metadata && item.metadata.mergeGate) || '';
         const blocker = item.blocker || (item.metadata && item.metadata.blocker) || '';
@@ -526,7 +549,7 @@ function renderControlPaneHtml() {
         const moveButtons = ['ready', 'running', 'blocked', 'done'].map(lane =>
           '<button type="button" data-wi-action="move" data-wi-id="' + idAttr + '" data-wi-lane="' + lane + '">' + escapeHtml(lane) + '</button>'
         ).join('');
-        const controls = state.allowActions
+        const controls = allowActions
           ? '<div class="row">'
             + (assigneeKind === 'unassigned' ? '<button type="button" data-wi-action="claim" data-wi-id="' + idAttr + '">Claim</button>' : '')
             + moveButtons
@@ -542,6 +565,10 @@ function renderControlPaneHtml() {
         '</div>';
       }).join('');
 
+      return { count, html };
+    }
+
+    function bindWorkItemActions() {
       document.querySelectorAll('#work-items [data-wi-action]').forEach(button => {
         button.addEventListener('click', () => {
           const id = button.getAttribute('data-wi-id');
@@ -555,13 +582,12 @@ function renderControlPaneHtml() {
     }
 
     function renderKnowledge(knowledge) {
-      $('#knowledge-count').textContent = knowledge.entityCount + ' entities';
+      const count = knowledge.entityCount + ' entities';
       if (!knowledge.results.length) {
-        $('#knowledge').innerHTML = '<div class="empty">No recall results for this query.</div>';
-        return;
+        return { count, html: '<div class="empty">No recall results for this query.</div>' };
       }
 
-      $('#knowledge').innerHTML = knowledge.results.map(result => {
+      const html = knowledge.results.map(result => {
         const entity = result.entity;
         const obs = result.latestObservation;
         return '<div class="result">' +
@@ -572,16 +598,16 @@ function renderControlPaneHtml() {
           '<div class="subtle">terms: ' + escapeHtml((result.matchedTerms || []).join(', ') || '-') + '</div>' +
         '</div>';
       }).join('');
+      return { count, html };
     }
 
     function renderConnectors(connectors) {
-      $('#connector-count').textContent = connectors.length + ' configured';
+      const count = connectors.length + ' configured';
       if (!connectors.length) {
-        $('#connectors').innerHTML = '<div class="empty">No memory connectors configured.</div>';
-        return;
+        return { count, html: '<div class="empty">No memory connectors configured.</div>' };
       }
 
-      $('#connectors').innerHTML = connectors.map(connector => {
+      const html = connectors.map(connector => {
         const status = connector.syncedSources > 0 ? '<span class="pill good">synced</span>' : '<span class="pill warn">not synced</span>';
         return '<div class="connector">' +
           '<div class="row"><strong>' + escapeHtml(connector.name) + '</strong>' + status + '</div>' +
@@ -589,16 +615,20 @@ function renderControlPaneHtml() {
           '<div class="subtle">sources ' + escapeHtml(connector.syncedSources) + ' - last ' + escapeHtml(connector.lastSyncedAt || '-') + '</div>' +
         '</div>';
       }).join('');
+      return { count, html };
     }
 
     function renderActions(actions) {
-      $('#actions').innerHTML = actions.map(action => '<div class="action">' +
+      return actions.map(action => '<div class="action">' +
         '<div class="row"><strong>' + escapeHtml(action.label) + '</strong>' +
         (action.executable ? '<button data-action="' + escapeHtml(action.id) + '">Run</button>' : '<span class="pill">copy</span>') + '</div>' +
         '<div class="subtle">' + escapeHtml(action.description) + '</div>' +
         '<code>' + escapeHtml(action.commandLine) + '</code>' +
       '</div>').join('');
 
+    }
+
+    function bindActions() {
       document.querySelectorAll('[data-action]').forEach(button => {
         button.addEventListener('click', () => {
           runAction(button.dataset.action);
@@ -611,10 +641,12 @@ function renderControlPaneHtml() {
       output.textContent = 'Running ' + actionId + '...';
 
       try {
+        // An action runs for the query its card on the board was built for.
+        // After a failed load that is not always the query typed last.
         const response = await fetch('/api/actions/' + encodeURIComponent(actionId), {
           method: 'POST',
           headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ query: state.query })
+          body: JSON.stringify({ query: state.shownQuery })
         });
         const payload = await readJsonResponse(response);
         output.textContent = JSON.stringify(payload, null, 2);
@@ -624,25 +656,93 @@ function renderControlPaneHtml() {
       }
     }
 
-    async function load() {
-      const url = new URL('/api/snapshot', window.location.href);
-      if (state.query) url.searchParams.set('query', state.query);
-      const response = await fetch(url);
-      const snapshot = await readJsonResponse(response);
-      $('#query').value = snapshot.knowledge.query || state.query;
-      $('#db-path').textContent = snapshot.database.exists ? snapshot.dbPath : 'database missing';
-      state.allowActions = Boolean(snapshot.execution.allowActions);
-      $('#action-status').textContent = state.allowActions ? 'local allowlist' : 'read-only';
-      renderMetrics(snapshot.summary);
-      renderSessions(snapshot.sessions);
-      renderWorkItems(snapshot.workItems);
-      renderKnowledge(snapshot.knowledge);
-      renderConnectors(snapshot.connectors);
-      renderActions(snapshot.actions.map(action => ({
-        ...action,
-        executable: snapshot.execution.allowActions && action.executable
-      })));
+    async function load(live = false) {
+      const id = ++loadsStarted;
+      const query = state.query;
+      snapshotsInFlight++;
+      let snapshotTimer = null;
+      try {
+        const url = new URL('/api/snapshot', window.location.href);
+        if (query) url.searchParams.set('query', query);
+        const controller = new AbortController();
+        let rejectDeadline;
+        const deadline = new Promise((_resolve, reject) => { rejectDeadline = reject; });
+        snapshotTimer = setTimeout(() => {
+          // Reject first so the fixed timeout wins over an abort rejection.
+          rejectDeadline(new Error('Snapshot request timed out after 10 seconds.'));
+          controller.abort();
+        }, SNAPSHOT_DEADLINE_MS);
+        // Only fetch/body decoding races the deadline. Late abort-ignoring
+        // responses have no rendering or state side effects after losing.
+        const snapshot = await Promise.race([
+          (async () => {
+            const response = await fetch(url, { signal: controller.signal });
+            return readJsonResponse(response);
+          })(),
+          deadline
+        ]);
+        // A snapshot that cannot be shown fails its load like one that could
+        // not be fetched, and older data may still take the board.
+        if (id > shownLoad) {
+          render(snapshot, query);
+          shownLoad = id;
+        }
+      } catch (error) {
+        if (id < newestFinished) return;
+        newestFinished = id;
+        failure = { error, live };
+        showFailure();
+        return;
+      } finally {
+        if (snapshotTimer !== null) clearTimeout(snapshotTimer);
+        snapshotsInFlight--;
+      }
+      if (id < newestFinished) {
+        // A newer load failed first. This data is still the newest on the
+        // board, so the failure stays, dated by it.
+        if (failure && id === shownLoad) showFailure();
+        return;
+      }
+      newestFinished = id;
+      failure = null;
       clearError('#app');
+    }
+
+    function render(snapshot, query) {
+      // Prepare every fragment before changing the board. Malformed late
+      // sections must not leave new results with the prior action context.
+      const allowActions = Boolean(snapshot.execution.allowActions);
+      const workItems = renderWorkItems(snapshot.workItems, allowActions);
+      const knowledge = renderKnowledge(snapshot.knowledge);
+      const connectors = renderConnectors(snapshot.connectors);
+      const updates = [
+        ['#query', 'value', snapshot.knowledge.query ?? query],
+        ['#db-path', 'textContent', snapshot.database.exists ? snapshot.dbPath : 'database missing'],
+        ['#action-status', 'textContent', allowActions ? 'local allowlist' : 'read-only'],
+        ['#metrics', 'innerHTML', renderMetrics(snapshot.summary)],
+        ['#sessions', 'innerHTML', renderSessions(snapshot.sessions)],
+        ['#work-item-count', 'textContent', workItems.count],
+        ['#work-items', 'innerHTML', workItems.html],
+        ['#knowledge-count', 'textContent', knowledge.count],
+        ['#knowledge', 'innerHTML', knowledge.html],
+        ['#connector-count', 'textContent', connectors.count],
+        ['#connectors', 'innerHTML', connectors.html],
+        ['#actions', 'innerHTML', renderActions(snapshot.actions.map(action => ({
+          ...action,
+          executable: allowActions && action.executable
+        })))]
+      ].map(([selector, property, value]) => {
+        const target = $(selector);
+        if (!target) throw new Error('Missing control pane element: ' + selector);
+        return { target, property, value };
+      });
+      const completedAt = new Date();
+      updates.forEach(({ target, property, value }) => { target[property] = value; });
+      state.allowActions = allowActions;
+      state.shownQuery = query;
+      loadedAt = completedAt;
+      bindWorkItemActions();
+      bindActions();
     }
 
     $('#query-form').addEventListener('submit', event => {
@@ -679,11 +779,12 @@ function renderControlPaneHtml() {
         .catch(error => showError('#app', error));
     };
 
-    // Live board: refresh on a gentle interval; pause while a prompt/tab is hidden.
+    // Only automatic polls coalesce. Manual/query loads retain ordered overlap.
+    // Browser suspension may delay timers; this is not a wall-clock server SLA.
     setInterval(() => {
-      if (document.hidden) return;
-      load().catch(() => {});
-    }, 15000);
+      if (document.hidden || snapshotsInFlight > 0) return;
+      load(true).catch(error => showError('#app', error));
+    }, SNAPSHOT_POLL_INTERVAL_MS);
 
     load().catch(error => showError('#app', error));
   </script>

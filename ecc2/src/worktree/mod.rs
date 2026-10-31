@@ -2445,11 +2445,16 @@ mod tests {
         assert_eq!(url, "https://github.com/example/repo/pull/123");
 
         let remote_branch = Command::new("git")
+            .current_dir(&root)
             .arg("--git-dir")
             .arg(&remote)
             .args(["branch", "--list", "feat/pr-test"])
             .output()?;
-        assert!(remote_branch.status.success());
+        assert!(
+            remote_branch.status.success(),
+            "{}",
+            String::from_utf8_lossy(&remote_branch.stderr)
+        );
         assert_eq!(
             String::from_utf8_lossy(&remote_branch.stdout).trim(),
             "feat/pr-test"
@@ -2544,8 +2549,19 @@ mod tests {
             &["remote", "add", "origin", "git@github.com:example/ecc.git"],
         )?;
 
+        let linked_path = root.join("worker");
+        run_git(
+            &repo,
+            &[
+                "worktree",
+                "add",
+                "-b",
+                "ecc/worker-123",
+                linked_path.to_str().expect("utf8 path"),
+            ],
+        )?;
         let worktree = WorktreeInfo {
-            path: repo.clone(),
+            path: linked_path,
             branch: "ecc/worker-123".to_string(),
             base_branch: "main".to_string(),
         };

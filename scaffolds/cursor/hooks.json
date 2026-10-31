@@ -3,7 +3,7 @@
   "hooks": {
     "sessionStart": [
       {
-        "command": "node .cursor/scripts/hooks/cursor-session-env.js"
+        "command": "node .cursor/hooks/session-start.js"
       }
     ]
   }

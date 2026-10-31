@@ -13,7 +13,7 @@ const assert = require('assert');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const { execFileSync } = require('child_process');
+const { execFileSync, spawnSync } = require('child_process');
 
 const REPO_ROOT = path.join(__dirname, '..', '..');
 
@@ -107,6 +107,42 @@ function runTests() {
       assert.strictEqual(result.code, 0, `stderr: ${result.stderr}`);
       assert.ok(!result.stderr.includes('Cannot find module'), `stderr: ${result.stderr}`);
       assert.ok(result.stdout.includes('Usage:'));
+    })) passed++; else failed++;
+
+    if (test('session-start.js runs without js-yaml installed', () => {
+      // The SessionStart hook loads scripts/lib/project-detect.js, so a
+      // top-level require of an npm package there fails every session start.
+      const sandbox = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-session-start-'));
+      try {
+        const project = path.join(sandbox, 'project');
+        const home = path.join(sandbox, 'home');
+        const data = path.join(home, '.claude');
+        fs.mkdirSync(project, { recursive: true });
+        fs.mkdirSync(data, { recursive: true });
+        fs.writeFileSync(path.join(project, 'pubspec.yaml'), 'name: app\ndependencies:\n  flutter:\n    sdk: flutter\n');
+
+        // A NODE_PATH that exposes js-yaml would hide the missing dependency.
+        const { NODE_PATH: _nodePath, ...inheritedEnv } = process.env;
+        const env = { ...inheritedEnv, HOME: home, USERPROFILE: home, ECC_AGENT_DATA_HOME: data,
+          CLAUDE_CONFIG_DIR: data, CLAUDE_PROJECT_DIR: project, XDG_DATA_HOME: path.join(home, '.local', 'share'),
+          ECC_HOMUNCULUS_DIR: path.join(data, 'homunculus'), ECC_SESSION_START_CONTEXT: 'true',
+          ECC_SESSION_START_MAX_CHARS: '8000' };
+
+        const result = spawnSync(process.execPath, [path.join(pluginDir, 'scripts', 'hooks', 'session-start.js')], {
+          cwd: project,
+          env,
+          input: JSON.stringify({ hook_event_name: 'SessionStart', source: 'startup', session_id: 'no-deps', cwd: project }),
+          encoding: 'utf8',
+          timeout: 15000,
+        });
+        assert.ifError(result.error);
+        assert.strictEqual(result.status, 0, `stderr: ${result.stderr}`);
+        assert.ok(!result.stderr.includes('Cannot find module'), `stderr: ${result.stderr}`);
+        const context = JSON.parse(result.stdout).hookSpecificOutput.additionalContext;
+        assert.ok(context.includes('"languages":["dart"]'), `additionalContext: ${context}`);
+      } finally {
+        fs.rmSync(sandbox, { recursive: true, force: true });
+      }
     })) passed++; else failed++;
 
     if (test('install-plan.js --config gives an actionable error when ajv is genuinely missing', () => {

@@ -34,12 +34,13 @@ test('guide requires an installer with native Antigravity 2.0 support', () => {
 });
 
 test('guide uses the published 2.2 package without stale pre-release copy', () => {
+  const publishedVersion = '2.2.3';
   assert.ok(
-    guide.includes('npm view ecc-universal version'),
-    'Guide should let operators verify registry propagation before installation'
+    guide.includes(`npm view ecc-universal@${publishedVersion} version`),
+    'Guide should let operators verify the pinned package is available before installation'
   );
   assert.ok(
-    guide.includes('npx ecc-universal@2.2.0 install --profile minimal --target antigravity'),
+    guide.includes(`npx ecc-universal@${publishedVersion} install --profile minimal --target antigravity`),
     'Guide should provide the pinned published-package installation path'
   );
   assert.ok(

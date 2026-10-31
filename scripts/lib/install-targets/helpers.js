@@ -5,6 +5,58 @@ const {
   CLAUDE_HOOKS_CONFIG_PATH,
   getClaudeSettingsPath,
 } = require('../install/claude-settings');
+const { METADATA_FILENAME } = require('../hooks-config');
+
+// Memoized WSL detection (avoids repeated /proc/version reads)
+let _isWSL = null;
+function isWSL() {
+  if (_isWSL !== null) return _isWSL;
+  if (process.platform !== 'linux') {
+    _isWSL = false;
+    return false;
+  }
+  try {
+    _isWSL = fs.readFileSync('/proc/version', 'utf8').toLowerCase().includes('microsoft');
+  } catch {
+    _isWSL = false;
+  }
+  return _isWSL;
+}
+
+// Reset WSL detection memoization (for testing only)
+function resetWSLDetection() {
+  _isWSL = null;
+}
+
+// Set WSL detection for testing (for testing only)
+function setWSLForTesting(value) {
+  _isWSL = value;
+}
+
+// Windows path pattern: drive letter followed by :\ or :/
+const WINDOWS_PATH_PATTERN = /^[A-Za-z]:[\\/]/;
+
+// Compact WSL conversion snippet for inline resolvers embedded in commands and hooks.
+// Contains no backslash: on native Windows, Claude Code runs hooks as `bash.exe -c "<command>"`
+// and the extra argv/MSYS unescape layer collapses backslashes, which broke regex literals (#3746).
+// The backslash separator is built with String.fromCharCode(92) instead.
+const INLINE_WSL_CONVERSION = `try{if(o.platform()==='linux'){var v=f.readFileSync('/proc/version','utf8').toLowerCase();if(v.includes('microsoft')){var b=String.fromCharCode(92),m=d.match(/^([A-Za-z]):/);if(m&&(d.charAt(2)==='/'||d.charAt(2)===b)){var dl=m[1].toLowerCase();d='/mnt/'+dl+d.slice(2).split(b).join('/')}}}}catch(_){}`;
+
+/**
+ * Convert a Windows path to a WSL path.
+ * Example: "C:\Users\name" -> "/mnt/c/Users/name"
+ * Example: "D:/Projects" -> "/mnt/d/Projects"
+ * Returns the original path if it's not a Windows path or not on WSL.
+ */
+function convertWindowsPathToWSL(windowsPath) {
+  if (!isWSL()) return windowsPath;
+  if (typeof windowsPath !== 'string') return windowsPath;
+  const trimmed = windowsPath.trim();
+  if (!WINDOWS_PATH_PATTERN.test(trimmed)) return trimmed;
+  const driveLetter = trimmed[0].toLowerCase();
+  const rest = trimmed.slice(2).replace(/\\/g, '/');
+  return `/mnt/${driveLetter}${rest}`;
+}
 
 const PLATFORM_SOURCE_PATH_OWNERS = Object.freeze({
   '.claude-plugin': 'claude',
@@ -17,11 +69,22 @@ const PLATFORM_SOURCE_PATH_OWNERS = Object.freeze({
   '.joycode': 'joycode',
   '.opencode': 'opencode',
   '.openclaw': 'openclaw',
+  // Pi loads ECC through `pi install`, not install-apply, so `.pi` is
+  // foreign to every install target.
+  '.pi': 'pi',
   '.codebuddy': 'codebuddy',
   '.qwen': 'qwen',
   '.zed': 'zed',
   '.adal': 'adal',
 });
+
+// Source paths that home installs must never copy into a harness home
+// directory. `.agents` is ECC's repo-local skills/plugins staging area:
+// project targets such as kimi and antigravity consume it, but neither
+// Claude Code nor Codex reads a `.agents` directory under ~/.claude or
+// ~/.codex, so copying it there produces unread files that doctor flags as
+// drift and repair keeps restoring.
+const HOME_INSTALL_EXCLUDED_SOURCE_PATHS = Object.freeze(['.agents']);
 
 function normalizeRelativePath(relativePath) {
   return String(relativePath || '')
@@ -40,6 +103,14 @@ function isForeignPlatformPath(sourceRelativePath, adapterTarget) {
   }
 
   return false;
+}
+
+function isExcludedSourcePath(sourceRelativePath, excludedSourcePaths = []) {
+  const normalizedPath = normalizeRelativePath(sourceRelativePath);
+  return excludedSourcePaths.some(excluded => {
+    const prefix = normalizeRelativePath(excluded);
+    return prefix !== '' && (normalizedPath === prefix || normalizedPath.startsWith(`${prefix}/`));
+  });
 }
 
 function resolveBaseRoot(scope, input = {}) {
@@ -176,7 +247,9 @@ function planClaudeHooksOperations(adapter, module, input) {
   return [
     ...operations,
     ...fs.readdirSync(sourceHooksRoot, { withFileTypes: true })
-      .filter(entry => entry.name !== 'hooks.json')
+      // hooks.json is merged into settings.json above, and its metadata sidecar
+      // is consumed with it, so neither is scaffolded into the target hooks dir.
+      .filter(entry => entry.name !== 'hooks.json' && entry.name !== METADATA_FILENAME)
       .sort((left, right) => left.name.localeCompare(right.name))
       .map(entry => adapter.createScaffoldOperation(
         module.id,
@@ -348,6 +421,9 @@ function createInstallTargetAdapter(config) {
         strategy: adapter.determineStrategy(normalizedSourcePath),
       });
     },
+    excludesSourcePath(sourceRelativePath) {
+      return isExcludedSourcePath(sourceRelativePath, config.excludedSourcePaths);
+    },
     planOperations(input = {}) {
       if (typeof config.planOperations === 'function') {
         return config.planOperations(input, adapter);
@@ -357,7 +433,7 @@ function createInstallTargetAdapter(config) {
         return input.modules.flatMap(module => {
           const paths = Array.isArray(module.paths) ? module.paths : [];
           return paths
-            .filter(p => !isForeignPlatformPath(p, config.target))
+            .filter(p => !isForeignPlatformPath(p, config.target) && !adapter.excludesSourcePath(p))
             .map(sourceRelativePath => adapter.createScaffoldOperation(
               module.id,
               sourceRelativePath,
@@ -369,7 +445,7 @@ function createInstallTargetAdapter(config) {
       const module = input.module || {};
       const paths = Array.isArray(module.paths) ? module.paths : [];
       return paths
-        .filter(p => !isForeignPlatformPath(p, config.target))
+        .filter(p => !isForeignPlatformPath(p, config.target) && !adapter.excludesSourcePath(p))
         .map(sourceRelativePath => adapter.createScaffoldOperation(
           module.id,
           sourceRelativePath,
@@ -396,6 +472,8 @@ function createInstallTargetAdapter(config) {
 }
 
 module.exports = {
+  HOME_INSTALL_EXCLUDED_SOURCE_PATHS,
+  isExcludedSourcePath,
   buildValidationIssue,
   createFlatFileOperations,
   createFlatRuleOperations,
@@ -412,6 +490,12 @@ module.exports = {
   createNamespacedFlatRuleOperations,
   createRemappedOperation,
   isForeignPlatformPath,
+  listRelativeFiles,
   normalizeRelativePath,
   planClaudeHooksOperations,
+  isWSL,
+  resetWSLDetection,
+  setWSLForTesting,
+  convertWindowsPathToWSL,
+  INLINE_WSL_CONVERSION,
 };

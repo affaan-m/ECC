@@ -64,7 +64,7 @@ Blueprint 自动检测 git/gh 可用性。如果具备 git + GitHub CLI，它会
 
 ## 安装
 
-此技能随 Everything Claude Code 附带。安装 ECC 时无需单独安装。
+此技能随 ECC 附带。安装 ECC 时无需单独安装。
 
 ### 完整 ECC 安装
 
@@ -77,7 +77,7 @@ test -f skills/blueprint/SKILL.md
 后续更新时，请在更新前查看 ECC 的差异：
 
 ```bash
-cd /path/to/everything-claude-code
+cd /path/to/ECC
 git fetch origin main
 git log --oneline HEAD..origin/main       # review new commits before updating
 git checkout <reviewed-full-sha>          # pin to a specific reviewed commit

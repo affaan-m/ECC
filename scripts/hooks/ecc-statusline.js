@@ -40,14 +40,15 @@ function formatDuration(isoTimestamp) {
  * @param {number} remaining - Raw remaining percentage from Claude Code
  * @returns {string} Colored bar string
  */
-function buildContextBar(remaining) {
+function buildContextBar(remaining, glyphs) {
   if (remaining === null || remaining === undefined) return '';
 
   const usableRemaining = Math.max(0, ((remaining - AUTO_COMPACT_BUFFER_PCT) / (100 - AUTO_COMPACT_BUFFER_PCT)) * 100);
   const used = Math.max(0, Math.min(100, Math.round(100 - usableRemaining)));
 
   const filled = Math.floor(used / 10);
-  const bar = '\u2588'.repeat(filled) + '\u2591'.repeat(10 - filled);
+  const bar = (glyphs?.full || '\u2588').repeat(filled)
+    + (glyphs?.empty || '\u2591').repeat(10 - filled);
 
   if (used < 50) return ` \x1b[32m${bar} ${used}%\x1b[0m`;
   if (used < 65) return ` \x1b[33m${bar} ${used}%\x1b[0m`;
@@ -85,6 +86,78 @@ function readCurrentTask(sessionId) {
   }
 }
 
+function getEccVersion(plugins) {
+  const ecc = plugins.find(p => p.name === 'ecc');
+  if (ecc?.version) return ecc.version;
+  try {
+    return fs.readFileSync(path.join(__dirname, '..', '..', 'VERSION'), 'utf8').trim();
+  } catch {
+    return '';
+  }
+}
+
+function sessionDurationMs(cost, bridge) {
+  if (Number.isFinite(cost.total_duration_ms) && cost.total_duration_ms >= 0) {
+    return cost.total_duration_ms;
+  }
+  const elapsed = bridge?.first_timestamp
+    ? Date.now() - new Date(bridge.first_timestamp).getTime()
+    : 0;
+  return Number.isFinite(elapsed) && elapsed >= 0 ? elapsed : 0;
+}
+
+/**
+ * Assemble statusline output lines from Claude Code stdin data.
+ * @param {object} data - Parsed statusLine stdin JSON
+ * @param {object|null} bridge - Session bridge metrics or null
+ * @param {string} task - Current in-progress task
+ * @returns {string[]} Non-empty output lines
+ */
+function buildUsageLines(data, bridge, task) {
+  const render = require('../lib/statusline-render');
+  const remaining = data.context_window?.remaining_percentage;
+  const cost = data.cost || {};
+  const dirname = path.basename(data.workspace?.current_dir || process.cwd());
+
+  if (process.env.ECC_STATUSLINE_COMPACT === '1') {
+    const segments = [`\x1b[2m${data.model?.display_name || 'Claude'}\x1b[0m`];
+    if (task) segments.push(`\x1b[1;97m${task}\x1b[0m`);
+    const usage = render.buildUsageLine(data.rate_limits, null, { compact: true });
+    if (usage) segments.push(usage);
+    segments.push(`\x1b[2m${dirname}\x1b[0m`);
+    return [segments.join(render.SEP) + buildContextBar(remaining, render.G)];
+  }
+
+  const usageLine = render.buildUsageLine(
+    data.rate_limits,
+    render.computeCacheStats(data.context_window?.current_usage)
+  );
+
+  const durationMs = sessionDurationMs(cost, bridge);
+  const sessionLine = render.buildSessionLine({
+    model: data.model?.display_name,
+    effort: data.effort?.level,
+    fastMode: data.fast_mode === true,
+    ctxBar: buildContextBar(remaining, render.G),
+    ctxWindowSize: data.context_window?.context_window_size,
+    costUsd: cost.total_cost_usd ?? bridge?.total_cost_usd ?? 0,
+    linesAdded: cost.total_lines_added || 0,
+    linesRemoved: cost.total_lines_removed || 0,
+    durationMs,
+    task,
+  });
+
+  const plugins = render.readInstalledPlugins(undefined, data.workspace?.current_dir || process.cwd());
+  const eccLine = render.buildEccLine({
+    eccVersion: getEccVersion(plugins),
+    hooks: render.getHooksSummary(),
+    plugins,
+    dirname,
+  });
+
+  return [usageLine, sessionLine, eccLine].filter(Boolean);
+}
+
 function runStatusline() {
   let input = '';
   const stdinTimeout = setTimeout(() => process.exit(0), 3000);
@@ -118,6 +191,11 @@ function runStatusline() {
 
       // Current task
       const task = sessionId ? readCurrentTask(sessionId) : '';
+
+      if (process.env.ECC_STATUSLINE_USAGE === '1') {
+        process.stdout.write(buildUsageLines(data, bridge, task).join('\n'));
+        return;
+      }
 
       // Metrics from bridge
       let metricsStr = '';
@@ -163,6 +241,6 @@ function runStatusline() {
   });
 }
 
-module.exports = { formatDuration, buildContextBar, readCurrentTask, MAX_STDIN };
+module.exports = { formatDuration, buildContextBar, readCurrentTask, buildUsageLines, MAX_STDIN };
 
 if (require.main === module) runStatusline();

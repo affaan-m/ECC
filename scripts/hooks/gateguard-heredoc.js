@@ -3,16 +3,23 @@
 const { extractCommandSubstitutions } = require('../lib/shell-substitution');
 
 /**
- * Recognize the deliberately narrow passive sink supported by this parser.
- * Shell operators and substitutions make the payload's destination ambiguous,
- * so every other form retains the original input for fail-closed checks.
+ * Recognize proven-passive sinks whose heredoc payload is data, not a command
+ * stream. `cat` and `tee` (optionally path-qualified, or wrapped in
+ * `command`/`builtin`/`env`) only write stdin; they do not execute the body.
+ * Shell operators or substitution markers make the destination ambiguous, so
+ * every other form retains the original input for fail-closed checks.
  *
  * @param {string} line
  * @returns {boolean}
  */
 function isProvenPassiveHeredocLine(line) {
   const trimmed = line.trim();
-  return /^cat(?=\s|[<>])/.test(trimmed) && !/[;&|()`]/.test(trimmed);
+  // Fail closed on control operators / grouping / command substitutions.
+  if (/[;&|()`]/.test(trimmed)) return false;
+  // Optional wrapper + optional path prefix + cat|tee, then args or redirect.
+  return /^(?:(?:command|builtin|env)\s+)?(?:(?:\.\/|\/(?:[\w.+-]+\/)*)?(?:cat|tee))(?=\s|[<>])/.test(
+    trimmed
+  );
 }
 
 /**

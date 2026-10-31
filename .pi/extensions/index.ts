@@ -24,7 +24,7 @@
  *     degrades to a warning and never terminates the Pi session.
  */
 
-import { execFile } from "node:child_process"
+import { execFile, execFileSync } from "node:child_process"
 import * as fs from "node:fs"
 import * as os from "node:os"
 import * as path from "node:path"
@@ -141,6 +141,10 @@ const DISABLED_VALUES = new Set(["0", "false", "off", "none", "disabled"])
 /**
  * Optional Pi companion packages. ECC works without every one of these; they
  * are reported by `/ecc-doctor` so users can see which extras are available.
+ *
+ * These are capability names, not exact install specs. See
+ * `findInstalledCompanion` for how an entry is matched against what Pi has
+ * actually installed.
  */
 const COMPANION_PACKAGES = [
   "pi-subagents",
@@ -475,6 +479,41 @@ function normalizePiPackageName(entry: unknown): string | undefined {
   return versionAt > 0 ? spec.slice(0, versionAt) : spec
 }
 
+/**
+ * The installed package satisfying a companion entry, or undefined if none is.
+ *
+ * An exact name match is the ordinary case. An UNSCOPED companion entry is
+ * also satisfied by a scoped package with the same bare name --
+ * `@tintinweb/pi-subagents` satisfies `pi-subagents`. The subagents capability
+ * is published to npm by more than one maintainer under that same bare name,
+ * and a user running a scoped fork has the capability installed by any
+ * meaning of the word; reporting "not installed" at them while its tools are
+ * live in their session is a false negative, and the suggested
+ * `pi install npm:pi-subagents` would push them into installing a second
+ * extension that registers the same tool names.
+ *
+ * A SCOPED companion entry is matched exactly, because there the scope is
+ * part of the identity the entry names, not incidental packaging.
+ */
+function findInstalledCompanion(companion: string, installed: Set<string>): string | undefined {
+  if (installed.has(companion)) {
+    return companion
+  }
+
+  if (companion.startsWith("@")) {
+    return undefined
+  }
+
+  const scopedSuffix = `/${companion}`
+  for (const name of installed) {
+    if (name.startsWith("@") && name.endsWith(scopedSuffix)) {
+      return name
+    }
+  }
+
+  return undefined
+}
+
 function countDirectories(dir: string): number {
   try {
     return fs.readdirSync(dir, { withFileTypes: true }).filter(entry => entry.isDirectory()).length
@@ -517,11 +556,74 @@ function describeRulesStatus(): string {
   return `${cachedRuleFileCount}/${PORTABLE_RULE_FILES.length} rule file(s), ${rules.length} chars, from rules/common/${shortfall}`
 }
 
+const AGENT_CHECK_TIMEOUT_MS = 5_000
+
+type AgentPortability =
+  | { status: "validated"; count: number }
+  | { status: "failed"; reason: string }
+  | { status: "unvalidated"; reason: string }
+
+/**
+ * Verify agent portability by actually running `agent-convert.js --check` rather
+ * than trusting file existence. A converter that exists but fails (schema drift,
+ * a frontmatter variant that fails ajv) must not report a green doctor line.
+ */
+function validateAgentPortability(converterScript: string): AgentPortability {
+  if (!fs.existsSync(converterScript)) {
+    return { status: "unvalidated", reason: "converter script not found" }
+  }
+
+  let nodeExec: string
+  try {
+    nodeExec = resolveHookRuntime()
+  } catch (err) {
+    return { status: "unvalidated", reason: `no node runtime: ${messageOf(err)}` }
+  }
+
+  try {
+    const stdout = execFileSync(nodeExec, [converterScript, "--check"], {
+      timeout: AGENT_CHECK_TIMEOUT_MS,
+      encoding: "utf8",
+    })
+    const match = stdout.match(/OK: (\d+) agents parsed and validated/)
+    if (match) {
+      return { status: "validated", count: parseInt(match[1], 10) }
+    }
+    return { status: "failed", reason: `unexpected output: ${stdout.slice(0, 200).trim()}` }
+  } catch (err) {
+    return { status: "failed", reason: messageOf(err) }
+  }
+}
+
+function messageOf(err: unknown): string {
+  if (err && typeof err === "object" && "message" in err) {
+    return String((err as { message: unknown }).message)
+  }
+  return "unknown error"
+}
+
+function describeAgentPortability(agentCount: number, portability: AgentPortability): string {
+  if (agentCount === 0) {
+    return "NOT FOUND"
+  }
+  if (portability.status === "validated") {
+    return `${portability.count} agent(s) source schema validated; Pi conversion available via scripts/agent-convert.js`
+  }
+  if (portability.status === "failed") {
+    return `${agentCount} agent(s) present but validation FAILED: ${portability.reason}`
+  }
+  return `${agentCount} agent(s) present (unvalidated — ${portability.reason})`
+}
+
 function buildDoctorReport(ctx: ExtensionContext): string {
   const skillsDir = path.join(ECC_ROOT, "skills")
   const commandsDir = path.join(ECC_ROOT, "commands")
   const skillCount = countDirectories(skillsDir)
   const commandCount = countMarkdownFiles(commandsDir)
+  const agentsDir = path.join(ECC_ROOT, "agents")
+  const agentCount = countMarkdownFiles(agentsDir)
+  const converterScript = path.join(ECC_ROOT, "scripts", "agent-convert.js")
+  const agentLine = describeAgentPortability(agentCount, validateAgentPortability(converterScript))
 
   const lines = [
     "ECC adapter for Pi",
@@ -533,6 +635,7 @@ function buildDoctorReport(ctx: ExtensionContext): string {
     "Canonical resources",
     `  skills/        ${skillCount > 0 ? `${skillCount} skill(s)` : "NOT FOUND"} (${skillsDir})`,
     `  commands/      ${commandCount > 0 ? `${commandCount} command(s)` : "NOT FOUND"} (${commandsDir})`,
+    `  agents/        ${agentLine} (${agentsDir})`,
     "",
     "Engineering rules (injected into the system prompt)",
     `  ${describeRulesStatus()}`,
@@ -547,10 +650,12 @@ function buildDoctorReport(ctx: ExtensionContext): string {
 
   const installed = listInstalledPiPackages(ctx.cwd)
   for (const name of COMPANION_PACKAGES) {
-    const present = installed.has(name)
-    lines.push(`  ${present ? "installed    " : "not installed"}  ${name}`)
-    if (!present) {
+    const match = findInstalledCompanion(name, installed)
+    lines.push(`  ${match ? "installed    " : "not installed"}  ${name}`)
+    if (!match) {
       lines.push(`      install with: pi install npm:${name}`)
+    } else if (match !== name) {
+      lines.push(`      satisfied by: ${match}`)
     }
   }
 

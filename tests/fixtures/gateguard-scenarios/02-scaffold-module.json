@@ -1,0 +1,743 @@
+{
+  "name": "scaffold-module",
+  "description": "Scaffold of five components and three tests in fresh directories, then a second turn adding two more files.",
+  "files": {
+    "src/app.ts": "export function start(): void {}\n",
+    "package.json": "{ \"name\": \"widgets-app\" }\n"
+  },
+  "steps": [
+    {
+      "id": "write-button",
+      "transcript": [
+        {
+          "type": "user",
+          "uuid": "scaffold-module-001",
+          "sessionId": "sess-scaffold",
+          "isSidechain": false,
+          "promptId": "prompt-scaffold-1",
+          "message": {
+            "role": "user",
+            "content": "Scaffold a widgets module in src/widgets with button, card, modal, tabs and panel components, plus tests for the first three."
+          }
+        },
+        {
+          "type": "assistant",
+          "uuid": "scaffold-module-002",
+          "sessionId": "sess-scaffold",
+          "isSidechain": false,
+          "message": {
+            "id": "msg_scaffoldmodule_01",
+            "type": "message",
+            "role": "assistant",
+            "model": "claude-sonnet-4-5",
+            "content": [
+              {
+                "type": "tool_use",
+                "id": "toolu_scaffoldmodule_001",
+                "name": "Glob",
+                "input": {
+                  "pattern": "src/**/*.ts"
+                }
+              }
+            ]
+          }
+        },
+        {
+          "type": "user",
+          "uuid": "scaffold-module-003",
+          "sessionId": "sess-scaffold",
+          "isSidechain": false,
+          "promptId": "prompt-scaffold-1",
+          "message": {
+            "role": "user",
+            "content": [
+              {
+                "type": "tool_result",
+                "tool_use_id": "toolu_scaffoldmodule_001",
+                "content": "ok"
+              }
+            ]
+          }
+        },
+        {
+          "type": "assistant",
+          "uuid": "scaffold-module-004",
+          "sessionId": "sess-scaffold",
+          "isSidechain": false,
+          "message": {
+            "id": "msg_scaffoldmodule_02",
+            "type": "message",
+            "role": "assistant",
+            "model": "claude-sonnet-4-5",
+            "content": [
+              {
+                "type": "tool_use",
+                "id": "toolu_scaffoldmodule_002",
+                "name": "Read",
+                "input": {
+                  "file_path": "{{root}}/src/app.ts"
+                }
+              }
+            ]
+          }
+        },
+        {
+          "type": "user",
+          "uuid": "scaffold-module-005",
+          "sessionId": "sess-scaffold",
+          "isSidechain": false,
+          "promptId": "prompt-scaffold-1",
+          "message": {
+            "role": "user",
+            "content": [
+              {
+                "type": "tool_result",
+                "tool_use_id": "toolu_scaffoldmodule_002",
+                "content": "ok"
+              }
+            ]
+          }
+        },
+        {
+          "type": "assistant",
+          "uuid": "scaffold-module-006",
+          "sessionId": "sess-scaffold",
+          "isSidechain": false,
+          "message": {
+            "id": "msg_scaffoldmodule_03",
+            "type": "message",
+            "role": "assistant",
+            "model": "claude-sonnet-4-5",
+            "content": [
+              {
+                "type": "tool_use",
+                "id": "toolu_scaffoldmodule_003",
+                "name": "Write",
+                "input": {
+                  "file_path": "{{root}}/src/widgets/button.ts",
+                  "content": "export function Button(label: string) {\n  return { kind: 'button', label };\n}\n"
+                }
+              }
+            ]
+          }
+        }
+      ],
+      "payload": {
+        "session_id": "sess-scaffold",
+        "transcript_path": "{{transcript}}",
+        "cwd": "{{root}}",
+        "permission_mode": "default",
+        "hook_event_name": "PreToolUse",
+        "tool_name": "Write",
+        "tool_input": {
+          "file_path": "{{root}}/src/widgets/button.ts",
+          "content": "export function Button(label: string) {\n  return { kind: 'button', label };\n}\n"
+        },
+        "tool_use_id": "toolu_scaffoldmodule_003"
+      },
+      "expect": "deny",
+      "mustDeny": false,
+      "redundant": false,
+      "relevantQuestions": [
+        "callers",
+        "no-duplicate",
+        "quote-instruction"
+      ]
+    },
+    {
+      "id": "write-card",
+      "note": "Same-turn sibling in the gated directory.",
+      "transcript": [
+        {
+          "type": "user",
+          "uuid": "scaffold-module-007",
+          "sessionId": "sess-scaffold",
+          "isSidechain": false,
+          "promptId": "prompt-scaffold-1",
+          "message": {
+            "role": "user",
+            "content": [
+              {
+                "type": "tool_result",
+                "tool_use_id": "toolu_scaffoldmodule_003",
+                "content": "ok"
+              }
+            ]
+          }
+        },
+        {
+          "type": "assistant",
+          "uuid": "scaffold-module-008",
+          "sessionId": "sess-scaffold",
+          "isSidechain": false,
+          "message": {
+            "id": "msg_scaffoldmodule_04",
+            "type": "message",
+            "role": "assistant",
+            "model": "claude-sonnet-4-5",
+            "content": [
+              {
+                "type": "tool_use",
+                "id": "toolu_scaffoldmodule_004",
+                "name": "Write",
+                "input": {
+                  "file_path": "{{root}}/src/widgets/card.ts",
+                  "content": "export function Card(label: string) {\n  return { kind: 'card', label };\n}\n"
+                }
+              }
+            ]
+          }
+        }
+      ],
+      "payload": {
+        "session_id": "sess-scaffold",
+        "transcript_path": "{{transcript}}",
+        "cwd": "{{root}}",
+        "permission_mode": "default",
+        "hook_event_name": "PreToolUse",
+        "tool_name": "Write",
+        "tool_input": {
+          "file_path": "{{root}}/src/widgets/card.ts",
+          "content": "export function Card(label: string) {\n  return { kind: 'card', label };\n}\n"
+        },
+        "tool_use_id": "toolu_scaffoldmodule_004"
+      },
+      "expect": "allow",
+      "mustDeny": false,
+      "redundant": true,
+      "relevantQuestions": [
+        "callers",
+        "no-duplicate",
+        "quote-instruction"
+      ]
+    },
+    {
+      "id": "write-modal",
+      "note": "Same-turn sibling in the gated directory.",
+      "transcript": [
+        {
+          "type": "user",
+          "uuid": "scaffold-module-009",
+          "sessionId": "sess-scaffold",
+          "isSidechain": false,
+          "promptId": "prompt-scaffold-1",
+          "message": {
+            "role": "user",
+            "content": [
+              {
+                "type": "tool_result",
+                "tool_use_id": "toolu_scaffoldmodule_004",
+                "content": "ok"
+              }
+            ]
+          }
+        },
+        {
+          "type": "assistant",
+          "uuid": "scaffold-module-010",
+          "sessionId": "sess-scaffold",
+          "isSidechain": false,
+          "message": {
+            "id": "msg_scaffoldmodule_05",
+            "type": "message",
+            "role": "assistant",
+            "model": "claude-sonnet-4-5",
+            "content": [
+              {
+                "type": "tool_use",
+                "id": "toolu_scaffoldmodule_005",
+                "name": "Write",
+                "input": {
+                  "file_path": "{{root}}/src/widgets/modal.ts",
+                  "content": "export function Modal(label: string) {\n  return { kind: 'modal', label };\n}\n"
+                }
+              }
+            ]
+          }
+        }
+      ],
+      "payload": {
+        "session_id": "sess-scaffold",
+        "transcript_path": "{{transcript}}",
+        "cwd": "{{root}}",
+        "permission_mode": "default",
+        "hook_event_name": "PreToolUse",
+        "tool_name": "Write",
+        "tool_input": {
+          "file_path": "{{root}}/src/widgets/modal.ts",
+          "content": "export function Modal(label: string) {\n  return { kind: 'modal', label };\n}\n"
+        },
+        "tool_use_id": "toolu_scaffoldmodule_005"
+      },
+      "expect": "allow",
+      "mustDeny": false,
+      "redundant": true,
+      "relevantQuestions": [
+        "callers",
+        "no-duplicate",
+        "quote-instruction"
+      ]
+    },
+    {
+      "id": "write-tabs",
+      "note": "Same-turn sibling in the gated directory.",
+      "transcript": [
+        {
+          "type": "user",
+          "uuid": "scaffold-module-011",
+          "sessionId": "sess-scaffold",
+          "isSidechain": false,
+          "promptId": "prompt-scaffold-1",
+          "message": {
+            "role": "user",
+            "content": [
+              {
+                "type": "tool_result",
+                "tool_use_id": "toolu_scaffoldmodule_005",
+                "content": "ok"
+              }
+            ]
+          }
+        },
+        {
+          "type": "assistant",
+          "uuid": "scaffold-module-012",
+          "sessionId": "sess-scaffold",
+          "isSidechain": false,
+          "message": {
+            "id": "msg_scaffoldmodule_06",
+            "type": "message",
+            "role": "assistant",
+            "model": "claude-sonnet-4-5",
+            "content": [
+              {
+                "type": "tool_use",
+                "id": "toolu_scaffoldmodule_006",
+                "name": "Write",
+                "input": {
+                  "file_path": "{{root}}/src/widgets/tabs.ts",
+                  "content": "export function Tabs(label: string) {\n  return { kind: 'tabs', label };\n}\n"
+                }
+              }
+            ]
+          }
+        }
+      ],
+      "payload": {
+        "session_id": "sess-scaffold",
+        "transcript_path": "{{transcript}}",
+        "cwd": "{{root}}",
+        "permission_mode": "default",
+        "hook_event_name": "PreToolUse",
+        "tool_name": "Write",
+        "tool_input": {
+          "file_path": "{{root}}/src/widgets/tabs.ts",
+          "content": "export function Tabs(label: string) {\n  return { kind: 'tabs', label };\n}\n"
+        },
+        "tool_use_id": "toolu_scaffoldmodule_006"
+      },
+      "expect": "allow",
+      "mustDeny": false,
+      "redundant": true,
+      "relevantQuestions": [
+        "callers",
+        "no-duplicate",
+        "quote-instruction"
+      ]
+    },
+    {
+      "id": "write-panel",
+      "note": "Same-turn sibling in the gated directory.",
+      "transcript": [
+        {
+          "type": "user",
+          "uuid": "scaffold-module-013",
+          "sessionId": "sess-scaffold",
+          "isSidechain": false,
+          "promptId": "prompt-scaffold-1",
+          "message": {
+            "role": "user",
+            "content": [
+              {
+                "type": "tool_result",
+                "tool_use_id": "toolu_scaffoldmodule_006",
+                "content": "ok"
+              }
+            ]
+          }
+        },
+        {
+          "type": "assistant",
+          "uuid": "scaffold-module-014",
+          "sessionId": "sess-scaffold",
+          "isSidechain": false,
+          "message": {
+            "id": "msg_scaffoldmodule_07",
+            "type": "message",
+            "role": "assistant",
+            "model": "claude-sonnet-4-5",
+            "content": [
+              {
+                "type": "tool_use",
+                "id": "toolu_scaffoldmodule_007",
+                "name": "Write",
+                "input": {
+                  "file_path": "{{root}}/src/widgets/panel.ts",
+                  "content": "export function Panel(label: string) {\n  return { kind: 'panel', label };\n}\n"
+                }
+              }
+            ]
+          }
+        }
+      ],
+      "payload": {
+        "session_id": "sess-scaffold",
+        "transcript_path": "{{transcript}}",
+        "cwd": "{{root}}",
+        "permission_mode": "default",
+        "hook_event_name": "PreToolUse",
+        "tool_name": "Write",
+        "tool_input": {
+          "file_path": "{{root}}/src/widgets/panel.ts",
+          "content": "export function Panel(label: string) {\n  return { kind: 'panel', label };\n}\n"
+        },
+        "tool_use_id": "toolu_scaffoldmodule_007"
+      },
+      "expect": "allow",
+      "mustDeny": false,
+      "redundant": true,
+      "relevantQuestions": [
+        "callers",
+        "no-duplicate",
+        "quote-instruction"
+      ]
+    },
+    {
+      "id": "write-button-test",
+      "transcript": [
+        {
+          "type": "user",
+          "uuid": "scaffold-module-015",
+          "sessionId": "sess-scaffold",
+          "isSidechain": false,
+          "promptId": "prompt-scaffold-1",
+          "message": {
+            "role": "user",
+            "content": [
+              {
+                "type": "tool_result",
+                "tool_use_id": "toolu_scaffoldmodule_007",
+                "content": "ok"
+              }
+            ]
+          }
+        },
+        {
+          "type": "assistant",
+          "uuid": "scaffold-module-016",
+          "sessionId": "sess-scaffold",
+          "isSidechain": false,
+          "message": {
+            "id": "msg_scaffoldmodule_08",
+            "type": "message",
+            "role": "assistant",
+            "model": "claude-sonnet-4-5",
+            "content": [
+              {
+                "type": "tool_use",
+                "id": "toolu_scaffoldmodule_008",
+                "name": "Write",
+                "input": {
+                  "file_path": "{{root}}/tests/widgets/button.test.ts",
+                  "content": "import { Button } from '../../src/widgets/button';\n\ntest('button keeps its label', () => {\n  expect(Button('x').label).toBe('x');\n});\n"
+                }
+              }
+            ]
+          }
+        }
+      ],
+      "payload": {
+        "session_id": "sess-scaffold",
+        "transcript_path": "{{transcript}}",
+        "cwd": "{{root}}",
+        "permission_mode": "default",
+        "hook_event_name": "PreToolUse",
+        "tool_name": "Write",
+        "tool_input": {
+          "file_path": "{{root}}/tests/widgets/button.test.ts",
+          "content": "import { Button } from '../../src/widgets/button';\n\ntest('button keeps its label', () => {\n  expect(Button('x').label).toBe('x');\n});\n"
+        },
+        "tool_use_id": "toolu_scaffoldmodule_008"
+      },
+      "expect": "deny",
+      "mustDeny": false,
+      "redundant": false
+    },
+    {
+      "id": "write-card-test",
+      "transcript": [
+        {
+          "type": "user",
+          "uuid": "scaffold-module-017",
+          "sessionId": "sess-scaffold",
+          "isSidechain": false,
+          "promptId": "prompt-scaffold-1",
+          "message": {
+            "role": "user",
+            "content": [
+              {
+                "type": "tool_result",
+                "tool_use_id": "toolu_scaffoldmodule_008",
+                "content": "ok"
+              }
+            ]
+          }
+        },
+        {
+          "type": "assistant",
+          "uuid": "scaffold-module-018",
+          "sessionId": "sess-scaffold",
+          "isSidechain": false,
+          "message": {
+            "id": "msg_scaffoldmodule_09",
+            "type": "message",
+            "role": "assistant",
+            "model": "claude-sonnet-4-5",
+            "content": [
+              {
+                "type": "tool_use",
+                "id": "toolu_scaffoldmodule_009",
+                "name": "Write",
+                "input": {
+                  "file_path": "{{root}}/tests/widgets/card.test.ts",
+                  "content": "import { Card } from '../../src/widgets/card';\n\ntest('card keeps its label', () => {\n  expect(Card('x').label).toBe('x');\n});\n"
+                }
+              }
+            ]
+          }
+        }
+      ],
+      "payload": {
+        "session_id": "sess-scaffold",
+        "transcript_path": "{{transcript}}",
+        "cwd": "{{root}}",
+        "permission_mode": "default",
+        "hook_event_name": "PreToolUse",
+        "tool_name": "Write",
+        "tool_input": {
+          "file_path": "{{root}}/tests/widgets/card.test.ts",
+          "content": "import { Card } from '../../src/widgets/card';\n\ntest('card keeps its label', () => {\n  expect(Card('x').label).toBe('x');\n});\n"
+        },
+        "tool_use_id": "toolu_scaffoldmodule_009"
+      },
+      "expect": "allow",
+      "mustDeny": false,
+      "redundant": true
+    },
+    {
+      "id": "write-modal-test",
+      "transcript": [
+        {
+          "type": "user",
+          "uuid": "scaffold-module-019",
+          "sessionId": "sess-scaffold",
+          "isSidechain": false,
+          "promptId": "prompt-scaffold-1",
+          "message": {
+            "role": "user",
+            "content": [
+              {
+                "type": "tool_result",
+                "tool_use_id": "toolu_scaffoldmodule_009",
+                "content": "ok"
+              }
+            ]
+          }
+        },
+        {
+          "type": "assistant",
+          "uuid": "scaffold-module-020",
+          "sessionId": "sess-scaffold",
+          "isSidechain": false,
+          "message": {
+            "id": "msg_scaffoldmodule_10",
+            "type": "message",
+            "role": "assistant",
+            "model": "claude-sonnet-4-5",
+            "content": [
+              {
+                "type": "tool_use",
+                "id": "toolu_scaffoldmodule_010",
+                "name": "Write",
+                "input": {
+                  "file_path": "{{root}}/tests/widgets/modal.test.ts",
+                  "content": "import { Modal } from '../../src/widgets/modal';\n\ntest('modal keeps its label', () => {\n  expect(Modal('x').label).toBe('x');\n});\n"
+                }
+              }
+            ]
+          }
+        }
+      ],
+      "payload": {
+        "session_id": "sess-scaffold",
+        "transcript_path": "{{transcript}}",
+        "cwd": "{{root}}",
+        "permission_mode": "default",
+        "hook_event_name": "PreToolUse",
+        "tool_name": "Write",
+        "tool_input": {
+          "file_path": "{{root}}/tests/widgets/modal.test.ts",
+          "content": "import { Modal } from '../../src/widgets/modal';\n\ntest('modal keeps its label', () => {\n  expect(Modal('x').label).toBe('x');\n});\n"
+        },
+        "tool_use_id": "toolu_scaffoldmodule_010"
+      },
+      "expect": "allow",
+      "mustDeny": false,
+      "redundant": true
+    },
+    {
+      "id": "write-tooltip-next-turn",
+      "note": "A new turn reopens the directory gate.",
+      "transcript": [
+        {
+          "type": "user",
+          "uuid": "scaffold-module-021",
+          "sessionId": "sess-scaffold",
+          "isSidechain": false,
+          "promptId": "prompt-scaffold-1",
+          "message": {
+            "role": "user",
+            "content": [
+              {
+                "type": "tool_result",
+                "tool_use_id": "toolu_scaffoldmodule_010",
+                "content": "ok"
+              }
+            ]
+          }
+        },
+        {
+          "type": "user",
+          "uuid": "scaffold-module-022",
+          "sessionId": "sess-scaffold",
+          "isSidechain": false,
+          "promptId": "prompt-scaffold-2",
+          "message": {
+            "role": "user",
+            "content": "Now add a tooltip widget and a barrel file."
+          }
+        },
+        {
+          "type": "assistant",
+          "uuid": "scaffold-module-023",
+          "sessionId": "sess-scaffold",
+          "isSidechain": false,
+          "message": {
+            "id": "msg_scaffoldmodule_11",
+            "type": "message",
+            "role": "assistant",
+            "model": "claude-sonnet-4-5",
+            "content": [
+              {
+                "type": "tool_use",
+                "id": "toolu_scaffoldmodule_011",
+                "name": "Write",
+                "input": {
+                  "file_path": "{{root}}/src/widgets/tooltip.ts",
+                  "content": "export function Tooltip(label: string) {\n  return { kind: 'tooltip', label };\n}\n"
+                }
+              }
+            ]
+          }
+        }
+      ],
+      "payload": {
+        "session_id": "sess-scaffold",
+        "transcript_path": "{{transcript}}",
+        "cwd": "{{root}}",
+        "permission_mode": "default",
+        "hook_event_name": "PreToolUse",
+        "tool_name": "Write",
+        "tool_input": {
+          "file_path": "{{root}}/src/widgets/tooltip.ts",
+          "content": "export function Tooltip(label: string) {\n  return { kind: 'tooltip', label };\n}\n"
+        },
+        "tool_use_id": "toolu_scaffoldmodule_011"
+      },
+      "expect": "deny",
+      "mustDeny": false,
+      "redundant": false,
+      "relevantQuestions": [
+        "callers",
+        "no-duplicate",
+        "quote-instruction"
+      ]
+    },
+    {
+      "id": "write-barrel",
+      "transcript": [
+        {
+          "type": "user",
+          "uuid": "scaffold-module-024",
+          "sessionId": "sess-scaffold",
+          "isSidechain": false,
+          "promptId": "prompt-scaffold-2",
+          "message": {
+            "role": "user",
+            "content": [
+              {
+                "type": "tool_result",
+                "tool_use_id": "toolu_scaffoldmodule_011",
+                "content": "ok"
+              }
+            ]
+          }
+        },
+        {
+          "type": "assistant",
+          "uuid": "scaffold-module-025",
+          "sessionId": "sess-scaffold",
+          "isSidechain": false,
+          "message": {
+            "id": "msg_scaffoldmodule_12",
+            "type": "message",
+            "role": "assistant",
+            "model": "claude-sonnet-4-5",
+            "content": [
+              {
+                "type": "tool_use",
+                "id": "toolu_scaffoldmodule_012",
+                "name": "Write",
+                "input": {
+                  "file_path": "{{root}}/src/widgets/index.ts",
+                  "content": "export * from './button';\nexport * from './tooltip';\n"
+                }
+              }
+            ]
+          }
+        }
+      ],
+      "payload": {
+        "session_id": "sess-scaffold",
+        "transcript_path": "{{transcript}}",
+        "cwd": "{{root}}",
+        "permission_mode": "default",
+        "hook_event_name": "PreToolUse",
+        "tool_name": "Write",
+        "tool_input": {
+          "file_path": "{{root}}/src/widgets/index.ts",
+          "content": "export * from './button';\nexport * from './tooltip';\n"
+        },
+        "tool_use_id": "toolu_scaffoldmodule_012"
+      },
+      "expect": "allow",
+      "mustDeny": false,
+      "redundant": true,
+      "relevantQuestions": [
+        "callers",
+        "no-duplicate",
+        "quote-instruction"
+      ]
+    }
+  ]
+}
