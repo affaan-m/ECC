@@ -326,6 +326,49 @@ function runTests() {
     }), 'prohibition');
   })) passed++; else failed++;
 
+  if (test('instinctMatchKind forbids a name banned after a recommendation', () => {
+    const { instinctMatchKind } = loadStore();
+    const instinct = {
+      id: 'ban-both-widgets',
+      confidence: 0.91,
+      trigger: 'when rendering widgets',
+      content: 'Never use `fooWidget`, prefer `barWidget` and never use `bazWidget`',
+    };
+    assert.strictEqual(instinctMatchKind(instinct, {
+      file_path: '/src/view.js',
+      content: 'bazWidget()',
+    }), 'prohibition');
+    assert.strictEqual(instinctMatchKind(instinct, {
+      file_path: '/src/view.js',
+      content: 'fooWidget()',
+    }), 'prohibition');
+    assert.strictEqual(instinctMatchKind(instinct, {
+      file_path: '/src/view.js',
+      content: 'barWidget()',
+    }), 'guidance');
+  })) passed++; else failed++;
+
+  if (test('mergeProjectOverGlobal picks the copy SessionStart shows', () => {
+    withEnv({ ECC_INSTINCT_CONFIDENCE_THRESHOLD: undefined }, () => {
+      const { mergeProjectOverGlobal } = loadStore();
+      const copy = (source, confidence, scope) => ({
+        id: 'ban', confidence, _scopeLabel: scope, source,
+      });
+      const pick = (project, global) => mergeProjectOverGlobal(project, global)[0].source;
+
+      const personal = copy('personal', 0.95, 'global');
+      const inherited = copy('inherited', 0.75, 'global');
+      assert.strictEqual(pick([], [personal, inherited]), 'personal');
+      assert.strictEqual(pick([
+        copy('project-personal', 0.95, 'project'),
+        copy('project-inherited', 0.75, 'project'),
+      ], []), 'project-personal');
+      assert.strictEqual(pick([], [copy('low', 0.2, 'global'), personal]), 'personal');
+      assert.strictEqual(pick([copy('project', 0.75, 'project')], [personal]), 'project');
+      assert.strictEqual(pick([copy('low-project', 0.2, 'project')], [personal]), 'personal');
+    });
+  })) passed++; else failed++;
+
   if (test('getInstinctConfidenceThreshold rejects hex and exponent overrides', () => {
     withEnv({ ECC_INSTINCT_CONFIDENCE_THRESHOLD: undefined }, () => {
       const { getInstinctConfidenceThreshold, DEFAULT_INSTINCT_CONFIDENCE_THRESHOLD } = loadStore();

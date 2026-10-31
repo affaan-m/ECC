@@ -152,13 +152,17 @@ function readInstinctsFromDir(directory, scope, onWarn) {
   return instincts;
 }
 
+// Picks the same copy of an id as SessionStart: the first one at or above the
+// confidence threshold, project before global and personal before inherited.
 function mergeProjectOverGlobal(project, global) {
+  const threshold = getInstinctConfidenceThreshold();
   const merged = new Map();
-  for (const instinct of global) {
-    if (instinct && instinct.id) merged.set(instinct.id, instinct);
-  }
-  for (const instinct of project) {
-    if (instinct && instinct.id) merged.set(instinct.id, instinct);
+  for (const instinct of [...project, ...global]) {
+    if (!instinct || !instinct.id) continue;
+    const existing = merged.get(instinct.id);
+    if (!existing || (existing.confidence < threshold && instinct.confidence >= threshold)) {
+      merged.set(instinct.id, instinct);
+    }
   }
   return Array.from(merged.values());
 }
@@ -281,14 +285,24 @@ function maskQuotedSpans(text) {
 }
 
 // The forbidden part of a clause runs from its start through the prohibition
-// and stops at the first affirmative marker after it.
+// and stops at the first affirmative marker after it. A later prohibition
+// opens another forbidden part, so "never a, prefer b and never c" forbids
+// both a and c.
 function prohibitedPart(clause) {
   const masked = maskQuotedSpans(clause);
-  const marker = PROHIBITION_MARKER_RE.exec(masked);
-  if (!marker) return '';
-  const afterMarker = marker.index + marker[0].length;
-  const affirmative = AFFIRMATIVE_MARKER_RE.exec(masked.slice(afterMarker));
-  return affirmative ? clause.slice(0, afterMarker + affirmative.index) : clause;
+  const parts = [];
+  let start = 0;
+  while (start < clause.length) {
+    const marker = PROHIBITION_MARKER_RE.exec(masked.slice(start));
+    if (!marker) break;
+    const afterMarker = start + marker.index + marker[0].length;
+    const affirmative = AFFIRMATIVE_MARKER_RE.exec(masked.slice(afterMarker));
+    const end = affirmative ? afterMarker + affirmative.index : clause.length;
+    parts.push(clause.slice(parts.length === 0 ? 0 : start + marker.index, end));
+    if (!affirmative) break;
+    start = end + affirmative[0].length;
+  }
+  return parts.join(' ');
 }
 
 function extractProhibitedClauses(text) {
