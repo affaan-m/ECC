@@ -34,6 +34,7 @@ This document lists each slash command and the primary agent(s) or skills it inv
 | `/instinct-status` | — | continuous-learning-v2 |
 | `/instinct-import` | — | continuous-learning-v2 |
 | `/instinct-export` | — | continuous-learning-v2 |
+| `/instinct-enforce` | — | instinct-enforce, continuous-learning-v2 |
 | `/evolve` | — | continuous-learning-v2, cluster instincts |
 | `/promote` | — | continuous-learning-v2 |
 | `/projects` | — | continuous-learning-v2 |
@@ -69,7 +70,7 @@ This document lists each slash command and the primary agent(s) or skills it inv
 
 ## Skills referenced by commands
 
-- **continuous-learning**, **continuous-learning-v2**: `/learn`, `/learn-eval`, `/instinct-*`, `/evolve`, `/promote`, `/projects`
+- **continuous-learning**, **continuous-learning-v2**, **instinct-enforce**: `/learn`, `/learn-eval`, `/instinct-*`, `/evolve`, `/promote`, `/projects`
 - **verification-loop**: `/checkpoint`, `/verify`
 - **eval-harness**: `/eval`
 - **security-scan**: `/security-scan` (runs AgentShield)

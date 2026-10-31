@@ -86,6 +86,7 @@ skills:
   - healthcare-emr-patterns
   - healthcare-eval-harness
   - healthcare-phi-compliance
+  - instinct-enforce
   - inventory-demand-planning
   - investor-materials
   - investor-outreach
@@ -216,6 +217,7 @@ commands:
   - hookify-configure
   - hookify-help
   - hookify-list
+  - instinct-enforce
   - instinct-export
   - instinct-import
   - instinct-status

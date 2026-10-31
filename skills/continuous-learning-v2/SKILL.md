@@ -197,6 +197,7 @@ mkdir -p "${XDG_DATA_HOME:-$HOME/.local/share}/ecc-homunculus"/{instincts/{perso
 
 ```bash
 /instinct-status     # Show learned instincts (project + global)
+/instinct-enforce    # Dry-run PreToolUse matches for a sample tool payload
 /evolve              # Cluster related instincts into skills/commands
 /instinct-export     # Export instincts to file
 /instinct-import     # Import instincts from others
@@ -209,6 +210,7 @@ mkdir -p "${XDG_DATA_HOME:-$HOME/.local/share}/ecc-homunculus"/{instincts/{perso
 | Command | Description |
 |---------|-------------|
 | `/instinct-status` | Show all instincts (project-scoped + global) with confidence |
+| `/instinct-enforce` | Dry-run Write/Edit/MultiEdit/Bash payloads against high-confidence instincts |
 | `/evolve` | Cluster related instincts into skills/commands, suggest promotions |
 | `/instinct-export` | Export instincts (filterable by scope/domain) |
 | `/instinct-import <file>` | Import instincts with scope control |
@@ -368,6 +370,7 @@ v2.1 is fully compatible with v2.0 and v1:
 
 ## Related
 
+- `/instinct-enforce` and `skills/instinct-enforce` — PreToolUse re-check of the same store (default block floor 0.85)
 - [ECC-Tools GitHub App](https://github.com/apps/ecc-tools) - Generate instincts from repo history
 - Homunculus - Community project that inspired the v2 instinct-based architecture (atomic observations, confidence scoring, instinct evolution pipeline)
 - [The Longform Guide](https://x.com/affaanmustafa/status/2014040193557471352) - Continuous learning section
