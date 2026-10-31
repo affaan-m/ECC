@@ -565,8 +565,9 @@ test('opens regular text files without following a stable symlink', () => {
   const link = path.join(root, 'link.md');
   try {
     fs.writeFileSync(target, 'safe');
-    if (!trySymlink(target, link)) return;
+    // This reads only the target, so it must run even where the link is refused.
     assert.strictEqual(readRegularTextFile(target, { maxBytes: 16 }), 'safe');
+    if (!trySymlink(target, link)) return;
     assert.throws(
       () => readRegularTextFile(link, { maxBytes: 16 }),
       /non-symlink|symbolic link|symlink/i

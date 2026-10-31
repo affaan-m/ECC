@@ -119,13 +119,15 @@ test('CLI requires a nonempty local artifact and fails safely on invalid input',
     assert.equal(run(input).status, 1, 'empty artifact must fail');
     fs.writeFileSync(path.join(dir, 'render.png'), 'nonempty local artifact');
     fs.writeFileSync(path.join(external, 'render.png'), 'nonempty external artifact');
-    // Add the link-based cases only where the OS allows the link, so a refusal
-    // narrows this list instead of skipping the gate and input checks below.
-    const artifacts = ['.', 'https://example.com/render.png', path.join(dir, 'render.png'),
-      '../render.png', 'C:\\render.png'];
-    if (trySymlink(path.join(dir, 'render.png'), path.join(dir, 'linked.png'))) artifacts.push('linked.png');
-    if (trySymlink(path.join(external, 'render.png'), path.join(dir, 'outside'))) artifacts.push('outside');
-    if (trySymlink(external, path.join(dir, 'external-dir'), 'junction')) artifacts.push('external-dir/render.png');
+    // The link-based cases join the list only where the OS allows the link, so a
+    // refusal narrows this list instead of skipping the gate and input checks below.
+    const artifacts = [
+      '.', 'https://example.com/render.png', path.join(dir, 'render.png'),
+      '../render.png', 'C:\\render.png',
+      ...(trySymlink(path.join(dir, 'render.png'), path.join(dir, 'linked.png')) ? ['linked.png'] : []),
+      ...(trySymlink(path.join(external, 'render.png'), path.join(dir, 'outside')) ? ['outside'] : []),
+      ...(trySymlink(external, path.join(dir, 'external-dir'), 'junction') ? ['external-dir/render.png'] : []),
+    ];
     for (const artifact of artifacts) {
       fs.writeFileSync(input, JSON.stringify({ ...report(), renderedEvidence: [{ viewport: '390x844', artifact, observation: 'Checked.' }] }));
       assert.equal(run(input).status, 1, 'directories and remote artifacts must fail');
