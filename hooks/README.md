@@ -49,6 +49,7 @@ idempotent updates and safe uninstall. On Windows, the Claude config root is
 | Hook | Matcher | Behavior | Exit Code |
 |------|---------|----------|-----------|
 | **Dev server blocker** | `Bash` | Blocks `npm run dev` etc. outside tmux — ensures log access | 2 (blocks) |
+| **Hook-bypass blocker** | `Bash` | Blocks git hook bypasses (the skip-hooks commit flags, `core.hooksPath` overrides). Optional: add `block-no-verify` (>= 1.4.1) as a devDependency to your project to enable the package's extra checks; it is stricter and may block more commands. ECC resolves it from the project only, runs it after its own check, and ignores it if absent or failing. Set `ECC_BLOCK_NO_VERIFY_PACKAGE=off` to skip it. | 2 (blocks) |
 | **Tmux reminder** | `Bash` | Suggests tmux for long-running commands (npm test, cargo build, docker) | 0 (warns) |
 | **Git push reminder** | `Bash` | Reminds to review changes before `git push` | 0 (warns) |
 | **Pre-commit quality check** | `Bash` | Runs quality checks before `git commit`: lints staged files, validates commit message format when provided via `-m/--message`, detects console.log/debugger/secrets | 2 (blocks critical) / 0 (warns) |

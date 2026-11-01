@@ -16,6 +16,7 @@
 'use strict';
 
 const { createBudget, scanShell } = require('./lib/shell-scan');
+const { checkWithProjectPackage } = require('./lib/optional-block-no-verify-package');
 
 const MAX_STDIN = 1024 * 1024;
 let raw = '';
@@ -1216,7 +1217,8 @@ function extractCommand(rawInput) {
  */
 function run(rawInput) {
   const command = extractCommand(rawInput);
-  const result = checkCommand(command);
+  let result = checkCommand(command);
+  if (!result.blocked) result = checkWithProjectPackage(command, rawInput);
 
   if (result.blocked) {
     return {
@@ -1242,7 +1244,8 @@ if (require.main === module) {
 
   process.stdin.on('end', () => {
     const command = extractCommand(raw);
-    const result = checkCommand(command);
+    let result = checkCommand(command);
+    if (!result.blocked) result = checkWithProjectPackage(command, raw);
 
     if (result.blocked) {
       process.stderr.write(result.reason + '\n');

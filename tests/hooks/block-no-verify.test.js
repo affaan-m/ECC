@@ -598,6 +598,7 @@ function countedClassification(command, quota) {
     },
   };
   load(path.join(hooks, 'block-no-verify.js'), hookModule, name => {
+    if (name === './lib/optional-block-no-verify-package') return { checkWithProjectPackage: () => ({ blocked: false }) };
     assert.strictEqual(name, './lib/shell-scan');
     return instrumentedLexer;
   });
