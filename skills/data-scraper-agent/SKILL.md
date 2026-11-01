@@ -693,7 +693,7 @@ soup = BeautifulSoup(html, "lxml")
 
 ### Pattern 6: JS-Rendered Pages (Firecrawl, optional)
 
-An alternative to Pattern 5 when you'd rather not install Chromium in the Actions runner. Set `FIRECRAWL_API_KEY` in `.env` locally. In GitHub Actions, add the repository secret and map `FIRECRAWL_API_KEY: ${{ secrets.FIRECRAWL_API_KEY }}` under the Run agent step's `env`.
+An alternative to Pattern 5 when you'd rather not install Chromium in the Actions runner. Set `FIRECRAWL_API_KEY` in `.env` locally. In GitHub Actions, add the repository secret and map `FIRECRAWL_API_KEY: ${{ secrets.FIRECRAWL_API_KEY }}` under the Run agent step's `env`. Send Firecrawl public pages only. URLs with embedded credentials, tokens or signed query parameters, or a private-network host stay on `requests` or Pattern 5.
 
 ```python
 import os

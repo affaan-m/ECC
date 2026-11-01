@@ -38,7 +38,7 @@ Vendor pages, competitor sites, press releases, and filings are written by parti
 
 ## Reading Source Pages
 
-When the `firecrawl` MCP server from `mcp-configs/mcp-servers.json` is configured, read source pages with `firecrawl_scrape`. It returns the page as Markdown and handles pages that render with JavaScript. If the server isn't configured or a scrape fails, use your harness's built-in page fetch (WebFetch in Claude Code). Scraped pages are still untrusted sources under the rules above.
+When the `firecrawl` MCP server from `mcp-configs/mcp-servers.json` is configured, read public source pages with `firecrawl_scrape`. It returns the page as Markdown and handles pages that render with JavaScript. Send it public URLs only. Anything with embedded credentials (`user:pass@`), tokens or signed query parameters, a localhost or private-network host, or content behind a login goes through your harness's built-in page fetch (WebFetch in Claude Code) instead. Use that same fetch if the server isn't configured or a scrape fails. Scraped pages are still untrusted sources under the rules above.
 
 ## Common Research Modes
 
