@@ -63,6 +63,11 @@
       "args": ["mcp-server"],
       "description": "Lossless Claude Code session history — indexes raw tool calls, file edits, and thinking blocks from ~/.claude/projects/*.jsonl into local SQLite + ChromaDB before Claude Code rotates them. Complements memory/omega-memory (synthesized) with verbatim recall. Install: pip install longhand && longhand setup"
     },
+    "deja-vu": {
+      "command": "npx",
+      "args": ["-y", "@vshulcz/deja-vu", "mcp"],
+      "description": "Opt-in recall over the session transcripts Claude Code, Codex, Cursor, OpenCode and other agents already keep on disk, including sessions from before install. One deja tool (recall, fix, blame, context). Local index, no LLM, no embeddings, no API key. Not enabled by default."
+    },
     "sequential-thinking": {
       "command": "npx",
       "args": ["-y", "@modelcontextprotocol/server-sequential-thinking"],
