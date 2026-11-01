@@ -1951,6 +1951,33 @@ async function main() {
         "the cache should return the same body on subsequent lookups"
       )
     }],
+
+    ["command body cache returns the first body after the backing file changes", () => {
+      const root = fs.mkdtempSync(path.join(os.tmpdir(), "ecc-pi-cache-"))
+      const commandsDir = path.join(root, "commands")
+      fs.mkdirSync(commandsDir, { recursive: true })
+      const planPath = path.join(commandsDir, "plan.md")
+      fs.writeFileSync(planPath, "---\ndescription: plan\n---\nfirst body\n")
+
+      try {
+        const readBody = createCommandBodyReader(root)
+        assert.strictEqual(readBody("plan"), "first body")
+
+        fs.writeFileSync(planPath, "---\ndescription: plan\n---\nsecond body\n")
+        assert.strictEqual(
+          loadPlaceholderlessCommand("plan", root),
+          "second body",
+          "the backing command file must actually change for the cache assertion to be meaningful"
+        )
+        assert.strictEqual(
+          readBody("plan"),
+          "first body",
+          "the cached body must be immutable even after the backing command file changes"
+        )
+      } finally {
+        fs.rmSync(root, { recursive: true, force: true })
+      }
+    }],
   ]
 
   for (const [name, fn] of tests) {
