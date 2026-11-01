@@ -1,7 +1,7 @@
 ---
 name: security-review
 description: >
-  Use this skill when adding authentication, handling user input, working with secrets, creating API endpoints, or implementing payment/sensitive features. Provides comprehensive security checklist and patterns.
+  Security review checklist and patterns for adding authentication, handling user input, managing secrets, creating API endpoints, or implementing payment and sensitive features.
 metadata:
   origin: ECC
 ---
