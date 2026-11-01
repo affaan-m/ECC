@@ -29,6 +29,7 @@ import * as fs from "node:fs"
 import * as os from "node:os"
 import * as path from "node:path"
 import { resolveHookRuntime } from "./hook-runtime.js"
+import { handlePiInput } from "./input-args.js"
 
 /**
  * Minimal structural types mirroring `@earendil-works/pi-coding-agent`.
@@ -680,50 +681,16 @@ function buildDoctorReport(ctx: ExtensionContext): string {
   return lines.join("\n")
 }
 
-/** Same placeholder set Pi's prompt-template substitution understands. */
-const ARG_PLACEHOLDER = /\$ARGUMENTS|\$@|\$\d|\$\{@/
-
 const commandBodyCache = new Map<string, string | null>()
-
-/**
- * Body of an ECC command that has NO argument placeholder, or null.
- *
- * Claude Code appends `ARGUMENTS: <args>` when a command lacks `$ARGUMENTS`;
- * Pi's template expansion silently drops the arguments instead. Most ECC
- * commands rely on the Claude behaviour, so the adapter restores it.
- */
-function loadPlaceholderlessCommand(name: string): string | null {
-  if (commandBodyCache.has(name)) {
-    return commandBodyCache.get(name) ?? null
-  }
-  let body: string | null = null
-  if (/^[A-Za-z0-9._-]+$/.test(name)) {
-    try {
-      const raw = fs.readFileSync(path.join(ECC_ROOT, "commands", `${name}.md`), "utf8")
-      const stripped = raw.replace(/^\uFEFF?---\r?\n[\s\S]*?\r?\n---\r?\n?/, "").trim()
-      body = ARG_PLACEHOLDER.test(stripped) ? null : stripped
-    } catch {
-      body = null
-    }
-  }
-  commandBodyCache.set(name, body)
-  return body
-}
 
 export default function (pi: ExtensionAPI): void {
   pi.on("input", event => {
-    if (isDisabledByEnv(process.env.ECC_PI_COMMAND_ARGS)) {
-      return { action: "continue" }
-    }
-    const match = event.text.match(/^\/([^\s:]+)\s+([\s\S]*\S[\s\S]*)$/)
-    if (!match) {
-      return { action: "continue" }
-    }
-    const body = loadPlaceholderlessCommand(match[1])
-    if (!body) {
-      return { action: "continue" }
-    }
-    return { action: "transform", text: `${body}\n\nARGUMENTS: ${match[2].trim()}` }
+    return handlePiInput({
+      text: event.text,
+      eccRoot: ECC_ROOT,
+      env: process.env,
+      cache: commandBodyCache,
+    })
   })
 
   /**

@@ -48,6 +48,9 @@ const { spawnSync, execFile } = require("child_process")
 const { resolveHookRuntime } = require(
   path.join(__dirname, "..", "..", ".pi", "extensions", "hook-runtime.js")
 )
+const { handlePiInput } = require(
+  path.join(__dirname, "..", "..", ".pi", "extensions", "input-args.js")
+)
 
 /** Run a single adapter test and report the result. */
 async function runTest(name, fn) {
@@ -352,6 +355,8 @@ async function main() {
   const repoRoot = path.join(__dirname, "..", "..")
   const extensionPath = path.join(repoRoot, ".pi", "extensions", "index.ts")
   const extensionSource = fs.readFileSync(extensionPath, "utf8")
+  const inputArgsPath = path.join(repoRoot, ".pi", "extensions", "input-args.js")
+  const inputArgsSource = fs.readFileSync(inputArgsPath, "utf8")
 
   const tests = [
     // ---- Group 1: source contract -------------------------------------
@@ -1666,7 +1671,7 @@ async function main() {
       )
     }],
 
-    ["registers the Pi input event and restores placeholder-less command arguments", () => {
+    ["registers the Pi input event and delegates to the testable input-args module", () => {
       assert.ok(
         extensionSource.includes('pi.on("input"'),
         "expected .pi/extensions/index.ts to register an input handler via pi.on(...); " +
@@ -1674,72 +1679,108 @@ async function main() {
           "place ECC can restore the ARGUMENTS payload Pi otherwise drops"
       )
       assert.ok(
-        extensionSource.includes("ECC_PI_COMMAND_ARGS"),
-        "expected .pi/extensions/index.ts to honor an ECC_PI_COMMAND_ARGS opt-out for " +
+        extensionSource.includes("handlePiInput") &&
+          extensionSource.includes('from "./input-args.js"'),
+        "expected .pi/extensions/index.ts to delegate the input handler to input-args.js " +
+          "so tests can load and exercise the real handler rather than a copy"
+      )
+      assert.ok(
+        inputArgsSource.includes("ECC_PI_COMMAND_ARGS"),
+        "expected input-args.js to honor an ECC_PI_COMMAND_ARGS opt-out for " +
           "argument restoration; an irreversible transform would make the workaround mandatory"
       )
       assert.ok(
-        extensionSource.includes('action: "transform"') &&
-          extensionSource.includes('action: "continue"'),
+        inputArgsSource.includes('action: "transform"') &&
+          inputArgsSource.includes('action: "continue"'),
         "expected the input handler to return Pi's action result shape, either " +
           "transform (replace the command with its body plus ARGUMENTS) or continue " +
           "(leave Pi's normal expansion untouched)"
       )
       assert.ok(
-        extensionSource.includes("ARG_PLACEHOLDER = /\\$ARGUMENTS|\\$@|\\$\\d|\\$\\{@/"),
+        inputArgsSource.includes("ARG_PLACEHOLDER = /\\$ARGUMENTS|\\$@|\\$\\d|\\$\\{@/"),
         "expected the placeholder test to recognize $ARGUMENTS, $@, positional $N, and ${@}; " +
           "missing any one of Pi's supported placeholders would transform commands Pi already expands"
       )
       assert.ok(
-        extensionSource.includes('path.join(ECC_ROOT, "commands"') &&
-          extensionSource.includes("${name}.md"),
-        "expected the adapter to read the canonical commands/ directory relative to ECC_ROOT; " +
+        inputArgsSource.includes('path.join(eccRoot, "commands"') &&
+          inputArgsSource.includes("${name}.md"),
+        "expected input-args.js to read the canonical commands/ directory relative to eccRoot; " +
           "reading from cwd would break global installs exactly like the original hook-root defect"
       )
       assert.ok(
-        extensionSource.includes("commandBodyCache"),
+        inputArgsSource.includes("cache.set(name, body)"),
         "expected the placeholder-less command lookup to cache command bodies; the input " +
           "handler runs on every prompt and should not re-read command markdown every time"
       )
     }],
 
-    ["placeholder-less command transformation (behavioral mirror): /plan args appends ARGUMENTS, /sessions stays untouched", () => {
-      const placeholder = /\$ARGUMENTS|\$@|\$\d|\$\{@/
+    ["input handler transforms /plan args using the real command body", () => {
       const stripFrontmatter = raw => raw.replace(/^\uFEFF?---\r?\n[\s\S]*?\r?\n---\r?\n?/, "").trim()
-
       const planRaw = fs.readFileSync(path.join(repoRoot, "commands", "plan.md"), "utf8")
       const planBody = stripFrontmatter(planRaw)
       assert.ok(
-        planBody && !placeholder.test(planBody),
+        planBody && !/\$ARGUMENTS|\$@|\$\d|\$\{@/.test(planBody),
         "commands/plan.md must be placeholder-less in this repo for the test to be meaningful; " +
           "if it gains a placeholder the transformation should no longer apply"
       )
 
-      const input = "/plan add a hello world CLI"
-      const args = "add a hello world CLI"
+      const result = handlePiInput({
+        text: "/plan add a hello world CLI",
+        eccRoot: repoRoot,
+        env: {},
+        cache: new Map(),
+      })
+
+      assert.strictEqual(result.action, "transform")
       assert.ok(
-        /^\/([^\s:]+)\s+([\s\S]*\S[\s\S]*)$/.test(input),
-        "the command-with-arguments shape should match the handler regex"
-      )
-      const transformed = `${planBody}\n\nARGUMENTS: ${args}`
-      assert.ok(
-        transformed.includes("ARGUMENTS: add a hello world CLI"),
+        result.text.includes("ARGUMENTS: add a hello world CLI"),
         "transforming a placeholder-less command should append ARGUMENTS with the user text"
       )
       assert.ok(
-        transformed.startsWith("# Plan Command"),
-        "the transformed input should be the command body itself, not the slash command name"
+        result.text.startsWith(planBody.split("\n")[0]),
+        "the transformed input should start with the real command body, not the slash command name"
+      )
+    }],
+
+    ["input handler passes /sessions through because the command has a placeholder", () => {
+      const stripFrontmatter = raw => raw.replace(/^\uFEFF?---\r?\n[\s\S]*?\r?\n---\r?\n?/, "").trim()
+      const sessionsRaw = fs.readFileSync(path.join(repoRoot, "commands", "sessions.md"), "utf8")
+      assert.ok(
+        /\$ARGUMENTS|\$@|\$\d|\$\{@/.test(stripFrontmatter(sessionsRaw)),
+        "commands/sessions.md must contain a placeholder in this repo for the pass-through test to be meaningful"
       )
 
-      const sessionsRaw = fs.readFileSync(path.join(repoRoot, "commands", "sessions.md"), "utf8")
-      const sessionsBody = stripFrontmatter(sessionsRaw)
-      assert.ok(
-        placeholder.test(sessionsBody),
-        "commands/sessions.md must contain a placeholder in this repo for the test to be meaningful"
+      assert.deepStrictEqual(
+        handlePiInput({
+          text: "/sessions recent",
+          eccRoot: repoRoot,
+          env: {},
+          cache: new Map(),
+        }),
+        { action: "continue" }
       )
-      assert.ok(
-        placeholder.test(sessionsBody),
-        "a command with $ARGUMENTS/$@/$N/${@} must fall through to Pi unchanged"
+    }],
+
+    ["input handler passes through bare and unknown commands", () => {
+      assert.deepStrictEqual(
+        handlePiInput({ text: "just a normal prompt", eccRoot: repoRoot, env: {}, cache: new Map() }),
+        { action: "continue" }
+      )
+      assert.deepStrictEqual(
+        handlePiInput({ text: "/not-a-real-ecc-command args", eccRoot: repoRoot, env: {}, cache: new Map() }),
+        { action: "continue" }
+      )
+    }],
+
+    ["input handler honors ECC_PI_COMMAND_ARGS=off", () => {
+      assert.deepStrictEqual(
+        handlePiInput({
+          text: "/plan add a hello world CLI",
+          eccRoot: repoRoot,
+          env: { ECC_PI_COMMAND_ARGS: "off" },
+          cache: new Map(),
+        }),
+        { action: "continue" }
       )
     }],
   ]
