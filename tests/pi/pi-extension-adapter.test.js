@@ -1741,6 +1741,12 @@ async function main() {
         "expected the command body cache to replace the old Map rather than mutate it; " +
           "ECC's immutability rule forbids mutating an existing cache object"
       )
+      assert.ok(
+        inputArgsSource.includes("console.warn") &&
+          inputArgsSource.includes("unable to read command"),
+        "expected input-args.js to report failed command reads instead of swallowing them; " +
+          "AGENTS.md requires errors to be surfaced even when the adapter keeps its fallback"
+      )
     }],
 
     ["registered input handler guard skips extension, steer, and missing getCommands", () => {
@@ -1901,6 +1907,37 @@ async function main() {
           "a body without placeholders should be returned for argument restoration"
         )
       } finally {
+        fs.rmSync(root, { recursive: true, force: true })
+      }
+    }],
+
+    ["command reader reports failed reads while keeping its null fallback", () => {
+      const root = fs.mkdtempSync(path.join(os.tmpdir(), "ecc-pi-readerr-"))
+      const commandsDir = path.join(root, "commands")
+      fs.mkdirSync(commandsDir, { recursive: true })
+
+      const warnings = []
+      const originalWarn = console.warn
+      console.warn = (...args) => {
+        warnings.push(args.join(" "))
+      }
+
+      try {
+        assert.strictEqual(
+          loadPlaceholderlessCommand("unreadable", root, commandsDir),
+          null,
+          "a failed read must keep the fallback so argument restoration degrades rather than throws"
+        )
+        assert.ok(
+          warnings.some(
+            message =>
+              message.includes("[ecc-pi] unable to read command") &&
+              message.includes(commandsDir)
+          ),
+          "the failed command read must be reported instead of being silently swallowed"
+        )
+      } finally {
+        console.warn = originalWarn
         fs.rmSync(root, { recursive: true, force: true })
       }
     }],

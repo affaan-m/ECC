@@ -28,7 +28,7 @@ function stripFrontmatter(raw) {
  * Pi's template expansion silently drops the arguments instead. Most ECC
  * commands rely on the Claude behaviour, so the adapter restores it.
  */
-function loadPlaceholderlessCommand(name, eccRoot, commandPath) {
+function loadPlaceholderlessCommand(name, eccRoot, commandPath, reportReadError = message => console.warn(message)) {
   if (!/^[A-Za-z0-9._-]+$/.test(name)) {
     return null
   }
@@ -38,7 +38,9 @@ function loadPlaceholderlessCommand(name, eccRoot, commandPath) {
     const raw = fs.readFileSync(resolvedPath, "utf8")
     const stripped = stripFrontmatter(raw)
     return ARG_PLACEHOLDER.test(stripped) ? null : stripped
-  } catch {
+  } catch (error) {
+    const detail = error && error.message ? error.message : String(error)
+    reportReadError(`[ecc-pi] unable to read command ${resolvedPath}: ${detail}`)
     return null
   }
 }
@@ -136,13 +138,13 @@ function handlePiInputEvent(event, pi, options) {
  * The returned function returns a fresh Map on each new lookup rather than
  * mutating the previous cache, satisfying ECC's immutability rule.
  */
-function createCommandBodyReader(eccRoot) {
+function createCommandBodyReader(eccRoot, reportReadError) {
   let cache = new Map()
   return name => {
     if (cache.has(name)) {
       return cache.get(name) ?? null
     }
-    const body = loadPlaceholderlessCommand(name, eccRoot)
+    const body = loadPlaceholderlessCommand(name, eccRoot, undefined, reportReadError)
     cache = new Map(cache).set(name, body)
     return body
   }
