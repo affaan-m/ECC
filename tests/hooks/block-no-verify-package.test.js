@@ -36,15 +36,21 @@ function tmpDir() {
   return fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-bnv-pkg-'));
 }
 
-function makeProject(stubSource) {
+function makeProject(stubSource, { version = '1.4.1', declared = true } = {}) {
   const dir = tmpDir();
-  if (stubSource !== null) {
-    const pkgDir = path.join(dir, 'node_modules', 'block-no-verify');
-    fs.mkdirSync(pkgDir, { recursive: true });
-    fs.writeFileSync(path.join(pkgDir, 'package.json'), JSON.stringify({ name: 'block-no-verify', version: '1.4.1', main: 'index.js' }));
-    fs.writeFileSync(path.join(pkgDir, 'index.js'), stubSource);
-  }
+  fs.writeFileSync(path.join(dir, 'package.json'), JSON.stringify(declared ? { devDependencies: { 'block-no-verify': '^1.4.1' } } : {}));
+  if (stubSource !== null) writePackage(path.join(dir, 'node_modules', 'block-no-verify'), stubSource, version);
   return dir;
+}
+
+function writePackage(pkgDir, stubSource, version = '1.4.1') {
+  fs.mkdirSync(path.join(pkgDir, 'dist', 'cjs'), { recursive: true });
+  fs.writeFileSync(path.join(pkgDir, 'package.json'), JSON.stringify({
+    name: 'block-no-verify',
+    version,
+    exports: { '.': { require: { default: './dist/cjs/index.js' } } }
+  }));
+  fs.writeFileSync(path.join(pkgDir, 'dist', 'cjs', 'index.js'), stubSource);
 }
 
 const stub = (marker, body) => `require('fs').appendFileSync(${JSON.stringify(marker)}, 'called\\n');\n${body}`;
@@ -56,7 +62,7 @@ function spawnHook(dir, command, env, script, args = []) {
     input: JSON.stringify({ tool_input: { command }, cwd: dir }),
     encoding: 'utf8',
     cwd: dir,
-    env: { ...process.env, CLAUDE_PROJECT_DIR: '', CLAUDE_PLUGIN_ROOT: root, ...env },
+    env: { ...process.env, HOME: tmpDir(), GIT_CONFIG_GLOBAL: path.join(tmpDir(), 'gitconfig'), CLAUDE_PROJECT_DIR: '', NODE_PATH: '', ECC_BLOCK_NO_VERIFY_PACKAGE: 'on', CLAUDE_PLUGIN_ROOT: root, ...env },
     timeout: 15000
   });
   return { code: result.status, stdout: result.stdout || '', stderr: result.stderr || '' };
@@ -135,11 +141,103 @@ check('ECC already blocks: package never consulted', () => {
   assert.doesNotMatch(result.stderr, /block-no-verify package/);
 });
 
-check('ECC_BLOCK_NO_VERIFY_PACKAGE=off skips the package', () => {
+check('default off: package present, env unset, never loaded', () => {
+  for (const value of [undefined, '', 'off', '0', 'false', 'disabled', 'nonsense']) {
+    const marker = path.join(tmpDir(), 'm');
+    const dir = makeProject(blockingStub(marker));
+    const env = value === undefined ? { ECC_BLOCK_NO_VERIFY_PACKAGE: '' } : { ECC_BLOCK_NO_VERIFY_PACKAGE: value };
+    assert.strictEqual(runDirect(dir, ECC_ALLOWED, env).code, 0, String(value));
+    assert.ok(!fs.existsSync(marker), `package must not load for ${value}`);
+  }
+});
+
+check('opt-in values on/1/true/enabled all enable it', () => {
+  for (const value of ['on', '1', 'true', 'enabled', 'ON']) {
+    const dir = makeProject(blockingStub(path.join(tmpDir(), 'm')));
+    assert.strictEqual(runDirect(dir, ECC_ALLOWED, { ECC_BLOCK_NO_VERIFY_PACKAGE: value }).code, 2, value);
+  }
+});
+
+check('opt-in but undeclared in package.json: not loaded', () => {
+  const marker = path.join(tmpDir(), 'm');
+  const dir = makeProject(blockingStub(marker), { declared: false });
+  assert.strictEqual(runDirect(dir, ECC_ALLOWED).code, 0);
+  assert.ok(!fs.existsSync(marker));
+});
+
+check('missing or invalid project package.json: not loaded', () => {
   const marker = path.join(tmpDir(), 'm');
   const dir = makeProject(blockingStub(marker));
-  assert.strictEqual(runDirect(dir, ECC_ALLOWED, { ECC_BLOCK_NO_VERIFY_PACKAGE: 'off' }).code, 0);
+  fs.writeFileSync(path.join(dir, 'package.json'), '{not json');
+  assert.strictEqual(runDirect(dir, ECC_ALLOWED).code, 0);
+  fs.unlinkSync(path.join(dir, 'package.json'));
+  assert.strictEqual(runDirect(dir, ECC_ALLOWED).code, 0);
   assert.ok(!fs.existsSync(marker));
+});
+
+check('ancestor node_modules copy: not loaded', () => {
+  const marker = path.join(tmpDir(), 'm');
+  const parent = makeProject(blockingStub(marker));
+  const child = path.join(parent, 'packages', 'app');
+  fs.mkdirSync(child, { recursive: true });
+  fs.writeFileSync(path.join(child, 'package.json'), JSON.stringify({ devDependencies: { 'block-no-verify': '^1.4.1' } }));
+  assert.strictEqual(runDirect(child, ECC_ALLOWED).code, 0);
+  assert.ok(!fs.existsSync(marker));
+});
+
+check('NODE_PATH copy: not loaded', () => {
+  const marker = path.join(tmpDir(), 'm');
+  const lib = tmpDir();
+  writePackage(path.join(lib, 'block-no-verify'), blockingStub(marker));
+  const dir = makeProject(null);
+  assert.strictEqual(runDirect(dir, ECC_ALLOWED, { NODE_PATH: lib }).code, 0);
+  assert.ok(!fs.existsSync(marker));
+});
+
+check('symlinked package dir escaping node_modules: not loaded', () => {
+  const marker = path.join(tmpDir(), 'm');
+  const outside = path.join(tmpDir(), 'elsewhere');
+  writePackage(outside, blockingStub(marker));
+  const dir = makeProject(null);
+  fs.mkdirSync(path.join(dir, 'node_modules'));
+  fs.symlinkSync(outside, path.join(dir, 'node_modules', 'block-no-verify'));
+  assert.strictEqual(runDirect(dir, ECC_ALLOWED).code, 0);
+  assert.ok(!fs.existsSync(marker));
+});
+
+check('entry symlink escaping the package dir: not loaded', () => {
+  const marker = path.join(tmpDir(), 'm');
+  const outsideFile = path.join(tmpDir(), 'evil.js');
+  fs.writeFileSync(outsideFile, blockingStub(marker));
+  const dir = makeProject(allowingStub(path.join(tmpDir(), 'unused')));
+  const entry = path.join(dir, 'node_modules', 'block-no-verify', 'dist', 'cjs', 'index.js');
+  fs.unlinkSync(entry);
+  fs.symlinkSync(outsideFile, entry);
+  assert.strictEqual(runDirect(dir, ECC_ALLOWED).code, 0);
+  assert.ok(!fs.existsSync(marker));
+});
+
+check('old or wrong package: not loaded', () => {
+  for (const version of ['1.3.9', '1.4.0', '0.9.0', 'garbage']) {
+    const marker = path.join(tmpDir(), 'm');
+    const dir = makeProject(blockingStub(marker), { version });
+    assert.strictEqual(runDirect(dir, ECC_ALLOWED).code, 0, version);
+    assert.ok(!fs.existsSync(marker), version);
+  }
+  const marker = path.join(tmpDir(), 'm');
+  const dir = makeProject(blockingStub(marker));
+  const manifestPath = path.join(dir, 'node_modules', 'block-no-verify', 'package.json');
+  fs.writeFileSync(manifestPath, JSON.stringify({ name: 'other', version: '2.0.0', exports: { '.': { require: './dist/cjs/index.js' } } }));
+  assert.strictEqual(runDirect(dir, ECC_ALLOWED).code, 0);
+  assert.ok(!fs.existsSync(marker));
+});
+
+check('newer versions and string require export are accepted', () => {
+  const dir = makeProject(blockingStub(path.join(tmpDir(), 'm')), { version: '2.0.0-beta.1' });
+  assert.strictEqual(runDirect(dir, ECC_ALLOWED).code, 2);
+  const flat = makeProject(blockingStub(path.join(tmpDir(), 'm')));
+  fs.writeFileSync(path.join(flat, 'node_modules', 'block-no-verify', 'package.json'), JSON.stringify({ name: 'block-no-verify', version: '1.10.0', exports: { '.': { require: './dist/cjs/index.js' } } }));
+  assert.strictEqual(runDirect(flat, ECC_ALLOWED).code, 2);
 });
 
 check('CLAUDE_PROJECT_DIR is preferred over payload cwd', () => {
