@@ -105,6 +105,32 @@ function handlePiInput({ text, eccRoot, env, activeCommands, getBody }) {
 }
 
 /**
+ * The real Pi input-event callback the TypeScript extension registers.
+ *
+ * Extracted here (rather than being an anonymous arrow in index.ts) so the
+ * plain Node test suite can invoke the exact registered handler with a fake
+ * `pi` object and assert both its guard branches and its transform result.
+ */
+function handlePiInputEvent(event, pi, options) {
+  if (
+    !event ||
+    event.source === "extension" ||
+    event.streamingBehavior === "steer" ||
+    typeof pi.getCommands !== "function"
+  ) {
+    return { action: "continue" }
+  }
+
+  return handlePiInput({
+    text: event.text,
+    eccRoot: options.eccRoot,
+    env: options.env,
+    activeCommands: pi.getCommands(),
+    getBody: options.getBody,
+  })
+}
+
+/**
  * Creates a body reader with its own cache.
  *
  * The returned function returns a fresh Map on each new lookup rather than
@@ -131,4 +157,5 @@ module.exports = {
   createCommandBodyReader,
   activeEccPromptPath,
   handlePiInput,
+  handlePiInputEvent,
 }

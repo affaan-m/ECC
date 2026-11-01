@@ -53,6 +53,7 @@ const {
   loadPlaceholderlessCommand,
   createCommandBodyReader,
   handlePiInput,
+  handlePiInputEvent,
 } = require(
   path.join(__dirname, "..", "..", ".pi", "extensions", "input-args.js")
 )
@@ -1690,20 +1691,23 @@ async function main() {
           "place ECC can restore the ARGUMENTS payload Pi otherwise drops"
       )
       assert.ok(
-        extensionSource.includes("handlePiInput") &&
+        extensionSource.includes("handlePiInputEvent") &&
           extensionSource.includes('from "./input-args.js"'),
         "expected .pi/extensions/index.ts to delegate the input handler to input-args.js " +
-          "so tests can load and exercise the real handler rather than a copy"
+          "so tests can load and exercise the real registered callback rather than a copy"
       )
       assert.ok(
-        extensionSource.includes('event.source === "extension"'),
-        "expected the registered handler to skip extension-injected input; transforming " +
-          "an extension message as if it were user input can double-expand ECC commands"
+        inputArgsSource.includes('event.source === "extension"') &&
+          inputArgsSource.includes('event.streamingBehavior === "steer"') &&
+          inputArgsSource.includes('typeof pi.getCommands !== "function"'),
+        "expected the registered callback to skip extension-injected and steering input, " +
+          "and to tolerate an API without getCommands; transforming those can double-expand " +
+          "ECC commands or crash the adapter"
       )
       assert.ok(
-        extensionSource.includes("pi.getCommands()") &&
-          extensionSource.includes("activeCommands:"),
-        "expected the registered handler to resolve active commands via pi.getCommands() " +
+        inputArgsSource.includes("pi.getCommands()") &&
+          inputArgsSource.includes("activeCommands:"),
+        "expected the registered callback to resolve active commands via pi.getCommands() " +
           "and pass them into the testable input-args handler for provenance checks"
       )
       assert.ok(
@@ -1736,6 +1740,55 @@ async function main() {
         inputArgsSource.includes("new Map(cache).set(name, body)"),
         "expected the command body cache to replace the old Map rather than mutate it; " +
           "ECC's immutability rule forbids mutating an existing cache object"
+      )
+    }],
+
+    ["registered input handler guard skips extension, steer, and missing getCommands", () => {
+      const fakePi = { getCommands: () => [eccPrompt("plan")] }
+      const options = {
+        eccRoot: repoRoot,
+        env: {},
+        getBody: createCommandBodyReader(repoRoot),
+      }
+
+      assert.deepStrictEqual(
+        handlePiInputEvent({ text: "/plan build it", source: "extension" }, fakePi, options),
+        { action: "continue" },
+        "extension-injected input must pass through unchanged so ECC commands are not double-expanded"
+      )
+      assert.deepStrictEqual(
+        handlePiInputEvent(
+          { text: "/plan build it", source: "interactive", streamingBehavior: "steer" },
+          fakePi,
+          options
+        ),
+        { action: "continue" },
+        "steering input must pass through unchanged rather than being transformed as a fresh command"
+      )
+      assert.deepStrictEqual(
+        handlePiInputEvent({ text: "/plan build it", source: "interactive" }, {}, options),
+        { action: "continue" },
+        "an extension API without getCommands must not crash the input handler"
+      )
+    }],
+
+    ["registered input handler transforms through the actual event callback", () => {
+      const fakePi = { getCommands: () => [eccPrompt("plan")] }
+      const readBody = createCommandBodyReader(repoRoot)
+      const result = handlePiInputEvent(
+        { text: "/plan add a hello world CLI", source: "interactive" },
+        fakePi,
+        { eccRoot: repoRoot, env: {}, getBody: readBody }
+      )
+
+      assert.strictEqual(result.action, "transform")
+      assert.ok(
+        result.text.includes("ARGUMENTS: add a hello world CLI"),
+        "the registered event callback should append the user arguments to the canonical body"
+      )
+      assert.ok(
+        result.text.startsWith(readBody("plan").split("\n")[0]),
+        "the registered event callback should use the real cached command body"
       )
     }],
 

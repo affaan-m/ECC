@@ -29,7 +29,7 @@ import * as fs from "node:fs"
 import * as os from "node:os"
 import * as path from "node:path"
 import { resolveHookRuntime } from "./hook-runtime.js"
-import { createCommandBodyReader, handlePiInput } from "./input-args.js"
+import { createCommandBodyReader, handlePiInputEvent } from "./input-args.js"
 
 /**
  * Minimal structural types mirroring `@earendil-works/pi-coding-agent`.
@@ -685,19 +685,13 @@ function buildDoctorReport(ctx: ExtensionContext): string {
 const getCommandBody = createCommandBodyReader(ECC_ROOT)
 
 export default function (pi: ExtensionAPI): void {
-  pi.on("input", event => {
-    if (event.source === "extension" || event.streamingBehavior === "steer" || typeof pi.getCommands !== "function") {
-      return { action: "continue" }
-    }
-
-    return handlePiInput({
-      text: event.text,
+  pi.on("input", event =>
+    handlePiInputEvent(event, pi, {
       eccRoot: ECC_ROOT,
       env: process.env,
-      activeCommands: pi.getCommands(),
       getBody: getCommandBody,
     })
-  })
+  )
 
   /**
    * ECC's SessionStart hook returns context for the model, but Pi has no
