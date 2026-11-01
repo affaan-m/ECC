@@ -44,6 +44,8 @@ const assert = require("assert")
 const fs = require("fs")
 const os = require("os")
 const path = require("path")
+const vm = require("vm")
+const ts = require("typescript")
 const { spawnSync, execFile } = require("child_process")
 const { resolveHookRuntime } = require(
   path.join(__dirname, "..", "..", ".pi", "extensions", "hook-runtime.js")
@@ -525,6 +527,64 @@ async function main() {
         extensionSource.includes(`registerCommand("ecc-doctor"`),
         "expected the adapter to register an 'ecc-doctor' command via pi.registerCommand(...) " +
           "so users have an install-diagnostics entry point"
+      )
+    }],
+
+    ["ecc-doctor emits report immediately without nextTurn delivery delay", async () => {
+      const commands = new Map()
+      const messages = []
+      const mockPi = {
+        on: () => {},
+        registerCommand: (name, def) => commands.set(name, def),
+        sendMessage: (msg, opts) => messages.push({ msg, opts }),
+      }
+      const compiled = ts.transpileModule(extensionSource, {
+        compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020 },
+      }).outputText
+      const mod = { exports: {} }
+      vm.runInNewContext(compiled, {
+        module: mod,
+        exports: mod.exports,
+        __dirname: path.resolve(repoRoot, ".pi", "extensions"),
+        process,
+        require: name => {
+          if (name === "./hook-runtime.js") {
+            return require(path.resolve(repoRoot, ".pi", "extensions", "hook-runtime.js"))
+          }
+          return require(name)
+        },
+      })
+
+      mod.exports.default(mockPi)
+
+      const doctorCmd = commands.get("ecc-doctor")
+      assert.ok(
+        doctorCmd && typeof doctorCmd.handler === "function",
+        "expected ecc-doctor command to register a handler"
+      )
+
+      const mockCtx = {
+        cwd: repoRoot,
+        ui: { notify: () => {} },
+      }
+
+      await doctorCmd.handler({}, mockCtx)
+
+      assert.strictEqual(messages.length, 1, "expected ecc-doctor to send exactly one message")
+      assert.strictEqual(messages[0].msg?.customType, "ecc-doctor", "expected ecc-doctor customType")
+      assert.strictEqual(messages[0].msg?.display, true, "expected ecc-doctor report to be visible")
+      assert.ok(
+        typeof messages[0].msg?.content === "string" && messages[0].msg.content.trim().length > 0,
+        "expected ecc-doctor report content to be nonempty"
+      )
+      assert.strictEqual(
+        messages[0].opts?.triggerTurn,
+        false,
+        "expected ecc-doctor to pass triggerTurn: false so running diagnostics does not invoke the LLM"
+      )
+      assert.ok(
+        messages[0].opts?.deliverAs !== "nextTurn",
+        "expected ecc-doctor not to queue with deliverAs: nextTurn; in Pi, queued delivery stalls display until next turn"
       )
     }],
 

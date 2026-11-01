@@ -759,7 +759,7 @@ export default function (pi: ExtensionAPI): void {
           content: buildDoctorReport(ctx),
           display: true,
         },
-        { deliverAs: "nextTurn" }
+        { triggerTurn: false }
       )
     },
   })
