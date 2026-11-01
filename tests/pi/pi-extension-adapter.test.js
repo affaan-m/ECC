@@ -1665,6 +1665,83 @@ async function main() {
           "systemPrompt-override return in before_agent_start"
       )
     }],
+
+    ["registers the Pi input event and restores placeholder-less command arguments", () => {
+      assert.ok(
+        extensionSource.includes('pi.on("input"'),
+        "expected .pi/extensions/index.ts to register an input handler via pi.on(...); " +
+          "Pi runs input handlers before prompt-template expansion, which is the only " +
+          "place ECC can restore the ARGUMENTS payload Pi otherwise drops"
+      )
+      assert.ok(
+        extensionSource.includes("ECC_PI_COMMAND_ARGS"),
+        "expected .pi/extensions/index.ts to honor an ECC_PI_COMMAND_ARGS opt-out for " +
+          "argument restoration; an irreversible transform would make the workaround mandatory"
+      )
+      assert.ok(
+        extensionSource.includes('action: "transform"') &&
+          extensionSource.includes('action: "continue"'),
+        "expected the input handler to return Pi's action result shape, either " +
+          "transform (replace the command with its body plus ARGUMENTS) or continue " +
+          "(leave Pi's normal expansion untouched)"
+      )
+      assert.ok(
+        extensionSource.includes("ARG_PLACEHOLDER = /\\$ARGUMENTS|\\$@|\\$\\d|\\$\\{@/"),
+        "expected the placeholder test to recognize $ARGUMENTS, $@, positional $N, and ${@}; " +
+          "missing any one of Pi's supported placeholders would transform commands Pi already expands"
+      )
+      assert.ok(
+        extensionSource.includes('path.join(ECC_ROOT, "commands"') &&
+          extensionSource.includes("${name}.md"),
+        "expected the adapter to read the canonical commands/ directory relative to ECC_ROOT; " +
+          "reading from cwd would break global installs exactly like the original hook-root defect"
+      )
+      assert.ok(
+        extensionSource.includes("commandBodyCache"),
+        "expected the placeholder-less command lookup to cache command bodies; the input " +
+          "handler runs on every prompt and should not re-read command markdown every time"
+      )
+    }],
+
+    ["placeholder-less command transformation (behavioral mirror): /plan args appends ARGUMENTS, /sessions stays untouched", () => {
+      const placeholder = /\$ARGUMENTS|\$@|\$\d|\$\{@/
+      const stripFrontmatter = raw => raw.replace(/^\uFEFF?---\r?\n[\s\S]*?\r?\n---\r?\n?/, "").trim()
+
+      const planRaw = fs.readFileSync(path.join(repoRoot, "commands", "plan.md"), "utf8")
+      const planBody = stripFrontmatter(planRaw)
+      assert.ok(
+        planBody && !placeholder.test(planBody),
+        "commands/plan.md must be placeholder-less in this repo for the test to be meaningful; " +
+          "if it gains a placeholder the transformation should no longer apply"
+      )
+
+      const input = "/plan add a hello world CLI"
+      const args = "add a hello world CLI"
+      assert.ok(
+        /^\/([^\s:]+)\s+([\s\S]*\S[\s\S]*)$/.test(input),
+        "the command-with-arguments shape should match the handler regex"
+      )
+      const transformed = `${planBody}\n\nARGUMENTS: ${args}`
+      assert.ok(
+        transformed.includes("ARGUMENTS: add a hello world CLI"),
+        "transforming a placeholder-less command should append ARGUMENTS with the user text"
+      )
+      assert.ok(
+        transformed.startsWith("# Plan Command"),
+        "the transformed input should be the command body itself, not the slash command name"
+      )
+
+      const sessionsRaw = fs.readFileSync(path.join(repoRoot, "commands", "sessions.md"), "utf8")
+      const sessionsBody = stripFrontmatter(sessionsRaw)
+      assert.ok(
+        placeholder.test(sessionsBody),
+        "commands/sessions.md must contain a placeholder in this repo for the test to be meaningful"
+      )
+      assert.ok(
+        placeholder.test(sessionsBody),
+        "a command with $ARGUMENTS/$@/$N/${@} must fall through to Pi unchanged"
+      )
+    }],
   ]
 
   for (const [name, fn] of tests) {

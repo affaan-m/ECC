@@ -70,7 +70,17 @@ interface BeforeAgentStartResult {
   systemPrompt?: string
 }
 
+interface InputEvent {
+  text: string
+}
+
+type InputEventResult = { action: "continue" } | { action: "transform"; text: string }
+
 interface ExtensionAPI {
+  on(
+    event: "input",
+    handler: (event: InputEvent, ctx: ExtensionContext) => Promise<InputEventResult> | InputEventResult
+  ): void
   on(
     event: "session_start",
     handler: (event: SessionStartEvent, ctx: ExtensionContext) => Promise<void> | void
@@ -670,7 +680,52 @@ function buildDoctorReport(ctx: ExtensionContext): string {
   return lines.join("\n")
 }
 
+/** Same placeholder set Pi's prompt-template substitution understands. */
+const ARG_PLACEHOLDER = /\$ARGUMENTS|\$@|\$\d|\$\{@/
+
+const commandBodyCache = new Map<string, string | null>()
+
+/**
+ * Body of an ECC command that has NO argument placeholder, or null.
+ *
+ * Claude Code appends `ARGUMENTS: <args>` when a command lacks `$ARGUMENTS`;
+ * Pi's template expansion silently drops the arguments instead. Most ECC
+ * commands rely on the Claude behaviour, so the adapter restores it.
+ */
+function loadPlaceholderlessCommand(name: string): string | null {
+  if (commandBodyCache.has(name)) {
+    return commandBodyCache.get(name) ?? null
+  }
+  let body: string | null = null
+  if (/^[A-Za-z0-9._-]+$/.test(name)) {
+    try {
+      const raw = fs.readFileSync(path.join(ECC_ROOT, "commands", `${name}.md`), "utf8")
+      const stripped = raw.replace(/^\uFEFF?---\r?\n[\s\S]*?\r?\n---\r?\n?/, "").trim()
+      body = ARG_PLACEHOLDER.test(stripped) ? null : stripped
+    } catch {
+      body = null
+    }
+  }
+  commandBodyCache.set(name, body)
+  return body
+}
+
 export default function (pi: ExtensionAPI): void {
+  pi.on("input", event => {
+    if (isDisabledByEnv(process.env.ECC_PI_COMMAND_ARGS)) {
+      return { action: "continue" }
+    }
+    const match = event.text.match(/^\/([^\s:]+)\s+([\s\S]*\S[\s\S]*)$/)
+    if (!match) {
+      return { action: "continue" }
+    }
+    const body = loadPlaceholderlessCommand(match[1])
+    if (!body) {
+      return { action: "continue" }
+    }
+    return { action: "transform", text: `${body}\n\nARGUMENTS: ${match[2].trim()}` }
+  })
+
   /**
    * ECC's SessionStart hook returns context for the model, but Pi has no
    * equivalent of Claude Code's `additionalContext` field. It is held here and
@@ -753,14 +808,15 @@ export default function (pi: ExtensionAPI): void {
   pi.registerCommand("ecc-doctor", {
     description: "Report ECC adapter status: package root, canonical resources, hooks, companions",
     handler: async (_args, ctx) => {
-      pi.sendMessage(
-        {
-          customType: "ecc-doctor",
-          content: buildDoctorReport(ctx),
-          display: true,
-        },
-        { deliverAs: "nextTurn" }
-      )
+      // No deliverAs: "nextTurn" here. In Pi 1.x that queues the message until
+      // the user's next prompt, so the report never appears when the command runs.
+      // Without options (and not streaming) Pi appends and displays it immediately
+      // without triggering a model turn.
+      pi.sendMessage({
+        customType: "ecc-doctor",
+        content: buildDoctorReport(ctx),
+        display: true,
+      })
     },
   })
 }
