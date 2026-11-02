@@ -278,7 +278,6 @@ test('rule transform preserves CRLF fenced examples and rewrites only prose link
 test('unsupported source paths produce no operations', () => {
   const operations = planFor([
     { id: 'commands-core', paths: ['commands', 'scripts/harness-audit.js'] },
-    { id: 'hooks-runtime', paths: ['hooks', 'scripts/hooks'] },
     { id: 'platform-configs', paths: ['.claude-plugin', '.codex', 'mcp-configs'] },
   ]);
   assert.strictEqual(operations.length, 0);

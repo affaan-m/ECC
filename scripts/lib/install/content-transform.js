@@ -57,6 +57,9 @@ function transformInstallContent(operation, content) {
   if (operation.contentTransform === 'copilot-rule-frontmatter') {
     return adaptCopilotRule(content, operation.sourceRelativePath);
   }
+  if (operation.contentTransform === 'copilot-hooks') {
+    return require('./copilot-hooks').adaptCopilotHooks(content);
+  }
   if (operation.contentTransform === 'opencode-disable-ecc-hooks') {
     return transformInstallContent({ ...operation, contentTransform: 'opencode-home-skills-path' },
       disableOpenCodeHookPluginRegistration(content, operation.sourceRelativePath));

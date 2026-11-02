@@ -1,5 +1,6 @@
 const fs = require('fs');
 const path = require('path');
+const { COPILOT_HOOK_RUNTIME_PATHS } = require('../copilot-hooks');
 
 const {
   createInstallTargetAdapter,
@@ -14,9 +15,8 @@ const {
 // `instructions/ecc/` with their Claude-style `paths:` frontmatter converted
 // to Copilot's `applyTo:` glob list. Explicitly declared package-manager
 // helpers live in `.github/ecc/scripts/`, outside Copilot's discovery roots.
-// ECC's hooks target Claude Code's event model, and commands rely on
-// slash-command argument substitution Copilot does not provide, so neither is
-// installed here.
+// The hooks-runtime module projects an audited subset into a dedicated native
+// hooks file and a closed script dependency set. Legacy commands are excluded.
 const SUPPORTED_SOURCE_PREFIXES = ['agents', 'skills', 'rules'];
 const COPILOT_HELPER_PATHS = new Set([
   'scripts/setup-package-manager.js',
@@ -115,6 +115,20 @@ function planSourcePathOperations(module, sourceRelativePath, targetRoot, repoRo
   return [];
 }
 
+function planHookOperations(module, targetRoot) {
+  return [
+    createManagedOperation({
+      moduleId: module.id, sourceRelativePath: 'hooks/hooks.json',
+      destinationPath: path.join(targetRoot, 'hooks', 'ecc.json'),
+      contentTransform: 'copilot-hooks',
+    }),
+    ...COPILOT_HOOK_RUNTIME_PATHS.map(sourceRelativePath => createManagedOperation({
+      moduleId: module.id, sourceRelativePath,
+      destinationPath: path.join(targetRoot, 'ecc', sourceRelativePath),
+    })),
+  ];
+}
+
 module.exports = createInstallTargetAdapter({
   id: 'copilot-project',
   target: 'copilot',
@@ -138,6 +152,7 @@ module.exports = createInstallTargetAdapter({
     const targetRoot = adapter.resolveRoot({ repoRoot, projectRoot, homeDir });
 
     return modules.flatMap(module => {
+      if (module.id === 'hooks-runtime') return planHookOperations(module, targetRoot);
       const paths = Array.isArray(module.paths) ? module.paths : [];
       return paths
         .filter(supportsCopilotSourcePath)

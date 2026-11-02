@@ -434,7 +434,7 @@ cd ECC
 | Kimi Code CLI | `./install.sh --profile minimal --target kimi` | Project-local `.kimi-code/` install · [Get Kimi Code](https://www.kimi.ai/code?aff=ecc) |
 | CodeBuddy | `./install.sh --profile minimal --target codebuddy` | Project-local `.codebuddy/` install |
 | JoyCode | `./install.sh --profile minimal --target joycode` | Project-local `.joycode/` install |
-| GitHub Copilot | `./install.sh --profile full --target copilot` | Installs skills to `.github/skills/` and agents to `.github/agents/` for Copilot CLI |
+| GitHub Copilot | `./install.sh --profile full --target copilot --enable-hooks` | Installs skills, agents, rules and the audited hook subset under `.github/` for Copilot CLI; use `--no-hooks` to omit automation |
 
 GitHub Copilot support is already included in this repository. `.github/copilot-instructions.md` provides the instruction layer, `.github/prompts/` contains the reusable `/plan`, `/tdd`, `/security-review`, `/build-fix`, and `/refactor` prompts, and `.vscode/settings.json` enables `chat.promptFiles`. GitHub Copilot CLI additionally discovers the `.agents/skills/` subset from a plain clone with no setup; see [Platform Support](#platform-support) for the full catalog and agents.
 
@@ -1443,7 +1443,7 @@ See [affaan-m/ECC#2065](https://github.com/affaan-m/ECC/issues/2065).
 | Instructions | Native | Native `AGENTS.md` | Project rules | Plugin instructions | Native instruction file |
 | Skills | Native installed set | Native plugin set | Build-dependent/project set | Built subset | Native discovery (Copilot CLI) from `.github/skills/`, `.agents/skills/`, `.claude/skills/` |
 | Agents/delegation | Native agents | Codex multi-agent roles; Claude agent files are not installed as roles | Build-dependent project agents | Plugin agents | Copilot CLI custom agents via `.github/agents/` and `--agent` |
-| ECC hooks | Native plugin hooks | Native reviewed subset with explicit trust | Cursor hook adapter; install-path differences remain | Plugin events | Not ported; Copilot CLI has its own plugin hook system |
+| ECC hooks | Native plugin hooks | Native reviewed subset with explicit trust | Cursor hook adapter; install-path differences remain | Plugin events | Opt-in audited pre/post-tool policies; see [Copilot hooks](docs/COPILOT-HOOKS.md) |
 | MCP configuration | Available, explicit activation | Native plugin manifest; legacy sync can merge TOML | Explicit project/user config | Provider/plugin config | Not supplied by ECC |
 | Parity with Claude Code | Primary reference | Partial | Partial | Partial | Partial |
 
@@ -1774,7 +1774,7 @@ name.
 Agents work the same way:
 
 ```bash
-./install.sh --profile full --target copilot
+./install.sh --profile full --target copilot --enable-hooks
 copilot --agent architect -p "Review this module's boundaries"
 ```
 
@@ -1789,15 +1789,16 @@ The steps above copy files by hand. The `copilot` install target does the same
 placement and additionally rewrites agent frontmatter so no warning is emitted:
 
 ```bash
-./install.sh --profile full --target copilot
-# Windows: ./install.ps1 --profile full --target copilot
+./install.sh --profile full --target copilot --enable-hooks
+# Windows: ./install.ps1 --profile full --target copilot --enable-hooks
 ```
 
 That writes skills to `.github/skills/`, agents to `.github/agents/`, and an
 install-state file to `.github/ecc-install-state.json`. Nothing is written
 outside `.github/`.
 
-The `full` profile selects the modules declared for Copilot. It can place fewer
+Use `--no-hooks` instead of `--enable-hooks` to omit automatic hooks. The
+`full` profile selects the modules declared for Copilot. It can place fewer
 skills than a manual copy of the entire canonical catalog because modules
 that require another host's runtime are excluded. List the resulting native
 inventory to see what this checkout installs; a count is not a capability grant.
@@ -1808,7 +1809,10 @@ tool access per session through `--allow-tool`/`--deny-tool` rather than through
 agent frontmatter. Rules are installed under `.github/instructions/ecc/` as
 `.instructions.md` files, with the Claude-style `paths:` frontmatter converted
 to Copilot's `applyTo:` glob list (rules without `paths` become `applyTo:
-"**"`). ECC's commands and hooks are not installed by this target.
+"**"`). The hook runtime requires explicit consent and installs four audited
+policies in `.github/hooks/ecc.json`, with Node.js helpers under `.github/ecc/`.
+See [Copilot hooks](docs/COPILOT-HOOKS.md) for the supported subset and runtime
+requirements. Legacy commands are not installed by this target.
 
 #### Feature coverage
 
@@ -1825,18 +1829,16 @@ to Copilot's `applyTo:` glob list (rules without `paths` become `applyTo:
 | Skills | Native discovery in Copilot CLI (`.github/skills/`, `.agents/skills/`) |
 | Agents / delegation | Copilot CLI custom agents (`.github/agents/`, `--agent`) |
 | Rules | Path-specific instructions (`.github/instructions/ecc/`, `applyTo:` globs) |
-| Hooks / automation | ECC's hooks are not ported (Copilot CLI has its own plugin hook system) |
+| Hooks / automation | Opt-in native pre/post-tool adapter for four audited ECC policies |
 
 #### Limitations
 
-ECC's hook automations (auto-format, TypeScript check, session persistence,
-dev-server guard) are written against Claude Code's hook event model and are
-not ported to Copilot. Copilot CLI does expose a hook system through its plugin
-format, but ECC does not currently ship a Copilot plugin, so none of ECC's hooks
-run there.
+Automatic formatting, TypeScript checks, session persistence, continuous
+learning and the dev-server guard are not included in the audited Copilot hook
+subset. ECC does not currently ship a native Copilot plugin package.
 
-ECC also does not install rules, commands, or hooks for Copilot. The `copilot`
-target installs skills and agents only. Skills that shell out to bundled
+The `copilot` target installs skills, agents, rules and opt-in hooks. It does
+not install legacy commands or MCP configuration. Skills that shell out to bundled
 scripts assume the same interpreters as on Claude Code. Copilot Chat in VS Code
 does not read `.github/skills/` or `.github/agents/`; those paths are Copilot
 CLI surfaces. The instruction and prompt layer is what carries ECC's coding
