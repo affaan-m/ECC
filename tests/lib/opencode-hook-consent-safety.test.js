@@ -9,7 +9,7 @@ const { createFileSystemLoader } = require('./helpers/load-with-file-system');
 const fileSystem = { ...fs };
 const load = createFileSystemLoader(fileSystem);
 const { applyInstallPlan } = load(require.resolve('../../scripts/lib/install/apply'));
-const { withHookConsent } = require('../../scripts/lib/install/hook-consent');
+const { parseJsoncConfig, withHookConsent } = require('../../scripts/lib/install/hook-consent');
 const { createInstallState, readInstallState, writeInstallState } = require('../../scripts/lib/install-state');
 const { buildDoctorReport, repairInstalledStates } = load(require.resolve('../../scripts/lib/install-lifecycle'));
 
@@ -169,6 +169,15 @@ function runTests() {
     try { callback(); passed++; console.log(`  PASS ${name}`); }
     catch (error) { failed++; console.error(`  FAIL ${name}: ${error.stack}`); }
   };
+  test('JSONC rejects commas without a preceding value but keeps valid trailing commas', () => {
+    for (const content of ['{"plugin":[,]}', '{"plugin":[/* note */,]}', '{"plugin":[1,,]}', '{,}', '{"plugin":,}']) {
+      assert.throws(() => parseJsoncConfig(content, 'opencode.json'), /Failed to parse opencode\.json/);
+    }
+    assert.deepStrictEqual(
+      parseJsoncConfig('{"plugin":["user", /* note */],}', 'opencode.json').plugin,
+      ['user'],
+    );
+  });
   test('relative-root fixture remains relative across Windows checkout and temp drives', () => {
     const source = 'C:\\private\\source';
     assert.strictEqual(path.win32.isAbsolute(path.win32.relative('D:\\checkout', source)), true);
@@ -248,6 +257,35 @@ function runTests() {
       assert.strictEqual(fs.readFileSync(destination, 'utf8'), '{ malformed');
       assert.deepStrictEqual(fs.readFileSync(value.installStatePath), before);
     }));
+    test(`${mode} rejects an empty-array comma with source context`, () => fixture(value => {
+      const destination = path.join(value.targetRoot, 'opencode.json');
+      const content = '{"plugin":[,]}';
+      fs.writeFileSync(destination, content);
+      const before = fs.readFileSync(value.installStatePath);
+      if (mode === 'apply') assert.throws(() => applyInstallPlan(value.declinePlan), /Failed to parse .*opencode\.json/);
+      else if (mode === 'repair') assert.match(repair(value).results[0].error, /Failed to parse .*opencode\.json/);
+      else {
+        const result = buildDoctorReport({ repoRoot: value.sourceRoot, homeDir: value.homeDir,
+          projectRoot: value.homeDir, targets: ['opencode'] }).results[0];
+        assert.match(JSON.stringify(result.issues), /Failed to parse .*opencode\.json/);
+      }
+      assert.strictEqual(fs.readFileSync(destination, 'utf8'), content);
+      assert.deepStrictEqual(fs.readFileSync(value.installStatePath), before);
+    }));
+    test(`${mode} reports a non-array plugin with source context`, () => fixture(value => {
+      const destination = path.join(value.targetRoot, 'opencode.json');
+      fs.writeFileSync(destination, '{"plugin":"./plugins"}');
+      const before = fs.readFileSync(value.installStatePath);
+      if (mode === 'apply') assert.throws(() => applyInstallPlan(value.declinePlan), /Invalid .*opencode\.json: plugin must be an array/);
+      else if (mode === 'repair') assert.match(repair(value).results[0].error, /plugin must be an array/);
+      else {
+        const result = buildDoctorReport({ repoRoot: value.sourceRoot, homeDir: value.homeDir,
+          projectRoot: value.homeDir, targets: ['opencode'] }).results[0];
+        assert.match(JSON.stringify(result.issues), /plugin must be an array/);
+      }
+      assert.strictEqual(fs.readFileSync(destination, 'utf8'), '{"plugin":"./plugins"}');
+      assert.deepStrictEqual(fs.readFileSync(value.installStatePath), before);
+    }));
   }
   test('apply rejects another enabled writer and repair while holding its target lease', () => fixture(value => {
     let checked = false;
@@ -314,6 +352,64 @@ function runTests() {
         assert.strictEqual(fs.existsSync(`${value.installStatePath}.ecc.lock`), false);
       }));
     }
+    test('parseJsoncConfig tolerates comments and trailing commas without touching strings', () => {
+      const config = parseJsoncConfig(`{
+  // my note
+  "plugin": [
+    "ecc-universal", /* inline */
+  ],
+  "endpoint": "https://example.com/path", // URL survives
+  "block": "/* not a comment */",
+}
+`, 'opencode.json');
+      assert.deepStrictEqual(config.plugin, ['ecc-universal']);
+      assert.strictEqual(config.endpoint, 'https://example.com/path');
+      assert.strictEqual(config.block, '/* not a comment */');
+    });
+    test('parseJsoncConfig rejects an unterminated block comment with source context', () => {
+      assert.throws(
+        () => parseJsoncConfig('{"plugin":[]} /* unfinished', 'opencode.json'),
+        /Failed to parse opencode\.json: Unterminated block comment/,
+      );
+    });
+    test('parseJsoncConfig stops line comments at CR-only line endings', () => {
+      const config = parseJsoncConfig('{"plugin":[] // note\r}', 'opencode.json');
+      assert.deepStrictEqual(config.plugin, []);
+    });
+    test(`fresh ${consent || 'default'} apply preserves inactive JSONC user config with comments`, () => fixture(value => {
+      fs.unlinkSync(value.installStatePath);
+      fs.unlinkSync(path.join(value.targetRoot, 'plugins/ecc-hooks.ts'));
+      const destination = path.join(value.targetRoot, 'opencode.json');
+      // JSONC with a line comment, a block comment, trailing commas and a
+      // URL string: OpenCode accepts this; the installer must not crash on
+      // the read-only membership check (issue #3546).
+      const content = `{
+  // my note
+  "plugin": [
+    "ecc-universal",
+  ],
+  "endpoint": "https://example.com/path", /* keep */
+}
+`;
+      fs.writeFileSync(destination, content);
+      const result = applyInstallPlan(withHookConsent(value.basePlan, consent));
+      assert.strictEqual(result.applied, true);
+      assert.strictEqual(fs.readFileSync(destination, 'utf8'), content);
+      assert.ok(result.warnings.some(warning => warning.includes(`Skipped user-owned file ${destination}`)));
+      assert.ok(result.skippedOperations.some(operation => operation.destinationPath === destination));
+      assert.strictEqual(fs.existsSync(`${value.installStatePath}.ecc.lock`), false);
+    }));
+    test(`fresh ${consent || 'default'} apply rejects malformed user JSONC without adopting it`, () => fixture(value => {
+      fs.unlinkSync(value.installStatePath);
+      fs.unlinkSync(path.join(value.targetRoot, 'plugins/ecc-hooks.ts'));
+      const destination = path.join(value.targetRoot, 'opencode.json');
+      const content = '{"plugin":[,]}';
+      fs.writeFileSync(destination, content);
+      assert.throws(() => applyInstallPlan(withHookConsent(value.basePlan, consent)), /Failed to parse .*opencode\.json/);
+      assert.strictEqual(fs.readFileSync(destination, 'utf8'), content);
+      assert.strictEqual(fs.existsSync(value.installStatePath), false);
+      assert.strictEqual(fs.existsSync(`${value.installStatePath}.ecc.lock`), false);
+    }));
     test(`fresh ${consent || 'default'} apply still refuses active unrecorded config`, () => fixture(value => {
       fs.unlinkSync(value.installStatePath);
       fs.unlinkSync(path.join(value.targetRoot, 'plugins/ecc-hooks.ts'));

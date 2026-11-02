@@ -1,12 +1,12 @@
 # ECC 長文ガイド
 
-![Header: The Longform Guide to ECC](./assets/images/longform/01-header.png)
+![Header: The Longform Guide to ECC](https://raw.githubusercontent.com/affaan-m/ECC/main/assets/images/longform/01-header.png)
 
 ---
 
 > **前提条件**: このガイドは[ECC 簡潔ガイド](./the-shortform-guide.md)を基に構成されています。スキル、フック、サブエージェント、MCP、プラグインのセットアップがまだの場合は、先にそちらをお読みください。
 
-![Reference to Shorthand Guide](./assets/images/longform/02-shortform-reference.png)
+![Reference to Shorthand Guide](https://raw.githubusercontent.com/affaan-m/ECC/main/assets/images/longform/02-shortform-reference.png)
 *簡潔ガイド - まずこちらを読んでください*
 
 簡潔ガイドでは、基礎的なセットアップをカバーしました：スキルとコマンド、フック、サブエージェント、MCP、プラグイン、そして効果的なClaude Codeワークフローのバックボーンとなる設定パターン。それはセットアップガイドであり、基盤インフラでした。
@@ -39,7 +39,7 @@ MCPを実際に使用せずにCLIをMCPのように機能させるには（そ�
 
 セッション間でメモリを共有するには、進捗を要約してチェックインし、`.claude`フォルダの`.tmp`ファイルに保存してセッション終了まで追記するスキルまたはコマンドが最善策です。翌日にはそれをコンテキストとして使用し、中断した箇所から再開できます。古いコンテキストが新しい作業を汚染しないよう、各セッションごとに新しいファイルを作成してください。
 
-![Session Storage File Tree](./assets/images/longform/03-session-storage.png)
+![Session Storage File Tree](https://raw.githubusercontent.com/affaan-m/ECC/main/assets/images/longform/03-session-storage.png)
 *セッションストレージの例 -> <https://github.com/affaan-m/ECC/tree/main/examples/sessions>*
 
 Claudeが現在の状態を要約するファイルを作成します。レビューし、必要に応じて編集を依頼し、新しく開始。新しい会話では、ファイルパスを提供するだけです。コンテキスト制限に達して複雑な作業を継続する必要がある場合に特に便利です。これらのファイルには以下を含めるべきです：
@@ -110,7 +110,7 @@ alias claude-research='claude --system-prompt "$(cat ~/.claude/contexts/research
 
 **モデル選択クイックリファレンス：**
 
-![Model Selection Table](./assets/images/longform/04-model-selection.png)
+![Model Selection Table](https://raw.githubusercontent.com/affaan-m/ECC/main/assets/images/longform/04-model-selection.png)
 *さまざまな一般的タスクにおけるサブエージェントの仮想セットアップと選択理由*
 
 | タスクタイプ | モデル | 理由 |
@@ -128,14 +128,14 @@ alias claude-research='claude --system-prompt "$(cat ~/.claude/contexts/research
 
 **価格リファレンス：**
 
-![Claude Model Pricing](./assets/images/longform/05-pricing-table.png)
+![Claude Model Pricing](https://raw.githubusercontent.com/affaan-m/ECC/main/assets/images/longform/05-pricing-table.png)
 *出典: <https://platform.claude.com/docs/en/about-claude/pricing>*
 
 **ツール固有の最適化：**
 
 grepをmgrepに置き換え — 従来のgrepやripgrepと比較して平均約50%のトークン削減：
 
-![mgrep Benchmark](./assets/images/longform/06-mgrep-benchmark.png)
+![mgrep Benchmark](https://raw.githubusercontent.com/affaan-m/ECC/main/assets/images/longform/06-mgrep-benchmark.png)
 *50タスクのベンチマークで、mgrep + Claude Codeはgrepベースのワークフローと同等以上の品質で約2倍少ないトークンを使用。出典：@mixedbread-aiによるmgrep*
 
 **モジュラーコードベースの利点：**
@@ -181,7 +181,7 @@ pass^k: k回の試行すべてが成功する必要がある
 
 **任意のターミナル数について：**
 
-![Boris on Parallel Terminals](./assets/images/longform/07-boris-parallel.png)
+![Boris on Parallel Terminals](https://raw.githubusercontent.com/affaan-m/ECC/main/assets/images/longform/07-boris-parallel.png)
 *Boris（Anthropic）が複数のClaudeインスタンスの実行について*
 
 Borisは並列化のヒントを持っています。ローカルで5つ、上流で5つのClaudeインスタンスを実行するようなことを提案しています。任意のターミナル数の設定は推奨しません。ターミナルの追加は本当の必要性から生まれるべきです。
@@ -202,7 +202,7 @@ cd ../project-feature-a && claude
 
 インスタンスのスケーリングを開始し、複数のClaudeインスタンスが互いに重複するコードで作業する場合、gitワークツリーを使用し、各インスタンスに非常に明確な計画を持つことが不可欠です。`/rename <名前>`を使用してすべてのチャットに名前を付けてください。
 
-![Two Terminal Setup](./assets/images/longform/08-two-terminals.png)
+![Two Terminal Setup](https://raw.githubusercontent.com/affaan-m/ECC/main/assets/images/longform/08-two-terminals.png)
 *初期セットアップ：左ターミナルでコーディング、右ターミナルで質問 - /renameと/forkを使用*
 
 **カスケード方式：**
@@ -314,7 +314,7 @@ alias q='cd ~/Desktop/projects'
 
 ## マイルストーン
 
-![25k+ GitHub Stars](./assets/images/longform/09-25k-stars.png)
+![25k+ GitHub Stars](https://raw.githubusercontent.com/affaan-m/ECC/main/assets/images/longform/09-25k-stars.png)
 *1週間足らずでGitHub 25,000+スター*
 
 ---

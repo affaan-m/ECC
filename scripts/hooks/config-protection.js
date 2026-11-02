@@ -117,8 +117,9 @@ const PROTECTED_FILES = new Set([
 const PROTECTED_PATTERNS = [
   // eslint.config.base.mjs, prettier.config.shared.cjs, stylelint.config.local.js ...
   /^(eslint|prettier|stylelint|commitlint|oxlint)\.config(\.[A-Za-z0-9_-]+)*\.(js|mjs|cjs|ts|mts|cts)$/i,
-  // .eslintrc.base.json, .prettierrc.shared.yml ...
-  /^\.(eslintrc|prettierrc|stylelintrc|markdownlintrc)(\.[A-Za-z0-9_-]+)*\.(js|cjs|mjs|json|jsonc|yml|yaml|toml)$/i,
+  // .eslintrc.base.json, .prettierrc.shared.yml ... Prettier also reads
+  // `.prettierrc.ts`, `.mts`, `.cts` and `.json5`.
+  /^\.(eslintrc|prettierrc|stylelintrc|markdownlintrc)(\.[A-Za-z0-9_-]+)*\.(js|cjs|mjs|ts|mts|cts|json|jsonc|json5|yml|yaml|toml)$/i,
 ];
 
 function isProtectedName(basename) {

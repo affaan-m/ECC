@@ -1,5 +1,6 @@
 """Tests for grader module — compliance scoring with LLM classification."""
 
+from dataclasses import replace
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -120,6 +121,48 @@ class TestGradeNoncompliant:
 
 
 class TestGradeEdgeCases:
+    @pytest.mark.parametrize("detected", [False, True])
+    @patch("scripts.grader.classify_events")
+    def test_optional_only_spec_is_compliant(
+        self, mock_cls: MagicMock, detected: bool,
+        tdd_spec: ComplianceSpec, compliant_trace: list[ObservationEvent],
+    ) -> None:
+        optional = replace(
+            next(step for step in tdd_spec.steps if not step.required),
+            detector=Detector("Refactor if applicable"),
+        )
+        spec = replace(tdd_spec, steps=(optional,))
+        mock_cls.return_value = {optional.id: [4]} if detected else {}
+
+        result = grade(spec, compliant_trace)
+
+        assert result.steps[0].detected is detected
+        assert result.compliance_rate == 1.0
+        assert result.recommend_hook_promotion is False
+
+    def test_spec_without_steps_is_compliant(self, tdd_spec: ComplianceSpec) -> None:
+        result = grade(replace(tdd_spec, steps=()), [])
+
+        assert result.steps == ()
+        assert result.compliance_rate == 1.0
+        assert result.recommend_hook_promotion is False
+
+    @patch("scripts.grader.classify_events", return_value={"refactor": [4]})
+    def test_optional_detection_does_not_satisfy_required_steps(
+        self, mock_cls: MagicMock,
+        tdd_spec: ComplianceSpec, compliant_trace: list[ObservationEvent],
+    ) -> None:
+        optional = replace(
+            next(step for step in tdd_spec.steps if not step.required),
+            detector=Detector("Refactor if applicable"),
+        )
+        spec = replace(tdd_spec, steps=(tdd_spec.steps[0], optional))
+        result = grade(spec, compliant_trace)
+
+        assert next(step for step in result.steps if step.step_id == "refactor").detected
+        assert result.compliance_rate == 0.0
+        assert result.recommend_hook_promotion is True
+
     @patch("scripts.grader.classify_events", side_effect=_mock_empty_classification)
     def test_empty_trace(self, mock_cls, tdd_spec) -> None:
         result = grade(tdd_spec, [])

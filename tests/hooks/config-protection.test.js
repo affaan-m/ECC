@@ -448,6 +448,25 @@ function runTests() {
   );
 
   results.push(
+    test("blocks Prettier's TypeScript and JSON5 rc files", () => {
+      return withOwnedDirectory(fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-config-protect-prettier-')), tmpDir => {
+        for (const name of ['.prettierrc.ts', '.prettierrc.mts', '.prettierrc.cts', '.prettierrc.json5', '.prettierrc.shared.ts']) {
+          const absPath = path.join(tmpDir, name);
+          fs.writeFileSync(absPath, 'export default {};\n');
+
+          const result = runHook({ tool_name: 'Edit', tool_input: { file_path: absPath } });
+
+          assert.strictEqual(result.code, 2, 'Expected ' + name + ' to be blocked');
+          assert.ok(
+            result.stderr.includes('BLOCKED: Modifying ' + name + ' is not allowed.'),
+            'Expected block message for ' + name + ', got: ' + result.stderr
+          );
+        }
+      });
+    })
+  );
+
+  results.push(
     test('does not block build or test tooling configs', () => {
       // Pins the boundary: this hook guards LINTER configs. A future widening
       // of the patterns must not quietly start blocking ordinary work.

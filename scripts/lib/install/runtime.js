@@ -60,6 +60,7 @@ function createRawInstallPlan(request, options = {}) {
       languages: request.languages,
       projectRoot: options.projectRoot,
       homeDir: options.homeDir,
+      env: resolveInvocationEnvironment(options),
       claudeRulesDir: options.claudeRulesDir,
       sourceRoot: options.sourceRoot,
     });

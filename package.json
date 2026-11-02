@@ -549,7 +549,8 @@
     "@iarna/toml": "2.2.5",
     "ajv": "8.20.0",
     "js-yaml": "4.3.2",
-    "sql.js": "1.14.2"
+    "sql.js": "1.14.2",
+    "zod": "4.6.7"
   },
   "pi": {
     "extensions": [
@@ -564,7 +565,7 @@
   },
   "devDependencies": {
     "@eslint/js": "9.39.2",
-    "@opencode-ai/plugin": "1.18.34",
+    "@opencode-ai/plugin": "1.4.3",
     "@types/node": "26.6.4",
     "c8": "11.0.0",
     "eslint": "10.11.0",
@@ -576,22 +577,24 @@
     "node": ">=18"
   },
   "overrides": {
-    "fast-uri": "3.1.8",
+    "fast-uri": "3.1.9",
     "markdown-it": "14.3.1",
     "js-yaml": "4.3.2",
     "@humanfs/node": "0.16.8",
     "brace-expansion": "5.0.12",
     "katex": "0.18.2",
-    "smol-toml": "1.9.1"
+    "smol-toml": "1.9.1",
+    "zod": "4.6.7"
   },
   "resolutions": {
-    "fast-uri": "3.1.8",
+    "fast-uri": "3.1.9",
     "markdown-it": "14.3.1",
     "js-yaml": "4.3.2",
     "@humanfs/node": "0.16.8",
     "brace-expansion": "5.0.12",
     "katex": "0.18.2",
-    "smol-toml": "1.9.1"
+    "smol-toml": "1.9.1",
+    "zod": "4.6.7"
   },
   "packageManager": "yarn@4.9.2+sha512.1fc009bc09d13cfd0e19efa44cbfc2b9cf6ca61482725eb35bbc5e257e093ebf4130db6dfe15d604ff4b79efd8e1e8e99b25fa7d0a6197c9f9826358d4d65c3c"
 }

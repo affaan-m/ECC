@@ -10,12 +10,12 @@ below.
 
 ## Quick start
 
-Verify that 2.2.0 is readable from the registry, then run the pinned package
+Verify that 2.2.3 is readable from the registry, then run the pinned package
 from the project you want to configure:
 
 ```bash
-npm view ecc-universal version
-npx ecc-universal@2.2.0 install --profile minimal --target antigravity
+npm view ecc-universal@2.2.3 version
+npx ecc-universal@2.2.3 install --profile minimal --target antigravity
 ```
 
 ### Source checkout alternative

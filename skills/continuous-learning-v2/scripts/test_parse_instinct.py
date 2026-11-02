@@ -281,6 +281,40 @@ def test_parse_confidence_preserves_valid_range(confidence):
     assert parse_instinct_file(content)[0]["confidence"] == confidence
 
 
+@pytest.mark.unit
+@pytest.mark.parametrize("value", [
+    "line one\nline two", "tab\tvalue", "carriage\rreturn",
+    'when writing "quoted" text', r"C:\Users\name", "caf\u00e9",
+    r"literal\ntext", "line\n---\nid: other\n---", "control\x01value",
+])
+def test_quoted_instinct_strings_roundtrip(value: str) -> None:
+    quoted = _mod._yaml_quote(value)
+    assert json.loads(quoted) == value
+    instincts = parse_instinct_file(f"---\nid: roundtrip\ntrigger: {quoted}\n---\nBody")
+    assert len(instincts) == 1
+    assert instincts[0]["trigger"] == value
+
+
+@pytest.mark.unit
+def test_parse_quoted_instinct_decodes_newline_escape() -> None:
+    content = '---\nid: newline\ntrigger: "line one\\nline two"\n---\nBody'
+    assert parse_instinct_file(content)[0]["trigger"] == "line one\nline two"
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("value", ["line\u0085value", "line\u0090value"])
+def test_unicode_controls_are_escaped_for_yaml(value: str) -> None:
+    quoted = _mod._yaml_quote(value)
+    assert quoted.isascii()
+    assert json.loads(quoted) == value
+
+
+@pytest.mark.unit
+def test_parse_quoted_instinct_preserves_legacy_escape() -> None:
+    content = '---\nid: legacy\ntrigger: "C:\\projects"\n---\nBody'
+    assert parse_instinct_file(content)[0]["trigger"] == r"C:\projects"
+
+
 def test_parse_trigger_strips_quotes():
     content = """\
 ---

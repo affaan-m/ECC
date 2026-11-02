@@ -238,11 +238,10 @@ def _fetch_import_url(source: str, *, max_bytes: int = 2 * 1024 * 1024) -> str:
 def _yaml_quote(value: str) -> str:
     """Quote a string for safe YAML frontmatter serialization.
 
-    Uses double quotes and escapes embedded double-quote characters to
-    prevent malformed YAML when the value contains quotes.
+    JSON double-quoted strings are valid YAML and keep control characters
+    escaped on one line, preserving instinct frontmatter boundaries.
     """
-    escaped = value.replace('\\', '\\\\').replace('"', '\\"')
-    return f'"{escaped}"'
+    return json.dumps(value)
 
 
 # ─────────────────────────────────────────────
@@ -546,7 +545,10 @@ def parse_instinct_file(content: str) -> list[dict]:
                 value = value.strip()
                 # Unescape quoted YAML strings
                 if value.startswith('"') and value.endswith('"'):
-                    value = value[1:-1].replace('\\"', '"').replace('\\\\', '\\')
+                    try:
+                        value = json.loads(value)
+                    except json.JSONDecodeError:
+                        value = value[1:-1].replace('\\"', '"').replace('\\\\', '\\')
                 elif value.startswith("'") and value.endswith("'"):
                     value = value[1:-1].replace("''", "'")
                 if key == 'confidence':

@@ -4,6 +4,23 @@ const fs = require('fs');
 const path = require('path');
 const os = require('os');
 
+// Lazily loaded so this module can be required from stripped-down directories
+// (e.g., temp dirs in tests that copy only resolve-ecc-root.js + utils.js).
+// Falls back to identity on failure, which matches non-WSL behavior.
+let _convertWindowsPathToWSL = null;
+function convertWindowsPathToWSL(windowsPath) {
+  if (_convertWindowsPathToWSL === null) {
+    try {
+      _convertWindowsPathToWSL = require('./install-targets/helpers').convertWindowsPathToWSL;
+    } catch (_) {
+      // Module unavailable from this location; non-WSL behavior returns
+      // the input unchanged, so the fallback is safe.
+      _convertWindowsPathToWSL = (p) => p;
+    }
+  }
+  return _convertWindowsPathToWSL(windowsPath);
+}
+
 const CURRENT_PLUGIN_SLUG = 'ecc';
 // Legacy install id, kept for existing installs.
 const LEGACY_PLUGIN_SLUG = 'everything-claude-code';
@@ -66,7 +83,10 @@ function resolveEccRoot(options = {}) {
   const configuredDir = options.configDir !== undefined
     ? options.configDir
     : process.env.CLAUDE_CONFIG_DIR;
-  const rawDir = typeof configuredDir === 'string' ? configuredDir.trim() : '';
+  // On WSL, convert Windows paths (e.g., C:\Users\name\.claude) to WSL paths
+  // (/mnt/c/Users/name/.claude) so the resolver finds the correct location.
+  const wslConfiguredDir = convertWindowsPathToWSL(configuredDir);
+  const rawDir = typeof wslConfiguredDir === 'string' ? wslConfiguredDir.trim() : '';
   const expandedDir = rawDir === '~'
     ? homeDir
     : (rawDir.startsWith('~/') || rawDir.startsWith('~\\'))
@@ -154,10 +174,41 @@ function normalizePluginRootForPlatform(rootDir, platform = process.platform) {
  *   const _r = <paste INLINE_RESOLVE>;
  *   const sm = require(_r + '/scripts/lib/session-manager');
  */
-const INLINE_RESOLVE = `(function(){var p=require('path'),f=require('fs'),o=require('os');var e=process.env.CLAUDE_PLUGIN_ROOT;if(e&&e.trim())return e.trim();var d=(process.env.CLAUDE_CONFIG_DIR||'').trim()||p.join(o.homedir(),'.claude');if(d==='~')d=o.homedir();else if(d.charAt(0)==='~'&&(d.charAt(1)==='/'||d.charCodeAt(1)===92))d=p.join(o.homedir(),d.slice(2));d=p.resolve(d);function L(x){try{return require(p.join(x,'scripts','lib','resolve-ecc-root')).resolveEccRoot()}catch(_){return null}}var r=L(d);if(r)return r;var s=['ecc','ecc@ecc','marketplaces/ecc','everything-claude-code','everything-claude-code@everything-claude-code','marketplaces/everything-claude-code'];for(var i=0;i<s.length;i++){r=L(p.join(d,'plugins',s[i]));if(r)return r}function D(x){try{return f.readdirSync(x,{withFileTypes:true}).filter(function(z){return z.isDirectory()}).map(function(z){return z.name})}catch(e){if(e.code==='ENOENT')return [];throw e}}var g=['ecc','everything-claude-code'];for(var j=0;j<g.length;j++){var c=p.join(d,'plugins','cache',g[j]);var O=D(c);for(var k=0;k<O.length;k++){var q=p.join(c,O[k]);var V=D(q);for(var m=0;m<V.length;m++){r=L(p.join(q,V[m]));if(r)return r}}}return d})()`;
+// Lazily loaded so this module can be required from stripped-down directories
+// (e.g., temp dirs in tests that copy only resolve-ecc-root.js + utils.js).
+// Falls back to canonical inline string with identical escaping when unavailable.
+let _inlineWslConversion = null;
+function getInlineWslConversion() {
+  if (_inlineWslConversion === null) {
+    try {
+      _inlineWslConversion = require('./install-targets/helpers').INLINE_WSL_CONVERSION;
+    } catch (_) {
+      _inlineWslConversion = `try{if(o.platform()==='linux'){var v=f.readFileSync('/proc/version','utf8').toLowerCase();if(v.includes('microsoft')){var m=d.match(/^([A-Za-z]):[\\\\\\\\/]/);if(m){var dl=m[1].toLowerCase();d='/mnt/'+dl+d.slice(2).replace(/\\\\\\\\/g,'/')}}}}catch(_){}`;
+    }
+  }
+  return _inlineWslConversion;
+}
+
+function buildInlineResolve(options = {}) {
+  const wslConversion = getInlineWslConversion();
+  let probeArg = '';
+  if (options && options.probe) {
+    const segments = String(options.probe).split(/[\\/]/).filter(Boolean);
+    for (const seg of segments) {
+      if (!/^[\w.-]+$/.test(seg)) {
+        throw new Error(`Invalid probe segment: ${seg}`);
+      }
+    }
+    probeArg = `{probe:p.join(${segments.map((s) => `'${s}'`).join(',')})}`;
+  }
+  return `(function(){var p=require('path'),f=require('fs'),o=require('os');var e=process.env.CLAUDE_PLUGIN_ROOT;if(e&&e.trim())return e.trim();var d=(process.env.CLAUDE_CONFIG_DIR||'').trim()||p.join(o.homedir(),'.claude');if(d==='~')d=o.homedir();else if(d.charAt(0)==='~'&&(d.charAt(1)==='/'||d.charCodeAt(1)===92))d=p.join(o.homedir(),d.slice(2));${wslConversion}d=p.resolve(d);function L(x){try{return require(p.join(x,'scripts','lib','resolve-ecc-root')).resolveEccRoot(${probeArg})}catch(_){return null}}var r=L(d);if(r)return r;var s=['ecc','ecc@ecc','marketplaces/ecc','everything-claude-code','everything-claude-code@everything-claude-code','marketplaces/everything-claude-code'];for(var i=0;i<s.length;i++){r=L(p.join(d,'plugins',s[i]));if(r)return r}function D(x){try{return f.readdirSync(x,{withFileTypes:true}).filter(function(z){return z.isDirectory()}).map(function(z){return z.name})}catch(e){if(e.code==='ENOENT')return [];throw e}}var g=['ecc','everything-claude-code'];for(var j=0;j<g.length;j++){var c=p.join(d,'plugins','cache',g[j]);var O=D(c);for(var k=0;k<O.length;k++){var q=p.join(c,O[k]);var V=D(q);for(var m=0;m<V.length;m++){r=L(p.join(q,V[m]));if(r)return r}}}return d})()`;
+}
+
+const INLINE_RESOLVE = buildInlineResolve();
 
 module.exports = {
   resolveEccRoot,
   normalizePluginRootForPlatform,
   INLINE_RESOLVE,
+  buildInlineResolve,
 };

@@ -233,6 +233,14 @@ function createTestDir() {
   return fs.mkdtempSync(path.join(os.tmpdir(), 'hooks-test-'));
 }
 
+function fixtureGitOptions(cwd) {
+  const env = { ...process.env };
+  for (const name of Object.keys(env)) {
+    if (name.toUpperCase().startsWith('GIT_')) delete env[name];
+  }
+  return { cwd, env };
+}
+
 // Clean up test directory
 function cleanupTestDir(testDir) {
   const retryableCodes = new Set(['EPERM', 'EBUSY', 'ENOTEMPTY']);
@@ -1196,6 +1204,74 @@ async function runTests() {
       assert.strictEqual(result.code, 0, 'Should exit 0 on invalid JSON');
       // Should still pass through the data
       assert.ok(result.stdout.includes('not valid json'), 'Should pass through invalid data');
+    })
+  )
+    passed++;
+  else failed++;
+
+  if (
+    await asyncTest('finds console.log in a modified file when the session runs in a subdirectory', async () => {
+      // git reports paths from the repository root, not from the session's directory.
+      const repo = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-console-log-'));
+      try {
+        const appDir = path.join(repo, 'packages', 'app');
+        fs.mkdirSync(path.join(appDir, 'src'), { recursive: true });
+        execFileSync('git', ['init', '-q'], fixtureGitOptions(repo));
+        fs.writeFileSync(path.join(appDir, 'src', 'a.ts'), 'export const a = 1;\n');
+        execFileSync('git', ['add', '-A'], fixtureGitOptions(repo));
+        execFileSync('git', ['-c', 'user.email=t@t.local', '-c', 'user.name=t', '-c', 'commit.gpgsign=false', 'commit', '-q', '-m', 'seed'], fixtureGitOptions(repo));
+        fs.writeFileSync(path.join(appDir, 'src', 'a.ts'), 'export const a = 1;\nconsole.log(a);\n');
+
+        const result = await runScript(path.join(scriptsDir, 'check-console-log.js'), '{}', {}, appDir);
+        assert.strictEqual(result.code, 0);
+        assert.ok(result.stderr.includes('console.log found in packages/app/src/a.ts'), `Should warn about the file, got: ${result.stderr}`);
+
+        // diff.relative would make git report paths from the session's directory.
+        execFileSync('git', ['config', 'diff.relative', 'true'], fixtureGitOptions(repo));
+        const relative = await runScript(path.join(scriptsDir, 'check-console-log.js'), '{}', {}, appDir);
+        assert.ok(relative.stderr.includes('console.log found in packages/app/src/a.ts'), `Should warn with diff.relative, got: ${relative.stderr}`);
+      } finally {
+        fs.rmSync(repo, { recursive: true, force: true });
+      }
+    })
+  )
+    passed++;
+  else failed++;
+
+  if (
+    await asyncTest('uses the session repository despite inherited Git environment overrides', async () => {
+      const root = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-console-git-env-'));
+      try {
+        const makeRepo = (name, file) => {
+          const repo = path.join(root, name);
+          fs.mkdirSync(path.join(repo, 'src'), { recursive: true });
+          execFileSync('git', ['init', '-q'], fixtureGitOptions(repo));
+          fs.writeFileSync(path.join(repo, 'src', file), 'export const value = 1;\n');
+          execFileSync('git', ['add', '-A'], fixtureGitOptions(repo));
+          execFileSync('git', ['-c', 'user.email=t@t.local', '-c', 'user.name=t', '-c', 'commit.gpgsign=false', 'commit', '-q', '-m', 'seed'], fixtureGitOptions(repo));
+          return repo;
+        };
+        const sessionRepo = makeRepo('session', 'local.ts');
+        const foreignRepo = makeRepo('foreign', 'foreign.ts');
+        fs.writeFileSync(path.join(foreignRepo, 'src', 'foreign.ts'), 'console.log("foreign");\n');
+        const env = {
+          GIT_DIR: path.join(foreignRepo, '.git'),
+          GIT_WORK_TREE: foreignRepo,
+          GIT_INDEX_FILE: path.join(foreignRepo, '.git', 'index')
+        };
+
+        const clean = await runScript(path.join(scriptsDir, 'check-console-log.js'), '{}', env, sessionRepo);
+        assert.strictEqual(clean.code, 0);
+        assert.ok(!clean.stderr.includes('console.log found'), `foreign repository leaked into hook: ${clean.stderr}`);
+
+        fs.writeFileSync(path.join(sessionRepo, 'src', 'local.ts'), 'console.log("local");\n');
+        const local = await runScript(path.join(scriptsDir, 'check-console-log.js'), '{}', env, sessionRepo);
+        assert.strictEqual(local.code, 0);
+        assert.ok(local.stderr.includes('console.log found in src/local.ts'), local.stderr);
+        assert.ok(!local.stderr.includes('foreign.ts'), local.stderr);
+      } finally {
+        fs.rmSync(root, { recursive: true, force: true });
+      }
     })
   )
     passed++;

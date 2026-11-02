@@ -304,42 +304,68 @@ const MISS_RANK = Object.freeze({
   'same-batch': 0, lookup: 1, excluded: 2, 'out-of-scope': 3, 'stdin-only': 4, 'not-a-search': 5, 'generic-stem': 6
 });
 
+// --- Tool search evidence ---
+
+function explicitPath(input) {
+  return typeof input.path === 'string' && input.path ? input.path : '';
+}
+
+function globEvidence(input) {
+  if (typeof input.pattern !== 'string' || !input.pattern) return [];
+  const explicit = explicitPath(input);
+  const prefix = globLiteralPrefix(input.pattern);
+  const scope = [explicit || '.', prefix || '.'];
+  if (!GLOB_CHARS_PATTERN.test(input.pattern)) {
+    const lookup = [explicit || '.', input.pattern];
+    return [{ texts: [input.pattern], dirs: [], scope, scopeExact: true, operands: [lookup], detail: input.pattern }];
+  }
+  const dirs = prefix || explicit ? [scope] : [];
+  // see docs/gateguard/design-notes.md#path-patterns
+  const pathPattern = pathPatternFor([explicit || '.'], input.pattern);
+  return [{ texts: [input.pattern], dirs, scope, detail: input.pattern, pathPattern }];
+}
+
+function grepEvidence(input) {
+  if (typeof input.pattern !== 'string' || !input.pattern) return [];
+  const explicit = explicitPath(input);
+  const detail = grepDetail(input);
+  const filters = grepToolFilters(input.glob, input.type);
+  return [{
+    texts: stringsOf(input.pattern, ...filters.positives),
+    dirs: explicit ? [[explicit]] : [],
+    scope: [explicit || '.'],
+    detail,
+    pathIncludes: true,
+    ...filters
+  }];
+}
+
+function lsEvidence(input) {
+  return stringsOf(input.path).map(dir => ({ texts: [], dirs: [[dir]], scope: [dir], detail: dir }));
+}
+
+const TOOL_EVIDENCE = new Map([['Glob', globEvidence], ['Grep', grepEvidence], ['LS', lsEvidence]]);
+
+function searchHasMessage(search) {
+  return typeof search.messageId === 'string' && Boolean(search.messageId);
+}
+
+/** First evidence item that credits the target by stem or, when allowed, by directory. */
+function creditingItem(items, ctx, stem, allowDirMatch) {
+  for (const item of items) {
+    if (!evidenceInScope(item, ctx) || !filtersAdmitTarget(item, ctx, stem)) continue;
+    const byStem = stem !== null && stemCredits(item, ctx, stem);
+    const byDir = Boolean(allowDirMatch) && evidenceNamesDir(item, ctx);
+    if (byStem || byDir) return item;
+  }
+  return null;
+}
 /** Build the prior-search matcher around the hook's shell segmenter. */
 function createSearchEvidence({ quoteAwareSegments, commandBasename, SHELL_SEGMENT_SEPARATORS }) {
   function searchEvidence(search, shellDirsTrusted, misses) {
-    const input = search.input;
-    if (search.name === 'Glob') {
-      if (typeof input.pattern !== 'string' || !input.pattern) return [];
-      const explicit = typeof input.path === 'string' && input.path ? input.path : '';
-      const prefix = globLiteralPrefix(input.pattern);
-      const scope = [explicit || '.', prefix || '.'];
-      if (!GLOB_CHARS_PATTERN.test(input.pattern)) {
-        const lookup = [explicit || '.', input.pattern];
-        return [{ texts: [input.pattern], dirs: [], scope, scopeExact: true, operands: [lookup], detail: input.pattern }];
-      }
-      const dirs = prefix || explicit ? [scope] : [];
-      // see docs/gateguard/design-notes.md#path-patterns
-      const pathPattern = pathPatternFor([explicit || '.'], input.pattern);
-      return [{ texts: [input.pattern], dirs, scope, detail: input.pattern, pathPattern }];
-    }
-    if (search.name === 'Grep') {
-      if (typeof input.pattern !== 'string' || !input.pattern) return [];
-      const explicit = typeof input.path === 'string' && input.path ? input.path : '';
-      const detail = grepDetail(input);
-      const filters = grepToolFilters(input.glob, input.type);
-      return [{
-        texts: stringsOf(input.pattern, ...filters.positives),
-        dirs: explicit ? [[explicit]] : [],
-        scope: [explicit || '.'],
-        detail,
-        pathIncludes: true,
-        ...filters
-      }];
-    }
-    if (search.name === 'LS') {
-      return stringsOf(input.path).map(dir => ({ texts: [], dirs: [[dir]], scope: [dir], detail: dir }));
-    }
-    return shellSearchEvidence(input.command, search.name, shellDirsTrusted, misses);
+    const byTool = TOOL_EVIDENCE.get(search.name);
+    if (byTool) return byTool(search.input);
+    return shellSearchEvidence(search.input.command, search.name, shellDirsTrusted, misses);
   }
 
   function segmentPipeFlags(input) {
@@ -493,17 +519,11 @@ function createSearchEvidence({ quoteAwareSegments, commandBasename, SHELL_SEGME
       const excluded = excludedBatchId(scan, data);
       let shellDirsTrusted = null;
       for (const search of scan.searches) {
-        if (typeof search.messageId !== 'string' || !search.messageId || search.messageId === excluded) continue;
+        if (!searchHasMessage(search) || search.messageId === excluded) continue;
         if (!allowDirMatch && !inputMayMention(search.input, eligible)) continue;
         if (shellDirsTrusted === null) shellDirsTrusted = shellDirsTrustedFor(scan);
-        for (const item of cachedEvidence(search, shellDirsTrusted).items) {
-          if (!evidenceInScope(item, ctx) || !filtersAdmitTarget(item, ctx, stem)) continue;
-          const byStem = stem !== null && stemCredits(item, ctx, stem);
-          const byDir = Boolean(allowDirMatch) && evidenceNamesDir(item, ctx);
-          if (byStem || byDir) {
-            return { name: search.name, detail: item.detail, callsAgo: search.callsAgo };
-          }
-        }
+        const item = creditingItem(cachedEvidence(search, shellDirsTrusted).items, ctx, stem, allowDirMatch);
+        if (item) return { name: search.name, detail: item.detail, callsAgo: search.callsAgo };
       }
       return null;
     } catch (_) {
@@ -534,6 +554,19 @@ function createSearchEvidence({ quoteAwareSegments, commandBasename, SHELL_SEGME
     return 'excluded';
   }
 
+  function missReason(miss, stem, rawStem) {
+    if (!mentionsTarget(miss.texts, stem, rawStem)) return null;
+    return stem === null ? 'generic-stem' : miss.reason;
+  }
+
+  function considerReads(scan, ctx, stem, consider) {
+    for (const read of Array.isArray(scan.reads) ? scan.reads : []) {
+      if (!read || typeof read.path !== 'string' || !read.path) continue;
+      const readsTarget = ctx.resolveDir(read.path) === ctx.targetKey || mentionsTarget([read.path], stem, null);
+      if (readsTarget) consider('Read', read.path, 'not-a-search');
+    }
+  }
+
   /** Closest search of the current turn that did not credit the target, with a reason code, else null. */
   function findClosestMiss(scan, targetPath, allowDirMatch, data) {
     try {
@@ -551,22 +584,15 @@ function createSearchEvidence({ quoteAwareSegments, commandBasename, SHELL_SEGME
         if (reason && (best === null || MISS_RANK[reason] < MISS_RANK[best.reason])) best = { name, detail, reason };
       };
       for (const search of scan.searches) {
-        if (!search || typeof search.messageId !== 'string' || !search.messageId) continue;
+        if (!search || !searchHasMessage(search)) continue;
         if (!allowDirMatch && (!bare || !inputMayMention(search.input, bare))) continue;
         if (shellDirsTrusted === null) shellDirsTrusted = shellDirsTrustedFor(scan);
         const { items, misses } = cachedEvidence(search, shellDirsTrusted);
-        for (const item of items) {
-          consider(search.name, item.detail, itemMiss(item, ctx, stem, rawStem, allowDirMatch, search.messageId === excluded));
-        }
-        for (const miss of misses) {
-          if (mentionsTarget(miss.texts, stem, rawStem)) consider(search.name, miss.detail, stem === null ? 'generic-stem' : miss.reason);
-        }
+        const sameBatch = search.messageId === excluded;
+        for (const item of items) consider(search.name, item.detail, itemMiss(item, ctx, stem, rawStem, allowDirMatch, sameBatch));
+        for (const miss of misses) consider(search.name, miss.detail, missReason(miss, stem, rawStem));
       }
-      for (const read of Array.isArray(scan.reads) ? scan.reads : []) {
-        if (!read || typeof read.path !== 'string' || !read.path) continue;
-        const readsTarget = ctx.resolveDir(read.path) === ctx.targetKey || mentionsTarget([read.path], stem, null);
-        if (readsTarget) consider('Read', read.path, 'not-a-search');
-      }
+      considerReads(scan, ctx, stem, consider);
       return best;
     } catch (_) {
       return null;

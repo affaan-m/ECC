@@ -18,22 +18,35 @@ permissions:
 
 jobs:
   test:
-    name: Test (${{ matrix.os }}, Node ${{ matrix.node }}, ${{ matrix.pm }})
+    name: Test (${{ matrix.os }}, Node ${{ matrix.node }}, ${{ matrix.pm }}, ${{ matrix.scope }})
     runs-on: ${{ matrix.os }}
-    # The complete cross-platform suite reaches its final installer cases at
-    # 30 minutes on hosted Windows Node 18; retain a bounded completion window.
+    # The serial Windows full lane reaches its final installer cases at about
+    # 30 minutes; retain a bounded completion window.
     timeout-minutes: 45
 
     strategy:
       fail-fast: false
+      # Two kinds of lane. `full` runs the whole suite; `pm` runs only the suites
+      # that read CLAUDE_CODE_PACKAGE_MANAGER, which is all the package-manager
+      # axis ever changed. The old 33-way cross product ran the full suite 33
+      # times per push, with Windows lanes at 30 to 40 minutes each.
       matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
-        node: ['18.x', '20.x', '22.x']
-        pm: [npm, pnpm, yarn, bun]
-        exclude:
-          # Bun has limited Windows support
-          - os: windows-latest
-            pm: bun
+        include:
+          # Full suite: Linux on every supported Node line, current LTS on Windows and macOS.
+          - { os: ubuntu-latest, node: '18.x', pm: npm, scope: full }
+          - { os: ubuntu-latest, node: '20.x', pm: npm, scope: full }
+          - { os: ubuntu-latest, node: '22.x', pm: npm, scope: full }
+          - { os: windows-latest, node: '22.x', pm: npm, scope: full }
+          - { os: macos-latest, node: '22.x', pm: npm, scope: full }
+          # Package-manager lanes on current LTS. Bun has limited Windows support.
+          - { os: ubuntu-latest, node: '22.x', pm: pnpm, scope: pm }
+          - { os: ubuntu-latest, node: '22.x', pm: yarn, scope: pm }
+          - { os: ubuntu-latest, node: '22.x', pm: bun, scope: pm }
+          - { os: windows-latest, node: '22.x', pm: pnpm, scope: pm }
+          - { os: windows-latest, node: '22.x', pm: yarn, scope: pm }
+          - { os: macos-latest, node: '22.x', pm: pnpm, scope: pm }
+          - { os: macos-latest, node: '22.x', pm: yarn, scope: pm }
+          - { os: macos-latest, node: '22.x', pm: bun, scope: pm }
 
     steps:
       - name: Checkout
@@ -125,18 +138,37 @@ jobs:
             *) echo "Unsupported package manager: ${{ matrix.pm }}" && exit 1 ;;
           esac
 
-      # Run tests
+      # Run tests. Full lanes run every file through a 4-process pool on Linux
+      # and macOS; Windows stays serial because its process spawn and temp-dir
+      # cleanup are the flaky part. pm lanes derive their file list from the
+      # suites that actually read the package-manager variable, so the lane
+      # cannot drift out of date as tests are added.
       - name: Run tests
-        run: node tests/run-all.js
+        shell: bash
+        run: |
+          if [ "${{ matrix.scope }}" = "pm" ]; then
+            ECC_TEST_ONLY=$(grep -rlE --include='*.test.js' 'CLAUDE(_CODE)?_PACKAGE_MANAGER' tests | sed 's#^tests/##' | sort | paste -sd, -)
+            export ECC_TEST_ONLY
+            echo "pm lane files: $ECC_TEST_ONLY"
+          fi
+          # Suites that run scripts/build-opencode.js, or rename a checkout path
+          # to a .backup-<pid> copy and restore it, mutate the shared checkout;
+          # suites that assert a wall-clock budget cannot share cores with the
+          # pool. Both groups run last, one at a time.
+          ECC_TEST_SERIAL=$(grep -rlE --include='*.test.js' 'build-opencode|\.backup-|dist\.backup|time budget' tests | sed 's#^tests/##' | sort | paste -sd, -)
+          export ECC_TEST_SERIAL
+          echo "serial after the pool: $ECC_TEST_SERIAL"
+          node tests/run-all.js
         env:
           CLAUDE_CODE_PACKAGE_MANAGER: ${{ matrix.pm }}
+          ECC_TEST_JOBS: ${{ runner.os == 'Windows' && '1' || '4' }}
 
       # Upload test artifacts on failure
       - name: Upload test artifacts
         if: failure()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: test-results-${{ matrix.os }}-node${{ matrix.node }}-${{ matrix.pm }}
+          name: test-results-${{ matrix.os }}-node${{ matrix.node }}-${{ matrix.pm }}-${{ matrix.scope }}
           path: |
             tests/
             !tests/node_modules/
