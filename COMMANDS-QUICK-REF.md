@@ -264,7 +264,7 @@ These slash commands were retired in favor of skills. The command files still ex
 | `/docs` | `documentation-lookup` |
 | `/claw` | `nanoclaw-repl` |
 | `/context-budget` | `context-budget` |
-| `/devfleet` | `claude-devfleet` |
+| `/devfleet` | `devfleet` |
 | `/orchestrate` | `dmux-workflows` and `autonomous-agent-harness` |
 | `/prompt-optimize` | `prompt-optimizer` |
 | `/rules-distill` | `rules-distill` |
