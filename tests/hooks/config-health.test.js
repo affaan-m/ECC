@@ -1,10 +1,6 @@
 /**
- * Hook-contract tests for scripts/config-health.py
- *
- * Verifies the contract haelyra asked for: present & missing scripts,
- * malformed & absent settings, absent rule dirs, and warning behavior —
- * every diagnostic must stay non-blocking (exit 0), exit cleanly, and never
- * echo raw hook input or secrets.
+ * Hook-contract tests for scripts/config-health.py: resolution, wording, and
+ * non-blocking behavior.
  *
  * Run with: node tests/hooks/config-health.test.js
  * (also picked up by `node tests/run-all.js`)
@@ -18,141 +14,25 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 
-const SCRIPT = path.join(__dirname, '..', '..', 'scripts', 'config-health.py');
-
-// Resolve a working python. On Windows, missing interpreters surface as
-// status 9009 (not a spawn error), so probe both name and exit status.
-function resolvePython() {
-  const probe = (name) => {
-    const r = spawnSync(name, ['--version'], { stdio: 'ignore' });
-    return !r.error && r.status === 0;
-  };
-  if (process.env.CONFIG_HEALTH_PYTHON) return process.env.CONFIG_HEALTH_PYTHON;
-  if (probe('python3')) return 'python3';
-  if (probe('python')) return 'python';
-  throw new Error('No python interpreter found (tried CONFIG_HEALTH_PYTHON, python3, python)');
-}
-
-const PYTHON = resolvePython();
-
-// ---- helpers ---------------------------------------------------------------
-
-function test(name, fn) {
-  try {
-    fn();
-    console.log(`  ✓ ${name}`);
-    return true;
-  } catch (err) {
-    console.log(`  ✗ ${name}`);
-    console.log(`    Error: ${err.message}`);
-    return false;
-  }
-}
-
-function makeFixture() {
-  // Returns { home, proj, root } — a throwaway sandbox under os.tmpdir().
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'config-health-'));
-  const home = path.join(root, 'home');
-  const proj = path.join(root, 'proj');
-  fs.mkdirSync(path.join(home, '.claude'), { recursive: true });
-  fs.mkdirSync(path.join(proj, '.claude'), { recursive: true });
-  return { root, home, proj };
-}
-
-function run(mode, { home, proj }, stdin = '', extraEnv = {}) {
-  return spawnSync(PYTHON, [SCRIPT, mode], {
-    env: {
-      ...process.env,
-      CONFIG_HEALTH_USER_HOME: home,
-      CLAUDE_PROJECT_DIR: proj,
-      CLAUDE_CONFIG_DIR: '',
-      ...extraEnv,
-    },
-    input: stdin,
-    encoding: 'utf8',
-  });
-}
-
-function writeSettings(home, content) {
-  fs.writeFileSync(path.join(home, '.claude', 'settings.json'), content, 'utf8');
-}
-
-// Install-lifecycle fixture: a disposable HOME and Claude data root, so the
-// real installer/repair/uninstaller run without touching the user's config.
-function makeInstallFixture() {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'config-health-install-'));
-  const home = path.join(root, 'home');
-  const config = path.join(root, 'claude');
-  const proj = path.join(root, 'proj');
-  fs.mkdirSync(home, { recursive: true });
-  fs.mkdirSync(config, { recursive: true });
-  fs.mkdirSync(proj, { recursive: true });
-  return { root, home, config, proj };
-}
-
-function installEnv(fx, extraEnv = {}) {
-  return {
-    HOME: fx.home,
-    USERPROFILE: fx.home,
-    CLAUDE_CONFIG_DIR: fx.config,
-    CONFIG_HEALTH_USER_HOME: fx.home,
-    CLAUDE_PROJECT_DIR: fx.proj,
-    ...extraEnv,
-  };
-}
-
-function runNode(scriptRel, args, env) {
-  return spawnSync(process.execPath, [path.join(__dirname, '..', '..', scriptRel), ...args], {
-    cwd: path.join(__dirname, '..', '..'),
-    env: { ...process.env, ...env },
-    encoding: 'utf8',
-    timeout: 120000,
-  });
-}
-
-function runInstalled(mode, fx, extraEnv = {}) {
-  return spawnSync(PYTHON, [path.join(fx.config, 'scripts', 'config-health.py'), mode], {
-    env: { ...process.env, ...installEnv(fx, extraEnv) },
-    encoding: 'utf8',
-    timeout: 120000,
-  });
-}
-
-function runInstalledWithInput(mode, fx, input, extraEnv = {}) {
-  return spawnSync(PYTHON, [path.join(fx.config, 'scripts', 'config-health.py'), mode], {
-    env: { ...process.env, ...installEnv(fx, extraEnv) },
-    input,
-    encoding: 'utf8',
-    timeout: 120000,
-  });
-}
-
-const HOOKS_JSON = (scriptPath) => JSON.stringify({
-  hooks: {
-    SessionStart: [{ hooks: [{ type: 'command', command: `python3 ${scriptPath} --start`, timeout: 5000 }] }],
-    PreToolUse: [{ matcher: 'Edit|Write', hooks: [{ type: 'command', command: `python3 ${scriptPath} --pretool`, timeout: 3000 }] }],
-  },
-});
-
-// A single command hook, for pinning one parser or resolution rule at a time
-// instead of the two-shape fixture above.
-const ONE_HOOK = (command, event = 'PreToolUse') => JSON.stringify({
-  hooks: { [event]: [{ hooks: [{ type: 'command', command, timeout: 5 }] }] },
-});
-
-// A plugin install wires its hooks against $CLAUDE_PLUGIN_ROOT, which is a
-// directory the monitor must expand rather than treat as project-relative.
-const PLUGIN_HOOKS_JSON = (relPath) => JSON.stringify({
-  hooks: {
-    SessionStart: [{ hooks: [{ type: 'command', command: `python3 "\${CLAUDE_PLUGIN_ROOT}/${relPath}" --start`, timeout: 5000 }] }],
-    PreToolUse: [{ matcher: 'Edit|Write', hooks: [{ type: 'command', command: `python3 "\${CLAUDE_PLUGIN_ROOT}/${relPath}" --pretool`, timeout: 3000 }] }],
-  },
-});
-
-// ---- suite -----------------------------------------------------------------
+const {
+  SCRIPT,
+  PYTHON,
+  test,
+  makeFixture,
+  run,
+  writeSettings,
+  makeInstallFixture,
+  installEnv,
+  runNode,
+  runInstalled,
+  runInstalledWithInput,
+  HOOKS_JSON,
+  ONE_HOOK,
+  PLUGIN_HOOKS_JSON,
+} = require('./config-health-helpers');
 
 function runTests() {
-  console.log('\n=== Testing config-health.py hook contract ===\n');
+  console.log('\n=== Testing config-health.py hook contract: resolution and wording ===\n');
   let passed = 0;
   let total = 0;
 
@@ -211,6 +91,92 @@ function runTests() {
     const r = run('--startup', fx);
     assert.strictEqual(r.status, 0, `expected exit 0, got ${r.status}`);
     assert.ok(r.stdout.includes('missing rule file'), 'expected a dead-rule warning');
+  });
+
+  // ECC installs rules under nested namespaces; a flat-only pattern missed
+  // every one of those, so a missing nested reference reported healthy.
+  t('startup warns on a missing nested rule reference', () => {
+    const fx = makeFixture();
+    fs.writeFileSync(path.join(fx.proj, 'CLAUDE.md'),
+      'see rules/ecc/common/security.md and .claude/rules/ecc/common/style.md\n', 'utf8');
+    const r = run('--startup', fx);
+    assert.strictEqual(r.status, 0, `expected exit 0, got ${r.status}`);
+    assert.ok(r.stdout.includes('rules/ecc/common/security.md'),
+      `expected the nested reference to be audited, got: ${r.stdout.trim()}`);
+    assert.ok(r.stdout.includes('rules/ecc/common/style.md'),
+      `expected the .claude-prefixed nested reference to be audited, got: ${r.stdout.trim()}`);
+  });
+
+  t('a nested rule reference that exists is not reported', () => {
+    const fx = makeFixture();
+    fs.mkdirSync(path.join(fx.proj, 'rules', 'ecc', 'common'), { recursive: true });
+    fs.writeFileSync(path.join(fx.proj, 'rules', 'ecc', 'common', 'security.md'), '# x\n', 'utf8');
+    fs.writeFileSync(path.join(fx.proj, 'CLAUDE.md'),
+      'see rules/ecc/common/security.md\n', 'utf8');
+    const r = run('--startup', fx);
+    assert.strictEqual(r.status, 0, `expected exit 0, got ${r.status}`);
+    assert.ok(!r.stdout.includes('missing rule file'),
+      `an existing nested rule must stay silent, got: ${r.stdout.trim()}`);
+  });
+
+  // settings.local.json wins over both settings files, so a hook declared only
+  // there is live. Not reading it turns a broken hook into a clean report.
+  t('a missing hook declared only in settings.local.json is reported', () => {
+    const fx = makeFixture();
+    fs.writeFileSync(path.join(fx.proj, '.claude', 'settings.local.json'),
+      ONE_HOOK('python3 .claude/scripts/ghost-local.py'), 'utf8');
+    const r = run('--startup', fx);
+    assert.strictEqual(r.status, 0, `expected exit 0, got ${r.status}`);
+    assert.ok(r.stdout.includes('ghost-local.py'),
+      `expected the local settings hook to be audited, got: ${r.stdout.trim()}`);
+  });
+
+  // A plugin's own hooks/hooks.json runs without any settings file naming it.
+  t('a missing hook declared only in plugin hooks/hooks.json is reported', () => {
+    const fx = makeFixture();
+    const pluginRoot = path.join(fx.root, 'plugin');
+    fs.mkdirSync(path.join(pluginRoot, 'hooks'), { recursive: true });
+    fs.writeFileSync(path.join(pluginRoot, 'hooks', 'hooks.json'),
+      PLUGIN_HOOKS_JSON('scripts/hooks/ghost-plugin.py'), 'utf8');
+    const r = run('--startup', fx, '', { CLAUDE_PLUGIN_ROOT: pluginRoot });
+    assert.strictEqual(r.status, 0, `expected exit 0, got ${r.status}`);
+    assert.ok(r.stdout.includes('ghost-plugin.py'),
+      `expected the plugin hook source to be audited, got: ${r.stdout.trim()}`);
+  });
+
+  // A positive count in a short session is still a firing. The complexity
+  // filter decides whether a rule *should* fire, not whether it did.
+  t('a rule that fired in a short recent session is not called dead', () => {
+    const fx = makeFixture();
+    const dataDir = path.join(fx.home, '.claude', 'session-data');
+    fs.mkdirSync(dataDir, { recursive: true });
+    const records = [
+      ...Array.from({ length: 4 }, (_, index) => JSON.stringify({
+        ts: `2026-10-2${index}T00:00:00Z`, tool_calls: 10, live_rule: 0,
+      })),
+      JSON.stringify({ ts: '2026-10-30T00:00:00Z', tool_calls: 1, live_rule: 3 }),
+    ];
+    fs.writeFileSync(path.join(dataDir, 'rule-health.jsonl'),
+      records.join('\n') + '\n', 'utf8');
+    const r = run('--startup', fx);
+    assert.strictEqual(r.status, 0, `expected exit 0, got ${r.status}`);
+    assert.ok(!r.stdout.includes('live_rule'),
+      `a rule that fired inside the window must not be called dead: ${r.stdout.trim()}`);
+  });
+
+  t('a rule with zero counts across five complex sessions is reported stale', () => {
+    const fx = makeFixture();
+    const dataDir = path.join(fx.home, '.claude', 'session-data');
+    fs.mkdirSync(dataDir, { recursive: true });
+    const records = Array.from({ length: 5 }, (_, index) => JSON.stringify({
+      ts: `2026-10-2${index}T00:00:00Z`, tool_calls: 10, dead_rule: 0,
+    }));
+    fs.writeFileSync(path.join(dataDir, 'rule-health.jsonl'),
+      records.join('\n') + '\n', 'utf8');
+    const r = run('--startup', fx);
+    assert.strictEqual(r.status, 0, `expected exit 0, got ${r.status}`);
+    assert.ok(r.stdout.includes('dead_rule') && r.stdout.includes('has not fired'),
+      `expected the stale rule to be named, got: ${r.stdout.trim()}`);
   });
 
   // --pretool must NEVER echo stdin (raw hook input / secrets).
@@ -769,490 +735,6 @@ function runTests() {
       assert.strictEqual(r.stdout, '', `${mode} must not print a half-finished report`);
     }
   });
-
-  // --- a blind spot nobody can see is not a health check -------------------
-
-  t('--check reports how many hook paths it did not audit', () => {
-    const fx = makeFixture();
-    writeSettings(fx.home, ONE_HOOK('python3 "${CLAUDE_ENV_FILE}/hooks/x.py"'));
-    const r = run('--check', fx, '', { CLAUDE_ENV_FILE: '' });
-    assert.ok(r.stdout.includes('not audited'),
-      `the blind spot must be visible, got: ${r.stdout.trim()}`);
-  });
-
-  t('--check names the plugin root it judged against', () => {
-    const fx = makeFixture();
-    const pluginRoot = path.join(fx.root, 'plugin');
-    fs.mkdirSync(pluginRoot, { recursive: true });
-    const r = run('--check', fx, '', { CLAUDE_PLUGIN_ROOT: pluginRoot });
-    assert.ok(r.stdout.includes(pluginRoot),
-      `a wrong-root false positive must be diagnosable, got: ${r.stdout.trim()}`);
-  });
-
-  // --- program bodies, quoting, and the backslash -------------------------
-  // A second adversarial pass found that the first fix of these introduced a
-  // Windows regression: treating every backslash as a shell escape turned
-  // C:\Users\me\guard.py into C:Usersmeguard.py, a false alarm on the
-  // platform this script is developed on. These pin the corrected rules.
-
-  t('an unquoted Windows path keeps its backslashes', () => {
-    const fx = makeFixture();
-    const dir = path.join(fx.home, 'back', 'slash');
-    fs.mkdirSync(dir, { recursive: true });
-    const present = path.join(dir, 'win.py');
-    fs.writeFileSync(present, '', 'utf8');
-    writeSettings(fx.home, ONE_HOOK(`python3 ${present}`));
-    const ok = run('--startup', fx);
-    assert.ok(!ok.stdout.includes('missing script'),
-      `a Windows path must not be unescaped into nonsense, got: ${ok.stdout.trim()}`);
-
-    writeSettings(fx.home, ONE_HOOK(`python3 ${path.join(dir, 'gone.py')}`));
-    const missing = run('--startup', fx);
-    assert.ok(missing.stdout.includes('gone.py'),
-      `and the missing case must still be reported, got: ${missing.stdout.trim()}`);
-  });
-
-  t('a shell -c body is scanned as a command line again', () => {
-    const fx = makeFixture();
-    const cmd = `sh -c "python3 ${path.join(fx.root, 'nowhere', 'ghost.py')}"`;
-    writeSettings(fx.home, ONE_HOOK(cmd));
-    const r = run('--startup', fx);
-    assert.ok(r.stdout.includes('ghost.py'),
-      `the shell will open that file, so it must be reported, got: ${r.stdout.trim()}`);
-  });
-
-  t('bundled and long-form program flags are recognised', () => {
-    const fx = makeFixture();
-    for (const flag of ['-c', '-lc', '--command']) {
-      writeSettings(fx.home, ONE_HOOK(`bash ${flag} "python3 .claude/scripts/ghost.py"`));
-      const r = run('--startup', fx);
-      assert.ok(r.stdout.includes('ghost.py'),
-        `${flag} takes a command body and must not hide the reference, got: ${r.stdout.trim()}`);
-    }
-  });
-
-  t('a node -e body is skipped, and the argument after it is not', () => {
-    const fx = makeFixture();
-    for (const cmd of [
-      'node -e "const s=p.join(r,\'scripts/hooks/never-created.js\')" node scripts/hooks/ghost.js',
-      'node --eval "const s=1" node scripts/hooks/ghost.js',
-      'node -e const s = p.join(r, "scripts/hooks/never-created.js") ; node scripts/hooks/ghost.js',
-    ]) {
-      writeSettings(fx.home, ONE_HOOK(cmd));
-      const r = run('--startup', fx);
-      assert.ok(r.stdout.includes('ghost.js'),
-        `the real argument must survive the body, got: ${r.stdout.trim()}`);
-      assert.ok(!r.stdout.includes('never-created.js'),
-        `a string inside the body is not a file, got: ${r.stdout.trim()}`);
-    }
-  });
-
-  t('an unclosed quote is skipped, counted, and reported by --check', () => {
-    const fx = makeFixture();
-    writeSettings(fx.home, ONE_HOOK('python3 ".claude/scripts/ghost.py --start'));
-    const r = run('--check', fx);
-    assert.strictEqual(r.status, 0, `expected exit 0, got ${r.status}`);
-    assert.ok(!r.stdout.includes('missing script'),
-      `an unparseable command must not produce a guess, got: ${r.stdout.trim()}`);
-    assert.ok(/unclosed quote/.test(r.stdout),
-      `but it must not be invisible either, got: ${r.stdout.trim()}`);
-  });
-
-  t('a relative hook satisfied only outside the project is disclosed', () => {
-    const fx = makeFixture();
-    fs.mkdirSync(path.join(fx.home, '.claude', 'scripts'), { recursive: true });
-    fs.writeFileSync(path.join(fx.home, '.claude', 'scripts', 'home-only.py'), '', 'utf8');
-    writeSettings(fx.home, HOOKS_JSON('.claude/scripts/home-only.py'));
-    const r = run('--check', fx);
-    assert.ok(r.stdout.includes('satisfied by the user home or plugin root'),
-      `the cross-root trade must be visible, got: ${r.stdout.trim()}`);
-  });
-
-  t('an option between the interpreter and -c does not orphan the body', () => {
-    const fx = makeFixture();
-    // The payload is chosen per interpreter: a shell body is a command line
-    // and is rescanned, a python body is source and is not a file reference.
-    const cases = [
-      ['bash -x -c "python3 .claude/scripts/ghost.py"', 'ghost.py'],
-      ['bash -o pipefail -c "python3 .claude/scripts/ghost.py"', 'ghost.py'],
-      ['sh -lc "python3 .claude/scripts/ghost.py"', 'ghost.py'],
-      ['bash -x -lc "python3 .claude/scripts/ghost.py"', 'ghost.py'],
-      ['python3 -u -c "print(1)" .claude/scripts/ghost.py', 'ghost.py'],
-    ];
-    for (const [cmd, expected] of cases) {
-      writeSettings(fx.home, ONE_HOOK(cmd));
-      const r = run('--startup', fx);
-      assert.ok(r.stdout.includes(expected),
-        `${cmd} must still reach the reference, got: ${r.stdout.trim()}`);
-      assert.ok(!r.stdout.includes('python3 .claude/scripts/ghost.py'),
-        `a whole payload must never be printed as a path, got: ${r.stdout.trim()}`);
-    }
-  });
-
-  t('a separator inside quotes is part of the name, not a separator', () => {
-    const fx = makeFixture();
-    for (const name of ['weird;name.py', 'a|b.py', 'a&b.py']) {
-      writeSettings(fx.home, ONE_HOOK(`python3 ".claude/scripts/${name}"`));
-      const r = run('--startup', fx);
-      assert.ok(r.stdout.includes(name),
-        `${name} is a legal filename, got: ${r.stdout.trim()}`);
-    }
-  });
-
-  t('an unclosed quote inside a payload is counted, not dropped', () => {
-    const fx = makeFixture();
-    writeSettings(fx.home, ONE_HOOK('sh -c "python3 .claude/scripts/ghost.py && echo \\"oops"'));
-    const r = run('--check', fx);
-    assert.strictEqual(r.status, 0, `expected exit 0, got ${r.status}`);
-    assert.ok(!r.stdout.includes('missing script'),
-      `an unparseable payload must not produce a guess, got: ${r.stdout.trim()}`);
-    assert.ok(/unclosed quote/.test(r.stdout),
-      `and the outer command must be reported as unparsed, got: ${r.stdout.trim()}`);
-  });
-
-  t('Windows paths a POSIX escaper would mangle survive intact', () => {
-    const fx = makeFixture();
-    // A UNC prefix is two backslashes, not an escaped one. Collapsing it to
-    // \server\share invents a rooted path that was never written.
-    writeSettings(fx.home, ONE_HOOK(String.raw`python3 \\server\share\ghost.py`));
-    const unc = run('--startup', fx);
-    assert.ok(unc.stdout.includes(String.raw`\\server\share\ghost.py`),
-      `a UNC path must be reported whole, got: ${unc.stdout.trim()}`);
-
-    // C:\$Recycle.Bin: the $ reads as a shell placeholder, so the token is
-    // skipped — but skipped and counted, not escaped into C:Recycle.Bin.
-    writeSettings(fx.home, ONE_HOOK(String.raw`python3 C:\$Recycle.Bin\ghost.py`));
-    const dollar = run('--check', fx);
-    assert.ok(!dollar.stdout.includes('C:Recycle.Bin'),
-      `a backslash must not escape the dollar, got: ${dollar.stdout.trim()}`);
-    assert.ok(/not audited/.test(dollar.stdout),
-      `and the skip must be counted, got: ${dollar.stdout.trim()}`);
-  });
-
-  t('a skipped program body is counted, not dropped silently', () => {
-    const fx = makeFixture();
-    // A file named inside a node -e body is a string in another language and
-    // cannot be checked. Silence is right; silence with no count is not.
-    writeSettings(fx.home, ONE_HOOK(
-      'node -e "const s=p.join(r,\'.claude/scripts/ghost.js\')" node .claude/scripts/real.py'));
-    const r = run('--check', fx);
-    assert.ok(!r.stdout.includes('ghost.js'),
-      `a string inside a JS body is not a file, got: ${r.stdout.trim()}`);
-    assert.ok(/program body/.test(r.stdout),
-      `but the unjudged body must be visible, got: ${r.stdout.trim()}`);
-  });
-
-  t('the repo\'s own hook wiring is fully accounted for', () => {
-    const repoRoot = path.join(__dirname, '..', '..');
-    const real = fs.readFileSync(path.join(repoRoot, 'hooks', 'hooks.json'), 'utf8');
-    const fx = makeFixture();
-    writeSettings(fx.home, real);
-    const r = run('--check', fx, '', { CLAUDE_PLUGIN_ROOT: repoRoot });
-    assert.ok(r.stdout.includes('[ok] normal'),
-      `a healthy install must be healthy, got: ${r.stdout.trim()}`);
-    // Every one of the 23 commands hides a program body, and every relative
-    // reference resolves through the plugin root. If those two counts ever go
-    // to zero, the numbers below are no longer describing anything.
-    const bodies = Number((r.stdout.match(/(\d+) interpreter program body/) || [])[1]);
-    const other = Number((r.stdout.match(/(\d+) relative hook path/) || [])[1]);
-    assert.ok(bodies >= 20, `expected ~23 skipped bodies, got ${bodies}`);
-    assert.ok(other >= 10, `expected plugin-root-satisfied paths, got ${other}`);
-  });
-
-  t('a longer name whose prefix is a script name is not truncated to it', () => {
-    const fx = makeFixture();
-    const dir = path.join(fx.proj, 'scripts', 'hooks');
-    fs.mkdirSync(dir, { recursive: true });
-    // The shell opens these files. A regex without an end guard matches the
-    // prefix and warns about a file that does not exist.
-    for (const name of ['archive.js.bak', 'buf.py.map', 'guard.pyc', 'ok.py~']) {
-      fs.writeFileSync(path.join(dir, name), '', 'utf8');
-      writeSettings(fx.home, ONE_HOOK(`python3 scripts/hooks/${name}`));
-      const r = run('--startup', fx);
-      assert.ok(!r.stdout.includes('missing script'),
-        `${name} exists; a prefix match would warn about a different file, got: ${r.stdout.trim()}`);
-    }
-    fs.writeFileSync(path.join(dir, 'gone.js.bak'), '', 'utf8');
-    writeSettings(fx.home, ONE_HOOK('python3 scripts/hooks/absent.js.bak'));
-    const missing = run('--startup', fx);
-    assert.ok(!missing.stdout.includes('missing script'),
-      `and an absent one is not a script reference either, got: ${missing.stdout.trim()}`);
-  });
-
-  t('sh -e is errexit, not a program body', () => {
-    const fx = makeFixture();
-    writeSettings(fx.home, ONE_HOOK('sh -e .claude/scripts/ghost.py'));
-    const r = run('--startup', fx);
-    assert.ok(r.stdout.includes('ghost.py'),
-      `sh -e runs the next word as a script, got: ${r.stdout.trim()}`);
-  });
-
-  t('a one-word quoted command is not reported as one long path', () => {
-    const fx = makeFixture();
-    writeSettings(fx.home, ONE_HOOK('"python3 .claude/scripts/ghost.js"'));
-    const r = run('--startup', fx);
-    assert.ok(r.stdout.includes('missing script: .claude/scripts/ghost.js'),
-      `the interpreter must be stripped, got: ${r.stdout.trim()}`);
-    assert.ok(!r.stdout.includes('missing script: python3'),
-      `a finding must never quote a whole command, got: ${r.stdout.trim()}`);
-  });
-
-  t('a very long token is clipped rather than printed in full', () => {
-    const fx = makeFixture();
-    const long = 'a'.repeat(5000) + '.py';
-    writeSettings(fx.home, ONE_HOOK(`python3 ${long}`));
-    const r = run('--startup', fx);
-    const line = (r.stdout.split('\n').find((l) => l.includes('missing script')) || '');
-    assert.ok(line.length > 0, 'expected a finding');
-    assert.ok(line.length < 300, `a finding must stay readable, got ${line.length} chars`);
-    assert.ok(/chars total/.test(line), 'clipping must say it clipped');
-  });
-
-  t('a settings file that cannot be read is not reported as healthy', () => {
-    const fx = makeFixture();
-    for (const junk of ['{ not valid json', '[1,2,3]', '{"hooks": 42}', '']) {
-      writeSettings(fx.home, junk);
-      const r = run('--check', fx);
-      assert.strictEqual(r.status, 0, `expected exit 0 for ${JSON.stringify(junk)}`);
-      assert.ok(!r.stdout.includes('[ok] normal'),
-        `an unreadable settings file must not read as healthy, got: ${r.stdout.trim()}`);
-      assert.ok(/could not be read/.test(r.stdout),
-        `and it must say which file, got: ${r.stdout.trim()}`);
-    }
-  });
-
-  t('a settings file that is simply absent is not a finding', () => {
-    const fx = makeFixture();
-    const r = run('--check', fx);
-    assert.ok(r.stdout.includes('[ok] normal'),
-      `no settings file means nothing to audit, got: ${r.stdout.trim()}`);
-  });
-
-  t('deep sh -c nesting is counted without losing the outer findings', () => {
-    const fx = makeFixture();
-    // MAX_PAYLOAD_DEPTH is 3, so four levels is the first that runs out. The
-    // flag has to survive the recursion, not just the level that trips it.
-    const payload = 'sh -c '.repeat(6) + 'true';
-    writeSettings(fx.home, ONE_HOOK(`python3 .claude/scripts/early.py && ${payload}`));
-    const r = run('--check', fx);
-    assert.ok(r.stdout.includes('early.py'),
-      `a missing script before the deep part is still missing, got: ${r.stdout.trim()}`);
-    assert.ok(/nested sh -c deeper/.test(r.stdout),
-      `and the depth limit must be disclosed, got: ${r.stdout.trim()}`);
-    assert.ok(!/unclosed quote/.test(r.stdout),
-      `balanced quotes are not a typo, got: ${r.stdout.trim()}`);
-  });
-
-  t('nesting inside the limit is not reported as too deep', () => {
-    const fx = makeFixture();
-    writeSettings(fx.home, ONE_HOOK('python3 .claude/scripts/early.py && sh -c sh -c true'));
-    const r = run('--check', fx);
-    assert.ok(!/nested sh -c deeper/.test(r.stdout),
-      `two levels is ordinary, got: ${r.stdout.trim()}`);
-  });
-
-  // --- unchanged vs changed settings --------------------------------------
-
-  t('an unchanged settings file yields the same finding on repeat runs', () => {
-    const fx = makeFixture();
-    writeSettings(fx.home, HOOKS_JSON('~/.claude/scripts/missing-again.py'));
-    const first = run('--startup', fx);
-    const second = run('--startup', fx);
-    assert.strictEqual(first.stdout, second.stdout,
-      'deterministic: same config must give byte-identical output');
-  });
-
-  t('changing settings changes the finding', () => {
-    const fx = makeFixture();
-    writeSettings(fx.home, HOOKS_JSON('~/.claude/scripts/missing-again.py'));
-    const before = run('--startup', fx);
-    assert.ok(before.stdout.includes('missing-again.py'), 'expected the first finding');
-    fs.mkdirSync(path.join(fx.home, '.claude', 'scripts'), { recursive: true });
-    fs.writeFileSync(path.join(fx.home, '.claude', 'scripts', 'missing-again.py'), '', 'utf8');
-    const after = run('--startup', fx);
-    assert.ok(!after.stdout.includes('missing script'),
-      `repairing the file must clear the finding, got: ${after.stdout.trim()}`);
-  });
-
-  t('a duplicate reference is reported once per event', () => {
-    const fx = makeFixture();
-    writeSettings(fx.home, JSON.stringify({
-      hooks: {
-        SessionStart: [{ hooks: [
-          { type: 'command', command: 'python3 ~/.claude/scripts/dup.py --a' },
-          { type: 'command', command: 'python3 ~/.claude/scripts/dup.py --b' },
-        ] }],
-      },
-    }));
-    const r = run('--startup', fx);
-    const hits = (r.stdout.match(/dup\.py/g) || []).length;
-    assert.strictEqual(hits, 1, `expected one finding for a repeated token, got ${hits}`);
-  });
-
-  t('CLAUDE_CONFIG_DIR moves the audited user settings file', () => {
-    const fx = makeFixture();
-    const configDir = path.join(fx.root, 'config');
-    fs.mkdirSync(configDir, { recursive: true });
-    fs.writeFileSync(
-      path.join(configDir, 'settings.json'),
-      ONE_HOOK('python3 ~/.claude/scripts/from-config.py'),
-      'utf8'
-    );
-    writeSettings(fx.home, ONE_HOOK('python3 ~/.claude/scripts/from-home.py'));
-
-    const r = run('--startup', fx, '', { CLAUDE_CONFIG_DIR: configDir });
-    assert.strictEqual(r.status, 0, `expected exit 0, got ${r.status}`);
-    assert.ok(r.stdout.includes('from-config.py'),
-      `expected the settings in $CLAUDE_CONFIG_DIR to be audited, got: ${r.stdout.trim()}`);
-    assert.ok(!r.stdout.includes('from-home.py'),
-      'settings under ~/.claude must not be audited when CLAUDE_CONFIG_DIR is set');
-
-    const check = run('--check', fx, '', { CLAUDE_CONFIG_DIR: configDir });
-    assert.ok(check.stdout.includes('$CLAUDE_CONFIG_DIR resolved to'),
-      '--check must name the non-default data root it resolved');
-  });
-
-  t('CLAUDE_CONFIG_DIR moves the rule-health log', () => {
-    const fx = makeFixture();
-    const configDir = path.join(fx.root, 'config');
-    const dataDir = path.join(configDir, 'session-data');
-    fs.mkdirSync(dataDir, { recursive: true });
-    const records = Array.from({ length: 5 }, (_, index) => JSON.stringify({
-      ts: `2026-10-2${index}T00:00:00Z`,
-      tool_calls: 6,
-      configured_rule: 0,
-    }));
-    fs.writeFileSync(path.join(dataDir, 'rule-health.jsonl'), records.join('\n') + '\n', 'utf8');
-
-    const homeData = path.join(fx.home, '.claude', 'session-data');
-    fs.mkdirSync(homeData, { recursive: true });
-    fs.writeFileSync(
-      path.join(homeData, 'rule-health.jsonl'),
-      records.map(line => line.replace('configured_rule', 'home_rule')).join('\n') + '\n',
-      'utf8'
-    );
-
-    const r = run('--startup', fx, '', { CLAUDE_CONFIG_DIR: configDir });
-    assert.strictEqual(r.status, 0, `expected exit 0, got ${r.status}`);
-    assert.ok(r.stdout.includes('configured_rule'),
-      `expected staleness to be read from $CLAUDE_CONFIG_DIR, got: ${r.stdout.trim()}`);
-    assert.ok(!r.stdout.includes('home_rule'),
-      'the rule-health log under ~/.claude must not be read when CLAUDE_CONFIG_DIR is set');
-  });
-
-  t('installed module survives install, startup, repair, and uninstall in a disposable home', () => {
-    const fx = makeInstallFixture();
-    const env = installEnv(fx);
-    const installedScript = path.join(fx.config, 'scripts', 'config-health.py');
-    const installedSkill = path.join(fx.config, 'skills', 'config-health', 'SKILL.md');
-    const settingsPath = path.join(fx.config, 'settings.json');
-
-    const install = runNode('scripts/install-apply.js',
-      ['--target', 'claude', '--modules', 'config-health', '--json'], env);
-    assert.strictEqual(install.status, 0,
-      `install failed: ${(install.stderr || install.stdout).trim()}`);
-    assert.ok(fs.existsSync(installedScript),
-      `installed script missing at ${installedScript}`);
-    assert.ok(fs.existsSync(installedSkill),
-      `installed skill missing at ${installedSkill}`);
-
-    const installedSettings = fs.existsSync(settingsPath)
-      ? fs.readFileSync(settingsPath, 'utf8')
-      : '';
-    assert.ok(!installedSettings.includes('config-health.py --pretool'),
-      'the default install must not add a per-tool hook');
-
-    // The opt-in pre-tool path must work from the disposable project install,
-    // not only from the in-repo fixture.
-    fs.writeFileSync(settingsPath,
-      ONE_HOOK(`python3 "${installedScript}" --pretool`), 'utf8');
-    const pretoolProject = runInstalledWithInput('--pretool', fx, '{"tool_name":"Edit"}');
-    assert.strictEqual(pretoolProject.status, 0,
-      `installed project pre-tool must exit 0, got ${pretoolProject.status}`);
-    assert.strictEqual(pretoolProject.stdout, '',
-      `installed project pre-tool stdout must stay clean: ${pretoolProject.stdout.trim()}`);
-    assert.ok(!pretoolProject.stderr.includes('references missing script'),
-      `installed project pre-tool must not warn: ${pretoolProject.stderr.trim()}`);
-
-    // The same pre-tool path with a plugin-root command, from the same
-    // disposable install.
-    const pluginRoot = path.join(fx.root, 'plugin');
-    fs.mkdirSync(path.join(pluginRoot, 'scripts', 'hooks'), { recursive: true });
-    fs.writeFileSync(path.join(pluginRoot, 'scripts', 'hooks', 'guard.py'), '', 'utf8');
-    fs.writeFileSync(settingsPath, PLUGIN_HOOKS_JSON('scripts/hooks/guard.py'), 'utf8');
-    const pretoolPlugin = runInstalledWithInput('--pretool', fx, '{"tool_name":"Edit"}',
-      { CLAUDE_PLUGIN_ROOT: pluginRoot });
-    assert.strictEqual(pretoolPlugin.status, 0,
-      `installed plugin pre-tool must exit 0, got ${pretoolPlugin.status}`);
-    assert.strictEqual(pretoolPlugin.stdout, '',
-      `installed plugin pre-tool stdout must stay clean: ${pretoolPlugin.stdout.trim()}`);
-    assert.ok(!pretoolPlugin.stderr.includes('references missing script'),
-      `installed plugin pre-tool must not warn: ${pretoolPlugin.stderr.trim()}`);
-
-    fs.writeFileSync(settingsPath, PLUGIN_HOOKS_JSON('scripts/ghost.py'), 'utf8');
-    const startup = runInstalled('--startup', fx, { CLAUDE_PLUGIN_ROOT: pluginRoot });
-    assert.strictEqual(startup.status, 0,
-      `startup must stay non-blocking, got ${startup.status}`);
-    assert.ok(startup.stdout.includes('references missing script'),
-      `a real missing plugin script must warn, got: ${startup.stdout.trim()}`);
-    assert.ok(startup.stdout.includes('ghost.py'),
-      'the warning must name the missing plugin script');
-
-    fs.writeFileSync(settingsPath,
-      ONE_HOOK('python3 "${CONFIG_HEALTH_TEST_UNSET_ROOT}/scripts/x.py"'), 'utf8');
-    const check = runInstalled('--check', fx);
-    assert.strictEqual(check.status, 0, `--check exits 0, got ${check.status}`);
-    assert.ok(check.stdout.includes('hook path(s) not audited'),
-      `an unresolved provider root must be reported as unjudged, got: ${check.stdout.trim()}`);
-    assert.ok(!check.stdout.includes('references missing script'),
-      'an unresolved provider root must not be reported as a missing script');
-
-    fs.unlinkSync(installedScript);
-    const repair = runNode('scripts/repair.js', ['--target', 'claude', '--json'], env);
-    assert.strictEqual(repair.status, 0,
-      `repair failed: ${(repair.stderr || repair.stdout).trim()}`);
-    assert.ok(fs.existsSync(installedScript), 'repair must restore the installed script');
-
-    const uninstall = runNode('scripts/uninstall.js', ['--target', 'claude', '--json'], env);
-    assert.strictEqual(uninstall.status, 0,
-      `uninstall failed: ${(uninstall.stderr || uninstall.stdout).trim()}`);
-    assert.ok(!fs.existsSync(installedScript), 'uninstall must remove the installed script');
-    assert.ok(!fs.existsSync(installedSkill), 'uninstall must remove the installed skill');
-  });
-
-  t('project install runs the pre-tool workflow from a disposable project', () => {
-    const fx = makeInstallFixture();
-    const env = installEnv(fx);
-    const installScript = path.join(__dirname, '..', '..', 'scripts', 'install-apply.js');
-
-    const install = spawnSync(process.execPath,
-      [installScript, '--target', 'claude-project', '--modules', 'config-health', '--json'],
-      { cwd: fx.proj, env: { ...process.env, ...env }, encoding: 'utf8', timeout: 120000 });
-    assert.strictEqual(install.status, 0,
-      `project install failed: ${(install.stderr || install.stdout).trim()}`);
-
-    const installedScript = path.join(fx.proj, '.claude', 'scripts', 'config-health.py');
-    const settingsPath = path.join(fx.proj, '.claude', 'settings.json');
-    assert.ok(fs.existsSync(installedScript),
-      `project install must place the script at ${installedScript}`);
-
-    fs.writeFileSync(settingsPath,
-      ONE_HOOK('python3 .claude/scripts/config-health.py --pretool'), 'utf8');
-    const pretool = spawnSync(PYTHON, [installedScript, '--pretool'], {
-      cwd: fx.proj,
-      env: { ...process.env, ...env, CLAUDE_PROJECT_DIR: fx.proj },
-      input: '{"tool_name":"Edit"}',
-      encoding: 'utf8',
-      timeout: 120000,
-    });
-    assert.strictEqual(pretool.status, 0,
-      `project pre-tool must exit 0, got ${pretool.status}`);
-    assert.strictEqual(pretool.stdout, '',
-      `project pre-tool stdout must stay clean: ${pretool.stdout.trim()}`);
-    assert.ok(!pretool.stderr.includes('references missing script'),
-      `project pre-tool must not warn: ${pretool.stderr.trim()}`);
-  });
-
   console.log(`\n  ${passed}/${total} passed`);
   if (passed !== total) process.exit(1);
 }

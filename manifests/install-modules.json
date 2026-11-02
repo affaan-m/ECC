@@ -956,7 +956,10 @@
       "description": "Runtime configuration integrity monitoring for Claude Code (Claude-only; SessionStart by default, PreToolUse opt-in).",
       "paths": [
         "skills/config-health",
-        "scripts/config-health.py"
+        "scripts/config-health.py",
+        "scripts/config_health_constants.py",
+        "scripts/config_health_paths.py",
+        "scripts/config_health_scan.py"
       ],
       "targets": [
         "claude",

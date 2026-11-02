@@ -114,9 +114,11 @@ the root of the plugin that is *running*, so a settings line wired for a second
 plugin is judged against the wrong directory. One variable cannot describe two
 plugins; set `CONFIG_HEALTH_PLUGIN_ROOT` explicitly in that case.
 
-**Standalone install?** `cp scripts/config-health.py ~/.claude/scripts/` puts it
-where no plugin root is in its environment. Two things follow, and both are
-worth acting on rather than ignoring:
+**Standalone install?** Copy the entry point **and its three helper modules**
+(`config_health_constants.py`, `config_health_paths.py`, `config_health_scan.py`)
+into the same directory as `config-health.py`; the entry imports them by name.
+That puts it where no plugin root is in its environment. Two things follow, and
+both are worth acting on rather than ignoring:
 
 - `${CLAUDE_PLUGIN_ROOT}/…` lines become unresolvable, so they are skipped —
   silence, not verification;
@@ -178,9 +180,10 @@ Dead rule reference:
 `CLAUDE.md references missing rule file: rules/ghost.md` → exit 0.
 
 Rule staleness:
-`rule "双池强制触发" last fired 5+ sessions ago → may be dead` — the count is
-fixed at the five most recent complex sessions, not an arbitrary number of
-sessions back.
+`rule "双池强制触发" has not fired in the last 5 sessions → may be dead` — the
+window is the five most recent complex sessions, not an arbitrary number of
+sessions back. Any positive count inside that window keeps the rule alive, even
+in a short session: a count above zero means the rule did fire.
 
 Healthy plugin install:
 `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/hooks/guard.py"` with the plugin
@@ -189,19 +192,31 @@ one finding, still exit 0 — **provided `CLAUDE_PLUGIN_ROOT` (or
 `CONFIG_HEALTH_PLUGIN_ROOT`) is set in the monitor's own environment.** Without
 it the token is unresolvable and there is no finding either way.
 
-What this monitor reads: `settings.json` (user and project), `CLAUDE.md` (in
-the project dir), and `$CLAUDE_CONFIG_DIR/session-data/rule-health.jsonl`
-(default `~/.claude/session-data/rule-health.jsonl`). It reads no documentation
-to find references, and it does not count how many places a script is wired.
+What this monitor reads: the hook-wired settings files — `settings.json` in the
+user dir, in the project dir, and `.claude/settings.local.json` in the project
+dir; plus the plugin's own `hooks/hooks.json` when `CLAUDE_PLUGIN_ROOT` (or
+`CONFIG_HEALTH_PLUGIN_ROOT`) is set — `CLAUDE.md` (in the project dir), and
+`$CLAUDE_CONFIG_DIR/session-data/rule-health.jsonl` (default
+`~/.claude/session-data/rule-health.jsonl`). It reads no documentation to find
+references, and it does not count how many places a script is wired.
 
 ## Install
 
-**ECC users:** install the `config-health` module (`npx ecc-install --modules config-health` or the `full` profile). It is a **Claude-only** module with a SessionStart hook by default; PreToolUse is opt-in. It does not target other harnesses, so it stays isolated from shared 13-harness modules.
+**ECC users:** install the `config-health` module (`npx ecc-universal install --modules config-health` or the `full` profile). It is a **Claude-only** module with a SessionStart hook by default; PreToolUse is opt-in. It does not target other harnesses, so it stays isolated from shared 13-harness modules.
 
-**Standalone:** copy `scripts/config-health.py` to
-`${CLAUDE_CONFIG_DIR:-~/.claude}/scripts/config-health.py` and verify it exists
-before enabling. If your launcher sets `CLAUDE_CONFIG_DIR`, use that path in the
-hook command; `~/.claude` is not the file Claude loads in that setup.
+The module ships its own hook config (`manifests/install-assets/config-health-hooks.json`), merged into `settings.json` at install time with the install root substituted for `${CLAUDE_PLUGIN_ROOT}` — so a home install points at `~/.claude/scripts/config-health.py` and a project install at `<project>/.claude/scripts/config-health.py`. Because that merge is a settings write, it is gated by hook consent:
+
+- `npx ecc-universal install --modules config-health --enable-hooks` wires the SessionStart hook.
+- `npx ecc-universal install --modules config-health --no-hooks` installs the script and skill only; nothing is written to `settings.json`, and you wire it yourself from the JSON below.
+
+Uninstall removes the hook entry along with the files.
+
+**Standalone:** copy `scripts/config-health.py` and the three helper modules
+(`config_health_constants.py`, `config_health_paths.py`, `config_health_scan.py`)
+to `${CLAUDE_CONFIG_DIR:-~/.claude}/scripts/` and verify the entry point exists
+before enabling. The helpers must sit in the same directory as the entry point.
+If your launcher sets `CLAUDE_CONFIG_DIR`, use that path in the hook command;
+`~/.claude` is not the file Claude loads in that setup.
 
 **Important:** Merge these hook entries into your existing `hooks` object — do not replace it, or you will lose hooks like delivery-gate.
 
@@ -243,4 +258,7 @@ Write; not recommended by default):
 
 | File | Purpose | Hook |
 |------|---------|------|
-| scripts/config-health.py | Rule health, hook audit, staleness | SessionStart; PreToolUse opt-in |
+| scripts/config-health.py | CLI entry: startup, pre-tool, check | SessionStart; PreToolUse opt-in |
+| scripts/config_health_constants.py | Constants, regexes, audit sets | — |
+| scripts/config_health_paths.py | Path resolution and defensive reads | — |
+| scripts/config_health_scan.py | Shell-command tokenising and scanning | — |
