@@ -52,7 +52,12 @@ function transformInstallContent(operation, content) {
     return rewriteCopilotWorkflowPaths(adaptCopilotAgent(content, operation.sourceRelativePath), operation.sourceRelativePath);
   }
   if (operation.contentTransform === 'copilot-workflow-paths') {
-    return rewriteCopilotWorkflowPaths(content, operation.sourceRelativePath);
+    const safeContent = /(?:^|\/)SKILL\.md$/i.test(operation.sourceRelativePath)
+      ? require('./copilot-command').adaptCopilotSkill(content) : content;
+    return rewriteCopilotWorkflowPaths(safeContent, operation.sourceRelativePath);
+  }
+  if (operation.contentTransform === 'copilot-command') {
+    return require('./copilot-command').adaptCopilotCommand(content, operation.sourceRelativePath);
   }
   if (operation.contentTransform === 'copilot-rule-frontmatter') {
     return adaptCopilotRule(content, operation.sourceRelativePath);

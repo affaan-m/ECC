@@ -1812,7 +1812,10 @@ to Copilot's `applyTo:` glob list (rules without `paths` become `applyTo:
 "**"`). The hook runtime requires explicit consent and installs four audited
 policies in `.github/hooks/ecc.json`, with Node.js helpers under `.github/ecc/`.
 See [Copilot hooks](docs/COPILOT-HOOKS.md) for the supported subset and runtime
-requirements. Legacy commands are not installed by this target.
+requirements. Command entry points project into skills with canonical precedence
+and explicit compatibility status; see [Copilot commands](docs/COPILOT-COMMANDS.md).
+The dedicated [memory/lifecycle runtime](docs/COPILOT-LIFECYCLE.md) supports
+private workspace checkpoints and opt-in native transcript observations.
 
 #### Feature coverage
 
@@ -1829,16 +1832,19 @@ requirements. Legacy commands are not installed by this target.
 | Skills | Native discovery in Copilot CLI (`.github/skills/`, `.agents/skills/`) |
 | Agents / delegation | Copilot CLI custom agents (`.github/agents/`, `--agent`) |
 | Rules | Path-specific instructions (`.github/instructions/ecc/`, `applyTo:` globs) |
-| Hooks / automation | Opt-in native pre/post-tool adapter for four audited ECC policies |
+| Hooks / automation | Opt-in native pre/post-tool adapter for four audited ECC policies, plus four lifecycle events |
+| Session continuity | Private workspace checkpoints; bounded historical restore; opt-in native event observations |
+| Commands | Native skill projections with canonical precedence and explicit compatibility notices |
 
 #### Limitations
 
-Automatic formatting, TypeScript checks, session persistence, continuous
+Automatic formatting, TypeScript checks, continuous
 learning and the dev-server guard are not included in the audited Copilot hook
 subset. ECC does not currently ship a native Copilot plugin package.
 
 The `copilot` target installs skills, agents, rules and opt-in hooks. It does
-not install legacy commands or MCP configuration. Skills that shell out to bundled
+not install legacy Claude command files or MCP configuration. Command workflows
+use native skills; incompatible runtimes are explicitly identified. Skills that shell out to bundled
 scripts assume the same interpreters as on Claude Code. Copilot Chat in VS Code
 does not read `.github/skills/` or `.github/agents/`; those paths are Copilot
 CLI surfaces. The instruction and prompt layer is what carries ECC's coding

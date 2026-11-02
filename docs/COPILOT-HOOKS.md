@@ -31,7 +31,8 @@ direct executable arguments rather than platform-specific shell quoting.
 Managed files are `.github/hooks/ecc.json`, the explicit script dependency
 closure in `.github/ecc/scripts/`, and `.github/ecc-install-state.json`.
 No runtime npm install, Claude installation, credential transfer, MCP server,
-or transcript storage is needed. Other hook JSON files remain independent.
+is needed. Optional lifecycle checkpoints use a separate private Copilot cache;
+see [memory and lifecycle](COPILOT-LIFECYCLE.md). Other hook JSON files remain independent.
 An existing unowned `ecc.json` is preserved and not claimed by ECC; inspect
 the install result for skipped files before expecting the adapter to activate.
 Repair restores missing managed files; uninstall preserves unowned files.
@@ -110,8 +111,12 @@ commands in a real Copilot session on Windows, macOS and Linux before claiming
 native lifecycle parity. Confirm both the denial and the agent-visible reason,
 and verify normal Copilot permissions still apply to successful calls.
 
-The next porting stages remain: audited lifecycle/session storage and transcript
-conversion; continuous learning; formatting/type checks; commands and selected
-MCP configuration; native plugin packaging; and behavioral parity evaluations.
-Normalizing event names alone does not make Claude transcript consumers work
-with Copilot transcripts. None of those components is activated by this adapter.
+Four additional native events now use a dedicated Copilot session runtime:
+`sessionStart`, `agentStop`, `preCompact`, and `sessionEnd`. See
+[memory and lifecycle](COPILOT-LIFECYCLE.md) for storage, opt-in transcript
+observations, limits and validation. [Command compatibility](COPILOT-COMMANDS.md)
+documents projected workflows and explicitly unavailable commands.
+
+Continuous learning, formatting/type checks, selected MCP configuration,
+native plugin packaging and behavioral parity evaluations remain separate
+porting work. Claude transcript consumers are not activated by this adapter.

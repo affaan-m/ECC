@@ -24,6 +24,9 @@ const EXPECTED_RUNTIME = [
   'lib/utils.js',
   'lib/agent-data-home.js',
   'lib/path-safety.js',
+  'hooks/copilot-lifecycle.js',
+  'lib/copilot-sessions.js',
+  'lib/memory-vault-format.js',
 ];
 
 let passed = 0;
@@ -93,16 +96,17 @@ test('hooks-runtime installs native commands and only the audited dependency clo
   applyInstallPlan(plan);
   const config = readConfig(project);
   assert.strictEqual(config.version, 1);
-  assert.deepStrictEqual(Object.keys(config.hooks).sort(), ['postToolUse', 'preToolUse']);
+  assert.deepStrictEqual(Object.keys(config.hooks).sort(), ['agentStop', 'postToolUse', 'preCompact', 'preToolUse', 'sessionEnd', 'sessionStart']);
   assert.strictEqual(config.hooks.preToolUse.length, 3);
   assert.strictEqual(config.hooks.postToolUse.length, 1);
   for (const [event, entries] of Object.entries(config.hooks)) {
     for (const entry of entries) {
       assert.strictEqual(entry.type, 'command');
       assert.strictEqual(entry.exec, 'node');
-      assert.strictEqual(entry.args[0], ENTRYPOINT);
+      const toolEvent = ['preToolUse', 'postToolUse'].includes(event);
+      assert.strictEqual(entry.args[0], toolEvent ? ENTRYPOINT : '.github/ecc/scripts/hooks/copilot-lifecycle.js');
       assert.strictEqual(entry.args[1], event);
-      assert.ok(entry.args[2], 'hook id must be explicit');
+      if (toolEvent) assert.ok(entry.args[2], 'policy hook id must be explicit');
       assert.ok(entry.timeoutSec >= 15);
     }
   }
@@ -113,6 +117,48 @@ test('hooks-runtime installs native commands and only the audited dependency clo
   }
   assert.ok(!fs.existsSync(path.join(project, '.github/ecc/scripts/hooks/session-start.js')), 'Claude lifecycle must not be copied wholesale');
   assert.ok(plan.operations.every(operation => operation.moduleId === 'hooks-runtime'));
+});
+
+test('installed lifecycle checkpoint restores from generated hook, repair and uninstall preserve user memory', project => {
+  applyInstallPlan(planFor(project));
+  const config = readConfig(project);
+  const dataHome = path.join(project, 'private-copilot');
+  const env = { ...process.env, COPILOT_HOME: dataHome, ECC_HOOKS_ENABLED: 'true', ECC_HOOK_PROFILE: 'standard', ECC_DISABLED_HOOKS: '' };
+  const invokeLifecycle = (args, input) => {
+    const result = spawnSync(process.execPath, args, {
+      cwd: project, env, input: typeof input === 'string' ? input : JSON.stringify(input), encoding: 'utf8', timeout: 15000,
+    });
+    assert.ifError(result.error);
+    assert.strictEqual(result.status, 0, result.stderr);
+    return JSON.parse(result.stdout);
+  };
+  const entry = config.hooks.sessionStart[0];
+  invokeLifecycle(entry.args, { sessionId: 'one', cwd: project, source: 'startup' });
+  const runtime = entry.args[0];
+  invokeLifecycle([runtime, 'checkpoint', '--session', 'one', '--stdin'], 'Installer E2E checkpoint.');
+  const restored = invokeLifecycle(entry.args, { sessionId: 'two', cwd: project, source: 'new' });
+  assert.match(restored.additionalContext, /Installer E2E checkpoint/);
+  fs.unlinkSync(path.join(project, runtime));
+  repairInstalledStates(lifecycleOptions(project));
+  assert.ok(fs.existsSync(path.join(project, runtime)));
+  uninstallInstalledStates(lifecycleOptions(project));
+  assert.ok(fs.existsSync(path.join(dataHome, 'ecc', 'projects')), 'uninstall must not remove private session data');
+});
+
+test('declining combined hooks and commands keeps manual session runtime without activation', project => {
+  const plan = withHookConsent(createManifestInstallPlan({
+    target: 'copilot', moduleIds: ['hooks-runtime', 'commands-core'],
+    projectRoot: project, homeDir: path.join(project, 'home'), env: {},
+  }), 'declined');
+  applyInstallPlan(plan);
+  assert.ok(!fs.existsSync(path.join(project, '.github/hooks/ecc.json')));
+  const result = spawnSync(process.execPath, ['.github/ecc/scripts/hooks/copilot-lifecycle.js', 'checkpoint', '--session', 'manual', '--stdin'], {
+    cwd: project, env: { ...process.env, COPILOT_HOME: path.join(project, 'private-copilot') },
+    input: 'Manual commands still work.', encoding: 'utf8', timeout: 15000,
+  });
+  assert.ifError(result.error);
+  assert.strictEqual(result.status, 0, result.stderr);
+  assert.strictEqual(JSON.parse(result.stdout).saved, true);
 });
 
 test('installed config guard denies existing config edits with object and JSON-string arguments', project => {

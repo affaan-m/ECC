@@ -1,6 +1,7 @@
 const fs = require('fs');
 const path = require('path');
-const { COPILOT_HOOK_RUNTIME_PATHS } = require('../copilot-hooks');
+const { COPILOT_HOOK_RUNTIME_PATHS, COPILOT_SESSION_RUNTIME_PATHS } = require('../copilot-hooks');
+const { copilotCommandName } = require('../install/copilot-command-capabilities');
 
 const {
   createInstallTargetAdapter,
@@ -16,8 +17,9 @@ const {
 // to Copilot's `applyTo:` glob list. Explicitly declared package-manager
 // helpers live in `.github/ecc/scripts/`, outside Copilot's discovery roots.
 // The hooks-runtime module projects an audited subset into a dedicated native
-// hooks file and a closed script dependency set. Legacy commands are excluded.
-const SUPPORTED_SOURCE_PREFIXES = ['agents', 'skills', 'rules'];
+// hooks file and a closed script dependency set. Legacy commands project into
+// skills with explicit capability status; canonical same-name skills win.
+const SUPPORTED_SOURCE_PREFIXES = ['agents', 'skills', 'rules', 'commands'];
 const COPILOT_HELPER_PATHS = new Set([
   'scripts/setup-package-manager.js',
   'scripts/lib/package-manager.js',
@@ -70,8 +72,38 @@ function planCopilotRuleOperations(module, normalizedSourcePath, targetRoot, rep
     }));
 }
 
-function planSourcePathOperations(module, sourceRelativePath, targetRoot, repoRoot) {
+function planCopilotCommandOperations(module, sourceRelativePath, targetRoot, repoRoot, selectedSkills) {
+  if (!repoRoot) return [];
+  const sourceRoot = path.join(repoRoot, sourceRelativePath);
+  if (!fs.existsSync(sourceRoot)) return [];
+  const files = fs.statSync(sourceRoot).isDirectory()
+    ? listRelativeFiles(sourceRoot).map(file => `${sourceRelativePath}/${file}`)
+    : [sourceRelativePath];
+  return files.filter(file => /^commands\/[a-z][a-z0-9-]*\.md$/.test(file)).flatMap(file => {
+    const name = path.basename(file, '.md');
+    const canonical = `skills/${name}`;
+    if (fs.existsSync(path.join(repoRoot, canonical, 'SKILL.md'))) {
+      if (selectedSkills.has(canonical) || selectedSkills.has(`${canonical}/SKILL.md`) || selectedSkills.has('skills')) return [];
+      return [createManagedOperation({
+        moduleId: module.id, sourceRelativePath: canonical,
+        destinationPath: path.join(targetRoot, 'skills', name),
+        contentTransform: 'copilot-workflow-paths',
+      })];
+    }
+    return [createManagedOperation({
+      moduleId: module.id, sourceRelativePath: file,
+      destinationPath: path.join(targetRoot, 'skills', copilotCommandName(name), 'SKILL.md'),
+      contentTransform: 'copilot-command',
+    })];
+  });
+}
+
+function planSourcePathOperations(module, sourceRelativePath, targetRoot, repoRoot, selectedSkills) {
   const normalizedSourcePath = normalizeRelativePath(sourceRelativePath);
+
+  if (hasPrefix(normalizedSourcePath, 'commands')) {
+    return planCopilotCommandOperations(module, normalizedSourcePath, targetRoot, repoRoot, selectedSkills);
+  }
 
   if (hasPrefix(normalizedSourcePath, 'agents')) {
     return [
@@ -115,14 +147,14 @@ function planSourcePathOperations(module, sourceRelativePath, targetRoot, repoRo
   return [];
 }
 
-function planHookOperations(module, targetRoot) {
+function planHookOperations(module, targetRoot, hasCommands) {
   return [
     createManagedOperation({
       moduleId: module.id, sourceRelativePath: 'hooks/hooks.json',
       destinationPath: path.join(targetRoot, 'hooks', 'ecc.json'),
       contentTransform: 'copilot-hooks',
     }),
-    ...COPILOT_HOOK_RUNTIME_PATHS.map(sourceRelativePath => createManagedOperation({
+    ...COPILOT_HOOK_RUNTIME_PATHS.filter(source => !hasCommands || !COPILOT_SESSION_RUNTIME_PATHS.includes(source)).map(sourceRelativePath => createManagedOperation({
       moduleId: module.id, sourceRelativePath,
       destinationPath: path.join(targetRoot, 'ecc', sourceRelativePath),
     })),
@@ -151,17 +183,27 @@ module.exports = createInstallTargetAdapter({
     const { repoRoot, projectRoot, homeDir } = input;
     const targetRoot = adapter.resolveRoot({ repoRoot, projectRoot, homeDir });
 
+    const selectedSkills = new Set(modules.flatMap(module => module.paths || [])
+      .map(normalizeRelativePath).filter(source => hasPrefix(source, 'skills')));
     return modules.flatMap(module => {
-      if (module.id === 'hooks-runtime') return planHookOperations(module, targetRoot);
+      if (module.id === 'hooks-runtime') return planHookOperations(module, targetRoot, modules.some(candidate => candidate.id === 'commands-core'));
       const paths = Array.isArray(module.paths) ? module.paths : [];
-      return paths
+      const operations = paths
         .filter(supportsCopilotSourcePath)
         .flatMap(sourceRelativePath => planSourcePathOperations(
           module,
           sourceRelativePath,
           targetRoot,
-          repoRoot
+          repoRoot,
+          selectedSkills
         ));
+      if (module.id === 'commands-core') {
+        return [...operations, ...COPILOT_SESSION_RUNTIME_PATHS.map(sourceRelativePath => createManagedOperation({
+          moduleId: module.id, sourceRelativePath,
+          destinationPath: path.join(targetRoot, 'ecc', sourceRelativePath),
+        }))];
+      }
+      return operations;
     });
   },
 });

@@ -1,6 +1,6 @@
 'use strict';
 
-const { COPILOT_HOOKS } = require('../copilot-hooks');
+const { COPILOT_HOOKS, COPILOT_SESSION_EVENTS } = require('../copilot-hooks');
 
 function adaptCopilotHooks(content) {
   // The canonical manifest remains the source inventory. Execution uses an
@@ -16,7 +16,11 @@ function adaptCopilotHooks(content) {
       timeoutSec: 15,
     })),
   ]));
-  return `${JSON.stringify({ version: 1, hooks }, null, 2)}\n`;
+  const lifecycle = Object.fromEntries(COPILOT_SESSION_EVENTS.map(event => [event, [{
+    type: 'command', exec: 'node',
+    args: ['.github/ecc/scripts/hooks/copilot-lifecycle.js', event], timeoutSec: 15,
+  }]]));
+  return `${JSON.stringify({ version: 1, hooks: { ...hooks, ...lifecycle } }, null, 2)}\n`;
 }
 
 module.exports = { adaptCopilotHooks };

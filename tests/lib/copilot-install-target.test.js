@@ -277,7 +277,7 @@ test('rule transform preserves CRLF fenced examples and rewrites only prose link
 
 test('unsupported source paths produce no operations', () => {
   const operations = planFor([
-    { id: 'commands-core', paths: ['commands', 'scripts/harness-audit.js'] },
+    { id: 'unsupported-commands', paths: ['scripts/harness-audit.js'] },
     { id: 'platform-configs', paths: ['.claude-plugin', '.codex', 'mcp-configs'] },
   ]);
   assert.strictEqual(operations.length, 0);
@@ -426,6 +426,7 @@ test('normal installed Copilot TDD command runs from the project with a complete
 test('Copilot preserves unrelated workflow shell steps around a detector call', () => {
   const { transformInstallContent } = require('../../scripts/lib/install/content-transform');
   const content = [
+    '---', 'name: fixture', 'description: Fixture.', '---',
     '```bash', 'ECC_ROOT="/custom/tool"', 'printf before',
     'node "$ECC_ROOT/scripts/setup-package-manager.js" --detect',
     'printf after', '```', ''
@@ -450,7 +451,7 @@ test('Copilot rewrites Markdown commands while preserving binary skill assets an
     fs.writeFileSync(path.join(sourceRoot, 'manifests', 'install-profiles.json'), JSON.stringify({ version: 1, profiles: {} }));
     const skillRoot = path.join(sourceRoot, 'skills', 'fixture');
     fs.mkdirSync(skillRoot, { recursive: true });
-    const original = 'Run `node scripts/setup-package-manager.js --detect`.\nhttps://example.org/scripts/setup-package-manager.js\n';
+    const original = '---\nname: fixture\ndescription: Fixture.\n---\nRun `node scripts/setup-package-manager.js --detect`.\nhttps://example.org/scripts/setup-package-manager.js\n';
     const binary = Buffer.from([0, 255, 254, 128, 42]);
     fs.writeFileSync(path.join(skillRoot, 'SKILL.md'), original);
     fs.writeFileSync(path.join(skillRoot, 'asset.png'), binary);
