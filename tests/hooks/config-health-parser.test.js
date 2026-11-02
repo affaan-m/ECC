@@ -167,6 +167,23 @@ function runTests() {
     }
   });
 
+  t('an unquoted separator attached to a script path does not hide it', () => {
+    const fx = makeFixture();
+    // Greptile's 2 October case: `python3 ~/.claude/scripts/guard.py;` used to
+    // be discarded as one separator-bearing word, so a missing guard looked
+    // healthy. The separator ends the word; the path is still audited.
+    for (const cmd of [
+      'python3 .claude/scripts/ghost.py;',
+      'python3 .claude/scripts/ghost.py&&echo ok',
+      'python3 .claude/scripts/ghost.py|cat',
+    ]) {
+      writeSettings(fx.home, ONE_HOOK(cmd));
+      const r = run('--startup', fx);
+      assert.ok(r.stdout.includes('ghost.py'),
+        `${cmd} must still be audited, got: ${r.stdout.trim()}`);
+    }
+  });
+
   t('an unclosed quote inside a payload is counted, not dropped', () => {
     const fx = makeFixture();
     writeSettings(fx.home, ONE_HOOK('sh -c "python3 .claude/scripts/ghost.py && echo \\"oops"'));

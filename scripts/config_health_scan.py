@@ -74,6 +74,18 @@ def _split_shell_words(command):
             chars.append(command[i + 1])
             started = True
             i += 1
+        elif ch in ';&|':
+            # An unquoted separator ends the word even without whitespace:
+            # `python3 guard.py;` is a script followed by a separator, not one
+            # word containing `;`. Keeping them fused discarded the path and
+            # made a missing hook look healthy.
+            if started:
+                words.append((''.join(chars), quoted, single))
+            words.append((ch, False, False))
+            chars = []
+            quoted = False
+            single = False
+            started = False
         else:
             chars.append(ch)
             started = True

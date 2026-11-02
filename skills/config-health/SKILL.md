@@ -202,7 +202,7 @@ references, and it does not count how many places a script is wired.
 
 ## Install
 
-**ECC users:** install the `config-health` module (`npx ecc-universal install --modules config-health` or the `full` profile). It is a **Claude-only** module with a SessionStart hook by default; PreToolUse is opt-in. It does not target other harnesses, so it stays isolated from shared 13-harness modules.
+**ECC users:** install the `config-health` module with an explicit hook decision — `npx ecc-universal install --modules config-health --enable-hooks` for the default SessionStart wiring, or the `full` profile with hook consent. The installer refuses to apply a hook-shipping module without `--enable-hooks` or `--no-hooks`. It is a **Claude-only** module; PreToolUse is opt-in. It does not target other harnesses, so it stays isolated from shared 13-harness modules.
 
 The module ships its own hook config (`manifests/install-assets/config-health-hooks.json`), merged into `settings.json` at install time with the install root substituted for `${CLAUDE_PLUGIN_ROOT}` — so a home install points at `~/.claude/scripts/config-health.py` and a project install at `<project>/.claude/scripts/config-health.py`. Because that merge is a settings write, it is gated by hook consent:
 
