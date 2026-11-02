@@ -280,6 +280,36 @@ test('inline resolver copies in commands and hooks match canonical buildInlineRe
   }
 });
 
+// On native Windows, Claude Code runs each hook as `bash.exe -c "<command>"` through the
+// Windows command line, and that extra unescape layer collapses backslashes. A regex such as
+// `/\\/g` then becomes `/\/g` and every hook fails with a SyntaxError (#3746). The inline
+// resolver must therefore contain no backslash at all.
+test('inline resolver and hook node -e programs contain no backslashes', () => {
+  const { buildInlineResolve } = require('../../scripts/lib/resolve-ecc-root');
+  assert.ok(!INLINE_RESOLVE.includes('\\'), 'INLINE_RESOLVE must not contain a backslash');
+  assert.ok(
+    !buildInlineResolve({ probe: 'scripts/auto-update.js' }).includes('\\'),
+    'buildInlineResolve({ probe }) must not contain a backslash'
+  );
+
+  for (const hookFile of ['hooks.json', 'codex-hooks.json']) {
+    const config = JSON.parse(fs.readFileSync(path.join(__dirname, '..', '..', 'hooks', hookFile), 'utf8'));
+    let checked = 0;
+    for (const entries of Object.values(config.hooks || {})) {
+      if (!Array.isArray(entries)) continue;
+      for (const entry of entries) {
+        for (const hook of entry.hooks || []) {
+          if (typeof hook.command !== 'string' || !hook.command.startsWith('node -e "')) continue;
+          const program = hook.command.slice('node -e "'.length, hook.command.indexOf('"', 'node -e "'.length));
+          assert.ok(!program.includes('\\'), `${hookFile} node -e program must not contain a backslash: ${program.slice(0, 80)}`);
+          checked++;
+        }
+      }
+    }
+    assert.ok(checked > 0, `Expected at least one node -e hook command in ${hookFile}`);
+  }
+});
+
 console.log(`Passed: ${passed}`);
 console.log(`Failed: ${failed}`);
 

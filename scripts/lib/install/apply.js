@@ -13,6 +13,7 @@ const {
   assertHookConsentReady,
   parseJsoncConfig,
   getDisabledOpenCodePluginContent,
+  isInertOpenCodePluginStub,
   getRecordedHookConsent,
   getOpenCodeActivationPathKind,
   getOpenCodeSourceActivationKind,
@@ -257,6 +258,32 @@ function isMcpConfigPath(filePath) {
   return basename === '.mcp.json' || basename === 'mcp.json';
 }
 
+function withMcpMergeExclusions(plan, disabledServers) {
+  if (disabledServers.length === 0) {
+    return plan;
+  }
+  const filterOperation = operation => (
+    operation.kind === 'merge-json' && isMcpConfigPath(operation.destinationPath)
+      && isPlainObject(operation.mergePayload)
+      && isPlainObject(operation.mergePayload.mcpServers)
+      ? {
+        ...operation,
+        mergePayload: filterMcpConfig(operation.mergePayload, disabledServers).config,
+      }
+      : operation
+  );
+  // Writes, recovery checkpoints, and the final ownership ledger must use the
+  // same payload. Repair and uninstall later run without the install environment.
+  return {
+    ...plan,
+    operations: plan.operations.map(filterOperation),
+    statePreview: {
+      ...plan.statePreview,
+      operations: plan.statePreview.operations.map(filterOperation),
+    },
+  };
+}
+
 function assertSafeInstallOperation(plan, operation) {
   if (!operation || typeof operation.destinationPath !== 'string') {
     throw new Error('Refusing to apply install operation: missing destination path.');
@@ -446,9 +473,11 @@ function openCodeActivationCandidates(plan, previousOperations) {
   return candidates;
 }
 
-function activationIsInactive(kind, operation, content) {
+function activationIsInactive(kind, operation, content, strict = false) {
   if (kind === 'plugin') {
-    return content.toString('utf8') === getDisabledOpenCodePluginContent();
+    // The final gate accepts only the V2-valid stub: the pre-fix one is inert but OpenCode rejects it.
+    return strict ? content.toString('utf8') === getDisabledOpenCodePluginContent()
+      : isInertOpenCodePluginStub(content);
   }
   const text = content.toString('utf8');
   const relativePath = operation.sourceRelativePath || operation.destinationPath;
@@ -504,7 +533,7 @@ function assertOpenCodeHookDeactivationReady(plan, options = {}) {
     const digest = content === null ? null : crypto.createHash('sha256').update(content).digest('hex');
     snapshot.set(key, digest);
     if (content === null) continue;
-    const inactive = activationIsInactive(kind, operation, content);
+    const inactive = activationIsInactive(kind, operation, content, options.requireInactive);
     if (options.requireInactive) {
       if (!inactive) {
         throw new Error(`OpenCode hook activation remains active at ${operation.destinationPath}`);
@@ -712,7 +741,8 @@ function preflightQwenAgentOperations(plan) {
   }
 }
 
-function previewInstallPlan(plan) {
+function previewInstallPlan(rawPlan) {
+  const plan = withMcpMergeExclusions(rawPlan, parseDisabledMcpServers(process.env.ECC_DISABLED_MCPS));
   preflightQwenAgentOperations(plan);
   assertOpenCodeScriptBoundary(plan);
   assertOpenCodeHookDeactivationReady(plan);
@@ -775,7 +805,9 @@ function applyInstallPlan(plan, dependencies = {}) {
     : applyInstallPlanLocked(plan, dependencies, false);
 }
 
-function applyInstallPlanLocked(plan, dependencies = {}, settingsLockHeld = false) {
+function applyInstallPlanLocked(rawPlan, dependencies = {}, settingsLockHeld = false) {
+  const disabledServers = parseDisabledMcpServers(process.env.ECC_DISABLED_MCPS);
+  const plan = withMcpMergeExclusions(rawPlan, disabledServers);
   preflightQwenAgentOperations(plan);
   const persistInstallState = dependencies.writeInstallState || writeInstallState;
   const beforeInstallStateRead = dependencies.beforeInstallStateRead;
@@ -803,7 +835,6 @@ function applyInstallPlanLocked(plan, dependencies = {}, settingsLockHeld = fals
     operations: migration.appliedOperations,
   };
   const preparedClaudeSettings = preflightClaudeSettingsOperations(appliedPlan);
-  const disabledServers = parseDisabledMcpServers(process.env.ECC_DISABLED_MCPS);
   const linkIndex = buildLinkIndexForPlan(appliedPlan);
   const hasLegacyMigration = migration.legacyOperationsToRemove.length > 0;
   const hookRemovalCount = appliedPlan.operations.filter(operation => (
@@ -885,17 +916,11 @@ function applyInstallPlanLocked(plan, dependencies = {}, settingsLockHeld = fals
           throw new Error(`Missing merge payload for ${operation.destinationPath}`);
         }
 
-        const filteredPayload = (
-          isMcpConfigPath(operation.destinationPath) && disabledServers.length > 0
-        )
-          ? filterMcpConfig(payload, disabledServers).config
-          : payload;
-
         const currentValue = readOptionalJsonObject(
           operation.destinationPath,
           'existing JSON config'
         );
-        const mergedValue = deepMergeJson(currentValue, filteredPayload);
+        const mergedValue = deepMergeJson(currentValue, payload);
         fs.writeFileSync(operation.destinationPath, formatJson(mergedValue), 'utf8');
         writtenDestinations.add(operation.destinationPath);
         continue;

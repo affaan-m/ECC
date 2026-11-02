@@ -40,7 +40,7 @@ MCPを実際に使用せずにCLIをMCPのように機能させるには（そ�
 セッション間でメモリを共有するには、進捗を要約してチェックインし、`.claude`フォルダの`.tmp`ファイルに保存してセッション終了まで追記するスキルまたはコマンドが最善策です。翌日にはそれをコンテキストとして使用し、中断した箇所から再開できます。古いコンテキストが新しい作業を汚染しないよう、各セッションごとに新しいファイルを作成してください。
 
 ![Session Storage File Tree](https://raw.githubusercontent.com/affaan-m/ECC/main/assets/images/longform/03-session-storage.png)
-*セッションストレージの例 -> <https://github.com/affaan-m/ECC/tree/main/examples/sessions>*
+*セッションストレージの例 -> <https://github.com/affaan-m/ECC/blob/main/commands/save-session.md#session-file-format>*
 
 Claudeが現在の状態を要約するファイルを作成します。レビューし、必要に応じて編集を依頼し、新しく開始。新しい会話では、ファイルパスを提供するだけです。コンテキスト制限に達して複雑な作業を継続する必要がある場合に特に便利です。これらのファイルには以下を含めるべきです：
 - うまくいったアプローチ（エビデンス付きで検証可能）

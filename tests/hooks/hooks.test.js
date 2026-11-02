@@ -177,12 +177,19 @@ async function asyncTest(name, fn) {
   }
 }
 
+// Hook scripts write session files, compaction logs, learned skills and
+// homunculus data under the home directory, so script runs get an empty home
+// instead of the developer's real one unless a test passes its own HOME.
+const ISOLATED_HOME = fs.mkdtempSync(path.join(os.tmpdir(), 'hooks-test-home-'));
+const ISOLATED_HOME_ENV = { HOME: ISOLATED_HOME, USERPROFILE: ISOLATED_HOME };
+process.on('exit', () => fs.rmSync(ISOLATED_HOME, { recursive: true, force: true }));
+
 // Run a script and capture output
 function runScript(scriptPath, input = '', env = {}, cwd = process.cwd()) {
   return new Promise((resolve, reject) => {
     const proc = spawn('node', [scriptPath], {
       cwd,
-      env: { ...process.env, ...env },
+      env: { ...process.env, ...ISOLATED_HOME_ENV, ...env },
       stdio: ['pipe', 'pipe', 'pipe']
     });
 
@@ -209,7 +216,7 @@ function runShellScript(scriptPath, args = [], input = '', env = {}, cwd = proce
   return new Promise((resolve, reject) => {
     const proc = spawn('bash', [toBashPath(scriptPath), ...args], {
       cwd,
-      env: { ...process.env, ...env },
+      env: { ...process.env, ...ISOLATED_HOME_ENV, ...env },
       stdio: ['pipe', 'pipe', 'pipe']
     });
 
@@ -1515,7 +1522,7 @@ async function runTests() {
   if (
     await asyncTest('creates compaction log', async () => {
       await runScript(path.join(scriptsDir, 'pre-compact.js'));
-      const logFile = path.join(getCanonicalSessionsDir(os.homedir()), 'compaction-log.txt');
+      const logFile = path.join(getCanonicalSessionsDir(ISOLATED_HOME), 'compaction-log.txt');
       assert.ok(fs.existsSync(logFile), 'Compaction log should exist');
     })
   )
@@ -3700,7 +3707,7 @@ async function runTests() {
 
       const shell = process.platform === 'win32' ? 'bash' : 'bash';
       const proc = spawn(shell, ['-lc', shellCommand], {
-        env: process.env,
+        env: { ...process.env, ...ISOLATED_HOME_ENV },
         stdio: ['ignore', 'pipe', 'pipe']
       });
 

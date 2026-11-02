@@ -13,9 +13,8 @@ function test(name, run) {
 // Serialized Bash quoting is covered separately by serialized-hook-wsl.test.js.
 test('INLINE_RESOLVE extracted expression converts Windows CLAUDE_CONFIG_DIR on simulated WSL', () => {
   const { INLINE_RESOLVE } = require('../../scripts/lib/resolve-ecc-root');
-  // INLINE_RESOLVE is formatted for embedding inside bash double-quoted `node -e "..."` strings,
-  // where `\\\\` is unescaped by the shell to `\\` before Node parses the JS source.
-  const jsResolveExpr = INLINE_RESOLVE.replace(/\\\\\\\\/g, '\\\\');
+  // INLINE_RESOLVE is backslash-free, so it embeds verbatim in bash double-quoted `node -e "..."` strings.
+  const jsResolveExpr = INLINE_RESOLVE;
   const scriptContent = `
     'use strict';
     const Module = require('module');
@@ -83,7 +82,7 @@ test('codex-hooks.json extracted resolver converts Windows CLAUDE_CONFIG_DIR to 
     }
   }
   assert.ok(hookResolverJS, 'Could not extract inline resolver IIFE from codex-hooks.json');
-  const jsResolveExpr = hookResolverJS.replace(/\\\\\\\\/g, '\\\\');
+  const jsResolveExpr = hookResolverJS;
 
   const scriptContent = `
     'use strict';

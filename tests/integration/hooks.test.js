@@ -41,6 +41,13 @@ async function asyncTest(name, fn) {
   }
 }
 
+// Hook scripts write session data, learned skills and homunculus observations
+// under the home directory, so runs get an empty home instead of the developer's
+// real one unless a test passes its own HOME.
+const ISOLATED_HOME = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-integration-home-'));
+const ISOLATED_HOME_ENV = { HOME: ISOLATED_HOME, USERPROFILE: ISOLATED_HOME };
+process.on('exit', () => fs.rmSync(ISOLATED_HOME, { recursive: true, force: true }));
+
 /**
  * Run a hook script with simulated Claude Code input
  * @param {string} scriptPath - Path to the hook script
@@ -51,7 +58,7 @@ async function asyncTest(name, fn) {
 function runHookWithInput(scriptPath, input = {}, env = {}, timeoutMs = 10000) {
   return new Promise((resolve, reject) => {
     const proc = spawn('node', [scriptPath], {
-      env: { ...process.env, ...env },
+      env: { ...process.env, ...ISOLATED_HOME_ENV, ...env },
       stdio: ['pipe', 'pipe', 'pipe']
     });
 
@@ -110,7 +117,7 @@ function getSessionStartPayload(stdout) {
 function runHookCommand(command, input = {}, env = {}, timeoutMs = 10000) {
   return new Promise((resolve, reject) => {
     const isWindows = process.platform === 'win32';
-    const mergedEnv = { ...process.env, CLAUDE_PLUGIN_ROOT: REPO_ROOT, ...env };
+    const mergedEnv = { ...process.env, ...ISOLATED_HOME_ENV, CLAUDE_PLUGIN_ROOT: REPO_ROOT, ...env };
     if (Array.isArray(command)) {
       const [program, ...args] = command;
       const proc = spawn(program, args, { env: mergedEnv, stdio: ['pipe', 'pipe', 'pipe'] });
@@ -297,6 +304,7 @@ async function runTests() {
 
   if (await asyncTest('hooks handle malformed JSON input', async () => {
     const proc = spawn('node', [path.join(scriptsDir, 'session-start.js')], {
+      env: { ...process.env, ...ISOLATED_HOME_ENV },
       stdio: ['pipe', 'pipe', 'pipe']
     });
 
@@ -887,6 +895,7 @@ async function runTests() {
     // session-end parses stdin JSON. If input is > 1MB and truncated mid-JSON,
     // JSON.parse should fail and fall back to env var
     const proc = spawn('node', [path.join(scriptsDir, 'session-end.js')], {
+      env: { ...process.env, ...ISOLATED_HOME_ENV },
       stdio: ['pipe', 'pipe', 'pipe']
     });
 

@@ -15,6 +15,16 @@ const { spawnSync } = require('child_process');
 
 const evaluateScript = path.join(__dirname, '..', '..', 'scripts', 'hooks', 'evaluate-session.js');
 
+// evaluate-session.js creates its learned-skills directory under the home
+// directory, so every run gets an empty home instead of the developer's real one.
+const ISOLATED_HOME = fs.mkdtempSync(path.join(os.tmpdir(), 'eval-session-home-'));
+const ISOLATED_HOME_ENV = { HOME: ISOLATED_HOME, USERPROFILE: ISOLATED_HOME };
+process.on('exit', () => fs.rmSync(ISOLATED_HOME, { recursive: true, force: true }));
+
+function isolatedEnv(extra = {}) {
+  return { ...process.env, ...ISOLATED_HOME_ENV, ...extra };
+}
+
 // Test helpers
 function test(name, fn) {
   try {
@@ -62,6 +72,7 @@ function runEvaluate(stdinJson) {
     encoding: 'utf8',
     input: JSON.stringify(stdinJson),
     timeout: 10000,
+    env: isolatedEnv(),
   });
   return {
     code: result.status || 0,
@@ -135,6 +146,7 @@ function runTests() {
       encoding: 'utf8',
       input: 'not valid json at all',
       timeout: 10000,
+      env: isolatedEnv(),
     });
     assert.strictEqual(result.status, 0, 'Should exit 0 even on bad stdin');
   })) passed++; else failed++;
@@ -253,6 +265,7 @@ function runTests() {
       encoding: 'utf8',
       input: '',
       timeout: 10000,
+      env: isolatedEnv(),
     });
     // Empty stdin → JSON.parse('') throws → fallback to env var (unset) → null → exit 0
     assert.strictEqual(result.status, 0, 'Should exit 0 on empty stdin');
@@ -269,7 +282,7 @@ function runTests() {
       encoding: 'utf8',
       input: 'invalid json {{{',
       timeout: 10000,
-      env: { ...process.env, CLAUDE_TRANSCRIPT_PATH: transcript }
+      env: isolatedEnv({ CLAUDE_TRANSCRIPT_PATH: transcript })
     });
 
     assert.strictEqual(result.status, 0, 'Should exit 0');
@@ -396,8 +409,8 @@ function runTests() {
         'Should NOT contain literal ~ in output (should be expanded)');
       assert.ok(result.stderr.includes('custom-learned-skills-dir'),
         `Should reference the custom learned skills dir. Got: ${result.stderr}`);
-      // The ~ should have been replaced with os.homedir()
-      assert.ok(result.stderr.includes(os.homedir()),
+      // The ~ should have been replaced with the child's home directory
+      assert.ok(result.stderr.includes(ISOLATED_HOME),
         `Should contain expanded home directory. Got: ${result.stderr}`);
 
       cleanupTestDir(testDir);

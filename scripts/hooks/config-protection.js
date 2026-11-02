@@ -157,9 +157,28 @@ function run(inputOrRaw, options = {}) {
   }
 
   const input = parseInput(inputOrRaw);
-  const filePath = input?.tool_input?.file_path || input?.tool_input?.file || '';
-  if (!filePath) return { exitCode: 0 };
+  for (const filePath of targetPaths(input?.tool_input)) {
+    const blocked = checkTarget(filePath);
+    if (blocked) return blocked;
+  }
+  return { exitCode: 0 };
+}
 
+/**
+ * Every path the tool call would write. A MultiEdit entry may carry its own
+ * `file_path`; one without falls back to the top-level path, the same rule
+ * GateGuard applies (#3761). Checking only the top-level path let a batch
+ * edit an existing config through `edits[].file_path`.
+ */
+function targetPaths(toolInput) {
+  const shared = toolInput?.file_path || toolInput?.file || '';
+  const edits = Array.isArray(toolInput?.edits) ? toolInput.edits : [];
+  const entryPaths = edits.map(edit => (edit && typeof edit === 'object' ? edit.file_path : undefined));
+  const candidates = [shared, ...entryPaths].filter(p => typeof p === 'string' && p);
+  return [...new Set(candidates)];
+}
+
+function checkTarget(filePath) {
   const basename = path.basename(filePath);
   // Match case-insensitively. Every PROTECTED_FILES entry is lowercase, and on
   // case-insensitive filesystems (macOS APFS/HFS+, Windows NTFS) a write to
@@ -194,7 +213,7 @@ function run(inputOrRaw, options = {}) {
     }
 
     if (!exists) {
-      return { exitCode: 0 };
+      return null;
     }
 
     return {
@@ -207,7 +226,7 @@ function run(inputOrRaw, options = {}) {
     };
   }
 
-  return { exitCode: 0 };
+  return null;
 }
 
 module.exports = { run };

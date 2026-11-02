@@ -1,0 +1,29 @@
+{
+  "schema_version": "ecc.evaluator-rag.verifier.v1",
+  "scenario_id": "public-feedback-goal-fidelity",
+  "run_id": "illustrative-goal-fidelity",
+  "read_only": true,
+  "evaluation_status": "illustrative_expected_decisions_not_historical_reproduction",
+  "candidates": [
+    {
+      "candidate_id": "preserved-outcome-and-chain",
+      "decision": "accepted",
+      "reasons": [
+        "Preserves the end-to-end automated OUTCOME_A",
+        "Connects incoming sources through the intermediary tool layer to the prepared result",
+        "Preserves sustained throughput as the rationale",
+        "Does not claim the requested architecture is implemented or verified"
+      ]
+    },
+    {
+      "candidate_id": "silent-human-assisted-substitution",
+      "decision": "rejected",
+      "reasons": [
+        "Substitutes human-assisted OUTCOME_B for the requested outcome",
+        "Drops incoming sources and the sustained throughput rationale",
+        "Presents an alternative as if it were the original requirement"
+      ]
+    }
+  ],
+  "promoted_candidate_id": "preserved-outcome-and-chain"
+}

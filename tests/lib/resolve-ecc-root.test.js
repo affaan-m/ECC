@@ -555,6 +555,7 @@ module.exports = { resolveEccRoot() { assert.strictEqual(process.env.HOME, ${JSO
       try {
         const result = resolveEccRoot({
           homeDir,
+          envRoot: '',
           configDir: 'C:\\Users\\test\\.claude'
         });
         // On WSL, 'C:\\Users\\test\\.claude' is converted to '/mnt/c/Users/test/.claude'.
@@ -576,6 +577,7 @@ module.exports = { resolveEccRoot() { assert.strictEqual(process.env.HOME, ${JSO
       try {
         const result = resolveEccRoot({
           homeDir,
+          envRoot: '',
           configDir: 'C:\\Users\\test\\.claude'
         });
         // Not on WSL: Windows path is not converted. On Linux, path.resolve treats

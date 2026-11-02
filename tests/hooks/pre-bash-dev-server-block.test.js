@@ -226,6 +226,11 @@ function runTests() {
       assert.strictEqual(result.code, 2, `Expected exit code 2, got ${result.code}`);
     }) ? passed++ : failed++);
 
+    (test("blocks echo $'it\\'s'; (npm run dev) — escaped apostrophe does not close $'...'", () => {
+      const result = runScript("echo $'it\\'s'; (npm run dev)");
+      assert.strictEqual(result.code, 2, `Expected exit code 2, got ${result.code}`);
+    }) ? passed++ : failed++);
+
     (test('allows $(echo "(npm run dev)") — () inside double-quoted substitution body is literal', () => {
       const result = runScript('$(echo "(npm run dev)")');
       assert.strictEqual(result.code, 0, `Expected exit code 0, got ${result.code}`);

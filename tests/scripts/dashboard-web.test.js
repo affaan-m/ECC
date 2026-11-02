@@ -1300,6 +1300,70 @@ test('loadMcps handles empty mcp-configs directory', () => {
   cleanup(testRoot);
 });
 
+// ===================== Entrypoint browser auto-open =====================
+
+function findFreePort() {
+  return new Promise((resolve, reject) => {
+    const probe = net.createServer();
+    probe.once('error', reject);
+    probe.listen(0, '127.0.0.1', () => {
+      const { port } = probe.address();
+      probe.close(() => resolve(port));
+    });
+  });
+}
+
+if (process.platform !== 'win32') {
+  asyncTest('entrypoint keeps serving when the browser launcher is missing', async () => {
+    const { spawn } = require('child_process');
+    const dir = createTempDir('ecc-dashboard-no-launcher-');
+    const emptyBin = path.join(dir, 'bin');
+    fs.mkdirSync(emptyBin);
+    const port = await findFreePort();
+    // An empty PATH means `xdg-open` / `open` cannot be found, so the
+    // auto-open spawn fails asynchronously with ENOENT.
+    const child = spawn(process.execPath, [SCRIPT, String(port)], {
+      env: { PATH: emptyBin, HOME: dir, CLAUDE_CONFIG_DIR: path.join(dir, '.claude') },
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+    let stdout = '';
+    let stderr = '';
+    child.stdout.on('data', chunk => { stdout += chunk; });
+    child.stderr.on('data', chunk => { stderr += chunk; });
+    const exited = new Promise(resolve => child.once('exit', resolve));
+    try {
+      await new Promise((resolve, reject) => {
+        const timer = setTimeout(() => reject(new Error(`banner not printed; stderr: ${stderr}`)), 10000);
+        const check = () => {
+          if (stdout.includes('ECC Capabilities')) {
+            clearTimeout(timer);
+            resolve();
+          }
+        };
+        child.stdout.on('data', check);
+        child.once('exit', code => {
+          clearTimeout(timer);
+          reject(new Error(`dashboard exited with ${code} before listening; stderr: ${stderr}`));
+        });
+        check();
+      });
+      // Give the asynchronous spawn error time to surface.
+      await new Promise(resolve => setTimeout(resolve, 500));
+      assert.strictEqual(child.exitCode, null, `dashboard exited after listening; stderr: ${stderr}`);
+      assert.strictEqual(child.signalCode, null);
+      assert.match(stderr, /Could not open a browser automatically \(ENOENT\)/);
+      const response = await requestDashboard(port);
+      assert.strictEqual(response.statusCode, 200);
+    } finally {
+      if (child.exitCode === null && child.signalCode === null) {
+        child.kill();
+        await exited;
+      }
+      cleanup(dir);
+    }
+  });
+}
+
 // ===================== Results =====================
 
 async function runAsyncTests() {

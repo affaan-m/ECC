@@ -123,6 +123,17 @@ Current corpus:
   expected-output comparisons, representative repository/commit histories, and
   regression commands before deep-analysis behavior can be promoted.
 
+- `connector-diagnostics-gap`: inventories an already-used connector, separates
+  observed gaps from unavailable research, and requires evidence before a new
+  background component is proposed. Decisions are illustrative, not executed
+  connector checks.
+- `public-feedback-goal-fidelity`: compares a shortened draft with the chosen
+  outcome and input/process/result chain, preserving verification limits and
+  separating optional alternatives. Decisions are illustrative.
+- `prepared-verifier-effect-state`: checks prepared command contracts while
+  preserving accepted, unknown and not-dispatched operation states. Separate
+  source-reported mechanisms remain separate; decisions are illustrative.
+
 ## ECC Tools Mapping
 
 ECC Tools already flags missing RAG/evaluator evidence for retrieval,

@@ -40,6 +40,7 @@
 | Command | What it does |
 |---------|-------------|
 | `/code-review` | Code review — local uncommitted changes or GitHub PR (pass PR number/URL for PR mode) |
+| `/issue-review` | GitHub issue review — verify the report against the codebase, find duplicates and prior fixes, assign severity, draft a reply (posting opt-in) |
 | `/python-review` | Python — PEP 8, type hints, security, idiomatic patterns |
 | `/go-review` | Go — idiomatic patterns, concurrency safety, error handling |
 | `/kotlin-review` | Kotlin — null safety, coroutine safety, clean architecture |
@@ -276,6 +277,7 @@ These slash commands were retired in favor of skills. The command files still ex
 ```
 Starting a new feature?         → /plan first, then TDD via the tdd-workflow skill
 Code just written?              → /code-review
+Triaging a GitHub issue?        → /issue-review <number>
 Build broken?                   → /build-fix
 Need live docs?                 → the documentation-lookup skill
 Session about to end?           → /save-session or /learn-eval

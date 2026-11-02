@@ -2104,6 +2104,8 @@ def _parse_created_date(file_path: Path) -> Optional[datetime]:
             if key.strip() == 'created':
                 date_str = value.strip().strip('"').strip("'")
                 for fmt in (
+                    "%Y-%m-%dT%H:%M:%S.%f%z",
+                    "%Y-%m-%dT%H:%M:%S.%f",
                     "%Y-%m-%dT%H:%M:%S%z",
                     "%Y-%m-%dT%H:%M:%SZ",
                     "%Y-%m-%dT%H:%M:%S",

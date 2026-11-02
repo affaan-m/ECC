@@ -467,6 +467,70 @@ function runTests() {
   );
 
   results.push(
+    test('blocks a MultiEdit whose existing config target is only in edits[].file_path (#3761)', () => {
+      return withOwnedDirectory(fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-config-protect-multi-')), tmpDir => {
+        const ruff = path.join(tmpDir, 'ruff.toml');
+        const eslintrc = path.join(tmpDir, '.eslintrc.json');
+        fs.writeFileSync(ruff, '{}');
+        fs.writeFileSync(eslintrc, '{}');
+        const ordinary = path.join(tmpDir, 'app.py');
+
+        const perEntryOnly = runHook({
+          tool_name: 'MultiEdit',
+          tool_input: { edits: [{ file_path: ruff, old_string: '{}', new_string: '{ }' }] }
+        });
+        assert.strictEqual(perEntryOnly.code, 2, 'per-entry-only batch should be blocked: ' + perEntryOnly.stderr);
+        assert.ok(perEntryOnly.stderr.includes('BLOCKED: Modifying ruff.toml is not allowed.'), perEntryOnly.stderr);
+
+        const mixed = runHook({
+          tool_name: 'MultiEdit',
+          tool_input: {
+            file_path: ordinary,
+            edits: [
+              { old_string: 'a', new_string: 'b' },
+              { file_path: eslintrc, old_string: '{}', new_string: '{ }' }
+            ]
+          }
+        });
+        assert.strictEqual(mixed.code, 2, 'mixed ordinary/config batch should be blocked: ' + mixed.stderr);
+        assert.ok(mixed.stderr.includes('BLOCKED: Modifying .eslintrc.json is not allowed.'), mixed.stderr);
+
+        const missingThenExisting = runHook({
+          tool_name: 'MultiEdit',
+          tool_input: {
+            file_path: path.join(tmpDir, 'missing', 'ruff.toml'),
+            edits: [
+              { old_string: '', new_string: '[lint]' },
+              { file_path: eslintrc, old_string: '{}', new_string: '{ }' }
+            ]
+          }
+        });
+        assert.strictEqual(missingThenExisting.code, 2, 'existing config after a missing one should be blocked: ' + missingThenExisting.stderr);
+        assert.ok(missingThenExisting.stderr.includes('BLOCKED: Modifying .eslintrc.json is not allowed.'), missingThenExisting.stderr);
+      });
+    })
+  );
+
+  results.push(
+    test('allows a MultiEdit that only creates or touches non-protected files', () => {
+      return withOwnedDirectory(fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-config-protect-multi-ok-')), tmpDir => {
+        const result = runHook({
+          tool_name: 'MultiEdit',
+          tool_input: {
+            file_path: path.join(tmpDir, 'app.py'),
+            edits: [
+              { old_string: 'a', new_string: 'b' },
+              { file_path: path.join(tmpDir, 'lib.py'), old_string: 'a', new_string: 'b' },
+              { file_path: path.join(tmpDir, 'ruff.toml'), old_string: '', new_string: '[lint]' }
+            ]
+          }
+        });
+        assert.strictEqual(result.code, 0, 'batch with no existing protected target should pass: ' + result.stderr);
+      });
+    })
+  );
+
+  results.push(
     test('does not block build or test tooling configs', () => {
       // Pins the boundary: this hook guards LINTER configs. A future widening
       // of the patterns must not quietly start blocking ordinary work.

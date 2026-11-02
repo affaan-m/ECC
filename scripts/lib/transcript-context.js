@@ -94,14 +94,16 @@ function readLatestContextTokens(transcriptPath, options = {}) {
 
   const tailBytes = Number.isInteger(options.tailBytes) && options.tailBytes > 0 ? options.tailBytes : DEFAULT_TRANSCRIPT_TAIL_BYTES;
 
-  const tail = readFileTail(transcriptPath, tailBytes);
+  // Include the preceding byte so a newline at the requested boundary keeps
+  // the first complete record; a mid-record boundary still gets discarded.
+  const tail = readFileTail(transcriptPath, tailBytes + 1, { includeByteLength: true });
   if (!tail) {
     return null;
   }
 
   const lines = tail.text.split('\n');
-  // The first line of a truncated tail is almost certainly partial JSON.
-  const firstLine = tail.truncated ? 1 : 0;
+  // Discard the extra boundary byte and any partial record containing it.
+  const firstLine = tail.truncated || tail.byteLength > tailBytes ? 1 : 0;
 
   for (let i = lines.length - 1; i >= firstLine; i--) {
     const line = lines[i].trim();
@@ -138,13 +140,13 @@ function readLatestContextTokens(transcriptPath, options = {}) {
  * @returns {{ windowTokens: number, inferred: boolean }}
  */
 function resolveContextWindow(tokens, model) {
+  const env = (typeof process !== 'undefined' && process.env) || {};
+
   // Explicit window override wins: 400k models (e.g. Opus 4.x) match neither the
   // 200k default nor the 1M marker and would otherwise report ~double usage (#2290).
-  // Honor ECC's own knob and Claude Code's native CLAUDE_CODE_AUTO_COMPACT_WINDOW.
-  const env = (typeof process !== 'undefined' && process.env) || {};
-  const envWindow = Number.parseInt(env.ECC_CONTEXT_WINDOW_TOKENS || env.CLAUDE_CODE_AUTO_COMPACT_WINDOW || '', 10);
-  if (Number.isInteger(envWindow) && envWindow > 0) {
-    return { windowTokens: envWindow, inferred: false };
+  const explicitWindow = Number(env.ECC_CONTEXT_WINDOW_TOKENS || '');
+  if (Number.isSafeInteger(explicitWindow) && explicitWindow > 0) {
+    return { windowTokens: explicitWindow, inferred: false };
   }
 
   if (typeof model === 'string' && model.includes(LARGE_WINDOW_MODEL_MARKER)) {
@@ -162,6 +164,15 @@ function resolveContextWindow(tokens, model) {
 
   if (Number.isFinite(tokens) && tokens > STANDARD_CONTEXT_WINDOW_TOKENS) {
     return { windowTokens: LARGE_CONTEXT_WINDOW_TOKENS, inferred: true };
+  }
+
+  // Claude Code's CLAUDE_CODE_AUTO_COMPACT_WINDOW is the harness auto-compact
+  // trigger point (e.g. 786432 on a 1M-window model), not the context window
+  // size. Honor it only as a last-resort fallback so it cannot mask the [1m]
+  // marker, known large-window families, or >200k observed tokens above.
+  const autoCompactWindow = Number(env.CLAUDE_CODE_AUTO_COMPACT_WINDOW || '');
+  if (Number.isSafeInteger(autoCompactWindow) && autoCompactWindow > 0) {
+    return { windowTokens: autoCompactWindow, inferred: false };
   }
 
   return { windowTokens: STANDARD_CONTEXT_WINDOW_TOKENS, inferred: true };
@@ -192,7 +203,8 @@ function isContextWindowInferred(tokens, model) {
 /**
  * Resolve the context-size suggestion threshold (tokens).
  * `COMPACT_CONTEXT_THRESHOLD=0` disables the context signal entirely;
- * other invalid values fall back to the window-scaled default.
+ * other invalid values fall back to the window-scaled default, capped at
+ * 80 percent of a valid native compaction budget when that is earlier.
  */
 function resolveContextThreshold(env, windowTokens) {
   const raw = env && env.COMPACT_CONTEXT_THRESHOLD;
@@ -206,7 +218,13 @@ function resolveContextThreshold(env, windowTokens) {
     }
   }
 
-  return windowTokens >= LARGE_CONTEXT_WINDOW_TOKENS ? DEFAULT_CONTEXT_THRESHOLD_LARGE : DEFAULT_CONTEXT_THRESHOLD_STANDARD;
+  const defaultThreshold = windowTokens >= LARGE_CONTEXT_WINDOW_TOKENS ? DEFAULT_CONTEXT_THRESHOLD_LARGE : DEFAULT_CONTEXT_THRESHOLD_STANDARD;
+  const nativeBudget = Number(env && env.CLAUDE_CODE_AUTO_COMPACT_WINDOW);
+  if (!Number.isSafeInteger(nativeBudget) || nativeBudget <= 0) return defaultThreshold;
+  // Keep the standard 160k/200k headroom before native compaction, without
+  // changing model-capacity evidence or an explicit reminder policy above.
+  const nativeThreshold = Math.max(1, Math.floor(nativeBudget * (DEFAULT_CONTEXT_THRESHOLD_STANDARD / STANDARD_CONTEXT_WINDOW_TOKENS)));
+  return Math.min(defaultThreshold, nativeThreshold);
 }
 
 /**
