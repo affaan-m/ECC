@@ -51,6 +51,13 @@ for (const [name, command, expected] of cases) {
   });
 }
 
+test('blocks when the package cannot parse the command', () => {
+  const command = "git commit -m x; printf '%s' '$" + "{}'";
+  const result = hook.run(json(command));
+  assert.strictEqual(result.exitCode, 2, result.stderr);
+  assert.match(result.stderr, /BLOCKED/);
+});
+
 test('stdin mode passes allowed input through', () => {
   const input = json('git status');
   const r = spawnSync(process.execPath, [script], { input, encoding: 'utf8' });

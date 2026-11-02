@@ -46,7 +46,13 @@ function extractCommand(rawInput) {
  * @returns {{exitCode: number, stderr?: string}}
  */
 function run(rawInput) {
-  const result = checkCommand(extractCommand(rawInput));
+  let result;
+  try {
+    result = checkCommand(extractCommand(rawInput));
+  } catch (error) {
+    // Fail closed: a crash would exit 1, which agents treat as allow.
+    return { exitCode: 2, stderr: `BLOCKED: block-no-verify could not analyse this command (${error.message}), so hook-bypass safety could not be established.` };
+  }
   return result.blocked ? { exitCode: 2, stderr: result.reason } : { exitCode: 0 };
 }
 
