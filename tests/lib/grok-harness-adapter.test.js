@@ -16,6 +16,7 @@ const {
   INLINE_RESOLVE,
   resolveEccRoot,
 } = require('../../scripts/lib/resolve-ecc-root');
+const { transformInstallContent } = require('../../scripts/lib/install/content-transform');
 
 const repoRoot = path.resolve(__dirname, '..', '..');
 let passed = 0;
@@ -96,6 +97,46 @@ function runTests() {
     assert.strictEqual(manifest.mcpServers, '');
     const rootMcp = JSON.parse(fs.readFileSync(path.join(repoRoot, '.mcp.json'), 'utf8'));
     assert.ok(rootMcp.mcpServers['chrome-devtools']);
+  })) passed++; else failed++;
+
+  if (test('Grok hook projection maps terminal tools and pins Windows Node without mutating source', () => {
+    const source = {
+      hooks: {
+        PreToolUse: [
+          { matcher: 'Bash', hooks: [{ type: 'command', command: 'node -e "runBash()"' }] },
+          { matcher: 'PowerShell', hooks: [{ type: 'command', command: 'node scripts/check.js' }] },
+          { matcher: 'Bash|PowerShell|Write', hooks: [{ type: 'command', command: 'node scripts/combined.js' }] },
+          { matcher: '^(Bash|PowerShell)$', hooks: [{ type: 'command', command: 'node scripts/regex.js' }] },
+          { matcher: 'Write', hooks: [{ type: 'command', command: 'node scripts/write-check.js' }] },
+        ],
+      },
+    };
+    const original = JSON.stringify(source);
+    const projected = JSON.parse(transformInstallContent({
+      sourceRelativePath: 'hooks/hooks.json',
+      contentTransform: {
+        type: 'grok-hooks',
+        nodeExecutable: 'C:\\Program Files\\nodejs\\node.exe',
+      },
+    }, JSON.stringify(source)));
+    const terminal = projected.hooks.PreToolUse.filter((entry) => entry.matcher === 'run_terminal_command');
+
+    assert.strictEqual(terminal.length, 2);
+    assert.ok(terminal.every((entry) => entry.hooks[0].command.startsWith('"C:\\Program Files\\nodejs\\node.exe" ')));
+    assert.strictEqual(projected.hooks.PreToolUse[2].matcher, 'run_terminal_command|Write');
+    assert.ok(projected.hooks.PreToolUse[2].hooks[0].command.startsWith('"C:\\Program Files\\nodejs\\node.exe" '));
+    assert.strictEqual(projected.hooks.PreToolUse[3].matcher, '^(run_terminal_command|run_terminal_command)$');
+    assert.strictEqual(projected.hooks.PreToolUse[4].matcher, 'Write');
+    assert.strictEqual(JSON.stringify(source), original);
+  })) passed++; else failed++;
+
+  if (test('Grok hook projection keeps Node lookup portable outside Windows', () => {
+    const source = { hooks: { SessionStart: [{ matcher: '.*', hooks: [{ type: 'command', command: 'node -e "run()"' }] }] } };
+    const projected = JSON.parse(transformInstallContent({
+      sourceRelativePath: 'hooks/hooks.json',
+      contentTransform: { type: 'grok-hooks' },
+    }, JSON.stringify(source)));
+    assert.strictEqual(projected.hooks.SessionStart[0].hooks[0].command, 'node -e "run()"');
   })) passed++; else failed++;
 
   if (test('marketplace source is the pinned whole repository', () => {

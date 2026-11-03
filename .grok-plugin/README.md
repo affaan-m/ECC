@@ -69,6 +69,12 @@ The Grok target adapter maps it onto the shared root contract in the installed
 hook configuration when hooks are consented. Without hook consent, the installed copy has no
 `hooks/hooks.json`.
 
+The Grok-only hook projection maps shared `Bash` and `PowerShell` matchers to
+Grok's `run_terminal_command` tool. On Windows it starts hook commands with the
+Node executable used by the canonical installer, so hook startup does not rely
+on Grok's inherited `PATH`. Other harnesses continue to use the shared hook
+configuration unchanged.
+
 Grok does not honor Claude `userConfig`. Hook enablement and profile stay on
 environment variables after explicit hook consent:
 

@@ -90,6 +90,44 @@ function transformJsonFilterObjectKeys(contract, content, sourceRelativePath) {
   return formatJson(replaceObjectAtPath(parsed, contract.path, filtered));
 }
 
+function transformGrokHooks(contract, content, sourceRelativePath) {
+  const config = parseTransformObject(content, sourceRelativePath);
+  if (!config.hooks || typeof config.hooks !== 'object' || Array.isArray(config.hooks)) {
+    throw new Error(`Invalid Grok hooks config: ${sourceRelativePath}`);
+  }
+  const nodeExecutable = typeof contract.nodeExecutable === 'string' && contract.nodeExecutable
+    ? `"${contract.nodeExecutable}"`
+    : null;
+  const matcherMap = { Bash: 'run_terminal_command', PowerShell: 'run_terminal_command' };
+  const mapMatcherName = (name) => Object.hasOwn(matcherMap, name) ? matcherMap[name] : name;
+  const mapMatcher = (matcher) => {
+    if (Array.isArray(matcher)) return [...new Set(matcher.map(mapMatcherName))];
+    if (typeof matcher !== 'string') return matcher;
+    if (/^[\w-]+(?:\|[\w-]+)*$/.test(matcher)) {
+      return [...new Set(matcher.split('|').map(mapMatcherName))].join('|');
+    }
+    return matcher.replace(/\b(Bash|PowerShell)\b/g, (name) => mapMatcherName(name));
+  };
+  const hooks = Object.fromEntries(Object.entries(config.hooks).map(([event, entries]) => [
+    event,
+    Array.isArray(entries) ? entries.map((entry) => {
+      const matcher = mapMatcher(entry.matcher);
+      return {
+        ...entry,
+        ...(matcher === undefined ? {} : { matcher }),
+        hooks: Array.isArray(entry.hooks) ? entry.hooks.map((hook) => {
+          if (hook.type !== 'command' || typeof hook.command !== 'string') return hook;
+          const command = hook.command
+            .replaceAll('var e=process.env.CLAUDE_PLUGIN_ROOT;', 'var e=process.env.GROK_PLUGIN_ROOT||process.env.CLAUDE_PLUGIN_ROOT;')
+            .replace(/^node(?=\s)/, nodeExecutable || 'node');
+          return { ...hook, command };
+        }) : entry.hooks,
+      };
+    }) : entries,
+  ]));
+  return formatJson({ ...config, hooks });
+}
+
 function transformByContract(contract, content, sourceRelativePath) {
   if (!contract || typeof contract !== 'object' || Array.isArray(contract)) {
     throw new Error('Invalid install content transform contract');
@@ -98,6 +136,7 @@ function transformByContract(contract, content, sourceRelativePath) {
     'text-replace': transformTextReplace,
     'json-set': transformJsonSet,
     'json-filter-object-keys': transformJsonFilterObjectKeys,
+    'grok-hooks': transformGrokHooks,
   };
   const handler = handlers[contract.type];
   if (!handler) throw new Error(`Unknown install content transform contract: ${contract.type}`);

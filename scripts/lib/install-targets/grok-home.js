@@ -10,11 +10,10 @@ const {
   normalizeRelativePath,
 } = require('./helpers');
 
-function grokHookBoundaryTransform() {
+function grokHookTransform() {
   return {
-    type: 'text-replace',
-    search: 'var e=process.env.CLAUDE_PLUGIN_ROOT;',
-    replace: 'var e=process.env.GROK_PLUGIN_ROOT||process.env.CLAUDE_PLUGIN_ROOT;',
+    type: 'grok-hooks',
+    ...(process.platform === 'win32' ? { nodeExecutable: process.execPath } : {}),
   };
 }
 
@@ -91,7 +90,7 @@ module.exports = createInstallTargetAdapter({
             ...operation,
             destinationPath: path.join(adapter.resolveRoot(input), 'plugins', 'ecc', sourceRelativePath),
             ...(normalizeRelativePath(sourceRelativePath) === 'hooks/hooks.json'
-              ? { contentTransform: grokHookBoundaryTransform() }
+              ? { contentTransform: grokHookTransform() }
               : {}),
           };
         });
@@ -103,7 +102,7 @@ module.exports = createInstallTargetAdapter({
       operations.push({
         ...adapter.createScaffoldOperation('hooks-runtime', 'hooks/hooks.json', input),
         destinationPath: hooksManifestPath,
-        contentTransform: grokHookBoundaryTransform(),
+        contentTransform: grokHookTransform(),
       });
     }
     operations.push({

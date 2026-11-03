@@ -168,7 +168,7 @@ function runTests() {
       assert.ok(installOperations.every(operation => typeof operation.contentTransform === 'object'));
       assert.ok(installOperations.every(operation => !Object.keys(operation).some(key => key.startsWith('grok'))));
       assert.ok(installOperations.some(operation => operation.contentTransform.type === 'json-set'));
-      assert.ok(installOperations.some(operation => operation.contentTransform.type === 'text-replace'));
+      assert.ok(installOperations.some(operation => operation.contentTransform.type === 'grok-hooks'));
       assert.ok(installOperations.some(operation => operation.contentTransform.type === 'json-filter-object-keys'));
 
       const manifest = JSON.parse(fs.readFileSync(path.join(installedRoot(fixture), '.grok-plugin', 'plugin.json'), 'utf8'));
@@ -179,7 +179,17 @@ function runTests() {
       assert.ok(!JSON.stringify(mcp).includes('chrome-devtools'));
       const installedHooks = fs.readFileSync(path.join(installedRoot(fixture), 'hooks', 'hooks.json'), 'utf8');
       assert.ok(installedHooks.includes('GROK_PLUGIN_ROOT'));
-      assert.ok(!fs.readFileSync(path.join(repoRoot, 'hooks', 'hooks.json'), 'utf8').includes('GROK_PLUGIN_ROOT'));
+      const installedHooksConfig = JSON.parse(installedHooks);
+      const terminalHooks = installedHooksConfig.hooks.PreToolUse.filter(entry => entry.matcher === 'run_terminal_command');
+      assert.strictEqual(terminalHooks.length, 2);
+      assert.ok(!installedHooksConfig.hooks.PreToolUse.some(entry => ['Bash', 'PowerShell'].includes(entry.matcher)));
+      if (process.platform === 'win32') {
+        assert.ok(terminalHooks.every(entry => entry.hooks[0].command.startsWith(`"${process.execPath}" `)));
+      }
+      const sharedHooks = fs.readFileSync(path.join(repoRoot, 'hooks', 'hooks.json'), 'utf8');
+      assert.ok(!sharedHooks.includes('GROK_PLUGIN_ROOT'));
+      assert.ok(sharedHooks.includes('"matcher": "Bash"'));
+      assert.ok(sharedHooks.includes('"matcher": "PowerShell"'));
       const inspection = inspectWithGrok(fixture);
       if (inspection) {
         const plugin = inspection.plugins.find((item) => item.name === 'ecc');
