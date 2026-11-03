@@ -9,9 +9,18 @@ test('extractJson tolerates fences and surrounding prose', () => {
   assert.deepEqual(extractJson('noise {"b":[1,2]} tail'), { b: [1, 2] });
 });
 
-test('extractJson throws a typed error on garbage', () => {
+test('extractJson throws a typed error on garbage, with a snippet near the error', () => {
   assert.throws(() => extractJson('nothing here'), ScriptParseError);
-  assert.throws(() => extractJson('{bad json}'), /Invalid JSON/);
+  assert.throws(() => extractJson('{"a": [1, 2 "x": 3}'), /Invalid JSON[\s\S]*Near: …/);
+});
+
+test('extractJson repairs missing commas, trailing commas and smart quotes', () => {
+  const missingComma = '{\n  "bible": {\n    "hair": "long dark hair"\n    "outfit": "navy blazer"\n  },\n  "n": 1\n}';
+  assert.deepEqual(extractJson(missingComma), { bible: { hair: 'long dark hair', outfit: 'navy blazer' }, n: 1 });
+  assert.deepEqual(extractJson('{"a": [1, 2,], "b": {"c": true,},}'), { a: [1, 2], b: { c: true } });
+  assert.deepEqual(extractJson('{\u201ca\u201d: \u201cx\u201d}'), { a: 'x' });
+  const inlineMissing = '{"scenes": [{"role": "hook" "goal": "g"}]}';
+  assert.deepEqual(extractJson(inlineMissing), { scenes: [{ role: 'hook', goal: 'g' }] });
 });
 
 test('normalizeScript forces planned clip count and durations', () => {

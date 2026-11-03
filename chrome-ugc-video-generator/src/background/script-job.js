@@ -119,7 +119,9 @@ export async function onScriptAnswer({ jobId, result, error }) {
     await saveJob(withLog({ ...job, status: 'error', error }, `Script failed: ${error}`));
     return;
   }
-  await finishScript(job, result?.text || '', 'Gemini app');
+  // Prefer the raw code block; fall back to the whole answer's text.
+  const answer = result?.code && result.code.includes('{') ? result.code : (result?.text || '');
+  await finishScript(job, answer, 'Gemini app');
 }
 
 export async function updateScript(script) {

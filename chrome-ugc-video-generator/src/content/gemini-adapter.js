@@ -311,7 +311,7 @@
       const text = fresh ? fresh.innerText.trim() : '';
       if (text && text === lastText && !isGenerating()) {
         if (!stableSince) stableSince = Date.now();
-        if (Date.now() - stableSince > ANSWER_STABLE_MS) return text;
+        if (Date.now() - stableSince > ANSWER_STABLE_MS) return { text, code: codeBlockText(fresh) };
       } else {
         stableSince = 0;
         lastText = text;
@@ -325,6 +325,14 @@
     throw new Error(`Timed out after ${Math.round(timeoutMs / 60000)} min waiting for the Gemini answer.`);
   }
 
+  // The exact text of the last code block, free of the renderer's extras
+  // (language label, copy button, syntax-highlight spans).
+  function codeBlockText(container) {
+    const blocks = Array.from(container.querySelectorAll('pre code, code-block code, pre, code-block'));
+    const last = blocks[blocks.length - 1];
+    return last ? last.textContent.trim() : '';
+  }
+
   async function ask(msg) {
     applyOverrides(msg.selectors);
     if (msg.newChat) await startNewChat();
@@ -335,8 +343,8 @@
     const editor = await typePrompt(msg.prompt);
     await sendPrompt(editor);
     heartbeat('sent', 'script');
-    const text = await waitForAnswer({ responseCountBefore, timeoutMs: msg.timeoutMs || 300000, index: 'script' });
-    return { text, modelSelected, attached };
+    const { text, code } = await waitForAnswer({ responseCountBefore, timeoutMs: msg.timeoutMs || 300000, index: 'script' });
+    return { text, code, modelSelected, attached };
   }
 
   async function generateClip(msg) {

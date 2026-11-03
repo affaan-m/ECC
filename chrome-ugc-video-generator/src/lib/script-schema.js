@@ -12,6 +12,40 @@ export class ScriptParseError extends Error {
   }
 }
 
+// Cheap repairs for the defects LLM answers (and chat renderers) commonly
+// introduce. Each step is tried in order until JSON.parse succeeds.
+const REPAIRS = [
+  ['smart quotes', t => t.replace(/[\u201c\u201d]/g, '"').replace(/[\u2018\u2019]/g, "'")],
+  ['control characters', t => Array.from(t).filter(ch => {
+    const code = ch.charCodeAt(0);
+    return code >= 0x20 || code === 0x09 || code === 0x0a || code === 0x0d;
+  }).join('')],
+  ['trailing commas', t => t.replace(/,(\s*[}\]])/g, '$1')],
+  ['missing commas between lines', t => t.replace(/("|\d|true|false|null|\]|\})[ \t]*\n(\s*)(?=["{[])/g, '$1,\n$2')],
+  ['missing commas before keys', t => t.replace(/("|\d|true|false|null|\]|\})[ \t]+(?=")/g, '$1, ')],
+];
+
+function snippetAt(text, message) {
+  const m = message.match(/position (\d+)/);
+  if (!m) return '';
+  const pos = Number(m[1]);
+  return text.slice(Math.max(0, pos - 90), pos + 40).replace(/\s+/g, ' ');
+}
+
+export function repairJson(candidate) {
+  let text = candidate;
+  let firstError = null;
+  for (const [, repair] of [['none', t => t], ...REPAIRS]) {
+    text = repair(text);
+    try {
+      return { value: JSON.parse(text), repaired: text !== candidate };
+    } catch (err) {
+      firstError = firstError || err;
+    }
+  }
+  throw new ScriptParseError(`Invalid JSON from LLM: ${firstError.message}. Near: …${snippetAt(candidate, firstError.message)}…`, candidate);
+}
+
 export function extractJson(text) {
   if (typeof text !== 'string') throw new ScriptParseError('LLM returned no text', text);
   const fenced = text.match(/```(?:json)?\s*([\s\S]*?)```/i);
@@ -21,11 +55,7 @@ export function extractJson(text) {
   if (start === -1 || end === -1 || end <= start) {
     throw new ScriptParseError('No JSON object found in LLM answer', text);
   }
-  try {
-    return JSON.parse(candidate.slice(start, end + 1));
-  } catch (err) {
-    throw new ScriptParseError(`Invalid JSON from LLM: ${err.message}`, text);
-  }
+  return repairJson(candidate.slice(start, end + 1)).value;
 }
 
 function str(v) {
