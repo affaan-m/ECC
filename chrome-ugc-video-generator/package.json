@@ -1,0 +1,14 @@
+{
+  "name": "ugc-video-director",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Chrome extension that turns a product brief into a consistent ~45s UGC/promo video sequence inside the Gemini app (Gemini 4 Argon + Veo), with LLM-written scripts.",
+  "type": "module",
+  "scripts": {
+    "test": "node --test tests/*.test.js",
+    "check": "node scripts/check-manifest.mjs"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

@@ -42,5 +42,17 @@ module.exports = [
         languageOptions: {
             sourceType: 'module'
         }
+    },
+    {
+        // Chrome extension: ES modules in the browser, plus the chrome.* API.
+        files: ['chrome-ugc-video-generator/**/*.js'],
+        languageOptions: {
+            sourceType: 'module',
+            globals: {
+                ...globals.browser,
+                ...globals.es2022,
+                chrome: 'readonly'
+            }
+        }
     }
 ];

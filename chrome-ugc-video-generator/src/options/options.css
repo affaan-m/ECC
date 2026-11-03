@@ -1,0 +1,10 @@
+body.options { max-width: 720px; margin: 0 auto; }
+.block { display: grid; gap: var(--space-3); padding: var(--space-3); border: 1px solid var(--line); border-radius: var(--radius); background: var(--paper-2); }
+.hint { font-size: var(--text-sm); color: var(--ink-2); margin: 0; }
+input[type="password"], input[type="number"] {
+  width: 100%; font: inherit; color: var(--ink); background: var(--paper);
+  border: 1px solid var(--line); border-radius: var(--radius-sm); padding: var(--space-2) var(--space-3);
+}
+body.options { padding-left: var(--space-6); padding-right: var(--space-6); }
+body.options .step { min-width: 0; }
+body.options .block, body.options .hint, body.options textarea { max-width: 100%; overflow-wrap: anywhere; }

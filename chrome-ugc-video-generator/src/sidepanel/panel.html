@@ -1,0 +1,126 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>UGC Video Director</title>
+  <link rel="stylesheet" href="panel.css">
+</head>
+<body>
+  <header class="masthead">
+    <div class="masthead-brand">
+      <span class="masthead-kicker">Gemini · Argon + Veo</span>
+      <h1 class="masthead-title">UGC Video Director</h1>
+    </div>
+    <div class="masthead-side">
+      <span id="status-pill" class="pill pill-idle">pronto</span>
+      <button id="open-options" class="icon-button" type="button" title="Configurações" aria-label="Abrir configurações">⚙</button>
+    </div>
+  </header>
+
+  <main class="steps">
+    <section class="step" id="step-brief" aria-labelledby="h-brief">
+      <header class="step-head">
+        <span class="step-num">01</span>
+        <h2 id="h-brief">Briefing</h2>
+      </header>
+      <label class="field">
+        <span class="field-label">Sobre o que é o vídeo</span>
+        <textarea id="brief" rows="6" placeholder="Ex.: Sérum facial Glow da Luma, vitamina C, para pele cansada. Público: mulheres 25-40 que acordam cedo. Tom: honesto, rotina de manhã. Oferta: 20% com o cupom GLOW20 no link da bio."></textarea>
+      </label>
+
+      <div class="row row-stack">
+        <fieldset class="segmented" id="format">
+          <legend class="field-label">Formato</legend>
+          <label><input type="radio" name="format" value="ugc" checked><span>UGC</span></label>
+          <label><input type="radio" name="format" value="product"><span>Produto</span></label>
+        </fieldset>
+        <fieldset class="segmented" id="persona">
+          <legend class="field-label">Apresentador</legend>
+          <label><input type="radio" name="persona" value="auto" checked><span>Auto</span></label>
+          <label><input type="radio" name="persona" value="woman"><span>Mulher</span></label>
+          <label><input type="radio" name="persona" value="man"><span>Homem</span></label>
+        </fieldset>
+      </div>
+
+      <div class="row">
+        <label class="field field-compact">
+          <span class="field-label">Idioma das falas</span>
+          <select id="language">
+            <option value="pt-BR" selected>Português (BR)</option>
+            <option value="en-US">English (US)</option>
+            <option value="es-419">Español (LatAm)</option>
+          </select>
+        </label>
+      </div>
+
+      <label class="field">
+        <span class="field-label">Duração total <output id="duration-out">45 s · 6 clipes</output></span>
+        <input id="target-seconds" type="range" min="24" max="80" step="1" value="45" aria-describedby="duration-out">
+      </label>
+
+      <div class="field">
+        <span class="field-label">Referência (foto da pessoa ou produto, ou um vídeo)</span>
+        <div id="dropzone" class="dropzone" tabindex="0" role="button" aria-label="Escolher arquivo de referência">
+          <input id="reference-file" type="file" accept="image/*,video/*" hidden>
+          <div class="dropzone-empty">Arraste uma imagem ou vídeo, ou clique para escolher. Opcional.</div>
+          <div class="dropzone-preview" hidden>
+            <img id="reference-preview" alt="Prévia da referência">
+            <div class="dropzone-meta">
+              <span id="reference-name"></span>
+              <button id="reference-clear" type="button" class="link-button">remover</button>
+            </div>
+          </div>
+        </div>
+      </div>
+      <label class="field">
+        <span class="field-label">Notas sobre a referência (opcional)</span>
+        <input id="reference-notes" type="text" placeholder="Ex.: é a criadora; manter o cabelo preso como na foto">
+      </label>
+
+      <button id="write-script" class="primary" type="button">Escrever roteiro com IA</button>
+      <p id="brief-error" class="error" hidden></p>
+    </section>
+
+    <section class="step step-locked" id="step-script" aria-labelledby="h-script">
+      <header class="step-head">
+        <span class="step-num">02</span>
+        <h2 id="h-script">Roteiro e bíblia visual</h2>
+      </header>
+      <div id="script-root"></div>
+      <div class="actions" id="script-actions" hidden>
+        <button id="save-script" type="button" class="secondary">Salvar edições</button>
+        <button id="run-clips" type="button" class="primary">Gerar clipes no Gemini</button>
+      </div>
+    </section>
+
+    <section class="step step-locked" id="step-render" aria-labelledby="h-render">
+      <header class="step-head">
+        <span class="step-num">03</span>
+        <h2 id="h-render">Geração dos clipes</h2>
+        <span id="render-mode" class="muted"></span>
+      </header>
+      <ol id="clip-list" class="clip-list"></ol>
+      <div class="actions">
+        <button id="stop-clips" type="button" class="secondary" hidden>Parar</button>
+        <button id="probe-gemini" type="button" class="link-button">Diagnosticar página do Gemini</button>
+      </div>
+      <pre id="log" class="log" aria-live="polite"></pre>
+    </section>
+
+    <section class="step step-locked" id="step-publish" aria-labelledby="h-publish">
+      <header class="step-head">
+        <span class="step-num">04</span>
+        <h2 id="h-publish">Publicar no TikTok</h2>
+      </header>
+      <div id="publish-root"></div>
+    </section>
+  </main>
+
+  <footer class="foot">
+    <button id="reset-job" type="button" class="link-button">Começar um novo vídeo</button>
+  </footer>
+
+  <script type="module" src="panel.js"></script>
+</body>
+</html>

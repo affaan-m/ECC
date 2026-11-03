@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <title>UGC Video Director · Configurações</title>
+  <link rel="stylesheet" href="../sidepanel/panel.css">
+  <link rel="stylesheet" href="options.css">
+</head>
+<body class="options">
+  <header class="masthead">
+    <div class="masthead-brand">
+      <span class="masthead-kicker">Configurações</span>
+      <h1 class="masthead-title">UGC Video Director</h1>
+    </div>
+  </header>
+
+  <main class="steps">
+    <section class="step">
+      <header class="step-head"><span class="step-num">A</span><h2>Quem escreve o roteiro</h2></header>
+      <fieldset class="segmented">
+        <legend class="field-label">Provedor</legend>
+        <label><input type="radio" name="provider" value="gemini" checked><span>Gemini (Argon)</span></label>
+        <label><input type="radio" name="provider" value="openai"><span>OpenAI (GPT)</span></label>
+      </fieldset>
+
+      <div id="gemini-block" class="block">
+        <div class="actions">
+          <button id="google-signin" type="button" class="secondary">Entrar com Google (OAuth)</button>
+          <button id="google-signout" type="button" class="link-button">sair</button>
+          <span id="google-status" class="muted"></span>
+        </div>
+        <p class="hint">O OAuth exige um <em>client_id</em> do tipo "Chrome Extension" no Google Cloud Console colado no manifest.json, e o ID de um projeto com a API Generative Language ativada. Sem isso, use uma chave de API.</p>
+        <label class="field"><span class="field-label">ID do projeto Google Cloud (para OAuth)</span><input id="projectId" type="text" placeholder="meu-projeto-123"></label>
+        <label class="field"><span class="field-label">Chave de API do Gemini (alternativa ao OAuth)</span><input id="geminiApiKey" type="password" autocomplete="off" placeholder="AIza…"></label>
+        <label class="field"><span class="field-label">Modelo</span>
+          <select id="geminiModel">
+            <option value="gemini-4-argon">gemini-4-argon (recomendado)</option>
+            <option value="gemini-3.8-flash">gemini-3.8-flash</option>
+            <option value="gemini-3.6-flash">gemini-3.6-flash</option>
+            <option value="gemini-3.1-pro-preview">gemini-3.1-pro-preview</option>
+          </select>
+        </label>
+      </div>
+
+      <div id="openai-block" class="block" hidden>
+        <p class="hint">A OpenAI não oferece login OAuth público com a conta do ChatGPT para apps de terceiros; use uma chave de API da plataforma.</p>
+        <label class="field"><span class="field-label">Chave de API da OpenAI</span><input id="openaiApiKey" type="password" autocomplete="off" placeholder="sk-…"></label>
+        <label class="field"><span class="field-label">Modelo</span><input id="openaiModel" type="text" value="gpt-5"></label>
+      </div>
+    </section>
+
+    <section class="step">
+      <header class="step-head"><span class="step-num">B</span><h2>Como os clipes são renderizados</h2></header>
+      <fieldset class="segmented">
+        <legend class="field-label">Modo</legend>
+        <label><input type="radio" name="renderMode" value="app" checked><span>App do Gemini (sua assinatura)</span></label>
+        <label><input type="radio" name="renderMode" value="api"><span>API (Omni Flash, cobra créditos)</span></label>
+      </fieldset>
+      <fieldset class="segmented">
+        <legend class="field-label">Conversa</legend>
+        <label><input type="radio" name="conversationMode" value="same" checked><span>Mesma conversa (mais consistente)</span></label>
+        <label><input type="radio" name="conversationMode" value="new"><span>Nova conversa por clipe</span></label>
+      </fieldset>
+      <div class="row">
+        <label class="field field-compact"><span class="field-label">Resolução (API)</span>
+          <select id="omniResolution"><option>720p</option><option selected>1080p</option><option>4k</option></select>
+        </label>
+        <label class="field field-compact"><span class="field-label">Tempo máx. por clipe (min)</span><input id="clipTimeoutMinutes" type="number" min="2" max="30" value="10"></label>
+      </div>
+    </section>
+
+    <section class="step">
+      <header class="step-head"><span class="step-num">C</span><h2>Seletores da página do Gemini</h2></header>
+      <p class="hint">Só mexa aqui se o Google mudar a interface. JSON com as chaves editor, send, newChat, toolsMenu, videoTool, videoToolText, fileInput, uploadMenu, uploadItemText, response, video, download, generating. Use "Diagnosticar página do Gemini" no painel para ver o que está sendo encontrado.</p>
+      <textarea id="selectorOverrides" rows="6" placeholder='{"editor": "div.ql-editor[contenteditable=\"true\"]"}'></textarea>
+    </section>
+
+    <div class="actions">
+      <button id="save" type="button" class="primary">Salvar</button>
+      <span id="saved" class="muted"></span>
+    </div>
+  </main>
+  <script type="module" src="options.js"></script>
+</body>
+</html>

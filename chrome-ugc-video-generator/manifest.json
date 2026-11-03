@@ -1,0 +1,51 @@
+{
+  "manifest_version": 3,
+  "name": "UGC Video Director for Gemini",
+  "version": "0.1.0",
+  "description": "Turns a product brief into a consistent ~45s TikTok UGC or promo video: an LLM writes the script, the extension drives Gemini (Argon + Veo) clip by clip, same person, same outfit.",
+  "default_locale": "en",
+  "minimum_chrome_version": "120",
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+  "action": {
+    "default_title": "UGC Video Director",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "48": "icons/icon48.png"
+    }
+  },
+  "side_panel": {
+    "default_path": "src/sidepanel/panel.html"
+  },
+  "options_page": "src/options/options.html",
+  "background": {
+    "service_worker": "src/background/worker.js",
+    "type": "module"
+  },
+  "content_scripts": [
+    {
+      "matches": ["https://gemini.google.com/*"],
+      "js": ["src/content/gemini-adapter.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "permissions": ["storage", "unlimitedStorage", "sidePanel", "identity", "downloads", "alarms"],
+  "host_permissions": [
+    "https://gemini.google.com/*",
+    "https://generativelanguage.googleapis.com/*",
+    "https://api.openai.com/*"
+  ],
+  "oauth2": {
+    "client_id": "REPLACE_WITH_YOUR_CHROME_EXTENSION_OAUTH_CLIENT_ID.apps.googleusercontent.com",
+    "scopes": [
+      "https://www.googleapis.com/auth/cloud-platform",
+      "https://www.googleapis.com/auth/generative-language.retriever"
+    ]
+  },
+  "content_security_policy": {
+    "extension_pages": "script-src 'self'; object-src 'self'"
+  }
+}
