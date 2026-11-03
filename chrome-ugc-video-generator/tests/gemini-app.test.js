@@ -31,3 +31,13 @@ test('cleanChatAnswer strips the code block chrome the Gemini UI adds', async ()
   assert.doesNotMatch(cleaned, /Copiar/);
   assert.deepEqual(extractJson(cleaned), { a: 1 });
 });
+
+test('jsonLooksComplete rejects half-streamed answers and accepts closed ones', async () => {
+  const { jsonLooksComplete } = await import('../src/lib/gemini-app.js');
+  assert.equal(jsonLooksComplete('```json\n{"a": {"b": "x'), false);
+  assert.equal(jsonLooksComplete('```json\n{"a": {"b": "x"}}'), false, 'fence not closed');
+  assert.equal(jsonLooksComplete('{"a": {"b": "x"}'), false, 'braces unbalanced');
+  assert.equal(jsonLooksComplete('```json\n{"a": {"b": "x }"}}\n```'), true, 'brace inside string ignored');
+  assert.equal(jsonLooksComplete('{"a": 1}'), true);
+  assert.equal(jsonLooksComplete('no json here'), false);
+});

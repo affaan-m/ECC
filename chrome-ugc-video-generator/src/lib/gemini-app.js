@@ -29,7 +29,7 @@ export const DEFAULT_SELECTORS = Object.freeze({
   response: ['model-response', '.model-response', '[data-test-id="model-response"]', 'message-content', '.response-container'],
   video: ['video'],
   download: ['button[aria-label*="Download" i]', 'button[aria-label*="Baixar" i]', 'a[download]'],
-  generating: ['[aria-label*="generating" i]', '.loading-indicator', 'mat-progress-bar', '[role="progressbar"]'],
+  generating: ['button[aria-label*="Stop" i]', 'button[aria-label*="Parar" i]', 'button[aria-label*="Interromper" i]', '.stop-icon', '[aria-label*="generating" i]', '.loading-indicator', 'mat-progress-bar', '[role="progressbar"]'],
 });
 
 export function mergeSelectors(overrides = {}) {
@@ -58,4 +58,30 @@ export function cleanChatAnswer(text) {
     .replace(/^\s*(json|JSON)\s*$/gm, '')
     .replace(/^\s*(copiar c[oó]digo|copy code|content_copy)\s*$/gim, '')
     .trim();
+}
+
+// True when a streamed answer that should carry a JSON object looks finished:
+// the fenced block is closed, or (without fences) braces balance and the text
+// ends on the closing brace. Used to avoid reading a half-streamed answer.
+export function jsonLooksComplete(text) {
+  const t = String(text || '').trim();
+  if (!t.includes('{')) return false;
+  const fences = (t.match(/```/g) || []).length;
+  if (fences === 1) return false;
+  const body = fences >= 2 ? (t.match(/```(?:json)?\s*([\s\S]*?)```/i) || [])[1] || '' : t;
+  let depth = 0;
+  let inString = false;
+  let escaped = false;
+  for (const ch of body) {
+    if (inString) {
+      if (escaped) escaped = false;
+      else if (ch === '\\') escaped = true;
+      else if (ch === '"') inString = false;
+      continue;
+    }
+    if (ch === '"') inString = true;
+    else if (ch === '{') depth += 1;
+    else if (ch === '}') depth -= 1;
+  }
+  return depth === 0 && body.trim().endsWith('}');
 }

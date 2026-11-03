@@ -24,12 +24,12 @@
     modelOption: ['[role="menuitem"]', '[role="option"]', 'button'],
     video: ['video'],
     download: ['button[aria-label*="Download" i]', 'button[aria-label*="Baixar" i]', 'a[download]'],
-    generating: ['[aria-label*="generating" i]', '.loading-indicator', 'mat-progress-bar', '[role="progressbar"]'],
+    generating: ['button[aria-label*="Stop" i]', 'button[aria-label*="Parar" i]', 'button[aria-label*="Interromper" i]', '.stop-icon', '[aria-label*="generating" i]', '.loading-indicator', 'mat-progress-bar', '[role="progressbar"]'],
   };
   const SEND_CONFIRM_MS = 12000;
   const TEXT_ONLY_GRACE_MS = 45000;
   const HEARTBEAT_MS = 15000;
-  const ANSWER_STABLE_MS = 5000;
+  const ANSWER_STABLE_MS = 10000;
   const MAX_BLOB_BYTES = 200 * 1024 * 1024;
 
   let selectors = { ...DEFAULTS };
@@ -300,7 +300,30 @@
 
   // Waits for a text answer created after the send: the newest response must
   // exist, no progress indicator, and its text unchanged for a few seconds.
-  async function waitForAnswer({ responseCountBefore, timeoutMs, index }) {
+  function jsonLooksComplete(text) {
+    const t = String(text || '').trim();
+    if (!t.includes('{')) return false;
+    const fences = (t.match(/```/g) || []).length;
+    if (fences === 1) return false;
+    const body = fences >= 2 ? (t.match(/```(?:json)?\s*([\s\S]*?)```/i) || [])[1] || '' : t;
+    let depth = 0;
+    let inString = false;
+    let escaped = false;
+    for (const ch of body) {
+      if (inString) {
+        if (escaped) escaped = false;
+        else if (ch === '\\') escaped = true;
+        else if (ch === '"') inString = false;
+        continue;
+      }
+      if (ch === '"') inString = true;
+      else if (ch === '{') depth += 1;
+      else if (ch === '}') depth -= 1;
+    }
+    return depth === 0 && body.trim().endsWith('}');
+  }
+
+  async function waitForAnswer({ responseCountBefore, timeoutMs, index, expectJson }) {
     const started = Date.now();
     let lastText = '';
     let stableSince = 0;
@@ -309,9 +332,11 @@
       const list = responses();
       const fresh = list.length > responseCountBefore ? list[list.length - 1] : null;
       const text = fresh ? fresh.innerText.trim() : '';
-      if (text && text === lastText && !isGenerating()) {
+      const code = fresh ? codeBlockText(fresh) : '';
+      const complete = !expectJson || jsonLooksComplete(code || text);
+      if (text && text === lastText && complete && !isGenerating()) {
         if (!stableSince) stableSince = Date.now();
-        if (Date.now() - stableSince > ANSWER_STABLE_MS) return { text, code: codeBlockText(fresh) };
+        if (Date.now() - stableSince > ANSWER_STABLE_MS) return { text, code };
       } else {
         stableSince = 0;
         lastText = text;
@@ -343,7 +368,7 @@
     const editor = await typePrompt(msg.prompt);
     await sendPrompt(editor);
     heartbeat('sent', 'script');
-    const { text, code } = await waitForAnswer({ responseCountBefore, timeoutMs: msg.timeoutMs || 300000, index: 'script' });
+    const { text, code } = await waitForAnswer({ responseCountBefore, timeoutMs: msg.timeoutMs || 300000, index: 'script', expectJson: true });
     return { text, code, modelSelected, attached };
   }
 
