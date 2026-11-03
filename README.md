@@ -1814,6 +1814,9 @@ policies in `.github/hooks/ecc.json`, with Node.js helpers under `.github/ecc/`.
 See [Copilot hooks](docs/COPILOT-HOOKS.md) for the supported subset and runtime
 requirements. Command entry points project into skills with canonical precedence
 and explicit compatibility status; see [Copilot commands](docs/COPILOT-COMMANDS.md).
+All 98 command entry points now resolve to canonical, portable or dedicated
+Copilot workflows. The [37 extended implementations](docs/COPILOT-EXTENDED-COMMANDS.md)
+declare required external tools, reviewed runtime pins and native limitations.
 The dedicated [memory/lifecycle runtime](docs/COPILOT-LIFECYCLE.md) supports
 private workspace checkpoints and opt-in native transcript observations.
 
@@ -1838,7 +1841,7 @@ private workspace checkpoints and opt-in native transcript observations.
 
 #### Limitations
 
-Automatic formatting, TypeScript checks, continuous
+Automatic formatting, TypeScript checks, automatic background
 learning and the dev-server guard are not included in the audited Copilot hook
 subset. ECC does not currently ship a native Copilot plugin package.
 

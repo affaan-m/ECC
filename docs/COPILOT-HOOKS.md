@@ -117,6 +117,6 @@ Four additional native events now use a dedicated Copilot session runtime:
 observations, limits and validation. [Command compatibility](COPILOT-COMMANDS.md)
 documents projected workflows and explicitly unavailable commands.
 
-Continuous learning, formatting/type checks, selected MCP configuration,
+Automatic background learning, formatting/type checks, selected MCP configuration,
 native plugin packaging and behavioral parity evaluations remain separate
 porting work. Claude transcript consumers are not activated by this adapter.

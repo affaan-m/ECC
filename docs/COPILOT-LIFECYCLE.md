@@ -141,7 +141,7 @@ static symlink/hardlink rejection, context budgets, manual checkpoint priority,
 consent, reinstall, repair and uninstall. The native Copilot executable is not
 available in the development environment. Real slash discovery, event delivery,
 resume/clear/compaction and Windows/macOS behavior still require host validation.
-Continuous learning, automatic instinct promotion, other hook policies, MCP
+Automatic background observation, automatic instinct promotion, other hook policies, MCP
 configuration and native plugin packaging remain separate porting work.
 
 Official contracts used for the adapter:

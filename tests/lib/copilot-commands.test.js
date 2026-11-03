@@ -43,7 +43,7 @@ test('portable commands reject newly introduced runtime syntax', () => {
 test('capability statuses are deterministic and explicit', () => {
   assert.strictEqual(getCommandCapability('build-fix').status, 'portable');
   assert.strictEqual(getCommandCapability('sessions').status, 'copilot-native');
-  assert.strictEqual(getCommandCapability('astra-review').status, 'blocked');
+  assert.strictEqual(getCommandCapability('astra-review').status, 'copilot-native');
   assert.strictEqual(getCommandCapability('new-command').status, 'blocked');
 });
 test('lifecycle commands use managed Copilot runtime and require real identity', () => {
@@ -118,18 +118,18 @@ test('builtin slash collisions use explicit ECC aliases without hijacking builti
   assert.match(result, /Next \/ecc-plan, \/ecc-pr and \/ecc-sessions/);
   assert.match(result, /Preserve \/plan-canvas and \/prp-pr/);
 });
-test('blocked capabilities name the missing integration instead of a blanket reason', () => {
+test('extended capabilities name implemented entrypoints and preserve backend prerequisites', () => {
   const cases = {
-    'cost-report': /cost-tracker|costs\.jsonl/,
-    'epic-claim': /github-coordination/,
-    'instinct-import': /instinct-cli|continuous-learning/,
-    'multi-plan': /ccg-workflow/,
-    'orch-review': /Workflow/,
-    'quality-gate': /quality-gate\.js|formatter/,
+    'cost-report': /copilot-cost-report/,
+    'epic-claim': /copilot-epics/,
+    'instinct-import': /copilot-learning/,
+    'multi-plan': /copilot-orchestrate/,
+    'orch-review': /copilot-orchestrate/,
+    'quality-gate': /copilot-runtime/,
     'hookify': /Hookify|hookify/,
   };
   for (const [name, reason] of Object.entries(cases)) {
-    assert.match(getCommandCapability(name).reason, reason);
+    assert.strictEqual(getCommandCapability(name).status, 'copilot-native');
     const result = adaptCopilotCommand(source, `commands/${name}.md`);
     assert.match(result, reason);
     assert.doesNotMatch(result, /# Build/);

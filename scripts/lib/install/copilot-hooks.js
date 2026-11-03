@@ -20,7 +20,12 @@ function adaptCopilotHooks(content) {
     type: 'command', exec: 'node',
     args: ['.github/ecc/scripts/hooks/copilot-lifecycle.js', event], timeoutSec: 15,
   }]]));
-  return `${JSON.stringify({ version: 1, hooks: { ...hooks, ...lifecycle } }, null, 2)}\n`;
+  const combined = { ...hooks, ...lifecycle };
+  for (const event of ['preToolUse', 'postToolUse', 'agentStop', 'userPromptTransformed']) {
+    combined[event] = [...(combined[event] || []), { type: 'command', exec: 'node',
+      args: ['.github/ecc/scripts/copilot-hookify.js', 'hook', event], timeoutSec: 15 }];
+  }
+  return `${JSON.stringify({ version: 1, hooks: combined }, null, 2)}\n`;
 }
 
 module.exports = { adaptCopilotHooks };

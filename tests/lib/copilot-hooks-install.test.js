@@ -27,6 +27,8 @@ const EXPECTED_RUNTIME = [
   'hooks/copilot-lifecycle.js',
   'lib/copilot-sessions.js',
   'lib/memory-vault-format.js',
+  'copilot-hookify.js', 'lib/copilot-native-events.js', 'lib/copilot-runtime-tools.js',
+  'hooks/hookify-runtime.js', 'hooks/hookify-frontmatter.js', 'hooks/hook-input.js', 'hooks/hook-input-limits.js',
 ];
 
 let passed = 0;
@@ -96,14 +98,18 @@ test('hooks-runtime installs native commands and only the audited dependency clo
   applyInstallPlan(plan);
   const config = readConfig(project);
   assert.strictEqual(config.version, 1);
-  assert.deepStrictEqual(Object.keys(config.hooks).sort(), ['agentStop', 'postToolUse', 'preCompact', 'preToolUse', 'sessionEnd', 'sessionStart']);
-  assert.strictEqual(config.hooks.preToolUse.length, 3);
-  assert.strictEqual(config.hooks.postToolUse.length, 1);
+  assert.deepStrictEqual(Object.keys(config.hooks).sort(), ['agentStop', 'postToolUse', 'preCompact', 'preToolUse', 'sessionEnd', 'sessionStart', 'userPromptTransformed']);
+  assert.strictEqual(config.hooks.preToolUse.length, 4);
+  assert.strictEqual(config.hooks.postToolUse.length, 2);
   for (const [event, entries] of Object.entries(config.hooks)) {
     for (const entry of entries) {
       assert.strictEqual(entry.type, 'command');
       assert.strictEqual(entry.exec, 'node');
       const toolEvent = ['preToolUse', 'postToolUse'].includes(event);
+      if (entry.args[0] === '.github/ecc/scripts/copilot-hookify.js') {
+        assert.deepStrictEqual(entry.args.slice(1), ['hook', event]);
+        continue;
+      }
       assert.strictEqual(entry.args[0], toolEvent ? ENTRYPOINT : '.github/ecc/scripts/hooks/copilot-lifecycle.js');
       assert.strictEqual(entry.args[1], event);
       if (toolEvent) assert.ok(entry.args[2], 'policy hook id must be explicit');

@@ -2,6 +2,7 @@ const fs = require('fs');
 const path = require('path');
 const { COPILOT_HOOK_RUNTIME_PATHS, COPILOT_SESSION_RUNTIME_PATHS } = require('../copilot-hooks');
 const { copilotCommandName } = require('../install/copilot-command-capabilities');
+const { RUNTIME_PATHS: EXTENDED_RUNTIME } = require('../install/copilot-extended-commands');
 
 const {
   createInstallTargetAdapter,
@@ -154,7 +155,7 @@ function planHookOperations(module, targetRoot, hasCommands) {
       destinationPath: path.join(targetRoot, 'hooks', 'ecc.json'),
       contentTransform: 'copilot-hooks',
     }),
-    ...COPILOT_HOOK_RUNTIME_PATHS.filter(source => !hasCommands || !COPILOT_SESSION_RUNTIME_PATHS.includes(source)).map(sourceRelativePath => createManagedOperation({
+    ...COPILOT_HOOK_RUNTIME_PATHS.filter(source => !hasCommands || ![...COPILOT_SESSION_RUNTIME_PATHS, ...EXTENDED_RUNTIME].includes(source)).map(sourceRelativePath => createManagedOperation({
       moduleId: module.id, sourceRelativePath,
       destinationPath: path.join(targetRoot, 'ecc', sourceRelativePath),
     })),
@@ -198,7 +199,7 @@ module.exports = createInstallTargetAdapter({
           selectedSkills
         ));
       if (module.id === 'commands-core') {
-        return [...operations, ...COPILOT_SESSION_RUNTIME_PATHS.map(sourceRelativePath => createManagedOperation({
+        return [...operations, ...[...new Set([...COPILOT_SESSION_RUNTIME_PATHS, ...EXTENDED_RUNTIME])].map(sourceRelativePath => createManagedOperation({
           moduleId: module.id, sourceRelativePath,
           destinationPath: path.join(targetRoot, 'ecc', sourceRelativePath),
         }))];
