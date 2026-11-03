@@ -146,6 +146,16 @@ function stripJsonc(input) {
   return out;
 }
 
+// Registrations that point the (legacy) OpenCode plugin config at the ECC
+// hooks: the old directory form and the per-file forms some setups wrote.
+// OpenCode 2.x ignores file-path entries at runtime, but they must still be
+// stripped for a clean deactivation and to keep install verification honest.
+function isOpenCodeHookConfigRegistration(value) {
+  const entry = String(value);
+  if (entry === './plugins') return true;
+  return /(^|[\\/])plugins[\\/]+ecc-hooks\.(?:ts|[cm]?js)$/.test(entry);
+}
+
 function disableOpenCodeHookPluginRegistration(content, sourceRelativePath) {
   const config = parseJsoncConfig(content, sourceRelativePath);
   if (config.plugin !== undefined && !Array.isArray(config.plugin)) {
@@ -158,7 +168,7 @@ function disableOpenCodeHookPluginRegistration(content, sourceRelativePath) {
 
   return `${JSON.stringify({
     ...config,
-    plugin: config.plugin.filter(plugin => plugin !== './plugins'),
+    plugin: config.plugin.filter(plugin => !isOpenCodeHookConfigRegistration(plugin)),
   }, null, 2)}\n`;
 }
 
@@ -180,7 +190,26 @@ function isOpenCodePluginEntrypoint(operation = {}) {
   return getOpenCodeSourceActivationKind(operation) === 'plugin';
 }
 
-function getDisabledOpenCodePluginContent() {
+const DISABLED_OPENCODE_PLUGIN_STUB = 'export default { id: "ecc-hooks", setup() {} };\n';
+// OpenCode 2.x scans every top-level plugins/*.ts independently, so an inert
+// barrel that kept the `ecc-hooks` id would collide with the real plugin file
+// (live or stubbed) sitting beside it and register a red
+// "Duplicate plugin ID" entry. The top-level barrel gets its own distinct id.
+const DISABLED_OPENCODE_BARREL_STUB = 'export default { id: "ecc-hooks-entry", setup() {} };\n';
+
+function isTopLevelPluginsBarrel(sourceRelativePath) {
+  if (typeof sourceRelativePath !== 'string') return false;
+  // Same prefix stripping as getOpenCodeSourceActivationKind: plans carry
+  // '.opencode/…', built payloads 'dist/…'; compare against the bare
+  // plugins-relative path.
+  const relative = normalizeOperationPath(sourceRelativePath)
+    .replace(/^\.opencode\//, '')
+    .replace(/^dist\//, '');
+  return relative === 'plugins/index.ts' || relative === 'plugins/index.js'
+    || relative === 'plugins/index.mjs' || relative === 'plugins/index.cjs';
+}
+
+function getDisabledOpenCodePluginContent(sourceRelativePath) {
   // OpenCode discovers plugins independently of opencode.json registration.
   // Do not import the original module: even module initialization has effects.
   // The stub must still satisfy the V2 loader schema: the default export has to
@@ -188,7 +217,9 @@ function getDisabledOpenCodePluginContent() {
   // (`export default async () => ({})`) is rejected at startup with
   // PluginModule.LoadError / SchemaError(Expected object at ["default"]), which
   // is the same failure reported for the V1 hook plugin in issue #3537.
-  return 'export default { id: "ecc-hooks", setup() {} };\n';
+  return isTopLevelPluginsBarrel(sourceRelativePath)
+    ? DISABLED_OPENCODE_BARREL_STUB
+    : DISABLED_OPENCODE_PLUGIN_STUB;
 }
 
 // Installs made before the V2 stub fix wrote this stub. It is inert either way;
@@ -197,7 +228,9 @@ const LEGACY_DISABLED_OPENCODE_PLUGIN_CONTENT = 'export default async () => ({})
 
 function isInertOpenCodePluginStub(content) {
   const text = content.toString('utf8');
-  return text === getDisabledOpenCodePluginContent() || text === LEGACY_DISABLED_OPENCODE_PLUGIN_CONTENT;
+  return text === DISABLED_OPENCODE_PLUGIN_STUB
+    || text === DISABLED_OPENCODE_BARREL_STUB
+    || text === LEGACY_DISABLED_OPENCODE_PLUGIN_CONTENT;
 }
 
 function isOpenCodeHookActivationOperation(operation = {}) {
@@ -435,6 +468,7 @@ module.exports = {
   assertHookConsentReady,
   disableUnselectedOpenCodeHooks,
   disableOpenCodeHookPluginRegistration,
+  isOpenCodeHookConfigRegistration,
   parseJsoncConfig,
   getDisabledOpenCodePluginContent,
   isInertOpenCodePluginStub,

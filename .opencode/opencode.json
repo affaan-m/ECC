@@ -17,9 +17,6 @@
     "skills/strategic-compact/SKILL.md",
     "skills/eval-harness/SKILL.md"
   ],
-  "plugin": [
-    "./plugins/ecc-hooks.ts"
-  ],
   "skills": {
     "paths": [
       "../skills"

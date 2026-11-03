@@ -14,6 +14,7 @@ const {
   parseJsoncConfig,
   getDisabledOpenCodePluginContent,
   isInertOpenCodePluginStub,
+  isOpenCodeHookConfigRegistration,
   getRecordedHookConsent,
   getOpenCodeActivationPathKind,
   getOpenCodeSourceActivationKind,
@@ -476,7 +477,7 @@ function openCodeActivationCandidates(plan, previousOperations) {
 function activationIsInactive(kind, operation, content, strict = false) {
   if (kind === 'plugin') {
     // The final gate accepts only the V2-valid stub: the pre-fix one is inert but OpenCode rejects it.
-    return strict ? content.toString('utf8') === getDisabledOpenCodePluginContent()
+    return strict ? content.toString('utf8') === getDisabledOpenCodePluginContent(operation.sourceRelativePath)
       : isInertOpenCodePluginStub(content);
   }
   const text = content.toString('utf8');
@@ -490,7 +491,11 @@ function activationIsInactive(kind, operation, content, strict = false) {
   if (config.plugin !== undefined && !Array.isArray(config.plugin)) {
     throw new Error(`Invalid ${relativePath}: plugin must be an array`);
   }
-  return !Array.isArray(config.plugin) || !config.plugin.includes('./plugins');
+  // T07: recognize every historical registration form — the legacy './plugins'
+  // directory entry and the per-file './plugins/ecc-hooks.ts' entries written
+  // before OpenCode 2.x directory discovery became the only load path.
+  return !Array.isArray(config.plugin)
+    || !config.plugin.some(plugin => isOpenCodeHookConfigRegistration(plugin));
 }
 
 function assertOpenCodeHookDeactivationReady(plan, options = {}) {

@@ -1,5 +1,5 @@
 /**
- * ECC Plugin Hooks for OpenCode (V2 plugin API)
+ * ECC Plugin Hooks for OpenCode (V2 plugin API, V1-compatible factory surface)
  *
  * Migrated from the OpenCode V1 plugin format for OpenCode 2.x.
  * V1 plugins default-exported an async function that returned a map of
@@ -7,19 +7,33 @@
  * an `id` and a `setup(ctx)` function, and hooks are registered on their
  * owning domain instead of being returned by key.
  *
- * Hook Event Mapping (V1 -> V2):
+ * ## Active Plugin: ECC v2.2.3
+ * (kept in sync with package.json — enforced by tests/plugin-manifest.test.js)
+ *
+ * This module intentionally exposes BOTH surfaces:
+ * - `ECCHooksPlugin` (named): the V1 factory. Old OpenCode builds and the
+ *   legacy discovery path (tests that scan `plugins/*.ts` and instantiate
+ *   function exports) keep working, and the 18 behavioral hook tests run
+ *   against real logic instead of a rewritten harness.
+ * - default export: the V2 definition `{ id, setup(ctx) }` that OpenCode 2.x
+ *   actually loads. `setup` builds the same runtime once and adapts its hook
+ *   map onto the V2 domains.
+ *
+ * Hook Event Mapping (V1 key -> V2 registration):
  * - tool.execute.before        -> ctx.tool.hook("execute.before")
  * - tool.execute.after         -> ctx.tool.hook("execute.after")
- * - file.edited / session.* /  -> ctx.event.subscribe() filtered by type
- *   todo.updated / watcher
+ * - file.edited / file.watcher / session.* / todo.updated
+ *                              -> ctx.event.subscribe() filtered by type
  * - shell.env                  -> ctx.shell.hook("create.before")
  * - experimental.session.compacting -> ctx.session.hook("compaction")
  * - permission.ask             -> ctx.permission.hook("evaluate")
- * - tool map                   -> ctx.tool.transform(editor => editor.add)
+ * - tool record                -> ctx.tool.transform(editor => editor.add)
  *
  * The Bun `$` shell helper is not part of the V2 context, so every command
  * here runs through `child_process.spawn` instead, and the console.log audit
- * uses `fs` + regex rather than `grep` so it works on Windows too.
+ * uses `fs` + regex rather than `grep` so it works on Windows too. The `$`
+ * parameter is still accepted by the factory for V1 call-signature parity,
+ * but is never invoked (asserted by tests/opencode-plugin-hooks.test.js).
  */
 
 import * as fs from "fs"
@@ -28,11 +42,21 @@ import { spawn } from "child_process"
 import { fileURLToPath, pathToFileURL } from "url"
 
 /**
- * Directory of this module. See the note in the V1 file: `import.meta.url` is
- * the ESM source of truth; `__dirname` is kept first only for CJS consumers.
+ * Directory of this module.
+ *
+ * The plugin is ESM: tsc compiles it to .opencode/dist/plugins/*.js and OpenCode
+ * loads the .ts directly, so `__dirname` is not defined there. Reading it used to
+ * throw inside a try/catch and silently degrade the reported ECC version to the
+ * default. `import.meta.url` is the ESM source of truth; the `__dirname` check is
+ * kept first only so a CJS consumer of this module still resolves correctly.
  */
 function resolvePluginDir(): string {
-  if (typeof __dirname === "string" && __dirname) return __dirname
+  // Node 24 leaks the eval context's `__dirname` ("." under `node -e`) into
+  // modules imported from it, which would resolve relative to the *process*
+  // cwd instead of this file. Only a genuine absolute __dirname is trusted;
+  // import.meta.url is correct in every layout (OpenCode's TS loader and
+  // plain ESM both give the module's own URL).
+  if (typeof __dirname === "string" && path.isAbsolute(__dirname)) return __dirname
   return path.dirname(fileURLToPath(import.meta.url))
 }
 
@@ -49,10 +73,29 @@ interface ToolArgs {
   [key: string]: unknown
 }
 
+interface ToolInput {
+  tool: string
+  callID?: string
+  args?: ToolArgs
+}
+
+interface PermissionEvent {
+  tool: string
+  args: unknown
+}
+
 /**
  * Artifacts that identify an ECC root, one per capability this plugin needs.
+ *
+ * These are required runtime files, never optional content: `skills/` belongs to
+ * the optional `workflow-quality` module, so probing for a skill rejected
+ * supported modular installs (e.g. `platform-configs` + `hooks-runtime` without
+ * `workflow-quality`) that still ship both the plugin and the tracker — silently
+ * disabling skill telemetry and the shell root export for those users.
+ *
  * Each probe is the exact artifact the caller is about to use, so detection is
- * layout detection rather than an authenticity control.
+ * layout detection rather than an authenticity control: a directory only
+ * qualifies because it contains what we are going to read.
  */
 const ECC_ROOT_PROBES = {
   // scripts/lib/utils.js is the shared library every scripts/ module requires.
@@ -60,16 +103,23 @@ const ECC_ROOT_PROBES = {
   // What the skill-run telemetry hook imports at runtime.
   skillTracker: [path.join("scripts", "hooks", "skill-run-tracker.js")],
   // What the resolver embedded in commands requires once they read
-  // CLAUDE_PLUGIN_ROOT, and the version lookup for the shell env hook.
+  // CLAUDE_PLUGIN_ROOT, and the version lookup for shell.env.
   resolver: [path.join("scripts", "lib", "resolve-ecc-root.js")],
 } as const
 
 /**
  * Walk upwards from `startDir` looking for an ancestor that contains every
- * relative path in `probes`. The plugin ships in three layouts -
- * `<root>/plugins` (installed), `<root>/dist/plugins` (compiled) and
- * `<repo>/.opencode/plugins` (repo checkout) - so the walk is bounded to
- * 5 levels. Returns null when no ancestor qualifies.
+ * relative path in `probes`.
+ *
+ * The plugin ships in three layouts — `<root>/plugins` (installed), `<root>/dist/plugins`
+ * (compiled) and `<repo>/.opencode/plugins` (repo checkout) — so the number of
+ * levels back to the root is not fixed. Probing beats a hardcoded `..`: a wrong
+ * root would make every command resolve against a directory that has no scripts.
+ *
+ * The walk is bounded to 5 levels so it cannot wander into unrelated ancestors.
+ *
+ * Returns null when no ancestor qualifies, so callers can leave the capability
+ * disabled instead of advertising a root that does not hold the artifact.
  */
 function findEccRootDir(startDir: string, probes: readonly string[]): string | null {
   let current = startDir
@@ -84,9 +134,22 @@ function findEccRootDir(startDir: string, probes: readonly string[]): string | n
   return null
 }
 
-/** Read the ECC version from package.json, trying the plausible root layouts. */
+/**
+ * Read the ECC version from package.json.
+ *
+ * Candidates are tried in order — the resolved ECC root first, then the two
+ * plausible parent depths of the plugin — because the layout differs between an
+ * installed root (`<root>/plugins`), the compiled bundle (`<root>/dist/plugins`)
+ * and a repo checkout (`<repo>/.opencode/plugins`). Falls back to a default if
+ * no package.json can be read.
+ */
 function getECCVersion(eccRootDir?: string | null): string {
-  const candidates = [eccRootDir, path.resolve(PLUGIN_DIR, ".."), path.resolve(PLUGIN_DIR, "..", "..")]
+  const candidates = [
+    eccRootDir,
+    path.resolve(PLUGIN_DIR, ".."),
+    path.resolve(PLUGIN_DIR, "..", ".."),
+  ]
+
   for (const candidate of candidates) {
     if (!candidate) continue
     try {
@@ -98,7 +161,37 @@ function getECCVersion(eccRootDir?: string | null): string {
       // Try the next candidate.
     }
   }
+
   return "2.0.0"
+}
+
+/**
+ * On Windows, npx/npm/pnpm/yarn/bun are `.cmd` shims that CreateProcess
+ * cannot launch directly from a bare command name. Node's own guidance for
+ * this case is to spawn the exact `.cmd` file through `cmd.exe /d /s /c`
+ * with `windowsVerbatimArguments` and quoted args — NOT `shell: true`,
+ * which concatenates the command and arguments into one string that shell
+ * metacharacters (&, |, ;) in any argument (e.g. a file path) could inject
+ * into. The command is fixed here (never user input); only known package
+ * managers get the cmd-shim treatment, and their arguments stay separated.
+ */
+function spawnCommand(
+  command: string,
+  args: string[],
+): { file: string; spawnArgs: string[]; verbatim: boolean } {
+  if (
+    process.platform === "win32" &&
+    /^(npx|npm|pnpm|yarn|bun)(\.cmd)?$/i.test(command)
+  ) {
+    const shim = `${command.replace(/\.cmd$/i, "")}.cmd`
+    const quote = (value: string) => `"${value.replace(/"/g, '\\"')}"`
+    return {
+      file: process.env.ComSpec || "cmd.exe",
+      spawnArgs: ["/d", "/s", "/c", [shim, ...args].map(quote).join(" ")],
+      verbatim: true,
+    }
+  }
+  return { file: command, spawnArgs: args, verbatim: false }
 }
 
 /** Run a command, resolving with its output regardless of exit code. */
@@ -108,16 +201,27 @@ function run(
   options: { cwd?: string; detached?: boolean } = {},
 ): Promise<{ code: number; stdout: string; stderr: string }> {
   return new Promise((resolve, reject) => {
-    // npx/npm are .cmd shims on Windows: resolve them through the shell.
-    const useShell = process.platform === "win32" && /^(npx|npm|pnpm|yarn|bun)(\.cmd)?$/i.test(command)
-    const child = spawn(command, args, {
+    const resolved = spawnCommand(command, args)
+    const child = spawn(resolved.file, resolved.spawnArgs, {
       cwd: options.cwd,
-      shell: useShell,
+      shell: false,
+      windowsVerbatimArguments: resolved.verbatim,
+      windowsHide: true,
       detached: options.detached === true,
       stdio: options.detached === true ? "ignore" : ["ignore", "pipe", "pipe"],
     })
+    // T03: the error listener must exist before any early return below, so a
+    // missing binary (ENOENT) rejects this promise instead of surfacing as an
+    // unhandled 'error' event that can crash the host process.
+    let settled = false
+    child.on("error", (error) => {
+      if (settled) return
+      settled = true
+      reject(error)
+    })
     if (options.detached === true) {
       child.unref()
+      settled = true
       resolve({ code: 0, stdout: "", stderr: "" })
       return
     }
@@ -125,8 +229,11 @@ function run(
     let stderr = ""
     child.stdout?.on("data", (chunk) => (stdout += String(chunk)))
     child.stderr?.on("data", (chunk) => (stderr += String(chunk)))
-    child.on("error", reject)
-    child.on("close", (code) => resolve({ code: code ?? 1, stdout, stderr }))
+    child.on("close", (code) => {
+      if (settled) return
+      settled = true
+      resolve({ code: code ?? 1, stdout, stderr })
+    })
   })
 }
 
@@ -140,9 +247,11 @@ async function countConsoleLogs(filePath: string): Promise<number> {
 // .opencode/plugins; OpenCode 2.x also treats plugins/index.ts and the
 // directory entrypoint as separate load entries. The directory config now
 // points at ecc-hooks.ts directly and plugins/index.ts is an inert
-// distinct-id stub, but we keep a per-directory guard so the hook set is
+// distinct-id stub, but we keep a per-directory guard so the V2 hook set is
 // registered only once per process *and* per project directory even if a
-// future layout double-instantiates this module.
+// future layout double-instantiates this module. The guard applies to V2
+// domain registration only; the V1 factory stays constructible on demand
+// (tests and legacy loaders instantiate it per project).
 const GUARD_KEY = Symbol.for("ecc.hooks.registered-directories")
 const registeredDirectories: Set<string> =
   ((globalThis as any)[GUARD_KEY] as Set<string> | undefined) ??
@@ -150,456 +259,743 @@ const registeredDirectories: Set<string> =
 
 type HookProfile = "minimal" | "standard" | "strict"
 
+/**
+ * The custom tool definitions V1 exposed through `plugin.tool` and V2 exposes
+ * through ctx.tool.transform. Loaded lazily and cached per name: this file is
+ * OpenCode's startup entry point, and a static top-level import of a missing
+ * tools/ module used to crash the whole session before any hook could load
+ * (#2530). A failed load degrades to an execute-time error message instead.
+ */
+const toolModuleCache = new Map<string, Promise<any>>()
+
+/**
+ * Resolve a tool module by URL rather than by a literal specifier: tsc only
+ * rewrites `.ts` extensions in statically-analyzable specifiers, and the
+ * compiled layout ships `.js` while a repo/source install ships `.ts`.
+ */
+async function loadToolModule(name: string): Promise<{ description: string; args: any; execute: (args: any, context: any) => Promise<unknown> }> {
+  let pending = toolModuleCache.get(name)
+  if (!pending) {
+    const toolsDir = path.resolve(PLUGIN_DIR, "..", "tools")
+    const candidates = [path.join(toolsDir, `${name}.js`), path.join(toolsDir, `${name}.ts`)]
+    pending = (async () => {
+      let lastError: unknown
+      for (const candidate of candidates) {
+        if (!fs.existsSync(candidate)) continue
+        try {
+          return await import(pathToFileURL(candidate).href)
+        } catch (error) {
+          lastError = error
+        }
+      }
+      throw lastError ?? new Error(`neither ${name}.js nor ${name}.ts found under ${toolsDir}`)
+    })()
+      .then((mod: any) => {
+        const definition = mod?.default ?? mod
+        if (!definition || typeof definition.execute !== "function") {
+          throw new Error(`${name}: module exposes no tool definition with an execute()`)
+        }
+        return definition
+      })
+      .catch((error: unknown) => {
+        toolModuleCache.delete(name)
+        throw new Error(
+          `${name} tool: could not load ECC tool module. Run \`ecc repair --target opencode\` to restore the missing files. (${
+            error instanceof Error ? error.message : String(error)
+          })`,
+        )
+      })
+    toolModuleCache.set(name, pending)
+  }
+  return pending
+}
+
+/** The shared runtime: every hook body lives here exactly once. */
+interface EccRuntime {
+  /** V1-shaped hook map (also used by the V2 adapters below). */
+  hooks: Record<string, any>
+  /** V1-shaped custom tool record. */
+  tool: Record<string, unknown>
+  /** ECC context block preserved through compaction (V2 registration uses it). */
+  buildCompactionContext: () => string
+  /** The project directory this runtime was built for. */
+  worktreePath: string
+}
+
+async function createEccRuntime(input: {
+  client?: { app?: { log?: (event: { body: LooseRecord }) => unknown } }
+  $?: unknown
+  directory?: string
+  worktree?: string
+}): Promise<EccRuntime> {
+  const { client } = input
+  const worktreePath = input.worktree || input.directory || process.cwd()
+
+  const editedFiles = new Set<string>()
+  const pendingToolChanges = new Map<string, { path: string; type: "added" | "modified" }>()
+  let writeCounter = 0
+
+  function resolvePath(p: string): string {
+    if (path.isAbsolute(p)) return p
+    return path.join(worktreePath, p)
+  }
+
+  function hasProjectFile(relativePath: string): boolean {
+    try {
+      return fs.statSync(resolvePath(relativePath)).isFile()
+    } catch {
+      return false
+    }
+  }
+
+  function getFilePath(args: ToolArgs | undefined): string | null {
+    if (!args) return null
+    const p = (args.filePath ?? args.file_path ?? args.path) as string | undefined
+    return typeof p === "string" && p.trim() ? p : null
+  }
+
+  // V1 logged through the SDK client; V2 has no client.app.log, so the console
+  // fallback writes into the server log, which is where those messages ended
+  // up anyway.
+  const log = (level: "debug" | "info" | "warn" | "error", message: string) => {
+    if (typeof client?.app?.log === "function") {
+      return client.app.log({ body: { service: "ecc", level, message } })
+    }
+    try {
+      const line = `[ecc] ${message}`
+      if (level === "error") console.error(line)
+      else if (level === "warn") console.warn(line)
+      else if (level === "debug") console.debug(line)
+      else console.log(line)
+    } catch {
+      // Logging must never break a hook.
+    }
+  }
+
+  // Loaded lazily (instead of via a top-level import) so that a missing or
+  // partially-installed `~/.opencode/plugins/lib` directory (e.g. an
+  // interrupted or partial ECC install on Termux/Android) only disables
+  // changed-files tracking, rather than throwing during module evaluation.
+  // This plugin is OpenCode's startup entry point, so a static import
+  // failure here previously crashed the whole plugin -- and with it, the
+  // entire OpenCode session -- before any hooks could load (see #2530).
+  // The relative ".ts" specifier is rewritten to ".js" by tsc in the compiled
+  // layout and resolved natively by OpenCode's TS loader in a source layout.
+  let changedFilesStore: typeof import("./lib/changed-files-store.ts") | undefined
+  try {
+    const store = await import("./lib/changed-files-store.ts")
+    store.initStore?.(worktreePath)
+    changedFilesStore = store
+  } catch {
+    // Best-effort diagnostic only: deferred via .then() (rather than
+    // Promise.resolve(log(...))) so that even a *synchronous* throw inside
+    // log() -- not just an async rejection -- is caught here instead of
+    // escaping this catch block. The raw loader error is intentionally not
+    // included in the message since it can contain absolute filesystem
+    // paths; this whole block exists to guarantee startup resilience even
+    // when things go wrong.
+    Promise.resolve()
+      .then(() =>
+        log(
+          "warn",
+          "[ECC] changed-files tracking disabled: could not load the changed-files store. " +
+            "Run `ecc repair --target opencode` to restore the missing files. Other ECC hooks are unaffected.",
+        ),
+      )
+      .catch(() => {})
+  }
+
+  // Claude Code routes post:skill:track through
+  // scripts/hooks/posttooluse-dispatcher.js, which OpenCode never invokes.
+  // Without a caller here, nothing ever writes skill-runs.jsonl and
+  // `skills-health.js --dashboard` has no data to report on any skill (#2463).
+  //
+  // The tracker module is reused rather than reimplemented so its identifier
+  // validation, length bounds and "never persist prompt text" guarantees stay
+  // the ones that were written and audited for the Claude Code path.
+  //
+  // Loaded lazily, for the same reason as the store above. A runtime file URL
+  // also keeps tsc from resolving a relative specifier that exists in no
+  // compiled layout.
+  let recordSkillRun: ((payload: unknown) => void) | undefined
+  // Detection is scoped to the tracker itself, so a modular install that omits
+  // optional content still gets telemetry.
+  const trackerRoot = findEccRootDir(PLUGIN_DIR, ECC_ROOT_PROBES.skillTracker)
+  // The root advertised to commands is a different question: those commands
+  // require the resolver, so a root without it would break them again.
+  const eccRoot =
+    findEccRootDir(PLUGIN_DIR, ECC_ROOT_PROBES.resolver) ?? findEccRootDir(PLUGIN_DIR, ECC_ROOT_PROBES.root)
+  try {
+    const trackerPath = trackerRoot ? path.join(trackerRoot, "scripts", "hooks", "skill-run-tracker.js") : null
+    if (!trackerPath || !fs.existsSync(trackerPath)) {
+      throw new Error("skill-run-tracker.js not found")
+    }
+    // CJS module loaded from ESM: run() is on the namespace in Node/Bun, but a
+    // transpiled default export must stay supported.
+    const loaded = (await import(pathToFileURL(trackerPath).href)) as {
+      run?: (payload: unknown) => void
+      default?: { run?: (payload: unknown) => void }
+    }
+    const entry = typeof loaded.run === "function" ? loaded : loaded.default
+    if (!entry || typeof entry.run !== "function") {
+      throw new Error("skill-run-tracker.js exposes no run()")
+    }
+    recordSkillRun = entry.run
+  } catch {
+    // Same deferred-log rationale as the store above: guarantee that a
+    // telemetry failure can never escape this catch and abort startup.
+    Promise.resolve()
+      .then(() =>
+        log(
+          "warn",
+          "[ECC] skill-run telemetry disabled: could not load scripts/hooks/skill-run-tracker.js. " +
+            "Run `ecc repair --target opencode` to restore the missing files. Other ECC hooks are unaffected.",
+        ),
+      )
+      .catch(() => {})
+  }
+
+  const normalizeProfile = (value: string | undefined): HookProfile => {
+    if (value === "minimal" || value === "strict") return value
+    return "standard"
+  }
+
+  const currentProfile = normalizeProfile(process.env.ECC_HOOK_PROFILE)
+  const disabledHooks = new Set(
+    (process.env.ECC_DISABLED_HOOKS || "")
+      .split(",")
+      .map((item) => item.trim())
+      .filter(Boolean),
+  )
+
+  const profileOrder: Record<HookProfile, number> = { minimal: 0, standard: 1, strict: 2 }
+
+  const profileAllowed = (required: HookProfile | HookProfile[]): boolean => {
+    if (Array.isArray(required)) {
+      return required.some((entry) => profileOrder[currentProfile] >= profileOrder[entry])
+    }
+    return profileOrder[currentProfile] >= profileOrder[required]
+  }
+
+  const hookEnabled = (
+    hookId: string,
+    requiredProfile: HookProfile | HookProfile[] = "standard",
+  ): boolean => {
+    if (disabledHooks.has(hookId)) return false
+    return profileAllowed(requiredProfile)
+  }
+
+  /**
+   * Prettier auto-format + console.log warning + change tracking.
+   * (Equivalent to Claude Code PostToolUse hook for prettier.)
+   */
+  const onFileEdited = async (event: { path: string }) => {
+    try {
+      editedFiles.add(event.path)
+      changedFilesStore?.recordChange?.(event.path, "modified")
+
+      // Auto-format JS/TS files (strict profile only: it shells out).
+      if (hookEnabled("post:edit:format", ["strict"]) && /\.(ts|tsx|js|jsx)$/.test(event.path)) {
+        try {
+          const result = await run("npx", ["prettier", "--write", event.path], { cwd: worktreePath })
+          // T11: a non-zero exit is a failure, not a success. Only log
+          // "Formatted" when prettier actually ran and wrote the file.
+          if (result.code === 0) {
+            log("info", `[ECC] Formatted: ${event.path}`)
+          } else {
+            const detail = (result.stderr || result.stdout || "").trim().slice(0, 200)
+            log("warn", `[ECC] Prettier failed for ${event.path} (exit ${result.code})${detail ? `: ${detail}` : ""}`)
+          }
+        } catch (error: unknown) {
+          // Prettier could not be spawned at all - log but continue
+          const errorMessage = error instanceof Error ? error.message : String(error)
+          log("debug", `[ECC] Prettier formatting failed for ${event.path}: ${errorMessage}`)
+        }
+      }
+
+      // Console.log warning check (fs+regex: grep is not available on Windows).
+      if (hookEnabled("post:edit:console-warn", ["standard", "strict"]) && /\.(ts|tsx|js|jsx)$/.test(event.path)) {
+        const count = await countConsoleLogs(resolvePath(event.path)).catch(() => 0)
+        if (count > 0) {
+          log(
+            "warn",
+            `[ECC] console.log found in ${event.path} (${count} occurrence${count > 1 ? "s" : ""})`,
+          )
+        }
+      }
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : String(error)
+      log("debug", `[ECC] file.edited hook failed: ${errorMessage}`)
+    }
+  }
+
+  /**
+   * Pre-Tool Security Check (Equivalent to Claude Code PreToolUse hook):
+   * change bookkeeping, git-push/tmux reminders, doc-file warning.
+   */
+  const onToolBefore = async (input: ToolInput) => {
+    try {
+      if (input.tool === "write") {
+        const filePath = getFilePath(input.args)
+        if (filePath) {
+          const absPath = resolvePath(filePath)
+          let type: "added" | "modified" = "modified"
+          try {
+            type = fs.existsSync(absPath) ? "modified" : "added"
+          } catch {
+            type = "modified"
+          }
+          const key = input.callID ?? `write-${++writeCounter}-${filePath}`
+          pendingToolChanges.set(key, { path: filePath, type })
+        }
+      }
+
+      // Git push review reminder
+      if (hookEnabled("pre:bash:git-push-reminder", "strict") && input.tool === "bash") {
+        const cmd = String(input.args?.command ?? input.args ?? "")
+        if (cmd.includes("git push")) {
+          log("info", "[ECC] Remember to review changes before pushing: git diff origin/main...HEAD")
+        }
+      }
+
+      // Block creation of unnecessary documentation files
+      if (hookEnabled("pre:write:doc-file-warning", ["standard", "strict"]) && input.tool === "write") {
+        const filePath = getFilePath(input.args)
+        if (
+          filePath &&
+          /\.(md|txt)$/i.test(filePath) &&
+          !filePath.includes("README") &&
+          !filePath.includes("CHANGELOG") &&
+          !filePath.includes("LICENSE") &&
+          !filePath.includes("CONTRIBUTING")
+        ) {
+          log("warn", `[ECC] Creating ${filePath} - consider if this documentation is necessary`)
+        }
+      }
+
+      // Long-running command reminder
+      if (hookEnabled("pre:bash:tmux-reminder", "strict") && input.tool === "bash") {
+        const cmd = String(input.args?.command ?? input.args ?? "")
+        if (
+          cmd.match(/^(npm|pnpm|yarn|bun)\s+(install|build|test|run)/) ||
+          cmd.match(/^cargo\s+(build|test|run)/) ||
+          cmd.match(/^go\s+(build|test|run)/)
+        ) {
+          log("info", "[ECC] Long-running command detected - consider using background execution")
+        }
+      }
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : String(error)
+      log("debug", `[ECC] tool.execute.before hook failed: ${errorMessage}`)
+    }
+  }
+
+  /**
+   * Post-tool: change recording, typecheck, PR log, skill telemetry.
+   * (Equivalent to Claude Code PostToolUse hook for tsc.)
+   */
+  const onToolAfter = async (input: ToolInput, output: unknown) => {
+    try {
+      const filePath = getFilePath(input.args)
+      if (input.tool === "edit" && filePath) {
+        changedFilesStore?.recordChange?.(filePath, "modified")
+      }
+      if (input.tool === "write" && filePath) {
+        const key = input.callID ?? `write-${++writeCounter}-${filePath}`
+        const pending = pendingToolChanges.get(key)
+        if (pending) {
+          changedFilesStore?.recordChange?.(pending.path, pending.type)
+          pendingToolChanges.delete(key)
+        } else {
+          changedFilesStore?.recordChange?.(filePath, "modified")
+        }
+      }
+
+      // Check if a TypeScript file was edited
+      if (
+        hookEnabled("post:edit:typecheck", ["strict"]) &&
+        input.tool === "edit" &&
+        typeof input.args?.filePath === "string" &&
+        /\.tsx?$/.test(input.args.filePath)
+      ) {
+        const result = await run("npx", ["tsc", "--noEmit"], { cwd: worktreePath }).catch(() => null)
+        if (result && result.code === 0) {
+          log("info", "[ECC] TypeScript check passed")
+        } else if (result) {
+          log("warn", "[ECC] TypeScript errors detected:")
+          const out = (result.stdout || result.stderr || "").split("\n").slice(0, 5)
+          out.forEach((line) => line.trim() && log("warn", `  ${line}`))
+        }
+      }
+
+      // PR creation logging
+      if (
+        hookEnabled("post:bash:pr-created", ["standard", "strict"]) &&
+        input.tool === "bash" &&
+        String(input.args?.command ?? input.args ?? "").includes("gh pr create")
+      ) {
+        log("info", "[ECC] PR created - check GitHub Actions status")
+      }
+
+      // Skill telemetry (#2463). OpenCode's tool is named `skill`, so the
+      // harness-side name is matched here (case-insensitively) and the payload
+      // is handed over in the shape the tracker already understands.
+      if (
+        hookEnabled("post:skill:track", ["standard", "strict"]) &&
+        typeof input.tool === "string" &&
+        input.tool.trim().toLowerCase() === "skill"
+      ) {
+        try {
+          recordSkillRun?.({
+            tool_name: "Skill",
+            tool_input: input.args ?? {},
+            tool_response: output,
+          })
+        } catch {
+          // Telemetry is best-effort; never let it affect the tool result.
+        }
+      }
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : String(error)
+      log("debug", `[ECC] tool.execute.after hook failed: ${errorMessage}`)
+    }
+  }
+
+  /** Session Created Hook (Equivalent to Claude Code SessionStart hook). */
+  const onSessionCreated = async () => {
+    if (!hookEnabled("session:start", ["minimal", "standard", "strict"])) return
+    log("info", `[ECC] Session started - profile=${currentProfile}`)
+    if (hasProjectFile("CLAUDE.md")) {
+      log("info", "[ECC] Found CLAUDE.md - loading project context")
+    }
+  }
+
+  /**
+   * Session Idle Hook (Equivalent to Claude Code Stop hook): console.log
+   * audit on all edited files + desktop notification.
+   */
+  const onSessionIdle = async () => {
+    if (!hookEnabled("stop:check-console-log", ["minimal", "standard", "strict"])) return
+    if (editedFiles.size === 0) return
+
+    log("info", "[ECC] Session idle - running console.log audit")
+
+    let totalConsoleLogCount = 0
+    const filesWithConsoleLogs: string[] = []
+
+    for (const file of editedFiles) {
+      if (!/\.(ts|tsx|js|jsx)$/.test(file)) continue
+      const count = await countConsoleLogs(resolvePath(file)).catch(() => 0)
+      if (count > 0) {
+        totalConsoleLogCount += count
+        filesWithConsoleLogs.push(file)
+      }
+    }
+
+    if (totalConsoleLogCount > 0) {
+      log(
+        "warn",
+        `[ECC] Audit: ${totalConsoleLogCount} console.log statement(s) in ${filesWithConsoleLogs.length} file(s)`,
+      )
+      filesWithConsoleLogs.forEach((f) => log("warn", `  - ${f}`))
+      log("warn", "[ECC] Remove console.log statements before committing")
+    } else {
+      log("info", "[ECC] Audit passed: No console.log statements found")
+    }
+
+    // Desktop notification, best effort and never blocking. The V1 Windows
+    // path opened a modal MessageBox on the server; that is replaced with a
+    // fire-and-forget balloon tip, and every branch is detached.
+    try {
+      if (process.platform === "darwin") {
+        await run("osascript", ["-e", 'display notification "Task completed!" with title "OpenCode ECC"'], {
+          detached: true,
+        }).catch(() => {})
+      } else if (process.platform === "win32") {
+        const ps =
+          "$ni = New-Object System.Windows.Forms.NotifyIcon; $ni.Icon = [System.Drawing.SystemIcons]::Information; " +
+          "$ni.Visible = $true; $ni.ShowBalloonTip('OpenCode ECC', 'Task completed!', 'Info'); " +
+          "Start-Sleep -Seconds 5; $ni.Dispose()"
+        await run(
+          "powershell",
+          ["-NoProfile", "-WindowStyle", "Hidden", "-Command", `Add-Type -AssemblyName System.Windows.Forms; ${ps}`],
+          { detached: true },
+        ).catch(() => {})
+      } else if (process.platform === "linux") {
+        await run("notify-send", ["OpenCode ECC", "Task completed!"], { detached: true }).catch(() => {})
+      }
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : String(error)
+      log("debug", `[ECC] Desktop notification failed: ${errorMessage}`)
+    }
+
+    // Clear tracked files for next task
+    editedFiles.clear()
+  }
+
+  /** Session Deleted Hook (Equivalent to Claude Code SessionEnd hook). */
+  const onSessionDeleted = async () => {
+    if (!hookEnabled("session:end-marker", ["minimal", "standard", "strict"])) return
+    log("info", "[ECC] Session ended - cleaning up")
+    editedFiles.clear()
+    changedFilesStore?.clearChanges?.()
+    pendingToolChanges.clear()
+  }
+
+  /** File Watcher Hook (OpenCode-only): keeps tracking in sync with external edits. */
+  const onFileWatcherUpdated = async (event: { path: string; type: string }) => {
+    let changeType: "added" | "modified" | "deleted" = "modified"
+    if (event.type === "create" || event.type === "add") changeType = "added"
+    else if (event.type === "delete" || event.type === "remove") changeType = "deleted"
+    changedFilesStore?.recordChange?.(event.path, changeType)
+    if (event.type === "change" && /\.(ts|tsx|js|jsx)$/.test(event.path)) {
+      editedFiles.add(event.path)
+    }
+  }
+
+  /** Todo Updated Hook (OpenCode-only): logs progress. */
+  const onTodoUpdated = async (event: { todos: Array<{ text?: string; done: boolean }> }) => {
+    const todos = Array.isArray(event.todos) ? event.todos : []
+    const completed = todos.filter((t) => t.done).length
+    const total = todos.length
+    if (total > 0) {
+      log("info", `[ECC] Progress: ${completed}/${total} tasks completed`)
+    }
+  }
+
+  /**
+   * Shell Environment Hook (OpenCode-specific): inject ECC context into
+   * shell commands. PROJECT_ROOT/PACKAGE_MANAGER/... are computed per call
+   * because project marker files can appear after plugin init.
+   */
+  const onShellEnv = async (_input: { cwd: string }, output: { env: Record<string, string> }) => {
+    const env: Record<string, string> = {
+      ECC_VERSION: getECCVersion(eccRoot),
+      ECC_PLUGIN: "true",
+      ECC_HOOK_PROFILE: currentProfile,
+      ECC_DISABLED_HOOKS: process.env.ECC_DISABLED_HOOKS || "",
+      PROJECT_ROOT: worktreePath,
+    }
+
+    // Detect package manager (fs only: no shell probing, so this works on Windows).
+    const lockfiles: Record<string, string> = {
+      "bun.lockb": "bun",
+      "pnpm-lock.yaml": "pnpm",
+      "yarn.lock": "yarn",
+      "package-lock.json": "npm",
+    }
+    for (const [lockfile, pm] of Object.entries(lockfiles)) {
+      if (hasProjectFile(lockfile)) {
+        env.PACKAGE_MANAGER = pm
+        break
+      }
+    }
+
+    // Detect languages
+    const langDetectors: Record<string, string> = {
+      "tsconfig.json": "typescript",
+      "go.mod": "go",
+      "pyproject.toml": "python",
+      "Cargo.toml": "rust",
+      "Package.swift": "swift",
+    }
+    const detected: string[] = []
+    for (const [file, lang] of Object.entries(langDetectors)) {
+      if (hasProjectFile(file)) {
+        detected.push(lang)
+      }
+    }
+    if (detected.length > 0) {
+      env.DETECTED_LANGUAGES = detected.join(",")
+      env.PRIMARY_LANGUAGE = detected[0]
+    }
+
+    // resolve-ecc-root.js only probes ~/.claude and Claude Code's plugin
+    // cache, so under OpenCode it fell back to ~/.claude and every command
+    // carrying the inlined resolver failed to find its scripts. That resolver
+    // reads CLAUDE_PLUGIN_ROOT first, so exporting the root here fixes them
+    // through the mechanism ECC already provides -- rather than editing the
+    // command files that embed the locator.
+    //
+    // Only set when a root actually exists, and never replace a root someone
+    // else already chose: neither the process environment (set by the user)
+    // nor `output.env` (set by an earlier plugin). The final merge below
+    // overwrites output.env, so checking it only in `env` would clobber it.
+    const rootAlreadySet = Boolean(
+      (process.env.CLAUDE_PLUGIN_ROOT || "").trim() || (output.env?.CLAUDE_PLUGIN_ROOT || "").trim(),
+    )
+    if (eccRoot && !rootAlreadySet) {
+      env.CLAUDE_PLUGIN_ROOT = eccRoot
+    }
+
+    // OpenCode reads the supplied output object and ignores callback return values.
+    output.env = { ...output.env, ...env }
+  }
+
+  /** ECC context block preserved through compaction. */
+  function buildCompactionContext(): string {
+    const contextBlock = [
+      "# ECC Context (preserve across compaction)",
+      "",
+      `## Active Plugin: ECC v${getECCVersion(eccRoot)}`,
+      "- Hooks: file.edited, tool.execute.before/after, session.created/idle/deleted, shell.env, compacting, permission.ask",
+      "- Tools: changed-files, dependency-analyzer",
+      "",
+      "## Key Principles",
+      "- TDD: write tests first, 80%+ coverage",
+      "- Immutability: never mutate, always return new copies",
+      "- Security: validate inputs, no hardcoded secrets",
+      "",
+    ]
+
+    // Include recently edited files
+    if (editedFiles.size > 0) {
+      contextBlock.push("## Recently Edited Files")
+      for (const f of editedFiles) {
+        contextBlock.push(`- ${f}`)
+      }
+      contextBlock.push("")
+    }
+
+    return [
+      contextBlock.join("\n"),
+      "Focus on preserving: 1) Current task status and progress, 2) Key decisions made, 3) Files created/modified, 4) Remaining work items, 5) Any security concerns flagged. Discard: verbose tool outputs, intermediate exploration, redundant file listings.",
+    ].join("\n\n")
+  }
+
+  /**
+   * Session Compacting Hook (OpenCode-specific): append ECC context without
+   * replacing the host (or an earlier plugin's) compaction prompt.
+   */
+  const onSessionCompacting = async (
+    _input: { sessionID: string },
+    output: { context: string[]; prompt?: string },
+  ) => {
+    const eccContext = buildCompactionContext()
+    // OpenCode requires output assignment and skips context when a prompt is set.
+    if (output.prompt !== undefined) {
+      output.prompt = [output.prompt, eccContext].join("\n\n")
+    } else {
+      output.context = [...output.context, eccContext]
+    }
+  }
+
+  /**
+   * Permission Auto-Approve Hook (OpenCode-specific): auto-approve reads,
+   * formatters, and test commands on top of the configured rules.
+   */
+  const onPermissionAsk = async (event: PermissionEvent) => {
+    log("info", `[ECC] Permission requested for: ${event.tool}`)
+
+    try {
+      // Handle both string args and object args with command property
+      let cmd: string
+      if (typeof event.args === "string") {
+        cmd = event.args
+      } else if (event.args && typeof event.args === "object") {
+        cmd = String((event.args as Record<string, unknown>).command || "")
+      } else {
+        cmd = String(event.args || "")
+      }
+      if (cmd) {
+        log("debug", `[ECC] Permission resource: ${cmd.slice(0, 120)}`)
+      }
+
+      // Auto-approve: read/search tools
+      if (["read", "glob", "grep", "search", "list"].includes(event.tool)) {
+        log("debug", `[ECC] Auto-approved read-only tool: ${event.tool}`)
+        return { approved: true, reason: "Read-only operation" }
+      }
+
+      // T02: no shell-command auto-approval. A regex over the leading
+      // characters of a free-form shell string is not a safe allow-list —
+      // cmd/powershell argument modes, quoting, and subshell syntax can all
+      // defeat it (e.g. `prettier --write x.ts & curl evil.co`, or PowerShell
+      // `(prettier)`). Formatter and test commands fall through to the user's
+      // permission system instead.
+
+      // Everything else: let user decide
+      log("debug", `[ECC] Permission requires user approval: ${event.tool}`)
+      return { approved: undefined }
+    } catch (error: unknown) {
+      // Error in permission handling - log and deny for safety
+      const errorMessage = error instanceof Error ? error.message : String(error)
+      log("error", `[ECC] Permission handling error for ${event.tool}: ${errorMessage}`)
+      return { approved: false, reason: `Error: ${errorMessage}` }
+    }
+  }
+
+  // V1 custom tool record: definitions load lazily; a broken tools/ install
+  // surfaces only when a tool is actually invoked, never at startup.
+  const tool: Record<string, unknown> = {}
+  for (const name of ["changed-files", "dependency-analyzer"]) {
+    try {
+      const definition = await loadToolModule(name)
+      tool[name] = definition
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : String(error)
+      log("warn", `[ECC] Custom tool ${name} disabled: ${errorMessage}`)
+    }
+  }
+
+  const hooks: Record<string, any> = {
+    "file.edited": onFileEdited,
+    "tool.execute.before": onToolBefore,
+    "tool.execute.after": onToolAfter,
+    "session.created": onSessionCreated,
+    "session.idle": onSessionIdle,
+    "session.deleted": onSessionDeleted,
+    "file.watcher.updated": onFileWatcherUpdated,
+    "todo.updated": onTodoUpdated,
+    "shell.env": onShellEnv,
+    "experimental.session.compacting": onSessionCompacting,
+    "permission.ask": onPermissionAsk,
+  }
+
+  return { hooks, tool, buildCompactionContext, worktreePath }
+}
+
+/**
+ * V1 factory surface. OpenCode 1.x (and ECC's own discovery tests) call this
+ * with { client, $, directory, worktree } and receive the keyed hook map.
+ * OpenCode 2.x never calls it — it loads the default-exported V2 definition
+ * below, whose setup() builds this very runtime.
+ *
+ * `input.$` is accepted for signature parity and deliberately unused: V2 has
+ * no Bun shell, and spawning through `$` broke on Windows.
+ */
+export const ECCHooksPlugin = async (input: {
+  client: any
+  $?: any
+  directory?: string
+  worktree?: string
+}): Promise<Record<string, unknown>> => {
+  const runtime = await createEccRuntime(input)
+  return { ...runtime.hooks, tool: runtime.tool }
+}
+
 export const ECCHooksPluginDefinition = {
   id: "ecc-hooks",
   async setup(ctx: any): Promise<() => void> {
     const directory: string = ctx?.location?.directory ?? process.cwd()
-    const worktreePath: string = directory
 
-    if (registeredDirectories.has(worktreePath)) {
+    if (registeredDirectories.has(directory)) {
       return () => {}
     }
-    registeredDirectories.add(worktreePath)
+    registeredDirectories.add(directory)
 
-    const editedFiles = new Set<string>()
-    const pendingToolChanges = new Map<string, { path: string; type: "added" | "modified" }>()
-    let writeCounter = 0
+    const runtime = await createEccRuntime({ directory, worktree: directory })
+    const { hooks, worktreePath } = runtime
 
-    function resolvePath(p: string): string {
-      if (path.isAbsolute(p)) return p
-      return path.join(worktreePath, p)
-    }
+    // Normalize a V2 tool-hook event into the V1 ToolInput shape so both
+    // surfaces share one implementation.
+    const toToolInput = (event: LooseRecord): ToolInput => ({
+      tool: String(event.tool ?? event.name ?? ""),
+      callID: event.callID ?? event.id,
+      args: (event.input ?? event.args) as ToolArgs | undefined,
+    })
 
-    function hasProjectFile(relativePath: string): boolean {
-      try {
-        return fs.statSync(resolvePath(relativePath)).isFile()
-      } catch {
-        return false
-      }
-    }
-
-    function getFilePath(args: ToolArgs | undefined): string | null {
-      if (!args) return null
-      const p = args.filePath ?? args.file_path ?? args.path
-      return typeof p === "string" && p.trim() ? p : null
-    }
-
-    // V2 plugins have no client.app.log; console output is captured into the
-    // server log, which is where the old ECC messages ended up anyway.
-    const log = (level: "debug" | "info" | "warn" | "error", message: string) => {
-      try {
-        const line = `[ecc] ${message}`
-        if (level === "error") console.error(line)
-        else if (level === "warn") console.warn(line)
-        else if (level === "debug") console.debug(line)
-        else console.log(line)
-      } catch {
-        // Logging must never break a hook.
-      }
-    }
-
-    const normalizeProfile = (value: string | undefined): HookProfile => {
-      if (value === "minimal" || value === "strict") return value
-      return "standard"
-    }
-
-    const currentProfile = normalizeProfile(process.env.ECC_HOOK_PROFILE)
-    const disabledHooks = new Set(
-      (process.env.ECC_DISABLED_HOOKS || "")
-        .split(",")
-        .map((item) => item.trim())
-        .filter(Boolean),
-    )
-
-    const profileOrder: Record<HookProfile, number> = { minimal: 0, standard: 1, strict: 2 }
-
-    const profileAllowed = (required: HookProfile | HookProfile[]): boolean => {
-      if (Array.isArray(required)) {
-        return required.some((entry) => profileOrder[currentProfile] >= profileOrder[entry])
-      }
-      return profileOrder[currentProfile] >= profileOrder[required]
-    }
-
-    const hookEnabled = (hookId: string, requiredProfile: HookProfile | HookProfile[] = "standard"): boolean => {
-      if (disabledHooks.has(hookId)) return false
-      return profileAllowed(requiredProfile)
-    }
-
-    // ECC root detection (see ECC_ROOT_PROBES rationale above).
-    const trackerRoot = findEccRootDir(PLUGIN_DIR, ECC_ROOT_PROBES.skillTracker)
-    const eccRoot = findEccRootDir(PLUGIN_DIR, ECC_ROOT_PROBES.resolver) ?? findEccRootDir(PLUGIN_DIR, ECC_ROOT_PROBES.root)
-    const eccVersion = getECCVersion(eccRoot)
-
-    // Lazy imports so a partial install disables one capability instead of
-    // crashing the plugin (and previously the session) at load time (#2530).
-    let changedFilesStore:
-      | {
-          initStore?: (dir: string) => void
-          recordChange?: (p: string, t: string) => void
-          clearChanges?: () => void
-          buildTree?: (f?: string) => unknown[]
-          getChangedPaths?: (f?: string) => { path: string; changeType: string }[]
-          hasChanges?: () => boolean
-        }
-      | undefined
-    try {
-      const store = (await import(pathToFileURL(path.join(PLUGIN_DIR, "lib", "changed-files-store.ts")).href)) as any
-      store.initStore?.(worktreePath)
-      changedFilesStore = store
-    } catch {
-      log(
-        "warn",
-        "[ECC] changed-files tracking disabled: could not load the changed-files store. " +
-          "Run `ecc repair --target opencode` to restore the missing files. Other ECC hooks are unaffected.",
-      )
-    }
-
-    let recordSkillRun: ((payload: unknown) => void) | undefined
-    try {
-      const trackerPath = trackerRoot ? path.join(trackerRoot, "scripts", "hooks", "skill-run-tracker.js") : null
-      if (!trackerPath || !fs.existsSync(trackerPath)) {
-        throw new Error("skill-run-tracker.js not found")
-      }
-      // CJS module loaded from ESM: run() is on the namespace in Node/Bun, but
-      // a transpiled default export must stay supported.
-      const loaded = (await import(pathToFileURL(trackerPath).href)) as { run?: (p: unknown) => void; default?: { run?: (p: unknown) => void } }
-      const entry = typeof loaded.run === "function" ? loaded : loaded.default
-      if (!entry || typeof entry.run !== "function") {
-        throw new Error("skill-run-tracker.js exposes no run()")
-      }
-      recordSkillRun = entry.run
-    } catch {
-      log(
-        "warn",
-        "[ECC] skill-run telemetry disabled: could not load scripts/hooks/skill-run-tracker.js. " +
-          "Run `ecc repair --target opencode` to restore the missing files. Other ECC hooks are unaffected.",
-      )
-    }
-
-    // ------------------------------------------------------------------
-    // Hook implementations (bodies preserved from the V1 plugin)
-    // ------------------------------------------------------------------
-
-    /** Prettier auto-format + console.log warning + change tracking. */
-    const onFileEdited = async (filePath: string) => {
-      try {
-        editedFiles.add(filePath)
-        changedFilesStore?.recordChange?.(filePath, "modified")
-
-        if (hookEnabled("post:edit:format", ["strict"]) && /\.(ts|tsx|js|jsx)$/.test(filePath)) {
-          try {
-            await run("npx", ["prettier", "--write", filePath], { cwd: worktreePath })
-            log("info", `[ECC] Formatted: ${filePath}`)
-          } catch (error: unknown) {
-            const errorMessage = error instanceof Error ? error.message : String(error)
-            log("debug", `[ECC] Prettier formatting failed for ${filePath}: ${errorMessage}`)
-          }
-        }
-
-        if (hookEnabled("post:edit:console-warn", ["standard", "strict"]) && /\.(ts|tsx|js|jsx)$/.test(filePath)) {
-          const count = await countConsoleLogs(filePath).catch(() => 0)
-          if (count > 0) {
-            log("warn", `[ECC] console.log found in ${filePath} (${count} occurrence${count > 1 ? "s" : ""})`)
-          }
-        }
-      } catch (error: unknown) {
-        const errorMessage = error instanceof Error ? error.message : String(error)
-        log("debug", `[ECC] file.edited hook failed: ${errorMessage}`)
-      }
-    }
-
-    /** Pre-tool: change bookkeeping, git-push/tmux reminders, doc-file warning. */
-    const onToolBefore = async (event: LooseRecord) => {
-      try {
-        const toolName: string = event.tool ?? event.name ?? ""
-        const args = (event.input ?? event.args) as ToolArgs | undefined
-        const callId: string | undefined = event.callID ?? event.id
-
-        if (toolName === "write") {
-          const filePath = getFilePath(args)
-          if (filePath) {
-            const absPath = resolvePath(filePath)
-            let type: "added" | "modified" = "modified"
-            try {
-              type = fs.existsSync(absPath) ? "modified" : "added"
-            } catch {
-              type = "modified"
-            }
-            const key = callId ?? `write-${++writeCounter}-${filePath}`
-            pendingToolChanges.set(key, { path: filePath, type })
-          }
-        }
-
-        // Git push review reminder
-        if (hookEnabled("pre:bash:git-push-reminder", "strict") && toolName === "bash") {
-          const cmd = String(args?.command ?? args ?? "")
-          if (cmd.includes("git push")) {
-            log("info", "[ECC] Remember to review changes before pushing: git diff origin/main...HEAD")
-          }
-        }
-
-        // Block creation of unnecessary documentation files
-        if (hookEnabled("pre:write:doc-file-warning", ["standard", "strict"]) && toolName === "write") {
-          const filePath = getFilePath(args)
-          if (
-            filePath &&
-            /\.(md|txt)$/i.test(filePath) &&
-            !filePath.includes("README") &&
-            !filePath.includes("CHANGELOG") &&
-            !filePath.includes("LICENSE") &&
-            !filePath.includes("CONTRIBUTING")
-          ) {
-            log("warn", `[ECC] Creating ${filePath} - consider if this documentation is necessary`)
-          }
-        }
-
-        // Long-running command reminder
-        if (hookEnabled("pre:bash:tmux-reminder", "strict") && toolName === "bash") {
-          const cmd = String(args?.command ?? args ?? "")
-          if (
-            cmd.match(/^(npm|pnpm|yarn|bun)\s+(install|build|test|run)/) ||
-            cmd.match(/^cargo\s+(build|test|run)/) ||
-            cmd.match(/^go\s+(build|test|run)/)
-          ) {
-            log("info", "[ECC] Long-running command detected - consider using background execution")
-          }
-        }
-      } catch (error: unknown) {
-        const errorMessage = error instanceof Error ? error.message : String(error)
-        log("debug", `[ECC] tool.execute.before hook failed: ${errorMessage}`)
-      }
-    }
-
-    /** Post-tool: change recording, typecheck, PR log, skill telemetry. */
-    const onToolAfter = async (event: LooseRecord) => {
-      try {
-        const toolName: string = event.tool ?? event.name ?? ""
-        const args = (event.input ?? event.args) as ToolArgs | undefined
-        const callId: string | undefined = event.callID ?? event.id
-
-        const filePath = getFilePath(args)
-        if (toolName === "edit" && filePath) {
-          changedFilesStore?.recordChange?.(filePath, "modified")
-        }
-        if (toolName === "write" && filePath) {
-          const key = callId ?? `write-${++writeCounter}-${filePath}`
-          const pending = pendingToolChanges.get(key)
-          if (pending) {
-            changedFilesStore?.recordChange?.(pending.path, pending.type)
-            pendingToolChanges.delete(key)
-          } else {
-            changedFilesStore?.recordChange?.(filePath, "modified")
-          }
-        }
-
-        // TypeScript check (strict profile only - it shells out to tsc).
-        if (
-          hookEnabled("post:edit:typecheck", ["strict"]) &&
-          toolName === "edit" &&
-          typeof args?.filePath === "string" &&
-          /\.tsx?$/.test(args.filePath)
-        ) {
-          const result = await run("npx", ["tsc", "--noEmit"], { cwd: worktreePath }).catch(() => null)
-          if (result && result.code === 0) {
-            log("info", "[ECC] TypeScript check passed")
-          } else if (result) {
-            log("warn", "[ECC] TypeScript errors detected:")
-            const out = (result.stdout || result.stderr || "").split("\n").slice(0, 5)
-            out.forEach((line) => line.trim() && log("warn", `  ${line}`))
-          }
-        }
-
-        // PR creation logging
-        if (
-          hookEnabled("post:bash:pr-created", ["standard", "strict"]) &&
-          toolName === "bash" &&
-          String(args?.command ?? args ?? "").includes("gh pr create")
-        ) {
-          log("info", "[ECC] PR created - check GitHub Actions status")
-        }
-
-        // Skill telemetry (#2463): OpenCode's tool is named `skill`.
-        if (
-          hookEnabled("post:skill:track", ["standard", "strict"]) &&
-          typeof toolName === "string" &&
-          toolName.trim().toLowerCase() === "skill"
-        ) {
-          try {
-            recordSkillRun?.({
-              tool_name: "Skill",
-              tool_input: args ?? {},
-              tool_response: event.result ?? event.output,
-            })
-          } catch {
-            // Telemetry is best-effort; never let it affect the tool result.
-          }
-        }
-      } catch (error: unknown) {
-        const errorMessage = error instanceof Error ? error.message : String(error)
-        log("debug", `[ECC] tool.execute.after hook failed: ${errorMessage}`)
-      }
-    }
-
-    /** Session idle: console.log audit on edited files + desktop notification. */
-    const onSessionIdle = async () => {
-      if (!hookEnabled("stop:check-console-log", ["minimal", "standard", "strict"])) return
-      if (editedFiles.size === 0) return
-
-      log("info", "[ECC] Session idle - running console.log audit")
-
-      let totalConsoleLogCount = 0
-      const filesWithConsoleLogs: string[] = []
-
-      for (const file of editedFiles) {
-        if (!/\.(ts|tsx|js|jsx)$/.test(file)) continue
-        const count = await countConsoleLogs(file).catch(() => 0)
-        if (count > 0) {
-          totalConsoleLogCount += count
-          filesWithConsoleLogs.push(file)
-        }
-      }
-
-      if (totalConsoleLogCount > 0) {
-        log("warn", `[ECC] Audit: ${totalConsoleLogCount} console.log statement(s) in ${filesWithConsoleLogs.length} file(s)`)
-        filesWithConsoleLogs.forEach((f) => log("warn", `  - ${f}`))
-        log("warn", "[ECC] Remove console.log statements before committing")
-      } else {
-        log("info", "[ECC] Audit passed: No console.log statements found")
-      }
-
-      // Desktop notification, best effort and never blocking: the V1 Windows
-      // path opened a modal MessageBox on the server; that was replaced with
-      // a fire-and-forget balloon tip.
-      try {
-        if (process.platform === "darwin") {
-          await run("osascript", ["-e", 'display notification "Task completed!" with title "OpenCode ECC"'], { detached: true }).catch(() => {})
-        } else if (process.platform === "win32") {
-          const ps =
-            "$ni = New-Object System.Windows.Forms.NotifyIcon; $ni.Icon = [System.Drawing.SystemIcons]::Information; " +
-            "$ni.Visible = $true; $ni.ShowBalloonTip('OpenCode ECC', 'Task completed!', 'Info'); " +
-            "Start-Sleep -Seconds 5; $ni.Dispose()"
-          await run("powershell", ["-NoProfile", "-WindowStyle", "Hidden", "-Command", `Add-Type -AssemblyName System.Windows.Forms; ${ps}`], {
-            detached: true,
-          }).catch(() => {})
-        } else if (process.platform === "linux") {
-          await run("notify-send", ["OpenCode ECC", "Task completed!"], { detached: true }).catch(() => {})
-        }
-      } catch (error: unknown) {
-        const errorMessage = error instanceof Error ? error.message : String(error)
-        log("debug", `[ECC] Desktop notification failed: ${errorMessage}`)
-      }
-
-      editedFiles.clear()
-    }
-
-    /** Inject ECC environment variables into shell commands. */
-    let cachedEnv: Record<string, string> | undefined
-    function computeEccEnv(): Record<string, string> {
-      if (cachedEnv) return cachedEnv
-      const env: Record<string, string> = {
-        ECC_VERSION: eccVersion,
-        ECC_PLUGIN: "true",
-        ECC_HOOK_PROFILE: currentProfile,
-        ECC_DISABLED_HOOKS: process.env.ECC_DISABLED_HOOKS || "",
-        PROJECT_ROOT: worktreePath,
-      }
-
-      const lockfiles: Record<string, string> = {
-        "bun.lockb": "bun",
-        "pnpm-lock.yaml": "pnpm",
-        "yarn.lock": "yarn",
-        "package-lock.json": "npm",
-      }
-      for (const [lockfile, pm] of Object.entries(lockfiles)) {
-        if (hasProjectFile(lockfile)) {
-          env.PACKAGE_MANAGER = pm
-          break
-        }
-      }
-
-      const langDetectors: Record<string, string> = {
-        "tsconfig.json": "typescript",
-        "go.mod": "go",
-        "pyproject.toml": "python",
-        "Cargo.toml": "rust",
-        "Package.swift": "swift",
-      }
-      const detected: string[] = []
-      for (const [file, lang] of Object.entries(langDetectors)) {
-        if (hasProjectFile(file)) detected.push(lang)
-      }
-      if (detected.length > 0) {
-        env.DETECTED_LANGUAGES = detected.join(",")
-        env.PRIMARY_LANGUAGE = detected[0]
-      }
-
-      // Commands embed resolve-ecc-root.js, which reads CLAUDE_PLUGIN_ROOT
-      // first; exporting the root here fixes them without editing command files.
-      // Never replace a root someone else already chose.
-      if (eccRoot && !(process.env.CLAUDE_PLUGIN_ROOT || "").trim()) {
-        env.CLAUDE_PLUGIN_ROOT = eccRoot
-      }
-
-      cachedEnv = env
-      return env
-    }
-
-    /** ECC context block preserved through compaction. */
-    function buildCompactionContext(): string {
-      const contextBlock = [
-        "# ECC Context (preserve across compaction)",
-        "",
-        `## Active Plugin: ECC v${eccVersion}`,
-        "- Hooks: file.edited, tool.execute.before/after, session.created/idle/deleted, shell env, compaction, permission",
-        "- Tools: changed-files, dependency-analyzer",
-        "",
-        "## Key Principles",
-        "- TDD: write tests first, 80%+ coverage",
-        "- Immutability: never mutate, always return new copies",
-        "- Security: validate inputs, no hardcoded secrets",
-        "",
-      ]
-
-      if (editedFiles.size > 0) {
-        contextBlock.push("## Recently Edited Files")
-        for (const f of editedFiles) contextBlock.push(`- ${f}`)
-        contextBlock.push("")
-      }
-
-      contextBlock.push(
-        "Focus on preserving: 1) Current task status and progress, 2) Key decisions made, 3) Files created/modified, 4) Remaining work items, 5) Any security concerns flagged. Discard: verbose tool outputs, intermediate exploration, redundant file listings.",
-      )
-      return contextBlock.join("\n")
-    }
-
-    /** Auto-approve safe operations on top of the configured rules. */
-    const READ_ONLY_ACTIONS = ["read", "glob", "grep", "search", "list"]
-    const FORMATTER_RE = /^(npx )?(@biomejs\/biome|prettier|black|gofmt|rustfmt|swift-format)/
-    const TEST_RE = /^(npm test|npx vitest|npx jest|pytest|go test|cargo test)/
-
-    const onPermissionEvaluate = async (event: LooseRecord) => {
-      try {
-        const action: string = String(event.action ?? "")
-        const resource: string = String(event.resources?.[0] ?? "")
-        log("debug", `[ECC] Permission evaluated: ${action} ${resource}`)
-
-        if (READ_ONLY_ACTIONS.includes(action)) {
-          event.effect = "allow"
-          event.message = "ECC: read-only operation"
-          return
-        }
-        if ((action === "bash" || action === "shell" || action === "execute") && (FORMATTER_RE.test(resource) || TEST_RE.test(resource))) {
-          event.effect = "allow"
-          event.message = "ECC: formatter/test execution"
-          return
-        }
-        // Everything else: leave the configured decision in place.
-      } catch (error: unknown) {
-        // On error, keep the configured behavior rather than denying outright.
-        const errorMessage = error instanceof Error ? error.message : String(error)
-        log("error", `[ECC] Permission handling error: ${errorMessage}`)
-      }
-    }
+    logStartup(directory)
 
     // ------------------------------------------------------------------
     // Registration on the V2 domains (each guarded so a missing domain in an
@@ -607,70 +1003,80 @@ export const ECCHooksPluginDefinition = {
     // ------------------------------------------------------------------
 
     const registrations: { dispose?: () => Promise<void> | void }[] = []
+    const controller = new AbortController()
 
+    const safe =
+      <T extends (...args: any[]) => any>(label: string, fn: T) =>
+      async (...args: Parameters<T>) => {
+        try {
+          return await fn(...args)
+        } catch (error: unknown) {
+          const errorMessage = error instanceof Error ? error.message : String(error)
+          console.debug(`[ecc] ${label} hook failed: ${errorMessage}`)
+          return undefined
+        }
+      }
+
+    // All domain registrations happen inside registerDomains() so a failure
+    // half-way through can be rolled back (T10): already-registered hooks are
+    // disposed and the directory guard is released for a later retry.
+    const registerDomains = async (): Promise<void> => {
     if (typeof ctx?.tool?.hook === "function") {
-      registrations.push(await ctx.tool.hook("execute.before", onToolBefore))
-      registrations.push(await ctx.tool.hook("execute.after", onToolAfter))
+      registrations.push(await ctx.tool.hook("execute.before", safe("execute.before", (event: LooseRecord) => hooks["tool.execute.before"](toToolInput(event), {}))))
+      registrations.push(
+        await ctx.tool.hook("execute.after", safe("execute.after", (event: LooseRecord) =>
+          hooks["tool.execute.after"](toToolInput(event), { result: event.result ?? event.output }),
+        )),
+      )
     }
 
     if (typeof ctx?.shell?.hook === "function") {
       registrations.push(
-        await ctx.shell.hook("create.before", (event: LooseRecord) => {
-          try {
-            const eccEnv = computeEccEnv()
-            event.env = { ...(event.env ?? {}) }
-            for (const [key, value] of Object.entries(eccEnv)) {
-              // Never replace values set by the user or an earlier plugin.
-              if (event.env[key] === undefined || event.env[key] === "") event.env[key] = value
-            }
-          } catch (error: unknown) {
-            const errorMessage = error instanceof Error ? error.message : String(error)
-            log("debug", `[ECC] shell env hook failed: ${errorMessage}`)
-          }
-        }),
+        await ctx.shell.hook(
+          "create.before",
+          safe("shell.env", async (event: LooseRecord) => {
+            const output = { env: { ...(event.env ?? {}) } as Record<string, string> }
+            await hooks["shell.env"]({ cwd: worktreePath }, output)
+            event.env = output.env
+          }),
+        ),
       )
     }
 
     if (typeof ctx?.session?.hook === "function") {
       registrations.push(
-        await ctx.session.hook("compaction", (event: LooseRecord) => {
-          try {
+        await ctx.session.hook(
+          "compaction",
+          safe("compaction", (event: LooseRecord) => {
             event.system = event.system ?? []
-            event.system.push({ type: "text", text: buildCompactionContext() })
-          } catch (error: unknown) {
-            const errorMessage = error instanceof Error ? error.message : String(error)
-            log("debug", `[ECC] compaction hook failed: ${errorMessage}`)
-          }
-        }),
+            event.system.push({ type: "text", text: runtime.buildCompactionContext() })
+          }),
+        ),
       )
     }
 
     if (typeof ctx?.permission?.hook === "function") {
-      registrations.push(await ctx.permission.hook("evaluate", onPermissionEvaluate))
+      registrations.push(
+        await ctx.permission.hook(
+          "evaluate",
+          safe("permission.evaluate", async (event: LooseRecord) => {
+            const action = String(event.action ?? "")
+            const resource = String(event.resources?.[0] ?? "")
+            const decision = await hooks["permission.ask"]({ tool: action, args: resource })
+            // approved === true -> allow; approved undefined/false -> keep the
+            // configured decision (V1 semantics, never a hard deny on drift).
+            if (decision?.approved === true) {
+              event.effect = "allow"
+              event.message = `ECC: ${decision.reason}`
+            }
+          }),
+        ),
+      )
     }
 
     // Custom tools: registered through a transform, resolving the V1 tool
     // modules lazily inside execute so a broken tools/ install only affects
     // these two tools when actually invoked.
-    const toolModuleCache = new Map<string, Promise<any>>()
-    async function loadV1Tool(name: string): Promise<{ execute: (args: any, context: any) => Promise<string> }> {
-      let p = toolModuleCache.get(name)
-      if (!p) {
-        p = import(pathToFileURL(path.resolve(PLUGIN_DIR, "..", "tools", `${name}.ts`)).href)
-          .then((mod: any) => (typeof mod?.default === "function" ? { execute: mod.default } : mod.default))
-          .catch((error: unknown) => {
-            toolModuleCache.delete(name)
-            throw new Error(
-              `${name} tool: could not load ECC tool module. Run \`ecc repair --target opencode\` to restore the missing files. (${
-                error instanceof Error ? error.message : String(error)
-              })`,
-            )
-          })
-        toolModuleCache.set(name, p)
-      }
-      return p
-    }
-
     if (typeof ctx?.tool?.transform === "function") {
       registrations.push(
         await ctx.tool.transform((editor: any) => {
@@ -687,7 +1093,7 @@ export const ECCHooksPluginDefinition = {
               additionalProperties: false,
             },
             execute: async (input: any, context: any) => {
-              const mod = await loadV1Tool("changed-files")
+              const mod = await loadToolModule("changed-files")
               const result = await mod.execute(input ?? {}, context ?? { directory: worktreePath, worktree: worktreePath })
               return { content: String(result) }
             },
@@ -706,7 +1112,7 @@ export const ECCHooksPluginDefinition = {
               additionalProperties: false,
             },
             execute: async (input: any, context: any) => {
-              const mod = await loadV1Tool("dependency-analyzer")
+              const mod = await loadToolModule("dependency-analyzer")
               const result = await mod.execute(input ?? {}, context ?? { directory: worktreePath, worktree: worktreePath })
               return { content: String(result) }
             },
@@ -717,7 +1123,6 @@ export const ECCHooksPluginDefinition = {
 
     // Event-driven hooks: V1 returned keyed handlers; V2 delivers these as
     // public server events on a subscription stream.
-    const controller = new AbortController()
     if (typeof ctx?.event?.subscribe === "function") {
       void (async () => {
         try {
@@ -728,74 +1133,82 @@ export const ECCHooksPluginDefinition = {
               switch (type) {
                 case "file.edited": {
                   const p = props.file ?? props.path ?? props.filePath
-                  if (typeof p === "string") await onFileEdited(p)
+                  if (typeof p === "string") await hooks["file.edited"]({ path: p })
                   break
                 }
                 case "file.watcher.updated": {
                   const p = props.file ?? props.path
-                  if (typeof p !== "string") break
-                  const changeType = props.type
-                  let mapped: "added" | "modified" | "deleted" = "modified"
-                  if (changeType === "create" || changeType === "add") mapped = "added"
-                  else if (changeType === "delete" || changeType === "remove") mapped = "deleted"
-                  changedFilesStore?.recordChange?.(p, mapped)
-                  if (changeType === "change" && /\.(ts|tsx|js|jsx)$/.test(p)) editedFiles.add(p)
+                  if (typeof p === "string") await hooks["file.watcher.updated"]({ path: p, type: String(props.type ?? "") })
                   break
                 }
-                case "session.created": {
-                  if (!hookEnabled("session:start", ["minimal", "standard", "strict"])) break
-                  log("info", `[ECC] Session started - profile=${currentProfile}`)
-                  if (hasProjectFile("CLAUDE.md")) log("info", "[ECC] Found CLAUDE.md - loading project context")
+                case "session.created":
+                  await hooks["session.created"]()
                   break
-                }
-                case "session.idle": {
-                  await onSessionIdle()
+                case "session.idle":
+                  await hooks["session.idle"]()
                   break
-                }
-                case "session.deleted": {
-                  if (!hookEnabled("session:end-marker", ["minimal", "standard", "strict"])) break
-                  log("info", "[ECC] Session ended - cleaning up")
-                  editedFiles.clear()
-                  changedFilesStore?.clearChanges?.()
-                  pendingToolChanges.clear()
+                case "session.deleted":
+                  await hooks["session.deleted"]()
                   break
-                }
-                case "todo.updated": {
-                  const todos: { done: boolean }[] = Array.isArray(props.todos) ? props.todos : []
-                  if (todos.length > 0) {
-                    const completed = todos.filter((t) => t.done).length
-                    log("info", `[ECC] Progress: ${completed}/${todos.length} tasks completed`)
-                  }
+                case "todo.updated":
+                  await hooks["todo.updated"]({ todos: Array.isArray(props.todos) ? props.todos : [] })
                   break
-                }
                 default:
                   break
               }
             } catch (error: unknown) {
               const errorMessage = error instanceof Error ? error.message : String(error)
-              log("debug", `[ECC] event ${type} handler failed: ${errorMessage}`)
+              console.debug(`[ecc] event ${type} handler failed: ${errorMessage}`)
             }
           }
-        } catch {
-          // Subscription aborted during unload - expected.
+        } catch (error: unknown) {
+          // T12: distinguish a normal unload abort from a real stream failure.
+          if (controller.signal.aborted) return // expected during disposal
+          const errorMessage = error instanceof Error ? error.message : String(error)
+          console.warn(`[ecc] event subscription failed (hooks still registered): ${errorMessage}`)
         }
       })()
     }
+    }
 
-    log("info", `[ECC] hooks plugin v${eccVersion} loaded (profile=${currentProfile}, directory=${worktreePath})`)
-
-    return () => {
+    // T10: if any registration after the guard was taken throws, dispose the
+    // registrations already made and release the directory guard so a later
+    // load attempt can succeed instead of being silently skipped forever.
+    try {
+      await registerDomains()
+    } catch (error: unknown) {
       controller.abort()
-      registeredDirectories.delete(worktreePath)
-      for (const registration of registrations) {
-        try {
-          void registration?.dispose?.()
-        } catch {
-          // Best-effort dispose.
-        }
-      }
+      registeredDirectories.delete(directory)
+      await disposeRegistrations(registrations)
+      throw error
+    }
+
+    return async () => {
+      controller.abort()
+      registeredDirectories.delete(directory)
+      await disposeRegistrations(registrations)
     }
   },
+}
+
+/** Dispose every registration, awaiting promises so no rejection is unhandled. */
+async function disposeRegistrations(
+  registrations: { dispose?: () => Promise<void> | void }[],
+): Promise<void> {
+  for (const registration of registrations) {
+    try {
+      // T13: the dispose result may be a promise; chain a catch so a
+      // rejection is never left unhandled, and await it in this loop.
+      await Promise.resolve().then(() => registration?.dispose?.())
+    } catch {
+      // Best-effort dispose.
+    }
+  }
+}
+
+function logStartup(directory: string) {
+  // Mirrors the V1 startup line used in server-log triage (TROUBLESHOOTING.md).
+  console.log(`[ecc] hooks plugin v${getECCVersion(findEccRootDir(PLUGIN_DIR, ECC_ROOT_PROBES.root))} loaded (directory=${directory})`)
 }
 
 export default ECCHooksPluginDefinition
