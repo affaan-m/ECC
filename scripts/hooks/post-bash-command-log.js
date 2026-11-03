@@ -22,6 +22,10 @@ const MODE_CONFIG = {
 function sanitizeCommand(command) {
   return String(command || '')
     .replace(/\n/g, ' ')
+    .replace(/-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----[\s\S]*?(?:-----END [A-Z0-9 ]*PRIVATE KEY-----|$)/g, '<REDACTED>')
+    .replace(/\bsk-[A-Za-z0-9_-]{20,}/g, '<REDACTED>')
+    .replace(/\beyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]*/g, '<REDACTED>')
+    .replace(/(\b|_)(secret|api[_-]?key)(\s*[:=]\s*)("[^"]*"|'[^']*'|[^\s"']+)/gi, '$1$2$3<REDACTED>')
     .replace(/--token[= ][^ ]*/g, '--token=<REDACTED>')
     .replace(/Authorization:[: ]*[^ ]*[: ]*[^ ]*/gi, 'Authorization:<REDACTED>')
     .replace(/\bAKIA[A-Z0-9]{16}\b/g, '<REDACTED>')
