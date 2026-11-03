@@ -30,6 +30,7 @@
   const TEXT_ONLY_GRACE_MS = 45000;
   const HEARTBEAT_MS = 15000;
   const ANSWER_STABLE_MS = 10000;
+  const REFUSAL_PATTERN = /can(?:'|’|no)t (?:generate|create|make) (?:that|this) video|unable to (?:generate|create) (?:that|this) video|n[aã]o (?:consigo|posso|pude) (?:gerar|criar) (?:esse|este|o) v[ií]deo|video policy|pol[ií]tica de v[ií]deo/i;
   const MAX_BLOB_BYTES = 200 * 1024 * 1024;
 
   let selectors = { ...DEFAULTS };
@@ -188,8 +189,12 @@
       if (candidates.length && !isGenerating()) return candidates[candidates.length - 1];
       if (fresh.length && !candidates.length && !isGenerating() && fresh[fresh.length - 1].innerText.trim().length > 80) {
         textSeenAt = textSeenAt || Date.now();
+        const answer = fresh[fresh.length - 1].innerText.trim();
+        if (REFUSAL_PATTERN.test(answer)) {
+          throw new Error(`Gemini refused this prompt (video policy): "${answer.slice(0, 160)}"`);
+        }
         if (Date.now() - textSeenAt > TEXT_ONLY_GRACE_MS) {
-          throw new Error(`Gemini answered with text instead of a video: "${fresh[fresh.length - 1].innerText.trim().slice(0, 160)}"`);
+          throw new Error(`Gemini answered with text instead of a video: "${answer.slice(0, 160)}"`);
         }
       } else {
         textSeenAt = 0;

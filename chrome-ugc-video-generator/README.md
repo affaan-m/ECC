@@ -88,3 +88,4 @@ scripts/              ícones e checagem estática
 - O download do clipe é feito pela própria página (o content script busca o arquivo e salva com o nome `<título>-clip-NN.mp4`); se isso falhar, clica no botão de download do Gemini, e por último o worker tenta baixar a URL `https:` diretamente.
 - Os clipes são fixos em 8 s (duração do Veo no app). 45 s viram 6 clipes.
 - O texto na tela (gancho, legendas) é pensado para ser adicionado na edição, não renderizado pelo Veo, que erra ortografia.
+- Quando o Gemini responde "I can't generate that video" (filtro de política do Veo, sem explicar o motivo), a extensão tenta o clipe mais duas vezes com um prompt simplificado: primeiro sem o texto entre aspas da embalagem, sem a lista NEGATIVE e sem a nota de continuidade; depois também sem a fala e sem a imagem de referência. Se ainda assim recusar, o clipe fica em erro e o jeito é editar a cena (fala, ação ou descrição do produto) e usar "Repetir".

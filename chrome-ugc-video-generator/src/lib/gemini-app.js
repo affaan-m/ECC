@@ -3,17 +3,40 @@
 // short, unambiguous instruction and the rendered clip prompt follows.
 
 export function wrapForGeminiApp(prompt, { index, total, seconds = 8, aspect = '9:16', sameConversation = true } = {}) {
-  const lead = [
-    `Generate ONE video clip with Veo now. Vertical ${aspect}, ${seconds} seconds, 1080p, with native audio and lip-synced dialogue.`,
-    'Do not describe or rewrite the prompt, do not ask questions, do not add text overlays: just generate the video from the prompt below exactly as written.',
-  ];
+  const lead = [`Create one ${seconds}-second vertical ${aspect} video with Veo from the prompt below, with native audio and the dialogue spoken exactly as written. Generate the video directly, without rewriting the prompt or asking questions.`];
   if (sameConversation && index > 1) {
-    lead.push(`This is clip ${index} of ${total} of the same video. Keep the exact same person, outfit, hair, product, location and grade as the clip(s) you already generated in this conversation.`);
+    lead.push(`This is clip ${index} of ${total} of the same video: keep the same person, outfit, product, location and grade as the previous clip(s) in this conversation.`);
   }
   if (sameConversation && index === 1 && total > 1) {
-    lead.push(`This is clip 1 of ${total}. I will ask for the next clips in this same conversation; keep this look locked.`);
+    lead.push(`This is clip 1 of ${total}; the next clips come in this same conversation.`);
   }
   return `${lead.join(' ')}\n\n${prompt}`;
+}
+
+// The Gemini app answers "I can't generate that video" when Veo's policy
+// filter rejects a prompt, without saying why. Each level strips the parts
+// that most often trip the filter so the clip can be retried automatically.
+//   1: drop quoted text to render, the negative list and continuity notes.
+//   2: also drop the dialogue (lip-synced speech) and the reference image.
+export const MAX_SOFTEN_LEVEL = 2;
+
+export function softenPrompt(prompt, level = 1) {
+  if (!level) return String(prompt || '');
+  const kept = String(prompt || '')
+    .split('\n')
+    .filter(line => !/^(NEGATIVE|CONTINUITY|SHOT PURPOSE):/i.test(line))
+    .map(line => line.replace(/\s*(reading|that says|with the text|labell?ed)\s+'[^']{2,}'/gi, ' with legible brand lettering').replace(/'[^']{2,}'/g, 'brand lettering'))
+    .map(line => (level >= 2 && /^DIALOGUE/i.test(line) ? 'DIALOGUE: none. Natural ambient sound only.' : line))
+    .map(line => (level >= 2 ? line.replace(/^REFERENCE:.*$/i, '') : line))
+    .filter(line => line.trim());
+  return kept.join('\n');
+}
+
+// Messages the Gemini app shows when a video request is rejected.
+export const REFUSAL_PATTERN = /can(?:'|’|no)t (?:generate|create|make) (?:that|this) video|unable to (?:generate|create) (?:that|this) video|n[aã]o (?:consigo|posso|pude) (?:gerar|criar) (?:esse|este|o) v[ií]deo|video policy|pol[ií]tica de v[ií]deo/i;
+
+export function isRefusal(text) {
+  return REFUSAL_PATTERN.test(String(text || ''));
 }
 
 export const DEFAULT_SELECTORS = Object.freeze({

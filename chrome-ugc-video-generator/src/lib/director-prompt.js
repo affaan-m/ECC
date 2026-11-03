@@ -10,7 +10,7 @@ const JSON_SHAPE = `{
   "title": "<internal working title>",
   "concept": "<one paragraph: the creative idea and why it will stop the scroll>",
   "bible": {
-    "character": {
+    "character": {  // null when nobody appears on camera (product film without presenter)
       "gender": "woman" | "man",
       "age": "<e.g. 'early 30s'>",
       "ethnicity": "<specific, respectful, visual>",
@@ -61,6 +61,7 @@ export function systemPrompt() {
     'Rules for UGC format: the creator is a real-looking person filming themselves on a phone; imperfect, honest, energetic. Product must be visible in hand in at least three clips. One idea per clip.',
     'Rules for product format: cinematic product film, no presenter unless the brief asks for one; macro textures, motion, premium lighting.',
     'Never invent claims the brief does not support (no medical, financial or guaranteed-result promises). Keep the brand name exactly as written in the brief.',
+    'The clips are rendered by Veo inside the Gemini app, which silently refuses prompts that trip its video policy. Keep every bible field short (at most 15 words) and purely visual; name no real people, celebrities, public figures or other brands; no children, weapons, violence, politics, news events or medical scenes; describe text printed on the product in a few words instead of quoting it; keep dialogue positive and personal. Leave fields that do not apply empty and set "character" to null when nobody is on camera.',
     'Answer with ONE JSON object only. No markdown, no commentary before or after.',
   ].join('\n\n');
 }

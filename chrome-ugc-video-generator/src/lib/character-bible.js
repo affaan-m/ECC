@@ -6,9 +6,14 @@ const CHARACTER_FIELDS = ['gender', 'age', 'ethnicity', 'face', 'hair', 'build',
 const PRODUCT_FIELDS = ['name', 'look', 'packaging', 'key_detail'];
 const WORLD_FIELDS = ['setting', 'lighting', 'camera_style', 'color_grade', 'audio_style'];
 
+// Values the script writer uses to say "nothing here". Dropping them keeps
+// the prompt free of noise like "Accessories: none" or "Face: not visible".
+const PLACEHOLDER = /^(none|n\/a|na|nil|null|not (visible|applicable|shown|specified|on camera)|nenhum[ao]?|n[aã]o (vis[ií]vel|se aplica|aparece))[.!]?$/i;
+
 function clean(value) {
   if (value === null || value === undefined) return '';
-  return String(value).replace(/\s+/g, ' ').trim();
+  const text = String(value).replace(/\s+/g, ' ').replace(/[\s.;,]+$/g, '').trim();
+  return PLACEHOLDER.test(text) ? '' : text;
 }
 
 function pick(obj, fields) {
@@ -56,10 +61,9 @@ export function productSentence(product = {}) {
 export function renderBibleBlock(bible, { hasReference = false } = {}) {
   const b = normalizeBible(bible);
   const lines = [];
+  if (hasReference) lines.push('REFERENCE: the attached image is the visual reference; match what it shows (the person and/or the product) exactly.');
   const who = characterSentence(b.character);
-  if (who) {
-    lines.push(`${hasReference ? 'SAME PERSON AS THE REFERENCE IMAGE' : 'CHARACTER'} (identical in every shot): ${who}.`);
-  }
+  if (who) lines.push(`CHARACTER (identical in every shot): ${who}.`);
   const outfit = outfitSentence(b.character);
   if (outfit) lines.push(`WEARING EXACTLY (never changes): ${outfit}.`);
   const prod = productSentence(b.product);

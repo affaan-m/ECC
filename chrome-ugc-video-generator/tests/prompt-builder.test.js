@@ -20,6 +20,13 @@ test('validator reports a prompt that lost an anchor', () => {
   assert.equal(problems[0].index, 3);
 });
 
+test('prompt has no shot-purpose line and no doubled punctuation', () => {
+  const script = normalizeScript(rawScript(), PLAN);
+  const p = renderScenePrompt({ bible: script.bible, scene: script.scenes[0], total: 6 });
+  assert.doesNotMatch(p, /SHOT PURPOSE/);
+  assert.doesNotMatch(p, /\.\./);
+});
+
 test('first and last clips get the right continuity notes', () => {
   const script = normalizeScript(rawScript(), PLAN);
   const rendered = renderAllPrompts(script);

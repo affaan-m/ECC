@@ -4,7 +4,7 @@
 // 'clip:result' / 'clip:error' message that wakes the worker and triggers the
 // next dispatch. In API mode the render is a sequence of short fetches instead.
 
-import { wrapForGeminiApp, mergeSelectors } from '../lib/gemini-app.js';
+import { wrapForGeminiApp, mergeSelectors, softenPrompt, isRefusal, MAX_SOFTEN_LEVEL } from '../lib/gemini-app.js';
 import { omniGenerateClip } from '../lib/llm/omni-video.js';
 import { clipFileName } from '../lib/tiktok.js';
 import { nextClip, inFlight, previousInteractionId, allDone, patchPrompt } from '../lib/run-state.js';
@@ -38,12 +38,14 @@ async function dispatchInApp(job, item, settings) {
   const tab = await ensureGeminiTab(job.geminiTabId);
   const { selectors, error } = selectorOverrides(settings);
   if (error) job = withLog(job, error);
+  const level = Math.min(Number(item.softenLevel) || 0, MAX_SOFTEN_LEVEL);
+  const prompt = softenPrompt(item.prompt, level);
   const message = {
     type: 'gemini:generateClip',
     index: item.index,
     fileName: clipFileName(job.script?.title, item.index),
-    prompt: wrapForGeminiApp(item.prompt, { index: item.index, total: job.prompts.length, seconds: item.seconds, sameConversation: settings.conversationMode === 'same' }),
-    images: referenceImages(job),
+    prompt: wrapForGeminiApp(prompt, { index: item.index, total: job.prompts.length, seconds: item.seconds, sameConversation: settings.conversationMode === 'same' }),
+    images: level >= 2 ? [] : referenceImages(job),
     newChat: item.index === 1 || settings.conversationMode === 'new',
     timeoutMs: (Number(settings.clipTimeoutMinutes) || 10) * 60 * 1000,
     wantAnchor: !job.input?.reference && !job.anchorFrame,
@@ -121,7 +123,7 @@ export async function startRun({ only = null } = {}) {
   if (!job.prompts?.length) throw new Error('Write the script first');
   if (job.status === 'running') throw new Error('A clip is already being rendered; wait or press Stop.');
   await chrome.alarms.create(KEEPALIVE, { periodInMinutes: 0.5 });
-  const queued = only ? patchPrompt(job, only, { status: 'pending', error: '' }) : job;
+  const queued = only ? patchPrompt(job, only, { status: 'pending', error: '', softenLevel: 0 }) : job;
   await saveJob({ ...queued, status: 'running', error: '', runOnly: only, stopRequested: false });
   await dispatchNext();
 }
@@ -171,4 +173,19 @@ export async function failClip(index, message) {
   const job = await getJob();
   await chrome.alarms.clear(KEEPALIVE);
   await saveJob(withLog(patchPrompt({ ...job, status: 'error', error: message, runOnly: null, stopRequested: false }, index, { status: 'error', error: message }), `Clip ${index}: ${message}`));
+}
+
+// A policy refusal is retried with a progressively simplified prompt before
+// the clip is marked as failed; any other error fails the clip at once.
+export async function handleClipError(index, message) {
+  const job = await getJob();
+  const item = job.prompts?.find(p => p.index === index);
+  const level = (Number(item?.softenLevel) || 0) + 1;
+  if (!item || item.status !== 'running' || !isRefusal(message) || level > MAX_SOFTEN_LEVEL) {
+    const hint = isRefusal(message) ? ' Edit this scene (dialogue, action or product text) and retry the clip.' : '';
+    await failClip(index, `${message}${hint}`);
+    return;
+  }
+  await saveJob(withLog(patchPrompt(job, index, { status: 'pending', softenLevel: level }), `Clip ${index}: Gemini refused the prompt; retrying with a simplified prompt (level ${level}/${MAX_SOFTEN_LEVEL}).`));
+  await dispatchNext();
 }

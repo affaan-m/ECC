@@ -4,7 +4,7 @@
 import { getSettings, setSettings, getJob, saveJob, emptyJob } from './storage.js';
 import { getGoogleToken, signOutGoogle, oauthConfigured } from './auth.js';
 import { writeScript, updateScript, onScriptAnswer } from './script-job.js';
-import { startRun, requestStop, completeClip, failClip, dispatchNext } from './clip-runner.js';
+import { startRun, requestStop, completeClip, failClip, handleClipError, dispatchNext } from './clip-runner.js';
 import { recoverInterrupted, inFlight } from '../lib/run-state.js';
 
 chrome.runtime.onInstalled.addListener(() => {
@@ -88,7 +88,7 @@ const geminiHandlers = {
     return { ok: true };
   },
   'clip:error': async ({ index, error }) => {
-    await failClip(index, error || 'Unknown error on the Gemini page');
+    await handleClipError(index, error || 'Unknown error on the Gemini page');
     return { ok: true };
   },
   'script:result': async ({ jobId, result }) => {

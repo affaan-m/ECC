@@ -39,7 +39,6 @@ export function renderScenePrompt({ bible, scene, total, language = 'pt-BR', for
   const parts = [
     header(scene, total, { aspect, seconds: scene.seconds }),
     renderBibleBlock(bible, { hasReference }),
-    `SHOT PURPOSE (${scene.role}): ${scene.goal || ''}`.trim(),
     `ACTION: ${scene.action || ''}`.trim(),
     scene.camera ? `CAMERA: ${scene.camera}` : '',
     format === FORMATS.UGC ? dialogueLine(scene, language) : (scene.dialogue ? dialogueLine(scene, language) : 'DIALOGUE: none. Music-driven product film.'),
