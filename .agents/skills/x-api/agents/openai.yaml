@@ -1,7 +1,0 @@
-interface:
-  display_name: "X API"
-  short_description: "X API posting, timelines, and analytics"
-  brand_color: "#000000"
-  default_prompt: "Use $x-api to build X API posting, timeline, or analytics workflows."
-policy:
-  allow_implicit_invocation: true

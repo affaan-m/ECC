@@ -1,7 +1,0 @@
-interface:
-  display_name: "Backend Patterns"
-  short_description: "API, database, and server-side patterns"
-  brand_color: "#F59E0B"
-  default_prompt: "Use $backend-patterns to apply backend architecture and API patterns."
-policy:
-  allow_implicit_invocation: true

@@ -1,4 +1,0 @@
-interface:
-  display_name: "Terminal Opener"
-  short_description: "Open commands safely in visible terminals"
-  default_prompt: "Use $terminal-opener to open an executable and its argument array in a visible terminal."

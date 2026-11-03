@@ -1,9 +1,0 @@
-{
-  "schemaVersion": 1,
-  "id": "skill-registry@1",
-  "inventory": {
-    "source": "manifests/install-modules.json",
-    "skillsRoot": "skills"
-  },
-  "overrides": []
-}

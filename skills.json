@@ -1,0 +1,39 @@
+{
+  "default_profiles": [
+    "core",
+    "go",
+    "web",
+    "rust",
+    "zig"
+  ],
+  "profiles": {
+    "core": [
+      "ecc-security",
+      "ecc-performance",
+      "ecc-verification"
+    ],
+    "go": [
+      "ecc-go"
+    ],
+    "web": [
+      "ecc-typescript",
+      "ecc-vue",
+      "ecc-react",
+      "ecc-node-backend",
+      "ecc-e2e",
+      "ecc-accessibility"
+    ],
+    "rust": [
+      "ecc-rust",
+      "ecc-rust-unsafe",
+      "ecc-rust-navigation"
+    ],
+    "zig": [
+      "ecc-zig"
+    ],
+    "infra": [
+      "ecc-postgres",
+      "ecc-docker"
+    ]
+  }
+}

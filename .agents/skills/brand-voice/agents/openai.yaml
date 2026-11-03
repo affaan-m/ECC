@@ -1,7 +1,0 @@
-interface:
-  display_name: "Brand Voice"
-  short_description: "Source-derived writing style profiles"
-  brand_color: "#0EA5E9"
-  default_prompt: "Use $brand-voice to derive and reuse a source-grounded writing style."
-policy:
-  allow_implicit_invocation: true

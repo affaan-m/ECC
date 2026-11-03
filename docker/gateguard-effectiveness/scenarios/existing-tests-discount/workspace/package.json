@@ -1,7 +1,0 @@
-{
-  "name": "shop",
-  "private": true,
-  "scripts": {
-    "test": "node tests/run.js"
-  }
-}

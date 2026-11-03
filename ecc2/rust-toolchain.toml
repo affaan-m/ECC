@@ -1,4 +1,0 @@
-[toolchain]
-# Minimum 1.85 required: several dependencies use edition2024.
-channel = "1.96"
-components = ["rustfmt", "clippy"]

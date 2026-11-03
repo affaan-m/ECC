@@ -1,7 +1,0 @@
-interface:
-  display_name: "Brand Discovery"
-  short_description: "Adaptive multi-session brand identity interviews"
-  brand_color: "#8B5CF6"
-  default_prompt: "Use $brand-discovery to run a structured brand identity interview."
-policy:
-  allow_implicit_invocation: true

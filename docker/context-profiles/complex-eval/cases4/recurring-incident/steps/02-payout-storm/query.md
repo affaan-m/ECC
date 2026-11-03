@@ -1,1 +1,0 @@
-Finance just flagged that their payout batch job is about to start retrying on timeouts, and payout retries can double-pay vendors. Same family of problem as the refunds — handle it. One hard requirement: a retried payout must never pay a vendor twice, even if the service restarts between the attempts.

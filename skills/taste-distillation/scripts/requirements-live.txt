@@ -1,3 +1,0 @@
-# Install only for separately authorized provider execution.
--r requirements.txt
-fal-client

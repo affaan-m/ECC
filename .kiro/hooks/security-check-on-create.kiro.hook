@@ -1,8 +1,0 @@
-{
-  "version": "1.0.0",
-  "enabled": true,
-  "name": "security-check-on-create",
-  "description": "Run a quick security check when new files are created in sensitive directories.",
-  "when": { "type": "fileCreated", "patterns": ["**/auth/**", "**/api/**", "**/middleware/**"] },
-  "then": { "type": "askAgent", "prompt": "A new file was created in a security-sensitive directory. Check for common security issues: hardcoded secrets, missing input validation, SQL injection risks, missing authentication/authorization checks." }
-}

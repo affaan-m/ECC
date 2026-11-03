@@ -1,1 +1,0 @@
-Customers are reporting duplicate refunds again — see docs/incidents.md. When a refund request comes in without an idempotency key and the caller retries, we refund the customer twice. Fix it, and make sure this stops being a recurring incident — it's the third time this quarter.
