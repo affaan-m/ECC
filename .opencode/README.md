@@ -224,7 +224,7 @@ Full configuration in `opencode.json`:
 ```json
 {
   "$schema": "https://opencode.ai/config.json",
-  "plugin": ["./plugins"],
+  "plugin": ["./plugins/ecc-hooks.ts"],
   "instructions": [
     "skills/tdd-workflow/SKILL.md",
     "skills/security-review/SKILL.md"
@@ -243,6 +243,10 @@ selection, and its subagents inherit the invoking primary agent's model.
 MIT
 
 Home-target installations keep `plugins/index.ts` inert even with hooks enabled.
-OpenCode automatically loads `plugins/ecc-hooks.ts`; loading the barrel as well
-would initialize every ECC hook twice. The source and published package barrel
-remain available for module imports.
+OpenCode 2.x scans every root-level file in a plugins directory **and** loads the
+directory through `index.ts`, so the config points directly at
+`plugins/ecc-hooks.ts` and the barrel stays a distinct-id stub
+(`ecc-hooks-entry`). Re-exporting the real definition from `index.ts` would
+register the id `ecc-hooks` two-to-three times, and OpenCode marks every entry
+after the first as failed (`Duplicate plugin ID`). The source and published
+package barrel remain available for module imports.
