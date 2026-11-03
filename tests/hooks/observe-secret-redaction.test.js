@@ -52,6 +52,15 @@ if (process.platform === 'win32') {
   // Synthetic canary data proves that captured credential-shaped text is masked.
   const canary = 'CANARY_TOKEN_abcdefghijk';
   const pemCanary = 'MIIEcanaryPEMbodyAAAA';
+  // Prefixes are split so secret scanners do not flag the synthetic fixtures.
+  const anthropicCanary = 'CANARYanthropic_Key-0123456789abcdefghijklmnop';
+  const anthropicKey = `${'sk-'}ant-api03-${anthropicCanary}`;
+  const openaiCanary = 'CANARYopenaiProject0123456789abcdefghij';
+  const openaiProjectKey = `${'sk-'}proj-${openaiCanary}`;
+  const legacyCanary = 'CANARYlegacy0123456789abcdefghijklmnopqrstu';
+  const legacyKey = `${'sk-'}${legacyCanary}`;
+  const jwtCanary = 'Q0FOQVJZc2lnbmF0dXJl';
+  const jwt = `${'eyJ'}hbGciOiJIUzI1NiJ9.eyJzdWIiOiJjYW5hcnkifQ.${jwtCanary}`;
   for (const [label, content, secret = canary] of [
     ['double-quoted source', 'const apiKey = "CANARY_TOKEN_abcdefghijk";'],
     ['single-quoted source', "const password = 'CANARY_TOKEN_abcdefghijk';"],
@@ -68,7 +77,12 @@ if (process.platform === 'win32') {
     ['truncated PEM private key block', `-----BEGIN OPENSSH ${'PRIVATE'} KEY-----\n${pemCanary}`, pemCanary],
     ['GitHub classic token', `GH_PAT=${'ghp_'}CANARY${'0'.repeat(30)}`, `CANARY${'0'.repeat(30)}`],
     ['GitHub fine-grained token', `use ${'github_pat_'}CANARY_${'1'.repeat(40)}`, `CANARY_${'1'.repeat(40)}`],
-    ['AWS access key id', `key id ${'AKIA'}CANARY0EXAMPLE00`, 'CANARY0EXAMPLE00']
+    ['AWS access key id', `key id ${'AKIA'}CANARY0EXAMPLE00`, 'CANARY0EXAMPLE00'],
+    // Bare sk- keys and JWTs carry no keyword, so only their shape gives them away (#3846).
+    ['bare Anthropic key', `echo ${anthropicKey} > key.txt`, anthropicCanary],
+    ['bare OpenAI project key', `client = OpenAI(${openaiProjectKey})`, openaiCanary],
+    ['bare legacy sk- key', `KEYS = [${legacyKey}]`, legacyCanary],
+    ['bare JWT', `curl -H "X-Session: ${jwt}" https://api.example.com`, jwtCanary]
   ]) {
     test(`redacts ${label} before persisting tool input`, () => {
       const records = capture('pre', { tool_name: 'Write',
@@ -92,7 +106,9 @@ if (process.platform === 'win32') {
     ['GitHub fine-grained token after tab', `col\t${'github_pat_'}CANARY_${'1'.repeat(40)}`,
       `CANARY_${'1'.repeat(40)}`],
     ['AWS access key id after CRLF', `id:\r\n${'AKIA'}CANARY0EXAMPLE00`, 'CANARY0EXAMPLE00'],
-    ['AWS session key id after newline', `id:\n${'ASIA'}CANARY0EXAMPLE00`, 'CANARY0EXAMPLE00']
+    ['AWS session key id after newline', `id:\n${'ASIA'}CANARY0EXAMPLE00`, 'CANARY0EXAMPLE00'],
+    ['Anthropic key after newline', `key:\n${anthropicKey}`, anthropicCanary],
+    ['JWT after tab', `jwt\t${jwt}`, jwtCanary]
   ]) {
     test(`redacts ${label} in structured tool output`, () => {
       const records = capture('post', { tool_name: 'Read',
@@ -101,6 +117,29 @@ if (process.platform === 'win32') {
       assert.ok(records.includes('[REDACTED]'));
     });
   }
+
+  // The three commands from #3846. Only the first two have a keyword in front of the key.
+  for (const command of [
+    `ANTHROPIC_API_KEY=${anthropicKey} claude -p hi`,
+    `curl -H "x-api-key: ${anthropicKey}" https://api.example.com`,
+    `echo ${anthropicKey} > key.txt`
+  ]) {
+    test(`redacts the Anthropic key in Bash input and output: ${command.split(' ')[0]}`, () => {
+      for (const records of [
+        capture('pre', { tool_name: 'Bash', tool_input: { command } }),
+        capture('post', { tool_name: 'Bash', tool_input: { command: 'cat key.txt' },
+          tool_response: { stdout: command, stderr: '' } })
+      ]) {
+        assert.ok(!records.includes(anthropicCanary), 'Anthropic key persisted');
+        assert.ok(records.includes('[REDACTED]'));
+      }
+    });
+  }
+  test('redacts a bare Anthropic key in the parse-error fallback', () => {
+    const records = capture('post', JSON.stringify([`echo ${anthropicKey}`]), 'parse_error');
+    assert.ok(!records.includes(anthropicCanary), 'Anthropic key persisted');
+    assert.ok(records.includes('[REDACTED]'));
+  });
 
   // Capture truncation (5000 chars, 2000 in the parse-error fallback) can cut a
   // DSN right before its '@'; the password must still be redacted (#3568).
@@ -148,7 +187,17 @@ if (process.platform === 'win32') {
     'password_hash = hashlib.sha256(pw)',
     'fetch(http://localhost:8080/api/v1)',
     'git clone git@github.com:org/repo.git',
-    'https://user@example.com/path'
+    'https://user@example.com/path',
+    // Hashes, ids and base64 that look random but are not keys (#3846).
+    'git show 3f9a1c2b7e4d5f6a8b9c0d1e2f3a4b5c6d7e8f90',
+    'sha256 e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855',
+    'id 550e8400-e29b-41d4-a716-446655440000',
+    'background: url(data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==);',
+    'payload: data:application/json;base64,eyJhIjoxLCJiIjoyLCJjIjozfQ==',
+    'git checkout -b sk-learn-upgrade-for-pipelines',
+    'risk-assessment-for-the-quarterly-report-v2',
+    'ssh deploy@eyeglasses.example.com',
+    'Keys start with the sk- prefix.'
   ];
   test('keeps ordinary code and credential-free URLs unredacted', () => {
     const records = capture('post', { tool_name: 'Read',
