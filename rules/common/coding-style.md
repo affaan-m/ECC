@@ -31,6 +31,9 @@ Rationale: Immutable data prevents hidden side effects, makes debugging easier, 
 - Do not build features or abstractions before they are needed
 - Avoid speculative generality
 - Start simple, then refactor when the pressure is real
+- No abstraction before the second caller: no interface with a single
+  implementation, no factory for one product, no config option for a value
+  that never varies
 
 ## File Organization
 
