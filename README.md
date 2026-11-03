@@ -1345,7 +1345,7 @@ The plugin automatically detects your preferred package manager (npm, pnpm, yarn
 3. **package.json**: `packageManager` field
 4. **Lock file**: Detection from package-lock.json, yarn.lock, pnpm-lock.yaml, or bun.lockb
 5. **Global config**: `~/.claude/package-manager.json`
-6. **Fallback**: First available package manager
+6. **Fallback**: npm
 
 To set your preferred package manager:
 
