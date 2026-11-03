@@ -279,8 +279,9 @@ _SECRET_RE = re.compile(
 )
 # Value-shaped secrets that carry no keyword: PEM private key blocks (to END or
 # end of the truncated text), GitHub tokens, AWS key IDs, Anthropic and OpenAI
-# style sk- keys, JWTs (eyJ header, payload, optional signature) and DSN
-# passwords (scheme://user:PASSWORD@host keeps scheme and user). Each branch is anchored
+# style sk- keys and JWTs (eyJ header, payload, optional signature; either one
+# cut by truncation ends at \Z), and DSN passwords (scheme://user:PASSWORD@host
+# keeps scheme and user). Each branch is anchored
 # on a literal prefix and uses bounded or non-overlapping classes (#2278).
 # Tokens may follow a JSON escape (\n, \t, \uXXXX) since dict I/O is encoded
 # before scrubbing; a DSN cut by truncation before its "@" ends at \Z,
@@ -289,7 +290,7 @@ _SECRET_RE = re.compile(
 _SECRET_VALUE_RE = re.compile(
     r"-----BEGIN[A-Z ]{0,40}PRIVATE KEY-----[\s\S]*?(?:-----END[A-Z ]{0,40}PRIVATE KEY-----|\Z)"
     r"|(?:(?<![A-Za-z0-9_])|(?<=\\[bfnrt])|(?<=\\u[0-9a-fA-F]{4}))(?:gh[pousr]_[A-Za-z0-9]{20,255}|github_pat_[A-Za-z0-9_]{20,255}|(?:AKIA|ASIA)[A-Z0-9]{16})\b"
-    r"|(?:(?<![A-Za-z0-9_-])|(?<=\\[bfnrt])|(?<=\\u[0-9a-fA-F]{4}))(?:sk-(?:ant|proj|svcacct|admin|or)-[A-Za-z0-9_-]{20,512}|sk-[A-Za-z0-9]{20,512}(?![A-Za-z0-9_-])|eyJ[A-Za-z0-9_-]{8,1024}\.[A-Za-z0-9_-]{8,8192}\.[A-Za-z0-9_-]{0,1024})"
+    r"|(?:(?<![A-Za-z0-9_-])|(?<=\\[bfnrt])|(?<=\\u[0-9a-fA-F]{4}))(?:sk-(?:ant|proj|svcacct|admin|or)-(?:[A-Za-z0-9_-]{20,512}|[A-Za-z0-9_-]{0,19}\Z)|sk-(?:[A-Za-z0-9]{20,512}(?![A-Za-z0-9_-])|[A-Za-z0-9]{1,19}\Z)|eyJ[A-Za-z0-9_-]{8,1024}(?:\.[A-Za-z0-9_-]{8,8192}\.[A-Za-z0-9_-]{0,1024}|(?:\.[A-Za-z0-9_-]{0,8192})?\Z))"
     r"""|(?<=://)(?:(?<=https://)|(?<=http://)|(?<!https://)(?<!http://)())([^\s:/@"\\]{1,256}:)(?(1)|(?!\d{1,5}\Z))[^\s@/"\\]{1,256}(?=@|\Z)"""
 )
 
@@ -366,8 +367,9 @@ _SECRET_RE = re.compile(
 )
 # Value-shaped secrets that carry no keyword: PEM private key blocks (to END or
 # end of the truncated text), GitHub tokens, AWS key IDs, Anthropic and OpenAI
-# style sk- keys, JWTs (eyJ header, payload, optional signature) and DSN
-# passwords (scheme://user:PASSWORD@host keeps scheme and user). Each branch is anchored
+# style sk- keys and JWTs (eyJ header, payload, optional signature; either one
+# cut by truncation ends at \Z), and DSN passwords (scheme://user:PASSWORD@host
+# keeps scheme and user). Each branch is anchored
 # on a literal prefix and uses bounded or non-overlapping classes (#2278).
 # Tokens may follow a JSON escape (\n, \t, \uXXXX) since dict I/O is encoded
 # before scrubbing; a DSN cut by truncation before its "@" ends at \Z,
@@ -376,7 +378,7 @@ _SECRET_RE = re.compile(
 _SECRET_VALUE_RE = re.compile(
     r"-----BEGIN[A-Z ]{0,40}PRIVATE KEY-----[\s\S]*?(?:-----END[A-Z ]{0,40}PRIVATE KEY-----|\Z)"
     r"|(?:(?<![A-Za-z0-9_])|(?<=\\[bfnrt])|(?<=\\u[0-9a-fA-F]{4}))(?:gh[pousr]_[A-Za-z0-9]{20,255}|github_pat_[A-Za-z0-9_]{20,255}|(?:AKIA|ASIA)[A-Z0-9]{16})\b"
-    r"|(?:(?<![A-Za-z0-9_-])|(?<=\\[bfnrt])|(?<=\\u[0-9a-fA-F]{4}))(?:sk-(?:ant|proj|svcacct|admin|or)-[A-Za-z0-9_-]{20,512}|sk-[A-Za-z0-9]{20,512}(?![A-Za-z0-9_-])|eyJ[A-Za-z0-9_-]{8,1024}\.[A-Za-z0-9_-]{8,8192}\.[A-Za-z0-9_-]{0,1024})"
+    r"|(?:(?<![A-Za-z0-9_-])|(?<=\\[bfnrt])|(?<=\\u[0-9a-fA-F]{4}))(?:sk-(?:ant|proj|svcacct|admin|or)-(?:[A-Za-z0-9_-]{20,512}|[A-Za-z0-9_-]{0,19}\Z)|sk-(?:[A-Za-z0-9]{20,512}(?![A-Za-z0-9_-])|[A-Za-z0-9]{1,19}\Z)|eyJ[A-Za-z0-9_-]{8,1024}(?:\.[A-Za-z0-9_-]{8,8192}\.[A-Za-z0-9_-]{0,1024}|(?:\.[A-Za-z0-9_-]{0,8192})?\Z))"
     r"""|(?<=://)(?:(?<=https://)|(?<=http://)|(?<!https://)(?<!http://)())([^\s:/@"\\]{1,256}:)(?(1)|(?!\d{1,5}\Z))[^\s@/"\\]{1,256}(?=@|\Z)"""
 )
 

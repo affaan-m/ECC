@@ -42,6 +42,13 @@ function capture(phase, input, expectedEvent) {
   }
 }
 
+// The persisted input/output is the scrubbed JSON of the tool payload, so one
+// field can be compared exactly instead of only checking a canary is gone.
+function capturedField(records, field) {
+  const record = JSON.parse(records);
+  return JSON.parse(record.event === 'tool_start' ? record.input : record.output)[field];
+}
+
 console.log('=== Actual registered observation secret redaction ===');
 if (process.platform === 'win32') {
   console.log('Skipping shell fixtures: native Windows runner requires platform CI.');
@@ -89,6 +96,9 @@ if (process.platform === 'win32') {
         tool_input: { file_path: '/tmp/example.js', content } });
       assert.ok(!records.includes(secret), 'seeded credential persisted');
       assert.ok(records.includes('[REDACTED]'));
+      if (label === 'bare JWT') {
+        assert.equal(capturedField(records, 'content'), content.replace(jwt, '[REDACTED]'));
+      }
     });
     test(`redacts ${label} before persisting structured tool output`, () => {
       const records = capture('post', { tool_name: 'Read',
@@ -131,7 +141,8 @@ if (process.platform === 'win32') {
           tool_response: { stdout: command, stderr: '' } })
       ]) {
         assert.ok(!records.includes(anthropicCanary), 'Anthropic key persisted');
-        assert.ok(records.includes('[REDACTED]'));
+        const field = JSON.parse(records).event === 'tool_start' ? 'command' : 'stdout';
+        assert.equal(capturedField(records, field), command.replace(anthropicKey, '[REDACTED]'));
       }
     });
   }
@@ -140,6 +151,32 @@ if (process.platform === 'win32') {
     assert.ok(!records.includes(anthropicCanary), 'Anthropic key persisted');
     assert.ok(records.includes('[REDACTED]'));
   });
+
+  // Truncation can also cut a bare JWT inside its payload or a key inside its
+  // body. What is left at the end of the capture must still be redacted.
+  const jwtKept = jwt.slice(0, jwt.indexOf('.') + 10);
+  const jwtPayloadStart = jwtKept.slice(jwt.indexOf('.') + 1);
+  const keyKept = anthropicKey.slice(0, 'sk-ant-api03-'.length + 12);
+  const cutAt = (end, value, kept) => `${'a'.repeat(end - kept.length - 1)} ${value}`;
+  for (const [label, value, kept, leak] of [
+    ['JWT', jwt, jwtKept, jwtPayloadStart],
+    ['Anthropic key', anthropicKey, keyKept, keyKept.slice('sk-ant-api03-'.length)]
+  ]) {
+    for (const [where, phase, input, expectedEvent] of [
+      ['string tool output', 'post', { tool_name: 'Bash', tool_input: { command: 'env' },
+        tool_response: cutAt(5000, value, kept) }],
+      // json.dumps prefixes '{"content": "' (13 chars) before the value.
+      ['structured tool output', 'post', { tool_name: 'Read', tool_input: { file_path: '/tmp/x' },
+        tool_response: { content: cutAt(5000 - 13, value, kept) } }],
+      ['parse-error fallback', 'post', JSON.stringify([cutAt(2000 - 2, value, kept)]), 'parse_error']
+    ]) {
+      test(`redacts the ${label} cut at the truncation boundary in ${where}`, () => {
+        const records = capture(phase, input, expectedEvent);
+        assert.ok(!records.includes(leak), `cut ${label} persisted`);
+        assert.ok(records.includes('[REDACTED]'));
+      });
+    }
+  }
 
   // Capture truncation (5000 chars, 2000 in the parse-error fallback) can cut a
   // DSN right before its '@'; the password must still be redacted (#3568).
