@@ -183,11 +183,27 @@ function spawnCommand(
     process.platform === "win32" &&
     /^(npx|npm|pnpm|yarn|bun)(\.cmd)?$/i.test(command)
   ) {
+    // R2-2: cmd.exe expands %VAR% and honours embedded quotes even inside
+    // "double quotes", so backslash-escaping a quote here is not safe. Reject
+    // any argument carrying a quote, percent sign, or line break outright
+    // (line breaks would also terminate the /c command string). Legitimate
+    // package-manager invocations never need these characters; callers already
+    // surface the rejection through run()'s rejection path.
+    const unsafe = args.find((value) => /["%\r\n]/.test(value))
+    if (unsafe !== undefined) {
+      throw new Error(
+        `Refusing to launch package-manager shim with unsafe argument: ${JSON.stringify(unsafe)}`,
+      )
+    }
     const shim = `${command.replace(/\.cmd$/i, "")}.cmd`
-    const quote = (value: string) => `"${value.replace(/"/g, '\\"')}"`
+    const quote = (value: string) => `"${value}"`
+    // Canonical `/s` form: wrap the whole command string in one outer pair of
+    // quotes. cmd strips exactly that outer pair and executes the remainder
+    // verbatim, so the quoted shim path resolves instead of being re-split.
+    const inner = [shim, ...args].map(quote).join(" ")
     return {
       file: process.env.ComSpec || "cmd.exe",
-      spawnArgs: ["/d", "/s", "/c", [shim, ...args].map(quote).join(" ")],
+      spawnArgs: ["/d", "/s", "/c", `"${inner}"`],
       verbatim: true,
     }
   }
@@ -366,7 +382,7 @@ async function createEccRuntime(input: {
       if (level === "error") console.error(line)
       else if (level === "warn") console.warn(line)
       else if (level === "debug") console.debug(line)
-      else console.log(line)
+      else console.info(line)
     } catch {
       // Logging must never break a hook.
     }
@@ -1025,7 +1041,11 @@ export const ECCHooksPluginDefinition = {
       registrations.push(await ctx.tool.hook("execute.before", safe("execute.before", (event: LooseRecord) => hooks["tool.execute.before"](toToolInput(event), {}))))
       registrations.push(
         await ctx.tool.hook("execute.after", safe("execute.after", (event: LooseRecord) =>
-          hooks["tool.execute.after"](toToolInput(event), { result: event.result ?? event.output }),
+          // R2-1: hand the shared handler the tool output object directly. The
+          // skill tracker reads error fields (isError/is_error/status/error) off
+          // `tool_response` itself; a `{ result: … }` wrapper made failed skill
+          // runs look like successes.
+          hooks["tool.execute.after"](toToolInput(event), event.result ?? event.output),
         )),
       )
     }
@@ -1208,7 +1228,7 @@ async function disposeRegistrations(
 
 function logStartup(directory: string) {
   // Mirrors the V1 startup line used in server-log triage (TROUBLESHOOTING.md).
-  console.log(`[ecc] hooks plugin v${getECCVersion(findEccRootDir(PLUGIN_DIR, ECC_ROOT_PROBES.root))} loaded (directory=${directory})`)
+  console.info(`[ecc] hooks plugin v${getECCVersion(findEccRootDir(PLUGIN_DIR, ECC_ROOT_PROBES.root))} loaded (directory=${directory})`)
 }
 
 export default ECCHooksPluginDefinition

@@ -830,17 +830,42 @@ async function main() {
             assert.strictEqual(call.options.shell, false, "spawn must never use shell:true")
             if (process.platform === "win32") {
               // Routed through cmd.exe ONLY as the documented .cmd-shim
-              // escape: /d /s /c with every argument double-quoted, so the
-              // & ; | characters in the path are data, not separators.
+              // escape: /d /s /c with the complete command string wrapped in
+              // one outer quote pair (which cmd strips) and every argument
+              // double-quoted inside it, so the & ; | characters in the path
+              // are data, not separators.
               assert.match(call.file, /cmd\.exe$/i)
               assert.deepStrictEqual(call.args.slice(0, 3), ["/d", "/s", "/c"])
-              const inner = call.args[3]
+              const commandString = call.args[3]
+              assert.ok(
+                commandString.startsWith('"') && commandString.endsWith('"'),
+                `the full command must carry the /s outer quote pair: ${commandString}`,
+              )
+              // cmd strips exactly the outer pair; what it then executes is
+              // the remainder.
+              const inner = commandString.slice(1, -1)
               assert.ok(inner.includes(`"${evil}"`), `evil path must be quoted inside: ${inner}`)
               assert.strictEqual(
                 unquotedMetachars(inner),
                 "",
                 `unquoted shell metacharacters survived: ${inner}`,
               )
+
+              // R2-2: characters cmd expands or that terminate quoting even
+              // INSIDE double quotes (quote, percent, line breaks) must be
+              // refused outright — never escaped, never spawned.
+              resetSpawns()
+              await hooks["file.edited"]({ path: 'evil" %PATH% expand.ts' })
+              assert.strictEqual(spawnCalls.length, 0, "quote/percent-bearing args must never reach spawn")
+              assert.ok(
+                client.logs.some(
+                  (entry) => entry.level === "debug" && entry.message.includes("unsafe argument"),
+                ),
+                "the shim refusal must be visible in the debug log",
+              )
+              resetSpawns()
+              await hooks["file.edited"]({ path: "evil\r\nx && calc.ts" })
+              assert.strictEqual(spawnCalls.length, 0, "line-break-bearing args must never reach spawn")
             } else {
               assert.strictEqual(call.file, "npx")
               assert.deepStrictEqual(call.args, ["prettier", "--write", evil])
@@ -964,6 +989,45 @@ async function main() {
         // Tool hooks run without throwing.
         await ctx.state.handlers["tool.execute.before"]({ tool: "write", callID: "c1", input: { filePath: "a.ts" } })
         await ctx.state.handlers["tool.execute.after"]({ tool: "write", callID: "c1", input: { filePath: "a.ts" }, output: {} })
+
+        // R2-1: the execute.after adapter must hand the skill tracker the RAW
+        // tool output. The tracker reads error fields (is_error/isError/
+        // status/error) directly off tool_response, so a `{ result: … }`
+        // wrapper made failed skills record as successes.
+        {
+          const previousHome = process.env.HOME
+          const previousUserProfile = process.env.USERPROFILE
+          const skillHome = fs.mkdtempSync(path.join(os.tmpdir(), "ecc-v2-skill-home-"))
+          process.env.HOME = skillHome
+          process.env.USERPROFILE = skillHome
+          try {
+            await ctx.state.handlers["tool.execute.after"]({
+              tool: "skill",
+              callID: "c2",
+              input: { name: "code-review" },
+              output: { output: "skill crashed", is_error: true },
+            })
+            const runs = readRecordedRuns(skillHome)
+            assert.strictEqual(runs.length, 1, "the skill run must be recorded through V2")
+            assert.strictEqual(
+              runs[0].outcome,
+              "failure",
+              "an error-bearing skill response must record as failure, not success",
+            )
+            await ctx.state.handlers["tool.execute.after"]({
+              tool: "skill",
+              callID: "c3",
+              input: { name: "code-review" },
+              output: { output: "all good" },
+            })
+            const both = readRecordedRuns(skillHome)
+            assert.strictEqual(both.length, 2)
+            assert.strictEqual(both[1].outcome, "success", "clean responses still record as success")
+          } finally {
+            restoreEnv({ HOME: previousHome, USERPROFILE: previousUserProfile })
+            fs.rmSync(skillHome, { recursive: true, force: true })
+          }
+        }
 
         // Session compaction appends ECC context through the V2 event object.
         const compactionEvent = { system: [] }

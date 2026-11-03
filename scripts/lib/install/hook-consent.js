@@ -233,6 +233,17 @@ function isInertOpenCodePluginStub(content) {
     || text === LEGACY_DISABLED_OPENCODE_PLUGIN_CONTENT;
 }
 
+// Exact historical disabled-entrypoint payloads that earlier ECC releases
+// wrote to EVERY plugin file, barrel included. Retained copies of these are
+// migrated in place to the current expected stub before the strict
+// deactivation gate verifies the install; a rewrite is only allowed for
+// files whose managed-recorded digest still matches these bytes.
+function isLegacyDisabledOpenCodePluginStub(content) {
+  const text = content.toString('utf8');
+  return text === DISABLED_OPENCODE_PLUGIN_STUB
+    || text === LEGACY_DISABLED_OPENCODE_PLUGIN_CONTENT;
+}
+
 function isOpenCodeHookActivationOperation(operation = {}) {
   return getOpenCodeSourceActivationKind(operation) !== null;
 }
@@ -472,6 +483,7 @@ module.exports = {
   parseJsoncConfig,
   getDisabledOpenCodePluginContent,
   isInertOpenCodePluginStub,
+  isLegacyDisabledOpenCodePluginStub,
   getOpenCodeActivationPathKind,
   getOpenCodeSourceActivationKind,
   formatHookCapabilityDisclosure,
