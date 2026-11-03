@@ -5,7 +5,7 @@ Extensão do Chrome (Manifest V3) que transforma um briefing em um vídeo UGC ou
 ## Como funciona
 
 1. **Briefing** (painel lateral): você descreve o vídeo, escolhe UGC ou Produto, idioma, duração (padrão 45 s = 6 clipes de 8 s) e opcionalmente anexa uma foto ou vídeo de referência (de um vídeo, a extensão extrai um quadro).
-2. **Roteiro**: um LLM escreve um JSON com a *bíblia visual* (pessoa, roupa, cabelo, produto, cenário, luz, câmera, cor, áudio) e uma cena por clipe (ação, fala, câmera, som). Você pode editar tudo. A extensão então monta um prompt por clipe, **repetindo a bíblia palavra por palavra** no topo de cada um, mais notas de continuidade e um prompt negativo. Um validador garante que nenhum prompt perdeu uma âncora da bíblia.
+2. **Roteiro**: por padrão a própria extensão pede o roteiro no chat de `gemini.google.com` (sua assinatura, sem chave de API): abre uma conversa nova, anexa a referência, cola as instruções de direção e lê a resposta. Alternativamente, a API do Gemini ou da OpenAI. O LLM escreve um JSON com a *bíblia visual* (pessoa, roupa, cabelo, produto, cenário, luz, câmera, cor, áudio) e uma cena por clipe (ação, fala, câmera, som). Você pode editar tudo. A extensão então monta um prompt por clipe, **repetindo a bíblia palavra por palavra** no topo de cada um, mais notas de continuidade e um prompt negativo. Um validador garante que nenhum prompt perdeu uma âncora da bíblia.
 3. **Geração**: o service worker abre `gemini.google.com`, e o content script, para cada clipe, inicia a conversa (ou continua a mesma), seleciona a ferramenta de vídeo, anexa a referência, cola o prompt, envia, espera o `<video>` aparecer, captura um quadro (usado como âncora de identidade quando não há referência) e baixa o arquivo.
 4. **Publicar**: legenda, hashtags, texto de gancho e capa prontos para o TikTok. Junte os clipes no CapCut em corte seco e publique em 9:16.
 
@@ -25,6 +25,10 @@ node --test tests/*.test.js
 3. Abra as **Configurações** (ícone ⚙) e escolha quem escreve o roteiro.
 
 ## Autenticação
+
+### App do Gemini (padrão, sem chave)
+
+Basta estar logado em `gemini.google.com`. Em Configurações você pode informar o nome do modelo a escolher no seletor do chat (por exemplo, "Argon"); vazio mantém o modelo atual. Roteiro e clipes são pedidos na mesma aba.
 
 ### Gemini com OAuth (login com Google)
 
@@ -51,7 +55,7 @@ A OpenAI não disponibiliza login OAuth público com a conta do ChatGPT para apl
 - Estar logado em `gemini.google.com` na mesma janela.
 - Não mexer na aba do Gemini enquanto um clipe está sendo gerado.
 
-Cada clipe leva alguns minutos. O fluxo é orientado a eventos: o service worker despacha um clipe, a página responde na hora, e o resultado chega depois como mensagem, acordando o worker para o próximo clipe. Se o Chrome suspender o worker no meio, o estado fica salvo e a fila continua; se a aba do Gemini for fechada, o clipe em andamento é marcado como erro após o tempo limite e pode ser refeito com **refazer**.
+Cada clipe leva alguns minutos. O fluxo é orientado a eventos: o service worker despacha o pedido (roteiro ou clipe), a página responde na hora, e o resultado chega depois como mensagem, acordando o worker para o próximo clipe. Se o Chrome suspender o worker no meio, o estado fica salvo e a fila continua; se a aba do Gemini for fechada, o clipe em andamento é marcado como erro após o tempo limite e pode ser refeito com **refazer**.
 
 ## Quando o Google muda a interface
 

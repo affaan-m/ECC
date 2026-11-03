@@ -16,3 +16,12 @@ test('system prompt demands JSON only and consistency', () => {
   assert.match(s, /ONE JSON object only/);
   assert.match(s, /CONSISTENCY/);
 });
+
+test('chat prompt bundles system and user instructions and asks for a fenced JSON block', async () => {
+  const { chatScriptPrompt } = await import('../src/lib/director-prompt.js');
+  const p = chatScriptPrompt({ brief: 'Bíblia King James 1611 capa dura', targetSeconds: 45, clipSeconds: 8 });
+  assert.match(p, /CONSISTENCY/);
+  assert.match(p, /exactly 6 clips/);
+  assert.match(p, /```json code block/);
+  assert.match(p, /Do not generate images or videos/);
+});

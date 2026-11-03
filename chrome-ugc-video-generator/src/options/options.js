@@ -6,11 +6,12 @@ const send = message => chrome.runtime.sendMessage(message).then(r => {
   return r;
 });
 
-const TEXT_FIELDS = ['projectId', 'geminiApiKey', 'geminiModel', 'openaiApiKey', 'openaiModel', 'omniResolution', 'clipTimeoutMinutes', 'selectorOverrides'];
+const TEXT_FIELDS = ['appModel', 'projectId', 'geminiApiKey', 'geminiModel', 'openaiApiKey', 'openaiModel', 'omniResolution', 'clipTimeoutMinutes', 'selectorOverrides'];
 const RADIO_FIELDS = ['provider', 'renderMode', 'conversationMode'];
 
 function syncBlocks() {
   const provider = document.querySelector('input[name="provider"]:checked')?.value;
+  $('app-block').hidden = provider !== 'app';
   $('gemini-block').hidden = provider !== 'gemini';
   $('openai-block').hidden = provider !== 'openai';
 }

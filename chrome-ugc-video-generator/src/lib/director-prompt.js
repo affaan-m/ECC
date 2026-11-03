@@ -93,3 +93,14 @@ export function userPrompt({ brief, format = FORMATS.UGC, language = 'pt-BR', ta
     `Return JSON with exactly this shape:\n${JSON_SHAPE}`,
   ].filter(Boolean).join('\n\n');
 }
+
+// One message for the Gemini web app (no system prompt there): the same
+// instructions, asking for the JSON inside a fenced block so the chat UI
+// renders it verbatim and the parser can lift it out.
+export function chatScriptPrompt(options) {
+  return [
+    systemPrompt(),
+    userPrompt(options),
+    'Reply with the JSON object inside a single ```json code block and nothing else: no greeting, no explanation, no questions. Do not generate images or videos for this message.',
+  ].join('\n\n');
+}

@@ -26,7 +26,7 @@ export const DEFAULT_SELECTORS = Object.freeze({
   fileInput: ['input[type="file"]'],
   uploadMenu: ['button[aria-label*="Upload" i]', 'button[aria-label*="Enviar arquivo" i]', 'button[aria-label*="Add files" i]', 'button[aria-label*="Adicionar" i]', 'button[aria-label*="Open upload" i]'],
   uploadItemText: /upload files?|fazer upload|enviar arquivo|carregar arquivo|from (your )?(device|computer)|do (seu )?(dispositivo|computador)/i,
-  response: ['model-response', '.model-response', '[data-test-id="model-response"]', 'message-content'],
+  response: ['model-response', '.model-response', '[data-test-id="model-response"]', 'message-content', '.response-container'],
   video: ['video'],
   download: ['button[aria-label*="Download" i]', 'button[aria-label*="Baixar" i]', 'a[download]'],
   generating: ['[aria-label*="generating" i]', '.loading-indicator', 'mat-progress-bar', '[role="progressbar"]'],
@@ -42,4 +42,20 @@ export function mergeSelectors(overrides = {}) {
     }
   }
   return out;
+}
+
+// Selectors for the model picker in the chat header ("Flash", "Argon"...).
+// Only used when the user set a preferred model name in the options page.
+export const MODEL_PICKER_SELECTORS = Object.freeze({
+  modelPicker: ['button[aria-label*="model" i]', 'button[aria-label*="modelo" i]', 'button[data-test-id="bard-mode-menu-button"]', 'bard-mode-switcher button'],
+  modelOption: ['[role="menuitem"]', '[role="option"]', 'button'],
+});
+
+// The Gemini UI wraps code blocks with a language label and a copy button;
+// strip those so the JSON parser sees only the block.
+export function cleanChatAnswer(text) {
+  return String(text || '')
+    .replace(/^\s*(json|JSON)\s*$/gm, '')
+    .replace(/^\s*(copiar c[oó]digo|copy code|content_copy)\s*$/gim, '')
+    .trim();
 }

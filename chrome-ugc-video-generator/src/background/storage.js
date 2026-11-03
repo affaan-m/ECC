@@ -2,7 +2,8 @@
 // so the side panel, options page and worker share one source of truth.
 
 export const DEFAULT_SETTINGS = Object.freeze({
-  provider: 'gemini',
+  provider: 'app',
+  appModel: '',
   geminiModel: 'gemini-4-argon',
   geminiApiKey: '',
   projectId: '',

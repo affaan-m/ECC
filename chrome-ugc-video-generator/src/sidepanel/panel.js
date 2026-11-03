@@ -97,7 +97,7 @@ function clipRow(p) {
   return li;
 }
 
-const STATUS_LABELS = { idle: 'pronto', scripting: 'escrevendo', ready: 'roteiro ok', running: 'gerando', stopped: 'parado', done: 'concluído', error: 'erro' };
+const STATUS_LABELS = { idle: 'pronto', scripting: 'escrevendo roteiro', ready: 'roteiro ok', running: 'gerando', stopped: 'parado', done: 'concluído', error: 'erro' };
 
 function renderStatus(job, status) {
   const pill = $('status-pill');

@@ -47,6 +47,7 @@ async function dispatchInApp(job, item, settings) {
     newChat: item.index === 1 || settings.conversationMode === 'new',
     timeoutMs: (Number(settings.clipTimeoutMinutes) || 10) * 60 * 1000,
     wantAnchor: !job.input?.reference && !job.anchorFrame,
+    model: settings.appModel || '',
     selectors,
   };
   const ack = await chrome.tabs.sendMessage(tab.id, message);

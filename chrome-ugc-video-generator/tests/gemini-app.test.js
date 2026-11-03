@@ -22,3 +22,12 @@ test('selector overrides replace only known keys', () => {
   assert.equal('bogus' in merged, false);
   assert.equal(merged.video, DEFAULT_SELECTORS.video);
 });
+
+test('cleanChatAnswer strips the code block chrome the Gemini UI adds', async () => {
+  const { cleanChatAnswer } = await import('../src/lib/gemini-app.js');
+  const { extractJson } = await import('../src/lib/script-schema.js');
+  const raw = 'JSON\nCopiar código\n```json\n{"a": 1}\n```\n';
+  const cleaned = cleanChatAnswer(raw);
+  assert.doesNotMatch(cleaned, /Copiar/);
+  assert.deepEqual(extractJson(cleaned), { a: 1 });
+});

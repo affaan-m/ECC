@@ -19,7 +19,9 @@
     fileInput: ['input[type="file"]'],
     uploadMenu: ['button[aria-label*="Upload" i]', 'button[aria-label*="Enviar arquivo" i]', 'button[aria-label*="Add files" i]', 'button[aria-label*="Adicionar" i]', 'button[aria-label*="Open upload" i]'],
     uploadItemText: 'upload files?|fazer upload|enviar arquivo|carregar arquivo|from (your )?(device|computer)|do (seu )?(dispositivo|computador)',
-    response: ['model-response', '.model-response', '[data-test-id="model-response"]', 'message-content'],
+    response: ['model-response', '.model-response', '[data-test-id="model-response"]', 'message-content', '.response-container'],
+    modelPicker: ['button[aria-label*="model" i]', 'button[aria-label*="modelo" i]', 'button[data-test-id="bard-mode-menu-button"]', 'bard-mode-switcher button'],
+    modelOption: ['[role="menuitem"]', '[role="option"]', 'button'],
     video: ['video'],
     download: ['button[aria-label*="Download" i]', 'button[aria-label*="Baixar" i]', 'a[download]'],
     generating: ['[aria-label*="generating" i]', '.loading-indicator', 'mat-progress-bar', '[role="progressbar"]'],
@@ -27,6 +29,7 @@
   const SEND_CONFIRM_MS = 12000;
   const TEXT_ONLY_GRACE_MS = 45000;
   const HEARTBEAT_MS = 15000;
+  const ANSWER_STABLE_MS = 5000;
   const MAX_BLOB_BYTES = 200 * 1024 * 1024;
 
   let selectors = { ...DEFAULTS };
@@ -275,11 +278,73 @@
     return false;
   }
 
+  // Picks the model in the chat header when the user asked for one (e.g.
+  // "Argon"). Best effort: a missing picker is not an error.
+  async function selectModel(name) {
+    if (!name) return false;
+    const re = new RegExp(name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
+    const picker = first('modelPicker');
+    if (!picker) return false;
+    if (re.test(picker.innerText || picker.getAttribute('aria-label') || '')) return true;
+    picker.click();
+    await sleep(600);
+    const option = Array.from(document.querySelectorAll(selectors.modelOption.join(','))).find(el => visible(el) && re.test(el.innerText || ''));
+    if (!option) {
+      document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+      return false;
+    }
+    option.click();
+    await sleep(600);
+    return true;
+  }
+
+  // Waits for a text answer created after the send: the newest response must
+  // exist, no progress indicator, and its text unchanged for a few seconds.
+  async function waitForAnswer({ responseCountBefore, timeoutMs, index }) {
+    const started = Date.now();
+    let lastText = '';
+    let stableSince = 0;
+    let lastBeat = 0;
+    while (Date.now() - started < timeoutMs) {
+      const list = responses();
+      const fresh = list.length > responseCountBefore ? list[list.length - 1] : null;
+      const text = fresh ? fresh.innerText.trim() : '';
+      if (text && text === lastText && !isGenerating()) {
+        if (!stableSince) stableSince = Date.now();
+        if (Date.now() - stableSince > ANSWER_STABLE_MS) return text;
+      } else {
+        stableSince = 0;
+        lastText = text;
+      }
+      if (Date.now() - lastBeat > HEARTBEAT_MS) {
+        heartbeat('answering', index);
+        lastBeat = Date.now();
+      }
+      await sleep(800);
+    }
+    throw new Error(`Timed out after ${Math.round(timeoutMs / 60000)} min waiting for the Gemini answer.`);
+  }
+
+  async function ask(msg) {
+    applyOverrides(msg.selectors);
+    if (msg.newChat) await startNewChat();
+    heartbeat('preparing', 'script');
+    const modelSelected = await selectModel(msg.model);
+    const responseCountBefore = responses().length;
+    const attached = await attachImages(msg.images);
+    const editor = await typePrompt(msg.prompt);
+    await sendPrompt(editor);
+    heartbeat('sent', 'script');
+    const text = await waitForAnswer({ responseCountBefore, timeoutMs: msg.timeoutMs || 300000, index: 'script' });
+    return { text, modelSelected, attached };
+  }
+
   async function generateClip(msg) {
     applyOverrides(msg.selectors);
     const index = msg.index;
     if (msg.newChat) await startNewChat();
     heartbeat('preparing', index);
+    await selectModel(msg.model);
     const videosBefore = new Set(videosIn(document));
     const responseCountBefore = responses().length;
     const toolSelected = await selectVideoTool();
@@ -323,6 +388,13 @@
     }
     if (msg?.type === 'gemini:ping') {
       sendResponse({ ok: true });
+      return false;
+    }
+    if (msg?.type === 'gemini:ask') {
+      sendResponse({ accepted: true });
+      ask(msg)
+        .then(result => send({ type: 'script:result', jobId: msg.jobId, result }))
+        .catch(err => send({ type: 'script:error', jobId: msg.jobId, error: err.message || String(err) }));
       return false;
     }
     if (msg?.type === 'gemini:generateClip') {

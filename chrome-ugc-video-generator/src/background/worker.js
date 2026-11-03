@@ -3,7 +3,7 @@
 
 import { getSettings, setSettings, getJob, saveJob, emptyJob } from './storage.js';
 import { getGoogleToken, signOutGoogle, oauthConfigured } from './auth.js';
-import { writeScript, updateScript } from './script-job.js';
+import { writeScript, updateScript, onScriptAnswer } from './script-job.js';
 import { startRun, requestStop, completeClip, failClip, dispatchNext } from './clip-runner.js';
 import { recoverInterrupted, inFlight } from '../lib/run-state.js';
 
@@ -14,8 +14,14 @@ chrome.runtime.onInstalled.addListener(() => {
 // On every worker start-up: a job left "running" with a clip in flight may
 // still get its clip:result (the content script keeps waiting), so give it a
 // grace period; a job running with nothing in flight simply resumes.
+const SCRIPT_TIMEOUT_MS = 6 * 60 * 1000;
+
 async function recoverOnStartup() {
   const job = await getJob();
+  if (job.status === 'scripting' && job.dispatchedAt && Date.now() - job.dispatchedAt > SCRIPT_TIMEOUT_MS) {
+    await saveJob({ ...job, status: 'error', error: 'No script answer from the Gemini page; try again.' });
+    return;
+  }
   if (job.status !== 'running') return;
   if (!inFlight(job)) {
     await dispatchNext();
@@ -83,6 +89,14 @@ const geminiHandlers = {
   },
   'clip:error': async ({ index, error }) => {
     await failClip(index, error || 'Unknown error on the Gemini page');
+    return { ok: true };
+  },
+  'script:result': async ({ jobId, result }) => {
+    await onScriptAnswer({ jobId, result });
+    return { ok: true };
+  },
+  'script:error': async ({ jobId, error }) => {
+    await onScriptAnswer({ jobId, error: error || 'Unknown error on the Gemini page' });
     return { ok: true };
   },
 };

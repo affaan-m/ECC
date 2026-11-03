@@ -19,9 +19,15 @@
       <header class="step-head"><span class="step-num">A</span><h2>Quem escreve o roteiro</h2></header>
       <fieldset class="segmented">
         <legend class="field-label">Provedor</legend>
-        <label><input type="radio" name="provider" value="gemini" checked><span>Gemini (Argon)</span></label>
+        <label><input type="radio" name="provider" value="app" checked><span>App do Gemini (sem chave)</span></label>
+        <label><input type="radio" name="provider" value="gemini"><span>API do Gemini</span></label>
         <label><input type="radio" name="provider" value="openai"><span>OpenAI (GPT)</span></label>
       </fieldset>
+
+      <div id="app-block" class="block">
+        <p class="hint">O roteiro é pedido no chat de gemini.google.com com a sua assinatura: a extensão abre uma conversa nova, anexa a referência, cola as instruções e lê a resposta em JSON. Nenhuma chave de API é usada.</p>
+        <label class="field"><span class="field-label">Modelo a escolher no seletor do chat (opcional)</span><input id="appModel" type="text" placeholder="Ex.: Argon (deixe vazio para manter o atual)"></label>
+      </div>
 
       <div id="gemini-block" class="block">
         <div class="actions">
