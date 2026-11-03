@@ -19,13 +19,32 @@ const MODE_CONFIG = {
   },
 };
 
+// A JWT header is base64url JSON, so it starts with `ey` (`{"`, `{ `) or
+// `ew` (`{` followed by a newline or tab). The common `eyJ` form is always
+// redacted; other headers must decode to an object with an `alg` field.
+function redactJwt(token) {
+  if (token.startsWith('eyJ')) return '<REDACTED>';
+  try {
+    const header = JSON.parse(Buffer.from(token.split('.')[0], 'base64url').toString('utf8'));
+    if (header && typeof header === 'object' && typeof header.alg === 'string') return '<REDACTED>';
+  } catch {
+    // Not a JWT header; keep the text.
+  }
+  return token;
+}
+
 function sanitizeCommand(command) {
   return String(command || '')
     .replace(/\n/g, ' ')
     .replace(/-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----[\s\S]*?(?:-----END [A-Z0-9 ]*PRIVATE KEY-----|$)/g, '<REDACTED>')
     .replace(/\bsk-[A-Za-z0-9_-]{20,}/g, '<REDACTED>')
-    .replace(/\beyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]*/g, '<REDACTED>')
-    .replace(/(\b|_)(secret|api[_-]?key)(\s*[:=]\s*)("[^"]*"|'[^']*'|[^\s"']+)/gi, '$1$2$3<REDACTED>')
+    .replace(/\be[wy][A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]*/g, redactJwt)
+    // Value: "..." with escapes, $'...' with escapes, '...', or a bare word
+    // with backslash escapes. Unterminated quotes are redacted to the end.
+    .replace(
+      /(\b|_)(secret|api[_-]?key)(\s*[:=]\s*)("(?:[^"\\]|\\.)*(?:"|$)|\$'(?:[^'\\]|\\.)*(?:'|$)|'[^']*(?:'|$)|(?:[^\s"'\\]|\\.)+)/gi,
+      '$1$2$3<REDACTED>'
+    )
     .replace(/--token[= ][^ ]*/g, '--token=<REDACTED>')
     .replace(/Authorization:[: ]*[^ ]*[: ]*[^ ]*/gi, 'Authorization:<REDACTED>')
     .replace(/\bAKIA[A-Z0-9]{16}\b/g, '<REDACTED>')

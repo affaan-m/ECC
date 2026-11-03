@@ -96,6 +96,42 @@ if (
 else failed++;
 
 if (
+  test('sanitizeCommand redacts JWTs whose header has whitespace after the brace', () => {
+    const spacedHeader = Buffer.from('{ "alg": "HS256" }').toString('base64url');
+    const newlineHeader = Buffer.from('{\n"alg":"HS256"}').toString('base64url');
+    assert.ok(spacedHeader.startsWith('eyA'), spacedHeader);
+    assert.ok(newlineHeader.startsWith('ew'), newlineHeader);
+    for (const header of [spacedHeader, newlineHeader]) {
+      const token = [header, 'eyJzdWIiOiJmYWtlIn0', 'ZmFrZXNpZ25hdHVyZQ'].join('.');
+      assert.strictEqual(sanitizeCommand(`export TOKEN_VALUE=${token}`), 'export TOKEN_VALUE=<REDACTED>');
+    }
+
+    // Same shape, but the first segment does not decode to a JWT header.
+    const notJwt = 'eyesightdata.example.com';
+    assert.strictEqual(sanitizeCommand(`ping ${notJwt}`), `ping ${notJwt}`);
+  })
+)
+  passed++;
+else failed++;
+
+if (
+  test('sanitizeCommand redacts whole quoted assignment values, including escapes', () => {
+    assert.strictEqual(
+      sanitizeCommand(`app --secret="first\\"${FAKE_VALUE}" --next`),
+      'app --secret=<REDACTED> --next'
+    );
+    assert.strictEqual(
+      sanitizeCommand(`app --secret=$'first\\'${FAKE_VALUE}' --next`),
+      'app --secret=<REDACTED> --next'
+    );
+    assert.strictEqual(sanitizeCommand(`app --secret=first\\"${FAKE_VALUE} --next`), 'app --secret=<REDACTED> --next');
+    assert.strictEqual(sanitizeCommand(`app --secret="${FAKE_VALUE} unterminated`), 'app --secret=<REDACTED>');
+  })
+)
+  passed++;
+else failed++;
+
+if (
   test('sanitizeCommand redacts secret= and api_key= assignments (#3846)', () => {
     assert.strictEqual(
       sanitizeCommand(`app --secret=${FAKE_VALUE} --api_key=${FAKE_VALUE} --api-key="${FAKE_VALUE} two"`),
