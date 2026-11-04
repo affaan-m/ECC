@@ -329,6 +329,22 @@ test('an interpreter that ignores TERM is killed within the hook budget', () => 
   assert.ok(secs < 9, `resolution took ${secs.toFixed(1)} s`);
 }));
 
+test('a timeout without -k (BusyBox before 1.36) still runs the probe', () => withTree(tree => {
+  // The stand-in rejects -k like BusyBox 1.34 and otherwise runs the command.
+  writeScript(tree.fakebin, 'timeout',
+    'case "$1" in -k) echo "usage: timeout [-s SIG] SECS PROG ARGS" >&2; exit 1 ;; esac\nshift\nexec "$@"');
+  writePython(tree.regular, 'python3', 'clv2-ok', '/usr/bin/python3');
+  assert.strictEqual(resolve(tree, [tree.fakebin, tree.regular]), 'python3');
+}));
+
+test('a verdict from a probe the timeout had to kill is rejected', () => withTree(tree => {
+  if (!hasGnuTimeout) return 'skip';
+  // It answers, then hangs, so every later Python call would hang as well.
+  writeScript(tree.regular, 'python3', "printf 'clv2-ok\\r\\n/usr/bin/python3\\r\\n'\nexec sleep 30");
+  writePython(tree.regular2, 'python', 'clv2-ok', '/usr/bin/python');
+  assert.strictEqual(resolve(tree, [tree.regular, tree.regular2]), 'python');
+}));
+
 test('a cache path planted as a symlink to a directory is not written through', () => withAliasTree(tree => {
   // mv onto a symlink to a directory would move the cache file into it.
   const target = path.join(tree.root, 'elsewhere');
