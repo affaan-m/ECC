@@ -37,8 +37,37 @@ if (
       timeout: 15000
     });
     assert.strictEqual(result.status, 1);
-    assert.match(result.stderr, /missing from this installation/i);
-    assert.match(result.stderr, /install-apply\.js/);
+    assert.match(result.stderr, /could not load \.\/lib\/skill-evolution\/health/);
+    assert.match(result.stderr, /--modules commands-core/);
+    assert.match(result.stderr, /full ECC checkout/);
+    assert.doesNotMatch(result.stderr, /Cannot find module/);
+  })
+)
+  passed++;
+else failed++;
+
+const nested = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-health-nested-missing-'));
+fs.mkdirSync(path.join(nested, 'scripts', 'lib'), { recursive: true });
+fs.copyFileSync(script, path.join(nested, 'scripts', 'skills-health.js'));
+fs.cpSync(
+  path.join(__dirname, '..', '..', 'scripts', 'lib', 'skill-evolution'),
+  path.join(nested, 'scripts', 'lib', 'skill-evolution'),
+  { recursive: true }
+);
+// Keep skill-evolution in place but drop the shared helper it requires via
+// `require('../utils')`; the error message must name that module, not claim
+// the whole skill-evolution directory is absent.
+fs.rmSync(path.join(nested, 'scripts', 'lib', 'utils.js'), { force: true });
+
+if (
+  test('a nested missing helper names the real module instead of the directory', () => {
+    const result = spawnSync('node', [path.join(nested, 'scripts', 'skills-health.js')], {
+      encoding: 'utf8',
+      timeout: 15000
+    });
+    assert.strictEqual(result.status, 1);
+    assert.match(result.stderr, /could not load \.\.\/utils/);
+    assert.match(result.stderr, /--modules commands-core/);
     assert.doesNotMatch(result.stderr, /Cannot find module/);
   })
 )
@@ -46,6 +75,7 @@ if (
 else failed++;
 
 fs.rmSync(tmp, { recursive: true, force: true });
+fs.rmSync(nested, { recursive: true, force: true });
 
 console.log(`\n  ${passed} passed, ${failed} failed\n`);
 process.exit(failed > 0 ? 1 : 0);
