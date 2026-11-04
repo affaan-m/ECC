@@ -159,9 +159,15 @@ test('runs the Python\\bin launcher for a WindowsApps python alias when python3 
   assert.deepStrictEqual(run(dirs, [dirs.alias]).map(c => c[0]), ['launcher']);
 }));
 
-test('matches the current user\'s WindowsApps directory case-insensitively', () => withTree(dirs => {
+// Windows and macOS filesystems ignore case, so a lowercase PATH entry names
+// the same WindowsApps directory there. On a case-sensitive filesystem it
+// would be another directory, so the case only runs where case is ignored.
+test('matches the current user\'s WindowsApps directory spelled in another case', () => withTree(dirs => {
   const lower = path.join(dirs.local, 'microsoft', 'windowsapps');
-  fs.mkdirSync(lower, { recursive: true });
+  if (!fs.existsSync(lower)) {
+    console.log('    (skipped: temp filesystem is case-sensitive)');
+    return;
+  }
   writePython(lower, 'python3', 'alias');
   writePython(dirs.launcher, 'python3.exe', 'launcher');
   assert.deepStrictEqual(run(dirs, [lower]).map(c => c[0]), ['launcher']);
