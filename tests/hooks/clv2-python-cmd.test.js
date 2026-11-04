@@ -318,6 +318,32 @@ test('a hanging interpreter is abandoned within the hook budget', () => withTree
   assert.ok(fs.existsSync(cachePath(tree)), 'the python verdict must be cached');
 }));
 
+test('an interpreter that ignores TERM is killed within the hook budget', () => withTree(tree => {
+  if (!hasGnuTimeout) return 'skip';
+  // The ignored TERM survives exec, so only timeout's kill-after ends sleep.
+  writeScript(tree.regular, 'python3', "trap '' TERM\nexec sleep 30");
+  writePython(tree.regular2, 'python', 'clv2-ok', '/usr/bin/python');
+  const started = Date.now();
+  assert.strictEqual(resolve(tree, [tree.regular, tree.regular2]), 'python');
+  const secs = (Date.now() - started) / 1000;
+  assert.ok(secs < 9, `resolution took ${secs.toFixed(1)} s`);
+}));
+
+test('a cache path planted as a symlink to a directory is not written through', () => withAliasTree(tree => {
+  // mv onto a symlink to a directory would move the cache file into it.
+  const target = path.join(tree.root, 'elsewhere');
+  fs.mkdirSync(target);
+  try {
+    fs.symlinkSync(target, cachePath(tree), 'dir');
+  } catch {
+    return 'skip';
+  }
+  const cmd = resolve(tree, [tree.alias, tree.fakebin]);
+  assert.ok(cmd.endsWith('/real dir/python.exe'));
+  assert.deepStrictEqual(fs.readdirSync(target), [], 'nothing may land in the symlink target');
+  assert.deepStrictEqual(fs.readdirSync(tree.home), ['.python-cmd'], 'no temp file may be left behind');
+}));
+
 test('detect-project.sh resolves through the shared resolver', () => withAliasTree(tree => {
   const cmd = resolve(tree, [tree.alias, tree.fakebin], {}, 'detect');
   assert.ok(cmd.endsWith('/real dir/python.exe'), `expected real interpreter, got ${cmd}`);
