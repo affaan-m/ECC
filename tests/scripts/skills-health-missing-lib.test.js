@@ -38,6 +38,7 @@ if (
     });
     assert.strictEqual(result.status, 1);
     assert.match(result.stderr, /could not load \.\/lib\/skill-evolution\/health/);
+    assert.match(result.stderr, /skills-health\.js --dashboard/);
     assert.match(result.stderr, /--modules commands-core/);
     assert.match(result.stderr, /full ECC checkout/);
     assert.doesNotMatch(result.stderr, /Cannot find module/);
@@ -67,6 +68,7 @@ if (
     });
     assert.strictEqual(result.status, 1);
     assert.match(result.stderr, /could not load \.\.\/utils/);
+    assert.match(result.stderr, /skills-health\.js --dashboard/);
     assert.match(result.stderr, /--modules commands-core/);
     assert.doesNotMatch(result.stderr, /Cannot find module/);
   })

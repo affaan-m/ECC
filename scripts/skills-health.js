@@ -15,7 +15,8 @@ try {
   if (error && error.code === 'MODULE_NOT_FOUND' && missing && /skill-evolution/.test(error.message)) {
     console.error(
       `skills-health could not load ${missing}; this installation is missing part of scripts/lib/skill-evolution.\n` +
-      'Run this from a full ECC checkout: node scripts/install-apply.js --target <host> --modules commands-core'
+      'For a one-off report, run from a full ECC checkout: node scripts/skills-health.js --dashboard. ' +
+      'For a non-marketplace install, select commands-core: node scripts/install-apply.js --target <host> --modules commands-core.'
     );
     process.exit(1);
   }
