@@ -160,11 +160,13 @@ _clv2_python_cache_write() {
 _clv2_python_probe() {
   # Sets _clv2_probe_ok (1 when the interpreter meets the minimum version) and
   # _clv2_probe_exe (its sys.executable, possibly empty). Returns 1 when the
-  # interpreter does not answer with a verdict line. The exit status is
-  # ignored: a verdict followed by a failure still describes a working Python.
-  # GNU timeout bounds a hanging alias or stub; Windows' own timeout.exe in
-  # System32 is a different program and is never used.
-  local _out _ok _timeout=""
+  # interpreter does not answer with a verdict line. Other than a timeout, the
+  # exit status is ignored: a verdict followed by a failure still describes a
+  # working Python. timeout bounds a hanging alias or stub; Windows' own
+  # timeout.exe in System32 is a different program and is never used. -k is
+  # passed only where it works (BusyBox before 1.36 has none), checked once
+  # per shell.
+  local _out _ok _rc _timeout=""
   _clv2_probe_ok=""
   _clv2_probe_exe=""
   if _timeout="$(command -v timeout 2>/dev/null)"; then
@@ -173,7 +175,18 @@ _clv2_python_probe() {
     esac
   fi
   if [ -n "$_timeout" ]; then
-    _out="$("$_timeout" -k 1 "$_CLV2_PYTHON_PROBE_TIMEOUT" "$1" -c "$_CLV2_PYTHON_PROBE" 2>/dev/null)"
+    if [ -z "${_clv2_timeout_kill:-}" ]; then
+      _clv2_timeout_kill=no
+      "$_timeout" -k 1 1 true >/dev/null 2>&1 && _clv2_timeout_kill=yes
+    fi
+    if [ "$_clv2_timeout_kill" = yes ]; then
+      _out="$("$_timeout" -k 1 "$_CLV2_PYTHON_PROBE_TIMEOUT" "$1" -c "$_CLV2_PYTHON_PROBE" 2>/dev/null)"
+    else
+      _out="$("$_timeout" "$_CLV2_PYTHON_PROBE_TIMEOUT" "$1" -c "$_CLV2_PYTHON_PROBE" 2>/dev/null)"
+    fi
+    _rc=$?
+    # Timed out (GNU 124, or killed by KILL/TERM): it would hang in use too.
+    case "$_rc" in 124|137|143) return 1 ;; esac
   else
     _out="$("$1" -c "$_CLV2_PYTHON_PROBE" 2>/dev/null)"
   fi
