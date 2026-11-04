@@ -114,10 +114,10 @@ test('a result either carries a Pi tool or is unsupported, never both or neither
   }
 });
 
-test('the tables are frozen and the model tiers are the three Claude tiers in order', () => {
+test('the tables are frozen and the model tiers are the Claude tiers in ascending order', () => {
   assert.ok(Object.isFrozen(CLAUDE_TO_PI_TOOLS));
   assert.ok(Object.isFrozen(CLAUDE_MODEL_TIERS));
-  assert.deepEqual(CLAUDE_MODEL_TIERS, ['haiku', 'sonnet', 'opus']);
+  assert.deepEqual(CLAUDE_MODEL_TIERS, ['haiku', 'sonnet', 'opus', 'fable']);
   assert.throws(() => {
     CLAUDE_TO_PI_TOOLS.WebFetch = 'bash';
   }, TypeError);

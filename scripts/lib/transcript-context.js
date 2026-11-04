@@ -34,6 +34,12 @@ const LARGE_WINDOW_MODEL_MARKER = '[1m]';
 // Checked in order, first match wins. Best-effort and expected to lag new
 // releases; the env override remains the escape hatch for unlisted models.
 const KNOWN_MODEL_WINDOW_TOKENS = [
+  // Opus 4.6/4.7/4.8 ship a documented 1M context but carry no `[1m]` marker in
+  // the transcript, so without these entries a sub-200k session resolves to the
+  // 200k STANDARD window and schedules compaction prematurely (#2290/#2461).
+  ['claude-opus-4-6', LARGE_CONTEXT_WINDOW_TOKENS],
+  ['claude-opus-4-7', LARGE_CONTEXT_WINDOW_TOKENS],
+  ['claude-opus-4-8', LARGE_CONTEXT_WINDOW_TOKENS],
   ['claude-opus-5', LARGE_CONTEXT_WINDOW_TOKENS],
   ['claude-fable-5', LARGE_CONTEXT_WINDOW_TOKENS],
   ['claude-mythos-5', LARGE_CONTEXT_WINDOW_TOKENS]
@@ -142,8 +148,11 @@ function readLatestContextTokens(transcriptPath, options = {}) {
 function resolveContextWindow(tokens, model) {
   const env = (typeof process !== 'undefined' && process.env) || {};
 
-  // Explicit window override wins: 400k models (e.g. Opus 4.x) match neither the
-  // 200k default nor the 1M marker and would otherwise report ~double usage (#2290).
+  // Explicit window override wins: it is the escape hatch for any model whose
+  // true window is neither the 200k default nor a listed/[1m]-marked 1M window
+  // (e.g. an unlisted intermediate-size tier), which would otherwise be scored
+  // against the wrong denominator and misreport usage (#2290). Documented
+  // large-window Opus 4.6/4.7/4.8 are handled by KNOWN_MODEL_WINDOW_TOKENS above.
   const explicitWindow = Number(env.ECC_CONTEXT_WINDOW_TOKENS || '');
   if (Number.isSafeInteger(explicitWindow) && explicitWindow > 0) {
     return { windowTokens: explicitWindow, inferred: false };

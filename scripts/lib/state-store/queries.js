@@ -484,6 +484,10 @@ function createQueryApi(db, { prepareRead = sql => db.prepare(sql) } = {}) {
   `);
   // Read the entire native READY set in SQL instead of truncating to the
   // 100 most recently updated items before checking their eligibility.
+  // Within a priority band, tie-break on creation order (created_at ASC, id ASC)
+  // for FIFO fairness: older READY work is claimed first, and a later touch
+  // (e.g. a GitHub sync rewriting updated_at) cannot hide older items behind
+  // refreshed ones. updated_at ordering here was LIFO and starved old work.
   const nextClaimableWorkItemStatement = prepareRead(`
     SELECT *
     FROM work_items
@@ -495,7 +499,7 @@ function createQueryApi(db, { prepareRead = sql => db.prepare(sql) } = {}) {
       WHEN 'urgent' THEN 1
       WHEN 'low' THEN 3
       ELSE 2
-    END ASC, updated_at DESC, id DESC
+    END ASC, created_at ASC, id ASC
     LIMIT 1
   `);
   const getWorkItemStatement = prepareRead(`

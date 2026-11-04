@@ -82,14 +82,14 @@ function readHarnessCost(sessionId, maxAgeSeconds) {
 // Opus 4.5-4.8 $5/$25, Sonnet 5 $2/$10, Sonnet 4.6 $3/$15, and Haiku 4.5
 // $1/$5. Opus 4.0/4.1 and Opus 3 stay on the legacy $15/$75 tier.
 // Opus 5.5 is $4/$20; Haiku 5.5 is $0.10/$0.50 at <=100K prompt tokens
-// and $0.50/$2.50 above 100K. Sonnet 5.5 retains $2/$10 with $0.10 cache reads.
+// and $0.50/$2.50 above 100K. Sonnet 5.5 retains $2/$10 with $0.20 cache reads.
 const RATE_TABLE = {
   haiku:      { in: 1.00,  out: 5.0,  cacheWrite: 1.25,  cacheRead: 0.10 },
   haiku55:    { in: 0.10,  out: 0.5,  cacheWrite: 0.125, cacheRead: 0.01 },
   haiku55Long: { in: 0.50, out: 2.5,  cacheWrite: 0.625, cacheRead: 0.05 },
   sonnet:     { in: 3.00,  out: 15.0, cacheWrite: 3.75,  cacheRead: 0.30 },
   sonnet5:    { in: 2.00,  out: 10.0, cacheWrite: 2.50,  cacheRead: 0.20 },
-  sonnet55:   { in: 2.00,  out: 10.0, cacheWrite: 2.50,  cacheRead: 0.10 },
+  sonnet55:   { in: 2.00,  out: 10.0, cacheWrite: 2.50,  cacheRead: 0.20 },
   opus:       { in: 5.00,  out: 25.0, cacheWrite: 6.25,  cacheRead: 0.50 },
   opus55:     { in: 4.00,  out: 20.0, cacheWrite: 5.00, cacheRead: 0.20 },
   opusLegacy: { in: 15.00, out: 75.0, cacheWrite: 18.75, cacheRead: 1.50 },
@@ -114,7 +114,27 @@ function getRates(model, usage = {}) {
   if (LEGACY_OPUS_RE.test(m)) return RATE_TABLE.opusLegacy;
   if (/(?:^|[^a-z0-9])opus-5-5(?:[^a-z0-9]|$)/.test(m)) return RATE_TABLE.opus55;
   if (m.includes('opus'))  return RATE_TABLE.opus;
-  return RATE_TABLE.sonnet;
+  // Unrecognized model: fall back to Sonnet pricing, but make the guess
+  // detectable so stale rates for a new/renamed model surface instead of
+  // silently mispricing. Stamp a flag (never mutate the shared frozen-ish row)
+  // and warn once per distinct model id.
+  warnFallbackRateOnce(m);
+  return { ...RATE_TABLE.sonnet, rateSource: 'fallback' };
+}
+
+const _warnedFallbackModels = new Set();
+function warnFallbackRateOnce(model) {
+  const key = model || 'unknown';
+  if (_warnedFallbackModels.has(key)) return;
+  _warnedFallbackModels.add(key);
+  try {
+    process.stderr.write(
+      `[Hook] cost-tracker: no rate entry for model '${key}'; ` +
+      `using Sonnet fallback pricing (rateSource=fallback)\n`
+    );
+  } catch {
+    // Never let logging break cost accounting.
+  }
 }
 
 function isSonnet5(model) {

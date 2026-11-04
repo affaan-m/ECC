@@ -97,12 +97,14 @@ function main() {
       }
     }],
 
-    ["throws on an invalid model tier instead of silently dropping it", () => {
+    ["warns but does not throw on an unrecognized model (one odd file must not break the catalog)", () => {
       const badPath = path.join(__dirname, "..", "fixtures", "agent-invalid-model.md")
       fs.mkdirSync(path.dirname(badPath), { recursive: true })
       fs.writeFileSync(badPath, "---\nname: x\ndescription: x\ntools: Read\nmodel: sonnet4\n---\n\nbody\n")
       try {
-        assert.throws(() => parseAgentFile(badPath), /invalid model tier 'sonnet4'/)
+        let ir
+        assert.doesNotThrow(() => { ir = parseAgentFile(badPath) })
+        assert.equal(ir.model, "sonnet4")
       } finally {
         fs.rmSync(badPath, { force: true })
       }

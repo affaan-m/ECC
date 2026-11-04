@@ -25,7 +25,24 @@ const AGENTS_DIR = path.join(__dirname, '..', '..', 'agents');
 const SCHEMA_PATH = path.join(__dirname, '..', '..', 'schemas', 'agent.schema.json');
 
 const IR_SCHEMA_CONST = 'ecc.agent-ir.v1';
-const VALID_MODELS = ['haiku', 'sonnet', 'opus'];
+// Canonical Claude model tiers, ascending capability (fable is top-tier).
+const VALID_MODELS = ['haiku', 'sonnet', 'opus', 'fable'];
+
+// `inherit` (take the parent/harness model) and explicit dated model ids
+// (e.g. `opus-4-8`, `claude-opus-4-8`, `claude-opus-4-20250514`, `sonnet-5-5`)
+// are legitimate Claude Code model values. Accept them as a passthrough rather
+// than treating them as invalid tiers. A family token must sit at a boundary
+// and be followed by a version segment or end of id, so bare typos like
+// `sonnet4` are NOT treated as plausible ids.
+const PLAUSIBLE_MODEL_ID_RE =
+  /(?:^|[.\-])(?:claude-)?(?:opus|sonnet|haiku|fable|mythos)(?=-\d|$|[.\-])/i;
+
+function isPlausibleModelValue(model) {
+  if (typeof model !== 'string') return false;
+  const m = model.trim().toLowerCase();
+  if (m === 'inherit') return true;
+  return PLAUSIBLE_MODEL_ID_RE.test(m);
+}
 
 let _ajv = null;
 function ajv() {
@@ -104,8 +121,19 @@ function parseAgentFile(filePath) {
   }
 
   const model = raw.model;
-  if (model !== undefined && !VALID_MODELS.includes(model)) {
-    throw new Error(`${filename}: invalid model tier '${model}' (expected haiku, sonnet, or opus)`);
+  // Model-value policy. A single odd model string must NEVER break the whole
+  // catalog build (one bad file would otherwise throw out of parseAllAgents and
+  // take every agent down). Canonical tiers and plausible/dated ids (and
+  // `inherit`) pass silently; a genuinely unknown value is downgraded to a
+  // warning and passed through, not thrown.
+  if (model !== undefined
+    && !VALID_MODELS.includes(model)
+    && !isPlausibleModelValue(model)) {
+    process.stderr.write(
+      `[agent-ir] ${filename}: unrecognized model '${model}' ` +
+      `(expected one of ${VALID_MODELS.join(', ')}, 'inherit', or an explicit model id); ` +
+      `passing through unvalidated\n`
+    );
   }
 
   const ir = {
@@ -126,7 +154,14 @@ function parseAgentFile(filePath) {
 
 function validateIr(ir, filename) {
   const validate = ajv().getSchema(IR_SCHEMA_CONST);
-  const ok = validate(ir);
+  // The IR schema's `model` enum (haiku/sonnet/opus) predates fable and the
+  // explicit/dated model ids and `inherit` that Claude Code now accepts, and
+  // schemas/agent.schema.json is not editable here. Model-value policy is owned
+  // by parseAgentFile above (VALID_MODELS + plausible-id acceptance + warn-on-
+  // unknown), so validate the structural contract with `model` excluded to
+  // avoid a stale-enum false rejection. Every other field is still enforced.
+  const { model: _model, ...irWithoutModel } = ir;
+  const ok = validate(irWithoutModel);
   if (!ok) {
     const detail = (validate.errors || []).map(e => `${e.instancePath} ${e.message}`).join('; ');
     throw new Error(`${filename}: IR validation failed: ${detail}`);

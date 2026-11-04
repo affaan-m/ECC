@@ -715,7 +715,7 @@ function runTests() {
     }]).estimated_cost_usd, 0.0052);
     assert.strictEqual(priceMessages([{
       model: 'claude-sonnet-5-5', usage: { cache_read_input_tokens: 1000 }
-    }]).estimated_cost_usd, 0.0001);
+    }]).estimated_cost_usd, 0.0002);
     assert.strictEqual(priceMessages([{
       model: 'claude-haiku-5-5',
       usage: { cache_creation_input_tokens: 1000, cache_read_input_tokens: 1000 }

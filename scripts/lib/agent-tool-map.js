@@ -56,11 +56,18 @@ function mapToolToPi(claudeTool) {
 }
 
 /**
- * Claude model tiers. Pi resolves its own child model; v1 does not emit a
- * `model` field, so Pi's default applies. The tier is retained in the IR for
- * lossless round-trips and for emitters that do have a model table.
+ * Claude model tiers, ascending capability (fable is top-tier).
+ *
+ * The tier is retained in the IR for lossless round-trips and for emitters that
+ * DO have a model table. For non-Claude harnesses the tier is advisory only:
+ * Claude tier names are not valid native model ids, so an emitter must not drop
+ * the tier silently. The Pi emitter (agent-emit-pi.js) surfaces it loudly
+ * instead — it writes a `# source model tier: <tier>` frontmatter comment per
+ * agent and an aggregate "model tiers preserved as comments … Pi uses its
+ * default child model" note — so Pi's default child model applies while the
+ * author's intended tier stays visible and auditable rather than vanishing.
  */
-const CLAUDE_MODEL_TIERS = Object.freeze(['haiku', 'sonnet', 'opus']);
+const CLAUDE_MODEL_TIERS = Object.freeze(['haiku', 'sonnet', 'opus', 'fable']);
 
 module.exports = {
   CLAUDE_TO_PI_TOOLS,

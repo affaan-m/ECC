@@ -8,7 +8,7 @@ const path = require('path');
 
 const AGENTS_DIR = path.join(__dirname, '../../agents');
 const REQUIRED_FIELDS = ['model', 'tools'];
-const VALID_MODELS = ['haiku', 'sonnet', 'opus'];
+const VALID_MODELS = ['haiku', 'sonnet', 'opus', 'fable'];
 
 function extractFrontmatter(content) {
   // Strip BOM if present (UTF-8 BOM: \uFEFF)

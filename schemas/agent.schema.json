@@ -32,8 +32,7 @@
     },
     "model": {
       "type": "string",
-      "description": "Source model tier, when present. Claude aliases only in v1.",
-      "enum": ["haiku", "sonnet", "opus"]
+      "description": "Source model tier or model value, when present. Known aliases are haiku/sonnet/opus/fable and 'inherit'; explicit/dated model ids are also accepted and validated by agent-ir (which owns model policy), so no enum is enforced here."
     },
     "tools": {
       "type": "array",
