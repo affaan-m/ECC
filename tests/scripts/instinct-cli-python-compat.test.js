@@ -3,9 +3,11 @@
  *
  * The CLI supports Python 3.6 and newer, but CI runs a current Python, so a
  * newer-only construct would not fail anywhere until a user on an old
- * interpreter hit it. The static check below parses the script with the 3.6
- * grammar and rejects the runtime constructs a grammar check cannot see:
- * unquoted builtin generics in evaluated annotations and newer-only APIs.
+ * interpreter hit it. The static check below parses the script with the
+ * oldest grammar ast offers (3.7 on current Pythons, which only adds the
+ * async/await keywords) and rejects what that parse misses: unquoted builtin
+ * generics in evaluated annotations, newer-only APIs, and f-string forms
+ * from 3.8 and 3.12 that ast does not record.
  * The other cases run the CLI under the strictest warning settings of the
  * current Python and cover the end-of-life notice.
  *
@@ -78,7 +80,7 @@ function runPython(args, options = {}) {
 
 // Prints one line per construct that would break on Python 3.6.
 const COMPAT_CHECK = String.raw`
-import ast, sys
+import ast, re, sys
 
 path = sys.argv[1]
 src = open(path, encoding="utf-8").read()
@@ -140,6 +142,47 @@ for node in ast.walk(tree):
             if kw.arg in newer:
                 problems.append("line %d: keyword %s= is newer than 3.6" % (node.lineno, kw.arg))
 
+def replacement_fields(literal):
+    """Yield the text of each top-level {...} field in an f-string literal."""
+    i, n = 0, len(literal)
+    while i < n:
+        if literal.startswith("{{", i) or literal.startswith("}}", i):
+            i += 2
+            continue
+        if literal[i] != "{":
+            i += 1
+            continue
+        depth, j = 1, i + 1
+        while j < n and depth:
+            depth += {"{": 1, "}": -1}.get(literal[j], 0)
+            j += 1
+        yield literal[i + 1:j - 1]
+        i = j
+
+def check_fstring(node):
+    # ast keeps neither the "=" specifier (3.8) nor how quotes nest (3.12),
+    # so read the literal's own source text.
+    segment = ast.get_source_segment(src, node)
+    if not segment:
+        return
+    body = segment.lstrip("rRbBuUfF")
+    quote = body[:3] if body[:3] in ('"""', "'''") else body[:1]
+    inner = body[len(quote):len(body) - len(quote)]
+    for field in replacement_fields(inner):
+        expr = re.split(r"(?<![!=<>])![rsa]\s*(?::|$)|:(?![^\[]*\])", field, maxsplit=1)[0]
+        if re.search(r"(?<![=!<>])=\s*$", expr):
+            problems.append("line %d: f-string = specifier needs 3.8" % node.lineno)
+        if "\\" in field:
+            problems.append("line %d: backslash in an f-string field needs 3.12" % node.lineno)
+        if quote in field:
+            problems.append("line %d: reused quotes in an f-string field need 3.12" % node.lineno)
+        if "#" in field:
+            problems.append("line %d: comment in an f-string field needs 3.12" % node.lineno)
+
+for node in ast.walk(tree):
+    if isinstance(node, ast.JoinedStr):
+        check_fstring(node)
+
 for problem in problems:
     print(problem)
 `;
@@ -185,12 +228,29 @@ test('the compatibility check catches what it is meant to catch', () => {
         'def f(x: list[str]) -> dict[str, int]:',
         '    subprocess.run(["git"], capture_output=True, text=True)',
         '    return x[0].removeprefix("a")',
+        'n = 1',
+        'd = {"k": 1}',
+        'a = f"{n=}"',
+        'b = f"{d["k"]}"',
+        "c = f'{n == 1} {n!r:>4} {d[\"k\"]} {{n=}}'",
         '',
       ].join('\n')
     );
     const r = runPython(['-c', COMPAT_CHECK, sample]);
     assert.strictEqual(r.status, 0, r.stderr);
-    for (const expected of ['list[...]', 'dict[...]', 'capture_output=', 'text=', '.removeprefix()']) {
+    const expectedProblems = [
+      'list[...]',
+      'dict[...]',
+      'capture_output=',
+      'text=',
+      '.removeprefix()',
+      'line 7: f-string = specifier',
+      'line 8: reused quotes',
+    ];
+    for (const unexpected of ['line 9:']) {
+      assert.ok(!r.stdout.includes(unexpected), `3.6-valid f-string flagged:\n${r.stdout}`);
+    }
+    for (const expected of expectedProblems) {
       assert.ok(r.stdout.includes(expected), `missing ${expected} in:\n${r.stdout}`);
     }
   } finally {
