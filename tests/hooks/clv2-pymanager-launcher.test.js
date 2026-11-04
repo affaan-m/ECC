@@ -12,7 +12,9 @@
  * Stand-in aliases and launchers are shell scripts that log which one ran and
  * the CLV2_PYTHON_CMD observe.sh exported for detect-project.sh. A `disabled`
  * file in the homunculus dir makes observe.sh exit right after its first
- * Python call, so nothing else in the hook runs.
+ * Python call, so nothing else in the hook runs. One test leaves the hook
+ * enabled so it reaches detect-project.sh, whose project-id hash call the
+ * stand-ins mark as `detect-project`.
  *
  * Run with: node tests/hooks/clv2-pymanager-launcher.test.js
  */
@@ -57,7 +59,7 @@ function test(name, fn) {
 const DRIVER = `
 conv() { case "$OSTYPE" in msys*|cygwin*) cygpath -u "$1" ;; *) printf '%s\\n' "$1" ;; esac; }
 tools="$(conv "$T_TOOLS")"
-for t in cat dirname; do
+for t in cat dirname basename sed mkdir; do
   printf '#!/bin/sh\\nexec "%s" "$@"\\n' "$(command -v "$t")" > "$tools/$t"
   chmod +x "$tools/$t"
 done
@@ -67,11 +69,12 @@ for p in "\${parts[@]}"; do new_path="\${new_path:+$new_path:}$(conv "$p")"; don
 target="$(conv "$T_TARGET")"
 export CLV2_HOMUNCULUS_DIR="$(conv "$T_HOME")"
 export T_LOG="$(conv "$T_LOG")"
+if [ -n "\${T_PROJECT:-}" ]; then export CLAUDE_PROJECT_DIR="$(conv "$T_PROJECT")"; fi
 PATH="$new_path:$tools"
 printf '%s' '{"cwd":""}' | "$BASH" "$target" post
 `;
 
-function makeTree() {
+function makeTree({ enabled = false } = {}) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-clv2-pymanager-'));
   const local = path.join(root, 'Local Data');
   const dirs = {
@@ -80,30 +83,34 @@ function makeTree() {
     alias: path.join(local, 'Microsoft', 'WindowsApps'),
     launcher: path.join(local, 'Python', 'bin'),
     regular: path.join(root, 'regular'),
+    project: path.join(root, 'project'),
     tools: path.join(root, 'tools'),
     home: path.join(root, 'homunculus'),
     log: path.join(root, 'calls.log')
   };
-  for (const dir of [dirs.alias, dirs.launcher, dirs.regular, dirs.tools, dirs.home]) {
+  for (const dir of [dirs.alias, dirs.launcher, dirs.regular, dirs.project, dirs.tools, dirs.home]) {
     fs.mkdirSync(dir, { recursive: true });
   }
-  fs.writeFileSync(path.join(dirs.home, 'disabled'), '');
+  if (!enabled) fs.writeFileSync(path.join(dirs.home, 'disabled'), '');
   return dirs;
 }
 
-// A stand-in interpreter: logs its label and the exported CLV2_PYTHON_CMD.
+// A stand-in interpreter: logs its label and the exported CLV2_PYTHON_CMD,
+// plus `detect-project` when detect-project.sh runs it to hash the project id.
 function writePython(dir, name, label) {
   fs.writeFileSync(
     path.join(dir, name),
-    `#!/bin/sh\necho "${label}|$CLV2_PYTHON_CMD" >> "$T_LOG"\n`,
+    `#!/bin/sh\necho "${label}|$CLV2_PYTHON_CMD\${_CLV2_HASH_INPUT:+|detect-project}" >> "$T_LOG"\n`,
     { mode: 0o755 }
   );
 }
 
-function run(dirs, pathDirs, env = {}) {
+function run(dirs, pathDirs, env = {}, { checkStatus = true } = {}) {
   const baseEnv = { ...process.env };
-  delete baseEnv.CLV2_PYTHON_CMD;
-  delete baseEnv.CLV2_CONFIG;
+  for (const key of ['CLV2_PYTHON_CMD', 'CLV2_CONFIG', 'CLAUDE_PROJECT_DIR', 'ECC_HOOK_PROFILE', 'ECC_SKIP_OBSERVE']) {
+    delete baseEnv[key];
+  }
+  baseEnv.CLAUDE_CODE_ENTRYPOINT = 'cli';
   baseEnv.LOCALAPPDATA = dirs.local;
   const merged = { ...baseEnv, ...env };
   for (const [key, value] of Object.entries(merged)) {
@@ -120,14 +127,14 @@ function run(dirs, pathDirs, env = {}) {
       T_LOG: dirs.log
     }
   });
-  assert.strictEqual(result.status, 0, `observe.sh failed: ${result.stderr}`);
+  if (checkStatus) assert.strictEqual(result.status, 0, `observe.sh failed: ${result.stderr}`);
   return fs.existsSync(dirs.log)
     ? fs.readFileSync(dirs.log, 'utf8').trim().split('\n').filter(Boolean).map(line => line.split('|'))
     : [];
 }
 
-function withTree(fn) {
-  const dirs = makeTree();
+function withTree(fn, options) {
+  const dirs = makeTree(options);
   try {
     fn(dirs);
   } finally {
@@ -152,13 +159,33 @@ test('runs the Python\\bin launcher for a WindowsApps python alias when python3 
   assert.deepStrictEqual(run(dirs, [dirs.alias]).map(c => c[0]), ['launcher']);
 }));
 
-test('matches the WindowsApps directory case-insensitively', () => withTree(dirs => {
-  const lower = path.join(dirs.root, 'other', 'microsoft', 'windowsapps');
+test('matches the current user\'s WindowsApps directory case-insensitively', () => withTree(dirs => {
+  const lower = path.join(dirs.local, 'microsoft', 'windowsapps');
   fs.mkdirSync(lower, { recursive: true });
   writePython(lower, 'python3', 'alias');
   writePython(dirs.launcher, 'python3.exe', 'launcher');
   assert.deepStrictEqual(run(dirs, [lower]).map(c => c[0]), ['launcher']);
 }));
+
+test('keeps an alias from another user\'s WindowsApps directory', () => withTree(dirs => {
+  const other = path.join(dirs.root, 'Other User', 'AppData', 'Local', 'Microsoft', 'WindowsApps');
+  fs.mkdirSync(other, { recursive: true });
+  writePython(other, 'python3', 'other-alias');
+  writePython(dirs.launcher, 'python3.exe', 'launcher');
+  assert.deepStrictEqual(run(dirs, [other]).map(c => c[0]), ['other-alias']);
+}));
+
+test('detect-project.sh hashes the project id with the launcher', () => withTree(dirs => {
+  writePython(dirs.alias, 'python3', 'alias');
+  writePython(dirs.launcher, 'python3.exe', 'launcher');
+  // The stand-ins print nothing, so the hook stops at a later step; only the
+  // calls made up to and inside detect-project.sh matter here.
+  const calls = run(dirs, [dirs.alias], { T_PROJECT: dirs.project }, { checkStatus: false });
+  const hashCalls = calls.filter(c => c[2] === 'detect-project');
+  assert.strictEqual(hashCalls.length, 1, `expected one detect-project hash call, got ${JSON.stringify(calls)}`);
+  assert.strictEqual(hashCalls[0][0], 'launcher');
+  assert.ok(!calls.some(c => c[0] === 'alias'), `the alias ran: ${JSON.stringify(calls)}`);
+}, { enabled: true }));
 
 test('keeps the alias when Python\\bin has no launcher (Microsoft Store Python)', () => withTree(dirs => {
   writePython(dirs.alias, 'python3', 'alias');
