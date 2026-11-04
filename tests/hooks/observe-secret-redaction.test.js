@@ -178,6 +178,29 @@ if (process.platform === 'win32') {
     }
   }
 
+  // A long key or JWT is redacted whole, never only up to some length cap.
+  const longTail = 'CANARYlongTail';
+  for (const [label, value] of [
+    ['an over-long Anthropic key', `${anthropicKey}${'A'.repeat(600)}${longTail}`],
+    ['a JWT with a long signature', `${jwt}${'s'.repeat(1500)}${longTail}`]
+  ]) {
+    test(`redacts ${label} completely`, () => {
+      const records = capture('post', { tool_name: 'Read', tool_input: { file_path: '/tmp/x' },
+        tool_response: { content: `value ${value} end` } });
+      assert.equal(capturedField(records, 'content'), 'value [REDACTED] end');
+    });
+  }
+
+  // The end-of-capture match only applies to text that was actually cut.
+  for (const output of ['git checkout sk-learn', 'payload eyJhIjoxLCJiIjoyfQ']) {
+    test(`keeps short string output ending in "${output.split(' ').pop().slice(0, 8)}" unredacted`, () => {
+      const records = capture('post', { tool_name: 'Bash', tool_input: { command: 'echo' },
+        tool_response: output });
+      assert.ok(records.includes(output), 'short output altered');
+      assert.ok(!records.includes('[REDACTED]'));
+    });
+  }
+
   // Capture truncation (5000 chars, 2000 in the parse-error fallback) can cut a
   // DSN right before its '@'; the password must still be redacted (#3568).
   const cutSecret = 'CANARYcutPassw0rd';
