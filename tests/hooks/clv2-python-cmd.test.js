@@ -329,12 +329,43 @@ test('an interpreter that ignores TERM is killed within the hook budget', () => 
   assert.ok(secs < 9, `resolution took ${secs.toFixed(1)} s`);
 }));
 
-test('a timeout without -k (BusyBox before 1.36) still runs the probe', () => withTree(tree => {
-  // The stand-in rejects -k like BusyBox 1.34 and otherwise runs the command.
-  writeScript(tree.fakebin, 'timeout',
-    'case "$1" in -k) echo "usage: timeout [-s SIG] SECS PROG ARGS" >&2; exit 1 ;; esac\nshift\nexec "$@"');
+// A stand-in timeout that logs its arguments, rejects the listed options with a
+// usage error, drops -s SIG and SECS, and runs the command.
+function writeTimeout(dir, rejected) {
+  writeScript(dir, 'timeout',
+    'echo "timeout $*" >> "${0%/*}/calls.log"\n' +
+    `case "$1" in ${rejected.join('|')}) echo "usage: timeout [-s SIG] SECS PROG ARGS" >&2; exit 1 ;; -s) shift 2 ;; esac\n` +
+    'shift\nexec "$@"');
+}
+
+function probeCall(dir) {
+  return calls(dir).find(c => / python3 -c /.test(c));
+}
+
+test('a timeout without -k (BusyBox before 1.36) still runs the probe, with -s KILL', () => withTree(tree => {
+  // Like BusyBox 1.34: -s SIG works, -k does not. KILL cannot be caught, so an
+  // interpreter cannot outlast the probe or turn its expiry into exit 0.
+  writeTimeout(tree.fakebin, ['-k']);
   writePython(tree.regular, 'python3', 'clv2-ok', '/usr/bin/python3');
   assert.strictEqual(resolve(tree, [tree.fakebin, tree.regular]), 'python3');
+  assert.ok(/^timeout -s KILL 4 python3 -c /.test(probeCall(tree.fakebin) || ''),
+    `probe ran as: ${probeCall(tree.fakebin)}`);
+}));
+
+test('a timeout with neither -k nor -s still runs the probe', () => withTree(tree => {
+  writeTimeout(tree.fakebin, ['-k', '-s']);
+  writePython(tree.regular, 'python3', 'clv2-ok', '/usr/bin/python3');
+  assert.strictEqual(resolve(tree, [tree.fakebin, tree.regular]), 'python3');
+  assert.ok(/^timeout 4 python3 -c /.test(probeCall(tree.fakebin) || ''),
+    `probe ran as: ${probeCall(tree.fakebin)}`);
+}));
+
+test('a verdict from a probe that only SIGKILL ends is rejected', () => withTree(tree => {
+  if (!hasGnuTimeout) return 'skip';
+  // TERM is ignored, so timeout's kill-after ends it and timeout exits 137.
+  writeScript(tree.regular, 'python3', "printf 'clv2-ok\\r\\n/usr/bin/python3\\r\\n'\ntrap '' TERM\nexec sleep 30");
+  writePython(tree.regular2, 'python', 'clv2-ok', '/usr/bin/python');
+  assert.strictEqual(resolve(tree, [tree.regular, tree.regular2]), 'python');
 }));
 
 test('a verdict from a probe the timeout had to kill is rejected', () => withTree(tree => {
