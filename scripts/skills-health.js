@@ -1,8 +1,26 @@
 #!/usr/bin/env node
 'use strict';
 
-const { collectSkillHealth, formatHealthReport } = require('./lib/skill-evolution/health');
-const { renderDashboard } = require('./lib/skill-evolution/dashboard');
+let collectSkillHealth;
+let formatHealthReport;
+let renderDashboard;
+try {
+  ({ collectSkillHealth, formatHealthReport } = require('./lib/skill-evolution/health'));
+  ({ renderDashboard } = require('./lib/skill-evolution/dashboard'));
+} catch (error) {
+  // The Claude Code plugin marketplace clones the repo but does not run
+  // npm/install-apply, so scripts/lib can be missing from a managed install.
+  // Fail with the remedy instead of a bare module-resolution stack (#3259).
+  if (error && error.code === 'MODULE_NOT_FOUND' && /skill-evolution/.test(error.message)) {
+    console.error(
+      'skills-health requires scripts/lib/skill-evolution, which is missing from this installation.\n' +
+      'Reinstall ECC with the commands-core module (node scripts/install-apply.js --target <host>) ' +
+      'or run this script from a full checkout of the repository.'
+    );
+    process.exit(1);
+  }
+  throw error;
+}
 
 function showHelp() {
   console.log(`
