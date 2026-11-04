@@ -13,6 +13,31 @@ const { createHookContextScanner } = require('./hook-input-limits');
 
 const SHELL_PROBE_TIMEOUT_MS = 2000;
 
+// Bash/PowerShell SAFETY invocations that gate a command on GateGuard
+// inspection. When the spawned child for one of these is killed (30s timeout
+// -> SIGTERM), errors, or returns no exit status, the command never got
+// inspected, so the bootstrap must fail CLOSED (exit 2) rather than open.
+// - Bash safety runs through pre-bash-dispatcher.js directly (relPath).
+// - PowerShell safety runs through run-with-flags.js with this hook id (argv).
+// Non-safety hooks are intentionally excluded so they keep failing open.
+const SAFETY_SCRIPT_BASENAMES = new Set(['pre-bash-dispatcher.js']);
+const SAFETY_HOOK_IDS = new Set(['pre:powershell:gateguard-fact-force']);
+
+function isBashPowerShellSafetyInvocation(relPath, args) {
+  if (typeof relPath === 'string' && SAFETY_SCRIPT_BASENAMES.has(path.basename(relPath))) {
+    return true;
+  }
+  return Array.isArray(args) && args.some(arg => SAFETY_HOOK_IDS.has(arg));
+}
+
+// Mirror run-with-flags.js:~127-133: honor the GateGuard opt-out so a disabled
+// GateGuard keeps failing open even for safety invocations.
+function isGateGuardDisabled(env = process.env) {
+  const legacyDisabled = String(env.GATEGUARD_DISABLED || '').trim() === '1';
+  const gateGuardValue = String(env.ECC_GATEGUARD || '').trim().toLowerCase();
+  return legacyDisabled || ['0', 'false', 'off', 'disabled', 'disable'].includes(gateGuardValue);
+}
+
 function writeStderr(stderr) {
   if ((typeof stderr === 'string' || Buffer.isBuffer(stderr)) && stderr.length > 0) {
     process.stderr.write(stderr);
@@ -308,6 +333,17 @@ async function main() {
         ? `terminated by signal ${result.signal}`
         : 'missing exit status';
     writeStderr(`[Hook] bootstrap execution failed: ${reason}\n`);
+    // A killed/errored/statusless child for a Bash/PowerShell safety matcher
+    // never completed GateGuard inspection. Failing open would let the command
+    // run uninspected, so fail CLOSED (exit 2) unless GateGuard is disabled.
+    if (isBashPowerShellSafetyInvocation(relPath, args) && !isGateGuardDisabled()) {
+      writeStderr(
+        '[Hook] bootstrap: safety hook could not complete; blocking (fail-closed). ' +
+          'Set ECC_GATEGUARD=0 to override.\n'
+      );
+      process.exitCode = 2;
+      return;
+    }
     process.exitCode = 0;
     return;
   }
@@ -331,6 +367,8 @@ if (require.main === module || require.main === undefined) {
 
 module.exports = {
   isRawPassthrough,
+  isBashPowerShellSafetyInvocation,
+  isGateGuardDisabled,
   main,
   normalizePluginRootForPlatform,
   withComparisonInput,

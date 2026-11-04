@@ -17,6 +17,11 @@ const FINGERPRINT_WINDOW_BYTES = 256;
 const PRUNE_INTERVAL_MS = 24 * 60 * 60 * 1000;
 const SNAPSHOT_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000;
 const MAX_SNAPSHOTS = 512;
+// Retention bound for the append-only costs.jsonl sink. The fallback cost scan
+// reads the whole file, so without a cap it grows unbounded while the sibling
+// tool-usage.jsonl sink is already bounded. Mirror that cap: keep the newest
+// 5000 rows.
+const MAX_COST_LOG_RECORDS = 5000;
 const WARNING_CACHE_PREFIX = 'ecc-cost-snapshot-warnings-';
 
 function assertSafeSessionId(sessionId) {
@@ -409,7 +414,32 @@ function appendSessionCostRow(metricsDir, sessionId, row) {
     // persistent failure remains visible without rolling back the log append.
     warnSessionCostSnapshotFailure('retention', metricsDir, sessionId, error);
   }
+  // Bound costs.jsonl itself (self-contained try/catch; never fails the write).
+  pruneCostLog(metricsDir);
   return JSON.stringify(result.row) === JSON.stringify(row);
+}
+
+// Front-trim retention for costs.jsonl, matching pruneToolUsageLog in
+// session-activity-tracker.js. Keep only the newest `maxRecords` lines;
+// `slice(-maxRecords)` keeps the tail (newest), discarding the oldest rows at
+// the front. The rewrite goes through writeFileAtomic (private temp file +
+// fsync + atomic rename), so a concurrent reader or appender never observes a
+// truncated or half-written file. At worst a row appended in the tiny window
+// between the read and the rename is dropped, which is acceptable for
+// best-effort telemetry. The atomic rename changes the file's inode, so any
+// per-session snapshot keyed to the old dev:ino simply falls back to a full
+// rescan of the trimmed file on the next read; each session's newest
+// cumulative row stays in the retained tail, so that rescan still recovers it.
+// Wrapped in try/catch so pruning never fails the cost-row write.
+function pruneCostLog(metricsDir, maxRecords = MAX_COST_LOG_RECORDS) {
+  const costsPath = path.join(metricsDir, COST_LOG_FILENAME);
+  try {
+    const lines = fs.readFileSync(costsPath, 'utf8').split('\n').filter(Boolean);
+    if (lines.length <= maxRecords) return;
+    writeFileAtomic(costsPath, `${lines.slice(-maxRecords).join('\n')}\n`);
+  } catch {
+    // Retention is best-effort; never fail a recorded cost row over it.
+  }
 }
 
 function readSessionCostSnapshot(metricsDir, sessionId) {
@@ -509,5 +539,6 @@ module.exports = {
   refreshSessionCostSnapshot,
   costLogNeedsSeparator,
   maybePruneSessionCostSnapshots,
+  pruneCostLog,
   warnSessionCostSnapshotFailure
 };

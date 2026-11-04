@@ -8,12 +8,16 @@ const {
   combineAdditionalContext,
 } = require('./pretooluse-visible-output');
 
-const { run: runBlockNoVerify } = require('./block-no-verify');
+// block-no-verify.js (~52KB) and gateguard-fact-force.js (~103KB, + transitive
+// powershell/heredoc parsers) are lazy-required inside their Bash-branch run
+// wrappers below. The PostToolUse and pre-bash dispatchers load this module on
+// every tool call (Read/Grep/Glob included); eagerly requiring these heavy
+// modules at top level paid their parse cost even when no Bash/PowerShell
+// command is handled. The require() cache makes repeat Bash calls cheap.
 const { run: runAutoTmuxDev } = require('./auto-tmux-dev');
 const { run: runTmuxReminder } = require('./pre-bash-tmux-reminder');
 const { run: runGitPushReminder } = require('./pre-bash-git-push-reminder');
 const { run: runCommitQuality } = require('./pre-bash-commit-quality');
-const { run: runGateGuard } = require('./gateguard-fact-force');
 const { run: runCommandLog } = require('./post-bash-command-log');
 const { run: runPrCreated } = require('./post-bash-pr-created');
 const { run: runBuildComplete } = require('./post-bash-build-complete');
@@ -24,7 +28,7 @@ const PRE_BASH_HOOKS = [
   {
     id: 'pre:bash:block-no-verify',
     profiles: 'minimal,standard,strict',
-    run: rawInput => runBlockNoVerify(rawInput),
+    run: rawInput => require('./block-no-verify').run(rawInput),
   },
   {
     id: 'pre:bash:auto-tmux-dev',
@@ -48,7 +52,7 @@ const PRE_BASH_HOOKS = [
   {
     id: 'pre:bash:gateguard-fact-force',
     profiles: 'standard,strict',
-    run: rawInput => runGateGuard(rawInput),
+    run: rawInput => require('./gateguard-fact-force').run(rawInput),
   },
 ];
 

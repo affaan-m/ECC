@@ -10,19 +10,15 @@ const path = require('path');
 const { StringDecoder } = require('string_decoder');
 const { isHookEnabled } = require('../lib/hook-flags');
 const { readStdinRaw: readBoundedStdin, resolveMaxStdin } = require('./hook-input');
-const { runPostBash } = require('./bash-hook-dispatcher');
-const { run: runQualityGate } = require('./quality-gate');
-const { run: runDesignQualityCheck } = require('./design-quality-check');
-const { run: runPostEditAccumulator } = require('./post-edit-accumulator');
-const { run: runConsoleWarn } = require('./post-edit-console-warn');
-const { run: runGovernanceCapture } = require('./governance-capture');
-const { run: runSessionActivityTracker } = require('./session-activity-tracker');
-const { run: runObserve } = require('./observe-runner');
-const { run: runMetricsBridge } = require('./ecc-metrics-bridge');
-const { run: runContextMonitor } = require('./ecc-context-monitor');
-const { run: runSkillRunTracker } = require('./skill-run-tracker');
-const { run: runHookify } = require('./hookify-runtime');
 const { createHookContextScanner } = require('./hook-input-limits');
+
+// Each sub-hook module is lazy-required inside its own run wrapper rather than
+// at top level. A load-time throw in any one module used to reject before
+// main(), hit the cli() catch, and set exitCode 0 -- silently skipping ALL
+// PostToolUse hooks and defeating the per-hook try/catch isolation in
+// runHooks(). Requiring inside the wrapper confines any such throw to that one
+// hook's try/catch, so one broken module degrades exactly one hook. The
+// require() cache keeps repeat invocations cheap.
 
 const MAX_STDIN = resolveMaxStdin(process.env.ECC_HOOK_INPUT_MAX_BYTES, {
   writeDiagnostic: message => process.stderr.write(message)
@@ -38,16 +34,16 @@ const SYNC_HOOKS = [
     profiles: 'minimal,standard,strict',
     script: 'scripts/hooks/hookify-runtime.js',
     run(raw, options) {
-      const result = runHookify(raw, options);
+      const result = require('./hookify-runtime').run(raw, options);
       return result.stdout === raw ? { ...result, stdout: '' } : result;
     }
   },
-  { id: 'post:edit:design-quality-check', matcher: 'Edit|Write|MultiEdit', profiles: 'standard,strict', script: 'scripts/hooks/design-quality-check.js', run: runDesignQualityCheck },
-  { id: 'post:edit:accumulator', matcher: 'Edit|Write|MultiEdit', profiles: 'standard,strict', script: 'scripts/hooks/post-edit-accumulator.js', run: runPostEditAccumulator },
-  { id: 'post:edit:console-warn', matcher: 'Edit', profiles: 'standard,strict', script: 'scripts/hooks/post-edit-console-warn.js', run: runConsoleWarn },
-  { id: 'post:governance-capture', matcher: 'Bash|PowerShell|Write|Edit|MultiEdit', profiles: 'standard,strict', script: 'scripts/hooks/governance-capture.js', run: runGovernanceCapture },
-  { id: 'post:ecc-metrics-bridge', matcher: '*', profiles: 'minimal,standard,strict', script: 'scripts/hooks/ecc-metrics-bridge.js', run: runMetricsBridge },
-  { id: 'post:ecc-context-monitor', matcher: '*', profiles: 'standard,strict', script: 'scripts/hooks/ecc-context-monitor.js', run: runContextMonitor }
+  { id: 'post:edit:design-quality-check', matcher: 'Edit|Write|MultiEdit', profiles: 'standard,strict', script: 'scripts/hooks/design-quality-check.js', run: (raw, options) => require('./design-quality-check').run(raw, options) },
+  { id: 'post:edit:accumulator', matcher: 'Edit|Write|MultiEdit', profiles: 'standard,strict', script: 'scripts/hooks/post-edit-accumulator.js', run: (raw, options) => require('./post-edit-accumulator').run(raw, options) },
+  { id: 'post:edit:console-warn', matcher: 'Edit', profiles: 'standard,strict', script: 'scripts/hooks/post-edit-console-warn.js', run: (raw, options) => require('./post-edit-console-warn').run(raw, options) },
+  { id: 'post:governance-capture', matcher: 'Bash|PowerShell|Write|Edit|MultiEdit', profiles: 'standard,strict', script: 'scripts/hooks/governance-capture.js', run: (raw, options) => require('./governance-capture').run(raw, options) },
+  { id: 'post:ecc-metrics-bridge', matcher: '*', profiles: 'minimal,standard,strict', script: 'scripts/hooks/ecc-metrics-bridge.js', run: (raw, options) => require('./ecc-metrics-bridge').run(raw, options) },
+  { id: 'post:ecc-context-monitor', matcher: '*', profiles: 'standard,strict', script: 'scripts/hooks/ecc-context-monitor.js', run: (raw, options) => require('./ecc-context-monitor').run(raw, options) }
 ];
 
 const ASYNC_HOOKS = [
@@ -58,17 +54,17 @@ const ASYNC_HOOKS = [
     profiles: 'minimal,standard,strict',
     script: 'scripts/hooks/post-bash-dispatcher.js',
     run(raw) {
-      const result = runPostBash(raw);
+      const result = require('./bash-hook-dispatcher').runPostBash(raw);
       return { stdout: result.output, stderr: result.stderr, exitCode: result.exitCode };
     }
   },
-  { id: 'post:quality-gate', matcher: 'Edit|Write|MultiEdit', profiles: 'standard,strict', script: 'scripts/hooks/quality-gate.js', run: runQualityGate },
+  { id: 'post:quality-gate', matcher: 'Edit|Write|MultiEdit', profiles: 'standard,strict', script: 'scripts/hooks/quality-gate.js', run: (raw, options) => require('./quality-gate').run(raw, options) },
   // Writes only telemetry (its run() returns rawInput unchanged, so the
   // dispatcher emits no mutated event); shells out to git per edited path, so
   // it belongs off the blocking sync path.
-  { id: 'post:session-activity-tracker', matcher: '*', profiles: 'standard,strict', script: 'scripts/hooks/session-activity-tracker.js', run: runSessionActivityTracker },
-  { id: 'post:observe:continuous-learning', matcher: '*', profiles: 'standard,strict', script: 'scripts/hooks/observe-runner.js', run: runObserve },
-  { id: 'post:skill:track', matcher: 'Skill', profiles: 'standard,strict', script: 'scripts/hooks/skill-run-tracker.js', run: runSkillRunTracker }
+  { id: 'post:session-activity-tracker', matcher: '*', profiles: 'standard,strict', script: 'scripts/hooks/session-activity-tracker.js', run: (raw, options) => require('./session-activity-tracker').run(raw, options) },
+  { id: 'post:observe:continuous-learning', matcher: '*', profiles: 'standard,strict', script: 'scripts/hooks/observe-runner.js', run: (raw, options) => require('./observe-runner').run(raw, options) },
+  { id: 'post:skill:track', matcher: 'Skill', profiles: 'standard,strict', script: 'scripts/hooks/skill-run-tracker.js', run: (raw, options) => require('./skill-run-tracker').run(raw, options) }
 ];
 
 function getPluginRoot(env = process.env) {
