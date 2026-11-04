@@ -290,9 +290,11 @@ _SECRET_RE = re.compile(
 # before scrubbing; a DSN cut by truncation before its "@" ends at \Z,
 # except a bare trailing host:port after http(s):// such as http://localhost:3000;
 # any other scheme (postgres://app:1234) is redacted even when the password is numeric (#3568).
+# PEM blocks run first: a label such as secret= in front of the BEGIN marker
+# would otherwise let _SECRET_RE eat "-----BEGIN" and hide the block from this match.
+_PEM_RE = re.compile(r"-----BEGIN[A-Z ]{0,40}PRIVATE KEY-----[\s\S]*?(?:-----END[A-Z ]{0,40}PRIVATE KEY-----|\Z)")
 _SECRET_VALUE_RE = re.compile(
-    r"-----BEGIN[A-Z ]{0,40}PRIVATE KEY-----[\s\S]*?(?:-----END[A-Z ]{0,40}PRIVATE KEY-----|\Z)"
-    r"|(?:(?<![A-Za-z0-9_])|(?<=\\[bfnrt])|(?<=\\u[0-9a-fA-F]{4}))(?:gh[pousr]_[A-Za-z0-9]{20,255}|github_pat_[A-Za-z0-9_]{20,255}|(?:AKIA|ASIA)[A-Z0-9]{16})\b"
+    r"(?:(?<![A-Za-z0-9_])|(?<=\\[bfnrt])|(?<=\\u[0-9a-fA-F]{4}))(?:gh[pousr]_[A-Za-z0-9]{20,255}|github_pat_[A-Za-z0-9_]{20,255}|(?:AKIA|ASIA)[A-Z0-9]{16})\b"
     r"|(?:(?<![A-Za-z0-9_-])|(?<=\\[bfnrt])|(?<=\\u[0-9a-fA-F]{4}))(?:sk-(?:ant|proj|svcacct|admin|or)-[A-Za-z0-9_-]{20,}|sk-[A-Za-z0-9]{20,}(?![A-Za-z0-9_-])|eyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]*)"
     r"""|(?<=://)(?:(?<=https://)|(?<=http://)|(?<!https://)(?<!http://)())([^\s:/@"\\]{1,256}:)(?(1)|(?!\d{1,5}\Z))[^\s@/"\\]{1,256}(?=@|\Z)"""
 )
@@ -315,6 +317,7 @@ except Exception:
 
 raw_full = sys.stdin.read()
 raw = raw_full[:2000]
+raw = _PEM_RE.sub("[REDACTED]", raw)
 raw = _SECRET_RE.sub(lambda m: m.group(1) + m.group(2) + (m.group(3) or "") + "[REDACTED]", raw)
 raw = _SECRET_VALUE_RE.sub(lambda m: (m.group(2) or "") + "[REDACTED]", raw)
 if len(raw_full) > 2000:
@@ -390,9 +393,11 @@ _SECRET_RE = re.compile(
 # before scrubbing; a DSN cut by truncation before its "@" ends at \Z,
 # except a bare trailing host:port after http(s):// such as http://localhost:3000;
 # any other scheme (postgres://app:1234) is redacted even when the password is numeric (#3568).
+# PEM blocks run first: a label such as secret= in front of the BEGIN marker
+# would otherwise let _SECRET_RE eat "-----BEGIN" and hide the block from this match.
+_PEM_RE = re.compile(r"-----BEGIN[A-Z ]{0,40}PRIVATE KEY-----[\s\S]*?(?:-----END[A-Z ]{0,40}PRIVATE KEY-----|\Z)")
 _SECRET_VALUE_RE = re.compile(
-    r"-----BEGIN[A-Z ]{0,40}PRIVATE KEY-----[\s\S]*?(?:-----END[A-Z ]{0,40}PRIVATE KEY-----|\Z)"
-    r"|(?:(?<![A-Za-z0-9_])|(?<=\\[bfnrt])|(?<=\\u[0-9a-fA-F]{4}))(?:gh[pousr]_[A-Za-z0-9]{20,255}|github_pat_[A-Za-z0-9_]{20,255}|(?:AKIA|ASIA)[A-Z0-9]{16})\b"
+    r"(?:(?<![A-Za-z0-9_])|(?<=\\[bfnrt])|(?<=\\u[0-9a-fA-F]{4}))(?:gh[pousr]_[A-Za-z0-9]{20,255}|github_pat_[A-Za-z0-9_]{20,255}|(?:AKIA|ASIA)[A-Z0-9]{16})\b"
     r"|(?:(?<![A-Za-z0-9_-])|(?<=\\[bfnrt])|(?<=\\u[0-9a-fA-F]{4}))(?:sk-(?:ant|proj|svcacct|admin|or)-[A-Za-z0-9_-]{20,}|sk-[A-Za-z0-9]{20,}(?![A-Za-z0-9_-])|eyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]*)"
     r"""|(?<=://)(?:(?<=https://)|(?<=http://)|(?<!https://)(?<!http://)())([^\s:/@"\\]{1,256}:)(?(1)|(?!\d{1,5}\Z))[^\s@/"\\]{1,256}(?=@|\Z)"""
 )
@@ -409,6 +414,7 @@ def scrub(val):
     val = str(val)
     # Tool I/O is cut to 5000 chars before it reaches this process.
     cut = len(val) >= 5000
+    val = _PEM_RE.sub("[REDACTED]", val)
     val = _SECRET_RE.sub(lambda m: m.group(1) + m.group(2) + (m.group(3) or "") + "[REDACTED]", val)
     val = _SECRET_VALUE_RE.sub(lambda m: (m.group(2) or "") + "[REDACTED]", val)
     return _CUT_TAIL_RE.sub("[REDACTED]", val) if cut else val

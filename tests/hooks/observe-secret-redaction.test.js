@@ -195,7 +195,9 @@ if (process.platform === 'win32') {
   for (const [label, text, expected] of [
     ['long sk-proj key', `OPENAI_API_KEY=${openaiProjectKey}${'B'.repeat(300)}${longTail}`, 'OPENAI_API_KEY=[REDACTED]'],
     ['sk- password with a suffix', `password=${'sk-'}${'A'.repeat(30)}.${longTail}`, 'password=[REDACTED]'],
-    ['GitHub token with a suffix', `token=${'ghp_'}${'0'.repeat(30)}/${longTail}`, 'token=[REDACTED]']
+    ['GitHub token with a suffix', `token=${'ghp_'}${'0'.repeat(30)}/${longTail}`, 'token=[REDACTED]'],
+    ['PEM private key block',
+      `secret=-----BEGIN RSA ${'PRIVATE'} KEY-----\n${longTail}\n-----END RSA PRIVATE KEY-----`, 'secret=[REDACTED]']
   ]) {
     for (const [phase, input, expectedEvent] of [
       ['post', { tool_name: 'Read', tool_input: { file_path: '/tmp/x' }, tool_response: { content: text } }],
