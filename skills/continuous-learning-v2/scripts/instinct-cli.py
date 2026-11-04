@@ -248,13 +248,25 @@ def _yaml_quote(value: str) -> str:
 # Project Detection (Python equivalent of detect-project.sh)
 # ─────────────────────────────────────────────
 
+# git prints paths and remote URLs as UTF-8, but text mode without an encoding
+# decodes with the locale encoding (the ANSI code page on Windows), which
+# garbles or rejects non-ASCII names and changes the project id. Spelled out
+# with PIPE rather than capture_output/text so Python 3.6 can run it.
+_GIT_OUTPUT = {
+    "stdout": subprocess.PIPE,
+    "stderr": subprocess.PIPE,
+    "encoding": "utf-8",
+    "errors": "replace",
+}
+
+
 def _git_repo_root(cwd: Optional[str] = None) -> Optional[str]:
     args = ["git"]
     if cwd:
         args.extend(["-C", cwd])
     args.extend(["rev-parse", "--show-toplevel"])
     try:
-        result = subprocess.run(args, capture_output=True, text=True, timeout=5)
+        result = subprocess.run(args, timeout=5, **_GIT_OUTPUT)
         if result.returncode == 0:
             return result.stdout.strip()
     except (subprocess.TimeoutExpired, FileNotFoundError):
@@ -267,7 +279,7 @@ def _main_worktree_root(project_root: str) -> str:
     try:
         result = subprocess.run(
             ["git", "-C", project_root, "worktree", "list", "--porcelain"],
-            capture_output=True, text=True, timeout=5
+            timeout=5, **_GIT_OUTPUT
         )
     except (subprocess.TimeoutExpired, FileNotFoundError):
         return project_root
@@ -340,7 +352,7 @@ def detect_project() -> dict:
     try:
         result = subprocess.run(
             ["git", "-C", project_root, "remote", "get-url", "origin"],
-            capture_output=True, text=True, timeout=5
+            timeout=5, **_GIT_OUTPUT
         )
         if result.returncode == 0:
             remote_url = result.stdout.strip()
