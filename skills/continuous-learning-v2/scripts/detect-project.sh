@@ -25,24 +25,8 @@ _CLV2_HOMUNCULUS_DIR="$(_clv2_resolve_homunculus_dir)"
 _CLV2_PROJECTS_DIR="${_CLV2_HOMUNCULUS_DIR}/projects"
 _CLV2_REGISTRY_FILE="${_CLV2_HOMUNCULUS_DIR}/projects.json"
 
-_clv2_resolve_python_cmd() {
-  if [ -n "${CLV2_PYTHON_CMD:-}" ] && command -v "$CLV2_PYTHON_CMD" >/dev/null 2>&1; then
-    printf '%s\n' "$CLV2_PYTHON_CMD"
-    return 0
-  fi
-
-  if command -v python3 >/dev/null 2>&1; then
-    printf '%s\n' python3
-    return 0
-  fi
-
-  if command -v python >/dev/null 2>&1; then
-    printf '%s\n' python
-    return 0
-  fi
-
-  return 1
-}
+# shellcheck disable=SC1091
+. "$(dirname "${BASH_SOURCE[0]}")/lib/python-cmd.sh"
 
 _CLV2_PYTHON_CMD="$(_clv2_resolve_python_cmd 2>/dev/null || true)"
 CLV2_PYTHON_CMD="$_CLV2_PYTHON_CMD"
