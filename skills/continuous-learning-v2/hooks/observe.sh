@@ -66,6 +66,29 @@ _is_windows_app_installer_stub() {
   return 1
 }
 
+_python_install_manager_launcher() {
+  # With the Python Install Manager, python3/python in
+  #   %LOCALAPPDATA%\Microsoft\WindowsApps
+  # are App Execution Aliases. Every start of one makes Windows run an App
+  # Installer update check (AppXDeploymentServer event 603), and this hook
+  # starts Python several times per tool call. The Install Manager's global
+  # shortcuts in %LOCALAPPDATA%\Python\bin start the same runtime without that
+  # check, so print the shortcut for $1 when it is an alias and one exists.
+  # Microsoft Store Python has no such shortcut and keeps its alias.
+  local _candidate="$1" _resolved _launcher
+  _resolved="$(command -v "$_candidate" 2>/dev/null || true)"
+  case "$_resolved" in
+    *[\\/][Mm][Ii][Cc][Rr][Oo][Ss][Oo][Ff][Tt][\\/][Ww][Ii][Nn][Dd][Oo][Ww][Ss][Aa][Pp][Pp][Ss][\\/]*) ;;
+    *) return 1 ;;
+  esac
+  [ -n "${LOCALAPPDATA:-}" ] || return 1
+  # Git Bash accepts C:/... paths, so swapping separators avoids a cygpath start.
+  _launcher="${LOCALAPPDATA//\\//}"
+  _launcher="${_launcher%/}/Python/bin/${_candidate}.exe"
+  [ -f "$_launcher" ] && [ -x "$_launcher" ] || return 1
+  printf '%s\n' "$_launcher"
+}
+
 resolve_python_cmd() {
   if [ -n "${CLV2_PYTHON_CMD:-}" ] && command -v "$CLV2_PYTHON_CMD" >/dev/null 2>&1; then
     printf '%s\n' "$CLV2_PYTHON_CMD"
@@ -73,12 +96,12 @@ resolve_python_cmd() {
   fi
 
   if command -v python3 >/dev/null 2>&1 && ! _is_windows_app_installer_stub python3; then
-    printf '%s\n' python3
+    _python_install_manager_launcher python3 || printf '%s\n' python3
     return 0
   fi
 
   if command -v python >/dev/null 2>&1 && ! _is_windows_app_installer_stub python; then
-    printf '%s\n' python
+    _python_install_manager_launcher python || printf '%s\n' python
     return 0
   fi
 
