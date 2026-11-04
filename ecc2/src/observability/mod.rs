@@ -258,6 +258,16 @@ pub struct ToolLogPage {
     pub total: u64,
 }
 
+/// Writer for the `tool_log` table.
+///
+/// NOTE (cross-language contract): in the current deployment the `tool_log`
+/// table is written by the JS control-pane, which owns tool-call ingestion.
+/// This Rust logger (`ToolLogger` / [`log_tool_call`] / `record_tool_call` /
+/// `StateStore::insert_tool_log`) is retained but unused on the write path; the
+/// Rust side only reads `tool_log` (e.g. via [`ToolLogger::query`]). It is kept
+/// deliberately so the schema contract stays co-located and the writer can be
+/// revived if ownership moves back to Rust. Do not delete or wire it up without
+/// coordinating with the JS control-pane.
 pub struct ToolLogger<'a> {
     db: &'a StateStore,
 }

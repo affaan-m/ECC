@@ -1710,16 +1710,21 @@ async fn main() -> Result<()> {
             )
             .await?;
             if session::manager::assignment_action_routes_work(outcome.action) {
+                let action_label = match outcome.action {
+                    session::manager::AssignmentAction::Spawned => "spawned",
+                    session::manager::AssignmentAction::ReusedIdle => "reused-idle",
+                    session::manager::AssignmentAction::ReusedActive => "reused-active",
+                    // Defensive: `assignment_action_routes_work` excludes this
+                    // variant, so it should never land here. If that predicate
+                    // ever drifts out of sync, degrade gracefully with a label
+                    // instead of panicking the whole process.
+                    session::manager::AssignmentAction::DeferredSaturated => "deferred",
+                };
                 println!(
                     "Assignment routed: {} -> {} ({})",
                     short_session(&lead_id),
                     short_session(&outcome.session_id),
-                    match outcome.action {
-                        session::manager::AssignmentAction::Spawned => "spawned",
-                        session::manager::AssignmentAction::ReusedIdle => "reused-idle",
-                        session::manager::AssignmentAction::ReusedActive => "reused-active",
-                        session::manager::AssignmentAction::DeferredSaturated => unreachable!(),
-                    }
+                    action_label
                 );
             } else {
                 println!(

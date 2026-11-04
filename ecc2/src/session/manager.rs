@@ -3106,6 +3106,35 @@ fn configure_background_runner_command(command: &mut Command) {
     }
 }
 
+/// Launch the agent in its own process group so the whole subtree — the agent
+/// and any children it spawns — can be signalled together when the session is
+/// stopped or reaped as stale. Without this, only the stored agent PID receives
+/// SIGTERM/SIGKILL and the agent's children are orphaned (see `kill_process`).
+fn configure_agent_process_group(command: &mut Command) {
+    #[cfg(unix)]
+    {
+        use std::os::unix::process::CommandExt;
+
+        // SAFETY: `setpgid(0, 0)` only reassigns the freshly-forked child's own
+        // process-group id (to its own pid) before exec. It is async-signal-safe
+        // and touches no shared runtime state, so it is sound in `pre_exec`.
+        unsafe {
+            command.as_std_mut().pre_exec(|| {
+                if libc::setpgid(0, 0) == -1 {
+                    return Err(std::io::Error::last_os_error());
+                }
+                Ok(())
+            });
+        }
+    }
+
+    #[cfg(windows)]
+    {
+        // Windows reaps the whole tree via `taskkill /T`; no group setup needed.
+        let _ = command;
+    }
+}
+
 fn build_agent_command(
     cfg: &Config,
     agent_type: &str,
@@ -3117,7 +3146,7 @@ fn build_agent_command(
 ) -> Command {
     let harness = HarnessKind::from_agent_type(agent_type);
     if let Some(runner) = cfg.harness_runner(&SessionHarnessInfo::runner_key(agent_type)) {
-        return build_configured_harness_command(
+        let mut command = build_configured_harness_command(
             runner,
             agent_type,
             agent_program,
@@ -3126,6 +3155,8 @@ fn build_agent_command(
             working_dir,
             profile,
         );
+        configure_agent_process_group(&mut command);
+        return command;
     }
 
     let task = normalize_task_for_harness(harness, task, profile);
@@ -3225,6 +3256,7 @@ fn build_agent_command(
         .arg(task)
         .current_dir(working_dir)
         .stdin(Stdio::null());
+    configure_agent_process_group(&mut command);
     command
 }
 
@@ -3617,14 +3649,29 @@ async fn stop_session_with_options(
     cleanup_worktree: bool,
 ) -> Result<()> {
     let session = resolve_session(db, id)?;
-    stop_session_recorded(db, &session, cleanup_worktree)
+    // Non-blocking stop path: never park a Tokio worker on the SIGTERM->SIGKILL
+    // grace period (see `kill_process_async`).
+    if let Some(pid) = session.pid {
+        kill_process_async(pid).await?;
+    }
+    finalize_stopped_session(db, &session, cleanup_worktree)
 }
 
 fn stop_session_recorded(db: &StateStore, session: &Session, cleanup_worktree: bool) -> Result<()> {
     if let Some(pid) = session.pid {
         kill_process(pid)?;
     }
+    finalize_stopped_session(db, session, cleanup_worktree)
+}
 
+/// Persist the stopped-session bookkeeping shared by the sync and async stop
+/// paths: clear the pid, mark the session stopped, and optionally reclaim the
+/// worktree.
+fn finalize_stopped_session(
+    db: &StateStore,
+    session: &Session,
+    cleanup_worktree: bool,
+) -> Result<()> {
     db.update_pid(&session.id, None)?;
     db.update_state(&session.id, &SessionState::Stopped)?;
 
@@ -3638,11 +3685,28 @@ fn stop_session_recorded(db: &StateStore, session: &Session, cleanup_worktree: b
     Ok(())
 }
 
+/// Grace period between SIGTERM and SIGKILL when stopping an agent.
+const PROCESS_TERM_GRACE: std::time::Duration = std::time::Duration::from_millis(1200);
+
+// TODO(L1): validate PID identity (e.g. start-time/cmdline) before signalling to guard against PID reuse.
+/// Synchronous process termination for sync callers (heartbeat/budget/conflict
+/// enforcement). Blocks for [`PROCESS_TERM_GRACE`] between signals; async
+/// callers must use [`kill_process_async`] instead.
 #[cfg(unix)]
 fn kill_process(pid: u32) -> Result<()> {
-    send_signal(pid, libc::SIGTERM)?;
-    std::thread::sleep(std::time::Duration::from_millis(1200));
-    send_signal(pid, libc::SIGKILL)?;
+    signal_process_tree(pid, libc::SIGTERM)?;
+    std::thread::sleep(PROCESS_TERM_GRACE);
+    signal_process_tree(pid, libc::SIGKILL)?;
+    Ok(())
+}
+
+/// Async process termination: identical to [`kill_process`] but yields to the
+/// Tokio runtime during the grace period instead of blocking a worker thread.
+#[cfg(unix)]
+async fn kill_process_async(pid: u32) -> Result<()> {
+    signal_process_tree(pid, libc::SIGTERM)?;
+    tokio::time::sleep(PROCESS_TERM_GRACE).await;
+    signal_process_tree(pid, libc::SIGKILL)?;
     Ok(())
 }
 
@@ -3657,6 +3721,47 @@ fn kill_process(pid: u32) -> Result<()> {
         Ok(())
     } else {
         Err(anyhow::anyhow!("taskkill exited with status {status}"))
+    }
+}
+
+#[cfg(windows)]
+async fn kill_process_async(pid: u32) -> Result<()> {
+    tokio::task::spawn_blocking(move || kill_process(pid))
+        .await
+        .map_err(|err| anyhow::anyhow!("taskkill task panicked: {err}"))?
+}
+
+/// Signal the agent's whole process group, falling back to the single process
+/// when no such group exists. Agents are launched via
+/// [`configure_agent_process_group`] (`setpgid(0, 0)`), so the group id equals
+/// the stored pid; signalling the group reaps the agent's children too.
+#[cfg(unix)]
+fn signal_process_tree(pid: u32, signal: i32) -> Result<()> {
+    if signal_group(pid, signal)? {
+        return Ok(());
+    }
+    // Group unavailable (e.g. agent predates setpgid, or already exited):
+    // fall back to the single stored pid.
+    send_signal(pid, signal)
+}
+
+/// Returns `Ok(true)` when the process group received the signal, `Ok(false)`
+/// when no such group exists so the caller should fall back to a single-pid
+/// signal.
+#[cfg(unix)]
+fn signal_group(pgid: u32, signal: i32) -> Result<bool> {
+    // SAFETY: `libc::kill` with a negative pid signals the process group whose
+    // id is the absolute value — the POSIX `killpg` idiom.
+    let outcome = unsafe { libc::kill(-(pgid as i32), signal) };
+    if outcome == 0 {
+        return Ok(true);
+    }
+
+    let error = std::io::Error::last_os_error();
+    match error.raw_os_error() {
+        // No such group, or we may not signal it: let the caller fall back.
+        Some(libc::ESRCH) | Some(libc::EPERM) => Ok(false),
+        _ => Err(error).with_context(|| format!("Failed to signal process group {pgid}")),
     }
 }
 

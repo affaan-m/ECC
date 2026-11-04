@@ -2,7 +2,7 @@ use anyhow::{Context, Result};
 use std::future::Future;
 use std::io::Write;
 use std::path::{Path, PathBuf};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use tokio::time;
 
 use super::manager;
@@ -94,6 +94,15 @@ impl Drop for DaemonLock {
     }
 }
 
+/// Retention window for `tool_log` / `messages`: rows older than this are
+/// pruned by the daemon. Both tables are otherwise only cleared on session
+/// deletion, so without this they grow without bound.
+const LOG_RETENTION_DAYS: i64 = 30;
+
+/// How often the daemon runs the log retention sweep. The sweep is a bounded
+/// `DELETE`, so it runs far less frequently than the heartbeat loop.
+const LOG_RETENTION_SWEEP_INTERVAL: Duration = Duration::from_secs(6 * 60 * 60);
+
 /// Background daemon that monitors sessions, handles heartbeats,
 /// and cleans up stale resources.
 pub async fn run(db: StateStore, cfg: Config) -> Result<()> {
@@ -102,6 +111,7 @@ pub async fn run(db: StateStore, cfg: Config) -> Result<()> {
     resume_crashed_sessions(&db)?;
 
     let heartbeat_interval = Duration::from_secs(cfg.heartbeat_interval_secs);
+    let mut last_log_sweep: Option<Instant> = None;
     loop {
         if let Err(e) = check_sessions(&db, &cfg) {
             tracing::error!("Session check failed: {e}");
@@ -125,6 +135,16 @@ pub async fn run(db: StateStore, cfg: Config) -> Result<()> {
 
         if let Err(e) = maybe_auto_prune_inactive_worktrees(&db, &cfg).await {
             tracing::error!("Worktree auto-prune pass failed: {e}");
+        }
+
+        let log_sweep_due = last_log_sweep
+            .map(|at| at.elapsed() >= LOG_RETENTION_SWEEP_INTERVAL)
+            .unwrap_or(true);
+        if log_sweep_due {
+            if let Err(e) = prune_old_logs(&db) {
+                tracing::error!("Log retention sweep failed: {e}");
+            }
+            last_log_sweep = Some(Instant::now());
         }
 
         if let Err(e) = manager::activate_pending_worktree_sessions(&db, &cfg).await {
@@ -506,6 +526,19 @@ where
     }
 
     Ok(merged)
+}
+
+/// Prune `tool_log` / `messages` rows older than [`LOG_RETENTION_DAYS`] so the
+/// two append-only tables don't grow without bound between session deletions.
+fn prune_old_logs(db: &StateStore) -> Result<usize> {
+    let cutoff = chrono::Utc::now() - chrono::Duration::days(LOG_RETENTION_DAYS);
+    let pruned = db.prune_logs_before(cutoff)?;
+    if pruned > 0 {
+        tracing::info!(
+            "Pruned {pruned} tool_log/messages row(s) older than {LOG_RETENTION_DAYS} days"
+        );
+    }
+    Ok(pruned)
 }
 
 async fn maybe_auto_prune_inactive_worktrees(db: &StateStore, cfg: &Config) -> Result<usize> {

@@ -645,12 +645,46 @@ impl Config {
     }
 
     pub fn save_to_path(&self, path: &std::path::Path) -> Result<()> {
-        if let Some(parent) = path.parent() {
+        use std::io::Write;
+
+        let parent = path.parent();
+        if let Some(parent) = parent {
             std::fs::create_dir_all(parent)?;
         }
 
         let content = toml::to_string_pretty(self)?;
-        std::fs::write(path, content)?;
+
+        // Atomic write: write to a temp file in the SAME directory, fsync it,
+        // then rename over the target. A reader never observes a partial file,
+        // and a crash mid-write cannot corrupt the existing config.
+        let dir = parent.unwrap_or_else(|| std::path::Path::new("."));
+        let file_name = path
+            .file_name()
+            .map(|name| name.to_string_lossy().into_owned())
+            .unwrap_or_else(|| "ecc2.toml".to_string());
+        let tmp_path = dir.join(format!(".{file_name}.tmp-{}", std::process::id()));
+
+        let write_tmp = || -> Result<()> {
+            let mut tmp = std::fs::File::create(&tmp_path).with_context(|| {
+                format!("Failed to create temp config file {}", tmp_path.display())
+            })?;
+            tmp.write_all(content.as_bytes())?;
+            tmp.sync_all()?;
+            Ok(())
+        };
+
+        if let Err(error) = write_tmp() {
+            let _ = std::fs::remove_file(&tmp_path);
+            return Err(error);
+        }
+
+        if let Err(error) = std::fs::rename(&tmp_path, path) {
+            let _ = std::fs::remove_file(&tmp_path);
+            return Err(error).with_context(|| {
+                format!("Failed to atomically replace config at {}", path.display())
+            });
+        }
+
         Ok(())
     }
 }

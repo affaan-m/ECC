@@ -4077,6 +4077,31 @@ impl StateStore {
         Ok(())
     }
 
+    /// Prune `tool_log` and `messages` rows whose `timestamp` predates
+    /// `cutoff`, in a single transaction. Both tables otherwise grow unbounded
+    /// because rows are only removed on session deletion. Returns the total
+    /// number of rows deleted across both tables. `session_output` keeps its
+    /// own per-session trim (see [`append_output_line`]) and is left untouched.
+    ///
+    /// [`append_output_line`]: StateStore::append_output_line
+    pub fn prune_logs_before(&self, cutoff: chrono::DateTime<chrono::Utc>) -> Result<usize> {
+        let cutoff = cutoff.to_rfc3339();
+        let tx = self.conn.unchecked_transaction()?;
+
+        let tool_log_deleted = tx.execute(
+            "DELETE FROM tool_log WHERE timestamp < ?1",
+            rusqlite::params![cutoff],
+        )?;
+        let messages_deleted = tx.execute(
+            "DELETE FROM messages WHERE timestamp < ?1",
+            rusqlite::params![cutoff],
+        )?;
+
+        tx.commit()?;
+
+        Ok(tool_log_deleted + messages_deleted)
+    }
+
     pub fn delegated_children(&self, session_id: &str, limit: usize) -> Result<Vec<String>> {
         let mut stmt = self.conn.prepare(
             "SELECT to_session
@@ -4104,13 +4129,18 @@ impl StateStore {
     ) -> Result<()> {
         let now = chrono::Utc::now().to_rfc3339();
 
-        self.conn.execute(
+        // Insert, trim, and touch the session in one transaction so a concurrent
+        // reader never observes the row inserted before the buffer is trimmed,
+        // and the three statements contend for the write lock only once.
+        let tx = self.conn.unchecked_transaction()?;
+
+        tx.execute(
             "INSERT INTO session_output (session_id, stream, line, timestamp)
              VALUES (?1, ?2, ?3, ?4)",
             rusqlite::params![session_id, stream.as_str(), line, now],
         )?;
 
-        self.conn.execute(
+        tx.execute(
             "DELETE FROM session_output
              WHERE session_id = ?1
                AND id NOT IN (
@@ -4123,13 +4153,15 @@ impl StateStore {
             rusqlite::params![session_id, OUTPUT_BUFFER_LIMIT as i64],
         )?;
 
-        self.conn.execute(
+        tx.execute(
             "UPDATE sessions
              SET updated_at = ?1,
                  last_heartbeat_at = ?1
              WHERE id = ?2",
-            rusqlite::params![chrono::Utc::now().to_rfc3339(), session_id],
+            rusqlite::params![now, session_id],
         )?;
+
+        tx.commit()?;
 
         Ok(())
     }
@@ -4211,6 +4243,13 @@ impl StateStore {
         Ok(SessionOutputBatch { cursor, records })
     }
 
+    /// Insert a row into `tool_log`.
+    ///
+    /// NOTE (cross-language contract): `tool_log` is currently written by the
+    /// JS control-pane, which owns tool-call ingestion. This Rust writer is
+    /// retained-but-unused on the write path (the Rust side only reads
+    /// `tool_log`); see `observability::ToolLogger` for the full note. Do not
+    /// delete or revive it without coordinating with the JS control-pane.
     pub fn insert_tool_log(
         &self,
         session_id: &str,
