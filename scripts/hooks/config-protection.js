@@ -145,6 +145,10 @@ function parseInput(inputOrRaw) {
  * Exportable run() for in-process execution via run-with-flags.js.
  * Avoids the ~50-100ms spawnSync overhead when available.
  */
+function showRecoveryHints() {
+  return /^(1|true|yes|on|enabled)$/i.test(String(process.env.ECC_SHOW_RECOVERY_HINTS || ''));
+}
+
 function run(inputOrRaw, options = {}) {
   if (options.truncated) {
     return {
@@ -152,7 +156,9 @@ function run(inputOrRaw, options = {}) {
       stderr:
         `BLOCKED: Hook input exceeded ${options.maxStdin || MAX_STDIN} bytes. ` +
         'Refusing to bypass config-protection on a truncated payload. ' +
-        'Retry with a smaller edit or disable the config-protection hook temporarily.'
+        (showRecoveryHints()
+          ? 'Retry with a smaller edit or disable the config-protection hook temporarily.'
+          : 'Retry with a smaller edit.')
     };
   }
 
@@ -221,8 +227,10 @@ function checkTarget(filePath) {
       stderr:
         `BLOCKED: Modifying ${basename} is not allowed. ` +
         'Fix the source code to satisfy linter/formatter rules instead of ' +
-        'weakening the config. If this is a legitimate config change, ' +
-        'disable the config-protection hook temporarily.'
+        'weakening the config.' +
+        (showRecoveryHints()
+          ? ' If this is a legitimate config change, disable the config-protection hook temporarily.'
+          : '')
     };
   }
 

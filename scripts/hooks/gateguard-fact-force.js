@@ -115,6 +115,13 @@ const ROUTINE_POWERSHELL_NARROW_RECOVERY_HINT =
 const ECC_DISABLE_VALUES = new Set(['0', 'false', 'off', 'disabled', 'disable']);
 const ECC_ENABLE_VALUES = new Set(['1', 'true', 'on', 'enabled', 'enable', 'yes']);
 
+// A denial is fed back to the agent as untrusted tool text. Naming the env vars
+// that disable the guard in that same message hands a bypass to the guarded
+// agent (#3844), so the recovery controls are opt-in for human operators.
+function showRecoveryHints() {
+  return ECC_ENABLE_VALUES.has(normalizeEnvValue(process.env.ECC_SHOW_RECOVERY_HINTS));
+}
+
 // SQL keywords remain a phrase check. Quoted strings are stripped before
 // this regex runs so a commit message mentioning "drop table" stays passive.
 // `dd if=` used to be a fourth arm here. Matching it as text could not work:
@@ -2108,7 +2115,9 @@ function condensedGateMsg(action, filePath, ordinal, { cls = 'code', targetNote 
     `${batchSiblingWarning(safe)} ` +
     (missNote ? `${missNote} ` : '') +
     (targetNote ? `${targetNote} ` : '') +
-    '(Use GATEGUARD_EXEMPT_GLOBS for path-scoped exemptions; GATEGUARD_FACT_FORCE_MAX_DENIALS caps denials per session; ECC_GATEGUARD=off disables this gate.)'
+    (showRecoveryHints()
+      ? '(Use GATEGUARD_EXEMPT_GLOBS for path-scoped exemptions; GATEGUARD_FACT_FORCE_MAX_DENIALS caps denials per session; ECC_GATEGUARD=off disables this gate.)'
+      : '')
   );
 }
 
@@ -2183,6 +2192,7 @@ function routineShellMsg(toolName) {
 }
 
 function withRecoveryHint(message, hookIds = [EDIT_WRITE_HOOK_ID], narrowRecoveryHint = '') {
+  if (!showRecoveryHints()) return message;
   const disableTargets = hookIds.map(hookId => `\`${hookId}\``).join(' or ');
   const recoveryLines = narrowRecoveryHint ? [narrowRecoveryHint, ''] : [];
   return [

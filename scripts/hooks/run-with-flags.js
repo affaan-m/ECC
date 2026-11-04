@@ -138,9 +138,14 @@ function truncatedInputResult(hookId, maxStdin) {
     if (failOpen) return null;
   }
 
+  const showRecoveryHints = /^(1|true|yes|on|enabled)$/i.test(
+    String(process.env.ECC_SHOW_RECOVERY_HINTS || '')
+  );
   return {
     stdout: '',
-    stderr: `BLOCKED: Hook input exceeded ${maxStdin} bytes, so ${hookId} could not safely inspect the complete request. Retry with a smaller tool input or explicitly disable this hook.`,
+    stderr: showRecoveryHints
+      ? `BLOCKED: Hook input exceeded ${maxStdin} bytes, so ${hookId} could not safely inspect the complete request. Retry with a smaller tool input or explicitly disable this hook.`
+      : `BLOCKED: Hook input exceeded ${maxStdin} bytes, so ${hookId} could not safely inspect the complete request. Retry with a smaller tool input.`,
     exitCode: 2
   };
 }
