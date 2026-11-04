@@ -51,7 +51,7 @@ const SECRET_PATTERNS = Object.freeze([
   { label: 'Stripe key', pattern: /\b(?:sk|rk)_live_[A-Za-z0-9]{16,}\b/ },
   { label: 'npm token', pattern: /\bnpm_[A-Za-z0-9]{20,}\b/ },
   { label: 'Hugging Face token', pattern: /\bhf_[A-Za-z0-9]{20,}\b/ },
-  { label: 'GitHub token', pattern: /\bgh[pors]_[A-Za-z0-9]{16,}\b/ },
+  { label: 'GitHub token', pattern: /\bgh[oprsu]_[A-Za-z0-9]{16,}\b/ },
   { label: 'GitHub token', pattern: /\bgithub_pat_[A-Za-z0-9_]{16,}\b/ },
   { label: 'Google API key', pattern: /\bAIza[A-Za-z0-9_-]{16,}\b/ },
   { label: 'Slack token', pattern: /\bxox[baprs]-[A-Za-z0-9-]{10,}\b/ },
