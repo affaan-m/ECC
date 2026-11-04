@@ -57,5 +57,6 @@ if (
   passed++;
 else failed++;
 
-console.log(`\n  ${passed} passed, ${failed} failed\n`);
+console.log(`\nPassed: ${passed}`);
+console.log(`Failed: ${failed}\n`);
 process.exit(failed > 0 ? 1 : 0);
