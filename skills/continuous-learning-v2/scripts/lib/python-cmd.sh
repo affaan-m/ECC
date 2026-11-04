@@ -28,10 +28,11 @@
 # start no probe at all. It is used only while PATH and what python3 and python
 # resolve to are unchanged, the chosen command still exists, and (on bash 4.2+)
 # it is under a day old. Anything else re-probes and rewrites it. Deleting the
-# file resets it. A cache file not owned by the current user is ignored, and
-# the cached command is only run when it is python3, python or a python*.exe
-# path outside WindowsApps, so a planted file in a shared homunculus dir cannot
-# choose what runs.
+# file resets it. A cache file or dir not owned by the current user is ignored,
+# writes go through a mktemp temp file, and the cached command is only run when
+# it is python3, python or a python*.exe path outside WindowsApps, so a planted
+# file in a shared homunculus dir can neither choose what runs nor be written
+# through.
 
 # Lowest Python the CLv2 scripts run on: instinct-cli.py uses PEP 585
 # annotations (list[dict]) evaluated at def time and str.removeprefix.
@@ -40,7 +41,9 @@ CLV2_MIN_PYTHON_MINOR=9
 
 _CLV2_PYTHON_CACHE_TAG='clv2-python-cmd 1'
 _CLV2_PYTHON_CACHE_TTL=86400
-_CLV2_PYTHON_PROBE_TIMEOUT=10
+# Seconds per probe. observe-runner.js gives the whole hook 9 s, so two probes
+# (python3, then python) must fit inside that with time left to observe.
+_CLV2_PYTHON_PROBE_TIMEOUT=4
 
 # Prints the version verdict, then sys.executable as UTF-8 bytes. Python 2
 # compatible on purpose, so an old "python" reports its version instead of a
@@ -104,7 +107,7 @@ _clv2_now() {
 _clv2_python_cache_file() {
   local _dir
   _dir="$(_clv2_resolve_homunculus_dir 2>/dev/null)" || return 1
-  [ -n "$_dir" ] && [ -d "$_dir" ] || return 1
+  [ -n "$_dir" ] && [ -d "$_dir" ] && [ -O "$_dir" ] || return 1
   printf '%s/.python-cmd\n' "$_dir"
 }
 
@@ -137,7 +140,10 @@ _clv2_python_cache_read() {
 
 _clv2_python_cache_write() {
   # $1 cache file, $2 python3 path, $3 python path, $4 chosen command.
-  local _file="$1" _tmp="$1.$$"
+  # mktemp creates the temp file exclusively under a random name, so a name
+  # planted as a symlink is never written through; without it, skip the cache.
+  local _file="$1" _tmp
+  _tmp="$(mktemp "$_file.XXXXXX" 2>/dev/null)" || return 0
   _clv2_now
   {
     printf '%s\n' "$_CLV2_PYTHON_CACHE_TAG" "$_clv2_epoch" "$PATH" "$2" "$3" "$4" "end" > "$_tmp" &&
