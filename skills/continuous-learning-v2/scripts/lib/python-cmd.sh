@@ -41,8 +41,11 @@ CLV2_MIN_PYTHON_MINOR=9
 
 _CLV2_PYTHON_CACHE_TAG='clv2-python-cmd 1'
 _CLV2_PYTHON_CACHE_TTL=86400
-# Seconds per probe. observe-runner.js gives the whole hook 9 s, so two probes
-# (python3, then python) must fit inside that with time left to observe.
+# Seconds per probe, plus 1 s before KILL for an interpreter that ignores TERM.
+# observe-runner.js gives the whole hook 9 s, so one stalled candidate still
+# leaves time to probe the other and observe. The bound needs GNU timeout, which
+# Git Bash and Cygwin ship; without it a probe runs unbounded, as every Python
+# call did before this resolver, and only the hook runner's 9 s limit applies.
 _CLV2_PYTHON_PROBE_TIMEOUT=4
 
 # Prints the version verdict, then sys.executable as UTF-8 bytes. Python 2
@@ -142,11 +145,14 @@ _clv2_python_cache_write() {
   # $1 cache file, $2 python3 path, $3 python path, $4 chosen command.
   # mktemp creates the temp file exclusively under a random name, so a name
   # planted as a symlink is never written through; without it, skip the cache.
+  # mv onto a symlink to a directory would move the file into that directory,
+  # so a cache path that is a symlink or a directory is left alone.
   local _file="$1" _tmp
   _tmp="$(mktemp "$_file.XXXXXX" 2>/dev/null)" || return 0
   _clv2_now
   {
     printf '%s\n' "$_CLV2_PYTHON_CACHE_TAG" "$_clv2_epoch" "$PATH" "$2" "$3" "$4" "end" > "$_tmp" &&
+      [ ! -L "$_file" ] && [ ! -d "$_file" ] &&
       mv -f "$_tmp" "$_file"
   } 2>/dev/null || rm -f "$_tmp" 2>/dev/null || true
 }
@@ -167,7 +173,7 @@ _clv2_python_probe() {
     esac
   fi
   if [ -n "$_timeout" ]; then
-    _out="$("$_timeout" "$_CLV2_PYTHON_PROBE_TIMEOUT" "$1" -c "$_CLV2_PYTHON_PROBE" 2>/dev/null)"
+    _out="$("$_timeout" -k 1 "$_CLV2_PYTHON_PROBE_TIMEOUT" "$1" -c "$_CLV2_PYTHON_PROBE" 2>/dev/null)"
   else
     _out="$("$1" -c "$_CLV2_PYTHON_PROBE" 2>/dev/null)"
   fi
