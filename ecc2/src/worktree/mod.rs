@@ -1058,6 +1058,15 @@ fn read_patch_prefix(stdout: impl Read, limit: usize) -> std::io::Result<(Vec<St
     Ok((lines, true))
 }
 
+// Drain the whole pipe so Git can keep writing stdout even when a diff
+// driver is noisy. Retain only a short prefix for the failure diagnostic.
+fn read_git_diagnostic(mut stderr: impl Read) -> std::io::Result<Vec<u8>> {
+    let mut diagnostic = Vec::new();
+    stderr.by_ref().take(8192).read_to_end(&mut diagnostic)?;
+    std::io::copy(&mut stderr, &mut std::io::sink())?;
+    Ok(diagnostic)
+}
+
 fn git_diff_patch_lines(
     worktree_path: &Path,
     revision: Option<&str>,
@@ -1069,16 +1078,28 @@ fn git_diff_patch_lines(
         .arg("-C")
         .arg(worktree_path)
         .args(["diff", "--stat", "--patch", "--find-renames"])
-        .args(revision);
+        .args(revision)
+        // A preview may be killed early. Keep it from refreshing the index.
+        .env("GIT_OPTIONAL_LOCKS", "0");
     if !paths.is_empty() {
         command.arg("--").args(paths);
     }
     let mut child = command
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
-        .stderr(Stdio::null())
+        .stderr(Stdio::piped())
         .spawn()
         .context("Failed to start worktree patch preview")?;
+    let stderr = child.stderr.take().expect("piped git stderr");
+    let diagnostic = std::thread::Builder::new().spawn(move || read_git_diagnostic(stderr));
+    let diagnostic = match diagnostic {
+        Ok(reader) => reader,
+        Err(error) => {
+            let _ = child.kill();
+            let _ = child.wait();
+            return Err(error).context("Failed to start Git diagnostic reader");
+        }
+    };
     let prefix = read_patch_prefix(child.stdout.as_mut().expect("piped git stdout"), limit);
 
     // Reap Git even on read errors. Keep the read end open until cancellation
@@ -1091,11 +1112,16 @@ fn git_diff_patch_lines(
     let status = child
         .wait()
         .context("Failed to wait for worktree patch preview")?;
+    let diagnostic = diagnostic
+        .join()
+        .map_err(|_| anyhow::anyhow!("Git diagnostic reader panicked"))?
+        .context("Failed to read Git diagnostic")?;
     let (lines, _) = prefix.context("Failed to read worktree patch preview")?;
     if !cancelled && !status.success() {
         tracing::warn!(
-            "Worktree patch preview failed for {}: {status}",
-            worktree_path.display()
+            "Worktree patch preview failed for {} ({status}): {}",
+            worktree_path.display(),
+            String::from_utf8_lossy(&diagnostic).trim_end()
         );
         return Ok(Vec::new());
     }
@@ -1834,6 +1860,15 @@ mod tests {
             .arg(&worktree_dir)
             .output();
         let _ = fs::remove_dir_all(root);
+        Ok(())
+    }
+
+    #[test]
+    fn git_diagnostic_retains_the_error_prefix_and_drains_the_rest() -> Result<()> {
+        let mut input = std::io::Cursor::new([b'x'; 32 * 1024]);
+        let diagnostic = read_git_diagnostic(&mut input)?;
+        assert_eq!(diagnostic, vec![b'x'; 8192]);
+        assert_eq!(input.position(), 32 * 1024);
         Ok(())
     }
 
