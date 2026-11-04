@@ -56,6 +56,13 @@ struct ThemePalette {
     help_border: Color,
 }
 
+/// Destructive actions that require explicit operator confirmation before running.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PendingConfirm {
+    DeleteSession,
+    PruneWorktrees,
+}
+
 #[derive(Debug, Clone)]
 struct SessionCompletionSummary {
     session_id: String,
@@ -154,6 +161,9 @@ pub struct Dashboard {
     selected_pane: Pane,
     selected_session: usize,
     show_help: bool,
+    help_scroll: u16,
+    pending_confirm: Option<PendingConfirm>,
+    no_color: bool,
     operator_note: Option<String>,
     pane_command_mode: bool,
     output_follow: bool,
@@ -612,6 +622,9 @@ impl Dashboard {
             selected_pane: Pane::Sessions,
             selected_session: 0,
             show_help: false,
+            help_scroll: 0,
+            pending_confirm: None,
+            no_color: std::env::var_os("NO_COLOR").is_some_and(|value| !value.is_empty()),
             operator_note: None,
             pane_command_mode: false,
             output_follow: true,
@@ -809,19 +822,22 @@ impl Dashboard {
             "Duration",
         ])
         .style(Style::default().add_modifier(Modifier::BOLD));
+        // Keep the fixed-width footprint small so the table degrades gracefully at
+        // 80 columns: primary columns get tight fixed widths, Branch flexes via Min,
+        // and secondary count columns stay minimal so they survive narrow terminals.
         let widths = [
-            Constraint::Length(8),
-            Constraint::Length(12),
-            Constraint::Length(18),
-            Constraint::Length(10),
-            Constraint::Length(10),
-            Constraint::Min(12),
-            Constraint::Length(10),
-            Constraint::Length(7),
-            Constraint::Length(8),
-            Constraint::Length(7),
-            Constraint::Length(7),
-            Constraint::Length(8),
+            Constraint::Length(6),  // ID
+            Constraint::Length(10), // Project
+            Constraint::Length(12), // Group
+            Constraint::Length(8),  // Agent
+            Constraint::Length(7),  // State
+            Constraint::Min(8),     // Branch (flexes)
+            Constraint::Length(5),  // Approvals
+            Constraint::Length(5),  // Backlog
+            Constraint::Length(6),  // Tokens
+            Constraint::Length(5),  // Tools
+            Constraint::Length(5),  // Files
+            Constraint::Length(6),  // Duration
         ];
 
         let table = Table::new(rows, widths)
@@ -1441,9 +1457,7 @@ impl Dashboard {
 
     fn render_status_bar(&self, frame: &mut Frame, area: Rect) {
         let base_text = format!(
-            " [n]ew session  natural spawn [N]  [a]ssign  re[b]alance  global re[B]alance  dra[i]n inbox  approval jump [I]  [g]lobal dispatch  coordinate [G]lobal  collapse pane [h]  restore panes [H]  timeline [y]  timeline filter [E]  file patch [v]  git status [z]  stage [S]  unstage [U]  reset [R]  commit [C]  create PR [P]  diff mode [V]  hunks [{{/}}]  conflict proto[c]ol  cont[e]nt filter  time [f]ilter  scope [A]  agent filter [o]  [m]erge  merge ready [M]  auto-worktree [t]  auto-merge [w]  toggle [p]olicy  [,/.] dispatch limit  [s]top  [u]resume  [x]cleanup  prune inactive [X]  [d]elete  [r]efresh  [{}] focus pane  [Tab] cycle pane  [{}] move pane  [j/k] scroll  delegate [ or ]  [Enter] open  [+/-] resize  [l]ayout {}  [T]heme {}  [?] help  [q]uit ",
-            self.pane_focus_shortcuts_label(),
-            self.pane_move_shortcuts_label(),
+            " [n]ew  [N]spawn  [a]ssign  [m]erge  [M]erge-ready  [s]top  [u]resume  [x]cleanup  [d]elete  [/]search  [Tab]pane  [j/k]scroll  [l]ayout {}  [T]heme {}  [?]help (full key list)  [q]uit ",
             self.layout_label(),
             self.theme_label()
         );
@@ -1554,7 +1568,7 @@ impl Dashboard {
         );
     }
 
-    fn render_help(&self, frame: &mut Frame, area: Rect) {
+    fn render_help(&mut self, frame: &mut Frame, area: Rect) {
         let help = vec![
             "Keyboard Shortcuts:".to_string(),
             "".to_string(),
@@ -1626,15 +1640,39 @@ impl Dashboard {
             "  r       Refresh".to_string(),
             "  ?       Toggle help".to_string(),
             "  q/C-c   Quit".to_string(),
+            "".to_string(),
+            "  (j/k or ↑/↓ scroll this help · Esc/q/? close)".to_string(),
         ];
 
-        let paragraph = Paragraph::new(help.join("\n")).block(
-            Block::default()
-                .borders(Borders::ALL)
-                .title(" Help ")
-                .border_style(Style::default().fg(self.theme_palette().help_border)),
-        );
+        // Clamp the scroll offset so we never page past the final help line.
+        let max_scroll = (help.len() as u16).saturating_sub(1);
+        if self.help_scroll > max_scroll {
+            self.help_scroll = max_scroll;
+        }
+
+        let help_border = self.theme_palette().help_border;
+        let paragraph = Paragraph::new(help.join("\n"))
+            .block(
+                Block::default()
+                    .borders(Borders::ALL)
+                    .title(" Help ")
+                    .border_style(Style::default().fg(help_border)),
+            )
+            .wrap(Wrap { trim: false })
+            .scroll((self.help_scroll, 0));
         frame.render_widget(paragraph, area);
+    }
+
+    pub fn scroll_help_down(&mut self) {
+        self.help_scroll = self.help_scroll.saturating_add(1);
+    }
+
+    pub fn scroll_help_up(&mut self) {
+        self.help_scroll = self.help_scroll.saturating_sub(1);
+    }
+
+    pub fn is_help_visible(&self) -> bool {
+        self.show_help
     }
 
     pub fn next_pane(&mut self) {
@@ -3240,6 +3278,45 @@ impl Dashboard {
 
     pub fn toggle_help(&mut self) {
         self.show_help = !self.show_help;
+        self.help_scroll = 0;
+    }
+
+    /// Sets a transient status note before a long-running async action so the
+    /// caller can draw one frame of feedback before the UI thread blocks.
+    pub fn begin_blocking_note(&mut self, note: &str) {
+        self.set_operator_note(note.to_string());
+    }
+
+    pub fn pending_confirm(&self) -> Option<PendingConfirm> {
+        self.pending_confirm
+    }
+
+    pub fn request_delete_confirm(&mut self) {
+        if self.sessions.get(self.selected_session).is_none() {
+            self.set_operator_note("no session selected to delete".to_string());
+            return;
+        }
+        self.pending_confirm = Some(PendingConfirm::DeleteSession);
+        self.set_operator_note(
+            "delete selected session? press y to confirm, any other key cancels".to_string(),
+        );
+    }
+
+    pub fn request_prune_confirm(&mut self) {
+        self.pending_confirm = Some(PendingConfirm::PruneWorktrees);
+        self.set_operator_note(
+            "prune inactive worktrees? press y to confirm, any other key cancels".to_string(),
+        );
+    }
+
+    pub fn clear_pending_confirm(&mut self) {
+        self.pending_confirm = None;
+    }
+
+    pub fn cancel_pending_confirm(&mut self) {
+        if self.pending_confirm.take().is_some() {
+            self.set_operator_note("confirmation cancelled".to_string());
+        }
     }
 
     pub fn is_input_mode(&self) -> bool {
@@ -7171,6 +7248,16 @@ impl Dashboard {
     }
 
     fn theme_palette(&self) -> ThemePalette {
+        // Honor the NO_COLOR convention: drop all foreground/background colors and
+        // rely on text labels and the selection symbol instead.
+        if self.no_color {
+            return ThemePalette {
+                accent: Color::Reset,
+                row_highlight_bg: Color::Reset,
+                muted: Color::Reset,
+                help_border: Color::Reset,
+            };
+        }
         match self.cfg.theme {
             Theme::Dark => ThemePalette {
                 accent: Color::Cyan,
@@ -15277,6 +15364,9 @@ diff --git a/src/lib.rs b/src/lib.rs
             selected_pane: Pane::Sessions,
             selected_session,
             show_help: false,
+            help_scroll: 0,
+            pending_confirm: None,
+            no_color: false,
             operator_note: None,
             pane_command_mode: false,
             output_follow: true,
