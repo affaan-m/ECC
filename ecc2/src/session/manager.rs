@@ -113,6 +113,25 @@ pub async fn create_session_from_source_with_profile_and_grouping(
     .await
 }
 
+/// Count sessions that currently hold a live slot against
+/// `max_parallel_sessions`. Pending/Running/Idle are obviously live; Stale is
+/// counted too because it still holds a process/worktree until reaped.
+fn count_live_sessions(db: &StateStore) -> Result<usize> {
+    Ok(db
+        .list_sessions()?
+        .into_iter()
+        .filter(|session| {
+            matches!(
+                session.state,
+                SessionState::Pending
+                    | SessionState::Running
+                    | SessionState::Idle
+                    | SessionState::Stale
+            )
+        })
+        .count())
+}
+
 async fn run_due_schedules_with_runner_program(
     db: &StateStore,
     cfg: &Config,
@@ -122,8 +141,19 @@ async fn run_due_schedules_with_runner_program(
     let now = Utc::now();
     let schedules = db.list_due_scheduled_tasks(now, limit)?;
     let mut outcomes = Vec::new();
+    // B-F4: schedules queue sessions that spawn immediately, so respect the
+    // global concurrency cap. Without this, N cron tasks coming due in one tick
+    // would start N concurrent sessions past max_parallel_sessions. Compute the
+    // available slots once and decrement per launch; remaining due schedules
+    // stay due (next_run_at is not advanced) and fire on a later tick.
+    let mut available_slots = cfg
+        .max_parallel_sessions
+        .saturating_sub(count_live_sessions(db)?);
 
     for schedule in schedules {
+        if available_slots == 0 {
+            break;
+        }
         let grouping = SessionGrouping {
             project: normalize_group_label(&schedule.project),
             task_group: normalize_group_label(&schedule.task_group),
@@ -141,6 +171,7 @@ async fn run_due_schedules_with_runner_program(
             grouping,
         )
         .await?;
+        available_slots = available_slots.saturating_sub(1);
         let next_run_at = next_schedule_run_at(&schedule.cron_expr, now)?;
         db.record_scheduled_task_run(schedule.id, now, next_run_at)?;
         outcomes.push(ScheduledRunOutcome {
@@ -511,10 +542,15 @@ async fn run_remote_dispatch_requests_with_runner_program(
                 &runner_program,
                 request.profile_name.as_deref(),
                 grouping,
+                request.priority,
             )
             .await
             {
                 Ok(assignment) if assignment.action == AssignmentAction::DeferredSaturated => {
+                    // B-F7: record the deferral so a chronically-saturated
+                    // request ages down the pending window and stops starving
+                    // requests queued behind it.
+                    db.record_remote_dispatch_deferral(request.id)?;
                     RemoteDispatchOutcome {
                         request_id: request.id,
                         task: request.task.clone(),
@@ -550,6 +586,21 @@ async fn run_remote_dispatch_requests_with_runner_program(
                         action: RemoteDispatchAction::Failed(error.to_string()),
                     }
                 }
+            }
+        } else if count_live_sessions(db)? >= cfg.max_parallel_sessions {
+            // B-F4: an untargeted remote request spawns a top-level session
+            // immediately. Respect the global concurrency cap so a burst of
+            // requests cannot start sessions past max_parallel_sessions; leave
+            // the request pending for a later tick. B-F7: age it so it does not
+            // keep the head of the pending window.
+            db.record_remote_dispatch_deferral(request.id)?;
+            RemoteDispatchOutcome {
+                request_id: request.id,
+                task: request.task.clone(),
+                priority: request.priority,
+                target_session_id: None,
+                session_id: None,
+                action: RemoteDispatchAction::DeferredSaturated,
             }
         } else {
             match queue_session_in_dir_with_runner_program(
@@ -633,20 +684,9 @@ pub async fn launch_orchestration_template(
         .transpose()?;
     let vars = build_template_variables(&repo_root, source_session.as_ref(), task, variables);
     let template = cfg.resolve_orchestration_template(template_name, &vars)?;
-    let live_sessions = db
-        .list_sessions()?
-        .into_iter()
-        .filter(|session| {
-            matches!(
-                session.state,
-                SessionState::Pending
-                    | SessionState::Running
-                    | SessionState::Idle
-                    | SessionState::Stale
-            )
-        })
-        .count();
-    let available_slots = cfg.max_parallel_sessions.saturating_sub(live_sessions);
+    let available_slots = cfg
+        .max_parallel_sessions
+        .saturating_sub(count_live_sessions(db)?);
     if template.steps.len() > available_slots {
         anyhow::bail!(
             "template {template_name} requires {} session slots but only {available_slots} available",
@@ -721,6 +761,7 @@ pub async fn launch_orchestration_template(
                 &session_id,
                 &step.task,
                 &format!("template {} | {}", template_name, step.name),
+                TaskPriority::Normal,
             )?;
         } else {
             created_anchor_id = Some(session_id.clone());
@@ -917,6 +958,10 @@ pub async fn assign_session_with_profile_and_grouping(
         &std::env::current_exe().context("Failed to resolve ECC executable path")?,
         profile_name,
         grouping,
+        // Native CLI assignment carries no explicit priority at this boundary;
+        // preserve the historical Normal default. Priority-bearing routes
+        // (drain/rebalance/remote) thread the original priority through.
+        TaskPriority::Normal,
     )
     .await
 }
@@ -939,6 +984,9 @@ pub async fn drain_inbox(
     for message in messages {
         let task =
             parse_task_handoff_task(&message.content).unwrap_or_else(|| message.content.clone());
+        // B-F1: carry the handoff's original priority to the chosen worker
+        // (the inbox is already ordered by priority) instead of flattening it.
+        let priority = comms::handoff_priority(&message.content);
 
         let outcome = assign_session_in_dir_with_runner_program(
             db,
@@ -953,6 +1001,7 @@ pub async fn drain_inbox(
             // coordinator's own profile when draining independent handoffs.
             cfg.default_agent_profile.as_deref(),
             SessionGrouping::default(),
+            priority,
         )
         .await?;
 
@@ -1147,6 +1196,8 @@ pub async fn rebalance_team_backlog(
 
             let task = parse_task_handoff_task(&message.content)
                 .unwrap_or_else(|| message.content.clone());
+            // B-F1: preserve the original priority when relocating backlog.
+            let priority = comms::handoff_priority(&message.content);
 
             let outcome = assign_session_in_dir_with_runner_program(
                 db,
@@ -1159,6 +1210,7 @@ pub async fn rebalance_team_backlog(
                 &runner_program,
                 cfg.default_agent_profile.as_deref(),
                 SessionGrouping::default(),
+                priority,
             )
             .await?;
 
@@ -1582,6 +1634,7 @@ async fn assign_session_in_dir_with_runner_program(
     runner_program: &Path,
     profile_name: Option<&str>,
     grouping: SessionGrouping,
+    priority: TaskPriority,
 ) -> Result<AssignmentOutcome> {
     let lead = resolve_session(db, lead_id)?;
     let inherited_grouping = SessionGrouping {
@@ -1600,12 +1653,25 @@ async fn assign_session_in_dir_with_runner_program(
                 .map(|count| (session.id.clone(), count))
         })
         .collect::<Result<std::collections::HashMap<_, _>>>()?;
+    // B-F3: idle-reuse eligibility must reflect *pending independent work*, not
+    // a worker's own assignment notices. `unread_task_handoff_count` counts
+    // native assignment notices too, so an Idle worker that returned without
+    // marking its own notice read would stay permanently ineligible for reuse,
+    // forcing needless spawn/defer. `unread_task_handoffs_for_session` filters
+    // assignment notices out, so its length is the real intake backlog.
+    let delegate_independent_backlog = delegates
+        .iter()
+        .map(|session| {
+            db.unread_task_handoffs_for_session(&session.id, usize::MAX)
+                .map(|messages| (session.id.clone(), messages.len()))
+        })
+        .collect::<Result<std::collections::HashMap<_, _>>>()?;
 
     if let Some(idle_delegate) = delegates
         .iter()
         .filter(|session| {
             session.state == SessionState::Idle
-                && delegate_handoff_backlog
+                && delegate_independent_backlog
                     .get(&session.id)
                     .copied()
                     .unwrap_or(0)
@@ -1613,7 +1679,14 @@ async fn assign_session_in_dir_with_runner_program(
         })
         .max_by_key(|session| delegate_selection_key(db, session, task))
     {
-        send_task_handoff(db, &lead, &idle_delegate.id, task, "reused idle delegate")?;
+        send_task_handoff(
+            db,
+            &lead,
+            &idle_delegate.id,
+            task,
+            "reused idle delegate",
+            priority,
+        )?;
         return Ok(AssignmentOutcome {
             session_id: idle_delegate.id.clone(),
             action: AssignmentAction::ReusedIdle,
@@ -1631,10 +1704,17 @@ async fn assign_session_in_dir_with_runner_program(
             runner_program,
             profile_name,
             Some(&lead.id),
-            inherited_grouping.clone(),
+            inherited_grouping,
         )
         .await?;
-        send_task_handoff(db, &lead, &session_id, task, "spawned new delegate")?;
+        send_task_handoff(
+            db,
+            &lead,
+            &session_id,
+            task,
+            "spawned new delegate",
+            priority,
+        )?;
         return Ok(AssignmentOutcome {
             session_id,
             action: AssignmentAction::Spawned,
@@ -1692,6 +1772,7 @@ async fn assign_session_in_dir_with_runner_program(
             &active_delegate.id,
             task,
             "reused active delegate at capacity",
+            priority,
         )?;
         return Ok(AssignmentOutcome {
             session_id: active_delegate.id.clone(),
@@ -1699,23 +1780,16 @@ async fn assign_session_in_dir_with_runner_program(
         });
     }
 
-    let session_id = queue_session_in_dir_with_runner_program(
-        db,
-        cfg,
-        task,
-        agent_type,
-        use_worktree,
-        repo_root,
-        runner_program,
-        profile_name,
-        Some(&lead.id),
-        inherited_grouping,
-    )
-    .await?;
-    send_task_handoff(db, &lead, &session_id, task, "spawned fallback delegate")?;
+    // B-F6: reaching here means the team is already at capacity (the spawn gate
+    // above requires `delegates.len() < max_parallel_sessions`) and no Idle,
+    // Running or Pending delegate was routable — the remaining delegates are
+    // Stale, which `direct_delegate_sessions` now counts toward the cap. Those
+    // still hold a process/worktree, so spawning another would over-provision
+    // past `max_parallel_sessions`. Defer instead; the work stays with the lead
+    // and is retried once a slot frees.
     Ok(AssignmentOutcome {
-        session_id,
-        action: AssignmentAction::Spawned,
+        session_id: lead.id.clone(),
+        action: AssignmentAction::DeferredSaturated,
     })
 }
 
@@ -2069,7 +2143,7 @@ pub async fn prune_inactive_worktrees(
     let now = chrono::Utc::now();
 
     for session in sessions {
-        let Some(_) = session.worktree.as_ref() else {
+        let Some(worktree) = session.worktree.clone() else {
             continue;
         };
 
@@ -2078,6 +2152,30 @@ pub async fn prune_inactive_worktrees(
             SessionState::Pending | SessionState::Running | SessionState::Idle
         ) {
             active_with_worktree_ids.push(session.id);
+            continue;
+        }
+
+        // B-F2: prune deletes the worktree outright (it does not merge), so it
+        // must never remove one that still holds work. Mirror the merge path's
+        // dirty/merge-readiness guard (`has_uncommitted_changes` / `health`),
+        // and additionally refuse to delete a branch whose commits are not yet
+        // merged into base — `WorktreeHealth::InProgress`/`Conflicted` mean the
+        // branch carries unmerged work or a conflict, whereas `Clear` means no
+        // branch diff and no working-tree changes. This holds regardless of
+        // `worktree_retention_secs` (which defaults to 0 = immediate prune).
+        //
+        // Only a *known* dirty-or-unmerged state blocks pruning. If git cannot
+        // inspect the path (it is not a valid worktree, or the command errors),
+        // there is no git-tracked work to preserve and the merge path cannot
+        // act on it either, so such a worktree stays prunable.
+        let known_dirty = crate::worktree::has_uncommitted_changes(&worktree).unwrap_or(false);
+        let known_unmerged = matches!(
+            crate::worktree::health(&worktree),
+            Ok(crate::worktree::WorktreeHealth::InProgress)
+                | Ok(crate::worktree::WorktreeHealth::Conflicted)
+        );
+        if known_dirty || known_unmerged {
+            retained_session_ids.push(session.id);
             continue;
         }
 
@@ -2867,9 +2965,17 @@ fn direct_delegate_sessions(
             continue;
         }
 
+        // B-F6: a Stale delegate still holds its process/worktree, so it must
+        // count toward the team's live-session cap (preventing over-provision).
+        // It is intentionally NOT routable: every routing filter below matches
+        // on Idle / Running / Pending, so new work is never sent to a Stale
+        // delegate — it only occupies a slot until it is reaped or recovers.
         if matches!(
             session.state,
-            SessionState::Pending | SessionState::Running | SessionState::Idle
+            SessionState::Pending
+                | SessionState::Running
+                | SessionState::Idle
+                | SessionState::Stale
         ) {
             sessions.push(session);
         }
@@ -2968,6 +3074,7 @@ fn send_task_handoff(
     to_session_id: &str,
     task: &str,
     routing_reason: &str,
+    priority: TaskPriority,
 ) -> Result<()> {
     let context = format!(
         "Assigned by {} [{}] | cwd {}{} | {}",
@@ -2993,7 +3100,9 @@ fn send_task_handoff(
         &crate::comms::MessageType::TaskHandoff {
             task: task.to_string(),
             context,
-            priority: crate::comms::TaskPriority::Normal,
+            // B-F1: preserve the task's original priority when routing to a
+            // worker instead of flattening every handoff to Normal.
+            priority,
         },
     )
 }
@@ -3939,12 +4048,21 @@ pub fn preview_assignment_for_task(
                 .map(|count| (session.id.clone(), count))
         })
         .collect::<Result<HashMap<_, _>>>()?;
+    // B-F3: idle-reuse eligibility is based on pending independent work, not a
+    // worker's own (assignment-notice) backlog. Mirror the live assign path.
+    let delegate_independent_backlog = delegates
+        .iter()
+        .map(|session| {
+            db.unread_task_handoffs_for_session(&session.id, usize::MAX)
+                .map(|messages| (session.id.clone(), messages.len()))
+        })
+        .collect::<Result<HashMap<_, _>>>()?;
 
     if let Some(idle_delegate) = delegates
         .iter()
         .filter(|session| {
             session.state == SessionState::Idle
-                && delegate_handoff_backlog
+                && delegate_independent_backlog
                     .get(&session.id)
                     .copied()
                     .unwrap_or(0)
@@ -4028,9 +4146,12 @@ pub fn preview_assignment_for_task(
         });
     }
 
+    // B-F6: team is at capacity with only non-routable (Stale) delegates left.
+    // The live assign path defers here rather than over-provisioning, so the
+    // preview must report the same terminal state.
     Ok(AssignmentPreview {
         session_id: None,
-        action: AssignmentAction::Spawned,
+        action: AssignmentAction::DeferredSaturated,
         delegate_state: None,
         handoff_backlog: 0,
         graph_match_terms: Vec::new(),
@@ -6442,6 +6563,70 @@ mod tests {
     }
 
     #[tokio::test(flavor = "current_thread")]
+    async fn prune_inactive_worktrees_retains_dirty_worktree_despite_zero_retention() -> Result<()>
+    {
+        // B-F2 regression: a stopped session whose worktree holds uncommitted
+        // changes must never be pruned, even at worktree_retention_secs = 0
+        // (immediate prune). Pruning it would silently destroy the work.
+        let tempdir = TestDir::new("manager-prune-worktree-dirty")?;
+        let repo_root = tempdir.path().join("repo");
+        init_git_repo(&repo_root)?;
+
+        let cfg = build_config(tempdir.path());
+        assert_eq!(
+            cfg.worktree_retention_secs, 0,
+            "guard must hold even at zero retention"
+        );
+        let db = StateStore::open(&cfg.db_path)?;
+        let (fake_claude, _) = write_fake_claude(tempdir.path())?;
+
+        let session_id = create_session_in_dir(
+            &db,
+            &cfg,
+            "dirty worktree",
+            "claude",
+            true,
+            &repo_root,
+            &fake_claude,
+        )
+        .await?;
+
+        stop_session_with_options(&db, &session_id, false).await?;
+
+        let worktree = db
+            .get_session(&session_id)?
+            .context("stopped session should exist")?
+            .worktree
+            .context("stopped session worktree missing")?;
+
+        // Introduce an uncommitted change in the worktree.
+        std::fs::write(worktree.path.join("uncommitted.txt"), "work in progress\n")?;
+        assert!(crate::worktree::has_uncommitted_changes(&worktree)?);
+
+        let outcome = prune_inactive_worktrees(&db, &cfg).await?;
+
+        assert!(
+            outcome.cleaned_session_ids.is_empty(),
+            "dirty worktree must not be pruned"
+        );
+        assert_eq!(outcome.retained_session_ids, vec![session_id.clone()]);
+        assert!(worktree.path.exists(), "dirty worktree must remain on disk");
+        assert!(
+            db.get_session(&session_id)?
+                .context("session should still exist")?
+                .worktree
+                .is_some(),
+            "dirty session should keep worktree metadata"
+        );
+
+        // Clean up the real worktree so it does not linger on disk.
+        crate::worktree::remove(&worktree)?;
+        db.clear_worktree_to_dir(&session_id, &repo_root)?;
+
+        Ok(())
+    }
+
+    #[tokio::test(flavor = "current_thread")]
     async fn merge_session_worktree_merges_branch_and_cleans_worktree() -> Result<()> {
         let tempdir = TestDir::new("manager-merge-worktree")?;
         let repo_root = tempdir.path().join("repo");
@@ -7199,6 +7384,7 @@ mod tests {
             &fake_runner,
             None,
             SessionGrouping::default(),
+            TaskPriority::Normal,
         )
         .await?;
 
@@ -7323,6 +7509,7 @@ mod tests {
             &fake_runner,
             None,
             SessionGrouping::default(),
+            TaskPriority::Normal,
         )
         .await?;
 
@@ -7399,6 +7586,7 @@ mod tests {
             &fake_runner,
             None,
             SessionGrouping::default(),
+            TaskPriority::Normal,
         )
         .await?;
 
@@ -7485,6 +7673,7 @@ mod tests {
             &fake_runner,
             None,
             SessionGrouping::default(),
+            TaskPriority::Normal,
         )
         .await?;
 
@@ -7558,6 +7747,7 @@ mod tests {
             &fake_runner,
             None,
             SessionGrouping::default(),
+            TaskPriority::Normal,
         )
         .await?;
 
@@ -7615,6 +7805,7 @@ mod tests {
             &fake_runner,
             None,
             SessionGrouping::default(),
+            TaskPriority::Normal,
         )
         .await?;
 
@@ -7689,6 +7880,7 @@ mod tests {
             &fake_runner,
             None,
             SessionGrouping::default(),
+            TaskPriority::Normal,
         )
         .await?;
 

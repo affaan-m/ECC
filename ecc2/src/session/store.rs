@@ -421,7 +421,8 @@ impl StateStore {
                 error TEXT,
                 created_at TEXT NOT NULL,
                 updated_at TEXT NOT NULL,
-                dispatched_at TEXT
+                dispatched_at TEXT,
+                deferred_attempts INTEGER NOT NULL DEFAULT 0
             );
 
             CREATE TABLE IF NOT EXISTS conflict_incidents (
@@ -554,6 +555,7 @@ impl StateStore {
         )?;
         self.ensure_session_columns()?;
         self.ensure_message_columns()?;
+        self.ensure_remote_dispatch_columns()?;
         self.ensure_harness_eval_columns()?;
         self.ensure_harness_candidate_aliases()?;
         self.ensure_session_board_columns()?;
@@ -569,6 +571,22 @@ impl StateStore {
                 "ALTER TABLE messages ADD COLUMN provenance TEXT NOT NULL DEFAULT 'legacy'",
                 [],
             ).context("Failed to add message provenance column")?;
+        }
+        Ok(())
+    }
+
+    // B-F7: existing databases predate the deferral-aging column; add it in
+    // place with a safe default so chronically-deferred remote requests can be
+    // aged down the pending window instead of permanently occupying its head.
+    fn ensure_remote_dispatch_columns(&self) -> Result<()> {
+        if !self.has_column("remote_dispatch_requests", "deferred_attempts")? {
+            self.conn
+                .execute(
+                    "ALTER TABLE remote_dispatch_requests
+                     ADD COLUMN deferred_attempts INTEGER NOT NULL DEFAULT 0",
+                    [],
+                )
+                .context("Failed to add remote dispatch deferred_attempts column")?;
         }
         Ok(())
     }
@@ -1779,7 +1797,7 @@ impl StateStore {
                     result_session_id, result_action, error, created_at, updated_at, dispatched_at
              FROM remote_dispatch_requests
              WHERE status = 'pending'
-             ORDER BY priority DESC, created_at ASC, id ASC
+             ORDER BY priority DESC, deferred_attempts ASC, created_at ASC, id ASC
              LIMIT ?1"
         };
 
@@ -1835,6 +1853,23 @@ impl StateStore {
                 result_action,
                 now.to_rfc3339()
             ],
+        )?;
+        Ok(())
+    }
+
+    /// B-F7: record that a pending remote request was deferred this pass. The
+    /// request stays pending, but its incremented `deferred_attempts` sorts it
+    /// behind equal-priority peers with fewer attempts, so items beyond the
+    /// pending window's LIMIT eventually surface instead of being starved by a
+    /// request that re-sorts to the head on every tick.
+    pub fn record_remote_dispatch_deferral(&self, request_id: i64) -> Result<()> {
+        let now = chrono::Utc::now();
+        self.conn.execute(
+            "UPDATE remote_dispatch_requests
+             SET deferred_attempts = deferred_attempts + 1,
+                 updated_at = ?2
+             WHERE id = ?1 AND status = 'pending'",
+            rusqlite::params![request_id, now.to_rfc3339()],
         )?;
         Ok(())
     }
