@@ -312,6 +312,10 @@ function isSensitiveTargetFor(filePath, data) {
     if (typeof filePath !== 'string' || !filePath) return true;
     const classPath = classPathFor(filePath, data);
     if (isClaudeSettingsPath(classPath)) return true;
+    // When the project root itself is `.claude`, the class path collapses to
+    // `settings.json`; the absolute path still carries the `.claude` segment.
+    const target = resolveTargetPath(filePath, data);
+    if (target && isClaudeSettingsPath(target.resolved)) return true;
     if (isSensitiveTarget(classPath)) return true;
     return isSensitiveRealTarget(filePath, data);
   } catch (_) {
@@ -325,6 +329,8 @@ function isSensitiveRealTarget(filePath, data) {
   const paths = target.isWin ? path.win32 : path.posix;
   const real = realTargetPath(target.resolved, paths);
   if (!real) return true;
+  // A symlink alias outside `.claude` still resolves to the settings file.
+  if (isClaudeSettingsPath(real)) return true;
   const realKey = foldKey(real, target.isWin);
   if (realKey === foldKey(target.resolved, target.isWin)) return false;
   const root = canonicalProjectRoot(data);
