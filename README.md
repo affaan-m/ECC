@@ -1105,6 +1105,8 @@ npm run dashboard
 python3 ./ecc_dashboard.py
 ```
 
+> **Accessibility note:** this desktop dashboard is built on Tkinter (Tk 8.6), which exposes no screen-reader/AT bridge. If you rely on assistive technology, use the web control pane instead — `ecc control-pane` — which is keyboard- and screen-reader-friendly and meets WCAG 2.2 AA.
+
 **Features:**
 - Tabbed interface: Agents, Skills, Commands, Rules, Settings
 - Dark/Light theme toggle

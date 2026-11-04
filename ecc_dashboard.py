@@ -863,6 +863,12 @@ ECC GUI
 A cross-platform desktop application for
 managing and exploring ECC components.
 
+Accessibility: this Tkinter (Tk 8.6) GUI has no
+screen-reader bridge. If you use assistive
+technology, use the web dashboard instead:
+run `ecc control-pane` for the accessible,
+keyboard- and screen-reader-friendly interface.
+
 Version: {APP_VERSION}
 Project: github.com/affaan-m/ECC"""
         
