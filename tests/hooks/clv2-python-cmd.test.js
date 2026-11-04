@@ -38,6 +38,9 @@ if (probe.status !== 0 || (process.platform === 'win32' && !/^(msys|cygwin)/.tes
 }
 const [bashMajor, bashMinor] = bashVersion.split('.').map(Number);
 const bashHasClock = bashMajor > 4 || (bashMajor === 4 && bashMinor >= 2);
+// The resolver bounds a probe only with GNU timeout, found on the driver's PATH.
+const hasGnuTimeout = /GNU coreutils/.test(
+  spawnSync('bash', ['-c', 'PATH=/usr/bin:/bin; timeout --version'], { encoding: 'utf8' }).stdout || '');
 
 let passed = 0;
 let failed = 0;
@@ -288,6 +291,31 @@ test('missing homunculus dir resolves without writing a cache', () => withAliasT
   const cmd = resolve(tree, [tree.alias, tree.fakebin]);
   assert.ok(cmd.endsWith('/real dir/python.exe'));
   assert.ok(!fs.existsSync(cachePath(tree)));
+}));
+
+test('the cache is written through mktemp, and not at all when mktemp fails', () => withAliasTree(tree => {
+  // A predictable temp name could be planted as a symlink in a shared
+  // homunculus dir; mktemp creates the file exclusively under a random name.
+  writeScript(tree.fakebin, 'mktemp', 'echo "mktemp $*" >> "${0%/*}/calls.log"\nexit 1');
+  const cmd = resolve(tree, [tree.alias, tree.fakebin]);
+  assert.ok(cmd.endsWith('/real dir/python.exe'));
+  assert.ok(calls(tree.fakebin).some(c => /^mktemp .*\/\.python-cmd\.XXXXXX$/.test(c)),
+    `mktemp not used: ${calls(tree.fakebin).join(', ')}`);
+  assert.deepStrictEqual(fs.readdirSync(tree.home), [], 'nothing may be written when mktemp fails');
+}));
+
+test('a hanging interpreter is abandoned within the hook budget', () => withTree(tree => {
+  if (!hasGnuTimeout) return 'skip';
+  // observe-runner.js gives the whole hook 9 s, so a stalled python3 must
+  // leave time to probe python and cache that verdict.
+  writeScript(tree.regular, 'python3', 'echo python3 >> "${0%/*}/calls.log"\nexec sleep 30');
+  writePython(tree.regular2, 'python', 'clv2-ok', '/usr/bin/python');
+  const started = Date.now();
+  assert.strictEqual(resolve(tree, [tree.regular, tree.regular2]), 'python');
+  const secs = (Date.now() - started) / 1000;
+  assert.ok(secs < 9, `resolution took ${secs.toFixed(1)} s`);
+  assert.deepStrictEqual(calls(tree.regular), ['python3']);
+  assert.ok(fs.existsSync(cachePath(tree)), 'the python verdict must be cached');
 }));
 
 test('detect-project.sh resolves through the shared resolver', () => withAliasTree(tree => {
