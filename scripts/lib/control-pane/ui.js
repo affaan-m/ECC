@@ -1,5 +1,10 @@
 'use strict';
 
+// Canonical ECC web tokens (Plan Canvas is the master). The board sources its
+// dark palette from here so it reads as one product with Plan Canvas and the
+// viz pages; the accent is standardized to the shared blue.
+const { ROOT_TOKENS_CSS } = require('../shared/theme-tokens');
+
 function renderControlPaneHtml() {
   return `<!doctype html>
 <html lang="en">
@@ -8,27 +13,14 @@ function renderControlPaneHtml() {
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>ECC Control Pane</title>
   <style>
-    :root {
-      color-scheme: dark;
-      --bg: #101312;
-      --panel: #181d1b;
-      --panel-2: #202622;
-      --ink: #f4f0e8;
-      --muted: #aab3aa;
-      --line: #344038;
-      --accent: #6fd8b5;
-      --accent-2: #e6c35c;
-      --danger: #ff7a72;
-      --blue: #82aaff;
-      --shadow: rgba(0, 0, 0, 0.28);
-      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-    }
+${ROOT_TOKENS_CSS}
+    :root { color-scheme: dark; font-family: var(--font); }
 
     * { box-sizing: border-box; }
     body {
       margin: 0;
       background: var(--bg);
-      color: var(--ink);
+      color: var(--text);
       min-width: 320px;
     }
 
@@ -48,8 +40,8 @@ function renderControlPaneHtml() {
       justify-content: space-between;
       gap: 18px;
       padding: 14px 18px;
-      border-bottom: 1px solid var(--line);
-      background: #121715;
+      border-bottom: 1px solid var(--border);
+      background: var(--bg2);
       position: sticky;
       top: 0;
       z-index: 4;
@@ -84,10 +76,10 @@ function renderControlPaneHtml() {
 
     input[type="search"] {
       width: 100%;
-      color: var(--ink);
-      background: #0c0f0e;
-      border: 1px solid var(--line);
-      border-radius: 6px;
+      color: var(--text);
+      background: var(--bg3);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
       padding: 9px 10px;
       outline: none;
     }
@@ -97,10 +89,10 @@ function renderControlPaneHtml() {
     }
 
     button {
-      color: var(--ink);
-      background: var(--panel-2);
-      border: 1px solid var(--line);
-      border-radius: 6px;
+      color: var(--text);
+      background: var(--bg3);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
       padding: 9px 12px;
       cursor: pointer;
       white-space: nowrap;
@@ -116,10 +108,15 @@ function renderControlPaneHtml() {
     }
 
     button.primary {
-      color: #06100c;
-      background: var(--accent);
-      border-color: var(--accent);
+      color: #fff;
+      background: var(--accent-strong);
+      border-color: var(--accent-strong);
       font-weight: 700;
+    }
+
+    button.primary:hover {
+      border-color: var(--accent-strong);
+      background: var(--accent-dim);
     }
 
     main {
@@ -138,10 +135,10 @@ function renderControlPaneHtml() {
 
     .metric,
     section {
-      background: var(--panel);
-      border: 1px solid var(--line);
-      border-radius: 8px;
-      box-shadow: 0 12px 30px var(--shadow);
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow-lg);
     }
 
     .metric {
@@ -151,7 +148,7 @@ function renderControlPaneHtml() {
 
     .metric span {
       display: block;
-      color: var(--muted);
+      color: var(--text2);
       font-size: 12px;
       text-transform: uppercase;
       letter-spacing: 0;
@@ -174,8 +171,8 @@ function renderControlPaneHtml() {
       align-items: center;
       gap: 12px;
       padding: 12px 14px;
-      border-bottom: 1px solid var(--line);
-      background: #151a18;
+      border-bottom: 1px solid var(--border);
+      background: var(--bg3);
     }
 
     h2 {
@@ -185,7 +182,7 @@ function renderControlPaneHtml() {
     }
 
     .subtle {
-      color: var(--muted);
+      color: var(--text2);
       font-size: 12px;
       overflow-wrap: anywhere;
     }
@@ -198,7 +195,7 @@ function renderControlPaneHtml() {
 
     th, td {
       padding: 10px 12px;
-      border-bottom: 1px solid rgba(52, 64, 56, 0.7);
+      border-bottom: 1px solid var(--border);
       text-align: left;
       vertical-align: top;
       font-size: 13px;
@@ -206,11 +203,11 @@ function renderControlPaneHtml() {
     }
 
     th {
-      color: var(--muted);
+      color: var(--text2);
       font-size: 11px;
       text-transform: uppercase;
       letter-spacing: 0;
-      background: #131816;
+      background: var(--bg3);
     }
 
     .stack {
@@ -223,7 +220,7 @@ function renderControlPaneHtml() {
     .work-item,
     .action {
       padding: 12px 14px;
-      border-bottom: 1px solid rgba(52, 64, 56, 0.7);
+      border-bottom: 1px solid var(--border);
       display: grid;
       gap: 8px;
     }
@@ -240,20 +237,20 @@ function renderControlPaneHtml() {
       grid-template-columns: repeat(4, minmax(0, 1fr));
       gap: 8px;
       padding: 12px 14px;
-      border-bottom: 1px solid rgba(52, 64, 56, 0.7);
+      border-bottom: 1px solid var(--border);
     }
 
     .kanban-lane {
       min-width: 0;
       padding: 9px;
-      border: 1px solid rgba(52, 64, 56, 0.8);
-      border-radius: 6px;
-      background: #141917;
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      background: var(--bg3);
     }
 
     .kanban-lane span {
       display: block;
-      color: var(--muted);
+      color: var(--text2);
       font-size: 11px;
       text-transform: uppercase;
       letter-spacing: 0;
@@ -284,28 +281,28 @@ function renderControlPaneHtml() {
       min-height: 22px;
       padding: 2px 7px;
       border-radius: 999px;
-      background: #222a26;
-      color: var(--muted);
+      background: var(--bg3);
+      color: var(--text2);
       font-size: 12px;
       white-space: nowrap;
     }
 
-    .pill.good { color: #07110d; background: var(--accent); }
-    .pill.warn { color: #171000; background: var(--accent-2); }
-    .pill.bad { color: #190706; background: var(--danger); }
-    .pill.blue { color: #071020; background: var(--blue); }
+    .pill.good { color: #0a0c10; background: var(--green); }
+    .pill.warn { color: #0a0c10; background: var(--orange); }
+    .pill.bad { color: #0a0c10; background: var(--red); }
+    .pill.blue { color: #0a0c10; background: var(--teal); }
 
     code {
       display: block;
       width: 100%;
       padding: 9px;
-      background: #0c0f0e;
-      border: 1px solid var(--line);
-      border-radius: 6px;
-      color: #d6e7dc;
+      background: var(--bg3);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      color: var(--text);
       overflow-x: auto;
       white-space: pre;
-      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      font-family: var(--mono);
       font-size: 12px;
     }
 
@@ -322,12 +319,12 @@ function renderControlPaneHtml() {
       max-height: 45vh;
       overflow: auto;
       padding: 12px 14px;
-      background: #190706;
-      border: 1px solid var(--danger);
-      border-radius: 8px;
-      color: #ffe5e2;
-      box-shadow: 0 12px 30px var(--shadow);
-      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      background: var(--red-glow);
+      border: 1px solid var(--red);
+      border-radius: var(--radius);
+      color: var(--text);
+      box-shadow: var(--shadow-lg);
+      font-family: var(--mono);
       font-size: 12px;
       white-space: pre-wrap;
       z-index: 10;
@@ -335,7 +332,7 @@ function renderControlPaneHtml() {
 
     .empty {
       padding: 18px 14px;
-      color: var(--muted);
+      color: var(--text2);
     }
 
     @media (max-width: 1040px) {

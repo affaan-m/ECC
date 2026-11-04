@@ -1,5 +1,11 @@
 'use strict';
 
+// Canonical ECC web tokens (Plan Canvas is the master). This dark-only viz
+// sources its palette from the shared block so it reads as one product with the
+// board, the 2D control plane, and Plan Canvas. The "clear/good" green matches
+// the 2D view exactly (same --green token); risk stays redundant (shape+color+text).
+const { ROOT_TOKENS_CSS, TOKEN_HEX } = require('../shared/theme-tokens');
+
 /**
  * Self-contained 3D "agent airspace" visualization, served by the control pane.
  *
@@ -21,34 +27,35 @@ function renderProximityVizHtml() {
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>ECC Agent Airspace</title>
 <style>
+${ROOT_TOKENS_CSS}
   :root { color-scheme: dark; }
   * { box-sizing: border-box; }
-  body { margin: 0; font: 14px/1.4 -apple-system, system-ui, sans-serif; background: #0b0e14; color: #e6edf3; }
-  header { display: flex; align-items: baseline; gap: 12px; padding: 12px 16px; border-bottom: 1px solid #1f2630; }
+  body { margin: 0; font: 14px/1.4 var(--font); background: var(--bg); color: var(--text); }
+  header { display: flex; align-items: baseline; gap: 12px; padding: 12px 16px; border-bottom: 1px solid var(--border); }
   header h1 { font-size: 15px; margin: 0; }
-  header .sub { color: #8b949e; font-size: 12px; }
+  header .sub { color: var(--text2); font-size: 12px; }
   #wrap { display: grid; grid-template-columns: 1fr 320px; grid-template-rows: minmax(0, 1fr); height: calc(100vh - 49px); }
   #stage { position: relative; height: 100%; min-height: 0; }
   canvas { width: 100%; height: 100%; display: block; }
-  #side { border-left: 1px solid #1f2630; padding: 12px 14px; overflow-y: auto; }
-  #side h2 { font-size: 12px; text-transform: uppercase; letter-spacing: .04em; color: #8b949e; margin: 0 0 8px; }
+  #side { border-left: 1px solid var(--border); padding: 12px 14px; overflow-y: auto; }
+  #side h2 { font-size: 12px; text-transform: uppercase; letter-spacing: .04em; color: var(--text2); margin: 0 0 8px; }
   #side h2:not(:first-child) { margin-top: 16px; }
-  .adv { border: 1px solid #1f2630; border-radius: 8px; padding: 8px 10px; margin-bottom: 8px; }
-  .adv.resolution { border-color: #b3402f; }
-  .adv.advisory { border-color: #9a6700; }
+  .adv { border: 1px solid var(--border); border-radius: var(--radius); padding: 8px 10px; margin-bottom: 8px; }
+  .adv.resolution { border-color: var(--red); }
+  .adv.advisory { border-color: var(--orange); }
   .adv .lv { font-size: 11px; text-transform: uppercase; letter-spacing: .04em; }
-  .adv.resolution .lv { color: #ff7b72; }
-  .adv.advisory .lv { color: #e3b341; }
-  .adv .who { color: #c9d1d9; }
-  .adv .act { color: #8b949e; font-size: 12px; margin-top: 3px; }
-  .empty { color: #767f8a; }
+  .adv.resolution .lv { color: var(--red); }
+  .adv.advisory .lv { color: var(--orange); }
+  .adv .who { color: var(--text); }
+  .adv .act { color: var(--text2); font-size: 12px; margin-top: 3px; }
+  .empty { color: var(--text3); }
   .agent-row { display: flex; gap: 8px; align-items: baseline; padding: 3px 0; font-size: 12px; }
-  .agent-row .who { color: #c9d1d9; overflow-wrap: anywhere; }
-  .agent-row .risk { margin-left: auto; color: #8b949e; white-space: nowrap; }
-  #legend { position: absolute; left: 12px; bottom: 12px; font-size: 11px; color: #8b949e; background: rgba(11,14,20,.7); padding: 6px 8px; border-radius: 6px; }
-  #motion-toggle { position: absolute; right: 12px; top: 12px; font: inherit; font-size: 12px; color: #e6edf3; background: rgba(11,14,20,.7); border: 1px solid #1f2630; border-radius: 6px; padding: 5px 10px; cursor: pointer; }
-  #motion-toggle:hover { border-color: #2ea043; }
-  #motion-toggle:focus-visible { outline: 2px solid #58a6ff; outline-offset: 2px; }
+  .agent-row .who { color: var(--text); overflow-wrap: anywhere; }
+  .agent-row .risk { margin-left: auto; color: var(--text2); white-space: nowrap; }
+  #legend { position: absolute; left: 12px; bottom: 12px; font-size: 11px; color: var(--text2); background: color-mix(in srgb, var(--bg) 70%, transparent); padding: 6px 8px; border-radius: var(--radius-sm); }
+  #motion-toggle { position: absolute; right: 12px; top: 12px; font: inherit; font-size: 12px; color: var(--text); background: color-mix(in srgb, var(--bg) 70%, transparent); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 5px 10px; cursor: pointer; }
+  #motion-toggle:hover { border-color: var(--green); }
+  #motion-toggle:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
   .shape { display: inline-block; width: 12px; margin-right: 5px; text-align: center; font-weight: 700; }
   /* Off-screen, not display:none, so assistive tech still reads the node. */
   .sr { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; border: 0; clip: rect(0 0 0 0); clip-path: inset(50%); overflow: hidden; white-space: nowrap; }
@@ -65,9 +72,9 @@ function renderProximityVizHtml() {
       <canvas id="c" role="img" aria-label="Agent airspace visualization. See the Agents panel for a text alternative.">Agent airspace visualization; see the Agents panel for per-agent risk.</canvas>
       <button id="motion-toggle" type="button" aria-pressed="false">Pause rotation</button>
       <div id="legend">
-        <div><span class="shape" style="color:#2ea043">●</span>clear</div>
-        <div><span class="shape" style="color:#e3b341">■</span>traffic advisory (transmit)</div>
-        <div><span class="shape" style="color:#ff7b72">▲</span>resolution (steer)</div>
+        <div><span class="shape" style="color:var(--green)">●</span>clear</div>
+        <div><span class="shape" style="color:var(--orange)">■</span>traffic advisory (transmit)</div>
+        <div><span class="shape" style="color:var(--red)">▲</span>resolution (steer)</div>
       </div>
       <div id="announce" class="sr" role="status" aria-live="polite" aria-atomic="true"></div>
     </div>
@@ -120,9 +127,9 @@ function renderProximityVizHtml() {
   }
 
   function riskColor(risk) {
-    if (risk >= 0.7) return '#ff7b72';
-    if (risk >= 0.35) return '#e3b341';
-    return '#2ea043';
+    if (risk >= 0.7) return '${TOKEN_HEX.red}';
+    if (risk >= 0.35) return '${TOKEN_HEX.orange}';
+    return '${TOKEN_HEX.green}';
   }
 
   function drawRiskMarker(x, y, radius, level) {
@@ -178,7 +185,7 @@ function renderProximityVizHtml() {
       var agentRisk = state.riskByAgent[ag.agentId] || 0;
       ctx.fillStyle = riskColor(agentRisk);
       drawRiskMarker(p[0], p[1], radius, riskLevel(agentRisk));
-      ctx.fillStyle = '#c9d1d9';
+      ctx.fillStyle = '${TOKEN_HEX.text}';
       ctx.font = '11px -apple-system, system-ui, sans-serif';
       ctx.fillText(String(ag.agentId).slice(0, 18), p[0] + radius + 4, p[1] + 3);
     }

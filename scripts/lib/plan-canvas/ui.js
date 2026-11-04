@@ -12,6 +12,10 @@
 const path = require('path');
 
 const { escapeHtml } = require('./markdown');
+// Canonical dark token block, shared with the Control Pane and the viz pages so
+// all three tools read as one product. Plan Canvas is the master: it owns these
+// values and layers its own light theme on top.
+const { ROOT_TOKENS_CSS } = require('../shared/theme-tokens');
 
 // Pinned Mermaid ESM build, loaded in the browser only when an artifact
 // actually contains a diagram. Override with a local/vendored URL (e.g. an
@@ -50,23 +54,10 @@ function mermaidLoaderScript(url) {
 }
 
 // Design tokens shared by the chrome and the markdown artifact template.
+// Dark `:root` comes from the shared module (the canonical ECC web token set);
+// the light theme is Plan Canvas's own and stays here (dark-only tools skip it).
 const TOKENS_CSS = `
-  :root{
-    --bg:#080a0e; --bg2:#0d0f14; --bg3:#13161e; --bg4:#191d2a;
-    --surface:#101218; --surface-hover:#171a24; --border:#1d2130; --border-light:#272c3e;
-    --text:#dfe2e9; --text2:#80859a; --text3:#8b90a6;
-    --accent:#6885e8; --accent-glow:rgba(104,133,232,0.15); --accent-dim:#3d5ab8; --accent-strong:#4560d0;
-    --green:#4acb8a; --green-glow:rgba(74,203,138,0.15);
-    --orange:#eca85a; --orange-glow:rgba(236,168,90,0.15);
-    --pink:#e26a9e; --pink-glow:rgba(226,106,158,0.15);
-    --red:#e86060; --red-glow:rgba(232,96,96,0.15);
-    --teal:#4acbbe; --teal-glow:rgba(74,203,190,0.15);
-    --radius:8px; --radius-sm:5px;
-    --font:-apple-system,BlinkMacSystemFont,'SF Pro Display','Inter','Segoe UI',Roboto,sans-serif;
-    --mono:'SF Mono','Fira Code','JetBrains Mono','Cascadia Code',monospace;
-    --shadow:0 1px 2px rgba(0,0,0,0.4);
-    --shadow-lg:0 8px 32px rgba(0,0,0,0.6);
-  }
+${ROOT_TOKENS_CSS}
   [data-theme="light"]{
     --bg:#f4f5f7; --bg2:#ffffff; --bg3:#eaecef; --bg4:#dfe2e6;
     --surface:#ffffff; --surface-hover:#f4f5f7; --border:#cdd1d9; --border-light:#dde1e8;
