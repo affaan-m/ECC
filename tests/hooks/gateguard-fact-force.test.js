@@ -1513,10 +1513,10 @@ function runTests() {
     passed++;
   else failed++;
 
-  // --- Test 16: allows Claude settings edits so the hook can be disabled safely ---
+  // --- Test 16: .claude/settings*.json is gated like any other first touch (#3845) ---
   clearState();
   if (
-    test('allows edits to .claude/settings.json without gating', () => {
+    test('gates first-touch edits to .claude/settings.json', () => {
       const input = {
         tool_name: 'Edit',
         tool_input: { file_path: '/workspace/app/.claude/settings.json', old_string: '{}', new_string: '{"hooks":[]}' }
@@ -1524,11 +1524,9 @@ function runTests() {
       const result = runHook(input);
       const output = parseOutput(result.stdout);
       assert.ok(output, 'should produce valid JSON output');
-      if (output.hookSpecificOutput) {
-        assert.notStrictEqual(output.hookSpecificOutput.permissionDecision, 'deny', 'settings edits must not be blocked by gateguard');
-      } else {
-        assert.strictEqual(output.tool_name, 'Edit');
-      }
+      assert.ok(output.hookSpecificOutput, 'the settings file must not bypass the gate');
+      assert.strictEqual(output.hookSpecificOutput.permissionDecision, 'deny');
+      assert.ok(output.hookSpecificOutput.permissionDecisionReason.includes('Fact-Forcing Gate'));
     })
   )
     passed++;
