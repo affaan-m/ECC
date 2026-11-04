@@ -54,8 +54,8 @@ const TOKENS_CSS = `
   :root{
     --bg:#080a0e; --bg2:#0d0f14; --bg3:#13161e; --bg4:#191d2a;
     --surface:#101218; --surface-hover:#171a24; --border:#1d2130; --border-light:#272c3e;
-    --text:#dfe2e9; --text2:#80859a; --text3:#4c5168;
-    --accent:#6885e8; --accent-glow:rgba(104,133,232,0.15); --accent-dim:#3d5ab8;
+    --text:#dfe2e9; --text2:#80859a; --text3:#8b90a6;
+    --accent:#6885e8; --accent-glow:rgba(104,133,232,0.15); --accent-dim:#3d5ab8; --accent-strong:#4560d0;
     --green:#4acb8a; --green-glow:rgba(74,203,138,0.15);
     --orange:#eca85a; --orange-glow:rgba(236,168,90,0.15);
     --pink:#e26a9e; --pink-glow:rgba(226,106,158,0.15);
@@ -70,8 +70,8 @@ const TOKENS_CSS = `
   [data-theme="light"]{
     --bg:#f4f5f7; --bg2:#ffffff; --bg3:#eaecef; --bg4:#dfe2e6;
     --surface:#ffffff; --surface-hover:#f4f5f7; --border:#cdd1d9; --border-light:#dde1e8;
-    --text:#181b23; --text2:#585e6e; --text3:#9197a8;
-    --accent:#4560d0; --accent-glow:rgba(69,96,208,0.08); --accent-dim:#2f44a0;
+    --text:#181b23; --text2:#585e6e; --text3:#5f6578;
+    --accent:#4560d0; --accent-glow:rgba(69,96,208,0.08); --accent-dim:#2f44a0; --accent-strong:#4560d0;
     --green:#16a34a; --green-glow:rgba(22,163,74,0.08);
     --orange:#d97706; --orange-glow:rgba(217,119,6,0.08);
     --pink:#c73877; --pink-glow:rgba(199,56,119,0.08);
@@ -92,6 +92,7 @@ function canvasCss() {
   ::-webkit-scrollbar-track{background:transparent}
   ::-webkit-scrollbar-thumb{background:var(--border);border-radius:4px}
   button{font-family:var(--font)}
+  .sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
 
   .bar{display:flex;align-items:center;gap:12px;height:52px;padding:0 16px;background:color-mix(in srgb,var(--bg2) 88%,transparent);border-bottom:1px solid var(--border);backdrop-filter:blur(16px)}
   .brand{display:flex;align-items:center;gap:9px;min-width:0}
@@ -107,7 +108,7 @@ function canvasCss() {
   .presence[data-state="queued"] .dot{background:var(--orange);box-shadow:0 0 0 3px var(--orange-glow)}
   @keyframes pulse{0%,100%{opacity:1}50%{opacity:.45}}
 
-  .toggle{display:flex;align-items:center;gap:7px;font-size:11.5px;color:var(--text2);cursor:pointer;user-select:none}
+  .toggle{display:flex;align-items:center;gap:7px;font-size:11.5px;color:var(--text2);cursor:pointer;user-select:none;background:none;border:0;padding:0}
   .toggle .track{width:30px;height:17px;border-radius:99px;background:var(--bg4);border:1px solid var(--border);position:relative;transition:background .15s}
   .toggle .knob{position:absolute;top:1px;left:1px;width:13px;height:13px;border-radius:99px;background:var(--text2);transition:transform .15s,background .15s}
   .toggle[aria-pressed="true"] .track{background:var(--accent);border-color:var(--accent-dim)}
@@ -116,6 +117,7 @@ function canvasCss() {
   .icon-btn{height:28px;padding:0 10px;border-radius:6px;border:1px solid var(--border);background:var(--bg3);color:var(--text2);cursor:pointer;font-size:11.5px;display:flex;align-items:center;gap:5px;transition:all .12s}
   .icon-btn:hover{border-color:var(--border-light);color:var(--text);background:var(--bg4)}
   .icon-btn.danger:hover{border-color:var(--red);color:var(--red);background:var(--red-glow)}
+  .icon-btn:disabled{opacity:.5;cursor:default}
 
   .layout{display:flex;height:calc(100% - 52px)}
   .frame{flex:1;min-width:0;position:relative;background:var(--bg2)}
@@ -128,9 +130,10 @@ function canvasCss() {
   .verdict{display:flex;gap:8px;padding:0 14px 12px;border-bottom:1px solid var(--border)}
   .verdict button{flex:1;height:30px;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;transition:all .12s}
   .verdict .approve{border:1px solid var(--green);background:var(--green-glow);color:var(--green)}
-  .verdict .approve:hover{background:var(--green);color:#fff}
+  .verdict .approve:hover{background:var(--green);color:#0a0c10}
   .verdict .changes{border:1px solid var(--orange);background:var(--orange-glow);color:var(--orange)}
-  .verdict .changes:hover{background:var(--orange);color:#fff}
+  .verdict .changes:hover{background:var(--orange);color:#0a0c10}
+  .verdict button:disabled{opacity:.5;cursor:default}
 
   .chat{flex:1;overflow-y:auto;padding:10px 14px;display:flex;flex-direction:column;gap:8px}
   .msg{max-width:92%;padding:7px 10px;border-radius:10px;font-size:12.5px;white-space:pre-wrap;word-break:break-word}
@@ -173,10 +176,11 @@ function canvasCss() {
   .composer textarea{width:100%;min-height:60px;max-height:160px;resize:vertical;background:var(--bg3);border:1px solid var(--border);border-radius:6px;padding:8px 10px;color:var(--text);font-size:12.5px;font-family:var(--font);outline:none;transition:all .15s}
   .composer textarea:focus{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-glow)}
   .composer .row{display:flex;gap:8px;align-items:center}
-  .composer .send{flex:1;height:32px;border:none;border-radius:6px;background:var(--accent);color:#fff;font-size:12.5px;font-weight:600;cursor:pointer;transition:all .12s}
+  .composer .send{flex:1;height:32px;border:none;border-radius:6px;background:var(--accent-strong);color:#fff;font-size:12.5px;font-weight:600;cursor:pointer;transition:all .12s}
   .composer .send:hover{background:var(--accent-dim)}
   .composer .send:disabled{opacity:.5;cursor:default}
   .composer .status{font-size:10.5px;color:var(--text3)}
+  .icon-btn:focus-visible,.toggle:focus-visible,.verdict button:focus-visible,.composer .send:focus-visible,.pill button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 
   .overlay{position:absolute;inset:0;display:none;align-items:center;justify-content:center;background:color-mix(in srgb,var(--bg) 80%,transparent);backdrop-filter:blur(6px);z-index:50}
   .overlay.show{display:flex}
@@ -287,8 +291,10 @@ function canvasClientJs() {
       txt.textContent = item.kind === 'verdict' ? (item.verdict === 'approve' ? 'Approve plan' : 'Request changes') + (item.text ? ': ' + item.text : '') : item.text;
       body.appendChild(txt);
       const rm = document.createElement('button');
+      rm.type = 'button';
       rm.textContent = '\\u00D7';
       rm.title = 'Remove';
+      rm.setAttribute('aria-label', 'Remove');
       rm.addEventListener('click', () => { queue.splice(i, 1); persistQueue(); renderQueue(); });
       pill.append(body, rm);
       queueEl.appendChild(pill);
@@ -365,7 +371,8 @@ function canvasClientJs() {
   // --- send -----------------------------------------------------------
   async function send(extraItems) {
     if (ended || sending) return;
-    const items = queue.slice();
+    const sentItems = queue.slice();
+    const items = sentItems.slice();
     if (extraItems) items.push(...extraItems);
     const text = input.value.trim();
     if (text) items.push({ kind: 'chat', text });
@@ -384,7 +391,10 @@ function canvasClientJs() {
       });
       if (!res.ok) throw new Error('HTTP ' + res.status);
       const body = await res.json().catch(() => ({}));
-      queue = [];
+      // Drop only the items we actually sent; annotations that arrived during
+      // the in-flight POST are new object refs and must survive.
+      const sentSet = new Set(sentItems);
+      queue = queue.filter(item => !sentSet.has(item));
       persistQueue();
       renderQueue();
       input.value = '';
@@ -412,7 +422,14 @@ function canvasClientJs() {
   $('reloadBtn').addEventListener('click', reloadArtifact);
   $('endBtn').addEventListener('click', async () => {
     if (!window.confirm('End this review session?')) return;
-    try { await fetch('/api/session/' + key + '/end', { method: 'POST' }); } catch { /* server gone */ }
+    try {
+      const res = await fetch('/api/session/' + key + '/end', { method: 'POST' });
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      // Close the UI optimistically; the SSE 'ended' event confirms it too.
+      markEnded('user');
+    } catch (err) {
+      statusEl.textContent = 'Could not end the session (' + err.message + ') - is the canvas server still running?';
+    }
   });
   function reloadArtifact() {
     const base = frame.getAttribute('data-artifact-src');
@@ -422,6 +439,9 @@ function canvasClientJs() {
     ended = true;
     sendBtn.disabled = true;
     input.disabled = true;
+    $('approve').disabled = true;
+    $('changes').disabled = true;
+    $('reloadBtn').disabled = true;
     renderActivity('ended');
     presence.setAttribute('data-state', 'ended');
     presence.querySelector('.label').textContent = 'session ended';
@@ -485,6 +505,7 @@ function renderCanvasHtml(session, { clientPath = '/client.js', cssPath = '/canv
 </head>
 <body>
 <script id="pc-session" type="application/json">${bootstrap}</script>
+<h1 class="sr-only">Plan Canvas — plan review</h1>
 <header class="bar">
   <div class="brand">
     <div class="logo">E</div>
@@ -493,9 +514,9 @@ function renderCanvasHtml(session, { clientPath = '/client.js', cssPath = '/canv
   </div>
   <div class="spacer"></div>
   <div id="presence" class="presence" data-state="waiting"><span class="dot"></span><span class="label">agent not connected</span></div>
-  <div id="annotate" class="toggle" role="switch" aria-pressed="true" title="Toggle annotate mode (Cmd/Ctrl+I)">
+  <button id="annotate" class="toggle" type="button" role="switch" aria-pressed="true" title="Toggle annotate mode (Cmd/Ctrl+I)">
     <span>Annotate</span><span class="track"><span class="knob"></span></span>
-  </div>
+  </button>
   <button id="themeBtn" class="icon-btn" type="button">light</button>
   <button id="reloadBtn" class="icon-btn" type="button" title="Reload artifact">Reload</button>
   <button id="endBtn" class="icon-btn danger" type="button">End session</button>
@@ -515,7 +536,7 @@ function renderCanvasHtml(session, { clientPath = '/client.js', cssPath = '/canv
     <div id="chatLog" class="chat"></div>
     <div id="queue" class="queue"></div>
     <div class="composer">
-      <textarea id="chatInput" placeholder="Message your agent&#10;Enter to send &middot; Shift+Enter for a new line"></textarea>
+      <textarea id="chatInput" aria-label="Message your agent" placeholder="Message your agent&#10;Enter to send &middot; Shift+Enter for a new line"></textarea>
       <div class="row">
         <button id="send" class="send" type="button">Send to agent</button>
       </div>

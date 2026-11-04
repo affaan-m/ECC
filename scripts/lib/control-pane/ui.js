@@ -110,6 +110,11 @@ function renderControlPaneHtml() {
       border-color: var(--accent);
     }
 
+    button:focus-visible {
+      outline: 2px solid var(--accent);
+      outline-offset: 2px;
+    }
+
     button.primary {
       color: #06100c;
       background: var(--accent);
@@ -357,7 +362,7 @@ function renderControlPaneHtml() {
         <h1>ECC Control Pane</h1>
       </div>
       <form class="query" id="query-form">
-        <input id="query" type="search" placeholder="Recall operator memory, session context, runbooks">
+        <input id="query" type="search" aria-label="Recall operator memory, session context, runbooks" placeholder="Recall operator memory, session context, runbooks">
         <button class="primary" type="submit">Recall</button>
         <button type="button" id="refresh">Refresh</button>
       </form>
@@ -402,13 +407,13 @@ function renderControlPaneHtml() {
           </div>
           <div id="actions"></div>
           <div class="action">
-            <code id="run-output">No action output yet.</code>
+            <code id="run-output" role="status" aria-live="polite">No action output yet.</code>
           </div>
         </section>
       </div>
     </main>
   </div>
-  <div id="app" hidden></div>
+  <div id="app" role="alert" hidden></div>
   <script>
     const state = { query: '', shownQuery: '' };
     const $ = selector => document.querySelector(selector);
@@ -546,12 +551,19 @@ function renderControlPaneHtml() {
         // dataset in delegated listeners below — never concatenated into inline
         // JS handlers — so a crafted work-item id cannot inject script (XSS).
         const idAttr = escapeHtml(item.id);
-        const moveButtons = ['ready', 'running', 'blocked', 'done'].map(lane =>
-          '<button type="button" data-wi-action="move" data-wi-id="' + idAttr + '" data-wi-lane="' + lane + '">' + escapeHtml(lane) + '</button>'
-        ).join('');
+        // Already HTML-escaped; safe inside the double-quoted aria-label.
+        const titleText = escapeHtml(item.title || item.id);
+        const currentLane = item.kanbanState || item.status;
+        const moveButtons = ['ready', 'running', 'blocked', 'done'].map(lane => {
+          // The item's current lane has no /move target, so disable it.
+          const isCurrent = lane === currentLane;
+          return '<button type="button"' + (isCurrent ? ' disabled' : '')
+            + ' aria-label="Move &quot;' + titleText + '&quot; to ' + lane + '"'
+            + ' data-wi-action="move" data-wi-id="' + idAttr + '" data-wi-lane="' + lane + '">' + escapeHtml(lane) + '</button>';
+        }).join('');
         const controls = allowActions
           ? '<div class="row">'
-            + (assigneeKind === 'unassigned' ? '<button type="button" data-wi-action="claim" data-wi-id="' + idAttr + '">Claim</button>' : '')
+            + (assigneeKind === 'unassigned' ? '<button type="button" aria-label="Claim &quot;' + titleText + '&quot;" data-wi-action="claim" data-wi-id="' + idAttr + '">Claim</button>' : '')
             + moveButtons
             + '</div>'
           : '';
@@ -684,7 +696,7 @@ function renderControlPaneHtml() {
         // A snapshot that cannot be shown fails its load like one that could
         // not be fetched, and older data may still take the board.
         if (id > shownLoad) {
-          render(snapshot, query);
+          render(snapshot, query, live);
           shownLoad = id;
         }
       } catch (error) {
@@ -708,7 +720,7 @@ function renderControlPaneHtml() {
       clearError('#app');
     }
 
-    function render(snapshot, query) {
+    function render(snapshot, query, live = false) {
       // Prepare every fragment before changing the board. Malformed late
       // sections must not leave new results with the prior action context.
       const allowActions = Boolean(snapshot.execution.allowActions);
@@ -716,7 +728,6 @@ function renderControlPaneHtml() {
       const knowledge = renderKnowledge(snapshot.knowledge);
       const connectors = renderConnectors(snapshot.connectors);
       const updates = [
-        ['#query', 'value', snapshot.knowledge.query ?? query],
         ['#db-path', 'textContent', snapshot.database.exists ? snapshot.dbPath : 'database missing'],
         ['#action-status', 'textContent', allowActions ? 'local allowlist' : 'read-only'],
         ['#metrics', 'innerHTML', renderMetrics(snapshot.summary)],
@@ -738,6 +749,19 @@ function renderControlPaneHtml() {
       });
       const completedAt = new Date();
       updates.forEach(({ target, property, value }) => { target[property] = value; });
+      // Reflect the snapshot's query in the search box, but never clobber what
+      // the operator is mid-typing: skip while the field is focused or holds
+      // edits that were never submitted, and on an auto-poll only write when the
+      // snapshot's query actually differs from the last submitted query.
+      const queryInput = $('#query');
+      if (queryInput) {
+        const snapQuery = snapshot.knowledge.query ?? query;
+        const isFocused = document.activeElement === queryInput;
+        const hasUnsubmittedEdits = queryInput.value !== state.query;
+        if (!isFocused && !hasUnsubmittedEdits && (!live || snapQuery !== state.query)) {
+          queryInput.value = snapQuery;
+        }
+      }
       state.allowActions = allowActions;
       state.shownQuery = query;
       loadedAt = completedAt;

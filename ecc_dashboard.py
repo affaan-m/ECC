@@ -8,7 +8,7 @@ import sys
 
 try:
     import tkinter as tk
-    from tkinter import ttk, scrolledtext, messagebox
+    from tkinter import ttk, scrolledtext, messagebox, font as tkfont
 except ImportError:
     sys.stderr.write(
         "ECC Dashboard requires Tkinter, which is missing from this Python install.\n"
@@ -31,6 +31,19 @@ import webbrowser
 from scripts.lib.ecc_dashboard_runtime import launch_terminal, maximize_window
 
 logger = logging.getLogger(__name__)
+
+# Single source of truth for the app version (header + About block).
+APP_VERSION = "1.10.0"
+
+# Fonts we prefer, in order; the first one actually installed wins.
+# Avoids silently falling back from an uninstalled family like "Open Sans".
+PREFERRED_FONTS = ('Helvetica Neue', 'Segoe UI', 'Arial', 'Helvetica', 'DejaVu Sans')
+
+# Darker muted token for secondary labels (>=7:1 on light bg, unlike 'gray').
+MUTED_FG = '#595959'
+
+# Extra vertical space added to the font size to derive Treeview row height.
+TREE_ROW_PADDING = 15
 
 # ============================================================================
 # DATA LOADERS - Load ECC data from the project
@@ -289,7 +302,10 @@ class ECCDashboard(tk.Tk):
     
     def __init__(self):
         super().__init__()
-        
+
+        # Resolve a platform-safe UI font family (needs a live root window).
+        self.ui_font_family = self._resolve_font_family()
+
         self.project_path = get_project_path()
         self.title("ECC Dashboard")
         
@@ -322,6 +338,22 @@ class ECCDashboard(tk.Tk):
         # Center window
         self.center_window()
     
+    def _resolve_font_family(self) -> str:
+        """Return the first installed family from PREFERRED_FONTS.
+
+        Falls back to 'Arial' so we never hand Tk a family it has to
+        silently substitute (the old 'Open Sans' default did exactly that).
+        """
+        try:
+            available = set(tkfont.families(self))
+        except Exception:
+            logger.debug("Could not enumerate font families", exc_info=True)
+            available = set()
+        for family in PREFERRED_FONTS:
+            if family in available:
+                return family
+        return 'Arial'
+
     def setup_styles(self):
         """Setup ttk styles for modern look"""
         style = ttk.Style()
@@ -332,12 +364,17 @@ class ECCDashboard(tk.Tk):
         style.configure('TNotebook.Tab', padding=[10, 5], font=('Arial', 10))
         style.map('TNotebook.Tab', background=[('selected', '#ffffff')])
         
-        # Configure Treeview
-        style.configure('Treeview', font=('Arial', 10), rowheight=25)
+        # Configure Treeview (row height scales with the base font size)
+        style.configure('Treeview', font=('Arial', 10), rowheight=10 + TREE_ROW_PADDING)
         style.configure('Treeview.Heading', font=('Arial', 10, 'bold'))
-        
-        # Configure buttons
+
+        # Configure buttons with visible hover/pressed affordance
         style.configure('TButton', font=('Arial', 10), padding=5)
+        style.map(
+            'TButton',
+            background=[('pressed', '#c0c0c0'), ('active', '#d8d8d8')],
+            relief=[('pressed', 'sunken'), ('!pressed', 'raised')],
+        )
     
     def center_window(self):
         """Center the window on screen"""
@@ -365,14 +402,15 @@ class ECCDashboard(tk.Tk):
         except Exception:
             logger.debug("Failed to load header logo", exc_info=True)
         
-        self.title_label = ttk.Label(header_frame, text="ECC Dashboard", font=('Open Sans', 18, 'bold'))
+        self.title_label = ttk.Label(header_frame, text="ECC Dashboard", font=(self.ui_font_family, 18, 'bold'))
         self.title_label.pack(side=tk.LEFT)
-        self.version_label = ttk.Label(header_frame, text="v1.10.0", font=('Open Sans', 10), foreground='gray')
+        self.version_label = ttk.Label(header_frame, text=f"v{APP_VERSION}", font=(self.ui_font_family, 10), foreground=MUTED_FG)
         self.version_label.pack(side=tk.LEFT, padx=(10, 0))
-        
+
         # Notebook (tabs)
         self.notebook = ttk.Notebook(main_frame)
         self.notebook.pack(fill=tk.BOTH, expand=True)
+        self.notebook.enable_traversal()  # Ctrl+Tab / Ctrl+Shift+Tab + mnemonics
         
         # Create tabs
         self.create_agents_tab()
@@ -387,7 +425,7 @@ class ECCDashboard(tk.Tk):
         
         self.status_label = ttk.Label(status_frame, 
                                        text=f"Ready | Agents: {len(self.agents)} | Skills: {len(self.skills)} | Commands: {len(self.commands)}",
-                                       font=('Arial', 9), foreground='gray')
+                                       font=('Arial', 9), foreground=MUTED_FG)
         self.status_label.pack(side=tk.LEFT)
     
     # =========================================================================
@@ -471,6 +509,8 @@ class ECCDashboard(tk.Tk):
         
         self.populate_agents(filtered)
         self.agent_count_label.config(text=str(len(filtered)))
+        # Tree was repopulated (selection cleared) -> stale details must go.
+        self.agent_details.delete('1.0', tk.END)
     
     def on_agent_select(self, event):
         """Handle agent selection"""
@@ -592,6 +632,8 @@ Use the /{agent['name']} command or invoke via agent delegation."""
         
         self.populate_skills(filtered)
         self.skill_count_label.config(text=str(len(filtered)))
+        # Tree was repopulated (selection cleared) -> stale details must go.
+        self.skill_details.delete('1.0', tk.END)
     
     def on_skill_select(self, event):
         """Handle skill selection"""
@@ -632,8 +674,8 @@ Usage: This skill is automatically activated when working with related technolog
         
         ttk.Label(info_frame, text="Slash Commands for Claude Code:", 
                   font=('Arial', 10, 'bold')).pack(anchor=tk.W)
-        ttk.Label(info_frame, text="Use these commands in Claude Code by typing /command_name", 
-                  foreground='gray').pack(anchor=tk.W)
+        ttk.Label(info_frame, text="Use these commands in Claude Code by typing /command_name",
+                  foreground=MUTED_FG).pack(anchor=tk.W)
         
         # Commands list
         list_frame = ttk.Frame(frame)
@@ -682,8 +724,8 @@ Usage: This skill is automatically activated when working with related technolog
         
         ttk.Label(info_frame, text="Coding Rules by Language:", 
                   font=('Arial', 10, 'bold')).pack(anchor=tk.W)
-        ttk.Label(info_frame, text="These rules are automatically applied in Claude Code", 
-                  foreground='gray').pack(anchor=tk.W)
+        ttk.Label(info_frame, text="These rules are automatically applied in Claude Code",
+                  foreground=MUTED_FG).pack(anchor=tk.W)
         
         # Filter
         filter_frame = ttk.Frame(frame)
@@ -780,9 +822,13 @@ Usage: This skill is automatically activated when working with related technolog
         font_frame.pack(fill=tk.X, padx=10, pady=10)
         
         ttk.Label(font_frame, text="Font Family:").pack(anchor=tk.W)
-        self.font_var = tk.StringVar(value='Open Sans')
-        
-        fonts = ['Open Sans', 'Arial', 'Helvetica', 'Times New Roman', 'Courier New', 'Verdana', 'Georgia', 'Tahoma', 'Trebuchet MS']
+        self.font_var = tk.StringVar(value=self.ui_font_family)
+
+        # Resolved family first; dict.fromkeys dedupes if it's already listed.
+        fonts = list(dict.fromkeys([
+            self.ui_font_family, 'Arial', 'Helvetica', 'Times New Roman',
+            'Courier New', 'Verdana', 'Georgia', 'Tahoma', 'Trebuchet MS',
+        ]))
         self.font_combo = ttk.Combobox(font_frame, textvariable=self.font_var, values=fonts, state='readonly')
         self.font_combo.pack(anchor=tk.W, fill=tk.X, pady=(5, 0))
         self.font_combo.bind('<<ComboboxSelected>>', lambda e: self.apply_theme())
@@ -811,13 +857,13 @@ Usage: This skill is automatically activated when working with related technolog
         about_frame = ttk.LabelFrame(frame, text="About", padding=10)
         about_frame.pack(fill=tk.X, padx=10, pady=10)
         
-        about_text = """ECC Dashboard v1.0.0
+        about_text = f"""ECC Dashboard v{APP_VERSION}
 ECC GUI
 
-A cross-platform desktop application for 
+A cross-platform desktop application for
 managing and exploring ECC components.
 
-Version: 1.10.0
+Version: {APP_VERSION}
 Project: github.com/affaan-m/ECC"""
         
         ttk.Label(about_frame, text=about_text, justify=tk.LEFT).pack(anchor=tk.W)
@@ -859,31 +905,63 @@ Project: github.com/affaan-m/ECC"""
         self._open_project_doc('AGENTS.md')
     
     def refresh_data(self):
-        """Refresh all data"""
+        """Refresh all data from the chosen project path.
+
+        Only loads from directories that actually exist, so a wrong path
+        surfaces an honest empty state instead of the loaders' built-in
+        defaults. Resets search boxes, filter comboboxes, count labels, and
+        detail panes so nothing is left stale after the trees repopulate.
+        """
         self.project_path = self.path_entry.get()
-        self.agents = load_agents(self.project_path)
-        self.skills = load_skills(self.project_path)
-        self.commands = load_commands(self.project_path)
-        self.rules = load_rules(self.project_path)
-        
+
+        has_agents = os.path.isdir(os.path.join(self.project_path, "agents"))
+        has_skills = os.path.isdir(os.path.join(self.project_path, "skills"))
+        has_commands = os.path.isdir(os.path.join(self.project_path, "commands"))
+        has_rules = os.path.isdir(os.path.join(self.project_path, "rules"))
+
+        self.agents = load_agents(self.project_path) if has_agents else []
+        self.skills = load_skills(self.project_path) if has_skills else []
+        self.commands = load_commands(self.project_path) if has_commands else []
+        self.rules = load_rules(self.project_path) if has_rules else []
+
         # Update tabs
         self.notebook.tab(0, text=f"Agents ({len(self.agents)})")
         self.notebook.tab(1, text=f"Skills ({len(self.skills)})")
         self.notebook.tab(2, text=f"Commands ({len(self.commands)})")
         self.notebook.tab(3, text=f"Rules ({len(self.rules)})")
-        
-        # Repopulate
-        self.populate_agents(self.agents)
-        self.populate_skills(self.skills)
+
+        # Reset search boxes so filters start clean.
+        self.agent_search.delete(0, tk.END)
+        self.skill_search.delete(0, tk.END)
+
+        # Rebuild filter comboboxes against the new data and reset to 'All'.
+        self.skill_category.configure(values=['All'] + self.get_categories())
+        self.skill_category.set('All')
+        self.rules_language.configure(values=['All'] + self.get_rule_languages())
+        self.rules_language.set('All')
+
+        # Repopulate via the filter functions so trees, count labels, and
+        # detail panes all stay in sync (filter_* also clears the panes).
+        self.filter_agents()
+        self.filter_skills()
         self.populate_commands(self.commands)
-        self.populate_rules(self.rules)
-        
+        self.filter_rules()
+
         # Update status
         self.status_label.config(
             text=f"Ready | Agents: {len(self.agents)} | Skills: {len(self.skills)} | Commands: {len(self.commands)}"
         )
-        
-        messagebox.showinfo("Success", "Data refreshed successfully!")
+
+        if not has_agents and not has_skills:
+            messagebox.showwarning(
+                "No ECC components found",
+                "No ECC 'agents/' or 'skills/' directory was found in:\n"
+                f"{self.project_path}\n\n"
+                "Showing an empty dashboard. Point the project path at the "
+                "ECC project root and refresh again."
+            )
+        else:
+            messagebox.showinfo("Success", "Data refreshed successfully!")
 
     def apply_theme(self):
         theme = self.theme_var.get()
@@ -913,15 +991,53 @@ Project: github.com/affaan-m/ECC"""
         style.configure('TNotebook', background=bg_color, font=font_tuple)
         style.configure('TNotebook.Tab', background=frame_bg, foreground=fg_color, font=font_tuple)
         style.map('TNotebook.Tab', background=[('selected', select_bg)])
-        style.configure('Treeview', background=entry_bg, foreground=fg_color, fieldbackground=entry_bg, font=font_tuple)
+        # Row height scales with the chosen font size so larger fonts don't clip.
+        row_height = font_size + TREE_ROW_PADDING
+        style.configure('Treeview', background=entry_bg, foreground=fg_color, fieldbackground=entry_bg, font=font_tuple, rowheight=row_height)
         style.configure('Treeview.Heading', background=frame_bg, foreground=fg_color, font=font_tuple)
+        style.map('Treeview',
+                  background=[('selected', select_bg)],
+                  foreground=[('selected', fg_color)])
         style.configure('TEntry', fieldbackground=entry_bg, foreground=fg_color, font=font_tuple)
+        # Theme the (readonly) comboboxes so they stay readable in dark mode.
+        style.configure('TCombobox', fieldbackground=entry_bg, background=frame_bg, foreground=fg_color, font=font_tuple)
+        style.map('TCombobox',
+                  fieldbackground=[('readonly', entry_bg)],
+                  foreground=[('readonly', fg_color)],
+                  selectbackground=[('readonly', entry_bg)],
+                  selectforeground=[('readonly', fg_color)])
         style.configure('TButton', background=frame_bg, foreground=fg_color, font=font_tuple)
-        
+        # Visible hover/pressed/focus affordance, themed to match the palette.
+        btn_active = '#4a4a4a' if theme == 'dark' else '#d8d8d8'
+        btn_pressed = '#555555' if theme == 'dark' else '#c0c0c0'
+        style.map('TButton',
+                  background=[('pressed', btn_pressed), ('active', btn_active), ('focus', btn_active)],
+                  relief=[('pressed', 'sunken'), ('!pressed', 'raised')])
+
         self.title_label.configure(font=(font_family, 18, 'bold'))
         self.version_label.configure(font=(font_family, 10))
-        
+
         def update_widget_colors(widget):
+            # Classic tk Text/Entry widgets ignore ttk styling, so their
+            # foreground/caret must be set directly or dark mode leaves
+            # black text on a dark background.
+            if isinstance(widget, (tk.Text, tk.Entry)):
+                try:
+                    widget.configure(background=entry_bg, foreground=fg_color, insertbackground=fg_color)
+                except Exception:
+                    logger.debug("Cannot set colors on %s", widget.__class__.__name__, exc_info=True)
+                if isinstance(widget, tk.Text):
+                    try:
+                        widget.configure(font=font_tuple)
+                    except Exception:
+                        logger.debug("Cannot set font on %s", widget.__class__.__name__, exc_info=True)
+                try:
+                    children = widget.winfo_children()
+                except Exception:
+                    return
+                for child in children:
+                    update_widget_colors(child)
+                return
             try:
                 widget.configure(background=bg_color)
             except Exception:

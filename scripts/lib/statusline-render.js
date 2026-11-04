@@ -29,11 +29,14 @@ const C = {
 };
 
 const UNICODE_GLYPHS = {
-  full: '\u2588', empty: '\u2591', sep: '\u2502', bolt: '\u26a1', star: '\u2733', hex: '\u2b22', reset: '\u21bb', dot: '\u00b7',
+  full: '\u2588', empty: '\u2591', sep: '\u2502', bolt: '\u26a1', star: '\u2733', hex: '\u2b22', reset: '\u21bb', dot: '\u00b7', ellipsis: '\u2026',
 };
 const ASCII_GLYPHS = {
-  full: '|', empty: '_', sep: '|', bolt: '*', star: '*', hex: '#', reset: '~', dot: '-',
+  full: '|', empty: '_', sep: '|', bolt: '*', star: '*', hex: '#', reset: '~', dot: '-', ellipsis: '...',
 };
+
+/** Visible-character budget for the in-progress task label in every layout. */
+const TASK_MAX_WIDTH = 44;
 
 /**
  * Glyphs degrade to ASCII when the environment cannot be trusted to render
@@ -51,6 +54,26 @@ function glyphSet(env = process.env) {
 
 const G = glyphSet();
 const SEP = ` ${C.dim}${G.sep}${C.reset} `;
+
+/**
+ * Clamp the in-progress task label to a bounded number of visible characters
+ * so a long activeForm cannot overflow the terminal width and wrap/clobber
+ * the status line. Counts visible characters only — any ANSI codes are
+ * stripped before measuring so escape sequences never eat into the budget.
+ * Degrades the trailing ellipsis to "..." in the ASCII path, matching how the
+ * rest of the renderer degrades block/box glyphs.
+ * @param {string} task - raw activeForm text
+ * @param {object} [glyphs=G] - active glyph set (ellipsis style)
+ * @param {number} [max=TASK_MAX_WIDTH] - visible-character budget
+ * @returns {string} truncated label (no ANSI; caller applies color)
+ */
+function truncateTask(task, glyphs = G, max = TASK_MAX_WIDTH) {
+  if (!task) return '';
+  const visible = String(task).replace(/\x1b\[[0-9;]*m/g, '');
+  if (visible.length <= max) return visible;
+  const ellipsis = glyphs?.ellipsis || UNICODE_GLYPHS.ellipsis;
+  return visible.slice(0, Math.max(0, max - ellipsis.length)) + ellipsis;
+}
 
 /**
  * Severity color for a usage percentage: brand color while healthy,
@@ -183,7 +206,7 @@ function buildSessionLine(info) {
   if (dur) metrics.push(dur);
   if (metrics.length > 0) parts.push(`\x1b[38;5;117m${metrics.join(' ')}${C.reset}`);
 
-  if (info.task) parts.push(`\x1b[1;97m${info.task}${C.reset}`);
+  if (info.task) parts.push(`\x1b[1;97m${truncateTask(info.task)}${C.reset}`);
   return parts.join(SEP);
 }
 
@@ -290,9 +313,11 @@ module.exports = {
   C,
   G,
   SEP,
+  TASK_MAX_WIDTH,
   UNICODE_GLYPHS,
   ASCII_GLYPHS,
   glyphSet,
+  truncateTask,
   pctColor,
   buildBar,
   formatCountdown,

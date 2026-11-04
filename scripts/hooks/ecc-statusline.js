@@ -121,7 +121,7 @@ function buildUsageLines(data, bridge, task) {
 
   if (process.env.ECC_STATUSLINE_COMPACT === '1') {
     const segments = [`\x1b[2m${data.model?.display_name || 'Claude'}\x1b[0m`];
-    if (task) segments.push(`\x1b[1;97m${task}\x1b[0m`);
+    if (task) segments.push(`\x1b[1;97m${render.truncateTask(task)}\x1b[0m`);
     const usage = render.buildUsageLine(data.rate_limits, null, { compact: true });
     if (usage) segments.push(usage);
     segments.push(`\x1b[2m${dirname}\x1b[0m`);
@@ -223,11 +223,12 @@ function runStatusline() {
       const ctx = buildContextBar(remaining);
 
       // Build output
+      const render = require('../lib/statusline-render');
       const dirname = path.basename(dir);
       const segments = [`\x1b[2m${model}\x1b[0m`];
 
       if (task) {
-        segments.push(`\x1b[1;97m${task}\x1b[0m`);
+        segments.push(`\x1b[1;97m${render.truncateTask(task)}\x1b[0m`);
       }
       if (metricsStr) {
         segments.push(metricsStr);

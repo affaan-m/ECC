@@ -41,12 +41,17 @@ function renderProximityVizHtml() {
   .adv.advisory .lv { color: #e3b341; }
   .adv .who { color: #c9d1d9; }
   .adv .act { color: #8b949e; font-size: 12px; margin-top: 3px; }
-  .empty { color: #6e7681; }
+  .empty { color: #767f8a; }
   .agent-row { display: flex; gap: 8px; align-items: baseline; padding: 3px 0; font-size: 12px; }
   .agent-row .who { color: #c9d1d9; overflow-wrap: anywhere; }
   .agent-row .risk { margin-left: auto; color: #8b949e; white-space: nowrap; }
   #legend { position: absolute; left: 12px; bottom: 12px; font-size: 11px; color: #8b949e; background: rgba(11,14,20,.7); padding: 6px 8px; border-radius: 6px; }
+  #motion-toggle { position: absolute; right: 12px; top: 12px; font: inherit; font-size: 12px; color: #e6edf3; background: rgba(11,14,20,.7); border: 1px solid #1f2630; border-radius: 6px; padding: 5px 10px; cursor: pointer; }
+  #motion-toggle:hover { border-color: #2ea043; }
+  #motion-toggle:focus-visible { outline: 2px solid #58a6ff; outline-offset: 2px; }
   .shape { display: inline-block; width: 12px; margin-right: 5px; text-align: center; font-weight: 700; }
+  /* Off-screen, not display:none, so assistive tech still reads the node. */
+  .sr { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; border: 0; clip: rect(0 0 0 0); clip-path: inset(50%); overflow: hidden; white-space: nowrap; }
 </style>
 </head>
 <body>
@@ -55,14 +60,16 @@ function renderProximityVizHtml() {
     <span class="sub" id="status">connecting...</span>
     <a class="sub" href="/control-plane" style="margin-left:auto;text-decoration:none">2D control plane</a>
   </header>
-  <div id="wrap">
+  <main id="wrap">
     <div id="stage">
       <canvas id="c" role="img" aria-label="Agent airspace visualization. See the Agents panel for a text alternative.">Agent airspace visualization; see the Agents panel for per-agent risk.</canvas>
+      <button id="motion-toggle" type="button" aria-pressed="false">Pause rotation</button>
       <div id="legend">
-        <div><span class="shape" style="color:#3fb950">●</span>clear</div>
+        <div><span class="shape" style="color:#2ea043">●</span>clear</div>
         <div><span class="shape" style="color:#e3b341">■</span>traffic advisory (transmit)</div>
         <div><span class="shape" style="color:#ff7b72">▲</span>resolution (steer)</div>
       </div>
+      <div id="announce" class="sr" role="status" aria-live="polite" aria-atomic="true"></div>
     </div>
     <div id="side">
       <h2>Advisories</h2>
@@ -70,13 +77,32 @@ function renderProximityVizHtml() {
       <h2>Agents</h2>
       <div id="agents"><div class="empty">No agents.</div></div>
     </div>
-  </div>
+  </main>
 <script>
 (function () {
   var canvas = document.getElementById('c');
   var ctx = canvas.getContext('2d');
   var state = { positions: [], links: [], advisories: [], riskByAgent: {} };
   var angle = 0;
+  // Respect the OS "reduce motion" setting (WCAG 2.2.2): default to paused and
+  // render a single static frame rather than auto-rotating forever. The toggle
+  // below still lets an operator start the rotation deliberately.
+  var reduceMotion = !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
+  var paused = reduceMotion;
+  var rafId = null;
+  // Last message handed to the live region, so a poll that changes nothing
+  // stays silent.
+  var lastSpoken = null;
+  // Wording shared by the canvas label and the live region so an outage reads
+  // the same way however the operator reaches it.
+  var UNAVAILABLE = 'Agent airspace data is unavailable. Advisories and steering are unknown.';
+
+  function announce(message) {
+    if (message === lastSpoken) return;
+    lastSpoken = message;
+    var node = document.getElementById('announce');
+    if (node) node.textContent = message;
+  }
 
   function resize() {
     var r = canvas.parentElement.getBoundingClientRect();
@@ -96,7 +122,7 @@ function renderProximityVizHtml() {
   function riskColor(risk) {
     if (risk >= 0.7) return '#ff7b72';
     if (risk >= 0.35) return '#e3b341';
-    return '#3fb950';
+    return '#2ea043';
   }
 
   function drawRiskMarker(x, y, radius, level) {
@@ -156,9 +182,40 @@ function renderProximityVizHtml() {
       ctx.font = '11px -apple-system, system-ui, sans-serif';
       ctx.fillText(String(ag.agentId).slice(0, 18), p[0] + radius + 4, p[1] + 3);
     }
-    angle += 0.0035;
-    requestAnimationFrame(draw);
   }
+
+  // Draw is one static frame; the loop advances the rotation. When paused (or
+  // under reduced motion) nothing is scheduled, so the scene holds still.
+  function loop() {
+    draw();
+    if (paused) { rafId = null; return; }
+    angle += 0.0035;
+    rafId = requestAnimationFrame(loop);
+  }
+
+  function startRotation() {
+    if (paused || rafId !== null) return;
+    rafId = requestAnimationFrame(loop);
+  }
+
+  function stopRotation() {
+    if (rafId !== null) { cancelAnimationFrame(rafId); rafId = null; }
+  }
+
+  var toggleBtn = document.getElementById('motion-toggle');
+  function updateToggle() {
+    if (!toggleBtn) return;
+    toggleBtn.textContent = paused ? 'Play rotation' : 'Pause rotation';
+    toggleBtn.setAttribute('aria-pressed', paused ? 'true' : 'false');
+  }
+  function togglePause() {
+    paused = !paused;
+    updateToggle();
+    if (paused) { stopRotation(); draw(); }
+    else startRotation();
+  }
+  if (toggleBtn) toggleBtn.addEventListener('click', togglePause);
+  updateToggle();
 
   function renderAdvisories() {
     var box = document.getElementById('advisories');
@@ -220,6 +277,20 @@ function renderProximityVizHtml() {
       (c.advisories || state.advisories.length) + ' advisories. See the Agents panel for per-agent risk.');
     document.getElementById('status').textContent =
       (c.agents || 0) + ' agents - ' + (c.advisories || 0) + ' advisories - ' + (c.resolutions || 0) + ' steering';
+    announce((c.advisories || state.advisories.length) + ' advisories, ' +
+      (c.resolutions || 0) + ' steering. ' +
+      ((c.resolutions || 0) > 0 ? 'Steering is required.' : 'No steering is required.'));
+    // While rotating, the loop repaints with the new data on the next frame;
+    // when held still it will not, so paint the updated static frame now.
+    if (paused) draw();
+  }
+
+  // The last guidance is now stale, so replace it rather than leaving the
+  // canvas label and live region claiming the airspace is clear.
+  function unavailable() {
+    document.getElementById('status').textContent = 'offline';
+    canvas.setAttribute('aria-label', UNAVAILABLE);
+    announce(UNAVAILABLE);
   }
 
   function poll() {
@@ -229,14 +300,17 @@ function renderProximityVizHtml() {
     }).then(function (data) {
       applySnapshot(data && data.enabled ? data : (data || {}));
     }).catch(function () {
-      document.getElementById('status').textContent = 'offline';
+      unavailable();
     });
   }
 
   resize();
   poll();
   setInterval(poll, 5000);
-  requestAnimationFrame(draw);
+  // Under reduced motion we start paused: paint one static frame and wait for
+  // the operator to opt into rotation. Otherwise begin the animation loop.
+  if (paused) draw();
+  else startRotation();
 })();
 </script>
 </body>

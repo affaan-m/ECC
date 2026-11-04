@@ -46,7 +46,7 @@ function renderControlPlaneViewHtml() {
   .task { display: flex; gap: 8px; align-items: baseline; font-size: 12px; padding: 2px 0 2px 8px; color: #8b949e; }
   .task .id { color: #c9d1d9; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
   .task .risk { margin-left: auto; }
-  .empty { color: #6e7681; font-size: 12px; }
+  .empty { color: #767f8a; font-size: 12px; }
   #legend { position: absolute; left: 12px; bottom: 12px; font-size: 11px; color: #8b949e; background: rgba(11,14,20,.7); padding: 6px 8px; border-radius: 6px; }
   #meta { position: absolute; right: 12px; top: 12px; font-size: 11px; color: #8b949e; background: rgba(11,14,20,.7); padding: 6px 8px; border-radius: 6px; text-align: right; }
   .shape { display: inline-block; width: 12px; margin-right: 5px; text-align: center; font-weight: 700; }
@@ -60,7 +60,7 @@ function renderControlPlaneViewHtml() {
     <span class="sub" id="status">connecting...</span>
     <nav><a href="/">board</a><a href="/proximity">3D airspace</a><a href="/api/control-plane">json</a></nav>
   </header>
-  <div id="wrap">
+  <main id="wrap">
     <div id="stage">
       <canvas id="c" role="img" aria-label="Control-plane projection. See the Lanes panel for a text alternative.">Control-plane projection; see the Lanes panel for per-task risk.</canvas>
       <div id="meta"></div>
@@ -77,7 +77,7 @@ function renderControlPlaneViewHtml() {
       <h2>Lanes</h2>
       <div id="lanes"><div class="empty">No tasks.</div></div>
     </div>
-  </div>
+  </main>
 <script>
 (function () {
   var canvas = document.getElementById('c');
