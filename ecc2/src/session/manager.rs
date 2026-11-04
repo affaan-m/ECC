@@ -2438,6 +2438,18 @@ pub async fn run_session(
         working_dir,
         profile.as_ref(),
     );
+
+    // Atomically transition pending -> running so only one activator spawns
+    // the agent. If another activator already won the race, abort this spawn
+    // cleanly instead of overwriting its PID and orphaning the first agent.
+    if !db.try_claim_pending(session_id)? {
+        tracing::info!(
+            "Aborting duplicate spawn for {}: another activator already claimed the pending session",
+            session_id
+        );
+        return Ok(());
+    }
+
     capture_command_output(
         cfg.db_path.clone(),
         session_id.to_string(),

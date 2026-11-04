@@ -9,9 +9,11 @@
 'use strict';
 
 const crypto = require('crypto');
+const fs = require('fs');
 const path = require('path');
 const { spawnSync } = require('child_process');
 const { sanitizeSessionId } = require('../lib/session-bridge');
+const { writeFileAtomic } = require('../lib/atomic-write');
 const {
   appendFile,
   getClaudeDir,
@@ -20,6 +22,10 @@ const {
 
 const MAX_STDIN = 1024 * 1024;
 const METRICS_FILE_NAME = 'tool-usage.jsonl';
+// Retention bound for the append-only sink. This hook appends a row on every
+// PostToolUse, so without a cap the file grows unbounded while sibling logs are
+// bounded. Mirror the skill-runs.jsonl convention: keep the newest 5000 rows.
+const MAX_TOOL_USAGE_RECORDS = 5000;
 const FILE_PATH_KEYS = new Set([
   'file_path',
   'file_paths',
@@ -608,15 +614,34 @@ function buildActivityRow(input, env = process.env) {
   };
 }
 
+// Front-trim retention for the JSONL sink: keep only the newest `maxRecords`
+// lines. `slice(-maxRecords)` keeps the tail (newest), discarding the oldest
+// rows at the front. The rewrite goes through writeFileAtomic (private temp
+// file + fsync + atomic rename), so a concurrent reader or appender never
+// observes a truncated or half-written file — the swap is atomic. At worst a
+// row appended in the tiny window between the read and the rename is dropped,
+// which is acceptable for best-effort telemetry and matches the trade-off the
+// sibling skill-runs pruner already makes.
+function pruneToolUsageLog(filePath, maxRecords = MAX_TOOL_USAGE_RECORDS) {
+  try {
+    const lines = fs.readFileSync(filePath, 'utf8').split('\n').filter(Boolean);
+    if (lines.length <= maxRecords) {
+      return;
+    }
+    writeFileAtomic(filePath, `${lines.slice(-maxRecords).join('\n')}\n`);
+  } catch {
+    // Retention is best-effort; never fail a recorded activity row over it.
+  }
+}
+
 function run(rawInput) {
   try {
     const input = rawInput.trim() ? JSON.parse(rawInput) : {};
     const row = buildActivityRow(input);
     if (row) {
-      appendFile(
-        path.join(getClaudeDir(), 'metrics', METRICS_FILE_NAME),
-        `${JSON.stringify(row)}\n`
-      );
+      const metricsPath = path.join(getClaudeDir(), 'metrics', METRICS_FILE_NAME);
+      appendFile(metricsPath, `${JSON.stringify(row)}\n`);
+      pruneToolUsageLog(metricsPath);
     }
   } catch {
     // Keep hook non-blocking.

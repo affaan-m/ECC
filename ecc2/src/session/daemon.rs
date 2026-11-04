@@ -1,5 +1,7 @@
-use anyhow::Result;
+use anyhow::{Context, Result};
 use std::future::Future;
+use std::io::Write;
+use std::path::{Path, PathBuf};
 use std::time::Duration;
 use tokio::time;
 
@@ -15,9 +17,87 @@ struct DispatchPassSummary {
     leads: usize,
 }
 
+/// Best-effort single-instance guard backed by an O_EXCL pidfile.
+///
+/// Prevents two daemons from running the dispatch/merge/prune loop at once.
+/// The lock is removed on normal exit via `Drop`.
+struct DaemonLock {
+    path: PathBuf,
+}
+
+impl DaemonLock {
+    /// Resolve the daemon lock path in the same directory the DB path resolves
+    /// to in `config/mod.rs` (`~/.claude` by default), named `ecc2.daemon.lock`.
+    fn lock_path(cfg: &Config) -> PathBuf {
+        let dir = cfg.db_path.parent().map(Path::to_path_buf).unwrap_or_else(|| {
+            dirs::home_dir()
+                .unwrap_or_else(|| PathBuf::from("."))
+                .join(".claude")
+        });
+        dir.join("ecc2.daemon.lock")
+    }
+
+    /// Acquire the exclusive single-instance lock by creating an O_EXCL pidfile
+    /// holding our PID. If the pidfile already exists, the recorded owner is
+    /// probed with `pid_is_alive`: a dead (or unreadable) owner means the lock
+    /// is stale and is reclaimed; a live owner means another daemon is running,
+    /// so a clear message is printed and the process exits non-zero.
+    fn acquire(cfg: &Config) -> Result<Self> {
+        let path = Self::lock_path(cfg);
+        if let Some(parent) = path.parent() {
+            let _ = std::fs::create_dir_all(parent);
+        }
+
+        loop {
+            match std::fs::OpenOptions::new()
+                .write(true)
+                .create_new(true)
+                .open(&path)
+            {
+                Ok(mut file) => {
+                    write!(file, "{}", std::process::id())
+                        .with_context(|| format!("write daemon pidfile {}", path.display()))?;
+                    return Ok(Self { path });
+                }
+                Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {
+                    let owner = std::fs::read_to_string(&path)
+                        .ok()
+                        .and_then(|raw| raw.trim().parse::<u32>().ok());
+                    match owner {
+                        Some(pid) if pid_is_alive(pid) => {
+                            eprintln!("ecc daemon already running (pid {pid})");
+                            std::process::exit(1);
+                        }
+                        _ => {
+                            tracing::warn!(
+                                "Reclaiming stale daemon lock at {} (owner not alive)",
+                                path.display()
+                            );
+                            std::fs::remove_file(&path).with_context(|| {
+                                format!("remove stale daemon lock {}", path.display())
+                            })?;
+                        }
+                    }
+                }
+                Err(error) => {
+                    return Err(error)
+                        .with_context(|| format!("open daemon lock {}", path.display()));
+                }
+            }
+        }
+    }
+}
+
+impl Drop for DaemonLock {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_file(&self.path);
+    }
+}
+
 /// Background daemon that monitors sessions, handles heartbeats,
 /// and cleans up stale resources.
 pub async fn run(db: StateStore, cfg: Config) -> Result<()> {
+    let _daemon_lock = DaemonLock::acquire(&cfg)?;
     tracing::info!("ECC daemon started");
     resume_crashed_sessions(&db)?;
 
