@@ -25,6 +25,7 @@
 const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
+const { showRecoveryHints } = require('../lib/hooks/recovery-hints');
 const { extractCommandSubstitutions, extractSubshellGroups, extractBraceGroups } = require('../lib/shell-substitution');
 const { classifyPowerShellDestructiveCommand } = require('../lib/powershell-destructive-command');
 const { stripHeredocBodies } = require('./gateguard-heredoc');
@@ -114,13 +115,6 @@ const ROUTINE_POWERSHELL_NARROW_RECOVERY_HINT =
   'Narrow recovery: set `GATEGUARD_BASH_ROUTINE_DISABLED=1`; destructive Bash and PowerShell checks remain active.';
 const ECC_DISABLE_VALUES = new Set(['0', 'false', 'off', 'disabled', 'disable']);
 const ECC_ENABLE_VALUES = new Set(['1', 'true', 'on', 'enabled', 'enable', 'yes']);
-
-// A denial is fed back to the agent as untrusted tool text. Naming the env vars
-// that disable the guard in that same message hands a bypass to the guarded
-// agent (#3844), so the recovery controls are opt-in for human operators.
-function showRecoveryHints() {
-  return ECC_ENABLE_VALUES.has(normalizeEnvValue(process.env.ECC_SHOW_RECOVERY_HINTS));
-}
 
 // SQL keywords remain a phrase check. Quoted strings are stripped before
 // this regex runs so a commit message mentioning "drop table" stays passive.

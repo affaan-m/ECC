@@ -15,6 +15,7 @@
 
 const fs = require('fs');
 const path = require('path');
+const { showRecoveryHints } = require('../lib/hooks/recovery-hints');
 
 const MAX_STDIN = 1024 * 1024;
 let raw = '';
@@ -145,10 +146,6 @@ function parseInput(inputOrRaw) {
  * Exportable run() for in-process execution via run-with-flags.js.
  * Avoids the ~50-100ms spawnSync overhead when available.
  */
-function showRecoveryHints() {
-  return /^(1|true|yes|on|enabled)$/i.test(String(process.env.ECC_SHOW_RECOVERY_HINTS || ''));
-}
-
 function run(inputOrRaw, options = {}) {
   if (options.truncated) {
     return {
