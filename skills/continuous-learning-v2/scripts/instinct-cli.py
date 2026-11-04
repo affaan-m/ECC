@@ -13,6 +13,10 @@ Commands:
   promote  - Promote project instincts to global scope
   projects - List all known projects and their instinct counts
   prune    - Delete pending instincts older than 30 days (TTL)
+
+Runs on Python 3.6 and newer. Keep it that way: annotations that subscript
+builtins (list[dict]) stay quoted, and newer-only APIs such as
+str.removeprefix or subprocess's capture_output/text are avoided.
 """
 
 import argparse
@@ -430,7 +434,7 @@ def _registry_lock():
     lock_fd = None
     try:
         if _HAS_FCNTL:
-            lock_fd = open(lock_path, "w")
+            lock_fd = open(lock_path, "w", encoding="utf-8")
             fcntl.flock(lock_fd, fcntl.LOCK_EX)
         yield
     finally:
@@ -524,7 +528,7 @@ def _validate_project_id(project_id: str) -> bool:
 # Instinct Parser
 # ─────────────────────────────────────────────
 
-def parse_instinct_file(content: str) -> list[dict]:
+def parse_instinct_file(content: str) -> "list[dict]":
     """Parse YAML-like instinct file format.
 
     Each instinct is delimited by a pair of ``---`` markers (YAML frontmatter).
@@ -536,7 +540,9 @@ def parse_instinct_file(content: str) -> list[dict]:
     in_frontmatter = False
     content_lines = []
 
-    for line in content.removeprefix('\ufeff').split('\n'):
+    if content.startswith('\ufeff'):
+        content = content[1:]
+    for line in content.split('\n'):
         if line.strip() == '---':
             if in_frontmatter:
                 # End of frontmatter - content comes next
@@ -582,7 +588,7 @@ def parse_instinct_file(content: str) -> list[dict]:
     return [i for i in instincts if i.get('id')]
 
 
-def _load_instincts_from_dir(directory: Path, source_type: str, scope_label: str) -> list[dict]:
+def _load_instincts_from_dir(directory: Path, source_type: str, scope_label: str) -> "list[dict]":
     """Load instincts from a single directory."""
     instincts = []
     if not directory.exists():
@@ -645,7 +651,7 @@ def _remove_project_storage(project_id: str) -> None:
         shutil.rmtree(project_dir)
 
 
-def _project_instinct_ids(project_dir: Path, source_type: str) -> set[str]:
+def _project_instinct_ids(project_dir: Path, source_type: str) -> "set[str]":
     instinct_dir = project_dir / "instincts" / source_type
     return {
         inst.get("id")
@@ -654,7 +660,7 @@ def _project_instinct_ids(project_dir: Path, source_type: str) -> set[str]:
     }
 
 
-def _merge_instinct_dir(from_dir: Path, into_dir: Path, existing_ids: set[str]) -> tuple[int, int]:
+def _merge_instinct_dir(from_dir: Path, into_dir: Path, existing_ids: "set[str]") -> "tuple[int, int]":
     moved = 0
     skipped = 0
     if not from_dir.exists():
@@ -705,7 +711,7 @@ def _append_observations(from_project_dir: Path, into_project_dir: Path) -> int:
     return len([line for line in lines if line.strip()])
 
 
-def load_all_instincts(project: dict, include_global: bool = True) -> list[dict]:
+def load_all_instincts(project: dict, include_global: bool = True) -> "list[dict]":
     """Load all instincts: project-scoped + global.
 
     Project-scoped instincts take precedence over global ones when IDs conflict.
@@ -740,7 +746,7 @@ def load_all_instincts(project: dict, include_global: bool = True) -> list[dict]
     return instincts
 
 
-def load_project_only_instincts(project: dict) -> list[dict]:
+def load_project_only_instincts(project: dict) -> "list[dict]":
     """Load only project-scoped instincts (no global).
 
     In global fallback mode (no git project), returns global instincts.
@@ -863,7 +869,7 @@ def _warn_legacy_data() -> None:
     print(f"{'!'*60}\n")
 
 
-def _print_instincts_by_domain(instincts: list[dict]) -> None:
+def _print_instincts_by_domain(instincts: "list[dict]") -> None:
     """Helper to print instincts grouped by domain."""
     by_domain = defaultdict(list)
     for inst in instincts:
@@ -1503,7 +1509,7 @@ def _show_promotion_candidates(project: dict) -> None:
         print(f"  Run `instinct-cli.py promote` to promote these to global scope.\n")
 
 
-def _frontmatter_scalar(lines: list[str], key: str) -> Optional[str]:
+def _frontmatter_scalar(lines: "list[str]", key: str) -> Optional[str]:
     """Extract a simple scalar value from frontmatter lines."""
     for line in lines:
         if ':' not in line:
@@ -1520,7 +1526,7 @@ def _frontmatter_scalar(lines: list[str], key: str) -> Optional[str]:
     return None
 
 
-def _remove_instinct_blocks(content: str, instinct_id: str) -> tuple[str, int]:
+def _remove_instinct_blocks(content: str, instinct_id: str) -> "tuple[str, int]":
     """Remove raw frontmatter blocks with a matching instinct ID."""
     lines = content.splitlines(keepends=True)
     retained = []
@@ -1967,7 +1973,7 @@ def _evolved_description(trigger: str, instincts: list, kind: str) -> str:
     return description.replace(': ', ' - ').replace('<', '(').replace('>', ')')
 
 
-def _generate_evolved(skill_candidates: list, workflow_instincts: list, agent_candidates: list, evolved_dir: Path, limit: int = 0) -> list[str]:
+def _generate_evolved(skill_candidates: list, workflow_instincts: list, agent_candidates: list, evolved_dir: Path, limit: int = 0) -> "list[str]":
     """Generate skill/command/agent files from analyzed instinct clusters.
 
     ``limit`` caps how many candidates of each kind are written; 0 writes them
@@ -2078,7 +2084,7 @@ def _generate_evolved(skill_candidates: list, workflow_instincts: list, agent_ca
 # Pending Instinct Helpers
 # ─────────────────────────────────────────────
 
-def _collect_pending_dirs() -> list[Path]:
+def _collect_pending_dirs() -> "list[Path]":
     """Return all pending instinct directories (global + per-project)."""
     dirs = []
     global_pending = GLOBAL_INSTINCTS_DIR / "pending"
@@ -2139,7 +2145,7 @@ def _parse_created_date(file_path: Path) -> Optional[datetime]:
         return None
 
 
-def _collect_pending_instincts() -> list[dict]:
+def _collect_pending_instincts() -> "list[dict]":
     """Scan all pending directories and return info about each pending instinct.
 
     Each dict contains: path, created, age_days, name, parent_dir.
