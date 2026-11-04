@@ -112,6 +112,17 @@ function resolveControlPaneConfig(options = {}) {
   };
 }
 
+// ecc2.db is read via a raw file read (sql.js has no file locking), so a read
+// that lands mid-write in rollback-journal mode can observe a torn/malformed
+// image and throw. Retry a couple of times with a short backoff so a transient
+// torn read self-heals instead of surfacing as an HTTP 500.
+const SQLJS_OPEN_MAX_ATTEMPTS = 3;
+const SQLJS_OPEN_RETRY_DELAY_MS = 25;
+
+function delay(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
 async function openSqlDatabase(dbPath) {
   if (!dbPath || !fs.existsSync(dbPath)) return null;
   // sql.js is required lazily so commands that never open an existing
@@ -119,8 +130,19 @@ async function openSqlDatabase(dbPath) {
   // it on the require path.
   const initSqlJs = require('sql.js');
   const SQL = await initSqlJs();
-  const buffer = fs.readFileSync(dbPath);
-  return new SQL.Database(buffer);
+  let lastError = null;
+  for (let attempt = 1; attempt <= SQLJS_OPEN_MAX_ATTEMPTS; attempt += 1) {
+    try {
+      const buffer = fs.readFileSync(dbPath);
+      return new SQL.Database(buffer);
+    } catch (error) {
+      lastError = error;
+      if (attempt < SQLJS_OPEN_MAX_ATTEMPTS) {
+        await delay(SQLJS_OPEN_RETRY_DELAY_MS * attempt);
+      }
+    }
+  }
+  throw lastError;
 }
 
 function execRows(db, sql, params = []) {
@@ -138,6 +160,36 @@ function execRows(db, sql, params = []) {
 function tableExists(db, tableName) {
   const rows = execRows(db, "SELECT name FROM sqlite_master WHERE type = 'table' AND name = ? LIMIT 1", [tableName]);
   return rows.length > 0;
+}
+
+// Columns the JS reader depends on from the Rust-owned ecc2.db. These tables
+// are read with `SELECT *` + hand-coded column access, so a Rust-side rename or
+// drop would silently render blank/zero data instead of an error. We probe the
+// live schema once per open and warn (not hard-fail) when an expected column is
+// gone, so drift is visible while the reader degrades gracefully.
+const EXPECTED_RUST_COLUMNS = Object.freeze({
+  sessions: ['id', 'task', 'state', 'harness', 'created_at', 'updated_at'],
+  messages: ['to_session', 'read'],
+  context_graph_entities: ['id', 'entity_type', 'name', 'updated_at'],
+  context_graph_observations: ['id', 'entity_id', 'observation_type', 'priority', 'pinned'],
+  context_graph_relations: ['from_entity_id', 'to_entity_id'],
+  context_graph_connector_checkpoints: ['connector_name', 'updated_at'],
+});
+
+function verifyRustSchema(db) {
+  for (const [table, expectedColumns] of Object.entries(EXPECTED_RUST_COLUMNS)) {
+    // Only probe tables that exist; a missing optional table is handled by the
+    // tableExists() guards in each reader and is not drift we warn about here.
+    if (!tableExists(db, table)) continue;
+    // PRAGMA table_info cannot bind params for the table name; table names come
+    // from the trusted constant above, so interpolation here is safe.
+    const presentColumns = new Set(execRows(db, `PRAGMA table_info(${table})`).map(row => String(row.name)));
+    for (const column of expectedColumns) {
+      if (!presentColumns.has(column)) {
+        process.stderr.write(`[control-pane] schema drift: expected column "${column}" is missing from Rust table "${table}" in ecc2.db; related fields will render blank\n`);
+      }
+    }
+  }
 }
 
 function parseJson(value, fallback) {
@@ -574,8 +626,15 @@ async function readWorkItemsSnapshot(stateDbPath) {
     db = await openSqlDatabase(stateDbPath);
     if (!db) return summarizeWorkItems([]);
     return summarizeWorkItems(readWorkItems(db));
-  } catch {
-    return summarizeWorkItems([]);
+  } catch (error) {
+    // Do not swallow: a corrupt/locked/schema-mismatched state.db must be
+    // distinguishable from a genuinely empty board. Log to stderr and attach an
+    // error marker to the (still usable) empty snapshot so the failure is
+    // visible rather than rendering as a healthy EMPTY board.
+    process.stderr.write(`[control-pane] failed to read work items from ${stateDbPath}: ${error.message}\n`);
+    const result = summarizeWorkItems([]);
+    result.error = error.message;
+    return result;
   } finally {
     if (db) db.close();
   }
@@ -634,6 +693,7 @@ async function buildControlPaneSnapshot(options = {}) {
   }
 
   try {
+    verifyRustSchema(db);
     const sessions = readSessions(db);
     const entities = readEntities(db);
     const observations = readObservations(db);

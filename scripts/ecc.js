@@ -136,6 +136,41 @@ const PRIMARY_COMMANDS = [
   'uninstall',
 ];
 
+// Subcommands that run a long-lived/interactive process (e.g. an HTTP server
+// that prints a banner/URL then blocks). These must inherit stdio so their
+// output streams live instead of being buffered in a pipe until the child
+// exits. `control-pane` starts the operator HTTP server.
+const LONG_RUNNING_INHERIT_COMMANDS = new Set(['control-pane']);
+
+// Flags accepted by the implicit-install fallback (`ecc <flags>` with no
+// command). Keep this in sync with scripts/lib/install/request.js and
+// scripts/install-guided.js so a typo'd flag (e.g. `--prot`) yields a clear
+// "unknown option" error instead of silently becoming an install invocation.
+const INSTALL_FLAG_ALLOWLIST = new Set([
+  '--target',
+  '--config',
+  '--profile',
+  '--modules',
+  '--with',
+  '--skill',
+  '--skills',
+  '--without',
+  '--locale',
+  '--enable-hooks',
+  '--no-hooks',
+  '--dry-run',
+  '--json',
+  '--help',
+  '-h',
+  '--guided',
+  '--harness',
+  '--claude-scope',
+  '--claude-hooks',
+  '--all-harnesses',
+  '--yes',
+  '-y',
+]);
+
 function showHelp(exitCode = 0) {
   process.stdout.write(`
 ECC selective-install CLI
@@ -251,12 +286,16 @@ function resolveCommand(argv) {
   }
 
   const knownLegacyLanguages = listAvailableLanguages();
+  const isImplicitInstallFlag = firstArg.startsWith('-') && INSTALL_FLAG_ALLOWLIST.has(firstArg);
   const shouldTreatAsImplicitInstall = (
-    firstArg.startsWith('-')
+    isImplicitInstallFlag
     || knownLegacyLanguages.includes(firstArg)
   );
 
   if (!shouldTreatAsImplicitInstall) {
+    if (firstArg.startsWith('-')) {
+      throw new Error(`Unknown option: ${firstArg}`);
+    }
     throw new Error(`Unknown command: ${firstArg}`);
   }
 
@@ -286,7 +325,7 @@ function runCommand(commandName, args) {
           }),
         }
         : process.env,
-      stdio: isItoLogin || isProfileStart || commandName === 'setup' || commandName === 'install'
+      stdio: isItoLogin || isProfileStart || commandName === 'setup' || commandName === 'install' || LONG_RUNNING_INHERIT_COMMANDS.has(commandName)
         ? 'inherit'
         : commandName === 'memory' || commandName === 'profile'
           ? ['inherit', 'pipe', 'pipe']
