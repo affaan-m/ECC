@@ -297,11 +297,22 @@ function isSensitiveTarget(classPath) {
   }
 }
 
+// `.claude/settings*.json` holds the switches for GateGuard and the other
+// hooks, so it must count as restricted on every edit path — including the
+// subagent paths that only deny sensitive or hard-linked targets (#3862).
+const CLAUDE_SETTINGS_PATH = /(^|\/)\.claude\/settings(?:\.([^/]+))?\.json$/;
+
+function isClaudeSettingsPath(classPath) {
+  return CLAUDE_SETTINGS_PATH.test(String(classPath || '').replace(/\\/g, '/').toLowerCase());
+}
+
 /** Sensitive on the lexical or the real (symlink-resolved) path; any error is sensitive. */
 function isSensitiveTargetFor(filePath, data) {
   try {
     if (typeof filePath !== 'string' || !filePath) return true;
-    if (isSensitiveTarget(classPathFor(filePath, data))) return true;
+    const classPath = classPathFor(filePath, data);
+    if (isClaudeSettingsPath(classPath)) return true;
+    if (isSensitiveTarget(classPath)) return true;
     return isSensitiveRealTarget(filePath, data);
   } catch (_) {
     return true;

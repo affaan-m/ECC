@@ -1521,7 +1521,7 @@ function runTests() {
         tool_name: 'Edit',
         tool_input: { file_path: '/workspace/app/.claude/settings.json', old_string: '{}', new_string: '{"hooks":[]}' }
       };
-      const result = runHook(input);
+      const result = runHook(input, { GATEGUARD_EXEMPT_GLOBS: '' });
       const output = parseOutput(result.stdout);
       assert.ok(output, 'should produce valid JSON output');
       assert.ok(output.hookSpecificOutput, 'the settings file must not bypass the gate');
@@ -2018,6 +2018,36 @@ function runTests() {
       const subOut = parseOutput(subagent.stdout);
       assert.ok(subOut, 'subagent MultiEdit should produce JSON output');
       assert.ok(!subOut.hookSpecificOutput || subOut.hookSpecificOutput.permissionDecision !== 'deny', 'subagent MultiEdit should bypass the first-touch file gate');
+    })
+  )
+    passed++;
+  else failed++;
+
+  // --- Test 33a: settings files stay gated on subagent Edit/Write/MultiEdit (#3862) ---
+  clearState();
+  if (
+    test('subagent settings edits stay gated on every edit tool', () => {
+      const env = { CLAUDE_SESSION_ID: '', ECC_SESSION_ID: '', GATEGUARD_EXEMPT_GLOBS: '' };
+      const settingsPaths = ['/workspace/app/.claude/settings.json', '/workspace/app/.claude/settings.local.json'];
+
+      for (const filePath of settingsPaths) {
+        const edits = [{ file_path: filePath, old_string: '{}', new_string: '{"hooks":[]}' }];
+        const cases = [
+          { tool_name: 'MultiEdit', tool_input: { edits } },
+          { tool_name: 'Edit', tool_input: { ...edits[0] } },
+          { tool_name: 'Write', tool_input: { file_path: filePath, content: '{"hooks":[]}' } }
+        ];
+        for (const toolInput of cases) {
+          clearState();
+          const result = runHook(
+            { ...toolInput, session_id: 'subagent-fresh-session', agent_id: 'agent-abc-123' },
+            env
+          );
+          const output = parseOutput(result.stdout);
+          assert.ok(output && output.hookSpecificOutput, `${toolInput.tool_name} ${filePath} must be denied`);
+          assert.strictEqual(output.hookSpecificOutput.permissionDecision, 'deny');
+        }
+      }
     })
   )
     passed++;
