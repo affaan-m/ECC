@@ -6,8 +6,8 @@
  * interpreter hit it. The static check below parses the script with the 3.6
  * grammar and rejects the runtime constructs a grammar check cannot see:
  * unquoted builtin generics in evaluated annotations and newer-only APIs.
- * The last case runs the CLI under the strictest warning settings of the
- * current Python.
+ * The other cases run the CLI under the strictest warning settings of the
+ * current Python and cover the end-of-life notice.
  *
  * Run with: node tests/scripts/instinct-cli-python-compat.test.js
  */
@@ -144,6 +144,28 @@ for problem in problems:
     print(problem)
 `;
 
+function loadAndCall(body, env = {}) {
+  const code = [
+    'import argparse, importlib.util, sys',
+    `spec = importlib.util.spec_from_file_location('icli', ${JSON.stringify(cliPath)})`,
+    'm = importlib.util.module_from_spec(spec)',
+    'spec.loader.exec_module(m)',
+    body,
+  ].join('\n');
+  const tmp = createTempDir();
+  try {
+    const r = runPython(['-c', code], {
+      env: { CLV2_HOMUNCULUS_DIR: path.join(tmp, 'homunculus'), ...env },
+    });
+    if (r.status !== 0) {
+      throw new Error(`python exited ${r.status}: ${r.stderr || r.error}`);
+    }
+    return r;
+  } finally {
+    cleanupDir(tmp);
+  }
+}
+
 console.log('\n=== Testing instinct-cli.py Python compatibility ===\n');
 
 test('the script uses nothing newer than Python 3.6', () => {
@@ -187,6 +209,7 @@ test('commands run with every warning turned into an error', () => {
     const env = {
       CLV2_HOMUNCULUS_DIR: path.join(tmp, 'homunculus'),
       CLAUDE_PROJECT_DIR: projectDir,
+      CLV2_SKIP_PYTHON_EOL_NOTICE: '1',
     };
     const sample = path.join(repoRoot, '.claude', 'homunculus', 'instincts', 'inherited', 'ecc-instincts.yaml');
     const strict = ['-X', 'dev', '-X', 'warn_default_encoding', '-W', 'error', cliPath];
@@ -205,6 +228,37 @@ test('commands run with every warning turned into an error', () => {
   } finally {
     cleanupDir(tmp);
   }
+});
+
+test('an end-of-life Python gets a one-line notice on stderr', () => {
+  const r = loadAndCall(
+    "m._SUPPORTED_PYTHON = (99, 0)\nm._warn_if_python_eol(argparse.Namespace(command='status'))",
+    { CLV2_SKIP_PYTHON_EOL_NOTICE: '' }
+  );
+  assert.strictEqual(r.stdout, '');
+  const lines = r.stderr.trim().split(/\r?\n/);
+  assert.strictEqual(lines.length, 1, r.stderr);
+  assert.match(lines[0], /^\[instinct-cli\] Python 3\.\d+ is past end of life\. .*99\.0 or newer/);
+});
+
+test('the notice stays quiet for --quiet, the opt-out and a supported Python', () => {
+  const quiet = loadAndCall(
+    "m._SUPPORTED_PYTHON = (99, 0)\nm._warn_if_python_eol(argparse.Namespace(command='prune', quiet=True))",
+    { CLV2_SKIP_PYTHON_EOL_NOTICE: '' }
+  );
+  assert.strictEqual(quiet.stderr, '');
+
+  const optedOut = loadAndCall(
+    "m._SUPPORTED_PYTHON = (99, 0)\nm._warn_if_python_eol(argparse.Namespace(command='status'))",
+    { CLV2_SKIP_PYTHON_EOL_NOTICE: '1' }
+  );
+  assert.strictEqual(optedOut.stderr, '');
+
+  const supported = loadAndCall(
+    "m._SUPPORTED_PYTHON = (3, 0)\nm._warn_if_python_eol(argparse.Namespace(command='status'))",
+    { CLV2_SKIP_PYTHON_EOL_NOTICE: '' }
+  );
+  assert.strictEqual(supported.stderr, '');
 });
 
 console.log(`\nPassed: ${passed}`);

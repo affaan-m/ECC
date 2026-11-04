@@ -51,6 +51,11 @@ try:
 except ImportError:
     _HAS_FCNTL = False  # Windows — skip file locking
 
+# Oldest Python that still gets security fixes upstream (3.10 reached end of
+# life in October 2026). Older interpreters keep working; the CLI only prints
+# a one-line upgrade notice, which CLV2_SKIP_PYTHON_EOL_NOTICE=1 turns off.
+_SUPPORTED_PYTHON = (3, 11)
+
 # ─────────────────────────────────────────────
 # Configuration
 # ─────────────────────────────────────────────
@@ -2228,6 +2233,19 @@ def cmd_prune(args) -> int:
 # Main
 # ─────────────────────────────────────────────
 
+def _warn_if_python_eol(args: argparse.Namespace) -> None:
+    if sys.version_info[:2] >= _SUPPORTED_PYTHON:
+        return
+    if getattr(args, 'quiet', False) or os.environ.get('CLV2_SKIP_PYTHON_EOL_NOTICE') == '1':
+        return
+    print(
+        f"[instinct-cli] Python {sys.version_info[0]}.{sys.version_info[1]} is past end of life. "
+        f"instinct-cli still runs on it; upgrade to Python "
+        f"{_SUPPORTED_PYTHON[0]}.{_SUPPORTED_PYTHON[1]} or newer for security fixes.",
+        file=sys.stderr,
+    )
+
+
 def main() -> int:
     _ensure_global_dirs()
     parser = argparse.ArgumentParser(description='Instinct CLI for Continuous Learning v2.1 (Project-Scoped)')
@@ -2289,6 +2307,7 @@ def main() -> int:
     prune_parser.add_argument('--quiet', action='store_true', help='Suppress output (for automated use)')
 
     args = parser.parse_args()
+    _warn_if_python_eol(args)
 
     if args.command == 'status':
         return cmd_status(args)
