@@ -132,6 +132,52 @@ if (
 else failed++;
 
 if (
+  test('sanitizeCommand redacts the whole Bash word when fragments are joined', () => {
+    const tail = ['suffix', 'tail', '123'].join('');
+    const commands = [
+      `app --secret='prefix-'${tail} --next`,
+      `app --secret=prefix-"${tail} two" --next`,
+      `app --secret=first\\ ${tail} --next`,
+      `app --secret=${FAKE_VALUE}\\`,
+    ];
+    for (const command of commands) {
+      const sanitized = sanitizeCommand(command);
+      assert.ok(!sanitized.includes(tail) && !sanitized.includes(FAKE_VALUE), `value leaked: ${sanitized}`);
+    }
+    assert.strictEqual(sanitizeCommand(commands[0]), 'app --secret=<REDACTED> --next');
+  })
+)
+  passed++;
+else failed++;
+
+if (
+  test('sanitizeCommand keeps the rest of the command when the keyword is searched for', () => {
+    const commands = ['grep -n "secret =" settings.py', "rg 'api_key:' config/ --type yaml"];
+    for (const command of commands) {
+      assert.strictEqual(sanitizeCommand(command), command);
+    }
+    assert.strictEqual(
+      sanitizeCommand(`curl -H "x-api-key: ${FAKE_VALUE}" -d "payload" https://api.example.com`),
+      'curl -H "x-api-key: <REDACTED>" -d "payload" https://api.example.com'
+    );
+  })
+)
+  passed++;
+else failed++;
+
+if (
+  test('sanitizeCommand stays linear on long dot-free ey- runs', () => {
+    const start = Date.now();
+    sanitizeCommand('ey-'.repeat(350000));
+    sanitizeCommand('eyJ-'.repeat(250000));
+    const elapsed = Date.now() - start;
+    assert.ok(elapsed < 2000, `took ${elapsed} ms`);
+  })
+)
+  passed++;
+else failed++;
+
+if (
   test('sanitizeCommand redacts secret= and api_key= assignments (#3846)', () => {
     assert.strictEqual(
       sanitizeCommand(`app --secret=${FAKE_VALUE} --api_key=${FAKE_VALUE} --api-key="${FAKE_VALUE} two"`),

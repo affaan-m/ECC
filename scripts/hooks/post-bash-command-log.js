@@ -33,18 +33,96 @@ function redactJwt(token) {
   return token;
 }
 
+const ASSIGNMENT_KEY = /(\b|_)(secret|api[_-]?key)(\s*[:=]\s*)/gi;
+
+function isQuoteStart(text, i) {
+  return text[i] === '"' || text[i] === "'" || (text[i] === '$' && text[i + 1] === "'");
+}
+
+// Index just past the quoted fragment opening at `start`, or the end of the
+// text when the quote is never closed.
+function skipQuoted(text, start) {
+  const ansi = text[start] === '$';
+  const quote = ansi ? "'" : text[start];
+  const escapes = ansi || quote === '"';
+  let i = start + (ansi ? 2 : 1);
+  while (i < text.length) {
+    if (escapes && text[i] === '\\') i += 2;
+    else if (text[i] === quote) return i + 1;
+    else i++;
+  }
+  return text.length;
+}
+
+// End of the shell word starting at `start`. Bash joins adjacent fragments,
+// so `'prefix-'suffix`, `a"b c"` and `first\ second` are each one value.
+function wordEnd(text, start) {
+  let i = start;
+  while (i < text.length && !/\s/.test(text[i])) {
+    if (isQuoteStart(text, i)) i = skipQuoted(text, i);
+    else if (text[i] === '\\') i += 2;
+    else i++;
+  }
+  return Math.min(i, text.length);
+}
+
+// End of a value that sits inside an enclosing quoted string, e.g.
+// `-H "x-api-key: VALUE"`: the value runs to the enclosing closing quote.
+function enclosedEnd(text, start, open) {
+  const close = open === '"' ? '"' : "'";
+  const escapes = open !== "'";
+  if (text[start] === close) {
+    // `grep "secret =" file` is a search, not an assignment. If a word
+    // follows the quote instead, the quote state was misread; fall back to
+    // redacting the whole word so nothing leaks.
+    const next = text[start + 1];
+    return next === undefined || /\s/.test(next) ? start : wordEnd(text, start);
+  }
+  let i = start;
+  while (i < text.length && text[i] !== close) i += escapes && text[i] === '\\' ? 2 : 1;
+  return Math.min(i, text.length);
+}
+
+// Redact secret=/api_key= values in one pass, tracking the enclosing quote.
+function redactAssignments(text) {
+  let out = '';
+  let copied = 0;
+  let scan = 0;
+  let open = null; // '"', "'", "$'" or null
+  ASSIGNMENT_KEY.lastIndex = 0;
+  let match;
+  while ((match = ASSIGNMENT_KEY.exec(text))) {
+    const valueStart = match.index + match[0].length;
+    while (scan < valueStart) {
+      if (open === null) {
+        if (isQuoteStart(text, scan)) {
+          open = text[scan] === '$' ? "$'" : text[scan];
+          scan += open.length;
+        } else scan += text[scan] === '\\' ? 2 : 1;
+      } else if (open !== "'" && text[scan] === '\\') scan += 2;
+      else {
+        if (text[scan] === (open === '"' ? '"' : "'")) open = null;
+        scan++;
+      }
+    }
+    const end = open === null ? wordEnd(text, valueStart) : enclosedEnd(text, valueStart, open);
+    if (end > valueStart) {
+      out += `${text.slice(copied, valueStart)}<REDACTED>`;
+      copied = end;
+      ASSIGNMENT_KEY.lastIndex = end;
+    }
+  }
+  return out + text.slice(copied);
+}
+
 function sanitizeCommand(command) {
-  return String(command || '')
+  const masked = String(command || '')
     .replace(/\n/g, ' ')
     .replace(/-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----[\s\S]*?(?:-----END [A-Z0-9 ]*PRIVATE KEY-----|$)/g, '<REDACTED>')
     .replace(/\bsk-[A-Za-z0-9_-]{20,}/g, '<REDACTED>')
-    .replace(/\be[wy][A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]*/g, redactJwt)
-    // Value: "..." with escapes, $'...' with escapes, '...', or a bare word
-    // with backslash escapes. Unterminated quotes are redacted to the end.
-    .replace(
-      /(\b|_)(secret|api[_-]?key)(\s*[:=]\s*)("(?:[^"\\]|\\.)*(?:"|$)|\$'(?:[^'\\]|\\.)*(?:'|$)|'[^']*(?:'|$)|(?:[^\s"'\\]|\\.)+)/gi,
-      '$1$2$3<REDACTED>'
-    )
+    // Lookbehind, not `\b`: `\b` matches after each `-`, making `ey-ey-...` quadratic.
+    .replace(/(?<![A-Za-z0-9_-])e[wy][A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]*/g, redactJwt);
+  return redactAssignments(masked)
     .replace(/--token[= ][^ ]*/g, '--token=<REDACTED>')
     .replace(/Authorization:[: ]*[^ ]*[: ]*[^ ]*/gi, 'Authorization:<REDACTED>')
     .replace(/\bAKIA[A-Z0-9]{16}\b/g, '<REDACTED>')
