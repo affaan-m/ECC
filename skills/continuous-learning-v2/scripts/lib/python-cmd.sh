@@ -163,9 +163,10 @@ _clv2_python_probe() {
   # interpreter does not answer with a verdict line. Other than a timeout, the
   # exit status is ignored: a verdict followed by a failure still describes a
   # working Python. timeout bounds a hanging alias or stub; Windows' own
-  # timeout.exe in System32 is a different program and is never used. -k is
-  # passed only where it works (BusyBox before 1.36 has none), checked once
-  # per shell.
+  # timeout.exe in System32 is a different program and is never used. The kill
+  # form is checked once per shell: -k 1 where it works, else -s KILL (BusyBox
+  # before 1.36 has no -k and returns the program's own status, so only KILL
+  # stops an interpreter from catching the signal and exiting 0), else plain.
   local _out _ok _rc _timeout=""
   _clv2_probe_ok=""
   _clv2_probe_exe=""
@@ -176,14 +177,22 @@ _clv2_python_probe() {
   fi
   if [ -n "$_timeout" ]; then
     if [ -z "${_clv2_timeout_kill:-}" ]; then
-      _clv2_timeout_kill=no
-      "$_timeout" -k 1 1 true >/dev/null 2>&1 && _clv2_timeout_kill=yes
+      if "$_timeout" -k 1 1 true >/dev/null 2>&1; then
+        _clv2_timeout_kill=after
+      elif "$_timeout" -s KILL 1 true >/dev/null 2>&1; then
+        _clv2_timeout_kill=signal
+      else
+        _clv2_timeout_kill=none
+      fi
     fi
-    if [ "$_clv2_timeout_kill" = yes ]; then
-      _out="$("$_timeout" -k 1 "$_CLV2_PYTHON_PROBE_TIMEOUT" "$1" -c "$_CLV2_PYTHON_PROBE" 2>/dev/null)"
-    else
-      _out="$("$_timeout" "$_CLV2_PYTHON_PROBE_TIMEOUT" "$1" -c "$_CLV2_PYTHON_PROBE" 2>/dev/null)"
-    fi
+    case "$_clv2_timeout_kill" in
+      after)
+        _out="$("$_timeout" -k 1 "$_CLV2_PYTHON_PROBE_TIMEOUT" "$1" -c "$_CLV2_PYTHON_PROBE" 2>/dev/null)" ;;
+      signal)
+        _out="$("$_timeout" -s KILL "$_CLV2_PYTHON_PROBE_TIMEOUT" "$1" -c "$_CLV2_PYTHON_PROBE" 2>/dev/null)" ;;
+      *)
+        _out="$("$_timeout" "$_CLV2_PYTHON_PROBE_TIMEOUT" "$1" -c "$_CLV2_PYTHON_PROBE" 2>/dev/null)" ;;
+    esac
     _rc=$?
     # Timed out (GNU 124, or killed by KILL/TERM): it would hang in use too.
     case "$_rc" in 124|137|143) return 1 ;; esac
