@@ -546,6 +546,7 @@
   },
   "dependencies": {
     "@iarna/toml": "2.2.5",
+    "@opencode-ai/plugin": "1.4.3",
     "ajv": "8.20.0",
     "js-yaml": "4.3.2",
     "sql.js": "1.14.2",
@@ -564,7 +565,6 @@
   },
   "devDependencies": {
     "@eslint/js": "9.39.2",
-    "@opencode-ai/plugin": "1.4.3",
     "@types/node": "26.6.4",
     "@x402/core": "2.29.0",
     "@x402/evm": "2.29.0",
