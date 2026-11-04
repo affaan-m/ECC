@@ -691,7 +691,9 @@ pip install gateguard-ai
 gateguard init
 ```
 
-This adds `.gateguard.yml` for per-project configuration (custom messages, ignore paths, gate toggles).
+That CLI writes `.gateguard.yml` for its own runtime. The ECC hook shipped in this
+repository does **not** read that file; configure it with the `GATEGUARD_*`
+environment variables documented above.
 
 ## Anti-Patterns
 
@@ -703,7 +705,7 @@ This adds `.gateguard.yml` for per-project configuration (custom messages, ignor
 
 - Let the gate fire naturally. Don't try to pre-answer the gate questions — the investigation itself is what improves quality. A real search for the target before editing is investigation, and is credited (see [What Counts as Already Done](#what-counts-as-already-done)).
 - Customize gate messages for your domain. If your project has specific conventions, add them to the gate prompts.
-- Use `.gateguard.yml` to ignore paths like `.venv/`, `node_modules/`, `.git/`.
+- Use `GATEGUARD_EXEMPT_GLOBS` to skip first-touch checks for paths like `.venv/`, `node_modules/` and `.git/`; the hook does not read `.gateguard.yml`.
 
 ## Related Skills
 
