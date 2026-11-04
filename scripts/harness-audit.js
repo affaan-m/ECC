@@ -12,9 +12,9 @@ const {
 const CATEGORIES = [
   'Tool Coverage',
   'Context Efficiency',
-  'Quality Gates',
+  'Quality-Gate Config Present',
   'Memory Persistence',
-  'Eval Coverage',
+  'Eval Assets Present',
   'Security Guardrails',
   'Cost Efficiency',
   'GitHub Integration',
@@ -492,7 +492,7 @@ function getRepoChecks(rootDir) {
     },
     {
       id: 'quality-test-runner',
-      category: 'Quality Gates',
+      category: 'Quality-Gate Config Present',
       points: 3,
       scopes: ['repo'],
       path: 'tests/run-all.js',
@@ -502,7 +502,7 @@ function getRepoChecks(rootDir) {
     },
     {
       id: 'quality-ci-validations',
-      category: 'Quality Gates',
+      category: 'Quality-Gate Config Present',
       points: 3,
       scopes: ['repo'],
       path: 'package.json',
@@ -512,7 +512,7 @@ function getRepoChecks(rootDir) {
     },
     {
       id: 'quality-hook-tests',
-      category: 'Quality Gates',
+      category: 'Quality-Gate Config Present',
       points: 2,
       scopes: ['repo', 'hooks'],
       path: 'tests/hooks/hooks.test.js',
@@ -522,7 +522,7 @@ function getRepoChecks(rootDir) {
     },
     {
       id: 'quality-doctor-script',
-      category: 'Quality Gates',
+      category: 'Quality-Gate Config Present',
       points: 2,
       scopes: ['repo'],
       path: 'scripts/doctor.js',
@@ -562,7 +562,7 @@ function getRepoChecks(rootDir) {
     },
     {
       id: 'eval-skill',
-      category: 'Eval Coverage',
+      category: 'Eval Assets Present',
       points: 4,
       scopes: ['repo', 'skills'],
       path: 'skills/eval-harness/SKILL.md',
@@ -572,7 +572,7 @@ function getRepoChecks(rootDir) {
     },
     {
       id: 'eval-commands',
-      category: 'Eval Coverage',
+      category: 'Eval Assets Present',
       points: 4,
       scopes: ['repo', 'commands', 'skills'],
       path: 'commands/checkpoint.md',
@@ -582,7 +582,7 @@ function getRepoChecks(rootDir) {
     },
     {
       id: 'eval-tests-presence',
-      category: 'Eval Coverage',
+      category: 'Eval Assets Present',
       points: 2,
       scopes: ['repo'],
       path: 'tests/',
@@ -880,7 +880,7 @@ function getConsumerChecks(rootDir) {
     },
     {
       id: 'consumer-test-suite',
-      category: 'Quality Gates',
+      category: 'Quality-Gate Config Present',
       points: 4,
       scopes: ['repo'],
       path: 'tests/',
@@ -893,7 +893,7 @@ function getConsumerChecks(rootDir) {
     },
     {
       id: 'consumer-ci-workflow',
-      category: 'Quality Gates',
+      category: 'Quality-Gate Config Present',
       points: 3,
       scopes: ['repo'],
       path: '.github/workflows/',
@@ -913,7 +913,7 @@ function getConsumerChecks(rootDir) {
     },
     {
       id: 'consumer-eval-coverage',
-      category: 'Eval Coverage',
+      category: 'Eval Assets Present',
       points: 2,
       scopes: ['repo'],
       path: 'evals/',

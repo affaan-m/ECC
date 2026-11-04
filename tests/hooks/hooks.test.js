@@ -565,7 +565,9 @@ async function runTests() {
     await asyncTest('honors ECC_MAX_INJECTED_INSTINCTS for injected instincts', async () => {
       const isoHome = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-max-instincts-'));
       const homunculusDir = path.join(isoHome, 'homunculus');
-      const instinctsDir = path.join(homunculusDir, 'instincts', 'personal');
+      // C-4A: inherited/ instincts are user-trusted and auto-inject; observer-authored
+      // personal/ instincts are withheld pending review, so this pipeline test uses inherited/.
+      const instinctsDir = path.join(homunculusDir, 'instincts', 'inherited');
       fs.mkdirSync(instinctsDir, { recursive: true });
       for (let i = 1; i <= 8; i++) {
         fs.writeFileSync(
@@ -611,7 +613,9 @@ async function runTests() {
     await asyncTest('honors ECC_INSTINCT_CONFIDENCE_THRESHOLD for injected instincts', async () => {
       const isoHome = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-instinct-threshold-'));
       const homunculusDir = path.join(isoHome, 'homunculus');
-      const instinctsDir = path.join(homunculusDir, 'instincts', 'personal');
+      // C-4A: inherited/ instincts are user-trusted and auto-inject; observer-authored
+      // personal/ instincts are withheld pending review, so this pipeline test uses inherited/.
+      const instinctsDir = path.join(homunculusDir, 'instincts', 'inherited');
       fs.mkdirSync(instinctsDir, { recursive: true });
       // 4 high-confidence (0.9) + 4 low-confidence (0.6) instincts.
       for (let i = 1; i <= 8; i++) {
@@ -654,7 +658,9 @@ async function runTests() {
     await asyncTest('ranks stack-relevant instincts above higher-confidence unrelated ones (#2371)', async () => {
       const isoHome = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-instinct-relevance-'));
       const homunculusDir = path.join(isoHome, 'homunculus');
-      const instinctsDir = path.join(homunculusDir, 'instincts', 'personal');
+      // C-4A: inherited/ instincts are user-trusted and auto-inject; observer-authored
+      // personal/ instincts are withheld pending review, so this pipeline test uses inherited/.
+      const instinctsDir = path.join(homunculusDir, 'instincts', 'inherited');
       fs.mkdirSync(instinctsDir, { recursive: true });
       // A stack-matching 0.75 instinct and an unrelated higher-confidence 0.9.
       fs.writeFileSync(
@@ -702,6 +708,49 @@ async function runTests() {
       } finally {
         fs.rmSync(isoHome, { recursive: true, force: true });
         fs.rmSync(projectRoot, { recursive: true, force: true });
+      }
+    })
+  )
+    passed++;
+  else failed++;
+
+  if (
+    await asyncTest('withholds unreviewed personal instincts but injects trusted ones (C-4A)', async () => {
+      const isoHome = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-instinct-review-'));
+      const homunculusDir = path.join(isoHome, 'homunculus');
+      const personalDir = path.join(homunculusDir, 'instincts', 'personal');
+      const inheritedDir = path.join(homunculusDir, 'instincts', 'inherited');
+      fs.mkdirSync(personalDir, { recursive: true });
+      fs.mkdirSync(inheritedDir, { recursive: true });
+      // Observer-authored personal instinct: high confidence but unreviewed — must be withheld.
+      fs.writeFileSync(
+        path.join(personalDir, 'observed.md'),
+        '---\nid: observed-pattern\nconfidence: 0.9\nsource: session-observation\n---\n## Action\nAlways do the unreviewed observed thing.\n'
+      );
+      // User-imported inherited instinct: trusted — must inject.
+      fs.writeFileSync(
+        path.join(inheritedDir, 'imported.md'),
+        '---\nid: imported-pattern\nconfidence: 0.9\nsource: inherited\n---\n## Action\nApply the trusted imported thing.\n'
+      );
+      // Promoted personal instinct: cleared the review gate — must inject.
+      fs.writeFileSync(
+        path.join(personalDir, 'promoted.md'),
+        '---\nid: promoted-pattern\nconfidence: 0.9\nsource: promoted\npromoted_from: abc123\n---\n## Action\nApply the promoted thing.\n'
+      );
+      const baseEnv = { HOME: isoHome, USERPROFILE: isoHome, CLV2_HOMUNCULUS_DIR: homunculusDir };
+
+      try {
+        const res = await runScript(path.join(scriptsDir, 'session-start.js'), '', baseEnv);
+        assert.strictEqual(res.code, 0);
+        const ctx = getSessionStartAdditionalContext(res.stdout);
+        assert.ok(ctx.includes('Apply the trusted imported thing.'), `inherited instinct should inject, ctx: ${ctx}`);
+        assert.ok(ctx.includes('Apply the promoted thing.'), `promoted personal instinct should inject, ctx: ${ctx}`);
+        assert.ok(!ctx.includes('Always do the unreviewed observed thing.'), `unreviewed personal instinct must NOT inject, ctx: ${ctx}`);
+        assert.ok(/awaiting review/.test(ctx), `withheld count must be surfaced for discoverability, ctx: ${ctx}`);
+        assert.ok(res.stderr.includes('Injecting 2 instinct(s)'), `two trusted instincts should inject, stderr: ${res.stderr}`);
+        assert.ok(res.stderr.includes('Withholding 1 unreviewed instinct(s)'), `one unreviewed instinct should be withheld, stderr: ${res.stderr}`);
+      } finally {
+        fs.rmSync(isoHome, { recursive: true, force: true });
       }
     })
   )

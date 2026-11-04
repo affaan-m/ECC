@@ -93,16 +93,24 @@ Risk Level: LOW/MEDIUM/HIGH
 ## Metrics
 
 ### pass@k
-"At least one success in k attempts"
-- pass@1: First attempt success rate
-- pass@3: Success within 3 attempts
+Formally, pass@k is the probability that **at least one** of `k` independent
+retries of the **same task** succeeds. Estimate it per task by running that one
+task `k` times and recording whether any attempt passed.
+- pass@1: the task passes on a single attempt (no retries)
+- pass@3: the task passes within 3 independent attempts of the same task
 - Typical target: pass@3 > 90%
 
 ### pass^k
-"All k trials succeed"
+Probability that **all** `k` independent retries of the **same task** succeed.
 - Higher bar for reliability
-- pass^3: 3 consecutive successes
+- pass^3: the same task passes 3 times in a row
 - Use for critical paths
+
+> Note: these per-task pass@k / pass^k values are recorded by hand from the
+> attempts in step 3 below — nothing in this skill computes them automatically.
+> Do not confuse per-task pass@k (retries of one task) with the cross-task
+> **task pass rate** used in the worked report below (the fraction of distinct
+> tasks that passed); they are different aggregates.
 
 ## Eval Workflow
 
@@ -156,9 +164,9 @@ Regression Evals:
   logout-flow:     PASS
   Overall:         3/3 passed
 
-Metrics:
-  pass@1: 67% (2/3)
-  pass@3: 100% (3/3)
+Metrics (aggregated across the 3 capability tasks):
+  Task pass rate within 1 attempt:         67% (2/3)
+  Cumulative task pass rate (<=3 attempts): 100% (3/3)
 
 Status: READY FOR REVIEW
 ```

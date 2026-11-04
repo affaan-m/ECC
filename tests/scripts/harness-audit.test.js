@@ -136,9 +136,9 @@ function runTests() {
     const categoryNames = Object.keys(parsed.categories);
     assert.ok(categoryNames.includes('Tool Coverage'));
     assert.ok(categoryNames.includes('Context Efficiency'));
-    assert.ok(categoryNames.includes('Quality Gates'));
+    assert.ok(categoryNames.includes('Quality-Gate Config Present'));
     assert.ok(categoryNames.includes('Memory Persistence'));
-    assert.ok(categoryNames.includes('Eval Coverage'));
+    assert.ok(categoryNames.includes('Eval Assets Present'));
     assert.ok(categoryNames.includes('Security Guardrails'));
     assert.ok(categoryNames.includes('Cost Efficiency'));
     assert.ok(categoryNames.includes('GitHub Integration'));

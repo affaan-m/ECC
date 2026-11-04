@@ -30,9 +30,9 @@ The script computes up to 12 fixed categories (`0-10` normalized each). The firs
 
 1. Tool Coverage
 2. Context Efficiency
-3. Quality Gates
+3. Quality-Gate Config Present
 4. Memory Persistence
-5. Eval Coverage
+5. Eval Assets Present
 6. Security Guardrails
 7. Cost Efficiency
 8. GitHub Integration
@@ -68,13 +68,13 @@ Return:
 Harness Audit (repo, repo): 71/80
 - Tool Coverage: 10/10 (10/10 pts)
 - Context Efficiency: 9/10 (9/10 pts)
-- Quality Gates: 10/10 (10/10 pts)
+- Quality-Gate Config Present: 10/10 (10/10 pts)
 - GitHub Integration: 2/10 (2/10 pts)
 
 Top 3 Actions:
 1) [GitHub Integration] Add at least one workflow under .github/workflows/. (.github/workflows/)
 2) [Security Guardrails] Add prompt/tool preflight security guards in hooks/hooks.json. (hooks/hooks.json)
-3) [Eval Coverage] Increase automated test coverage across scripts/hooks/lib. (tests/)
+3) [Eval Assets Present] Increase automated test coverage across scripts/hooks/lib. (tests/)
 ```
 
 ## Arguments

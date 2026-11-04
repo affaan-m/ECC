@@ -431,7 +431,9 @@ async function runTests() {
       const projectId = crypto.createHash('sha256').update(projectDir).digest('hex').slice(0, 12);
       const homunculusEnv = getTestHomunculusEnv(testDir);
       const homunculusDir = homunculusEnv.homunculusDir;
-      const projectInstinctDir = path.join(homunculusDir, 'projects', projectId, 'instincts', 'personal');
+      // C-4A: observer-authored personal/ instincts are withheld pending review; use the
+      // trusted inherited/ dir so this injection test still exercises scope + confidence filtering.
+      const projectInstinctDir = path.join(homunculusDir, 'projects', projectId, 'instincts', 'inherited');
       const globalInstinctDir = path.join(homunculusDir, 'instincts', 'inherited');
 
       writeInstinctFile(path.join(projectInstinctDir, 'project-instincts.yaml'), [

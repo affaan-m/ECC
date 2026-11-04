@@ -62,12 +62,12 @@ node scripts/harness-audit.js <scope> --format <text|json> [--root <path>]
 Harness Audit (repo): 66/70
 - Tool Coverage: 10/10 (10/10 pts)
 - Context Efficiency: 9/10 (9/10 pts)
-- Quality Gates: 10/10 (10/10 pts)
+- Quality-Gate Config Present: 10/10 (10/10 pts)
 
 Top 3 Actions:
 1) [Security Guardrails] hooks/hooks.jsonにプロンプト/ツールプリフライトセキュリティガードを追加。(hooks/hooks.json)
 2) [Tool Coverage] commands/harness-audit.mdと.opencode/commands/harness-audit.mdを同期。(.opencode/commands/harness-audit.md)
-3) [Eval Coverage] scripts/hooks/lib全体の自動テストカバレッジを増加。(tests/)
+3) [Eval Assets Present] scripts/hooks/lib全体の自動テストカバレッジを増加。(tests/)
 ```
 
 ## 引数

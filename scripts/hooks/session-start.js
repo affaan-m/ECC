@@ -417,7 +417,7 @@ function parseInstinctFile(content) {
   return instincts;
 }
 
-function readInstinctsFromDir(directory, scope) {
+function readInstinctsFromDir(directory, scope, sourceType) {
   if (!directory || !fs.existsSync(directory)) return [];
 
   const entries = fs.readdirSync(directory, { withFileTypes: true })
@@ -433,6 +433,7 @@ function readInstinctsFromDir(directory, scope) {
         instincts.push({
           ...instinct,
           _scopeLabel: scope,
+          _sourceType: sourceType,
           _sourceFile: filePath,
         });
       }
@@ -455,20 +456,50 @@ function extractInstinctAction(content) {
   return firstLine || '';
 }
 
+/**
+ * Decide whether an instinct may auto-inject into session context.
+ *
+ * C-4A safeguard: the observer (a Haiku agent) writes instincts straight into
+ * `instincts/personal/` with a self-chosen confidence, bypassing any human
+ * review. Gating injection on confidence alone lets an unreviewed mis-inference
+ * silently steer every later session. Injection therefore requires a trust
+ * signal, not just confidence:
+ *
+ *   - `instincts/inherited` — explicitly imported by the user
+ *     (`instinct-cli.py import`); treated as trusted.
+ *   - `instincts/personal` carrying a promotion signal — `instinct-cli.py
+ *     promote` writes `source: promoted` / `source: auto-promoted` and/or a
+ *     `promoted_from` field. Promotion means the instinct cleared the
+ *     cross-project / explicit-promote review gate.
+ *
+ * Unreviewed personal instincts (e.g. `source: session-observation`) are NOT
+ * injectable; the caller withholds, counts, and surfaces them for review.
+ *
+ * @param {Object} instinct - Parsed instinct with `_sourceType` and frontmatter.
+ * @returns {boolean} True when the instinct is trusted enough to auto-inject.
+ */
+function isInjectableInstinct(instinct) {
+  if (instinct._sourceType === 'inherited') return true;
+  const source = String(instinct.source || '').trim().toLowerCase();
+  if (source === 'promoted' || source === 'auto-promoted') return true;
+  if (instinct.promoted_from) return true;
+  return false;
+}
+
 function summarizeActiveInstincts(observerContext) {
   const homunculusDir = getHomunculusDir();
   const globalDirs = [
-    { dir: path.join(homunculusDir, 'instincts', 'personal'), scope: 'global' },
-    { dir: path.join(homunculusDir, 'instincts', 'inherited'), scope: 'global' },
+    { dir: path.join(homunculusDir, 'instincts', 'personal'), scope: 'global', source: 'personal' },
+    { dir: path.join(homunculusDir, 'instincts', 'inherited'), scope: 'global', source: 'inherited' },
   ];
   const projectDirs = observerContext.isGlobal ? [] : [
-    { dir: path.join(observerContext.projectDir, 'instincts', 'personal'), scope: 'project' },
-    { dir: path.join(observerContext.projectDir, 'instincts', 'inherited'), scope: 'project' },
+    { dir: path.join(observerContext.projectDir, 'instincts', 'personal'), scope: 'project', source: 'personal' },
+    { dir: path.join(observerContext.projectDir, 'instincts', 'inherited'), scope: 'project', source: 'inherited' },
   ];
 
   const scopedInstincts = [
-    ...projectDirs.flatMap(({ dir, scope }) => readInstinctsFromDir(dir, scope)),
-    ...globalDirs.flatMap(({ dir, scope }) => readInstinctsFromDir(dir, scope)),
+    ...projectDirs.flatMap(({ dir, scope, source }) => readInstinctsFromDir(dir, scope, source)),
+    ...globalDirs.flatMap(({ dir, scope, source }) => readInstinctsFromDir(dir, scope, source)),
   ];
 
   const confidenceThreshold = getInstinctConfidenceThreshold();
@@ -488,14 +519,27 @@ function summarizeActiveInstincts(observerContext) {
     ? detectStackKeywords(observerContext.projectRoot || undefined)
     : new Set();
 
+  // C-4A: split confidence-qualifying instincts into those trusted enough to
+  // inject (inherited or promoted) and unreviewed personal ones that are only
+  // counted + surfaced. Withholding here is the default-safe behaviour; the
+  // count keeps those instincts discoverable instead of silently absent
+  // (fixing the "/instinct-status shows 0 pending" blindspot for the viewer).
   const deduped = new Map();
+  const withheldIds = new Set();
   for (const instinct of scopedInstincts) {
     if (!instinct.id || instinct.confidence < confidenceThreshold) continue;
+    if (!isInjectableInstinct(instinct)) {
+      withheldIds.add(instinct.id);
+      continue;
+    }
     const existing = deduped.get(instinct.id);
     if (!existing || (existing._scopeLabel !== 'project' && instinct._scopeLabel === 'project')) {
       deduped.set(instinct.id, instinct);
     }
   }
+  // An id that also exists in an injectable form is not "awaiting review".
+  for (const id of deduped.keys()) withheldIds.delete(id);
+  const withheldCount = withheldIds.size;
 
   const ranked = Array.from(deduped.values())
     .map(instinct => ({
@@ -517,19 +561,29 @@ function summarizeActiveInstincts(observerContext) {
     })
     .slice(0, maxInjected);
 
-  if (ranked.length === 0) {
-    return '';
+  const sections = [];
+
+  if (ranked.length > 0) {
+    log(`[SessionStart] Injecting ${ranked.length} instinct(s) into session context`);
+
+    const lines = ranked.map(instinct => {
+      const scope = instinct._scopeLabel === 'project' ? 'project' : 'global';
+      const confidence = `${Math.round(instinct.confidence * 100)}%`;
+      return `- [${scope} ${confidence}] ${instinct.action}`;
+    });
+
+    sections.push(`Active instincts:\n${lines.join('\n')}`);
   }
 
-  log(`[SessionStart] Injecting ${ranked.length} instinct(s) into session context`);
+  if (withheldCount > 0) {
+    log(`[SessionStart] Withholding ${withheldCount} unreviewed instinct(s) from injection pending review`);
+    sections.push(
+      `${withheldCount} learned pattern(s) awaiting review (run /instinct-status). `
+      + 'Unreviewed instincts are not auto-applied until promoted.'
+    );
+  }
 
-  const lines = ranked.map(instinct => {
-    const scope = instinct._scopeLabel === 'project' ? 'project' : 'global';
-    const confidence = `${Math.round(instinct.confidence * 100)}%`;
-    return `- [${scope} ${confidence}] ${instinct.action}`;
-  });
-
-  return `Active instincts:\n${lines.join('\n')}`;
+  return sections.join('\n\n');
 }
 
 function stripMarkdownInline(value) {
