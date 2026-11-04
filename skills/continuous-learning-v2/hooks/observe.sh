@@ -74,19 +74,21 @@ _python_install_manager_launcher() {
   # starts Python several times per tool call. The Install Manager's global
   # shortcuts in %LOCALAPPDATA%\Python\bin start the same runtime without that
   # check, so print the shortcut for $1 when it is an alias and one exists.
-  # Microsoft Store Python has no such shortcut and keeps its alias.
-  local _candidate="$1" _resolved _launcher
-  _resolved="$(command -v "$_candidate" 2>/dev/null || true)"
-  case "$_resolved" in
-    *[\\/][Mm][Ii][Cc][Rr][Oo][Ss][Oo][Ff][Tt][\\/][Ww][Ii][Nn][Dd][Oo][Ww][Ss][Aa][Pp][Pp][Ss][\\/]*) ;;
-    *) return 1 ;;
-  esac
+  # Microsoft Store Python has no such shortcut and keeps its alias. Only the
+  # current user's WindowsApps counts: an alias from anywhere else is left alone.
+  local _candidate="$1" _resolved _local
   [ -n "${LOCALAPPDATA:-}" ] || return 1
+  _resolved="$(command -v "$_candidate" 2>/dev/null || true)"
+  case "$_resolved" in */*) ;; *) return 1 ;; esac
   # Git Bash accepts C:/... paths, so swapping separators avoids a cygpath start.
-  _launcher="${LOCALAPPDATA//\\//}"
-  _launcher="${_launcher%/}/Python/bin/${_candidate}.exe"
-  [ -f "$_launcher" ] && [ -x "$_launcher" ] || return 1
-  printf '%s\n' "$_launcher"
+  _local="${LOCALAPPDATA//\\//}"
+  _local="${_local%/}"
+  # command -v prints /c/... (or a mount such as /tmp/...) while LOCALAPPDATA
+  # is C:\..., so ask whether the two name the same directory instead of
+  # comparing strings.
+  [ "${_resolved%/*}" -ef "$_local/Microsoft/WindowsApps" ] || return 1
+  [ -f "$_local/Python/bin/${_candidate}.exe" ] && [ -x "$_local/Python/bin/${_candidate}.exe" ] || return 1
+  printf '%s\n' "$_local/Python/bin/${_candidate}.exe"
 }
 
 resolve_python_cmd() {
