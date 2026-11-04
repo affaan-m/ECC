@@ -190,19 +190,32 @@ if (process.platform === 'win32') {
       assert.equal(capturedField(records, 'content'), 'value [REDACTED] end');
     });
   }
-  // The keyword matcher stops after 256 value chars, so a long keyword-labeled
-  // key must be caught by its shape first or its tail is persisted.
-  for (const [phase, input, expectedEvent] of [
-    ['post', { tool_name: 'Read', tool_input: { file_path: '/tmp/x' },
-      tool_response: { content: `OPENAI_API_KEY=${openaiProjectKey}${'B'.repeat(300)}${longTail}` } }],
-    ['post', JSON.stringify([`OPENAI_API_KEY=${openaiProjectKey}${'B'.repeat(300)}${longTail}`]), 'parse_error']
+  // A keyword-labeled value is redacted whole, however long it is and whatever
+  // shaped token sits at its start.
+  for (const [label, text, expected] of [
+    ['long sk-proj key', `OPENAI_API_KEY=${openaiProjectKey}${'B'.repeat(300)}${longTail}`, 'OPENAI_API_KEY=[REDACTED]'],
+    ['sk- password with a suffix', `password=${'sk-'}${'A'.repeat(30)}.${longTail}`, 'password=[REDACTED]'],
+    ['GitHub token with a suffix', `token=${'ghp_'}${'0'.repeat(30)}/${longTail}`, 'token=[REDACTED]']
   ]) {
-    test(`redacts a long keyword-labeled sk-proj key completely (${expectedEvent || 'tool_complete'})`, () => {
-      const records = capture(phase, input, expectedEvent);
-      assert.ok(!records.includes(longTail), 'key tail persisted');
-      assert.ok(records.includes('OPENAI_API_KEY=[REDACTED]'));
-    });
+    for (const [phase, input, expectedEvent] of [
+      ['post', { tool_name: 'Read', tool_input: { file_path: '/tmp/x' }, tool_response: { content: text } }],
+      ['post', JSON.stringify([text]), 'parse_error']
+    ]) {
+      test(`redacts a keyword-labeled ${label} completely (${expectedEvent || 'tool_complete'})`, () => {
+        const records = capture(phase, input, expectedEvent);
+        assert.ok(!records.includes(longTail), 'value tail persisted');
+        assert.ok(records.includes(expected));
+      });
+    }
   }
+  // A labeled JWT cut inside a payload longer than 256 chars at the capture limit.
+  test('redacts a keyword-labeled JWT cut inside a long payload', () => {
+    const labeled = `Authorization: Bearer ${'eyJ'}hbGciOiJIUzI1NiJ9.eyJ${'p'.repeat(600)}${longTail}`;
+    const records = capture('post', { tool_name: 'Bash', tool_input: { command: 'env' },
+      tool_response: `${'a'.repeat(5000 - labeled.length + 5)} ${labeled}` });
+    assert.ok(!records.includes('pppp'), 'JWT payload persisted');
+    assert.ok(records.includes('Authorization: Bearer [REDACTED]'));
+  });
 
   // The end-of-capture match only applies to text that was actually cut.
   for (const output of ['git checkout sk-learn', 'payload eyJhIjoxLCJiIjoyfQ']) {

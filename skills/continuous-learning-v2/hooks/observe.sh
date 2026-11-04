@@ -271,11 +271,13 @@ import json, sys, os, re
 # Linear-time secret matcher. Bounded quantifiers and a fixed set of auth
 # schemes (instead of a generic [A-Za-z]+\s+ that overlapped the value class)
 # prevent the catastrophic backtracking that pegged python at 100% CPU (#2278).
+# The value class is disjoint from the separators, so it runs to the end of the
+# token: a long labeled key is redacted whole instead of leaving its tail.
 _SECRET_RE = re.compile(
     r"(?i)((?:api[_-]?key|token|secret|password|authorization|credentials?|auth)(?:_access_key|_key)?)"
     r"""(["'"'"'\s:=\\]{1,8})"""
     r"((?:bearer|basic|token|bot)\s+)?"
-    r"([A-Za-z0-9_\-/.+=]{8,256})"
+    r"([A-Za-z0-9_\-/.+=]{8,})"
 )
 # Value-shaped secrets that carry no keyword: PEM private key blocks (to END or
 # end of the truncated text), GitHub tokens, AWS key IDs, Anthropic and OpenAI
@@ -313,10 +315,8 @@ except Exception:
 
 raw_full = sys.stdin.read()
 raw = raw_full[:2000]
-# Shape patterns first: _SECRET_RE stops after 256 value chars, which would
-# strip the sk-/eyJ prefix from a longer keyword-labeled key and leave its tail.
-raw = _SECRET_VALUE_RE.sub(lambda m: (m.group(2) or "") + "[REDACTED]", raw)
 raw = _SECRET_RE.sub(lambda m: m.group(1) + m.group(2) + (m.group(3) or "") + "[REDACTED]", raw)
+raw = _SECRET_VALUE_RE.sub(lambda m: (m.group(2) or "") + "[REDACTED]", raw)
 if len(raw_full) > 2000:
     raw = _CUT_TAIL_RE.sub("[REDACTED]", raw)
 print(json.dumps({"timestamp": os.environ["TIMESTAMP"], "event": "parse_error", "raw": raw}))
@@ -371,11 +371,13 @@ observation = {
 # Linear-time secret matcher. Bounded quantifiers and a fixed set of auth
 # schemes (instead of a generic [A-Za-z]+\s+ that overlapped the value class)
 # prevent the catastrophic backtracking that pegged python at 100% CPU (#2278).
+# The value class is disjoint from the separators, so it runs to the end of the
+# token: a long labeled key is redacted whole instead of leaving its tail.
 _SECRET_RE = re.compile(
     r"(?i)((?:api[_-]?key|token|secret|password|authorization|credentials?|auth)(?:_access_key|_key)?)"
     r"""(["'"'"'\s:=\\]{1,8})"""
     r"((?:bearer|basic|token|bot)\s+)?"
-    r"([A-Za-z0-9_\-/.+=]{8,256})"
+    r"([A-Za-z0-9_\-/.+=]{8,})"
 )
 # Value-shaped secrets that carry no keyword: PEM private key blocks (to END or
 # end of the truncated text), GitHub tokens, AWS key IDs, Anthropic and OpenAI
@@ -407,10 +409,8 @@ def scrub(val):
     val = str(val)
     # Tool I/O is cut to 5000 chars before it reaches this process.
     cut = len(val) >= 5000
-    # Shape patterns first: _SECRET_RE stops after 256 value chars, which would
-    # strip the sk-/eyJ prefix from a longer keyword-labeled key and leave its tail.
-    val = _SECRET_VALUE_RE.sub(lambda m: (m.group(2) or "") + "[REDACTED]", val)
     val = _SECRET_RE.sub(lambda m: m.group(1) + m.group(2) + (m.group(3) or "") + "[REDACTED]", val)
+    val = _SECRET_VALUE_RE.sub(lambda m: (m.group(2) or "") + "[REDACTED]", val)
     return _CUT_TAIL_RE.sub("[REDACTED]", val) if cut else val
 
 if parsed["input"]:
