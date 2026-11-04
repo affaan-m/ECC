@@ -190,6 +190,19 @@ if (process.platform === 'win32') {
       assert.equal(capturedField(records, 'content'), 'value [REDACTED] end');
     });
   }
+  // The keyword matcher stops after 256 value chars, so a long keyword-labeled
+  // key must be caught by its shape first or its tail is persisted.
+  for (const [phase, input, expectedEvent] of [
+    ['post', { tool_name: 'Read', tool_input: { file_path: '/tmp/x' },
+      tool_response: { content: `OPENAI_API_KEY=${openaiProjectKey}${'B'.repeat(300)}${longTail}` } }],
+    ['post', JSON.stringify([`OPENAI_API_KEY=${openaiProjectKey}${'B'.repeat(300)}${longTail}`]), 'parse_error']
+  ]) {
+    test(`redacts a long keyword-labeled sk-proj key completely (${expectedEvent || 'tool_complete'})`, () => {
+      const records = capture(phase, input, expectedEvent);
+      assert.ok(!records.includes(longTail), 'key tail persisted');
+      assert.ok(records.includes('OPENAI_API_KEY=[REDACTED]'));
+    });
+  }
 
   // The end-of-capture match only applies to text that was actually cut.
   for (const output of ['git checkout sk-learn', 'payload eyJhIjoxLCJiIjoyfQ']) {

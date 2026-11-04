@@ -313,8 +313,10 @@ except Exception:
 
 raw_full = sys.stdin.read()
 raw = raw_full[:2000]
-raw = _SECRET_RE.sub(lambda m: m.group(1) + m.group(2) + (m.group(3) or "") + "[REDACTED]", raw)
+# Shape patterns first: _SECRET_RE stops after 256 value chars, which would
+# strip the sk-/eyJ prefix from a longer keyword-labeled key and leave its tail.
 raw = _SECRET_VALUE_RE.sub(lambda m: (m.group(2) or "") + "[REDACTED]", raw)
+raw = _SECRET_RE.sub(lambda m: m.group(1) + m.group(2) + (m.group(3) or "") + "[REDACTED]", raw)
 if len(raw_full) > 2000:
     raw = _CUT_TAIL_RE.sub("[REDACTED]", raw)
 print(json.dumps({"timestamp": os.environ["TIMESTAMP"], "event": "parse_error", "raw": raw}))
@@ -405,8 +407,10 @@ def scrub(val):
     val = str(val)
     # Tool I/O is cut to 5000 chars before it reaches this process.
     cut = len(val) >= 5000
-    val = _SECRET_RE.sub(lambda m: m.group(1) + m.group(2) + (m.group(3) or "") + "[REDACTED]", val)
+    # Shape patterns first: _SECRET_RE stops after 256 value chars, which would
+    # strip the sk-/eyJ prefix from a longer keyword-labeled key and leave its tail.
     val = _SECRET_VALUE_RE.sub(lambda m: (m.group(2) or "") + "[REDACTED]", val)
+    val = _SECRET_RE.sub(lambda m: m.group(1) + m.group(2) + (m.group(3) or "") + "[REDACTED]", val)
     return _CUT_TAIL_RE.sub("[REDACTED]", val) if cut else val
 
 if parsed["input"]:
