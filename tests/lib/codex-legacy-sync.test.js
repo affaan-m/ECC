@@ -274,6 +274,35 @@ function runTests() {
     fs.rmSync(homeDir, { recursive: true, force: true });
   })) passed += 1; else failed += 1;
 
+  // Retain the native symlink case above; exercise directory junctions separately.
+  if (test('recording refuses a junction parent directory before any managed write', () => {
+    const homeDir = tempDir('legacy-codex-junction-');
+    const codexHome = path.join(homeDir, '.codex');
+    const outsideDir = path.join(homeDir, 'outside');
+    const linkedParent = path.join(codexHome, 'prompts');
+    try {
+      fs.mkdirSync(codexHome, { recursive: true });
+      fs.mkdirSync(outsideDir);
+      fs.symlinkSync(outsideDir, linkedParent, process.platform === 'win32' ? 'junction' : 'dir');
+      assert.ok(fs.lstatSync(linkedParent).isSymbolicLink());
+      assert.strictEqual(fs.realpathSync(linkedParent), fs.realpathSync(outsideDir));
+      const statePath = beginLegacySyncState({
+        codexHome,
+        backupDir: path.join(codexHome, 'backups', 'ecc-test'),
+      });
+      assert.throws(
+        () => recordLegacySyncPath({
+          statePath,
+          filePath: path.join(linkedParent, 'ecc-plan.md'),
+        }),
+        /Refusing to manage legacy sync path through symlinked ancestor/
+      );
+      assert.deepStrictEqual(fs.readdirSync(outsideDir), []);
+    } finally {
+      fs.rmSync(homeDir, { recursive: true, force: true });
+    }
+  })) passed += 1; else failed += 1;
+
   if (test('uninstall preserves a managed path replaced by a symlink', () => {
     const homeDir = tempDir('legacy-codex-home-');
     const codexHome = path.join(homeDir, '.codex');
