@@ -111,6 +111,611 @@ fn append_output_records(
     cache
 }
 
+/// The result of a long-running dashboard operation, computed on a background
+/// worker thread and applied back on the event-loop thread via [`Dashboard::apply_op`].
+///
+/// The operation itself runs off the UI loop (see `src/tui/app.rs`), so the note
+/// and any state refresh it implies must travel back as plain, owned data rather
+/// than as mutations to the live `Dashboard`.
+pub(crate) struct OpApply {
+    /// Operator status note to show once the operation finishes.
+    note: String,
+    /// When true, re-run the full selected-session sync bundle after refreshing.
+    full_sync: bool,
+    /// Session id to re-select after the refresh (only consulted when `full_sync`).
+    select: Option<String>,
+    /// When true, reset the output view before the sync bundle (only with `full_sync`).
+    reset_output: bool,
+    /// When true, re-evaluate budget alerts after setting the note.
+    sync_budget: bool,
+}
+
+impl OpApply {
+    /// A note-only outcome: refresh state and show `note`, nothing more.
+    fn note_only(note: String) -> Self {
+        Self {
+            note,
+            full_sync: false,
+            select: None,
+            reset_output: false,
+            sync_budget: false,
+        }
+    }
+
+    /// An infrastructure failure outcome (e.g. the background worker could not
+    /// open its own state store). Surfaced the same way as an op error note.
+    pub(crate) fn failure(note: String) -> Self {
+        Self::note_only(note)
+    }
+}
+
+/// Owned inputs for a background `new_session` run, captured on the loop thread.
+pub(crate) struct NewSessionInputs {
+    task: String,
+    source: Option<Session>,
+}
+
+// ---------------------------------------------------------------------------
+// Background operation bodies.
+//
+// Each `run_*` free function performs the heavy async work of a long-running
+// operation against a *borrowed* state store and returns an `OpApply`. They are
+// free functions (not methods) so a background worker thread can call them with
+// its own `StateStore` connection while the live `Dashboard` stays on the event
+// loop. The matching `begin_*` methods capture the loop-thread inputs, and
+// `apply_op` applies the returned `OpApply`.
+// ---------------------------------------------------------------------------
+
+pub(crate) async fn run_new_session(
+    db: &StateStore,
+    cfg: Config,
+    inputs: NewSessionInputs,
+) -> OpApply {
+    let NewSessionInputs { task, source } = inputs;
+    let agent = cfg.default_agent.clone();
+    let grouping = source
+        .as_ref()
+        .map(|session| SessionGrouping {
+            project: Some(session.project.clone()),
+            task_group: Some(session.task_group.clone()),
+        })
+        .unwrap_or_default();
+
+    let session_id = match manager::create_session_with_grouping(
+        db,
+        &cfg,
+        &task,
+        &agent,
+        cfg.auto_create_worktrees,
+        grouping,
+    )
+    .await
+    {
+        Ok(session_id) => session_id,
+        Err(error) => {
+            tracing::warn!("Failed to create new session from dashboard: {error}");
+            return OpApply::note_only(format!("new session failed: {error}"));
+        }
+    };
+
+    if let Some(source_session) = source.as_ref() {
+        let context = format!(
+            "Dashboard handoff from {} [{}] | cwd {}{}",
+            format_session_id(&source_session.id),
+            source_session.agent_type,
+            source_session.working_dir.display(),
+            source_session
+                .worktree
+                .as_ref()
+                .map(|worktree| format!(
+                    " | worktree {} ({})",
+                    worktree.branch,
+                    worktree.path.display()
+                ))
+                .unwrap_or_default()
+        );
+        if let Err(error) = comms::send_native_assignment(
+            db,
+            &source_session.id,
+            &session_id,
+            &comms::MessageType::TaskHandoff {
+                task: source_session.task.clone(),
+                context,
+                priority: comms::TaskPriority::Normal,
+            },
+        ) {
+            tracing::warn!(
+                "Failed to send handoff from session {} to {}: {error}",
+                source_session.id,
+                session_id
+            );
+        }
+    }
+
+    let queued_for_worktree = db
+        .pending_worktree_queue_contains(&session_id)
+        .unwrap_or(false);
+    let note = if queued_for_worktree {
+        format!(
+            "queued session {} pending worktree slot",
+            format_session_id(&session_id)
+        )
+    } else {
+        format!("spawned session {}", format_session_id(&session_id))
+    };
+
+    OpApply {
+        note,
+        full_sync: true,
+        select: Some(session_id),
+        reset_output: true,
+        sync_budget: true,
+    }
+}
+
+pub(crate) async fn run_assign(
+    db: &StateStore,
+    cfg: Config,
+    source_id: String,
+    task: String,
+) -> OpApply {
+    let agent = cfg.default_agent.clone();
+    let outcome = match manager::assign_session(
+        db,
+        &cfg,
+        &source_id,
+        &task,
+        &agent,
+        cfg.auto_create_worktrees,
+    )
+    .await
+    {
+        Ok(outcome) => outcome,
+        Err(error) => {
+            tracing::warn!("Failed to assign follow-up work from session {source_id}: {error}");
+            return OpApply::note_only(format!("assignment failed: {error}"));
+        }
+    };
+
+    let note = format!(
+        "assigned via {} -> {}",
+        assignment_action_label(outcome.action),
+        format_session_id(&outcome.session_id)
+    );
+    OpApply {
+        note,
+        full_sync: true,
+        select: Some(outcome.session_id),
+        reset_output: true,
+        sync_budget: false,
+    }
+}
+
+pub(crate) async fn run_rebalance_selected(
+    db: &StateStore,
+    cfg: Config,
+    source_id: String,
+) -> OpApply {
+    let agent = cfg.default_agent.clone();
+    let outcomes = match manager::rebalance_team_backlog(
+        db,
+        &cfg,
+        &source_id,
+        &agent,
+        cfg.auto_create_worktrees,
+        cfg.auto_dispatch_limit_per_session,
+    )
+    .await
+    {
+        Ok(outcomes) => outcomes,
+        Err(error) => {
+            tracing::warn!("Failed to rebalance team backlog for session {source_id}: {error}");
+            return OpApply::note_only(format!(
+                "rebalance failed for {}: {error}",
+                format_session_id(&source_id)
+            ));
+        }
+    };
+
+    let note = if outcomes.is_empty() {
+        format!(
+            "no delegate backlog needed rebalancing for {}",
+            format_session_id(&source_id)
+        )
+    } else {
+        format!(
+            "rebalanced {} delegate handoff(s) for {}",
+            outcomes.len(),
+            format_session_id(&source_id)
+        )
+    };
+    OpApply {
+        note,
+        full_sync: true,
+        select: Some(source_id),
+        reset_output: false,
+        sync_budget: false,
+    }
+}
+
+pub(crate) async fn run_drain_inbox(
+    db: &StateStore,
+    cfg: Config,
+    source_id: String,
+) -> OpApply {
+    let agent = cfg.default_agent.clone();
+    let outcomes = match manager::drain_inbox(
+        db,
+        &cfg,
+        &source_id,
+        &agent,
+        cfg.auto_create_worktrees,
+        cfg.max_parallel_sessions,
+    )
+    .await
+    {
+        Ok(outcomes) => outcomes,
+        Err(error) => {
+            tracing::warn!("Failed to drain inbox for session {source_id}: {error}");
+            return OpApply::note_only(format!(
+                "drain inbox failed for {}: {error}",
+                format_session_id(&source_id)
+            ));
+        }
+    };
+
+    let note = if outcomes.is_empty() {
+        format!("no unread handoffs for {}", format_session_id(&source_id))
+    } else {
+        format!(
+            "drained {} handoff(s) from {}",
+            outcomes.len(),
+            format_session_id(&source_id)
+        )
+    };
+    OpApply {
+        note,
+        full_sync: true,
+        select: Some(source_id),
+        reset_output: false,
+        sync_budget: false,
+    }
+}
+
+pub(crate) async fn run_auto_dispatch(
+    db: &StateStore,
+    cfg: Config,
+    lead_limit: usize,
+    selected_id: Option<String>,
+) -> OpApply {
+    let agent = cfg.default_agent.clone();
+    let outcomes = match manager::auto_dispatch_backlog(
+        db,
+        &cfg,
+        &agent,
+        cfg.auto_create_worktrees,
+        lead_limit,
+    )
+    .await
+    {
+        Ok(outcomes) => outcomes,
+        Err(error) => {
+            tracing::warn!("Failed to auto-dispatch backlog from dashboard: {error}");
+            return OpApply::note_only(format!("global auto-dispatch failed: {error}"));
+        }
+    };
+
+    let total_processed: usize = outcomes.iter().map(|outcome| outcome.routed.len()).sum();
+    let total_routed: usize = outcomes
+        .iter()
+        .map(|outcome| {
+            outcome
+                .routed
+                .iter()
+                .filter(|item| manager::assignment_action_routes_work(item.action))
+                .count()
+        })
+        .sum();
+    let total_deferred = total_processed.saturating_sub(total_routed);
+
+    let note = if total_processed == 0 {
+        "no unread handoff backlog found".to_string()
+    } else {
+        format!(
+            "auto-dispatch processed {} handoff(s) across {} lead session(s) ({} routed, {} deferred)",
+            total_processed,
+            outcomes.len(),
+            total_routed,
+            total_deferred
+        )
+    };
+    OpApply {
+        note,
+        full_sync: true,
+        select: selected_id,
+        reset_output: false,
+        sync_budget: false,
+    }
+}
+
+pub(crate) async fn run_rebalance_all(
+    db: &StateStore,
+    cfg: Config,
+    lead_limit: usize,
+    selected_id: Option<String>,
+) -> OpApply {
+    let agent = cfg.default_agent.clone();
+    let outcomes =
+        match manager::rebalance_all_teams(db, &cfg, &agent, cfg.auto_create_worktrees, lead_limit)
+            .await
+        {
+            Ok(outcomes) => outcomes,
+            Err(error) => {
+                tracing::warn!("Failed to rebalance teams from dashboard: {error}");
+                return OpApply::note_only(format!("global rebalance failed: {error}"));
+            }
+        };
+
+    let total_rerouted: usize = outcomes.iter().map(|outcome| outcome.rerouted.len()).sum();
+    let note = if total_rerouted == 0 {
+        "no delegate backlog needed global rebalancing".to_string()
+    } else {
+        format!(
+            "rebalanced {} handoff(s) across {} lead session(s)",
+            total_rerouted,
+            outcomes.len()
+        )
+    };
+    OpApply {
+        note,
+        full_sync: true,
+        select: selected_id,
+        reset_output: false,
+        sync_budget: false,
+    }
+}
+
+pub(crate) async fn run_coordinate(
+    db: &StateStore,
+    cfg: Config,
+    lead_limit: usize,
+    selected_id: Option<String>,
+) -> OpApply {
+    let agent = cfg.default_agent.clone();
+    let outcome =
+        match manager::coordinate_backlog(db, &cfg, &agent, cfg.auto_create_worktrees, lead_limit)
+            .await
+        {
+            Ok(outcome) => outcome,
+            Err(error) => {
+                tracing::warn!("Failed to coordinate backlog from dashboard: {error}");
+                return OpApply::note_only(format!("global coordinate failed: {error}"));
+            }
+        };
+
+    let total_processed: usize = outcome
+        .dispatched
+        .iter()
+        .map(|dispatch| dispatch.routed.len())
+        .sum();
+    let total_routed: usize = outcome
+        .dispatched
+        .iter()
+        .map(|dispatch| {
+            dispatch
+                .routed
+                .iter()
+                .filter(|item| manager::assignment_action_routes_work(item.action))
+                .count()
+        })
+        .sum();
+    let total_deferred = total_processed.saturating_sub(total_routed);
+    let total_rerouted: usize = outcome
+        .rebalanced
+        .iter()
+        .map(|rebalance| rebalance.rerouted.len())
+        .sum();
+
+    let note = if total_processed == 0
+        && total_rerouted == 0
+        && outcome.remaining_backlog_sessions == 0
+    {
+        "backlog already clear".to_string()
+    } else {
+        format!(
+            "coordinated backlog: processed {} across {} lead(s) ({} routed, {} deferred), rebalanced {} across {} lead(s), remaining {} across {} session(s) [{} absorbable, {} saturated]",
+            total_processed,
+            outcome.dispatched.len(),
+            total_routed,
+            total_deferred,
+            total_rerouted,
+            outcome.rebalanced.len(),
+            outcome.remaining_backlog_messages,
+            outcome.remaining_backlog_sessions,
+            outcome.remaining_absorbable_sessions,
+            outcome.remaining_saturated_sessions
+        )
+    };
+    OpApply {
+        note,
+        full_sync: true,
+        select: selected_id,
+        reset_output: false,
+        sync_budget: false,
+    }
+}
+
+pub(crate) async fn run_stop(db: &StateStore, session_id: String) -> OpApply {
+    if let Err(error) = manager::stop_session(db, &session_id).await {
+        tracing::warn!("Failed to stop session {session_id}: {error}");
+        return OpApply::note_only(format!(
+            "stop failed for {}: {error}",
+            format_session_id(&session_id)
+        ));
+    }
+    OpApply::note_only(format!("stopped session {}", format_session_id(&session_id)))
+}
+
+pub(crate) async fn run_resume(db: &StateStore, cfg: Config, session_id: String) -> OpApply {
+    if let Err(error) = manager::resume_session(db, &cfg, &session_id).await {
+        tracing::warn!("Failed to resume session {session_id}: {error}");
+        return OpApply::note_only(format!(
+            "resume failed for {}: {error}",
+            format_session_id(&session_id)
+        ));
+    }
+    OpApply::note_only(format!("resumed session {}", format_session_id(&session_id)))
+}
+
+pub(crate) async fn run_cleanup(db: &StateStore, session_id: String) -> OpApply {
+    if let Err(error) = manager::cleanup_session_worktree(db, &session_id).await {
+        tracing::warn!("Failed to cleanup session {session_id} worktree: {error}");
+        return OpApply::note_only(format!(
+            "cleanup failed for {}: {error}",
+            format_session_id(&session_id)
+        ));
+    }
+    OpApply::note_only(format!(
+        "cleaned worktree for {}",
+        format_session_id(&session_id)
+    ))
+}
+
+pub(crate) async fn run_delete(db: &StateStore, session_id: String) -> OpApply {
+    if let Err(error) = manager::delete_session(db, &session_id).await {
+        tracing::warn!("Failed to delete session {session_id}: {error}");
+        return OpApply::note_only(format!(
+            "delete failed for {}: {error}",
+            format_session_id(&session_id)
+        ));
+    }
+    OpApply::note_only(format!("deleted session {}", format_session_id(&session_id)))
+}
+
+pub(crate) async fn run_merge(db: &StateStore, session_id: String) -> OpApply {
+    let outcome = match manager::merge_session_worktree(db, &session_id, true).await {
+        Ok(outcome) => outcome,
+        Err(error) => {
+            tracing::warn!("Failed to merge session {session_id} worktree: {error}");
+            return OpApply::note_only(format!(
+                "merge failed for {}: {error}",
+                format_session_id(&session_id)
+            ));
+        }
+    };
+
+    OpApply::note_only(format!(
+        "merged {} into {} for {}{}",
+        outcome.branch,
+        outcome.base_branch,
+        format_session_id(&session_id),
+        if outcome.already_up_to_date {
+            " (already up to date)"
+        } else {
+            ""
+        }
+    ))
+}
+
+pub(crate) async fn run_merge_ready(db: &StateStore) -> OpApply {
+    match manager::merge_ready_worktrees(db, true).await {
+        Ok(outcome) => {
+            if outcome.merged.is_empty()
+                && outcome.rebased.is_empty()
+                && outcome.active_with_worktree_ids.is_empty()
+                && outcome.conflicted_session_ids.is_empty()
+                && outcome.dirty_worktree_ids.is_empty()
+                && outcome.blocked_by_queue_session_ids.is_empty()
+                && outcome.failures.is_empty()
+            {
+                return OpApply::note_only("no ready worktrees to merge".to_string());
+            }
+
+            let mut parts = vec![format!("merged {} ready worktree(s)", outcome.merged.len())];
+            if !outcome.rebased.is_empty() {
+                parts.push(format!("rebased {}", outcome.rebased.len()));
+            }
+            if !outcome.active_with_worktree_ids.is_empty() {
+                parts.push(format!(
+                    "skipped {} active",
+                    outcome.active_with_worktree_ids.len()
+                ));
+            }
+            if !outcome.conflicted_session_ids.is_empty() {
+                parts.push(format!(
+                    "skipped {} conflicted",
+                    outcome.conflicted_session_ids.len()
+                ));
+            }
+            if !outcome.dirty_worktree_ids.is_empty() {
+                parts.push(format!("skipped {} dirty", outcome.dirty_worktree_ids.len()));
+            }
+            if !outcome.blocked_by_queue_session_ids.is_empty() {
+                parts.push(format!(
+                    "blocked {} in queue",
+                    outcome.blocked_by_queue_session_ids.len()
+                ));
+            }
+            if !outcome.failures.is_empty() {
+                parts.push(format!("{} failed", outcome.failures.len()));
+            }
+            OpApply::note_only(parts.join("; "))
+        }
+        Err(error) => {
+            tracing::warn!("Failed to merge ready worktrees: {error}");
+            OpApply::note_only(format!("merge ready worktrees failed: {error}"))
+        }
+    }
+}
+
+pub(crate) async fn run_prune(db: &StateStore, cfg: Config) -> OpApply {
+    match manager::prune_inactive_worktrees(db, &cfg).await {
+        Ok(outcome) => {
+            let note = if outcome.cleaned_session_ids.is_empty()
+                && outcome.retained_session_ids.is_empty()
+            {
+                "no inactive worktrees to prune".to_string()
+            } else if outcome.cleaned_session_ids.is_empty() {
+                format!(
+                    "deferred {} inactive worktree(s) within retention",
+                    outcome.retained_session_ids.len()
+                )
+            } else if outcome.active_with_worktree_ids.is_empty() {
+                if outcome.retained_session_ids.is_empty() {
+                    format!(
+                        "pruned {} inactive worktree(s)",
+                        outcome.cleaned_session_ids.len()
+                    )
+                } else {
+                    format!(
+                        "pruned {} inactive worktree(s); deferred {} within retention",
+                        outcome.cleaned_session_ids.len(),
+                        outcome.retained_session_ids.len()
+                    )
+                }
+            } else {
+                let mut note = format!(
+                    "pruned {} inactive worktree(s); skipped {} active session(s)",
+                    outcome.cleaned_session_ids.len(),
+                    outcome.active_with_worktree_ids.len()
+                );
+                if !outcome.retained_session_ids.is_empty() {
+                    note.push_str(&format!(
+                        "; deferred {} within retention",
+                        outcome.retained_session_ids.len()
+                    ));
+                }
+                note
+            };
+            OpApply::note_only(note)
+        }
+        Err(error) => {
+            tracing::warn!("Failed to prune inactive worktrees: {error}");
+            OpApply::note_only(format!("prune inactive worktrees failed: {error}"))
+        }
+    }
+}
+
 pub struct Dashboard {
     db: StateStore,
     cfg: Config,
@@ -2216,7 +2821,9 @@ impl Dashboard {
         ));
     }
 
-    pub async fn new_session(&mut self) {
+    /// Captures the loop-thread inputs for a background `new_session` run, or
+    /// returns `None` (setting an operator note) when it cannot proceed.
+    pub(crate) fn begin_new_session(&mut self) -> Option<NewSessionInputs> {
         if self.active_session_count() >= self.cfg.max_parallel_sessions {
             tracing::warn!(
                 "Cannot queue new session: active session limit reached ({})",
@@ -2226,97 +2833,15 @@ impl Dashboard {
                 "cannot queue new session: active session limit reached ({})",
                 self.cfg.max_parallel_sessions
             ));
-            return;
+            return None;
         }
 
-        let task = self.new_session_task();
-        let agent = self.cfg.default_agent.clone();
-        let grouping = self
-            .sessions
-            .get(self.selected_session)
-            .map(|session| SessionGrouping {
-                project: Some(session.project.clone()),
-                task_group: Some(session.task_group.clone()),
-            })
-            .unwrap_or_default();
-
-        let session_id = match manager::create_session_with_grouping(
-            &self.db,
-            &self.cfg,
-            &task,
-            &agent,
-            self.cfg.auto_create_worktrees,
-            grouping,
-        )
-        .await
-        {
-            Ok(session_id) => session_id,
-            Err(error) => {
-                tracing::warn!("Failed to create new session from dashboard: {error}");
-                self.set_operator_note(format!("new session failed: {error}"));
-                return;
-            }
-        };
-
-        if let Some(source_session) = self.sessions.get(self.selected_session) {
-            let context = format!(
-                "Dashboard handoff from {} [{}] | cwd {}{}",
-                format_session_id(&source_session.id),
-                source_session.agent_type,
-                source_session.working_dir.display(),
-                source_session
-                    .worktree
-                    .as_ref()
-                    .map(|worktree| format!(
-                        " | worktree {} ({})",
-                        worktree.branch,
-                        worktree.path.display()
-                    ))
-                    .unwrap_or_default()
-            );
-            if let Err(error) = comms::send_native_assignment(
-                &self.db,
-                &source_session.id,
-                &session_id,
-                &comms::MessageType::TaskHandoff {
-                    task: source_session.task.clone(),
-                    context,
-                    priority: comms::TaskPriority::Normal,
-                },
-            ) {
-                tracing::warn!(
-                    "Failed to send handoff from session {} to {}: {error}",
-                    source_session.id,
-                    session_id
-                );
-            }
-        }
-
-        self.refresh();
-        self.sync_selection_by_id(Some(&session_id));
-        let queued_for_worktree = self
-            .db
-            .pending_worktree_queue_contains(&session_id)
-            .unwrap_or(false);
-        if queued_for_worktree {
-            self.set_operator_note(format!(
-                "queued session {} pending worktree slot",
-                format_session_id(&session_id)
-            ));
-        } else {
-            self.set_operator_note(format!(
-                "spawned session {}",
-                format_session_id(&session_id)
-            ));
-        }
-        self.reset_output_view();
-        self.sync_selected_output();
-        self.sync_selected_diff();
-        self.sync_selected_messages();
-        self.sync_selected_lineage();
-        self.refresh_logs();
-        self.sync_budget_alerts();
+        Some(NewSessionInputs {
+            task: self.new_session_task(),
+            source: self.sessions.get(self.selected_session).cloned(),
+        })
     }
+
 
     pub fn toggle_output_mode(&mut self) {
         match self.output_mode {
@@ -2708,567 +3233,169 @@ impl Dashboard {
         }
     }
 
-    pub async fn assign_selected(&mut self) {
-        let Some(source_session) = self.sessions.get(self.selected_session) else {
-            return;
-        };
-
+    /// Captures `(source_id, task)` for a background `assign_selected` run.
+    pub(crate) fn begin_assign(&mut self) -> Option<(String, String)> {
         let task = self.new_session_task();
-        let agent = self.cfg.default_agent.clone();
-
-        let outcome = match manager::assign_session(
-            &self.db,
-            &self.cfg,
-            &source_session.id,
-            &task,
-            &agent,
-            self.cfg.auto_create_worktrees,
-        )
-        .await
-        {
-            Ok(outcome) => outcome,
-            Err(error) => {
-                tracing::warn!(
-                    "Failed to assign follow-up work from session {}: {error}",
-                    source_session.id
-                );
-                self.set_operator_note(format!("assignment failed: {error}"));
-                return;
-            }
-        };
-
-        self.refresh();
-        self.sync_selection_by_id(Some(&outcome.session_id));
-        self.set_operator_note(format!(
-            "assigned via {} -> {}",
-            assignment_action_label(outcome.action),
-            format_session_id(&outcome.session_id)
-        ));
-        self.reset_output_view();
-        self.sync_selected_output();
-        self.sync_selected_diff();
-        self.sync_selected_messages();
-        self.sync_selected_lineage();
-        self.refresh_logs();
+        let source_session = self.sessions.get(self.selected_session)?;
+        Some((source_session.id.clone(), task))
     }
 
+
+    /// Captures the selected session id for a background `rebalance_selected_team` run.
+    pub(crate) fn begin_rebalance_selected(&mut self) -> Option<String> {
+        Some(self.sessions.get(self.selected_session)?.id.clone())
+    }
+
+    #[cfg(test)]
     pub async fn rebalance_selected_team(&mut self) {
-        let Some(source_session) = self.sessions.get(self.selected_session) else {
+        let Some(source_id) = self.begin_rebalance_selected() else {
             return;
         };
-
-        let agent = self.cfg.default_agent.clone();
-        let source_session_id = source_session.id.clone();
-        let outcomes = match manager::rebalance_team_backlog(
-            &self.db,
-            &self.cfg,
-            &source_session_id,
-            &agent,
-            self.cfg.auto_create_worktrees,
-            self.cfg.auto_dispatch_limit_per_session,
-        )
-        .await
-        {
-            Ok(outcomes) => outcomes,
-            Err(error) => {
-                tracing::warn!(
-                    "Failed to rebalance team backlog for session {}: {error}",
-                    source_session_id
-                );
-                self.set_operator_note(format!(
-                    "rebalance failed for {}: {error}",
-                    format_session_id(&source_session_id)
-                ));
-                return;
-            }
-        };
-
-        self.refresh();
-        self.sync_selection_by_id(Some(&source_session_id));
-        self.sync_selected_output();
-        self.sync_selected_diff();
-        self.sync_selected_messages();
-        self.sync_selected_lineage();
-        self.refresh_logs();
-
-        if outcomes.is_empty() {
-            self.set_operator_note(format!(
-                "no delegate backlog needed rebalancing for {}",
-                format_session_id(&source_session_id)
-            ));
-        } else {
-            self.set_operator_note(format!(
-                "rebalanced {} delegate handoff(s) for {}",
-                outcomes.len(),
-                format_session_id(&source_session_id)
-            ));
-        }
+        let apply = run_rebalance_selected(&self.db, self.cfg.clone(), source_id).await;
+        self.apply_op(apply);
     }
 
-    pub async fn drain_inbox_selected(&mut self) {
-        let Some(source_session) = self.sessions.get(self.selected_session) else {
-            return;
-        };
-
-        let agent = self.cfg.default_agent.clone();
-        let source_session_id = source_session.id.clone();
-
-        let outcomes = match manager::drain_inbox(
-            &self.db,
-            &self.cfg,
-            &source_session_id,
-            &agent,
-            self.cfg.auto_create_worktrees,
-            self.cfg.max_parallel_sessions,
-        )
-        .await
-        {
-            Ok(outcomes) => outcomes,
-            Err(error) => {
-                tracing::warn!(
-                    "Failed to drain inbox for session {}: {error}",
-                    source_session_id
-                );
-                self.set_operator_note(format!(
-                    "drain inbox failed for {}: {error}",
-                    format_session_id(&source_session_id)
-                ));
-                return;
-            }
-        };
-
-        self.refresh();
-        self.sync_selection_by_id(Some(&source_session_id));
-        self.sync_selected_output();
-        self.sync_selected_diff();
-        self.sync_selected_messages();
-        self.sync_selected_lineage();
-        self.refresh_logs();
-
-        if outcomes.is_empty() {
-            self.set_operator_note(format!(
-                "no unread handoffs for {}",
-                format_session_id(&source_session_id)
-            ));
-        } else {
-            self.set_operator_note(format!(
-                "drained {} handoff(s) from {}",
-                outcomes.len(),
-                format_session_id(&source_session_id)
-            ));
-        }
+    /// Captures the selected session id for a background `drain_inbox_selected` run.
+    pub(crate) fn begin_drain_inbox(&mut self) -> Option<String> {
+        Some(self.sessions.get(self.selected_session)?.id.clone())
     }
 
+
+    /// Captures `(lead_limit, selected_id)` shared by the global backlog ops.
+    pub(crate) fn begin_global_backlog(&mut self) -> (usize, Option<String>) {
+        let lead_limit = self.sessions.len().max(1);
+        let selected_id = self
+            .sessions
+            .get(self.selected_session)
+            .map(|session| session.id.clone());
+        (lead_limit, selected_id)
+    }
+
+    #[cfg(test)]
     pub async fn auto_dispatch_backlog(&mut self) {
-        let agent = self.cfg.default_agent.clone();
-        let lead_limit = self.sessions.len().max(1);
-
-        let outcomes = match manager::auto_dispatch_backlog(
-            &self.db,
-            &self.cfg,
-            &agent,
-            self.cfg.auto_create_worktrees,
-            lead_limit,
-        )
-        .await
-        {
-            Ok(outcomes) => outcomes,
-            Err(error) => {
-                tracing::warn!("Failed to auto-dispatch backlog from dashboard: {error}");
-                self.set_operator_note(format!("global auto-dispatch failed: {error}"));
-                return;
-            }
-        };
-
-        let total_processed: usize = outcomes.iter().map(|outcome| outcome.routed.len()).sum();
-        let total_routed: usize = outcomes
-            .iter()
-            .map(|outcome| {
-                outcome
-                    .routed
-                    .iter()
-                    .filter(|item| manager::assignment_action_routes_work(item.action))
-                    .count()
-            })
-            .sum();
-        let total_deferred = total_processed.saturating_sub(total_routed);
-        let selected_session_id = self
-            .sessions
-            .get(self.selected_session)
-            .map(|session| session.id.clone());
-
-        self.refresh();
-        self.sync_selection_by_id(selected_session_id.as_deref());
-        self.sync_selected_output();
-        self.sync_selected_diff();
-        self.sync_selected_messages();
-        self.sync_selected_lineage();
-        self.refresh_logs();
-
-        if total_processed == 0 {
-            self.set_operator_note("no unread handoff backlog found".to_string());
-        } else {
-            self.set_operator_note(format!(
-                "auto-dispatch processed {} handoff(s) across {} lead session(s) ({} routed, {} deferred)",
-                total_processed,
-                outcomes.len(),
-                total_routed,
-                total_deferred
-            ));
-        }
+        let (lead_limit, selected_id) = self.begin_global_backlog();
+        let apply = run_auto_dispatch(&self.db, self.cfg.clone(), lead_limit, selected_id).await;
+        self.apply_op(apply);
     }
 
+    #[cfg(test)]
     pub async fn rebalance_all_teams(&mut self) {
-        let agent = self.cfg.default_agent.clone();
-        let lead_limit = self.sessions.len().max(1);
-
-        let outcomes = match manager::rebalance_all_teams(
-            &self.db,
-            &self.cfg,
-            &agent,
-            self.cfg.auto_create_worktrees,
-            lead_limit,
-        )
-        .await
-        {
-            Ok(outcomes) => outcomes,
-            Err(error) => {
-                tracing::warn!("Failed to rebalance teams from dashboard: {error}");
-                self.set_operator_note(format!("global rebalance failed: {error}"));
-                return;
-            }
-        };
-
-        let total_rerouted: usize = outcomes.iter().map(|outcome| outcome.rerouted.len()).sum();
-        let selected_session_id = self
-            .sessions
-            .get(self.selected_session)
-            .map(|session| session.id.clone());
-
-        self.refresh();
-        self.sync_selection_by_id(selected_session_id.as_deref());
-        self.sync_selected_output();
-        self.sync_selected_diff();
-        self.sync_selected_messages();
-        self.sync_selected_lineage();
-        self.refresh_logs();
-
-        if total_rerouted == 0 {
-            self.set_operator_note("no delegate backlog needed global rebalancing".to_string());
-        } else {
-            self.set_operator_note(format!(
-                "rebalanced {} handoff(s) across {} lead session(s)",
-                total_rerouted,
-                outcomes.len()
-            ));
-        }
+        let (lead_limit, selected_id) = self.begin_global_backlog();
+        let apply = run_rebalance_all(&self.db, self.cfg.clone(), lead_limit, selected_id).await;
+        self.apply_op(apply);
     }
 
+    #[cfg(test)]
     pub async fn coordinate_backlog(&mut self) {
-        let agent = self.cfg.default_agent.clone();
-        let lead_limit = self.sessions.len().max(1);
-
-        let outcome = match manager::coordinate_backlog(
-            &self.db,
-            &self.cfg,
-            &agent,
-            self.cfg.auto_create_worktrees,
-            lead_limit,
-        )
-        .await
-        {
-            Ok(outcomes) => outcomes,
-            Err(error) => {
-                tracing::warn!("Failed to coordinate backlog from dashboard: {error}");
-                self.set_operator_note(format!("global coordinate failed: {error}"));
-                return;
-            }
-        };
-        let total_processed: usize = outcome
-            .dispatched
-            .iter()
-            .map(|dispatch| dispatch.routed.len())
-            .sum();
-        let total_routed: usize = outcome
-            .dispatched
-            .iter()
-            .map(|dispatch| {
-                dispatch
-                    .routed
-                    .iter()
-                    .filter(|item| manager::assignment_action_routes_work(item.action))
-                    .count()
-            })
-            .sum();
-        let total_deferred = total_processed.saturating_sub(total_routed);
-        let total_rerouted: usize = outcome
-            .rebalanced
-            .iter()
-            .map(|rebalance| rebalance.rerouted.len())
-            .sum();
-
-        let selected_session_id = self
-            .sessions
-            .get(self.selected_session)
-            .map(|session| session.id.clone());
-
-        self.refresh();
-        self.sync_selection_by_id(selected_session_id.as_deref());
-        self.sync_selected_output();
-        self.sync_selected_diff();
-        self.sync_selected_messages();
-        self.sync_selected_lineage();
-        self.refresh_logs();
-
-        if total_processed == 0 && total_rerouted == 0 && outcome.remaining_backlog_sessions == 0 {
-            self.set_operator_note("backlog already clear".to_string());
-        } else {
-            self.set_operator_note(format!(
-                "coordinated backlog: processed {} across {} lead(s) ({} routed, {} deferred), rebalanced {} across {} lead(s), remaining {} across {} session(s) [{} absorbable, {} saturated]",
-                total_processed,
-                outcome.dispatched.len(),
-                total_routed,
-                total_deferred,
-                total_rerouted,
-                outcome.rebalanced.len(),
-                outcome.remaining_backlog_messages,
-                outcome.remaining_backlog_sessions,
-                outcome.remaining_absorbable_sessions,
-                outcome.remaining_saturated_sessions
-            ));
-        }
+        let (lead_limit, selected_id) = self.begin_global_backlog();
+        let apply = run_coordinate(&self.db, self.cfg.clone(), lead_limit, selected_id).await;
+        self.apply_op(apply);
     }
 
+    /// Captures the selected session id for a background session-state op.
+    pub(crate) fn begin_selected_session_id(&mut self) -> Option<String> {
+        Some(self.sessions.get(self.selected_session)?.id.clone())
+    }
+
+    #[cfg(test)]
     pub async fn stop_selected(&mut self) {
-        let Some(session) = self.sessions.get(self.selected_session) else {
+        let Some(session_id) = self.begin_selected_session_id() else {
             return;
         };
-
-        let session_id = session.id.clone();
-        if let Err(error) = manager::stop_session(&self.db, &session_id).await {
-            tracing::warn!("Failed to stop session {}: {error}", session.id);
-            self.set_operator_note(format!(
-                "stop failed for {}: {error}",
-                format_session_id(&session_id)
-            ));
-            return;
-        }
-
-        self.refresh();
-        self.set_operator_note(format!(
-            "stopped session {}",
-            format_session_id(&session_id)
-        ));
+        let apply = run_stop(&self.db, session_id).await;
+        self.apply_op(apply);
     }
 
+    #[cfg(test)]
     pub async fn resume_selected(&mut self) {
-        let Some(session) = self.sessions.get(self.selected_session) else {
+        let Some(session_id) = self.begin_selected_session_id() else {
             return;
         };
-
-        let session_id = session.id.clone();
-        if let Err(error) = manager::resume_session(&self.db, &self.cfg, &session_id).await {
-            tracing::warn!("Failed to resume session {}: {error}", session.id);
-            self.set_operator_note(format!(
-                "resume failed for {}: {error}",
-                format_session_id(&session_id)
-            ));
-            return;
-        }
-
-        self.refresh();
-        self.set_operator_note(format!(
-            "resumed session {}",
-            format_session_id(&session_id)
-        ));
+        let apply = run_resume(&self.db, self.cfg.clone(), session_id).await;
+        self.apply_op(apply);
     }
 
+    /// Captures the selected session id for a background `cleanup_selected_worktree`
+    /// run, returning `None` (silently, matching prior behaviour) when there is
+    /// no session or no attached worktree.
+    pub(crate) fn begin_cleanup(&mut self) -> Option<String> {
+        let session = self.sessions.get(self.selected_session)?;
+        session.worktree.as_ref()?;
+        Some(session.id.clone())
+    }
+
+    #[cfg(test)]
     pub async fn cleanup_selected_worktree(&mut self) {
-        let Some(session) = self.sessions.get(self.selected_session) else {
+        let Some(session_id) = self.begin_cleanup() else {
             return;
         };
-
-        if session.worktree.is_none() {
-            return;
-        }
-
-        let session_id = session.id.clone();
-        if let Err(error) = manager::cleanup_session_worktree(&self.db, &session_id).await {
-            tracing::warn!("Failed to cleanup session {} worktree: {error}", session.id);
-            self.set_operator_note(format!(
-                "cleanup failed for {}: {error}",
-                format_session_id(&session_id)
-            ));
-            return;
-        }
-
-        self.refresh();
-        self.set_operator_note(format!(
-            "cleaned worktree for {}",
-            format_session_id(&session_id)
-        ));
+        let apply = run_cleanup(&self.db, session_id).await;
+        self.apply_op(apply);
     }
 
-    pub async fn merge_selected_worktree(&mut self) {
-        let Some(session) = self.sessions.get(self.selected_session) else {
-            return;
-        };
-
+    /// Captures the selected session id for a background `merge_selected_worktree`
+    /// run, setting an operator note and returning `None` when the session has
+    /// no worktree.
+    pub(crate) fn begin_merge(&mut self) -> Option<String> {
+        let session = self.sessions.get(self.selected_session)?;
         if session.worktree.is_none() {
             self.set_operator_note("selected session has no worktree to merge".to_string());
-            return;
+            return None;
         }
-
-        let session_id = session.id.clone();
-        let outcome = match manager::merge_session_worktree(&self.db, &session_id, true).await {
-            Ok(outcome) => outcome,
-            Err(error) => {
-                tracing::warn!("Failed to merge session {} worktree: {error}", session.id);
-                self.set_operator_note(format!(
-                    "merge failed for {}: {error}",
-                    format_session_id(&session_id)
-                ));
-                return;
-            }
-        };
-
-        self.refresh();
-        self.set_operator_note(format!(
-            "merged {} into {} for {}{}",
-            outcome.branch,
-            outcome.base_branch,
-            format_session_id(&session_id),
-            if outcome.already_up_to_date {
-                " (already up to date)"
-            } else {
-                ""
-            }
-        ));
+        Some(session.id.clone())
     }
 
+    #[cfg(test)]
+    pub async fn merge_selected_worktree(&mut self) {
+        let Some(session_id) = self.begin_merge() else {
+            return;
+        };
+        let apply = run_merge(&self.db, session_id).await;
+        self.apply_op(apply);
+    }
+
+    #[cfg(test)]
     pub async fn merge_ready_worktrees(&mut self) {
-        match manager::merge_ready_worktrees(&self.db, true).await {
-            Ok(outcome) => {
-                self.refresh();
-                if outcome.merged.is_empty()
-                    && outcome.rebased.is_empty()
-                    && outcome.active_with_worktree_ids.is_empty()
-                    && outcome.conflicted_session_ids.is_empty()
-                    && outcome.dirty_worktree_ids.is_empty()
-                    && outcome.blocked_by_queue_session_ids.is_empty()
-                    && outcome.failures.is_empty()
-                {
-                    self.set_operator_note("no ready worktrees to merge".to_string());
-                    return;
-                }
-
-                let mut parts = vec![format!("merged {} ready worktree(s)", outcome.merged.len())];
-                if !outcome.rebased.is_empty() {
-                    parts.push(format!("rebased {}", outcome.rebased.len()));
-                }
-                if !outcome.active_with_worktree_ids.is_empty() {
-                    parts.push(format!(
-                        "skipped {} active",
-                        outcome.active_with_worktree_ids.len()
-                    ));
-                }
-                if !outcome.conflicted_session_ids.is_empty() {
-                    parts.push(format!(
-                        "skipped {} conflicted",
-                        outcome.conflicted_session_ids.len()
-                    ));
-                }
-                if !outcome.dirty_worktree_ids.is_empty() {
-                    parts.push(format!(
-                        "skipped {} dirty",
-                        outcome.dirty_worktree_ids.len()
-                    ));
-                }
-                if !outcome.blocked_by_queue_session_ids.is_empty() {
-                    parts.push(format!(
-                        "blocked {} in queue",
-                        outcome.blocked_by_queue_session_ids.len()
-                    ));
-                }
-                if !outcome.failures.is_empty() {
-                    parts.push(format!("{} failed", outcome.failures.len()));
-                }
-                self.set_operator_note(parts.join("; "));
-            }
-            Err(error) => {
-                tracing::warn!("Failed to merge ready worktrees: {error}");
-                self.set_operator_note(format!("merge ready worktrees failed: {error}"));
-            }
-        }
+        let apply = run_merge_ready(&self.db).await;
+        self.apply_op(apply);
     }
 
+    #[cfg(test)]
     pub async fn prune_inactive_worktrees(&mut self) {
-        match manager::prune_inactive_worktrees(&self.db, &self.cfg).await {
-            Ok(outcome) => {
-                self.refresh();
-                if outcome.cleaned_session_ids.is_empty() && outcome.retained_session_ids.is_empty()
-                {
-                    self.set_operator_note("no inactive worktrees to prune".to_string());
-                } else if outcome.cleaned_session_ids.is_empty() {
-                    self.set_operator_note(format!(
-                        "deferred {} inactive worktree(s) within retention",
-                        outcome.retained_session_ids.len()
-                    ));
-                } else if outcome.active_with_worktree_ids.is_empty() {
-                    if outcome.retained_session_ids.is_empty() {
-                        self.set_operator_note(format!(
-                            "pruned {} inactive worktree(s)",
-                            outcome.cleaned_session_ids.len()
-                        ));
-                    } else {
-                        self.set_operator_note(format!(
-                            "pruned {} inactive worktree(s); deferred {} within retention",
-                            outcome.cleaned_session_ids.len(),
-                            outcome.retained_session_ids.len()
-                        ));
-                    }
-                } else {
-                    let mut note = format!(
-                        "pruned {} inactive worktree(s); skipped {} active session(s)",
-                        outcome.cleaned_session_ids.len(),
-                        outcome.active_with_worktree_ids.len()
-                    );
-                    if !outcome.retained_session_ids.is_empty() {
-                        note.push_str(&format!(
-                            "; deferred {} within retention",
-                            outcome.retained_session_ids.len()
-                        ));
-                    }
-                    self.set_operator_note(note);
-                }
-            }
-            Err(error) => {
-                tracing::warn!("Failed to prune inactive worktrees: {error}");
-                self.set_operator_note(format!("prune inactive worktrees failed: {error}"));
-            }
-        }
+        let apply = run_prune(&self.db, self.cfg.clone()).await;
+        self.apply_op(apply);
     }
 
+    #[cfg(test)]
     pub async fn delete_selected_session(&mut self) {
-        let Some(session) = self.sessions.get(self.selected_session) else {
+        let Some(session_id) = self.begin_selected_session_id() else {
             return;
         };
+        let apply = run_delete(&self.db, session_id).await;
+        self.apply_op(apply);
+    }
 
-        let session_id = session.id.clone();
-        if let Err(error) = manager::delete_session(&self.db, &session_id).await {
-            tracing::warn!("Failed to delete session {}: {error}", session.id);
-            self.set_operator_note(format!(
-                "delete failed for {}: {error}",
-                format_session_id(&session_id)
-            ));
-            return;
-        }
-
+    /// Applies the outcome of a long-running operation back onto the live
+    /// dashboard. This always runs on the event-loop thread, whether the
+    /// operation ran inline (via the `*_selected` wrappers in tests) or on a
+    /// background worker thread (via `src/tui/app.rs`).
+    pub(crate) fn apply_op(&mut self, apply: OpApply) {
         self.refresh();
-        self.set_operator_note(format!(
-            "deleted session {}",
-            format_session_id(&session_id)
-        ));
+        if apply.full_sync {
+            self.sync_selection_by_id(apply.select.as_deref());
+            if apply.reset_output {
+                self.reset_output_view();
+            }
+            self.sync_selected_output();
+            self.sync_selected_diff();
+            self.sync_selected_messages();
+            self.sync_selected_lineage();
+            self.refresh_logs();
+        }
+        self.set_operator_note(apply.note);
+        if apply.sync_budget {
+            self.sync_budget_alerts();
+        }
     }
 
     /// Refreshes persisted dashboard state while preserving the output cursor.

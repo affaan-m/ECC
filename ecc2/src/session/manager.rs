@@ -1771,7 +1771,7 @@ pub async fn cleanup_session_worktree(db: &StateStore, id: &str) -> Result<()> {
     }
 
     if let Some(worktree) = session.worktree.as_ref() {
-        crate::worktree::remove(worktree)?;
+        crate::worktree::remove_async(worktree).await?;
         db.clear_worktree(&session.id)?;
     }
 
@@ -1817,10 +1817,10 @@ pub async fn merge_session_worktree(
         .worktree
         .clone()
         .ok_or_else(|| anyhow::anyhow!("Session {} has no attached worktree", session.id))?;
-    let outcome = crate::worktree::merge_into_base(&worktree)?;
+    let outcome = crate::worktree::merge_into_base_async(&worktree).await?;
 
     if cleanup_worktree {
-        crate::worktree::remove(&worktree)?;
+        crate::worktree::remove_async(&worktree).await?;
         db.clear_worktree(&session.id)?;
     }
 
@@ -1851,7 +1851,7 @@ pub async fn rebase_session_worktree(db: &StateStore, id: &str) -> Result<Worktr
         .worktree
         .clone()
         .ok_or_else(|| anyhow::anyhow!("Session {} has no attached worktree", session.id))?;
-    let outcome = crate::worktree::rebase_onto_base(&worktree)?;
+    let outcome = crate::worktree::rebase_onto_base_async(&worktree).await?;
 
     Ok(WorktreeRebaseOutcome {
         session_id: session.id,
@@ -2345,7 +2345,7 @@ pub async fn delete_session(db: &StateStore, id: &str) -> Result<()> {
     }
 
     if let Some(worktree) = session.worktree.as_ref() {
-        let _ = crate::worktree::remove(worktree);
+        let _ = crate::worktree::remove_async(worktree).await;
     }
 
     db.delete_session(&session.id)?;

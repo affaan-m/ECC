@@ -175,6 +175,15 @@ pub(crate) fn branch_name_for_session(
 }
 
 /// Remove a worktree and its branch.
+/// Async wrapper around [`remove`]; see [`merge_into_base_async`] for why the
+/// blocking git work is offloaded to the Tokio blocking pool.
+pub async fn remove_async(worktree: &WorktreeInfo) -> Result<()> {
+    let worktree = worktree.clone();
+    tokio::task::spawn_blocking(move || remove(&worktree))
+        .await
+        .context("worktree remove blocking task failed to join")?
+}
+
 pub fn remove(worktree: &WorktreeInfo) -> Result<()> {
     let repo_root = match base_checkout_path(worktree) {
         Ok(path) => path,
@@ -855,6 +864,17 @@ pub fn has_staged_changes(worktree: &WorktreeInfo) -> Result<bool> {
         .any(|entry| entry.staged))
 }
 
+/// Async wrapper around [`merge_into_base`] that offloads the blocking git
+/// invocations to the Tokio blocking pool. The `WorktreeInfo` is cloned into an
+/// owned value so the closure is `'static` and `Send`, which lets long-running
+/// merges run without starving the async runtime's worker threads.
+pub async fn merge_into_base_async(worktree: &WorktreeInfo) -> Result<MergeOutcome> {
+    let worktree = worktree.clone();
+    tokio::task::spawn_blocking(move || merge_into_base(&worktree))
+        .await
+        .context("merge_into_base blocking task failed to join")?
+}
+
 pub fn merge_into_base(worktree: &WorktreeInfo) -> Result<MergeOutcome> {
     let readiness = merge_readiness(worktree)?;
     if readiness.status == MergeReadinessStatus::Conflicted {
@@ -908,6 +928,15 @@ pub fn merge_into_base(worktree: &WorktreeInfo) -> Result<MergeOutcome> {
         base_branch: worktree.base_branch.clone(),
         already_up_to_date: merged_output.contains("Already up to date."),
     })
+}
+
+/// Async wrapper around [`rebase_onto_base`]; see [`merge_into_base_async`] for
+/// why the blocking git work is offloaded to the Tokio blocking pool.
+pub async fn rebase_onto_base_async(worktree: &WorktreeInfo) -> Result<RebaseOutcome> {
+    let worktree = worktree.clone();
+    tokio::task::spawn_blocking(move || rebase_onto_base(&worktree))
+        .await
+        .context("rebase_onto_base blocking task failed to join")?
 }
 
 pub fn rebase_onto_base(worktree: &WorktreeInfo) -> Result<RebaseOutcome> {
