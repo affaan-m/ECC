@@ -59,6 +59,74 @@ function sessionFileFor(home, uuid, date = getDateString()) {
   return path.join(home, '.claude', 'session-data', `${date}-${shortId}-session.tmp`);
 }
 
+function runClassifierNoticeTests() {
+  let passed = 0;
+  let failed = 0;
+
+  // Regression (#3867): the harness notice after a safety-classifier stop is
+  // recorded as a user entry; it must not become a task in the summary.
+  const CLASSIFIER_NOTICE_TEXT = 'Your response above was stopped by a safety classifier — this is not a tool or API error.';
+
+  (test('drops safety-classifier notices from summary tasks', () => {
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-session-end-'));
+    try {
+      const uuid = '3867aaaa-bbbb-4ccc-8ddd-eeeeeeee3867';
+      const transcript = path.join(home, `${uuid}.jsonl`);
+      fs.writeFileSync(
+        transcript,
+        [
+          JSON.stringify({ type: 'user', message: { role: 'user', content: 'Refactor the config loader' } }),
+          JSON.stringify({ type: 'user', message: { role: 'user', content: [{ type: 'text', text: CLASSIFIER_NOTICE_TEXT }] } }),
+        ].join('\n') + '\n'
+      );
+
+      const res = runHook(home, transcript);
+      assert.strictEqual(res.status || 0, 0, `hook exited ${res.status}: ${res.stderr}`);
+      const out = fs.readFileSync(sessionFileFor(home, uuid), 'utf8');
+      assert.ok(out.includes('- Refactor the config loader'), `expected the real user task in:\n${out}`);
+      assert.ok(!out.includes('safety classifier'), `classifier notice must not be summarized:\n${out}`);
+    } finally {
+      fs.rmSync(home, { recursive: true, force: true });
+    }
+  }) ? passed++ : failed++);
+
+  (test('writes no summary for a transcript holding only a classifier notice', () => {
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-session-end-'));
+    try {
+      const uuid = '3867bbbb-cccc-4ddd-8eee-ffffffff3867';
+      const transcript = path.join(home, `${uuid}.jsonl`);
+      fs.writeFileSync(transcript, JSON.stringify({ type: 'user', content: CLASSIFIER_NOTICE_TEXT }) + '\n');
+
+      const res = runHook(home, transcript);
+      assert.strictEqual(res.status || 0, 0, `hook exited ${res.status}: ${res.stderr}`);
+      const out = fs.readFileSync(sessionFileFor(home, uuid), 'utf8');
+      assert.ok(!out.includes(START), `a notice-only transcript must not produce a summary block:\n${out}`);
+      assert.ok(!out.includes('safety classifier'), `classifier notice must not be persisted:\n${out}`);
+    } finally {
+      fs.rmSync(home, { recursive: true, force: true });
+    }
+  }) ? passed++ : failed++);
+
+  (test('keeps a user message that only mentions the classifier notice', () => {
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-session-end-'));
+    try {
+      const uuid = '3867cccc-dddd-4eee-8fff-aaaaaaaa3867';
+      const transcript = path.join(home, `${uuid}.jsonl`);
+      const userText = 'Why did I see "Your response above was stopped by a safety classifier" earlier?';
+      fs.writeFileSync(transcript, JSON.stringify({ type: 'user', content: userText }) + '\n');
+
+      const res = runHook(home, transcript);
+      assert.strictEqual(res.status || 0, 0, `hook exited ${res.status}: ${res.stderr}`);
+      const out = fs.readFileSync(sessionFileFor(home, uuid), 'utf8');
+      assert.ok(out.includes(userText), `a real question about the notice must be kept:\n${out}`);
+    } finally {
+      fs.rmSync(home, { recursive: true, force: true });
+    }
+  }) ? passed++ : failed++);
+
+  return { passed, failed };
+}
+
 function runTests() {
   console.log('\n=== Testing session-end.js ===\n');
 
@@ -146,6 +214,10 @@ function runTests() {
       fs.rmSync(home, { recursive: true, force: true });
     }
   }) ? passed++ : failed++);
+
+  const noticeResults = runClassifierNoticeTests();
+  passed += noticeResults.passed;
+  failed += noticeResults.failed;
 
   (test('writes a session for one user message with tool activity', () => {
     const home = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-session-end-'));

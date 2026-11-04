@@ -20,6 +20,8 @@ const SESSION_SEPARATOR = '\n---\n';
 
 // Harness noise: local command echoes, caveats, system reminders.
 const HARNESS_NOISE = /^<(local-command-caveat|local-command-stdout|command-name|command-message|command-args|system-reminder|task-notification)/i;
+// Harness notice shown after a safety-classifier stop; it is not a user ask (#3867).
+const CLASSIFIER_NOTICE = /^Your response above was stopped by a safety classifier/i;
 const TRANSCRIPT_UUID = /([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\.jsonl$/i;
 const NEXT_SESSION_FOOTER = '\n\n### Notes for Next Session\n-\n\n### Context to Load\n```\n[relevant files]\n```';
 const EMPTY_SESSION_BODY = '## Current State\n\n[Session context goes here]\n\n### Completed\n- [ ]\n\n### In Progress\n- [ ]\n\n### Notes for Next Session\n-\n\n### Context to Load\n```\n[relevant files]\n```';
@@ -38,7 +40,7 @@ function userMessageText(entry) {
   // `isMeta` is also used for genuine channel- and plugin-originated
   // human prompts. Exclude known structured noise instead of
   // discarding every metadata-marked user turn.
-  return HARNESS_NOISE.test(cleaned) ? '' : cleaned;
+  return HARNESS_NOISE.test(cleaned) || CLASSIFIER_NOTICE.test(cleaned) ? '' : cleaned;
 }
 
 /**
