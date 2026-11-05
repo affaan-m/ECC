@@ -17,15 +17,197 @@ def project(tmp_path: Path) -> Path:
 
 
 def run_audit(
-    project: Path, scope: str, *, timeout: float | None = None
+    project: Path, scope: str, *, timeout: float | None = None,
+    modules: tuple[str, ...] = (),
+    script: Path = SCRIPT,
 ) -> subprocess.CompletedProcess[str]:
+    module_args = [argument for module in modules for argument in ("--module", module)]
     return subprocess.run(
-        [sys.executable, str(SCRIPT), "--root", str(project), "--scope", scope],
+        [sys.executable, str(script), "--root", str(project), "--scope", scope, *module_args],
         text=True,
         capture_output=True,
         check=False,
         timeout=timeout,
     )
+
+
+def test_module_audit_checks_local_carriers_links_and_is_read_only(project: Path) -> None:
+    module = project / "src" / "inventory"
+    module.mkdir(parents=True)
+    (module / "AGENTS.md").write_text("[terms](CONTEXT.md)\n", encoding="utf-8")
+    (module / "CONTEXT.md").write_text("[contract](../../contract.md)\n", encoding="utf-8")
+    (project / "contract.md").write_text("# Contract\n", encoding="utf-8")
+    before = {path: path.read_bytes() for path in project.rglob("*") if path.is_file()}
+    result = run_audit(project, "modules", modules=("src/inventory",))
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "Local agents source: 'src/inventory/AGENTS.md'" in result.stdout
+    assert "Local context source: 'src/inventory/CONTEXT.md'" in result.stdout
+    assert "All local Markdown links resolve" in result.stdout
+    assert "semantic review" in result.stdout
+    after = {path: path.read_bytes() for path in project.rglob("*") if path.is_file()}
+    assert after == before
+
+
+@pytest.mark.parametrize("distribution", ("skills", ".agents/skills", "pi/core/skills"))
+@pytest.mark.parametrize("role,filename", (("agents", "AGENTS.md"), ("context", "CONTEXT.md")))
+@pytest.mark.parametrize("broken", (False, True))
+@pytest.mark.parametrize("module_path", (".", "src/inventory"))
+def test_module_audit_checks_root_carrier_before_mapped_source(
+    project: Path, distribution: str, role: str, filename: str, broken: bool,
+    module_path: str,
+) -> None:
+    (project / module_path).mkdir(parents=True, exist_ok=True)
+    (project / ".governance").mkdir()
+    (project / "docs").mkdir()
+    (project / ".governance/docs-map.json").write_text(
+        json.dumps({"agents": "docs/rules.md", "context": "docs/glossary.md"}),
+        encoding="utf-8",
+    )
+    for mapped in ("rules", "glossary"):
+        (project / f"docs/{mapped}.md").write_text("# Shared source\n", encoding="utf-8")
+    if not broken:
+        (project / "docs/target.md").write_text("# Link target\n", encoding="utf-8")
+    (project / filename).write_text("[target](docs/target.md)\n", encoding="utf-8")
+    before = {path: path.read_bytes() for path in project.rglob("*") if path.is_file()}
+    result = run_audit(
+        project, "modules", modules=(module_path,),
+        script=ROOT / distribution / "docs-governance/scripts/audit-docs.py",
+    )
+    assert result.returncode == (1 if broken else 0), result.stdout + result.stderr
+    source_label = f"Local {role} source" if module_path == "." else f"Shared {role} candidate"
+    assert f"{source_label}: '{filename}'" in result.stdout
+    assert (f"Broken Markdown link: '{filename}' -> 'docs/target.md'" in result.stdout) == broken
+    after = {path: path.read_bytes() for path in project.rglob("*") if path.is_file()}
+    assert after == before, "module audit must remain read-only in every distribution"
+
+
+@pytest.mark.parametrize("scope", ("modules", "full"))
+def test_module_audit_reports_nearest_shared_candidates(project: Path, scope: str) -> None:
+    (project / "src" / "inventory").mkdir(parents=True)
+    (project / "AGENTS.md").write_text("# Project rules\n", encoding="utf-8")
+    (project / "src" / "AGENTS.md").write_text("# Shared module rules\n", encoding="utf-8")
+    (project / "CONTEXT.md").write_text("# Shared language\n", encoding="utf-8")
+    result = run_audit(project, scope, modules=("src/inventory",))
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "Shared agents candidate: 'src/AGENTS.md'" in result.stdout
+    assert "Shared context candidate: 'CONTEXT.md'" in result.stdout
+    assert "confirm it covers module 'src/inventory'" in result.stdout
+    assert "Local agents source" not in result.stdout
+
+
+def test_module_audit_reuses_mapped_sources_without_creating_shells(project: Path) -> None:
+    (project / "inventory").mkdir()
+    (project / "docs").mkdir()
+    (project / ".governance").mkdir()
+    (project / ".governance/docs-map.json").write_text(
+        json.dumps({"agents": "docs/rules.md", "context": "docs/glossary.md"}), encoding="utf-8"
+    )
+    for name in ("rules", "glossary"):
+        (project / f"docs/{name}.md").write_text(f"# {name}\n", encoding="utf-8")
+    result = run_audit(project, "modules", modules=("inventory",))
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "Shared agents candidate: 'docs/rules.md'" in result.stdout
+    assert "Shared context candidate: 'docs/glossary.md'" in result.stdout
+    assert list((project / "inventory").iterdir()) == []
+
+
+def test_module_audit_checks_selected_carriers_in_template_named_modules(project: Path) -> None:
+    (project / "templates/inventory").mkdir(parents=True)
+    (project / "templates/inventory/AGENTS.md").write_text("[missing](missing.md)\n", encoding="utf-8")
+    result = run_audit(project, "modules", modules=("templates/inventory",))
+    assert result.returncode == 1, result.stdout + result.stderr
+    assert "Broken Markdown link: 'templates/inventory/AGENTS.md'" in result.stdout
+
+
+def test_module_audit_missing_carriers_are_manual_review_not_failure(project: Path) -> None:
+    (project / "inventory").mkdir()
+    result = run_audit(project, "modules", modules=("inventory",))
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "No agents source found for module 'inventory'" in result.stdout
+    assert "No context source found for module 'inventory'" in result.stdout
+    assert list((project / "inventory").iterdir()) == []
+
+
+@pytest.mark.parametrize("module", ("missing", "../", "/", "not-a-directory"))
+def test_module_audit_rejects_invalid_directories(project: Path, module: str) -> None:
+    (project / "not-a-directory").write_text("not a module\n", encoding="utf-8")
+    result = run_audit(project, "modules", modules=(module,))
+    assert result.returncode == 1, result.stdout + result.stderr
+    assert "Module must be a repository-relative directory inside root" in result.stdout
+    assert "Traceback" not in result.stderr
+
+
+@pytest.mark.parametrize("filename", ("AGENTS.md", "CONTEXT.md"))
+def test_module_audit_does_not_read_escaping_sources(project: Path, filename: str) -> None:
+    module = project / "inventory"
+    module.mkdir()
+    outside = project.parent / f"outside-{filename}"
+    outside.write_text("[secret](secret-missing.md)\n", encoding="utf-8")
+    try:
+        (module / filename).symlink_to(outside)
+        result = run_audit(project, "modules", modules=("inventory",))
+        assert result.returncode == 1, result.stdout + result.stderr
+        assert "repository-contained regular file" in result.stdout
+        assert "secret-missing" not in result.stdout
+    finally:
+        outside.unlink(missing_ok=True)
+
+
+def test_module_audit_reports_invalid_utf8_carrier(project: Path) -> None:
+    (project / "inventory").mkdir()
+    (project / "inventory/AGENTS.md").write_bytes(b"\xff")
+    result = run_audit(project, "modules", modules=("inventory",))
+    assert result.returncode == 1, result.stdout + result.stderr
+    assert "Cannot read module agents source" in result.stdout
+
+
+def test_module_audit_reuses_link_parser_and_source_relative_resolution(project: Path) -> None:
+    module = project / "src/inventory"
+    module.mkdir(parents=True)
+    (module / "AGENTS.md").write_text("[terms](.\\CONTEXT.md)\n", encoding="utf-8")
+    (module / "CONTEXT.md").write_text("[contract](../contract.md)\n", encoding="utf-8")
+    (project / "contract.md").write_text("# Wrong base\n", encoding="utf-8")
+    result = run_audit(project, "modules", modules=("src/inventory",))
+    assert result.returncode == 1, result.stdout + result.stderr
+    assert "Broken Markdown link: 'src/inventory/CONTEXT.md' -> '../contract.md'" in result.stdout
+    assert "AGENTS.md' ->" not in result.stdout
+
+
+def test_module_audit_requires_explicit_scope_and_boundary(project: Path) -> None:
+    missing = run_audit(project, "modules")
+    ignored = run_audit(project, "context", modules=("inventory",))
+    assert missing.returncode == ignored.returncode == 2
+    assert "requires at least one --module" in missing.stderr
+    assert "supported only with --scope modules or full" in ignored.stderr
+
+
+def test_module_audit_checks_each_selected_boundary_once(project: Path) -> None:
+    for module in ("inventory", "billing"):
+        (project / module).mkdir()
+    result = run_audit(project, "modules", modules=("inventory", "billing", "inventory"))
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert result.stdout.count("Selected module: 'inventory'") == 1
+    assert result.stdout.count("Selected module: 'billing'") == 1
+
+
+@pytest.mark.parametrize("kind", ("directory", "broken-symlink"))
+def test_module_audit_reports_non_file_carriers(project: Path, kind: str) -> None:
+    (project / "inventory").mkdir()
+    carrier = project / "inventory/AGENTS.md"
+    if kind == "directory":
+        carrier.mkdir()
+    else:
+        carrier.symlink_to(project / "missing.md")
+    result = run_audit(project, "modules", modules=("inventory",))
+    assert result.returncode == 1, result.stdout + result.stderr
+    assert "repository-contained regular file" in result.stdout
+
+
+def test_module_audit_rejects_escaping_module_directory(project: Path) -> None:
+    (project / "escape").symlink_to(project.parent, target_is_directory=True)
+    result = run_audit(project, "modules", modules=("escape",))
+    assert result.returncode == 1, result.stdout + result.stderr
+    assert "Module must be a repository-relative directory inside root" in result.stdout
 
 
 def configure_git(project: Path) -> None:

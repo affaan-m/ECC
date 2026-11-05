@@ -272,10 +272,23 @@ import json, sys, os, re
 # schemes (instead of a generic [A-Za-z]+\s+ that overlapped the value class)
 # prevent the catastrophic backtracking that pegged python at 100% CPU (#2278).
 _SECRET_RE = re.compile(
-    r"(?i)(api[_-]?key|token|secret|password|authorization|credentials?|auth)"
+    r"(?i)((?:api[_-]?key|token|secret|password|authorization|credentials?|auth)(?:_access_key|_key)?)"
     r"""(["'"'"'\s:=\\]{1,8})"""
     r"((?:bearer|basic|token|bot)\s+)?"
     r"([A-Za-z0-9_\-/.+=]{8,256})"
+)
+# Value-shaped secrets that carry no keyword: PEM private key blocks (to END or
+# end of the truncated text), GitHub tokens, AWS key IDs, and DSN passwords
+# (scheme://user:PASSWORD@host keeps scheme and user). Each branch is anchored
+# on a literal prefix and uses bounded or non-overlapping classes (#2278).
+# Tokens may follow a JSON escape (\n, \t, \uXXXX) since dict I/O is encoded
+# before scrubbing; a DSN cut by truncation before its "@" ends at \Z,
+# except a bare trailing host:port after http(s):// such as http://localhost:3000;
+# any other scheme (postgres://app:1234) is redacted even when the password is numeric (#3568).
+_SECRET_VALUE_RE = re.compile(
+    r"-----BEGIN[A-Z ]{0,40}PRIVATE KEY-----[\s\S]*?(?:-----END[A-Z ]{0,40}PRIVATE KEY-----|\Z)"
+    r"|(?:(?<![A-Za-z0-9_])|(?<=\\[bfnrt])|(?<=\\u[0-9a-fA-F]{4}))(?:gh[pousr]_[A-Za-z0-9]{20,255}|github_pat_[A-Za-z0-9_]{20,255}|(?:AKIA|ASIA)[A-Z0-9]{16})\b"
+    r"""|(?<=://)(?:(?<=https://)|(?<=http://)|(?<!https://)(?<!http://)())([^\s:/@"\\]{1,256}:)(?(1)|(?!\d{1,5}\Z))[^\s@/"\\]{1,256}(?=@|\Z)"""
 )
 
 import signal
@@ -290,6 +303,7 @@ except Exception:
 
 raw = sys.stdin.read()[:2000]
 raw = _SECRET_RE.sub(lambda m: m.group(1) + m.group(2) + (m.group(3) or "") + "[REDACTED]", raw)
+raw = _SECRET_VALUE_RE.sub(lambda m: (m.group(2) or "") + "[REDACTED]", raw)
 print(json.dumps({"timestamp": os.environ["TIMESTAMP"], "event": "parse_error", "raw": raw}))
 ' >> "$OBSERVATIONS_FILE"
   exit 0
@@ -343,16 +357,30 @@ observation = {
 # schemes (instead of a generic [A-Za-z]+\s+ that overlapped the value class)
 # prevent the catastrophic backtracking that pegged python at 100% CPU (#2278).
 _SECRET_RE = re.compile(
-    r"(?i)(api[_-]?key|token|secret|password|authorization|credentials?|auth)"
+    r"(?i)((?:api[_-]?key|token|secret|password|authorization|credentials?|auth)(?:_access_key|_key)?)"
     r"""(["'"'"'\s:=\\]{1,8})"""
     r"((?:bearer|basic|token|bot)\s+)?"
     r"([A-Za-z0-9_\-/.+=]{8,256})"
+)
+# Value-shaped secrets that carry no keyword: PEM private key blocks (to END or
+# end of the truncated text), GitHub tokens, AWS key IDs, and DSN passwords
+# (scheme://user:PASSWORD@host keeps scheme and user). Each branch is anchored
+# on a literal prefix and uses bounded or non-overlapping classes (#2278).
+# Tokens may follow a JSON escape (\n, \t, \uXXXX) since dict I/O is encoded
+# before scrubbing; a DSN cut by truncation before its "@" ends at \Z,
+# except a bare trailing host:port after http(s):// such as http://localhost:3000;
+# any other scheme (postgres://app:1234) is redacted even when the password is numeric (#3568).
+_SECRET_VALUE_RE = re.compile(
+    r"-----BEGIN[A-Z ]{0,40}PRIVATE KEY-----[\s\S]*?(?:-----END[A-Z ]{0,40}PRIVATE KEY-----|\Z)"
+    r"|(?:(?<![A-Za-z0-9_])|(?<=\\[bfnrt])|(?<=\\u[0-9a-fA-F]{4}))(?:gh[pousr]_[A-Za-z0-9]{20,255}|github_pat_[A-Za-z0-9_]{20,255}|(?:AKIA|ASIA)[A-Z0-9]{16})\b"
+    r"""|(?<=://)(?:(?<=https://)|(?<=http://)|(?<!https://)(?<!http://)())([^\s:/@"\\]{1,256}:)(?(1)|(?!\d{1,5}\Z))[^\s@/"\\]{1,256}(?=@|\Z)"""
 )
 
 def scrub(val):
     if val is None:
         return None
-    return _SECRET_RE.sub(lambda m: m.group(1) + m.group(2) + (m.group(3) or "") + "[REDACTED]", str(val))
+    val = _SECRET_RE.sub(lambda m: m.group(1) + m.group(2) + (m.group(3) or "") + "[REDACTED]", str(val))
+    return _SECRET_VALUE_RE.sub(lambda m: (m.group(2) or "") + "[REDACTED]", val)
 
 if parsed["input"]:
     observation["input"] = scrub(parsed["input"])

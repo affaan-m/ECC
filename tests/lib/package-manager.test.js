@@ -41,9 +41,12 @@ function withIsolatedHome(fn) {
   const isolatedHome = fs.mkdtempSync(path.join(os.tmpdir(), 'pm-home-'));
   const originalHome = process.env.HOME;
   const originalUserProfile = process.env.USERPROFILE;
+  const originalAgentDataHome = process.env.ECC_AGENT_DATA_HOME;
 
   process.env.HOME = isolatedHome;
   process.env.USERPROFILE = isolatedHome;
+  // An explicit override outranks inherited config roots and project settings.
+  process.env.ECC_AGENT_DATA_HOME = path.join(isolatedHome, ".claude");
 
   try {
     return fn(isolatedHome);
@@ -58,6 +61,12 @@ function withIsolatedHome(fn) {
       process.env.USERPROFILE = originalUserProfile;
     } else {
       delete process.env.USERPROFILE;
+    }
+
+    if (originalAgentDataHome !== undefined) {
+      process.env.ECC_AGENT_DATA_HOME = originalAgentDataHome;
+    } else {
+      delete process.env.ECC_AGENT_DATA_HOME;
     }
 
     fs.rmSync(isolatedHome, { recursive: true, force: true });
@@ -767,8 +776,8 @@ function runTests() {
   // setPreferredPackageManager success
   console.log('\nsetPreferredPackageManager (success):');
 
-  if (test('successfully saves preferred package manager', () => {
-    // This writes to ~/.claude/package-manager.json — read original to restore
+  if (test('successfully saves preferred package manager', () => withIsolatedHome(() => {
+    // Writes ~/.claude/package-manager.json under the isolated home, not the real one
     const utils = require('../../scripts/lib/utils');
     const configPath = path.join(utils.getClaudeDir(), 'package-manager.json');
     const original = utils.readFile(configPath);
@@ -790,6 +799,59 @@ function runTests() {
           // ignore
         }
       }
+    }
+  }))) passed++;
+  else failed++;
+
+  if (test('isolated home preserves inherited data roots and restores their environment', () => {
+    const fixture = fs.mkdtempSync(path.join(os.tmpdir(), 'pm-inherited-roots-'));
+    const names = ['HOME', 'USERPROFILE', 'ECC_AGENT_DATA_HOME', 'CLAUDE_CONFIG_DIR'];
+    const originalEnv = new Map(names.map(name => [name, process.env[name]]));
+    const agentRoot = path.join(fixture, 'agent-data-home');
+    const claudeRoot = path.join(fixture, 'claude-config');
+    const contents = new Map([
+      [path.join(agentRoot, 'package-manager.json'), '{"packageManager":"npm","sentinel":"agent"}\n'],
+      [path.join(claudeRoot, 'package-manager.json'), '{"packageManager":"yarn","sentinel":"claude"}\n'],
+    ]);
+    for (const [file, content] of contents) {
+      fs.mkdirSync(path.dirname(file), { recursive: true });
+      fs.writeFileSync(file, content, 'utf8');
+    }
+    process.env.ECC_AGENT_DATA_HOME = agentRoot;
+    process.env.CLAUDE_CONFIG_DIR = claudeRoot;
+    const inheritedEnv = new Map(names.map(name => [name, process.env[name]]));
+    const assertRestored = () => {
+      for (const [name, value] of inheritedEnv) assert.strictEqual(process.env[name], value, name);
+      for (const [file, content] of contents) assert.strictEqual(fs.readFileSync(file, 'utf8'), content, file);
+    };
+    let temporaryHome;
+    try {
+      withIsolatedHome(isolatedHome => {
+        temporaryHome = isolatedHome;
+        const config = pm.setPreferredPackageManager('bun');
+        assert.strictEqual(config.packageManager, 'bun');
+        const utils = require('../../scripts/lib/utils');
+        const expectedDir = path.join(isolatedHome, '.claude');
+        assert.strictEqual(utils.getClaudeDir(), expectedDir);
+        const saved = JSON.parse(fs.readFileSync(path.join(expectedDir, 'package-manager.json'), 'utf8'));
+        assert.strictEqual(saved.packageManager, 'bun');
+        for (const [file, content] of contents) assert.strictEqual(fs.readFileSync(file, 'utf8'), content, file);
+      });
+      assert.ok(!fs.existsSync(temporaryHome), 'temporary data must be cleaned up');
+      assertRestored();
+      assert.throws(() => withIsolatedHome(isolatedHome => {
+        temporaryHome = isolatedHome;
+        pm.setPreferredPackageManager('bun');
+        throw new Error('controlled fixture failure');
+      }), /controlled fixture failure/);
+      assert.ok(!fs.existsSync(temporaryHome), 'throwing callback must clean up its temporary data');
+      assertRestored();
+    } finally {
+      for (const [name, value] of originalEnv) {
+        if (value === undefined) delete process.env[name];
+        else process.env[name] = value;
+      }
+      fs.rmSync(fixture, { recursive: true, force: true });
     }
   })) passed++;
   else failed++;

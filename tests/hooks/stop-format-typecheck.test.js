@@ -246,6 +246,57 @@ if (test('matches forward-slash TypeScript paths against Windows edited paths', 
 
 })) passed++; else failed++;
 
+if (test('matches a diagnostic by the file it names, not by a substring of the line', () => {
+  const rootIndex = new Set(['/project/index.ts', 'index.ts']);
+  assert.strictEqual(diagnosticMatchesFile('index.ts(1,14): error TS2322: Type', rootIndex), true);
+  assert.strictEqual(diagnosticMatchesFile('src/index.ts(1,14): error TS2322: Type', rootIndex), false);
+  const utils = new Set(['/project/src/utils.ts', 'src/utils.ts']);
+  assert.strictEqual(diagnosticMatchesFile('web/src/utils.ts(2,1): error TS2304: Cannot find name', utils), false);
+  assert.strictEqual(diagnosticMatchesFile("app.ts(3,1): error TS2307: Cannot find module './src/utils.ts'", utils), false);
+  assert.strictEqual(diagnosticMatchesFile('src/(group)/page.tsx(3,5): error TS2322', new Set(['src/(group)/page.tsx'])), true);
+  assert.strictEqual(diagnosticMatchesFile("  Type 'string' is not assignable to type 'number'.", utils), false);
+})) passed++; else failed++;
+
+if (test('stop hook reports a tsc diagnostic only under the file it names', () => {
+  const { spawnSync } = require('child_process');
+  const projectDir = fs.mkdtempSync(path.join(accumulatorTempRoot, 'ts-project-'));
+  const binDir = path.join(projectDir, 'bin');
+  fs.mkdirSync(path.join(projectDir, 'src'));
+  fs.mkdirSync(binDir);
+  fs.writeFileSync(path.join(projectDir, 'tsconfig.json'), '{}');
+  fs.writeFileSync(path.join(projectDir, 'index.ts'), 'export const ok = 1;\n');
+  fs.writeFileSync(path.join(projectDir, 'src', 'index.ts'), 'export const bad: number = "x";\n');
+  const diagnostic = "src/index.ts(1,14): error TS2322: Type 'string' is not assignable to type 'number'.";
+  const fakeTsc = path.join(binDir, 'fake-tsc.js');
+  fs.writeFileSync(fakeTsc, `process.stdout.write(${JSON.stringify(`${diagnostic}\n`)});\nprocess.exitCode = 2;\n`);
+  if (process.platform === 'win32') {
+    fs.writeFileSync(path.join(binDir, 'npx.cmd'), `@echo off\r\nnode "${fakeTsc}" %*\r\n`);
+  } else {
+    fs.writeFileSync(path.join(binDir, 'npx'), `#!/usr/bin/env node\nrequire(${JSON.stringify(fakeTsc)});\n`);
+    fs.chmodSync(path.join(binDir, 'npx'), 0o755);
+  }
+  const pathKey = Object.keys(process.env).find(key => key.toLowerCase() === 'path') || 'PATH';
+  const stopScript = path.resolve(__dirname, '../../scripts/hooks/stop-format-typecheck.js');
+  const stopStderr = editedFile => {
+    fs.writeFileSync(getAccumFile(), `${editedFile}\n`);
+    return spawnSync('node', [stopScript], {
+      input: '{}',
+      env: { ...process.env, CLAUDE_SESSION_ID: TEST_SESSION_ID, [pathKey]: `${binDir}${path.delimiter}${process.env[pathKey]}` },
+      encoding: 'utf8',
+      timeout: 10000
+    }).stderr;
+  };
+  try {
+    const rootStderr = stopStderr(path.join(projectDir, 'index.ts'));
+    assert.ok(!rootStderr.includes('TypeScript errors'), `root index.ts must not get src/index.ts errors:\n${rootStderr}`);
+    const nestedStderr = stopStderr(path.join(projectDir, 'src', 'index.ts'));
+    assert.ok(nestedStderr.includes(`TypeScript errors in index.ts:\n${diagnostic}`), nestedStderr);
+  } finally {
+    cleanAccumFile();
+    fs.rmSync(projectDir, { recursive: true, force: true });
+  }
+})) passed++; else failed++;
+
 if (test('stop hook clears accumulator after processing duplicates', () => {
   cleanAccumFile();
   fs.writeFileSync(getAccumFile(), '/nonexistent/x.ts\n/nonexistent/x.ts\n/nonexistent/y.ts\n', 'utf8');

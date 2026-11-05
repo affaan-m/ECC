@@ -48,7 +48,7 @@ origin: ECC
 
 ## 出力契約
 
-ダウンストリームスキルが直接消費できる再利用可能な`VOICE PROFILE`ブロックを作成します。[references/voice-profile-schema.md](references/voice-profile-schema.md)のスキーマを使用します。
+ダウンストリームスキルが直接消費できる再利用可能な`VOICE PROFILE`ブロックを作成します。[references/voice-profile-schema.md](https://github.com/affaan-m/ECC/blob/main/skills/brand-voice/references/voice-profile-schema.md)のスキーマを使用します。
 
 プロファイルを構造化され、セッションコンテキストで再利用するのに十分な短さに保つ。ポイントは文学批評ではありません。ポイントは運用上の再利用です。
 

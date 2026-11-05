@@ -22,7 +22,7 @@ const {
 const { applyInstallPlan: applyInstallPlanDirect } = require('../../scripts/lib/install/apply');
 const { normalizeInstallRequest } = require('../../scripts/lib/install/request');
 const { createInstallPlanFromRequest } = require('../../scripts/lib/install/runtime');
-const { withHookConsent } = require('../../scripts/lib/install/hook-consent');
+const { getDisabledOpenCodePluginContent, withHookConsent } = require('../../scripts/lib/install/hook-consent');
 const { repairInstalledStates, uninstallInstalledStates } = require('../../scripts/lib/install-lifecycle');
 
 const REPO_ROOT = path.resolve(__dirname, '..', '..');
@@ -53,7 +53,7 @@ function operationFor(plan, suffix) {
   ));
 }
 
-const INERT_OPENCODE_PLUGIN = 'export default async () => ({});\n';
+const INERT_OPENCODE_PLUGIN = getDisabledOpenCodePluginContent();
 const OPENCODE_ENTRYPOINTS = ['ecc-hooks.ts', 'index.ts'];
 
 function snapshotFiles(root) {
@@ -451,6 +451,14 @@ function runTests() {
       assert.ok(plan.warnings.some(warning => warning.includes("Invalid language name 'bad/name'")));
       assert.ok(operationFor(plan, path.join('.agents', 'rules', 'common-coding-style.md')));
       assert.ok(operationFor(plan, path.join('.agents', 'rules', 'typescript-testing.md')));
+      assert.strictEqual(
+        operationFor(plan, path.join('.agents', 'rules', 'common-coding-style.md')).contentTransform,
+        'antigravity-rule-frontmatter'
+      );
+      assert.strictEqual(
+        operationFor(plan, path.join('.agents', 'rules', 'typescript-testing.md')).contentTransform,
+        'antigravity-rule-frontmatter'
+      );
       assert.ok(operationFor(plan, path.join('.agents', 'workflows', 'plan.md')));
       const agentOperation = plan.operations.find(operation => (
         operation.destinationPath.endsWith(path.join('.agents', 'agents', 'architect.md'))

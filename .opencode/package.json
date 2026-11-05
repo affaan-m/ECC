@@ -56,6 +56,9 @@
   "publishConfig": {
     "access": "public"
   },
+  "dependencies": {
+    "zod": "4.6.7"
+  },
   "peerDependencies": {
     "@opencode-ai/plugin": ">=1.0.0"
   },
@@ -66,5 +69,8 @@
   },
   "engines": {
     "node": ">=18.0.0"
+  },
+  "overrides": {
+    "zod": "4.6.7"
   }
 }

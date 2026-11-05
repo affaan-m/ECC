@@ -4,6 +4,7 @@
  */
 
 const assert = require('assert');
+const { spawnSync } = require('child_process');
 
 const { treeDistance, lineRangeOverlap, graphDistance, collisionRisk, advise, closureRate } = require('../../scripts/lib/agent-proximity/distance');
 const { buildDependencyGraphFromSources, extractRelativeSpecifiers } = require('../../scripts/lib/agent-proximity/graph');
@@ -45,6 +46,10 @@ test('treeDistance: siblings are closer than cousins', () => {
 // ── line overlap ──
 test('lineRangeOverlap: full overlap when whole-file (no ranges)', () => {
   assert.strictEqual(lineRangeOverlap([], []), 1);
+  for (const wholeFile of [[], undefined, null]) {
+    assert.strictEqual(lineRangeOverlap(wholeFile, [[1, 5]]), 1);
+    assert.strictEqual(lineRangeOverlap([[1, 5]], wholeFile), 1);
+  }
 });
 test('lineRangeOverlap: partial overlapping ranges (overlap coefficient)', () => {
   const r = lineRangeOverlap([[1, 10]], [[5, 14]]);
@@ -57,6 +62,50 @@ test('lineRangeOverlap: smaller edit fully inside the larger ⇒ 1', () => {
 });
 test('lineRangeOverlap: disjoint ranges are 0', () => {
   assert.strictEqual(lineRangeOverlap([[1, 5]], [[20, 25]]), 0);
+});
+test('lineRangeOverlap: unions unordered, reversed and repeated ranges without changing inputs', () => {
+  const a = Object.freeze([
+    Object.freeze([10, 8]), Object.freeze([1, 4]), Object.freeze([3, 6]), Object.freeze([1, 4])
+  ]);
+  const b = Object.freeze([Object.freeze([5, 8]), Object.freeze([8, 9])]);
+  // A covers 1..6 and 8..10; B covers 5..9. Shared lines are 5, 6, 8 and 9.
+  assert.strictEqual(lineRangeOverlap(a, b), 4 / 5);
+  assert.strictEqual(lineRangeOverlap(b, a), 4 / 5);
+});
+test('lineRangeOverlap: counts inclusive endpoints and adjacent ranges once', () => {
+  assert.strictEqual(lineRangeOverlap([[1, 2], [3, 4]], [[4, 7]]), 1 / 4);
+  assert.strictEqual(lineRangeOverlap([[4, 4]], [[4, 7]]), 1);
+});
+test('lineRangeOverlap: agrees with a per-line oracle for small range unions', () => {
+  const fixtures = [
+    [[1, 1]], [[1, 5]], [[6, 9]], [[5, 9]], [[9, 3], [2, 4]],
+    [[1, 3], [2, 5], [1, 3]], [[1, 2], [3, 4]], [[9, 12], [1, 4], [3, 6]]
+  ];
+  const covered = ranges => new Set(ranges.flatMap(([start, end]) =>
+    Array.from({ length: Math.abs(end - start) + 1 }, (_, i) => Math.min(start, end) + i)));
+  for (const a of fixtures) {
+    for (const b of fixtures) {
+      const ca = covered(a);
+      const cb = covered(b);
+      const intersection = [...ca].filter(line => cb.has(line)).length;
+      assert.strictEqual(lineRangeOverlap(a, b), intersection / Math.min(ca.size, cb.size));
+    }
+  }
+});
+test('lineRangeOverlap: large line spans fit in a bounded heap', () => {
+  const result = spawnSync(process.execPath, ['--max-old-space-size=64', '-e', `
+    const { lineRangeOverlap } = require(process.argv[1]);
+    process.stdout.write(JSON.stringify([
+      lineRangeOverlap([[1, 1000000000]], [[500000001, 1500000000]]),
+      lineRangeOverlap([[1, 1000000000]], [[40, 60]]),
+      lineRangeOverlap([[1, 1000000000]], [[1000000001, 2000000000]])
+    ]));
+  `, require.resolve('../../scripts/lib/agent-proximity/distance')], {
+    encoding: 'utf8', timeout: 10000, windowsHide: true
+  });
+  assert.ifError(result.error);
+  assert.strictEqual(result.status, 0, result.stderr);
+  assert.deepStrictEqual(JSON.parse(result.stdout), [0.5, 1, 0]);
 });
 
 // ── dependency graph + distance ──
