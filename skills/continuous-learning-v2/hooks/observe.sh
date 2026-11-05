@@ -76,8 +76,13 @@ _python_install_manager_launcher() {
   # check, so print the shortcut for $1 when it is an alias and one exists.
   # Microsoft Store Python has no such shortcut and keeps its alias. Only the
   # current user's WindowsApps counts: an alias from anywhere else is left alone.
-  local _candidate="$1" _resolved _local
+  # The alias is also kept when it may not be the Install Manager's (Store
+  # Python provides the same name, and either package can own it) and when
+  # PYTHON_MANAGER_DEFAULT picks the runtime, which the alias honours and the
+  # shortcut, generated for one runtime, does not.
+  local _candidate="$1" _resolved _local _store
   [ -n "${LOCALAPPDATA:-}" ] || return 1
+  [ -z "${PYTHON_MANAGER_DEFAULT:-}" ] || return 1
   _resolved="$(command -v "$_candidate" 2>/dev/null || true)"
   case "$_resolved" in */*) ;; *) return 1 ;; esac
   # Git Bash accepts C:/... paths, so swapping separators avoids a cygpath start.
@@ -87,6 +92,10 @@ _python_install_manager_launcher() {
   # is C:\..., so ask whether the two name the same directory instead of
   # comparing strings.
   [ "${_resolved%/*}" -ef "$_local/Microsoft/WindowsApps" ] || return 1
+  # A glob, not a command, so this check starts no process.
+  for _store in "$_local"/Microsoft/WindowsApps/PythonSoftwareFoundation.Python.3*/"${_candidate}.exe"; do
+    [ -e "$_store" ] && return 1
+  done
   [ -f "$_local/Python/bin/${_candidate}.exe" ] && [ -x "$_local/Python/bin/${_candidate}.exe" ] || return 1
   printf '%s\n' "$_local/Python/bin/${_candidate}.exe"
 }
