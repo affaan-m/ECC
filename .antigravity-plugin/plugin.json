@@ -19,8 +19,5 @@
     "tdd",
     "code-review",
     "security"
-  ],
-  "skills": "./skills/",
-  "mcpServers": "./.mcp.json",
-  "hooks": "./hooks/antigravity-hooks.json"
+  ]
 }

@@ -1,0 +1,16 @@
+{
+  "ecc-guardrails": {
+    "PreToolUse": [
+      {
+        "matcher": "run_command|write_file|edit_file",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node scripts/antigravity/hook-bridge.js --hook config-protection",
+            "timeout": 30
+          }
+        ]
+      }
+    ]
+  }
+}

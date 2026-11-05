@@ -9,11 +9,11 @@ const TOOL_NAMES = Object.freeze({
   Write: 'write_file',
   Edit: 'edit_file',
   MultiEdit: 'edit_file',
-  Grep: 'run_command',
-  Glob: 'run_command',
+  Grep: 'grep_search',
+  Glob: 'find_by_name',
   Bash: 'run_command',
   WebSearch: 'search_web',
-  WebFetch: 'search_web',
+  WebFetch: 'read_url_content',
   Task: 'invoke_subagent',
 });
 

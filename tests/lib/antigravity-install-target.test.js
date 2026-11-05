@@ -82,8 +82,11 @@ test('transform maps Claude tools (including MultiEdit/ReadFile/NotebookRead), m
     'read_file',
     'edit_file',
     'write_file',
+    'grep_search',
+    'find_by_name',
     'run_command',
     'search_web',
+    'read_url_content',
     'invoke_subagent',
   ]);
   assert.ok(adapted.includes('## Role'));
@@ -107,6 +110,24 @@ test('transform parses quoted tool scalars and maps haiku to flash', () => {
   const parsed = yaml.load(adapted.match(/^---\n([\s\S]*?)\n---\n/)[1]);
   assert.strictEqual(parsed.model, 'flash');
   assert.deepStrictEqual(parsed.tools, ['read_file', 'edit_file']);
+});
+
+test('search-only agent receives search tools without shell access (run_command)', () => {
+  const yaml = require('js-yaml');
+  const source = [
+    '---',
+    'name: read-only-reviewer',
+    'description: Review without shell',
+    'tools: Read, Grep, Glob',
+    'model: sonnet',
+    '---',
+    '',
+    'Review only.',
+  ].join('\n');
+  const adapted = adaptAntigravityAgent(source, 'agents/read-only-reviewer.md');
+  const parsed = yaml.load(adapted.match(/^---\n([\s\S]*?)\n---\n/)[1]);
+  assert.deepStrictEqual(parsed.tools, ['read_file', 'grep_search', 'find_by_name']);
+  assert.strictEqual(parsed.tools.includes('run_command'), false);
 });
 
 test('transform preserves CRLF line endings consistently on Windows-saved agents', () => {
