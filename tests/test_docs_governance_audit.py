@@ -468,21 +468,16 @@ def test_artifact_scope_reads_html_comments_as_commonmark_does(project: Path) ->
         "Intro \\<!-- [escaped](missing-escaped.md) -->\n\n"
         # -- a comment that opens before a code span ends at its own closer --
         "Note <!-- ` --> `sample` [after-code](missing-after-code.md)\n\n"
-        # -- a comment inside a line ends with its paragraph, so past a blank line it is text --
+        # -- a comment inside a line that does not close on it is text --
         "Intro <!-- note\n\n[real](missing-real.md)\n-->\n\n"
-        # -- one that starts a line is an HTML block: it spans blank lines and takes the rest of
-        # -- the line that holds its closer --
+        # -- one that starts a line after a blank line is a top-level HTML block: it spans blank
+        # -- lines and takes the rest of the line that holds its closer --
         "<!--\n[hidden](missing-hidden.md)\n\n[hidden2](missing-hidden2.md)\n-->\n\n"
         "<!-- c --> [rest](missing-rest.md)\n\n"
-        # -- so does one that starts a list item or a block quote line --
-        "- <!--\n\n  [listed](missing-listed.md)\n  -->\n\n"
+        # -- in a list item or a block quote, only a comment that closes on its line is skipped,
+        # -- and the rest of that line is still audited --
+        "- <!-- c --> [listed](missing-listed.md)\n\n"
         "> <!-- c --> [quoted](missing-quoted.md)\n\n"
-        # -- a list that starts at 2 cannot interrupt a paragraph; one that starts at 1 can --
-        "Paragraph\n2. <!-- c --> [numbered](missing-numbered.md)\n\n"
-        "1. first\n2. <!-- c --> [listed2](missing-listed2.md)\n\n"
-        "1. first\n   continued\n2. <!-- c --> [listed3](missing-listed3.md)\n\n"
-        "Paragraph\n1. <!-- c --> [one](missing-one.md)\n\n"
-        # -- after text in a list item, a comment is inline again --
         "- item <!-- c\n\n  [item-real](missing-item-real.md)\n  -->\n\n"
         # -- a comment where a destination must begin does not make a definition --
         "[foo]: <!-- note --> missing-definition.md\n\n[foo]\n\n"
@@ -495,24 +490,38 @@ def test_artifact_scope_reads_html_comments_as_commonmark_does(project: Path) ->
     )
     result = run_audit(project, "artifacts")
     assert result.returncode == 1
-    assert "Broken Markdown link: 'guide.md' -> 'missing-escaped.md'" in result.stdout
-    assert (
-        "Broken Markdown link: 'guide.md' -> 'missing-after-code.md'" in result.stdout
+    for reported in (
+        "missing-escaped.md",
+        "missing-after-code.md",
+        "missing-real.md",
+        "missing-listed.md",
+        "missing-quoted.md",
+        "missing-item-real.md",
+        "missing-titled.md",
+    ):
+        assert f"Broken Markdown link: 'guide.md' -> '{reported}'" in result.stdout
+    for hidden in (
+        "missing-hidden",
+        "missing-rest.md",
+        "missing-definition.md",
+        "missing-fenced.md",
+    ):
+        assert hidden not in result.stdout
+    assert result.stdout.count("Broken Markdown link") == 7, result.stdout
+
+
+def test_artifact_scope_reports_a_link_that_a_comment_cannot_reach(project: Path) -> None:
+    (project / "guide.md").write_text(
+        # -- the block quote ends the list item, so the comment never closes and the link is live --
+        "- item <!--\ntext\n  [live](missing.md)\n> > -->\n\n"
+        # -- a comment block at the top level hides list and quote lines up to its closer --
+        "<!--\n- [draft](missing-draft.md)\n> -->\n",
+        encoding="utf-8",
     )
-    assert "Broken Markdown link: 'guide.md' -> 'missing-real.md'" in result.stdout
-    assert "missing-hidden" not in result.stdout
-    assert "missing-rest.md" not in result.stdout
-    assert "missing-listed.md" not in result.stdout
-    assert "missing-quoted.md" not in result.stdout
-    assert "Broken Markdown link: 'guide.md' -> 'missing-item-real.md'" in result.stdout
-    assert "Broken Markdown link: 'guide.md' -> 'missing-numbered.md'" in result.stdout
-    assert "missing-listed2.md" not in result.stdout
-    assert "missing-listed3.md" not in result.stdout
-    assert "missing-one.md" not in result.stdout
-    assert "missing-definition.md" not in result.stdout
-    assert "Broken Markdown link: 'guide.md' -> 'missing-titled.md'" in result.stdout
-    assert "missing-fenced.md" not in result.stdout
-    assert result.stdout.count("Broken Markdown link") == 6, result.stdout
+    result = run_audit(project, "artifacts")
+    assert result.returncode == 1
+    assert "Broken Markdown link: 'guide.md' -> 'missing.md'" in result.stdout
+    assert "missing-draft.md" not in result.stdout
 
 
 def test_artifact_scope_ignores_title_with_escaped_quotes(project: Path) -> None:

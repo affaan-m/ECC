@@ -18,11 +18,6 @@ REFERENCE_DEFINITION_RE = re.compile(
 REFERENCE_USAGE_RE = re.compile(
     r"(?<![\\])(?:\\\\)*\[(?P<text>[^\]\n]+)\](?:\[(?P<label>[^\]\n]*)\])?"
 )
-BLANK_LINE_RE = re.compile(r"\n[ \t]*\r?\n")
-# -- what may come before a block on its line: indentation and block quote or list markers --
-CONTAINER_PREFIX_RE = re.compile(r"(?:[ \t]*(?:>|[-+*][ \t]|\d{1,9}[.)][ \t]))*[ \t]*")
-CONTAINER_MARKER_RE = re.compile(r"[ \t]*(?:>|[-+*][ \t]|\d{1,9}[.)][ \t])")
-ORDERED_MARKER_RE = re.compile(r"[ \t]*(\d{1,9})[.)]")
 LINK_TITLE_RE = re.compile(
     r'\s+(?:"(?:\\.|[^"\\])*"|\'(?:\\.|[^\'\\])*\'|\([^()]*\))\s*$'
 )
@@ -39,16 +34,19 @@ def without_fenced_code(text: str) -> str:
     # -- inside an HTML comment block that opened on an earlier line, a fence line is comment
     # -- text, which the inline pass blanks with the rest of the comment --
     in_comment = False
+    after_blank = True
     for line in text.splitlines(keepends=True):
         if in_comment:
             in_comment = "-->" not in line
             output.append(line)
+            after_blank = False
             continue
         marker = re.match(r"^ {0,3}(`{3,}|~{3,})(.*)$", line)
         if fence_character is None and marker:
             fence_character = marker.group(1)[0]
             fence_length = len(marker.group(1))
             output.append("\n" if line.endswith("\n") else "")
+            after_blank = True
             continue
         if fence_character is not None:
             closing = re.match(
@@ -59,10 +57,12 @@ def without_fenced_code(text: str) -> str:
                 fence_character = None
                 fence_length = 0
             output.append("\n" if line.endswith("\n") else "")
+            after_blank = True
             continue
-        opener = re.match(r"^ {0,3}<!--", line)
-        in_comment = bool(opener) and "-->" not in line[opener.end() - 2 :]
+        # -- the same comment blocks as `_html_comment_end`: <!-- at column 0 after a blank line --
+        in_comment = after_blank and line.startswith("<!--") and "-->" not in line[2:]
         output.append(line)
+        after_blank = not line.strip()
     return "".join(output)
 
 
@@ -73,47 +73,22 @@ def _is_escaped(text: str, index: int) -> bool:
     return backslashes % 2 == 1
 
 
-def _continues_a_paragraph(text: str, line_start: int) -> bool:
-    """Whether the line at `line_start` follows a paragraph line.
-
-    A blank line, a list or block quote line, and an indented line, which may continue a list
-    item, are not taken for one.
-    """
-    if line_start == 0:
-        return False
-    previous = text[text.rfind("\n", 0, line_start - 1) + 1 : line_start - 1]
-    return (
-        bool(previous.strip())
-        and not previous[0].isspace()
-        and not CONTAINER_MARKER_RE.match(previous)
-    )
-
-
-def _html_comment_end(text: str, start: int, closing: int, blank: int) -> int:
+def _html_comment_end(text: str, start: int, closing: int) -> int:
     """Where the comment that opens at `start` and closes at `closing` ends, or -1 if it is text.
 
-    One that starts a block, after nothing but indentation and block quote or list markers on
-    its line (as in `- <!--`), opens an HTML block. The block may span blank lines and takes the
-    rest of the line that holds its closer. A list that starts at a number other than 1 cannot
-    interrupt a paragraph, so after a paragraph line `2. <!--` is still paragraph text. One after
-    text on its line is inline HTML, which cannot outlast its paragraph, so when the first blank
-    line after it, at `blank`, comes before its closer, it is text.
+    One whose `<!--` starts a line at column 0, after a blank line or at the start of the text,
+    opens a top-level HTML block. No list item or block quote holds that block, so only its closer
+    ends it: it may span lines and takes the rest of the line that holds the closer. Any other
+    comment is hidden only when it closes on the line it opens on, which it cannot leave. Across
+    lines it stays text, so a container that ends before its closer does not hide the links that
+    follow.
     """
-    # -- only the 64 characters before the opener are read, so a long line stays cheap --
-    window = max(0, start - 64)
-    line_start = text.rfind("\n", window, start) + 1
-    if (line_start or not window) and CONTAINER_PREFIX_RE.fullmatch(
-        text, line_start, start
-    ):
-        ordered = ORDERED_MARKER_RE.match(text, line_start, start)
-        if not (
-            ordered
-            and int(ordered.group(1)) != 1
-            and _continues_a_paragraph(text, line_start)
-        ):
+    if start == 0 or text[start - 1] == "\n":
+        previous_line = text[text.rfind("\n", 0, start - 1) + 1 : start - 1] if start else ""
+        if not previous_line.strip():
             newline = text.find("\n", closing + 3)
             return len(text) if newline == -1 else newline
-    return -1 if blank < closing else closing + 3
+    return -1 if text.find("\n", start, closing) != -1 else closing + 3
 
 
 def without_inline_code_and_html_comments(text: str) -> str:
@@ -126,9 +101,8 @@ def without_inline_code_and_html_comments(text: str) -> str:
     """
     output: list[str] = []
     cursor = 0
-    # -- the first closer after an opener and the first blank line after it, kept while valid --
+    # -- the first closer after an opener, kept while it is still ahead --
     closing = -1
-    blank = -1
     comments_can_close = True
     while cursor < len(text):
         if (
@@ -138,12 +112,7 @@ def without_inline_code_and_html_comments(text: str) -> str:
         ):
             if closing < cursor + 2:
                 closing = text.find("-->", cursor + 2)
-            if blank < cursor:
-                match = BLANK_LINE_RE.search(text, cursor)
-                blank = match.start() if match else len(text)
-            end = (
-                -1 if closing == -1 else _html_comment_end(text, cursor, closing, blank)
-            )
+            end = -1 if closing == -1 else _html_comment_end(text, cursor, closing)
             if end != -1:
                 output.extend(
                     "\n" if character == "\n" else "\0"
