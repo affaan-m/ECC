@@ -160,9 +160,16 @@ function isCommandTimeout(error, killSignal = 'SIGKILL') {
     || (error?.killed === true && error?.signal === killSignal);
 }
 
-// On Windows the npm-installed Codex CLI is a codex.cmd shim that execFile
-// cannot spawn without a shell; resolve it to node + the JS entry point.
-// An explicitly configured command is used as-is.
+/**
+ * Choose how to launch the Codex CLI. On Windows the npm-installed CLI is a
+ * codex.cmd shim that execFile cannot spawn without a shell, so the default
+ * resolver maps it to node + the shim's JS entry point. An explicitly
+ * configured command is used as-is.
+ * @param {object} env Environment used for PATH lookup.
+ * @param {{command?: string}} options
+ * @param {{command?: string, resolveCodexCommand?: Function}} dependencies
+ * @returns {{command: string, prefixArgs: string[]}}
+ */
 function resolveCodexLauncher(env, options, dependencies) {
   const explicitCommand = dependencies.command || options.command;
   if (explicitCommand) return { command: explicitCommand, prefixArgs: [] };
