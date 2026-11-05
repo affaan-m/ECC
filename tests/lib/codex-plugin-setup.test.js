@@ -539,6 +539,25 @@ async function runTests() {
       assert.strictEqual(resolverCalls.length, 1);
       assert.strictEqual(resolverCalls[0].env, env);
     }],
+    ['reports only Codex argv when a prefixed launcher fails', async () => {
+      const entry = 'C:\\npm\\node_modules\\@openai\\codex\\bin\\codex.js';
+      const crashed = Object.assign(new Error('Command failed'), { code: 1, stderr: 'boom' });
+      const fake = createExecFile([
+        { command: 'C:\\node\\node.exe', args: [entry, ...PLUGIN_LIST], error: crashed },
+      ]);
+
+      await assert.rejects(
+        runCodexCommand(PLUGIN_LIST, {}, {
+          execFile: fake.execFile,
+          resolveCodexCommand: () => ({ command: 'C:\\node\\node.exe', prefixArgs: [entry] }),
+        }),
+        error => {
+          assert.strictEqual(error.code, 'CODEX_COMMAND_FAILED');
+          assert.deepStrictEqual(error.argv, PLUGIN_LIST);
+          return true;
+        }
+      );
+    }],
     ['uses an explicit Codex command as-is and reports Codex argv without launcher prefixes', async () => {
       const missing = Object.assign(new Error('spawn ENOENT'), { code: 'ENOENT' });
       const fake = createExecFile([
