@@ -1,0 +1,26 @@
+{
+  "name": "ecc",
+  "version": "2.2.3",
+  "description": "Cross-harness operating system for Antigravity 2.0 and agy CLI - skills, rules, hooks, and agents",
+  "author": {
+    "name": "Affaan Mustafa",
+    "url": "https://x.com/affaanmustafa"
+  },
+  "homepage": "https://ecc.tools",
+  "repository": "https://github.com/affaan-m/ECC",
+  "license": "MIT",
+  "keywords": [
+    "antigravity",
+    "agy",
+    "agents",
+    "skills",
+    "hooks",
+    "rules",
+    "tdd",
+    "code-review",
+    "security"
+  ],
+  "skills": "./skills/",
+  "mcpServers": "./.mcp.json",
+  "hooks": "./hooks/antigravity-hooks.json"
+}

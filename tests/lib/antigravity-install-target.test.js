@@ -79,14 +79,12 @@ test('transform maps Claude tools (including MultiEdit/ReadFile/NotebookRead), m
   assert.strictEqual(parsed.model, 'pro');
   assert.strictEqual(Object.hasOwn(parsed, 'color'), false);
   assert.deepStrictEqual(parsed.tools, [
-    'view_file',
-    'replace_file_content',
-    'write_to_file',
-    'grep_search',
-    'find_by_name',
+    'read_file',
+    'edit_file',
+    'write_file',
     'run_command',
     'search_web',
-    'read_url_content',
+    'invoke_subagent',
   ]);
   assert.ok(adapted.includes('## Role'));
   assert.ok(adapted.includes('You simplify complex code.'));
@@ -108,7 +106,7 @@ test('transform parses quoted tool scalars and maps haiku to flash', () => {
   const adapted = adaptAntigravityAgent(source, 'agents/fast-helper.md');
   const parsed = yaml.load(adapted.match(/^---\n([\s\S]*?)\n---\n/)[1]);
   assert.strictEqual(parsed.model, 'flash');
-  assert.deepStrictEqual(parsed.tools, ['view_file', 'replace_file_content']);
+  assert.deepStrictEqual(parsed.tools, ['read_file', 'edit_file']);
 });
 
 test('transform preserves CRLF line endings consistently on Windows-saved agents', () => {
@@ -129,7 +127,7 @@ test('transform preserves CRLF line endings consistently on Windows-saved agents
   assert.ok(adapted.includes('\r\n'), 'Expected CRLF line endings to be preserved');
   assert.ok(!/[^\r]\n/.test(adapted), 'Expected no mixed bare LF line endings in CRLF output');
   assert.ok(!adapted.includes('color:'));
-  assert.ok(adapted.includes('replace_file_content'));
+  assert.ok(adapted.includes('edit_file'));
 });
 
 test('transform preserves mixed body line endings verbatim without rewriting body LFs', () => {
@@ -167,6 +165,7 @@ test('every planned operation is contained within .agents', () => {
     { id: 'agents-core', paths: ['agents', '.agents', 'AGENTS.md'] },
     { id: 'commands-core', paths: ['commands'] },
     { id: 'framework-language', paths: ['skills/api-design'] },
+    { id: 'hooks-core', paths: ['hooks'] },
   ]);
   const root = path.join('/project', '.agents');
   assert.ok(operations.length > 0);
@@ -177,6 +176,15 @@ test('every planned operation is contained within .agents', () => {
       `operation escapes .agents: ${operation.destinationPath}`
     );
   }
+});
+
+test('plans hook operation copying antigravity-hooks.json to .agents/hooks.json', () => {
+  const operations = planFor([
+    { id: 'hooks-core', paths: ['hooks'] },
+  ]);
+  assert.strictEqual(operations.length, 1);
+  assert.strictEqual(operations[0].destinationPath, path.join('/project', '.agents', 'hooks.json'));
+  assert.strictEqual(operations[0].strategy, 'copy-file');
 });
 
 test('Antigravity installs non-Markdown agent assets byte-for-byte while adapting Markdown agents', () => {

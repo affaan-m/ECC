@@ -8,7 +8,7 @@ const {
   normalizeRelativePath,
 } = require('./helpers');
 
-const SUPPORTED_SOURCE_PREFIXES = ['rules', 'commands', 'agents', 'skills'];
+const SUPPORTED_SOURCE_PREFIXES = ['rules', 'commands', 'agents', 'skills', 'hooks'];
 
 function supportsAntigravitySourcePath(sourceRelativePath) {
   const normalizedPath = normalizeRelativePath(sourceRelativePath);
@@ -127,6 +127,21 @@ module.exports = createInstallTargetAdapter({
                 path.join(targetRoot, 'skills', skillRelativePath),
                 'preserve-relative-path'
               ),
+            ];
+          }
+
+          if (
+            normalizedSourcePath === 'hooks'
+            || normalizedSourcePath.startsWith('hooks/')
+          ) {
+            const antigravityHooksSource = path.join('hooks', 'antigravity-hooks.json');
+            return [
+              createManagedOperation({
+                moduleId: module.id,
+                sourceRelativePath: antigravityHooksSource,
+                destinationPath: path.join(targetRoot, 'hooks.json'),
+                strategy: 'copy-file',
+              }),
             ];
           }
 

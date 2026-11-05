@@ -3,17 +3,18 @@
 const { normalizeAgentTools } = require('../agent-tools');
 
 const TOOL_NAMES = Object.freeze({
-  Read: 'view_file',
-  ReadFile: 'view_file',
-  NotebookRead: 'view_file',
-  Write: 'write_to_file',
-  Edit: 'replace_file_content',
-  MultiEdit: 'replace_file_content',
-  Grep: 'grep_search',
-  Glob: 'find_by_name',
+  Read: 'read_file',
+  ReadFile: 'read_file',
+  NotebookRead: 'read_file',
+  Write: 'write_file',
+  Edit: 'edit_file',
+  MultiEdit: 'edit_file',
+  Grep: 'run_command',
+  Glob: 'run_command',
   Bash: 'run_command',
   WebSearch: 'search_web',
-  WebFetch: 'read_url_content',
+  WebFetch: 'search_web',
+  Task: 'invoke_subagent',
 });
 
 const MODEL_NAMES = Object.freeze({
