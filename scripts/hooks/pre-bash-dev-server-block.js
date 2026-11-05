@@ -197,8 +197,9 @@ function collectCheckSegments(cmd) {
   const queue = [cmd, ...segments];
   const seen = new Set();
 
-  while (queue.length) {
-    const current = queue.shift();
+  // Read by index: shift() copies the queue each time, which is quadratic on a long command.
+  for (let head = 0; head < queue.length; head++) {
+    const current = queue[head];
     if (seen.has(current)) continue;
     seen.add(current);
 
