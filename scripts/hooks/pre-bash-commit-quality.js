@@ -170,20 +170,45 @@ function findFileIssues(filePath) {
  * The body and expansion mode of the here-document that `value` starts with,
  * as in `$(cat <<'EOF'`, or null.
  * It ends at the line that holds only the delimiter, after leading tabs for <<-, which also
- * strips them from the body.
+ * strips them from the body. In an unquoted here-document, a line that ends in an unescaped
+ * backslash is joined with the next one before the delimiter is looked for, so a delimiter
+ * line right after it does not end the body. A quoted body stays literal, as Bash 4 and later
+ * and zsh read it; `bash32Body` is how Bash 3.2 reads it inside "$(...)", with those lines
+ * joined too.
  * @param {string} value
- * @returns {{body: string, expands: boolean}|null}
+ * @returns {{body: string, expands: boolean, bash32Body: string|null}|null}
  */
 function heredocBody(value) {
   const opener = /^\$\(\s*cat\s+<<(-?)\s*(['"]?)([A-Za-z_][\w.-]*)\2[ \t]*\r?\n/.exec(value);
   if (!opener) return null;
   const [, stripTabs, quote, delimiter] = opener;
-  const lines = value.slice(opener[0].length).split('\n').map(line => {
-    const text = line.replace(/\r$/, '');
-    return stripTabs ? text.replace(/^\t+/, '') : text;
-  });
-  const end = lines.indexOf(delimiter);
-  return end === -1 ? null : { body: lines.slice(0, end).join('\n'), expands: quote === '' };
+  const lines = value.slice(opener[0].length).split('\n').map(line => line.replace(/\r$/, ''));
+  const read = joinLines => {
+    const body = [];
+    let joined = '';
+    for (const line of lines) {
+      // <<- strips leading tabs while the line read so far is empty, so not from a line
+      // that a backslash continues after some text
+      const text = joined + (stripTabs && !joined ? line.replace(/^\t+/, '') : line);
+      // An odd number of trailing backslashes escapes the newline
+      if (joinLines && /(?:^|[^\\])(?:\\\\)*\\$/.test(text)) {
+        joined = text.slice(0, -1);
+        continue;
+      }
+      joined = '';
+      if (text === delimiter) return body.join('\n');
+      body.push(text);
+    }
+    return null;
+  };
+  const expands = quote === '';
+  const body = read(expands);
+  return body === null ? null : { body, expands, bash32Body: expands ? null : read(true) };
+}
+
+// Git drops leading blank lines and trailing whitespace, and the first line left is the subject.
+function subjectOf(message) {
+  return (message.split('\n').find(line => line.trim()) || '').trimEnd();
 }
 
 // Bash expands parameters, commands and arithmetic in an unquoted here-document.
@@ -230,11 +255,20 @@ function validateCommitMessage(command) {
   // In double quotes, Bash drops the backslash before $ ` " \ and drops a backslash-newline,
   // a line continuation, altogether. Before any other character the backslash stays.
   const doubleQuoted = messageMatch[1]?.replace(/\\([\n$`"\\])/g, (escape, next) => (next === '\n' ? '' : next));
-  const message = heredoc?.body ?? doubleQuoted ?? messageMatch[2] ?? messageMatch[3];
-  // The format rules apply to the subject: git drops leading blank lines and trailing
-  // whitespace, and the first line left is the subject.
-  const subject = (message.split('\n').find(line => line.trim()) || '').trimEnd();
+  // An unquoted here-document also loses the backslash before $, ` and \.
+  const heredocMessage = heredoc && (heredoc.expands ? heredoc.body.replace(/\\([$`\\])/g, '$1') : heredoc.body);
+  const message = heredocMessage ?? doubleQuoted ?? messageMatch[2] ?? messageMatch[3];
+  // The format rules apply to the subject.
+  const subject = subjectOf(message);
   const issues = [];
+
+  if (heredoc?.bash32Body != null && subjectOf(heredoc.bash32Body) !== subject) {
+    issues.push({
+      type: 'shell-dependent',
+      message: 'Bash 3.2 joins a subject line that ends in a backslash with the next line, even with a quoted delimiter',
+      suggestion: 'Do not end the subject line with a backslash'
+    });
+  }
   
   // Check conventional commit format
   const conventionalCommit = /^(feat|fix|docs|style|refactor|test|chore|build|ci|perf|revert)(\(.+\))?:\s*.+/;

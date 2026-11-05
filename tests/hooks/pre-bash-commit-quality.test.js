@@ -547,6 +547,61 @@ if (test('treats a backslash as literal inside a single-quoted commit message', 
   assert.ok(res.issues.some(issue => issue.type === 'format'));
 })) passed++; else failed++;
 
+if (test('joins a continued line of an unquoted here-document, as Bash does', () => {
+  const res = hook.validateCommitMessage('git commit -m "$(cat <<EOF\nfix: \\\nUpdate input.\nEOF\n)"');
+  assert.strictEqual(res.message, 'fix: Update input.');
+  assert.deepStrictEqual(res.issues.map(i => i.type), ['capitalization', 'punctuation']);
+  // A delimiter line right after a continued line belongs to the body
+  assert.strictEqual(
+    hook.validateCommitMessage('git commit -m "$(cat <<EOF\nfix: a \\\nEOF\nb\nEOF\n)"').message,
+    'fix: a EOF\nb'
+  );
+  // An escaped backslash does not continue the line, and the escaping backslash is dropped
+  assert.strictEqual(
+    hook.validateCommitMessage('git commit -m "$(cat <<EOF\nfix: a \\\\\nb \\` c\nEOF\n)"').message,
+    'fix: a \\\nb ` c'
+  );
+})) passed++; else failed++;
+
+if (test('keeps a quoted here-document literal and notes that Bash 3.2 joins it', () => {
+  const res = hook.validateCommitMessage('git commit -m "$(cat <<\'EOF\'\nfix: \\\nUpdate input.\nEOF\n)"');
+  assert.strictEqual(res.message, 'fix: \\\nUpdate input.');
+  assert.deepStrictEqual(res.issues.map(i => i.type), ['shell-dependent']);
+  assert.deepStrictEqual(
+    hook.validateCommitMessage('git commit -m "$(cat <<\'EOF\'\nfix: add a check\n\nA body line \\\nEOF\n)"').issues,
+    []
+  );
+})) passed++; else failed++;
+
+if (process.platform !== 'win32') {
+  if (test('reads the message that Bash and Git record for a here-document', () => {
+    const bashMajor = Number(spawnSync('/bin/bash', ['-c', 'echo "${BASH_VERSINFO[0]}"'], { encoding: 'utf8' }).stdout);
+    const forms = [
+      ['EOF', 'fix: \\\nUpdate input.'],
+      ['EOF', 'fix: a \\\nEOF\nb'],
+      ['EOF', 'fix: a \\\\\nb \\` c'],
+      ['-EOF', '\tfix: \\\n\tUpdate input.'],
+      ['-EOF', '\tfix: a\n\t\\\n\tb'],
+      ["'EOF'", 'fix: \\\nUpdate input.'],
+      ['"EOF"', 'fix: keep \\\\ and \\$HOME'],
+    ];
+    inTempRepo(repoDir => {
+      for (const [delimiter, body] of forms) {
+        const command = `git commit -q --allow-empty -m "$(cat <<${delimiter}\n${body}\nEOF\n)"`;
+        const run = spawnSync('/bin/bash', ['-c', command], { cwd: repoDir, encoding: 'utf8' });
+        assert.strictEqual(run.status, 0, run.stderr);
+        const recorded = spawnSync('git', ['log', '-1', '--format=%B'], { cwd: repoDir, encoding: 'utf8' }).stdout.trimEnd();
+        const res = hook.validateCommitMessage(command);
+        if (bashMajor < 4 && res.issues.some(i => i.type === 'shell-dependent')) {
+          assert.notStrictEqual(recorded, res.message, `Bash 3.2 joins the quoted body of ${JSON.stringify(command)}`);
+        } else {
+          assert.strictEqual(res.message, recorded, `message of ${JSON.stringify(command)}`);
+        }
+      }
+    });
+  })) passed++; else failed++;
+}
+
 if (test('drops a line continuation from a double-quoted message, as Bash does', () => {
   const res = hook.validateCommitMessage('git commit -m "\\\nfix: handle empty input"');
   assert.strictEqual(res.message, 'fix: handle empty input');
