@@ -167,22 +167,35 @@ function findFileIssues(filePath) {
 }
 
 /**
- * The body of the here-document that `value` starts with, as in `$(cat <<'EOF'`, or null.
+ * The body and expansion mode of the here-document that `value` starts with,
+ * as in `$(cat <<'EOF'`, or null.
  * It ends at the line that holds only the delimiter, after leading tabs for <<-, which also
  * strips them from the body.
  * @param {string} value
- * @returns {string|null}
+ * @returns {{body: string, expands: boolean}|null}
  */
 function heredocBody(value) {
   const opener = /^\$\(\s*cat\s+<<(-?)\s*(['"]?)([A-Za-z_][\w.-]*)\2[ \t]*\r?\n/.exec(value);
   if (!opener) return null;
-  const [, stripTabs, , delimiter] = opener;
+  const [, stripTabs, quote, delimiter] = opener;
   const lines = value.slice(opener[0].length).split('\n').map(line => {
     const text = line.replace(/\r$/, '');
     return stripTabs ? text.replace(/^\t+/, '') : text;
   });
   const end = lines.indexOf(delimiter);
-  return end === -1 ? null : lines.slice(0, end).join('\n');
+  return end === -1 ? null : { body: lines.slice(0, end).join('\n'), expands: quote === '' };
+}
+
+// Bash expands parameters, commands and arithmetic in an unquoted here-document.
+// Only backslashes before $, `, \\ and newline suppress the following character.
+function hasHeredocExpansion(body) {
+  for (let i = 0; i < body.length; i++) {
+    const ch = body[i];
+    const next = body[i + 1] || '';
+    if (ch === '\\' && next && '$`\\\n'.includes(next)) { i++; continue; }
+    if (ch === '`' || (ch === '$' && next && (/[A-Za-z0-9_]/.test(next) || '$@*#?!-({['.includes(next)))) return true;
+  }
+  return false;
 }
 
 /**
@@ -196,7 +209,7 @@ function validateCommitMessage(command) {
   // newline) so an embedded escaped quote does not truncate the subject, and allowing
   // the OTHER quote char inside the body; when unquoted, capture the full remaining
   // tail, not just the first token)
-  const messageMatch = command.match(/(?:-m|--message)[=\s]+(?:"((?:\\[\s\S]|[^"\\])*)"|'((?:\\.|[^'\\])*)'|([^"']+?)\s*$)/);
+  const messageMatch = command.match(/(?:-m|--message)[=\s]+(?:"((?:\\[\s\S]|[^"\\])*)"|'([^']*)'|([^"']+?)\s*$)/);
   if (!messageMatch) return null;
   
   // A message written as -m "$(cat <<'EOF' ... EOF)", as Claude Code writes them, is the
@@ -204,10 +217,20 @@ function validateCommitMessage(command) {
   const heredoc = messageMatch[1]?.startsWith('$(')
     ? heredocBody(command.slice(messageMatch.index + messageMatch[0].indexOf('"') + 1))
     : null;
+  if (heredoc?.expands && hasHeredocExpansion(heredoc.body)) {
+    return {
+      message: null,
+      issues: [{
+        type: 'unverifiable',
+        message: 'Cannot validate a commit message with unquoted here-document expansions',
+        suggestion: 'Quote the here-document delimiter to keep the message literal'
+      }]
+    };
+  }
   // In double quotes, Bash drops the backslash before $ ` " \ and drops a backslash-newline,
   // a line continuation, altogether. Before any other character the backslash stays.
   const doubleQuoted = messageMatch[1]?.replace(/\\([\n$`"\\])/g, (escape, next) => (next === '\n' ? '' : next));
-  const message = heredoc ?? doubleQuoted ?? messageMatch[2] ?? messageMatch[3];
+  const message = heredoc?.body ?? doubleQuoted ?? messageMatch[2] ?? messageMatch[3];
   // The format rules apply to the subject: git drops leading blank lines and trailing
   // whitespace, and the first line left is the subject.
   const subject = (message.split('\n').find(line => line.trim()) || '').trimEnd();

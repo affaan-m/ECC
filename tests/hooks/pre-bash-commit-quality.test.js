@@ -525,6 +525,28 @@ if (test('still reports a bad subject inside a here-document', () => {
   assert.deepStrictEqual(res.issues.map(i => i.type), ['format', 'punctuation']);
 })) passed++; else failed++;
 
+if (test('warns when an unquoted here-document can expand the commit message', () => {
+  const command = 'git commit -m "$(cat <<EOF\nfix: ${EMPTY}\nEOF\n)"';
+  const res = hook.validateCommitMessage(command);
+  assert.strictEqual(res.message, null);
+  assert.deepStrictEqual(res.issues.map(i => i.type), ['unverifiable']);
+  assert.deepStrictEqual(
+    hook.validateCommitMessage('git commit -m "$(cat <<\'EOF\'\nfix: ${EMPTY}\nEOF\n)"').issues,
+    []
+  );
+  assert.deepStrictEqual(
+    hook.validateCommitMessage('git commit -m "$(cat <<EOF\nfix: \\${EMPTY}\nEOF\n)"').issues,
+    []
+  );
+})) passed++; else failed++;
+
+if (test('treats a backslash as literal inside a single-quoted commit message', () => {
+  const res = hook.validateCommitMessage(String.raw`git commit -m 'Update path\'`);
+  assert.ok(res, 'expected a validation result for valid Bash quoting');
+  assert.strictEqual(res.message, 'Update path' + String.fromCharCode(92));
+  assert.ok(res.issues.some(issue => issue.type === 'format'));
+})) passed++; else failed++;
+
 if (test('drops a line continuation from a double-quoted message, as Bash does', () => {
   const res = hook.validateCommitMessage('git commit -m "\\\nfix: handle empty input"');
   assert.strictEqual(res.message, 'fix: handle empty input');
