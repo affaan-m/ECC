@@ -107,7 +107,7 @@ function writePython(dir, name, label) {
 
 function run(dirs, pathDirs, env = {}, { checkStatus = true } = {}) {
   const baseEnv = { ...process.env };
-  for (const key of ['CLV2_PYTHON_CMD', 'CLV2_CONFIG', 'CLAUDE_PROJECT_DIR', 'ECC_HOOK_PROFILE', 'ECC_SKIP_OBSERVE']) {
+  for (const key of ['CLV2_PYTHON_CMD', 'CLV2_CONFIG', 'CLV2_NO_PROJECT', 'CLAUDE_PROJECT_DIR', 'ECC_HOOK_PROFILE', 'ECC_SKIP_OBSERVE', 'PYTHON_MANAGER_DEFAULT']) {
     delete baseEnv[key];
   }
   baseEnv.CLAUDE_CODE_ENTRYPOINT = 'cli';
@@ -197,6 +197,26 @@ test('keeps the alias when Python\\bin has no launcher (Microsoft Store Python)'
   writePython(dirs.alias, 'python3', 'alias');
   const calls = run(dirs, [dirs.alias]);
   assert.deepStrictEqual(calls, [['alias', 'python3']]);
+}));
+
+// With Store Python installed too, either package can own the top-level
+// alias (Settings > App execution aliases), so it is not known to be the
+// Install Manager's.
+test('keeps the alias when Microsoft Store Python also provides it', () => withTree(dirs => {
+  writePython(dirs.alias, 'python3', 'alias');
+  writePython(dirs.launcher, 'python3.exe', 'launcher');
+  const store = path.join(dirs.alias, 'PythonSoftwareFoundation.Python.3.13_qbz5n2kfra8p0');
+  fs.mkdirSync(store, { recursive: true });
+  fs.writeFileSync(path.join(store, 'python3.exe'), '');
+  assert.deepStrictEqual(run(dirs, [dirs.alias]).map(c => c[0]), ['alias']);
+}));
+
+// The alias honours PYTHON_MANAGER_DEFAULT; the Python\bin shortcut always
+// starts the runtime it was generated for.
+test('keeps the alias when PYTHON_MANAGER_DEFAULT chooses the runtime', () => withTree(dirs => {
+  writePython(dirs.alias, 'python3', 'alias');
+  writePython(dirs.launcher, 'python3.exe', 'launcher');
+  assert.deepStrictEqual(run(dirs, [dirs.alias], { PYTHON_MANAGER_DEFAULT: '3.13' }).map(c => c[0]), ['alias']);
 }));
 
 test('keeps the alias when LOCALAPPDATA is unset', () => withTree(dirs => {
