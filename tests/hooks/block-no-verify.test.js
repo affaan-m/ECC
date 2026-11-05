@@ -2218,6 +2218,42 @@ for (const [name, command, expected] of sedCases) {
   })) passed++; else failed++;
 }
 
+// --- Producer output follows the shell's descriptors (checked against bash) ---
+
+// Each command ends in `| bash` or `| sh`. With that receiver replaced by `cat`,
+// bash itself shows what the shell would have read, and the hook must block
+// exactly when that text runs `git push` or `git commit` with --no-verify.
+const producerCases = [
+  "{ exec 2>&1; echo 'git push --no-verify' >&2; } | bash",
+  "( exec 3>&1; echo 'git push --no-verify' >&3 ) | sh",
+  "{ echo 'git push --no-verify' >&2; } 2>&1 | bash",
+  "{ echo 'git push --no-verify' >&2; } | bash",
+  "{ echo 'git push --no-verify' >/dev/null | cat; } | bash",
+  "echo 'git push --no-verify' >&2 | bash",
+  "echo 'git push --no-verify' 2>&1 >/dev/null | bash",
+  "echo 'git push --no-verify' >/dev/stdout | bash",
+  "echo 'git push --no-verify' | cat >/dev/null | bash",
+  "echo 'git push --no-verify' | echo hi | bash",
+  "echo 'git push --no-verify' | cat <<< 'ls' | bash",
+  "printf 'git %s --no-verify\\n' push | sh",
+  "printf -- 'git %b --no-verify\\n' push | sh",
+  "printf '%s %s %s\\n' git push --no-verify | sh",
+  "printf 'git push %s\\n' --no-verify | sh",
+  "printf '%%s git push\\n' | sh",
+  "{ printf 'git pu'; printf 'sh --no-verify'; } | sh",
+];
+if (process.platform !== 'win32') {
+  for (const command of producerCases) {
+    if (test(`producer output as bash reads it: ${command}`, () => {
+      const shown = command.replace(/\|\s*(bash|sh)$/, '| cat');
+      const bash = spawnSync('/bin/bash', ['-c', shown], { encoding: 'utf8' });
+      assert.strictEqual(bash.status, 0, bash.stderr);
+      const bypass = /\bgit\s+(?:push|commit)\b[^\n]*\s--no-verify\b/.test(bash.stdout);
+      assert.strictEqual(runHook({ tool_input: { command } }).code, bypass ? 2 : 0, `bash reads ${JSON.stringify(bash.stdout)}`);
+    })) passed++; else failed++;
+  }
+}
+
 console.log('─'.repeat(50));
 console.log(`Passed: ${passed}  Failed: ${failed}`);
 
