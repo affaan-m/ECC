@@ -50,8 +50,8 @@ function writeTranscript(tokens, model = 'claude-fable-5') {
   return file;
 }
 
-function inputFor(transcriptPath) {
-  return JSON.stringify({ session_id: 'test', transcript_path: transcriptPath, prompt: 'continue' });
+function inputFor(transcriptPath, extra = {}) {
+  return JSON.stringify({ session_id: 'test', transcript_path: transcriptPath, prompt: 'continue', ...extra });
 }
 
 function runTests() {
@@ -60,9 +60,37 @@ function runTests() {
   let passed = 0;
   let failed = 0;
   const cleanup = [];
-  const env = {}; // isolated env: no ECC_* leakage from the host
+  // Enforcement is opt-in: the gate only fires in enforce mode. These tests
+  // exercise the firing path, so they run with enforce set. The default
+  // (advisory) posture is covered separately below. Isolated env object: no
+  // ECC_* leakage from the host.
+  const env = { ECC_CONTEXT_GATE_MODE: 'enforce' };
 
-  console.log('run() — gate behavior:');
+  console.log('opt-in / default posture:');
+
+  if (
+    test('default install (no mode set) stays silent even deep in the band', () => {
+      // 97% occupancy, but with no ECC_CONTEXT_GATE_MODE the gate is inert and
+      // does no per-prompt checkpoint work.
+      const t = writeTranscript(970000);
+      cleanup.push(t);
+      assert.strictEqual(run(inputFor(t), { env: {} }), '');
+    })
+  )
+    passed++;
+  else failed++;
+
+  if (
+    test('ECC_CONTEXT_GATE_MODE=off stays silent in the band', () => {
+      const t = writeTranscript(970000);
+      cleanup.push(t);
+      assert.strictEqual(run(inputFor(t), { env: { ECC_CONTEXT_GATE_MODE: 'off' } }), '');
+    })
+  )
+    passed++;
+  else failed++;
+
+  console.log('\nrun() — gate behavior (enforce mode):');
 
   if (
     test('below threshold (50% of 1M) stays completely silent', () => {
@@ -79,11 +107,14 @@ function runTests() {
       const t = writeTranscript(905000);
       cleanup.push(t);
       const out = JSON.parse(run(inputFor(t), { env }));
+      const ctx = out.hookSpecificOutput.additionalContext;
       assert.strictEqual(out.hookSpecificOutput.hookEventName, 'UserPromptSubmit');
-      assert.ok(out.hookSpecificOutput.additionalContext.includes('CONTEXT GATE TRIPPED'));
-      assert.ok(out.hookSpecificOutput.additionalContext.includes('RESUME.md'));
+      assert.ok(ctx.includes('CONTEXT GATE TRIPPED'));
+      // Checkpoint targets the session-scoped handoff path, not project-root RESUME.md.
+      assert.ok(/[/\\]resume[/\\].*-test\.md/.test(ctx), `expected handoff path with session id. Got: ${ctx}`);
+      assert.ok(ctx.includes('Do NOT overwrite or modify an existing RESUME.md'));
       assert.ok(out.systemMessage.includes('90%'));
-      assert.ok(!out.hookSpecificOutput.additionalContext.includes('EMERGENCY'));
+      assert.ok(!ctx.includes('EMERGENCY'));
     })
   )
     passed++;
@@ -103,10 +134,14 @@ function runTests() {
 
   if (
     test('order forbids asking to stop and demands a resume command', () => {
-      const text = buildOrderText({ pct: 91, tokens: 910000, windowTokens: 1000000, inferred: false, emergency: false });
+      const cp = '/home/me/.claude/session-data/resume/myproj-abc123.md';
+      const text = buildOrderText({ pct: 91, tokens: 910000, windowTokens: 1000000, inferred: false, emergency: false, checkpointPath: cp });
       assert.ok(text.includes('Do NOT ask whether to stop'));
-      assert.ok(text.includes('claude "Read <absolute checkpoint path>'));
+      assert.ok(text.includes(`claude "Read ${cp} and continue`));
+      assert.ok(text.includes(cp));
       assert.ok(text.includes('VERIFIED facts strictly separated from hypotheses'));
+      // Observed usage is distinguished from permission to stop.
+      assert.ok(text.includes('not by itself permission to abandon the task'));
     })
   )
     passed++;
@@ -124,7 +159,7 @@ function runTests() {
       assert.ok(!text.includes('an order, not a suggestion'));
       assert.ok(text.includes('INFERRED'));
       assert.ok(text.includes('strong recommendation'));
-      assert.ok(text.includes('RESUME.md'));
+      assert.ok(/[/\\]resume[/\\].*-test\.md/.test(text));
       assert.ok(out.systemMessage.includes('strongly advised'));
       assert.ok(!out.systemMessage.includes('ordered'));
     })
@@ -155,10 +190,10 @@ function runTests() {
   console.log('\nenvironment controls:');
 
   if (
-    test('ECC_CONTEXT_GATE_PCT=0 disables the gate', () => {
+    test('ECC_CONTEXT_GATE_PCT=0 disables the gate (even in enforce mode)', () => {
       const t = writeTranscript(990000);
       cleanup.push(t);
-      assert.strictEqual(run(inputFor(t), { env: { ECC_CONTEXT_GATE_PCT: '0' } }), '');
+      assert.strictEqual(run(inputFor(t), { env: { ...env, ECC_CONTEXT_GATE_PCT: '0' } }), '');
     })
   )
     passed++;
@@ -168,7 +203,7 @@ function runTests() {
     test('ECC_CONTEXT_GATE_PCT=70 lowers the trigger', () => {
       const t = writeTranscript(750000);
       cleanup.push(t);
-      const out = JSON.parse(run(inputFor(t), { env: { ECC_CONTEXT_GATE_PCT: '70' } }));
+      const out = JSON.parse(run(inputFor(t), { env: { ...env, ECC_CONTEXT_GATE_PCT: '70' } }));
       assert.ok(out.hookSpecificOutput.additionalContext.includes('CONTEXT GATE TRIPPED'));
     })
   )
@@ -181,7 +216,7 @@ function runTests() {
       // clamp every fire (pct >= 98) would also be >= 96 and skip step 1.
       // Clamp makes emergency 99, so 98% fires as a full order (step 1 kept)
       // and only 99%+ escalates.
-      const gateEnv = { ECC_CONTEXT_GATE_PCT: '98' };
+      const gateEnv = { ...env, ECC_CONTEXT_GATE_PCT: '98' };
       const at98 = writeTranscript(980000);
       cleanup.push(at98);
       const out98 = JSON.parse(run(inputFor(at98), { env: gateEnv }));
@@ -206,7 +241,7 @@ function runTests() {
       // fires); an injected 1M override must make it 18% and stay silent.
       const t = writeTranscript(185000, 'claude-unknown-experimental');
       cleanup.push(t);
-      assert.strictEqual(run(inputFor(t), { env: { ECC_CONTEXT_WINDOW_TOKENS: '1000000' } }), '');
+      assert.strictEqual(run(inputFor(t), { env: { ...env, ECC_CONTEXT_WINDOW_TOKENS: '1000000' } }), '');
     })
   )
     passed++;
@@ -218,17 +253,22 @@ function runTests() {
       cleanup.push(t);
       // 185k of 1M would be 18%; forced 200k window makes it 92%.
       // Injected form: options.env governs window resolution too.
-      const out = JSON.parse(run(inputFor(t), { env: { ECC_CONTEXT_WINDOW_TOKENS: '200000' } }));
+      const out = JSON.parse(run(inputFor(t), { env: { ...env, ECC_CONTEXT_WINDOW_TOKENS: '200000' } }));
       assert.ok(out.systemMessage.includes('92%'));
-      // Registered-path form: metadata second arg falls back to process.env.
+      // Registered-path form: metadata second arg falls back to process.env
+      // (including the opt-in mode).
       const original = process.env.ECC_CONTEXT_WINDOW_TOKENS;
+      const originalMode = process.env.ECC_CONTEXT_GATE_MODE;
       try {
         process.env.ECC_CONTEXT_WINDOW_TOKENS = '200000';
+        process.env.ECC_CONTEXT_GATE_MODE = 'enforce';
         const viaProcess = JSON.parse(run(inputFor(t), { hookId: 'user-prompt:context-gate' }));
         assert.ok(viaProcess.systemMessage.includes('92%'));
       } finally {
         if (original === undefined) delete process.env.ECC_CONTEXT_WINDOW_TOKENS;
         else process.env.ECC_CONTEXT_WINDOW_TOKENS = original;
+        if (originalMode === undefined) delete process.env.ECC_CONTEXT_GATE_MODE;
+        else process.env.ECC_CONTEXT_GATE_MODE = originalMode;
       }
     })
   )
@@ -268,14 +308,62 @@ function runTests() {
       const t = writeTranscript(990000);
       cleanup.push(t);
       const original = process.env.ECC_CONTEXT_GATE_PCT;
+      const originalMode = process.env.ECC_CONTEXT_GATE_MODE;
       try {
+        // Enforce mode on, but PCT=0 — read from process.env on the metadata
+        // path — must still disable, proving the override is honored there.
+        process.env.ECC_CONTEXT_GATE_MODE = 'enforce';
         process.env.ECC_CONTEXT_GATE_PCT = '0';
         const meta = { hookId: 'user-prompt:context-gate', pluginRoot: '/nonexistent', truncated: false };
         assert.strictEqual(run(inputFor(t), meta), '');
       } finally {
         if (original === undefined) delete process.env.ECC_CONTEXT_GATE_PCT;
         else process.env.ECC_CONTEXT_GATE_PCT = original;
+        if (originalMode === undefined) delete process.env.ECC_CONTEXT_GATE_MODE;
+        else process.env.ECC_CONTEXT_GATE_MODE = originalMode;
       }
+    })
+  )
+    passed++;
+  else failed++;
+
+  console.log('\nhandoff checkpoint ownership (enforce mode):');
+
+  if (
+    test('a pre-existing project RESUME.md is never targeted and is left untouched', () => {
+      const projDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-gate-proj-'));
+      const existing = path.join(projDir, 'RESUME.md');
+      fs.writeFileSync(existing, 'OPERATOR CONTENT — must survive\n', 'utf8');
+      const t = writeTranscript(950000);
+      cleanup.push(t);
+      try {
+        const out = JSON.parse(run(inputFor(t, { cwd: projDir }), { env }));
+        const ctx = out.hookSpecificOutput.additionalContext;
+        // Checkpoint goes to the session-handoff dir, not the project root.
+        assert.ok(/[/\\]resume[/\\]/.test(ctx), 'checkpoint must live under the handoff resume dir');
+        assert.ok(!ctx.includes(existing), 'order must not target the operator RESUME.md');
+        assert.ok(ctx.includes('preserves whatever the operator already has'));
+        // The hook injects an order; it writes nothing itself — the file stands.
+        assert.strictEqual(fs.readFileSync(existing, 'utf8'), 'OPERATOR CONTENT — must survive\n');
+      } finally {
+        fs.rmSync(projDir, { recursive: true, force: true });
+      }
+    })
+  )
+    passed++;
+  else failed++;
+
+  if (
+    test('repeated fires in one session resolve to the same stable checkpoint path', () => {
+      const t = writeTranscript(950000);
+      cleanup.push(t);
+      const extract = (raw) => {
+        const ctx = JSON.parse(raw).hookSpecificOutput.additionalContext;
+        return ctx.match(/\S*[/\\]resume[/\\]\S*-test\.md/)[0];
+      };
+      const first = extract(run(inputFor(t, { cwd: '/tmp/ecc-demo-proj' }), { env }));
+      const second = extract(run(inputFor(t, { cwd: '/tmp/ecc-demo-proj' }), { env }));
+      assert.strictEqual(first, second, 'same session must reuse one checkpoint path (idempotent)');
     })
   )
     passed++;

@@ -161,13 +161,55 @@ function runTests() {
         }) + '\n'
       );
       const input = JSON.stringify({ session_id: sessionId, tool_name: 'Bash', transcript_path: transcript });
+      const originalMode = process.env.ECC_CONTEXT_GATE_MODE;
       try {
+        // gateOwnsTranscript reads process.env — enforcement is opt-in.
+        process.env.ECC_CONTEXT_GATE_MODE = 'enforce';
         writeBridgeAtomic(sessionId, { context_remaining_pct: 8, last_timestamp: new Date().toISOString() });
         const result = run(input);
         assert.strictEqual(result, input, 'Monitor must defer to the confirmed-active gate');
       } finally {
+        if (originalMode === undefined) delete process.env.ECC_CONTEXT_GATE_MODE;
+        else process.env.ECC_CONTEXT_GATE_MODE = originalMode;
         fs.rmSync(getBridgePath(sessionId), { force: true });
         fs.rmSync(warnPath, { force: true });
+        fs.rmSync(transcript, { force: true });
+      }
+    })
+  )
+    passed++;
+  else failed++;
+
+  if (
+    test('run(): default (advisory) gate does NOT suppress the context warning', () => {
+      // Same in-band transcript, but with no ECC_CONTEXT_GATE_MODE the gate is
+      // inert — the monitor must keep emitting CONTEXT CRITICAL.
+      const sessionId = `ctx-monitor-gate-advisory-${process.pid}-${Date.now()}`;
+      const transcript = path.join(os.tmpdir(), `ecc-ctx-monitor-transcript-${sessionId}.jsonl`);
+      fs.writeFileSync(
+        transcript,
+        JSON.stringify({
+          type: 'assistant',
+          message: {
+            model: 'claude-unknown-x',
+            usage: { input_tokens: 190000, cache_read_input_tokens: 0, cache_creation_input_tokens: 0, output_tokens: 50 }
+          }
+        }) + '\n'
+      );
+      const input = JSON.stringify({ session_id: sessionId, tool_name: 'Bash', transcript_path: transcript });
+      const originalMode = process.env.ECC_CONTEXT_GATE_MODE;
+      try {
+        delete process.env.ECC_CONTEXT_GATE_MODE;
+        writeBridgeAtomic(sessionId, { context_remaining_pct: 8, last_timestamp: new Date().toISOString() });
+        const result = JSON.parse(run(input));
+        assert.ok(
+          result.hookSpecificOutput.additionalContext.includes('CONTEXT CRITICAL'),
+          'Critical warning must stand on a default install (advisory gate)'
+        );
+      } finally {
+        if (originalMode === undefined) delete process.env.ECC_CONTEXT_GATE_MODE;
+        else process.env.ECC_CONTEXT_GATE_MODE = originalMode;
+        fs.rmSync(getBridgePath(sessionId), { force: true });
         fs.rmSync(transcript, { force: true });
       }
     })

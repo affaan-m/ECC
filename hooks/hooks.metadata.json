@@ -138,7 +138,7 @@
     "UserPromptSubmit": [
       {
         "id": "user-prompt:context-gate",
-        "description": "Deterministic checkpoint-and-restart gate: at >=90% context, order a clean stopping point, a RESUME.md checkpoint, and a fresh-session resume command instead of per-turn stop suggestions",
+        "description": "Opt-in checkpoint-and-restart gate (ECC_CONTEXT_GATE_MODE=enforce): at >=90% context, order a clean stopping point, a session-scoped checkpoint under the handoff dir, and a fresh-session resume command. Default mode is advisory — inert, suppresses nothing",
         "fingerprint": "13d8180d18ec"
       }
     ]

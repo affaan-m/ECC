@@ -15,6 +15,7 @@ const os = require('os');
 const path = require('path');
 const {
   resolvePct,
+  resolveGateMode,
   resolveGatePct,
   resolveEmergencyPct,
   isGateEnabled,
@@ -22,8 +23,12 @@ const {
   gateOwnsTranscript,
   DEFAULT_GATE_PCT,
   DEFAULT_EMERGENCY_PCT,
+  DEFAULT_GATE_MODE,
   GATE_HOOK_ID
 } = require('../../scripts/lib/context-gate-state');
+
+// Enforcement is opt-in; the active/suppression checks only hold in this mode.
+const ENFORCE = { ECC_CONTEXT_GATE_MODE: 'enforce' };
 
 console.log('=== Testing context-gate-state.js ===\n');
 
@@ -113,36 +118,80 @@ test('resolvePct stays silent for valid, zero-disable, and unset values', () => 
   assert.strictEqual(out.split('\n').filter((l) => l.includes('QUIET_')).length, 0);
 });
 
-// ── isGateEnabled ──
+// ── resolveGateMode ──
 
-test('enabled by default profile, disabled by threshold 0', () => {
-  assert.strictEqual(isGateEnabled({}), true);
-  assert.strictEqual(isGateEnabled({ ECC_CONTEXT_GATE_PCT: '0' }), false);
+test('mode defaults to advisory (enforcement is opt-in)', () => {
+  assert.strictEqual(resolveGateMode({}), DEFAULT_GATE_MODE);
+  assert.strictEqual(DEFAULT_GATE_MODE, 'advisory');
+  assert.strictEqual(resolveGateMode({ ECC_CONTEXT_GATE_MODE: '' }), 'advisory');
+  assert.strictEqual(resolveGateMode({ ECC_CONTEXT_GATE_MODE: '   ' }), 'advisory');
 });
 
-test('disabled via ECC_DISABLED_HOOKS', () => {
-  assert.strictEqual(isGateEnabled({ ECC_DISABLED_HOOKS: GATE_HOOK_ID }), false);
+test('mode accepts enforce/off (case- and whitespace-insensitive)', () => {
+  assert.strictEqual(resolveGateMode({ ECC_CONTEXT_GATE_MODE: 'enforce' }), 'enforce');
+  assert.strictEqual(resolveGateMode({ ECC_CONTEXT_GATE_MODE: '  ENFORCE ' }), 'enforce');
+  assert.strictEqual(resolveGateMode({ ECC_CONTEXT_GATE_MODE: 'off' }), 'off');
+});
+
+test('mode falls back to advisory on a garbage value, with a one-time note', () => {
+  const out = captureStderr(() => {
+    // A mistyped mode must never silently enable enforcement.
+    assert.strictEqual(resolveGateMode({ ECC_CONTEXT_GATE_MODE: 'enforced' }), 'advisory');
+    assert.strictEqual(resolveGateMode({ ECC_CONTEXT_GATE_MODE: 'enforced' }), 'advisory');
+  });
+  const hits = out.split('\n').filter((l) => l.includes('ECC_CONTEXT_GATE_MODE'));
+  assert.strictEqual(hits.length, 1, 'rejected mode must be surfaced exactly once');
+  assert.ok(hits[0].includes('[context-gate]'));
+  assert.ok(hits[0].includes('enforced'));
+});
+
+// ── isGateEnabled ──
+
+test('disabled by default (advisory); enabled only in enforce mode', () => {
+  // The default install must not enforce or suppress the advisory hooks.
+  assert.strictEqual(isGateEnabled({}), false);
+  assert.strictEqual(isGateEnabled(ENFORCE), true);
+});
+
+test('enforce mode still disabled by threshold 0, off mode, and ECC_DISABLED_HOOKS', () => {
+  assert.strictEqual(isGateEnabled({ ...ENFORCE, ECC_CONTEXT_GATE_PCT: '0' }), false);
+  assert.strictEqual(isGateEnabled({ ECC_CONTEXT_GATE_MODE: 'off' }), false);
+  assert.strictEqual(isGateEnabled({ ...ENFORCE, ECC_DISABLED_HOOKS: GATE_HOOK_ID }), false);
 });
 
 // ── isGateActive ──
 
-test('active at/above the threshold, inactive below', () => {
-  assert.strictEqual(isGateActive({ tokens: 180000, windowTokens: 200000, env: {} }), true);
-  assert.strictEqual(isGateActive({ tokens: 179999, windowTokens: 200000, env: {} }), false);
+test('advisory default never active even deep in the band (no suppression)', () => {
+  assert.strictEqual(isGateActive({ tokens: 195000, windowTokens: 200000, env: {} }), false);
+});
+
+test('active at/above the threshold, inactive below (enforce mode)', () => {
+  assert.strictEqual(isGateActive({ tokens: 180000, windowTokens: 200000, env: ENFORCE }), true);
+  assert.strictEqual(isGateActive({ tokens: 179999, windowTokens: 200000, env: ENFORCE }), false);
 });
 
 test('inactive on invalid inputs or disabled gate', () => {
-  assert.strictEqual(isGateActive({ tokens: NaN, windowTokens: 200000, env: {} }), false);
-  assert.strictEqual(isGateActive({ tokens: 190000, windowTokens: 0, env: {} }), false);
-  assert.strictEqual(isGateActive({ tokens: 190000, windowTokens: 200000, env: { ECC_CONTEXT_GATE_PCT: '0' } }), false);
+  assert.strictEqual(isGateActive({ tokens: NaN, windowTokens: 200000, env: ENFORCE }), false);
+  assert.strictEqual(isGateActive({ tokens: 190000, windowTokens: 0, env: ENFORCE }), false);
+  assert.strictEqual(isGateActive({ tokens: 190000, windowTokens: 200000, env: { ...ENFORCE, ECC_CONTEXT_GATE_PCT: '0' } }), false);
 });
 
 // ── gateOwnsTranscript ──
 
-test('true for a readable transcript in the gate band', () => {
+test('advisory default: false even for a readable transcript in the band', () => {
+  // Proves a default install adds no advisory suppression.
   const t = writeTranscript(190000);
   try {
-    assert.strictEqual(gateOwnsTranscript(t, {}), true);
+    assert.strictEqual(gateOwnsTranscript(t, {}), false);
+  } finally {
+    fs.unlinkSync(t);
+  }
+});
+
+test('true for a readable transcript in the gate band (enforce mode)', () => {
+  const t = writeTranscript(190000);
+  try {
+    assert.strictEqual(gateOwnsTranscript(t, ENFORCE), true);
   } finally {
     fs.unlinkSync(t);
   }
@@ -152,8 +201,8 @@ test('false below the band and with the gate disabled', () => {
   const t = writeTranscript(100000);
   const t2 = writeTranscript(190000);
   try {
-    assert.strictEqual(gateOwnsTranscript(t, {}), false);
-    assert.strictEqual(gateOwnsTranscript(t2, { ECC_CONTEXT_GATE_PCT: '0' }), false);
+    assert.strictEqual(gateOwnsTranscript(t, ENFORCE), false);
+    assert.strictEqual(gateOwnsTranscript(t2, { ...ENFORCE, ECC_CONTEXT_GATE_PCT: '0' }), false);
   } finally {
     fs.unlinkSync(t);
     fs.unlinkSync(t2);
@@ -163,12 +212,12 @@ test('false below the band and with the gate disabled', () => {
 test('false when the gate cannot evaluate usage (missing/unreadable transcript)', () => {
   // The advisory hooks use false to KEEP their own warnings — a gate that
   // cannot fire must never silence its fallbacks.
-  assert.strictEqual(gateOwnsTranscript(path.join(os.tmpdir(), `ecc-gate-state-nope-${process.pid}.jsonl`), {}), false);
-  assert.strictEqual(gateOwnsTranscript('', {}), false);
+  assert.strictEqual(gateOwnsTranscript(path.join(os.tmpdir(), `ecc-gate-state-nope-${process.pid}.jsonl`), ENFORCE), false);
+  assert.strictEqual(gateOwnsTranscript('', ENFORCE), false);
   const broken = path.join(os.tmpdir(), `ecc-gate-state-broken-${process.pid}.jsonl`);
   fs.writeFileSync(broken, 'not json\n{broken', 'utf8');
   try {
-    assert.strictEqual(gateOwnsTranscript(broken, {}), false);
+    assert.strictEqual(gateOwnsTranscript(broken, ENFORCE), false);
   } finally {
     fs.unlinkSync(broken);
   }
@@ -179,7 +228,7 @@ test('honors an injected env window override', () => {
   // override puts it at 19% — not in the gate band.
   const t = writeTranscript(190000);
   try {
-    assert.strictEqual(gateOwnsTranscript(t, { ECC_CONTEXT_WINDOW_TOKENS: '1000000' }), false);
+    assert.strictEqual(gateOwnsTranscript(t, { ...ENFORCE, ECC_CONTEXT_WINDOW_TOKENS: '1000000' }), false);
   } finally {
     fs.unlinkSync(t);
   }

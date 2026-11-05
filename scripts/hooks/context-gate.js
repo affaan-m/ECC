@@ -4,13 +4,26 @@
  *
  * Cross-platform (Windows, macOS, Linux)
  *
- * Deterministic end-of-session protocol. At >=90% context-window occupancy
- * (measured from the latest assistant `usage` record in the session
- * transcript, same signal as suggest-compact), injects a mandatory order:
- * bring the in-flight unit of work to its nearest clean stopping point,
- * write a structured checkpoint file (RESUME.md), hand the operator a
- * one-line resume command, and instruct closing the session. At >=96% the
- * order escalates to checkpoint-immediately, mid-task if necessary.
+ * Enforcement is OPT-IN. On a default install the gate runs in `advisory`
+ * mode: it returns immediately, does no per-prompt transcript work, and
+ * suppresses nothing — the advisory hooks (suggest-compact,
+ * ecc-context-monitor) keep their normal behavior. The operator turns on the
+ * deterministic protocol by setting ECC_CONTEXT_GATE_MODE=enforce.
+ *
+ * In enforce mode: at >=90% context-window occupancy (measured from the
+ * latest assistant `usage` record in the session transcript, same signal as
+ * suggest-compact), the hook injects an order: bring the in-flight unit of
+ * work to its nearest clean stopping point, write a structured checkpoint
+ * file, hand the operator a one-line resume command, and instruct closing
+ * the session. At >=96% the order escalates to checkpoint-immediately,
+ * mid-task if necessary.
+ *
+ * The checkpoint is written to a collision-safe, identity-bearing path under
+ * the plugin's session-handoff directory
+ * (<getSessionsDir()>/resume/<project>-<sessionId>.md) — NOT the project
+ * root — so an operator's own RESUME.md is never a target and repeated fires
+ * in one session overwrite only that session's own checkpoint. The resume
+ * command naming that exact path is the handoff receipt.
  *
  * Why an order instead of a suggestion (contrast with suggest-compact and
  * ecc-context-monitor, which advise and ask):
@@ -29,17 +42,20 @@
  *   gate would never fire. With auto-compact on the hook is harmless but
  *   inert.
  *
- * Precedence over the advisory hooks: once occupancy reaches the gate
- * threshold, suggest-compact and ecc-context-monitor suppress their
- * /compact suggestions and context warnings (via isGateActive /
- * isGateEnabled in lib/context-gate-state.js) so the model never receives
- * contradictory instructions in the gate band.
+ * Precedence over the advisory hooks: in enforce mode only, once occupancy
+ * reaches the gate threshold, suggest-compact and ecc-context-monitor
+ * suppress their /compact suggestions and context warnings (via isGateActive
+ * / isGateEnabled in lib/context-gate-state.js) so the model never receives
+ * contradictory instructions in the gate band. In advisory mode isGateEnabled
+ * is false, so there is no suppression and the advisory hooks are unaffected.
  *
  * The gate deliberately re-fires on every prompt while above threshold —
  * that is the enforcement, not a defect: the order stands until the session
  * is closed. Below threshold the hook is completely silent.
  *
  * Controls:
+ * - ECC_CONTEXT_GATE_MODE      advisory (default; inert) | enforce (opt in to
+ *   the order + advisory-hook deference) | off (same as PCT=0)
  * - ECC_CONTEXT_GATE_PCT       gate threshold percent (default 90; 0 disables)
  * - ECC_CONTEXT_GATE_EMERGENCY_PCT  escalation percent (default 96; always
  *   clamped to at least gate+1 so the two-tier order is preserved)
@@ -51,20 +67,46 @@
 
 'use strict';
 
+const path = require('path');
 const { readLatestContextTokens, resolveContextWindow, formatWindowLabel } = require('../lib/transcript-context');
-const { resolvePct, resolveGatePct, resolveEmergencyPct, DEFAULT_GATE_PCT, DEFAULT_EMERGENCY_PCT } = require('../lib/context-gate-state');
+const { resolvePct, resolveGateMode, resolveGatePct, resolveEmergencyPct, DEFAULT_GATE_PCT, DEFAULT_EMERGENCY_PCT } = require('../lib/context-gate-state');
+const { getSessionsDir, getProjectName, sanitizeSessionId } = require('../lib/utils');
 
 /**
- * Build the checkpoint order injected as additionalContext.
+ * Compute a collision-safe, identity-bearing checkpoint path under the
+ * plugin's session-handoff directory. Never the project root, so an
+ * operator's own RESUME.md is never a target; the session id in the name
+ * keeps repeated fires in one session pointed at the same file (idempotent
+ * — the model overwrites only its own checkpoint, never a user file).
+ * @param {object} input - Parsed hook stdin ({ cwd, session_id }).
+ * @returns {string} Absolute path to the session-scoped checkpoint file.
+ */
+function resolveCheckpointPath(input) {
+  const resumeDir = path.join(getSessionsDir(), 'resume');
+  const project =
+    sanitizeSessionId(input && input.cwd ? path.basename(String(input.cwd)) : null) ||
+    sanitizeSessionId(getProjectName()) ||
+    'project';
+  const sessionId =
+    sanitizeSessionId(input && input.session_id) ||
+    sanitizeSessionId(process.env.ECC_SESSION_ID) ||
+    sanitizeSessionId(process.env.CLAUDE_SESSION_ID) ||
+    'session';
+  return path.join(resumeDir, `${project}-${sessionId}.md`);
+}
+
+/**
+ * Build the checkpoint order injected as additionalContext (enforce mode).
  * @param {object} params
  * @param {number} params.pct - Occupancy percent (integer, floored).
  * @param {number} params.tokens - Context tokens observed.
  * @param {number} params.windowTokens - Resolved window size.
  * @param {boolean} params.inferred - Window size was assumed, not detected.
  * @param {boolean} params.emergency - Past the emergency threshold.
+ * @param {string} params.checkpointPath - Session-scoped checkpoint target.
  * @returns {string}
  */
-function buildOrderText({ pct, tokens, windowTokens, inferred, emergency }) {
+function buildOrderText({ pct, tokens, windowTokens, inferred, emergency, checkpointPath }) {
   const windowLabel = formatWindowLabel(windowTokens);
   // An inferred window means the true denominator may be larger (an
   // unrecognized 1M-window model would read as 90% at 180k of an assumed
@@ -74,11 +116,16 @@ function buildOrderText({ pct, tokens, windowTokens, inferred, emergency }) {
   // never forces a restart.
   const lines = [
     inferred
-      ? `CONTEXT GATE TRIPPED (deterministic hook): context at ~${pct}% of an INFERRED ${windowLabel} window ` +
-        `(${tokens.toLocaleString('en-US')} tokens; the true window may be larger — set ` +
-        'ECC_CONTEXT_WINDOW_TOKENS to correct it). Treat the following as a strong recommendation:'
-      : `CONTEXT GATE TRIPPED (deterministic hook — this is an order, not a suggestion): context at ${pct}% ` +
-        `(${tokens.toLocaleString('en-US')} tokens of a ${windowLabel} window).`,
+      ? `CONTEXT GATE TRIPPED (enforce mode — operator opted in): context at ~${pct}% of an INFERRED ` +
+        `${windowLabel} window (${tokens.toLocaleString('en-US')} tokens; the true window may be larger — ` +
+        'set ECC_CONTEXT_WINDOW_TOKENS to correct it). Treat the following as a strong recommendation:'
+      : `CONTEXT GATE TRIPPED (enforce mode — operator opted in; this is an order, not a suggestion): ` +
+        `context at ${pct}% (${tokens.toLocaleString('en-US')} tokens of a ${windowLabel} window).`,
+    '',
+    // Occupancy is a measurement, not by itself authority to abandon the task.
+    // The authority here is the operator's explicit opt-in to enforce mode.
+    'The occupancy figure above is an observed measurement, not by itself permission to abandon the task. ' +
+      'The authority to checkpoint-and-hand-off now comes from the operator having enabled enforce mode.',
     ''
   ];
 
@@ -93,13 +140,16 @@ function buildOrderText({ pct, tokens, windowTokens, inferred, emergency }) {
   lines.push(
     '1. Do NOT start any new work stream. Bring only the unit of work currently in flight to its nearest ' +
       'clean stopping point (finish the edit/test/verification underway; do not begin the next one).',
-    '2. Write a checkpoint file: RESUME.md at the root of the active project directory (or under ' +
-      '~/.claude/resume/ if no single project applies) containing: the objective; current state with ' +
-      'VERIFIED facts strictly separated from hypotheses; decisions the operator approved; approaches ' +
-      'ruled out and WHY; exact next steps; files touched; any pending or half-applied changes.',
+    '2. Write the checkpoint to EXACTLY this session-scoped path (create parent directories if needed):',
+    `   ${checkpointPath}`,
+    '   It must contain: the objective; current state with VERIFIED facts strictly separated from ' +
+      'hypotheses; decisions the operator approved; approaches ruled out and WHY; exact next steps; files ' +
+      'touched; any pending or half-applied changes. Do NOT overwrite or modify an existing RESUME.md or ' +
+      'any other file in the project — this path is dedicated to this session\'s handoff and preserves ' +
+      'whatever the operator already has.',
     '3. Then state plainly that this session must now be closed, and give the operator this exact resume ' +
-      'command on its own line:',
-    '   claude "Read <absolute checkpoint path> and continue the work described there."',
+      'command on its own line (the receipt for this handoff):',
+    `   claude "Read ${checkpointPath} and continue the work described there."`,
     '4. Do NOT ask whether to stop, do NOT offer alternatives ("good stopping point", "want to pause?"), ' +
       'and do NOT take on further work in this session after the checkpoint is written. If the operator ' +
       'sends further prompts here, answer only from existing context and repeat the restart instruction.'
@@ -120,6 +170,10 @@ function buildOrderText({ pct, tokens, windowTokens, inferred, emergency }) {
 function run(rawInput, options = {}) {
   try {
     const env = (options && options.env) || process.env;
+    // Enforcement is opt-in. In the default advisory mode the gate is inert:
+    // return before any transcript work so a default install adds zero
+    // per-prompt cost and leaves the advisory hooks unsuppressed.
+    if (resolveGateMode(env) !== 'enforce') return '';
     const gatePct = resolveGatePct(env);
     if (gatePct === 0) return '';
     // Emergency must sit in a strictly tighter band than the gate. Otherwise a
@@ -138,12 +192,14 @@ function run(rawInput, options = {}) {
     if (pct < gatePct) return '';
 
     const emergency = pct >= emergencyPct;
+    const checkpointPath = resolveCheckpointPath(input);
     const orderText = buildOrderText({
       pct,
       tokens: latest.tokens,
       windowTokens,
       inferred,
-      emergency
+      emergency,
+      checkpointPath
     });
 
     return JSON.stringify({

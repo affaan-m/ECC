@@ -19,6 +19,19 @@ const DEFAULT_EMERGENCY_PCT = 96;
 const MIN_PCT = 1;
 const MAX_PCT = 100;
 
+/**
+ * Gate operating mode. Enforcement is OPT-IN: a default install leaves the
+ * gate in `advisory`, where it is completely inert and suppresses nothing —
+ * the advisory hooks (suggest-compact, ecc-context-monitor) keep their normal
+ * behavior. Only `enforce` turns on the checkpoint-and-restart order and the
+ * advisory-hook deference.
+ */
+const DEFAULT_GATE_MODE = 'advisory';
+const GATE_MODE_ADVISORY = 'advisory';
+const GATE_MODE_ENFORCE = 'enforce';
+const GATE_MODE_OFF = 'off';
+const VALID_GATE_MODES = new Set([GATE_MODE_ADVISORY, GATE_MODE_ENFORCE, GATE_MODE_OFF]);
+
 /** Hook id and profiles exactly as registered in hooks/hooks.json. */
 const GATE_HOOK_ID = 'user-prompt:context-gate';
 const GATE_HOOK_PROFILES = 'standard,strict';
@@ -46,6 +59,46 @@ function warnRejected(name, raw, fallback) {
   } catch {
     /* stderr unavailable — resolution still returns the deterministic fallback */
   }
+}
+
+/**
+ * Emit a one-time stderr note that ECC_CONTEXT_GATE_MODE was present but
+ * unrecognized. Shares the per-process dedupe Set with warnRejected so a
+ * typo can never turn the re-firing hook into a stderr spam stream, and a
+ * typo'd mode can never silently flip enforcement on. Never throws.
+ * @param {*} raw
+ */
+function warnRejectedMode(raw) {
+  const name = 'ECC_CONTEXT_GATE_MODE';
+  if (warnedEnvNames.has(name)) return;
+  warnedEnvNames.add(name);
+  try {
+    process.stderr.write(
+      `[context-gate] ignoring invalid ${name}="${raw}" ` +
+      `(expected advisory, enforce, or off); using default ${DEFAULT_GATE_MODE}.\n`
+    );
+  } catch {
+    /* stderr unavailable — resolution still returns the deterministic fallback */
+  }
+}
+
+/**
+ * Resolve the gate operating mode from the environment. Enforcement is
+ * opt-in: an unset, blank, or unrecognized value resolves to `advisory`
+ * (inert, suppresses nothing). A rejected value also surfaces a one-time
+ * stderr note, so a mistyped mode never silently enables — or disables —
+ * the checkpoint-and-restart order.
+ * @param {object} [env]
+ * @returns {'advisory'|'enforce'|'off'}
+ */
+function resolveGateMode(env = process.env) {
+  const raw = env && env.ECC_CONTEXT_GATE_MODE;
+  if (raw === undefined || raw === null) return DEFAULT_GATE_MODE;
+  const str = String(raw).trim().toLowerCase();
+  if (str === '') return DEFAULT_GATE_MODE;
+  if (VALID_GATE_MODES.has(str)) return str;
+  warnRejectedMode(raw);
+  return DEFAULT_GATE_MODE;
 }
 
 /**
@@ -100,13 +153,16 @@ function resolveEmergencyPct(env = process.env) {
 }
 
 /**
- * True when the context-gate hook is installed-and-enabled for this
- * environment (profile allows it, not in ECC_DISABLED_HOOKS, threshold
- * not set to 0). Says nothing about current occupancy.
+ * True when the context-gate hook is ENFORCING for this environment: the
+ * operator opted into enforce mode, the profile allows it, it is not in
+ * ECC_DISABLED_HOOKS, and the threshold is not 0. Says nothing about current
+ * occupancy. In the default (advisory) mode this is false, so the advisory
+ * hooks never defer and the gate never fires — enforcement is opt-in.
  * @param {object} [env]
  * @returns {boolean}
  */
 function isGateEnabled(env = process.env) {
+  if (resolveGateMode(env) !== GATE_MODE_ENFORCE) return false;
   if (resolveGatePct(env) === 0) return false;
   return isHookEnabled(GATE_HOOK_ID, { profiles: GATE_HOOK_PROFILES, env });
 }
@@ -154,6 +210,7 @@ function gateOwnsTranscript(transcriptPath, env = process.env) {
 
 module.exports = {
   resolvePct,
+  resolveGateMode,
   gateOwnsTranscript,
   resolveGatePct,
   resolveEmergencyPct,
@@ -161,6 +218,7 @@ module.exports = {
   isGateActive,
   DEFAULT_GATE_PCT,
   DEFAULT_EMERGENCY_PCT,
+  DEFAULT_GATE_MODE,
   GATE_HOOK_ID,
   GATE_HOOK_PROFILES
 };
