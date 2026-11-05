@@ -2,11 +2,11 @@
   "ecc-guardrails": {
     "PreToolUse": [
       {
-        "matcher": "run_command|write_file|edit_file",
+        "matcher": "run_command|write_file|edit_file|write_to_file|replace_file_content|multi_replace_file_content",
         "hooks": [
           {
             "type": "command",
-            "command": "node scripts/antigravity/hook-bridge.js --hook config-protection",
+            "command": "node -e \"const f=require('fs'),p=require('path'),c=require('child_process');const b=['scripts/antigravity/hook-bridge.js','.agents/scripts/antigravity/hook-bridge.js'].find(f.existsSync);if(b)process.exit(c.spawnSync(process.execPath,[p.resolve(b),...process.argv.slice(1)],{stdio:'inherit'}).status||0);else process.stdout.write(JSON.stringify({decision:'allow'}));\" -- --hook config-protection",
             "timeout": 30
           }
         ]

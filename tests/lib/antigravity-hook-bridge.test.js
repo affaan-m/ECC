@@ -58,6 +58,42 @@ test('translates Antigravity edit_file payload to Claude Edit tool shape', () =>
   assert.strictEqual(claudePayload.tool_input.path, 'eslint.config.js');
 });
 
+test('normalizes TargetFile argument for replace_file_content and write_to_file', () => {
+  const replacePayload = {
+    conversationId: 'conv-targetfile-1',
+    toolCall: {
+      name: 'replace_file_content',
+      args: {
+        TargetFile: 'prettier.config.js',
+        Target: 'old',
+        Replacement: 'new',
+      },
+    },
+    workspacePaths: [REPO_ROOT],
+  };
+
+  const claudeEdit = normalizeAntigravityToClaude(replacePayload);
+  assert.strictEqual(claudeEdit.tool_name, 'Edit');
+  assert.strictEqual(claudeEdit.tool_input.file_path, 'prettier.config.js');
+
+  const writePayload = {
+    conversationId: 'conv-targetfile-2',
+    toolCall: {
+      name: 'write_to_file',
+      args: {
+        TargetFile: 'some.config.js',
+        Content: 'content',
+      },
+    },
+    workspacePaths: [REPO_ROOT],
+  };
+
+  const claudeWrite = normalizeAntigravityToClaude(writePayload);
+  assert.strictEqual(claudeWrite.tool_name, 'Write');
+  assert.strictEqual(claudeWrite.tool_input.file_path, 'some.config.js');
+  assert.strictEqual(claudeWrite.tool_input.content, 'content');
+});
+
 test('translates Antigravity run_command payload to Claude Bash tool shape', () => {
   const agyPayload = {
     conversationId: 'test-conv-456',

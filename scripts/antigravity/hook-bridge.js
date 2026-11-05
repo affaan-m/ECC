@@ -49,8 +49,22 @@ function parseArgs(argv) {
 function resolveHookScript(hookTarget) {
   if (!hookTarget) return null;
   if (Object.prototype.hasOwnProperty.call(KNOWN_HOOKS, hookTarget)) {
-    return KNOWN_HOOKS[hookTarget];
+    const known = KNOWN_HOOKS[hookTarget];
+    if (fs.existsSync(known)) return known;
   }
+
+  // Sibling hooks folder relative to this bridge script
+  const sibling = path.resolve(__dirname, '..', 'hooks', `${hookTarget}.js`);
+  if (fs.existsSync(sibling)) return sibling;
+
+  // Relative to workspace .agents/scripts/hooks
+  const workspaceAgentsHook = path.resolve(process.cwd(), '.agents', 'scripts', 'hooks', `${hookTarget}.js`);
+  if (fs.existsSync(workspaceAgentsHook)) return workspaceAgentsHook;
+
+  // Relative to workspace scripts/hooks
+  const workspaceDirectHook = path.resolve(process.cwd(), 'scripts', 'hooks', `${hookTarget}.js`);
+  if (fs.existsSync(workspaceDirectHook)) return workspaceDirectHook;
+
   const resolved = path.isAbsolute(hookTarget) ? hookTarget : path.resolve(REPO_ROOT, hookTarget);
   return fs.existsSync(resolved) ? resolved : null;
 }
@@ -63,15 +77,19 @@ function normalizeAntigravityToClaude(payload) {
   let claudeToolName = rawToolName;
   const claudeToolInput = { ...args };
 
-  if (rawToolName === 'edit_file' || rawToolName === 'replace_file_content') {
+  if (
+    rawToolName === 'edit_file'
+    || rawToolName === 'replace_file_content'
+    || rawToolName === 'multi_replace_file_content'
+  ) {
     claudeToolName = 'Edit';
-    const filePath = args.Path || args.path || args.filePath || '';
+    const filePath = args.TargetFile || args.targetFile || args.Path || args.path || args.filePath || '';
     claudeToolInput.file_path = filePath;
     claudeToolInput.path = filePath;
     claudeToolInput.file = filePath;
   } else if (rawToolName === 'write_file' || rawToolName === 'write_to_file') {
     claudeToolName = 'Write';
-    const filePath = args.Path || args.path || args.filePath || '';
+    const filePath = args.TargetFile || args.targetFile || args.Path || args.path || args.filePath || '';
     claudeToolInput.file_path = filePath;
     claudeToolInput.path = filePath;
     claudeToolInput.file = filePath;
@@ -81,7 +99,7 @@ function normalizeAntigravityToClaude(payload) {
     claudeToolInput.command = args.CommandLine || args.command || '';
   } else if (rawToolName === 'read_file' || rawToolName === 'view_file') {
     claudeToolName = 'Read';
-    const filePath = args.Path || args.path || args.filePath || '';
+    const filePath = args.TargetFile || args.targetFile || args.Path || args.path || args.filePath || '';
     claudeToolInput.file_path = filePath;
     claudeToolInput.path = filePath;
   }

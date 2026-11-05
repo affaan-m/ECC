@@ -8,7 +8,7 @@ const {
   normalizeRelativePath,
 } = require('./helpers');
 
-const SUPPORTED_SOURCE_PREFIXES = ['rules', 'commands', 'agents', 'skills', 'hooks'];
+const SUPPORTED_SOURCE_PREFIXES = ['rules', 'commands', 'agents', 'skills', 'hooks', 'scripts'];
 
 function supportsAntigravitySourcePath(sourceRelativePath) {
   const normalizedPath = normalizeRelativePath(sourceRelativePath);
@@ -61,7 +61,7 @@ module.exports = createInstallTargetAdapter({
 
     return modules.flatMap(module => {
       const paths = Array.isArray(module.paths) ? module.paths : [];
-      return paths
+      const moduleOperations = paths
         .filter(supportsAntigravitySourcePath)
         .flatMap(sourceRelativePath => {
           const normalizedSourcePath = normalizeRelativePath(sourceRelativePath);
@@ -145,8 +145,36 @@ module.exports = createInstallTargetAdapter({
             ];
           }
 
+          if (
+            normalizedSourcePath === 'scripts'
+            || normalizedSourcePath.startsWith('scripts/')
+          ) {
+            return [
+              createManagedScaffoldOperation(
+                module.id,
+                normalizedSourcePath,
+                path.join(targetRoot, normalizedSourcePath),
+                'preserve-relative-path'
+              ),
+            ];
+          }
+
           return [];
         });
+
+      if (module.id !== 'hooks-runtime') {
+        return moduleOperations;
+      }
+
+      return [
+        ...moduleOperations,
+        createManagedOperation({
+          moduleId: module.id,
+          sourceRelativePath: path.join('scripts', 'antigravity', 'hook-bridge.js'),
+          destinationPath: path.join(targetRoot, 'scripts', 'antigravity', 'hook-bridge.js'),
+          strategy: 'copy-file',
+        }),
+      ];
     });
   },
 });

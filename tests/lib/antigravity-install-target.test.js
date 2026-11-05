@@ -208,6 +208,21 @@ test('plans hook operation copying antigravity-hooks.json to .agents/hooks.json'
   assert.strictEqual(operations[0].strategy, 'copy-file');
 });
 
+test('plans hook-bridge and runtime helpers when hooks-runtime is selected', () => {
+  const operations = planFor([
+    {
+      id: 'hooks-runtime',
+      paths: ['hooks', 'scripts/hooks', 'scripts/lib'],
+    },
+  ]);
+  assert.strictEqual(operations.length, 4);
+  const destPaths = operations.map(op => op.destinationPath);
+  assert.ok(destPaths.includes(path.join('/project', '.agents', 'hooks.json')));
+  assert.ok(destPaths.includes(path.join('/project', '.agents', 'scripts', 'antigravity', 'hook-bridge.js')));
+  assert.ok(destPaths.includes(path.join('/project', '.agents', 'scripts', 'hooks')));
+  assert.ok(destPaths.includes(path.join('/project', '.agents', 'scripts', 'lib')));
+});
+
 test('Antigravity installs non-Markdown agent assets byte-for-byte while adapting Markdown agents', () => {
   const { createManifestInstallPlan, applyInstallPlan } = require('../../scripts/lib/install-executor');
   const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-antigravity-agent-assets-'));
