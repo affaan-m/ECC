@@ -1,0 +1,48 @@
+{
+  "schema_version": "ecc.evaluator-rag.scenario.v1",
+  "scenario_id": "public-feedback-goal-fidelity",
+  "title": "Preserve the chosen outcome and causal chain when shortening feedback",
+  "mode": "read_only_prototype",
+  "objective": "Compare a shortened draft with the requested outcome, causal steps and verification limits before publication.",
+  "sources": [
+    {
+      "kind": "public_feedback",
+      "url": "https://github.com/affaan-m/ECC/issues/3695",
+      "purpose": "Reported corrected goal drift and proposed evaluation"
+    },
+    {
+      "kind": "public_comment",
+      "url": "https://github.com/evilbruce666/1c-odata-mcp/issues/56#issuecomment-6385767160",
+      "purpose": "Corrected public text cited by the reporter; not recovery of its earlier revision"
+    }
+  ],
+  "evidence_limits": "The earlier published revision was not independently recovered. Original HTML and earlier HTML response are unavailable; revised output was reported supplied but not compared, rendered, fact-checked or accepted by the user. ECC activation/version and causal contribution remain unknown.",
+  "inputs": {
+    "chosen_outcome": "OUTCOME_A: an end-to-end automated workflow producing the prepared result",
+    "causal_chain": [
+      "INPUTS: incoming data sources",
+      "PROCESS: intermediary tool layer prepares the result",
+      "RESULT: final prepared result, with sustained throughput as the purpose"
+    ],
+    "constraint": "Describe the requested capability, not a claim that it is implemented. Preserve genuine feasibility and verification limits.",
+    "accepted_draft": "Request an end-to-end automated flow from incoming sources through the intermediary tool layer to a prepared result, supporting sustained throughput. Implementation and feasibility remain to be verified.",
+    "rejected_draft": "Request a convenient helper that prepares suggestions and leaves routine exceptions for a person."
+  },
+  "retrieval_questions": [
+    "Does the draft preserve OUTCOME_A?",
+    "Are the inputs, process, result and throughput rationale still connected?",
+    "Are optional alternatives labeled as alternatives?",
+    "Are implementation and verification limits retained?"
+  ],
+  "forbidden_actions": [
+    "publishing feedback from this read-only evaluator",
+    "silently replacing OUTCOME_A with human-assisted OUTCOME_B",
+    "claiming implementation or verified HTML correction from a revised code block alone"
+  ],
+  "acceptance_gates": [
+    "chosen outcome remains unchanged",
+    "important causal steps and throughput rationale remain explicit",
+    "alternatives are separate proposals, not substituted requirements",
+    "unknown feasibility and verification remain explicit"
+  ]
+}

@@ -1,9 +1,29 @@
 'use strict';
 
+function hasSingleSurroundingQuotePair(trimmed, quote) {
+  let escaped = false;
+  for (let index = 1; index < trimmed.length - 1; index += 1) {
+    const character = trimmed[index];
+    if (escaped) {
+      escaped = false;
+    } else if (character === '\\') {
+      escaped = true;
+    } else if (character === quote) {
+      return false;
+    }
+  }
+  return !escaped;
+}
+
 function stripSurroundingQuotes(value) {
   const trimmed = value.trim();
   const quote = trimmed[0];
-  if ((quote === '"' || quote === "'") && trimmed.endsWith(quote)) {
+  if (
+    trimmed.length >= 2
+    && (quote === '"' || quote === "'")
+    && trimmed.endsWith(quote)
+    && hasSingleSurroundingQuotePair(trimmed, quote)
+  ) {
     return trimmed.slice(1, -1).trim();
   }
   return trimmed;

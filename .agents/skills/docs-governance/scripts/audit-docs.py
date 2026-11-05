@@ -16,6 +16,7 @@ from markdown_links import (
     normalize_link_target,
     without_fenced_code,
 )
+from module_audit import check_modules
 
 DEFAULT_ROLES = {
     "constitution": "CLAUDE.md",
@@ -242,10 +243,12 @@ def resolve_target(root: Path, source: Path, target: str) -> Path | None:
     return resolve_within_root(root, source.parent, target)
 
 
-def check_markdown_links(root: Path, files: list[Path], report: Report) -> None:
+def check_markdown_links(
+    root: Path, files: list[Path], report: Report, *, skip_templates: bool = True
+) -> None:
     broken: list[str] = []
     for source in files:
-        if "templates" in source.relative_to(root).parts:
+        if skip_templates and "templates" in source.relative_to(root).parts:
             continue
         text = source.read_text(encoding="utf-8")
         for raw in markdown_link_targets(text):
@@ -716,11 +719,19 @@ def main() -> int:
     parser.add_argument("--root", type=Path, default=Path.cwd())
     parser.add_argument(
         "--scope",
-        choices=("spine", "context", "adr", "artifacts", "full"),
+        choices=("spine", "context", "adr", "artifacts", "modules", "full"),
         default="full",
+    )
+    parser.add_argument(
+        "--module", action="append", default=[],
+        help="Repository-relative module directory; repeat for several modules",
     )
     parser.add_argument("--log-threshold", type=int, default=200)
     args = parser.parse_args()
+    if args.scope == "modules" and not args.module:
+        parser.error("--scope modules requires at least one --module directory")
+    if args.module and args.scope not in ("modules", "full"):
+        parser.error("--module is supported only with --scope modules or full")
 
     root = args.root.resolve()
     if not root.is_dir():
@@ -728,6 +739,11 @@ def main() -> int:
         return 2
     report = Report()
     roles = load_roles(root, report)
+    if args.module:
+        check_modules(
+            root, roles, args.module, report,
+            resolved_within_root, read_utf8, check_markdown_links,
+        )
     if args.scope in ("spine", "full"):
         check_spine(root, roles, report, args.log_threshold)
     if args.scope in ("context", "full"):

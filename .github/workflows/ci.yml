@@ -79,10 +79,30 @@ jobs:
       - name: Install and verify ripgrep (Windows)
         if: runner.os == 'Windows'
         shell: pwsh
+        timeout-minutes: 5
         run: |
-          if (-not (Get-Command rg -ErrorAction SilentlyContinue)) {
-            choco install ripgrep --yes --no-progress
-            if ($LASTEXITCODE -ne 0) { throw 'ripgrep installation failed' }
+          $ErrorActionPreference = 'Stop'
+          if (-not (Get-Command rg -CommandType Application -ErrorAction SilentlyContinue)) {
+            if ($env:RUNNER_ARCH -ne 'X64') { throw 'Pinned ripgrep archive requires an X64 runner' }
+            $ripgrepVersion = '15.2.0'
+            # Official BurntSushi/ripgrep release archive and published SHA256.
+            $archiveName = "ripgrep-$ripgrepVersion-x86_64-pc-windows-msvc.zip"
+            $expectedHash = '71b2fef860abe467217a538ff31de02f5258807c0129f771846f87bd029aafc5'
+            $downloadRoot = Join-Path $env:RUNNER_TEMP ("ecc-ripgrep-" + [Guid]::NewGuid().ToString('N'))
+            New-Item -ItemType Directory -Path $downloadRoot | Out-Null
+            $archivePath = Join-Path $downloadRoot $archiveName
+            $archiveUrl = "https://github.com/BurntSushi/ripgrep/releases/download/$ripgrepVersion/$archiveName"
+            Invoke-WebRequest -Uri $archiveUrl -OutFile $archivePath -MaximumRetryCount 2 -RetryIntervalSec 2 -ConnectionTimeoutSeconds 15 -OperationTimeoutSeconds 60 -MaximumRedirection 5
+            $actualHash = (Get-FileHash -LiteralPath $archivePath -Algorithm SHA256).Hash.ToLowerInvariant()
+            if ($actualHash -ne $expectedHash) { throw 'ripgrep archive SHA256 verification failed' }
+            Expand-Archive -LiteralPath $archivePath -DestinationPath $downloadRoot
+            $ripgrepDir = Join-Path $downloadRoot "ripgrep-$ripgrepVersion-x86_64-pc-windows-msvc"
+            $ripgrepExe = Join-Path $ripgrepDir 'rg.exe'
+            if (-not (Test-Path -LiteralPath $ripgrepExe -PathType Leaf)) { throw 'Verified archive has no rg.exe' }
+            & $ripgrepExe --version
+            if ($LASTEXITCODE -ne 0) { throw 'Verified ripgrep executable failed' }
+            Add-Content -LiteralPath $env:GITHUB_PATH -Value $ripgrepDir -Encoding utf8
+            $env:PATH = "$ripgrepDir;$env:PATH"
           }
           rg --version
           if ($LASTEXITCODE -ne 0) { throw 'ripgrep executable is unavailable' }
@@ -137,6 +157,13 @@ jobs:
             bun) bun install --ignore-scripts ;;
             *) echo "Unsupported package manager: ${{ matrix.pm }}" && exit 1 ;;
           esac
+
+      - name: Check observer and revision identity
+        if: matrix.scope == 'full'
+        shell: bash
+        run: |
+          node tests/lib/observer-sessions.test.js
+          node tests/commands/issue-review.test.js
 
       # Run tests. Full lanes run every file through a 4-process pool on Linux
       # and macOS; Windows stays serial because its process spawn and temp-dir

@@ -28,11 +28,17 @@ function parseArgs(argv) {
     const arg = args[index];
 
     if (arg === '--db') {
+      if (!args[index + 1] || args[index + 1].startsWith('--') || args[index + 1] === '-h') {
+        throw new Error(`Missing value for ${arg}`);
+      }
       parsed.dbPath = args[index + 1] || null;
       index += 1;
     } else if (arg === '--json') {
       parsed.json = true;
     } else if (arg === '--limit') {
+      if (!args[index + 1] || args[index + 1].startsWith('--') || args[index + 1] === '-h') {
+        throw new Error(`Missing value for ${arg}`);
+      }
       parsed.limit = args[index + 1] || null;
       index += 1;
     } else if (arg === '--help' || arg === '-h') {

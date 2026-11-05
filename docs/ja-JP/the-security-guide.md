@@ -18,7 +18,7 @@ _ecc / research / security_
 
 ### 攻撃チェーンと関与するノード / コンポーネント
 
-![Attack Chain Diagram](./assets/images/security/attack-chain.png)
+![Attack Chain Diagram](https://raw.githubusercontent.com/affaan-m/ECC/main/assets/images/security/attack-chain.png)
 
 例えば、あなたのエージェントがゲートウェイレイヤーを介してWhatsAppに接続されているとします。攻撃者があなたのWhatsApp番号を知っています。既存のジェイルブレイクを使ってプロンプトインジェクションを試みます。チャットにジェイルブレイクをスパムします。エージェントがメッセージを読み、指示として受け取ります。プライベート情報を明かすレスポンスを実行します。エージェントがroot権限、広範なファイルシステムアクセス、または有用な認証情報を持っている場合、あなたは侵害されています。
 

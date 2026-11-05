@@ -55,7 +55,9 @@ def get_project_memory_dir() -> Optional[str]:
     Returns None if no memory directory exists for this project.
     Does NOT fall back to other projects (privacy boundary)."""
     cwd = os.environ.get('CLAUDE_PROJECT_DIR', os.getcwd())
-    safe = cwd.replace(':', '-').replace('\\', '-').replace('/', '-')
+    # Claude Code names project dirs by replacing every non-alphanumeric
+    # character (including spaces) with '-'.
+    safe = re.sub(r'[^A-Za-z0-9]', '-', cwd)
     mem = os.path.expanduser(f'~/.claude/projects/{safe}/memory')
     log.info('Looking for memory dir: cwd=%s -> %s', cwd, mem)
     if os.path.isdir(mem):
@@ -136,6 +138,9 @@ def main() -> None:
     transcript = raw
     try:
         payload = json.loads(raw)
+        if isinstance(payload, dict) and payload.get('stop_hook_active') is True:
+            # This Stop was already blocked once; blocking again would loop forever.
+            sys.exit(0)
         if isinstance(payload, dict) and 'transcript_path' in payload:
             tp = os.path.expanduser(payload['transcript_path'])
             if os.path.exists(tp):
