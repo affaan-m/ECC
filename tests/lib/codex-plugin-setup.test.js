@@ -12,6 +12,7 @@ const {
   parsePluginInventory,
   reconcileCodexPlugin,
   resolveMarketplaceRepository,
+  runCodexCommand,
 } = require('../../scripts/lib/codex-plugin-setup');
 
 const MARKETPLACE_LIST = ['plugin', 'marketplace', 'list', '--json'];
@@ -74,6 +75,8 @@ function createExecFile(steps) {
 function dependenciesFor(fake, overrides = {}) {
   return {
     execFile: fake.execFile,
+    // Keep argv assertions independent of whether the host has a Codex shim on PATH.
+    resolveCodexCommand: () => ({ command: 'codex', prefixArgs: [] }),
     resolveMarketplaceRepository: async () => 'https://github.com/affaan-m/ECC.git',
     ...overrides,
   };
@@ -514,6 +517,47 @@ async function runTests() {
         /not installed|not on path/i
       );
       assert.strictEqual(fake.calls.length, 1);
+    }],
+    ['runs the resolved Codex launcher with its prefix args (npm codex.cmd shim on Windows)', async () => {
+      const entry = 'C:\\npm\\node_modules\\@openai\\codex\\bin\\codex.js';
+      const env = { Path: 'C:\\Windows;C:\\npm' };
+      const resolverCalls = [];
+      const fake = createExecFile([
+        { command: 'C:\\node\\node.exe', args: [entry, ...PLUGIN_LIST], stdout: '{}' },
+      ]);
+
+      const result = await runCodexCommand(PLUGIN_LIST, { env }, {
+        execFile: fake.execFile,
+        resolveCodexCommand: deps => {
+          resolverCalls.push(deps);
+          return { command: 'C:\\node\\node.exe', prefixArgs: [entry] };
+        },
+      });
+
+      assert.strictEqual(result.stdout, '{}');
+      assert.strictEqual(fake.calls.length, 1);
+      assert.strictEqual(resolverCalls.length, 1);
+      assert.strictEqual(resolverCalls[0].env, env);
+    }],
+    ['uses an explicit Codex command as-is and reports Codex argv without launcher prefixes', async () => {
+      const missing = Object.assign(new Error('spawn ENOENT'), { code: 'ENOENT' });
+      const fake = createExecFile([
+        { command: 'C:\\custom\\codex.exe', args: PLUGIN_LIST, error: missing },
+      ]);
+
+      await assert.rejects(
+        runCodexCommand(PLUGIN_LIST, { command: 'C:\\custom\\codex.exe' }, {
+          execFile: fake.execFile,
+          resolveCodexCommand: () => {
+            throw new Error('resolver must not run for an explicit command');
+          },
+        }),
+        error => {
+          assert.strictEqual(error.code, 'CODEX_NOT_FOUND');
+          assert.deepStrictEqual(error.argv, PLUGIN_LIST);
+          return true;
+        }
+      );
     }],
     ['rejects malformed marketplace and plugin JSON inventories', async () => {
       assert.throws(
