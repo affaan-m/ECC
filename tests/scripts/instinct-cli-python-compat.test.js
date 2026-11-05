@@ -6,7 +6,7 @@
  * interpreter hit it. The static check below parses the script with the
  * oldest grammar ast offers (3.7 on current Pythons, which only adds the
  * async/await keywords) and rejects what that parse misses: unquoted builtin
- * generics in evaluated annotations, newer-only APIs, and f-string forms
+ * generics and X | Y unions in evaluated annotations, newer-only APIs, and f-string forms
  * from 3.8 and 3.12 that ast does not record.
  * The other cases run the CLI under the strictest warning settings of the
  * current Python and cover the end-of-life notice.
@@ -118,6 +118,10 @@ def check_annotation(node, where):
         if (isinstance(sub, ast.Subscript) and isinstance(sub.value, ast.Name)
                 and sub.value.id in BUILTIN_GENERICS):
             problems.append("line %d: unquoted %s[...] annotation in %s" % (sub.lineno, sub.value.id, where))
+        # X | Y in an evaluated annotation is a PEP 604 union on 3.10+; an
+        # operand type with its own __or__ could still make it valid earlier.
+        if isinstance(sub, ast.BinOp) and isinstance(sub.op, ast.BitOr):
+            problems.append("line %d: unquoted X | Y annotation in %s may need 3.10" % (sub.lineno, where))
 
 for node in ast.walk(tree):
     if isinstance(node, ast.ImportFrom) and node.module == "__future__":
@@ -217,44 +221,67 @@ test('the script uses nothing newer than Python 3.6', () => {
   assert.strictEqual(r.stdout.trim(), '', `3.6-incompatible constructs:\n${r.stdout}`);
 });
 
-test('the compatibility check catches what it is meant to catch', () => {
+function runCompatCheck(lines) {
   const tmp = createTempDir();
   try {
     const sample = path.join(tmp, 'sample.py');
-    fs.writeFileSync(
-      sample,
-      [
-        'import subprocess',
-        'def f(x: list[str]) -> dict[str, int]:',
-        '    subprocess.run(["git"], capture_output=True, text=True)',
-        '    return x[0].removeprefix("a")',
-        'n = 1',
-        'd = {"k": 1}',
-        'a = f"{n=}"',
-        'b = f"{d["k"]}"',
-        "c = f'{n == 1} {n!r:>4} {d[\"k\"]} {{n=}}'",
-        '',
-      ].join('\n')
-    );
+    fs.writeFileSync(sample, [...lines, ''].join('\n'));
     const r = runPython(['-c', COMPAT_CHECK, sample]);
     assert.strictEqual(r.status, 0, r.stderr);
-    const expectedProblems = [
-      'list[...]',
-      'dict[...]',
-      'capture_output=',
-      'text=',
-      '.removeprefix()',
-      'line 7: f-string = specifier',
-      'line 8: reused quotes',
-    ];
-    for (const unexpected of ['line 9:']) {
-      assert.ok(!r.stdout.includes(unexpected), `3.6-valid f-string flagged:\n${r.stdout}`);
-    }
-    for (const expected of expectedProblems) {
-      assert.ok(r.stdout.includes(expected), `missing ${expected} in:\n${r.stdout}`);
-    }
+    return r.stdout;
   } finally {
     cleanupDir(tmp);
+  }
+}
+
+// Every line here parses on all supported Pythons, so each finding is
+// reported on its own rather than hidden behind a parse error.
+test('the compatibility check catches what it is meant to catch', () => {
+  const out = runCompatCheck([
+    'import subprocess',
+    'def f(x: list[str]) -> dict[str, int]:',
+    '    subprocess.run(["git"], capture_output=True, text=True)',
+    '    return x[0].removeprefix("a")',
+    'n = 1',
+    'd = {"k": 1}',
+    "c = f'{n == 1} {n!r:>4} {d[\"k\"]} {{n=}}'",
+    'def g(x: str | None) -> "str | None":',
+    '    return x',
+    'def h(x: "str | None") -> None:',
+    '    pass',
+  ]);
+  const expectedProblems = [
+    'list[...]',
+    'dict[...]',
+    'capture_output=',
+    'text=',
+    '.removeprefix()',
+    'line 8: unquoted X | Y annotation in g',
+  ];
+  for (const expected of expectedProblems) {
+    assert.ok(out.includes(expected), `missing ${expected} in:\n${out}`);
+  }
+  for (const unexpected of ['line 7:', 'line 10:']) {
+    assert.ok(!out.includes(unexpected), `3.6-valid line flagged:\n${out}`);
+  }
+  assert.strictEqual((out.match(/X \| Y/g) || []).length, 1, `quoted union flagged:\n${out}`);
+});
+
+// Before 3.12 the parser itself rejects some of these forms, and before 3.8
+// it rejects the = specifier when asked for the 3.6 grammar. Either the
+// specific finding or the parse error counts, so the test holds on any
+// Python the CLI supports.
+test('the compatibility check rejects f-string forms newer than 3.6', () => {
+  const cases = [
+    { lines: ['n = 1', 'a = f"{n=}"'], finding: 'line 2: f-string = specifier' },
+    { lines: ['d = {"k": 1}', 'b = f"{d["k"]}"'], finding: 'line 2: reused quotes' },
+  ];
+  for (const { lines, finding } of cases) {
+    const out = runCompatCheck(lines);
+    assert.ok(
+      out.includes(finding) || /^syntax newer than 3\.6 at line 2:/m.test(out),
+      `${lines[1]} not rejected:\n${out}`
+    );
   }
 });
 
