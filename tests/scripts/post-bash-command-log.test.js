@@ -166,6 +166,34 @@ if (
 else failed++;
 
 if (
+  test('sanitizeCommand redacts JWTs joined to a hyphenated prefix', () => {
+    assert.strictEqual(
+      sanitizeCommand(`curl --cookie "session=jwt-${FAKE_JWT}" https://example.com`),
+      'curl --cookie "session=jwt-<REDACTED>" https://example.com'
+    );
+    assert.strictEqual(sanitizeCommand(`echo prefix-${FAKE_JWT}`), 'echo prefix-<REDACTED>');
+    assert.strictEqual(sanitizeCommand(`echo ey-${FAKE_JWT}`), 'echo ey-<REDACTED>');
+    assert.strictEqual(sanitizeCommand(`open https://x.example.com/a.${FAKE_JWT}`), 'open https://x.example.com/a.<REDACTED>');
+    assert.strictEqual(sanitizeCommand('ping eyesightdata.example.com'), 'ping eyesightdata.example.com');
+  })
+)
+  passed++;
+else failed++;
+
+if (
+  test('sanitizeCommand stays linear on long ey- runs followed by dots', () => {
+    const start = Date.now();
+    sanitizeCommand(`${'ey-'.repeat(300000)}x.y.z`);
+    sanitizeCommand(`${'ew-'.repeat(300000)}x.y.z`);
+    sanitizeCommand('ey-ey-ey-ey.'.repeat(80000));
+    const elapsed = Date.now() - start;
+    assert.ok(elapsed < 2000, `took ${elapsed} ms`);
+  })
+)
+  passed++;
+else failed++;
+
+if (
   test('sanitizeCommand stays linear on long dot-free ey- runs', () => {
     const start = Date.now();
     sanitizeCommand('ey-'.repeat(350000));

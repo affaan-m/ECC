@@ -33,6 +33,46 @@ function redactJwt(token) {
   return token;
 }
 
+// Redact JWTs inside one run of `[A-Za-z0-9_.-]` characters. A JWT may follow
+// a word prefix joined by `-` (`session=jwt-<JWT>`), so each dot-separated
+// segment is checked for a header starting at its beginning or after a `-`.
+// Every segment is scanned once and decoded at most once, keeping long
+// `ey-ey-...` runs linear (a `\b`-anchored regex retries at each `-`).
+function redactJwtsInChain(chain) {
+  if (!chain.includes('.')) return chain;
+  const segs = chain.split('.');
+  const out = [];
+  let i = 0;
+  while (i < segs.length) {
+    const seg = segs[i];
+    if (i + 2 < segs.length && segs[i + 1].length > 0) {
+      let first = -1;
+      let preferred = -1;
+      for (let j = 0; j + 10 <= seg.length; j++) {
+        if ((j === 0 || seg[j - 1] === '-') && seg[j] === 'e' && (seg[j + 1] === 'y' || seg[j + 1] === 'w')) {
+          if (first < 0) first = j;
+          if (seg.startsWith('eyJ', j)) {
+            preferred = j;
+            break;
+          }
+        }
+      }
+      const start = preferred >= 0 ? preferred : first;
+      if (start >= 0) {
+        const token = [seg.slice(start), segs[i + 1], segs[i + 2]].join('.');
+        if (redactJwt(token) !== token) {
+          out.push(`${seg.slice(0, start)}<REDACTED>`);
+          i += 3;
+          continue;
+        }
+      }
+    }
+    out.push(seg);
+    i++;
+  }
+  return out.join('.');
+}
+
 const ASSIGNMENT_KEY = /(\b|_)(secret|api[_-]?key)(\s*[:=]\s*)/gi;
 
 function isQuoteStart(text, i) {
@@ -120,8 +160,7 @@ function sanitizeCommand(command) {
     .replace(/\n/g, ' ')
     .replace(/-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----[\s\S]*?(?:-----END [A-Z0-9 ]*PRIVATE KEY-----|$)/g, '<REDACTED>')
     .replace(/\bsk-[A-Za-z0-9_-]{20,}/g, '<REDACTED>')
-    // Lookbehind, not `\b`: `\b` matches after each `-`, making `ey-ey-...` quadratic.
-    .replace(/(?<![A-Za-z0-9_-])e[wy][A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]*/g, redactJwt);
+    .replace(/[A-Za-z0-9_.-]+/g, redactJwtsInChain);
   return redactAssignments(masked)
     .replace(/--token[= ][^ ]*/g, '--token=<REDACTED>')
     .replace(/Authorization:[: ]*[^ ]*[: ]*[^ ]*/gi, 'Authorization:<REDACTED>')
