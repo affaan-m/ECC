@@ -177,12 +177,19 @@ async function asyncTest(name, fn) {
   }
 }
 
+// Hook scripts write session files, compaction logs, learned skills and
+// homunculus data under the home directory, so script runs get an empty home
+// instead of the developer's real one unless a test passes its own HOME.
+const ISOLATED_HOME = fs.mkdtempSync(path.join(os.tmpdir(), 'hooks-test-home-'));
+const ISOLATED_HOME_ENV = { HOME: ISOLATED_HOME, USERPROFILE: ISOLATED_HOME };
+process.on('exit', () => fs.rmSync(ISOLATED_HOME, { recursive: true, force: true }));
+
 // Run a script and capture output
 function runScript(scriptPath, input = '', env = {}, cwd = process.cwd()) {
   return new Promise((resolve, reject) => {
     const proc = spawn('node', [scriptPath], {
       cwd,
-      env: { ...process.env, ...env },
+      env: { ...process.env, ...ISOLATED_HOME_ENV, ...env },
       stdio: ['pipe', 'pipe', 'pipe']
     });
 
@@ -209,7 +216,7 @@ function runShellScript(scriptPath, args = [], input = '', env = {}, cwd = proce
   return new Promise((resolve, reject) => {
     const proc = spawn('bash', [toBashPath(scriptPath), ...args], {
       cwd,
-      env: { ...process.env, ...env },
+      env: { ...process.env, ...ISOLATED_HOME_ENV, ...env },
       stdio: ['pipe', 'pipe', 'pipe']
     });
 
@@ -231,6 +238,14 @@ function runShellScript(scriptPath, args = [], input = '', env = {}, cwd = proce
 // Create a temporary test directory
 function createTestDir() {
   return fs.mkdtempSync(path.join(os.tmpdir(), 'hooks-test-'));
+}
+
+function fixtureGitOptions(cwd) {
+  const env = { ...process.env };
+  for (const name of Object.keys(env)) {
+    if (name.toUpperCase().startsWith('GIT_')) delete env[name];
+  }
+  return { cwd, env };
 }
 
 // Clean up test directory
@@ -1201,6 +1216,74 @@ async function runTests() {
     passed++;
   else failed++;
 
+  if (
+    await asyncTest('finds console.log in a modified file when the session runs in a subdirectory', async () => {
+      // git reports paths from the repository root, not from the session's directory.
+      const repo = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-console-log-'));
+      try {
+        const appDir = path.join(repo, 'packages', 'app');
+        fs.mkdirSync(path.join(appDir, 'src'), { recursive: true });
+        execFileSync('git', ['init', '-q'], fixtureGitOptions(repo));
+        fs.writeFileSync(path.join(appDir, 'src', 'a.ts'), 'export const a = 1;\n');
+        execFileSync('git', ['add', '-A'], fixtureGitOptions(repo));
+        execFileSync('git', ['-c', 'user.email=t@t.local', '-c', 'user.name=t', '-c', 'commit.gpgsign=false', 'commit', '-q', '-m', 'seed'], fixtureGitOptions(repo));
+        fs.writeFileSync(path.join(appDir, 'src', 'a.ts'), 'export const a = 1;\nconsole.log(a);\n');
+
+        const result = await runScript(path.join(scriptsDir, 'check-console-log.js'), '{}', {}, appDir);
+        assert.strictEqual(result.code, 0);
+        assert.ok(result.stderr.includes('console.log found in packages/app/src/a.ts'), `Should warn about the file, got: ${result.stderr}`);
+
+        // diff.relative would make git report paths from the session's directory.
+        execFileSync('git', ['config', 'diff.relative', 'true'], fixtureGitOptions(repo));
+        const relative = await runScript(path.join(scriptsDir, 'check-console-log.js'), '{}', {}, appDir);
+        assert.ok(relative.stderr.includes('console.log found in packages/app/src/a.ts'), `Should warn with diff.relative, got: ${relative.stderr}`);
+      } finally {
+        fs.rmSync(repo, { recursive: true, force: true });
+      }
+    })
+  )
+    passed++;
+  else failed++;
+
+  if (
+    await asyncTest('uses the session repository despite inherited Git environment overrides', async () => {
+      const root = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-console-git-env-'));
+      try {
+        const makeRepo = (name, file) => {
+          const repo = path.join(root, name);
+          fs.mkdirSync(path.join(repo, 'src'), { recursive: true });
+          execFileSync('git', ['init', '-q'], fixtureGitOptions(repo));
+          fs.writeFileSync(path.join(repo, 'src', file), 'export const value = 1;\n');
+          execFileSync('git', ['add', '-A'], fixtureGitOptions(repo));
+          execFileSync('git', ['-c', 'user.email=t@t.local', '-c', 'user.name=t', '-c', 'commit.gpgsign=false', 'commit', '-q', '-m', 'seed'], fixtureGitOptions(repo));
+          return repo;
+        };
+        const sessionRepo = makeRepo('session', 'local.ts');
+        const foreignRepo = makeRepo('foreign', 'foreign.ts');
+        fs.writeFileSync(path.join(foreignRepo, 'src', 'foreign.ts'), 'console.log("foreign");\n');
+        const env = {
+          GIT_DIR: path.join(foreignRepo, '.git'),
+          GIT_WORK_TREE: foreignRepo,
+          GIT_INDEX_FILE: path.join(foreignRepo, '.git', 'index')
+        };
+
+        const clean = await runScript(path.join(scriptsDir, 'check-console-log.js'), '{}', env, sessionRepo);
+        assert.strictEqual(clean.code, 0);
+        assert.ok(!clean.stderr.includes('console.log found'), `foreign repository leaked into hook: ${clean.stderr}`);
+
+        fs.writeFileSync(path.join(sessionRepo, 'src', 'local.ts'), 'console.log("local");\n');
+        const local = await runScript(path.join(scriptsDir, 'check-console-log.js'), '{}', env, sessionRepo);
+        assert.strictEqual(local.code, 0);
+        assert.ok(local.stderr.includes('console.log found in src/local.ts'), local.stderr);
+        assert.ok(!local.stderr.includes('foreign.ts'), local.stderr);
+      } finally {
+        fs.rmSync(root, { recursive: true, force: true });
+      }
+    })
+  )
+    passed++;
+  else failed++;
+
   // session-end.js tests
   console.log('\nsession-end.js:');
 
@@ -1439,7 +1522,7 @@ async function runTests() {
   if (
     await asyncTest('creates compaction log', async () => {
       await runScript(path.join(scriptsDir, 'pre-compact.js'));
-      const logFile = path.join(getCanonicalSessionsDir(os.homedir()), 'compaction-log.txt');
+      const logFile = path.join(getCanonicalSessionsDir(ISOLATED_HOME), 'compaction-log.txt');
       assert.ok(fs.existsSync(logFile), 'Compaction log should exist');
     })
   )
@@ -3624,7 +3707,7 @@ async function runTests() {
 
       const shell = process.platform === 'win32' ? 'bash' : 'bash';
       const proc = spawn(shell, ['-lc', shellCommand], {
-        env: process.env,
+        env: { ...process.env, ...ISOLATED_HOME_ENV },
         stdio: ['ignore', 'pipe', 'pipe']
       });
 

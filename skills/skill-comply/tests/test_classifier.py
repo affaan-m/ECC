@@ -28,7 +28,12 @@ class TestParseClassification:
             _parse_classification('{"a": [0], "other": "x"}')
 
     def test_existing_index_coercion_is_preserved(self) -> None:
-        assert _parse_classification('{"a": [true, 2.9, "3"]}') == {"a": [1, 2, 3]}
+        assert _parse_classification('{"a": [0, 2.0, "3"]}') == {"a": [0, 2, 3]}
+
+    @pytest.mark.parametrize("index", [True, False, 2.9, -0.1])
+    def test_boolean_and_fractional_indices_raise(self, index: object) -> None:
+        with pytest.raises(classifier.ClassifierParseError, match="failed to parse"):
+            _parse_classification(json.dumps({"a": [index]}))
 
     def test_empty_object_is_valid(self) -> None:
         assert _parse_classification("{}") == {}
@@ -54,7 +59,7 @@ class TestParseClassification:
         assert issubclass(classifier.ClassifierParseError, RuntimeError)
 
 
-@pytest.mark.parametrize("response", ["not JSON", "[]", '{"a": ["x"]}', '{"a": "x"}', '{"a": [0], "other": null}', '{"a": [1e309]}', '{"a": [-1e309]}'])
+@pytest.mark.parametrize("response", ["not JSON", "[]", '{"a": ["x"]}', '{"a": "x"}', '{"a": [0], "other": null}', '{"a": [1e309]}', '{"a": [-1e309]}', '{"a": [false]}', '{"a": [0.5]}'])
 def test_grader_propagates_classifier_parse_failure(response: str) -> None:
     """An invalid successful subprocess response cannot become a zero score."""
     spec = ComplianceSpec(

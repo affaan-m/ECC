@@ -1,0 +1,73 @@
+{
+  "schema_version": "ecc.evaluator-rag.verifier.v1",
+  "scenario_id": "connector-diagnostics-gap",
+  "run_id": "illustrative-connector-gap",
+  "read_only": true,
+  "evaluation_status": "illustrative_expected_decisions_not_executed_connector_checks",
+  "candidates": [
+    {
+      "candidate_id": "bounded-event-summary",
+      "decision": "accepted",
+      "reasons": [
+        "Names all inspected diagnostic paths and their observed coverage",
+        "Uses existing throttle events for the remaining interval-summary requirement",
+        "Keeps retention and deployed settings unknown until checked",
+        "Requires evidence before introducing a new background component"
+      ]
+    },
+    {
+      "candidate_id": "new-monitor-without-inventory",
+      "decision": "rejected",
+      "reasons": [
+        "Duplicates existing connection and access diagnostics",
+        "Infers absent capability from an unavailable settings channel",
+        "Provides no evidence that existing events cannot satisfy the remaining gap"
+      ]
+    }
+  ],
+  "promoted_candidate_id": "bounded-event-summary",
+  "rollback": {
+    "current_run": "Not applicable: No connector state is changed by this read-only illustrative selection.",
+    "future_extension": "If later implemented, revert the summary extension and its query/configuration changes to restore the existing diagnostics paths; verify connection, access and per-request event behavior before redeployment."
+  },
+  "management_preparation": {
+    "decision": "continue_independent_preparation",
+    "blocked_work": [
+      "host-level checks on server A"
+    ],
+    "continue_work": [
+      "prepare monitoring templates",
+      "map existing management capabilities",
+      "inspect the existing notification channel"
+    ],
+    "not_established": [
+      "continuous collection readiness",
+      "notification delivery",
+      "authority for arbitrary changes"
+    ],
+    "rejected_inferences": [
+      "unavailable SSH blocks all monitoring preparation",
+      "existing management access requires redundant installation",
+      "successful management reads prove collection or notification readiness"
+    ]
+  },
+  "target_contract": {
+    "before_stop": {
+      "document_filling": "hold_for_target_mapping",
+      "reason": "General documentation does not identify the active variant and mandatory fields; preserve independent findings."
+    },
+    "after_stop": {
+      "action": "stop_requested_work",
+      "candidate_state": "unfinished_not_promoted"
+    },
+    "after_scope_revision": {
+      "authorization_source": "explicit_user_scope_revision",
+      "continue_work": [
+        "fact storage",
+        "fact validation"
+      ],
+      "document_filling": "separate_phase_awaiting_target_contract",
+      "erases_earlier_sequencing_error": false
+    }
+  }
+}

@@ -128,10 +128,16 @@ function findTsConfigDir(filePath) {
   return null;
 }
 
+// tsc --pretty false starts each diagnostic with the file it is about:
+// `src/a.ts(1,14): error TS2322: ...`. Compare that path instead of looking for
+// the edited path anywhere in the line, which let a root `index.ts` claim the
+// errors of `src/index.ts`, and `src/utils.ts` those of `web/src/utils.ts`.
 function diagnosticMatchesFile(line, paths) {
-  const normalizedLine = line.replace(/\\/g, '/');
+  const location = /^(.+?)\(\d+,\d+\): /.exec(line);
+  if (!location) return false;
+  const file = location[1].replace(/\\/g, '/');
   for (const candidate of paths) {
-    if (normalizedLine.includes(candidate.replace(/\\/g, '/'))) return true;
+    if (file === candidate.replace(/\\/g, '/')) return true;
   }
   return false;
 }

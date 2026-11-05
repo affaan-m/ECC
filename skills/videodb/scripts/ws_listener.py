@@ -35,8 +35,9 @@ import contextlib
 from datetime import datetime, timezone
 from pathlib import Path
 
-from dotenv import load_dotenv
-load_dotenv()
+from dotenv import find_dotenv, load_dotenv
+# Search from the working directory (the user's project), not this script's dir.
+load_dotenv(find_dotenv(usecwd=True))
 
 import videodb
 from videodb.exceptions import AuthenticationError
@@ -191,15 +192,21 @@ async def listen_with_retry():
             print(f"WS_ID={ws_id}", flush=True)
         log(f"Connected (ws_id={ws_id})")
 
-        retry_count = 0
-        backoff = INITIAL_BACKOFF
-
         receiver = ws.receive().__aiter__()
         while True:
             try:
                 msg = await anext(receiver)
             except StopAsyncIteration:
+                # Counts as a failed attempt, so a server that accepts and then
+                # closes at once is retried with backoff, not in a tight loop.
+                retry_count += 1
                 log("Connection closed by server")
+                if retry_count >= MAX_RETRIES:
+                    log(f"Max retries ({MAX_RETRIES}) exceeded, exiting")
+                    return
+                log(f"Reconnecting in {backoff}s (attempt {retry_count}/{MAX_RETRIES})...")
+                await asyncio.sleep(backoff)
+                backoff = min(backoff * 2, MAX_BACKOFF)
                 break
             except asyncio.CancelledError:
                 log("Shutdown requested")
@@ -222,6 +229,9 @@ async def listen_with_retry():
                 backoff = min(backoff * 2, MAX_BACKOFF)
                 break
 
+            # Only a connection that delivers events resets the retry budget.
+            retry_count = 0
+            backoff = INITIAL_BACKOFF
             append_event(msg)
             channel = msg.get("channel", msg.get("event", "unknown"))
             text = msg.get("data", {}).get("text", "")

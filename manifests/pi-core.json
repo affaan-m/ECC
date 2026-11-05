@@ -114,6 +114,7 @@
       "living-docs-governance",
       "make-interfaces-feel-better",
       "mcp-server-patterns",
+      "module-governance",
       "module-regression",
       "ml-adoption-playbook",
       "mle-workflow",
@@ -161,6 +162,7 @@
       "swiftui-patterns",
       "tdd-workflow",
       "test-collaboration",
+      "typescript-patterns",
       "verification-loop",
       "vite-patterns",
       "vue-patterns"
@@ -347,7 +349,8 @@
       "agent-runtime-gateway-smoke-test": "requires authenticated network gateways and remote sandbox callbacks at runtime",
       "brownfield-retrospective": "depends on the ECC specialist agent roster and spec-miner dispatch workflow; not a compact portable Pi prompt",
       "deepseek-harness-setup": "configures an external DeepSeek provider and Claude-Code-specific credentials and hook integration",
-      "story-lifecycle": "Requires ECC agent workflow handoffs and a local Node ledger; native Pi delivery has not been validated."
+      "story-lifecycle": "Requires ECC agent workflow handoffs and a local Node ledger; native Pi delivery has not been validated.",
+      "issue-review": "Requires authenticated GitHub reads and optional remote issue mutations through gh; outside the offline core profile."
     }
   },
   "commands": {
@@ -450,7 +453,8 @@
       "skill-host-compat.md": "runs an ECC repo CI script (scripts/ci/validate-skill-host-compat.js)",
       "vue-review.md": "invokes ECC agent roster (vue-reviewer)",
       "token-card.md": "Requires the tokenchit CLI and provider session logs via the token-card skill.",
-      "astra-review.md": "requires an external Codex CLI and cross-provider review authorization at runtime"
+      "astra-review.md": "requires an external Codex CLI and cross-provider review authorization at runtime",
+      "issue-review.md": "Compatibility shim for the authenticated issue-review workflow; outside the offline core profile."
     }
   },
   "safety": {

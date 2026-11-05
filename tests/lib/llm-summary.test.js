@@ -167,11 +167,55 @@ test('returns null for transcript with no usage data', () => {
 });
 
 test('returns numeric percentage for transcript with usage data', () => {
-  const p = writeTranscript([assistantEntry('ok')]);
+  const parsed = JSON.parse(assistantEntry('ok'));
+  const entry = { ...parsed, message: { ...parsed.message, model: 'claude-opus-4-5[1m]' } };
+  const p = writeTranscript([JSON.stringify(entry)]);
   const pct = getContextRemainingPct(p);
   assert.ok(typeof pct === 'number');
   assert.ok(pct >= 0 && pct <= 100);
 });
+
+for (const [label, model, nativeBudget, explicitWindow, expected, tokens = 330000] of [
+  ['inferred window uses native compaction budget conservatively', 'unknown-model', '400000', '', 18],
+  ['unknown capacity without a budget stays unknown', 'unknown-model', '', '', null],
+  ['summary precedes native compaction even with confirmed model capacity', 'claude-opus-4-5[1m]', '400000', '', 18],
+  ['explicit ECC window remains authoritative', 'claude-opus-4-5[1m]', '786432', '400000', 18],
+  ['invalid compaction budget does not certify an inferred window', 'unknown-model', 'invalid', '', null],
+  ['native budget cannot exceed confirmed model capacity', 'claude-opus-4-5[1m]', '2000000', '', 67],
+  ['explicit capacity does not defer a smaller native compaction budget', 'claude-opus-4-5[1m]', '400000', '1000000', 18],
+  ['native 786k compaction receives a timely summary on a 1M model', 'claude-opus-4-5[1m]', '786432', '', 10, 710000],
+  ['confirmed capacity remains usable without a native budget', 'claude-opus-4-5[1m]', '', '', 67],
+  ['known model family also respects the earlier native budget', 'claude-fable-5', '400000', '', 18],
+  ['unknown capacity rejects a numeric native prefix', 'unknown-model', '200000tokens', '', null, 180000],
+  ['unknown capacity rejects a fractional native budget', 'unknown-model', '200000.5', '', null, 180000],
+  ['unknown capacity rejects an unsafe native integer', 'unknown-model', '9007199254740992', '', null, 180000],
+  ['invalid explicit prefix does not override a valid native budget', 'unknown-model', '400000', '200000tokens', 55, 180000],
+]) {
+  test(label, () => {
+    const keys = ['ECC_CONTEXT_WINDOW_TOKENS', 'CLAUDE_CODE_AUTO_COMPACT_WINDOW'];
+    const previous = keys.map(key => process.env[key]);
+    try {
+      process.env.ECC_CONTEXT_WINDOW_TOKENS = explicitWindow;
+      process.env.CLAUDE_CODE_AUTO_COMPACT_WINDOW = nativeBudget;
+      const parsed = JSON.parse(assistantEntry('preserve context'));
+      const entry = {
+        ...parsed,
+        message: { ...parsed.message, model, usage: { ...parsed.message.usage, input_tokens: tokens } },
+      };
+      assert.strictEqual(getContextRemainingPct(writeTranscript([JSON.stringify(entry)])), expected);
+      if (model.includes('[1m]') || model === 'claude-fable-5') {
+        const { resolveContextWindowTokens } = require('../../scripts/lib/transcript-context');
+        assert.strictEqual(resolveContextWindowTokens(tokens, model), explicitWindow ? Number(explicitWindow) : 1000000,
+          'summary scheduling must not change model capacity resolution');
+      }
+    } finally {
+      keys.forEach((key, index) => {
+        if (previous[index] === undefined) delete process.env[key];
+        else process.env[key] = previous[index];
+      });
+    }
+  });
+}
 
 // --- generateSessionSummary ---
 console.log('\ngenerateSessionSummary:');

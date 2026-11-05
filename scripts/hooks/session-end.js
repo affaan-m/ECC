@@ -221,7 +221,7 @@ function sessionShortId(transcriptPath) {
 
 /**
  * Decide whether to call LLM for a richer summary.
- * Triggers: context remaining < 20%, or every 50 user messages as a baseline.
+ * Triggers: summary budget remaining < 20%, or every 50 user messages as a baseline.
  */
 function maybeGenerateLlmSummary(transcriptPath, summary) {
   const contextPct = getContextRemainingPct(transcriptPath);
@@ -231,7 +231,7 @@ function maybeGenerateLlmSummary(transcriptPath, summary) {
   const isPeriodicTurn = summary.totalMessages > 0 && summary.totalMessages % safeInterval === 0;
   if (!isContextLow && !isPeriodicTurn) return null;
 
-  log(`[SessionEnd] LLM summary triggered (context: ${contextPct ?? 'unknown'}%, messages: ${summary.totalMessages})`);
+  log(`[SessionEnd] LLM summary triggered (summary budget: ${contextPct ?? 'unknown'}%, messages: ${summary.totalMessages})`);
   let skipped = false;
   const llmSummary = generateSessionSummary(transcriptPath, {
     onSkip: reason => {

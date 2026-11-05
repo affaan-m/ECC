@@ -485,12 +485,10 @@ flox search <package> --all       # より広いパッケージ検索（大文�
 
 ## 関連スキル
 
-以下のスキルは、より深い統合のために[Flox Claude Codeプラグイン](https://github.com/flox/flox-agentic)の一部として利用可能です:
+以下のスキルは、より深い統合のために[Flox Claude Codeプラグイン](https://github.com/flox/flox-skills)の一部として利用可能です:
 
-- **flox-services** — サービス管理、データベースセットアップ、バックグラウンドプロセス
-- **flox-builds** — Floxによる再現可能なビルドとパッケージング
-- **flox-containers** — Flox環境からDocker/OCIコンテナーを作成
-- **flox-sharing** — 環境の合成、リモート環境、チームパターン
-- **flox-cuda** — CUDAとGPU開発環境
+- **flox** — 環境、サービスとデータベース、ビルドとパッケージング、コンテナー、FloxHubへの公開、環境の合成と共有、CUDA/GPU開発
+- **floxify** — ランタイム、サービス、ビルドツールを検出して既存のリポジトリをFloxに移行
+- **flox-debug** — パッケージが期待するバージョンに解決されない場合のカタログ解決の問題を診断
 
 詳細とインストールは[flox.dev/docs](https://flox.dev/docs/install-flox/install/)で。

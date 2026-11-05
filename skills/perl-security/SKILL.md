@@ -412,10 +412,6 @@ Always encode output for its context: `HTML::Entities::encode_entities()` for HT
 severity = 3
 theme = security + core
 
-# Require three-arg open
-[InputOutput::RequireThreeArgOpen]
-severity = 5
-
 # Require checked system calls
 [InputOutput::RequireCheckedSyscalls]
 functions = :builtins
@@ -428,10 +424,6 @@ severity = 5
 # Prohibit backtick operators
 [InputOutput::ProhibitBacktickOperators]
 severity = 4
-
-# Require taint checking in CGI
-[Modules::RequireTaintChecking]
-severity = 5
 
 # Prohibit two-arg open
 [InputOutput::ProhibitTwoArgOpen]

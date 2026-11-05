@@ -533,7 +533,7 @@ func ProcessRequest(data []byte) []byte {
 
     buf.Write(data)
     // Procesar...
-    return buf.Bytes()
+    return bytes.Clone(buf.Bytes()) // copy: buf goes back to the pool on return
 }
 ```
 
