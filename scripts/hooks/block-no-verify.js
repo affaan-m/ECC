@@ -844,30 +844,46 @@ function fileTarget(path, fds) {
 
 // The descriptors after a command's output redirections, applied left to right
 // as the shell does: `2>&1 >/dev/null` sends stderr to the old stdout and
-// stdout away.
+// stdout away. `N>&M` and `N<&M` both make N a copy of M, and `N>&M-` moves M
+// to N and closes M.
 function redirectedFds(fds, redirects, budget) {
   const result = new Map(fds);
   for (const redirect of redirects) {
     budget.spend();
-    const { operator, word } = redirect;
-    if (operator !== '>' && operator !== '>>' && operator !== '>&') continue;
-    const fd = redirect.fd ?? '1';
-    const target = word?.value ?? '';
-    if (!word || word.dynamic) {
-      result.set(fd, 'unknown');
-    } else if (operator === '>&' && target === '-') {
-      result.set(fd, 'away');
-    } else if (operator === '>&' && /^\d+$/.test(target)) {
-      // A descriptor that was never opened fails the command, so nothing is written.
-      result.set(fd, result.get(target) ?? 'away');
-    } else {
-      const file = fileTarget(target, result);
-      result.set(fd, file);
-      // `>&file` sends stdout and stderr there, like `&>file`.
-      if (operator === '>&' && redirect.fd === null) result.set('2', file);
-    }
+    applyRedirect(result, redirect);
   }
   return result;
+}
+
+// A descriptor that was never opened fails the command, so nothing is written.
+function copyDescriptor(fds, fd, source, move) {
+  const target = fds.get(source) ?? 'away';
+  if (move && source !== fd) fds.set(source, 'away');
+  fds.set(fd, target);
+}
+
+function applyRedirect(fds, redirect) {
+  const { operator, word } = redirect;
+  const copies = operator === '>&' || (operator === '<&' && redirect.fd !== null);
+  if (operator !== '>' && operator !== '>>' && !copies) return;
+  const fd = redirect.fd ?? '1';
+  const target = word?.value ?? '';
+  const copied = copies ? /^(\d+)(-?)$/.exec(target) : null;
+  if (!word || word.dynamic) {
+    fds.set(fd, 'unknown');
+  } else if (copies && target === '-') {
+    fds.set(fd, 'away');
+  } else if (copied) {
+    copyDescriptor(fds, fd, copied[1], copied[2] === '-');
+  } else if (operator === '<&') {
+    // Not a descriptor: the scan does not model what this reads into an output.
+    fds.set(fd, 'unknown');
+  } else {
+    const file = fileTarget(target, fds);
+    fds.set(fd, file);
+    // `>&file` sends stdout and stderr there, like `&>file`.
+    if (operator === '>&' && redirect.fd === null) fds.set('2', file);
+  }
 }
 
 // Commands that print without reading their stdin, so what is piped into them
@@ -920,27 +936,36 @@ function echoText(words) {
 
 // What printf writes: each %s, %b and %c takes the next argument, and the format
 // is used again while arguments remain, as printf does; %% is a percent sign, and
-// a conversion with no argument left is empty. Null for any other conversion
-// (%d, a width or a precision): printf is then read like an unmodeled command.
-function printfText(words) {
+// a conversion with no argument left is empty. Escapes are decoded in the format
+// and in %b arguments only: %s and %c write their argument as it is. Null for any
+// other conversion (%d, a width or a precision): printf is then read like an
+// unmodeled command. The budget is charged before each piece is added, so a
+// short command cannot expand into a huge string.
+function printfText(words, budget) {
   let index = 1;
   if (words[index]?.value === '--') index++;
   const format = words[index]?.value ?? '';
   const args = words.slice(index + 1).map(word => word.value);
-  const conversions = format.match(/%./g) || [];
+  const pieces = format.split(/(%.)/);
+  const conversions = pieces.filter((piece, i) => i % 2 === 1);
   if (conversions.some(conversion => !['%s', '%b', '%c', '%%'].includes(conversion))) return null;
   const consumes = conversions.some(conversion => conversion !== '%%');
   let output = '';
   let next = 0;
   do {
-    output += format.replace(/%(.)/g, (conversion, kind) => {
-      if (kind === '%') return '%';
-      const arg = args[next++] ?? '';
-      if (kind === 'c') return arg.slice(0, 1);
-      return kind === 'b' ? decodeSpaceEscapes(arg) : arg;
+    pieces.forEach((piece, i) => {
+      let text;
+      if (i % 2 === 0) text = decodeSpaceEscapes(piece);
+      else if (piece === '%%') text = '%';
+      else {
+        const arg = args[next++] ?? '';
+        text = piece === '%c' ? arg.slice(0, 1) : (piece === '%b' ? decodeSpaceEscapes(arg) : arg);
+      }
+      budget.spend(text.length + 1);
+      output += text;
     });
   } while (consumes && next < args.length);
-  return decodeSpaceEscapes(output);
+  return output;
 }
 
 // A group writes to where its stage's descriptors point: the shell, or away.
@@ -965,9 +990,9 @@ function opaqueSource(words, budget) {
 
 // The text echo or printf writes; null for a printf conversion the model lacks,
 // undefined for any other command.
-function literalText(name, words) {
+function literalText(name, words, budget) {
   if (name === 'echo') return echoText(words);
-  if (name === 'printf' && words[1]?.value !== '-v') return printfText(words);
+  if (name === 'printf' && words[1]?.value !== '-v') return printfText(words, budget);
   return undefined;
 }
 
@@ -990,7 +1015,7 @@ function stageSources(current, budget, stageFds, downstream) {
   const { words } = executableWords(current.words, budget);
   for (const word of words) budget.spend(word.value.length + 3);
   const name = basename(words[0]?.value || '');
-  const literal = literalText(name, words);
+  const literal = literalText(name, words, budget);
   if (stdoutReaches && typeof literal === 'string') sources.push({ text: literal });
   // An unmodeled command may also write to stderr, so either stream counts.
   const unmodeled = !DATA_COMMANDS.has(name) || literal === null;

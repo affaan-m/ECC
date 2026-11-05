@@ -2220,9 +2220,10 @@ for (const [name, command, expected] of sedCases) {
 
 // --- Producer output follows the shell's descriptors (checked against bash) ---
 
-// Each command ends in `| bash` or `| sh`. With that receiver replaced by `cat`,
-// bash itself shows what the shell would have read, and the hook must block
-// exactly when that text runs `git push` or `git commit` with --no-verify.
+// Each command ends in `| bash` or `| sh`. That receiver is replaced by a bash
+// that runs what it reads with `git` defined as a function printing its
+// arguments, and the hook must block exactly when the shell would have run
+// `git push` or `git commit` with --no-verify.
 const producerCases = [
   "{ exec 2>&1; echo 'git push --no-verify' >&2; } | bash",
   "( exec 3>&1; echo 'git push --no-verify' >&3 ) | sh",
@@ -2241,18 +2242,31 @@ const producerCases = [
   "printf 'git push %s\\n' --no-verify | sh",
   "printf '%%s git push\\n' | sh",
   "{ printf 'git pu'; printf 'sh --no-verify'; } | sh",
+  "printf '%s' 'gi\\t push --no-verify' | sh",
+  "printf '%b' 'git push\\t--no-verify' | sh",
+  "echo 'git push --no-verify' 3>&1 >/dev/null 1<&3 | sh",
+  "echo 'git push --no-verify' 3>&1 >/dev/null 1>&3- | sh",
 ];
 if (process.platform !== 'win32') {
   for (const command of producerCases) {
     if (test(`producer output as bash reads it: ${command}`, () => {
-      const shown = command.replace(/\|\s*(bash|sh)$/, '| cat');
+      const shown = command.replace(/\|\s*(bash|sh)$/, '| /bin/bash -c \'git() { echo "GIT $*"; }; . /dev/stdin\'');
       const bash = spawnSync('/bin/bash', ['-c', shown], { encoding: 'utf8' });
-      assert.strictEqual(bash.status, 0, bash.stderr);
-      const bypass = /\bgit\s+(?:push|commit)\b[^\n]*\s--no-verify\b/.test(bash.stdout);
-      assert.strictEqual(runHook({ tool_input: { command } }).code, bypass ? 2 : 0, `bash reads ${JSON.stringify(bash.stdout)}`);
+      const bypass = /^GIT (?:push|commit)\b.*\s--no-verify\b/m.test(bash.stdout);
+      assert.strictEqual(runHook({ tool_input: { command } }).code, bypass ? 2 : 0, `the shell runs ${JSON.stringify(bash.stdout)}`);
     })) passed++; else failed++;
   }
 }
+
+if (test('printf format reuse is charged to the work budget before it expands', () => {
+  // About 4 KB of command expands to about 2 MB when the format is reused per argument.
+  const command = `printf '${'x'.repeat(2000)}%s' ${Array(1000).fill('a').join(' ')} | sh`;
+  const started = Date.now();
+  const result = runHook({ tool_input: { command } });
+  assert.strictEqual(result.code, 2);
+  assert.match(result.stderr, /work budget exceeded/);
+  assert.ok(Date.now() - started < 2000, 'expected the budget to stop the expansion early');
+})) passed++; else failed++;
 
 console.log('─'.repeat(50));
 console.log(`Passed: ${passed}  Failed: ${failed}`);
