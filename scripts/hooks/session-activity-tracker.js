@@ -12,7 +12,6 @@ const crypto = require('crypto');
 const path = require('path');
 const { spawnSync } = require('child_process');
 const { sanitizeSessionId } = require('../lib/session-bridge');
-const { getToolResult } = require('./hook-input');
 const {
   appendFile,
   getClaudeDir,
@@ -581,25 +580,34 @@ function summarizeInput(toolName, toolInput, filePaths) {
   return truncateSummary(toolName);
 }
 
+// Activity history keeps tool output text only from the adapter's `tool_output`, a
+// string, number, boolean or `{ output }`, and redacts it. A structured result is never
+// serialized, since an encoding nested in it escapes the redaction patterns.
 function summarizeOutput(toolOutput) {
-  if (toolOutput === null || toolOutput === undefined) {
-    return '';
+  if (['string', 'number', 'boolean'].includes(typeof toolOutput)) {
+    return truncateSummary(String(toolOutput));
   }
 
-  if (typeof toolOutput === 'string') {
-    return truncateSummary(toolOutput);
-  }
-
-  if (typeof toolOutput === 'object' && typeof toolOutput.output === 'string') {
+  if (toolOutput && typeof toolOutput === 'object' && typeof toolOutput.output === 'string') {
     return truncateSummary(toolOutput.output);
   }
 
-  // A Bash result from Claude Code: { stdout, stderr, interrupted, isImage }.
-  if (typeof toolOutput === 'object' && (typeof toolOutput.stdout === 'string' || typeof toolOutput.stderr === 'string')) {
-    return truncateSummary([toolOutput.stdout, toolOutput.stderr].filter(part => typeof part === 'string').join('\n'));
+  return '';
+}
+
+// Of Claude Code's `tool_response`, only the sizes and flags of a Bash result
+// ({ stdout, stderr, interrupted, isImage }) are kept. None of them holds output.
+function summarizeToolResponse(response) {
+  if (!response || typeof response !== 'object') {
+    return '';
   }
 
-  return truncateSummary(JSON.stringify(toolOutput));
+  const parts = ['stdout', 'stderr']
+    .filter(field => typeof response[field] === 'string')
+    .map(field => `${field}: ${response[field].length} chars`);
+  if (response.interrupted === true) parts.push('interrupted');
+  if (response.isImage === true) parts.push('image');
+  return parts.join(', ');
 }
 
 function buildActivityRow(input, env = process.env) {
@@ -642,7 +650,9 @@ function buildActivityRow(input, env = process.env) {
     tool_name: toolName,
     input_summary: summarizeInput(toolName, toolInput, filePaths),
     input_params_json: sanitizeInputParams(toolInput),
-    output_summary: summarizeOutput(getToolResult(input)),
+    output_summary: input?.tool_response === undefined
+      ? summarizeOutput(input?.tool_output)
+      : summarizeToolResponse(input.tool_response),
     duration_ms: 0,
     file_paths: filePaths,
     file_events: fileEvents,

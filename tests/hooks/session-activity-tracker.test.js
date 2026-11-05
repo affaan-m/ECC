@@ -564,9 +564,12 @@ function runTests() {
     assert.strictEqual(summarizeOutput(null), '');
     assert.strictEqual(summarizeOutput(undefined), '');
     assert.strictEqual(summarizeOutput('hello\nworld'), 'hello world');
-    assert.strictEqual(summarizeOutput({ ok: true }), '{"ok":true}');
-    // Claude Code sends the result as tool_response, for Bash { stdout, stderr, ... }.
-    assert.strictEqual(summarizeOutput({ stdout: `token ghp_${'A'.repeat(20)}`, stderr: '' }), 'token <REDACTED>');
+    // A structured result is not serialized: nested encodings would escape redaction.
+    assert.strictEqual(summarizeOutput({ ok: true }), '');
+    assert.strictEqual(summarizeOutput({ stdout: 'out', stderr: '' }), '');
+    assert.strictEqual(summarizeOutput(`token ghp_${'A'.repeat(20)}`), 'token <REDACTED>');
+    // Claude Code sends the result as tool_response, for Bash { stdout, stderr, ... }:
+    // only its sizes and flags are kept.
     const bashRow = buildActivityRow(
       {
         hook_event_name: 'PostToolUse',
@@ -577,10 +580,10 @@ function runTests() {
       },
       {}
     );
-    assert.strictEqual(bashRow.output_summary, '12 passing warn: slow');
+    assert.strictEqual(bashRow.output_summary, 'stdout: 11 chars, stderr: 11 chars');
     // Output such as `cat .env` lands here too, so the secrets governance-capture
     // detects are redacted as well.
-    assert.strictEqual(summarizeOutput({ stdout: 'api_key = "example-secret-value"\n', stderr: '' }), 'api_key = <REDACTED>');
+    assert.strictEqual(summarizeOutput('api_key = "example-secret-value"\n'), 'api_key = <REDACTED>');
     assert.strictEqual(summarizeOutput('OPENAI_API_KEY=sk-abc123def456\nDEBUG=1'), 'OPENAI_API_KEY=<REDACTED> DEBUG=1');
     assert.strictEqual(summarizeOutput('AWS_SECRET_ACCESS_KEY=example-secret-value'), 'AWS_SECRET_ACCESS_KEY=<REDACTED>');
     assert.strictEqual(summarizeOutput('DOCKER_AUTH_CONFIG={"auths":{"registry":{}}}'), 'DOCKER_AUTH_CONFIG=<REDACTED>');
@@ -610,6 +613,46 @@ function runTests() {
       summarizeOutput(output);
       assert.ok(Date.now() - started < 2000, `Redacting ${output.length} characters should stay within its time budget`);
     }
+  }) ? passed++ : failed++);
+
+  (test('saves no part of a structured tool result in activity history', () => {
+    const tmpHome = makeTempDir();
+    const marker = 'S3CR3T-MARK';
+    const env = { ...withTempHome(tmpHome), CLAUDE_HOOK_EVENT_NAME: 'PostToolUse', ECC_SESSION_ID: 'sess-privacy' };
+    const bashOutput = [
+      `{"token": "${marker}-direct"}`,
+      JSON.stringify(JSON.stringify({ token: `${marker}-escaped` })),
+      `Authorization: Bearer ${marker}-header`,
+      `"Authorization": "Bearer ${marker}-quoted"`,
+      `API_TOKEN=${marker}\\ escaped-space`,
+    ].join('\n');
+    const payloads = [
+      { tool_name: 'Bash', tool_input: { command: 'cat .env' }, tool_response: { stdout: bashOutput, stderr: '', interrupted: false, isImage: false } },
+      {
+        tool_name: 'mcp__example__fetch',
+        tool_input: {},
+        tool_response: {
+          content: [{ type: 'text', text: JSON.stringify({ api_key: `${marker}-nested` }) }],
+          headers: { Authorization: `Bearer ${marker}-field` },
+          raw: JSON.stringify(JSON.stringify(`password=${marker}-double`)),
+        },
+      },
+      { tool_name: 'Read', tool_input: { file_path: 'README.md' }, tool_output: { output: 'adapted result text' } },
+    ];
+    for (const payload of payloads) {
+      assert.strictEqual(runScript(payload, env).code, 0);
+    }
+
+    const saved = fs.readFileSync(path.join(tmpHome, '.claude', 'metrics', 'tool-usage.jsonl'), 'utf8');
+    assert.ok(!saved.includes(marker), `activity history kept a credential fragment: ${saved}`);
+    const rows = readMetricRows(tmpHome);
+    assert.deepStrictEqual(rows.map(row => row.output_summary), [
+      `stdout: ${bashOutput.length} chars, stderr: 0 chars`,
+      '',
+      'adapted result text',
+    ]);
+
+    fs.rmSync(tmpHome, { recursive: true, force: true });
   }) ? passed++ : failed++);
 
   (test('extracts file paths from nested arrays while filtering duplicates and remote URIs', () => {
