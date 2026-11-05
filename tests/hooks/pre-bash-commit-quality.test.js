@@ -573,6 +573,21 @@ if (test('keeps a quoted here-document literal and notes that Bash 3.2 joins it'
   );
 })) passed++; else failed++;
 
+if (test('reads text after the substitution as part of the message', () => {
+  const res = hook.validateCommitMessage('git commit -m "$(cat <<\'EOF\'\nfix: update input\nEOF\n)."');
+  assert.strictEqual(res.message, 'fix: update input.');
+  assert.deepStrictEqual(res.issues.map(i => i.type), ['punctuation']);
+  assert.strictEqual(
+    hook.validateCommitMessage('git commit -m "$(cat <<\'EOF\'\nfix: a\nEOF\n)\\$HOME"').message,
+    'fix: a$HOME'
+  );
+  // An expansion after the substitution is not literal text.
+  assert.deepStrictEqual(
+    hook.validateCommitMessage('git commit -m "$(cat <<\'EOF\'\nfix: a\nEOF\n)$HOME"').issues.map(i => i.type),
+    ['unverifiable']
+  );
+})) passed++; else failed++;
+
 if (process.platform !== 'win32') {
   if (test('reads the message that Bash and Git record for a here-document', () => {
     const bashMajor = Number(spawnSync('/bin/bash', ['-c', 'echo "${BASH_VERSINFO[0]}"'], { encoding: 'utf8' }).stdout);
@@ -584,10 +599,12 @@ if (process.platform !== 'win32') {
       ['-EOF', '\tfix: a\n\t\\\n\tb'],
       ["'EOF'", 'fix: \\\nUpdate input.'],
       ['"EOF"', 'fix: keep \\\\ and \\$HOME'],
+      ["'EOF'", 'fix: update input', '.'],
+      ["'EOF'", 'fix: update input\n\nbody line', ' and more'],
     ];
     inTempRepo(repoDir => {
-      for (const [delimiter, body] of forms) {
-        const command = `git commit -q --allow-empty -m "$(cat <<${delimiter}\n${body}\nEOF\n)"`;
+      for (const [delimiter, body, suffix = ''] of forms) {
+        const command = `git commit -q --allow-empty -m "$(cat <<${delimiter}\n${body}\nEOF\n)${suffix}"`;
         const run = spawnSync('/bin/bash', ['-c', command], { cwd: repoDir, encoding: 'utf8' });
         assert.strictEqual(run.status, 0, run.stderr);
         const recorded = spawnSync('git', ['log', '-1', '--format=%B'], { cwd: repoDir, encoding: 'utf8' }).stdout.trimEnd();

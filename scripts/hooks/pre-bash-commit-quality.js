@@ -182,11 +182,16 @@ function heredocBody(value) {
   const opener = /^\$\(\s*cat\s+<<(-?)\s*(['"]?)([A-Za-z_][\w.-]*)\2[ \t]*\r?\n/.exec(value);
   if (!opener) return null;
   const [, stripTabs, quote, delimiter] = opener;
-  const lines = value.slice(opener[0].length).split('\n').map(line => line.replace(/\r$/, ''));
+  const raw = value.slice(opener[0].length).split('\n');
+  const lines = raw.map(line => line.replace(/\r$/, ''));
+  // Where the delimiter line ends in `value`, for the text after the substitution.
+  let end = -1;
   const read = joinLines => {
     const body = [];
     let joined = '';
-    for (const line of lines) {
+    let offset = opener[0].length;
+    for (const [index, line] of lines.entries()) {
+      offset += raw[index].length + 1;
       // <<- strips leading tabs while the line read so far is empty, so not from a line
       // that a backslash continues after some text
       const text = joined + (stripTabs && !joined ? line.replace(/^\t+/, '') : line);
@@ -196,14 +201,17 @@ function heredocBody(value) {
         continue;
       }
       joined = '';
-      if (text === delimiter) return body.join('\n');
+      if (text === delimiter) {
+        if (end === -1) end = Math.min(offset, value.length);
+        return body.join('\n');
+      }
       body.push(text);
     }
     return null;
   };
   const expands = quote === '';
   const body = read(expands);
-  return body === null ? null : { body, expands, bash32Body: expands ? null : read(true) };
+  return body === null ? null : { body, expands, bash32Body: expands ? null : read(true), end };
 }
 
 // Git drops leading blank lines and trailing whitespace, and the first line left is the subject.
@@ -223,6 +231,42 @@ function hasHeredocExpansion(body) {
   return false;
 }
 
+// The message a `-m "$(cat <<…)"` value gives Git, or an `issue` when the literal command
+// does not show it: an expansion in an unquoted body, or commands or expansions after the
+// here-document. Text after the substitution's `)` is part of the message: `$(…)."` adds a
+// period to the body, whose trailing newlines the substitution drops first.
+function readHeredocMessage(value, heredoc) {
+  if (heredoc.expands && hasHeredocExpansion(heredoc.body)) {
+    return { issue: {
+      type: 'unverifiable',
+      message: 'Cannot validate a commit message with unquoted here-document expansions',
+      suggestion: 'Quote the here-document delimiter to keep the message literal'
+    } };
+  }
+  const after = /^[ \t\r\n]*\)((?:\\[\s\S]|[^"\\])*)"/.exec(value.slice(heredoc.end));
+  if (!after || hasHeredocExpansion(after[1])) {
+    return { issue: {
+      type: 'unverifiable',
+      message: 'Cannot validate a commit message that adds commands or expansions to its here-document',
+      suggestion: 'Write the whole message inside the here-document'
+    } };
+  }
+  const tail = after[1].replace(/\\([\n$`"\\])/g, (escape, next) => (next === '\n' ? '' : next));
+  const withTail = body => (tail ? body.replace(/\n+$/, '') + tail : body);
+  // An unquoted here-document also loses the backslash before $, ` and \.
+  const body = heredoc.expands ? heredoc.body.replace(/\\([$`\\])/g, '$1') : heredoc.body;
+  const message = withTail(body);
+  const bash32Message = heredoc.bash32Body === null ? null : withTail(heredoc.bash32Body);
+  const note = bash32Message !== null && subjectOf(bash32Message) !== subjectOf(message)
+    ? {
+      type: 'shell-dependent',
+      message: 'Bash 3.2 joins a subject line that ends in a backslash with the next line, even with a quoted delimiter',
+      suggestion: 'Do not end the subject line with a backslash'
+    }
+    : null;
+  return { message, note };
+}
+
 /**
  * Validate commit message format
  * @param {string} command 
@@ -239,36 +283,19 @@ function validateCommitMessage(command) {
   
   // A message written as -m "$(cat <<'EOF' ... EOF)", as Claude Code writes them, is the
   // body of that here-document. It is read from the command itself, since it may hold quotes.
-  const heredoc = messageMatch[1]?.startsWith('$(')
-    ? heredocBody(command.slice(messageMatch.index + messageMatch[0].indexOf('"') + 1))
-    : null;
-  if (heredoc?.expands && hasHeredocExpansion(heredoc.body)) {
-    return {
-      message: null,
-      issues: [{
-        type: 'unverifiable',
-        message: 'Cannot validate a commit message with unquoted here-document expansions',
-        suggestion: 'Quote the here-document delimiter to keep the message literal'
-      }]
-    };
-  }
+  const value = command.slice(messageMatch.index + messageMatch[0].indexOf('"') + 1);
+  const heredoc = messageMatch[1]?.startsWith('$(') ? heredocBody(value) : null;
+  const fromHeredoc = heredoc && readHeredocMessage(value, heredoc);
+  if (fromHeredoc?.issue) return { message: null, issues: [fromHeredoc.issue] };
   // In double quotes, Bash drops the backslash before $ ` " \ and drops a backslash-newline,
   // a line continuation, altogether. Before any other character the backslash stays.
   const doubleQuoted = messageMatch[1]?.replace(/\\([\n$`"\\])/g, (escape, next) => (next === '\n' ? '' : next));
-  // An unquoted here-document also loses the backslash before $, ` and \.
-  const heredocMessage = heredoc && (heredoc.expands ? heredoc.body.replace(/\\([$`\\])/g, '$1') : heredoc.body);
-  const message = heredocMessage ?? doubleQuoted ?? messageMatch[2] ?? messageMatch[3];
+  const message = fromHeredoc?.message ?? doubleQuoted ?? messageMatch[2] ?? messageMatch[3];
   // The format rules apply to the subject.
   const subject = subjectOf(message);
   const issues = [];
 
-  if (heredoc?.bash32Body != null && subjectOf(heredoc.bash32Body) !== subject) {
-    issues.push({
-      type: 'shell-dependent',
-      message: 'Bash 3.2 joins a subject line that ends in a backslash with the next line, even with a quoted delimiter',
-      suggestion: 'Do not end the subject line with a backslash'
-    });
-  }
+  if (fromHeredoc?.note) issues.push(fromHeredoc.note);
   
   // Check conventional commit format
   const conventionalCommit = /^(feat|fix|docs|style|refactor|test|chore|build|ci|perf|revert)(\(.+\))?:\s*.+/;
