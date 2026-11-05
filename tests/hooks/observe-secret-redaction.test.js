@@ -68,6 +68,8 @@ if (process.platform === 'win32') {
   const legacyKey = `${'sk-'}${legacyCanary}`;
   const jwtCanary = 'Q0FOQVJZc2lnbmF0dXJl';
   const jwt = `${'eyJ'}hbGciOiJIUzI1NiJ9.eyJzdWIiOiJjYW5hcnkifQ.${jwtCanary}`;
+  // e30 is base64url for {}, a valid but very short claims segment.
+  const emptyClaimsJwt = `${'eyJ'}hbGciOiJIUzI1NiJ9.e30.${jwtCanary}`;
   for (const [label, content, secret = canary] of [
     ['double-quoted source', 'const apiKey = "CANARY_TOKEN_abcdefghijk";'],
     ['single-quoted source', "const password = 'CANARY_TOKEN_abcdefghijk';"],
@@ -89,7 +91,10 @@ if (process.platform === 'win32') {
     ['bare Anthropic key', `echo ${anthropicKey} > key.txt`, anthropicCanary],
     ['bare OpenAI project key', `client = OpenAI(${openaiProjectKey})`, openaiCanary],
     ['bare legacy sk- key', `KEYS = [${legacyKey}]`, legacyCanary],
-    ['bare JWT', `curl -H "X-Session: ${jwt}" https://api.example.com`, jwtCanary]
+    ['bare JWT', `curl -H "X-Session: ${jwt}" https://api.example.com`, jwtCanary],
+    ['bare JWT with empty claims', `curl -H "X-Session: ${emptyClaimsJwt}" https://api.example.com`, jwtCanary],
+    // Redacted to the end of the token, not skipped because a hyphen follows.
+    ['bare legacy sk- key with a suffix', `KEYS = [${legacyKey}-CANARYsuffix]`, 'CANARYsuffix']
   ]) {
     test(`redacts ${label} before persisting tool input`, () => {
       const records = capture('pre', { tool_name: 'Write',
@@ -98,6 +103,12 @@ if (process.platform === 'win32') {
       assert.ok(records.includes('[REDACTED]'));
       if (label === 'bare JWT') {
         assert.equal(capturedField(records, 'content'), content.replace(jwt, '[REDACTED]'));
+      }
+      if (label === 'bare JWT with empty claims') {
+        assert.equal(capturedField(records, 'content'), content.replace(emptyClaimsJwt, '[REDACTED]'));
+      }
+      if (label === 'bare legacy sk- key with a suffix') {
+        assert.equal(capturedField(records, 'content'), 'KEYS = [[REDACTED]]');
       }
     });
     test(`redacts ${label} before persisting structured tool output`, () => {
@@ -292,6 +303,51 @@ if (process.platform === 'win32') {
       tool_input: { file_path: '/tmp/example.js' }, tool_response: { content: benign.join('\n') } });
     for (const line of benign) assert.ok(records.includes(line), `benign text altered: ${line}`);
     assert.ok(!records.includes('[REDACTED]'));
+  });
+  // Both writers carry the same patterns. Run them on 300 KB of adversarial
+  // input so a pattern that backtracks quadratically (#2278) fails here.
+  test('scrub patterns stay identical in both writers and linear on 300 KB input', () => {
+    const hook = fs.readFileSync(
+      path.join(repoRoot, 'skills/continuous-learning-v2/hooks/observe.sh'), 'utf8');
+    const copies = hook.split('_SECRET_RE = re.compile(').slice(1).map((rest) =>
+      `_SECRET_RE = re.compile(${rest.split(/\n(?:import signal|def scrub)/)[0]}`
+        .replace(/'"'"'/g, "'"));
+    assert.equal(copies.length, 2);
+    assert.equal(copies[0], copies[1], 'the parse-error copy of the patterns drifted');
+    const driver = String.raw`
+import re, sys, time
+ns = {"re": re}
+exec(sys.stdin.read(), ns)
+patterns = [ns[n] for n in ("_PEM_RE", "_SECRET_RE", "_SECRET_VALUE_RE", "_CUT_TAIL_RE")]
+n = 300000
+cases = {
+    "hyphen run": "a-" * (n // 2),
+    "sk- then hyphen run": "sk-" + "a-" * (n // 2),
+    "repeated sk-": "sk-" * (n // 3),
+    "sk- keys followed by a hyphen": (" sk-" + "a" * 40 + "-") * (n // 45),
+    "eyJ segments": ("eyJ" + "a-" * 10 + ".") * (n // 24),
+    "repeated eyJ dots": "eyJ." * (n // 4),
+    "label then hyphens": "token=" + "-" * n,
+    "repeated labels": "token:" * (n // 6),
+    "escaped newline before sk-": "\\nsk-" * (n // 5),
+    "unfinished DSNs": "a://b:" * (n // 6),
+    "unterminated PEM": "-----BEGIN RSA PRIV" + "ATE KEY-----" + "A" * n,
+}
+for name, text in cases.items():
+    start = time.perf_counter()
+    for pattern in patterns:
+        pattern.sub("X", text)
+    print("%s\t%.3f" % (name, time.perf_counter() - start))
+`;
+    const result = spawnSync('python3', ['-c', driver],
+      { input: copies[0], encoding: 'utf8', timeout: 60000 });
+    assert.equal(result.status, 0, result.stderr || 'timed out');
+    const timings = result.stdout.trim().split('\n');
+    assert.equal(timings.length, 11);
+    for (const line of timings) {
+      const [name, seconds] = line.split('\t');
+      assert.ok(Number(seconds) < 2, `${name} took ${seconds}s`);
+    }
   });
   test('keeps a trailing host:port in string output unredacted', () => {
     const records = capture('post', { tool_name: 'Bash', tool_input: { command: 'npm run dev' },

@@ -295,7 +295,7 @@ _SECRET_RE = re.compile(
 _PEM_RE = re.compile(r"-----BEGIN[A-Z ]{0,40}PRIVATE KEY-----[\s\S]*?(?:-----END[A-Z ]{0,40}PRIVATE KEY-----|\Z)")
 _SECRET_VALUE_RE = re.compile(
     r"(?:(?<![A-Za-z0-9_])|(?<=\\[bfnrt])|(?<=\\u[0-9a-fA-F]{4}))(?:gh[pousr]_[A-Za-z0-9]{20,255}|github_pat_[A-Za-z0-9_]{20,255}|(?:AKIA|ASIA)[A-Z0-9]{16})\b"
-    r"|(?:(?<![A-Za-z0-9_-])|(?<=\\[bfnrt])|(?<=\\u[0-9a-fA-F]{4}))(?:sk-(?:ant|proj|svcacct|admin|or)-[A-Za-z0-9_-]{20,}|sk-[A-Za-z0-9]{20,}(?![A-Za-z0-9_-])|eyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]*)"
+    r"|(?:(?<![A-Za-z0-9_-])|(?<=\\[bfnrt])|(?<=\\u[0-9a-fA-F]{4}))(?:sk-(?:ant|proj|svcacct|admin|or)-[A-Za-z0-9_-]{20,}|sk-[A-Za-z0-9]{20,}[A-Za-z0-9_-]*|eyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]*)"
     r"""|(?<=://)(?:(?<=https://)|(?<=http://)|(?<!https://)(?<!http://)())([^\s:/@"\\]{1,256}:)(?(1)|(?!\d{1,5}\Z))[^\s@/"\\]{1,256}(?=@|\Z)"""
 )
 # A capture cut at its length limit can end inside an sk- key or JWT that the
@@ -398,7 +398,7 @@ _SECRET_RE = re.compile(
 _PEM_RE = re.compile(r"-----BEGIN[A-Z ]{0,40}PRIVATE KEY-----[\s\S]*?(?:-----END[A-Z ]{0,40}PRIVATE KEY-----|\Z)")
 _SECRET_VALUE_RE = re.compile(
     r"(?:(?<![A-Za-z0-9_])|(?<=\\[bfnrt])|(?<=\\u[0-9a-fA-F]{4}))(?:gh[pousr]_[A-Za-z0-9]{20,255}|github_pat_[A-Za-z0-9_]{20,255}|(?:AKIA|ASIA)[A-Z0-9]{16})\b"
-    r"|(?:(?<![A-Za-z0-9_-])|(?<=\\[bfnrt])|(?<=\\u[0-9a-fA-F]{4}))(?:sk-(?:ant|proj|svcacct|admin|or)-[A-Za-z0-9_-]{20,}|sk-[A-Za-z0-9]{20,}(?![A-Za-z0-9_-])|eyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]*)"
+    r"|(?:(?<![A-Za-z0-9_-])|(?<=\\[bfnrt])|(?<=\\u[0-9a-fA-F]{4}))(?:sk-(?:ant|proj|svcacct|admin|or)-[A-Za-z0-9_-]{20,}|sk-[A-Za-z0-9]{20,}[A-Za-z0-9_-]*|eyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]*)"
     r"""|(?<=://)(?:(?<=https://)|(?<=http://)|(?<!https://)(?<!http://)())([^\s:/@"\\]{1,256}:)(?(1)|(?!\d{1,5}\Z))[^\s@/"\\]{1,256}(?=@|\Z)"""
 )
 # A capture cut at its length limit can end inside an sk- key or JWT that the
