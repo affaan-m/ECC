@@ -112,6 +112,25 @@ test('$$ before a quote is the process ID, not the start of ANSI-C quoting', () 
   }
 });
 
+test('bash ends a decoded ANSI-C delimiter at a NUL', () => {
+  const command = "cat <<$'EOF\\0X'\nbody\nEOF\nnpm run dev";
+  assert.deepStrictEqual(splitShellSegments(command), ["cat <<$'EOF\\0X'", 'npm run dev']);
+  if (process.platform !== 'win32') {
+    const ran = spawnSync('/bin/bash', ['-c', command.replace('npm run dev', "printf 'ran\\n'")], { encoding: 'utf8' });
+    assert.strictEqual(ran.stdout, 'body\nran\n', ran.stderr);
+  }
+});
+test('a # after a carriage return or a no-break space is part of the word', () => {
+  for (const blankLike of ['\r', ' ']) {
+    const command = `echo foo${blankLike}# && npm run dev`;
+    assert.deepStrictEqual(splitShellSegments(command), [`echo foo${blankLike}#`, 'npm run dev']);
+    if (process.platform !== 'win32') {
+      const ran = spawnSync('/bin/bash', ['-c', command.replace('npm run dev', "printf 'ran\\n'")], { encoding: 'utf8' });
+      assert.ok(ran.stdout.endsWith('ran\n'), JSON.stringify(ran.stdout));
+    }
+  }
+});
+
 // Escaped operators outside quotes
 console.log('\nEscaped operators outside quotes:');
 test('escaped && outside quotes not split', () => {

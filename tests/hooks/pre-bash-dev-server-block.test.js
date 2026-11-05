@@ -324,6 +324,12 @@ function runTests() {
       }
     }) ? passed++ : failed++);
 
+    (test('blocks a dev command in a substitution with a very long body', () => {
+      const command = `echo "$(npm run dev; ${'true; '.repeat(150000)})"`;
+      const result = runScript(command);
+      assert.strictEqual(result.code, 2, `Expected exit code 2, got ${result.code}`);
+    }) ? passed++ : failed++);
+
     (test('blocks nested dev commands in expanded here-document substitutions', () => {
       for (const command of [
         'cat <<EOF\n\'$(echo "$(npm run dev)")\'\nEOF',

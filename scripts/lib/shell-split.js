@@ -67,7 +67,8 @@ function readWord(command, start) {
       // $'...' decodes its escapes, so $'E\x4fF' is EOF
       const decoded = decodeAnsiC(ansiC[1]);
       if (decoded === null) utf8 = false;
-      else word += decoded;
+      // Bash ends the decoded string at a NUL, so $'EOF\0X' is EOF
+      else word += decoded.split('\0', 1)[0];
       quoted = true;
       i += ansiC[0].length - 1;
     } else if (ch === "'" || ch === '"') {
@@ -165,7 +166,8 @@ function startsWord(command, index, current) {
   while (before >= 1 && command[before] === '\n' && command[before - 1] === '\\' && !isEscaped(command, before - 1)) {
     before -= 2;
   }
-  return before < 0 || (/[\s;&|(]/.test(command[before]) && !isEscaped(command, before));
+  // Bash's blanks are a space and a tab; a carriage return or a no-break space is part of a word.
+  return before < 0 || (/[ \t\n;&|(]/.test(command[before]) && !isEscaped(command, before));
 }
 
 // The end of a span copied as is, or -1: a comment, which runs to the end of its line, or an

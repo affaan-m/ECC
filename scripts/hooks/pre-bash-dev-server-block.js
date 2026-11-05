@@ -204,8 +204,12 @@ function collectCheckSegments(cmd) {
 
     for (const body of [...extractCommandSubstitutions(current), ...extractSubshellGroups(current)]) {
       const bodySegments = splitShellSegments(body);
-      segments.push(...bodySegments);
-      queue.push(body, ...bodySegments);
+      // One at a time: spreading a long command's segments into push() exceeds the argument limit.
+      queue.push(body);
+      for (const segment of bodySegments) {
+        segments.push(segment);
+        queue.push(segment);
+      }
     }
   }
 
