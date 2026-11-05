@@ -142,8 +142,13 @@ function resolveCodexCommand(deps = {}) {
 
   const shimDir = dirs.find((dir) => exists(path.win32.join(dir, 'codex.cmd')));
   if (shimDir) {
-    const entry = path.win32.join(shimDir, 'node_modules', '@openai', 'codex', 'bin', 'codex.js');
-    if (exists(entry)) return { command: execPath, prefixArgs: [entry] };
+    // Global npm prefix layout first, then a project-local node_modules/.bin
+    // shim whose package sits beside it in node_modules/@openai/codex.
+    const entry = [
+      path.win32.join(shimDir, 'node_modules', '@openai', 'codex', 'bin', 'codex.js'),
+      path.win32.join(shimDir, '..', '@openai', 'codex', 'bin', 'codex.js'),
+    ].find((candidate) => exists(candidate));
+    if (entry) return { command: execPath, prefixArgs: [entry] };
   }
   return { command: 'codex', prefixArgs: [] };
 }

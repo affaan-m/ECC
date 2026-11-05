@@ -267,6 +267,37 @@ test('resolveCodexCommand runs the npm shim entry point through node on Windows'
   assert.deepStrictEqual(resolved, { command: 'C:\\node\\node.exe', prefixArgs: [entry] });
 });
 
+test('resolveCodexCommand finds the sibling entry point for a project-local node_modules/.bin shim', () => {
+  const binDir = 'C:\\proj\\node_modules\\.bin';
+  const entry = 'C:\\proj\\node_modules\\@openai\\codex\\bin\\codex.js';
+  const existing = new Set([path.win32.join(binDir, 'codex.cmd'), entry]);
+
+  const resolved = codex.resolveCodexCommand({
+    platform: 'win32',
+    env: { PATH: `${binDir};C:\\Windows` },
+    existsSync: (file) => existing.has(file),
+    execPath: 'C:\\node\\node.exe',
+  });
+
+  assert.deepStrictEqual(resolved, { command: 'C:\\node\\node.exe', prefixArgs: [entry] });
+});
+
+test('resolveCodexCommand prefers the global-layout entry point over the sibling layout', () => {
+  const dir = 'C:\\tools\\npm';
+  const globalEntry = path.win32.join(dir, 'node_modules', '@openai', 'codex', 'bin', 'codex.js');
+  const siblingEntry = 'C:\\tools\\@openai\\codex\\bin\\codex.js';
+  const existing = new Set([path.win32.join(dir, 'codex.cmd'), globalEntry, siblingEntry]);
+
+  const resolved = codex.resolveCodexCommand({
+    platform: 'win32',
+    env: { PATH: dir },
+    existsSync: (file) => existing.has(file),
+    execPath: 'node.exe',
+  });
+
+  assert.deepStrictEqual(resolved, { command: 'node.exe', prefixArgs: [globalEntry] });
+});
+
 test('resolveCodexCommand prefers a native codex.exe on Windows when present', () => {
   const dir = 'C:\\tools';
   const exe = path.win32.join(dir, 'codex.exe');
