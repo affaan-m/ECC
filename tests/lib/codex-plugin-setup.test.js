@@ -1,6 +1,8 @@
 'use strict';
 
 const assert = require('assert');
+const fs = require('fs');
+const path = require('path');
 
 const {
   CodexPluginSetupError,
@@ -538,6 +540,27 @@ async function runTests() {
       assert.strictEqual(fake.calls.length, 1);
       assert.strictEqual(resolverCalls.length, 1);
       assert.strictEqual(resolverCalls[0].env, env);
+    }],
+    ['default resolver launches the npm codex.cmd shim entry point through node on Windows', async () => {
+      const shimDir = 'C:\\npm';
+      const entry = path.win32.join(shimDir, 'node_modules', '@openai', 'codex', 'bin', 'codex.js');
+      const present = new Set([path.win32.join(shimDir, 'codex.cmd'), entry]);
+      const fake = createExecFile([
+        { command: process.execPath, args: [entry, ...PLUGIN_LIST], stdout: '{}' },
+      ]);
+      const platform = Object.getOwnPropertyDescriptor(process, 'platform');
+      const existsSync = fs.existsSync;
+      Object.defineProperty(process, 'platform', { ...platform, value: 'win32' });
+      fs.existsSync = file => present.has(file);
+      try {
+        await runCodexCommand(PLUGIN_LIST, { env: { Path: `C:\\Windows;${shimDir}` } }, {
+          execFile: fake.execFile,
+        });
+      } finally {
+        fs.existsSync = existsSync;
+        Object.defineProperty(process, 'platform', platform);
+      }
+      assert.strictEqual(fake.calls.length, 1);
     }],
     ['reports only Codex argv when a prefixed launcher fails', async () => {
       const entry = 'C:\\npm\\node_modules\\@openai\\codex\\bin\\codex.js';
