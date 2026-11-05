@@ -586,6 +586,15 @@ if (test('reads text after the substitution as part of the message', () => {
     hook.validateCommitMessage('git commit -m "$(cat <<\'EOF\'\nfix: a\nEOF\n)$HOME"').issues.map(i => i.type),
     ['unverifiable']
   );
+  // A line continuation inside it is dropped first: `$\<newline>HOME` is `$HOME`, `\$\<newline>HOME` is not.
+  assert.deepStrictEqual(
+    hook.validateCommitMessage('git commit -m "$(cat <<\'EOF\'\nfix: a\nEOF\n)$\\\nHOME"').issues.map(i => i.type),
+    ['unverifiable']
+  );
+  assert.strictEqual(
+    hook.validateCommitMessage('git commit -m "$(cat <<\'EOF\'\nfix: a\nEOF\n)\\$\\\nHOME"').message,
+    'fix: a$HOME'
+  );
 })) passed++; else failed++;
 
 if (process.platform !== 'win32') {
@@ -601,6 +610,7 @@ if (process.platform !== 'win32') {
       ['"EOF"', 'fix: keep \\\\ and \\$HOME'],
       ["'EOF'", 'fix: update input', '.'],
       ["'EOF'", 'fix: update input\n\nbody line', ' and more'],
+      ["'EOF'", 'fix: a', '\\$\\\nHOME'],
     ];
     inTempRepo(repoDir => {
       for (const [delimiter, body, suffix = ''] of forms) {

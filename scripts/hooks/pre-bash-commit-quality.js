@@ -244,7 +244,10 @@ function readHeredocMessage(value, heredoc) {
     } };
   }
   const after = /^[ \t\r\n]*\)((?:\\[\s\S]|[^"\\])*)"/.exec(value.slice(heredoc.end));
-  if (!after || hasHeredocExpansion(after[1])) {
+  // In double quotes Bash drops a backslash-newline before it expands anything, so
+  // `$\<newline>HOME` is `$HOME`; other escapes stay for the expansion check to skip.
+  const continued = after && after[1].replace(/\\([\s\S])/g, (escape, next) => (next === '\n' ? '' : escape));
+  if (!after || hasHeredocExpansion(continued)) {
     return { issue: {
       type: 'unverifiable',
       message: 'Cannot validate a commit message that adds commands or expansions to its here-document',
