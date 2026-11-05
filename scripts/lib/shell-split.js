@@ -49,6 +49,12 @@ function readWord(command, start) {
   let i = start;
   for (; i < command.length; i++) {
     const ch = command[i];
+    // $$ is the process-ID parameter, so a quote right after it is not $'...'
+    if (!quote && ch === '$' && command[i + 1] === '$') {
+      word += '$$';
+      i++;
+      continue;
+    }
     ANSI_C_QUOTED_RE.lastIndex = i;
     const ansiC = !quote && ch === '$' ? ANSI_C_QUOTED_RE.exec(command) : null;
     if (quote) {
@@ -257,6 +263,13 @@ function splitShellSegments(command) {
     // Backslash escape outside quotes
     if (ch === '\\' && i + 1 < command.length) {
       current += ch + command[i + 1];
+      i++;
+      continue;
+    }
+
+    // $$ is the process-ID parameter, so a quote right after it is not $'...'
+    if (ch === '$' && command[i + 1] === '$') {
+      current += '$$';
       i++;
       continue;
     }

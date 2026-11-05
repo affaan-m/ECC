@@ -91,6 +91,26 @@ test('ANSI-C quotes keep escaped apostrophes and shell operators as data', () =>
     assert.strictEqual(text.stdout, "x' && npm run dev\n");
   }
 });
+test('$$ before a quote is the process ID, not the start of ANSI-C quoting', () => {
+  const launch = "echo $$'\\'; npm run dev";
+  const heredoc = "cat <<$$'EOF'\nbody\n$$EOF\nnpm run dev";
+  const literalInstruction = "echo $$'; npm run dev'";
+  assert.deepStrictEqual(splitShellSegments(launch), ["echo $$'\\'", 'npm run dev']);
+  assert.deepStrictEqual(splitShellSegments(heredoc), ["cat <<$$'EOF'", 'npm run dev']);
+  assert.deepStrictEqual(splitShellSegments(literalInstruction), [literalInstruction]);
+  if (process.platform !== 'win32') {
+    const run = command => spawnSync('/bin/bash', ['-c', command.replace('npm run dev', "printf 'ran\\n'")], { encoding: 'utf8' });
+    const ran = run(launch);
+    assert.strictEqual(ran.status, 0, ran.stderr);
+    assert.ok(ran.stdout.endsWith('\\\nran\n'), ran.stdout);
+    const body = run(heredoc);
+    assert.strictEqual(body.status, 0, body.stderr);
+    assert.strictEqual(body.stdout, 'body\nran\n');
+    const text = spawnSync('/bin/bash', ['-c', literalInstruction], { encoding: 'utf8' });
+    assert.strictEqual(text.status, 0, text.stderr);
+    assert.ok(text.stdout.endsWith('; npm run dev\n'), text.stdout);
+  }
+});
 
 // Escaped operators outside quotes
 console.log('\nEscaped operators outside quotes:');

@@ -56,6 +56,18 @@ function runTests() {
       }
     }) ? passed++ : failed++);
 
+    (test('blocks dev launch after a $$ that a quote follows', () => {
+      for (const command of ["echo $$'\\'; npm run dev", "cat <<$$'EOF'\nbody\n$$EOF\nnpm run dev"]) {
+        const result = runScript(command);
+        assert.strictEqual(result.code, 2, `Expected exit code 2 for ${JSON.stringify(command)}, got ${result.code}`);
+      }
+    }) ? passed++ : failed++);
+
+    (test('allows a dev command quoted after a $$', () => {
+      const result = runScript("echo $$'; npm run dev'");
+      assert.strictEqual(result.code, 0, `Expected exit code 0, got ${result.code}`);
+    }) ? passed++ : failed++);
+
     (test('allows a dev command mentioned inside an ANSI-C quoted string', () => {
       const result = runScript("echo $'x\\' && npm run dev'");
       assert.strictEqual(result.code, 0, `Expected exit code 0, got ${result.code}`);
