@@ -11,6 +11,7 @@ const path = require('path');
 const { spawnSync } = require('child_process');
 
 const dashboard = require('../../scripts/lib/skill-evolution/dashboard');
+const health = require('../../scripts/lib/skill-evolution/health');
 const versioning = require('../../scripts/lib/skill-evolution/versioning');
 const _provenance = require('../../scripts/lib/skill-evolution/provenance');
 
@@ -146,6 +147,24 @@ function runTests() {
         assert.strictEqual(bucket.rate, null);
         assert.strictEqual(bucket.runs, 0);
       }
+    })) passed++; else failed++;
+
+    if (test('bucketByDay includes the window cutoff without duplicating internal boundaries', () => {
+      const nowMs = Date.parse(now);
+      const records = [
+        { outcome: 'failure', recorded_at: '2026-03-12T12:00:00.000Z' },
+        { outcome: 'success', recorded_at: '2026-03-13T12:00:00.000Z' },
+        { outcome: 'success', recorded_at: '2026-03-14T12:00:00.000Z' },
+        { outcome: 'success', recorded_at: now },
+        { outcome: 'failure', recorded_at: '2026-03-12T11:59:59.999Z' },
+        { outcome: 'failure', recorded_at: '2026-03-15T12:00:00.001Z' },
+      ];
+      const buckets = dashboard.bucketByDay(records, nowMs, 3);
+      const windowRecords = health.filterRecordsWithinDays(records, nowMs, 3);
+      assert.strictEqual(windowRecords.length, 4);
+      assert.deepStrictEqual(buckets.map(bucket => bucket.runs), [2, 1, 1]);
+      assert.strictEqual(buckets.reduce((total, bucket) => total + bucket.runs, 0), windowRecords.length);
+      assert.strictEqual(buckets[0].rate, 0.5);
     })) passed++; else failed++;
 
     console.log('\nPanel renderers:');

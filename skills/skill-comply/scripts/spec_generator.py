@@ -24,8 +24,8 @@ def generate_spec(
     Calls claude -p with the spec_generator prompt, parses YAML output.
     Retries on YAML parse errors with error feedback.
     """
-    skill_content = skill_path.read_text()
-    prompt_template = (PROMPTS_DIR / "spec_generator.md").read_text()
+    skill_content = skill_path.read_text(encoding="utf-8")
+    prompt_template = (PROMPTS_DIR / "spec_generator.md").read_text(encoding="utf-8")
     base_prompt = prompt_template.replace("{skill_content}", skill_content)
 
     last_error: Exception | None = None
@@ -41,9 +41,10 @@ def generate_spec(
             )
 
         result = subprocess.run(
-            ["claude", "-p", prompt, "--model", model, "--output-format", "text"],
+            ["claude", "-p", "--model", model, "--output-format", "text"],
+            input=prompt,
             capture_output=True,
-            text=True,
+            encoding="utf-8",
             timeout=120,
         )
 
@@ -54,7 +55,7 @@ def generate_spec(
 
         tmp_path = None
         with tempfile.NamedTemporaryFile(
-            mode="w", suffix=".yaml", delete=False,
+            mode="w", suffix=".yaml", delete=False, encoding="utf-8",
         ) as f:
             f.write(raw_yaml)
             tmp_path = Path(f.name)

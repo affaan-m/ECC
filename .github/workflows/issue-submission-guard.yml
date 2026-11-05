@@ -1,0 +1,38 @@
+name: Issue Submission Guard
+
+on:
+  issues:
+    types: [opened, reopened]
+
+concurrency:
+  group: issue-guard-${{ github.repository }}-${{ github.event.issue.user.id }}
+  cancel-in-progress: false
+  queue: max
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  moderate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      # The issues event uses the trusted default branch, never contributor code.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+          sparse-checkout: |
+            .github/issue-submission-policy.json
+            scripts/ci/issue-submission-guard.js
+            scripts/ci/pr-burst-guard.js
+          sparse-checkout-cone-mode: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '22.x'
+      - name: Enforce Issue submission policy
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          PR_MODERATION_BLOCK_TOKEN: ${{ secrets.PR_MODERATION_BLOCK_TOKEN }}
+        run: node scripts/ci/issue-submission-guard.js

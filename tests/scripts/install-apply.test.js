@@ -1692,6 +1692,51 @@ function runTests() {
       cleanup(projectDir);
     }
   })) passed++; else failed++;
+  if (test('legacy install respects CLAUDE_CONFIG_DIR environment variable', () => {
+    const homeDir = createTempDir('install-apply-legacy-claude-config-');
+    const projectDir = createTempDir('install-apply-legacy-claude-config-project-');
+    const customClaudeDir = path.join(homeDir, 'custom-claude-config');
+
+    try {
+      const env = { CLAUDE_CONFIG_DIR: customClaudeDir };
+      // Use legacy mode (--target claude without --profile), provide a language
+      const result = run(['--target', 'claude', 'typescript', '--no-hooks'], { cwd: projectDir, homeDir, env });
+      assert.strictEqual(result.code, 0, result.stderr);
+
+      // Verify install landed in CLAUDE_CONFIG_DIR, not ~/.claude
+      assert.ok(fs.existsSync(path.join(customClaudeDir, 'rules', 'ecc', 'common', 'coding-style.md')),
+        'Expected rules in CLAUDE_CONFIG_DIR');
+      assert.ok(fs.existsSync(path.join(customClaudeDir, 'ecc', 'install-state.json')),
+        'Expected install-state in CLAUDE_CONFIG_DIR');
+      assert.ok(!fs.existsSync(path.join(homeDir, '.claude', 'rules', 'ecc')),
+        'Should not install to default ~/.claude when CLAUDE_CONFIG_DIR is set');
+
+      const state = readJson(path.join(customClaudeDir, 'ecc', 'install-state.json'));
+      assert.strictEqual(fs.realpathSync(state.target.root), fs.realpathSync(customClaudeDir));
+    } finally {
+      cleanup(homeDir);
+      cleanup(projectDir);
+    }
+  })) passed++; else failed++;
+
+  if (test('legacy install passes CLAUDE_CONFIG_DIR through to adapter', () => {
+    const homeDir = createTempDir('install-apply-legacy-env-');
+    const projectDir = createTempDir('install-apply-legacy-env-project-');
+    const customClaudeDir = path.join(homeDir, 'custom-claude-config-env');
+
+    try {
+      const env = { CLAUDE_CONFIG_DIR: customClaudeDir };
+      const result = run(['--target', 'claude', 'typescript', '--no-hooks'], { cwd: projectDir, homeDir, env });
+      assert.strictEqual(result.code, 0, result.stderr);
+
+      // Verify install landed in CLAUDE_CONFIG_DIR
+      const state = readJson(path.join(customClaudeDir, 'ecc', 'install-state.json'));
+      assert.strictEqual(fs.realpathSync(state.target.root), fs.realpathSync(customClaudeDir));
+    } finally {
+      cleanup(homeDir);
+      cleanup(projectDir);
+    }
+  })) passed++; else failed++;
 
   console.log(`\nResults: Passed: ${passed}, Failed: ${failed}`);
   process.exit(failed > 0 ? 1 : 0);

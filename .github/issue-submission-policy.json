@@ -1,0 +1,8 @@
+{
+  "windowMinutes": 20,
+  "closeAbove": 5,
+  "blockAbove": 10,
+  "maxOpen": 10,
+  "deniedUserIDs": [],
+  "notify": ["affaan-m", "haelyra"]
+}

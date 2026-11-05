@@ -15,6 +15,12 @@ const script = path.join(__dirname, '..', '..', 'scripts', 'hooks', 'cost-tracke
 
 // Harness caches belong to a real private root shared by parent and hook child.
 const cacheRoot = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-cost-cache-')));
+// cost-tracker.js appends to ~/.claude/metrics/costs.jsonl and writes cost
+// snapshots there, so runs get an empty home instead of the developer's real
+// one unless a test passes withTempHome().
+const ISOLATED_HOME = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-cost-home-'));
+const ISOLATED_HOME_ENV = { HOME: ISOLATED_HOME, USERPROFILE: ISOLATED_HOME };
+process.on('exit', () => fs.rmSync(ISOLATED_HOME, { recursive: true, force: true }));
 const savedTempEnvironment = Object.fromEntries(['TMPDIR', 'TMP', 'TEMP']
   .map(name => [name, process.env[name]]));
 for (const name of Object.keys(savedTempEnvironment)) process.env[name] = cacheRoot;
@@ -56,7 +62,7 @@ function runScript(input, envOverrides = {}) {
     encoding: 'utf8',
     input: inputStr,
     timeout: 10000,
-    env: { ...process.env, ...envOverrides, TMPDIR: cacheRoot, TMP: cacheRoot, TEMP: cacheRoot },
+    env: { ...process.env, ...ISOLATED_HOME_ENV, ...envOverrides, TMPDIR: cacheRoot, TMP: cacheRoot, TEMP: cacheRoot },
   });
   return { code: result.status || 0, stdout: result.stdout || '', stderr: result.stderr || '' };
 }
