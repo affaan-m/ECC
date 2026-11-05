@@ -323,6 +323,18 @@ function runTests() {
         assert.strictEqual(result.code, 2, `Expected exit code 2 for ${JSON.stringify(command)}, got ${result.code}`);
       }
     }) ? passed++ : failed++);
+
+    (test('blocks nested dev commands in expanded here-document substitutions', () => {
+      for (const command of [
+        'cat <<EOF\n\'$(echo "$(npm run dev)")\'\nEOF',
+        "cat <<EOF\n'$( (npm run dev) )'\nEOF",
+      ]) {
+        const result = runScript(command);
+        assert.strictEqual(result.code, 2, `Expected exit code 2 for ${JSON.stringify(command)}, got ${result.code}`);
+      }
+      const quoted = "cat <<'EOF'\n'$(echo \"$(npm run dev)\")'\nEOF";
+      assert.strictEqual(runScript(quoted).code, 0, 'quoted here-document must remain literal');
+    }) ? passed++ : failed++);
   }
 
   (test('allows a here-document that only mentions a dev server', () => {

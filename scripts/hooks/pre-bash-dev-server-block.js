@@ -192,7 +192,9 @@ const DEV_PATTERN = /\b(npm\s+run\s+dev|pnpm(?:\s+run)?\s+dev|yarn(?:\s+run)?\s+
  */
 function collectCheckSegments(cmd) {
   const segments = [...splitShellSegments(cmd)];
-  const queue = [cmd];
+  // Expanded here-document bodies enter through splitShellSegments, so their
+  // segments must also be scanned for substitutions nested inside them.
+  const queue = [cmd, ...segments];
   const seen = new Set();
 
   while (queue.length) {
@@ -200,13 +202,10 @@ function collectCheckSegments(cmd) {
     if (seen.has(current)) continue;
     seen.add(current);
 
-    for (const body of extractCommandSubstitutions(current)) {
-      for (const seg of splitShellSegments(body)) segments.push(seg);
-      queue.push(body);
-    }
-    for (const body of extractSubshellGroups(current)) {
-      for (const seg of splitShellSegments(body)) segments.push(seg);
-      queue.push(body);
+    for (const body of [...extractCommandSubstitutions(current), ...extractSubshellGroups(current)]) {
+      const bodySegments = splitShellSegments(body);
+      segments.push(...bodySegments);
+      queue.push(body, ...bodySegments);
     }
   }
 
