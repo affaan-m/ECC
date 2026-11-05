@@ -66,7 +66,7 @@ function runTests() {
 
   if (test('resolves claude adapter root and install-state path from home dir', () => {
     const adapter = getInstallTargetAdapter('claude');
-    const homeDir = '/Users/example';
+    const homeDir = path.resolve('/Users/example');
     const root = adapter.resolveRoot({ homeDir, repoRoot: '/repo/ecc' });
     const statePath = adapter.getInstallStatePath({ homeDir, repoRoot: '/repo/ecc' });
 
@@ -163,7 +163,7 @@ function runTests() {
 
   if (test('plans namespaced Claude rules and flat discoverable skills', () => {
     const repoRoot = path.join(__dirname, '..', '..');
-    const homeDir = '/Users/example';
+    const homeDir = path.resolve('/Users/example');
 
     const plan = planInstallTargetScaffold({
       target: 'claude',
@@ -547,6 +547,24 @@ function runTests() {
       )),
       'Should flatten common rules for antigravity'
     );
+    const ruleOperation = sourcePath => plan.operations.find(operation => (
+      normalizedRelativePath(operation.sourceRelativePath) === sourcePath
+    ));
+    assert.strictEqual(
+      ruleOperation('rules/common/coding-style.md').contentTransform,
+      'antigravity-rule-frontmatter',
+      'Should give common rules an Antigravity activation trigger'
+    );
+    assert.strictEqual(
+      ruleOperation('rules/python/coding-style.md').contentTransform,
+      'antigravity-rule-frontmatter',
+      'Should give language rules an Antigravity activation trigger'
+    );
+    assert.strictEqual(
+      ruleOperation('rules/README.md').contentTransform,
+      undefined,
+      'Should leave the rules README without an activation trigger'
+    );
     assert.ok(
       plan.operations.every(operation => !['.agents', 'AGENTS.md'].includes(operation.sourceRelativePath)),
       'Should exclude Codex-only .agents metadata and root AGENTS.md'
@@ -702,6 +720,61 @@ function runTests() {
     assert.strictEqual(
       JSON.parse(child.stdout),
       path.join(path.resolve(homeDir), '.config', 'opencode')
+    );
+  })) passed++; else failed++;
+
+  if (test('claude adapter honors CLAUDE_CONFIG_DIR over the default home directory', () => {
+    const adapter = getInstallTargetAdapter('claude');
+    const homeDir = '/Users/example';
+    const claudeConfigDir = '/private/claude-profile';
+
+    assert.strictEqual(
+      adapter.resolveRoot({ homeDir, env: { CLAUDE_CONFIG_DIR: claudeConfigDir } }),
+      path.resolve(claudeConfigDir)
+    );
+    assert.strictEqual(
+      adapter.getInstallStatePath({ homeDir, env: { CLAUDE_CONFIG_DIR: claudeConfigDir } }),
+      path.join(path.resolve(claudeConfigDir), 'ecc', 'install-state.json')
+    );
+  })) passed++; else failed++;
+
+  if (test('claude adapter falls back to home/.claude when CLAUDE_CONFIG_DIR is unset or blank', () => {
+    const adapter = getInstallTargetAdapter('claude');
+    const homeDir = path.resolve('/Users/example');
+
+    assert.strictEqual(
+      adapter.resolveRoot({ homeDir, env: {} }),
+      path.join(homeDir, '.claude')
+    );
+    assert.strictEqual(
+      adapter.resolveRoot({ homeDir, env: { CLAUDE_CONFIG_DIR: '   ' } }),
+      path.join(homeDir, '.claude')
+    );
+  })) passed++; else failed++;
+
+  if (test('plans claude install under CLAUDE_CONFIG_DIR, keeping operations in the redirected root', () => {
+    const repoRoot = path.join(__dirname, '..', '..');
+    const homeDir = '/Users/example';
+    const claudeConfigDir = '/private/claude-profile';
+
+    const plan = planInstallTargetScaffold({
+      target: 'claude',
+      repoRoot,
+      homeDir,
+      env: { CLAUDE_CONFIG_DIR: claudeConfigDir },
+      modules: [
+        { id: 'rules-core', paths: ['rules'] },
+        { id: 'docs-core', paths: ['docs'] },
+      ],
+    });
+
+    assert.strictEqual(plan.targetRoot, path.resolve(claudeConfigDir));
+    assert.ok(
+      plan.operations.every(operation => (
+        operation.destinationPath === plan.targetRoot
+        || operation.destinationPath.startsWith(`${plan.targetRoot}${path.sep}`)
+      )),
+      'Should keep every managed operation inside the CLAUDE_CONFIG_DIR root'
     );
   })) passed++; else failed++;
 
@@ -1492,6 +1565,60 @@ function runTests() {
       } else {
         delete require.cache[registryPath];
       }
+    }
+  })) passed++; else failed++;
+
+  if (test('convertWindowsPathToWSL converts Windows paths on WSL', () => {
+    const { convertWindowsPathToWSL, resetWSLDetection, setWSLForTesting } = require('../../scripts/lib/install-targets/helpers');
+    setWSLForTesting(true);
+    try {
+      assert.strictEqual(convertWindowsPathToWSL('C:\\Users\\test\\.claude'), '/mnt/c/Users/test/.claude');
+      assert.strictEqual(convertWindowsPathToWSL('D:/Projects'), '/mnt/d/Projects');
+      assert.strictEqual(convertWindowsPathToWSL('C:\\Path\\With\\Backslashes'), '/mnt/c/Path/With/Backslashes');
+    } finally {
+      resetWSLDetection();
+    }
+  })) passed++; else failed++;
+
+  if (test('convertWindowsPathToWSL returns original path when not on WSL', () => {
+    const { convertWindowsPathToWSL, resetWSLDetection, setWSLForTesting } = require('../../scripts/lib/install-targets/helpers');
+    setWSLForTesting(false);
+    try {
+      assert.strictEqual(convertWindowsPathToWSL('C:\\Users\\test\\.claude'), 'C:\\Users\\test\\.claude');
+      assert.strictEqual(convertWindowsPathToWSL('/home/user/.claude'), '/home/user/.claude');
+    } finally {
+      resetWSLDetection();
+    }
+  })) passed++; else failed++;
+
+  if (test('convertWindowsPathToWSL handles non-string input', () => {
+    const { convertWindowsPathToWSL, resetWSLDetection, setWSLForTesting } = require('../../scripts/lib/install-targets/helpers');
+    setWSLForTesting(true);
+    try {
+      assert.strictEqual(convertWindowsPathToWSL(null), null);
+      assert.strictEqual(convertWindowsPathToWSL(undefined), undefined);
+      assert.strictEqual(convertWindowsPathToWSL(123), 123);
+    } finally {
+      resetWSLDetection();
+    }
+  })) passed++; else failed++;
+
+  if (test('claude adapter converts CLAUDE_CONFIG_DIR Windows path to WSL path on WSL', () => {
+    const adapter = getInstallTargetAdapter('claude');
+    const homeDir = '/home/user';
+    const windowsConfigDir = 'C:\\Users\\test\\.claude';
+    const expectedWslPath = '/mnt/c/Users/test/.claude';
+
+    // Mock WSL detection
+    const { setWSLForTesting } = require('../../scripts/lib/install-targets/helpers');
+    setWSLForTesting(true);
+    try {
+      const resolved = adapter.resolveRoot({ homeDir, env: { CLAUDE_CONFIG_DIR: windowsConfigDir } });
+      assert.strictEqual(resolved, path.resolve(expectedWslPath));
+      const statePath = adapter.getInstallStatePath({ homeDir, env: { CLAUDE_CONFIG_DIR: windowsConfigDir } });
+      assert.strictEqual(statePath, path.join(path.resolve(expectedWslPath), 'ecc', 'install-state.json'));
+    } finally {
+      setWSLForTesting(null);
     }
   })) passed++; else failed++;
 

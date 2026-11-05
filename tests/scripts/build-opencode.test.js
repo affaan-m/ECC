@@ -4,6 +4,7 @@
 
 const assert = require("assert")
 const fs = require("fs")
+const { builtinModules } = require("module")
 const os = require("os")
 const path = require("path")
 const { spawnSync } = require("child_process")
@@ -40,7 +41,11 @@ function checkRuntime(runtimeRoot, extension, loader, installedHome = false) {
       // the hooks module is initialized exactly once; published package entry
       // imports continue to expose the actual plugin.
       const active = installedHome === "true" ? await load("plugins/ecc-hooks") : entry
-      if (installedHome === "true") assert.deepEqual(await entry.default({}), {})
+      // The inert stub is a V2 definition object (id + setup), not a factory.
+      if (installedHome === "true") {
+        assert.equal(entry.default.id, "ecc-hooks")
+        assert.equal(typeof entry.default.setup, "function")
+      }
       const plugin = await active.default({
         client: { app: { log: (event) => logs.push(event.body) } },
         $: () => { throw new Error("Unexpected shell execution") },
@@ -115,6 +120,36 @@ function main() {
       })
       assert.strictEqual(result.status, 0, result.stderr)
       assert.ok(fs.existsSync(distEntry), ".opencode/dist/index.js should exist after build")
+    }],
+    ["built OpenCode bundle only imports packages declared as runtime dependencies", () => {
+      // OpenCode installs npm plugins without devDependencies, so any package
+      // the compiled bundle imports at runtime must ship as a dependency.
+      const runtimeDeps = new Set([
+        ...Object.keys(packageJson.dependencies || {}),
+        ...Object.keys(packageJson.peerDependencies || {}),
+      ])
+      const distDir = path.dirname(distEntry)
+      const imported = new Set()
+      const walk = (dir) => {
+        for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+          const entryPath = path.join(dir, entry.name)
+          if (entry.isDirectory()) {
+            walk(entryPath)
+          } else if (entry.name.endsWith(".js")) {
+            const source = fs.readFileSync(entryPath, "utf8")
+            for (const match of source.matchAll(/(?:\bfrom|\bimport)\s*\(?\s*["']([^"'.][^"']*)["']/g)) {
+              const specifier = match[1]
+              if (specifier.startsWith("node:") || builtinModules.includes(specifier)) continue
+              const parts = specifier.split("/")
+              imported.add(specifier.startsWith("@") ? parts.slice(0, 2).join("/") : parts[0])
+            }
+          }
+        }
+      }
+      walk(distDir)
+      assert.ok(imported.size > 0, "expected the OpenCode bundle to import at least one package")
+      const undeclared = [...imported].filter((name) => !runtimeDeps.has(name)).sort()
+      assert.deepStrictEqual(undeclared, [], `undeclared runtime imports: ${undeclared.join(", ")}`)
     }],
     ["package.json declares a resolvable OpenCode plugin entry", () => {
       assert.strictEqual(packageJson.main, ".opencode/dist/index.js")

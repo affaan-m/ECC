@@ -85,10 +85,80 @@ function resolveProjectRoot(cwd = process.cwd()) {
   return '';
 }
 
+function resolveMainWorktreeRoot(projectRoot) {
+  const listing = runGit(['worktree', 'list', '--porcelain'], projectRoot);
+  const line = listing.split(/\r?\n/).find(entry => entry.startsWith('worktree '));
+  return line ? line.slice('worktree '.length) : '';
+}
+
 function computeProjectId(projectRoot) {
   const remoteUrl = stripRemoteCredentials(runGit(['remote', 'get-url', 'origin'], projectRoot));
-  const hashInput = normalizeRemoteUrl(remoteUrl) || remoteUrl || projectRoot;
+  // Same fallback as detect-project.sh: a remote-free linked worktree shares its main checkout's id.
+  const hashInput = normalizeRemoteUrl(remoteUrl) || remoteUrl || resolveMainWorktreeRoot(projectRoot) || projectRoot;
   return crypto.createHash('sha256').update(hashInput).digest('hex').slice(0, 12);
+}
+
+// detect-project.sh creates instincts/ before it updates projects.json, so a
+// folder with instincts/ is one the observer writes to (a bare folder may be
+// one this module created).
+function hasObserverData(projectId) {
+  return fs.existsSync(path.join(getProjectsDir(), projectId, 'instincts'));
+}
+
+// Match the project CLI's ID boundary before using registry data in paths.
+function isSafeProjectId(projectId) {
+  return typeof projectId === 'string' && projectId.length <= 128
+    && /^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(projectId)
+    && !projectId.includes('..');
+}
+
+/**
+ * Choose the project id for a root that has registry entries.
+ *
+ * After a repository gains a remote, detect-project.sh writes under the
+ * remote-hash id while the old path-hash entry stays in the registry. Prefer
+ * the id the observer derives now when it is registered or already holds
+ * observer data; otherwise keep a sole entry, or take the most recently seen
+ * of several. When other ids remain for the root, show a read-only inspection
+ * path. The current merge CLI deletes the source directory, including live
+ * observer state and files it does not copy, so SessionStart must not suggest it.
+ */
+function pickRootProjectId(entries, projectRoot) {
+  const computedId = computeProjectId(projectRoot);
+  const ids = [...new Set(entries.map(entry => entry.id))];
+  const lastSeen = entry => Date.parse(entry.last_seen || '') || 0;
+  let chosenId;
+  if (ids.includes(computedId) || hasObserverData(computedId)) {
+    chosenId = computedId;
+  } else if (entries.length === 1) {
+    return ids[0];
+  } else {
+    chosenId = entries.reduce((latest, entry) => (lastSeen(entry) > lastSeen(latest) ? entry : latest)).id;
+  }
+
+  const others = ids.filter(id => id !== chosenId);
+  if (others.length > 0) {
+    process.stderr.write(
+      `[ecc] ${projectRoot} has project ids ${[chosenId, ...others].join(', ')}; using ${chosenId}. `
+      + 'Inspect with instinct-cli.py projects; do not merge live project storage. '
+      + 'The merge command removes the source directory.\n'
+    );
+  }
+  return chosenId;
+}
+
+// Native real paths expand Windows 8.3 names; the JS realpath walker may retain
+// a non-symlink short spelling. Canonicalize only root comparison; keep the Git
+// spelling in computeProjectId's fallback hash for detect-project.sh parity.
+// Unavailable roots cannot claim aliases.
+function canonicalProjectRoot(root) {
+  if (typeof root !== 'string' || !path.isAbsolute(root)) return '';
+  try {
+    const realpath = fs.realpathSync.native || fs.realpathSync;
+    return realpath(root);
+  } catch {
+    return '';
+  }
 }
 
 function resolveProjectContext(cwd = process.cwd()) {
@@ -100,12 +170,31 @@ function resolveProjectContext(cwd = process.cwd()) {
   }
 
   const registry = readProjectRegistry();
-  const registryEntry = Object.values(registry).find(entry => entry && path.resolve(entry.root || '') === projectRoot);
-  const projectId = registryEntry?.id || computeProjectId(projectRoot);
+  const canonicalRoot = canonicalProjectRoot(projectRoot);
+  const rootEntries = Object.values(registry).filter(entry => entry && isSafeProjectId(entry.id)
+    && canonicalRoot && canonicalProjectRoot(entry.root) === canonicalRoot);
+  const projectId = rootEntries.length > 0
+    ? pickRootProjectId(rootEntries, projectRoot)
+    : computeProjectId(projectRoot);
   const projectDir = path.join(getProjectsDir(), projectId);
   ensureDir(projectDir);
+  const aliasProjectIds = [...new Set(rootEntries.map(entry => entry.id))].filter(id => id !== projectId);
 
-  return { projectId, projectRoot, projectDir, isGlobal: false };
+  return { projectId, projectRoot, projectDir, isGlobal: false, aliasProjectIds };
+}
+
+/**
+ * Contexts for the other registry ids that share this root. A remote added
+ * mid-session moves the root to a new id, so a SessionStart lease can still
+ * sit under one of these.
+ */
+function getAliasContexts(context) {
+  return [...new Set((context.aliasProjectIds || []).filter(isSafeProjectId))].map(projectId => ({
+    ...context,
+    projectId,
+    projectDir: path.join(getProjectsDir(), projectId),
+    aliasProjectIds: []
+  }));
 }
 
 function getObserverPidFile(context) {
@@ -201,6 +290,7 @@ module.exports = {
   getHomunculusDir,
   normalizeRemoteUrl,
   resolveProjectContext,
+  getAliasContexts,
   getObserverActivityFile,
   getObserverPidFile,
   getSessionLeaseDir,

@@ -55,6 +55,7 @@ function classify(python, requests) {
     const result = spawnSync(python, ["-c", HARNESS, workspace, JSON.stringify(requests)], {
       input: workspacePathSnippet(),
       encoding: "utf8",
+      env: { ...process.env, PYTHONIOENCODING: "utf-8", PYTHONUTF8: "1" },
     });
     assert.strictEqual(result.status, 0, `python harness failed:\n${result.stderr}`);
     return JSON.parse(result.stdout);

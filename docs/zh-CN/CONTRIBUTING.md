@@ -309,7 +309,7 @@ commands/your-command.md
 
 ### 命令模板
 
-```markdown
+````markdown
 ---
 description: 在 /help 中显示的简要描述
 ---
@@ -338,7 +338,7 @@ description: 在 /help 中显示的简要描述
 
 用户将收到的内容。
 
-```
+````
 
 ### 命令示例
 
