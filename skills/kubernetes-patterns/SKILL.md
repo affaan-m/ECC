@@ -653,7 +653,7 @@ kubectl describe pod <pod-name> -n my-namespace | grep -A5 "Last State"
 
 ### Pods Replaced With Zero Restarts (Churn)
 
-A young pod with `RESTARTS 0` was not restarted: it was deleted and recreated. `kubectl get events` often shows nothing, because events expire after one hour by default and a descheduler without RBAC on `events.k8s.io` emits none. Node-pressure evictions by the kubelet are different: they skip the Eviction API and leave the old pod listed as `Evicted`.
+A young pod with `RESTARTS 0` may be a new replica or a replacement. Compare its Pod UID and `creationTimestamp` with a prior observation; a changed UID confirms replacement, while the restart count alone does not prove deletion. `kubectl get events` often shows nothing, because events expire after one hour by default and a descheduler without RBAC on `events.k8s.io` emits none. Node-pressure evictions by the kubelet are different: they skip the Eviction API and leave the old pod listed as `Evicted`.
 
 | Signal | Likely cause | Confirm with |
 |--------|--------------|--------------|
