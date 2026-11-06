@@ -82,6 +82,8 @@ skills:
   - frontend-slides
   - fsharp-testing
   - git-workflow
+  - godot-patterns
+  - godot-testing
   - golang-patterns
   - golang-testing
   - healthcare-cdss-patterns

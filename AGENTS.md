@@ -45,6 +45,7 @@ This is a **production-ready AI coding plugin** providing 71 specialized agents,
 | harness-optimizer | Harness config tuning | Reliability, cost, throughput |
 | rust-reviewer | Rust code review | Rust projects |
 | rust-build-resolver | Rust build errors | Rust build failures |
+| gdscript-reviewer | GDScript and Godot 4 code review | Godot projects |
 | pytorch-build-resolver | PyTorch runtime/CUDA/training errors | PyTorch build/training failures |
 | mle-reviewer | Production ML pipeline review | ML pipelines, evals, serving, monitoring, rollback |
 | rag-pipeline-reviewer | RAG pipeline review | Retrieval quality, chunking, reranking, RAGAS evaluation coverage |

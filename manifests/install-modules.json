@@ -236,6 +236,8 @@
         "skills/react-testing",
         "skills/rust-patterns",
         "skills/rust-testing",
+        "skills/godot-patterns",
+        "skills/godot-testing",
         "skills/springboot-patterns",
         "skills/springboot-tdd",
         "skills/springboot-verification",
