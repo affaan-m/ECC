@@ -24,6 +24,26 @@ const KNOWN_HOOKS = Object.freeze({
   'block-no-verify': path.join(REPO_ROOT, 'scripts', 'hooks', 'block-no-verify.js'),
 });
 
+let _hookFlags = null;
+function getHookFlags() {
+  if (_hookFlags === null) {
+    try {
+      _hookFlags = require('../lib/hook-flags');
+    } catch (_) {
+      try {
+        _hookFlags = require(path.join(REPO_ROOT, 'scripts', 'lib', 'hook-flags.js'));
+      } catch (_err) {
+        _hookFlags = {
+          areHooksEnabled: () => true,
+          isHookEnabled: () => true,
+          isDryRun: () => false,
+        };
+      }
+    }
+  }
+  return _hookFlags;
+}
+
 function parseArgs(argv) {
   const args = argv.slice(2);
   let hookTarget = null;
@@ -54,19 +74,20 @@ function resolveHookScript(hookTarget) {
   }
 
   // Sibling hooks folder relative to this bridge script
-  const sibling = path.resolve(__dirname, '..', 'hooks', `${hookTarget}.js`);
-  if (fs.existsSync(sibling)) return sibling;
+  const siblingDir = path.resolve(__dirname, '..', 'hooks');
+  const sibling = path.resolve(siblingDir, `${hookTarget}.js`);
+  if (sibling.startsWith(siblingDir + path.sep) && fs.existsSync(sibling)) {
+    return sibling;
+  }
 
-  // Relative to workspace .agents/scripts/hooks
-  const workspaceAgentsHook = path.resolve(process.cwd(), '.agents', 'scripts', 'hooks', `${hookTarget}.js`);
-  if (fs.existsSync(workspaceAgentsHook)) return workspaceAgentsHook;
+  // Canonical hooks directory under REPO_ROOT (reject path traversal escapes)
+  const canonicalHooksDir = path.resolve(REPO_ROOT, 'scripts', 'hooks');
+  const targetScript = path.resolve(canonicalHooksDir, `${hookTarget}.js`);
+  if (targetScript.startsWith(canonicalHooksDir + path.sep) && fs.existsSync(targetScript)) {
+    return targetScript;
+  }
 
-  // Relative to workspace scripts/hooks
-  const workspaceDirectHook = path.resolve(process.cwd(), 'scripts', 'hooks', `${hookTarget}.js`);
-  if (fs.existsSync(workspaceDirectHook)) return workspaceDirectHook;
-
-  const resolved = path.isAbsolute(hookTarget) ? hookTarget : path.resolve(REPO_ROOT, hookTarget);
-  return fs.existsSync(resolved) ? resolved : null;
+  return null;
 }
 
 function normalizeAntigravityToClaude(payload) {
@@ -126,6 +147,26 @@ function emitAntigravityDecision(decision, reason) {
 
 function main() {
   const { hookTarget } = parseArgs(process.argv);
+  const hookFlags = getHookFlags();
+
+  // 1. Central ECC policy check: are hooks globally enabled?
+  if (!hookFlags.areHooksEnabled()) {
+    emitAntigravityDecision('allow');
+    process.exit(0);
+  }
+
+  // 2. Is this specific hook enabled in active profile / not in ECC_DISABLED_HOOKS?
+  if (hookTarget && !hookFlags.isHookEnabled(hookTarget)) {
+    emitAntigravityDecision('allow');
+    process.exit(0);
+  }
+
+  // 3. Dry-run mode check
+  if (hookFlags.isDryRun()) {
+    emitAntigravityDecision('allow');
+    process.exit(0);
+  }
+
   const hookScript = resolveHookScript(hookTarget);
 
   let rawStdin = '';
@@ -212,4 +253,6 @@ module.exports = {
   KNOWN_HOOKS,
   normalizeAntigravityToClaude,
   resolveHookScript,
+  main,
+  getHookFlags,
 };

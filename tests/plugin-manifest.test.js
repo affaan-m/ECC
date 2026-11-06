@@ -503,7 +503,8 @@ test('antigravity plugin manifest adheres to Antigravity 2.0 discovery specifica
   assert.strictEqual(typeof antigravityPlugin.name, 'string');
   assert.strictEqual(typeof antigravityPlugin.description, 'string');
   assert.ok(fs.existsSync(path.join(repoRoot, '.antigravity-plugin', 'hooks.json')));
-  assert.ok(fs.existsSync(path.join(repoRoot, '.antigravity-plugin', 'mcp_config.json')));
+  // MCP is an explicit consent choice; plugin does not bundle forced mcp_config.json
+  assert.strictEqual(fs.existsSync(path.join(repoRoot, '.antigravity-plugin', 'mcp_config.json')), false);
 });
 
 test('antigravity native surface ships in npm package', () => {

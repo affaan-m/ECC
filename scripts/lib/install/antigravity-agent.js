@@ -2,7 +2,21 @@
 
 const { normalizeAgentTools } = require('../agent-tools');
 
-const TOOL_NAMES = Object.freeze({
+const EDITOR_TOOL_NAMES = Object.freeze({
+  Read: 'view_file',
+  ReadFile: 'view_file',
+  NotebookRead: 'view_file',
+  Write: 'write_to_file',
+  Edit: 'replace_file_content',
+  MultiEdit: 'replace_file_content',
+  Grep: 'view_file',
+  Glob: 'view_file',
+  Bash: 'run_command',
+  WebSearch: 'search_web',
+  WebFetch: 'search_web',
+});
+
+const CLI_TOOL_NAMES = Object.freeze({
   Read: 'read_file',
   ReadFile: 'read_file',
   NotebookRead: 'read_file',
@@ -17,11 +31,21 @@ const TOOL_NAMES = Object.freeze({
   Task: 'invoke_subagent',
 });
 
+const TOOL_NAMES = CLI_TOOL_NAMES;
+
 const MODEL_NAMES = Object.freeze({
   haiku: 'flash',
   sonnet: 'pro',
   opus: 'pro',
 });
+
+function resolveToolMap(runtimeOrOptions) {
+  const runtime = typeof runtimeOrOptions === 'string'
+    ? runtimeOrOptions
+    : (runtimeOrOptions?.runtime || runtimeOrOptions?.capability || process.env.ANTIGRAVITY_RUNTIME || 'cli');
+
+  return runtime === 'editor' ? EDITOR_TOOL_NAMES : CLI_TOOL_NAMES;
+}
 
 function splitFrontmatter(source, label) {
   const raw = String(source || '');
@@ -46,18 +70,19 @@ function splitFrontmatter(source, label) {
   };
 }
 
-function normalizeToolNames(value) {
+function normalizeToolNames(value, toolMap = CLI_TOOL_NAMES) {
   return [...new Set(normalizeAgentTools(value)
-    .filter(name => Object.hasOwn(TOOL_NAMES, name))
-    .map(name => TOOL_NAMES[name]))];
+    .filter(name => Object.hasOwn(toolMap, name))
+    .map(name => toolMap[name]))];
 }
 
-function adaptAntigravityAgent(source, label = '<unknown>') {
+function adaptAntigravityAgent(source, label = '<unknown>', options = {}) {
   const { frontmatter, body, headerEol, trailingFenceEol } = splitFrontmatter(source, label);
+  const toolMap = resolveToolMap(options);
   const { color: _claudeColor, ...supportedFrontmatter } = frontmatter;
   const adapted = { ...supportedFrontmatter };
   if (Object.hasOwn(frontmatter, 'tools')) {
-    adapted.tools = normalizeToolNames(frontmatter.tools);
+    adapted.tools = normalizeToolNames(frontmatter.tools, toolMap);
   }
   if (Object.hasOwn(frontmatter, 'model')) {
     adapted.model = Object.hasOwn(MODEL_NAMES, frontmatter.model)
@@ -73,6 +98,9 @@ function adaptAntigravityAgent(source, label = '<unknown>') {
 
 module.exports = {
   adaptAntigravityAgent,
-  MODEL_NAMES,
+  resolveToolMap,
+  EDITOR_TOOL_NAMES,
+  CLI_TOOL_NAMES,
   TOOL_NAMES,
+  MODEL_NAMES,
 };

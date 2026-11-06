@@ -130,6 +130,49 @@ test('search-only agent receives search tools without shell access (run_command)
   assert.strictEqual(parsed.tools.includes('run_command'), false);
 });
 
+test('pinned native loader receipt establishes distinct editor and CLI capability boundaries', () => {
+  const yaml = require('js-yaml');
+  const allClaudeTools = 'Read, ReadFile, NotebookRead, Write, Edit, MultiEdit, Grep, Glob, Bash, WebSearch, WebFetch, Task';
+  const source = [
+    '---',
+    'name: full-agent',
+    'description: Agent with all tools',
+    `tools: ${allClaudeTools}`,
+    'model: opus',
+    '---',
+    '',
+    'Full agent body',
+  ].join('\n');
+
+  // CLI / Antigravity 2.0 runtime
+  const cliAdapted = adaptAntigravityAgent(source, 'agents/full-agent.md', { runtime: 'cli' });
+  const cliParsed = yaml.load(cliAdapted.match(/^---\n([\s\S]*?)\n---\n/)[1]);
+  assert.deepStrictEqual(cliParsed.tools, [
+    'read_file',
+    'write_file',
+    'edit_file',
+    'grep_search',
+    'find_by_name',
+    'run_command',
+    'search_web',
+    'read_url_content',
+    'invoke_subagent',
+  ]);
+  assert.ok(cliParsed.tools.includes('invoke_subagent'), 'CLI runtime must support invoke_subagent');
+
+  // Editor-only runtime
+  const editorAdapted = adaptAntigravityAgent(source, 'agents/full-agent.md', { runtime: 'editor' });
+  const editorParsed = yaml.load(editorAdapted.match(/^---\n([\s\S]*?)\n---\n/)[1]);
+  assert.deepStrictEqual(editorParsed.tools, [
+    'view_file',
+    'write_to_file',
+    'replace_file_content',
+    'run_command',
+    'search_web',
+  ]);
+  assert.strictEqual(editorParsed.tools.includes('invoke_subagent'), false, 'Editor runtime must exclude invoke_subagent');
+});
+
 test('transform preserves CRLF line endings consistently on Windows-saved agents', () => {
   const crlfSource = [
     '---',

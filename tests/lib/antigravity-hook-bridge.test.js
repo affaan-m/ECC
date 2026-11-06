@@ -165,6 +165,128 @@ test('hook bridge allows modifications to unprotected files via config-protectio
   assert.strictEqual(decision.decision, 'allow');
 });
 
+test('rejects path traversal escapes in resolveHookScript', () => {
+  assert.strictEqual(resolveHookScript('../../../etc/passwd'), null);
+  assert.strictEqual(resolveHookScript('..\\..\\malicious'), null);
+});
+
+test('honors ECC_HOOKS_ENABLED=false policy by failing open (allow)', () => {
+  const bridgeScript = path.join(REPO_ROOT, 'scripts', 'antigravity', 'hook-bridge.js');
+  const agyPayload = {
+    conversationId: 'disabled-policy-test',
+    toolCall: {
+      name: 'edit_file',
+      args: {
+        Path: path.join(REPO_ROOT, 'eslint.config.js'),
+      },
+    },
+  };
+
+  const result = spawnSync(process.execPath, [bridgeScript, '--hook', 'config-protection'], {
+    input: JSON.stringify(agyPayload),
+    encoding: 'utf8',
+    env: { ...process.env, ECC_HOOKS_ENABLED: 'false' },
+    cwd: REPO_ROOT,
+  });
+
+  assert.strictEqual(result.status, 0);
+  const decision = JSON.parse(result.stdout.trim());
+  assert.strictEqual(decision.decision, 'allow');
+});
+
+test('honors ECC_DISABLED_HOOKS=config-protection policy', () => {
+  const bridgeScript = path.join(REPO_ROOT, 'scripts', 'antigravity', 'hook-bridge.js');
+  const agyPayload = {
+    conversationId: 'disabled-hook-test',
+    toolCall: {
+      name: 'edit_file',
+      args: {
+        Path: path.join(REPO_ROOT, 'eslint.config.js'),
+      },
+    },
+  };
+
+  const result = spawnSync(process.execPath, [bridgeScript, '--hook', 'config-protection'], {
+    input: JSON.stringify(agyPayload),
+    encoding: 'utf8',
+    env: { ...process.env, ECC_DISABLED_HOOKS: 'config-protection' },
+    cwd: REPO_ROOT,
+  });
+
+  assert.strictEqual(result.status, 0);
+  const decision = JSON.parse(result.stdout.trim());
+  assert.strictEqual(decision.decision, 'allow');
+});
+
+test('honors ECC_DRY_RUN=1 policy without blocking modifications', () => {
+  const bridgeScript = path.join(REPO_ROOT, 'scripts', 'antigravity', 'hook-bridge.js');
+  const agyPayload = {
+    conversationId: 'dry-run-test',
+    toolCall: {
+      name: 'edit_file',
+      args: {
+        Path: path.join(REPO_ROOT, 'eslint.config.js'),
+      },
+    },
+  };
+
+  const result = spawnSync(process.execPath, [bridgeScript, '--hook', 'config-protection'], {
+    input: JSON.stringify(agyPayload),
+    encoding: 'utf8',
+    env: { ...process.env, ECC_DRY_RUN: '1' },
+    cwd: REPO_ROOT,
+  });
+
+  assert.strictEqual(result.status, 0);
+  const decision = JSON.parse(result.stdout.trim());
+  assert.strictEqual(decision.decision, 'allow');
+});
+
+test('rejects execution of decoy scripts planted in unrelated project directories', () => {
+  const fs = require('fs');
+  const os = require('os');
+  const tempDecoy = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-decoy-repo-'));
+  try {
+    fs.mkdirSync(path.join(tempDecoy, 'scripts', 'antigravity'), { recursive: true });
+    fs.mkdirSync(path.join(tempDecoy, '.agents', 'scripts', 'antigravity'), { recursive: true });
+    const sentinelFile = path.join(tempDecoy, 'decoy-executed.txt');
+    const maliciousCode = `require('fs').writeFileSync(${JSON.stringify(sentinelFile)}, 'PWNED');`;
+
+    fs.writeFileSync(path.join(tempDecoy, 'scripts', 'antigravity', 'hook-bridge.js'), maliciousCode);
+    fs.writeFileSync(path.join(tempDecoy, '.agents', 'scripts', 'antigravity', 'hook-bridge.js'), maliciousCode);
+
+    // Read the hooks command from hooks/antigravity-hooks.json
+    const hookConfig = JSON.parse(fs.readFileSync(path.join(REPO_ROOT, 'hooks', 'antigravity-hooks.json'), 'utf8'));
+    const hookCmd = hookConfig['ecc-guardrails'].PreToolUse[0].hooks[0].command;
+
+    // Execute the hook command inside the decoy repo without setting ECC plugin env
+    const agyPayload = {
+      conversationId: 'decoy-test',
+      toolCall: { name: 'edit_file', args: { Path: 'safe.js' } }
+    };
+
+    const cleanEnv = { ...process.env };
+    delete cleanEnv.ANTIGRAVITY_PLUGIN_ROOT;
+    delete cleanEnv.CLAUDE_PLUGIN_ROOT;
+    delete cleanEnv.ECC_PLUGIN_ROOT;
+    cleanEnv.HOME = path.join(tempDecoy, 'empty-home');
+
+    // Run hook command in decoy directory
+    const result = spawnSync(hookCmd, {
+      shell: true,
+      input: JSON.stringify(agyPayload),
+      encoding: 'utf8',
+      cwd: tempDecoy,
+      env: cleanEnv,
+    });
+
+    // Sentinel file must NOT have been created!
+    assert.strictEqual(fs.existsSync(sentinelFile), false, 'Planted decoy bridge must not be executed!');
+  } finally {
+    fs.rmSync(tempDecoy, { recursive: true, force: true });
+  }
+});
+
 console.log(`\nResults: Passed: ${passed}, Failed: ${failed}`);
 if (failed > 0) {
   process.exit(1);
