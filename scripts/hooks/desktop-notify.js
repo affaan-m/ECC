@@ -69,14 +69,22 @@ function findPowerShell() {
 }
 
 /**
+ * Quote a value as a PowerShell single-quoted string literal.
+ * PowerShell also ends single-quoted strings at the typographic quotes
+ * U+2018-U+201B, so those are doubled along with the ASCII apostrophe.
+ * Otherwise a summary with a curly apostrophe breaks the command.
+ */
+function quotePowerShellString(value) {
+  return `'${String(value).replace(/['\u2018\u2019\u201A\u201B]/g, '$&$&')}'`;
+}
+
+/**
  * Send a Windows Toast notification via PowerShell BurntToast.
  * Returns { success: boolean, reason: string|null }.
  * reason is null on success, or contains error detail on failure.
  */
 function notifyWindows(pwshPath, title, body) {
-  const safeBody = body.replace(/'/g, "''");
-  const safeTitle = title.replace(/'/g, "''");
-  const command = `Import-Module BurntToast; New-BurntToastNotification -Text '${safeTitle}', '${safeBody}'`;
+  const command = `Import-Module BurntToast; New-BurntToastNotification -Text ${quotePowerShellString(title)}, ${quotePowerShellString(body)}`;
   const result = spawnSync(pwshPath, ['-Command', command],
     { stdio: ['ignore', 'pipe', 'pipe'], timeout: 5000 });
   if (result.status === 0) {
@@ -230,7 +238,7 @@ function run(raw) {
   return raw;
 }
 
-module.exports = { run };
+module.exports = { run, quotePowerShellString };
 
 // Legacy stdin path (when invoked directly rather than via run-with-flags)
 if (require.main === module) {
