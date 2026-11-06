@@ -135,9 +135,19 @@ cd PROJECT_DIR
 git log --oneline | wc -l
 # If > 1, history was not cleaned — FAIL
 
-# Search history for potential secrets
-git log -p | grep -iE '(password|secret|api.?key|token)' | head -20
+# Write the full history to a file outside the project, so Steps 1-3 never scan it
+HISTORY="$(mktemp)"
+git log -p --all --no-color > "$HISTORY"
+echo "$HISTORY"
+
+# Broad keyword pass (WARNING — manual review)
+grep -iE '(password|secret|api.?key|token)' "$HISTORY" | head -20
 ```
+
+Steps 1-3 read the working tree, but the push sends commits. A secret fixed in a file but still in
+a commit is published. Run every Step 1 pattern (CRITICAL) and the Step 3 home-directory patterns
+over `$HISTORY` with the same tool you used for Steps 1-3. Any match is a FAIL, even when the
+current file is clean. Delete `$HISTORY` when done.
 
 ### Step 7: Unreadable Files (WARNING)
 

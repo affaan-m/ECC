@@ -17,6 +17,7 @@ const MIRRORED_FILES = [
   'references/artifact-role-contract.md',
   'scripts/audit-docs.py',
   'scripts/markdown_links.py',
+  'scripts/module_audit.py',
 ];
 const ROUTED_SKILLS = [
   'ai-regression-testing',
@@ -42,11 +43,13 @@ function test(name, fn) {
 
 console.log('\n=== Documentation governance surface tests ===\n');
 
-test('Codex distribution files match the canonical skill', () => {
-  for (const relativePath of MIRRORED_FILES) {
-    const canonical = fs.readFileSync(path.join(CANONICAL, relativePath), 'utf8');
-    const mirror = fs.readFileSync(path.join(CODEX_MIRROR, relativePath), 'utf8');
-    assert.strictEqual(mirror, canonical, `${relativePath} mirror is stale`);
+test('Codex and Pi distribution files match the canonical skill', () => {
+  for (const mirrorRoot of [CODEX_MIRROR, path.dirname(PI_CORE)]) {
+    for (const relativePath of MIRRORED_FILES) {
+      const canonical = fs.readFileSync(path.join(CANONICAL, relativePath), 'utf8');
+      const mirror = fs.readFileSync(path.join(mirrorRoot, relativePath), 'utf8');
+      assert.strictEqual(mirror, canonical, `${mirrorRoot}/${relativePath} mirror is stale`);
+    }
   }
 });
 

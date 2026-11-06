@@ -58,7 +58,7 @@ function loadAliases() {
     const data = JSON.parse(content);
 
     // Validate structure
-    if (!data.aliases || typeof data.aliases !== 'object') {
+    if (!data.aliases || typeof data.aliases !== 'object' || Array.isArray(data.aliases)) {
       log('[Aliases] Invalid aliases file structure, resetting');
       return getDefaultAliases();
     }
@@ -213,6 +213,10 @@ function setAliasUnlocked(alias, sessionPath, title = null) {
   // Validate session path
   if (!sessionPath || typeof sessionPath !== 'string' || sessionPath.trim().length === 0) {
     return { success: false, error: 'Session path cannot be empty' };
+  }
+
+  if (title !== null && typeof title !== 'string') {
+    return { success: false, error: 'Title must be a string or null' };
   }
 
   if (alias.length > 128) {

@@ -15,6 +15,9 @@ Thanks for wanting to contribute! This repo is a community resource for Claude C
 - [Cross-Harness and Translations](#cross-harness-and-translations)
 - [Pull Request Process](#pull-request-process)
 - [Releases](#releases)
+- [Guidelines](#guidelines)
+- [File Naming](#file-naming)
+- [Questions?](#questions)
 
 ---
 
@@ -430,6 +433,13 @@ Check existing skills in those directories for the expected structure. Keeping t
 Translations live under `docs/` (e.g. `docs/zh-CN`, `docs/zh-TW`, `docs/ja-JP`). If you change agents, commands, or skills that are translated, consider updating the corresponding translation files or opening an issue so maintainers or translators can update them.
 
 ---
+
+## Issue submission
+
+Please submit at most five Issues within any 20-minute period and keep at
+most ten Issues open at once. The [Issue moderation policy](.github/ISSUE_MODERATION.md)
+explains the automatic closure, reopening, and maintainer alert rules. Existing
+open Issues stay open when the policy takes effect.
 
 ## Pull Request Process
 

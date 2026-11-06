@@ -117,7 +117,7 @@ jest --ci                           # Pruebas (Jest)
 
 ## Referencia
 
-Este repositorio aún no incluye una skill `typescript-patterns` dedicada. Para patrones detallados de TypeScript y JavaScript, usar `coding-standards` más `frontend-patterns` o `backend-patterns` según el código que se está revisando.
+Para patrones detallados de TypeScript y JavaScript, usar la skill `typescript-patterns`, más `coding-standards` y `frontend-patterns` o `backend-patterns` según el código que se está revisando.
 
 ---
 
