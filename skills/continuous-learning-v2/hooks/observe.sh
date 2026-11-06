@@ -66,6 +66,40 @@ _is_windows_app_installer_stub() {
   return 1
 }
 
+_python_install_manager_launcher() {
+  # With the Python Install Manager, python3/python in
+  #   %LOCALAPPDATA%\Microsoft\WindowsApps
+  # are App Execution Aliases. Every start of one makes Windows run an App
+  # Installer update check (AppXDeploymentServer event 603), and this hook
+  # starts Python several times per tool call. The Install Manager's global
+  # shortcuts in %LOCALAPPDATA%\Python\bin start the same runtime without that
+  # check, so print the shortcut for $1 when it is an alias and one exists.
+  # Microsoft Store Python has no such shortcut and keeps its alias. Only the
+  # current user's WindowsApps counts: an alias from anywhere else is left alone.
+  # The alias is also kept when it may not be the Install Manager's (Store
+  # Python provides the same name, and either package can own it) and when
+  # PYTHON_MANAGER_DEFAULT picks the runtime, which the alias honours and the
+  # shortcut, generated for one runtime, does not.
+  local _candidate="$1" _resolved _local _store
+  [ -n "${LOCALAPPDATA:-}" ] || return 1
+  [ -z "${PYTHON_MANAGER_DEFAULT:-}" ] || return 1
+  _resolved="$(command -v "$_candidate" 2>/dev/null || true)"
+  case "$_resolved" in */*) ;; *) return 1 ;; esac
+  # Git Bash accepts C:/... paths, so swapping separators avoids a cygpath start.
+  _local="${LOCALAPPDATA//\\//}"
+  _local="${_local%/}"
+  # command -v prints /c/... (or a mount such as /tmp/...) while LOCALAPPDATA
+  # is C:\..., so ask whether the two name the same directory instead of
+  # comparing strings.
+  [ "${_resolved%/*}" -ef "$_local/Microsoft/WindowsApps" ] || return 1
+  # A glob, not a command, so this check starts no process.
+  for _store in "$_local"/Microsoft/WindowsApps/PythonSoftwareFoundation.Python.3*/"${_candidate}.exe"; do
+    [ -e "$_store" ] && return 1
+  done
+  [ -f "$_local/Python/bin/${_candidate}.exe" ] && [ -x "$_local/Python/bin/${_candidate}.exe" ] || return 1
+  printf '%s\n' "$_local/Python/bin/${_candidate}.exe"
+}
+
 resolve_python_cmd() {
   if [ -n "${CLV2_PYTHON_CMD:-}" ] && command -v "$CLV2_PYTHON_CMD" >/dev/null 2>&1; then
     printf '%s\n' "$CLV2_PYTHON_CMD"
@@ -73,12 +107,12 @@ resolve_python_cmd() {
   fi
 
   if command -v python3 >/dev/null 2>&1 && ! _is_windows_app_installer_stub python3; then
-    printf '%s\n' python3
+    _python_install_manager_launcher python3 || printf '%s\n' python3
     return 0
   fi
 
   if command -v python >/dev/null 2>&1 && ! _is_windows_app_installer_stub python; then
-    printf '%s\n' python
+    _python_install_manager_launcher python || printf '%s\n' python
     return 0
   fi
 
