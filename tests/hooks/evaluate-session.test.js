@@ -438,8 +438,8 @@ function runTests() {
 
   // Test session ids below are already sanitized-safe (lowercase, digits,
   // hyphens), so the delivery marker filename is a plain concatenation.
-  function deliveryMarkerPath(sessionId) {
-    return path.join(os.tmpdir(), `claude-continuous-learning-delivered-${sessionId}`);
+  function deliveryMarkerPath(homunculusDir, sessionId) {
+    return path.join(homunculusDir, 'delivery-markers', `claude-continuous-learning-delivered-${sessionId}`);
   }
 
   function runEvaluatePayload(payload, extraEnv = {}, dropKeys = []) {
@@ -544,7 +544,7 @@ function runTests() {
     const transcript = createTranscript(testDir, 12);
     const homunculusDir = fs.mkdtempSync(path.join(os.tmpdir(), 'eval-delivery-home-'));
     const sessionId = 'delivery-ok-1';
-    const marker = deliveryMarkerPath(sessionId);
+    const marker = deliveryMarkerPath(homunculusDir, sessionId);
     try {
       fs.rmSync(marker, { force: true });
       registerLeaseFor(testDir, homunculusDir, sessionId);
@@ -584,22 +584,20 @@ function runTests() {
     const transcript = createTranscript(testDir, 12);
     const homunculusDir = fs.mkdtempSync(path.join(os.tmpdir(), 'eval-delivery-home-'));
     const sessionId = 'delivery-marker-fail-1';
-    const marker = deliveryMarkerPath(sessionId);
-    // A regular file as TMPDIR makes the marker path uncreatable (ENOTDIR)
-    // even as root, so the write fails while no marker exists.
-    const notADir = path.join(testDir, 'not-a-dir');
+    const marker = deliveryMarkerPath(homunculusDir, sessionId);
+    const notADir = path.dirname(marker);
     try {
       fs.rmSync(marker, { force: true });
-      fs.writeFileSync(notADir, 'not a directory\n');
       registerLeaseFor(testDir, homunculusDir, sessionId);
+      fs.writeFileSync(notADir, 'not a directory\n');
       const result = withOptInConfig(true, () => runEvaluatePayload(
         stopPayload(transcript, sessionId, testDir),
-        { CLV2_HOMUNCULUS_DIR: homunculusDir, CLAUDE_PROJECT_DIR: testDir, TMPDIR: notADir, TEMP: notADir, TMP: notADir }
+        { CLV2_HOMUNCULUS_DIR: homunculusDir, CLAUDE_PROJECT_DIR: testDir }
       ));
       assert.strictEqual(result.stdout, '', 'A failed marker write must fail closed, never deliver');
       assert.ok(result.stderr.includes('could not record delivery marker'), 'Marker failure must be logged');
     } finally {
-      fs.rmSync(marker, { force: true });
+      fs.rmSync(notADir, { force: true });
       cleanupTestDir(testDir);
       fs.rmSync(homunculusDir, { recursive: true, force: true });
     }
@@ -626,7 +624,7 @@ function runTests() {
     const transcript = createTranscript(testDir, 12);
     const homunculusDir = fs.mkdtempSync(path.join(os.tmpdir(), 'eval-delivery-home-'));
     const sessionId = 'delivery-loop-1';
-    const marker = deliveryMarkerPath(sessionId);
+    const marker = deliveryMarkerPath(homunculusDir, sessionId);
     try {
       fs.rmSync(marker, { force: true });
       registerLeaseFor(testDir, homunculusDir, sessionId);

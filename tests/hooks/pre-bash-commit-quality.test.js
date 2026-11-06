@@ -355,7 +355,7 @@ if (process.platform === 'win32') {
       ].join('\r\n'), 'utf8');
 
       const invocation = hook.getLinterInvocation(command, ['100% ready.js', '!important!.js'], 'win32');
-      const result = spawnSync(invocation.command, invocation.args, {
+      const result = spawnSync('cmd.exe', invocation.args, {
         ...invocation.options,
         env: { ...invocation.options.env, ECC_CAPTURE_PATH: capturePath }
       });

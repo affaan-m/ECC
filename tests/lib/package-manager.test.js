@@ -27,9 +27,7 @@ function test(name, fn) {
 
 // Create a temporary test directory
 function createTestDir() {
-  const testDir = path.join(os.tmpdir(), `pm-test-${Date.now()}`);
-  fs.mkdirSync(testDir, { recursive: true });
-  return testDir;
+  return fs.mkdtempSync(path.join(os.tmpdir(), 'pm-test-'));
 }
 
 // Clean up test directory

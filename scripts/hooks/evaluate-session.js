@@ -19,7 +19,6 @@ const {
   ensureDir,
   readFile,
   countInFile,
-  getTempDir,
   log,
   output
 } = require('../lib/utils');
@@ -28,12 +27,12 @@ const {
   resolveProjectContext,
   getAliasContexts,
   listSessionLeases,
+  getHomunculusDir,
   resolveSessionId
 } = require('../lib/observer-sessions');
 
-// Marker that records a delivered Stop nudge, one per session, in the OS
-// temp dir (same per-session temp-file pattern as suggest-compact's
-// counters). A marker is what makes delivery once-per-session: a later
+// Marker that records a delivered Stop nudge, one per session, in the
+// observer data directory. A marker is what makes delivery once-per-session: a later
 // user stop in the same session must not block again.
 const DELIVERY_MARKER_PREFIX = 'claude-continuous-learning-delivered-';
 
@@ -164,8 +163,8 @@ function deliverStopNudge({ input, stdinData, messageCount, learnedSkillsPath, s
     return;
   }
   // The session id is sanitized upstream by resolveSessionId, so the
-  // marker filename cannot traverse out of the temp dir.
-  const markerFile = path.join(getTempDir(), `${DELIVERY_MARKER_PREFIX}${sessionId}`);
+  // marker filename cannot traverse out of the private observer directory.
+  const markerDir = path.join(getHomunculusDir(), 'delivery-markers');
   // Claim the marker atomically: 'wx' fails when a nudge was already
   // delivered (EEXIST) and closes the check-then-create gap. Any other
   // write failure fails closed: without a marker, a later Stop would stay
@@ -174,7 +173,20 @@ function deliverStopNudge({ input, stdinData, messageCount, learnedSkillsPath, s
   // Stop for one turn, not later turns, so it cannot stand in for the
   // marker.
   try {
-    fs.writeFileSync(markerFile, `${new Date().toISOString()}\n`, { flag: 'wx' });
+    fs.mkdirSync(markerDir, { recursive: true, mode: 0o700 });
+    const stat = fs.lstatSync(markerDir);
+    if (!stat.isDirectory() || stat.isSymbolicLink()
+      || (process.platform !== 'win32' && ((stat.mode & 0o077) !== 0
+        || (typeof process.getuid === 'function' && stat.uid !== process.getuid())))) {
+      throw new Error('delivery marker directory is not private');
+    }
+  } catch (err) {
+    log(`[ContinuousLearning] Warning: could not record delivery marker, skipping delivery: ${err.message}`);
+    return;
+  }
+  const markerFile = path.join(markerDir, `${DELIVERY_MARKER_PREFIX}${sessionId}`);
+  try {
+    fs.writeFileSync(markerFile, `${new Date().toISOString()}\n`, { flag: 'wx', mode: 0o600 });
   } catch (err) {
     if (err.code === 'EEXIST') {
       log('[ContinuousLearning] Stop nudge already delivered for this session, skipping');

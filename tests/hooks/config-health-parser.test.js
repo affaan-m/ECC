@@ -439,9 +439,7 @@ function runTests() {
     assert.ok(fs.existsSync(installedSkill),
       `installed skill missing at ${installedSkill}`);
 
-    const installedSettings = fs.existsSync(settingsPath)
-      ? fs.readFileSync(settingsPath, 'utf8')
-      : '';
+    const installedSettings = fs.readFileSync(settingsPath, 'utf8');
     // Copying the script is not the SessionStart promise the skill makes: the
     // installed monitor only runs if the installer also registers it.
     const parsedSettings = JSON.parse(installedSettings);

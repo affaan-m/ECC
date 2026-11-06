@@ -251,9 +251,9 @@ for (const name of SHARED_FILES) {
       operation.destinationPath === destination
     ));
     writeFile(linkedFile, '# User-owned linked configuration\n');
-    fs.unlinkSync(destination);
+    const replacementLink = fixture.destination(`${name}.replacement-link`);
     try {
-      fs.symlinkSync(linkedFile, destination, 'file');
+      fs.symlinkSync(linkedFile, replacementLink, 'file');
     } catch (error) {
       if (process.platform === 'win32'
         && ['EPERM', 'EACCES', 'ENOTSUP'].includes(error.code)) {
@@ -262,6 +262,8 @@ for (const name of SHARED_FILES) {
       }
       throw error;
     }
+    fs.unlinkSync(destination);
+    fs.renameSync(replacementLink, destination);
 
     assert.throws(() => fixture.install(), error => (
       error.code === 'ELOOP' || /Refusing to inspect changed Codex configuration/.test(error.message)

@@ -67,15 +67,16 @@ function runWithGuidedDispatcherFailure(failureMode) {
   const root = createTempDir('install-apply-guided-failure-');
   const preloadPath = path.join(root, 'preload.js');
   const failureMessage = 'guided dispatcher failed\u001b[31m';
-  const replacement = failureMode === 'load'
-    ? `throw new Error(${JSON.stringify(failureMessage)});`
-    : `return { main: () => Promise.reject(new Error(${JSON.stringify(failureMessage)})) };`;
   fs.writeFileSync(preloadPath, `
     const Module = require('module');
     const originalLoad = Module._load;
     Module._load = function(request, parent, isMain) {
       if (request === './install-guided' && /install-apply\\.js$/.test(parent?.filename || '')) {
-        ${replacement}
+        const failureMessage = process.env.ECC_GUIDED_FAILURE_MESSAGE;
+        if (process.env.ECC_GUIDED_FAILURE_MODE === 'load') {
+          throw new Error(failureMessage);
+        }
+        return { main: () => Promise.reject(new Error(failureMessage)) };
       }
       return originalLoad.call(this, request, parent, isMain);
     };
@@ -84,6 +85,7 @@ function runWithGuidedDispatcherFailure(failureMode) {
     return spawnSync(process.execPath, ['--require', preloadPath, SCRIPT, '--guided'], {
       cwd: path.dirname(SCRIPT),
       encoding: 'utf8',
+      env: { ...process.env, ECC_GUIDED_FAILURE_MODE: failureMode, ECC_GUIDED_FAILURE_MESSAGE: failureMessage },
     });
   } finally {
     cleanup(root);
