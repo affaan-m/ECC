@@ -2,6 +2,7 @@
 'use strict';
 
 const MAX_STDIN = 1024 * 1024;
+const { getToolResultText } = require('./hook-input');
 let raw = '';
 
 function run(rawInput) {
@@ -10,7 +11,7 @@ function run(rawInput) {
     const cmd = String(input.tool_input?.command || '');
 
     if (/\bgh\s+pr\s+create\b/.test(cmd)) {
-      const out = String(input.tool_output?.output || '');
+      const out = getToolResultText(input);
       const match = out.match(/https:\/\/github\.com\/[^/]+\/[^/]+\/pull\/\d+/);
       if (match) {
         const prUrl = match[0];

@@ -142,6 +142,18 @@ async function runTests() {
     assert.strictEqual(secretEvent.payload.severity, 'critical');
   })) passed += 1; else failed += 1;
 
+  if (await test('analyzeForGovernanceEvents detects secrets in a Bash result Claude Code sends as tool_response', async () => {
+    const events = analyzeForGovernanceEvents({
+      tool_name: 'Bash',
+      tool_input: { command: 'cat .env' },
+      tool_response: { stdout: 'AWS_ACCESS_KEY_ID=AKIAIOSFODNN7EXAMPLE\n', stderr: '', interrupted: false, isImage: false },
+    });
+
+    const secretEvent = events.find(e => e.eventType === 'secret_detected');
+    assert.ok(secretEvent, 'Expected a secret_detected event');
+    assert.strictEqual(secretEvent.payload.location, 'output');
+  })) passed += 1; else failed += 1;
+
   if (await test('analyzeForGovernanceEvents detects approval-required commands', async () => {
     const events = analyzeForGovernanceEvents({
       tool_name: 'Bash',

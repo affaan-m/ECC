@@ -564,7 +564,8 @@ function runTests() {
     assert.strictEqual(summarizeOutput(null), '');
     assert.strictEqual(summarizeOutput(undefined), '');
     assert.strictEqual(summarizeOutput('hello\nworld'), 'hello world');
-    assert.strictEqual(summarizeOutput({ ok: true }), '{"ok":true}');
+    // A structured result is not serialized: nested encodings would escape redaction.
+    assert.strictEqual(summarizeOutput({ ok: true }), '');
   }) ? passed++ : failed++);
 
   (test('extracts file paths from nested arrays while filtering duplicates and remote URIs', () => {
