@@ -1062,6 +1062,7 @@
         "skills/homelab-vlan-segmentation",
         "skills/homelab-wireguard-vpn",
         "skills/kubernetes-patterns",
+        "skills/terraform-patterns",
         "skills/uncloud"
       ],
       "targets": [

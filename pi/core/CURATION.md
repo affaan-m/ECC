@@ -180,6 +180,7 @@ Exclude anything that:
 | `tasteforge-video` | media generation workflow over fal.ai SaaS |
 | `team-agent-orchestration` | agent squad orchestration |
 | `team-builder` | Claude agents roster picker |
+| `terraform-patterns` | infrastructure-as-code guidance that targets live cloud accounts; outside the curated Pi-core profile |
 | `terminal-opener` | ECC harness utility, not engineering content |
 | `terminal-ops` | ECC ops workflow |
 | `tinystruct-patterns` | niche single-framework pack |
