@@ -10,6 +10,7 @@ const { resolveWindowsBashCandidates } = require('../lib/windows-bash');
 const { readStdinRaw: readBoundedStdin, resolveMaxStdin } = require('./hook-input');
 
 const { createHookContextScanner } = require('./hook-input-limits');
+const { installHookWatchdog } = require('./hook-watchdog');
 
 const SHELL_PROBE_TIMEOUT_MS = 2000;
 
@@ -323,6 +324,7 @@ async function main() {
 // exports (tests), require.main is a real, different module, so main() stays
 // dormant.
 if (require.main === module || require.main === undefined) {
+  installHookWatchdog({ label: 'plugin hook bootstrap' });
   main().catch(error => {
     writeStderr(`[Hook] bootstrap failed: ${error.message}\n`);
     process.exitCode = 0;
