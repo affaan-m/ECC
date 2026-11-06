@@ -319,7 +319,7 @@ function normalizeSaveInput(input, options) {
 function saveMemory(input, options = {}) {
   const roots = options.roots || resolveVaultRoots(options);
   const memory = normalizeSaveInput(input || {}, options);
-  const secretKinds = findPotentialSecrets(JSON.stringify(memory));
+  const secretKinds = findPotentialSecrets(memory);
   if (secretKinds.length > 0) {
     throw new Error(`Refusing to save memory containing a suspected secret (${secretKinds.join(', ')}).`);
   }
@@ -501,7 +501,7 @@ function readMemoryFiles(options = {}) {
         scannedBytes += sourceBytes;
         const memory = parseMemoryDocument(source, filePath);
         assertMemoryMatchesLocation(memory, scope, root, filePath);
-        if (findPotentialSecrets(JSON.stringify(memory)).length > 0) {
+        if (findPotentialSecrets(memory).length > 0) {
           const error = new Error('Memory contains a suspected secret.');
           error.code = 'ECC_MEMORY_SECRET';
           throw error;
