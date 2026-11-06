@@ -317,6 +317,7 @@
       "security-bounty-hunter": "offensive security (bug bounty)",
       "security-scan": "wraps AgentShield commercial product",
       "seo": "SEO/marketing",
+      "short-video-distribution": "social/media distribution",
       "skill-comply": "runs agent rosters for compliance checks",
       "skill-host-compat": "runs an ECC repo CI script (scripts/ci/validate-skill-host-compat.js)",
       "skill-scout": "network searches of skill marketplaces",

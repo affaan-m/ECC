@@ -832,7 +832,8 @@
       "paths": [
         "skills/crosspost",
         "skills/x-api",
-        "skills/social-publisher"
+        "skills/social-publisher",
+        "skills/short-video-distribution"
       ],
       "targets": [
         "claude",
