@@ -93,6 +93,23 @@ skills/
     └── SKILL.md
 ```
 
+### Description Budget
+
+A skill's `description` is injected into every session so the model knows the
+skill exists — it is paid on every request, not only when the skill is used.
+Keep it to one or two sentences: what the skill does, then when to use it.
+Leave trigger synonym lists to `manifests/context-packs/skill-triggers@1.json`.
+
+```bash
+npm run descriptions:check
+```
+
+The check fails when a single description exceeds `maxDescriptionChars` or when
+the total listing exceeds `maxListingTokens` in
+`manifests/skill-description-budget.json`. That ceiling is a ratchet: it may
+only go down. Trim a description, then lower the ceiling to the new total in the
+same commit.
+
 ### SKILL.md Template
 
 ```markdown

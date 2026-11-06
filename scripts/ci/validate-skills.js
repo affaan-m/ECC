@@ -27,6 +27,7 @@
 const fs = require('fs');
 const path = require('path');
 const yaml = require('js-yaml');
+const { checkDescriptions } = require('./validate-skill-descriptions');
 
 const SKILLS_DIR = path.join(__dirname, '../../skills');
 const DOCS_DIR = path.join(__dirname, '../../docs');
@@ -366,6 +367,20 @@ function validateSkills() {
       continue;
     }
     validCount++;
+  }
+
+  // The always-on listing cost is part of skill validity: every description is
+  // injected into every session, so unbounded growth silently crowds skills out
+  // of the model's view. The ceiling in manifests/skill-description-budget.json
+  // is a ratchet and never trips on pre-existing content.
+  const budget = checkDescriptions();
+  for (const line of budget.errors) {
+    console.error(`ERROR: ${line}`);
+    hasErrors = true;
+  }
+  if (budget.count > 0) {
+    console.log(`Skill listing metadata: ${budget.totalTokens} tokens`
+      + (budget.target ? ` (${budget.target} token profile target)` : ''));
   }
 
   if (hasErrors) {
