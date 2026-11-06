@@ -15,7 +15,16 @@ After completing a complex task, the agent pauses to rate its own output against
 - After a debugging session that involved 3+ attempts
 - After producing a design document, architecture decision, or written analysis
 - When the user asks "how good was that?" or "rate yourself"
-- At the end of any session Stop hook (if configured — see `references/hook-integration.md`)
+- At the end of any session Stop hook (if configured — see the [hook integration guide](references/hook-integration.md))
+
+## Supporting Files
+
+- [Evaluation criteria](references/evaluation-criteria.md) — concrete score anchors for distinguishing adjacent ratings
+- [Hook integration](references/hook-integration.md) — opt-in Stop and PostToolUse reminders
+- [High-score example](examples/high-score-example.md) — a fully verified evaluation report
+- [Low-score example](examples/low-score-example.md) — an evaluation that identifies substantive gaps
+- [Report template](templates/evaluation-report.md) — copy-ready scorecard and scoring triggers
+- [Evaluator script](scripts/evaluate.py) — optional heuristic first pass for file or piped output
 
 ## Core Concepts
 
@@ -69,7 +78,7 @@ Do NOT average the scores in your head first and then work backwards. Score each
 
 ### Step 3: Produce the Evaluation Report
 
-Use the template from `templates/evaluation-report.md`. The report must include:
+Use the [evaluation report template](templates/evaluation-report.md). The report must include:
 
 ```
 - One-line summary
