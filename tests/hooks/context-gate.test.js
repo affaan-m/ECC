@@ -135,13 +135,22 @@ function runTests() {
   if (
     test('order forbids asking to stop and demands a resume command', () => {
       const cp = '/home/me/.claude/session-data/resume/myproj-abc123.md';
-      const text = buildOrderText({ pct: 91, tokens: 910000, windowTokens: 1000000, inferred: false, emergency: false, checkpointPath: cp });
+      const text = buildOrderText({ pct: 91, tokens: 910000, windowTokens: 1000000, inferred: false, emergency: false, checkpointPath: cp, sessionId: 'abc123', project: 'myproj' });
       assert.ok(text.includes('Do NOT ask whether to stop'));
       assert.ok(text.includes(`claude "Read ${cp} and continue`));
       assert.ok(text.includes(cp));
       assert.ok(text.includes('VERIFIED facts strictly separated from hypotheses'));
       // Observed usage is distinguished from permission to stop.
       assert.ok(text.includes('not by itself permission to abandon the task'));
+      // Proposal framing: the hook writes nothing, so it must NOT claim a
+      // completed handoff "receipt". The resume command is gated on a verify
+      // step, and the checkpoint carries an ownership marker bound to this
+      // session plus a source revision.
+      assert.ok(!text.toLowerCase().includes('receipt'), 'must not claim a completed receipt');
+      assert.ok(text.includes('PROPOSED'));
+      assert.ok(text.includes('VERIFY the checkpoint file exists and is non-empty'));
+      assert.ok(text.includes('ecc-handoff session=abc123 project=myproj'));
+      assert.ok(text.includes('source-rev='));
     })
   )
     passed++;
@@ -329,6 +338,10 @@ function runTests() {
 
   console.log('\nhandoff checkpoint ownership (enforce mode):');
 
+  // This case only proves the order never points at a project-root RESUME.md
+  // (a file the hook never writes). Ownership of the SELECTED checkpoint file —
+  // the real collision surface — is exercised by the identity/disambiguation
+  // cases that follow.
   if (
     test('a pre-existing project RESUME.md is never targeted and is left untouched', () => {
       const projDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-gate-proj-'));
@@ -364,6 +377,112 @@ function runTests() {
       const first = extract(run(inputFor(t, { cwd: '/tmp/ecc-demo-proj' }), { env }));
       const second = extract(run(inputFor(t, { cwd: '/tmp/ecc-demo-proj' }), { env }));
       assert.strictEqual(first, second, 'same session must reuse one checkpoint path (idempotent)');
+    })
+  )
+    passed++;
+  else failed++;
+
+  if (
+    test('missing identity: same-named projects never collide on a shared destination', () => {
+      // Sandbox the handoff home so the fire touches tmp only. ECC_AGENT_DATA_HOME
+      // is read by getSessionsDir() from process.env, so it must be set there.
+      const sandbox = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-gate-home-'));
+      const resumeDir = path.join(sandbox, 'session-data', 'resume');
+      fs.mkdirSync(resumeDir, { recursive: true });
+      // A pre-existing handoff at the exact path the OLD literal-fallback code
+      // produced for any unidentified session ("project-session.md").
+      const seeded = path.join(resumeDir, 'project-session.md');
+      const original = 'OWNER-A HANDOFF — must survive\n';
+      fs.writeFileSync(seeded, original, 'utf8');
+      const t = writeTranscript(950000);
+      cleanup.push(t);
+      const prevHome = process.env.ECC_AGENT_DATA_HOME;
+      const prevSid = process.env.ECC_SESSION_ID;
+      const prevCsid = process.env.CLAUDE_SESSION_ID;
+      try {
+        process.env.ECC_AGENT_DATA_HOME = sandbox;
+        delete process.env.ECC_SESSION_ID;
+        delete process.env.CLAUDE_SESSION_ID;
+        // Two different owners, same basename "project", NO session id.
+        const envEnforce = { ECC_CONTEXT_GATE_MODE: 'enforce' };
+        const outA = JSON.parse(run(JSON.stringify({ transcript_path: t, cwd: '/tmp/owner-a/project', prompt: 'go' }), { env: envEnforce }));
+        const outB = JSON.parse(run(JSON.stringify({ transcript_path: t, cwd: '/tmp/owner-b/project', prompt: 'go' }), { env: envEnforce }));
+        for (const out of [outA, outB]) {
+          const ctx = out.hookSpecificOutput.additionalContext;
+          // Enforcement declined: NO checkpoint path is named...
+          assert.ok(!/[/\\]resume[/\\]\S*\.md/.test(ctx), `decline must name no checkpoint path. Got: ${ctx}`);
+          // ...but the operator still gets actionable guidance (not silent).
+          assert.ok(ctx.includes('ECC_SESSION_ID'), 'decline must tell the operator how to enable it');
+          assert.ok(ctx.includes('Do NOT auto-write'), 'decline must forbid a guessed write');
+        }
+        // The pre-existing handoff survives byte-for-byte.
+        assert.strictEqual(fs.readFileSync(seeded, 'utf8'), original);
+      } finally {
+        if (prevHome === undefined) delete process.env.ECC_AGENT_DATA_HOME;
+        else process.env.ECC_AGENT_DATA_HOME = prevHome;
+        if (prevSid === undefined) delete process.env.ECC_SESSION_ID;
+        else process.env.ECC_SESSION_ID = prevSid;
+        if (prevCsid === undefined) delete process.env.CLAUDE_SESSION_ID;
+        else process.env.CLAUDE_SESSION_ID = prevCsid;
+        fs.rmSync(sandbox, { recursive: true, force: true });
+      }
+    })
+  )
+    passed++;
+  else failed++;
+
+  if (
+    test('a destination owned by a different session is disambiguated, not overwritten', () => {
+      const sandbox = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-gate-home-'));
+      const resumeDir = path.join(sandbox, 'session-data', 'resume');
+      fs.mkdirSync(resumeDir, { recursive: true });
+      // Seed the exact path this session resolves to, owned by ANOTHER session.
+      const taken = path.join(resumeDir, 'demoproj-mysess.md');
+      const foreign = '<!-- ecc-handoff session=othersess project=demoproj source-rev=deadbeef -->\nFOREIGN\n';
+      fs.writeFileSync(taken, foreign, 'utf8');
+      const t = writeTranscript(950000);
+      cleanup.push(t);
+      const prevHome = process.env.ECC_AGENT_DATA_HOME;
+      try {
+        process.env.ECC_AGENT_DATA_HOME = sandbox;
+        const out = JSON.parse(run(JSON.stringify({ transcript_path: t, cwd: '/x/demoproj', session_id: 'mysess', prompt: 'go' }), { env: { ECC_CONTEXT_GATE_MODE: 'enforce' } }));
+        const ctx = out.hookSpecificOutput.additionalContext;
+        // Targets a disambiguated sibling, never the foreign file.
+        assert.ok(ctx.includes('demoproj-mysess-2.md'), `expected disambiguated path. Got: ${ctx}`);
+        assert.ok(!ctx.includes(taken), 'must not target another session\'s handoff');
+        // Foreign handoff survives byte-for-byte.
+        assert.strictEqual(fs.readFileSync(taken, 'utf8'), foreign);
+      } finally {
+        if (prevHome === undefined) delete process.env.ECC_AGENT_DATA_HOME;
+        else process.env.ECC_AGENT_DATA_HOME = prevHome;
+        fs.rmSync(sandbox, { recursive: true, force: true });
+      }
+    })
+  )
+    passed++;
+  else failed++;
+
+  if (
+    test('a destination owned by the same session is reused (idempotent)', () => {
+      const sandbox = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-gate-home-'));
+      const resumeDir = path.join(sandbox, 'session-data', 'resume');
+      fs.mkdirSync(resumeDir, { recursive: true });
+      const own = path.join(resumeDir, 'demoproj-mysess.md');
+      fs.writeFileSync(own, '<!-- ecc-handoff session=mysess project=demoproj source-rev=abc123 -->\nMINE\n', 'utf8');
+      const t = writeTranscript(950000);
+      cleanup.push(t);
+      const prevHome = process.env.ECC_AGENT_DATA_HOME;
+      try {
+        process.env.ECC_AGENT_DATA_HOME = sandbox;
+        const out = JSON.parse(run(JSON.stringify({ transcript_path: t, cwd: '/x/demoproj', session_id: 'mysess', prompt: 'go' }), { env: { ECC_CONTEXT_GATE_MODE: 'enforce' } }));
+        const ctx = out.hookSpecificOutput.additionalContext;
+        assert.ok(ctx.includes(own), 'this session must reuse its own checkpoint');
+        assert.ok(!ctx.includes('demoproj-mysess-2.md'), 'must not disambiguate away from its own file');
+      } finally {
+        if (prevHome === undefined) delete process.env.ECC_AGENT_DATA_HOME;
+        else process.env.ECC_AGENT_DATA_HOME = prevHome;
+        fs.rmSync(sandbox, { recursive: true, force: true });
+      }
     })
   )
     passed++;
