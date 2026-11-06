@@ -3,6 +3,7 @@
 const { spawn, spawnSync } = require('child_process');
 const path = require('path');
 const fs = require('fs');
+const { performance } = require('perf_hooks');
 
 const testsDir = __dirname;
 const repoRoot = path.resolve(testsDir, '..');
@@ -116,7 +117,14 @@ function parseCounts(combined) {
   return { passed: 0, failed: 0, definite: false };
 }
 
-const testFiles = discoverTestFiles();
+const testFiles = Object.freeze(discoverTestFiles());
+const plannedFiles = Object.freeze(testFiles.map(file => file.split(path.sep).join('/')));
+const plannedSet = new Set(plannedFiles);
+const attempts = new Map();
+const records = new Map();
+const integrityErrors = [];
+if (plannedSet.size !== plannedFiles.length) integrityErrors.push('Duplicate files in execution plan');
+console.log(`ECC_TEST_PLAN ${JSON.stringify({ jobs, files: plannedFiles })}`);
 
 const BOX_W = 58;
 const boxLine = s => `║${s.padEnd(BOX_W)}║`;
@@ -154,7 +162,7 @@ function childEnvFor() {
   const childEnv = { ...process.env };
   // Git context would leak into fixtures; ONLY and JOBS are runner controls and
   // must not reach suites that spawn the runner themselves.
-  for (const key of ['GIT_DIR', 'GIT_WORK_TREE', 'GIT_INDEX_FILE', 'GIT_COMMON_DIR', 'GIT_PREFIX', 'ECC_TEST_ONLY', 'ECC_TEST_JOBS', 'ECC_TEST_SERIAL']) {
+  for (const key of ['GIT_DIR', 'GIT_WORK_TREE', 'GIT_INDEX_FILE', 'GIT_COMMON_DIR', 'GIT_PREFIX', 'ECC_TEST_ONLY', 'ECC_TEST_JOBS', 'ECC_TEST_SERIAL', 'ECC_TEST_REPORT']) {
     delete childEnv[key];
   }
   return childEnv;
@@ -233,19 +241,41 @@ function reportTestFile(displayPath, result) {
       totalFailed += counts.failed;
     }
   }
+  return failureReason || null;
 }
 
-function pendingTestFiles() {
-  return testFiles.filter(testFile => {
-    if (fs.existsSync(path.join(testsDir, testFile))) return true;
-    console.log(`WARNING Skipping ${testFile.split(path.sep).join('/')} (file not found)`);
-    return false;
-  });
+function beginTestFile(testFile, phase) {
+  const file = testFile.split(path.sep).join('/');
+  if (!plannedSet.has(file) || attempts.has(file)) {
+    throw new Error(`Unplanned or duplicate test attempt: ${file}`);
+  }
+  const attempt = { file, phase, attemptedAt: new Date().toISOString(), clock: performance.now() };
+  attempts.set(file, attempt);
+  return attempt;
+}
+
+function completeTestFile(attempt, result) {
+  if (attempts.get(attempt.file) !== attempt || records.has(attempt.file)) {
+    throw new Error(`Unplanned or duplicate test completion: ${attempt.file}`);
+  }
+  const completedAt = new Date().toISOString();
+  const durationMs = performance.now() - attempt.clock;
+  const failureReason = reportTestFile(attempt.file, result);
+  const record = {
+    file: attempt.file, phase: attempt.phase, attemptedAt: attempt.attemptedAt,
+    completedAt, durationMs, exitCode: result.status ?? null, signal: result.signal || null,
+    error: result.error ? result.error.message : failureReason,
+    outcome: failureReason ? 'failed' : 'passed'
+  };
+  records.set(attempt.file, record);
+  console.log(`ECC_TEST_FILE ${JSON.stringify(record)}`);
 }
 
 function runAllSync() {
-  for (const testFile of pendingTestFiles()) {
-    reportTestFile(testFile.split(path.sep).join('/'), runTestFileSync(testFile));
+  // Never drop a discovered file: a file removed by another suite must fail.
+  for (const testFile of testFiles) {
+    const attempt = beginTestFile(testFile, 'serial');
+    completeTestFile(attempt, runTestFileSync(testFile));
   }
 }
 
@@ -255,24 +285,53 @@ function isSerial(testFile) {
 }
 
 async function runAllParallel() {
-  const pending = pendingTestFiles();
-  const queue = pending.filter(testFile => !isSerial(testFile));
-  const serial = pending.filter(isSerial);
+  const queue = testFiles.filter(testFile => !isSerial(testFile));
+  const serial = testFiles.filter(isSerial);
   const worker = async () => {
     while (queue.length > 0) {
       const testFile = queue.shift();
+      const attempt = beginTestFile(testFile, 'pool');
       const result = await runTestFile(testFile);
-      reportTestFile(testFile.split(path.sep).join('/'), result);
+      completeTestFile(attempt, result);
     }
   };
-  await Promise.all(Array.from({ length: Math.min(jobs, queue.length) }, worker));
+  const workers = await Promise.allSettled(Array.from({ length: Math.min(jobs, queue.length) }, worker));
+  for (const result of workers) {
+    if (result.status === 'rejected') integrityErrors.push(result.reason.message || String(result.reason));
+  }
   if (serial.length > 0) console.log(`\nRunning ${serial.length} serial files after the pool`);
   for (const testFile of serial) {
-    reportTestFile(testFile.split(path.sep).join('/'), await runTestFile(testFile));
+    const attempt = beginTestFile(testFile, 'serial');
+    completeTestFile(attempt, await runTestFile(testFile));
   }
 }
 
 function finish() {
+  for (const file of plannedFiles) {
+    if (!attempts.has(file) || !records.has(file)) integrityErrors.push(`Incomplete planned file: ${file}`);
+  }
+  if (records.size !== plannedFiles.length || filesPassed + filesFailed !== plannedFiles.length) {
+    integrityErrors.push('Execution counts do not match the plan');
+  }
+  const report = {
+    version: 1, jobs, plannedFiles,
+    records: plannedFiles.filter(file => records.has(file)).map(file => records.get(file)),
+    integrity: { ok: integrityErrors.length === 0, errors: integrityErrors },
+    counts: {
+      planned: plannedFiles.length, attempted: attempts.size, completed: records.size,
+      passed: filesPassed, failed: filesFailed
+    }
+  };
+  if (process.env.ECC_TEST_REPORT) {
+    try {
+      fs.mkdirSync(path.dirname(process.env.ECC_TEST_REPORT), { recursive: true });
+      fs.writeFileSync(process.env.ECC_TEST_REPORT, `${JSON.stringify(report, null, 2)}\n`);
+    } catch (error) {
+      integrityErrors.push(`Cannot write execution report: ${error.message}`);
+    }
+  }
+  console.log(`ECC_TEST_COMPLETE ${JSON.stringify({ counts: report.counts, integrity: { ok: integrityErrors.length === 0, errors: integrityErrors } })}`);
+  for (const error of integrityErrors) console.log(`Execution integrity error: ${error}`);
   const totalTests = totalPassed + totalFailed;
 
   console.log('\n╔' + '═'.repeat(BOX_W) + '╗');
@@ -294,12 +353,21 @@ function finish() {
   console.log('╚' + '═'.repeat(BOX_W) + '╝');
   console.log(`\nPassed: ${totalPassed}, Failed: ${totalFailed}`);
 
-  process.exitCode = totalFailed > 0 ? 1 : 0;
+  process.exitCode = totalFailed > 0 || integrityErrors.length > 0 ? 1 : 0;
+}
+
+function failRun(error) {
+  integrityErrors.push(error.message || String(error));
+  finish();
 }
 
 if (jobs > 1) {
-  runAllParallel().then(finish);
+  runAllParallel().then(finish, failRun);
 } else {
-  runAllSync();
-  finish();
+  try {
+    runAllSync();
+    finish();
+  } catch (error) {
+    failRun(error);
+  }
 }

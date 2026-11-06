@@ -394,6 +394,53 @@ test('rejects a symlinked ancestor when roots come back from initializeVault', (
   }
 });
 
+// Native symlink cases above remain mandatory; junction fixtures add Windows coverage.
+test('rejects a vault path that traverses a junction before creating directories', () => {
+  const fixture = createFixture();
+  const outside = path.join(fixture.root, 'outside');
+  const linkedAncestor = path.join(fixture.projectRoot, '.ecc');
+  try {
+    fs.mkdirSync(outside);
+    fs.symlinkSync(outside, linkedAncestor, process.platform === 'win32' ? 'junction' : 'dir');
+    assert.ok(fs.lstatSync(linkedAncestor).isSymbolicLink());
+    assert.strictEqual(fs.realpathSync(linkedAncestor), fs.realpathSync(outside));
+    assert.throws(
+      () => saveMemory(
+        { title: 'Escaped note', body: 'must stay in the project' },
+        fixedOptions(fixture.roots)
+      ),
+      /symlink/i
+    );
+    assert.strictEqual(fs.existsSync(path.join(outside, 'memory')), false);
+  } finally {
+    fs.rmSync(fixture.root, { recursive: true, force: true });
+  }
+});
+
+test('rejects a junction ancestor when roots come back from initializeVault', () => {
+  const fixture = createFixture();
+  const outside = path.join(fixture.root, 'outside');
+  const linkedAncestor = path.join(fixture.projectRoot, '.ecc');
+  try {
+    fs.mkdirSync(outside);
+    const initialized = initializeVault({ roots: fixture.roots, scopes: ['project'] });
+    fs.rmSync(linkedAncestor, { recursive: true, force: true });
+    fs.symlinkSync(outside, linkedAncestor, process.platform === 'win32' ? 'junction' : 'dir');
+    assert.ok(fs.lstatSync(linkedAncestor).isSymbolicLink());
+    assert.strictEqual(fs.realpathSync(linkedAncestor), fs.realpathSync(outside));
+    assert.throws(
+      () => saveMemory(
+        { title: 'Escaped note', body: 'must not be written' },
+        { ...fixedOptions(fixture.roots), roots: initialized.roots }
+      ),
+      /symlink|outside|trusted/i
+    );
+    assert.strictEqual(fs.existsSync(path.join(outside, 'memory')), false);
+  } finally {
+    fs.rmSync(fixture.root, { recursive: true, force: true });
+  }
+});
+
 test('fails closed when callers provide roots without a boundary policy', () => {
   const fixture = createFixture();
   try {

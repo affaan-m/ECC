@@ -97,6 +97,31 @@ test('task file adapter reads structured status, labels mtime, skips symlinks an
     assert.equal(collectTaskFiles(path.join(dir, 'missing')).status, 'unavailable');
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });
+// Keep the native symlink case above, even on hosts that cannot create symlinks.
+test('task file adapter reads structured status, labels mtime, excludes junctions and rejects oversized JSON', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'coordination-junction-'));
+  const worker = path.join(dir, 'worker');
+  const linked = path.join(dir, 'linked');
+  try {
+    fs.mkdirSync(worker);
+    fs.writeFileSync(path.join(worker, 'STATUS.md'), '- State: running\n- Updated: 2026-09-08T06:29:00Z\n');
+    fs.symlinkSync(worker, linked, process.platform === 'win32' ? 'junction' : 'dir');
+    assert.ok(fs.lstatSync(linked).isSymbolicLink());
+    assert.equal(fs.realpathSync(linked), fs.realpathSync(worker));
+    const r = collectTaskFiles(dir);
+    assert.equal(r.tasks.length, 1);
+    assert.equal(r.tasks[0].id, 'worker');
+    assert.equal(r.tasks[0].status, 'running');
+    assert.ok(r.tasks[0].statusFileModifiedAt);
+    assert.equal(r.tasks[0].heartbeatAt, '2026-09-08T06:29:00Z');
+    fs.writeFileSync(path.join(dir, 'large.json'), ' '.repeat(1024 * 1024 + 1));
+    assert.throws(() => readJson(path.join(dir, 'large.json')), /limit/);
+    assert.equal(collectTaskFiles(path.join(dir, 'missing')).status, 'unavailable');
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test('CLI JSON end to end, no output file changes and safe errors', () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'coordination-cli-'));
   const cli = path.resolve(__dirname, '../../scripts/coordination-inventory.js');

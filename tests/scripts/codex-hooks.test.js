@@ -45,24 +45,54 @@ function cleanup(dirPath) {
   fs.rmSync(dirPath, { recursive: true, force: true });
 }
 
+function pathEnvironmentKey(env) {
+  return Object.keys(env).find(key => key === 'PATH')
+    || (process.platform === 'win32'
+      ? Object.keys(env).find(key => key.toLowerCase() === 'path')
+      : undefined);
+}
+
 function resolveBashExecutable(env = process.env) {
-  return env.BASH_PATH
-    || (process.platform === 'win32' && fs.existsSync('C:\\Program Files\\Git\\bin\\bash.exe')
-      ? 'C:\\Program Files\\Git\\bin\\bash.exe'
-      : fs.existsSync('/bin/bash')
-        ? '/bin/bash'
-        : 'bash');
+  if (env.BASH_PATH) return env.BASH_PATH;
+  const pathKey = pathEnvironmentKey(env);
+  const executable = process.platform === 'win32' ? 'bash.exe' : 'bash';
+  for (const dir of (pathKey ? env[pathKey] || '' : '').split(path.delimiter).filter(Boolean)) {
+    const candidate = path.resolve(dir.replace(/^"(.*)"$/, '$1'), executable);
+    try {
+      if (!fs.statSync(candidate).isFile()) continue;
+      fs.accessSync(candidate, fs.constants.X_OK);
+      return candidate;
+    } catch {
+      // Keep searching when a PATH directory is absent or inaccessible.
+    }
+  }
+  const conventional = process.platform === 'win32'
+    ? ['C:\\Program Files\\Git\\bin\\bash.exe', '/bin/bash']
+    : ['/bin/bash'];
+  return conventional.find(candidate => fs.existsSync(candidate)) || 'bash';
+}
+
+function makeBashEnvironment(env, preservePath) {
+  const inherited = preservePath ? process.env : {};
+  const merged = { ...inherited, ...env };
+  if (process.platform !== 'win32') return merged;
+  const source = pathEnvironmentKey(env) ? env : inherited;
+  const pathKey = pathEnvironmentKey(source);
+  if (!pathKey) return merged;
+  return {
+    ...Object.fromEntries(Object.entries(merged).filter(([key]) => key.toLowerCase() !== 'path')),
+    PATH: source[pathKey],
+  };
 }
 
 function runBash(
   scriptPath,
   { args = [], env = {}, cwd = repoRoot, input = undefined, preservePath = true } = {},
 ) {
-  const effectiveEnv = {
-    ...(preservePath ? process.env : {}),
-    ...env,
-  };
-  const bash = resolveBashExecutable(effectiveEnv);
+  // Resolve the interpreter before hiding host tools from hermetic fixtures.
+  // An explicit override must still fail visibly if it cannot be started.
+  const bash = env.BASH_PATH || resolveBashExecutable(process.env);
+  const effectiveEnv = makeBashEnvironment(env, preservePath);
   return spawnSync(bash, [scriptPath, ...args], {
     cwd,
     env: effectiveEnv,
@@ -156,6 +186,7 @@ if (
     const tempDir = createTempDir('ecc-missing-bash-');
     try {
       const missingBash = path.join(tempDir, 'bash');
+      assert.strictEqual(resolveBashExecutable({ ...process.env, BASH_PATH: missingBash }), missingBash);
       const result = runBash(prePushHook, { env: { BASH_PATH: missingBash } });
       assert.strictEqual(result.error?.code, 'ENOENT');
     } finally {
@@ -164,6 +195,85 @@ if (
   })
 )
   passed++;
+else failed++;
+
+if (
+  test('Bash environment keeps only the explicit fixture PATH', () => {
+    const pathKey = process.platform === 'win32' ? 'Path' : 'PATH';
+    const isolated = makeBashEnvironment({ [pathKey]: 'FIXTURE_ONLY' }, false);
+    assert.deepStrictEqual(isolated, { PATH: 'FIXTURE_ONLY' });
+    const inherited = makeBashEnvironment({ [pathKey]: 'FIXTURE_ONLY' }, true);
+    const pathKeys = Object.keys(inherited).filter(key => process.platform === 'win32'
+      ? key.toLowerCase() === 'path' : key === 'PATH');
+    assert.deepStrictEqual(pathKeys, ['PATH']);
+    assert.strictEqual(inherited.PATH, 'FIXTURE_ONLY');
+  })
+) passed++;
+else failed++;
+
+if (
+  test('resolves portable Bash from PATH entries containing spaces', () => {
+    const tempDir = createTempDir('ecc-portable-bash-');
+    try {
+      const executable = process.platform === 'win32' ? 'bash.exe' : 'bash';
+      const actualBash = resolveBashExecutable(process.env);
+      assert.ok(path.isAbsolute(actualBash) && fs.statSync(actualBash).isFile(), 'a real Bash is required');
+      const portableDir = path.join(tempDir, 'portable bash tools');
+      fs.mkdirSync(portableDir);
+      const portableBash = path.join(portableDir, executable);
+      // Resolver-only fixture: do not launch this copy without its MSYS DLLs.
+      fs.copyFileSync(actualBash, portableBash);
+      const unusableDir = path.join(tempDir, 'unusable');
+      fs.mkdirSync(unusableDir);
+      const unusableBash = path.join(unusableDir, executable);
+      if (process.platform === 'win32') fs.mkdirSync(unusableBash);
+      else fs.writeFileSync(unusableBash, 'not executable', { mode: 0o600 });
+      for (const key of process.platform === 'win32' ? ['PATH', 'Path'] : ['PATH']) {
+        assert.strictEqual(resolveBashExecutable({ [key]: portableDir }), portableBash);
+        assert.strictEqual(resolveBashExecutable({ [key]: `${unusableDir}${path.delimiter}${portableDir}` }), portableBash);
+      }
+    } finally {
+      cleanup(tempDir);
+    }
+  })
+) passed++;
+else failed++;
+
+if (
+  test('hermetic pre-push starts Bash without exposing ambient package managers', () => {
+    const tempDir = createTempDir('ecc-ambient-pm-');
+    const pathKey = Object.keys(process.env).find(key => key.toLowerCase() === 'path') || 'PATH';
+    const previousPath = process.env[pathKey];
+    try {
+      for (const name of ['corepack', 'pnpm']) {
+        writeExecutable(path.join(tempDir, name), '#!/bin/sh\nprintf "HOST_TOOL_LEAK\\n" >&2\nexit 93\n');
+      }
+      process.env[pathKey] = `${tempDir}${path.delimiter}${previousPath || ''}`;
+      const probe = path.join(tempDir, 'probe.sh');
+      fs.writeFileSync(probe, 'command -v corepack && command -v pnpm\n');
+      const visible = runBash(probe);
+      assert.ifError(visible.error);
+      assert.strictEqual(visible.status, 0, visible.stderr);
+      // MSYS may expose TEMP as /tmp rather than /c/...; the unique fixture
+      // directory and tool names must still identify our ambient stubs.
+      assert.deepStrictEqual(visible.stdout.trim().split(/\r?\n/)
+        .map(file => file.replaceAll('\\', '/').split('/').slice(-2).join('/')), [
+        `${path.basename(tempDir)}/corepack`,
+        `${path.basename(tempDir)}/pnpm`,
+      ]);
+      const { result, calls } = runHermeticPrePush({ includeCorepack: false, includePnpm: false });
+      assert.ifError(result.error);
+      assert.strictEqual(result.status, 1, result.stdout + result.stderr);
+      assert.match(result.stderr, /pnpm.*(?:resolve|found)/i);
+      assert.doesNotMatch(result.stdout + result.stderr, /HOST_TOOL_LEAK/);
+      assert.deepStrictEqual(calls, []);
+    } finally {
+      if (previousPath === undefined) delete process.env[pathKey];
+      else process.env[pathKey] = previousPath;
+      cleanup(tempDir);
+    }
+  })
+) passed++;
 else failed++;
 
 function runHermeticPreCommit({ content = 'safe text\n', filename = 'sample.txt', scanner = false, env = {} } = {}) {
@@ -412,6 +522,30 @@ function writeExecutable(filePath, body) {
   fs.chmodSync(filePath, 0o755);
 }
 
+function prepareTrackedJunctionVenv(projectDir, record) {
+  const python = path.join(projectDir, 'bin', 'python');
+  const venv = path.join(projectDir, '.venv');
+  writeExecutable(python, `#!/bin/sh\n${record}\nexit 0\n`);
+  fs.symlinkSync(projectDir, venv, process.platform === 'win32' ? 'junction' : 'dir');
+  assert.ok(fs.lstatSync(venv).isSymbolicLink());
+  assert.strictEqual(fs.realpathSync(venv), fs.realpathSync(projectDir));
+  assert.strictEqual(fs.realpathSync(path.join(venv, 'bin', 'python')), fs.realpathSync(python));
+
+  const git = (args, input = undefined) => {
+    const result = spawnSync('git', args, { cwd: projectDir, encoding: 'utf8', input });
+    assert.strictEqual(result.status, 0, result.error?.message || result.stderr);
+    return result.stdout;
+  };
+  git(['add', '-f', '--', 'bin/python']);
+  const oid = git(['hash-object', '-w', '--stdin'], '.').trim();
+  // A junction must not be staged with git add: register the symlink blob in
+  // this disposable repository's index without replacing the physical junction.
+  git(['update-index', '--add', '--cacheinfo', '120000', oid, '.venv']);
+  assert.strictEqual(git(['ls-files', '--stage', '--', '.venv']), `120000 ${oid} 0\t.venv\n`);
+  assert.strictEqual(git(['cat-file', 'blob', oid]), '.');
+  assert.strictEqual(git(['ls-files', '--error-unmatch', '--', 'bin/python']), 'bin/python\n');
+}
+
 // The Python arm of the hook, exercised without a real interpreter: the stubs
 // record the argv they were handed, which is what the virtualenv-path regression
 // is actually about.
@@ -421,6 +555,7 @@ function runHermeticPythonPrePush({
   trackVenv = false,
   trackedVenvBasename = 'python',
   trackedSymlinkVenv = false,
+  trackedJunctionVenv = false,
   pytestCmd = null,
   overrideStub = false,
   pathPytestVersionLine = null,
@@ -437,6 +572,15 @@ function runHermeticPythonPrePush({
   // how a test tells a preserved path from a split one, and a command that was run
   // once from one the hook probed first.
   const record = `printf '%s\\n' "$0|$*" >> "${toBashPath(callsPath)}"`;
+
+  if (trackedJunctionVenv) {
+    try {
+      prepareTrackedJunctionVenv(projectDir, record);
+    } catch (error) {
+      cleanup(tempDir);
+      throw error;
+    }
+  }
 
   // A tracked venv has to live inside the repository to be trackable at all, and is
   // found by directory-name discovery rather than by VIRTUAL_ENV.
@@ -562,6 +706,17 @@ if (
     const run = runHermeticPythonPrePush({ trackedSymlinkVenv: true });
     if (!run) return;
     const { result, calls } = run;
+    assert.strictEqual(result.status, 0, `${result.stdout}\n${result.stderr}`);
+    assert.deepStrictEqual(calls, [], JSON.stringify(calls));
+    assert.match(result.stdout, /the repository ships it/);
+  })
+)
+  passed++;
+else failed++;
+
+if (
+  test('pre-push refuses a tracked interpreter through a junction with Git index mode 120000', () => {
+    const { result, calls } = runHermeticPythonPrePush({ trackedJunctionVenv: true });
     assert.strictEqual(result.status, 0, `${result.stdout}\n${result.stderr}`);
     assert.deepStrictEqual(calls, [], JSON.stringify(calls));
     assert.match(result.stdout, /the repository ships it/);
