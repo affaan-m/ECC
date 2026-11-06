@@ -583,6 +583,14 @@
       ]
     },
     {
+      "id": "skill:yoruba-localization-testing",
+      "family": "skill",
+      "description": "Yoruba-English UI localization, Unicode diacritics, fallback, and accessibility testing.",
+      "modules": [
+        "framework-language"
+      ]
+    },
+    {
       "id": "skill:vue-patterns",
       "family": "skill",
       "description": "Vue.js 3 Composition API, reactivity, Pinia, Vue Router, and Nuxt SSR patterns.",
