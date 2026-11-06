@@ -963,7 +963,7 @@
         "skills/ai-first-engineering",
         "skills/autonomous-loops",
         "skills/blueprint",
-        "skills/claude-devfleet",
+        "skills/devfleet",
         "skills/content-hash-cache-pattern",
         "skills/continuous-agent-loop",
         "skills/cost-aware-llm-pipeline",
