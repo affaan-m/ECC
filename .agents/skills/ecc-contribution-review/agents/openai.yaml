@@ -1,0 +1,7 @@
+interface:
+  display_name: "ECC Skill Contribution Review"
+  short_description: "Prepare evidence-aware ECC skill review packets"
+  brand_color: "#0EA5E9"
+  default_prompt: "Use $ecc-contribution-review to prepare an ECC skill contribution review packet from current observations and evidence."
+policy:
+  allow_implicit_invocation: true

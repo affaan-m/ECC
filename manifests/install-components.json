@@ -503,6 +503,14 @@
       ]
     },
     {
+      "id": "skill:ecc-contribution-review",
+      "family": "skill",
+      "description": "Optional skill contribution review packet workflow for ECC repositories.",
+      "modules": [
+        "ecc-contribution-review"
+      ]
+    },
+    {
       "id": "skill:unified-memory",
       "family": "skill",
       "description": "Cross-harness memory guidance that requires the separately installed ecc-universal CLI runtime.",

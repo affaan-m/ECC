@@ -393,13 +393,13 @@ jobs:
         run: python -m pip install --upgrade pip && python -m pip install -e '.[dev]'
 
       - name: Run ruff (lint)
-        run: python -m ruff check src tests
+        run: python -m ruff check src tests skills/ecc-contribution-review/scripts skills/ecc-contribution-review/tests
 
       - name: Run mypy (type check)
-        run: python -m mypy src
+        run: python -m mypy src skills/ecc-contribution-review/scripts/compile_contribution_review.py
 
       - name: Run Python tests
-        run: python -m pytest tests/test_*.py -m "not integration"
+        run: python -m pytest tests/test_*.py skills/ecc-contribution-review/tests/ -m "not integration"
 
       - name: Test minimum supported OpenAI SDK
         run: |
@@ -435,6 +435,31 @@ jobs:
       - name: Run supply-chain IOC scan
         run: npm run security:ioc-scan
 
+      - name: Setup Python for contribution security checks
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.11'
+
+      - name: Install contribution security tools
+        run: python -m pip install bandit==1.9.4 pytest==9.1.1 pyyaml==6.0.3
+
+      - name: Scan contribution compiler security
+        run: python skills/ecc-contribution-review/tests/record_security_evidence.py --output security-bandit.json
+
+      - name: Test contribution security boundaries
+        if: success() || failure()
+        run: python -m pytest skills/ecc-contribution-review/tests/test_security_regression.py skills/ecc-contribution-review/tests/test_security_evidence.py -q --junitxml=security-regression.xml
+
+      - name: Upload contribution security evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: contribution-security-evidence
+          path: |
+            security-bandit.json
+            security-regression.xml
+          if-no-files-found: error
+
   coverage:
     name: Coverage
     runs-on: ubuntu-latest
@@ -451,6 +476,14 @@ jobs:
         with:
           node-version: '20.x'
 
+      - name: Setup Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.11'
+
+      - name: Install Python dependencies
+        run: python -m pip install --upgrade pip && python -m pip install -e '.[dev]'
+
       - name: Install dependencies
         run: npm ci --ignore-scripts
 
@@ -463,6 +496,9 @@ jobs:
 
       - name: Run coverage
         run: npm run coverage
+
+      - name: Run Python coverage
+        run: npm run coverage:python
 
       - name: Upload coverage report
         if: always()
