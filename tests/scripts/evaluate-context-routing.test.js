@@ -133,8 +133,41 @@ test('the CLI reads the baseline before the corpus run and keeps --json stdout p
   assert.ok(stderr.includes('Routing quality evaluation failed: boom'));
 });
 
+test('a baseline that is not a routing-quality receipt fails before the corpus run', () => {
+  let runs = 0;
+  const io = { log: () => {}, error: () => {}, evaluate: () => { runs += 1; return evaluator().score(healthyRows()); } };
+  for (const text of ['{}', '[]', '{"schemaVersion":"other.v1","sets":{"direct":{},"paraphrased":{}}}', '{"schemaVersion":"ecc.routing-quality.v1"}']) {
+    assert.equal(evaluator().main(['--baseline', 'previous.json'], { ...io, readFile: () => text }), 1, text);
+  }
+  assert.equal(runs, 0);
+  const nullRates = JSON.stringify(evaluator().score([]));
+  assert.equal(evaluator().main(['--baseline', 'previous.json'], { ...io, readFile: () => nullRates }), 0);
+});
+
+test('an incomplete corpus fails before any prompt is resolved', () => {
+  const fs = require('node:fs');
+  const os = require('node:os');
+  const path = require('node:path');
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-routing-corpus-'));
+  const prompt = { query: 'review this pull request', expected: ['skill:a'] };
+  try {
+    for (const corpus of [{}, { paraphrased: [prompt] }, { direct: [], paraphrased: [] }, { direct: [prompt], paraphrased: [] },
+      { direct: [{ query: 'x' }], paraphrased: [prompt] }, { direct: [{ query: 42, expected: ['skill:a'] }], paraphrased: [prompt] },
+      { direct: [{ query: 'x', expected: [] }], paraphrased: [prompt] }]) {
+      const corpusPath = path.join(directory, 'corpus.json');
+      fs.writeFileSync(corpusPath, JSON.stringify(corpus));
+      const errors = [];
+      assert.equal(evaluator().main([], { log: () => {}, error: text => errors.push(text), evaluate: () => evaluator().evaluate({ corpusPath }) }), 1, JSON.stringify(corpus));
+      assert.match(errors.join('\n'), /routing corpus/);
+    }
+  } finally {
+    fs.rmSync(directory, { recursive: true, force: true, maxRetries: 3 });
+  }
+});
+
 test('the gate has an npm entry point but stays out of the default test chain', () => {
   const { scripts } = require('../../package.json');
   assert.equal(scripts['routing:check'], 'node scripts/ci/evaluate-context-routing.js');
   assert.ok(!scripts.test.includes('evaluate-context-routing'));
+  assert.ok(!scripts.test.includes('routing:check'));
 });
