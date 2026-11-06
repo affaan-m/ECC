@@ -28,6 +28,13 @@ function createRawInstallPlan(request, options = {}) {
       homeDir: options.homeDir,
       env: resolveInvocationEnvironment(options),
       sourceRoot: options.sourceRoot,
+      sourceUrl: options.sourceUrl,
+      sourceSha: options.sourceSha || request.sourceSha,
+      trust: request.trust,
+      consent: {
+        hooks: request.hookConsent === 'enabled',
+        mcp: Object.fromEntries((request.consentMcp || []).map(id => [id, true])),
+      },
       exemptValidationCodes: options.exemptValidationCodes || [],
     });
   }

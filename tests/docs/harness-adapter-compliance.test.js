@@ -45,6 +45,7 @@ test('adapter compliance matrix covers the required harness surfaces', () => {
   for (const harness of [
     'Claude Code',
     'Codex',
+    'Grok Build',
     'OpenCode',
     'Pi',
     'Cursor',

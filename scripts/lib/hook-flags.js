@@ -40,9 +40,9 @@ function sanitizeDiagnostic(value) {
 }
 
 function readManagedHookConfig(env = process.env) {
-  const pluginRoot = String(
-    env.CLAUDE_PLUGIN_ROOT || env.ECC_PLUGIN_ROOT || ''
-  ).trim();
+  const pluginRoot = [env.CLAUDE_PLUGIN_ROOT, env.ECC_PLUGIN_ROOT]
+    .map(value => typeof value === 'string' ? value.trim() : '')
+    .find(Boolean) || '';
   const configPath = String(env.ECC_HOOK_CONFIG || '').trim()
     || (pluginRoot ? path.join(pluginRoot, 'ecc', 'setup.json') : '');
   if (!configPath || !fs.existsSync(configPath)) return {};

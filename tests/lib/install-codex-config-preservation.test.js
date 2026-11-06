@@ -102,6 +102,58 @@ function assertWarning(result, name) {
   )), `Expected an explicit preservation warning for ${name}`);
 }
 
+function deriveStats(stats, overrides) {
+  return Object.assign(Object.create(Object.getPrototypeOf(stats)), stats, overrides);
+}
+
+function withWindowsConfigStats(fixture, name, identities, action) {
+  const destination = fixture.destination(name);
+  const originalOpenSync = fs.openSync;
+  const originalCloseSync = fs.closeSync;
+  const originalFstatSync = fs.fstatSync;
+  const originalLstatSync = fs.lstatSync;
+  const originalPlatform = process.platform;
+  const descriptors = new Set();
+  try {
+    Object.defineProperty(process, 'platform', { value: 'win32', configurable: true });
+    fs.openSync = function (filePath, ...args) {
+      const descriptor = originalOpenSync.call(fs, filePath, ...args);
+      if (typeof filePath === 'string'
+        && path.resolve(filePath) === path.resolve(destination)) {
+        descriptors.add(descriptor);
+      }
+      return descriptor;
+    };
+    fs.closeSync = function (descriptor) {
+      descriptors.delete(descriptor);
+      return originalCloseSync.call(fs, descriptor);
+    };
+    fs.fstatSync = function (descriptor, options) {
+      const stats = originalFstatSync.call(fs, descriptor, options);
+      return descriptors.has(descriptor) && options && options.bigint
+        ? deriveStats(stats, identities.opened)
+        : stats;
+    };
+    fs.lstatSync = function (filePath, ...args) {
+      const stats = originalLstatSync.call(fs, filePath, ...args);
+      return path.resolve(filePath) === path.resolve(destination)
+        && args[0] && args[0].bigint
+        ? deriveStats(stats, identities.current)
+        : stats;
+    };
+    return action();
+  } finally {
+    fs.openSync = originalOpenSync;
+    fs.closeSync = originalCloseSync;
+    fs.fstatSync = originalFstatSync;
+    fs.lstatSync = originalLstatSync;
+    Object.defineProperty(process, 'platform', {
+      value: originalPlatform,
+      configurable: true,
+    });
+  }
+}
+
 function editAfterRepairInspection(fixture, name, content, action) {
   const originalOpen = fs.openSync;
   const originalClose = fs.closeSync;
@@ -135,6 +187,94 @@ function editAfterRepairInspection(fixture, name, content, action) {
 }
 
 for (const name of SHARED_FILES) {
+  test(`reinstall accepts unchanged Codex ${name} when Windows lstat omits the device id`, t => {
+    const fixture = createFixture(t);
+    fixture.install();
+    const updated = `${TEMPLATES[name]}\n# New upstream default\n`;
+    writeFile(fixture.template(name), updated);
+
+    withWindowsConfigStats(
+      fixture,
+      name,
+      {
+        opened: { dev: 1644385068n, ino: 21110623254304612n },
+        current: { dev: 0n, ino: 21110623254304612n },
+      },
+      () => fixture.install()
+    );
+
+    assertPreserved(fixture, name, updated);
+    assert.ok(readInstallState(fixture.statePath).operations.some(operation => (
+      operation.destinationPath === fixture.destination(name) && operation.ownership === 'managed'
+    )));
+    lifecycleResult(fixture.uninstall());
+    assert.ok(!fs.existsSync(fixture.destination(name)));
+  });
+
+  for (const mismatch of ['inode', 'device']) {
+    test(`reinstall rejects a changed Codex ${name} Windows ${mismatch} identity`, t => {
+      const fixture = createFixture(t);
+      fixture.install();
+      const destination = fixture.destination(name);
+      const previousOperation = readInstallState(fixture.statePath).operations.find(operation => (
+        operation.destinationPath === destination
+      ));
+      writeFile(fixture.template(name), `${TEMPLATES[name]}# update\n`);
+
+      const opened = { dev: 1644385068n, ino: 21110623254304612n };
+      const current = mismatch === 'inode'
+        ? { dev: 0n, ino: 21110623254304613n }
+        : { dev: 3054669153n, ino: 21110623254304612n };
+      assert.throws(() => withWindowsConfigStats(
+        fixture,
+        name,
+        { opened, current },
+        () => fixture.install()
+      ), /Refusing to inspect changed Codex configuration/);
+
+      assertPreserved(fixture, name, TEMPLATES[name]);
+      const retainedOperation = readInstallState(fixture.statePath).operations.find(operation => (
+        operation.destinationPath === destination && operation.ownership === 'managed'
+      ));
+      assert.equal(retainedOperation.contentSha256, previousOperation.contentSha256);
+      lifecycleResult(fixture.uninstall());
+      assert.ok(!fs.existsSync(destination));
+    });
+  }
+
+  test(`reinstall rejects a symlink replacing managed Codex ${name}`, t => {
+    const fixture = createFixture(t);
+    fixture.install();
+    const destination = fixture.destination(name);
+    const linkedFile = fixture.destination(`${name}.user`);
+    const previousOperation = readInstallState(fixture.statePath).operations.find(operation => (
+      operation.destinationPath === destination
+    ));
+    writeFile(linkedFile, '# User-owned linked configuration\n');
+    fs.unlinkSync(destination);
+    try {
+      fs.symlinkSync(linkedFile, destination, 'file');
+    } catch (error) {
+      if (process.platform === 'win32'
+        && ['EPERM', 'EACCES', 'ENOTSUP'].includes(error.code)) {
+        t.skip('Windows file-symlink privilege or filesystem support unavailable');
+        return;
+      }
+      throw error;
+    }
+
+    assert.throws(() => fixture.install(), error => (
+      error.code === 'ELOOP' || /Refusing to inspect changed Codex configuration/.test(error.message)
+    ));
+
+    assert.ok(fs.lstatSync(destination).isSymbolicLink());
+    assert.equal(fs.readFileSync(destination, 'utf8'), '# User-owned linked configuration\n');
+    const retainedOperation = readInstallState(fixture.statePath).operations.find(operation => (
+      operation.destinationPath === destination && operation.ownership === 'managed'
+    ));
+    assert.equal(retainedOperation.contentSha256, previousOperation.contentSha256);
+  });
+
   for (const stage of ['bridge', 'no-op refresh']) {
     test(`repair ${stage} does not claim a concurrent edit to Codex ${name}`, t => {
       const fixture = createFixture(t);

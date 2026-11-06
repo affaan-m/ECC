@@ -80,6 +80,53 @@ function runTests() {
     );
   })) passed++; else failed++;
 
+  if (test('release preserves Qoder and Grok manifest checks, updates, and staging', () => {
+    const existenceCheck = source.match(/^for FILE in (.+); do$/m);
+    const staging = source.match(/^git add (.+)$/m);
+    assert.ok(existenceCheck, 'release.sh should check versioned manifests exist');
+    assert.ok(staging, 'release.sh should stage versioned manifests');
+    for (const manifest of ['QODER_PLUGIN_JSON', 'GROK_PLUGIN_JSON', 'GROK_MARKETPLACE_JSON']) {
+      assert.ok(existenceCheck[1].includes(`"$${manifest}"`), `${manifest} must exist before release`);
+      assert.ok(staging[1].includes(`"$${manifest}"`), `${manifest} must be in the release commit`);
+    }
+    assert.ok(source.includes('QODER_PLUGIN_JSON=".qoder-plugin/plugin.json"'));
+    assert.ok(source.includes('update_version "$QODER_PLUGIN_JSON"'));
+  })) passed++; else failed++;
+
+  if (test('release script updates and commits the Grok pin before tagging', () => {
+    const releaseCommitIndex = source.indexOf('git commit -m "chore: bump plugin version to $VERSION"');
+    const sourceShaIndex = source.indexOf('GROK_SOURCE_SHA=$(git rev-parse HEAD)');
+    const pinUpdateIndex = source.indexOf('plugin.source.sha = sha;');
+    const pinValidationIndex = source.indexOf('node scripts/ci/validate-grok-pin.js --release');
+    const pinCommitIndex = source.indexOf('git commit -m "chore: pin Grok marketplace to release source"');
+    const tagIndex = source.indexOf('\ngit tag -s "v$VERSION" -m "Release v$VERSION"\n');
+
+    assert.ok(source.includes('GROK_PLUGIN_JSON=".grok-plugin/plugin.json"'));
+    assert.ok(source.includes('GROK_MARKETPLACE_JSON=".grok-plugin/marketplace.json"'));
+    assert.ok(source.includes('update_version "$GROK_PLUGIN_JSON"'));
+    assert.ok(source.includes('update_marketplace_plugin_version "$GROK_MARKETPLACE_JSON"'));
+    assert.ok(releaseCommitIndex >= 0 && sourceShaIndex > releaseCommitIndex);
+    assert.ok(pinUpdateIndex > sourceShaIndex);
+    assert.ok(pinValidationIndex > pinUpdateIndex);
+    assert.ok(pinCommitIndex > pinValidationIndex);
+    const finalValidationIndex = source.lastIndexOf('node scripts/ci/validate-grok-pin.js --release');
+    assert.ok(finalValidationIndex > pinCommitIndex && finalValidationIndex < tagIndex,
+      'validate the committed release snapshot before tagging');
+    assert.ok(tagIndex > pinCommitIndex, 'the release tag must point at the pin-only commit');
+  })) passed++; else failed++;
+
+  if (test('release workflows enforce snapshot equality while ordinary CI accepts historical pins', () => {
+    for (const workflow of [releaseWorkflowSource, reusableReleaseWorkflowSource]) {
+      assert.match(workflow, /run: node scripts\/ci\/validate-grok-pin\.js --release/);
+    }
+    const reusableValidation = fs.readFileSync(path.join(
+      __dirname, '../../.github/workflows/reusable-validate.yml'
+    ), 'utf8');
+    for (const workflow of [ciWorkflowSource, reusableValidation]) {
+      assert.match(workflow, /run: node scripts\/ci\/validate-grok-pin\.js\s*\n/);
+    }
+  })) passed++; else failed++;
+
   if (test('release script supports prerelease semver and release heading sync', () => {
     assert.ok(
       source.includes('2.0.0-rc.1'),
