@@ -30,6 +30,7 @@ function test(name, fn) {
 const sessionsDoc = fs.readFileSync(path.join(__dirname, '..', '..', 'commands', 'sessions.md'), 'utf8');
 const skillHealthDoc = fs.readFileSync(path.join(__dirname, '..', '..', 'commands', 'skill-health.md'), 'utf8');
 const instinctStatusDoc = fs.readFileSync(path.join(__dirname, '..', '..', 'commands', 'instinct-status.md'), 'utf8');
+const instinctEnforceDoc = fs.readFileSync(path.join(__dirname, '..', '..', 'commands', 'instinct-enforce.md'), 'utf8');
 
 test('sessions command uses shared inline resolver in all node scripts', () => {
   assert.strictEqual((sessionsDoc.match(/const _r = /g) || []).length, 6);
@@ -49,6 +50,15 @@ test('instinct-status command uses shared inline resolver (no stale legacy fallb
   assert.ok(
     !instinctStatusDoc.includes('python3 ~/.claude/skills/continuous-learning-v2/scripts/instinct-cli.py'),
     'instinct-status should not hard-code the legacy ~/.claude install path as a fallback'
+  );
+});
+
+test('instinct-enforce command uses shared inline resolver (#2037)', () => {
+  assert.strictEqual((instinctEnforceDoc.match(/var r=\(function/g) || []).length, 1);
+  assert.strictEqual((instinctEnforceDoc.match(/scripts','lib','resolve-ecc-root/g) || []).length, 1);
+  assert.ok(
+    /scripts\/hooks\/instinct-enforce\.js" --check /.test(instinctEnforceDoc),
+    'instinct-enforce should invoke the PreToolUse hook in --check mode'
   );
 });
 

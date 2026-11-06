@@ -1,6 +1,6 @@
 # Commands Quick Reference
 
-> 94 slash commands installed globally. Type `/` in any Claude Code session to invoke.
+> 95 slash commands installed globally. Type `/` in any Claude Code session to invoke.
 
 ---
 
@@ -180,6 +180,7 @@ These lifecycle commands are also available through the `ecc` CLI.
 | `/instinct-status` | Show all learned instincts (project + global) with confidence scores |
 | `/instinct-export` | Export instincts to a file |
 | `/instinct-import` | Import instincts from a file or URL |
+| `/instinct-enforce` | Dry-run instinct matches for a Write/Edit/MultiEdit/Bash payload |
 | `/skill-create` | Analyse local git history → generate a reusable skill |
 | `/skill-health` | Skill portfolio health dashboard with analytics |
 | `/skill-host-compat` | Lint skills for Codex-safe frontmatter and Claude substitutions |

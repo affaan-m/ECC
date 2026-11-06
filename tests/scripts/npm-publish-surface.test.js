@@ -270,6 +270,8 @@ function main() {
         "scripts/memory-mcp.mjs",
         "scripts/nasiko.js",
         "scripts/lib/nasiko-release.js",
+        "scripts/hooks/instinct-enforce.js",
+        "scripts/lib/instinct-store.js",
         "scripts/lib/memory-vault-format.js",
         "scripts/lib/memory-vault.js",
         "scripts/lib/hook-session.js",

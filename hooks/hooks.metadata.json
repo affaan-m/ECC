@@ -48,6 +48,11 @@
         "fingerprint": "4778e39c56cf"
       },
       {
+        "id": "pre:edit-write:instinct-enforce",
+        "description": "Enforce high-confidence learned instincts on Write/Edit/MultiEdit/Bash. Confidence >= 0.85 blocks; 0.70-0.84 warns. Disable with ECC_INSTINCT_ENFORCE=0.",
+        "fingerprint": "494b8b5833d5"
+      },
+      {
         "id": "pre:hookify-runtime",
         "description": "Evaluate project-local Hookify rules before Bash, PowerShell, and file tools run",
         "fingerprint": "3577a44df932"

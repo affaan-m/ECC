@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "totalCommands": 98,
+  "totalCommands": 99,
   "commands": [
     {
       "command": "aside",
@@ -376,6 +376,17 @@
       "allAgents": [],
       "skills": [],
       "path": "commands/hookify.md"
+    },
+    {
+      "command": "instinct-enforce",
+      "description": "Dry-run instinct-enforce against a sample Write/Edit/MultiEdit/Bash payload and print matching instincts",
+      "type": "general",
+      "primaryAgents": [],
+      "allAgents": [],
+      "skills": [
+        "instinct-enforce"
+      ],
+      "path": "commands/instinct-enforce.md"
     },
     {
       "command": "instinct-export",
@@ -1072,7 +1083,7 @@
   "statistics": {
     "byType": {
       "build": 2,
-      "general": 12,
+      "general": 13,
       "orchestration": 12,
       "planning": 2,
       "refactoring": 1,
