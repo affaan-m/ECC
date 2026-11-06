@@ -13,6 +13,10 @@ Commands:
   promote  - Promote project instincts to global scope
   projects - List all known projects and their instinct counts
   prune    - Delete pending instincts older than 30 days (TTL)
+
+Runs on Python 3.6 and newer. Keep it that way: annotations that subscript
+builtins (list[dict]) stay quoted, and newer-only APIs such as
+str.removeprefix or subprocess's capture_output/text are avoided.
 """
 
 import argparse
@@ -46,6 +50,11 @@ try:
     _HAS_FCNTL = True
 except ImportError:
     _HAS_FCNTL = False  # Windows — skip file locking
+
+# Oldest Python that still gets security fixes upstream (3.10 reached end of
+# life in October 2026). Older interpreters keep working; the CLI only prints
+# a one-line upgrade notice, which CLV2_SKIP_PYTHON_EOL_NOTICE=1 turns off.
+_SUPPORTED_PYTHON = (3, 11)
 
 # ─────────────────────────────────────────────
 # Configuration
@@ -248,13 +257,25 @@ def _yaml_quote(value: str) -> str:
 # Project Detection (Python equivalent of detect-project.sh)
 # ─────────────────────────────────────────────
 
+# git prints paths and remote URLs as UTF-8, but text mode without an encoding
+# decodes with the locale encoding (the ANSI code page on Windows), which
+# garbles or rejects non-ASCII names and changes the project id. Spelled out
+# with PIPE rather than capture_output/text so Python 3.6 can run it.
+_GIT_OUTPUT = {
+    "stdout": subprocess.PIPE,
+    "stderr": subprocess.PIPE,
+    "encoding": "utf-8",
+    "errors": "replace",
+}
+
+
 def _git_repo_root(cwd: Optional[str] = None) -> Optional[str]:
     args = ["git"]
     if cwd:
         args.extend(["-C", cwd])
     args.extend(["rev-parse", "--show-toplevel"])
     try:
-        result = subprocess.run(args, capture_output=True, text=True, timeout=5)
+        result = subprocess.run(args, timeout=5, **_GIT_OUTPUT)
         if result.returncode == 0:
             return result.stdout.strip()
     except (subprocess.TimeoutExpired, FileNotFoundError):
@@ -267,7 +288,7 @@ def _main_worktree_root(project_root: str) -> str:
     try:
         result = subprocess.run(
             ["git", "-C", project_root, "worktree", "list", "--porcelain"],
-            capture_output=True, text=True, timeout=5
+            timeout=5, **_GIT_OUTPUT
         )
     except (subprocess.TimeoutExpired, FileNotFoundError):
         return project_root
@@ -340,7 +361,7 @@ def detect_project() -> dict:
     try:
         result = subprocess.run(
             ["git", "-C", project_root, "remote", "get-url", "origin"],
-            capture_output=True, text=True, timeout=5
+            timeout=5, **_GIT_OUTPUT
         )
         if result.returncode == 0:
             remote_url = result.stdout.strip()
@@ -418,7 +439,7 @@ def _registry_lock():
     lock_fd = None
     try:
         if _HAS_FCNTL:
-            lock_fd = open(lock_path, "w")
+            lock_fd = open(lock_path, "w", encoding="utf-8")
             fcntl.flock(lock_fd, fcntl.LOCK_EX)
         yield
     finally:
@@ -512,7 +533,7 @@ def _validate_project_id(project_id: str) -> bool:
 # Instinct Parser
 # ─────────────────────────────────────────────
 
-def parse_instinct_file(content: str) -> list[dict]:
+def parse_instinct_file(content: str) -> "list[dict]":
     """Parse YAML-like instinct file format.
 
     Each instinct is delimited by a pair of ``---`` markers (YAML frontmatter).
@@ -524,7 +545,9 @@ def parse_instinct_file(content: str) -> list[dict]:
     in_frontmatter = False
     content_lines = []
 
-    for line in content.removeprefix('\ufeff').split('\n'):
+    if content.startswith('\ufeff'):
+        content = content[1:]
+    for line in content.split('\n'):
         if line.strip() == '---':
             if in_frontmatter:
                 # End of frontmatter - content comes next
@@ -570,7 +593,7 @@ def parse_instinct_file(content: str) -> list[dict]:
     return [i for i in instincts if i.get('id')]
 
 
-def _load_instincts_from_dir(directory: Path, source_type: str, scope_label: str) -> list[dict]:
+def _load_instincts_from_dir(directory: Path, source_type: str, scope_label: str) -> "list[dict]":
     """Load instincts from a single directory."""
     instincts = []
     if not directory.exists():
@@ -633,7 +656,7 @@ def _remove_project_storage(project_id: str) -> None:
         shutil.rmtree(project_dir)
 
 
-def _project_instinct_ids(project_dir: Path, source_type: str) -> set[str]:
+def _project_instinct_ids(project_dir: Path, source_type: str) -> "set[str]":
     instinct_dir = project_dir / "instincts" / source_type
     return {
         inst.get("id")
@@ -642,7 +665,7 @@ def _project_instinct_ids(project_dir: Path, source_type: str) -> set[str]:
     }
 
 
-def _merge_instinct_dir(from_dir: Path, into_dir: Path, existing_ids: set[str]) -> tuple[int, int]:
+def _merge_instinct_dir(from_dir: Path, into_dir: Path, existing_ids: "set[str]") -> "tuple[int, int]":
     moved = 0
     skipped = 0
     if not from_dir.exists():
@@ -693,7 +716,7 @@ def _append_observations(from_project_dir: Path, into_project_dir: Path) -> int:
     return len([line for line in lines if line.strip()])
 
 
-def load_all_instincts(project: dict, include_global: bool = True) -> list[dict]:
+def load_all_instincts(project: dict, include_global: bool = True) -> "list[dict]":
     """Load all instincts: project-scoped + global.
 
     Project-scoped instincts take precedence over global ones when IDs conflict.
@@ -728,7 +751,7 @@ def load_all_instincts(project: dict, include_global: bool = True) -> list[dict]
     return instincts
 
 
-def load_project_only_instincts(project: dict) -> list[dict]:
+def load_project_only_instincts(project: dict) -> "list[dict]":
     """Load only project-scoped instincts (no global).
 
     In global fallback mode (no git project), returns global instincts.
@@ -851,7 +874,7 @@ def _warn_legacy_data() -> None:
     print(f"{'!'*60}\n")
 
 
-def _print_instincts_by_domain(instincts: list[dict]) -> None:
+def _print_instincts_by_domain(instincts: "list[dict]") -> None:
     """Helper to print instincts grouped by domain."""
     by_domain = defaultdict(list)
     for inst in instincts:
@@ -1491,7 +1514,7 @@ def _show_promotion_candidates(project: dict) -> None:
         print(f"  Run `instinct-cli.py promote` to promote these to global scope.\n")
 
 
-def _frontmatter_scalar(lines: list[str], key: str) -> Optional[str]:
+def _frontmatter_scalar(lines: "list[str]", key: str) -> Optional[str]:
     """Extract a simple scalar value from frontmatter lines."""
     for line in lines:
         if ':' not in line:
@@ -1508,7 +1531,7 @@ def _frontmatter_scalar(lines: list[str], key: str) -> Optional[str]:
     return None
 
 
-def _remove_instinct_blocks(content: str, instinct_id: str) -> tuple[str, int]:
+def _remove_instinct_blocks(content: str, instinct_id: str) -> "tuple[str, int]":
     """Remove raw frontmatter blocks with a matching instinct ID."""
     lines = content.splitlines(keepends=True)
     retained = []
@@ -1955,7 +1978,7 @@ def _evolved_description(trigger: str, instincts: list, kind: str) -> str:
     return description.replace(': ', ' - ').replace('<', '(').replace('>', ')')
 
 
-def _generate_evolved(skill_candidates: list, workflow_instincts: list, agent_candidates: list, evolved_dir: Path, limit: int = 0) -> list[str]:
+def _generate_evolved(skill_candidates: list, workflow_instincts: list, agent_candidates: list, evolved_dir: Path, limit: int = 0) -> "list[str]":
     """Generate skill/command/agent files from analyzed instinct clusters.
 
     ``limit`` caps how many candidates of each kind are written; 0 writes them
@@ -2066,7 +2089,7 @@ def _generate_evolved(skill_candidates: list, workflow_instincts: list, agent_ca
 # Pending Instinct Helpers
 # ─────────────────────────────────────────────
 
-def _collect_pending_dirs() -> list[Path]:
+def _collect_pending_dirs() -> "list[Path]":
     """Return all pending instinct directories (global + per-project)."""
     dirs = []
     global_pending = GLOBAL_INSTINCTS_DIR / "pending"
@@ -2127,7 +2150,7 @@ def _parse_created_date(file_path: Path) -> Optional[datetime]:
         return None
 
 
-def _collect_pending_instincts() -> list[dict]:
+def _collect_pending_instincts() -> "list[dict]":
     """Scan all pending directories and return info about each pending instinct.
 
     Each dict contains: path, created, age_days, name, parent_dir.
@@ -2210,6 +2233,19 @@ def cmd_prune(args) -> int:
 # Main
 # ─────────────────────────────────────────────
 
+def _warn_if_python_eol(args: argparse.Namespace) -> None:
+    if sys.version_info[:2] >= _SUPPORTED_PYTHON:
+        return
+    if getattr(args, 'quiet', False) or os.environ.get('CLV2_SKIP_PYTHON_EOL_NOTICE') == '1':
+        return
+    print(
+        f"[instinct-cli] Python {sys.version_info[0]}.{sys.version_info[1]} is past end of life. "
+        f"instinct-cli still runs on it; upgrade to Python "
+        f"{_SUPPORTED_PYTHON[0]}.{_SUPPORTED_PYTHON[1]} or newer for security fixes.",
+        file=sys.stderr,
+    )
+
+
 def main() -> int:
     _ensure_global_dirs()
     parser = argparse.ArgumentParser(description='Instinct CLI for Continuous Learning v2.1 (Project-Scoped)')
@@ -2271,6 +2307,7 @@ def main() -> int:
     prune_parser.add_argument('--quiet', action='store_true', help='Suppress output (for automated use)')
 
     args = parser.parse_args()
+    _warn_if_python_eol(args)
 
     if args.command == 'status':
         return cmd_status(args)
