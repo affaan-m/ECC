@@ -246,10 +246,22 @@
             },
             "then": {
               "required": ["managedHooks"],
-              "properties": {
-                "moduleId": { "const": "hooks-runtime" },
-                "sourceRelativePath": { "const": "hooks/hooks.json" }
-              }
+              "anyOf": [
+                {
+                  "properties": {
+                    "moduleId": { "const": "hooks-runtime" },
+                    "sourceRelativePath": { "const": "hooks/hooks.json" }
+                  }
+                },
+                {
+                  "properties": {
+                    "moduleId": { "const": "config-health" },
+                    "sourceRelativePath": {
+                      "const": "manifests/install-assets/config-health-hooks.json"
+                    }
+                  }
+                }
+              ]
             }
           }
         ]
