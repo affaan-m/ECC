@@ -203,12 +203,12 @@ async function defaultFetchSource(source, options = {}) {
     });
 
     if (result.statusCode === 405 || result.statusCode === 403) {
-      return requestUrl(source.url, {
+      const fallbackResult = await requestUrl(source.url, {
         timeoutMs: options.timeoutMs || DEFAULT_TIMEOUT_MS,
         redirectsRemaining: MAX_REDIRECTS,
         method: 'GET',
-        checkedAt,
       });
+      return { ...fallbackResult, checkedAt };
     }
 
     return { ...result, checkedAt };
@@ -223,9 +223,34 @@ async function defaultFetchSource(source, options = {}) {
   }
 }
 
+function parseHttpUrl(rawUrl, baseUrl) {
+  let parsed;
+  try {
+    parsed = baseUrl ? new URL(rawUrl, baseUrl) : new URL(rawUrl);
+  } catch (error) {
+    return { error: `invalid URL: ${error.message}` };
+  }
+
+  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+    return { error: `unsupported protocol: ${parsed.protocol}` };
+  }
+
+  return { parsed };
+}
+
 function requestUrl(url, options) {
+  const initial = parseHttpUrl(url);
+  if (initial.error) {
+    return Promise.resolve({
+      ok: false,
+      statusCode: null,
+      finalUrl: url,
+      error: initial.error,
+    });
+  }
+
   return new Promise(resolve => {
-    const parsed = new URL(url);
+    const { parsed } = initial;
     const client = parsed.protocol === 'http:' ? http : https;
     const request = client.request(parsed, {
       method: options.method || 'HEAD',
@@ -244,8 +269,17 @@ function requestUrl(url, options) {
         && options.redirectsRemaining > 0
       ) {
         response.resume();
-        const nextUrl = new URL(location, parsed).toString();
-        resolve(requestUrl(nextUrl, {
+        const redirected = parseHttpUrl(location, parsed);
+        if (redirected.error) {
+          resolve({
+            ok: false,
+            statusCode,
+            finalUrl: url,
+            error: redirected.error,
+          });
+          return;
+        }
+        resolve(requestUrl(redirected.parsed.toString(), {
           ...options,
           redirectsRemaining: options.redirectsRemaining - 1,
         }));
@@ -366,6 +400,14 @@ async function buildAdvisorySourceReport(options = {}) {
   return report;
 }
 
+function requireFlagValue(argv, index, flag, label) {
+  const value = argv[index + 1];
+  if (typeof value !== 'string' || value.trim() === '' || value.startsWith('-')) {
+    throw new Error(`${flag} requires a ${label}`);
+  }
+  return value;
+}
+
 function parseArgs(argv) {
   const options = {};
   for (let i = 0; i < argv.length; i += 1) {
@@ -380,15 +422,16 @@ function parseArgs(argv) {
       options.strictRefresh = true;
       options.refresh = true;
     } else if (arg === '--generated-at') {
-      options.generatedAt = argv[++i];
+      options.generatedAt = requireFlagValue(argv, i, '--generated-at', 'timestamp');
+      i += 1;
     } else if (arg === '--timeout-ms') {
       options.timeoutMs = Number(argv[++i]);
       if (!Number.isFinite(options.timeoutMs) || options.timeoutMs <= 0) {
         throw new Error('--timeout-ms must be a positive number');
       }
     } else if (arg === '--write') {
-      options.writePath = argv[++i];
-      if (!options.writePath) throw new Error('--write requires a path');
+      options.writePath = requireFlagValue(argv, i, '--write', 'path');
+      i += 1;
     } else {
       throw new Error(`Unknown argument: ${arg}`);
     }
