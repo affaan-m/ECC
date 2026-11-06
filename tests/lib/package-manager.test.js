@@ -8,6 +8,7 @@ const assert = require('assert');
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
+const ts = require('typescript');
 
 // Import the modules
 const pm = require('../../scripts/lib/package-manager');
@@ -1760,6 +1761,40 @@ function runTests() {
   else failed++;
 
   console.log('\nPackage manager name validation:');
+
+  if (test('declares isSupportedPackageManager as an unknown-input type guard', () => {
+    const testDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pm-types-'));
+    try {
+      const fixture = path.join(testDir, 'package-manager.ts');
+      const modulePath = path.resolve(__dirname, '../../scripts/lib/package-manager').replace(/\\/g, '/');
+      fs.writeFileSync(fixture, `
+        import { isSupportedPackageManager, PackageManagerName, PACKAGE_MANAGERS } from ${JSON.stringify(modulePath)};
+        const guard: (name: unknown) => name is PackageManagerName = isSupportedPackageManager;
+        declare const input: unknown;
+        const result: boolean = guard(input);
+        // @ts-expect-error Unknown input must be validated before it can be a manager name.
+        const unvalidated: PackageManagerName = input;
+        if (isSupportedPackageManager(input)) {
+          const name: PackageManagerName = input;
+          const command: string = PACKAGE_MANAGERS[input].runCmd;
+        }
+        // @ts-expect-error Inherited object keys are not supported package manager names.
+        const inherited: PackageManagerName = 'constructor';
+      `);
+      const program = ts.createProgram([fixture], {
+        strict: true,
+        noEmit: true,
+        types: [],
+        module: ts.ModuleKind.Node16,
+        moduleResolution: ts.ModuleResolutionKind.Node16
+      });
+      const diagnostics = ts.getPreEmitDiagnostics(program);
+      assert.deepStrictEqual(diagnostics.map(d => ts.flattenDiagnosticMessageText(d.messageText, '\n')), []);
+    } finally {
+      fs.rmSync(testDir, { recursive: true, force: true });
+    }
+  })) passed++;
+  else failed++;
 
   for (const name of ['constructor', 'toString', '__proto__', ['npm'], null, 42]) {
     if (test(`rejects unsupported manager value ${JSON.stringify(name)} in setters`, () => {
