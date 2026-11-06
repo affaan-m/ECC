@@ -553,6 +553,12 @@ function runTests() {
         stopPayload(transcript, sessionId, testDir), env
       ));
       assert.strictEqual(first.code, 0);
+      const markerStat = fs.statSync(marker);
+      assert.ok(markerStat.isFile());
+      if (process.platform !== 'win32') {
+        assert.strictEqual(markerStat.mode & 0o777, 0o600);
+        assert.strictEqual(fs.statSync(path.dirname(marker)).mode & 0o777, 0o700);
+      }
       let parsed;
       try {
         parsed = JSON.parse(first.stdout);
@@ -574,6 +580,30 @@ function runTests() {
       assert.strictEqual(second.stdout, '', 'Second Stop for the same session must not re-deliver');
     } finally {
       fs.rmSync(marker, { force: true });
+      cleanupTestDir(testDir);
+      fs.rmSync(homunculusDir, { recursive: true, force: true });
+    }
+  })) passed++; else failed++;
+
+  if (test('refuses an observer root writable by other users', () => {
+    if (process.platform === 'win32') return;
+    const testDir = createTestDir();
+    const transcript = createTranscript(testDir, 12);
+    const homunculusDir = fs.mkdtempSync(path.join(os.tmpdir(), 'eval-delivery-home-'));
+    const sessionId = 'delivery-unsafe-root-1';
+    try {
+      registerLeaseFor(testDir, homunculusDir, sessionId);
+      fs.chmodSync(homunculusDir, 0o777);
+      const result = withOptInConfig(true, () => runEvaluatePayload(
+        stopPayload(transcript, sessionId, testDir),
+        { CLV2_HOMUNCULUS_DIR: homunculusDir, CLAUDE_PROJECT_DIR: testDir }
+      ));
+      assert.strictEqual(result.stdout, '', 'shared-write root must fail closed');
+      assert.ok(result.stderr.includes('could not record delivery marker'));
+      assert.ok(!fs.existsSync(deliveryMarkerPath(homunculusDir, sessionId)));
+      assert.strictEqual(fs.statSync(homunculusDir).mode & 0o777, 0o777);
+    } finally {
+      fs.chmodSync(homunculusDir, 0o700);
       cleanupTestDir(testDir);
       fs.rmSync(homunculusDir, { recursive: true, force: true });
     }

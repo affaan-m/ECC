@@ -269,8 +269,8 @@ for (const name of SHARED_FILES) {
       error.code === 'ELOOP' || /Refusing to inspect changed Codex configuration/.test(error.message)
     ));
 
-    assert.ok(fs.lstatSync(destination).isSymbolicLink());
-    assert.equal(fs.readFileSync(destination, 'utf8'), '# User-owned linked configuration\n');
+    assert.equal(fs.readlinkSync(destination), linkedFile, 'reinstall must retain the original symlink');
+    assert.equal(fs.readFileSync(linkedFile, 'utf8'), '# User-owned linked configuration\n');
     const retainedOperation = readInstallState(fixture.statePath).operations.find(operation => (
       operation.destinationPath === destination && operation.ownership === 'managed'
     ));
