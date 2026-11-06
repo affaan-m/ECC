@@ -2,7 +2,7 @@ use anyhow::{Context, Result};
 use serde::Serialize;
 use sha2::{Digest, Sha256};
 use std::fs;
-use std::io::Write;
+use std::io::{BufRead, BufReader, Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
@@ -692,31 +692,35 @@ pub fn diff_file_preview(worktree: &WorktreeInfo, limit: usize) -> Result<Vec<St
 }
 
 pub fn diff_patch_preview(worktree: &WorktreeInfo, max_lines: usize) -> Result<Option<String>> {
-    let mut remaining = max_lines.max(1);
-    let mut sections = Vec::new();
-    let base_ref = format!("{}...HEAD", worktree.base_branch);
+    patch_preview(worktree, &[], max_lines)
+}
 
-    let committed = git_diff_patch_lines(&worktree.path, &[&base_ref])?;
-    if !committed.is_empty() && remaining > 0 {
-        let taken = take_preview_lines(&committed, &mut remaining);
+fn patch_preview(
+    worktree: &WorktreeInfo,
+    paths: &[String],
+    max_lines: usize,
+) -> Result<Option<String>> {
+    let limit = max_lines.max(1);
+    let base_ref = format!("{}...HEAD", worktree.base_branch);
+    let committed = git_diff_patch_lines(&worktree.path, Some(&base_ref), paths, limit)?;
+    let remaining = limit - committed.len();
+    let mut sections = Vec::new();
+
+    if !committed.is_empty() {
         sections.push(format!(
             "--- Branch diff vs {} ---\n{}",
             worktree.base_branch,
-            taken.join("\n")
+            committed.join("\n")
         ));
     }
-
-    let working = git_diff_patch_lines(&worktree.path, &[])?;
-    if !working.is_empty() && remaining > 0 {
-        let taken = take_preview_lines(&working, &mut remaining);
-        sections.push(format!("--- Working tree diff ---\n{}", taken.join("\n")));
+    if remaining > 0 {
+        let working = git_diff_patch_lines(&worktree.path, None, paths, remaining)?;
+        if !working.is_empty() {
+            sections.push(format!("--- Working tree diff ---\n{}", working.join("\n")));
+        }
     }
 
-    if sections.is_empty() {
-        Ok(None)
-    } else {
-        Ok(Some(sections.join("\n\n")))
-    }
+    Ok((!sections.is_empty()).then(|| sections.join("\n\n")))
 }
 
 pub fn merge_readiness(worktree: &WorktreeInfo) -> Result<MergeReadiness> {
@@ -1024,29 +1028,104 @@ fn git_diff_name_status(worktree_path: &Path, extra_args: &[&str]) -> Result<Vec
     Ok(parse_nonempty_lines(&output.stdout))
 }
 
-fn git_diff_patch_lines(worktree_path: &Path, extra_args: &[&str]) -> Result<Vec<String>> {
+// A line budget alone does not bound generated or minified files. Read one
+// extra byte to distinguish an exact fit from a truncated final line.
+const PATCH_PREVIEW_MAX_BYTES: usize = 256 * 1024;
+
+fn read_patch_prefix(stdout: impl Read, limit: usize) -> std::io::Result<(Vec<String>, bool)> {
+    let mut reader = BufReader::new(stdout.take(PATCH_PREVIEW_MAX_BYTES as u64 + 1));
+    let mut bytes_left = PATCH_PREVIEW_MAX_BYTES;
+    let mut lines = Vec::new();
+    let mut line = Vec::new();
+    while lines.len() < limit {
+        line.clear();
+        let count = reader.read_until(b'\n', &mut line)?;
+        if count == 0 {
+            return Ok((lines, false));
+        }
+        if count > bytes_left {
+            let prefix = String::from_utf8_lossy(&line[..bytes_left]);
+            lines.push(format!("{}…", prefix.trim()));
+            return Ok((lines, true));
+        }
+        bytes_left -= count;
+        let decoded = String::from_utf8_lossy(&line);
+        let trimmed = decoded.trim();
+        if !trimmed.is_empty() {
+            lines.push(trimmed.to_owned());
+        }
+    }
+    Ok((lines, true))
+}
+
+// Drain the whole pipe so Git can keep writing stdout even when a diff
+// driver is noisy. Retain only a short prefix for the failure diagnostic.
+fn read_git_diagnostic(mut stderr: impl Read) -> std::io::Result<Vec<u8>> {
+    let mut diagnostic = Vec::new();
+    stderr.by_ref().take(8192).read_to_end(&mut diagnostic)?;
+    std::io::copy(&mut stderr, &mut std::io::sink())?;
+    Ok(diagnostic)
+}
+
+fn git_diff_patch_lines(
+    worktree_path: &Path,
+    revision: Option<&str>,
+    paths: &[String],
+    limit: usize,
+) -> Result<Vec<String>> {
     let mut command = Command::new("git");
     command
         .arg("-C")
         .arg(worktree_path)
-        .arg("diff")
-        .args(["--stat", "--patch", "--find-renames"]);
-    command.args(extra_args);
+        .args(["diff", "--stat", "--patch", "--find-renames"])
+        .args(revision)
+        // A preview may be killed early. Keep it from refreshing the index.
+        .env("GIT_OPTIONAL_LOCKS", "0");
+    if !paths.is_empty() {
+        command.arg("--").args(paths);
+    }
+    let mut child = command
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .context("Failed to start worktree patch preview")?;
+    let stderr = child.stderr.take().expect("piped git stderr");
+    let diagnostic = std::thread::Builder::new().spawn(move || read_git_diagnostic(stderr));
+    let diagnostic = match diagnostic {
+        Ok(reader) => reader,
+        Err(error) => {
+            let _ = child.kill();
+            let _ = child.wait();
+            return Err(error).context("Failed to start Git diagnostic reader");
+        }
+    };
+    let prefix = read_patch_prefix(child.stdout.as_mut().expect("piped git stdout"), limit);
 
-    let output = command
-        .output()
-        .context("Failed to generate worktree patch preview")?;
-
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
+    // Reap Git even on read errors. Keep the read end open until cancellation
+    // so our own broken pipe cannot be mistaken for a Git failure.
+    let mut cancelled = false;
+    if !matches!(prefix, Ok((_, false))) && !matches!(child.try_wait(), Ok(Some(_))) {
+        cancelled = child.kill().is_ok();
+    }
+    drop(child.stdout.take());
+    let status = child
+        .wait()
+        .context("Failed to wait for worktree patch preview")?;
+    let diagnostic = diagnostic
+        .join()
+        .map_err(|_| anyhow::anyhow!("Git diagnostic reader panicked"))?
+        .context("Failed to read Git diagnostic")?;
+    let (lines, _) = prefix.context("Failed to read worktree patch preview")?;
+    if !cancelled && !status.success() {
         tracing::warn!(
-            "Worktree patch preview warning for {}: {stderr}",
-            worktree_path.display()
+            "Worktree patch preview failed for {} ({status}): {}",
+            worktree_path.display(),
+            String::from_utf8_lossy(&diagnostic).trim_end()
         );
         return Ok(Vec::new());
     }
-
-    Ok(parse_nonempty_lines(&output.stdout))
+    Ok(lines)
 }
 
 fn git_diff_patch_text_for_paths(
@@ -1080,43 +1159,6 @@ fn git_diff_patch_text_for_paths(
     }
 
     Ok(String::from_utf8_lossy(&output.stdout).into_owned())
-}
-
-fn git_diff_patch_lines_for_paths(
-    worktree_path: &Path,
-    extra_args: &[&str],
-    paths: &[String],
-) -> Result<Vec<String>> {
-    if paths.is_empty() {
-        return Ok(Vec::new());
-    }
-
-    let mut command = Command::new("git");
-    command
-        .arg("-C")
-        .arg(worktree_path)
-        .arg("diff")
-        .args(["--stat", "--patch", "--find-renames"]);
-    command.args(extra_args);
-    command.arg("--");
-    for path in paths {
-        command.arg(path);
-    }
-
-    let output = command
-        .output()
-        .context("Failed to generate filtered worktree patch preview")?;
-
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        tracing::warn!(
-            "Filtered worktree patch preview warning for {}: {stderr}",
-            worktree_path.display()
-        );
-        return Ok(Vec::new());
-    }
-
-    Ok(parse_nonempty_lines(&output.stdout))
 }
 
 fn extract_patch_hunks(section: GitPatchSectionKind, patch_text: &str) -> Vec<GitPatchHunk> {
@@ -1412,31 +1454,7 @@ pub fn diff_patch_preview_for_paths(
         return Ok(None);
     }
 
-    let mut remaining = max_lines.max(1);
-    let mut sections = Vec::new();
-    let base_ref = format!("{}...HEAD", worktree.base_branch);
-
-    let committed = git_diff_patch_lines_for_paths(&worktree.path, &[&base_ref], paths)?;
-    if !committed.is_empty() && remaining > 0 {
-        let taken = take_preview_lines(&committed, &mut remaining);
-        sections.push(format!(
-            "--- Branch diff vs {} ---\n{}",
-            worktree.base_branch,
-            taken.join("\n")
-        ));
-    }
-
-    let working = git_diff_patch_lines_for_paths(&worktree.path, &[], paths)?;
-    if !working.is_empty() && remaining > 0 {
-        let taken = take_preview_lines(&working, &mut remaining);
-        sections.push(format!("--- Working tree diff ---\n{}", taken.join("\n")));
-    }
-
-    if sections.is_empty() {
-        Ok(None)
-    } else {
-        Ok(Some(sections.join("\n\n")))
-    }
+    patch_preview(worktree, paths, max_lines)
 }
 
 fn git_status_short(worktree_path: &Path) -> Result<Vec<String>> {
@@ -1536,13 +1554,6 @@ fn parse_nonempty_lines(stdout: &[u8]) -> Vec<String> {
         .filter(|line| !line.is_empty())
         .map(ToOwned::to_owned)
         .collect()
-}
-
-fn take_preview_lines(lines: &[String], remaining: &mut usize) -> Vec<String> {
-    let count = (*remaining).min(lines.len());
-    let taken = lines.iter().take(count).cloned().collect::<Vec<_>>();
-    *remaining = remaining.saturating_sub(count);
-    taken
 }
 
 fn parse_merge_conflict_path(line: &str) -> Option<String> {
@@ -1849,6 +1860,134 @@ mod tests {
             .arg(&worktree_dir)
             .output();
         let _ = fs::remove_dir_all(root);
+        Ok(())
+    }
+
+    #[test]
+    fn git_diagnostic_retains_the_error_prefix_and_drains_the_rest() -> Result<()> {
+        let mut input = std::io::Cursor::new([b'x'; 32 * 1024]);
+        let diagnostic = read_git_diagnostic(&mut input)?;
+        assert_eq!(diagnostic, vec![b'x'; 8192]);
+        assert_eq!(input.position(), 32 * 1024);
+        Ok(())
+    }
+
+    #[test]
+    fn patch_prefix_bounds_reads_even_when_all_lines_are_blank() -> Result<()> {
+        let bytes = vec![b'\n'; PATCH_PREVIEW_MAX_BYTES * 2];
+        let mut input = std::io::Cursor::new(bytes);
+        let (lines, stopped) = read_patch_prefix(&mut input, 1)?;
+        assert!(stopped);
+        assert_eq!(lines, ["…"]);
+        assert!(input.position() <= PATCH_PREVIEW_MAX_BYTES as u64 + 1);
+        Ok(())
+    }
+
+    #[test]
+    fn patch_prefix_accepts_a_line_that_exactly_fits_the_byte_budget() -> Result<()> {
+        let bytes = vec![b'x'; PATCH_PREVIEW_MAX_BYTES];
+        let (lines, stopped) = read_patch_prefix(bytes.as_slice(), 2)?;
+        assert!(!stopped);
+        assert_eq!(lines, [String::from_utf8(bytes)?]);
+        Ok(())
+    }
+
+    #[test]
+    fn patch_prefix_counts_only_nonempty_lines_and_decodes_lossily() -> Result<()> {
+        let input = b"  \r\n  +one   \r\n\n-\xff\nignored\n";
+        let (lines, stopped) = read_patch_prefix(&input[..], 2)?;
+        assert!(stopped);
+        assert_eq!(lines, ["+one", "-�"]);
+        Ok(())
+    }
+
+    #[test]
+    fn patch_preview_skips_working_diff_after_branch_exhausts_budget() -> Result<()> {
+        let root = std::env::temp_dir().join(format!("ecc2-patch-budget-{}", Uuid::new_v4()));
+        let repo = init_repo(&root)?;
+        run_git(&repo, &["switch", "-c", "topic"])?;
+        fs::write(repo.join("branch.txt"), "committed\n")?;
+        run_git(&repo, &["add", "branch.txt"])?;
+        run_git(&repo, &["commit", "-m", "branch change"])?;
+        fs::write(repo.join("README.md"), "unstaged\n")?;
+
+        // A repository-local textconv marks actual inspection of the working patch.
+        // Only README.md uses it, so generating the branch patch cannot set the marker.
+        fs::write(repo.join(".git/info/attributes"), "README.md diff=probe\n")?;
+        run_git(
+            &repo,
+            &[
+                "config",
+                "diff.probe.textconv",
+                "echo inspected > .git/preview-probe && cat",
+            ],
+        )?;
+        let probe = repo.join(".git/preview-probe");
+        let info = WorktreeInfo {
+            path: repo.clone(),
+            branch: "topic".into(),
+            base_branch: "main".into(),
+        };
+        let paths = ["branch.txt".into(), "README.md".into()];
+        for filtered in [false, true] {
+            let preview = |limit| {
+                if filtered {
+                    diff_patch_preview_for_paths(&info, &paths, limit)
+                } else {
+                    diff_patch_preview(&info, limit)
+                }
+            };
+            assert!(preview(80)?.unwrap().contains("--- Working tree diff ---"));
+            assert!(probe.is_file(), "working diff must trigger the probe");
+            fs::remove_file(&probe)?;
+
+            let patch = preview(1)?.expect("branch diff");
+            assert_eq!(patch.lines().count(), 2, "{patch}");
+            assert!(patch.starts_with("--- Branch diff vs main ---\n"));
+            assert!(
+                !probe.exists(),
+                "working diff ran after exhausting the budget"
+            );
+        }
+        fs::remove_dir_all(root)?;
+        Ok(())
+    }
+
+    #[test]
+    fn patch_preview_bounds_a_single_oversized_diff_line() -> Result<()> {
+        let root = std::env::temp_dir().join(format!("ecc2-patch-bytes-{}", Uuid::new_v4()));
+        let repo = init_repo(&root)?;
+        let info = WorktreeInfo {
+            path: repo.clone(),
+            branch: "main".into(),
+            base_branch: "main".into(),
+        };
+        let path = "README.md";
+        fs::write(
+            repo.join(path),
+            format!("{}END_SENTINEL\n", "x".repeat(1024 * 1024)),
+        )?;
+        for preview in [
+            diff_patch_preview(&info, 40)?,
+            diff_patch_preview_for_paths(&info, &[path.into()], 40)?,
+        ] {
+            let patch = preview.expect("working diff");
+            assert!(patch.starts_with("--- Working tree diff ---\n"));
+            assert!(
+                !patch.contains("END_SENTINEL"),
+                "oversized diff was read to its end"
+            );
+            assert!(
+                patch.contains('…'),
+                "oversized diff should indicate truncation"
+            );
+            assert!(
+                patch.len() < 512 * 1024,
+                "unexpected preview size {}",
+                patch.len()
+            );
+        }
+        fs::remove_dir_all(root)?;
         Ok(())
     }
 
