@@ -1,6 +1,6 @@
 # Curation
 
-pi/core includes 134 of 315 skills and 24 of 98 commands from the root of ECC.
+pi/core includes 134 of 318 skills and 24 of 98 commands from the root of ECC.
 Everything excluded is listed here with its reason.
 
 ## Rules
@@ -41,6 +41,7 @@ Exclude anything that:
 | `competitive-platform-analysis` | competitive/marketing analysis |
 | `competitive-report-structure` | competitive/marketing reporting |
 | `config-gc` | Claude-Code-only config garbage collection (~/.claude) |
+| `config-health` | Claude Code startup hook and configuration monitoring |
 | `configure-ecc` | ECC-specific setup wizard |
 | `connections-optimizer` | social/outreach (X and LinkedIn) |
 | `content-engine` | social/marketing content system |
@@ -151,6 +152,7 @@ Exclude anything that:
 | `repo-scan` | downloads an external skill at runtime |
 | `research-ops` | ECC ops research workflow with network enrichment |
 | `returns-reverse-logistics` | logistics niche domain |
+| `roundhouse-x402` | hosted x402 service discovery and settlement integration |
 | `rules-distill` | Claude-Code-only rules distillation mechanics |
 | `safety-guard` | Claude-Code-only PreToolUse hooks |
 | `santa-method` | multi-agent adversarial review roster |
@@ -185,6 +187,7 @@ Exclude anything that:
 | `uncloud` | niche cluster ops |
 | `unified-memory` | ECC memory vault (session save/resume family) |
 | `unified-notifications-ops` | ECC notifications ops |
+| `web-perimeter-owasp-2025-audit` | live web perimeter probes and network audit workflow |
 | `video-editing` | media production niche |
 | `videodb` | wraps VideoDB SaaS |
 | `visa-doc-translate` | visa/legal docs niche; OCR network calls |

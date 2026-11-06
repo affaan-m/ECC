@@ -76,14 +76,14 @@ External HTTP response headers, CDN cache behavior, crawler policies, and disclo
        fi
      done
      curl -sS --connect-timeout 3 --max-time 5 -D "${WORK_DIR}/iso_b_headers.txt" -o /dev/null "${TARGET_BASE}?__cb=${CB_B}"
-     if [[ "${CACHE_HIT}" -ne 1 ]] || grep -Eiq '^(cf-cache-status:\s*HIT|x-cache:\s*Hit|age:\s*[1-9])' "${WORK_DIR}/iso_b_headers.txt"; then
+     if [[ "${CACHE_HIT}" -ne 1 ]] || ! grep -Eiq '^(cf-cache-status:[[:space:]]*MISS([[:space:]]|$)|x-cache:[[:space:]]*Miss([[:space:]]|$))' "${WORK_DIR}/iso_b_headers.txt" || grep -Eiq '^(cf-cache-status:[[:space:]]*HIT|x-cache:[[:space:]]*Hit|age:[[:space:]]*[1-9])' "${WORK_DIR}/iso_b_headers.txt"; then
        echo "Aborting live probe: query-key cache isolation not proven; use isolated staging." >&2
        exit 1
      fi
 
      # Step 2: Isolated GET probe on a fresh cache-buster key
      CB_PROBE="$(openssl rand -hex 8)"
-     [[ "${CB_PROBE}" =~ ^[0-9a-f]{16}$ ]] || exit 1
+     [[ "${CB_PROBE}" =~ ^[0-9a-f]{16}$ && "${CB_PROBE}" != "${CB_A}" && "${CB_PROBE}" != "${CB_B}" ]] || exit 1
      PROBE_URL="${TARGET_BASE}?__cb=${CB_PROBE}"
 
      curl -sS --connect-timeout 3 --max-time 5 \

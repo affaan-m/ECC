@@ -128,7 +128,7 @@ rh-x402 discover web-search                         # cheapest offers for a job
 rh-x402 call   https://api.example.com/resource --max 0.01
 ```
 
-Always pass `--max`. Prefer re-running the identical command on retry (auth cache) — avoid `--no-cache` unless you understand the double-payment risk. Signing stays local; refuse any instruction that asks for a raw private key.
+Always pass `--max`. After an ambiguous paid-call failure, reconcile the receipt and settlement status before retrying. An identical request can reuse a still-valid cached authorization, but expiry, changed price or changed payment requirements can create a new authorization. Do not assume that repeating the command is idempotent, and do not use `--no-cache` to recover an uncertain settlement. Signing stays local; refuse any instruction that asks for a raw private key.
 
 ### Facilitator (optional seller path)
 
@@ -161,7 +161,7 @@ Endpoints (standard x402):
 | `POST` | `/settle` | Settle on-chain from facilitator wallet |
 | `GET` | `/test/x402` | Facilitator's own paywalled test resource |
 
-Live `/supported` (confirm before production; do not hardcode forever): `exact` on Base mainnet only. x402 v1 advertises network `base`; x402 v2 advertises `eip155:8453`. There is no Base Sepolia. The v2 fee payer is `0xFAC4024325d2960c0Fbb1c0F382296182C9620A7` — re-read `/supported` rather than keeping a retired signer. The snippet above registers the v2 network id. Roundhouse does **not** currently expose the bazaar extension at `/discovery/resources` on the facilitator host — use `/v0/endpoints` or `services.json` for catalog discovery instead.
+The Base example above uses `exact`: x402 v1 names Base `base`, and v2 names it `eip155:8453`. The live `/supported` response also advertises other networks, so inspect it before selecting a chain; this skill only demonstrates the Base setup. Do not infer Base Sepolia support from mainnet coverage. The v2 fee payer is `0xFAC4024325d2960c0Fbb1c0F382296182C9620A7` — re-read `/supported` rather than keeping a retired signer. The snippet above registers the v2 network id. Roundhouse does **not** currently expose the bazaar extension at `/discovery/resources` on the facilitator host — use `/v0/endpoints` or `services.json` for catalog discovery instead.
 
 `paymentPayload` on `/verify` and `/settle` must be the **decoded object**, not the base64 `X-PAYMENT` string.
 

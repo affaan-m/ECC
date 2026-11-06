@@ -279,15 +279,11 @@ function parseMemoryDocument(source, sourcePath = '<memory>') {
   return normalizeMemory({ ...parsed.values, body });
 }
 
-function collectStrings(value, strings = []) {
-  if (typeof value === 'string') {
-    strings.push(value);
-  } else if (Array.isArray(value)) {
-    value.forEach(item => collectStrings(item, strings));
-  } else if (value && typeof value === 'object') {
-    Object.values(value).forEach(item => collectStrings(item, strings));
-  }
-  return strings;
+function collectStrings(value) {
+  if (typeof value === 'string') return [value];
+  if (Array.isArray(value)) return value.flatMap(collectStrings);
+  if (value && typeof value === 'object') return Object.values(value).flatMap(collectStrings);
+  return [];
 }
 
 // Scan decoded field values: JSON.stringify turns a newline or tab into `\n`

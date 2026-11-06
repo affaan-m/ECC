@@ -264,7 +264,7 @@ const res = await payOnce("https://api.example.com/data", { method: "GET" });
 | [`x402.org` ファシリテーター](https://x402.org/facilitator) | 開発・テストネット向け — パッケージのデフォルトでセットアップ不要。アップストリームはメインネットルート向けではないと明記している |
 | ホスト型の本番ファシリテーター | インフラを運用せずにメインネット対応が欲しい |
 
-ホスト型を選ぶ場合は、ここに書かれた名前ではなくアップストリームドキュメントの[ファシリテーターリスト](https://docs.x402.org/dev-tools/facilitators)から選ぶこと — メンテナンスされており、網羅的ではなく、カバレッジも変わる。執筆時点では Coinbase の CDP（全トランザクションに KYT/OFAC スクリーニング）、PayAI、Corbits、Dexter、Solvador などが掲載され、複数が EVM に加えて Solana メインネットをカバーしている。このリストに掲載されていない他のファシリテーターとしては Roundhouse（`https://x402.roundhouseai.io`、API キー不要、Base メインネットの `exact` のみ — x402 v1 のネットワーク `base` と v2 の `eip155:8453`、Base Sepolia は対象外 — `/supported` で確認）などがある。Roundhouse を上流の表へ載せるドキュメント PR は未マージのまま開いている: [x402-foundation/x402#4005](https://github.com/x402-foundation/x402/pull/4005)。どれを選ぶ場合も、本番前に `/supported` エンドポイントでライブカバレッジを確認し、ネットワークを追加したときは再確認すること。
+ホスト型を選ぶ場合は、ここに書かれた名前ではなくアップストリームドキュメントの[ファシリテーターリスト](https://docs.x402.org/dev-tools/facilitators)から選ぶこと — メンテナンスされており、網羅的ではなく、カバレッジも変わる。執筆時点では Coinbase の CDP（全トランザクションに KYT/OFAC スクリーニング）、PayAI、Corbits、Dexter、Solvador などが掲載され、複数が EVM に加えて Solana メインネットをカバーしている。このリストに掲載されていない他のファシリテーターとしては Roundhouse（`https://x402.roundhouseai.io`、API キー不要、Base メインネットの `exact` の例 — x402 v1 のネットワーク `base` と v2 の `eip155:8453`、Base Sepolia は対象外 — `/supported` で確認）などがある。Roundhouse を上流の表へ載せるドキュメント PR は未マージのまま開いている: [x402-foundation/x402#4005](https://github.com/x402-foundation/x402/pull/4005)。どれを選ぶ場合も、本番前に `/supported` エンドポイントでライブカバレッジを確認し、ネットワークを追加したときは再確認すること。
 
 > **開示**: このセクションの一部は、ここで言及しているファシリテーター / インデックスである PayAI（アップストリームのリストに掲載）と Roundhouse（上記で別途言及）に関わる者が寄稿した。いずれも複数ある選択肢の 1 つとして記載しており、上記の自己ホストおよびアップストリームデフォルトのパスを意図的に先に挙げている。
 
