@@ -26,11 +26,11 @@ function findPython() {
   return null;
 }
 
-function runGacha(pythonBin, arg) {
+function runGacha(pythonBin, arg, env = { ...process.env, PYTHONUTF8: '1' }) {
   return spawnSync(pythonBin, [SCRIPT, arg], {
     encoding: 'utf8',
     maxBuffer: 10 * 1024 * 1024,
-    env: { ...process.env, PYTHONUTF8: '1' },
+    env,
   });
 }
 
@@ -70,6 +70,11 @@ function main() {
     }],
     ['clamps negative draws to one', () => {
       assertSingleDrawOutput(runGacha(pythonBin, '-3'));
+    }],
+    ['prints when piped stdout is not UTF-8 (Windows cp1252 default)', () => {
+      const env = { ...process.env, PYTHONIOENCODING: 'cp1252' };
+      delete env.PYTHONUTF8;
+      assertSingleDrawOutput(runGacha(pythonBin, '1', env));
     }],
   ];
 
