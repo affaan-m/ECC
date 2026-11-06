@@ -20,6 +20,8 @@ const MAX_TURNS = 25;
 const LLM_TIMEOUT_MS = 90000;
 // Leave the Stop hook time to persist its mechanical fallback after a timeout.
 const HOOK_FINISH_RESERVE_MS = 1000;
+// Harness notice shown after a safety-classifier stop; it is not a user ask (#3867).
+const CLASSIFIER_NOTICE = /^Your response above was stopped by a safety classifier\s*[—–-]\s*this is not a tool or API error\.?$/i;
 
 function getLLMModel() {
   return process.env.ECC_LLM_SUMMARY_MODEL || 'haiku';
@@ -28,6 +30,15 @@ function getLLMModel() {
 function getContextThreshold() {
   const raw = parseInt(process.env.ECC_LLM_SUMMARY_CONTEXT_THRESHOLD || '20', 10);
   return Number.isFinite(raw) && raw > 0 && raw <= 100 ? raw : 20;
+}
+
+/**
+ * True when a user-turn text is the harness notice left after a
+ * safety-classifier stop. Anchored to the whole message so user text that
+ * quotes or follows the notice is kept.
+ */
+function isClassifierNotice(text) {
+  return CLASSIFIER_NOTICE.test(text);
 }
 
 /**
@@ -63,7 +74,7 @@ function extractConversationText(transcriptPath) {
                   .join(' ')
               : '';
         const cleaned = text.replace(/\n+/g, ' ').trim();
-        if (cleaned) {
+        if (cleaned && !isClassifierNotice(cleaned)) {
           turns.push({ role: 'User', text: cleaned.slice(0, 400) });
         }
       }
@@ -201,4 +212,4 @@ function generateSessionSummary(transcriptPath, { onSkip = () => {} } = {}) {
   }
 }
 
-module.exports = { generateSessionSummary, extractConversationText, getContextRemainingPct, getContextThreshold, getLLMModel };
+module.exports = { generateSessionSummary, extractConversationText, isClassifierNotice, getContextRemainingPct, getContextThreshold, getLLMModel };
