@@ -6,6 +6,7 @@ const path = require('path');
 const { spawnSync } = require('child_process');
 const { test, tempDir, cleanup, finish } = require('./helpers');
 const gate = require('../../../scripts/lib/eval-harness/gate');
+const { trySymlink } = require('../helpers/symlink-support');
 const library = path.resolve(__dirname, '../../../scripts/lib/eval-harness');
 const refused = error => error.code === 'gate.isolation_required';
 const invalidVariant = error => error.code === 'gate.variant_invalid';
@@ -109,11 +110,11 @@ test('symlink manifests and symlink trees cannot hide from digest', () => setup(
   const file = path.join(c.variant, 'variant.json');
   const outside = path.join(c.root, 'manifest.json');
   fs.renameSync(file, outside);
-  fs.symlinkSync(outside, file);
+  if (!trySymlink(outside, file)) return;
   assert.throws(() => gate.loadVariant(c.variant), invalidVariant);
   fs.unlinkSync(file);
   fs.renameSync(outside, file);
-  fs.symlinkSync(c.root, path.join(c.variant, 'link'));
+  if (!trySymlink(c.root, path.join(c.variant, 'link'))) return;
   assert.throws(() => gate.loadVariant(c.variant), invalidVariant);
 }));
 
