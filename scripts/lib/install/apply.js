@@ -1122,6 +1122,10 @@ function applyInstallPlanLocked(rawPlan, dependencies = {}, settingsLockHeld = f
     ];
   }
 
+  if (dependencies.requireCompleteLegacyCleanup && opencodeMigrationWarnings.length > 0) {
+    throw new Error(opencodeMigrationWarnings.join(' '));
+  }
+
   if (legacyActivation) {
     assertOpenCodeHookDeactivationReady(legacyActivation.plan, {
       requireInactive: true, legacyOperations: legacyActivation.operations,

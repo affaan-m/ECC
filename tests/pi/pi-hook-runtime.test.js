@@ -46,6 +46,7 @@ function loadAdapter(host, spawnError) {
     require: name => {
       if (name === 'node:child_process') return { execFile: recordExecFile };
       if (name === './hook-runtime.js') return runtimeModule.exports;
+      if (name === './input-args.js') return require(path.join(extensionDir, 'input-args.js'));
       return require(name);
     }
   });

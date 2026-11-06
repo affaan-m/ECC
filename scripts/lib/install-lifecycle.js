@@ -1566,7 +1566,10 @@ function repairLegacyOpencodeLayout(repair, build) {
 
   // Load lazily to avoid a module cycle during install-lifecycle startup.
   const { applyInstallPlan } = require('./install/apply');
-  const appliedPlan = applyInstallPlan(canonicalPlan, { opencodeLease });
+  const appliedPlan = applyInstallPlan(canonicalPlan, {
+    opencodeLease,
+    requireCompleteLegacyCleanup: true,
+  });
   return {
     adapter: record.adapter,
     status: 'repaired',

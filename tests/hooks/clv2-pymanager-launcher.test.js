@@ -59,7 +59,7 @@ function test(name, fn) {
 const DRIVER = `
 conv() { case "$OSTYPE" in msys*|cygwin*) cygpath -u "$1" ;; *) printf '%s\\n' "$1" ;; esac; }
 tools="$(conv "$T_TOOLS")"
-for t in cat dirname basename sed mkdir; do
+for t in cat dirname basename sed mkdir git; do
   printf '#!/bin/sh\\nexec "%s" "$@"\\n' "$(command -v "$t")" > "$tools/$t"
   chmod +x "$tools/$t"
 done
@@ -71,7 +71,7 @@ export CLV2_HOMUNCULUS_DIR="$(conv "$T_HOME")"
 export T_LOG="$(conv "$T_LOG")"
 if [ -n "\${T_PROJECT:-}" ]; then export CLAUDE_PROJECT_DIR="$(conv "$T_PROJECT")"; fi
 PATH="$new_path:$tools"
-printf '%s' '{"cwd":""}' | "$BASH" "$target" post
+printf '%s' "$T_INPUT" | "$BASH" "$target" post
 `;
 
 function makeTree({ enabled = false } = {}) {
@@ -100,7 +100,7 @@ function makeTree({ enabled = false } = {}) {
 function writePython(dir, name, label) {
   fs.writeFileSync(
     path.join(dir, name),
-    `#!/bin/sh\necho "${label}|$CLV2_PYTHON_CMD\${_CLV2_HASH_INPUT:+|detect-project}" >> "$T_LOG"\n`,
+    `#!/bin/sh\necho "${label}|$CLV2_PYTHON_CMD\${_CLV2_HASH_INPUT:+|detect-project}" >> "$T_LOG"\ncase "$2" in *cwd*) [ -n "$T_PROJECT" ] && printf '%s\\n' "$T_PROJECT" ;; esac\n[ -n "\${_CLV2_HASH_INPUT:-}" ] && printf '0123456789ab\\n'\n`,
     { mode: 0o755 }
   );
 }
@@ -112,6 +112,7 @@ function run(dirs, pathDirs, env = {}, { checkStatus = true } = {}) {
   }
   baseEnv.CLAUDE_CODE_ENTRYPOINT = 'cli';
   baseEnv.LOCALAPPDATA = dirs.local;
+  baseEnv.T_INPUT = JSON.stringify({ cwd: '' });
   const merged = { ...baseEnv, ...env };
   for (const [key, value] of Object.entries(merged)) {
     if (value === undefined) delete merged[key];
@@ -184,9 +185,13 @@ test('keeps an alias from another user\'s WindowsApps directory', () => withTree
 test('detect-project.sh hashes the project id with the launcher', () => withTree(dirs => {
   writePython(dirs.alias, 'python3', 'alias');
   writePython(dirs.launcher, 'python3.exe', 'launcher');
+  assert.strictEqual(spawnSync('git', ['init', '-q', dirs.project]).status, 0);
   // The stand-ins print nothing, so the hook stops at a later step; only the
   // calls made up to and inside detect-project.sh matter here.
-  const calls = run(dirs, [dirs.alias], { T_PROJECT: dirs.project }, { checkStatus: false });
+  const calls = run(dirs, [dirs.alias], {
+    T_PROJECT: dirs.project,
+    T_INPUT: JSON.stringify({ cwd: dirs.project }),
+  }, { checkStatus: false });
   const hashCalls = calls.filter(c => c[2] === 'detect-project');
   assert.strictEqual(hashCalls.length, 1, `expected one detect-project hash call, got ${JSON.stringify(calls)}`);
   assert.strictEqual(hashCalls[0][0], 'launcher');

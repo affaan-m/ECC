@@ -52,7 +52,7 @@ function main() {
       assert.strictEqual(a, b, "parseAllAgents must be deterministic")
     }],
 
-    ["retains current model tier distribution (61 sonnet / 6 haiku / 4 opus)", () => {
+    ["retains current model tier distribution (62 sonnet / 6 haiku / 4 opus)", () => {
       const agents = parseAllAgents()
       for (const ir of agents) {
         assert.ok(ir.model, `${ir.id}: missing model tier`)
@@ -61,7 +61,7 @@ function main() {
         (acc, ir) => ({ ...acc, [ir.model]: (acc[ir.model] || 0) + 1 }),
         {}
       )
-      assert.strictEqual(tally.sonnet, 61, "sonnet count")
+      assert.strictEqual(tally.sonnet, 62, "sonnet count")
       assert.strictEqual(tally.haiku, 6, "haiku count")
       assert.strictEqual(tally.opus, 4, "opus count")
     }],
