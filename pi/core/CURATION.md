@@ -156,6 +156,7 @@ Exclude anything that:
 | `rules-distill` | Claude-Code-only rules distillation mechanics |
 | `safety-guard` | Claude-Code-only PreToolUse hooks |
 | `santa-method` | multi-agent adversarial review roster |
+| `scientific-db-openalex-database` | scientific niche domain pack |
 | `scientific-db-pubmed-database` | scientific niche domain pack |
 | `scientific-db-uspto-database` | scientific niche domain pack |
 | `scientific-pkg-gget` | scientific niche domain pack |

@@ -67,7 +67,8 @@ Minimum useful database set:
 
 - PubMed for biomedical and life-sciences literature.
 - arXiv for CS, math, physics, quantitative biology, and preprints.
-- Semantic Scholar or Crossref for broad academic discovery.
+- OpenAlex, Semantic Scholar or Crossref for broad academic discovery across
+  fields.
 - Domain-specific sources when relevant, such as clinical-trial registries,
   patent databases, standards bodies, or official technical docs.
 

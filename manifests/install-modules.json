@@ -590,6 +590,7 @@
         "skills/exa-search",
         "skills/research-ops",
         "skills/osint-investigation",
+        "skills/scientific-db-openalex-database",
         "skills/scientific-db-pubmed-database",
         "skills/scientific-db-uspto-database",
         "skills/scientific-pkg-gget",
