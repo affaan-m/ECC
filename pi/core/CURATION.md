@@ -36,7 +36,7 @@ Exclude anything that:
 | `carrier-relationship-management` | supply chain/logistics domain pack |
 | `cisco-ios-patterns` | network-device ops niche domain |
 | `ck` | Claude-Code-only persistent memory commands |
-| `claude-devfleet` | multi-agent orchestration via external DevFleet product |
+| `devfleet` | multi-agent orchestration via external DevFleet product |
 | `codehealth-mcp` | wraps CodeScene MCP SaaS |
 | `competitive-platform-analysis` | competitive/marketing analysis |
 | `competitive-report-structure` | competitive/marketing reporting |

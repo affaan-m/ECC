@@ -11,6 +11,8 @@
  *   4. SKILL.md frontmatter `description:` uses an inline scalar — not a
  *      literal block scalar (`|` / `|-` / `|+`), which preserves internal
  *      newlines and breaks flat-table renderers keyed off `description`.
+ *   5. SKILL.md frontmatter `name:` does not contain the reserved words
+ *      `claude` or `anthropic`.
  *
  * Frontmatter findings default to WARN so CI does not break while
  * pre-existing data defects are being cleaned up out of band (see #1663).
@@ -264,6 +266,13 @@ function validateSkillFile(skillMd, label, reportFrontmatterFinding, opts = {}) 
     reportFrontmatterFinding(`${label} - frontmatter missing required field: name`);
   } else if (values.name === '') {
     reportFrontmatterFinding(`${label} - frontmatter 'name' is empty`);
+  } else {
+    const reservedName = /(?:anthropic|claude)/i.exec(values.name);
+    if (reservedName) {
+      reportFrontmatterFinding(
+        `${label} - frontmatter 'name' contains reserved word '${reservedName[0]}'`
+      );
+    }
   }
 
   if (!Object.prototype.hasOwnProperty.call(values, 'description')) {

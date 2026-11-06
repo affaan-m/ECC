@@ -1,5 +1,5 @@
 ---
-name: claude-devfleet
+name: devfleet
 description: Claude DevFleet経由でマルチエージェントコーディングタスクをオーケストレーション — プロジェクトを計画し、分離された作業ツリー内で平行エージェントを派遣し、進捗を監視し、構造化レポートを読む。
 origin: community
 ---

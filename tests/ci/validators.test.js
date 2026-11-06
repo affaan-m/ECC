@@ -1200,6 +1200,20 @@ function runTests() {
     cleanupTestDir(testDir);
   })) passed++; else failed++;
 
+  if (test('errors when a skill name contains a reserved word (strict mode)', () => {
+    const testDir = createTestDir();
+    const skillDir = path.join(testDir, 'claude-devfleet');
+    fs.mkdirSync(skillDir);
+    fs.writeFileSync(path.join(skillDir, 'SKILL.md'),
+      '---\nname: claude-devfleet\ndescription: "Multi-agent orchestration."\n---\n# Skill');
+
+    const result = runSkillsValidator(testDir, ['--strict']);
+    assert.strictEqual(result.code, 1, '--strict must reject reserved skill names');
+    assert.ok(result.stderr.includes("frontmatter 'name' contains reserved word"),
+      `Should report the reserved skill name; got stderr: ${result.stderr}`);
+    cleanupTestDir(testDir);
+  })) passed++; else failed++;
+
   if (test('warns on literal block-scalar description (|-)', () => {
     const testDir = createTestDir();
     const skillDir = path.join(testDir, 'block-desc-skill');
