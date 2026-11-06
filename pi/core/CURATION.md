@@ -1,6 +1,6 @@
 # Curation
 
-pi/core includes 134 of 314 skills and 24 of 98 commands from the root of ECC.
+pi/core includes 134 of 315 skills and 24 of 98 commands from the root of ECC.
 Everything excluded is listed here with its reason.
 
 ## Rules
@@ -53,6 +53,7 @@ Exclude anything that:
 | `counterparty-channel-discipline` | agent messaging ops policy |
 | `crosspost` | social/marketing distribution |
 | `customer-billing-ops` | billing/ops skill over connected billing tools |
+| `ecc-contribution-review` | ECC-specific contribution packet compiler over repository manifests and cross-harness review evidence |
 | `customs-trade-compliance` | customs/trade niche domain |
 | `data-scraper-agent` | scheduled network scraping agent |
 | `deep-research` | requires firecrawl and exa SaaS MCP tools |

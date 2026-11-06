@@ -107,7 +107,8 @@
         "documentation-change-impact",
         "documentation-module-governance",
         "documentation-test-regression",
-        "config-health"
+        "config-health",
+        "ecc-contribution-review"
       ]
     }
   }
