@@ -14,6 +14,7 @@ const { resolveTaskContext } = require('../lib/context-selection');
 const { DEFAULT_REPO_ROOT } = require('../lib/context-profile-support');
 
 const CORPUS = path.join(DEFAULT_REPO_ROOT, 'tests/fixtures/context-selection/routing-prompts.json');
+const SCHEMA = 'ecc.routing-quality.v1';
 const SETS = Object.freeze(['direct', 'paraphrased']);
 const THRESHOLDS = Object.freeze({ 'direct.top3Rate': 0.88, 'direct.top1Rate': 0.80 });
 const METRICS = Object.freeze(['top1Rate', 'top3Rate', 'admissionPrecision']);
@@ -54,14 +55,26 @@ function score(rows) {
     const ratio = prompts ? sets[set][key.replace(/Rate$/, '')] / prompts : null;
     if (ratio === null || ratio < required) breaches.push({ metric, actual: sets[set][key], required });
   }
-  return { schemaVersion: 'ecc.routing-quality.v1', status: breaches.length ? 'fail' : 'pass',
+  return { schemaVersion: SCHEMA, status: breaches.length ? 'fail' : 'pass',
     thresholds: { ...THRESHOLDS, wrongLoads: 0 }, sets, breaches, wrongLoads };
+}
+
+/** Reads the corpus and rejects a missing or empty set, or a malformed prompt, before any resolve. */
+function readCorpus(corpusPath) {
+  const corpus = JSON.parse(fs.readFileSync(corpusPath, 'utf8'));
+  for (const set of SETS) {
+    const prompts = corpus && corpus[set];
+    const valid = Array.isArray(prompts) && prompts.length > 0 && prompts.every(prompt => prompt
+      && typeof prompt.query === 'string' && Array.isArray(prompt.expected) && prompt.expected.length > 0);
+    if (!valid) throw new Error(`routing corpus ${corpusPath}: "${set}" must be a non-empty array of { query, expected } prompts`);
+  }
+  return corpus;
 }
 
 /** One resolver pass over the corpus; every prompt is a fresh task in auto mode.
  * The registry digest comes from the resolver's own receipt, so the gate adds no registry load. */
 function evaluate({ repoRoot = DEFAULT_REPO_ROOT, corpusPath = CORPUS } = {}) {
-  const corpus = JSON.parse(fs.readFileSync(corpusPath, 'utf8'));
+  const corpus = readCorpus(corpusPath);
   const rows = [];
   let registryDigest = null;
   for (const set of SETS) {
@@ -103,7 +116,10 @@ function summary(result) {
 function readBaseline(io, file) {
   if (!file) return null;
   const previous = JSON.parse(io.readFile(file));
-  if (previous === null || typeof previous !== 'object') throw new Error(`${file} is not a routing-quality receipt`);
+  const isReceipt = previous !== null && typeof previous === 'object' && !Array.isArray(previous)
+    && previous.schemaVersion === SCHEMA
+    && SETS.every(set => previous.sets && previous.sets[set] !== null && typeof previous.sets[set] === 'object');
+  if (!isReceipt) throw new Error(`${file} is not an ${SCHEMA} receipt`);
   return previous;
 }
 
