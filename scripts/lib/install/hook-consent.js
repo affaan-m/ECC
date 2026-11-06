@@ -399,19 +399,25 @@ function stripHookRuntimeFromPlan(plan) {
   };
 }
 
+function preserveDispose(plan, nextPlan) {
+  const descriptor = Object.getOwnPropertyDescriptor(plan, 'dispose');
+  if (descriptor) Object.defineProperty(nextPlan, 'dispose', descriptor);
+  return nextPlan;
+}
+
 function withHookConsent(plan, hookConsent = null) {
   if (hookConsent !== null && !HOOK_CONSENT_DECISIONS.includes(hookConsent)) {
     throw new Error(`Unknown hook consent decision: ${hookConsent}`);
   }
   if (hookConsent === 'declined') {
-    return { ...stripHookRuntimeFromPlan(plan), hookConsent };
+    return preserveDispose(plan, { ...stripHookRuntimeFromPlan(plan), hookConsent });
   }
   const effectivePlan = disableUnselectedOpenCodeHooks(plan);
-  return {
+  return preserveDispose(plan, {
     ...effectivePlan,
     hookConsent,
     statePreview: setStatePreviewHookConsent(effectivePlan.statePreview, hookConsent),
-  };
+  });
 }
 
 function assertHookConsentReady(plan = {}) {

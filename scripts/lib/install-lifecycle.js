@@ -121,12 +121,16 @@ function buildRecordedManifestRequest(record) {
     excludeComponentIds: Array.isArray(request.excludeComponents) ? [...request.excludeComponents] : [],
     legacyLanguages: Array.isArray(request.legacyLanguages) ? [...request.legacyLanguages] : [],
     hookConsent: getRecordedHookConsent(state),
+    trust: request.trust === true,
+    consentMcp: Array.isArray(request.consentMcp) ? [...request.consentMcp] : [],
   };
 }
 
 function resolveRecordedManifestPlan(record, context, options = {}) {
   return createInstallPlanFromRequest(buildRecordedManifestRequest(record), {
     sourceRoot: context.repoRoot,
+    sourceUrl: record.state.source.repoUrl || undefined,
+    sourceSha: record.state.source.repoCommit || undefined,
     projectRoot: context.projectRoot,
     homeDir: context.homeDir,
     env: context.env,
@@ -1584,7 +1588,7 @@ function planOpencodeBuildRepair(repair, build) {
   });
   const { plan: desiredPlan } = prepareRepairMigration(rawPlan, record);
   const operationHealth = summarizeManagedOperationHealth(
-    context.repoRoot,
+    desiredPlan.sourceRoot || context.repoRoot,
     record.targetRoot,
     desiredPlan.operations,
     record.adapter.target
@@ -1643,12 +1647,17 @@ function executeGuardedRepairOperation(repair, plan, operation, repairedPaths) {
     apply.assertOpenCodeActivationUnchanged(desiredPlan, operation, activationSnapshot);
   }
   assertNoNewUserOwnedFile(migration, operation, desiredPlan);
-  const repairedPath = executeRepairOperation(context.repoRoot, operation, record.targetRoot, {
+  const repairedPath = executeRepairOperation(
+    desiredPlan.sourceRoot || context.repoRoot,
+    operation,
+    record.targetRoot,
+    {
     linkIndex: repairLinkIndex,
     target: record.adapter.target,
     settingsLockHeld,
     writeOptions: apply.getOpenCodeActivationWriteOptions(operation, activationSnapshot),
-  });
+    }
+  );
   if (repairedPath) {
     repairedPaths.push(repairedPath);
   }
@@ -1728,8 +1737,9 @@ function repairManagedRecord(repair, build) {
     plan: desiredPlan,
   } = prepareRepairMigration(rawPlan, record);
   const activationSnapshot = assertOpenCodeRepairHookDeactivation(desiredPlan);
+  const repairSourceRoot = desiredPlan.sourceRoot || context.repoRoot;
   const operationHealth = summarizeManagedOperationHealth(
-    context.repoRoot,
+    repairSourceRoot,
     record.targetRoot,
     desiredPlan.operations,
     record.adapter.target

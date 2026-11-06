@@ -266,7 +266,9 @@ async function main() {
   contextScanner.push(contextDecoder.end());
   const hookContext = contextScanner.context;
   const rootDir = normalizePluginRootForPlatform(
-    process.env.QODER_PLUGIN_ROOT || process.env.CLAUDE_PLUGIN_ROOT || process.env.ECC_PLUGIN_ROOT
+    [process.env.QODER_PLUGIN_ROOT, process.env.CLAUDE_PLUGIN_ROOT, process.env.ECC_PLUGIN_ROOT]
+      .map(value => typeof value === 'string' ? value.trim() : '')
+      .find(Boolean) || ''
   );
 
   if (!mode || !relPath || !rootDir) {

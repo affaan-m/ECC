@@ -114,6 +114,16 @@
             "declined",
             null
           ]
+        },
+        "trust": {
+          "type": "boolean"
+        },
+        "consentMcp": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
         }
       }
     },
@@ -151,6 +161,12 @@
       ],
       "properties": {
         "repoVersion": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "repoUrl": {
           "type": [
             "string",
             "null"

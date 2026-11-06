@@ -19,6 +19,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          fetch-depth: 0
           persist-credentials: false
 
       - name: Setup Node.js
@@ -46,6 +47,9 @@ jobs:
 
       - name: Validate install manifests
         run: node scripts/ci/validate-install-manifests.js
+
+      - name: Validate Grok marketplace source pin
+        run: node scripts/ci/validate-grok-pin.js
 
       - name: Validate workflow security
         run: node scripts/ci/validate-workflow-security.js

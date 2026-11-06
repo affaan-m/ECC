@@ -103,6 +103,9 @@ jobs:
       - name: Verify release metadata stays in sync
         run: node tests/plugin-manifest.test.js
 
+      - name: Validate Grok marketplace source pin
+        run: node scripts/ci/validate-grok-pin.js --release
+
       - name: Check npm publish state
         id: npm_publish_state
         run: |
