@@ -8,6 +8,7 @@ const assert = require('assert');
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
+const ts = require('typescript');
 
 // Import the modules
 const pm = require('../../scripts/lib/package-manager');
@@ -1758,6 +1759,97 @@ function runTests() {
     }
   })) passed++;
   else failed++;
+
+  console.log('\nPackage manager name validation:');
+
+  if (test('declares isSupportedPackageManager as an unknown-input type guard', () => {
+    const testDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pm-types-'));
+    try {
+      const fixture = path.join(testDir, 'package-manager.ts');
+      const modulePath = path.resolve(__dirname, '../../scripts/lib/package-manager').replace(/\\/g, '/');
+      fs.writeFileSync(fixture, `
+        import { isSupportedPackageManager, PackageManagerName, PACKAGE_MANAGERS } from ${JSON.stringify(modulePath)};
+        const guard: (name: unknown) => name is PackageManagerName = isSupportedPackageManager;
+        declare const input: unknown;
+        const result: boolean = guard(input);
+        // @ts-expect-error Unknown input must be validated before it can be a manager name.
+        const unvalidated: PackageManagerName = input;
+        if (isSupportedPackageManager(input)) {
+          const name: PackageManagerName = input;
+          const command: string = PACKAGE_MANAGERS[input].runCmd;
+        }
+        // @ts-expect-error Inherited object keys are not supported package manager names.
+        const inherited: PackageManagerName = 'constructor';
+      `);
+      const program = ts.createProgram([fixture], {
+        strict: true,
+        noEmit: true,
+        types: [],
+        module: ts.ModuleKind.Node16,
+        moduleResolution: ts.ModuleResolutionKind.Node16
+      });
+      const diagnostics = ts.getPreEmitDiagnostics(program);
+      assert.deepStrictEqual(diagnostics.map(d => ts.flattenDiagnosticMessageText(d.messageText, '\n')), []);
+    } finally {
+      fs.rmSync(testDir, { recursive: true, force: true });
+    }
+  })) passed++;
+  else failed++;
+
+  for (const name of ['constructor', 'toString', '__proto__', ['npm'], null, 42]) {
+    if (test(`rejects unsupported manager value ${JSON.stringify(name)} in setters`, () => {
+      withIsolatedHome(home => {
+        const project = path.join(home, 'project');
+        fs.mkdirSync(project);
+        assert.throws(() => pm.setPreferredPackageManager(name), /Unknown package manager/);
+        assert.throws(() => pm.setProjectPackageManager(name, project), /Unknown package manager/);
+        assert.ok(!fs.existsSync(path.join(home, '.claude', 'package-manager.json')));
+        assert.ok(!fs.existsSync(path.join(project, '.claude')));
+      });
+    })) passed++;
+    else failed++;
+  }
+
+  for (const source of ['environment', 'project-config', 'package.json', 'global-config']) {
+    if (test(`ignores inherited manager names from ${source}`, () => {
+      withIsolatedHome(home => {
+        const project = path.join(home, 'project');
+        fs.mkdirSync(project);
+        const originalEnv = process.env.CLAUDE_PACKAGE_MANAGER;
+        try {
+          delete process.env.CLAUDE_PACKAGE_MANAGER;
+          for (const name of source === 'environment'
+            ? ['constructor', 'toString', '__proto__']
+            : ['constructor', 'toString', '__proto__', ['npm']]) {
+            if (source === 'environment') {
+              process.env.CLAUDE_PACKAGE_MANAGER = name;
+            } else {
+              const configPath = source === 'package.json'
+                ? path.join(project, 'package.json')
+                : path.join(source === 'project-config' ? project : home, '.claude', 'package-manager.json');
+              fs.mkdirSync(path.dirname(configPath), { recursive: true });
+              fs.writeFileSync(configPath, JSON.stringify({ packageManager: name }));
+            }
+            const result = pm.getPackageManager({ projectDir: project });
+            assert.strictEqual(result.name, 'npm');
+            assert.strictEqual(result.source, 'default');
+            assert.strictEqual(pm.getRunCommand('lint', { projectDir: project }), 'npm run lint');
+            if (source === 'package.json') assert.strictEqual(pm.detectFromPackageJson(project), null);
+            if (source !== 'global-config') {
+              const lockPath = path.join(project, 'pnpm-lock.yaml');
+              fs.writeFileSync(lockPath, '');
+              assert.strictEqual(pm.getPackageManager({ projectDir: project }).name, 'pnpm');
+              fs.unlinkSync(lockPath);
+            }
+          }
+        } finally {
+          if (originalEnv === undefined) delete process.env.CLAUDE_PACKAGE_MANAGER;
+          else process.env.CLAUDE_PACKAGE_MANAGER = originalEnv;
+        }
+      });
+    })) passed++;
+    else failed++;
+  }
 
   // Summary
   console.log('\n=== Test Results ===');
