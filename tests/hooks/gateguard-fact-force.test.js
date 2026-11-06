@@ -7,6 +7,10 @@ const fs = require('fs');
 const path = require('path');
 const { spawnSync } = require('child_process');
 
+// These assertions cover the opt-in human-operator hint text (#3844): the
+// default denial no longer names the env vars that disable the guard.
+process.env.ECC_SHOW_RECOVERY_HINTS = '1';
+
 const runner = path.join(__dirname, '..', '..', 'scripts', 'hooks', 'run-with-flags.js');
 const hookScript = path.join(__dirname, '..', '..', 'scripts', 'hooks', 'gateguard-fact-force.js');
 const externalStateDir = process.env.GATEGUARD_STATE_DIR;
@@ -7717,6 +7721,63 @@ function runTests() {
     if (test(`lazy loading: ${label}`, () => assert.deepStrictEqual(loadedLibs(payload, setup), expected))) passed++;
     else failed++;
   }
+
+  // --- Test N: the default denial never names the controls that disable the hook (#3844) ---
+  clearState();
+  if (
+    test('default denial does not name recovery bypass controls', () => {
+      const input = {
+        session_id: TEST_SESSION_ID,
+        tool_name: 'Edit',
+        tool_input: { file_path: '/workspace/app/src/recovery-hint.js', old_string: 'a', new_string: 'b' }
+      };
+      const result = runHook(input, { ECC_SHOW_RECOVERY_HINTS: '' });
+      const output = parseOutput(result.stdout);
+      assert.ok(output && output.hookSpecificOutput, 'expected a denial');
+      assert.strictEqual(output.hookSpecificOutput.permissionDecision, 'deny');
+      const reason = output.hookSpecificOutput.permissionDecisionReason;
+      for (const leaked of [
+        'ECC_GATEGUARD=off',
+        'ECC_DISABLED_HOOKS',
+        'GATEGUARD_EXEMPT_GLOBS',
+        'GATEGUARD_BASH_ROUTINE_DISABLED'
+      ]) {
+        assert.ok(!reason.includes(leaked), `default denial must not name ${leaked}`);
+      }
+    })
+  )
+    passed++;
+  else failed++;
+
+  clearState();
+  writeState({ checked: [], last_active: Date.now(), fact_force_denials: 3 });
+  if (
+    test('condensed default denial omits recovery markers and bypass controls', () => {
+      const input = {
+        session_id: TEST_SESSION_ID,
+        tool_name: 'Edit',
+        tool_input: { file_path: '/workspace/app/src/recovery-condensed.js', old_string: 'a', new_string: 'b' }
+      };
+      const result = runHook(input, { ECC_SHOW_RECOVERY_HINTS: '' });
+      const output = parseOutput(result.stdout);
+      assert.ok(output && output.hookSpecificOutput, 'expected the condensed denial');
+      assert.strictEqual(output.hookSpecificOutput.permissionDecision, 'deny');
+      const reason = output.hookSpecificOutput.permissionDecisionReason;
+      assert.ok(reason.includes('denial #4'), 'expected the condensed denial ordinal');
+      for (const leaked of [
+        'Narrow recovery:',
+        'Recovery:',
+        'ECC_GATEGUARD=off',
+        'ECC_DISABLED_HOOKS',
+        'GATEGUARD_EXEMPT_GLOBS',
+        'GATEGUARD_BASH_ROUTINE_DISABLED'
+      ]) {
+        assert.ok(!reason.includes(leaked), `condensed default denial must not contain ${leaked}`);
+      }
+    })
+  )
+    passed++;
+  else failed++;
 
   const ddResults = runDdRegressionTests();
   passed += ddResults.passed;

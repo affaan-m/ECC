@@ -165,6 +165,55 @@ function runTests() {
   );
 
   results.push(
+    test('hides the config-protection recovery hint by default', () => {
+      return withOwnedDirectory(fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-config-protect-')), tmpDir => {
+        const absPath = path.join(tmpDir, '.eslintrc.js');
+        fs.writeFileSync(absPath, 'module.exports = {};');
+        const result = runHook(
+          { tool_name: 'Write', tool_input: { file_path: absPath, content: '{}' } },
+          { ECC_SHOW_RECOVERY_HINTS: '' }
+        );
+        assert.strictEqual(result.code, 2);
+        assert.ok(!result.stderr.includes('disable the config-protection hook temporarily'), result.stderr);
+      });
+    })
+  );
+
+  results.push(
+    test('restores the config-protection recovery hint for normalized truthy values', () => {
+      return withOwnedDirectory(fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-config-protect-')), tmpDir => {
+        const absPath = path.join(tmpDir, '.eslintrc.js');
+        fs.writeFileSync(absPath, 'module.exports = {};');
+        for (const value of [' true ', 'enable']) {
+          const result = runHook(
+            { tool_name: 'Write', tool_input: { file_path: absPath, content: '{}' } },
+            { ECC_SHOW_RECOVERY_HINTS: value }
+          );
+          assert.strictEqual(result.code, 2);
+          assert.ok(result.stderr.includes('disable the config-protection hook temporarily'), `${value}: ${result.stderr}`);
+        }
+      });
+    })
+  );
+
+  results.push(
+    test('hides the truncated-payload recovery hint by default and restores it on demand', () => {
+      const rawInput = JSON.stringify({
+        tool_name: 'Write',
+        tool_input: { file_path: '.eslintrc.js', content: 'x'.repeat(1024 * 1024 + 2048) }
+      });
+
+      const hidden = runHook(rawInput, { ECC_SHOW_RECOVERY_HINTS: '' });
+      assert.strictEqual(hidden.code, 2);
+      assert.ok(!hidden.stderr.includes('disable the config-protection hook temporarily'), hidden.stderr);
+
+      const shown = runHook(rawInput, { ECC_SHOW_RECOVERY_HINTS: ' true ' });
+      assert.strictEqual(shown.code, 2);
+      assert.ok(shown.stderr.includes('disable the config-protection hook temporarily'), shown.stderr);
+    })
+  );
+
+  results.push(
     test('allows first-time creation of a protected config file', () => {
       return withOwnedDirectory(fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-config-protect-')), tmpDir => {
         const absPath = path.join(tmpDir, 'eslint.config.mjs');

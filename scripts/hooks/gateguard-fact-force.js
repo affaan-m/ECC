@@ -25,6 +25,7 @@
 const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
+const { showRecoveryHints } = require('../lib/hooks/recovery-hints');
 const { extractCommandSubstitutions, extractSubshellGroups, extractBraceGroups } = require('../lib/shell-substitution');
 const { classifyPowerShellDestructiveCommand } = require('../lib/powershell-destructive-command');
 const { stripHeredocBodies } = require('./gateguard-heredoc');
@@ -2102,7 +2103,9 @@ function condensedGateMsg(action, filePath, ordinal, { cls = 'code', targetNote 
     `${batchSiblingWarning(safe)} ` +
     (missNote ? `${missNote} ` : '') +
     (targetNote ? `${targetNote} ` : '') +
-    '(Use GATEGUARD_EXEMPT_GLOBS for path-scoped exemptions; GATEGUARD_FACT_FORCE_MAX_DENIALS caps denials per session; ECC_GATEGUARD=off disables this gate.)'
+    (showRecoveryHints()
+      ? '(Use GATEGUARD_EXEMPT_GLOBS for path-scoped exemptions; GATEGUARD_FACT_FORCE_MAX_DENIALS caps denials per session; ECC_GATEGUARD=off disables this gate.)'
+      : '')
   );
 }
 
@@ -2177,6 +2180,7 @@ function routineShellMsg(toolName) {
 }
 
 function withRecoveryHint(message, hookIds = [EDIT_WRITE_HOOK_ID], narrowRecoveryHint = '') {
+  if (!showRecoveryHints()) return message;
   const disableTargets = hookIds.map(hookId => `\`${hookId}\``).join(' or ');
   const recoveryLines = narrowRecoveryHint ? [narrowRecoveryHint, ''] : [];
   return [

@@ -13,6 +13,7 @@ const path = require('path');
 const { spawnSync } = require('child_process');
 const { StringDecoder } = require('string_decoder');
 const { isHookEnabled, isDryRun } = require('../lib/hook-flags');
+const { showRecoveryHints } = require('../lib/hooks/recovery-hints');
 const { readStdinRaw: readBoundedStdin, resolveMaxStdin } = require('./hook-input');
 const { installHookWatchdog } = require('./hook-watchdog');
 const { buildPreToolUseAdditionalContext } = require('./pretooluse-visible-output');
@@ -141,7 +142,9 @@ function truncatedInputResult(hookId, maxStdin) {
 
   return {
     stdout: '',
-    stderr: `BLOCKED: Hook input exceeded ${maxStdin} bytes, so ${hookId} could not safely inspect the complete request. Retry with a smaller tool input or explicitly disable this hook.`,
+    stderr: showRecoveryHints()
+      ? `BLOCKED: Hook input exceeded ${maxStdin} bytes, so ${hookId} could not safely inspect the complete request. Retry with a smaller tool input or explicitly disable this hook.`
+      : `BLOCKED: Hook input exceeded ${maxStdin} bytes, so ${hookId} could not safely inspect the complete request. Retry with a smaller tool input.`,
     exitCode: 2
   };
 }
