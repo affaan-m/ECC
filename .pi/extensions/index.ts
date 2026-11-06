@@ -29,6 +29,7 @@ import * as fs from "node:fs"
 import * as os from "node:os"
 import * as path from "node:path"
 import { resolveHookRuntime } from "./hook-runtime.js"
+import { createCommandBodyReader, handlePiInputEvent } from "./input-args.js"
 
 /**
  * Minimal structural types mirroring `@earendil-works/pi-coding-agent`.
@@ -70,7 +71,18 @@ interface BeforeAgentStartResult {
   systemPrompt?: string
 }
 
+interface PiSlashCommandInfo { name: string; source: "extension" | "prompt" | "skill"; sourceInfo: { path: string } }
+
+interface InputEvent { text: string; source: "interactive" | "rpc" | "extension"; streamingBehavior?: "steer" | "followUp" }
+
+type InputEventResult = { action: "continue" } | { action: "transform"; text: string }
+
 interface ExtensionAPI {
+  getCommands(): PiSlashCommandInfo[]
+  on(
+    event: "input",
+    handler: (event: InputEvent, ctx: ExtensionContext) => Promise<InputEventResult> | InputEventResult
+  ): void
   on(
     event: "session_start",
     handler: (event: SessionStartEvent, ctx: ExtensionContext) => Promise<void> | void
@@ -670,7 +682,17 @@ function buildDoctorReport(ctx: ExtensionContext): string {
   return lines.join("\n")
 }
 
+const getCommandBody = createCommandBodyReader(ECC_ROOT)
+
 export default function (pi: ExtensionAPI): void {
+  pi.on("input", event =>
+    handlePiInputEvent(event, pi, {
+      eccRoot: ECC_ROOT,
+      env: process.env,
+      getBody: getCommandBody,
+    })
+  )
+
   /**
    * ECC's SessionStart hook returns context for the model, but Pi has no
    * equivalent of Claude Code's `additionalContext` field. It is held here and
@@ -753,14 +775,15 @@ export default function (pi: ExtensionAPI): void {
   pi.registerCommand("ecc-doctor", {
     description: "Report ECC adapter status: package root, canonical resources, hooks, companions",
     handler: async (_args, ctx) => {
-      pi.sendMessage(
-        {
-          customType: "ecc-doctor",
-          content: buildDoctorReport(ctx),
-          display: true,
-        },
-        { deliverAs: "nextTurn" }
-      )
+      // No deliverAs: "nextTurn" here. In Pi 1.x that queues the message until
+      // the user's next prompt, so the report never appears when the command runs.
+      // Without options (and not streaming) Pi appends and displays it immediately
+      // without triggering a model turn.
+      pi.sendMessage({
+        customType: "ecc-doctor",
+        content: buildDoctorReport(ctx),
+        display: true,
+      })
     },
   })
 }
