@@ -550,12 +550,22 @@ function runTests() {
       const settingsOperations = parsed.plan.operations.filter(operation => (
         operation.kind === 'update-claude-settings'
       ));
-      assert.strictEqual(settingsOperations.length, 1);
-      assert.strictEqual(
-        settingsOperations[0].destinationPath,
-        path.join(homeDir, '.claude', 'settings.json')
+      // Two modules ship hooks: the runtime, and config-health's own
+      // SessionStart registration. Both merge into the same settings file.
+      assert.strictEqual(settingsOperations.length, 2);
+      for (const operation of settingsOperations) {
+        assert.strictEqual(
+          operation.destinationPath,
+          path.join(homeDir, '.claude', 'settings.json')
+        );
+        assert.ok(operation.managedHooks.SessionStart);
+      }
+      assert.deepStrictEqual(
+        settingsOperations
+          .map(operation => String(operation.sourceRelativePath).replace(/\\/g, '/'))
+          .sort(),
+        ['hooks/hooks.json', 'manifests/install-assets/config-health-hooks.json']
       );
-      assert.ok(settingsOperations[0].managedHooks.SessionStart);
       assert.ok(!parsed.plan.operations.some(operation => (
         operation.kind === 'copy-file'
         && String(operation.sourceRelativePath || '').replace(/\\/g, '/') === 'hooks/hooks.json'

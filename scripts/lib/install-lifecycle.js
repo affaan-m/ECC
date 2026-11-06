@@ -1626,10 +1626,14 @@ function collectRepairOperations(operationHealth, desiredPlan) {
         && !isDeepStrictEqual(operation.previousManagedHooks, operation.managedHooks)
       ))
       .map(operation => ({ ...operation })),
-  ].filter((operation, index, items) => items.findIndex(candidate => (
-    candidate.kind === operation.kind
-    && candidate.destinationPath === operation.destinationPath
-  )) === index);
+  ].filter((operation, index, items) => items.findIndex(candidate => {
+    if (candidate.kind !== operation.kind) return false;
+    if (candidate.destinationPath !== operation.destinationPath) return false;
+    // One settings file holds hooks shipped by several modules; each module's
+    // record must survive the dedupe so repair rewrites every contribution.
+    if (operation.kind !== 'update-claude-settings') return true;
+    return (candidate.sourceRelativePath || '') === (operation.sourceRelativePath || '');
+  }) === index);
 }
 
 function executeGuardedRepairOperation(repair, plan, operation, repairedPaths) {

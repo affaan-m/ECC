@@ -611,9 +611,14 @@ function findPreviousManagedHooks(previousState, plan, operation) {
     return null;
   }
 
+  // Settings files collect hooks from more than one module, so the recorded
+  // operation is identified by its source as well; matching on the destination
+  // alone hands one module the other module's managed hooks.
   const previousOperation = (previousState.operations || []).find(candidate => (
     candidate.kind === operation.kind
     && comparablePath(candidate.destinationPath) === comparablePath(operation.destinationPath)
+    && (operation.kind !== 'update-claude-settings'
+      || (candidate.sourceRelativePath || '') === (operation.sourceRelativePath || ''))
   ));
   if (!previousOperation || !previousOperation.managedHooks) {
     return null;
