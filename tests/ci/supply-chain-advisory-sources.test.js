@@ -251,6 +251,12 @@ async function run() {
         return;
       }
 
+      if (request.url === '/redirect-malformed') {
+        response.writeHead(302, { Location: 'http://[' });
+        response.end();
+        return;
+      }
+
       if (request.url === '/head-unsupported' && request.method === 'HEAD') {
         response.writeHead(405);
         response.end();
@@ -288,15 +294,36 @@ async function run() {
       const invalidRedirectReport = await buildAdvisorySourceReport({
         generatedAt: '2026-05-16T00:00:00.000Z',
         refresh: true,
-        sources: sources.map((source, index) => (index === 0
-          ? { ...source, url: `http://127.0.0.1:${port}/redirect-unsupported-protocol` }
-          : source)),
+        sources: sources.map((source, index) => {
+          if (index === 0) {
+            return { ...source, url: `http://127.0.0.1:${port}/redirect-unsupported-protocol` };
+          }
+          if (index === 1) {
+            return { ...source, url: `http://127.0.0.1:${port}/redirect-malformed` };
+          }
+          if (index === 2) {
+            return { ...source, url: 'http://[' };
+          }
+          return source;
+        }),
       });
       assert.strictEqual(invalidRedirectReport.refresh.ok, false);
       assert.strictEqual(invalidRedirectReport.sources[0].refreshStatus.status, 'warning');
       assert.match(invalidRedirectReport.sources[0].refreshStatus.error, /unsupported protocol/);
       assert.strictEqual(
         invalidRedirectReport.sources[0].refreshStatus.checkedAt,
+        '2026-05-16T00:00:00.000Z',
+      );
+      assert.strictEqual(invalidRedirectReport.sources[1].refreshStatus.status, 'warning');
+      assert.match(invalidRedirectReport.sources[1].refreshStatus.error, /invalid URL/);
+      assert.strictEqual(
+        invalidRedirectReport.sources[1].refreshStatus.checkedAt,
+        '2026-05-16T00:00:00.000Z',
+      );
+      assert.strictEqual(invalidRedirectReport.sources[2].refreshStatus.status, 'warning');
+      assert.match(invalidRedirectReport.sources[2].refreshStatus.error, /invalid URL/);
+      assert.strictEqual(
+        invalidRedirectReport.sources[2].refreshStatus.checkedAt,
         '2026-05-16T00:00:00.000Z',
       );
     } finally {
