@@ -20,8 +20,8 @@ jobs:
   test:
     name: Test (${{ matrix.os }}, Node ${{ matrix.node }}, ${{ matrix.pm }}, ${{ matrix.scope }})
     runs-on: ${{ matrix.os }}
-    # The serial Windows full lane reaches its final installer cases at about
-    # 30 minutes; retain a bounded completion window.
+    # Retain the existing bounded completion window while validating the
+    # two-worker Windows full lane.
     timeout-minutes: 45
 
     strategy:
@@ -166,8 +166,9 @@ jobs:
           node tests/commands/issue-review.test.js
 
       # Run tests. Full lanes run every file through a 4-process pool on Linux
-      # and macOS; Windows stays serial because its process spawn and temp-dir
-      # cleanup are the flaky part. pm lanes derive their file list from the
+      # and macOS; Windows full lanes use two workers, retaining the serial
+      # tail for shared-checkout and timing-sensitive suites. pm lanes derive
+      # their file list from the
       # suites that actually read the package-manager variable, so the lane
       # cannot drift out of date as tests are added.
       - name: Run tests
@@ -183,12 +184,18 @@ jobs:
           # suites that assert a wall-clock budget cannot share cores with the
           # pool. Both groups run last, one at a time.
           ECC_TEST_SERIAL=$(grep -rlE --include='*.test.js' 'build-opencode|\.backup-|dist\.backup|time budget' tests | sed 's#^tests/##' | sort | paste -sd, -)
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            # These suites assert real elapsed-time limits without the literal
+            # "time budget" marker. Retain them in the serial tail, not SKIP.
+            ECC_TEST_SERIAL="$ECC_TEST_SERIAL,hooks/hookify-runtime.test.js,integration/hooks.test.js,hooks/hooks.test.js,ci/agent-payment-x402-seller-guard.test.js,lib/context-profile-sandbox.test.js,hooks/gateguard-fact-force.test.js"
+          fi
           export ECC_TEST_SERIAL
           echo "serial after the pool: $ECC_TEST_SERIAL"
           node tests/run-all.js
         env:
           CLAUDE_CODE_PACKAGE_MANAGER: ${{ matrix.pm }}
-          ECC_TEST_JOBS: ${{ runner.os == 'Windows' && '1' || '4' }}
+          ECC_TEST_JOBS: ${{ runner.os == 'Windows' && (matrix.scope == 'full' && '2' || '1') || '4' }}
+          ECC_TEST_REPORT: ${{ runner.temp }}/ecc-test-execution.json
 
       # Upload test artifacts on failure
       - name: Upload test artifacts
