@@ -34,7 +34,8 @@
   <a href="docs/es/README.md">Español</a> |
   <a href="docs/uk-UA/README.md">Українська</a> |
   <a href="docs/pl/README.md">Polski</a> |
-  <a href="docs/bn/README.md">বাংলা</a>
+  <a href="docs/bn/README.md">বাংলা</a> |
+  <a href="docs/it-IT/README.md">Italiano</a>
 </p>
 
 <p align="center">
