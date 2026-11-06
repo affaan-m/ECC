@@ -2010,12 +2010,6 @@ function normalizeForMatch(value) {
     .toLowerCase();
 }
 
-function isClaudeSettingsPath(filePath) {
-  const normalized = normalizeForMatch(filePath);
-  return /(^|\/)\.claude\/settings(?:\.[^/]+)?\.json$/.test(normalized);
-}
-
-
 function isReadOnlyGitIntrospection(command) {
   const trimmed = String(command || '').trim();
   if (!trimmed || /[\r\n;&|><`$()]/.test(trimmed)) return false;
@@ -2444,7 +2438,9 @@ function flushMetrics() {
 
 function exemptReason(filePath, data) {
   if (!filePath) return 'no-path';
-  if (isClaudeSettingsPath(filePath)) return 'claude-settings';
+  // .claude/settings*.json holds the switches for GateGuard and the other
+  // hooks, so a first-touch edit there must go through the same gate as any
+  // other new target. Exempting it let an agent disable the guard (#3845).
   return isExemptPath(filePath, data) ? 'exempt-glob' : '';
 }
 
@@ -2618,7 +2614,7 @@ function gateMultiEdit(ctx) {
 function gateMultiEditSubagent(edits, data, rawInput) {
   for (const edit of edits) {
     const filePath = (edit && edit.file_path) || '';
-    if (!filePath || isClaudeSettingsPath(filePath) || isExemptPath(filePath, data)) continue;
+    if (!filePath || isExemptPath(filePath, data)) continue;
     const denial = subagentRestrictedDenial(filePath, data, false);
     if (denial) return denial;
   }

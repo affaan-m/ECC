@@ -1513,22 +1513,20 @@ function runTests() {
     passed++;
   else failed++;
 
-  // --- Test 16: allows Claude settings edits so the hook can be disabled safely ---
+  // --- Test 16: .claude/settings*.json is gated like any other first touch (#3845) ---
   clearState();
   if (
-    test('allows edits to .claude/settings.json without gating', () => {
+    test('gates first-touch edits to .claude/settings.json', () => {
       const input = {
         tool_name: 'Edit',
         tool_input: { file_path: '/workspace/app/.claude/settings.json', old_string: '{}', new_string: '{"hooks":[]}' }
       };
-      const result = runHook(input);
+      const result = runHook(input, { GATEGUARD_EXEMPT_GLOBS: '' });
       const output = parseOutput(result.stdout);
       assert.ok(output, 'should produce valid JSON output');
-      if (output.hookSpecificOutput) {
-        assert.notStrictEqual(output.hookSpecificOutput.permissionDecision, 'deny', 'settings edits must not be blocked by gateguard');
-      } else {
-        assert.strictEqual(output.tool_name, 'Edit');
-      }
+      assert.ok(output.hookSpecificOutput, 'the settings file must not bypass the gate');
+      assert.strictEqual(output.hookSpecificOutput.permissionDecision, 'deny');
+      assert.ok(output.hookSpecificOutput.permissionDecisionReason.includes('Fact-Forcing Gate'));
     })
   )
     passed++;
@@ -2020,6 +2018,36 @@ function runTests() {
       const subOut = parseOutput(subagent.stdout);
       assert.ok(subOut, 'subagent MultiEdit should produce JSON output');
       assert.ok(!subOut.hookSpecificOutput || subOut.hookSpecificOutput.permissionDecision !== 'deny', 'subagent MultiEdit should bypass the first-touch file gate');
+    })
+  )
+    passed++;
+  else failed++;
+
+  // --- Test 33a: settings files stay gated on subagent Edit/Write/MultiEdit (#3862) ---
+  clearState();
+  if (
+    test('subagent settings edits stay gated on every edit tool', () => {
+      const env = { CLAUDE_SESSION_ID: '', ECC_SESSION_ID: '', GATEGUARD_EXEMPT_GLOBS: '' };
+      const settingsPaths = ['/workspace/app/.claude/settings.json', '/workspace/app/.claude/settings.local.json'];
+
+      for (const filePath of settingsPaths) {
+        const edits = [{ file_path: filePath, old_string: '{}', new_string: '{"hooks":[]}' }];
+        const cases = [
+          { tool_name: 'MultiEdit', tool_input: { edits } },
+          { tool_name: 'Edit', tool_input: { ...edits[0] } },
+          { tool_name: 'Write', tool_input: { file_path: filePath, content: '{"hooks":[]}' } }
+        ];
+        for (const toolInput of cases) {
+          clearState();
+          const result = runHook(
+            { ...toolInput, session_id: 'subagent-fresh-session', agent_id: 'agent-abc-123' },
+            env
+          );
+          const output = parseOutput(result.stdout);
+          assert.ok(output && output.hookSpecificOutput, `${toolInput.tool_name} ${filePath} must be denied`);
+          assert.strictEqual(output.hookSpecificOutput.permissionDecision, 'deny');
+        }
+      }
     })
   )
     passed++;
