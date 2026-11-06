@@ -15,10 +15,11 @@ const { execFileSync } = require('child_process');
 const SCRIPT = path.join(__dirname, '..', '..', 'scripts', 'setup-package-manager.js');
 
 // Run the script with given args, return { stdout, stderr, code }
-function run(args = [], env = {}) {
+function run(args = [], env = {}, cwd = process.cwd()) {
   try {
     const stdout = execFileSync('node', [SCRIPT, ...args], {
       encoding: 'utf8',
+      cwd,
       stdio: ['pipe', 'pipe', 'pipe'],
       env: { ...process.env, ...env },
       timeout: 10000
@@ -51,6 +52,26 @@ function runTests() {
 
   let passed = 0;
   let failed = 0;
+
+  for (const name of ['constructor', 'toString', '__proto__']) {
+    for (const args of [[name], ['--global', name], ['--project', name]]) {
+      if (test(`rejects inherited package manager: ${args.join(' ')}`, () => {
+        const home = fs.mkdtempSync(path.join(os.tmpdir(), 'pm-cli-invalid-'));
+        try {
+          const result = run(args, {
+            HOME: home,
+            USERPROFILE: home,
+            ECC_AGENT_DATA_HOME: path.join(home, '.claude')
+          }, home);
+          assert.strictEqual(result.code, 1);
+          assert.ok(result.stderr.includes('Unknown'));
+          assert.ok(!fs.existsSync(path.join(home, '.claude', 'package-manager.json')));
+        } finally {
+          fs.rmSync(home, { recursive: true, force: true });
+        }
+      })) passed++; else failed++;
+    }
+  }
 
   // --help flag
   console.log('--help:');

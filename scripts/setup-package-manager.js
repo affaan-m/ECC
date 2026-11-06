@@ -14,6 +14,7 @@
 
 const {
   PACKAGE_MANAGERS,
+  isSupportedPackageManager,
   getPackageManager,
   setPreferredPackageManager,
   setProjectPackageManager,
@@ -113,7 +114,7 @@ function listAvailable() {
 }
 
 function setGlobal(pmName) {
-  if (!PACKAGE_MANAGERS[pmName]) {
+  if (!isSupportedPackageManager(pmName)) {
     console.error(`Error: Unknown package manager "${pmName}"`);
     console.error(`Available: ${Object.keys(PACKAGE_MANAGERS).join(', ')}`);
     process.exit(1);
@@ -136,7 +137,7 @@ function setGlobal(pmName) {
 }
 
 function setProject(pmName) {
-  if (!PACKAGE_MANAGERS[pmName]) {
+  if (!isSupportedPackageManager(pmName)) {
     console.error(`Error: Unknown package manager "${pmName}"`);
     console.error(`Available: ${Object.keys(PACKAGE_MANAGERS).join(', ')}`);
     process.exit(1);
@@ -195,7 +196,7 @@ if (projectIdx !== -1) {
 
 // If just a package manager name is provided, set it globally
 const pmName = args[0];
-if (PACKAGE_MANAGERS[pmName]) {
+if (isSupportedPackageManager(pmName)) {
   setGlobal(pmName);
 } else {
   console.error(`Error: Unknown option or package manager "${pmName}"`);
