@@ -1333,7 +1333,8 @@ Treat `stable`, `beta`, `experimental`, and `instruction-only` below as capabili
 | OpenCode | Beta built plugin | Build plugin, then selective installer | ECC ships a subset of the catalog; connect a provider and select a model in OpenCode ([#2617](https://github.com/affaan-m/ECC/issues/2617)). |
 | GitHub Copilot Chat | Instruction-only | Checked-in instructions and prompt files | ECC hooks are not adapted. |
 | GitHub Copilot CLI | Beta project adapter | `--target copilot` places skills, adapted agents, and converted rules in `.github/` | ECC hooks and command shims are not installed by this target. |
-| Gemini, Zed, Antigravity, Qwen, Hermes, OpenClaw, Kimi, CodeBuddy, JoyCode | Experimental/minimal adapters | Harness-specific selective target | File placement and instruction portability are tested; full Claude feature parity is not claimed. |
+| Antigravity 2.0 | Supported adapter & plugin | Native plugin (`.antigravity-plugin/` or `plugins/ecc/`) or `./install.sh --target antigravity` into `.agents/` | Subagents map to native tools (`read_file`, `edit_file`, `write_file`, `run_command`, `search_web`); hooks bridge via `scripts/antigravity/hook-bridge.js`. |
+| Gemini, Zed, Qwen, Hermes, OpenClaw, Kimi, CodeBuddy, JoyCode | Experimental/minimal adapters | Harness-specific selective target | File placement and instruction portability are tested; full Claude feature parity is not claimed. |
 
 <details>
 <summary><strong>Package manager detection</strong></summary>

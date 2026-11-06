@@ -79,14 +79,15 @@ test('transform maps Claude tools (including MultiEdit/ReadFile/NotebookRead), m
   assert.strictEqual(parsed.model, 'pro');
   assert.strictEqual(Object.hasOwn(parsed, 'color'), false);
   assert.deepStrictEqual(parsed.tools, [
-    'view_file',
-    'replace_file_content',
-    'write_to_file',
+    'read_file',
+    'edit_file',
+    'write_file',
     'grep_search',
     'find_by_name',
     'run_command',
     'search_web',
     'read_url_content',
+    'invoke_subagent',
   ]);
   assert.ok(adapted.includes('## Role'));
   assert.ok(adapted.includes('You simplify complex code.'));
@@ -108,7 +109,68 @@ test('transform parses quoted tool scalars and maps haiku to flash', () => {
   const adapted = adaptAntigravityAgent(source, 'agents/fast-helper.md');
   const parsed = yaml.load(adapted.match(/^---\n([\s\S]*?)\n---\n/)[1]);
   assert.strictEqual(parsed.model, 'flash');
-  assert.deepStrictEqual(parsed.tools, ['view_file', 'replace_file_content']);
+  assert.deepStrictEqual(parsed.tools, ['read_file', 'edit_file']);
+});
+
+test('search-only agent receives search tools without shell access (run_command)', () => {
+  const yaml = require('js-yaml');
+  const source = [
+    '---',
+    'name: read-only-reviewer',
+    'description: Review without shell',
+    'tools: Read, Grep, Glob',
+    'model: sonnet',
+    '---',
+    '',
+    'Review only.',
+  ].join('\n');
+  const adapted = adaptAntigravityAgent(source, 'agents/read-only-reviewer.md');
+  const parsed = yaml.load(adapted.match(/^---\n([\s\S]*?)\n---\n/)[1]);
+  assert.deepStrictEqual(parsed.tools, ['read_file', 'grep_search', 'find_by_name']);
+  assert.strictEqual(parsed.tools.includes('run_command'), false);
+});
+
+test('pinned native loader receipt establishes distinct editor and CLI capability boundaries', () => {
+  const yaml = require('js-yaml');
+  const allClaudeTools = 'Read, ReadFile, NotebookRead, Write, Edit, MultiEdit, Grep, Glob, Bash, WebSearch, WebFetch, Task';
+  const source = [
+    '---',
+    'name: full-agent',
+    'description: Agent with all tools',
+    `tools: ${allClaudeTools}`,
+    'model: opus',
+    '---',
+    '',
+    'Full agent body',
+  ].join('\n');
+
+  // CLI / Antigravity 2.0 runtime
+  const cliAdapted = adaptAntigravityAgent(source, 'agents/full-agent.md', { runtime: 'cli' });
+  const cliParsed = yaml.load(cliAdapted.match(/^---\n([\s\S]*?)\n---\n/)[1]);
+  assert.deepStrictEqual(cliParsed.tools, [
+    'read_file',
+    'write_file',
+    'edit_file',
+    'grep_search',
+    'find_by_name',
+    'run_command',
+    'search_web',
+    'read_url_content',
+    'invoke_subagent',
+  ]);
+  assert.ok(cliParsed.tools.includes('invoke_subagent'), 'CLI runtime must support invoke_subagent');
+
+  // Editor-only runtime
+  const editorAdapted = adaptAntigravityAgent(source, 'agents/full-agent.md', { runtime: 'editor' });
+  const editorParsed = yaml.load(editorAdapted.match(/^---\n([\s\S]*?)\n---\n/)[1]);
+  assert.deepStrictEqual(editorParsed.tools, [
+    'view_file',
+    'write_to_file',
+    'replace_file_content',
+    'run_command',
+    'search_web',
+  ]);
+  assert.strictEqual(editorParsed.tools.includes('invoke_subagent'), false, 'Editor runtime must exclude invoke_subagent');
 });
 
 test('transform preserves CRLF line endings consistently on Windows-saved agents', () => {
@@ -129,7 +191,7 @@ test('transform preserves CRLF line endings consistently on Windows-saved agents
   assert.ok(adapted.includes('\r\n'), 'Expected CRLF line endings to be preserved');
   assert.ok(!/[^\r]\n/.test(adapted), 'Expected no mixed bare LF line endings in CRLF output');
   assert.ok(!adapted.includes('color:'));
-  assert.ok(adapted.includes('replace_file_content'));
+  assert.ok(adapted.includes('edit_file'));
 });
 
 test('transform preserves mixed body line endings verbatim without rewriting body LFs', () => {
@@ -167,6 +229,7 @@ test('every planned operation is contained within .agents', () => {
     { id: 'agents-core', paths: ['agents', '.agents', 'AGENTS.md'] },
     { id: 'commands-core', paths: ['commands'] },
     { id: 'framework-language', paths: ['skills/api-design'] },
+    { id: 'hooks-core', paths: ['hooks'] },
   ]);
   const root = path.join('/project', '.agents');
   assert.ok(operations.length > 0);
@@ -177,6 +240,30 @@ test('every planned operation is contained within .agents', () => {
       `operation escapes .agents: ${operation.destinationPath}`
     );
   }
+});
+
+test('plans hook operation copying antigravity-hooks.json to .agents/hooks.json', () => {
+  const operations = planFor([
+    { id: 'hooks-core', paths: ['hooks'] },
+  ]);
+  assert.strictEqual(operations.length, 1);
+  assert.strictEqual(operations[0].destinationPath, path.join('/project', '.agents', 'hooks.json'));
+  assert.strictEqual(operations[0].strategy, 'copy-file');
+});
+
+test('plans hook-bridge and runtime helpers when hooks-runtime is selected', () => {
+  const operations = planFor([
+    {
+      id: 'hooks-runtime',
+      paths: ['hooks', 'scripts/hooks', 'scripts/lib'],
+    },
+  ]);
+  assert.strictEqual(operations.length, 4);
+  const destPaths = operations.map(op => op.destinationPath);
+  assert.ok(destPaths.includes(path.join('/project', '.agents', 'hooks.json')));
+  assert.ok(destPaths.includes(path.join('/project', '.agents', 'scripts', 'antigravity', 'hook-bridge.js')));
+  assert.ok(destPaths.includes(path.join('/project', '.agents', 'scripts', 'hooks')));
+  assert.ok(destPaths.includes(path.join('/project', '.agents', 'scripts', 'lib')));
 });
 
 test('Antigravity installs non-Markdown agent assets byte-for-byte while adapting Markdown agents', () => {

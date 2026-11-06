@@ -53,6 +53,7 @@
   "files": [
     ".adal/",
     ".agents/",
+    ".antigravity-plugin/",
     ".claude-plugin/",
     ".codex/",
     ".codex-plugin/",
@@ -111,6 +112,7 @@
     "rules/",
     "schemas/",
     "scripts/agent-convert.js",
+    "scripts/antigravity/",
     "scripts/catalog.js",
     "scripts/ci/scan-supply-chain-iocs.js",
     "scripts/ci/supply-chain-advisory-sources.js",

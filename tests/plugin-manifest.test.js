@@ -488,6 +488,31 @@ test('qoder native surface ships in npm package', () => {
   assert.ok(packageFiles.has('scripts/hooks/'));
 });
 
+// ── Antigravity plugin manifest ───────────────────────────────────────────────
+console.log('\n=== .antigravity-plugin/plugin.json ===\n');
+
+const antigravityPluginPath = path.join(repoRoot, '.antigravity-plugin', 'plugin.json');
+const antigravityPlugin = loadJsonObject(antigravityPluginPath, '.antigravity-plugin/plugin.json');
+
+test('antigravity plugin.json version matches package.json', () => {
+  assert.strictEqual(antigravityPlugin.name, 'ecc');
+  assert.strictEqual(antigravityPlugin.version, expectedVersion);
+});
+
+test('antigravity plugin manifest adheres to Antigravity 2.0 discovery specification', () => {
+  assert.strictEqual(typeof antigravityPlugin.name, 'string');
+  assert.strictEqual(typeof antigravityPlugin.description, 'string');
+  assert.ok(fs.existsSync(path.join(repoRoot, '.antigravity-plugin', 'hooks.json')));
+  // MCP is an explicit consent choice; plugin does not bundle forced mcp_config.json
+  assert.strictEqual(fs.existsSync(path.join(repoRoot, '.antigravity-plugin', 'mcp_config.json')), false);
+});
+
+test('antigravity native surface ships in npm package', () => {
+  const packageFiles = new Set(rootPackage.files);
+  assert.ok(packageFiles.has('.antigravity-plugin/'));
+  assert.ok(packageFiles.has('scripts/antigravity/'));
+});
+
 // ── .mcp.json at plugin root ──────────────────────────────────────────────────
 // Per official docs: keep .mcp.json at plugin root, NOT inside .codex-plugin/
 console.log('\n=== .mcp.json (plugin root) ===\n');
