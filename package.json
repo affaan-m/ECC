@@ -509,6 +509,7 @@
     "catalog:check": "node scripts/ci/catalog.js --text",
     "context-profiles:check": "node scripts/ci/validate-context-profiles.js",
     "carrier-closure:check": "node scripts/ci/validate-carrier-closure.js",
+    "routing:check": "node scripts/ci/evaluate-context-routing.js",
     "catalog:sync": "node scripts/ci/catalog.js --write --text",
     "command-registry:generate": "node scripts/ci/generate-command-registry.js",
     "command-registry:write": "node scripts/ci/generate-command-registry.js --write",
