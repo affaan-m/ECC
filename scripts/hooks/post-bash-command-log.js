@@ -34,8 +34,9 @@ function redactJwt(token) {
 }
 
 // Redact JWTs inside one run of `[A-Za-z0-9_.-]` characters. A JWT may follow
-// a word prefix joined by `-` (`session=jwt-<JWT>`), so each dot-separated
-// segment is checked for a header starting at its beginning or after a `-`.
+// a word prefix joined by `-` or `_` (`session=jwt-<JWT>`, `session_<JWT>`), so
+// each dot-separated segment is checked for a header starting at its beginning
+// or after a `-` or `_`.
 // Every segment is scanned once and decoded at most once, keeping long
 // `ey-ey-...` runs linear (a `\b`-anchored regex retries at each `-`).
 function redactJwtsInChain(chain) {
@@ -49,7 +50,7 @@ function redactJwtsInChain(chain) {
       let first = -1;
       let preferred = -1;
       for (let j = 0; j + 10 <= seg.length; j++) {
-        if ((j === 0 || seg[j - 1] === '-') && seg[j] === 'e' && (seg[j + 1] === 'y' || seg[j + 1] === 'w')) {
+        if ((j === 0 || seg[j - 1] === '-' || seg[j - 1] === '_') && seg[j] === 'e' && (seg[j + 1] === 'y' || seg[j + 1] === 'w')) {
           if (first < 0) first = j;
           if (seg.startsWith('eyJ', j)) {
             preferred = j;

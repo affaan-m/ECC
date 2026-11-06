@@ -166,7 +166,7 @@ if (
 else failed++;
 
 if (
-  test('sanitizeCommand redacts JWTs joined to a hyphenated prefix', () => {
+  test('sanitizeCommand redacts JWTs joined to a hyphenated or underscored prefix', () => {
     assert.strictEqual(
       sanitizeCommand(`curl --cookie "session=jwt-${FAKE_JWT}" https://example.com`),
       'curl --cookie "session=jwt-<REDACTED>" https://example.com'
@@ -174,7 +174,9 @@ if (
     assert.strictEqual(sanitizeCommand(`echo prefix-${FAKE_JWT}`), 'echo prefix-<REDACTED>');
     assert.strictEqual(sanitizeCommand(`echo ey-${FAKE_JWT}`), 'echo ey-<REDACTED>');
     assert.strictEqual(sanitizeCommand(`open https://x.example.com/a.${FAKE_JWT}`), 'open https://x.example.com/a.<REDACTED>');
-    assert.strictEqual(sanitizeCommand('ping eyesightdata.example.com'), 'ping eyesightdata.example.com');
+    assert.strictEqual(sanitizeCommand('ping eyesightdata.example.com'), 'ping eyesightdata.example.com');    assert.strictEqual(sanitizeCommand(`echo session_${FAKE_JWT}`), 'echo session_<REDACTED>');
+    assert.strictEqual(sanitizeCommand(`export AUTH=bearer_${FAKE_JWT}`), 'export AUTH=bearer_<REDACTED>');
+    assert.strictEqual(sanitizeCommand('ls my_eyes.backup.tar'), 'ls my_eyes.backup.tar');
   })
 )
   passed++;
