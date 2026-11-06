@@ -94,6 +94,8 @@
       "git-workflow",
       "golang-patterns",
       "golang-testing",
+      "godot-patterns",
+      "godot-testing",
       "hexagonal-architecture",
       "inherit-legacy-style",
       "intent-driven-development",
@@ -165,7 +167,8 @@
       "typescript-patterns",
       "verification-loop",
       "vite-patterns",
-      "vue-patterns"
+      "vue-patterns",
+      "yoruba-localization-testing"
     ],
     "rename": {
       "council": "ecc-council"
@@ -357,7 +360,9 @@
       "brownfield-retrospective": "depends on the ECC specialist agent roster and spec-miner dispatch workflow; not a compact portable Pi prompt",
       "deepseek-harness-setup": "configures an external DeepSeek provider and Claude-Code-specific credentials and hook integration",
       "story-lifecycle": "Requires ECC agent workflow handoffs and a local Node ledger; native Pi delivery has not been validated.",
-      "issue-review": "Requires authenticated GitHub reads and optional remote issue mutations through gh; outside the offline core profile."
+      "issue-review": "Requires authenticated GitHub reads and optional remote issue mutations through gh; outside the offline core profile.",
+      "leanrea": "specialized local binary reverse-engineering workflow",
+      "platform-factory": "optional third-party OCI and microVM operator workflow"
     }
   },
   "commands": {

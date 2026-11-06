@@ -11,7 +11,6 @@
 const assert = require('assert');
 const { spawnSync } = require('child_process');
 const fs = require('fs');
-const os = require('os');
 const path = require('path');
 
 const {
@@ -21,11 +20,6 @@ const {
   makeFixture,
   run,
   writeSettings,
-  makeInstallFixture,
-  installEnv,
-  runNode,
-  runInstalled,
-  runInstalledWithInput,
   HOOKS_JSON,
   ONE_HOOK,
   PLUGIN_HOOKS_JSON,

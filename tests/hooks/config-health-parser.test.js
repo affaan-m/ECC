@@ -11,11 +11,9 @@
 const assert = require('assert');
 const { spawnSync } = require('child_process');
 const fs = require('fs');
-const os = require('os');
 const path = require('path');
 
 const {
-  SCRIPT,
   PYTHON,
   test,
   makeFixture,

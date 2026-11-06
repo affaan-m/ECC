@@ -87,7 +87,12 @@ src = open(path, encoding="utf-8").read()
 problems = []
 
 try:
-    tree = ast.parse(src, filename=path, feature_version=(3, 6))
+    try:
+        tree = ast.parse(src, filename=path, feature_version=(3, 6))
+    except TypeError:
+        # Python 3.6/3.7 lack feature_version; their native parser already
+        # rejects newer f-string and statement syntax.
+        tree = ast.parse(src, filename=path)
 except SyntaxError as exc:
     print("syntax newer than 3.6 at line %s: %s" % (exc.lineno, exc.msg))
     sys.exit(0)
@@ -166,6 +171,9 @@ def replacement_fields(literal):
 def check_fstring(node):
     # ast keeps neither the "=" specifier (3.8) nor how quotes nest (3.12),
     # so read the literal's own source text.
+    if not hasattr(ast, "get_source_segment"):
+        # Python 3.6/3.7 reject newer f-string forms during the native parse.
+        return
     segment = ast.get_source_segment(src, node)
     if not segment:
         return

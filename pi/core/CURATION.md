@@ -1,6 +1,6 @@
 # Curation
 
-pi/core includes 134 of 318 skills and 24 of 98 commands from the root of ECC.
+pi/core includes 137 of 326 skills and 24 of 98 commands from the root of ECC.
 Everything excluded is listed here with its reason.
 
 ## Rules
@@ -206,6 +206,8 @@ Exclude anything that:
 | `deepseek-harness-setup` | configures an external DeepSeek provider and Claude-Code-specific credentials and hook integration |
 | `story-lifecycle` | Requires ECC agent workflow handoffs and a local Node ledger; native Pi delivery has not been validated. |
 | `issue-review` | Requires authenticated GitHub reads and optional remote issue mutations through gh; outside the offline core profile. |
+| `leanrea` | specialized local binary reverse-engineering workflow |
+| `platform-factory` | optional third-party OCI and microVM operator workflow |
 
 ## Excluded commands
 

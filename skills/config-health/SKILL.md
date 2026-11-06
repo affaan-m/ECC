@@ -40,7 +40,7 @@ Boundary: "Can this be fixed retroactively?" Config drift → config-health warn
 The default wiring is SessionStart only. PreToolUse is available as an opt-in
 mode, but it is not recommended by default: it adds a fresh-process parse of
 this script to every matched Edit and Write without adding tool-specific
-evidence. See [PreToolUse Cost](#pretool-cost).
+evidence. See [PreToolUse Cost](#pretooluse-cost-opt-in).
 
 ## Hook Paths
 

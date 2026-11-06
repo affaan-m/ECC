@@ -65,8 +65,9 @@
     },
     "deja-vu": {
       "command": "npx",
-      "args": ["-y", "@vshulcz/deja-vu", "mcp"],
-      "description": "Opt-in recall over the session transcripts Claude Code, Codex, Cursor, OpenCode and other agents already keep on disk, including sessions from before install. One deja tool (recall, fix, blame, context). Local index, no LLM, no embeddings, no API key. Not enabled by default."
+      "args": ["-y", "@vshulcz/deja-vu@0.24.0", "mcp"],
+      "env": { "DEJA_OFFLINE": "1" },
+      "description": "Opt-in recall over local coding-session transcripts, including older sessions and other projects. Index persists under ~/.cache/deja; recalled text is sent to the connected model. Enable only with permission to read those histories; configure source/project exclusions for private sessions. Reviewed package version is pinned and offline mode is set. No LLM, embeddings or API key required by the local index. Not enabled by default."
     },
     "sequential-thinking": {
       "command": "npx",
@@ -216,8 +217,9 @@
     },
     "mnemosyne-os": {
       "command": "npx",
-      "args": ["-y", "-p", "@mnemosyne_os/mcp", "mnemosyne-mcp"],
-      "description": "Opt-in local memory and agent dashboard from the Mnemosyne OS desktop app. Search fuses vectors with a local BM25 channel, one vault per folder the user declares, scoped by MNEMO_VAULTS. Agents post a status card on the user's canvas and can see other live sessions on the same worktree. Memory tools need the app running on ws://127.0.0.1:7799. Tool results, memory included, go to the MCP client. Not enabled by default."
+      "args": ["-y", "-p", "@mnemosyne_os/mcp@2.2.0", "mnemosyne-mcp"],
+      "env": { "MNEMO_VAULTS": "YOUR_APPROVED_VAULT_NAMES", "MNEMO_DEFAULT_VAULT": "" },
+      "description": "Opt-in Mnemosyne OS desktop-app memory and dashboard. Replace MNEMO_VAULTS with approved vault names before enabling; the app ingests selected folders into persistent vaults, and memory_ingest can save content for later agents. Vault scope does not restrict session tools, which read local coding-agent transcripts. Review folder and transcript access before enabling. Memory tools use the app at ws://127.0.0.1:7799. Tool results, including private memory and session data, go to the MCP client and its model provider. Not enabled by default."
     }
   },
   "_comments": {
