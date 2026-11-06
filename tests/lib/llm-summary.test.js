@@ -165,13 +165,19 @@ test('drops safety-classifier notices from the LLM input', () => {
   assert.ok(!result.includes('safety classifier'), `classifier notice must not reach the LLM:\n${result}`);
 });
 
+test('keeps user text pasted after the notice', () => {
+  const text = `${CLASSIFIER_NOTICE_TEXT} Why did this happen?`;
+  assert.ok(extractConversationText(writeTranscript([userEntry(text)])).includes('Why did this happen?'));
+});
+
 test('returns null when the only user turn is a classifier notice', () => {
   const p = writeTranscript([userEntry(CLASSIFIER_NOTICE_TEXT)]);
   assert.strictEqual(extractConversationText(p), null);
 });
 
-test('isClassifierNotice matches only a leading notice', () => {
+test('isClassifierNotice matches only the whole notice', () => {
   assert.strictEqual(isClassifierNotice(CLASSIFIER_NOTICE_TEXT), true);
+  assert.strictEqual(isClassifierNotice(`${CLASSIFIER_NOTICE_TEXT} Why did this happen?`), false);
   assert.strictEqual(isClassifierNotice('Why did I see "Your response above was stopped by a safety classifier"?'), false);
 });
 

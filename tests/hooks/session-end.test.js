@@ -68,7 +68,7 @@ function withTranscript(uuid, lines, fn) {
   try {
     const transcript = path.join(home, `${uuid}.jsonl`);
     fs.writeFileSync(transcript, lines.join('\n') + '\n');
-    const res = runHook(home, transcript);
+    const res = runHook(home, transcript, { ECC_SKIP_LLM_SUMMARY: '1' });
     assert.strictEqual(res.status || 0, 0, `hook exited ${res.status}: ${res.stderr}`);
     fn(fs.readFileSync(sessionFileFor(home, uuid), 'utf8'));
   } finally {

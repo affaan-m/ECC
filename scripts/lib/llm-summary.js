@@ -21,7 +21,7 @@ const LLM_TIMEOUT_MS = 90000;
 // Leave the Stop hook time to persist its mechanical fallback after a timeout.
 const HOOK_FINISH_RESERVE_MS = 1000;
 // Harness notice shown after a safety-classifier stop; it is not a user ask (#3867).
-const CLASSIFIER_NOTICE = /^Your response above was stopped by a safety classifier/i;
+const CLASSIFIER_NOTICE = /^Your response above was stopped by a safety classifier\s*[—–-]\s*this is not a tool or API error\.?$/i;
 
 function getLLMModel() {
   return process.env.ECC_LLM_SUMMARY_MODEL || 'haiku';
@@ -34,8 +34,8 @@ function getContextThreshold() {
 
 /**
  * True when a user-turn text is the harness notice left after a
- * safety-classifier stop. Anchored to the start so user messages that only
- * quote the notice are kept.
+ * safety-classifier stop. Anchored to the whole message so user text that
+ * quotes or follows the notice is kept.
  */
 function isClassifierNotice(text) {
   return CLASSIFIER_NOTICE.test(text);
