@@ -264,9 +264,9 @@ const res = await payOnce("https://api.example.com/data", { method: "GET" });
 | [`x402.org` ファシリテーター](https://x402.org/facilitator) | 開発・テストネット向け — パッケージのデフォルトでセットアップ不要。アップストリームはメインネットルート向けではないと明記している |
 | ホスト型の本番ファシリテーター | インフラを運用せずにメインネット対応が欲しい |
 
-ホスト型を選ぶ場合は、ここに書かれた名前ではなくアップストリームドキュメントの[ファシリテーターリスト](https://docs.x402.org/dev-tools/facilitators)から選ぶこと — メンテナンスされており、網羅的ではなく、カバレッジも変わる。執筆時点では Coinbase の CDP（全トランザクションに KYT/OFAC スクリーニング）、PayAI、Corbits、Dexter、Solvador などが掲載され、複数が EVM に加えて Solana メインネットをカバーしている。どれを選ぶ場合も、本番前に `/supported` エンドポイントでライブカバレッジを確認し、ネットワークを追加したときは再確認すること。
+ホスト型を選ぶ場合は、ここに書かれた名前ではなくアップストリームドキュメントの[ファシリテーターリスト](https://docs.x402.org/dev-tools/facilitators)から選ぶこと — メンテナンスされており、網羅的ではなく、カバレッジも変わる。執筆時点では Coinbase の CDP（全トランザクションに KYT/OFAC スクリーニング）、PayAI、Corbits、Dexter、Solvador などが掲載され、複数が EVM に加えて Solana メインネットをカバーしている。このリストに掲載されていない他のファシリテーターとしては Roundhouse（`https://x402.roundhouseai.io`、API キー不要、Base メインネットの `exact` の例 — x402 v1 のネットワーク `base` と v2 の `eip155:8453`、Base Sepolia は対象外 — `/supported` で確認）などがある。Roundhouse を上流の表へ載せるドキュメント PR は未マージのまま開いている: [x402-foundation/x402#4005](https://github.com/x402-foundation/x402/pull/4005)。どれを選ぶ場合も、本番前に `/supported` エンドポイントでライブカバレッジを確認し、ネットワークを追加したときは再確認すること。
 
-> **開示**: このセクションは、掲載されているファシリテーターの 1 つである PayAI に関わる者が寄稿した。複数ある選択肢の 1 つとして記載しており、上記の自己ホストおよびアップストリームデフォルトのパスを意図的に先に挙げている。
+> **開示**: このセクションの一部は、ここで言及しているファシリテーター / インデックスである PayAI（アップストリームのリストに掲載）と Roundhouse（上記で別途言及）に関わる者が寄稿した。いずれも複数ある選択肢の 1 つとして記載しており、上記の自己ホストおよびアップストリームデフォルトのパスを意図的に先に挙げている。
 
 **セラー側（API がエージェントに課金する）。** アップストリームのミドルウェアを使用する；1 つのルートで Base と Solana を同時に提示できる（実行可能なバージョンは [`examples/typescript/servers`](https://github.com/x402-foundation/x402/tree/main/examples/typescript/servers) を参照）：
 
@@ -457,7 +457,7 @@ app.post("/report", async (req, res, next) => {
 
 アトミックな条件付き挿入ができるストアなら何でもよい：DynamoDB の `attribute_not_exists` 付き `PutItem`、または Postgres のユニークインデックス。ガードが代わりに決めてくれないことが 2 つある。ストアが停止している場合、`FAIL_CLOSED` は可用性と引き換えに承認ごとに 1 回という保証を守る。フェイルオープンにするとルートは動き続けるが、ストアが回復するまで各コピーがハンドラーを実行するので、冪等なハンドラーに限って使うこと。また `payment_replayed` は、その承認が以前に提示されたことを意味し、最初の試行が失敗したことを意味しない。クライアントが最初のレスポンスを失った場合、処理が実行され支払いが決済されている可能性があるので、新しい承認に署名する前に元のリクエストの結果を照合すること。これが防ぐのは 1 つの承認の重複コピーだけである。検証と決済の間に支払いを無効にする支払者（たとえば資金を移動する）は、依然としてハンドラーを 1 回実行させられる。高コストなルートでは、作業の前に資金を確保すること。
 
-**発見。** x402 バザール拡張を実装するファシリテーターは `/discovery/resources` エンドポイントを公開する — CDP カタログは `https://api.cdp.coinbase.com/platform/v2/x402/discovery/resources`、PayAI カタログは `https://facilitator.payai.network/discovery/resources` で照会できる。Solana で支払い可能なサービスには、Solana Foundation のキュレーションカタログである [pay.sh](https://pay.sh) もある。
+**発見。** x402 バザール拡張を実装するファシリテーターは `/discovery/resources` エンドポイントを公開する — CDP カタログは `https://api.cdp.coinbase.com/platform/v2/x402/discovery/resources`、PayAI カタログは `https://facilitator.payai.network/discovery/resources` で照会できる。Roundhouse はバザールの `/discovery/resources` ではなく、インデックス済みサービスディレクトリを `https://api.roundhouseai.io/v0/endpoints` と `https://roundhouseai.io/services.json` で公開し、ERC-8004 エージェントは `/v0/agents` で参照できる。Solana で支払い可能なサービスには、Solana Foundation のキュレーションカタログである [pay.sh](https://pay.sh) もある。
 
 ## 例
 
@@ -588,4 +588,4 @@ main().catch((err) => {
 - **x402 ドキュメント**: [docs.x402.org](https://docs.x402.org)；本番ファシリテーターリストは [docs.x402.org/dev-tools/facilitators](https://docs.x402.org/dev-tools/facilitators)
 - **`@x402` パッケージ**: [npmjs.com/org/x402](https://www.npmjs.com/org/x402) — `@x402/fetch`、`@x402/axios`、`@x402/express`、`@x402/hono`、`@x402/next`、`@x402/fastify`、`@x402/evm`、`@x402/svm`
 - **ファシリテーター**: [自己ファシリテーションの例](https://github.com/x402-foundation/x402/tree/main/examples/typescript/servers/self-facilitation)（第三者なし）、[x402.org ファシリテーター](https://x402.org/facilitator)（テストネットデフォルト）、メンテナンスされている[本番リスト](https://docs.x402.org/dev-tools/facilitators)
-- **発見**: CDP と PayAI のバザールは `/discovery/resources`；Solana で支払い可能なサービスは [pay.sh](https://pay.sh)
+- **発見**: CDP と PayAI のバザールは `/discovery/resources`；Roundhouse ディレクトリは `/v0/endpoints` と `services.json`；Solana で支払い可能なサービスは [pay.sh](https://pay.sh)

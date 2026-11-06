@@ -375,12 +375,12 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@types/node@npm:26.6.4":
-  version: 26.6.4
-  resolution: "@types/node@npm:26.6.4"
+"@types/node@npm:26.6.6":
+  version: 26.6.6
+  resolution: "@types/node@npm:26.6.6"
   dependencies:
     undici-types: "npm:~8.9.0"
-  checksum: 10c0/094e7362df9200ba4c2da09131ca3b5d1aa51535a268a24e4ee2546d9c5a323d1d30cbdaaaa3db7ef8b2387572d1f9edabb11538ab7a09d3bca33ae5cddc2b1b
+  checksum: 10c0/5cb63f644f6e85a257a9cd2403cbcbe196760e2a35fd3ec9fb8b5cff663e14cc832b198cc17b53f870a2e30900ed45a1fb3f53e6589aba26b8e8c484aa672053
   languageName: node
   linkType: hard
 
@@ -545,6 +545,13 @@ __metadata:
   version: 2.0.1
   resolution: "argparse@npm:2.0.1"
   checksum: 10c0/c5640c2d89045371c7cedd6a70212a04e360fd34d6edeae32f6952c63949e3525ea77dbec0289d8213a99bbaeab5abfa860b5c12cf88a2e6cf8106e90dd27a7e
+  languageName: node
+  linkType: hard
+
+"argparse@npm:^3.0.3":
+  version: 3.0.4
+  resolution: "argparse@npm:3.0.4"
+  checksum: 10c0/845346e39e677b46f8558cece7c8dad1f7045f8b86af33356d8565b26a16940bf770a14a51d6da40ce76554a141e0e95b514d055d1da17a2f1b42df7d523fa0f
   languageName: node
   linkType: hard
 
@@ -859,18 +866,18 @@ __metadata:
     "@eslint/js": "npm:9.39.2"
     "@iarna/toml": "npm:2.2.5"
     "@opencode-ai/plugin": "npm:1.4.3"
-    "@types/node": "npm:26.6.4"
+    "@types/node": "npm:26.6.6"
     "@x402/core": "npm:2.29.0"
     "@x402/evm": "npm:2.29.0"
     "@x402/express": "npm:2.29.0"
     ajv: "npm:8.20.0"
     c8: "npm:11.0.0"
-    eslint: "npm:10.11.0"
+    eslint: "npm:10.13.0"
     express: "npm:4.22.3"
     globals: "npm:17.13.0"
-    js-yaml: "npm:4.3.2"
+    js-yaml: "npm:5.5.0"
     markdownlint-cli: "npm:0.49.1"
-    sql.js: "npm:1.14.2"
+    sql.js: "npm:1.15.2"
     typescript: "npm:6.0.3"
     zod: "npm:4.6.7"
   bin:
@@ -981,9 +988,9 @@ __metadata:
   languageName: node
   linkType: hard
 
-"eslint@npm:10.11.0":
-  version: 10.11.0
-  resolution: "eslint@npm:10.11.0"
+"eslint@npm:10.13.0":
+  version: 10.13.0
+  resolution: "eslint@npm:10.13.0"
   dependencies:
     "@eslint-community/eslint-utils": "npm:^4.8.0"
     "@eslint-community/regexpp": "npm:^4.12.2"
@@ -1022,7 +1029,7 @@ __metadata:
       optional: true
   bin:
     eslint: bin/eslint.js
-  checksum: 10c0/c767f45f21d1921b41d70e30b1c8fa7ec4e65c0f43a8d80cc4990ca3d923127fa7b9b3416b8f5be6e877d9286f97d3c51a04ed341bc6aa73c0dba0f463e1f861
+  checksum: 10c0/4a28e85de458f13306d30f07df21b58109056bd8bd691b6158952d95e126cf742db2eb09562e3f1c1cc0154ee44dedc789f8ced8d0d8da48e82a689aa9cb1c0d
   languageName: node
   linkType: hard
 
@@ -1543,14 +1550,14 @@ __metadata:
   languageName: node
   linkType: hard
 
-"js-yaml@npm:4.3.2":
-  version: 4.3.2
-  resolution: "js-yaml@npm:4.3.2"
+"js-yaml@npm:5.5.0":
+  version: 5.5.0
+  resolution: "js-yaml@npm:5.5.0"
   dependencies:
-    argparse: "npm:^2.0.1"
+    argparse: "npm:^3.0.3"
   bin:
-    js-yaml: bin/js-yaml.js
-  checksum: 10c0/dedd34c2e8fef1d504687f1bc94ed0ee1311a1f78770fa2800352c6d59c635ccf555009d74e9afe529ae62199da2b1ccef30e53dc84dcd8d2d8187c22574bc97
+    js-yaml: bin/js-yaml.mjs
+  checksum: 10c0/311619f44dd788657e9b81d4b5c60ff367441f364045e3796bc604a41f25819852748fb173ae82f2553d53cb609d7fdb79e0a74148892cb2c085eebe91839b53
   languageName: node
   linkType: hard
 
@@ -2481,10 +2488,10 @@ __metadata:
   languageName: node
   linkType: hard
 
-"sql.js@npm:1.14.2":
-  version: 1.14.2
-  resolution: "sql.js@npm:1.14.2"
-  checksum: 10c0/4c217404d85b7396a2c7b6037a9dc96dd05f10c94847bb8c5df70d387ff37702f51551afc97d338ff2c0d504414bb1d3631d48f2a3f33eaa45e862747135d5d5
+"sql.js@npm:1.15.2":
+  version: 1.15.2
+  resolution: "sql.js@npm:1.15.2"
+  checksum: 10c0/734faff4e430c4dbc0b347f03b55bb72a475395c6e0b51cd458fd53c47db89997c4c584e827cf869dab286f92f417a725f21024999ece3973d03969afc025437
   languageName: node
   linkType: hard
 

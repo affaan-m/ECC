@@ -8,7 +8,7 @@ origin: ECC
 
 当用户怀疑 ECC Tools GitHub App 正在消耗成本、过度创建 PR、绕过使用限制，或将免费用户引导至付费分析路径时，使用此技能。
 
-这是一个针对兄弟仓库 [ECC-Tools](../../../../ECC-Tools) 的聚焦操作者工作流。它不是通用的计费技能，也不是仓库范围的代码审查。
+这是一个针对兄弟仓库 [ECC-Tools](https://github.com/ECC-Tools/ECC-Tools) 的聚焦操作者工作流。它不是通用的计费技能，也不是仓库范围的代码审查。
 
 ## 技能栈
 

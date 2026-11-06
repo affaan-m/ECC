@@ -10,6 +10,7 @@ const { resolveWindowsBashCandidates } = require('../lib/windows-bash');
 const { readStdinRaw: readBoundedStdin, resolveMaxStdin } = require('./hook-input');
 
 const { createHookContextScanner } = require('./hook-input-limits');
+const { installHookWatchdog } = require('./hook-watchdog');
 
 const SHELL_PROBE_TIMEOUT_MS = 2000;
 
@@ -189,6 +190,24 @@ function spawnNode(rootDir, relPath, raw, args, options = {}) {
   return withComparisonInput(result, Buffer.from(raw, 'utf8'));
 }
 
+// Almost every plugin hook targets run-with-flags.js, which only reads stdin
+// and dispatches. Call it in-process instead of paying a second Node startup
+// (~50-100 ms) on every hook. Same env and inputs the child would have seen.
+async function runWithFlagsInProcess(rootDir, target, raw, args, options) {
+  ensureAgentDataHomeEnv();
+  process.env.CLAUDE_PLUGIN_ROOT = rootDir;
+  process.env.ECC_PLUGIN_ROOT = rootDir;
+  process.env.ECC_HOOK_INPUT_MAX_BYTES = String(options.maxStdin);
+  const [hookId, relScriptPath, profilesCsv] = args;
+  const { runHook } = require(target);
+  const { stdout, exitCode } = await runHook(hookId, relScriptPath, profilesCsv, {
+    raw,
+    truncated: options.truncated,
+    hookContext: options.hookContext || {},
+  });
+  return withComparisonInput({ status: exitCode, stdout }, Buffer.from(raw, 'utf8'));
+}
+
 // spawnShell is not used by any hook in the shipped hooks.json configuration
 // (all hooks use 'node' mode). It is provided for third-party plugins that
 // register shell-backed hooks. Plugins should supply .ps1 scripts on Windows
@@ -266,7 +285,9 @@ async function main() {
   contextScanner.push(contextDecoder.end());
   const hookContext = contextScanner.context;
   const rootDir = normalizePluginRootForPlatform(
-    process.env.QODER_PLUGIN_ROOT || process.env.CLAUDE_PLUGIN_ROOT || process.env.ECC_PLUGIN_ROOT
+    [process.env.QODER_PLUGIN_ROOT, process.env.CLAUDE_PLUGIN_ROOT, process.env.ECC_PLUGIN_ROOT]
+      .map(value => typeof value === 'string' ? value.trim() : '')
+      .find(Boolean) || ''
   );
 
   if (!mode || !relPath || !rootDir) {
@@ -283,7 +304,10 @@ async function main() {
 
   let result;
   try {
-    if (mode === 'node') {
+    if (mode === 'node' && path.basename(relPath) === 'run-with-flags.js') {
+      const target = resolveTarget(rootDir, relPath);
+      result = await runWithFlagsInProcess(rootDir, target, raw, args, { maxStdin, truncated, hookContext });
+    } else if (mode === 'node') {
       result = spawnNode(rootDir, relPath, raw, args, { maxStdin, truncated, hookContext });
     } else if (mode === 'shell') {
       result = spawnShell(rootDir, relPath, raw, args, { maxStdin, truncated, hookContext });
@@ -323,6 +347,7 @@ async function main() {
 // exports (tests), require.main is a real, different module, so main() stays
 // dormant.
 if (require.main === module || require.main === undefined) {
+  installHookWatchdog({ label: 'plugin hook bootstrap' });
   main().catch(error => {
     writeStderr(`[Hook] bootstrap failed: ${error.message}\n`);
     process.exitCode = 0;

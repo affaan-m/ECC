@@ -3950,13 +3950,17 @@ async function runTests() {
   // ─── Round 23: Bug fixes & high-priority gap coverage ───
 
   // Helper: create a patched evaluate-session.js wrapper that resolves
-  // require('../lib/utils') to the real utils.js and uses a custom config path
+  // require('../lib/...') to the real lib files and uses a custom config path
   const realUtilsPath = path.resolve(__dirname, '..', '..', 'scripts', 'lib', 'utils.js');
+  const realHookSessionPath = path.resolve(__dirname, '..', '..', 'scripts', 'lib', 'hook-session.js');
+  const realObserverSessionsPath = path.resolve(__dirname, '..', '..', 'scripts', 'lib', 'observer-sessions.js');
   function createEvalWrapper(testDir, configPath) {
     const wrapperScript = path.join(testDir, 'eval-wrapper.js');
     let src = fs.readFileSync(path.join(scriptsDir, 'evaluate-session.js'), 'utf8');
-    // Patch require to use absolute path (the temp dir doesn't have ../lib/utils)
+    // Patch requires to use absolute paths (the temp dir doesn't have ../lib/*)
     src = src.replace(/require\('\.\.\/lib\/utils'\)/, `require(${JSON.stringify(realUtilsPath)})`);
+    src = src.replace(/require\('\.\.\/lib\/hook-session'\)/, `require(${JSON.stringify(realHookSessionPath)})`);
+    src = src.replace(/require\('\.\.\/lib\/observer-sessions'\)/, `require(${JSON.stringify(realObserverSessionsPath)})`);
     // Patch config file path to point to our test config
     src = src.replace(/const configFile = path\.join\(scriptDir.*?config\.json'\);/, `const configFile = ${JSON.stringify(configPath)};`);
     fs.writeFileSync(wrapperScript, src);

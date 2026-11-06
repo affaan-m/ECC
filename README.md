@@ -34,7 +34,8 @@
   <a href="docs/es/README.md">Español</a> |
   <a href="docs/uk-UA/README.md">Українська</a> |
   <a href="docs/pl/README.md">Polski</a> |
-  <a href="docs/bn/README.md">বাংলা</a>
+  <a href="docs/bn/README.md">বাংলা</a> |
+  <a href="docs/it-IT/README.md">Italiano</a>
 </p>
 
 <p align="center">
@@ -141,12 +142,12 @@ Instead of rebuilding that process in every prompt, you install it once and make
 
 ECC is MIT-licensed open source. It works best with Claude Code today, has native Codex and Qoder plugin paths, and provides capability-limited adapters for Cursor, OpenCode, Gemini, Zed, GitHub Copilot, Antigravity, Qwen, and other harnesses. See the [support status matrix](#platform-support) before assuming feature parity.
 
-Access to 71 agents, 314 skills, and 98 legacy command shims, plus hooks, rules, memory, continuous learning, and AgentShield security scanning. The agents are specialized for planning, review, build repair, security, architecture, and domain work.
+Access to 72 agents, 326 skills, and 98 legacy command shims, plus hooks, rules, memory, continuous learning, and AgentShield security scanning. The agents are specialized for planning, review, build repair, security, architecture, and domain work.
 
 | Included         |       Count | What it gives you                                                                    |
 | ---------------- | ----------: | ------------------------------------------------------------------------------------ |
-| Agents           |   71 agents | Planning, review, build repair, security, architecture, and domain work              |
-| Skills           |  314 skills | TDD, research, security, docs, frontend, data, ML, operations, and more              |
+| Agents           |   72 agents | Planning, review, build repair, security, architecture, and domain work              |
+| Skills           |  326 skills | TDD, research, security, docs, frontend, data, ML, operations, and more              |
 | Commands         | 98 commands | Convenient entry points while ECC moves to a skills-first surface                    |
 | Hooks and memory |     Runtime | Enforcement, session summaries, continuous learning, instincts, and context controls |
 | Rules            |   Selective | Always-loaded standards you choose by language or project                            |
@@ -860,8 +861,8 @@ Stable graduation of the 2.0 line: control-pane substrate, worktree lifecycle se
 
 ```text
 ECC/
-|-- agents/           # 71 specialized subagents for delegation
-|-- skills/           # 314 reusable workflows loaded on demand
+|-- agents/           # 72 specialized subagents for delegation
+|-- skills/           # 326 reusable workflows loaded on demand
 |-- commands/         # 98 maintained slash-command shims
 |-- rules/            # opt-in common and language standards
 |-- hooks/            # runtime automation and enforcement
@@ -884,7 +885,7 @@ ECC/
 |   |-- plugin.json         # Plugin metadata and component paths
 |   |-- marketplace.json    # Marketplace catalog for /plugin marketplace add
 |
-|-- agents/           # 71 specialized subagents for delegation
+|-- agents/           # 72 specialized subagents for delegation
 |   |-- planner.md           # Feature implementation planning
 |   |-- architect.md         # System design decisions
 |   |-- tdd-guide.md         # Test-driven development
@@ -1345,7 +1346,7 @@ The plugin automatically detects your preferred package manager (npm, pnpm, yarn
 3. **package.json**: `packageManager` field
 4. **Lock file**: Detection from package-lock.json, yarn.lock, pnpm-lock.yaml, or bun.lockb
 5. **Global config**: `~/.claude/package-manager.json`
-6. **Fallback**: First available package manager
+6. **Fallback**: npm
 
 To set your preferred package manager:
 

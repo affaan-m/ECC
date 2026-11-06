@@ -33,13 +33,14 @@ skills:
   - carrier-relationship-management
   - change-impact
   - ck
-  - claude-devfleet
+  - devfleet
   - click-path-audit
   - clickhouse-io
   - brownfield-retrospective
   - codebase-onboarding
   - coding-standards
   - compose-multiplatform-patterns
+  - config-health
   - configure-ecc
   - contract-first
   - context-and-decisions
@@ -68,6 +69,7 @@ skills:
   - documentation-lookup
   - docs-governance
   - e2e-testing
+  - ecc-contribution-review
   - energy-procurement
   - enterprise-agent-ops
   - error-handling
@@ -80,6 +82,8 @@ skills:
   - frontend-slides
   - fsharp-testing
   - git-workflow
+  - godot-patterns
+  - godot-testing
   - golang-patterns
   - golang-testing
   - healthcare-cdss-patterns
@@ -103,6 +107,7 @@ skills:
   - laravel-security
   - laravel-tdd
   - laravel-verification
+  - leanrea
   - liquid-glass-design
   - logistics-exception-management
   - market-research
@@ -123,6 +128,7 @@ skills:
   - perl-security
   - perl-testing
   - plankton-code-quality
+  - platform-factory
   - plan-canvas
   - plan-orchestrate
   - postgres-patterns
@@ -170,6 +176,7 @@ skills:
   - tasteforge-video
   - tdd-workflow
   - team-builder
+  - terraform-patterns
   - test-collaboration
   - token-budget-advisor
   - token-card
@@ -180,6 +187,7 @@ skills:
   - videodb
   - visa-doc-translate
   - x-api
+  - yoruba-localization-testing
 commands:
   - aside
   - astra-review

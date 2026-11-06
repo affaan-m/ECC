@@ -235,6 +235,21 @@ const executingPayloads = [
   ['word-internal hash does not hide a later push bypass', 'printf %s foo#bar && git push --no-verify'],
   ['pipe echo data to bash', "echo 'git commit -n -m x' | bash"],
   ['pipe printf data to sh', "printf '%s\\n' 'git commit --no-verify -m x' | sh"],
+  ['pipe brace group data to sh', "{ echo 'git commit --no-verify -m x'; } | sh"],
+  ['pipe subshell data to bash', "(echo 'git push --no-verify'; printf x) | bash"],
+  ['pipe nested group data to sh', "{ (printf '%s\\n' 'git commit -n -m x'); } | sh"],
+  ['pipe group pipeline data to sh', "{ echo 'git push --no-verify' | grep git; } | sh"],
+  ['pipe consecutive group writes to sh', "{ printf 'git pu'; printf 'sh --no-verify'; } | sh"],
+  ['pipe echo -n and echo group writes to bash', "{ echo -n 'git commit '; echo '--no-verify -m x'; } | bash"],
+  ['pipe printf with a newline escape to sh', "printf 'git push --no-verify\\n' | sh"],
+  ['pipe split printf writes ending in a newline escape to sh', '{ printf "git "; printf "push --no-verify\\n"; } | sh'],
+  ['pipe printf %s arguments joined to sh', "printf '%s' 'git pu' 'sh --no-verify' | sh"],
+  ['pipe echo with a trailing -n operand to sh', "echo 'git commit -m x' -n | sh"],
+  ['execute bypass through Node eval', 'node -e \'require("child_process").execSync("git push --no-verify")\''],
+  ['execute piped bypass source through Node stdin', "printf '%s' 'require(\"child_process\").execSync(\"git push --no-verify\")' | node"],
+  ['execute heredoc bypass source through Node empty double-quoted operand', 'node "" <<\'JS\'\nrequire("child_process").execSync("git push --no-verify")\nJS'],
+  ['execute heredoc bypass source through Node empty single-quoted operand', "node '' <<'JS'\nrequire(\"child_process\").execSync(\"git push --no-verify\")\nJS"],
+  ['keep a dynamic Node launcher opaque', "node$SUFFIX /tmp/x.js 'git commit --no-verify'"],
   ['execute data through xargs and bash -c', "printf '%s\\n' 'git commit -n -m x' | xargs -I CMD bash -c CMD"],
   ['execute command substitution text through bash', "echo '$(git commit -n -m x)' | bash"],
   ['execute bash here-string', "bash <<< 'git commit -n -m x'"],
@@ -272,10 +287,14 @@ for (const [name, command] of executingPayloads) {
 }
 
 const nonLeakingPayloads = [
+  ['Node script argument is data, not shell source', "node /tmp/cli.js 'git commit --no-verify -m x'"],
+  ['stdin piped to a Node script is data, not shell source', "printf '%s' 'git commit --no-verify -m x' | node /tmp/x.js"],
   // Inside double quotes a backslash before dot remains literal, so decoded executable is git\.exe, not git.exe.
   ['allows the distinct executable with a literal escaped dot', '"git""\\.exe" commit -n -m x'],
   // A complete echo operand is data; accepted role repair intentionally corrects the authored broad-blocking expectation.
   ['allows quoted echo data (corrected author expectation)', 'echo "git commit -n"'],
+  ['allows two echo lines in a group piped to sh', "{ echo 'git pu'; echo 'sh --no-verify'; } | sh"],
+  ['allows an echo -n operand that does not join two group lines', "{ echo 'git pu' -n; echo 'sh --no-verify'; } | sh"],
   ['python heredoc string with later bash -n', 'python3 - <<\'PY\'\nold="git add -A\\nif ! git diff --cached --quiet; then\\n  git commit -q -m \\"vault sync"\nPY\nbash -n vault-sync.sh'],
   ['assignment string with later bash -n', 'old="git commit -q -m x"; bash -n x.sh'],
   ['plain commit followed by later-line bash -n', 'git commit -m x\nbash -n s.sh'],
@@ -2205,6 +2224,56 @@ for (const [name, command, expected] of sedCases) {
     }
   })) passed++; else failed++;
 }
+
+// --- Producer output follows the shell's descriptors (checked against bash) ---
+
+// Each command ends in `| bash` or `| sh`. That receiver is replaced by a bash
+// that runs what it reads with `git` defined as a function printing its
+// arguments, and the hook must block exactly when the shell would have run
+// `git push` or `git commit` with --no-verify.
+const producerCases = [
+  "{ exec 2>&1; echo 'git push --no-verify' >&2; } | bash",
+  "( exec 3>&1; echo 'git push --no-verify' >&3 ) | sh",
+  "{ echo 'git push --no-verify' >&2; } 2>&1 | bash",
+  "{ echo 'git push --no-verify' >&2; } | bash",
+  "{ echo 'git push --no-verify' >/dev/null | cat; } | bash",
+  "echo 'git push --no-verify' >&2 | bash",
+  "echo 'git push --no-verify' 2>&1 >/dev/null | bash",
+  "echo 'git push --no-verify' >/dev/stdout | bash",
+  "echo 'git push --no-verify' | cat >/dev/null | bash",
+  "echo 'git push --no-verify' | echo hi | bash",
+  "echo 'git push --no-verify' | cat <<< 'ls' | bash",
+  "printf 'git %s --no-verify\\n' push | sh",
+  "printf -- 'git %b --no-verify\\n' push | sh",
+  "printf '%s %s %s\\n' git push --no-verify | sh",
+  "printf 'git push %s\\n' --no-verify | sh",
+  "printf '%%s git push\\n' | sh",
+  "{ printf 'git pu'; printf 'sh --no-verify'; } | sh",
+  "printf '%s' 'gi\\t push --no-verify' | sh",
+  "printf '%b' 'git push\\t--no-verify' | sh",
+  "echo 'git push --no-verify' 3>&1 >/dev/null 1<&3 | sh",
+  "echo 'git push --no-verify' 3>&1 >/dev/null 1>&3- | sh",
+];
+if (process.platform !== 'win32') {
+  for (const command of producerCases) {
+    if (test(`producer output as bash reads it: ${command}`, () => {
+      const shown = command.replace(/\|\s*(bash|sh)$/, '| /bin/bash -c \'git() { echo "GIT $*"; }; . /dev/stdin\'');
+      const bash = spawnSync('/bin/bash', ['-c', shown], { encoding: 'utf8' });
+      const bypass = /^GIT (?:push|commit)\b.*\s--no-verify\b/m.test(bash.stdout);
+      assert.strictEqual(runHook({ tool_input: { command } }).code, bypass ? 2 : 0, `the shell runs ${JSON.stringify(bash.stdout)}`);
+    })) passed++; else failed++;
+  }
+}
+
+if (test('printf format reuse is charged to the work budget before it expands', () => {
+  // About 4 KB of command expands to about 2 MB when the format is reused per argument.
+  const command = `printf '${'x'.repeat(2000)}%s' ${Array(1000).fill('a').join(' ')} | sh`;
+  const started = Date.now();
+  const result = runHook({ tool_input: { command } });
+  assert.strictEqual(result.code, 2);
+  assert.match(result.stderr, /work budget exceeded/);
+  assert.ok(Date.now() - started < 2000, 'expected the budget to stop the expansion early');
+})) passed++; else failed++;
 
 console.log('─'.repeat(50));
 console.log(`Passed: ${passed}  Failed: ${failed}`);

@@ -35,6 +35,7 @@
  */
 
 // Export the main plugin
-// opencode's legacy plugin loader iterates every module export and throws if
-// any is not a plugin function, so only the plugin function may be exported.
-export { default } from "./plugins/index.ts"
+// The default package export targets OpenCode 2.x's definition loader.
+// OpenCode 1.x's function-only loader cannot load this package entry. The
+// named V1 factory in plugins/ecc-hooks.ts is retained for migration only.
+export { default } from "./plugins/ecc-hooks.ts"

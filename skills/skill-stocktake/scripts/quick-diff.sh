@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# quick-diff.sh — compare skill file mtimes against results.json evaluated_at
+# quick-diff.sh — compare skill file mtimes against their saved evaluations
 # Usage: quick-diff.sh RESULTS_JSON [CWD_SKILLS_DIR]
 # Output: JSON array of changed/new files to stdout (empty [] if no changes)
 #
@@ -88,16 +88,18 @@ process_dir() {
     mtime=$(date -u -r "$file" +%Y-%m-%dT%H:%M:%SZ)
     dp="${file/#$HOME/~}"
 
-    # Keep path comparison structured so literal newlines remain part of one
-    # JSON string instead of becoming ambiguous line-delimited records.
-    if jq -e --arg path "$dp" '.skills | any(.path == $path)' "$RESULTS_JSON" >/dev/null 2>&1; then
-      is_new="false"
-      # Known file: only emit if mtime changed (ISO 8601 string comparison is safe)
-      [[ "$mtime" > "$evaluated_at" ]] || continue
-    else
-      is_new="true"
-      # New file: always emit regardless of mtime
-    fi
+    # Compare against the version actually evaluated for this skill. The global
+    # completion time can be later than edits to an earlier evaluation batch.
+    # Older caches without per-skill mtimes retain the completion-time fallback.
+    is_new=$(jq -r --arg path "$dp" --arg mtime "$mtime" '
+      (first(.skills[] | select(.path == $path)) // null) as $cached |
+      if $cached == null then true
+      elif $cached.mtime != null then
+        if $cached.mtime != $mtime then false else empty end
+      elif $mtime > .evaluated_at then false
+      else empty end
+    ' "$RESULTS_JSON")
+    [[ -n "$is_new" ]] || continue
 
     jq -n \
       --arg path "$dp" \

@@ -198,6 +198,36 @@ for (const [hookId, toolName, toolInput] of GATEGUARD_TRUNCATION_CASES) {
   }
 }
 
+if (
+  test('fail-closed truncation hides the disable-hook hint by default', () => {
+    const result = runRunner(
+      ['pre:edit-write:gateguard-fact-force', 'scripts/hooks/gateguard-fact-force.js', 'standard,strict'],
+      oversizedPayload(),
+      { ...GATEGUARD_ENV_BASELINE, ECC_GATEGUARD: 'on', ECC_SHOW_RECOVERY_HINTS: '' }
+    );
+    assert.strictEqual(result.status, 2);
+    assert.doesNotMatch(result.stderr, /explicitly disable this hook/);
+  })
+)
+  passed++;
+else failed++;
+
+if (
+  test('fail-closed truncation restores the disable-hook hint for normalized truthy values', () => {
+    for (const value of [' true ', 'enable']) {
+      const result = runRunner(
+        ['pre:edit-write:gateguard-fact-force', 'scripts/hooks/gateguard-fact-force.js', 'standard,strict'],
+        oversizedPayload(),
+        { ...GATEGUARD_ENV_BASELINE, ECC_GATEGUARD: 'on', ECC_SHOW_RECOVERY_HINTS: value }
+      );
+      assert.strictEqual(result.status, 2);
+      assert.match(result.stderr, /explicitly disable this hook/, `${value}: ${result.stderr}`);
+    }
+  })
+)
+  passed++;
+else failed++;
+
 console.log(`\nPassed: ${passed}`);
 console.log(`Failed: ${failed}\n`);
 process.exit(failed > 0 ? 1 : 0);

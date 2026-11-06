@@ -192,21 +192,25 @@ const DEV_PATTERN = /\b(npm\s+run\s+dev|pnpm(?:\s+run)?\s+dev|yarn(?:\s+run)?\s+
  */
 function collectCheckSegments(cmd) {
   const segments = [...splitShellSegments(cmd)];
-  const queue = [cmd];
+  // Expanded here-document bodies enter through splitShellSegments, so their
+  // segments must also be scanned for substitutions nested inside them.
+  const queue = [cmd, ...segments];
   const seen = new Set();
 
-  while (queue.length) {
-    const current = queue.shift();
+  // Read by index: shift() copies the queue each time, which is quadratic on a long command.
+  for (let head = 0; head < queue.length; head++) {
+    const current = queue[head];
     if (seen.has(current)) continue;
     seen.add(current);
 
-    for (const body of extractCommandSubstitutions(current)) {
-      for (const seg of splitShellSegments(body)) segments.push(seg);
+    for (const body of [...extractCommandSubstitutions(current), ...extractSubshellGroups(current)]) {
+      const bodySegments = splitShellSegments(body);
+      // One at a time: spreading a long command's segments into push() exceeds the argument limit.
       queue.push(body);
-    }
-    for (const body of extractSubshellGroups(current)) {
-      for (const seg of splitShellSegments(body)) segments.push(seg);
-      queue.push(body);
+      for (const segment of bodySegments) {
+        segments.push(segment);
+        queue.push(segment);
+      }
     }
   }
 

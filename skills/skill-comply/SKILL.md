@@ -40,7 +40,23 @@ uv run python -m scripts.run --dry-run ~/.claude/skills/search-first/SKILL.md
 
 # Custom models
 uv run python -m scripts.run --gen-model haiku --model sonnet <path>
+
+# Long multi-step workflows: raise the per-scenario turn cap and timeout
+uv run python -m scripts.run --max-turns 120 --timeout 2400 <path>
+
+# Copy a directory (plans, config, sources) into every scenario sandbox
+uv run python -m scripts.run --fixtures ./fixtures <path>
 ```
+
+| Flag | Default | Meaning |
+|---|---|---|
+| `--max-turns N` | 30 | Turn cap per scenario |
+| `--timeout S` | 900 | Seconds per scenario; on timeout the partial trace is still graded and a warning is logged |
+| `--fixtures DIR` | none | Copied into each sandbox (links/reparse points rejected, `.git` skipped case-insensitively at any depth) |
+
+### Sandbox
+
+Each scenario uses a private per-user directory under the OS temporary directory. This is fixture isolation, not an ECC sandbox tier or a network/credential isolation boundary. It holds the files the scenario lists under `files:` plus any `--fixtures`, committed as a baseline. It has a local bare `origin` with `origin/HEAD` set, so push and merge steps work offline. A stub `gh` is first on `PATH`: it explicitly simulates `pr create`, `pr view`, `pr list` and `repo view` and fails on other subcommands. Reports label this boundary and any timeout; they cannot establish that a real PR, merge or hosted check succeeded. Auxiliary `.bin` and `.origin.git` directories are replaced only when they carry matching tool-owned metadata.
 
 ## Key Concept: Prompt Independence
 

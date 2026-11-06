@@ -15,6 +15,7 @@
 
 const fs = require('fs');
 const path = require('path');
+const { showRecoveryHints } = require('../lib/hooks/recovery-hints');
 
 const MAX_STDIN = 1024 * 1024;
 let raw = '';
@@ -152,7 +153,9 @@ function run(inputOrRaw, options = {}) {
       stderr:
         `BLOCKED: Hook input exceeded ${options.maxStdin || MAX_STDIN} bytes. ` +
         'Refusing to bypass config-protection on a truncated payload. ' +
-        'Retry with a smaller edit or disable the config-protection hook temporarily.'
+        (showRecoveryHints()
+          ? 'Retry with a smaller edit or disable the config-protection hook temporarily.'
+          : 'Retry with a smaller edit.')
     };
   }
 
@@ -221,8 +224,10 @@ function checkTarget(filePath) {
       stderr:
         `BLOCKED: Modifying ${basename} is not allowed. ` +
         'Fix the source code to satisfy linter/formatter rules instead of ' +
-        'weakening the config. If this is a legitimate config change, ' +
-        'disable the config-protection hook temporarily.'
+        'weakening the config.' +
+        (showRecoveryHints()
+          ? ' If this is a legitimate config change, disable the config-protection hook temporarily.'
+          : '')
     };
   }
 
@@ -232,31 +237,33 @@ function checkTarget(filePath) {
 module.exports = { run };
 
 // Stdin fallback for spawnSync execution
-let truncated = /^(1|true|yes)$/i.test(String(process.env.ECC_HOOK_INPUT_TRUNCATED || ''));
-process.stdin.setEncoding('utf8');
-process.stdin.on('data', chunk => {
-  if (raw.length < MAX_STDIN) {
-    const remaining = MAX_STDIN - raw.length;
-    raw += chunk.substring(0, remaining);
-    if (chunk.length > remaining) truncated = true;
-  } else {
-    truncated = true;
-  }
-});
-
-process.stdin.on('end', () => {
-  const result = run(raw, {
-    truncated,
-    maxStdin: Number(process.env.ECC_HOOK_INPUT_MAX_BYTES) || MAX_STDIN
+if (require.main === module) {
+  let truncated = /^(1|true|yes)$/i.test(String(process.env.ECC_HOOK_INPUT_TRUNCATED || ''));
+  process.stdin.setEncoding('utf8');
+  process.stdin.on('data', chunk => {
+    if (raw.length < MAX_STDIN) {
+      const remaining = MAX_STDIN - raw.length;
+      raw += chunk.substring(0, remaining);
+      if (chunk.length > remaining) truncated = true;
+    } else {
+      truncated = true;
+    }
   });
 
-  if (result.stderr) {
-    process.stderr.write(result.stderr + '\n');
-  }
+  process.stdin.on('end', () => {
+    const result = run(raw, {
+      truncated,
+      maxStdin: Number(process.env.ECC_HOOK_INPUT_MAX_BYTES) || MAX_STDIN
+    });
 
-  if (result.exitCode === 2) {
-    process.exit(2);
-  }
+    if (result.stderr) {
+      process.stderr.write(result.stderr + '\n');
+    }
 
-  process.stdout.write(raw);
-});
+    if (result.exitCode === 2) {
+      process.exit(2);
+    }
+
+    process.stdout.write(raw);
+  });
+}

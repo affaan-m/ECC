@@ -74,61 +74,66 @@ class ScenarioRun:
     scenario: Scenario
     observations: tuple[ObservationEvent, ...]
     sandbox_dir: Path
+    timed_out: bool = False
+    simulated_github: bool = True
 
 
 def run_scenario(
     scenario: Scenario,
     model: str = "sonnet",
     max_turns: int = 30,
-    timeout: int = 300,
+    timeout: int = 900,
+    fixtures_dir: Path | None = None,
 ) -> ScenarioRun:
-    """Execute a scenario and extract tool calls from stream-json output."""
+    """Execute a scenario with local fixture GitHub responses, never real PRs."""
     if model not in ALLOWED_MODELS:
         raise ValueError(f"Unknown model: {model!r}. Allowed: {ALLOWED_MODELS}")
-
+    if max_turns < 1 or timeout < 1:
+        raise ValueError("max_turns and timeout must be positive")
     sandbox_dir = _safe_sandbox_dir(scenario.id)
-    _setup_sandbox(sandbox_dir, scenario)
-
-    result = subprocess.run(
-        [
-            "claude", "-p",
-            "--model", model,
-            "--max-turns", str(max_turns),
-            "--add-dir", str(sandbox_dir),
-            "--allowedTools", "Read,Write,Edit,Bash,Glob,Grep",
-            "--output-format", "stream-json",
-            "--verbose",
-        ],
-        input=scenario.prompt,
-        capture_output=True,
-        encoding="utf-8",
-        timeout=timeout,
-        cwd=sandbox_dir,
-    )
-
-    # claude -p returns rc=1 when --max-turns is reached, but the stream-json
-    # output is still complete and parseable. Treat this graceful termination
-    # as non-fatal so scenarios that hit the turn cap still produce usable
-    # observations.
+    if fixtures_dir is None:
+        _setup_sandbox(sandbox_dir, scenario)
+    else:
+        _setup_sandbox(sandbox_dir, scenario, fixtures_dir=fixtures_dir)
+    gh_bin = _install_gh_stub(sandbox_dir)
+    env = {**os.environ, "PATH": f"{gh_bin}{os.pathsep}{os.environ.get('PATH', '')}"}
+    try:
+        result = subprocess.run(
+            [
+                "claude", "-p",
+                "--model", model,
+                "--max-turns", str(max_turns),
+                "--add-dir", str(sandbox_dir),
+                "--allowedTools", "Read,Write,Edit,Bash,Glob,Grep",
+                "--output-format", "stream-json",
+                "--verbose",
+            ],
+            input=scenario.prompt,
+            capture_output=True,
+            encoding="utf-8",
+            timeout=timeout,
+            cwd=sandbox_dir,
+            env=env,
+        )
+    except subprocess.TimeoutExpired as exc:
+        partial = exc.output or ""
+        if isinstance(partial, bytes):
+            partial = partial.decode("utf-8", errors="replace")
+        return ScenarioRun(
+            scenario=scenario, observations=tuple(_parse_stream_json(partial)),
+            sandbox_dir=sandbox_dir, timed_out=True,
+        )
     nonfatal_max_turns = (
         result.returncode == 1
-        and '"terminal_reason":"max_turns"' in result.stdout
+        and '\"terminal_reason\":\"max_turns\"' in result.stdout
     )
     if result.returncode != 0 and not nonfatal_max_turns:
-        # Include both stderr and stdout tails. claude -p often surfaces the
-        # actual failure context (model error JSON, partial stream-json) on
-        # stdout, while stderr carries generic transport / auth messages.
-        # Showing both dramatically reduces "rc=N: <empty>" debugging dead-ends.
         raise RuntimeError(
             f"claude -p failed (rc={result.returncode}): "
             f"stderr={result.stderr[:500]!r} stdout_tail={result.stdout[-500:]!r}"
         )
-
-    observations = _parse_stream_json(result.stdout)
-
     return ScenarioRun(
-        scenario=scenario,
-        observations=tuple(observations),
+        scenario=scenario, observations=tuple(_parse_stream_json(result.stdout)),
         sandbox_dir=sandbox_dir,
     )
 
@@ -166,34 +171,174 @@ def _safe_sandbox_dir(scenario_id: str) -> Path:
     return path
 
 
-def _setup_sandbox(sandbox_dir: Path, scenario: Scenario) -> None:
-    """Create sandbox directory and run setup commands."""
+def _setup_sandbox(
+    sandbox_dir: Path, scenario: Scenario, fixtures_dir: Path | None = None,
+) -> None:
+    """Create a private fixture repo while retaining the setup-command allowlists."""
     _validate_sandbox_base()
     SANDBOX_BASE.mkdir(mode=0o700, parents=True, exist_ok=True)
     _validate_sandbox_base()
     SANDBOX_BASE.chmod(0o700)
+    if sandbox_dir.is_symlink():
+        raise ValueError("Sandbox directory must not be a symlink")
     if sandbox_dir.exists():
         shutil.rmtree(sandbox_dir)
     sandbox_dir.mkdir(parents=True)
-
-    subprocess.run(["git", "init"], cwd=sandbox_dir, capture_output=True)
-
+    _git(sandbox_dir, "init")
+    if fixtures_dir is not None:
+        _copy_fixtures(fixtures_dir, sandbox_dir)
+    _write_scenario_files(sandbox_dir, getattr(scenario, "files", ()))
     for cmd in scenario.setup_commands:
         parts = shlex.split(cmd)
         if not parts or parts[0] in SHELL_BUILTINS:
-            # Shell builtins (cd/pushd/popd) cannot run as subprocess; skip.
             continue
         argv = _sandboxed_setup_command(parts, sandbox_dir)
         if argv is None:
-            # Not an allowed tool, or a use of it that could run code or
-            # reach outside the sandbox.
             continue
         try:
-            subprocess.run(argv, cwd=sandbox_dir, capture_output=True, stdin=subprocess.DEVNULL)
+            subprocess.run(
+                argv, cwd=sandbox_dir, capture_output=True, stdin=subprocess.DEVNULL,
+                env=_fixture_git_env() if argv[0] == "git" else None,
+            )
         except FileNotFoundError:
-            # Setup tool not installed in this environment; skip rather than
-            # crash the whole scenario. The compliance run continues.
             continue
+    _commit_initial_state(sandbox_dir)
+    _add_local_origin(sandbox_dir)
+
+
+def _git_metadata_name(name: str) -> bool:
+    # Windows aliases trailing dots/spaces to the same metadata directory.
+    return name.rstrip(" .").lower() == ".git"
+
+
+def _copy_fixtures(fixtures_dir: Path, sandbox_dir: Path) -> None:
+    """Copy regular fixture files only, ignoring Git metadata at every depth."""
+    root = fixtures_dir.resolve()
+    metadata = fixtures_dir.lstat()
+    reparse = getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0x400)
+    if (fixtures_dir.is_symlink() or not root.is_dir()
+            or getattr(metadata, "st_file_attributes", 0) & reparse):
+        raise ValueError("Fixtures directory must be a regular directory, not a symlink")
+    def inspect(directory: Path) -> None:
+        for source in directory.iterdir():
+            if _git_metadata_name(source.name):
+                continue
+            metadata = source.lstat()
+            reparse = getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0x400)
+            if stat.S_ISLNK(metadata.st_mode) or getattr(metadata, "st_file_attributes", 0) & reparse:
+                raise ValueError(f"Fixture symlink or reparse point is not allowed: {source.name}")
+            if stat.S_ISDIR(metadata.st_mode):
+                inspect(source)
+            elif not stat.S_ISREG(metadata.st_mode):
+                raise ValueError(f"Fixture must be a regular file or directory: {source.name}")
+    inspect(root)
+    shutil.copytree(
+        root, sandbox_dir, dirs_exist_ok=True, symlinks=True,
+        ignore=lambda _directory, names: {name for name in names if _git_metadata_name(name)},
+    )
+    inspect(sandbox_dir)
+
+
+def _write_scenario_files(sandbox_dir: Path, files: tuple[tuple[str, str], ...]) -> None:
+    """Write declared fixture text without crossing links or Git metadata."""
+    root = sandbox_dir.resolve()
+    for rel, content in files:
+        if not isinstance(rel, str) or not isinstance(content, str):
+            raise ValueError("Scenario files must map paths to text")
+        if not rel or rel.startswith(("/", "\\", "~")) or re.match(r"^[A-Za-z]:", rel):
+            raise ValueError(f"Scenario file path must be relative: {rel!r}")
+        if ":" in rel or any(_git_metadata_name(part) for part in re.split(r"[\\/]", rel)):
+            raise ValueError(f"Scenario file path must not reach .git: {rel!r}")
+        target = (root / rel).resolve()
+        target.relative_to(root)
+        if target == root:
+            raise ValueError("Scenario file path must name a file")
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(content, encoding="utf-8")
+
+
+_AUX_MARKER = ".skill-comply-owned.json"
+
+
+def _prepare_aux_dir(sandbox_dir: Path, suffix: str) -> Path:
+    """Replace only a tool-created sibling with matching ownership metadata."""
+    auxiliary = sandbox_dir.parent / f"{sandbox_dir.name}{suffix}"
+    expected = {"owner": "skill-comply", "sandbox": sandbox_dir.name, "kind": suffix}
+    try:
+        metadata = auxiliary.lstat()
+    except FileNotFoundError:
+        metadata = None
+    if metadata is not None:
+        reparse = getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0x400)
+        if (not stat.S_ISDIR(metadata.st_mode) or stat.S_ISLNK(metadata.st_mode)
+                or getattr(metadata, "st_file_attributes", 0) & reparse):
+            raise ValueError("Auxiliary ownership path must be a directory without links")
+        if hasattr(os, "getuid") and metadata.st_uid != os.getuid():
+            raise ValueError("Auxiliary directory is not owned by the current user")
+        marker = auxiliary / _AUX_MARKER
+        try:
+            valid = not marker.is_symlink() and json.loads(marker.read_text(encoding="utf-8")) == expected
+        except (OSError, ValueError):
+            valid = False
+        if not valid:
+            raise ValueError("Refusing to replace an unowned auxiliary directory")
+        shutil.rmtree(auxiliary)
+    auxiliary.mkdir(mode=0o700, parents=True)
+    (auxiliary / _AUX_MARKER).write_text(json.dumps(expected), encoding="utf-8")
+    return auxiliary
+
+
+GH_STUB = """#!/bin/sh
+echo "skill-comply GitHub simulation: no network or real pull request" >&2
+case "$1 $2" in
+  "pr create") echo "https://example.invalid/skill-comply/simulation/pull/1" ;;
+  "pr view") echo '{"number":1,"state":"SIMULATED","simulation":true}' ;;
+  "pr list") echo '[]' ;;
+  "repo view") echo '{"nameWithOwner":"skill-comply/simulation","simulation":true}' ;;
+  *) echo "skill-comply gh simulation: unsupported command" >&2; exit 1 ;;
+esac
+"""
+
+
+def _install_gh_stub(sandbox_dir: Path) -> Path:
+    directory = _prepare_aux_dir(sandbox_dir, ".bin")
+    gh = directory / "gh"
+    gh.write_text(GH_STUB, encoding="utf-8")
+    gh.chmod(0o755)
+    return directory
+
+
+def _fixture_git_env() -> dict[str, str]:
+    """Keep generated files from activating host Git filters or remote rewrites."""
+    env = {key: value for key, value in os.environ.items() if not key.startswith("GIT_")}
+    return {**env, "GIT_CONFIG_GLOBAL": os.devnull, "GIT_CONFIG_NOSYSTEM": "1",
+            "GIT_ALLOW_PROTOCOL": "file", "GIT_TERMINAL_PROMPT": "0"}
+
+
+def _git(cwd: Path, *args: str) -> subprocess.CompletedProcess:
+    """Run local fixture Git without ambient hooks, config or network protocols."""
+    result = subprocess.run(
+        ["git", "-c", f"core.hooksPath={os.devnull}", "-c", "init.templateDir=", *args],
+        cwd=cwd, capture_output=True, encoding="utf-8", env=_fixture_git_env(),
+    )
+    if result.returncode != 0:
+        raise RuntimeError(f"sandbox setup git failed (rc={result.returncode}): {(result.stderr or '')[:300]}")
+    return result
+
+
+def _commit_initial_state(sandbox_dir: Path) -> None:
+    _git(sandbox_dir, "add", "-A")
+    _git(sandbox_dir, "-c", "user.name=skill-comply", "-c", "user.email=skill-comply@localhost",
+         "-c", "commit.gpgsign=false", "commit", "--allow-empty", "-m", "chore: sandbox baseline")
+
+
+def _add_local_origin(sandbox_dir: Path) -> None:
+    origin = _prepare_aux_dir(sandbox_dir, ".origin.git")
+    branch = (_git(sandbox_dir, "symbolic-ref", "--short", "HEAD").stdout or "main").strip()
+    _git(sandbox_dir, "init", "--bare", f"--initial-branch={branch}", str(origin))
+    _git(sandbox_dir, "remote", "add", "origin", str(origin))
+    _git(sandbox_dir, "push", "-u", "origin", branch)
+    _git(sandbox_dir, "remote", "set-head", "origin", branch)
 
 
 def _attached_values(arg: str) -> list[str]:

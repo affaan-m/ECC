@@ -9,6 +9,7 @@ const { pathToFileURL } = require('url');
 const { createManifestInstallPlan, applyInstallPlan, previewInstallPlan } = require('../../scripts/lib/install-executor');
 const { withHookConsent } = require('../../scripts/lib/install/hook-consent');
 const { repairInstalledStates } = require('../../scripts/lib/install-lifecycle');
+const { trySymlink } = require('../lib/helpers/symlink-support');
 const repo = path.resolve(__dirname, '../..');
 let passed = 0;
 let failed = 0;
@@ -186,7 +187,7 @@ for (const scope of ['package.json', 'lib/package.json']) {
   test(`symlinked ${scope} refuses before mutation`, f => {
     const file = path.join(f.scripts, scope); const outside = path.join(f.dir, 'user-package.json');
     f.write(outside, '{"type":"commonjs"}\n'); fs.mkdirSync(path.dirname(file), { recursive: true });
-    fs.symlinkSync(outside, file); const before = snapshot(f.dir);
+    if (!trySymlink(outside, file)) return; const before = snapshot(f.dir);
     assert.notStrictEqual(f.install().status, 0); assert.deepStrictEqual(snapshot(f.dir), before);
   });
 }

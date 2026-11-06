@@ -27,9 +27,7 @@ function test(name, fn) {
 
 // Create a temporary test directory
 function createTestDir() {
-  const testDir = path.join(os.tmpdir(), `pm-test-${Date.now()}`);
-  fs.mkdirSync(testDir, { recursive: true });
-  return testDir;
+  return fs.mkdtempSync(path.join(os.tmpdir(), 'pm-test-'));
 }
 
 // Clean up test directory
@@ -110,6 +108,17 @@ function runTests() {
       fs.writeFileSync(path.join(testDir, 'package-lock.json'), '{}');
       const result = pm.detectFromLockFile(testDir);
       assert.strictEqual(result, 'npm');
+    } finally {
+      cleanupTestDir(testDir);
+    }
+  })) passed++;
+  else failed++;
+
+  if (test('detects npm from npm-shrinkwrap.json', () => {
+    const testDir = createTestDir();
+    try {
+      fs.writeFileSync(path.join(testDir, 'npm-shrinkwrap.json'), '{}');
+      assert.strictEqual(pm.detectFromLockFile(testDir), 'npm');
     } finally {
       cleanupTestDir(testDir);
     }
@@ -295,6 +304,32 @@ function runTests() {
       }
     }
   })) passed++;
+  else failed++;
+
+  if (test('shrinkwrap overrides global preference but not an explicit packageManager', () => withIsolatedHome(isolatedHome => {
+    const originalEnv = process.env.CLAUDE_PACKAGE_MANAGER;
+    const projectDir = path.join(isolatedHome, 'project');
+    fs.mkdirSync(projectDir);
+    try {
+      delete process.env.CLAUDE_PACKAGE_MANAGER;
+      pm.setPreferredPackageManager('pnpm');
+      fs.writeFileSync(path.join(projectDir, 'npm-shrinkwrap.json'), '{}');
+      fs.writeFileSync(path.join(projectDir, 'package.json'), '{}');
+      const detected = pm.getPackageManager({ projectDir });
+      assert.strictEqual(detected.name, 'npm');
+      assert.strictEqual(detected.source, 'lock-file');
+      assert.strictEqual(pm.getRunCommand('install', { projectDir }), 'npm install');
+
+      fs.writeFileSync(path.join(projectDir, 'package.json'), JSON.stringify({ packageManager: 'yarn@4.0.0' }));
+      const configured = pm.getPackageManager({ projectDir });
+      assert.strictEqual(configured.name, 'yarn');
+      assert.strictEqual(configured.source, 'package.json');
+      assert.strictEqual(pm.getRunCommand('install', { projectDir }), 'yarn');
+    } finally {
+      if (originalEnv !== undefined) process.env.CLAUDE_PACKAGE_MANAGER = originalEnv;
+      else delete process.env.CLAUDE_PACKAGE_MANAGER;
+    }
+  }))) passed++;
   else failed++;
 
   // getRunCommand tests
@@ -1758,6 +1793,63 @@ function runTests() {
     }
   })) passed++;
   else failed++;
+
+  console.log('\nPackage manager name validation:');
+
+  for (const name of ['constructor', 'toString', '__proto__', ['npm'], null, 42]) {
+    if (test(`rejects unsupported manager value ${JSON.stringify(name)} in setters`, () => {
+      withIsolatedHome(home => {
+        const project = path.join(home, 'project');
+        fs.mkdirSync(project);
+        assert.throws(() => pm.setPreferredPackageManager(name), /Unknown package manager/);
+        assert.throws(() => pm.setProjectPackageManager(name, project), /Unknown package manager/);
+        assert.ok(!fs.existsSync(path.join(home, '.claude', 'package-manager.json')));
+        assert.ok(!fs.existsSync(path.join(project, '.claude')));
+      });
+    })) passed++;
+    else failed++;
+  }
+
+  for (const source of ['environment', 'project-config', 'package.json', 'global-config']) {
+    if (test(`ignores inherited manager names from ${source}`, () => {
+      withIsolatedHome(home => {
+        const project = path.join(home, 'project');
+        fs.mkdirSync(project);
+        const originalEnv = process.env.CLAUDE_PACKAGE_MANAGER;
+        try {
+          delete process.env.CLAUDE_PACKAGE_MANAGER;
+          for (const name of source === 'environment'
+            ? ['constructor', 'toString', '__proto__']
+            : ['constructor', 'toString', '__proto__', ['npm']]) {
+            if (source === 'environment') {
+              process.env.CLAUDE_PACKAGE_MANAGER = name;
+            } else {
+              const configPath = source === 'package.json'
+                ? path.join(project, 'package.json')
+                : path.join(source === 'project-config' ? project : home, '.claude', 'package-manager.json');
+              fs.mkdirSync(path.dirname(configPath), { recursive: true });
+              fs.writeFileSync(configPath, JSON.stringify({ packageManager: name }));
+            }
+            const result = pm.getPackageManager({ projectDir: project });
+            assert.strictEqual(result.name, 'npm');
+            assert.strictEqual(result.source, 'default');
+            assert.strictEqual(pm.getRunCommand('lint', { projectDir: project }), 'npm run lint');
+            if (source === 'package.json') assert.strictEqual(pm.detectFromPackageJson(project), null);
+            if (source !== 'global-config') {
+              const lockPath = path.join(project, 'pnpm-lock.yaml');
+              fs.writeFileSync(lockPath, '');
+              assert.strictEqual(pm.getPackageManager({ projectDir: project }).name, 'pnpm');
+              fs.unlinkSync(lockPath);
+            }
+          }
+        } finally {
+          if (originalEnv === undefined) delete process.env.CLAUDE_PACKAGE_MANAGER;
+          else process.env.CLAUDE_PACKAGE_MANAGER = originalEnv;
+        }
+      });
+    })) passed++;
+    else failed++;
+  }
 
   // Summary
   console.log('\n=== Test Results ===');

@@ -1,0 +1,362 @@
+{
+  "schemaVersion": 1,
+  "generatedAt": "2026-10-21T02:05:09.816Z",
+  "commit": "dd2107ff659f085a6394c8d7925d5b283cfbdc8a",
+  "sourceDirty": false,
+  "runtime": {
+    "grok": "grok 1.0.62 (1474f9cbdd91)",
+    "executable": {
+      "sha256": "2a46d9e4d7ebd7a9cff7f95716714b19dad5f21dd2a497822400b1fb128969aa"
+    },
+    "node": "v24.21.0",
+    "platform": "linux",
+    "arch": "x64"
+  },
+  "isolation": {
+    "strategy": "fresh temporary HOME/GROK_HOME",
+    "credentialsInherited": false
+  },
+  "nativeCli": {
+    "status": "passed",
+    "steps": [
+      {
+        "command": "grok --version",
+        "exitCode": 0,
+        "stdout": "grok 1.0.62 (1474f9cbdd91)",
+        "stderr": ""
+      },
+      {
+        "command": "grok plugin validate <checkout>",
+        "exitCode": 0,
+        "stdout": "Plugin manifest is valid.\n  name: ecc\n  version: 2.2.3\n  description: Harness-native ECC plugin for engineering teams - 71 agents, 311 skills, 97 legacy command shims, reusable hooks, rules, MCP conventions, and operator workflows for Grok Build plus adjacent agent harnesses\n  components: 1 skill dir(s), 1 command dir(s), 1 agent dir(s)",
+        "stderr": ""
+      },
+      {
+        "command": "grok plugin list --json",
+        "exitCode": 0,
+        "stdout": "[]",
+        "stderr": ""
+      },
+      {
+        "command": "grok inspect --json",
+        "exitCode": 0,
+        "stdout": "{\"plugins\":[],\"eccSkills\":0,\"hooks\":0,\"mcpServers\":0}",
+        "stderr": ""
+      },
+      {
+        "command": "grok plugin install <checkout>",
+        "exitCode": 1,
+        "stdout": "",
+        "stderr": "Installing from directory <checkout> requires confirmation.\nPlugins can run hooks, MCP servers, and skills on your machine, so installation needs explicit trust.\n\nTo proceed, re-run with --trust:\n  grok plugin install <checkout> --trust"
+      },
+      {
+        "command": "grok plugin list --json",
+        "exitCode": 0,
+        "stdout": "[]",
+        "stderr": ""
+      },
+      {
+        "command": "grok plugin install <checkout> --trust",
+        "exitCode": 0,
+        "stdout": "Installed 1 plugin(s) from <checkout>: ecc",
+        "stderr": ""
+      },
+      {
+        "command": "grok plugin list --json",
+        "exitCode": 0,
+        "stdout": "[\n  {\n    \"status\": \"installed\",\n    \"name\": \"ecc\",\n    \"repo_key\": \"ecc-4f62749e\",\n    \"version\": \"2.2.3\",\n    \"path\": \"<temporary-native-root>/home/.grok/installed-plugins/ecc-4f62749e\",\n    \"source\": \"<checkout>\",\n    \"marketplace\": null\n  }\n]",
+        "stderr": ""
+      },
+      {
+        "command": "grok inspect --json",
+        "exitCode": 0,
+        "stdout": "{\"plugins\":[{\"name\":\"ecc\",\"enabled\":true,\"provides\":{\"skills\":311,\"agents\":1,\"hooks\":false,\"mcpServers\":0}}],\"eccSkills\":397,\"hooks\":0,\"mcpServers\":0}",
+        "stderr": ""
+      },
+      {
+        "command": "grok plugin update ecc",
+        "exitCode": 0,
+        "stdout": "ecc-4f62749e: local symlink, already live",
+        "stderr": ""
+      },
+      {
+        "command": "grok plugin disable ecc",
+        "exitCode": 0,
+        "stdout": "Disabled plugin: ecc",
+        "stderr": ""
+      },
+      {
+        "command": "grok inspect --json",
+        "exitCode": 0,
+        "stdout": "{\"plugins\":[{\"name\":\"ecc\",\"enabled\":true,\"provides\":{\"skills\":311,\"agents\":1,\"hooks\":false,\"mcpServers\":0}}],\"eccSkills\":0,\"hooks\":0,\"mcpServers\":0}",
+        "stderr": ""
+      },
+      {
+        "command": "grok plugin enable ecc",
+        "exitCode": 0,
+        "stdout": "Enabled plugin: ecc",
+        "stderr": ""
+      },
+      {
+        "command": "grok inspect --json",
+        "exitCode": 0,
+        "stdout": "{\"plugins\":[{\"name\":\"ecc\",\"enabled\":true,\"provides\":{\"skills\":311,\"agents\":1,\"hooks\":false,\"mcpServers\":0}}],\"eccSkills\":397,\"hooks\":0,\"mcpServers\":0}",
+        "stderr": ""
+      },
+      {
+        "command": "grok inspect --json",
+        "exitCode": 0,
+        "stdout": "{\"plugins\":[],\"eccSkills\":0,\"hooks\":0,\"mcpServers\":0}",
+        "stderr": ""
+      },
+      {
+        "command": "grok inspect --json",
+        "exitCode": 0,
+        "stdout": "{\"plugins\":[{\"name\":\"ecc\",\"enabled\":true,\"provides\":{\"skills\":311,\"agents\":1,\"hooks\":false,\"mcpServers\":0}}],\"eccSkills\":397,\"hooks\":0,\"mcpServers\":0}",
+        "stderr": ""
+      },
+      {
+        "command": "grok plugin uninstall ecc --confirm",
+        "exitCode": 0,
+        "stdout": "Uninstalled 1 plugin(s): ecc",
+        "stderr": ""
+      },
+      {
+        "command": "grok plugin list --json",
+        "exitCode": 0,
+        "stdout": "[]",
+        "stderr": ""
+      },
+      {
+        "command": "grok inspect --json",
+        "exitCode": 0,
+        "stdout": "{\"plugins\":[],\"eccSkills\":0,\"hooks\":0,\"mcpServers\":0}",
+        "stderr": ""
+      },
+      {
+        "command": "grok plugin install file://<temporary-native-root>/native-git-source@b205a51b1ba0db7f0fb1613578bc4e4238d1d8f1 --trust",
+        "exitCode": 0,
+        "stdout": "Installed 1 plugin(s) from file://<temporary-native-root>/native-git-source@b205a51b1ba0db7f0fb1613578bc4e4238d1d8f1: ecc",
+        "stderr": ""
+      },
+      {
+        "command": "grok inspect --json",
+        "exitCode": 0,
+        "stdout": "{\n  \"grokVersion\": \"1.0.62\",\n  \"channel\": \"unknown\",\n  \"cwd\": \"<temporary-native-root>/project\",\n  \"projectRoot\": null,\n  \"projectTrusted\": true,\n  \"projectInstructions\": [],\n  \"permissions\": {\n    \"sources\": [],\n    \"loaded\": 0,\n    \"skipped\": [],\n    \"mcpServerAllowlist\": [],\n    \"mcpLockdownSources\": [],\n    \"mcpManagedServersOnly\": \"off\",\n    \"marketplaceAllowlist\": [],\n    \"marketplaceLockdownSources\": [],\n    \"managedMarketplaces\": [],\n    \"managedSettingsPath\": \"/etc/claude-code/managed-settings.json\",\n    \"managedSettingsExists\": false,\n    \"managedSettingsActive\": false,\n    \"claudeBypassLockAdvisory\": false\n  },\n  \"loginPolicy\": {\n    \"disableApiKeyAuth\": null,\n    \"forceLoginTeamUuid\": null,\n    \"apiKeyAuthDisabled\": false\n  },\n  \"hooks\": [],\n  \"skills\": [\n    {\n      \"name\": \"accessibility\",\n      \"description\": \"Design, implement, and audit accessible UI to WCAG 2.2 Level AA across Web, iOS, and Android — semantic ARIA roles and labels, accessibility traits and hints, focus management, contrast, target size, and screen-reader support. Use when building or auditing UI for accessibility compliance, keyboard navigation, or screen-reader support.\",\n      \"source\": {\n      ",
+        "stderr": ""
+      },
+      {
+        "command": "grok plugin update ecc",
+        "exitCode": 0,
+        "stdout": "native-git-source-7ad54405: pinned to b205a51b1ba0db7f0fb1613578bc4e4238d1d8f1, skipping",
+        "stderr": ""
+      },
+      {
+        "command": "grok inspect --json",
+        "exitCode": 0,
+        "stdout": "{\n  \"grokVersion\": \"1.0.62\",\n  \"channel\": \"unknown\",\n  \"cwd\": \"<temporary-native-root>/project\",\n  \"projectRoot\": null,\n  \"projectTrusted\": true,\n  \"projectInstructions\": [],\n  \"permissions\": {\n    \"sources\": [],\n    \"loaded\": 0,\n    \"skipped\": [],\n    \"mcpServerAllowlist\": [],\n    \"mcpLockdownSources\": [],\n    \"mcpManagedServersOnly\": \"off\",\n    \"marketplaceAllowlist\": [],\n    \"marketplaceLockdownSources\": [],\n    \"managedMarketplaces\": [],\n    \"managedSettingsPath\": \"/etc/claude-code/managed-settings.json\",\n    \"managedSettingsExists\": false,\n    \"managedSettingsActive\": false,\n    \"claudeBypassLockAdvisory\": false\n  },\n  \"loginPolicy\": {\n    \"disableApiKeyAuth\": null,\n    \"forceLoginTeamUuid\": null,\n    \"apiKeyAuthDisabled\": false\n  },\n  \"hooks\": [],\n  \"skills\": [\n    {\n      \"name\": \"accessibility\",\n      \"description\": \"Design, implement, and audit accessible UI to WCAG 2.2 Level AA across Web, iOS, and Android — semantic ARIA roles and labels, accessibility traits and hints, focus management, contrast, target size, and screen-reader support. Use when building or auditing UI for accessibility compliance, keyboard navigation, or screen-reader support.\",\n      \"source\": {\n      ",
+        "stderr": ""
+      },
+      {
+        "command": "grok plugin uninstall ecc",
+        "exitCode": 0,
+        "stdout": "Uninstalled 1 plugin(s): ecc",
+        "stderr": ""
+      },
+      {
+        "command": "grok inspect --json",
+        "exitCode": 0,
+        "stdout": "{\n  \"grokVersion\": \"1.0.62\",\n  \"channel\": \"unknown\",\n  \"cwd\": \"<temporary-native-root>/project\",\n  \"projectRoot\": null,\n  \"projectTrusted\": true,\n  \"projectInstructions\": [],\n  \"permissions\": {\n    \"sources\": [],\n    \"loaded\": 0,\n    \"skipped\": [],\n    \"mcpServerAllowlist\": [],\n    \"mcpLockdownSources\": [],\n    \"mcpManagedServersOnly\": \"off\",\n    \"marketplaceAllowlist\": [],\n    \"marketplaceLockdownSources\": [],\n    \"managedMarketplaces\": [],\n    \"managedSettingsPath\": \"/etc/claude-code/managed-settings.json\",\n    \"managedSettingsExists\": false,\n    \"managedSettingsActive\": false,\n    \"claudeBypassLockAdvisory\": false\n  },\n  \"loginPolicy\": {\n    \"disableApiKeyAuth\": null,\n    \"forceLoginTeamUuid\": null,\n    \"apiKeyAuthDisabled\": false\n  },\n  \"hooks\": [],\n  \"skills\": [],\n  \"agents\": [\n    {\n      \"name\": \"general-purpose\",\n      \"description\": \"General purpose agent for multi-step tasks.\",\n      \"source\": {\n        \"type\": \"builtin\"\n      }\n    },\n    {\n      \"name\": \"explore\",\n      \"description\": \"Fast, read-only agent specialized for codebase exploration.\",\n      \"source\": {\n        \"type\": \"builtin\"\n      }\n    },\n    {\n      \"name\": \"plan\",\n      \"description\": \"Software archite",
+        "stderr": ""
+      },
+      {
+        "command": "grok plugin install file://<temporary-native-root>/native-git-source@b16879414093e29925f2baf006bfa9df72e5cb5f --trust",
+        "exitCode": 0,
+        "stdout": "Installed 1 plugin(s) from file://<temporary-native-root>/native-git-source@b16879414093e29925f2baf006bfa9df72e5cb5f: ecc",
+        "stderr": ""
+      },
+      {
+        "command": "grok inspect --json",
+        "exitCode": 0,
+        "stdout": "{\n  \"grokVersion\": \"1.0.62\",\n  \"channel\": \"unknown\",\n  \"cwd\": \"<temporary-native-root>/project\",\n  \"projectRoot\": null,\n  \"projectTrusted\": true,\n  \"projectInstructions\": [],\n  \"permissions\": {\n    \"sources\": [],\n    \"loaded\": 0,\n    \"skipped\": [],\n    \"mcpServerAllowlist\": [],\n    \"mcpLockdownSources\": [],\n    \"mcpManagedServersOnly\": \"off\",\n    \"marketplaceAllowlist\": [],\n    \"marketplaceLockdownSources\": [],\n    \"managedMarketplaces\": [],\n    \"managedSettingsPath\": \"/etc/claude-code/managed-settings.json\",\n    \"managedSettingsExists\": false,\n    \"managedSettingsActive\": false,\n    \"claudeBypassLockAdvisory\": false\n  },\n  \"loginPolicy\": {\n    \"disableApiKeyAuth\": null,\n    \"forceLoginTeamUuid\": null,\n    \"apiKeyAuthDisabled\": false\n  },\n  \"hooks\": [],\n  \"skills\": [\n    {\n      \"name\": \"accessibility\",\n      \"description\": \"Design, implement, and audit accessible UI to WCAG 2.2 Level AA across Web, iOS, and Android — semantic ARIA roles and labels, accessibility traits and hints, focus management, contrast, target size, and screen-reader support. Use when building or auditing UI for accessibility compliance, keyboard navigation, or screen-reader support.\",\n      \"source\": {\n      ",
+        "stderr": ""
+      },
+      {
+        "command": "grok plugin uninstall ecc",
+        "exitCode": 0,
+        "stdout": "Uninstalled 1 plugin(s): ecc",
+        "stderr": ""
+      },
+      {
+        "command": "grok inspect --json",
+        "exitCode": 0,
+        "stdout": "{\n  \"grokVersion\": \"1.0.62\",\n  \"channel\": \"unknown\",\n  \"cwd\": \"<temporary-native-root>/project\",\n  \"projectRoot\": null,\n  \"projectTrusted\": true,\n  \"projectInstructions\": [],\n  \"permissions\": {\n    \"sources\": [],\n    \"loaded\": 0,\n    \"skipped\": [],\n    \"mcpServerAllowlist\": [],\n    \"mcpLockdownSources\": [],\n    \"mcpManagedServersOnly\": \"off\",\n    \"marketplaceAllowlist\": [],\n    \"marketplaceLockdownSources\": [],\n    \"managedMarketplaces\": [],\n    \"managedSettingsPath\": \"/etc/claude-code/managed-settings.json\",\n    \"managedSettingsExists\": false,\n    \"managedSettingsActive\": false,\n    \"claudeBypassLockAdvisory\": false\n  },\n  \"loginPolicy\": {\n    \"disableApiKeyAuth\": null,\n    \"forceLoginTeamUuid\": null,\n    \"apiKeyAuthDisabled\": false\n  },\n  \"hooks\": [],\n  \"skills\": [],\n  \"agents\": [\n    {\n      \"name\": \"general-purpose\",\n      \"description\": \"General purpose agent for multi-step tasks.\",\n      \"source\": {\n        \"type\": \"builtin\"\n      }\n    },\n    {\n      \"name\": \"explore\",\n      \"description\": \"Fast, read-only agent specialized for codebase exploration.\",\n      \"source\": {\n        \"type\": \"builtin\"\n      }\n    },\n    {\n      \"name\": \"plan\",\n      \"description\": \"Software archite",
+        "stderr": ""
+      },
+      {
+        "command": "grok plugin install file://<temporary-native-root>/native-git-source@b205a51b1ba0db7f0fb1613578bc4e4238d1d8f1 --trust",
+        "exitCode": 0,
+        "stdout": "Installed 1 plugin(s) from file://<temporary-native-root>/native-git-source@b205a51b1ba0db7f0fb1613578bc4e4238d1d8f1: ecc",
+        "stderr": ""
+      },
+      {
+        "command": "grok inspect --json",
+        "exitCode": 0,
+        "stdout": "{\n  \"grokVersion\": \"1.0.62\",\n  \"channel\": \"unknown\",\n  \"cwd\": \"<temporary-native-root>/project\",\n  \"projectRoot\": null,\n  \"projectTrusted\": true,\n  \"projectInstructions\": [],\n  \"permissions\": {\n    \"sources\": [],\n    \"loaded\": 0,\n    \"skipped\": [],\n    \"mcpServerAllowlist\": [],\n    \"mcpLockdownSources\": [],\n    \"mcpManagedServersOnly\": \"off\",\n    \"marketplaceAllowlist\": [],\n    \"marketplaceLockdownSources\": [],\n    \"managedMarketplaces\": [],\n    \"managedSettingsPath\": \"/etc/claude-code/managed-settings.json\",\n    \"managedSettingsExists\": false,\n    \"managedSettingsActive\": false,\n    \"claudeBypassLockAdvisory\": false\n  },\n  \"loginPolicy\": {\n    \"disableApiKeyAuth\": null,\n    \"forceLoginTeamUuid\": null,\n    \"apiKeyAuthDisabled\": false\n  },\n  \"hooks\": [],\n  \"skills\": [\n    {\n      \"name\": \"accessibility\",\n      \"description\": \"Design, implement, and audit accessible UI to WCAG 2.2 Level AA across Web, iOS, and Android — semantic ARIA roles and labels, accessibility traits and hints, focus management, contrast, target size, and screen-reader support. Use when building or auditing UI for accessibility compliance, keyboard navigation, or screen-reader support.\",\n      \"source\": {\n      ",
+        "stderr": ""
+      },
+      {
+        "command": "grok plugin uninstall ecc",
+        "exitCode": 0,
+        "stdout": "Uninstalled 1 plugin(s): ecc",
+        "stderr": ""
+      },
+      {
+        "command": "grok inspect --json",
+        "exitCode": 0,
+        "stdout": "{\n  \"grokVersion\": \"1.0.62\",\n  \"channel\": \"unknown\",\n  \"cwd\": \"<temporary-native-root>/project\",\n  \"projectRoot\": null,\n  \"projectTrusted\": true,\n  \"projectInstructions\": [],\n  \"permissions\": {\n    \"sources\": [],\n    \"loaded\": 0,\n    \"skipped\": [],\n    \"mcpServerAllowlist\": [],\n    \"mcpLockdownSources\": [],\n    \"mcpManagedServersOnly\": \"off\",\n    \"marketplaceAllowlist\": [],\n    \"marketplaceLockdownSources\": [],\n    \"managedMarketplaces\": [],\n    \"managedSettingsPath\": \"/etc/claude-code/managed-settings.json\",\n    \"managedSettingsExists\": false,\n    \"managedSettingsActive\": false,\n    \"claudeBypassLockAdvisory\": false\n  },\n  \"loginPolicy\": {\n    \"disableApiKeyAuth\": null,\n    \"forceLoginTeamUuid\": null,\n    \"apiKeyAuthDisabled\": false\n  },\n  \"hooks\": [],\n  \"skills\": [],\n  \"agents\": [\n    {\n      \"name\": \"general-purpose\",\n      \"description\": \"General purpose agent for multi-step tasks.\",\n      \"source\": {\n        \"type\": \"builtin\"\n      }\n    },\n    {\n      \"name\": \"explore\",\n      \"description\": \"Fast, read-only agent specialized for codebase exploration.\",\n      \"source\": {\n        \"type\": \"builtin\"\n      }\n    },\n    {\n      \"name\": \"plan\",\n      \"description\": \"Software archite",
+        "stderr": ""
+      },
+      {
+        "command": "grok plugin install file://<temporary-native-root>/native-git-source --trust",
+        "exitCode": 0,
+        "stdout": "Installed 1 plugin(s) from file://<temporary-native-root>/native-git-source: ecc",
+        "stderr": ""
+      },
+      {
+        "command": "grok inspect --json",
+        "exitCode": 0,
+        "stdout": "{\n  \"grokVersion\": \"1.0.62\",\n  \"channel\": \"unknown\",\n  \"cwd\": \"<temporary-native-root>/project\",\n  \"projectRoot\": null,\n  \"projectTrusted\": true,\n  \"projectInstructions\": [],\n  \"permissions\": {\n    \"sources\": [],\n    \"loaded\": 0,\n    \"skipped\": [],\n    \"mcpServerAllowlist\": [],\n    \"mcpLockdownSources\": [],\n    \"mcpManagedServersOnly\": \"off\",\n    \"marketplaceAllowlist\": [],\n    \"marketplaceLockdownSources\": [],\n    \"managedMarketplaces\": [],\n    \"managedSettingsPath\": \"/etc/claude-code/managed-settings.json\",\n    \"managedSettingsExists\": false,\n    \"managedSettingsActive\": false,\n    \"claudeBypassLockAdvisory\": false\n  },\n  \"loginPolicy\": {\n    \"disableApiKeyAuth\": null,\n    \"forceLoginTeamUuid\": null,\n    \"apiKeyAuthDisabled\": false\n  },\n  \"hooks\": [],\n  \"skills\": [\n    {\n      \"name\": \"accessibility\",\n      \"description\": \"Design, implement, and audit accessible UI to WCAG 2.2 Level AA across Web, iOS, and Android — semantic ARIA roles and labels, accessibility traits and hints, focus management, contrast, target size, and screen-reader support. Use when building or auditing UI for accessibility compliance, keyboard navigation, or screen-reader support.\",\n      \"source\": {\n      ",
+        "stderr": ""
+      },
+      {
+        "command": "grok plugin update ecc",
+        "exitCode": 0,
+        "stdout": "native-git-source-7ad54405: updated (b205a51 -> b168794)",
+        "stderr": ""
+      },
+      {
+        "command": "grok inspect --json",
+        "exitCode": 0,
+        "stdout": "{\n  \"grokVersion\": \"1.0.62\",\n  \"channel\": \"unknown\",\n  \"cwd\": \"<temporary-native-root>/project\",\n  \"projectRoot\": null,\n  \"projectTrusted\": true,\n  \"projectInstructions\": [],\n  \"permissions\": {\n    \"sources\": [],\n    \"loaded\": 0,\n    \"skipped\": [],\n    \"mcpServerAllowlist\": [],\n    \"mcpLockdownSources\": [],\n    \"mcpManagedServersOnly\": \"off\",\n    \"marketplaceAllowlist\": [],\n    \"marketplaceLockdownSources\": [],\n    \"managedMarketplaces\": [],\n    \"managedSettingsPath\": \"/etc/claude-code/managed-settings.json\",\n    \"managedSettingsExists\": false,\n    \"managedSettingsActive\": false,\n    \"claudeBypassLockAdvisory\": false\n  },\n  \"loginPolicy\": {\n    \"disableApiKeyAuth\": null,\n    \"forceLoginTeamUuid\": null,\n    \"apiKeyAuthDisabled\": false\n  },\n  \"hooks\": [],\n  \"skills\": [\n    {\n      \"name\": \"accessibility\",\n      \"description\": \"Design, implement, and audit accessible UI to WCAG 2.2 Level AA across Web, iOS, and Android — semantic ARIA roles and labels, accessibility traits and hints, focus management, contrast, target size, and screen-reader support. Use when building or auditing UI for accessibility compliance, keyboard navigation, or screen-reader support.\",\n      \"source\": {\n      ",
+        "stderr": ""
+      },
+      {
+        "command": "grok plugin uninstall ecc",
+        "exitCode": 0,
+        "stdout": "Uninstalled 1 plugin(s): ecc",
+        "stderr": ""
+      },
+      {
+        "command": "grok inspect --json",
+        "exitCode": 0,
+        "stdout": "{\n  \"grokVersion\": \"1.0.62\",\n  \"channel\": \"unknown\",\n  \"cwd\": \"<temporary-native-root>/project\",\n  \"projectRoot\": null,\n  \"projectTrusted\": true,\n  \"projectInstructions\": [],\n  \"permissions\": {\n    \"sources\": [],\n    \"loaded\": 0,\n    \"skipped\": [],\n    \"mcpServerAllowlist\": [],\n    \"mcpLockdownSources\": [],\n    \"mcpManagedServersOnly\": \"off\",\n    \"marketplaceAllowlist\": [],\n    \"marketplaceLockdownSources\": [],\n    \"managedMarketplaces\": [],\n    \"managedSettingsPath\": \"/etc/claude-code/managed-settings.json\",\n    \"managedSettingsExists\": false,\n    \"managedSettingsActive\": false,\n    \"claudeBypassLockAdvisory\": false\n  },\n  \"loginPolicy\": {\n    \"disableApiKeyAuth\": null,\n    \"forceLoginTeamUuid\": null,\n    \"apiKeyAuthDisabled\": false\n  },\n  \"hooks\": [],\n  \"skills\": [],\n  \"agents\": [\n    {\n      \"name\": \"general-purpose\",\n      \"description\": \"General purpose agent for multi-step tasks.\",\n      \"source\": {\n        \"type\": \"builtin\"\n      }\n    },\n    {\n      \"name\": \"explore\",\n      \"description\": \"Fast, read-only agent specialized for codebase exploration.\",\n      \"source\": {\n        \"type\": \"builtin\"\n      }\n    },\n    {\n      \"name\": \"plan\",\n      \"description\": \"Software archite",
+        "stderr": ""
+      }
+    ],
+    "assertions": [
+      "untrusted local install was rejected and installed no plugin",
+      "trusted install was visible through grok plugin list and grok inspect",
+      "Grok discovered ECC skills while hooks and MCP servers remained disabled",
+      "disable removed ECC from loaded skills and enable restored them",
+      "missing installed root loaded no ECC skills; restoring root restored discovery",
+      "uninstall removed ECC from native discovery"
+    ]
+  },
+  "eccLifecycleSuites": [
+    {
+      "file": "tests/lib/grok-harness-adapter.test.js",
+      "passed": 8,
+      "failed": 0
+    },
+    {
+      "file": "tests/lib/grok-canonical-install.test.js",
+      "passed": 11,
+      "failed": 0,
+      "nativeInspections": 8
+    }
+  ],
+  "nativeGitFixture": {
+    "fixture": "full ECC checkout with synthetic lifecycle versions",
+    "baseSourceCommit": "dd2107ff659f085a6394c8d7925d5b283cfbdc8a",
+    "firstCommit": "b205a51b1ba0db7f0fb1613578bc4e4238d1d8f1",
+    "secondCommit": "b16879414093e29925f2baf006bfa9df72e5cb5f",
+    "pinnedInstall": {
+      "commit": "b205a51b1ba0db7f0fb1613578bc4e4238d1d8f1",
+      "gitRef": "b205a51b1ba0db7f0fb1613578bc4e4238d1d8f1",
+      "version": "2.2.3",
+      "skillContentVerified": true,
+      "snapshotVerified": true,
+      "eccCheckoutVerified": true,
+      "nativeInspectVerified": true,
+      "hooks": "",
+      "mcpServers": ""
+    },
+    "immutablePin": {
+      "commit": "b205a51b1ba0db7f0fb1613578bc4e4238d1d8f1",
+      "gitRef": "b205a51b1ba0db7f0fb1613578bc4e4238d1d8f1",
+      "version": "2.2.3",
+      "skillContentVerified": true,
+      "snapshotVerified": true,
+      "eccCheckoutVerified": true,
+      "nativeInspectVerified": true,
+      "hooks": "",
+      "mcpServers": ""
+    },
+    "explicitUpgrade": {
+      "commit": "b16879414093e29925f2baf006bfa9df72e5cb5f",
+      "gitRef": "b16879414093e29925f2baf006bfa9df72e5cb5f",
+      "version": "2.2.4-native.2",
+      "skillContentVerified": true,
+      "snapshotVerified": true,
+      "eccCheckoutVerified": true,
+      "nativeInspectVerified": true,
+      "hooks": "",
+      "mcpServers": ""
+    },
+    "rollback": {
+      "commit": "b205a51b1ba0db7f0fb1613578bc4e4238d1d8f1",
+      "gitRef": "b205a51b1ba0db7f0fb1613578bc4e4238d1d8f1",
+      "version": "2.2.3",
+      "skillContentVerified": true,
+      "snapshotVerified": true,
+      "eccCheckoutVerified": true,
+      "nativeInspectVerified": true,
+      "hooks": "",
+      "mcpServers": ""
+    },
+    "unpinnedInstall": {
+      "commit": "b205a51b1ba0db7f0fb1613578bc4e4238d1d8f1",
+      "gitRef": null,
+      "version": "2.2.3",
+      "skillContentVerified": true,
+      "snapshotVerified": true,
+      "eccCheckoutVerified": true,
+      "nativeInspectVerified": true,
+      "hooks": "",
+      "mcpServers": ""
+    },
+    "unpinnedUpdate": {
+      "commit": "b16879414093e29925f2baf006bfa9df72e5cb5f",
+      "gitRef": null,
+      "version": "2.2.4-native.2",
+      "skillContentVerified": true,
+      "snapshotVerified": true,
+      "eccCheckoutVerified": true,
+      "nativeInspectVerified": true,
+      "hooks": "",
+      "mcpServers": ""
+    },
+    "uninstall": {
+      "registryEntryRemoved": true,
+      "snapshotRemoved": true
+    }
+  },
+  "coverageNotes": {
+    "upgradeRollbackAndImmutablePin": "Covered by the canonical Grok install suite using distinct source commits and an explicit rollback SHA.",
+    "missingRoot": "Covered by the Grok adapter boundary suite; unresolved roots return null.",
+    "nativeUpdate": "Real native Git lifecycle uses a full ECC source archive with a synthetic second version: pinned update stays on SHA1; explicit SHA2 install and rollback to SHA1 preserve exact registry commits; unpinned update advances to SHA2.",
+    "disabledFlag": "grok 1.0.62 (1474f9cbdd91) still reports plugin.enabled=true after disable; loaded ECC skills correctly drop to zero.",
+    "providerExecution": "No model turn, tool execution, or external MCP server was invoked."
+  }
+}
