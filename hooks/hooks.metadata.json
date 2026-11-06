@@ -15,12 +15,12 @@
       {
         "id": "pre:write:doc-file-warning",
         "description": "Doc file warning: warn about non-standard documentation files (exit code 0; warns only)",
-        "fingerprint": "7b414e2f33ce"
+        "fingerprint": "37def33777d0"
       },
       {
         "id": "pre:edit-write:suggest-compact",
         "description": "Suggest manual compaction at logical intervals",
-        "fingerprint": "c5221aa445cc"
+        "fingerprint": "0f903aca71cf"
       },
       {
         "id": "pre:observe:continuous-learning",
@@ -40,7 +40,7 @@
       {
         "id": "pre:mcp-health-check",
         "description": "Check MCP server health before MCP tool execution and block unhealthy MCP calls",
-        "fingerprint": "773a20e88ec8"
+        "fingerprint": "06d268a8095a"
       },
       {
         "id": "pre:edit-write:gateguard-fact-force",
@@ -64,7 +64,7 @@
       {
         "id": "pre:compact",
         "description": "Save state before context compaction",
-        "fingerprint": "28991284118e"
+        "fingerprint": "1beef3acf474"
       }
     ],
     "SessionStart": [
@@ -76,7 +76,7 @@
       {
         "id": "session-start:plan-canvas-sessions",
         "description": "Surface open Plan Canvas review sessions so a fresh session can resume the loop",
-        "fingerprint": "1c23f955ee8b"
+        "fingerprint": "728d48b97fdb"
       }
     ],
     "PostToolUse": [
@@ -95,12 +95,12 @@
       {
         "id": "post:mcp-health-check",
         "description": "Track failed MCP tool calls, mark unhealthy servers, and attempt reconnect",
-        "fingerprint": "42692c6b8819"
+        "fingerprint": "72cf431345fc"
       },
       {
         "id": "post:skill:track",
         "description": "Record hard Skill tool failures for skill-health telemetry",
-        "fingerprint": "db25a82289aa"
+        "fingerprint": "06d3de215e25"
       }
     ],
     "Stop": [

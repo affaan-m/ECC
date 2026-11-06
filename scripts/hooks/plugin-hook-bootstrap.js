@@ -190,6 +190,24 @@ function spawnNode(rootDir, relPath, raw, args, options = {}) {
   return withComparisonInput(result, Buffer.from(raw, 'utf8'));
 }
 
+// Almost every plugin hook targets run-with-flags.js, which only reads stdin
+// and dispatches. Call it in-process instead of paying a second Node startup
+// (~50-100 ms) on every hook. Same env and inputs the child would have seen.
+async function runWithFlagsInProcess(rootDir, target, raw, args, options) {
+  ensureAgentDataHomeEnv();
+  process.env.CLAUDE_PLUGIN_ROOT = rootDir;
+  process.env.ECC_PLUGIN_ROOT = rootDir;
+  process.env.ECC_HOOK_INPUT_MAX_BYTES = String(options.maxStdin);
+  const [hookId, relScriptPath, profilesCsv] = args;
+  const { runHook } = require(target);
+  const { stdout, exitCode } = await runHook(hookId, relScriptPath, profilesCsv, {
+    raw,
+    truncated: options.truncated,
+    hookContext: options.hookContext || {},
+  });
+  return withComparisonInput({ status: exitCode, stdout }, Buffer.from(raw, 'utf8'));
+}
+
 // spawnShell is not used by any hook in the shipped hooks.json configuration
 // (all hooks use 'node' mode). It is provided for third-party plugins that
 // register shell-backed hooks. Plugins should supply .ps1 scripts on Windows
@@ -284,7 +302,10 @@ async function main() {
 
   let result;
   try {
-    if (mode === 'node') {
+    if (mode === 'node' && path.basename(relPath) === 'run-with-flags.js') {
+      const target = resolveTarget(rootDir, relPath);
+      result = await runWithFlagsInProcess(rootDir, target, raw, args, { maxStdin, truncated, hookContext });
+    } else if (mode === 'node') {
       result = spawnNode(rootDir, relPath, raw, args, { maxStdin, truncated, hookContext });
     } else if (mode === 'shell') {
       result = spawnShell(rootDir, relPath, raw, args, { maxStdin, truncated, hookContext });
