@@ -56,6 +56,12 @@ const PACKAGE_MANAGERS = {
   }
 };
 
+// Only explicitly supported primitive names are valid; inherited object keys
+// (for example "constructor") are not package manager configurations.
+function isSupportedPackageManager(name) {
+  return typeof name === 'string' && Object.prototype.hasOwnProperty.call(PACKAGE_MANAGERS, name);
+}
+
 // Priority order for detection
 const DETECTION_PRIORITY = ['pnpm', 'bun', 'yarn', 'npm'];
 
@@ -117,7 +123,7 @@ function detectFromPackageJson(projectDir = process.cwd()) {
       if (pkg.packageManager) {
         // Format: "pnpm@8.6.0" or just "pnpm"
         const pmName = pkg.packageManager.split('@')[0];
-        if (PACKAGE_MANAGERS[pmName]) {
+        if (isSupportedPackageManager(pmName)) {
           return pmName;
         }
       }
@@ -168,7 +174,7 @@ function getPackageManager(options = {}) {
 
   // 1. Check environment variable
   const envPm = process.env.CLAUDE_PACKAGE_MANAGER;
-  if (envPm && PACKAGE_MANAGERS[envPm]) {
+  if (isSupportedPackageManager(envPm)) {
     return {
       name: envPm,
       config: PACKAGE_MANAGERS[envPm],
@@ -182,7 +188,7 @@ function getPackageManager(options = {}) {
   if (projectConfig) {
     try {
       const config = JSON.parse(projectConfig);
-      if (config.packageManager && PACKAGE_MANAGERS[config.packageManager]) {
+      if (isSupportedPackageManager(config.packageManager)) {
         return {
           name: config.packageManager,
           config: PACKAGE_MANAGERS[config.packageManager],
@@ -216,7 +222,7 @@ function getPackageManager(options = {}) {
 
   // 5. Check global user preference
   const globalConfig = loadConfig();
-  if (globalConfig && globalConfig.packageManager && PACKAGE_MANAGERS[globalConfig.packageManager]) {
+  if (globalConfig && isSupportedPackageManager(globalConfig.packageManager)) {
     return {
       name: globalConfig.packageManager,
       config: PACKAGE_MANAGERS[globalConfig.packageManager],
@@ -242,7 +248,7 @@ function getPackageManager(options = {}) {
  * Set user's preferred package manager (global)
  */
 function setPreferredPackageManager(pmName) {
-  if (!PACKAGE_MANAGERS[pmName]) {
+  if (!isSupportedPackageManager(pmName)) {
     throw new Error(`Unknown package manager: ${pmName}`);
   }
 
@@ -263,7 +269,7 @@ function setPreferredPackageManager(pmName) {
  * Set project's preferred package manager
  */
 function setProjectPackageManager(pmName, projectDir = process.cwd()) {
-  if (!PACKAGE_MANAGERS[pmName]) {
+  if (!isSupportedPackageManager(pmName)) {
     throw new Error(`Unknown package manager: ${pmName}`);
   }
 
@@ -420,6 +426,7 @@ function getCommandPattern(action) {
 
 module.exports = {
   PACKAGE_MANAGERS,
+  isSupportedPackageManager,
   DETECTION_PRIORITY,
   getPackageManager,
   setPreferredPackageManager,
