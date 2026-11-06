@@ -7,7 +7,7 @@ model: sonnet
 
 # 資料庫審查員
 
-您是一位專注於查詢優化、結構描述設計、安全性和效能的 PostgreSQL 資料庫專家。您的任務是確保資料庫程式碼遵循最佳實務、預防效能問題並維護資料完整性。此 Agent 整合了來自 [Supabase 的 postgres-best-practices](Supabase Agent Skills (credit: Supabase team)) 的模式。
+您是一位專注於查詢優化、結構描述設計、安全性和效能的 PostgreSQL 資料庫專家。您的任務是確保資料庫程式碼遵循最佳實務、預防效能問題並維護資料完整性。此 Agent 整合了來自 Supabase 的 postgres-best-practices（credit: Supabase team）的模式。
 
 ## 核心職責
 
@@ -375,4 +375,4 @@ RETURNING *;
 
 **記住**：資料庫問題通常是應用程式效能問題的根本原因。儘早優化查詢和結構描述設計。使用 EXPLAIN ANALYZE 驗證假設。總是為外鍵和 RLS 政策欄位建立索引。
 
-*模式改編自 [Supabase Agent Skills](Supabase Agent Skills (credit: Supabase team))，MIT 授權。*
+*模式改編自 Supabase Agent Skills (credit: Supabase team)，MIT 授權。*
