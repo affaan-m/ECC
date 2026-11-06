@@ -18,6 +18,9 @@ REFERENCE_DEFINITION_RE = re.compile(
 REFERENCE_USAGE_RE = re.compile(
     r"(?<![\\])(?:\\\\)*\[(?P<text>[^\]\n]+)\](?:\[(?P<label>[^\]\n]*)\])?"
 )
+LINK_TITLE_RE = re.compile(
+    r'\s+(?:"(?:\\.|[^"\\])*"|\'(?:\\.|[^\'\\])*\'|\([^()]*\))\s*$'
+)
 EXTERNAL_URI_RE = re.compile(
     r"^(?:[A-Za-z][A-Za-z0-9+.-]*://|(?:data|doi|geo|irc|magnet|mailto|news|sms|tel|urn):)",
     re.IGNORECASE,
@@ -28,12 +31,22 @@ def without_fenced_code(text: str) -> str:
     output: list[str] = []
     fence_character: str | None = None
     fence_length = 0
+    # -- inside an HTML comment block that opened on an earlier line, a fence line is comment
+    # -- text, which the inline pass blanks with the rest of the comment --
+    in_comment = False
+    after_blank = True
     for line in text.splitlines(keepends=True):
+        if in_comment:
+            in_comment = "-->" not in line
+            output.append(line)
+            after_blank = False
+            continue
         marker = re.match(r"^ {0,3}(`{3,}|~{3,})(.*)$", line)
         if fence_character is None and marker:
             fence_character = marker.group(1)[0]
             fence_length = len(marker.group(1))
             output.append("\n" if line.endswith("\n") else "")
+            after_blank = True
             continue
         if fence_character is not None:
             closing = re.match(
@@ -44,15 +57,71 @@ def without_fenced_code(text: str) -> str:
                 fence_character = None
                 fence_length = 0
             output.append("\n" if line.endswith("\n") else "")
+            after_blank = True
             continue
+        # -- the same comment blocks as `_html_comment_end`: <!-- at column 0 after a blank line --
+        in_comment = after_blank and line.startswith("<!--") and "-->" not in line[2:]
         output.append(line)
+        after_blank = not line.strip()
     return "".join(output)
 
 
-def without_inline_code(text: str) -> str:
+def _is_escaped(text: str, index: int) -> bool:
+    backslashes = 0
+    while index - backslashes > 0 and text[index - backslashes - 1] == "\\":
+        backslashes += 1
+    return backslashes % 2 == 1
+
+
+def _html_comment_end(text: str, start: int, closing: int) -> int:
+    """Where the comment that opens at `start` and closes at `closing` ends, or -1 if it is text.
+
+    One whose `<!--` starts a line at column 0, after a blank line or at the start of the text,
+    opens a top-level HTML block. No list item or block quote holds that block, so only its closer
+    ends it: it may span lines and takes the rest of the line that holds the closer. Any other
+    comment is hidden only when it closes on the line it opens on, which it cannot leave. Across
+    lines it stays text, so a container that ends before its closer does not hide the links that
+    follow.
+    """
+    if start == 0 or text[start - 1] == "\n":
+        previous_line = text[text.rfind("\n", 0, start - 1) + 1 : start - 1] if start else ""
+        if not previous_line.strip():
+            newline = text.find("\n", closing + 3)
+            return len(text) if newline == -1 else newline
+    return -1 if text.find("\n", start, closing) != -1 else closing + 3
+
+
+def without_inline_code_and_html_comments(text: str) -> str:
+    """Blank out inline code spans and HTML comments, whichever opens first.
+
+    A comment runs from `<!--` to the first `-->` after it (`<!-->` and `<!--->` included), within
+    the limits that `_html_comment_end` sets. It becomes an opaque run of NUL characters, so a
+    link or a reference definition cannot continue through it, as none can through raw HTML. An
+    escaped `\\<!--`, or an opener with no closer, stays literal text, as in CommonMark.
+    """
     output: list[str] = []
     cursor = 0
+    # -- the first closer after an opener, kept while it is still ahead --
+    closing = -1
+    comments_can_close = True
     while cursor < len(text):
+        if (
+            comments_can_close
+            and text.startswith("<!--", cursor)
+            and not _is_escaped(text, cursor)
+        ):
+            if closing < cursor + 2:
+                closing = text.find("-->", cursor + 2)
+            end = -1 if closing == -1 else _html_comment_end(text, cursor, closing)
+            if end != -1:
+                output.extend(
+                    "\n" if character == "\n" else "\0"
+                    for character in text[cursor:end]
+                )
+                cursor = end
+                continue
+            # -- no closer here means none for any later opener either --
+            comments_can_close = closing != -1
         if text[cursor] != "`":
             output.append(text[cursor])
             cursor += 1
@@ -173,8 +242,16 @@ def reference_link_targets(text: str) -> list[str]:
 
 
 def markdown_link_targets(text: str) -> list[str]:
-    text = without_inline_code(without_fenced_code(text))
-    return inline_link_targets(text) + reference_link_targets(text)
+    text = without_inline_code_and_html_comments(without_fenced_code(text))
+    targets = inline_link_targets(text) + reference_link_targets(text)
+    # -- a destination made of a blanked comment is no link; a title may hold one --
+    return [target for target in targets if "\0" not in _without_title(target)]
+
+
+def _without_title(raw: str) -> str:
+    target = raw.strip()
+    title = None if target.startswith("<") else LINK_TITLE_RE.search(target)
+    return target[: title.start()] if title else target
 
 
 def normalize_link_target(raw: str) -> str | None:
@@ -186,12 +263,7 @@ def normalize_link_target(raw: str) -> str | None:
             return None
         target = target[1:closing]
     else:
-        title = re.search(
-            r'\s+(?:"(?:\\.|[^"\\])*"|\'(?:\\.|[^\'\\])*\'|\([^()]*\))\s*$',
-            target,
-        )
-        if title:
-            target = target[: title.start()]
+        target = _without_title(target)
     # Unescape supported Markdown punctuation before Windows path separators.
     target = re.sub(r"\\([()\[\]'])", r"\1", target)
     target = unquote(target.split("#", 1)[0].split("?", 1)[0]).replace("\\", "/")
