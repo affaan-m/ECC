@@ -35,18 +35,21 @@ function checkRuntime(runtimeRoot, extension, loader, installedHome = false) {
       const plugins = await load("plugins/index")
       const entry = await load("index")
       assert.deepEqual(Object.keys(entry), ["default"])
-      assert.equal(entry.default, plugins.default)
+      // The entry barrel exposes the real V2 definition; the plugins barrel is
+      // an inert distinct-id stub on purpose (OpenCode 2.x loads root plugin
+      // files AND the directory barrel, so re-exporting the real id from both
+      // would produce red "Duplicate plugin ID" registrations).
+      assert.notEqual(entry.default, plugins.default,
+        "entry and plugins barrels must not share one plugin id (duplicate registrations)")
+      assert.equal(entry.default.id, "ecc-hooks")
+      assert.equal(typeof entry.default.setup, "function")
+      assert.equal(plugins.default.id, "ecc-hooks-entry")
+      assert.equal(typeof plugins.default.setup, "function")
       const logs = []
-      // Home installs are auto-discovered. Their barrel must stay inert so
-      // the hooks module is initialized exactly once; published package entry
-      // imports continue to expose the actual plugin.
-      const active = installedHome === "true" ? await load("plugins/ecc-hooks") : entry
-      // The inert stub is a V2 definition object (id + setup), not a factory.
-      if (installedHome === "true") {
-        assert.equal(entry.default.id, "ecc-hooks")
-        assert.equal(typeof entry.default.setup, "function")
-      }
-      const plugin = await active.default({
+      const active = await load("plugins/ecc-hooks")
+      assert.equal(active.default, entry.default)
+      assert.equal(typeof active.ECCHooksPlugin, "function")
+      const plugin = await active.ECCHooksPlugin({
         client: { app: { log: (event) => logs.push(event.body) } },
         $: () => { throw new Error("Unexpected shell execution") },
         directory: process.cwd(),
@@ -175,8 +178,13 @@ function main() {
             throw new Error("unexpected entry resolution: " + resolved)
           }
           const mod = await import("ecc-universal")
-          if (Object.keys(mod).join(",") !== "default" || typeof mod.default !== "function") {
-            throw new Error("root module must export exactly the plugin function")
+          const definition = mod.default
+          if (Object.keys(mod).join(",") !== "default") {
+            throw new Error("root module must export exactly the plugin definition")
+          }
+          if (!definition || typeof definition !== "object" || definition.id !== "ecc-hooks" ||
+              typeof definition.setup !== "function") {
+            throw new Error("root module must export the V2 plugin definition ({ id, setup })")
           }
         `
         const probePath = path.join(tempDir, "probe.mjs")
@@ -217,9 +225,10 @@ function main() {
       }
       assert.deepStrictEqual(unresolved, [])
     }],
-    ["built OpenCode entry exports only the plugin function", () => {
+    ["built OpenCode entry exports the V2 definition and the factory hook map", () => {
       const check = `
         const assert = require("assert")
+        const path = require("path")
         const { pathToFileURL } = require("url")
 
         async function main() {
@@ -231,10 +240,21 @@ function main() {
             process.exit(1)
           }
           assert.deepStrictEqual(Object.keys(mod).sort(), ["default"])
-          assert.strictEqual(typeof mod.default, "function")
+          // OpenCode 2.x requires the default export to be the plugin
+          // definition object; the V1 factory stays as a named export of the
+          // hooks module for legacy discovery and the behavioral test suite.
+          assert.ok(mod.default && typeof mod.default === "object", "entry default must be the plugin definition")
+          assert.strictEqual(mod.default.id, "ecc-hooks")
+          assert.strictEqual(typeof mod.default.setup, "function")
+
+          const hooksMod = await import(pathToFileURL(
+            path.join(path.dirname(process.argv[1]), "plugins", "ecc-hooks.js")
+          ).href)
+          assert.strictEqual(hooksMod.default, mod.default, "entry and hooks module must share one definition")
+          assert.strictEqual(typeof hooksMod.ECCHooksPlugin, "function", "hooks module must export the V1 factory")
 
           let shellCalls = 0
-          const plugin = await mod.default({
+          const plugin = await hooksMod.ECCHooksPlugin({
             client: { app: { log: () => {} } },
             $: async () => {
               shellCalls += 1
@@ -244,7 +264,7 @@ function main() {
             worktree: process.cwd(),
           })
           assert.strictEqual(shellCalls, 0, "$ must not be called during plugin init")
-          assert.ok(plugin && typeof plugin === "object", "default export must return a plugin record")
+          assert.ok(plugin && typeof plugin === "object", "factory must return a plugin record")
           const expectedHooks = [
             "file.edited",
             "tool.execute.after",
@@ -282,6 +302,47 @@ function main() {
         })
       `
       const result = spawnSync(process.execPath, ["-e", check, distEntry], {
+        cwd: repoRoot,
+        encoding: "utf8",
+      })
+      assert.strictEqual(result.status, 0, result.stderr)
+    }],
+    ["ecc-universal package ./plugins export resolves to the live hooks entry", () => {
+      const pkgDir = path.join(repoRoot, ".opencode")
+      const pkg = JSON.parse(fs.readFileSync(path.join(pkgDir, "package.json"), "utf8"))
+      assert.strictEqual(pkg.name, "ecc-universal")
+      const pluginExport = pkg.exports && pkg.exports["./plugins"]
+      assert.ok(pluginExport, "ecc-universal must declare an ./plugins export")
+      for (const key of ["types", "import"]) {
+        const rel = pluginExport[key]
+        assert.ok(rel, `./plugins export must declare ${key}`)
+        assert.ok(
+          fs.existsSync(path.resolve(pkgDir, rel)),
+          `./plugins ${key} target must exist after the build: ${rel}`,
+        )
+      }
+      // The export must point at the LIVE plugin, not the inert barrel: same
+      // default definition, V1 factory, and a distinct-id barrel behind it.
+      const check = `
+        const assert = require("assert")
+        const path = require("path")
+        const { pathToFileURL } = require("url")
+        async function main() {
+          const pkgDir = process.argv[1]
+          const pkg = require(path.join(pkgDir, "package.json"))
+          const live = await import(pathToFileURL(path.resolve(pkgDir, pkg.exports["./plugins"].import)).href)
+          assert.strictEqual(live.default.id, "ecc-hooks", "./plugins must expose the live plugin definition")
+          assert.strictEqual(typeof live.default.setup, "function")
+          assert.strictEqual(typeof live.ECCHooksPlugin, "function", "./plugins must expose the V1 factory")
+          const barrel = await import(pathToFileURL(
+            path.join(pkgDir, "dist", "plugins", "index.js")
+          ).href)
+          assert.strictEqual(barrel.default.id, "ecc-hooks-entry", "compiled barrel must keep the distinct id")
+          assert.notStrictEqual(barrel.default, live.default, "barrel must not re-export the live definition")
+        }
+        main().catch((error) => { console.error(error); process.exit(1) })
+      `
+      const result = spawnSync(process.execPath, ["-e", check, pkgDir], {
         cwd: repoRoot,
         encoding: "utf8",
       })

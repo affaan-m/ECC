@@ -343,6 +343,99 @@ third-party [`oh-my-opencode-slim`](https://github.com/alvinunreal/oh-my-opencod
 plugin, not ECC — ECC never writes to `~/.config/opencode/`. Fix the model prefix
 (`opencode/...` instead of `openai/...`) there, or file it against that project.
 
+### OpenCode 2.x: `PluginModule.LoadError` and red "Duplicate plugin ID" entries
+
+**Symptoms (two distinct failures, often in sequence):**
+
+1. Red startup banner / log lines:
+
+   ```
+   PluginModule.LoadError: Plugin must export a default definition with an id and
+   an effect or setup function. (cause: SchemaError(Expected object at ["default"]))
+   ```
+
+   reported against `plugins/ecc-hooks.ts` (global or project `.opencode/plugins/`).
+
+2. After a first fix attempt, the TUI plugins panel shows `ecc-hooks` multiple
+   times with red entries reading `Duplicate plugin ID: ecc-hooks`, even though
+   the hooks themselves are working.
+
+**Causes:**
+
+- **V1 plugin on a V2 runtime.** OpenCode 1.x plugins default-export an async
+  function returning a keyed hook map. OpenCode 2.x requires a definition object
+  `{ id, setup(ctx) }` and does not run V1 implementations (see
+  [migrate-v1](https://opencode.ai/v2/docs/build/plugins/migrate-v1)). Cause A
+  produces the `Expected object at ["default"]` schema error.
+- **Duplicate registration.** OpenCode 2.x loads plugins by directory
+  discovery: every root-level file in a plugins directory is a separate
+  entry. If `index.ts` re-exports the same definition as `ecc-hooks.ts`, the
+  id `ecc-hooks` registers twice; all but the first entry are marked
+  `failed: Duplicate plugin ID`. A copy of the same file in both the global
+  config plugins dir and the project `.opencode/plugins/` compounds it.
+  Note that the `plugin` config array does **not** accept file paths — an
+  entry like `"./plugins/ecc-hooks.ts"` logs "configured plugin path must be
+  a directory" and is skipped (verified against OpenCode 2.2.5's
+  `config/plugin/source.ts`), so it cannot pin or dedupe entries.
+
+**Fix layout (current design):**
+
+- `.opencode/plugins/ecc-hooks.ts` is the only file carrying hook logic. V1 →
+  V2 registration mapping: `tool.execute.before/after` →
+  `ctx.tool.hook(...)`, `shell.env` → `ctx.shell.hook("create.before", ...)`,
+  `permission.ask` → `ctx.permission.hook("evaluate", ...)` (mutate
+  `event.effect`), keyed event handlers (`file.edited`, `session:*`,
+  `todo.updated`) → `ctx.event.subscribe()` filtered on `event.type`.
+- `opencode.json` carries **no** `plugin` entry for the hooks file. OpenCode
+  2.x discovers `plugins/ecc-hooks.ts` from the plugins directory; a configured
+  file path would be ignored with a warning anyway.
+- `plugins/index.ts` is an inert stub with the distinct id
+  `ecc-hooks-entry`. Never make it re-export the real definition: that is
+  exactly what triggers the duplicate-id failures. It must keep a default
+  export with an id + setup (a plain non-plugin module in a loaded directory
+  would throw the schema error again), and it must remain present on disk for
+  the install/uninstall plans. Module consumers of the published package get
+  the live plugin through the `ecc-universal/plugins` export, which maps to
+  `dist/plugins/ecc-hooks.js`.
+
+**Diagnosing (do this before editing anything):**
+
+1. Read the server log, and check the `run=` id and timestamp of every error
+   line — TUI banners survive from a process that predates your fix, so match
+   errors against the *current* run only:
+
+   ```
+   ~/.local/share/opencode/log/opencode.log   # Windows, Linux, Termux
+   ```
+
+2. Ignore unrelated network noise when triaging plugins: `Failed to fetch
+   models.dev`, `failed to sync GitHub Copilot models: 403`, and
+   `update check failed` are connectivity/auth issues, not hook failures.
+
+3. Query the live plugin table — this is the ground truth behind the TUI
+   panel. The server port comes from `opencode service status`; credentials
+   are Basic auth with the `password` field of `~/.config/opencode/service.json`.
+   `/api/plugin` is location-scoped: pass the affected project directory as
+   `location[directory]`, otherwise you inspect the service's default location
+   and can miss the failures you are chasing (a location with no live session
+   may report no entries at all):
+
+   ```bash
+   curl -s -u "opencode:$(sed -n 's/.*"password": "\(.*\)".*/\1/p' ~/.config/opencode/service.json)" \
+     --get "http://127.0.0.1:<port>/api/plugin" \
+     --data-urlencode "location[directory]=/path/to/affected/project" \
+     | jq '[.data[] | select(.state.status != "active")]'
+   ```
+
+4. `opencode plugin list` shows each registered entry with its source path.
+   The same id appearing from two-plus sources predicts a duplicate-ID
+   rejection.
+
+**Environment-variable note:** `ECC_HOOK_PROFILE` / `ECC_DISABLED_HOOKS` are
+read once at plugin setup. On Windows, `setx` affects only *new* processes, and
+a service restarted from a terminal that predates the `setx` still inherits the
+stale environment block — restart from a freshly opened terminal.
+
 ---
 
 ## Performance Issues

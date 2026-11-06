@@ -176,7 +176,7 @@ function transformInstallContent(operation, content) {
       disableOpenCodeHookPluginRegistration(content, operation.sourceRelativePath));
   }
   if (operation.contentTransform === 'opencode-disable-plugin-entrypoint') {
-    return getDisabledOpenCodePluginContent();
+    return getDisabledOpenCodePluginContent(operation.sourceRelativePath);
   }
   if (operation.contentTransform === 'opencode-home-skills-path') {
     const config = JSON.parse(content);
