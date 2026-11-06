@@ -235,6 +235,11 @@ const executingPayloads = [
   ['word-internal hash does not hide a later push bypass', 'printf %s foo#bar && git push --no-verify'],
   ['pipe echo data to bash', "echo 'git commit -n -m x' | bash"],
   ['pipe printf data to sh', "printf '%s\\n' 'git commit --no-verify -m x' | sh"],
+  ['execute bypass through Node eval', 'node -e \'require("child_process").execSync("git push --no-verify")\''],
+  ['execute piped bypass source through Node stdin', "printf '%s' 'require(\"child_process\").execSync(\"git push --no-verify\")' | node"],
+  ['execute heredoc bypass source through Node empty double-quoted operand', 'node "" <<\'JS\'\nrequire("child_process").execSync("git push --no-verify")\nJS'],
+  ['execute heredoc bypass source through Node empty single-quoted operand', "node '' <<'JS'\nrequire(\"child_process\").execSync(\"git push --no-verify\")\nJS"],
+  ['keep a dynamic Node launcher opaque', "node$SUFFIX /tmp/x.js 'git commit --no-verify'"],
   ['execute data through xargs and bash -c', "printf '%s\\n' 'git commit -n -m x' | xargs -I CMD bash -c CMD"],
   ['execute command substitution text through bash', "echo '$(git commit -n -m x)' | bash"],
   ['execute bash here-string', "bash <<< 'git commit -n -m x'"],
@@ -272,6 +277,8 @@ for (const [name, command] of executingPayloads) {
 }
 
 const nonLeakingPayloads = [
+  ['Node script argument is data, not shell source', "node /tmp/cli.js 'git commit --no-verify -m x'"],
+  ['stdin piped to a Node script is data, not shell source', "printf '%s' 'git commit --no-verify -m x' | node /tmp/x.js"],
   // Inside double quotes a backslash before dot remains literal, so decoded executable is git\.exe, not git.exe.
   ['allows the distinct executable with a literal escaped dot', '"git""\\.exe" commit -n -m x'],
   // A complete echo operand is data; accepted role repair intentionally corrects the authored broad-blocking expectation.
