@@ -21,7 +21,7 @@ const LLM_TIMEOUT_MS = 90000;
 // Leave the Stop hook time to persist its mechanical fallback after a timeout.
 const HOOK_FINISH_RESERVE_MS = 1000;
 // Harness notice shown after a safety-classifier stop; it is not a user ask (#3867).
-const CLASSIFIER_NOTICE = /^Your response above was stopped by a safety classifier\s*[—–-]\s*this is not a tool or API error\.?$/i;
+const CLASSIFIER_NOTICE = /^Your response above was stopped by a safety classifier\s*[—–-]\s*this is not a tool or API error\.?(?:\s+The rest of it was withheld, and tool calls in it that had not finished did not run\.\s+Do not produce that content again, even reworded\.)?$/i;
 
 function getLLMModel() {
   return process.env.ECC_LLM_SUMMARY_MODEL || 'haiku';

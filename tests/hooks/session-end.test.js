@@ -86,6 +86,18 @@ function testDropsClassifierNotice() {
   });
 }
 
+function testDropsLongClassifierNotice() {
+  const longNotice = `${CLASSIFIER_NOTICE_TEXT} The rest of it was withheld, and tool calls in it that had not finished did not run. Do not produce that content again, even reworded.`;
+  withTranscript('3867dddd-eeee-4fff-8aaa-bbbbbbbb3867', [
+    JSON.stringify({ type: 'user', message: { role: 'user', content: 'Refactor the config loader' } }),
+    JSON.stringify({ type: 'user', content: longNotice }),
+    JSON.stringify({ type: 'user', content: 'Why did this happen?' }),
+  ], out => {
+    assert.ok(out.includes('- Refactor the config loader') && out.includes('Why did this happen?'), `expected real user asks in:\n${out}`);
+    assert.ok(!out.includes('withheld') && !out.includes('safety classifier'), `long notice must not be summarized:\n${out}`);
+  });
+}
+
 function testNoticeOnlyTranscript() {
   withTranscript('3867bbbb-cccc-4ddd-8eee-ffffffff3867', [JSON.stringify({ type: 'user', content: CLASSIFIER_NOTICE_TEXT })], out => {
     assert.ok(!out.includes(START), `a notice-only transcript must not produce a summary block:\n${out}`);
@@ -103,6 +115,7 @@ function testKeepsMessageQuotingNotice() {
 function runClassifierNoticeTests() {
   const results = [
     test('drops safety-classifier notices from summary tasks', testDropsClassifierNotice),
+    test('drops the longer classifier notice from summary tasks', testDropsLongClassifierNotice),
     test('writes no summary for a transcript holding only a classifier notice', testNoticeOnlyTranscript),
     test('keeps a user message that only mentions the classifier notice', testKeepsMessageQuotingNotice),
   ];

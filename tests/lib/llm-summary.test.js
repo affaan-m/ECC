@@ -157,6 +157,19 @@ test('collapses newlines to spaces', () => {
 // Regression (#3867): the harness notice after a safety-classifier stop is
 // recorded as a user entry; it must not reach the LLM summary input.
 const CLASSIFIER_NOTICE_TEXT = 'Your response above was stopped by a safety classifier — this is not a tool or API error.';
+const CLASSIFIER_NOTICE_LONG_TEXT = `${CLASSIFIER_NOTICE_TEXT} The rest of it was withheld, and tool calls in it that had not finished did not run. Do not produce that content again, even reworded.`;
+
+test('drops the longer classifier notice from the LLM input', () => {
+  const p = writeTranscript([userEntry('Refactor the config loader'), userEntry(CLASSIFIER_NOTICE_LONG_TEXT), assistantEntry('Done.')]);
+  const result = extractConversationText(p);
+  assert.ok(result.includes('Refactor the config loader'));
+  assert.ok(!result.includes('withheld') && !result.includes('safety classifier'), result);
+});
+
+test('keeps user text following the longer notice', () => {
+  const text = `${CLASSIFIER_NOTICE_LONG_TEXT} Why did this happen?`;
+  assert.ok(extractConversationText(writeTranscript([userEntry(text)])).includes('Why did this happen?'));
+});
 
 test('drops safety-classifier notices from the LLM input', () => {
   const p = writeTranscript([userEntry('Refactor the config loader'), userEntry(CLASSIFIER_NOTICE_TEXT), assistantEntry('Done.')]);
@@ -177,6 +190,8 @@ test('returns null when the only user turn is a classifier notice', () => {
 
 test('isClassifierNotice matches only the whole notice', () => {
   assert.strictEqual(isClassifierNotice(CLASSIFIER_NOTICE_TEXT), true);
+  assert.strictEqual(isClassifierNotice(CLASSIFIER_NOTICE_LONG_TEXT), true);
+  assert.strictEqual(isClassifierNotice(`${CLASSIFIER_NOTICE_LONG_TEXT} Why did this happen?`), false);
   assert.strictEqual(isClassifierNotice(`${CLASSIFIER_NOTICE_TEXT} Why did this happen?`), false);
   assert.strictEqual(isClassifierNotice('Why did I see "Your response above was stopped by a safety classifier"?'), false);
 });
