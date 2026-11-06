@@ -279,8 +279,21 @@ function parseMemoryDocument(source, sourcePath = '<memory>') {
   return normalizeMemory({ ...parsed.values, body });
 }
 
+function collectStrings(value, strings = []) {
+  if (typeof value === 'string') {
+    strings.push(value);
+  } else if (Array.isArray(value)) {
+    value.forEach(item => collectStrings(item, strings));
+  } else if (value && typeof value === 'object') {
+    Object.values(value).forEach(item => collectStrings(item, strings));
+  }
+  return strings;
+}
+
+// Scan decoded field values: JSON.stringify turns a newline or tab into `\n`
+// or `\t`, and the escape letter would defeat the patterns' leading `\b`.
 function findPotentialSecrets(value) {
-  const text = typeof value === 'string' ? value : '';
+  const text = typeof value === 'string' ? value : collectStrings(value).join('\n');
   return SECRET_PATTERNS
     .filter(item => item.pattern.test(text))
     .map(item => item.label)

@@ -517,6 +517,45 @@ test('quarantines imported secrets and metadata that disagrees with its vault lo
   }
 });
 
+test('detects secrets that start right after a newline or tab in the body', () => {
+  const fixture = createFixture();
+  try {
+    const savedToken = `ghp_${'c3'.repeat(12)}`;
+    assert.throws(
+      () => saveMemory({ title: 'Newline secret', body: `first line\n${savedToken}` }, fixedOptions(fixture.roots)),
+      /suspected secret/i
+    );
+    assert.throws(
+      () => saveMemory({ title: 'Tab secret', body: `key:\t${savedToken}` }, fixedOptions(fixture.roots)),
+      /suspected secret/i
+    );
+
+    const notes = path.join(fixture.roots.project, 'notes');
+    fs.mkdirSync(notes, { recursive: true });
+    const importedToken = `npm_${'d4'.repeat(12)}`;
+    fs.writeFileSync(
+      path.join(notes, 'newline-secret.md'),
+      serializeMemoryDocument(baseMemory({
+        id: 'mem_20260726_newline_secret',
+        kind: 'note',
+        links: [],
+        body: `Imported token:\n${importedToken}`,
+      }))
+    );
+    const report = doctorMemoryVault({
+      roots: fixture.roots,
+      scopes: ['project'],
+    });
+    assert.deepStrictEqual(
+      report.invalidFiles.map(item => item.code),
+      ['suspected-secret']
+    );
+    assert.strictEqual(JSON.stringify(report).includes(importedToken), false);
+  } finally {
+    fs.rmSync(fixture.root, { recursive: true, force: true });
+  }
+});
+
 // Windows reports dev = 0 from path-based stat()/lstat() while fstat() on an open
 // handle reports the real volume serial number, so a strict dev comparison can never
 // match and every vault read/write is rejected. The stat pairs below are the values
