@@ -468,6 +468,20 @@ test('rejects traversal IDs, oversized bodies, NUL bytes, and suspected secrets'
   }
 });
 
+test('rejects GitHub user-to-server (ghu_) tokens as suspected secrets', () => {
+  const fixture = createFixture();
+  try {
+    const token = `ghu_${'b2'.repeat(18)}`;
+    assert.deepStrictEqual(findPotentialSecrets(`token ${token}`), ['GitHub token']);
+    assert.throws(
+      () => saveMemory({ title: 'App token', body: `token ${token}` }, fixedOptions(fixture.roots)),
+      /suspected secret/i
+    );
+  } finally {
+    fs.rmSync(fixture.root, { recursive: true, force: true });
+  }
+});
+
 test('quarantines imported secrets and metadata that disagrees with its vault location', () => {
   const fixture = createFixture();
   try {
