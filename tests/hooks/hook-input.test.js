@@ -10,6 +10,8 @@ const { spawn } = require('child_process');
 const { PassThrough } = require('stream');
 const {
   DEFAULT_STDIN_IDLE_TIMEOUT_MS,
+  getToolResult,
+  getToolResultText,
   readStdinRaw,
   resolveStdinIdleTimeout
 } = require('../../scripts/hooks/hook-input');
@@ -189,6 +191,27 @@ async function runTests() {
       assert.strictEqual(inputResult.truncated, true);
       assert.strictEqual(hookResult.exitCode, 2);
       assert.match(hookResult.stderr, /Refusing to bypass config-protection/);
+    })
+  )
+    passed++;
+  else failed++;
+
+  if (
+    await test('reads the tool result from Claude Code and from adapted payloads', async () => {
+      // Claude Code sends tool_response; Bash results carry stdout and stderr.
+      const bash = { stdout: 'out', stderr: 'err', interrupted: false, isImage: false };
+      assert.strictEqual(getToolResult({ tool_response: bash }), bash);
+      assert.strictEqual(getToolResultText({ tool_response: bash }), 'out\nerr');
+      assert.strictEqual(getToolResultText({ tool_response: { stdout: 'out', stderr: '' } }), 'out');
+      assert.strictEqual(getToolResultText({ tool_response: 'plain' }), 'plain');
+      // The Cursor adapter and older payloads send tool_output.
+      assert.strictEqual(getToolResultText({ tool_output: { output: 'adapted' } }), 'adapted');
+      assert.strictEqual(getToolResultText({ tool_output: 'legacy' }), 'legacy');
+      assert.strictEqual(getToolResultText({ tool_response: { stdout: 'new' }, tool_output: 'old' }), 'new');
+      // A result without text, or no result at all.
+      assert.strictEqual(getToolResultText({ tool_response: { filePath: '/tmp/a.txt', type: 'create' } }), '');
+      assert.strictEqual(getToolResultText({}), '');
+      assert.strictEqual(getToolResultText(null), '');
     })
   )
     passed++;
