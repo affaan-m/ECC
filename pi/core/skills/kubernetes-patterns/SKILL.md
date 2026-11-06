@@ -1,6 +1,6 @@
 ---
 name: kubernetes-patterns
-description: Kubernetes workload patterns, resource management, RBAC, probes, autoscaling, ConfigMap/Secret handling, and kubectl debugging for production-grade deployments. Use when writing or reviewing Kubernetes manifests, or debugging probes, RBAC, autoscaling, or resource limits.
+description: Kubernetes workload patterns, resource management, RBAC, probes, autoscaling, ConfigMap/Secret handling, and kubectl debugging for production-grade deployments. Use when writing or reviewing Kubernetes manifests, or debugging probes, RBAC, autoscaling, resource limits, or pods that keep getting evicted.
 metadata:
   origin: ECC
 ---
@@ -16,6 +16,7 @@ Production-grade Kubernetes patterns for deploying, managing, and debugging work
 - Setting up RBAC, namespaces, or ServiceAccounts
 - Managing configuration and secrets in K8s
 - Debugging CrashLoopBackOff, OOMKilled, pending pods, or image pull errors
+- Investigating pods that keep getting replaced with zero restarts (evictions, descheduler churn)
 - Configuring HPA (Horizontal Pod Autoscaler) or PodDisruptionBudgets
 - Reviewing K8s YAML for security or correctness
 
@@ -35,7 +36,7 @@ This skill provides **copy-pasteable, production-grade YAML patterns** and **kub
 6. **RBAC** — Least-privilege ServiceAccount → Role → RoleBinding chain.
 7. **HPA & PDB** — Autoscaling and node-drain safety configurations.
 8. **Jobs & CronJobs** — One-off and scheduled workload patterns with correct `restartPolicy`.
-9. **kubectl cheatsheet** — Logs, exec, rollback, port-forward, dry-run, and common error diagnosis commands.
+9. **kubectl cheatsheet** — Logs, exec, rollback, port-forward, dry-run, common error diagnosis, and pod churn (eviction) triage.
 10. **Anti-patterns & checklist** — What NOT to do, and a security/reliability/observability checklist.
 
 ## Examples
@@ -48,6 +49,7 @@ See the sections below for complete, runnable examples. Quick references:
 | Probe configuration | [Probes](#probes--liveness-readiness-startup) |
 | RBAC least-privilege setup | [RBAC](#rbac--roles-and-serviceaccounts) |
 | Debug a CrashLoopBackOff | [kubectl Debugging Cheatsheet](#kubectl-debugging-cheatsheet) |
+| Pods replaced with zero restarts | [Pod churn triage](#pods-replaced-with-zero-restarts-churn) |
 | Autoscaling | [HPA](#horizontal-pod-autoscaler-hpa) |
 
 ---
@@ -649,6 +651,26 @@ kubectl describe pod <pod-name> -n my-namespace
 kubectl describe pod <pod-name> -n my-namespace | grep -A5 "Last State"
 ```
 
+### Pods Replaced With Zero Restarts (Churn)
+
+A young pod with `RESTARTS 0` was not restarted: it was deleted and recreated. `kubectl get events` often shows nothing, because events expire after one hour by default and a descheduler without RBAC on `events.k8s.io` emits none. Node-pressure evictions by the kubelet are different: they skip the Eviction API and leave the old pod listed as `Evicted`.
+
+| Signal | Likely cause | Confirm with |
+|--------|--------------|--------------|
+| New ReplicaSet whose only template change is `kubectl.kubernetes.io/restartedAt` | `kubectl rollout restart` | Audit log: deployment `patch` and who sent it |
+| Same ReplicaSet, same nodes | API-initiated eviction (descheduler, `kubectl drain`) | Audit log: `pods/eviction` `create` |
+| Same ReplicaSet, a node was added or removed | Node reclaim or replacement (spot/preemptible, autoscaler, upgrade) | `kubectl get nodes` (AGE), cloud provider logs |
+
+```bash
+# Who evicted what: API server audit log, objectRef.subresource=eviction, verb=create
+# GKE example (Cloud Logging):
+gcloud logging read 'protoPayload.methodName="io.k8s.core.v1.pods.eviction.create"' --freshness=4h \
+  --format='value(timestamp,protoPayload.authenticationInfo.principalEmail,protoPayload.resourceName)'
+
+# A descheduler CronJob logs the plugin behind each eviction
+kubectl logs -n kube-system job/<descheduler-job> | grep "Evicted pod"
+```
+
 ---
 
 ## Anti-Patterns
@@ -711,6 +733,20 @@ roleRef:
 # BAD: minAvailable: 0 in PDB — defeats the purpose
 spec:
   minAvailable: 0
+
+# ---
+
+# BAD: Descheduler enforcing a soft spread the scheduler cannot satisfy
+topologySpreadConstraints:
+  - maxSkew: 1
+    topologyKey: kubernetes.io/hostname
+    whenUnsatisfiable: ScheduleAnyway   # The scheduler only scores this
+# ...plus a descheduler RemovePodsViolatingTopologySpreadConstraint with
+# constraints: [DoNotSchedule, ScheduleAnyway], replicas close to the node count,
+# and nodes near full on requests: every run evicts a pod, the replacement lands
+# on a busy node again, and the next run evicts it. Pods churn all day.
+# GOOD: let the descheduler enforce only DoNotSchedule (its default),
+# or raise maxSkew / keep spare capacity so the spread is satisfiable
 
 # ---
 
