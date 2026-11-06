@@ -1,12 +1,16 @@
 /**
- * ECC Plugins for OpenCode
+ * ECC OpenCode plugin barrel.
  *
- * This module exports all ECC plugins for OpenCode integration.
- * Plugins provide hook-based automation that mirrors Claude Code's hook system
- * while taking advantage of OpenCode's more sophisticated 20+ event types.
+ * Intentionally inert. ECC keeps this barrel out of the load path so hooks are
+ * not initialized twice (see .opencode/README.md).
+ *
+ * The v1 plugin API accepted a bare `async () => ({})` default export. The v2
+ * API requires a definition object instead:
+ *   - { id, setup(ctx) }  <- user-facing contract, used here
+ *   - { id, effect(ctx) } <- internal Effect-TS path; a plain async function
+ *     there never settles and wedges location activation
  */
-
-export { ECCHooksPlugin, default } from "./ecc-hooks.ts"
-
-// Re-export for named imports
-export * from "./ecc-hooks.ts"
+export default {
+  id: "ecc-barrel",
+  setup: async () => undefined,
+}
