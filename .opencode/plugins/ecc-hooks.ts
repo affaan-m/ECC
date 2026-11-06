@@ -11,10 +11,9 @@
  * (kept in sync with package.json — enforced by tests/plugin-manifest.test.js)
  *
  * This module intentionally exposes BOTH surfaces:
- * - `ECCHooksPlugin` (named): the V1 factory. Old OpenCode builds and the
- *   legacy discovery path (tests that scan `plugins/*.ts` and instantiate
- *   function exports) keep working, and the 18 behavioral hook tests run
- *   against real logic instead of a rewritten harness.
+ * - `ECCHooksPlugin` (named): the retained V1 factory used by behavioral
+ *   tests and explicit migration callers. The default module is V2-only:
+ *   OpenCode 1.x's function-only module loader cannot load this entry.
  * - default export: the V2 definition `{ id, setup(ctx) }` that OpenCode 2.x
  *   actually loads. `setup` builds the same runtime once and adapts its hook
  *   map onto the V2 domains.
@@ -546,8 +545,8 @@ async function createEccRuntime(input: {
   }
 
   /**
-   * Pre-Tool Security Check (Equivalent to Claude Code PreToolUse hook):
-   * change bookkeeping, git-push/tmux reminders, doc-file warning.
+   * Advisory pre-tool callback: change bookkeeping, git-push/tmux reminders,
+   * and doc-file warnings. This does not invoke canonical ECC Bash guards.
    */
   const onToolBefore = async (input: ToolInput) => {
     try {
@@ -574,7 +573,7 @@ async function createEccRuntime(input: {
         }
       }
 
-      // Block creation of unnecessary documentation files
+      // Warn about potentially unnecessary documentation files
       if (hookEnabled("pre:write:doc-file-warning", ["standard", "strict"]) && input.tool === "write") {
         const filePath = getFilePath(input.args)
         if (
@@ -1045,7 +1044,9 @@ export const ECCHooksPluginDefinition = {
           // skill tracker reads error fields (isError/is_error/status/error) off
           // `tool_response` itself; a `{ result: … }` wrapper made failed skill
           // runs look like successes.
-          hooks["tool.execute.after"](toToolInput(event), event.result ?? event.output),
+          hooks["tool.execute.after"](toToolInput(event), event.status === "error"
+            ? { is_error: true }
+            : event.result ?? event.output),
         )),
       )
     }

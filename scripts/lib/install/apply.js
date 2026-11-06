@@ -564,6 +564,10 @@ function assertOpenCodeHookDeactivationReady(plan, options = {}) {
             return destinationPath;
           },
         });
+        // Record only writes proven above. Never rehash unrelated retained files.
+        if (typeof options.onMigratedOperation === 'function') {
+          options.onMigratedOperation(operation);
+        }
         snapshot.set(key, crypto.createHash('sha256').update(current).digest('hex'));
         inactive = activationIsInactive(kind, operation, current, true);
       }
@@ -886,6 +890,11 @@ function applyInstallPlanLocked(rawPlan, dependencies = {}, settingsLockHeld = f
   )).length;
   let completedHookRemovalCount = 0;
   const writtenDestinations = new Set();
+  const migratedActivationOperations = [];
+  const digestPlan = () => ({
+    ...appliedPlan,
+    operations: [...appliedPlan.operations, ...migratedActivationOperations],
+  });
     if (migration.requiresBridgeState) {
       // Own every operation that may be written during a flat-skill migration
       // before the first copy. A later failure is retryable and uninstall can
@@ -1030,19 +1039,25 @@ function applyInstallPlanLocked(rawPlan, dependencies = {}, settingsLockHeld = f
       }
 
       // Preserve main's activation safety gate before publishing ownership.
-      assertOpenCodeHookDeactivationReady(plan, { requireInactive: true });
+      assertOpenCodeHookDeactivationReady(plan, {
+        requireInactive: true,
+        onMigratedOperation(operation) {
+          migratedActivationOperations.push(operation);
+          writtenDestinations.add(operation.destinationPath);
+        },
+      });
       // Stale records leave only the successful final state; the bridge and
       // failure checkpoint above keep them so a failed install retains ownership.
       finalState = stateWithContentDigests(
         withoutStaleOperations(migration.finalState, migration),
-        appliedPlan
+        digestPlan()
       );
       if (typeof beforeInstallStateWrite === 'function') {
         beforeInstallStateWrite({ plan: appliedPlan, state: finalState });
       }
       persistInstallState(plan.installStatePath, finalState);
     } catch (error) {
-      if (migration.requiresBridgeState) {
+      if (migration.requiresBridgeState || migratedActivationOperations.length > 0) {
         try {
           // The bridge was committed before any writes. Refresh it with hashes of
           // files that now exist so uninstall can remove only bytes this attempt
@@ -1059,7 +1074,7 @@ function applyInstallPlanLocked(rawPlan, dependencies = {}, settingsLockHeld = f
               ),
               {
                 ...appliedPlan,
-                operations: appliedPlan.operations.filter(operation => (
+                operations: digestPlan().operations.filter(operation => (
                   writtenDestinations.has(operation.destinationPath)
                 )),
               }

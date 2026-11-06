@@ -1023,6 +1023,14 @@ async function main() {
             const both = readRecordedRuns(skillHome)
             assert.strictEqual(both.length, 2)
             assert.strictEqual(both[1].outcome, "success", "clean responses still record as success")
+            // Actual OpenCode 2.x failures have status/error, no result/output.
+            await ctx.state.handlers["tool.execute.after"]({
+              tool: "skill", id: "c4", input: { name: "code-review" },
+              status: "error", error: { message: "native tool failed" },
+            })
+            const nativeRuns = readRecordedRuns(skillHome)
+            assert.strictEqual(nativeRuns.length, 3)
+            assert.strictEqual(nativeRuns[2].outcome, "failure", "native V2 errors must not become successes")
           } finally {
             restoreEnv({ HOME: previousHome, USERPROFILE: previousUserProfile })
             fs.rmSync(skillHome, { recursive: true, force: true })

@@ -2188,17 +2188,46 @@ function runTests() {
         for (const relative of ['.opencode/plugins/index.ts', '.opencode/plugins/ecc-hooks.ts']) {
           const operation = state.operations.find(candidate => comparableRelative(candidate) === relative);
           assert.strictEqual(operation.ownership, 'managed', 'migration must retain managed ownership');
+          assert.strictEqual(operation.contentSha256,
+            crypto.createHash('sha256').update(fs.readFileSync(operation.destinationPath)).digest('hex'),
+            'migrated bytes must have a matching uninstall receipt');
         }
 
-        // Only planned destinations get refreshed digests, so the migrated
-        // retained files keep their historical record; the doctor must verify
-        // deactivation operations by transform content, not by that digest.
+        // Migrated retained files have current digests; untouched retained
+        // files keep their previous receipts. Doctor still verifies deactivation.
         const doctor = buildDoctorReport({
           repoRoot: REPO_ROOT, homeDir, projectRoot: homeDir, targets: ['opencode'],
         });
         assert.ok(!doctor.results[0].issues.some(issue => (
           ['missing-managed-files', 'drifted-managed-files', 'unverified-managed-operations'].includes(issue.code)
         )));
+
+        // A failure after migration must checkpoint those actual writes too.
+        ageInstalledStubs();
+        assert.throws(() => applyInstallPlan(createDeclinePlan(['commands-core']), {
+          beforeInstallStateWrite({ state: pending }) {
+            if (pending.operations.some(operation => {
+              if (!comparableRelative(operation).startsWith('.opencode/plugins/')) return false;
+              return operation.contentSha256 === crypto.createHash('sha256')
+                .update(fs.readFileSync(operation.destinationPath)).digest('hex');
+            })) throw new Error('injected final-state failure');
+          },
+        }), /injected final-state failure/);
+        const checkpoint = readInstallState(basePlan.installStatePath);
+        for (const operation of checkpoint.operations.filter(operation => (
+          comparableRelative(operation).startsWith('.opencode/plugins/')
+        ))) {
+          assert.strictEqual(operation.contentSha256,
+            crypto.createHash('sha256').update(fs.readFileSync(operation.destinationPath)).digest('hex'),
+            'failure checkpoint must own migrated bytes');
+        }
+        const removed = uninstallInstalledStates({
+          repoRoot: REPO_ROOT, homeDir, projectRoot: homeDir, targets: ['opencode'],
+        });
+        assert.strictEqual(removed.results[0].status, 'uninstalled');
+        assert.ok(!fs.existsSync(path.join(pluginDir, 'index.ts')));
+        assert.ok(!fs.existsSync(path.join(pluginDir, 'ecc-hooks.ts')));
+        applyInstallPlan(createDeclinePlan(['platform-configs']));
 
         // Ownership is proven twice: identical legacy bytes alone never grant a
         // rewrite. A mis-recorded digest keeps the strict gate refusing.
@@ -2214,6 +2243,22 @@ function runTests() {
         );
         assert.strictEqual(fs.readFileSync(path.join(pluginDir, 'index.ts'), 'utf8'), moduleStub,
           'an unverifiable retained file must never be rewritten');
+        for (const badDigest of [undefined, 'invalid']) {
+          ageInstalledStubs();
+          const unverified = readInstallState(basePlan.installStatePath);
+          unverified.operations.find(operation => (
+            comparableRelative(operation) === '.opencode/plugins/index.ts'
+          )).contentSha256 = badDigest;
+          if (badDigest === 'invalid') {
+            assert.throws(() => writeInstallState(basePlan.installStatePath, unverified), /SHA-256 hex digest/i);
+          } else {
+            writeInstallState(basePlan.installStatePath, unverified);
+            assert.throws(() => applyInstallPlan(createDeclinePlan(['commands-core'])),
+              /OpenCode hook activation remains active/i);
+          }
+          assert.strictEqual(fs.readFileSync(path.join(pluginDir, 'index.ts'), 'utf8'), moduleStub,
+            'missing or invalid receipts must not authorize a migration');
+        }
       });
     } finally {
       cleanup(homeDir);
