@@ -1997,7 +1997,9 @@ function runTests() {
       ));
       const expectedContent = `${JSON.stringify({
         ...sourceConfig,
-        plugin: sourceConfig.plugin.filter(plugin => plugin !== './plugins'),
+        ...(Array.isArray(sourceConfig.plugin)
+          ? { plugin: sourceConfig.plugin.filter(plugin => plugin !== './plugins') }
+          : {}),
         skills: { ...sourceConfig.skills, paths: ['./skills'] },
       }, null, 2)}\n`;
       fs.mkdirSync(targetRoot, { recursive: true });
@@ -2047,9 +2049,11 @@ function runTests() {
           exemptValidationCodes: ['opencode-plugin-not-built'],
         });
         applyInstallPlan(plan);
-        const pluginPaths = ['ecc-hooks.ts', 'index.ts'].map(name => path.join(plan.targetRoot, 'plugins', name));
-        for (const pluginPath of pluginPaths) {
-          assert.strictEqual(fs.readFileSync(pluginPath, 'utf8'), getDisabledOpenCodePluginContent());
+        const pluginNames = ['ecc-hooks.ts', 'index.ts'];
+        const pluginPaths = pluginNames.map(name => path.join(plan.targetRoot, 'plugins', name));
+        for (const [index, pluginPath] of pluginPaths.entries()) {
+          assert.strictEqual(fs.readFileSync(pluginPath, 'utf8'),
+            getDisabledOpenCodePluginContent(`.opencode/plugins/${pluginNames[index]}`));
           fs.unlinkSync(pluginPath);
         }
         const before = buildDoctorReport({ repoRoot: REPO_ROOT, homeDir, projectRoot: homeDir, targets: ['opencode'] });
@@ -2067,8 +2071,9 @@ function runTests() {
         });
         assert.strictEqual(buildCalls, 1, 'Only the injected inert builder is used');
         assert.strictEqual(repaired.results[0].status, 'repaired');
-        for (const pluginPath of pluginPaths) {
-          assert.strictEqual(fs.readFileSync(pluginPath, 'utf8'), getDisabledOpenCodePluginContent());
+        for (const [index, pluginPath] of pluginPaths.entries()) {
+          assert.strictEqual(fs.readFileSync(pluginPath, 'utf8'),
+            getDisabledOpenCodePluginContent(`.opencode/plugins/${pluginNames[index]}`));
         }
         const state = readInstallState(plan.installStatePath);
         assert.strictEqual(state.request.hookConsent, 'declined');
@@ -2102,9 +2107,11 @@ function runTests() {
         });
         assert.strictEqual(result.results[0].status, 'repaired');
         for (const name of ['ecc-hooks.ts', 'index.ts']) {
-          assert.strictEqual(fs.readFileSync(path.join(recorded.targetRoot, 'plugins', name), 'utf8'), getDisabledOpenCodePluginContent());
+          assert.strictEqual(fs.readFileSync(path.join(recorded.targetRoot, 'plugins', name), 'utf8'),
+            getDisabledOpenCodePluginContent(`.opencode/plugins/${name}`));
         }
-        assert.ok(!JSON.parse(fs.readFileSync(path.join(recorded.targetRoot, 'opencode.json'), 'utf8')).plugin.includes('./plugins'));
+        const repairedConfig = JSON.parse(fs.readFileSync(path.join(recorded.targetRoot, 'opencode.json'), 'utf8'));
+        assert.ok(!(repairedConfig.plugin ?? []).some(plugin => plugin === './plugins' || /ecc-hooks/.test(String(plugin))));
         const state = readInstallState(recorded.installStatePath);
         assert.notStrictEqual(state.request.hookConsent, 'enabled');
         assert.ok(!state.resolution.selectedModules.includes('hooks-runtime'));
@@ -2113,6 +2120,100 @@ function runTests() {
         ))) {
           assert.strictEqual(operation.contentTransform, 'opencode-disable-plugin-entrypoint');
         }
+      });
+    } finally {
+      cleanup(homeDir);
+    }
+  })) passed++; else failed++;
+
+  if (test('selective declined install migrates retained legacy plugin stubs before the strict gate', () => {
+    // R2-4 (review 4456945413): declined installs before the barrel split wrote
+    // the module stub (or the older factory stub) to EVERY plugin file, barrel
+    // included. A later selective install such as commands-core has no
+    // operation that rewrites those retained files, so the strict deactivation
+    // gate would fail the install after all writes landed. The gate now
+    // migrates them in place — only when ownership is proven twice.
+    const legacyFactoryStub = 'export default async () => ({});\n';
+    const homeDir = createTempDir('install-lifecycle-opencode-stub-migration-');
+    try {
+      withTemporarilyMovedPath(path.join(REPO_ROOT, '.opencode', 'dist'), () => {
+        const createDeclinePlan = modules => createInstallPlanFromRequest({
+          mode: 'manifest', target: 'opencode', profileId: null,
+          moduleIds: modules, includeComponentIds: [], excludeComponentIds: [],
+          legacyLanguages: [], hookConsent: 'declined',
+        }, {
+          sourceRoot: REPO_ROOT, homeDir, projectRoot: homeDir,
+          exemptValidationCodes: ['opencode-plugin-not-built'],
+        });
+
+        // A current declined install records fully managed plugin operations...
+        const basePlan = createDeclinePlan(['platform-configs']);
+        applyInstallPlan(basePlan);
+        const pluginDir = path.join(basePlan.targetRoot, 'plugins');
+        const comparableRelative = operation => String(operation.sourceRelativePath || '')
+          .split(path.sep).join('/');
+        const moduleStub = getDisabledOpenCodePluginContent('.opencode/plugins/ecc-hooks.ts');
+        const barrelStub = getDisabledOpenCodePluginContent('.opencode/plugins/index.ts');
+        assert.notStrictEqual(moduleStub, barrelStub, 'the legacy fixture needs the two stubs to differ');
+
+        // ...then roll the install back in time: the barrel holds the module
+        // stub, ecc-hooks.ts holds the pre-V2-fix factory stub, and the
+        // recorded digests are re-hashed so ownership stays provable.
+        const ageInstalledStubs = () => {
+          fs.writeFileSync(path.join(pluginDir, 'index.ts'), moduleStub);
+          fs.writeFileSync(path.join(pluginDir, 'ecc-hooks.ts'), legacyFactoryStub);
+          const aged = readInstallState(basePlan.installStatePath);
+          for (const [relative, content] of [
+            ['.opencode/plugins/index.ts', moduleStub],
+            ['.opencode/plugins/ecc-hooks.ts', legacyFactoryStub],
+          ]) {
+            aged.operations.find(operation => comparableRelative(operation) === relative)
+              .contentSha256 = crypto.createHash('sha256').update(content).digest('hex');
+          }
+          writeInstallState(basePlan.installStatePath, aged);
+        };
+        ageInstalledStubs();
+
+        const selectivePlan = createDeclinePlan(['commands-core']);
+        assert.ok(!selectivePlan.operations.some(operation => (
+          comparableRelative(operation).startsWith('.opencode/plugins/')
+        )), 'the selective plan must not rewrite the retained plugin files');
+        applyInstallPlan(selectivePlan);
+
+        // Both retained files migrated to their current per-path inert stubs.
+        assert.strictEqual(fs.readFileSync(path.join(pluginDir, 'index.ts'), 'utf8'), barrelStub);
+        assert.strictEqual(fs.readFileSync(path.join(pluginDir, 'ecc-hooks.ts'), 'utf8'), moduleStub);
+        const state = readInstallState(basePlan.installStatePath);
+        assert.strictEqual(state.request.hookConsent, 'declined');
+        for (const relative of ['.opencode/plugins/index.ts', '.opencode/plugins/ecc-hooks.ts']) {
+          const operation = state.operations.find(candidate => comparableRelative(candidate) === relative);
+          assert.strictEqual(operation.ownership, 'managed', 'migration must retain managed ownership');
+        }
+
+        // Only planned destinations get refreshed digests, so the migrated
+        // retained files keep their historical record; the doctor must verify
+        // deactivation operations by transform content, not by that digest.
+        const doctor = buildDoctorReport({
+          repoRoot: REPO_ROOT, homeDir, projectRoot: homeDir, targets: ['opencode'],
+        });
+        assert.ok(!doctor.results[0].issues.some(issue => (
+          ['missing-managed-files', 'drifted-managed-files', 'unverified-managed-operations'].includes(issue.code)
+        )));
+
+        // Ownership is proven twice: identical legacy bytes alone never grant a
+        // rewrite. A mis-recorded digest keeps the strict gate refusing.
+        ageInstalledStubs();
+        const tampered = readInstallState(basePlan.installStatePath);
+        tampered.operations.find(operation => (
+          comparableRelative(operation) === '.opencode/plugins/index.ts'
+        )).contentSha256 = crypto.createHash('sha256').update('tampered\n').digest('hex');
+        writeInstallState(basePlan.installStatePath, tampered);
+        assert.throws(
+          () => applyInstallPlan(createDeclinePlan(['commands-core'])),
+          /OpenCode hook activation remains active/i
+        );
+        assert.strictEqual(fs.readFileSync(path.join(pluginDir, 'index.ts'), 'utf8'), moduleStub,
+          'an unverifiable retained file must never be rewritten');
       });
     } finally {
       cleanup(homeDir);
