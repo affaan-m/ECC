@@ -127,6 +127,7 @@ skills:
   - perl-security
   - perl-testing
   - plankton-code-quality
+  - platform-factory
   - plan-canvas
   - plan-orchestrate
   - postgres-patterns
