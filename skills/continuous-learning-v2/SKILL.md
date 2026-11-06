@@ -238,6 +238,13 @@ Edit `config.json` to control the background observer:
 
 Other behavior (observation capture, instinct thresholds, project scoping, promotion criteria) is configured via code defaults in `instinct-cli.py` and `observe.sh`.
 
+### Python versions
+
+`instinct-cli.py` runs on Python 3.6 and newer. On a Python that no longer
+gets security fixes (older than 3.11) it prints one line to stderr
+suggesting an upgrade, then runs the command as usual. `prune --quiet` skips
+the line, and `CLV2_SKIP_PYTHON_EOL_NOTICE=1` turns it off everywhere.
+
 ### Observer platform support
 
 The background observer requires WSL2, Linux, or macOS. On native Windows
