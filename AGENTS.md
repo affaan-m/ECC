@@ -3,7 +3,7 @@
 This repository is a curated local skill collection for Codex. Canonical skill
 directories live in `skills/`; `skills.json` defines installation profiles.
 
-- Preserve the Go, JavaScript/TypeScript, Rust 2024, and Zig scope.
+- Preserve the Go, JavaScript/TypeScript, Rust 2024, Zig, and Swift/SwiftUI scope.
 - Keep skill descriptions precise and entrypoints compact. Put substantial,
   conditional examples in linked references; keep essential invariants inline.
 - Use only tools available in the current Codex session. Do not invent APIs,

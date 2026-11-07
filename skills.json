@@ -4,7 +4,8 @@
     "go",
     "web",
     "rust",
-    "zig"
+    "zig",
+    "swift"
   ],
   "profiles": {
     "core": [
@@ -30,6 +31,11 @@
     ],
     "zig": [
       "ecc-zig"
+    ],
+    "swift": [
+      "ecc-swift",
+      "ecc-swiftui",
+      "ecc-swift-testing"
     ],
     "infra": [
       "ecc-postgres",

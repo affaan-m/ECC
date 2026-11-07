@@ -1,7 +1,7 @@
 # ECC для Codex
 
-Локальный набор для Go, JavaScript/TypeScript, Rust 2024 и Zig.
-16 самостоятельных скиллов: 14 в стандартной установке, PostgreSQL и Docker —
+Локальный набор для Go, JavaScript/TypeScript, Rust 2024, Zig и Swift/SwiftUI.
+19 самостоятельных скиллов: 17 в стандартной установке, PostgreSQL и Docker —
 в опциональном профиле `infra`. Объёмные примеры хранятся в `references/`
 и читаются по задаче, а не загружаются целиком.
 
@@ -32,6 +32,7 @@
 
 ```sh
 ./install.sh --profile core --profile rust --profile zig
+./install.sh --profile swift
 ./install.sh --profile infra
 ./install.sh --profile all
 ```
@@ -66,11 +67,23 @@ MCP-серверы и хуки установщик не меняет.
 | `web` | `ecc-typescript`, `ecc-vue`, `ecc-react`, `ecc-node-backend`, `ecc-e2e`, `ecc-accessibility` | Да |
 | `rust` | `ecc-rust`, `ecc-rust-unsafe`, `ecc-rust-navigation` | Да |
 | `zig` | `ecc-zig` | Да |
+| `swift` | `ecc-swift`, `ecc-swiftui`, `ecc-swift-testing` | Да |
 | `infra` | `ecc-postgres`, `ecc-docker` | Нет |
 
 Все имена имеют префикс `ecc-`, чтобы не пересекаться с другими наборами.
 Скиллы доступны для автоматического выбора; их можно вызывать явно,
 например `$ecc-rust`, `$ecc-go` или `$ecc-zig`.
+
+Swift-профиль объединяет concurrency, actor persistence, SwiftUI и protocol DI
+из оригинального ECC с выбранными материалами Paul Hudson: SwiftUI Pro,
+Swift Concurrency Pro и Swift Testing Pro. Справочники переработаны под Codex,
+с сохранением лицензий и точных версий источников в [SOURCES.md](SOURCES.md).
+Настройки language mode, concurrency и deployment target проверяются для
+конкретного проекта; профиль не требует их автоматического обновления.
+
+При уже установленном основном наборе достаточно `./install.sh --profile swift`.
+Постоянный checkout форка должен оставаться на месте: для изучения оригинального
+ECC используй другой каталог, чтобы переключение веток не ломало глобальные ссылки.
 
 Rust-материалы из `bol` объединены в три скилла. Сохранены темы ownership,
 smart pointers, mutability, traits, типового проектирования, ошибок, async,
