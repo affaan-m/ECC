@@ -183,6 +183,33 @@ if (
 else failed++;
 
 if (
+  test('sanitizeCommand tries later JWT headers after a prefix candidate fails', () => {
+    const spacedHeader = Buffer.from('{ "alg": "HS256" }').toString('base64url');
+    const newlineHeader = Buffer.from('{\n"alg":"HS256"}').toString('base64url');
+    for (const header of [spacedHeader, newlineHeader]) {
+      const token = [header, 'eyJzdWIiOiJmYWtlIn0', 'ZmFrZXNpZ25hdHVyZQ'].join('.');
+      assert.strictEqual(sanitizeCommand(`echo eyewear_session_${token}`), 'echo eyewear_session_<REDACTED>');
+      assert.strictEqual(sanitizeCommand(`echo ey-eye-${token}`), 'echo ey-eye-<REDACTED>');
+    }
+    assert.strictEqual(sanitizeCommand('ls eyewear_session_eyebrows.backup.tar'), 'ls eyewear_session_eyebrows.backup.tar');
+  })
+)
+  passed++;
+else failed++;
+
+if (
+  test('sanitizeCommand stays linear on long runs of plausible JWT header candidates', () => {
+    const start = Date.now();
+    sanitizeCommand(`${'eyAg-'.repeat(200000)}x.y.z`);
+    sanitizeCommand(`${'ewog_'.repeat(200000)}x.y.z`);
+    const elapsed = Date.now() - start;
+    assert.ok(elapsed < 2000, `took ${elapsed} ms`);
+  })
+)
+  passed++;
+else failed++;
+
+if (
   test('sanitizeCommand stays linear on long ey- runs followed by dots', () => {
     const start = Date.now();
     sanitizeCommand(`${'ey-'.repeat(300000)}x.y.z`);
