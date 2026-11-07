@@ -280,6 +280,7 @@ test('rejects execution of decoy scripts planted in unrelated project directorie
       env: cleanEnv,
     });
 
+    assert.strictEqual(result.status, 0, 'Hook runner must succeed and fail open');
     // Sentinel file must NOT have been created!
     assert.strictEqual(fs.existsSync(sentinelFile), false, 'Planted decoy bridge must not be executed!');
   } finally {
