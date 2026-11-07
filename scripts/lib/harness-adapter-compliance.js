@@ -186,6 +186,47 @@ const ADAPTER_RECORDS = Object.freeze([
     ],
   },
   {
+    id: 'antigravity',
+    harness: 'Antigravity 2.0',
+    state: 'Adapter-backed',
+    supported_assets: [
+      'Antigravity plugin manifest',
+      'skills (skills/)',
+      'agents (agents/)',
+      'workflows (commands/)',
+      'progressive disclosure rules (rules/)',
+      'lifecycle hooks (hooks.json via hook-bridge)',
+      'MCP configs',
+    ],
+    unsupported_surfaces: [
+      'Subagent recursion depth and terminal permissions follow Antigravity sandbox settings',
+    ],
+    install_or_onramp: [
+      '`./install.sh --profile minimal --target antigravity`',
+      '`./install.ps1 -Profile minimal -Target antigravity`',
+      '`agy plugin install <path-to-ecc>`',
+    ],
+    verification_commands: [
+      '`node tests/lib/antigravity-install-target.test.js`',
+      '`node tests/lib/antigravity-hook-bridge.test.js`',
+      '`node tests/lib/antigravity-legacy-migration.test.js`',
+      '`node tests/lib/antigravity-rule.test.js`',
+      '`npm run harness:adapters -- --check`',
+    ],
+    risk_notes: [
+      'Preserve the 20k token rules budget using model_decision and glob triggers rather than loading every rule as always_on.',
+    ],
+    last_verified_at: '2026-11-05',
+    owner: 'ECC maintainers',
+    source_docs: [
+      '.agents/',
+      'hooks/antigravity-hooks.json',
+      'scripts/lib/install-targets/antigravity-project.js',
+      'scripts/antigravity/hook-bridge.js',
+      'tests/lib/antigravity-install-target.test.js',
+    ],
+  },
+  {
     id: 'gemini',
     harness: 'Gemini',
     state: 'Instruction-backed',

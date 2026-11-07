@@ -1,0 +1,16 @@
+{
+  "ecc-guardrails": {
+    "PreToolUse": [
+      {
+        "matcher": "run_command|write_file|edit_file|write_to_file|replace_file_content|multi_replace_file_content",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node -e \"const p=require('path'),f=require('fs');function G(){var e=process.env.ANTIGRAVITY_PLUGIN_ROOT||process.env.CLAUDE_PLUGIN_ROOT||process.env.ECC_PLUGIN_ROOT;if(e&&f.existsSync(p.join(e,'scripts','antigravity','hook-bridge.js')))return p.join(e,'scripts','antigravity','hook-bridge.js');try{var r=p.resolve('.agents','ecc-install-state.json');if(f.existsSync(r)){var s=JSON.parse(f.readFileSync(r,'utf8'));if(s&&s.schemaVersion==='ecc.install.v1'&&s.target&&s.target.id==='antigravity-project'){var b=p.resolve('.agents','scripts','antigravity','hook-bridge.js');if(b.startsWith(p.resolve('.agents')+p.sep)&&f.existsSync(b))return b;}}}catch(_){}var h=require('os').homedir();var c=[p.join(h,'.claude','plugins','marketplaces','ecc'),p.join(h,'.gemini','config','plugins','ecc'),p.join(h,'.gemini','antigravity'),p.join(h,'.claude')];for(var i=0;i<c.length;i++){var cb=p.join(c[i],'scripts','antigravity','hook-bridge.js');if(f.existsSync(cb))return cb;}return null;}var b=G();if(!b){process.stdout.write(JSON.stringify({decision:'allow'}));process.exit(0);}require(b);\" -- --hook config-protection",
+            "timeout": 30
+          }
+        ]
+      }
+    ]
+  }
+}
