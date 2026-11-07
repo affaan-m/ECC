@@ -755,3 +755,45 @@ test('invalid resolution and routing options are rejected before reading a missi
   assert.throws(() => routingEntries(values), /target/i);
   assert.throws(() => routingEntries({ repoRoot, selectionMode: 'invalid' }), /Unknown selection mode/);
 });
+
+test('benchmark optimization is discoverable and loads through task context routing', () => {
+  const id = 'skill:benchmark-optimization-loop';
+  const entry = routingEntries().entries.find(value => value.id === id);
+  assert.ok(entry, 'Goal-driven optimization must be admissible to routing');
+  assert.ok(entry.triggers.includes('turn user goal into benchmark'));
+  const explicit = resolveTaskContext({ task: task({ explicitIds: [id] }), load: true });
+  assert.deepEqual(explicit.loadedIds, [id]);
+  assert.equal(explicit.nativeInvocation, 'unobserved');
+  const named = resolveTaskContext({ task: task({ query: 'Use the benchmark-optimization-loop skill.' }) });
+  assert.ok(named.candidates.some(value => value.id === id));
+  assert.equal(named.reason, 'agent-selection-required', 'Overlapping benchmark names still require selection');
+});
+
+for (const [query, automatic] of [
+  ['turn user goal into benchmark', false],
+  ['optimize task completion rate', true],
+  ['compare implementation variants', false],
+  ['improve correctness with fixed evaluation', true],
+  ['reduce cost per resolved task', true],
+  ['run bounded recursive optimization', true],
+  ['verify improvement on independent cases', true],
+  ['keep best measured admissible result', true],
+]) {
+  test('benchmark trigger preserves routing admission: ' + query, () => {
+    const id = 'skill:benchmark-optimization-loop';
+    const entry = routingEntries().entries.find(value => value.id === id);
+    assert.ok(entry.triggers.includes(query), 'The curated phrase must remain registered');
+    const result = resolveTaskContext({ task: task({ query }), load: true });
+    assert.ok(result.candidates.some(value => value.id === id));
+    assert.deepEqual(result.selectedIds, automatic ? [id] : []);
+    assert.deepEqual(result.loadedIds, automatic ? [id] : []);
+    assert.equal(result.reason, automatic ? 'auto-selection' : 'agent-selection-required');
+    assert.equal(result.nativeInvocation, 'unobserved');
+    if (!automatic) {
+      const approved = resolveTaskContext({ task: task({ query, proposedIds: [id] }), load: true });
+      assert.deepEqual(approved.selectedIds, [id]);
+      assert.deepEqual(approved.loadedIds, [id]);
+      assert.equal(approved.nativeInvocation, 'unobserved');
+    }
+  });
+}
