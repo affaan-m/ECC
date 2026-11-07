@@ -30,7 +30,7 @@ function runValidator(files) {
       fs.writeFileSync(path.join(tempDir, name), contents);
     }
 
-    return spawnSync('node', [SCRIPT_PATH], {
+    return spawnSync(process.execPath, [SCRIPT_PATH], {
       encoding: 'utf8',
       env: {
         ...process.env,
@@ -42,9 +42,7 @@ function runValidator(files) {
   }
 }
 
-function run() {
-  console.log('\n=== Testing workflow security validation ===\n');
-
+function runCheckoutRefTests() {
   let passed = 0;
   let failed = 0;
 
@@ -142,6 +140,13 @@ function run() {
     const matches = (result.stderr || '').match(/ERROR:.*pull_request_target must not checkout an untrusted pull_request head ref/g) || [];
     assert.strictEqual(matches.length, 1, `Expected exactly 1 violation, got ${matches.length}: ${result.stderr}`);
   })) passed++; else failed++;
+
+  return { passed, failed };
+}
+
+function runPermissionAndInstallTests() {
+  let passed = 0;
+  let failed = 0;
 
   if (test('rejects shared cache use in pull_request_target workflows', () => {
     const result = runValidator({
@@ -242,6 +247,13 @@ function run() {
     assert.strictEqual(result.status, 0, result.stderr || result.stdout);
   })) passed++; else failed++;
 
+  return { passed, failed };
+}
+
+function runOidcAuditAndHardeningTests() {
+  let passed = 0;
+  let failed = 0;
+
   if (test('rejects actions/cache in workflows with id-token write', () => {
     const result = runValidator({
       'unsafe-oidc-cache.yml': `name: Unsafe\non:\n  push:\npermissions:\n  contents: read\njobs:\n  release:\n    runs-on: ubuntu-latest\n    permissions:\n      contents: read\n      id-token: write\n    steps:\n      - uses: actions/cache@v5\n        with:\n          path: ~/.npm\n          key: cache\n`,
@@ -279,6 +291,104 @@ function run() {
     });
     assert.strictEqual(result.status, 0, result.stderr || result.stdout);
   })) passed++; else failed++;
+
+  if (test('rejects npm install, shorthand i aliases, and chained installs without --ignore-scripts', () => {
+    const result = runValidator({
+      'unsafe-npm-install.yml': `name: Unsafe\non:\n  pull_request:\njobs:\n  build:\n    runs-on: ubuntu-latest\n    steps:\n      - run: |\n          npm install\n          npm i lodash\n          pnpm i\n          bun i\n          npm ci && npm ci --ignore-scripts\n`,
+    });
+    assert.notStrictEqual(result.status, 0, 'Expected validator to fail on unguarded npm/shorthand installs');
+    assert.match(result.stderr, /npm install must include --ignore-scripts/);
+    assert.match(result.stderr, /pnpm install must include --ignore-scripts/);
+    assert.match(result.stderr, /bun install must include --ignore-scripts/);
+    assert.match(result.stderr, /npm ci must include --ignore-scripts/);
+  })) passed++; else failed++;
+
+  if (test('allows npm install and shorthand i aliases when --ignore-scripts is passed', () => {
+    const result = runValidator({
+      'safe-npm-install.yml': `name: Safe\non:\n  pull_request:\njobs:\n  build:\n    runs-on: ubuntu-latest\n    steps:\n      - run: |\n          npm install --global --ignore-scripts @mariozechner/pi-coding-agent@0.73.1\n          npm i --ignore-scripts\n          pnpm i --ignore-scripts\n          bun i --ignore-scripts\n`,
+    });
+    assert.strictEqual(result.status, 0, result.stderr || result.stdout);
+  })) passed++; else failed++;
+
+  if (test('rejects commented-out persist-credentials, --ignore-scripts, and npm audit signatures', () => {
+    const persistResult = runValidator({
+      'commented-persist.yml': `name: Unsafe\non:\n  workflow_dispatch:\npermissions:\n  contents: write\njobs:\n  release:\n    runs-on: ubuntu-latest\n    steps:\n      - uses: actions/checkout@v4 # persist-credentials: false\n        # persist-credentials: false\n      - run: npm ci --ignore-scripts\n`,
+    });
+    assert.notStrictEqual(persistResult.status, 0, 'Commented persist-credentials must not pass');
+    assert.match(persistResult.stderr, /write permissions must disable checkout credential persistence/);
+
+    const installResult = runValidator({
+      'commented-install.yml': `name: Unsafe\non:\n  pull_request:\njobs:\n  test:\n    runs-on: ubuntu-latest\n    steps:\n      - run: npm ci # --ignore-scripts\n`,
+    });
+    assert.notStrictEqual(installResult.status, 0, 'Inline comment --ignore-scripts must not pass');
+    assert.match(installResult.stderr, /npm ci must include --ignore-scripts/);
+
+    const auditResult = runValidator({
+      'commented-audit.yml': `name: Unsafe\non:\n  push:\njobs:\n  audit:\n    runs-on: ubuntu-latest\n    steps:\n      - run: |\n          # npm audit signatures\n          npm audit --audit-level=high\n`,
+    });
+    assert.notStrictEqual(auditResult.status, 0, 'Commented npm audit signatures must not pass');
+    assert.match(auditResult.stderr, /npm audit must also verify registry signatures/);
+  })) passed++; else failed++;
+
+  if (test('preserves checkout step boundaries across nested list items and subsequent jobs', () => {
+    const nestedBullet = runValidator({
+      'nested-bullet-checkout.yml': [
+        'name: Unsafe',
+        'on:',
+        '  pull_request_target:',
+        'jobs:',
+        '  inspect:',
+        '    runs-on: ubuntu-latest',
+        '    steps:',
+        '      - uses: actions/checkout@v4',
+        '        env:',
+        '          NOTES: |',
+        '            - bullet inside block scalar',
+        '        with:',
+        '          ref: ${{ github.event.pull_request.head.sha }}',
+        '          persist-credentials: false',
+        '',
+      ].join('\n'),
+    });
+    assert.notStrictEqual(nestedBullet.status, 0, 'Nested bullet must not split checkout step before with.ref');
+    assert.match(nestedBullet.stderr, /pull_request\.head\.sha/);
+
+    const crossJobBleed = runValidator({
+      'cross-job-checkout.yml': [
+        'name: Unsafe',
+        'on:',
+        '  workflow_dispatch:',
+        'permissions:',
+        '  contents: write',
+        'jobs:',
+        '  first:',
+        '    runs-on: ubuntu-latest',
+        '    steps:',
+        '      - uses: actions/checkout@v4',
+        '  second:',
+        '    runs-on: ubuntu-latest',
+        '    env:',
+        '      persist-credentials: false',
+        '    steps:',
+        '      - run: echo ok',
+        '',
+      ].join('\n'),
+    });
+    assert.notStrictEqual(crossJobBleed.status, 0, 'Subsequent job keys must not bleed into prior checkout step');
+    assert.match(crossJobBleed.stderr, /write permissions must disable checkout credential persistence/);
+  })) passed++; else failed++;
+
+  return { passed, failed };
+}
+
+function run() {
+  console.log('\n=== Testing workflow security validation ===\n');
+
+  const first = runCheckoutRefTests();
+  const second = runPermissionAndInstallTests();
+  const third = runOidcAuditAndHardeningTests();
+  const passed = first.passed + second.passed + third.passed;
+  const failed = first.failed + second.failed + third.failed;
 
   console.log(`\nPassed: ${passed}`);
   console.log(`Failed: ${failed}`);
