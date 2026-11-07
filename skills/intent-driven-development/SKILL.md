@@ -58,6 +58,66 @@ blocking decisions on session invalidation strategy, and explicit rollback AC.
 Skill reviews it for missing scope boundaries, unverifiable requirements ("the system shall be fast"),
 and silent assumptions, then returns corrected or supplemental criteria without restarting discovery.
 
+### Existing-Issue Handoff Example
+
+When continuing an existing issue, reconcile its original
+description with later comments and verified evidence before
+preparing a handoff. Do not assume the issue body is current.
+
+**Synthetic issue:**
+
+- Phase A: Blocked, awaiting database approval.
+- Phase B: Not started, awaiting the API contract.
+
+A later comment reports that Phase A passed its approval check,
+with a review record and a successful test result. The agent
+checks that both pieces of evidence apply to Phase A.
+Phase B still requires API contract approval.
+
+Verified progress must be supported by checked evidence,
+not merely by a completion claim.
+
+**Reconciled issue state (draft; not published without authorization):**
+
+- Phase A: Completed, supported by the verified approval
+  review record and successful test result.
+- Phase B: Pending, awaiting API contract approval.
+- Next action: Review and approve the API contract.
+- Prerequisite: Obtain the contract and its designated reviewer.
+- Acceptance check: Confirm approval is recorded in a
+  traceable review record.
+
+This is a proposed issue update, not an authorized edit.
+Publish it only with authorization, then read back the
+published description to verify its contents.
+
+**Unverified claim variant:**
+
+If the later comment only says "Phase A is done" without
+verifiable evidence, keep Phase A's completion uncertain.
+Record the missing evidence rather than treating the claim
+as an accepted result. Do not silently erase the original
+blocker or assert that Phase A remains blocked without
+checking its current status.
+
+**Captured versus accepted variant:**
+
+For a task involving three fictional data categories,
+preserve all requested categories in the handoff:
+
+| Category | Verified state | Missing prerequisite/evidence | Next action | Acceptance check |
+| --- | --- | --- | --- | --- |
+| A | Records captured but not accepted | Acceptance review and validation results missing | Validate records against agreed criteria | Required checks pass and acceptance is recorded |
+| B | Source not established; unknown total | Authoritative source and coverage evidence missing | Identify an authoritative source and establish coverage | Source and record scope are verified |
+| C | Limited subset returned zero records | Subset coverage and broader scope are unknown | Determine subset coverage and whether broader data exists | Coverage is verified; global absence is not inferred from the subset |
+
+Do not equate successful data capture with accepted work.
+Keep unsupported counts and unverified completion claims
+explicitly unknown.
+
+For each incomplete category, identify its next action,
+missing prerequisite or evidence, and acceptance check.
+
 ## Operating Rules
 
 1. Inspect the available repository, documentation, issue, design, and test context before
@@ -358,3 +418,21 @@ Before returning the brief, check:
 When another planning or implementation workflow is available, pass the acceptance brief or
 criterion IDs to it. When no dedicated workflow exists, provide the brief directly as the
 implementation reference. Do not assume any named skill or tool is installed.
+
+For an existing issue, read the issue body and relevant later
+comments before preparing the handoff. Reconcile reported
+progress against verifiable evidence, distinguishing completed
+work, unverified claims, captured-but-unaccepted data, and
+remaining blockers. Mark inaccessible or insufficient evidence
+as unknown rather than assuming completion.
+
+State the next action, prerequisite or missing evidence, and
+acceptance check for each remaining phase. Preserve the original
+scope unless an authorized change explicitly revises it.
+
+Only modify the issue description when authorized. After an
+authorized edit, perform a read-back of the published description
+and verify that the completed work, outstanding blockers, and
+acceptance criteria are represented accurately. If verification
+fails, report the mismatch rather than claiming a successful
+handoff.
