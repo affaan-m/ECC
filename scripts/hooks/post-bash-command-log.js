@@ -19,9 +19,164 @@ const MODE_CONFIG = {
   },
 };
 
+// A JWT header is base64url JSON, so it starts with `ey` (`{"`, `{ `) or
+// `ew` (`{` followed by a newline or tab). The common `eyJ` form is always
+// redacted; other headers must decode to an object with an `alg` field.
+function isJwtHeader(header) {
+  if (header.startsWith('eyJ')) return true;
+  try {
+    const decoded = JSON.parse(Buffer.from(header, 'base64url').toString('utf8'));
+    return Boolean(decoded && typeof decoded === 'object' && typeof decoded.alg === 'string');
+  } catch {
+    // Not a JWT header; keep the text.
+    return false;
+  }
+}
+
+// Constant-time prefilter: the second decoded byte of a JSON object header is
+// whitespace or `"`. Rejects word prefixes such as `eyewear` without decoding
+// the whole segment.
+function mayBeJwtHeader(seg, j) {
+  const bytes = Buffer.from(seg.slice(j, j + 4), 'base64url');
+  return bytes.length >= 2 && (bytes[1] === 0x22 || bytes[1] === 0x20 || bytes[1] === 0x09 || bytes[1] === 0x0a || bytes[1] === 0x0d);
+}
+
+// Full header decodes allowed per segment; keeps adversarial `eyAg-eyAg-...`
+// runs linear while still trying every realistic candidate.
+const MAX_HEADER_DECODES = 8;
+
+// Index of the first JWT header in `seg`, starting at its beginning or after a
+// `-` or `_`, or -1. A candidate that fails validation (e.g. `eyewear` in
+// `eyewear_session_<JWT>`) does not stop the scan.
+function findJwtHeader(seg) {
+  let decodes = 0;
+  for (let j = 0; j + 10 <= seg.length; j++) {
+    if (!((j === 0 || seg[j - 1] === '-' || seg[j - 1] === '_') && seg[j] === 'e' && (seg[j + 1] === 'y' || seg[j + 1] === 'w'))) continue;
+    if (seg.startsWith('eyJ', j)) return j;
+    if (decodes < MAX_HEADER_DECODES && mayBeJwtHeader(seg, j)) {
+      decodes++;
+      if (isJwtHeader(seg.slice(j))) return j;
+    }
+  }
+  return -1;
+}
+
+// Redact JWTs inside one run of `[A-Za-z0-9_.-]` characters. A JWT may follow
+// a word prefix joined by `-` or `_` (`session=jwt-<JWT>`, `session_<JWT>`), so
+// each dot-separated segment is checked for a header starting at its beginning
+// or after a `-` or `_`.
+// Every segment is scanned once with a bounded number of decodes, keeping long
+// `ey-ey-...` runs linear (a `\b`-anchored regex retries at each `-`).
+function redactJwtsInChain(chain) {
+  if (!chain.includes('.')) return chain;
+  const segs = chain.split('.');
+  const out = [];
+  let i = 0;
+  while (i < segs.length) {
+    const seg = segs[i];
+    if (i + 2 < segs.length && segs[i + 1].length > 0) {
+      const start = findJwtHeader(seg);
+      if (start >= 0) {
+        out.push(`${seg.slice(0, start)}<REDACTED>`);
+        i += 3;
+        continue;
+      }
+    }
+    out.push(seg);
+    i++;
+  }
+  return out.join('.');
+}
+
+const ASSIGNMENT_KEY = /(\b|_)(secret|api[_-]?key)(\s*[:=]\s*)/gi;
+
+function isQuoteStart(text, i) {
+  return text[i] === '"' || text[i] === "'" || (text[i] === '$' && text[i + 1] === "'");
+}
+
+// Index just past the quoted fragment opening at `start`, or the end of the
+// text when the quote is never closed.
+function skipQuoted(text, start) {
+  const ansi = text[start] === '$';
+  const quote = ansi ? "'" : text[start];
+  const escapes = ansi || quote === '"';
+  let i = start + (ansi ? 2 : 1);
+  while (i < text.length) {
+    if (escapes && text[i] === '\\') i += 2;
+    else if (text[i] === quote) return i + 1;
+    else i++;
+  }
+  return text.length;
+}
+
+// End of the shell word starting at `start`. Bash joins adjacent fragments,
+// so `'prefix-'suffix`, `a"b c"` and `first\ second` are each one value.
+function wordEnd(text, start) {
+  let i = start;
+  while (i < text.length && !/\s/.test(text[i])) {
+    if (isQuoteStart(text, i)) i = skipQuoted(text, i);
+    else if (text[i] === '\\') i += 2;
+    else i++;
+  }
+  return Math.min(i, text.length);
+}
+
+// End of a value that sits inside an enclosing quoted string, e.g.
+// `-H "x-api-key: VALUE"`: the value runs to the enclosing closing quote.
+function enclosedEnd(text, start, open) {
+  const close = open === '"' ? '"' : "'";
+  const escapes = open !== "'";
+  if (text[start] === close) {
+    // `grep "secret =" file` is a search, not an assignment. If a word
+    // follows the quote instead, the quote state was misread; fall back to
+    // redacting the whole word so nothing leaks.
+    const next = text[start + 1];
+    return next === undefined || /\s/.test(next) ? start : wordEnd(text, start);
+  }
+  let i = start;
+  while (i < text.length && text[i] !== close) i += escapes && text[i] === '\\' ? 2 : 1;
+  return Math.min(i, text.length);
+}
+
+// Redact secret=/api_key= values in one pass, tracking the enclosing quote.
+function redactAssignments(text) {
+  let out = '';
+  let copied = 0;
+  let scan = 0;
+  let open = null; // '"', "'", "$'" or null
+  ASSIGNMENT_KEY.lastIndex = 0;
+  let match;
+  while ((match = ASSIGNMENT_KEY.exec(text))) {
+    const valueStart = match.index + match[0].length;
+    while (scan < valueStart) {
+      if (open === null) {
+        if (isQuoteStart(text, scan)) {
+          open = text[scan] === '$' ? "$'" : text[scan];
+          scan += open.length;
+        } else scan += text[scan] === '\\' ? 2 : 1;
+      } else if (open !== "'" && text[scan] === '\\') scan += 2;
+      else {
+        if (text[scan] === (open === '"' ? '"' : "'")) open = null;
+        scan++;
+      }
+    }
+    const end = open === null ? wordEnd(text, valueStart) : enclosedEnd(text, valueStart, open);
+    if (end > valueStart) {
+      out += `${text.slice(copied, valueStart)}<REDACTED>`;
+      copied = end;
+      ASSIGNMENT_KEY.lastIndex = end;
+    }
+  }
+  return out + text.slice(copied);
+}
+
 function sanitizeCommand(command) {
-  return String(command || '')
+  const masked = String(command || '')
     .replace(/\n/g, ' ')
+    .replace(/-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----[\s\S]*?(?:-----END [A-Z0-9 ]*PRIVATE KEY-----|$)/g, '<REDACTED>')
+    .replace(/\bsk-[A-Za-z0-9_-]{20,}/g, '<REDACTED>')
+    .replace(/[A-Za-z0-9_.-]+/g, redactJwtsInChain);
+  return redactAssignments(masked)
     .replace(/--token[= ][^ ]*/g, '--token=<REDACTED>')
     .replace(/Authorization:[: ]*[^ ]*[: ]*[^ ]*/gi, 'Authorization:<REDACTED>')
     .replace(/\bAKIA[A-Z0-9]{16}\b/g, '<REDACTED>')
