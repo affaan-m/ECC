@@ -116,6 +116,14 @@
       "url": "https://search.parallel.ai/mcp",
       "description": "Parallel Web Search — LLM-optimized web_search and web_fetch tools that take an objective + queries and return citation-backed excerpts in a single call (replaces multiple keyword searches). Works key-free for anonymous use. For higher rate limits, add a headers block: { \"Authorization\": \"Bearer YOUR_PARALLEL_API_KEY_HERE\" } using a key from platform.parallel.ai."
     },
+    "arcmira": {
+      "type": "http",
+      "url": "https://mcp.arcmira.com/mcp",
+      "headers": {
+        "Authorization": "Bearer YOUR_ARCMIRA_API_KEY_HERE"
+      },
+      "description": "YouTube transcript search and monitoring for your AI: exact quotes, full transcripts and speakers. Needs an Arcmira API key, or drop the headers block on hosts that sign in with MCP OAuth."
+    },
     "context7": {
       "command": "npx",
       "args": ["-y", "@upstash/context7-mcp@latest"],
