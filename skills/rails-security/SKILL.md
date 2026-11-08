@@ -287,34 +287,52 @@ does not apply; token or session-cookie APIs still need it.
 
 ## File Uploads
 
-The `content_type` a client sends is attacker-controlled. Validate the detected type,
-the extension, and the size, and choose the storage destination deliberately:
+The `content_type` a client sends is attacker-controlled, and `blob.content_type` is not a
+substitute for it. Active Storage derives that column through `Marcel::MimeType.for`, which
+treats the client's declared type as one candidate alongside magic-byte detection and keeps
+it when the bytes match nothing known — so opaque bytes declared `image/png` are stored as
+`image/png` with `identified?` true. Inspect the stored bytes yourself:
 
 ```ruby
-class Document < ApplicationRecord
-  has_one_attached :file
+module Uploads
+  Rejected = Class.new(StandardError)
 
-  ALLOWED = %w[application/pdf image/png image/jpeg].freeze
+  MAGIC = {
+    "application/pdf" => "%PDF-".b,
+    "image/png" => "\x89PNG\r\n\x1a\n".b,
+    "image/jpeg" => "\xFF\xD8\xFF".b
+  }.freeze
   ALLOWED_EXTENSIONS = %w[.pdf .png .jpg .jpeg].freeze
   MAX_BYTES = 10.megabytes
 
-  validate :acceptable_file
+  def self.verified!(blob)
+    # Fail closed: an object that is missing or still pending cannot be inspected.
+    raise Rejected, "could not be verified" unless blob.service.exist?(blob.key)
+    raise Rejected, "is too large" if blob.byte_size > MAX_BYTES
 
-  private
+    extension = File.extname(blob.filename.to_s).downcase
+    raise Rejected, "extension not allowed" unless ALLOWED_EXTENSIONS.include?(extension)
 
-  def acceptable_file
-    return unless file.attached?
+    head = blob.service.download_chunk(blob.key, 0...8)
+    raise Rejected, "type not allowed" unless MAGIC.any? { |_mime, magic| head.start_with?(magic) }
 
-    errors.add(:file, "is too large") if file.blob.byte_size > MAX_BYTES
-
-    # identify sets content_type from the file's own bytes, not the client's header.
-    file.blob.identify unless file.blob.identified?
-    errors.add(:file, "type not allowed") unless ALLOWED.include?(file.blob.content_type)
-
-    extension = File.extname(file.blob.filename.to_s).downcase
-    errors.add(:file, "extension not allowed") unless ALLOWED_EXTENSIONS.include?(extension)
+    blob
   end
 end
+```
+
+The check reads from storage, so it has to run where the bytes already exist. A form upload
+is not yet in storage when model validations run — Active Storage uploads on save — so
+upload explicitly first, and attach only what passed:
+
+```ruby
+# Form upload
+blob = ActiveStorage::Blob.create_and_upload!(io: params[:file], filename: params[:file].original_filename)
+document.file.attach(Uploads.verified!(blob))
+
+# Direct upload: the client already stored the object, so verify before the record
+# points at it.
+document.file.attach(Uploads.verified!(ActiveStorage::Blob.find_signed!(params[:file])))
 ```
 
 Attach to a private service — a public bucket makes every upload world-readable regardless
@@ -481,7 +499,7 @@ confidence threshold.
 - [ ] No raw SQL string interpolation; `order` and `pluck` inputs allowlisted
 - [ ] Every `html_safe` and `raw` reviewed
 - [ ] CSRF exemptions scoped to specific actions with another auth mechanism
-- [ ] Uploads validated by detected type, extension, and size, and stored on a private service
+- [ ] Uploads validated against stored bytes, not `blob.content_type`, and fail closed when the object is unavailable
 - [ ] Auth endpoints rate-limited; webhook signatures compared in constant time
 - [ ] No secrets in version control; master key excluded
 - [ ] `bundle-audit` and `brakeman` clean
