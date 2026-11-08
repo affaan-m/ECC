@@ -117,7 +117,14 @@ function runFixture() {
 const cases = runFixture();
 
 if (cases === null) {
-  skip('Active Storage lifecycle cases', 'ruby with rails and activestorage not available');
+  // The CI lane sets this so a missing toolchain fails rather than passing silently.
+  if (process.env.ECC_RAILS_FIXTURE_REQUIRED === '1') {
+    failed += 1;
+    console.log('  ✗ Active Storage lifecycle cases');
+    console.log('    ECC_RAILS_FIXTURE_REQUIRED=1 but ruby with rails could not run the fixture');
+  } else {
+    skip('Active Storage lifecycle cases', 'ruby with rails and activestorage not available');
+  }
 } else {
   const byName = new Map(cases.map(entry => [entry.case, entry]));
   const expectCase = name => {
