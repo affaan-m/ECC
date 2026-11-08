@@ -31,6 +31,7 @@ function isHookRedirectConfigKey(key) {
     || /^includeif\..*\.path$/.test(normalized);
 }
 
+/** Return the key from a Git configuration operand, ignoring its value. */
 function configKey(setting) {
   return setting.split('=', 1)[0];
 }
@@ -166,6 +167,8 @@ function isNoVerifyLongFlag(value) {
   return value.length >= '--no-v'.length && '--no-verify'.startsWith(value);
 }
 
+// These longstanding, non-deprecated built-ins take precedence over aliases.
+const GIT_BUILTINS_THAT_IGNORE_ALIASES = new Set(['diff', 'log', 'status']);
 const PROTECTED_GIT_COMMANDS = new Set(['commit', 'push', 'merge', 'cherry-pick', 'rebase', 'am']);
 const GIT_GLOBAL_VALUES = new Set(['-c', '-C', '--config-env', '--work-tree', '--git-dir', '--namespace', '--super-prefix']);
 const SHELLS = new Set(['sh', 'bash', 'dash', 'zsh', 'ksh']);
@@ -181,8 +184,10 @@ function isGitExecutable(value) {
   return name === 'git' || name === 'git.exe';
 }
 
-// Only literal values from this supplied shell task are tracked. No host
-// environment, arbitrary expansion or external configuration is read.
+/**
+ * Test Git configuration keys visible in literal shell environment assignments.
+ * Values from the host environment and Git configuration files are opaque.
+ */
 function gitEnvironmentMatchesConfig(environment, budget, matches) {
   const count = environment.get('GIT_CONFIG_COUNT') || '';
   budget.spend(count.length + environment.size + 1);
@@ -216,8 +221,7 @@ function gitEnvironmentMatchesConfig(environment, budget, matches) {
   return false;
 }
 
-// Walk the global options once so configuration can be matched against the
-// command that Git will invoke.
+/** Return the subcommand index and literal config keys from Git global options. */
 function scanGitGlobalOptions(words, budget, start) {
   const keys = [];
   let index = start + 1;
@@ -257,12 +261,14 @@ function findGitBypassFlag(words, budget, start, command) {
   return false;
 }
 
+/** Check a Git invocation for hook-bypass options or a command-supplied alias. */
 function checkGitWords(words, budget, start, environment) {
   const { index, keys } = scanGitGlobalOptions(words, budget, start);
   const command = words[index]?.value;
   budget.spend((command?.length || 0) + 1);
   if (!command) return null;
   if (!PROTECTED_GIT_COMMANDS.has(command)) {
+    if (GIT_BUILTINS_THAT_IGNORE_ALIASES.has(command)) return null;
     // Alias bodies can chain to other aliases or execute shell commands.
     // Reject the invocation without evaluating the supplied definition.
     const aliasKey = `alias.${command.toLowerCase()}`;

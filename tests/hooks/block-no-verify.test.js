@@ -80,16 +80,21 @@ const gitAliasCases = [
   ['attached config-env alias', 2, "git --config-env=alias.ci=COMMIT_ALIAS ci -m demo"],
   ['config count alias', 2, "GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=alias.ci GIT_CONFIG_VALUE_0='commit --no-verify' git ci -m demo"],
   ['config parameters alias', 2, "GIT_CONFIG_PARAMETERS=\"'alias.ci'='commit --no-verify'\" git ci -m demo"],
+  ['status ignores a same-name inline alias', 0, 'git -c alias.status=log status --porcelain'],
+  ['log ignores a same-name config-env alias', 0, "GIT_LOG_ALIAS='commit --no-verify' git --config-env=alias.log=GIT_LOG_ALIAS log -1"],
+  ['diff ignores a same-name environment alias', 0, "GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=alias.diff GIT_CONFIG_VALUE_0='commit --no-verify' git diff"],
+  ['uppercase status can resolve to an alias', 2, "git -c 'alias.status=commit --no-verify' STATUS"],
+  ['direct commit still checks flags with a same-name alias', 2, 'git -c alias.commit=status commit --no-verify', /--no-verify flag/],
   ['unused alias definition', 0, "git -c 'alias.ci=commit --no-verify' status"],
   ['protected builtin ignores a same-name alias', 0, "git -c 'alias.commit=commit --no-verify' commit -m demo"],
   ['alias definition in message text', 0, "git commit -m 'alias.ci=commit --no-verify'"],
 ];
 
-for (const [name, expected, command] of gitAliasCases) {
+for (const [name, expected, command, diagnostic = /Git alias/] of gitAliasCases) {
   if (test(name, () => {
     const result = runHook({ tool_input: { command } });
     assert.strictEqual(result.code, expected, result.stderr);
-    if (expected === 2) assert.match(result.stderr, /Git alias/);
+    if (expected === 2) assert.match(result.stderr, diagnostic);
   })) passed++; else failed++;
 }
 
