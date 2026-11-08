@@ -31,8 +31,8 @@ function isHookRedirectConfigKey(key) {
     || /^includeif\..*\.path$/.test(normalized);
 }
 
-function isHookRedirectSetting(setting) {
-  return isHookRedirectConfigKey(setting.split('=', 1)[0]);
+function configKey(setting) {
+  return setting.split('=', 1)[0];
 }
 
 const COMMIT_OPTIONS_WITH_VALUE = new Set([
@@ -183,23 +183,23 @@ function isGitExecutable(value) {
 
 // Only literal values from this supplied shell task are tracked. No host
 // environment, arbitrary expansion or external configuration is read.
-function gitEnvironmentOverride(environment, budget) {
+function gitEnvironmentMatchesConfig(environment, budget, matches) {
   const count = environment.get('GIT_CONFIG_COUNT') || '';
   budget.spend(count.length + environment.size + 1);
   // Git uses strtoul: leading ASCII whitespace/+ are accepted, trailing bytes
   // and counts above INT_MAX are rejected. Bound work by assignments we own.
   const configured = /^[ \t\r\n\v\f]*\+?[0-9]+(?![\s\S])/.test(count) ? Number(count) : 0;
   if (configured > 0 && configured <= 0x7fffffff && configured <= environment.size / 2) {
-    let override = false;
+    let matched = false;
     let complete = true;
     for (let i = 0; i < configured; i++) {
       budget.spend();
       const key = environment.get(`GIT_CONFIG_KEY_${i}`);
       if (key === undefined || !environment.has(`GIT_CONFIG_VALUE_${i}`)) { complete = false; break; }
       budget.spend(key.length + 1);
-      override ||= isHookRedirectConfigKey(key);
+      matched ||= matches(key);
     }
-    if (complete && override) return true;
+    if (complete && matched) return true;
   }
   const parameters = environment.get('GIT_CONFIG_PARAMETERS');
   if (parameters) {
@@ -209,41 +209,35 @@ function gitEnvironmentOverride(environment, budget) {
     for (const command of scanShell(parameters, budget).commands) {
       for (const word of command.words) {
         budget.spend(word.value.length + 1);
-        if (isHookRedirectSetting(word.value)) return true;
+        if (matches(configKey(word.value))) return true;
       }
     }
   }
   return false;
 }
 
-// True when a git global option at words[index] redirects hooks via config.
-// The separate-operand forms always charge the operand so budget accounting
-// does not depend on whether an earlier option already matched.
-function gitGlobalOptionRedirectsHooks(words, index, value, budget) {
-  if (value === '-c' || value === '--config-env') {
-    const setting = words[index + 1]?.value || '';
-    budget.spend(setting.length + 1);
-    return isHookRedirectSetting(setting);
-  }
-  if (value.startsWith('-c')) return isHookRedirectSetting(value.slice(2));
-  if (value.startsWith('--config-env=')) return isHookRedirectSetting(value.slice('--config-env='.length));
-  return false;
-}
-
-// Walk git's global options after the executable. Returns the index of the
-// subcommand word and whether any option redirected the hooks path.
-function scanGitGlobalOptions(words, budget, start, environmentOverride) {
+// Walk the global options once so configuration can be matched against the
+// command that Git will invoke.
+function scanGitGlobalOptions(words, budget, start) {
+  const keys = [];
   let index = start + 1;
-  let override = environmentOverride;
   for (; index < words.length; index++) {
     const value = words[index].value;
     budget.spend(value.length + 1);
     if (!value.startsWith('-')) break;
     if (value === '--') { index++; break; }
-    if (gitGlobalOptionRedirectsHooks(words, index, value, budget)) override = true;
+    if (value === '-c' || value === '--config-env') {
+      const setting = words[index + 1]?.value || '';
+      budget.spend(setting.length + 1);
+      keys.push(configKey(setting));
+    } else if (value.startsWith('-c')) {
+      keys.push(configKey(value.slice(2)));
+    } else if (value.startsWith('--config-env=')) {
+      keys.push(configKey(value.slice('--config-env='.length)));
+    }
     if (GIT_GLOBAL_VALUES.has(value)) index++;
   }
-  return { index, override };
+  return { index, keys };
 }
 
 // Scan a protected subcommand's own arguments for a hook-bypass flag.
@@ -263,12 +257,28 @@ function findGitBypassFlag(words, budget, start, command) {
   return false;
 }
 
-function checkGitWords(words, budget, start = 0, environmentOverride = false) {
-  const { index, override } = scanGitGlobalOptions(words, budget, start, environmentOverride);
+function checkGitWords(words, budget, start, environment) {
+  const { index, keys } = scanGitGlobalOptions(words, budget, start);
   const command = words[index]?.value;
   budget.spend((command?.length || 0) + 1);
-  if (!PROTECTED_GIT_COMMANDS.has(command)) return null;
-  if (override) return `BLOCKED: Overriding core.hooksPath is not allowed with git ${command}. Git hooks must not be bypassed.`;
+  if (!command) return null;
+  if (!PROTECTED_GIT_COMMANDS.has(command)) {
+    // Alias bodies can chain to other aliases or execute shell commands.
+    // Reject the invocation without evaluating the supplied definition.
+    const aliasKey = `alias.${command.toLowerCase()}`;
+    const aliasCommandKey = `${aliasKey}.command`;
+    const matches = key => {
+      const normalized = key.toLowerCase();
+      return normalized === aliasKey || normalized === aliasCommandKey;
+    };
+    if (keys.some(matches) || gitEnvironmentMatchesConfig(environment, budget, matches)) {
+      return 'BLOCKED: Invoking a command-supplied Git alias is not allowed. Run the underlying Git command directly so its flags can be checked.';
+    }
+    return null;
+  }
+  if (keys.some(isHookRedirectConfigKey) || gitEnvironmentMatchesConfig(environment, budget, isHookRedirectConfigKey)) {
+    return `BLOCKED: Overriding core.hooksPath is not allowed with git ${command}. Git hooks must not be bypassed.`;
+  }
   if (findGitBypassFlag(words, budget, index + 1, command)) {
     return `BLOCKED: --no-verify flag is not allowed with git ${command}. Git hooks must not be bypassed.`;
   }
@@ -997,7 +1007,7 @@ function checkCommand(input) {
       const word = words[index];
       budget.spend(word.value.length + 1);
       if (isGitExecutable(word.value)) {
-        const reason = checkGitWords(words, budget, index, gitEnvironmentOverride(environment, budget));
+        const reason = checkGitWords(words, budget, index, environment);
         if (reason) return reason;
       }
       if (word.value !== text && /git/i.test(word.value) && /[\s'"()]/.test(word.value)) enqueue(word.value, true, { states: [shellState(environment, budget)] });
@@ -1058,7 +1068,7 @@ function checkCommand(input) {
     const { words } = normalized;
     const reason = task.opaque || role.kind === 'opaque'
       ? inspectOpaque(command.words, task.text, environment)
-      : role.kind === 'git' ? checkGitWords(words, budget, 0, gitEnvironmentOverride(environment, budget)) : null;
+      : role.kind === 'git' ? checkGitWords(words, budget, 0, environment) : null;
     if (reason) return reason;
     if (role.code) {
       if (normalized.local && words[0]?.value === 'eval') frame.sameShellCode = role.code;
