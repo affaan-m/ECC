@@ -158,6 +158,11 @@ class ApplicationController < ActionController::Base
   after_action :verify_authorized, except: :index
   after_action :verify_policy_scoped, only: :index
 end
+
+# Public actions have no record to authorize, so exempt them explicitly.
+class SessionsController < ApplicationController
+  skip_after_action :verify_authorized
+end
 ```
 
 ## Strong Parameters and Mass Assignment
