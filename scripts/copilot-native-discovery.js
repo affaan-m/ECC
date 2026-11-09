@@ -73,7 +73,9 @@ function discover(executable) {
   const fixture = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc copilot discovery '));
   try {
     const env = fixtureEnvironment(fixture);
-    const project = fs.realpathSync(fs.mkdirSync(path.join(fixture, 'project'), { recursive: true }));
+    const projectPath = path.join(fixture, 'project');
+    fs.mkdirSync(projectPath, { recursive: true });
+    const project = fs.realpathSync(projectPath);
     run('git', ['init', '--quiet', '--template='], project, env);
     const revision = run('git', ['rev-parse', 'HEAD'], ROOT, env).trim();
     if (!/^[a-f0-9]{40,64}$/.test(revision)) throw new Error('Cannot identify the source revision.');

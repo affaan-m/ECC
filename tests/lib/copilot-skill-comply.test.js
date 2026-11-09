@@ -9,7 +9,8 @@ const { createManifestInstallPlan, applyInstallPlan } = require('../../scripts/l
 const { withHookConsent } = require('../../scripts/lib/install/hook-consent');
 
 const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'ecc comply ')));
-const cwd = fs.mkdirSync(path.join(root, 'project'), { recursive: true });
+const cwd = path.join(root, 'project');
+fs.mkdirSync(cwd, { recursive: true });
 const home = path.join(root, 'home');
 const journal = path.join(home, 'session-state', 'fixture', 'events.jsonl');
 const env = { ...process.env, COPILOT_HOME: home };

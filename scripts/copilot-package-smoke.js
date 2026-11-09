@@ -106,7 +106,8 @@ function smoke(npm) {
     const name = pack[0]?.filename;
     assert.ok(typeof name === 'string' && /^ecc-universal-[a-z0-9.-]+\.tgz$/i.test(name));
     run('tar', ['-xzf', path.join(fixture, name), '-C', fixture], { cwd: fixture, env, label: 'Package extraction' });
-    const project = fs.mkdirSync(path.join(fixture, 'project'), { recursive: true });
+    const project = path.join(fixture, 'project');
+    fs.mkdirSync(project, { recursive: true });
     const metadata = '{"type":"module"}\n';
     fs.writeFileSync(path.join(project, 'package.json'), metadata);
     // Test the packed sources using the dependency tree already verified by

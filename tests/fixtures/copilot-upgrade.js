@@ -22,7 +22,9 @@ const INSTINCT = '---\nid: baseline-instinct\ntrigger: when testing upgrades\nco
 function fixture() {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc copilot upgrade '));
   try {
-    const project = fs.realpathSync(fs.mkdirSync(path.join(root, 'project'), { recursive: true }));
+    const projectPath = path.join(root, 'project');
+    fs.mkdirSync(projectPath, { recursive: true });
+    const project = fs.realpathSync(projectPath);
     const env = { ...fixtureEnvironment(root), ECC_COPILOT_OBSERVE: '1' };
     const run = (executable, args, input, cwd = project) => execFileSync(executable, args, {
       cwd, env, input, encoding: 'utf8', timeout: 20000, maxBuffer: 2 * 1024 * 1024, stdio: ['pipe', 'pipe', 'pipe'],

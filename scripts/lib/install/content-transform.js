@@ -53,7 +53,7 @@ function transformInstallContent(operation, content) {
       { operatorEnvironment: process.env }), operation.sourceRelativePath);
   }
   if (operation.contentTransform === 'copilot-workflow-paths') {
-    const safeContent = /(?:^|\/)SKILL\.md$/i.test(operation.sourceRelativePath)
+    const safeContent = /(?:^|[\\/])SKILL\.md$/i.test(operation.sourceRelativePath)
       ? require('./copilot-command').adaptCopilotSkill(
         require('./copilot-runtime-skill-transform').adaptCopilotRuntimeSkill(content, operation.sourceRelativePath)
       ) : content;

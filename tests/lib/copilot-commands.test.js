@@ -66,6 +66,7 @@ test('transform boundary invokes command and skill projections', () => {
   assert.match(transformInstallContent({ contentTransform: 'copilot-command', sourceRelativePath: 'commands/build-fix.md' }, source), /name: build-fix/);
   const skill = source.replace('description:', 'name: build-fix\ndescription:');
   assert.doesNotMatch(transformInstallContent({ contentTransform: 'copilot-workflow-paths', sourceRelativePath: 'skills/build-fix/SKILL.md' }, skill), /allowed-tools:/);
+  assert.doesNotMatch(transformInstallContent({ contentTransform: 'copilot-workflow-paths', sourceRelativePath: path.win32.join('skills', 'build-fix', 'SKILL.md') }, skill), /allowed-tools:/);
 });
 test('planning projects command discovery and canonical skill wins duplicates', () => {
   const operations = adapter.planOperations({ repoRoot: REPO, projectRoot: '/project', modules: [
@@ -74,15 +75,15 @@ test('planning projects command discovery and canonical skill wins duplicates', 
   ] });
   const commands = operations.filter(op => op.contentTransform === 'copilot-command');
   assert.ok(commands.length > 70);
-  assert.ok(commands.some(op => op.destinationPath.endsWith('/skills/build-fix/SKILL.md')));
+  assert.ok(commands.some(op => op.destinationPath.endsWith(path.join('skills', 'build-fix', 'SKILL.md'))));
   assert.ok(!commands.some(op => op.sourceRelativePath === 'commands/issue-review.md'));
-  const canonical = operations.filter(op => op.destinationPath === '/project/.github/skills/issue-review');
+  const canonical = operations.filter(op => op.destinationPath === path.join('/project', '.github', 'skills', 'issue-review'));
   assert.strictEqual(canonical.length, 1);
   assert.strictEqual(canonical[0].sourceRelativePath, 'skills/issue-review');
 });
 test('commands-only selection includes canonical workflows without duplicates', () => {
   const operations = adapter.planOperations({ repoRoot: REPO, projectRoot: '/project', modules: [{ id: 'commands-core', paths: ['commands'] }] });
-  assert.strictEqual(operations.filter(op => op.destinationPath === '/project/.github/skills/issue-review').length, 1);
+  assert.strictEqual(operations.filter(op => op.destinationPath === path.join('/project', '.github', 'skills', 'issue-review')).length, 1);
 });
 test('commands planning rejects traversal and does not invent nonexistent sources', () => {
   for (const file of ['commands/../x.md', 'commands/missing.md', 'commands\\..\\x.md']) {
@@ -109,8 +110,8 @@ test('instruction-only documentation and Git workflows remain usable', () => {
 test('builtin slash collisions use explicit ECC aliases without hijacking builtins', () => {
   const operations = adapter.planOperations({ repoRoot: REPO, projectRoot: '/project', modules: [{ id: 'commands-core', paths: ['commands'] }] });
   for (const name of ['plan', 'pr', 'sessions']) {
-    assert.ok(operations.some(op => op.destinationPath === `/project/.github/skills/ecc-${name}/SKILL.md`));
-    assert.ok(!operations.some(op => op.destinationPath === `/project/.github/skills/${name}/SKILL.md`));
+    assert.ok(operations.some(op => op.destinationPath === path.join('/project', '.github', 'skills', `ecc-${name}`, 'SKILL.md')));
+    assert.ok(!operations.some(op => op.destinationPath === path.join('/project', '.github', 'skills', name, 'SKILL.md')));
     const result = adaptCopilotCommand(fs.readFileSync(path.join(REPO, 'commands', `${name}.md`), 'utf8'), `commands/${name}.md`);
     assert.match(result, new RegExp(`name: ecc-${name}`));
   }

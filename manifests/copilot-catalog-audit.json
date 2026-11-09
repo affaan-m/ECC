@@ -24271,7 +24271,7 @@
       "id": "catalog:scripts/copilot-native-discovery.js",
       "source": "scripts/copilot-native-discovery.js",
       "kind": "runtime",
-      "sha256": "cf67908c16fcb25df26b4487bde918dd8d83014239c0be5e685c081d77a8370f",
+      "sha256": "4b8ad2764d21fbd3dd171596218aeb83aa82de4ffc07813ce39ba0e87255c3de",
       "classification": "external-or-portability-review-required",
       "native_status": "native-unverified",
       "findings": [
@@ -24304,7 +24304,7 @@
         },
         {
           "kind": "external-tool",
-          "line": 87,
+          "line": 89,
           "column": 16,
           "reference": "copilot",
           "context": "executable-candidate",
@@ -24313,7 +24313,7 @@
         },
         {
           "kind": "external-tool",
-          "line": 96,
+          "line": 98,
           "column": 20,
           "reference": "copilot",
           "context": "executable-candidate",
@@ -24322,7 +24322,7 @@
         },
         {
           "kind": "interpreter",
-          "line": 98,
+          "line": 100,
           "column": 93,
           "reference": "node",
           "context": "executable-candidate",
@@ -24331,7 +24331,7 @@
         },
         {
           "kind": "external-tool",
-          "line": 98,
+          "line": 100,
           "column": 116,
           "reference": "copilot",
           "context": "executable-candidate",
@@ -24340,7 +24340,7 @@
         },
         {
           "kind": "external-tool",
-          "line": 105,
+          "line": 107,
           "column": 55,
           "reference": "copilot",
           "context": "executable-candidate",
@@ -24349,7 +24349,7 @@
         },
         {
           "kind": "external-tool",
-          "line": 107,
+          "line": 109,
           "column": 29,
           "reference": "copilot",
           "context": "executable-candidate",
@@ -24358,7 +24358,7 @@
         },
         {
           "kind": "external-tool",
-          "line": 107,
+          "line": 109,
           "column": 59,
           "reference": "copilot",
           "context": "executable-candidate",
@@ -24436,7 +24436,7 @@
       "id": "catalog:scripts/copilot-package-smoke.js",
       "source": "scripts/copilot-package-smoke.js",
       "kind": "runtime",
-      "sha256": "e401003fd61fdfaef992c5600cbc0e16866e06494c541b8353e6dfc6546d14b9",
+      "sha256": "be459b179c3e9beccb7f4b73460a8aff756dc564f0a2e9f03e71157626a4579f",
       "classification": "adaptation-review-required",
       "native_status": "native-unverified",
       "findings": [
@@ -24757,7 +24757,7 @@
         },
         {
           "kind": "external-tool",
-          "line": 117,
+          "line": 118,
           "column": 16,
           "reference": "copilot",
           "context": "executable-candidate",
@@ -24766,7 +24766,7 @@
         },
         {
           "kind": "external-tool",
-          "line": 119,
+          "line": 120,
           "column": 77,
           "reference": "copilot",
           "context": "executable-candidate",
@@ -24775,7 +24775,7 @@
         },
         {
           "kind": "external-tool",
-          "line": 127,
+          "line": 128,
           "column": 30,
           "reference": "copilot",
           "context": "executable-candidate",
@@ -24784,29 +24784,11 @@
         },
         {
           "kind": "external-tool",
-          "line": 128,
+          "line": 129,
           "column": 26,
           "reference": "copilot",
           "context": "executable-candidate",
           "resolution": "external-prerequisite-unverified",
-          "review": "semantic-review-required"
-        },
-        {
-          "kind": "external-tool",
-          "line": 130,
-          "column": 32,
-          "reference": "copilot",
-          "context": "executable-candidate",
-          "resolution": "external-prerequisite-unverified",
-          "review": "semantic-review-required"
-        },
-        {
-          "kind": "local-reference",
-          "line": 130,
-          "column": 26,
-          "reference": "hooks/copilot-lifecycle.js",
-          "context": "executable-candidate",
-          "resolution": "missing",
           "review": "semantic-review-required"
         },
         {
@@ -24829,7 +24811,25 @@
         },
         {
           "kind": "external-tool",
-          "line": 134,
+          "line": 132,
+          "column": 32,
+          "reference": "copilot",
+          "context": "executable-candidate",
+          "resolution": "external-prerequisite-unverified",
+          "review": "semantic-review-required"
+        },
+        {
+          "kind": "local-reference",
+          "line": 132,
+          "column": 26,
+          "reference": "hooks/copilot-lifecycle.js",
+          "context": "executable-candidate",
+          "resolution": "missing",
+          "review": "semantic-review-required"
+        },
+        {
+          "kind": "external-tool",
+          "line": 135,
           "column": 27,
           "reference": "copilot",
           "context": "executable-candidate",
@@ -24838,7 +24838,7 @@
         },
         {
           "kind": "interpreter",
-          "line": 135,
+          "line": 136,
           "column": 7,
           "reference": "node",
           "context": "executable-candidate",
@@ -41329,7 +41329,7 @@
       "id": "catalog:scripts/lib/install/content-transform.js",
       "source": "scripts/lib/install/content-transform.js",
       "kind": "runtime",
-      "sha256": "2361e8a082e701722d64e3dbdad603e19250fdfb6fbf7c737ec5d84b8d969784",
+      "sha256": "65cedb84d3349b0de2a3514fa10cdccf0922c9e4f33f293dde67efc7c172fd53",
       "classification": "external-or-portability-review-required",
       "native_status": "native-unverified",
       "findings": [

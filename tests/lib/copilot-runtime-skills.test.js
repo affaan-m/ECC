@@ -21,6 +21,12 @@ try {
     assert.equal(adaptCopilotRuntimeSkill(other, 'skills/coding-standards/SKILL.md'), other);
     assert.equal(adaptCopilotRuntimeSkill(source('unified-memory'), 'examples/unified-memory/SKILL.md'), source('unified-memory'));
     assert.equal(copilotRuntimeSkillStatus('skills\\gateguard\\SKILL.md'), 'projected');
+    for (const name of ['plan-canvas', 'plan-orchestrate', 'skill-comply']) {
+      const windowsPath = path.win32.join('skills', name, 'SKILL.md');
+      assert.equal(transformInstallContent({
+        sourceRelativePath: windowsPath, contentTransform: 'copilot-workflow-paths',
+      }, source(name)), projected(name));
+    }
     assert.equal(copilotRuntimeSkillStatus('skills/delivery-gate/SKILL.md'), 'notice-only');
     assert.equal(copilotRuntimeSkillStatus('examples/unified-memory/SKILL.md'), null);
     assert.throws(() => adaptCopilotRuntimeSkill('missing frontmatter', 'skills/unified-memory/SKILL.md'));
