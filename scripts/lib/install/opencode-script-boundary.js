@@ -4,30 +4,31 @@ const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
 
-const SOURCE = 'manifests/install-assets/commonjs-scripts-package.json';
+const SCRIPT_BOUNDARY_SOURCE = 'manifests/install-assets/commonjs-scripts-package.json';
 const key = file => process.platform === 'win32' ? path.resolve(file).toLowerCase() : path.resolve(file);
-const markerPath = root => path.join(root, 'scripts', 'package.json');
-const isScriptBoundary = (operation, root) => operation.kind === 'copy-file'
-  && operation.sourceRelativePath === SOURCE && key(operation.destinationPath) === key(markerPath(root));
+const scriptBoundaryPath = (root, target) => path.join(target === 'copilot' ? path.join(root, 'ecc') : root, 'scripts', 'package.json');
+const isScriptBoundary = (operation, root, target) => operation.kind === 'copy-file'
+  && operation.sourceRelativePath === SCRIPT_BOUNDARY_SOURCE
+  && key(operation.destinationPath) === key(scriptBoundaryPath(root, target));
 
 // A nested package owns its own module scope. Symlinks and uncertain trees are
 // preserved conservatively rather than followed while deciding scope changes.
 // Native .ts and transpiled JSX/TSX inherit package type too. Explicit
 // .mjs/.cjs/.mts/.cts formats remain independent of this boundary.
 function scopedScriptFiles(directory, { nested = false, depth = 0 } = {}) {
-  if (depth > 40) throw new Error('OpenCode scripts tree exceeds the safe inspection depth');
+  if (depth > 40) throw new Error('Managed scripts tree exceeds the safe inspection depth');
   const stat = fs.lstatSync(directory, { throwIfNoEntry: false });
   if (!stat) return [];
-  if (stat.isSymbolicLink() || !stat.isDirectory()) throw new Error(`Unsafe OpenCode scripts directory: ${directory}`);
+  if (stat.isSymbolicLink() || !stat.isDirectory()) throw new Error(`Unsafe managed scripts directory: ${directory}`);
   const packageStat = fs.lstatSync(path.join(directory, 'package.json'), { throwIfNoEntry: false });
   if (nested && packageStat?.isFile()) return [];
   const files = [];
   for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
     const file = path.join(directory, entry.name);
-    if (entry.isSymbolicLink()) throw new Error(`Unsafe OpenCode scripts symlink: ${file}`);
+    if (entry.isSymbolicLink()) throw new Error(`Unsafe managed scripts symlink: ${file}`);
     if (entry.isDirectory()) files.push(...scopedScriptFiles(file, { nested: true, depth: depth + 1 }));
     else if (entry.isFile() && /\.(?:js|jsx|ts|tsx)$/i.test(entry.name)) files.push(file);
-    if (files.length > 12000) throw new Error('OpenCode scripts tree exceeds the safe inspection count');
+    if (files.length > 12000) throw new Error('Managed scripts tree exceeds the safe inspection count');
   }
   return files;
 }
@@ -69,18 +70,22 @@ function assertSelectedScriptScopes(plan, readFile, scriptsRoot) {
 }
 
 function assertScriptBoundary(plan, { readFile, previousOperations = [], writtenDestinations = new Set(), expectedContent }) {
-  if (!plan.operations.some(operation => isScriptBoundary(operation, plan.targetRoot))) return;
-  const marker = markerPath(plan.targetRoot);
+  const boundary = plan.operations.find(operation => isScriptBoundary(operation, plan.targetRoot, plan.target));
+  if (!boundary) return;
+  const marker = scriptBoundaryPath(plan.targetRoot, plan.target);
   assertSelectedScriptScopes(plan, readFile, path.dirname(marker));
   const content = readFile(marker);
   assertCommonJSMetadata(content, marker);
   if (content !== null) {
+    if (plan.target === 'copilot' && fs.lstatSync(marker).nlink !== 1) {
+      throw new Error(`Refusing CommonJS runtime migration: preserve the linked module boundary at ${marker}.`);
+    }
     const ownedMarker = previousOperations.find(operation => operation.ownership === 'managed'
-      && isScriptBoundary(operation, plan.targetRoot));
+      && isScriptBoundary(operation, plan.targetRoot, plan.target));
     // A reinstall bridge may omit digests after preflight validated the old
     // receipt. At publication the fixed boundary asset still proves its bytes.
     const expectedMarker = ownedMarker && !ownedMarker.contentSha256
-      ? expectedContent(plan.operations.find(operation => isScriptBoundary(operation, plan.targetRoot))) : null;
+      ? expectedContent(boundary) : null;
     const markerDigest = ownedMarker?.contentSha256 || (expectedMarker
       ? crypto.createHash('sha256').update(expectedMarker).digest('hex') : null);
     if (ownedMarker && crypto.createHash('sha256').update(content).digest('hex') !== markerDigest) {
@@ -108,10 +113,10 @@ function assertScriptBoundary(plan, { readFile, previousOperations = [], written
   }
 }
 
-function retainScriptBoundary(operation, targetRoot) {
-  if (!isScriptBoundary(operation, targetRoot)) return false;
+function retainScriptBoundary(operation, targetRoot, target) {
+  if (!isScriptBoundary(operation, targetRoot, target)) return false;
   try { return scopedScriptFiles(path.dirname(operation.destinationPath)).length > 0; }
   catch { return true; }
 }
 
-module.exports = { assertScriptBoundary, isScriptBoundary, retainScriptBoundary };
+module.exports = { assertScriptBoundary, isScriptBoundary, retainScriptBoundary, SCRIPT_BOUNDARY_SOURCE, scriptBoundaryPath };

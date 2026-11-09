@@ -5,3 +5,6 @@
 *.jpeg binary
 *.gif binary
 *.ico binary
+
+manifests/copilot-capabilities.json linguist-generated=true
+manifests/copilot-catalog-audit.json linguist-generated=true

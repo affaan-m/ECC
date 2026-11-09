@@ -75,7 +75,7 @@ function buildWarning(frontendPaths, findings) {
   ].join('\n');
 }
 
-function run(inputOrRaw) {
+function run(inputOrRaw, options = {}) {
   let input;
   let rawInput = inputOrRaw;
 
@@ -100,7 +100,7 @@ function run(inputOrRaw) {
 
   const findings = [];
   for (const filePath of frontendPaths) {
-    const content = readContent(filePath);
+    const content = (options.readContent || readContent)(filePath);
     findings.push(...detectSignals(content));
   }
 

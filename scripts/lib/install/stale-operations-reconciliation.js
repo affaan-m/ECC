@@ -5,7 +5,8 @@ const fs = require('fs');
 const path = require('path');
 
 const { assertWithinTrustedRoot } = require('../path-safety');
-const { isHookRuntimeOperation } = require('./hook-consent');
+const { getRecordedHookConsent, isHookRuntimeOperation } = require('./hook-consent');
+const { isScriptBoundary } = require('./opencode-script-boundary');
 
 /**
  * Stale managed copy-file reconciliation (issue #3232).
@@ -82,6 +83,8 @@ function prepareStaleOperationsReconciliation(plan, migration) {
       || operation.ownership !== 'managed'
       || typeof operation.destinationPath !== 'string'
       || !selectedModules.has(operation.moduleId)
+      // Selective Copilot installs keep scripts from other recorded modules.
+      || (plan.target === 'copilot' && isScriptBoundary(operation, plan.targetRoot, plan.target))
       // Declining hooks strips hook files without the module dropping them.
       || (skipHookRuntime && isHookRuntimeOperation(operation))
     ) {
@@ -232,11 +235,12 @@ function removeEmptyParents(filePath, targetRoot) {
 
 // Removes one stale destination. Returns true when removed, false when it was
 // already absent, and throws PreservedStaleFile when it must be kept.
-function removeUnchangedStaleFile(candidate, targetRoot) {
+function verifyUnchangedStaleFile(candidate, targetRoot, { requireSingleLink = false } = {}) {
   const initialStat = inspectDestinationPath(candidate.destinationPath, targetRoot);
   if (!initialStat) {
-    return false;
+    return null;
   }
+  if (requireSingleLink && initialStat.nlink !== 1n) throw new PreservedStaleFile('it has multiple hard links');
   if (typeof candidate.contentSha256 !== 'string' || !SHA256_PATTERN.test(candidate.contentSha256)) {
     throw new PreservedStaleFile('its record has no content digest, so it cannot be verified unchanged');
   }
@@ -252,6 +256,12 @@ function removeUnchangedStaleFile(candidate, targetRoot) {
   if (!sameFile(initialStat, hashed.stat) || !sameFile(finalStat, hashed.stat)) {
     throw new PreservedStaleFile('it changed while being verified');
   }
+  return finalStat;
+}
+
+function removeUnchangedStaleFile(candidate, targetRoot) {
+  if (!verifyUnchangedStaleFile(candidate, targetRoot)) return false;
+  const destinationPath = path.resolve(candidate.destinationPath);
   fs.unlinkSync(destinationPath);
   try {
     removeEmptyParents(destinationPath, targetRoot);
@@ -259,6 +269,55 @@ function removeUnchangedStaleFile(candidate, targetRoot) {
     // Pruning emptied directories is best effort; the stale file is gone.
   }
   return true;
+}
+
+function copilotHookManifest(targetRoot) {
+  return path.join(targetRoot, 'hooks', 'ecc.json');
+}
+
+function isCopilotHookActivation(operation, targetRoot) {
+  return operation?.kind === 'copy-file' && operation.ownership === 'managed'
+    && operation.moduleId === 'hooks-runtime' && operation.sourceRelativePath === 'hooks/hooks.json'
+    && operation.contentTransform === 'copilot-hooks'
+    && typeof operation.destinationPath === 'string'
+    && comparablePath(operation.destinationPath) === comparablePath(copilotHookManifest(targetRoot));
+}
+
+function prepareCopilotHookDeactivation(plan, migration, previousState) {
+  const destinationPath = copilotHookManifest(plan.targetRoot);
+  const candidate = migration.previousManagedOperations.get(comparablePath(destinationPath));
+  const stat = inspectDestinationPath(destinationPath, plan.targetRoot);
+  if ((candidate || stat) && !isCopilotHookActivation(candidate, plan.targetRoot)) {
+    throw new Error(`Refusing to disable an unowned Copilot hook manifest at ${destinationPath}. Review the file before retrying --no-hooks.`);
+  }
+  const verified = candidate ? verifyUnchangedStaleFile(candidate, plan.targetRoot, { requireSingleLink: true }) : null;
+  const bridgeConsent = verified ? getRecordedHookConsent(previousState || {}) : 'declined';
+  return {
+    ...migration,
+    copilotHookDeactivation: { destinationPath, candidate, verified },
+    finalState: {
+      ...migration.finalState,
+      operations: migration.finalState.operations.filter(operation => !isCopilotHookActivation(operation, plan.targetRoot)),
+    },
+    // Keep the last decision until the filesystem transition completes.
+    bridgeState: {
+      ...migration.bridgeState,
+      request: { ...migration.bridgeState.request, hookConsent: bridgeConsent },
+    },
+  };
+}
+
+function completeCopilotHookDeactivation(deactivation, targetRoot) {
+  if (!deactivation) return [];
+  const { destinationPath, candidate, verified } = deactivation;
+  if (!inspectDestinationPath(destinationPath, targetRoot)) return [];
+  if (!candidate || !verified
+    || !sameFile(verified, verifyUnchangedStaleFile(candidate, targetRoot, { requireSingleLink: true }))) {
+    throw new Error(`Copilot hook manifest changed after preview at ${destinationPath}. Review the file before retrying --no-hooks.`);
+  }
+  fs.unlinkSync(destinationPath);
+  if (inspectDestinationPath(destinationPath, targetRoot)) throw new Error(`Copilot hook manifest reappeared at ${destinationPath}.`);
+  return [destinationPath];
 }
 
 function completeStaleOperationsReconciliation(migration, plan) {
@@ -283,8 +342,11 @@ function completeStaleOperationsReconciliation(migration, plan) {
 }
 
 module.exports = {
+  completeCopilotHookDeactivation,
   completeStaleOperationsReconciliation,
   describeStaleOperationsPreview,
+  isCopilotHookActivation,
+  prepareCopilotHookDeactivation,
   prepareStaleOperationsReconciliation,
   withoutStaleOperations,
 };

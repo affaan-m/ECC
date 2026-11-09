@@ -79,13 +79,13 @@ test('copilot is a supported install target', () => {
   assert.ok(SUPPORTED_INSTALL_TARGETS.includes('copilot'));
 });
 
-test('transform keeps only name and description', () => {
+test('transform keeps identity and projects explicit tool restrictions', () => {
   const adapted = adaptCopilotAgent(CLAUDE_AGENT, 'agents/architect.md');
   assert.match(adapted, /^---\n/);
   assert.match(adapted, /name: architect/);
   assert.match(adapted, /description: Software architecture specialist\./);
   assert.doesNotMatch(adapted, /^model:/m);
-  assert.doesNotMatch(adapted, /^tools:/m);
+  assert.match(adapted, /^tools:\n {2}- read\n {2}- search/m);
   assert.doesNotMatch(adapted, /^color:/m);
 });
 
@@ -135,6 +135,17 @@ test('skills are planned into .github/skills with installed helper references', 
     operations[0].destinationPath,
     path.join('/project', '.github', 'skills', 'tdd-workflow')
   );
+});
+
+test('Copilot Dart instructions retain manual checks without Claude hook setup', () => {
+  const fs = require('fs');
+  const label = 'rules/dart/hooks.md';
+  const source = fs.readFileSync(path.join(__dirname, '../..', label), 'utf8');
+  const adapted = adaptCopilotRule(source, label);
+  assert.match(adapted, /applyTo:.*\*\*\/\*\.dart/);
+  assert.match(adapted, /dart analyze --fatal-infos/);
+  assert.match(adapted, /\.\.\/common\/hooks\.instructions\.md/);
+  assert.doesNotMatch(adapted, /CLAUDE_FILE_PATHS|\.claude\/settings\.json|PostToolUse/);
 });
 
 test('rule transform converts paths frontmatter to applyTo', () => {
@@ -277,8 +288,7 @@ test('rule transform preserves CRLF fenced examples and rewrites only prose link
 
 test('unsupported source paths produce no operations', () => {
   const operations = planFor([
-    { id: 'commands-core', paths: ['commands', 'scripts/harness-audit.js'] },
-    { id: 'hooks-runtime', paths: ['hooks', 'scripts/hooks'] },
+    { id: 'unsupported-commands', paths: ['scripts/harness-audit.js'] },
     { id: 'platform-configs', paths: ['.claude-plugin', '.codex', 'mcp-configs'] },
   ]);
   assert.strictEqual(operations.length, 0);
@@ -394,7 +404,9 @@ test('normal installed Copilot TDD command runs from the project with a complete
     }
 
     assert.ok(!plan.operations.some(operation => operation.kind === 'update-claude-settings'
-      || /[\\/]\.github[\\/]hooks[\\/]|[\\/]ecc[\\/]scripts[\\/]hooks[\\/]|settings\.json$|hooks\.json$/.test(operation.destinationPath)), 'Copilot must not register hooks');
+      || /[\\/]\.github[\\/]hooks[\\/]|settings\.json$|hooks\.json$/.test(operation.destinationPath)), 'skill-only Copilot install must not register automatic hooks');
+    assert.ok(fs.existsSync(path.join(project, '.github/ecc/scripts/hooks/copilot-lifecycle.js')),
+      'the unified-memory manual checkpoint workflow still needs its distributed helper');
     assert.strictEqual(fs.readFileSync(path.join(project, 'scripts', 'setup-package-manager.js'), 'utf8'), 'USER PROJECT SENTINEL\n');
     const options = { repoRoot: REPO_ROOT, projectRoot: project, homeDir, targets: ['copilot'], env };
     const repair = repairInstalledStates(options);
@@ -427,6 +439,7 @@ test('normal installed Copilot TDD command runs from the project with a complete
 test('Copilot preserves unrelated workflow shell steps around a detector call', () => {
   const { transformInstallContent } = require('../../scripts/lib/install/content-transform');
   const content = [
+    '---', 'name: fixture', 'description: Fixture.', '---',
     '```bash', 'ECC_ROOT="/custom/tool"', 'printf before',
     'node "$ECC_ROOT/scripts/setup-package-manager.js" --detect',
     'printf after', '```', ''
@@ -451,7 +464,7 @@ test('Copilot rewrites Markdown commands while preserving binary skill assets an
     fs.writeFileSync(path.join(sourceRoot, 'manifests', 'install-profiles.json'), JSON.stringify({ version: 1, profiles: {} }));
     const skillRoot = path.join(sourceRoot, 'skills', 'fixture');
     fs.mkdirSync(skillRoot, { recursive: true });
-    const original = 'Run `node scripts/setup-package-manager.js --detect`.\nhttps://example.org/scripts/setup-package-manager.js\n';
+    const original = '---\nname: fixture\ndescription: Fixture.\n---\nRun `node scripts/setup-package-manager.js --detect`.\nhttps://example.org/scripts/setup-package-manager.js\n';
     const binary = Buffer.from([0, 255, 254, 128, 42]);
     fs.writeFileSync(path.join(skillRoot, 'SKILL.md'), original);
     fs.writeFileSync(path.join(skillRoot, 'asset.png'), binary);

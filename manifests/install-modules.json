@@ -105,6 +105,7 @@
         "scripts/lib"
       ],
       "targets": [
+        "copilot",
         "claude",
         "claude-project",
         "cursor",

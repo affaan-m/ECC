@@ -49,13 +49,24 @@ function transformInstallContent(operation, content) {
     return adaptAntigravityRule(content, operation.sourceRelativePath);
   }
   if (operation.contentTransform === 'copilot-agent-frontmatter') {
-    return rewriteCopilotWorkflowPaths(adaptCopilotAgent(content, operation.sourceRelativePath), operation.sourceRelativePath);
+    return rewriteCopilotWorkflowPaths(adaptCopilotAgent(content, operation.sourceRelativePath,
+      { operatorEnvironment: process.env }), operation.sourceRelativePath);
   }
   if (operation.contentTransform === 'copilot-workflow-paths') {
-    return rewriteCopilotWorkflowPaths(content, operation.sourceRelativePath);
+    const safeContent = /(?:^|[\\/])SKILL\.md$/i.test(operation.sourceRelativePath)
+      ? require('./copilot-command').adaptCopilotSkill(
+        require('./copilot-runtime-skill-transform').adaptCopilotRuntimeSkill(content, operation.sourceRelativePath)
+      ) : content;
+    return rewriteCopilotWorkflowPaths(safeContent, operation.sourceRelativePath);
+  }
+  if (operation.contentTransform === 'copilot-command') {
+    return require('./copilot-command').adaptCopilotCommand(content, operation.sourceRelativePath);
   }
   if (operation.contentTransform === 'copilot-rule-frontmatter') {
     return adaptCopilotRule(content, operation.sourceRelativePath);
+  }
+  if (operation.contentTransform === 'copilot-hooks') {
+    return require('./copilot-hooks').adaptCopilotHooks(content);
   }
   if (operation.contentTransform === 'opencode-disable-ecc-hooks') {
     return transformInstallContent({ ...operation, contentTransform: 'opencode-home-skills-path' },

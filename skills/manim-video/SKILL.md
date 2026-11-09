@@ -67,10 +67,12 @@ For social-graph and network-optimization explainers:
 
 Use [assets/network_graph_scene.py](assets/network_graph_scene.py) as a starting point for network-graph explainers.
 
-Example smoke test:
+For a smoke test, replace `<installed-skill>` with the absolute directory
+containing this skill's `SKILL.md`. Run from the project so Manim writes its
+media there.
 
 ```bash
-manim -ql assets/network_graph_scene.py NetworkGraphExplainer
+manim -ql "<installed-skill>/assets/network_graph_scene.py" NetworkGraphExplainer
 ```
 
 ## Output Format

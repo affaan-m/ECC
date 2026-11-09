@@ -39,7 +39,7 @@ Targets:
   cursor       - Install rules, hooks, and bundled Cursor configs to ./.cursor/
   antigravity  - Install rules, workflows, skills, and agents to ./.agents/
   codex        - Install shared agents/config into ~/.codex/
-  copilot      - Install skills and agents into ./.github/ for GitHub Copilot CLI (ECC hooks not configured)
+  copilot      - Install skills, agents, rules, and opt-in audited hooks into ./.github/ for GitHub Copilot CLI
   gemini       - Install project-local Gemini config into ./.gemini/
   opencode     - Install into OPENCODE_CONFIG_DIR, XDG_CONFIG_HOME/opencode, or ~/.config/opencode/
   codebuddy    - Install commands, agents, skills, and flattened rules into ./.codebuddy/
@@ -138,6 +138,11 @@ function printHumanPlan(plan, dryRun) {
     for (const removedPath of plan.reconciledExcludedPaths) {
       console.log(`- removed ${removedPath}`);
     }
+  }
+
+  if (plan.plannedCopilotHookRemovals?.length) {
+    console.log('\nPlanned Copilot hook deactivation:');
+    for (const file of plan.plannedCopilotHookRemovals) console.log(`- remove ${file}`);
   }
 
   if (Array.isArray(plan.reconciledStalePaths) && plan.reconciledStalePaths.length > 0) {

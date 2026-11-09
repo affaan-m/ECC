@@ -1,0 +1,195 @@
+{
+  "schema": "ecc.copilot.core-verification.v1",
+  "recordedAt": "2026-11-04T08:22:04.291Z",
+  "inventorySha256": "9270a940881ea6478d0a803e1b1d2108fe9c94dbb62a8156b097e68845349d8b",
+  "environment": {
+    "platform": "linux",
+    "architecture": "x64",
+    "node": "v24.22.1"
+  },
+  "fixturesPassed": true,
+  "complete": false,
+  "phases": {
+    "P00": {
+      "implementationChecks": "passed",
+      "nativeAcceptance": "pending",
+      "pending": [
+        "Windows discovery and native pre/post/lifecycle payload evidence"
+      ]
+    },
+    "P01": {
+      "implementationChecks": "passed",
+      "nativeAcceptance": "pending",
+      "pending": [
+        "Native hook contract and approved platform latency thresholds"
+      ]
+    },
+    "P02": {
+      "implementationChecks": "passed",
+      "nativeAcceptance": "pending",
+      "pending": [
+        "Native Windows corpus, guard feedback and read-evidence delivery"
+      ]
+    },
+    "P03": {
+      "implementationChecks": "passed",
+      "nativeAcceptance": "pending",
+      "pending": [
+        "Native check/fix delivery and project toolchains on declared platforms"
+      ]
+    },
+    "P04": {
+      "implementationChecks": "passed",
+      "nativeAcceptance": "pending",
+      "pending": [
+        "Authenticated skill-event delivery and ephemeral signal availability"
+      ]
+    },
+    "P05": {
+      "implementationChecks": "passed",
+      "nativeAcceptance": "pending",
+      "pending": [
+        "Native Windows filesystem/event delivery fault matrix"
+      ]
+    }
+  },
+  "checks": [
+    {
+      "phase": "P00",
+      "file": "scripts/ci/copilot-capabilities.js",
+      "args": [
+        "--check"
+      ],
+      "status": "passed",
+      "exitCode": 0,
+      "durationMs": 341,
+      "outputSha256": "5e5e49ce8ac896ef29bf6a096756eff720ac4df00a2dd9cc5f493f2aae155476"
+    },
+    {
+      "phase": "P01",
+      "file": "tests/lib/copilot-event-envelope.test.js",
+      "args": [],
+      "status": "passed",
+      "exitCode": 0,
+      "durationMs": 139,
+      "outputSha256": "2514cd2dc34e2f720c94939533b97c19acfc8e114ee4730cd0a90bf712c5c73f"
+    },
+    {
+      "phase": "P01",
+      "file": "tests/hooks/copilot-hook-adapter.test.js",
+      "args": [],
+      "status": "passed",
+      "exitCode": 0,
+      "durationMs": 3308,
+      "outputSha256": "9d0422d58ad034873500c852259de9dd090660463295939b6dd795c9591d1fb4"
+    },
+    {
+      "phase": "P01",
+      "file": "tests/lib/copilot-hooks-install.test.js",
+      "args": [],
+      "status": "passed",
+      "exitCode": 0,
+      "durationMs": 6820,
+      "outputSha256": "b659cc0c0cc3d054bc2151f4ab2059ce7a4f34caaf2734837b6678ee7fea91fd"
+    },
+    {
+      "phase": "P02",
+      "file": "tests/hooks/copilot-guard.test.js",
+      "args": [],
+      "status": "passed",
+      "exitCode": 0,
+      "durationMs": 241,
+      "outputSha256": "556e7ec351868f103e16c59413a5d70eef8aea511d68ae91c7a9b0f78a73830f"
+    },
+    {
+      "phase": "P02",
+      "file": "tests/lib/copilot-evidence.test.js",
+      "args": [],
+      "status": "passed",
+      "exitCode": 0,
+      "durationMs": 336,
+      "outputSha256": "2250809b6c4a97d053c76dded2c16ed8b7bdcca6f06ac4e9f0f8dd369ec6641e"
+    },
+    {
+      "phase": "P03",
+      "file": "tests/hooks/copilot-quality.test.js",
+      "args": [],
+      "status": "passed",
+      "exitCode": 0,
+      "durationMs": 918,
+      "outputSha256": "0954829ba40eee53af502e5d452f3711e2f1ea2ab3a58366bb69fb44ee4fb585"
+    },
+    {
+      "phase": "P03",
+      "file": "tests/hooks/design-quality-check.test.js",
+      "args": [],
+      "status": "passed",
+      "exitCode": 0,
+      "durationMs": 61,
+      "outputSha256": "9cc5a5769d40ac2ab24ee14c1e130fe352b325e64c1f57e66b219638fd708e7a"
+    },
+    {
+      "phase": "P03",
+      "file": "tests/lib/copilot-phase-install.test.js",
+      "args": [],
+      "status": "passed",
+      "exitCode": 0,
+      "durationMs": 1656,
+      "outputSha256": "dc56731f8b0d9d985624efc0ca14d93af2cb86959c83b13d0fa2f210d0637841"
+    },
+    {
+      "phase": "P04",
+      "file": "tests/lib/copilot-telemetry.test.js",
+      "args": [],
+      "status": "passed",
+      "exitCode": 0,
+      "durationMs": 317,
+      "outputSha256": "8dbb84cd45c2fc3f1ace4f9f2375e8c448678c70ccd595a1df97302782efef1e"
+    },
+    {
+      "phase": "P04",
+      "file": "tests/lib/copilot-native-skill-telemetry.test.js",
+      "args": [],
+      "status": "passed",
+      "exitCode": 0,
+      "durationMs": 111,
+      "outputSha256": "d81d465f2302e7eda082165744b24c54ab8ff9599fa46d6b45bbe6c4f0b4cdc8"
+    },
+    {
+      "phase": "P04",
+      "file": "tests/hooks/copilot-native-telemetry.test.js",
+      "args": [],
+      "status": "passed",
+      "exitCode": 0,
+      "durationMs": 214,
+      "outputSha256": "7d3140c81cf05676c8dbf82893929fb6c87e56230f49b6b077af22e9c5077805"
+    },
+    {
+      "phase": "P05",
+      "file": "tests/lib/copilot-observations.test.js",
+      "args": [],
+      "status": "passed",
+      "exitCode": 0,
+      "durationMs": 106,
+      "outputSha256": "3aec2fe96b87a98a6b1881116e3497b6a53700d77ceb7f253465ec208ea1cb2f"
+    },
+    {
+      "phase": "P05",
+      "file": "tests/lib/copilot-observation-faults.test.js",
+      "args": [],
+      "status": "passed",
+      "exitCode": 0,
+      "durationMs": 122,
+      "outputSha256": "1d6e77f0053d2969d6d743141c415d4c4d49245aac3f5c841993b4ecd53ca515"
+    },
+    {
+      "phase": "P05",
+      "file": "tests/lib/copilot-learning-mapping.test.js",
+      "args": [],
+      "status": "passed",
+      "exitCode": 0,
+      "durationMs": 1481,
+      "outputSha256": "7f64eb607a9d0f8f8d822f7201b4a9cd258c67546ef4a04e31cbd702eddf0f9e"
+    }
+  ]
+}
