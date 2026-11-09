@@ -3,6 +3,8 @@ const path = require('path');
 const { COPILOT_HOOK_RUNTIME_PATHS, COPILOT_SESSION_RUNTIME_PATHS } = require('../copilot-hooks');
 const { copilotCommandName } = require('../install/copilot-command-capabilities');
 const { RUNTIME_PATHS: EXTENDED_RUNTIME } = require('../install/copilot-extended-commands');
+const { runtimeSkillPaths } = require('../install/copilot-runtime-skills');
+const { SCRIPT_BOUNDARY_SOURCE, scriptBoundaryPath } = require('../install/opencode-script-boundary');
 
 const {
   createInstallTargetAdapter,
@@ -148,18 +150,51 @@ function planSourcePathOperations(module, sourceRelativePath, targetRoot, repoRo
   return [];
 }
 
-function planHookOperations(module, targetRoot, hasCommands) {
+function planHookOperations(module, targetRoot, hasCommands, skillHelpers) {
   return [
     createManagedOperation({
       moduleId: module.id, sourceRelativePath: 'hooks/hooks.json',
       destinationPath: path.join(targetRoot, 'hooks', 'ecc.json'),
       contentTransform: 'copilot-hooks',
     }),
-    ...COPILOT_HOOK_RUNTIME_PATHS.filter(source => !hasCommands || ![...COPILOT_SESSION_RUNTIME_PATHS, ...EXTENDED_RUNTIME].includes(source)).map(sourceRelativePath => createManagedOperation({
+    ...COPILOT_HOOK_RUNTIME_PATHS.filter(source => !skillHelpers.has(source)
+      && (!hasCommands || ![...COPILOT_SESSION_RUNTIME_PATHS, ...EXTENDED_RUNTIME].includes(source))).map(sourceRelativePath => createManagedOperation({
       moduleId: module.id, sourceRelativePath,
       destinationPath: path.join(targetRoot, 'ecc', sourceRelativePath),
     })),
   ];
+}
+
+function planRuntimeSkillHelpers(modules, targetRoot, hasCommands) {
+  const commandsOwn = new Set(hasCommands ? [...COPILOT_SESSION_RUNTIME_PATHS, ...EXTENDED_RUNTIME] : []);
+  return modules.reduce((planned, module) => {
+    if (['commands-core', 'hooks-runtime'].includes(module.id)) return planned;
+    const sources = runtimeSkillPaths(module.paths || []).filter(source => !commandsOwn.has(source) && !planned.sources.has(source));
+    return {
+      sources: new Set([...planned.sources, ...sources]),
+      operations: [...planned.operations, ...sources.map(sourceRelativePath => createManagedOperation({
+        moduleId: module.id, sourceRelativePath,
+        destinationPath: path.join(targetRoot, 'ecc', sourceRelativePath),
+      }))],
+    };
+  }, { sources: new Set(), operations: [] });
+}
+
+function needsScriptBoundary(boundaryPath) {
+  const scriptsRoot = path.dirname(boundaryPath);
+  for (let directory = scriptsRoot; ; directory = path.dirname(directory)) {
+    if (fs.lstatSync(directory, { throwIfNoEntry: false })?.isSymbolicLink()) return true;
+    const metadata = path.join(directory, 'package.json');
+    const stat = fs.lstatSync(metadata, { throwIfNoEntry: false });
+    if (stat) {
+      // Validate an existing scripts scope through the shared ownership guard.
+      if (directory === scriptsRoot || !stat.isFile() || stat.size > 1024 * 1024) return true;
+      const content = fs.readFileSync(metadata, 'utf8');
+      try { return JSON.parse(content.replace(/^\uFEFF/, ''))?.type === 'module'; }
+      catch (error) { if (error instanceof SyntaxError) return true; throw error; }
+    }
+    if (path.dirname(directory) === directory) return false;
+  }
 }
 
 module.exports = createInstallTargetAdapter({
@@ -186,8 +221,12 @@ module.exports = createInstallTargetAdapter({
 
     const selectedSkills = new Set(modules.flatMap(module => module.paths || [])
       .map(normalizeRelativePath).filter(source => hasPrefix(source, 'skills')));
-    return modules.flatMap(module => {
-      if (module.id === 'hooks-runtime') return planHookOperations(module, targetRoot, modules.some(candidate => candidate.id === 'commands-core'));
+    const hasCommands = modules.some(candidate => candidate.id === 'commands-core');
+    // Skill helpers retain skill ownership so declining hooks cannot remove a
+    // manual CLI dependency. Commands own their existing shared closure first.
+    const skillHelpers = planRuntimeSkillHelpers(modules, targetRoot, hasCommands);
+    const operations = modules.flatMap(module => {
+      if (module.id === 'hooks-runtime') return planHookOperations(module, targetRoot, hasCommands, skillHelpers.sources);
       const paths = Array.isArray(module.paths) ? module.paths : [];
       const operations = paths
         .filter(supportsCopilotSourcePath)
@@ -206,5 +245,19 @@ module.exports = createInstallTargetAdapter({
       }
       return operations;
     });
+    const allOperations = [...operations, ...skillHelpers.operations];
+    const boundaryPath = scriptBoundaryPath(targetRoot, 'copilot');
+    const scriptRoot = path.dirname(boundaryPath);
+    const scripts = allOperations.filter(operation => {
+      const relative = normalizeRelativePath(path.relative(scriptRoot, operation.destinationPath));
+      return !path.isAbsolute(relative) && !hasPrefix(relative, '..') && /\.js$/i.test(relative);
+    });
+    const owner = scripts.find(operation => operation.moduleId !== 'hooks-runtime') || scripts[0];
+    if (!owner || !needsScriptBoundary(boundaryPath)) return allOperations;
+    return [createManagedOperation({
+      moduleId: owner.moduleId,
+      sourceRelativePath: SCRIPT_BOUNDARY_SOURCE,
+      destinationPath: boundaryPath,
+    }), ...allOperations];
   },
 });

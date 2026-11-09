@@ -52,8 +52,10 @@ const {
   prepareExcludedPathsReconciliation,
 } = require('./excluded-paths-reconciliation');
 const {
+  completeCopilotHookDeactivation,
   completeStaleOperationsReconciliation,
   describeStaleOperationsPreview,
+  prepareCopilotHookDeactivation,
   prepareStaleOperationsReconciliation,
   withoutStaleOperations,
 } = require('./stale-operations-reconciliation');
@@ -324,7 +326,7 @@ function readPreviousInstallState(plan) {
 }
 
 function assertOpenCodeScriptBoundary(plan, writtenDestinations = new Set()) {
-  if (!plan.operations.some(operation => isScriptBoundary(operation, plan.targetRoot))) return;
+  if (!plan.operations.some(operation => isScriptBoundary(operation, plan.targetRoot, plan.target))) return;
   assertSafeInstallOperation(plan, { destinationPath: plan.installStatePath });
   assertScriptBoundary(plan, {
     readFile: destinationPath => readInstalledFileNoFollow(plan, { destinationPath }),
@@ -656,6 +658,9 @@ function preflightClaudeSettingsOperations(plan) {
 }
 
 function prepareHookConsentMigration(plan, migration) {
+  if (plan.target === 'copilot' && plan.hookConsent === 'declined') {
+    return prepareCopilotHookDeactivation(plan, migration, readPreviousInstallState(plan));
+  }
   if (shouldDisableOpenCodeHooks(plan) && migration.requiresBridgeState) {
     const previousState = readPreviousInstallState(plan);
     if (previousState) {
@@ -767,6 +772,9 @@ function previewInstallPlan(rawPlan) {
     plannedOperations: [...plan.operations],
     operations: migration.appliedOperations,
     skippedOperations: migration.skippedOperations,
+    ...(migration.copilotHookDeactivation?.verified ? {
+      plannedCopilotHookRemovals: [migration.copilotHookDeactivation.destinationPath],
+    } : {}),
     warnings: [
       ...(Array.isArray(plan.warnings) ? plan.warnings : []),
       ...migration.warnings,
@@ -841,6 +849,8 @@ function applyInstallPlanLocked(rawPlan, dependencies = {}, settingsLockHeld = f
     operation.kind === 'remove-claude-settings-hooks'
   )).length;
   let completedHookRemovalCount = 0;
+  let copilotHookRemovals = [];
+  let copilotHookDeactivated = false;
   const writtenDestinations = new Set();
     if (migration.requiresBridgeState) {
       // Own every operation that may be written during a flat-skill migration
@@ -996,6 +1006,8 @@ function applyInstallPlanLocked(rawPlan, dependencies = {}, settingsLockHeld = f
       if (typeof beforeInstallStateWrite === 'function') {
         beforeInstallStateWrite({ plan: appliedPlan, state: finalState });
       }
+      copilotHookRemovals = completeCopilotHookDeactivation(migration.copilotHookDeactivation, plan.targetRoot);
+      copilotHookDeactivated = Boolean(migration.copilotHookDeactivation);
       persistInstallState(plan.installStatePath, finalState);
     } catch (error) {
       if (migration.requiresBridgeState) {
@@ -1007,7 +1019,7 @@ function applyInstallPlanLocked(rawPlan, dependencies = {}, settingsLockHeld = f
             plan.installStatePath,
             stateWithContentDigests(
               preserveUnwrittenFiles(
-                hookRemovalCount > 0 && completedHookRemovalCount === hookRemovalCount
+                copilotHookDeactivated || (hookRemovalCount > 0 && completedHookRemovalCount === hookRemovalCount)
                   ? migration.finalState
                   : migration.bridgeState,
                 migration,
@@ -1100,7 +1112,7 @@ function applyInstallPlanLocked(rawPlan, dependencies = {}, settingsLockHeld = f
       operations: migration.appliedOperations,
       skippedOperations: migration.skippedOperations,
       reconciledExcludedPaths: excludedPathsRemoved,
-      reconciledStalePaths: stalePathsRemoved,
+      reconciledStalePaths: [...copilotHookRemovals, ...stalePathsRemoved],
       warnings: [
         ...(Array.isArray(plan.warnings) ? plan.warnings : []),
         ...migration.warnings,

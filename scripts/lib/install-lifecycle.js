@@ -12,6 +12,7 @@ const { createInstallPlanFromRequest } = require('./install/runtime');
 const { assertNoNewUserOwnedFile, prepareUserOwnedFileGuard } = require('./install/ownership-guard');
 const { withOpenCodeInstallLocks } = require('./install/opencode-install-lock');
 const { isCodexUserConfig } = require('./install/codex-user-config');
+const { isCopilotHookActivation } = require('./install/stale-operations-reconciliation');
 const {
   getRecordedHookConsent,
   withHookConsent,
@@ -1296,6 +1297,10 @@ function createRepairPlanFromRecord(record, context, options = {}) {
   if (!state) {
     throw new Error('No install-state available for repair');
   }
+  if (record.adapter.target === 'copilot' && getRecordedHookConsent(state) === 'declined'
+    && state.operations.some(operation => isCopilotHookActivation(operation, record.targetRoot))) {
+    throw new Error('Copilot install-state still records a hook manifest after consent was declined. Rerun the Copilot installer with the intended selection and --no-hooks before repair.');
+  }
 
   if (
     record.legacyLayout !== 'opencode'
@@ -1971,11 +1976,11 @@ function uninstallInstalledStates(options = {}) {
       // Remove owned script bodies first. Keep their CommonJS scope while any
       // retained or user-created JavaScript still relies on that boundary.
       const orderedOperations = [
-        ...operations.filter(operation => !isScriptBoundary(operation, record.targetRoot)),
-        ...operations.filter(operation => isScriptBoundary(operation, record.targetRoot)),
+        ...operations.filter(operation => !isScriptBoundary(operation, record.targetRoot, record.adapter.target)),
+        ...operations.filter(operation => isScriptBoundary(operation, record.targetRoot, record.adapter.target)),
       ];
       for (const operation of orderedOperations) {
-        if (retainScriptBoundary(operation, record.targetRoot)) {
+        if (retainScriptBoundary(operation, record.targetRoot, record.adapter.target)) {
           retainedPaths.push(operation.destinationPath);
           continue;
         }

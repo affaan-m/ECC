@@ -235,5 +235,5 @@ function processLifecycle(event, payload, env = process.env) {
   return {};
 }
 
-module.exports = { MAX_SUMMARY_BYTES, MAX_TRANSCRIPT_BYTES, EVENTS, configRoot, normalizePayload, readBounded, sessionId,
+module.exports = { MAX_SUMMARY_BYTES, MAX_TRANSCRIPT_BYTES, EVENTS, configRoot, normalizePayload, readBounded, sessionId, projectDirectory,
   listSessions, recall, checkpoint, summarizeTranscript, historicalContext, processLifecycle };

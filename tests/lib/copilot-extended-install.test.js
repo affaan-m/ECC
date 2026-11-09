@@ -53,4 +53,19 @@ test('repair restores extended runtime and uninstall preserves private stores an
   assert.strictEqual(uninstallInstalledStates(options).summary.errorCount, 0);
   assert.ok(fs.existsSync(local)); assert.ok(fs.existsSync(path.join(home, 'ecc/private-data'))); assert.ok(!fs.existsSync(runtime));
 });
+test('installed memory MCP and telemetry helpers run without source checkout dependencies', ({ root, home }) => {
+  const env = { ...process.env, COPILOT_HOME: home };
+  const commands = [
+    ['.github/ecc/scripts/copilot-memory.js', 'doctor'],
+    ['.github/ecc/scripts/copilot-mcp.js', 'doctor', '--config', path.join(root, '.mcp.json')],
+    ['.github/ecc/scripts/copilot-telemetry.js'],
+  ];
+  for (const args of commands) {
+    const result = spawnSync(process.execPath, args, { cwd: root, env, encoding: 'utf8', timeout: 20000 });
+    assert.strictEqual(result.status, 0, result.stderr);
+    const report = JSON.parse(result.stdout);
+    if (args[0].endsWith('copilot-memory.js')) assert.strictEqual(report.status, 'unavailable', 'separate canonical vault must be configured explicitly');
+    if (args[0].endsWith('copilot-telemetry.js')) assert.strictEqual(report.costUsd, null);
+  }
+});
 console.log(`Passed: ${passed}, Failed: ${failed}`); process.exitCode = failed ? 1 : 0;

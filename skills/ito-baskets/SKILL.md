@@ -90,16 +90,19 @@ the compute surface and cannot unlock basket/market reads.
 public surfaces. Run it only when the user has asked for Itô data — not merely
 because a key exists.
 
+Replace `<installed-skill>` with the absolute directory containing this skill's
+`SKILL.md`. Keep the working directory at the user's project.
+
 ```bash
 # Anonymous index reads (no credential is ever sent):
-node scripts/ito-baskets.js --json basket-index
-node scripts/ito-baskets.js --json basket-detail --basket-id <id>
+node "<installed-skill>/scripts/ito-baskets.js" --json basket-index
+node "<installed-skill>/scripts/ito-baskets.js" --json basket-detail --basket-id <id>
 
 # Keyed reads (require ITO_API_KEY in the environment):
-node scripts/ito-baskets.js --json list-baskets --page 1 --per-page 25
-node scripts/ito-baskets.js --json search-markets --platform all --limit 25
-node scripts/ito-baskets.js --json get-market --market-id <id>
-node scripts/ito-baskets.js --json market-history --market-id <id> --days 30
+node "<installed-skill>/scripts/ito-baskets.js" --json list-baskets --page 1 --per-page 25
+node "<installed-skill>/scripts/ito-baskets.js" --json search-markets --platform all --limit 25
+node "<installed-skill>/scripts/ito-baskets.js" --json get-market --market-id <id>
+node "<installed-skill>/scripts/ito-baskets.js" --json market-history --market-id <id> --days 30
 ```
 
 The client reads `ITO_API_KEY` only for keyed commands, transmits it only to

@@ -121,7 +121,11 @@ function adaptCopilotRule(source, label = '<unknown>') {
   }
 
   const { frontmatter } = parsed;
-  const body = rewriteRuleLinks(parsed.body, label);
+  const sourceBody = label.replace(/\\/g, '/') === 'rules/dart/hooks.md'
+    ? parsed.body.replace(/^## PostToolUse Hooks\r?\n[\s\S]*?(?=^## Pre-commit Checks)/m,
+      'The commands below are manual Dart and Flutter checks for Copilot.\n\n')
+    : parsed.body;
+  const body = rewriteRuleLinks(sourceBody, label);
   const paths = frontmatter.paths;
 
   if (paths === undefined) {

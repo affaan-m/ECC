@@ -25,26 +25,44 @@ place of `--modules hooks-runtime --enable-hooks`. Use `--profile full
 --no-hooks` to install the catalog without automatic hooks. The existing
 installer consent gate applies to Copilot as it does to other hook targets.
 
+To disable previously installed ECC hooks, preview your intended catalog
+selection with `--no-hooks --dry-run`, then apply it with `--no-hooks`.
+The installer removes `.github/hooks/ecc.json` only when it is a verified,
+unchanged ECC-managed file. Modified, linked, unowned or unverifiable manifests
+block the transition and require review. The installer retains other manifests,
+runtime helpers and private data. Start a new Copilot session to verify host
+behavior after changing the manifest.
+
 On Windows, invoke `node` with the path to the same script. Hook entries use
 direct executable arguments rather than platform-specific shell quoting.
 
 Managed files are `.github/hooks/ecc.json`, the explicit script dependency
 closure in `.github/ecc/scripts/`, and `.github/ecc-install-state.json`.
+For ESM projects, the managed scripts directory gets a CommonJS package
+boundary so hooks can start without editing the project's `package.json`.
 No runtime npm install, Claude installation, credential transfer, MCP server,
 is needed. Optional lifecycle checkpoints use a separate private Copilot cache;
 see [memory and lifecycle](COPILOT-LIFECYCLE.md). Other hook JSON files remain independent.
 An existing unowned `ecc.json` is preserved and not claimed by ECC; inspect
 the install result for skipped files before expecting the adapter to activate.
-Repair restores missing managed files; uninstall preserves unowned files.
+Repair restores missing managed files for enabled installs. If a legacy record
+declines hooks but still owns the activation manifest, rerun the intended
+selection with `--no-hooks` before repairing. Uninstall preserves unowned files.
 
 ## Policy coverage
 
 | Policy ID | Copilot event | Native tools | Behavior |
 | --- | --- | --- | --- |
-| `pre:bash:block-no-verify` | `preToolUse` | `bash` | Reuses the canonical Bash scanner to reject Git hook bypass flags |
+| `pre:bash:block-no-verify` | `preToolUse` | `bash` | Legacy callable policy; generated manifest runs its scanner through the combined guard |
 | `pre:config-protection` | `preToolUse` | `create`, `edit`, `str_replace_editor`, `apply_patch` | Checks existing linter/formatter config targets, including patch move destinations |
 | `pre:write:doc-file-warning` | `preToolUse` | `create` | Returns canonical advice for ad-hoc documentation filenames |
-| `post:edit:console-warn` | `postToolUse` | File writes/edits listed above | Returns console.log warnings as model context |
+| `pre:copilot:guard` | `preToolUse` | Bash, PowerShell, edits and writes | Canonical destructive-operation and sensitive-target checks; see [guard limits](COPILOT-GUARD.md) |
+| `post:edit:copilot-quality` / `stop:copilot-quality` | `postToolUse` / `agentStop` | Successful observed edits | Accumulation, local formatter/typecheck, design and console feedback; [check/fix modes](COPILOT-QUALITY.md) |
+| `copilot:observe` | `preToolUse` / `postToolUse` | Observed tool events | Opt-in metadata-only records; no worker or automatic instinct activation |
+
+The legacy `post:edit:console-warn` and `pre:bash:block-no-verify` adapters remain
+callable for compatibility. The generated manifest uses the stop quality check
+and combined guard so each policy runs once per delivery.
 
 `create_file` and canonical `Write`/`Edit` names are also accepted. Structured
 arguments can be objects or JSON strings. Native `path` and canonical
@@ -61,8 +79,9 @@ schemas. These hooks are workflow controls, not a filesystem sandbox.
 
 ## Execution and controls
 
-Every generated entry invokes the Copilot adapter with a fixed event and
-policy ID. The adapter starts only its allowlisted canonical Node.js script,
+Policy entries invoke the Copilot adapter with a fixed event and
+policy ID. Quality, observations, lifecycle and Hookify have fixed dedicated entrypoints.
+The adapter starts only its allowlisted canonical Node.js script,
 with no shell interpolation. Tool commands are inspected as data and never
 executed by the adapter. It emits one JSON result, never the incoming event.
 A successful policy leaves normal Copilot permission handling in place; it
@@ -81,7 +100,7 @@ is returned as `additionalContext`; visibility of that field depends on the
 installed CLI's pre-tool output handling and must be checked during native
 validation. Blocking decisions do not depend on advice visibility.
 
-The four policies run in `standard` and `strict` hook profiles. Existing
+The policies run in `standard` and `strict` hook profiles. Existing
 `ECC_HOOKS_ENABLED`, `ECC_HOOK_PROFILE`, `ECC_DISABLED_HOOKS` and explicitly
 selected `ECC_HOOK_CONFIG` controls apply. For example:
 
@@ -117,6 +136,10 @@ Four additional native events now use a dedicated Copilot session runtime:
 observations, limits and validation. [Command compatibility](COPILOT-COMMANDS.md)
 documents projected workflows and explicitly unavailable commands.
 
-Automatic background learning, formatting/type checks, selected MCP configuration,
-native plugin packaging and behavioral parity evaluations remain separate
-porting work. Claude transcript consumers are not activated by this adapter.
+Formatter/typecheck automation is fixture-tested; native host delivery remains unverified.
+[Selective MCP configuration](COPILOT-MCP.md), [Memory Vault handoff](COPILOT-MEMORY.md),
+[telemetry](COPILOT-TELEMETRY.md) and [agent restrictions](COPILOT-AGENT-TOOLS.md)
+have explicit entrypoints and separate acceptance limits. Automatic background learning,
+native plugin packaging and behavioral parity evaluations remain open.
+See [implementation status](COPILOT-IMPLEMENTATION-STATUS.md) for phase gates.
+Claude transcript consumers are not activated by this adapter.

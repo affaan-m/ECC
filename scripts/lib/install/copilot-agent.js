@@ -1,23 +1,26 @@
 'use strict';
 
-// GitHub Copilot CLI custom agents are markdown files with `name` and
-// `description` frontmatter. Claude Code's agent files additionally carry
-// `model`, `tools`, and `color`, none of which transfer cleanly:
-//
-//   model  Copilot CLI resolves the session model from user configuration and
-//          plan entitlement. Carrying a Claude model id ("opus", "sonnet")
-//          makes Copilot emit "specifies model ... which is not available" on
-//          every invocation and silently fall back. Dropping the key selects
-//          the session default with no warning.
-//   tools  Claude tool names (Read, Grep, Bash, ...) are not Copilot CLI tool
-//          names. Copilot governs tool access at the session level through
-//          --allow-tool/--deny-tool, so carrying the Claude list would assert
-//          a restriction Copilot does not actually apply.
-//   color  Claude Code presentation only.
-//
-// The transform is therefore an allowlist rather than a denylist: unknown keys
-// added to ECC agents later cannot silently leak into the Copilot copy.
-const SUPPORTED_FRONTMATTER_KEYS = Object.freeze(['name', 'description']);
+// Explicit tool lists are mandatory in ECC projections: omission would grant
+// every Copilot tool. Aliases follow GitHub's custom-agent reference (2026-11-03).
+// MCP names require an operator mapping; Claude's mcp__ namespace is not native.
+const SUPPORTED_FRONTMATTER_KEYS = Object.freeze(['name', 'description', 'tools', 'strict-tools-list']);
+const { TOOL_ALIASES, READ_ONLY_ROLES, mappings, model } = require('./copilot-agent-policy');
+
+function projectCopilotTools(value, name, options = {}) {
+  const configured = mappings(options.toolMappings, options.verifiedTools);
+  const values = typeof value === 'string' ? value.split(',').map(tool => tool.trim()) : value;
+  const invalid = !Array.isArray(values) || values.some(tool => typeof tool !== 'string' || !tool.trim());
+  if (invalid) return { tools: [], status: 'incompatible', reason: value === undefined ? 'missing tools declaration' : 'invalid tools declaration' };
+  const unmapped = values.filter(tool => !Object.hasOwn(TOOL_ALIASES, tool.toLowerCase()) && !Object.hasOwn(configured, tool));
+  if (unmapped.length) return { tools: [], status: 'incompatible', reason: 'unmapped tools require an explicit reviewed host mapping' };
+  const mapped = [...new Set(values.map(tool => Object.hasOwn(TOOL_ALIASES, tool.toLowerCase()) ? TOOL_ALIASES[tool.toLowerCase()] : configured[tool]))];
+  // Shell execution and delegation can both write indirectly. Reviewers get
+  // only file reads/search; even an MCP/web tool may have remote side effects.
+  const tools = READ_ONLY_ROLES.test(name) || READ_ONLY_ROLES.test(options.roleLabel || '')
+    ? mapped.filter(tool => ['read', 'search'].includes(tool)) : mapped;
+  return { tools, status: tools.length === mapped.length ? 'mapped' : 'restricted',
+    reason: tools.length === mapped.length ? null : 'read-only projection removes execution, editing, delegation and remote tools' };
+}
 
 const REQUIRED_FRONTMATTER_KEYS = Object.freeze(['name', 'description']);
 
@@ -41,7 +44,7 @@ function splitFrontmatter(source, label) {
   };
 }
 
-function adaptCopilotAgent(source, label = '<unknown>') {
+function prepareAgent(source, label, options) {
   const { frontmatter, body } = splitFrontmatter(source, label);
 
   for (const key of REQUIRED_FRONTMATTER_KEYS) {
@@ -51,6 +54,24 @@ function adaptCopilotAgent(source, label = '<unknown>') {
     }
   }
 
+  const operatorOptions = options.operatorEnvironment
+    ? require('./copilot-agent-config').loadAgentOptions(frontmatter.name, options.operatorEnvironment) : options;
+  const projection = projectCopilotTools(frontmatter.tools, frontmatter.name, { ...operatorOptions, roleLabel: label });
+  if (operatorOptions.model !== undefined && (!model(operatorOptions.model) || !Array.isArray(operatorOptions.verifiedModels)
+    || !operatorOptions.verifiedModels.includes(operatorOptions.model))) {
+    throw new Error('Copilot model override must be explicitly verified by the operator');
+  }
+  return { frontmatter, body, operatorOptions, projection };
+}
+
+function inspectCopilotAgent(source, label = '<unknown>', options = {}) {
+  const { frontmatter, operatorOptions, projection } = prepareAgent(source, label, options);
+  return { name: frontmatter.name, ...projection, model: operatorOptions.model || null,
+    operatorCliVersion: operatorOptions.cliVersion || null, nativeEnforcement: 'unverified' };
+}
+
+function adaptCopilotAgent(source, label = '<unknown>', options = {}) {
+  const { frontmatter, body, operatorOptions, projection } = prepareAgent(source, label, options);
   const adapted = {};
   for (const key of SUPPORTED_FRONTMATTER_KEYS) {
     if (Object.hasOwn(frontmatter, key)) {
@@ -58,13 +79,24 @@ function adaptCopilotAgent(source, label = '<unknown>') {
     }
   }
 
+  adapted.tools = projection.tools;
+  adapted['strict-tools-list'] = true;
+  if (operatorOptions.model !== undefined) {
+    adapted.model = operatorOptions.model;
+  }
+  const notice = projection.status === 'mapped' ? ''
+    : `> ECC Copilot tools: ${projection.status} — ${projection.reason}. Native direct/delegated enforcement remains unverified.\n\n`;
+
   const serialized = require('js-yaml')
     .dump(adapted, { lineWidth: -1, noRefs: true })
     .trimEnd();
-  return `---\n${serialized}\n---\n${body}`;
+  return `---\n${serialized}\n---\n${notice}${body}`;
 }
 
 module.exports = {
   adaptCopilotAgent,
+  inspectCopilotAgent,
   SUPPORTED_FRONTMATTER_KEYS,
+  projectCopilotTools,
+  TOOL_ALIASES,
 };

@@ -13,6 +13,10 @@ named genre in its own pack. Measurements from Flash Ethereal must not be
 silently reused for Fluid Sketch or 3D Cyber Glitch. A measured zero is valid
 data; distinguish it from an absent field.
 
+Replace `<installed-skill>` in commands with the absolute directory containing
+this skill's `SKILL.md`. Run from the user's project so relative media and pack
+paths resolve there.
+
 Local dependencies are in `scripts/requirements.txt`. Separately authorized
 provider work also needs `scripts/requirements-live.txt`, credentials and
 explicit `TASTE_FORGE_ALLOW_LIVE=1`. `--dry-run` does not read credentials or
@@ -63,8 +67,8 @@ stylepacks/<genre>/
 ## Running It
 
 ```bash
-python mint.py --genre <name> --refs a.mov b.mov c.mov     # offline, no API key
-python distill.py --genre <name>                            # one VLM call
+python "<installed-skill>/scripts/mint.py" --genre <name> --refs a.mov b.mov c.mov  # offline, no API key
+python "<installed-skill>/scripts/distill.py" --genre <name>                       # one VLM call
 ```
 
 `mint.py` is pure numeric analysis — no network, no key, deterministic, so a pack
@@ -192,7 +196,7 @@ project-specific assumptions: point it at any reference videos and it produces a
 pack.
 
 ```bash
-pip install -r scripts/requirements.txt
+pip install -r "<installed-skill>/scripts/requirements.txt"
 export FAL_KEY=...            # only needed for the stages that call fal
 ```
 

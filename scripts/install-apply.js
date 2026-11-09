@@ -140,6 +140,11 @@ function printHumanPlan(plan, dryRun) {
     }
   }
 
+  if (plan.plannedCopilotHookRemovals?.length) {
+    console.log('\nPlanned Copilot hook deactivation:');
+    for (const file of plan.plannedCopilotHookRemovals) console.log(`- remove ${file}`);
+  }
+
   if (Array.isArray(plan.reconciledStalePaths) && plan.reconciledStalePaths.length > 0) {
     console.log('\nRemoved files no longer in the install plan:');
     for (const removedPath of plan.reconciledStalePaths) {

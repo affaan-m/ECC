@@ -190,19 +190,26 @@ function createSessionStore({ stateDir = resolveStateDir() } = {}) {
   // Deliver-and-drain: feedback is handed to exactly one await call, after
   // which the session flips back to open. An ended session keeps reporting
   // ended (with attribution) so agents know to stop polling.
-  function takeFeedback(key) {
+  function takeFeedback(key, limits) {
     const session = get(key);
     if (!session) return { status: 'missing' };
     if (session.pendingFeedback.length > 0) {
-      const items = session.pendingFeedback;
-      session.pendingFeedback = [];
+      const pending = session.pendingFeedback;
+      const items = limits ? pending.slice(0, limits.items) : pending;
       const result = { status: 'feedback', items };
-      if (session.status === 'ended') {
-        result.sessionEnded = true;
-        result.endedBy = session.endedBy;
-      } else {
-        session.status = 'open';
+      while (items.length > 0) {
+        if (session.status === 'ended' && items.length === pending.length) {
+          result.sessionEnded = true;
+          result.endedBy = session.endedBy;
+        }
+        if (!limits || Buffer.byteLength(JSON.stringify(result)) <= limits.bytes) break;
+        items.pop();
+        delete result.sessionEnded;
+        delete result.endedBy;
       }
+      if (!items.length) return { status: 'unavailable' };
+      session.pendingFeedback = pending.slice(items.length);
+      if (session.status !== 'ended' && !session.pendingFeedback.length) session.status = 'open';
       session.updatedAt = nowIso();
       persist();
       return result;

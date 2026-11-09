@@ -8,6 +8,7 @@ and keeps mutation and candidate activation separate. It requires Python 3.9+.
 
 import argparse
 import contextlib
+import hashlib
 import importlib.util
 import io
 import json
@@ -89,11 +90,15 @@ def private_directory(base, parts):
     return current
 
 
-def store_home():
+def config_home():
     configured = os.environ.get("COPILOT_HOME")
     if configured is not None and (not configured.strip() or not Path(configured).is_absolute()):
         raise LearningError("COPILOT_HOME must be absolute.")
-    config = Path(configured) if configured else Path.home() / ".copilot"
+    return Path(configured) if configured else Path.home() / ".copilot"
+
+
+def store_home():
+    config = config_home()
     config.mkdir(parents=True, mode=0o700, exist_ok=True)
     return private_directory(config.resolve(), ["ecc", "homunculus"])
 
@@ -160,7 +165,8 @@ def parser():
     projects.add_argument("project_ids", nargs="*")
     prune = sub.add_parser("prune")
     prune.add_argument("--max-age", type=int, default=30)
-    for command in (importing, evolve, promote, projects, prune):
+    identity = sub.add_parser("identity")
+    for command in (importing, evolve, promote, projects, prune, identity):
         command.add_argument("--apply", action="store_true")
         command.add_argument("--dry-run", action="store_true")
     return result
@@ -215,6 +221,87 @@ def load_backend(home, workspace):
     return backend
 
 
+def mapping_for(workspace, project_id):
+    if not isinstance(project_id, str) or not re.fullmatch(r"[a-f0-9]{12}", project_id):
+        raise LearningError("Canonical backend did not return a project identity.")
+    return {
+        "schema": "ecc.copilot.learning-mapping.v1",
+        "observationProjectId": hashlib.sha256(str(workspace).encode("utf-8")).hexdigest(),
+        "learningProjectId": project_id,
+        "identitySource": "canonical-detect-project",
+    }
+
+
+def mapping_path(workspace, create=False):
+    base = config_home().resolve()
+    current = base
+    for segment in ("ecc", "learning-mappings"):
+        current = current / segment
+        try:
+            entry = current.lstat()
+            if not stat.S_ISDIR(entry.st_mode):
+                raise LearningError("Learning mapping directory must not redirect.")
+        except FileNotFoundError:
+            if not create:
+                return None
+            current.mkdir(mode=0o700)
+    namespace = hashlib.sha256(str(workspace).encode("utf-8")).hexdigest()
+    return current / f"{namespace}.json"
+
+
+def read_mapping(workspace):
+    file = mapping_path(workspace)
+    if file is None:
+        return None
+    try:
+        value = json.loads(read_file(file, 2048))
+    except FileNotFoundError:
+        return None
+    if not isinstance(value, dict) or set(value) != {
+        "schema", "observationProjectId", "learningProjectId", "identitySource"
+    } or value != mapping_for(workspace, value.get("learningProjectId")):
+        raise LearningError("Invalid or foreign learning mapping schema.")
+    return value
+
+
+def preview_identity(workspace):
+    # detect_project owns Git URL/worktree normalization and canonical ID logic.
+    # Its directory/registry side effects are confined to this disposable home.
+    existing = read_mapping(workspace)
+    with tempfile.TemporaryDirectory(prefix="ecc-copilot-identity-") as temporary:
+        captured = BoundedOutput()
+        with contextlib.redirect_stdout(captured), contextlib.redirect_stderr(captured):
+            backend = load_backend(Path(temporary), workspace)
+            proposed = mapping_for(workspace, backend.detect_project()["id"])
+    if existing is not None and existing != proposed:
+        raise LearningError("Learning identity changed; existing binding is not reassigned automatically.")
+    return proposed
+
+
+def apply_identity(workspace, backend, expected):
+    mapping = mapping_for(workspace, backend.detect_project()["id"])
+    if mapping != expected:
+        raise LearningError("Canonical identity differs from preview; inspect migration before retry.")
+    previous = read_mapping(workspace)
+    if previous is not None:
+        if previous != mapping:
+            raise LearningError("Existing learning binding cannot be reassigned.")
+        return mapping
+    file = mapping_path(workspace, create=True)
+    descriptor, temporary = tempfile.mkstemp(prefix=".mapping-", suffix=".tmp", dir=file.parent)
+    try:
+        with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
+            json.dump(mapping, handle, indent=2)
+            handle.write("\n")
+            handle.flush()
+            os.fsync(handle.fileno())
+        # Exclusive publication: never overwrite a mapping created concurrently.
+        os.link(temporary, file)
+    finally:
+        Path(temporary).unlink(missing_ok=True)
+    return mapping
+
+
 def import_content(backend, args, source, home):
     if args.stdin:
         data = sys.stdin.buffer.read(MAX_IMPORT_BYTES + 1)
@@ -260,6 +347,10 @@ def main():
     args = parser().parse_args()
     workspace = Path.cwd().resolve()
     transfer = validate_arguments(args, workspace)
+    identity = preview_identity(workspace) if args.command == "identity" else None
+    if identity is not None and not args.apply:
+        print(json.dumps({"ok": True, "operation": "identity", "mapping": identity, "applied": False}))
+        return 0
     home = store_home()
     lock = home.parent / ".learning.lock"
     lock.mkdir(mode=0o700)
@@ -272,7 +363,11 @@ def main():
             transfer = temporary
         captured = BoundedOutput()
         with contextlib.redirect_stdout(captured), contextlib.redirect_stderr(captured):
-            code = dispatch(backend, args, transfer)
+            if identity is not None:
+                mapping = apply_identity(workspace, backend, identity)
+                code = 0
+            else:
+                code = dispatch(backend, args, transfer)
         output = captured.getvalue()
         if not safe_text(output):
             raise LearningError("Learning output contains unsafe data.")
@@ -281,7 +376,10 @@ def main():
             with transfer.open("x", encoding="utf-8") as handle:
                 handle.write(output)
             output = "Exported reviewed transfer to the requested workspace file."
-        print(json.dumps({"ok": code == 0, "operation": args.command, "output": output}, ensure_ascii=False))
+        if identity is not None:
+            print(json.dumps({"ok": True, "operation": "identity", "mapping": mapping, "applied": True}))
+        else:
+            print(json.dumps({"ok": code == 0, "operation": args.command, "output": output}, ensure_ascii=False))
         return code
     finally:
         if temporary:

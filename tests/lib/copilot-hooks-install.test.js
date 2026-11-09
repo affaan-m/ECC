@@ -5,9 +5,10 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const { spawnSync } = require('child_process');
-const { createManifestInstallPlan, applyInstallPlan } = require('../../scripts/lib/install-executor');
+const { createManifestInstallPlan, applyInstallPlan, previewInstallPlan } = require('../../scripts/lib/install-executor');
 const { repairInstalledStates, uninstallInstalledStates } = require('../../scripts/lib/install-lifecycle');
 const { withHookConsent } = require('../../scripts/lib/install/hook-consent');
+const { writeInstallState } = require('../../scripts/lib/install-state');
 
 const REPO_ROOT = path.resolve(__dirname, '../..');
 const ENTRYPOINT = '.github/ecc/scripts/hooks/copilot-hook-adapter.js';
@@ -20,7 +21,20 @@ const EXPECTED_RUNTIME = [
   'hooks/post-edit-console-warn.js',
   'hooks/lib/shell-scan.js',
   'lib/copilot-hooks.js',
+  'lib/copilot-event-envelope.js',
+  'hooks/copilot-guard.js', 'hooks/gateguard-fact-force.js', 'hooks/gateguard-heredoc.js',
+  'lib/shell-substitution.js', 'lib/powershell-destructive-command.js',
+  'lib/gateguard-state.js', 'lib/gateguard-target-class.js',
+  'lib/copilot-shell-preflight.js', 'hooks/pre-bash-commit-quality.js', 'hooks/pre-bash-git-push-reminder.js',
+  'hooks/copilot-quality.js', 'lib/copilot-quality.js', 'lib/resolve-formatter.js',
+  'hooks/copilot-canvas.js', 'lib/copilot-canvas.js', 'lib/plan-canvas/sessions.js',
+  'lib/package-manager.js', 'hooks/design-quality-check.js',
+  'hooks/copilot-observe.js', 'lib/copilot-observations.js',
+  'hooks/copilot-evidence.js', 'lib/copilot-evidence.js',
+  'lib/copilot-telemetry.js', 'copilot-telemetry.js', 'lib/skill-evolution/tracker.js',
+  'lib/copilot-native-skill-telemetry.js', 'hooks/copilot-native-telemetry.js',
   'lib/hook-flags.js',
+  'lib/copilot-accessories.js', 'hooks/copilot-accessories.js',
   'lib/utils.js',
   'lib/agent-data-home.js',
   'lib/path-safety.js',
@@ -98,9 +112,11 @@ test('hooks-runtime installs native commands and only the audited dependency clo
   applyInstallPlan(plan);
   const config = readConfig(project);
   assert.strictEqual(config.version, 1);
-  assert.deepStrictEqual(Object.keys(config.hooks).sort(), ['agentStop', 'postToolUse', 'preCompact', 'preToolUse', 'sessionEnd', 'sessionStart', 'userPromptTransformed']);
-  assert.strictEqual(config.hooks.preToolUse.length, 4);
-  assert.strictEqual(config.hooks.postToolUse.length, 2);
+  assert.deepStrictEqual(Object.keys(config.hooks).sort(), ['agentStop', 'postToolUse', 'postToolUseFailure', 'preCompact', 'preToolUse', 'sessionEnd', 'sessionStart', 'userPromptSubmitted', 'userPromptTransformed']);
+  assert.strictEqual(config.hooks.preToolUse.length, 6);
+  assert.strictEqual(config.hooks.postToolUse.length, 4);
+  assert.ok(!config.hooks.postToolUse.some(entry => entry.args[2] === 'post:edit:console-warn'), 'stop checks replace duplicate console warnings');
+  assert.ok(!config.hooks.preToolUse.some(entry => entry.args[2] === 'pre:bash:block-no-verify'), 'combined guard invokes no-verify once');
   for (const [event, entries] of Object.entries(config.hooks)) {
     for (const entry of entries) {
       assert.strictEqual(entry.type, 'command');
@@ -110,13 +126,17 @@ test('hooks-runtime installs native commands and only the audited dependency clo
         assert.deepStrictEqual(entry.args.slice(1), ['hook', event]);
         continue;
       }
+      if (['copilot-quality.js', 'copilot-observe.js', 'copilot-evidence.js', 'copilot-native-telemetry.js', 'copilot-canvas.js'].includes(path.basename(entry.args[0]))) {
+        assert.deepStrictEqual(entry.args.slice(1), [event]);
+        continue;
+      }
       assert.strictEqual(entry.args[0], toolEvent ? ENTRYPOINT : '.github/ecc/scripts/hooks/copilot-lifecycle.js');
       assert.strictEqual(entry.args[1], event);
       if (toolEvent) assert.ok(entry.args[2], 'policy hook id must be explicit');
       assert.ok(entry.timeoutSec >= 15);
     }
   }
-  const runtimeOperations = plan.operations.filter(operation => operation.destinationPath.includes(`${path.sep}ecc${path.sep}scripts${path.sep}`));
+  const runtimeOperations = plan.operations.filter(operation => operation.sourceRelativePath.startsWith('scripts/'));
   assert.deepStrictEqual(runtimeOperations.map(operation => operation.sourceRelativePath.replace(/^scripts\//, '')).sort(), EXPECTED_RUNTIME.slice().sort());
   for (const relative of EXPECTED_RUNTIME) {
     assert.ok(fs.existsSync(path.join(project, '.github/ecc/scripts', relative)), relative);
@@ -235,6 +255,149 @@ test('declined hook consent removes both activation and runtime materialization'
   applyInstallPlan(plan);
   assert.ok(!fs.existsSync(path.join(project, '.github/hooks/ecc.json')));
   assert.ok(!fs.existsSync(path.join(project, ENTRYPOINT)));
+  assert.ok(!fs.existsSync(path.join(project, '.github/ecc/scripts/package.json')));
+});
+
+test('Copilot repairs an older ESM install and preserves the module scope of retained user scripts', project => {
+  const rootPackage = path.join(project, 'package.json');
+  const rootBytes = '{"type":"module"}\n';
+  fs.writeFileSync(rootPackage, rootBytes);
+  const plan = planFor(project);
+  applyInstallPlan(plan);
+  const marker = path.join(project, '.github/ecc/scripts/package.json');
+  const ledger = JSON.parse(fs.readFileSync(plan.installStatePath, 'utf8'));
+  ledger.operations = ledger.operations.filter(operation => operation.destinationPath !== marker);
+  writeInstallState(plan.installStatePath, ledger);
+  fs.unlinkSync(marker);
+
+  const custom = path.join(path.dirname(marker), 'user.js');
+  fs.writeFileSync(custom, 'export default 1;\n');
+  assert.throws(() => previewInstallPlan(plan), /unowned or edited JavaScript/);
+  assert.equal(repairInstalledStates(lifecycleOptions(project)).summary.errorCount, 1);
+  assert.equal(fs.readFileSync(custom, 'utf8'), 'export default 1;\n');
+  assert.ok(!fs.existsSync(marker));
+  fs.unlinkSync(custom);
+  assert.equal(repairInstalledStates(lifecycleOptions(project)).summary.errorCount, 0);
+  assert.equal(JSON.parse(fs.readFileSync(marker, 'utf8')).type, 'commonjs');
+  const config = readConfig(project);
+  const guard = config.hooks.preToolUse.find(entry => entry.args[2] === 'pre:config-protection');
+  assert.equal(invoke(project, guard, { path: 'demo.js' }).status, 0);
+
+  fs.writeFileSync(custom, 'module.exports = 1;\n');
+  const uninstall = uninstallInstalledStates(lifecycleOptions(project));
+  assert.equal(uninstall.results[0].status, 'partial');
+  assert.ok(uninstall.results[0].retainedPaths.includes(marker));
+  assert.ok(fs.existsSync(marker));
+  assert.equal(fs.readFileSync(custom, 'utf8'), 'module.exports = 1;\n');
+  assert.equal(fs.readFileSync(rootPackage, 'utf8'), rootBytes);
+});
+
+test('declining previously enabled hooks removes the managed manifest and repair cannot recreate it', project => {
+  const enabled = planFor(project);
+  applyInstallPlan(enabled);
+  const manifest = path.join(project, '.github/hooks/ecc.json');
+  const userHook = path.join(project, '.github/hooks/user.json');
+  fs.writeFileSync(userHook, '{}\n');
+  const declined = planFor(project, 'declined');
+  const preview = previewInstallPlan(declined);
+  assert.deepStrictEqual(preview.plannedCopilotHookRemovals, [manifest]);
+  assert.ok(fs.existsSync(manifest));
+  const result = applyInstallPlan(declined);
+  assert.deepStrictEqual(result.reconciledStalePaths, [manifest]);
+  assert.equal(result.statePreview.request.hookConsent, 'declined');
+  assert.ok(!result.statePreview.operations.some(operation => operation.destinationPath === manifest));
+  assert.ok(!fs.existsSync(manifest));
+  assert.equal(repairInstalledStates(lifecycleOptions(project)).summary.errorCount, 0);
+  assert.ok(!fs.existsSync(manifest));
+  assert.equal(fs.readFileSync(userHook, 'utf8'), '{}\n');
+  assert.ok(fs.existsSync(path.join(project, ENTRYPOINT)));
+  applyInstallPlan(enabled);
+  assert.ok(fs.existsSync(manifest));
+});
+
+test('declining hooks refuses edited and unowned manifests without publishing consent', project => {
+  const enabled = planFor(project);
+  const manifest = path.join(project, '.github/hooks/ecc.json');
+  fs.mkdirSync(path.dirname(manifest), { recursive: true });
+  const userContent = '{"version":1,"hooks":{}}\n';
+  fs.writeFileSync(manifest, userContent);
+  assert.throws(() => applyInstallPlan(planFor(project, 'declined')), /unowned Copilot hook manifest/);
+  assert.equal(fs.readFileSync(manifest, 'utf8'), userContent);
+  assert.ok(!fs.existsSync(enabled.installStatePath));
+  fs.unlinkSync(manifest);
+  applyInstallPlan(enabled);
+  const linked = path.join(project, 'manifest-hardlink.json');
+  fs.linkSync(manifest, linked);
+  assert.throws(() => applyInstallPlan(planFor(project, 'declined')), /multiple hard links/);
+  fs.unlinkSync(linked);
+  fs.writeFileSync(manifest, userContent);
+  const previousState = fs.readFileSync(enabled.installStatePath, 'utf8');
+  assert.throws(() => previewInstallPlan(planFor(project, 'declined')), /changed after install/);
+  assert.throws(() => applyInstallPlan(planFor(project, 'declined')), /changed after install/);
+  assert.equal(fs.readFileSync(manifest, 'utf8'), userContent);
+  assert.equal(fs.readFileSync(enabled.installStatePath, 'utf8'), previousState);
+});
+
+test('repair refuses an old declined state that still owns the Copilot activation', project => {
+  const enabled = planFor(project);
+  applyInstallPlan(enabled);
+  const manifest = path.join(project, '.github/hooks/ecc.json');
+  const legacyState = JSON.parse(fs.readFileSync(enabled.installStatePath, 'utf8'));
+  legacyState.request.hookConsent = 'declined';
+  fs.writeFileSync(enabled.installStatePath, JSON.stringify(legacyState));
+  fs.unlinkSync(manifest);
+  const repair = repairInstalledStates(lifecycleOptions(project));
+  assert.equal(repair.summary.errorCount, 1);
+  assert.match(repair.results[0].error, /--no-hooks/);
+  assert.ok(!fs.existsSync(manifest));
+  applyInstallPlan(planFor(project, 'declined'));
+  assert.equal(repairInstalledStates(lifecycleOptions(project)).summary.errorCount, 0);
+  assert.ok(!fs.existsSync(manifest));
+});
+
+test('deactivation rechecks the manifest and preserves the previous decision on a late edit', project => {
+  const enabled = planFor(project);
+  applyInstallPlan(enabled);
+  const manifest = path.join(project, '.github/hooks/ecc.json');
+  const declined = withHookConsent(createManifestInstallPlan({
+    target: 'copilot', moduleIds: ['commands-core'], projectRoot: project,
+    homeDir: path.join(project, 'home'), env: {},
+  }), 'declined');
+  assert.throws(() => applyInstallPlan(declined, {
+    beforeInstallStateWrite({ state }) {
+      if (state.request.hookConsent === 'declined') fs.appendFileSync(manifest, '\n');
+    },
+  }), /changed after install/);
+  assert.ok(fs.existsSync(manifest));
+  const state = JSON.parse(fs.readFileSync(enabled.installStatePath, 'utf8'));
+  assert.equal(state.request.hookConsent, 'enabled');
+  assert.ok(state.operations.some(operation => operation.destinationPath === manifest));
+});
+
+test('a state write failure after deactivation checkpoints the inactive manifest', project => {
+  const enabled = planFor(project);
+  applyInstallPlan(enabled);
+  const declined = withHookConsent(createManifestInstallPlan({
+    target: 'copilot', moduleIds: ['commands-core'], projectRoot: project,
+    homeDir: path.join(project, 'home'), env: {},
+  }), 'declined');
+  let failed = false;
+  assert.throws(() => applyInstallPlan(declined, {
+    writeInstallState(file, state) {
+      if (!failed && state.request.hookConsent === 'declined') {
+        failed = true;
+        throw new Error('simulated final write failure');
+      }
+      return writeInstallState(file, state);
+    },
+  }), /simulated final write failure/);
+  const manifest = path.join(project, '.github/hooks/ecc.json');
+  assert.ok(!fs.existsSync(manifest));
+  const state = JSON.parse(fs.readFileSync(enabled.installStatePath, 'utf8'));
+  assert.equal(state.request.hookConsent, 'declined');
+  assert.ok(!state.operations.some(operation => operation.destinationPath === manifest));
+  assert.equal(repairInstalledStates(lifecycleOptions(project)).summary.errorCount, 0);
+  assert.ok(!fs.existsSync(manifest));
 });
 
 test('automatic hook installation requires the existing explicit consent gate', project => {

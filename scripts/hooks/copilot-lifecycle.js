@@ -24,7 +24,17 @@ async function main() {
     const env = Object.fromEntries(Object.entries(process.env).filter(([key]) => !key.startsWith('CLAUDE_')));
     if (!isHookEnabled(`copilot:${action}`, { env, profiles: ['standard', 'strict'] })) return {};
     if (args.length) throw new Error('Unexpected lifecycle arguments.');
-    return sessions.processLifecycle(action, JSON.parse(await readInput()), env);
+    const payload = JSON.parse(await readInput());
+    const result = sessions.processLifecycle(action, payload, env);
+    if (action === 'agentStop') {
+      try {
+        const notification = require('../lib/copilot-accessories').notifyLifecycle(action, payload, env);
+        if (['failed', 'unavailable', 'timeout'].includes(notification.status)) {
+          process.stderr.write('ECC desktop notification unavailable; work continues.\n');
+        }
+      } catch { process.stderr.write('ECC desktop notification skipped; work continues.\n'); }
+    }
+    return result;
   }
   const workspace = fs.realpathSync(process.cwd());
   if (action === 'list' && !args.length) {

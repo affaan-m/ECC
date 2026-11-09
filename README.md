@@ -1332,7 +1332,7 @@ Treat `stable`, `beta`, `experimental`, and `instruction-only` below as capabili
 | Cursor | Beta project adapter | Selective installer into `.cursor/` | Agent discovery varies by Cursor build; hook events use profile-gated dispatchers, but full Claude feature parity is not claimed. |
 | OpenCode | Beta built plugin | Build plugin, then selective installer | ECC ships a subset of the catalog; connect a provider and select a model in OpenCode ([#2617](https://github.com/affaan-m/ECC/issues/2617)). |
 | GitHub Copilot Chat | Instruction-only | Checked-in instructions and prompt files | ECC hooks are not adapted. |
-| GitHub Copilot CLI | Beta project adapter | `--target copilot` places skills, adapted agents, and converted rules in `.github/` | ECC hooks and command shims are not installed by this target. |
+| GitHub Copilot CLI | Beta project adapter | `--target copilot` places skills, adapted agents, converted rules and command workflows in `.github/`; audited hooks are opt-in | Native and integration certification remains scoped; see [Copilot parity](docs/COPILOT-PARITY.md). |
 | Gemini, Zed, Antigravity, Qwen, Hermes, OpenClaw, Kimi, CodeBuddy, JoyCode | Experimental/minimal adapters | Harness-specific selective target | File placement and instruction portability are tested; full Claude feature parity is not claimed. |
 
 <details>
@@ -1721,8 +1721,9 @@ GitHub Copilot CLI discovers `SKILL.md` skills from `.github/skills/`,
 `.agents/skills/`, `.claude/skills/`, `~/.copilot/skills/`, and
 `~/.agents/skills/`, and custom agents from `.github/agents/`. ECC's skill and
 skill frontmatter is compatible. The managed `copilot` target adapts agent
-frontmatter to `name` and `description`, removing Claude-specific model and
-tool keys. Raw manual agent copies can retain unsupported metadata.
+frontmatter to supported metadata and explicit restricted tool aliases, removing
+Claude model IDs. Unknown tool mappings receive an empty strict tool list and
+a compatibility notice; see [agent tool restrictions](docs/COPILOT-AGENT-TOOLS.md).
 
 Because ECC ships a skill subset in `.agents/skills/`, a plain clone of this
 repository is picked up by Copilot CLI with no configuration at all:
@@ -1803,10 +1804,10 @@ skills than a manual copy of the entire canonical catalog because modules
 that require another host's runtime are excluded. List the resulting native
 inventory to see what this checkout installs; a count is not a capability grant.
 
-Claude-only agent frontmatter (`model`, `tools`, `color`) is dropped during the
-copy: Copilot resolves the model from your own configuration, and it governs
-tool access per session through `--allow-tool`/`--deny-tool` rather than through
-agent frontmatter. Rules are installed under `.github/instructions/ecc/` as
+The agent projection removes Claude model IDs and maps explicit tool restrictions
+to Copilot aliases with `strict-tools-list: true`. Unknown or unsafe tool mappings fail
+closed. Tool availability does not grant approval; session permission rules still
+apply. See [Copilot agent tools](docs/COPILOT-AGENT-TOOLS.md). Rules are installed under `.github/instructions/ecc/` as
 `.instructions.md` files, with the Claude-style `paths:` frontmatter converted
 to Copilot's `applyTo:` glob list (rules without `paths` become `applyTo:
 "**"`). The hook runtime requires explicit consent and installs four audited

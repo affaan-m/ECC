@@ -13,7 +13,10 @@ a style pack; this generates against that pack and cuts the result.
 ## Execution and Delivery Contract
 
 The original implementation ships here in `scripts/`; no separate `ito-video`
-checkout is required. Install `scripts/requirements.txt` for local processing.
+checkout is required. Replace `<installed-skill>` in commands with the absolute
+directory containing this skill's `SKILL.md`. Run from the user's project so
+relative media, pack, and output paths resolve there. Install
+`scripts/requirements.txt` for local processing.
 Install `scripts/requirements-live.txt` only for provider execution. Live
 uploads, submissions and downloads require explicit `TASTE_FORGE_ALLOW_LIVE=1`
 in addition to credentials; set it only for the user's authorized run.
@@ -24,7 +27,7 @@ provider request before deciding whether another submission is warranted.
 Use existing completed takes without any provider calls:
 
 ```bash
-python scripts/pipeline.py --genre example --root stylepacks \
+python "<installed-skill>/scripts/pipeline.py" --genre example --root stylepacks \
   --takes media/take-a.mp4 media/take-b.mp4 --duration 12 --fps 30 \
   --out out/review-v1.mp4
 ```
@@ -174,8 +177,8 @@ them.
 ## The 3D Branch
 
 ```bash
-python mint3d.py --genre <name> --from-stills 4 --retopo --render
-python mint3d.py --genre <name> --prompt "a cracked chrome visor" --render
+python "<installed-skill>/scripts/mint3d.py" --genre <name> --from-stills 4 --retopo --render
+python "<installed-skill>/scripts/mint3d.py" --genre <name> --prompt "a cracked chrome visor" --render
 ```
 
 - **Generate a clean plate first; do not lift from reference stills.** The
@@ -229,7 +232,7 @@ biased +128. Mixing them reports chroma errors in the hundreds.
 ## Full Chain
 
 ```bash
-python pipeline.py --genre <name> --refs a.mov b.mov \
+python "<installed-skill>/scripts/pipeline.py" --genre <name> --refs a.mov b.mov \
   --brief "what happens" --duration 12 \
   --base-video existing.mp4 --out out/FINAL.mp4
 ```
@@ -344,7 +347,7 @@ project-specific assumptions: point it at any reference videos and it produces a
 pack.
 
 ```bash
-pip install -r scripts/requirements.txt
+pip install -r "<installed-skill>/scripts/requirements.txt"
 export FAL_KEY=...            # only needed for the stages that call fal
 ```
 

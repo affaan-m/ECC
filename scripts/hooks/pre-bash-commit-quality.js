@@ -85,11 +85,11 @@ function isPlaceholderSecret(value) {
  * @param {string} filePath
  * @returns {object[]} Array of issues found
  */
-function findFileIssues(filePath) {
+function findFileIssues(filePath, options = {}) {
   const issues = [];
   
   try {
-    const content = getStagedFileContent(filePath);
+    const content = Object.hasOwn(options, 'content') ? options.content : getStagedFileContent(filePath);
     if (content === null || content === undefined) {
       return issues;
     }
@@ -552,5 +552,6 @@ module.exports = {
   isPlaceholderSecret,
   getLinterInvocation,
   golintSucceeded,
-  runLinter
+  runLinter,
+  shouldCheckFile
 };
