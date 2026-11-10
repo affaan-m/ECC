@@ -16,13 +16,20 @@ process.once('exit', () => {
   }
 });
 
+// Prefer the native realpath: JS fs.realpathSync does not expand Windows 8.3
+// short names (e.g. RUNNER~1), so it can disagree with git's long-path output.
+function realpath(fsModule, value) {
+  const resolve = fsModule.realpathSync.native || fsModule.realpathSync;
+  return resolve.call(fsModule, value);
+}
+
 function isGitWorkTreeRoot(dir, fsModule = fs, execute = execFileSync) {
   try {
     const top = execute('git', ['-C', dir, 'rev-parse', '--show-toplevel'], {
       encoding: 'utf8',
       stdio: ['ignore', 'pipe', 'ignore'],
     }).trim();
-    return fsModule.realpathSync(top) === fsModule.realpathSync(dir);
+    return realpath(fsModule, top) === realpath(fsModule, dir);
   } catch {
     return false;
   }
@@ -101,11 +108,11 @@ function findRegistrySource(sourceRoot, homeDir, pathModule = path) {
     if (error.code === 'ENOENT') return null;
     throw new Error(`Failed to read Grok plugin registry at ${registryPath}: ${error.message}`);
   }
-  const expectedPath = fs.realpathSync(sourceRoot);
+  const expectedPath = realpath(fs, sourceRoot);
   for (const record of Object.values(registry.repos || {})) {
     let recordPath;
     try {
-      recordPath = fs.realpathSync(record.path);
+      recordPath = realpath(fs, record.path);
     } catch {
       continue;
     }
