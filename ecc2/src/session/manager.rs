@@ -986,7 +986,7 @@ pub async fn auto_dispatch_backlog(
         .filter(|session| {
             matches!(
                 session.state,
-                SessionState::Running | SessionState::Idle | SessionState::Pending
+                SessionState::Running | SessionState::Idle
             )
         })
         .map(|session| session.id.as_str())
@@ -7880,6 +7880,7 @@ mod tests {
             ("completed-lead", SessionState::Completed),
             ("failed-lead", SessionState::Failed),
             ("stopped-lead", SessionState::Stopped),
+            ("pending-lead", SessionState::Pending),
         ] {
             db.insert_session(&Session {
                 id: lead_id.to_string(),
@@ -7907,8 +7908,8 @@ mod tests {
         let outcomes = auto_dispatch_backlog(&db, &cfg, "claude", false, 10).await?;
         assert!(outcomes.is_empty());
         // Do not erase historical inbox evidence just to suppress dispatch.
-        assert_eq!(db.unread_task_handoff_targets(10)?.len(), 3);
-        assert_eq!(db.list_sessions()?.len(), 3);
+        assert_eq!(db.unread_task_handoff_targets(10)?.len(), 4);
+        assert_eq!(db.list_sessions()?.len(), 4);
         Ok(())
     }
 
