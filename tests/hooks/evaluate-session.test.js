@@ -579,6 +579,65 @@ function runTests() {
     }
   })) passed++; else failed++;
 
+  if (test('delivers the full Stop JSON even when stdout writes are asynchronous', () => {
+    // Regression: the Stop JSON was written with console.log and main()
+    // called process.exit(0) immediately after, so when stdout is a pipe
+    // the write is asynchronous and the exit can truncate the payload
+    // (Node documents this process.exit truncation for piped stdout).
+    // Force every stdout write to be asynchronous with a preload, so the
+    // race reproduces deterministically instead of relying on pipe timing.
+    const testDir = createTestDir();
+    const transcript = createTranscript(testDir, 12);
+    const homunculusDir = fs.mkdtempSync(path.join(os.tmpdir(), 'eval-delivery-home-'));
+    const sessionId = 'delivery-flush-1';
+    const marker = deliveryMarkerPath(sessionId);
+    const preloadPath = path.join(testDir, 'async-stdout-preload.js');
+    fs.writeFileSync(preloadPath, [
+      '// Test-only preload: defer every stdout write to the next macrotask,',
+      '// so a process.exit(0) before the flush drops the data.',
+      'const origWrite = process.stdout.write.bind(process.stdout);',
+      'process.stdout.write = function (chunk, encoding, cb) {',
+      '  if (typeof encoding === \'function\') { cb = encoding; encoding = undefined; }',
+      '  setImmediate(() => origWrite(chunk, encoding, cb));',
+      '  return true;',
+      '};',
+      '',
+    ].join('\n'));
+    try {
+      fs.rmSync(marker, { force: true });
+      registerLeaseFor(testDir, homunculusDir, sessionId);
+      const result = withOptInConfig(true, () => {
+        const spawned = spawnSync('node', ['-r', preloadPath, evaluateScript], {
+          encoding: 'utf8',
+          input: JSON.stringify(stopPayload(transcript, sessionId, testDir)),
+          timeout: 10000,
+          env: isolatedEnv({ CLV2_HOMUNCULUS_DIR: homunculusDir, CLAUDE_PROJECT_DIR: testDir }),
+        });
+        return {
+          code: spawned.error || spawned.signal ? null : spawned.status,
+          stdout: spawned.stdout || '',
+          stderr: spawned.stderr || '',
+        };
+      });
+      assert.strictEqual(result.code, 0);
+      let parsed;
+      try {
+        parsed = JSON.parse(result.stdout);
+      } catch {
+        assert.fail(`Stdout must arrive complete even with async stdout writes. Got: ${result.stdout}`);
+      }
+      assert.strictEqual(parsed.decision, 'block', 'Native Stop delivery blocks the stop');
+      assert.ok(
+        typeof parsed.reason === 'string' && parsed.reason.includes('12 messages'),
+        `Reason must carry the session signal. Got: ${parsed.reason}`
+      );
+    } finally {
+      fs.rmSync(marker, { force: true });
+      cleanupTestDir(testDir);
+      fs.rmSync(homunculusDir, { recursive: true, force: true });
+    }
+  })) passed++; else failed++;
+
   if (test('skips delivery when the delivery marker cannot be written', () => {
     const testDir = createTestDir();
     const transcript = createTranscript(testDir, 12);

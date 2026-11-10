@@ -20,8 +20,7 @@ const {
   readFile,
   countInFile,
   getTempDir,
-  log,
-  output
+  log
 } = require('../lib/utils');
 const { resolveHookSessionId } = require('../lib/hook-session');
 const {
@@ -121,9 +120,12 @@ async function main() {
   log(`[ContinuousLearning] Session has ${messageCount} messages - evaluate for extractable patterns`);
   log(`[ContinuousLearning] Save learned skills to: ${learnedSkillsPath}`);
 
-  deliverStopNudge({ input, stdinData, messageCount, learnedSkillsPath, stopNudgeOptIn });
-
-  process.exit(0);
+  // When a nudge was delivered, the process exits from the stdout-write
+  // callback, only after the Stop JSON has flushed. Exiting here instead
+  // would race the flush and could truncate the payload.
+  if (!deliverStopNudge({ input, stdinData, messageCount, learnedSkillsPath, stopNudgeOptIn })) {
+    process.exit(0);
+  }
 }
 
 /**
@@ -133,35 +135,38 @@ async function main() {
  * decision "block" + reason, which continues the turn with the reason as
  * context. Plain stdout text is not a delivery channel on Stop, so nothing
  * else is ever written to stdout here. Every gate fails closed.
+ *
+ * Returns true when the Stop JSON was written (the process then exits from
+ * the write callback, once the payload has flushed), false otherwise.
  */
 function deliverStopNudge({ input, stdinData, messageCount, learnedSkillsPath, stopNudgeOptIn }) {
   if (!stopNudgeOptIn) {
     log('[ContinuousLearning] Stop nudge opt-in is off, skipping delivery');
-    return;
+    return false;
   }
   // A payload that names a different event means this script is running
   // under the wrong registration; an absent field is tolerated (older
   // harnesses omit it), a mismatched one is not.
   if (input && input.hook_event_name && input.hook_event_name !== 'Stop') {
     log(`[ContinuousLearning] Skipping delivery: hook event is ${input.hook_event_name}, not Stop`);
-    return;
+    return false;
   }
   // Stop-loop protection: when a previous Stop already continued this stop,
   // the hook is re-firing and must pass through, never block again.
   if (input && input.stop_hook_active === true) {
     log('[ContinuousLearning] Skipping delivery: Stop hook already fired for this stop');
-    return;
+    return false;
   }
   // The payload session id identifies the harness conversation; env ids are
   // only fallbacks, never preferred over it.
   const sessionId = resolveSessionId(resolveHookSessionId(stdinData));
   if (!sessionId) {
     log('[ContinuousLearning] Skipping delivery: no session id available');
-    return;
+    return false;
   }
   if (!hasRegisteredSessionLease(input, sessionId)) {
     log('[ContinuousLearning] Skipping delivery: no SessionStart lease for this session');
-    return;
+    return false;
   }
   // The session id is sanitized upstream by resolveSessionId, so the
   // marker filename cannot traverse out of the temp dir.
@@ -181,12 +186,16 @@ function deliverStopNudge({ input, stdinData, messageCount, learnedSkillsPath, s
     } else {
       log(`[ContinuousLearning] Warning: could not record delivery marker, skipping delivery: ${err.message}`);
     }
-    return;
+    return false;
   }
-  output({
+  // Write the Stop JSON with a flush callback and exit from it: a plain
+  // console.log followed by process.exit(0) can truncate the payload when
+  // stdout is a pipe, because the write is asynchronous.
+  process.stdout.write(`${JSON.stringify({
     decision: 'block',
     reason: `[ContinuousLearning] Session has ${messageCount} messages - evaluate for extractable patterns. Save learned skills to: ${learnedSkillsPath}`
-  });
+  })}\n`, () => process.exit(0));
+  return true;
 }
 
 /**
