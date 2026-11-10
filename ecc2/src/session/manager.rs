@@ -977,7 +977,26 @@ pub async fn auto_dispatch_backlog(
     use_worktree: bool,
     lead_limit: usize,
 ) -> Result<Vec<LeadDispatchOutcome>> {
-    let targets = db.unread_task_handoff_targets(lead_limit)?;
+    // Only a live native session may receive automatic handoff dispatch.
+    // Keep unread messages addressed to terminal sessions intact for explicit
+    // reconciliation; auto-dispatch must not replay their historical work.
+    let sessions = db.list_sessions()?;
+    let live_targets: HashSet<_> = sessions
+        .iter()
+        .filter(|session| {
+            matches!(
+                session.state,
+                SessionState::Running | SessionState::Idle | SessionState::Pending
+            )
+        })
+        .map(|session| session.id.as_str())
+        .collect();
+    let targets = db
+        .unread_task_handoff_targets(sessions.len().max(1))?
+        .into_iter()
+        .filter(|(session_id, _)| live_targets.contains(session_id.as_str()))
+        .take(lead_limit)
+        .collect::<Vec<_>>();
     let mut outcomes = Vec::new();
 
     for (lead_id, unread_count) in targets {
@@ -7847,6 +7866,49 @@ mod tests {
             message.msg_type == "task_handoff" && message.content.contains("Critical auth outage")
         }));
 
+        Ok(())
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn auto_dispatch_backlog_does_not_replay_terminal_session_handoffs() -> Result<()> {
+        let tempdir = TestDir::new("manager-no-terminal-replay")?;
+        let cfg = build_config(tempdir.path());
+        let db = StateStore::open(&cfg.db_path)?;
+        let now = Utc::now();
+
+        for (lead_id, state) in [
+            ("completed-lead", SessionState::Completed),
+            ("failed-lead", SessionState::Failed),
+            ("stopped-lead", SessionState::Stopped),
+        ] {
+            db.insert_session(&Session {
+                id: lead_id.to_string(),
+                task: "historical work".to_string(),
+                project: "workspace".to_string(),
+                task_group: "general".to_string(),
+                agent_type: "claude".to_string(),
+                working_dir: tempdir.path().to_path_buf(),
+                state,
+                pid: None,
+                worktree: None,
+                created_at: now - Duration::minutes(5),
+                updated_at: now - Duration::minutes(3),
+                last_heartbeat_at: now - Duration::minutes(3),
+                metrics: SessionMetrics::default(),
+            })?;
+            db.send_message(
+                "planner",
+                lead_id,
+                r#"{"task":"Historical task","context":"Unreconciled"}"#,
+                "task_handoff",
+            )?;
+        }
+
+        let outcomes = auto_dispatch_backlog(&db, &cfg, "claude", false, 10).await?;
+        assert!(outcomes.is_empty());
+        // Do not erase historical inbox evidence just to suppress dispatch.
+        assert_eq!(db.unread_task_handoff_targets(10)?.len(), 3);
+        assert_eq!(db.list_sessions()?.len(), 3);
         Ok(())
     }
 
