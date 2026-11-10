@@ -983,12 +983,7 @@ pub async fn auto_dispatch_backlog(
     let sessions = db.list_sessions()?;
     let live_targets: HashSet<_> = sessions
         .iter()
-        .filter(|session| {
-            matches!(
-                session.state,
-                SessionState::Running | SessionState::Idle
-            )
-        })
+        .filter(|session| matches!(session.state, SessionState::Running | SessionState::Idle))
         .map(|session| session.id.as_str())
         .collect();
     let targets = db
