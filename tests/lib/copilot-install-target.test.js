@@ -275,6 +275,43 @@ test('rule transform preserves CRLF fenced examples and rewrites only prose link
   assert.ok(adapted.includes('Outside [link](../common/hooks.instructions.md).\r\n'));
 });
 
+for (const [label, pathsValue] of [
+  ['a non-string entry', '[1]'],
+  ['a nested list entry', '[["**/*.ts"]]'],
+  ['a null entry after a valid glob', '["**/*.ts", null]'],
+  ['an empty string entry', '["**/*.ts", ""]'],
+  ['a whitespace-only entry', '["   "]'],
+]) {
+  test(`rule transform rejects paths with ${label}`, () => {
+    assert.throws(
+      () => adaptCopilotRule(`---\npaths: ${pathsValue}\n---\nbody\n`, 'rules/broken.md'),
+      /Cannot adapt Copilot rule rules\/broken\.md: "paths" must be a non-empty list of glob strings/
+    );
+  });
+}
+
+test('rule transform trims surrounding whitespace from each glob', () => {
+  const adapted = adaptCopilotRule('---\npaths:\n  - "  **/*.ts  "\n  - "**/*.tsx"\n---\nbody\n', 'rules/typescript/x.md');
+  assert.match(adapted, /^---\napplyTo: ["']\*\*\/\*\.ts,\*\*\/\*\.tsx["']\n---\nbody\n$/);
+});
+
+test('rule transform resolves links from a Windows-style source label', () => {
+  const adapted = adaptCopilotRule('See [hooks](../common/hooks.md).\n', 'rules\\angular\\coding-style.md');
+  assert.ok(adapted.includes('](../common/hooks.instructions.md)'), adapted);
+});
+
+test('rule transform leaves links unchanged when the source label is not a Markdown path', () => {
+  const body = 'See [hooks](../common/hooks.md).\n';
+  assert.ok(adaptCopilotRule(body).endsWith(body));
+  assert.ok(adaptCopilotRule(body, 'rules/angular/coding-style.txt').endsWith(body));
+});
+
+test('rule transform keeps lowercase readme links and rewrites uppercase .MD rule links', () => {
+  const adapted = adaptCopilotRule('[r](../common/readme.md) [u](../common/Hooks.MD)\n', 'rules/angular/coding-style.md');
+  assert.ok(adapted.includes('](../common/readme.md)'), adapted);
+  assert.ok(adapted.includes('](../common/Hooks.instructions.md)'), adapted);
+});
+
 test('unsupported source paths produce no operations', () => {
   const operations = planFor([
     { id: 'commands-core', paths: ['commands', 'scripts/harness-audit.js'] },
