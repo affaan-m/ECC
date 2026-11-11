@@ -59,6 +59,82 @@ function sessionFileFor(home, uuid, date = getDateString()) {
   return path.join(home, '.claude', 'session-data', `${date}-${shortId}-session.tmp`);
 }
 
+// Regression (#3867): the harness notice after a safety-classifier stop is
+// recorded as a user entry; it must not become a task in the summary.
+const CLASSIFIER_NOTICE_TEXT = 'Your response above was stopped by a safety classifier — this is not a tool or API error.';
+
+function withTranscript(uuid, lines, fn) {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-session-end-'));
+  try {
+    const transcript = path.join(home, `${uuid}.jsonl`);
+    fs.writeFileSync(transcript, lines.join('\n') + '\n');
+    const res = runHook(home, transcript, { ECC_SKIP_LLM_SUMMARY: '1' });
+    assert.strictEqual(res.status || 0, 0, `hook exited ${res.status}: ${res.stderr}`);
+    fn(fs.readFileSync(sessionFileFor(home, uuid), 'utf8'));
+  } finally {
+    fs.rmSync(home, { recursive: true, force: true });
+  }
+}
+
+function testDropsClassifierNotice() {
+  withTranscript('3867aaaa-bbbb-4ccc-8ddd-eeeeeeee3867', [
+    JSON.stringify({ type: 'user', message: { role: 'user', content: 'Refactor the config loader' } }),
+    JSON.stringify({ type: 'user', message: { role: 'user', content: [{ type: 'text', text: CLASSIFIER_NOTICE_TEXT }] } }),
+  ], out => {
+    assert.ok(out.includes('- Refactor the config loader'), `expected the real user task in:\n${out}`);
+    assert.ok(!out.includes('safety classifier'), `classifier notice must not be summarized:\n${out}`);
+  });
+}
+
+function testDropsLongClassifierNotice() {
+  const longNotice = `${CLASSIFIER_NOTICE_TEXT} The rest of it was withheld, and tool calls in it that had not finished did not run. Do not produce that content again, even reworded.`;
+  withTranscript('3867dddd-eeee-4fff-8aaa-bbbbbbbb3867', [
+    JSON.stringify({ type: 'user', message: { role: 'user', content: 'Refactor the config loader' } }),
+    JSON.stringify({ type: 'user', content: longNotice }),
+    JSON.stringify({ type: 'user', content: 'Why did this happen?' }),
+  ], out => {
+    assert.ok(out.includes('- Refactor the config loader') && out.includes('Why did this happen?'), `expected real user asks in:\n${out}`);
+    assert.ok(!out.includes('withheld') && !out.includes('safety classifier'), `long notice must not be summarized:\n${out}`);
+  });
+}
+
+function testNoticeOnlyTranscript() {
+  withTranscript('3867bbbb-cccc-4ddd-8eee-ffffffff3867', [JSON.stringify({ type: 'user', content: CLASSIFIER_NOTICE_TEXT })], out => {
+    assert.ok(!out.includes(START), `a notice-only transcript must not produce a summary block:\n${out}`);
+    assert.ok(!out.includes('safety classifier'), `classifier notice must not be persisted:\n${out}`);
+  });
+}
+
+function testDropsMultilineClassifierNotice() {
+  const wrapped = CLASSIFIER_NOTICE_TEXT.replace('safety classifier', 'safety\nclassifier');
+  withTranscript('3867eeee-ffff-4aaa-8bbb-cccccccc3867', [
+    JSON.stringify({ type: 'user', content: 'Refactor the config loader' }),
+    JSON.stringify({ type: 'user', content: wrapped }),
+  ], out => {
+    assert.ok(out.includes('- Refactor the config loader'), `expected the real user task in:\n${out}`);
+    assert.ok(!/safety\s+classifier/.test(out), `wrapped notice must not be summarized:\n${out}`);
+  });
+}
+
+function testKeepsMessageQuotingNotice() {
+  const userText = 'Why did I see "Your response above was stopped by a safety classifier" earlier?';
+  withTranscript('3867cccc-dddd-4eee-8fff-aaaaaaaa3867', [JSON.stringify({ type: 'user', content: userText })], out => {
+    assert.ok(out.includes(userText), `a real question about the notice must be kept:\n${out}`);
+  });
+}
+
+function runClassifierNoticeTests() {
+  const results = [
+    test('drops safety-classifier notices from summary tasks', testDropsClassifierNotice),
+    test('drops the longer classifier notice from summary tasks', testDropsLongClassifierNotice),
+    test('drops a classifier notice wrapped across lines', testDropsMultilineClassifierNotice),
+    test('writes no summary for a transcript holding only a classifier notice', testNoticeOnlyTranscript),
+    test('keeps a user message that only mentions the classifier notice', testKeepsMessageQuotingNotice),
+  ];
+  const passed = results.filter(Boolean).length;
+  return { passed, failed: results.length - passed };
+}
+
 function runTests() {
   console.log('\n=== Testing session-end.js ===\n');
 
@@ -146,6 +222,10 @@ function runTests() {
       fs.rmSync(home, { recursive: true, force: true });
     }
   }) ? passed++ : failed++);
+
+  const noticeResults = runClassifierNoticeTests();
+  passed += noticeResults.passed;
+  failed += noticeResults.failed;
 
   (test('writes a session for one user message with tool activity', () => {
     const home = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-session-end-'));
