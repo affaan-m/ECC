@@ -256,15 +256,23 @@ function getGoDeps(projectDir) {
     if (!fs.existsSync(modPath)) return [];
     const content = fs.readFileSync(modPath, 'utf8');
     const deps = [];
-    const requireBlock = content.match(/require\s*\(([\s\S]*?)\)/);
-    if (requireBlock) {
-      requireBlock[1].split('\n').forEach(line => {
-        const trimmed = line.trim();
-        if (trimmed && !trimmed.startsWith('//')) {
-          const parts = trimmed.split(/\s+/);
-          if (parts[0]) deps.push(parts[0]);
-        }
-      });
+    let inRequireBlock = false;
+    for (const rawLine of content.split(/\r?\n/)) {
+      const line = rawLine.split('//')[0].trim();
+      if (!line) continue;
+      if (line === ')' && inRequireBlock) {
+        inRequireBlock = false;
+        continue;
+      }
+      const directive = line.match(/^require(?:\s+|(?=\())(.+)$/);
+      if (directive?.[1] === '(') {
+        inRequireBlock = true;
+        continue;
+      }
+      if (!directive && !inRequireBlock) continue;
+      const requirement = (directive ? directive[1] : line)
+        .match(/^(?:"([^"]+)"|`([^`]+)`|(\S+))\s+\S+/);
+      if (requirement) deps.push(requirement[1] || requirement[2] || requirement[3]);
     }
     return deps;
   } catch {
