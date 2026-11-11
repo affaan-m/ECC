@@ -546,8 +546,41 @@ impl StateStore {
         self.ensure_harness_eval_columns()?;
         self.ensure_harness_candidate_aliases()?;
         self.ensure_session_board_columns()?;
-        self.refresh_session_board_meta()?;
+        // Session and handoff mutations already refresh the board. Rebuilding all
+        // historical rows on every CLI invocation (including read-only status)
+        // turns a large state store into an expensive write-heavy startup path.
+        if self.session_board_needs_bootstrap()? {
+            self.refresh_session_board_meta()?;
+        }
         Ok(())
+    }
+
+    fn session_board_needs_bootstrap(&self) -> Result<bool> {
+        // Use indexed existence probes, not per-session writes. Old databases
+        // with a missing/orphaned board row or a stale state lane still reconcile.
+        let needs_rebuild: i64 = self.conn.query_row(
+            "SELECT EXISTS (
+                SELECT 1 FROM sessions AS s
+                LEFT JOIN session_board AS b ON b.session_id = s.id
+                WHERE b.session_id IS NULL
+                   OR b.lane != CASE s.state
+                       WHEN 'pending' THEN 'Inbox'
+                       WHEN 'running' THEN 'In Progress'
+                       WHEN 'idle' THEN 'Review'
+                       WHEN 'stale' THEN 'Blocked'
+                       WHEN 'failed' THEN 'Blocked'
+                       WHEN 'completed' THEN 'Done'
+                       WHEN 'stopped' THEN 'Stopped'
+                       ELSE b.lane END
+            ) OR EXISTS (
+                SELECT 1 FROM session_board AS b
+                LEFT JOIN sessions AS s ON s.id = b.session_id
+                WHERE s.id IS NULL
+            )",
+            [],
+            |row| row.get(0),
+        )?;
+        Ok(needs_rebuild != 0)
     }
 
     // Existing rows are untagged; keep their historical classification after
@@ -5924,6 +5957,65 @@ mod tests {
         assert!(error
             .to_string()
             .contains("Invalid session state transition"));
+        Ok(())
+    }
+
+    #[test]
+    fn reopen_with_consistent_board_is_read_only_for_board_timestamps() -> Result<()> {
+        let tempdir = TestDir::new("store-board-fast-reopen")?;
+        let path = tempdir.path().join("state.db");
+        let db = StateStore::open(&path)?;
+        db.insert_session(&build_session("reopen-done", SessionState::Completed))?;
+        db.conn.execute(
+            "UPDATE session_board SET updated_at = '2000-01-01T00:00:00Z'
+             WHERE session_id = 'reopen-done'",
+            [],
+        )?;
+        drop(db);
+
+        let reopened = StateStore::open(&path)?;
+        let (lane, timestamp): (String, String) = reopened.conn.query_row(
+            "SELECT lane, updated_at FROM session_board WHERE session_id = 'reopen-done'",
+            [],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )?;
+        assert_eq!(lane, "Done");
+        assert_eq!(timestamp, "2000-01-01T00:00:00Z");
+        Ok(())
+    }
+
+    #[test]
+    fn reopen_reconciles_missing_or_stale_board_rows() -> Result<()> {
+        let tempdir = TestDir::new("store-board-repair-reopen")?;
+        let path = tempdir.path().join("state.db");
+        let db = StateStore::open(&path)?;
+        db.insert_session(&build_session("repair-done", SessionState::Completed))?;
+        db.conn.execute(
+            "UPDATE session_board SET lane = 'Inbox' WHERE session_id = 'repair-done'",
+            [],
+        )?;
+        drop(db);
+
+        let reopened = StateStore::open(&path)?;
+        let lane: String = reopened.conn.query_row(
+            "SELECT lane FROM session_board WHERE session_id = 'repair-done'",
+            [],
+            |row| row.get(0),
+        )?;
+        assert_eq!(lane, "Done");
+        reopened.conn.execute(
+            "DELETE FROM session_board WHERE session_id = 'repair-done'",
+            [],
+        )?;
+        drop(reopened);
+
+        let rebuilt = StateStore::open(&path)?;
+        let count: i64 = rebuilt.conn.query_row(
+            "SELECT COUNT(*) FROM session_board WHERE session_id = 'repair-done'",
+            [],
+            |row| row.get(0),
+        )?;
+        assert_eq!(count, 1);
         Ok(())
     }
 
