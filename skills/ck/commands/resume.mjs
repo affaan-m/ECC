@@ -9,6 +9,7 @@
  */
 
 import { existsSync } from 'fs';
+import { resolve } from 'path';
 import { resolveContext, renderBriefingBox } from './shared.mjs';
 
 const arg = process.argv[2];
@@ -24,7 +25,7 @@ if (!resolved) {
 const { context, projectPath } = resolved;
 
 // Attempt to cd to the project path
-if (projectPath && projectPath !== cwd) {
+if (projectPath && resolve(projectPath) !== resolve(cwd)) {
   if (existsSync(projectPath)) {
     console.log(`→ cd ${projectPath}`);
   } else {

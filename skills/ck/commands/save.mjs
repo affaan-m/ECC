@@ -20,7 +20,7 @@ import { readFileSync, mkdirSync, writeFileSync } from 'fs';
 import { resolve } from 'path';
 import { createHash } from 'crypto';
 import {
-  readProjects, writeProjects, loadContext, saveContext,
+  readProjects, writeProjects, findProject, loadContext, saveContext,
   today, shortId, gitSummary, nativeMemoryDir,
   CURRENT_SESSION,
 } from './shared.mjs';
@@ -53,6 +53,7 @@ if (isInit) {
   }
 
   const projects = readProjects();
+  const registered = findProject(projects, projectPath);
 
   // Derive contextDir (lowercase, spaces→dashes, deduplicate). Names with no
   // ASCII letters/digits (e.g. "Проект") fall back to a stable path hash, so
@@ -61,7 +62,7 @@ if (isInit) {
     || `project-${createHash('sha256').update(projectPath).digest('hex').slice(0, 8)}`;
   let suffix = 2;
   const existingDirs = Object.values(projects).map(p => p.contextDir);
-  while (existingDirs.includes(contextDir) && projects[projectPath]?.contextDir !== contextDir) {
+  while (existingDirs.includes(contextDir) && registered?.contextDir !== contextDir) {
     contextDir = `${contextDir.replace(/-\d+$/, '')}-${suffix++}`;
   }
 
@@ -82,7 +83,7 @@ if (isInit) {
   saveContext(contextDir, context);
 
   // Update projects.json
-  projects[projectPath] = {
+  projects[registered?.path ?? projectPath] = {
     name,
     contextDir,
     lastUpdated: today(),
@@ -98,7 +99,7 @@ if (isInit) {
 // SAVE MODE: record a session
 // ─────────────────────────────────────────────────────────────────────────────
 const projects = readProjects();
-const projectEntry = projects[cwd];
+const projectEntry = findProject(projects, cwd);
 
 if (!projectEntry) {
   console.log("This project isn't registered yet. Run /ck:init first.");
@@ -158,7 +159,7 @@ if (goal && goal !== context.goal) {
 saveContext(contextDir, context);
 
 // Update projects.json timestamp
-projects[cwd].lastUpdated = today();
+projects[projectEntry.path].lastUpdated = today();
 writeProjects(projects);
 
 // ── Write to native memory ────────────────────────────────────────────────────

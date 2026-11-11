@@ -10,7 +10,7 @@
 
 import { readFileSync, existsSync } from 'fs';
 import { resolve, basename } from 'path';
-import { readProjects } from './shared.mjs';
+import { readProjects, findProject } from './shared.mjs';
 
 const cwd = process.env.PWD || process.cwd();
 const projects = readProjects();
@@ -23,7 +23,7 @@ const output = {
   goal: null,
   constraints: [],
   repo: null,
-  alreadyRegistered: !!projects[cwd],
+  alreadyRegistered: !!findProject(projects, cwd),
 };
 
 function readFile(filename) {

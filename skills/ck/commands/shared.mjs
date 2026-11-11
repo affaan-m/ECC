@@ -45,6 +45,13 @@ export function writeProjects(projects) {
   writeJson(PROJECTS_FILE, projects);
 }
 
+export function findProject(projects, projectPath) {
+  const key = Object.hasOwn(projects, projectPath)
+    ? projectPath
+    : Object.keys(projects).find(p => resolve(p) === resolve(projectPath));
+  return key === undefined ? null : { path: key, ...projects[key] };
+}
+
 // ─── Context I/O ──────────────────────────────────────────────────────────────
 
 export function contextPath(contextDir) {
@@ -78,11 +85,11 @@ export function resolveContext(arg, cwd) {
 
   if (!arg) {
     // Match by cwd
-    const entry = projects[cwd];
+    const entry = findProject(projects, cwd);
     if (!entry) return null;
     const context = loadContext(entry.contextDir);
     if (!context) return null;
-    return { name: entry.name, contextDir: entry.contextDir, projectPath: cwd, context };
+    return { name: entry.name, contextDir: entry.contextDir, projectPath: entry.path, context };
   }
 
   // Collect all contexts sorted alphabetically by contextDir
@@ -350,7 +357,7 @@ export function renderListTable(entries, cwd, _todayStr) {
   // entries: [{name, contextDir, path, context, lastUpdated}]
   // Sorted alphabetically by contextDir before calling
   const rows = entries.map((e, i) => {
-    const isHere = e.path === cwd;
+    const isHere = resolve(e.path) === resolve(cwd);
     const latest = e.context?.sessions?.[e.context.sessions.length - 1] || {};
     const when = daysAgoLabel(latest.date);
     const icon = stalenessIcon(latest.date);

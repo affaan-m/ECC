@@ -97,7 +97,8 @@ function main() {
     : '';
 
   const projects = readJson(PROJECTS_FILE) || {};
-  const entry = projects[cwd];
+  const key = Object.hasOwn(projects, cwd) ? cwd : Object.keys(projects).find(p => resolve(p) === resolve(cwd));
+  const entry = projects[key];
 
   // Read previous session BEFORE overwriting current-session.json
   const prevSession = readJson(CURRENT_SESSION);
