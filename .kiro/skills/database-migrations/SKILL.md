@@ -72,21 +72,66 @@ CREATE INDEX CONCURRENTLY idx_users_email ON users (email);
 
 ### Renaming a Column (Zero-Downtime)
 
-Never rename directly in production. Use the expand-contract pattern:
+For a pure rename (both columns represent the same value), use expand-contract.
+Keep `username` authoritative until the read cutover:
 
 ```sql
--- Step 1: Add new column (migration 001)
+-- Step 1: Expand (migration 001)
 ALTER TABLE users ADD COLUMN display_name TEXT;
 
--- Step 2: Backfill data (migration 002, data migration)
-UPDATE users SET display_name = username WHERE display_name IS NULL;
+-- Step 2: Deploy app v2: read username, write BOTH columns atomically.
+-- Cover every INSERT/UPDATE path, including jobs, imports, and admin tools.
+-- Drain old-only writers and their in-flight transactions before backfilling.
 
--- Step 3: Update application code to read/write both columns
--- Deploy application changes
+-- Step 3: Backfill in bounded primary-key ranges (separate data migration).
+-- Example range; advance bounds to cover every existing id.
+BEGIN;
+SET TRANSACTION ISOLATION LEVEL READ COMMITTED;
+SET LOCAL lock_timeout = '2s';
+UPDATE users SET display_name = username
+WHERE id > 0 AND id <= 10000
+  AND display_name IS DISTINCT FROM username;
+COMMIT;
 
--- Step 4: Stop writing to old column, drop it (migration 003)
+-- Step 4: Validate AFTER all ranges complete, while dual writes continue.
+-- Require zero mismatches before switching reads.
+SELECT count(*) AS mismatched_rows FROM users
+WHERE display_name IS DISTINCT FROM username;
+
+-- Step 5: Deploy app v3: read display_name, still write BOTH columns.
+-- Keep dual writes throughout the rollback window.
+
+-- Step 6: After the rollback window, stop backfill/reconciliation workers.
+-- Transfer required constraints/indexes/dependencies to the new column.
+-- Make old-column constraints compatible with new-only INSERTs/UPDATEs.
+-- Deploy app v4 using ONLY display_name; drain all old-column users.
+
+-- Step 7: Contract in a separate migration after checking dependencies.
 ALTER TABLE users DROP COLUMN username;
 ```
+
+Commit each range independently; checkpoint only after commit and retry failed
+batch transactions. Choose bounds for the actual key space (including zero or
+negative IDs if present). `IS DISTINCT FROM` repairs stale non-NULL values and
+handles NULL pairs without repeatedly updating them. Do not fetch `username`
+into application memory and later write that stale snapshot: copy the target
+row's current value in the same `UPDATE`. At Read Committed, concurrent updates
+serialize on the row and PostgreSQL rechecks the predicate after waiting.
+
+Deploying dual writes does not repair earlier drift by itself. Finish draining
+old-only writers before backfill, and validate parity before read cutover. Once
+new-only writes start, the old column may be stale: do not restart this backfill
+or roll back to old readers without a reconciliation plan. The timeline below
+represents deployment gates, not guaranteed elapsed time or lock-free DDL.
+
+The [self-checking SQL example](examples/postgres-column-rename.sql) reproduces
+the stale-value failure and verifies reconciliation, retries, and NULL handling:
+
+```bash
+psql -X -v ON_ERROR_STOP=1 -f skills/database-migrations/examples/postgres-column-rename.sql
+```
+
+Reference: [PostgreSQL Read Committed behavior](https://www.postgresql.org/docs/current/transaction-iso.html#XACT-READ-COMMITTED).
 
 ### Removing a Column Safely
 
@@ -306,15 +351,17 @@ For critical production changes, follow the expand-contract pattern:
 ```
 Phase 1: EXPAND
   - Add new column/table (nullable or with default)
-  - Deploy: app writes to BOTH old and new
-  - Backfill existing data
+  - Deploy: app reads OLD, writes BOTH atomically
+  - Drain old-only writers and in-flight transactions
+  - Backfill in committed batches, then verify parity
 
 Phase 2: MIGRATE
   - Deploy: app reads from NEW, writes to BOTH
-  - Verify data consistency
+  - Monitor parity and retain dual writes throughout the rollback window
 
 Phase 3: CONTRACT
-  - Deploy: app only uses NEW
+  - End rollback window; stop backfill and migrate constraints/dependencies
+  - Deploy: app only uses NEW; drain all old-column users
   - Drop old column/table in separate migration
 ```
 
@@ -322,10 +369,12 @@ Phase 3: CONTRACT
 
 ```
 Day 1: Migration adds new_status column (nullable)
-Day 1: Deploy app v2 — writes to both status and new_status
-Day 2: Run backfill migration for existing rows
-Day 3: Deploy app v3 — reads from new_status only
-Day 7: Migration drops old status column
+Day 1: Deploy app v2 — reads status, writes both columns atomically
+Day 2: Drain old-only writers; backfill in batches; require zero mismatches
+Day 3: Deploy app v3 — reads new_status, still writes both columns
+Day 7: End rollback window; stop backfill; migrate constraints/dependencies
+Day 7: Deploy app v4 — only uses new_status; drain old-column users
+Later: Separate migration drops status after all contract gates pass
 ```
 
 ## Anti-Patterns
