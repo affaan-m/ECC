@@ -31,6 +31,19 @@ from llm.providers.reasoning import prefilled_reasoning_from_env, strip_reasonin
 logger = logging.getLogger(__name__)
 
 
+def _token_usage(response: dict[str, Any]) -> dict[str, int] | None:
+    """Expose measured counters using the OpenAI-compatible usage field names."""
+    fields = (("prompt_tokens", "prompt_eval_count"), ("completion_tokens", "eval_count"))
+    usage = {
+        name: value
+        for name, source in fields
+        if type(value := response.get(source)) is int and value >= 0
+    }
+    if len(usage) == len(fields):
+        return {**usage, "total_tokens": usage["prompt_tokens"] + usage["completion_tokens"]}
+    return usage or None
+
+
 def _messages_payload(messages: list[Message]) -> list[dict[str, Any]]:
     """Serialize messages, naming the tool each tool result answers.
 
@@ -190,6 +203,7 @@ class OllamaProvider(LLMProvider):
                 content=content,
                 tool_calls=tool_calls,
                 model=model,
+                usage=_token_usage(result),
                 stop_reason=result.get("done_reason"),
             )
         except Exception as e:
