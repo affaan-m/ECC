@@ -2,10 +2,16 @@
 
 from __future__ import annotations
 
+import asyncio
+import contextvars
 import inspect
 import logging
+import threading
+from collections import deque
 from collections.abc import Callable
+from concurrent.futures import Future
 from typing import Any
+from weakref import WeakValueDictionary
 
 from llm.core.interface import LLMError
 from llm.core.types import (
@@ -32,6 +38,7 @@ def _generic_failure(tool_call: ToolCall) -> ToolResult:
         content=GENERIC_TOOL_FAILURE.format(name=tool_call.name),
         is_error=True,
     )
+
 
 ToolFunc = Callable[..., Any]
 
@@ -120,6 +127,84 @@ class ToolExecutor:
         return results
 
 
+class _ProviderGate:
+    def __init__(self, provider: Any) -> None:
+        self.provider = provider
+        self.lock = threading.Lock()
+        self.pending: deque[Future[None]] = deque()
+
+    def enqueue(self) -> Future[None]:
+        ticket: Future[None] = Future()
+        with self.lock:
+            self.pending.append(ticket)
+            if len(self.pending) == 1:
+                ticket.set_result(None)
+        return ticket
+
+    def release(self, ticket: Future[None]) -> None:
+        with self.lock:
+            was_first = self.pending[0] is ticket
+            self.pending.remove(ticket)
+            if not ticket.done():
+                ticket.cancel()
+            if was_first and self.pending:
+                self.pending[0].set_result(None)
+
+
+# Identity keys support unhashable/custom providers without modifying their
+# objects. Workers retain their gate (and provider) until generate finishes;
+# weak values release unused gates instead of keeping providers alive forever.
+_provider_gates: WeakValueDictionary[int, _ProviderGate] = WeakValueDictionary()
+_provider_gates_lock = threading.Lock()
+
+
+async def _generate_serially(provider: Any, input: LLMInput) -> LLMOutput:
+    with _provider_gates_lock:
+        gate = _provider_gates.get(id(provider))
+        if gate is None:
+            gate = _ProviderGate(provider)
+            _provider_gates[id(provider)] = gate
+
+    ticket = gate.enqueue()
+    request_lock = threading.Lock()
+    cancelled = False
+    started = False
+
+    def generate() -> LLMOutput:
+        nonlocal started
+        with request_lock:
+            if cancelled:
+                raise asyncio.CancelledError
+            started = True
+        try:
+            output: LLMOutput = gate.provider.generate(input)
+            return output
+        finally:
+            # Only the actual worker may release a request that has started.
+            gate.release(ticket)
+
+    def consume_exception(completed: asyncio.Future[LLMOutput]) -> None:
+        # A cancelled caller may no longer be awaiting a provider failure.
+        if not completed.cancelled():
+            completed.exception()
+
+    try:
+        # Cross-loop futures queue callers without occupying executor threads.
+        await asyncio.shield(asyncio.wrap_future(ticket))
+        worker: asyncio.Future[LLMOutput] = asyncio.get_running_loop().run_in_executor(
+            None, contextvars.copy_context().run, generate
+        )
+        worker.add_done_callback(consume_exception)
+        return await asyncio.shield(worker)
+    finally:
+        with request_lock:
+            cancelled = True
+            if not started:
+                # An executor can discard a submitted job during shutdown. Return
+                # its permit now; a late worker must not generate or release again.
+                gate.release(ticket)
+
+
 class ReActAgent:
     def __init__(
         self,
@@ -145,9 +230,11 @@ class ReActAgent:
             )
 
             try:
-                output: LLMOutput = self.provider.generate(input_copy)
+                output = await _generate_serially(self.provider, input_copy)
             except LLMError as e:
-                logger.warning("Provider failed during agent run: %s", e.code or type(e).__name__)
+                logger.warning(
+                    "Provider failed during agent run: %s", e.code or type(e).__name__
+                )
                 return LLMOutput(
                     content=f"Provider error: {e.code or type(e).__name__}",
                     stop_reason="provider_error",
