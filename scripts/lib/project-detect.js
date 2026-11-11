@@ -303,10 +303,10 @@ function getGoDeps(projectDir) {
       }
       if (!directive && !inRequireBlock) continue;
       const requirement = (directive ? directive[1] : line)
-        .match(/^(?:"((?:[^"\\]|\\.)+)"[ \t]*|`([^`]+)`[ \t]*|([^"`\s]+)[ \t]+)\S+/);
+        .match(/^(?:"((?:[^"\\]|\\.)+)"[ \t]*|([^"'`\s]+)[ \t]+)\S+/);
       if (!requirement) continue;
       const modulePath = requirement[1] === undefined
-        ? requirement[2] || requirement[3]
+        ? requirement[2]
         : decodeGoQuotedPath(requirement[1]);
       if (modulePath) deps.push(modulePath);
     }
