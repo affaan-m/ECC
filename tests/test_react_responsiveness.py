@@ -14,6 +14,8 @@ from llm.core.interface import LLMError
 from llm.core.types import LLMInput, LLMOutput, Message, Role
 from llm.tools import ReActAgent, ToolExecutor
 
+pytestmark = pytest.mark.unit
+
 
 def _input() -> LLMInput:
     return LLMInput(messages=[Message(role=Role.USER, content="hello")])
