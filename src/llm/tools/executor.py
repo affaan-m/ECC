@@ -166,17 +166,21 @@ async def _generate_serially(provider: Any, input: LLMInput) -> LLMOutput:
             _provider_gates[id(provider)] = gate
 
     ticket = gate.enqueue()
-    cancelled = threading.Event()
-    submitted = False
+    request_lock = threading.Lock()
+    cancelled = False
+    started = False
 
     def generate() -> LLMOutput:
-        try:
-            if cancelled.is_set():
+        nonlocal started
+        with request_lock:
+            if cancelled:
                 raise asyncio.CancelledError
+            started = True
+        try:
             output: LLMOutput = gate.provider.generate(input)
             return output
         finally:
-            # Only the actual worker may release a submitted request's turn.
+            # Only the actual worker may release a request that has started.
             gate.release(ticket)
 
     def consume_exception(completed: asyncio.Future[LLMOutput]) -> None:
@@ -190,16 +194,15 @@ async def _generate_serially(provider: Any, input: LLMInput) -> LLMOutput:
         worker: asyncio.Future[LLMOutput] = asyncio.get_running_loop().run_in_executor(
             None, contextvars.copy_context().run, generate
         )
-        submitted = True
         worker.add_done_callback(consume_exception)
         return await asyncio.shield(worker)
-    except asyncio.CancelledError:
-        cancelled.set()
-        raise
     finally:
-        if not submitted:
-            # Removing a queued cancellation cannot release its active predecessor.
-            gate.release(ticket)
+        with request_lock:
+            cancelled = True
+            if not started:
+                # An executor can discard a submitted job during shutdown. Return
+                # its permit now; a late worker must not generate or release again.
+                gate.release(ticket)
 
 
 class ReActAgent:
