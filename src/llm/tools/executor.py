@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+import asyncio
 import inspect
 import logging
+import threading
 from collections.abc import Callable
 from typing import Any
+from weakref import WeakValueDictionary
 
 from llm.core.interface import LLMError
 from llm.core.types import (
@@ -120,6 +123,37 @@ class ToolExecutor:
         return results
 
 
+class _ProviderGate:
+    def __init__(self, provider: Any) -> None:
+        self.provider = provider
+        self.lock = threading.Lock()
+
+
+# Identity keys support unhashable/custom providers without modifying their
+# objects. Workers retain their gate (and provider) until generate finishes;
+# weak values release unused gates instead of keeping providers alive forever.
+_provider_gates: WeakValueDictionary[int, _ProviderGate] = WeakValueDictionary()
+_provider_gates_lock = threading.Lock()
+
+
+def _generate_serially(
+    provider: Any, input: LLMInput, cancelled: threading.Event
+) -> LLMOutput:
+    with _provider_gates_lock:
+        gate = _provider_gates.get(id(provider))
+        if gate is None:
+            gate = _ProviderGate(provider)
+            _provider_gates[id(provider)] = gate
+
+    # The worker owns this lock, so cancelling its await cannot let a second
+    # request reuse mutable provider state while the first request is still live.
+    with gate.lock:
+        if cancelled.is_set():
+            raise asyncio.CancelledError
+        output: LLMOutput = gate.provider.generate(input)
+        return output
+
+
 class ReActAgent:
     def __init__(
         self,
@@ -144,8 +178,14 @@ class ReActAgent:
                 tools=tools,
             )
 
+            cancelled = threading.Event()
             try:
-                output: LLMOutput = self.provider.generate(input_copy)
+                output = await asyncio.to_thread(
+                    _generate_serially, self.provider, input_copy, cancelled
+                )
+            except asyncio.CancelledError:
+                cancelled.set()
+                raise
             except LLMError as e:
                 logger.warning("Provider failed during agent run: %s", e.code or type(e).__name__)
                 return LLMOutput(
