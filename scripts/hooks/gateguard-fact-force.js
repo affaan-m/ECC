@@ -123,7 +123,13 @@ const ECC_ENABLE_VALUES = new Set(['1', 'true', 'on', 'enabled', 'enable', 'yes'
 // `echo dd if=x` — which runs no dd at all — was gated. The boundary decided
 // the verdict instead of the command position, so dd moved to isDestructiveDd()
 // alongside the other token-based detectors (#2642).
-const DESTRUCTIVE_SQL = /\b(drop\s+table|delete\s+from|truncate)\b/i;
+// DROP DATABASE / DROP SCHEMA remove at least as much data as DROP TABLE, and
+// ALTER TABLE ... DROP COLUMN discards a column's data across every row. The
+// DROP COLUMN arm is bounded by `;` so it cannot join two separate statements,
+// and it requires the explicit COLUMN keyword so `ALTER COLUMN ... DROP
+// DEFAULT` / `DROP NOT NULL` (metadata-only changes) stay passive.
+const DESTRUCTIVE_SQL =
+  /\b(drop\s+(?:table|database|schema)|delete\s+from|truncate|alter\s+table\b[^;]*?\bdrop\s+column)\b/i;
 
 // Operator-supplied additional destructive patterns. Lazily compiled from
 // `GATEGUARD_BASH_EXTRA_DESTRUCTIVE` (regex source) on first use, then

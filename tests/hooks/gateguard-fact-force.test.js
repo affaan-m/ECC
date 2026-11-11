@@ -2249,6 +2249,41 @@ function runTests() {
   else failed++;
 
   if (
+    test('denies DROP DATABASE, DROP SCHEMA and ALTER TABLE ... DROP COLUMN passed to SQL clients', () => {
+      // Each of these destroys at least as much data as DROP TABLE.
+      expectDestructiveDeny('psql -c "DROP DATABASE prod"', 'psql drop database');
+      expectDestructiveDeny('psql -c "drop database if exists app_dev"', 'psql drop database if exists');
+      expectDestructiveDeny('mysql -e "DROP DATABASE app"', 'mysql drop database');
+      expectDestructiveDeny('psql -c "DROP SCHEMA public CASCADE"', 'psql drop schema cascade');
+      expectDestructiveDeny('mysql -e "DROP SCHEMA app"', 'mysql drop schema');
+      expectDestructiveDeny('psql -c "ALTER TABLE users DROP COLUMN email"', 'psql alter table drop column');
+      expectDestructiveDeny(
+        'psql -c "ALTER TABLE IF EXISTS ONLY public.users DROP COLUMN IF EXISTS email CASCADE"',
+        'psql alter table if exists only drop column'
+      );
+      expectDestructiveDeny('sqlite3 app.db "ALTER TABLE users DROP COLUMN email"', 'sqlite3 drop column');
+      expectDestructiveDeny('sudo -u postgres psql -c "drop database prod"', 'sudo psql drop database');
+      expectDestructiveDeny('psql -c "drop database prod"; echo done', 'drop database before a separator');
+    })
+  )
+    passed++;
+  else failed++;
+
+  if (
+    test('allows non-destructive ALTER TABLE forms and quoted DROP DATABASE mentions', () => {
+      expectAllow('psql -c "ALTER TABLE users ALTER COLUMN email DROP DEFAULT"', 'alter column drop default');
+      expectAllow('psql -c "ALTER TABLE users ALTER COLUMN email DROP NOT NULL"', 'alter column drop not null');
+      expectAllow('psql -c "ALTER TABLE users ADD COLUMN note text"', 'alter table add column');
+      expectAllow('psql -c "ALTER TABLE users ADD COLUMN note text; SELECT \'drop column\'"', 'drop column in a literal');
+      expectAllow('psql -c "SELECT \'drop database\' AS label"', 'drop database in a literal');
+      expectAllow('git commit -m "docs: explain drop database recovery"', 'drop database in -m');
+      expectAllow('echo "drop schema public cascade"', 'echo drop schema mention');
+    })
+  )
+    passed++;
+  else failed++;
+
+  if (
     test('denies quoted destructive SQL through sudo/env wrappers', () => {
       expectDestructiveDeny('sudo -u postgres psql -c "drop table users"', 'sudo -u psql');
       expectDestructiveDeny('env PGUSER=postgres psql -c "drop table users"', 'env psql');
