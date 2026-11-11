@@ -454,6 +454,33 @@ src/main.ts
   // getSessionById tests
   console.log('\ngetSessionById:');
 
+  if (test('getSessionById prefers an exact ID over newer prefix matches', () => {
+    const fixtures = [
+      ['2026-03-01-frontend-session.tmp', 1000],
+      ['2026-03-02-frontend-session.tmp', 2000],
+      ['2026-03-03-frontend-2-session.tmp', 3000]
+    ];
+    const files = fixtures.map(([filename, mtime]) => {
+      const file = path.join(tmpCanonicalSessionsDir, filename);
+      fs.writeFileSync(file, `# ${filename}\n`);
+      fs.utimesSync(file, mtime, mtime);
+      return file;
+    });
+    const savedAgentDataHome = process.env.ECC_AGENT_DATA_HOME;
+    process.env.ECC_AGENT_DATA_HOME = path.join(tmpHome, '.claude');
+    try {
+      const exact = sessionManager.getSessionById('frontend', true);
+      assert.strictEqual(exact.filename, fixtures[1][0]);
+      assert.ok(exact.content.includes(fixtures[1][0]));
+      assert.strictEqual(sessionManager.getSessionById('front').filename, fixtures[2][0]);
+      assert.strictEqual(sessionManager.getSessionById(fixtures[0][0]).filename, fixtures[0][0]);
+    } finally {
+      if (savedAgentDataHome === undefined) delete process.env.ECC_AGENT_DATA_HOME;
+      else process.env.ECC_AGENT_DATA_HOME = savedAgentDataHome;
+      for (const file of files) fs.unlinkSync(file);
+    }
+  })) passed++; else failed++;
+
   if (test('getSessionById finds by short ID prefix', () => {
     const result = sessionManager.getSessionById('abcd1234');
     assert.ok(result, 'Should find session by exact short ID');

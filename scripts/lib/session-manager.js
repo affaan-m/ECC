@@ -167,9 +167,11 @@ function buildSessionRecord(sessionPath, metadata) {
   };
 }
 
-function sessionMatchesId(metadata, normalizedSessionId) {
+function sessionMatchesId(metadata, normalizedSessionId, exact = false) {
   const filename = metadata.filename;
-  const shortIdMatch = metadata.shortId !== 'no-id' && metadata.shortId.startsWith(normalizedSessionId);
+  const shortIdMatch = metadata.shortId !== 'no-id' && (exact
+    ? metadata.shortId === normalizedSessionId
+    : metadata.shortId.startsWith(normalizedSessionId));
   const filenameMatch = filename === normalizedSessionId || filename === `${normalizedSessionId}.tmp`;
   const noIdMatch = metadata.shortId === 'no-id' && filename === `${normalizedSessionId}-session.tmp`;
 
@@ -216,7 +218,11 @@ function getMatchingSessionCandidates(normalizedSessionId) {
     }
   }
 
-  matches.sort((a, b) => b.modifiedTime - a.modifiedTime);
+  // All exact aliases share priority; keep newest-first ordering for ties.
+  matches.sort((a, b) =>
+    Number(sessionMatchesId(b, normalizedSessionId, true)) - Number(sessionMatchesId(a, normalizedSessionId, true)) ||
+    b.modifiedTime - a.modifiedTime
+  );
   return matches;
 }
 
