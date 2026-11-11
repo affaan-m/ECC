@@ -929,6 +929,22 @@ pub async fn drain_inbox(
     use_worktree: bool,
     limit: usize,
 ) -> Result<Vec<InboxDrainOutcome>> {
+    // Explicit CLI/TUI recovery is operator-directed and may target terminal
+    // sessions. Automatic sweeps have separate, stricter eligibility.
+    drain_inbox_with_native_live_check(
+        db, cfg, lead_id, agent_type, use_worktree, limit, false,
+    ).await
+}
+
+async fn drain_inbox_with_native_live_check(
+    db: &StateStore,
+    cfg: &Config,
+    lead_id: &str,
+    agent_type: &str,
+    use_worktree: bool,
+    limit: usize,
+    require_live: bool,
+) -> Result<Vec<InboxDrainOutcome>> {
     let runner_program =
         std::env::current_exe().context("Failed to resolve ECC executable path")?;
     let lead = resolve_session(db, lead_id)?;
@@ -937,7 +953,7 @@ pub async fn drain_inbox(
     let mut outcomes = Vec::new();
 
     for message in messages {
-        if !matches!(db.get_session(&lead.id)?.map(|s| s.state),
+        if require_live && !matches!(db.session_state_exact(&lead.id)?,
                      Some(SessionState::Running | SessionState::Idle)) {
             break;
         }
@@ -971,7 +987,7 @@ pub async fn drain_inbox(
         });
         // A lead that finished during the awaited assignment may not authorize
         // further unread historical handoffs on this pass.
-        if !matches!(db.get_session(&lead.id)?.map(|s| s.state),
+        if require_live && !matches!(db.session_state_exact(&lead.id)?,
                      Some(SessionState::Running | SessionState::Idle)) {
             break;
         }
@@ -1005,13 +1021,14 @@ pub async fn auto_dispatch_backlog(
     let mut outcomes = Vec::new();
 
     for (lead_id, unread_count) in targets {
-        let routed = drain_inbox(
+        let routed = drain_inbox_with_native_live_check(
             db,
             cfg,
             &lead_id,
             agent_type,
             use_worktree,
             cfg.auto_dispatch_limit_per_session,
+            true,
         )
         .await?;
 
@@ -7743,6 +7760,47 @@ mod tests {
             message.msg_type == "task_handoff" && message.content.contains("Review auth changes")
         }));
 
+        Ok(())
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn manual_drain_inbox_preserves_terminal_and_pending_recovery() -> Result<()> {
+        for (index, state) in [
+            SessionState::Completed, SessionState::Stopped, SessionState::Pending,
+        ].into_iter().enumerate() {
+            let tempdir = TestDir::new(&format!("manual-recovery-state-{index}"))?;
+            let repo_root = tempdir.path().join("repo");
+            init_git_repo(&repo_root)?;
+            let mut cfg = build_config(tempdir.path());
+            cfg.auto_create_worktrees = false;
+            cfg.max_parallel_sessions = 2;
+            let db = StateStore::open(&cfg.db_path)?;
+            let now = Utc::now();
+            db.insert_session(&Session {
+                id: "manual-lead".to_string(),
+                task: "previous finished task".to_string(),
+                project: "workspace".to_string(),
+                task_group: "general".to_string(),
+                agent_type: "claude".to_string(),
+                working_dir: repo_root.clone(),
+                state,
+                pid: None,
+                worktree: None,
+                created_at: now - Duration::minutes(3),
+                updated_at: now - Duration::minutes(3),
+                last_heartbeat_at: now - Duration::minutes(3),
+                metrics: SessionMetrics::default(),
+            })?;
+            db.send_message(
+                "operator", "manual-lead",
+                r#"{"task":"authorized human recovery","priority":"normal"}"#,
+                "task_handoff",
+            )?;
+            let routed = drain_inbox(&db, &cfg, "manual-lead", "claude", false, 1).await?;
+            assert_eq!(routed.len(), 1, "manual recovery must not be silently skipped");
+            assert!(assignment_action_routes_work(routed[0].action));
+            assert_eq!(db.unread_task_handoff_count("manual-lead")?, 0);
+        }
         Ok(())
     }
 
