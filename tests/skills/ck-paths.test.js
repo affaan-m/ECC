@@ -56,6 +56,12 @@ function runDocumentedSave(marker, placeholder, payload, ctx) {
   return spawnSync('bash', ['-c', script], { cwd: ctx.project, env: ctx.env, encoding: 'utf8' });
 }
 
+function runCk(ctx, script, args, env, payload) {
+  return spawnSync(process.execPath, [path.join(SKILL_DIR, script), ...args], {
+    cwd: ctx.project, env, input: payload === undefined ? '' : JSON.stringify(payload), encoding: 'utf8',
+  });
+}
+
 async function runTests() {
   console.log('\n=== Testing ck path handling ===\n');
 
@@ -134,6 +140,88 @@ async function runTests() {
       fs.rmSync(ctx.root, { recursive: true, force: true });
     }
   })) passed++; else failed++;
+
+  if (await test('SessionStart does not brief a registration that does not match the directory', async () => {
+    const ctx = tempEnv();
+    try {
+      const ckHome = path.join(ctx.home, '.claude', 'ck');
+      fs.mkdirSync(path.join(ckHome, 'contexts', 'other'), { recursive: true });
+      fs.writeFileSync(path.join(ckHome, 'contexts', 'other', 'context.json'), JSON.stringify({ version: 2, name: 'other', sessions: [] }));
+      fs.writeFileSync(path.join(ckHome, 'projects.json'), JSON.stringify({ undefined: { name: 'other', contextDir: 'other' } }));
+      const hook = runCk(ctx, 'hooks/session-start.mjs', [], ctx.env, {});
+      assert.strictEqual(hook.status, 0, hook.stderr);
+      assert.ok(!JSON.parse(hook.stdout).additionalContext.includes('ck: other |'), 'SessionStart briefed an unrelated project');
+    } finally {
+      fs.rmSync(ctx.root, { recursive: true, force: true });
+    }
+  })) passed++; else failed++;
+
+  if (process.platform !== 'win32') {
+    console.log('  - skipped Git Bash and PowerShell path form tests off Windows');
+  } else {
+    if (await test('a project registered from Git Bash (C:/...) is found from PowerShell (C:\\...) and in another letter case', async () => {
+      const ctx = tempEnv();
+      try {
+        const gitBashPath = ctx.project.replaceAll('\\', '/');
+        const { PWD: _pwd, ...powerShellEnv } = ctx.env;
+        const init = runCk(ctx, 'commands/save.mjs', ['--init'], { ...ctx.env, PWD: gitBashPath }, { name: 'bobs-app', path: gitBashPath });
+        assert.strictEqual(init.status, 0, init.stdout + init.stderr);
+
+        for (const [label, env] of [['PowerShell', powerShellEnv], ['lower case', { ...ctx.env, PWD: ctx.project.toLowerCase() }]]) {
+          assert.strictEqual(JSON.parse(runCk(ctx, 'commands/init.mjs', [], env).stdout).alreadyRegistered, true, `${label}: init did not find the project`);
+          const save = runCk(ctx, 'commands/save.mjs', [], env, { summary: `saved from ${label}`, leftOff: `${label} parser` });
+          assert.strictEqual(save.status, 0, save.stdout + save.stderr);
+          assert.ok(runCk(ctx, 'commands/list.mjs', [], env).stdout.includes('bobs-app <-'), `${label}: list does not mark the current project`);
+          const resume = runCk(ctx, 'commands/resume.mjs', [], env);
+          assert.strictEqual(resume.status, 0, resume.stdout + resume.stderr);
+          assert.ok(resume.stdout.includes(`${label} parser`), `${label}: resume did not show the saved session`);
+          assert.ok(!resume.stdout.includes('→ cd'), `${label}: resume asks to cd into the current directory`);
+          const hook = runCk(ctx, 'hooks/session-start.mjs', [], env, {});
+          assert.ok(JSON.parse(hook.stdout).additionalContext.includes('ck: bobs-app |'), `${label}: SessionStart did not find the project`);
+        }
+
+        const reinit = runCk(ctx, 'commands/save.mjs', ['--init'], powerShellEnv, { name: 'bobs-app', path: ctx.project });
+        assert.strictEqual(reinit.status, 0, reinit.stdout + reinit.stderr);
+        const projects = JSON.parse(fs.readFileSync(path.join(ctx.home, '.claude', 'ck', 'projects.json'), 'utf8'));
+        assert.deepStrictEqual(Object.keys(projects), [gitBashPath]);
+      } finally {
+        fs.rmSync(ctx.root, { recursive: true, force: true });
+      }
+    })) passed++; else failed++;
+
+    if (await test('when both spellings of a folder are registered, the exact one is used', async () => {
+      const ctx = tempEnv();
+      try {
+        const ckHome = path.join(ctx.home, '.claude', 'ck');
+        const gitBashPath = ctx.project.replaceAll('\\', '/');
+        const { PWD: _pwd, ...powerShellEnv } = ctx.env;
+        const projects = {};
+        for (const [name, projectPath] of [['git-bash', gitBashPath], ['powershell', ctx.project]]) {
+          projects[projectPath] = { name, contextDir: name, lastUpdated: '2026-01-01' };
+          fs.mkdirSync(path.join(ckHome, 'contexts', name), { recursive: true });
+          fs.writeFileSync(path.join(ckHome, 'contexts', name, 'context.json'), JSON.stringify({ version: 2, name, path: projectPath, sessions: [] }));
+        }
+        fs.writeFileSync(path.join(ckHome, 'projects.json'), JSON.stringify(projects));
+
+        const save = runCk(ctx, 'commands/save.mjs', [], powerShellEnv, { summary: 'saved from PowerShell' });
+        assert.strictEqual(save.status, 0, save.stdout + save.stderr);
+        const sessions = name => JSON.parse(fs.readFileSync(path.join(ckHome, 'contexts', name, 'context.json'), 'utf8')).sessions.length;
+        assert.deepStrictEqual([sessions('git-bash'), sessions('powershell')], [0, 1]);
+        const list = runCk(ctx, 'commands/list.mjs', [], powerShellEnv).stdout;
+        assert.ok(list.includes('powershell <-') && !list.includes('git-bash <-'), 'list marks the wrong registration');
+        assert.ok(runCk(ctx, 'commands/resume.mjs', [], powerShellEnv).stdout.includes('RESUMING: powershell'), 'resume picked the other registration');
+        const hook = runCk(ctx, 'hooks/session-start.mjs', [], powerShellEnv, {});
+        assert.ok(JSON.parse(hook.stdout).additionalContext.includes('ck: powershell |'), 'SessionStart picked the other registration');
+
+        const forget = runCk(ctx, 'commands/forget.mjs', [], powerShellEnv);
+        assert.strictEqual(forget.status, 0, forget.stdout + forget.stderr);
+        assert.deepStrictEqual(fs.readdirSync(path.join(ckHome, 'contexts')), ['git-bash']);
+        assert.deepStrictEqual(Object.keys(JSON.parse(fs.readFileSync(path.join(ckHome, 'projects.json'), 'utf8'))), [gitBashPath]);
+      } finally {
+        fs.rmSync(ctx.root, { recursive: true, force: true });
+      }
+    })) passed++; else failed++;
+  }
 
   console.log(`\nPassed: ${passed}`);
   console.log(`Failed: ${failed}`);

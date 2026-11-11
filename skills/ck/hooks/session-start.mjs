@@ -19,6 +19,7 @@ import { resolve, dirname } from 'path';
 import { homedir } from 'os';
 import { spawnSync } from 'child_process';
 import { fileURLToPath } from 'url';
+import { findProject } from '../commands/shared.mjs';
 
 const CK_HOME         = resolve(homedir(), '.claude', 'ck');
 const PROJECTS_FILE   = resolve(CK_HOME, 'projects.json');
@@ -97,7 +98,7 @@ function main() {
     : '';
 
   const projects = readJson(PROJECTS_FILE) || {};
-  const entry = projects[cwd];
+  const entry = findProject(projects, cwd);
 
   // Read previous session BEFORE overwriting current-session.json
   const prevSession = readJson(CURRENT_SESSION);

@@ -8,7 +8,7 @@
  * exit 0: success  exit 1: no projects
  */
 
-import { readProjects, loadContext, today, renderListTable } from './shared.mjs';
+import { readProjects, findProject, loadContext, today, renderListTable } from './shared.mjs';
 
 const cwd = process.env.PWD || process.cwd();
 const projects = readProjects();
@@ -33,7 +33,7 @@ const enriched = entries
   })
   .sort((a, b) => a.contextDir.localeCompare(b.contextDir));
 
-const table = renderListTable(enriched, cwd, today());
+const table = renderListTable(enriched, findProject(projects, cwd)?.path ?? cwd, today());
 console.log('');
 console.log(table);
 console.log('');
