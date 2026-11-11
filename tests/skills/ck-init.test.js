@@ -77,6 +77,23 @@ test('initializing a registered project under a new name keeps its context direc
   const context = JSON.parse(fs.readFileSync(path.join(contextsDir, 'app', 'context.json'), 'utf8'));
   assert.strictEqual(context.displayName, 'App Server');
   assert.deepStrictEqual(context.sessions.map(s => s.summary), ['built the parser']);
+
+  const forget = run(home, project, 'forget.mjs', ['App Server']);
+  assert.strictEqual(forget.status, 0, forget.stdout + forget.stderr);
+  assert.deepStrictEqual(fs.readdirSync(contextsDir), []);
+});
+
+test('initializing a registered project whose context cannot be read changes nothing', home => {
+  const project = path.join(home, 'app');
+  fs.mkdirSync(project);
+  runOk(home, project, 'save.mjs', ['--init'], { name: 'app', path: project });
+  const contextFile = path.join(home, '.claude', 'ck', 'contexts', 'app', 'context.json');
+  const damaged = '{"version": 2, "sessions": [{"summary": "built the parser"}';
+  fs.writeFileSync(contextFile, damaged);
+
+  const result = run(home, project, 'save.mjs', ['--init'], JSON.stringify({ name: 'app', path: project }));
+  assert.strictEqual(result.status, 1, result.stdout + result.stderr);
+  assert.strictEqual(fs.readFileSync(contextFile, 'utf8'), damaged);
 });
 
 console.log(`\nPassed: ${passed}`);

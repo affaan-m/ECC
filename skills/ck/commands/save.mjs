@@ -16,11 +16,11 @@
  * exit 0: success  exit 1: error
  */
 
-import { readFileSync, mkdirSync, writeFileSync } from 'fs';
+import { readFileSync, mkdirSync, writeFileSync, existsSync } from 'fs';
 import { resolve } from 'path';
 import { createHash } from 'crypto';
 import {
-  readProjects, writeProjects, loadContext, saveContext,
+  readProjects, writeProjects, loadContext, saveContext, contextPath,
   today, shortId, gitSummary, nativeMemoryDir,
   CURRENT_SESSION,
 } from './shared.mjs';
@@ -55,6 +55,10 @@ if (isInit) {
   const projects = readProjects();
   const registered = projects[projectPath];
   const previous = registered ? loadContext(registered.contextDir) : null;
+  if (registered && !previous && existsSync(contextPath(registered.contextDir))) {
+    console.log(`ck init: ${contextPath(registered.contextDir)} cannot be read. Nothing was changed; fix or move that file, then run init again.`);
+    process.exit(1);
+  }
 
   // Derive contextDir (lowercase, spaces→dashes, deduplicate). Names with no
   // ASCII letters/digits (e.g. "Проект") fall back to a stable path hash, so
