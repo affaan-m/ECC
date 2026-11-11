@@ -87,3 +87,59 @@ test('accepts adjacent block punctuation and raw string tokens', () => {
     assert.deepEqual(getGoDeps(dir), ['github.com/gin-gonic/gin', 'github.com/labstack/echo/v4']);
   });
 });
+
+test('decodes Go escapes in quoted module paths before framework detection', () => {
+  for (const escaped of [String.raw`\x67`, String.raw`\147`, String.raw`\u0067`, String.raw`\U00000067`]) {
+    for (const newline of ['\n', '\r\n']) {
+      withGoMod([
+        'module example.com/app',
+        `require "github.com/gin-gonic/${escaped}in" "\\x761.10.0"`,
+        'require(',
+        String.raw`  "github.com/labstack/\x65cho/v4" v4.13.0`,
+        ')',
+      ].join(newline), dir => {
+        assert.deepEqual(getGoDeps(dir), ['github.com/gin-gonic/gin', 'github.com/labstack/echo/v4']);
+        assert.deepEqual(detectProjectType(dir).frameworks, ['gin', 'echo']);
+      });
+    }
+  }
+});
+
+test('rejects malformed quoted escapes without losing later requirements', () => {
+  for (const escaped of [String.raw`\q`, String.raw`\x6`, String.raw`\777`, String.raw`\uD800`, String.raw`\U00110000`]) {
+    withGoMod([
+      'module example.com/app',
+      `require "github.com/gin-gonic/${escaped}in" v1.10.0`,
+      'require github.com/labstack/echo/v4 v4.13.0',
+    ].join('\n'), dir => {
+      assert.deepEqual(getGoDeps(dir), ['github.com/labstack/echo/v4']);
+    });
+  }
+});
+
+test('preserves raw quoted paths and decodes byte escapes as UTF-8', () => {
+  withGoMod([
+    'module example.com/app',
+    'require `github.com/gin-gonic/\\x67in` v1.10.0',
+    String.raw`require "example.com/\xc3\xa9" v1.0.0`,
+    String.raw`require "\ufeffgithub.com/gin-gonic/gin" v1.10.0`,
+  ].join('\n'), dir => {
+    assert.deepEqual(getGoDeps(dir), [String.raw`github.com/gin-gonic/\x67in`, 'example.com/é', '\ufeffgithub.com/gin-gonic/gin']);
+    assert.deepEqual(detectProjectType(dir).frameworks, []);
+  });
+});
+
+test('accepts adjacent quoted module and version tokens', () => {
+  for (const newline of ['\n', '\r\n']) {
+    withGoMod([
+      'module example.com/app',
+      String.raw`require "github.com/gin-gonic/\x67in""v1.10.0"`,
+      'require(',
+      '  "github.com/labstack/echo/v4""v4.13.0"',
+      ')',
+    ].join(newline), dir => {
+      assert.deepEqual(getGoDeps(dir), ['github.com/gin-gonic/gin', 'github.com/labstack/echo/v4']);
+      assert.deepEqual(detectProjectType(dir).frameworks, ['gin', 'echo']);
+    });
+  }
+});
