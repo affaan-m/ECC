@@ -88,12 +88,13 @@ test('initializing a registered project whose context cannot be read changes not
   fs.mkdirSync(project);
   runOk(home, project, 'save.mjs', ['--init'], { name: 'app', path: project });
   const contextFile = path.join(home, '.claude', 'ck', 'contexts', 'app', 'context.json');
-  const damaged = '{"version": 2, "sessions": [{"summary": "built the parser"}';
-  fs.writeFileSync(contextFile, damaged);
+  for (const damaged of ['{"version": 2, "sessions": [{"summary": "built the parser"}', '[{"summary": "built the parser"}]']) {
+    fs.writeFileSync(contextFile, damaged);
 
-  const result = run(home, project, 'save.mjs', ['--init'], JSON.stringify({ name: 'app', path: project }));
-  assert.strictEqual(result.status, 1, result.stdout + result.stderr);
-  assert.strictEqual(fs.readFileSync(contextFile, 'utf8'), damaged);
+    const result = run(home, project, 'save.mjs', ['--init'], JSON.stringify({ name: 'app', path: project }));
+    assert.strictEqual(result.status, 1, result.stdout + result.stderr);
+    assert.strictEqual(fs.readFileSync(contextFile, 'utf8'), damaged);
+  }
 });
 
 console.log(`\nPassed: ${passed}`);

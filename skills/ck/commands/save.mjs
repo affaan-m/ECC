@@ -55,8 +55,8 @@ if (isInit) {
   const projects = readProjects();
   const registered = projects[projectPath];
   const previous = registered ? loadContext(registered.contextDir) : null;
-  if (registered && !previous && existsSync(contextPath(registered.contextDir))) {
-    console.log(`ck init: ${contextPath(registered.contextDir)} cannot be read. Nothing was changed; fix or move that file, then run init again.`);
+  if (registered && !Array.isArray(previous?.sessions) && existsSync(contextPath(registered.contextDir))) {
+    console.log(`ck init: ${contextPath(registered.contextDir)} is not a readable ck context. Nothing was changed; fix or move that file, then run init again.`);
     process.exit(1);
   }
 
