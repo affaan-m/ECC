@@ -32,7 +32,8 @@ test('a completed no-workflow decision is distinct from a pending proposal', () 
   const first = resolveTaskContext({ repoRoot, task: { ...task('feature'), noWorkflow: true } });
   const next = resolveTaskContext({ repoRoot, task: task('feature'), previous: first.receipt, load: true });
   assert.equal(first.receipt.decision, 'none');
-  assert.equal(next.reused, true);
+  assert.equal(next.reused, false);
+  assert.equal(next.receipt.decision, 'pending');
   assert.deepEqual(next.loadedIds, []);
 }));
 
