@@ -167,7 +167,8 @@ function buildSessionRecord(sessionPath, metadata) {
   };
 }
 
-function sessionMatchesId(metadata, normalizedSessionId, exact = false) {
+/** Match allowed lookup kinds, optionally excluding short-ID prefix matches. */
+function sessionMatchesId(metadata, normalizedSessionId, exact = false, matchBy = 'auto') {
   const filename = metadata.filename;
   const shortIdMatch = metadata.shortId !== 'no-id' && (exact
     ? metadata.shortId === normalizedSessionId
@@ -175,10 +176,12 @@ function sessionMatchesId(metadata, normalizedSessionId, exact = false) {
   const filenameMatch = filename === normalizedSessionId || filename === `${normalizedSessionId}.tmp`;
   const noIdMatch = metadata.shortId === 'no-id' && filename === `${normalizedSessionId}-session.tmp`;
 
-  return shortIdMatch || filenameMatch || noIdMatch;
+  return (matchBy !== 'filename' && (shortIdMatch || noIdMatch)) ||
+    (matchBy !== 'id' && filenameMatch);
 }
 
-function getMatchingSessionCandidates(normalizedSessionId) {
+/** Keep canonical-first records and rank exact matches for the selected lookup kind. */
+function getMatchingSessionCandidates(normalizedSessionId, matchBy) {
   const matches = [];
   const seenFilenames = new Set();
 
@@ -199,7 +202,7 @@ function getMatchingSessionCandidates(normalizedSessionId) {
       if (!entry.isFile() || !entry.name.endsWith('.tmp')) continue;
 
       const metadata = parseSessionFilename(entry.name);
-      if (!metadata || !sessionMatchesId(metadata, normalizedSessionId)) {
+      if (!metadata || !sessionMatchesId(metadata, normalizedSessionId, false, matchBy)) {
         continue;
       }
 
@@ -218,9 +221,12 @@ function getMatchingSessionCandidates(normalizedSessionId) {
     }
   }
 
-  // All exact aliases share priority; keep newest-first ordering for ties.
+  // Automatic lookup keeps exact aliases tied; explicit ID lookup prefers the ID.
+  const exactMatch = session => matchBy === 'id'
+    ? session.shortId === normalizedSessionId
+    : sessionMatchesId(session, normalizedSessionId, true, matchBy);
   matches.sort((a, b) =>
-    Number(sessionMatchesId(b, normalizedSessionId, true)) - Number(sessionMatchesId(a, normalizedSessionId, true)) ||
+    Number(exactMatch(b)) - Number(exactMatch(a)) ||
     b.modifiedTime - a.modifiedTime
   );
   return matches;
@@ -407,13 +413,20 @@ function getAllSessions(options = {}) {
 }
 
 /**
- * Get a single session by ID (short ID or full path)
- * @param {string} sessionId - Short ID or session filename
+ * Find a session by ID or filename. Automatic lookup ranks exact IDs and
+ * filename/date aliases before prefixes, with modification time breaking ties.
+ * Use matchBy to disambiguate an extensionless filename and another short ID.
+ * @param {string} sessionId - Short ID prefix, session filename, or legacy date alias
  * @param {boolean} includeContent - Include session content
- * @returns {object|null} Session object or null if not found
+ * @param {{matchBy?: 'auto'|'id'|'filename'}} [options={}] - Restrict lookup to IDs or filenames
+ * @returns {object|null} Session object, or null for no match or invalid options
  */
-function getSessionById(sessionId, includeContent = false) {
-  if (typeof sessionId !== 'string') {
+function getSessionById(sessionId, includeContent = false, options = {}) {
+  if (typeof sessionId !== 'string' || !options || typeof options !== 'object' || Array.isArray(options)) {
+    return null;
+  }
+  const { matchBy = 'auto' } = options;
+  if (!['auto', 'id', 'filename'].includes(matchBy)) {
     return null;
   }
 
@@ -422,7 +435,7 @@ function getSessionById(sessionId, includeContent = false) {
     return null;
   }
 
-  const sessions = getMatchingSessionCandidates(normalizedSessionId);
+  const sessions = getMatchingSessionCandidates(normalizedSessionId, matchBy);
 
   for (const session of sessions) {
     const sessionRecord = { ...session };
