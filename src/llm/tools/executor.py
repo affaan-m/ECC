@@ -3,10 +3,13 @@
 from __future__ import annotations
 
 import asyncio
+import contextvars
 import inspect
 import logging
 import threading
+from collections import deque
 from collections.abc import Callable
+from concurrent.futures import Future
 from typing import Any
 from weakref import WeakValueDictionary
 
@@ -35,6 +38,7 @@ def _generic_failure(tool_call: ToolCall) -> ToolResult:
         content=GENERIC_TOOL_FAILURE.format(name=tool_call.name),
         is_error=True,
     )
+
 
 ToolFunc = Callable[..., Any]
 
@@ -127,6 +131,24 @@ class _ProviderGate:
     def __init__(self, provider: Any) -> None:
         self.provider = provider
         self.lock = threading.Lock()
+        self.pending: deque[Future[None]] = deque()
+
+    def enqueue(self) -> Future[None]:
+        ticket: Future[None] = Future()
+        with self.lock:
+            self.pending.append(ticket)
+            if len(self.pending) == 1:
+                ticket.set_result(None)
+        return ticket
+
+    def release(self, ticket: Future[None]) -> None:
+        with self.lock:
+            was_first = self.pending[0] is ticket
+            self.pending.remove(ticket)
+            if not ticket.done():
+                ticket.cancel()
+            if was_first and self.pending:
+                self.pending[0].set_result(None)
 
 
 # Identity keys support unhashable/custom providers without modifying their
@@ -136,22 +158,48 @@ _provider_gates: WeakValueDictionary[int, _ProviderGate] = WeakValueDictionary()
 _provider_gates_lock = threading.Lock()
 
 
-def _generate_serially(
-    provider: Any, input: LLMInput, cancelled: threading.Event
-) -> LLMOutput:
+async def _generate_serially(provider: Any, input: LLMInput) -> LLMOutput:
     with _provider_gates_lock:
         gate = _provider_gates.get(id(provider))
         if gate is None:
             gate = _ProviderGate(provider)
             _provider_gates[id(provider)] = gate
 
-    # The worker owns this lock, so cancelling its await cannot let a second
-    # request reuse mutable provider state while the first request is still live.
-    with gate.lock:
-        if cancelled.is_set():
-            raise asyncio.CancelledError
-        output: LLMOutput = gate.provider.generate(input)
-        return output
+    ticket = gate.enqueue()
+    cancelled = threading.Event()
+    submitted = False
+
+    def generate() -> LLMOutput:
+        try:
+            if cancelled.is_set():
+                raise asyncio.CancelledError
+            output: LLMOutput = gate.provider.generate(input)
+            return output
+        finally:
+            # Only the actual worker may release a submitted request's turn.
+            gate.release(ticket)
+
+    def consume_exception(completed: asyncio.Future[LLMOutput]) -> None:
+        # A cancelled caller may no longer be awaiting a provider failure.
+        if not completed.cancelled():
+            completed.exception()
+
+    try:
+        # Cross-loop futures queue callers without occupying executor threads.
+        await asyncio.shield(asyncio.wrap_future(ticket))
+        worker: asyncio.Future[LLMOutput] = asyncio.get_running_loop().run_in_executor(
+            None, contextvars.copy_context().run, generate
+        )
+        submitted = True
+        worker.add_done_callback(consume_exception)
+        return await asyncio.shield(worker)
+    except asyncio.CancelledError:
+        cancelled.set()
+        raise
+    finally:
+        if not submitted:
+            # Removing a queued cancellation cannot release its active predecessor.
+            gate.release(ticket)
 
 
 class ReActAgent:
@@ -178,16 +226,12 @@ class ReActAgent:
                 tools=tools,
             )
 
-            cancelled = threading.Event()
             try:
-                output = await asyncio.to_thread(
-                    _generate_serially, self.provider, input_copy, cancelled
-                )
-            except asyncio.CancelledError:
-                cancelled.set()
-                raise
+                output = await _generate_serially(self.provider, input_copy)
             except LLMError as e:
-                logger.warning("Provider failed during agent run: %s", e.code or type(e).__name__)
+                logger.warning(
+                    "Provider failed during agent run: %s", e.code or type(e).__name__
+                )
                 return LLMOutput(
                     content=f"Provider error: {e.code or type(e).__name__}",
                     stop_reason="provider_error",

@@ -3,8 +3,6 @@ from __future__ import annotations
 import asyncio
 import contextvars
 import threading
-from collections.abc import Callable
-from concurrent.futures import Future, ThreadPoolExecutor
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -66,7 +64,9 @@ def test_agent_can_be_cancelled_while_provider_is_waiting() -> None:
                 release.wait(timeout=2)
                 return LLMOutput(content="provider finished")
 
-        pending = asyncio.create_task(ReActAgent(WaitingProvider(), ToolExecutor()).run(_input()))
+        pending = asyncio.create_task(
+            ReActAgent(WaitingProvider(), ToolExecutor()).run(_input())
+        )
         try:
             await asyncio.wait_for(entered.wait(), timeout=5)
             pending.cancel()
@@ -90,24 +90,9 @@ def test_provider_error_keeps_the_agent_error_contract() -> None:
     assert output.content == "Provider error: connection_error"
 
 
-class ObservedExecutor(ThreadPoolExecutor):
-    """Signal actual worker entry before testing cancellation of a queued call."""
-
-    def __init__(self, loop: asyncio.AbstractEventLoop) -> None:
-        super().__init__(max_workers=2)
-        self.loop = loop
-        self.started = [asyncio.Event(), asyncio.Event()]
-        self.submitted = 0
-
-    def submit(self, fn: Callable[..., Any], /, *args: Any, **kwargs: Any) -> Future[Any]:
-        started = self.started[self.submitted]
-        self.submitted += 1
-
-        def invoke() -> Any:
-            self.loop.call_soon_threadsafe(started.set)
-            return fn(*args, **kwargs)
-
-        return super().submit(invoke)
+async def _run_started(agent: ReActAgent, started: asyncio.Event) -> LLMOutput:
+    started.set()
+    return await agent.run(_input())
 
 
 @dataclass
@@ -117,7 +102,9 @@ class SharedProvider:
     loop: asyncio.AbstractEventLoop
     fail_first: bool = False
     release: threading.Event = field(default_factory=threading.Event)
-    entered: list[asyncio.Event] = field(default_factory=lambda: [asyncio.Event(), asyncio.Event()])
+    entered: list[asyncio.Event] = field(
+        default_factory=lambda: [asyncio.Event(), asyncio.Event()]
+    )
     guard: Any = field(default_factory=threading.Lock)
     calls: int = 0
     active: int = 0
@@ -143,11 +130,11 @@ class SharedProvider:
 
 
 @pytest.mark.parametrize("first_result", ["success", "cancelled", "error"])
-def test_shared_provider_remains_serial_until_the_worker_finishes(first_result: str) -> None:
+def test_shared_provider_remains_serial_until_the_worker_finishes(
+    first_result: str,
+) -> None:
     async def scenario() -> SharedProvider:
         loop = asyncio.get_running_loop()
-        pool = ObservedExecutor(loop)
-        loop.set_default_executor(pool)
         provider = SharedProvider(loop, fail_first=first_result == "error")
         first = asyncio.create_task(ReActAgent(provider, ToolExecutor()).run(_input()))
         pending = [first]
@@ -158,11 +145,14 @@ def test_shared_provider_remains_serial_until_the_worker_finishes(first_result: 
                 with pytest.raises(asyncio.CancelledError):
                     await first
 
-            second = asyncio.create_task(ReActAgent(provider, ToolExecutor()).run(_input()))
+            second_waiting = asyncio.Event()
+            second = asyncio.create_task(
+                _run_started(ReActAgent(provider, ToolExecutor()), second_waiting)
+            )
             pending.append(second)
-            await asyncio.wait_for(pool.started[1].wait(), timeout=5)
-            # The second worker has started, while the first generate is still
-            # blocked. It must not enter the shared provider, even after cancel.
+            await asyncio.wait_for(second_waiting.wait(), timeout=5)
+            # The second run has reached its provider await. It must stay queued
+            # while the first generate is blocked, even after the first is cancelled.
             with pytest.raises(TimeoutError):
                 await asyncio.wait_for(provider.entered[1].wait(), timeout=0.1)
             provider.release.set()
@@ -183,19 +173,20 @@ def test_shared_provider_remains_serial_until_the_worker_finishes(first_result: 
     assert provider.max_active == 1
 
 
-def test_cancelling_a_queued_worker_does_not_start_another_provider_request() -> None:
+def test_cancelling_a_queued_run_does_not_start_another_provider_request() -> None:
     async def scenario() -> SharedProvider:
         loop = asyncio.get_running_loop()
-        pool = ObservedExecutor(loop)
-        loop.set_default_executor(pool)
         provider = SharedProvider(loop)
         first = asyncio.create_task(ReActAgent(provider, ToolExecutor()).run(_input()))
         pending = [first]
         try:
             await asyncio.wait_for(provider.entered[0].wait(), timeout=5)
-            second = asyncio.create_task(ReActAgent(provider, ToolExecutor()).run(_input()))
+            second_waiting = asyncio.Event()
+            second = asyncio.create_task(
+                _run_started(ReActAgent(provider, ToolExecutor()), second_waiting)
+            )
             pending.append(second)
-            await asyncio.wait_for(pool.started[1].wait(), timeout=5)
+            await asyncio.wait_for(second_waiting.wait(), timeout=5)
             second.cancel()
             with pytest.raises(asyncio.CancelledError):
                 await second
@@ -218,7 +209,9 @@ def test_distinct_providers_can_make_progress_independently() -> None:
         first_provider = SharedProvider(loop)
         second_provider = SharedProvider(loop)
         second_provider.release.set()
-        first = asyncio.create_task(ReActAgent(first_provider, ToolExecutor()).run(_input()))
+        first = asyncio.create_task(
+            ReActAgent(first_provider, ToolExecutor()).run(_input())
+        )
         try:
             await asyncio.wait_for(first_provider.entered[0].wait(), timeout=5)
             second = ReActAgent(second_provider, ToolExecutor()).run(_input())
