@@ -103,7 +103,7 @@ code クラスでは変更内容も読み、公開宣言に触れない Edit に
 
 ### Destructive Bash Gate (every destructive command)
 
-Triggers on: `rm -rf`, `git reset --hard`, `git push --force`, `drop table`, etc.
+Triggers on: `rm -rf`, `git reset --hard`, `git push --force`, `drop table`, `drop database`, `drop schema`, `alter table ... drop column`, etc.
 
 ```
 1. List all files/data this command will modify or delete
