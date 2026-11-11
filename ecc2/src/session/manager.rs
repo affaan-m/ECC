@@ -937,6 +937,10 @@ pub async fn drain_inbox(
     let mut outcomes = Vec::new();
 
     for message in messages {
+        if !matches!(db.get_session(&lead.id)?.map(|s| s.state),
+                     Some(SessionState::Running | SessionState::Idle)) {
+            break;
+        }
         let task =
             parse_task_handoff_task(&message.content).unwrap_or_else(|| message.content.clone());
 
@@ -965,6 +969,12 @@ pub async fn drain_inbox(
             session_id: outcome.session_id,
             action: outcome.action,
         });
+        // A lead that finished during the awaited assignment may not authorize
+        // further unread historical handoffs on this pass.
+        if !matches!(db.get_session(&lead.id)?.map(|s| s.state),
+                     Some(SessionState::Running | SessionState::Idle)) {
+            break;
+        }
     }
 
     Ok(outcomes)
@@ -987,7 +997,7 @@ pub async fn auto_dispatch_backlog(
         .map(|session| session.id.as_str())
         .collect();
     let targets = db
-        .unread_task_handoff_targets(sessions.len().max(1))?
+        .unread_task_handoff_targets(usize::MAX)?
         .into_iter()
         .filter(|(session_id, _)| live_targets.contains(session_id.as_str()))
         .take(lead_limit)
@@ -7909,6 +7919,58 @@ mod tests {
     }
 
     #[tokio::test(flavor = "current_thread")]
+    async fn auto_dispatch_skips_orphan_and_terminal_priority_without_starving_live() -> Result<()> {
+        let tempdir = TestDir::new("manager-atomic-pr3902-live-priority")?;
+        let repo_root = tempdir.path().join("repo");
+        init_git_repo(&repo_root)?;
+        let mut cfg = build_config(tempdir.path());
+        cfg.auto_create_worktrees = false;
+        cfg.auto_dispatch_limit_per_session = 1;
+        let db = StateStore::open(&cfg.db_path)?;
+        let now = Utc::now();
+        for (id, state) in [
+            ("terminal", SessionState::Completed),
+            ("lead-high", SessionState::Running),
+            ("lead-idle", SessionState::Idle),
+        ] {
+            db.insert_session(&Session {
+                id: id.to_string(),
+                task: "priority test".to_string(),
+                project: "workspace".to_string(),
+                task_group: "general".to_string(),
+                agent_type: "claude".to_string(),
+                working_dir: repo_root.clone(),
+                state,
+                pid: None,
+                worktree: None,
+                created_at: now - Duration::minutes(2),
+                updated_at: now - Duration::minutes(2),
+                last_heartbeat_at: now - Duration::minutes(2),
+                metrics: SessionMetrics::default(),
+            })?;
+        }
+        for recipient in ["orphan-1", "orphan-2", "terminal"] {
+            db.send_message("planner", recipient,
+                r#"{"task":"historical task","priority":"critical"}"#,
+                "task_handoff")?;
+        }
+        db.send_message("planner", "lead-high",
+            r#"{"task":"current work","priority":"high"}"#,
+            "task_handoff")?;
+        db.send_message("planner", "lead-idle",
+            r#"{"task":"later work","priority":"normal"}"#,
+            "task_handoff")?;
+        let outcomes = auto_dispatch_backlog(&db, &cfg, "claude", false, 1).await?;
+        assert_eq!(outcomes.len(), 1);
+        assert_eq!(outcomes[0].lead_session_id, "lead-high");
+        assert_eq!(outcomes[0].routed.len(), 1);
+        for recipient in ["orphan-1", "orphan-2", "terminal", "lead-idle"] {
+            assert_eq!(db.unread_task_handoff_count(recipient)?, 1);
+        }
+        Ok(())
+    }
+
+    #[tokio::test(flavor = "current_thread")]
     async fn auto_dispatch_backlog_routes_multiple_lead_inboxes() -> Result<()> {
         let tempdir = TestDir::new("manager-auto-dispatch")?;
         let repo_root = tempdir.path().join("repo");
@@ -8082,6 +8144,7 @@ mod tests {
             "task_handoff",
         )?;
         assert_eq!(db.unread_task_handoff_count(&child_id)?, 3);
+        db.update_state(&child_id, &SessionState::Running)?;
         let explicit_tick = auto_dispatch_backlog(&db, &cfg, "claude", cfg.auto_create_worktrees, 10).await?;
         assert!(explicit_tick
             .iter()
