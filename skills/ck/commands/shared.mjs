@@ -362,7 +362,7 @@ export function renderListTable(entries, cwd, _todayStr) {
   // entries: [{name, contextDir, path, context, lastUpdated}]
   // Sorted alphabetically by contextDir before calling
   const rows = entries.map((e, i) => {
-    const isHere = samePath(e.path, cwd);
+    const isHere = e.path === cwd;
     const latest = e.context?.sessions?.[e.context.sessions.length - 1] || {};
     const when = daysAgoLabel(latest.date);
     const icon = stalenessIcon(latest.date);

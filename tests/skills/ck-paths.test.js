@@ -207,6 +207,8 @@ async function runTests() {
         assert.strictEqual(save.status, 0, save.stdout + save.stderr);
         const sessions = name => JSON.parse(fs.readFileSync(path.join(ckHome, 'contexts', name, 'context.json'), 'utf8')).sessions.length;
         assert.deepStrictEqual([sessions('git-bash'), sessions('powershell')], [0, 1]);
+        const list = runCk(ctx, 'commands/list.mjs', [], powerShellEnv).stdout;
+        assert.ok(list.includes('powershell <-') && !list.includes('git-bash <-'), 'list marks the wrong registration');
         assert.ok(runCk(ctx, 'commands/resume.mjs', [], powerShellEnv).stdout.includes('RESUMING: powershell'), 'resume picked the other registration');
         const hook = runCk(ctx, 'hooks/session-start.mjs', [], powerShellEnv, {});
         assert.ok(JSON.parse(hook.stdout).additionalContext.includes('ck: powershell |'), 'SessionStart picked the other registration');
