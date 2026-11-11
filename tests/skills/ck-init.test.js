@@ -88,13 +88,41 @@ test('initializing a registered project whose context cannot be read changes not
   fs.mkdirSync(project);
   runOk(home, project, 'save.mjs', ['--init'], { name: 'app', path: project });
   const contextFile = path.join(home, '.claude', 'ck', 'contexts', 'app', 'context.json');
-  for (const damaged of ['{"version": 2, "sessions": [{"summary": "built the parser"}', '[{"summary": "built the parser"}]']) {
+  const damagedContexts = [
+    '{"version": 2, "sessions": [{"summary": "built the parser"}',
+    '[{"summary": "built the parser"}]',
+    '{"version": 2, "sessions": [null]}',
+  ];
+  for (const damaged of damagedContexts) {
     fs.writeFileSync(contextFile, damaged);
 
     const result = run(home, project, 'save.mjs', ['--init'], JSON.stringify({ name: 'app', path: project }));
     assert.strictEqual(result.status, 1, result.stdout + result.stderr);
+    assert.match(result.stdout, /is not a readable ck context/);
     assert.strictEqual(fs.readFileSync(contextFile, 'utf8'), damaged);
   }
+});
+
+test('initializing a registered v1 project points to migrate until nothing is left to recover', home => {
+  const project = path.join(home, 'app');
+  fs.mkdirSync(project);
+  const contextDir = path.join(home, '.claude', 'ck', 'contexts', 'app');
+  fs.mkdirSync(contextDir, { recursive: true });
+  const v1 = '# Project: app\n\n## Where I Left Off\n- wiring the parser\n';
+  fs.writeFileSync(path.join(contextDir, 'CONTEXT.md'), v1);
+  fs.writeFileSync(path.join(home, '.claude', 'ck', 'projects.json'), JSON.stringify({
+    [project]: { name: 'app', contextDir: 'app', lastUpdated: '2026-01-01' },
+  }));
+
+  const result = run(home, project, 'save.mjs', ['--init'], JSON.stringify({ name: 'app', path: project }));
+  assert.strictEqual(result.status, 1, result.stdout + result.stderr);
+  assert.match(result.stdout, /\/ck:migrate/);
+  assert.strictEqual(fs.readFileSync(path.join(contextDir, 'CONTEXT.md'), 'utf8'), v1);
+  assert.ok(!fs.existsSync(path.join(contextDir, 'context.json')), 'init wrote a context.json');
+
+  fs.rmSync(path.join(contextDir, 'CONTEXT.md'));
+  runOk(home, project, 'save.mjs', ['--init'], { name: 'app', path: project });
+  assert.ok(fs.existsSync(path.join(contextDir, 'context.json')), 'init did not register the project');
 });
 
 console.log(`\nPassed: ${passed}`);

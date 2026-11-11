@@ -20,7 +20,7 @@ import { readFileSync, mkdirSync, writeFileSync, existsSync } from 'fs';
 import { resolve } from 'path';
 import { createHash } from 'crypto';
 import {
-  readProjects, writeProjects, loadContext, saveContext, contextPath,
+  readProjects, writeProjects, loadContext, saveContext, contextPath, contextMdPath,
   today, shortId, gitSummary, nativeMemoryDir,
   CURRENT_SESSION,
 } from './shared.mjs';
@@ -55,9 +55,16 @@ if (isInit) {
   const projects = readProjects();
   const registered = projects[projectPath];
   const previous = registered ? loadContext(registered.contextDir) : null;
-  if (registered && !Array.isArray(previous?.sessions) && existsSync(contextPath(registered.contextDir))) {
-    console.log(`ck init: ${contextPath(registered.contextDir)} is not a readable ck context. Nothing was changed; fix or move that file, then run init again.`);
-    process.exit(1);
+  const readable = Array.isArray(previous?.sessions) && previous.sessions.every(s => s && typeof s === 'object');
+  if (registered && !readable) {
+    if (existsSync(contextPath(registered.contextDir))) {
+      console.log(`ck init: ${contextPath(registered.contextDir)} is not a readable ck context. Nothing was changed; fix or move that file, then run init again.`);
+      process.exit(1);
+    }
+    if (existsSync(contextMdPath(registered.contextDir))) {
+      console.log(`ck init: ${contextMdPath(registered.contextDir)} has no context.json beside it (a v1 project). Nothing was changed; run /ck:migrate first.`);
+      process.exit(1);
+    }
   }
 
   // Derive contextDir (lowercase, spaces→dashes, deduplicate). Names with no
