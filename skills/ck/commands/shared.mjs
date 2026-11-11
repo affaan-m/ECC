@@ -45,10 +45,15 @@ export function writeProjects(projects) {
   writeJson(PROJECTS_FILE, projects);
 }
 
+export function samePath(a, b) {
+  const key = p => (process.platform === 'win32' ? resolve(p).toLowerCase() : resolve(p));
+  return key(a) === key(b);
+}
+
 export function findProject(projects, projectPath) {
   const key = Object.hasOwn(projects, projectPath)
     ? projectPath
-    : Object.keys(projects).find(p => resolve(p) === resolve(projectPath));
+    : Object.keys(projects).find(p => samePath(p, projectPath));
   return key === undefined ? null : { path: key, ...projects[key] };
 }
 
@@ -357,7 +362,7 @@ export function renderListTable(entries, cwd, _todayStr) {
   // entries: [{name, contextDir, path, context, lastUpdated}]
   // Sorted alphabetically by contextDir before calling
   const rows = entries.map((e, i) => {
-    const isHere = resolve(e.path) === resolve(cwd);
+    const isHere = samePath(e.path, cwd);
     const latest = e.context?.sessions?.[e.context.sessions.length - 1] || {};
     const when = daysAgoLabel(latest.date);
     const icon = stalenessIcon(latest.date);
