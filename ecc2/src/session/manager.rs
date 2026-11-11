@@ -929,6 +929,22 @@ pub async fn drain_inbox(
     use_worktree: bool,
     limit: usize,
 ) -> Result<Vec<InboxDrainOutcome>> {
+    // Explicit CLI/TUI recovery is operator-directed and may target terminal
+    // sessions. Automatic sweeps have separate, stricter eligibility.
+    drain_inbox_with_native_live_check(
+        db, cfg, lead_id, agent_type, use_worktree, limit, false,
+    ).await
+}
+
+async fn drain_inbox_with_native_live_check(
+    db: &StateStore,
+    cfg: &Config,
+    lead_id: &str,
+    agent_type: &str,
+    use_worktree: bool,
+    limit: usize,
+    require_live: bool,
+) -> Result<Vec<InboxDrainOutcome>> {
     let runner_program =
         std::env::current_exe().context("Failed to resolve ECC executable path")?;
     let lead = resolve_session(db, lead_id)?;
@@ -937,6 +953,10 @@ pub async fn drain_inbox(
     let mut outcomes = Vec::new();
 
     for message in messages {
+        if require_live && !matches!(db.session_state_exact(&lead.id)?,
+                     Some(SessionState::Running | SessionState::Idle)) {
+            break;
+        }
         let task =
             parse_task_handoff_task(&message.content).unwrap_or_else(|| message.content.clone());
 
@@ -965,6 +985,12 @@ pub async fn drain_inbox(
             session_id: outcome.session_id,
             action: outcome.action,
         });
+        // A lead that finished during the awaited assignment may not authorize
+        // further unread historical handoffs on this pass.
+        if require_live && !matches!(db.session_state_exact(&lead.id)?,
+                     Some(SessionState::Running | SessionState::Idle)) {
+            break;
+        }
     }
 
     Ok(outcomes)
@@ -977,17 +1003,32 @@ pub async fn auto_dispatch_backlog(
     use_worktree: bool,
     lead_limit: usize,
 ) -> Result<Vec<LeadDispatchOutcome>> {
-    let targets = db.unread_task_handoff_targets(lead_limit)?;
+    // Only a live native session may receive automatic handoff dispatch.
+    // Keep unread messages addressed to terminal sessions intact for explicit
+    // reconciliation; auto-dispatch must not replay their historical work.
+    let sessions = db.list_sessions()?;
+    let live_targets: HashSet<_> = sessions
+        .iter()
+        .filter(|session| matches!(session.state, SessionState::Running | SessionState::Idle))
+        .map(|session| session.id.as_str())
+        .collect();
+    let targets = db
+        .unread_task_handoff_targets(usize::MAX)?
+        .into_iter()
+        .filter(|(session_id, _)| live_targets.contains(session_id.as_str()))
+        .take(lead_limit)
+        .collect::<Vec<_>>();
     let mut outcomes = Vec::new();
 
     for (lead_id, unread_count) in targets {
-        let routed = drain_inbox(
+        let routed = drain_inbox_with_native_live_check(
             db,
             cfg,
             &lead_id,
             agent_type,
             use_worktree,
             cfg.auto_dispatch_limit_per_session,
+            true,
         )
         .await?;
 
@@ -7723,6 +7764,47 @@ mod tests {
     }
 
     #[tokio::test(flavor = "current_thread")]
+    async fn manual_drain_inbox_preserves_terminal_and_pending_recovery() -> Result<()> {
+        for (index, state) in [
+            SessionState::Completed, SessionState::Stopped, SessionState::Pending,
+        ].into_iter().enumerate() {
+            let tempdir = TestDir::new(&format!("manual-recovery-state-{index}"))?;
+            let repo_root = tempdir.path().join("repo");
+            init_git_repo(&repo_root)?;
+            let mut cfg = build_config(tempdir.path());
+            cfg.auto_create_worktrees = false;
+            cfg.max_parallel_sessions = 2;
+            let db = StateStore::open(&cfg.db_path)?;
+            let now = Utc::now();
+            db.insert_session(&Session {
+                id: "manual-lead".to_string(),
+                task: "previous finished task".to_string(),
+                project: "workspace".to_string(),
+                task_group: "general".to_string(),
+                agent_type: "claude".to_string(),
+                working_dir: repo_root.clone(),
+                state,
+                pid: None,
+                worktree: None,
+                created_at: now - Duration::minutes(3),
+                updated_at: now - Duration::minutes(3),
+                last_heartbeat_at: now - Duration::minutes(3),
+                metrics: SessionMetrics::default(),
+            })?;
+            db.send_message(
+                "operator", "manual-lead",
+                r#"{"task":"authorized human recovery","priority":"normal"}"#,
+                "task_handoff",
+            )?;
+            let routed = drain_inbox(&db, &cfg, "manual-lead", "claude", false, 1).await?;
+            assert_eq!(routed.len(), 1, "manual recovery must not be silently skipped");
+            assert!(assignment_action_routes_work(routed[0].action));
+            assert_eq!(db.unread_task_handoff_count("manual-lead")?, 0);
+        }
+        Ok(())
+    }
+
+    #[tokio::test(flavor = "current_thread")]
     async fn drain_inbox_leaves_saturated_handoffs_unread() -> Result<()> {
         let tempdir = TestDir::new("manager-drain-inbox-defer")?;
         let repo_root = tempdir.path().join("repo");
@@ -7847,6 +7929,102 @@ mod tests {
             message.msg_type == "task_handoff" && message.content.contains("Critical auth outage")
         }));
 
+        Ok(())
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn auto_dispatch_backlog_does_not_replay_terminal_session_handoffs() -> Result<()> {
+        let tempdir = TestDir::new("manager-no-terminal-replay")?;
+        let cfg = build_config(tempdir.path());
+        let db = StateStore::open(&cfg.db_path)?;
+        let now = Utc::now();
+
+        for (lead_id, state) in [
+            ("completed-lead", SessionState::Completed),
+            ("failed-lead", SessionState::Failed),
+            ("stopped-lead", SessionState::Stopped),
+            ("pending-lead", SessionState::Pending),
+        ] {
+            db.insert_session(&Session {
+                id: lead_id.to_string(),
+                task: "historical work".to_string(),
+                project: "workspace".to_string(),
+                task_group: "general".to_string(),
+                agent_type: "claude".to_string(),
+                working_dir: tempdir.path().to_path_buf(),
+                state,
+                pid: None,
+                worktree: None,
+                created_at: now - Duration::minutes(5),
+                updated_at: now - Duration::minutes(3),
+                last_heartbeat_at: now - Duration::minutes(3),
+                metrics: SessionMetrics::default(),
+            })?;
+            db.send_message(
+                "planner",
+                lead_id,
+                r#"{"task":"Historical task","context":"Unreconciled"}"#,
+                "task_handoff",
+            )?;
+        }
+
+        let outcomes = auto_dispatch_backlog(&db, &cfg, "claude", false, 10).await?;
+        assert!(outcomes.is_empty());
+        // Do not erase historical inbox evidence just to suppress dispatch.
+        assert_eq!(db.unread_task_handoff_targets(10)?.len(), 4);
+        assert_eq!(db.list_sessions()?.len(), 4);
+        Ok(())
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn auto_dispatch_skips_orphan_and_terminal_priority_without_starving_live() -> Result<()> {
+        let tempdir = TestDir::new("manager-atomic-pr3902-live-priority")?;
+        let repo_root = tempdir.path().join("repo");
+        init_git_repo(&repo_root)?;
+        let mut cfg = build_config(tempdir.path());
+        cfg.auto_create_worktrees = false;
+        cfg.auto_dispatch_limit_per_session = 1;
+        let db = StateStore::open(&cfg.db_path)?;
+        let now = Utc::now();
+        for (id, state) in [
+            ("terminal", SessionState::Completed),
+            ("lead-high", SessionState::Running),
+            ("lead-idle", SessionState::Idle),
+        ] {
+            db.insert_session(&Session {
+                id: id.to_string(),
+                task: "priority test".to_string(),
+                project: "workspace".to_string(),
+                task_group: "general".to_string(),
+                agent_type: "claude".to_string(),
+                working_dir: repo_root.clone(),
+                state,
+                pid: None,
+                worktree: None,
+                created_at: now - Duration::minutes(2),
+                updated_at: now - Duration::minutes(2),
+                last_heartbeat_at: now - Duration::minutes(2),
+                metrics: SessionMetrics::default(),
+            })?;
+        }
+        for recipient in ["orphan-1", "orphan-2", "terminal"] {
+            db.send_message("planner", recipient,
+                r#"{"task":"historical task","priority":"critical"}"#,
+                "task_handoff")?;
+        }
+        db.send_message("planner", "lead-high",
+            r#"{"task":"current work","priority":"high"}"#,
+            "task_handoff")?;
+        db.send_message("planner", "lead-idle",
+            r#"{"task":"later work","priority":"normal"}"#,
+            "task_handoff")?;
+        let outcomes = auto_dispatch_backlog(&db, &cfg, "claude", false, 1).await?;
+        assert_eq!(outcomes.len(), 1);
+        assert_eq!(outcomes[0].lead_session_id, "lead-high");
+        assert_eq!(outcomes[0].routed.len(), 1);
+        for recipient in ["orphan-1", "orphan-2", "terminal", "lead-idle"] {
+            assert_eq!(db.unread_task_handoff_count(recipient)?, 1);
+        }
         Ok(())
     }
 
@@ -8024,6 +8202,7 @@ mod tests {
             "task_handoff",
         )?;
         assert_eq!(db.unread_task_handoff_count(&child_id)?, 3);
+        db.update_state(&child_id, &SessionState::Running)?;
         let explicit_tick = auto_dispatch_backlog(&db, &cfg, "claude", cfg.auto_create_worktrees, 10).await?;
         assert!(explicit_tick
             .iter()
