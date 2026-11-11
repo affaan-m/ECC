@@ -196,6 +196,15 @@ test('isClassifierNotice matches only the whole notice', () => {
   assert.strictEqual(isClassifierNotice('Why did I see "Your response above was stopped by a safety classifier"?'), false);
 });
 
+test('drops a classifier notice wrapped across lines', () => {
+  const wrapped = CLASSIFIER_NOTICE_LONG_TEXT.replace('safety classifier', 'safety\nclassifier').replace(' The rest', ' \nThe rest');
+  assert.strictEqual(isClassifierNotice(wrapped), true);
+  const p = writeTranscript([userEntry('Refactor the config loader'), userEntry(wrapped), assistantEntry('Done.')]);
+  const result = extractConversationText(p);
+  assert.ok(result.includes('Refactor the config loader'));
+  assert.ok(!result.includes('withheld') && !result.includes('safety classifier'), result);
+});
+
 // --- getContextRemainingPct ---
 console.log('\ngetContextRemainingPct:');
 

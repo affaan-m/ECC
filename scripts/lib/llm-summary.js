@@ -35,10 +35,11 @@ function getContextThreshold() {
 /**
  * True when a user-turn text is the harness notice left after a
  * safety-classifier stop. Anchored to the whole message so user text that
- * quotes or follows the notice is kept.
+ * quotes or follows the notice is kept. Whitespace runs (including
+ * newlines) are collapsed first so every caller matches the same text.
  */
 function isClassifierNotice(text) {
-  return CLASSIFIER_NOTICE.test(text);
+  return CLASSIFIER_NOTICE.test(String(text).replace(/\s+/g, ' ').trim());
 }
 
 /**

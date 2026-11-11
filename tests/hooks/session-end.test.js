@@ -105,6 +105,17 @@ function testNoticeOnlyTranscript() {
   });
 }
 
+function testDropsMultilineClassifierNotice() {
+  const wrapped = CLASSIFIER_NOTICE_TEXT.replace('safety classifier', 'safety\nclassifier');
+  withTranscript('3867eeee-ffff-4aaa-8bbb-cccccccc3867', [
+    JSON.stringify({ type: 'user', content: 'Refactor the config loader' }),
+    JSON.stringify({ type: 'user', content: wrapped }),
+  ], out => {
+    assert.ok(out.includes('- Refactor the config loader'), `expected the real user task in:\n${out}`);
+    assert.ok(!/safety\s+classifier/.test(out), `wrapped notice must not be summarized:\n${out}`);
+  });
+}
+
 function testKeepsMessageQuotingNotice() {
   const userText = 'Why did I see "Your response above was stopped by a safety classifier" earlier?';
   withTranscript('3867cccc-dddd-4eee-8fff-aaaaaaaa3867', [JSON.stringify({ type: 'user', content: userText })], out => {
@@ -116,6 +127,7 @@ function runClassifierNoticeTests() {
   const results = [
     test('drops safety-classifier notices from summary tasks', testDropsClassifierNotice),
     test('drops the longer classifier notice from summary tasks', testDropsLongClassifierNotice),
+    test('drops a classifier notice wrapped across lines', testDropsMultilineClassifierNotice),
     test('writes no summary for a transcript holding only a classifier notice', testNoticeOnlyTranscript),
     test('keeps a user message that only mentions the classifier notice', testKeepsMessageQuotingNotice),
   ];
