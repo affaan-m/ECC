@@ -246,6 +246,38 @@ function getPythonDeps(projectDir) {
 }
 
 /**
+ * Decode the contents of a Go-quoted module path, rejecting malformed escapes.
+ * @param {string} value - Quoted token contents without the surrounding quotes
+ * @returns {string|null} Decoded UTF-8 path, or null for an invalid token
+ */
+function decodeGoQuotedPath(value) {
+  if (!/^(?:[^"\\\r\n]|\\(?:[abfnrtv\\"]|[0-7]{3}|x[\da-fA-F]{2}|u[\da-fA-F]{4}|U[\da-fA-F]{8}))*$/.test(value)) return null;
+  const escaped = { a: '\x07', b: '\b', f: '\f', n: '\n', r: '\r', t: '\t', v: '\v', '\\': '\\', '"': '"' };
+  const chunks = [];
+  for (const token of value.match(/[^\\]+|\\(?:[abfnrtv\\"]|[0-7]{3}|x[\da-fA-F]{2}|u[\da-fA-F]{4}|U[\da-fA-F]{8})/g) || []) {
+    if (!token.startsWith('\\')) {
+      chunks.push(Buffer.from(token));
+      continue;
+    }
+    const escape = token.slice(1);
+    if (Object.hasOwn(escaped, escape)) {
+      chunks.push(Buffer.from(escaped[escape]));
+      continue;
+    }
+    const octal = /^[0-7]/.test(escape);
+    const codePoint = Number.parseInt(octal ? escape : escape.slice(1), octal ? 8 : 16);
+    const byte = octal || escape.startsWith('x');
+    if (byte ? codePoint > 255 : codePoint > 0x10ffff || (codePoint >= 0xd800 && codePoint <= 0xdfff)) return null;
+    chunks.push(byte ? Buffer.from([codePoint]) : Buffer.from(String.fromCodePoint(codePoint)));
+  }
+  try {
+    return new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }).decode(Buffer.concat(chunks));
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Read go.mod for Go module dependencies
  * @param {string} projectDir - Project root directory
  * @returns {string[]} Array of module paths
@@ -256,15 +288,27 @@ function getGoDeps(projectDir) {
     if (!fs.existsSync(modPath)) return [];
     const content = fs.readFileSync(modPath, 'utf8');
     const deps = [];
-    const requireBlock = content.match(/require\s*\(([\s\S]*?)\)/);
-    if (requireBlock) {
-      requireBlock[1].split('\n').forEach(line => {
-        const trimmed = line.trim();
-        if (trimmed && !trimmed.startsWith('//')) {
-          const parts = trimmed.split(/\s+/);
-          if (parts[0]) deps.push(parts[0]);
-        }
-      });
+    let inRequireBlock = false;
+    for (const rawLine of content.split(/\r?\n/)) {
+      const line = rawLine.split('//')[0].trim();
+      if (!line) continue;
+      if (line === ')' && inRequireBlock) {
+        inRequireBlock = false;
+        continue;
+      }
+      const directive = line.match(/^require(?:\s+|(?=\())(.+)$/);
+      if (directive?.[1] === '(') {
+        inRequireBlock = true;
+        continue;
+      }
+      if (!directive && !inRequireBlock) continue;
+      const requirement = (directive ? directive[1] : line)
+        .match(/^(?:"((?:[^"\\]|\\.)+)"[ \t]*|([^"'`\s]+)[ \t]+)\S+/);
+      if (!requirement) continue;
+      const modulePath = requirement[1] === undefined
+        ? requirement[2]
+        : decodeGoQuotedPath(requirement[1]);
+      if (modulePath) deps.push(modulePath);
     }
     return deps;
   } catch {
