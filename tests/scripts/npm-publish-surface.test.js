@@ -261,6 +261,7 @@ function main() {
         "docs/design/context-carriers.md",
         "docs/design/context-profile-delivery.md",
         "scripts/control-pane.js",
+        "scripts/lib/control-pane/action-output.js",
         "scripts/lib/control-pane/work-item-runner.js",
         "scripts/lib/control-pane/work-item-worker.js",
         "scripts/lib/state-store/file-lock.js",
