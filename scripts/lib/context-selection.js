@@ -3,6 +3,7 @@
 const yaml = require('js-yaml');
 const { loadSkillTriggers } = require('./context-pack-registry');
 const { compileContextProfileWithRegistry } = require('./context-profiles');
+const { COMPANION_LIMITATION, companionInput, rankCompanions } = require('./context-neighbors');
 const { buildRetrievalIndex, searchRetrieval } = require('./context-retrieval');
 const { DEFAULT_REPO_ROOT, createSourceReader, digestObject } = require('./context-profile-support');
 
@@ -204,14 +205,36 @@ function validateTask(task) {
 // Canonical source digests replace its independent cache/receipt authority.
 // Ranking now uses the hybrid retrieval engine (BM25-weighted fields fused
 // with hashed character n-gram vectors); see context-retrieval.js.
+function routingIndexFor(entries, excluded, triggers = {}) {
+  return buildRetrievalIndex(entries.filter(entry => !excluded.has(entry.id))
+    .map(entry => triggers[entry.id] ? { ...entry, triggers: triggers[entry.id] } : entry));
+}
+
 function candidatesFor(query, entries, excluded, admissible, triggers = {}) {
-  const available = entries.filter(entry => !excluded.has(entry.id))
-    .map(entry => triggers[entry.id] ? { ...entry, triggers: triggers[entry.id] } : entry);
-  const index = buildRetrievalIndex(available);
+  const index = routingIndexFor(entries, excluded, triggers);
   const candidates = searchRetrieval(index, query, { limit: MAX_CANDIDATES * 3 })
     .filter(candidate => admissible(candidate.id))
     .slice(0, MAX_CANDIDATES);
-  return { candidates };
+  return { candidates, index };
+}
+
+/** Installed non-ECC skills that also match the query, to list beside ECC's
+ * selection. They clear the same bar as an automatic load (score, matched
+ * terms, an anchor term in the skill's name) but are never loaded. */
+function companionsFor(index, query, neighborSet, { limit = MAX_CANDIDATES, top = null } = {}) {
+  return rankCompanions(index, query, neighborSet.neighbors, { minBm25: AUTO_ADMIT_MIN_BM25,
+    minTerms: AUTO_ADMIT_MIN_TERMS, minAnchorTerms: MIN_ANCHOR_TERMS, margin: AUTO_ADMIT_MARGIN, limit, top });
+}
+
+// Result fields for companions. Without neighbors there are none, so the
+// result is byte-identical. With them, companions are recomputed on every
+// resolve (reuse, manual and no-workflow included, so a declined proposal
+// still lists them) and stay out of the binding and receipt: they never change
+// what ECC loads.
+function companionListing(neighborSet, indexFor, query, top) {
+  if (!neighborSet) return { fields: {}, limitations: [] };
+  return { fields: { neighborsDigest: neighborSet.neighborsDigest, companions: companionsFor(indexFor(), query, neighborSet, { top }) },
+    limitations: [COMPANION_LIMITATION] };
 }
 
 function verifiedResource(entry, sourcePath, reader) {
@@ -328,12 +351,17 @@ function routingEntries({ repoRoot = DEFAULT_REPO_ROOT, profileId = 'lean@1', ta
  * @param {object} options.task Task identity, query, and explicit or proposed skill IDs.
  * @param {boolean} [options.load=false] Include verified resource contents in the result.
  * @param {object|null} [options.previous=null] Receipt reusable only when its binding matches.
+ * @param {Array|object|null} [options.neighbors=null] Installed non-ECC skills (source, name, description)
+ *   or an ecc.context-neighbors.v1 snapshot. Matching ones are listed as companions; ECC's selection,
+ *   candidates and receipt are unchanged. Omitted or empty leaves the result unchanged.
  * @returns {object} Selection decision, candidates, verified resources, and a bound receipt.
  */
 function resolveTaskContext({ repoRoot = DEFAULT_REPO_ROOT, task, profileId = 'lean@1', target = 'codex',
-  selectionMode = 'auto', include = [], exclude = [], load = false, previous = null, expectedDigest = null } = {}) {
+  selectionMode = 'auto', include = [], exclude = [], load = false, previous = null, expectedDigest = null,
+  neighbors = null } = {}) {
   validateTask(task);
   validatePrevious(previous);
+  const neighborSet = companionInput(neighbors);
   // One registry load serves the plan and the selection; skill bytes are
   // still verified against it when they are read.
   const { registry, plan } = compileContextProfileWithRegistry({ repoRoot, profileId, target, selectionMode, include, exclude });
@@ -354,8 +382,10 @@ function resolveTaskContext({ repoRoot = DEFAULT_REPO_ROOT, task, profileId = 'l
   const reused = Boolean(previous && previous.bindingDigest === bindingDigest && !task.noWorkflow
     && ['selected', 'none'].includes(previous.decision) && !explicitIds.length && !proposedIds.length);
   const admissible = admissibility(byId, excluded, reader);
-  const { candidates } = task.noWorkflow || selectionMode === 'manual' || reused
-    ? { candidates: [] } : candidatesFor(task.query || '', registry.entries, excluded, admissible, triggers);
+  const { candidates, index } = task.noWorkflow || selectionMode === 'manual' || reused
+    ? { candidates: [], index: null } : candidatesFor(task.query || '', registry.entries, excluded, admissible, triggers);
+  const listing = companionListing(neighborSet, () => index || routingIndexFor(registry.entries, excluded, triggers),
+    task.query || '', candidates[0] || null);
   // Auto admission: free-text routing loads the ranked top skill only on
   // unambiguous evidence, or when the query is an explicit directive citation
   // of exactly one skill (for example "Use the X skill"). Mere mentions —
@@ -414,13 +444,15 @@ function resolveTaskContext({ repoRoot = DEFAULT_REPO_ROOT, task, profileId = 'l
   if (autoSelection) receiptValue.autoSelection = autoSelection;
   return { schemaVersion: 'ecc.task-context.v1', profileId: plan.profileId, selectionMode, target,
     reason, reused, selectedIds, loadedIds, candidates, resources, fallback,
+    ...listing.fields,
     activation: loadedIds.length ? 'context-returned' : 'proposed', nativeInvocation: 'unobserved',
     enforcement: 'prompt-advisory', maxContextBytes: MAX_CONTEXT_BYTES,
     receipt: { ...receiptValue, receiptDigest: digestObject(receiptValue) },
     limitations: ['Context returned by this command is data for the calling agent; native invocation and execution are unobserved.',
       'Auto mode admits a ranked skill only on calibrated unambiguous evidence or a single cited skill name; ambiguous routing still requires an explicit ID or an admitted agent proposal.',
       'Selection grants no tools, hooks, network access, installation or persistent configuration changes.',
-      'The byte cap is an output bound, not a measured native token budget. Declared workflow dependencies remain incomplete.'] };
+      'The byte cap is an output bound, not a measured native token budget. Declared workflow dependencies remain incomplete.',
+      ...listing.limitations] };
 }
 
 /** After a bounded proposal admitted nothing despite proposing a candidate,
@@ -438,4 +470,4 @@ function resolveDeclinedFallback(options, selection) {
     receipt: { ...receiptValue, receiptDigest: digestObject(receiptValue) } };
 }
 
-module.exports = { hasSuggestionEvidence, resolveTaskContext, resolveDeclinedFallback, routingEntries };
+module.exports = { companionsFor, hasSuggestionEvidence, resolveTaskContext, resolveDeclinedFallback, routingEntries };
