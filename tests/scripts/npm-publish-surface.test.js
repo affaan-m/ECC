@@ -243,6 +243,7 @@ function main() {
         "scripts/lib/context-profile-support.js",
         "scripts/lib/context-carriers.js",
         "scripts/lib/context-selection.js",
+        "scripts/lib/context-neighbors.js",
         "scripts/lib/context-profile-commands.js",
         "scripts/lib/context-profile-launch.js",
         "scripts/lib/context-profile-proposal.js",
