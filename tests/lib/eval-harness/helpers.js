@@ -20,6 +20,28 @@ function test(name, fn) {
   }
 }
 
+async function asyncTest(name, fn, timeoutMs = 5000) {
+  let timer;
+  try {
+    // Keep a referenced timer: an unresolved Promise alone lets Node exit 0
+    // before finish() can report an incomplete test as a failure.
+    await Promise.race([
+      Promise.resolve().then(fn),
+      new Promise((_, reject) => {
+        timer = setTimeout(() => reject(new Error(`timed out after ${timeoutMs}ms`)), timeoutMs);
+      })
+    ]);
+    console.log(`  ✓ ${name}`);
+    passed += 1;
+  } catch (error) {
+    console.log(`  ✗ ${name}`);
+    console.log(`    Error: ${error.message}`);
+    failed += 1;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 function tempDir(prefix) {
   return fs.mkdtempSync(path.join(os.tmpdir(), `ecc-eval-harness-${prefix}-`));
 }
@@ -55,4 +77,4 @@ function runNpm(args, options = {}) {
 
 const fixedClock = () => new Date('2026-09-02T00:00:00.000Z');
 
-module.exports = { test, tempDir, cleanup, finish, fixedClock, runNpm };
+module.exports = { test, asyncTest, tempDir, cleanup, finish, fixedClock, runNpm };
