@@ -101,7 +101,7 @@ function runHook(input, env = {}, options = {}) {
   });
 
   return {
-    code: result.status || 0,
+    code: result.status ?? 1,
     stdout: result.stdout || '',
     stderr: result.stderr || ''
   };
@@ -118,7 +118,7 @@ function runRawHook(rawInput, env = {}, options = {}) {
   });
 
   return {
-    code: result.status || 0,
+    code: result.status ?? 1,
     stdout: result.stdout || '',
     stderr: result.stderr || ''
   };
@@ -176,6 +176,27 @@ function waitForHttpReady(urlString, timeoutMs = 5000) {
 
     attempt();
   });
+}
+
+function withCacheFixture(fn) {
+  const dir = createTempDir();
+  const configPath = path.join(dir, 'config.json');
+  const statePath = path.join(dir, 'state.json');
+  const markerPath = path.join(dir, 'probes.txt');
+  const serverPath = path.join(dir, 'healthy.js');
+  fs.writeFileSync(serverPath, `require('fs').appendFileSync(${JSON.stringify(markerPath)}, 'probe\\n'); setInterval(() => {}, 1000);`);
+  const healthyConfig = { mcpServers: { shared: createCommandConfig(serverPath) } };
+  const failingConfig = { mcpServers: { shared: { command: 'ecc-nonexistent-test-server', args: [] } } };
+  const run = (env = {}, cwd) => runHook({ tool_name: 'mcp__shared__ping', tool_input: {}, error: '503 Service Unavailable' }, {
+    CLAUDE_HOOK_EVENT_NAME: 'PreToolUse', ECC_MCP_CONFIG_PATH: configPath,
+    ECC_MCP_HEALTH_STATE_PATH: statePath, ECC_MCP_HEALTH_TIMEOUT_MS: '1000',
+    ECC_MCP_RECONNECT_ALLOW: null, ECC_MCP_RECONNECT_COMMAND: null, ...env
+  }, { cwd });
+  try {
+    fn({ dir, configPath, statePath, markerPath, healthyConfig, failingConfig, run });
+  } finally {
+    cleanupTempDir(dir);
+  }
 }
 
 async function runTests() {
@@ -273,63 +294,167 @@ async function runTests() {
     }
   })) passed++; else failed++;
 
-  if (test('uses cached healthy and unhealthy states without probing configs', () => {
-    const tempDir = createTempDir();
-    const now = Date.now();
-    const healthyStatePath = path.join(tempDir, 'healthy-state.json');
-    const unhealthyStatePath = path.join(tempDir, 'unhealthy-state.json');
+  for (const healthy of [true, false]) {
+    if (test(`reuses matching ${healthy ? 'healthy' : 'unhealthy'} cache entries`, () => {
+      withCacheFixture(({ run, configPath, statePath, markerPath, healthyConfig, failingConfig }) => {
+        writeConfig(configPath, healthy ? healthyConfig : failingConfig);
+        const first = run();
+        const before = fs.readFileSync(statePath, 'utf8');
+        const second = run();
+        assert.strictEqual(first.code, healthy ? 0 : 2, first.stderr);
+        assert.strictEqual(second.code, first.code, second.stderr);
+        assert.strictEqual(fs.readFileSync(statePath, 'utf8'), before, 'Cache hit must not rewrite state');
+        if (healthy) {
+          assert.strictEqual(fs.readFileSync(markerPath, 'utf8'), 'probe\n', 'Matching cache must not launch another server');
+        } else {
+          assert.match(second.stderr, /marked unhealthy until/);
+        }
+      });
+    })) passed++; else failed++;
+  }
 
-    try {
-      fs.writeFileSync(healthyStatePath, JSON.stringify({
-        version: 1,
-        servers: {
-          cached: {
-            status: 'healthy',
-            checkedAt: now,
-            expiresAt: now + 60000,
-            failureCount: 0,
-            nextRetryAt: now
-          }
-        }
-      }));
-      fs.writeFileSync(unhealthyStatePath, JSON.stringify({
-        version: 1,
-        servers: {
-          blocked: {
-            status: 'unhealthy',
-            checkedAt: now,
-            expiresAt: now,
-            failureCount: 1,
-            nextRetryAt: now + 60000,
-            lastError: 'cached outage'
-          }
-        }
-      }));
+  for (const healthyFirst of [true, false]) {
+    if (test(`does not reuse ${healthyFirst ? 'healthy' : 'unhealthy'} state from another config source`, () => {
+      withCacheFixture(({ run, configPath, statePath, dir, healthyConfig, failingConfig }) => {
+        writeConfig(configPath, healthyFirst ? healthyConfig : failingConfig);
+        assert.strictEqual(run().code, healthyFirst ? 0 : 2);
+        const otherConfig = path.join(dir, 'other-config.json');
+        writeConfig(otherConfig, healthyFirst ? failingConfig : healthyConfig);
+        const result = run({ ECC_MCP_CONFIG_PATH: otherConfig });
+        assert.strictEqual(result.code, healthyFirst ? 2 : 0, result.stderr);
+        assert.strictEqual(readState(statePath).servers.shared.status, healthyFirst ? 'unhealthy' : 'healthy');
+        assert.doesNotMatch(result.stderr, /marked unhealthy until|connection restored/);
+      });
+    })) passed++; else failed++;
+  }
 
-      const healthy = runHook(
-        { tool_name: 'mcp__cached__list', tool_input: {} },
-        {
-          CLAUDE_HOOK_EVENT_NAME: 'PreToolUse',
-          ECC_MCP_CONFIG_PATH: path.join(tempDir, 'missing.json'),
-          ECC_MCP_HEALTH_STATE_PATH: healthyStatePath
-        }
-      );
-      const unhealthy = runHook(
-        { tool_name: 'mcp__blocked__query', tool_input: {} },
-        {
-          CLAUDE_HOOK_EVENT_NAME: 'PreToolUse',
-          ECC_MCP_CONFIG_PATH: path.join(tempDir, 'missing.json'),
-          ECC_MCP_HEALTH_STATE_PATH: unhealthyStatePath
-        }
-      );
+  if (test('reprobes identical server configs loaded from different files', () => {
+    withCacheFixture(({ run, configPath, statePath, markerPath, dir, healthyConfig }) => {
+      writeConfig(configPath, healthyConfig);
+      assert.strictEqual(run().code, 0);
+      const firstIdentity = readState(statePath).servers.shared.cacheIdentity;
+      const secondConfigPath = path.join(dir, 'second-config.json');
+      writeConfig(secondConfigPath, healthyConfig);
+      const result = run({ ECC_MCP_CONFIG_PATH: secondConfigPath });
+      assert.strictEqual(result.code, 0, result.stderr);
+      assert.notStrictEqual(readState(statePath).servers.shared.cacheIdentity, firstIdentity);
+      assert.strictEqual(fs.readFileSync(markerPath, 'utf8'), 'probe\nprobe\n');
+    });
+  })) passed++; else failed++;
 
-      assert.strictEqual(healthy.code, 0, 'Expected cached healthy server to pass without config lookup');
-      assert.strictEqual(healthy.stderr, '', 'Expected cached healthy server to skip logging');
-      assert.strictEqual(unhealthy.code, 2, 'Expected cached unhealthy server to block before retry time');
-      assert.ok(unhealthy.stderr.includes('marked unhealthy until'), `Expected cached unhealthy log, got: ${unhealthy.stderr}`);
-    } finally {
-      cleanupTempDir(tempDir);
-    }
+  if (test('hashes changed configuration credentials without copying them into cache metadata', () => {
+    withCacheFixture(({ run, configPath, statePath, markerPath, healthyConfig }) => {
+      const firstValue = 'fixture-only-credential-one';
+      const secondValue = 'fixture-only-credential-two';
+      const configure = value => writeConfig(configPath, { mcpServers: { shared: {
+        ...healthyConfig.mcpServers.shared, env: { API_KEY: value }
+      } } });
+      configure(firstValue);
+      assert.strictEqual(run().code, 0);
+      const firstIdentity = readState(statePath).servers.shared.cacheIdentity;
+      configure(secondValue);
+      const result = run();
+      assert.strictEqual(result.code, 0, result.stderr);
+      const cache = fs.readFileSync(statePath, 'utf8');
+      assert.notStrictEqual(readState(statePath).servers.shared.cacheIdentity, firstIdentity);
+      assert.ok(!cache.includes(firstValue) && !cache.includes(secondValue));
+      assert.ok(!result.stdout.includes(firstValue) && !result.stdout.includes(secondValue));
+      assert.ok(!result.stderr.includes(firstValue) && !result.stderr.includes(secondValue));
+      assert.strictEqual(fs.readFileSync(markerPath, 'utf8'), 'probe\nprobe\n');
+    });
+  })) passed++; else failed++;
+
+  if (test('invalidates cache when server configuration changes at the same source', () => {
+    withCacheFixture(({ run, configPath, statePath, healthyConfig, failingConfig }) => {
+      writeConfig(configPath, healthyConfig);
+      assert.strictEqual(run().code, 0);
+      writeConfig(configPath, failingConfig);
+      const result = run();
+      assert.strictEqual(result.code, 2, result.stderr);
+      assert.strictEqual(readState(statePath).servers.shared.failureCount, 1);
+    });
+  })) passed++; else failed++;
+
+  if (test('invalidates cache when relative server arguments resolve in another working directory', () => {
+    withCacheFixture(({ run, configPath, dir, markerPath }) => {
+      const firstDir = path.join(dir, 'first');
+      const secondDir = path.join(dir, 'second');
+      fs.mkdirSync(firstDir);
+      fs.mkdirSync(secondDir);
+      fs.writeFileSync(path.join(firstDir, 'server.js'), `require('fs').appendFileSync(${JSON.stringify(markerPath)}, 'probe\\n'); setInterval(() => {}, 1000);`);
+      fs.writeFileSync(path.join(secondDir, 'server.js'), 'process.exit(1);');
+      writeConfig(configPath, { mcpServers: { shared: { command: process.execPath, args: ['server.js'] } } });
+      assert.strictEqual(run({}, firstDir).code, 0);
+      const result = run({}, secondDir);
+      assert.strictEqual(result.code, 2, result.stderr);
+    });
+  })) passed++; else failed++;
+
+  if (test('does not inherit cached backoff when the server has no current config', () => {
+    withCacheFixture(({ run, configPath, dir, failingConfig }) => {
+      writeConfig(configPath, failingConfig);
+      assert.strictEqual(run().code, 2);
+      const result = run({ ECC_MCP_CONFIG_PATH: path.join(dir, 'missing.json') });
+      assert.strictEqual(result.code, 0, result.stderr);
+      assert.match(result.stderr, /No MCP config found/);
+    });
+  })) passed++; else failed++;
+
+  if (test('preserves post-failure backoff for a configless server only in the same working directory', () => {
+    withCacheFixture(({ run, configPath, statePath, dir }) => {
+      const failure = run({ CLAUDE_HOOK_EVENT_NAME: 'PostToolUseFailure' });
+      assert.strictEqual(failure.code, 0, failure.stderr);
+      assert.ok(!fs.existsSync(configPath), 'Fixture has no server config');
+      assert.strictEqual(readState(statePath).servers.shared.status, 'unhealthy');
+      const sameProject = run();
+      assert.strictEqual(sameProject.code, 2, sameProject.stderr);
+      assert.match(sameProject.stderr, /marked unhealthy until/);
+      const otherProject = path.join(dir, 'other-project');
+      fs.mkdirSync(otherProject);
+      const result = run({}, otherProject);
+      assert.strictEqual(result.code, 0, result.stderr);
+      assert.match(result.stderr, /No MCP config found/);
+    });
+  })) passed++; else failed++;
+
+  for (const healthyCache of [true, false]) {
+    if (test(`rechecks legacy ${healthyCache ? 'healthy' : 'unhealthy'} entries without an identity`, () => {
+      withCacheFixture(({ run, configPath, statePath, healthyConfig, failingConfig }) => {
+        writeConfig(configPath, healthyCache ? failingConfig : healthyConfig);
+        fs.writeFileSync(statePath, JSON.stringify({ version: 1, servers: { shared: {
+          status: healthyCache ? 'healthy' : 'unhealthy', expiresAt: Date.now() + 60000,
+          nextRetryAt: Date.now() + 60000, failureCount: 5, lastRestoredAt: 123
+        } } }));
+        const result = run();
+        assert.strictEqual(result.code, healthyCache ? 2 : 0, result.stderr);
+        const entry = readState(statePath).servers.shared;
+        assert.match(entry.cacheIdentity, /^[a-f0-9]{64}$/);
+        assert.strictEqual(entry.failureCount, healthyCache ? 1 : 0);
+        if (healthyCache) assert.strictEqual(entry.lastRestoredAt, null);
+      });
+    })) passed++; else failed++;
+  }
+
+  if (test('post-failure backoff belongs to the config that failed', () => {
+    withCacheFixture(({ run, configPath, statePath, dir, failingConfig, healthyConfig }) => {
+      writeConfig(configPath, failingConfig);
+      assert.strictEqual(run().code, 2);
+      const failed = run({ CLAUDE_HOOK_EVENT_NAME: 'PostToolUseFailure' });
+      assert.strictEqual(failed.code, 0, failed.stderr);
+      assert.strictEqual(readState(statePath).servers.shared.failureCount, 2);
+      const otherConfig = path.join(dir, 'other.json');
+      writeConfig(otherConfig, healthyConfig);
+      const secondFailure = run({ CLAUDE_HOOK_EVENT_NAME: 'PostToolUseFailure', ECC_MCP_CONFIG_PATH: otherConfig });
+      assert.strictEqual(secondFailure.code, 0, secondFailure.stderr);
+      assert.strictEqual(readState(statePath).servers.shared.failureCount, 1, 'New config starts its own failure history');
+      const sameConfig = run({ ECC_MCP_CONFIG_PATH: otherConfig });
+      assert.strictEqual(sameConfig.code, 2, sameConfig.stderr);
+      assert.match(sameConfig.stderr, /marked unhealthy until/);
+      const result = run();
+      assert.strictEqual(result.code, 2, result.stderr);
+      assert.doesNotMatch(result.stderr, /marked unhealthy until/);
+      assert.strictEqual(readState(statePath).servers.shared.failureCount, 1);
+    });
   })) passed++; else failed++;
 
   if (test('ignores malformed state files and allows missing MCP configs', () => {
@@ -596,25 +721,18 @@ async function runTests() {
     try {
       fs.writeFileSync(serverScript, "console.error('503 Service Unavailable'); process.exit(1);\n");
       fs.writeFileSync(reconnectScript, "process.exit(0);\n");
-      fs.writeFileSync(statePath, JSON.stringify({
-        version: 1,
-        servers: {
-          sticky: {
-            status: 'unhealthy',
-            checkedAt: now - 60000,
-            expiresAt: now - 60000,
-            failureCount: 2,
-            lastError: 'previous outage',
-            nextRetryAt: now - 1000,
-            lastRestoredAt: now - 120000
-          }
-        }
-      }));
-      writeConfig(configPath, {
-        mcpServers: {
-          sticky: createCommandConfig(serverScript)
-        }
+      writeConfig(configPath, { mcpServers: { sticky: createCommandConfig(serverScript) } });
+      runHook({ tool_name: 'mcp__sticky__search', tool_input: {} }, {
+        CLAUDE_HOOK_EVENT_NAME: 'PreToolUse', ECC_MCP_CONFIG_PATH: configPath,
+        ECC_MCP_HEALTH_STATE_PATH: statePath, ECC_MCP_HEALTH_TIMEOUT_MS: '1000'
       });
+      const previousState = readState(statePath);
+      fs.writeFileSync(statePath, JSON.stringify({ ...previousState, servers: {
+        ...previousState.servers,
+        sticky: { ...previousState.servers.sticky, checkedAt: now - 60000,
+          expiresAt: now - 60000, failureCount: 2, nextRetryAt: now - 1000,
+          lastRestoredAt: now - 120000 }
+      } }));
 
       const result = runHook(
         { tool_name: 'mcp__sticky__search', tool_input: {} },
