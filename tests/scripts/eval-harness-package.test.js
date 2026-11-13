@@ -111,10 +111,28 @@ try {
 
   test('failed checks remain visible to aggregation and return a failing exit', () => {
     const helper = path.join(repo, 'tests/lib/eval-harness/helpers.js');
-    const script = `const h=require(${JSON.stringify(helper)});h.test('pass fixture',()=>{});h.test('failure fixture',()=>{throw new Error('synthetic failure');});h.finish('count fixture');`;
+    const script = `const h=require(${JSON.stringify(helper)});(async()=>{
+      h.test('pass fixture',()=>{});
+      h.test('failure fixture',()=>{throw new Error('synthetic failure');});
+      await h.asyncTest('async pass fixture',async()=>{});
+      await h.asyncTest('async failure fixture',async()=>{await Promise.resolve();throw new Error('synthetic async failure');});
+      h.finish('count fixture');
+    })().catch(()=>process.exit(1));`;
     const result = command(process.execPath, ['-e', script], { cwd: work });
     assert.strictEqual(result.status, 1);
-    assert.deepStrictEqual(counts(result.stdout), { passed: 1, failed: 1 });
+    assert.deepStrictEqual(counts(result.stdout), { passed: 2, failed: 2 });
+  });
+
+  test('an unsettled async check times out instead of exiting successfully without a summary', () => {
+    const helper = path.join(repo, 'tests/lib/eval-harness/helpers.js');
+    const script = `const h=require(${JSON.stringify(helper)});(async()=>{
+      await h.asyncTest('pending fixture',()=>new Promise(()=>{}),25);
+      h.finish('pending fixture');
+    })().catch(()=>process.exit(1));`;
+    const result = command(process.execPath, ['-e', script], { cwd: work });
+    assert.strictEqual(result.status, 1);
+    assert.deepStrictEqual(counts(result.stdout), { passed: 0, failed: 1 });
+    assert.match(result.stdout, /timed out after 25ms/);
   });
 } finally {
   cleanup(work);
