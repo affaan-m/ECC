@@ -639,6 +639,10 @@ export const ECCHooksPlugin: ECCHooksPluginFn = async ({
      * Action: Sets PROJECT_ROOT, PACKAGE_MANAGER, DETECTED_LANGUAGES, ECC_VERSION
      */
     "shell.env": async (_input: { cwd: string }, output: { env: Record<string, string> }) => {
+      // OpenCode may invoke this hook with no output object. Dereferencing
+      // output.env unconditionally below throws and aborts the shell environment
+      // hook, so bail out early instead (#3934).
+      if (!output) return
       const env: Record<string, string> = {
         ECC_VERSION: getECCVersion(eccRoot),
         ECC_PLUGIN: "true",
@@ -744,9 +748,11 @@ export const ECCHooksPlugin: ECCHooksPluginFn = async ({
       ]
 
       // OpenCode requires output assignment and skips context when a prompt is set.
-      if (output.prompt !== undefined) {
+      // Guard against a missing output object so a hook invocation that omits it
+      // no-ops instead of throwing and aborting compaction (#3934).
+      if (output && output.prompt !== undefined) {
         output.prompt = [output.prompt, ...eccContext].join("\n\n")
-      } else {
+      } else if (output) {
         output.context = [...output.context, ...eccContext]
       }
     },
