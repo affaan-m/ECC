@@ -348,6 +348,22 @@ async function main() {
       },
     ],
     [
+      "shell.env no-ops instead of throwing when the host omits the output object",
+      async () => withTempProject([], async (projectDir) => {
+        const client = createClient()
+        const $ = createFailingShell()
+        const hooks = await ECCHooksPlugin({ client, $, directory: projectDir })
+
+        // OpenCode may invoke the hook with no output object; the previous
+        // implementation dereferenced output.env unconditionally and aborted
+        // the shell environment hook with TypeError: undefined is not an
+        // object (#3934).
+        await hooks["shell.env"]({ cwd: projectDir }, undefined)
+
+        assert.deepStrictEqual($.calls, [], "Expected no shell probes")
+      }),
+    ],
+    [
       "compacting appends ECC context without replacing the host compaction prompt",
       async () => withTempProject([], async (projectDir) => {
         const client = createClient()
@@ -386,6 +402,21 @@ async function main() {
           assert.strictEqual(output.context, existingContext)
         }
         assert.deepStrictEqual($.calls, [])
+      }),
+    ],
+    [
+      "compacting no-ops instead of throwing when the host omits the output object",
+      async () => withTempProject([], async (projectDir) => {
+        const client = createClient()
+        const $ = createFailingShell()
+        const hooks = await ECCHooksPlugin({ client, $, directory: projectDir })
+
+        // OpenCode may invoke the hook with no output object; the previous
+        // implementation dereferenced output.prompt unconditionally and aborted
+        // compaction with TypeError: undefined is not an object (#3934).
+        await hooks["experimental.session.compacting"]({ sessionID: "session-1" }, undefined)
+
+        assert.deepStrictEqual($.calls, [], "Expected no shell probes")
       }),
     ],
     [
