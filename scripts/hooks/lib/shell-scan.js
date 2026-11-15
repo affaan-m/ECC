@@ -3,8 +3,14 @@
 // Finite literal shell scanner for block-no-verify. This is not an interpreter:
 // aliases, generated programs, expansion results and foreign languages remain
 // opaque. Every scan/queued region spends one shared input-proportional budget.
-function createBudget(length) {
-  let remaining = 24 * (length + 1) + 4096;
+// Pipeline analysis re-walks every upstream segment, so its cost grows
+// with the square of the "|" count (about 25 x n^2). The original linear budget ran
+// out at ~15 segments, e.g. a regex alternation inside a heredoc. Add a quadratic
+// allowance capped at 64 segments; above that the scan fails closed as before.
+const PIPE_ALLOWANCE_CAP = 64;
+function createBudget(length, input = '') {
+  const pipes = Math.min((String(input).match(/\|/g) || []).length, PIPE_ALLOWANCE_CAP);
+  let remaining = 24 * (length + 1) + 4096 + 40 * pipes * pipes;
   return { spend(amount = 1) {
     remaining -= amount;
     if (remaining < 0) throw new RangeError('Shell scan work budget exceeded');

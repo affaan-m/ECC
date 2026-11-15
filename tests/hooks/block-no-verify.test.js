@@ -2206,6 +2206,21 @@ for (const [name, command, expected] of sedCases) {
   })) passed++; else failed++;
 }
 
+const alternation = Array.from({ length: 20 }, (_, i) => `ext${i}`).join('|');
+const budgetCases = [
+  ['heredoc script with a 20-way regex alternation is allowed', `node - <<'EOF'\nconst r = /\\.(${alternation})$/\nEOF`, 0],
+  ['20-segment pipeline text is allowed', alternation, 0],
+  ['--no-verify at the end of a 40-segment pipeline is blocked',
+    `${Array.from({ length: 40 }, (_, i) => `cat f${i}`).join(' | ')} | git commit --no-verify -m x`, 2],
+  ['200 pipes still fail closed', Array.from({ length: 200 }, (_, i) => `w${i}`).join('|'), 2],
+];
+for (const [name, command, expected] of budgetCases) {
+  if (test(`scan budget: ${name}`, () => {
+    const result = runHook({ tool_input: { command } });
+    assert.strictEqual(result.code, expected, `expected exit ${expected}, got ${result.code}: ${result.stderr}`);
+  })) passed++; else failed++;
+}
+
 console.log('─'.repeat(50));
 console.log(`Passed: ${passed}  Failed: ${failed}`);
 
