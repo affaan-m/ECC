@@ -73,7 +73,9 @@ const ALIAS_PARAMETER_ABBREVIATIONS = Object.freeze({
   ov: 'outvariable', ob: 'outbuffer', pv: 'pipelinevariable',
   wi: 'whatif', cf: 'confirm', vb: 'verbose', db: 'debug',
 });
-const MAX_SCAN_DEPTH = 4;
+// Ordinary read-only scripts nest five or more levels of (), {} and "$()"
+// (ForEach-Object blocks with -f format strings); 4 failed them closed.
+const MAX_SCAN_DEPTH = 12;
 const MAX_CONTEXT_LENGTH = 4096;
 const DYNAMIC_EXECUTION_MARKER = '__ecc_dynamic_execution__';
 
@@ -1291,6 +1293,55 @@ function collectStaticScalarAssignments(input, state) {
   }
   for (const [name, count] of assignmentCounts) {
     if (count !== 1) state.staticScalars.delete(name);
+  }
+  seedTrustedCommandEnv(input, state, assignmentCounts, firstReferences);
+}
+
+// Trusted command env vars (opt-in). Tools often expose their CLI path in an env
+// var that agents call as "& $env:TOOL_CLI ...". Listing such names in
+// GATEGUARD_TRUSTED_COMMAND_ENV="NAME1,NAME2" resolves them to their real value,
+// so the scanner checks the actual command instead of failing closed. A command
+// that writes the variable (or the alias) itself stays gated.
+const TRUSTED_COMMAND_ENV_DEFAULT = '';
+
+function trustedCommandEnvNames() {
+  const raw = process.env.GATEGUARD_TRUSTED_COMMAND_ENV;
+  const source = raw === undefined ? TRUSTED_COMMAND_ENV_DEFAULT : raw;
+  return source.split(/[,;\s]+/).filter(name => /^[A-Za-z_]\w*$/.test(name));
+}
+
+function seedTrustedCommandEnv(input, state, assignmentCounts, firstReferences) {
+  for (const envName of trustedCommandEnvNames()) {
+    const value = String(process.env[envName] || '').trim();
+    if (!value) continue;
+    const plainRef = ('$env:' + envName).toLowerCase();
+    const bracedRef = ('${env:' + envName + '}').toLowerCase();
+    if (assignmentCounts.has(plainRef) || assignmentCounts.has(bracedRef)) continue;
+    // The name may appear only as a plain read ($env:X or ${env:X}). Any other
+    // mention (Set-Item env:X, New-Item -Path Env: -Name X, SetEnvironmentVariable('X'),
+    // a string holding the name, ...) could rewrite it, so the command stays gated.
+    const anyMention = new RegExp('(?<![\\w-])' + envName + '(?![\\w-])', 'gi');
+    const plainRead = new RegExp('(?:\\$env:' + envName + '|\\$\\{env:' + envName + '\\})(?![\\w-])', 'gi');
+    const mentions = (input.match(anyMention) || []).length;
+    const reads = (input.match(plainRead) || []).length;
+    if (mentions !== reads) continue;
+    if (new RegExp('\\$(?:\\{)?env:' + envName + '\\}?\\s*(?:\\+=|-=|\\*=|\\/=|%=|=(?!=))', 'i').test(input)) continue;
+    state.staticScalars.set(plainRef, value);
+    state.staticScalars.set(bracedRef, value);
+    // "$o = $env:X" as the first reference and only assignment of $o.
+    const aliasPattern = new RegExp(
+      '(?:^|[;\\r\\n])\\s*(\\$[A-Za-z_][\\w-]*)\\s*=\\s*(?:\\$env:' + envName
+        + '|\\$\\{env:' + envName + '\\})\\s*(?=;|\\r?\\n|$)',
+      'gi'
+    );
+    let aliasMatch;
+    while ((aliasMatch = aliasPattern.exec(input)) !== null) {
+      const aliasName = aliasMatch[1].toLowerCase();
+      const aliasIndex = aliasMatch.index + aliasMatch[0].indexOf(aliasMatch[1]);
+      if (firstReferences.get(aliasName) !== aliasIndex) continue;
+      if (assignmentCounts.get(aliasName) !== 1) continue;
+      state.staticScalars.set(aliasName, value);
+    }
   }
 }
 

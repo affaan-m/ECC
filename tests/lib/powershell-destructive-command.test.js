@@ -412,15 +412,75 @@ test('ignores an invalid EncodedCommand payload without throwing', () => {
   expectSafe('pwsh -EncodedCommand %%%not-base64%%%');
 });
 
-test('bounds deeply nested encoded commands and reports conservative evidence', () => {
+test('decodes eight nested encoded commands down to the real finding', () => {
   let command = 'Remove-Item -Recurse C:/tmp/demo';
   for (let depth = 0; depth < 8; depth += 1) {
     const payload = Buffer.from(command, 'utf16le').toString('base64');
     command = `pwsh -EncodedCommand ${payload}`;
   }
 
-  expectRules(command, [RULES.SCAN_DEPTH_EXCEEDED]);
+  expectRules(command, [RULES.REMOVE_RECURSE]);
 });
+
+test('bounds pathological nesting and reports conservative evidence', () => {
+  expectRules(`${'('.repeat(400)}Get-Date${')'.repeat(400)}`, [RULES.SCAN_DEPTH_EXCEEDED]);
+});
+
+test('allows ordinary read-only scripts that nest five or more levels', () => {
+  expectSafe('((()((()))))');
+  expectSafe('$o.groups | ForEach-Object { "{0} {1}" -f $_.id, (($_.by.PSObject.Properties | ForEach-Object { "$($_.Name):$($_.Value)" }) -join \',\') }');
+  expectSafe('foreach ($g in $o) { foreach ($y in $g.b) { if ($y.a) { if ($y.c) { "x $($y.d)" } } } }');
+});
+
+test('still finds destructive commands deep inside nested blocks', () => {
+  expectRules(
+    '$a | ForEach-Object { if ($_.a) { foreach ($y in $_.b) { if ($y) { (Remove-Item $y -Recurse -Force) } } } }',
+    [RULES.REMOVE_RECURSE, RULES.REMOVE_FORCE]
+  );
+});
+
+console.log('\nTrusted command env vars:');
+
+function withTrustedEnv(fn) {
+  const saved = { list: process.env.GATEGUARD_TRUSTED_COMMAND_ENV, tool: process.env.ECC_TEST_TOOL_CLI };
+  process.env.GATEGUARD_TRUSTED_COMMAND_ENV = 'ECC_TEST_TOOL_CLI';
+  process.env.ECC_TEST_TOOL_CLI = 'C:/tools/bin/tool.exe';
+  try {
+    fn();
+  } finally {
+    for (const [key, name] of [['list', 'GATEGUARD_TRUSTED_COMMAND_ENV'], ['tool', 'ECC_TEST_TOOL_CLI']]) {
+      if (saved[key] === undefined) delete process.env[name];
+      else process.env[name] = saved[key];
+    }
+  }
+}
+
+test('keeps env-var call targets gated unless they are listed as trusted', () => {
+  const saved = process.env.ECC_TEST_TOOL_CLI;
+  process.env.ECC_TEST_TOOL_CLI = 'C:/tools/bin/tool.exe';
+  try {
+    expectRules('& $env:ECC_TEST_TOOL_CLI status --json', [RULES.DYNAMIC_EXECUTION]);
+  } finally {
+    if (saved === undefined) delete process.env.ECC_TEST_TOOL_CLI;
+    else process.env.ECC_TEST_TOOL_CLI = saved;
+  }
+});
+
+test('resolves trusted env-var call targets to their real command', () => withTrustedEnv(() => {
+  expectSafe('& $env:ECC_TEST_TOOL_CLI status --json');
+  expectSafe('& ${env:ECC_TEST_TOOL_CLI} status --json');
+  expectSafe('$t = $env:ECC_TEST_TOOL_CLI; & $t worker-list --json');
+  expectSafe('$t = $env:ECC_TEST_TOOL_CLI; $q = (& $t status --json | ConvertFrom-Json).result');
+}));
+
+test('keeps trusted env vars gated when the command can rewrite them', () => withTrustedEnv(() => {
+  expectRules('& $env:OTHER_TOOL run', [RULES.DYNAMIC_EXECUTION]);
+  assert.ok(classify('$env:ECC_TEST_TOOL_CLI = "Remove-Item"; & $env:ECC_TEST_TOOL_CLI C:/x -Recurse').length > 0);
+  assert.ok(classify('Set-Item env:ECC_TEST_TOOL_CLI Remove-Item; & $env:ECC_TEST_TOOL_CLI C:/x -Recurse').length > 0);
+  assert.ok(classify('New-Item -Path Env: -Name ECC_TEST_TOOL_CLI -Value Remove-Item -Force; & $env:ECC_TEST_TOOL_CLI C:/x -Recurse').length > 0);
+  assert.ok(classify("[Environment]::SetEnvironmentVariable('ECC_TEST_TOOL_CLI', 'Remove-Item'); & $env:ECC_TEST_TOOL_CLI C:/x -Recurse").length > 0);
+  expectRules('$t = $env:ECC_TEST_TOOL_CLI; $t = $cmd; & $t x', [RULES.DYNAMIC_EXECUTION]);
+}));
 
 test('classifies destructive commands in executable PowerShell containers', () => {
   const commands = [

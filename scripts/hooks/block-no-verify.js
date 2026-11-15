@@ -985,7 +985,7 @@ function applyDeclaration(current, key, equals, declaration) {
 }
 
 function checkCommand(input) {
-  const budget = createBudget(input.length);
+  const budget = createBudget(input.length, input);
   const pending = [{ text: input, opaque: false, context: { states: [shellState(new Map(), budget)] } }];
   function enqueue(text, opaque = false, context = { states: [shellState(new Map(), budget)] }) {
     if (!text) return;
