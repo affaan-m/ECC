@@ -4,10 +4,10 @@ from __future__ import annotations
 
 import os
 import sys
-from enum import Enum
+from enum import StrEnum
 
 
-class Color(str, Enum):
+class Color(StrEnum):
     RESET = "\033[0m"
     BOLD = "\033[1m"
     GREEN = "\033[92m"
@@ -18,10 +18,10 @@ class Color(str, Enum):
 
 def print_banner() -> None:
     banner = f"""{Color.CYAN}
-╔═══════════════════════════════════════════╗
-║   LLM Provider Selector                   ║
-║   Provider-agnostic AI interactions       ║
-╚═══════════════════════════════════════════╝{Color.RESET}"""
++-------------------------------------------+
+|   LLM Provider Selector                   |
+|   Provider-agnostic AI interactions       |
++-------------------------------------------+{Color.RESET}"""
     print(banner)
 
 
@@ -98,12 +98,12 @@ def save_config(provider: str, model: str, persist: bool = False) -> None:
     with open(env_file, "w") as f:
         f.write(config)
 
-    print(f"\n{Color.GREEN}✓{Color.RESET} Config saved to {Color.CYAN}{env_file}{Color.RESET}")
+    print(f"\n{Color.GREEN}OK{Color.RESET} Config saved to {Color.CYAN}{env_file}{Color.RESET}")
 
     if persist:
         os.environ["LLM_PROVIDER"] = provider
         os.environ["LLM_MODEL"] = model
-        print(f"{Color.GREEN}✓{Color.RESET} Config loaded to current session")
+        print(f"{Color.GREEN}OK{Color.RESET} Config loaded to current session")
 
 
 def interactive_select(
@@ -116,7 +116,7 @@ def interactive_select(
     if providers is None:
         providers = [
             ("claude", "Anthropic Claude ( Sonnet, Opus, Haiku)"),
-            ("minimax", "MiniMax (M2.7)"),
+            ("minimax", "MiniMax (M3.1 Flash, M3)"),
             ("openai", "OpenAI GPT (4o, 4o-mini, 3.5-turbo)"),
             ("ollama", "Local Ollama models"),
         ]
@@ -129,7 +129,8 @@ def interactive_select(
                 ("claude-haiku-4-5", "Claude Haiku 4.5 - Fast"),
             ],
             "minimax": [
-                ("MiniMax-M2.7", "MiniMax M2.7 - Long-context text model"),
+                ("MiniMax-M3.1-Flash", "MiniMax M3.1 Flash - Fast reasoning model"),
+                ("MiniMax-M3", "MiniMax M3 - Flexible reasoning model"),
             ],
             "openai": [
                 ("gpt-4o", "GPT-4o - Most capable"),

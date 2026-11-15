@@ -48,7 +48,7 @@ function readManagedHookConfig(env = process.env) {
   if (!configPath || !fs.existsSync(configPath)) return {};
 
   try {
-    const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+    const config = JSON.parse(fs.readFileSync(configPath, 'utf8').replace(/^\uFEFF/, ''));
     return config?.hooks
       && typeof config.hooks === 'object'
       && !Array.isArray(config.hooks)

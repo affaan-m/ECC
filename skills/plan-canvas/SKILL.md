@@ -194,3 +194,5 @@ ecc-plan-canvas await <file> --reply "Reworked the risk table."
   and keep the terminal summary to one line.
 - Parsing the canvas chat from state files — everything you need arrives via
   `await`.
+
+Design notes and origin: [docs/design/plan-canvas.md](../../docs/design/plan-canvas.md).

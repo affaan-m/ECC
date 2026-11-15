@@ -18,6 +18,8 @@ const fs = require('fs');
 const MAX_TRANSCRIPT_CHARS = 7000;
 const MAX_TURNS = 25;
 const LLM_TIMEOUT_MS = 90000;
+// Leave the Stop hook time to persist its mechanical fallback after a timeout.
+const HOOK_FINISH_RESERVE_MS = 1000;
 
 function getLLMModel() {
   return process.env.ECC_LLM_SUMMARY_MODEL || 'haiku';
@@ -90,16 +92,24 @@ function extractConversationText(transcriptPath) {
 }
 
 /**
- * Read the context remaining percentage from a transcript's latest usage record.
- * Returns null when unavailable.
+ * Read the remaining context budget percentage for summary scheduling.
+ * Use the earlier of confirmed capacity and a native compaction budget.
+ * With inferred capacity, only an explicit native budget can supply a safe
+ * scheduling boundary; otherwise return null rather than certify a guess.
  */
 function getContextRemainingPct(transcriptPath) {
   try {
-    const { readLatestContextTokens, resolveContextWindowTokens } = require('./transcript-context');
+    const { readLatestContextTokens, resolveContextWindow } = require('./transcript-context');
     const usage = readLatestContextTokens(transcriptPath);
     if (!usage) return null;
-    const windowTokens = resolveContextWindowTokens(usage.tokens, usage.model);
-    return Math.round((1 - usage.tokens / windowTokens) * 100);
+    const resolution = resolveContextWindow(usage.tokens, usage.model);
+    const nativeBudget = Number(process.env.CLAUDE_CODE_AUTO_COMPACT_WINDOW || '');
+    const hasNativeBudget = Number.isSafeInteger(nativeBudget) && nativeBudget > 0;
+    const budget = resolution.inferred
+      ? (hasNativeBudget ? nativeBudget : 0)
+      : (hasNativeBudget ? Math.min(resolution.windowTokens, nativeBudget) : resolution.windowTokens);
+    if (!Number.isSafeInteger(budget) || budget <= 0) return null;
+    return Math.round((1 - usage.tokens / budget) * 100);
   } catch {
     return null;
   }
@@ -109,11 +119,28 @@ function getContextRemainingPct(transcriptPath) {
  * Generate a session summary using `claude -p`.
  * Returns the summary string, or null on failure or when recursion guard is active.
  */
-function generateSessionSummary(transcriptPath) {
-  if (process.env.ECC_SKIP_LLM_SUMMARY) return null;
+function generateSessionSummary(transcriptPath, { onSkip = () => {} } = {}) {
+  if (process.env.ECC_SKIP_LLM_SUMMARY) {
+    onSkip('ECC_SKIP_LLM_SUMMARY');
+    return null;
+  }
 
   const conversation = extractConversationText(transcriptPath);
   if (!conversation) return null;
+
+  let timeout = LLM_TIMEOUT_MS;
+  if (process.env.ECC_HOOK_DEADLINE_MS !== undefined) {
+    const deadline = Number(process.env.ECC_HOOK_DEADLINE_MS);
+    if (!Number.isSafeInteger(deadline) || deadline <= 0) {
+      onSkip('invalid lifecycle deadline');
+      return null;
+    }
+    timeout = Math.min(timeout, deadline - Date.now() - HOOK_FINISH_RESERVE_MS);
+    if (timeout <= 0) {
+      onSkip('insufficient lifecycle time budget');
+      return null;
+    }
+  }
 
   const prompt = [
     'Below is a conversation log from a Claude Code coding session.',
@@ -156,9 +183,10 @@ function generateSessionSummary(transcriptPath) {
       env: {
         ...process.env,
         CLAUDECODE: '',
-        ECC_SKIP_LLM_SUMMARY: '1'
+        ECC_SKIP_LLM_SUMMARY: '1',
+        ECC_LLM_SUMMARY_SUBPROCESS: '1'
       },
-      timeout: LLM_TIMEOUT_MS,
+      timeout,
       shell: process.platform === 'win32'
     });
 

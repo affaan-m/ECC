@@ -1,6 +1,6 @@
 # 用語集 / Glossary
 
-everything-claude-code 日本語翻訳における統一用語集です。
+ECC 日本語翻訳における統一用語集です。
 
 | English | Japanese | 注記 |
 |---------|----------|------|

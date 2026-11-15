@@ -1,0 +1,4 @@
+# Explicit Codex CLI profile: codex -p yolo
+approval_policy = "never"
+sandbox_mode = "workspace-write"
+web_search = "live"

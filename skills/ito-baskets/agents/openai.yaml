@@ -1,0 +1,4 @@
+interface:
+  display_name: "Itô Baskets"
+  short_description: "Read-only basket index, comparison, briefs, and planning worksheets"
+  default_prompt: "Use $ito-baskets to index the live Itô basket catalog, compare a basket against my research, or build a source-grounded market brief with provenance and freshness caveats."

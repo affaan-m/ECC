@@ -1,0 +1,60 @@
+name: npmscan
+
+# Warn-only dependency check. When package.json, package-lock.json or yarn.lock
+# changes, it sends those files (base and PR versions) to npmscan.com and reports
+# what the PR changes: known malware or vulnerabilities in changed packages, new
+# install scripts, swapped tarballs or checksums, and override changes. No
+# environment variables or GitHub token are intentionally included. Values
+# embedded in dependency files are included, such as registry URLs and scripts.
+# Non-regular checkout inputs are refused before transmission. The check is
+# warning-only and comments on findings; the full report is in the job summary.
+
+on:
+  pull_request:
+    paths:
+      - package.json
+      - package-lock.json
+      - yarn.lock
+
+permissions:
+  contents: read
+
+concurrency:
+  group: npmscan-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  scan:
+    name: npmscan dependency check
+    runs-on: ubuntu-latest
+    # The action gives up on a hung API after about 5 minutes per scanned file.
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      pull-requests: write # only for the one report comment; fork PRs get a read-only token and use the job summary
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Check dependency input boundaries
+        id: input-safety
+        shell: bash
+        run: |
+          safe=true
+          for dependency_file in package.json package-lock.json yarn.lock; do
+            if [ -L "$dependency_file" ] || { [ -e "$dependency_file" ] && [ ! -f "$dependency_file" ]; }; then
+              safe=false
+              echo "::warning::Skipping external dependency scan: $dependency_file is not a regular checkout file."
+            fi
+          done
+          echo "safe=$safe" >> "$GITHUB_OUTPUT"
+      - if: steps.input-safety.outputs.safe == 'true'
+        uses: NPMscan/npmscan-action@83cb7d67204f8f2d1f76454ee9abf19c480dec26 # v1.4.0
+        with:
+          files: |
+            package.json
+            package-lock.json
+            yarn.lock
+          mode: warn
+          fail-on-error: false
+          comment: on-findings

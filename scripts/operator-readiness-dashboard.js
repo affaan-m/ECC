@@ -63,6 +63,36 @@ function normalizeRelativePrefix(value) {
   return normalized ? `${normalized}/` : '';
 }
 
+// Flags that take a value, as `--flag value` or `--flag=value`.
+const VALUE_FLAGS = Object.freeze({
+  '--format': (parsed, value) => { parsed.format = value.toLowerCase(); },
+  '--write': (parsed, value) => { parsed.writePath = path.resolve(value); },
+  '--root': (parsed, value) => { parsed.root = path.resolve(value); },
+  '--repo': (parsed, value) => { parsed.repos.push(value); },
+  '--allow-untracked': (parsed, value) => { parsed.allowUntracked.push(value); },
+  '--max-open-prs': (parsed, value) => {
+    parsed.thresholds.maxOpenPrs = parseIntegerFlag(value, '--max-open-prs');
+  },
+  '--max-open-issues': (parsed, value) => {
+    parsed.thresholds.maxOpenIssues = parseIntegerFlag(value, '--max-open-issues');
+  },
+  '--max-dirty-files': (parsed, value) => {
+    parsed.thresholds.maxDirtyFiles = parseIntegerFlag(value, '--max-dirty-files');
+  },
+  '--generated-at': (parsed, value) => { parsed.generatedAt = value; },
+});
+
+// Flags that stand alone. They never accept an inline `=value`.
+const BOOLEAN_FLAGS = Object.freeze({
+  '--help': parsed => { parsed.help = true; },
+  '-h': parsed => { parsed.help = true; },
+  '--json': parsed => { parsed.format = 'json'; },
+  '--markdown': parsed => { parsed.format = 'markdown'; },
+  '--skip-github': parsed => { parsed.skipGithub = true; },
+  '--use-env-github-token': parsed => { parsed.useEnvGithubToken = true; },
+  '--exit-code': parsed => { parsed.exitCode = true; },
+});
+
 function parseArgs(argv) {
   const args = argv.slice(2);
   const parsed = {
@@ -81,133 +111,18 @@ function parseArgs(argv) {
 
   for (let index = 0; index < args.length; index += 1) {
     const arg = args[index];
+    const separator = arg.indexOf('=');
+    const name = separator === -1 ? arg : arg.slice(0, separator);
 
-    if (arg === '--help' || arg === '-h') {
-      parsed.help = true;
+    if (Object.hasOwn(VALUE_FLAGS, name)) {
+      const value = separator === -1 ? readValue(args, index, arg) : arg.slice(separator + 1);
+      if (separator === -1) index += 1;
+      VALUE_FLAGS[name](parsed, value);
       continue;
     }
 
-    if (arg === '--format') {
-      parsed.format = readValue(args, index, arg).toLowerCase();
-      index += 1;
-      continue;
-    }
-
-    if (arg.startsWith('--format=')) {
-      parsed.format = arg.slice('--format='.length).toLowerCase();
-      continue;
-    }
-
-    if (arg === '--json') {
-      parsed.format = 'json';
-      continue;
-    }
-
-    if (arg === '--markdown') {
-      parsed.format = 'markdown';
-      continue;
-    }
-
-    if (arg === '--write') {
-      parsed.writePath = path.resolve(readValue(args, index, arg));
-      index += 1;
-      continue;
-    }
-
-    if (arg.startsWith('--write=')) {
-      parsed.writePath = path.resolve(arg.slice('--write='.length));
-      continue;
-    }
-
-    if (arg === '--root') {
-      parsed.root = path.resolve(readValue(args, index, arg));
-      index += 1;
-      continue;
-    }
-
-    if (arg.startsWith('--root=')) {
-      parsed.root = path.resolve(arg.slice('--root='.length));
-      continue;
-    }
-
-    if (arg === '--repo') {
-      parsed.repos.push(readValue(args, index, arg));
-      index += 1;
-      continue;
-    }
-
-    if (arg.startsWith('--repo=')) {
-      parsed.repos.push(arg.slice('--repo='.length));
-      continue;
-    }
-
-    if (arg === '--skip-github') {
-      parsed.skipGithub = true;
-      continue;
-    }
-
-    if (arg === '--allow-untracked') {
-      parsed.allowUntracked.push(readValue(args, index, arg));
-      index += 1;
-      continue;
-    }
-
-    if (arg.startsWith('--allow-untracked=')) {
-      parsed.allowUntracked.push(arg.slice('--allow-untracked='.length));
-      continue;
-    }
-
-    if (arg === '--max-open-prs') {
-      parsed.thresholds.maxOpenPrs = parseIntegerFlag(readValue(args, index, arg), arg);
-      index += 1;
-      continue;
-    }
-
-    if (arg.startsWith('--max-open-prs=')) {
-      parsed.thresholds.maxOpenPrs = parseIntegerFlag(arg.slice('--max-open-prs='.length), '--max-open-prs');
-      continue;
-    }
-
-    if (arg === '--max-open-issues') {
-      parsed.thresholds.maxOpenIssues = parseIntegerFlag(readValue(args, index, arg), arg);
-      index += 1;
-      continue;
-    }
-
-    if (arg.startsWith('--max-open-issues=')) {
-      parsed.thresholds.maxOpenIssues = parseIntegerFlag(arg.slice('--max-open-issues='.length), '--max-open-issues');
-      continue;
-    }
-
-    if (arg === '--max-dirty-files') {
-      parsed.thresholds.maxDirtyFiles = parseIntegerFlag(readValue(args, index, arg), arg);
-      index += 1;
-      continue;
-    }
-
-    if (arg.startsWith('--max-dirty-files=')) {
-      parsed.thresholds.maxDirtyFiles = parseIntegerFlag(arg.slice('--max-dirty-files='.length), '--max-dirty-files');
-      continue;
-    }
-
-    if (arg === '--use-env-github-token') {
-      parsed.useEnvGithubToken = true;
-      continue;
-    }
-
-    if (arg === '--generated-at') {
-      parsed.generatedAt = readValue(args, index, arg);
-      index += 1;
-      continue;
-    }
-
-    if (arg.startsWith('--generated-at=')) {
-      parsed.generatedAt = arg.slice('--generated-at='.length);
-      continue;
-    }
-
-    if (arg === '--exit-code') {
-      parsed.exitCode = true;
+    if (separator === -1 && Object.hasOwn(BOOLEAN_FLAGS, arg)) {
+      BOOLEAN_FLAGS[arg](parsed);
       continue;
     }
 
@@ -341,129 +256,72 @@ function agentShieldEnterpriseEvidence(roadmap) {
   return 'AgentShield enterprise PR evidence is mirrored in the GA roadmap';
 }
 
+// Roadmap markers, newest milestone first. Each tier is [markers, message]
+// and the first tier with any marker present wins.
+const ANNOUNCEMENT_GATE_READY_MARKERS = [
+  'announcementGateReady` is `true',
+  'Native GitHub payments announcement gate is ready',
+  'd3d62df83fa075660fa4530c3e0edc311a4355fe',
+];
+const SELECTED_TARGET_GATE_MARKERS = [
+  'selected-target official announcement gate',
+  'billing gate env-file operator path',
+  '72119a1',
+  '16a5bb3',
+  'select-ready-target',
+  'f14ed2fe-a219-470c-8119-63429e197027',
+];
+const PROVENANCE_COUNT_MARKERS = ['d5f60db', 'Marketplace-source provenance counts'];
+const TARGET_ACCOUNT_READBACK_MARKERS = ['target account billing readback', '632e059'];
+const WRANGLER_OAUTH_READBACK_MARKERS = ['Wrangler OAuth readback', '42653f9'];
+const WEBHOOK_PROVENANCE_MARKERS = ['Marketplace webhook provenance', '2859678'];
+const KV_READBACK_MARKERS = ['billing:kv-readback', '95d0bec'];
+const PRODUCTION_READBACK_MARKERS = ['production Marketplace readback state', 'eb69412'];
+const PROMOTION_TRACE_MARKERS = [
+  'hosted promotion judge audit traces',
+  'operator-visible promotion output values',
+];
+
+const ECC_TOOLS_EVIDENCE_TIERS = [
+  [ANNOUNCEMENT_GATE_READY_MARKERS, 'billing announcement gate, selected-target announcement gate, billing gate env-file operator path, non-breaking operator bearer path, hosted analysis lanes, AgentShield fleet-summary consumption, hosted finding evidence paths, harness-route policy linking, policy-promotion Action-output telemetry, operator-visible promotion output details, hosted promotion judge audit traces, billing announcement preflight, aggregate production billing KV readback, Wrangler selected-target readback, target-account billing readback, provenance-aware Marketplace billing-state gates, sanitized Marketplace plan/action provenance counts, ready Marketplace Pro target selection, hosted team-learning feedback controls, and ECC-Tools Dependabot alert remediation are mirrored in the GA roadmap'],
+  [SELECTED_TARGET_GATE_MARKERS, 'billing announcement gate, selected-target announcement gate, billing gate env-file operator path, hosted analysis lanes, AgentShield fleet-summary consumption, hosted finding evidence paths, harness-route policy linking, policy-promotion Action-output telemetry, operator-visible promotion output details, hosted promotion judge audit traces, billing announcement preflight, aggregate production billing KV readback, Wrangler OAuth readback, target-account billing readback, provenance-aware Marketplace billing-state gates, sanitized Marketplace plan/action provenance counts, ready Marketplace Pro target selection, hosted team-learning feedback controls, and ECC-Tools Dependabot alert remediation are mirrored in the GA roadmap'],
+  [['69ca535', 'team feedback controls', 'e56fc1a'], 'billing announcement gate, hosted analysis lanes, AgentShield fleet-summary consumption, hosted finding evidence paths, harness-route policy linking, policy-promotion Action-output telemetry, operator-visible promotion output details, hosted promotion judge audit traces, billing announcement preflight, aggregate production billing KV readback, Wrangler OAuth readback, target-account billing readback, provenance-aware Marketplace billing-state gates, sanitized Marketplace plan/action provenance counts, hosted team-learning feedback controls, and ECC-Tools Dependabot alert remediation are mirrored in the GA roadmap'],
+  [PROVENANCE_COUNT_MARKERS, 'billing announcement gate, hosted analysis lanes, AgentShield fleet-summary consumption, hosted finding evidence paths, harness-route policy linking, policy-promotion Action-output telemetry, operator-visible promotion output details, hosted promotion judge audit traces, billing announcement preflight, aggregate production billing KV readback, Wrangler OAuth readback, target-account billing readback, provenance-aware Marketplace billing-state gates, and sanitized Marketplace plan/action provenance counts are mirrored in the GA roadmap'],
+  [TARGET_ACCOUNT_READBACK_MARKERS, 'billing announcement gate, hosted analysis lanes, AgentShield fleet-summary consumption, hosted finding evidence paths, harness-route policy linking, policy-promotion Action-output telemetry, operator-visible promotion output details, hosted promotion judge audit traces, billing announcement preflight, aggregate production billing KV readback, Wrangler OAuth readback, target-account billing readback, and provenance-aware Marketplace billing-state gates are mirrored in the GA roadmap'],
+  [WRANGLER_OAUTH_READBACK_MARKERS, 'billing announcement gate, hosted analysis lanes, AgentShield fleet-summary consumption, hosted finding evidence paths, harness-route policy linking, policy-promotion Action-output telemetry, operator-visible promotion output details, hosted promotion judge audit traces, billing announcement preflight, aggregate production billing KV readback, Wrangler OAuth readback, and provenance-aware Marketplace billing-state gates are mirrored in the GA roadmap'],
+  [WEBHOOK_PROVENANCE_MARKERS, 'billing announcement gate, hosted analysis lanes, AgentShield fleet-summary consumption, hosted finding evidence paths, harness-route policy linking, policy-promotion Action-output telemetry, operator-visible promotion output details, hosted promotion judge audit traces, billing announcement preflight, aggregate production billing KV readback, and provenance-aware Marketplace billing-state gates are mirrored in the GA roadmap'],
+  [KV_READBACK_MARKERS, 'billing announcement gate, hosted analysis lanes, AgentShield fleet-summary consumption, hosted finding evidence paths, harness-route policy linking, policy-promotion Action-output telemetry, operator-visible promotion output details, hosted promotion judge audit traces, billing announcement preflight, and aggregate production billing KV readback are mirrored in the GA roadmap'],
+  [PRODUCTION_READBACK_MARKERS, 'billing announcement gate, hosted analysis lanes, AgentShield fleet-summary consumption, hosted finding evidence paths, harness-route policy linking, policy-promotion Action-output telemetry, operator-visible promotion output details, hosted promotion judge audit traces, billing announcement preflight, and production KV readback state are mirrored in the GA roadmap'],
+  [PROMOTION_TRACE_MARKERS, 'billing announcement gate, hosted analysis lanes, AgentShield fleet-summary consumption, hosted finding evidence paths, harness-route policy linking, policy-promotion Action-output telemetry, operator-visible promotion output details, and hosted promotion judge audit traces are mirrored in the GA roadmap'],
+];
+const ECC_TOOLS_EVIDENCE_FALLBACK = 'billing announcement gate, hosted analysis lanes, AgentShield fleet-summary consumption, hosted finding evidence paths, and harness-route policy linking are mirrored in the GA roadmap';
+
+const ECC_TOOLS_GAP_TIERS = [
+  [ANNOUNCEMENT_GATE_READY_MARKERS, 'repeat KV readback and selected-target announcement gate immediately before launch; keep native-payments copy behind the final release, plugin, URL, and owner-approval gates'],
+  [[...SELECTED_TARGET_GATE_MARKERS, 'old "no Marketplace-managed Pro target billing-state" blocker is cleared'], 'obtain or rotate the local/internal INTERNAL_API_SECRET bearer-token path, via exported env or ignored --env-file, then run the live selected-target billing announcement gate before publishing native-payments copy'],
+  [['1Password CLI authorization timed out', 'Cloudflare API auth returned `Authentication error [code: 10000]`'], 'authorize Cloudflare API or 1Password CLI access, configure the target Marketplace Pro account and INTERNAL_API_SECRET, create or replay Marketplace Pro webhook state, then rerun target readback and the live announcement gate'],
+  [['Wrangler OAuth now works', '6904e4fb-bec7-4787-90e2-759f077a628c'], 'create or verify Marketplace-managed Pro target billing-state with webhook provenance, configure the target account and INTERNAL_API_SECRET, then rerun target readback and the live announcement gate'],
+  [PROVENANCE_COUNT_MARKERS, 'create or verify Marketplace-managed Pro target billing-state with webhook provenance, then run `billing:kv-readback -- --wrangler --wrangler-bin ./node_modules/.bin/wrangler --account <github-login> --require-ready`, followed by the live announcement gate'],
+  [TARGET_ACCOUNT_READBACK_MARKERS, 'create or verify Marketplace-managed Pro target billing-state with webhook provenance, then run `billing:kv-readback -- --account <github-login> --require-ready` with working Cloudflare API auth or repaired Wrangler OAuth, followed by the live announcement gate'],
+  [WRANGLER_OAUTH_READBACK_MARKERS, 'create or verify Marketplace-managed Pro billing-state with webhook provenance, then run `billing:kv-readback -- --require-ready` with working Cloudflare API auth or repaired Wrangler OAuth, followed by the live announcement gate'],
+  [WEBHOOK_PROVENANCE_MARKERS, 'replace the invalid Cloudflare credential, create or verify Marketplace-managed Pro billing-state with webhook provenance, then run `billing:kv-readback -- --require-ready` and the live announcement gate'],
+  [KV_READBACK_MARKERS, 'create or verify a Marketplace-managed Pro billing-state, then run the official live announcement gate'],
+  [PRODUCTION_READBACK_MARKERS, 'complete Marketplace purchase/webhook readback, then run the live announcement gate'],
+  [PROMOTION_TRACE_MARKERS, 'live Marketplace test-account readback pending'],
+];
+const ECC_TOOLS_GAP_FALLBACK = 'live Marketplace test-account readback, hosted promotion telemetry, and richer operator review UX pending';
+
+function roadmapTierMessage(roadmap, tiers, fallback) {
+  const tier = tiers.find(([markers]) => markers.some(marker => roadmap.includes(marker)));
+  return tier ? tier[1] : fallback;
+}
+
 function eccToolsNextLevelEvidence(roadmap) {
-  if (roadmap.includes('announcementGateReady` is `true')
-    || roadmap.includes('Native GitHub payments announcement gate is ready')
-    || roadmap.includes('d3d62df83fa075660fa4530c3e0edc311a4355fe')) {
-    return 'billing announcement gate, selected-target announcement gate, billing gate env-file operator path, non-breaking operator bearer path, hosted analysis lanes, AgentShield fleet-summary consumption, hosted finding evidence paths, harness-route policy linking, policy-promotion Action-output telemetry, operator-visible promotion output details, hosted promotion judge audit traces, billing announcement preflight, aggregate production billing KV readback, Wrangler selected-target readback, target-account billing readback, provenance-aware Marketplace billing-state gates, sanitized Marketplace plan/action provenance counts, ready Marketplace Pro target selection, hosted team-learning feedback controls, and ECC-Tools Dependabot alert remediation are mirrored in the GA roadmap';
-  }
-
-  if (roadmap.includes('selected-target official announcement gate')
-    || roadmap.includes('billing gate env-file operator path')
-    || roadmap.includes('72119a1')
-    || roadmap.includes('16a5bb3')
-    || roadmap.includes('select-ready-target')
-    || roadmap.includes('f14ed2fe-a219-470c-8119-63429e197027')) {
-    return 'billing announcement gate, selected-target announcement gate, billing gate env-file operator path, hosted analysis lanes, AgentShield fleet-summary consumption, hosted finding evidence paths, harness-route policy linking, policy-promotion Action-output telemetry, operator-visible promotion output details, hosted promotion judge audit traces, billing announcement preflight, aggregate production billing KV readback, Wrangler OAuth readback, target-account billing readback, provenance-aware Marketplace billing-state gates, sanitized Marketplace plan/action provenance counts, ready Marketplace Pro target selection, hosted team-learning feedback controls, and ECC-Tools Dependabot alert remediation are mirrored in the GA roadmap';
-  }
-
-  if (roadmap.includes('69ca535')
-    || roadmap.includes('team feedback controls')
-    || roadmap.includes('e56fc1a')) {
-    return 'billing announcement gate, hosted analysis lanes, AgentShield fleet-summary consumption, hosted finding evidence paths, harness-route policy linking, policy-promotion Action-output telemetry, operator-visible promotion output details, hosted promotion judge audit traces, billing announcement preflight, aggregate production billing KV readback, Wrangler OAuth readback, target-account billing readback, provenance-aware Marketplace billing-state gates, sanitized Marketplace plan/action provenance counts, hosted team-learning feedback controls, and ECC-Tools Dependabot alert remediation are mirrored in the GA roadmap';
-  }
-
-  if (roadmap.includes('d5f60db')
-    || roadmap.includes('Marketplace-source provenance counts')) {
-    return 'billing announcement gate, hosted analysis lanes, AgentShield fleet-summary consumption, hosted finding evidence paths, harness-route policy linking, policy-promotion Action-output telemetry, operator-visible promotion output details, hosted promotion judge audit traces, billing announcement preflight, aggregate production billing KV readback, Wrangler OAuth readback, target-account billing readback, provenance-aware Marketplace billing-state gates, and sanitized Marketplace plan/action provenance counts are mirrored in the GA roadmap';
-  }
-
-  if (roadmap.includes('target account billing readback')
-    || roadmap.includes('632e059')) {
-    return 'billing announcement gate, hosted analysis lanes, AgentShield fleet-summary consumption, hosted finding evidence paths, harness-route policy linking, policy-promotion Action-output telemetry, operator-visible promotion output details, hosted promotion judge audit traces, billing announcement preflight, aggregate production billing KV readback, Wrangler OAuth readback, target-account billing readback, and provenance-aware Marketplace billing-state gates are mirrored in the GA roadmap';
-  }
-
-  if (roadmap.includes('Wrangler OAuth readback')
-    || roadmap.includes('42653f9')) {
-    return 'billing announcement gate, hosted analysis lanes, AgentShield fleet-summary consumption, hosted finding evidence paths, harness-route policy linking, policy-promotion Action-output telemetry, operator-visible promotion output details, hosted promotion judge audit traces, billing announcement preflight, aggregate production billing KV readback, Wrangler OAuth readback, and provenance-aware Marketplace billing-state gates are mirrored in the GA roadmap';
-  }
-
-  if (roadmap.includes('Marketplace webhook provenance')
-    || roadmap.includes('2859678')) {
-    return 'billing announcement gate, hosted analysis lanes, AgentShield fleet-summary consumption, hosted finding evidence paths, harness-route policy linking, policy-promotion Action-output telemetry, operator-visible promotion output details, hosted promotion judge audit traces, billing announcement preflight, aggregate production billing KV readback, and provenance-aware Marketplace billing-state gates are mirrored in the GA roadmap';
-  }
-
-  if (roadmap.includes('billing:kv-readback')
-    || roadmap.includes('95d0bec')) {
-    return 'billing announcement gate, hosted analysis lanes, AgentShield fleet-summary consumption, hosted finding evidence paths, harness-route policy linking, policy-promotion Action-output telemetry, operator-visible promotion output details, hosted promotion judge audit traces, billing announcement preflight, and aggregate production billing KV readback are mirrored in the GA roadmap';
-  }
-
-  if (roadmap.includes('production Marketplace readback state')
-    || roadmap.includes('eb69412')) {
-    return 'billing announcement gate, hosted analysis lanes, AgentShield fleet-summary consumption, hosted finding evidence paths, harness-route policy linking, policy-promotion Action-output telemetry, operator-visible promotion output details, hosted promotion judge audit traces, billing announcement preflight, and production KV readback state are mirrored in the GA roadmap';
-  }
-
-  if (roadmap.includes('hosted promotion judge audit traces')
-    || roadmap.includes('operator-visible promotion output values')) {
-    return 'billing announcement gate, hosted analysis lanes, AgentShield fleet-summary consumption, hosted finding evidence paths, harness-route policy linking, policy-promotion Action-output telemetry, operator-visible promotion output details, and hosted promotion judge audit traces are mirrored in the GA roadmap';
-  }
-
-  return 'billing announcement gate, hosted analysis lanes, AgentShield fleet-summary consumption, hosted finding evidence paths, and harness-route policy linking are mirrored in the GA roadmap';
+  return roadmapTierMessage(roadmap, ECC_TOOLS_EVIDENCE_TIERS, ECC_TOOLS_EVIDENCE_FALLBACK);
 }
 
 function eccToolsNextLevelGap(roadmap) {
-  if (roadmap.includes('announcementGateReady` is `true')
-    || roadmap.includes('Native GitHub payments announcement gate is ready')
-    || roadmap.includes('d3d62df83fa075660fa4530c3e0edc311a4355fe')) {
-    return 'repeat KV readback and selected-target announcement gate immediately before launch; keep native-payments copy behind the final release, plugin, URL, and owner-approval gates';
-  }
-
-  if (roadmap.includes('selected-target official announcement gate')
-    || roadmap.includes('billing gate env-file operator path')
-    || roadmap.includes('72119a1')
-    || roadmap.includes('16a5bb3')
-    || roadmap.includes('select-ready-target')
-    || roadmap.includes('f14ed2fe-a219-470c-8119-63429e197027')
-    || roadmap.includes('old "no Marketplace-managed Pro target billing-state" blocker is cleared')) {
-    return 'obtain or rotate the local/internal INTERNAL_API_SECRET bearer-token path, via exported env or ignored --env-file, then run the live selected-target billing announcement gate before publishing native-payments copy';
-  }
-
-  if (roadmap.includes('1Password CLI authorization timed out')
-    || roadmap.includes('Cloudflare API auth returned `Authentication error [code: 10000]`')) {
-    return 'authorize Cloudflare API or 1Password CLI access, configure the target Marketplace Pro account and INTERNAL_API_SECRET, create or replay Marketplace Pro webhook state, then rerun target readback and the live announcement gate';
-  }
-
-  if (roadmap.includes('Wrangler OAuth now works')
-    || roadmap.includes('6904e4fb-bec7-4787-90e2-759f077a628c')) {
-    return 'create or verify Marketplace-managed Pro target billing-state with webhook provenance, configure the target account and INTERNAL_API_SECRET, then rerun target readback and the live announcement gate';
-  }
-
-  if (roadmap.includes('d5f60db')
-    || roadmap.includes('Marketplace-source provenance counts')) {
-    return 'create or verify Marketplace-managed Pro target billing-state with webhook provenance, then run `billing:kv-readback -- --wrangler --wrangler-bin ./node_modules/.bin/wrangler --account <github-login> --require-ready`, followed by the live announcement gate';
-  }
-
-  if (roadmap.includes('target account billing readback')
-    || roadmap.includes('632e059')) {
-    return 'create or verify Marketplace-managed Pro target billing-state with webhook provenance, then run `billing:kv-readback -- --account <github-login> --require-ready` with working Cloudflare API auth or repaired Wrangler OAuth, followed by the live announcement gate';
-  }
-
-  if (roadmap.includes('Wrangler OAuth readback')
-    || roadmap.includes('42653f9')) {
-    return 'create or verify Marketplace-managed Pro billing-state with webhook provenance, then run `billing:kv-readback -- --require-ready` with working Cloudflare API auth or repaired Wrangler OAuth, followed by the live announcement gate';
-  }
-
-  if (roadmap.includes('Marketplace webhook provenance')
-    || roadmap.includes('2859678')) {
-    return 'replace the invalid Cloudflare credential, create or verify Marketplace-managed Pro billing-state with webhook provenance, then run `billing:kv-readback -- --require-ready` and the live announcement gate';
-  }
-
-  if (roadmap.includes('billing:kv-readback')
-    || roadmap.includes('95d0bec')) {
-    return 'create or verify a Marketplace-managed Pro billing-state, then run the official live announcement gate';
-  }
-
-  if (roadmap.includes('production Marketplace readback state')
-    || roadmap.includes('eb69412')) {
-    return 'complete Marketplace purchase/webhook readback, then run the live announcement gate';
-  }
-
-  if (roadmap.includes('hosted promotion judge audit traces')
-    || roadmap.includes('operator-visible promotion output values')) {
-    return 'live Marketplace test-account readback pending';
-  }
-
-  return 'live Marketplace test-account readback, hosted promotion telemetry, and richer operator review UX pending';
+  return roadmapTierMessage(roadmap, ECC_TOOLS_GAP_TIERS, ECC_TOOLS_GAP_FALLBACK);
 }
 
 function supplyChainLocalProtectionEvidence({ roadmap, scripts }) {
@@ -624,30 +482,43 @@ function buildGrowthSummary(rootDir) {
   };
 }
 
-function buildRequirements(rootDir, platformReport) {
-  const roadmap = readText(rootDir, 'docs/ECC-2.0-GA-ROADMAP.md');
-  const publicationReadiness = readText(rootDir, 'docs/releases/2.0.0-rc.1/publication-readiness.md');
-  const namingMatrix = readText(rootDir, 'docs/releases/2.0.0-rc.1/naming-and-publication-matrix.md');
-  const releasePublicationChecklist = readText(rootDir, 'docs/releases/2.0.0-rc.1/release-name-plugin-publication-checklist-2026-05-18.md');
-  const releaseUrlLedger = readText(rootDir, 'docs/releases/2.0.0-rc.1/release-url-ledger-2026-05-19.md');
-  const publicationEvidenceMay19 = readText(rootDir, 'docs/releases/2.0.0-rc.1/publication-evidence-2026-05-19.md');
-  const hypergrowthCommandCenter = readText(rootDir, 'docs/releases/2.0.0/ecc-2-hypergrowth-release-command-center.md');
-  const partnerSponsorTalksPack = readText(rootDir, 'docs/releases/2.0.0-rc.1/partner-sponsor-talks-pack.md');
-  const releaseVideoProduction = readText(rootDir, 'docs/releases/2.0.0-rc.1/video-suite-production.md');
-  const ownerQueueCleanup = readText(rootDir, 'docs/releases/2.0.0-rc.1/owner-queue-cleanup-2026-05-18.md');
-  const ownerApprovalPacket = readText(rootDir, 'docs/releases/2.0.0-rc.1/owner-approval-packet-2026-05-19.md');
-  const previewManifest = readText(rootDir, 'docs/releases/2.0.0-rc.1/preview-pack-manifest.md');
-  const previewPackSmoke = readText(rootDir, 'scripts/preview-pack-smoke.js');
-  const releaseVideoSuite = readText(rootDir, 'scripts/release-video-suite.js');
-  const progressSync = readText(rootDir, 'docs/architecture/progress-sync-contract.md');
-  const observabilityReadiness = readText(rootDir, 'docs/architecture/observability-readiness.md');
-  const stalePrSalvage = readText(rootDir, 'docs/stale-pr-salvage-ledger.md');
-  const legacyInventory = readText(rootDir, 'docs/legacy-artifact-inventory.md');
-  const supplyChainRunbook = readText(rootDir, 'docs/security/supply-chain-incident-response.md');
-  const supplyChainWorkflow = readText(rootDir, '.github/workflows/supply-chain-watch.yml');
+// Three-way readiness text: fully ready, partially ready, or neither.
+function tiered(ready, partial, [whenReady, whenPartial, otherwise]) {
+  if (ready) return whenReady;
+  return partial ? whenPartial : otherwise;
+}
+
+const TIERED_STATUS = ['current', 'in_progress', 'not_complete'];
+
+function readReleaseDocs(rootDir) {
   const packageJson = readPackage(rootDir);
-  const scripts = packageJson.scripts || {};
-  const legacyContext = { stalePrSalvage, legacyInventory, roadmap };
+  return {
+    roadmap: readText(rootDir, 'docs/ECC-2.0-GA-ROADMAP.md'),
+    publicationReadiness: readText(rootDir, 'docs/releases/2.0.0-rc.1/publication-readiness.md'),
+    namingMatrix: readText(rootDir, 'docs/releases/2.0.0-rc.1/naming-and-publication-matrix.md'),
+    releasePublicationChecklist: readText(rootDir, 'docs/releases/2.0.0-rc.1/release-name-plugin-publication-checklist-2026-05-18.md'),
+    releaseUrlLedger: readText(rootDir, 'docs/releases/2.0.0-rc.1/release-url-ledger-2026-05-19.md'),
+    publicationEvidenceMay19: readText(rootDir, 'docs/releases/2.0.0-rc.1/publication-evidence-2026-05-19.md'),
+    hypergrowthCommandCenter: readText(rootDir, 'docs/releases/2.0.0/ecc-2-hypergrowth-release-command-center.md'),
+    partnerSponsorTalksPack: readText(rootDir, 'docs/releases/2.0.0-rc.1/partner-sponsor-talks-pack.md'),
+    releaseVideoProduction: readText(rootDir, 'docs/releases/2.0.0-rc.1/video-suite-production.md'),
+    ownerQueueCleanup: readText(rootDir, 'docs/releases/2.0.0-rc.1/owner-queue-cleanup-2026-05-18.md'),
+    ownerApprovalPacket: readText(rootDir, 'docs/releases/2.0.0-rc.1/owner-approval-packet-2026-05-19.md'),
+    previewManifest: readText(rootDir, 'docs/releases/2.0.0-rc.1/preview-pack-manifest.md'),
+    previewPackSmoke: readText(rootDir, 'scripts/preview-pack-smoke.js'),
+    releaseVideoSuite: readText(rootDir, 'scripts/release-video-suite.js'),
+    progressSync: readText(rootDir, 'docs/architecture/progress-sync-contract.md'),
+    observabilityReadiness: readText(rootDir, 'docs/architecture/observability-readiness.md'),
+    stalePrSalvage: readText(rootDir, 'docs/stale-pr-salvage-ledger.md'),
+    legacyInventory: readText(rootDir, 'docs/legacy-artifact-inventory.md'),
+    supplyChainRunbook: readText(rootDir, 'docs/security/supply-chain-incident-response.md'),
+    supplyChainWorkflow: readText(rootDir, '.github/workflows/supply-chain-watch.yml'),
+    scripts: packageJson.scripts || {},
+  };
+}
+
+function assessReadiness(rootDir, docs) {
+  const { scripts, previewManifest, previewPackSmoke, publicationEvidenceMay19 } = docs;
   const previewPackManifestReady = includesAll(previewManifest, [
     'publication-readiness.md',
     'release-notes.md',
@@ -664,7 +535,7 @@ function buildRequirements(rootDir, platformReport) {
     ]);
   const hermesArtifactsReady = fileExists(rootDir, 'docs/HERMES-SETUP.md')
     && fileExists(rootDir, 'skills/hermes-imports/SKILL.md');
-  const hypergrowthCommandCenterReady = includesAll(hypergrowthCommandCenter, [
+  const hypergrowthCommandCenterReady = includesAll(docs.hypergrowthCommandCenter, [
     'harness-native operator system',
     '$1,728/mo',
     '$10,000/mo',
@@ -678,13 +549,13 @@ function buildRequirements(rootDir, platformReport) {
   ]);
   const releaseVideoSuiteReady = scripts['release:video-suite'] === 'node scripts/release-video-suite.js'
     && fileExists(rootDir, 'scripts/release-video-suite.js')
-    && includesAll(releaseVideoProduction, [
+    && includesAll(docs.releaseVideoProduction, [
       'ECC 2.0 Video Suite Production Manifest',
       'Primary launch video',
       'Self-Eval Gate',
       'timeline',
     ])
-    && includesAll(releaseVideoSuite, [
+    && includesAll(docs.releaseVideoSuite, [
       'ecc.release-video-suite.v1',
       'video-source-assets-present',
       'video-release-artifacts-present',
@@ -698,7 +569,7 @@ function buildRequirements(rootDir, platformReport) {
       'zero detected black-frame segments',
       'primary rough render self-eval passed',
     ]);
-  const partnerSponsorTalksReady = includesAll(partnerSponsorTalksPack, [
+  const partnerSponsorTalksReady = includesAll(docs.partnerSponsorTalksPack, [
     'Sponsor Outbound',
     'Platform Partner DM',
     'Consulting Intro',
@@ -706,7 +577,7 @@ function buildRequirements(rootDir, platformReport) {
     'GitHub Discussion Announcement',
     'Do Not Send Or Publish If',
   ]);
-  const ownerApprovalPacketReady = includesAll(ownerApprovalPacket, [
+  const ownerApprovalPacketReady = includesAll(docs.ownerApprovalPacket, [
     'Owner Approval Packet',
     'Decision Register',
     'GitHub prerelease',
@@ -718,75 +589,99 @@ function buildRequirements(rootDir, platformReport) {
     'No outbound email, personal-account post, package publish, plugin tag, or billing announcement is authorized by this packet alone.'
   ]) && includesAll(previewManifest, ['owner-approval-packet-2026-05-19.md']);
 
-  const githubLive = !platformReport.github.skipped && platformReport.github.totals.errors === 0;
-  const ownerWideOpenPrs = extractLabeledCount(ownerQueueCleanup, 'Owner-wide open PRs after cleanup');
-  const ownerWideOpenIssues = extractLabeledCount(ownerQueueCleanup, 'Owner-wide open issues after cleanup');
-  const trackedPrQueueCurrent = githubLive
-    && platformReport.github.totals.openPrs <= platformReport.thresholds.maxOpenPrs;
-  const trackedIssueQueueCurrent = githubLive
-    && platformReport.github.totals.openIssues <= platformReport.thresholds.maxOpenIssues;
-  const ownerPrQueueCurrent = ownerWideOpenPrs === null
-    || ownerWideOpenPrs <= platformReport.thresholds.maxOpenPrs;
-  const ownerIssueQueueCurrent = ownerWideOpenIssues === null
-    || ownerWideOpenIssues <= platformReport.thresholds.maxOpenIssues;
-  const ownerPrEvidence = ownerWideOpenPrs === null
+  return {
+    previewPackManifestReady,
+    previewPackSmokeReady,
+    hermesArtifactsReady,
+    hypergrowthCommandCenterReady,
+    releaseVideoSuiteReady,
+    releaseVideoPublishCandidatesReady,
+    partnerSponsorTalksReady,
+    ownerApprovalPacketReady,
+  };
+}
+
+// PR and issue budgets share one shape: a tracked-repo count from the live
+// sweep plus an optional owner-wide count from the queue cleanup ledger.
+function queueBudgetRequirement(platformReport, githubLive, spec) {
+  const { id, requirement, noun, queueNoun, trackedCount, ownerCount, threshold } = spec;
+  const trackedCurrent = githubLive && trackedCount <= threshold;
+  const ownerCurrent = ownerCount === null || ownerCount <= threshold;
+  const ownerEvidence = ownerCount === null
     ? ''
-    : `; ${ownerWideOpenPrs} owner-wide open PRs after cleanup`;
-  const ownerIssueEvidence = ownerWideOpenIssues === null
-    ? ''
-    : `; ${ownerWideOpenIssues} owner-wide open issues after cleanup`;
+    : `; ${ownerCount} owner-wide open ${noun} after cleanup`;
+
+  return buildRequirement(
+    id,
+    requirement,
+    ownerCount === null
+      ? 'scripts/platform-audit.js live GitHub sweep'
+      : 'scripts/platform-audit.js live GitHub sweep plus owner-wide queue cleanup ledger',
+    trackedCurrent && ownerCurrent ? 'current' : 'in_progress',
+    githubLive
+      ? `${trackedCount} open ${noun} across ${platformReport.github.repos.length} tracked repos${ownerEvidence}`
+      : 'live GitHub queue readback was skipped or failed',
+    trackedCurrent && ownerCurrent
+      ? 'repeat platform:audit and owner-wide gh search before release'
+      : `run live platform:audit and owner-wide gh search, then drain ${queueNoun} queue`
+  );
+}
+
+function githubQueueRequirements(platformReport, ownerQueueCleanup) {
+  const { totals } = platformReport.github;
+  const githubLive = !platformReport.github.skipped && totals.errors === 0;
   const discussionsCurrent = githubLive
-    && platformReport.github.totals.discussionsNeedingMaintainerTouch === 0
-    && platformReport.github.totals.discussionsMissingAcceptedAnswer === 0;
+    && totals.discussionsNeedingMaintainerTouch === 0
+    && totals.discussionsMissingAcceptedAnswer === 0;
 
   return [
-    buildRequirement(
-      'public-pr-budget',
-      'Keep public PRs below 20',
-      ownerWideOpenPrs === null
-        ? 'scripts/platform-audit.js live GitHub sweep'
-        : 'scripts/platform-audit.js live GitHub sweep plus owner-wide queue cleanup ledger',
-      trackedPrQueueCurrent && ownerPrQueueCurrent ? 'current' : 'in_progress',
-      githubLive
-        ? `${platformReport.github.totals.openPrs} open PRs across ${platformReport.github.repos.length} tracked repos${ownerPrEvidence}`
-        : 'live GitHub queue readback was skipped or failed',
-      trackedPrQueueCurrent && ownerPrQueueCurrent
-        ? 'repeat platform:audit and owner-wide gh search before release'
-        : 'run live platform:audit and owner-wide gh search, then drain PR queue'
-    ),
-    buildRequirement(
-      'public-issue-budget',
-      'Keep public issues below 20',
-      ownerWideOpenIssues === null
-        ? 'scripts/platform-audit.js live GitHub sweep'
-        : 'scripts/platform-audit.js live GitHub sweep plus owner-wide queue cleanup ledger',
-      trackedIssueQueueCurrent && ownerIssueQueueCurrent ? 'current' : 'in_progress',
-      githubLive
-        ? `${platformReport.github.totals.openIssues} open issues across ${platformReport.github.repos.length} tracked repos${ownerIssueEvidence}`
-        : 'live GitHub queue readback was skipped or failed',
-      trackedIssueQueueCurrent && ownerIssueQueueCurrent
-        ? 'repeat platform:audit and owner-wide gh search before release'
-        : 'run live platform:audit and owner-wide gh search, then drain issue queue'
-    ),
+    queueBudgetRequirement(platformReport, githubLive, {
+      id: 'public-pr-budget',
+      requirement: 'Keep public PRs below 20',
+      noun: 'PRs',
+      queueNoun: 'PR',
+      trackedCount: totals.openPrs,
+      ownerCount: extractLabeledCount(ownerQueueCleanup, 'Owner-wide open PRs after cleanup'),
+      threshold: platformReport.thresholds.maxOpenPrs,
+    }),
+    queueBudgetRequirement(platformReport, githubLive, {
+      id: 'public-issue-budget',
+      requirement: 'Keep public issues below 20',
+      noun: 'issues',
+      queueNoun: 'issue',
+      trackedCount: totals.openIssues,
+      ownerCount: extractLabeledCount(ownerQueueCleanup, 'Owner-wide open issues after cleanup'),
+      threshold: platformReport.thresholds.maxOpenIssues,
+    }),
     buildRequirement(
       'repository-discussions',
       'Respond and manage repository discussions',
       'scripts/platform-audit.js discussion summary',
       discussionsCurrent ? 'current' : 'in_progress',
       githubLive
-        ? `${platformReport.github.totals.discussionsNeedingMaintainerTouch} need maintainer touch; ${platformReport.github.totals.discussionsMissingAcceptedAnswer} answerable discussions missing accepted answer`
+        ? `${totals.discussionsNeedingMaintainerTouch} need maintainer touch; ${totals.discussionsMissingAcceptedAnswer} answerable discussions missing accepted answer`
         : 'live discussion readback was skipped or failed',
       discussionsCurrent ? 'repeat before release' : 'respond, answer, or route remaining discussions'
     ),
+  ];
+}
+
+function releasePackRequirements(rootDir, docs, readiness) {
+  const { scripts } = docs;
+  const { previewPackManifestReady, previewPackSmokeReady, hermesArtifactsReady } = readiness;
+  const previewPackReady = previewPackManifestReady && previewPackSmokeReady;
+  const hermesReady = hermesArtifactsReady && previewPackSmokeReady;
+  const dashboardScriptReady = scripts['operator:dashboard'] === 'node scripts/operator-readiness-dashboard.js';
+
+  return [
     buildRequirement(
       'completion-dashboard',
       'Build ITO-44 completion dashboard into a repeatable command',
       'npm run operator:dashboard',
-      scripts['operator:dashboard'] === 'node scripts/operator-readiness-dashboard.js'
-        && fileExists(rootDir, 'scripts/operator-readiness-dashboard.js')
+      dashboardScriptReady && fileExists(rootDir, 'scripts/operator-readiness-dashboard.js')
         ? 'complete'
         : 'in_progress',
-      scripts['operator:dashboard'] === 'node scripts/operator-readiness-dashboard.js'
+      dashboardScriptReady
         ? 'operator:dashboard package script exists'
         : 'operator:dashboard package script missing',
       'keep generated dashboard attached to publication evidence'
@@ -795,13 +690,13 @@ function buildRequirements(rootDir, platformReport) {
       'ecc-preview-pack',
       'ECC 2.0 preview pack ready',
       'docs/releases/2.0.0-rc.1/preview-pack-manifest.md',
-      previewPackManifestReady && previewPackSmokeReady ? 'current' : previewPackManifestReady ? 'in_progress' : 'not_complete',
-      previewPackManifestReady && previewPackSmokeReady
-        ? 'preview pack manifest and deterministic smoke gate are in-tree'
-        : previewPackManifestReady
-        ? 'preview pack manifest is in-tree'
-        : 'preview pack manifest is incomplete',
-      previewPackManifestReady && previewPackSmokeReady
+      tiered(previewPackReady, previewPackManifestReady, TIERED_STATUS),
+      tiered(previewPackReady, previewPackManifestReady, [
+        'preview pack manifest and deterministic smoke gate are in-tree',
+        'preview pack manifest is in-tree',
+        'preview pack manifest is incomplete',
+      ]),
+      previewPackReady
         ? 'repeat clean-checkout preview-pack smoke before publication'
         : 'final clean-checkout release approval and publish evidence still pending'
     ),
@@ -809,13 +704,13 @@ function buildRequirements(rootDir, platformReport) {
       'hermes-specialized-skills',
       'Include Hermes specialized skills safely',
       'docs/HERMES-SETUP.md and skills/hermes-imports/SKILL.md',
-      hermesArtifactsReady && previewPackSmokeReady ? 'current' : hermesArtifactsReady ? 'in_progress' : 'not_complete',
-      hermesArtifactsReady && previewPackSmokeReady
-        ? 'Hermes setup/import artifacts are covered by preview-pack smoke'
-        : hermesArtifactsReady
-        ? 'Hermes setup and import skill are present'
-        : 'Hermes setup/import artifacts missing',
-      hermesArtifactsReady && previewPackSmokeReady
+      tiered(hermesReady, hermesArtifactsReady, TIERED_STATUS),
+      tiered(hermesReady, hermesArtifactsReady, [
+        'Hermes setup/import artifacts are covered by preview-pack smoke',
+        'Hermes setup and import skill are present',
+        'Hermes setup/import artifacts missing',
+      ]),
+      hermesReady
         ? 'repeat preview-pack smoke before release review'
         : 'final preview-pack smoke and release review pending'
     ),
@@ -823,8 +718,8 @@ function buildRequirements(rootDir, platformReport) {
       'naming-and-plugin-publication',
       'Prepare name-change, Claude plugin, and Codex plugin paths',
       'naming-and-publication-matrix plus release-name-plugin-publication checklist plus publication-readiness',
-      includesAll(namingMatrix, ['Claude plugin', 'Codex plugin', 'npm package', 'Publication Paths'])
-        && includesAll(releasePublicationChecklist, [
+      includesAll(docs.namingMatrix, ['Claude plugin', 'Codex plugin', 'npm package', 'Publication Paths'])
+        && includesAll(docs.releasePublicationChecklist, [
           'Ship `v2.0.0-rc.1` as **ECC**',
           'affaan-m/ECC',
           'ecc-universal',
@@ -832,12 +727,20 @@ function buildRequirements(rootDir, platformReport) {
           'codex plugin marketplace add',
           'Do not rename the npm package until rc.1 is published'
         ])
-        && includesAll(publicationReadiness, ['Claude plugin', 'Codex plugin'])
+        && includesAll(docs.publicationReadiness, ['Claude plugin', 'Codex plugin'])
         ? 'in_progress'
         : 'not_complete',
       'naming matrix, release publication checklist, and plugin readiness gates exist',
       'real tag/push, marketplace submission, and final channel choice remain approval-gated'
     ),
+  ];
+}
+
+function releaseCopyRequirements(rootDir, docs, readiness) {
+  const { partnerSponsorTalksReady, ownerApprovalPacketReady } = readiness;
+  const urlLedgerReady = includesAll(docs.releaseUrlLedger, ['Live Now', 'Approval-Gated URLs', 'Codex marketplace CLI docs']);
+
+  return [
     buildRequirement(
       'release-notes-and-notifications',
       'Prepare release notes, articles, tweets, and push notifications',
@@ -847,10 +750,10 @@ function buildRequirements(rootDir, platformReport) {
         && fileExists(rootDir, 'docs/releases/2.0.0-rc.1/linkedin-post.md')
         ? 'in_progress'
         : 'not_complete',
-      includesAll(releaseUrlLedger, ['Live Now', 'Approval-Gated URLs', 'Codex marketplace CLI docs'])
+      urlLedgerReady
         ? 'release notes, X thread, LinkedIn draft, and URL ledger are present'
         : 'release notes, X thread, and LinkedIn draft are present',
-      includesAll(releaseUrlLedger, ['Live Now', 'Approval-Gated URLs', 'Codex marketplace CLI docs'])
+      urlLedgerReady
         ? 'final live release/npm/plugin/billing URLs and publish approval still pending'
         : 'URL-backed refresh and publish approval still pending'
     ),
@@ -866,6 +769,26 @@ function buildRequirements(rootDir, platformReport) {
         ? 'review owner approvals from the final release commit before any publication or outbound action'
         : 'add the owner decision sheet before publication review'
     ),
+  ].concat(growthRequirements(readiness), [
+    buildRequirement(
+      'partner-sponsor-talks-pack',
+      'Prepare sponsor, partner, consulting, podcast, talk, and Discussion copy',
+      'docs/releases/2.0.0-rc.1/partner-sponsor-talks-pack.md',
+      partnerSponsorTalksReady ? 'in_progress' : 'not_complete',
+      partnerSponsorTalksReady
+        ? 'sponsor outbound, platform partner DM, consulting intro, talk/podcast pitch, GitHub Discussion announcement, CTA hooks, and do-not-send gate are drafted'
+        : 'partner, sponsor, consulting, talk, or discussion copy is missing',
+      partnerSponsorTalksReady
+        ? 'replace final URLs after publication gates, then get explicit approval before outbound or personal-account posts'
+        : 'draft the full outbound pack and approval gate'
+    ),
+  ]);
+}
+
+function growthRequirements(readiness) {
+  const { hypergrowthCommandCenterReady, releaseVideoSuiteReady, releaseVideoPublishCandidatesReady } = readiness;
+
+  return [
     buildRequirement(
       'hypergrowth-command-center',
       'Create a second-phase hypergrowth release command center',
@@ -882,30 +805,27 @@ function buildRequirements(rootDir, platformReport) {
       'release-video-suite',
       'Produce the ECC 2.0 release video suite',
       'docs/releases/2.0.0-rc.1/video-suite-production.md and npm run release:video-suite',
-      releaseVideoPublishCandidatesReady ? 'current' : releaseVideoSuiteReady ? 'in_progress' : 'not_complete',
-      releaseVideoPublishCandidatesReady
-        ? 'video-suite gate is ready with 15/15 source assets, 13/13 suite artifacts, 12/12 publish candidates, primary self-eval, and zero detected black-frame segments recorded in May 19 evidence'
-        : releaseVideoSuiteReady
-        ? 'video production manifest and deterministic video-suite gate are wired for launch video, short clips, captions, timeline, and self-eval evidence'
-        : 'video production manifest or release:video-suite gate is incomplete',
-      releaseVideoPublishCandidatesReady
-        ? 'final owner approval, upload, and public video URLs remain approval-gated'
-        : releaseVideoSuiteReady
-        ? 'render final owner-approved MP4s, captions, platform reframes, and editable timeline before posting'
-        : 'wire release:video-suite and production manifest before final content work'
+      tiered(releaseVideoPublishCandidatesReady, releaseVideoSuiteReady, TIERED_STATUS),
+      tiered(releaseVideoPublishCandidatesReady, releaseVideoSuiteReady, [
+        'video-suite gate is ready with 15/15 source assets, 13/13 suite artifacts, 12/12 publish candidates, primary self-eval, and zero detected black-frame segments recorded in May 19 evidence',
+        'video production manifest and deterministic video-suite gate are wired for launch video, short clips, captions, timeline, and self-eval evidence',
+        'video production manifest or release:video-suite gate is incomplete',
+      ]),
+      tiered(releaseVideoPublishCandidatesReady, releaseVideoSuiteReady, [
+        'final owner approval, upload, and public video URLs remain approval-gated',
+        'render final owner-approved MP4s, captions, platform reframes, and editable timeline before posting',
+        'wire release:video-suite and production manifest before final content work',
+      ])
     ),
-    buildRequirement(
-      'partner-sponsor-talks-pack',
-      'Prepare sponsor, partner, consulting, podcast, talk, and Discussion copy',
-      'docs/releases/2.0.0-rc.1/partner-sponsor-talks-pack.md',
-      partnerSponsorTalksReady ? 'in_progress' : 'not_complete',
-      partnerSponsorTalksReady
-        ? 'sponsor outbound, platform partner DM, consulting intro, talk/podcast pitch, GitHub Discussion announcement, CTA hooks, and do-not-send gate are drafted'
-        : 'partner, sponsor, consulting, talk, or discussion copy is missing',
-      partnerSponsorTalksReady
-        ? 'replace final URLs after publication gates, then get explicit approval before outbound or personal-account posts'
-        : 'draft the full outbound pack and approval gate'
-    ),
+  ];
+}
+
+function programRequirements(rootDir, docs) {
+  const { roadmap, scripts, progressSync } = docs;
+  const legacyContext = { stalePrSalvage: docs.stalePrSalvage, legacyInventory: docs.legacyInventory, roadmap };
+  const observabilityScriptReady = scripts['observability:ready'] === 'node scripts/observability-readiness.js';
+
+  return [
     buildRequirement(
       'agentshield-enterprise-iteration',
       'Advance AgentShield enterprise iteration',
@@ -946,11 +866,11 @@ function buildRequirements(rootDir, platformReport) {
       'observability-for-self-use',
       'Provide ECC 2.0 observability for self-use',
       'observability readiness gate',
-      scripts['observability:ready'] === 'node scripts/observability-readiness.js'
-        && includesAll(observabilityReadiness, ['observability-readiness.js'])
+      observabilityScriptReady
+        && includesAll(docs.observabilityReadiness, ['observability-readiness.js'])
         ? 'complete'
         : 'in_progress',
-      scripts['observability:ready'] === 'node scripts/observability-readiness.js'
+      observabilityScriptReady
         ? 'observability:ready command and readiness doc exist'
         : 'observability readiness command missing',
       'runtime/dashboard implementation can continue after release gates'
@@ -959,8 +879,8 @@ function buildRequirements(rootDir, platformReport) {
       'supply-chain-local-protection',
       'Keep Mini Shai-Hulud/TanStack protection loop current',
       'supply-chain watch plus runbook plus AgentShield package-manager hardening',
-      includesAll(supplyChainRunbook, ['TanStack', 'Mini Shai-Hulud', 'scan-supply-chain-iocs.js', 'supply-chain-advisory-sources.js'])
-        && includesAll(supplyChainWorkflow, ['supply-chain-advisory-sources.js', 'supply-chain-advisory-sources.json'])
+      includesAll(docs.supplyChainRunbook, ['TanStack', 'Mini Shai-Hulud', 'scan-supply-chain-iocs.js', 'supply-chain-advisory-sources.js'])
+        && includesAll(docs.supplyChainWorkflow, ['supply-chain-advisory-sources.js', 'supply-chain-advisory-sources.json'])
         && scripts['security:advisory-sources'] === 'node scripts/ci/supply-chain-advisory-sources.js'
         && fileExists(rootDir, '.github/workflows/supply-chain-watch.yml')
         ? 'current'
@@ -968,6 +888,18 @@ function buildRequirements(rootDir, platformReport) {
       supplyChainLocalProtectionEvidence({ roadmap, scripts }),
       supplyChainLocalProtectionGap({ roadmap, scripts })
     ),
+  ];
+}
+
+function buildRequirements(rootDir, platformReport) {
+  const docs = readReleaseDocs(rootDir);
+  const readiness = assessReadiness(rootDir, docs);
+
+  return [
+    ...githubQueueRequirements(platformReport, docs.ownerQueueCleanup),
+    ...releasePackRequirements(rootDir, docs, readiness),
+    ...releaseCopyRequirements(rootDir, docs, readiness),
+    ...programRequirements(rootDir, docs),
   ];
 }
 

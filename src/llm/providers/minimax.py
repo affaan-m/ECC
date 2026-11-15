@@ -31,8 +31,9 @@ JSONValue = None | bool | int | float | str | list["JSONValue"] | dict[str, "JSO
 
 MINIMAX_BASE_URL = "https://api.minimax.io/v1"
 MINIMAX_ANTHROPIC_BASE_URL = "https://api.minimax.io/anthropic"
-MINIMAX_M2_7_MODEL = "MiniMax-M2.7"
-DEFAULT_MINIMAX_MODEL = MINIMAX_M2_7_MODEL
+MINIMAX_M3_1_FLASH_MODEL = "MiniMax-M3.1-Flash"
+MINIMAX_M3_MODEL = "MiniMax-M3"
+DEFAULT_MINIMAX_MODEL = MINIMAX_M3_1_FLASH_MODEL
 DEFAULT_MINIMAX_ANTHROPIC_MAX_TOKENS = 16_000
 
 
@@ -198,11 +199,18 @@ class MiniMaxProvider(LLMProvider):
             )
         self._models = [
             ModelInfo(
-                name=DEFAULT_MINIMAX_MODEL,
+                name=MINIMAX_M3_1_FLASH_MODEL,
                 provider=self.provider_type,
                 supports_tools=True,
-                supports_vision=False,
-                context_window=204_800,
+                supports_vision=True,
+                context_window=1_000_000,
+            ),
+            ModelInfo(
+                name=MINIMAX_M3_MODEL,
+                provider=self.provider_type,
+                supports_tools=True,
+                supports_vision=True,
+                context_window=1_000_000,
             ),
         ]
 

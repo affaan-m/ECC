@@ -6,7 +6,7 @@
  * while taking advantage of OpenCode's more sophisticated 20+ event types.
  */
 
-export { ECCHooksPlugin, default } from "./ecc-hooks.js"
+export { ECCHooksPlugin, default } from "./ecc-hooks.ts"
 
 // Re-export for named imports
-export * from "./ecc-hooks.js"
+export * from "./ecc-hooks.ts"

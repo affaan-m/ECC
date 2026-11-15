@@ -1,6 +1,10 @@
 #!/usr/bin/env node
-const { readStdin } = require('./adapter');
+const { readStdin, hookEnabled } = require('./adapter');
 readStdin().then(raw => {
+  if (!hookEnabled('pre:prompt:secret-warning', ['minimal', 'standard', 'strict'])) {
+    process.stdout.write(raw);
+    return;
+  }
   try {
     const input = JSON.parse(raw);
     const prompt = input.prompt || input.content || input.message || '';
@@ -18,6 +22,8 @@ readStdin().then(raw => {
         break;
       }
     }
-  } catch {}
+  } catch {
+    // This warning hook remains advisory when Cursor sends malformed input.
+  }
   process.stdout.write(raw);
 }).catch(() => process.exit(0));

@@ -155,6 +155,21 @@ function runTests() {
     assert.strictEqual(detectFormatter(root), 'prettier');
   });
 
+  run("detectFormatter: detects Prettier's TypeScript and JSON5 config files", () => {
+    const names = ['.prettierrc.json5', '.prettierrc.ts', '.prettierrc.mts', '.prettierrc.cts',
+      'prettier.config.ts', 'prettier.config.mts', 'prettier.config.cts'];
+    for (const name of names) {
+      const root = makeTmpDir();
+      fs.writeFileSync(path.join(root, 'package.json'), JSON.stringify({ name: 'test' }));
+      fs.writeFileSync(path.join(root, name), 'export default {};\n');
+      assert.strictEqual(detectFormatter(root), 'prettier', name);
+      const nested = path.join(root, 'src');
+      fs.mkdirSync(nested);
+      fs.rmSync(path.join(root, 'package.json'));
+      assert.strictEqual(findProjectRoot(nested), root, `${name} marks the project root`);
+    }
+  });
+
   run('detectFormatter: detects prettier key in package.json', () => {
     const root = makeTmpDir();
     fs.writeFileSync(path.join(root, 'package.json'), JSON.stringify({ name: 'test', prettier: { singleQuote: true } }));

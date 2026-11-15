@@ -31,6 +31,10 @@ const COMMANDS = {
     script: 'consult.js',
     description: 'Recommend ECC components and profiles from a natural language query',
   },
+  profile: {
+    script: 'profile.js',
+    description: 'Inspect Lean/Full profiles, stage managed generations, and resolve task context',
+  },
   'control-pane': {
     script: 'control-pane.js',
     description: 'Run the local ECC2 operator control pane',
@@ -38,6 +42,10 @@ const COMMANDS = {
   ito: {
     script: 'ito.js',
     description: 'Invoke the separately installed canonical Itô compute CLI',
+  },
+  nasiko: {
+    script: 'nasiko.js',
+    description: 'Install or inspect the optional pinned Nasiko CLI lifecycle bridge',
   },
   memory: {
     script: 'memory.js',
@@ -108,8 +116,10 @@ const PRIMARY_COMMANDS = [
   'plan',
   'catalog',
   'consult',
+  'profile',
   'control-pane',
   'ito',
+  'nasiko',
   'memory',
   'list-installed',
   'doctor',
@@ -162,12 +172,16 @@ Examples:
   ecc catalog components --family language
   ecc catalog show framework:nextjs
   ecc consult "security reviews"
+  ecc profile preview lean@1 --target codex --selection auto --json
   ecc control-pane --port 8765
   ecc ito login [--no-browser]
   ecc ito logout
   ecc ito auth
   ecc ito find --gpu h200 --count 8 --nodes 1 --gpus-per-node 8 --days 30 --storage-tb 1 --start-window 2099-08-15 --max-rate 3.00 --form-factor bare_metal --contract-type reservation --fabric infiniband --region us-east-1
   ecc ito status --json
+  ecc nasiko status --json
+  ecc nasiko install --version v0.1.0 --dry-run --json
+  ecc nasiko install --version v0.1.0 --yes --json
   ecc ito evals --cluster clu_prod_example --live-sixtytwo --nodes gpu-01,gpu-02 --config-dir /absolute/path/to/qualification-config
   ecc memory init
   ecc memory handoff --from codex --target claude --title "Continue migration" --stdin
@@ -259,6 +273,7 @@ function runCommand(commandName, args) {
     throw new Error(`Unknown command: ${commandName}`);
   }
   const isItoLogin = commandName === 'ito' && getInvocationCommand(args) === 'login';
+  const isProfileStart = commandName === 'profile' && getInvocationCommand(args) === 'start';
   const result = spawnSync(
     process.execPath,
     [path.join(__dirname, command.script), ...args],
@@ -271,9 +286,9 @@ function runCommand(commandName, args) {
           }),
         }
         : process.env,
-      stdio: isItoLogin || commandName === 'setup' || commandName === 'install'
+      stdio: isItoLogin || isProfileStart || commandName === 'setup' || commandName === 'install'
         ? 'inherit'
-        : commandName === 'memory'
+        : commandName === 'memory' || commandName === 'profile'
           ? ['inherit', 'pipe', 'pipe']
           : ['pipe', 'pipe', 'pipe'],
       encoding: 'utf8',

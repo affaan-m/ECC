@@ -1,6 +1,6 @@
 {
   "name": "ecc-universal",
-  "version": "2.2.0",
+  "version": "2.2.3",
   "description": "ECC plugin for OpenCode - agents, commands, hooks, and skills",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -56,15 +56,21 @@
   "publishConfig": {
     "access": "public"
   },
+  "dependencies": {
+    "zod": "4.6.7"
+  },
   "peerDependencies": {
     "@opencode-ai/plugin": ">=1.0.0"
   },
   "devDependencies": {
     "@opencode-ai/plugin": "^1.4.3",
     "@types/node": "^20.0.0",
-    "typescript": "^5.3.0"
+    "typescript": "^5.7.0"
   },
   "engines": {
     "node": ">=18.0.0"
+  },
+  "overrides": {
+    "zod": "4.6.7"
   }
 }

@@ -94,7 +94,7 @@ origin: ECC
 mcp__scheduled-tasks__create_scheduled_task({
   name: "daily-pr-review",
   schedule: "0 9 * * 1-5",  # 工作日上午9点
-  prompt: "Review all open PRs in affaan-m/everything-claude-code. For each: check CI status, review changes, flag issues. Post summary to memory.",
+  prompt: "Review all open PRs in affaan-m/ECC. For each: check CI status, review changes, flag issues. Post summary to memory.",
   project_dir: "/path/to/repo"
 })
 

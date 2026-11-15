@@ -4,10 +4,18 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 
-const { appendFile } = require('../utils');
+const { ensureDir } = require('../utils');
 
 const VALID_OUTCOMES = new Set(['success', 'failure', 'partial']);
 const VALID_FEEDBACK = new Set(['accepted', 'corrected', 'rejected']);
+
+// Retention bound for the JSONL sink. The dashboard only aggregates recent
+// runs, so an unbounded append-only file is pure cost. Trim from the front
+// once the file grows past the cap.
+const MAX_RUN_RECORDS = 5000;
+// Owner-only. The sink lives under the user's home and is local telemetry;
+// nothing else on the machine needs to read it.
+const RUNS_FILE_MODE = 0o600;
 
 function resolveHomeDir(homeDir) {
   return homeDir ? path.resolve(homeDir) : os.homedir();
@@ -27,8 +35,8 @@ function toNullableNumber(value, fieldName) {
   }
 
   const numericValue = Number(value);
-  if (!Number.isFinite(numericValue)) {
-    throw new Error(`${fieldName} must be a number`);
+  if (!Number.isFinite(numericValue) || numericValue < 0) {
+    throw new Error(`${fieldName} must be a number greater than or equal to zero`);
   }
 
   return numericValue;
@@ -45,6 +53,7 @@ function normalizeExecutionRecord(input, options = {}) {
   const outcome = input.outcome;
   const recordedAt = input.recorded_at || options.now || new Date().toISOString();
   const userFeedback = input.user_feedback || input.userFeedback || null;
+  const failureReasons = [input.failure_reason, input.failureReason];
 
   if (typeof skillId !== 'string' || skillId.trim().length === 0) {
     throw new Error('skill_id is required');
@@ -66,7 +75,11 @@ function normalizeExecutionRecord(input, options = {}) {
     throw new Error('user_feedback must be accepted, corrected, rejected, or null');
   }
 
-  if (Number.isNaN(Date.parse(recordedAt))) {
+  if (failureReasons.some(value => value != null && typeof value !== 'string')) {
+    throw new Error('failure_reason must be a string or null');
+  }
+
+  if (typeof recordedAt !== 'string' || Number.isNaN(Date.parse(recordedAt))) {
     throw new Error('recorded_at must be an ISO timestamp');
   }
 
@@ -94,12 +107,58 @@ function readJsonl(filePath) {
     .filter(Boolean)
     .reduce((rows, line) => {
       try {
-        rows.push(JSON.parse(line));
+        const record = JSON.parse(line);
+        if (record && typeof record === 'object' && !Array.isArray(record)
+          && typeof record.skill_id === 'string' && record.skill_id.trim().length > 0
+          && VALID_OUTCOMES.has(record.outcome)
+          && typeof record.recorded_at === 'string' && !Number.isNaN(Date.parse(record.recorded_at))) {
+          rows.push(record);
+        }
       } catch {
         // Ignore malformed rows so analytics remain best-effort.
       }
       return rows;
     }, []);
+}
+
+// Append one record to the JSONL sink with owner-only permissions, then
+// enforce the retention cap. `fs.appendFileSync`'s mode only applies when it
+// creates the file, so an existing world-readable sink is chmod'd on the way
+// past — cheap, and it repairs files written before this bound existed.
+function appendRunRecord(runsFilePath, record, options = {}) {
+  const maxRecords = Number.isInteger(options.maxRecords) && options.maxRecords > 0
+    ? options.maxRecords
+    : MAX_RUN_RECORDS;
+
+  ensureDir(path.dirname(runsFilePath));
+  fs.appendFileSync(runsFilePath, `${JSON.stringify(record)}\n`, { encoding: 'utf8', mode: RUNS_FILE_MODE });
+
+  try {
+    fs.chmodSync(runsFilePath, RUNS_FILE_MODE);
+  } catch {
+    // Windows and some mounts do not support POSIX modes; the record still lands.
+  }
+
+  pruneRunRecords(runsFilePath, maxRecords);
+}
+
+// Keep only the newest `maxRecords` lines. Rewrites the whole file, which is
+// fine because the file is bounded by this very cap; it only runs on the
+// appends that actually cross the line.
+function pruneRunRecords(runsFilePath, maxRecords) {
+  try {
+    const lines = fs.readFileSync(runsFilePath, 'utf8').split('\n').filter(Boolean);
+    if (lines.length <= maxRecords) {
+      return;
+    }
+    fs.writeFileSync(
+      runsFilePath,
+      `${lines.slice(-maxRecords).join('\n')}\n`,
+      { encoding: 'utf8', mode: RUNS_FILE_MODE }
+    );
+  } catch {
+    // Retention is best-effort; never fail a recorded run over it.
+  }
 }
 
 function recordSkillExecution(input, options = {}) {
@@ -119,7 +178,7 @@ function recordSkillExecution(input, options = {}) {
   }
 
   const runsFilePath = getRunsFilePath(options);
-  appendFile(runsFilePath, `${JSON.stringify(record)}\n`);
+  appendRunRecord(runsFilePath, record, options);
 
   return {
     storage: 'jsonl',
@@ -137,6 +196,8 @@ function readSkillExecutionRecords(options = {}) {
 }
 
 module.exports = {
+  MAX_RUN_RECORDS,
+  RUNS_FILE_MODE,
   VALID_FEEDBACK,
   VALID_OUTCOMES,
   getRunsFilePath,

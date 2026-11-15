@@ -1,8 +1,10 @@
+const adalProject = require('./adal-project');
 const antigravityProject = require('./antigravity-project');
 const claudeHome = require('./claude-home');
 const claudeProject = require('./claude-project');
 const codebuddyProject = require('./codebuddy-project');
 const codexHome = require('./codex-home');
+const copilotProject = require('./copilot-project');
 const cursorProject = require('./cursor-project');
 const geminiProject = require('./gemini-project');
 const hermesHome = require('./hermes-home');
@@ -12,6 +14,7 @@ const openclawHome = require('./openclaw-home');
 const opencodeHome = require('./opencode-home');
 const qwenHome = require('./qwen-home');
 const zedProject = require('./zed-project');
+const { resolveInvocationEnvironment } = require('../invocation-environment');
 
 const ADAPTERS = Object.freeze([
   claudeHome,
@@ -19,6 +22,7 @@ const ADAPTERS = Object.freeze([
   cursorProject,
   antigravityProject,
   codexHome,
+  copilotProject,
   geminiProject,
   hermesHome,
   opencodeHome,
@@ -28,6 +32,7 @@ const ADAPTERS = Object.freeze([
   kimiProject,
   qwenHome,
   zedProject,
+  adalProject,
 ]);
 
 function listInstallTargetAdapters() {
@@ -52,6 +57,7 @@ function planInstallTargetScaffold(options = {}) {
     repoRoot: options.repoRoot,
     projectRoot: options.projectRoot || options.repoRoot,
     homeDir: options.homeDir,
+    env: resolveInvocationEnvironment(options),
   };
   const validationIssues = adapter.validate(planningInput);
   const blockingIssues = validationIssues.filter(issue => (

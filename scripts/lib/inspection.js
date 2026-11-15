@@ -21,8 +21,15 @@ function normalizeFailureReason(reason) {
     .replace(/\d{4}-\d{2}-\d{2}[t ]\d{2}:\d{2}:\d{2}[.\dz]*/g, '<timestamp>')
     // Strip UUIDs (already lowercased)
     .replace(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/g, '<uuid>')
-    // Strip file paths
-    .replace(/\/[\w./-]+/g, '<path>')
+    // Quoted Windows paths preserve spaces and apostrophes inside path components.
+    // A closing quote must be followed by a delimiter, not another name character.
+    .replace(/(["'])(?:[a-z]:[\\/]|\\\\)[^\r\n]*?\1(?=[:\s),;.!?]|$)/gu, '$1<path>$1')
+    // Directories may contain spaces, but trailing whitespace separates diagnostic prose.
+    // Unquoted spaced leaves allow one final dotted token; longer prose stays diagnostic.
+    // Quote paths with multiple spaces in the final filename to remove ambiguity.
+    .replace(/(?:\b[a-z]:|\\)[\\/](?:[^\\/:*?"<>|\r\n]*[^\s\\/:*?"<>|][\\/])*[^\s\\/:*?"<>|(),;]+(?: [^\s\\/:*?"<>|]+\.[^\s\\/:*?"<>|]+(?=:))?[\\/]*/gu, '<path>')
+    // Strip remaining file paths
+    .replace(/(?:\b[a-z]:)?[\\/][\w./\\-]+/g, '<path>')
     // Collapse whitespace
     .replace(/\s+/g, ' ')
     .trim();
@@ -60,6 +67,14 @@ function groupFailures(skillRuns) {
   return groups;
 }
 
+function compareTimestampsDescending(a, b) {
+  const timeA = Date.parse(a);
+  const timeB = Date.parse(b);
+  if (Number.isNaN(timeA)) return Number.isNaN(timeB) ? 0 : 1;
+  if (Number.isNaN(timeB)) return -1;
+  return timeB - timeA;
+}
+
 /**
  * Detect recurring failure patterns from skill runs.
  *
@@ -79,7 +94,7 @@ function detectPatterns(skillRuns, options = {}) {
     }
 
     const sortedRuns = [...group.runs].sort(
-      (a, b) => (b.createdAt || '').localeCompare(a.createdAt || '')
+      (a, b) => compareTimestampsDescending(a.createdAt, b.createdAt)
     );
 
     const firstSeen = sortedRuns[sortedRuns.length - 1].createdAt || null;
@@ -106,7 +121,7 @@ function detectPatterns(skillRuns, options = {}) {
   // Sort by count descending, then by lastSeen descending
   return patterns.sort((a, b) => {
     if (b.count !== a.count) return b.count - a.count;
-    return (b.lastSeen || '').localeCompare(a.lastSeen || '');
+    return compareTimestampsDescending(a.lastSeen, b.lastSeen);
   });
 }
 

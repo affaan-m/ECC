@@ -126,11 +126,11 @@ gh api repos/{owner}/{repo}/dependabot/alerts --jq '.[].security_advisory.summar
 # Check secret scanning alerts
 gh api repos/{owner}/{repo}/secret-scanning/alerts --jq '.[].state'
 
-# Review and auto-merge safe dependency bumps
+# 审查依赖项更新并提交给用户批准，切勿自动合并
 gh pr list --label "dependencies" --json number,title
 ```
 
-* 审查并自动合并安全的依赖项更新
+* 审查安全的依赖项更新并提交给用户批准，切勿自动合并
 * 立即标记任何严重/高严重性告警
 * 至少每周检查一次新的 Dependabot 告警
 

@@ -4,6 +4,7 @@ from types import SimpleNamespace
 from typing import cast
 
 import httpx
+import httpx2
 import pytest
 from anthropic import Anthropic as AnthropicSDK
 from openai import OpenAI as OpenAISDK
@@ -21,7 +22,8 @@ from llm.providers.minimax import (
     DEFAULT_MINIMAX_MODEL,
     MINIMAX_ANTHROPIC_BASE_URL,
     MINIMAX_BASE_URL,
-    MINIMAX_M2_7_MODEL,
+    MINIMAX_M3_1_FLASH_MODEL,
+    MINIMAX_M3_MODEL,
     MiniMaxProvider,
 )
 
@@ -111,19 +113,23 @@ def test_minimax_provider_exposes_documented_target_model(
     assert provider.base_url == MINIMAX_BASE_URL
     assert provider.get_default_model() == DEFAULT_MINIMAX_MODEL
     assert provider.validate_config() is False
-    assert provider.supports_vision() is False
-    assert models[DEFAULT_MINIMAX_MODEL].context_window == 204_800
+    assert provider.supports_vision() is True
+    assert models[DEFAULT_MINIMAX_MODEL].context_window == 1_000_000
     assert models[DEFAULT_MINIMAX_MODEL].max_tokens is None
-    assert models[DEFAULT_MINIMAX_MODEL].supports_vision is False
-    assert models[MINIMAX_M2_7_MODEL].context_window == 204_800
-    assert models[MINIMAX_M2_7_MODEL].max_tokens is None
-    assert models[MINIMAX_M2_7_MODEL].supports_vision is False
+    assert models[DEFAULT_MINIMAX_MODEL].supports_vision is True
+    assert models[MINIMAX_M3_1_FLASH_MODEL].context_window == 1_000_000
+    assert models[MINIMAX_M3_MODEL].context_window == 1_000_000
+    assert models[MINIMAX_M3_MODEL].max_tokens is None
+    assert models[MINIMAX_M3_MODEL].supports_vision is True
 
 
 def test_minimax_provider_lists_custom_default_model() -> None:
     provider = MiniMaxProvider(api_key="test", default_model="custom-model")
 
-    assert {model.name for model in provider.list_models()} == {DEFAULT_MINIMAX_MODEL}
+    assert {model.name for model in provider.list_models()} == {
+        MINIMAX_M3_1_FLASH_MODEL,
+        MINIMAX_M3_MODEL,
+    }
     assert provider.supports_vision() is False
 
 
@@ -476,11 +482,11 @@ def test_anthropic_base_url_yields_one_v1_messages_path(
     configured_base_url: str,
     expected_host: str,
 ) -> None:
-    requests: list[httpx.Request] = []
+    requests: list[httpx2.Request] = []
 
-    def handler(request: httpx.Request) -> httpx.Response:
+    def handler(request: httpx2.Request) -> httpx2.Response:
         requests.append(request)
-        return httpx.Response(
+        return httpx2.Response(
             200,
             json={
                 "id": "msg_test",
@@ -494,7 +500,7 @@ def test_anthropic_base_url_yields_one_v1_messages_path(
             },
         )
 
-    http_client = httpx.Client(transport=httpx.MockTransport(handler))
+    http_client = httpx2.Client(transport=httpx2.MockTransport(handler))
 
     def anthropic_client(**kwargs: object) -> AnthropicSDK:
         return AnthropicSDK(

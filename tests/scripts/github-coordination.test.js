@@ -94,6 +94,28 @@ async function runTests() {
   let failed = 0;
 
   if (
+    await test('rejects malformed issue numbers during argument parsing', async () => {
+      const { parseArgs } = require(SCRIPT);
+
+      for (const argv of [
+        ['node', 'github-coordination.js', 'claim', '42oops', '--repo', 'example/project'],
+        ['node', 'github-coordination.js', 'claim', '--issue', '42.9', '--repo', 'example/project'],
+        ['node', 'github-coordination.js', 'claim', '--issue', '4e2', '--repo', 'example/project'],
+        ['node', 'github-coordination.js', 'claim', '--issue', '9007199254740993', '--repo', 'example/project'],
+        ['node', 'github-coordination.js', 'claim', '--limit', '42.9', '--repo', 'example/project'],
+      ]) {
+        assert.throws(() => parseArgs(argv), /Invalid issue number/);
+      }
+
+      const valid = parseArgs(['node', 'github-coordination.js', 'claim', '7', '--repo', 'example/project']);
+      assert.strictEqual(valid.issueNumber, 7);
+      assert.strictEqual(valid.limit, 100);
+    })
+  )
+    passed++;
+  else failed++;
+
+  if (
     await test('claims an epic issue, updates GitHub state, and caches a work item', async () => {
       const rootDir = createTempDir('github-coordination-claim-');
       const dbPath = path.join(rootDir, 'state.db');
@@ -235,6 +257,87 @@ async function runTests() {
         const epicItem = stored.items.find(item => item.source === 'github-epic');
         assert.ok(epicItem, 'expected github epic work item');
         assert.strictEqual(epicItem.metadata.coordination.status, 'ready');
+      } finally {
+        cleanup(rootDir);
+      }
+    })
+  )
+    passed++;
+  else failed++;
+
+  if (
+    await test('sync filters the issue list to the configured epic label', async () => {
+      const rootDir = createTempDir('github-coordination-sync-');
+      const dbPath = path.join(rootDir, 'state.db');
+
+      try {
+        const epicIssue = {
+          number: 12,
+          title: 'Ship GitHub-native coordination',
+          body: '# Ship GitHub-native coordination',
+          url: 'https://github.com/affaan-m/ECC/issues/12',
+          state: 'OPEN',
+          labels: [{ name: 'epic' }],
+          author: { login: 'maintainer' },
+          updatedAt: '2026-06-01T12:00:00Z'
+        };
+        const shim = writeGhShim(rootDir, {
+          'issue list --repo affaan-m/ECC --state all --limit 100 --label epic --json number,title,body,url,state,labels,author,updatedAt,assignees': [epicIssue],
+          'issue list --repo affaan-m/ECC --state all --limit 100 --search in:body "ecc-coordination:start" --json number,title,body,url,state,labels,author,updatedAt,assignees': []
+        });
+
+        const result = run(['sync', '--repo', 'affaan-m/ECC', '--db', dbPath, '--dry-run', '--json'], {
+          cwd: rootDir,
+          env: {
+            ECC_GH_SHIM: shim.shimPath,
+            ECC_GH_SHIM_LOG: shim.logPath
+          }
+        });
+        assert.strictEqual(result.status, 0, result.stderr);
+        const payload = parseJson(result.stdout);
+        assert.strictEqual(payload.count, 1);
+        assert.strictEqual(payload.items[0].issueNumber, 12);
+      } finally {
+        cleanup(rootDir);
+      }
+    })
+  )
+    passed++;
+  else failed++;
+
+  if (
+    await test('sync recovers coordinated issues whose epic label drifted', async () => {
+      const rootDir = createTempDir('github-coordination-sync-drift-');
+      const dbPath = path.join(rootDir, 'state.db');
+
+      try {
+        const driftedIssue = {
+          number: 13,
+          title: 'Recover label drift',
+          body: '<!-- ecc-coordination:start -->\n```json\n{}\n```\n<!-- ecc-coordination:end -->',
+          url: 'https://github.com/affaan-m/ECC/issues/13',
+          state: 'OPEN',
+          labels: [{ name: 'coordination:synced' }],
+          author: { login: 'maintainer' },
+          updatedAt: '2026-06-01T12:00:00Z'
+        };
+        const shim = writeGhShim(rootDir, {
+          'issue list --repo affaan-m/ECC --state all --limit 100 --label epic --json number,title,body,url,state,labels,author,updatedAt,assignees': [],
+          'issue list --repo affaan-m/ECC --state all --limit 100 --search in:body "ecc-coordination:start" --json number,title,body,url,state,labels,author,updatedAt,assignees': [driftedIssue]
+        });
+
+        const result = run(['sync', '--repo', 'affaan-m/ECC', '--db', dbPath, '--dry-run', '--json'], {
+          cwd: rootDir,
+          env: {
+            ECC_GH_SHIM: shim.shimPath,
+            ECC_GH_SHIM_LOG: shim.logPath
+          }
+        });
+        assert.strictEqual(result.status, 0, result.stderr);
+        const payload = parseJson(result.stdout);
+        assert.strictEqual(payload.count, 1);
+        assert.strictEqual(payload.items[0].issueNumber, 13);
+        assert.ok(payload.items[0].labels.includes('epic'));
       } finally {
         cleanup(rootDir);
       }

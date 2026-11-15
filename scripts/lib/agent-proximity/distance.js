@@ -113,6 +113,23 @@ function treeDistance(a, b) {
   return clamp01((da - lca + (db - lca)) / (da + db));
 }
 
+function mergeLineRanges(ranges) {
+  const sorted = ranges
+    .map(([start, end]) => [Math.min(start, end), Math.max(start, end)])
+    .filter(([start, end]) => start <= end)
+    .sort((a, b) => a[0] - b[0]);
+  const merged = [];
+  for (const [start, end] of sorted) {
+    const previous = merged[merged.length - 1];
+    if (previous && start <= previous[1] + 1) {
+      merged[merged.length - 1] = [previous[0], Math.max(previous[1], end)];
+    } else {
+      merged.push([start, end]);
+    }
+  }
+  return merged;
+}
+
 /**
  * Line-range overlap as the overlap COEFFICIENT (Szymkiewicz–Simpson):
  * |A ∩ B| / min(|A|, |B|). This is the right collision measure — if one agent's
@@ -124,21 +141,20 @@ function lineRangeOverlap(rangesA, rangesB) {
   const a = Array.isArray(rangesA) ? rangesA : [];
   const b = Array.isArray(rangesB) ? rangesB : [];
   if (a.length === 0 || b.length === 0) return 1; // file-level edit ⇒ whole-file overlap
-  const covered = ranges => {
-    const set = new Set();
-    for (const [s, e] of ranges) {
-      const lo = Math.min(s, e);
-      const hi = Math.max(s, e);
-      for (let i = lo; i <= hi; i += 1) set.add(i);
-    }
-    return set;
-  };
-  const ca = covered(a);
-  const cb = covered(b);
-  if (ca.size === 0 || cb.size === 0) return 0;
+  const ca = mergeLineRanges(a);
+  const cb = mergeLineRanges(b);
+  const size = ranges => ranges.reduce((total, [start, end]) => total + end - start + 1, 0);
+  const minSize = Math.min(size(ca), size(cb));
+  if (minSize === 0) return 0;
   let inter = 0;
-  for (const v of ca) if (cb.has(v)) inter += 1;
-  return inter / Math.min(ca.size, cb.size);
+  let i = 0;
+  let j = 0;
+  while (i < ca.length && j < cb.length) {
+    inter += Math.max(0, Math.min(ca[i][1], cb[j][1]) - Math.max(ca[i][0], cb[j][0]) + 1);
+    if (ca[i][1] < cb[j][1]) i += 1;
+    else j += 1;
+  }
+  return inter / minSize;
 }
 
 function jaccard(setA, setB) {
@@ -271,6 +287,21 @@ function agentPriority(agent) {
 }
 
 /**
+ * Right-of-way between two agents: more progress wins; tie goes to the earlier
+ * start (greater age); final deterministic tiebreak on agentId so the maneuver
+ * is coordinated. Returns { hold, steer } as agentIds.
+ */
+function rightOfWay(a, b) {
+  const pa = agentPriority(a);
+  const pb = agentPriority(b);
+  let aHasPriority;
+  if (pa.progress !== pb.progress) aHasPriority = pa.progress > pb.progress;
+  else if (pa.ageMs !== pb.ageMs) aHasPriority = pa.ageMs > pb.ageMs;
+  else aHasPriority = String(a.agentId) < String(b.agentId);
+  return { hold: aHasPriority ? a.agentId : b.agentId, steer: aHasPriority ? b.agentId : a.agentId };
+}
+
+/**
  * TCAS-style advisory between two agents given their collision risk.
  * Returns { level: 'clear'|'advisory'|'resolution', risk, transmit, steer, hold }.
  *   - advisory: both should transmit intent to each other.
@@ -284,17 +315,7 @@ function advise(a, b, graph = {}, options = {}) {
     return { level: 'clear', risk, distance, channels, transmit: false, steer: null, hold: null };
   }
 
-  const pa = agentPriority(a);
-  const pb = agentPriority(b);
-  // Right-of-way: more progress wins; tie → earlier start (greater age) wins;
-  // final deterministic tiebreak on agentId so the maneuver is coordinated.
-  let aHasPriority;
-  if (pa.progress !== pb.progress) aHasPriority = pa.progress > pb.progress;
-  else if (pa.ageMs !== pb.ageMs) aHasPriority = pa.ageMs > pb.ageMs;
-  else aHasPriority = String(a.agentId) < String(b.agentId);
-
-  const hold = aHasPriority ? a.agentId : b.agentId;
-  const steer = aHasPriority ? b.agentId : a.agentId;
+  const { hold, steer } = rightOfWay(a, b);
 
   if (risk < thresholds.ra) {
     // Traffic advisory: exchange intent, no one has to move yet.
@@ -324,6 +345,7 @@ module.exports = {
   treeRisk,
   collisionRisk,
   agentPriority,
+  rightOfWay,
   advise,
   closureRate,
   _internal: { normalizePath, segments, jaccard }

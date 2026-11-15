@@ -1,10 +1,10 @@
 ---
-description: Navigate ECC's current agents, skills, commands, hooks, install profiles, and docs from the live repository surface.
+description: Navigate ECC's current agents, skills, commands, hooks, install profiles, and docs from the live repository surface. This is the slash-command entrypoint for that navigation; the ecc-guide skill covers the same map for on-demand use in conversation.
 ---
 
 # /ecc-guide
 
-Use this command as a conversational map of Everything Claude Code. It should help the user discover the right ECC surface for their task without dumping the entire README or stale catalog counts.
+Use this command as a conversational map of ECC. It should help the user discover the right ECC surface for their task without dumping the entire README or stale catalog counts.
 
 ## Usage
 

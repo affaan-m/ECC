@@ -17,6 +17,7 @@ import io
 import json
 import os
 import sys
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -208,6 +209,23 @@ Prevents vulnerabilities.
     assert "Prevents vulnerabilities." in result[0]["content"]
 
 
+@pytest.mark.parametrize("newline", ["\n", "\r\n"])
+def test_parse_initial_utf8_bom(newline):
+    content = SAMPLE_INSTINCT_YAML.replace("\n", newline)
+    assert parse_instinct_file("\ufeff" + content) == parse_instinct_file(content)
+
+
+def test_parse_preserves_bom_inside_content():
+    content = SAMPLE_INSTINCT_YAML.replace("Always write", "Always \ufeffwrite")
+    assert "Always \ufeffwrite" in parse_instinct_file(content)[0]["content"]
+
+
+def test_load_instinct_file_with_utf8_bom(tmp_path):
+    (tmp_path / "bom.yaml").write_text(SAMPLE_INSTINCT_YAML, encoding="utf-8-sig")
+    instincts = _load_instincts_from_dir(tmp_path, "personal", "project")
+    assert [instinct["id"] for instinct in instincts] == ["test-instinct"]
+
+
 def test_empty_content_no_error():
     content = """\
 ---
@@ -250,6 +268,52 @@ Body.
     result = parse_instinct_file(content)
     assert isinstance(result[0]["confidence"], float)
     assert result[0]["confidence"] == pytest.approx(0.42)
+
+
+@pytest.mark.parametrize("confidence", ["nan", "inf", "-inf", "1e309", "-0.1", "1.1", "invalid"])
+def test_parse_invalid_confidence_uses_default(confidence):
+    content = SAMPLE_INSTINCT_YAML.replace("confidence: 0.8", f"confidence: {confidence}")
+    assert parse_instinct_file(content)[0]["confidence"] == 0.5
+
+
+@pytest.mark.parametrize("confidence", [0.0, 0.42, 1.0])
+def test_parse_confidence_preserves_valid_range(confidence):
+    content = SAMPLE_INSTINCT_YAML.replace("confidence: 0.8", f"confidence: {confidence}")
+    assert parse_instinct_file(content)[0]["confidence"] == confidence
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("value", [
+    "line one\nline two", "tab\tvalue", "carriage\rreturn",
+    'when writing "quoted" text', r"C:\Users\name", "caf\u00e9",
+    r"literal\ntext", "line\n---\nid: other\n---", "control\x01value",
+])
+def test_quoted_instinct_strings_roundtrip(value: str) -> None:
+    quoted = _mod._yaml_quote(value)
+    assert json.loads(quoted) == value
+    instincts = parse_instinct_file(f"---\nid: roundtrip\ntrigger: {quoted}\n---\nBody")
+    assert len(instincts) == 1
+    assert instincts[0]["trigger"] == value
+
+
+@pytest.mark.unit
+def test_parse_quoted_instinct_decodes_newline_escape() -> None:
+    content = '---\nid: newline\ntrigger: "line one\\nline two"\n---\nBody'
+    assert parse_instinct_file(content)[0]["trigger"] == "line one\nline two"
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("value", ["line\u0085value", "line\u0090value"])
+def test_unicode_controls_are_escaped_for_yaml(value: str) -> None:
+    quoted = _mod._yaml_quote(value)
+    assert quoted.isascii()
+    assert json.loads(quoted) == value
+
+
+@pytest.mark.unit
+def test_parse_quoted_instinct_preserves_legacy_escape() -> None:
+    content = '---\nid: legacy\ntrigger: "C:\\projects"\n---\nBody'
+    assert parse_instinct_file(content)[0]["trigger"] == r"C:\projects"
 
 
 def test_parse_trigger_strips_quotes():
@@ -669,6 +733,17 @@ def test_cmd_status_with_instincts(patch_globals, monkeypatch, capsys):
     assert "Global instincts:  1" in out
     assert "PROJECT-SCOPED" in out
     assert "GLOBAL" in out
+
+
+@pytest.mark.parametrize("confidence", ["inf", "-inf", "nan"])
+def test_cmd_status_handles_nonfinite_confidence(patch_globals, monkeypatch, capsys, confidence):
+    project = _make_project(patch_globals)
+    monkeypatch.setattr(_mod, "detect_project", lambda: project)
+    content = SAMPLE_INSTINCT_YAML.replace("confidence: 0.8", f"confidence: {confidence}")
+    (project["instincts_personal"] / "nonfinite.yaml").write_text(content, encoding="utf-8")
+
+    assert cmd_status(SimpleNamespace()) == 0
+    assert "50%" in capsys.readouterr().out
 
 
 def test_confidence_bar_uses_unicode_when_supported():
@@ -1353,6 +1428,38 @@ def test_projects_merge_force_moves_and_removes_source(patch_globals, capsys):
 
 
 # ── cmd_prune ────────────────────────────────
+
+@pytest.mark.parametrize(("created", "expected"), [
+    ("2020-01-01T12:34:56.123Z", datetime(2020, 1, 1, 12, 34, 56, 123000, timezone.utc)),
+    ("2020-01-01T12:34:56.123456+02:00", datetime(2020, 1, 1, 12, 34, 56, 123456, timezone(timedelta(hours=2)))),
+    ("2020-01-01T12:34:56.123", datetime(2020, 1, 1, 12, 34, 56, 123000, timezone.utc)),
+    ("2020-01-01T12:34:56Z", datetime(2020, 1, 1, 12, 34, 56, tzinfo=timezone.utc)),
+    ("2020-01-01", datetime(2020, 1, 1, tzinfo=timezone.utc)),
+])
+def test_parse_created_date_formats(tmp_path: Path, created: str, expected: datetime) -> None:
+    source = tmp_path / "pending.yaml"
+    source.write_text(f"---\nid: pending\ncreated: {created}\n---\nBody", encoding="utf-8")
+    assert _mod._parse_created_date(source) == expected
+
+
+def test_parse_created_date_falls_back_to_mtime(tmp_path: Path) -> None:
+    source = tmp_path / "pending.yaml"
+    source.write_text("---\nid: pending\ncreated: invalid\n---\nBody", encoding="utf-8")
+    assert _mod._parse_created_date(source) == datetime.fromtimestamp(source.stat().st_mtime, timezone.utc)
+
+
+def test_parse_created_date_missing_file_returns_none(tmp_path: Path) -> None:
+    assert _mod._parse_created_date(tmp_path / "missing.yaml") is None
+
+
+def test_pending_fractional_created_date_expires(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    source = tmp_path / "pending.yaml"
+    source.write_text("---\nid: pending\ncreated: 2020-01-01T00:00:00.123Z\n---\nBody", encoding="utf-8")
+    monkeypatch.setattr(_mod, "_collect_pending_dirs", lambda: [tmp_path])
+    pending = _mod._collect_pending_instincts()
+    assert len(pending) == 1
+    assert pending[0]["age_days"] >= 30
+
 
 def _pending_item(path, age_days):
     return {

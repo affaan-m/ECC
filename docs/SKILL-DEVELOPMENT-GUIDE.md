@@ -1,6 +1,6 @@
 # Skill Development Guide
 
-A comprehensive guide to creating effective skills for Everything Claude Code (ECC).
+A comprehensive guide to creating effective skills for ECC.
 
 ## Table of Contents
 
@@ -632,8 +632,8 @@ go build ./examples/...
 ### 1. Fork and Clone
 
 ```bash
-gh repo fork affaan-m/everything-claude-code --clone
-cd everything-claude-code
+gh repo fork affaan-m/ECC --clone
+cd ECC
 ```
 
 ### 2. Create Branch
@@ -908,6 +908,7 @@ npm run test:e2e
 
 ## Additional Resources
 
+- [DevScratchpad AI Skill Studio](https://www.devscratchpad.tech/ai-skill-studio/claude-skills) - Third-party editor for drafting Claude Code `SKILL.md` files.
 - [CONTRIBUTING.md](../CONTRIBUTING.md) - General contribution guidelines
 - [project-guidelines-template](./examples/project-guidelines-template.md) - Project-specific skill template
 - [coding-standards](../skills/coding-standards/SKILL.md) - Example of standards skill

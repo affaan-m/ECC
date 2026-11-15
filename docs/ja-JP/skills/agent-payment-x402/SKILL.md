@@ -1,6 +1,6 @@
 ---
 name: agent-payment-x402
-description: タスクごとのバジェット、支出コントロール、ノンカストディアルウォレットを備えた x402 決済実行を AI エージェントに追加します。agentwallet-sdk を通じて Base をサポートし、OKX Payments / OKX エージェント決済プロトコルを通じて X Layer をサポートします。
+description: タスクごとのバジェット、支出コントロール、ノンカストディアルウォレットを備えた x402 決済実行を AI エージェントに追加します。agentwallet-sdk を通じて Base を、OKX Payments / OKX エージェント決済プロトコルを通じて X Layer を、アップストリームの x402 パッケージとファシリテーターベースの決済を通じて Solana とマルチネットワーク EVM をサポートします。
 origin: community
 ---
 
@@ -20,6 +20,8 @@ origin: community
 |------|------------------|
 | エージェントが Base または他の agentwallet 対応チェーンの 402 ゲート API に支払う | 厳格な支出ポリシーで `agentwallet-sdk` を MCP 決済サーバーとして使用 |
 | エージェントが X Layer の 402 ゲート API に支払う | `okx/onchainos-skills` の OKX エージェント決済プロトコルを使用；`okx-x402-payment` は廃止されたレガシーエイリアス |
+| エージェントが Solana または他の x402 v2 ネットワークの 402 ゲート API に支払う | エージェントの HTTP クライアントをアップストリームの `@x402/fetch` または `@x402/axios` パッケージでラップし、EVM/SVM スキームを登録する；リソースサーバーのファシリテーターが検証・決済する |
+| API が Solana または複数ネットワークでエージェントに課金する（TypeScript、Python、または Go） | `x402-foundation/x402` のアップストリーム x402 ミドルウェアを使用 — TypeScript は `@x402/express`、`@x402/hono`、`@x402/next`、または `@x402/fastify`、Python は `x402`、Go は `github.com/x402-foundation/x402/go/v2` |
 | TypeScript API がエージェントに課金する | Express、Hono、Fastify、または Next.js 向け OKX Payments TypeScript セラー SDK ドキュメントを使用 |
 | Go API がエージェントに課金する | Gin、Echo、または `net/http` 向け OKX Payments Go セラー SDK ドキュメントを使用 |
 | Rust API がエージェントに課金する | Axum 向け OKX Payments Rust セラー SDK ドキュメントを使用 |
@@ -30,6 +32,7 @@ origin: community
 
 - `agentwallet-sdk`: 本番使用前に現在のネットワークカバレッジをパッケージドキュメントで確認。Base Sepolia が最も安全な開発デフォルト；Base メインネットがオリジナルスキルで説明されている本番パス。
 - OKX Payments / X Layer: 現在のセラードキュメントは X Layer（`eip155:196`）と USDT0 決済を対象。決済パッケージとファシリテーターの動作が迅速に変わる可能性があるため、本番コードを生成する前に現在の SDK ドキュメントを取得すること。
+- アップストリーム x402 パッケージ: 設計上マルチネットワーク — 1 つのルートで Base と Solana を同時に提示し、買い手に選ばせることができる。パッケージのデフォルトは `x402.org` ファシリテーターで、テストネット専用（Base Sepolia `eip155:84532`、Solana デブネット `solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1`、加えて Stellar、Aptos、Hedera、XRPL の各テストネット）であり、メインネットルート向けではない。メインネット（Solana は `solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp`）では、自己ファシリテートするか、自前のファシリテーターを運用するか、アップストリームのファシリテーターリストからホスト型を選ぶ — オプション C のファシリテーター比較を参照。本番前にここにハードコードするのではなく、ファシリテーターの `/supported` エンドポイントでライブカバレッジを確認すること。
 
 ## 仕組み
 
@@ -97,6 +100,364 @@ X Layer x402、マルチパーティ決済（MPP）、セッション決済、�
 | Java | `https://raw.githubusercontent.com/okx/payments/main/java/SELLER.md` |
 
 現在の OKX リポジトリを確認せずに古いドキュメントの例をコピーしないこと。現在の OKX ガイダンスはディスパッチャーとして `okx-agent-payments-protocol` を使用しており、Java セラードキュメントが利用可能になっています。
+
+### オプション C: アップストリーム x402 パッケージ（Solana + Base/EVM）
+
+エージェントが Solana、Base、またはアップストリームのプロトコル実装がサポートする他のネットワークで支払う（または API が課金する）場合にこのパスを使用します。[`x402-foundation/x402`](https://github.com/x402-foundation/x402) の正規 x402 モノレポは活発にメンテナンスされており、クライアントとミドルウェアのパッケージを直接公開しています。オプション A・B と異なり、これは別個の MCP サーバーではありません — エージェント自身の HTTP クライアントをラップし、リソースサーバーが選んだファシリテーターが検証・決済します。
+
+バイヤー側エージェントフローの場合：
+
+1. 古いドキュメントのスニペットをコピーするのではなく、メンテナンスされている [`examples/typescript/clients`](https://github.com/x402-foundation/x402/tree/main/examples/typescript/clients)（fetch、axios、MCP）の例から始める。
+2. オプション B が OKX フローに要求するのとまったく同様に、最初の有料リクエストの署名または送信の前に明示的なユーザー確認を求める。汎用ツール呼び出しの背後に決済実行を隠さない。
+3. パッケージバージョンを固定する（例：`@x402/fetch@2.22.0`）；アップストリームの全パッケージはロックステップでバージョニングされる。
+4. バジェットはクライアントに登録した `PaymentPolicy` で強制し、毎回サーバーの実際のチャレンジに対して検査が走るようにする。自分で渡した数値と突き合わせるバジェットは何も証明しない — 金額・アセット・ネットワークはすべてサーバー由来なので、署名が生成される前に 3 つとも検証すること。
+
+5. 受取先と予算のポリシーとは別に、許可するリソースのオリジンを正確に設定する。以下の支払い対応 fetch はすべてリダイレクトを拒否する。セッションの確認には許可オリジン、ネットワーク、資産、受取先、人が読める単位の支出上限を明示し、並行呼び出しは同じ確認結果を共有する。クライアントとポリシーはオーケストレーター内に留める。
+
+```typescript
+import { x402Client, wrapFetchWithPayment } from "@x402/fetch";
+import { ExactEvmScheme } from "@x402/evm/exact/client";
+import { ExactSvmScheme } from "@x402/svm/exact/client";
+import { privateKeyToAccount } from "viem/accounts";
+import { createKeyPairSignerFromBytes } from "@solana/kit";
+import { base58 } from "@scure/base";
+
+// Signer keys belong to the ORCHESTRATOR's env — never hardcoded, never agent-writable.
+const evmKey = process.env.EVM_PRIVATE_KEY as `0x${string}`;
+const svmKey = process.env.SVM_PRIVATE_KEY;
+if (!evmKey || !svmKey) {
+  throw new Error("Signer keys are not set — refusing to start payment client");
+}
+
+// One client, both network families: the buyer pays whichever chain the 402 offers.
+const client = new x402Client();
+client.register("eip155:*", new ExactEvmScheme(privateKeyToAccount(evmKey)));
+client.register("solana:*", new ExactSvmScheme(await createKeyPairSignerFromBytes(base58.decode(svmKey))));
+
+// A PaymentPolicy filters the SERVER's payment requirements before any
+// signature is created. Returning an empty array means "nothing here is
+// acceptable" and the client refuses to pay rather than falling back.
+const ALLOWED_NETWORKS = new Set([
+  "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp",      // Solana mainnet
+  "eip155:8453",                                   // Base
+]);
+const MAX_AMOUNT = 10_000n;      // atomic units, 6-decimal USDC: 0.01 USDC per call
+const SESSION_CAP = 50_000n;     // 0.05 USDC across the whole session
+
+// EVM addresses are case-insensitive, so compare them lowercased. Solana
+// addresses are base58 and ARE case-sensitive — never lowercase those, or a
+// different account could slip through.
+const normalizeAddress = (a: string) => (a.startsWith("0x") ? a.toLowerCase() : a);
+const ALLOWED_ASSETS = new Set(
+  [
+    "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",  // USDC, Solana mainnet
+    "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",    // USDC, Base
+  ].map(normalizeAddress),
+);
+// Who you are willing to pay. Without this, any 402 an agent happens to hit
+// can name its own recipient.
+const ALLOWED_PAY_TO = new Set(
+  ["7pr7NCaQRz5PEhPy7BAeB3Z72TVkiShhjRyVCN5DA6yC"].map(normalizeAddress),
+);
+
+client.registerPolicy((_x402Version, requirements) =>
+  requirements.filter(r => {
+    if (!ALLOWED_NETWORKS.has(r.network)) return false;                   // wrong chain
+    if (!ALLOWED_ASSETS.has(normalizeAddress(r.asset))) return false;     // wrong token
+    if (!ALLOWED_PAY_TO.has(normalizeAddress(r.payTo))) return false;     // wrong recipient
+    try {
+      const amount = BigInt(r.amount);
+      return amount >= 0n && amount <= MAX_AMOUNT;                        // over budget / negative
+    } catch {
+      return false;                                                       // unparseable amount
+    }
+  }),
+);
+
+// The policy sees one challenge at a time, so it cannot enforce a session
+// total or ask a human anything. Keep the payment-enabled client private and
+// route every paid call through the payOnce boundary below.
+
+// Supply this from your harness — a real prompt, never a stub that returns true.
+declare function confirmWithUser(prompt: string): Promise<boolean>;
+
+// Resource authorization is independent of recipient and budget policy.
+// The ORCHESTRATOR supplies exact approved HTTPS origins before delegation;
+// never populate this set from a server challenge or agent-controlled input.
+const ALLOWED_ORIGINS = new Set(["https://api.example.com"]);
+function requireAllowedOrigin(url: string): void {
+  const parsed = new URL(url);
+  if (!ALLOWED_ORIGINS.has(parsed.origin) || parsed.username || parsed.password) {
+    throw new Error("Resource origin is not authorized");
+  }
+}
+
+// Both approved assets above are 6-decimal USDC. Update this trusted formatting
+// policy along with the asset allowlist if you support other assets/decimals.
+const USDC_SCALE = 1_000_000n;
+const humanUSDC = (amount: bigint) =>
+  `${amount / USDC_SCALE}.${(amount % USDC_SCALE).toString().padStart(6, "0").replace(/0+$/, "") || "0"} USDC`;
+
+let sessionSpent = 0n;
+let sessionApproval: Promise<boolean> | undefined;
+
+async function payOnce(url: string, init?: RequestInit): Promise<Response> {
+  requireAllowedOrigin(url); // Before reservation, prompt, fetch, or signature.
+  // Reserve the worst case the policy allows. Settlement responses do not
+  // carry an amount, so counting MAX_AMOUNT per call is a deliberate
+  // over-estimate — it can stop early, never late. Reserve before any await,
+  // so concurrent calls cannot all pass the check.
+  if (sessionSpent + MAX_AMOUNT > SESSION_CAP) {
+    throw new Error("Session budget exhausted — blocked");
+  }
+  sessionSpent += MAX_AMOUNT;
+  // Release the reservation only when no signed payment left this process:
+  // a declined or failed prompt, a challenge the policy rejected, or a free
+  // response. Once a signed request is sent it may settle, so keep it counted.
+  let signedRequestSent = false;
+  const trackingFetch: typeof fetch = async (input, reqInit) => {
+    // Override caller options on BOTH the challenge and signed retry. Native
+    // fetch refuses redirects, so an unauthorized host cannot return a 402
+    // or receive a payment header via an automatic redirect.
+    const req = new Request(input, { ...reqInit, redirect: "error" });
+    requireAllowedOrigin(req.url);
+    if (req.headers.has("PAYMENT-SIGNATURE") || req.headers.has("X-PAYMENT")) {
+      signedRequestSent = true;
+    }
+    const response = await fetch(req);
+    // Also fail closed for adapters that expose a redirect response instead.
+    if (response.redirected || (response.status >= 300 && response.status < 400)) {
+      throw new Error("Paid request redirects are blocked");
+    }
+    return response;
+  };
+  try {
+    // Install one promise before awaiting the prompt. Concurrent calls share
+    // the same decision, including a decline or failure; never auto-reprompt.
+    sessionApproval ??= Promise.resolve().then(() => confirmWithUser(
+      `Allow paid requests to origins: ${[...ALLOWED_ORIGINS].join(", ")}? ` +
+      `Networks: ${[...ALLOWED_NETWORKS].join(", ")}. ` +
+      `Assets: ${[...ALLOWED_ASSETS].join(", ")} (6-decimal USDC). ` +
+      `Recipients (payTo): ${[...ALLOWED_PAY_TO].join(", ")}. ` +
+      `Per-call cap: ${humanUSDC(MAX_AMOUNT)}; session cap: ${humanUSDC(SESSION_CAP)}.`,
+    ));
+    if (!await sessionApproval) {
+      throw new Error("User declined: no payment attempted");
+    }
+    return await wrapFetchWithPayment(trackingFetch, client)(url, init);
+  } finally {
+    if (!signedRequestSent) sessionSpent -= MAX_AMOUNT;
+  }
+}
+
+const res = await payOnce("https://api.example.com/data", { method: "GET" });
+```
+
+ポリシーを登録すると、予算超過の金額、想定外のトークン、未登録のチェーンはすべてフェイルクローズドになる — 候補がすべて除外されるため、`createPaymentPayload` は署名せずに例外を投げる。デブネット USDC は `4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU`；開発時のみ `ALLOWED_ASSETS` に追加すること。ポリシーは敵対的にテストする — `5000000` アトミック単位を要求するチャレンジ、別のミントを提示するチャレンジ、登録していないチェーンのチャレンジを与え、いずれも署名が生成されないことを確認する。exact-SVM スキームではファシリテーターがトランザクション手数料支払者となるため、買い手のウォレットは USDC のみを保有すればよい — ガス用の SOL は不要。
+
+**ファシリテーターの選択。** ファシリテーターはリソースサーバーに代わって検証と決済を行うため、これは買い手ではなくリソースサーバーの判断である。委ねる信頼が小さい順に：
+
+| 選択肢 | 適する場面 |
+|--------|--------------|
+| [インプロセスで自己ファシリテート](https://github.com/x402-foundation/x402/tree/main/examples/typescript/servers/self-facilitation) | 決済経路に第三者を入れたくなく、鍵と RPC アクセスを自前で保持できる |
+| 自前のファシリテーターを運用 | 同じ制御を複数サービスで共有したい |
+| [`x402.org` ファシリテーター](https://x402.org/facilitator) | 開発・テストネット向け — パッケージのデフォルトでセットアップ不要。アップストリームはメインネットルート向けではないと明記している |
+| ホスト型の本番ファシリテーター | インフラを運用せずにメインネット対応が欲しい |
+
+ホスト型を選ぶ場合は、ここに書かれた名前ではなくアップストリームドキュメントの[ファシリテーターリスト](https://docs.x402.org/dev-tools/facilitators)から選ぶこと — メンテナンスされており、網羅的ではなく、カバレッジも変わる。執筆時点では Coinbase の CDP（全トランザクションに KYT/OFAC スクリーニング）、PayAI、Corbits、Dexter、Solvador などが掲載され、複数が EVM に加えて Solana メインネットをカバーしている。どれを選ぶ場合も、本番前に `/supported` エンドポイントでライブカバレッジを確認し、ネットワークを追加したときは再確認すること。
+
+> **開示**: このセクションは、掲載されているファシリテーターの 1 つである PayAI に関わる者が寄稿した。複数ある選択肢の 1 つとして記載しており、上記の自己ホストおよびアップストリームデフォルトのパスを意図的に先に挙げている。
+
+**セラー側（API がエージェントに課金する）。** アップストリームのミドルウェアを使用する；1 つのルートで Base と Solana を同時に提示できる（実行可能なバージョンは [`examples/typescript/servers`](https://github.com/x402-foundation/x402/tree/main/examples/typescript/servers) を参照）：
+
+| ランタイム | パッケージ |
+|---------|---------|
+| Express / Hono / Next.js / Fastify | `@x402/express@2.22.0`、`@x402/hono@2.22.0`、`@x402/next@2.22.0`、`@x402/fastify@2.22.0` |
+| Python（FastAPI、Flask） | PyPI の `x402` |
+| Go（Gin、Echo、`net/http`） | `github.com/x402-foundation/x402/go/v2` |
+
+**Solana のセラー：`payTo` アドレスには先に正規のトークンアカウントが必要。** exact-SVM クライアントは `findAssociatedTokenPda` で `payTo` の*関連トークンアカウント*（ATA）を導出してそこに送金するが、それを作成はしない。その正確なアカウントが存在しないと決済はシミュレーション段階で失敗し、402 が `transaction_simulation_failed` を返す — クライアントのバグのように見えるが、実際は受取側アカウントの欠落である。導出したアドレス自体を確認すること — オーナーのトークンアカウントを走査するのは等価ではない。同じミントの非正規な補助アカウントがあると検査は通るのに、クライアントが対象とする ATA は依然として存在しないからだ：
+
+```typescript
+import { findAssociatedTokenPda, TOKEN_PROGRAM_ADDRESS } from "@solana-program/token";
+
+const [ata] = await findAssociatedTokenPda({
+  mint: "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",   // USDC mainnet
+  owner: payToAddress,
+  tokenProgram: TOKEN_PROGRAM_ADDRESS,                     // TOKEN_2022_PROGRAM_ADDRESS for Token-2022 mints
+});
+```
+
+次にそのアドレスが実在することを確認する — `value: null` なら存在せず、そこへの決済は失敗する：
+
+```bash
+curl -s https://api.mainnet-beta.solana.com -X POST -H 'Content-Type: application/json' \
+  -d '{"jsonrpc":"2.0","id":1,"method":"getAccountInfo",
+       "params":["<DERIVED_ATA>",{"encoding":"base64"}]}' \
+  | jq '.result.value != null'
+```
+
+作成方法（作成者が少額のレントを負担し、支払者ではない）：
+
+- コード上では `@solana-program/token` の `getCreateAssociatedTokenIdempotentInstruction` をオンボーディングフローに追加する — 冪等版なので再実行しても安全で、決定的に動作する唯一の方法。
+- spl-token CLI で `spl-token create-account <MINT> --owner <PAYTO_ADDRESS>`。
+- そのトークンを `payTo` に送金する方法も使えるが、送金側が作成インストラクションを含む場合に限る — ウォレットや `spl-token transfer --fund-recipient` は含める。ATA が無い状態への素の `transferChecked` は、決済と同じように失敗する。
+
+これは新規プロビジョニングされたウォレットやカストディアルウォレットへの支払いで最も問題になりやすい。そうしたウォレットは対象アセットの ATA をまだ持っていないことが多い。
+
+**セラー：1 つの支払い承認につきルートは 1 回だけ実行する。** ミドルウェアは支払いを検証し、ハンドラーを実行し、その後で決済する。検証は承認を消費しない（消費するのは決済）ため、同じ署名済み支払いを同時に複数回送ると、毎回検証を通り、毎回ハンドラーが実行される。ファシリテーターが決済するのは 1 つのコピーだけで、残りはレスポンスなしの 402 を受け取るので、誰も無料で出力を得ることはない。しかしハンドラー内の副作用（LLM 呼び出し、ジョブのキュー投入、オンチェーントランザクション）はコピーごとに発生する。本番のセラー（Python `x402` 2.9.0、FastAPI）では、1 つの承認を同時に 3 回送ると、ハンドラーが 3 回実行され、決済は 1 回だった。ハンドラー内の有料呼び出しカウンターも同じように売上を過大に数えるので、決済後に数えること。検証から決済までのより広い競合については [x402#1169](https://github.com/x402-foundation/x402/issues/1169) で議論されている。
+
+各承認を、ファシリテーターが検証した後、ハンドラーが実行される前に、1 回だけ取得する。リソースサーバーの `onAfterVerify` フックはちょうどその時点で実行され、そこから返した `abort` はハンドラーを実行せずに 402 になる：
+
+```typescript
+import { createHash } from "node:crypto";
+import express from "express";
+import { paymentMiddleware, x402ResourceServer } from "@x402/express";
+import { HTTPFacilitatorClient } from "@x402/core/server";
+import { ExactEvmScheme } from "@x402/evm/exact/server";
+import { getBase64Encoder, getTransactionDecoder } from "@solana/kit";
+import { createClient } from "redis";
+
+// Use a shared, durable, non-evicting claim store. Atomic insertion alone
+// does not preserve claims after a store reset or eviction; test that operational
+// contract separately before claiming durable replay protection.
+// The claim store must never be what takes the seller down. With the offline
+// queue disabled, a command sent while disconnected fails at once; the queue
+// cap does the same when the store is connected but not replying; the error
+// listener stops a client error from crashing the process; and the connection
+// is made in the background, so startup never waits on it.
+const redis = createClient({
+  url: process.env.REDIS_URL,
+  disableOfflineQueue: true,
+  commandsQueueMaxLength: 1_000,
+  socket: { connectTimeout: 2_000 },
+});
+redis.on("error", (err) => console.warn(`replay store: ${err.message}`));
+redis.connect().catch(() => {});
+
+const CLAIM_MIN_S = 900;          // longer than maxTimeoutSeconds plus your slowest handler run
+const CLAIM_MAX_S = 366 * 86_400; // ceiling for a signer-chosen expiry
+const CLAIM_TIMEOUT_MS = 250;     // a slow store must not stall paid requests
+// When the store is unavailable: refuse before the handler runs (true), or run
+// it without duplicate protection (false). Fail open only if the handler is
+// idempotent or has its own side-effect boundary.
+const FAIL_CLOSED = true;
+
+// Identifies a verified authorization, however its JSON is encoded, and keeps
+// the claim until the authorization can no longer settle: the signer picks
+// that expiry, and verification does not cap it at maxTimeoutSeconds.
+function claimOf(
+  paymentPayload: { payload: Record<string, any> },
+  requirements: { network: string; asset: string },
+): { key: string; until: number } | undefined {
+  const now = Math.floor(Date.now() / 1000);
+  const keep = (expiry: unknown) => {
+    // Reject authorizations beyond our retention contract; never shorten a
+    // live authorization's claim lifetime and silently reopen its replay window.
+    const validUntil = BigInt(String(expiry));
+    if (validUntil < 0n || validUntil + 60n > BigInt(now + CLAIM_MAX_S)) {
+      throw new Error("Authorization expiry exceeds the replay retention horizon");
+    }
+    return Math.max(now + CLAIM_MIN_S, Number(validUntil + 60n));
+  };
+  const p = paymentPayload.payload;
+  if (p.authorization?.nonce) {
+    // EVM exact, EIP-3009: each token contract accepts a (from, nonce) once.
+    const { from, nonce, validBefore } = p.authorization;
+    const asset = requirements.asset.toLowerCase();
+    return {
+      key: `x402:${requirements.network}:${asset}:${from.toLowerCase()}:${nonce.toLowerCase()}`,
+      until: keep(validBefore),
+    };
+  }
+  if (p.permit2Authorization?.nonce !== undefined) {
+    // EVM exact, Permit2: uint256 nonces per owner, across tokens. The signed
+    // value is BigInt(nonce), so "1", "01" and "0x1" are one authorization.
+    const { from, nonce, deadline } = p.permit2Authorization;
+    return {
+      key: `x402:${requirements.network}:permit2:${from.toLowerCase()}:${BigInt(nonce)}`,
+      until: keep(deadline),
+    };
+  }
+  if (typeof p.transaction === "string") {
+    // SVM exact: hash the message the payer signed, not the whole transaction.
+    // The fee payer's signature slot is outside the payer's signature.
+    const tx = getTransactionDecoder().decode(getBase64Encoder().encode(p.transaction));
+    const digest = createHash("sha256").update(new Uint8Array(tx.messageBytes)).digest("hex");
+    return { key: `x402:${requirements.network}:${digest}`, until: now + CLAIM_MIN_S };
+  }
+  return undefined;
+}
+
+function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
+  return Promise.race([
+    promise,
+    new Promise<T>((_, reject) => setTimeout(reject, ms, new Error("timeout")).unref()),
+  ]);
+}
+
+const resourceServer = new x402ResourceServer(
+  new HTTPFacilitatorClient({ url: process.env.FACILITATOR_URL }),
+)
+  .register("eip155:8453", new ExactEvmScheme())
+  .onAfterVerify(async ({ paymentPayload, requirements, result }) => {
+    if (!result.isValid) return; // an invalid payment never takes a claim
+    let claim: ReturnType<typeof claimOf>;
+    let set: Promise<string | null> | undefined;
+    try {
+      claim = claimOf(paymentPayload, requirements);
+      if (!claim) {
+        return { abort: true, reason: "claim_unsupported", message: "Authorization cannot be guarded." };
+      }
+      // NX is atomic: of two simultaneous copies exactly one wins.
+      set = redis.set(claim.key, "1", {
+        condition: "NX",
+        expiration: { type: "EXAT", value: claim.until },
+      });
+      if ((await withTimeout(set, CLAIM_TIMEOUT_MS)) === "OK") return;
+      return {
+        abort: true,
+        reason: "payment_replayed",
+        message: "This payment authorization was already presented.",
+      };
+    } catch {
+      // Return, don't throw: the resource server logs and skips a hook that
+      // throws, which would run the handler unguarded.
+      if (FAIL_CLOSED) {
+        // A write that timed out can still land. This request is refused and
+        // the handler never runs, so release a late claim, or the retry
+        // would be refused as a replay of work that never happened.
+        set?.then((reply) => (reply === "OK" && claim ? redis.del(claim.key) : 0)).catch(() => {});
+        return { abort: true, reason: "claim_unavailable", message: "Retry shortly." };
+      }
+    }
+  });
+
+const app = express();
+app.use(express.json());
+app.use(
+  paymentMiddleware(
+    {
+      "POST /report": {
+        accepts: [{ scheme: "exact", price: "$0.01", network: "eip155:8453", payTo: process.env.PAY_TO! }],
+      },
+    },
+    resourceServer,
+  ),
+);
+app.post("/report", async (req, res, next) => {
+  try {
+    res.json(await buildReport(req.body));
+  } catch (error) {
+    // Keep the claim: a failed handler may already have performed side effects.
+    next(error);
+  }
+});
+```
+
+アトミックな条件付き挿入ができるストアなら何でもよい：DynamoDB の `attribute_not_exists` 付き `PutItem`、または Postgres のユニークインデックス。ガードが代わりに決めてくれないことが 2 つある。ストアが停止している場合、`FAIL_CLOSED` は可用性と引き換えに承認ごとに 1 回という保証を守る。フェイルオープンにするとルートは動き続けるが、ストアが回復するまで各コピーがハンドラーを実行するので、冪等なハンドラーに限って使うこと。また `payment_replayed` は、その承認が以前に提示されたことを意味し、最初の試行が失敗したことを意味しない。クライアントが最初のレスポンスを失った場合、処理が実行され支払いが決済されている可能性があるので、新しい承認に署名する前に元のリクエストの結果を照合すること。これが防ぐのは 1 つの承認の重複コピーだけである。検証と決済の間に支払いを無効にする支払者（たとえば資金を移動する）は、依然としてハンドラーを 1 回実行させられる。高コストなルートでは、作業の前に資金を確保すること。
+
+**発見。** x402 バザール拡張を実装するファシリテーターは `/discovery/resources` エンドポイントを公開する — CDP カタログは `https://api.cdp.coinbase.com/platform/v2/x402/discovery/resources`、PayAI カタログは `https://facilitator.payai.network/discovery/resources` で照会できる。Solana で支払い可能なサービスには、Solana Foundation のキュレーションカタログである [pay.sh](https://pay.sh) もある。
 
 ## 例
 
@@ -212,7 +573,8 @@ main().catch((err) => {
 - **監査証跡**: タスク後のフックで `list_transactions` を使用して何が使われたかをログに記録する。
 - **フェイルクローズド**: 決済ツールに到達できない場合、有料アクションをブロックする — 課金されないアクセスにフォールバックしない。
 - **security-review と組み合わせる**: 決済ツールは高い権限を持つ。シェルアクセスと同じ精査を適用する。
-- **まずテストネットでテストする**: 開発には Base Sepolia を使用；本番には Base メインネットに切り替える。
+- **まずテストネットでテストする**: 開発には Base Sepolia を使用；本番には Base メインネットに切り替える。Solana では、メインネットの本番ファシリテーターに移る前に、Solana デブネット（`solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1`）と無料の x402.org ファシリテーターで開発する。
+- **Solana では SOL ではなく USDC を資金として入れる**: exact-SVM スキームではファシリテーターがトランザクション手数料支払者となるため、SOL を持たないウォレットでも支払える。署名前に各チャレンジの `asset` を期待する USDC ミント（メインネット `EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v`、デブネット `4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU`）と照合する — 任意のアセットに支払うラップクライアントはバジェットの穴になる。
 
 ## 本番リファレンス
 
@@ -222,3 +584,8 @@ main().catch((err) => {
 - **OKX Payments SDK**: [`okx/payments`](https://github.com/okx/payments) — X Layer x402 向け TypeScript、Go、Rust、Java セラー統合
 - **OKX エージェント決済プロトコルスキル**: [`okx/onchainos-skills`](https://github.com/okx/onchainos-skills/tree/main/skills/okx-agent-payments-protocol)
 - **OKX Payments 概要**: [web3.okx.com/onchainos/dev-docs/payments/overview](https://web3.okx.com/onchainos/dev-docs/payments/overview)
+- **アップストリーム x402 モノレポ**: [`x402-foundation/x402`](https://github.com/x402-foundation/x402) — TypeScript、Python、Go の実装と、メンテナンスされているクライアント・サーバー例
+- **x402 ドキュメント**: [docs.x402.org](https://docs.x402.org)；本番ファシリテーターリストは [docs.x402.org/dev-tools/facilitators](https://docs.x402.org/dev-tools/facilitators)
+- **`@x402` パッケージ**: [npmjs.com/org/x402](https://www.npmjs.com/org/x402) — `@x402/fetch`、`@x402/axios`、`@x402/express`、`@x402/hono`、`@x402/next`、`@x402/fastify`、`@x402/evm`、`@x402/svm`
+- **ファシリテーター**: [自己ファシリテーションの例](https://github.com/x402-foundation/x402/tree/main/examples/typescript/servers/self-facilitation)（第三者なし）、[x402.org ファシリテーター](https://x402.org/facilitator)（テストネットデフォルト）、メンテナンスされている[本番リスト](https://docs.x402.org/dev-tools/facilitators)
+- **発見**: CDP と PayAI のバザールは `/discovery/resources`；Solana で支払い可能なサービスは [pay.sh](https://pay.sh)

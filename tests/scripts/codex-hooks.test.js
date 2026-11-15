@@ -11,6 +11,8 @@ const TOML = require('@iarna/toml');
 
 const repoRoot = path.join(__dirname, '..', '..');
 const installScript = path.join(repoRoot, 'scripts', 'codex', 'install-global-git-hooks.sh');
+const preCommitHook = path.join(repoRoot, 'scripts', 'codex-git-hooks', 'pre-commit');
+const prePushHook = path.join(repoRoot, 'scripts', 'codex-git-hooks', 'pre-push');
 const pluginCacheCheckScript = path.join(repoRoot, 'scripts', 'codex', 'check-plugin-cache.js');
 const mergeCodexConfigScript = path.join(repoRoot, 'scripts', 'codex', 'merge-codex-config.js');
 const mergeMcpConfigScript = path.join(repoRoot, 'scripts', 'codex', 'merge-mcp-config.js');
@@ -42,16 +44,37 @@ function cleanup(dirPath) {
   fs.rmSync(dirPath, { recursive: true, force: true });
 }
 
-function runBash(scriptPath, args = [], env = {}, cwd = repoRoot) {
-  return spawnSync('bash', [scriptPath, ...args], {
+function resolveBashExecutable(env = process.env) {
+  return env.BASH_PATH
+    || (process.platform === 'win32' && fs.existsSync('C:\\Program Files\\Git\\bin\\bash.exe')
+      ? 'C:\\Program Files\\Git\\bin\\bash.exe'
+      : fs.existsSync('/bin/bash')
+        ? '/bin/bash'
+        : 'bash');
+}
+
+function runBash(
+  scriptPath,
+  { args = [], env = {}, cwd = repoRoot, input = undefined, preservePath = true } = {},
+) {
+  const effectiveEnv = {
+    ...(preservePath ? process.env : {}),
+    ...env,
+  };
+  const bash = resolveBashExecutable(effectiveEnv);
+  return spawnSync(bash, [scriptPath, ...args], {
     cwd,
-    env: {
-      ...process.env,
-      ...env,
-    },
+    env: effectiveEnv,
     encoding: 'utf8',
+    input,
     stdio: ['pipe', 'pipe', 'pipe'],
   });
+}
+
+function toBashPath(filePath) {
+  return process.platform === 'win32'
+    ? `/${filePath[0].toLowerCase()}${filePath.slice(2).replaceAll('\\', '/')}`
+    : filePath;
 }
 
 function runNode(scriptPath, args = [], env = {}, cwd = repoRoot) {
@@ -117,6 +140,513 @@ let passed = 0;
 let failed = 0;
 
 if (
+  test('shell test runner honors an explicit BASH_PATH override', () => {
+    assert.strictEqual(
+      resolveBashExecutable({ BASH_PATH: '/custom/git/bin/bash' }),
+      '/custom/git/bin/bash',
+    );
+  })
+)
+  passed++;
+else failed++;
+
+if (
+  test('shell test runner honors a per-invocation BASH_PATH override', () => {
+    const tempDir = createTempDir('ecc-missing-bash-');
+    try {
+      const missingBash = path.join(tempDir, 'bash');
+      const result = runBash(prePushHook, { env: { BASH_PATH: missingBash } });
+      assert.strictEqual(result.error?.code, 'ENOENT');
+    } finally {
+      cleanup(tempDir);
+    }
+  })
+)
+  passed++;
+else failed++;
+
+function runHermeticPreCommit({ content = 'safe text\n', filename = 'sample.txt', scanner = false, env = {} } = {}) {
+  const tempDir = createTempDir('codex-pre-commit-');
+  try {
+    const bashEnv = path.join(tempDir, 'bash-env');
+    const binDir = path.join(tempDir, 'bin');
+    const callsPath = path.join(tempDir, 'scanner-calls');
+    fs.mkdirSync(binDir);
+    const hookEnv = makeHermeticCodexEnv(tempDir, path.join(tempDir, '.codex'), {
+      PATH: process.env.PATH,
+      GIT_CONFIG_NOSYSTEM: '1',
+      MSYS_NO_PATHCONV: '1',
+      ECC_SKIP_GIT_HOOKS: '0',
+      ECC_SKIP_PRECOMMIT: '0',
+      ...env,
+    });
+    const initialized = spawnSync('git', ['init', '--quiet'], { cwd: tempDir, env: hookEnv });
+    assert.strictEqual(initialized.status, 0, initialized.stderr?.toString());
+    if (content !== null) {
+      fs.writeFileSync(path.join(tempDir, filename), content);
+      const staged = spawnSync('git', ['add', '--', filename], { cwd: tempDir, env: hookEnv });
+      assert.strictEqual(staged.status, 0, staged.stderr?.toString());
+    }
+    // Synthetic scanners drain staged input before returning so pipefail sees their intended status.
+    // Keep real Git/awk available, while hiding every installed ripgrep binary.
+    fs.writeFileSync(bashEnv, `
+git_path="$(command -v git)"
+awk_path="$(command -v awk)"
+head_path="$(command -v head)"
+cat_path="$(command -v cat)"
+rg_path="$(type -P rg || true)"
+${scanner === 'real' ? `if [[ -z "$rg_path" ]]; then
+printf 'Real scanner fixture requires ripgrep with PCRE2 support on PATH.\\n' >&2
+exit 97
+fi` : ''}
+git() { "$git_path" "$@"; }
+awk() { "$awk_path" "$@"; }
+head() { "$head_path" "$@"; }
+cat() { "$cat_path" "$@"; }
+unset -f rg
+${scanner === 'real' ? '# Preserve dependencies used by an actual scanner executable or wrapper.' : `PATH="${toBashPath(binDir)}"`}
+${scanner ? `rg() {
+printf '%s\\n' "$*" >> "${toBashPath(callsPath)}"
+${scanner === 'real' ? '' : 'cat >/dev/null; '}${scanner === 'real' ? '"$rg_path" "$@"' : scanner === 'finding' ? "printf '1:synthetic-scanner-finding\\n'; return 0;" : scanner === 'error' ? 'return 2;' : 'return 1;'}
+}` : ''}
+`);
+    const result = runBash(preCommitHook, {
+      env: { ...hookEnv, BASH_ENV: toBashPath(bashEnv) },
+      cwd: tempDir,
+      preservePath: false,
+    });
+    result.scannerCalls = fs.existsSync(callsPath) ? fs.readFileSync(callsPath, 'utf8').trim().split('\n') : [];
+    return result;
+  } finally {
+    cleanup(tempDir);
+  }
+}
+
+for (const [name, options, status, diagnostic] of [
+  ['blocks safe staged text when ripgrep is missing', {}, 1, /ripgrep.*required/i],
+  ['blocks a staged token when ripgrep is missing', { content: `token = "ghp_${'a'.repeat(36)}"\n` }, 1, /ripgrep.*required/i],
+  ['allows a successful scan with no findings', { scanner: true }, 0, null],
+  ['blocks a finding reported by an invoked scanner', { scanner: 'finding' }, 1, /Potential secret detected/],
+  ['blocks an invoked scanner error', { scanner: 'error' }, 1, /scanner failed.*exit 2/i],
+  ['allows safe text through the real scanner', { scanner: 'real' }, 0, null],
+  ['blocks a token through the real scanner', { scanner: 'real', content: `token = "ghp_${'a'.repeat(36)}"\n` }, 1, /Potential secret detected/],
+  ['blocks a private key through the real scanner', { scanner: 'real', content: '-----BEGIN PRIVATE KEY-----\n' }, 1, /private key block/],
+  ['blocks an RSA private key through the real scanner', { scanner: 'real', content: '-----BEGIN RSA PRIVATE KEY-----\n' }, 1, /private key block/],
+  ['allows an empty index without ripgrep', { content: null }, 0, null],
+  ['allows excluded lockfiles without ripgrep', { filename: 'yarn.lock' }, 0, null],
+  ['preserves the pre-commit bypass warning', { env: { ECC_SKIP_PRECOMMIT: '1' } }, 0, /hook bypassed via env/],
+  ['preserves the global bypass warning', { env: { ECC_SKIP_GIT_HOOKS: '1' } }, 0, /hook bypassed via env/],
+]) {
+  if (test(`pre-commit ${name}`, () => {
+    const result = runHermeticPreCommit(options);
+    assert.strictEqual(result.status, status, `${result.stdout}\n${result.stderr}`);
+    if (diagnostic) assert.match(result.stderr, diagnostic);
+    else assert.strictEqual(result.stderr, '');
+    if (options.scanner) {
+      assert.ok(result.scannerCalls.length > 0, 'The scanner must actually execute');
+      assert.ok(result.scannerCalls.every(call => call.startsWith('-n --pcre2 -- ')), 'Regex must follow the option terminator');
+    }
+  })) passed++;
+  else failed++;
+}
+
+function runHermeticPrePush({
+  failScript = null,
+  includeCorepack = true,
+  includePnpm = false,
+  audit = false,
+  runChecks = true,
+} = {}) {
+  const tempDir = createTempDir('codex-pre-push-');
+  const binDir = path.join(tempDir, 'bin');
+  const projectDir = path.join(tempDir, 'project');
+  const callsPath = path.join(tempDir, 'calls.txt');
+  const bashEnv = path.join(tempDir, 'bash-env');
+  fs.mkdirSync(binDir);
+  fs.mkdirSync(projectDir);
+  const functionStub = (name, corepack) => `${name}() {
+${corepack ? 'node -e \'const p=require("./package.json"); process.exit(p.packageManager === "pnpm@11.9.0" ? 0 : 1)\' || return 97' : ':'}
+printf '%s\\n' "${corepack ? '' : 'pnpm '}$*" >> "${toBashPath(callsPath)}"
+${corepack ? 'shift' : ':'}
+shift
+test "$1" != "${failScript || '__never__'}"
+}`;
+  fs.writeFileSync(
+    bashEnv,
+    `git() { return 0; }
+node() { "${toBashPath(process.execPath)}" "$@"; }
+${includeCorepack ? functionStub('corepack', true) : ''}
+${includePnpm ? functionStub('pnpm', false) : ''}
+`,
+  );
+  fs.writeFileSync(path.join(projectDir, 'pnpm-lock.yaml'), 'lockfileVersion: 9\n');
+  const initialized = spawnSync('git', ['init', '--quiet'], { cwd: projectDir });
+  assert.strictEqual(initialized.status, 0, initialized.stderr?.toString());
+  writeJson(path.join(projectDir, 'package.json'), {
+    packageManager: 'pnpm@11.9.0',
+    scripts: { lint: 'x', typecheck: 'x', test: 'x', build: 'x' },
+  });
+  const result = runBash(prePushHook, {
+    env: {
+      PATH: toBashPath(binDir),
+      BASH_ENV: toBashPath(bashEnv),
+      ECC_PREPUSH_AUDIT: audit ? '1' : '0',
+      ECC_PREPUSH_RUN_CHECKS: runChecks ? '1' : '0',
+      ECC_SKIP_GIT_HOOKS: '0',
+      ECC_SKIP_PREPUSH: '0',
+      MSYS_NO_PATHCONV: '1',
+    },
+    cwd: projectDir,
+    input: Buffer.from('refs/heads/main 1111111111111111111111111111111111111111 refs/heads/main 0000000000000000000000000000000000000000\n'),
+    preservePath: false,
+  });
+  const calls = fs.existsSync(callsPath)
+    ? fs.readFileSync(callsPath, 'utf8').trim().split(/\r?\n/)
+    : [];
+  cleanup(tempDir);
+  return { result, calls };
+}
+
+if (
+  test('pre-push uses Corepack pinned pnpm and runs every required verification script', () => {
+    const { result, calls } = runHermeticPrePush({ runChecks: true });
+    assert.strictEqual(result.status, 0, JSON.stringify(result, null, 2));
+    assert.deepStrictEqual(calls, [
+      'pnpm run lint',
+      'pnpm run typecheck',
+      'pnpm run test',
+      'pnpm run build',
+    ], JSON.stringify(result, null, 2));
+  })
+)
+  passed++;
+else failed++;
+
+if (
+  test('pre-push falls back to direct pnpm when Corepack is absent', () => {
+    const { result, calls } = runHermeticPrePush({
+      includeCorepack: false,
+      includePnpm: true,
+    });
+    assert.strictEqual(result.status, 0, `${result.stdout}\n${result.stderr}`);
+    assert.deepStrictEqual(calls, [
+      'pnpm run lint',
+      'pnpm run typecheck',
+      'pnpm run test',
+      'pnpm run build',
+    ]);
+  })
+)
+  passed++;
+else failed++;
+
+if (
+  test('pre-push fails closed when pnpm and Corepack cannot resolve', () => {
+    const { result } = runHermeticPrePush({ includeCorepack: false });
+    assert.notStrictEqual(result.status, 0, `${result.stdout}\n${result.stderr}`);
+    assert.match(result.stderr, /pnpm.*(?:resolve|found)/i);
+  })
+)
+  passed++;
+else failed++;
+
+if (
+  test('pre-push stops immediately when a required verification script fails', () => {
+    const { result, calls } = runHermeticPrePush({ runChecks: true, failScript: 'typecheck' });
+    assert.notStrictEqual(result.status, 0, `${result.stdout}\n${result.stderr}`);
+    assert.deepStrictEqual(calls, ['pnpm run lint', 'pnpm run typecheck']);
+    assert.match(result.stderr, /typecheck failed/);
+  })
+)
+  passed++;
+else failed++;
+
+if (
+  test('pre-push skips verification scripts by default when opt-in is not set', () => {
+    const { result, calls } = runHermeticPrePush({ runChecks: false });
+    assert.strictEqual(result.status, 0, `${result.stdout}\n${result.stderr}`);
+    assert.deepStrictEqual(calls, []);
+    assert.match(result.stderr, /ECC_PREPUSH_RUN_CHECKS!=1/);
+  })
+)
+  passed++;
+else failed++;
+
+if (
+  test('pre-push runs the production audit through Corepack pnpm', () => {
+    const { result, calls } = runHermeticPrePush({ runChecks: true, audit: true });
+    assert.strictEqual(result.status, 0, `${result.stdout}\n${result.stderr}`);
+    assert.deepStrictEqual(calls, [
+      'pnpm run lint',
+      'pnpm run typecheck',
+      'pnpm run test',
+      'pnpm run build',
+      'pnpm audit --prod',
+    ]);
+  })
+)
+  passed++;
+else failed++;
+
+if (
+  test('pre-push fails closed when the production audit fails', () => {
+    const { result, calls } = runHermeticPrePush({ audit: true, failScript: '--prod' });
+    assert.notStrictEqual(result.status, 0, `${result.stdout}\n${result.stderr}`);
+    assert.deepStrictEqual(calls, [
+      'pnpm run lint',
+      'pnpm run typecheck',
+      'pnpm run test',
+      'pnpm run build',
+      'pnpm audit --prod',
+    ]);
+    assert.match(result.stderr, /pnpm audit failed/);
+  })
+)
+  passed++;
+else failed++;
+
+function writeExecutable(filePath, body) {
+  fs.mkdirSync(path.dirname(filePath), { recursive: true });
+  fs.writeFileSync(filePath, body);
+  fs.chmodSync(filePath, 0o755);
+}
+
+// The Python arm of the hook, exercised without a real interpreter: the stubs
+// record the argv they were handed, which is what the virtualenv-path regression
+// is actually about.
+function runHermeticPythonPrePush({
+  venvName = null,
+  venvExit = 0,
+  trackVenv = false,
+  trackedVenvBasename = 'python',
+  trackedSymlinkVenv = false,
+  pytestCmd = null,
+  overrideStub = false,
+  pathPytestVersionLine = null,
+} = {}) {
+  const tempDir = createTempDir('codex-pre-push-py-');
+  const projectDir = path.join(tempDir, 'project');
+  const callsPath = path.join(tempDir, 'calls.txt');
+  fs.mkdirSync(projectDir);
+  fs.writeFileSync(path.join(projectDir, 'pyproject.toml'), '[project]\nname = "demo"\n');
+  const initialized = spawnSync('git', ['init', '--quiet'], { cwd: projectDir });
+  assert.strictEqual(initialized.status, 0, initialized.stderr?.toString());
+
+  // Every stub records the argv it was handed. That record is the assertion: it is
+  // how a test tells a preserved path from a split one, and a command that was run
+  // once from one the hook probed first.
+  const record = `printf '%s\\n' "$0|$*" >> "${toBashPath(callsPath)}"`;
+
+  // A tracked venv has to live inside the repository to be trackable at all, and is
+  // found by directory-name discovery rather than by VIRTUAL_ENV.
+  const venvDir = venvName === null ? null : path.join(trackVenv ? projectDir : tempDir, venvName);
+  const venvPython = venvDir === null
+    ? null
+    : path.join(venvDir, 'bin', trackVenv ? trackedVenvBasename : 'python');
+  if (venvPython !== null) {
+    writeExecutable(venvPython, `#!/bin/sh\n${record}\ncase " $* " in *" -c "*) exit 0 ;; esac\nexit ${venvExit}\n`);
+    if (trackVenv) {
+      // Staged, not committed: `git ls-files` reads the index, so this is enough to
+      // make the file repository-controlled without needing a committer identity.
+      const added = spawnSync('git', ['add', '-f', '--', venvPython], { cwd: projectDir });
+      assert.strictEqual(added.status, 0, added.stderr?.toString());
+    }
+  }
+
+  // The shape that defeats a naive `git ls-files -- .venv/bin/python` check: the
+  // repository commits `.venv` as a symlink to its own root plus a tracked
+  // `bin/python`, so git is asked about a path it has never indexed.
+  if (trackedSymlinkVenv) {
+    writeExecutable(path.join(projectDir, 'bin', 'python'), `#!/bin/sh\n${record}\nexit 0\n`);
+    fs.symlinkSync('.', path.join(projectDir, '.venv'));
+    const added = spawnSync('git', ['add', '-f', '--', 'bin/python', '.venv'], { cwd: projectDir });
+    assert.strictEqual(added.status, 0, added.stderr?.toString());
+  }
+
+  // Deliberately does NOT special-case --version: an operator's wrapper would not
+  // either, and the recorded calls are what prove the hook never probed it.
+  const overrideStubPath = overrideStub ? path.join(tempDir, 'bin', 'wrapper') : null;
+  if (overrideStubPath !== null) {
+    writeExecutable(overrideStubPath, `#!/bin/sh\n${record}\nexit 0\n`);
+  }
+
+  const pathBin = pathPytestVersionLine === null ? null : path.join(tempDir, 'pathbin');
+  if (pathBin !== null) {
+    writeExecutable(
+      path.join(pathBin, 'pytest'),
+      `#!/bin/sh\nif [ "$1" = "--version" ]; then printf '%s\\n' '${pathPytestVersionLine}'; exit 0; fi\n${record}\nexit 0\n`,
+    );
+  }
+
+  const override = overrideStubPath === null ? pytestCmd : toBashPath(overrideStubPath);
+  // Built from nothing rather than from process.env. The hook reads VIRTUAL_ENV and
+  // ECC_PYTEST_CMD from the ambient environment, so a developer running this suite
+  // inside an activated virtualenv, or with ECC_PYTEST_CMD exported, would resolve a
+  // pytest the fixture never created. Omitted, not blanked: now that a variable set
+  // to nothing is itself an override, blanking it here would make every one of these
+  // tests take that branch.
+  const env = {
+    PATH: pathBin === null
+      ? process.env.PATH
+      : `${toBashPath(pathBin)}${path.delimiter}${process.env.PATH}`,
+    HOME: process.env.HOME ?? '',
+    ECC_PREPUSH_RUN_CHECKS: '1',
+    ECC_SKIP_GIT_HOOKS: '0',
+    ECC_SKIP_PREPUSH: '0',
+    MSYS_NO_PATHCONV: '1',
+    ...(venvDir === null || trackVenv ? {} : { VIRTUAL_ENV: toBashPath(venvDir) }),
+    ...(override === null ? {} : { ECC_PYTEST_CMD: override }),
+  };
+
+  const result = runBash(prePushHook, {
+    env,
+    cwd: projectDir,
+    preservePath: false,
+    input: Buffer.from('refs/heads/main 1111111111111111111111111111111111111111 refs/heads/main 0000000000000000000000000000000000000000\n'),
+  });
+  const calls = fs.existsSync(callsPath)
+    ? fs.readFileSync(callsPath, 'utf8').trim().split(/\r?\n/).filter(Boolean)
+    : [];
+  cleanup(tempDir);
+  return { result, calls, venvPython, overrideStubPath };
+}
+
+if (
+  test('pre-push runs pytest from a virtualenv whose path contains spaces', () => {
+    const { result, calls, venvPython } = runHermeticPythonPrePush({ venvName: 'my venv' });
+    const python = toBashPath(venvPython);
+    assert.strictEqual(result.status, 0, `${result.stdout}\n${result.stderr}`);
+    assert.deepStrictEqual(calls, [
+      `${python}|-I -c import pytest`,
+      `${python}|-m pytest -q`,
+    ], JSON.stringify({ calls, python, stdout: result.stdout, stderr: result.stderr }, null, 2));
+  })
+)
+  passed++;
+else failed++;
+
+if (
+  test('pre-push refuses to run a virtualenv python that the repository tracks', () => {
+    const { result, calls } = runHermeticPythonPrePush({ venvName: '.venv', trackVenv: true });
+    assert.strictEqual(result.status, 0, `${result.stdout}\n${result.stderr}`);
+    assert.deepStrictEqual(calls, [], JSON.stringify(calls));
+    assert.match(result.stdout, /the repository ships it/);
+  })
+)
+  passed++;
+else failed++;
+
+// A case-folded spelling, because macOS resolves `$venv/bin/python` to a committed
+// `Python` while git matches index pathspecs case-sensitively. Skipped where the
+// filesystem is case-sensitive and the two names cannot collide.
+if (fs.existsSync(__filename.toUpperCase()) && fs.existsSync(__filename.toLowerCase())) {
+  if (
+    test('pre-push refuses a tracked interpreter committed under a folded case', () => {
+      const { result, calls } = runHermeticPythonPrePush({
+        venvName: '.venv',
+        trackVenv: true,
+        trackedVenvBasename: 'Python',
+      });
+      assert.strictEqual(result.status, 0, `${result.stdout}\n${result.stderr}`);
+      assert.deepStrictEqual(calls, [], JSON.stringify(calls));
+      assert.match(result.stdout, /the repository ships it/);
+    })
+  )
+    passed++;
+  else failed++;
+}
+
+if (
+  test('pre-push refuses a tracked interpreter reached through a committed symlink', () => {
+    const { result, calls } = runHermeticPythonPrePush({ trackedSymlinkVenv: true });
+    assert.strictEqual(result.status, 0, `${result.stdout}\n${result.stderr}`);
+    assert.deepStrictEqual(calls, [], JSON.stringify(calls));
+    assert.match(result.stdout, /the repository ships it/);
+  })
+)
+  passed++;
+else failed++;
+
+if (
+  test('pre-push blocks the push when the resolved pytest fails', () => {
+    const { result } = runHermeticPythonPrePush({ venvName: 'venv-red', venvExit: 1 });
+    assert.notStrictEqual(result.status, 0, `${result.stdout}\n${result.stderr}`);
+    assert.match(result.stderr, /pytest failed \(exit 1\)/);
+    assert.doesNotMatch(result.stdout, /Verification checks passed/);
+  })
+)
+  passed++;
+else failed++;
+
+if (
+  test('pre-push does not block when pytest collected no tests (exit 5)', () => {
+    const { result } = runHermeticPythonPrePush({ venvName: 'venv-empty', venvExit: 5 });
+    assert.strictEqual(result.status, 0, `${result.stdout}\n${result.stderr}`);
+    assert.match(result.stdout, /collected no tests \(exit 5\)/);
+    assert.match(result.stdout, /rootdir, testpaths, and conftest\.py/);
+  })
+)
+  passed++;
+else failed++;
+
+if (
+  test('pre-push runs an ECC_PYTEST_CMD override exactly once, without probing it', () => {
+    const { result, calls, overrideStubPath } = runHermeticPythonPrePush({ overrideStub: true });
+    assert.strictEqual(result.status, 0, `${result.stdout}\n${result.stderr}`);
+    assert.deepStrictEqual(calls, [`${toBashPath(overrideStubPath)}|-q`], JSON.stringify(calls));
+    // The override is not verified to be pytest, so it must at least be loud.
+    assert.match(result.stdout, /via ECC_PYTEST_CMD/);
+    assert.match(result.stdout, /does\n?.*not check that it is pytest/s);
+  })
+)
+  passed++;
+else failed++;
+
+// Both blank forms, because they used to disagree: an unquoted empty value fell
+// through to discovery while whitespace failed the push. A venv is present so a
+// fall-through would be visible as a pass rather than as an absence.
+for (const [label, blank] of [['empty', ''], ['whitespace', '   ']]) {
+  if (
+    test(`pre-push fails closed when ECC_PYTEST_CMD is set to ${label}`, () => {
+      const { result, calls } = runHermeticPythonPrePush({
+        venvName: 'venv-blank',
+        pytestCmd: blank,
+      });
+      assert.notStrictEqual(result.status, 0, `${result.stdout}\n${result.stderr}`);
+      assert.match(result.stderr, /ECC_PYTEST_CMD is set but names no command/);
+      assert.deepStrictEqual(calls, [], JSON.stringify(calls));
+    })
+  )
+    passed++;
+  else failed++;
+}
+
+if (
+  test('pre-push rejects a PATH pytest that does not identify itself as pytest', () => {
+    const { result, calls } = runHermeticPythonPrePush({
+      pathPytestVersionLine: 'true (GNU coreutils) 9.0',
+    });
+    assert.strictEqual(result.status, 0, `${result.stdout}\n${result.stderr}`);
+    assert.match(result.stdout, /no pytest found/);
+    assert.deepStrictEqual(calls, []);
+  })
+)
+  passed++;
+else failed++;
+
+if (
+  test('pre-push accepts a PATH pytest that reports a pytest version', () => {
+    const { result, calls } = runHermeticPythonPrePush({ pathPytestVersionLine: 'pytest 8.0.0' });
+    assert.strictEqual(result.status, 0, `${result.stdout}\n${result.stderr}`);
+    assert.strictEqual(calls.length, 1, JSON.stringify(calls));
+    assert.match(calls[0], /\|-q$/);
+  })
+)
+  passed++;
+else failed++;
+
+
+if (
   test('check-plugin-cache fails when the installed cache is missing manifest-referenced files', () => {
     const homeDir = createTempDir('codex-plugin-cache-home-');
     const codexDir = path.join(homeDir, '.codex');
@@ -130,7 +660,13 @@ if (
       assert.match(result.stdout, /\[FAIL\] skills missing/);
       assert.match(result.stdout, /\[FAIL\] mcpServers missing/);
       assert.match(result.stdout, /codex plugin list only confirms marketplace registration/);
-      assert.match(result.stdout, /sync-ecc-to-codex\.sh/);
+      assert.match(result.stdout, /codex plugin marketplace upgrade ecc/);
+      assert.match(result.stdout, /codex plugin add ecc@ecc/);
+      assert.match(result.stdout, /same CODEX_HOME/);
+      assert.match(result.stdout, /active plugin root/);
+      assert.match(result.stdout, /--plugin-dir ACTIVE_ROOT/);
+      assert.match(result.stdout, /--version ACTIVE_VERSION/);
+      assert.doesNotMatch(result.stdout, /npm install|sync-ecc-to-codex\.sh/);
     } finally {
       cleanup(homeDir);
     }
@@ -191,6 +727,84 @@ if (
 )
   passed++;
 else failed++;
+
+for (const scenario of [
+  {
+    name: 'rejects a missing hook file when all other references exist',
+    hooks: './hooks/codex-hooks.json',
+    targetKind: 'missing',
+    status: 1,
+    output: /\[FAIL\] hooks missing/,
+  },
+  {
+    name: 'accepts a regular hook file inside the cache',
+    hooks: './hooks/codex-hooks.json',
+    targetKind: 'file',
+    status: 0,
+    output: /\[OK\] hooks/,
+  },
+  {
+    name: 'rejects a directory in place of the hook file',
+    hooks: './hooks/codex-hooks.json',
+    targetKind: 'directory',
+    status: 1,
+    output: /\[FAIL\] hooks missing/,
+  },
+  {
+    name: 'rejects an existing hook file outside the cache',
+    hooks: '../outside-hooks.json',
+    targetKind: 'file',
+    status: 1,
+    output: /\[FAIL\] hooks escapes cache boundary/,
+  },
+  {
+    name: 'ignores non-string hooks rather than treating them as a path',
+    hooks: { hooks: {} },
+    status: 0,
+    output: /All cached manifest references resolve/,
+  },
+]) {
+  if (
+    test(`check-plugin-cache ${scenario.name}`, () => {
+      const homeDir = createTempDir('codex-plugin-cache-hooks-home-');
+      const codexDir = path.join(homeDir, '.codex');
+
+      try {
+        const cacheDir = seedPluginCache(codexDir, {
+          ...cacheManifestWithLocalRefs,
+          hooks: scenario.hooks,
+        }, [
+          ['.mcp.json', '{"mcpServers":{}}\n'],
+          ['assets/ecc-icon.svg', '<svg />\n'],
+          ['assets/hero.png', 'png\n'],
+        ]);
+        fs.mkdirSync(path.join(cacheDir, 'skills'), { recursive: true });
+        if (scenario.targetKind === 'file') {
+          writeJson(path.resolve(cacheDir, scenario.hooks), { hooks: {} });
+        } else if (scenario.targetKind === 'directory') {
+          fs.mkdirSync(path.resolve(cacheDir, scenario.hooks), { recursive: true });
+        }
+
+        const result = runNode(
+          pluginCacheCheckScript,
+          ['--plugin-dir', cacheDir],
+          makeHermeticCodexEnv(homeDir, codexDir)
+        );
+
+        assert.strictEqual(result.status, scenario.status, `${result.stdout}\n${result.stderr}`);
+        assert.match(result.stdout, scenario.output);
+        assert.strictEqual(result.stderr, '');
+        if (scenario.status !== 0) {
+          assert.doesNotMatch(result.stdout, /All cached manifest references resolve/);
+        }
+      } finally {
+        cleanup(homeDir);
+      }
+    })
+  )
+    passed++;
+  else failed++;
+}
 
 if (
   test('check-plugin-cache reports a missing installed cache clearly', () => {
@@ -266,9 +880,11 @@ if (os.platform() === 'win32') {
     const weirdHooksDir = path.join(homeDir, 'git-hooks "quoted"');
 
     try {
-      const result = runBash(installScript, [], {
-        HOME: homeDir,
-        ECC_GLOBAL_HOOKS_DIR: weirdHooksDir,
+      const result = runBash(installScript, {
+        env: {
+          HOME: homeDir,
+          ECC_GLOBAL_HOOKS_DIR: weirdHooksDir,
+        },
       });
 
       assert.strictEqual(result.status, 0, result.stderr || result.stdout);
@@ -350,8 +966,7 @@ if (
       assert.strictEqual(parsed.sandbox_mode, 'workspace-write');
       assert.strictEqual(parsed.web_search, 'live');
       assert.strictEqual(parsed.features.multi_agent, true);
-      assert.strictEqual(parsed.profiles.strict.approval_policy, 'on-request');
-      assert.strictEqual(parsed.profiles.yolo.approval_policy, 'never');
+      assert.strictEqual(parsed.profiles, undefined, 'Do not emit legacy profile tables');
       assert.strictEqual(parsed.agents.max_threads, 6);
       assert.strictEqual(parsed.agents.explorer.config_file, 'agents/explorer.toml');
     } finally {
@@ -366,7 +981,7 @@ if (
   test('merge-codex-config no-ops when the Codex baseline is already present', () => {
     const tempDir = createTempDir('codex-merge-noop-');
     const configPath = path.join(tempDir, 'config.toml');
-    const original = fs.readFileSync(path.join(repoRoot, '.codex', 'config.toml'), 'utf8');
+    const original = fs.readFileSync(path.join(repoRoot, '.codex', 'user-config.example.toml'), 'utf8');
 
     try {
       fs.writeFileSync(configPath, original);
@@ -471,7 +1086,13 @@ if (
       const merged = fs.readFileSync(configPath, 'utf8');
       const parsed = TOML.parse(merged);
       assert.strictEqual(parsed.mcp_servers['chrome-devtools'].command, 'npx');
-      assert.deepStrictEqual(parsed.mcp_servers['chrome-devtools'].args, ['chrome-devtools-mcp@latest']);
+      assert.deepStrictEqual(parsed.mcp_servers['chrome-devtools'].args, ['chrome-devtools-mcp@1.10.1']);
+      const rootMcp = JSON.parse(fs.readFileSync(path.join(repoRoot, '.mcp.json'), 'utf8'));
+      const rootPackages = rootMcp.mcpServers['chrome-devtools'].args.filter(arg =>
+        arg.startsWith('chrome-devtools-mcp@'));
+      assert.deepStrictEqual(rootPackages, parsed.mcp_servers['chrome-devtools'].args,
+        'root MCP and generated Codex TOML must use the same connector pin');
+      assert.deepStrictEqual(rootPackages, ['chrome-devtools-mcp@1.10.1']);
       assert.strictEqual(parsed.mcp_servers['chrome-devtools'].startup_timeout_sec, 30);
       // No retired server may be (re-)emitted — exa's url form broke Codex (#2224).
       assert.strictEqual(parsed.mcp_servers.exa, undefined);
@@ -483,6 +1104,51 @@ if (
       assert.match(second.stdout, /\[ok\] mcp_servers\.chrome-devtools/);
       assert.match(second.stdout, /All ECC MCP servers already present/);
       assert.strictEqual(fs.readFileSync(configPath, 'utf8'), merged);
+    } finally {
+      cleanup(tempDir);
+    }
+  })
+)
+  passed++;
+else failed++;
+
+if (
+  test('merge-mcp-config preserves an existing latest entry until explicit recommendation refresh', () => {
+    const tempDir = createTempDir('mcp-merge-explicit-refresh-');
+    const configPath = path.join(tempDir, 'config.toml');
+    const original = [
+      '# User-maintained configuration',
+      '[mcp_servers.chrome-devtools]',
+      'command = "npx"',
+      'args = ["chrome-devtools-mcp@latest", "--custom-browser-argument"]',
+      'startup_timeout_sec = 75',
+      '[mcp_servers.chrome-devtools.env]',
+      'CUSTOM_BROWSER_SETTING = "preserve-until-explicit-refresh"',
+      '',
+      '[mcp_servers.user_tool]',
+      'command = "custom-launcher"',
+      'args = ["--user-setting"]',
+      '',
+    ].join('\n');
+
+    try {
+      fs.writeFileSync(configPath, original);
+      const preserved = runNode(mergeMcpConfigScript, [configPath], deterministicPackageEnv);
+      assert.strictEqual(preserved.status, 0, `${preserved.stdout}\n${preserved.stderr}`);
+      assert.match(preserved.stderr, /chrome-devtools differs from ECC recommendation/);
+      assert.match(preserved.stderr, /--update-mcp to refresh/);
+      assert.strictEqual(fs.readFileSync(configPath, 'utf8'), original,
+        'normal sync must preserve existing latest and customized settings byte-for-byte');
+
+      const refreshed = runNode(mergeMcpConfigScript, [configPath, '--update-mcp'], deterministicPackageEnv);
+      assert.strictEqual(refreshed.status, 0, `${refreshed.stdout}\n${refreshed.stderr}`);
+      assert.match(refreshed.stdout, /\[update\] mcp_servers\.chrome-devtools/);
+      const updated = TOML.parse(fs.readFileSync(configPath, 'utf8'));
+      assert.deepStrictEqual(updated.mcp_servers['chrome-devtools'], {
+        command: 'npx', args: ['chrome-devtools-mcp@1.10.1'], startup_timeout_sec: 30,
+      }, 'explicit refresh replaces the whole recommended section, including custom subsettings');
+      assert.deepStrictEqual(updated.mcp_servers.user_tool, TOML.parse(original).mcp_servers.user_tool,
+        'unrelated user-managed server settings remain untouched');
     } finally {
       cleanup(tempDir);
     }
@@ -663,11 +1329,14 @@ if (
       fs.mkdirSync(codexDir, { recursive: true });
       fs.writeFileSync(configPath, config);
 
-      const syncResult = runBash(syncScript, ['--update-mcp'], makeHermeticCodexEnv(homeDir, codexDir));
+      const syncResult = runBash(syncScript, {
+        args: ['--update-mcp'],
+        env: makeHermeticCodexEnv(homeDir, codexDir),
+      });
       assert.strictEqual(syncResult.status, 0, `${syncResult.stdout}\n${syncResult.stderr}`);
 
       const syncedAgents = fs.readFileSync(agentsPath, 'utf8');
-      assert.match(syncedAgents, /^# Everything Claude Code \(ECC\) — Agent Instructions/m);
+      assert.match(syncedAgents, /^# ECC — Agent Instructions/m);
       assert.match(syncedAgents, /^# Codex Supplement \(From ECC \.codex\/AGENTS\.md\)/m);
 
       const syncedConfig = fs.readFileSync(configPath, 'utf8');
@@ -678,9 +1347,12 @@ if (
       assert.ok(!Object.prototype.hasOwnProperty.call(parsedConfig, 'multi_agent'));
       assert.ok(parsedConfig.features);
       assert.strictEqual(parsedConfig.features.multi_agent, true);
-      assert.ok(parsedConfig.profiles);
-      assert.strictEqual(parsedConfig.profiles.strict.approval_policy, 'on-request');
-      assert.strictEqual(parsedConfig.profiles.yolo.approval_policy, 'never');
+      assert.strictEqual(parsedConfig.profiles, undefined);
+      for (const name of ['strict', 'yolo']) {
+        assert.ok(fs.existsSync(path.join(codexDir, `${name}.config.toml`)));
+      }
+      assert.strictEqual(TOML.parse(fs.readFileSync(path.join(codexDir, 'strict.config.toml'), 'utf8')).approval_policy, 'on-request');
+      assert.strictEqual(TOML.parse(fs.readFileSync(path.join(codexDir, 'yolo.config.toml'), 'utf8')).approval_policy, 'never');
       assert.ok(parsedConfig.agents);
       assert.strictEqual(parsedConfig.agents.max_threads, 6);
       assert.strictEqual(parsedConfig.agents.max_depth, 1);
@@ -724,7 +1396,9 @@ if (
       fs.mkdirSync(codexDir, { recursive: true });
       fs.writeFileSync(configPath, config);
 
-      const syncResult = runBash(syncScript, [], makeHermeticCodexEnv(homeDir, codexDir));
+      const syncResult = runBash(syncScript, {
+        env: makeHermeticCodexEnv(homeDir, codexDir),
+      });
       assert.strictEqual(syncResult.status, 0, `${syncResult.stdout}\n${syncResult.stderr}`);
 
       const parsedConfig = TOML.parse(fs.readFileSync(configPath, 'utf8'));

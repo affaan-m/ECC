@@ -249,6 +249,9 @@ async function runTests() {
           ECC_MCP_CONFIG_PATH: null,
           ECC_MCP_HEALTH_STATE_PATH: null,
           ECC_MCP_HEALTH_TIMEOUT_MS: '100',
+          // Workspace configs are untrusted by default; this test uses a
+          // temp dir it created itself, so opt in explicitly.
+          ECC_MCP_ALLOW_WORKSPACE_PROBE: '1',
           HOME: homeDir,
           USERPROFILE: homeDir
         },
@@ -619,6 +622,7 @@ async function runTests() {
           CLAUDE_HOOK_EVENT_NAME: 'PreToolUse',
           ECC_MCP_CONFIG_PATH: configPath,
           ECC_MCP_HEALTH_STATE_PATH: statePath,
+          ECC_MCP_RECONNECT_ALLOW: '1',
           ECC_MCP_RECONNECT_COMMAND: `${JSON.stringify(process.execPath)} ${JSON.stringify(reconnectScript)}`,
           ECC_MCP_HEALTH_TIMEOUT_MS: '1000',
           ECC_MCP_HEALTH_BACKOFF_MS: '10'
@@ -682,6 +686,7 @@ async function runTests() {
           CLAUDE_HOOK_EVENT_NAME: 'PostToolUseFailure',
           ECC_MCP_CONFIG_PATH: configPath,
           ECC_MCP_HEALTH_STATE_PATH: statePath,
+          ECC_MCP_RECONNECT_ALLOW: '1',
           ECC_MCP_RECONNECT_COMMAND: `node ${JSON.stringify(reconnectScript)}`,
           ECC_MCP_HEALTH_TIMEOUT_MS: '1000'
         }
@@ -773,6 +778,7 @@ async function runTests() {
         {
           CLAUDE_HOOK_EVENT_NAME: 'PostToolUseFailure',
           ECC_MCP_HEALTH_STATE_PATH: statePath,
+          ECC_MCP_RECONNECT_ALLOW: '1',
           ECC_MCP_RECONNECT_COMMAND: `${JSON.stringify(process.execPath)} ${JSON.stringify(reconnectScript)}`
         }
       );
@@ -810,6 +816,7 @@ async function runTests() {
           CLAUDE_HOOK_EVENT_NAME: 'PostToolUseFailure',
           ECC_MCP_HEALTH_STATE_PATH: statePath,
           ECC_MCP_CONFIG_PATH: path.join(tempDir, 'missing.json'),
+          ECC_MCP_RECONNECT_ALLOW: '1',
           ECC_MCP_RECONNECT_COMMAND: null,
           ECC_MCP_RECONNECT_FOO_BAR: `${JSON.stringify(process.execPath)} ${JSON.stringify(reconnectScript)} ${JSON.stringify(markerFile)} {server}`
         }
@@ -882,6 +889,77 @@ async function runTests() {
 
       const state = readState(statePath);
       assert.strictEqual(state.servers.http400.status, 'healthy', 'Expected HTTP MCP server to be marked healthy');
+    } finally {
+      serverProcess.kill('SIGTERM');
+      cleanupTempDir(tempDir);
+    }
+  })) passed++; else failed++;
+
+  if (await asyncTest('treats HTTP 404 probe responses as healthy POST-only Streamable HTTP servers', async () => {
+    const tempDir = createTempDir();
+    const configPath = path.join(tempDir, 'claude.json');
+    const statePath = path.join(tempDir, 'mcp-health.json');
+    const serverScript = path.join(tempDir, 'http-404-server.js');
+    const portFile = path.join(tempDir, 'server-port.txt');
+
+    // Mirrors Paper Desktop: the Streamable HTTP endpoint only routes POST and
+    // answers a bare GET probe with 404, which still proves reachability.
+    fs.writeFileSync(
+      serverScript,
+      [
+        "const fs = require('fs');",
+        "const http = require('http');",
+        "const portFile = process.argv[2];",
+        "const server = http.createServer((req, res) => {",
+        "  if (req.method === 'POST' && req.url === '/mcp') {",
+        "    res.writeHead(200, { 'Content-Type': 'text/event-stream' });",
+        "    res.end('event: message\\ndata: {}\\n\\n');",
+        "    return;",
+        "  }",
+        "  res.writeHead(404, { 'Content-Type': 'text/plain' });",
+        "  res.end('not found');",
+        "});",
+        "server.listen(0, '127.0.0.1', () => {",
+        "  fs.writeFileSync(portFile, String(server.address().port));",
+        "});",
+        "setInterval(() => {}, 1000);"
+      ].join('\n')
+    );
+
+    const serverProcess = spawn(process.execPath, [serverScript, portFile], {
+      stdio: 'ignore'
+    });
+
+    try {
+      const port = waitForFile(portFile).trim();
+      await waitForHttpReady(`http://127.0.0.1:${port}/mcp`);
+
+      writeConfig(configPath, {
+        mcpServers: {
+          http404: {
+            type: 'http',
+            url: `http://127.0.0.1:${port}/mcp`
+          }
+        }
+      });
+
+      const input = { tool_name: 'mcp__http404__get_guide', tool_input: {} };
+      const result = runHook(input, {
+        CLAUDE_HOOK_EVENT_NAME: 'PreToolUse',
+        ECC_MCP_CONFIG_PATH: configPath,
+        ECC_MCP_HEALTH_STATE_PATH: statePath,
+        ECC_MCP_HEALTH_TIMEOUT_MS: '2000'
+      });
+
+      assert.strictEqual(
+        result.code,
+        0,
+        `Expected HTTP 404 probe to be treated as healthy: ${hookFailureDetails(result, statePath)}`
+      );
+      assert.strictEqual(result.stdout.trim(), JSON.stringify(input), 'Expected original JSON on stdout');
+
+      const state = readState(statePath);
+      assert.strictEqual(state.servers.http404.status, 'healthy', 'Expected POST-only HTTP MCP server to be marked healthy');
     } finally {
       serverProcess.kill('SIGTERM');
       cleanupTempDir(tempDir);

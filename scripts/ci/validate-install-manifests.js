@@ -18,9 +18,7 @@ const PROFILES_SCHEMA_PATH = path.join(REPO_ROOT, 'schemas/install-profiles.sche
 const COMPONENTS_SCHEMA_PATH = path.join(REPO_ROOT, 'schemas/install-components.schema.json');
 const CURATED_SKILLS_DIR = path.join(REPO_ROOT, 'skills');
 // Empty by default; add only curated skills that are intentionally unshipped.
-const INTENTIONALLY_UNSHIPPED_SKILL_IDS = new Set([
-  'skill-comply', // meta/measurement dev-skill; ships committed .pyc artifacts and a nested .gitignore, revisit after packaging cleanup
-]);
+const INTENTIONALLY_UNSHIPPED_SKILL_IDS = new Set([]);
 const COMPONENT_FAMILY_PREFIXES = {
   baseline: 'baseline:',
   language: 'lang:',
@@ -121,6 +119,13 @@ function validateInstallManifests() {
       }
       if (dependency === module.id) {
         console.error(`ERROR: Module ${module.id} cannot depend on itself`);
+        hasErrors = true;
+      }
+    }
+
+    for (const dependency of module.optionalDependencies || []) {
+      if (!module.dependencies.includes(dependency)) {
+        console.error(`ERROR: Module ${module.id} optional dependency ${dependency} is not a declared dependency`);
         hasErrors = true;
       }
     }

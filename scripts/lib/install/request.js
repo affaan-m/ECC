@@ -1,8 +1,10 @@
 'use strict';
 
 const { validateInstallModuleIds, LOCALE_ALIAS_TO_COMPONENT_ID, listSupportedLocales } = require('../install-manifests');
+const { resolveHookConsentFlags } = require('./hook-consent');
 
 const LEGACY_INSTALL_TARGETS = ['claude', 'claude-project', 'cursor', 'antigravity'];
+const LOCALE_COMPONENT_IDS = new Set(Object.values(LOCALE_ALIAS_TO_COMPONENT_ID));
 
 function dedupeStrings(values) {
   return [...new Set((Array.isArray(values) ? values : []).map(value => String(value).trim()).filter(Boolean))];
@@ -28,6 +30,8 @@ function parseInstallArgs(argv) {
     excludeComponentIds: [],
     languages: [],
     locale: null,
+    enableHooks: false,
+    noHooks: false,
   };
 
   for (let index = 0; index < args.length; index += 1) {
@@ -68,6 +72,10 @@ function parseInstallArgs(argv) {
       }
       parsed.locale = locale;
       index += 1;
+    } else if (arg === '--enable-hooks') {
+      parsed.enableHooks = true;
+    } else if (arg === '--no-hooks') {
+      parsed.noHooks = true;
     } else if (arg === '--dry-run') {
       parsed.dryRun = true;
     } else if (arg === '--json') {
@@ -81,6 +89,12 @@ function parseInstallArgs(argv) {
     }
   }
 
+  const dryRunEnv = process.env.ECC_DRY_RUN;
+  if (dryRunEnv !== undefined && dryRunEnv !== '0' && dryRunEnv !== '1') {
+    throw new Error('ECC_DRY_RUN must be "1" or "0" when set');
+  }
+  parsed.dryRun = parsed.dryRun || dryRunEnv === '1';
+
   return parsed;
 }
 
@@ -90,6 +104,7 @@ function normalizeInstallRequest(options = {}) {
     : null;
   const profileId = options.profileId || config?.profileId || null;
   const target = options.target || config?.target || 'claude';
+  const supportsLocale = target === 'claude' || target === 'claude-project';
   const moduleIds = validateInstallModuleIds(
     dedupeStrings([...(config?.moduleIds || []), ...(options.moduleIds || [])])
   );
@@ -100,7 +115,7 @@ function normalizeInstallRequest(options = {}) {
       `Unsupported locale: "${locale}". Supported locales: ${listSupportedLocales().join(', ')}`
     );
   }
-  if (locale && target !== 'claude' && target !== 'claude-project') {
+  if (locale && !supportsLocale) {
     throw new Error('--locale can only be used with --target claude or --target claude-project');
   }
   const requestedIncludeComponentIds = dedupeStrings([
@@ -119,10 +134,15 @@ function normalizeInstallRequest(options = {}) {
     ...(Array.isArray(options.legacyLanguages) ? options.legacyLanguages : []),
     ...(Array.isArray(options.languages) ? options.languages : []),
   ]).map(language => language.toLowerCase()));
+  const hookConsent = resolveHookConsentFlags(options);
+  if (hookConsent === 'declined' && moduleIds.includes('hooks-runtime')) {
+    throw new Error('--no-hooks cannot be combined with an explicit hooks-runtime module selection');
+  }
   const hasManifestBaseSelection = Boolean(profileId) || moduleIds.length > 0 || includeComponentIds.length > 0;
   const hasNonLocaleManifestSelection = Boolean(profileId)
     || moduleIds.length > 0
-    || requestedIncludeComponentIds.length > 0
+    // Install-state persists --locale as a component; auto-update replays it via --with.
+    || requestedIncludeComponentIds.some(id => !supportsLocale || !LOCALE_COMPONENT_IDS.has(id))
     || excludeComponentIds.length > 0;
   const usingManifestMode = hasManifestBaseSelection || excludeComponentIds.length > 0;
 
@@ -146,6 +166,7 @@ function normalizeInstallRequest(options = {}) {
     includeComponentIds,
     excludeComponentIds,
     legacyLanguages,
+    hookConsent,
     configPath: config?.path || options.configPath || null,
   };
 }

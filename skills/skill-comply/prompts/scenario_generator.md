@@ -16,7 +16,7 @@ scenarios:
     prompt: |
       <the task prompt to pass to claude -p. Must be a concrete coding task.>
     setup_commands:
-      - "mkdir -p /tmp/skill-comply-sandbox/{id}/src /tmp/skill-comply-sandbox/{id}/tests"
+      - "mkdir -p src tests"
       - <other setup commands>
 
   - id: <kebab-case>
@@ -47,6 +47,10 @@ Rules:
 - All 3 scenarios should test the SAME task (so results are comparable)
 - The task must be simple enough to complete in <30 tool calls
 - setup_commands should create a minimal sandbox (dirs, pyproject.toml, etc.)
+- setup_commands run without a shell, from inside the scenario's sandbox directory.
+  Use paths relative to it (no absolute paths, `~`, `..`, pipes or redirection).
+  Only git, npm, pip, pip3, touch, mkdir, cp, mv, echo, chmod, unzip and tar run,
+  and only for creating files: other commands and options are skipped.
 - Prompts should be realistic — something a developer would actually ask
 
 Skill content:
