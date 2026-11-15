@@ -728,6 +728,50 @@ async function runTests() {
     passed++;
   else failed++;
 
+  if (
+    await test('board reports a failed verification move and persists the blocked receipt', async () => {
+      const { createStateStore } = require('../../scripts/lib/state-store');
+      const { MATRIX_BLOCK_START, MATRIX_BLOCK_END, renderMarkdownTable } = require('../../scripts/lib/harness-adapter-compliance');
+      const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-board-verification-'));
+      const stateDbPath = path.join(tempDir, 'state.db');
+      const artifact = path.join(tempDir, 'matrix.md');
+      let app;
+      try {
+        const store = await createStateStore({ dbPath: stateDbPath });
+        try {
+          store.upsertSession({ id: 'docs-session', adapterId: 'test', harness: 'test', state: 'active', snapshot: {} });
+          const item = store.upsertWorkItem({ id: 'verified', source: 'manual', title: 'Matrix', status: 'open', repoRoot: tempDir,
+            metadata: { verification: { contract: { verifier: 'harness-adapter-documentation/v1', artifact: 'matrix.md' } } } });
+          store.upsertWorkItem({ ...item, owner: 'agent', sessionId: 'docs-session', status: 'running' });
+          fs.writeFileSync(artifact, `${MATRIX_BLOCK_START}\n${renderMarkdownTable()}\n${MATRIX_BLOCK_END}`);
+          store.verifyWorkItem('verified');
+        } finally { store.close(); }
+        fs.writeFileSync(artifact, 'regression');
+        app = await createControlPaneServer({ host: '127.0.0.1', port: 0, stateDbPath, repoRoot: REPO_ROOT, allowActions: true });
+        await app.listen();
+        const response = await fetchLocal(`${app.url}/api/work-items/verified/move`, {
+          method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ lane: 'done' })
+        });
+        assert.strictEqual(response.status, 409);
+        const result = await response.json();
+        assert.strictEqual(result.ok, false);
+        assert.strictEqual(result.moved, false);
+        assert.match(result.error, /verification/i);
+        assert.strictEqual(result.item.status, 'blocked');
+        const reopened = await createStateStore({ dbPath: stateDbPath });
+        try {
+          const persisted = reopened.getWorkItemById('verified');
+          assert.strictEqual(persisted.status, 'blocked');
+          assert.strictEqual(persisted.metadata.verification.attempts.at(-1).outcome, 'failure');
+        } finally { reopened.close(); }
+      } finally {
+        if (app) await app.close();
+        fs.rmSync(tempDir, { recursive: true, force: true });
+      }
+    })
+  ) passed++;
+  else failed++;
+
   console.log(`\nResults: Passed: ${passed}, Failed: ${failed}`);
   process.exit(failed > 0 ? 1 : 0);
 }

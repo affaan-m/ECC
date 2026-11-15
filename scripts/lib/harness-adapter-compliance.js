@@ -503,7 +503,9 @@ function validateDocumentation(options = {}) {
   const repoRoot = options.repoRoot || path.resolve(__dirname, '..', '..');
   const docPath = options.docPath || path.join(repoRoot, 'docs', 'architecture', 'harness-adapter-compliance.md');
   const errors = [];
-  const source = fs.readFileSync(docPath, 'utf8');
+  // Callers may supply an already bounded snapshot, so validation and hashing
+  // inspect the same bytes without reopening a mutable artifact.
+  const source = options.source === undefined ? fs.readFileSync(docPath, 'utf8') : options.source;
   const actual = extractMatrixBlock(source);
   const expected = renderMarkdownTable();
 

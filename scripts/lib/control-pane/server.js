@@ -347,7 +347,11 @@ function createControlPaneServer(options = {}) {
                 }
               : { id, lane: body.lane }
           );
-          sendJson(res, 200, { ok: true, ...result });
+          if (result.moved === false && result.reason === 'verification-failed') {
+            sendJson(res, 409, { ...result, ok: false, error: 'Verification failed; the work item is blocked. Run verify after repair.' });
+          } else {
+            sendJson(res, 200, { ok: true, ...result });
+          }
         } catch (mutationError) {
           if (mutationError.code === 'STATE_STORE_BUSY') {
             res.setHeader('Retry-After', '1');
