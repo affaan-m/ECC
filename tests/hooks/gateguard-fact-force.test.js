@@ -4347,6 +4347,175 @@ function runTests() {
     passed++;
   else failed++;
 
+  // --- Same-batch siblings (#3936): when the denied call's batch is found ---
+  // by its tool_use_id, the other edits to that file in the same batch are
+  // denied too, so the file is not left half-edited. The retry from a later
+  // message passes. Without a located batch, the #3136 behavior holds.
+  {
+    const batchDir = fs.mkdtempSync(path.join(tmpRoot, 'gateguard-batch-'));
+    const batchEnv = { CLAUDE_PROJECT_DIR: '/proj-batch', CLAUDE_TRANSCRIPT_PATH: '' };
+    let batchSeq = 0;
+    const userText = text => ({ type: 'user', message: { role: 'user', content: text } });
+    const assistantCalls = (messageId, calls) => ({
+      type: 'assistant',
+      message: { id: messageId, role: 'assistant', content: calls.map(([id, name, input]) => ({ type: 'tool_use', id, name, input })) }
+    });
+    const deniedResults = ids => ({
+      type: 'user',
+      message: { role: 'user', content: ids.map(id => ({ type: 'tool_result', tool_use_id: id, is_error: true, content: 'denied' })) }
+    });
+    const writeBatchTranscript = records => {
+      batchSeq += 1;
+      const file = path.join(batchDir, `batch-${batchSeq}.jsonl`);
+      fs.writeFileSync(file, records.map(r => JSON.stringify(r)).join('\n') + '\n', 'utf8');
+      return file;
+    };
+    const editInput = (file_path, old_string) => ({ file_path, old_string, new_string: `${old_string}2` });
+    const batchRun = (toolName, toolInput, transcriptPath, toolUseId) => {
+      const payload = { tool_name: toolName, tool_input: toolInput, cwd: '/proj-batch' };
+      if (transcriptPath) payload.transcript_path = transcriptPath;
+      if (toolUseId) payload.tool_use_id = toolUseId;
+      const output = parseOutput(runHook(payload, batchEnv).stdout);
+      const hso = output && output.hookSpecificOutput ? output.hookSpecificOutput : {};
+      return { decision: hso.permissionDecision, reason: hso.permissionDecisionReason || '' };
+    };
+    const readBatchState = () => JSON.parse(fs.readFileSync(stateFile, 'utf8'));
+    const batchCase = (name, fn) => {
+      clearState();
+      if (test(name, fn)) passed++;
+      else failed++;
+    };
+    const target = '/proj-batch/src/table.js';
+
+    batchCase('same-batch sibling of a first-touch denial is denied; the retry passes (#3936)', () => {
+      const batch = [
+        ['toolu_tbl_a', 'Edit', editInput(target, 'head')],
+        ['toolu_tbl_b', 'Edit', editInput(target, 'body')]
+      ];
+      const t = writeBatchTranscript([userText('fix the table'), assistantCalls('msg_tbl_1', batch)]);
+
+      const first = batchRun('Edit', batch[0][2], t, 'toolu_tbl_a');
+      assert.strictEqual(first.decision, 'deny', 'first touch is denied');
+      assert.ok(first.reason.includes(`Other edits to ${target} from this batch are denied too`), `locked note expected, got: ${first.reason}`);
+      assert.ok(!first.reason.includes('may already have been applied'), 'no partial-application warning when locked');
+
+      const sibling = batchRun('Edit', batch[1][2], t, 'toolu_tbl_b');
+      assert.strictEqual(sibling.decision, 'deny', 'same-batch sibling is denied');
+      assert.ok(sibling.reason.includes('in this same batch was denied at first touch'), sibling.reason);
+      assert.ok(sibling.reason.includes(target), 'sibling denial names the file');
+      assert.strictEqual(readBatchState().fact_force_denials, 1, 'a same-batch denial is not a new first-touch denial');
+
+      const retryBatch = [
+        ['toolu_tbl_c', 'Edit', editInput(target, 'head')],
+        ['toolu_tbl_d', 'Edit', editInput(target, 'body')]
+      ];
+      const later = writeBatchTranscript([
+        userText('fix the table'),
+        assistantCalls('msg_tbl_1', batch),
+        deniedResults(['toolu_tbl_a', 'toolu_tbl_b']),
+        assistantCalls('msg_tbl_2', retryBatch)
+      ]);
+      assert.notStrictEqual(batchRun('Edit', retryBatch[0][2], later, 'toolu_tbl_c').decision, 'deny', 'retry from a later message passes');
+      assert.notStrictEqual(batchRun('Edit', retryBatch[1][2], later, 'toolu_tbl_d').decision, 'deny', 'resent sibling passes');
+      assert.strictEqual(readBatchState().fact_force_denials, 1, 'still one denial');
+    });
+
+    batchCase('one record per tool_use with a shared message id is one batch (#3936)', () => {
+      const a = ['toolu_split_a', 'Edit', editInput(target, 'x')];
+      const b = ['toolu_split_b', 'Edit', editInput(target, 'y')];
+      const t = writeBatchTranscript([userText('go'), assistantCalls('msg_split', [a]), assistantCalls('msg_split', [b])]);
+      assert.strictEqual(batchRun('Edit', a[2], t, a[0]).decision, 'deny');
+      assert.strictEqual(batchRun('Edit', b[2], t, b[0]).decision, 'deny', 'sibling in a separate record of the same message is denied');
+    });
+
+    batchCase('the lock is per file: another file in the same batch gets its own first-touch gate (#3936)', () => {
+      const other = '/proj-batch/src/other.js';
+      const batch = [
+        ['toolu_pf_a', 'Edit', editInput(target, 'x')],
+        ['toolu_pf_b', 'Edit', editInput(other, 'y')]
+      ];
+      const t = writeBatchTranscript([userText('go'), assistantCalls('msg_pf', batch)]);
+      assert.strictEqual(batchRun('Edit', batch[0][2], t, batch[0][0]).decision, 'deny');
+      const second = batchRun('Edit', batch[1][2], t, batch[1][0]);
+      assert.strictEqual(second.decision, 'deny', 'other file is gated on its own first touch');
+      assert.ok(!second.reason.includes('in this same batch was denied'), 'not a same-batch denial');
+      assert.strictEqual(readBatchState().fact_force_denials, 2);
+    });
+
+    batchCase('no located batch keeps the #3136 behavior: siblings pass (#3936)', () => {
+      const batch = [
+        ['toolu_nl_a', 'Edit', editInput(target, 'x')],
+        ['toolu_nl_b', 'Edit', editInput(target, 'y')]
+      ];
+      const t = writeBatchTranscript([userText('go'), assistantCalls('msg_nl', batch)]);
+      // No tool_use_id on either call.
+      const first = batchRun('Edit', batch[0][2], t, '');
+      assert.strictEqual(first.decision, 'deny');
+      assert.ok(first.reason.includes('may already have been applied'), 'unlocked denial keeps the partial-application warning');
+      assert.notStrictEqual(batchRun('Edit', batch[1][2], t, '').decision, 'deny', 'sibling without tool_use_id passes');
+      assert.ok(!('batch_locks' in readBatchState()) || Object.keys(readBatchState().batch_locks).length === 0, 'nothing locked');
+
+      clearState();
+      // tool_use_id given but the pending call is not in the transcript yet.
+      const stale = writeBatchTranscript([userText('go')]);
+      assert.strictEqual(batchRun('Edit', batch[0][2], stale, 'toolu_nl_a').decision, 'deny');
+      assert.notStrictEqual(batchRun('Edit', batch[1][2], stale, 'toolu_nl_b').decision, 'deny', 'unlocated sibling passes');
+    });
+
+    batchCase('MultiEdit and NotebookEdit siblings of a locked file are denied (#3936)', () => {
+      const notebook = '/proj-batch/nb/analysis.ipynb';
+      const batch = [
+        ['toolu_me_a', 'Edit', editInput(target, 'x')],
+        ['toolu_me_b', 'MultiEdit', { edits: [editInput(target, 'y')] }],
+        ['toolu_me_c', 'NotebookEdit', { notebook_path: notebook, new_source: 'x' }],
+        ['toolu_me_d', 'NotebookEdit', { notebook_path: notebook, new_source: 'y' }]
+      ];
+      const t = writeBatchTranscript([userText('go'), assistantCalls('msg_me', batch)]);
+      assert.strictEqual(batchRun('Edit', batch[0][2], t, batch[0][0]).decision, 'deny');
+      const multi = batchRun('MultiEdit', batch[1][2], t, batch[1][0]);
+      assert.strictEqual(multi.decision, 'deny', 'MultiEdit entry for the locked file is denied');
+      assert.ok(multi.reason.includes('in this same batch was denied'), multi.reason);
+      assert.strictEqual(batchRun('NotebookEdit', batch[2][2], t, batch[2][0]).decision, 'deny', 'notebook first touch');
+      assert.strictEqual(batchRun('NotebookEdit', batch[3][2], t, batch[3][0]).decision, 'deny', 'notebook sibling denied');
+    });
+
+    batchCase('a Write sibling of a denied Write in the same batch is denied (#3936)', () => {
+      const created = '/proj-batch/src/new-module.js';
+      const batch = [
+        ['toolu_w_a', 'Write', { file_path: created, content: 'a' }],
+        ['toolu_w_b', 'Edit', editInput(created, 'a')]
+      ];
+      const t = writeBatchTranscript([userText('go'), assistantCalls('msg_w', batch)]);
+      const first = batchRun('Write', batch[0][2], t, batch[0][0]);
+      assert.strictEqual(first.decision, 'deny');
+      assert.ok(first.reason.includes('are denied too'), first.reason);
+      assert.strictEqual(batchRun('Edit', batch[1][2], t, batch[1][0]).decision, 'deny');
+    });
+
+    batchCase('condensed denial carries the locked note on one line (#3936)', () => {
+      writeState({ checked: [], last_active: Date.now(), fact_force_denials: 3 });
+      const a = ['toolu_cd_a', 'Edit', editInput(target, 'x')];
+      const t = writeBatchTranscript([userText('go'), assistantCalls('msg_cd', [a])]);
+      const out = batchRun('Edit', a[2], t, a[0]);
+      assert.strictEqual(out.decision, 'deny');
+      assert.ok(out.reason.includes('are denied too'), out.reason);
+      assert.ok(!out.reason.includes('\n'), 'condensed denial stays a single line');
+    });
+
+    batchCase('malformed batch_locks in the state file are ignored (#3936)', () => {
+      const key = stateKey(target);
+      const t = writeBatchTranscript([userText('go'), assistantCalls('msg_bad', [['toolu_bad', 'Edit', editInput(target, 'x')]])]);
+      for (const bad of [{ batch: 5, at: 1 }, { batch: '', at: 1 }, { batch: 'msg_bad' }, 'msg_bad', null]) {
+        writeState({ checked: [key], last_active: Date.now(), fact_force_denials: 1, batch_locks: { [key]: bad } });
+        assert.notStrictEqual(batchRun('Edit', editInput(target, 'x'), t, 'toolu_bad').decision, 'deny', `ignored: ${JSON.stringify(bad)}`);
+      }
+      writeState({ checked: [key], last_active: Date.now(), fact_force_denials: 1, batch_locks: JSON.parse('{"__proto__":{"batch":"msg_bad","at":1}}') });
+      assert.notStrictEqual(batchRun('Edit', editInput(target, 'x'), t, 'toolu_bad').decision, 'deny', 'prototype key ignored');
+    });
+
+    fs.rmSync(batchDir, { recursive: true, force: true });
+  }
+
   // --- Canonical checked-path keys ---
   const decisionOf = result => {
     const output = parseOutput(result.stdout);
