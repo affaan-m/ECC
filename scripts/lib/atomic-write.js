@@ -75,9 +75,9 @@ function writeFileAtomic(filePath, content, options = {}) {
   let descriptor;
   try {
     if (options.validateParent) options.validateParent();
-    descriptor = fs.openSync(tempPath, 'wx', mode);
-    if (options.validateParent) options.validateParent();
     const existingMode = options.preserveExistingMode ? readExistingFileMode(resolvedPath) : undefined;
+    descriptor = fs.openSync(tempPath, 'wx', existingMode ?? mode);
+    if (options.validateParent) options.validateParent();
     fs.writeFileSync(descriptor, content, { encoding: options.encoding || 'utf8' });
     // Restore existing permissions after writing, without applying the process umask a second time.
     if (existingMode !== undefined) fs.fchmodSync(descriptor, existingMode);

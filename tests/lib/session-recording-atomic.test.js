@@ -125,7 +125,26 @@ if (process.platform !== 'win32') {
       for (const mode of [0o600, 0o640, 0o660]) {
         fs.chmodSync(filePath, mode);
         const next = snapshot(`Permissions ${mode.toString(8)}`);
-        persistCanonicalSnapshot(next, options);
+        const originalWrite = fs.writeFileSync;
+        const observedModes = [];
+        fs.writeFileSync = (destination, contents, writeOptions) => {
+          const readMode = () => (typeof destination === 'number'
+            ? fs.fstatSync(destination)
+            : fs.statSync(destination)).mode & 0o777;
+          observedModes.push(readMode());
+          const result = originalWrite(destination, contents, writeOptions);
+          observedModes.push(readMode());
+          return result;
+        };
+        try {
+          persistCanonicalSnapshot(next, options);
+        } finally {
+          fs.writeFileSync = originalWrite;
+        }
+        assert.strictEqual(observedModes.length, 2);
+        for (const observed of observedModes) {
+          assert.strictEqual(observed & ~mode, 0, 'staging must not grant permissions absent from the saved recording');
+        }
         assert.strictEqual(fs.statSync(filePath).mode & 0o777, mode);
         assert.deepStrictEqual(JSON.parse(fs.readFileSync(filePath, 'utf8')).latest, next);
       }
