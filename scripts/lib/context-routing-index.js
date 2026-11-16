@@ -7,7 +7,8 @@
 const path = require('node:path');
 const io = require('./context-profile-store-fs');
 const { buildRetrievalIndex, searchRetrieval, sparseDense } = require('./context-retrieval');
-const { hasSuggestionEvidence } = require('./context-selection');
+const { companionsFor, hasSuggestionEvidence } = require('./context-selection');
+const { companionInput } = require('./context-neighbors');
 const { DEFAULT_REPO_ROOT, digestObject, stableStringify } = require('./context-profile-support');
 
 const SCHEMA = 'ecc.context-routing-index.v1';
@@ -171,17 +172,42 @@ const singleLine = text => String(text).replace(CONTROL_CHARACTERS, ' ').replace
 
 /** Rank index entries for a prompt. IDs and one-line descriptions only; like
  * implicit admission, a suggestion needs a name or trigger anchor term. */
-function suggestContext(index, prompt, { limit = MAX_SUGGESTIONS } = {}) {
-  // Filter before trimming so unanchored matches cannot crowd out anchored ones.
-  return searchRetrieval(buildRetrievalIndex(index.entries), prompt, { limit: index.entries.length })
-    .filter(candidate => SKILL_ID.test(candidate.id) && hasSuggestionEvidence(candidate)
-      && (candidate.exact || candidate.anchorTerms.length > 0))
-    .slice(0, Math.min(limit, MAX_SUGGESTIONS))
-    .map(candidate => {
-      const description = singleLine(candidate.description);
-      return { id: candidate.id,
-        description: description.length > MAX_DESCRIPTION ? `${description.slice(0, MAX_DESCRIPTION - 1)}…` : description };
-    });
+function suggestContext(index, prompt, { limit = MAX_SUGGESTIONS, built = buildRetrievalIndex(index.entries) } = {}) {
+  return anchoredSuggestions(built, index, prompt, limit).map(oneLine);
 }
 
-module.exports = { readBinding, readRoutingIndex, routingIndexStatus, suggestContext, writeRoutingIndex };
+// Filter before trimming so unanchored matches cannot crowd out anchored ones.
+function anchoredSuggestions(built, index, prompt, limit) {
+  return searchRetrieval(built, prompt, { limit: index.entries.length })
+    .filter(candidate => SKILL_ID.test(candidate.id) && hasSuggestionEvidence(candidate)
+      && (candidate.exact || candidate.anchorTerms.length > 0))
+    .slice(0, Math.min(limit, MAX_SUGGESTIONS));
+}
+
+function shortLine(text) {
+  const description = singleLine(text);
+  return description.length > MAX_DESCRIPTION ? `${description.slice(0, MAX_DESCRIPTION - 1)}…` : description;
+}
+
+const oneLine = candidate => ({ id: candidate.id, description: shortLine(candidate.description) });
+
+/** The retrieval index for a routing index, built once and passed as `built`
+ * to suggestContext and suggestWithCompanions for the same prompt. */
+const suggestionIndex = index => buildRetrievalIndex(index.entries);
+
+/** ECC suggestions exactly as suggestContext returns them, plus up to three
+ * installed non-ECC skills that also match the prompt (companions), scored
+ * against the same index. Companions never replace or reorder a suggestion. */
+function suggestWithCompanions(index, prompt, neighbors, { limit = MAX_SUGGESTIONS,
+  built = buildRetrievalIndex(index.entries) } = {}) {
+  const ranked = anchoredSuggestions(built, index, prompt, limit);
+  const neighborSet = companionInput(neighbors);
+  const companions = neighborSet
+    ? companionsFor(built, prompt, neighborSet, { limit: MAX_SUGGESTIONS, top: ranked[0] || null }) : [];
+  return { suggestions: ranked.map(oneLine),
+    companions: companions.map(item => ({ name: singleLine(item.name), source: singleLine(item.source),
+      description: shortLine(item.description), ...(item.sameTopicAs ? { sameTopicAs: item.sameTopicAs } : {}) })) };
+}
+
+module.exports = { readBinding, readRoutingIndex, routingIndexStatus, suggestContext, suggestionIndex, suggestWithCompanions,
+  writeRoutingIndex };
