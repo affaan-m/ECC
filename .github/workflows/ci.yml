@@ -464,6 +464,13 @@ jobs:
         with:
           node-version: '20.x'
 
+      - name: Install pinned npm provenance verifier
+        env:
+          npm_config_cache: ${{ runner.temp }}/ecc-security-npm-cache
+        run: |
+          npm install --global npm@11.21.2 --ignore-scripts --no-audit --no-fund
+          test "$(npm --version)" = "11.21.2"
+
       - name: Install audit dependencies
         env:
           npm_config_cache: ${{ runner.temp }}/ecc-security-npm-cache
