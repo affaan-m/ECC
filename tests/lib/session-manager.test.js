@@ -26,9 +26,7 @@ function test(name, fn) {
 
 // Create a temp directory for session tests
 function createTempSessionDir() {
-  const dir = path.join(os.tmpdir(), `ecc-test-sessions-${Date.now()}`);
-  fs.mkdirSync(dir, { recursive: true });
-  return dir;
+  return fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-test-sessions-'));
 }
 
 function cleanup(dir) {
@@ -44,6 +42,27 @@ function runTests() {
 
   let passed = 0;
   let failed = 0;
+
+  if (test('temporary session fixtures stay private and distinct with a frozen clock', () => {
+    const originalNow = Date.now;
+    const directories = [];
+    try {
+      Date.now = () => 123456789;
+      directories.push(createTempSessionDir(), createTempSessionDir());
+      assert.notStrictEqual(directories[0], directories[1]);
+      for (const [index, directory] of directories.entries()) {
+        if (process.platform !== 'win32') {
+          assert.strictEqual(fs.statSync(directory).mode & 0o077, 0,
+            'other users must not access fixture files');
+        }
+        fs.writeFileSync(path.join(directory, 'session.tmp'), String(index), { flag: 'wx' });
+      }
+      assert.strictEqual(fs.readFileSync(path.join(directories[0], 'session.tmp'), 'utf8'), '0');
+    } finally {
+      Date.now = originalNow;
+      for (const directory of directories) cleanup(directory);
+    }
+  })) passed++; else failed++;
 
   // parseSessionFilename tests
   console.log('parseSessionFilename:');
@@ -418,7 +437,7 @@ src/main.ts
 
   // Override HOME to a temp dir for isolated getAllSessions/getSessionById tests
   // On Windows, os.homedir() uses USERPROFILE, not HOME — set both for cross-platform
-  const tmpHome = path.join(os.tmpdir(), `ecc-session-mgr-test-${Date.now()}`);
+  const tmpHome = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-session-mgr-test-'));
   const tmpCanonicalSessionsDir = path.join(tmpHome, '.claude', 'session-data');
   const tmpLegacySessionsDir = path.join(tmpHome, '.claude', 'sessions');
   fs.mkdirSync(tmpCanonicalSessionsDir, { recursive: true });
@@ -1697,7 +1716,7 @@ src/main.ts
   })) passed++; else failed++;
 
   // Re-establish test environment for Rounds 95-98 (these tests need sessions to exist)
-  const tmpHome2 = path.join(os.tmpdir(), `ecc-session-mgr-test-2-${Date.now()}`);
+  const tmpHome2 = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-session-mgr-test-2-'));
   const tmpSessionsDir2 = path.join(tmpHome2, '.claude', 'sessions');
   fs.mkdirSync(tmpSessionsDir2, { recursive: true });
   const origHome2 = process.env.HOME;

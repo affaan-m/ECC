@@ -50,6 +50,7 @@ test('the auto-update CLI reports interrupted fetch, pull, and reinstall stages 
   const lifecycle = require.resolve('../../scripts/lib/install-lifecycle');
   const logPath = path.join(root, 'calls.jsonl');
   const preload = path.join(root, 'subprocess-fixture.cjs');
+  const fixtureDataPath = path.join(root, 'fixture-data.json');
   try {
     fs.mkdirSync(path.join(root, 'scripts'));
     fs.writeFileSync(path.join(root, 'package.json'), JSON.stringify({ name: 'ecc-universal' }));
@@ -60,14 +61,17 @@ test('the auto-update CLI reports interrupted fetch, pull, and reinstall stages 
       installStatePath: path.join(root, 'home', '.claude', 'ecc', 'install-state.json'),
       state: { target: { target: 'claude' }, request: { legacyLanguages: ['typescript'] } },
     };
-    fs.writeFileSync(preload, `
+    fs.writeFileSync(fixtureDataPath, JSON.stringify({ lifecycle, record, logPath,
+      missingCommand: path.join(root, 'missing-command') }));
+    fs.writeFileSync(preload, String.raw`
       const fs = require('node:fs');
       const childProcess = require('node:child_process');
       const originalSpawn = childProcess.spawnSync;
-      require(${JSON.stringify(lifecycle)}).discoverInstalledStates = () => [${JSON.stringify(record)}];
+      const fixture = JSON.parse(fs.readFileSync(process.env.ECC_AUTO_UPDATE_FIXTURE_DATA, 'utf8'));
+      require(fixture.lifecycle).discoverInstalledStates = () => [fixture.record];
       childProcess.spawnSync = (command, args, options) => {
         const stage = command === 'git' ? args[0] : 'install';
-        fs.appendFileSync(${JSON.stringify(logPath)}, JSON.stringify(stage) + '\\n');
+        fs.appendFileSync(fixture.logPath, JSON.stringify(stage) + '\n');
         if (stage === process.env.ECC_AUTO_UPDATE_TEST_SIGNAL_STAGE && process.env.ECC_AUTO_UPDATE_TEST_FAILURE === 'exit') {
           return originalSpawn(process.execPath, ['-e', 'process.stderr.write("update fixture failed"); process.exit(2)'], options);
         }
@@ -75,7 +79,7 @@ test('the auto-update CLI reports interrupted fetch, pull, and reinstall stages 
           return originalSpawn(process.execPath, ['-e', 'process.stdout.write("update fixture failed"); process.exit(2)'], options);
         }
         if (stage === process.env.ECC_AUTO_UPDATE_TEST_SIGNAL_STAGE && process.env.ECC_AUTO_UPDATE_TEST_FAILURE === 'spawn') {
-          return originalSpawn(${JSON.stringify(path.join(root, 'missing-command'))}, [], options);
+          return originalSpawn(fixture.missingCommand, [], options);
         }
         if (stage === process.env.ECC_AUTO_UPDATE_TEST_SIGNAL_STAGE) {
           return originalSpawn(process.execPath, ['-e', 'process.kill(process.pid, "SIGTERM")'], options);
@@ -101,7 +105,7 @@ test('the auto-update CLI reports interrupted fetch, pull, and reinstall stages 
       const result = childProcess.spawnSync(process.execPath, args, {
         cwd: root,
         encoding: 'utf8',
-        env: { ...process.env, ECC_AUTO_UPDATE_TEST_SIGNAL_STAGE: stage, ECC_AUTO_UPDATE_TEST_FAILURE: failure, ECC_DRY_RUN: '0' },
+        env: { ...process.env, ECC_AUTO_UPDATE_FIXTURE_DATA: fixtureDataPath, ECC_AUTO_UPDATE_TEST_SIGNAL_STAGE: stage, ECC_AUTO_UPDATE_TEST_FAILURE: failure, ECC_DRY_RUN: '0' },
       });
       assert.ifError(result.error);
       assert.equal(result.status, stage ? 1 : 0, `${stage || 'success'}: ${result.stdout}${result.stderr}`);
@@ -119,7 +123,7 @@ test('the auto-update CLI reports interrupted fetch, pull, and reinstall stages 
     const jsonResult = childProcess.spawnSync(process.execPath, ['--require', preload, cli, '--repo-root', root, '--json'], {
       cwd: root,
       encoding: 'utf8',
-      env: { ...process.env, ECC_AUTO_UPDATE_TEST_SIGNAL_STAGE: 'install', ECC_AUTO_UPDATE_TEST_FAILURE: 'signal', ECC_DRY_RUN: '0' },
+      env: { ...process.env, ECC_AUTO_UPDATE_FIXTURE_DATA: fixtureDataPath, ECC_AUTO_UPDATE_TEST_SIGNAL_STAGE: 'install', ECC_AUTO_UPDATE_TEST_FAILURE: 'signal', ECC_DRY_RUN: '0' },
     });
     assert.equal(jsonResult.status, 1, jsonResult.stderr);
     const payload = JSON.parse(jsonResult.stdout);

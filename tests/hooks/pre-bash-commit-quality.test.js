@@ -344,25 +344,26 @@ if (process.platform === 'win32') {
   if (test('passes percent and exclamation filenames literally to a Windows batch linter', () => {
     const repoDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc cmd literal '));
     try {
-      const command = path.join(repoDir, 'lint %!.cmd');
-      const capturePath = path.join(repoDir, 'captured arguments.txt');
-      fs.writeFileSync(command, [
+      // Keep cmd source and transported values constant; only cwd selects
+      // the private fixture directory. Capture stdout without another shell path.
+      const command = '.\\lint %!.cmd';
+      fs.writeFileSync(path.join(repoDir, 'lint %!.cmd'), [
         '@echo off',
         'setlocal DisableDelayedExpansion',
-        '> "%ECC_CAPTURE_PATH%" echo(%~1',
-        '>> "%ECC_CAPTURE_PATH%" echo(%~2',
+        'echo(%~1',
+        'echo(%~2',
         ''
       ].join('\r\n'), 'utf8');
 
       const invocation = hook.getLinterInvocation(command, ['100% ready.js', '!important!.js'], 'win32');
       const result = spawnSync('cmd.exe', invocation.args, {
         ...invocation.options,
-        env: { ...invocation.options.env, ECC_CAPTURE_PATH: capturePath }
+        cwd: repoDir
       });
 
       assert.strictEqual(result.status, 0, result.stderr || result.error?.message);
       assert.deepStrictEqual(
-        fs.readFileSync(capturePath, 'utf8').split(/\r?\n/).filter(Boolean),
+        result.stdout.split(/\r?\n/).filter(Boolean),
         ['100% ready.js', '!important!.js']
       );
     } finally {

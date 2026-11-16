@@ -423,6 +423,9 @@ jobs:
     name: Security Scan
     runs-on: ubuntu-latest
     timeout-minutes: 5
+    env:
+      # Keep verifier metadata and TUF roots isolated from runner-image caches.
+      npm_config_cache: ${{ runner.temp }}/ecc-security-npm-cache
 
     steps:
       - name: Checkout
@@ -449,14 +452,17 @@ jobs:
         run: npm run security:ioc-scan
 
       - name: Setup Python for contribution security checks
+        if: success() || failure()
         uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: '3.11'
 
       - name: Install contribution security tools
+        if: success() || failure()
         run: python -m pip install bandit==1.9.4 pytest==9.1.1 pyyaml==6.0.3
 
       - name: Scan contribution compiler security
+        if: success() || failure()
         run: python skills/ecc-contribution-review/tests/record_security_evidence.py --output security-bandit.json
 
       - name: Test contribution security boundaries

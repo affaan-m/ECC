@@ -69,7 +69,7 @@ Run the self-checking [reproduction SQL](examples/postgres-add-column.sql) on
 PostgreSQL 11+:
 
 ```bash
-psql -X -v ON_ERROR_STOP=1 -f skills/database-migrations/examples/postgres-add-column.sql
+psql -X -v ON_ERROR_STOP=1 -f examples/postgres-add-column.sql
 ```
 
 It uses a temporary table, rolls back the ALTERs, and drops the fixture, checking

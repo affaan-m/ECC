@@ -50,10 +50,13 @@ function bashBlock(marker) {
 }
 
 function runDocumentedSave(marker, placeholder, payload, ctx) {
-  const script = bashBlock(marker)
-    .replaceAll('${CLAUDE_SKILL_DIR}', SKILL_DIR)
-    .replace(placeholder, () => JSON.stringify(payload));
-  return spawnSync('bash', ['-c', script], { cwd: ctx.project, env: ctx.env, encoding: 'utf8' });
+  const script = bashBlock(marker).replace(placeholder, () => JSON.stringify(payload));
+  return spawnSync('bash', ['-s'], {
+    cwd: ctx.project,
+    env: { ...ctx.env, CLAUDE_SKILL_DIR: ctx.skillDir || SKILL_DIR },
+    input: script,
+    encoding: 'utf8',
+  });
 }
 
 function runCk(ctx, script, args, env, payload) {
@@ -119,6 +122,8 @@ async function runTests() {
   } else if (await test('documented heredoc commands save JSON with apostrophes into the native memory dir', async () => {
     const ctx = tempEnv();
     try {
+      ctx.skillDir = path.join(ctx.root, 'skills $(touch COMMAND_INJECTION) $USER `x` "q"', 'ck');
+      fs.cpSync(SKILL_DIR, ctx.skillDir, { recursive: true });
       const init = runDocumentedSave('save.mjs" --init', '<confirmed-json>', {
         name: 'bobs-app', path: ctx.project, description: "Bob's app, don't break it",
         stack: ['node'], goal: "Ship Bob's release", constraints: [],
@@ -130,6 +135,8 @@ async function runTests() {
         decisions: [{ what: "use Bob's parser", why: "it's faster" }], blockers: [],
       }, ctx);
       assert.strictEqual(save.status, 0, save.stdout + save.stderr);
+      assert.ok(!fs.existsSync(path.join(ctx.project, 'COMMAND_INJECTION')),
+        'a skill-directory component must never execute as shell source');
 
       const encoded = ctx.project.replace(/[^A-Za-z0-9]/g, '-');
       const memDir = path.join(ctx.home, '.claude', 'projects', encoded, 'memory');
