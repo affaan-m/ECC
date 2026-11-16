@@ -141,9 +141,10 @@ class OpenAIProvider(LLMProvider):
             )
         except Exception as e:
             msg = str(e)
-            if "401" in msg or "authentication" in msg.lower():
+            status_code = getattr(e, "status_code", None)
+            if status_code == 401:
                 raise AuthenticationError(msg, provider=ProviderType.OPENAI) from e
-            if "429" in msg or "rate_limit" in msg.lower():
+            if status_code == 429:
                 raise RateLimitError(msg, provider=ProviderType.OPENAI) from e
             if "context" in msg.lower() and "length" in msg.lower():
                 raise ContextLengthError(msg, provider=ProviderType.OPENAI) from e
