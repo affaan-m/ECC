@@ -7,6 +7,10 @@ const fs = require('fs');
 const path = require('path');
 const { spawnSync } = require('child_process');
 
+// These assertions cover the opt-in human-operator hint text (#3844): the
+// default denial no longer names the env vars that disable the guard.
+process.env.ECC_SHOW_RECOVERY_HINTS = '1';
+
 const runner = path.join(__dirname, '..', '..', 'scripts', 'hooks', 'run-with-flags.js');
 const hookScript = path.join(__dirname, '..', '..', 'scripts', 'hooks', 'gateguard-fact-force.js');
 const externalStateDir = process.env.GATEGUARD_STATE_DIR;
@@ -1513,22 +1517,20 @@ function runTests() {
     passed++;
   else failed++;
 
-  // --- Test 16: allows Claude settings edits so the hook can be disabled safely ---
+  // --- Test 16: .claude/settings*.json is gated like any other first touch (#3845) ---
   clearState();
   if (
-    test('allows edits to .claude/settings.json without gating', () => {
+    test('gates first-touch edits to .claude/settings.json', () => {
       const input = {
         tool_name: 'Edit',
         tool_input: { file_path: '/workspace/app/.claude/settings.json', old_string: '{}', new_string: '{"hooks":[]}' }
       };
-      const result = runHook(input);
+      const result = runHook(input, { GATEGUARD_EXEMPT_GLOBS: '' });
       const output = parseOutput(result.stdout);
       assert.ok(output, 'should produce valid JSON output');
-      if (output.hookSpecificOutput) {
-        assert.notStrictEqual(output.hookSpecificOutput.permissionDecision, 'deny', 'settings edits must not be blocked by gateguard');
-      } else {
-        assert.strictEqual(output.tool_name, 'Edit');
-      }
+      assert.ok(output.hookSpecificOutput, 'the settings file must not bypass the gate');
+      assert.strictEqual(output.hookSpecificOutput.permissionDecision, 'deny');
+      assert.ok(output.hookSpecificOutput.permissionDecisionReason.includes('Fact-Forcing Gate'));
     })
   )
     passed++;
@@ -2025,6 +2027,36 @@ function runTests() {
     passed++;
   else failed++;
 
+  // --- Test 33a: settings files stay gated on subagent Edit/Write/MultiEdit (#3862) ---
+  clearState();
+  if (
+    test('subagent settings edits stay gated on every edit tool', () => {
+      const env = { CLAUDE_SESSION_ID: '', ECC_SESSION_ID: '', GATEGUARD_EXEMPT_GLOBS: '' };
+      const settingsPaths = ['/workspace/app/.claude/settings.json', '/workspace/app/.claude/settings.local.json'];
+
+      for (const filePath of settingsPaths) {
+        const edits = [{ file_path: filePath, old_string: '{}', new_string: '{"hooks":[]}' }];
+        const cases = [
+          { tool_name: 'MultiEdit', tool_input: { edits } },
+          { tool_name: 'Edit', tool_input: { ...edits[0] } },
+          { tool_name: 'Write', tool_input: { file_path: filePath, content: '{"hooks":[]}' } }
+        ];
+        for (const toolInput of cases) {
+          clearState();
+          const result = runHook(
+            { ...toolInput, session_id: 'subagent-fresh-session', agent_id: 'agent-abc-123' },
+            env
+          );
+          const output = parseOutput(result.stdout);
+          assert.ok(output && output.hookSpecificOutput, `${toolInput.tool_name} ${filePath} must be denied`);
+          assert.strictEqual(output.hookSpecificOutput.permissionDecision, 'deny');
+        }
+      }
+    })
+  )
+    passed++;
+  else failed++;
+
   // --- Test 33: Bash stays gated inside subagents ---
   clearState();
   if (
@@ -2243,6 +2275,41 @@ function runTests() {
       expectDestructiveDeny("psql -c 'truncate audit_log'", 'psql quoted truncate');
       expectDestructiveDeny('mysql -e "delete from sessions"', 'mysql quoted delete');
       expectDestructiveDeny('sqlite3 app.db "DROP TABLE users"', 'sqlite3 quoted drop');
+    })
+  )
+    passed++;
+  else failed++;
+
+  if (
+    test('denies DROP DATABASE, DROP SCHEMA and ALTER TABLE ... DROP COLUMN passed to SQL clients', () => {
+      // Each of these destroys at least as much data as DROP TABLE.
+      expectDestructiveDeny('psql -c "DROP DATABASE prod"', 'psql drop database');
+      expectDestructiveDeny('psql -c "drop database if exists app_dev"', 'psql drop database if exists');
+      expectDestructiveDeny('mysql -e "DROP DATABASE app"', 'mysql drop database');
+      expectDestructiveDeny('psql -c "DROP SCHEMA public CASCADE"', 'psql drop schema cascade');
+      expectDestructiveDeny('mysql -e "DROP SCHEMA app"', 'mysql drop schema');
+      expectDestructiveDeny('psql -c "ALTER TABLE users DROP COLUMN email"', 'psql alter table drop column');
+      expectDestructiveDeny(
+        'psql -c "ALTER TABLE IF EXISTS ONLY public.users DROP COLUMN IF EXISTS email CASCADE"',
+        'psql alter table if exists only drop column'
+      );
+      expectDestructiveDeny('sqlite3 app.db "ALTER TABLE users DROP COLUMN email"', 'sqlite3 drop column');
+      expectDestructiveDeny('sudo -u postgres psql -c "drop database prod"', 'sudo psql drop database');
+      expectDestructiveDeny('psql -c "drop database prod"; echo done', 'drop database before a separator');
+    })
+  )
+    passed++;
+  else failed++;
+
+  if (
+    test('allows non-destructive ALTER TABLE forms and quoted DROP DATABASE mentions', () => {
+      expectAllow('psql -c "ALTER TABLE users ALTER COLUMN email DROP DEFAULT"', 'alter column drop default');
+      expectAllow('psql -c "ALTER TABLE users ALTER COLUMN email DROP NOT NULL"', 'alter column drop not null');
+      expectAllow('psql -c "ALTER TABLE users ADD COLUMN note text"', 'alter table add column');
+      expectAllow('psql -c "ALTER TABLE users ADD COLUMN note text; SELECT \'drop column\'"', 'drop column in a literal');
+      expectAllow('psql -c "SELECT \'drop database\' AS label"', 'drop database in a literal');
+      expectAllow('git commit -m "docs: explain drop database recovery"', 'drop database in -m');
+      expectAllow('echo "drop schema public cascade"', 'echo drop schema mention');
     })
   )
     passed++;
@@ -7689,6 +7756,63 @@ function runTests() {
     if (test(`lazy loading: ${label}`, () => assert.deepStrictEqual(loadedLibs(payload, setup), expected))) passed++;
     else failed++;
   }
+
+  // --- Test N: the default denial never names the controls that disable the hook (#3844) ---
+  clearState();
+  if (
+    test('default denial does not name recovery bypass controls', () => {
+      const input = {
+        session_id: TEST_SESSION_ID,
+        tool_name: 'Edit',
+        tool_input: { file_path: '/workspace/app/src/recovery-hint.js', old_string: 'a', new_string: 'b' }
+      };
+      const result = runHook(input, { ECC_SHOW_RECOVERY_HINTS: '' });
+      const output = parseOutput(result.stdout);
+      assert.ok(output && output.hookSpecificOutput, 'expected a denial');
+      assert.strictEqual(output.hookSpecificOutput.permissionDecision, 'deny');
+      const reason = output.hookSpecificOutput.permissionDecisionReason;
+      for (const leaked of [
+        'ECC_GATEGUARD=off',
+        'ECC_DISABLED_HOOKS',
+        'GATEGUARD_EXEMPT_GLOBS',
+        'GATEGUARD_BASH_ROUTINE_DISABLED'
+      ]) {
+        assert.ok(!reason.includes(leaked), `default denial must not name ${leaked}`);
+      }
+    })
+  )
+    passed++;
+  else failed++;
+
+  clearState();
+  writeState({ checked: [], last_active: Date.now(), fact_force_denials: 3 });
+  if (
+    test('condensed default denial omits recovery markers and bypass controls', () => {
+      const input = {
+        session_id: TEST_SESSION_ID,
+        tool_name: 'Edit',
+        tool_input: { file_path: '/workspace/app/src/recovery-condensed.js', old_string: 'a', new_string: 'b' }
+      };
+      const result = runHook(input, { ECC_SHOW_RECOVERY_HINTS: '' });
+      const output = parseOutput(result.stdout);
+      assert.ok(output && output.hookSpecificOutput, 'expected the condensed denial');
+      assert.strictEqual(output.hookSpecificOutput.permissionDecision, 'deny');
+      const reason = output.hookSpecificOutput.permissionDecisionReason;
+      assert.ok(reason.includes('denial #4'), 'expected the condensed denial ordinal');
+      for (const leaked of [
+        'Narrow recovery:',
+        'Recovery:',
+        'ECC_GATEGUARD=off',
+        'ECC_DISABLED_HOOKS',
+        'GATEGUARD_EXEMPT_GLOBS',
+        'GATEGUARD_BASH_ROUTINE_DISABLED'
+      ]) {
+        assert.ok(!reason.includes(leaked), `condensed default denial must not contain ${leaked}`);
+      }
+    })
+  )
+    passed++;
+  else failed++;
 
   const ddResults = runDdRegressionTests();
   passed += ddResults.passed;

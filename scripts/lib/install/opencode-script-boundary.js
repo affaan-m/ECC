@@ -6,28 +6,33 @@ const path = require('path');
 
 const SOURCE = 'manifests/install-assets/commonjs-scripts-package.json';
 const key = file => process.platform === 'win32' ? path.resolve(file).toLowerCase() : path.resolve(file);
-const markerPath = root => path.join(root, 'scripts', 'package.json');
+// Copilot keeps runtime helpers under ecc/scripts rather than scripts.
+const markerPaths = root => [
+  path.join(root, 'scripts', 'package.json'),
+  path.join(root, 'ecc', 'scripts', 'package.json'),
+];
 const isScriptBoundary = (operation, root) => operation.kind === 'copy-file'
-  && operation.sourceRelativePath === SOURCE && key(operation.destinationPath) === key(markerPath(root));
+  && operation.sourceRelativePath === SOURCE
+  && markerPaths(root).some(marker => key(operation.destinationPath) === key(marker));
 
 // A nested package owns its own module scope. Symlinks and uncertain trees are
 // preserved conservatively rather than followed while deciding scope changes.
 // Native .ts and transpiled JSX/TSX inherit package type too. Explicit
 // .mjs/.cjs/.mts/.cts formats remain independent of this boundary.
 function scopedScriptFiles(directory, { nested = false, depth = 0 } = {}) {
-  if (depth > 40) throw new Error('OpenCode scripts tree exceeds the safe inspection depth');
+  if (depth > 40) throw new Error('Runtime scripts tree exceeds the safe inspection depth');
   const stat = fs.lstatSync(directory, { throwIfNoEntry: false });
   if (!stat) return [];
-  if (stat.isSymbolicLink() || !stat.isDirectory()) throw new Error(`Unsafe OpenCode scripts directory: ${directory}`);
+  if (stat.isSymbolicLink() || !stat.isDirectory()) throw new Error(`Unsafe runtime scripts directory: ${directory}`);
   const packageStat = fs.lstatSync(path.join(directory, 'package.json'), { throwIfNoEntry: false });
   if (nested && packageStat?.isFile()) return [];
   const files = [];
   for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
     const file = path.join(directory, entry.name);
-    if (entry.isSymbolicLink()) throw new Error(`Unsafe OpenCode scripts symlink: ${file}`);
+    if (entry.isSymbolicLink()) throw new Error(`Unsafe runtime scripts symlink: ${file}`);
     if (entry.isDirectory()) files.push(...scopedScriptFiles(file, { nested: true, depth: depth + 1 }));
     else if (entry.isFile() && /\.(?:js|jsx|ts|tsx)$/i.test(entry.name)) files.push(file);
-    if (files.length > 12000) throw new Error('OpenCode scripts tree exceeds the safe inspection count');
+    if (files.length > 12000) throw new Error('Runtime scripts tree exceeds the safe inspection count');
   }
   return files;
 }
@@ -69,18 +74,19 @@ function assertSelectedScriptScopes(plan, readFile, scriptsRoot) {
 }
 
 function assertScriptBoundary(plan, { readFile, previousOperations = [], writtenDestinations = new Set(), expectedContent }) {
-  if (!plan.operations.some(operation => isScriptBoundary(operation, plan.targetRoot))) return;
-  const marker = markerPath(plan.targetRoot);
+  const boundary = plan.operations.find(operation => isScriptBoundary(operation, plan.targetRoot));
+  if (!boundary) return;
+  const marker = boundary.destinationPath;
   assertSelectedScriptScopes(plan, readFile, path.dirname(marker));
   const content = readFile(marker);
   assertCommonJSMetadata(content, marker);
   if (content !== null) {
     const ownedMarker = previousOperations.find(operation => operation.ownership === 'managed'
-      && isScriptBoundary(operation, plan.targetRoot));
+      && isScriptBoundary(operation, plan.targetRoot) && key(operation.destinationPath) === key(marker));
     // A reinstall bridge may omit digests after preflight validated the old
     // receipt. At publication the fixed boundary asset still proves its bytes.
     const expectedMarker = ownedMarker && !ownedMarker.contentSha256
-      ? expectedContent(plan.operations.find(operation => isScriptBoundary(operation, plan.targetRoot))) : null;
+      ? expectedContent(boundary) : null;
     const markerDigest = ownedMarker?.contentSha256 || (expectedMarker
       ? crypto.createHash('sha256').update(expectedMarker).digest('hex') : null);
     if (ownedMarker && crypto.createHash('sha256').update(content).digest('hex') !== markerDigest) {

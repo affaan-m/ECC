@@ -25,6 +25,7 @@
 const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
+const { showRecoveryHints } = require('../lib/hooks/recovery-hints');
 const { extractCommandSubstitutions, extractSubshellGroups, extractBraceGroups } = require('../lib/shell-substitution');
 const { classifyPowerShellDestructiveCommand } = require('../lib/powershell-destructive-command');
 const { stripHeredocBodies } = require('./gateguard-heredoc');
@@ -123,7 +124,13 @@ const ECC_ENABLE_VALUES = new Set(['1', 'true', 'on', 'enabled', 'enable', 'yes'
 // `echo dd if=x` — which runs no dd at all — was gated. The boundary decided
 // the verdict instead of the command position, so dd moved to isDestructiveDd()
 // alongside the other token-based detectors (#2642).
-const DESTRUCTIVE_SQL = /\b(drop\s+table|delete\s+from|truncate)\b/i;
+// DROP DATABASE / DROP SCHEMA remove at least as much data as DROP TABLE, and
+// ALTER TABLE ... DROP COLUMN discards a column's data across every row. The
+// DROP COLUMN arm is bounded by `;` so it cannot join two separate statements,
+// and it requires the explicit COLUMN keyword so `ALTER COLUMN ... DROP
+// DEFAULT` / `DROP NOT NULL` (metadata-only changes) stay passive.
+const DESTRUCTIVE_SQL =
+  /\b(drop\s+(?:table|database|schema)|delete\s+from|truncate|alter\s+table\b[^;]*?\bdrop\s+column)\b/i;
 
 // Operator-supplied additional destructive patterns. Lazily compiled from
 // `GATEGUARD_BASH_EXTRA_DESTRUCTIVE` (regex source) on first use, then
@@ -2010,12 +2017,6 @@ function normalizeForMatch(value) {
     .toLowerCase();
 }
 
-function isClaudeSettingsPath(filePath) {
-  const normalized = normalizeForMatch(filePath);
-  return /(^|\/)\.claude\/settings(?:\.[^/]+)?\.json$/.test(normalized);
-}
-
-
 function isReadOnlyGitIntrospection(command) {
   const trimmed = String(command || '').trim();
   if (!trimmed || /[\r\n;&|><`$()]/.test(trimmed)) return false;
@@ -2108,7 +2109,9 @@ function condensedGateMsg(action, filePath, ordinal, { cls = 'code', targetNote 
     `${batchSiblingWarning(safe)} ` +
     (missNote ? `${missNote} ` : '') +
     (targetNote ? `${targetNote} ` : '') +
-    '(Use GATEGUARD_EXEMPT_GLOBS for path-scoped exemptions; GATEGUARD_FACT_FORCE_MAX_DENIALS caps denials per session; ECC_GATEGUARD=off disables this gate.)'
+    (showRecoveryHints()
+      ? '(Use GATEGUARD_EXEMPT_GLOBS for path-scoped exemptions; GATEGUARD_FACT_FORCE_MAX_DENIALS caps denials per session; ECC_GATEGUARD=off disables this gate.)'
+      : '')
   );
 }
 
@@ -2183,6 +2186,7 @@ function routineShellMsg(toolName) {
 }
 
 function withRecoveryHint(message, hookIds = [EDIT_WRITE_HOOK_ID], narrowRecoveryHint = '') {
+  if (!showRecoveryHints()) return message;
   const disableTargets = hookIds.map(hookId => `\`${hookId}\``).join(' or ');
   const recoveryLines = narrowRecoveryHint ? [narrowRecoveryHint, ''] : [];
   return [
@@ -2444,7 +2448,9 @@ function flushMetrics() {
 
 function exemptReason(filePath, data) {
   if (!filePath) return 'no-path';
-  if (isClaudeSettingsPath(filePath)) return 'claude-settings';
+  // .claude/settings*.json holds the switches for GateGuard and the other
+  // hooks, so a first-touch edit there must go through the same gate as any
+  // other new target. Exempting it let an agent disable the guard (#3845).
   return isExemptPath(filePath, data) ? 'exempt-glob' : '';
 }
 
@@ -2618,7 +2624,7 @@ function gateMultiEdit(ctx) {
 function gateMultiEditSubagent(edits, data, rawInput) {
   for (const edit of edits) {
     const filePath = (edit && edit.file_path) || '';
-    if (!filePath || isClaudeSettingsPath(filePath) || isExemptPath(filePath, data)) continue;
+    if (!filePath || isExemptPath(filePath, data)) continue;
     const denial = subagentRestrictedDenial(filePath, data, false);
     if (denial) return denial;
   }

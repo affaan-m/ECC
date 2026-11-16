@@ -6,6 +6,7 @@ const path = require('path');
 const { spawn } = require('child_process');
 
 const { buildControlPaneAction } = require('./actions');
+const { captureActionOutput } = require('./action-output');
 const { buildControlPaneSnapshot, resolveControlPaneConfig } = require('./state');
 const { renderControlPaneHtml } = require('./ui');
 const { renderProximityVizHtml } = require('./proximity-viz');
@@ -98,12 +99,6 @@ async function readRequestJson(req) {
   return JSON.parse(raw);
 }
 
-function boundedOutput(value, limit = 20000) {
-  const text = String(value || '');
-  if (text.length <= limit) return text;
-  return `${text.slice(0, limit)}\n[truncated ${text.length - limit} chars]`;
-}
-
 function runAction(action, options = {}) {
   const timeoutMs = options.timeoutMs || 120000;
   return new Promise(resolve => {
@@ -113,8 +108,8 @@ function runAction(action, options = {}) {
       env: process.env,
       stdio: ['ignore', 'pipe', 'pipe']
     });
-    let stdout = '';
-    let stderr = '';
+    const readStdout = captureActionOutput(child.stdout);
+    const readStderr = captureActionOutput(child.stderr);
     let settled = false;
     const timeout = setTimeout(() => {
       if (!settled) {
@@ -122,12 +117,6 @@ function runAction(action, options = {}) {
       }
     }, timeoutMs);
 
-    child.stdout.on('data', chunk => {
-      stdout += chunk.toString('utf8');
-    });
-    child.stderr.on('data', chunk => {
-      stderr += chunk.toString('utf8');
-    });
     child.on('error', error => {
       settled = true;
       clearTimeout(timeout);
@@ -138,8 +127,8 @@ function runAction(action, options = {}) {
         finishedAt: new Date().toISOString(),
         code: null,
         error: error.message,
-        stdout: boundedOutput(stdout),
-        stderr: boundedOutput(stderr)
+        stdout: readStdout(),
+        stderr: readStderr()
       });
     });
     child.on('close', (code, signal) => {
@@ -152,8 +141,8 @@ function runAction(action, options = {}) {
         finishedAt: new Date().toISOString(),
         code,
         signal,
-        stdout: boundedOutput(stdout),
-        stderr: boundedOutput(stderr)
+        stdout: readStdout(),
+        stderr: readStderr()
       });
     });
   });

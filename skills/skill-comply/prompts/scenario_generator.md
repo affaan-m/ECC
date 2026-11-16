@@ -51,6 +51,15 @@ Rules:
   Use paths relative to it (no absolute paths, `~`, `..`, pipes or redirection).
   Only git, npm, pip, pip3, touch, mkdir, cp, mv, echo, chmod, unzip and tar run,
   and only for creating files: other commands and options are skipped.
+- Every input file referenced by a scenario prompt must be listed in a `files:` mapping
+  of relative paths to text. Setup commands cannot write content through redirection.
+  For example:
+    files:
+      ".claude/plans/example.plan.md": |
+        # Plan
+        - [ ] step 1
+  Paths must remain inside the scenario directory and cannot name `.git` at any depth.
+  Fixture files must be regular files; links and reparse points are rejected.
 - Prompts should be realistic — something a developer would actually ask
 
 Skill content:

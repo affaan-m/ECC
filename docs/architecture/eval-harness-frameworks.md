@@ -313,6 +313,18 @@ an implementation. The legacy `EFFECT_FENCE_PRELOAD` export remains for import
 compatibility, but loading that file always throws `gate.isolation_required`.
 It no longer attempts JavaScript interception.
 
+Record-mode calls preserve synchronous results. If an implementation returns a
+Promise or thenable, await `call()` before consuming the result: the fixture and
+`recorded` trace are written only after fulfillment. An implementation rejection
+propagates without writing a fixture or successful trace and leaves any previous
+fixture unchanged.
+Replay remains synchronous and never invokes the implementation.
+Fixture keys use a JSON snapshot of the arguments at invocation, before the
+implementation runs; later argument mutations cannot redirect the recording.
+Re-record fixtures previously captured from async implementations: an empty
+object recorded from an unresolved Promise still has a valid hash and cannot
+be distinguished automatically from a real empty response.
+
 ## Offline receipts
 
 ```sh
