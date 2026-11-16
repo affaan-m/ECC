@@ -78,7 +78,7 @@ def operator(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Iterator[Operat
     }
     monkeypatch.chdir(project)
     for name in tuple(os.environ):
-        if name.startswith(("LLM_", "OLLAMA_", "ATLAS_", "ASTRAFLOW_")):
+        if name.startswith(("LLM_", "OLLAMA_", "ATLAS_", "ASTRAFLOW_", "MINIMAX_")):
             monkeypatch.delenv(name)
     # Record absent values too: persist=True writes directly to os.environ.
     for name in ("LLM_PROVIDER", "LLM_MODEL"):
@@ -114,7 +114,7 @@ def test_real_cli_creates_loads_and_replaces_project_selection(
     assert operator.selection() == ["claude", "claude-sonnet-4-6"]
     origin = operator.run(["-c", "import llm; print(llm.__file__)"])
     assert Path(origin.stdout.strip()).resolve() == SOURCE / "llm" / "__init__.py"
-    first = operator.run(args, "3\n2\n")
+    first = operator.run(args, "4\n2\n")
     assert "Available Providers:" in first.stdout
     assert "Local Ollama models" in first.stdout
     assert "Available Models:" in first.stdout
@@ -127,7 +127,7 @@ def test_real_cli_creates_loads_and_replaces_project_selection(
     assert config.read_text() == "LLM_PROVIDER=ollama\nLLM_MODEL=mistral\n"
     assert operator.selection() == ["ollama", "mistral"]
 
-    second = operator.run(args, "2\n2\n")
+    second = operator.run(args, "3\n2\n")
     assert "GPT-4o-mini - Fast & affordable" in second.stdout
     assert second.stderr == ""
     assert config.read_text() == "LLM_PROVIDER=openai\nLLM_MODEL=gpt-4o-mini\n"
@@ -141,8 +141,9 @@ def test_real_cli_creates_loads_and_replaces_project_selection(
     "provider_number,provider,model,description",
     [
         (1, "claude", "claude-sonnet-4-6", "Claude Sonnet 4.6 - Balanced"),
-        (2, "openai", "gpt-4o-mini", "GPT-4o-mini - Fast & affordable"),
-        (3, "ollama", "mistral", "Mistral - Fast & efficient"),
+        (2, "minimax", "MiniMax-M3", "MiniMax M3 - Flexible reasoning model"),
+        (3, "openai", "gpt-4o-mini", "GPT-4o-mini - Fast & affordable"),
+        (4, "ollama", "mistral", "Mistral - Fast & efficient"),
     ],
 )
 def test_default_catalog_selection_is_saved_without_changing_current_environment(
@@ -197,7 +198,7 @@ def test_custom_catalog_updates_saved_selection_and_optionally_current_process(
 def test_cli_reprompts_for_malformed_and_out_of_range_choices(
     operator: Operator,
 ) -> None:
-    result = operator.run(["-m", "llm"], "text\n0\n-1\n99\n 3 \n1.5\n0\n99\n 2 \n")
+    result = operator.run(["-m", "llm"], "text\n0\n-1\n99\n 4 \n1.5\n0\n99\n 2 \n")
 
     assert result.stdout.count("Please enter a number.") == 2
     assert result.stdout.count("Invalid selection. Try again.") == 5
@@ -265,7 +266,7 @@ def test_interactive_cancellation_handles_empty_catalogs_without_overwriting_con
 
 
 @pytest.mark.parametrize(
-    "answers", ["bad\n0\n3\nwrong\n99\n2\n", "\n"], ids=["select", "cancel"]
+    "answers", ["bad\n0\n4\nwrong\n99\n2\n", "\n"], ids=["select", "cancel"]
 )
 def test_public_main_sets_current_selection_or_exits_cleanly(
     operator: Operator,
