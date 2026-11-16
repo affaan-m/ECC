@@ -301,7 +301,7 @@ test('discovery tolerates BOMs and skips oversized headers, relative install pat
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-neighbors-edges-'));
   try {
     const config = path.join(home, '.claude');
-    write(config, 'skills/bom/SKILL.md', '﻿---\nname: bom-skill\ndescription: Starts with a byte order mark.\n---\n');
+    write(config, 'skills/bom/SKILL.md', '\uFEFF---\nname: bom-skill\ndescription: Starts with a byte order mark.\n---\n');
     write(config, 'skills/huge/SKILL.md', `---\nname: huge\ndescription: ${'x'.repeat(17 * 1024)}\n---\n`);
     const relative = path.join(home, 'cache', 'relative');
     const badKey = path.join(home, 'cache', 'bad');

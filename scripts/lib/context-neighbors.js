@@ -1,7 +1,8 @@
 'use strict';
 
 // Neighbor skills: skills the host has installed from somewhere other than ECC.
-// ECC never loads them and never reads their bodies. Their names and
+// ECC never loads their bodies as context or interprets their instructions.
+// Discovery reads bounded files to extract frontmatter. Their names and
 // descriptions are matched against the task so the ones that also fit can be
 // listed as companions next to ECC's own selection, which they never change.
 // The host can then use ECC's skill and the user's other skills together. The
