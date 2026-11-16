@@ -784,6 +784,7 @@ async function createEccRuntime(input: {
    * because project marker files can appear after plugin init.
    */
   const onShellEnv = async (_input: { cwd: string }, output: { env: Record<string, string> }) => {
+    if (!output) return
     const env: Record<string, string> = {
       ECC_VERSION: getECCVersion(eccRoot),
       ECC_PLUGIN: "true",
@@ -888,9 +889,9 @@ async function createEccRuntime(input: {
   ) => {
     const eccContext = buildCompactionContext()
     // OpenCode requires output assignment and skips context when a prompt is set.
-    if (output.prompt !== undefined) {
+    if (output && output.prompt !== undefined) {
       output.prompt = [output.prompt, eccContext].join("\n\n")
-    } else {
+    } else if (output) {
       output.context = [...output.context, eccContext]
     }
   }
