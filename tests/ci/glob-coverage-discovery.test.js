@@ -5,8 +5,11 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
-const glob = require('glob');
-const rawGlob = require('glob/raw');
+const { createRequire } = require('node:module');
+const c8Require = createRequire(require.resolve('c8'));
+const testExcludeRequire = createRequire(c8Require.resolve('test-exclude'));
+const glob = testExcludeRequire('glob');
+const rawGlob = testExcludeRequire('glob/raw');
 
 function writeFixture(root) {
   fs.mkdirSync(path.join(root, 'scripts', 'nested'), { recursive: true });
