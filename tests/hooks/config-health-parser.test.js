@@ -14,6 +14,7 @@ const fs = require('fs');
 const path = require('path');
 
 const {
+  SCRIPT,
   PYTHON,
   test,
   makeFixture,
@@ -37,6 +38,47 @@ function runTests() {
   const t = (name, fn) => { total += 1; if (test(name, fn)) passed += 1; };
 
   // --- a blind spot nobody can see is not a health check -------------------
+
+  t('audit helpers return updated counts without changing caller-owned state', () => {
+    const fx = makeFixture();
+    writeSettings(fx.home, '{ malformed');
+    const source = String.raw`
+import copy
+import importlib.util
+import json
+import os
+import sys
+sys.path.insert(0, os.path.dirname(sys.argv[1]))
+spec = importlib.util.spec_from_file_location('config_health_contract', sys.argv[1])
+monitor = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(monitor)
+project, home = sys.argv[2:4]
+seed = {'bodies': 2, 'unreadable_names': ['existing']}
+before = copy.deepcopy(seed)
+settings = {'hooks': {'PreToolUse': [{'command': 'python3 -c "path = \'unused.js\'"'}]}}
+settings_before = copy.deepcopy(settings)
+findings, updated = monitor.audit_hook_wiring(settings, project, home, {}, seed)
+assert findings == [] and updated['bodies'] == 3
+assert seed == before and settings == settings_before
+assert updated is not seed
+parsed, unreadable, updated = monitor.read_settings(os.path.join(home, '.claude', 'settings.json'), seed, 'user')
+assert parsed is None and unreadable and updated['unreadable'] == 1
+assert updated['unreadable_names'] == ['existing', 'user']
+assert seed == before and updated['unreadable_names'] is not seed['unreadable_names']
+for audit in (monitor.audit_hook_settings, monitor.run_startup_audit, monitor.run_hook_wiring_audit):
+    result = audit(home, project, seed)
+    assert seed == before and result[-1] is not seed
+    assert result[-1]['unreadable'] == 1
+print(json.dumps({'unchanged': True, 'body_count': 3, 'unreadable_count': 1}))
+`;
+    const result = spawnSync(PYTHON, ['-c', source, SCRIPT, fx.proj, fx.home], {
+      encoding: 'utf8', env: { ...process.env, CLAUDE_CONFIG_DIR: '' },
+    });
+    assert.strictEqual(result.status, 0, result.stderr);
+    assert.deepStrictEqual(JSON.parse(result.stdout), {
+      unchanged: true, body_count: 3, unreadable_count: 1,
+    });
+  });
 
   t('--check reports how many hook paths it did not audit', () => {
     const fx = makeFixture();
@@ -110,6 +152,26 @@ function runTests() {
         `the real argument must survive the body, got: ${r.stdout.trim()}`);
       assert.ok(!r.stdout.includes('never-created.js'),
         `a string inside the body is not a file, got: ${r.stdout.trim()}`);
+    }
+  });
+
+  t('Python -c bodies are unjudged source while real following scripts remain audited', () => {
+    const fx = makeFixture();
+    for (const command of [
+      `python3 -c "path = 'unused.js'"; python3 .claude/scripts/real-missing.py`,
+      `python -u -c "path = 'unused.js'"; node .claude/scripts/real-missing.py`,
+      `py -c"path = 'unused.js'"; python3 .claude/scripts/real-missing.py`,
+    ]) {
+      writeSettings(fx.home, ONE_HOOK(command));
+      for (const mode of ['--startup', '--pretool', '--check']) {
+        const result = run(mode, fx);
+        const output = result.stdout + result.stderr;
+        assert.strictEqual(result.status, 0);
+        assert.ok(!output.includes('unused.js'), `Python body leaked a false path: ${output}`);
+        assert.ok(output.includes('real-missing.py'), `real script was not audited: ${output}`);
+        if (mode === '--check') assert.match(output, /1 interpreter program body/);
+        if (mode === '--pretool') assert.strictEqual(result.stdout, '');
+      }
     }
   });
 

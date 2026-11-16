@@ -356,9 +356,24 @@ if (process.platform === 'win32') {
       ].join('\r\n'), 'utf8');
 
       const invocation = hook.getLinterInvocation(command, ['100% ready.js', '!important!.js'], 'win32');
+      // The fixture runs only cmd built-ins. Do not inherit unrelated launcher
+      // variables or helper environments from other cases into this process.
+      const tokens = {
+        ECC_LINTER_TOKEN_0: command,
+        ECC_LINTER_TOKEN_1: '100% ready.js',
+        ECC_LINTER_TOKEN_2: '!important!.js'
+      };
+      for (const [name, value] of Object.entries(tokens)) {
+        assert.strictEqual(invocation.options.env[name], value);
+      }
       const result = spawnSync('cmd.exe', invocation.args, {
-        ...invocation.options,
-        cwd: repoDir
+        encoding: 'utf8',
+        stdio: ['pipe', 'pipe', 'pipe'],
+        shell: false,
+        windowsVerbatimArguments: true,
+        timeout: 15000,
+        cwd: repoDir,
+        env: tokens
       });
 
       assert.strictEqual(result.status, 0, result.stderr || result.error?.message);

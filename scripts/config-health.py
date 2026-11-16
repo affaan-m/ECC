@@ -150,86 +150,76 @@ def iter_hook_commands(settings):
                 yield event, group['command']
 
 
-def audit_hook_wiring(settings, project_dir, user_home, env, stats=None):
-    """Verify every script referenced by a hook command exists on disk.
+def _updated_counts(stats, **deltas):
+    """Return fresh counts without changing the caller's dictionary."""
+    return {**stats, **{key: stats.get(key, 0) + value
+                       for key, value in deltas.items() if value}}
 
-    A referenced-but-missing script is a fact, not a heuristic — this is the
-    core deterministic check. Never prints the full command (may hold secrets);
-    only the missing path is reported.
 
-    Anything this monitor declines to judge is counted in `stats` so `--check`
-    can show it: a token carrying a placeholder we cannot resolve, a
-    single-quoted one, a substituted path outside the audited roots, a command
-    that could not be parsed at all, and a relative path satisfied only by a
-    root other than the project. Silence is the right verdict for all of them —
-    claiming a script is missing when the real problem is that we could not
-    parse the command is what produces a false-warning flood, and a monitor
-    whose WARN line is always red trains users to ignore it. Silence that is
-    also invisible is not a verdict at all, which is what the counts are for.
+def _command_counts(stats, unparsed, bodies, too_deep):
+    """Count each reason a command was only partially audited."""
+    return _updated_counts(
+        stats, bodies=bodies, skipped=int(unparsed) + int(too_deep),
+        unparsed=int(unparsed), too_deep=int(too_deep),
+    )
 
-    Args:
-        settings (`dict`): A parsed settings.json.
-        project_dir (`str`): Absolute project directory.
-        user_home (`str`): Absolute user home directory.
-        env (`dict`): Supported placeholder replacements.
-        stats (`dict`): Optional counter dictionary, incremented in place.
 
-    Returns:
-        `list[str]`: One finding per missing script.
-    """
+def _audit_hook_tokens(event, tokens, context, seen, stats):
+    """Resolve and deduplicate tokens, returning findings and fresh counts."""
     findings = []
-    seen = set()
-    roots = audit_roots(project_dir, user_home, env)
-    project_norm = _normalize(project_dir)
+    for token, single_quoted in tokens:
+        paths, status, relative = resolve_script_path(
+            token, context['project_dir'], context['user_home'], context['env'],
+            context['roots'], single_quoted,
+        )
+        # Identity uses the judged path, rather than its placeholder spelling.
+        key = (event, _dedupe_key(status, paths, token))
+        if key in seen:
+            continue
+        seen = seen | {key}
+        if status == AUDIT_SKIP:
+            stats = _updated_counts(stats, skipped=1)
+            continue
+        if status == AUDIT_OK and relative \
+                and _normalize(paths[0]) != context['project_norm']:
+            stats = _updated_counts(stats, other_root=1)
+        if status == AUDIT_MISSING:
+            findings = findings + [
+                f'hook "{event}" references missing script: {_clip(token)}'
+            ]
+    return findings, seen, stats
+
+
+def audit_hook_wiring(settings, project_dir, user_home, env, stats=None):
+    """Return (missing-script findings, updated counts), preserving inputs.
+
+    Unparseable commands and unresolvable paths are counted, never guessed.
+    Relative paths are checked against every audited root; a path found only
+    outside the project is healthy but disclosed in the returned counts.
+    """
+    findings, seen = [], set()
+    stats = dict(stats or {})
+    context = {
+        'project_dir': project_dir, 'user_home': user_home, 'env': env,
+        'roots': audit_roots(project_dir, user_home, env),
+        'project_norm': _normalize(project_dir),
+    }
     for event, command in iter_hook_commands(settings):
         tokens, unparsed, bodies, too_deep = scan_command(command)
-        if stats is not None:
-            if bodies:
-                stats['bodies'] = stats.get('bodies', 0) + bodies
-            if too_deep:
-                stats['skipped'] = stats.get('skipped', 0) + 1
-                stats['too_deep'] = stats.get('too_deep', 0) + 1
+        stats = _command_counts(stats, unparsed, bodies, too_deep)
         if unparsed:
-            if stats is not None:
-                stats['skipped'] = stats.get('skipped', 0) + 1
-                stats['unparsed'] = stats.get('unparsed', 0) + 1
             continue
-        for token, single_quoted in tokens:
-            paths, status, relative = resolve_script_path(
-                token, project_dir, user_home, env, roots, single_quoted,
-            )
-            # Dedupe on the path we judged, not on the spelling: one missing
-            # file referenced as both ${ROOT}/x.py and $ROOT/x.py is one
-            # problem, and the two spellings are what a settings file drifts
-            # into when a hook block is rewritten.
-            key = (event, _dedupe_key(status, paths, token))
-            if key in seen:
-                continue
-            seen.add(key)
-            if status == AUDIT_SKIP:
-                if stats is not None:
-                    stats['skipped'] = stats.get('skipped', 0) + 1
-                continue
-            if status == AUDIT_OK and relative and stats is not None \
-                    and _normalize(paths[0]) != project_norm:
-                # A relative path satisfied only by a root other than the
-                # project. Judged healthy, but a project-scoped hook that is
-                # genuinely broken looks exactly like this, so the count is
-                # what keeps the trade visible.
-                stats['other_root'] = stats.get('other_root', 0) + 1
-            if status == AUDIT_MISSING:
-                findings.append(
-                    'hook "%s" references missing script: %s'
-                    % (event, _clip(token))
-                )
-    return findings
+        added, seen, stats = _audit_hook_tokens(
+            event, tokens, context, seen, stats)
+        findings = findings + added
+    return findings, stats
 
 
 def _clip(token):
     """A path short enough to read, never a whole hook command."""
     if len(token) <= MAX_REPORTED_PATH:
         return token
-    return token[:MAX_REPORTED_PATH] + '... (%d chars total)' % len(token)
+    return token[:MAX_REPORTED_PATH] + f'... ({len(token)} chars total)'
 
 
 def _dedupe_key(status, paths, raw):
@@ -323,21 +313,22 @@ def read_settings(path, stats=None, label='settings'):
     first of those is health.
 
     Returns:
-        `tuple[dict | None, bool]`: The parsed settings, and whether the file
-            existed but could not be parsed.
+        `tuple[dict | None, bool, dict]`: Parsed settings, whether the file
+            existed but could not be parsed, and updated counts. Inputs stay unchanged.
     """
+    stats = dict(stats or {})
     if not os.path.exists(path):
-        return None, False
+        return None, False, stats
     parsed = read_json(path)
     # Readable JSON that is not a settings object is the same failure as
     # unparseable JSON: there are hooks in there we cannot see.
     if parsed is None or not isinstance(parsed, dict) \
             or ('hooks' in parsed and not isinstance(parsed['hooks'], dict)):
-        if stats is not None:
-            stats['unreadable'] = stats.get('unreadable', 0) + 1
-            stats['unreadable_names'] = stats.get('unreadable_names', []) + [label]
-        return None, True
-    return parsed, False
+        counts = _updated_counts(stats, unreadable=1)
+        counts = {**counts, 'unreadable_names':
+                  stats.get('unreadable_names', []) + [label]}
+        return None, True, counts
+    return parsed, False, stats
 
 
 def hook_sources(user_home, project_dir, env):
@@ -376,44 +367,46 @@ def audit_hook_settings(user_home, project_dir, stats=None):
     """Run the hook-wiring audit over every hook source.
 
     Returns:
-        `tuple[dict, list[str]]`: The placeholder environment, and findings.
+        `tuple[dict, list[str], dict]`: Placeholder environment, findings,
+            and updated counts. Caller-owned inputs are preserved.
     """
     env = placeholder_env(project_dir, user_home)
     findings = []
+    stats = dict(stats or {})
     claude_dir = claude_data_dir(user_home)
     # Each source may be absent or malformed — each is handled independently
     # and never blocks. A malformed file yields no findings (nothing to audit)
     # and is counted, rather than a crash or a silent clean verdict.
     for label, path in hook_sources(user_home, project_dir, env):
-        settings, _ = read_settings(path, stats, label)
+        settings, _, stats = read_settings(path, stats, label)
         if settings is not None:
-            findings.extend(
-                audit_hook_wiring(settings, project_dir, user_home, env, stats)
-            )
-    if stats is not None and env.get(PLUGIN_ROOT_ENV):
-        stats['plugin_root'] = env[PLUGIN_ROOT_ENV]
-    if stats is not None and os.environ.get('CLAUDE_CONFIG_DIR'):
-        stats['claude_dir'] = claude_dir
-    return env, findings
+            added, stats = audit_hook_wiring(
+                settings, project_dir, user_home, env, stats)
+            findings = findings + added
+    if env.get(PLUGIN_ROOT_ENV):
+        stats = {**stats, 'plugin_root': env[PLUGIN_ROOT_ENV]}
+    if os.environ.get('CLAUDE_CONFIG_DIR'):
+        stats = {**stats, 'claude_dir': claude_dir}
+    return env, findings, stats
 
 
 def run_startup_audit(user_home, project_dir, stats=None):
-    """SessionStart audit: hook wiring + rule references + guard staleness."""
+    """Return startup findings and counts without changing caller inputs."""
     claude_dir = claude_data_dir(user_home)
-    _, findings = audit_hook_settings(user_home, project_dir, stats)
-    findings.extend(audit_rule_references(project_dir))
-    findings.extend(audit_guard_staleness(claude_dir))
-    return findings
+    _, findings, stats = audit_hook_settings(user_home, project_dir, stats)
+    findings = findings + audit_rule_references(project_dir)
+    return findings + audit_guard_staleness(claude_dir), stats
 
 
 def run_hook_wiring_audit(user_home, project_dir, stats=None):
-    """Just the hook-wiring half of the audit — the PreToolUse path."""
-    return audit_hook_settings(user_home, project_dir, stats)[1]
+    """Return hook-wiring findings and updated counts for PreToolUse."""
+    _, findings, counts = audit_hook_settings(user_home, project_dir, stats)
+    return findings, counts
 
 
 def startup_mode():
     user_home, project_dir = resolve_dirs()
-    findings = run_startup_audit(user_home, project_dir)
+    findings, _ = run_startup_audit(user_home, project_dir)
     for finding in findings:
         print(WARN_PREFIX + finding)
     # Non-blocking by contract: never gate on process monitoring.
@@ -443,7 +436,7 @@ def pretool_mode():
     drain_stdin()
 
     user_home, project_dir = resolve_dirs()
-    findings = run_hook_wiring_audit(user_home, project_dir)
+    findings, _ = run_hook_wiring_audit(user_home, project_dir)
 
     # PreToolUse keeps stdout clean — warnings go to stderr so a non-empty
     # stdout can never be misread as a block/allow decision.
@@ -455,8 +448,7 @@ def pretool_mode():
 def check_mode():
     """Manual tri-color overview. Read-only."""
     user_home, project_dir = resolve_dirs()
-    stats = {}
-    findings = run_startup_audit(user_home, project_dir, stats)
+    findings, stats = run_startup_audit(user_home, project_dir)
     unreadable = stats.get('unreadable', 0)
     if findings:
         print('config-health: [warn] attention')
@@ -480,38 +472,38 @@ def _print_audit_counts(stats):
     # is invisible cannot be fixed. Printed here only, never per tool call.
     skipped = stats.get('skipped', 0)
     if skipped:
-        print('config-health: [info] {} hook path(s) not audited — unresolved '
+        print(f'config-health: [info] {skipped} hook path(s) not audited — unresolved '
               'or single-quoted placeholder, a substituted path outside the '
               'audited roots, or a command that could not be parsed'
-              .format(skipped))
+              )
     unparsed = stats.get('unparsed', 0)
     if unparsed:
-        print('config-health: [info] {} hook command(s) have an unclosed quote '
-              'and were not parsed at all'.format(unparsed))
+        print(f'config-health: [info] {unparsed} hook command(s) have an unclosed quote '
+              'and were not parsed at all')
     unreadable = stats.get('unreadable', 0)
     if unreadable:
         names = ', '.join(stats.get('unreadable_names', []))
-        print('config-health: [warn] {} settings file(s) could not be read '
-              '({}) — malformed JSON, a read error, or not an object. Their '
+        print(f'config-health: [warn] {unreadable} settings file(s) could not be read '
+              f'({names}) — malformed JSON, a read error, or not an object. Their '
               'hooks were NOT audited; nothing below is a verdict about them.'
-              .format(unreadable, names))
+              )
     too_deep = stats.get('too_deep', 0)
     if too_deep:
-        print('config-health: [info] {} hook command(s) nested sh -c deeper '
-              'than {} levels; the rest was still audited'
-              .format(too_deep, MAX_PAYLOAD_DEPTH))
+        print(f'config-health: [info] {too_deep} hook command(s) nested sh -c deeper '
+              f'than {MAX_PAYLOAD_DEPTH} levels; the rest was still audited'
+              )
     bodies = stats.get('bodies', 0)
     if bodies:
-        print('config-health: [info] {} interpreter program body/bodies were '
+        print(f'config-health: [info] {bodies} interpreter program body/bodies were '
               'skipped unjudged — a node -e or python -c body is source in '
               'another language, so a file named inside one is not checked'
-              .format(bodies))
+              )
     other_root = stats.get('other_root', 0)
     if other_root:
-        print('config-health: [info] {} relative hook path(s) were satisfied '
+        print(f'config-health: [info] {other_root} relative hook path(s) were satisfied '
               'by the user home or plugin root, not the project — a broken '
               'project-scoped hook is indistinguishable from a healthy '
-              'plugin one here'.format(other_root))
+              'plugin one here')
     claude_dir = stats.get('claude_dir')
     if claude_dir:
         # Name the non-default root so a settings file the harness is not

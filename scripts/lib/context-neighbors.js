@@ -78,14 +78,43 @@ function normalizeNeighbors(value) {
   return { neighbors, neighborsDigest };
 }
 
+// Provider skill directories may legitimately be symlinks. Resolve that
+// mapping once, then bind type/size checks and all reads to one open file.
+// A raced FIFO must not block opening, and a newly substituted final symlink
+// must not be followed where the platform supports O_NOFOLLOW.
+function readBoundedBytes(file, maxBytes) {
+  const canonical = fs.realpathSync(file);
+  const flags = fs.constants.O_RDONLY | (fs.constants.O_NOFOLLOW || 0) | (fs.constants.O_NONBLOCK || 0);
+  const fd = fs.openSync(canonical, flags);
+  try {
+    const before = fs.fstatSync(fd, { bigint: true });
+    if (!before.isFile() || before.size > BigInt(maxBytes)) {
+      throw new Error(`Neighbor file must be a regular file of at most ${maxBytes} bytes`);
+    }
+    const bytes = Buffer.alloc(Number(before.size) + 1);
+    let length = 0;
+    while (length < bytes.length) {
+      const count = fs.readSync(fd, bytes, length, Math.min(64 * 1024, bytes.length - length), null);
+      if (count === 0) break;
+      length += count;
+    }
+    const after = fs.fstatSync(fd, { bigint: true });
+    const sameFile = stat => stat.isFile() && stat.dev === before.dev && stat.ino === before.ino
+      && stat.size === before.size && stat.mtimeNs === before.mtimeNs && stat.ctimeNs === before.ctimeNs;
+    if (length > maxBytes || BigInt(length) !== before.size || !sameFile(after)
+      || fs.realpathSync(file) !== canonical || !sameFile(fs.statSync(canonical, { bigint: true }))) {
+      throw new Error('Neighbor file changed while reading');
+    }
+    return bytes.subarray(0, length);
+  } finally {
+    fs.closeSync(fd);
+  }
+}
+
 /** Read and validate a neighbor snapshot file written by discovery or by hand. */
 function readNeighborSnapshot(file) {
   const absolute = path.resolve(file);
-  const stat = fs.statSync(absolute);
-  if (!stat.isFile() || stat.size > MAX_SNAPSHOT_BYTES) {
-    throw new Error(`Neighbor snapshot must be a file of at most ${MAX_SNAPSHOT_BYTES} bytes`);
-  }
-  const bytes = fs.readFileSync(absolute);
+  const bytes = readBoundedBytes(absolute, MAX_SNAPSHOT_BYTES);
   const text = bytes.toString('utf8');
   if (!Buffer.from(text).equals(bytes) || text.includes('\0')) throw new Error('Neighbor snapshot must be UTF-8 JSON without NUL');
   let value;
@@ -156,18 +185,14 @@ function rankCompanions(index, query, neighbors, { minBm25, minTerms, minAnchorT
 
 function readBoundedJson(file) {
   try {
-    const stat = fs.statSync(file);
-    if (!stat.isFile() || stat.size > MAX_JSON_BYTES) return null;
-    return JSON.parse(fs.readFileSync(file, 'utf8'));
+    return JSON.parse(readBoundedBytes(file, MAX_JSON_BYTES).toString('utf8'));
   } catch {
     return null;
   }
 }
 
 function frontmatter(file) {
-  const stat = fs.statSync(file);
-  if (!stat.isFile() || stat.size > MAX_SKILL_FILE_BYTES) return null;
-  const text = fs.readFileSync(file, 'utf8');
+  const text = readBoundedBytes(file, MAX_SKILL_FILE_BYTES).toString('utf8');
   const match = /^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/.exec(text.charCodeAt(0) === 0xfeff ? text.slice(1) : text);
   // Only name and description are needed; a frontmatter block this large is
   // not a skill header, so it is skipped before YAML parsing.
@@ -218,9 +243,11 @@ const comparable = text => String(text || '').trim().replace(/\s+/g, ' ');
 // (unreadable or incomplete) skill, or no SKILL.md at all.
 function readSkillSummary(directory, eccCopies) {
   const file = path.join(directory, 'SKILL.md');
-  if (!fs.existsSync(file)) return { kind: 'missing' };
   let meta;
-  try { meta = frontmatter(file); } catch { meta = null; }
+  try { meta = frontmatter(file); } catch (error) {
+    if (error.code === 'ENOENT') return { kind: 'missing' };
+    meta = null;
+  }
   const name = meta && typeof meta.name === 'string' && meta.name.trim() ? meta.name.trim() : path.basename(directory);
   const description = meta && typeof meta.description === 'string' ? comparable(meta.description) : '';
   if (!description || Buffer.byteLength(name) > MAX_NAME_BYTES || CONTROL.test(name) || CONTROL.test(description)) {

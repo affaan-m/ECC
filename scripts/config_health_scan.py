@@ -103,7 +103,7 @@ def _is_interpreter(word):
     return name in INTERPRETERS
 
 
-def _is_program_flag(word, shell):
+def _is_program_flag(word, interpreter):
     """Whether `word` is an option whose next word is a program body.
 
     Covers the long spellings, the plain short ones, and the bundled short
@@ -114,11 +114,14 @@ def _is_program_flag(word, shell):
     warning: `sh -e script.sh` is errexit, not a program body, so treating `-e`
     as one hides the script the shell will run.
     """
+    name = interpreter.replace('\\', '/').rsplit('/', 1)[-1].lower()
+    shell = name in SHELL_INTERPRETERS
+    python = name in ('python', 'python3', 'pythonw', 'py')
     if word in PROGRAM_FLAG_LONG:
-        return True
+        return (shell and word == '--command') or (not shell and not python and word == '--eval')
     if word.startswith('--') or not word.startswith('-') or len(word) < 2:
         return False
-    wanted = 'c' if shell else 'e'
+    wanted = 'c' if shell or python else 'e'
     return wanted in word[1:]
 
 
@@ -147,28 +150,19 @@ def scan_command(command, depth=0):
     words = _split_shell_words(command)
     if words is None:
         return [], True, 0, False
-    tokens = []
-    bodies = 0
-    too_deep = False
-    index = 0
-    interpreter = None
-    option_arg = False
+    tokens, bodies, too_deep = [], 0, False
+    index, interpreter, option_arg = 0, None, False
     while index < len(words):
         word, quoted, single = words[index]
-        # A separator only separates when the shell can see it. Inside quotes
-        # it is part of the name, and `python3 "weird;name.py"` is a file.
         if not quoted and _is_separator(word):
-            interpreter = None
-            option_arg = False
+            interpreter, option_arg = None, False
             index += 1
             continue
         if _is_interpreter(word):
-            interpreter = word
-            option_arg = False
+            interpreter, option_arg = word, False
             index += 1
             continue
-        if interpreter and _is_program_flag(
-                word, _is_shell_interpreter(interpreter)):
+        if interpreter and _is_program_flag(word, interpreter):
             (index, added, stop, unparsed,
              deep, reset) = _scan_program_body(
                  interpreter, quoted, words, index, depth, tokens)
@@ -179,7 +173,6 @@ def scan_command(command, depth=0):
                 return tokens, unparsed, bodies, too_deep
             continue
         if interpreter and word.startswith('-') and len(word) > 1:
-            # An interpreter option; some take the next word as their value.
             option_arg = not quoted and word in OPTION_TAKES_NEXT_WORD
             index += 1
             continue

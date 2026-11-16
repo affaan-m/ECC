@@ -471,3 +471,164 @@ test('the shipped registry keeps ECC\'s selection and lists the matching install
       companions, query);
   }
 });
+
+// Swap/grow the checked file at a deterministic metadata/read boundary. Track
+// both path and descriptor metadata so this reproduces the original path race
+// as well as exercising the repaired descriptor reader.
+function withMetadataRace(file, mutate, action) {
+  const canonical = fs.realpathSync(file);
+  const original = { openSync: fs.openSync, statSync: fs.statSync, fstatSync: fs.fstatSync };
+  const descriptors = new Set();
+  let changed = false;
+  const change = () => { if (!changed) { changed = true; mutate(); } };
+  fs.openSync = function (target, ...args) {
+    const fd = original.openSync.call(fs, target, ...args);
+    if (target === canonical) descriptors.add(fd);
+    return fd;
+  };
+  fs.statSync = function (target, ...args) {
+    const result = original.statSync.call(fs, target, ...args);
+    if (target === canonical) change();
+    return result;
+  };
+  fs.fstatSync = function (fd, ...args) {
+    const result = original.fstatSync.call(fs, fd, ...args);
+    if (descriptors.has(fd)) change();
+    return result;
+  };
+  try { action(); assert.equal(changed, true, 'the fixture exercised the metadata race'); }
+  finally { Object.assign(fs, original); }
+}
+
+test('snapshot rejects pathname replacement after validation instead of reading the replacement', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-neighbor-race-'));
+  try {
+    const file = path.join(dir, 'neighbors.json');
+    fs.writeFileSync(file, JSON.stringify([userSkill]));
+    withMetadataRace(file, () => {
+      fs.renameSync(file, `${file}.original`);
+      fs.writeFileSync(file, JSON.stringify([{ ...userSkill, name: 'replacement' }]));
+    }, () => assert.throws(() => readNeighborSnapshot(file), /changed while reading/));
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+test('snapshot enforces its byte ceiling when a checked file grows before reading', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-neighbor-growth-'));
+  try {
+    const file = path.join(dir, 'neighbors.json');
+    fs.writeFileSync(file, JSON.stringify([userSkill]));
+    withMetadataRace(file, () => fs.appendFileSync(file, ' '.repeat(4 * 1024 * 1024)),
+      () => assert.throws(() => readNeighborSnapshot(file), /changed while reading/));
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+test('discovery skips plugin configuration that grows beyond its bound after validation', () => withFixture(repoRoot => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-neighbor-config-race-'));
+  try {
+    const config = path.join(home, '.claude');
+    const plugin = path.join(home, 'plugin');
+    skill(plugin, 'skills/extra', 'extra', 'Plugin configuration must be bounded.');
+    write(config, 'plugins/installed_plugins.json', JSON.stringify({ plugins: {
+      'extra@market': [{ scope: 'user', installPath: plugin }] } }));
+    write(config, 'settings.json', '{}');
+    const file = path.join(config, 'settings.json');
+    withMetadataRace(file, () => fs.writeFileSync(file,
+      JSON.stringify({ enabledPlugins: { 'extra@market': true } }) + ' '.repeat(1024 * 1024)),
+    () => assert.deepEqual(discoverNeighborSkills({ repoRoot, target: 'claude', env: {}, home }).neighbors, []));
+  } finally { fs.rmSync(home, { recursive: true, force: true }); }
+}));
+
+test('discovery skips skill frontmatter whose file grows beyond its bound after validation', () => withFixture(repoRoot => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-neighbor-skill-race-'));
+  try {
+    const root = path.join(home, '.codex');
+    skill(root, 'skills/growing', 'growing', 'The header looks valid but its file changes.');
+    const file = path.join(root, 'skills/growing/SKILL.md');
+    withMetadataRace(file, () => fs.appendFileSync(file, 'x'.repeat(256 * 1024)), () => {
+      const result = discoverNeighborSkills({ repoRoot, target: 'codex', env: {}, home });
+      assert.deepEqual(result.neighbors, []);
+      assert.equal(result.skipped, 1);
+    });
+  } finally { fs.rmSync(home, { recursive: true, force: true }); }
+}));
+
+test('descriptor reads retain legitimate provider skill and snapshot symlinks', t => withFixture(repoRoot => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-neighbor-links-'));
+  try {
+    const root = path.join(home, '.codex');
+    const linked = path.join(home, 'shared');
+    skill(linked, 'linked-skill', 'linked-skill', 'A legitimate separately managed provider skill.');
+    fs.mkdirSync(path.join(root, 'skills'), { recursive: true });
+    try { fs.symlinkSync(path.join(linked, 'linked-skill'), path.join(root, 'skills/linked-skill'), 'dir'); }
+    catch (error) {
+      if (process.platform === 'win32' && ['EPERM', 'EACCES', 'ENOTSUP'].includes(error.code)) {
+        t.skip('host does not permit symlink creation'); return;
+      }
+      throw error;
+    }
+    const result = discoverNeighborSkills({ repoRoot, target: 'codex', env: {}, home });
+    assert.deepEqual(result.neighbors.map(item => item.name), ['linked-skill']);
+    const snapshot = path.join(home, 'neighbors.json');
+    fs.writeFileSync(snapshot, JSON.stringify([userSkill]));
+    const alias = path.join(home, 'neighbors-link.json');
+    fs.symlinkSync(snapshot, alias, 'file');
+    assert.deepEqual(readNeighborSnapshot(alias).neighbors, normalizeNeighbors([userSkill]).neighbors);
+  } finally { fs.rmSync(home, { recursive: true, force: true }); }
+}));
+
+test('snapshot rejects non-regular files before reading their content', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-neighbor-type-'));
+  try {
+    assert.throws(() => readNeighborSnapshot(dir), /regular file|EISDIR|EPERM/);
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+test('snapshot closes its descriptor on a read error and handles short reads', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-neighbor-fd-'));
+  const file = path.join(dir, 'neighbors.json');
+  fs.writeFileSync(file, JSON.stringify([userSkill]));
+  const canonical = fs.realpathSync(file);
+  const original = { openSync: fs.openSync, readSync: fs.readSync, closeSync: fs.closeSync };
+  let selected;
+  let closed = false;
+  let failRead = true;
+  fs.openSync = function (target, ...args) {
+    const fd = original.openSync.call(fs, target, ...args);
+    if (target === canonical) { selected = fd; closed = false; }
+    return fd;
+  };
+  fs.readSync = function (fd, buffer, offset, length, position) {
+    if (fd === selected && failRead) throw Object.assign(new Error('injected read failure'), { code: 'EIO' });
+    return original.readSync.call(fs, fd, buffer, offset, fd === selected ? Math.min(length, 3) : length, position);
+  };
+  fs.closeSync = function (fd) {
+    if (fd === selected) closed = true;
+    return original.closeSync.call(fs, fd);
+  };
+  try {
+    assert.throws(() => readNeighborSnapshot(file), /injected read failure/);
+    assert.equal(closed, true, 'the failing reader closes its descriptor');
+    failRead = false;
+    assert.deepEqual(readNeighborSnapshot(file).neighbors, normalizeNeighbors([userSkill]).neighbors);
+    assert.equal(closed, true, 'short reads reach EOF and close the descriptor');
+  } finally { Object.assign(fs, original); fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+test('opening a non-regular FIFO cannot hang snapshot discovery', t => {
+  if (process.platform === 'win32') { t.skip('POSIX FIFO fixture'); return; }
+  const { spawnSync } = require('node:child_process');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-neighbor-fifo-'));
+  try {
+    const fifo = path.join(dir, 'neighbors.pipe');
+    const created = spawnSync('mkfifo', [fifo], { encoding: 'utf8', timeout: 2000 });
+    assert.equal(created.status, 0, created.stderr);
+    const result = spawnSync(process.execPath, ['-e', [
+      'const { readNeighborSnapshot } = require(process.argv[1]);',
+      'try { readNeighborSnapshot(process.argv[2]); process.exitCode = 1; }',
+      'catch (error) { process.stdout.write(error.message); }'
+    ].join('\n'), require.resolve('../../scripts/lib/context-neighbors'), fifo],
+    { encoding: 'utf8', timeout: 2000 });
+    assert.equal(result.status, 0, String(result.error || result.stderr));
+    assert.match(result.stdout, /regular file/);
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});

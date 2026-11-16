@@ -2,7 +2,6 @@
 
 import re
 
-
 WARN_PREFIX = '[config-health] WARN: '
 
 # Sessions of rule-health history to look back for guard staleness.
@@ -44,7 +43,7 @@ PLACEHOLDER_RE = re.compile(r'\$\{?([A-Za-z_][A-Za-z0-9_]*)\}?')
 # Interpreters whose -e / -c argument is a program body rather than a script
 # path. The two kinds of payload are not the same thing:
 #   - a shell's -c payload is a command line, so it is scanned again as one
-#   - a node/python -e payload is source in another language, where a string
+#   - a node -e or python -c payload is source in another language, where a string
 #     is a string: p.join(r,'scripts/hooks/x.js') is assembled at runtime and
 #     is not a file the shell will open
 SHELL_INTERPRETERS = frozenset(('sh', 'bash', 'zsh'))
