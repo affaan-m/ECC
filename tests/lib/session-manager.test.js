@@ -86,6 +86,84 @@ function runTests() {
     assert.strictEqual(result.shortId, 'abc');
   })) passed++; else failed++;
 
+  if (test('keeps blank-separated tasks and note paragraphs inside their sections', () => {
+    for (const newline of ['\n', '\r\n']) {
+      const content = [
+        '### Completed', '- [x] First task', '', '- [x] Second task', '',
+        '### In Progress', '- [ ] First pending task', '', '- [ ] Second pending task', '',
+        '### Notes for Next Session', 'Read the new logs.', '',
+        'The literal ### marker belongs to this paragraph.', '',
+        '#### Details', 'Keep this nested note.', '',
+        '### Context to Load', 'Do not copy this into notes.',
+      ].join(newline);
+      const meta = sessionManager.parseSessionMetadata(content);
+      assert.deepStrictEqual(meta.completed, ['First task', 'Second task']);
+      assert.deepStrictEqual(meta.inProgress, ['First pending task', 'Second pending task']);
+      assert.strictEqual(meta.notes, [
+        'Read the new logs.', '', 'The literal ### marker belongs to this paragraph.', '',
+        '#### Details', 'Keep this nested note.',
+      ].join(newline));
+      const stats = sessionManager.getSessionStats(content);
+      assert.strictEqual(stats.totalItems, 4);
+      assert.strictEqual(stats.completedItems, 2);
+    }
+  })) passed++; else failed++;
+
+  if (test('stops session sections at a higher-level heading', () => {
+    const meta = sessionManager.parseSessionMetadata([
+      '### Completed', '- [x] Completed task', '',
+      '## Archived Tasks', '- [x] Unrelated archived task', '',
+      '### Notes for Next Session', 'Current note.', '',
+      '# Another Document', 'Unrelated note.',
+    ].join('\n'));
+    assert.deepStrictEqual(meta.completed, ['Completed task']);
+    assert.strictEqual(meta.notes, 'Current note.');
+  })) passed++; else failed++;
+
+  if (test('empty session sections stop at immediately following headings', () => {
+    for (const newline of ['\n', '\r\n']) {
+      for (const [heading, field, outside, expected] of [
+        ['Completed', 'completed', '- [x] Outside completed task', []],
+        ['In Progress', 'inProgress', '- [ ] Outside pending task', []],
+        ['Notes for Next Session', 'notes', 'Outside note', '']
+      ]) {
+        const content = [`### ${heading}`, '### Other Section', outside].join(newline);
+        assert.deepStrictEqual(sessionManager.parseSessionMetadata(content)[field], expected,
+          `${heading} must remain empty with ${JSON.stringify(newline)} endings`);
+      }
+    }
+  })) passed++; else failed++;
+
+  if (test('recognizes up to three leading spaces on session and boundary headings', () => {
+    for (const newline of ['\n', '\r\n']) {
+      for (const spaces of [1, 2, 3]) {
+        const indent = ' '.repeat(spaces);
+        const content = [
+          `${indent}### Completed`, '- [x] First task', '', '- [x] Second task',
+          `${indent}## Archive`, '- [x] Outside completed task',
+          `${indent}### In Progress`, '- [ ] Pending task',
+          `${indent}### Other Tasks`, '- [ ] Outside pending task',
+          `${indent}### Notes for Next Session`, 'First paragraph.', '',
+          `${indent}#### Detail`, 'Second paragraph with ### inline.',
+          `${indent}# Another Document`, 'Outside note'
+        ].join(newline);
+        const meta = sessionManager.parseSessionMetadata(content);
+        assert.deepStrictEqual(meta.completed, ['First task', 'Second task']);
+        assert.deepStrictEqual(meta.inProgress, ['Pending task']);
+        assert.strictEqual(meta.notes, ['First paragraph.', '', `${indent}#### Detail`,
+          'Second paragraph with ### inline.'].join(newline));
+        for (const [heading, field, expected] of [
+          ['Completed', 'completed', []], ['In Progress', 'inProgress', []],
+          ['Notes for Next Session', 'notes', '']
+        ]) {
+          const empty = [`${indent}### ${heading}`, `${indent}### Other`,
+            '- [x] Outside task', '- [ ] Outside task', 'Outside note'].join(newline);
+          assert.deepStrictEqual(sessionManager.parseSessionMetadata(empty)[field], expected);
+        }
+      }
+    }
+  })) passed++; else failed++;
+
   // parseSessionMetadata tests
   console.log('\nparseSessionMetadata:');
 
@@ -1734,26 +1812,12 @@ src/main.ts
       'null path should be caught by try/catch and return false');
   })) passed++; else failed++;
 
-  // ── Round 100: parseSessionMetadata with ### inside item text (premature section termination) ──
-  console.log('\nRound 100: parseSessionMetadata (### in item text — lazy regex truncation):');
-  if (test('parseSessionMetadata truncates item text at embedded ### due to lazy regex lookahead', () => {
-    const content = `# Session
-
-### Completed
-- [x] Fix issue ### with parser
-- [x] Normal task
-
-### In Progress
-- [ ] Debug output
-`;
-    const meta = sessionManager.parseSessionMetadata(content);
-    // The lazy regex ([\s\S]*?)(?=###|\n\n|$) terminates at the first ###
-    // So the Completed section captures only "- [x] Fix issue " (before the inner ###)
-    // The second item "- [x] Normal task" is lost because it's after the inner ###
-    assert.strictEqual(meta.completed.length, 1,
-      'Only 1 item extracted — second item is after the inner ### terminator');
-    assert.strictEqual(meta.completed[0], 'Fix issue',
-      'Item text truncated at embedded ### (lazy regex stops at first ### match)');
+  if (test('keeps inline heading markers inside completed item text', () => {
+    const meta = sessionManager.parseSessionMetadata([
+      '### Completed', '- [x] Fix issue ### with parser', '- [x] Normal task',
+      '### In Progress', '- [ ] Debug output',
+    ].join('\n'));
+    assert.deepStrictEqual(meta.completed, ['Fix issue ### with parser', 'Normal task']);
   })) passed++; else failed++;
 
   // ── Round 101: getSessionStats with non-string input (number) throws TypeError ──
@@ -1845,26 +1909,11 @@ file.ts
       'hasContext should be true (context section has actual content)');
   })) passed++; else failed++;
 
-  // ── Round 105: parseSessionMetadata blank-line boundary truncates section items ──
-  console.log('\nRound 105: parseSessionMetadata (blank line inside section — regex stops at \\n\\n):');
-
-  if (test('parseSessionMetadata drops completed items after a blank line within the section', () => {
-    // session-manager.js line 119: regex `(?=###|\n\n|$)` uses lazy [\s\S]*? with
-    // a lookahead that stops at the first \n\n. If completed items are separated
-    // by a blank line, items below the blank line are silently lost.
+  if (test('keeps completed items separated by blank lines', () => {
     const content = '# Session\n\n### Completed\n- [x] Task A\n\n- [x] Task B\n\n### In Progress\n- [ ] Task C\n';
     const meta = sessionManager.parseSessionMetadata(content);
-    // The regex captures "- [x] Task A\n" then hits \n\n and stops.
-    // "- [x] Task B" is between the two sections but outside both regex captures.
-    assert.strictEqual(meta.completed.length, 1,
-      'Only Task A captured — blank line terminates the section regex before Task B');
-    assert.strictEqual(meta.completed[0], 'Task A',
-      'First completed item should be Task A');
-    // Task B is lost — it appears after the blank line, outside the captured range
-    assert.strictEqual(meta.inProgress.length, 1,
-      'In Progress should still capture Task C');
-    assert.strictEqual(meta.inProgress[0], 'Task C',
-      'In-progress item should be Task C');
+    assert.deepStrictEqual(meta.completed, ['Task A', 'Task B']);
+    assert.deepStrictEqual(meta.inProgress, ['Task C']);
   })) passed++; else failed++;
 
   // ── Round 106: getAllSessions with array/object limit — Number() coercion edge cases ──
@@ -2391,11 +2440,11 @@ file.ts
     assert.strictEqual(nextMeta.notes, 'Important note',
       'Notes should stop at next ### header');
 
-    // Notes followed by \n\n (double newline)
+    // Blank lines separate paragraphs within the same notes section.
     const withDoubleNewline = '# Session\n\n### Notes for Next Session\nNote here\n\nSome other text';
     const dblMeta = sessionManager.parseSessionMetadata(withDoubleNewline);
-    assert.strictEqual(dblMeta.notes, 'Note here',
-      'Notes should stop at \\n\\n boundary');
+    assert.strictEqual(dblMeta.notes, 'Note here\n\nSome other text',
+      'Notes should preserve both paragraphs');
 
     // Empty notes section (header only, followed by \n\n)
     const emptyNotes = '# Session\n\n### Notes for Next Session\n\n### Other Section';
@@ -2500,78 +2549,19 @@ file.ts
     }
   })) passed++; else failed++;
 
-  // ── Round 123: parseSessionMetadata with CRLF line endings — section boundaries break ──
-  console.log('\nRound 123: parseSessionMetadata (CRLF section boundaries — \\n\\n fails to match \\r\\n\\r\\n):');
-  if (test('parseSessionMetadata CRLF content: \\n\\n boundary fails, lazy match bleeds across sections', () => {
-    // session-manager.js lines 119-134: regex uses (?=###|\n\n|$) to delimit sections.
-    // On CRLF content, a blank line is \r\n\r\n, NOT \n\n. The \n\n alternation
-    // won't match, so the lazy [\s\S]*? extends past the blank line until it hits
-    // ### or $. This means completed items may bleed into following sections.
-    //
-    // However, \s* in /### Completed\s*\n/ DOES match \r\n (since \r is whitespace),
-    // so section headers still match — only blank-line boundaries fail.
-
-    // Test 1: CRLF with ### delimiter — works because ### is an alternation
-    const crlfWithHash = [
-      '# Session Title\r\n',
-      '\r\n',
-      '### Completed\r\n',
-      '- [x] Task A\r\n',
-      '### In Progress\r\n',
-      '- [ ] Task B\r\n'
-    ].join('');
-    const meta1 = sessionManager.parseSessionMetadata(crlfWithHash);
-    // ### delimiter still works — lazy match stops at ### In Progress
-    assert.ok(meta1.completed.length >= 1,
-      'Completed section should find at least 1 item with ### boundary on CRLF');
-    // Check that Task A is found (may include \r in the trimmed text)
-    const taskA = meta1.completed[0];
-    assert.ok(taskA.includes('Task A'),
-      'Should extract Task A from completed section');
-
-    // Test 2: CRLF with \n\n (blank line) delimiter — this is where it breaks
-    const crlfBlankLine = [
-      '# Session\r\n',
-      '\r\n',
-      '### Completed\r\n',
-      '- [x] First task\r\n',
-      '\r\n',         // Blank line = \r\n\r\n — won't match \n\n
-      'Some other text\r\n'
-    ].join('');
-    const meta2 = sessionManager.parseSessionMetadata(crlfBlankLine);
-    // On LF, blank line stops the lazy match. On CRLF, it bleeds through.
-    // The lazy [\s\S]*? stops at $ if no ### or \n\n matches,
-    // so "Some other text" may end up captured in the raw section text.
-    // But the items regex /- \[x\]\s*(.+)/g only captures checkbox lines,
-    // so the count stays correct despite the bleed.
-    assert.strictEqual(meta2.completed.length, 1,
-      'Even with CRLF bleed, checkbox regex only matches "- [x]" lines');
-
-    // Test 3: LF version of same content — proves \n\n works normally
-    const lfBlankLine = '# Session\n\n### Completed\n- [x] First task\n\nSome other text\n';
-    const meta3 = sessionManager.parseSessionMetadata(lfBlankLine);
-    assert.strictEqual(meta3.completed.length, 1,
-      'LF version: blank line correctly delimits section');
-
-    // Test 4: CRLF notes section — lazy match goes to $ when \n\n fails
-    const crlfNotes = [
-      '# Session\r\n',
-      '\r\n',
-      '### Notes for Next Session\r\n',
-      'Remember to review\r\n',
-      '\r\n',
-      'This should be separate\r\n'
-    ].join('');
-    const meta4 = sessionManager.parseSessionMetadata(crlfNotes);
-    // On CRLF, \n\n fails → lazy match extends to $ → includes "This should be separate"
-    // On LF, \n\n works → notes = "Remember to review" only
-    const lfNotes = '# Session\n\n### Notes for Next Session\nRemember to review\n\nThis should be separate\n';
-    const meta5 = sessionManager.parseSessionMetadata(lfNotes);
-    assert.strictEqual(meta5.notes, 'Remember to review',
-      'LF: notes stop at blank line');
-    // CRLF notes will be longer (bleed through blank line)
-    assert.ok(meta4.notes.length >= meta5.notes.length,
-      'CRLF notes >= LF notes length (CRLF may bleed past blank line)');
+  if (test('uses the same section boundaries for LF and CRLF content', () => {
+    const lines = [
+      '# Session', '', '### Completed', '- [x] First task', '', 'Some other text',
+      '### In Progress', '- [ ] Pending task', '',
+      '### Notes for Next Session', 'Remember to review', '', 'Another paragraph',
+    ];
+    const lf = sessionManager.parseSessionMetadata(lines.join('\n'));
+    const crlf = sessionManager.parseSessionMetadata(lines.join('\r\n'));
+    assert.deepStrictEqual(lf.completed, ['First task']);
+    assert.deepStrictEqual(crlf.completed, lf.completed);
+    assert.deepStrictEqual(crlf.inProgress, lf.inProgress);
+    assert.strictEqual(lf.notes, 'Remember to review\n\nAnother paragraph');
+    assert.strictEqual(crlf.notes.replace(/\r\n/g, '\n'), lf.notes);
   })) passed++; else failed++;
 
   // ── Round 124: getAllSessions with invalid date format (strict equality, no normalization) ──

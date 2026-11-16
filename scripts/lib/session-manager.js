@@ -292,7 +292,9 @@ function parseSessionMetadata(content) {
   }
 
   // Extract completed items
-  const completedSection = content.match(/### Completed\s*\n([\s\S]*?)(?=###|\n\n|$)/);
+  // Keep the header newline available to delimit an immediately following
+  // heading, including when the section has no body.
+  const completedSection = content.match(/(?:^|\n) {0,3}### Completed[ \t]*(?=\r?\n)([\s\S]*?)(?=\r?\n {0,3}#{1,3}[ \t]+|$)/);
   if (completedSection) {
     const items = completedSection[1].match(/- \[x\]\s*(.+)/g);
     if (items) {
@@ -301,7 +303,7 @@ function parseSessionMetadata(content) {
   }
 
   // Extract in-progress items
-  const progressSection = content.match(/### In Progress\s*\n([\s\S]*?)(?=###|\n\n|$)/);
+  const progressSection = content.match(/(?:^|\n) {0,3}### In Progress[ \t]*(?=\r?\n)([\s\S]*?)(?=\r?\n {0,3}#{1,3}[ \t]+|$)/);
   if (progressSection) {
     const items = progressSection[1].match(/- \[ \]\s*(.+)/g);
     if (items) {
@@ -310,7 +312,7 @@ function parseSessionMetadata(content) {
   }
 
   // Extract notes
-  const notesSection = content.match(/### Notes for Next Session\s*\n([\s\S]*?)(?=###|\n\n|$)/);
+  const notesSection = content.match(/(?:^|\n) {0,3}### Notes for Next Session[ \t]*(?=\r?\n)([\s\S]*?)(?=\r?\n {0,3}#{1,3}[ \t]+|$)/);
   if (notesSection) {
     metadata.notes = notesSection[1].trim();
   }
