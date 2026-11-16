@@ -85,7 +85,12 @@ function normalizeNeighbors(value) {
 function readBoundedBytes(file, maxBytes) {
   const canonical = fs.realpathSync(file);
   const flags = fs.constants.O_RDONLY | (fs.constants.O_NOFOLLOW || 0) | (fs.constants.O_NONBLOCK || 0);
-  const fd = fs.openSync(canonical, flags);
+  const writeFlags = fs.constants.O_CREAT | fs.constants.O_TRUNC | fs.constants.O_APPEND
+    | fs.constants.O_WRONLY | fs.constants.O_RDWR;
+  if (flags & writeFlags) throw new Error('Neighbor files require a non-creating, read-only descriptor');
+  // Mode does not change existing files. Keep an explicit least-privilege
+  // fallback as well as the non-creating flag contract above.
+  const fd = fs.openSync(canonical, flags, 0o400);
   try {
     const before = fs.fstatSync(fd, { bigint: true });
     if (!before.isFile() || before.size > BigInt(maxBytes)) {

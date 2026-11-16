@@ -632,3 +632,31 @@ test('opening a non-regular FIFO cannot hang snapshot discovery', t => {
     assert.match(result.stdout, /regular file/);
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });
+
+test('snapshot uses a non-creating read-only open and leaves source permissions unchanged', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-neighbor-readonly-'));
+  const file = path.join(dir, 'neighbors.json');
+  fs.writeFileSync(file, JSON.stringify([userSkill]), { mode: 0o640 });
+  const canonical = fs.realpathSync(file);
+  const before = fs.statSync(file).mode;
+  const open = fs.openSync;
+  let inspected = false;
+  fs.openSync = function (target, flags, mode) {
+    if (target === canonical) {
+      inspected = true;
+      const writes = fs.constants.O_CREAT | fs.constants.O_TRUNC | fs.constants.O_APPEND
+        | fs.constants.O_WRONLY | fs.constants.O_RDWR;
+      assert.equal(flags & writes, 0);
+      assert.equal(mode, 0o400);
+    }
+    return open.call(fs, target, flags, mode);
+  };
+  try {
+    assert.deepEqual(readNeighborSnapshot(file).neighbors, normalizeNeighbors([userSkill]).neighbors);
+    assert.equal(inspected, true);
+    assert.equal(fs.statSync(file).mode, before);
+    const missing = path.join(dir, 'missing.json');
+    assert.throws(() => readNeighborSnapshot(missing), /ENOENT/);
+    assert.equal(fs.existsSync(missing), false, 'reading cannot create a missing snapshot');
+  } finally { fs.openSync = open; fs.rmSync(dir, { recursive: true, force: true }); }
+});

@@ -405,11 +405,16 @@ function getLinterInvocation(command, args, platform = process.platform) {
     // stay literal. Disabling delayed expansion likewise preserves exclamation
     // marks. Quotes and line controls remain invalid because they could escape
     // the quoted token boundary or create another command line.
-    const tokenReferences = [command, ...args].map((value, index) => {
-      const name = `${CMD_TOKEN_ENV_PREFIX}${index}`;
-      environment[name] = validateCmdToken(value);
-      return `"%${name}%"`;
-    });
+    const values = [command, ...args];
+    for (let index = 0; index < values.length; index++) {
+      environment[`${CMD_TOKEN_ENV_PREFIX}${index}`] = validateCmdToken(values[index]);
+    }
+    // Build cmd source only from constant variable names and numeric indexes.
+    // Argument contents stay exclusively in the validated child environment.
+    const tokenReferences = [];
+    for (let index = 0; index < values.length; index++) {
+      tokenReferences.push(`"%${CMD_TOKEN_ENV_PREFIX}${index}%"`);
+    }
     const commandLine = tokenReferences.join(' ');
     return {
       command: process.env.ComSpec || process.env.COMSPEC || 'cmd.exe',
