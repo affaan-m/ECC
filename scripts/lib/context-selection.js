@@ -351,7 +351,8 @@ function resolveTaskContext({ repoRoot = DEFAULT_REPO_ROOT, task, profileId = 'l
   const bindingDigest = digestObject({ ...taskBinding, planDigest: plan.planDigest,
     routingPolicyVersion: ROUTING_POLICY_VERSION, triggersDigest: digestObject(triggers),
     queryDigest: digestObject(task.query || '') });
-  const reused = Boolean(previous && previous.bindingDigest === bindingDigest && !task.noWorkflow
+  const noWorkflow = Boolean(task.noWorkflow);
+  const reused = Boolean(previous && previous.bindingDigest === bindingDigest && !noWorkflow && previous.noWorkflow === false
     && ['selected', 'none'].includes(previous.decision) && !explicitIds.length && !proposedIds.length);
   const admissible = admissibility(byId, excluded, reader);
   const { candidates } = task.noWorkflow || selectionMode === 'manual' || reused
@@ -398,7 +399,7 @@ function resolveTaskContext({ repoRoot = DEFAULT_REPO_ROOT, task, profileId = 'l
       : proposedIds.length ? proposedIds : autoSelection ? [autoSelection.id] : [];
   const effectiveExplicit = reused ? previous.explicitIds : explicitIds;
   const selectedIds = selectedClosure(requested, new Set(effectiveExplicit), byId, excluded, reader);
-  const selectionDigest = digestObject({ bindingDigest, selectedIds, explicitIds: effectiveExplicit });
+  const selectionDigest = digestObject({ bindingDigest, selectedIds, explicitIds: effectiveExplicit, noWorkflow });
   if (expectedDigest && expectedDigest !== selectionDigest) throw new Error('Task selection is stale; resolve again before loading');
   const resources = load && selectionMode !== 'suggest' ? readSelected(selectedIds, byId, reader) : [];
   const loadedIds = [...new Set(resources.map(resource => resource.id))].sort();
@@ -409,7 +410,7 @@ function resolveTaskContext({ repoRoot = DEFAULT_REPO_ROOT, task, profileId = 'l
   const decision = selectedIds.length ? 'selected' : reason === 'agent-selection-required' ? 'pending' : 'none';
   const receiptValue = { schemaVersion: 'ecc.task-context-receipt.v1', ...taskBinding, bindingDigest,
     selectionDigest, profileId: plan.profileId, selectionMode, target, registryDigest: registry.registryDigest,
-    decision, selectedIds, explicitIds: effectiveExplicit, loadedIds,
+    decision, selectedIds, explicitIds: effectiveExplicit, loadedIds, noWorkflow,
     resources: resources.map(({ content: _content, ...resource }) => resource) };
   if (autoSelection) receiptValue.autoSelection = autoSelection;
   return { schemaVersion: 'ecc.task-context.v1', profileId: plan.profileId, selectionMode, target,
