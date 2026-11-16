@@ -2,7 +2,8 @@ name: ctxcap
 
 # Measures what this repository's agent context files cost in tokens and fails a
 # PR that grows them, so a 40-line addition to AGENTS.md shows up as a number in
-# review instead of landing silently.
+# review instead of landing silently. The committed ctxcap-baseline.json is what
+# a PR is compared against; update it in the same PR as an intentional increase.
 on:
   pull_request:
     paths:
@@ -10,6 +11,10 @@ on:
       - 'CLAUDE.md'
       - '.github/copilot-instructions.md'
       - '.cursor/rules/**'
+      - 'ctxcap-baseline.json'
+      - '.ctxcap.json'
+      - '.github/workflows/ctxcap.yml'
+  workflow_dispatch:
 
 permissions:
   contents: read
