@@ -617,6 +617,24 @@ test('settings files stay sensitive when .claude is the project root', () => {
   }
 });
 
+test('every .claude/settings*.json variant counts as restricted', () => {
+  const root = tempProject();
+  try {
+    withProjectDir(root, () => {
+      const data = { cwd: root };
+      const at = rel => path.join(root, rel);
+      // A dash suffix (settings-dev.json) used to slip past the pattern, so a
+      // subagent could edit it while settings.json stayed gated.
+      for (const name of ['settings.json', 'settings.local.json', 'settings-dev.json', 'settings.ci.json']) {
+        assert.strictEqual(isSensitiveTargetFor(at(`.claude/${name}`), data), true, name);
+      }
+      assert.strictEqual(isSensitiveTargetFor(at('.claude/notes.json'), data), false);
+    });
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test('a symlink alias to .claude/settings.json is sensitive through the real path', () => {
   const root = tempProject();
   try {
