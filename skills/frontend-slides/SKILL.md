@@ -41,8 +41,14 @@ Choose one path:
 
 Ask only the minimum needed:
 - purpose: pitch, teaching, conference talk, internal update
-- length: short (5-10), medium (10-20), long (20+)
+- length: short (5-10), medium (10-20), long (20+), or single-slide / one-pager (1)
 - content state: finished copy, rough notes, topic only
+
+> [!IMPORTANT]
+> **Length Confirmation Is Non-Skippable for Unit/Count Keywords:**
+> When the prompt contains count or unit words (e.g. "single", "one-pager", "one slide", "a page", "single-unit summary") or requests "everything about X", do NOT skip or guess the length.
+> Explicitly confirm the target slide count in one short line before building:
+> *"Confirming deliverable size: 1-slide architecture overview (one-pager). Proceeding with container-scaled density grid."*
 
 If the user has content, ask them to paste it before styling.
 
