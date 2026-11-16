@@ -2564,7 +2564,8 @@ impl StateStore {
     }
 
     fn refresh_session_board_meta(&self) -> Result<()> {
-        self.conn.execute(
+        let tx = self.conn.unchecked_transaction()?;
+        tx.execute(
             "DELETE FROM session_board
              WHERE session_id NOT IN (SELECT id FROM sessions)",
             [],
@@ -2598,7 +2599,7 @@ impl StateStore {
             }
             meta.handoff_backlog = self.unread_task_handoff_count(&session.id)? as i64;
 
-            self.conn.execute(
+            tx.execute(
                 "INSERT INTO session_board (
                     session_id, lane, project, feature, issue, row_label,
                     previous_lane, previous_row_label,
@@ -2649,6 +2650,7 @@ impl StateStore {
             )?;
         }
 
+        tx.commit()?;
         Ok(())
     }
 
@@ -5964,6 +5966,30 @@ mod tests {
         assert_eq!(db.session_state_exact("lead-longer")?, Some(SessionState::Running));
         assert_eq!(db.session_state_exact("lead-l")?, None);
         assert_eq!(db.session_state_exact("orphan")?, None);
+        Ok(())
+    }
+
+    #[test]
+    fn session_board_refresh_rolls_back_after_later_row_error() -> Result<()> {
+        let tempdir = TestDir::new("atomic-session-board")?;
+        let db = StateStore::open(&tempdir.path().join("state.db"))?;
+        db.insert_session(&build_session("alpha", SessionState::Pending))?;
+        db.insert_session(&build_session("beta", SessionState::Pending))?;
+        let sessions = db.list_sessions()?;
+        assert_eq!(sessions.len(), 2);
+        let first = &sessions[0].id;
+        let second = &sessions[1].id;
+        let read_first = || db.conn.query_row(
+            "SELECT updated_at FROM session_board WHERE session_id = ?1",
+            [first], |row| row.get::<_, String>(0));
+        let before = read_first()?;
+        db.conn.execute_batch(&format!(
+            "CREATE TRIGGER reject_second BEFORE INSERT ON session_board
+             WHEN NEW.session_id = '{}' BEGIN SELECT RAISE(ABORT, 'forced'); END;",
+            second))?;
+        std::thread::sleep(std::time::Duration::from_millis(3));
+        assert!(db.refresh_session_board_meta().is_err());
+        assert_eq!(read_first()?, before, "no earlier row may be partially written");
         Ok(())
     }
 
