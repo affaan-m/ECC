@@ -42,11 +42,13 @@ function coverageEnvironment() {
 
 function checkDiscovery(root) {
   for (const engine of [glob, rawGlob]) {
-    assert.deepEqual(engine.globSync('scripts/alpha.js', { cwd: root }), ['scripts/alpha.js']);
-    assert.deepEqual(engine.globSync('scripts/**/*.js', { cwd: root }).sort(), [
+    const discover = pattern => engine.globSync(pattern, { cwd: root })
+      .map(name => name.split(path.sep).join('/')).sort();
+    assert.deepEqual(discover('scripts/alpha.js'), ['scripts/alpha.js']);
+    assert.deepEqual(discover('scripts/**/*.js'), [
       'scripts/alpha.js', 'scripts/never.js', 'scripts/skip.test.js',
     ]);
-    assert.deepEqual(engine.globSync('scripts/**/*.mjs', { cwd: root }), ['scripts/nested/beta.mjs']);
+    assert.deepEqual(discover('scripts/**/*.mjs'), ['scripts/nested/beta.mjs']);
   }
 }
 

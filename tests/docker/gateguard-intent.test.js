@@ -621,9 +621,14 @@ function syntheticIntentRunner(root, { fakeEnv = {}, arms = 'off,gate' } = {}) {
   const env = { ...process.env, HOME: path.join(root, 'home'), USERPROFILE: path.join(root, 'home'), CLAUDE_CONFIG_DIR: config, CLAUDE_CODE_PROJECT_DIR_NAME: '',
     NODE_PATH: path.join(ROOT, 'node_modules'), GIT_CONFIG_GLOBAL: path.join(root, 'unused-gitconfig'),
     GIT_AUTHOR_NAME: 'Synthetic Eval', GIT_COMMITTER_NAME: 'Synthetic Eval', GIT_AUTHOR_EMAIL: 'eval@example.invalid', GIT_COMMITTER_EMAIL: 'eval@example.invalid' };
-  for (const args of [['init', '-q'], ['add', '.'], ['commit', '-q', '--no-gpg-sign', '-m', 'synthetic source snapshot']]) {
-    const result = spawnSync('git', args, { cwd: repo, env, encoding: 'utf8', timeout: 30000 });
-    assert.strictEqual(result.status, 0, result.stderr);
+  // Freeze the copied source bytes, independent of the host Git line-ending
+  // policy. The full scripts snapshot can take longer to stage on busy Windows
+  // runners; keep setup bounded at the same 60s limit as the harness Git calls.
+  for (const args of [['init', '-q'], ['config', 'core.autocrlf', 'false'], ['add', '.'], ['commit', '-q', '--no-gpg-sign', '-m', 'synthetic source snapshot']]) {
+    const result = spawnSync('git', args, { cwd: repo, env, encoding: 'utf8', timeout: 60000 });
+    const diagnostic = `git ${args.join(' ')}: status=${result.status}, signal=${result.signal || 'none'}, error=${result.error?.code || 'none'}\n${result.error?.message || ''}\n${result.stderr || ''}`;
+    assert.strictEqual(result.error, undefined, diagnostic);
+    assert.strictEqual(result.status, 0, diagnostic);
   }
   const scenario = intentEval.loadIntentScenarios()[0];
   const copiedReference = path.join(copied, 'scenarios-intent', scenario.id, 'reference');
