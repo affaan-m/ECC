@@ -39,7 +39,7 @@ When a request asks for a single slide, one-pager, or whole-system overview on a
 
 1. **Scalable 16:9 Viewport Panel:** Set `container-type: inline-size` on the slide and size internal typography and spacing with container-query width units (`cqw`), ensuring the entire system diagram scales harmoniously without viewport overflow or internal scrolling.
 2. **Multi-Region Spatial Grid:** Structure cards across a 3-column or 4-band grid (`left: ingestion/inputs`, `center: core processing/engine`, `right: outputs/integrations`, `bottom: infrastructure/telemetry`). Color-code regions by category.
-3. **Mobile Reflow:** Add `@container (max-width: 640px)` or `@media (max-width: 768px)` to gracefully reflow cards into a single readable column on mobile screens without breaking desktop viewport fitting.
+3. **Keep the slide readable and fitted:** Use container or media queries to rearrange regions only when the full slide still fits its viewport without scrolling. Keep the existing text and density limits. If a single column would overflow or require unreadably small type, simplify the content or ask which detail to remove instead of shrinking everything to fit.
 
 ## Mandatory Base CSS
 

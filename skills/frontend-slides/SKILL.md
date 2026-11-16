@@ -45,9 +45,9 @@ Ask only the minimum needed:
 - content state: finished copy, rough notes, topic only
 
 > [!IMPORTANT]
-> **Length Confirmation Is Non-Skippable for Unit/Count Keywords:**
-> When the prompt contains count or unit words (e.g. "single", "one-pager", "one slide", "a page", "single-unit summary") or requests "everything about X", do NOT skip or guess the length.
-> Explicitly confirm the target slide count in one short line before building:
+> **Make the requested slide count explicit:**
+> When the user supplies a count (for example, "one slide" or "one-pager"), honor it and state the deliverable size before building. Ask one short clarification only when the requested count is ambiguous; "everything about X" alone does not imply one slide.
+> State an explicit count in one short line before building:
 > *"Confirming deliverable size: 1-slide architecture overview (one-pager). Proceeding with container-scaled density grid."*
 
 If the user has content, ask them to paste it before styling.
