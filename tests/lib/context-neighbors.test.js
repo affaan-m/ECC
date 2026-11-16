@@ -636,7 +636,7 @@ test('opening a non-regular FIFO cannot hang snapshot discovery', t => {
 test('snapshot uses a non-creating read-only open and leaves source permissions unchanged', () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-neighbor-readonly-'));
   const file = path.join(dir, 'neighbors.json');
-  fs.writeFileSync(file, JSON.stringify([userSkill]), { mode: 0o640 });
+  fs.writeFileSync(file, JSON.stringify([userSkill]), { mode: 0o600 });
   const canonical = fs.realpathSync(file);
   const before = fs.statSync(file).mode;
   const open = fs.openSync;
