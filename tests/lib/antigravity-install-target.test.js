@@ -171,6 +171,41 @@ test('pinned native loader receipt establishes distinct editor and CLI capabilit
     'search_web',
   ]);
   assert.strictEqual(editorParsed.tools.includes('invoke_subagent'), false, 'Editor runtime must exclude invoke_subagent');
+
+  // Isolated tool mappings for editor
+  const grepAdapted = adaptAntigravityAgent('---\nname: grep-agent\ntools: Grep\n---\nbody', 'agents/grep.md', { runtime: 'editor' });
+  assert.deepStrictEqual(yaml.load(grepAdapted.match(/^---\n([\s\S]*?)\n---\n/)[1]).tools, ['view_file']);
+
+  const globAdapted = adaptAntigravityAgent('---\nname: glob-agent\ntools: Glob\n---\nbody', 'agents/glob.md', { runtime: 'editor' });
+  assert.deepStrictEqual(yaml.load(globAdapted.match(/^---\n([\s\S]*?)\n---\n/)[1]).tools, ['view_file']);
+
+  const fetchAdapted = adaptAntigravityAgent('---\nname: fetch-agent\ntools: WebFetch\n---\nbody', 'agents/fetch.md', { runtime: 'editor' });
+  assert.deepStrictEqual(yaml.load(fetchAdapted.match(/^---\n([\s\S]*?)\n---\n/)[1]).tools, ['search_web']);
+
+  const taskAdapted = adaptAntigravityAgent('---\nname: task-agent\ntools: Task\n---\nbody', 'agents/task.md', { runtime: 'editor' });
+  assert.deepStrictEqual(yaml.load(taskAdapted.match(/^---\n([\s\S]*?)\n---\n/)[1]).tools, []);
+
+  // Exercise ANTIGRAVITY_RUNTIME environment variable
+  const priorRuntime = process.env.ANTIGRAVITY_RUNTIME;
+  try {
+    process.env.ANTIGRAVITY_RUNTIME = 'editor';
+    const envAdapted = adaptAntigravityAgent(source, 'agents/full-agent.md');
+    const envParsed = yaml.load(envAdapted.match(/^---\n([\s\S]*?)\n---\n/)[1]);
+    assert.deepStrictEqual(envParsed.tools, [
+      'view_file',
+      'write_to_file',
+      'replace_file_content',
+      'run_command',
+      'search_web',
+    ]);
+    assert.strictEqual(envParsed.tools.includes('invoke_subagent'), false);
+  } finally {
+    if (priorRuntime === undefined) {
+      delete process.env.ANTIGRAVITY_RUNTIME;
+    } else {
+      process.env.ANTIGRAVITY_RUNTIME = priorRuntime;
+    }
+  }
 });
 
 test('transform preserves CRLF line endings consistently on Windows-saved agents', () => {

@@ -288,6 +288,223 @@ test('rejects execution of decoy scripts planted in unrelated project directorie
   }
 });
 
+test('registered command in hooks/antigravity-hooks.json executes allowed and denied calls via entry point', () => {
+  const fs = require('fs');
+  const os = require('os');
+  const tempWorkspace = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-user-project-'));
+  try {
+    const protectedFile = path.join(tempWorkspace, 'eslint.config.js');
+    fs.writeFileSync(protectedFile, 'module.exports = {};');
+    const safeFile = path.join(tempWorkspace, 'safe-app.js');
+    fs.writeFileSync(safeFile, 'console.log("hello");');
+
+    const hooksConfig = JSON.parse(fs.readFileSync(path.join(REPO_ROOT, 'hooks', 'antigravity-hooks.json'), 'utf8'));
+    const hookCmd = hooksConfig['ecc-guardrails'].PreToolUse[0].hooks[0].command;
+
+    const envTrusted = {
+      ...process.env,
+      ANTIGRAVITY_PLUGIN_ROOT: REPO_ROOT,
+    };
+
+    // Allowed call
+    const resAllow = spawnSync(hookCmd, {
+      shell: true,
+      input: JSON.stringify({
+        conversationId: 'allow-cmd-test',
+        toolCall: { name: 'edit_file', args: { Path: safeFile } },
+        workspacePaths: [tempWorkspace],
+      }),
+      encoding: 'utf8',
+      env: envTrusted,
+      cwd: tempWorkspace,
+    });
+
+    assert.strictEqual(resAllow.status, 0);
+    const allowDecision = JSON.parse(resAllow.stdout.trim());
+    assert.strictEqual(allowDecision.decision, 'allow');
+
+    // Denied call
+    const resDeny = spawnSync(hookCmd, {
+      shell: true,
+      input: JSON.stringify({
+        conversationId: 'deny-cmd-test',
+        toolCall: { name: 'edit_file', args: { Path: protectedFile } },
+        workspacePaths: [tempWorkspace],
+      }),
+      encoding: 'utf8',
+      env: envTrusted,
+      cwd: tempWorkspace,
+    });
+
+    assert.strictEqual(resDeny.status, 0);
+    const denyDecision = JSON.parse(resDeny.stdout.trim());
+    assert.strictEqual(denyDecision.decision, 'deny');
+    assert.ok(denyDecision.reason && denyDecision.reason.length > 0);
+  } finally {
+    fs.rmSync(tempWorkspace, { recursive: true, force: true });
+  }
+});
+
+test('registered command in .antigravity-plugin/hooks.json executes allowed and denied calls via entry point', () => {
+  const fs = require('fs');
+  const os = require('os');
+  const tempWorkspace = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-user-plugin-project-'));
+  try {
+    const protectedFile = path.join(tempWorkspace, 'eslint.config.js');
+    fs.writeFileSync(protectedFile, 'module.exports = {};');
+    const safeFile = path.join(tempWorkspace, 'safe-app.js');
+    fs.writeFileSync(safeFile, 'console.log("hello");');
+
+    const hooksConfig = JSON.parse(fs.readFileSync(path.join(REPO_ROOT, '.antigravity-plugin', 'hooks.json'), 'utf8'));
+    const hookCmd = hooksConfig['ecc-guardrails'].PreToolUse[0].hooks[0].command;
+
+    const envTrusted = {
+      ...process.env,
+      ANTIGRAVITY_PLUGIN_ROOT: REPO_ROOT,
+    };
+
+    // Allowed call
+    const resAllow = spawnSync(hookCmd, {
+      shell: true,
+      input: JSON.stringify({
+        conversationId: 'allow-plugin-cmd-test',
+        toolCall: { name: 'edit_file', args: { Path: safeFile } },
+        workspacePaths: [tempWorkspace],
+      }),
+      encoding: 'utf8',
+      env: envTrusted,
+      cwd: tempWorkspace,
+    });
+
+    assert.strictEqual(resAllow.status, 0);
+    const allowDecision = JSON.parse(resAllow.stdout.trim());
+    assert.strictEqual(allowDecision.decision, 'allow');
+
+    // Denied call
+    const resDeny = spawnSync(hookCmd, {
+      shell: true,
+      input: JSON.stringify({
+        conversationId: 'deny-plugin-cmd-test',
+        toolCall: { name: 'edit_file', args: { Path: protectedFile } },
+        workspacePaths: [tempWorkspace],
+      }),
+      encoding: 'utf8',
+      env: envTrusted,
+      cwd: tempWorkspace,
+    });
+
+    assert.strictEqual(resDeny.status, 0);
+    const denyDecision = JSON.parse(resDeny.stdout.trim());
+    assert.strictEqual(denyDecision.decision, 'deny');
+    assert.ok(denyDecision.reason && denyDecision.reason.length > 0);
+  } finally {
+    fs.rmSync(tempWorkspace, { recursive: true, force: true });
+  }
+});
+
+test('rejects execution of forged-receipt sentinel planted in untrusted project', () => {
+  const fs = require('fs');
+  const os = require('os');
+  const tempUntrusted = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-forged-repo-'));
+  try {
+    const decoyAgents = path.join(tempUntrusted, '.agents');
+    const decoyBridgeDir = path.join(decoyAgents, 'scripts', 'antigravity');
+    fs.mkdirSync(decoyBridgeDir, { recursive: true });
+
+    // Plant forged receipt
+    fs.writeFileSync(path.join(decoyAgents, 'ecc-install-state.json'), JSON.stringify({
+      schemaVersion: 'ecc.install.v1',
+      target: { id: 'antigravity-project' },
+    }));
+
+    // Plant sentinel bridge that creates a marker file
+    const sentinelFile = path.join(tempUntrusted, 'forged-sentinel-executed.marker');
+    const maliciousCode = `
+      require('fs').writeFileSync(${JSON.stringify(sentinelFile)}, 'FORGED_EXECUTED');
+      module.exports = { main() { process.stdout.write(JSON.stringify({ decision: 'deny', reason: 'SENTINEL' })); } };
+    `;
+    fs.writeFileSync(path.join(decoyBridgeDir, 'hook-bridge.js'), maliciousCode);
+
+    const hooksConfig = JSON.parse(fs.readFileSync(path.join(REPO_ROOT, 'hooks', 'antigravity-hooks.json'), 'utf8'));
+    const hookCmd = hooksConfig['ecc-guardrails'].PreToolUse[0].hooks[0].command;
+
+    const cleanEnv = { ...process.env };
+    delete cleanEnv.ANTIGRAVITY_PLUGIN_ROOT;
+    delete cleanEnv.CLAUDE_PLUGIN_ROOT;
+    delete cleanEnv.ECC_PLUGIN_ROOT;
+    cleanEnv.HOME = path.join(tempUntrusted, 'empty-home');
+    cleanEnv.USERPROFILE = path.join(tempUntrusted, 'empty-home');
+
+    const result = spawnSync(hookCmd, {
+      shell: true,
+      input: JSON.stringify({
+        conversationId: 'forged-receipt-test',
+        toolCall: { name: 'edit_file', args: { Path: 'safe.js' } },
+      }),
+      encoding: 'utf8',
+      cwd: tempUntrusted,
+      env: cleanEnv,
+    });
+
+    assert.strictEqual(result.status, 0, 'Hook runner must succeed and fail open');
+    assert.strictEqual(fs.existsSync(sentinelFile), false, 'Forged receipt sentinel must NOT be executed!');
+    const decision = JSON.parse(result.stdout.trim());
+    assert.strictEqual(decision.decision, 'allow');
+  } finally {
+    fs.rmSync(tempUntrusted, { recursive: true, force: true });
+  }
+});
+
+test('rejects symlink-decoy realpath escapes pointing into untrusted directory', () => {
+  const fs = require('fs');
+  const os = require('os');
+  const tempUntrusted = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-symlink-repo-'));
+  try {
+    const sentinelFile = path.join(tempUntrusted, 'symlink-sentinel-executed.marker');
+    const sentinelDir = path.join(tempUntrusted, 'sentinel-src', 'scripts', 'antigravity');
+    fs.mkdirSync(sentinelDir, { recursive: true });
+    fs.writeFileSync(path.join(sentinelDir, 'hook-bridge.js'), `
+      require('fs').writeFileSync(${JSON.stringify(sentinelFile)}, 'SYMLINK_EXECUTED');
+      module.exports = { main() { process.stdout.write(JSON.stringify({ decision: 'deny', reason: 'SENTINEL' })); } };
+    `);
+
+    // Create a symlink or junction attempting to escape to sentinel
+    const symlinkDir = path.join(tempUntrusted, 'symlink-plugin');
+    try {
+      fs.symlinkSync(path.join(tempUntrusted, 'sentinel-src'), symlinkDir, 'junction');
+    } catch (_symErr) {
+      // If junction/symlink fails on restricted Windows permissions, skip symlink creation
+      return;
+    }
+
+    const hooksConfig = JSON.parse(fs.readFileSync(path.join(REPO_ROOT, 'hooks', 'antigravity-hooks.json'), 'utf8'));
+    const hookCmd = hooksConfig['ecc-guardrails'].PreToolUse[0].hooks[0].command;
+
+    const envWithSymlink = {
+      ...process.env,
+      ANTIGRAVITY_PLUGIN_ROOT: symlinkDir,
+    };
+
+    const result = spawnSync(hookCmd, {
+      shell: true,
+      input: JSON.stringify({
+        conversationId: 'symlink-test',
+        toolCall: { name: 'edit_file', args: { Path: 'safe.js' } },
+      }),
+      encoding: 'utf8',
+      cwd: tempUntrusted,
+      env: envWithSymlink,
+    });
+
+    assert.strictEqual(result.status, 0);
+    assert.strictEqual(fs.existsSync(sentinelFile), false, 'Symlink decoy sentinel must NOT be executed!');
+    const decision = JSON.parse(result.stdout.trim());
+    assert.strictEqual(decision.decision, 'allow');
+  } finally {
+    fs.rmSync(tempUntrusted, { recursive: true, force: true });
+  }
+});
+
 console.log(`\nResults: Passed: ${passed}, Failed: ${failed}`);
 if (failed > 0) {
   process.exit(1);

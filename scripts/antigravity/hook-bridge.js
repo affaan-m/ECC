@@ -45,7 +45,7 @@ function getHookFlags() {
 }
 
 function parseArgs(argv) {
-  const args = argv.slice(2);
+  const args = Array.isArray(argv) ? argv : [];
   let hookTarget = null;
 
   for (let i = 0; i < args.length; i += 1) {
