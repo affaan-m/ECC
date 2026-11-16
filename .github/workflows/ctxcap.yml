@@ -38,3 +38,4 @@ jobs:
       - uses: Naeha-S/ctxcap@v1
         with:
           fail-on: increase
+          upload-sarif: false
