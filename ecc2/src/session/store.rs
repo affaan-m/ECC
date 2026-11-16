@@ -2626,6 +2626,17 @@ impl StateStore {
             .find(|session| session.id == id || session.id.starts_with(id)))
     }
 
+    /// Query a single full Session ID without prefix aliases or a full scan.
+    /// Used by automatic dispatch to fail closed on terminal recipients.
+    pub fn session_state_exact(&self, session_id: &str) -> Result<Option<SessionState>> {
+        let state = self.conn.query_row(
+            "SELECT state FROM sessions WHERE id = ?1",
+            [session_id],
+            |row| row.get::<_, String>(0),
+        ).optional()?;
+        Ok(state.map(|value| SessionState::from_db_value(&value)))
+    }
+
     pub fn delete_session(&self, session_id: &str) -> Result<()> {
         self.conn.execute(
             "DELETE FROM session_output WHERE session_id = ?1",
@@ -5908,6 +5919,19 @@ mod tests {
             last_heartbeat_at: now,
             metrics: SessionMetrics::default(),
         }
+    }
+
+    #[test]
+    fn session_state_exact_never_matches_a_longer_session_prefix() -> Result<()> {
+        let tempdir = TestDir::new("exact-session-state")?;
+        let db = StateStore::open(&tempdir.path().join("state.db"))?;
+        db.insert_session(&build_session("lead", SessionState::Completed))?;
+        db.insert_session(&build_session("lead-longer", SessionState::Running))?;
+        assert_eq!(db.session_state_exact("lead")?, Some(SessionState::Completed));
+        assert_eq!(db.session_state_exact("lead-longer")?, Some(SessionState::Running));
+        assert_eq!(db.session_state_exact("lead-l")?, None);
+        assert_eq!(db.session_state_exact("orphan")?, None);
+        Ok(())
     }
 
     #[test]
