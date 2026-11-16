@@ -104,7 +104,8 @@ WHERE display_name IS DISTINCT FROM username;
 -- Step 6: After the rollback window, stop backfill/reconciliation workers.
 -- Transfer required constraints/indexes/dependencies to the new column.
 -- Make old-column constraints compatible with new-only INSERTs/UPDATEs.
--- Deploy app v4 using ONLY display_name; drain all old-column users.
+-- Drain non-app readers of username and their in-flight transactions first.
+-- Then deploy app v4 using ONLY display_name; drain remaining old-column users.
 
 -- Step 7: Contract in a separate migration after checking dependencies.
 ALTER TABLE users DROP COLUMN username;
@@ -128,7 +129,7 @@ The [self-checking SQL example](examples/postgres-column-rename.sql) reproduces
 the stale-value failure and verifies reconciliation, retries, and NULL handling:
 
 ```bash
-psql -X -v ON_ERROR_STOP=1 -f skills/database-migrations/examples/postgres-column-rename.sql
+psql -X -v ON_ERROR_STOP=1 -f examples/postgres-column-rename.sql
 ```
 
 Reference: [PostgreSQL Read Committed behavior](https://www.postgresql.org/docs/current/transaction-iso.html#XACT-READ-COMMITTED).
@@ -361,7 +362,8 @@ Phase 2: MIGRATE
 
 Phase 3: CONTRACT
   - End rollback window; stop backfill and migrate constraints/dependencies
-  - Deploy: app only uses NEW; drain all old-column users
+  - Drain non-app old-column readers and their in-flight transactions
+  - Deploy: app only uses NEW; drain remaining old-column users
   - Drop old column/table in separate migration
 ```
 
@@ -373,7 +375,8 @@ Day 1: Deploy app v2 — reads status, writes both columns atomically
 Day 2: Drain old-only writers; backfill in batches; require zero mismatches
 Day 3: Deploy app v3 — reads new_status, still writes both columns
 Day 7: End rollback window; stop backfill; migrate constraints/dependencies
-Day 7: Deploy app v4 — only uses new_status; drain old-column users
+Day 7: Drain non-app old-column readers and their in-flight transactions
+Day 7: Deploy app v4 — only uses new_status; drain remaining old-column users
 Later: Separate migration drops status after all contract gates pass
 ```
 

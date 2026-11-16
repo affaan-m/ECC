@@ -35,7 +35,7 @@ async function asyncTest(name, fn, timeoutMs = 5000) {
     passed += 1;
   } catch (error) {
     console.log(`  ✗ ${name}`);
-    console.log(`    Error: ${error.message}`);
+    console.log(`    Error: ${error?.message ?? String(error)}`);
     failed += 1;
   } finally {
     clearTimeout(timer);

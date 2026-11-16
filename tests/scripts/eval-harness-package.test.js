@@ -116,11 +116,13 @@ try {
       h.test('failure fixture',()=>{throw new Error('synthetic failure');});
       await h.asyncTest('async pass fixture',async()=>{});
       await h.asyncTest('async failure fixture',async()=>{await Promise.resolve();throw new Error('synthetic async failure');});
+      await h.asyncTest('null rejection fixture',()=>Promise.reject(null));
+      await h.asyncTest('pass after null rejection',async()=>{});
       h.finish('count fixture');
     })().catch(()=>process.exit(1));`;
     const result = command(process.execPath, ['-e', script], { cwd: work });
     assert.strictEqual(result.status, 1);
-    assert.deepStrictEqual(counts(result.stdout), { passed: 2, failed: 2 });
+    assert.deepStrictEqual(counts(result.stdout), { passed: 3, failed: 3 });
   });
 
   test('an unsettled async check times out instead of exiting successfully without a summary', () => {
