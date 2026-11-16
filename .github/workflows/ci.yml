@@ -453,10 +453,6 @@ jobs:
     name: Security Scan
     runs-on: ubuntu-latest
     timeout-minutes: 5
-    env:
-      # Keep verifier metadata and TUF roots isolated from runner-image caches.
-      npm_config_cache: ${{ runner.temp }}/ecc-security-npm-cache
-
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -469,9 +465,13 @@ jobs:
           node-version: '20.x'
 
       - name: Install audit dependencies
+        env:
+          npm_config_cache: ${{ runner.temp }}/ecc-security-npm-cache
         run: npm ci --ignore-scripts
 
       - name: Run npm audit
+        env:
+          npm_config_cache: ${{ runner.temp }}/ecc-security-npm-cache
         run: |
           npm audit signatures
           # Runtime/package advisories are release blockers. Development-only
