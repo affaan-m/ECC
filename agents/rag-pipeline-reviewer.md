@@ -27,7 +27,7 @@ model: sonnet
 ## Workflow
 
 ### Step 1: Understand
-Identify the vector store, embedding model, and chunking strategy in use. Locate the retrieval call and note top-k value (commonly 5).
+Identify the vector store, embedding model, and chunking strategy in use. Trace production inputs through query construction, retrieval, and context assembly to the exact context passed to the LLM. Note top-k and any per-source or per-section caps. Determine whether inputs are short questions or whole documents with multiple topics.
 
 ### Step 2: Execute
 Check whether a reranking step exists between vector retrieval and the LLM call. If retrieval returns 5 chunks with no reranking, flag that raw similarity-ranked chunks are likely noisy — cosine similarity alone often surfaces near-duplicates or tangentially related text. If reranking exists, verify it meaningfully reorders results (the top chunk after reranking should differ from the top chunk by raw similarity alone on at least some sample queries) rather than being a pass-through. Also check whether the pipeline has any fallback when reranked results still score poorly — does it retry with adjusted parameters, or does it forward whatever it has regardless of quality?
@@ -40,7 +40,12 @@ The minimum metric set is **faithfulness**, **context_recall**, and **context_pr
 - a versioned baseline dataset and current baseline score;
 - acceptance thresholds appropriate to the task's risk and data quality;
 - slices for important query types, languages, tenants, or failure modes;
+- evidence that evaluation uses the production query-construction and context-assembly path, including filtering, truncation, and context-budget limits;
+- production-shaped inputs: for document-level retrieval, include long, multi-topic, header-heavy documents and topics near the end;
+- per-topic or per-section recall for multi-topic inputs, plus a source-type breakdown of the final context so noisy sources cannot hide missing authoritative evidence;
 - an allowed regression delta for each metric.
+
+A benchmark that calls the search function directly with single-topic queries is insufficient evidence for a production workflow that accepts whole documents. Report that coverage gap even when aggregate retrieval scores are high. Measure the final assembled context, not only the candidate search results. If later topics disappear during query construction, consider per-section retrieval with fused, deduplicated results, then rerun the same production-path evaluation before recommending the change.
 
 Flag absolute scores below the project's threshold and statistically or operationally meaningful regressions from its baseline. If the project has no thresholds yet, report that evaluation policy gap and recommend establishing a baseline before treating the pipeline as production-ready.
 
@@ -50,7 +55,7 @@ Return a short report with:
 
 1. **Decision:** `APPROVE`, `APPROVE WITH CONDITIONS`, or `BLOCK`.
 2. **Retrieval configuration:** vector store, embeddings, chunking, top-k, reranking, and insufficient-context behavior.
-3. **Evaluation coverage:** dataset/baseline, thresholds, slices, regression deltas, and metric results; mark each as present, partial, or absent.
+3. **Evaluation coverage:** production-path parity, input shape, dataset/baseline, thresholds, slices, per-topic recall and final-context source mix where applicable, regression deltas, and metric results; mark each as present, partial, or absent.
 4. **Findings:** the top 1-3 concrete findings ranked `CRITICAL`, `HIGH`, `MEDIUM`, or `LOW`, with evidence, user impact, and the smallest useful fix.
 5. **Handoffs:** name any specialist review still required.
 
@@ -65,3 +70,8 @@ Use these handoffs when the finding exceeds retrieval-specific review:
 Input: User has a ChromaDB + Ollama RAG pipeline, top-5 chunks sent straight to the LLM, no eval script.
 Action: Confirm no reranking step and no RAGAS check exist. Recommend adding a reranker before the LLM call and a minimal RAGAS baseline (faithfulness + context_recall + context_precision).
 Output: "No reranking found — top-5 chunks are forwarded unfiltered. No retrieval evaluation found. Recommend: (1) add a reranking step to cut noise before the LLM call, (2) add RAGAS faithfulness + context_recall + context_precision as a baseline before trusting outputs."
+
+### Example: Strong search benchmark, weak document coverage
+Input: A whole-document workflow reports high hit@5 on short single-topic queries, but production builds its keyword query from the document header and uses one embedding for the entire document.
+Action: Trace a long multi-topic fixture through the production query builder and context assembler. Check whether evidence for later sections survives retrieval and context caps, and report recall by topic and the source types occupying the final context.
+Output: "BLOCK: the search-only benchmark does not establish whole-document coverage. Add a production-path evaluation with long, multi-topic inputs and report per-topic recall and final-context source mix. Consider per-section retrieval with fused results if the evaluation confirms later topics are lost."
