@@ -20,7 +20,7 @@ import { readFileSync, mkdirSync, writeFileSync, existsSync } from 'fs';
 import { resolve } from 'path';
 import { createHash } from 'crypto';
 import {
-  readProjects, writeProjects, loadContext, saveContext, contextPath, contextMdPath,
+  readProjects, writeProjects, findProject, loadContext, saveContext, contextPath, contextMdPath,
   today, shortId, gitSummary, nativeMemoryDir,
   CURRENT_SESSION,
 } from './shared.mjs';
@@ -53,7 +53,7 @@ if (isInit) {
   }
 
   const projects = readProjects();
-  const registered = projects[projectPath];
+  const registered = findProject(projects, projectPath);
   const previous = registered ? loadContext(registered.contextDir) : null;
   const readable = Array.isArray(previous?.sessions) && previous.sessions.every(s => s && typeof s === 'object');
   if (registered && !readable) {
@@ -75,7 +75,7 @@ if (isInit) {
     || `project-${createHash('sha256').update(projectPath).digest('hex').slice(0, 8)}`;
   let suffix = 2;
   const existingDirs = Object.values(projects).map(p => p.contextDir);
-  while (existingDirs.includes(contextDir) && projects[projectPath]?.contextDir !== contextDir) {
+  while (existingDirs.includes(contextDir) && registered?.contextDir !== contextDir) {
     contextDir = `${contextDir.replace(/-\d+$/, '')}-${suffix++}`;
   }
 
@@ -96,7 +96,7 @@ if (isInit) {
   saveContext(contextDir, context);
 
   // Update projects.json
-  projects[projectPath] = {
+  projects[registered?.path ?? projectPath] = {
     name,
     contextDir,
     lastUpdated: today(),
@@ -112,7 +112,7 @@ if (isInit) {
 // SAVE MODE: record a session
 // ─────────────────────────────────────────────────────────────────────────────
 const projects = readProjects();
-const projectEntry = projects[cwd];
+const projectEntry = findProject(projects, cwd);
 
 if (!projectEntry) {
   console.log("This project isn't registered yet. Run /ck:init first.");
@@ -172,7 +172,7 @@ if (goal && goal !== context.goal) {
 saveContext(contextDir, context);
 
 // Update projects.json timestamp
-projects[cwd].lastUpdated = today();
+projects[projectEntry.path].lastUpdated = today();
 writeProjects(projects);
 
 // ── Write to native memory ────────────────────────────────────────────────────
