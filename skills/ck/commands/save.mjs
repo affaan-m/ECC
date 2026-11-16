@@ -16,11 +16,11 @@
  * exit 0: success  exit 1: error
  */
 
-import { readFileSync, mkdirSync, writeFileSync } from 'fs';
+import { readFileSync, mkdirSync, writeFileSync, existsSync } from 'fs';
 import { resolve } from 'path';
 import { createHash } from 'crypto';
 import {
-  readProjects, writeProjects, loadContext, saveContext,
+  readProjects, writeProjects, loadContext, saveContext, contextPath, contextMdPath,
   today, shortId, gitSummary, nativeMemoryDir,
   CURRENT_SESSION,
 } from './shared.mjs';
@@ -53,11 +53,25 @@ if (isInit) {
   }
 
   const projects = readProjects();
+  const registered = projects[projectPath];
+  const previous = registered ? loadContext(registered.contextDir) : null;
+  const readable = Array.isArray(previous?.sessions) && previous.sessions.every(s => s && typeof s === 'object');
+  if (registered && !readable) {
+    if (existsSync(contextPath(registered.contextDir))) {
+      console.log(`ck init: ${contextPath(registered.contextDir)} is not a readable ck context. Nothing was changed; fix or move that file, then run init again.`);
+      process.exit(1);
+    }
+    if (existsSync(contextMdPath(registered.contextDir))) {
+      console.log(`ck init: ${contextMdPath(registered.contextDir)} has no context.json beside it (a v1 project). Nothing was changed; run /ck:migrate first.`);
+      process.exit(1);
+    }
+  }
 
   // Derive contextDir (lowercase, spaces→dashes, deduplicate). Names with no
   // ASCII letters/digits (e.g. "Проект") fall back to a stable path hash, so
   // contextDir is never "" (which would resolve to CONTEXTS_DIR itself).
-  let contextDir = name.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '')
+  let contextDir = (previous && registered.contextDir)
+    || name.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '')
     || `project-${createHash('sha256').update(projectPath).digest('hex').slice(0, 8)}`;
   let suffix = 2;
   const existingDirs = Object.values(projects).map(p => p.contextDir);
@@ -75,8 +89,8 @@ if (isInit) {
     goal: goal || null,
     constraints: Array.isArray(constraints) ? constraints : [],
     repo: repo || null,
-    createdAt: today(),
-    sessions: [],
+    createdAt: previous?.createdAt || today(),
+    sessions: previous?.sessions || [],
   };
 
   saveContext(contextDir, context);
