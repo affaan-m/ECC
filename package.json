@@ -609,7 +609,9 @@
     "brace-expansion": "5.0.12",
     "katex": "0.18.2",
     "smol-toml": "1.9.1",
-    "zod": "4.6.7"
+    "zod": "4.6.7",
+    "glob": "14.0.3",
+    "minimatch": "11.0.2"
   },
   "resolutions": {
     "fast-uri": "3.1.9",
@@ -619,7 +621,9 @@
     "brace-expansion": "5.0.12",
     "katex": "0.18.2",
     "smol-toml": "1.9.1",
-    "zod": "4.6.7"
+    "zod": "4.6.7",
+    "glob": "14.0.3",
+    "minimatch": "11.0.2"
   },
   "packageManager": "yarn@4.9.2+sha512.1fc009bc09d13cfd0e19efa44cbfc2b9cf6ca61482725eb35bbc5e257e093ebf4130db6dfe15d604ff4b79efd8e1e8e99b25fa7d0a6197c9f9826358d4d65c3c"
 }

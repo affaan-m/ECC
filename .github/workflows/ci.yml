@@ -553,6 +553,8 @@ jobs:
           printf 'ecc-pcre2-probe\n' | rg --pcre2 -- '^ecc-pcre2-probe$'
 
       - name: Run coverage
+        env:
+          NODE_OPTIONS: --max-old-space-size=4096
         run: npm run coverage
 
       - name: Run Python coverage
