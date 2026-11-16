@@ -228,7 +228,8 @@ function deriveLastActivityMs(records, fallbackPath) {
 }
 
 function deriveModel(meta, records) {
-  for (const record of records) {
+  for (let index = records.length - 1; index >= 0; index -= 1) {
+    const record = records[index];
     if (record && record.type === 'turn_context' && record.payload) {
       if (typeof record.payload.model === 'string' && record.payload.model.length > 0) {
         return record.payload.model;
