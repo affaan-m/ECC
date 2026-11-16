@@ -61,7 +61,7 @@ function run() {
     assert.match(source, /node tests\/ci\/supply-chain-advisory-sources\.test\.js/);
     assert.match(source, /node scripts\/ci\/supply-chain-advisory-sources\.js --refresh --json > artifacts\/supply-chain-advisory-sources\.json/);
     assert.match(source, /node scripts\/ci\/validate-workflow-security\.js/);
-    assert.match(source, /uses: actions\/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a/);
+    assert.match(source, /uses: actions\/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9/);
     assert.match(source, /name: supply-chain-ioc-report/);
     assert.match(source, /artifacts\/supply-chain-ioc-report\.json/);
     assert.match(source, /artifacts\/supply-chain-advisory-sources\.json/);

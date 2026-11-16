@@ -353,6 +353,45 @@ if (process.platform !== 'win32') {
   }
 }
 
+if (process.platform !== 'win32') {
+  test('quick diff uses each saved evaluation mtime across cache shapes and timestamp changes', () => {
+    const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-stocktake-quick-mtime-'));
+    try {
+      const skills = path.join(tempRoot, '.claude', 'skills');
+      writeSkill(path.join(skills, 'live'), 'live');
+      const skillPath = path.join(skills, 'live', 'SKILL.md');
+      const resultsPath = path.join(tempRoot, 'results.json');
+      const env = {
+        SKILL_STOCKTAKE_GLOBAL_DIR: path.join(tempRoot, 'missing'),
+        SKILL_STOCKTAKE_PROJECT_DIR: skills,
+      };
+      const evaluatedAt = '2025-01-10T00:00:00Z';
+      for (const shape of ['array', 'path-keyed', 'name-keyed']) {
+        for (const scenario of [
+          { name: 'changed during batch', saved: '2025-01-01T00:00:00Z', live: '2025-01-02T00:00:00Z', changed: true },
+          { name: 'restored older timestamp', saved: '2025-01-02T00:00:00Z', live: '2025-01-01T00:00:00Z', changed: true },
+          { name: 'matching future timestamp', saved: '2025-02-01T00:00:00Z', live: '2025-02-01T00:00:00Z', changed: false },
+          { name: 'null mtime unchanged', saved: null, live: '2025-01-01T00:00:00Z', changed: false },
+          { name: 'null mtime changed', saved: null, live: '2025-02-01T00:00:00Z', changed: true },
+          { name: 'legacy unchanged', live: '2025-01-01T00:00:00Z', changed: false },
+          { name: 'legacy changed', live: '2025-02-01T00:00:00Z', changed: true },
+        ]) {
+          const entry = { path: skillPath, ...(Object.hasOwn(scenario, 'saved') ? { mtime: scenario.saved } : {}) };
+          const cache = shape === 'array' ? [entry] : { [shape === 'path-keyed' ? skillPath : 'live']: entry };
+          fs.writeFileSync(resultsPath, JSON.stringify({ evaluated_at: evaluatedAt, skills: cache }));
+          fs.utimesSync(skillPath, new Date(scenario.live), new Date(scenario.live));
+          const result = runBash(quickDiffScript, [resultsPath], env);
+          assert.strictEqual(result.status, 0, result.stderr);
+          assert.deepStrictEqual(JSON.parse(result.stdout), scenario.changed
+            ? [{ path: skillPath, mtime: scenario.live, is_new: false }] : [], `${shape}: ${scenario.name}`);
+        }
+      }
+    } finally {
+      fs.rmSync(tempRoot, { recursive: true, force: true });
+    }
+  });
+}
+
 console.log(`\nPassed: ${passed}`);
 console.log(`Failed: ${failed}`);
 process.exit(failed > 0 ? 1 : 0);

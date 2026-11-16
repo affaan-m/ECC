@@ -135,9 +135,18 @@ function isManagedOperation(operation) {
 function uniqueOperations(operations) {
   const byDestination = new Map();
   for (const operation of operations) {
-    // A target path has one current owner. Later operations come from the
-    // newest plan and replace stale metadata for the same destination.
-    byDestination.set(comparablePath(operation.destinationPath), operation);
+    // A target path has one current owner — except a settings file, which
+    // takes contributions from every module that ships hooks. Keyed by the
+    // destination alone, the last settings operation would replace the
+    // earlier records, and uninstall would leave their managed hooks behind.
+    const isSettingsOperation = operation.kind === 'update-claude-settings'
+      || operation.kind === 'remove-claude-settings-hooks';
+    const key = isSettingsOperation
+      ? `${operation.kind}\0${comparablePath(operation.destinationPath)}\0${operation.sourceRelativePath || ''}`
+      : comparablePath(operation.destinationPath);
+    // Later operations come from the newest plan and replace stale metadata
+    // for the same destination and source.
+    byDestination.set(key, operation);
   }
   return [...byDestination.values()];
 }

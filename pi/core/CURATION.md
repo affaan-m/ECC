@@ -1,6 +1,6 @@
 # Curation
 
-pi/core includes 134 of 314 skills and 24 of 98 commands from the root of ECC.
+pi/core includes 137 of 326 skills and 24 of 98 commands from the root of ECC.
 Everything excluded is listed here with its reason.
 
 ## Rules
@@ -36,11 +36,12 @@ Exclude anything that:
 | `carrier-relationship-management` | supply chain/logistics domain pack |
 | `cisco-ios-patterns` | network-device ops niche domain |
 | `ck` | Claude-Code-only persistent memory commands |
-| `claude-devfleet` | multi-agent orchestration via external DevFleet product |
+| `devfleet` | multi-agent orchestration via external DevFleet product |
 | `codehealth-mcp` | wraps CodeScene MCP SaaS |
 | `competitive-platform-analysis` | competitive/marketing analysis |
 | `competitive-report-structure` | competitive/marketing reporting |
 | `config-gc` | Claude-Code-only config garbage collection (~/.claude) |
+| `config-health` | Claude Code startup hook and configuration monitoring |
 | `configure-ecc` | ECC-specific setup wizard |
 | `connections-optimizer` | social/outreach (X and LinkedIn) |
 | `content-engine` | social/marketing content system |
@@ -53,6 +54,7 @@ Exclude anything that:
 | `counterparty-channel-discipline` | agent messaging ops policy |
 | `crosspost` | social/marketing distribution |
 | `customer-billing-ops` | billing/ops skill over connected billing tools |
+| `ecc-contribution-review` | ECC-specific contribution packet compiler over repository manifests and cross-harness review evidence |
 | `customs-trade-compliance` | customs/trade niche domain |
 | `data-scraper-agent` | scheduled network scraping agent |
 | `deep-research` | requires firecrawl and exa SaaS MCP tools |
@@ -150,9 +152,11 @@ Exclude anything that:
 | `repo-scan` | downloads an external skill at runtime |
 | `research-ops` | ECC ops research workflow with network enrichment |
 | `returns-reverse-logistics` | logistics niche domain |
+| `roundhouse-x402` | hosted x402 service discovery and settlement integration |
 | `rules-distill` | Claude-Code-only rules distillation mechanics |
 | `safety-guard` | Claude-Code-only PreToolUse hooks |
 | `santa-method` | multi-agent adversarial review roster |
+| `scientific-db-openalex-database` | scientific niche domain pack |
 | `scientific-db-pubmed-database` | scientific niche domain pack |
 | `scientific-db-uspto-database` | scientific niche domain pack |
 | `scientific-pkg-gget` | scientific niche domain pack |
@@ -162,6 +166,7 @@ Exclude anything that:
 | `security-bounty-hunter` | offensive security (bug bounty) |
 | `security-scan` | wraps AgentShield commercial product |
 | `seo` | SEO/marketing |
+| `short-video-distribution` | social/media distribution |
 | `skill-comply` | runs agent rosters for compliance checks |
 | `skill-host-compat` | runs an ECC repo CI script (scripts/ci/validate-skill-host-compat.js) |
 | `skill-scout` | network searches of skill marketplaces |
@@ -175,6 +180,7 @@ Exclude anything that:
 | `tasteforge-video` | media generation workflow over fal.ai SaaS |
 | `team-agent-orchestration` | agent squad orchestration |
 | `team-builder` | Claude agents roster picker |
+| `terraform-patterns` | infrastructure-as-code guidance that targets live cloud accounts; outside the curated Pi-core profile |
 | `terminal-opener` | ECC harness utility, not engineering content |
 | `terminal-ops` | ECC ops workflow |
 | `tinystruct-patterns` | niche single-framework pack |
@@ -184,6 +190,7 @@ Exclude anything that:
 | `uncloud` | niche cluster ops |
 | `unified-memory` | ECC memory vault (session save/resume family) |
 | `unified-notifications-ops` | ECC notifications ops |
+| `web-perimeter-owasp-2025-audit` | live web perimeter probes and network audit workflow |
 | `video-editing` | media production niche |
 | `videodb` | wraps VideoDB SaaS |
 | `visa-doc-translate` | visa/legal docs niche; OCR network calls |
@@ -199,6 +206,8 @@ Exclude anything that:
 | `deepseek-harness-setup` | configures an external DeepSeek provider and Claude-Code-specific credentials and hook integration |
 | `story-lifecycle` | Requires ECC agent workflow handoffs and a local Node ledger; native Pi delivery has not been validated. |
 | `issue-review` | Requires authenticated GitHub reads and optional remote issue mutations through gh; outside the offline core profile. |
+| `leanrea` | specialized local binary reverse-engineering workflow |
+| `platform-factory` | optional third-party OCI and microVM operator workflow |
 
 ## Excluded commands
 

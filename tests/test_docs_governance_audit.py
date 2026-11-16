@@ -448,6 +448,82 @@ def test_artifact_scope_ignores_links_inside_code_examples(project: Path) -> Non
     assert result.returncode == 0, result.stdout
 
 
+def test_artifact_scope_ignores_links_inside_html_comments(project: Path) -> None:
+    (project / "guide.md").write_text(
+        "Intro <!-- [old](missing-inline.md) --> text\n\n"
+        "<!--\nSee [draft](missing-draft.md).\n-->\n\n"
+        "Text <!-- --> [after](missing-after.md)\n",
+        encoding="utf-8",
+    )
+    result = run_audit(project, "artifacts")
+    assert result.returncode == 1
+    assert "missing-inline.md" not in result.stdout
+    assert "missing-draft.md" not in result.stdout
+    assert "Broken Markdown link: 'guide.md' -> 'missing-after.md'" in result.stdout
+
+
+def test_artifact_scope_reads_html_comments_as_commonmark_does(project: Path) -> None:
+    (project / "guide.md").write_text(
+        # -- an escaped opener is text, so the link after it is real --
+        "Intro \\<!-- [escaped](missing-escaped.md) -->\n\n"
+        # -- a comment that opens before a code span ends at its own closer --
+        "Note <!-- ` --> `sample` [after-code](missing-after-code.md)\n\n"
+        # -- a comment inside a line that does not close on it is text --
+        "Intro <!-- note\n\n[real](missing-real.md)\n-->\n\n"
+        # -- one that starts a line after a blank line is a top-level HTML block: it spans blank
+        # -- lines and takes the rest of the line that holds its closer --
+        "<!--\n[hidden](missing-hidden.md)\n\n[hidden2](missing-hidden2.md)\n-->\n\n"
+        "<!-- c --> [rest](missing-rest.md)\n\n"
+        # -- in a list item or a block quote, only a comment that closes on its line is skipped,
+        # -- and the rest of that line is still audited --
+        "- <!-- c --> [listed](missing-listed.md)\n\n"
+        "> <!-- c --> [quoted](missing-quoted.md)\n\n"
+        "- item <!-- c\n\n  [item-real](missing-item-real.md)\n  -->\n\n"
+        # -- a comment where a destination must begin does not make a definition --
+        "[foo]: <!-- note --> missing-definition.md\n\n[foo]\n\n"
+        "[bar]: <!-- only a comment -->\n\n[bar]\n\n"
+        # -- a title may hold comment-shaped text; the destination is still audited --
+        '[titled](missing-titled.md "<!-- c -->")\n\n'
+        # -- a fence line inside a comment block is comment text; the fence after it is real --
+        "<!--\n```\n-->\n```\n[fenced](missing-fenced.md)\n```\n",
+        encoding="utf-8",
+    )
+    result = run_audit(project, "artifacts")
+    assert result.returncode == 1
+    for reported in (
+        "missing-escaped.md",
+        "missing-after-code.md",
+        "missing-real.md",
+        "missing-listed.md",
+        "missing-quoted.md",
+        "missing-item-real.md",
+        "missing-titled.md",
+    ):
+        assert f"Broken Markdown link: 'guide.md' -> '{reported}'" in result.stdout
+    for hidden in (
+        "missing-hidden",
+        "missing-rest.md",
+        "missing-definition.md",
+        "missing-fenced.md",
+    ):
+        assert hidden not in result.stdout
+    assert result.stdout.count("Broken Markdown link") == 7, result.stdout
+
+
+def test_artifact_scope_reports_a_link_that_a_comment_cannot_reach(project: Path) -> None:
+    (project / "guide.md").write_text(
+        # -- the block quote ends the list item, so the comment never closes and the link is live --
+        "- item <!--\ntext\n  [live](missing.md)\n> > -->\n\n"
+        # -- a comment block at the top level hides list and quote lines up to its closer --
+        "<!--\n- [draft](missing-draft.md)\n> -->\n",
+        encoding="utf-8",
+    )
+    result = run_audit(project, "artifacts")
+    assert result.returncode == 1
+    assert "Broken Markdown link: 'guide.md' -> 'missing.md'" in result.stdout
+    assert "missing-draft.md" not in result.stdout
+
+
 def test_artifact_scope_ignores_title_with_escaped_quotes(project: Path) -> None:
     (project / "guide.md").write_text("# Guide\n", encoding="utf-8")
     (project / "index.md").write_text(

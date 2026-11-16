@@ -53,7 +53,11 @@ function operationFor(plan, suffix) {
   ));
 }
 
-const INERT_OPENCODE_PLUGIN = getDisabledOpenCodePluginContent();
+// OpenCode 2.x scans plugins/ files side by side, and a barrel sharing the
+// real id would register a duplicate (red "Duplicate plugin ID"). The top-level
+// barrel therefore gets a distinct-id stub; tests assert bytes per entrypoint.
+const inertOpenCodeEntrypointContent = (name) =>
+  getDisabledOpenCodePluginContent(`.opencode/plugins/${name}`);
 const OPENCODE_ENTRYPOINTS = ['ecc-hooks.ts', 'index.ts'];
 
 function snapshotFiles(root) {
@@ -804,7 +808,9 @@ function runTests() {
         assert.strictEqual(plan.operations.filter(operation => operation.destinationPath === configPath).length, 1);
         applyInstallPlan(plan);
         const installed = JSON.parse(fs.readFileSync(configPath, 'utf8'));
-        const dormantConfig = { ...config, plugin: config.plugin.filter(plugin => plugin !== './plugins') };
+        const dormantConfig = Array.isArray(config.plugin)
+          ? { ...config, plugin: config.plugin.filter(plugin => plugin !== './plugins') }
+          : { ...config };
         const expected = index === 0
           ? { ...dormantConfig, skills: { ...config.skills, paths: ['./skills', '/custom/skills', '../other-skills'] } }
           : dormantConfig;
@@ -1125,13 +1131,13 @@ function runTests() {
       }
       applyInstallPlanDirect(defaultPlan);
       for (const name of OPENCODE_ENTRYPOINTS) {
-        assert.strictEqual(fs.readFileSync(path.join(homeDir, '.config', 'opencode', 'plugins', name), 'utf8'), INERT_OPENCODE_PLUGIN);
+        assert.strictEqual(fs.readFileSync(path.join(homeDir, '.config', 'opencode', 'plugins', name), 'utf8'), inertOpenCodeEntrypointContent(name));
       }
       const installedConfig = JSON.parse(fs.readFileSync(
         path.join(homeDir, '.config', 'opencode', 'opencode.json'),
         'utf8'
       ));
-      assert.ok(!installedConfig.plugin.includes('./plugins'));
+      assert.ok(!installedConfig.plugin?.includes('./plugins'));
       assert.deepStrictEqual(installedConfig.skills.paths, ['./skills']);
 
       const enabledWithoutRuntime = createInstallPlanFromRequest(
@@ -1190,7 +1196,7 @@ function runTests() {
       for (const name of OPENCODE_ENTRYPOINTS) {
         assert.strictEqual(
           fs.readFileSync(path.join(homeDir, '.config', 'opencode', 'plugins', name), 'utf8'),
-          name === 'index.ts' ? INERT_OPENCODE_PLUGIN : fs.readFileSync(path.join(REPO_ROOT, '.opencode', 'plugins', name), 'utf8')
+          name === 'index.ts' ? inertOpenCodeEntrypointContent('index.ts') : fs.readFileSync(path.join(REPO_ROOT, '.opencode', 'plugins', name), 'utf8')
         );
       }
       assert.strictEqual(
@@ -1201,13 +1207,13 @@ function runTests() {
       const declinedState = JSON.parse(fs.readFileSync(declinedPlan.installStatePath, 'utf8'));
       assert.strictEqual(declinedState.request.hookConsent, 'declined');
       assert.ok(!declinedState.resolution.selectedModules.includes('hooks-runtime'));
-      assert.ok(!JSON.parse(fs.readFileSync(path.join(declinedPlan.targetRoot, 'opencode.json'), 'utf8')).plugin.includes('./plugins'));
+      assert.ok(!JSON.parse(fs.readFileSync(path.join(declinedPlan.targetRoot, 'opencode.json'), 'utf8')).plugin?.includes('./plugins'));
       for (const name of OPENCODE_ENTRYPOINTS) {
         const destinationPath = path.join(homeDir, '.config', 'opencode', 'plugins', name);
-        assert.strictEqual(fs.readFileSync(destinationPath, 'utf8'), INERT_OPENCODE_PLUGIN);
+        assert.strictEqual(fs.readFileSync(destinationPath, 'utf8'), inertOpenCodeEntrypointContent(name));
         const operation = declinedState.operations.find(candidate => candidate.destinationPath === destinationPath);
         assert.strictEqual(operation.contentTransform, 'opencode-disable-plugin-entrypoint');
-        assert.strictEqual(operation.contentSha256, crypto.createHash('sha256').update(INERT_OPENCODE_PLUGIN).digest('hex'));
+        assert.strictEqual(operation.contentSha256, crypto.createHash('sha256').update(inertOpenCodeEntrypointContent(name)).digest('hex'));
       }
     } finally {
       cleanup(homeDir);

@@ -63,6 +63,12 @@
       "args": ["mcp-server"],
       "description": "Lossless Claude Code session history — indexes raw tool calls, file edits, and thinking blocks from ~/.claude/projects/*.jsonl into local SQLite + ChromaDB before Claude Code rotates them. Complements memory/omega-memory (synthesized) with verbatim recall. Install: pip install longhand && longhand setup"
     },
+    "deja-vu": {
+      "command": "npx",
+      "args": ["-y", "@vshulcz/deja-vu@0.24.0", "mcp"],
+      "env": { "DEJA_OFFLINE": "1" },
+      "description": "Opt-in recall over local coding-session transcripts, including older sessions and other projects. Index persists under ~/.cache/deja; recalled text is sent to the connected model. Enable only with permission to read those histories; configure source/project exclusions for private sessions. Reviewed package version is pinned and offline mode is set. No LLM, embeddings or API key required by the local index. Not enabled by default."
+    },
     "sequential-thinking": {
       "command": "npx",
       "args": ["-y", "@modelcontextprotocol/server-sequential-thinking"],
@@ -208,6 +214,12 @@
         "OPENAI_API_KEY": "YOUR_OPENAI_API_KEY_HERE"
       },
       "description": "AI agent regression testing — snapshot behavior, detect regressions in tool calls and output quality. 8 tools: create_test, run_snapshot, run_check, list_tests, validate_skill, generate_skill_tests, run_skill_test, generate_visual_report. API key optional — deterministic checks (tool diff, output hash) work without it. Install: pip install \"evalview>=0.5,<1\""
+    },
+    "mnemosyne-os": {
+      "command": "npx",
+      "args": ["-y", "-p", "@mnemosyne_os/mcp@2.2.0", "mnemosyne-mcp"],
+      "env": { "MNEMO_VAULTS": "YOUR_APPROVED_VAULT_NAMES", "MNEMO_DEFAULT_VAULT": "" },
+      "description": "Opt-in Mnemosyne OS desktop-app memory and dashboard. Replace MNEMO_VAULTS with approved vault names before enabling; the app ingests selected folders into persistent vaults, and memory_ingest can save content for later agents. Vault scope does not restrict session tools, which read local coding-agent transcripts. Review folder and transcript access before enabling. Memory tools use the app at ws://127.0.0.1:7799. Tool results, including private memory and session data, go to the MCP client and its model provider. Not enabled by default."
     }
   },
   "_comments": {

@@ -1,0 +1,17 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "id": "config-health:session-start",
+        "matcher": ".*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/scripts/config-health.py\" --startup",
+            "timeout": 10
+          }
+        ]
+      }
+    ]
+  }
+}
