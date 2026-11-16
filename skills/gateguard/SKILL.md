@@ -190,7 +190,7 @@ may collapse, and that a sibling must share the first file's class.
 
 ### Destructive Bash Gate (every destructive command)
 
-Triggers on: `rm -rf`, `git reset --hard`, `git push --force`, `drop table`, etc.
+Triggers on: `rm -rf`, `git reset --hard`, `git push --force`, `drop table`, `drop database`, `drop schema`, `alter table ... drop column`, etc.
 
 ```
 1. List all files/data this command will modify or delete
