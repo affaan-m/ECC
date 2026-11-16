@@ -363,6 +363,46 @@ function runTests() {
     }
   })) passed++; else failed++;
 
+  if (test('Git worktree roots prefer native realpath so Windows 8.3 aliases resolve', () => {
+    const canonicalPath = path.join(os.tmpdir(), 'ecc-grok-long-name', 'repo');
+    const shortAliasPath = path.join(os.tmpdir(), 'ECC-GR~1', 'repo');
+    const fakeFs = {
+      realpathSync: Object.assign(
+        // Mimics JS realpath: it leaves the short-name alias unexpanded.
+        value => path.resolve(value),
+        {
+          native: value => (path.resolve(value) === shortAliasPath ? canonicalPath : path.resolve(value)),
+        }
+      ),
+    };
+    const fakeGit = () => `${canonicalPath}\n`;
+    assert.strictEqual(isGitWorkTreeRoot(shortAliasPath, fakeFs, fakeGit), true);
+  })) passed++; else failed++;
+
+  if (process.platform !== 'win32') {
+    console.log('  - skipped: Git worktree roots accept Windows 8.3 short-name aliases (not Windows)');
+  } else if (test('Git worktree roots accept Windows 8.3 short-name aliases', () => {
+    const parent = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-grok-long-name-alias-'));
+    try {
+      const sourceRoot = path.join(parent, 'source-with-a-long-directory-name');
+      fs.mkdirSync(sourceRoot);
+      git(sourceRoot, ['init', '--quiet']);
+      assert.strictEqual(isGitWorkTreeRoot(sourceRoot), true);
+      const aliasRoot = execFileSync(
+        'cmd',
+        ['/d', '/s', '/c', `for %I in ("${sourceRoot}") do @echo %~sI`],
+        { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], windowsVerbatimArguments: true }
+      ).trim();
+      if (!aliasRoot || aliasRoot.toLowerCase() === sourceRoot.toLowerCase()) {
+        console.log('    (volume has no 8.3 alias for the test directory; alias assertion skipped)');
+        return;
+      }
+      assert.strictEqual(isGitWorkTreeRoot(aliasRoot), true);
+    } finally {
+      fs.rmSync(parent, { recursive: true, force: true });
+    }
+  })) passed++; else failed++;
+
   if (test('source identity rejects a marketplace version that does not match the pinned plugin', () => {
     const fixture = createPinnedFixture();
     try {

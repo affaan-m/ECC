@@ -688,6 +688,13 @@ function isSafeRelativeSourceDocPath(trimmedEntry, normalizedEntry) {
     && !segments.includes('.');
 }
 
+// Canonicalize both sides of the containment check the same way. The native
+// realpath also expands Windows 8.3 short names (e.g. RUNNER~1), which the JS
+// realpath leaves as-is.
+function nativeRealpath(value) {
+  return (fs.realpathSync.native || fs.realpathSync)(value);
+}
+
 function validateSingleSourceDoc(label, docEntry, repoRoot, canonicalRepoRoot) {
   if (typeof docEntry !== 'string' || !docEntry.trim()) {
     return null;
@@ -706,7 +713,7 @@ function validateSingleSourceDoc(label, docEntry, repoRoot, canonicalRepoRoot) {
 
   let canonicalResolved;
   try {
-    canonicalResolved = fs.realpathSync(resolved);
+    canonicalResolved = nativeRealpath(resolved);
   } catch (_error) {
     return `${label}: missing source_doc ${trimmedEntry}`;
   }
@@ -720,7 +727,7 @@ function validateSingleSourceDoc(label, docEntry, repoRoot, canonicalRepoRoot) {
 
 function validateSourceDocs(records = ADAPTER_RECORDS, options = {}) {
   const repoRoot = path.resolve(options.repoRoot || path.resolve(__dirname, '..', '..'));
-  const canonicalRepoRoot = fs.existsSync(repoRoot) ? fs.realpathSync(repoRoot) : repoRoot;
+  const canonicalRepoRoot = fs.existsSync(repoRoot) ? nativeRealpath(repoRoot) : repoRoot;
   const errors = [];
 
   for (const record of records) {

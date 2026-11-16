@@ -287,6 +287,56 @@ test('validateSourceDocs rejects a symlinked source_doc escaping the repository 
   }
 });
 
+test('validateSourceDocs canonicalizes the root and source_docs with the native realpath', () => {
+  // Models Windows 8.3 aliasing without needing symlink privileges: the JS
+  // realpath keeps the root's short form (e.g. RUNNER~1) while an in-repo
+  // link resolves to a long-form target; the native realpath returns the
+  // long form for both. Before the fix, both in-repo docs were reported as
+  // outside the repository root.
+  const tempRoot = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-adapter-native-')));
+  const outsideRoot = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-adapter-native-outside-')));
+  const shortRoot = path.join(path.dirname(tempRoot), 'ECC-AD~1');
+  const realDoc = path.join(tempRoot, 'docs', 'real.md');
+  const linkDoc = path.join(tempRoot, 'docs', 'link.md');
+  const outsideDoc = path.join(tempRoot, 'docs', 'outside.md');
+  const outsideFile = path.join(outsideRoot, 'secret.md');
+  const originalRealpathSync = fs.realpathSync;
+
+  try {
+    fs.mkdirSync(path.join(tempRoot, 'docs'), { recursive: true });
+    for (const file of [realDoc, linkDoc, outsideDoc, outsideFile]) {
+      fs.writeFileSync(file, 'doc\n');
+    }
+    const linkTargets = new Map([[linkDoc, realDoc], [outsideDoc, outsideFile]]);
+    const nativeRealpath = value => linkTargets.get(path.resolve(value)) || path.resolve(value);
+    const jsRealpath = value => (path.resolve(value) === tempRoot ? shortRoot : nativeRealpath(value));
+    fs.realpathSync = Object.assign(jsRealpath, { native: nativeRealpath });
+
+    const errors = validateSourceDocs(
+      [{
+        id: 'sample',
+        harness: 'Sample',
+        state: 'Adapter-backed',
+        supported_assets: ['skills'],
+        unsupported_surfaces: ['hooks'],
+        install_or_onramp: ['`./install.sh --target sample`'],
+        verification_commands: ['`npm test`'],
+        risk_notes: ['None'],
+        last_verified_at: '2026-10-30',
+        owner: 'ECC maintainers',
+        source_docs: ['docs/real.md', 'docs/link.md', 'docs/outside.md'],
+      }],
+      { repoRoot: tempRoot }
+    );
+    assert.strictEqual(errors.length, 1, errors.join('\n'));
+    assert.match(errors[0], /docs\/outside\.md resolves outside repository root/);
+  } finally {
+    fs.realpathSync = originalRealpathSync;
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+    fs.rmSync(outsideRoot, { recursive: true, force: true });
+  }
+});
+
 if (failed > 0) {
   console.log(`\nFailed: ${failed}`);
   process.exit(1);
