@@ -31,10 +31,23 @@
       "id": "replication-before-recommendation",
       "severity": "warning",
       "summary": "One pair, overlapping variants, or fixed run order can qualify a harness but cannot establish a general orchestration efficiency boundary."
+    },
+    {
+      "id": "pair-consistency-before-direction",
+      "severity": "warning",
+      "summary": "With three pairs, one reversed pair delta makes that metric inconclusive; averaging opposite-sign deltas would publish a direction the evidence does not support."
     }
   ],
   "recommended_next_action": {
     "candidate_id": "controlled-paired-orchestration-evaluation",
     "action": "Use the promoted playbook to design sequential paired runs, preserve every attempt, and recommend orchestration only for task classes where accepted quality and measured coordination cost justify it."
+  },
+  "evidence_coverage": {
+    "kind": "synthetic_fixture_only",
+    "pair_fixtures": [
+      "pairs-sign-consistent.json",
+      "pairs-mixed-sign.json"
+    ],
+    "executed_runs": 0
   }
 }

@@ -31,9 +31,11 @@
     },
     {
       "phase": "verification",
-      "summary": "Accepted the controlled paired evaluation because it matches controls, evaluates quality first, aggregates worker cost, and keeps negative results. Rejected the intuition-only claim because it relies on one overlapping run with unavailable token totals.",
+      "summary": "Accepted the controlled paired evaluation because it matches controls, evaluates quality first, aggregates worker cost, and keeps negative results. Rejected the intuition-only claim because it relies on one overlapping run with unavailable token totals. Applied the pair consistency rule: the sign-consistent fixture permits only a task-class-scoped claim, and the mixed-sign fixture returns inconclusive with no promoted claim.",
       "evidence": [
-        "examples/evaluator-rag-prototype/orchestration-efficiency-evidence/verifier-result.json"
+        "examples/evaluator-rag-prototype/orchestration-efficiency-evidence/verifier-result.json",
+        "examples/evaluator-rag-prototype/orchestration-efficiency-evidence/pairs-sign-consistent.json",
+        "examples/evaluator-rag-prototype/orchestration-efficiency-evidence/pairs-mixed-sign.json"
       ]
     },
     {

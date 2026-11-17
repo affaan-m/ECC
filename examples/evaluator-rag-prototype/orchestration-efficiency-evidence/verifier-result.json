@@ -12,9 +12,10 @@
         "records a dependency graph and exclusive write ownership before delegation",
         "matches task, revision, model, reasoning effort, permissions, tools, time limit, and evaluator",
         "requires acceptance and evidence quality before comparing elapsed time or cost",
-        "aggregates controller, worker, and retry tokens or cost and marks unavailable telemetry honestly",
+        "aggregates controller, worker, verifier, and retry tokens or cost and marks unavailable telemetry honestly",
         "retains failed candidates, conflicts, integration rework, retries, and human corrections",
-        "requires repeated sequential pairs and alternated run order before a general recommendation"
+        "requires repeated sequential pairs and alternated run order before a general recommendation",
+        "derives per-pair quality, time, and cost deltas from retained attempts and returns inconclusive when any metric is mixed-sign or unavailable"
       ],
       "rollback": "Withdraw the recommendation and retain the raw run receipts if later replications reverse the result; this read-only playbook launches no workers and changes no candidate repository."
     },
@@ -27,7 +28,8 @@
         "has no matched accepted single-agent baseline",
         "reports no aggregate worker token or cost total",
         "ignores overlap, machine contention, conflicts, integration rework, and failed attempts",
-        "turns one smoke run with unavailable telemetry into a general efficiency claim"
+        "turns one smoke run with unavailable telemetry into a general efficiency claim",
+        "would average opposite-sign pair results into one direction"
       ],
       "rollback": "Do not publish the claim; restart from matched controls, acceptance evidence, complete run receipts, and sequential paired replications."
     }
