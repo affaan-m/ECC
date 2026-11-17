@@ -77,6 +77,20 @@ function dot(left, right) {
   return total;
 }
 
+function dotAtDimensions(left, right, dimensions) {
+  let total = 0;
+  for (const dimension of dimensions) total += left[dimension] * right[dimension];
+  return total;
+}
+
+function nonzeroDimensions(vector) {
+  const dimensions = [];
+  for (let dimension = 0; dimension < vector.length; dimension += 1) {
+    if (vector[dimension] !== 0) dimensions.push(dimension);
+  }
+  return dimensions;
+}
+
 function fieldTokens(entry, field) {
   if (field === 'name') return tokenize(`${entry.id.slice('skill:'.length)} ${entry.name || ''}`);
   if (field === 'triggers') return tokenize((entry.triggers || []).join(' '));
@@ -145,18 +159,22 @@ function searchRetrieval(index, query, { limit = 5 } = {}) {
   const normalizedQuery = ` ${normalizedName(query || '')} `;
   if (!queryTokens.length) return [];
   const queryDense = denseVector([queryTokens]);
+  // Most prompt features are zero. Skip their products for every document,
+  // retaining ascending dimension order so nonzero additions stay identical.
+  const queryDimensions = nonzeroDimensions(queryDense);
+  const uniqueTerms = new Set(queryTokens);
   const bm25 = new Map();
   const dense = new Map();
   for (const document of index.documents) {
     let score = 0;
-    for (const term of new Set(queryTokens)) {
+    for (const term of uniqueTerms) {
       const tf = document.weighted.get(term);
       if (!tf) continue;
       const denominator = tf + K1 * (1 - B + B * document.docLength / index.averageLength);
       score += index.idf(term) * (tf * (K1 + 1)) / denominator;
     }
     if (score > 0) bm25.set(document, score);
-    const cosine = dot(queryDense, document.dense);
+    const cosine = dotAtDimensions(queryDense, document.dense, queryDimensions);
     if (cosine >= DENSE_ADMIT_COSINE) dense.set(document, cosine);
   }
   const bm25Ranked = [...bm25.entries()].sort((a, b) => b[1] - a[1] || (a[0].entry.id < b[0].entry.id ? -1 : 1));
@@ -165,7 +183,6 @@ function searchRetrieval(index, query, { limit = 5 } = {}) {
   // "capital of Japan") is not evidence of relevance. Short queries need two
   // matched terms; longer technical queries carry signal in one strong domain
   // term. Exact names and strong morphology matches anchor regardless.
-  const uniqueTerms = new Set(queryTokens);
   const minimumCoverage = Math.min(2, uniqueTerms.size);
   const eligible = new Set();
   for (const [document] of bm25Ranked) {
@@ -193,7 +210,7 @@ function searchRetrieval(index, query, { limit = 5 } = {}) {
     .sort((a, b) => b[1] - a[1] || (a[0].entry.id < b[0].entry.id ? -1 : 1))
     .slice(0, limit)
     .map(([document, score]) => {
-      const matched = [...new Set(queryTokens)].filter(term => document.weighted.has(term));
+      const matched = [...uniqueTerms].filter(term => document.weighted.has(term));
       const anchorTerms = matched.filter(term => document.fields.name.includes(term) || document.fields.triggers.includes(term));
       const exact = anchored.has(document);
       return { id: document.entry.id, score: Math.round(score * 10000) / 10000, exact,
