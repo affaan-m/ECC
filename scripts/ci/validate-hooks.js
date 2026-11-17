@@ -7,6 +7,7 @@ const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
 const Ajv = require('ajv');
+const { visit } = require('jsonc-parser');
 
 /**
  * Resolve a module by its repo-relative path.
@@ -287,20 +288,56 @@ function isValidMatcherValue(value) {
   return typeof value === 'string' || (typeof value === 'object' && value !== null);
 }
 
+// Inspect the source before JSON.parse discards earlier members with the same name.
+function checkHookDuplicates(source, eventMap) {
+  const events = new Map();
+  const ids = new Map();
+
+  visit(source, {
+    onObjectProperty(key, _offset, _length, line, _column, getPath) {
+      const parent = getPath();
+      if (parent.length !== 1 || parent[0] !== eventMap) return;
+
+      if (events.has(key)) {
+        throw new Error(`line ${line + 1}: duplicate event key '${key}' (first on line ${events.get(key)})`);
+      }
+      events.set(key, line + 1);
+    },
+    onLiteralValue(value, _offset, _length, line, _column, getPath) {
+      const location = getPath();
+      const [container, event, index, field] = location;
+      if (location.length !== 4 || container !== eventMap || field !== 'id') return;
+      if (typeof event !== 'string' || typeof index !== 'number' || !isNonEmptyString(value)) return;
+
+      const matcher = `${event}[${index}]`;
+      if (ids.has(value)) {
+        throw new Error(`line ${line + 1}: ${matcher} has duplicate id '${value}' (already used by ${ids.get(value)})`);
+      }
+      ids.set(value, `${matcher} on line ${line + 1}`);
+    },
+  });
+}
+
+function readHookDocument(file, eventMap) {
+  const name = path.basename(file);
+  try {
+    const source = fs.readFileSync(file, 'utf-8');
+    checkHookDuplicates(source, eventMap);
+    return JSON.parse(source);
+  } catch (error) {
+    const label = error instanceof SyntaxError ? `Invalid JSON in ${name}` : name;
+    console.error(`ERROR: ${label}: ${error.message}`);
+    process.exit(1);
+  }
+}
+
 function readHooksFile() {
   if (!fs.existsSync(HOOKS_FILE)) {
     console.log('No hooks.json found, skipping validation');
     process.exit(0);
   }
 
-  let data;
-  try {
-    data = JSON.parse(fs.readFileSync(HOOKS_FILE, 'utf-8'));
-  } catch (e) {
-    console.error(`ERROR: Invalid JSON in hooks.json: ${e.message}`);
-    process.exit(1);
-  }
-  return data;
+  return readHookDocument(HOOKS_FILE, 'hooks');
 }
 
 /**
@@ -317,13 +354,7 @@ function loadMetadata(data, metadataPath) {
     return null;
   }
 
-  let metadata;
-  try {
-    metadata = JSON.parse(fs.readFileSync(metadataPath, 'utf-8'));
-  } catch (e) {
-    console.error(`ERROR: Invalid JSON in ${METADATA_FILENAME}: ${e.message}`);
-    process.exit(1);
-  }
+  let metadata = readHookDocument(metadataPath, 'entries');
 
   if (validateHarnessCompatibility(data)) {
     process.exit(1);
@@ -368,24 +399,16 @@ function validateHookEntries(entries, label) {
 }
 
 /**
- * Validate one matcher of the object format. `ids` tracks stable ids when the
- * document requires them, and is null otherwise.
+ * Validate one matcher of the object format.
  * @returns {boolean} true if errors were found
  */
-function validateObjectMatcher(eventType, index, matcher, ids) {
+function validateObjectMatcher(eventType, index, matcher, requiresStableIds) {
   const matcherLabel = `${eventType}[${index}]`;
   let hasErrors = false;
 
-  if (ids && !isNonEmptyString(matcher.id)) {
+  if (requiresStableIds && !isNonEmptyString(matcher.id)) {
     console.error(`ERROR: ${matcherLabel} missing or invalid 'id' field`);
     hasErrors = true;
-  } else if (ids && ids.has(matcher.id)) {
-    console.error(
-      `ERROR: ${matcherLabel} has duplicate id '${matcher.id}' (already used by ${ids.get(matcher.id)})`
-    );
-    hasErrors = true;
-  } else if (ids) {
-    ids.set(matcher.id, matcherLabel);
   }
 
   if (!('matcher' in matcher) && !EVENTS_WITHOUT_MATCHER.has(eventType)) {
@@ -411,7 +434,6 @@ function validateObjectMatcher(eventType, index, matcher, ids) {
  * @returns {{ hasErrors: boolean, totalMatchers: number }}
  */
 function validateObjectFormat(hooks, requiresStableIds) {
-  const ids = requiresStableIds ? new Map() : null;
   let hasErrors = false;
   let totalMatchers = 0;
 
@@ -435,7 +457,7 @@ function validateObjectFormat(hooks, requiresStableIds) {
         hasErrors = true;
         continue;
       }
-      if (validateObjectMatcher(eventType, i, matcher, ids)) {
+      if (validateObjectMatcher(eventType, i, matcher, requiresStableIds)) {
         hasErrors = true;
       }
       totalMatchers++;

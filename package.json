@@ -595,6 +595,7 @@
     "eslint": "10.13.0",
     "express": "4.22.3",
     "globals": "17.13.0",
+    "jsonc-parser": "3.3.1",
     "markdownlint-cli": "0.49.1",
     "typescript": "6.0.3"
   },

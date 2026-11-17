@@ -3014,6 +3014,32 @@ function runTests() {
     cleanupTestDir(testDir);
   })) passed++; else failed++;
 
+  for (const [file, eventMap] of [['hooks.json', 'hooks'], ['hooks.metadata.json', 'entries']]) {
+    if (test(`reports the second occurrence of a duplicate event in ${file}`, () => {
+      const testDir = createTestDir();
+      try {
+        const hooksFile = path.join(testDir, 'hooks.json');
+        writeJson(hooksFile, { hooks: { Stop: [] } });
+        // JSON.parse decodes both spellings as Stop and discards the first entry.
+        fs.writeFileSync(path.join(testDir, file), String.raw`{
+  "${eventMap}": {
+    "Stop": [],
+    "St\u006fp": []
+  }
+}`);
+
+        const result = runValidatorWithDir('validate-hooks', 'HOOKS_FILE', hooksFile);
+        assert.strictEqual(result.code, 1, result.stdout);
+        assert.ok(result.stderr.includes(file), result.stderr);
+        assert.match(result.stderr, /duplicate/i);
+        assert.match(result.stderr, /Stop/);
+        assert.match(result.stderr, /(?:\bline\s+|:)4\b/i);
+      } finally {
+        cleanupTestDir(testDir);
+      }
+    })) passed++; else failed++;
+  }
+
   if (test('rejects duplicate wrapped matcher ids across events', () => {
     const testDir = createTestDir();
     const hooksFile = path.join(testDir, 'hooks.json');
@@ -3030,7 +3056,7 @@ function runTests() {
           hooks: [{ type: 'command', command: 'echo post' }]
         }]
       }
-    }));
+    }, null, 2));
 
     const result = runValidatorWithDir('validate-hooks', 'HOOKS_FILE', hooksFile);
     assert.strictEqual(result.code, 1, 'Should reject matcher ids reused by another event');
@@ -3042,7 +3068,36 @@ function runTests() {
       result.stderr.includes('PreToolUse[0]') && result.stderr.includes('PostToolUse[0]'),
       `Should report both matcher locations, got: ${result.stderr}`
     );
+    assert.ok(result.stderr.includes('hooks.json'), result.stderr);
+    assert.match(result.stderr, /(?:\bline\s+|:)17\b/i);
     cleanupTestDir(testDir);
+  })) passed++; else failed++;
+
+  if (test('reports the source line of a duplicate sidecar id across events', () => {
+    const testDir = createTestDir();
+    try {
+      const hooksFile = path.join(testDir, 'hooks.json');
+      const entry = { hooks: [{ type: 'command', command: 'echo ok' }] };
+      writeJson(hooksFile, { hooks: { Stop: [entry], UserPromptSubmit: [entry] } });
+      const { fingerprintHookEntry } = require('../../scripts/lib/hooks-config');
+      const metadata = JSON.stringify({ id: 'shared:matcher', fingerprint: fingerprintHookEntry(entry) });
+      fs.writeFileSync(path.join(testDir, 'hooks.metadata.json'), `{
+  "entries": {
+    "Stop": [${metadata}],
+    "UserPromptSubmit": [
+      ${metadata}]
+  }
+}`);
+
+      const result = runValidatorWithDir('validate-hooks', 'HOOKS_FILE', hooksFile);
+      assert.strictEqual(result.code, 1, result.stdout);
+      assert.ok(result.stderr.includes('hooks.metadata.json'), result.stderr);
+      assert.match(result.stderr, /duplicate/i);
+      assert.match(result.stderr, /shared:matcher/);
+      assert.match(result.stderr, /(?:\bline\s+|:)5\b/i);
+    } finally {
+      cleanupTestDir(testDir);
+    }
   })) passed++; else failed++;
 
   // ── Round 79: validate-commands.js warnings count suffix in output ──
