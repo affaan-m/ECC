@@ -50,6 +50,26 @@ if (test('rejects shorthand and insecure or unrelated origins', () => {
   assert.strictEqual(normalizeGitHubGitOrigin(null), null);
 })) passed++; else failed++;
 
+if (test('normalizes trailing separators before the optional git suffix', () => {
+  for (const prefix of ['https://github.com/', 'ssh://git@github.com/', 'git@github.com:']) {
+    for (const suffix of ['.git/', '.GIT///', '///']) {
+      assert.strictEqual(normalizeGitHubGitOrigin(`${prefix}Affaan-M/ECC${suffix}`), 'affaan-m/ecc');
+    }
+  }
+  assert.strictEqual(normalizeGitHubGitOrigin('https://github.com/affaan-m/ECC.git.git/'), 'affaan-m/ecc.git');
+})) passed++; else failed++;
+
+if (test('trailing separators do not admit insecure hosts or repository subpaths', () => {
+  for (const origin of [
+    'http://github.com/affaan-m/ECC.git/',
+    'https://example.com/affaan-m/ECC.git/',
+    'https://github.com.example.com/affaan-m/ECC.git/',
+    'https://github.com/affaan-m/ECC/tree/main.git/',
+  ]) {
+    assert.strictEqual(normalizeGitHubGitOrigin(origin), null);
+  }
+})) passed++; else failed++;
+
 console.log(`\nPassed: ${passed}`);
 console.log(`Failed: ${failed}`);
 process.exit(failed > 0 ? 1 : 0);

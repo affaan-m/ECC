@@ -55,7 +55,7 @@ function fail(code, message, details) {
 
 function normalizeGitHubRepository(value) {
   if (typeof value !== 'string') return null;
-  const normalized = value.trim().replace(/\.git$/i, '').replace(/\/+$/, '');
+  const normalized = value.trim().replace(/\/+$/, '').replace(/\.git$/i, '');
   const match = normalized.match(/^([^/]+\/[^/]+)$/);
   return match ? match[1].toLowerCase() : null;
 }

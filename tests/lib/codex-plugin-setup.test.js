@@ -276,6 +276,37 @@ async function runTests() {
         PLUGIN_LIST,
       ]);
     }],
+    ['refreshes and rechecks official origins ending in git and a slash', async () => {
+      const fake = createExecFile([
+        { args: MARKETPLACE_LIST, stdout: marketplaceInventory(true) },
+        { args: PLUGIN_LIST, stdout: pluginInventory(true) },
+        { args: MARKETPLACE_UPGRADE, stdout: marketplaceUpgradeResult() },
+        { args: MARKETPLACE_LIST, stdout: marketplaceInventory(true) },
+        { args: PLUGIN_LIST, stdout: pluginInventory(true) },
+      ]);
+      let provenanceChecks = 0;
+      const result = await reconcileCodexPlugin({}, dependenciesFor(fake, {
+        resolveMarketplaceRepository: async () => {
+          provenanceChecks += 1;
+          return 'https://github.com/affaan-m/ECC.git/';
+        },
+      }));
+
+      assert.deepStrictEqual(result, {
+        action: 'updated',
+        marketplaceAction: 'upgraded',
+        pluginId: 'ecc@ecc',
+        restartRequired: true,
+      });
+      assert.strictEqual(provenanceChecks, 2);
+      assert.deepStrictEqual(fake.calls.map(call => call.args), [
+        MARKETPLACE_LIST,
+        PLUGIN_LIST,
+        MARKETPLACE_UPGRADE,
+        MARKETPLACE_LIST,
+        PLUGIN_LIST,
+      ]);
+    }],
     ['fails closed when native refresh does not confirm the marketplace root', async () => {
       const fake = createExecFile([
         { args: MARKETPLACE_LIST, stdout: marketplaceInventory(true) },

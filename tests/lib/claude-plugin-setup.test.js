@@ -266,6 +266,46 @@ test('an existing single-scope install defaults to its detected scope', () => {
   });
 });
 
+test('repeat setup refreshes official repository origins ending in git and a slash', () => {
+  const marketplaces = [
+    { ...officialMarketplace('user'), repo: 'affaan-m/ECC.git/' },
+    { name: 'ecc', source: 'git', url: 'https://github.com/affaan-m/ECC.git/', scope: 'user' },
+  ];
+  for (const marketplace of marketplaces) {
+    withFixture({
+      plugins: [installedPlugin('user')],
+      marketplaces: [marketplace],
+    }, fixture => {
+      const result = setupClaudePlugin(setupOptions(fixture));
+      assert.strictEqual(result.action, 'updated');
+      assert.strictEqual(result.scope, 'user');
+      assert.deepStrictEqual(readCalls(fixture), [
+        ['plugin', 'list', '--json'],
+        ['plugin', 'marketplace', 'list', '--json'],
+        ['plugin', 'marketplace', 'update', 'ecc'],
+        ['plugin', 'marketplace', 'list', '--json'],
+        ['plugin', 'update', 'ecc@ecc', '--scope', 'user'],
+        ['plugin', 'list', '--json'],
+      ]);
+    });
+  }
+});
+
+test('repository suffix normalization still rejects an unrelated marketplace before mutation', () => {
+  for (const repo of [null, 42, {}, 'affaan-m', 'affaan-m/ECC/extra.git/']) {
+    assert.strictEqual(isOfficialMarketplace({ ...officialMarketplace('user'), repo }), false);
+  }
+  for (const repo of ['someone-else/ECC.git/', 'affaan-m/ECC.git.git/']) {
+    withFixture({
+      plugins: [installedPlugin('user')],
+      marketplaces: [{ ...officialMarketplace('user'), repo }],
+    }, fixture => {
+      assert.throws(() => setupClaudePlugin(setupOptions(fixture)), error => error.code === 'MARKETPLACE_COLLISION');
+      assert.deepStrictEqual(mutationCalls(readCalls(fixture)), []);
+    });
+  }
+});
+
 test('requesting another scope fails without the PR 2 move-scope operation', () => {
   withFixture({
     plugins: [installedPlugin('user')],
