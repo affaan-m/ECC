@@ -62,6 +62,35 @@ function applyEmphasis(s) {
     .replace(/(^|[^\w])_([^_]+)_(?!\w)/g, '$1<em>$2</em>');
 }
 
+// Match the same simple [label](url) grammar without retrying every opening
+// bracket against the same unfinished suffix. Images also allow empty labels.
+function replaceLinks(source, marker, render) {
+  const parts = [];
+  let copied = 0;
+  let search = 0;
+  while (search < source.length) {
+    const start = source.indexOf(marker, search);
+    if (start === -1) break;
+    const labelStart = start + marker.length;
+    const labelEnd = source.indexOf(']', labelStart);
+    if (labelEnd === -1) break;
+    if (source[labelEnd + 1] !== '(' || (marker === '[' && labelEnd === labelStart)) {
+      // Every opener before this closing bracket has the same invalid end.
+      search = labelEnd + 1;
+      continue;
+    }
+    const urlEnd = source.indexOf(')', labelEnd + 2);
+    if (urlEnd === -1) break;
+    parts.push(source.slice(copied, start), render(
+      source.slice(labelStart, labelEnd), source.slice(labelEnd + 2, urlEnd)
+    ));
+    copied = urlEnd + 1;
+    search = copied;
+  }
+  parts.push(source.slice(copied));
+  return parts.join('');
+}
+
 function renderInline(rawText) {
   const tokens = [];
   const stash = (html) => {
@@ -74,13 +103,13 @@ function renderInline(rawText) {
   // Code spans first: contents stay escaped and opt out of all other rules.
   s = s.replace(/`([^`]+)`/g, (_m, code) => stash('<code>' + code + '</code>'));
 
-  s = s.replace(/!\[([^\]]*)\]\(([^)]*)\)/g, (_m, alt, src) => {
+  s = replaceLinks(s, '![', (alt, src) => {
     const kind = classifyUrl(src);
     if (kind !== 'http' && kind !== 'relative') return alt;
     return stash('<img src="' + src.trim() + '" alt="' + alt + '">');
   });
 
-  s = s.replace(/\[([^\]]+)\]\(([^)]*)\)/g, (_m, label, url) => {
+  s = replaceLinks(s, '[', (label, url) => {
     const kind = classifyUrl(url);
     const text = applyEmphasis(label);
     if (kind === 'blocked') return text;
