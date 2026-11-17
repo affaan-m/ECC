@@ -189,24 +189,72 @@ function getPackageJsonDeps(projectDir) {
   }
 }
 
+/** Read one quoted TOML value, advancing monotonically even if unfinished. */
+function readTomlQuotedValue(content, start) {
+  const quote = content[start];
+  const delimiter = content.startsWith(quote.repeat(3), start) ? quote.repeat(3) : quote;
+  const multiline = delimiter.length === 3;
+  let index = start + delimiter.length;
+  // TOML trims a newline immediately after a multiline opening delimiter.
+  if (multiline && content.startsWith('\r\n', index)) index += 2;
+  else if (multiline && content[index] === '\n') index++;
+  const valueStart = index;
+  while (index < content.length) {
+    if (quote === '"' && content[index] === '\\') {
+      index += 2;
+      continue;
+    }
+    if (content.startsWith(delimiter, index)) {
+      let end = index + delimiter.length;
+      // A multiline closing delimiter may be preceded by one or two quotes.
+      if (multiline) {
+        while (end < index + 5 && content[end] === quote) end++;
+      }
+      return { value: content.slice(valueStart, end - delimiter.length), end };
+    }
+    if (!multiline && (content[index] === '\n' || content[index] === '\r')) return null;
+    index++;
+  }
+  return null;
+}
+
 /**
  * Find a dependency array while keeping quoted values and comments intact.
- * This lightweight scan accepts inline tables too, without backtracking over
- * an entire array when an editor has not written its closing bracket yet.
+ * This lightweight scan accepts inline tables too. Its cursor never rewinds,
+ * including when an editor has not written a closing quote or bracket yet.
  * @param {string} content - pyproject.toml contents
  * @returns {string[]} Quoted dependency values, or an empty array if unfinished
  */
 function readTomlDependencyArray(content) {
-  const tokens = content.matchAll(/#[^\r\n]*|"(?:\\.|[^"\\])*"|'[^']*'|\bdependencies\s*=\s*\[|\]/g);
+  const key = /dependencies\s*=\s*\[/y;
   let values = null;
-  for (const [token] of tokens) {
-    if (token[0] === '#') continue;
-    if (values === null) {
-      if (token.startsWith('dependencies')) values = [];
+  let index = 0;
+  while (index < content.length) {
+    const character = content[index];
+    if (character === '#') {
+      const newline = content.indexOf('\n', index);
+      if (newline < 0) break;
+      index = newline + 1;
       continue;
     }
-    if (token === ']') return values;
-    if (token[0] === '"' || token[0] === "'") values.push(token.slice(1, -1));
+    if (character === '"' || character === "'") {
+      const quoted = readTomlQuotedValue(content, index);
+      if (!quoted) return [];
+      if (values !== null) values.push(quoted.value);
+      index = quoted.end;
+      continue;
+    }
+    if (values === null && character === 'd' && !/[A-Za-z0-9_-]/.test(content[index - 1] || '')) {
+      key.lastIndex = index;
+      const match = key.exec(content);
+      if (match) {
+        values = [];
+        index = key.lastIndex;
+        continue;
+      }
+    }
+    if (values !== null && character === ']') return values;
+    index++;
   }
   return [];
 }

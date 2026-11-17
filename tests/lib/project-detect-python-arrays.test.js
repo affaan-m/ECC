@@ -53,22 +53,46 @@ test('retains dependencies in a project inline table',
 test('does not select a dependency declaration inside a quoted value',
   "description = 'dependencies = [\"django\"]'\n[project]\ndependencies = [\"flask\"]\n",
   ['flask'], ['flask']);
+test('does not match the suffix of a hyphenated dependency key',
+  '[tool.uv]\ndev-dependencies = ["pytest"]\n[project]\ndependencies = ["flask"]\n',
+  ['flask'], ['flask']);
+test('keeps quotes and fake dependency declarations inside multiline basic descriptions',
+  '[project]\ndescription = """A 6" display helper.\ndependencies = ["django"]"""\ndependencies = ["flask"]\n',
+  ['flask'], ['flask']);
+test('keeps single quotes inside multiline literal descriptions',
+  "[project]\ndescription = '''A developer's helper.\ndependencies = [\"django\"]'''\ndependencies = [\"fastapi\"]\n",
+  ['fastapi'], ['fastapi']);
+test('trims the opening newline of multiline quoted requirements',
+  "[project]\ndependencies = ['''\nfastapi''', \"\"\"\r\nflask\"\"\"]\n",
+  ['fastapi', 'flask'], ['fastapi', 'flask']);
+test('allows one or two quote characters before a multiline closing delimiter',
+  '[project]\ndescription = """quoted"""""\ndependencies = ["flask"]\n',
+  ['flask'], ['flask']);
+test('an unfinished multiline description never exposes a fake dependency array',
+  '[project]\ndescription = """A 6" display helper.\ndependencies = ["django"]\n',
+  [], []);
 
 const unfinishedRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-python-unfinished-'));
 try {
-  fs.writeFileSync(path.join(unfinishedRoot, 'pyproject.toml'),
-    '[project]\ndependencies = [\n' + '# abc\n'.repeat(1000));
   const script = 'const { getPythonDeps } = require(process.argv[1]); '
     + 'process.stdout.write(JSON.stringify(getPythonDeps(process.argv[2])));';
-  const result = spawnSync(process.execPath, ['-e', script,
-    require.resolve('../../scripts/lib/project-detect'), unfinishedRoot], {
-    encoding: 'utf8', timeout: 5000,
-  });
-  assert.ifError(result.error);
-  assert.strictEqual(result.status, 0, result.stderr);
-  assert.deepStrictEqual(JSON.parse(result.stdout), []);
+  const unfinishedSources = [
+    '[project]\ndependencies = [\n' + '# abc\n'.repeat(1000),
+    '[project]\ndescription = """' + 'line \\" # comment [ ]\n'.repeat(20000),
+    "[project]\ndescription = '''" + "a developer's # comment [ ]\n".repeat(20000),
+  ];
+  for (const source of unfinishedSources) {
+    fs.writeFileSync(path.join(unfinishedRoot, 'pyproject.toml'), source);
+    const result = spawnSync(process.execPath, ['-e', script,
+      require.resolve('../../scripts/lib/project-detect'), unfinishedRoot], {
+      encoding: 'utf8', timeout: 5000,
+    });
+    assert.ifError(result.error);
+    assert.strictEqual(result.status, 0, result.stderr);
+    assert.deepStrictEqual(JSON.parse(result.stdout), []);
+  }
   passed += 1;
-  console.log('  ✓ an unfinished array with repeated comments completes without backtracking');
+  console.log('  ✓ unfinished arrays and multiline strings complete without backtracking');
 } catch (error) {
   failed += 1;
   console.log(`  ✗ an unfinished array with repeated comments: ${error.message}`);
