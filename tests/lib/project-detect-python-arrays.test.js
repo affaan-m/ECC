@@ -2,6 +2,7 @@ const assert = require('assert');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
+const { spawnSync } = require('child_process');
 const { getPythonDeps, detectProjectType } = require('../../scripts/lib/project-detect');
 
 let passed = 0;
@@ -46,6 +47,34 @@ test('keeps escaped quotes in environment markers inside one requirement',
 test('does not parse an unterminated dependency array',
   '[project]\ndependencies = ["fastapi[standard]"\n',
   [], []);
+test('retains dependencies in a project inline table',
+  'project = { name = "demo", version = "1.0", dependencies = ["fastapi[standard]", "flask"] }\n',
+  ['fastapi', 'flask'], ['fastapi', 'flask']);
+test('does not select a dependency declaration inside a quoted value',
+  "description = 'dependencies = [\"django\"]'\n[project]\ndependencies = [\"flask\"]\n",
+  ['flask'], ['flask']);
 
-console.log(`\n=== Results: ${passed} passed, ${failed} failed ===\n`);
+const unfinishedRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-python-unfinished-'));
+try {
+  fs.writeFileSync(path.join(unfinishedRoot, 'pyproject.toml'),
+    '[project]\ndependencies = [\n' + '# abc\n'.repeat(1000));
+  const script = 'const { getPythonDeps } = require(process.argv[1]); '
+    + 'process.stdout.write(JSON.stringify(getPythonDeps(process.argv[2])));';
+  const result = spawnSync(process.execPath, ['-e', script,
+    require.resolve('../../scripts/lib/project-detect'), unfinishedRoot], {
+    encoding: 'utf8', timeout: 5000,
+  });
+  assert.ifError(result.error);
+  assert.strictEqual(result.status, 0, result.stderr);
+  assert.deepStrictEqual(JSON.parse(result.stdout), []);
+  passed += 1;
+  console.log('  ✓ an unfinished array with repeated comments completes without backtracking');
+} catch (error) {
+  failed += 1;
+  console.log(`  ✗ an unfinished array with repeated comments: ${error.message}`);
+} finally {
+  fs.rmSync(unfinishedRoot, { recursive: true, force: true });
+}
+
+console.log(`\nPassed: ${passed}, Failed: ${failed}\n`);
 process.exitCode = failed > 0 ? 1 : 0;

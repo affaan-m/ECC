@@ -190,6 +190,28 @@ function getPackageJsonDeps(projectDir) {
 }
 
 /**
+ * Find a dependency array while keeping quoted values and comments intact.
+ * This lightweight scan accepts inline tables too, without backtracking over
+ * an entire array when an editor has not written its closing bracket yet.
+ * @param {string} content - pyproject.toml contents
+ * @returns {string[]} Quoted dependency values, or an empty array if unfinished
+ */
+function readTomlDependencyArray(content) {
+  const tokens = content.matchAll(/#[^\r\n]*|"(?:\\.|[^"\\])*"|'[^']*'|\bdependencies\s*=\s*\[|\]/g);
+  let values = null;
+  for (const [token] of tokens) {
+    if (token[0] === '#') continue;
+    if (values === null) {
+      if (token.startsWith('dependencies')) values = [];
+      continue;
+    }
+    if (token === ']') return values;
+    if (token[0] === '"' || token[0] === "'") values.push(token.slice(1, -1));
+  }
+  return [];
+}
+
+/**
  * Read requirements.txt or pyproject.toml for Python package names
  * @param {string} projectDir - Project root directory
  * @returns {string[]} Array of dependency names (lowercase)
@@ -225,20 +247,12 @@ function getPythonDeps(projectDir) {
     const tomlPath = path.join(projectDir, 'pyproject.toml');
     if (fs.existsSync(tomlPath)) {
       const content = fs.readFileSync(tomlPath, 'utf8');
-      // Brackets in extras and quoted markers belong to the requirement, not
-      // the TOML array. Keep strings and comments whole before finding its end.
-      const depMatches = content.match(/^[ \t]*dependencies[ \t]*=[ \t]*\[((?:[^\]"'#]|"(?:\\.|[^"\\])*"|'[^']*'|#[^\r\n]*)*)\]/m);
-      if (depMatches) {
-        const block = depMatches[1];
-        for (const match of block.matchAll(/#[^\r\n]*|("(?:\\.|[^"\\])*"|'[^']*')/g)) {
-          if (!match[1]) continue;
-          const name = match[1]
-            .slice(1, -1)
-            .split(/[\s>=<!~@[;]/)[0]
-            .trim()
-            .toLowerCase();
-          if (name) deps.push(name);
-        }
+      for (const dependency of readTomlDependencyArray(content)) {
+        const name = dependency
+          .split(/[\s>=<!~@[;]/)[0]
+          .trim()
+          .toLowerCase();
+        if (name) deps.push(name);
       }
     }
   } catch {
