@@ -148,7 +148,7 @@ function runTests() {
     test('run(): readable transcript in the gate band suppresses the context warning', () => {
       const sessionId = `ctx-monitor-gate-active-${process.pid}-${Date.now()}`;
       const warnPath = path.join(os.tmpdir(), `ecc-ctx-warn-${sessionId}.json`);
-      const transcript = path.join(os.tmpdir(), `ecc-ctx-monitor-transcript-${sessionId}.jsonl`);
+      const transcript = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-ctx-monitor-')), 'transcript.jsonl');
       // 190k of an assumed 200k window = 95% >= the 90% gate threshold.
       fs.writeFileSync(
         transcript,
@@ -173,7 +173,7 @@ function runTests() {
         else process.env.ECC_CONTEXT_GATE_MODE = originalMode;
         fs.rmSync(getBridgePath(sessionId), { force: true });
         fs.rmSync(warnPath, { force: true });
-        fs.rmSync(transcript, { force: true });
+        fs.rmSync(path.dirname(transcript), { recursive: true, force: true });
       }
     })
   )
@@ -185,7 +185,7 @@ function runTests() {
       // Same in-band transcript, but with no ECC_CONTEXT_GATE_MODE the gate is
       // inert — the monitor must keep emitting CONTEXT CRITICAL.
       const sessionId = `ctx-monitor-gate-advisory-${process.pid}-${Date.now()}`;
-      const transcript = path.join(os.tmpdir(), `ecc-ctx-monitor-transcript-${sessionId}.jsonl`);
+      const transcript = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-ctx-monitor-')), 'transcript.jsonl');
       fs.writeFileSync(
         transcript,
         JSON.stringify({
@@ -210,7 +210,7 @@ function runTests() {
         if (originalMode === undefined) delete process.env.ECC_CONTEXT_GATE_MODE;
         else process.env.ECC_CONTEXT_GATE_MODE = originalMode;
         fs.rmSync(getBridgePath(sessionId), { force: true });
-        fs.rmSync(transcript, { force: true });
+        fs.rmSync(path.dirname(transcript), { recursive: true, force: true });
       }
     })
   )

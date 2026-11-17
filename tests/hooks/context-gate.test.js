@@ -25,12 +25,24 @@ function test(name, fn) {
   }
 }
 
+// Private per-run directory for fixtures, so no test writes a predictable name
+// directly under the shared OS temp directory.
+const FIXTURE_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-context-gate-test-'));
+process.on('exit', () => fs.rmSync(FIXTURE_DIR, { recursive: true, force: true }));
+let fixtureSeq = 0;
+
+// The proposed checkpoint is the indented line that is an absolute .md path:
+// "/..." on POSIX, "C:\\..." (or a UNC path) on Windows.
+function isProposedPathLine(line) {
+  return /^\s+\S/.test(line) && line.endsWith('.md') && path.isAbsolute(line.trim());
+}
+
 /**
  * Write a minimal transcript JSONL whose latest assistant record reports the
  * given context token total against a claude-fable-5 (1M window) model.
  */
 function writeTranscript(tokens, model = 'claude-fable-5') {
-  const file = path.join(os.tmpdir(), `ecc-context-gate-test-${process.pid}-${Math.random().toString(16).slice(2)}.jsonl`);
+  const file = path.join(FIXTURE_DIR, `transcript-${++fixtureSeq}.jsonl`);
   const records = [
     { type: 'user', message: { role: 'user', content: 'hello' } },
     {
@@ -219,7 +231,7 @@ function runTests() {
 
   if (
     test('missing transcript path fails open to empty output', () => {
-      assert.strictEqual(run(JSON.stringify({ transcript_path: path.join(os.tmpdir(), 'ecc-context-gate-nope.jsonl') }), { env }), '');
+      assert.strictEqual(run(JSON.stringify({ transcript_path: path.join(FIXTURE_DIR, 'missing.jsonl') }), { env }), '');
       assert.strictEqual(run(JSON.stringify({}), { env }), '');
       assert.strictEqual(run('', { env }), '');
     })
@@ -476,7 +488,7 @@ function runTests() {
       try {
         process.env.ECC_AGENT_DATA_HOME = sandbox;
         const first = JSON.parse(run(JSON.stringify({ transcript_path: t, cwd: '/x/demoproj', session_id: 'mysess' }), { env: { ECC_CONTEXT_GATE_MODE: 'enforce' } })).hookSpecificOutput.additionalContext;
-        taken = first.split('\n').find(line => /^\s+[/\\].*\.md$/.test(line)).trim();
+        taken = first.split('\n').find(isProposedPathLine).trim();
         fs.writeFileSync(taken, foreign, 'utf8');
         const out = JSON.parse(run(JSON.stringify({ transcript_path: t, cwd: '/x/demoproj', session_id: 'mysess', prompt: 'go' }), { env: { ECC_CONTEXT_GATE_MODE: 'enforce' } }));
         const ctx = out.hookSpecificOutput.additionalContext;
@@ -507,7 +519,7 @@ function runTests() {
       try {
         process.env.ECC_AGENT_DATA_HOME = sandbox;
         const first = JSON.parse(run(JSON.stringify({ transcript_path: t, cwd: '/x/demoproj', session_id: 'mysess' }), { env: { ECC_CONTEXT_GATE_MODE: 'enforce' } })).hookSpecificOutput.additionalContext;
-        own = first.split('\n').find(line => /^\s+[/\\].*\.md$/.test(line)).trim();
+        own = first.split('\n').find(isProposedPathLine).trim();
         const marker = first.split('\n').find(line => line.includes('<!-- ecc-handoff')).trim().replace('<GIT_HEAD>', 'a'.repeat(40));
         fs.writeFileSync(own, marker + '\nMINE\n', 'utf8');
         const out = JSON.parse(run(JSON.stringify({ transcript_path: t, cwd: '/x/demoproj', session_id: 'mysess', prompt: 'go' }), { env: { ECC_CONTEXT_GATE_MODE: 'enforce' } }));

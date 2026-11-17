@@ -47,8 +47,14 @@ function test(desc, fn) {
   }
 }
 
+// Private per-run directory for fixtures, so no test writes a predictable name
+// directly under the shared OS temp directory.
+const FIXTURE_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-gate-state-test-'));
+process.on('exit', () => fs.rmSync(FIXTURE_DIR, { recursive: true, force: true }));
+let fixtureSeq = 0;
+
 function writeTranscript(tokens, model = 'claude-unknown-x') {
-  const file = path.join(os.tmpdir(), `ecc-gate-state-test-${process.pid}-${Math.random().toString(16).slice(2)}.jsonl`);
+  const file = path.join(FIXTURE_DIR, `transcript-${++fixtureSeq}.jsonl`);
   const record = JSON.stringify({
     type: 'assistant',
     message: {
@@ -212,9 +218,9 @@ test('false below the band and with the gate disabled', () => {
 test('false when the gate cannot evaluate usage (missing/unreadable transcript)', () => {
   // The advisory hooks use false to KEEP their own warnings — a gate that
   // cannot fire must never silence its fallbacks.
-  assert.strictEqual(gateOwnsTranscript(path.join(os.tmpdir(), `ecc-gate-state-nope-${process.pid}.jsonl`), ENFORCE), false);
+  assert.strictEqual(gateOwnsTranscript(path.join(FIXTURE_DIR, 'missing.jsonl'), ENFORCE), false);
   assert.strictEqual(gateOwnsTranscript('', ENFORCE), false);
-  const broken = path.join(os.tmpdir(), `ecc-gate-state-broken-${process.pid}.jsonl`);
+  const broken = path.join(FIXTURE_DIR, 'broken.jsonl');
   fs.writeFileSync(broken, 'not json\n{broken', 'utf8');
   try {
     assert.strictEqual(gateOwnsTranscript(broken, ENFORCE), false);

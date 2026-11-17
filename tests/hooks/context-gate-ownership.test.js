@@ -54,6 +54,12 @@ function createSandbox() {
   return { root, resumeDir, transcript, env };
 }
 
+// The proposed checkpoint is the indented line that is an absolute .md path:
+// "/..." on POSIX, "C:\\..." (or a UNC path) on Windows.
+function isProposedPathLine(line) {
+  return /^\s+\S/.test(line) && line.endsWith('.md') && path.isAbsolute(line.trim());
+}
+
 function fire(sandbox, extra = {}) {
   const input = { cwd: '/tmp/owner-a/project', session_id: 'mysess', transcript_path: sandbox.transcript, ...extra };
   const result = spawnSync(process.execPath, [RUNNER, 'user-prompt:context-gate', 'scripts/hooks/context-gate.js', 'standard,strict'], {
@@ -66,7 +72,7 @@ function fire(sandbox, extra = {}) {
   if (result.error) return { timeout: result.error.code };
   const text = JSON.parse(result.stdout).hookSpecificOutput.additionalContext;
   const lines = text.split('\n');
-  const target = lines.find(line => /^\s+[/\\].*\.md$/.test(line));
+  const target = lines.find(isProposedPathLine);
   const marker = lines.find(line => line.includes('<!-- ecc-handoff'));
   return { text, target: target && target.trim(), marker: marker && marker.trim() };
 }
@@ -118,7 +124,7 @@ function runTests() {
       clearResumeDir(sandbox);
       const a = fire(sandbox);
       const b = fire(sandbox, { cwd: '/tmp/owner-b/project' });
-      assert.ok(a.target && b.target, 'both fires should propose a destination');
+      assert.ok(a.target && b.target, `both fires should propose a destination. Got: ${a.target ? b.text : a.text}`);
       assert.notStrictEqual(a.target, b.target);
     }));
 
@@ -126,7 +132,7 @@ function runTests() {
       clearResumeDir(sandbox);
       const a = fire(sandbox, { session_id: 'owner/a' });
       const b = fire(sandbox, { session_id: 'owner?a' });
-      assert.ok(a.target && b.target, 'both fires should propose a destination');
+      assert.ok(a.target && b.target, `both fires should propose a destination. Got: ${a.target ? b.text : a.text}`);
       assert.notStrictEqual(a.target, b.target);
     }));
 
