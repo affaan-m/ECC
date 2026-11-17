@@ -601,6 +601,58 @@ test('collapseGateDir never keys a gate for a sensitive real location', () => {
   }
 });
 
+test('settings files stay sensitive when .claude is the project root', () => {
+  const root = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'gateguard-settings-root-')));
+  try {
+    const dotClaude = path.join(root, '.claude');
+    fs.mkdirSync(dotClaude, { recursive: true });
+    fs.writeFileSync(path.join(dotClaude, 'settings.json'), '{}');
+    withProjectDir(dotClaude, () => {
+      const data = { cwd: dotClaude };
+      assert.strictEqual(isSensitiveTargetFor(path.join(dotClaude, 'settings.json'), data), true);
+      assert.strictEqual(isSensitiveTargetFor('settings.local.json', data), true);
+    });
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('every .claude/settings*.json variant counts as restricted', () => {
+  const root = tempProject();
+  try {
+    withProjectDir(root, () => {
+      const data = { cwd: root };
+      const at = rel => path.join(root, rel);
+      // A dash suffix (settings-dev.json) used to slip past the pattern, so a
+      // subagent could edit it while settings.json stayed gated.
+      for (const name of ['settings.json', 'settings.local.json', 'settings-dev.json', 'settings.ci.json']) {
+        assert.strictEqual(isSensitiveTargetFor(at(`.claude/${name}`), data), true, name);
+      }
+      assert.strictEqual(isSensitiveTargetFor(at('.claude/notes.json'), data), false);
+    });
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('a symlink alias to .claude/settings.json is sensitive through the real path', () => {
+  const root = tempProject();
+  try {
+    withProjectDir(root, () => {
+      const data = { cwd: root };
+      const at = rel => path.join(root, rel);
+      const settings = at('.claude/settings.json');
+      fs.mkdirSync(path.dirname(settings), { recursive: true });
+      fs.writeFileSync(settings, '{}');
+      fs.mkdirSync(at('src'), { recursive: true });
+      if (!trySymlink(settings, at('src/settings-alias.json'), 'file')) return;
+      assert.strictEqual(isSensitiveTargetFor(at('src/settings-alias.json'), data), true);
+    });
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test('isSensitiveTargetFor fails safe on bad input', () => {
   assert.strictEqual(isSensitiveTargetFor(undefined, undefined), true);
   assert.strictEqual(isSensitiveTargetFor({ toString() { throw new Error('x'); } }, {}), true);

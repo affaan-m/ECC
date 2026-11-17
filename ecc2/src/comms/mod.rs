@@ -57,6 +57,20 @@ pub fn send(db: &StateStore, from: &str, to: &str, msg: &MessageType) -> Result<
     Ok(())
 }
 
+/// Persist an ECC-generated assignment with native provenance. Ordinary
+/// user handoffs must continue through send(), which marks them external.
+pub fn send_native_assignment(
+    db: &StateStore,
+    from: &str,
+    to: &str,
+    msg: &MessageType,
+) -> Result<()> {
+    if !matches!(msg, MessageType::TaskHandoff { .. }) {
+        anyhow::bail!("Native assignment notice must be a task handoff");
+    }
+    db.send_native_assignment_notice(from, to, &serde_json::to_string(msg)?)
+}
+
 pub fn message_type_name(msg: &MessageType) -> &'static str {
     match msg {
         MessageType::TaskHandoff { .. } => "task_handoff",

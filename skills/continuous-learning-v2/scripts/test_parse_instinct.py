@@ -17,6 +17,7 @@ import io
 import json
 import os
 import sys
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -1427,6 +1428,38 @@ def test_projects_merge_force_moves_and_removes_source(patch_globals, capsys):
 
 
 # ── cmd_prune ────────────────────────────────
+
+@pytest.mark.parametrize(("created", "expected"), [
+    ("2020-01-01T12:34:56.123Z", datetime(2020, 1, 1, 12, 34, 56, 123000, timezone.utc)),
+    ("2020-01-01T12:34:56.123456+02:00", datetime(2020, 1, 1, 12, 34, 56, 123456, timezone(timedelta(hours=2)))),
+    ("2020-01-01T12:34:56.123", datetime(2020, 1, 1, 12, 34, 56, 123000, timezone.utc)),
+    ("2020-01-01T12:34:56Z", datetime(2020, 1, 1, 12, 34, 56, tzinfo=timezone.utc)),
+    ("2020-01-01", datetime(2020, 1, 1, tzinfo=timezone.utc)),
+])
+def test_parse_created_date_formats(tmp_path: Path, created: str, expected: datetime) -> None:
+    source = tmp_path / "pending.yaml"
+    source.write_text(f"---\nid: pending\ncreated: {created}\n---\nBody", encoding="utf-8")
+    assert _mod._parse_created_date(source) == expected
+
+
+def test_parse_created_date_falls_back_to_mtime(tmp_path: Path) -> None:
+    source = tmp_path / "pending.yaml"
+    source.write_text("---\nid: pending\ncreated: invalid\n---\nBody", encoding="utf-8")
+    assert _mod._parse_created_date(source) == datetime.fromtimestamp(source.stat().st_mtime, timezone.utc)
+
+
+def test_parse_created_date_missing_file_returns_none(tmp_path: Path) -> None:
+    assert _mod._parse_created_date(tmp_path / "missing.yaml") is None
+
+
+def test_pending_fractional_created_date_expires(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    source = tmp_path / "pending.yaml"
+    source.write_text("---\nid: pending\ncreated: 2020-01-01T00:00:00.123Z\n---\nBody", encoding="utf-8")
+    monkeypatch.setattr(_mod, "_collect_pending_dirs", lambda: [tmp_path])
+    pending = _mod._collect_pending_instincts()
+    assert len(pending) == 1
+    assert pending[0]["age_days"] >= 30
+
 
 def _pending_item(path, age_days):
     return {

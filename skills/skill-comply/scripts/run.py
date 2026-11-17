@@ -19,6 +19,13 @@ from scripts.spec_generator import generate_spec
 logger = logging.getLogger(__name__)
 
 
+def _positive_int(value: str) -> int:
+    number = int(value)
+    if number < 1:
+        raise argparse.ArgumentTypeError(f"must be a positive integer, got {value}")
+    return number
+
+
 def main() -> None:
     logging.basicConfig(level=logging.INFO, format="%(message)s")
 
@@ -52,7 +59,30 @@ def main() -> None:
         help="Output report path (default: results/<skill-name>.md)",
     )
 
+    parser.add_argument(
+        "--max-turns",
+        type=_positive_int,
+        default=30,
+        help="Turn cap per scenario; long multi-step workflows need more (default: 30)",
+    )
+    parser.add_argument(
+        "--timeout",
+        type=_positive_int,
+        default=900,
+        help="Seconds per scenario before the partial trace is graded (default: 900)",
+    )
+    parser.add_argument(
+        "--fixtures",
+        type=Path,
+        default=None,
+        help="Directory copied into every scenario sandbox (plans, config, sources)",
+    )
+
     args = parser.parse_args()
+
+    if args.fixtures is not None and not args.fixtures.is_dir():
+        logger.error("Error: Fixtures directory not found: %s", args.fixtures)
+        sys.exit(1)
 
     if not args.skill.is_file():
         logger.error("Error: Skill file not found: %s", args.skill)
@@ -91,10 +121,24 @@ def main() -> None:
     # Step 3: Execute scenarios
     logger.info("[3/4] Executing scenarios (model=%s)...", args.model)
     graded_results: list[tuple[str, Any, list[Any]]] = []
+    timed_out_levels: tuple[str, ...] = ()
 
     for scenario in scenarios:
         logger.info("       Running %s...", scenario.level_name)
-        run = run_scenario(scenario, model=args.model)
+        run = run_scenario(
+            scenario,
+            model=args.model,
+            max_turns=args.max_turns,
+            timeout=args.timeout,
+            fixtures_dir=args.fixtures,
+        )
+        if run.timed_out:
+            timed_out_levels += (scenario.level_name,)
+            logger.warning(
+                "       %s hit the %ds timeout; its partial trace is graded, "
+                "so compliance may be understated.",
+                scenario.level_name, args.timeout,
+            )
         result = grade(spec, list(run.observations))
         graded_results.append((scenario.level_name, result, list(run.observations)))
         logger.info("       %s: %.0f%%", scenario.level_name, result.compliance_rate * 100)
@@ -105,6 +149,16 @@ def main() -> None:
     logger.info("[4/4] Generating report...")
 
     report = generate_report(args.skill, spec, graded_results, scenarios=scenarios)
+    conditions = [
+        "> Execution boundary: setup supplies a local gh simulation and a local bare origin. "
+        "This report verifies no live GitHub pull request, merge, or hosted CI result.",
+    ]
+    if timed_out_levels:
+        conditions += [
+            f"> Incomplete execution: {len(timed_out_levels)} scenario(s) timed out. "
+            "Their partial traces were graded; the reported compliance is not a completed run.",
+        ]
+    report = report.replace("\n\n", "\n\n" + "\n".join(conditions) + "\n\n", 1)
     output_path.parent.mkdir(parents=True, exist_ok=True)
     output_path.write_text(report, encoding="utf-8")
     logger.info("       Report saved to %s", output_path)
@@ -115,7 +169,8 @@ def main() -> None:
         return
     overall = sum(r.compliance_rate for _, r, _obs in graded_results) / len(graded_results)
     logger.info("\n%s", "=" * 50)
-    logger.info("Overall Compliance: %.0f%%", overall * 100)
+    label = "Partial-trace Compliance (incomplete)" if timed_out_levels else "Overall Compliance"
+    logger.info("%s: %.0f%%", label, overall * 100)
     if overall < spec.threshold_promote_to_hook:
         logger.info(
             "Recommendation: Some steps have low compliance. "

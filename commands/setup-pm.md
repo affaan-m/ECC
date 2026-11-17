@@ -32,7 +32,7 @@ When determining which package manager to use, the following order is checked:
 3. **package.json**: `packageManager` field
 4. **Lock file**: Presence of package-lock.json, yarn.lock, pnpm-lock.yaml, or bun.lockb
 5. **Global config**: `~/.claude/package-manager.json`
-6. **Fallback**: First available package manager (pnpm > bun > yarn > npm)
+6. **Fallback**: npm
 
 ## Configuration Files
 

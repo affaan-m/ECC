@@ -122,12 +122,16 @@ function buildRecordedManifestRequest(record) {
     excludeComponentIds: Array.isArray(request.excludeComponents) ? [...request.excludeComponents] : [],
     legacyLanguages: Array.isArray(request.legacyLanguages) ? [...request.legacyLanguages] : [],
     hookConsent: getRecordedHookConsent(state),
+    trust: request.trust === true,
+    consentMcp: Array.isArray(request.consentMcp) ? [...request.consentMcp] : [],
   };
 }
 
 function resolveRecordedManifestPlan(record, context, options = {}) {
   return createInstallPlanFromRequest(buildRecordedManifestRequest(record), {
     sourceRoot: context.repoRoot,
+    sourceUrl: record.state.source.repoUrl || undefined,
+    sourceSha: record.state.source.repoCommit || undefined,
     projectRoot: context.projectRoot,
     homeDir: context.homeDir,
     env: context.env,
@@ -1582,7 +1586,10 @@ function repairLegacyOpencodeLayout(repair, build) {
 
   // Load lazily to avoid a module cycle during install-lifecycle startup.
   const { applyInstallPlan } = require('./install/apply');
-  const appliedPlan = applyInstallPlan(canonicalPlan, { opencodeLease });
+  const appliedPlan = applyInstallPlan(canonicalPlan, {
+    opencodeLease,
+    requireCompleteLegacyCleanup: true,
+  });
   return {
     adapter: record.adapter,
     status: 'repaired',
@@ -1604,7 +1611,7 @@ function planOpencodeBuildRepair(repair, build) {
   });
   const { plan: desiredPlan } = prepareRepairMigration(rawPlan, record);
   const operationHealth = summarizeManagedOperationHealth(
-    context.repoRoot,
+    desiredPlan.sourceRoot || context.repoRoot,
     record.targetRoot,
     desiredPlan.operations,
     record.adapter.target,
@@ -1647,10 +1654,14 @@ function collectRepairOperations(operationHealth, desiredPlan) {
         && !isDeepStrictEqual(operation.previousManagedHooks, operation.managedHooks)
       ))
       .map(operation => ({ ...operation })),
-  ].filter((operation, index, items) => items.findIndex(candidate => (
-    candidate.kind === operation.kind
-    && candidate.destinationPath === operation.destinationPath
-  )) === index);
+  ].filter((operation, index, items) => items.findIndex(candidate => {
+    if (candidate.kind !== operation.kind) return false;
+    if (candidate.destinationPath !== operation.destinationPath) return false;
+    // One settings file holds hooks shipped by several modules; each module's
+    // record must survive the dedupe so repair rewrites every contribution.
+    if (operation.kind !== 'update-claude-settings') return true;
+    return (candidate.sourceRelativePath || '') === (operation.sourceRelativePath || '');
+  }) === index);
 }
 
 function executeGuardedRepairOperation(repair, plan, operation, repairedPaths) {
@@ -1665,7 +1676,7 @@ function executeGuardedRepairOperation(repair, plan, operation, repairedPaths) {
   }
   assertNoNewUserOwnedFile(migration, operation, desiredPlan);
   const repairedPath = executeRepairOperation(
-    context.repoRoot,
+    desiredPlan.sourceRoot || context.repoRoot,
     operation,
     trustedRootForDestination(operation.destinationPath, record.targetRoot, repair.trustedRoots),
     {
@@ -1754,8 +1765,9 @@ function repairManagedRecord(repair, build) {
     plan: desiredPlan,
   } = prepareRepairMigration(rawPlan, record);
   const activationSnapshot = assertOpenCodeRepairHookDeactivation(desiredPlan);
+  const repairSourceRoot = desiredPlan.sourceRoot || context.repoRoot;
   const operationHealth = summarizeManagedOperationHealth(
-    context.repoRoot,
+    repairSourceRoot,
     record.targetRoot,
     desiredPlan.operations,
     record.adapter.target,

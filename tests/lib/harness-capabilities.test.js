@@ -33,12 +33,12 @@ function runTests() {
   let passed = 0;
   let failed = 0;
 
-  if (test('represents all 17 registered targets exactly once across 15 harnesses', () => {
+  if (test('represents all 18 registered targets exactly once across 16 harnesses', () => {
     const catalogTargetIds = HARNESS_CAPABILITIES.flatMap(harness => harness.targetIds);
     const adapterTargetIds = listInstallTargetAdapters().map(adapter => adapter.target);
 
-    assert.strictEqual(HARNESS_CAPABILITIES.length, 15);
-    assert.strictEqual(new Set(catalogTargetIds).size, 17);
+    assert.strictEqual(HARNESS_CAPABILITIES.length, 16);
+    assert.strictEqual(new Set(catalogTargetIds).size, 18);
     assert.deepStrictEqual([...catalogTargetIds].sort(), [...SUPPORTED_INSTALL_TARGETS].sort());
     assert.deepStrictEqual([...catalogTargetIds].sort(), [...adapterTargetIds].sort());
   })) passed++; else failed++;
@@ -112,6 +112,7 @@ function runTests() {
       adal: ['project', './.adal'],
       hermes: ['home', '~/.hermes'],
       openclaw: ['home', '~/.openclaw'],
+      grok: ['native', '~/.grok'],
     };
 
     for (const [id, [scopeId, root]] of Object.entries(expected)) {
@@ -184,7 +185,7 @@ function runTests() {
     assert.throws(() => normalizeHarnessSelection('none'), /At least one guided harness/);
     assert.throws(() => normalizeHarnessSelection('all,codex'), /cannot be combined/i);
     assert.throws(() => normalizeHarnessSelection('cursor'), /advanced.*not guided-ready/i);
-    assert.throws(() => normalizeHarnessSelection('grok'), /Unknown guided harness selection/);
+    assert.throws(() => normalizeHarnessSelection('grok'), /advanced.*not guided-ready/i);
   })) passed++; else failed++;
 
   if (test('exports deeply frozen records while list helpers return safe array copies', () => {
@@ -198,7 +199,7 @@ function runTests() {
 
     const first = listHarnessCapabilities();
     first.pop();
-    assert.strictEqual(listHarnessCapabilities().length, 15);
+    assert.strictEqual(listHarnessCapabilities().length, 16);
 
     const guided = listGuidedHarnesses();
     guided.reverse();

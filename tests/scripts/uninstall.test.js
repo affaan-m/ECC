@@ -132,6 +132,66 @@ function runTests() {
     }
   })) passed++; else failed++;
 
+  if (test('uninstall removes every managed hook when two modules share settings.json', () => {
+    const homeDir = createTempDir('uninstall-shared-settings-home-');
+    const projectRoot = createTempDir('uninstall-shared-settings-project-');
+    const claudeRoot = path.join(homeDir, '.claude');
+    const settingsPath = path.join(claudeRoot, 'settings.json');
+    const statePath = path.join(claudeRoot, 'ecc', 'install-state.json');
+
+    try {
+      execFileSync(
+        'node',
+        [INSTALL_SCRIPT, '--target', 'claude', '--modules', 'hooks-runtime,config-health', '--enable-hooks'],
+        {
+          cwd: projectRoot,
+          env: { ...process.env, HOME: homeDir, USERPROFILE: homeDir },
+          encoding: 'utf8',
+          stdio: ['pipe', 'pipe', 'pipe'],
+          timeout: CLI_TIMEOUT_MS,
+        }
+      );
+      const state = JSON.parse(fs.readFileSync(statePath, 'utf8'));
+      const settingsOperations = state.operations.filter(operation => (
+        operation.kind === 'update-claude-settings'
+      ));
+      // Each module's settings contribution must keep its own record; keyed by
+      // destination alone, one overwrites the other and its hooks leak.
+      assert.strictEqual(settingsOperations.length, 2,
+        `expected one settings record per hook-shipping module, got ${JSON.stringify(
+          settingsOperations.map(operation => operation.moduleId)
+        )}`);
+      const managedIds = new Set(settingsOperations
+        .flatMap(operation => Object.values(operation.managedHooks || {}))
+        .flat()
+        .map(entry => entry.id));
+      assert.ok(managedIds.has('config-health:session-start'),
+        'the config-health hook must be recorded');
+      assert.ok(managedIds.has('session:start'),
+        'the runtime SessionStart hook must be recorded');
+
+      const uninstallResult = run(['--target', 'claude'], {
+        cwd: projectRoot,
+        homeDir,
+      });
+      assert.strictEqual(uninstallResult.code, 0, uninstallResult.stderr);
+      assert.ok(!fs.existsSync(statePath), 'uninstall must remove the install-state record');
+
+      const settings = fs.existsSync(settingsPath)
+        ? JSON.parse(fs.readFileSync(settingsPath, 'utf8'))
+        : {};
+      const remainingIds = Object.values(settings.hooks || {})
+        .flat()
+        .map(entry => entry.id);
+      const leaked = remainingIds.filter(id => managedIds.has(id));
+      assert.deepStrictEqual(leaked, [],
+        `uninstall left managed hooks behind in settings.json: ${leaked.join(', ')}`);
+    } finally {
+      cleanup(homeDir);
+      cleanup(projectRoot);
+    }
+  })) passed++; else failed++;
+
   if (test('uninstalls the project hook module boundary and preserves user Claude package data', () => {
     const homeDir = createTempDir('uninstall-claude-project-esm-home-');
     const projectRoot = createTempDir('uninstall-claude-project-esm-');

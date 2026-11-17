@@ -482,6 +482,22 @@ function createQueryApi(db, { prepareRead = sql => db.prepare(sql) } = {}) {
     FROM work_items
     ORDER BY updated_at DESC, id DESC
   `);
+  // Read the entire native READY set in SQL instead of truncating to the
+  // 100 most recently updated items before checking their eligibility.
+  const nextClaimableWorkItemStatement = prepareRead(`
+    SELECT *
+    FROM work_items
+    WHERE (owner IS NULL OR owner = '')
+      AND LOWER(TRIM(COALESCE(status, ''))) IN ('open', 'ready')
+    ORDER BY CASE LOWER(COALESCE(priority, ''))
+      WHEN 'critical' THEN 0
+      WHEN 'high' THEN 1
+      WHEN 'urgent' THEN 1
+      WHEN 'low' THEN 3
+      ELSE 2
+    END ASC, updated_at DESC, id DESC
+    LIMIT 1
+  `);
   const getWorkItemStatement = prepareRead(`
     SELECT *
     FROM work_items
@@ -760,6 +776,11 @@ function createQueryApi(db, { prepareRead = sql => db.prepare(sql) } = {}) {
     };
   }
 
+  function getNextClaimableWorkItem() {
+    const row = nextClaimableWorkItemStatement.get();
+    return row ? mapWorkItemRow(row) : null;
+  }
+
   function getStatus(options = {}) {
     const activeLimit = normalizeLimit(options.activeLimit, 5);
     const recentSkillRunLimit = normalizeLimit(options.recentSkillRunLimit, 20);
@@ -870,6 +891,7 @@ function createQueryApi(db, { prepareRead = sql => db.prepare(sql) } = {}) {
     },
     listRecentSessions,
     listWorkItems,
+    getNextClaimableWorkItem,
     upsertInstallState(installState) {
       const normalized = normalizeInstallStateInput(installState);
       assertValidEntity('installState', normalized);

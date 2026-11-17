@@ -7,6 +7,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const { spawnSync } = require('child_process');
+const { trySymlink } = require('./helpers/symlink-support');
 
 const {
   createStateStore,
@@ -399,7 +400,7 @@ async function runTests() {
 
     try {
       fs.writeFileSync(targetPath, 'do not overwrite');
-      fs.symlinkSync(targetPath, dbPath);
+      if (!trySymlink(targetPath, dbPath)) return;
 
       await assert.rejects(
         () => createStateStore({ dbPath }),
@@ -419,7 +420,7 @@ async function runTests() {
 
     try {
       fs.mkdirSync(outsideDir);
-      fs.symlinkSync(outsideDir, linkedParent, process.platform === 'win32' ? 'junction' : 'dir');
+      if (!trySymlink(outsideDir, linkedParent, process.platform === 'win32' ? 'junction' : 'dir')) return;
 
       await assert.rejects(
         () => createStateStore({ dbPath }),
@@ -980,7 +981,7 @@ async function runTests() {
       assert.strictEqual(syncPayload.issueCount, 1);
       assert.strictEqual(syncPayload.closedCount, 0);
       assert.strictEqual(syncPayload.items.length, 3);
-      assert.strictEqual(syncPayload.items[0].id, 'github-affaan-m-ecc-pr-3');
+      assert.strictEqual(syncPayload.items[0].id, 'github-affaan-m%2Fecc-pr-3');
       assert.strictEqual(syncPayload.items[0].status, 'blocked');
       assert.strictEqual(syncPayload.items[1].status, 'needs-review');
       assert.strictEqual(syncPayload.items[2].metadata.labels[0], 'release');

@@ -6,6 +6,7 @@ const path = require('path');
 
 const { readInstallState, validateInstallState } = require('../install-state');
 const { assertWithinTrustedRoot } = require('../path-safety');
+const { isInertOpenCodePluginStub } = require('./hook-consent');
 
 const OPENCODE_TARGET = 'opencode';
 const INSTALL_STATE_NAME = 'ecc-install-state.json';
@@ -210,7 +211,7 @@ function verifyManagedLegacyFile(operation, location, sourceRoot) {
   } catch (_error) {
     return { retainedPath: destinationPath };
   }
-  if (source.digest !== destination.digest) {
+  if (source.digest !== destination.digest && !isInertOpenCodePluginStub(destination.content)) {
     return { retainedPath: destinationPath };
   }
   return { destinationPath, digest: destination.digest, stat: destination.stat };

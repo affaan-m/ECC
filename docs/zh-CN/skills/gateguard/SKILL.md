@@ -71,7 +71,7 @@ LLM 的自我评估不起作用。问"你是否违反了任何策略？"答案�
 
 ### 破坏性 Bash 门控（每个破坏性命令）
 
-触发条件：`rm -rf`、`git reset --hard`、`git push --force`、`drop table` 等。
+触发条件：`rm -rf`、`git reset --hard`、`git push --force`、`drop table`、`drop database`、`drop schema`、`alter table ... drop column` 等。
 
 ```
 1. 列出此命令将修改或删除的所有文件/数据

@@ -34,6 +34,7 @@
         "hermes",
         "openclaw",
         "kimi",
+        "grok",
         "adal"
       ]
     },
@@ -52,14 +53,14 @@
       "type": "array",
       "items": {
         "type": "string",
-        "pattern": "^(baseline|lang|framework|capability):[a-z0-9-]+$"
+        "pattern": "^(baseline|lang|framework|capability|agent|skill|locale):[a-z0-9-]+$"
       }
     },
     "exclude": {
       "type": "array",
       "items": {
         "type": "string",
-        "pattern": "^(baseline|lang|framework|capability):[a-z0-9-]+$"
+        "pattern": "^(baseline|lang|framework|capability|agent|skill|locale):[a-z0-9-]+$"
       }
     },
     "options": {

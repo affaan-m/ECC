@@ -177,12 +177,19 @@ async function asyncTest(name, fn) {
   }
 }
 
+// Hook scripts write session files, compaction logs, learned skills and
+// homunculus data under the home directory, so script runs get an empty home
+// instead of the developer's real one unless a test passes its own HOME.
+const ISOLATED_HOME = fs.mkdtempSync(path.join(os.tmpdir(), 'hooks-test-home-'));
+const ISOLATED_HOME_ENV = { HOME: ISOLATED_HOME, USERPROFILE: ISOLATED_HOME };
+process.on('exit', () => fs.rmSync(ISOLATED_HOME, { recursive: true, force: true }));
+
 // Run a script and capture output
 function runScript(scriptPath, input = '', env = {}, cwd = process.cwd()) {
   return new Promise((resolve, reject) => {
     const proc = spawn('node', [scriptPath], {
       cwd,
-      env: { ...process.env, ...env },
+      env: { ...process.env, ...ISOLATED_HOME_ENV, ...env },
       stdio: ['pipe', 'pipe', 'pipe']
     });
 
@@ -209,7 +216,7 @@ function runShellScript(scriptPath, args = [], input = '', env = {}, cwd = proce
   return new Promise((resolve, reject) => {
     const proc = spawn('bash', [toBashPath(scriptPath), ...args], {
       cwd,
-      env: { ...process.env, ...env },
+      env: { ...process.env, ...ISOLATED_HOME_ENV, ...env },
       stdio: ['pipe', 'pipe', 'pipe']
     });
 
@@ -1515,7 +1522,7 @@ async function runTests() {
   if (
     await asyncTest('creates compaction log', async () => {
       await runScript(path.join(scriptsDir, 'pre-compact.js'));
-      const logFile = path.join(getCanonicalSessionsDir(os.homedir()), 'compaction-log.txt');
+      const logFile = path.join(getCanonicalSessionsDir(ISOLATED_HOME), 'compaction-log.txt');
       assert.ok(fs.existsSync(logFile), 'Compaction log should exist');
     })
   )
@@ -3700,7 +3707,7 @@ async function runTests() {
 
       const shell = process.platform === 'win32' ? 'bash' : 'bash';
       const proc = spawn(shell, ['-lc', shellCommand], {
-        env: process.env,
+        env: { ...process.env, ...ISOLATED_HOME_ENV },
         stdio: ['ignore', 'pipe', 'pipe']
       });
 
@@ -3943,13 +3950,17 @@ async function runTests() {
   // ─── Round 23: Bug fixes & high-priority gap coverage ───
 
   // Helper: create a patched evaluate-session.js wrapper that resolves
-  // require('../lib/utils') to the real utils.js and uses a custom config path
+  // require('../lib/...') to the real lib files and uses a custom config path
   const realUtilsPath = path.resolve(__dirname, '..', '..', 'scripts', 'lib', 'utils.js');
+  const realHookSessionPath = path.resolve(__dirname, '..', '..', 'scripts', 'lib', 'hook-session.js');
+  const realObserverSessionsPath = path.resolve(__dirname, '..', '..', 'scripts', 'lib', 'observer-sessions.js');
   function createEvalWrapper(testDir, configPath) {
     const wrapperScript = path.join(testDir, 'eval-wrapper.js');
     let src = fs.readFileSync(path.join(scriptsDir, 'evaluate-session.js'), 'utf8');
-    // Patch require to use absolute path (the temp dir doesn't have ../lib/utils)
+    // Patch requires to use absolute paths (the temp dir doesn't have ../lib/*)
     src = src.replace(/require\('\.\.\/lib\/utils'\)/, `require(${JSON.stringify(realUtilsPath)})`);
+    src = src.replace(/require\('\.\.\/lib\/hook-session'\)/, `require(${JSON.stringify(realHookSessionPath)})`);
+    src = src.replace(/require\('\.\.\/lib\/observer-sessions'\)/, `require(${JSON.stringify(realObserverSessionsPath)})`);
     // Patch config file path to point to our test config
     src = src.replace(/const configFile = path\.join\(scriptDir.*?config\.json'\);/, `const configFile = ${JSON.stringify(configPath)};`);
     fs.writeFileSync(wrapperScript, src);

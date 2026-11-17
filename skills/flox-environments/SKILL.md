@@ -486,12 +486,10 @@ flox search <package> --all       # Broader package search (case-sensitive)
 
 ## Related Skills
 
-The following skills are available as part of the [Flox Claude Code plugin](https://github.com/flox/flox-agentic) for deeper integration:
+The following skills are available as part of the [Flox Claude Code plugin](https://github.com/flox/flox-skills) for deeper integration:
 
-- **flox-services** — Service management, database setup, background processes
-- **flox-builds** — Reproducible builds and packaging with Flox
-- **flox-containers** — Create Docker/OCI containers from Flox environments
-- **flox-sharing** — Environment composition, remote environments, team patterns
-- **flox-cuda** — CUDA and GPU development environments
+- **flox** — Environments, services and databases, builds and packaging, containers, FloxHub publishing, environment composition and sharing, and CUDA/GPU development
+- **floxify** — Onboard an existing repo to Flox by detecting its runtimes, services, and build tools
+- **flox-debug** — Diagnose catalog resolution problems when a package won't resolve to the expected version
 
 Learn more and install at [flox.dev/docs](https://flox.dev/docs/install-flox/install/)

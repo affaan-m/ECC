@@ -62,6 +62,11 @@ Claude model tiers become `flash` or `pro`, and Claude tool names become their
 Antigravity equivalents. Unsupported tool identifiers are never emitted because
 Antigravity warns that invalid tool names can hang custom-agent execution.
 
+Installed rules receive the activation frontmatter Antigravity needs to attach
+them: common rules use `trigger: always_on`, and language rules map their
+Claude `paths:` scope to `trigger: glob` with matching `globs:`. Rules without
+a trigger are present on disk but never loaded.
+
 ## Expected project tree
 
 ```text

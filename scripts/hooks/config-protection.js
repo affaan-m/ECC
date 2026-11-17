@@ -15,6 +15,7 @@
 
 const fs = require('fs');
 const path = require('path');
+const { showRecoveryHints } = require('../lib/hooks/recovery-hints');
 
 const MAX_STDIN = 1024 * 1024;
 let raw = '';
@@ -152,14 +153,35 @@ function run(inputOrRaw, options = {}) {
       stderr:
         `BLOCKED: Hook input exceeded ${options.maxStdin || MAX_STDIN} bytes. ` +
         'Refusing to bypass config-protection on a truncated payload. ' +
-        'Retry with a smaller edit or disable the config-protection hook temporarily.'
+        (showRecoveryHints()
+          ? 'Retry with a smaller edit or disable the config-protection hook temporarily.'
+          : 'Retry with a smaller edit.')
     };
   }
 
   const input = parseInput(inputOrRaw);
-  const filePath = input?.tool_input?.file_path || input?.tool_input?.file || '';
-  if (!filePath) return { exitCode: 0 };
+  for (const filePath of targetPaths(input?.tool_input)) {
+    const blocked = checkTarget(filePath);
+    if (blocked) return blocked;
+  }
+  return { exitCode: 0 };
+}
 
+/**
+ * Every path the tool call would write. A MultiEdit entry may carry its own
+ * `file_path`; one without falls back to the top-level path, the same rule
+ * GateGuard applies (#3761). Checking only the top-level path let a batch
+ * edit an existing config through `edits[].file_path`.
+ */
+function targetPaths(toolInput) {
+  const shared = toolInput?.file_path || toolInput?.file || '';
+  const edits = Array.isArray(toolInput?.edits) ? toolInput.edits : [];
+  const entryPaths = edits.map(edit => (edit && typeof edit === 'object' ? edit.file_path : undefined));
+  const candidates = [shared, ...entryPaths].filter(p => typeof p === 'string' && p);
+  return [...new Set(candidates)];
+}
+
+function checkTarget(filePath) {
   const basename = path.basename(filePath);
   // Match case-insensitively. Every PROTECTED_FILES entry is lowercase, and on
   // case-insensitive filesystems (macOS APFS/HFS+, Windows NTFS) a write to
@@ -194,7 +216,7 @@ function run(inputOrRaw, options = {}) {
     }
 
     if (!exists) {
-      return { exitCode: 0 };
+      return null;
     }
 
     return {
@@ -202,42 +224,46 @@ function run(inputOrRaw, options = {}) {
       stderr:
         `BLOCKED: Modifying ${basename} is not allowed. ` +
         'Fix the source code to satisfy linter/formatter rules instead of ' +
-        'weakening the config. If this is a legitimate config change, ' +
-        'disable the config-protection hook temporarily.'
+        'weakening the config.' +
+        (showRecoveryHints()
+          ? ' If this is a legitimate config change, disable the config-protection hook temporarily.'
+          : '')
     };
   }
 
-  return { exitCode: 0 };
+  return null;
 }
 
 module.exports = { run };
 
 // Stdin fallback for spawnSync execution
-let truncated = /^(1|true|yes)$/i.test(String(process.env.ECC_HOOK_INPUT_TRUNCATED || ''));
-process.stdin.setEncoding('utf8');
-process.stdin.on('data', chunk => {
-  if (raw.length < MAX_STDIN) {
-    const remaining = MAX_STDIN - raw.length;
-    raw += chunk.substring(0, remaining);
-    if (chunk.length > remaining) truncated = true;
-  } else {
-    truncated = true;
-  }
-});
-
-process.stdin.on('end', () => {
-  const result = run(raw, {
-    truncated,
-    maxStdin: Number(process.env.ECC_HOOK_INPUT_MAX_BYTES) || MAX_STDIN
+if (require.main === module) {
+  let truncated = /^(1|true|yes)$/i.test(String(process.env.ECC_HOOK_INPUT_TRUNCATED || ''));
+  process.stdin.setEncoding('utf8');
+  process.stdin.on('data', chunk => {
+    if (raw.length < MAX_STDIN) {
+      const remaining = MAX_STDIN - raw.length;
+      raw += chunk.substring(0, remaining);
+      if (chunk.length > remaining) truncated = true;
+    } else {
+      truncated = true;
+    }
   });
 
-  if (result.stderr) {
-    process.stderr.write(result.stderr + '\n');
-  }
+  process.stdin.on('end', () => {
+    const result = run(raw, {
+      truncated,
+      maxStdin: Number(process.env.ECC_HOOK_INPUT_MAX_BYTES) || MAX_STDIN
+    });
 
-  if (result.exitCode === 2) {
-    process.exit(2);
-  }
+    if (result.stderr) {
+      process.stderr.write(result.stderr + '\n');
+    }
 
-  process.stdout.write(raw);
-});
+    if (result.exitCode === 2) {
+      process.exit(2);
+    }
+
+    process.stdout.write(raw);
+  });
+}

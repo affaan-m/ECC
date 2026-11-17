@@ -10,22 +10,31 @@ judge whether a patch is useful. Existing open PRs are not bulk-closed on rollou
 | --- | --- | --- |
 | Burst allowance | Five creations per author in 20 minutes | Close and lock excess PRs |
 | Severe burst | More than ten creations in 20 minutes | Attempt account block; alert maintainers |
-| Open-PR cap | Ten open PRs per author at any time | Close the newest PRs above the cap with an explanatory comment; no lock, no alert |
+| Open-PR cap | Ten open PRs per author at any time | Close excess new PRs or a reopened PR with an explanatory comment; no lock, no alert |
 | Known denied account | User ID `108231307`, currently `dajiaohuang` | Close and lock its incoming/reopened PR |
-| Trusted contributors | Live repository write, maintain, or admin permission | Exempt from the burst guard |
+| Trusted contributors | Live repository write, maintain, or admin permission | Exempt from burst and denied-account moderation; still subject to the open-PR cap |
 | Notifications | `@affaan-m @haelyra` | One bot-authored issue per author per UTC day, plus one escalation comment |
 
 Edit `pr-burst-policy.json` to change thresholds, notification recipients or
 denied numeric IDs, or `maxOpen` to change the open-PR cap.
 
-The open-PR cap is evaluated on the same opened and reopened events, after any
-burst closures in that run, against a full paginated list of the repository's
-open PRs. The author's oldest `maxOpen` PRs stay open; newer ones are closed with
-a bot comment that names the count and the limit. Closing is reversible: once
-the author is under the cap, reopening a closed PR passes. A PR the burst guard
+The open-PR cap applies to every author on opened and reopened events. Up to 100 author events
+queue in Actions, so normal submission bursts keep their pending cap checks.
+The guard checks a full paginated list of open PRs. A newly opened PR closes
+only when at least ten older PRs by that author are still open.
+If an opened event runs late, it also closes newer excess PRs visible in that
+snapshot. This catches new PRs whose individual checks were cancelled by the
+Actions queue without closing any PR that predates the triggering opened event.
+Reopening consumes a new slot, so the reopened PR closes when the author is
+over the cap. Existing open PRs stay open, even when their author already had
+more than ten. A bot comment names the count and limit. Closing is reversible:
+once the author is under the cap, reopening a closed PR passes. A PR the burst guard
 already closed and locked in the same run is never touched again by the cap. The
-cap does not bulk-close PRs that were already open when it shipped; it applies
-as each author opens or reopens their next PR.
+cap does not bulk-close historical PRs; it applies when an author opens or
+reopens a PR after rollout. Burst moderation runs before the cap in the same
+job and still reads later creation windows to handle out-of-order API snapshots.
+GitHub cancels excess pending runs beyond its 100-run queue; a prolonged backlog
+that reaches that limit can leave an individual cap event unchecked.
 
 Closed and draft PRs count toward burst detection. Counting uses stable author
 IDs and paginated REST creation metadata, without the search index. A run checks
@@ -33,8 +42,7 @@ historical windows from the triggering PR's creation time through newer API
 rows. Queue delays, out-of-order delivery and replaced pending runs cannot hide
 a burst already present in that snapshot. Excess PRs are determined in creation
 order across all scanned windows, with PR number breaking timestamp ties.
-Already closed excess PRs count
-but are not mutated again.
+Already closed excess PRs count but are not mutated again.
 
 Reopening an old ordinary PR does not add a new creation to the burst count.
 Reopening a denied author's PR triggers denial even outside the time window.

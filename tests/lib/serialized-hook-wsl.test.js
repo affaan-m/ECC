@@ -67,14 +67,20 @@ try {
   assert.strictEqual(actual.bootstrap, expected + '/scripts/hooks/plugin-hook-bootstrap.js');
   assert.deepStrictEqual(actual.args, ['node', 'scripts/hooks/session-start-bootstrap.js']);
   console.log('PASS full JSON-decoded SessionStart hook resolves exact WSL path through Bash and forwards continuation');
-  const mutation = command.replace(",'/'", ",'_'");
+  // Native Windows runs hooks as `bash.exe -c "<command>"` through the Windows command line;
+  // that extra argv/MSYS layer collapses each `\\` pair to `\` before Bash sees it (#3746).
+  const windowsCollapsed = command.replace(/\\\\/g, '\\');
+  const collapsed = execute(windowsCollapsed);
+  assert.strictEqual(collapsed.root, expected);
+  console.log('PASS SessionStart hook still parses and resolves after Windows backslash collapsing');
+  const mutation = command.replace(".join('/')", ".join('_')");
   assert.notStrictEqual(mutation, command, 'Mutation must modify the shipped replacement');
   const broken = execute(mutation);
   assert.notStrictEqual(broken.root, expected, 'Mutation must be detected by exact expected-path assertion');
   console.log('PASS exact path assertion detects a mutated slash replacement');
 } catch (error) { failed++; console.error(error.stack); }
 finally { fs.rmSync(folder, { recursive: true, force: true }); }
-console.log('Passed: ' + (failed ? 0 : 2));
+console.log('Passed: ' + (failed ? 0 : 3));
 console.log('Failed: ' + failed);
 process.exitCode = failed ? 1 : 0;
 

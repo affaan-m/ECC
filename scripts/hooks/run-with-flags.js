@@ -13,13 +13,20 @@ const path = require('path');
 const { spawnSync } = require('child_process');
 const { StringDecoder } = require('string_decoder');
 const { isHookEnabled, isDryRun } = require('../lib/hook-flags');
+const { showRecoveryHints } = require('../lib/hooks/recovery-hints');
 const { readStdinRaw: readBoundedStdin, resolveMaxStdin } = require('./hook-input');
+const { installHookWatchdog } = require('./hook-watchdog');
 const { buildPreToolUseAdditionalContext } = require('./pretooluse-visible-output');
 const { createHookContextScanner } = require('./hook-input-limits');
 
-const FAIL_CLOSED_ON_TRUNCATION_HOOKS = new Set([
+const GATEGUARD_HOOKS = new Set([
+  'pre:bash:gateguard-fact-force',
   'pre:powershell:gateguard-fact-force',
-  'pre:edit-write:gateguard-fact-force',
+  'pre:edit-write:gateguard-fact-force'
+]);
+
+const FAIL_CLOSED_ON_TRUNCATION_HOOKS = new Set([
+  ...GATEGUARD_HOOKS,
   'pre:mcp-health-check'
 ]);
 
@@ -119,8 +126,7 @@ function resolveLegacySpawnStdout(result) {
 
 function truncatedInputResult(hookId, maxStdin) {
   if (!FAIL_CLOSED_ON_TRUNCATION_HOOKS.has(hookId)) return null;
-  if (hookId === 'pre:powershell:gateguard-fact-force'
-    || hookId === 'pre:edit-write:gateguard-fact-force') {
+  if (GATEGUARD_HOOKS.has(hookId)) {
     const gateGuardValue = String(process.env.ECC_GATEGUARD || '').trim().toLowerCase();
     const legacyDisabled = String(process.env.GATEGUARD_DISABLED || '').trim() === '1';
     if (legacyDisabled || ['0', 'false', 'off', 'disabled', 'disable'].includes(gateGuardValue)) {
@@ -136,15 +142,18 @@ function truncatedInputResult(hookId, maxStdin) {
 
   return {
     stdout: '',
-    stderr: `BLOCKED: Hook input exceeded ${maxStdin} bytes, so ${hookId} could not safely inspect the complete request. Retry with a smaller tool input or explicitly disable this hook.`,
+    stderr: showRecoveryHints()
+      ? `BLOCKED: Hook input exceeded ${maxStdin} bytes, so ${hookId} could not safely inspect the complete request. Retry with a smaller tool input or explicitly disable this hook.`
+      : `BLOCKED: Hook input exceeded ${maxStdin} bytes, so ${hookId} could not safely inspect the complete request. Retry with a smaller tool input.`,
     exitCode: 2
   };
 }
 
 function getPluginRoot() {
-  if (process.env.CLAUDE_PLUGIN_ROOT && process.env.CLAUDE_PLUGIN_ROOT.trim()) {
-    return process.env.CLAUDE_PLUGIN_ROOT;
-  }
+  const configuredRoot = [process.env.CLAUDE_PLUGIN_ROOT, process.env.ECC_PLUGIN_ROOT]
+    .map(value => typeof value === 'string' ? value.trim() : '')
+    .find(Boolean);
+  if (configuredRoot) return configuredRoot;
   return path.resolve(__dirname, '..', '..');
 }
 
@@ -189,10 +198,12 @@ function buildDryRunPreview(hookId, relScriptPath, profilesCsv, raw) {
   return parts.join(' ') + '\n';
 }
 
-async function main() {
-  const [, , hookId, relScriptPath, profilesCsv] = process.argv;
-  const { raw, truncated, hookContext } = await readStdinRaw();
-
+/**
+ * Runs one hook and returns { stdout, exitCode } instead of exiting, so
+ * plugin-hook-bootstrap.js can call it in-process rather than spawning a
+ * second Node process per hook.
+ */
+async function runHook(hookId, relScriptPath, profilesCsv, { raw, truncated, hookContext }) {
   // Oversized payloads: never echo the truncated string — a JSON document
   // cut mid-stream is treated by the harness as a hook failure, blocking the
   // tool call (#2222). Empty stdout + exit 0 means "no opinion", so
@@ -205,20 +216,17 @@ async function main() {
   }
 
   if (!hookId || !relScriptPath) {
-    exitWithStdout('', 0);
-    return;
+    return { stdout: '', exitCode: 0 };
   }
 
   if (!isHookEnabled(hookId, { profiles: profilesCsv })) {
-    exitWithStdout('', 0);
-    return;
+    return { stdout: '', exitCode: 0 };
   }
 
   if (isDryRun()) {
     const preview = buildDryRunPreview(hookId, relScriptPath, profilesCsv, raw);
     process.stderr.write(preview);
-    exitWithStdout('', 0);
-    return;
+    return { stdout: '', exitCode: 0 };
   }
 
   const pluginRoot = getPluginRoot();
@@ -228,21 +236,18 @@ async function main() {
   // Prevent path traversal outside the plugin root
   if (!scriptPath.startsWith(resolvedRoot + path.sep)) {
     process.stderr.write(`[Hook] Path traversal rejected for ${hookId}: ${scriptPath}\n`);
-    exitWithStdout('', 0);
-    return;
+    return { stdout: '', exitCode: 0 };
   }
 
   if (!fs.existsSync(scriptPath)) {
     process.stderr.write(`[Hook] Script not found for ${hookId}: ${scriptPath}\n`);
-    exitWithStdout('', 0);
-    return;
+    return { stdout: '', exitCode: 0 };
   }
 
   const truncationBlock = truncated ? truncatedInputResult(hookId, MAX_STDIN) : null;
   if (truncationBlock) {
     writeStderr(truncationBlock.stderr);
-    exitWithStdout(truncationBlock.stdout, truncationBlock.exitCode);
-    return;
+    return { stdout: truncationBlock.stdout, exitCode: truncationBlock.exitCode };
   }
 
   // Prefer direct require() when the hook exports a run(rawInput) function.
@@ -290,12 +295,11 @@ async function main() {
         ...(truncated ? hookContext : {})
       });
       const result = resolveHookResult(output);
-      exitWithStdout(sanitizeEcho(result.stdout), result.exitCode);
+      return { stdout: sanitizeEcho(result.stdout), exitCode: result.exitCode };
     } catch (runErr) {
       process.stderr.write(`[Hook] run() error for ${hookId}: ${runErr.message}\n`);
-      exitWithStdout('', 0);
+      return { stdout: '', exitCode: 0 };
     }
-    return;
   }
 
   // Legacy path: spawn a child Node process for hooks without run() export
@@ -311,8 +315,7 @@ async function main() {
   const remaining = deadline - Date.now();
   if (remaining <= 0) {
     writeStderr(`[Hook] lifecycle time budget exhausted for ${hookId}; skipping legacy hook`);
-    exitWithStdout('', 0);
-    return;
+    return { stdout: '', exitCode: 0 };
   }
   const result = spawnSync(process.execPath, [scriptPath], {
     input: raw,
@@ -336,14 +339,25 @@ async function main() {
   if (result.error || result.signal || result.status === null) {
     const failureDetail = result.error ? result.error.message : result.signal ? `terminated by signal ${result.signal}` : 'missing exit status';
     writeStderr(`[Hook] legacy hook execution failed for ${hookId}: ${failureDetail}`);
-    exitWithStdout(legacyStdout, 1);
-    return;
+    return { stdout: legacyStdout, exitCode: 1 };
   }
 
-  exitWithStdout(legacyStdout, Number.isInteger(result.status) ? result.status : 0);
+  return { stdout: legacyStdout, exitCode: Number.isInteger(result.status) ? result.status : 0 };
 }
 
-main().catch(err => {
-  process.stderr.write(`[Hook] run-with-flags error: ${err.message}\n`);
-  process.exit(0);
-});
+async function main() {
+  const [, , hookId, relScriptPath, profilesCsv] = process.argv;
+  const input = await readStdinRaw();
+  const result = await runHook(hookId, relScriptPath, profilesCsv, input);
+  exitWithStdout(result.stdout, result.exitCode);
+}
+
+if (require.main === module) {
+  installHookWatchdog({ label: 'run-with-flags' });
+  main().catch(err => {
+    process.stderr.write(`[Hook] run-with-flags error: ${err.message}\n`);
+    process.exit(0);
+  });
+}
+
+module.exports = { runHook };

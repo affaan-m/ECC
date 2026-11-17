@@ -37,8 +37,10 @@ function setWSLForTesting(value) {
 const WINDOWS_PATH_PATTERN = /^[A-Za-z]:[\\/]/;
 
 // Compact WSL conversion snippet for inline resolvers embedded in commands and hooks.
-// Uses 8 backslashes in regex source so it preserves shell escaping when inlined into `node -e "..."`.
-const INLINE_WSL_CONVERSION = `try{if(o.platform()==='linux'){var v=f.readFileSync('/proc/version','utf8').toLowerCase();if(v.includes('microsoft')){var m=d.match(/^([A-Za-z]):[\\\\\\\\/]/);if(m){var dl=m[1].toLowerCase();d='/mnt/'+dl+d.slice(2).replace(/\\\\\\\\/g,'/')}}}}catch(_){}`;
+// Contains no backslash: on native Windows, Claude Code runs hooks as `bash.exe -c "<command>"`
+// and the extra argv/MSYS unescape layer collapses backslashes, which broke regex literals (#3746).
+// The backslash separator is built with String.fromCharCode(92) instead.
+const INLINE_WSL_CONVERSION = `try{if(o.platform()==='linux'){var v=f.readFileSync('/proc/version','utf8').toLowerCase();if(v.includes('microsoft')){var b=String.fromCharCode(92),m=d.match(/^([A-Za-z]):/);if(m&&(d.charAt(2)==='/'||d.charAt(2)===b)){var dl=m[1].toLowerCase();d='/mnt/'+dl+d.slice(2).split(b).join('/')}}}}catch(_){}`;
 
 /**
  * Convert a Windows path to a WSL path.
@@ -370,6 +372,9 @@ function createInstallTargetAdapter(config) {
     id: config.id,
     target: config.target,
     kind: config.kind,
+    rootSegments: Object.freeze([...(config.rootSegments || [])]),
+    installStatePathSegments: Object.freeze([...(config.installStatePathSegments || [])]),
+    acceptsUndeclaredModuleTargets: config.acceptsUndeclaredModuleTargets === true,
     nativeRootRelativePath: config.nativeRootRelativePath || null,
     supports(target) {
       return target === config.target || target === config.id;
@@ -379,7 +384,7 @@ function createInstallTargetAdapter(config) {
       if (typeof config.resolveRoot === 'function') {
         return config.resolveRoot(input, baseRoot);
       }
-      return path.join(baseRoot, ...config.rootSegments);
+      return path.join(baseRoot, ...adapter.rootSegments);
     },
     resolveTrustedRoots(input = {}) {
       const root = adapter.resolveRoot(input);
@@ -390,7 +395,7 @@ function createInstallTargetAdapter(config) {
     },
     getInstallStatePath(input = {}) {
       const root = adapter.resolveRoot(input);
-      return path.join(root, ...config.installStatePathSegments);
+      return path.join(root, ...adapter.installStatePathSegments);
     },
     resolveDestinationPath(sourceRelativePath, input = {}) {
       const normalizedSourcePath = normalizeRelativePath(sourceRelativePath);
@@ -428,6 +433,14 @@ function createInstallTargetAdapter(config) {
     },
     excludesSourcePath(sourceRelativePath) {
       return isExcludedSourcePath(sourceRelativePath, config.excludedSourcePaths);
+    },
+    prepareSource(input = {}) {
+      if (typeof config.prepareSource === 'function') {
+        return config.prepareSource(input, adapter);
+      }
+      return {
+        sourceRoot: input.sourceRoot || input.repoRoot,
+      };
     },
     planOperations(input = {}) {
       if (typeof config.planOperations === 'function') {
@@ -495,6 +508,7 @@ module.exports = {
   createNamespacedFlatRuleOperations,
   createRemappedOperation,
   isForeignPlatformPath,
+  listRelativeFiles,
   normalizeRelativePath,
   planClaudeHooksOperations,
   isWSL,

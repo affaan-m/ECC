@@ -14,6 +14,9 @@ const {
   assertHookConsentReady,
   parseJsoncConfig,
   getDisabledOpenCodePluginContent,
+  isInertOpenCodePluginStub,
+  isLegacyDisabledOpenCodePluginStub,
+  isOpenCodeHookConfigRegistration,
   getRecordedHookConsent,
   getOpenCodeActivationPathKind,
   getOpenCodeSourceActivationKind,
@@ -267,6 +270,32 @@ function getTrustedRootsForPlan(plan) {
   return plan.targetRoot ? [plan.targetRoot] : [];
 }
 
+function withMcpMergeExclusions(plan, disabledServers) {
+  if (disabledServers.length === 0) {
+    return plan;
+  }
+  const filterOperation = operation => (
+    operation.kind === 'merge-json' && isMcpConfigPath(operation.destinationPath)
+      && isPlainObject(operation.mergePayload)
+      && isPlainObject(operation.mergePayload.mcpServers)
+      ? {
+        ...operation,
+        mergePayload: filterMcpConfig(operation.mergePayload, disabledServers).config,
+      }
+      : operation
+  );
+  // Writes, recovery checkpoints, and the final ownership ledger must use the
+  // same payload. Repair and uninstall later run without the install environment.
+  return {
+    ...plan,
+    operations: plan.operations.map(filterOperation),
+    statePreview: {
+      ...plan.statePreview,
+      operations: plan.statePreview.operations.map(filterOperation),
+    },
+  };
+}
+
 function assertSafeInstallOperation(plan, operation) {
   if (!operation || typeof operation.destinationPath !== 'string') {
     throw new Error('Refusing to apply install operation: missing destination path.');
@@ -458,9 +487,11 @@ function openCodeActivationCandidates(plan, previousOperations) {
   return candidates;
 }
 
-function activationIsInactive(kind, operation, content) {
+function activationIsInactive(kind, operation, content, strict = false) {
   if (kind === 'plugin') {
-    return content.toString('utf8') === getDisabledOpenCodePluginContent();
+    // The final gate accepts only the V2-valid stub: the pre-fix one is inert but OpenCode rejects it.
+    return strict ? content.toString('utf8') === getDisabledOpenCodePluginContent(operation.sourceRelativePath)
+      : isInertOpenCodePluginStub(content);
   }
   const text = content.toString('utf8');
   const relativePath = operation.sourceRelativePath || operation.destinationPath;
@@ -473,7 +504,11 @@ function activationIsInactive(kind, operation, content) {
   if (config.plugin !== undefined && !Array.isArray(config.plugin)) {
     throw new Error(`Invalid ${relativePath}: plugin must be an array`);
   }
-  return !Array.isArray(config.plugin) || !config.plugin.includes('./plugins');
+  // T07: recognize every historical registration form — the legacy './plugins'
+  // directory entry and the per-file './plugins/ecc-hooks.ts' entries written
+  // before OpenCode 2.x directory discovery became the only load path.
+  return !Array.isArray(config.plugin)
+    || !config.plugin.some(plugin => isOpenCodeHookConfigRegistration(plugin));
 }
 
 function assertOpenCodeHookDeactivationReady(plan, options = {}) {
@@ -516,7 +551,39 @@ function assertOpenCodeHookDeactivationReady(plan, options = {}) {
     const digest = content === null ? null : crypto.createHash('sha256').update(content).digest('hex');
     snapshot.set(key, digest);
     if (content === null) continue;
-    const inactive = activationIsInactive(kind, operation, content);
+    let inactive = activationIsInactive(kind, operation, content, options.requireInactive);
+    if (options.requireInactive && !inactive && kind === 'plugin') {
+      // R2-4 (review 4456945413): installs that declined hooks before the
+      // barrel split wrote the module stub (or the older factory stub) to
+      // EVERY plugin file, the barrel included. This selective plan has no
+      // operation that would rewrite the retained file, so the strict gate
+      // would fail the install after all writes landed. Migrate it in place
+      // — ownership is proven twice: install-state records the file as
+      // managed AND its bytes still match a historical disabled-stub payload
+      // exactly, so no user edit can be lost. Anything else keeps failing.
+      const recorded = previous.get(key);
+      if (recorded
+        && typeof recorded.contentSha256 === 'string'
+        && recorded.contentSha256 === digest
+        && isLegacyDisabledOpenCodePluginStub(content)) {
+        const current = getDisabledOpenCodePluginContent(operation.sourceRelativePath);
+        writeFileNoFollow(operation.destinationPath, current, {
+          expectedContent: { kind: 'sha256', digest },
+          action: 'migrate legacy OpenCode plugin stub',
+          validateDestination(destinationPath) {
+            assertSafeInstallOperation(plan, { destinationPath });
+            assertSafeClaudeSkillOperation(plan, { destinationPath });
+            return destinationPath;
+          },
+        });
+        // Record only writes proven above. Never rehash unrelated retained files.
+        if (typeof options.onMigratedOperation === 'function') {
+          options.onMigratedOperation(operation);
+        }
+        snapshot.set(key, crypto.createHash('sha256').update(current).digest('hex'));
+        inactive = activationIsInactive(kind, operation, current, true);
+      }
+    }
     if (options.requireInactive) {
       if (!inactive) {
         throw new Error(`OpenCode hook activation remains active at ${operation.destinationPath}`);
@@ -524,7 +591,12 @@ function assertOpenCodeHookDeactivationReady(plan, options = {}) {
       continue;
     }
     const recorded = previous.get(key);
-    if (inactive && (kind === 'plugin' || options.allowVerifiedLegacyRemoval || !recorded)) continue;
+    // R2-4: a recorded config that already parses as inactive needs no
+    // replacement operation when its bytes still match the managed digest —
+    // selective installs (e.g. commands-core) legitimately plan no .opencode
+    // writes at all. Unverifiable or modified records keep refusing.
+    if (inactive && (kind === 'plugin' || options.allowVerifiedLegacyRemoval || !recorded
+      || (typeof recorded.contentSha256 === 'string' && recorded.contentSha256 === digest))) continue;
     if (options.allowVerifiedLegacyRemoval && recorded) {
       const verified = verifyManagedLegacyFile(recorded, {
         targetRoot: plan.targetRoot, installStatePath: plan.installStatePath,
@@ -594,9 +666,14 @@ function findPreviousManagedHooks(previousState, plan, operation) {
     return null;
   }
 
+  // Settings files collect hooks from more than one module, so the recorded
+  // operation is identified by its source as well; matching on the destination
+  // alone hands one module the other module's managed hooks.
   const previousOperation = (previousState.operations || []).find(candidate => (
     candidate.kind === operation.kind
     && comparablePath(candidate.destinationPath) === comparablePath(operation.destinationPath)
+    && (operation.kind !== 'update-claude-settings'
+      || (candidate.sourceRelativePath || '') === (operation.sourceRelativePath || ''))
   ));
   if (!previousOperation || !previousOperation.managedHooks) {
     return null;
@@ -789,7 +866,8 @@ function preflightQwenAgentOperations(plan) {
   }
 }
 
-function previewInstallPlan(plan) {
+function previewInstallPlan(rawPlan) {
+  const plan = withMcpMergeExclusions(rawPlan, parseDisabledMcpServers(process.env.ECC_DISABLED_MCPS));
   preflightQwenAgentOperations(plan);
   assertOpenCodeScriptBoundary(plan);
   assertOpenCodeHookDeactivationReady(plan);
@@ -852,7 +930,9 @@ function applyInstallPlan(plan, dependencies = {}) {
     : applyInstallPlanLocked(plan, dependencies, false);
 }
 
-function applyInstallPlanLocked(plan, dependencies = {}, settingsLockHeld = false) {
+function applyInstallPlanLocked(rawPlan, dependencies = {}, settingsLockHeld = false) {
+  const disabledServers = parseDisabledMcpServers(process.env.ECC_DISABLED_MCPS);
+  const plan = withMcpMergeExclusions(rawPlan, disabledServers);
   preflightQwenAgentOperations(plan);
   const persistInstallState = dependencies.writeInstallState || writeInstallState;
   const beforeInstallStateRead = dependencies.beforeInstallStateRead;
@@ -880,7 +960,6 @@ function applyInstallPlanLocked(plan, dependencies = {}, settingsLockHeld = fals
     operations: migration.appliedOperations,
   };
   const preparedClaudeSettings = preflightClaudeSettingsOperations(appliedPlan);
-  const disabledServers = parseDisabledMcpServers(process.env.ECC_DISABLED_MCPS);
   const linkIndex = buildLinkIndexForPlan(appliedPlan);
   const hasLegacyMigration = migration.legacyOperationsToRemove.length > 0;
   const hookRemovalCount = appliedPlan.operations.filter(operation => (
@@ -888,6 +967,11 @@ function applyInstallPlanLocked(plan, dependencies = {}, settingsLockHeld = fals
   )).length;
   let completedHookRemovalCount = 0;
   const writtenDestinations = new Set();
+  const migratedActivationOperations = [];
+  const digestPlan = () => ({
+    ...appliedPlan,
+    operations: [...appliedPlan.operations, ...migratedActivationOperations],
+  });
     if (migration.requiresBridgeState) {
       // Own every operation that may be written during a flat-skill migration
       // before the first copy. A later failure is retryable and uninstall can
@@ -988,17 +1072,11 @@ function applyInstallPlanLocked(plan, dependencies = {}, settingsLockHeld = fals
           throw new Error(`Missing merge payload for ${operation.destinationPath}`);
         }
 
-        const filteredPayload = (
-          isMcpConfigPath(operation.destinationPath) && disabledServers.length > 0
-        )
-          ? filterMcpConfig(payload, disabledServers).config
-          : payload;
-
         const currentValue = readOptionalJsonObject(
           operation.destinationPath,
           'existing JSON config'
         );
-        const mergedValue = deepMergeJson(currentValue, filteredPayload);
+        const mergedValue = deepMergeJson(currentValue, payload);
         fs.writeFileSync(operation.destinationPath, formatJson(mergedValue), 'utf8');
         writtenDestinations.add(operation.destinationPath);
         continue;
@@ -1064,19 +1142,25 @@ function applyInstallPlanLocked(plan, dependencies = {}, settingsLockHeld = fals
       }
 
       // Preserve main's activation safety gate before publishing ownership.
-      assertOpenCodeHookDeactivationReady(plan, { requireInactive: true });
+      assertOpenCodeHookDeactivationReady(plan, {
+        requireInactive: true,
+        onMigratedOperation(operation) {
+          migratedActivationOperations.push(operation);
+          writtenDestinations.add(operation.destinationPath);
+        },
+      });
       // Stale records leave only the successful final state; the bridge and
       // failure checkpoint above keep them so a failed install retains ownership.
       finalState = stateWithContentDigests(
         withoutStaleOperations(migration.finalState, migration),
-        appliedPlan
+        digestPlan()
       );
       if (typeof beforeInstallStateWrite === 'function') {
         beforeInstallStateWrite({ plan: appliedPlan, state: finalState });
       }
       persistInstallState(plan.installStatePath, finalState);
     } catch (error) {
-      if (migration.requiresBridgeState) {
+      if (migration.requiresBridgeState || migratedActivationOperations.length > 0) {
         try {
           // The bridge was committed before any writes. Refresh it with hashes of
           // files that now exist so uninstall can remove only bytes this attempt
@@ -1093,7 +1177,7 @@ function applyInstallPlanLocked(plan, dependencies = {}, settingsLockHeld = fals
               ),
               {
                 ...appliedPlan,
-                operations: appliedPlan.operations.filter(operation => (
+                operations: digestPlan().operations.filter(operation => (
                   writtenDestinations.has(operation.destinationPath)
                 )),
               }
@@ -1139,6 +1223,10 @@ function applyInstallPlanLocked(plan, dependencies = {}, settingsLockHeld = fals
     opencodeMigrationWarnings = [
       `Legacy OpenCode cleanup did not finish: ${error.message}. Content under ~/.opencode was preserved; rerun the OpenCode install or review it manually.`,
     ];
+  }
+
+  if (dependencies.requireCompleteLegacyCleanup && opencodeMigrationWarnings.length > 0) {
+    throw new Error(opencodeMigrationWarnings.join(' '));
   }
 
   if (legacyActivation) {

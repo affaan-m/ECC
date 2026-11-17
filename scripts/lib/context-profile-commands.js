@@ -5,9 +5,10 @@ const fs = require('node:fs');
 const { createSourceReader } = require('./context-profile-support');
 
 const NATIVE_COMMANDS = ['prepare-native', 'native-status', 'native-rollback', 'native-recover'];
-const COMMANDS = ['start', 'resolve', 'run', 'set', 'mode', 'status', 'rollback', 'recover', 'routing-index', ...NATIVE_COMMANDS];
+const COMMANDS = ['start', 'resolve', 'run', 'set', 'mode', 'status', 'rollback', 'recover', 'routing-index', 'neighbors',
+  ...NATIVE_COMMANDS];
 const VALUE_FLAGS = ['--task-input', '--previous', '--expected-digest', '--state-root', '--expected-revision',
-  '--target', '--selection', '--include', '--exclude', '--native-root'];
+  '--target', '--selection', '--include', '--exclude', '--native-root', '--neighbors', '--project'];
 
 function parse(argv) {
   const args = argv.filter(arg => arg !== '--dry-run');
@@ -31,15 +32,20 @@ function parse(argv) {
   }
   const taskCommand = ['resolve', 'run'].includes(result.command);
   const allowed = result.command === 'start' ? ['--state-root', '--native-root'] : NATIVE_COMMANDS.includes(result.command)
-    ? ['--state-root', '--native-root', '--expected-revision', '--expected-digest'] : taskCommand
+    ? ['--state-root', '--native-root', '--expected-revision', '--expected-digest'] : result.command === 'neighbors' ? ['--target', '--project']
+    : taskCommand
     ? ['--task-input', '--previous', '--expected-digest', '--state-root', '--target', '--selection', '--include', '--exclude',
-      ...(result.command === 'run' ? ['--native-root'] : [])]
+      '--neighbors', ...(result.command === 'run' ? ['--native-root'] : [])]
     : result.command === 'set'
       ? ['--state-root', '--expected-revision', '--expected-digest', '--target', '--selection', '--include', '--exclude']
       : ['--state-root', ...(['rollback', 'mode'].includes(result.command) ? ['--expected-revision'] : [])];
   for (const flag of seen) if (!allowed.includes(flag)) throw new Error(`${flag} is unavailable for ${result.command}`);
+  if (result.project && result.target !== 'claude') throw new Error('--project applies to --target claude only');
+  if (result.neighbors && result['native-root']) {
+    throw new Error('--neighbors cannot be used with --native-root; the listed skills do not exist in the isolated generation');
+  }
   if (taskCommand && !result['task-input']) throw new Error(`${result.command} requires --task-input`);
-  if (!taskCommand && !result['state-root']) throw new Error(`${result.command} requires --state-root`);
+  if (!taskCommand && result.command !== 'neighbors' && !result['state-root']) throw new Error(`${result.command} requires --state-root`);
   if ((NATIVE_COMMANDS.includes(result.command) || result.command === 'start') && !result['native-root']) throw new Error(`${result.command} requires --native-root`);
   if (result['native-root'] && !result['state-root']) throw new Error('--native-root requires --state-root');
   if (result.command === 'mode' && !['auto', 'manual', 'suggest'].includes(result.profileId)) throw new Error('Choose mode auto, manual, or suggest');
@@ -96,6 +102,12 @@ function execute(options) {
         'native-rollback': 'rollbackNativeProfile', 'native-recover': 'recoverNativeProfile' })[options.command];
     return { native: native[method](input) };
   }
+  if (options.command === 'neighbors') {
+    const target = options.target || 'codex';
+    // Claude reads a project's own skills from the directory it starts in.
+    const projectDir = target === 'claude' ? path.resolve(options.project || process.cwd()) : null;
+    return { neighbors: require('./context-neighbors').discoverNeighborSkills({ target, projectDir }) };
+  }
   if (['resolve', 'run'].includes(options.command)) {
     const { resolveTaskContext } = require('./context-selection');
     const stored = options['state-root']
@@ -112,7 +124,8 @@ function execute(options) {
       exclude: stored?.exclude || options.exclude,
       load: options.load && !options.dryRun,
       previous: options.previous ? readInput(options.previous) : null,
-      expectedDigest: options['expected-digest'] || null };
+      expectedDigest: options['expected-digest'] || null,
+      ...(options.neighbors ? { neighbors: require('./context-neighbors').readNeighborSnapshot(options.neighbors) } : {}) };
     if (options.command === 'run') {
       const { load: _load, ...launchInput } = input;
       const native = options['native-root'] ? require('./context-profile-native').getNativeProfileStatus({
@@ -172,6 +185,7 @@ function run(argv) {
       : options.command === 'run' ? 'Task launch uses selected context and the provider configuration. Inspect the launch result.'
       : options.command === 'resolve' ? 'Task context resolved within the selected profile.'
       : options.command === 'routing-index' ? 'Routing index inspected. Prompt suggestions stay advisory; resolve verifies sources before loading.'
+      : options.command === 'neighbors' ? 'Installed non-ECC skills listed by name and description; nothing was loaded or changed. Save the snapshot and pass it with --neighbors.'
       : 'Managed profile generation inspected. Native activation is a separate provider boundary.',
     activation: value.selection?.activation || 'unobserved', next_actions: [], artifacts: [], ...value };
 }

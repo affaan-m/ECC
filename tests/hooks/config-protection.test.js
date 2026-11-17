@@ -165,6 +165,55 @@ function runTests() {
   );
 
   results.push(
+    test('hides the config-protection recovery hint by default', () => {
+      return withOwnedDirectory(fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-config-protect-')), tmpDir => {
+        const absPath = path.join(tmpDir, '.eslintrc.js');
+        fs.writeFileSync(absPath, 'module.exports = {};');
+        const result = runHook(
+          { tool_name: 'Write', tool_input: { file_path: absPath, content: '{}' } },
+          { ECC_SHOW_RECOVERY_HINTS: '' }
+        );
+        assert.strictEqual(result.code, 2);
+        assert.ok(!result.stderr.includes('disable the config-protection hook temporarily'), result.stderr);
+      });
+    })
+  );
+
+  results.push(
+    test('restores the config-protection recovery hint for normalized truthy values', () => {
+      return withOwnedDirectory(fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-config-protect-')), tmpDir => {
+        const absPath = path.join(tmpDir, '.eslintrc.js');
+        fs.writeFileSync(absPath, 'module.exports = {};');
+        for (const value of [' true ', 'enable']) {
+          const result = runHook(
+            { tool_name: 'Write', tool_input: { file_path: absPath, content: '{}' } },
+            { ECC_SHOW_RECOVERY_HINTS: value }
+          );
+          assert.strictEqual(result.code, 2);
+          assert.ok(result.stderr.includes('disable the config-protection hook temporarily'), `${value}: ${result.stderr}`);
+        }
+      });
+    })
+  );
+
+  results.push(
+    test('hides the truncated-payload recovery hint by default and restores it on demand', () => {
+      const rawInput = JSON.stringify({
+        tool_name: 'Write',
+        tool_input: { file_path: '.eslintrc.js', content: 'x'.repeat(1024 * 1024 + 2048) }
+      });
+
+      const hidden = runHook(rawInput, { ECC_SHOW_RECOVERY_HINTS: '' });
+      assert.strictEqual(hidden.code, 2);
+      assert.ok(!hidden.stderr.includes('disable the config-protection hook temporarily'), hidden.stderr);
+
+      const shown = runHook(rawInput, { ECC_SHOW_RECOVERY_HINTS: ' true ' });
+      assert.strictEqual(shown.code, 2);
+      assert.ok(shown.stderr.includes('disable the config-protection hook temporarily'), shown.stderr);
+    })
+  );
+
+  results.push(
     test('allows first-time creation of a protected config file', () => {
       return withOwnedDirectory(fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-config-protect-')), tmpDir => {
         const absPath = path.join(tmpDir, 'eslint.config.mjs');
@@ -467,6 +516,70 @@ function runTests() {
   );
 
   results.push(
+    test('blocks a MultiEdit whose existing config target is only in edits[].file_path (#3761)', () => {
+      return withOwnedDirectory(fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-config-protect-multi-')), tmpDir => {
+        const ruff = path.join(tmpDir, 'ruff.toml');
+        const eslintrc = path.join(tmpDir, '.eslintrc.json');
+        fs.writeFileSync(ruff, '{}');
+        fs.writeFileSync(eslintrc, '{}');
+        const ordinary = path.join(tmpDir, 'app.py');
+
+        const perEntryOnly = runHook({
+          tool_name: 'MultiEdit',
+          tool_input: { edits: [{ file_path: ruff, old_string: '{}', new_string: '{ }' }] }
+        });
+        assert.strictEqual(perEntryOnly.code, 2, 'per-entry-only batch should be blocked: ' + perEntryOnly.stderr);
+        assert.ok(perEntryOnly.stderr.includes('BLOCKED: Modifying ruff.toml is not allowed.'), perEntryOnly.stderr);
+
+        const mixed = runHook({
+          tool_name: 'MultiEdit',
+          tool_input: {
+            file_path: ordinary,
+            edits: [
+              { old_string: 'a', new_string: 'b' },
+              { file_path: eslintrc, old_string: '{}', new_string: '{ }' }
+            ]
+          }
+        });
+        assert.strictEqual(mixed.code, 2, 'mixed ordinary/config batch should be blocked: ' + mixed.stderr);
+        assert.ok(mixed.stderr.includes('BLOCKED: Modifying .eslintrc.json is not allowed.'), mixed.stderr);
+
+        const missingThenExisting = runHook({
+          tool_name: 'MultiEdit',
+          tool_input: {
+            file_path: path.join(tmpDir, 'missing', 'ruff.toml'),
+            edits: [
+              { old_string: '', new_string: '[lint]' },
+              { file_path: eslintrc, old_string: '{}', new_string: '{ }' }
+            ]
+          }
+        });
+        assert.strictEqual(missingThenExisting.code, 2, 'existing config after a missing one should be blocked: ' + missingThenExisting.stderr);
+        assert.ok(missingThenExisting.stderr.includes('BLOCKED: Modifying .eslintrc.json is not allowed.'), missingThenExisting.stderr);
+      });
+    })
+  );
+
+  results.push(
+    test('allows a MultiEdit that only creates or touches non-protected files', () => {
+      return withOwnedDirectory(fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-config-protect-multi-ok-')), tmpDir => {
+        const result = runHook({
+          tool_name: 'MultiEdit',
+          tool_input: {
+            file_path: path.join(tmpDir, 'app.py'),
+            edits: [
+              { old_string: 'a', new_string: 'b' },
+              { file_path: path.join(tmpDir, 'lib.py'), old_string: 'a', new_string: 'b' },
+              { file_path: path.join(tmpDir, 'ruff.toml'), old_string: '', new_string: '[lint]' }
+            ]
+          }
+        });
+        assert.strictEqual(result.code, 0, 'batch with no existing protected target should pass: ' + result.stderr);
+      });
+    })
+  );
+
+  results.push(
     test('does not block build or test tooling configs', () => {
       // Pins the boundary: this hook guards LINTER configs. A future widening
       // of the patterns must not quietly start blocking ordinary work.
@@ -519,6 +632,31 @@ function runTests() {
           assert.strictEqual(result.stdout, '', 'No raw input should be echoed: ' + name);
           assert.strictEqual(fs.readFileSync(absPath, 'utf8'), '{}', 'Hook must not modify the fixture');
         }
+      });
+    })
+  );
+
+  results.push(
+    test('requiring config-protection in-process does not attach stdin listeners or echo stdin', () => {
+      return withOwnedDirectory(fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-config-protect-require-')), tmpDir => {
+        const protectedPath = path.join(tmpDir, '.eslintrc.js');
+        fs.writeFileSync(protectedPath, 'module.exports = {};');
+        const configProtectionPath = path.join(__dirname, '..', '..', 'scripts', 'hooks', 'config-protection.js');
+        const script = [
+          'const beforeData = process.stdin.listenerCount("data");',
+          'const beforeEnd = process.stdin.listenerCount("end");',
+          `const mod = require(${JSON.stringify(configProtectionPath)});`,
+          'if (typeof mod.run !== "function") process.exit(3);',
+          'if (process.stdin.listenerCount("data") !== beforeData || process.stdin.listenerCount("end") !== beforeEnd) process.exit(4);'
+        ].join('');
+        const result = spawnSync(process.execPath, ['-e', script], {
+          input: JSON.stringify({ tool_name: 'Write', tool_input: { file_path: protectedPath } }),
+          encoding: 'utf8',
+          timeout: 5000
+        });
+        assert.strictEqual(result.status, 0, `require() should not attach stdin listeners or run the CLI handler (exit ${result.status}): ${result.stderr}`);
+        assert.strictEqual(result.stdout, '', 'require() must not echo stdin');
+        assert.strictEqual(result.stderr, '', 'require() must not execute the stdin fallback block');
       });
     })
   );

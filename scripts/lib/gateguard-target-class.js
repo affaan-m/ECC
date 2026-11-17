@@ -297,11 +297,26 @@ function isSensitiveTarget(classPath) {
   }
 }
 
+// `.claude/settings*.json` holds the switches for GateGuard and the other
+// hooks, so it must count as restricted on every edit path — including the
+// subagent paths that only deny sensitive or hard-linked targets (#3862).
+const CLAUDE_SETTINGS_PATH = /(^|\/)\.claude\/settings[^/]*\.json$/;
+
+function isClaudeSettingsPath(classPath) {
+  return CLAUDE_SETTINGS_PATH.test(String(classPath || '').replace(/\\/g, '/').toLowerCase());
+}
+
 /** Sensitive on the lexical or the real (symlink-resolved) path; any error is sensitive. */
 function isSensitiveTargetFor(filePath, data) {
   try {
     if (typeof filePath !== 'string' || !filePath) return true;
-    if (isSensitiveTarget(classPathFor(filePath, data))) return true;
+    const classPath = classPathFor(filePath, data);
+    if (isClaudeSettingsPath(classPath)) return true;
+    // When the project root itself is `.claude`, the class path collapses to
+    // `settings.json`; the absolute path still carries the `.claude` segment.
+    const target = resolveTargetPath(filePath, data);
+    if (target && isClaudeSettingsPath(target.resolved)) return true;
+    if (isSensitiveTarget(classPath)) return true;
     return isSensitiveRealTarget(filePath, data);
   } catch (_) {
     return true;
@@ -314,6 +329,8 @@ function isSensitiveRealTarget(filePath, data) {
   const paths = target.isWin ? path.win32 : path.posix;
   const real = realTargetPath(target.resolved, paths);
   if (!real) return true;
+  // A symlink alias outside `.claude` still resolves to the settings file.
+  if (isClaudeSettingsPath(real)) return true;
   const realKey = foldKey(real, target.isWin);
   if (realKey === foldKey(target.resolved, target.isWin)) return false;
   const root = canonicalProjectRoot(data);
@@ -398,6 +415,22 @@ function realTargetPath(resolved, paths) {
   return realDir ? paths.join(realDir, paths.basename(resolved)) : null;
 }
 
+/**
+ * Real (symlink-resolved) location of an absolute host-style path; a missing
+ * file resolves through its nearest existing ancestor. Null when the path is
+ * not host-style or its real location cannot be determined.
+ */
+function realLocationOf(nativePath, isWin) {
+  try {
+    if (typeof nativePath !== 'string' || !isHostPathStyle(isWin)) return null;
+    const paths = isWin ? path.win32 : path.posix;
+    if (!paths.isAbsolute(nativePath)) return null;
+    return realTargetPath(paths.resolve(nativePath), paths);
+  } catch (_) {
+    return null;
+  }
+}
+
 function isMissingEntry(nativePath) {
   try {
     fs.lstatSync(nativePath);
@@ -453,5 +486,6 @@ module.exports = {
   collapseGateDir,
   isSensitiveTarget,
   isSensitiveTargetFor,
-  isHardLinkedTargetFor
+  isHardLinkedTargetFor,
+  realLocationOf
 };

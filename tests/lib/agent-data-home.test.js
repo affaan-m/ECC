@@ -125,7 +125,8 @@ function runTests() {
           const agentDataHome = require('../../scripts/lib/agent-data-home');
           assert.strictEqual(
             agentDataHome.resolveAgentDataHome({ projectDir }),
-            path.join(os.homedir(), '.cursor', 'ecc')
+            // Project-config trust checks canonicalize the existing home ancestor.
+            path.join(fs.realpathSync(os.homedir()), '.cursor', 'ecc')
           );
         });
       });
