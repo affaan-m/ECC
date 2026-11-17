@@ -225,17 +225,20 @@ function getPythonDeps(projectDir) {
     const tomlPath = path.join(projectDir, 'pyproject.toml');
     if (fs.existsSync(tomlPath)) {
       const content = fs.readFileSync(tomlPath, 'utf8');
-      const depMatches = content.match(/dependencies\s*=\s*\[([\s\S]*?)\]/);
+      // Brackets in extras and quoted markers belong to the requirement, not
+      // the TOML array. Keep strings and comments whole before finding its end.
+      const depMatches = content.match(/^[ \t]*dependencies[ \t]*=[ \t]*\[((?:[^\]"'#]|"(?:\\.|[^"\\])*"|'[^']*'|#[^\r\n]*)*)\]/m);
       if (depMatches) {
         const block = depMatches[1];
-        block.match(/"([^"]+)"/g)?.forEach(m => {
-          const name = m
-            .replace(/"/g, '')
+        for (const match of block.matchAll(/#[^\r\n]*|("(?:\\.|[^"\\])*"|'[^']*')/g)) {
+          if (!match[1]) continue;
+          const name = match[1]
+            .slice(1, -1)
             .split(/[\s>=<!~@[;]/)[0]
             .trim()
             .toLowerCase();
           if (name) deps.push(name);
-        });
+        }
       }
     }
   } catch {
