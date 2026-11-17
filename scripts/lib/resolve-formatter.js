@@ -72,7 +72,7 @@ function findProjectRoot(startDir) {
   while (dir !== path.dirname(dir)) {
     // Stop before checking the home directory to avoid treating global
     // dotfiles (e.g. ~/.prettierrc) as a project root marker.
-    if (dir === homeDir) break;
+    if (path.relative(homeDir, dir) === '') break;
     if (detectFormatter(dir)) {
       projectRootCache.set(startDir, dir);
       return dir;

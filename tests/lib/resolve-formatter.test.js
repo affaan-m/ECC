@@ -8,6 +8,7 @@ const assert = require('assert');
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
+const vm = require('vm');
 
 const { findProjectRoot, detectFormatter, resolveFormatterBin, clearCaches } = require('../../scripts/lib/resolve-formatter');
 
@@ -160,6 +161,28 @@ function runTests() {
     fs.writeFileSync(path.join(root, 'package.json'), '{}');
     fs.writeFileSync(path.join(workspace, 'package.json'), '{}');
     assert.strictEqual(findProjectRoot(workspace), workspace);
+  });
+
+  run('findProjectRoot: keeps the home boundary across Windows path casing', () => {
+    const source = fs.readFileSync(path.join(__dirname, '../../scripts/lib/resolve-formatter.js'), 'utf8');
+    const existing = new Set([
+      'c:\\users\\alice\\.prettierrc',
+      'c:\\users\\alice\\project\\package.json',
+    ]);
+    const mod = { exports: {} };
+    const dependencies = {
+      path: path.win32,
+      os: { homedir: () => 'C:\\Users\\Alice' },
+      fs: {
+        existsSync: file => existing.has(file.toLowerCase()),
+        readFileSync: () => '{}',
+      },
+    };
+    vm.runInNewContext(source, { module: mod, require: id => dependencies[id] });
+    for (const project of ['c:\\Users\\Alice\\project', 'C:\\USERS\\ALICE\\project']) {
+      assert.strictEqual(mod.exports.findProjectRoot(path.win32.join(project, 'src')), project);
+      assert.strictEqual(mod.exports.detectFormatter(project), null);
+    }
   });
 
   run('findProjectRoot: does not borrow a formatter from outside a repository', () => {
