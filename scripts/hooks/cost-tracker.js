@@ -42,6 +42,7 @@
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
+const { StringDecoder } = require('string_decoder');
 const { ensureDir, getClaudeDir } = require('../lib/utils');
 const { sanitizeSessionId } = require('../lib/session-bridge');
 const {
@@ -136,6 +137,38 @@ function normalizeUsageTotals(totals) {
   };
 }
 
+// Keep at most one JSONL record plus a read chunk in memory. UTF-8 characters
+// and records may cross chunks; only complete records are handed to JSON.parse.
+function* readTranscriptLines(transcriptPath) {
+  const descriptor = fs.openSync(transcriptPath, 'r');
+  try {
+    const end = fs.fstatSync(descriptor).size;
+    const buffer = Buffer.allocUnsafe(64 * 1024);
+    const decoder = new StringDecoder('utf8');
+    let position = 0;
+    let pending = [];
+    while (position < end) {
+      const bytesRead = fs.readSync(descriptor, buffer, 0, Math.min(buffer.length, end - position), position);
+      if (bytesRead === 0) break;
+      position += bytesRead;
+      const chunk = decoder.write(buffer.subarray(0, bytesRead));
+      let start = 0;
+      for (let newline = chunk.indexOf('\n'); newline !== -1; newline = chunk.indexOf('\n', start)) {
+        const segment = chunk.slice(start, newline);
+        yield pending.length > 0 ? pending.join('') + segment : segment;
+        pending = [];
+        start = newline + 1;
+      }
+      if (start < chunk.length) pending.push(chunk.slice(start));
+    }
+    const remainder = decoder.end();
+    if (remainder) pending.push(remainder);
+    if (pending.length > 0) yield pending.join('');
+  } finally {
+    fs.closeSync(descriptor);
+  }
+}
+
 /**
  * Scan the session JSONL and sum token usage across all assistant turns.
  * Returns { inputTokens, outputTokens, cacheWriteTokens, cacheReadTokens, model }
@@ -149,38 +182,35 @@ function normalizeUsageTotals(totals) {
  * counted once per message.id, keeping the last line seen for each id.
  */
 function sumUsageFromTranscript(transcriptPath) {
-  let content;
-  try {
-    content = fs.readFileSync(transcriptPath, 'utf8');
-  } catch {
-    return null;
-  }
-
   const usageById = new Map();
   let syntheticKey = 0;
   let model = 'unknown';
 
-  for (const line of content.split('\n')) {
-    if (!line.trim()) continue;
-    let entry;
-    try { entry = JSON.parse(line); } catch { continue; }
+  try {
+    for (const line of readTranscriptLines(transcriptPath)) {
+      if (!line.trim()) continue;
+      let entry;
+      try { entry = JSON.parse(line); } catch { continue; }
 
-    if (entry.type !== 'assistant') continue;
-    const msg = entry.message;
-    if (!msg || !msg.usage) continue;
+      if (entry?.type !== 'assistant') continue;
+      const msg = entry.message;
+      if (!msg || !msg.usage) continue;
 
-    // Lines without a message.id (older transcript shapes) keep the previous
-    // per-line behavior via a synthetic key.
-    const key = (typeof msg.id === 'string' && msg.id)
-      ? msg.id
-      : `__line_${++syntheticKey}`;
-    const previous = usageById.get(key);
-    const requestModel = msg.model && msg.model !== 'unknown'
-      ? msg.model
-      : previous && previous.model;
-    usageById.set(key, { usage: msg.usage, model: requestModel });
+      // Lines without a message.id (older transcript shapes) keep the previous
+      // per-line behavior via a synthetic key.
+      const key = (typeof msg.id === 'string' && msg.id)
+        ? msg.id
+        : `__line_${++syntheticKey}`;
+      const previous = usageById.get(key);
+      const requestModel = msg.model && msg.model !== 'unknown'
+        ? msg.model
+        : previous && previous.model;
+      usageById.set(key, { usage: msg.usage, model: requestModel });
 
-    if (msg.model && msg.model !== 'unknown') model = msg.model;
+      if (msg.model && msg.model !== 'unknown') model = msg.model;
+    }
+  } catch {
+    return null;
   }
 
   let inputTokens = 0;
