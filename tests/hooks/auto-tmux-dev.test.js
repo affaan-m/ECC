@@ -162,7 +162,10 @@ function runTests() {
       'yarn --cwd app dev',
       // npm takes any config key as `--key value`, so an unknown option must
       // not swallow the script name.
-      'npm --userconfig /tmp/npmrc run dev'
+      'npm --userconfig /tmp/npmrc run dev',
+      // Option arity is per manager: npm -d and pnpm -w are boolean flags.
+      'npm -d run dev',
+      'pnpm -w dev'
     ]) {
       (test(`detects a quoted or option-separated dev script: ${command}`, () => {
         const result = runScript({ tool_input: { command } });
