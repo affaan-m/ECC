@@ -51,6 +51,7 @@ Targets:
   grok         - Install through the canonical plan/apply/receipt lifecycle into ~/.grok/plugins/ecc/
   openclaw     - Install shared rules/skills/commands into ~/.openclaw/
   adal         - Install shared rules/skills/commands into ./.adal/
+  mistral-vibe - Install selected skills into ./.vibe/skills/ (Vibe hooks and agents not configured)
 
 Options:
   --profile <name>    Resolve and install a manifest profile

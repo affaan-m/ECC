@@ -103,16 +103,23 @@ const HARNESS_CAPABILITIES = deepFreeze([
   },
   {
     id: 'antigravity',
-    label: 'Antigravity',
-    targetIds: ['antigravity'],
-    channel: 'managed-project',
-    installMode: 'managed-project',
+    label: 'Google Antigravity',
+    targetIds: ['antigravity-home', 'antigravity'],
+    channel: 'native-plugin',
+    installMode: 'native-plugin',
     guidedReady: false,
     availability: 'advanced',
-    destination: './.agents',
-    scopes: [scope('project', 'antigravity', './.agents')],
-    hooks: hooks('not-configured', false, 'ECC hooks are not configured by this adapter.'),
-    aliases: ['google-antigravity'],
+    destination: 'Selected Antigravity scope: ~/.gemini/config/plugins/ecc or ./.agents',
+    scopes: [
+      scope('user', 'antigravity-home', '~/.gemini/config/plugins/ecc'),
+      scope('project', 'antigravity', './.agents'),
+    ],
+    hooks: hooks(
+      'profile-selection',
+      true,
+      'ECC hooks are configured through Antigravity PreToolUse and Stop lifecycle hooks.'
+    ),
+    aliases: ['google-antigravity', 'gemini-antigravity', 'agy'],
   },
   {
     id: 'copilot',
@@ -230,6 +237,23 @@ const HARNESS_CAPABILITIES = deepFreeze([
     scopes: [scope('project', 'adal', './.adal')],
     hooks: hooks('not-configured', false, 'ECC hooks are not configured by this adapter.'),
     aliases: ['adal-cli'],
+  },
+  {
+    id: 'mistral-vibe',
+    label: 'Mistral Vibe',
+    targetIds: ['mistral-vibe'],
+    channel: 'managed-project',
+    installMode: 'managed-project',
+    guidedReady: false,
+    availability: 'advanced',
+    destination: './.vibe',
+    scopes: [scope('project', 'mistral-vibe', './.vibe')],
+    hooks: hooks(
+      'not-configured',
+      false,
+      'ECC installs selected Agent Skills only; Vibe hooks, agents, and provider configuration are not configured.'
+    ),
+    aliases: ['vibe'],
   },
   {
     id: 'hermes',

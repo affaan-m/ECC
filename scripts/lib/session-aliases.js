@@ -20,6 +20,20 @@ function getAliasesPath() {
 // Current alias storage format version
 const ALIAS_VERSION = '1.0';
 
+function getAliasRecord(aliases, name) {
+  return Object.hasOwn(aliases, name) ? aliases[name] : undefined;
+}
+
+function setAliasRecord(aliases, name, record) {
+  // Valid names such as __proto__ must become JSON entries, not invoke setters.
+  Object.defineProperty(aliases, name, {
+    value: record,
+    enumerable: true,
+    writable: true,
+    configurable: true
+  });
+}
+
 /**
  * Default aliases file structure
  */
@@ -183,7 +197,7 @@ function resolveAlias(alias) {
   }
 
   const data = loadAliases();
-  const aliasData = data.aliases[alias];
+  const aliasData = getAliasRecord(data.aliases, alias);
 
   if (!aliasData) {
     return null;
@@ -234,15 +248,16 @@ function setAliasUnlocked(alias, sessionPath, title = null) {
   }
 
   const data = loadAliases();
-  const existing = data.aliases[alias];
+  const existing = getAliasRecord(data.aliases, alias);
   const isNew = !existing;
 
-  data.aliases[alias] = {
+  const record = {
     sessionPath,
     createdAt: existing ? existing.createdAt : new Date().toISOString(),
     updatedAt: new Date().toISOString(),
     title: title || null
   };
+  setAliasRecord(data.aliases, alias, record);
 
   if (saveAliasesUnlocked(data)) {
     return {
@@ -250,7 +265,7 @@ function setAliasUnlocked(alias, sessionPath, title = null) {
       isNew,
       alias,
       sessionPath,
-      title: data.aliases[alias].title
+      title: record.title
     };
   }
 
@@ -303,12 +318,12 @@ function listAliases(options = {}) {
  */
 function deleteAliasUnlocked(alias) {
   const data = loadAliases();
+  const deleted = getAliasRecord(data.aliases, alias);
 
-  if (!data.aliases[alias]) {
+  if (!deleted) {
     return { success: false, error: `Alias '${alias}' not found` };
   }
 
-  const deleted = data.aliases[alias];
   delete data.aliases[alias];
 
   if (saveAliasesUnlocked(data)) {
@@ -330,8 +345,9 @@ function deleteAliasUnlocked(alias) {
  */
 function renameAliasUnlocked(oldAlias, newAlias) {
   const data = loadAliases();
+  const aliasData = getAliasRecord(data.aliases, oldAlias);
 
-  if (!data.aliases[oldAlias]) {
+  if (!aliasData) {
     return { success: false, error: `Alias '${oldAlias}' not found` };
   }
 
@@ -353,15 +369,14 @@ function renameAliasUnlocked(oldAlias, newAlias) {
     return { success: false, error: `'${newAlias}' is a reserved alias name` };
   }
 
-  if (data.aliases[newAlias]) {
+  if (getAliasRecord(data.aliases, newAlias)) {
     return { success: false, error: `Alias '${newAlias}' already exists` };
   }
 
-  const aliasData = data.aliases[oldAlias];
   delete data.aliases[oldAlias];
 
   aliasData.updatedAt = new Date().toISOString();
-  data.aliases[newAlias] = aliasData;
+  setAliasRecord(data.aliases, newAlias, aliasData);
 
   if (saveAliasesUnlocked(data)) {
     return {
@@ -405,12 +420,13 @@ function updateAliasTitleUnlocked(alias, title) {
 
   const data = loadAliases();
 
-  if (!data.aliases[alias]) {
+  const aliasData = getAliasRecord(data.aliases, alias);
+  if (!aliasData) {
     return { success: false, error: `Alias '${alias}' not found` };
   }
 
-  data.aliases[alias].title = title || null;
-  data.aliases[alias].updatedAt = new Date().toISOString();
+  aliasData.title = title || null;
+  aliasData.updatedAt = new Date().toISOString();
 
   if (saveAliasesUnlocked(data)) {
     return {

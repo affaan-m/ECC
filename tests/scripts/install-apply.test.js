@@ -117,6 +117,35 @@ function runTests() {
     assert.ok(result.stdout.includes('--dry-run'));
     assert.ok(result.stdout.includes('--profile <name>'));
     assert.ok(result.stdout.includes('--modules <id,id,...>'));
+    assert.ok(result.stdout.includes('mistral-vibe'));
+    assert.ok(result.stdout.includes('Install selected skills into ./.vibe/skills/'));
+  })) passed++; else failed++;
+
+  if (test('installs a selected skill into Mistral Vibe without unrelated surfaces', () => {
+    const homeDir = createTempDir('install-apply-vibe-home-');
+    const projectDir = createTempDir('install-apply-vibe-project-');
+    try {
+      const result = run(
+        ['--target', 'mistral-vibe', '--skills', 'tdd-workflow', '--json'],
+        { cwd: projectDir, homeDir }
+      );
+      assert.strictEqual(result.code, 0, result.stderr);
+      assert.ok(fs.existsSync(path.join(projectDir, '.vibe', 'skills', 'tdd-workflow', 'SKILL.md')));
+      assert.ok(!fs.existsSync(path.join(projectDir, '.vibe', 'agents')));
+      assert.ok(!fs.existsSync(path.join(projectDir, '.vibe', 'hooks.toml')));
+
+      const state = readJson(path.join(projectDir, '.vibe', 'ecc-install-state.json'));
+      assert.strictEqual(state.target.id, 'mistral-vibe-project');
+      assert.deepStrictEqual(state.resolution.selectedModules, ['skill-tdd-workflow']);
+      assert.ok(state.operations.every(operation => (
+        operation.destinationPath.startsWith(
+          `${path.join(fs.realpathSync(projectDir), '.vibe', 'skills')}${path.sep}`
+        )
+      )));
+    } finally {
+      cleanup(homeDir);
+      cleanup(projectDir);
+    }
   })) passed++; else failed++;
 
   if (test('Claude hook dry-run validates settings without mutating malformed input', () => {
@@ -1018,7 +1047,7 @@ function runTests() {
     const projectDir = createTempDir('install-apply-project-');
 
     try {
-      const result = run(['--target', 'antigravity', '--profile', 'core'], { cwd: projectDir, homeDir });
+      const result = run(['--target', 'antigravity', '--profile', 'core', '--enable-hooks'], { cwd: projectDir, homeDir });
       assert.strictEqual(result.code, 0, result.stderr);
 
       assert.ok(fs.existsSync(path.join(projectDir, '.agents', 'rules', 'common-coding-style.md')));
@@ -1029,6 +1058,7 @@ function runTests() {
       assert.ok(fs.existsSync(path.join(projectDir, '.agents', 'agents', 'architect.md')));
       assert.ok(fs.existsSync(path.join(projectDir, '.agents', 'workflows', 'plan.md')));
       assert.ok(fs.existsSync(path.join(projectDir, '.agents', 'skills', 'tdd-workflow', 'SKILL.md')));
+      assert.ok(fs.existsSync(path.join(projectDir, '.agents', 'hooks.json')), 'hooks.json should exist');
 
       const state = readJson(path.join(projectDir, '.agents', 'ecc-install-state.json'));
       assert.strictEqual(state.request.profile, 'core');
@@ -1039,13 +1069,14 @@ function runTests() {
           'rules-core',
           'agents-core',
           'commands-core',
+          'hooks-runtime',
           'platform-configs',
           'skill-unified-memory',
           'workflow-quality',
           'shared-script-utils'
         ]
       );
-      assert.ok(state.resolution.skippedModules.includes('hooks-runtime'));
+      assert.ok(!state.resolution.skippedModules.includes('hooks-runtime'));
       assert.ok(!state.resolution.skippedModules.includes('workflow-quality'));
       assert.ok(!state.resolution.skippedModules.includes('platform-configs'));
     } finally {
@@ -1290,6 +1321,10 @@ function runTests() {
       assert.ok(
         settings.hooks.UserPromptSubmit.some(entry => entry.id === 'prompt:hookify-runtime'),
         'managed Hookify prompt runtime should be registered alongside user hooks'
+      );
+      assert.ok(
+        settings.hooks.UserPromptSubmit.some(entry => entry.id === 'user-prompt:context-gate'),
+        'managed context gate should be registered alongside user hooks'
       );
       assert.deepStrictEqual(
         settings.hooks.PreToolUse[0],
