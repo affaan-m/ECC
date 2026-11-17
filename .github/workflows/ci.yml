@@ -159,6 +159,12 @@ jobs:
             *) echo "Unsupported package manager: ${{ matrix.pm }}" && exit 1 ;;
           esac
 
+      - name: Verify packed Copilot project installer
+        if: github.event_name == 'pull_request' && matrix.scope == 'full' && matrix.node == '22.x'
+        env:
+          ECC_COPILOT_FIXTURE_REF: ${{ github.event.pull_request.head.sha }}
+        run: node tests/ci/copilot-packed-install.js
+
       - name: Check observer and revision identity
         if: matrix.scope == 'full'
         shell: bash
