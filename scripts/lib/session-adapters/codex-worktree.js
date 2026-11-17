@@ -184,7 +184,28 @@ function isPreambleText(text) {
     || text.includes('AGENTS.md instructions');
 }
 
+function extractUserEventText(record) {
+  if (!record || record.type !== 'event_msg') return '';
+  const payload = record.payload;
+  if (payload?.type === 'user_message' && typeof payload.message === 'string') {
+    return payload.message;
+  }
+  if (payload?.type === 'item_completed' && payload.item?.type === 'UserMessage'
+    && Array.isArray(payload.item.content)) {
+    return extractText(payload.item.content.filter(part => part?.type === 'text'));
+  }
+  return '';
+}
+
 function deriveObjective(records) {
+  // Native user events distinguish operator input from injected user-role
+  // context, including requests that happen to begin with Markdown or XML.
+  for (const record of records) {
+    const text = extractUserEventText(record).trim();
+    if (text) return text.length > 280 ? `${text.slice(0, 277)}...` : text;
+  }
+
+  // Older/exported logs may contain only response items.
   for (const record of records) {
     const payload = record && record.payload;
     if (!payload || payload.type !== 'message' || payload.role !== 'user') {
