@@ -2013,6 +2013,61 @@ for (const n of [8, 12]) {
   })) passed++; else failed++;
 }
 
+// --- Value-taking option arity (#2837, carried forward onto the current scanner) ---
+// `--push-option`/`-o`/`--receive-pack`/`--exec`/`--repo`/`--trailer` consume
+// the next token as data. Git sends or executes it verbatim and still runs the
+// hooks, so refusing these is a false positive. An unambiguous abbreviation of
+// a value-taking option consumes the next token exactly like the full name.
+for (const command of [
+  'git push --push-option --no-verify',
+  'git push --push-option --no-verif',
+  'git push -o --no-verify',
+  'git push --receive-pack --no-verify',
+  'git push --exec --no-verify origin main',
+  'git push --repo --no-verify',
+  'git commit --trailer --no-verify -m "msg"',
+  'git commit --trailer --no-verif -m "msg"',
+  'git push --push-opti --no-verify',
+  'git push --push-o --no-verif',
+  'git commit --trail --no-verify -m "msg"',
+  'git commit --mes --no-verify',
+  "bash -c 'git push -o --no-verify origin main'",
+  'git -C repo commit --trailer --no-verify -m "msg"',
+  'git push --force-with-lease',
+]) {
+  if (test(`does not block a value-taking option's value: ${command}`, () => {
+    const r = runHook({ tool_input: { command } });
+    assert.strictEqual(r.code, 0, `expected exit 0, got ${r.code}: ${r.stderr}`);
+  })) passed++; else failed++;
+}
+
+// Arity must never swallow a real flag. `--force-with-lease` takes an optional,
+// inline-only value, so the bare form consumes nothing. Inline `=value` forms
+// are one token. A prefix ambiguous among the value-taking options resolves to
+// none of them. Value options of another subcommand do not apply.
+for (const command of [
+  'git push --force-with-lease --no-verify',
+  'git push --force-with-lease --no-verif',
+  'git push --force-with-lease=main:abc123 --no-verify',
+  'git push --push-option=ci.skip --no-verify',
+  'git push --push-opti=ci.skip --no-verify',
+  'git commit --trailer=Key:val --no-verif -m "msg"',
+  'git commit --trail=Key:val --no-verify -m "msg"',
+  'git push --re --no-verify',
+  'git commit --f --no-verify -m "msg"',
+  'git commit --push-option --no-verify -m "msg"',
+  'git push --trailer --no-verify',
+  'git push -o x --no-verify',
+  "bash -c 'git push --re --no-verify'",
+  'git commit --no-verify --trailer x -m "msg"',
+]) {
+  if (test(`arity handling still blocks: ${command}`, () => {
+    const r = runHook({ tool_input: { command } });
+    assert.strictEqual(r.code, 2, `expected exit 2, got ${r.code}`);
+    assert.ok(r.stderr.includes('BLOCKED'), `stderr should contain BLOCKED: ${r.stderr}`);
+  })) passed++; else failed++;
+}
+
 const pureOnly = process.argv.includes('--pure-only');
 if (pureOnly) console.log('Pure classifier mode: 3 bounded Node routing checks omitted.');
 else {
@@ -2041,6 +2096,51 @@ else {
     }
   } finally {
     fs.rmSync(home, { recursive: true, force: true });
+  }
+}
+
+// Real Git agrees with the arity table: when the hook allows a flag-looking
+// value, Git still runs the refusing hook and creates nothing.
+const gitProbe = pureOnly ? null : spawnSync('git', ['--version'], { encoding: 'utf8' });
+if (gitProbe && gitProbe.status === 0) {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-no-verify-arity-'));
+  const git = (cwd, args) => spawnSync('git', args, {
+    cwd, encoding: 'utf8', timeout: 10000,
+    env: { ...process.env, GIT_CONFIG_GLOBAL: path.join(root, 'absent'), GIT_CONFIG_NOSYSTEM: '1', GIT_TERMINAL_PROMPT: '0' },
+  });
+  try {
+    const repo = path.join(root, 'repo');
+    const remote = path.join(root, 'remote.git');
+    git(root, ['init', '-q', repo]);
+    git(root, ['init', '-q', '--bare', remote]);
+    const identity = ['-c', 'user.name=ECC', '-c', 'user.email=ecc@example.invalid'];
+    git(repo, [...identity, 'commit', '-q', '--allow-empty', '-m', 'base']);
+    git(repo, ['remote', 'add', 'origin', remote]);
+    git(repo, ['push', '-q', 'origin', 'HEAD:refs/heads/main']);
+    for (const name of ['pre-commit', 'pre-push']) {
+      const hookPath = path.join(repo, '.git', 'hooks', name);
+      fs.writeFileSync(hookPath, '#!/bin/sh\nexit 1\n');
+      fs.chmodSync(hookPath, 0o755);
+    }
+    git(repo, [...identity, 'commit', '-q', '--allow-empty', '--no-verify', '-m', 'ahead']);
+    for (const args of [
+      ['commit', '--allow-empty', '--trailer', '--no-verify', '-m', 'probe'],
+      ['commit', '--allow-empty', '--mes', '--no-verify'],
+      ['push', '--push-option', '--no-verify', 'origin', 'HEAD:refs/heads/main'],
+      ['push', '--push-opti', '--no-verify', 'origin', 'HEAD:refs/heads/main'],
+    ]) {
+      if (test(`real Git still runs the hook after an allowed value: git ${args.join(' ')}`, () => {
+        assert.strictEqual(runHook({ tool_input: { command: `git ${args.join(' ')}` } }).code, 0);
+        const head = git(repo, ['rev-parse', 'HEAD']).stdout;
+        const remoteHead = git(remote, ['rev-parse', 'main']).stdout;
+        const result = git(repo, [...identity, ...args]);
+        assert.notStrictEqual(result.status, 0, 'the refusing hook must stop Git');
+        assert.strictEqual(git(repo, ['rev-parse', 'HEAD']).stdout, head);
+        assert.strictEqual(git(remote, ['rev-parse', 'main']).stdout, remoteHead);
+      })) passed++; else failed++;
+    }
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
   }
 }
 

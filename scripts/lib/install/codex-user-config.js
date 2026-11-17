@@ -7,7 +7,7 @@ const { assertWithinTrustedRoot } = require('../path-safety');
 const { sameFileIdentity } = require('./claude-settings-lock');
 
 function isCodexUserConfig(plan, operation) {
-  if (!plan.adapter || plan.adapter.id !== 'codex-home' || operation.kind !== 'copy-file') {
+  if (plan?.adapter?.id !== 'codex-home' || operation?.kind !== 'copy-file') {
     return false;
   }
   const relativePath = path.relative(plan.targetRoot, operation.destinationPath);

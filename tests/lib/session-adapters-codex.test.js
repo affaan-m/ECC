@@ -204,5 +204,70 @@ test('resolveGitBranch returns null when cwd is not a git repo (real path)', () 
   assert.strictEqual(parsed.branch, null);
 });
 
+
+test('snapshot follows model changes appended to the same Codex rollout', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-codex-model-change-'));
+  try {
+    const rolloutPath = writeRollout(dir, 'rollout-model-change.jsonl', [
+      { type: 'session_meta', payload: { id: 'model-change', model: 'metadata-model' } },
+      { type: 'turn_context', payload: { model: 'initial-model' } },
+    ]);
+    const adapter = createCodexWorktreeAdapter({ sessionsDir: dir, persistSnapshots: false });
+    const session = adapter.open(rolloutPath);
+    assert.strictEqual(session.getSnapshot().workers[0].artifacts.model, 'initial-model');
+    fs.appendFileSync(rolloutPath, JSON.stringify({
+      type: 'turn_context', payload: { model: 'selected-model' },
+    }) + '\n');
+    assert.strictEqual(session.getSnapshot().workers[0].artifacts.model, 'selected-model');
+    const contents = fs.readFileSync(rolloutPath, 'utf8');
+    const parsed = parseCodexRollout(rolloutPath);
+    assert.strictEqual(parsed.model, 'selected-model');
+    assert.strictEqual(fs.readFileSync(rolloutPath, 'utf8'), contents);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('latest valid turn model survives trailing unrelated or incomplete records', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-codex-model-tail-'));
+  try {
+    const rolloutPath = writeRollout(dir, 'rollout-model-tail.jsonl', [
+      { type: 'session_meta', payload: { id: 'model-tail', model: 'metadata-model' } },
+      { type: 'turn_context', payload: { model: 'initial-model' } },
+      { type: 'turn_context', payload: { model: 'selected-model' } },
+      { type: 'response_item', payload: { model: 'unrelated-model' } },
+      { type: 'turn_context', payload: { model: '' } },
+      { type: 'turn_context', payload: { model: null } },
+      { type: 'turn_context', payload: { model: 42 } },
+      { type: 'turn_context', payload: null },
+      null,
+    ]);
+    fs.appendFileSync(rolloutPath, '{"type":"turn_context","payload":');
+    assert.strictEqual(parseCodexRollout(rolloutPath).model, 'selected-model');
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+for (const [metadata, expected] of [
+  [{ model: 'metadata-model', model_provider: 'provider-name' }, 'metadata-model'],
+  [{ model_provider: 'provider-name' }, 'provider-name'],
+  [{}, null],
+]) {
+  test('model metadata fallback remains available: ' + String(expected), () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-codex-model-fallback-'));
+    try {
+      const rolloutPath = writeRollout(dir, 'rollout-model-fallback.jsonl', [
+        { type: 'session_meta', payload: { id: 'model-fallback', ...metadata } },
+        { type: 'turn_context', payload: { model: '' } },
+        { type: 'turn_context', payload: { model: null } },
+      ]);
+      assert.strictEqual(parseCodexRollout(rolloutPath).model, expected);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+}
+
 console.log(`\n=== Results: ${passed} passed, ${failed} failed ===`);
 if (failed > 0) process.exit(1);

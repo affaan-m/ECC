@@ -1,0 +1,175 @@
+{
+  "schema_version": "ecc.evaluator-rag.verifier.v1",
+  "scenario_id": "orchestration-efficiency-evidence",
+  "run_id": "illustrative-sign-consistent-pairs",
+  "read_only": true,
+  "illustrative": true,
+  "evaluation_status": "illustrative_synthetic_attempts_not_executed_runs",
+  "task_class": "independent documentation updates with disjoint file ownership",
+  "raw_attempts": [
+    {
+      "attempt_id": "pair-1-single_agent",
+      "pair": 1,
+      "variant": "single_agent",
+      "run_order": 1,
+      "accepted": true,
+      "quality_score": 1,
+      "elapsed_ms": 1200000,
+      "cost_breakdown_usd": {
+        "controller": 1.5,
+        "workers": 0,
+        "verifier": 0.1,
+        "retries": 0
+      },
+      "total_cost_usd": 1.6,
+      "worker_count": 1,
+      "conflicts": 0,
+      "integration_rework": 0,
+      "human_corrections": 0
+    },
+    {
+      "attempt_id": "pair-1-orchestrated",
+      "pair": 1,
+      "variant": "orchestrated",
+      "run_order": 2,
+      "accepted": true,
+      "quality_score": 1,
+      "elapsed_ms": 720000,
+      "cost_breakdown_usd": {
+        "controller": 0.5,
+        "workers": 1.4,
+        "verifier": 0.1,
+        "retries": 0
+      },
+      "total_cost_usd": 2.0,
+      "worker_count": 3,
+      "conflicts": 0,
+      "integration_rework": 0,
+      "human_corrections": 0
+    },
+    {
+      "attempt_id": "pair-2-orchestrated",
+      "pair": 2,
+      "variant": "orchestrated",
+      "run_order": 1,
+      "accepted": true,
+      "quality_score": 1,
+      "elapsed_ms": 780000,
+      "cost_breakdown_usd": {
+        "controller": 0.5,
+        "workers": 1.5,
+        "verifier": 0.1,
+        "retries": 0
+      },
+      "total_cost_usd": 2.1,
+      "worker_count": 3,
+      "conflicts": 0,
+      "integration_rework": 0,
+      "human_corrections": 0
+    },
+    {
+      "attempt_id": "pair-2-single_agent",
+      "pair": 2,
+      "variant": "single_agent",
+      "run_order": 2,
+      "accepted": true,
+      "quality_score": 1,
+      "elapsed_ms": 1140000,
+      "cost_breakdown_usd": {
+        "controller": 1.45,
+        "workers": 0,
+        "verifier": 0.1,
+        "retries": 0
+      },
+      "total_cost_usd": 1.55,
+      "worker_count": 1,
+      "conflicts": 0,
+      "integration_rework": 0,
+      "human_corrections": 0
+    },
+    {
+      "attempt_id": "pair-3-single_agent",
+      "pair": 3,
+      "variant": "single_agent",
+      "run_order": 1,
+      "accepted": true,
+      "quality_score": 1,
+      "elapsed_ms": 1260000,
+      "cost_breakdown_usd": {
+        "controller": 1.55,
+        "workers": 0,
+        "verifier": 0.1,
+        "retries": 0
+      },
+      "total_cost_usd": 1.65,
+      "worker_count": 1,
+      "conflicts": 0,
+      "integration_rework": 0,
+      "human_corrections": 0
+    },
+    {
+      "attempt_id": "pair-3-orchestrated",
+      "pair": 3,
+      "variant": "orchestrated",
+      "run_order": 2,
+      "accepted": true,
+      "quality_score": 1,
+      "elapsed_ms": 810000,
+      "cost_breakdown_usd": {
+        "controller": 0.55,
+        "workers": 1.45,
+        "verifier": 0.1,
+        "retries": 0
+      },
+      "total_cost_usd": 2.1,
+      "worker_count": 3,
+      "conflicts": 0,
+      "integration_rework": 0,
+      "human_corrections": 0
+    }
+  ],
+  "pair_deltas": [
+    {
+      "pair": 1,
+      "order": "single_agent_first",
+      "quality_delta": 0,
+      "time_delta_ms": -480000,
+      "cost_delta_usd": 0.4
+    },
+    {
+      "pair": 2,
+      "order": "orchestrated_first",
+      "quality_delta": 0,
+      "time_delta_ms": -360000,
+      "cost_delta_usd": 0.55
+    },
+    {
+      "pair": 3,
+      "order": "single_agent_first",
+      "quality_delta": 0,
+      "time_delta_ms": -450000,
+      "cost_delta_usd": 0.45
+    }
+  ],
+  "metric_directions": {
+    "quality": "no_difference",
+    "time": "orchestrated_better",
+    "cost": "single_agent_better"
+  },
+  "result": "consistent",
+  "candidates": [
+    {
+      "candidate_id": "task-class-direction-claim",
+      "decision": "accepted",
+      "claim": "For this task class only, orchestration finished faster in all three pairs and cost more in all three pairs, with no quality difference.",
+      "reasons": [
+        "every pair reports available quality, time, and cost deltas from retained attempts",
+        "time and cost deltas keep one sign across all three pairs and quality deltas are all zero",
+        "both run orders occur, so a fixed-order effect cannot explain the direction",
+        "the claim states the higher aggregate cost instead of reporting only the faster time"
+      ],
+      "rollback": "Withdraw the claim and keep every raw attempt if a later pair reverses any metric direction."
+    }
+  ],
+  "promoted_candidate_id": "task-class-direction-claim"
+}

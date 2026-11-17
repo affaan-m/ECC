@@ -81,7 +81,7 @@ metadata:
 ## 集成
 
 可与任意浏览器 MCP 配合：
-- `mChild__claude-in-chrome__*` 工具（推荐，直接使用你的真实 Chrome）
+- `mcp__claude-in-chrome__*` 工具（推荐，直接使用你的真实 Chrome）
 - 通过 `mcp__browserbase__*` 使用 Playwright
 - 直接运行 Puppeteer 脚本
 

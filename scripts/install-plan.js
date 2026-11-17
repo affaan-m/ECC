@@ -261,6 +261,7 @@ function main() {
       includeComponentIds: request.includeComponentIds,
       excludeComponentIds: request.excludeComponentIds,
       target: request.target,
+      projectRoot: process.cwd(),
     });
 
     if (options.json) {
