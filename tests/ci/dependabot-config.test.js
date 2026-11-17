@@ -54,6 +54,15 @@ function run() {
     }
   })) passed++; else failed++;
 
+  if (test('keeps the Node 18 compatible OpenCode plugin line out of npm bumps', () => {
+    const npmRoot = config.updates.find(update => update['package-ecosystem'] === 'npm' && update.directory === '/');
+    assert.ok(npmRoot, 'missing root npm update entry');
+    const rule = (npmRoot.ignore || []).find(entry => entry['dependency-name'] === '@opencode-ai/plugin');
+    assert.ok(rule, 'missing @opencode-ai/plugin ignore rule');
+    assert.ok(rule['update-types'].includes('version-update:semver-minor'));
+    assert.ok(rule['update-types'].includes('version-update:semver-major'));
+  })) passed++; else failed++;
+
   console.log(`\nPassed: ${passed}`);
   console.log(`Failed: ${failed}`);
   process.exit(failed > 0 ? 1 : 0);
