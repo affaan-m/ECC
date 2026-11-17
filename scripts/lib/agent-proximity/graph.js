@@ -16,8 +16,27 @@
 const fs = require('fs');
 const path = require('path');
 
-const SOURCE_EXTENSIONS = ['.js', '.mjs', '.cjs', '.ts', '.tsx', '.jsx'];
+const SOURCE_EXTENSIONS = ['.js', '.mjs', '.cjs', '.ts', '.tsx', '.jsx', '.mts', '.cts'];
 const RESOLVE_EXTENSIONS = ['.js', '.mjs', '.cjs', '.ts', '.tsx', '.jsx', '.json'];
+const TYPESCRIPT_SOURCE_EXTENSIONS = {
+  '.js': ['.ts', '.tsx', '.d.ts'],
+  '.jsx': ['.tsx', '.d.ts'],
+  '.mjs': ['.mts', '.d.mts'],
+  '.cjs': ['.cts', '.d.cts'],
+};
+
+function resolutionCandidates(target, pathApi) {
+  const extension = pathApi.extname(target);
+  const sourceExtensions = TYPESCRIPT_SOURCE_EXTENSIONS[extension] || [];
+  // NodeNext source imports name the emitted JS file, which may not exist yet.
+  // Keep literal files first, then recover the corresponding TypeScript source.
+  return [
+    target,
+    ...sourceExtensions.map(ext => target.slice(0, -extension.length) + ext),
+    ...RESOLVE_EXTENSIONS.map(ext => target + ext),
+    ...RESOLVE_EXTENSIONS.map(ext => pathApi.join(target, 'index' + ext)),
+  ];
+}
 
 function toRepoRel(repoRoot, absPath) {
   return path.relative(repoRoot, absPath).split(path.sep).join('/');
@@ -53,9 +72,7 @@ function extractRelativeSpecifiers(source) {
 function resolveSpecifier(repoRoot, fromFile, spec) {
   const baseDir = path.dirname(path.join(repoRoot, fromFile));
   const target = path.resolve(baseDir, spec);
-  const candidates = [target];
-  for (const ext of RESOLVE_EXTENSIONS) candidates.push(target + ext);
-  for (const ext of RESOLVE_EXTENSIONS) candidates.push(path.join(target, 'index' + ext));
+  const candidates = resolutionCandidates(target, path);
   for (const cand of candidates) {
     try {
       if (fs.existsSync(cand) && fs.statSync(cand).isFile()) {
@@ -117,9 +134,7 @@ function buildDependencyGraphFromSources(sources = {}) {
   const tryResolve = (fromFile, spec) => {
     const base = path.posix.dirname(fromFile);
     const target = path.posix.normalize(path.posix.join(base, spec));
-    const candidates = [target];
-    for (const ext of RESOLVE_EXTENSIONS) candidates.push(target + ext);
-    for (const ext of RESOLVE_EXTENSIONS) candidates.push(path.posix.join(target, 'index' + ext));
+    const candidates = resolutionCandidates(target, path.posix);
     return candidates.find(c => fileSet.has(c)) || null;
   };
   for (const file of fileList) {
