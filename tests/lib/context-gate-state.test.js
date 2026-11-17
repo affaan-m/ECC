@@ -49,7 +49,7 @@ function test(desc, fn) {
 
 // Private per-run directory for fixtures, so no test writes a predictable name
 // directly under the shared OS temp directory.
-const FIXTURE_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-gate-state-test-'));
+const FIXTURE_DIR = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-gate-state-test-')));
 process.on('exit', () => fs.rmSync(FIXTURE_DIR, { recursive: true, force: true }));
 let fixtureSeq = 0;
 

@@ -27,7 +27,7 @@ function test(name, fn) {
 
 // Private per-run directory for fixtures, so no test writes a predictable name
 // directly under the shared OS temp directory.
-const FIXTURE_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-context-gate-test-'));
+const FIXTURE_DIR = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-context-gate-test-')));
 process.on('exit', () => fs.rmSync(FIXTURE_DIR, { recursive: true, force: true }));
 let fixtureSeq = 0;
 
@@ -387,7 +387,7 @@ function runTests() {
   // cases that follow.
   if (
     test('a pre-existing project RESUME.md is never targeted and is left untouched', () => {
-      const projDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-gate-proj-'));
+      const projDir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-gate-proj-')));
       const existing = path.join(projDir, 'RESUME.md');
       fs.writeFileSync(existing, 'OPERATOR CONTENT — must survive\n', 'utf8');
       const t = writeTranscript(950000);
@@ -429,7 +429,7 @@ function runTests() {
     test('missing identity: same-named projects never collide on a shared destination', () => {
       // Sandbox the handoff home so the fire touches tmp only. ECC_AGENT_DATA_HOME
       // is read by getSessionsDir() from process.env, so it must be set there.
-      const sandbox = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-gate-home-'));
+      const sandbox = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-gate-home-')));
       const resumeDir = path.join(sandbox, 'session-data', 'resume');
       fs.mkdirSync(resumeDir, { recursive: true });
       // A pre-existing handoff at the exact path the OLD literal-fallback code
@@ -476,7 +476,7 @@ function runTests() {
 
   if (
     test('a destination owned by a different session is disambiguated, not overwritten', () => {
-      const sandbox = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-gate-home-'));
+      const sandbox = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-gate-home-')));
       const resumeDir = path.join(sandbox, 'session-data', 'resume');
       fs.mkdirSync(resumeDir, { recursive: true });
       // Seed the exact path this session resolves to, owned by ANOTHER session.
@@ -509,7 +509,7 @@ function runTests() {
 
   if (
     test('a destination owned by the same session is reused (idempotent)', () => {
-      const sandbox = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-gate-home-'));
+      const sandbox = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-gate-home-')));
       const resumeDir = path.join(sandbox, 'session-data', 'resume');
       fs.mkdirSync(resumeDir, { recursive: true });
       let own;

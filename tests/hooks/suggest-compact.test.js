@@ -670,7 +670,7 @@ function runTests() {
     return path.join(suiteTempDir, `claude-context-bucket-${sessionId}`);
   }
 
-  const transcriptDir = fs.mkdtempSync(path.join(suiteTempDir, 'ecc-compact-transcripts-'));
+  const transcriptDir = fs.realpathSync(fs.mkdtempSync(path.join(suiteTempDir, 'ecc-compact-transcripts-')));
   process.once('exit', () => fs.rmSync(transcriptDir, { recursive: true, force: true }));
   let transcriptSeq = 0;
 

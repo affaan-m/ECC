@@ -33,7 +33,7 @@ function test(name, fn) {
 }
 
 function createSandbox() {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-context-gate-owner-'));
+  const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-context-gate-owner-')));
   const dataHome = path.join(root, 'data');
   const resumeDir = path.join(dataHome, 'session-data', 'resume');
   fs.mkdirSync(resumeDir, { recursive: true });
