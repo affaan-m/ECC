@@ -23,6 +23,7 @@
         "cursor",
         "antigravity",
         "codex",
+        "copilot",
         "gemini",
         "opencode",
         "codebuddy",
@@ -31,7 +32,9 @@
         "zed",
         "hermes",
         "openclaw",
-        "kimi"
+        "kimi",
+        "grok",
+        "adal"
       ]
     },
     "profile": {
@@ -49,14 +52,14 @@
       "type": "array",
       "items": {
         "type": "string",
-        "pattern": "^(baseline|lang|framework|capability):[a-z0-9-]+$"
+        "pattern": "^(baseline|lang|framework|capability|agent|skill|locale):[a-z0-9-]+$"
       }
     },
     "exclude": {
       "type": "array",
       "items": {
         "type": "string",
-        "pattern": "^(baseline|lang|framework|capability):[a-z0-9-]+$"
+        "pattern": "^(baseline|lang|framework|capability|agent|skill|locale):[a-z0-9-]+$"
       }
     },
     "options": {

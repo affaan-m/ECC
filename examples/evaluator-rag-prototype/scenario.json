@@ -22,12 +22,12 @@
     },
     {
       "kind": "github_pr",
-      "url": "https://github.com/affaan-m/everything-claude-code/pull/1815",
+      "url": "https://github.com/affaan-m/ECC/pull/1815",
       "purpose": "Example maintainer-owned stale salvage PR with attribution"
     },
     {
       "kind": "github_pr",
-      "url": "https://github.com/affaan-m/everything-claude-code/pull/1818",
+      "url": "https://github.com/affaan-m/ECC/pull/1818",
       "purpose": "Example gap pass classifying already-present and skipped stale work"
     }
   ],

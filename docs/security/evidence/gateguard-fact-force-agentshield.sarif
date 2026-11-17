@@ -1,0 +1,1338 @@
+{
+  "version": "2.1.0",
+  "$schema": "https://json.schemastore.org/sarif-2.1.0.json",
+  "runs": [
+    {
+      "tool": {
+        "driver": {
+          "name": "AgentShield",
+          "informationUri": "https://github.com/affaan-m/agentshield",
+          "rules": [
+            {
+              "id": "hooks-no-pretooluse",
+              "name": "No PreToolUse security hooks configured",
+              "shortDescription": {
+                "text": "No PreToolUse security hooks configured"
+              },
+              "fullDescription": {
+                "text": "No PreToolUse hooks are defined. These hooks can catch dangerous operations before they run, providing an essential security layer."
+              },
+              "help": {
+                "text": "No PreToolUse hooks are defined. These hooks can catch dangerous operations before they run, providing an essential security layer.\n\nRecommended fix: Add PreToolUse hooks for security-sensitive operations"
+              },
+              "defaultConfiguration": {
+                "level": "warning"
+              },
+              "properties": {
+                "category": "misconfiguration",
+                "severity": "medium",
+                "security-severity": "5.0",
+                "tags": [
+                  "security",
+                  "agent-config",
+                  "misconfiguration"
+                ],
+                "precision": "high"
+              }
+            },
+            {
+              "id": "hooks-chained-commands-0",
+              "name": "Hook has 31 chained commands",
+              "shortDescription": {
+                "text": "Hook has 31 chained commands"
+              },
+              "fullDescription": {
+                "text": "A hook chains 31 commands together: \"node -e \"if(!process.env.PLUGIN_ROOT)throw new Error('Missing Codex PLUGIN_ROOT'...\". Complex chained commands in hooks are harder to audit and may perform operations beyond the hook's stated purpose. Consider breaking into a dedicated script file."
+              },
+              "help": {
+                "text": "A hook chains 31 commands together: \"node -e \"if(!process.env.PLUGIN_ROOT)throw new Error('Missing Codex PLUGIN_ROOT'...\". Complex chained commands in hooks are harder to audit and may perform operations beyond the hook's stated purpose. Consider breaking into a dedicated script file.\n\nRecommended fix: Move complex logic to a script file"
+              },
+              "defaultConfiguration": {
+                "level": "warning"
+              },
+              "properties": {
+                "category": "hooks",
+                "severity": "medium",
+                "security-severity": "5.0",
+                "tags": [
+                  "security",
+                  "agent-config",
+                  "hooks"
+                ],
+                "precision": "high"
+              }
+            },
+            {
+              "id": "hooks-inline-eval-payload",
+              "name": "SessionStart hook runs a 1177-character inline payload",
+              "shortDescription": {
+                "text": "SessionStart hook runs a 1177-character inline payload"
+              },
+              "fullDescription": {
+                "text": "The hook command feeds a long inline payload to an interpreter or decoder instead of running a script file. Inline payloads are hard to review, are not anchored to a plugin or project directory, and are the usual way to hide a dropper in a hook."
+              },
+              "help": {
+                "text": "The hook command feeds a long inline payload to an interpreter or decoder instead of running a script file. Inline payloads are hard to review, are not anchored to a plugin or project directory, and are the usual way to hide a dropper in a hook."
+              },
+              "defaultConfiguration": {
+                "level": "warning"
+              },
+              "properties": {
+                "category": "hooks",
+                "severity": "medium",
+                "security-severity": "5.0",
+                "tags": [
+                  "security",
+                  "agent-config",
+                  "hooks"
+                ],
+                "precision": "high"
+              }
+            },
+            {
+              "id": "permissions-no-block",
+              "name": "No permissions block configured",
+              "shortDescription": {
+                "text": "No permissions block configured"
+              },
+              "fullDescription": {
+                "text": "settings.json has configuration but no permissions section. Without explicit allow/deny lists, the agent relies on default permissions which may be too broad. Add a permissions block to restrict tool access."
+              },
+              "help": {
+                "text": "settings.json has configuration but no permissions section. Without explicit allow/deny lists, the agent relies on default permissions which may be too broad. Add a permissions block to restrict tool access.\n\nRecommended fix: Add a permissions block with scoped allow and deny lists"
+              },
+              "defaultConfiguration": {
+                "level": "warning"
+              },
+              "properties": {
+                "category": "permissions",
+                "severity": "medium",
+                "security-severity": "5.0",
+                "tags": [
+                  "security",
+                  "agent-config",
+                  "permissions"
+                ],
+                "precision": "high"
+              }
+            },
+            {
+              "id": "hooks-no-stop-hooks",
+              "name": "No Stop hooks for session-end verification",
+              "shortDescription": {
+                "text": "No Stop hooks for session-end verification"
+              },
+              "fullDescription": {
+                "text": "Hooks are configured but no Stop hooks exist. Stop hooks run when a session ends and are useful for final verification — checking for uncommitted secrets, ensuring console.log statements were removed, or auditing file changes."
+              },
+              "help": {
+                "text": "Hooks are configured but no Stop hooks exist. Stop hooks run when a session ends and are useful for final verification — checking for uncommitted secrets, ensuring console.log statements were removed, or auditing file changes.\n\nRecommended fix: Add a Stop hook for session-end checks"
+              },
+              "defaultConfiguration": {
+                "level": "note"
+              },
+              "properties": {
+                "category": "misconfiguration",
+                "severity": "low",
+                "security-severity": "2.5",
+                "tags": [
+                  "security",
+                  "agent-config",
+                  "misconfiguration"
+                ],
+                "precision": "high"
+              }
+            },
+            {
+              "id": "hooks-code-transcript-access-1418",
+              "name": "Hook code reads Claude transcript input",
+              "shortDescription": {
+                "text": "Hook code reads Claude transcript input"
+              },
+              "fullDescription": {
+                "text": "This non-shell hook implementation reads transcript-derived input (`transcript_path` or `CLAUDE_TRANSCRIPT_PATH`). That is common for Stop and SessionEnd hooks, but it should be reviewed because downstream logic can process sensitive prompt and tool history."
+              },
+              "help": {
+                "text": "This non-shell hook implementation reads transcript-derived input (`transcript_path` or `CLAUDE_TRANSCRIPT_PATH`). That is common for Stop and SessionEnd hooks, but it should be reviewed because downstream logic can process sensitive prompt and tool history."
+              },
+              "defaultConfiguration": {
+                "level": "note"
+              },
+              "properties": {
+                "category": "hooks",
+                "severity": "info",
+                "security-severity": "1.0",
+                "tags": [
+                  "security",
+                  "agent-config",
+                  "hooks"
+                ],
+                "precision": "high"
+              }
+            },
+            {
+              "id": "hooks-code-context-output-262",
+              "name": "Hook code injects content into Claude context",
+              "shortDescription": {
+                "text": "Hook code injects content into Claude context"
+              },
+              "fullDescription": {
+                "text": "This non-shell hook implementation calls an output helper that writes content back into Claude context. That is often legitimate, but it should be reviewed because untrusted summaries or derived data can become prompt-injection surface."
+              },
+              "help": {
+                "text": "This non-shell hook implementation calls an output helper that writes content back into Claude context. That is often legitimate, but it should be reviewed because untrusted summaries or derived data can become prompt-injection surface."
+              },
+              "defaultConfiguration": {
+                "level": "note"
+              },
+              "properties": {
+                "category": "hooks",
+                "severity": "info",
+                "security-severity": "1.0",
+                "tags": [
+                  "security",
+                  "agent-config",
+                  "hooks"
+                ],
+                "precision": "high"
+              }
+            },
+            {
+              "id": "hooks-code-transcript-access-217",
+              "name": "Hook code reads Claude transcript input",
+              "shortDescription": {
+                "text": "Hook code reads Claude transcript input"
+              },
+              "fullDescription": {
+                "text": "This non-shell hook implementation reads transcript-derived input (`transcript_path` or `CLAUDE_TRANSCRIPT_PATH`). That is common for Stop and SessionEnd hooks, but it should be reviewed because downstream logic can process sensitive prompt and tool history."
+              },
+              "help": {
+                "text": "This non-shell hook implementation reads transcript-derived input (`transcript_path` or `CLAUDE_TRANSCRIPT_PATH`). That is common for Stop and SessionEnd hooks, but it should be reviewed because downstream logic can process sensitive prompt and tool history."
+              },
+              "defaultConfiguration": {
+                "level": "note"
+              },
+              "properties": {
+                "category": "hooks",
+                "severity": "info",
+                "security-severity": "1.0",
+                "tags": [
+                  "security",
+                  "agent-config",
+                  "hooks"
+                ],
+                "precision": "high"
+              }
+            },
+            {
+              "id": "hooks-code-transcript-access-117",
+              "name": "Hook code reads Claude transcript input",
+              "shortDescription": {
+                "text": "Hook code reads Claude transcript input"
+              },
+              "fullDescription": {
+                "text": "This non-shell hook implementation reads transcript-derived input (`transcript_path` or `CLAUDE_TRANSCRIPT_PATH`). That is common for Stop and SessionEnd hooks, but it should be reviewed because downstream logic can process sensitive prompt and tool history."
+              },
+              "help": {
+                "text": "This non-shell hook implementation reads transcript-derived input (`transcript_path` or `CLAUDE_TRANSCRIPT_PATH`). That is common for Stop and SessionEnd hooks, but it should be reviewed because downstream logic can process sensitive prompt and tool history."
+              },
+              "defaultConfiguration": {
+                "level": "note"
+              },
+              "properties": {
+                "category": "hooks",
+                "severity": "info",
+                "security-severity": "1.0",
+                "tags": [
+                  "security",
+                  "agent-config",
+                  "hooks"
+                ],
+                "precision": "high"
+              }
+            },
+            {
+              "id": "hooks-code-transcript-access-183",
+              "name": "Hook code reads Claude transcript input",
+              "shortDescription": {
+                "text": "Hook code reads Claude transcript input"
+              },
+              "fullDescription": {
+                "text": "This non-shell hook implementation reads transcript-derived input (`transcript_path` or `CLAUDE_TRANSCRIPT_PATH`). That is common for Stop and SessionEnd hooks, but it should be reviewed because downstream logic can process sensitive prompt and tool history."
+              },
+              "help": {
+                "text": "This non-shell hook implementation reads transcript-derived input (`transcript_path` or `CLAUDE_TRANSCRIPT_PATH`). That is common for Stop and SessionEnd hooks, but it should be reviewed because downstream logic can process sensitive prompt and tool history."
+              },
+              "defaultConfiguration": {
+                "level": "note"
+              },
+              "properties": {
+                "category": "hooks",
+                "severity": "info",
+                "security-severity": "1.0",
+                "tags": [
+                  "security",
+                  "agent-config",
+                  "hooks"
+                ],
+                "precision": "high"
+              }
+            },
+            {
+              "id": "hooks-code-transcript-access-49",
+              "name": "Hook code reads Claude transcript input",
+              "shortDescription": {
+                "text": "Hook code reads Claude transcript input"
+              },
+              "fullDescription": {
+                "text": "This non-shell hook implementation reads transcript-derived input (`transcript_path` or `CLAUDE_TRANSCRIPT_PATH`). That is common for Stop and SessionEnd hooks, but it should be reviewed because downstream logic can process sensitive prompt and tool history."
+              },
+              "help": {
+                "text": "This non-shell hook implementation reads transcript-derived input (`transcript_path` or `CLAUDE_TRANSCRIPT_PATH`). That is common for Stop and SessionEnd hooks, but it should be reviewed because downstream logic can process sensitive prompt and tool history."
+              },
+              "defaultConfiguration": {
+                "level": "note"
+              },
+              "properties": {
+                "category": "hooks",
+                "severity": "info",
+                "security-severity": "1.0",
+                "tags": [
+                  "security",
+                  "agent-config",
+                  "hooks"
+                ],
+                "precision": "high"
+              }
+            },
+            {
+              "id": "hooks-code-transcript-access-207",
+              "name": "Hook code reads Claude transcript input",
+              "shortDescription": {
+                "text": "Hook code reads Claude transcript input"
+              },
+              "fullDescription": {
+                "text": "This non-shell hook implementation reads transcript-derived input (`transcript_path` or `CLAUDE_TRANSCRIPT_PATH`). That is common for Stop and SessionEnd hooks, but it should be reviewed because downstream logic can process sensitive prompt and tool history."
+              },
+              "help": {
+                "text": "This non-shell hook implementation reads transcript-derived input (`transcript_path` or `CLAUDE_TRANSCRIPT_PATH`). That is common for Stop and SessionEnd hooks, but it should be reviewed because downstream logic can process sensitive prompt and tool history."
+              },
+              "defaultConfiguration": {
+                "level": "note"
+              },
+              "properties": {
+                "category": "hooks",
+                "severity": "info",
+                "security-severity": "1.0",
+                "tags": [
+                  "security",
+                  "agent-config",
+                  "hooks"
+                ],
+                "precision": "high"
+              }
+            }
+          ]
+        }
+      },
+      "automationDetails": {
+        "id": "agentshield/security-scan"
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "endTimeUtc": "2026-09-30T16:08:01.455Z",
+          "workingDirectory": {
+            "uri": "<target-path>"
+          }
+        }
+      ],
+      "properties": {
+        "score": 83,
+        "grade": "B",
+        "filesScanned": 28
+      },
+      "results": [
+        {
+          "ruleId": "hooks-no-pretooluse",
+          "ruleIndex": 0,
+          "level": "warning",
+          "message": {
+            "text": "No PreToolUse hooks are defined. These hooks can catch dangerous operations before they run, providing an essential security layer."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "hooks/codex-hooks.json"
+                }
+              }
+            }
+          ],
+          "properties": {
+            "title": "No PreToolUse security hooks configured",
+            "category": "misconfiguration",
+            "severity": "medium",
+            "fix": "Add PreToolUse hooks for security-sensitive operations"
+          }
+        },
+        {
+          "ruleId": "hooks-chained-commands-0",
+          "ruleIndex": 1,
+          "level": "warning",
+          "message": {
+            "text": "A hook chains 31 commands together: \"node -e \"if(!process.env.PLUGIN_ROOT)throw new Error('Missing Codex PLUGIN_ROOT'...\". Complex chained commands in hooks are harder to audit and may perform operations beyond the hook's stated purpose. Consider breaking into a dedicated script file."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "hooks/codex-hooks.json"
+                }
+              }
+            }
+          ],
+          "properties": {
+            "title": "Hook has 31 chained commands",
+            "category": "hooks",
+            "severity": "medium",
+            "evidence": "node -e \"if(!process.env.PLUGIN_ROOT)throw new Error('Missing Codex PLUGIN_ROOT');process.env.CLAUDE",
+            "fix": "Move complex logic to a script file"
+          }
+        },
+        {
+          "ruleId": "hooks-inline-eval-payload",
+          "ruleIndex": 2,
+          "level": "warning",
+          "message": {
+            "text": "The hook command feeds a long inline payload to an interpreter or decoder instead of running a script file. Inline payloads are hard to review, are not anchored to a plugin or project directory, and are the usual way to hide a dropper in a hook."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "hooks/codex-hooks.json"
+                },
+                "region": {
+                  "startLine": 4
+                }
+              }
+            }
+          ],
+          "properties": {
+            "title": "SessionStart hook runs a 1177-character inline payload",
+            "category": "hooks",
+            "severity": "medium",
+            "evidence": "node -e \"if(!process.env.PLUGIN_ROOT)throw new Error('Missing Codex PLUGIN_ROOT');process.env.CLAUDE_PLUGIN_ROOT=process..."
+          }
+        },
+        {
+          "ruleId": "hooks-inline-eval-payload",
+          "ruleIndex": 2,
+          "level": "warning",
+          "message": {
+            "text": "This finding comes from a declarative hook manifest. Review the referenced hook implementation to confirm the exact runtime behavior. The hook command feeds a long inline payload to an interpreter or decoder instead of running a script file. Inline payloads are hard to review, are not anchored to a plugin or project directory, and are the usual way to hide a dropper in a hook."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "hooks/hooks.json"
+                },
+                "region": {
+                  "startLine": 3
+                }
+              }
+            }
+          ],
+          "properties": {
+            "title": "Plugin hook manifest: PreToolUse hook runs a 1045-character inline payload",
+            "category": "hooks",
+            "severity": "medium",
+            "runtimeConfidence": "plugin-manifest",
+            "evidence": "node -e \"const p=require('path');const r=(function(){var p=require('path'),f=require('fs'),o=require('os');var e=process..."
+          }
+        },
+        {
+          "ruleId": "hooks-inline-eval-payload",
+          "ruleIndex": 2,
+          "level": "warning",
+          "message": {
+            "text": "This finding comes from a declarative hook manifest. Review the referenced hook implementation to confirm the exact runtime behavior. The hook command feeds a long inline payload to an interpreter or decoder instead of running a script file. Inline payloads are hard to review, are not anchored to a plugin or project directory, and are the usual way to hide a dropper in a hook."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "hooks/hooks.json"
+                },
+                "region": {
+                  "startLine": 3
+                }
+              }
+            }
+          ],
+          "properties": {
+            "title": "Plugin hook manifest: PreToolUse hook runs a 1130-character inline payload",
+            "category": "hooks",
+            "severity": "medium",
+            "runtimeConfidence": "plugin-manifest",
+            "evidence": "node -e \"const p=require('path');const r=(function(){var p=require('path'),f=require('fs'),o=require('os');var e=process..."
+          }
+        },
+        {
+          "ruleId": "hooks-inline-eval-payload",
+          "ruleIndex": 2,
+          "level": "warning",
+          "message": {
+            "text": "This finding comes from a declarative hook manifest. Review the referenced hook implementation to confirm the exact runtime behavior. The hook command feeds a long inline payload to an interpreter or decoder instead of running a script file. Inline payloads are hard to review, are not anchored to a plugin or project directory, and are the usual way to hide a dropper in a hook."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "hooks/hooks.json"
+                },
+                "region": {
+                  "startLine": 3
+                }
+              }
+            }
+          ],
+          "properties": {
+            "title": "Plugin hook manifest: PreToolUse hook runs a 1117-character inline payload",
+            "category": "hooks",
+            "severity": "medium",
+            "runtimeConfidence": "plugin-manifest",
+            "evidence": "node -e \"const p=require('path');const r=(function(){var p=require('path'),f=require('fs'),o=require('os');var e=process..."
+          }
+        },
+        {
+          "ruleId": "hooks-inline-eval-payload",
+          "ruleIndex": 2,
+          "level": "warning",
+          "message": {
+            "text": "This finding comes from a declarative hook manifest. Review the referenced hook implementation to confirm the exact runtime behavior. The hook command feeds a long inline payload to an interpreter or decoder instead of running a script file. Inline payloads are hard to review, are not anchored to a plugin or project directory, and are the usual way to hide a dropper in a hook."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "hooks/hooks.json"
+                },
+                "region": {
+                  "startLine": 3
+                }
+              }
+            }
+          ],
+          "properties": {
+            "title": "Plugin hook manifest: PreToolUse hook runs a 1120-character inline payload",
+            "category": "hooks",
+            "severity": "medium",
+            "runtimeConfidence": "plugin-manifest",
+            "evidence": "node -e \"const p=require('path');const r=(function(){var p=require('path'),f=require('fs'),o=require('os');var e=process..."
+          }
+        },
+        {
+          "ruleId": "hooks-inline-eval-payload",
+          "ruleIndex": 2,
+          "level": "warning",
+          "message": {
+            "text": "This finding comes from a declarative hook manifest. Review the referenced hook implementation to confirm the exact runtime behavior. The hook command feeds a long inline payload to an interpreter or decoder instead of running a script file. Inline payloads are hard to review, are not anchored to a plugin or project directory, and are the usual way to hide a dropper in a hook."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "hooks/hooks.json"
+                },
+                "region": {
+                  "startLine": 3
+                }
+              }
+            }
+          ],
+          "properties": {
+            "title": "Plugin hook manifest: PreToolUse hook runs a 1100-character inline payload",
+            "category": "hooks",
+            "severity": "medium",
+            "runtimeConfidence": "plugin-manifest",
+            "evidence": "node -e \"const p=require('path');const r=(function(){var p=require('path'),f=require('fs'),o=require('os');var e=process..."
+          }
+        },
+        {
+          "ruleId": "hooks-inline-eval-payload",
+          "ruleIndex": 2,
+          "level": "warning",
+          "message": {
+            "text": "This finding comes from a declarative hook manifest. Review the referenced hook implementation to confirm the exact runtime behavior. The hook command feeds a long inline payload to an interpreter or decoder instead of running a script file. Inline payloads are hard to review, are not anchored to a plugin or project directory, and are the usual way to hide a dropper in a hook."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "hooks/hooks.json"
+                },
+                "region": {
+                  "startLine": 3
+                }
+              }
+            }
+          ],
+          "properties": {
+            "title": "Plugin hook manifest: PreToolUse hook runs a 1115-character inline payload",
+            "category": "hooks",
+            "severity": "medium",
+            "runtimeConfidence": "plugin-manifest",
+            "evidence": "node -e \"const p=require('path');const r=(function(){var p=require('path'),f=require('fs'),o=require('os');var e=process..."
+          }
+        },
+        {
+          "ruleId": "hooks-inline-eval-payload",
+          "ruleIndex": 2,
+          "level": "warning",
+          "message": {
+            "text": "This finding comes from a declarative hook manifest. Review the referenced hook implementation to confirm the exact runtime behavior. The hook command feeds a long inline payload to an interpreter or decoder instead of running a script file. Inline payloads are hard to review, are not anchored to a plugin or project directory, and are the usual way to hide a dropper in a hook."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "hooks/hooks.json"
+                },
+                "region": {
+                  "startLine": 3
+                }
+              }
+            }
+          ],
+          "properties": {
+            "title": "Plugin hook manifest: PreToolUse hook runs a 1113-character inline payload",
+            "category": "hooks",
+            "severity": "medium",
+            "runtimeConfidence": "plugin-manifest",
+            "evidence": "node -e \"const p=require('path');const r=(function(){var p=require('path'),f=require('fs'),o=require('os');var e=process..."
+          }
+        },
+        {
+          "ruleId": "hooks-inline-eval-payload",
+          "ruleIndex": 2,
+          "level": "warning",
+          "message": {
+            "text": "This finding comes from a declarative hook manifest. Review the referenced hook implementation to confirm the exact runtime behavior. The hook command feeds a long inline payload to an interpreter or decoder instead of running a script file. Inline payloads are hard to review, are not anchored to a plugin or project directory, and are the usual way to hide a dropper in a hook."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "hooks/hooks.json"
+                },
+                "region": {
+                  "startLine": 3
+                }
+              }
+            }
+          ],
+          "properties": {
+            "title": "Plugin hook manifest: PreToolUse hook runs a 1111-character inline payload",
+            "category": "hooks",
+            "severity": "medium",
+            "runtimeConfidence": "plugin-manifest",
+            "evidence": "node -e \"const p=require('path');const r=(function(){var p=require('path'),f=require('fs'),o=require('os');var e=process..."
+          }
+        },
+        {
+          "ruleId": "hooks-inline-eval-payload",
+          "ruleIndex": 2,
+          "level": "warning",
+          "message": {
+            "text": "This finding comes from a declarative hook manifest. Review the referenced hook implementation to confirm the exact runtime behavior. The hook command feeds a long inline payload to an interpreter or decoder instead of running a script file. Inline payloads are hard to review, are not anchored to a plugin or project directory, and are the usual way to hide a dropper in a hook."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "hooks/hooks.json"
+                },
+                "region": {
+                  "startLine": 3
+                }
+              }
+            }
+          ],
+          "properties": {
+            "title": "Plugin hook manifest: PreToolUse hook runs a 1130-character inline payload",
+            "category": "hooks",
+            "severity": "medium",
+            "runtimeConfidence": "plugin-manifest",
+            "evidence": "node -e \"const p=require('path');const r=(function(){var p=require('path'),f=require('fs'),o=require('os');var e=process..."
+          }
+        },
+        {
+          "ruleId": "hooks-inline-eval-payload",
+          "ruleIndex": 2,
+          "level": "warning",
+          "message": {
+            "text": "This finding comes from a declarative hook manifest. Review the referenced hook implementation to confirm the exact runtime behavior. The hook command feeds a long inline payload to an interpreter or decoder instead of running a script file. Inline payloads are hard to review, are not anchored to a plugin or project directory, and are the usual way to hide a dropper in a hook."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "hooks/hooks.json"
+                },
+                "region": {
+                  "startLine": 92
+                }
+              }
+            }
+          ],
+          "properties": {
+            "title": "Plugin hook manifest: PreCompact hook runs a 1097-character inline payload",
+            "category": "hooks",
+            "severity": "medium",
+            "runtimeConfidence": "plugin-manifest",
+            "evidence": "node -e \"const p=require('path');const r=(function(){var p=require('path'),f=require('fs'),o=require('os');var e=process..."
+          }
+        },
+        {
+          "ruleId": "hooks-inline-eval-payload",
+          "ruleIndex": 2,
+          "level": "warning",
+          "message": {
+            "text": "This finding comes from a declarative hook manifest. Review the referenced hook implementation to confirm the exact runtime behavior. The hook command feeds a long inline payload to an interpreter or decoder instead of running a script file. Inline payloads are hard to review, are not anchored to a plugin or project directory, and are the usual way to hide a dropper in a hook."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "hooks/hooks.json"
+                },
+                "region": {
+                  "startLine": 103
+                }
+              }
+            }
+          ],
+          "properties": {
+            "title": "Plugin hook manifest: SessionStart hook runs a 1049-character inline payload",
+            "category": "hooks",
+            "severity": "medium",
+            "runtimeConfidence": "plugin-manifest",
+            "evidence": "node -e \"const p=require('path');const r=(function(){var p=require('path'),f=require('fs'),o=require('os');var e=process..."
+          }
+        },
+        {
+          "ruleId": "hooks-inline-eval-payload",
+          "ruleIndex": 2,
+          "level": "warning",
+          "message": {
+            "text": "This finding comes from a declarative hook manifest. Review the referenced hook implementation to confirm the exact runtime behavior. The hook command feeds a long inline payload to an interpreter or decoder instead of running a script file. Inline payloads are hard to review, are not anchored to a plugin or project directory, and are the usual way to hide a dropper in a hook."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "hooks/hooks.json"
+                },
+                "region": {
+                  "startLine": 103
+                }
+              }
+            }
+          ],
+          "properties": {
+            "title": "Plugin hook manifest: SessionStart hook runs a 1129-character inline payload",
+            "category": "hooks",
+            "severity": "medium",
+            "runtimeConfidence": "plugin-manifest",
+            "evidence": "node -e \"const p=require('path');const r=(function(){var p=require('path'),f=require('fs'),o=require('os');var e=process..."
+          }
+        },
+        {
+          "ruleId": "hooks-inline-eval-payload",
+          "ruleIndex": 2,
+          "level": "warning",
+          "message": {
+            "text": "This finding comes from a declarative hook manifest. Review the referenced hook implementation to confirm the exact runtime behavior. The hook command feeds a long inline payload to an interpreter or decoder instead of running a script file. Inline payloads are hard to review, are not anchored to a plugin or project directory, and are the usual way to hide a dropper in a hook."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "hooks/hooks.json"
+                },
+                "region": {
+                  "startLine": 123
+                }
+              }
+            }
+          ],
+          "properties": {
+            "title": "Plugin hook manifest: PostToolUse hook runs a 1015-character inline payload",
+            "category": "hooks",
+            "severity": "medium",
+            "runtimeConfidence": "plugin-manifest",
+            "evidence": "node -e \"const p=require('path');const r=(function(){var p=require('path'),f=require('fs'),o=require('os');var e=process..."
+          }
+        },
+        {
+          "ruleId": "hooks-inline-eval-payload",
+          "ruleIndex": 2,
+          "level": "warning",
+          "message": {
+            "text": "This finding comes from a declarative hook manifest. Review the referenced hook implementation to confirm the exact runtime behavior. The hook command feeds a long inline payload to an interpreter or decoder instead of running a script file. Inline payloads are hard to review, are not anchored to a plugin or project directory, and are the usual way to hide a dropper in a hook."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "hooks/hooks.json"
+                },
+                "region": {
+                  "startLine": 123
+                }
+              }
+            }
+          ],
+          "properties": {
+            "title": "Plugin hook manifest: PostToolUse hook runs a 1016-character inline payload",
+            "category": "hooks",
+            "severity": "medium",
+            "runtimeConfidence": "plugin-manifest",
+            "evidence": "node -e \"const p=require('path');const r=(function(){var p=require('path'),f=require('fs'),o=require('os');var e=process..."
+          }
+        },
+        {
+          "ruleId": "hooks-inline-eval-payload",
+          "ruleIndex": 2,
+          "level": "warning",
+          "message": {
+            "text": "This finding comes from a declarative hook manifest. Review the referenced hook implementation to confirm the exact runtime behavior. The hook command feeds a long inline payload to an interpreter or decoder instead of running a script file. Inline payloads are hard to review, are not anchored to a plugin or project directory, and are the usual way to hide a dropper in a hook."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "hooks/hooks.json"
+                },
+                "region": {
+                  "startLine": 146
+                }
+              }
+            }
+          ],
+          "properties": {
+            "title": "Plugin hook manifest: PostToolUseFailure hook runs a 1112-character inline payload",
+            "category": "hooks",
+            "severity": "medium",
+            "runtimeConfidence": "plugin-manifest",
+            "evidence": "node -e \"const p=require('path');const r=(function(){var p=require('path'),f=require('fs'),o=require('os');var e=process..."
+          }
+        },
+        {
+          "ruleId": "hooks-inline-eval-payload",
+          "ruleIndex": 2,
+          "level": "warning",
+          "message": {
+            "text": "This finding comes from a declarative hook manifest. Review the referenced hook implementation to confirm the exact runtime behavior. The hook command feeds a long inline payload to an interpreter or decoder instead of running a script file. Inline payloads are hard to review, are not anchored to a plugin or project directory, and are the usual way to hide a dropper in a hook."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "hooks/hooks.json"
+                },
+                "region": {
+                  "startLine": 146
+                }
+              }
+            }
+          ],
+          "properties": {
+            "title": "Plugin hook manifest: PostToolUseFailure hook runs a 1108-character inline payload",
+            "category": "hooks",
+            "severity": "medium",
+            "runtimeConfidence": "plugin-manifest",
+            "evidence": "node -e \"const p=require('path');const r=(function(){var p=require('path'),f=require('fs'),o=require('os');var e=process..."
+          }
+        },
+        {
+          "ruleId": "hooks-inline-eval-payload",
+          "ruleIndex": 2,
+          "level": "warning",
+          "message": {
+            "text": "This finding comes from a declarative hook manifest. Review the referenced hook implementation to confirm the exact runtime behavior. The hook command feeds a long inline payload to an interpreter or decoder instead of running a script file. Inline payloads are hard to review, are not anchored to a plugin or project directory, and are the usual way to hide a dropper in a hook."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "hooks/hooks.json"
+                },
+                "region": {
+                  "startLine": 166
+                }
+              }
+            }
+          ],
+          "properties": {
+            "title": "Plugin hook manifest: Stop hook runs a 1407-character inline payload",
+            "category": "hooks",
+            "severity": "medium",
+            "runtimeConfidence": "plugin-manifest",
+            "evidence": "node -e \"const p=require('path');const r=(function(){var p=require('path'),f=require('fs'),o=require('os');var e=process..."
+          }
+        },
+        {
+          "ruleId": "hooks-inline-eval-payload",
+          "ruleIndex": 2,
+          "level": "warning",
+          "message": {
+            "text": "This finding comes from a declarative hook manifest. Review the referenced hook implementation to confirm the exact runtime behavior. The hook command feeds a long inline payload to an interpreter or decoder instead of running a script file. Inline payloads are hard to review, are not anchored to a plugin or project directory, and are the usual way to hide a dropper in a hook."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "hooks/hooks.json"
+                },
+                "region": {
+                  "startLine": 166
+                }
+              }
+            }
+          ],
+          "properties": {
+            "title": "Plugin hook manifest: Stop hook runs a 1399-character inline payload",
+            "category": "hooks",
+            "severity": "medium",
+            "runtimeConfidence": "plugin-manifest",
+            "evidence": "node -e \"const p=require('path');const r=(function(){var p=require('path'),f=require('fs'),o=require('os');var e=process..."
+          }
+        },
+        {
+          "ruleId": "hooks-inline-eval-payload",
+          "ruleIndex": 2,
+          "level": "warning",
+          "message": {
+            "text": "This finding comes from a declarative hook manifest. Review the referenced hook implementation to confirm the exact runtime behavior. The hook command feeds a long inline payload to an interpreter or decoder instead of running a script file. Inline payloads are hard to review, are not anchored to a plugin or project directory, and are the usual way to hide a dropper in a hook."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "hooks/hooks.json"
+                },
+                "region": {
+                  "startLine": 166
+                }
+              }
+            }
+          ],
+          "properties": {
+            "title": "Plugin hook manifest: Stop hook runs a 1395-character inline payload",
+            "category": "hooks",
+            "severity": "medium",
+            "runtimeConfidence": "plugin-manifest",
+            "evidence": "node -e \"const p=require('path');const r=(function(){var p=require('path'),f=require('fs'),o=require('os');var e=process..."
+          }
+        },
+        {
+          "ruleId": "hooks-inline-eval-payload",
+          "ruleIndex": 2,
+          "level": "warning",
+          "message": {
+            "text": "This finding comes from a declarative hook manifest. Review the referenced hook implementation to confirm the exact runtime behavior. The hook command feeds a long inline payload to an interpreter or decoder instead of running a script file. Inline payloads are hard to review, are not anchored to a plugin or project directory, and are the usual way to hide a dropper in a hook."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "hooks/hooks.json"
+                },
+                "region": {
+                  "startLine": 166
+                }
+              }
+            }
+          ],
+          "properties": {
+            "title": "Plugin hook manifest: Stop hook runs a 1391-character inline payload",
+            "category": "hooks",
+            "severity": "medium",
+            "runtimeConfidence": "plugin-manifest",
+            "evidence": "node -e \"const p=require('path');const r=(function(){var p=require('path'),f=require('fs'),o=require('os');var e=process..."
+          }
+        },
+        {
+          "ruleId": "hooks-inline-eval-payload",
+          "ruleIndex": 2,
+          "level": "warning",
+          "message": {
+            "text": "This finding comes from a declarative hook manifest. Review the referenced hook implementation to confirm the exact runtime behavior. The hook command feeds a long inline payload to an interpreter or decoder instead of running a script file. Inline payloads are hard to review, are not anchored to a plugin or project directory, and are the usual way to hide a dropper in a hook."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "hooks/hooks.json"
+                },
+                "region": {
+                  "startLine": 166
+                }
+              }
+            }
+          ],
+          "properties": {
+            "title": "Plugin hook manifest: Stop hook runs a 1401-character inline payload",
+            "category": "hooks",
+            "severity": "medium",
+            "runtimeConfidence": "plugin-manifest",
+            "evidence": "node -e \"const p=require('path');const r=(function(){var p=require('path'),f=require('fs'),o=require('os');var e=process..."
+          }
+        },
+        {
+          "ruleId": "hooks-inline-eval-payload",
+          "ruleIndex": 2,
+          "level": "warning",
+          "message": {
+            "text": "This finding comes from a declarative hook manifest. Review the referenced hook implementation to confirm the exact runtime behavior. The hook command feeds a long inline payload to an interpreter or decoder instead of running a script file. Inline payloads are hard to review, are not anchored to a plugin or project directory, and are the usual way to hide a dropper in a hook."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "hooks/hooks.json"
+                },
+                "region": {
+                  "startLine": 166
+                }
+              }
+            }
+          ],
+          "properties": {
+            "title": "Plugin hook manifest: Stop hook runs a 1393-character inline payload",
+            "category": "hooks",
+            "severity": "medium",
+            "runtimeConfidence": "plugin-manifest",
+            "evidence": "node -e \"const p=require('path');const r=(function(){var p=require('path'),f=require('fs'),o=require('os');var e=process..."
+          }
+        },
+        {
+          "ruleId": "hooks-inline-eval-payload",
+          "ruleIndex": 2,
+          "level": "warning",
+          "message": {
+            "text": "This finding comes from a declarative hook manifest. Review the referenced hook implementation to confirm the exact runtime behavior. The hook command feeds a long inline payload to an interpreter or decoder instead of running a script file. Inline payloads are hard to review, are not anchored to a plugin or project directory, and are the usual way to hide a dropper in a hook."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "hooks/hooks.json"
+                },
+                "region": {
+                  "startLine": 166
+                }
+              }
+            }
+          ],
+          "properties": {
+            "title": "Plugin hook manifest: Stop hook runs a 1389-character inline payload",
+            "category": "hooks",
+            "severity": "medium",
+            "runtimeConfidence": "plugin-manifest",
+            "evidence": "node -e \"const p=require('path');const r=(function(){var p=require('path'),f=require('fs'),o=require('os');var e=process..."
+          }
+        },
+        {
+          "ruleId": "hooks-inline-eval-payload",
+          "ruleIndex": 2,
+          "level": "warning",
+          "message": {
+            "text": "This finding comes from a declarative hook manifest. Review the referenced hook implementation to confirm the exact runtime behavior. The hook command feeds a long inline payload to an interpreter or decoder instead of running a script file. Inline payloads are hard to review, are not anchored to a plugin or project directory, and are the usual way to hide a dropper in a hook."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "hooks/hooks.json"
+                },
+                "region": {
+                  "startLine": 240
+                }
+              }
+            }
+          ],
+          "properties": {
+            "title": "Plugin hook manifest: SessionEnd hook runs a 1400-character inline payload",
+            "category": "hooks",
+            "severity": "medium",
+            "runtimeConfidence": "plugin-manifest",
+            "evidence": "node -e \"const p=require('path');const r=(function(){var p=require('path'),f=require('fs'),o=require('os');var e=process..."
+          }
+        },
+        {
+          "ruleId": "permissions-no-block",
+          "ruleIndex": 3,
+          "level": "warning",
+          "message": {
+            "text": "settings.json has configuration but no permissions section. Without explicit allow/deny lists, the agent relies on default permissions which may be too broad. Add a permissions block to restrict tool access."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "hooks/hooks.metadata.json"
+                }
+              }
+            }
+          ],
+          "properties": {
+            "title": "No permissions block configured",
+            "category": "permissions",
+            "severity": "medium",
+            "fix": "Add a permissions block with scoped allow and deny lists"
+          }
+        },
+        {
+          "ruleId": "hooks-no-pretooluse",
+          "ruleIndex": 0,
+          "level": "warning",
+          "message": {
+            "text": "No PreToolUse hooks are defined. These hooks can catch dangerous operations before they run, providing an essential security layer."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "hooks/hooks.metadata.json"
+                }
+              }
+            }
+          ],
+          "properties": {
+            "title": "No PreToolUse security hooks configured",
+            "category": "misconfiguration",
+            "severity": "medium",
+            "fix": "Add PreToolUse hooks for security-sensitive operations"
+          }
+        },
+        {
+          "ruleId": "hooks-no-stop-hooks",
+          "ruleIndex": 4,
+          "level": "note",
+          "message": {
+            "text": "Hooks are configured but no Stop hooks exist. Stop hooks run when a session ends and are useful for final verification — checking for uncommitted secrets, ensuring console.log statements were removed, or auditing file changes."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "hooks/codex-hooks.json"
+                }
+              }
+            }
+          ],
+          "properties": {
+            "title": "No Stop hooks for session-end verification",
+            "category": "misconfiguration",
+            "severity": "low",
+            "fix": "Add a Stop hook for session-end checks"
+          }
+        },
+        {
+          "ruleId": "hooks-code-transcript-access-1418",
+          "ruleIndex": 5,
+          "level": "note",
+          "message": {
+            "text": "This non-shell hook implementation reads transcript-derived input (`transcript_path` or `CLAUDE_TRANSCRIPT_PATH`). That is common for Stop and SessionEnd hooks, but it should be reviewed because downstream logic can process sensitive prompt and tool history."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "scripts/hooks/gateguard-fact-force.js"
+                },
+                "region": {
+                  "startLine": 1418
+                }
+              }
+            }
+          ],
+          "properties": {
+            "title": "Hook code reads Claude transcript input",
+            "category": "hooks",
+            "severity": "info",
+            "runtimeConfidence": "hook-code",
+            "evidence": "const transcriptPath = (data && (data.transcript_path || data.transcriptPath)) || process.env.CLAUDE_TRANSCRIPT_PATH;"
+          }
+        },
+        {
+          "ruleId": "hooks-code-context-output-262",
+          "ruleIndex": 6,
+          "level": "note",
+          "message": {
+            "text": "This non-shell hook implementation calls an output helper that writes content back into Claude context. That is often legitimate, but it should be reviewed because untrusted summaries or derived data can become prompt-injection surface."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "scripts/hooks/suggest-compact.js"
+                },
+                "region": {
+                  "startLine": 262
+                }
+              }
+            }
+          ],
+          "properties": {
+            "title": "Hook code injects content into Claude context",
+            "category": "hooks",
+            "severity": "info",
+            "runtimeConfidence": "hook-code",
+            "evidence": "output({"
+          }
+        },
+        {
+          "ruleId": "hooks-code-transcript-access-217",
+          "ruleIndex": 7,
+          "level": "note",
+          "message": {
+            "text": "This non-shell hook implementation reads transcript-derived input (`transcript_path` or `CLAUDE_TRANSCRIPT_PATH`). That is common for Stop and SessionEnd hooks, but it should be reviewed because downstream logic can process sensitive prompt and tool history."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "scripts/hooks/suggest-compact.js"
+                },
+                "region": {
+                  "startLine": 217
+                }
+              }
+            }
+          ],
+          "properties": {
+            "title": "Hook code reads Claude transcript input",
+            "category": "hooks",
+            "severity": "info",
+            "runtimeConfidence": "hook-code",
+            "evidence": "const transcriptPath = (input && typeof input.transcript_path === 'string') ? input.transcript_path : '';"
+          }
+        },
+        {
+          "ruleId": "hooks-code-transcript-access-117",
+          "ruleIndex": 8,
+          "level": "note",
+          "message": {
+            "text": "This non-shell hook implementation reads transcript-derived input (`transcript_path` or `CLAUDE_TRANSCRIPT_PATH`). That is common for Stop and SessionEnd hooks, but it should be reviewed because downstream logic can process sensitive prompt and tool history."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "scripts/hooks/pre-compact.js"
+                },
+                "region": {
+                  "startLine": 117
+                }
+              }
+            }
+          ],
+          "properties": {
+            "title": "Hook code reads Claude transcript input",
+            "category": "hooks",
+            "severity": "info",
+            "runtimeConfidence": "hook-code",
+            "evidence": "if (input && typeof input.transcript_path === 'string' && input.transcript_path.length > 0) {"
+          }
+        },
+        {
+          "ruleId": "hooks-code-transcript-access-183",
+          "ruleIndex": 9,
+          "level": "note",
+          "message": {
+            "text": "This non-shell hook implementation reads transcript-derived input (`transcript_path` or `CLAUDE_TRANSCRIPT_PATH`). That is common for Stop and SessionEnd hooks, but it should be reviewed because downstream logic can process sensitive prompt and tool history."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "scripts/hooks/session-end.js"
+                },
+                "region": {
+                  "startLine": 183
+                }
+              }
+            }
+          ],
+          "properties": {
+            "title": "Hook code reads Claude transcript input",
+            "category": "hooks",
+            "severity": "info",
+            "runtimeConfidence": "hook-code",
+            "evidence": "if (input && typeof input.transcript_path === 'string' && input.transcript_path.length > 0) {"
+          }
+        },
+        {
+          "ruleId": "hooks-code-transcript-access-49",
+          "ruleIndex": 10,
+          "level": "note",
+          "message": {
+            "text": "This non-shell hook implementation reads transcript-derived input (`transcript_path` or `CLAUDE_TRANSCRIPT_PATH`). That is common for Stop and SessionEnd hooks, but it should be reviewed because downstream logic can process sensitive prompt and tool history."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "scripts/hooks/evaluate-session.js"
+                },
+                "region": {
+                  "startLine": 49
+                }
+              }
+            }
+          ],
+          "properties": {
+            "title": "Hook code reads Claude transcript input",
+            "category": "hooks",
+            "severity": "info",
+            "runtimeConfidence": "hook-code",
+            "evidence": "transcriptPath = input.transcript_path;"
+          }
+        },
+        {
+          "ruleId": "hooks-code-transcript-access-207",
+          "ruleIndex": 11,
+          "level": "note",
+          "message": {
+            "text": "This non-shell hook implementation reads transcript-derived input (`transcript_path` or `CLAUDE_TRANSCRIPT_PATH`). That is common for Stop and SessionEnd hooks, but it should be reviewed because downstream logic can process sensitive prompt and tool history."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "scripts/hooks/cost-tracker.js"
+                },
+                "region": {
+                  "startLine": 207
+                }
+              }
+            }
+          ],
+          "properties": {
+            "title": "Hook code reads Claude transcript input",
+            "category": "hooks",
+            "severity": "info",
+            "runtimeConfidence": "hook-code",
+            "evidence": "const transcriptPath = (typeof input.transcript_path === 'string' && input.transcript_path)"
+          }
+        }
+      ]
+    }
+  ]
+}

@@ -6,6 +6,7 @@ description: >-
   personality, voice, narrative, and founder-brand tension across 8 modules
   using laddering, 5 Whys, and projective techniques. Produces a resumable
   session with disk-persisted state and a master brandbook (90_SYNTHESIS.md).
+license: MIT
 ---
 
 # Brand Discovery

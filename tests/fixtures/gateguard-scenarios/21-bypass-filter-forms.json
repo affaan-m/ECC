@@ -1,0 +1,1425 @@
+{
+  "name": "bypass-filter-forms",
+  "description": "Searches whose type, extension or path pattern misses the target (rg -t/-T, fd -e, the Grep tool type, a Glob pattern, a shell glob operand, a git pathspec), and name lookups confined to the target itself; then four controls whose filters or patterns cover the target.",
+  "files": {
+    "src/lexer/scanner.js": "function scannerValue(x) {\n  return x;\n}\n",
+    "src/lexer/reader.js": "function readerValue(x) {\n  return x;\n}\n",
+    "src/lexer/cursor.js": "function cursorValue(x) {\n  return x;\n}\n",
+    "src/lexer/buffer.js": "function bufferValue(x) {\n  return x;\n}\n",
+    "src/lexer/emitter.js": "function emitterValue(x) {\n  return x;\n}\n",
+    "src/lexer/matcher.js": "function matcherValue(x) {\n  return x;\n}\n",
+    "src/lexer/tracker.js": "function trackerValue(x) {\n  return x;\n}\n",
+    "src/lexer/splitter.js": "function splitterValue(x) {\n  return x;\n}\n",
+    "src/lexer/joiner.js": "function joinerValue(x) {\n  return x;\n}\n",
+    "src/lexer/folder.js": "function folderValue(x) {\n  return x;\n}\n",
+    "src/lexer/decoder.js": "function decoderValue(x) {\n  return x;\n}\n",
+    "src/lexer/encoder.js": "function encoderValue(x) {\n  return x;\n}\n",
+    "src/lexer/printer.js": "function printerValue(x) {\n  return x;\n}\n",
+    "src/lexer/lister.js": "function listerValue(x) {\n  return x;\n}\n"
+  },
+  "steps": [
+    {
+      "id": "rg-type-excludes-target",
+      "transcript": [
+        {
+          "type": "user",
+          "uuid": "bypass-filter-forms-001",
+          "sessionId": "sess-bypass-filter-forms",
+          "isSidechain": false,
+          "promptId": "prompt-filter-forms-1",
+          "message": {
+            "role": "user",
+            "content": "Round the lexer values to cents."
+          }
+        },
+        {
+          "type": "assistant",
+          "uuid": "bypass-filter-forms-002",
+          "sessionId": "sess-bypass-filter-forms",
+          "isSidechain": false,
+          "message": {
+            "id": "msg_bypassfilterforms_1",
+            "type": "message",
+            "role": "assistant",
+            "model": "claude-sonnet-4-5",
+            "content": [
+              {
+                "type": "tool_use",
+                "id": "toolu_bypassfilterforms_001",
+                "name": "Bash",
+                "input": {
+                  "command": "rg -n scanner -t py src"
+                }
+              }
+            ]
+          }
+        },
+        {
+          "type": "user",
+          "uuid": "bypass-filter-forms-003",
+          "sessionId": "sess-bypass-filter-forms",
+          "isSidechain": false,
+          "promptId": "prompt-filter-forms-1",
+          "message": {
+            "role": "user",
+            "content": [
+              {
+                "type": "tool_result",
+                "tool_use_id": "toolu_bypassfilterforms_001",
+                "content": "ok"
+              }
+            ]
+          }
+        },
+        {
+          "type": "assistant",
+          "uuid": "bypass-filter-forms-004",
+          "sessionId": "sess-bypass-filter-forms",
+          "isSidechain": false,
+          "message": {
+            "id": "msg_bypassfilterforms_2",
+            "type": "message",
+            "role": "assistant",
+            "model": "claude-sonnet-4-5",
+            "content": [
+              {
+                "type": "tool_use",
+                "id": "toolu_bypassfilterforms_002",
+                "name": "Edit",
+                "input": {
+                  "file_path": "{{root}}/src/lexer/scanner.js",
+                  "old_string": "  return x;",
+                  "new_string": "  return Math.round(x * 100) / 100;"
+                }
+              }
+            ]
+          }
+        }
+      ],
+      "payload": {
+        "session_id": "sess-bypass-filter-forms",
+        "transcript_path": "{{transcript}}",
+        "cwd": "{{root}}",
+        "permission_mode": "default",
+        "hook_event_name": "PreToolUse",
+        "tool_name": "Edit",
+        "tool_input": {
+          "file_path": "{{root}}/src/lexer/scanner.js",
+          "old_string": "  return x;",
+          "new_string": "  return Math.round(x * 100) / 100;"
+        },
+        "tool_use_id": "toolu_bypassfilterforms_002"
+      },
+      "expect": "deny",
+      "mustDeny": true,
+      "redundant": false,
+      "relevantQuestions": [
+        "local-callers",
+        "quote-instruction"
+      ]
+    },
+    {
+      "id": "rg-type-not-names-target",
+      "transcript": [
+        {
+          "type": "user",
+          "uuid": "bypass-filter-forms-005",
+          "sessionId": "sess-bypass-filter-forms",
+          "isSidechain": false,
+          "promptId": "prompt-filter-forms-1",
+          "message": {
+            "role": "user",
+            "content": "Round the lexer values to cents."
+          }
+        },
+        {
+          "type": "assistant",
+          "uuid": "bypass-filter-forms-006",
+          "sessionId": "sess-bypass-filter-forms",
+          "isSidechain": false,
+          "message": {
+            "id": "msg_bypassfilterforms_3",
+            "type": "message",
+            "role": "assistant",
+            "model": "claude-sonnet-4-5",
+            "content": [
+              {
+                "type": "tool_use",
+                "id": "toolu_bypassfilterforms_003",
+                "name": "Bash",
+                "input": {
+                  "command": "rg -n reader -T js src"
+                }
+              }
+            ]
+          }
+        },
+        {
+          "type": "user",
+          "uuid": "bypass-filter-forms-007",
+          "sessionId": "sess-bypass-filter-forms",
+          "isSidechain": false,
+          "promptId": "prompt-filter-forms-1",
+          "message": {
+            "role": "user",
+            "content": [
+              {
+                "type": "tool_result",
+                "tool_use_id": "toolu_bypassfilterforms_003",
+                "content": "ok"
+              }
+            ]
+          }
+        },
+        {
+          "type": "assistant",
+          "uuid": "bypass-filter-forms-008",
+          "sessionId": "sess-bypass-filter-forms",
+          "isSidechain": false,
+          "message": {
+            "id": "msg_bypassfilterforms_4",
+            "type": "message",
+            "role": "assistant",
+            "model": "claude-sonnet-4-5",
+            "content": [
+              {
+                "type": "tool_use",
+                "id": "toolu_bypassfilterforms_004",
+                "name": "Edit",
+                "input": {
+                  "file_path": "{{root}}/src/lexer/reader.js",
+                  "old_string": "  return x;",
+                  "new_string": "  return Math.round(x * 100) / 100;"
+                }
+              }
+            ]
+          }
+        }
+      ],
+      "payload": {
+        "session_id": "sess-bypass-filter-forms",
+        "transcript_path": "{{transcript}}",
+        "cwd": "{{root}}",
+        "permission_mode": "default",
+        "hook_event_name": "PreToolUse",
+        "tool_name": "Edit",
+        "tool_input": {
+          "file_path": "{{root}}/src/lexer/reader.js",
+          "old_string": "  return x;",
+          "new_string": "  return Math.round(x * 100) / 100;"
+        },
+        "tool_use_id": "toolu_bypassfilterforms_004"
+      },
+      "expect": "deny",
+      "mustDeny": true,
+      "redundant": false,
+      "relevantQuestions": [
+        "local-callers",
+        "quote-instruction"
+      ]
+    },
+    {
+      "id": "fd-extension-misses-target",
+      "transcript": [
+        {
+          "type": "user",
+          "uuid": "bypass-filter-forms-009",
+          "sessionId": "sess-bypass-filter-forms",
+          "isSidechain": false,
+          "promptId": "prompt-filter-forms-1",
+          "message": {
+            "role": "user",
+            "content": "Round the lexer values to cents."
+          }
+        },
+        {
+          "type": "assistant",
+          "uuid": "bypass-filter-forms-010",
+          "sessionId": "sess-bypass-filter-forms",
+          "isSidechain": false,
+          "message": {
+            "id": "msg_bypassfilterforms_5",
+            "type": "message",
+            "role": "assistant",
+            "model": "claude-sonnet-4-5",
+            "content": [
+              {
+                "type": "tool_use",
+                "id": "toolu_bypassfilterforms_005",
+                "name": "Bash",
+                "input": {
+                  "command": "fd -e py cursor src"
+                }
+              }
+            ]
+          }
+        },
+        {
+          "type": "user",
+          "uuid": "bypass-filter-forms-011",
+          "sessionId": "sess-bypass-filter-forms",
+          "isSidechain": false,
+          "promptId": "prompt-filter-forms-1",
+          "message": {
+            "role": "user",
+            "content": [
+              {
+                "type": "tool_result",
+                "tool_use_id": "toolu_bypassfilterforms_005",
+                "content": "ok"
+              }
+            ]
+          }
+        },
+        {
+          "type": "assistant",
+          "uuid": "bypass-filter-forms-012",
+          "sessionId": "sess-bypass-filter-forms",
+          "isSidechain": false,
+          "message": {
+            "id": "msg_bypassfilterforms_6",
+            "type": "message",
+            "role": "assistant",
+            "model": "claude-sonnet-4-5",
+            "content": [
+              {
+                "type": "tool_use",
+                "id": "toolu_bypassfilterforms_006",
+                "name": "Edit",
+                "input": {
+                  "file_path": "{{root}}/src/lexer/cursor.js",
+                  "old_string": "  return x;",
+                  "new_string": "  return Math.round(x * 100) / 100;"
+                }
+              }
+            ]
+          }
+        }
+      ],
+      "payload": {
+        "session_id": "sess-bypass-filter-forms",
+        "transcript_path": "{{transcript}}",
+        "cwd": "{{root}}",
+        "permission_mode": "default",
+        "hook_event_name": "PreToolUse",
+        "tool_name": "Edit",
+        "tool_input": {
+          "file_path": "{{root}}/src/lexer/cursor.js",
+          "old_string": "  return x;",
+          "new_string": "  return Math.round(x * 100) / 100;"
+        },
+        "tool_use_id": "toolu_bypassfilterforms_006"
+      },
+      "expect": "deny",
+      "mustDeny": true,
+      "redundant": false,
+      "relevantQuestions": [
+        "local-callers",
+        "quote-instruction"
+      ]
+    },
+    {
+      "id": "grep-tool-type-misses-target",
+      "transcript": [
+        {
+          "type": "user",
+          "uuid": "bypass-filter-forms-013",
+          "sessionId": "sess-bypass-filter-forms",
+          "isSidechain": false,
+          "promptId": "prompt-filter-forms-1",
+          "message": {
+            "role": "user",
+            "content": "Round the lexer values to cents."
+          }
+        },
+        {
+          "type": "assistant",
+          "uuid": "bypass-filter-forms-014",
+          "sessionId": "sess-bypass-filter-forms",
+          "isSidechain": false,
+          "message": {
+            "id": "msg_bypassfilterforms_7",
+            "type": "message",
+            "role": "assistant",
+            "model": "claude-sonnet-4-5",
+            "content": [
+              {
+                "type": "tool_use",
+                "id": "toolu_bypassfilterforms_007",
+                "name": "Grep",
+                "input": {
+                  "pattern": "buffer",
+                  "type": "py"
+                }
+              }
+            ]
+          }
+        },
+        {
+          "type": "user",
+          "uuid": "bypass-filter-forms-015",
+          "sessionId": "sess-bypass-filter-forms",
+          "isSidechain": false,
+          "promptId": "prompt-filter-forms-1",
+          "message": {
+            "role": "user",
+            "content": [
+              {
+                "type": "tool_result",
+                "tool_use_id": "toolu_bypassfilterforms_007",
+                "content": "ok"
+              }
+            ]
+          }
+        },
+        {
+          "type": "assistant",
+          "uuid": "bypass-filter-forms-016",
+          "sessionId": "sess-bypass-filter-forms",
+          "isSidechain": false,
+          "message": {
+            "id": "msg_bypassfilterforms_8",
+            "type": "message",
+            "role": "assistant",
+            "model": "claude-sonnet-4-5",
+            "content": [
+              {
+                "type": "tool_use",
+                "id": "toolu_bypassfilterforms_008",
+                "name": "Edit",
+                "input": {
+                  "file_path": "{{root}}/src/lexer/buffer.js",
+                  "old_string": "  return x;",
+                  "new_string": "  return Math.round(x * 100) / 100;"
+                }
+              }
+            ]
+          }
+        }
+      ],
+      "payload": {
+        "session_id": "sess-bypass-filter-forms",
+        "transcript_path": "{{transcript}}",
+        "cwd": "{{root}}",
+        "permission_mode": "default",
+        "hook_event_name": "PreToolUse",
+        "tool_name": "Edit",
+        "tool_input": {
+          "file_path": "{{root}}/src/lexer/buffer.js",
+          "old_string": "  return x;",
+          "new_string": "  return Math.round(x * 100) / 100;"
+        },
+        "tool_use_id": "toolu_bypassfilterforms_008"
+      },
+      "expect": "deny",
+      "mustDeny": true,
+      "redundant": false,
+      "relevantQuestions": [
+        "local-callers",
+        "quote-instruction"
+      ]
+    },
+    {
+      "id": "glob-pattern-misses-target",
+      "transcript": [
+        {
+          "type": "user",
+          "uuid": "bypass-filter-forms-017",
+          "sessionId": "sess-bypass-filter-forms",
+          "isSidechain": false,
+          "promptId": "prompt-filter-forms-1",
+          "message": {
+            "role": "user",
+            "content": "Round the lexer values to cents."
+          }
+        },
+        {
+          "type": "assistant",
+          "uuid": "bypass-filter-forms-018",
+          "sessionId": "sess-bypass-filter-forms",
+          "isSidechain": false,
+          "message": {
+            "id": "msg_bypassfilterforms_9",
+            "type": "message",
+            "role": "assistant",
+            "model": "claude-sonnet-4-5",
+            "content": [
+              {
+                "type": "tool_use",
+                "id": "toolu_bypassfilterforms_009",
+                "name": "Glob",
+                "input": {
+                  "pattern": "**/emitter.py"
+                }
+              }
+            ]
+          }
+        },
+        {
+          "type": "user",
+          "uuid": "bypass-filter-forms-019",
+          "sessionId": "sess-bypass-filter-forms",
+          "isSidechain": false,
+          "promptId": "prompt-filter-forms-1",
+          "message": {
+            "role": "user",
+            "content": [
+              {
+                "type": "tool_result",
+                "tool_use_id": "toolu_bypassfilterforms_009",
+                "content": "ok"
+              }
+            ]
+          }
+        },
+        {
+          "type": "assistant",
+          "uuid": "bypass-filter-forms-020",
+          "sessionId": "sess-bypass-filter-forms",
+          "isSidechain": false,
+          "message": {
+            "id": "msg_bypassfilterforms_10",
+            "type": "message",
+            "role": "assistant",
+            "model": "claude-sonnet-4-5",
+            "content": [
+              {
+                "type": "tool_use",
+                "id": "toolu_bypassfilterforms_010",
+                "name": "Edit",
+                "input": {
+                  "file_path": "{{root}}/src/lexer/emitter.js",
+                  "old_string": "  return x;",
+                  "new_string": "  return Math.round(x * 100) / 100;"
+                }
+              }
+            ]
+          }
+        }
+      ],
+      "payload": {
+        "session_id": "sess-bypass-filter-forms",
+        "transcript_path": "{{transcript}}",
+        "cwd": "{{root}}",
+        "permission_mode": "default",
+        "hook_event_name": "PreToolUse",
+        "tool_name": "Edit",
+        "tool_input": {
+          "file_path": "{{root}}/src/lexer/emitter.js",
+          "old_string": "  return x;",
+          "new_string": "  return Math.round(x * 100) / 100;"
+        },
+        "tool_use_id": "toolu_bypassfilterforms_010"
+      },
+      "expect": "deny",
+      "mustDeny": true,
+      "redundant": false,
+      "relevantQuestions": [
+        "local-callers",
+        "quote-instruction"
+      ]
+    },
+    {
+      "id": "shell-glob-operand-misses-target",
+      "transcript": [
+        {
+          "type": "user",
+          "uuid": "bypass-filter-forms-021",
+          "sessionId": "sess-bypass-filter-forms",
+          "isSidechain": false,
+          "promptId": "prompt-filter-forms-1",
+          "message": {
+            "role": "user",
+            "content": "Round the lexer values to cents."
+          }
+        },
+        {
+          "type": "assistant",
+          "uuid": "bypass-filter-forms-022",
+          "sessionId": "sess-bypass-filter-forms",
+          "isSidechain": false,
+          "message": {
+            "id": "msg_bypassfilterforms_11",
+            "type": "message",
+            "role": "assistant",
+            "model": "claude-sonnet-4-5",
+            "content": [
+              {
+                "type": "tool_use",
+                "id": "toolu_bypassfilterforms_011",
+                "name": "Bash",
+                "input": {
+                  "command": "rg -n matcher src/lexer/*.py"
+                }
+              }
+            ]
+          }
+        },
+        {
+          "type": "user",
+          "uuid": "bypass-filter-forms-023",
+          "sessionId": "sess-bypass-filter-forms",
+          "isSidechain": false,
+          "promptId": "prompt-filter-forms-1",
+          "message": {
+            "role": "user",
+            "content": [
+              {
+                "type": "tool_result",
+                "tool_use_id": "toolu_bypassfilterforms_011",
+                "content": "ok"
+              }
+            ]
+          }
+        },
+        {
+          "type": "assistant",
+          "uuid": "bypass-filter-forms-024",
+          "sessionId": "sess-bypass-filter-forms",
+          "isSidechain": false,
+          "message": {
+            "id": "msg_bypassfilterforms_12",
+            "type": "message",
+            "role": "assistant",
+            "model": "claude-sonnet-4-5",
+            "content": [
+              {
+                "type": "tool_use",
+                "id": "toolu_bypassfilterforms_012",
+                "name": "Edit",
+                "input": {
+                  "file_path": "{{root}}/src/lexer/matcher.js",
+                  "old_string": "  return x;",
+                  "new_string": "  return Math.round(x * 100) / 100;"
+                }
+              }
+            ]
+          }
+        }
+      ],
+      "payload": {
+        "session_id": "sess-bypass-filter-forms",
+        "transcript_path": "{{transcript}}",
+        "cwd": "{{root}}",
+        "permission_mode": "default",
+        "hook_event_name": "PreToolUse",
+        "tool_name": "Edit",
+        "tool_input": {
+          "file_path": "{{root}}/src/lexer/matcher.js",
+          "old_string": "  return x;",
+          "new_string": "  return Math.round(x * 100) / 100;"
+        },
+        "tool_use_id": "toolu_bypassfilterforms_012"
+      },
+      "expect": "deny",
+      "mustDeny": true,
+      "redundant": false,
+      "relevantQuestions": [
+        "local-callers",
+        "quote-instruction"
+      ]
+    },
+    {
+      "id": "git-pathspec-misses-target",
+      "transcript": [
+        {
+          "type": "user",
+          "uuid": "bypass-filter-forms-025",
+          "sessionId": "sess-bypass-filter-forms",
+          "isSidechain": false,
+          "promptId": "prompt-filter-forms-1",
+          "message": {
+            "role": "user",
+            "content": "Round the lexer values to cents."
+          }
+        },
+        {
+          "type": "assistant",
+          "uuid": "bypass-filter-forms-026",
+          "sessionId": "sess-bypass-filter-forms",
+          "isSidechain": false,
+          "message": {
+            "id": "msg_bypassfilterforms_13",
+            "type": "message",
+            "role": "assistant",
+            "model": "claude-sonnet-4-5",
+            "content": [
+              {
+                "type": "tool_use",
+                "id": "toolu_bypassfilterforms_013",
+                "name": "Bash",
+                "input": {
+                  "command": "git grep -n tracker -- '*.py'"
+                }
+              }
+            ]
+          }
+        },
+        {
+          "type": "user",
+          "uuid": "bypass-filter-forms-027",
+          "sessionId": "sess-bypass-filter-forms",
+          "isSidechain": false,
+          "promptId": "prompt-filter-forms-1",
+          "message": {
+            "role": "user",
+            "content": [
+              {
+                "type": "tool_result",
+                "tool_use_id": "toolu_bypassfilterforms_013",
+                "content": "ok"
+              }
+            ]
+          }
+        },
+        {
+          "type": "assistant",
+          "uuid": "bypass-filter-forms-028",
+          "sessionId": "sess-bypass-filter-forms",
+          "isSidechain": false,
+          "message": {
+            "id": "msg_bypassfilterforms_14",
+            "type": "message",
+            "role": "assistant",
+            "model": "claude-sonnet-4-5",
+            "content": [
+              {
+                "type": "tool_use",
+                "id": "toolu_bypassfilterforms_014",
+                "name": "Edit",
+                "input": {
+                  "file_path": "{{root}}/src/lexer/tracker.js",
+                  "old_string": "  return x;",
+                  "new_string": "  return Math.round(x * 100) / 100;"
+                }
+              }
+            ]
+          }
+        }
+      ],
+      "payload": {
+        "session_id": "sess-bypass-filter-forms",
+        "transcript_path": "{{transcript}}",
+        "cwd": "{{root}}",
+        "permission_mode": "default",
+        "hook_event_name": "PreToolUse",
+        "tool_name": "Edit",
+        "tool_input": {
+          "file_path": "{{root}}/src/lexer/tracker.js",
+          "old_string": "  return x;",
+          "new_string": "  return Math.round(x * 100) / 100;"
+        },
+        "tool_use_id": "toolu_bypassfilterforms_014"
+      },
+      "expect": "deny",
+      "mustDeny": true,
+      "redundant": false,
+      "relevantQuestions": [
+        "local-callers",
+        "quote-instruction"
+      ]
+    },
+    {
+      "id": "glob-lookup-of-target",
+      "transcript": [
+        {
+          "type": "user",
+          "uuid": "bypass-filter-forms-029",
+          "sessionId": "sess-bypass-filter-forms",
+          "isSidechain": false,
+          "promptId": "prompt-filter-forms-1",
+          "message": {
+            "role": "user",
+            "content": "Round the lexer values to cents."
+          }
+        },
+        {
+          "type": "assistant",
+          "uuid": "bypass-filter-forms-030",
+          "sessionId": "sess-bypass-filter-forms",
+          "isSidechain": false,
+          "message": {
+            "id": "msg_bypassfilterforms_15",
+            "type": "message",
+            "role": "assistant",
+            "model": "claude-sonnet-4-5",
+            "content": [
+              {
+                "type": "tool_use",
+                "id": "toolu_bypassfilterforms_015",
+                "name": "Glob",
+                "input": {
+                  "pattern": "**/splitter.js"
+                }
+              }
+            ]
+          }
+        },
+        {
+          "type": "user",
+          "uuid": "bypass-filter-forms-031",
+          "sessionId": "sess-bypass-filter-forms",
+          "isSidechain": false,
+          "promptId": "prompt-filter-forms-1",
+          "message": {
+            "role": "user",
+            "content": [
+              {
+                "type": "tool_result",
+                "tool_use_id": "toolu_bypassfilterforms_015",
+                "content": "ok"
+              }
+            ]
+          }
+        },
+        {
+          "type": "assistant",
+          "uuid": "bypass-filter-forms-032",
+          "sessionId": "sess-bypass-filter-forms",
+          "isSidechain": false,
+          "message": {
+            "id": "msg_bypassfilterforms_16",
+            "type": "message",
+            "role": "assistant",
+            "model": "claude-sonnet-4-5",
+            "content": [
+              {
+                "type": "tool_use",
+                "id": "toolu_bypassfilterforms_016",
+                "name": "Edit",
+                "input": {
+                  "file_path": "{{root}}/src/lexer/splitter.js",
+                  "old_string": "  return x;",
+                  "new_string": "  return Math.round(x * 100) / 100;"
+                }
+              }
+            ]
+          }
+        }
+      ],
+      "payload": {
+        "session_id": "sess-bypass-filter-forms",
+        "transcript_path": "{{transcript}}",
+        "cwd": "{{root}}",
+        "permission_mode": "default",
+        "hook_event_name": "PreToolUse",
+        "tool_name": "Edit",
+        "tool_input": {
+          "file_path": "{{root}}/src/lexer/splitter.js",
+          "old_string": "  return x;",
+          "new_string": "  return Math.round(x * 100) / 100;"
+        },
+        "tool_use_id": "toolu_bypassfilterforms_016"
+      },
+      "expect": "deny",
+      "mustDeny": true,
+      "redundant": false,
+      "relevantQuestions": [
+        "local-callers",
+        "quote-instruction"
+      ]
+    },
+    {
+      "id": "find-name-lookup-of-target",
+      "transcript": [
+        {
+          "type": "user",
+          "uuid": "bypass-filter-forms-033",
+          "sessionId": "sess-bypass-filter-forms",
+          "isSidechain": false,
+          "promptId": "prompt-filter-forms-1",
+          "message": {
+            "role": "user",
+            "content": "Round the lexer values to cents."
+          }
+        },
+        {
+          "type": "assistant",
+          "uuid": "bypass-filter-forms-034",
+          "sessionId": "sess-bypass-filter-forms",
+          "isSidechain": false,
+          "message": {
+            "id": "msg_bypassfilterforms_17",
+            "type": "message",
+            "role": "assistant",
+            "model": "claude-sonnet-4-5",
+            "content": [
+              {
+                "type": "tool_use",
+                "id": "toolu_bypassfilterforms_017",
+                "name": "Bash",
+                "input": {
+                  "command": "find src -name joiner.js"
+                }
+              }
+            ]
+          }
+        },
+        {
+          "type": "user",
+          "uuid": "bypass-filter-forms-035",
+          "sessionId": "sess-bypass-filter-forms",
+          "isSidechain": false,
+          "promptId": "prompt-filter-forms-1",
+          "message": {
+            "role": "user",
+            "content": [
+              {
+                "type": "tool_result",
+                "tool_use_id": "toolu_bypassfilterforms_017",
+                "content": "ok"
+              }
+            ]
+          }
+        },
+        {
+          "type": "assistant",
+          "uuid": "bypass-filter-forms-036",
+          "sessionId": "sess-bypass-filter-forms",
+          "isSidechain": false,
+          "message": {
+            "id": "msg_bypassfilterforms_18",
+            "type": "message",
+            "role": "assistant",
+            "model": "claude-sonnet-4-5",
+            "content": [
+              {
+                "type": "tool_use",
+                "id": "toolu_bypassfilterforms_018",
+                "name": "Edit",
+                "input": {
+                  "file_path": "{{root}}/src/lexer/joiner.js",
+                  "old_string": "  return x;",
+                  "new_string": "  return Math.round(x * 100) / 100;"
+                }
+              }
+            ]
+          }
+        }
+      ],
+      "payload": {
+        "session_id": "sess-bypass-filter-forms",
+        "transcript_path": "{{transcript}}",
+        "cwd": "{{root}}",
+        "permission_mode": "default",
+        "hook_event_name": "PreToolUse",
+        "tool_name": "Edit",
+        "tool_input": {
+          "file_path": "{{root}}/src/lexer/joiner.js",
+          "old_string": "  return x;",
+          "new_string": "  return Math.round(x * 100) / 100;"
+        },
+        "tool_use_id": "toolu_bypassfilterforms_018"
+      },
+      "expect": "deny",
+      "mustDeny": true,
+      "redundant": false,
+      "relevantQuestions": [
+        "local-callers",
+        "quote-instruction"
+      ]
+    },
+    {
+      "id": "grep-tool-glob-lookup-of-target",
+      "transcript": [
+        {
+          "type": "user",
+          "uuid": "bypass-filter-forms-037",
+          "sessionId": "sess-bypass-filter-forms",
+          "isSidechain": false,
+          "promptId": "prompt-filter-forms-1",
+          "message": {
+            "role": "user",
+            "content": "Round the lexer values to cents."
+          }
+        },
+        {
+          "type": "assistant",
+          "uuid": "bypass-filter-forms-038",
+          "sessionId": "sess-bypass-filter-forms",
+          "isSidechain": false,
+          "message": {
+            "id": "msg_bypassfilterforms_19",
+            "type": "message",
+            "role": "assistant",
+            "model": "claude-sonnet-4-5",
+            "content": [
+              {
+                "type": "tool_use",
+                "id": "toolu_bypassfilterforms_019",
+                "name": "Grep",
+                "input": {
+                  "pattern": "folder",
+                  "glob": "folder.js"
+                }
+              }
+            ]
+          }
+        },
+        {
+          "type": "user",
+          "uuid": "bypass-filter-forms-039",
+          "sessionId": "sess-bypass-filter-forms",
+          "isSidechain": false,
+          "promptId": "prompt-filter-forms-1",
+          "message": {
+            "role": "user",
+            "content": [
+              {
+                "type": "tool_result",
+                "tool_use_id": "toolu_bypassfilterforms_019",
+                "content": "ok"
+              }
+            ]
+          }
+        },
+        {
+          "type": "assistant",
+          "uuid": "bypass-filter-forms-040",
+          "sessionId": "sess-bypass-filter-forms",
+          "isSidechain": false,
+          "message": {
+            "id": "msg_bypassfilterforms_20",
+            "type": "message",
+            "role": "assistant",
+            "model": "claude-sonnet-4-5",
+            "content": [
+              {
+                "type": "tool_use",
+                "id": "toolu_bypassfilterforms_020",
+                "name": "Edit",
+                "input": {
+                  "file_path": "{{root}}/src/lexer/folder.js",
+                  "old_string": "  return x;",
+                  "new_string": "  return Math.round(x * 100) / 100;"
+                }
+              }
+            ]
+          }
+        }
+      ],
+      "payload": {
+        "session_id": "sess-bypass-filter-forms",
+        "transcript_path": "{{transcript}}",
+        "cwd": "{{root}}",
+        "permission_mode": "default",
+        "hook_event_name": "PreToolUse",
+        "tool_name": "Edit",
+        "tool_input": {
+          "file_path": "{{root}}/src/lexer/folder.js",
+          "old_string": "  return x;",
+          "new_string": "  return Math.round(x * 100) / 100;"
+        },
+        "tool_use_id": "toolu_bypassfilterforms_020"
+      },
+      "expect": "deny",
+      "mustDeny": true,
+      "redundant": false,
+      "relevantQuestions": [
+        "local-callers",
+        "quote-instruction"
+      ]
+    },
+    {
+      "id": "rg-type-includes-target",
+      "expectOnWindows": "deny",
+      "transcript": [
+        {
+          "type": "user",
+          "uuid": "bypass-filter-forms-041",
+          "sessionId": "sess-bypass-filter-forms",
+          "isSidechain": false,
+          "promptId": "prompt-filter-forms-1",
+          "message": {
+            "role": "user",
+            "content": "Round the lexer values to cents."
+          }
+        },
+        {
+          "type": "assistant",
+          "uuid": "bypass-filter-forms-042",
+          "sessionId": "sess-bypass-filter-forms",
+          "isSidechain": false,
+          "message": {
+            "id": "msg_bypassfilterforms_21",
+            "type": "message",
+            "role": "assistant",
+            "model": "claude-sonnet-4-5",
+            "content": [
+              {
+                "type": "tool_use",
+                "id": "toolu_bypassfilterforms_021",
+                "name": "Bash",
+                "input": {
+                  "command": "rg -n decoder -t js src"
+                }
+              }
+            ]
+          }
+        },
+        {
+          "type": "user",
+          "uuid": "bypass-filter-forms-043",
+          "sessionId": "sess-bypass-filter-forms",
+          "isSidechain": false,
+          "promptId": "prompt-filter-forms-1",
+          "message": {
+            "role": "user",
+            "content": [
+              {
+                "type": "tool_result",
+                "tool_use_id": "toolu_bypassfilterforms_021",
+                "content": "ok"
+              }
+            ]
+          }
+        },
+        {
+          "type": "assistant",
+          "uuid": "bypass-filter-forms-044",
+          "sessionId": "sess-bypass-filter-forms",
+          "isSidechain": false,
+          "message": {
+            "id": "msg_bypassfilterforms_22",
+            "type": "message",
+            "role": "assistant",
+            "model": "claude-sonnet-4-5",
+            "content": [
+              {
+                "type": "tool_use",
+                "id": "toolu_bypassfilterforms_022",
+                "name": "Edit",
+                "input": {
+                  "file_path": "{{root}}/src/lexer/decoder.js",
+                  "old_string": "  return x;",
+                  "new_string": "  return Math.round(x * 100) / 100;"
+                }
+              }
+            ]
+          }
+        }
+      ],
+      "payload": {
+        "session_id": "sess-bypass-filter-forms",
+        "transcript_path": "{{transcript}}",
+        "cwd": "{{root}}",
+        "permission_mode": "default",
+        "hook_event_name": "PreToolUse",
+        "tool_name": "Edit",
+        "tool_input": {
+          "file_path": "{{root}}/src/lexer/decoder.js",
+          "old_string": "  return x;",
+          "new_string": "  return Math.round(x * 100) / 100;"
+        },
+        "tool_use_id": "toolu_bypassfilterforms_022"
+      },
+      "expect": "allow",
+      "mustDeny": false,
+      "redundant": true,
+      "relevantQuestions": [
+        "local-callers",
+        "quote-instruction"
+      ]
+    },
+    {
+      "id": "glob-pattern-lists-target",
+      "transcript": [
+        {
+          "type": "user",
+          "uuid": "bypass-filter-forms-045",
+          "sessionId": "sess-bypass-filter-forms",
+          "isSidechain": false,
+          "promptId": "prompt-filter-forms-1",
+          "message": {
+            "role": "user",
+            "content": "Round the lexer values to cents."
+          }
+        },
+        {
+          "type": "assistant",
+          "uuid": "bypass-filter-forms-046",
+          "sessionId": "sess-bypass-filter-forms",
+          "isSidechain": false,
+          "message": {
+            "id": "msg_bypassfilterforms_23",
+            "type": "message",
+            "role": "assistant",
+            "model": "claude-sonnet-4-5",
+            "content": [
+              {
+                "type": "tool_use",
+                "id": "toolu_bypassfilterforms_023",
+                "name": "Glob",
+                "input": {
+                  "pattern": "src/**/encoder*"
+                }
+              }
+            ]
+          }
+        },
+        {
+          "type": "user",
+          "uuid": "bypass-filter-forms-047",
+          "sessionId": "sess-bypass-filter-forms",
+          "isSidechain": false,
+          "promptId": "prompt-filter-forms-1",
+          "message": {
+            "role": "user",
+            "content": [
+              {
+                "type": "tool_result",
+                "tool_use_id": "toolu_bypassfilterforms_023",
+                "content": "ok"
+              }
+            ]
+          }
+        },
+        {
+          "type": "assistant",
+          "uuid": "bypass-filter-forms-048",
+          "sessionId": "sess-bypass-filter-forms",
+          "isSidechain": false,
+          "message": {
+            "id": "msg_bypassfilterforms_24",
+            "type": "message",
+            "role": "assistant",
+            "model": "claude-sonnet-4-5",
+            "content": [
+              {
+                "type": "tool_use",
+                "id": "toolu_bypassfilterforms_024",
+                "name": "Edit",
+                "input": {
+                  "file_path": "{{root}}/src/lexer/encoder.js",
+                  "old_string": "  return x;",
+                  "new_string": "  return Math.round(x * 100) / 100;"
+                }
+              }
+            ]
+          }
+        }
+      ],
+      "payload": {
+        "session_id": "sess-bypass-filter-forms",
+        "transcript_path": "{{transcript}}",
+        "cwd": "{{root}}",
+        "permission_mode": "default",
+        "hook_event_name": "PreToolUse",
+        "tool_name": "Edit",
+        "tool_input": {
+          "file_path": "{{root}}/src/lexer/encoder.js",
+          "old_string": "  return x;",
+          "new_string": "  return Math.round(x * 100) / 100;"
+        },
+        "tool_use_id": "toolu_bypassfilterforms_024"
+      },
+      "expect": "allow",
+      "mustDeny": false,
+      "redundant": true,
+      "relevantQuestions": [
+        "local-callers",
+        "quote-instruction"
+      ]
+    },
+    {
+      "id": "git-pathspec-covers-target",
+      "transcript": [
+        {
+          "type": "user",
+          "uuid": "bypass-filter-forms-049",
+          "sessionId": "sess-bypass-filter-forms",
+          "isSidechain": false,
+          "promptId": "prompt-filter-forms-1",
+          "message": {
+            "role": "user",
+            "content": "Round the lexer values to cents."
+          }
+        },
+        {
+          "type": "assistant",
+          "uuid": "bypass-filter-forms-050",
+          "sessionId": "sess-bypass-filter-forms",
+          "isSidechain": false,
+          "message": {
+            "id": "msg_bypassfilterforms_25",
+            "type": "message",
+            "role": "assistant",
+            "model": "claude-sonnet-4-5",
+            "content": [
+              {
+                "type": "tool_use",
+                "id": "toolu_bypassfilterforms_025",
+                "name": "Bash",
+                "input": {
+                  "command": "git grep -n printer -- 'src/*.js'"
+                }
+              }
+            ]
+          }
+        },
+        {
+          "type": "user",
+          "uuid": "bypass-filter-forms-051",
+          "sessionId": "sess-bypass-filter-forms",
+          "isSidechain": false,
+          "promptId": "prompt-filter-forms-1",
+          "message": {
+            "role": "user",
+            "content": [
+              {
+                "type": "tool_result",
+                "tool_use_id": "toolu_bypassfilterforms_025",
+                "content": "ok"
+              }
+            ]
+          }
+        },
+        {
+          "type": "assistant",
+          "uuid": "bypass-filter-forms-052",
+          "sessionId": "sess-bypass-filter-forms",
+          "isSidechain": false,
+          "message": {
+            "id": "msg_bypassfilterforms_26",
+            "type": "message",
+            "role": "assistant",
+            "model": "claude-sonnet-4-5",
+            "content": [
+              {
+                "type": "tool_use",
+                "id": "toolu_bypassfilterforms_026",
+                "name": "Edit",
+                "input": {
+                  "file_path": "{{root}}/src/lexer/printer.js",
+                  "old_string": "  return x;",
+                  "new_string": "  return Math.round(x * 100) / 100;"
+                }
+              }
+            ]
+          }
+        }
+      ],
+      "payload": {
+        "session_id": "sess-bypass-filter-forms",
+        "transcript_path": "{{transcript}}",
+        "cwd": "{{root}}",
+        "permission_mode": "default",
+        "hook_event_name": "PreToolUse",
+        "tool_name": "Edit",
+        "tool_input": {
+          "file_path": "{{root}}/src/lexer/printer.js",
+          "old_string": "  return x;",
+          "new_string": "  return Math.round(x * 100) / 100;"
+        },
+        "tool_use_id": "toolu_bypassfilterforms_026"
+      },
+      "expect": "allow",
+      "mustDeny": false,
+      "redundant": true,
+      "relevantQuestions": [
+        "local-callers",
+        "quote-instruction"
+      ]
+    },
+    {
+      "id": "shell-glob-operand-covers-target",
+      "transcript": [
+        {
+          "type": "user",
+          "uuid": "bypass-filter-forms-053",
+          "sessionId": "sess-bypass-filter-forms",
+          "isSidechain": false,
+          "promptId": "prompt-filter-forms-1",
+          "message": {
+            "role": "user",
+            "content": "Round the lexer values to cents."
+          }
+        },
+        {
+          "type": "assistant",
+          "uuid": "bypass-filter-forms-054",
+          "sessionId": "sess-bypass-filter-forms",
+          "isSidechain": false,
+          "message": {
+            "id": "msg_bypassfilterforms_27",
+            "type": "message",
+            "role": "assistant",
+            "model": "claude-sonnet-4-5",
+            "content": [
+              {
+                "type": "tool_use",
+                "id": "toolu_bypassfilterforms_027",
+                "name": "Bash",
+                "input": {
+                  "command": "rg -n lister src/*"
+                }
+              }
+            ]
+          }
+        },
+        {
+          "type": "user",
+          "uuid": "bypass-filter-forms-055",
+          "sessionId": "sess-bypass-filter-forms",
+          "isSidechain": false,
+          "promptId": "prompt-filter-forms-1",
+          "message": {
+            "role": "user",
+            "content": [
+              {
+                "type": "tool_result",
+                "tool_use_id": "toolu_bypassfilterforms_027",
+                "content": "ok"
+              }
+            ]
+          }
+        },
+        {
+          "type": "assistant",
+          "uuid": "bypass-filter-forms-056",
+          "sessionId": "sess-bypass-filter-forms",
+          "isSidechain": false,
+          "message": {
+            "id": "msg_bypassfilterforms_28",
+            "type": "message",
+            "role": "assistant",
+            "model": "claude-sonnet-4-5",
+            "content": [
+              {
+                "type": "tool_use",
+                "id": "toolu_bypassfilterforms_028",
+                "name": "Edit",
+                "input": {
+                  "file_path": "{{root}}/src/lexer/lister.js",
+                  "old_string": "  return x;",
+                  "new_string": "  return Math.round(x * 100) / 100;"
+                }
+              }
+            ]
+          }
+        }
+      ],
+      "payload": {
+        "session_id": "sess-bypass-filter-forms",
+        "transcript_path": "{{transcript}}",
+        "cwd": "{{root}}",
+        "permission_mode": "default",
+        "hook_event_name": "PreToolUse",
+        "tool_name": "Edit",
+        "tool_input": {
+          "file_path": "{{root}}/src/lexer/lister.js",
+          "old_string": "  return x;",
+          "new_string": "  return Math.round(x * 100) / 100;"
+        },
+        "tool_use_id": "toolu_bypassfilterforms_028"
+      },
+      "expect": "allow",
+      "mustDeny": false,
+      "redundant": true,
+      "relevantQuestions": [
+        "local-callers",
+        "quote-instruction"
+      ]
+    }
+  ]
+}

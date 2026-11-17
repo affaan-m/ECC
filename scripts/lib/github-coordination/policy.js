@@ -74,10 +74,14 @@ function loadPolicy(rootDir = process.cwd(), configPath = null) {
   const branchModel = typeof parsed.branchModel === 'object' && parsed.branchModel !== null && !Array.isArray(parsed.branchModel) ? parsed.branchModel : {};
   const project = typeof parsed.project === 'object' && parsed.project !== null && !Array.isArray(parsed.project) ? parsed.project : {};
   const fieldNames = typeof project.fieldNames === 'object' && project.fieldNames !== null && !Array.isArray(project.fieldNames) ? project.fieldNames : {};
+  const mergedLabels = { ...DEFAULT_LABELS, ...labels };
+  if (typeof mergedLabels.epic !== 'string' || !mergedLabels.epic.trim()) {
+    throw new Error(`Policy file ${resolvedPath} must define labels.epic as a non-empty string`);
+  }
   return {
     ...DEFAULT_POLICY,
     ...parsed,
-    labels: { ...DEFAULT_LABELS, ...labels },
+    labels: mergedLabels,
     review: { ...DEFAULT_POLICY.review, ...review },
     validation: { ...DEFAULT_POLICY.validation, ...validation },
     branchModel: { ...DEFAULT_POLICY.branchModel, ...branchModel },

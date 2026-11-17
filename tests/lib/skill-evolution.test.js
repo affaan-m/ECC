@@ -202,6 +202,53 @@ function runTests() {
       assert.strictEqual(amendments[1].version, 2);
     })) passed++; else failed++;
 
+    if (test('ignores directories named like version snapshots', () => {
+      const fixtureRoot = createTempDir('skill-version-directory-');
+      try {
+        const skillDir = createSkill(fixtureRoot, 'demo', '# Demo\n');
+        const snapshotDirectory = path.join(versioning.getVersionsDir(skillDir), 'v999.md');
+        fs.mkdirSync(snapshotDirectory, { recursive: true });
+        fs.writeFileSync(path.join(versioning.getVersionsDir(skillDir), 'notes.txt'), 'Not a snapshot');
+
+        assert.deepStrictEqual(versioning.listVersions(skillDir), []);
+        assert.strictEqual(versioning.getCurrentVersion(skillDir), 1);
+        const snapshot = versioning.createVersion(skillDir);
+        assert.strictEqual(snapshot.version, 1);
+        assert.deepStrictEqual(versioning.listVersions(skillDir).map(entry => entry.version), [1]);
+        assert.deepStrictEqual(
+          versioning.listVersions(path.join(skillDir, 'SKILL.md')).map(entry => entry.version),
+          [1]
+        );
+        assert.strictEqual(versioning.getCurrentVersion(skillDir), 1);
+        assert.ok(fs.statSync(snapshotDirectory).isDirectory());
+        for (const version of [2, 3]) {
+          fs.mkdirSync(path.join(versioning.getVersionsDir(skillDir), `v${version}.md`));
+        }
+        assert.strictEqual(versioning.createVersion(skillDir).version, 4);
+        assert.deepStrictEqual(versioning.listVersions(skillDir).map(entry => entry.version), [1, 4]);
+        for (const version of [2, 3]) {
+          assert.ok(fs.statSync(path.join(versioning.getVersionsDir(skillDir), `v${version}.md`)).isDirectory());
+        }
+        assert.strictEqual(versioning.getCurrentVersion(path.join(fixtureRoot, 'missing-skill')), 0);
+        assert.throws(() => versioning.createVersion(snapshotDirectory), /Skill file not found/);
+        const oversizedSnapshot = path.join(versioning.getVersionsDir(skillDir), 'v9007199254740992.md');
+        fs.writeFileSync(oversizedSnapshot, 'Preserve this snapshot');
+        const overflow = spawnSync(process.execPath, [
+          '-e', 'require("assert").strictEqual(require(process.argv[1]).createVersion(process.argv[2]).version, 5)',
+          require.resolve('../../scripts/lib/skill-evolution/versioning'), skillDir,
+        ], { encoding: 'utf8', timeout: 10000 });
+        assert.strictEqual(overflow.status, 0, overflow.error?.message || overflow.stderr);
+        assert.strictEqual(fs.readFileSync(oversizedSnapshot, 'utf8'), 'Preserve this snapshot');
+        // Unsafe names are excluded from listing, while the actual safe range boundary refuses allocation.
+        const exhaustedSnapshot = path.join(versioning.getVersionsDir(skillDir), `v${Number.MAX_SAFE_INTEGER}.md`);
+        fs.writeFileSync(exhaustedSnapshot, 'Preserve the range boundary');
+        assert.throws(() => versioning.createVersion(skillDir), /safe integer/);
+        assert.strictEqual(fs.readFileSync(exhaustedSnapshot, 'utf8'), 'Preserve the range boundary');
+      } finally {
+        cleanupTempDir(fixtureRoot);
+      }
+    })) passed++; else failed++;
+
     if (test('rolls back to a previous snapshot without losing history', () => {
       const skillDir = path.join(skillsRoot, 'alpha');
 
@@ -294,13 +341,30 @@ function runTests() {
           duration_ms: 1,
           user_feedback: 'accepted',
           recorded_at: '2026-03-15T11:45:00.000Z',
-        })}\n{bad-json}\n`,
+        })}\n{bad-json}\nnull\n42\nfalse\n"not a record"\n[]\n{}\n{"skill_id":42}\n{"skill_id":""}\n{"skill_id":"alpha","outcome":"invalid","recorded_at":"2026-03-15T11:45:00.000Z"}\n{"skill_id":"alpha","outcome":"success","recorded_at":"bad-date"}\n`,
         'utf8'
       );
 
       const records = tracker.readSkillExecutionRecords({ runsFilePath: malformedRunsFile });
       assert.strictEqual(records.length, 1);
       assert.strictEqual(records[0].skill_id, 'alpha');
+      const report = health.collectSkillHealth({
+        repoRoot, homeDir, runsFilePath: malformedRunsFile, now,
+      });
+      assert.strictEqual(report.skills.find(skill => skill.skill_id === 'alpha').run_count_30d, 1);
+
+      const result = runCli([
+        '--json',
+        '--skills-root', skillsRoot,
+        '--learned-root', learnedRoot,
+        '--imported-root', importedRoot,
+        '--home', homeDir,
+        '--runs-file', malformedRunsFile,
+        '--now', now,
+      ]);
+      assert.strictEqual(result.status, 0, result.stderr);
+      const payload = JSON.parse(result.stdout);
+      assert.strictEqual(payload.skills.find(skill => skill.skill_id === 'alpha').run_count_30d, 1);
     })) passed++; else failed++;
 
     if (test('preserves zero-valued telemetry fields during normalization', () => {
@@ -381,11 +445,54 @@ function runTests() {
         [{ ...valid, recorded_at: 'not-a-date' }, /recorded_at must be/],
         [{ ...valid, tokens_used: 'lots' }, /tokens_used must be a number/],
         [{ ...valid, duration_ms: Number.POSITIVE_INFINITY }, /duration_ms must be a number/],
+        ...[-1, '-1'].flatMap(value => [
+          [{ ...valid, tokens_used: value }, /tokens_used must be a number/],
+          [{ ...valid, tokensUsed: value }, /tokens_used must be a number/],
+          [{ ...valid, duration_ms: value }, /duration_ms must be a number/],
+          [{ ...valid, durationMs: value }, /duration_ms must be a number/],
+        ]),
+        ...[42, 0, false, {}, []].flatMap(value => [
+          [{ ...valid, failure_reason: value }, /failure_reason must be a string or null/],
+          [{ ...valid, failureReason: value }, /failure_reason must be a string or null/],
+        ]),
       ];
 
       for (const [payload, expectedError] of cases) {
         assert.throws(() => tracker.normalizeExecutionRecord(payload), expectedError);
       }
+      for (const value of [null, '', 'Useful detail']) {
+        assert.strictEqual(
+          tracker.normalizeExecutionRecord({ ...valid, failureReason: value }).failure_reason,
+          value || null
+        );
+      }
+      for (const snake of ['', null, undefined]) {
+        assert.strictEqual(tracker.normalizeExecutionRecord({
+          ...valid, failure_reason: snake, failureReason: 'Useful detail',
+        }).failure_reason, 'Useful detail');
+      }
+      assert.strictEqual(tracker.normalizeExecutionRecord({
+        ...valid, failure_reason: 'Primary detail', failureReason: 'Other detail',
+      }).failure_reason, 'Primary detail');
+      for (const value of [42, 0, false, {}, []]) {
+        for (const payload of [
+          { ...valid, failure_reason: value, failureReason: 'Useful detail' },
+          { ...valid, failure_reason: '', failureReason: value },
+        ]) assert.throws(() => tracker.normalizeExecutionRecord(payload), /failure_reason must be a string or null/);
+      }
+      const invalidRunsFile = path.join(homeDir, '.claude', 'state', 'invalid-reason-runs.jsonl');
+      assert.throws(
+        () => tracker.recordSkillExecution({ ...valid, failure_reason: 42 }, { runsFilePath: invalidRunsFile }),
+        /failure_reason must be a string or null/
+      );
+      assert.ok(!fs.existsSync(invalidRunsFile), 'invalid reasons must be rejected before writing a run');
+      for (const invalidFields of [{ tokens_used: -1 }, { duration_ms: -1 }]) {
+        assert.throws(() => tracker.recordSkillExecution({ ...valid, ...invalidFields }, { runsFilePath: invalidRunsFile }));
+        assert.ok(!fs.existsSync(invalidRunsFile), 'invalid telemetry must be rejected before writing a run');
+      }
+      const zeroStrings = tracker.normalizeExecutionRecord({ ...valid, tokens_used: '0', duration_ms: '0' });
+      assert.strictEqual(zeroStrings.tokens_used, 0);
+      assert.strictEqual(zeroStrings.duration_ms, 0);
     })) passed++; else failed++;
 
     if (test('uses state-store adapters for recording and reading when available', () => {
@@ -559,17 +666,95 @@ function runTests() {
       const summary = health.summarizeHealthReport(report);
       assert.deepStrictEqual(summary, {
         total_skills: 6,
-        healthy_skills: 5,
+        measured_skills: 2,
+        healthy_skills: 1,
         declining_skills: 1,
+        unmeasured_skills: 4,
       });
 
       const human = health.formatHealthReport(report, { json: false });
       assert.match(human, /alpha/);
       assert.match(human, /worsening/);
-      assert.match(
-        human,
-        new RegExp(`Skills: ${summary.total_skills} total, ${summary.healthy_skills} healthy, ${summary.declining_skills} declining`)
+      // Built from values rather than interpolated into a RegExp: the numbers are
+      // internally generated, but a literal comparison needs no pattern engine.
+      assert.ok(
+        human.includes(
+          `Skills: ${summary.total_skills} total, ${summary.measured_skills} measured, ` +
+          `${summary.healthy_skills} healthy, ${summary.declining_skills} declining, ` +
+          `${summary.unmeasured_skills} unmeasured`
+        ),
+        'summary line must report measured and unmeasured counts'
       );
+    })) passed++; else failed++;
+
+    if (test('zero warning threshold distinguishes unchanged rates from actual trends', () => {
+      const recent = '2026-03-14T10:00:00.000Z';
+      const older = '2026-02-24T10:00:00.000Z';
+      const records = [
+        { skill_id: 'unchanged', outcome: 'success', recorded_at: recent },
+        { skill_id: 'improving', outcome: 'failure', recorded_at: older },
+        { skill_id: 'improving', outcome: 'success', recorded_at: recent },
+        { skill_id: 'declining', outcome: 'success', recorded_at: older },
+        { skill_id: 'declining', outcome: 'failure', recorded_at: recent },
+      ];
+      const report = health.collectSkillHealth({
+        repoRoot,
+        homeDir,
+        now,
+        warnThreshold: 0,
+        stateStore: { listSkillExecutionRecords: () => records },
+      });
+
+      assert.strictEqual(report.warn_threshold, 0);
+      for (const [skillId, expectedTrend] of [
+        ['unchanged', 'stable'],
+        ['improving', 'improving'],
+        ['declining', 'worsening'],
+      ]) {
+        const skill = report.skills.find(entry => entry.skill_id === skillId);
+        assert.strictEqual(skill.failure_trend, expectedTrend);
+        assert.strictEqual(skill.declining, expectedTrend === 'worsening');
+      }
+    })) passed++; else failed++;
+
+    if (test('does not report unmeasured skills as healthy (#2463)', () => {
+      // A runs file that does not exist: skills are still discovered, so this
+      // is exactly the "discovered but never executed" state.
+      const emptyReport = health.collectSkillHealth({
+        repoRoot,
+        homeDir,
+        runsFilePath: path.join(homeDir, '.claude', 'state', 'no-such-runs.jsonl'),
+        now,
+        warnThreshold: 0.1,
+      });
+
+      const summary = health.summarizeHealthReport(emptyReport);
+      assert.ok(summary.total_skills > 0, 'expected discovered skills');
+      assert.strictEqual(summary.total_skills, summary.unmeasured_skills);
+      assert.strictEqual(summary.measured_skills, 0);
+      assert.strictEqual(summary.declining_skills, 0);
+      assert.strictEqual(
+        summary.healthy_skills,
+        0,
+        'a skill with no runs is unmeasured, never healthy'
+      );
+
+      // Healthy + declining must account for every measured skill, so a partial
+      // coverage state cannot over-report.
+      const partial = health.summarizeHealthReport({
+        skills: [
+          { skill_id: 'a', run_count_30d: 4, declining: false },
+          { skill_id: 'b', run_count_30d: 2, declining: true },
+          { skill_id: 'c', run_count_30d: 0, declining: false },
+        ],
+      });
+      assert.deepStrictEqual(partial, {
+        total_skills: 3,
+        measured_skills: 2,
+        healthy_skills: 1,
+        declining_skills: 1,
+        unmeasured_skills: 1,
+      });
     })) passed++; else failed++;
 
     if (test('treats an unsnapshotted SKILL.md as v1 and orders last_run by actual time', () => {

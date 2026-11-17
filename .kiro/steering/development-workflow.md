@@ -1,5 +1,5 @@
 ---
-inclusion: auto
+inclusion: always
 name: development-workflow
 description: Development workflow guidelines for planning, TDD, code review, and commit pipeline
 ---

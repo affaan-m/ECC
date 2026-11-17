@@ -33,12 +33,12 @@ function runTests() {
   let passed = 0;
   let failed = 0;
 
-  if (test('represents all 14 registered targets exactly once across 13 harnesses', () => {
+  if (test('represents all 17 registered targets exactly once across 16 harnesses', () => {
     const catalogTargetIds = HARNESS_CAPABILITIES.flatMap(harness => harness.targetIds);
     const adapterTargetIds = listInstallTargetAdapters().map(adapter => adapter.target);
 
-    assert.strictEqual(HARNESS_CAPABILITIES.length, 13);
-    assert.strictEqual(new Set(catalogTargetIds).size, 14);
+    assert.strictEqual(HARNESS_CAPABILITIES.length, 16);
+    assert.strictEqual(new Set(catalogTargetIds).size, 17);
     assert.deepStrictEqual([...catalogTargetIds].sort(), [...SUPPORTED_INSTALL_TARGETS].sort());
     assert.deepStrictEqual([...catalogTargetIds].sort(), [...adapterTargetIds].sort());
   })) passed++; else failed++;
@@ -83,6 +83,11 @@ function runTests() {
     assert.deepStrictEqual(kimi.scopes, [
       { id: 'project', targetId: 'kimi', root: './.kimi-code' },
     ]);
+
+    const opencode = getHarnessCapability('opencode');
+    assert.match(opencode.destinationResolution, /OPENCODE_CONFIG_DIR/);
+    assert.match(opencode.destinationResolution, /XDG_CONFIG_HOME/);
+    assert.match(opencode.destinationResolution, /~\/\.config\/opencode/);
   })) passed++; else failed++;
 
   if (test('keeps every advanced target attached to its registered root and scope', () => {
@@ -90,13 +95,15 @@ function runTests() {
       cursor: ['project', './.cursor'],
       antigravity: ['project', './.agents'],
       gemini: ['project', './.gemini'],
-      opencode: ['home', '~/.opencode'],
+      opencode: ['home', '~/.config/opencode'],
       codebuddy: ['project', './.codebuddy'],
       joycode: ['project', './.joycode'],
       qwen: ['home', '~/.qwen'],
       zed: ['project', './.zed'],
+      adal: ['project', './.adal'],
       hermes: ['home', '~/.hermes'],
       openclaw: ['home', '~/.openclaw'],
+      grok: ['native', '~/.grok'],
     };
 
     for (const [id, [scopeId, root]] of Object.entries(expected)) {
@@ -122,8 +129,26 @@ function runTests() {
     assert.doesNotMatch(kimiHooks.note, /provider.*unsupported|Kimi.*unsupported/i);
   })) passed++; else failed++;
 
-  if (test('does not advertise unregistered Copilot, Kiro, or Pi harnesses', () => {
-    for (const id of ['copilot', 'kiro', 'pi']) {
+  if (test('registers Copilot as an advanced project harness', () => {
+    const copilot = getHarnessCapability('copilot');
+    assert.ok(copilot);
+    assert.deepStrictEqual(copilot.targetIds, ['copilot']);
+    assert.strictEqual(copilot.installMode, 'managed-project');
+    assert.strictEqual(copilot.destination, './.github');
+    assert.strictEqual(copilot.guidedReady, false);
+    assert.strictEqual(copilot.availability, 'advanced');
+    assert.strictEqual(copilot.hooks.mode, 'not-configured');
+    assert.strictEqual(copilot.hooks.eccConfigured, false);
+    assert.match(copilot.hooks.note, /ECC hooks .*not installed for Copilot/i);
+    // Copilot stays out of the guided wizard, which is Claude/Codex/Kimi only.
+    assert.throws(
+      () => normalizeHarnessSelection('copilot'),
+      /Unknown guided harness selection|advanced/i
+    );
+  })) passed++; else failed++;
+
+  if (test('does not advertise unregistered Kiro or Pi harnesses', () => {
+    for (const id of ['kiro', 'pi']) {
       assert.strictEqual(getHarnessCapability(id), null);
       assert.throws(
         () => normalizeHarnessSelection(id),
@@ -151,7 +176,7 @@ function runTests() {
     assert.throws(() => normalizeHarnessSelection('none'), /At least one guided harness/);
     assert.throws(() => normalizeHarnessSelection('all,codex'), /cannot be combined/i);
     assert.throws(() => normalizeHarnessSelection('cursor'), /advanced.*not guided-ready/i);
-    assert.throws(() => normalizeHarnessSelection('grok'), /Unknown guided harness selection/);
+    assert.throws(() => normalizeHarnessSelection('grok'), /advanced.*not guided-ready/i);
   })) passed++; else failed++;
 
   if (test('exports deeply frozen records while list helpers return safe array copies', () => {
@@ -165,7 +190,7 @@ function runTests() {
 
     const first = listHarnessCapabilities();
     first.pop();
-    assert.strictEqual(listHarnessCapabilities().length, 13);
+    assert.strictEqual(listHarnessCapabilities().length, 16);
 
     const guided = listGuidedHarnesses();
     guided.reverse();

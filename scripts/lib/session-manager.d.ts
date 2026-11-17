@@ -78,6 +78,16 @@ export interface GetAllSessionsOptions {
   search?: string | null;
 }
 
+export interface GetSessionByIdOptions {
+  /**
+   * auto (default) ranks exact IDs and filename/date aliases before prefixes;
+   * modification time breaks ties. id prefers exact short IDs and also accepts
+   * ID prefixes and legacy date aliases. filename accepts full filenames or
+   * filenames without .tmp only.
+   */
+  matchBy?: 'auto' | 'id' | 'filename';
+}
+
 /**
  * Parse a session filename to extract date and short ID.
  * @returns Parsed metadata, or null if the filename doesn't match the expected pattern
@@ -114,10 +124,12 @@ export function getAllSessions(options?: GetAllSessionsOptions): SessionListResu
 
 /**
  * Find a session by short ID or filename.
- * @param sessionId - Short ID prefix, full filename, or filename without .tmp
+ * Use matchBy to disambiguate an extensionless filename and another short ID.
+ * @param sessionId - Short ID prefix, full filename, filename without .tmp, or legacy date alias
  * @param includeContent - Whether to read and parse the session content
+ * @param options - Restrict the lookup type; invalid options return null
  */
-export function getSessionById(sessionId: string, includeContent?: boolean): Session | null;
+export function getSessionById(sessionId: string, includeContent?: boolean, options?: GetSessionByIdOptions): Session | null;
 
 /** Write markdown content to a session file */
 export function writeSessionContent(sessionPath: string, content: string): boolean;

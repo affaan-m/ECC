@@ -127,9 +127,9 @@ async function run() {
 
   if (await test('CLI JSON can be written as a scheduled workflow artifact', async () => {
     const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-advisory-sources-'));
-    const outputPath = path.join(tempDir, 'advisory-sources.json');
+    const outputPath = path.join(tempDir, 'dir with spaces', 'advisory-sources.json');
     try {
-      const result = spawnSync('node', [
+      const result = spawnSync(process.execPath, [
         SCRIPT_PATH,
         '--json',
         '--generated-at',
@@ -138,7 +138,6 @@ async function run() {
         outputPath,
       ], {
         encoding: 'utf8',
-        shell: process.platform === 'win32',
       });
 
       assert.strictEqual(result.status, 0, result.stderr);
@@ -159,7 +158,10 @@ async function run() {
     assert.strictEqual(parsed.json, true);
 
     assert.throws(() => parseArgs(['--timeout-ms', '0']), /positive number/);
+    assert.throws(() => parseArgs(['--generated-at']), /requires a timestamp/);
+    assert.throws(() => parseArgs(['--generated-at', '--json']), /requires a timestamp/);
     assert.throws(() => parseArgs(['--write']), /requires a path/);
+    assert.throws(() => parseArgs(['--write', '--json']), /requires a path/);
     assert.throws(() => parseArgs(['--wat']), /Unknown argument/);
   })) passed++; else failed++;
 
@@ -187,28 +189,25 @@ async function run() {
   })) passed++; else failed++;
 
   if (await test('CLI text output and invalid flag errors are stable', async () => {
-    const help = spawnSync('node', [SCRIPT_PATH, '--help'], {
+    const help = spawnSync(process.execPath, [SCRIPT_PATH, '--help'], {
       encoding: 'utf8',
-      shell: process.platform === 'win32',
     });
     assert.strictEqual(help.status, 0);
     assert.match(help.stdout, /--strict-refresh/);
 
-    const text = spawnSync('node', [
+    const text = spawnSync(process.execPath, [
       SCRIPT_PATH,
       '--generated-at',
       '2026-05-16T00:00:00.000Z',
     ], {
       encoding: 'utf8',
-      shell: process.platform === 'win32',
     });
     assert.strictEqual(text.status, 0, text.stderr);
     assert.match(text.stdout, /Supply-chain advisory sources: ready/);
     assert.match(text.stdout, /Linear ITO-57:/);
 
-    const invalid = spawnSync('node', [SCRIPT_PATH, '--unknown'], {
+    const invalid = spawnSync(process.execPath, [SCRIPT_PATH, '--unknown'], {
       encoding: 'utf8',
-      shell: process.platform === 'win32',
     });
     assert.strictEqual(invalid.status, 2);
     assert.match(invalid.stderr, /Unknown argument/);
@@ -246,6 +245,18 @@ async function run() {
         return;
       }
 
+      if (request.url === '/redirect-unsupported-protocol') {
+        response.writeHead(302, { Location: 'ftp://example.com/advisory' });
+        response.end();
+        return;
+      }
+
+      if (request.url === '/redirect-malformed') {
+        response.writeHead(302, { Location: 'http://[' });
+        response.end();
+        return;
+      }
+
       if (request.url === '/head-unsupported' && request.method === 'HEAD') {
         response.writeHead(405);
         response.end();
@@ -276,6 +287,45 @@ async function run() {
       assert.strictEqual(report.ready, true);
       assert.strictEqual(report.refresh.ok, true);
       assert.ok(report.sources.every(source => source.refreshStatus.status === 'ok'));
+      assert.ok(report.sources.every(
+        source => source.refreshStatus.checkedAt === '2026-05-16T00:00:00.000Z',
+      ));
+
+      const invalidRedirectReport = await buildAdvisorySourceReport({
+        generatedAt: '2026-05-16T00:00:00.000Z',
+        refresh: true,
+        sources: sources.map((source, index) => {
+          if (index === 0) {
+            return { ...source, url: `http://127.0.0.1:${port}/redirect-unsupported-protocol` };
+          }
+          if (index === 1) {
+            return { ...source, url: `http://127.0.0.1:${port}/redirect-malformed` };
+          }
+          if (index === 2) {
+            return { ...source, url: 'http://[' };
+          }
+          return source;
+        }),
+      });
+      assert.strictEqual(invalidRedirectReport.refresh.ok, false);
+      assert.strictEqual(invalidRedirectReport.sources[0].refreshStatus.status, 'warning');
+      assert.match(invalidRedirectReport.sources[0].refreshStatus.error, /unsupported protocol/);
+      assert.strictEqual(
+        invalidRedirectReport.sources[0].refreshStatus.checkedAt,
+        '2026-05-16T00:00:00.000Z',
+      );
+      assert.strictEqual(invalidRedirectReport.sources[1].refreshStatus.status, 'warning');
+      assert.match(invalidRedirectReport.sources[1].refreshStatus.error, /invalid URL/);
+      assert.strictEqual(
+        invalidRedirectReport.sources[1].refreshStatus.checkedAt,
+        '2026-05-16T00:00:00.000Z',
+      );
+      assert.strictEqual(invalidRedirectReport.sources[2].refreshStatus.status, 'warning');
+      assert.match(invalidRedirectReport.sources[2].refreshStatus.error, /invalid URL/);
+      assert.strictEqual(
+        invalidRedirectReport.sources[2].refreshStatus.checkedAt,
+        '2026-05-16T00:00:00.000Z',
+      );
     } finally {
       await new Promise(resolve => server.close(resolve));
     }

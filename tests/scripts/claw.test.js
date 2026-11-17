@@ -47,6 +47,37 @@ function makeTmpDir() {
   return fs.mkdtempSync(path.join(os.tmpdir(), 'claw-test-'));
 }
 
+// askClaude() spawns whatever `claude` is on PATH. The askClaude tests pin
+// PATH (same helpers as tests/hooks/pre-bash-commit-quality.test.js) so they
+// never start a developer's real Claude CLI.
+function pathEnvKey() {
+  return Object.keys(process.env).find(key => key.toLowerCase() === 'path') || 'PATH';
+}
+
+function withEnv(overrides, fn) {
+  const previous = {};
+  for (const key of Object.keys(overrides)) {
+    previous[key] = process.env[key];
+    process.env[key] = overrides[key];
+  }
+
+  try {
+    return fn();
+  } finally {
+    for (const key of Object.keys(overrides)) {
+      if (typeof previous[key] === 'string') {
+        process.env[key] = previous[key];
+      } else {
+        delete process.env[key];
+      }
+    }
+  }
+}
+
+function writeClaudeStub(binDir, lines) {
+  fs.writeFileSync(path.join(binDir, 'claude'), ['#!/bin/sh', ...lines, ''].join('\n'), { mode: 0o755 });
+}
+
 function runTests() {
   console.log('\n=== Testing claw.js ===\n');
 
@@ -160,7 +191,7 @@ function runTests() {
     }
   })) passed++; else failed++;
 
-  // ── Delegation tests (2) ──────────────────────────────────────────────
+  // ── Delegation tests (4) ──────────────────────────────────────────────
 
   console.log('\nDelegation:');
 
@@ -180,14 +211,59 @@ function runTests() {
     assert.ok(histIdx < userIdx, 'History should come before user message');
   })) passed++; else failed++;
 
-  if (test('askClaude() handles subprocess error gracefully', () => {
-    // Use a non-existent command to trigger an error
-    const result = askClaude('sys', 'hist', 'msg');
-    // Should return an error string, not throw
-    assert.strictEqual(typeof result, 'string', 'Should return a string');
-    // If claude is not installed, we get an error message
-    // If claude IS installed, we get an actual response — both are valid
-    assert.ok(result.length > 0, 'Should return non-empty result');
+  if (test('askClaude() returns an error string when claude is not on PATH', () => {
+    const binDir = makeTmpDir();
+    try {
+      const result = withEnv({ [pathEnvKey()]: binDir }, () => askClaude('sys', 'hist', 'msg'));
+      assert.match(result, /^\[Error: /, `Expected an error string, got: ${result}`);
+    } finally {
+      fs.rmSync(binDir, { recursive: true, force: true });
+    }
+  })) passed++; else failed++;
+
+  if (test('askClaude() sends the prompt on stdin and returns trimmed stdout', () => {
+    if (process.platform === 'win32') {
+      console.log('    (skipped on Windows: the claude stub is a POSIX shell script)');
+      return;
+    }
+    const binDir = makeTmpDir();
+    try {
+      writeClaudeStub(binDir, [
+        `printf '%s\\n' "$@" > "$CLAW_TEST_DIR/args.txt"`,
+        `printf '%s' "\${CLAUDECODE-unset}" > "$CLAW_TEST_DIR/claudecode.txt"`,
+        'cat > "$CLAW_TEST_DIR/stdin.txt"',
+        `printf '  stub reply  \\n'`,
+      ]);
+      const result = withEnv({
+        [pathEnvKey()]: `${binDir}${path.delimiter}${process.env.PATH || ''}`,
+        CLAW_TEST_DIR: binDir,
+      }, () => askClaude('sys', 'hist', 'msg', 'haiku'));
+      assert.strictEqual(result, 'stub reply');
+      assert.deepStrictEqual(
+        fs.readFileSync(path.join(binDir, 'args.txt'), 'utf8').trim().split('\n'),
+        ['--model', 'haiku', '-p']);
+      assert.strictEqual(fs.readFileSync(path.join(binDir, 'stdin.txt'), 'utf8'), buildPrompt('sys', 'hist', 'msg'));
+      assert.strictEqual(fs.readFileSync(path.join(binDir, 'claudecode.txt'), 'utf8'), '',
+        'CLAUDECODE should be set to an empty string for the child process');
+    } finally {
+      fs.rmSync(binDir, { recursive: true, force: true });
+    }
+  })) passed++; else failed++;
+
+  if (test('askClaude() reports a non-zero exit with its stderr', () => {
+    if (process.platform === 'win32') {
+      console.log('    (skipped on Windows: the claude stub is a POSIX shell script)');
+      return;
+    }
+    const binDir = makeTmpDir();
+    try {
+      writeClaudeStub(binDir, ['cat > /dev/null', 'echo "rate limited" >&2', 'exit 3']);
+      const result = withEnv({ [pathEnvKey()]: `${binDir}${path.delimiter}${process.env.PATH || ''}` },
+        () => askClaude('sys', 'hist', 'msg'));
+      assert.strictEqual(result, '[Error: claude exited with code 3: rate limited]');
+    } finally {
+      fs.rmSync(binDir, { recursive: true, force: true });
+    }
   })) passed++; else failed++;
 
   // ── REPL/Meta tests (3) ───────────────────────────────────────────────

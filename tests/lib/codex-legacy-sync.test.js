@@ -4,9 +4,11 @@ const assert = require('assert');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
+const { trySymlink } = require('./helpers/symlink-support');
 
 const {
   beginLegacySyncState,
+  detectLegacyCodexSync,
   finalizeLegacySyncState,
   recordLegacySyncPath,
   rollbackLegacyCodexSync,
@@ -178,7 +180,7 @@ function runTests() {
 
     fs.writeFileSync(outsidePath, '<!-- BEGIN ECC -->\n# Outside\n<!-- END ECC -->\n');
     fs.rmSync(agentsPath);
-    fs.symlinkSync(outsidePath, agentsPath);
+    if (!trySymlink(outsidePath, agentsPath)) return;
     const symlinkResult = uninstallLegacyCodexSync({ codexHome });
     assert.strictEqual(symlinkResult.status, 'partial');
     assert.ok(symlinkResult.retainedPaths.includes(agentsPath));
@@ -236,7 +238,7 @@ function runTests() {
     const linkedPath = path.join(codexHome, 'prompts', 'ecc-plan.md');
     fs.mkdirSync(path.dirname(linkedPath), { recursive: true });
     fs.writeFileSync(outsidePath, '# Outside\n');
-    fs.symlinkSync(outsidePath, linkedPath);
+    if (!trySymlink(outsidePath, linkedPath)) return;
     const statePath = beginLegacySyncState({
       codexHome,
       backupDir: path.join(codexHome, 'backups', 'ecc-test'),
@@ -256,7 +258,7 @@ function runTests() {
     const outsideDir = path.join(homeDir, 'outside');
     fs.mkdirSync(codexHome, { recursive: true });
     fs.mkdirSync(outsideDir, { recursive: true });
-    fs.symlinkSync(outsideDir, path.join(codexHome, 'prompts'));
+    if (!trySymlink(outsideDir, path.join(codexHome, 'prompts'))) return;
     const statePath = beginLegacySyncState({
       codexHome,
       backupDir: path.join(codexHome, 'backups', 'ecc-test'),
@@ -271,6 +273,35 @@ function runTests() {
     );
     assert.deepStrictEqual(fs.readdirSync(outsideDir), []);
     fs.rmSync(homeDir, { recursive: true, force: true });
+  })) passed += 1; else failed += 1;
+
+  // Retain the native symlink case above; exercise directory junctions separately.
+  if (test('recording refuses a junction parent directory before any managed write', () => {
+    const homeDir = tempDir('legacy-codex-junction-');
+    const codexHome = path.join(homeDir, '.codex');
+    const outsideDir = path.join(homeDir, 'outside');
+    const linkedParent = path.join(codexHome, 'prompts');
+    try {
+      fs.mkdirSync(codexHome, { recursive: true });
+      fs.mkdirSync(outsideDir);
+      fs.symlinkSync(outsideDir, linkedParent, process.platform === 'win32' ? 'junction' : 'dir');
+      assert.ok(fs.lstatSync(linkedParent).isSymbolicLink());
+      assert.strictEqual(fs.realpathSync(linkedParent), fs.realpathSync(outsideDir));
+      const statePath = beginLegacySyncState({
+        codexHome,
+        backupDir: path.join(codexHome, 'backups', 'ecc-test'),
+      });
+      assert.throws(
+        () => recordLegacySyncPath({
+          statePath,
+          filePath: path.join(linkedParent, 'ecc-plan.md'),
+        }),
+        /Refusing to manage legacy sync path through symlinked ancestor/
+      );
+      assert.deepStrictEqual(fs.readdirSync(outsideDir), []);
+    } finally {
+      fs.rmSync(homeDir, { recursive: true, force: true });
+    }
   })) passed += 1; else failed += 1;
 
   if (test('uninstall preserves a managed path replaced by a symlink', () => {
@@ -288,7 +319,7 @@ function runTests() {
     fs.writeFileSync(promptPath, '# ECC generated prompt\n');
     finalizeLegacySyncState({ statePath });
     fs.rmSync(promptPath);
-    fs.symlinkSync(outsidePath, promptPath);
+    if (!trySymlink(outsidePath, promptPath)) return;
 
     const result = uninstallLegacyCodexSync({ codexHome });
     assert.strictEqual(result.status, 'partial');
@@ -480,7 +511,7 @@ function runTests() {
     });
     recordLegacySyncPath({ statePath, filePath: promptPath });
     fs.rmSync(promptPath);
-    fs.symlinkSync(outsidePath, promptPath);
+    if (!trySymlink(outsidePath, promptPath)) return;
 
     const result = rollbackLegacyCodexSync({ statePath });
     assert.strictEqual(result.status, 'partial');
@@ -518,6 +549,53 @@ function runTests() {
     const uninstall = uninstallLegacyCodexSync({ codexHome });
     assert.strictEqual(uninstall.status, 'uninstalled');
     assert.strictEqual(fs.readFileSync(promptPath, 'utf8'), '# Original user prompt\n');
+    fs.rmSync(homeDir, { recursive: true, force: true });
+  })) passed += 1; else failed += 1;
+
+  if (test('detectLegacyCodexSync surfaces unreadable AGENTS.md instead of reporting clean', () => {
+    // hasMarkerBlock previously swallowed every read/open error and returned false,
+    // which made detectLegacyCodexSync claim a clean home even when AGENTS.md was
+    // unreadable (EACCES, EMFILE, ...). The fix is to rethrow every error except
+    // ENOENT (a missing file is a legitimate "no marker" signal).
+    const homeDir = tempDir('legacy-codex-home-');
+    const codexHome = path.join(homeDir, '.codex');
+    const agentsPath = path.join(codexHome, 'AGENTS.md');
+    fs.mkdirSync(codexHome, { recursive: true });
+    fs.writeFileSync(agentsPath, '# User instructions\n<!-- BEGIN ECC -->\n<!-- END ECC -->\n');
+
+    // chmod 000 to make AGENTS.md unreadable. Skip when running as root because
+    // root bypasses mode bits and the test would not exercise the error path.
+    if (typeof process.getuid === 'function' && process.getuid() !== 0) {
+      fs.chmodSync(agentsPath, 0o000);
+      let threw = null;
+      try {
+        detectLegacyCodexSync(codexHome);
+      } catch (error) {
+        threw = error;
+      }
+      assert.ok(threw, 'detectLegacyCodexSync must propagate the read error');
+      assert.notStrictEqual(threw && threw.code, 'ENOENT');
+      fs.chmodSync(agentsPath, 0o600);
+    } else {
+      // Root path: simulate the same failure by replacing AGENTS.md with a
+      // directory — openRegularFileNoFollow then throws EACCES-on-open on
+      // Linux when the path resolves to a non-regular file.
+      fs.rmSync(agentsPath);
+      fs.mkdirSync(agentsPath);
+      let threw = null;
+      try {
+        detectLegacyCodexSync(codexHome);
+      } catch (error) {
+        threw = error;
+      }
+      assert.ok(threw, 'detectLegacyCodexSync must propagate the inspection error');
+      fs.rmSync(agentsPath, { recursive: true });
+    }
+
+    // Sanity check: a missing AGENTS.md is still treated as no-marker (not an error).
+    fs.rmSync(agentsPath, { force: true });
+    assert.strictEqual(detectLegacyCodexSync(codexHome), false);
+
     fs.rmSync(homeDir, { recursive: true, force: true });
   })) passed += 1; else failed += 1;
 

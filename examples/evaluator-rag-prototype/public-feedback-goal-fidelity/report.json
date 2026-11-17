@@ -1,0 +1,23 @@
+{
+  "schema_version": "ecc.evaluator-rag.report.v1",
+  "scenario_id": "public-feedback-goal-fidelity",
+  "run_id": "illustrative-goal-fidelity",
+  "read_only": true,
+  "result": "illustrative_expected_result",
+  "findings": [
+    {
+      "id": "meaning-before-length",
+      "severity": "warning",
+      "summary": "A shorter draft can retain vocabulary while losing the requested outcome or causal connection."
+    },
+    {
+      "id": "format-not-quality",
+      "severity": "info",
+      "summary": "A revised HTML code block establishes output format, not verified preservation, rendering or factual correctness."
+    }
+  ],
+  "recommended_next_action": {
+    "candidate_id": "preserved-outcome-and-chain",
+    "action": "Compare meaning and limits with the task before publishing; offer alternatives explicitly."
+  }
+}

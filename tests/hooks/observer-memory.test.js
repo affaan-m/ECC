@@ -220,7 +220,20 @@ test('prompt references analysis_file not full OBSERVATIONS_FILE', () => {
   assert.ok(heredocStart > 0, 'Should find prompt heredoc start');
   assert.ok(heredocEnd > heredocStart, 'Should find prompt heredoc end');
   const promptSection = content.substring(heredocStart, heredocEnd);
-  assert.ok(promptSection.includes('${analysis_relpath}'), 'Prompt should point Claude at the sampled analysis file (via relative path), not the full observations file');
+  assert.ok(promptSection.includes('${analysis_relpath}'), 'Prompt should point Claude at the sampled analysis file, not the full observations file');
+});
+
+test('observer uses an absolute analysis path outside Windows', () => {
+  const content = fs.readFileSync(observerLoopPath, 'utf8');
+  assert.ok(
+    content.includes('if [ "${CLV2_IS_WINDOWS:-false}" = "true" ]') &&
+      content.includes('analysis_relpath="$analysis_file"'),
+    'macOS and Linux must pass the absolute analysis path to Claude'
+  );
+  assert.ok(
+    content.includes('analysis_relpath=".observer-tmp/$(basename "$analysis_file")"'),
+    'Windows must retain the MSYS-compatible relative analysis path'
+  );
 });
 
 test('observer-loop wait helper retries SIGUSR1-interrupted waits while claude child is alive', () => {

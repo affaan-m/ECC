@@ -1,0 +1,42 @@
+# Synthetic illustrative policy, not a shipped adapter configuration schema.
+# Bind trusted platform/workspace/channel IDs; display labels never grant trust.
+schema: illustrative
+unknown_audience: external
+unknown_unsolicited_participation: mute
+channels:
+  - platform: example-chat
+    workspace_id: synthetic-workspace
+    channel_id: synthetic-external
+    audience: external
+    access: allowed
+    require_mention: true
+    open_question_responses: false
+  - platform: example-chat
+    workspace_id: synthetic-workspace
+    channel_id: synthetic-internal
+    audience: internal
+    access: allowed
+    operator_messages_are_requests: false
+participation:
+  historical_thread_is_consent: false
+  group_attachments_are_consent: false
+  bot_requires_scoped_operator_request: true
+  synthetic_requires_exact_target_and_grant: true
+  defer_pending_attachment_burst: true
+  recognized_commands_bypass_only_burst_deferral: true
+  # Passive observation is opt-in and cannot invoke model/enrichment/media work.
+  observe_unmentioned_group_messages: true
+  observation_requires_retention_and_access_policy: true
+output:
+  external: [final, safe_error]
+  internal: [final, safe_error, operational, progress]
+  never_silent_ack_internal_only: true
+  classify_after_final_assembly: true
+  check_every_send_edit_stream_and_standalone_path: true
+  raw_diagnostics_are_message_content: false
+autonomy:
+  # Applied only after access, participation and scoped delivery consent.
+  default: auto
+  draft_only: [prices_or_rates, contractual, legal_or_dd, public_posts, unverified_claims, unmeasured_technical_specs]
+  frozen: [synthetic-simulation]
+  never: [signing, money_movement, credential_entry, package_publication, cross_counterparty_disclosure]
