@@ -95,6 +95,16 @@ function test(name, run) {
   }
 }
 
+function assertBatchCalls({ calls, diagnostics }, files, platform = process.platform) {
+  // Windows Stop intentionally skips a formatter batch if any path contains
+  // shell-sensitive characters, including spaces in the host's temp directory.
+  const skipsFormatting = platform === 'win32' && files.some(file => /[&|<>^%!\s()]/.test(file));
+  const expected = skipsFormatting ? [] : [['--write', ...files]];
+  expected.push(['tsc', '--noEmit', '--pretty', 'false']);
+  assert.deepStrictEqual(calls.map(call => call.args), expected);
+  if (skipsFormatting) assert.ok(diagnostics.includes('unsafe path chars'));
+}
+
 test('Edit and MultiEdit accumulate all JS and TS module extensions', ({ root, files }) => {
   for (const file of files) invokeHook('post-edit-accumulator', root,
     JSON.stringify({ session_id: 'single', tool_input: { file_path: file } }));
@@ -135,9 +145,7 @@ test('the accumulator-to-Stop pipeline formats one batch and typechecks module f
     session_id: 'batch', tool_input: { edits: [...files, files[0], plugin].map(file_path => ({ file_path })) },
   }));
   const { calls, diagnostics } = invokeHook('stop-format-typecheck', root, JSON.stringify({ session_id: 'batch' }));
-  assert.strictEqual(calls.length, 2, 'one formatter and one tsc invocation');
-  assert.deepStrictEqual(calls[0].args, ['--write', ...files]);
-  assert.deepStrictEqual(calls[1].args, ['tsc', '--noEmit', '--pretty', 'false']);
+  assertBatchCalls({ calls, diagnostics }, files);
   for (const extension of ['ts', 'tsx', 'mts', 'cts']) assert.ok(diagnostics.includes(`TypeScript errors in source.${extension}:`));
   for (const extension of ['js', 'jsx', 'mjs', 'cjs']) assert.ok(!diagnostics.includes(`TypeScript errors in source.${extension}:`));
   assert.ok(!fs.existsSync(path.join(root, 'ecc-edited-batch.txt')), 'Stop consumes the session accumulator');
@@ -166,7 +174,7 @@ test('module extensions retain Windows formatter guards and batch diagnostic han
   fs.writeFileSync(path.join(root, 'ecc-edited-typed.txt'), typed.join('\n'));
   const checked = invokeHook('stop-format-typecheck', root,
     JSON.stringify({ session_id: 'typed' }), { platform: 'win32' });
-  assert.strictEqual(checked.calls.length, 2);
+  assertBatchCalls(checked, typed, 'win32');
   assert.ok(checked.diagnostics.includes('TypeScript errors in source.mts:'));
   assert.ok(checked.diagnostics.includes('TypeScript errors in source.cts:'));
 });
