@@ -47,16 +47,18 @@ const MAX_HEADER_DECODES = 8;
 
 // Index of the first JWT header in `seg`, starting at its beginning or after a
 // `-` or `_`, or -1. A candidate that fails validation (e.g. `eyewear` in
-// `eyewear_session_<JWT>`) does not stop the scan.
+// `eyewear_session_<JWT>`) does not stop the scan. Once the decode budget is
+// spent, the next candidate that passes the prefilter is treated as a header
+// (fail closed), so padding a JWT with decoy candidates cannot hide it.
 function findJwtHeader(seg) {
   let decodes = 0;
   for (let j = 0; j + 10 <= seg.length; j++) {
     if (!((j === 0 || seg[j - 1] === '-' || seg[j - 1] === '_') && seg[j] === 'e' && (seg[j + 1] === 'y' || seg[j + 1] === 'w'))) continue;
     if (seg.startsWith('eyJ', j)) return j;
-    if (decodes < MAX_HEADER_DECODES && mayBeJwtHeader(seg, j)) {
-      decodes++;
-      if (isJwtHeader(seg.slice(j))) return j;
-    }
+    if (!mayBeJwtHeader(seg, j)) continue;
+    if (decodes >= MAX_HEADER_DECODES) return j;
+    decodes++;
+    if (isJwtHeader(seg.slice(j))) return j;
   }
   return -1;
 }

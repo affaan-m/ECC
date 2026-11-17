@@ -198,6 +198,19 @@ if (
 else failed++;
 
 if (
+  test('sanitizeCommand redacts a JWT that follows more decoy header candidates than the decode budget', () => {
+    const spacedHeader = Buffer.from('{ "alg":"HS256"}').toString('base64url');
+    const token = [spacedHeader, 'e30', 'c2ln'].join('.');
+    for (const count of [7, 8, 9, 20]) {
+      const prefix = 'eyAg-'.repeat(count);
+      assert.strictEqual(sanitizeCommand(`echo ${prefix}${token}`), `echo ${prefix.slice(0, 5 * Math.min(count, 8))}<REDACTED>`);
+    }
+  })
+)
+  passed++;
+else failed++;
+
+if (
   test('sanitizeCommand stays linear on long runs of plausible JWT header candidates', () => {
     const start = Date.now();
     sanitizeCommand(`${'eyAg-'.repeat(200000)}x.y.z`);
