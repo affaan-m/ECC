@@ -292,16 +292,23 @@ function isValidMatcherValue(value) {
 function checkHookDuplicates(source, eventMap) {
   const events = new Map();
   const ids = new Map();
+  const rootProperties = [];
+
+  function checkEvent(key, line) {
+    if (events.has(key)) {
+      throw new Error(`line ${line + 1}: duplicate event key '${key}' (first on line ${events.get(key)})`);
+    }
+    events.set(key, line + 1);
+  }
 
   visit(source, {
     onObjectProperty(key, _offset, _length, line, _column, getPath) {
       const parent = getPath();
-      if (parent.length !== 1 || parent[0] !== eventMap) return;
-
-      if (events.has(key)) {
-        throw new Error(`line ${line + 1}: duplicate event key '${key}' (first on line ${events.get(key)})`);
+      if (parent.length === 1 && parent[0] === eventMap) {
+        checkEvent(key, line);
+      } else if (parent.length === 0 && eventMap === 'hooks') {
+        rootProperties.push({ key, line });
       }
-      events.set(key, line + 1);
     },
     onLiteralValue(value, _offset, _length, line, _column, getPath) {
       const location = getPath();
@@ -316,6 +323,12 @@ function checkHookDuplicates(source, eventMap) {
       ids.set(value, `${matcher} on line ${line + 1}`);
     },
   });
+
+  // A hooks wrapper can appear after other root properties. Only an unwrapped
+  // manifest uses those root properties as its event map.
+  if (!rootProperties.some(({ key }) => key === 'hooks')) {
+    for (const { key, line } of rootProperties) checkEvent(key, line);
+  }
 }
 
 function readHookDocument(file, eventMap) {

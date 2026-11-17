@@ -3040,6 +3040,37 @@ function runTests() {
     })) passed++; else failed++;
   }
 
+  if (test('reports duplicate root events in a schema-free unwrapped hook map', () => {
+    const testDir = createTestDir();
+    try {
+      const hooksFile = path.join(testDir, 'hooks.json');
+      fs.writeFileSync(hooksFile, `{
+  "Stop": [{"hooks": [{"type": "command", "command": "echo first"}]}],
+  "Stop": []
+}`);
+      const result = runValidatorWithDirs('validate-hooks', {
+        HOOKS_FILE: hooksFile,
+        HOOKS_SCHEMA_PATH: path.join(testDir, 'missing-schema.json'),
+      });
+      assert.strictEqual(result.code, 1, result.stdout);
+      assert.match(result.stderr, /hooks\.json: line 3: duplicate event key 'Stop' \(first on line 2\)/);
+    } finally {
+      cleanupTestDir(testDir);
+    }
+  })) passed++; else failed++;
+
+  if (test('checks only the active event map when hooks is wrapped', () => {
+    const testDir = createTestDir();
+    try {
+      const hooksFile = path.join(testDir, 'hooks.json');
+      fs.writeFileSync(hooksFile, '{"Stop":[],"Stop":[],"hooks":{"Stop":[]}}');
+      const result = runValidatorWithDir('validate-hooks', 'HOOKS_FILE', hooksFile);
+      assert.strictEqual(result.code, 0, result.stderr);
+    } finally {
+      cleanupTestDir(testDir);
+    }
+  })) passed++; else failed++;
+
   if (test('rejects duplicate wrapped matcher ids across events', () => {
     const testDir = createTestDir();
     const hooksFile = path.join(testDir, 'hooks.json');
