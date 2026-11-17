@@ -90,6 +90,25 @@ try {
   const externalContent = fs.readFileSync(externalWorkflow, 'utf8');
 
   assert.throws(() => applyInstallPlan(symlinkPlan), /outside|symlink|trusted/i);
+  // One unsafe target root must not hide doctor results for other targets.
+  applyInstallPlan(withHookConsent(createManifestInstallPlan({
+    profileId: 'core',
+    target: 'antigravity',
+    homeDir: symlinkHome,
+    projectRoot: symlinkProject,
+  }), 'enabled'));
+  const unsafeRootDoctor = buildDoctorReport({
+    repoRoot,
+    homeDir: symlinkHome,
+    projectRoot: symlinkProject,
+    targets: ['antigravity-home', 'antigravity'],
+  }).results;
+  const homeDoctor = unsafeRootDoctor.find(result => result.adapter.target === 'antigravity-home');
+  const projectDoctor = unsafeRootDoctor.find(result => result.adapter.target === 'antigravity');
+  assert.strictEqual(homeDoctor.status, 'error');
+  assert.ok(homeDoctor.issues.some(issue => issue.code === 'unsafe-trusted-root'));
+  assert.ok(projectDoctor, 'project target must still be reported');
+  assert.notStrictEqual(projectDoctor.status, 'error');
   const rootSymlinkRepair = repairInstalledStates({
     repoRoot,
     homeDir: symlinkHome,
@@ -128,7 +147,7 @@ try {
     if (previousHome === undefined) delete process.env.HOME;
     else process.env.HOME = previousHome;
   }
-  console.log('Results: Passed: 6, Failed: 0');
+  console.log('Results: Passed: 7, Failed: 0');
 } finally {
   fs.rmSync(fixtureRoot, { recursive: true, force: true });
 }

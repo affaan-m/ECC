@@ -1127,8 +1127,15 @@ function collectTargetPathIssues(record, state, issues) {
 }
 
 function collectOperationHealthIssues(record, context, state, issues) {
-  const trustedRoots = getInstallTargetAdapter(record.adapter.id || record.adapter.target)
-    .resolveTrustedRoots(context);
+  let trustedRoots;
+  try {
+    trustedRoots = getInstallTargetAdapter(record.adapter.id || record.adapter.target)
+      .resolveTrustedRoots(context);
+  } catch (error) {
+    // Report an unsafe root for this target without aborting the other targets.
+    issues.push(buildIssue('error', 'unsafe-trusted-root', error.message));
+    return;
+  }
   const operationHealth = summarizeManagedOperationHealth(
     context.repoRoot,
     record.targetRoot,

@@ -32,7 +32,7 @@ Install or update the published package, then run the same ECC install command y
 
 ```bash
 npm install -g ecc-universal@2.2.0
-ecc install --target antigravity --profile full --enable-hooks
+ecc install --target antigravity --profile full
 ```
 
 Use `ecc doctor --target <target>` after installation. For Antigravity, start a new conversation and verify workspace skills under Settings > Customizations.
