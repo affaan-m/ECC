@@ -27,8 +27,14 @@ function defaultConfigPaths(cwd = process.cwd(), env = process.env) {
 
   let current = path.resolve(cwd);
   while (current && current !== path.dirname(current)) {
-    paths.push(path.join(current, '.claude', 'ecc2.toml'));
-    paths.push(path.join(current, 'ecc2.toml'));
+    const projectPaths = [path.join(current, '.claude', 'ecc2.toml'), path.join(current, 'ecc2.toml')]
+      .filter(configPath => !paths.includes(configPath) && fs.existsSync(configPath));
+    // ECC2 selects the nearest project layer. Its primary config overrides
+    // the legacy file, while unrelated ancestor projects must not leak in.
+    if (projectPaths.length > 0) {
+      paths.push(...projectPaths);
+      break;
+    }
     current = path.dirname(current);
   }
 
