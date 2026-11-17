@@ -278,6 +278,26 @@ function runTests() {
     }), 'guidance');
   })) passed++; else failed++;
 
+  if (test('instinctMatchKind does not forbid the file named before the prohibition', () => {
+    const { instinctMatchKind } = loadStore();
+    const instinct = {
+      id: 'no-foowidget-when-editing-helpers',
+      confidence: 0.91,
+      trigger: 'when editing helpers',
+      content: 'When editing `helpers.js`, never use `fooWidget`',
+    };
+    assert.strictEqual(instinctMatchKind(instinct, {
+      file_path: '/src/helpers.js',
+      old_string: 'oldWidget()',
+      new_string: 'barWidget()',
+    }), 'guidance');
+    assert.strictEqual(instinctMatchKind(instinct, {
+      file_path: '/src/helpers.js',
+      old_string: 'oldWidget()',
+      new_string: 'fooWidget()',
+    }), 'prohibition');
+  })) passed++; else failed++;
+
   if (test('instinctMatchKind keeps punctuation inside a quoted command in one clause', () => {
     const { instinctMatchKind } = loadStore();
     const instinct = {

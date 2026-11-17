@@ -284,10 +284,11 @@ function maskQuotedSpans(text) {
   return text.replace(QUOTED_IDENTIFIER_RE, match => ' '.repeat(match.length));
 }
 
-// The forbidden part of a clause runs from its start through the prohibition
-// and stops at the first affirmative marker after it. A later prohibition
-// opens another forbidden part, so "never a, prefer b and never c" forbids
-// both a and c.
+// The forbidden part of a clause runs from the prohibition marker and stops
+// at the first affirmative marker after it, so context before the marker
+// ("When editing `helpers.js`, never use `fooWidget`") is not forbidden. A
+// later prohibition opens another forbidden part, so "never a, prefer b and
+// never c" forbids both a and c.
 function prohibitedPart(clause) {
   const masked = maskQuotedSpans(clause);
   const parts = [];
@@ -298,7 +299,7 @@ function prohibitedPart(clause) {
     const afterMarker = start + marker.index + marker[0].length;
     const affirmative = AFFIRMATIVE_MARKER_RE.exec(masked.slice(afterMarker));
     const end = affirmative ? afterMarker + affirmative.index : clause.length;
-    parts.push(clause.slice(parts.length === 0 ? 0 : start + marker.index, end));
+    parts.push(clause.slice(start + marker.index, end));
     if (!affirmative) break;
     start = end + affirmative[0].length;
   }
