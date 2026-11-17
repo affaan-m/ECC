@@ -417,8 +417,8 @@ function runTests() {
         const ctx = JSON.parse(raw).hookSpecificOutput.additionalContext;
         return ctx.match(/\S*[/\\]resume[/\\]\S*-test\.md/)[0];
       };
-      const first = extract(run(inputFor(t, { cwd: '/tmp/ecc-demo-proj' }), { env }));
-      const second = extract(run(inputFor(t, { cwd: '/tmp/ecc-demo-proj' }), { env }));
+      const first = extract(run(inputFor(t, { cwd: path.join(FIXTURE_DIR, 'ecc-demo-proj') }), { env }));
+      const second = extract(run(inputFor(t, { cwd: path.join(FIXTURE_DIR, 'ecc-demo-proj') }), { env }));
       assert.strictEqual(first, second, 'same session must reuse one checkpoint path (idempotent)');
     })
   )
@@ -448,8 +448,8 @@ function runTests() {
         delete process.env.CLAUDE_SESSION_ID;
         // Two different owners, same basename "project", NO session id.
         const envEnforce = { ECC_CONTEXT_GATE_MODE: 'enforce' };
-        const outA = JSON.parse(run(JSON.stringify({ transcript_path: t, cwd: '/tmp/owner-a/project', prompt: 'go' }), { env: envEnforce }));
-        const outB = JSON.parse(run(JSON.stringify({ transcript_path: t, cwd: '/tmp/owner-b/project', prompt: 'go' }), { env: envEnforce }));
+        const outA = JSON.parse(run(JSON.stringify({ transcript_path: t, cwd: path.join(sandbox, 'owner-a', 'project'), prompt: 'go' }), { env: envEnforce }));
+        const outB = JSON.parse(run(JSON.stringify({ transcript_path: t, cwd: path.join(sandbox, 'owner-b', 'project'), prompt: 'go' }), { env: envEnforce }));
         for (const out of [outA, outB]) {
           const ctx = out.hookSpecificOutput.additionalContext;
           // Enforcement declined: NO checkpoint path is named...

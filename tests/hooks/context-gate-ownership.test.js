@@ -61,7 +61,7 @@ function isProposedPathLine(line) {
 }
 
 function fire(sandbox, extra = {}) {
-  const input = { cwd: '/tmp/owner-a/project', session_id: 'mysess', transcript_path: sandbox.transcript, ...extra };
+  const input = { cwd: path.join(sandbox.root, 'owner-a', 'project'), session_id: 'mysess', transcript_path: sandbox.transcript, ...extra };
   const result = spawnSync(process.execPath, [RUNNER, 'user-prompt:context-gate', 'scripts/hooks/context-gate.js', 'standard,strict'], {
     cwd: REPO_ROOT,
     env: sandbox.env,
@@ -123,7 +123,7 @@ function runTests() {
     record(test('same-named project roots get distinct proposals', () => {
       clearResumeDir(sandbox);
       const a = fire(sandbox);
-      const b = fire(sandbox, { cwd: '/tmp/owner-b/project' });
+      const b = fire(sandbox, { cwd: path.join(sandbox.root, 'owner-b', 'project') });
       assert.ok(a.target && b.target, `both fires should propose a destination. Got: ${a.target ? b.text : a.text}`);
       assert.notStrictEqual(a.target, b.target);
     }));
