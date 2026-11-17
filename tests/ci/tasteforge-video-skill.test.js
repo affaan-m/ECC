@@ -217,12 +217,15 @@ test("never claims a Fal workflow is saved from a local reference", () => {
   assert.match(skill, /dry[- ]run|dry_run/i);
 });
 
-test("links to the canonical ito-video implementation instead of duplicating it", () => {
+test("assigns reusable runtime ownership to ECC and the example to ito-video", () => {
   const skill = read("skills/tasteforge-video/SKILL.md");
   assert.match(skill, /ito-video/i);
   assert.match(skill, /Ito-Markets\/ito-video/i);
   assert.match(skill, /python3 -m tasteforge/);
-  assert.match(skill, /does not (?:vendor|duplicate|copy)/i);
+  assert.match(skill, /skills\/taste-application\/scripts/);
+  assert.match(skill, /ecc-tasteforge/);
+  assert.match(skill, /example project/i);
+  assert.doesNotMatch(skill, /canonical implementation is the[\s\S]{0,100}Itô video repository/);
 });
 
 test("describes the deterministic workflow surface faithfully", () => {

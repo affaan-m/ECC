@@ -51,7 +51,7 @@ const SECRET_PATTERNS = Object.freeze([
   { label: 'Stripe key', pattern: /\b(?:sk|rk)_live_[A-Za-z0-9]{16,}\b/ },
   { label: 'npm token', pattern: /\bnpm_[A-Za-z0-9]{20,}\b/ },
   { label: 'Hugging Face token', pattern: /\bhf_[A-Za-z0-9]{20,}\b/ },
-  { label: 'GitHub token', pattern: /\bgh[pors]_[A-Za-z0-9]{16,}\b/ },
+  { label: 'GitHub token', pattern: /\bgh[oprsu]_[A-Za-z0-9]{16,}\b/ },
   { label: 'GitHub token', pattern: /\bgithub_pat_[A-Za-z0-9_]{16,}\b/ },
   { label: 'Google API key', pattern: /\bAIza[A-Za-z0-9_-]{16,}\b/ },
   { label: 'Slack token', pattern: /\bxox[baprs]-[A-Za-z0-9-]{10,}\b/ },
@@ -279,8 +279,17 @@ function parseMemoryDocument(source, sourcePath = '<memory>') {
   return normalizeMemory({ ...parsed.values, body });
 }
 
+function collectStrings(value) {
+  if (typeof value === 'string') return [value];
+  if (Array.isArray(value)) return value.flatMap(collectStrings);
+  if (value && typeof value === 'object') return Object.values(value).flatMap(collectStrings);
+  return [];
+}
+
+// Scan decoded field values: JSON.stringify turns a newline or tab into `\n`
+// or `\t`, and the escape letter would defeat the patterns' leading `\b`.
 function findPotentialSecrets(value) {
-  const text = typeof value === 'string' ? value : '';
+  const text = typeof value === 'string' ? value : collectStrings(value).join('\n');
   return SECRET_PATTERNS
     .filter(item => item.pattern.test(text))
     .map(item => item.label)

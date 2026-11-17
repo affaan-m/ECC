@@ -37,12 +37,10 @@ SECURE_HSTS_SECONDS = 31536000  # 1 year
 SECURE_HSTS_INCLUDE_SUBDOMAINS = True
 SECURE_HSTS_PRELOAD = True
 SECURE_CONTENT_TYPE_NOSNIFF = True
-SECURE_BROWSER_XSS_FILTER = True
 X_FRAME_OPTIONS = 'DENY'
 
 # HTTPS and Cookies
 SESSION_COOKIE_HTTPONLY = True
-CSRF_COOKIE_HTTPONLY = True
 SESSION_COOKIE_SAMESITE = 'Lax'
 CSRF_COOKIE_SAMESITE = 'Lax'
 
@@ -312,7 +310,6 @@ def greet_user(username):
 ```python
 # settings.py
 SECURE_CONTENT_TYPE_NOSNIFF = True  # Prevent MIME sniffing
-SECURE_BROWSER_XSS_FILTER = True  # Enable XSS filter
 X_FRAME_OPTIONS = 'DENY'  # Prevent clickjacking
 
 # Custom middleware
@@ -338,7 +335,7 @@ class SecurityHeaderMiddleware:
 ```python
 # settings.py - CSRF is enabled by default
 CSRF_COOKIE_SECURE = True  # Only send over HTTPS
-CSRF_COOKIE_HTTPONLY = True  # Prevent JavaScript access
+CSRF_COOKIE_HTTPONLY = False  # False so AJAX can read csrf token from document.cookie; SESSION_COOKIE_HTTPONLY remains True
 CSRF_COOKIE_SAMESITE = 'Lax'  # Prevent CSRF in some cases
 CSRF_TRUSTED_ORIGINS = ['https://example.com']  # Trusted domains
 

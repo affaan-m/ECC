@@ -159,6 +159,182 @@ function runTests() {
     }
   })) passed++; else failed++;
 
+  if (test('deduplicates MultiEdit/Edit and ReadFile/NotebookRead/Read', () => {
+    const tempDir = createTempDir();
+    const agentsDir = path.join(tempDir, '.gemini', 'agents');
+
+    try {
+      writeAgent(
+        agentsDir,
+        'code-simplifier.md',
+        [
+          '---',
+          'name: code-simplifier',
+          'description: Refactoring agent',
+          'tools: Read, ReadFile, NotebookRead, Edit, MultiEdit, Write',
+          '---',
+          '',
+          'Body'
+        ].join('\n')
+      );
+
+      const result = run([agentsDir]);
+      assert.strictEqual(result.code, 0, result.stderr);
+
+      const updated = fs.readFileSync(path.join(agentsDir, 'code-simplifier.md'), 'utf8');
+      assert.ok(updated.includes('tools: ["read_file", "replace", "write_file"]'));
+    } finally {
+      cleanupTempDir(tempDir);
+    }
+  })) passed++; else failed++;
+
+  if (test('adapts a CRLF agent on Windows and preserves its line endings', () => {
+    const tempDir = createTempDir();
+    const agentsDir = path.join(tempDir, '.gemini', 'agents');
+
+    try {
+      writeAgent(
+        agentsDir,
+        'windows.md',
+        ['---', 'name: windows', 'tools: Read, Bash', 'color: purple', '---', '', 'Body line'].join('\r\n')
+      );
+
+      const result = run([agentsDir]);
+      assert.strictEqual(result.code, 0, result.stderr);
+      assert.ok(result.stdout.includes('Updated 1 agent file(s)'), result.stdout);
+
+      const updated = fs.readFileSync(path.join(agentsDir, 'windows.md'), 'utf8');
+      assert.ok(updated.includes('tools: ["read_file", "run_shell_command"]'));
+      assert.ok(!updated.includes('color: purple'));
+      assert.ok(updated.includes('\r\n'), 'CRLF endings were lost');
+      assert.ok(!/[^\r]\n/.test(updated), 'found a bare LF in a CRLF file');
+    } finally {
+      cleanupTempDir(tempDir);
+    }
+  })) passed++; else failed++;
+
+  if (test('rejects an unknown flag without modifying any file', () => {
+    const tempDir = createTempDir();
+    const agentsDir = path.join(tempDir, '.gemini', 'agents');
+
+    try {
+      writeAgent(
+        agentsDir,
+        'architect.md',
+        ['---', 'name: architect', 'tools: Read, Bash', '---', '', 'Body'].join('\n')
+      );
+      const before = fs.readFileSync(path.join(agentsDir, 'architect.md'), 'utf8');
+
+      const result = run(['--dry-run', agentsDir]);
+      assert.strictEqual(result.code, 1);
+      assert.ok(result.stderr.includes('Unknown option: --dry-run'), result.stderr);
+      assert.strictEqual(fs.readFileSync(path.join(agentsDir, 'architect.md'), 'utf8'), before);
+    } finally {
+      cleanupTempDir(tempDir);
+    }
+  })) passed++; else failed++;
+
+  if (test('adapts multi-line YAML block list tools and is idempotent on rerun', () => {
+    const tempDir = createTempDir();
+    const agentsDir = path.join(tempDir, '.gemini', 'agents');
+
+    try {
+      writeAgent(
+        agentsDir,
+        'block-tools.md',
+        [
+          '---',
+          'name: block-tools',
+          'description: Block list tools',
+          'tools:',
+          '  - Read',
+          '  # comment inside list',
+          '  - Grep',
+          'model: sonnet',
+          '---',
+          '',
+          'Body'
+        ].join('\n')
+      );
+
+      const first = run([agentsDir]);
+      assert.strictEqual(first.code, 0, first.stderr);
+      assert.ok(first.stdout.includes('Updated 1 agent file(s)'));
+
+      const afterFirst = fs.readFileSync(path.join(agentsDir, 'block-tools.md'), 'utf8');
+      assert.ok(afterFirst.includes('tools: ["read_file", "grep_search"]'));
+      assert.ok(!afterFirst.includes('- Read'));
+
+      const second = run([agentsDir]);
+      assert.strictEqual(second.code, 0, second.stderr);
+      assert.ok(second.stdout.includes('Updated 0 agent file(s)'));
+      assert.ok(second.stdout.includes('1 already compatible'));
+      assert.strictEqual(fs.readFileSync(path.join(agentsDir, 'block-tools.md'), 'utf8'), afterFirst);
+    } finally {
+      cleanupTempDir(tempDir);
+    }
+  })) passed++; else failed++;
+
+  if (test('strips unquoted inline YAML comments on block-list items while preserving quoted # literals', () => {
+    const tempDir = createTempDir();
+    const agentsDir = path.join(tempDir, '.gemini', 'agents');
+
+    try {
+      writeAgent(
+        agentsDir,
+        'inline-comments.md',
+        [
+          '---',
+          'name: inline-comments',
+          'description: Inline comment handling',
+          'tools: # allowed tools',
+          '  - Read # inspect files',
+          '  - "Read # explanation" # trailing comment',
+          '  - \'Grep # literal\' # another comment',
+          '---',
+          '',
+          'Body'
+        ].join('\n')
+      );
+
+      const result = run([agentsDir]);
+      assert.strictEqual(result.code, 0, result.stderr);
+
+      const updated = fs.readFileSync(path.join(agentsDir, 'inline-comments.md'), 'utf8');
+      assert.ok(
+        updated.includes('tools: ["read_file", "Read # explanation", "Grep # literal"]'),
+        updated
+      );
+    } finally {
+      cleanupTempDir(tempDir);
+    }
+  })) passed++; else failed++;
+
+  if (test('preserves mixed line endings in the body verbatim when adapting frontmatter', () => {
+    const tempDir = createTempDir();
+    const agentsDir = path.join(tempDir, '.gemini', 'agents');
+    const mixedBody = '\nFirst LF line\nPasted CRLF line\r\nFinal LF line\n';
+
+    try {
+      writeAgent(
+        agentsDir,
+        'mixed-endings.md',
+        `---\nname: mixed-endings\ntools: Read, Bash\ncolor: purple\n---\n${mixedBody}`
+      );
+
+      const result = run([agentsDir]);
+      assert.strictEqual(result.code, 0, result.stderr);
+
+      const updated = fs.readFileSync(path.join(agentsDir, 'mixed-endings.md'), 'utf8');
+      assert.strictEqual(
+        updated,
+        `---\nname: mixed-endings\ntools: ["read_file", "run_shell_command"]\n---\n${mixedBody}`
+      );
+    } finally {
+      cleanupTempDir(tempDir);
+    }
+  })) passed++; else failed++;
+
   console.log(`\nResults: Passed: ${passed}, Failed: ${failed}`);
   process.exit(failed > 0 ? 1 : 0);
 }

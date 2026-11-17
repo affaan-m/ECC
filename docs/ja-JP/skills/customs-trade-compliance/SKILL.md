@@ -4,7 +4,7 @@ description: >
   通関書類、関税分類、関税最適化、制限当事者スクリーニング、複数の法域にわたる規制コンプライアンスのための成文化された専門知識。15年以上の経験を持つ貿易コンプライアンス専門家に情報。HS分類ロジック、インコターム適用、FTA利用、ペナルティ軽減を含みます。通関許可、関税分類、貿易コンプライアンス、輸入/輸出ドキュメント、または関税最適化を処理するときに使用します。
 license: Apache-2.0
 version: 1.0.0
-homepage: https://github.com/affaan-m/everything-claude-code
+homepage: https://github.com/affaan-m/ECC
 origin: ECC
 metadata:
   author: evos

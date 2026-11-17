@@ -15,7 +15,8 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 
-const { buildRecord, deriveOutcome, extractSkillId, run } = require('../../scripts/hooks/skill-run-tracker');
+const { buildRecord, deriveOutcome, extractSkillId, isSkillToolCall, run } = require('../../scripts/hooks/skill-run-tracker');
+const { readHooksConfig } = require('../../scripts/lib/hooks-config');
 const {
   MAX_RUN_RECORDS,
   RUNS_FILE_MODE,
@@ -151,6 +152,57 @@ test('run ignores non-Skill tools and malformed input without throwing', () => {
   assert.doesNotThrow(() => run(''));
 });
 
+// ── tool-name tolerance ───────────────────────────────────────────────────────
+// OpenCode names the tool `skill`. A case-sensitive matcher meant the hook ran,
+// dropped every event, and the dashboard kept reporting "unmeasured" with no
+// indication that a writer existed at all.
+
+test('isSkillToolCall accepts both harness spellings and rejects everything else', () => {
+  assert.strictEqual(isSkillToolCall({ tool_name: 'Skill' }), true);
+  assert.strictEqual(isSkillToolCall({ tool_name: 'skill' }), true);
+  assert.strictEqual(isSkillToolCall({ tool_name: '  SKILL  ' }), true);
+  assert.strictEqual(isSkillToolCall({ tool_name: 'Bash' }), false);
+  assert.strictEqual(isSkillToolCall({ tool_name: '' }), false);
+  assert.strictEqual(isSkillToolCall({ tool_name: 42 }), false);
+  assert.strictEqual(isSkillToolCall({}), false);
+  assert.strictEqual(isSkillToolCall(null), false);
+});
+
+test('run records a run for a lowercase skill tool name', () => {
+  withTempHome(homeDir => {
+    const previousHome = process.env.HOME;
+    const previousUserProfile = process.env.USERPROFILE;
+    process.env.HOME = homeDir;
+    process.env.USERPROFILE = homeDir;
+    try {
+      run(payload({ tool_name: 'skill' }));
+
+      const records = readSkillExecutionRecords({ homeDir });
+      assert.strictEqual(records.length, 1);
+      assert.strictEqual(records[0].skill_id, 'code-review');
+    } finally {
+      if (previousHome === undefined) delete process.env.HOME; else process.env.HOME = previousHome;
+      if (previousUserProfile === undefined) delete process.env.USERPROFILE; else process.env.USERPROFILE = previousUserProfile;
+    }
+  });
+});
+
+test('run still records nothing for a non-skill tool', () => {
+  withTempHome(homeDir => {
+    const previousHome = process.env.HOME;
+    const previousUserProfile = process.env.USERPROFILE;
+    process.env.HOME = homeDir;
+    process.env.USERPROFILE = homeDir;
+    try {
+      run(payload({ tool_name: 'bash' }));
+      assert.strictEqual(readSkillExecutionRecords({ homeDir }).length, 0);
+    } finally {
+      if (previousHome === undefined) delete process.env.HOME; else process.env.HOME = previousHome;
+      if (previousUserProfile === undefined) delete process.env.USERPROFILE; else process.env.USERPROFILE = previousUserProfile;
+    }
+  });
+});
+
 // ── JSONL sink bounds ────────────────────────────────────────────────────────
 
 test('recordSkillExecution writes the sink owner-only', function () {
@@ -238,9 +290,7 @@ test('an end-to-end Skill hook run lands exactly one non-sensitive record', () =
 // needs its own hooks.json entry. Without it, hard Skill failures are silently
 // dropped and the dashboard's success rate is inflated.
 test('the tracker is registered for PostToolUseFailure so hard failures are recorded', () => {
-  const hooksConfig = JSON.parse(
-    fs.readFileSync(path.join(__dirname, '..', '..', 'hooks', 'hooks.json'), 'utf8')
-  );
+  const hooksConfig = readHooksConfig(path.join(__dirname, '..', '..', 'hooks', 'hooks.json'));
   const entries = (hooksConfig.hooks.PostToolUseFailure || [])
     .filter(entry => entry.id === 'post:skill:track');
 

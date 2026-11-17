@@ -1,0 +1,62 @@
+{
+  "name": "flashethereal",
+  "version": 1,
+  "created": "2026-08-16T05:53:05Z",
+  "updated": "2026-08-16T07:10:42Z",
+  "refs": [
+    {
+      "id": "genre1",
+      "src": "refs/flashethereal_1.mov",
+      "duration": 14.752,
+      "n_shots": 21
+    },
+    {
+      "id": "genre1_2",
+      "src": "refs/flashethereal_2.mov",
+      "duration": 34.183,
+      "n_shots": 46
+    },
+    {
+      "id": "genre1_3",
+      "src": "refs/flashethereal_3.mov",
+      "duration": 11.052,
+      "n_shots": 10
+    }
+  ],
+  "artifacts": {
+    "lut": "look.cube",
+    "grade": true,
+    "cadence": true,
+    "spec": true,
+    "stills": 14,
+    "props": 2,
+    "plates": 0
+  },
+  "mint": {
+    "lut_size": 33,
+    "strength": 1.0,
+    "pixels_analyzed": 20873152,
+    "ui_masked": true
+  },
+  "distill": {
+    "generated": "2026-08-16T07:10:41Z",
+    "stills_used": [
+      "genre1_000.png",
+      "genre1_002.png",
+      "genre1_004.png",
+      "genre1_2_001.png",
+      "genre1_2_003.png",
+      "genre1_3_001.png"
+    ],
+    "vlm_endpoint": "fal-ai/any-llm/vision",
+    "vlm_model": "google/gemini-flash-2.5",
+    "dry_run": true,
+    "prop": {
+      "source_still": "genre1_3_001.png",
+      "detail_score": 4879.744,
+      "mesh_url": "https://dry-run.taste-forge.local/44ef4f690e74/mesh.glb",
+      "file": "genre1_3_001.glb",
+      "endpoint": "fal-ai/hunyuan3d-v3/image-to-3d"
+    }
+  }
+}

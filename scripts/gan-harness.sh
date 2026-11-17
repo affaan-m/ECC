@@ -19,6 +19,7 @@
 #   GAN_PROJECT_DIR     — Working directory (default: current dir)
 #   GAN_SKIP_PLANNER    — Set to "true" to skip planner phase
 #   GAN_EVAL_MODE       — playwright, screenshot, or code-only (default: playwright)
+#                        playwright requires a connected MCP server named "playwright"
 
 set -euo pipefail
 
@@ -61,17 +62,71 @@ phase()  { echo -e "\n${PURPLE}════════════════�
 extract_score() {
   # Extract the TOTAL weighted score from a feedback file
   local file="$1"
-  # Look for **TOTAL** or **X.X/10** pattern
-  grep -oP '(?<=\*\*TOTAL\*\*.*\*\*)[0-9]+\.[0-9]+' "$file" 2>/dev/null \
-    || grep -oP '(?<=TOTAL.*\|.*\| \*\*)[0-9]+\.[0-9]+' "$file" 2>/dev/null \
-    || grep -oP 'Verdict:.*([0-9]+\.[0-9]+)' "$file" 2>/dev/null | grep -oP '[0-9]+\.[0-9]+' \
-    || echo "0.0"
+  awk '
+    /\*\*TOTAL\*\*/ {
+      total_line = $0
+      total = ""
+      while (match(total_line, /[0-9]+[.][0-9]+/)) {
+        total = substr(total_line, RSTART, RLENGTH)
+        total_line = substr(total_line, RSTART + RLENGTH)
+      }
+      if (total != "") {
+        print total
+        found = 1
+        exit
+      }
+    }
+    /Verdict:/ && /[Ss]core[[:space:]]*[:=]?[[:space:]]*[0-9]+[.][0-9]+/ {
+      verdict = $0
+      sub(/^.*[Ss]core[[:space:]]*[:=]?[[:space:]]*/, "", verdict)
+      if (match(verdict, /^[0-9]+[.][0-9]+/)) {
+        verdict = substr(verdict, RSTART, RLENGTH)
+      } else {
+        verdict = ""
+      }
+    }
+    END {
+      if (!found) print (verdict != "" ? verdict : "0.0")
+    }
+  ' "$file" 2>/dev/null
 }
 
 score_passes() {
   local score="$1"
   local threshold="$2"
   awk -v s="$score" -v t="$threshold" 'BEGIN { exit !(s >= t) }'
+}
+
+playwright_mcp_is_connected() {
+  local status
+  local status_value
+  local check_mark
+  local heavy_check_mark
+  status=$(NO_COLOR=1 claude mcp get playwright 2>/dev/null) || return 1
+  status_value=$(printf '%s\n' "$status" | awk '
+    /^[[:space:]]*Status:[[:space:]]*/ {
+      sub(/^[[:space:]]*Status:[[:space:]]*/, "")
+      sub(/[[:space:]]*$/, "")
+      print
+      exit
+    }
+  ')
+  check_mark=$(printf '\342\234\223')
+  heavy_check_mark=$(printf '\342\234\224')
+
+  [ "$status_value" = "$check_mark Connected" ] || \
+    [ "$status_value" = "$heavy_check_mark Connected" ]
+}
+
+evaluator_tools_for_mode() {
+  local base_tools="Read,Write,Bash,Grep,Glob"
+  local playwright_tools="mcp__playwright__browser_navigate,mcp__playwright__browser_click,mcp__playwright__browser_take_screenshot,mcp__playwright__browser_snapshot,mcp__playwright__browser_type,mcp__playwright__browser_fill_form,mcp__playwright__browser_resize,mcp__playwright__browser_press_key"
+
+  if [ "$1" = "playwright" ]; then
+    printf '%s,%s\n' "$base_tools" "$playwright_tools"
+  else
+    printf '%s\n' "$base_tools"
+  fi
 }
 
 elapsed() {
@@ -81,6 +136,30 @@ elapsed() {
 }
 
 # ─── Setup ───────────────────────────────────────────────────────────────────
+
+case "$EVAL_MODE" in
+  playwright)
+    if ! playwright_mcp_is_connected; then
+      fail "GAN_EVAL_MODE=playwright requires a connected MCP server named 'playwright'."
+      fail "Run 'claude mcp get playwright' to inspect its status, or choose GAN_EVAL_MODE=screenshot or code-only."
+      exit 1
+    fi
+    ;;
+  screenshot|code-only)
+    ;;
+  *)
+    fail "Unsupported GAN_EVAL_MODE. Expected playwright, screenshot, or code-only."
+    exit 1
+    ;;
+esac
+
+EVALUATOR_TOOLS=$(evaluator_tools_for_mode "$EVAL_MODE")
+EVALUATOR_OPTIONS=(--allowedTools "$EVALUATOR_TOOLS")
+if [ "$EVAL_MODE" != "playwright" ]; then
+  # Allow rules only pre-approve calls. Deny this server's tools explicitly
+  # in modes that inspect existing screenshots or source instead.
+  EVALUATOR_OPTIONS+=(--disallowedTools 'mcp__playwright__*')
+fi
 
 phase "GAN-STYLE HARNESS — Setup"
 
@@ -183,8 +262,14 @@ Update gan-harness/generator-state.md." \
   # ── EVALUATE ──
   echo -e "${RED}>> EVALUATOR (iteration $i)${NC}"
 
+  if [ "$EVAL_MODE" = "playwright" ] && ! playwright_mcp_is_connected; then
+    fail "The Playwright MCP server disconnected before evaluator iteration $i."
+    fail "Run 'claude mcp get playwright' to inspect its status, then retry the harness."
+    exit 1
+  fi
+
   claude -p --model "$EVALUATOR_MODEL" \
-    --allowedTools "Read,Write,Bash,Grep,Glob" \
+    "${EVALUATOR_OPTIONS[@]}" \
     "You are the Evaluator in a GAN-style harness. Read agents/gan-evaluator.md for full instructions.
 
 Iteration: $i
@@ -241,8 +326,12 @@ done
 
 phase "PHASE 3: Build Report"
 
-FINAL_SCORE="${SCORES[-1]:-0.0}"
 NUM_ITERATIONS=${#SCORES[@]}
+if [ "$NUM_ITERATIONS" -gt 0 ]; then
+  FINAL_SCORE="${SCORES[$((NUM_ITERATIONS - 1))]}"
+else
+  FINAL_SCORE="0.0"
+fi
 ELAPSED=$(elapsed)
 
 # Build score progression table

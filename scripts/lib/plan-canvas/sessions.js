@@ -16,10 +16,26 @@ const path = require('path');
 const FEEDBACK_KINDS = new Set(['chat', 'annotation', 'verdict']);
 const VERDICTS = new Set(['approve', 'request-changes']);
 
+// The producer and the SessionStart/Stop hooks must land on one directory. The
+// hooks resolve CLAUDE_CONFIG_DIR (they cannot require this file: managed
+// installs ship scripts/ without scripts/lib/, see #3259), so writing to
+// ~/.claude here regardless would hide queued feedback from them whenever a
+// session runs under a second profile.
+function resolveClaudeConfigDir(env = process.env) {
+  const configured = env.CLAUDE_CONFIG_DIR;
+  const trimmed = configured ? String(configured).trim() : '';
+  if (!trimmed) return path.join(os.homedir(), '.claude');
+  if (trimmed.startsWith('~')) {
+    const remainder = trimmed.slice(1).replace(/^[/\\]+/, '');
+    return remainder ? path.join(os.homedir(), remainder) : os.homedir();
+  }
+  return path.resolve(trimmed);
+}
+
 function resolveStateDir(env = process.env) {
   const override = env.ECC_PLAN_CANVAS_STATE_DIR;
   if (override && String(override).trim()) return path.resolve(String(override).trim());
-  return path.join(os.homedir(), '.claude', 'plan-canvas');
+  return path.join(resolveClaudeConfigDir(env), 'plan-canvas');
 }
 
 // Canonicalize so `./plan.md`, symlinks, and absolute paths all land on the

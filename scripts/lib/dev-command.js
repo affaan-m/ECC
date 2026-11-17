@@ -5,9 +5,8 @@
  * `pre-bash-dev-server-block.js` refuses it outside tmux, and
  * `auto-tmux-dev.js` rewrites it into a tmux session. They used to carry a
  * copy of the same raw-text regex each, with a comment in both asking the
- * other to stay byte-identical — so widening one silently left the other
- * behind (a command the blocker refuses but the wrapper never detaches is the
- * worst of both). The classification lives here now, once.
+ * other to stay byte-identical, so widening one silently left the other
+ * behind. The classification lives here now, once.
  */
 
 'use strict';
@@ -66,7 +65,9 @@ function readToken(input, startIndex) {
         continue;
       }
 
-      if (ch === '\\' && quote === '"' && index + 1 < input.length) {
+      // Inside double quotes, bash drops a backslash only before $ ` " \ or a
+      // newline, so `"echo ready\;"` keeps its `\;` for tmux.
+      if (ch === '\\' && quote === '"' && index + 1 < input.length && '$`"\\\n'.includes(input[index + 1])) {
         token += input[index + 1];
         index += 2;
         continue;
@@ -114,7 +115,7 @@ function normalizeCommandWord(token) {
   return base.replace(/\.(cmd|exe|bat)$/i, '');
 }
 
-function getLeadingCommandWord(segment) {
+function getLeadingCommand(segment) {
   let index = 0;
   let activeWrapper = null;
   let skipNextValue = false;
@@ -155,13 +156,30 @@ function getLeadingCommandWord(segment) {
       continue;
     }
 
-    return normalizedToken;
+    return { word: normalizedToken, end: index };
   }
 
   return null;
 }
 
-const TMUX_LAUNCHER = /^\s*tmux\s+(new|new-session|new-window|split-window)\b/;
+// tmux commands, and their aliases, that run their shell command in a tmux pane,
+// where its output stays readable. run-shell and `tmux -c` run it without one.
+const TMUX_PANE_COMMANDS = new Set([
+  'new-session', 'new',
+  'new-window', 'neww',
+  'split-window', 'splitw',
+  'respawn-pane', 'respawnp',
+  'respawn-window', 'respawnw',
+  'send-keys', 'send'
+]);
+// tmux's own options that take a value (`-L work`, `-Lwork`, or the last of a
+// cluster such as `-vL work`).
+const TMUX_OPTION_VALUE_LETTERS = new Set(['f', 'L', 'S', 'T']);
+// Raw-text spelling of a dev server, kept for tmux and npx arguments, where the
+// shell command is one argument among tmux's own. Trailing (?![\w-]) rather
+// than \b: `dev-setup` / `dev-docs` / `dev-build` are distinct scripts.
+const DEV_PATTERN = /\b(npm\s+run\s+dev|pnpm(?:\s+run)?\s+dev|yarn(?:\s+run)?\s+dev|bun(?:\s+run)?\s+dev)(?![\w-])/;
+
 // The script name is decided from TOKENS, not from a regex over the raw text.
 // A raw-text `npm\s+run\s+dev` cannot see through the shell's own quoting, so
 // `npm run "dev"`, `npm run 'dev'` and `npm run de"v"` all reached the shell as
@@ -173,87 +191,89 @@ const TMUX_LAUNCHER = /^\s*tmux\s+(new|new-session|new-window|split-window)\b/;
 // dev server, while `dev-setup` / `dev-docs` / `dev-build` are distinct scripts
 // that must keep running.
 const DEV_SCRIPT_NAME = /^dev(?::|$)/;
-const PACKAGE_MANAGERS = new Set(['npm', 'pnpm', 'yarn', 'bun']);
 const RUN_KEYWORDS = new Set(['run', 'run-script']);
-// Options that consume the following token, so their value is never mistaken
-// for the script name (`yarn --cwd app dev` must read `dev`, not `app`).
-const MANAGER_OPTIONS_WITH_VALUE = new Set([
-  '--prefix',
-  '--cwd',
-  '-C',
-  '--dir',
-  '-d',
-  '--workspace',
-  '-w',
-  '--filter',
-  '-F',
-  '--package',
-  '-p',
-  '--config',
-  '-c',
-  // pnpm / yarn / bun accept a script without `run`, so for them a value-taking
-  // option IS load-bearing: `pnpm --loglevel debug dev` would otherwise read
-  // `debug` as the script name. Their option sets are finite and documented,
-  // unlike npm's config surface — npm needs no entry here because its script is
-  // only ever read after the `run` keyword (see getRunScriptName).
-  '--loglevel',
-  '--reporter',
-  '--store-dir',
-  '--virtual-store-dir',
-  '--modules-dir',
-  '--lockfile-dir',
-  '--registry',
-  '--network-timeout',
-  '--modules-folder',
-  '--cache-folder',
-  '--mutex',
-  '--env-file'
-]);
-
-// npm has no implicit script form — `npm dev` is not a command — so a bare
-// token before `run` is an option's value, never the script. pnpm, yarn and
-// bun do accept `pnpm dev`, so for them the first bare token IS the script.
-const MANAGERS_REQUIRING_RUN = new Set(['npm']);
 
 /**
- * The script a package manager is being asked to run, or null.
+ * Each package manager's own grammar for the options that may precede a
+ * script. The same short flag means different things per manager (pnpm `-d`
+ * is `--loglevel=info`, bun `-d` is `--define <K:V>`, pnpm `-w` is the boolean
+ * `--workspace-root`), so one shared table either swallows the script after a
+ * boolean flag or reads an option's value as the script.
  *
- * Two shapes, because the managers do not agree:
+ * - `requiresRun`: npm has no implicit script form (`npm dev` is not a
+ *   command), so its script is only ever the token after `run`. That makes
+ *   npm's open-ended `--<any-config-key> <value>` surface harmless without a
+ *   value table: `npm -d run dev` and `npm --userconfig x run dev` both read
+ *   the token after `run`.
+ * - `values`: options that consume the following token (`--opt=value` is one
+ *   token and needs no entry).
+ * - `optionalValues`: options whose value is optional, so the next bare token
+ *   may be either their value or the script; both readings are checked.
  *
- *   - with a `run` keyword, the script is the token right after it. Anything
- *     further along is an ARGUMENT to that script: `npm run build dev` runs
- *     build, and `npm run run dev` runs a script called `run`.
- *   - without one (`pnpm dev`, `yarn dev`, `bun dev`), the script is the first
- *     bare token.
- *
- * Anchoring on the `run` keyword is also what makes npm's config surface
- * harmless. npm takes ANY config key as `--key value`, so an unknown option's
- * value lands in the token stream — reading the first bare token made
- * `npm --userconfig /tmp/npmrc run dev` resolve to `/tmp/npmrc` and let the
- * dev server through. Reading the token after `run` steps over it without
- * needing to know that `--userconfig` takes a value.
- *
- * Known value-taking options are still consumed, so `pnpm --filter dev run
- * build` is a filter named dev rather than the dev script.
- *
- * Residual gap, stated rather than hidden: the implicit form combined with an
- * unknown value-taking option (`pnpm --unknown value dev`) has no `run` to
- * anchor on, so `value` reads as the script name. pnpm/yarn/bun spell their
- * options `--flag=value` in practice, and npm — the one manager with an
- * open-ended config surface — has no implicit form at all.
+ * Sources: pnpm `shorthands.ts` and CLI help, Yarn Classic/Berry global
+ * options, bun `Arguments.rs`.
  */
-function getRunScriptName(segment, managerWord) {
-  const requiresRunKeyword = MANAGERS_REQUIRING_RUN.has(managerWord);
-  let index = 0;
-  let seenManager = false;
+const MANAGER_GRAMMARS = {
+  npm: { requiresRun: true, values: new Set(), optionalValues: new Set() },
+  pnpm: {
+    requiresRun: false,
+    values: new Set([
+      '-C', '--dir', '-F', '--filter', '--filter-prod', '--test-pattern',
+      '--changed-files-ignore-pattern', '--loglevel', '--reporter', '--store-dir',
+      '--virtual-store-dir', '--modules-dir', '--lockfile-dir', '--registry',
+      '--workspace-concurrency'
+    ]),
+    optionalValues: new Set()
+  },
+  yarn: {
+    requiresRun: false,
+    values: new Set([
+      '--cwd', '--modules-folder', '--cache-folder', '--preferred-cache-folder',
+      '--global-folder', '--link-folder', '--mutex', '--network-timeout',
+      '--network-concurrency', '--child-concurrency', '--registry', '--use-yarnrc'
+    ]),
+    optionalValues: new Set()
+  },
+  bun: {
+    requiresRun: false,
+    values: new Set([
+      '--cwd', '--env-file', '-F', '--filter', '-r', '--preload', '-d', '--define',
+      '-l', '--loader', '--tsconfig-override', '--main-fields', '--shell',
+      '--elide-lines', '--install', '--conditions', '--drop', '--feature'
+    ]),
+    optionalValues: new Set(['-c', '--config', '--inspect', '--inspect-wait', '--inspect-brk'])
+  }
+};
+
+/**
+ * True when a package-manager invocation runs the dev script.
+ *
+ * With a `run` keyword the script is the token right after it, and anything
+ * further along is an ARGUMENT to that script: `npm run build dev` runs build.
+ * Without one (`pnpm dev`, `yarn dev`, `bun dev`), the script is the first
+ * bare token, and everything after it, a later `run` included, is its
+ * argument. `--` ends the manager's own arguments.
+ *
+ * Residual gap, stated rather than hidden: an implicit form behind a
+ * value-taking option missing from the manager's table (`pnpm --unknown value
+ * dev`) reads `value` as the script. pnpm, Yarn and bun usually spell such
+ * options `--flag=value`, and npm, the one manager with an open-ended config
+ * surface, has no implicit form at all.
+ *
+ * @param {string} segment
+ * @param {number} start index just past the manager word
+ * @param {string} manager
+ * @returns {boolean}
+ */
+function runsDevScript(segment, start, manager) {
+  const grammar = MANAGER_GRAMMARS[manager];
+  let index = start;
   let seenRunKeyword = false;
   let skipNextValue = false;
+  let optionalValuePending = false;
 
-  while (index < segment.length) {
-    const parsed = readToken(segment, index);
-    if (!parsed) return null;
+  for (let parsed = readToken(segment, index); parsed; parsed = readToken(segment, index)) {
     index = parsed.end;
-
     const token = parsed.token;
     if (!token) continue;
 
@@ -262,31 +282,78 @@ function getRunScriptName(segment, managerWord) {
       continue;
     }
 
-    if (!seenManager) {
-      if (normalizeCommandWord(token) === managerWord) seenManager = true;
-      continue;
-    }
-
-    // Everything after `--` is an argument to the script, not the script name.
-    if (token === '--') break;
+    if (token === '--') return false;
 
     if (isOptionToken(token)) {
-      if (MANAGER_OPTIONS_WITH_VALUE.has(token)) skipNextValue = true;
+      optionalValuePending = false;
+      if (!seenRunKeyword && grammar.values.has(token)) skipNextValue = true;
+      else if (!seenRunKeyword && grammar.optionalValues.has(token)) optionalValuePending = true;
       continue;
     }
 
     if (!seenRunKeyword && RUN_KEYWORDS.has(token.toLowerCase())) {
       seenRunKeyword = true;
+      optionalValuePending = false;
       continue;
     }
 
-    // After a `run` keyword this token IS the script it names; for a manager
-    // that accepts the implicit form, the first bare token is the script and
-    // everything after it — including a later `run` — is its argument.
-    if (seenRunKeyword || !requiresRunKeyword) return token;
+    if (seenRunKeyword || !grammar.requiresRun) {
+      if (DEV_SCRIPT_NAME.test(token)) return true;
+      // Read as an optional option's value, the token is not the script.
+      if (optionalValuePending) {
+        optionalValuePending = false;
+        continue;
+      }
+      return false;
+    }
   }
 
-  return null;
+  return false;
+}
+
+/**
+ * Return true when the tmux invocation that starts at `index` runs the dev
+ * server outside a pane. The tmux commands follow tmux's own options
+ * (`-L work`, `-f conf`), and the executable may come through a path or an env
+ * prefix, so this reads the parsed tokens instead of the start of the segment.
+ * A sequence (`new-session -d \; run-shell ...`) is exempt only when every
+ * command in it that runs the dev server is a pane command.
+ */
+function tmuxRunsDevOutsidePane(segment, index) {
+  const tokens = [];
+  for (let parsed = readToken(segment, index); parsed; parsed = readToken(segment, parsed.end)) {
+    if (parsed.token) tokens.push(parsed.token);
+  }
+  // A shell command passed to tmux as one argument is classified on its own;
+  // the raw pattern keeps the spellings tmux joins from several arguments.
+  const runsDev = words => DEV_PATTERN.test(words.join(' ')) || words.some(isDevServerCommand);
+  const segmentRunsDev = DEV_PATTERN.test(segment) || runsDev(tokens);
+
+  let next = 0;
+  for (; next < tokens.length && isOptionToken(tokens[next]); next++) {
+    const letters = tokens[next].slice(1);
+    for (let i = 0; i < letters.length; i++) {
+      // -c runs its shell command without a pane.
+      if (letters[i] === 'c') return segmentRunsDev;
+      if (TMUX_OPTION_VALUE_LETTERS.has(letters[i])) {
+        if (i === letters.length - 1) next++;
+        break;
+      }
+    }
+  }
+
+  // tmux ends a command at a `;` argument and at a `;` that ends an argument
+  // (`'npm run dev;'`); an escaped `\;` at the end stays literal.
+  const commands = [[]];
+  for (const token of tokens.slice(next)) {
+    const ends = token.endsWith(';') && !token.endsWith('\\;');
+    const value = ends ? token.slice(0, -1) : token;
+    if (value) commands[commands.length - 1].push(value);
+    if (ends) commands.push([]);
+  }
+  const devCommands = commands.filter(command => command.length > 0 && runsDev(command.slice(1)));
+  if (devCommands.length === 0) return segmentRunsDev;
+  return !devCommands.every(command => TMUX_PANE_COMMANDS.has(command[0]));
 }
 
 /**
@@ -294,27 +361,31 @@ function getRunScriptName(segment, managerWord) {
  * segments first, then segments harvested from `$(...)` / backtick command
  * substitutions and plain `(...)` subshell groups, recursively.
  *
- * Without this expansion the leading-command and dev-pattern check below only
- * sees the outermost command, so wrappers like `$(npm run dev)` and
- * `(npm run dev)` (which still spawn a dev server) sneak past.
+ * Without this expansion the leading-command check only sees the outermost
+ * command, so wrappers like `$(npm run dev)` and `(npm run dev)` (which still
+ * spawn a dev server) sneak past.
  */
 function collectCheckSegments(cmd) {
   const segments = [...splitShellSegments(cmd)];
-  const queue = [cmd];
+  // Expanded here-document bodies enter through splitShellSegments, so their
+  // segments must also be scanned for substitutions nested inside them.
+  const queue = [cmd, ...segments];
   const seen = new Set();
 
-  while (queue.length) {
-    const current = queue.shift();
+  // Read by index: shift() copies the queue each time, which is quadratic on a long command.
+  for (let head = 0; head < queue.length; head++) {
+    const current = queue[head];
     if (seen.has(current)) continue;
     seen.add(current);
 
-    for (const body of extractCommandSubstitutions(current)) {
-      for (const seg of splitShellSegments(body)) segments.push(seg);
+    for (const body of [...extractCommandSubstitutions(current), ...extractSubshellGroups(current)]) {
+      const bodySegments = splitShellSegments(body);
+      // One at a time: spreading a long command's segments into push() exceeds the argument limit.
       queue.push(body);
-    }
-    for (const body of extractSubshellGroups(current)) {
-      for (const seg of splitShellSegments(body)) segments.push(seg);
-      queue.push(body);
+      for (const segment of bodySegments) {
+        segments.push(segment);
+        queue.push(segment);
+      }
     }
   }
 
@@ -322,16 +393,17 @@ function collectCheckSegments(cmd) {
 }
 
 function isDevServerSegment(segment) {
-  const commandWord = getLeadingCommandWord(segment);
-  if (!commandWord || !DEV_COMMAND_WORDS.has(commandWord)) return false;
-  if (TMUX_LAUNCHER.test(segment)) return false;
-  if (!PACKAGE_MANAGERS.has(commandWord)) return false;
-
-  const script = getRunScriptName(segment, commandWord);
-  return Boolean(script) && DEV_SCRIPT_NAME.test(script);
+  const command = getLeadingCommand(segment);
+  if (!command || !DEV_COMMAND_WORDS.has(command.word)) return false;
+  if (command.word === 'tmux') return tmuxRunsDevOutsidePane(segment, command.end);
+  if (Object.prototype.hasOwnProperty.call(MANAGER_GRAMMARS, command.word)) {
+    return runsDevScript(segment, command.end, command.word);
+  }
+  // npx keeps the raw-text match on the package command it launches.
+  return DEV_PATTERN.test(segment);
 }
 
-/** True when any segment of `command` starts a dev server. */
+/** True when any segment of `command` starts a dev server outside a tmux pane. */
 function isDevServerCommand(command) {
   return collectCheckSegments(String(command || '')).some(isDevServerSegment);
 }

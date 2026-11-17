@@ -1,4 +1,4 @@
-# The Shorthand Guide to Everything Claude Code
+# The Shorthand Guide to ECC
 
 ![Header: Anthropic Hackathon Winner - Tips & Tricks for Claude Code](./assets/images/shortform/00-header.png)
 
@@ -420,7 +420,7 @@ affoon:~ ctx:65% Opus 4.5 19:52
 - [Interactive Mode](https://code.claude.com/docs/en/interactive-mode)
 - [Memory System](https://code.claude.com/docs/en/memory)
 - [Subagents](https://code.claude.com/docs/en/sub-agents)
-- [MCP Overview](https://code.claude.com/docs/en/mcp-overview)
+- [MCP Overview](https://code.claude.com/docs/en/mcp)
 
 ---
 

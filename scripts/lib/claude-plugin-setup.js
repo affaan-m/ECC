@@ -9,6 +9,7 @@ const {
   hasExplicitCommitAttributionPreference,
   withCommitAttributionDisabled,
 } = require('./claude-commit-attribution');
+const { createDryRunClaudeRunner } = require('./claude-dry-run-sandbox');
 const { normalizeGitHubGitOrigin } = require('./github-origin');
 const {
   CURRENT_PLUGIN_ID,
@@ -96,6 +97,7 @@ function parsePluginList(stdout) {
       plugin.id === CURRENT_PLUGIN_ID
       || String(plugin.id || '').startsWith('ecc@')
       || LEGACY_PLUGIN_IDS.has(plugin.id)
+      // Legacy install id prefix, kept for existing installs.
       || String(plugin.id || '').startsWith('everything-claude-code@')
     );
     if (!isRelevant) continue;
@@ -171,6 +173,41 @@ function resolveWindowsCmdShim(command, env) {
     .split(/\r?\n/)
     .map(line => line.trim())
     .find(Boolean) || null;
+}
+
+function assertGitAvailable(options = {}, dependencies = {}) {
+  const spawn = dependencies.spawnSync || spawnSync;
+  const result = spawn('git', ['--version'], {
+    cwd: options.cwd || process.cwd(),
+    env: options.env || process.env,
+    encoding: 'utf8',
+    timeout: 10 * 1000,
+    windowsHide: true,
+  });
+  if (result.error?.code === 'ENOENT') {
+    fail(
+      'GIT_NOT_FOUND',
+      'Git is required for Claude marketplace setup but `git` is not on PATH. Install Git, ensure `git` is on PATH, then rerun ECC setup.',
+      {
+        phase: 'preflight',
+        recovery: [
+          'Install Git from https://git-scm.com/downloads and ensure `git` is on PATH.',
+          'Rerun ECC setup.',
+        ],
+      }
+    );
+  }
+  if (result.error || result.status !== 0) {
+    const detail = String(result.stderr || result.stdout || result.error?.message || '').trim();
+    fail(
+      'GIT_UNAVAILABLE',
+      `Git is required for Claude marketplace setup but could not run${detail ? `: ${detail}` : '.'}`,
+      {
+        phase: 'preflight',
+        recovery: ['Repair Git, ensure `git --version` succeeds, then rerun ECC setup.'],
+      }
+    );
+  }
 }
 
 function runClaude(args, options = {}, dependencies = {}) {
@@ -364,6 +401,7 @@ function currentEccPlugins(plugins) {
 function assertNoConflictingEccPlugins(plugins) {
   const legacy = plugins.find(plugin => (
     LEGACY_PLUGIN_IDS.has(plugin?.id)
+    // Legacy install id prefix, kept for existing installs.
     || String(plugin?.id || '').startsWith('everything-claude-code@')
   ));
   if (legacy) {
@@ -534,7 +572,6 @@ function verifyPluginAtScope(options) {
 
 function ensurePluginAtScope(options) {
   const run = options.run || runClaude;
-  const configuredHooks = options.hookConfiguration || hookOptions(options.hooks);
   if (options.installed) {
     run(
       ['plugin', 'update', CURRENT_PLUGIN_ID, '--scope', options.scope],
@@ -546,8 +583,6 @@ function ensurePluginAtScope(options) {
     [
       'plugin', 'install', CURRENT_PLUGIN_ID,
       '--scope', options.scope,
-      '--config', `hooks_enabled=${configuredHooks.hooks_enabled}`,
-      '--config', `hook_profile=${configuredHooks.hook_profile}`,
     ],
     { cwd: options.projectRoot, phase: 'plugin-install' }
   );
@@ -566,8 +601,15 @@ function setupClaudePlugin(options = {}, dependencies = {}) {
   const settingsPath = path.join(paths.configDir, 'settings.json');
   const initialSettings = readSettings(settingsPath);
   assertSafeLocalInventory(paths);
+  assertGitAvailable(
+    { cwd: paths.projectRoot },
+    { spawnSync: dependencies.spawnSync }
+  );
 
-  const run = dependencies.runClaude || runClaude;
+  const providerRun = dependencies.runClaude || runClaude;
+  const run = options.dryRun
+    ? createDryRunClaudeRunner(providerRun, paths, options)
+    : providerRun;
   const plugins = parsePluginList(
     run(
       ['plugin', 'list', '--json'],
@@ -610,6 +652,7 @@ function setupClaudePlugin(options = {}, dependencies = {}) {
     projectRoot: paths.projectRoot,
     run,
     scope: inventory.scope,
+    spawnSync: dependencies.spawnSync,
   });
   const action = ensurePluginAtScope({
     hooks,
@@ -656,6 +699,8 @@ module.exports = {
   buildWindowsCommandLine,
   assertNoConflictingEccPlugins,
   assertSafeLocalInventory,
+  assertGitAvailable,
+  createDryRunClaudeRunner,
   currentEccPlugins,
   deriveHookMode,
   ensureOfficialMarketplace,

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# quick-diff.sh — compare skill file mtimes against results.json evaluated_at
+# quick-diff.sh — compare skill file mtimes against their saved evaluations
 # Usage: quick-diff.sh RESULTS_JSON [CWD_SKILLS_DIR]
 # Output: JSON array of changed/new files to stdout (empty [] if no changes)
 #
@@ -12,6 +12,27 @@
 #   SKILL_STOCKTAKE_PROJECT_DIR  Override project dir detection (for testing only)
 
 set -euo pipefail
+
+sort_nul_file() {
+  local input_file="$1"
+  local sorted_file="${input_file}.sorted"
+  node -e '
+    const fs = require("fs");
+    const input = fs.readFileSync(0);
+    const records = [];
+    let start = 0;
+    for (let index = 0; index < input.length; index += 1) {
+      if (input[index] === 0) {
+        records.push(input.subarray(start, index + 1));
+        start = index + 1;
+      }
+    }
+    if (start < input.length) records.push(input.subarray(start));
+    records.sort(Buffer.compare);
+    process.stdout.write(Buffer.concat(records));
+  ' <"$input_file" >"$sorted_file"
+  mv "$sorted_file" "$input_file"
+}
 
 RESULTS_JSON="${1:-}"
 CWD_SKILLS_DIR="${SKILL_STOCKTAKE_PROJECT_DIR:-${2:-$PWD/.claude/skills}}"
@@ -37,9 +58,6 @@ if [[ ! "$evaluated_at" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2
   exit 1
 fi
 
-# Pre-extract known paths from results.json once (O(1) lookup per file instead of O(n*m))
-known_paths=$(jq -r '.skills[].path' "$RESULTS_JSON" 2>/dev/null)
-
 tmpdir=$(mktemp -d)
 # Use a function to avoid embedding $tmpdir in a quoted string (prevents injection
 # if TMPDIR were crafted to contain shell metacharacters).
@@ -51,21 +69,37 @@ i=0
 
 process_dir() {
   local dir="$1"
-  while IFS= read -r file; do
+  local find_out="$tmpdir/.find-stdout"
+  local find_err="$tmpdir/.find-stderr"
+  # Capture find's exit status and stderr instead of discarding them: with -L,
+  # a broken symlink or unreadable directory makes find skip that entry AND
+  # exit non-zero, which would otherwise silently under-count skills.
+  # NUL-delimited (-print0 / sort_nul_file / read -d '') so a path containing a
+  # literal newline can't desync record boundaries — paths here are untrusted.
+  # Archived skills are not live inventory; prune the entire trash subtree.
+  if ! find -L "$dir" -type d -name ".trash" -prune -o -name "SKILL.md" -type f -print0 >"$find_out" 2>"$find_err"; then
+    echo "Warning: find encountered errors while scanning $dir (broken symlinks or permission issues may cause skills to be missed):" >&2
+    cat "$find_err" >&2
+  fi
+  sort_nul_file "$find_out"
+
+  while IFS= read -r -d '' file; do
     local mtime dp is_new
     mtime=$(date -u -r "$file" +%Y-%m-%dT%H:%M:%SZ)
     dp="${file/#$HOME/~}"
 
-    # Check if this file is known to results.json (exact whole-line match to
-    # avoid substring false-positives, e.g. "python-patterns" matching "python-patterns-v2").
-    if echo "$known_paths" | grep -qxF "$dp"; then
-      is_new="false"
-      # Known file: only emit if mtime changed (ISO 8601 string comparison is safe)
-      [[ "$mtime" > "$evaluated_at" ]] || continue
-    else
-      is_new="true"
-      # New file: always emit regardless of mtime
-    fi
+    # Compare against the version actually evaluated for this skill. The global
+    # completion time can be later than edits to an earlier evaluation batch.
+    # Older caches without per-skill mtimes retain the completion-time fallback.
+    is_new=$(jq -r --arg path "$dp" --arg mtime "$mtime" '
+      (first(.skills[] | select(.path == $path)) // null) as $cached |
+      if $cached == null then true
+      elif $cached.mtime != null then
+        if $cached.mtime != $mtime then false else empty end
+      elif $mtime > .evaluated_at then false
+      else empty end
+    ' "$RESULTS_JSON")
+    [[ -n "$is_new" ]] || continue
 
     jq -n \
       --arg path "$dp" \
@@ -74,7 +108,7 @@ process_dir() {
       '{path:$path,mtime:$mtime,is_new:$is_new}' \
       > "$tmpdir/$i.json"
     i=$((i+1))
-  done < <(find "$dir" -name "*.md" -type f 2>/dev/null | sort)
+  done < "$find_out"
 }
 
 [[ -d "$GLOBAL_DIR" ]] && process_dir "$GLOBAL_DIR"

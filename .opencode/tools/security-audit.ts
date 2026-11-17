@@ -8,7 +8,7 @@
  * The regex patterns below are used to DETECT potential issues in user code.
  */
 
-import { tool, type ToolDefinition } from "@opencode-ai/plugin/tool"
+import { tool, type ToolDefinition } from "./tool.ts"
 import * as path from "path"
 import * as fs from "fs"
 

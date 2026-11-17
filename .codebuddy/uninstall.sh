@@ -1,7 +1,7 @@
 #!/bin/bash
 #
 # ECC CodeBuddy Uninstaller
-# Uninstalls Everything Claude Code workflows from a CodeBuddy project.
+# Uninstalls ECC workflows from a CodeBuddy project.
 #
 # Usage:
 #   ./uninstall.sh              # Uninstall from current directory

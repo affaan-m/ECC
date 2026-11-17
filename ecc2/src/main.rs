@@ -507,7 +507,49 @@ enum MessageCommands {
         session_id: String,
         #[arg(long, default_value_t = 10)]
         limit: usize,
+        /// Show complete structured content and acknowledge displayed inbound messages
+        #[arg(long)]
+        full: bool,
     },
+}
+
+/// Preview without acknowledging; full output acknowledges only inbound rows shown.
+fn write_message_inbox<W: std::io::Write>(
+    db: &session::store::StateStore,
+    session_id: &str,
+    limit: usize,
+    full: bool,
+    out: &mut W,
+) -> Result<()> {
+    let messages = db.list_messages_for_session(session_id, limit)?;
+    if messages.is_empty() {
+        writeln!(out, "No messages for {}", short_session(session_id))?;
+        return Ok(());
+    }
+
+    writeln!(out, "Messages for {}", short_session(session_id))?;
+    for message in messages {
+        let time = message.timestamp.format("%H:%M:%S");
+        let from = short_session(&message.from_session);
+        let to = short_session(&message.to_session);
+        if full {
+            writeln!(
+                out,
+                "{time} {from} -> {to} | {} [id={}] {}",
+                message.msg_type, message.id, message.content
+            )?;
+        } else {
+            writeln!(
+                out,
+                "{time} {from} -> {to} | {}",
+                comms::preview(&message.msg_type, &message.content)
+            )?;
+        }
+        if full && message.to_session == session_id && !message.read {
+            db.mark_message_read(message.id)?;
+        }
+    }
+    Ok(())
 }
 
 #[derive(clap::Subcommand, Debug)]
@@ -534,6 +576,17 @@ enum ScheduleCommands {
         /// Optional task-group grouping override
         #[arg(long)]
         task_group: Option<String>,
+        /// Emit machine-readable JSON instead of the human summary
+        #[arg(long)]
+        json: bool,
+    },
+    /// Update only the instructions for one existing schedule
+    Update {
+        /// Existing schedule ID; never creates another schedule
+        schedule_id: i64,
+        /// Replacement task instructions (preserves timing and agent identity)
+        #[arg(short, long)]
+        task: String,
         /// Emit machine-readable JSON instead of the human summary
         #[arg(long)]
         json: bool,
@@ -2619,32 +2672,13 @@ async fn main() -> Result<()> {
                     short_session(&to)
                 );
             }
-            MessageCommands::Inbox { session_id, limit } => {
+            MessageCommands::Inbox {
+                session_id,
+                limit,
+                full,
+            } => {
                 let session_id = resolve_session_id(&db, &session_id)?;
-                let messages = db.list_messages_for_session(&session_id, limit)?;
-                let unread_before = db
-                    .unread_message_counts()?
-                    .get(&session_id)
-                    .copied()
-                    .unwrap_or(0);
-                if unread_before > 0 {
-                    let _ = db.mark_messages_read(&session_id)?;
-                }
-
-                if messages.is_empty() {
-                    println!("No messages for {}", short_session(&session_id));
-                } else {
-                    println!("Messages for {}", short_session(&session_id));
-                    for message in messages {
-                        println!(
-                            "{} {} -> {} | {}",
-                            message.timestamp.format("%H:%M:%S"),
-                            short_session(&message.from_session),
-                            short_session(&message.to_session),
-                            comms::preview(&message.msg_type, &message.content)
-                        );
-                    }
-                }
+                write_message_inbox(&db, &session_id, limit, full, &mut std::io::stdout())?;
             }
         },
         Some(Commands::Schedule { command }) => match command {
@@ -2682,6 +2716,17 @@ async fn main() -> Result<()> {
                     println!(
                         "- {} [{}] | {}",
                         schedule.task, schedule.agent_type, schedule.cron_expr
+                    );
+                }
+            }
+            ScheduleCommands::Update { schedule_id, task, json } => {
+                let schedule = session::manager::update_scheduled_task_text(&db, schedule_id, &task)?;
+                if json {
+                    println!("{}", serde_json::to_string_pretty(&schedule)?);
+                } else {
+                    println!(
+                        "Updated schedule {} without changing its next run {}",
+                        schedule.id, schedule.next_run_at.to_rfc3339()
                     );
                 }
             }
@@ -5214,7 +5259,6 @@ fn build_legacy_migration_audit_report(source: &Path) -> Result<LegacyMigrationA
             mapping: vec![
                 "ecc graph connector-sync".to_string(),
                 "ecc graph recall".to_string(),
-                "WORKING-CONTEXT.md".to_string(),
             ],
             notes: vec![
                 "Import only sanitized operator memory into the shared context graph."
@@ -8569,7 +8613,7 @@ fn send_handoff_message(db: &session::store::StateStore, from_id: &str, to_id: &
             .unwrap_or_default()
     );
 
-    comms::send(
+    comms::send_native_assignment(
         db,
         &from_session.id,
         to_id,
@@ -8859,6 +8903,107 @@ mod tests {
     }
 
     #[test]
+    fn cli_parses_messages_inbox_full() {
+        let cli =
+            Cli::try_parse_from(["ecc", "messages", "inbox", "lead", "--limit", "2", "--full"])
+                .expect("messages inbox --full should parse");
+
+        match cli.command {
+            Some(Commands::Messages {
+                command:
+                    MessageCommands::Inbox {
+                        session_id,
+                        limit,
+                        full,
+                    },
+            }) => {
+                assert_eq!(session_id, "lead");
+                assert_eq!(limit, 2);
+                assert!(full);
+            }
+            _ => panic!("expected messages inbox subcommand"),
+        }
+    }
+
+    #[test]
+    fn inbox_full_shows_complete_content_without_acknowledging_unseen_messages() -> Result<()> {
+        let tempdir = TestDir::new("inbox-full-scoped-ack")?;
+        let db = StateStore::open(&tempdir.path().join("state.db"))?;
+        db.insert_session(&build_session("lead", "Lead", SessionState::Idle))?;
+        db.insert_session(&build_session("sender", "Sender", SessionState::Idle))?;
+
+        let old = comms::MessageType::Query {
+            question: "OLDER_UNSEEN_QUERY".to_string(),
+        };
+        let middle = comms::MessageType::Query {
+            question: "MIDDLE_UNSEEN_QUERY".to_string(),
+        };
+        let full_question = format!("LATEST_FULL_QUERY_{}", "x".repeat(120));
+        let latest = comms::MessageType::Query {
+            question: full_question.clone(),
+        };
+        let outgoing = comms::MessageType::Response {
+            answer: "OUTBOUND_NOT_ACKNOWLEDGED_BY_LEAD".to_string(),
+        };
+        comms::send(&db, "sender", "lead", &old)?;
+        comms::send(&db, "sender", "lead", &middle)?;
+        comms::send(&db, "sender", "lead", &latest)?;
+        comms::send(&db, "lead", "sender", &outgoing)?;
+
+        let mut preview = Vec::new();
+        write_message_inbox(&db, "lead", 2, false, &mut preview)?;
+        let preview_text = String::from_utf8(preview)?;
+        assert!(!preview_text.contains(&full_question), "preview must remain short");
+        assert_eq!(
+            db.unread_message_counts()?.get("lead"),
+            Some(&3),
+            "preview must not acknowledge unread content it did not display"
+        );
+
+        let mut output = Vec::new();
+        write_message_inbox(&db, "lead", 2, true, &mut output)?;
+        let shown = String::from_utf8(output)?;
+        assert!(
+            shown.contains(&full_question),
+            "full mode must not truncate"
+        );
+        let messages = db.list_messages_for_session("lead", 10)?;
+        assert_eq!(messages.len(), 4);
+        // The two displayed rows are the newest inbound query and the
+        // outgoing response. Never substitute a constant or another row ID.
+        for index in [2, 3] {
+            assert!(
+                shown.contains(&format!("[id={}] ", messages[index].id)),
+                "full mode must show the exact selected message ID"
+            );
+        }
+        for index in [0, 1] {
+            assert!(
+                !shown.contains(&format!("[id={}] ", messages[index].id)),
+                "messages outside the limit must not be displayed"
+            );
+        }
+        assert!(!shown.contains("OLDER_UNSEEN_QUERY"));
+        assert!(!shown.contains("MIDDLE_UNSEEN_QUERY"));
+        assert!(!messages[0].read, "older unseen inbound must remain unread");
+        assert!(
+            !messages[1].read,
+            "middle unseen inbound must remain unread"
+        );
+        assert!(
+            messages[2].read,
+            "displayed inbound message is acknowledged"
+        );
+        assert!(
+            !messages[3].read,
+            "outgoing message is not an inbox acknowledgment"
+        );
+        assert_eq!(db.unread_message_counts()?.get("lead"), Some(&2));
+
+        Ok(())
+    }
+
+    #[test]
     fn cli_parses_schedule_add_command() {
         let cli = Cli::try_parse_from([
             "ecc",
@@ -8901,6 +9046,33 @@ mod tests {
             }
             _ => panic!("expected schedule add subcommand"),
         }
+    }
+
+    #[test]
+    fn cli_parses_native_schedule_update_without_identity_mutation_options() {
+        let cli = Cli::try_parse_from([
+            "ecc", "schedule", "update", "16", "--task",
+            "Read original ECC native READY items", "--json",
+        ])
+        .expect("native schedule update must parse");
+        match cli.command {
+            Some(Commands::Schedule {
+                command: ScheduleCommands::Update { schedule_id, task, json }
+            }) => {
+                assert_eq!(schedule_id, 16);
+                assert!(task.contains("READY items"));
+                assert!(json);
+            }
+            _ => panic!("expected native existing schedule update"),
+        }
+        assert!(Cli::try_parse_from([
+            "ecc", "schedule", "update", "16", "--task",
+            "New instructions", "--cron", "* * * * *",
+        ]).is_err(), "schedule update must not mutate cron");
+        assert!(Cli::try_parse_from([
+            "ecc", "schedule", "update", "16", "--task",
+            "New instructions", "--agent", "codex",
+        ]).is_err(), "schedule update must not mutate the agent");
     }
 
     #[test]
@@ -12215,7 +12387,7 @@ Customer wiped setup and got charged twice after reinstalling.
         db.insert_session(&session::Session {
             id: "session-1".to_string(),
             task: "knowledge import".to_string(),
-            project: "everything-claude-code".to_string(),
+            project: "ecc".to_string(),
             task_group: "memory".to_string(),
             agent_type: "claude".to_string(),
             working_dir: PathBuf::from("/tmp"),
@@ -12302,7 +12474,7 @@ Guide users to repair before reinstall so wiped setups do not buy twice.
         db.insert_session(&session::Session {
             id: "session-1".to_string(),
             task: "knowledge import".to_string(),
-            project: "everything-claude-code".to_string(),
+            project: "ecc".to_string(),
             task_group: "memory".to_string(),
             agent_type: "claude".to_string(),
             working_dir: PathBuf::from("/tmp"),
@@ -12491,7 +12663,7 @@ INVALID LINE
         db.insert_session(&session::Session {
             id: "session-1".to_string(),
             task: "memory import".to_string(),
-            project: "everything-claude-code".to_string(),
+            project: "ecc".to_string(),
             task_group: "memory".to_string(),
             agent_type: "claude".to_string(),
             working_dir: PathBuf::from("/tmp"),
