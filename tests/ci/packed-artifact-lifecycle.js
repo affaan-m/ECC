@@ -377,12 +377,14 @@ function findDriftCandidate(state, cursorRoot) {
 }
 
 function runTargetSmoke(options) {
+  const selectionArgs = Array.isArray(options.selectionArgs)
+    ? options.selectionArgs
+    : ['--modules', 'workflow-quality', '--enable-hooks'];
   parseJsonOutput(
     options.runCli([
       'install',
-      '--modules', 'workflow-quality',
+      ...selectionArgs,
       '--target', options.target,
-      '--enable-hooks',
       '--json',
     ]),
     `${options.target} packed install`
@@ -858,6 +860,14 @@ function runLifecycle(options) {
     });
     assert.ok(!fs.existsSync(path.join(homeDir, '.opencode')));
 
+    const mistralVibeRoot = path.join(projectDir, '.vibe');
+    runTargetSmoke({
+      runCli,
+      target: 'mistral-vibe',
+      targetRoot: mistralVibeRoot,
+      selectionArgs: ['--skills', 'skill-comply'],
+    });
+
     return {
       packageSha256: options.expectedSha256,
       platform: process.platform,
@@ -889,6 +899,7 @@ function runLifecycle(options) {
         'sentinel-preserved',
         'antigravity-install-doctor-uninstall',
         'opencode-install-doctor-uninstall',
+        'mistral-vibe-skill-install-doctor-uninstall',
       ],
     };
   } finally {
