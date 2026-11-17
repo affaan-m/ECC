@@ -15,6 +15,11 @@ const { spawnSync } = require('child_process');
 
 const compactScript = path.join(__dirname, '..', '..', 'scripts', 'hooks', 'suggest-compact.js');
 
+// Cleanup sweeps every stale counter in its temp root. Keep aged fixtures
+// private so a concurrent hook suite cannot prune them before our own hook runs.
+const suiteTempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-suggest-compact-'));
+process.once('exit', () => fs.rmSync(suiteTempDir, { recursive: true, force: true }));
+
 // Test helpers
 function test(name, fn) {
   try {
@@ -43,6 +48,9 @@ function runCompact(envOverrides = {}) {
 function runCompactWithInput(input, envOverrides = {}) {
   const env = {
     ...process.env,
+    TMPDIR: suiteTempDir,
+    TMP: suiteTempDir,
+    TEMP: suiteTempDir,
     ECC_CONTEXT_WINDOW_TOKENS: '',
     CLAUDE_CODE_AUTO_COMPACT_WINDOW: '',
     ...envOverrides,
@@ -64,7 +72,7 @@ function runCompactWithInput(input, envOverrides = {}) {
  * Get the counter file path for a given session ID.
  */
 function getCounterFilePath(sessionId) {
-  return path.join(os.tmpdir(), `claude-tool-count-${sessionId}`);
+  return path.join(suiteTempDir, `claude-tool-count-${sessionId}`);
 }
 
 let counterContextSeq = 0;
@@ -447,7 +455,8 @@ function runTests() {
     try { fs.unlinkSync(defaultCounterFile); } catch (_err) { /* ignore */ }
     try {
       // Pass empty CLAUDE_SESSION_ID — falsy, so script uses 'default'
-      const env = { ...process.env, CLAUDE_SESSION_ID: '' };
+      const env = { ...process.env, TMPDIR: suiteTempDir, TMP: suiteTempDir,
+        TEMP: suiteTempDir, CLAUDE_SESSION_ID: '' };
       const result = spawnSync('node', [compactScript], {
         encoding: 'utf8',
         input: '{}',
@@ -578,7 +587,7 @@ function runTests() {
 
   if (test('does not touch unrelated temp files', () => {
     const { sessionId, cleanup } = createCounterContext();
-    const unrelated = path.join(os.tmpdir(), `unrelated-${Date.now()}.tmp`);
+    const unrelated = path.join(suiteTempDir, `unrelated-${Date.now()}.tmp`);
     fs.writeFileSync(unrelated, 'do not touch');
     setMtimeDaysAgo(unrelated, 60);
     try {
@@ -631,7 +640,7 @@ function runTests() {
     const { sessionId, cleanup } = createCounterContext();
     const stale = getCounterFilePath(`mix-stale-${Date.now()}`);
     const fresh = getCounterFilePath(`mix-fresh-${Date.now()}`);
-    const unrelated = path.join(os.tmpdir(), `mix-unrelated-${Date.now()}.tmp`);
+    const unrelated = path.join(suiteTempDir, `mix-unrelated-${Date.now()}.tmp`);
     fs.writeFileSync(stale, '1');
     fs.writeFileSync(fresh, '1');
     fs.writeFileSync(unrelated, '1');
@@ -658,10 +667,10 @@ function runTests() {
   console.log('\nContext-size trigger (#2155):');
 
   function getBucketFilePath(sessionId) {
-    return path.join(os.tmpdir(), `claude-context-bucket-${sessionId}`);
+    return path.join(suiteTempDir, `claude-context-bucket-${sessionId}`);
   }
 
-  const transcriptDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-compact-transcripts-'));
+  const transcriptDir = fs.mkdtempSync(path.join(suiteTempDir, 'ecc-compact-transcripts-'));
   process.once('exit', () => fs.rmSync(transcriptDir, { recursive: true, force: true }));
   let transcriptSeq = 0;
 
@@ -689,7 +698,7 @@ function runTests() {
   }
 
   if (test('transcript fixtures preserve an already occupied shared-temp path', () => {
-    const occupied = path.join(os.tmpdir(), `compact-transcript-${process.pid}-${transcriptSeq + 1}.jsonl`);
+    const occupied = path.join(suiteTempDir, `compact-transcript-${process.pid}-${transcriptSeq + 1}.jsonl`);
     let owned = false;
     let transcript;
     try {

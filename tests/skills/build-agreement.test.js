@@ -11,6 +11,7 @@ const scriptPath = path.join(repoRoot, 'skills/master-agreement-generator/script
 const templatePath = path.join(repoRoot, 'skills/master-agreement-generator/references/master-template.example.md');
 const specPath = path.join(repoRoot, 'skills/master-agreement-generator/references/spec.example.json');
 const builder = require(scriptPath);
+const { trySymlink } = require('../lib/helpers/symlink-support');
 
 let passed = 0;
 let failed = 0;
@@ -215,7 +216,7 @@ for (const extension of ['md', 'docx']) {
       fs.mkdirSync(fixture.outDir);
       const target = path.join(fixture.artifacts, 'external');
       if (!dangling) fs.writeFileSync(target, 'do not overwrite');
-      fs.symlinkSync(target, path.join(fixture.outDir, `Acme MASTER.${extension}`), 'file');
+      if (!trySymlink(target, path.join(fixture.outDir, `Acme MASTER.${extension}`), 'file')) return;
       const other = extension === 'md' ? 'docx' : 'md';
       fs.writeFileSync(path.join(fixture.outDir, `Acme MASTER.${other}`), 'existing output');
       const before = snapshot(fixture.artifacts);

@@ -250,7 +250,7 @@ test('legacy non-file operations do not block canonical cleanup or repair', () =
   }
 });
 
-test('repair migrates a legacy install while preserving modified legacy files', () => {
+test('repair refuses incomplete legacy migration while preserving modified legacy files', () => {
   const homeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'opencode-legacy-repair-'));
   try {
     const legacy = seedLegacyInstall(homeDir, { modified: true });
@@ -260,7 +260,8 @@ test('repair migrates a legacy install while preserving modified legacy files', 
       projectRoot: homeDir,
       targets: ['opencode'],
     });
-    assert.strictEqual(result.summary.errorCount, 0, JSON.stringify(result));
+    assert.strictEqual(result.summary.errorCount, 1, JSON.stringify(result));
+    assert.match(result.results[0].error, /Legacy OpenCode migration is incomplete/);
     assert.ok(fs.existsSync(path.join(homeDir, '.config', 'opencode', 'ecc-install-state.json')));
     assert.strictEqual(fs.readFileSync(legacy.destinationPath, 'utf8'), 'user-modified\n');
     assert.ok(fs.existsSync(legacy.installStatePath));

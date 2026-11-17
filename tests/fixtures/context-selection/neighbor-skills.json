@@ -1,0 +1,57 @@
+{
+  "description": "Synthetic installed non-ECC skills and prompts for companion listing on the shipped registry. The skills are invented; none is copied from a real plugin. For every case, ECC's selection must be identical with and without these neighbors, and the companions must be exactly the listed names in order (sameTopicAs when given).",
+  "neighbors": [
+    {
+      "source": "plugin:example-db",
+      "name": "postgres-query-tuning",
+      "description": "Tune slow postgres queries: read query plans, choose the right indexes and rewrite slow joins to our team conventions."
+    },
+    {
+      "source": "plugin:example-ops",
+      "name": "status-report",
+      "description": "Write a project status report: overall health as red, yellow or green, progress against milestones, open risks and next steps for stakeholders."
+    },
+    {
+      "source": "user",
+      "name": "tool-server-builder",
+      "description": "Build an MCP server that exposes tools to an LLM: tool schemas, input validation, transports, testing the server with an MCP client."
+    },
+    {
+      "source": "user",
+      "name": "query-tips",
+      "description": "Tips for reading postgres query plans."
+    },
+    {
+      "source": "plugin:example-qa",
+      "name": "browser-test-runner",
+      "description": "Run browser tests for a signup page and report failures."
+    }
+  ],
+  "cases": [
+    {
+      "query": "optimize this slow postgres query with the right indexes",
+      "eccSelected": ["skill:postgres-patterns"],
+      "companions": [{ "name": "postgres-query-tuning", "sameTopicAs": "skill:postgres-patterns" }]
+    },
+    {
+      "query": "build an MCP server that exposes our tools to an LLM with tool schemas and input validation",
+      "eccSelected": ["skill:mcp-server-patterns"],
+      "companions": [{ "name": "tool-server-builder", "sameTopicAs": "skill:mcp-server-patterns" }]
+    },
+    {
+      "query": "write this month's status report for stakeholders with milestones, open risks and next steps",
+      "eccSelected": [],
+      "companions": [{ "name": "status-report" }]
+    },
+    {
+      "query": "write e2e tests for the signup flow with playwright",
+      "eccSelected": ["skill:e2e-testing"],
+      "companions": []
+    },
+    {
+      "query": "draft release notes for the merged pull requests",
+      "eccSelected": [],
+      "companions": []
+    }
+  ]
+}

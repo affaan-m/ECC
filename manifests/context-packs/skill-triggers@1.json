@@ -1,7 +1,7 @@
 {
   "coverage": {
-    "skills": 314,
-    "withTriggers": 34
+    "skills": 326,
+    "withTriggers": 42
   },
   "generatedAt": "2026-10-30T00:01:34.569Z",
   "id": "skill-triggers@1",
@@ -10,7 +10,7 @@
     "id": "hand-seeded",
     "source": "manual-curation-pending-regeneration"
   },
-  "registryDigest": "6f213dc845937b4093bc018d041b25b538d88d78451b9d799ad614989b360ee4",
+  "registryDigest": "23bd986cff96ea33424b1a461461a70e3194582ce01927145fd3f956daeebf7f",
   "schemaVersion": 1,
   "triggers": {
     "skill:agent-runtime-gateway-smoke-test": [
@@ -47,6 +47,16 @@
       "static file server",
       "url path handling",
       "file server"
+    ],
+    "skill:benchmark-optimization-loop": [
+      "turn user goal into benchmark",
+      "optimize task completion rate",
+      "compare implementation variants",
+      "improve correctness with fixed evaluation",
+      "reduce cost per resolved task",
+      "run bounded recursive optimization",
+      "verify improvement on independent cases",
+      "keep best measured admissible result"
     ],
     "skill:browser-qa": [
       "deployed feature test",
@@ -136,6 +146,12 @@
       "container security",
       "multi service orchestration"
     ],
+    "skill:ecc-contribution-review": [
+      "prepare ecc skill contribution for review",
+      "organize skill contribution security evidence",
+      "review cross-harness skill contribution observations",
+      "compile ecc skill contribution proposal"
+    ],
     "skill:error-handling": [
       "error types",
       "retry logic",
@@ -173,6 +189,27 @@
       "pull request cleanup",
       "git history tidy"
     ],
+    "skill:godot-patterns": [
+      "godot gdscript patterns",
+      "godot 4 best practices",
+      "gdscript static typing",
+      "godot signals vs direct calls",
+      "godot scene tree design",
+      "godot autoload singleton",
+      "godot resource data",
+      "gdscript style guide",
+      "godot node freed after await"
+    ],
+    "skill:godot-testing": [
+      "godot unit tests",
+      "gdunit4",
+      "gut godot tests",
+      "godot headless tests",
+      "test gdscript",
+      "godot ci tests",
+      "godot scene runner test",
+      "godot check-only"
+    ],
     "skill:hexagonal-architecture": [
       "ports and adapters",
       "dependency injection boundaries",
@@ -192,6 +229,14 @@
       "regression fix",
       "reproduce bug",
       "defect repair"
+    ],
+    "skill:platform-factory": [
+      "platform factory",
+      "pf freeze",
+      "pf build",
+      "reproducible oci image",
+      "oci sbom provenance",
+      "microvm container"
     ],
     "skill:postgres-patterns": [
       "slow postgres query",
@@ -246,6 +291,15 @@
       "rust concurrency",
       "idiomatic rust"
     ],
+    "skill:scientific-db-openalex-database": [
+      "openalex api",
+      "cross disciplinary literature search",
+      "look up paper by doi",
+      "resolve pmid to metadata",
+      "find open access copy",
+      "citation count lookup",
+      "verify a citation exists"
+    ],
     "skill:search-first": [
       "find existing library",
       "npm package research",
@@ -275,6 +329,13 @@
       "hook configuration audit",
       "settings json security"
     ],
+    "skill:short-video-distribution": [
+      "publish video to tiktok youtube reels",
+      "cross-post short video",
+      "schedule short-form video",
+      "upload reel and short",
+      "video captions per platform"
+    ],
     "skill:tdd-workflow": [
       "write test first",
       "failing test",
@@ -303,7 +364,19 @@
       "quality gates",
       "build lint test coverage",
       "before creating a pr"
+    ],
+    "skill:yoruba-localization-testing": [
+      "yoruba localization testing",
+      "yoruba english bilingual interface",
+      "yoruba tone marks",
+      "yoruba diacritics",
+      "yoruba unicode normalization",
+      "yoruba translation fallback",
+      "yoruba screen reader language",
+      "yoruba bilingual ui",
+      "test yoruba character preservation",
+      "yoruba accents not rendering"
     ]
   },
-  "triggersDigest": "953728cb51ef7726f8a4969efecaec294d37772fcddf8544cd9ee45bff4945ee"
+  "triggersDigest": "b1f4c1bd0602860615fb67ecf4d16b6a0f7171ab4d65862c3db66aa0a2d6487c"
 }

@@ -8,7 +8,7 @@ origin: ECC
 
 Use this skill when the user suspects the ECC Tools GitHub App is burning cost, over-creating PRs, bypassing usage limits, or routing free users into premium analysis paths.
 
-This is a focused operator workflow for the sibling [ECC-Tools](../../ECC-Tools) repo. It is not a generic billing skill and it is not a repo-wide code review pass.
+This is a focused operator workflow for the sibling [ECC-Tools](https://github.com/ECC-Tools/ECC-Tools) repo. It is not a generic billing skill and it is not a repo-wide code review pass.
 
 ## Skill Stack
 

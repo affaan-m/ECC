@@ -63,7 +63,13 @@ function hashToolCall(toolName, toolInput) {
     key = crypto
       .createHash('sha256')
       .update(
-        stableStringify({
+        stableStringify(name === 'NotebookEdit' ? {
+          notebook_path: toolInput?.notebook_path,
+          cell_id: toolInput?.cell_id,
+          new_source: toolInput?.new_source,
+          edit_mode: toolInput?.edit_mode,
+          cell_type: toolInput?.cell_type
+        } : {
           file_path: toolInput?.file_path,
           old_string: toolInput?.old_string,
           new_string: toolInput?.new_string,
@@ -87,7 +93,7 @@ function extractFilePaths(toolName, toolInput) {
   const paths = [];
   if (!toolInput || typeof toolInput !== 'object') return paths;
 
-  const fp = toolInput.file_path;
+  const fp = /^NotebookEdit$/i.test(toolName) ? toolInput.notebook_path : toolInput.file_path;
   if (fp && typeof fp === 'string') paths.push(fp);
 
   const edits = toolInput.edits;
@@ -229,8 +235,8 @@ function run(rawInput) {
     bridge.last_timestamp = now;
     if (!bridge.first_timestamp) bridge.first_timestamp = now;
 
-    // Track modified files (Write/Edit/MultiEdit only)
-    const isWriteOp = /^(Write|Edit|MultiEdit)$/i.test(toolName);
+    // Track modified files, including notebooks edited through NotebookEdit.
+    const isWriteOp = /^(Write|Edit|MultiEdit|NotebookEdit)$/i.test(toolName);
     if (isWriteOp) {
       const newPaths = extractFilePaths(toolName, toolInput);
       const existing = new Set(bridge.files_modified || []);

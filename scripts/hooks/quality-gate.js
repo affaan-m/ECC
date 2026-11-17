@@ -59,12 +59,13 @@ function log(msg) {
  * @param {string} filePath - Path to the edited file
  */
 function maybeRunQualityGate(filePath) {
-  if (!filePath || !fs.existsSync(filePath)) {
+  if (!filePath) {
     return;
   }
 
-  // Resolve to absolute path so projectRoot-relative comparisons work
-  filePath = path.resolve(filePath);
+  // Use the existing file's canonical path for project-root comparisons and
+  // formatter arguments. A disappeared file fails closed in run().
+  filePath = fs.realpathSync(filePath);
 
   const ext = path.extname(filePath).toLowerCase();
   const fix = String(process.env.ECC_QUALITY_GATE_FIX || '').toLowerCase() === 'true';

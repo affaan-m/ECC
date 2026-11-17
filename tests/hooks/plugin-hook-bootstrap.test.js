@@ -169,6 +169,33 @@ process.stdout.write(JSON.stringify({
     }
   })) passed++; else failed++;
 
+  if (test('node mode runs run-with-flags.js in-process instead of spawning a second node', () => {
+    const root = createTempDir();
+    try {
+      writeFile(root, path.join('scripts', 'hooks', 'run-with-flags.js'), `
+module.exports.runHook = async (hookId, relScriptPath, profilesCsv, input) => ({
+  stdout: JSON.stringify({ pid: process.pid, hookId, relScriptPath, profilesCsv, raw: input.raw }),
+  exitCode: 2,
+});
+`);
+
+      const result = run(
+        ['node', path.join('scripts', 'hooks', 'run-with-flags.js'), 'pre:test', 'scripts/hooks/x.js', 'standard'],
+        { root, input: 'payload' }
+      );
+      const parsed = JSON.parse(result.stdout);
+
+      assert.strictEqual(result.status, 2, result.stderr);
+      assert.strictEqual(parsed.pid, result.pid);
+      assert.deepStrictEqual(
+        [parsed.hookId, parsed.relScriptPath, parsed.profilesCsv, parsed.raw],
+        ['pre:test', 'scripts/hooks/x.js', 'standard', 'payload']
+      );
+    } finally {
+      cleanup(root);
+    }
+  })) passed++; else failed++;
+
   if (test('node mode emits empty stdout when child exits cleanly without stdout', () => {
     const root = createTempDir();
     try {

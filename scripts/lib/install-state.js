@@ -5,6 +5,14 @@ const {
   validateRecordedManagedHooks,
 } = require('./install/claude-settings');
 
+// A module may only own the settings merge for the hook config it ships. The
+// install state is the record of what the installer did, so this map is what
+// keeps one module from claiming another module's hook source.
+const CLAUDE_HOOKS_CONFIG_OWNERS = Object.freeze({
+  'hooks-runtime': CLAUDE_HOOKS_CONFIG_PATH,
+  'config-health': 'manifests/install-assets/config-health-hooks.json',
+});
+
 // Dependency-free, self-contained validation. The installer closure must not
 // require any non-builtin package (enterprise supply-chain vetting: the vetted
 // bytes must be the installed bytes). install-state is validated by the
@@ -132,7 +140,7 @@ function createFallbackValidator() {
       validateNoAdditionalProperties(
         request,
         '/request',
-        ['profile', 'modules', 'includeComponents', 'excludeComponents', 'legacyLanguages', 'legacyMode', 'hookConsent']
+        ['profile', 'modules', 'includeComponents', 'excludeComponents', 'legacyLanguages', 'legacyMode', 'hookConsent', 'trust', 'consentMcp']
       );
       if (!(Object.prototype.hasOwnProperty.call(request, 'profile') && (request.profile === null || typeof request.profile === 'string'))) {
         pushError('/request/profile', 'must be string or null');
@@ -152,6 +160,12 @@ function createFallbackValidator() {
       ) {
         pushError('/request/hookConsent', 'must be enabled, declined, or null');
       }
+      if (request.trust !== undefined && typeof request.trust !== 'boolean') {
+        pushError('/request/trust', 'must be boolean');
+      }
+      if (request.consentMcp !== undefined) {
+        validateStringArray(request.consentMcp, '/request/consentMcp');
+      }
     }
 
     const resolution = state.resolution;
@@ -167,8 +181,9 @@ function createFallbackValidator() {
     if (!source || typeof source !== 'object' || Array.isArray(source)) {
       pushError('/source', 'must be object');
     } else {
-      validateNoAdditionalProperties(source, '/source', ['repoVersion', 'repoCommit', 'manifestVersion']);
+      validateNoAdditionalProperties(source, '/source', ['repoVersion', 'repoUrl', 'repoCommit', 'manifestVersion']);
       validateOptionalString(source.repoVersion, '/source/repoVersion');
+      validateOptionalString(source.repoUrl, '/source/repoUrl');
       validateOptionalString(source.repoCommit, '/source/repoCommit');
       if (!Number.isInteger(source.manifestVersion) || source.manifestVersion < 1) {
         pushError('/source/manifestVersion', 'must be integer >= 1');
@@ -218,11 +233,19 @@ function createFallbackValidator() {
           if (!['claude', 'claude-project'].includes(state.target && state.target.target)) {
             pushError(`${instancePath}/kind`, 'is only valid for Claude targets');
           }
-          if (operation.moduleId !== 'hooks-runtime') {
-            pushError(`${instancePath}/moduleId`, 'must equal hooks-runtime');
-          }
-          if (String(operation.sourceRelativePath).replace(/\\/g, '/') !== CLAUDE_HOOKS_CONFIG_PATH) {
-            pushError(`${instancePath}/sourceRelativePath`, 'must equal hooks/hooks.json');
+          const expectedSource = CLAUDE_HOOKS_CONFIG_OWNERS[operation.moduleId];
+          if (!expectedSource) {
+            pushError(
+              `${instancePath}/moduleId`,
+              `must be a module that ships its own hooks (${Object.keys(CLAUDE_HOOKS_CONFIG_OWNERS).join(', ')})`
+            );
+          } else if (
+            String(operation.sourceRelativePath).replace(/\\/g, '/') !== expectedSource
+          ) {
+            pushError(
+              `${instancePath}/sourceRelativePath`,
+              `must equal ${expectedSource} for module "${operation.moduleId}"`
+            );
           }
           if (
             isNonEmptyString(state.target && state.target.root)
@@ -306,6 +329,10 @@ function createInstallState(options) {
       hookConsent: Object.prototype.hasOwnProperty.call(options.request, 'hookConsent')
         ? options.request.hookConsent
         : null,
+      trust: options.request.trust === true,
+      consentMcp: Array.isArray(options.request.consentMcp)
+        ? [...options.request.consentMcp]
+        : [],
     },
     resolution: {
       selectedModules: Array.isArray(options.resolution.selectedModules)
@@ -317,6 +344,7 @@ function createInstallState(options) {
     },
     source: {
       repoVersion: options.source.repoVersion || null,
+      repoUrl: options.source.repoUrl || null,
       repoCommit: options.source.repoCommit || null,
       manifestVersion: options.source.manifestVersion,
     },
