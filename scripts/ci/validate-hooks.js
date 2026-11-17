@@ -293,6 +293,7 @@ function checkHookDuplicates(source, eventMap) {
   const events = new Map();
   const ids = new Map();
   const rootProperties = [];
+  let eventMapLine = null;
 
   function checkEvent(key, line) {
     if (events.has(key)) {
@@ -306,7 +307,12 @@ function checkHookDuplicates(source, eventMap) {
       const parent = getPath();
       if (parent.length === 1 && parent[0] === eventMap) {
         checkEvent(key, line);
-      } else if (parent.length === 0 && eventMap === 'hooks') {
+      } else if (parent.length === 0 && key === eventMap) {
+        if (eventMapLine !== null) {
+          throw new Error(`line ${line + 1}: duplicate root key '${key}' (first on line ${eventMapLine})`);
+        }
+        eventMapLine = line + 1;
+      } else if (parent.length === 0 && eventMap === 'hooks' && eventMapLine === null) {
         rootProperties.push({ key, line });
       }
     },
@@ -326,7 +332,7 @@ function checkHookDuplicates(source, eventMap) {
 
   // A hooks wrapper can appear after other root properties. Only an unwrapped
   // manifest uses those root properties as its event map.
-  if (!rootProperties.some(({ key }) => key === 'hooks')) {
+  if (eventMapLine === null) {
     for (const { key, line } of rootProperties) checkEvent(key, line);
   }
 }

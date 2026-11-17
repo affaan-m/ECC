@@ -3038,6 +3038,31 @@ function runTests() {
         cleanupTestDir(testDir);
       }
     })) passed++; else failed++;
+
+    if (test(`rejects a repeated root ${eventMap} key in ${file}`, () => {
+      const testDir = createTestDir();
+      try {
+        const hooksFile = path.join(testDir, 'hooks.json');
+        writeJson(hooksFile, { hooks: {} });
+        const firstEntry = eventMap === 'hooks'
+          ? { id: 'first', hooks: [{ type: 'command', command: 'echo first' }] }
+          : { id: 'first', fingerprint: '0123456789ab' };
+        fs.writeFileSync(path.join(testDir, file), `{"${eventMap}":
+  ${JSON.stringify({ Stop: [firstEntry] })},
+  "${eventMap}": {}
+}`);
+        const result = runValidatorWithDirs('validate-hooks', {
+          HOOKS_FILE: hooksFile,
+          HOOKS_SCHEMA_PATH: path.join(repoRoot, 'schemas', 'hooks.schema.json'),
+          METADATA_SCHEMA_PATH: path.join(repoRoot, 'schemas', 'hooks-metadata.schema.json'),
+        });
+        assert.strictEqual(result.code, 1, result.stdout);
+        const diagnostic = `${file}: line 3: duplicate root key '${eventMap}' (first on line 1)`;
+        assert.ok(result.stderr.includes(diagnostic), result.stderr);
+      } finally {
+        cleanupTestDir(testDir);
+      }
+    })) passed++; else failed++;
   }
 
   if (test('reports duplicate root events in a schema-free unwrapped hook map', () => {
