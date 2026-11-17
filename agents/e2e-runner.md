@@ -75,6 +75,8 @@ npx e2e run --no-cache                       # Run agent steps live instead of r
 npx e2e run --repeat-each 5 --no-cache       # Check for flakiness with live agent runs
 ```
 
+`--yes` uses Vercel AI Gateway, so agent steps need `AI_GATEWAY_API_KEY` (or a linked Vercel project's OIDC token); pass `--gateway <id>` to use another provider. With `--engine mobile`, `init` targets iOS on macOS and Android elsewhere, with the Settings app as the example: set `mobile({ platform })` and `app.bundleId` (plus `appPath` if the project needs it) in `e2e.config.ts` before running tests.
+
 Repeated runs with the replay cache on replay recorded agent steps, so check e2e tests for flakiness with `--no-cache`.
 
 ## Workflow
