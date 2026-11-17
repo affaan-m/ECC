@@ -22,7 +22,7 @@ def generate_spec(
     """Generate a compliance spec from a skill/rule file.
 
     Calls claude -p with the spec_generator prompt, parses YAML output.
-    Retries on YAML parse errors with error feedback.
+    Retries on YAML parse or specification validation errors with feedback.
     """
     skill_content = skill_path.read_text(encoding="utf-8")
     prompt_template = (PROMPTS_DIR / "spec_generator.md").read_text(encoding="utf-8")
@@ -34,7 +34,7 @@ def generate_spec(
         prompt = base_prompt
         if attempt > 0 and last_error is not None:
             prompt += (
-                f"\n\nPREVIOUS ATTEMPT FAILED with YAML parse error:\n"
+                f"\n\nPREVIOUS ATTEMPT FAILED with YAML parse or validation error:\n"
                 f"{last_error}\n\n"
                 f"Please fix the YAML. Remember to quote all string values "
                 f"that contain colons, e.g.: description: \"Use type: description format\""
@@ -62,7 +62,7 @@ def generate_spec(
 
         try:
             return parse_spec(tmp_path)
-        except (yaml.YAMLError, KeyError, TypeError) as e:
+        except (yaml.YAMLError, KeyError, TypeError, ValueError) as e:
             last_error = e
             if attempt == max_retries:
                 raise

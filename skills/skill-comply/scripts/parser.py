@@ -94,6 +94,8 @@ def parse_spec(path: Path) -> ComplianceSpec:
             ),
         ))
 
+    _validate_step_identities(steps)
+
     if "scoring" not in raw:
         raise KeyError("Missing 'scoring' section in compliance spec")
 
@@ -105,3 +107,25 @@ def parse_spec(path: Path) -> ComplianceSpec:
         steps=tuple(steps),
         threshold_promote_to_hook=raw["scoring"]["threshold_promote_to_hook"],
     )
+
+
+def _validate_step_identities(steps: list[Step]) -> None:
+    """Keep classification keys and temporal references unambiguous."""
+    step_ids: set[str] = set()
+    for index, step in enumerate(steps):
+        if not isinstance(step.id, str) or not step.id.strip():
+            raise ValueError(f"Step {index} id must be a non-empty string")
+        if step.id in step_ids:
+            raise ValueError(f"Duplicate step id at index {index}")
+        step_ids.add(step.id)
+
+    # Resolve against the complete set so forward references stay valid.
+    for index, step in enumerate(steps):
+        for constraint in ("after_step", "before_step"):
+            reference = getattr(step.detector, constraint)
+            if reference is not None and (
+                not isinstance(reference, str) or reference not in step_ids
+            ):
+                raise ValueError(
+                    f"Step {index} {constraint} must reference a declared step id"
+                )
