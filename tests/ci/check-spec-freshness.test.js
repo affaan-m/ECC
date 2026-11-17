@@ -152,13 +152,14 @@ describe('check-spec-freshness (v1, file-level)', () => {
     });
 
     it('exits 2 for a project root that is a file', () => {
-      const file = path.join(os.tmpdir(), 'ecc-file-' + Date.now());
+      const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-file-'));
+      const file = path.join(dir, 'root-file');
       fs.writeFileSync(file, 'x');
       try {
         const result = runChecker(file);
         assert.strictEqual(result.exitCode, 2);
       } finally {
-        fs.rmSync(file, { force: true });
+        fs.rmSync(dir, { recursive: true, force: true });
       }
     });
 
@@ -303,7 +304,8 @@ describe('check-spec-freshness (v1, file-level)', () => {
     });
 
     it('marks ORPHANED when an enforced target escapes via a symlink', () => {
-      const outside = path.join(os.tmpdir(), 'ecc-outside-' + Date.now() + '.txt');
+      const outsideDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-outside-'));
+      const outside = path.join(outsideDir, 'outside.txt');
       fs.writeFileSync(outside, 'outside\n');
       fs.mkdirSync(path.join(repo, 'src'), { recursive: true });
       fs.symlinkSync(outside, path.join(repo, 'src', 'link.js'));
@@ -313,7 +315,7 @@ describe('check-spec-freshness (v1, file-level)', () => {
         const spec = parseJson(result).specs.find((s) => s.path.includes('escape'));
         assert.strictEqual(spec.status, 'ORPHANED', JSON.stringify(spec));
       } finally {
-        fs.rmSync(outside, { force: true });
+        fs.rmSync(outsideDir, { recursive: true, force: true });
       }
     });
 

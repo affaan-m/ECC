@@ -37,9 +37,12 @@ function failAfterPartialWrite(callback, observe) {
   const originalWrite = fs.writeFileSync;
   const error = Object.assign(new Error('Simulated disk full after partial write'), { code: 'ENOSPC' });
   let calls = 0;
-  fs.writeFileSync = (destination, _contents, options) => {
+  fs.writeFileSync = destination => {
     calls += 1;
-    originalWrite(destination, '{"incomplete":', options);
+    // The atomic writer stages through an open descriptor; write the partial
+    // bytes to that same descriptor instead of re-opening any path.
+    assert.strictEqual(typeof destination, 'number', 'staging must write through a descriptor');
+    fs.writeSync(destination, '{"incomplete":');
     observe();
     throw error;
   };
@@ -127,14 +130,12 @@ if (process.platform !== 'win32') {
         const next = snapshot(`Permissions ${mode.toString(8)}`);
         const originalWrite = fs.writeFileSync;
         const observedModes = [];
-        fs.writeFileSync = (destination, contents, writeOptions) => {
-          const readMode = () => (typeof destination === 'number'
-            ? fs.fstatSync(destination)
-            : fs.statSync(destination)).mode & 0o777;
+        fs.writeFileSync = (destination, contents) => {
+          assert.strictEqual(typeof destination, 'number', 'staging must write through a descriptor');
+          const readMode = () => fs.fstatSync(destination).mode & 0o777;
           observedModes.push(readMode());
-          const result = originalWrite(destination, contents, writeOptions);
+          fs.writeSync(destination, contents);
           observedModes.push(readMode());
-          return result;
         };
         try {
           persistCanonicalSnapshot(next, options);
@@ -145,8 +146,13 @@ if (process.platform !== 'win32') {
         for (const observed of observedModes) {
           assert.strictEqual(observed & ~mode, 0, 'staging must not grant permissions absent from the saved recording');
         }
-        assert.strictEqual(fs.statSync(filePath).mode & 0o777, mode);
-        assert.deepStrictEqual(JSON.parse(fs.readFileSync(filePath, 'utf8')).latest, next);
+        const savedFd = fs.openSync(filePath, 'r');
+        try {
+          assert.strictEqual(fs.fstatSync(savedFd).mode & 0o777, mode);
+          assert.deepStrictEqual(JSON.parse(fs.readFileSync(savedFd, 'utf8')).latest, next);
+        } finally {
+          fs.closeSync(savedFd);
+        }
       }
     } finally {
       fs.rmSync(recordingDir, { recursive: true, force: true });

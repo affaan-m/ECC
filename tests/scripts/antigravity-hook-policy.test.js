@@ -22,12 +22,15 @@ test('minimal installs retain warning handlers for explicit runtime profile over
     entry.hooks.some(hook => hook.command.includes('pre:write:doc-file-warning'))));
 });
 
+// Per-test private temp root so the bridge's accumulator never lands in the shared temp dir.
+let tmpEnv = {};
+
 function invoke(mode, hook, payload, env = {}) {
   const child = spawnSync(process.execPath, [bridge, '--mode', mode, '--hook', hook], {
     input: JSON.stringify(payload), encoding: 'utf8', timeout: 15000,
     env: {
       ...process.env, ECC_HOOKS_ENABLED: 'true', ECC_HOOK_PROFILE: 'standard',
-      ECC_DISABLED_HOOKS: '', ECC_DRY_RUN: '0', ECC_HOOK_CONFIG: '', ...env,
+      ECC_DISABLED_HOOKS: '', ECC_DRY_RUN: '0', ECC_HOOK_CONFIG: '', ...tmpEnv, ...env,
     },
   });
   assert.equal(child.status, 0, child.stderr);
@@ -37,7 +40,9 @@ function invoke(mode, hook, payload, env = {}) {
 test('Stop formatting writes only when enabled; disabled, minimal and dry-run preserve edits', () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-agy-policy-'));
   const conversationId = path.basename(root);
-  const accumulator = path.join(os.tmpdir(), `ecc-edited-${conversationId}.txt`);
+  const privateTmp = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-agy-tmp-'));
+  tmpEnv = { TMPDIR: privateTmp, TEMP: privateTmp, TMP: privateTmp };
+  const accumulator = path.join(privateTmp, `ecc-edited-${conversationId}.txt`);
   try {
     const target = path.join(root, 'component.js');
     const marker = path.join(root, 'formatter-args.json');
@@ -66,14 +71,17 @@ test('Stop formatting writes only when enabled; disabled, minimal and dry-run pr
     }
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
-    fs.rmSync(accumulator, { force: true });
+    fs.rmSync(privateTmp, { recursive: true, force: true });
+    tmpEnv = {};
   }
 });
 
 test('PostToolUse and warnings honor the same execution controls', () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-agy-flags-'));
   const conversationId = path.basename(root);
-  const accumulator = path.join(os.tmpdir(), `ecc-edited-${conversationId}.txt`);
+  const privateTmp = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-agy-tmp-'));
+  tmpEnv = { TMPDIR: privateTmp, TEMP: privateTmp, TMP: privateTmp };
+  const accumulator = path.join(privateTmp, `ecc-edited-${conversationId}.txt`);
   try {
     const edit = { conversationId, toolCall: { name: 'write_to_file', args: { TargetFile: path.join(root, 'app.js') } } };
     for (const env of [...controls.slice(0, 2), { ECC_DISABLED_HOOKS: 'post:edit:accumulator' }, controls[3]]) {
@@ -89,7 +97,8 @@ test('PostToolUse and warnings honor the same execution controls', () => {
     assert.equal(fs.readFileSync(accumulator, 'utf8').trim(), edit.toolCall.args.TargetFile);
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
-    fs.rmSync(accumulator, { force: true });
+    fs.rmSync(privateTmp, { recursive: true, force: true });
+    tmpEnv = {};
   }
 });
 

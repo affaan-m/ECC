@@ -118,13 +118,14 @@ describe('validate-openspec-syntax (v1 schema)', () => {
     });
 
     it('exits 2 when root is a file, not a directory', () => {
-      const file = path.join(os.tmpdir(), 'ecc-vs-file-' + Date.now());
+      const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-vs-file-'));
+      const file = path.join(dir, 'root-file');
       fs.writeFileSync(file, 'x');
       try {
         const result = runValidator(file);
         assert.strictEqual(result.exitCode, 2);
       } finally {
-        fs.rmSync(file, { force: true });
+        fs.rmSync(dir, { recursive: true, force: true });
       }
     });
   });

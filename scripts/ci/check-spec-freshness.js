@@ -120,7 +120,7 @@ function parseAnchor(raw) {
     return { invalid: true, reason: 'must not contain whitespace' };
   }
   const sep = trimmed.indexOf('::');
-  if (sep <= 0 || sep === trimmed.length - 2) {
+  if (sep <= 0 || trimmed.slice(sep + 2) === '') {
     return { invalid: true, reason: 'expected <path>::<symbol>' };
   }
   const anchorPath = trimmed.slice(0, sep);
