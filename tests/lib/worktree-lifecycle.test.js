@@ -231,6 +231,17 @@ test('CLI usage() and main(--help) print help', () => {
   assert.ok(out.includes('git merge-tree'));
 });
 
+test('CLI stays directly executable on POSIX', () => {
+  if (process.platform === 'win32') {
+    console.log('  (skipped POSIX executable-bit check on Windows)');
+    return;
+  }
+  const script = path.join(__dirname, '..', '..', 'scripts', 'worktree-lifecycle.js');
+  assert.ok((fs.statSync(script).mode & 0o111) !== 0, 'scripts/worktree-lifecycle.js must keep its executable bit');
+  const out = execFileSync(script, ['--help'], { encoding: 'utf8' });
+  assert.ok(out.includes('Usage: worktree-lifecycle'));
+});
+
 test('empty-queue branches: no conflicts / no stale render friendly messages', () => {
   const git = fakeGit('/repo', {
     'worktree list --porcelain -z': { stdout: 'worktree /repo\0HEAD a\0branch refs/heads/main\0' }
