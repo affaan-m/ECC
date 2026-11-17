@@ -198,9 +198,21 @@ function readTomlQuotedValue(content, start) {
   // TOML trims a newline immediately after a multiline opening delimiter.
   if (multiline && content.startsWith('\r\n', index)) index += 2;
   else if (multiline && content[index] === '\n') index++;
-  const valueStart = index;
+  let valueStart = index;
+  const parts = [];
+  const continuation = /\\[ \t]*\r?\n[ \t\r\n]*/y;
   while (index < content.length) {
     if (quote === '"' && content[index] === '\\') {
+      if (multiline) {
+        continuation.lastIndex = index;
+        const match = continuation.exec(content);
+        if (match) {
+          parts.push(content.slice(valueStart, index));
+          index = continuation.lastIndex;
+          valueStart = index;
+          continue;
+        }
+      }
       index += 2;
       continue;
     }
@@ -210,7 +222,8 @@ function readTomlQuotedValue(content, start) {
       if (multiline) {
         while (end < index + 5 && content[end] === quote) end++;
       }
-      return { value: content.slice(valueStart, end - delimiter.length), end };
+      parts.push(content.slice(valueStart, end - delimiter.length));
+      return { value: parts.join(''), end };
     }
     if (!multiline && (content[index] === '\n' || content[index] === '\r')) return null;
     index++;
@@ -253,6 +266,9 @@ function readTomlDependencyArray(content) {
         continue;
       }
     }
+    // Dependency values are strings; an unquoted opening bracket here can be
+    // a later table header while the dependency array is still unfinished.
+    if (values !== null && character === '[') return [];
     if (values !== null && character === ']') return values;
     index++;
   }

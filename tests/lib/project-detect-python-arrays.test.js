@@ -47,6 +47,9 @@ test('keeps escaped quotes in environment markers inside one requirement',
 test('does not parse an unterminated dependency array',
   '[project]\ndependencies = ["fastapi[standard]"\n',
   [], []);
+test('does not use a later table header to close an unfinished dependency array',
+  '[project]\ndependencies = ["fastapi",\n[tool.demo]\n',
+  [], []);
 test('retains dependencies in a project inline table',
   'project = { name = "demo", version = "1.0", dependencies = ["fastapi[standard]", "flask"] }\n',
   ['fastapi', 'flask'], ['fastapi', 'flask']);
@@ -65,6 +68,12 @@ test('keeps single quotes inside multiline literal descriptions',
 test('trims the opening newline of multiline quoted requirements',
   "[project]\ndependencies = ['''\nfastapi''', \"\"\"\r\nflask\"\"\"]\n",
   ['fastapi', 'flask'], ['fastapi', 'flask']);
+test('joins escaped newlines inside multiline basic requirements',
+  '[project]\ndependencies = ["""fast\\\n  api""", """fl\\ \t\r\n\n  ask"""]\n',
+  ['fastapi', 'flask'], ['fastapi', 'flask']);
+test('leaves multiline literal backslashes unchanged',
+  "[project]\ndependencies = ['''fast\\\napi''']\n",
+  ['fast\\'], []);
 test('allows one or two quote characters before a multiline closing delimiter',
   '[project]\ndescription = """quoted"""""\ndependencies = ["flask"]\n',
   ['flask'], ['flask']);
