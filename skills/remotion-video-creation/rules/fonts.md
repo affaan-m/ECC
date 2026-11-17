@@ -33,7 +33,7 @@ export const MyComposition = () => {
 };
 ```
 
-Preferrably, specify only needed weights and subsets to reduce file size:
+Preferably, specify only needed weights and subsets to reduce file size:
 
 ```tsx
 import { loadFont } from "@remotion/google-fonts/Roboto";

@@ -22,7 +22,7 @@ ECC now installs directly into [Kimi Code](https://moonshotai.github.io/kimi-cli
 
 ```bash
 bash ./install.sh --target kimi --profile minimal
-npx ecc doctor --target kimi
+npx ecc-universal doctor --target kimi
 kimi
 ```
 

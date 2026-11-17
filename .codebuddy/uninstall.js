@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
  * ECC CodeBuddy Uninstaller (Cross-platform Node.js version)
- * Uninstalls Everything Claude Code workflows from a CodeBuddy project.
+ * Uninstalls ECC workflows from a CodeBuddy project.
  *
  * Usage:
  *   node uninstall.js              # Uninstall from current directory

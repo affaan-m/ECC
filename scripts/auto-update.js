@@ -6,6 +6,7 @@ const path = require('path');
 const { spawnSync } = require('child_process');
 
 const { discoverInstalledStates } = require('./lib/install-lifecycle');
+const { getRecordedHookConsent } = require('./lib/install/hook-consent');
 const { SUPPORTED_INSTALL_TARGETS } = require('./lib/install-manifests');
 
 function showHelp(exitCode = 0) {
@@ -85,6 +86,7 @@ function buildInstallApplyArgs(record) {
   const target = state.target.target || record.adapter.target;
   const request = state.request || {};
   const args = [];
+  const hookConsent = getRecordedHookConsent(state);
 
   if (target) {
     args.push('--target', target);
@@ -106,6 +108,12 @@ function buildInstallApplyArgs(record) {
     args.push('--without', componentId);
   }
 
+  if (hookConsent === 'enabled') {
+    args.push('--enable-hooks');
+  } else if (hookConsent === 'declined') {
+    args.push('--no-hooks');
+  }
+
   for (const language of Array.isArray(request.legacyLanguages) ? request.legacyLanguages : []) {
     args.push(language);
   }
@@ -125,6 +133,7 @@ function determineInstallCwd(record, repoRoot) {
 // install-apply.js if its package.json identifies it as ECC — otherwise a
 // cloned project that ships a nested `evil/{package.json,scripts/install-apply.js}`
 // could drive auto-update into executing attacker code (GHSA-hfpv-w6mp-5g95).
+// 'everything-claude-code' is the legacy 1.x package name, kept for existing checkouts.
 const ECC_PACKAGE_NAMES = new Set(['ecc-universal', 'everything-claude-code']);
 
 function validateRepoRoot(repoRoot) {
@@ -165,12 +174,20 @@ function runExternalCommand(command, args, options = {}) {
     throw result.error;
   }
 
-  if (typeof result.status === 'number' && result.status !== 0) {
+  if (result.status !== 0) {
     const errorOutput = (result.stderr || result.stdout || '').trim();
-    throw new Error(`${command} ${args.join(' ')} failed${errorOutput ? `: ${errorOutput}` : ''}`);
+    const failure = result.signal ? `was terminated by ${result.signal}` : 'failed';
+    throw new Error(`${command} ${args.join(' ')} ${failure}${errorOutput ? `: ${errorOutput}` : ''}`);
   }
 
   return result;
+}
+
+function legacyMigrationWarning(record) {
+  if (record.legacyLayout === 'opencode') {
+    return 'Found only a legacy OpenCode ~/.opencode install-state. Run the OpenCode installer once to migrate it to the configured OpenCode directory before auto-updating.';
+  }
+  return 'Found only a legacy Antigravity .agent install-state. Run the Antigravity installer once to migrate it to .agents before auto-updating.';
 }
 
 function runAutoUpdate(options = {}, dependencies = {}) {
@@ -187,9 +204,7 @@ function runAutoUpdate(options = {}, dependencies = {}) {
   const records = discoveredRecords.filter(record => record.exists && !record.legacy);
   const legacyRecords = discoveredRecords.filter(record => record.exists && record.legacy);
   const warnings = records.length === 0 && legacyRecords.length > 0
-    ? [
-        'Found only a legacy Antigravity .agent install-state. Run the Antigravity installer once to migrate it to .agents before auto-updating.',
-      ]
+    ? [...new Set(legacyRecords.map(legacyMigrationWarning))]
     : [];
 
   const results = [];

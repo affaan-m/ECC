@@ -26,8 +26,14 @@ def _uses_adaptive_thinking_only(model: str) -> bool:
 class ClaudeProvider(LLMProvider):
     provider_type = ProviderType.CLAUDE
 
-    def __init__(self, api_key: str | None = None, base_url: str | None = None) -> None:
+    def __init__(
+        self,
+        api_key: str | None = None,
+        base_url: str | None = None,
+        default_model: str | None = None,
+    ) -> None:
         self.client = Anthropic(api_key=api_key or os.environ.get("ANTHROPIC_API_KEY"), base_url=base_url)
+        self.default_model = default_model or _DEFAULT_MODEL
         self._models = [
             ModelInfo(
                 name="claude-opus-4-8",
@@ -57,8 +63,14 @@ class ClaudeProvider(LLMProvider):
 
     def generate(self, input: LLMInput) -> LLMOutput:
         try:
-            model = input.model or _DEFAULT_MODEL
-            system_parts = [msg.content for msg in input.messages if msg.role == Role.SYSTEM]
+            model = input.model or self.default_model
+            system_parts: list[str] = []
+            for message in input.messages:
+                if message.role != Role.SYSTEM:
+                    continue
+                if not isinstance(message.content, str):
+                    raise TypeError("System messages must contain text")
+                system_parts.append(message.content)
             api_messages = [
                 msg.to_dict() for msg in input.messages if msg.role not in (Role.SYSTEM,)
             ]
@@ -124,9 +136,10 @@ class ClaudeProvider(LLMProvider):
             )
         except Exception as e:
             msg = str(e)
-            if "401" in msg or "authentication" in msg.lower():
+            status_code = getattr(e, "status_code", None)
+            if status_code == 401:
                 raise AuthenticationError(msg, provider=ProviderType.CLAUDE) from e
-            if "429" in msg or "rate_limit" in msg.lower():
+            if status_code == 429:
                 raise RateLimitError(msg, provider=ProviderType.CLAUDE) from e
             if "context" in msg.lower() and "length" in msg.lower():
                 raise ContextLengthError(msg, provider=ProviderType.CLAUDE) from e
@@ -139,4 +152,4 @@ class ClaudeProvider(LLMProvider):
         return bool(self.client.api_key)
 
     def get_default_model(self) -> str:
-        return _DEFAULT_MODEL
+        return self.default_model

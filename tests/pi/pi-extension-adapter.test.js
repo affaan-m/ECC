@@ -44,8 +44,23 @@ const assert = require("assert")
 const fs = require("fs")
 const os = require("os")
 const path = require("path")
+const vm = require("vm")
+const ts = require("typescript")
 const { spawnSync, execFile } = require("child_process")
+const { resolveHookRuntime } = require(
+  path.join(__dirname, "..", "..", ".pi", "extensions", "hook-runtime.js")
+)
+const {
+  ARG_PLACEHOLDER,
+  loadPlaceholderlessCommand,
+  createCommandBodyReader,
+  handlePiInput,
+  handlePiInputEvent,
+} = require(
+  path.join(__dirname, "..", "..", ".pi", "extensions", "input-args.js")
+)
 
+/** Run a single adapter test and report the result. */
 async function runTest(name, fn) {
   try {
     await fn()
@@ -69,10 +84,17 @@ function stripComments(source) {
   return source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "")
 }
 
+// Hook scripts write homunculus observations under the home directory, so
+// runner calls get an empty home instead of the developer's real one unless a
+// test passes its own HOME.
+const ISOLATED_HOME = fs.mkdtempSync(path.join(os.tmpdir(), "ecc-pi-home-"))
+const ISOLATED_HOME_ENV = { HOME: ISOLATED_HOME, USERPROFILE: ISOLATED_HOME }
+process.on("exit", () => fs.rmSync(ISOLATED_HOME, { recursive: true, force: true }))
+
 /**
- * Mirrors the adapter's own hook invocation (`runEccHook` in
- * .pi/extensions/index.ts): same binary (`process.execPath`), same argv
- * shape, same stdin-JSON payload, same env keys. No shell is used anywhere.
+ * Invokes ECC's hook runner like the adapter (`runEccHook` in
+ * .pi/extensions/index.ts): it uses the test host's Node executable with the
+ * same argv shape and JSON payload on stdin. No shell is used.
  */
 function runHookRunner(eccRoot, hookId, relScript, profiles, payload, extraEnv, cwd) {
   const runner = path.join(eccRoot, "scripts", "hooks", "run-with-flags.js")
@@ -81,7 +103,7 @@ function runHookRunner(eccRoot, hookId, relScript, profiles, payload, extraEnv, 
     encoding: "utf8",
     cwd: cwd || eccRoot,
     timeout: 30000,
-    env: { ...process.env, CLAUDE_PLUGIN_ROOT: eccRoot, ECC_PLUGIN_ROOT: eccRoot, ...extraEnv },
+    env: { ...process.env, ...ISOLATED_HOME_ENV, CLAUDE_PLUGIN_ROOT: eccRoot, ECC_PLUGIN_ROOT: eccRoot, ...extraEnv },
   })
 }
 
@@ -96,7 +118,14 @@ function buildEccSkeleton(repoRoot) {
   const hooksDir = path.join(root, "scripts", "hooks")
   fs.mkdirSync(hooksDir, { recursive: true })
 
-  for (const name of ["run-with-flags.js", "session-end-marker.js", "pretooluse-visible-output.js"]) {
+  for (const name of [
+    "hook-input.js",
+    "hook-input-limits.js",
+    "run-with-flags.js",
+    "hook-watchdog.js",
+    "session-end-marker.js",
+    "pretooluse-visible-output.js",
+  ]) {
     fs.cpSync(path.join(repoRoot, "scripts", "hooks", name), path.join(hooksDir, name))
   }
   fs.cpSync(path.join(repoRoot, "scripts", "lib"), path.join(root, "scripts", "lib"), { recursive: true })
@@ -182,6 +211,32 @@ function readInstalledPackageNames(settingsFile) {
     // Missing or unreadable settings are simply "nothing installed here".
   }
   return names
+}
+
+/**
+ * Mirror of the adapter's `findInstalledCompanion` (same file, same matching
+ * rule) so the exact-match and unscoped-satisfied-by-scoped cases can be
+ * exercised directly without importing the TypeScript source. This copy
+ * proves the *behavior* below is correct, but a copy cannot detect the real
+ * adapter's rule drifting out from under it. The source-text assertions in
+ * the "companion package detection tolerates a scoped fork" test below read
+ * the real `findInstalledCompanion` text out of `.pi/extensions/index.ts` and
+ * pin its actual guards directly.
+ */
+function findInstalledCompanion(companion, installed) {
+  if (installed.has(companion)) {
+    return companion
+  }
+  if (companion.startsWith("@")) {
+    return undefined
+  }
+  const scopedSuffix = `/${companion}`
+  for (const name of installed) {
+    if (name.startsWith("@") && name.endsWith(scopedSuffix)) {
+      return name
+    }
+  }
+  return undefined
 }
 
 /**
@@ -283,6 +338,23 @@ function isDisabledByEnvMirror(value) {
   return typeof value === "string" && DISABLED_VALUES_MIRROR.has(value.trim().toLowerCase())
 }
 
+/**
+ * Mirror of the adapter's `describeAgentPortability` (same three states, same
+ * exact strings). The source-text assertions in the matching test pin the real
+ * function's wording out of `.pi/extensions/index.ts` so this copy cannot drift.
+ */
+function describeAgentPortabilityMirror(agentCount, portability) {
+  if (agentCount === 0) return "NOT FOUND"
+  if (portability.status === "validated") {
+    return `${portability.count} agent(s) source schema validated; Pi conversion available via scripts/agent-convert.js`
+  }
+  if (portability.status === "failed") {
+    return `${agentCount} agent(s) present but validation FAILED: ${portability.reason}`
+  }
+  return `${agentCount} agent(s) present (unvalidated — ${portability.reason})`
+}
+
+/** Run the Pi adapter regression suite. */
 async function main() {
   console.log("\n=== Testing .pi/extensions/index.ts (Pi thin adapter) ===\n")
 
@@ -292,6 +364,14 @@ async function main() {
   const repoRoot = path.join(__dirname, "..", "..")
   const extensionPath = path.join(repoRoot, ".pi", "extensions", "index.ts")
   const extensionSource = fs.readFileSync(extensionPath, "utf8")
+  const inputArgsPath = path.join(repoRoot, ".pi", "extensions", "input-args.js")
+  const inputArgsSource = fs.readFileSync(inputArgsPath, "utf8")
+
+  const eccPrompt = name => ({
+    name,
+    source: "prompt",
+    sourceInfo: { path: path.join(repoRoot, "commands", `${name}.md`) },
+  })
 
   const tests = [
     // ---- Group 1: source contract -------------------------------------
@@ -320,8 +400,8 @@ async function main() {
         "expected the adapter to invoke hooks via child_process.execFile(...)"
       )
       assert.ok(
-        extensionSource.includes("process.execPath"),
-        "expected hooks to be spawned with process.execPath, not a hardcoded 'node' string"
+        extensionSource.includes("resolveHookRuntime"),
+        "expected the adapter to select a hook runtime before execFile(...)"
       )
 
       const shellExecPattern = /(?<!execFile)\bexec\s*\(/
@@ -341,6 +421,95 @@ async function main() {
         !extensionSource.includes("shell: true"),
         "found `shell: true` in .pi/extensions/index.ts; opting into a shell reintroduces " +
           "the path-with-spaces / injection risk execFile(...) with no shell was meant to avoid"
+      )
+    }],
+    ["selects a real Node runtime instead of compiled OMP's masquerading process.execPath", () => {
+      const runtimeSource = fs.readFileSync(
+        path.join(repoRoot, ".pi", "extensions", "hook-runtime.js"),
+        "utf8"
+      )
+      const runHookStart = extensionSource.indexOf("function runEccHook")
+      const runHookEnd = extensionSource.indexOf("function resolveHookCwd")
+      const runHookSource = extensionSource.slice(runHookStart, runHookEnd)
+      const beforeRunHookSource = extensionSource.slice(0, runHookStart)
+      assert.ok(
+        extensionSource.includes('from "./hook-runtime.js"'),
+        "expected the adapter to import the shared hook runtime selector"
+      )
+      assert.ok(
+        !beforeRunHookSource.includes("resolveHookRuntime()") &&
+          /try\s*\{\s*hookRuntime = resolveHookRuntime\(\)\s*\}\s*catch/.test(runHookSource) &&
+          /execFile\(\s*hookRuntime,/.test(runHookSource),
+        "expected runEccHook to resolve its runtime inside the guarded hook path rather than " +
+          "during module initialization"
+      )
+      assert.ok(
+        runtimeSource.includes("process.versions?.bun") &&
+          runtimeSource.includes("path.basename(execPath)") &&
+          runtimeSource.includes("path.isAbsolute(overridePath)") &&
+          runtimeSource.includes(
+            'throw new Error("ECC_HOOK_NODE must be an absolute path: " + overridePath)'
+          ),
+        "expected the selector to reject Bun/OMP runtimes, require absolute overrides, and " +
+          "fall back to PATH node"
+      )
+    }],
+
+    ["resolves hook runtimes across Node, compiled OMP, and explicit override cases", () => {
+      assert.strictEqual(
+        resolveHookRuntime({ execPath: "/usr/bin/node", override: "" }),
+        "/usr/bin/node"
+      )
+      assert.strictEqual(
+        resolveHookRuntime({ execPath: "/usr/bin/nodejs", override: "" }),
+        "/usr/bin/nodejs"
+      )
+      assert.strictEqual(
+        resolveHookRuntime({
+          execPath: "/usr/bin/node",
+          bunVersion: "1.4.0",
+          override: "",
+        }),
+        "node"
+      )
+      assert.strictEqual(
+        resolveHookRuntime({
+          execPath: "/usr/bin/node",
+          releaseName: "bun",
+          override: "",
+        }),
+        "node"
+      )
+      assert.strictEqual(
+        resolveHookRuntime({
+          execPath: "/home/user/.omp/bin/omp",
+          releaseName: "node",
+          override: "",
+        }),
+        "node"
+      )
+      assert.throws(
+        () =>
+          resolveHookRuntime({
+            execPath: "/usr/bin/node",
+            override: "./node",
+          }),
+        /ECC_HOOK_NODE must be an absolute path: \.\/node/
+      )
+      assert.strictEqual(
+        resolveHookRuntime({
+          execPath: "/usr/bin/node",
+          override: " /opt/node/bin/node ",
+        }),
+        "/opt/node/bin/node"
+      )
+      assert.strictEqual(
+        resolveHookRuntime({
+          execPath: "/home/user/.omp/bin/omp",
+          bunVersion: "1.4.0",
+          override: " /opt/node/bin/node ",
+        }),
+        "/opt/node/bin/node"
       )
     }],
 
@@ -376,6 +545,64 @@ async function main() {
         extensionSource.includes(`registerCommand("ecc-doctor"`),
         "expected the adapter to register an 'ecc-doctor' command via pi.registerCommand(...) " +
           "so users have an install-diagnostics entry point"
+      )
+    }],
+
+    ["ecc-doctor emits report immediately without nextTurn delivery delay", async () => {
+      const commands = new Map()
+      const messages = []
+      const mockPi = {
+        on: () => {},
+        registerCommand: (name, def) => commands.set(name, def),
+        sendMessage: (msg, opts) => messages.push({ msg, opts }),
+      }
+      const compiled = ts.transpileModule(extensionSource, {
+        compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020 },
+      }).outputText
+      const mod = { exports: {} }
+      vm.runInNewContext(compiled, {
+        module: mod,
+        exports: mod.exports,
+        __dirname: path.resolve(repoRoot, ".pi", "extensions"),
+        process,
+        require: name => {
+          if (name === "./hook-runtime.js" || name === "./input-args.js") {
+            return require(path.resolve(repoRoot, ".pi", "extensions", name))
+          }
+          return require(name)
+        },
+      })
+
+      mod.exports.default(mockPi)
+
+      const doctorCmd = commands.get("ecc-doctor")
+      assert.ok(
+        doctorCmd && typeof doctorCmd.handler === "function",
+        "expected ecc-doctor command to register a handler"
+      )
+
+      const mockCtx = {
+        cwd: repoRoot,
+        ui: { notify: () => {} },
+      }
+
+      await doctorCmd.handler({}, mockCtx)
+
+      assert.strictEqual(messages.length, 1, "expected ecc-doctor to send exactly one message")
+      assert.strictEqual(messages[0].msg?.customType, "ecc-doctor", "expected ecc-doctor customType")
+      assert.strictEqual(messages[0].msg?.display, true, "expected ecc-doctor report to be visible")
+      assert.ok(
+        typeof messages[0].msg?.content === "string" && messages[0].msg.content.trim().length > 0,
+        "expected ecc-doctor report content to be nonempty"
+      )
+      assert.strictEqual(
+        messages[0].opts?.triggerTurn,
+        false,
+        "expected ecc-doctor to pass triggerTurn: false so running diagnostics does not invoke the LLM"
+      )
+      assert.ok(
+        messages[0].opts?.deliverAs !== "nextTurn",
+        "expected ecc-doctor not to queue with deliverAs: nextTurn; in Pi, queued delivery stalls display until next turn"
       )
     }],
 
@@ -1041,6 +1268,146 @@ async function main() {
       }
     }],
 
+    ["companion package detection tolerates a scoped fork (source contract): the unscoped-entry fallback exists, scoped entries stay exact, and the doctor loop reports what satisfied the entry", () => {
+      const matchStart = extensionSource.indexOf("function findInstalledCompanion")
+      assert.ok(
+        matchStart !== -1,
+        "expected .pi/extensions/index.ts to define a function named findInstalledCompanion; " +
+          "a bare installed.has(name) check reports an installed scoped fork such as " +
+          "@tintinweb/pi-subagents as missing, and then tells the user to run " +
+          "`pi install npm:pi-subagents`, which would put a SECOND extension registering " +
+          "the same tool names into their session"
+      )
+      const nextFunctionStart = extensionSource.indexOf("\nfunction ", matchStart + 1)
+      const matchSource =
+        nextFunctionStart === -1
+          ? extensionSource.slice(matchStart)
+          : extensionSource.slice(matchStart, nextFunctionStart)
+
+      assert.ok(
+        /if\s*\(\s*installed\.has\(\s*companion\s*\)\s*\)/.test(matchSource),
+        "expected findInstalledCompanion in .pi/extensions/index.ts to check the exact name " +
+          "first; an exact install is the ordinary case and must not be routed through the " +
+          "scoped-fork scan"
+      )
+      assert.ok(
+        /if\s*\(\s*companion\.startsWith\(\s*["'`]@["'`]\s*\)\s*\)\s*\{\s*return undefined/.test(
+          matchSource
+        ),
+        "expected findInstalledCompanion in .pi/extensions/index.ts to bail out for a SCOPED " +
+          "companion entry before the fallback; for an entry like " +
+          "@juicesharp/rpiv-todo the scope is part of the identity ECC is naming, so some " +
+          "other publisher's rpiv-todo must not silently satisfy it"
+      )
+      assert.ok(
+        /name\.startsWith\(\s*["'`]@["'`]\s*\)\s*&&\s*name\.endsWith\(\s*scopedSuffix\s*\)/.test(
+          matchSource
+        ),
+        "expected findInstalledCompanion in .pi/extensions/index.ts to match an installed " +
+          "scoped package by the '@scope/' + exact bare name shape; matching on endsWith " +
+          "alone would let a package named my-pi-subagents satisfy the pi-subagents entry"
+      )
+
+      const withoutComments = stripComments(extensionSource)
+      assert.ok(
+        !/installed\.has\(name\)/.test(withoutComments),
+        "found a bare installed.has(name) still used as executable code in " +
+          ".pi/extensions/index.ts; the /ecc-doctor companion loop must go through " +
+          "findInstalledCompanion so a scoped fork is not reported as missing"
+      )
+      assert.ok(
+        /satisfied by/.test(extensionSource),
+        "expected the /ecc-doctor companion loop in .pi/extensions/index.ts to name the " +
+          "package that satisfied an entry when it is not an exact match; reporting a " +
+          "bare 'installed' for @tintinweb/pi-subagents under the pi-subagents line hides " +
+          "which implementation is actually loaded, which is the first thing to know when " +
+          "its behavior differs from the unscoped package's"
+      )
+    }],
+
+    ["companion package matching (behavioral mirror): an unscoped entry is satisfied by a scoped fork, a scoped entry is matched exactly", () => {
+      assert.strictEqual(
+        findInstalledCompanion("pi-subagents", new Set(["pi-subagents"])),
+        "pi-subagents",
+        "expected an exactly-installed companion to be reported as itself"
+      )
+      assert.strictEqual(
+        findInstalledCompanion("pi-subagents", new Set(["@tintinweb/pi-subagents"])),
+        "@tintinweb/pi-subagents",
+        "expected a scoped fork to satisfy the unscoped pi-subagents entry; the subagents " +
+          "capability is published under that bare name by more than one maintainer, and a " +
+          "user running the scoped one has working Agent/SubagentWorkflow tools in session " +
+          "while /ecc-doctor was calling it missing"
+      )
+      assert.strictEqual(
+        findInstalledCompanion("pi-subagents", new Set(["pi-subagents", "@tintinweb/pi-subagents"])),
+        "pi-subagents",
+        "expected the exact match to win when both are installed, so the reported name is " +
+          "stable rather than depending on Set iteration order"
+      )
+      assert.strictEqual(
+        findInstalledCompanion("pi-subagents", new Set(["my-pi-subagents"])),
+        undefined,
+        "expected an unscoped package that merely ENDS WITH the companion name to not " +
+          "satisfy it; only a @scope/ prefix counts"
+      )
+      assert.strictEqual(
+        findInstalledCompanion("pi-subagents", new Set(["@acme/my-pi-subagents"])),
+        undefined,
+        "expected a scoped package whose bare name merely ends with the companion name to " +
+          "not satisfy it; the segment after the scope must equal the companion name"
+      )
+      assert.strictEqual(
+        findInstalledCompanion("@juicesharp/rpiv-todo", new Set(["@juicesharp/rpiv-todo"])),
+        "@juicesharp/rpiv-todo",
+        "expected an exactly-installed scoped companion to be reported as itself"
+      )
+      assert.strictEqual(
+        findInstalledCompanion("@juicesharp/rpiv-todo", new Set(["@someoneelse/rpiv-todo"])),
+        undefined,
+        "expected a DIFFERENT scope to not satisfy a scoped companion entry; ECC names that " +
+          "scope deliberately, so relaxing this direction would report an unrelated " +
+          "publisher's package as the one ECC documents"
+      )
+      assert.strictEqual(
+        findInstalledCompanion("@juicesharp/rpiv-todo", new Set(["rpiv-todo"])),
+        undefined,
+        "expected an unscoped package to not satisfy a scoped companion entry"
+      )
+      assert.strictEqual(
+        findInstalledCompanion("pi-subagents", new Set()),
+        undefined,
+        "expected an empty install set to satisfy nothing"
+      )
+    }],
+
+    ["every COMPANION_PACKAGES entry this repo ships is still resolvable by the matcher it is checked with", () => {
+      const constStart = extensionSource.indexOf("const COMPANION_PACKAGES")
+      assert.ok(
+        constStart !== -1,
+        "expected to find a COMPANION_PACKAGES array literal in .pi/extensions/index.ts"
+      )
+      const constEnd = extensionSource.indexOf("]", constStart)
+      const companions = Array.from(
+        extensionSource.slice(constStart, constEnd + 1).matchAll(/["'`](@?[\w./-]+)["'`]/g)
+      ).map(match => match[1])
+
+      assert.ok(
+        companions.length > 0,
+        "expected to parse at least one companion package name out of COMPANION_PACKAGES"
+      )
+
+      for (const companion of companions) {
+        assert.strictEqual(
+          findInstalledCompanion(companion, new Set([companion])),
+          companion,
+          `expected the companion entry ${companion} to be recognized when it is installed ` +
+            "under exactly its own name; an entry the matcher cannot resolve would be " +
+            "reported as permanently missing no matter what the user installs"
+        )
+      }
+    }],
+
     // ---- Group 4: engineering-rules injection -------------------------
 
     ["PORTABLE_RULE_FILES lists exactly ECC's 7 Pi-portable rule files and excludes the 3 Claude-Code-only ones", () => {
@@ -1229,6 +1596,48 @@ async function main() {
       )
     }],
 
+    ["/ecc-doctor validates agent portability instead of trusting file existence (source contract)", () => {
+      const start = extensionSource.indexOf("function validateAgentPortability")
+      assert.ok(start !== -1, "expected .pi/extensions/index.ts to define validateAgentPortability")
+      const end = extensionSource.indexOf("\nfunction ", start + 1)
+      const src = end === -1 ? extensionSource.slice(start) : extensionSource.slice(start, end)
+
+      assert.ok(src.includes("execFileSync("), "must use execFileSync (no shell) to run the check")
+      assert.ok(src.includes('"--check"'), "must run agent-convert.js in --check mode")
+      assert.ok(/timeout:\s*AGENT_CHECK_TIMEOUT_MS/.test(src), "must bound the check with a finite timeout")
+      assert.ok(src.includes("resolveHookRuntime()"), "must reuse the node-runtime resolver, not hardcode 'node'")
+      assert.ok(src.includes('"validated"'), "must model the validated state")
+      assert.ok(src.includes('"failed"'), "must model the failed state")
+      assert.ok(src.includes('"unvalidated"'), "must model the unvalidated state")
+      assert.ok(/OK: \(\\d\+\) agents parsed and validated/.test(src), "must parse the real --check output")
+    }],
+
+    ["/ecc-doctor renders three honest agent states (behavioral mirror)", () => {
+      assert.strictEqual(
+        describeAgentPortabilityMirror(68, { status: "validated", count: 68 }),
+        "68 agent(s) source schema validated; Pi conversion available via scripts/agent-convert.js"
+      )
+      assert.strictEqual(
+        describeAgentPortabilityMirror(68, { status: "failed", reason: "boom" }),
+        "68 agent(s) present but validation FAILED: boom"
+      )
+      assert.strictEqual(
+        describeAgentPortabilityMirror(68, { status: "unvalidated", reason: "no node" }),
+        "68 agent(s) present (unvalidated — no node)"
+      )
+      assert.strictEqual(
+        describeAgentPortabilityMirror(0, { status: "unvalidated", reason: "none" }),
+        "NOT FOUND"
+      )
+
+      assert.ok(
+        extensionSource.includes("agent(s) source schema validated; Pi conversion available via scripts/agent-convert.js"),
+        "expected the validated line pinned in the source"
+      )
+      assert.ok(extensionSource.includes("validation FAILED:"), "expected the failed line pinned in the source")
+      assert.ok(extensionSource.includes("unvalidated —"), "expected the unvalidated line pinned in the source")
+    }],
+
     ["isDisabledByEnv() behavioral mirror: recognizes 0/false/off/none/disabled case- and whitespace-insensitively, and the real function reads ECC_PI_RULES", () => {
       for (const disabledValue of ["0", "false", "off", "none", "disabled"]) {
         assert.strictEqual(
@@ -1333,6 +1742,339 @@ async function main() {
         "expected the early-return-when-nothing-to-add guard to appear before the " +
           "systemPrompt-override return in before_agent_start"
       )
+    }],
+
+    ["registers the Pi input event and delegates to the testable input-args module", () => {
+      assert.ok(
+        extensionSource.includes('pi.on("input"'),
+        "expected .pi/extensions/index.ts to register an input handler via pi.on(...); " +
+          "Pi runs input handlers before prompt-template expansion, which is the only " +
+          "place ECC can restore the ARGUMENTS payload Pi otherwise drops"
+      )
+      assert.ok(
+        extensionSource.includes("handlePiInputEvent") &&
+          extensionSource.includes('from "./input-args.js"'),
+        "expected .pi/extensions/index.ts to delegate the input handler to input-args.js " +
+          "so tests can load and exercise the real registered callback rather than a copy"
+      )
+      assert.ok(
+        inputArgsSource.includes('event.source === "extension"') &&
+          inputArgsSource.includes('event.streamingBehavior === "steer"') &&
+          inputArgsSource.includes('typeof pi.getCommands !== "function"'),
+        "expected the registered callback to skip extension-injected and steering input, " +
+          "and to tolerate an API without getCommands; transforming those can double-expand " +
+          "ECC commands or crash the adapter"
+      )
+      assert.ok(
+        inputArgsSource.includes("pi.getCommands()") &&
+          inputArgsSource.includes("activeCommands:"),
+        "expected the registered callback to resolve active commands via pi.getCommands() " +
+          "and pass them into the testable input-args handler for provenance checks"
+      )
+      assert.ok(
+        inputArgsSource.includes("ECC_PI_COMMAND_ARGS"),
+        "expected input-args.js to honor an ECC_PI_COMMAND_ARGS opt-out for " +
+          "argument restoration; an irreversible transform would make the workaround mandatory"
+      )
+      assert.ok(
+        inputArgsSource.includes('action: "transform"') &&
+          inputArgsSource.includes('action: "continue"'),
+        "expected the input handler to return Pi's action result shape, either " +
+          "transform (replace the command with its body plus ARGUMENTS) or continue " +
+          "(leave Pi's normal expansion untouched)"
+      )
+      assert.ok(
+        inputArgsSource.includes(":-[^}]*") &&
+          inputArgsSource.includes("(?::\\d+)?") &&
+          inputArgsSource.includes("$(ARGUMENTS|@|\\d+)"),
+        "expected ARG_PLACEHOLDER to match Pi's full placeholder set, including " +
+          "${1:-default}, ${@:N}, and ${@:N:L}; missing those would transform commands " +
+          "Pi already expands"
+      )
+      assert.ok(
+        inputArgsSource.includes('path.join(eccRoot, "commands"') &&
+          inputArgsSource.includes("${name}.md"),
+        "expected input-args.js to read the canonical commands/ directory relative to eccRoot; " +
+          "reading from cwd would break global installs exactly like the original hook-root defect"
+      )
+      assert.ok(
+        inputArgsSource.includes("new Map(cache).set(name, body)"),
+        "expected the command body cache to replace the old Map rather than mutate it; " +
+          "ECC's immutability rule forbids mutating an existing cache object"
+      )
+      assert.ok(
+        inputArgsSource.includes("console.warn") &&
+          inputArgsSource.includes("unable to read command"),
+        "expected input-args.js to report failed command reads instead of swallowing them; " +
+          "AGENTS.md requires errors to be surfaced even when the adapter keeps its fallback"
+      )
+    }],
+
+    ["registered input handler guard skips extension, steer, and missing getCommands", () => {
+      const fakePi = { getCommands: () => [eccPrompt("plan")] }
+      const options = {
+        eccRoot: repoRoot,
+        env: {},
+        getBody: createCommandBodyReader(repoRoot),
+      }
+
+      assert.deepStrictEqual(
+        handlePiInputEvent({ text: "/plan build it", source: "extension" }, fakePi, options),
+        { action: "continue" },
+        "extension-injected input must pass through unchanged so ECC commands are not double-expanded"
+      )
+      assert.deepStrictEqual(
+        handlePiInputEvent(
+          { text: "/plan build it", source: "interactive", streamingBehavior: "steer" },
+          fakePi,
+          options
+        ),
+        { action: "continue" },
+        "steering input must pass through unchanged rather than being transformed as a fresh command"
+      )
+      assert.deepStrictEqual(
+        handlePiInputEvent({ text: "/plan build it", source: "interactive" }, {}, options),
+        { action: "continue" },
+        "an extension API without getCommands must not crash the input handler"
+      )
+    }],
+
+    ["registered input handler transforms through the actual event callback", () => {
+      const fakePi = { getCommands: () => [eccPrompt("plan")] }
+      const readBody = createCommandBodyReader(repoRoot)
+      const result = handlePiInputEvent(
+        { text: "/plan add a hello world CLI", source: "interactive" },
+        fakePi,
+        { eccRoot: repoRoot, env: {}, getBody: readBody }
+      )
+
+      assert.strictEqual(result.action, "transform")
+      assert.ok(
+        result.text.includes("ARGUMENTS: add a hello world CLI"),
+        "the registered event callback should append the user arguments to the canonical body"
+      )
+      assert.ok(
+        result.text.startsWith(readBody("plan").split("\n")[0]),
+        "the registered event callback should use the real cached command body"
+      )
+    }],
+
+    ["input handler transforms /plan args when Pi's active prompt resolves to ECC", () => {
+      const planRaw = fs.readFileSync(path.join(repoRoot, "commands", "plan.md"), "utf8")
+      const planBody = ARG_PLACEHOLDER.test(
+        planRaw.replace(/^\uFEFF?---\r?\n[\s\S]*?\r?\n---\r?\n?/, "").trim()
+      )
+        ? ""
+        : planRaw.replace(/^\uFEFF?---\r?\n[\s\S]*?\r?\n---\r?\n?/, "").trim()
+      assert.ok(
+        planBody,
+        "commands/plan.md must be placeholder-less in this repo for the test to be meaningful; " +
+          "if it gains a placeholder the transformation should no longer apply"
+      )
+
+      const result = handlePiInput({
+        text: "/plan add a hello world CLI",
+        eccRoot: repoRoot,
+        env: {},
+        activeCommands: [eccPrompt("plan")],
+      })
+
+      assert.strictEqual(result.action, "transform")
+      assert.ok(
+        result.text.includes("ARGUMENTS: add a hello world CLI"),
+        "transforming a placeholder-less command should append ARGUMENTS with the user text"
+      )
+      assert.ok(
+        result.text.startsWith(planBody.split("\n")[0]),
+        "the transformed input should start with the real command body, not the slash command name"
+      )
+    }],
+
+    ["input handler passes /sessions through because the command has a placeholder", () => {
+      const stripFrontmatter = raw => raw.replace(/^\uFEFF?---\r?\n[\s\S]*?\r?\n---\r?\n?/, "").trim()
+      const sessionsRaw = fs.readFileSync(path.join(repoRoot, "commands", "sessions.md"), "utf8")
+      assert.ok(
+        ARG_PLACEHOLDER.test(stripFrontmatter(sessionsRaw)),
+        "commands/sessions.md must contain a placeholder in this repo for the pass-through test to be meaningful"
+      )
+
+      assert.deepStrictEqual(
+        handlePiInput({
+          text: "/sessions recent",
+          eccRoot: repoRoot,
+          env: {},
+          activeCommands: [eccPrompt("sessions")],
+        }),
+        { action: "continue" }
+      )
+    }],
+
+    ["input handler passes through bare and unknown commands", () => {
+      assert.deepStrictEqual(
+        handlePiInput({
+          text: "just a normal prompt",
+          eccRoot: repoRoot,
+          env: {},
+          activeCommands: [],
+        }),
+        { action: "continue" }
+      )
+      assert.deepStrictEqual(
+        handlePiInput({
+          text: "/not-a-real-ecc-command args",
+          eccRoot: repoRoot,
+          env: {},
+          activeCommands: [eccPrompt("plan")],
+        }),
+        { action: "continue" }
+      )
+    }],
+
+    ["input handler honors ECC_PI_COMMAND_ARGS=off", () => {
+      assert.deepStrictEqual(
+        handlePiInput({
+          text: "/plan add a hello world CLI",
+          eccRoot: repoRoot,
+          env: { ECC_PI_COMMAND_ARGS: "off" },
+          activeCommands: [eccPrompt("plan")],
+        }),
+        { action: "continue" }
+      )
+    }],
+
+    ["placeholder detection recognizes Pi's braced positional and slice forms", () => {
+      const root = fs.mkdtempSync(path.join(os.tmpdir(), "ecc-pi-args-"))
+      const commandsDir = path.join(root, "commands")
+      fs.mkdirSync(commandsDir, { recursive: true })
+
+      try {
+        fs.writeFileSync(
+          path.join(commandsDir, "braced.md"),
+          "---\ndescription: braced\n---\n${1:-default} plus ${@:2:3}\n"
+        )
+        assert.strictEqual(
+          loadPlaceholderlessCommand("braced", root),
+          null,
+          "${1:-default} and ${@:2:3} are placeholders Pi expands, not placeholder-less bodies"
+        )
+
+        fs.writeFileSync(
+          path.join(commandsDir, "plain.md"),
+          "---\ndescription: plain\n---\nno placeholders here\n"
+        )
+        assert.strictEqual(
+          loadPlaceholderlessCommand("plain", root),
+          "no placeholders here",
+          "a body without placeholders should be returned for argument restoration"
+        )
+      } finally {
+        fs.rmSync(root, { recursive: true, force: true })
+      }
+    }],
+
+    ["command reader reports failed reads while keeping its null fallback", () => {
+      const root = fs.mkdtempSync(path.join(os.tmpdir(), "ecc-pi-readerr-"))
+      const commandsDir = path.join(root, "commands")
+      fs.mkdirSync(commandsDir, { recursive: true })
+
+      const warnings = []
+      const originalWarn = console.warn
+      console.warn = (...args) => {
+        warnings.push(args.join(" "))
+      }
+
+      try {
+        assert.strictEqual(
+          loadPlaceholderlessCommand("unreadable", root, commandsDir),
+          null,
+          "a failed read must keep the fallback so argument restoration degrades rather than throws"
+        )
+        assert.ok(
+          warnings.some(
+            message =>
+              message.includes("[ecc-pi] unable to read command") &&
+              message.includes(commandsDir)
+          ),
+          "the failed command read must be reported instead of being silently swallowed"
+        )
+      } finally {
+        console.warn = originalWarn
+        fs.rmSync(root, { recursive: true, force: true })
+      }
+    }],
+
+    ["input handler leaves disabled, missing, and differently resolved prompts unchanged", () => {
+      const otherRoot = fs.mkdtempSync(path.join(os.tmpdir(), "ecc-pi-other-"))
+      const otherCommands = path.join(otherRoot, "commands")
+      fs.mkdirSync(otherCommands, { recursive: true })
+      const otherPlan = path.join(otherCommands, "plan.md")
+      fs.writeFileSync(otherPlan, "---\ndescription: user plan\n---\nuser plan body\n")
+
+      try {
+        assert.deepStrictEqual(
+          handlePiInput({
+            text: "/plan add a hello world CLI",
+            eccRoot: repoRoot,
+            env: {},
+            activeCommands: [],
+          }),
+          { action: "continue" },
+          "a disabled or missing Pi prompt must not be overridden by ECC's canonical file"
+        )
+        assert.deepStrictEqual(
+          handlePiInput({
+            text: "/plan add a hello world CLI",
+            eccRoot: repoRoot,
+            env: {},
+            activeCommands: [{ name: "plan", source: "prompt", sourceInfo: { path: otherPlan } }],
+          }),
+          { action: "continue" },
+          "a same-named prompt resolved from outside ECC must be left for Pi to expand"
+        )
+      } finally {
+        fs.rmSync(otherRoot, { recursive: true, force: true })
+      }
+    }],
+
+    ["command body cache replaces rather than mutates its previous Map", () => {
+      const readBody = createCommandBodyReader(repoRoot)
+      const first = readBody("plan")
+      assert.ok(
+        typeof first === "string" && first.includes("# Plan Command"),
+        "the body reader should return the real canonical plan body"
+      )
+      assert.strictEqual(
+        readBody("plan"),
+        first,
+        "the cache should return the same body on subsequent lookups"
+      )
+    }],
+
+    ["command body cache returns the first body after the backing file changes", () => {
+      const root = fs.mkdtempSync(path.join(os.tmpdir(), "ecc-pi-cache-"))
+      const commandsDir = path.join(root, "commands")
+      fs.mkdirSync(commandsDir, { recursive: true })
+      const planPath = path.join(commandsDir, "plan.md")
+      fs.writeFileSync(planPath, "---\ndescription: plan\n---\nfirst body\n")
+
+      try {
+        const readBody = createCommandBodyReader(root)
+        assert.strictEqual(readBody("plan"), "first body")
+
+        fs.writeFileSync(planPath, "---\ndescription: plan\n---\nsecond body\n")
+        assert.strictEqual(
+          loadPlaceholderlessCommand("plan", root),
+          "second body",
+          "the backing command file must actually change for the cache assertion to be meaningful"
+        )
+        assert.strictEqual(
+          readBody("plan"),
+          "first body",
+          "the cached body must be immutable even after the backing command file changes"
+        )
+      } finally {
+        fs.rmSync(root, { recursive: true, force: true })
+      }
     }],
   ]
 

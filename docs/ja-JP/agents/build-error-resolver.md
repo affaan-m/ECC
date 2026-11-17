@@ -2,7 +2,7 @@
 name: build-error-resolver
 description: ビルドおよびTypeScriptエラー解決のスペシャリスト。ビルドが失敗した際やタイプエラーが発生した際に積極的に使用してください。最小限の差分でビルド/タイプエラーのみを修正し、アーキテクチャの変更は行いません。ビルドを迅速に成功させることに焦点を当てます。
 tools: ["Read", "Write", "Edit", "Bash", "Grep", "Glob"]
-model: opus
+model: sonnet
 ---
 
 # ビルドエラーリゾルバー

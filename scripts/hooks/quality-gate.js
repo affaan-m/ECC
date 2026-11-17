@@ -17,6 +17,7 @@
 const fs = require('fs');
 const path = require('path');
 const { spawnSync } = require('child_process');
+const { getLinterInvocation } = require('./pre-bash-commit-quality');
 
 const { findProjectRoot, detectFormatter, resolveFormatterBin } = require('../lib/resolve-formatter');
 
@@ -31,10 +32,13 @@ const MAX_STDIN = 1024 * 1024;
  * @returns {import('child_process').SpawnSyncReturns<string>}
  */
 function exec(command, args, cwd = process.cwd()) {
-  return spawnSync(command, args, {
+  // Reuse the Windows shim runner so .cmd formatters receive literal paths.
+  const invocation = getLinterInvocation(command, args);
+  return spawnSync(invocation.command, invocation.args, {
+    ...invocation.options,
+    shell: false,
     cwd,
-    encoding: 'utf8',
-    env: process.env,
+    env: invocation.options.env || process.env,
     timeout: 15000
   });
 }
@@ -55,12 +59,13 @@ function log(msg) {
  * @param {string} filePath - Path to the edited file
  */
 function maybeRunQualityGate(filePath) {
-  if (!filePath || !fs.existsSync(filePath)) {
+  if (!filePath) {
     return;
   }
 
-  // Resolve to absolute path so projectRoot-relative comparisons work
-  filePath = path.resolve(filePath);
+  // Use the existing file's canonical path for project-root comparisons and
+  // formatter arguments. A disappeared file fails closed in run().
+  filePath = fs.realpathSync(filePath);
 
   const ext = path.extname(filePath).toLowerCase();
   const fix = String(process.env.ECC_QUALITY_GATE_FIX || '').toLowerCase() === 'true';

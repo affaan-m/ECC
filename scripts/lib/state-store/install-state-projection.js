@@ -317,6 +317,7 @@ function reconcileCurrentInstallState(store, options = {}) {
       homeDir: options.homeDir,
       projectRoot: options.projectRoot,
       targets: options.targets,
+      env: options.env,
     });
     let result = reconcileInstallStateProjections(store, records);
     try {

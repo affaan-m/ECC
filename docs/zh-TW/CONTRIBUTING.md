@@ -1,4 +1,4 @@
-# 貢獻 Everything Claude Code
+# 貢獻 ECC
 
 感謝您想要貢獻。本儲存庫旨在成為 Claude Code 使用者的社群資源。
 
@@ -60,8 +60,8 @@
 ### 1. Fork 儲存庫
 
 ```bash
-git clone https://github.com/YOUR_USERNAME/everything-claude-code.git
-cd everything-claude-code
+git clone https://github.com/YOUR_USERNAME/ECC.git
+cd ECC
 ```
 
 ### 2. 建立分支

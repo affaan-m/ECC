@@ -1,6 +1,6 @@
-# Everything Claude Code for CodeBuddy
+# ECC for CodeBuddy
 
-为 CodeBuddy IDE 带来 Everything Claude Code (ECC) 工作流。此仓库提供自定义命令、智能体、技能和规则，可以通过统一的 Target Adapter 架构安装到任何 CodeBuddy 项目中。
+为 CodeBuddy IDE 带来 ECC 工作流。此仓库提供自定义命令、智能体、技能和规则，可以通过统一的 Target Adapter 架构安装到任何 CodeBuddy 项目中。
 
 ## 快速开始（推荐）
 

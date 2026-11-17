@@ -13,7 +13,14 @@ const os = require('os');
 const path = require('path');
 
 const accumulator = require('../../scripts/hooks/post-edit-accumulator');
-const { parseAccumulator, isPluginClonePath } = require('../../scripts/hooks/stop-format-typecheck');
+const {
+  getPerBatchBudgetMs,
+  getTotalBudgetMs,
+  isPluginClonePath,
+  diagnosticMatchesFile,
+  parseAccumulator,
+} = require('../../scripts/hooks/stop-format-typecheck');
+
 
 function test(name, fn) {
   try {
@@ -30,13 +37,21 @@ function test(name, fn) {
 let passed = 0;
 let failed = 0;
 
+// Keep accumulator fixtures private, including subprocess hook invocations.
+const accumulatorTempRoot = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-stop-fixtures-')));
+const originalTempEnv = Object.fromEntries(['TMPDIR', 'TMP', 'TEMP'].map(key => [key, process.env[key]]));
+for (const key of Object.keys(originalTempEnv)) process.env[key] = accumulatorTempRoot;
+process.on('exit', () => fs.rmSync(accumulatorTempRoot, { recursive: true, force: true }));
+
 // Use a unique session ID for tests so we don't pollute real sessions
 const TEST_SESSION_ID = `test-${Date.now()}`;
 const origSessionId = process.env.CLAUDE_SESSION_ID;
+const origEccSessionId = process.env.ECC_SESSION_ID;
 process.env.CLAUDE_SESSION_ID = TEST_SESSION_ID;
+delete process.env.ECC_SESSION_ID;
 
 function getAccumFile() {
-  return path.join(os.tmpdir(), `ecc-edited-${TEST_SESSION_ID}.txt`);
+  return path.join(accumulatorTempRoot, `ecc-edited-${TEST_SESSION_ID}.txt`);
 }
 
 function cleanAccumFile() {
@@ -203,6 +218,85 @@ if (test('parseAccumulator ignores blank lines and trims whitespace', () => {
   assert.deepStrictEqual(result, ['/tmp/a.ts', '/tmp/b.ts']);
 })) passed++; else failed++;
 
+if (test('getTotalBudgetMs honors a bounded dispatcher budget', () => {
+  assert.strictEqual(
+    getTotalBudgetMs({ ECC_STOP_FORMAT_TYPECHECK_BUDGET_MS: '210000' }),
+    210000
+  );
+  assert.strictEqual(
+    getTotalBudgetMs({ ECC_STOP_FORMAT_TYPECHECK_BUDGET_MS: '999999' }),
+    270000
+  );
+  assert.strictEqual(
+    getTotalBudgetMs({ ECC_STOP_FORMAT_TYPECHECK_BUDGET_MS: 'invalid' }),
+    270000
+  );
+})) passed++; else failed++;
+
+if (test('getPerBatchBudgetMs always returns a positive child timeout', () => {
+  assert.strictEqual(getPerBatchBudgetMs(210000, 2), 105000);
+  assert.strictEqual(getPerBatchBudgetMs(210000, 210001), 1);
+  assert.strictEqual(getPerBatchBudgetMs(210000, 0), 60000);
+})) passed++; else failed++;
+
+if (test('matches forward-slash TypeScript paths against Windows edited paths', () => {
+  const candidates = new Set(['C:\\project\\src\\broken.ts', 'src\\broken.ts']);
+  assert.strictEqual(diagnosticMatchesFile('src/broken.ts(1,14): error TS2322', candidates), true);
+  assert.strictEqual(diagnosticMatchesFile('src/other.ts(1,14): error TS2322', candidates), false);
+
+})) passed++; else failed++;
+
+if (test('matches a diagnostic by the file it names, not by a substring of the line', () => {
+  const rootIndex = new Set(['/project/index.ts', 'index.ts']);
+  assert.strictEqual(diagnosticMatchesFile('index.ts(1,14): error TS2322: Type', rootIndex), true);
+  assert.strictEqual(diagnosticMatchesFile('src/index.ts(1,14): error TS2322: Type', rootIndex), false);
+  const utils = new Set(['/project/src/utils.ts', 'src/utils.ts']);
+  assert.strictEqual(diagnosticMatchesFile('web/src/utils.ts(2,1): error TS2304: Cannot find name', utils), false);
+  assert.strictEqual(diagnosticMatchesFile("app.ts(3,1): error TS2307: Cannot find module './src/utils.ts'", utils), false);
+  assert.strictEqual(diagnosticMatchesFile('src/(group)/page.tsx(3,5): error TS2322', new Set(['src/(group)/page.tsx'])), true);
+  assert.strictEqual(diagnosticMatchesFile("  Type 'string' is not assignable to type 'number'.", utils), false);
+})) passed++; else failed++;
+
+if (test('stop hook reports a tsc diagnostic only under the file it names', () => {
+  const { spawnSync } = require('child_process');
+  const projectDir = fs.mkdtempSync(path.join(accumulatorTempRoot, 'ts-project-'));
+  const binDir = path.join(projectDir, 'bin');
+  fs.mkdirSync(path.join(projectDir, 'src'));
+  fs.mkdirSync(binDir);
+  fs.writeFileSync(path.join(projectDir, 'tsconfig.json'), '{}');
+  fs.writeFileSync(path.join(projectDir, 'index.ts'), 'export const ok = 1;\n');
+  fs.writeFileSync(path.join(projectDir, 'src', 'index.ts'), 'export const bad: number = "x";\n');
+  const diagnostic = "src/index.ts(1,14): error TS2322: Type 'string' is not assignable to type 'number'.";
+  const fakeTsc = path.join(binDir, 'fake-tsc.js');
+  fs.writeFileSync(fakeTsc, `process.stdout.write(${JSON.stringify(`${diagnostic}\n`)});\nprocess.exitCode = 2;\n`);
+  if (process.platform === 'win32') {
+    fs.writeFileSync(path.join(binDir, 'npx.cmd'), `@echo off\r\nnode "${fakeTsc}" %*\r\n`);
+  } else {
+    fs.writeFileSync(path.join(binDir, 'npx'), `#!/usr/bin/env node\nrequire(${JSON.stringify(fakeTsc)});\n`);
+    fs.chmodSync(path.join(binDir, 'npx'), 0o755);
+  }
+  const pathKey = Object.keys(process.env).find(key => key.toLowerCase() === 'path') || 'PATH';
+  const stopScript = path.resolve(__dirname, '../../scripts/hooks/stop-format-typecheck.js');
+  const stopStderr = editedFile => {
+    fs.writeFileSync(getAccumFile(), `${editedFile}\n`);
+    return spawnSync('node', [stopScript], {
+      input: '{}',
+      env: { ...process.env, CLAUDE_SESSION_ID: TEST_SESSION_ID, [pathKey]: `${binDir}${path.delimiter}${process.env[pathKey]}` },
+      encoding: 'utf8',
+      timeout: 10000
+    }).stderr;
+  };
+  try {
+    const rootStderr = stopStderr(path.join(projectDir, 'index.ts'));
+    assert.ok(!rootStderr.includes('TypeScript errors'), `root index.ts must not get src/index.ts errors:\n${rootStderr}`);
+    const nestedStderr = stopStderr(path.join(projectDir, 'src', 'index.ts'));
+    assert.ok(nestedStderr.includes(`TypeScript errors in index.ts:\n${diagnostic}`), nestedStderr);
+  } finally {
+    cleanAccumFile();
+    fs.rmSync(projectDir, { recursive: true, force: true });
+  }
+})) passed++; else failed++;
+
 if (test('stop hook clears accumulator after processing duplicates', () => {
   cleanAccumFile();
   fs.writeFileSync(getAccumFile(), '/nonexistent/x.ts\n/nonexistent/x.ts\n/nonexistent/y.ts\n', 'utf8');
@@ -231,6 +325,91 @@ if (test('stop hook passes stdin through unchanged', () => {
     timeout: 10000
   });
   assert.strictEqual(result.toString(), input);
+})) passed++; else failed++;
+
+console.log('\nsession-scoped accumulator regression (#3460)');
+
+function withPayloadSessions(fn) {
+  const sessionA = `${TEST_SESSION_ID}-payload-a`;
+  const sessionB = `${TEST_SESSION_ID}-payload-b`;
+  const fileA = path.join(accumulatorTempRoot, `ecc-edited-${sessionA}.txt`);
+  const fileB = path.join(accumulatorTempRoot, `ecc-edited-${sessionB}.txt`);
+  try {
+    cleanAccumFile();
+    fn({ sessionA, sessionB, fileA, fileB });
+  } finally {
+    for (const file of [fileA, fileB]) fs.rmSync(file, { force: true });
+    cleanAccumFile();
+  }
+}
+
+if (test('stdin session IDs isolate edits from sibling sessions in the same cwd', () => {
+  withPayloadSessions(({ sessionA, sessionB, fileA, fileB }) => {
+    accumulator.run(JSON.stringify({ session_id: sessionA, tool_input: { file_path: '/nonexistent/a.ts' } }));
+    accumulator.run(JSON.stringify({ session_id: sessionB, tool_input: { file_path: '/nonexistent/b.ts' } }));
+    assert.strictEqual(fs.readFileSync(fileA, 'utf8'), '/nonexistent/a.ts\n');
+    assert.strictEqual(fs.readFileSync(fileB, 'utf8'), '/nonexistent/b.ts\n');
+    assert.ok(!fs.existsSync(getAccumFile()), 'stdin must override the environment session');
+  });
+})) passed++; else failed++;
+
+if (test('Stop consumes only its stdin session accumulator and preserves pass-through', () => {
+  withPayloadSessions(({ sessionA, sessionB, fileA, fileB }) => {
+    fs.writeFileSync(fileA, '/nonexistent/a.ts\n');
+    fs.writeFileSync(fileB, '/nonexistent/b.ts\n');
+    const stopHook = require('../../scripts/hooks/stop-format-typecheck');
+    const inputA = JSON.stringify({ session_id: sessionA, stop_reason: 'end_turn' });
+    assert.strictEqual(stopHook.run(inputA), inputA);
+    assert.ok(!fs.existsSync(fileA), 'completed session accumulator must be removed');
+    assert.strictEqual(fs.readFileSync(fileB, 'utf8'), '/nonexistent/b.ts\n');
+    stopHook.run(JSON.stringify({ session_id: sessionB }));
+    assert.ok(!fs.existsSync(fileB), 'second session should consume its own accumulator');
+  });
+})) passed++; else failed++;
+
+if (test('MultiEdit uses the same stdin session accumulator for every edit', () => {
+  withPayloadSessions(({ sessionA, fileA }) => {
+    accumulator.run(JSON.stringify({
+      session_id: sessionA,
+      tool_input: { edits: [{ file_path: '/nonexistent/a.ts' }, { file_path: '/nonexistent/b.js' }] }
+    }));
+    assert.strictEqual(fs.readFileSync(fileA, 'utf8'), '/nonexistent/a.ts\n/nonexistent/b.js\n');
+  });
+})) passed++; else failed++;
+
+if (test('ECC_SESSION_ID precedes CLAUDE_SESSION_ID while preserving legacy filenames', () => {
+  const rawId = `${TEST_SESSION_ID}/ecc.with spaces`;
+  const safeId = rawId.replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 64);
+  const file = path.join(accumulatorTempRoot, `ecc-edited-${safeId}.txt`);
+  process.env.ECC_SESSION_ID = rawId;
+  try {
+    cleanAccumFile();
+    accumulator.run(JSON.stringify({ tool_input: { file_path: '/nonexistent/ecc.ts' } }));
+    assert.strictEqual(fs.readFileSync(file, 'utf8'), '/nonexistent/ecc.ts\n');
+    assert.ok(!fs.existsSync(getAccumFile()));
+    const stopHook = require('../../scripts/hooks/stop-format-typecheck');
+    assert.strictEqual(stopHook.run('malformed JSON'), 'malformed JSON');
+    assert.ok(!fs.existsSync(file), 'malformed Stop input must retain the environment fallback');
+  } finally {
+    delete process.env.ECC_SESSION_ID;
+    fs.rmSync(file, { force: true });
+    cleanAccumFile();
+  }
+})) passed++; else failed++;
+
+if (test('stdin IDs keep the existing filename sanitizer and length limit', () => {
+  const rawId = `${TEST_SESSION_ID}/../nested\\session ${'x'.repeat(100)}`;
+  const safeId = rawId.replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 64);
+  const file = path.join(accumulatorTempRoot, `ecc-edited-${safeId}.txt`);
+  try {
+    accumulator.run(JSON.stringify({ session_id: rawId, tool_input: { file_path: '/nonexistent/safe.ts' } }));
+    assert.strictEqual(fs.readFileSync(file, 'utf8'), '/nonexistent/safe.ts\n');
+    require('../../scripts/hooks/stop-format-typecheck').run(JSON.stringify({ session_id: rawId }));
+    assert.ok(!fs.existsSync(file));
+  } finally {
+    fs.rmSync(file, { force: true });
+    cleanAccumFile();
+  }
 })) passed++; else failed++;
 
 // --- Plugin and marketplace clones are read, not owned: never format them ---
@@ -273,11 +452,22 @@ if (test('resolves traversal before deciding', () => {
   assert.strictEqual(isPluginClonePath(p, FAKE_CWD, FAKE_HOME), true);
 })) passed++; else failed++;
 
+fs.rmSync(accumulatorTempRoot, { recursive: true, force: true });
+for (const [key, value] of Object.entries(originalTempEnv)) {
+  if (value === undefined) delete process.env[key];
+  else process.env[key] = value;
+}
+
 // Restore env
 if (origSessionId === undefined) {
   delete process.env.CLAUDE_SESSION_ID;
 } else {
   process.env.CLAUDE_SESSION_ID = origSessionId;
+}
+if (origEccSessionId === undefined) {
+  delete process.env.ECC_SESSION_ID;
+} else {
+  process.env.ECC_SESSION_ID = origEccSessionId;
 }
 
 console.log(`\n=== Test Results ===`);

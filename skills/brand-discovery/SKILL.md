@@ -1,11 +1,6 @@
 ---
 name: brand-discovery
-description: >-
-  Use when a brand needs to discover or articulate its identity through
-  structured multi-session interviews. Covers purpose, positioning, audience,
-  personality, voice, narrative, and founder-brand tension across 8 modules
-  using laddering, 5 Whys, and projective techniques. Produces a resumable
-  session with disk-persisted state and a master brandbook (90_SYNTHESIS.md).
+description: Run a structured, resumable multi-session brand identity interview across 8 modules (purpose, positioning, audience, personality, voice, narrative, founder tension) using laddering, 5 Whys, and projective techniques, persisting answers to disk and producing a master brandbook (90_SYNTHESIS.md). Use when creating or repositioning a brand, briefing designers or writers, or making implicit founder knowledge explicit.
 ---
 
 # Brand Discovery

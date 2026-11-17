@@ -2,7 +2,7 @@ import pytest
 
 from llm.core.types import Message, Role, ToolDefinition
 from llm.prompt import PromptBuilder, adapt_messages_for_provider
-from llm.prompt.builder import PromptConfig
+from llm.prompt.builder import PromptConfig, get_provider_builder
 
 
 class TestPromptBuilder:
@@ -24,6 +24,15 @@ class TestPromptBuilder:
 
         assert len(result) == 2
         assert result[0].role == Role.SYSTEM
+
+    def test_build_rejects_structured_system_content(self):
+        messages = [
+            Message(role=Role.SYSTEM, content=[{"type": "text", "text": "Rules"}]),
+            Message(role=Role.USER, content="Hello"),
+        ]
+
+        with pytest.raises(TypeError, match="system messages must contain text"):
+            PromptBuilder().build(messages)
 
     def test_build_adds_system_from_keyword_options(self):
         messages = [Message(role=Role.USER, content="Hello")]
@@ -83,3 +92,14 @@ class TestAdaptMessagesForProvider:
         messages = [Message(role=Role.USER, content="Hello")]
         result = adapt_messages_for_provider(messages, "ollama")
         assert len(result) == 1
+
+    def test_provider_names_allow_outer_whitespace(self):
+        messages = [Message(role=Role.USER, content="Hello")]
+        tools = [ToolDefinition(name="search", description="Search the web", parameters={})]
+
+        result = adapt_messages_for_provider(messages, " ollama ", tools)
+
+        assert get_provider_builder(" ollama ").config.tool_format == "text"
+        assert len(result) == 2
+        assert result[0].role == Role.SYSTEM
+        assert "Available Tools" in result[0].content

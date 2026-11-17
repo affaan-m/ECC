@@ -493,6 +493,87 @@ function runTests() {
     }
   })) passed++; else failed++;
 
+  // Dart/Flutter detection
+  console.log('\nDart/Flutter Detection:');
+
+  if (test('detects dart from pubspec.yaml and .dart files', () => {
+    const dir = createTempDir();
+    try {
+      writeTestFile(dir, 'pubspec.yaml', 'name: test_pkg\nversion: 1.0.0\n');
+      writeTestFile(dir, 'main.dart', 'void main() {}\n');
+      const result = detectProjectType(dir);
+      assert.ok(result.languages.includes('dart'));
+    } finally {
+      cleanupDir(dir);
+    }
+  })) passed++; else failed++;
+
+  if (test('detects flutter framework when pubspec.yaml depends on the Flutter SDK', () => {
+    const dir = createTempDir();
+    try {
+      writeTestFile(dir, 'pubspec.yaml', [
+        'name: halal_cosmetics_app',
+        'dependencies:',
+        '  flutter:',
+        '    sdk: flutter',
+        '  cupertino_icons: ^1.0.2'
+      ].join('\n'));
+      const result = detectProjectType(dir);
+      assert.ok(result.languages.includes('dart'));
+      assert.ok(result.frameworks.includes('flutter'), `flutter not detected: ${JSON.stringify(result.frameworks)}`);
+      assert.strictEqual(result.primary, 'flutter');
+    } finally {
+      cleanupDir(dir);
+    }
+  })) passed++; else failed++;
+
+  if (test('does not misclassify a plain Dart package as flutter', () => {
+    const dir = createTempDir();
+    try {
+      writeTestFile(dir, 'pubspec.yaml', [
+        'name: plain_dart_pkg',
+        'dependencies:',
+        '  http: ^1.0.0'
+      ].join('\n'));
+      const result = detectProjectType(dir);
+      assert.ok(result.languages.includes('dart'));
+      assert.ok(!result.frameworks.includes('flutter'), `plain Dart package wrongly detected as flutter: ${JSON.stringify(result.frameworks)}`);
+      assert.strictEqual(result.primary, 'dart');
+    } finally {
+      cleanupDir(dir);
+    }
+  })) passed++; else failed++;
+
+  if (test('does not combine unrelated Flutter and SDK configuration', () => {
+    const dir = createTempDir();
+    try {
+      writeTestFile(dir, 'pubspec.yaml', 'name: plain_dart\nflutter:\n  assets: []\ndependencies:\n  other:\n    sdk: flutter\n');
+      assert.ok(!detectProjectType(dir).frameworks.includes('flutter'));
+    } finally {
+      cleanupDir(dir);
+    }
+  })) passed++; else failed++;
+
+  if (test('detects inline Flutter SDK dependencies', () => {
+    const dir = createTempDir();
+    try {
+      writeTestFile(dir, 'pubspec.yaml', 'name: flutter_pkg\ndependencies: {flutter: {sdk: flutter}}\n');
+      assert.ok(detectProjectType(dir).frameworks.includes('flutter'));
+    } finally {
+      cleanupDir(dir);
+    }
+  })) passed++; else failed++;
+
+  if (test('malformed pubspec does not claim Flutter detection', () => {
+    const dir = createTempDir();
+    try {
+      writeTestFile(dir, 'pubspec.yaml', 'dependencies: [\nflutter:\n  sdk: flutter\n');
+      assert.ok(!detectProjectType(dir).frameworks.includes('flutter'));
+    } finally {
+      cleanupDir(dir);
+    }
+  })) passed++; else failed++;
+
   // Edge cases
   console.log('\nEdge Cases:');
 

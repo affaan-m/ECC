@@ -6,7 +6,7 @@ origin: community
 
 # ECC 指南
 
-当用户需要帮助来理解、浏览、安装 Everything Claude Code 或在其中做选择时，使用此技能。
+当用户需要帮助来理解、浏览、安装 ECC 或在其中做选择时，使用此技能。
 
 ## 何时使用
 
