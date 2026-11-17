@@ -77,5 +77,5 @@ test('keeps marker and dependency detection when enumeration fails', root => {
   assert.strictEqual(reads, 1);
 });
 
-console.log(`\n=== Results: ${passed} passed, ${failed} failed ===\n`);
+console.log(`\nPassed: ${passed}, Failed: ${failed}\n`);
 process.exitCode = failed > 0 ? 1 : 0;
