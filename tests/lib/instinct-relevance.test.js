@@ -81,6 +81,16 @@ function runAliasTests() {
     assert.strictEqual(instinctMatchesStack({ trigger: 'edit next.json' }, new Set(['nextjs'])), false);
     assert.strictEqual(instinctMatchesStack({ trigger: 'nest.json settings' }, new Set(['nestjs'])), false);
     assert.strictEqual(instinctMatchesStack({ trigger: 'good practices' }, new Set(['golang'])), false);
+    for (const [value, keyword] of [
+      ['next.js_routes', 'nextjs'], ['use_nest.js', 'nestjs'],
+      ['use_C#', 'csharp'], ['F#_functions', 'fsharp'],
+    ]) {
+      assert.strictEqual(instinctMatchesStack({ trigger: value }, new Set([keyword])), true, value);
+    }
+    assert.strictEqual(instinctMatchesStack({ trigger: 'when changes go live' }, new Set(['golang'])), false);
+    assert.strictEqual(instinctMatchesStack({ trigger: 'when writing Go tests' }, new Set(['golang'])), true);
+    assert.strictEqual(instinctMatchesStack({ domain: 'go' }, new Set(['golang'])), true);
+    assert.strictEqual(instinctMatchesStack({ stack: 'GO' }, new Set(['golang'])), true);
   })) passed++; else failed++;
 
   return { passed, failed };
