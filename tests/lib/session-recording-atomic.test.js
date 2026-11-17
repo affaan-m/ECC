@@ -115,6 +115,21 @@ for (const [backend, loadStateStoreImpl] of backends) {
   });
 }
 
+/** The single published recording under a private fixture directory. */
+function findOnlyRecording(directory) {
+  const found = [];
+  const walk = current => {
+    for (const entry of fs.readdirSync(current, { withFileTypes: true })) {
+      const child = path.join(current, entry.name);
+      if (entry.isDirectory()) walk(child);
+      else if (entry.isFile() && entry.name.endsWith('.json')) found.push(child);
+    }
+  };
+  walk(directory);
+  assert.strictEqual(found.length, 1, `expected one recording, found ${found.length}`);
+  return found[0];
+}
+
 /** Inspect or adjust the published recording through one opened handle. */
 function withSavedRecording(filePath, inspect) {
   const fd = fs.openSync(filePath, 'r');
@@ -131,8 +146,11 @@ if (process.platform !== 'win32') {
     try {
       const options = { recordingDir, loadStateStoreImpl: () => null };
       const first = snapshot('Initial permissions');
-      const filePath = getFallbackSessionRecordingPath(first, options);
       persistCanonicalSnapshot(first, options);
+      // Locate the published file inside this test's private directory so the
+      // path never derives from the library's shared-temp default.
+      const filePath = findOnlyRecording(recordingDir);
+      assert.strictEqual(path.basename(filePath), path.basename(getFallbackSessionRecordingPath(first, options)));
       withSavedRecording(filePath, fd => {
         assert.strictEqual(fs.fstatSync(fd).mode & 0o777, 0o666 & ~process.umask());
       });
