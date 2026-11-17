@@ -8,7 +8,8 @@
  * mode: it returns immediately, does no per-prompt transcript work, and
  * suppresses nothing — the advisory hooks (suggest-compact,
  * ecc-context-monitor) keep their normal behavior. The operator turns on the
- * deterministic protocol by setting ECC_CONTEXT_GATE_MODE=enforce.
+ * deterministic protocol by setting ECC_CONTEXT_GATE_MODE=enforce. This is
+ * prompt guidance; it does not block tools, reserve a path, or close the host session.
  *
  * In enforce mode: at >=90% context-window occupancy (measured from the
  * latest assistant `usage` record in the session transcript, same signal as
@@ -20,10 +21,10 @@
  *
  * The checkpoint is written to a collision-safe, identity-bearing path under
  * the plugin's session-handoff directory
- * (<getSessionsDir()>/resume/<project>-<sessionId>.md) — NOT the project
+ * (<getSessionsDir()>/resume/<project>-<ownerDigest>-<sessionId>.md), NOT the project
  * root — so an operator's own RESUME.md is never a target and repeated fires
  * in one session overwrite only that session's own checkpoint. The resume
- * command naming that exact path is the handoff receipt.
+ * command is a proposed continuation instruction, never a durable handoff receipt.
  *
  * Why an order instead of a suggestion (contrast with suggest-compact and
  * ecc-context-monitor, which advise and ask):
@@ -69,104 +70,93 @@
 
 const fs = require('fs');
 const path = require('path');
+const crypto = require('crypto');
 const { readLatestContextTokens, resolveContextWindow, formatWindowLabel } = require('../lib/transcript-context');
 const { resolvePct, resolveGateMode, resolveGatePct, resolveEmergencyPct, DEFAULT_GATE_PCT, DEFAULT_EMERGENCY_PCT } = require('../lib/context-gate-state');
-const { getSessionsDir, getProjectName, sanitizeSessionId } = require('../lib/utils');
+const { getSessionsDir, sanitizeSessionId } = require('../lib/utils');
 
 /** Max disambiguation attempts before declining rather than guess a path. */
 const MAX_CHECKPOINT_CANDIDATES = 50;
 
 /**
- * Read the owning session id recorded in a checkpoint file's ownership
- * marker (its first line), or null when the file has no recognizable marker
- * or cannot be read. The model writes this marker verbatim from the order
- * (see buildOrderText); the hook itself never writes the file, so a checkpoint
- * with no marker is treated as NOT owned by any session — a file the gate must
- * not target. Never throws: a read failure is "not owned", not a crash.
- * @param {string} filePath
- * @returns {string|null} Sanitized owner session id, or null.
+ * Read-only proposal ownership, never a reservation or permission grant.
+ * Symlinks and special files are occupied. Read errors decline this slot.
  */
-function readOwnerSession(filePath) {
+function matchesOwner(candidate, observed, identity) {
+  if (!observed.isFile() || observed.isSymbolicLink() || observed.nlink !== 1) return false;
   let fd;
   try {
-    fd = fs.openSync(filePath, 'r');
+    fd = fs.openSync(candidate, fs.constants.O_RDONLY |
+      (fs.constants.O_NOFOLLOW || 0) | (fs.constants.O_NONBLOCK || 0));
+    const opened = fs.fstatSync(fd);
+    if (!opened.isFile() || opened.dev !== observed.dev || opened.ino !== observed.ino) return false;
     const buf = Buffer.alloc(512);
     const bytes = fs.readSync(fd, buf, 0, buf.length, 0);
     const firstLine = buf.toString('utf8', 0, bytes).split(/\r?\n/, 1)[0];
-    const m = firstLine.match(/ecc-handoff\s+session=(\S+)/);
-    return m ? m[1] : null;
+    const marker = /^<!-- ecc-handoff owner=([a-f0-9]{64}) session=([A-Za-z0-9_-]+) project=([A-Za-z0-9_-]+) source-rev=(?:[a-f0-9]{40}|[a-f0-9]{64}|unknown) -->$/.exec(firstLine);
+    return Boolean(marker && marker[1] === identity.ownerKey &&
+      marker[2] === identity.sessionId && marker[3] === identity.project);
   } catch {
-    return null;
+    return false;
   } finally {
-    if (fd !== undefined) {
-      try { fs.closeSync(fd); } catch { /* already closed / never opened */ }
-    }
+    if (fd !== undefined) { try { fs.closeSync(fd); } catch { /* read-only probe */ } }
   }
 }
 
-/**
- * Pick an ownership-safe checkpoint destination under resumeDir for the given
- * base name. The first candidate is `<base>.md`; if a candidate already exists
- * and is NOT owned by this session (no matching ecc-handoff marker, including
- * an unmarked or unreadable file), the gate refuses to target it and tries
- * `<base>-2.md`, `-3.md`, … A candidate that does not exist, or that is already
- * owned by this session (idempotent re-fire), is returned. Returns null if no
- * safe candidate is found within MAX_CHECKPOINT_CANDIDATES — the caller then
- * declines rather than overwrite someone else's handoff.
- * @param {string} resumeDir
- * @param {string} base - `<project>-<sessionId>`
- * @param {string} sessionId - sanitized owner id to match against markers
- * @returns {string|null}
- */
-function pickOwnedDestination(resumeDir, base, sessionId) {
+function safeDirectoryOrMissing(directory) {
+  try {
+    const st = fs.lstatSync(directory);
+    return st.isDirectory() && !st.isSymbolicLink();
+  } catch (error) {
+    return error.code === 'ENOENT';
+  }
+}
+
+function pickOwnedDestination(resumeDir, base, identity) {
   for (let i = 1; i <= MAX_CHECKPOINT_CANDIDATES; i++) {
-    const name = i === 1 ? `${base}.md` : `${base}-${i}.md`;
-    const candidate = path.join(resumeDir, name);
-    let exists;
-    try {
-      exists = fs.existsSync(candidate);
-    } catch {
-      exists = false;
+    const candidate = path.join(resumeDir, i === 1 ? `${base}.md` : `${base}-${i}.md`);
+    let observed;
+    try { observed = fs.lstatSync(candidate); }
+    catch (error) {
+      if (error.code === 'ENOENT') return candidate;
+      return null; // An unreadable destination is not a free slot.
     }
-    // Free slot: safe to propose.
-    if (!exists) return candidate;
-    // Occupied: reuse only when THIS session already owns it (idempotent);
-    // otherwise step past it so an operator's / another session's handoff is
-    // never a write target.
-    if (readOwnerSession(candidate) === sessionId) return candidate;
+    if (matchesOwner(candidate, observed, identity)) return candidate;
   }
   return null;
 }
 
-/**
- * Resolve a collision-safe, identity-bearing checkpoint destination under the
- * plugin's session-handoff directory, plus the identity it is bound to.
- *
- * Enforcement requires a REAL handoff identity: a session id resolved from the
- * hook input or a session environment override, and a project name resolved
- * from the working directory or git repo. There is no literal 'session' /
- * 'project' fallback — two owners with no session id must NOT collide on one
- * shared path — so when identity cannot be established this returns null and
- * the caller declines checkpoint enforcement (never the project root, so an
- * operator's own RESUME.md is never a target).
- * @param {object} input - Parsed hook stdin ({ cwd, session_id }).
- * @param {object} env - Resolved environment (options.env || process.env).
- * @returns {{ checkpointPath: string, project: string, sessionId: string }|null}
- */
+/** Bind proposal identity to full project root and raw session, before filename sanitization. */
 function resolveCheckpointIdentity(input, env) {
-  const sessionId =
-    sanitizeSessionId(input && input.session_id) ||
-    sanitizeSessionId(env && env.ECC_SESSION_ID) ||
-    sanitizeSessionId(env && env.CLAUDE_SESSION_ID);
-  if (!sessionId) return null;
-  const project =
-    sanitizeSessionId(input && input.cwd ? path.basename(String(input.cwd)) : null) ||
-    sanitizeSessionId(getProjectName());
-  if (!project) return null;
-  const resumeDir = path.join(getSessionsDir(), 'resume');
-  const checkpointPath = pickOwnedDestination(resumeDir, `${project}-${sessionId}`, sessionId);
-  if (!checkpointPath) return null;
-  return { checkpointPath, project, sessionId };
+  const rawSession = [input && input.session_id, env && env.ECC_SESSION_ID, env && env.CLAUDE_SESSION_ID]
+    .find(value => typeof value === 'string' && sanitizeSessionId(value));
+  if (!rawSession) return null;
+  const suppliedRoot = input && input.cwd;
+  if (suppliedRoot !== undefined && (typeof suppliedRoot !== 'string' || !path.isAbsolute(suppliedRoot))) return null;
+  let projectRoot = suppliedRoot || process.cwd();
+  try { projectRoot = fs.realpathSync(projectRoot); }
+  catch (error) { if (error.code !== 'ENOENT') return null; }
+  const project = sanitizeSessionId(path.basename(projectRoot));
+  const sessionId = sanitizeSessionId(rawSession);
+  if (!project || !sessionId) return null;
+  const ownerKey = crypto.createHash('sha256').update(JSON.stringify([projectRoot, rawSession])).digest('hex');
+  const sessionsDir = getSessionsDir();
+  const resumeDir = path.join(sessionsDir, 'resume');
+  if (Array.from(resumeDir).some(char => char.codePointAt(0) < 32 || char.codePointAt(0) === 127) ||
+      !safeDirectoryOrMissing(sessionsDir) || !safeDirectoryOrMissing(resumeDir)) return null;
+  const identity = { project: project.slice(0, 64), sessionId: sessionId.slice(0, 64), ownerKey };
+  const base = `${identity.project}-${ownerKey.slice(0, 32)}-${identity.sessionId}`;
+  const checkpointPath = pickOwnedDestination(resumeDir, base, identity);
+  return checkpointPath ? { checkpointPath, ...identity } : null;
+}
+
+/** POSIX shells or PowerShell on Windows; the entire prompt is one literal argument. */
+function resumeCommand(checkpointPath) {
+  const prompt = `Read ${checkpointPath} and continue the work described there.`;
+  const quoted = process.platform === 'win32'
+    ? `'${prompt.replace(/['\u2018-\u201B]/g, '$&$&')}'`
+    : `'${prompt.replace(/'/g, "'\\''")}'`;
+  return `claude ${quoted}`;
 }
 
 /**
@@ -176,8 +166,8 @@ function resolveCheckpointIdentity(input, env) {
  * The checkpoint is therefore described as a PROPOSAL — the resume command is
  * valid only once the model has written the file and verified it exists and is
  * non-empty. The model is instructed to stamp an ownership marker (so a later
- * fire can recognize this session's own checkpoint — see readOwnerSession) and
- * to bind the handoff to a source revision.
+ * fire can recognize this session's own checkpoint; see matchesOwner) and
+ * to record source revision metadata without claiming a content-bound receipt.
  * @param {object} params
  * @param {number} params.pct - Occupancy percent (integer, floored).
  * @param {number} params.tokens - Context tokens observed.
@@ -189,7 +179,7 @@ function resolveCheckpointIdentity(input, env) {
  * @param {string} params.project - Project segment for the marker.
  * @returns {string}
  */
-function buildOrderText({ pct, tokens, windowTokens, inferred, emergency, checkpointPath, sessionId, project }) {
+function buildOrderText({ pct, tokens, windowTokens, inferred, emergency, checkpointPath, sessionId, project, ownerKey }) {
   const windowLabel = formatWindowLabel(windowTokens);
   // An inferred window means the true denominator may be larger (an
   // unrecognized 1M-window model would read as 90% at 180k of an assumed
@@ -224,12 +214,15 @@ function buildOrderText({ pct, tokens, windowTokens, inferred, emergency, checkp
     '1. Do NOT start any new work stream. Bring only the unit of work currently in flight to its nearest ' +
       'clean stopping point (finish the edit/test/verification underway; do not begin the next one).',
     '2. Write the PROPOSED checkpoint to EXACTLY this session-scoped path (create parent directories if ' +
-      'needed):',
+      'needed). This path is a read-only proposal, not an atomic reservation. At write time reject ' +
+      'symlinks or special files and recheck parent directories and the complete ownership marker. ' +
+      'For a new file use exclusive creation; on any collision or failed verification preserve the ' +
+      'existing file and report that the proposed checkpoint could not be saved:',
     `   ${checkpointPath}`,
     '   Make its FIRST line this exact ownership marker, replacing <GIT_HEAD> with the current source ' +
-      'revision (run `git rev-parse HEAD`; use `unknown` if this is not a git repo) so the handoff bytes ' +
-      'are bound to a revision:',
-    `   <!-- ecc-handoff session=${sessionId} project=${project} source-rev=<GIT_HEAD> -->`,
+      'revision (run `git rev-parse HEAD`; use `unknown` if this is not a git repo) as source metadata. ' +
+      'This marker does not verify content or create a durable receipt:',
+    `   <!-- ecc-handoff owner=${ownerKey} session=${sessionId} project=${project} source-rev=<GIT_HEAD> -->`,
     '   After the marker it must contain: the objective; current state with VERIFIED facts strictly ' +
       'separated from hypotheses; decisions the operator approved; approaches ruled out and WHY; exact ' +
       'next steps; files touched; any pending or half-applied changes. Do NOT overwrite or modify an ' +
@@ -240,7 +233,8 @@ function buildOrderText({ pct, tokens, windowTokens, inferred, emergency, checkp
     '4. Only once the checkpoint is written and verified, state plainly that this session must now be ' +
       'closed and give the operator this exact resume command on its own line (valid only because the ' +
       'checkpoint above now exists):',
-    `   claude "Read ${checkpointPath} and continue the work described there."`,
+    `   ${resumeCommand(checkpointPath)}`,
+    ...(process.platform === 'win32' ? ['   Run this command in PowerShell.'] : []),
     '5. Do NOT ask whether to stop, do NOT offer alternatives ("good stopping point", "want to pause?"), ' +
       'and do NOT take on further work in this session after the checkpoint is written. If the operator ' +
       'sends further prompts here, answer only from existing context and repeat the restart instruction.'
@@ -272,7 +266,7 @@ function buildDeclineText({ pct, tokens, windowTokens, inferred, emergency }) {
     `CONTEXT GATE TRIPPED (enforce mode — operator opted in): context at ${pct}% ` +
       `(${tokens.toLocaleString('en-US')} tokens of a ${windowLabel} window${inferred ? ', inferred' : ''}).`,
     '',
-    'Enforcement is on, but NO session handoff identity is available (no session id), so the gate cannot ' +
+    'Enforcement is on, but no safe project/session destination is available, so the gate cannot ' +
       'bind a collision-safe checkpoint destination and WILL NOT guess one. It is declining the automatic ' +
       'checkpoint rather than risk writing over another session\'s handoff.',
     ''
@@ -283,9 +277,9 @@ function buildDeclineText({ pct, tokens, windowTokens, inferred, emergency }) {
   lines.push(
     '1. Do NOT auto-write a checkpoint to any guessed, shared, or project-root path.',
     '2. Bring the unit of work currently in flight to its nearest clean stopping point; do not start new work.',
-    '3. To enable the automatic, identity-bound checkpoint, the operator should set ECC_SESSION_ID (or run ' +
-      'in a harness that provides a session id). Until then, if a handoff is needed, save one explicitly ' +
-      '(e.g. /save-session) and point the operator at the file they choose — the gate will not pick one.'
+    '3. Check the current project, session identity (ECC_SESSION_ID where appropriate), and ownership of ' +
+      'the configured handoff destination. If no safe destination is available, save a handoff explicitly ' +
+      '(e.g. /save-session) and point the operator at the file they choose; the gate will not guess one.'
   );
   return lines.join('\n');
 }
@@ -334,8 +328,8 @@ function run(rawInput, options = {}) {
         systemMessage:
           `[context-gate] ${pct}% of ${formatWindowLabel(windowTokens)} window used` +
           `${inferred ? ' (window size inferred)' : ''}${emergency ? ' (EMERGENCY)' : ''}. ` +
-          'Enforce mode is on but no session identity is available, so no checkpoint destination can be ' +
-          'safely bound. Set ECC_SESSION_ID to enable the automatic checkpoint; Claude has been told to ' +
+          'Enforce mode is on but the project/session identity or destination is unavailable, so no checkpoint destination can be ' +
+          'safely bound. Check the project, ECC_SESSION_ID and destination ownership; Claude has been told to ' +
           'reach a clean stopping point and not to auto-write a handoff.',
         hookSpecificOutput: {
           hookEventName: 'UserPromptSubmit',
@@ -344,7 +338,7 @@ function run(rawInput, options = {}) {
       });
     }
 
-    const { checkpointPath, project, sessionId } = identity;
+    const { checkpointPath, project, sessionId, ownerKey } = identity;
     const orderText = buildOrderText({
       pct,
       tokens: latest.tokens,
@@ -353,7 +347,8 @@ function run(rawInput, options = {}) {
       emergency,
       checkpointPath,
       sessionId,
-      project
+      project,
+      ownerKey
     });
 
     return JSON.stringify({

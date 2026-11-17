@@ -8,6 +8,7 @@ const assert = require('assert');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
+const { spawnSync } = require('child_process');
 
 const { run, buildOrderText, resolvePct, DEFAULT_GATE_PCT, DEFAULT_EMERGENCY_PCT } = require('../../scripts/hooks/context-gate');
 
@@ -133,11 +134,11 @@ function runTests() {
   else failed++;
 
   if (
-    test('order forbids asking to stop and demands a resume command', () => {
+    test('order forbids asking to stop and demands a single-quoted resume command', () => {
       const cp = '/home/me/.claude/session-data/resume/myproj-abc123.md';
-      const text = buildOrderText({ pct: 91, tokens: 910000, windowTokens: 1000000, inferred: false, emergency: false, checkpointPath: cp, sessionId: 'abc123', project: 'myproj' });
+      const text = buildOrderText({ pct: 91, tokens: 910000, windowTokens: 1000000, inferred: false, emergency: false, checkpointPath: cp, sessionId: 'abc123', project: 'myproj', ownerKey: 'a'.repeat(64) });
       assert.ok(text.includes('Do NOT ask whether to stop'));
-      assert.ok(text.includes(`claude "Read ${cp} and continue`));
+      assert.ok(text.includes(`claude 'Read ${cp} and continue`));
       assert.ok(text.includes(cp));
       assert.ok(text.includes('VERIFIED facts strictly separated from hypotheses'));
       // Observed usage is distinguished from permission to stop.
@@ -146,11 +147,41 @@ function runTests() {
       // completed handoff "receipt". The resume command is gated on a verify
       // step, and the checkpoint carries an ownership marker bound to this
       // session plus a source revision.
-      assert.ok(!text.toLowerCase().includes('receipt'), 'must not claim a completed receipt');
+      assert.ok(text.includes('does not verify content or create a durable receipt'));
+      assert.ok(text.includes('not an atomic reservation'));
       assert.ok(text.includes('PROPOSED'));
       assert.ok(text.includes('VERIFY the checkpoint file exists and is non-empty'));
-      assert.ok(text.includes('ecc-handoff session=abc123 project=myproj'));
+      assert.ok(text.includes('ecc-handoff owner=' + 'a'.repeat(64) + ' session=abc123 project=myproj'));
       assert.ok(text.includes('source-rev='));
+    })
+  )
+    passed++;
+  else failed++;
+
+  if (
+    test('PowerShell resume prompt preserves typographic quotes as one literal argument', () => {
+      const originalPlatform = Object.getOwnPropertyDescriptor(process, 'platform');
+      const checkpointPath = "C:\\data\\\u2018a\u2019\u201Ab\u201B; Write-Output INJECTED; $env:PATH `n\\it's.md";
+      let text;
+      try {
+        Object.defineProperty(process, 'platform', { ...originalPlatform, value: 'win32' });
+        text = buildOrderText({ pct: 91, tokens: 910000, windowTokens: 1000000,
+          inferred: false, emergency: false, checkpointPath,
+          sessionId: 'abc123', project: 'myproj', ownerKey: 'a'.repeat(64) });
+      } finally {
+        Object.defineProperty(process, 'platform', originalPlatform);
+      }
+      const command = text.split('\n').find(line => line.trim().startsWith('claude ')).trim();
+      assert.ok(command.includes('\u2018\u2018a\u2019\u2019\u201A\u201Ab\u201B\u201B'));
+      assert.ok(text.includes('Run this command in PowerShell.'));
+      const shell = process.env.ECC_TEST_PWSH_PATH;
+      if (shell) {
+        const invocation = `function claude { param([string]$Prompt) ($Prompt.ToCharArray() | ForEach-Object { [int]$_ }) -join ',' }; ${command}`;
+        const result = spawnSync(shell, ['-NoProfile', '-Command', invocation], { encoding: 'utf8', timeout: 15000 });
+        assert.strictEqual(result.status, 0, result.stderr);
+        const expected = `Read ${checkpointPath} and continue the work described there.`;
+        assert.strictEqual(result.stdout.trim(), Array.from(expected, ch => ch.charCodeAt(0)).join(','));
+      }
     })
   )
     passed++;
@@ -437,18 +468,20 @@ function runTests() {
       const resumeDir = path.join(sandbox, 'session-data', 'resume');
       fs.mkdirSync(resumeDir, { recursive: true });
       // Seed the exact path this session resolves to, owned by ANOTHER session.
-      const taken = path.join(resumeDir, 'demoproj-mysess.md');
+      let taken;
       const foreign = '<!-- ecc-handoff session=othersess project=demoproj source-rev=deadbeef -->\nFOREIGN\n';
-      fs.writeFileSync(taken, foreign, 'utf8');
       const t = writeTranscript(950000);
       cleanup.push(t);
       const prevHome = process.env.ECC_AGENT_DATA_HOME;
       try {
         process.env.ECC_AGENT_DATA_HOME = sandbox;
+        const first = JSON.parse(run(JSON.stringify({ transcript_path: t, cwd: '/x/demoproj', session_id: 'mysess' }), { env: { ECC_CONTEXT_GATE_MODE: 'enforce' } })).hookSpecificOutput.additionalContext;
+        taken = first.split('\n').find(line => /^\s+[/\\].*\.md$/.test(line)).trim();
+        fs.writeFileSync(taken, foreign, 'utf8');
         const out = JSON.parse(run(JSON.stringify({ transcript_path: t, cwd: '/x/demoproj', session_id: 'mysess', prompt: 'go' }), { env: { ECC_CONTEXT_GATE_MODE: 'enforce' } }));
         const ctx = out.hookSpecificOutput.additionalContext;
         // Targets a disambiguated sibling, never the foreign file.
-        assert.ok(ctx.includes('demoproj-mysess-2.md'), `expected disambiguated path. Got: ${ctx}`);
+        assert.ok(ctx.includes(taken.replace(/\.md$/, '-2.md')), `expected disambiguated path. Got: ${ctx}`);
         assert.ok(!ctx.includes(taken), 'must not target another session\'s handoff');
         // Foreign handoff survives byte-for-byte.
         assert.strictEqual(fs.readFileSync(taken, 'utf8'), foreign);
@@ -467,17 +500,20 @@ function runTests() {
       const sandbox = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-gate-home-'));
       const resumeDir = path.join(sandbox, 'session-data', 'resume');
       fs.mkdirSync(resumeDir, { recursive: true });
-      const own = path.join(resumeDir, 'demoproj-mysess.md');
-      fs.writeFileSync(own, '<!-- ecc-handoff session=mysess project=demoproj source-rev=abc123 -->\nMINE\n', 'utf8');
+      let own;
       const t = writeTranscript(950000);
       cleanup.push(t);
       const prevHome = process.env.ECC_AGENT_DATA_HOME;
       try {
         process.env.ECC_AGENT_DATA_HOME = sandbox;
+        const first = JSON.parse(run(JSON.stringify({ transcript_path: t, cwd: '/x/demoproj', session_id: 'mysess' }), { env: { ECC_CONTEXT_GATE_MODE: 'enforce' } })).hookSpecificOutput.additionalContext;
+        own = first.split('\n').find(line => /^\s+[/\\].*\.md$/.test(line)).trim();
+        const marker = first.split('\n').find(line => line.includes('<!-- ecc-handoff')).trim().replace('<GIT_HEAD>', 'a'.repeat(40));
+        fs.writeFileSync(own, marker + '\nMINE\n', 'utf8');
         const out = JSON.parse(run(JSON.stringify({ transcript_path: t, cwd: '/x/demoproj', session_id: 'mysess', prompt: 'go' }), { env: { ECC_CONTEXT_GATE_MODE: 'enforce' } }));
         const ctx = out.hookSpecificOutput.additionalContext;
         assert.ok(ctx.includes(own), 'this session must reuse its own checkpoint');
-        assert.ok(!ctx.includes('demoproj-mysess-2.md'), 'must not disambiguate away from its own file');
+        assert.ok(!ctx.includes(own.replace(/\.md$/, '-2.md')), 'must not disambiguate away from its own file');
       } finally {
         if (prevHome === undefined) delete process.env.ECC_AGENT_DATA_HOME;
         else process.env.ECC_AGENT_DATA_HOME = prevHome;
