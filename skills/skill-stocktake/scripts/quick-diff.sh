@@ -84,7 +84,7 @@ process_dir() {
   sort_nul_file "$find_out"
 
   while IFS= read -r -d '' file; do
-    local mtime dp is_new
+    local mtime dp is_new record_file
     mtime=$(date -u -r "$file" +%Y-%m-%dT%H:%M:%SZ)
     dp="${file/#$HOME/~}"
 
@@ -101,12 +101,15 @@ process_dir() {
     ' "$RESULTS_JSON")
     [[ -n "$is_new" ]] || continue
 
+    # Zero-pad record names so the "$tmpdir"/*.json glob below keeps the sorted
+    # discovery order past nine records (unpadded, 10.json sorts before 2.json).
+    printf -v record_file '%s/%08d.json' "$tmpdir" "$i"
     jq -n \
       --arg path "$dp" \
       --arg mtime "$mtime" \
       --argjson is_new "$is_new" \
       '{path:$path,mtime:$mtime,is_new:$is_new}' \
-      > "$tmpdir/$i.json"
+      > "$record_file"
     i=$((i+1))
   done < "$find_out"
 }

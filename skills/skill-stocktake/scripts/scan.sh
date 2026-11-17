@@ -135,7 +135,7 @@ scan_dir_to_json() {
   sort_nul_file "$find_out"
 
   while IFS= read -r -d '' file; do
-    local name desc mtime u7 u30 dp
+    local name desc mtime u7 u30 dp record_file
     name=$(extract_field "$file" "name")
     desc=$(extract_field "$file" "description")
     mtime=$(date -u -r "$file" +%Y-%m-%dT%H:%M:%SZ)
@@ -154,6 +154,9 @@ scan_dir_to_json() {
     fi
     dp="${file/#$HOME/~}"
 
+    # Zero-pad record names so the "$tmpdir"/*.json glob below keeps the sorted
+    # discovery order past nine records (unpadded, 10.json sorts before 2.json).
+    printf -v record_file '%s/%08d.json' "$tmpdir" "$i"
     jq -n \
       --arg path "$dp" \
       --arg name "$name" \
@@ -162,7 +165,7 @@ scan_dir_to_json() {
       --argjson use_7d "$u7" \
       --argjson use_30d "$u30" \
       '{path:$path,name:$name,description:$description,use_7d:$use_7d,use_30d:$use_30d,mtime:$mtime}' \
-      > "$tmpdir/$i.json"
+      > "$record_file"
     i=$((i+1))
   done < "$find_out"
 
