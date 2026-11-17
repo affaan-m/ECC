@@ -57,6 +57,20 @@ npx playwright test --trace on             # Run with trace
 npx playwright show-report                 # View HTML report
 ```
 
+## Alternative: e2e
+
+Use e2e when the flow runs on iOS or Android, or when you want tests written as plain-language goals. An agent step that a later assertion verifies records its actions, and later runs replay them with no model calls until the app changes.
+
+```bash
+# Setup: asks for web or mobile and a model provider, then writes a config and an example test
+npx e2e init
+
+npx e2e run                                  # Run all E2E tests
+npx e2e run tests/checkout.e2e.ts --headed   # Run specific file, see browser
+npx e2e run --last-failed                    # Re-run failed tests
+npx e2e run --no-cache                       # Run agent steps live instead of replaying
+```
+
 ## Workflow
 
 ### 1. Plan
