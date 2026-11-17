@@ -57,12 +57,18 @@ Use e2e when the flow runs on iOS or Android, or when you want tests written as 
 ```bash
 # Setup: asks for web or mobile and a model provider, then writes a config and an example test
 npx e2e init
+# In an agent shell with no terminal, skip the prompts (Web engine by default)
+npx e2e init --yes --install                   # Web
+npx e2e init --yes --engine mobile --install   # iOS or Android
 
 npx e2e run                                  # Run all E2E tests
 npx e2e run tests/checkout.e2e.ts --headed   # Run specific file, see browser
 npx e2e run --last-failed                    # Re-run failed tests
 npx e2e run --no-cache                       # Run agent steps live instead of replaying
+npx e2e run --repeat-each 5 --no-cache       # Check for flakiness with live agent runs
 ```
+
+Repeated runs with the replay cache on replay recorded agent steps, so check e2e tests for flakiness with `--no-cache`.
 
 ## Workflow
 
