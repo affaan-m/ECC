@@ -594,7 +594,7 @@
     "@x402/express": "2.31.0",
     "c8": "11.0.0",
     "eslint": "10.15.0",
-    "express": "4.22.3",
+    "express": "5.3.0",
     "globals": "17.14.0",
     "markdownlint-cli": "0.50.0",
     "typescript": "6.0.3"
