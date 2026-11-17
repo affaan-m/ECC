@@ -129,6 +129,53 @@ function runTests() {
     assert.strictEqual(first, second);
   });
 
+  run('findProjectRoot: finds shared formatter config above workspace packages', () => {
+    for (const config of ['biome.json', '.prettierrc', 'prettier.config.ts']) {
+      const root = makeTmpDir();
+      const workspace = path.join(root, 'packages', 'web');
+      const source = path.join(workspace, 'src');
+      fs.mkdirSync(source, { recursive: true });
+      fs.writeFileSync(path.join(root, config), '{}');
+      fs.writeFileSync(path.join(root, 'package.json'), '{}');
+      fs.writeFileSync(path.join(workspace, 'package.json'), '{}');
+      assert.strictEqual(findProjectRoot(source), root, config);
+      assert.strictEqual(detectFormatter(findProjectRoot(source)), config === 'biome.json' ? 'biome' : 'prettier');
+    }
+  });
+
+  run('findProjectRoot: workspace formatter overrides the shared config', () => {
+    const root = makeTmpDir();
+    const workspace = path.join(root, 'packages', 'web');
+    fs.mkdirSync(workspace, { recursive: true });
+    fs.writeFileSync(path.join(root, 'biome.json'), '{}');
+    fs.writeFileSync(path.join(workspace, 'package.json'), JSON.stringify({ prettier: {} }));
+    assert.strictEqual(findProjectRoot(workspace), workspace);
+    assert.strictEqual(detectFormatter(workspace), 'prettier');
+  });
+
+  run('findProjectRoot: retains the nearest package when no formatter is configured', () => {
+    const root = makeTmpDir();
+    const workspace = path.join(root, 'packages', 'web');
+    fs.mkdirSync(workspace, { recursive: true });
+    fs.writeFileSync(path.join(root, 'package.json'), '{}');
+    fs.writeFileSync(path.join(workspace, 'package.json'), '{}');
+    assert.strictEqual(findProjectRoot(workspace), workspace);
+  });
+
+  run('findProjectRoot: does not borrow a formatter from outside a repository', () => {
+    for (const isWorktree of [false, true]) {
+      const outer = makeTmpDir();
+      const repo = path.join(outer, 'repo');
+      const source = path.join(repo, 'src');
+      fs.mkdirSync(source, { recursive: true });
+      fs.writeFileSync(path.join(outer, 'biome.json'), '{}');
+      fs.writeFileSync(path.join(repo, 'package.json'), '{}');
+      if (isWorktree) fs.writeFileSync(path.join(repo, '.git'), 'gitdir: ../worktrees/repo');
+      else fs.mkdirSync(path.join(repo, '.git'));
+      assert.strictEqual(findProjectRoot(source), repo);
+    }
+  });
+
   // ── detectFormatter ───────────────────────────────────────────
 
   run('detectFormatter: detects biome.json', () => {
