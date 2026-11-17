@@ -78,6 +78,31 @@ class ScenarioRun:
     simulated_github: bool = True
 
 
+def _ended_at_max_turns(stdout: str) -> bool:
+    """Recognize the final top-level result, never markers inside tool data."""
+    for line in reversed(stdout.split("\n")):
+        if not line.strip():
+            continue
+        try:
+            message = json.loads(line)
+        except json.JSONDecodeError:
+            return False
+        if not isinstance(message, dict):
+            return False
+        if message.get("type") != "result" or message.get("parent_tool_use_id") is not None:
+            continue
+        reason = message.get("terminal_reason")
+        subtype = message.get("subtype")
+        # Older CLIs omit terminal_reason; retain the existing reason-only form.
+        # If both fields are supplied, they must agree about the termination.
+        return (
+            reason in (None, "max_turns")
+            and subtype in (None, "error_max_turns")
+            and (reason == "max_turns" or subtype == "error_max_turns")
+        )
+    return False
+
+
 def run_scenario(
     scenario: Scenario,
     model: str = "sonnet",
@@ -125,7 +150,7 @@ def run_scenario(
         )
     nonfatal_max_turns = (
         result.returncode == 1
-        and '\"terminal_reason\":\"max_turns\"' in result.stdout
+        and _ended_at_max_turns(result.stdout)
     )
     if result.returncode != 0 and not nonfatal_max_turns:
         raise RuntimeError(
