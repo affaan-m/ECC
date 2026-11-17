@@ -94,14 +94,19 @@ function readRegularFile(filePath, encoding) {
   }
 }
 
-/** Content digest of a directory tree: sorted relative paths and bytes. */
+/** Content digest of a directory tree with length-framed paths and file bytes. */
 function digestDir(dir) {
-  const hash = crypto.createHash('sha256');
+  const hash = crypto.createHash('sha256').update('ecc-variant-tree/v2\0');
   for (const relative of listFiles(dir)) {
+    const content = readRegularFile(path.join(dir, relative));
+    // File contents can contain NULs and encoded filenames. Explicit byte
+    // lengths prevent those bytes from being mistaken for another file.
+    const lengths = Buffer.alloc(16);
+    lengths.writeBigUInt64BE(BigInt(Buffer.byteLength(relative)), 0);
+    lengths.writeBigUInt64BE(BigInt(content.length), 8);
+    hash.update(lengths);
     hash.update(relative);
-    hash.update('\0');
-    hash.update(readRegularFile(path.join(dir, relative)));
-    hash.update('\0');
+    hash.update(content);
   }
   return hash.digest('hex');
 }

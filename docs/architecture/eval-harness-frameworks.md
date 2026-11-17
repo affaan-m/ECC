@@ -286,6 +286,18 @@ host filesystem mutation and is not a sandbox or an execution attestation.
 Task IDs must be unique. Syntactic warnings are incomplete by design: zero hits
 prove neither safety nor correctness.
 
+Variant tree digests use SHA-256 with the `ecc-variant-tree/v2` domain followed
+by a NUL byte. Each file contributes two unsigned 64-bit big-endian byte lengths
+(UTF-8 relative path, then content), followed by that path and those file bytes.
+Traversal order and excluded directories are unchanged. Explicit lengths keep
+binary contents from impersonating a boundary and an additional file; the former
+NUL-separated encoding could give different file layouts identical hash input.
+
+This correction changes newly computed variant digests, including for unchanged
+trees. Regenerate inspection results or other records that must match a current
+tree digest. Stored receipt bytes are not rewritten, receipt verification rules
+are unchanged, and there is no fallback to the ambiguous legacy digest.
+
 `parseChildResult` and `baselineFailure(run, tasks)` are pure validation helpers
 for bounded protocol and baseline integrity regression checks. No executor calls
 them in this release. Their tests are not evidence of an operational gate or a
