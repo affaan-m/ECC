@@ -31,7 +31,8 @@ const SPEC_PATTERNS = [
   /require\(\s*['"](\.[^'"]+)['"]\s*\)/g,
   /import\s+(?!\s)(?:[^'"]*?\bfrom\s+)?['"](\.[^'"]+)['"]/g,
   /import\(\s*['"](\.[^'"]+)['"]\s*\)/g,
-  /export\s+(?:\*|\{[^}]*\})\s+from\s+['"](\.[^'"]+)['"]/g
+  // Type-only re-exports still couple source edits even when erased at runtime.
+  /export\s+(?:type\s+)?(?:\*(?:\s+as\s+[\p{ID_Start}$_][\p{ID_Continue}$\u200c\u200d]*)?|\{[^}]*\})\s+from\s+['"](\.[^'"]+)['"]/gu
 ];
 
 function extractRelativeSpecifiers(source) {
