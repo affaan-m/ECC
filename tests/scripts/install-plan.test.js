@@ -3,6 +3,8 @@
  */
 
 const assert = require('assert');
+const fs = require('fs');
+const os = require('os');
 const path = require('path');
 const { execFileSync } = require('child_process');
 
@@ -147,6 +149,35 @@ function runTests() {
       assert.ok(!parsed.selectedModuleIds.includes('orchestration'));
     } finally {
       require('fs').rmSync(configDir, { recursive: true, force: true });
+    }
+  })) passed++; else failed++;
+
+  if (test('config component selections produce the same operations as CLI flags', () => {
+    const configDir = fs.mkdtempSync(path.join(os.tmpdir(), 'install-plan-config-'));
+    const configPath = path.join(configDir, 'selections.json');
+    const include = ['agent:planner', 'skill:continuous-learning-v2', 'locale:ja'];
+    const exclude = ['skill:security-review'];
+
+    try {
+      fs.writeFileSync(configPath, JSON.stringify({
+        version: 1, target: 'claude', profile: 'developer', include, exclude,
+      }));
+      const cli = run([
+        '--target', 'claude', '--profile', 'developer',
+        ...include.flatMap(id => ['--with', id]),
+        ...exclude.flatMap(id => ['--without', id]), '--json',
+      ], { cwd: configDir });
+      const configured = run(['--config', configPath, '--json'], { cwd: configDir });
+      assert.strictEqual(cli.code, 0, cli.stderr);
+      assert.strictEqual(configured.code, 0, configured.stderr);
+      const expected = JSON.parse(cli.stdout);
+      const actual = JSON.parse(configured.stdout);
+      assert.deepStrictEqual(actual.includedComponentIds, include);
+      assert.deepStrictEqual(actual.excludedComponentIds, exclude);
+      assert.deepStrictEqual(actual.selectedModuleIds, expected.selectedModuleIds);
+      assert.deepStrictEqual(actual.operations, expected.operations);
+    } finally {
+      fs.rmSync(configDir, { recursive: true, force: true });
     }
   })) passed++; else failed++;
 

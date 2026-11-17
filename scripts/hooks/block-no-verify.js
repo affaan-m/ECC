@@ -8,6 +8,17 @@
  * Replaces the previous npx-based invocation that failed in pnpm-only projects
  * (EBADDEVENGINES) and could not be disabled via ECC_DISABLED_HOOKS.
  *
+ * Output piped into a shell (`... | sh`) is read through a static model, not
+ * run: literal echo and printf output (printf's %s, %b, %c and %% conversions,
+ * with the format reused for extra arguments), here-documents and here-strings,
+ * brace groups and subshells, and the redirections and `exec` that decide
+ * whether that output reaches the shell at all. A bypass built at run time is
+ * outside the model and is not blocked: values of variables and command
+ * substitutions, shell functions, other printf conversions (%d, a width or a
+ * precision), numeric escapes such as \x2d or \055, and transformations such as
+ * `base64 -d` or `rev`. The hook stops the usual ways an agent writes a bypass;
+ * it does not prove that none can run.
+ *
  * Exit codes:
  *   0 = allow (not a git command or no bypass flags)
  *   2 = block (bypass flag detected)
@@ -31,8 +42,9 @@ function isHookRedirectConfigKey(key) {
     || /^includeif\..*\.path$/.test(normalized);
 }
 
-function isHookRedirectSetting(setting) {
-  return isHookRedirectConfigKey(setting.split('=', 1)[0]);
+/** Return the key from a Git configuration operand, ignoring its value. */
+function configKey(setting) {
+  return setting.split('=', 1)[0];
 }
 
 const COMMIT_OPTIONS_WITH_VALUE = new Set([
@@ -166,6 +178,8 @@ function isNoVerifyLongFlag(value) {
   return value.length >= '--no-v'.length && '--no-verify'.startsWith(value);
 }
 
+// These longstanding, non-deprecated built-ins take precedence over aliases.
+const GIT_BUILTINS_THAT_IGNORE_ALIASES = new Set(['diff', 'log', 'status']);
 const PROTECTED_GIT_COMMANDS = new Set(['commit', 'push', 'merge', 'cherry-pick', 'rebase', 'am']);
 const GIT_GLOBAL_VALUES = new Set(['-c', '-C', '--config-env', '--work-tree', '--git-dir', '--namespace', '--super-prefix']);
 const SHELLS = new Set(['sh', 'bash', 'dash', 'zsh', 'ksh']);
@@ -181,25 +195,27 @@ function isGitExecutable(value) {
   return name === 'git' || name === 'git.exe';
 }
 
-// Only literal values from this supplied shell task are tracked. No host
-// environment, arbitrary expansion or external configuration is read.
-function gitEnvironmentOverride(environment, budget) {
+/**
+ * Test Git configuration keys visible in literal shell environment assignments.
+ * Values from the host environment and Git configuration files are opaque.
+ */
+function gitEnvironmentMatchesConfig(environment, budget, matches) {
   const count = environment.get('GIT_CONFIG_COUNT') || '';
   budget.spend(count.length + environment.size + 1);
   // Git uses strtoul: leading ASCII whitespace/+ are accepted, trailing bytes
   // and counts above INT_MAX are rejected. Bound work by assignments we own.
   const configured = /^[ \t\r\n\v\f]*\+?[0-9]+(?![\s\S])/.test(count) ? Number(count) : 0;
   if (configured > 0 && configured <= 0x7fffffff && configured <= environment.size / 2) {
-    let override = false;
+    let matched = false;
     let complete = true;
     for (let i = 0; i < configured; i++) {
       budget.spend();
       const key = environment.get(`GIT_CONFIG_KEY_${i}`);
       if (key === undefined || !environment.has(`GIT_CONFIG_VALUE_${i}`)) { complete = false; break; }
       budget.spend(key.length + 1);
-      override ||= isHookRedirectConfigKey(key);
+      matched ||= matches(key);
     }
-    if (complete && override) return true;
+    if (complete && matched) return true;
   }
   const parameters = environment.get('GIT_CONFIG_PARAMETERS');
   if (parameters) {
@@ -209,16 +225,17 @@ function gitEnvironmentOverride(environment, budget) {
     for (const command of scanShell(parameters, budget).commands) {
       for (const word of command.words) {
         budget.spend(word.value.length + 1);
-        if (isHookRedirectSetting(word.value)) return true;
+        if (matches(configKey(word.value))) return true;
       }
     }
   }
   return false;
 }
 
-function checkGitWords(words, budget, start = 0, environmentOverride = false) {
+/** Return the subcommand index and literal config keys from Git global options. */
+function scanGitGlobalOptions(words, budget, start) {
+  const keys = [];
   let index = start + 1;
-  let override = environmentOverride;
   for (; index < words.length; index++) {
     const value = words[index].value;
     budget.spend(value.length + 1);
@@ -227,17 +244,21 @@ function checkGitWords(words, budget, start = 0, environmentOverride = false) {
     if (value === '-c' || value === '--config-env') {
       const setting = words[index + 1]?.value || '';
       budget.spend(setting.length + 1);
-      override ||= isHookRedirectSetting(setting);
-    } else if (value.startsWith('-c')) override ||= isHookRedirectSetting(value.slice(2));
-    else if (value.startsWith('--config-env=')) override ||= isHookRedirectSetting(value.slice('--config-env='.length));
+      keys.push(configKey(setting));
+    } else if (value.startsWith('-c')) {
+      keys.push(configKey(value.slice(2)));
+    } else if (value.startsWith('--config-env=')) {
+      keys.push(configKey(value.slice('--config-env='.length)));
+    }
     if (GIT_GLOBAL_VALUES.has(value)) index++;
   }
-  const command = words[index]?.value;
-  budget.spend((command?.length || 0) + 1);
-  if (!PROTECTED_GIT_COMMANDS.has(command)) return null;
-  if (override) return `BLOCKED: Overriding core.hooksPath is not allowed with git ${command}. Git hooks must not be bypassed.`;
+  return { index, keys };
+}
+
+// Scan a protected subcommand's own arguments for a hook-bypass flag.
+function findGitBypassFlag(words, budget, start, command) {
   let skipNext = false;
-  for (index++; index < words.length; index++) {
+  for (let index = start; index < words.length; index++) {
     const value = words[index].value;
     budget.spend(value.length + 1);
     if (skipNext) { skipNext = false; continue; }
@@ -246,9 +267,37 @@ function checkGitWords(words, budget, start = 0, environmentOverride = false) {
       if (commitOptionConsumesNextValue(value)) { skipNext = true; continue; }
       if (commitOptionContainsInlineValue(value)) continue;
     }
-    if (isNoVerifyLongFlag(value) || (command === 'commit' && isCommitNoVerifyShortFlag(value))) {
-      return `BLOCKED: --no-verify flag is not allowed with git ${command}. Git hooks must not be bypassed.`;
+    if (isNoVerifyLongFlag(value) || (command === 'commit' && isCommitNoVerifyShortFlag(value))) return true;
+  }
+  return false;
+}
+
+/** Check a Git invocation for hook-bypass options or a command-supplied alias. */
+function checkGitWords(words, budget, start, environment) {
+  const { index, keys } = scanGitGlobalOptions(words, budget, start);
+  const command = words[index]?.value;
+  budget.spend((command?.length || 0) + 1);
+  if (!command) return null;
+  if (!PROTECTED_GIT_COMMANDS.has(command)) {
+    if (GIT_BUILTINS_THAT_IGNORE_ALIASES.has(command)) return null;
+    // Alias bodies can chain to other aliases or execute shell commands.
+    // Reject the invocation without evaluating the supplied definition.
+    const aliasKey = `alias.${command.toLowerCase()}`;
+    const aliasCommandKey = `${aliasKey}.command`;
+    const matches = key => {
+      const normalized = key.toLowerCase();
+      return normalized === aliasKey || normalized === aliasCommandKey;
+    };
+    if (keys.some(matches) || gitEnvironmentMatchesConfig(environment, budget, matches)) {
+      return 'BLOCKED: Invoking a command-supplied Git alias is not allowed. Run the underlying Git command directly so its flags can be checked.';
     }
+    return null;
+  }
+  if (keys.some(isHookRedirectConfigKey) || gitEnvironmentMatchesConfig(environment, budget, isHookRedirectConfigKey)) {
+    return `BLOCKED: Overriding core.hooksPath is not allowed with git ${command}. Git hooks must not be bypassed.`;
+  }
+  if (findGitBypassFlag(words, budget, index + 1, command)) {
+    return `BLOCKED: --no-verify flag is not allowed with git ${command}. Git hooks must not be bypassed.`;
   }
   return null;
 }
@@ -284,15 +333,45 @@ function validateEnvSplitEscapes(payload, budget) {
   }
 }
 
+const ENV_VALUE_OPTIONS = new Set(['-u', '--unset', '-C', '--chdir']);
+const ENV_FLAG_OPTIONS = new Set(['-i', '--ignore-environment', '-0', '--null']);
+const SUDO_VALUE_OPTIONS = new Set(['-u', '--user', '-g', '--group', '-h', '--host', '-p', '--prompt', '-C', '-T', '-R', '-D']);
+const SUDO_FLAG_OPTIONS = new Set(['-n', '-E', '-H', '-S', '-k', '-K', '-b']);
+const SHELL_ASSIGNMENT = /^[A-Za-z_][A-Za-z0-9_]*\+?=/;
+const GIT_ENV_NAME = /^GIT_CONFIG_(?:COUNT|PARAMETERS|(?:KEY|VALUE)_[0-9]+)$/;
+
+function isEnvSplitFlag(flag) {
+  return flag === '-S' || flag === '--split-string'
+    || flag.startsWith('--split-string=') || flag.startsWith('-S');
+}
+
+// A value-taking wrapper option with its operand attached (`-uNAME`, `--unset=NAME`).
+function hasAttachedOperand(flag, values) {
+  return [...values].some(value => value.startsWith('--')
+    ? flag.startsWith(`${value}=`)
+    : flag.startsWith(value) && flag.length > value.length);
+}
+
+// Only literal word splitting is understood for env -S. Keep complex env
+// syntax opaque rather than pretending to execute it as a shell.
+function isLiteralWordList(scan) {
+  const command = scan.commands[0];
+  return scan.commands.length === 1 && !command.nested.length
+    && !command.redirects.length && !command.words.some(word => word.dynamic);
+}
+
 // Only explicit option grammars remove wrapper operands. Unknown launchers are
 // opaque/conservative, never guessed from a name found among data arguments.
 function executableWords(words, budget, inherited = new Map(), callerValues = inherited) {
   budget.spend(inherited.size + 1);
   const environments = [new Map(inherited)];
   const prefixAssignments = new Map();
+  const dynamicAssignments = new Set();
   let local = true;
   let assignmentOnly = true;
-  const dynamicAssignments = new Set();
+  let i = 0;
+  let assignments = true;
+  let environmentAssignments = false;
   function result(values) { return { words: values, environments, prefixAssignments, local, assignmentOnly, dynamicAssignments }; }
   function suffix(start) {
     budget.spend(words.length - start);
@@ -304,7 +383,7 @@ function executableWords(words, budget, inherited = new Map(), callerValues = in
     const equals = value.indexOf('=');
     const append = !environmentAssignments && value[equals - 1] === '+';
     const key = value.slice(0, append ? equals - 1 : equals);
-    if (/^GIT_CONFIG_(?:COUNT|PARAMETERS|(?:KEY|VALUE)_[0-9]+)$/.test(key)) {
+    if (GIT_ENV_NAME.test(key)) {
       const operand = value.slice(equals + 1);
       const count = environments.length;
       budget.spend(count + 1);
@@ -336,85 +415,137 @@ function executableWords(words, budget, inherited = new Map(), callerValues = in
       else environment.delete(name);
     }
   }
-  let i = 0;
-  let assignments = true;
-  let environmentAssignments = false;
+  // Wrapper handlers below return a final result to stop scanning, or
+  // undefined once the wrapper's own options are consumed and the scan
+  // should continue with the wrapped command.
+  function commandBuiltin(token) {
+    assignmentOnly = false;
+    local &&= token.value === 'command';
+    i++;
+    while (words[i]?.value.startsWith('-')) {
+      const flag = words[i++].value;
+      budget.spend(flag.length + 1);
+      if (flag === '--') break;
+      if (/^-[pvV]+$/.test(flag) && /[vV]/.test(flag)) return result([]);
+      if (!/^-p+$/.test(flag)) return suffix(i - 1);
+    }
+    assignments = false;
+    return undefined;
+  }
+  function execBuiltin() {
+    assignmentOnly = false;
+    local = false;
+    i++;
+    while (words[i]?.value.startsWith('-')) {
+      const flag = words[i++].value;
+      budget.spend(flag.length + 1);
+      if (flag === '--') break;
+      if (/^-[cl]*a$/.test(flag)) i++;
+      else if (!/^-([cl]*a.+|[cl]+)$/.test(flag)) return suffix(i - 1);
+      if (flag.slice(1).split('a', 1)[0].includes('c')) resetEnvironment();
+    }
+    assignments = false;
+    return undefined;
+  }
+  // env -S splits a literal payload into argv words in place; words[i] is
+  // then re-examined as the first expanded word.
+  function envSplitString(flag) {
+    const separated = flag === '-S' || flag === '--split-string';
+    const payload = separated ? words[i + 1]?.value || ''
+      : flag.slice(flag.startsWith('--split-string=') ? '--split-string='.length : 2);
+    budget.spend(payload.length + 1);
+    validateEnvSplitEscapes(payload, budget);
+    const scan = scanShell(payload, budget);
+    if (!isLiteralWordList(scan)) return suffix(i - 1);
+    // Pay for both slices and the expanded array before allocating them.
+    budget.spend(2 * words.length + scan.commands[0].words.length);
+    words = [...words.slice(0, i), ...scan.commands[0].words, ...words.slice(i + (separated ? 2 : 1))];
+    return undefined;
+  }
+  function envResetFlag(flag) {
+    if (flag === '-i' || flag === '--ignore-environment') resetEnvironment();
+    if (flag === '-u' || flag === '--unset') resetEnvironment(words[i + 1]?.value || '');
+    else if (flag.startsWith('--unset=')) resetEnvironment(flag.slice('--unset='.length));
+    else if (flag.startsWith('-u')) resetEnvironment(flag.slice(2));
+  }
+  function envWrapper(name) {
+    assignmentOnly = false;
+    local = false;
+    const env = name === 'env';
+    const values = env ? ENV_VALUE_OPTIONS : SUDO_VALUE_OPTIONS;
+    const flags = env ? ENV_FLAG_OPTIONS : SUDO_FLAG_OPTIONS;
+    i++;
+    while (words[i]?.value.startsWith('-')) {
+      const flag = words[i].value;
+      budget.spend(flag.length + 1);
+      if (flag === '--') { i++; break; }
+      if (env && isEnvSplitFlag(flag)) {
+        const stop = envSplitString(flag);
+        if (stop) return stop;
+        continue;
+      }
+      if (env) envResetFlag(flag);
+      if (values.has(flag)) i += 2;
+      else if (flags.has(flag) || hasAttachedOperand(flag, values)) i++;
+      else return suffix(i - 1); // Includes opaque env -S / sudo shell modes.
+    }
+    assignments = true;
+    environmentAssignments = true;
+    return undefined;
+  }
   while (i < words.length) {
     const token = words[i];
     budget.spend(token.value.length + token.raw.length + 1);
-    if (assignments && /^[A-Za-z_][A-Za-z0-9_]*\+?=/.test(environmentAssignments ? token.value : token.raw)) { assignment(token); i++; continue; }
+    if (assignments && SHELL_ASSIGNMENT.test(environmentAssignments ? token.value : token.raw)) { assignment(token); i++; continue; }
     if (!token.quoted && CONTROL_WORDS.has(token.value)) { i++; continue; }
     const name = basename(token.value);
-    if (name === 'command') {
-      assignmentOnly = false;
-      local &&= token.value === 'command';
-      i++;
-      while (words[i]?.value.startsWith('-')) {
-        const flag = words[i++].value;
-        budget.spend(flag.length + 1);
-        if (flag === '--') break;
-        if (/^-[pvV]+$/.test(flag) && /[vV]/.test(flag)) return result([]);
-        if (!/^-p+$/.test(flag)) return suffix(i - 1);
-      }
-      assignments = false; continue;
-    }
-    if (name === 'exec') {
-      assignmentOnly = false;
-      local = false;
-      i++;
-      while (words[i]?.value.startsWith('-')) {
-        const flag = words[i++].value;
-        budget.spend(flag.length + 1);
-        if (flag === '--') break;
-        if (/^-[cl]*a$/.test(flag)) i++;
-        else if (!/^-([cl]*a.+|[cl]+)$/.test(flag)) return suffix(i - 1);
-        if (flag.slice(1).split('a', 1)[0].includes('c')) resetEnvironment();
-      }
-      assignments = false; continue;
-    }
-    if (name === 'env' || name === 'sudo' || name === 'doas') {
-      assignmentOnly = false;
-      local = false;
-      const env = name === 'env';
-      const values = env
-        ? new Set(['-u', '--unset', '-C', '--chdir'])
-        : new Set(['-u', '--user', '-g', '--group', '-h', '--host', '-p', '--prompt', '-C', '-T', '-R', '-D']);
-      const flags = env ? new Set(['-i', '--ignore-environment', '-0', '--null']) : new Set(['-n', '-E', '-H', '-S', '-k', '-K', '-b']);
-      i++;
-      while (words[i]?.value.startsWith('-')) {
-        const flag = words[i].value;
-        budget.spend(flag.length + 1);
-        if (flag === '--') { i++; break; }
-        if (env && (flag === '-S' || flag === '--split-string'
-          || flag.startsWith('--split-string=') || flag.startsWith('-S'))) {
-          const separated = flag === '-S' || flag === '--split-string';
-          const payload = separated ? words[i + 1]?.value || ''
-            : flag.slice(flag.startsWith('--split-string=') ? '--split-string='.length : 2);
-          budget.spend(payload.length + 1);
-          validateEnvSplitEscapes(payload, budget);
-          const scan = scanShell(payload, budget);
-          // Only literal word splitting is understood here. Keep complex env
-          // syntax opaque rather than pretending to execute it as a shell.
-          if (scan.commands.length !== 1 || scan.commands[0].nested.length
-            || scan.commands[0].redirects.length || scan.commands[0].words.some(word => word.dynamic)) return suffix(i - 1);
-          // Pay for both slices and the expanded array before allocating them.
-          budget.spend(2 * words.length + scan.commands[0].words.length);
-          words = [...words.slice(0, i), ...scan.commands[0].words, ...words.slice(i + (separated ? 2 : 1))];
-          continue;
-        }
-        if (env && (flag === '-i' || flag === '--ignore-environment')) resetEnvironment();
-        if (env && (flag === '-u' || flag === '--unset')) resetEnvironment(words[i + 1]?.value || '');
-        else if (env && flag.startsWith('--unset=')) resetEnvironment(flag.slice('--unset='.length));
-        else if (env && flag.startsWith('-u')) resetEnvironment(flag.slice(2));
-        if (values.has(flag)) i += 2;
-        else if (flags.has(flag) || [...values].some(value => value.startsWith('--') ? flag.startsWith(`${value}=`) : flag.startsWith(value) && flag.length > value.length)) i++;
-        else return suffix(i - 1); // Includes opaque env -S / sudo shell modes.
-      }
-      assignments = true; environmentAssignments = true; continue;
-    }
-    return suffix(i);
+    let stop;
+    if (name === 'command') stop = commandBuiltin(token);
+    else if (name === 'exec') stop = execBuiltin();
+    else if (name === 'env' || name === 'sudo' || name === 'doas') stop = envWrapper(name);
+    else return suffix(i);
+    if (stop) return stop;
   }
   return result([]);
+}
+
+const SHELL_LONG_FLAGS = ['--noprofile', '--norc', '--posix', '--restricted', '--verbose', '--login'];
+const OPAQUE_SHELL = { kind: 'opaque', stdin: true };
+
+// Classify one short shell flag inside an option cluster.
+function classifyShellFlag(flag, shell) {
+  // Named-option arity is unproved for sh/dash/ksh: keep the invocation
+  // opaque instead of consuming a code flag as a guessed option operand.
+  if ((flag === 'o' || flag === 'O') && shell !== 'bash' && shell !== 'zsh') return 'opaque';
+  if (flag === 'c') return 'code';
+  if (flag === 's') return 'stdin';
+  // zsh consumes the rest of this argv word as the option name, or one
+  // separate word if no suffix exists, then ends this option cluster.
+  if (shell === 'zsh' && flag === 'o') return 'zshOption';
+  // These are not Bash's operand grammar; unmodeled zsh modes stay opaque.
+  if (shell === 'zsh' && (flag === 'O' || flag === 'b')) return 'opaque';
+  if (flag === 'o' || flag === 'O') return 'operand';
+  return 'abefhiklmnprtuvxBCEHPTD'.includes(flag) ? 'plain' : 'opaque';
+}
+
+// Bash accepts either sign and consumes a separate operand for each o/O
+// even inside a cluster. The command string follows ALL option processing,
+// not necessarily the argv word immediately after the first c flag.
+// Returns null when the cluster makes the invocation opaque.
+function scanShellOptionCluster(option, words, start, shell, budget) {
+  const cluster = { next: start + 1, code: false, stdin: false };
+  for (let j = 1; j < option.length; j++) {
+    budget.spend();
+    const kind = classifyShellFlag(option[j], shell);
+    if (kind === 'opaque') return null;
+    if (kind === 'code') cluster.code = true;
+    else if (kind === 'stdin') cluster.stdin = true;
+    else if (kind === 'zshOption') {
+      if (j + 1 === option.length && cluster.next < words.length) cluster.next++;
+      return cluster;
+    } else if (kind === 'operand' && cluster.next < words.length) cluster.next++;
+  }
+  return cluster;
 }
 
 function shellRole(words, budget, shell) {
@@ -428,33 +559,14 @@ function shellRole(words, budget, shell) {
     if (!/^[+-]/.test(option)) break;
     if (option === '--rcfile' || option === '--init-file') { i += 2; continue; }
     if (option.startsWith('--')) {
-      if (!['--noprofile', '--norc', '--posix', '--restricted', '--verbose', '--login'].includes(option)) return { kind: 'opaque', stdin: true };
+      if (!SHELL_LONG_FLAGS.includes(option)) return { ...OPAQUE_SHELL };
       i++; continue;
     }
-    // Bash accepts either sign and consumes a separate operand for each o/O
-    // even inside a cluster. The command string follows ALL option processing,
-    // not necessarily the argv word immediately after the first c flag.
-    let next = i + 1;
-    for (let j = 1; j < option.length; j++) {
-      budget.spend();
-      const flag = option[j];
-      // Named-option arity is unproved for sh/dash/ksh: keep the invocation
-      // opaque instead of consuming a code flag as a guessed option operand.
-      if ((flag === 'o' || flag === 'O') && shell !== 'bash' && shell !== 'zsh') return { kind: 'opaque', stdin: true };
-      if (flag === 'c') code = true;
-      else if (flag === 's') stdin = true;
-      else if (shell === 'zsh' && flag === 'o') {
-        // zsh consumes the rest of this argv word as the option name, or one
-        // separate word if no suffix exists, then ends this option cluster.
-        if (j + 1 === option.length && next < words.length) next++;
-        break;
-      } else if (shell === 'zsh' && (flag === 'O' || flag === 'b')) {
-        // These are not Bash's operand grammar; unmodeled zsh modes stay opaque.
-        return { kind: 'opaque', stdin: true };
-      } else if (flag === 'o' || flag === 'O') { if (next < words.length) next++; }
-      else if (!'abefhiklmnprtuvxBCEHPTD'.includes(flag)) return { kind: 'opaque', stdin: true };
-    }
-    i = next;
+    const cluster = scanShellOptionCluster(option, words, i, shell, budget);
+    if (!cluster) return { ...OPAQUE_SHELL };
+    code ||= cluster.code;
+    stdin ||= cluster.stdin;
+    i = cluster.next;
   }
   if (code) return { kind: 'shell', code: words[i]?.value, stdin: false };
   // A script filename and its positional arguments are not shell source text.
@@ -699,6 +811,16 @@ function sedScriptParts(words, budget) {
   return scripts;
 }
 
+// A Node invocation with a literal script operand does not make its remaining
+// argv or stdin JavaScript source by itself. Eval, stdin mode, options before
+// the script, and dynamic launchers or operands stay opaque and conservatively
+// scanned.
+function isLiteralNodeScript(words, name) {
+  return (name === 'node' || name === 'node.exe') && !words[0].dynamic && words[1]
+    && !words[1].dynamic && words[1].value !== '' && words[1].value !== '-'
+    && !words[1].value.startsWith('-');
+}
+
 function commandRole(words, budget) {
   if (!words.length) return { kind: 'data' };
   budget.spend(words[0].value.length + 1);
@@ -726,42 +848,228 @@ function commandRole(words, budget) {
     // contain "git ..." never execute.
     return { kind: 'data' };
   }
-  if (DATA_COMMANDS.has(name)) return { kind: 'data' };
+  if (DATA_COMMANDS.has(name) || isLiteralNodeScript(words, name)) return { kind: 'data' };
   return { kind: 'opaque', stdin: true };
 }
 
-// Literal producers only. Unmodeled transformations remain conservative rather
-// than executing a formatter, interpreter, shell or user-supplied command.
-function pipelineSources(command, budget) {
+// Where output goes, as far as the redirections show it: 'out' is the shell that
+// reads the pipeline, 'next' the stdin of the next stage, 'away' a file,
+// /dev/null or the terminal, and 'unknown' a target the scan cannot name, which
+// is read as reaching the shell.
+const TO_READER = new Map([['1', 'out'], ['2', 'away']]);
+
+function reaches(target, downstream) {
+  return target === 'out' || target === 'unknown' || (target === 'next' && downstream);
+}
+
+// A file name that is one of the shell's own descriptors.
+function fileTarget(path, fds) {
+  const fd = { '/dev/stdout': '1', '/dev/stderr': '2' }[path] ?? path.match(/^\/(?:dev\/fd|proc\/self\/fd)\/(\d+)$/)?.[1];
+  return fd === undefined ? 'away' : (fds.get(fd) ?? 'away');
+}
+
+// The descriptors after a command's output redirections, applied left to right
+// as the shell does: `2>&1 >/dev/null` sends stderr to the old stdout and
+// stdout away. `N>&M` and `N<&M` both make N a copy of M, and `N>&M-` moves M
+// to N and closes M.
+function redirectedFds(fds, redirects, budget) {
+  const result = new Map(fds);
+  for (const redirect of redirects) {
+    budget.spend();
+    applyRedirect(result, redirect);
+  }
+  return result;
+}
+
+// A descriptor that was never opened fails the command, so nothing is written.
+function copyDescriptor(fds, fd, source, move) {
+  const target = fds.get(source) ?? 'away';
+  if (move && source !== fd) fds.set(source, 'away');
+  fds.set(fd, target);
+}
+
+function applyRedirect(fds, redirect) {
+  const { operator, word } = redirect;
+  const copies = operator === '>&' || (operator === '<&' && redirect.fd !== null);
+  if (operator !== '>' && operator !== '>>' && !copies) return;
+  const fd = redirect.fd ?? '1';
+  const target = word?.value ?? '';
+  const copied = copies ? /^(\d+)(-?)$/.exec(target) : null;
+  if (!word || word.dynamic) {
+    fds.set(fd, 'unknown');
+  } else if (copies && target === '-') {
+    fds.set(fd, 'away');
+  } else if (copied) {
+    copyDescriptor(fds, fd, copied[1], copied[2] === '-');
+  } else if (operator === '<&') {
+    // Not a descriptor: the scan does not model what this reads into an output.
+    fds.set(fd, 'unknown');
+  } else {
+    const file = fileTarget(target, fds);
+    fds.set(fd, file);
+    // `>&file` sends stdout and stderr there, like `&>file`.
+    if (operator === '>&' && redirect.fd === null) fds.set('2', file);
+  }
+}
+
+// Commands that print without reading their stdin, so what is piped into them
+// stops there.
+const IGNORES_STDIN = new Set(['echo', 'printf', ':', 'true', 'false']);
+
+// A brace group or subshell writes what its own commands print into the pipe:
+// `{ echo 'git push --no-verify'; } | sh` feeds sh like `echo ... | sh`. The
+// writes form one stream, so they are also read joined in order:
+// `{ printf 'git pu'; printf 'sh --no-verify'; } | sh`. An `exec` in the group
+// changes the descriptors of the commands after it, but only where it sends
+// more output to the shell: an `exec >/dev/null` that a condition skips must not
+// hide what follows, so a redirection away is not carried.
+function groupSources(scope, budget, fds) {
+  const written = [];
+  let groupFds = fds;
+  for (const inner of scanShell(scope.body, budget).commands) {
+    if (inner.words.length === 1 && inner.words[0].value === 'exec' && !inner.pipeFrom && !inner.pipeTo) {
+      const redirected = redirectedFds(groupFds, inner.redirects, budget);
+      groupFds = new Map(groupFds);
+      for (const [fd, target] of redirected) {
+        if (reaches(target, false) && !reaches(groupFds.get(fd), false)) groupFds.set(fd, target);
+      }
+      continue;
+    }
+    if (!inner.pipeTo) written.push(...pipelineSources(inner, budget, groupFds));
+  }
+  if (written.length > 1) written.push({ text: written.map(source => source.text).join(''), opaque: written.some(source => source.opaque) });
+  return written;
+}
+
+// printf writes the whitespace escapes of its format as the characters they
+// name, so `printf 'git push --no-verify\n'` ends its flag at the newline. As for
+// $'...' in shell-scan, only word boundaries are decoded, not numeric escapes.
+const PRINTF_SPACE_ESCAPES = { n: '\n', t: '\t', r: '\r', v: '\v', f: '\f', '\\': '\\' };
+
+function decodeSpaceEscapes(text) {
+  return text.replace(/\\([ntrvf\\])/g, (escape, c) => PRINTF_SPACE_ESCAPES[c]);
+}
+
+// echo reads options only before its first operand, so `echo 'git commit' -n`
+// prints `git commit -n`. Its output ends with a newline unless an -n option
+// asks it not to, so two echoes in a group write two lines, not one command.
+function echoText(words) {
+  let first = 1;
+  while (first < words.length && /^-[neE]+$/.test(words[first].value)) first++;
+  const text = words.slice(first).map(word => word.value).join(' ');
+  return words.slice(1, first).some(word => word.value.includes('n')) ? text : `${text}\n`;
+}
+
+// What printf writes: each %s, %b and %c takes the next argument, and the format
+// is used again while arguments remain, as printf does; %% is a percent sign, and
+// a conversion with no argument left is empty. Escapes are decoded in the format
+// and in %b arguments only: %s and %c write their argument as it is. Null for any
+// other conversion (%d, a width or a precision): printf is then read like an
+// unmodeled command. The budget is charged before each piece is added, so a
+// short command cannot expand into a huge string.
+function printfText(words, budget) {
+  let index = 1;
+  if (words[index]?.value === '--') index++;
+  const format = words[index]?.value ?? '';
+  const args = words.slice(index + 1).map(word => word.value);
+  const pieces = format.split(/(%.)/);
+  const conversions = pieces.filter((piece, i) => i % 2 === 1);
+  if (conversions.some(conversion => !['%s', '%b', '%c', '%%'].includes(conversion))) return null;
+  const consumes = conversions.some(conversion => conversion !== '%%');
+  let output = '';
+  let next = 0;
+  do {
+    pieces.forEach((piece, i) => {
+      let text;
+      if (i % 2 === 0) text = decodeSpaceEscapes(piece);
+      else if (piece === '%%') text = '%';
+      else {
+        const arg = args[next++] ?? '';
+        text = piece === '%c' ? arg.slice(0, 1) : (piece === '%b' ? decodeSpaceEscapes(arg) : arg);
+      }
+      budget.spend(text.length + 1);
+      output += text;
+    });
+  } while (consumes && next < args.length);
+  return output;
+}
+
+// A group writes to where its stage's descriptors point: the shell, or away.
+function groupContext(stageFds, downstream) {
+  const fds = new Map();
+  for (const [fd, target] of stageFds) {
+    if (!reaches(target, downstream)) fds.set(fd, 'away');
+    else fds.set(fd, target === 'unknown' ? 'unknown' : 'out');
+  }
+  return fds;
+}
+
+// Foreign transformations can introduce literal bypasses into executable stdin.
+// Treat their punctuation as delimiters, not as proved shell syntax. This
+// deliberately may refuse a transformation that removes a bypass; it does not
+// evaluate sed/interpreters or detect arbitrary generated source.
+function opaqueSource(words, budget) {
+  const text = words.map(word => word.value).join(' ');
+  budget.spend(2 * text.length + 1);
+  return { text: text.replace(/[^\w$=.+-]/g, ' '), opaque: true };
+}
+
+// The text echo or printf writes; null for a printf conversion the model lacks,
+// undefined for any other command.
+function literalText(name, words, budget) {
+  if (name === 'echo') return echoText(words);
+  if (name === 'printf' && words[1]?.value !== '-v') return printfText(words, budget);
+  return undefined;
+}
+
+function hereSources(redirects) {
   const sources = [];
-  for (let current = command; current; current = current.pipeFrom) {
-    budget.spend(current.words.length + 1);
-    const { words } = executableWords(current.words, budget);
-    for (const word of words) budget.spend(word.value.length + 3);
-    const name = basename(words[0]?.value || '');
-    if (name === 'echo') sources.push({ text: words.slice(1).filter(word => !/^-[neE]+$/.test(word.value)).map(word => word.value).join(' ') });
-    if (name === 'printf') {
-      const format = words[1]?.value || '';
-      if (format !== '-v') sources.push({ text: (format === '%s' || format === '%s\\n') ? words.slice(2).map(word => word.value).join('\n') : words.slice(1).map(word => word.value).join(' ') });
-    }
-    if (!DATA_COMMANDS.has(name)) {
-      // Foreign transformations can introduce literal bypasses into executable
-      // stdin. Treat their punctuation as delimiters, not as proved shell syntax.
-      // This deliberately may refuse a transformation that removes a bypass; it
-      // does not evaluate sed/interpreters or detect arbitrary generated source.
-      const text = words.map(word => word.value).join(' ');
-      budget.spend(2 * text.length + 1);
-      sources.push({ text: text.replace(/[^\w$=.+-]/g, ' '), opaque: true });
-    }
-    for (const redirect of current.redirects) {
-      if (redirect.operator === '<<<') sources.push({ text: redirect.word.value });
-      else if (redirect.operator === '<<' || redirect.operator === '<<-') sources.push({ text: redirect.body });
-    }
+  for (const redirect of redirects) {
+    if (redirect.operator === '<<<') sources.push({ text: redirect.word.value });
+    else if (redirect.operator === '<<' || redirect.operator === '<<-') sources.push({ text: redirect.body });
   }
   return sources;
 }
 
-const GIT_ENV_NAME = /^GIT_CONFIG_(?:COUNT|PARAMETERS|(?:KEY|VALUE)_[0-9]+)$/;
+// What one pipeline stage adds to the shell's input, and whether what is piped
+// into the stage gets there too.
+function stageSources(current, budget, stageFds, downstream) {
+  const sources = [];
+  const stdoutReaches = reaches(stageFds.get('1'), downstream);
+  if (current.closedScope) sources.push(...groupSources(current.closedScope, budget, groupContext(stageFds, downstream)));
+  budget.spend(current.words.length + 1);
+  const { words } = executableWords(current.words, budget);
+  for (const word of words) budget.spend(word.value.length + 3);
+  const name = basename(words[0]?.value || '');
+  const literal = literalText(name, words, budget);
+  if (stdoutReaches && typeof literal === 'string') sources.push({ text: literal });
+  // An unmodeled command may also write to stderr, so either stream counts.
+  const unmodeled = !DATA_COMMANDS.has(name) || literal === null;
+  if (unmodeled && (stdoutReaches || reaches(stageFds.get('2'), downstream))) sources.push(opaqueSource(words, budget));
+  const forwards = stdoutReaches && !IGNORES_STDIN.has(name);
+  if (forwards) sources.push(...hereSources(current.redirects));
+  // Its own stdin redirection replaces the pipe, so the stage before it feeds nothing.
+  const ownStdin = current.redirects.some(redirect => redirect.operator.startsWith('<') && (redirect.fd ?? '0') === '0');
+  return { sources, downstream: forwards && !ownStdin };
+}
+
+// Literal producers only. Unmodeled transformations remain conservative rather
+// than executing a formatter, interpreter, shell or user-supplied command. A
+// stage counts only when its output reaches the shell: through the stages after
+// it, unless a redirection sends it elsewhere, as in `echo ... >/dev/null | cat`.
+function pipelineSources(command, budget, fds = TO_READER) {
+  const sources = [];
+  // Whether what is written into the current stage's stdin gets to the shell.
+  let downstream = true;
+  for (let current = command; current; current = current.pipeFrom) {
+    const stageFds = redirectedFds(current === command ? fds : new Map([...fds, ['1', 'next']]), current.redirects, budget);
+    const stage = stageSources(current, budget, stageFds, downstream);
+    sources.push(...stage.sources);
+    downstream = stage.downstream;
+  }
+  return sources;
+}
+
 const DECLARATIONS = new Set(['export', 'declare', 'typeset', 'readonly', 'unset']);
 
 function shellState(environment, budget) {
@@ -825,31 +1133,11 @@ function updateShellState(state, normalized, budget) {
   // Exact builtin names only: /some/path/export is an external executable.
   const name = words[0]?.value;
   if (!DECLARATIONS.has(name)) return result(false, false);
-  let exported = name === 'export' ? true : null;
-  let readonly = name === 'readonly';
-  let passive = false;
-  let uncertain = dynamicAssignments.size > 0;
-  let i = 1;
-  for (; i < words.length; i++) {
-    const flag = words[i].value;
-    budget.spend(flag.length + 1);
-    if (flag === '--') { i++; break; }
-    if (!/^[+-]/.test(flag)) break;
-    if (name === 'export' && /^-[npf]+$/.test(flag)) {
-      if (flag.includes('n')) exported = false;
-      passive ||= flag.includes('f');
-    } else if ((name === 'declare' || name === 'typeset') && /^[+-][xrgpf]+$/.test(flag)) {
-      if (flag.includes('x')) exported = flag[0] === '-';
-      if (flag[0] === '-' && flag.includes('r')) readonly = true;
-      passive ||= /[pf]/.test(flag);
-    } else if (name === 'readonly' && /^-[pf]+$/.test(flag)) passive ||= flag.includes('f');
-    else if (name === 'unset' && /^-[vf]+$/.test(flag)) passive ||= flag.includes('f');
-    else uncertain = true;
-  }
-  if (passive && !uncertain) return result(true, false);
+  const declaration = parseDeclarationFlags(name, words, budget, dynamicAssignments.size > 0);
+  if (declaration.passive && !declaration.uncertain) return result(true, false);
   let changed = prefixAssignments.size > 0;
   assignPrefixes();
-  for (; i < words.length; i++) {
+  for (let i = declaration.index; i < words.length; i++) {
     const value = words[i].value;
     budget.spend(2 * value.length + 1);
     const equals = value.indexOf('=');
@@ -859,21 +1147,65 @@ function updateShellState(state, normalized, budget) {
     changed = true;
     if (name !== 'unset' && equals >= 0) assign(key, value.slice(equals + 1), words[i].dynamic, append);
     budget.spend(states.length + 1);
-    for (const current of states) {
-      if (name === 'unset') {
-        if (equals < 0 && !current.readonly.has(key)) {
-          current.variables.delete(key); current.exported.delete(key);
-        }
-      } else {
-        if (exported === true || uncertain) current.exported.add(key);
-        else if (exported === false) current.exported.delete(key);
-        if (readonly || uncertain) current.readonly.add(key);
-      }
-    }
+    for (const current of states) applyDeclaration(current, key, equals, declaration);
   }
   // Unsupported attributes may transform values or reject the declaration.
   // Retain old and conservative literal states; never use them to prove reset.
-  return result(true, changed, uncertain);
+  return result(true, changed, declaration.uncertain);
+}
+
+// Fold one declaration builtin flag into the parsed attribute set.
+function applyDeclarationFlag(declaration, flag) {
+  const { name } = declaration;
+  if (name === 'export' && /^-[npf]+$/.test(flag)) {
+    if (flag.includes('n')) declaration.exported = false;
+    declaration.passive ||= flag.includes('f');
+    return;
+  }
+  if ((name === 'declare' || name === 'typeset') && /^[+-][xrgpf]+$/.test(flag)) {
+    if (flag.includes('x')) declaration.exported = flag[0] === '-';
+    if (flag[0] === '-' && flag.includes('r')) declaration.readonly = true;
+    declaration.passive ||= /[pf]/.test(flag);
+    return;
+  }
+  if (name === 'readonly' && /^-[pf]+$/.test(flag)) { declaration.passive ||= flag.includes('f'); return; }
+  if (name === 'unset' && /^-[vf]+$/.test(flag)) { declaration.passive ||= flag.includes('f'); return; }
+  declaration.uncertain = true;
+}
+
+// Parse the option words of export/declare/typeset/readonly/unset. Returns the
+// attributes they set and the index of the first operand.
+function parseDeclarationFlags(name, words, budget, uncertain) {
+  const declaration = {
+    name,
+    exported: name === 'export' ? true : null,
+    readonly: name === 'readonly',
+    passive: false,
+    uncertain,
+    index: 1
+  };
+  for (; declaration.index < words.length; declaration.index++) {
+    const flag = words[declaration.index].value;
+    budget.spend(flag.length + 1);
+    if (flag === '--') { declaration.index++; break; }
+    if (!/^[+-]/.test(flag)) break;
+    applyDeclarationFlag(declaration, flag);
+  }
+  return declaration;
+}
+
+// Apply a parsed declaration of `key` to one literal shell state.
+function applyDeclaration(current, key, equals, declaration) {
+  const { name, exported, readonly, uncertain } = declaration;
+  if (name === 'unset') {
+    if (equals < 0 && !current.readonly.has(key)) {
+      current.variables.delete(key); current.exported.delete(key);
+    }
+    return;
+  }
+  if (exported === true || uncertain) current.exported.add(key);
+  else if (exported === false) current.exported.delete(key);
+  if (readonly || uncertain) current.readonly.add(key);
 }
 
 function checkCommand(input) {
@@ -889,11 +1221,153 @@ function checkCommand(input) {
       const word = words[index];
       budget.spend(word.value.length + 1);
       if (isGitExecutable(word.value)) {
-        const reason = checkGitWords(words, budget, index, gitEnvironmentOverride(environment, budget));
+        const reason = checkGitWords(words, budget, index, environment);
         if (reason) return reason;
       }
       if (word.value !== text && /git/i.test(word.value) && /[\s'"()]/.test(word.value)) enqueue(word.value, true, { states: [shellState(environment, budget)] });
     }
+    return null;
+  }
+  // Split a text task into one pending task per scanned command.
+  function expandText(task) {
+    const scan = scanShell(task.text, budget);
+    const contexts = new Map([[scan.rootScope, task.context]]);
+    budget.spend(scan.commands.length + 1);
+    for (let i = scan.commands.length - 1; i >= 0; i--) pending.push({ ...task, command: scan.commands[i], contexts });
+  }
+  // A closing scope folds its states back into the enclosing context when the
+  // scope ended a pipeline.
+  function exitScope(command, contexts) {
+    const closing = command.scopeExit;
+    const exited = contexts.get(closing);
+    const enclosing = contexts.get(closing.parent);
+    if (closing.pipelineLast && exited && enclosing) {
+      budget.spend(exited.states.length + 1);
+      enclosing.states.push(...exited.states);
+    }
+  }
+  // Materialize contexts for any scopes between the command and the nearest
+  // known ancestor, then return the command's own scope context.
+  function resolveScope(command, contexts) {
+    const missing = [];
+    for (let scope = command.scope; !contexts.has(scope); scope = scope.parent) { budget.spend(); missing.push(scope); }
+    while (missing.length) {
+      const scope = missing.pop();
+      const parent = contexts.get(scope.parent);
+      contexts.set(scope, scope.isolated ? copyShellContext(parent, budget) : parent);
+    }
+    return contexts.get(command.scope);
+  }
+  function isConditional(scope) {
+    let conditional = false;
+    for (let current = scope; current; current = current.parent) { budget.spend(); conditional ||= current.conditional; }
+    return conditional;
+  }
+  // Stdin fed to a shell-like receiver (here-strings, heredocs, literal pipe
+  // producers) is scanned as source. Opaque receivers keep their text opaque.
+  function collectStdinSources(frame, role, environment) {
+    const opaque = role.kind === 'opaque';
+    for (const redirect of frame.command.redirects) {
+      if (redirect.operator === '<<<') frame.childEnvironments.push({ code: redirect.word.value, opaque, environment });
+      else if (redirect.operator === '<<' || redirect.operator === '<<-') frame.childEnvironments.push({ code: redirect.body, opaque, environment });
+    }
+    if (frame.command.pipeFrom) {
+      for (const source of pipelineSources(frame.command.pipeFrom, budget)) frame.childEnvironments.push({ code: source.text, opaque: source.opaque || opaque, environment });
+    }
+  }
+  // Inspect one command under one literal environment. Returns a block reason
+  // or null, and records any child source text the command would execute.
+  function inspectEnvironment(frame, role, normalized, environment) {
+    const { task, command } = frame;
+    const { words } = normalized;
+    const reason = task.opaque || role.kind === 'opaque'
+      ? inspectOpaque(command.words, task.text, environment)
+      : role.kind === 'git' ? checkGitWords(words, budget, 0, environment) : null;
+    if (reason) return reason;
+    if (role.code) {
+      if (normalized.local && words[0]?.value === 'eval') frame.sameShellCode = role.code;
+      else frame.childEnvironments.push({ code: role.code, opaque: false, environment });
+    }
+    if (role.kind === 'sedExec') {
+      // Fragments sed will hand to the shell are scanned as real shell
+      // source, not as opaque text — this closes the GNU sed `e` gap.
+      for (const part of role.parts) {
+        budget.spend(part.length + 1);
+        frame.childEnvironments.push({ code: part, opaque: false, environment });
+      }
+    }
+    if (role.stdin) collectStdinSources(frame, role, environment);
+    return null;
+  }
+  // Advance one literal shell state through the command: apply declarations
+  // and prefix assignments, then inspect the executable under each resulting
+  // environment.
+  function inspectState(frame, state) {
+    const { command, conditional } = frame;
+    const normalized = executableWords(command.words, budget, exportedEnvironment(state, budget), state.variables);
+    const { words, environments } = normalized;
+    const next = copyShellState(state, budget);
+    const evalPrefix = normalized.local && words[0]?.value === 'eval' && normalized.prefixAssignments.size > 0;
+    const mutation = updateShellState(next, evalPrefix ? { ...normalized, assignmentOnly: true } : normalized, budget);
+    if (evalPrefix) {
+      frame.alternatives.push(state);
+      budget.spend(mutation.states.length * (normalized.prefixAssignments.size + 1));
+      for (const variant of mutation.states) for (const name of normalized.prefixAssignments.keys()) variant.exported.add(name);
+    }
+    budget.spend(mutation.states.length + 1);
+    frame.alternatives.push(...mutation.states);
+    if (mutation.changed && (conditional || mutation.uncertain)) frame.alternatives.push(state);
+    frame.changed ||= mutation.changed;
+    if (mutation.handled && !evalPrefix) return null;
+    const role = commandRole(words, budget);
+    budget.spend(environments.length + 1);
+    for (const environment of environments) {
+      const reason = inspectEnvironment(frame, role, normalized, environment);
+      if (reason) return reason;
+    }
+    return null;
+  }
+  // Commit the command's resulting states and queue whatever it would run.
+  function finishCommand(frame) {
+    const { command, context, parent, conditional, sameShellCode, changed } = frame;
+    context.states = frame.alternatives;
+    // Bash lastpipe and zsh can execute a final pipeline builtin in the
+    // parent shell. Preserve that possible state as well as isolation; this
+    // is deliberately conservative when the host shell/options are unknown.
+    if (command.pipeFrom && !command.pipeTo && !command.background && (changed || sameShellCode)) pending.push({ mergeInto: parent, context });
+    for (const child of frame.childEnvironments) enqueue(child.code, child.opaque, { states: [shellState(child.environment, budget)] });
+    if (sameShellCode) {
+      // A conditional eval may not run. Its nested scans have fresh lexical
+      // roots, so preserve the skipped branch across all delayed updates.
+      const evaluated = conditional ? copyShellContext(context, budget) : context;
+      if (conditional) pending.push({ mergeInto: context, context: evaluated });
+      enqueue(sameShellCode, false, evaluated);
+    }
+  }
+  // Process one scanned command task. Returns a block reason or null.
+  function processCommand(task) {
+    const { command, contexts } = task;
+    if (command.scopeExit) { exitScope(command, contexts); return null; }
+    const parent = resolveScope(command, contexts);
+    const isolated = command.pipeFrom || command.pipeTo || command.background;
+    const context = task.commandContext || (isolated ? copyShellContext(parent, budget) : parent);
+    if (!task.nestedDone && command.nested.length) {
+      pending.push({ ...task, nestedDone: true, commandContext: context });
+      budget.spend(command.nested.length + 1);
+      for (let i = command.nested.length - 1; i >= 0; i--) enqueue(command.nested[i], false, copyShellContext(context, budget));
+      return null;
+    }
+    const frame = {
+      task, command, context, parent,
+      conditional: isConditional(command.scope),
+      alternatives: [], childEnvironments: [], sameShellCode: null, changed: false
+    };
+    budget.spend(context.states.length + 1);
+    for (const state of context.states) {
+      const reason = inspectState(frame, state);
+      if (reason) return reason;
+    }
+    finishCommand(frame);
     return null;
   }
   try {
@@ -904,108 +1378,9 @@ function checkCommand(input) {
         task.mergeInto.states.push(...task.context.states);
         continue;
       }
-      if (!task.command) {
-        const scan = scanShell(task.text, budget);
-        const contexts = new Map([[scan.rootScope, task.context]]);
-        budget.spend(scan.commands.length + 1);
-        for (let i = scan.commands.length - 1; i >= 0; i--) pending.push({ ...task, command: scan.commands[i], contexts });
-        continue;
-      }
-      const { command, contexts } = task;
-      if (command.scopeExit) {
-        const closing = command.scopeExit;
-        const exited = contexts.get(closing);
-        const enclosing = contexts.get(closing.parent);
-        if (closing.pipelineLast && exited && enclosing) {
-          budget.spend(exited.states.length + 1);
-          enclosing.states.push(...exited.states);
-        }
-        continue;
-      }
-      const missing = [];
-      for (let scope = command.scope; !contexts.has(scope); scope = scope.parent) { budget.spend(); missing.push(scope); }
-      while (missing.length) {
-        const scope = missing.pop();
-        const parent = contexts.get(scope.parent);
-        contexts.set(scope, scope.isolated ? copyShellContext(parent, budget) : parent);
-      }
-      const parent = contexts.get(command.scope);
-      const isolated = command.pipeFrom || command.pipeTo || command.background;
-      const context = task.commandContext || (isolated ? copyShellContext(parent, budget) : parent);
-      if (!task.nestedDone && command.nested.length) {
-        pending.push({ ...task, nestedDone: true, commandContext: context });
-        budget.spend(command.nested.length + 1);
-        for (let i = command.nested.length - 1; i >= 0; i--) enqueue(command.nested[i], false, copyShellContext(context, budget));
-        continue;
-      }
-      let conditional = false;
-      for (let scope = command.scope; scope; scope = scope.parent) { budget.spend(); conditional ||= scope.conditional; }
-      const alternatives = [];
-      const childEnvironments = [];
-      let sameShellCode = null;
-      let changed = false;
-      budget.spend(context.states.length + 1);
-      for (const state of context.states) {
-        const normalized = executableWords(command.words, budget, exportedEnvironment(state, budget), state.variables);
-        const { words, environments } = normalized;
-        const next = copyShellState(state, budget);
-        const evalPrefix = normalized.local && words[0]?.value === 'eval' && normalized.prefixAssignments.size > 0;
-        const mutation = updateShellState(next, evalPrefix ? { ...normalized, assignmentOnly: true } : normalized, budget);
-        if (evalPrefix) {
-          alternatives.push(state);
-          budget.spend(mutation.states.length * (normalized.prefixAssignments.size + 1));
-          for (const variant of mutation.states) for (const name of normalized.prefixAssignments.keys()) variant.exported.add(name);
-        }
-        budget.spend(mutation.states.length + 1);
-        alternatives.push(...mutation.states);
-        if (mutation.changed && (conditional || mutation.uncertain)) alternatives.push(state);
-        changed ||= mutation.changed;
-        if (mutation.handled && !evalPrefix) continue;
-        const role = commandRole(words, budget);
-        budget.spend(environments.length + 1);
-        for (const environment of environments) {
-          const reason = task.opaque || role.kind === 'opaque'
-            ? inspectOpaque(command.words, task.text, environment)
-            : role.kind === 'git' ? checkGitWords(words, budget, 0, gitEnvironmentOverride(environment, budget)) : null;
-          if (reason) return { blocked: true, reason };
-          if (role.code) {
-            if (normalized.local && words[0]?.value === 'eval') {
-              sameShellCode = role.code;
-            }
-            else childEnvironments.push({ code: role.code, opaque: false, environment });
-          }
-          if (role.kind === 'sedExec') {
-            // Fragments sed will hand to the shell are scanned as real shell
-            // source, not as opaque text — this closes the GNU sed `e` gap.
-            for (const part of role.parts) {
-              budget.spend(part.length + 1);
-              childEnvironments.push({ code: part, opaque: false, environment });
-            }
-          }
-          if (role.stdin) {
-            for (const redirect of command.redirects) {
-              if (redirect.operator === '<<<') childEnvironments.push({ code: redirect.word.value, opaque: role.kind === 'opaque', environment });
-              else if (redirect.operator === '<<' || redirect.operator === '<<-') childEnvironments.push({ code: redirect.body, opaque: role.kind === 'opaque', environment });
-            }
-            if (command.pipeFrom) {
-              for (const source of pipelineSources(command.pipeFrom, budget)) childEnvironments.push({ code: source.text, opaque: source.opaque || role.kind === 'opaque', environment });
-            }
-          }
-        }
-      }
-      context.states = alternatives;
-      // Bash lastpipe and zsh can execute a final pipeline builtin in the
-      // parent shell. Preserve that possible state as well as isolation; this
-      // is deliberately conservative when the host shell/options are unknown.
-      if (command.pipeFrom && !command.pipeTo && !command.background && (changed || sameShellCode)) pending.push({ mergeInto: parent, context });
-      for (const child of childEnvironments) enqueue(child.code, child.opaque, { states: [shellState(child.environment, budget)] });
-      if (sameShellCode) {
-        // A conditional eval may not run. Its nested scans have fresh lexical
-        // roots, so preserve the skipped branch across all delayed updates.
-        const evaluated = conditional ? copyShellContext(context, budget) : context;
-        if (conditional) pending.push({ mergeInto: context, context: evaluated });
-        enqueue(sameShellCode, false, evaluated);
-      }
+      if (!task.command) { expandText(task); continue; }
+      const reason = processCommand(task);
+      if (reason) return { blocked: true, reason };
     }
   } catch (error) {
     if (error instanceof UnsupportedEnvSplitEscape) {

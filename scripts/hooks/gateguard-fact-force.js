@@ -25,6 +25,7 @@
 const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
+const { showRecoveryHints } = require('../lib/hooks/recovery-hints');
 const { extractCommandSubstitutions, extractSubshellGroups, extractBraceGroups } = require('../lib/shell-substitution');
 const { classifyPowerShellDestructiveCommand } = require('../lib/powershell-destructive-command');
 const { stripHeredocBodies } = require('./gateguard-heredoc');
@@ -123,7 +124,13 @@ const ECC_ENABLE_VALUES = new Set(['1', 'true', 'on', 'enabled', 'enable', 'yes'
 // `echo dd if=x` — which runs no dd at all — was gated. The boundary decided
 // the verdict instead of the command position, so dd moved to isDestructiveDd()
 // alongside the other token-based detectors (#2642).
-const DESTRUCTIVE_SQL = /\b(drop\s+table|delete\s+from|truncate)\b/i;
+// DROP DATABASE / DROP SCHEMA remove at least as much data as DROP TABLE, and
+// ALTER TABLE ... DROP COLUMN discards a column's data across every row. The
+// DROP COLUMN arm is bounded by `;` so it cannot join two separate statements,
+// and it requires the explicit COLUMN keyword so `ALTER COLUMN ... DROP
+// DEFAULT` / `DROP NOT NULL` (metadata-only changes) stay passive.
+const DESTRUCTIVE_SQL =
+  /\b(drop\s+(?:table|database|schema)|delete\s+from|truncate|alter\s+table\b[^;]*?\bdrop\s+column)\b/i;
 
 // Operator-supplied additional destructive patterns. Lazily compiled from
 // `GATEGUARD_BASH_EXTRA_DESTRUCTIVE` (regex source) on first use, then
@@ -179,6 +186,27 @@ function getExtraDestructiveRegex() {
 // `**` across segments, `?` a single char.
 let exemptCacheKey = null;
 let exemptCacheRegexes = null;
+function exemptGlobRegex(glob) {
+  let source = '';
+  for (let index = 0; index < glob.length; index++) {
+    const char = glob[index];
+    if (char === '*' && glob[index + 1] === '*') {
+      index++;
+      if (glob[index + 1] === '/') {
+        source += '(?:.*/)?';
+        index++;
+      } else source += '.*';
+    } else if (char === '*') source += '[^/]*';
+    else if (char === '?') source += '[^/]';
+    else source += char.replace(/[.+^${}()|[\]\\]/g, '\\$&');
+  }
+  try {
+    return new RegExp(`^${source}$`);
+  } catch (_) {
+    return null;
+  }
+}
+
 function getExemptMatchers() {
   const raw = process.env.GATEGUARD_EXEMPT_GLOBS || '';
   if (raw === exemptCacheKey) {
@@ -187,42 +215,59 @@ function getExemptMatchers() {
   exemptCacheKey = raw;
   exemptCacheRegexes = raw
     .split(',')
-    .map(s => normalizeForMatch(s.trim()))
+    .map(s => s.trim().replace(/\\/g, '/'))
     .filter(Boolean)
-    .map(glob => {
-      let source = '';
-      for (let index = 0; index < glob.length; index++) {
-        const char = glob[index];
-        if (char === '*' && glob[index + 1] === '*') {
-          index++;
-          if (glob[index + 1] === '/') {
-            source += '(?:.*/)?';
-            index++;
-          } else source += '.*';
-        } else if (char === '*') source += '[^/]*';
-        else if (char === '?') source += '[^/]';
-        else source += char.replace(/[.+^${}()|[\]\\]/g, '\\$&');
-      }
-      try {
-        return { regex: new RegExp(`^${source}$`), absolute: path.posix.isAbsolute(glob) || path.win32.isAbsolute(glob) };
-      } catch (_) {
-        return null;
-      }
+    .map(written => {
+      const glob = normalizeForMatch(written);
+      const regex = exemptGlobRegex(glob);
+      return regex ? { written, regex, absolute: path.posix.isAbsolute(glob) || path.win32.isAbsolute(glob) } : null;
     })
     .filter(Boolean);
   return exemptCacheRegexes;
 }
 
+function matchesExemptGlob(target, projectRoot, paths, absoluteRegexFor = matcher => matcher.regex) {
+  const relative = paths.relative(projectRoot, target);
+  const contained = relative !== '..' && !relative.startsWith(`..${paths.sep}`) && !paths.isAbsolute(relative);
+  return getExemptMatchers().some(matcher => {
+    if (!matcher.absolute) return contained && matcher.regex.test(normalizeForMatch(relative));
+    const regex = absoluteRegexFor(matcher);
+    return Boolean(regex) && regex.test(normalizeForMatch(target));
+  });
+}
+
+// An absolute glob as it reads once its literal leading directories are
+// symlink-resolved (`/tmp/...` is `/private/tmp/...` on macOS). Null when that
+// prefix has no real location.
+function realAbsoluteGlobRegex(glob, isWin) {
+  const segments = glob.split('/');
+  const wild = segments.findIndex(segment => /[*?]/.test(segment));
+  const literal = wild === -1 ? segments.length - 1 : wild;
+  const prefix = segments.slice(0, literal).join('/') || '/';
+  const realPrefix = targetClass().realLocationOf(isWin ? prefix.replace(/\//g, '\\') : prefix, isWin);
+  if (!realPrefix) return null;
+  const rest = segments.slice(literal).join('/');
+  return exemptGlobRegex(normalizeForMatch(`${realPrefix.replace(/[\\/]$/, '')}/${rest}`));
+}
+
+// The path as written and its real location must both match: a symlink inside
+// an exempt tree does not exempt its target. See docs/gateguard/design-notes.md#exempt-globs
 function isExemptPath(filePath, data) {
   const projectRoot = process.env.CLAUDE_PROJECT_DIR || data.cwd || process.cwd();
   if (typeof projectRoot !== 'string' || typeof filePath !== 'string') return false;
-  const paths = targetClass().WINDOWS_PATH_PATTERN.test(projectRoot) ? path.win32 : path.posix;
+  const isWin = targetClass().WINDOWS_PATH_PATTERN.test(projectRoot);
+  const paths = isWin ? path.win32 : path.posix;
   if (!paths.isAbsolute(projectRoot)) return false;
   const target = paths.resolve(projectRoot, filePath);
-  const relative = paths.relative(projectRoot, target);
-  const contained = relative !== '..' && !relative.startsWith(`..${paths.sep}`) && !paths.isAbsolute(relative);
-  return getExemptMatchers().some(({ regex, absolute }) =>
-    absolute ? regex.test(normalizeForMatch(target)) : contained && regex.test(normalizeForMatch(relative))
+  if (!matchesExemptGlob(target, projectRoot, paths)) return false;
+  // A Windows-style path has no real location on a POSIX host (and vice versa).
+  if (isWin !== (process.platform === 'win32')) return true;
+  const realTarget = targetClass().realLocationOf(target, isWin);
+  if (!realTarget) return false;
+  if (realTarget === target) return true;
+  const realRoot = targetClass().realLocationOf(projectRoot, isWin) || projectRoot;
+  return matchesExemptGlob(realTarget, realRoot, paths, matcher =>
+    matcher.regex.test(normalizeForMatch(realTarget)) ? matcher.regex : realAbsoluteGlobRegex(matcher.written, isWin)
   );
 }
 
@@ -514,9 +559,77 @@ const SUDO_VALUE_FLAGS = new Set([
   '--type',
   '-T',
   '--command-timeout',
+  '-R',
+  '--chroot',
+  '-a',
+  '--auth-type',
+  '-c',
+  '--login-class',
 ]);
 
-const DOAS_VALUE_FLAGS = new Set(['-u', '-C']);
+const DOAS_VALUE_FLAGS = new Set(['-u', '-C', '-a']);
+// Option letters that take no value (sudo's getopt string
+// "+Aa:BbC:c:D:Eeg:Hh::iKklNnPp:R:r:SsT:t:U:u:Vv", doas's "+a:C:Lnsu:").
+const SUDO_BOOLEAN_FLAGS = new Set('ABbEeHiKklNnPSsVv'.split('').map(c => `-${c}`));
+const DOAS_BOOLEAN_FLAGS = new Set(['-L', '-n', '-s']);
+// Modes that list, validate, edit, check config or report instead of running
+// the command operand: `sudo -l rm -rf x` only checks whether rm is permitted.
+const SUDO_NON_EXEC_FLAGS = new Set([
+  '-l', '--list', '-v', '--validate', '-K', '--remove-timestamp', '-V', '--version', '-e', '--edit',
+  '--help',
+]);
+const DOAS_NON_EXEC_FLAGS = new Set(['-L', '-C']);
+
+/**
+ * True when a privilege-wrapper option puts it in a mode that does not run the
+ * command operand. A short cluster is read left to right: a value flag ends it
+ * (the rest is its value, so `-ul` is user `l` and `-R/live` is a chroot), and
+ * an unknown letter ends it too, so an unrecognized option never turns a
+ * command into a non-executing one.
+ */
+function isNonExecPrivilegeOption(arg, valueFlags, nonExecFlags, booleanFlags) {
+  if (arg.startsWith('--')) {
+    const separator = arg.indexOf('=');
+    return nonExecFlags.has(separator === -1 ? arg : arg.slice(0, separator));
+  }
+  for (let i = 1; i < arg.length; i += 1) {
+    const name = `-${arg[i]}`;
+    if (nonExecFlags.has(name)) return true;
+    if (valueFlags.has(name) || !booleanFlags.has(name)) return false;
+  }
+  return false;
+}
+
+// Every sudo long option (parse_args.c sudo_long_opts). getopt_long accepts a
+// unique prefix, so `--use root` is `--user root` and `--chro /x` is `--chroot /x`.
+const SUDO_LONG_OPTIONS = [
+  '--background', '--preserve-env', '--edit', '--set-home', '--login', '--remove-timestamp',
+  '--list', '--preserve-groups', '--shell', '--other-user', '--validate', '--askpass',
+  '--auth-type', '--bell', '--close-from', '--login-class', '--chdir', '--group', '--help',
+  '--host', '--reset-timestamp', '--no-update', '--non-interactive', '--prompt', '--chroot',
+  '--role', '--stdin', '--command-timeout', '--type', '--user', '--version',
+];
+
+/**
+ * Expand a unique sudo long-option prefix to its full name, keeping any
+ * attached `=value`. Exact names, ambiguous prefixes (sudo rejects those with
+ * a usage error and runs nothing) and non-long arguments come back unchanged.
+ */
+function canonicalSudoLongOption(arg) {
+  if (!arg.startsWith('--') || arg === '--') return arg;
+  const separator = arg.indexOf('=');
+  const name = separator === -1 ? arg : arg.slice(0, separator);
+  if (SUDO_LONG_OPTIONS.includes(name)) return arg;
+  const matches = SUDO_LONG_OPTIONS.filter(option => option.startsWith(name));
+  if (matches.length !== 1) return arg;
+  return separator === -1 ? matches[0] : `${matches[0]}${arg.slice(separator)}`;
+}
+
+// sudo accepts VAR=value environment assignments between its options
+// (parse_args.c is_envar: not starting with '/' or '=', containing '=').
+function isSudoEnvAssignment(arg) {
+  return arg[0] !== '/' && arg[0] !== '=' && arg.includes('=');
+}
 const EXEC_VALUE_FLAGS = new Set(['-a']);
 const ENV_VALUE_FLAGS = new Set(['-u', '--unset', '-C', '--chdir', '-a', '--argv0', '-S', '--split-string']);
 const SHELL_ASSIGNMENT = /^[A-Za-z_][A-Za-z0-9_]*=/;
@@ -651,13 +764,14 @@ const DD_LAUNCHER_OPTIONS = {
 };
 
 /** Return the command position after one explicitly supported launcher's options. */
+
 function ddLauncherCommandIndex(argv, index, name) {
-  const { values, optional, flags, nonCommand } = DD_LAUNCHER_OPTIONS[name];
+  const options = DD_LAUNCHER_OPTIONS[name];
   // GNU time uses getopt_long: unique prefixes resolve against its complete
   // eight-option table, including terminating help/version. Other launchers
   // retain their explicit spellings; this does not affect shell-keyword time.
   const timeLongOptions = name === 'time'
-    ? [...values, ...flags, ...nonCommand].filter(flag => flag.startsWith('--'))
+    ? [...options.values, ...options.flags, ...options.nonCommand].filter(flag => flag.startsWith('--'))
     : null;
   index += 1;
   while (index < argv.length) {
@@ -672,36 +786,45 @@ function ddLauncherCommandIndex(argv, index, name) {
       index += 1;
       continue;
     }
-    if (arg.startsWith('--')) {
-      const separator = arg.indexOf('=');
-      let flag = separator === -1 ? arg : arg.slice(0, separator);
-      if (timeLongOptions && !timeLongOptions.includes(flag)) {
-        const matches = timeLongOptions.filter(option => option.startsWith(flag));
-        if (matches.length !== 1) return argv.length;
-        [flag] = matches;
-      }
-      if (nonCommand && nonCommand.has(flag)) return argv.length;
-      if (values.has(flag)) index += separator === -1 ? 2 : 1;
-      else if (optional.has(flag) || (separator === -1 && flags.has(flag))) index += 1;
-      else return argv.length;
-      continue;
-    }
-    let consumesNext = false;
-    for (let offset = 1; offset < arg.length; offset += 1) {
-      const flag = `-${arg[offset]}`;
-      if (nonCommand && nonCommand.has(flag)) return argv.length;
-      if (values.has(flag)) {
-        consumesNext = offset + 1 === arg.length;
-        break;
-      }
-      if (optional.has(flag)) break;
-      if (!flags.has(flag)) return argv.length;
-    }
-    index += consumesNext ? 2 : 1;
+    const step = arg.startsWith('--')
+      ? ddLauncherLongOptionStep(arg, options, timeLongOptions)
+      : ddLauncherShortClusterStep(arg, options);
+    if (step === -1) return argv.length;
+    index += step;
   }
   // timeout's duration and taskset's mask or CPU list are data, followed by
   // exactly one executable position.
   return name === 'timeout' || name === 'taskset' ? index + 1 : index;
+}
+
+// One long option of a dd launcher: how many argv positions it consumes, or
+// -1 when the launcher can no longer reach a command position.
+function ddLauncherLongOptionStep(arg, options, timeLongOptions) {
+  const { values, optional, flags, nonCommand } = options;
+  const separator = arg.indexOf('=');
+  let flag = separator === -1 ? arg : arg.slice(0, separator);
+  if (timeLongOptions && !timeLongOptions.includes(flag)) {
+    const matches = timeLongOptions.filter(option => option.startsWith(flag));
+    if (matches.length !== 1) return -1;
+    [flag] = matches;
+  }
+  if (nonCommand && nonCommand.has(flag)) return -1;
+  if (values.has(flag)) return separator === -1 ? 2 : 1;
+  if (optional.has(flag) || (separator === -1 && flags.has(flag))) return 1;
+  return -1;
+}
+
+// One short-option cluster of a dd launcher, same contract as above.
+function ddLauncherShortClusterStep(arg, options) {
+  const { values, optional, flags, nonCommand } = options;
+  for (let offset = 1; offset < arg.length; offset += 1) {
+    const flag = `-${arg[offset]}`;
+    if (nonCommand && nonCommand.has(flag)) return -1;
+    if (values.has(flag)) return offset + 1 === arg.length ? 2 : 1;
+    if (optional.has(flag)) return 1;
+    if (!flags.has(flag)) return -1;
+  }
+  return 1;
 }
 
 /**
@@ -715,6 +838,7 @@ function ddLauncherCommandIndex(argv, index, name) {
  * @param {boolean} [allowDdLaunchers] opt-in; other shared callers retain their grammar
  * @returns {string[]} normalized argv, or [] when no literal command resolves
  */
+
 function unwrapLeadWrappers(tokens, allowShellBuiltins = true, allowDdLaunchers = false) {
   let argv = tokens.slice();
   let index = 0;
@@ -722,6 +846,133 @@ function unwrapLeadWrappers(tokens, allowShellBuiltins = true, allowDdLaunchers 
   let allowShellTime = allowShellBuiltins;
   const timeTokens = SHELL_TIME_TOKENS.get(tokens);
   let budget = tokens.reduce((size, token) => size + token.length + 1, 1);
+
+  // Each wrapper handler consumes its own options and returns true when no
+  // literal command can resolve behind it.
+  function isReservedTime() {
+    return allowDdLaunchers && allowShellTime && argv[index] === 'time' && timeTokens && timeTokens.has(index);
+  }
+  function skipReservedTime() {
+    // Current Bash accepts only raw -p and -- as reserved-time options.
+    // Quotes/escapes make them executable words, unlike external time argv.
+    // The next command/exec builtin or assignment keeps shell semantics.
+    index += 1;
+    if (argv[index] === '-p' && timeTokens.has(index)) index += 1;
+    if (argv[index] === '--' && timeTokens.has(index)) index += 1;
+    return false;
+  }
+  function skipCommandBuiltin() {
+    allowShellTime = false;
+    index += 1;
+    while (index < argv.length && argv[index].startsWith('-') && argv[index] !== '-') {
+      const flag = argv[index++];
+      if (flag === '--') break;
+      // -v/-V (including -pv) only describe names; no command executes.
+      if (!/^-[pVv]+$/.test(flag) || /[vV]/.test(flag)) return true;
+    }
+    allowAssignments = false;
+    return false;
+  }
+  function skipExecBuiltin() {
+    allowShellTime = false;
+    index += 1;
+    while (index < argv.length && argv[index].startsWith('-') && argv[index] !== '-') {
+      const flag = argv[index];
+      if (flag === '--') {
+        index += 1;
+        break;
+      }
+      const option = wrapperValueOption(flag, EXEC_VALUE_FLAGS);
+      const flagLetters = option ? flag.slice(1, flag.indexOf('a')) : flag.slice(1);
+      if (!/^[cl]*$/.test(flagLetters)) return true;
+      index += option && option.value === undefined ? 2 : 1;
+    }
+    // exec replaces the shell with an external executable; its argument
+    // 'command' is not the shell's builtin, and A=1 is not an assignment.
+    allowShellBuiltins = false;
+    allowAssignments = false;
+    return false;
+  }
+  function skipDdLauncher(base) {
+    index = ddLauncherCommandIndex(argv, index, base);
+    allowShellTime = false;
+    allowShellBuiltins = false;
+    allowAssignments = false;
+    return false;
+  }
+  function skipPrivilegeWrapper(base) {
+    allowShellTime = false;
+    allowShellBuiltins = false;
+    allowAssignments = true;
+    const valueFlags = base === 'sudo' ? SUDO_VALUE_FLAGS : DOAS_VALUE_FLAGS;
+    const nonExecFlags = base === 'sudo' ? SUDO_NON_EXEC_FLAGS : DOAS_NON_EXEC_FLAGS;
+    const booleanFlags = base === 'sudo' ? SUDO_BOOLEAN_FLAGS : DOAS_BOOLEAN_FLAGS;
+    index += 1;
+    while (index < argv.length) {
+      const flag = base === 'sudo' ? canonicalSudoLongOption(argv[index]) : argv[index];
+      if (flag === '--') {
+        index += 1;
+        break;
+      }
+      if (base === 'sudo' && isSudoEnvAssignment(flag)) {
+        index += 1;
+        continue;
+      }
+      if (flag === '-' || !flag.startsWith('-')) break;
+      if (isNonExecPrivilegeOption(flag, valueFlags, nonExecFlags, booleanFlags)) return true;
+      const option = wrapperValueOption(flag, valueFlags);
+      index += option && option.value === undefined ? 2 : 1;
+    }
+    return false;
+  }
+  function expandEnvSplit(option) {
+    const separate = option.value === undefined;
+    const source = separate ? argv[index + 1] : option.value;
+    if (source === undefined || budget-- <= 0) return true;
+    const expanded = splitEnvWords(source);
+    if (!expanded) return true;
+    argv = [...expanded, ...argv.slice(index + (separate ? 2 : 1))];
+    index = 0;
+    return false;
+  }
+  function skipEnvWrapper() {
+    allowShellTime = false;
+    allowShellBuiltins = false;
+    allowAssignments = true;
+    index += 1;
+    while (index < argv.length) {
+      const arg = argv[index];
+      if (arg === '--') {
+        index += 1;
+        break;
+      }
+      const option = wrapperValueOption(arg, ENV_VALUE_FLAGS);
+      if (option && (option.name === '-S' || option.name === '--split-string')) {
+        if (expandEnvSplit(option)) return true;
+        continue;
+      }
+      if (option) {
+        index += option.value === undefined ? 2 : 1;
+        continue;
+      }
+      if (arg.startsWith('-') || SHELL_ASSIGNMENT.test(arg)) {
+        index += 1;
+        continue;
+      }
+      break;
+    }
+    return false;
+  }
+  function leadWrapperFor(base) {
+    if (isReservedTime()) return skipReservedTime;
+    if (allowShellBuiltins && base === 'command') return skipCommandBuiltin;
+    if (allowShellBuiltins && base === 'exec') return skipExecBuiltin;
+    if (allowDdLaunchers && Object.prototype.hasOwnProperty.call(DD_LAUNCHER_OPTIONS, base)) return skipDdLauncher;
+    if (base === 'sudo' || base === 'doas') return skipPrivilegeWrapper;
+    if (base === 'env') return skipEnvWrapper;
+    return null;
+  }
+
   while (index < argv.length && budget-- > 0) {
     while (allowAssignments && index < argv.length && SHELL_ASSIGNMENT.test(argv[index])) {
       index += 1;
@@ -729,107 +980,9 @@ function unwrapLeadWrappers(tokens, allowShellBuiltins = true, allowDdLaunchers 
     }
     if (index >= argv.length) return [];
     const base = commandBasename(argv[index]);
-    if (allowDdLaunchers && allowShellTime && argv[index] === 'time' && timeTokens && timeTokens.has(index)) {
-      // Current Bash accepts only raw -p and -- as reserved-time options.
-      // Quotes/escapes make them executable words, unlike external time argv.
-      // The next command/exec builtin or assignment keeps shell semantics.
-      index += 1;
-      if (argv[index] === '-p' && timeTokens.has(index)) index += 1;
-      if (argv[index] === '--' && timeTokens.has(index)) index += 1;
-      continue;
-    }
-    if (allowShellBuiltins && base === 'command') {
-      allowShellTime = false;
-      index += 1;
-      while (index < argv.length && argv[index].startsWith('-') && argv[index] !== '-') {
-        const flag = argv[index++];
-        if (flag === '--') break;
-        // -v/-V (including -pv) only describe names; no command executes.
-        if (!/^-[pVv]+$/.test(flag) || /[vV]/.test(flag)) return [];
-      }
-      allowAssignments = false;
-      continue;
-    }
-    if (allowShellBuiltins && base === 'exec') {
-      allowShellTime = false;
-      index += 1;
-      while (index < argv.length && argv[index].startsWith('-') && argv[index] !== '-') {
-        const flag = argv[index];
-        if (flag === '--') {
-          index += 1;
-          break;
-        }
-        const option = wrapperValueOption(flag, EXEC_VALUE_FLAGS);
-        const flagLetters = option ? flag.slice(1, flag.indexOf('a')) : flag.slice(1);
-        if (!/^[cl]*$/.test(flagLetters)) return [];
-        index += option && option.value === undefined ? 2 : 1;
-      }
-      // exec replaces the shell with an external executable; its argument
-      // 'command' is not the shell's builtin, and A=1 is not an assignment.
-      allowShellBuiltins = false;
-      allowAssignments = false;
-      continue;
-    }
-    if (allowDdLaunchers && Object.prototype.hasOwnProperty.call(DD_LAUNCHER_OPTIONS, base)) {
-      index = ddLauncherCommandIndex(argv, index, base);
-      allowShellTime = false;
-      allowShellBuiltins = false;
-      allowAssignments = false;
-      continue;
-    }
-    if (base === 'sudo' || base === 'doas') {
-      allowShellTime = false;
-      allowShellBuiltins = false;
-      allowAssignments = true;
-      const valueFlags = base === 'sudo' ? SUDO_VALUE_FLAGS : DOAS_VALUE_FLAGS;
-      index += 1;
-      while (index < argv.length) {
-        const flag = argv[index];
-        if (flag === '--') {
-          index += 1;
-          break;
-        }
-        if (flag === '-' || !flag.startsWith('-')) break;
-        const option = wrapperValueOption(flag, valueFlags);
-        index += option && option.value === undefined ? 2 : 1;
-      }
-      continue;
-    }
-    if (base === 'env') {
-      allowShellTime = false;
-      allowShellBuiltins = false;
-      allowAssignments = true;
-      index += 1;
-      while (index < argv.length) {
-        const arg = argv[index];
-        if (arg === '--') {
-          index += 1;
-          break;
-        }
-        const option = wrapperValueOption(arg, ENV_VALUE_FLAGS);
-        if (option && (option.name === '-S' || option.name === '--split-string')) {
-          const separate = option.value === undefined;
-          const source = separate ? argv[index + 1] : option.value;
-          if (source === undefined || budget-- <= 0) return [];
-          const expanded = splitEnvWords(source);
-          if (!expanded) return [];
-          argv = [...expanded, ...argv.slice(index + (separate ? 2 : 1))];
-          index = 0;
-          continue;
-        }
-        if (option) {
-          index += option.value === undefined ? 2 : 1;
-          continue;
-        }
-        if (arg.startsWith('-') || SHELL_ASSIGNMENT.test(arg)) {
-          index += 1;
-          continue;
-        }
-        break;
-      }
-      continue;
-    }
-    return argv.slice(index);
+    const wrapper = leadWrapperFor(base);
+    if (!wrapper) return argv.slice(index);
+    if (wrapper(base)) return [];
   }
   return [];
 }
@@ -893,8 +1046,7 @@ function isDestructiveQuoteAware(raw, depth = 0) {
   for (const body of collectExecutableBodies(executable)) {
     for (const tokens of quoteAwareSegments(body)) {
       if (tokens.length === 0) continue;
-      if (isDestructiveRm(tokens)) return true;
-      if (isDestructiveGit(tokens)) return true;
+      if (isDestructiveRmOrGit(tokens)) return true;
       if (isDestructiveDd(tokens)) return true;
       if (isDestructiveSqlClient(tokens)) return true;
       if (isDestructiveFindExec(tokens)) return true;
@@ -951,6 +1103,23 @@ function commandBasename(token) {
 function isDestructiveDd(tokens, allowShellBuiltins = true) {
   const argv = unwrapLeadWrappers(tokens, allowShellBuiltins, true);
   return commandBasename(argv[0]) === 'dd' && argv.slice(1).some(operand => /^(?:if|of)=/i.test(operand));
+}
+
+/**
+ * rm/Git check on the segment as written and on the command it actually runs.
+ * Both detectors key on argv[0], so `sudo rm -rf build`, `command rm -rf build`
+ * and `env git reset --hard` read as calls to the wrapper and passed (#2832).
+ * unwrapLeadWrappers resolves the wrapped command word the same way the dd
+ * and `sh -c` paths already do. Argument text is left alone: in
+ * `echo sudo rm -rf x` the resolved command is still `echo`.
+ *
+ * @param {string[]} tokens
+ * @returns {boolean}
+ */
+function isDestructiveRmOrGit(tokens) {
+  if (isDestructiveRm(tokens) || isDestructiveGit(tokens)) return true;
+  const argv = unwrapLeadWrappers(tokens, true, true);
+  return argv.length > 0 && (isDestructiveRm(argv) || isDestructiveGit(argv));
 }
 
 /**
@@ -1067,6 +1236,113 @@ function pushTargetsSharedBranch(rest) {
   return false;
 }
 
+/** Short-option cluster carrying `letter` (`-f`, `-fd`); long options never match. */
+function hasShortFlag(token, letter) {
+  return token.startsWith('-') && !token.startsWith('--') && token.slice(1).includes(letter);
+}
+
+// `git checkout -- <path>`, `git checkout .`, and the force forms
+// (`--force` / `-f`) all discard uncommitted working-tree changes,
+// mirroring the `switch` handler.
+function isDestructiveGitCheckout(rest) {
+  return rest.some(t => t === '--' || t === '.' || t === '--force' || hasShortFlag(t, 'f'));
+}
+
+// `git switch` can discard local working-tree changes in three forms:
+//   --discard-changes           explicit discard
+//   --force / -f                ignore conflicts and overwrite
+//   -C <branch>                 force-create (overwrites existing branch)
+// Short combined form: -f, -fC, -Cf, -C
+function isDestructiveGitSwitch(rest) {
+  return rest.some(t => t === '--discard-changes' || t === '--force'
+    || (t.startsWith('-') && !t.startsWith('--') && /[fC]/.test(t.slice(1))));
+}
+
+// Only `--force-with-lease` qualifies as a safety-checked force.
+// `--force-if-includes` is a no-op when used WITHOUT
+// `--force-with-lease` (per git-scm.com/docs/git-push), and when
+// combined with a bare `--force` the bare force is still in effect.
+// So `--force --force-if-includes` must be treated as destructive.
+//
+// A `+` refspec prefix (e.g. `git push origin +main`,
+// `+refs/heads/main:refs/heads/main`) also forces a non-fast-forward
+// update of that ref and is destructive on its own.
+function isDestructiveGitPush(rest) {
+  let withLease = false;
+  let bareForce = false;
+  let plusRefspecForce = false;
+  for (const t of rest) {
+    if (t === '--force-with-lease' || t.startsWith('--force-with-lease=')) {
+      withLease = true;
+      continue;
+    }
+    if (t === '--force' || t.startsWith('--force=') || hasShortFlag(t, 'f')) {
+      bareForce = true;
+      continue;
+    }
+    // Refspec prefix: `+<src>[:<dst>]`. Match tokens like `+main`,
+    // `+refs/heads/main`, `+HEAD:branch`, `+:branch`. Exclude bare
+    // `+` and numeric-only `+123` which are not refspecs.
+    if (t.startsWith('+') && t.length > 1 && /^\+(?:[a-zA-Z_/.:]|HEAD)/.test(t)) plusRefspecForce = true;
+  }
+  if (bareForce || (plusRefspecForce && !withLease)) return true;
+  // A lease-checked force still rewrites a shared branch's history.
+  return withLease && pushTargetsSharedBranch(rest);
+}
+
+// `git branch -D` (long spelling: `--delete --force`) deletes a
+// branch even when it is unmerged, orphaning its commits. Plain
+// `-d` refuses when unmerged, so it is safe to leave ungated.
+function isDestructiveGitBranch(rest) {
+  let del = false;
+  let force = false;
+  for (const t of rest) {
+    if (t === '--delete') { del = true; continue; }
+    if (t === '--force') { force = true; continue; }
+    if (!t.startsWith('-') || t.startsWith('--')) continue;
+    const body = t.slice(1);
+    if (body.includes('D')) return true;
+    if (body.includes('d')) del = true;
+    if (body.includes('f')) force = true;
+  }
+  return del && force;
+}
+
+// `git restore <path>` overwrites the working tree from the index
+// by default, the modern spelling of gated `git checkout -- <path>`.
+// Only `--staged` alone is non-destructive (it leaves the file on
+// disk untouched); `--worktree` (the default target) is destructive.
+function isDestructiveGitRestore(rest) {
+  const has = (long, short) => rest.some(t => t === long || hasShortFlag(t, short));
+  const staged = has('--staged', 'S');
+  const worktree = has('--worktree', 'W');
+  return worktree || !staged;
+}
+
+// Subcommand -> predicate over the tokens after it. Each entry is the
+// smallest rule that identifies the destructive spelling of that command.
+const DESTRUCTIVE_GIT_SUBCOMMANDS = new Map([
+  ['reset', rest => rest.includes('--hard')],
+  ['checkout', isDestructiveGitCheckout],
+  // `git clean -f`, `-fd`, `-fdx`, `-df`, `--force`
+  ['clean', rest => rest.some(t => t === '--force' || hasShortFlag(t, 'f'))],
+  ['push', isDestructiveGitPush],
+  ['commit', rest => rest.includes('--amend')],
+  // `git rm -r` / `-rf` / `-r -f`: destructive within the index too.
+  ['rm', rest => rest.some(t => t.startsWith('-') && !t.startsWith('--') && /[rR]/.test(t.slice(1)))],
+  ['switch', isDestructiveGitSwitch],
+  ['branch', isDestructiveGitBranch],
+  // `drop` destroys one stash entry, `clear` the entire stash.
+  // `list`, `show`, `pop` and `apply` keep the entries recoverable.
+  ['stash', rest => rest[0] === 'drop' || rest[0] === 'clear'],
+  // `expire` and `delete` remove the recovery net that makes every
+  // other gated git command recoverable.
+  ['reflog', rest => rest[0] === 'expire' || rest[0] === 'delete'],
+  // `git update-ref -d <ref>` deletes a ref directly.
+  ['update-ref', rest => rest.includes('-d') || rest.includes('--delete')],
+  ['restore', isDestructiveGitRestore]
+]);
+
 /**
  * Detect destructive `git` invocations: `reset --hard`, `checkout --`,
  * `clean -f...`, `push --force` (`--force-with-lease` only to a shared
@@ -1077,149 +1353,12 @@ function pushTargetsSharedBranch(rest) {
  * @param {string[]} tokens
  * @returns {boolean}
  */
+
 function isDestructiveGit(tokens) {
   const sub = findGitSubcommand(tokens);
   if (!sub) return false;
-  const { command, rest } = sub;
-
-  if (command === 'reset') {
-    return rest.includes('--hard');
-  }
-
-  if (command === 'checkout') {
-    // `git checkout -- <path>`, `git checkout .`, and the force forms
-    // (`--force` / `-f`) all discard uncommitted working-tree changes,
-    // mirroring the `switch` handler below.
-    return rest.some(t => {
-      if (t === '--' || t === '.' || t === '--force') return true;
-      if (!t.startsWith('-') || t.startsWith('--')) return false;
-      return t.slice(1).includes('f');
-    });
-  }
-
-  if (command === 'clean') {
-    // `git clean -f`, `-fd`, `-fdx`, `-df`, `--force`
-    return rest.some(t => {
-      if (t === '--force') return true;
-      if (!t.startsWith('-') || t.startsWith('--')) return false;
-      return t.slice(1).includes('f');
-    });
-  }
-
-  if (command === 'push') {
-    // Only `--force-with-lease` qualifies as a safety-checked force.
-    // `--force-if-includes` is a no-op when used WITHOUT
-    // `--force-with-lease` (per git-scm.com/docs/git-push), and when
-    // combined with a bare `--force` the bare force is still in effect.
-    // So `--force --force-if-includes` must be treated as destructive.
-    //
-    // A `+` refspec prefix (e.g. `git push origin +main`,
-    // `+refs/heads/main:refs/heads/main`) also forces a non-fast-forward
-    // update of that ref and is destructive on its own.
-    let withLease = false;
-    let bareForce = false;
-    let plusRefspecForce = false;
-    for (const t of rest) {
-      if (t === '--force-with-lease' || t.startsWith('--force-with-lease=')) {
-        withLease = true;
-        continue;
-      }
-      if (t === '--force' || t.startsWith('--force=')) {
-        bareForce = true;
-        continue;
-      }
-      if (t.startsWith('-') && !t.startsWith('--') && t.slice(1).includes('f')) {
-        bareForce = true;
-        continue;
-      }
-      // Refspec prefix: `+<src>[:<dst>]`. Match tokens like `+main`,
-      // `+refs/heads/main`, `+HEAD:branch`, `+:branch`. Exclude bare
-      // `+` and numeric-only `+123` which are not refspecs.
-      if (t.startsWith('+') && t.length > 1 && /^\+(?:[a-zA-Z_/.:]|HEAD)/.test(t)) {
-        plusRefspecForce = true;
-      }
-    }
-    if (bareForce || (plusRefspecForce && !withLease)) return true;
-    // A lease-checked force still rewrites a shared branch's history.
-    return withLease && pushTargetsSharedBranch(rest);
-  }
-
-  if (command === 'commit') {
-    return rest.includes('--amend');
-  }
-
-  if (command === 'rm') {
-    // `git rm -r` / `-rf` / `-r -f` — destructive within the index too.
-    let hasR = false;
-    for (const t of rest) {
-      if (!t.startsWith('-') || t.startsWith('--')) continue;
-      if (/[rR]/.test(t.slice(1))) hasR = true;
-    }
-    return hasR;
-  }
-
-  if (command === 'switch') {
-    // `git switch` can discard local working-tree changes in three forms:
-    //   --discard-changes           explicit discard
-    //   --force / -f                ignore conflicts and overwrite
-    //   -C <branch>                 force-create (overwrites existing branch)
-    return rest.some(t => {
-      if (t === '--discard-changes' || t === '--force') return true;
-      if (!t.startsWith('-') || t.startsWith('--')) return false;
-      // Short combined form: -f, -fC, -Cf, -C
-      const body = t.slice(1);
-      return /[fC]/.test(body);
-    });
-  }
-
-  if (command === 'branch') {
-    // `git branch -D` (long spelling: `--delete --force`) deletes a
-    // branch even when it is unmerged, orphaning its commits. Plain
-    // `-d` refuses when unmerged, so it is safe to leave ungated.
-    let del = false;
-    let force = false;
-    for (const t of rest) {
-      if (t === '--delete') { del = true; continue; }
-      if (t === '--force') { force = true; continue; }
-      if (!t.startsWith('-') || t.startsWith('--')) continue;
-      const body = t.slice(1);
-      if (body.includes('D')) return true;
-      if (body.includes('d')) del = true;
-      if (body.includes('f')) force = true;
-    }
-    return del && force;
-  }
-
-  if (command === 'stash') {
-    // `drop` destroys one stash entry, `clear` the entire stash.
-    // `list`, `show`, `pop` and `apply` keep the entries recoverable.
-    return rest[0] === 'drop' || rest[0] === 'clear';
-  }
-
-  if (command === 'reflog') {
-    // `expire` and `delete` remove the recovery net that makes every
-    // other gated git command recoverable.
-    return rest[0] === 'expire' || rest[0] === 'delete';
-  }
-
-  if (command === 'update-ref') {
-    // `git update-ref -d <ref>` deletes a ref directly.
-    return rest.includes('-d') || rest.includes('--delete');
-  }
-
-  if (command === 'restore') {
-    // `git restore <path>` overwrites the working tree from the index
-    // by default, the modern spelling of gated `git checkout -- <path>`.
-    // Only `--staged` alone is non-destructive (it leaves the file on
-    // disk untouched); `--worktree` (the default target) is destructive.
-    const has = (long, short) => rest.some(t =>
-      t === long || (t.startsWith('-') && !t.startsWith('--') && t.slice(1).includes(short)));
-    const staged = has('--staged', 'S');
-    const worktree = has('--worktree', 'W');
-    return worktree || !staged;
-  }
-
-  return false;
+  const check = DESTRUCTIVE_GIT_SUBCOMMANDS.get(sub.command);
+  return check ? check(sub.rest) : false;
 }
 
 /**
@@ -1298,6 +1437,7 @@ const FIND_EXEC_ACTIONS = new Set(['-exec', '-execdir', '-ok', '-okdir']);
  * @param {string | string[]} command raw segment or already dequoted argv
  * @returns {boolean}
  */
+
 function isDestructiveFindExec(command) {
   const quoteAware = Array.isArray(command);
   const tokens = quoteAware ? command : tokenize(String(command || '').trim());
@@ -1314,28 +1454,39 @@ function isDestructiveFindExec(command) {
       continue;
     }
     if (!FIND_EXEC_ACTIONS.has(action)) continue;
-    const execTokens = [];
-    for (index += 1; index < tokens.length; index += 1) {
-      const token = tokens[index];
-      if (token === ';' || token === '\\;' || (
-        token === '+' && (action === '-exec' || action === '-execdir') &&
-        execTokens[execTokens.length - 1] === '{}'
-      )) break;
-      execTokens.push(token);
-    }
-    if (execTokens.length === 0) continue;
-    // The legacy raw fallback can split quoted prose into apparent actions.
-    // Preserve its old rm/Git coverage, but classify dd only from real argv.
-    if (quoteAware && isDestructiveDd(execTokens, false)) return true;
-    const baseCmd = commandBasename(execTokens[0]);
-    // Preserve main's existing rm/rmdir/unlink and git-reset handling.
-    if (baseCmd === 'rm' || baseCmd === 'rmdir' || baseCmd === 'unlink') return true;
-    if (baseCmd === 'git') {
-      const sub = findGitSubcommand(execTokens);
-      if (sub && sub.command === 'reset' && sub.rest.includes('--hard')) return true;
-    }
+    const exec = readFindExecArgv(tokens, index + 1, action);
+    index = exec.index;
+    if (exec.argv.length && isDestructiveFindExecArgv(exec.argv, quoteAware)) return true;
   }
   return false;
+}
+
+// Collect the argv of one find action starting at `start`. Returns the argv
+// and the index of its terminator (or the end of the token list).
+function readFindExecArgv(tokens, start, action) {
+  const argv = [];
+  let index = start;
+  for (; index < tokens.length; index += 1) {
+    const token = tokens[index];
+    if (token === ';' || token === '\\;' || (
+      token === '+' && (action === '-exec' || action === '-execdir') &&
+      argv[argv.length - 1] === '{}'
+    )) break;
+    argv.push(token);
+  }
+  return { argv, index };
+}
+
+function isDestructiveFindExecArgv(argv, quoteAware) {
+  // The legacy raw fallback can split quoted prose into apparent actions.
+  // Preserve its old rm/Git coverage, but classify dd only from real argv.
+  if (quoteAware && isDestructiveDd(argv, false)) return true;
+  const baseCmd = commandBasename(argv[0]);
+  // Preserve main's existing rm/rmdir/unlink and git-reset handling.
+  if (baseCmd === 'rm' || baseCmd === 'rmdir' || baseCmd === 'unlink') return true;
+  if (baseCmd !== 'git') return false;
+  const sub = findGitSubcommand(argv);
+  return Boolean(sub && sub.command === 'reset' && sub.rest.includes('--hard'));
 }
 
 function isDestructiveBash(command) {
@@ -1377,9 +1528,7 @@ function isDestructiveBash(command) {
     const stripped = stripQuotedStrings(segment);
     if (DESTRUCTIVE_SQL.test(stripped)) return true;
     if (extra && extra.test(stripped)) return true;
-    const tokens = tokenize(segment);
-    if (isDestructiveRm(tokens)) return true;
-    if (isDestructiveGit(tokens)) return true;
+    if (isDestructiveRmOrGit(tokenize(segment))) return true;
   }
 
   // Quote-aware pass: closes the quoted-command-word, newline-separator,
@@ -1817,35 +1966,49 @@ function inRange(code, [lo, hi]) {
   return code >= lo && code <= hi;
 }
 
+
 function sanitizePath(filePath) {
-  // Strip control chars (including null), bidi overrides, separators,
-  // and the dangerous invisible characters defined by the constants
-  // above (mirroring scripts/ci/check-unicode-safety.js), so a denial
-  // message cannot carry content a human reviewer cannot see.
   let sanitized = '';
   for (const char of String(filePath || '')) {
-    const code = char.codePointAt(0);
-    const isAsciiControl =
-      code <= ASCII_CONTROL_MAX || code === ASCII_DELETE || inRange(code, C1_CONTROLS);
-    const isBidiOverride =
-      inRange(code, BIDI_MARKS) || inRange(code, BIDI_EMBEDDINGS) || inRange(code, BIDI_ISOLATES);
-    const isUnicodeSeparator = code === LINE_SEPARATOR || code === PARAGRAPH_SEPARATOR;
-    const isDangerousInvisible =
-      inRange(code, ZERO_WIDTHS) ||
-      code === WORD_JOINER ||
-      code === BYTE_ORDER_MARK ||
-      code === SOFT_HYPHEN ||
-      inRange(code, VARIATION_SELECTORS) ||
-      inRange(code, VARIATION_SUPPLEMENTS) ||
-      inRange(code, TAG_BLOCK) ||
-      code === MONGOLIAN_VOWEL_SEPARATOR ||
-      code === HANGUL_CHOSEONG_FILLER ||
-      code === HANGUL_JUNGSEONG_FILLER ||
-      code === HANGUL_FILLER ||
-      inRange(code, INVISIBLE_MATH_OPERATORS);
-    sanitized += isAsciiControl || isBidiOverride || isUnicodeSeparator || isDangerousInvisible ? ' ' : char;
+    sanitized += isUnsafePathCodePoint(char.codePointAt(0)) ? ' ' : char;
   }
   return sanitized.trim().slice(0, SANITIZED_PATH_MAX_LENGTH);
+}
+
+// Control chars (including null), bidi overrides, separators, and the
+// dangerous invisible characters defined by the constants above (mirroring
+// scripts/ci/check-unicode-safety.js), so a denial message cannot carry
+// content a human reviewer cannot see.
+function isUnsafePathCodePoint(code) {
+  return isAsciiControlCodePoint(code)
+    || isBidiOverrideCodePoint(code)
+    || code === LINE_SEPARATOR || code === PARAGRAPH_SEPARATOR
+    || isDangerousInvisibleCodePoint(code);
+}
+
+function isAsciiControlCodePoint(code) {
+  return code <= ASCII_CONTROL_MAX || code === ASCII_DELETE || inRange(code, C1_CONTROLS);
+}
+
+function isBidiOverrideCodePoint(code) {
+  return inRange(code, BIDI_MARKS) || inRange(code, BIDI_EMBEDDINGS) || inRange(code, BIDI_ISOLATES);
+}
+
+function isDangerousInvisibleCodePoint(code) {
+  return (
+    inRange(code, ZERO_WIDTHS) ||
+    code === WORD_JOINER ||
+    code === BYTE_ORDER_MARK ||
+    code === SOFT_HYPHEN ||
+    inRange(code, VARIATION_SELECTORS) ||
+    inRange(code, VARIATION_SUPPLEMENTS) ||
+    inRange(code, TAG_BLOCK) ||
+    code === MONGOLIAN_VOWEL_SEPARATOR ||
+    code === HANGUL_CHOSEONG_FILLER ||
+    code === HANGUL_JUNGSEONG_FILLER ||
+    code === HANGUL_FILLER ||
+    inRange(code, INVISIBLE_MATH_OPERATORS)
+  );
 }
 
 function normalizeForMatch(value) {
@@ -1854,79 +2017,45 @@ function normalizeForMatch(value) {
     .toLowerCase();
 }
 
-function isClaudeSettingsPath(filePath) {
-  const normalized = normalizeForMatch(filePath);
-  return /(^|\/)\.claude\/settings(?:\.[^/]+)?\.json$/.test(normalized);
-}
-
 function isReadOnlyGitIntrospection(command) {
   const trimmed = String(command || '').trim();
-  if (!trimmed || /[\r\n;&|><`$()]/.test(trimmed)) {
-    return false;
-  }
-
-  const segments = splitCommandSegments(trimmed);
-  if (segments.length !== 1) {
-    return false;
-  }
-
+  if (!trimmed || /[\r\n;&|><`$()]/.test(trimmed)) return false;
+  if (splitCommandSegments(trimmed).length !== 1) return false;
   const tokens = tokenizeAllowlistedShellWords(trimmed);
-  if (!tokens) {
-    return false;
-  }
-  if (commandBasename(tokens[0]) !== 'git' || tokens.length < 2) {
-    return false;
-  }
+  if (!tokens || commandBasename(tokens[0]) !== 'git' || tokens.length < 2) return false;
+  const check = READ_ONLY_GIT_SUBCOMMANDS.get(tokens[1].toLowerCase());
+  return check ? check(tokens.slice(2)) : false;
+}
 
-  const subcommand = tokens[1].toLowerCase();
-  const args = tokens.slice(2);
+const READ_ONLY_GIT_SHOW_REF = /^[a-zA-Z0-9._:/ -]+$/;
+const READ_ONLY_GIT_DIFF_ARGS = new Set(['--name-only', '--name-status', '--cached', '--staged', '--stat']);
 
-  if (subcommand === 'status') {
-    return args.every(arg => ['--porcelain', '--short', '--branch'].includes(arg));
+// Permits: git show <ref>, git show --stat, git show --name-only,
+// git show <ref> --stat, git show <ref> --name-only
+function isReadOnlyGitShow(args) {
+  if (args.length === 1) {
+    const arg = args[0];
+    if (arg === '--stat' || arg === '--name-only') return true;
+    return !arg.startsWith('--') && READ_ONLY_GIT_SHOW_REF.test(arg);
   }
-
-  if (subcommand === 'diff') {
-    const allowedDiffArgs = new Set(['--name-only', '--name-status', '--cached', '--staged', '--stat']);
-    // git diff without arguments is read-only introspection
-    if (args.length === 0) return true;
-    return args.length <= 2 && args.every(arg => allowedDiffArgs.has(arg));
+  if (args.length === 2) {
+    const [first, second] = args;
+    return !first.startsWith('--') && READ_ONLY_GIT_SHOW_REF.test(first) && (second === '--stat' || second === '--name-only');
   }
-
-  if (subcommand === 'log') {
-    return args.every(arg => arg === '--oneline' || /^--max-count=\d+$/.test(arg));
-  }
-
-  if (subcommand === 'show') {
-    // Permite: git show <ref>, git show --stat, git show --name-only,
-    // git show <ref> --stat, git show <ref> --name-only
-    if (args.length === 0) return false;
-    if (args.length === 1) {
-      const arg = args[0];
-      if (arg === '--stat' || arg === '--name-only') return true;
-      // ref
-      return !arg.startsWith('--') && /^[a-zA-Z0-9._:/ -]+$/.test(arg);
-    }
-    if (args.length === 2) {
-      const [first, second] = args;
-      // ref + flag
-      if (!first.startsWith('--') && /^[a-zA-Z0-9._:/ -]+$/.test(first) && (second === '--stat' || second === '--name-only')) {
-        return true;
-      }
-      return false;
-    }
-    return false;
-  }
-
-  if (subcommand === 'branch') {
-    return args.length === 1 && args[0] === '--show-current';
-  }
-
-  if (subcommand === 'rev-parse') {
-    return args.length === 2 && args[0] === '--abbrev-ref' && /^head$/i.test(args[1]);
-  }
-
   return false;
 }
+
+// Subcommand -> predicate over its arguments. Only these exact spellings are
+// treated as read-only introspection that skips the shell gate.
+const READ_ONLY_GIT_SUBCOMMANDS = new Map([
+  ['status', args => args.every(arg => ['--porcelain', '--short', '--branch'].includes(arg))],
+  // git diff without arguments is read-only introspection
+  ['diff', args => args.length === 0 || (args.length <= 2 && args.every(arg => READ_ONLY_GIT_DIFF_ARGS.has(arg)))],
+  ['log', args => args.every(arg => arg === '--oneline' || /^--max-count=\d+$/.test(arg))],
+  ['show', isReadOnlyGitShow],
+  ['branch', args => args.length === 1 && args[0] === '--show-current'],
+  ['rev-parse', args => args.length === 2 && args[0] === '--abbrev-ref' && /^head$/i.test(args[1])]
+]);
 
 // --- Gate messages ---
 
@@ -1971,7 +2100,7 @@ function firstTouchGateMsg(filePath, isWrite, cls, profile) {
  * (#2142). Carries the denial ordinal so consecutive denials differ
  * textually, and a one-line recovery hint instead of the multi-line block.
  */
-function condensedGateMsg(action, filePath, ordinal, cls = 'code', targetNote = '', profile = null, missNote = '') {
+function condensedGateMsg(action, filePath, ordinal, { cls = 'code', targetNote = '', profile = null, missNote = '' } = {}) {
   const safe = sanitizePath(filePath);
   const hint = condensedHintFor(cls, action === 'creation', profile, questionOptions());
   return (
@@ -1980,7 +2109,9 @@ function condensedGateMsg(action, filePath, ordinal, cls = 'code', targetNote = 
     `${batchSiblingWarning(safe)} ` +
     (missNote ? `${missNote} ` : '') +
     (targetNote ? `${targetNote} ` : '') +
-    '(Use GATEGUARD_EXEMPT_GLOBS for path-scoped exemptions; GATEGUARD_FACT_FORCE_MAX_DENIALS caps denials per session; ECC_GATEGUARD=off disables this gate.)'
+    (showRecoveryHints()
+      ? '(Use GATEGUARD_EXEMPT_GLOBS for path-scoped exemptions; GATEGUARD_FACT_FORCE_MAX_DENIALS caps denials per session; ECC_GATEGUARD=off disables this gate.)'
+      : '')
   );
 }
 
@@ -2018,7 +2149,7 @@ function firstTouchDenial(filePath, { isWrite, denials, cls, sensitive, linked =
   });
   if (denials > getFullDenialBudget()) {
     const action = isWrite ? 'creation' : 'edit';
-    return denyResult(condensedGateMsg(action, filePath, denials, cls, targetNote, profile, missNote), { includeRecoveryHint: false });
+    return denyResult(condensedGateMsg(action, filePath, denials, { cls, targetNote, profile, missNote }), { includeRecoveryHint: false });
   }
   const message = withNoteBeforeRetry(firstTouchGateMsg(filePath, isWrite, cls, profile), missNote);
   return denyResult(targetNote ? withNoteBeforeRetry(message, targetNote) : message, {
@@ -2055,6 +2186,7 @@ function routineShellMsg(toolName) {
 }
 
 function withRecoveryHint(message, hookIds = [EDIT_WRITE_HOOK_ID], narrowRecoveryHint = '') {
+  if (!showRecoveryHints()) return message;
   const disableTargets = hookIds.map(hookId => `\`${hookId}\``).join(' or ');
   const recoveryLines = narrowRecoveryHint ? [narrowRecoveryHint, ''] : [];
   return [
@@ -2316,7 +2448,9 @@ function flushMetrics() {
 
 function exemptReason(filePath, data) {
   if (!filePath) return 'no-path';
-  if (isClaudeSettingsPath(filePath)) return 'claude-settings';
+  // .claude/settings*.json holds the switches for GateGuard and the other
+  // hooks, so a first-touch edit there must go through the same gate as any
+  // other new target. Exempting it let an agent disable the guard (#3845).
   return isExemptPath(filePath, data) ? 'exempt-glob' : '';
 }
 
@@ -2330,6 +2464,7 @@ function run(rawInput) {
     flushMetrics();
   }
 }
+
 
 function gate(rawInput) {
   let data;
@@ -2348,210 +2483,257 @@ function gate(rawInput) {
 
   const rawToolName = data.tool_name || '';
   const toolInput = data.tool_input || {};
-  // Normalize: case-insensitive matching via lookup map
-  const TOOL_MAP = { edit: 'Edit', write: 'Write', multiedit: 'MultiEdit', notebookedit: 'NotebookEdit', bash: 'Bash', powershell: 'PowerShell' };
   const toolName = TOOL_MAP[rawToolName.toLowerCase()] || rawToolName;
   if (isMetricsEnabled()) {
     pendingMetrics = { tool: toolName, data, entries: [], keys: new Set() };
   }
-  const inSubagent = isSubagentInvocation(data);
   let turnScanner = null;
-  const getTurnScan = () => (turnScanner || (turnScanner = createTurnScanner(data)))();
+  const ctx = {
+    rawInput,
+    data,
+    toolInput,
+    toolName,
+    inSubagent: isSubagentInvocation(data),
+    getTurnScan: () => (turnScanner || (turnScanner = createTurnScanner(data)))()
+  };
 
-  if (toolName === 'Edit' || toolName === 'Write' || toolName === 'NotebookEdit') {
-    const filePath = (toolName === 'NotebookEdit' ? toolInput.notebook_path : toolInput.file_path) || '';
+  if (toolName === 'Edit' || toolName === 'Write' || toolName === 'NotebookEdit') return gateSingleEdit(ctx);
+  if (toolName === 'MultiEdit') return gateMultiEdit(ctx);
+  if (toolName === 'Bash' || toolName === 'PowerShell') return gateShell(ctx);
+  return rawInput; // allow
+}
+
+// Normalize: case-insensitive matching via lookup map
+const TOOL_MAP = { edit: 'Edit', write: 'Write', multiedit: 'MultiEdit', notebookedit: 'NotebookEdit', bash: 'Bash', powershell: 'PowerShell' };
+
+// --- Edit / Write / NotebookEdit ---
+
+function gateSingleEdit(ctx) {
+  const { toolName, toolInput, data, rawInput, inSubagent } = ctx;
+  const filePath = (toolName === 'NotebookEdit' ? toolInput.notebook_path : toolInput.file_path) || '';
+  const exempt = exemptReason(filePath, data);
+  if (exempt) {
+    recordDecision('pass-exempt', exempt, { target: filePath });
+    return rawInput; // allow
+  }
+
+  if (inSubagent) {
+    const denial = subagentRestrictedDenial(filePath, data, toolName === 'Write');
+    if (!denial) recordDecision('pass-subagent', 'subagent', { target: filePath });
+    return denial || rawInput;
+  }
+
+  const fileKey = canonicalPathKey(filePath, data);
+  if (!isChecked([fileKey, filePath])) return firstTouchSingleEdit(ctx, filePath, fileKey);
+
+  recordDecision('pass-checked', 'checked', { target: filePath });
+  return rawInput; // allow
+}
+
+function singleEditProfile(ctx, filePath, cls, restricted) {
+  const { toolName, toolInput, data } = ctx;
+  if (restricted || toolName === 'NotebookEdit' || !needsProfile(toolName, cls)) return null;
+  return changeProfileFor(toolName, filePath, [toolInput], toolInput.content, data);
+}
+
+// see docs/gateguard/design-notes.md#sibling-collapse
+function newFileCollapse(ctx, filePath, cls, isNewFile, restricted) {
+  if (!isNewFile || restricted) return { sibling: null, dirGate: undefined };
+  const turnId = currentTurnId(ctx.getTurnScan());
+  const collapsible = turnId !== null || !transcriptPathFor(ctx.data);
+  const gateKey = collapsible ? newFileGateKey(filePath, ctx.data, cls) : null;
+  const sibling = gateKey ? findSiblingGate(gateKey, turnId) : null;
+  const dirGate = gateKey ? { key: gateKey, turn: turnId, first: sanitizePath(filePath) } : undefined;
+  return { sibling, dirGate };
+}
+
+function firstTouchSingleEdit(ctx, filePath, fileKey) {
+  const { toolName, data, rawInput, getTurnScan } = ctx;
+  const isNewFile = toolName === 'Write' && isNewFileTarget(filePath, data);
+  const cls = classifyTargetFor(filePath, data);
+  // see docs/gateguard/design-notes.md#sensitive-targets
+  const { sensitive, linked, restricted } = allowanceFacts(filePath, data);
+  const credit = restricted ? null : findCreditingSearch(getTurnScan(), filePath, isNewFile, data);
+  if (credit) {
+    if (!markCheckedAndCountCredit(fileKey, cls)) {
+      return allowWithStateWarning();
+    }
+    recordDecision('credit', 'prior-search', { target: filePath, cls, sensitive });
+    return { additionalContext: creditNote(credit, filePath), exitCode: 0 };
+  }
+  const profile = singleEditProfile(ctx, filePath, cls, restricted);
+  if (toolName === 'Edit' && isTrivialChange(cls, restricted, profile)) {
+    if (!countTrivialAllow()) {
+      return allowWithStateWarning();
+    }
+    recordDecision('trivial', 'comment-whitespace', { target: filePath, cls, sensitive, profile });
+    return { additionalContext: trivialNote(filePath), exitCode: 0 };
+  }
+  const { sibling, dirGate } = newFileCollapse(ctx, filePath, cls, isNewFile, restricted);
+  if (sibling) {
+    if (!markCheckedAndCountSibling(fileKey)) {
+      return allowWithStateWarning();
+    }
+    recordDecision('sibling', 'same-turn-dir', { target: filePath, cls, sensitive, profile });
+    return { additionalContext: siblingNote(sibling), exitCode: 0 };
+  }
+  const cap = restricted ? Number.POSITIVE_INFINITY : getMaxDenialBudget();
+  const { ok, denials } = markCheckedAndCountDenial(fileKey, { cls, dirGate, cap });
+  if (!ok) {
+    return allowWithStateWarning();
+  }
+  if (denials === null) {
+    // see docs/gateguard/design-notes.md#denial-cap
+    recordDecision('cap', 'max-denials', { target: filePath, cls, sensitive, profile });
+    return rawInput;
+  }
+  const miss = restricted ? null : findClosestMiss(getTurnScan(), filePath, isNewFile, data);
+  return firstTouchDenial(filePath, { isWrite: toolName === 'Write', denials, cls, sensitive, linked, profile, miss });
+}
+
+// --- MultiEdit ---
+
+function gateMultiEdit(ctx) {
+  const { toolInput, data, rawInput, inSubagent } = ctx;
+  const edits = multiEditEntries(toolInput);
+  if (inSubagent) return gateMultiEditSubagent(edits, data, rawInput);
+
+  const batch = { notes: [], trivialKeys: new Set() };
+  for (const edit of edits) {
+    const filePath = (edit && edit.file_path) || '';
     const exempt = exemptReason(filePath, data);
     if (exempt) {
-      recordDecision('pass-exempt', exempt, { target: filePath });
-      return rawInput; // allow
+      recordDecision('pass-exempt', exempt, { target: filePath, key: `exempt:${filePath}` });
+      continue;
     }
-
-    if (inSubagent) {
-      const denial = subagentRestrictedDenial(filePath, data, toolName === 'Write');
-      if (!denial) recordDecision('pass-subagent', 'subagent', { target: filePath });
-      return denial || rawInput;
-    }
-
     const fileKey = canonicalPathKey(filePath, data);
-    if (!isChecked([fileKey, filePath])) {
-      const isNewFile = toolName === 'Write' && isNewFileTarget(filePath, data);
-      const cls = classifyTargetFor(filePath, data);
-      // see docs/gateguard/design-notes.md#sensitive-targets
-      const { sensitive, linked, restricted } = allowanceFacts(filePath, data);
-      const credit = restricted ? null : findCreditingSearch(getTurnScan(), filePath, isNewFile, data);
-      if (credit) {
-        if (!markCheckedAndCountCredit(fileKey, cls)) {
-          return allowWithStateWarning();
-        }
-        recordDecision('credit', 'prior-search', { target: filePath, cls, sensitive });
-        return { additionalContext: creditNote(credit, filePath), exitCode: 0 };
-      }
-      const profile = restricted || toolName === 'NotebookEdit' || !needsProfile(toolName, cls)
-        ? null
-        : changeProfileFor(toolName, filePath, [toolInput], toolInput.content, data);
-      if (toolName === 'Edit' && isTrivialChange(cls, restricted, profile)) {
-        if (!countTrivialAllow()) {
-          return allowWithStateWarning();
-        }
-        recordDecision('trivial', 'comment-whitespace', { target: filePath, cls, sensitive, profile });
-        return { additionalContext: trivialNote(filePath), exitCode: 0 };
-      }
-      const turnId = isNewFile && !restricted ? currentTurnId(getTurnScan()) : null;
-      const collapsible = isNewFile && !restricted && (turnId !== null || !transcriptPathFor(data));
-      const gateKey = collapsible ? newFileGateKey(filePath, data, cls) : null;
-      const sibling = gateKey ? findSiblingGate(gateKey, turnId) : null;
-      if (sibling) {
-        if (!markCheckedAndCountSibling(fileKey)) {
-          return allowWithStateWarning();
-        }
-        recordDecision('sibling', 'same-turn-dir', { target: filePath, cls, sensitive, profile });
-        return { additionalContext: siblingNote(sibling), exitCode: 0 };
-      }
-      const dirGate = gateKey ? { key: gateKey, turn: turnId, first: sanitizePath(filePath) } : undefined;
-      const cap = restricted ? Number.POSITIVE_INFINITY : getMaxDenialBudget();
-      const { ok, denials } = markCheckedAndCountDenial(fileKey, { cls, dirGate, cap });
-      if (!ok) {
-        return allowWithStateWarning();
-      }
-      if (denials === null) {
-        // see docs/gateguard/design-notes.md#denial-cap
-        recordDecision('cap', 'max-denials', { target: filePath, cls, sensitive, profile });
-        return rawInput;
-      }
-      const miss = restricted ? null : findClosestMiss(getTurnScan(), filePath, isNewFile, data);
-      return firstTouchDenial(filePath, { isWrite: toolName === 'Write', denials, cls, sensitive, linked, profile, miss });
-    }
-
-    recordDecision('pass-checked', 'checked', { target: filePath });
-    return rawInput; // allow
-  }
-
-  if (toolName === 'MultiEdit') {
-    const edits = multiEditEntries(toolInput);
-    if (inSubagent) {
-      for (const edit of edits) {
-        const filePath = (edit && edit.file_path) || '';
-        if (!filePath || isClaudeSettingsPath(filePath) || isExemptPath(filePath, data)) continue;
-        const denial = subagentRestrictedDenial(filePath, data, false);
-        if (denial) return denial;
-      }
-      recordDecision('pass-subagent', 'subagent');
-      return rawInput;
-    }
-
-    const notes = [];
-    const trivialKeys = new Set();
-    for (const edit of edits) {
-      const filePath = (edit && edit.file_path) || '';
-      const exempt = exemptReason(filePath, data);
-      if (exempt) {
-        recordDecision('pass-exempt', exempt, { target: filePath, key: `exempt:${filePath}` });
-        continue;
-      }
-      const fileKey = canonicalPathKey(filePath, data);
-      if (trivialKeys.has(fileKey)) continue;
-      if (!isChecked([fileKey, filePath])) {
-        const cls = classifyTargetFor(filePath, data);
-        const { sensitive, linked, restricted } = allowanceFacts(filePath, data);
-        const credit = restricted ? null : findCreditingSearch(getTurnScan(), filePath, false, data);
-        if (credit) {
-          if (!markCheckedAndCountCredit(fileKey, cls)) {
-            return allowWithStateWarning();
-          }
-          recordDecision('credit', 'prior-search', { target: filePath, cls, sensitive, key: fileKey });
-          notes.push(creditNote(credit, filePath));
-          continue;
-        }
-        const profile = restricted || !needsProfile('MultiEdit', cls)
-          ? null
-          : changeProfileFor('Edit', filePath, entriesFor(edits, fileKey, data), undefined, data);
-        if (isTrivialChange(cls, restricted, profile)) {
-          if (!countTrivialAllow()) {
-            return allowWithStateWarning();
-          }
-          trivialKeys.add(fileKey);
-          recordDecision('trivial', 'comment-whitespace', { target: filePath, cls, sensitive, profile, key: fileKey });
-          notes.push(trivialNote(filePath));
-          continue;
-        }
-        const cap = restricted ? Number.POSITIVE_INFINITY : getMaxDenialBudget();
-        const { ok, denials } = markCheckedAndCountDenial(fileKey, { cls, cap });
-        if (!ok) {
-          return allowWithStateWarning();
-        }
-        if (denials === null) {
-          // see docs/gateguard/design-notes.md#denial-cap
-          recordDecision('cap', 'max-denials', { target: filePath, cls, sensitive, profile, key: fileKey });
-          continue;
-        }
-        const miss = restricted ? null : findClosestMiss(getTurnScan(), filePath, false, data);
-        return firstTouchDenial(filePath, { isWrite: false, denials, cls, sensitive, linked, profile, miss });
-      }
+    if (batch.trivialKeys.has(fileKey)) continue;
+    if (isChecked([fileKey, filePath])) {
       recordDecision('pass-checked', 'checked', { target: filePath, key: fileKey });
+      continue;
     }
-    if (notes.length > 0) {
-      return { additionalContext: notes, exitCode: 0 };
-    }
-    return rawInput; // allow
+    const result = firstTouchMultiEdit(ctx, edits, filePath, fileKey, batch);
+    if (result) return result;
   }
-
-  if (toolName === 'Bash' || toolName === 'PowerShell') {
-    const command = toolInput.command || '';
-    if (isReadOnlyGitIntrospection(command)) {
-      recordDecision('pass', 'readonly-git');
-      return rawInput;
-    }
-
-    if (classifyDestructiveCommand(toolName, command).length > 0) {
-      // Gate destructive commands on first attempt; allow retry after facts presented
-      const key = '__destructive__' + crypto.createHash('sha256').update(command).digest('hex').slice(0, 16);
-      if (!isChecked(key)) {
-        if (!markChecked(key)) {
-          return allowWithStateWarning();
-        }
-        recordDecision('destructive-deny', 'destructive');
-        return denyResult(destructiveBashMsg(), { includeRecoveryHint: false });
-      }
-      recordDecision('pass-checked', 'destructive-retry');
-      return rawInput; // allow retry after facts presented
-    }
-
-    // Operator opt-out: skip the routine shell gate entirely. The destructive
-    // gate above still fires. This is the documented escape hatch for hosts
-    // (Cursor, OpenCode, etc.) where the once-per-session routine gate is
-    // friction without signal.
-    if (isRoutineBashGateDisabled()) {
-      recordDecision('pass-exempt', 'routine-disabled');
-      return rawInput; // routine gate opted out via env
-    }
-
-    if (!isChecked(ROUTINE_BASH_SESSION_KEY)) {
-      if (isReadOnlyShellCommand(toolName, command)) {
-        if (!countRoutineReadonlyPass()) {
-          return allowWithStateWarning();
-        }
-        recordDecision('routine-readonly', 'readonly');
-        return rawInput;
-      }
-      if (!markChecked(ROUTINE_BASH_SESSION_KEY)) {
-        return allowWithStateWarning();
-      }
-      recordDecision('routine-deny', 'first-command');
-      const hookId = toolName === 'PowerShell' ? POWERSHELL_HOOK_ID : BASH_HOOK_ID;
-      const narrowRecoveryHint = toolName === 'PowerShell'
-        ? ROUTINE_POWERSHELL_NARROW_RECOVERY_HINT
-        : ROUTINE_BASH_NARROW_RECOVERY_HINT;
-      return denyResult(routineShellMsg(toolName), {
-        hookIds: [hookId],
-        narrowRecoveryHint
-      });
-    }
-
-    recordDecision('pass-checked', 'routine-checked');
-    return rawInput; // allow
+  if (batch.notes.length > 0) {
+    return { additionalContext: batch.notes, exitCode: 0 };
   }
-
   return rawInput; // allow
+}
+
+function gateMultiEditSubagent(edits, data, rawInput) {
+  for (const edit of edits) {
+    const filePath = (edit && edit.file_path) || '';
+    if (!filePath || isExemptPath(filePath, data)) continue;
+    const denial = subagentRestrictedDenial(filePath, data, false);
+    if (denial) return denial;
+  }
+  recordDecision('pass-subagent', 'subagent');
+  return rawInput;
+}
+
+// Returns a gate result to stop on, or null when the batch loop should move
+// to the next edit. `batch` collects notes and trivially allowed file keys.
+function firstTouchMultiEdit(ctx, edits, filePath, fileKey, batch) {
+  const { data, getTurnScan } = ctx;
+  const cls = classifyTargetFor(filePath, data);
+  const { sensitive, linked, restricted } = allowanceFacts(filePath, data);
+  const credit = restricted ? null : findCreditingSearch(getTurnScan(), filePath, false, data);
+  if (credit) {
+    if (!markCheckedAndCountCredit(fileKey, cls)) {
+      return allowWithStateWarning();
+    }
+    recordDecision('credit', 'prior-search', { target: filePath, cls, sensitive, key: fileKey });
+    batch.notes.push(creditNote(credit, filePath));
+    return null;
+  }
+  const profile = restricted || !needsProfile('MultiEdit', cls)
+    ? null
+    : changeProfileFor('Edit', filePath, entriesFor(edits, fileKey, data), undefined, data);
+  if (isTrivialChange(cls, restricted, profile)) {
+    if (!countTrivialAllow()) {
+      return allowWithStateWarning();
+    }
+    batch.trivialKeys.add(fileKey);
+    recordDecision('trivial', 'comment-whitespace', { target: filePath, cls, sensitive, profile, key: fileKey });
+    batch.notes.push(trivialNote(filePath));
+    return null;
+  }
+  const cap = restricted ? Number.POSITIVE_INFINITY : getMaxDenialBudget();
+  const { ok, denials } = markCheckedAndCountDenial(fileKey, { cls, cap });
+  if (!ok) {
+    return allowWithStateWarning();
+  }
+  if (denials === null) {
+    // see docs/gateguard/design-notes.md#denial-cap
+    recordDecision('cap', 'max-denials', { target: filePath, cls, sensitive, profile, key: fileKey });
+    return null;
+  }
+  const miss = restricted ? null : findClosestMiss(getTurnScan(), filePath, false, data);
+  return firstTouchDenial(filePath, { isWrite: false, denials, cls, sensitive, linked, profile, miss });
+}
+
+// --- Bash / PowerShell ---
+
+function gateShell(ctx) {
+  const { toolName, toolInput, rawInput } = ctx;
+  const command = toolInput.command || '';
+  if (isReadOnlyGitIntrospection(command)) {
+    recordDecision('pass', 'readonly-git');
+    return rawInput;
+  }
+
+  if (classifyDestructiveCommand(toolName, command).length > 0) return gateDestructiveShell(command, rawInput);
+
+  // Operator opt-out: skip the routine shell gate entirely. The destructive
+  // gate above still fires. This is the documented escape hatch for hosts
+  // (Cursor, OpenCode, etc.) where the once-per-session routine gate is
+  // friction without signal.
+  if (isRoutineBashGateDisabled()) {
+    recordDecision('pass-exempt', 'routine-disabled');
+    return rawInput; // routine gate opted out via env
+  }
+
+  if (!isChecked(ROUTINE_BASH_SESSION_KEY)) return gateRoutineShell(toolName, command, rawInput);
+
+  recordDecision('pass-checked', 'routine-checked');
+  return rawInput; // allow
+}
+
+// Gate destructive commands on first attempt; allow retry after facts presented
+function gateDestructiveShell(command, rawInput) {
+  const key = '__destructive__' + crypto.createHash('sha256').update(command).digest('hex').slice(0, 16);
+  if (isChecked(key)) {
+    recordDecision('pass-checked', 'destructive-retry');
+    return rawInput; // allow retry after facts presented
+  }
+  if (!markChecked(key)) {
+    return allowWithStateWarning();
+  }
+  recordDecision('destructive-deny', 'destructive');
+  return denyResult(destructiveBashMsg(), { includeRecoveryHint: false });
+}
+
+function gateRoutineShell(toolName, command, rawInput) {
+  if (isReadOnlyShellCommand(toolName, command)) {
+    if (!countRoutineReadonlyPass()) {
+      return allowWithStateWarning();
+    }
+    recordDecision('routine-readonly', 'readonly');
+    return rawInput;
+  }
+  if (!markChecked(ROUTINE_BASH_SESSION_KEY)) {
+    return allowWithStateWarning();
+  }
+  recordDecision('routine-deny', 'first-command');
+  const hookId = toolName === 'PowerShell' ? POWERSHELL_HOOK_ID : BASH_HOOK_ID;
+  const narrowRecoveryHint = toolName === 'PowerShell'
+    ? ROUTINE_POWERSHELL_NARROW_RECOVERY_HINT
+    : ROUTINE_BASH_NARROW_RECOVERY_HINT;
+  return denyResult(routineShellMsg(toolName), {
+    hookIds: [hookId],
+    narrowRecoveryHint
+  });
 }
 
 module.exports = {

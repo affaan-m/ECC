@@ -316,13 +316,29 @@ function parseCrossHarnessIdentityExpectations(content, source) {
   ];
 }
 
+/**
+ * Build a replacer for a summary line whose capture groups alternate between
+ * literal text and the agent, skill, and command counts. `groupCount` is the
+ * number of capture groups in the regex; `countGroups` lists the 1-based
+ * groups that hold the three counts, in that order. Every other group is
+ * written back verbatim.
+ */
+function catalogCountReplacer(catalog, groupCount, countGroups) {
+  const counts = [catalog.agents.count, catalog.skills.count, catalog.commands.count];
+  return (...args) => {
+    const groups = args.slice(1, groupCount + 1);
+    countGroups.forEach((groupIndex, position) => {
+      groups[groupIndex - 1] = counts[position];
+    });
+    return groups.join('');
+  };
+}
+
 function syncCrossHarnessIdentity(content, catalog, source) {
   return replaceOrThrow(
     content,
     /(with\s+)(\d+)(\s+specialized agents,\s+)(\d+)(\s+skills,\s+(?:and\s+)?)(\d+)(\s+commands)/i,
-    (_, prefix, __, agentsSuffix, ___, skillsSuffix, ____, commandsSuffix) => (
-      `${prefix}${catalog.agents.count}${agentsSuffix}${catalog.skills.count}${skillsSuffix}${catalog.commands.count}${commandsSuffix}`
-    ),
+    catalogCountReplacer(catalog, 7, [2, 4, 6]),
     source
   );
 }
@@ -482,8 +498,7 @@ function syncEnglishAgents(content, catalog) {
   nextContent = replaceOrThrow(
     nextContent,
     /(providing\s+)(\d+)(\s+specialized agents,\s+)(\d+)(\+?)(\s+skills,\s+)(\d+)(\s+commands)/i,
-    (_, prefix, __, agentsSuffix, ___, skillsPlus, skillsSuffix, ____, commandsSuffix) =>
-      `${prefix}${catalog.agents.count}${agentsSuffix}${catalog.skills.count}${skillsPlus}${skillsSuffix}${catalog.commands.count}${commandsSuffix}`,
+    catalogCountReplacer(catalog, 8, [2, 4, 7]),
     'AGENTS.md summary'
   );
   nextContent = replaceOrThrow(
@@ -512,8 +527,7 @@ function syncZhRootReadme(content, catalog) {
   return replaceOrThrow(
     content,
     /(你现在可以使用\s+)(\d+)(\s+个代理、\s*)(\d+)(\s*个技能和\s*)(\d+)(\s*个命令[。.!！]?)/i,
-    (_, prefix, __, agentsSuffix, ___, skillsSuffix, ____, commandsSuffix) =>
-      `${prefix}${catalog.agents.count}${agentsSuffix}${catalog.skills.count}${skillsSuffix}${catalog.commands.count}${commandsSuffix}`,
+    catalogCountReplacer(catalog, 7, [2, 4, 6]),
     'README.zh-CN.md quick-start summary'
   );
 }
@@ -524,8 +538,7 @@ function syncZhDocsReadme(content, catalog) {
   nextContent = replaceOrThrow(
     nextContent,
     /(你现在可以使用\s+)(\d+)(\s+个智能体、\s*)(\d+)(\s*项技能和\s*)(\d+)(\s*个命令了[。.!！]?)/i,
-    (_, prefix, __, agentsSuffix, ___, skillsSuffix, ____, commandsSuffix) =>
-      `${prefix}${catalog.agents.count}${agentsSuffix}${catalog.skills.count}${skillsSuffix}${catalog.commands.count}${commandsSuffix}`,
+    catalogCountReplacer(catalog, 7, [2, 4, 6]),
     'docs/zh-CN/README.md quick-start summary'
   );
   nextContent = replaceOrThrow(
@@ -574,8 +587,7 @@ function syncZhAgents(content, catalog) {
   nextContent = replaceOrThrow(
     nextContent,
     /(提供\s+)(\d+)(\s+个专业代理、\s*)(\d+)(\+?)(\s*项技能、\s*)(\d+)(\s+条命令)/i,
-    (_, prefix, __, agentsSuffix, ___, skillsPlus, skillsSuffix, ____, commandsSuffix) =>
-      `${prefix}${catalog.agents.count}${agentsSuffix}${catalog.skills.count}${skillsPlus}${skillsSuffix}${catalog.commands.count}${commandsSuffix}`,
+    catalogCountReplacer(catalog, 8, [2, 4, 7]),
     'docs/zh-CN/AGENTS.md summary'
   );
   nextContent = replaceOrThrow(
@@ -616,13 +628,11 @@ function syncCatalogDescription(content, catalog, source, getDescription, setDes
   const nextDescription = replaceOrThrow(
     description,
     /(\d+)(\s+agents,\s+)(\d+)(\s+skills,\s+)(\d+)(\s+legacy command shims?)/i,
-    (_, __, agentsSuffix, ___, skillsSuffix, ____, commandsSuffix) =>
-      `${catalog.agents.count}${agentsSuffix}${catalog.skills.count}${skillsSuffix}${catalog.commands.count}${commandsSuffix}`,
+    catalogCountReplacer(catalog, 6, [1, 3, 5]),
     source
   );
 
-  setDescription(parsed, nextDescription);
-  return `${JSON.stringify(parsed, null, 2)}\n`;
+  return `${JSON.stringify(setDescription(parsed, nextDescription), null, 2)}\n`;
 }
 
 function createDocumentSpecs(paths = {}) {
@@ -686,7 +696,7 @@ function createDocumentSpecs(paths = {}) {
         catalog,
         '.claude-plugin/plugin.json description',
         parsed => parsed.description,
-        (parsed, description) => { parsed.description = description; }
+        (parsed, description) => ({ ...parsed, description })
       ),
     },
     {
@@ -701,7 +711,13 @@ function createDocumentSpecs(paths = {}) {
         catalog,
         '.claude-plugin/marketplace.json plugin description',
         parsed => parsed.plugins?.[0]?.description,
-        (parsed, description) => { parsed.plugins[0].description = description; }
+        (parsed, description) => ({
+          ...parsed,
+          plugins: [
+            { ...parsed.plugins[0], description },
+            ...parsed.plugins.slice(1),
+          ],
+        })
       ),
     },
   ];

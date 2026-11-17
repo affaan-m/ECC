@@ -1,4 +1,4 @@
-import { tool, type ToolDefinition } from "@opencode-ai/plugin/tool"
+import { tool, type ToolDefinition } from "./tool.ts"
 import type { ChangeType, TreeNode } from "../plugins/lib/changed-files-store.ts"
 
 const INDICATORS: Record<ChangeType, string> = {

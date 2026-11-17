@@ -190,6 +190,7 @@
         "skills/api-design",
         "skills/backend-patterns",
         "skills/bengali-nlp",
+        "skills/yoruba-localization-testing",
         "skills/coding-standards",
         "skills/compose-multiplatform-patterns",
         "skills/contract-first",
@@ -235,9 +236,12 @@
         "skills/react-testing",
         "skills/rust-patterns",
         "skills/rust-testing",
+        "skills/godot-patterns",
+        "skills/godot-testing",
         "skills/springboot-patterns",
         "skills/springboot-tdd",
         "skills/springboot-verification",
+        "skills/typescript-patterns",
         "skills/ui-to-vue",
         "skills/vue-patterns",
         "skills/accessibility",
@@ -255,7 +259,8 @@
         "skills/nuxt4-patterns",
         "skills/react-native-patterns",
         "skills/tinystruct-patterns",
-        "skills/vite-patterns"
+        "skills/vite-patterns",
+        "skills/leanrea"
       ],
       "targets": [
         "claude",
@@ -544,6 +549,7 @@
         "skills/nodejs-keccak256",
         "skills/perl-security",
         "skills/quarkus-security",
+        "skills/rails-security",
         "skills/security-review",
         "skills/security-scan",
         "skills/security-bounty-hunter",
@@ -554,7 +560,8 @@
         "skills/healthcare-cdss-patterns",
         "skills/healthcare-emr-patterns",
         "skills/healthcare-eval-harness",
-        "skills/safety-guard"
+        "skills/safety-guard",
+        "skills/web-perimeter-owasp-2025-audit"
       ],
       "targets": [
         "claude",
@@ -585,6 +592,7 @@
         "skills/exa-search",
         "skills/research-ops",
         "skills/osint-investigation",
+        "skills/scientific-db-openalex-database",
         "skills/scientific-db-pubmed-database",
         "skills/scientific-db-uspto-database",
         "skills/scientific-pkg-gget",
@@ -667,6 +675,7 @@
         "skills/email-ops",
         "skills/finance-billing-ops",
         "skills/github-ops",
+        "skills/issue-review",
         "skills/google-workspace-ops",
         "skills/jira-integration",
         "skills/knowledge-ops",
@@ -828,7 +837,8 @@
       "paths": [
         "skills/crosspost",
         "skills/x-api",
-        "skills/social-publisher"
+        "skills/social-publisher",
+        "skills/short-video-distribution"
       ],
       "targets": [
         "claude",
@@ -949,6 +959,26 @@
       "stability": "stable"
     },
     {
+      "id": "config-health",
+      "kind": "skills",
+      "description": "Runtime configuration integrity monitoring for Claude Code (Claude-only; SessionStart by default, PreToolUse opt-in).",
+      "paths": [
+        "skills/config-health",
+        "scripts/config-health.py",
+        "scripts/config_health_constants.py",
+        "scripts/config_health_paths.py",
+        "scripts/config_health_scan.py"
+      ],
+      "targets": [
+        "claude",
+        "claude-project"
+      ],
+      "dependencies": [],
+      "defaultInstall": false,
+      "cost": "light",
+      "stability": "beta"
+    },
+    {
       "id": "agentic-patterns",
       "kind": "skills",
       "description": "Agentic engineering, autonomous loops, agent harness construction, and LLM pipeline optimization skills.",
@@ -961,7 +991,7 @@
         "skills/ai-first-engineering",
         "skills/autonomous-loops",
         "skills/blueprint",
-        "skills/claude-devfleet",
+        "skills/devfleet",
         "skills/content-hash-cache-pattern",
         "skills/continuous-agent-loop",
         "skills/cost-aware-llm-pipeline",
@@ -978,6 +1008,7 @@
         "skills/token-budget-advisor",
         "skills/team-builder",
         "skills/agent-payment-x402",
+        "skills/roundhouse-x402",
         "skills/autonomous-agent-harness",
         "skills/gan-style-harness",
         "skills/hermes-imports",
@@ -1033,6 +1064,8 @@
         "skills/homelab-vlan-segmentation",
         "skills/homelab-wireguard-vpn",
         "skills/kubernetes-patterns",
+        "skills/platform-factory",
+        "skills/terraform-patterns",
         "skills/uncloud"
       ],
       "targets": [
@@ -1390,6 +1423,35 @@
       "stability": "beta"
     },
     {
+      "id": "documentation-module-governance",
+      "kind": "skills",
+      "description": "Optional module-local instructions and documentation ownership workflow.",
+      "paths": [
+        "skills/module-governance"
+      ],
+      "targets": [
+        "claude",
+        "claude-project",
+        "cursor",
+        "antigravity",
+        "codex",
+        "opencode",
+        "codebuddy",
+        "joycode",
+        "qwen",
+        "zed"
+      ],
+      "dependencies": [
+        "documentation-context",
+        "documentation-governance",
+        "documentation-change-impact",
+        "framework-language"
+      ],
+      "defaultInstall": false,
+      "cost": "light",
+      "stability": "beta"
+    },
+    {
       "id": "documentation-test-regression",
       "kind": "skills",
       "description": "Optional test-collaboration and module-regression workflow.",
@@ -1416,6 +1478,35 @@
       "dependencies": [
         "workflow-quality"
       ],
+      "defaultInstall": false,
+      "cost": "light",
+      "stability": "beta"
+    },
+    {
+      "id": "ecc-contribution-review",
+      "kind": "skills",
+      "description": "Optional skill contribution review packet workflow for ECC repositories.",
+      "paths": [
+        "skills/ecc-contribution-review"
+      ],
+      "targets": [
+        "claude",
+        "claude-project",
+        "cursor",
+        "antigravity",
+        "codex",
+        "copilot",
+        "opencode",
+        "codebuddy",
+        "joycode",
+        "qwen",
+        "zed",
+        "hermes",
+        "openclaw",
+        "kimi",
+        "adal"
+      ],
+      "dependencies": [],
       "defaultInstall": false,
       "cost": "light",
       "stability": "beta"

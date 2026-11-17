@@ -10,6 +10,7 @@ from llm.core.types import ProviderType
 from llm.providers.astraflow import AstraflowCNProvider, AstraflowProvider
 from llm.providers.atlas import AtlasProvider
 from llm.providers.claude import ClaudeProvider
+from llm.providers.minimax import MiniMaxProvider
 from llm.providers.model_config import read_model_env
 from llm.providers.ollama import OllamaProvider
 from llm.providers.openai import OpenAIProvider
@@ -19,6 +20,7 @@ _PROVIDER_MAP: dict[ProviderType, type[LLMProvider]] = {
     ProviderType.ASTRAFLOW_CN: AstraflowCNProvider,
     ProviderType.ATLAS: AtlasProvider,
     ProviderType.CLAUDE: ClaudeProvider,
+    ProviderType.MINIMAX: MiniMaxProvider,
     ProviderType.OPENAI: OpenAIProvider,
     ProviderType.OLLAMA: OllamaProvider,
 }
@@ -31,6 +33,7 @@ _MODEL_ENV_VARS: dict[type[LLMProvider], tuple[str, ...]] = {
     AtlasProvider: (AtlasProvider.model_env,),
     AstraflowProvider: (AstraflowProvider.model_env,),
     AstraflowCNProvider: (AstraflowCNProvider.model_env, AstraflowProvider.model_env),
+    MiniMaxProvider: (MiniMaxProvider.model_env,),
 }
 
 LLM_ENV_FILE = ".llm.env"

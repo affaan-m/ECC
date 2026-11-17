@@ -113,88 +113,169 @@ function isCommandFlag(token) {
     isParameterPrefix(token, 'commandwithargs') || name === 'cwa';
 }
 
+/**
+ * Shared inert-region tracking for the character scanners below. Comments,
+ * `${}` variable names, quoted strings, and backtick escapes never contain
+ * container delimiters or here-string openers, so every scanner skips them
+ * the same way.
+ */
+function createLexState() {
+  return {
+    quote: null,
+    lineComment: false,
+    blockComment: false,
+    bracedVariable: false,
+    comment: false,
+  };
+}
+
+/**
+ * Consume the character at `index` when it belongs to an open inert region.
+ * Returns the last index consumed, or -1 when the character is live and the
+ * caller must interpret it. `state.comment` reports whether the consumed run
+ * is comment text.
+ */
+function consumeInertChar(state, input, index) {
+  const char = input[index];
+  const next = input[index + 1];
+  state.comment = false;
+  if (state.lineComment) {
+    if (char === '\n' || char === '\r') {
+      state.lineComment = false;
+    } else {
+      state.comment = true;
+    }
+    return index;
+  }
+  if (state.blockComment) {
+    if (char === '#' && next === '>') {
+      state.blockComment = false;
+      state.comment = true;
+      return index + 1;
+    }
+    state.comment = char !== '\n' && char !== '\r';
+    return index;
+  }
+  if (state.bracedVariable) {
+    if (char === '`') return index + 1;
+    if (char === '}') state.bracedVariable = false;
+    return index;
+  }
+  if (state.quote === "'") {
+    if (char === "'" && next === "'") return index + 1;
+    if (char === "'") state.quote = null;
+    return index;
+  }
+  if (char === '`') return index + 1;
+  if (state.quote === '"') {
+    if (char === '"') state.quote = null;
+    return index;
+  }
+  return -1;
+}
+
+/**
+ * Open an inert region at a live character. Returns the last index consumed,
+ * or -1 when the character does not start a region.
+ */
+function openInertRegion(state, input, index) {
+  const char = input[index];
+  const next = input[index + 1];
+  state.comment = false;
+  if (char === "'" || char === '"') {
+    state.quote = char;
+    return index;
+  }
+  if (char === '$' && next === '{') {
+    state.bracedVariable = true;
+    return index + 1;
+  }
+  if (char === '<' && next === '#') {
+    state.blockComment = true;
+    state.comment = true;
+    return index + 1;
+  }
+  if (char === '#') {
+    state.lineComment = true;
+    state.comment = true;
+    return index;
+  }
+  return -1;
+}
+
+function hereStringOpenerLineEnd(input, index) {
+  let openerLineEnd = index + 2;
+  while (input[openerLineEnd] === ' ' || input[openerLineEnd] === '\t') openerLineEnd += 1;
+  if (input[openerLineEnd] === '\r' && input[openerLineEnd + 1] === '\n') openerLineEnd += 1;
+  return openerLineEnd;
+}
+
+function hereStringClosingEnd(input, openerLineEnd, quote) {
+  for (let lineStart = openerLineEnd + 1; lineStart < input.length;) {
+    let contentStart = lineStart;
+    while (input[contentStart] === ' ' || input[contentStart] === '\t') contentStart += 1;
+    if (input[contentStart] === quote && input[contentStart + 1] === '@') {
+      return contentStart + 2;
+    }
+    while (lineStart < input.length && input[lineStart] !== '\n') lineStart += 1;
+    if (lineStart < input.length) lineStart += 1;
+  }
+  return -1;
+}
+
+// Expandable here-strings execute their unescaped subexpressions while the
+// string value is being formed, independently of any later consumer.
+function collectHereStringSubexpressions(input, start, end, executablePayloads) {
+  for (let offset = start; offset < end; offset += 1) {
+    if (input[offset] === '`') {
+      offset += 1;
+      continue;
+    }
+    if (input[offset] !== '$' || input[offset + 1] !== '(') continue;
+    const group = readBalancedGroup(input, offset + 1, '(', ')');
+    if (!group || group.end > end) break;
+    executablePayloads.push(group.body);
+    offset = group.end - 1;
+  }
+}
+
+function applyReplacements(output, replacements) {
+  let normalized = '';
+  let cursor = 0;
+  for (const replacement of replacements) {
+    normalized += output.slice(cursor, replacement.start).join('');
+    normalized += replacement.value;
+    cursor = replacement.end;
+  }
+  return normalized + output.slice(cursor).join('');
+}
+
 function normalizeHereStrings(input, executablePayloads = []) {
   const output = [...input];
   const replacements = [];
-  let ordinaryQuote = null;
-  let lineComment = false;
-  let blockComment = false;
-  let bracedVariable = false;
+  const state = createLexState();
 
   for (let index = 0; index < input.length - 1; index += 1) {
-    const char = input[index];
-    const next = input[index + 1];
-    if (lineComment) {
-      if (char === '\n' || char === '\r') lineComment = false;
-      continue;
-    }
-    if (blockComment) {
-      if (char === '#' && next === '>') {
-        blockComment = false;
-        index += 1;
-      }
-      continue;
-    }
-    if (bracedVariable) {
-      if (char === '`') index += 1;
-      else if (char === '}') bracedVariable = false;
-      continue;
-    }
-    if (ordinaryQuote === "'") {
-      if (char === "'" && input[index + 1] === "'") index += 1;
-      else if (char === "'") ordinaryQuote = null;
-      continue;
-    }
-    if (char === '`') {
-      index += 1;
-      continue;
-    }
-    if (ordinaryQuote === '"') {
-      if (char === '"') ordinaryQuote = null;
-      continue;
-    }
-
-    if (char === '$' && next === '{') {
-      bracedVariable = true;
-      index += 1;
-      continue;
-    }
-    if (char === '<' && next === '#') {
-      blockComment = true;
-      index += 1;
-      continue;
-    }
-    if (char === '#') {
-      lineComment = true;
-      continue;
-    }
-
-    if (input[index] !== '@' || (input[index + 1] !== "'" && input[index + 1] !== '"')) {
-      if (char === "'" || char === '"') ordinaryQuote = char;
+    const inertEnd = consumeInertChar(state, input, index);
+    if (inertEnd !== -1) {
+      index = inertEnd;
       continue;
     }
 
     const quote = input[index + 1];
-    let openerLineEnd = index + 2;
-    while (input[openerLineEnd] === ' ' || input[openerLineEnd] === '\t') openerLineEnd += 1;
-    if (input[openerLineEnd] === '\r' && input[openerLineEnd + 1] === '\n') openerLineEnd += 1;
+    if (input[index] !== '@' || (quote !== "'" && quote !== '"')) {
+      const regionEnd = openInertRegion(state, input, index);
+      if (regionEnd !== -1) index = regionEnd;
+      continue;
+    }
+
+    const openerLineEnd = hereStringOpenerLineEnd(input, index);
     if (input[openerLineEnd] !== '\n') {
       if (openerLineEnd >= input.length) break;
       continue;
     }
 
-    let closingEnd = -1;
-    for (let lineStart = openerLineEnd + 1; lineStart < input.length;) {
-      let contentStart = lineStart;
-      while (input[contentStart] === ' ' || input[contentStart] === '\t') contentStart += 1;
-      if (input[contentStart] === quote && input[contentStart + 1] === '@') {
-        closingEnd = contentStart + 2;
-        break;
-      }
-      while (lineStart < input.length && input[lineStart] !== '\n') lineStart += 1;
-      if (lineStart < input.length) lineStart += 1;
-    }
-
+    const closingEnd = hereStringClosingEnd(input, openerLineEnd, quote);
     const contentEnd = closingEnd === -1 ? input.length : closingEnd - 2;
     const content = input.slice(openerLineEnd + 1, contentEnd);
 
@@ -206,21 +287,8 @@ function normalizeHereStrings(input, executablePayloads = []) {
       start: index,
       value: `'${content.replace(/'/g, "''")}'`,
     });
-
-    // Expandable here-strings execute their unescaped subexpressions while the
-    // string value is being formed, independently of any later consumer.
     if (quote === '"') {
-      for (let offset = openerLineEnd + 1; offset < contentEnd; offset += 1) {
-        if (input[offset] === '`') {
-          offset += 1;
-          continue;
-        }
-        if (input[offset] !== '$' || input[offset + 1] !== '(') continue;
-        const group = readBalancedGroup(input, offset + 1, '(', ')');
-        if (!group || group.end > contentEnd) break;
-        executablePayloads.push(group.body);
-        offset = group.end - 1;
-      }
+      collectHereStringSubexpressions(input, openerLineEnd + 1, contentEnd, executablePayloads);
     }
 
     if (closingEnd === -1) break;
@@ -228,94 +296,25 @@ function normalizeHereStrings(input, executablePayloads = []) {
   }
 
   if (replacements.length === 0) return output.join('');
-  let normalized = '';
-  let cursor = 0;
-  for (const replacement of replacements) {
-    normalized += output.slice(cursor, replacement.start).join('');
-    normalized += replacement.value;
-    cursor = replacement.end;
+  return applyReplacements(output, replacements);
+}
+
+function blankRange(output, start, end) {
+  for (let offset = start; offset <= end; offset += 1) {
+    if (output[offset] !== '\n' && output[offset] !== '\r') output[offset] = ' ';
   }
-  normalized += output.slice(cursor).join('');
-  return normalized;
 }
 
 function stripPowerShellComments(input) {
   const output = [...input];
-  let quote = null;
-  let lineComment = false;
-  let blockComment = false;
-  let bracedVariable = false;
+  const state = createLexState();
 
   for (let index = 0; index < input.length; index += 1) {
-    const char = input[index];
-    const next = input[index + 1];
-
-    if (lineComment) {
-      if (char === '\n' || char === '\r') {
-        lineComment = false;
-      } else {
-        output[index] = ' ';
-      }
-      continue;
-    }
-
-    if (blockComment) {
-      if (char === '#' && next === '>') {
-        output[index] = ' ';
-        output[index + 1] = ' ';
-        blockComment = false;
-        index += 1;
-      } else if (char !== '\n' && char !== '\r') {
-        output[index] = ' ';
-      }
-      continue;
-    }
-
-    if (bracedVariable) {
-      if (char === '`') index += 1;
-      else if (char === '}') bracedVariable = false;
-      continue;
-    }
-
-    if (quote === "'") {
-      if (char === "'" && next === "'") {
-        index += 1;
-      } else if (char === "'") {
-        quote = null;
-      }
-      continue;
-    }
-    if (char === '`') {
-      index += 1;
-      continue;
-    }
-    if (quote === '"') {
-      if (char === '"') quote = null;
-      continue;
-    }
-    if (char === "'" || char === '"') {
-      quote = char;
-      continue;
-    }
-
-    if (char === '$' && next === '{') {
-      bracedVariable = true;
-      index += 1;
-      continue;
-    }
-
-    if (char === '<' && next === '#') {
-      output[index] = ' ';
-      output[index + 1] = ' ';
-      blockComment = true;
-      index += 1;
-      continue;
-    }
-
-    if (char === '#') {
-      output[index] = ' ';
-      lineComment = true;
-    }
+    let end = consumeInertChar(state, input, index);
+    if (end === -1) end = openInertRegion(state, input, index);
+    if (end === -1) continue;
+    if (state.comment) blankRange(output, index, end);
+    index = end;
   }
 
   return output.join('');
@@ -328,71 +327,17 @@ function stripPowerShellComments(input) {
  */
 function readBalancedGroup(input, openingIndex, open, close) {
   let depth = 1;
-  let quote = null;
-  let lineComment = false;
-  let blockComment = false;
-  let bracedVariable = false;
+  const state = createLexState();
 
   for (let index = openingIndex + 1; index < input.length; index += 1) {
+    let end = consumeInertChar(state, input, index);
+    if (end === -1) end = openInertRegion(state, input, index);
+    if (end !== -1) {
+      index = end;
+      continue;
+    }
+
     const char = input[index];
-    const next = input[index + 1];
-
-    if (lineComment) {
-      if (char === '\n' || char === '\r') lineComment = false;
-      continue;
-    }
-    if (blockComment) {
-      if (char === '#' && next === '>') {
-        blockComment = false;
-        index += 1;
-      }
-      continue;
-    }
-    if (bracedVariable) {
-      if (char === '`') index += 1;
-      else if (char === '}') bracedVariable = false;
-      continue;
-    }
-
-    if (quote === "'") {
-      if (char === "'" && input[index + 1] === "'") {
-        index += 1;
-      } else if (char === "'") {
-        quote = null;
-      }
-      continue;
-    }
-    if (char === '`') {
-      index += 1;
-      continue;
-    }
-
-    if (quote === '"') {
-      if (char === '"') quote = null;
-      continue;
-    }
-
-    if (char === "'" || char === '"') {
-      quote = char;
-      continue;
-    }
-
-    if (char === '$' && next === '{') {
-      bracedVariable = true;
-      index += 1;
-      continue;
-    }
-
-    if (char === '<' && next === '#') {
-      blockComment = true;
-      index += 1;
-      continue;
-    }
-    if (char === '#') {
-      lineComment = true;
-      continue;
-    }
-
     if (char === open) {
       depth += 1;
     } else if (char === close) {
@@ -645,8 +590,11 @@ function staticCommandResult(body) {
   return command && /^[A-Za-z_][\w./\\-]*$/.test(command) ? command : null;
 }
 
-function staticStringArrayResult(body) {
-  const input = String(body || '');
+/**
+ * Split an argument list on top-level commas, keeping quotes and nested
+ * parentheses intact. Returns null for unbalanced input.
+ */
+function splitStaticArrayItems(input) {
   const items = [];
   let item = '';
   let quote = null;
@@ -668,17 +616,25 @@ function staticStringArrayResult(body) {
       item += char;
       continue;
     }
-    if (!quote && char === '(') depth += 1;
-    if (!quote && char === ')') depth -= 1;
-    if (!quote && depth === 0 && char === ',') {
-      items.push(item);
-      item = '';
-      continue;
+    if (!quote) {
+      if (char === '(') depth += 1;
+      else if (char === ')') depth -= 1;
+      else if (depth === 0 && char === ',') {
+        items.push(item);
+        item = '';
+        continue;
+      }
     }
     item += char;
   }
   if (quote || depth !== 0) return null;
   items.push(item);
+  return items;
+}
+
+function staticStringArrayResult(body) {
+  const items = splitStaticArrayItems(String(body || ''));
+  if (!items) return null;
   const values = items.map(value => staticScalarResult(value));
   return values.length > 0 && values.every(value => value !== null)
     ? values.join(' ')
@@ -735,203 +691,272 @@ function isPipedToPowerShellStdin(input, end) {
  * blocks while masking every container from the outer statement pass. `$()`
  * also executes inside double quotes. Other containers are literal there.
  */
-function extractExecutableContainers(input, options = {}) {
-  const bodies = [];
-  const deferredFunctions = [];
-  const masked = [...input];
-  let quote = null;
-  let bracedVariable = false;
-  let context = '';
-  let contextTruncated = false;
+const CONTEXT_CLAUSE_KEYWORDS = /^(?:if|elseif|else|for|foreach|while|do|switch|default|try|catch|finally|trap|function|filter|workflow|begin|process|end|dynamicparam|clean)\b/i;
 
-  const resetContext = () => {
-    context = '';
-    contextTruncated = false;
+function createContainerScan(input, options) {
+  return {
+    input,
+    options,
+    bodies: [],
+    deferredFunctions: [],
+    masked: [...input],
+    quote: null,
+    bracedVariable: false,
+    context: '',
+    contextTruncated: false,
   };
+}
 
-  const appendContext = value => {
-    for (const contextChar of value) {
-      if (contextChar === ';' || contextChar === '}') {
-        resetContext();
-      } else if (contextChar === '\n' || contextChar === '\r') {
-        const clause = currentClause(context);
-        if (/^(?:if|elseif|else|for|foreach|while|do|switch|default|try|catch|finally|trap|function|filter|workflow|begin|process|end|dynamicparam|clean)\b/i.test(clause)) {
-          if (context && !context.endsWith(' ')) context += ' ';
-        } else {
-          resetContext();
-        }
-      } else if (/\s/.test(contextChar)) {
-        if (context && !context.endsWith(' ')) context += ' ';
+function resetContainerContext(scan) {
+  scan.context = '';
+  scan.contextTruncated = false;
+}
+
+function appendContextSpace(scan) {
+  if (scan.context && !scan.context.endsWith(' ')) scan.context += ' ';
+}
+
+function appendContainerContext(scan, value) {
+  for (const contextChar of value) {
+    if (contextChar === ';' || contextChar === '}') {
+      resetContainerContext(scan);
+    } else if (contextChar === '\n' || contextChar === '\r') {
+      if (CONTEXT_CLAUSE_KEYWORDS.test(currentClause(scan.context))) {
+        appendContextSpace(scan);
       } else {
-        context += contextChar;
+        resetContainerContext(scan);
       }
-      if (context.length > MAX_CONTEXT_LENGTH) {
-        context = context.slice(-Math.floor(MAX_CONTEXT_LENGTH / 2));
-        contextTruncated = true;
-      }
+    } else if (/\s/.test(contextChar)) {
+      appendContextSpace(scan);
+    } else {
+      scan.context += contextChar;
     }
+    if (scan.context.length > MAX_CONTEXT_LENGTH) {
+      scan.context = scan.context.slice(-Math.floor(MAX_CONTEXT_LENGTH / 2));
+      scan.contextTruncated = true;
+    }
+  }
+}
+
+function maskRange(masked, start, end) {
+  for (let offset = start; offset < end; offset += 1) masked[offset] = ' ';
+}
+
+function consumeBracedVariableChar(scan, index) {
+  const { input } = scan;
+  const char = input[index];
+  if (char === '`' && index + 1 < input.length) {
+    appendContainerContext(scan, input[index + 1]);
+    return index + 1;
+  }
+  if (char === '}') {
+    scan.context += char;
+    scan.bracedVariable = false;
+  } else {
+    appendContainerContext(scan, char);
+  }
+  return index;
+}
+
+// A backtick outside quotes folds the escaped character into the clause
+// context; inside quotes it only protects the next character.
+function consumeContainerEscape(scan, index) {
+  const { input } = scan;
+  if (!scan.quote && index + 1 < input.length) {
+    const escaped = input[index + 1];
+    appendContainerContext(scan, escaped === '\n' || escaped === '\r' ? ' ' : escaped);
+    if (escaped === '\r' && input[index + 2] === '\n') return index + 2;
+  }
+  return index + 1;
+}
+
+/**
+ * Consume characters that cannot open a container: `${}` names, single-quoted
+ * text, backtick escapes, and quote delimiters. Returns the last consumed
+ * index, or -1 for a live character.
+ */
+function consumeContainerInertChar(scan, index) {
+  const { input } = scan;
+  const char = input[index];
+  if (scan.bracedVariable) return consumeBracedVariableChar(scan, index);
+  if (scan.quote === "'") {
+    if (char === "'" && input[index + 1] === "'") return index + 1;
+    if (char === "'") scan.quote = null;
+    return index;
+  }
+  if (char === '`') return consumeContainerEscape(scan, index);
+  if (!scan.quote && char === "'") {
+    scan.quote = "'";
+    appendContainerContext(scan, ' ');
+    return index;
+  }
+  if (!scan.quote && char === '$' && input[index + 1] === '{') {
+    appendContainerContext(scan, '${');
+    scan.bracedVariable = true;
+    return index + 1;
+  }
+  if (char === '"') {
+    scan.quote = scan.quote === '"' ? null : '"';
+    if (scan.quote === '"') appendContainerContext(scan, ' ');
+    return index;
+  }
+  return -1;
+}
+
+function containerDescriptor(input, index, flags) {
+  const { isSubexpression, isArrayExpression, isScriptBlock } = flags;
+  return {
+    ...flags,
+    isHashtable: isScriptBlock && input[index - 1] === '@',
+    openingIndex: isSubexpression || isArrayExpression ? index + 1 : index,
+    open: isScriptBlock ? '{' : '(',
+    close: isScriptBlock ? '}' : ')',
   };
+}
+
+/**
+ * Classify the live character at `index`. Returns a container descriptor, or
+ * null after folding a non-container character into the clause context.
+ */
+function readContainerOpener(scan, index) {
+  const { input, quote } = scan;
+  const char = input[index];
+  const isSubexpression = char === '$' && input[index + 1] === '(';
+  if (quote === '"' && !isSubexpression) return null;
+
+  const isArrayExpression = !quote && char === '@' && input[index + 1] === '(';
+  const isGroupingExpression = !quote && char === '(';
+  const isScriptBlock = !quote && char === '{';
+  if (!isSubexpression && !isArrayExpression && !isGroupingExpression && !isScriptBlock) {
+    if (!quote) appendContainerContext(scan, char);
+    return null;
+  }
+  const isCmdPayloadGroup = isGroupingExpression &&
+    /(?:^|\s)cmd(?:\.exe)?\s+\/[ck](?:\s|$)/i.test(currentClause(scan.context));
+  if (isCmdPayloadGroup) {
+    appendContainerContext(scan, char);
+    return null;
+  }
+  return containerDescriptor(input, index, {
+    isSubexpression,
+    isArrayExpression,
+    isGroupingExpression,
+    isScriptBlock,
+  });
+}
+
+function queueCreatedScriptBlock(scan, group, clause, invokedAfter) {
+  const { options } = scan;
+  const createsScriptBlock = /\[\s*(?:system\.management\.automation\.)?scriptblock\s*\]\s*::\s*create\s*$/i.test(clause);
+  if (!createsScriptBlock || !(invokedAfter || options.executeBareScriptBlocks)) return;
+  const scalarReference = variableReference(group.body);
+  const scriptText = staticStringResult(group.body) ||
+    (scalarReference ? options.staticScalars?.get(scalarReference) : null);
+  if (scriptText) {
+    scan.bodies.push({ body: scriptText, options: { executeBareScriptBlocks: true } });
+  }
+}
+
+function queueContainerBody(scan, container, group, info) {
+  const { options } = scan;
+  const { isScriptBlock, isHashtable } = container;
+  const { prefix, invokesContainer, invokedAfter } = info;
+  const clause = currentClause(prefix);
+  const shouldScan = scan.contextTruncated || !isScriptBlock || isHashtable || invokedAfter ||
+    isExecutableScriptBlock(prefix, options);
+  if (shouldScan) {
+    const executesNestedScriptBlocks = isScriptBlock && /^switch\b/i.test(clause);
+    scan.bodies.push({
+      body: group.body,
+      options: {
+        executeBareScriptBlocks: Boolean(options.executeBareScriptBlocks) ||
+          invokedAfter || executesNestedScriptBlocks ||
+          (!isScriptBlock && invokesContainer),
+      },
+    });
+  } else {
+    const functionName = deferredScriptBlockName(prefix);
+    if (functionName) scan.deferredFunctions.push({ body: group.body, functionName });
+  }
+  queueCreatedScriptBlock(scan, group, clause, invokedAfter);
+}
+
+function staticContainerCommand(scan, container, group, info) {
+  const clause = currentClause(info.prefix);
+  if (container.isSubexpression || info.invokesContainer) {
+    const output = staticOutputResult(group.body);
+    if (output !== null || !container.isSubexpression) return output;
+    const scalarReference = variableReference(group.body);
+    return scalarReference ? scan.options.staticScalars?.get(scalarReference) ?? null : null;
+  }
+  if (/^(?:start-process|saps|start)\b/i.test(clause)) return staticStringArrayResult(group.body);
+  if (/^new-object\b/i.test(clause)) return staticTypeNameResult(group.body);
+  if (isPipedToPowerShellStdin(scan.input, group.end)) return staticScalarResult(group.body);
+  return staticCommandResult(group.body);
+}
+
+function resolveContainerCommand(scan, container, group, info) {
+  const resolvedCommand = container.isScriptBlock
+    ? null
+    : staticContainerCommand(scan, container, group, info);
+  if (resolvedCommand || container.isScriptBlock) return resolvedCommand;
+  const executableBlockExpression = /\{|\[\s*(?:system\.management\.automation\.)?scriptblock\s*\]\s*::\s*create/i.test(
+    maskQuotedStrings(group.body)
+  );
+  const dynamic = invokesDynamicResult(info.prefix, {
+    groupingExpression: container.isGroupingExpression,
+  });
+  return dynamic && !executableBlockExpression ? DYNAMIC_EXECUTION_MARKER : null;
+}
+
+function recordContainer(scan, container, group, index) {
+  const withinDoubleQuote = scan.quote === '"';
+  const prefix = scan.context;
+  const invokesContainer = invokesContainerResult(prefix, {
+    groupingExpression: container.isGroupingExpression,
+  });
+  const invokedAfter = isInvokedAfterContainer(scan.input, group.end);
+  queueContainerBody(scan, container, group, { prefix, invokesContainer, invokedAfter });
+  maskRange(scan.masked, index, group.end);
+
+  const resolvedCommand = resolveContainerCommand(scan, container, group, { prefix, invokesContainer });
+  if (resolvedCommand) {
+    scan.masked[index] = resolvedCommand;
+    if (!withinDoubleQuote) appendContainerContext(scan, resolvedCommand);
+  } else if (container.isScriptBlock) {
+    if (invokesContainer) {
+      scan.context = prefix;
+    } else {
+      resetContainerContext(scan);
+    }
+  } else if (!withinDoubleQuote) {
+    appendContainerContext(scan, ' ');
+  }
+}
+
+function extractExecutableContainers(input, options = {}) {
+  const scan = createContainerScan(input, options);
 
   for (let index = 0; index < input.length; index += 1) {
-    const char = input[index];
-
-    if (bracedVariable) {
-      if (char === '`' && index + 1 < input.length) {
-        appendContext(input[index + 1]);
-        index += 1;
-      } else if (char === '}') {
-        context += char;
-        bracedVariable = false;
-      } else {
-        appendContext(char);
-      }
+    const inertEnd = consumeContainerInertChar(scan, index);
+    if (inertEnd !== -1) {
+      index = inertEnd;
       continue;
     }
 
-    if (quote === "'") {
-      if (char === "'" && input[index + 1] === "'") {
-        index += 1;
-      } else if (char === "'") {
-        quote = null;
-      }
-      continue;
-    }
-    if (char === '`') {
-      if (!quote && index + 1 < input.length) {
-        const escaped = input[index + 1];
-        appendContext(escaped === '\n' || escaped === '\r' ? ' ' : escaped);
-        if (escaped === '\r' && input[index + 2] === '\n') index += 1;
-      }
-      index += 1;
-      continue;
-    }
+    const container = readContainerOpener(scan, index);
+    if (!container) continue;
 
-    if (!quote && char === "'") {
-      quote = "'";
-      appendContext(' ');
-      continue;
-    }
-
-    if (!quote && char === '$' && input[index + 1] === '{') {
-      appendContext('${');
-      bracedVariable = true;
-      index += 1;
-      continue;
-    }
-
-    if (char === '"') {
-      quote = quote === '"' ? null : '"';
-      if (quote === '"') appendContext(' ');
-      continue;
-    }
-
-    const isSubexpression = char === '$' && input[index + 1] === '(';
-    if (quote === '"' && !isSubexpression) continue;
-
-    const isArrayExpression = !quote && char === '@' && input[index + 1] === '(';
-    const isGroupingExpression = !quote && char === '(';
-    const isScriptBlock = !quote && char === '{';
-    const isHashtable = isScriptBlock && input[index - 1] === '@';
-    const isCmdPayloadGroup = isGroupingExpression &&
-      /(?:^|\s)cmd(?:\.exe)?\s+\/[ck](?:\s|$)/i.test(currentClause(context));
-    if (!isSubexpression && !isArrayExpression && !isGroupingExpression && !isScriptBlock) {
-      if (!quote) appendContext(char);
-      continue;
-    }
-    if (isCmdPayloadGroup) {
-      appendContext(char);
-      continue;
-    }
-
-    const openingIndex = isSubexpression || isArrayExpression ? index + 1 : index;
-    const open = isScriptBlock ? '{' : '(';
-    const close = isScriptBlock ? '}' : ')';
-    const group = readBalancedGroup(input, openingIndex, open, close);
+    const group = readBalancedGroup(input, container.openingIndex, container.open, container.close);
     if (!group) {
-      for (let offset = index; offset < input.length; offset += 1) masked[offset] = ' ';
+      maskRange(scan.masked, index, input.length);
       break;
     }
-
-    const withinDoubleQuote = quote === '"';
-    const prefix = context;
-    const invokesContainer = invokesContainerResult(prefix, {
-      groupingExpression: isGroupingExpression,
-    });
-    const invokedAfter = isInvokedAfterContainer(input, group.end);
-    const createsScriptBlock = /\[\s*(?:system\.management\.automation\.)?scriptblock\s*\]\s*::\s*create\s*$/i.test(
-      currentClause(prefix)
-    );
-    const shouldScan = contextTruncated || !isScriptBlock || isHashtable || invokedAfter ||
-      isExecutableScriptBlock(prefix, options);
-    if (shouldScan) {
-      const executesNestedScriptBlocks = isScriptBlock && /^switch\b/i.test(currentClause(prefix));
-      bodies.push({
-        body: group.body,
-        options: {
-          executeBareScriptBlocks: Boolean(options.executeBareScriptBlocks) ||
-            invokedAfter || executesNestedScriptBlocks ||
-            (!isScriptBlock && invokesContainer),
-        },
-      });
-    } else {
-      const functionName = deferredScriptBlockName(prefix);
-      if (functionName) deferredFunctions.push({ body: group.body, functionName });
-    }
-    if (createsScriptBlock && (invokedAfter || options.executeBareScriptBlocks)) {
-      const scalarReference = variableReference(group.body);
-      const scriptText = staticStringResult(group.body) ||
-        (scalarReference ? options.staticScalars?.get(scalarReference) : null);
-      if (scriptText) {
-        bodies.push({ body: scriptText, options: { executeBareScriptBlocks: true } });
-      }
-    }
-    for (let offset = index; offset < group.end; offset += 1) {
-      masked[offset] = ' ';
-    }
-    let resolvedCommand = null;
-    if (!isScriptBlock) {
-      if (isSubexpression || invokesContainer) {
-        resolvedCommand = staticOutputResult(group.body);
-        if (resolvedCommand === null && isSubexpression) {
-          const scalarReference = variableReference(group.body);
-          if (scalarReference) {
-            resolvedCommand = options.staticScalars?.get(scalarReference) ?? null;
-          }
-        }
-      } else if (/^(?:start-process|saps|start)\b/i.test(currentClause(prefix))) {
-        resolvedCommand = staticStringArrayResult(group.body);
-      } else if (/^new-object\b/i.test(currentClause(prefix))) {
-        resolvedCommand = staticTypeNameResult(group.body);
-      } else if (isPipedToPowerShellStdin(input, group.end)) {
-        resolvedCommand = staticScalarResult(group.body);
-      } else {
-        resolvedCommand = staticCommandResult(group.body);
-      }
-    }
-    const executableBlockExpression = /\{|\[\s*(?:system\.management\.automation\.)?scriptblock\s*\]\s*::\s*create/i.test(
-      maskQuotedStrings(group.body)
-    );
-    if (!resolvedCommand && !isScriptBlock && invokesDynamicResult(prefix, {
-      groupingExpression: isGroupingExpression,
-    }) && !executableBlockExpression) {
-      resolvedCommand = DYNAMIC_EXECUTION_MARKER;
-    }
-    if (resolvedCommand) {
-      masked[index] = resolvedCommand;
-      if (!withinDoubleQuote) appendContext(resolvedCommand);
-    } else if (isScriptBlock) {
-      if (invokesContainer) {
-        context = prefix;
-      } else {
-        resetContext();
-      }
-    } else if (!withinDoubleQuote) {
-      appendContext(' ');
-    }
+    recordContainer(scan, container, group, index);
     index = group.end - 1;
   }
 
-  return { bodies, deferredFunctions, outer: masked.join('') };
+  return { bodies: scan.bodies, deferredFunctions: scan.deferredFunctions, outer: scan.masked.join('') };
 }
 
 /**
@@ -939,181 +964,226 @@ function extractExecutableContainers(input, options = {}) {
  * are interpreted before token comparison so `Rem`ove-Item` normalizes to the
  * command PowerShell executes. Backslashes remain ordinary characters.
  */
-function parseStatements(input) {
-  const statements = [];
-  let statement = [];
-  let segment = [];
-  let segmentQuotedTokens = [];
-  let segmentQuoteKinds = [];
-  let segmentTokenSources = [];
-  let segmentInlineValueQuoteKinds = [];
-  let word = '';
-  let wordSource = '';
-  let wordHasQuotedContent = false;
-  let wordHasUnquotedContent = false;
-  let wordQuoteKind = null;
-  let wordInlineValueQuoteKind = null;
-  let wordInlineValueQuoteClosed = false;
-  let quote = null;
-  let parenDepth = 0;
-  let callOperatorPending = false;
+function createWordState() {
+  return {
+    text: '',
+    source: '',
+    hasQuotedContent: false,
+    hasUnquotedContent: false,
+    quoteKind: null,
+    inlineValueQuoteKind: null,
+    inlineValueQuoteClosed: false,
+  };
+}
 
-  const flushWord = () => {
-    if (word) {
-      segment.push(word);
-      segmentQuotedTokens.push(wordHasQuotedContent && !wordHasUnquotedContent);
-      segmentQuoteKinds.push(
-        wordHasQuotedContent && !wordHasUnquotedContent ? wordQuoteKind : null
-      );
-      segmentTokenSources.push(wordSource);
-      segmentInlineValueQuoteKinds.push(
-        wordInlineValueQuoteClosed && wordInlineValueQuoteKind !== 'mixed'
-          ? wordInlineValueQuoteKind
-          : null
-      );
+function createSegmentState() {
+  return {
+    tokens: [],
+    quotedTokens: [],
+    quoteKinds: [],
+    tokenSources: [],
+    inlineValueQuoteKinds: [],
+  };
+}
+
+function createStatementParser() {
+  return {
+    statements: [],
+    statement: [],
+    segment: createSegmentState(),
+    word: createWordState(),
+    quote: null,
+    parenDepth: 0,
+    callOperatorPending: false,
+  };
+}
+
+function markInlineValueMixed(word) {
+  if (word.inlineValueQuoteClosed) word.inlineValueQuoteKind = 'mixed';
+}
+
+function appendUnquotedChar(word, char) {
+  word.text += char;
+  word.source += char;
+  word.hasUnquotedContent = true;
+}
+
+function appendQuotedChar(word, char) {
+  word.text += char;
+  word.source += char;
+  word.hasQuotedContent = true;
+}
+
+function flushWord(parser) {
+  const { word, segment } = parser;
+  if (word.text) {
+    const quotedOnly = word.hasQuotedContent && !word.hasUnquotedContent;
+    segment.tokens.push(word.text);
+    segment.quotedTokens.push(quotedOnly);
+    segment.quoteKinds.push(quotedOnly ? word.quoteKind : null);
+    segment.tokenSources.push(word.source);
+    segment.inlineValueQuoteKinds.push(
+      word.inlineValueQuoteClosed && word.inlineValueQuoteKind !== 'mixed'
+        ? word.inlineValueQuoteKind
+        : null
+    );
+  }
+  parser.word = createWordState();
+}
+
+function flushSegment(parser) {
+  flushWord(parser);
+  const { segment } = parser;
+  if (segment.tokens.length) {
+    Object.defineProperties(segment.tokens, {
+      invokedByCallOperator: { value: parser.callOperatorPending },
+      quotedTokens: { value: segment.quotedTokens },
+      quoteKinds: { value: segment.quoteKinds },
+      tokenSources: { value: segment.tokenSources },
+      inlineValueQuoteKinds: { value: segment.inlineValueQuoteKinds },
+    });
+    parser.statement.push(segment.tokens);
+    parser.callOperatorPending = false;
+  }
+  parser.segment = createSegmentState();
+}
+
+function flushStatement(parser) {
+  flushSegment(parser);
+  if (parser.statement.length) parser.statements.push(parser.statement);
+  parser.statement = [];
+}
+
+// Each consume* helper returns the last input index it consumed.
+function consumeSingleQuotedChar(parser, input, index) {
+  const { word } = parser;
+  const char = input[index];
+  if (char === "'" && input[index + 1] === "'") {
+    word.text += "'";
+    word.source += "''";
+    return index + 1;
+  }
+  if (char === "'") {
+    parser.quote = null;
+    if (word.inlineValueQuoteKind === "'") word.inlineValueQuoteClosed = true;
+    return index;
+  }
+  appendQuotedChar(word, char);
+  return index;
+}
+
+function consumeDoubleQuotedChar(parser, input, index) {
+  const { word } = parser;
+  const char = input[index];
+  if (char === '"') {
+    parser.quote = null;
+    if (word.inlineValueQuoteKind === '"') word.inlineValueQuoteClosed = true;
+    return index;
+  }
+  appendQuotedChar(word, char);
+  return index;
+}
+
+function consumeBacktickEscape(parser, input, index) {
+  const { word } = parser;
+  if (index + 1 >= input.length) {
+    word.text += '`';
+    word.source += '`';
+    return index;
+  }
+  const escaped = input[index + 1];
+  word.source += `\`${escaped}`;
+  if (escaped === '\n' || escaped === '\r') {
+    if (escaped === '\r' && input[index + 2] === '\n') {
+      word.source += '\n';
+      return index + 2;
     }
-    word = '';
-    wordSource = '';
-    wordHasQuotedContent = false;
-    wordHasUnquotedContent = false;
-    wordQuoteKind = null;
-    wordInlineValueQuoteKind = null;
-    wordInlineValueQuoteClosed = false;
-  };
-  const flushSegment = () => {
-    flushWord();
-    if (segment.length) {
-      Object.defineProperties(segment, {
-        invokedByCallOperator: { value: callOperatorPending },
-        quotedTokens: { value: segmentQuotedTokens },
-        quoteKinds: { value: segmentQuoteKinds },
-        tokenSources: { value: segmentTokenSources },
-        inlineValueQuoteKinds: { value: segmentInlineValueQuoteKinds },
-      });
-      statement.push(segment);
-      callOperatorPending = false;
-    }
-    segment = [];
-    segmentQuotedTokens = [];
-    segmentQuoteKinds = [];
-    segmentTokenSources = [];
-    segmentInlineValueQuoteKinds = [];
-  };
-  const flushStatement = () => {
-    flushSegment();
-    if (statement.length) statements.push(statement);
-    statement = [];
-  };
+    return index + 1;
+  }
+  markInlineValueMixed(word);
+  word.text += escaped;
+  if (parser.quote) word.hasQuotedContent = true;
+  else word.hasUnquotedContent = true;
+  return index + 1;
+}
+
+function openWordQuote(parser, char) {
+  const { word } = parser;
+  if (word.inlineValueQuoteClosed) {
+    word.inlineValueQuoteKind = 'mixed';
+  } else if (word.inlineValueQuoteKind === null && /^-+[^:\s]+:$/.test(word.text)) {
+    word.inlineValueQuoteKind = char;
+  }
+  parser.quote = char;
+  word.hasQuotedContent = true;
+  word.quoteKind = word.quoteKind === null || word.quoteKind === char ? char : 'mixed';
+}
+
+// Parentheses, statement and pipeline separators, the call operator, and
+// whitespace. Returns false when `char` is an ordinary word character.
+function consumeStructuralChar(parser, char) {
+  if (char === '(') {
+    markInlineValueMixed(parser.word);
+    parser.parenDepth += 1;
+    appendUnquotedChar(parser.word, char);
+    return true;
+  }
+  if (char === ')' && parser.parenDepth > 0) {
+    markInlineValueMixed(parser.word);
+    parser.parenDepth -= 1;
+    appendUnquotedChar(parser.word, char);
+    return true;
+  }
+  if (parser.parenDepth === 0 && (char === ';' || char === '\n' || char === '\r')) {
+    flushStatement(parser);
+    return true;
+  }
+  if (parser.parenDepth === 0 && char === '|') {
+    flushSegment(parser);
+    return true;
+  }
+  if (parser.parenDepth === 0 && char === '&') {
+    if (parser.word.text || parser.segment.tokens.length) flushStatement(parser);
+    parser.callOperatorPending = true;
+    return true;
+  }
+  if (/\s/.test(char)) {
+    flushWord(parser);
+    return true;
+  }
+  return false;
+}
+
+function parseStatements(input) {
+  const parser = createStatementParser();
 
   for (let index = 0; index < input.length; index += 1) {
     const char = input[index];
 
-    if (quote === "'") {
-      if (char === "'" && input[index + 1] === "'") {
-        word += "'";
-        wordSource += "''";
-        index += 1;
-      } else if (char === "'") {
-        quote = null;
-        if (wordInlineValueQuoteKind === "'") wordInlineValueQuoteClosed = true;
-      } else {
-        word += char;
-        wordSource += char;
-        wordHasQuotedContent = true;
-      }
+    if (parser.quote === "'") {
+      index = consumeSingleQuotedChar(parser, input, index);
       continue;
     }
-
     if (char === '`') {
-      if (index + 1 >= input.length) {
-        word += '`';
-        wordSource += '`';
-        continue;
-      }
-      const escaped = input[index + 1];
-      wordSource += `\`${escaped}`;
-      index += 1;
-      if (escaped === '\n' || escaped === '\r') {
-        if (escaped === '\r' && input[index + 1] === '\n') {
-          wordSource += '\n';
-          index += 1;
-        }
-      } else {
-        if (wordInlineValueQuoteClosed) wordInlineValueQuoteKind = 'mixed';
-        word += escaped;
-        if (quote) wordHasQuotedContent = true;
-        else wordHasUnquotedContent = true;
-      }
+      index = consumeBacktickEscape(parser, input, index);
       continue;
     }
-
-    if (quote === '"') {
-      if (char === '"') {
-        quote = null;
-        if (wordInlineValueQuoteKind === '"') wordInlineValueQuoteClosed = true;
-      } else {
-        word += char;
-        wordSource += char;
-        wordHasQuotedContent = true;
-      }
+    if (parser.quote === '"') {
+      index = consumeDoubleQuotedChar(parser, input, index);
       continue;
     }
-
     if (char === "'" || char === '"') {
-      if (wordInlineValueQuoteClosed) {
-        wordInlineValueQuoteKind = 'mixed';
-      } else if (wordInlineValueQuoteKind === null && /^-+[^:\s]+:$/.test(word)) {
-        wordInlineValueQuoteKind = char;
-      }
-      quote = char;
-      wordHasQuotedContent = true;
-      wordQuoteKind = wordQuoteKind === null || wordQuoteKind === char ? char : 'mixed';
+      openWordQuote(parser, char);
       continue;
     }
+    if (consumeStructuralChar(parser, char)) continue;
 
-    if (char === '(') {
-      if (wordInlineValueQuoteClosed) wordInlineValueQuoteKind = 'mixed';
-      parenDepth += 1;
-      word += char;
-      wordSource += char;
-      wordHasUnquotedContent = true;
-      continue;
-    }
-    if (char === ')' && parenDepth > 0) {
-      if (wordInlineValueQuoteClosed) wordInlineValueQuoteKind = 'mixed';
-      parenDepth -= 1;
-      word += char;
-      wordSource += char;
-      wordHasUnquotedContent = true;
-      continue;
-    }
-
-    if (parenDepth === 0 && (char === ';' || char === '\n' || char === '\r')) {
-      flushStatement();
-      continue;
-    }
-    if (parenDepth === 0 && char === '|') {
-      flushSegment();
-      continue;
-    }
-    if (parenDepth === 0 && char === '&') {
-      if (word || segment.length) flushStatement();
-      callOperatorPending = true;
-      continue;
-    }
-    if (/\s/.test(char)) {
-      flushWord();
-      continue;
-    }
-
-    if (wordInlineValueQuoteClosed) wordInlineValueQuoteKind = 'mixed';
-    word += char;
-    wordSource += char;
-    wordHasUnquotedContent = true;
+    markInlineValueMixed(parser.word);
+    appendUnquotedChar(parser.word, char);
   }
 
-  flushStatement();
-  return statements;
+  flushStatement(parser);
+  return parser.statements;
 }
 
 function maskQuotedStrings(input) {
@@ -1267,84 +1337,101 @@ function staticPipelineInput(tokens, state, findings) {
   return null;
 }
 
+function scanEncodedCommandFlag(tokens, index, scan) {
+  const { findings, scanState } = scan;
+  const token = tokens[index];
+  const inlinePayload = parameterValue(token);
+  let encodedPayload = inlinePayload || tokens[index + 1];
+  const payloadIndex = index + 1;
+  const quoteKind = tokens.quoteKinds?.[payloadIndex];
+  const inlineQuoteKind = tokens.inlineValueQuoteKinds?.[index];
+  if ((inlinePayload && inlineQuoteKind !== "'") ||
+      (!inlinePayload && encodedPayload && quoteKind !== "'")) {
+    const source = inlinePayload
+      ? parameterValue(tokens.tokenSources?.[index] || token)
+      : tokens.tokenSources?.[payloadIndex] ?? encodedPayload;
+    const expanded = expandStaticDoubleQuotedString(
+      source || encodedPayload,
+      scanState,
+      findings
+    );
+    if (expanded === null) return;
+    encodedPayload = expanded;
+  }
+  const decoded = decodeUtf16LeBase64(encodedPayload);
+  if (decoded !== null) addNestedScan(decoded, scan.depth, findings, scan.analysis, {}, scanState);
+}
+
+// Inline `-Command:value` payloads. Returns null when expansion is unresolved.
+function resolveInlineCommandPayload(tokens, index, scan) {
+  const token = tokens[index];
+  const inlinePayload = parameterValue(token);
+  const rest = tokens.slice(index + 1);
+  if (tokens.inlineValueQuoteKinds?.[index] === "'") return [inlinePayload, ...rest].join(' ');
+  const inlineSource = parameterValue(tokens.tokenSources?.[index] || token);
+  const expanded = expandStaticDoubleQuotedString(
+    inlineSource || inlinePayload,
+    scan.scanState,
+    scan.findings
+  );
+  return expanded === null ? null : [expanded, ...rest].join(' ');
+}
+
+// `-Command value` payloads. Returns null when expansion is unresolved.
+function resolvePositionalCommandPayload(tokens, payloadIndex, payload, scan) {
+  const { findings, scanState } = scan;
+  const quoteKind = tokens.quoteKinds?.[payloadIndex];
+  if (tokens[payloadIndex] && quoteKind !== "'") {
+    const expanded = expandStaticDoubleQuotedString(
+      tokens.tokenSources?.[payloadIndex] ?? tokens[payloadIndex],
+      scanState,
+      findings
+    );
+    return expanded === null ? null : [expanded, ...tokens.slice(payloadIndex + 1)].join(' ');
+  }
+  const payloadReference = quoteKind === "'" ? null : variableReference(payload);
+  if (!payloadReference) return payload;
+  const staticValue = scanState?.staticScalars.get(payloadReference);
+  if (staticValue === undefined) {
+    findings.add(RULE_IDS.DYNAMIC_EXECUTION);
+    return null;
+  }
+  return staticValue;
+}
+
+function scanCommandFlag(tokens, index, scan, upstreamTokens) {
+  const { findings, scanState } = scan;
+  const inlinePayload = parameterValue(tokens[index]);
+  const rawPayload = inlinePayload
+    ? [inlinePayload, ...tokens.slice(index + 1)].join(' ')
+    : tokens.slice(index + 1).join(' ');
+  const pipelinePayload = rawPayload === '-' ? staticPipelineInput(upstreamTokens, scanState, findings) : null;
+  const payload = inlinePayload
+    ? resolveInlineCommandPayload(tokens, index, scan)
+    : resolvePositionalCommandPayload(tokens, index + 1, rawPayload, scan);
+  if (payload === null) return;
+  if (pipelinePayload || (payload && payload !== '-')) {
+    addNestedScan(
+      pipelinePayload || payload,
+      scan.depth,
+      findings,
+      scan.analysis,
+      { executeBareScriptBlocks: true },
+      scanState
+    );
+  }
+}
+
 function scanNestedPowerShell(tokens, depth, findings, analysis, scanState, upstreamTokens = null) {
+  const scan = { depth, findings, analysis, scanState };
   for (let index = 1; index < tokens.length; index += 1) {
     const token = tokens[index];
-
     if (isEncodedCommandFlag(token)) {
-      const inlinePayload = parameterValue(token);
-      let encodedPayload = inlinePayload || tokens[index + 1];
-      const payloadIndex = index + 1;
-      const quoteKind = tokens.quoteKinds?.[payloadIndex];
-      const inlineQuoteKind = tokens.inlineValueQuoteKinds?.[index];
-      if ((inlinePayload && inlineQuoteKind !== "'") ||
-          (!inlinePayload && encodedPayload && quoteKind !== "'")) {
-        const source = inlinePayload
-          ? parameterValue(tokens.tokenSources?.[index] || token)
-          : tokens.tokenSources?.[payloadIndex] ?? encodedPayload;
-        const expanded = expandStaticDoubleQuotedString(
-          source || encodedPayload,
-          scanState,
-          findings
-        );
-        if (expanded === null) return;
-        encodedPayload = expanded;
-      }
-      const decoded = decodeUtf16LeBase64(encodedPayload);
-      if (decoded !== null) addNestedScan(decoded, depth, findings, analysis, {}, scanState);
+      scanEncodedCommandFlag(tokens, index, scan);
       return;
     }
-
     if (isCommandFlag(token)) {
-      const inlinePayload = parameterValue(token);
-      let payload = inlinePayload
-        ? [inlinePayload, ...tokens.slice(index + 1)].join(' ')
-        : tokens.slice(index + 1).join(' ');
-      const pipelinePayload = payload === '-' ? staticPipelineInput(upstreamTokens, scanState, findings) : null;
-      const payloadIndex = index + 1;
-      const inlineQuoteKind = tokens.inlineValueQuoteKinds?.[index];
-      if (inlinePayload && inlineQuoteKind !== "'") {
-        const inlineSource = parameterValue(tokens.tokenSources?.[index] || token);
-        const expanded = expandStaticDoubleQuotedString(
-          inlineSource || inlinePayload,
-          scanState,
-          findings
-        );
-        if (expanded === null) return;
-        payload = [expanded, ...tokens.slice(index + 1)].join(' ');
-      } else if (inlinePayload) {
-        payload = [inlinePayload, ...tokens.slice(index + 1)].join(' ');
-      } else if (tokens[payloadIndex] && tokens.quoteKinds?.[payloadIndex] !== "'") {
-        const expanded = expandStaticDoubleQuotedString(
-          tokens.tokenSources?.[payloadIndex] ?? tokens[payloadIndex],
-          scanState,
-          findings
-        );
-        if (expanded === null) return;
-        payload = [expanded, ...tokens.slice(payloadIndex + 1)].join(' ');
-      } else {
-        const payloadReference = tokens.quoteKinds?.[payloadIndex] === "'"
-          ? null
-          : variableReference(payload);
-        if (payloadReference) {
-          const staticValue = scanState?.staticScalars.get(payloadReference);
-          if (staticValue === undefined) {
-            findings.add(RULE_IDS.DYNAMIC_EXECUTION);
-            return;
-          }
-          payload = staticValue;
-        }
-      }
-      if (pipelinePayload || (payload && payload !== '-')) {
-        addNestedScan(
-          pipelinePayload || payload,
-          depth,
-          findings,
-          analysis,
-          { executeBareScriptBlocks: true },
-          scanState
-        );
-      }
+      scanCommandFlag(tokens, index, scan, upstreamTokens);
       return;
     }
   }
@@ -1377,111 +1464,105 @@ function splitCmdSegments(payload) {
   return segments;
 }
 
-function scanCmdWords(inputWords, depth, findings, analysis, scanState, wrapperDepth = 0) {
-  if (wrapperDepth > 64) {
-    findings.add(RULE_IDS.SCAN_DEPTH_EXCEEDED);
-    return;
-  }
-
-  let words = inputWords.filter(Boolean).map(word => String(word));
-  if (words.length === 0) return;
-  words[0] = words[0].replace(/^@+/, '').replace(/^\(+/, '');
-  words[words.length - 1] = words[words.length - 1].replace(/\)+$/, '');
-
+function stripCmdRedirections(words) {
   while (words.length > 0 && /^\d*(?:>>?|<<?)/.test(words[0])) {
     const redirection = words.shift();
     if (/^\d*(?:>>?|<<?)$/.test(redirection)) words.shift();
   }
+}
+
+// Index of the command that follows a cmd `if` condition.
+function cmdIfCommandIndex(trueBranch) {
+  let commandIndex = 1;
+  if (/^\/i$/i.test(trueBranch[commandIndex])) commandIndex += 1;
+  if (/^not$/i.test(trueBranch[commandIndex])) commandIndex += 1;
+  if (/^(?:exist|defined|errorlevel|cmdextversion)$/i.test(trueBranch[commandIndex])) {
+    return commandIndex + 2;
+  }
+  if (/^(?:equ|neq|lss|leq|gtr|geq)$/i.test(trueBranch[commandIndex + 1])) {
+    return commandIndex + 3;
+  }
+  return commandIndex + 1;
+}
+
+function scanCmdIf(words, scan, wrapperDepth) {
+  const elseIndex = words.findIndex((word, index) => index > 0 && /^else$/i.test(word));
+  const trueBranch = elseIndex === -1 ? words : words.slice(0, elseIndex);
+  scanCmdWords(trueBranch.slice(cmdIfCommandIndex(trueBranch)), scan, wrapperDepth + 1);
+  if (elseIndex !== -1) {
+    scanCmdWords(words.slice(elseIndex + 1), scan, wrapperDepth + 1);
+  }
+}
+
+// Words after `start [options] [title] ...`, skipping options that take a
+// value and a leading window title when a known command follows it.
+function cmdStartTarget(inputWords) {
+  let words = inputWords.slice(1);
+  while (words.length > 0 && /^\//.test(words[0])) {
+    const option = words.shift().toLowerCase();
+    if (/^\/(?:d|node|affinity)$/.test(option)) words.shift();
+  }
+  const knownCommands = new Set([
+    ...CMD_DELETE_COMMANDS,
+    ...POWERSHELL_COMMANDS,
+    'call',
+    'cmd',
+    'for',
+    'if',
+    'start',
+  ]);
+  if (words.length > 1 && !knownCommands.has(commandBasename(words[0]))) {
+    const commandIndex = words.findIndex(word => knownCommands.has(commandBasename(word)));
+    if (commandIndex > 0) words = words.slice(commandIndex);
+  }
+  return words;
+}
+
+function scanCmdWords(inputWords, scan, wrapperDepth = 0) {
+  if (wrapperDepth > 64) {
+    scan.findings.add(RULE_IDS.SCAN_DEPTH_EXCEEDED);
+    return;
+  }
+
+  const words = inputWords.filter(Boolean).map(word => String(word));
+  if (words.length === 0) return;
+  words[0] = words[0].replace(/^@+/, '').replace(/^\(+/, '');
+  words[words.length - 1] = words[words.length - 1].replace(/\)+$/, '');
+  stripCmdRedirections(words);
   if (words.length === 0) return;
 
-  let firstCommand = commandBasename(words[0].replace(/^@+/, '').replace(/^\(+/, ''));
+  const firstCommand = commandBasename(words[0].replace(/^@+/, '').replace(/^\(+/, ''));
   if (firstCommand === 'if') {
-    const elseIndex = words.findIndex((word, index) => index > 0 && /^else$/i.test(word));
-    const trueBranch = elseIndex === -1 ? words : words.slice(0, elseIndex);
-    let commandIndex = 1;
-    if (/^\/i$/i.test(trueBranch[commandIndex])) commandIndex += 1;
-    if (/^not$/i.test(trueBranch[commandIndex])) commandIndex += 1;
-    if (/^(?:exist|defined|errorlevel|cmdextversion)$/i.test(trueBranch[commandIndex])) {
-      commandIndex += 2;
-    } else if (/^(?:equ|neq|lss|leq|gtr|geq)$/i.test(trueBranch[commandIndex + 1])) {
-      commandIndex += 3;
-    } else {
-      commandIndex += 1;
-    }
-    scanCmdWords(
-      trueBranch.slice(commandIndex),
-      depth,
-      findings,
-      analysis,
-      scanState,
-      wrapperDepth + 1
-    );
-    if (elseIndex !== -1) {
-      scanCmdWords(
-        words.slice(elseIndex + 1),
-        depth,
-        findings,
-        analysis,
-        scanState,
-        wrapperDepth + 1
-      );
-    }
+    scanCmdIf(words, scan, wrapperDepth);
     return;
   }
   if (firstCommand === 'for') {
     const doIndex = words.findIndex(word => /^do$/i.test(word));
-    if (doIndex !== -1) {
-      scanCmdWords(
-        words.slice(doIndex + 1),
-        depth,
-        findings,
-        analysis,
-        scanState,
-        wrapperDepth + 1
-      );
-    }
+    if (doIndex !== -1) scanCmdWords(words.slice(doIndex + 1), scan, wrapperDepth + 1);
     return;
   }
   if (firstCommand === 'call') {
-    scanCmdWords(words.slice(1), depth, findings, analysis, scanState, wrapperDepth + 1);
+    scanCmdWords(words.slice(1), scan, wrapperDepth + 1);
     return;
   }
   if (firstCommand === 'start') {
-    words = words.slice(1);
-    while (words.length > 0 && /^\//.test(words[0])) {
-      const option = words.shift().toLowerCase();
-      if (/^\/(?:d|node|affinity)$/.test(option)) words.shift();
-    }
-    const knownCommands = new Set([
-      ...CMD_DELETE_COMMANDS,
-      ...POWERSHELL_COMMANDS,
-      'call',
-      'cmd',
-      'for',
-      'if',
-      'start',
-    ]);
-    if (words.length > 1 && !knownCommands.has(commandBasename(words[0]))) {
-      const commandIndex = words.findIndex(word => knownCommands.has(commandBasename(word)));
-      if (commandIndex > 0) words = words.slice(commandIndex);
-    }
-    scanCmdWords(words, depth, findings, analysis, scanState, wrapperDepth + 1);
+    scanCmdWords(cmdStartTarget(words), scan, wrapperDepth + 1);
     return;
   }
 
   if (POWERSHELL_COMMANDS.has(firstCommand) || firstCommand === 'cmd') {
     addNestedScan(
       [firstCommand, ...words.slice(1)].join(' '),
-      depth,
-      findings,
-      analysis,
+      scan.depth,
+      scan.findings,
+      scan.analysis,
       { executeBareScriptBlocks: true },
-      scanState
+      scan.scanState
     );
     return;
   }
   if (CMD_DELETE_COMMANDS.has(firstCommand) && words.slice(1).some(word => /^[-/]s$/i.test(word))) {
-    findings.add(RULE_IDS.CMD_RECURSIVE_DELETE);
+    scan.findings.add(RULE_IDS.CMD_RECURSIVE_DELETE);
   }
 }
 
@@ -1493,14 +1574,9 @@ function scanCmd(tokens, depth, findings, analysis, scanState) {
     .slice(flagIndex + 1)
     .filter(token => token !== '--%')
     .join(' ');
+  const scan = { depth, findings, analysis, scanState };
   for (const segment of splitCmdSegments(payload)) {
-    scanCmdWords(
-      segment.trim().split(/\s+/),
-      depth,
-      findings,
-      analysis,
-      scanState
-    );
+    scanCmdWords(segment.trim().split(/\s+/), scan);
   }
 }
 
@@ -1558,41 +1634,43 @@ function normalizeArgumentList(parts) {
   return payload.replace(/\s*,\s*/g, ' ').trim();
 }
 
-function scanStartProcess(tokens, depth, findings, analysis, scanState) {
-  const command = commandBasename(tokens[0]);
-  if (!['start-process', 'saps', 'start'].includes(command)) return;
-  if (tokens.slice(1).some((token, index) =>
-    !(tokens.quotedTokens || [])[index + 1] &&
+function hasSplattedStartProcessArguments(tokens, quotedTokens) {
+  return tokens.slice(1).some((token, index) =>
+    !quotedTokens[index + 1] &&
       /^@(?:(?:global|script|local|private):)?[A-Za-z_][\w-]*$/i.test(token)
-  )) {
-    findings.add(RULE_IDS.DYNAMIC_EXECUTION);
-    return;
-  }
+  );
+}
 
-  let executable = null;
-  let argumentParts = null;
-  const quotedTokens = tokens.quotedTokens || [];
-
+function startProcessFilePath(tokens, quotedTokens) {
   for (let index = 1; index < tokens.length; index += 1) {
     if (quotedTokens[index]) continue;
-    const parameter = startProcessParameterName(tokens[index]);
-    if (parameter !== 'filepath') continue;
-    executable = parameterValue(tokens[index]) || tokens[index + 1] || null;
-    break;
+    if (startProcessParameterName(tokens[index]) !== 'filepath') continue;
+    return parameterValue(tokens[index]) || tokens[index + 1] || null;
   }
+  return null;
+}
 
+function startProcessArgumentListParts(tokens, quotedTokens, index) {
+  const inlineValue = parameterValue(tokens[index]);
+  const end = tokens.findIndex(
+    (candidate, candidateIndex) => candidateIndex > index &&
+      !quotedTokens[candidateIndex] && startProcessParameterName(candidate)
+  );
+  const remaining = tokens.slice(index + 1, end === -1 ? tokens.length : end);
+  return inlineValue ? [inlineValue, ...remaining] : remaining;
+}
+
+// Walk named parameters once: pick up `-ArgumentList` and, when `-FilePath`
+// was absent, the first positional value as the executable.
+function startProcessNamedTarget(tokens, quotedTokens, filePath) {
+  let executable = filePath;
+  let argumentParts = null;
   for (let index = 1; index < tokens.length; index += 1) {
     const token = tokens[index];
     const quoted = quotedTokens[index] === true;
     const parameter = quoted ? null : startProcessParameterName(token);
     if (parameter === 'argumentlist') {
-      const inlineValue = parameterValue(token);
-      const end = tokens.findIndex(
-        (candidate, candidateIndex) => candidateIndex > index &&
-          !quotedTokens[candidateIndex] && startProcessParameterName(candidate)
-      );
-      const remaining = tokens.slice(index + 1, end === -1 ? tokens.length : end);
-      argumentParts = inlineValue ? [inlineValue, ...remaining] : remaining;
+      argumentParts = startProcessArgumentListParts(tokens, quotedTokens, index);
       break;
     }
     if (parameter) {
@@ -1600,48 +1678,65 @@ function scanStartProcess(tokens, depth, findings, analysis, scanState) {
       continue;
     }
     if (!quoted && token.startsWith('-')) continue;
-    if (executable !== null) continue;
-    if (executable === null) {
-      executable = token;
+    if (executable === null) executable = token;
+  }
+  return { executable, argumentParts };
+}
+
+// Positional arguments are everything after the executable once named
+// parameters and their values are skipped.
+function startProcessPositionalArguments(tokens, quotedTokens, executable) {
+  let executableSeen = false;
+  for (let index = 1; index < tokens.length; index += 1) {
+    const token = tokens[index];
+    const parameter = quotedTokens[index] ? null : startProcessParameterName(token);
+    if (parameter) {
+      if (parameter === 'filepath') executableSeen = true;
+      if (START_PROCESS_VALUE_PARAMETERS.has(parameter) && !parameterValue(token)) index += 1;
+      continue;
     }
+    if (!executableSeen && token === executable) {
+      executableSeen = true;
+      continue;
+    }
+    if (executableSeen) return tokens.slice(index);
+  }
+  return null;
+}
+
+function startProcessTarget(tokens, quotedTokens) {
+  const filePath = startProcessFilePath(tokens, quotedTokens);
+  const target = startProcessNamedTarget(tokens, quotedTokens, filePath);
+  if (target.argumentParts === null && target.executable !== null) {
+    target.argumentParts = startProcessPositionalArguments(tokens, quotedTokens, target.executable);
+  }
+  return target;
+}
+
+function scanStartProcess(tokens, depth, findings, analysis, scanState) {
+  const command = commandBasename(tokens[0]);
+  if (!['start-process', 'saps', 'start'].includes(command)) return;
+  const quotedTokens = tokens.quotedTokens || [];
+  if (hasSplattedStartProcessArguments(tokens, quotedTokens)) {
+    findings.add(RULE_IDS.DYNAMIC_EXECUTION);
+    return;
   }
 
-  if (argumentParts === null && executable !== null) {
-    let executableSeen = false;
-    for (let index = 1; index < tokens.length; index += 1) {
-      const token = tokens[index];
-      const parameter = quotedTokens[index] ? null : startProcessParameterName(token);
-      if (parameter) {
-        if (parameter === 'filepath') executableSeen = true;
-        if (START_PROCESS_VALUE_PARAMETERS.has(parameter) && !parameterValue(token)) index += 1;
-        continue;
-      }
-      if (!executableSeen && token === executable) {
-        executableSeen = true;
-        continue;
-      }
-      if (executableSeen) {
-        argumentParts = tokens.slice(index);
-        break;
-      }
-      if (!quotedTokens[index] && token.startsWith('-')) continue;
-    }
-  }
-
+  const { executable, argumentParts } = startProcessTarget(tokens, quotedTokens);
   const nestedCommand = commandBasename(executable);
+  if (!POWERSHELL_COMMANDS.has(nestedCommand) && nestedCommand !== 'cmd') return;
+
   let argumentList = argumentParts ? normalizeArgumentList(argumentParts) : '';
-  if (POWERSHELL_COMMANDS.has(nestedCommand) || nestedCommand === 'cmd') {
-    const argumentReference = variableReference(argumentList);
-    if (argumentReference) {
-      const staticValue = scanState.staticScalars.get(argumentReference);
-      if (staticValue === undefined) {
-        findings.add(RULE_IDS.DYNAMIC_EXECUTION);
-        return;
-      }
-      argumentList = staticValue;
+  const argumentReference = variableReference(argumentList);
+  if (argumentReference) {
+    const staticValue = scanState.staticScalars.get(argumentReference);
+    if (staticValue === undefined) {
+      findings.add(RULE_IDS.DYNAMIC_EXECUTION);
+      return;
     }
+    argumentList = staticValue;
   }
-  if ((POWERSHELL_COMMANDS.has(nestedCommand) || nestedCommand === 'cmd') && argumentList) {
+  if (argumentList) {
     addNestedScan(
       `${executable} ${argumentList}`,
       depth,
@@ -1868,18 +1963,14 @@ function scanInvokeScriptCalls(source, unquoted, depth, findings, analysis, stat
   }
 }
 
-function scanPowerShell(command, depth, findings, analysis = null, options = {}, scanState = null) {
-  const raw = normalizeSmartQuotes(command);
-  if (!raw.trim()) return;
+const DIRECT_COMMAND_FINDINGS = Object.freeze({
+  'clear-content': RULE_IDS.CLEAR_CONTENT,
+  clc: RULE_IDS.CLEAR_CONTENT,
+  'clear-disk': RULE_IDS.CLEAR_DISK,
+  'format-volume': RULE_IDS.FORMAT_VOLUME,
+});
 
-  const state = scanState || createScanState();
-
-  const hereStringExpressions = [];
-  const normalizedHereStrings = normalizeHereStrings(raw, hereStringExpressions);
-  const withoutComments = stripPowerShellComments(normalizedHereStrings);
-  collectStaticScalarAssignments(withoutComments, state);
-  const unquoted = maskQuotedStrings(withoutComments);
-  scanInvokeScriptCalls(withoutComments, unquoted, depth, findings, analysis, state);
+function scanStaticDotNetCalls(unquoted, findings, state) {
   if (/\[\s*(?:system\.)?io\.directory\s*\]\s*::\s*delete\s*\(/i.test(unquoted)) {
     findings.add(RULE_IDS.DOTNET_DIRECTORY_DELETE);
   }
@@ -1891,6 +1982,201 @@ function scanPowerShell(command, depth, findings, analysis = null, options = {},
   while ((activatorMatch = activatorPattern.exec(unquoted)) !== null) {
     recordInvocation(state, `__class__:${activatorMatch[1].toLowerCase()}`);
   }
+}
+
+function recordInvokedBlockVariables(unquoted, state) {
+  const invokedBlockVariable = /(\$\{[^}]+\}|\$(?:[A-Za-z_][\w-]*:)?[A-Za-z_][\w-]*(?:\[[^\]]+\]|\.(?!getnewclosure\b)[A-Za-z_][\w-]*)*)(?:\.getnewclosure\s*\(\s*\))+\.\s*(?:invoke|invokereturnasis|invokewithcontext)\s*\(/gi;
+  let invokedBlockMatch;
+  while ((invokedBlockMatch = invokedBlockVariable.exec(unquoted)) !== null) {
+    recordInvocation(state, invokedBlockMatch[1].toLowerCase());
+  }
+}
+
+function scanAliasInvocation(commandName, tokens, executable, scan) {
+  const { state } = scan;
+  const aliasTarget = state.aliases.get(commandName);
+  if (aliasTarget) {
+    addNestedScan(
+      [aliasTarget, ...tokens.slice(1)].join(' '),
+      scan.depth,
+      scan.findings,
+      scan.analysis,
+      { executeBareScriptBlocks: true },
+      state
+    );
+  }
+  if (['set-alias', 'new-alias', 'sal', 'nal'].includes(commandName)) {
+    for (const definition of staticAliasDefinitions(tokens, executable.quotedTokens, state)) {
+      state.aliases.set(definition.name, definition.value);
+    }
+  }
+}
+
+function recordNewObjectClass(tokens, quotedTokens, scan) {
+  const { findings, state } = scan;
+  let className = newObjectClassName(tokens, quotedTokens);
+  const classReference = variableReference(className);
+  if (classReference) {
+    const staticClassName = state.staticScalars.get(classReference);
+    if (staticClassName === undefined) {
+      findings.add(RULE_IDS.DYNAMIC_EXECUTION);
+      className = null;
+    } else {
+      className = staticClassName;
+    }
+  }
+  if (className && /^[A-Za-z_][\w-]*$/.test(className)) {
+    recordInvocation(state, `__class__:${className.toLowerCase()}`);
+  }
+}
+
+function recordClassInvocations(commandName, tokens, executable, scan) {
+  const { state } = scan;
+  const classInvocation = commandName.match(/^\[([a-z_][\w-]*)\]::/i);
+  if (classInvocation) recordInvocation(state, `__class__:${classInvocation[1].toLowerCase()}`);
+  if (commandName === 'new-object') recordNewObjectClass(tokens, executable.quotedTokens, scan);
+  const invokedVariable = commandName.match(
+    /^((?:\$\{[^}]+\}|\$(?:[a-z_][\w-]*:)?[a-z_][\w-]*(?:\[[^\]]+\]|\.[a-z_][\w-]*)*))(?:\.getnewclosure\(\))*\.(?:invoke|invokereturnasis|invokewithcontext)(?:\(|$)/i
+  );
+  if (invokedVariable) recordInvocation(state, invokedVariable[1].toLowerCase());
+  if (commandName === '.' && tokens[1]) {
+    recordInvocation(state, commandBasename(tokens[1]));
+  }
+}
+
+// `& $variable ...` where the variable holds a static command string.
+function scanCallOperatorReference(tokens, upstreamTokens, scan) {
+  const { findings, state } = scan;
+  const invokedReference = variableReference(tokens[0]);
+  if (!invokedReference || state.deferredFunctions.has(invokedReference)) return;
+  const commandValue = state.staticScalars.get(invokedReference);
+  if (commandValue === undefined) {
+    findings.add(RULE_IDS.DYNAMIC_EXECUTION);
+  } else if (POWERSHELL_COMMANDS.has(commandBasename(commandValue))) {
+    scanNestedPowerShell(
+      [commandValue, ...tokens.slice(1)],
+      scan.depth,
+      findings,
+      scan.analysis,
+      state,
+      upstreamTokens
+    );
+  } else {
+    addNestedScan(
+      [commandValue, ...tokens.slice(1)].join(' '),
+      scan.depth,
+      findings,
+      scan.analysis,
+      { executeBareScriptBlocks: true },
+      state
+    );
+  }
+}
+
+function scanInvokeExpression(tokens, scan) {
+  const { findings, state } = scan;
+  let payload = tokens.slice(1).join(' ');
+  const payloadReference = variableReference(payload);
+  if (payloadReference) {
+    const staticValue = state.staticScalars.get(payloadReference);
+    if (staticValue === undefined) {
+      findings.add(RULE_IDS.DYNAMIC_EXECUTION);
+      return;
+    }
+    payload = staticValue;
+  }
+  if (payload) {
+    addNestedScan(
+      payload,
+      scan.depth,
+      findings,
+      scan.analysis,
+      { executeBareScriptBlocks: true },
+      state
+    );
+  }
+}
+
+function scanCommandFamily(commandName, tokens, upstreamTokens, scan) {
+  const { findings, state } = scan;
+  if (POWERSHELL_COMMANDS.has(commandName)) {
+    scanNestedPowerShell(tokens, scan.depth, findings, scan.analysis, state, upstreamTokens);
+  } else if (commandName === 'cmd') {
+    scanCmd(tokens, scan.depth, findings, scan.analysis, state);
+  } else if (commandName === 'invoke-expression' || commandName === 'iex') {
+    scanInvokeExpression(tokens, scan);
+  } else if (Object.hasOwn(DIRECT_COMMAND_FINDINGS, commandName)) {
+    findings.add(DIRECT_COMMAND_FINDINGS[commandName]);
+  }
+}
+
+/**
+ * Scan one pipeline segment. Returns null for inert segments, otherwise
+ * whether the segment deletes and whether it carries `-Recurse`.
+ */
+function scanStatementSegment(statement, index, scan) {
+  const { findings, state } = scan;
+  const segmentTokens = statement[index];
+  const executable = executableSegment(segmentTokens);
+  const tokens = executable.tokens;
+  if (tokens.length === 0) return null;
+  if (executable.firstTokenQuoted && !segmentTokens.invokedByCallOperator) return null;
+
+  const commandName = commandBasename(tokens[0]);
+  recordInvocation(state, commandName);
+  scanAliasInvocation(commandName, tokens, executable, scan);
+  recordClassInvocations(commandName, tokens, executable, scan);
+  markPowerShellElevation(tokens, scan.analysis);
+  scanStartProcess(tokens, scan.depth, findings, scan.analysis, state);
+  scanScriptBlockConsumer(tokens, executable.quotedTokens, findings, state);
+  if (tokens.some(token => commandBasename(token) === DYNAMIC_EXECUTION_MARKER)) {
+    findings.add(RULE_IDS.DYNAMIC_EXECUTION);
+  }
+  if (segmentTokens.invokedByCallOperator) {
+    scanCallOperatorReference(tokens, statement[index - 1], scan);
+  }
+  scanCommandFamily(commandName, tokens, statement[index - 1], scan);
+
+  return {
+    deletes: scanDeleteSegment(tokens, findings, executable.quotedTokens),
+    recurses: tokens.some(
+      (token, tokenIndex) => !executable.quotedTokens[tokenIndex] &&
+        isEnabledSwitch(token, 'recurse')
+    ),
+  };
+}
+
+function scanStatement(statement, scan) {
+  const deleteSegments = new Set();
+  const recurseSegments = new Set();
+
+  for (let index = 0; index < statement.length; index += 1) {
+    const result = scanStatementSegment(statement, index, scan);
+    if (!result) continue;
+    if (result.deletes) deleteSegments.add(index);
+    if (result.recurses) recurseSegments.add(index);
+  }
+
+  const hasUpstreamRecurse = [...recurseSegments].some(index => !deleteSegments.has(index));
+  if (statement.length > 1 && deleteSegments.size > 0 && hasUpstreamRecurse) {
+    scan.findings.add(RULE_IDS.PIPELINE_RECURSE);
+  }
+}
+
+function scanPowerShell(command, depth, findings, analysis = null, options = {}, scanState = null) {
+  const raw = normalizeSmartQuotes(command);
+  if (!raw.trim()) return;
+
+  const state = scanState || createScanState();
+  const scan = { depth, findings, analysis, state };
+
+  const hereStringExpressions = [];
+  const normalizedHereStrings = normalizeHereStrings(raw, hereStringExpressions);
+  const withoutComments = stripPowerShellComments(normalizedHereStrings);
+  collectStaticScalarAssignments(withoutComments, state);
+  const unquoted = maskQuotedStrings(withoutComments);
+  scanInvokeScriptCalls(withoutComments, unquoted, depth, findings, analysis, state);
+  scanStaticDotNetCalls(unquoted, findings, state);
   for (const payload of hereStringExpressions) {
     addNestedScan(payload, depth, findings, analysis, { executeBareScriptBlocks: true }, state);
   }
@@ -1902,152 +2188,14 @@ function scanPowerShell(command, depth, findings, analysis = null, options = {},
   for (const definition of deferredFunctions) {
     registerDeferredFunction(state, { ...definition, depth });
   }
-  const invokedBlockVariable = /(\$\{[^}]+\}|\$(?:[A-Za-z_][\w-]*:)?[A-Za-z_][\w-]*(?:\[[^\]]+\]|\.(?!getnewclosure\b)[A-Za-z_][\w-]*)*)(?:\.getnewclosure\s*\(\s*\))+\.\s*(?:invoke|invokereturnasis|invokewithcontext)\s*\(/gi;
-  let invokedBlockMatch;
-  while ((invokedBlockMatch = invokedBlockVariable.exec(unquoted)) !== null) {
-    recordInvocation(state, invokedBlockMatch[1].toLowerCase());
-  }
+  recordInvokedBlockVariables(unquoted, state);
   for (const entry of bodies) {
     addNestedScan(entry.body, depth, findings, analysis, entry.options, state);
   }
 
   for (const statement of parseStatements(outer)) {
-    const deleteSegments = new Set();
-    const recurseSegments = new Set();
-
-    for (let index = 0; index < statement.length; index += 1) {
-      const segmentTokens = statement[index];
-      const executable = executableSegment(segmentTokens);
-      const tokens = executable.tokens;
-      if (tokens.length === 0) continue;
-      if (executable.firstTokenQuoted && !segmentTokens.invokedByCallOperator) continue;
-      const commandName = commandBasename(tokens[0]);
-      recordInvocation(state, commandName);
-      const aliasTarget = state.aliases.get(commandName);
-      if (aliasTarget) {
-        addNestedScan(
-          [aliasTarget, ...tokens.slice(1)].join(' '),
-          depth,
-          findings,
-          analysis,
-          { executeBareScriptBlocks: true },
-          state
-        );
-      }
-      if (['set-alias', 'new-alias', 'sal', 'nal'].includes(commandName)) {
-        for (const definition of staticAliasDefinitions(tokens, executable.quotedTokens, state)) {
-          state.aliases.set(definition.name, definition.value);
-        }
-      }
-      const classInvocation = commandName.match(/^\[([a-z_][\w-]*)\]::/i);
-      if (classInvocation) recordInvocation(state, `__class__:${classInvocation[1].toLowerCase()}`);
-      if (commandName === 'new-object') {
-        let className = newObjectClassName(tokens, executable.quotedTokens);
-        const classReference = variableReference(className);
-        if (classReference) {
-          const staticClassName = state.staticScalars.get(classReference);
-          if (staticClassName === undefined) {
-            findings.add(RULE_IDS.DYNAMIC_EXECUTION);
-            className = null;
-          } else {
-            className = staticClassName;
-          }
-        }
-        if (className && /^[A-Za-z_][\w-]*$/.test(className)) {
-          recordInvocation(state, `__class__:${className.toLowerCase()}`);
-        }
-      }
-      const invokedVariable = commandName.match(
-        /^((?:\$\{[^}]+\}|\$(?:[a-z_][\w-]*:)?[a-z_][\w-]*(?:\[[^\]]+\]|\.[a-z_][\w-]*)*))(?:\.getnewclosure\(\))*\.(?:invoke|invokereturnasis|invokewithcontext)(?:\(|$)/i
-      );
-      if (invokedVariable) recordInvocation(state, invokedVariable[1].toLowerCase());
-      if (commandName === '.' && tokens[1]) {
-        recordInvocation(state, commandBasename(tokens[1]));
-      }
-      markPowerShellElevation(tokens, analysis);
-      scanStartProcess(tokens, depth, findings, analysis, state);
-      scanScriptBlockConsumer(tokens, executable.quotedTokens, findings, state);
-      if (tokens.some(token => commandBasename(token) === DYNAMIC_EXECUTION_MARKER)) {
-        findings.add(RULE_IDS.DYNAMIC_EXECUTION);
-      }
-
-      const invokedReference = segmentTokens.invokedByCallOperator
-        ? variableReference(tokens[0])
-        : null;
-      if (invokedReference && !state.deferredFunctions.has(invokedReference)) {
-        const commandValue = state.staticScalars.get(invokedReference);
-        if (commandValue === undefined) {
-          findings.add(RULE_IDS.DYNAMIC_EXECUTION);
-        } else if (POWERSHELL_COMMANDS.has(commandBasename(commandValue))) {
-          scanNestedPowerShell(
-            [commandValue, ...tokens.slice(1)],
-            depth,
-            findings,
-            analysis,
-            state,
-            statement[index - 1]
-          );
-        } else {
-          addNestedScan(
-            [commandValue, ...tokens.slice(1)].join(' '),
-            depth,
-            findings,
-            analysis,
-            { executeBareScriptBlocks: true },
-            state
-          );
-        }
-      }
-
-      if (POWERSHELL_COMMANDS.has(commandName)) {
-        scanNestedPowerShell(tokens, depth, findings, analysis, state, statement[index - 1]);
-      } else if (commandName === 'cmd') {
-        scanCmd(tokens, depth, findings, analysis, state);
-      } else if (commandName === 'invoke-expression' || commandName === 'iex') {
-        let payload = tokens.slice(1).join(' ');
-        const payloadReference = variableReference(payload);
-        if (payloadReference) {
-          const staticValue = state.staticScalars.get(payloadReference);
-          if (staticValue === undefined) {
-            findings.add(RULE_IDS.DYNAMIC_EXECUTION);
-            payload = '';
-          } else {
-            payload = staticValue;
-          }
-        }
-        if (payload) {
-          addNestedScan(
-            payload,
-            depth,
-            findings,
-            analysis,
-            { executeBareScriptBlocks: true },
-            state
-          );
-        }
-      } else if (commandName === 'clear-content' || commandName === 'clc') {
-        findings.add(RULE_IDS.CLEAR_CONTENT);
-      } else if (commandName === 'clear-disk') {
-        findings.add(RULE_IDS.CLEAR_DISK);
-      } else if (commandName === 'format-volume') {
-        findings.add(RULE_IDS.FORMAT_VOLUME);
-      }
-
-      if (scanDeleteSegment(tokens, findings, executable.quotedTokens)) deleteSegments.add(index);
-      if (tokens.some(
-        (token, tokenIndex) => !executable.quotedTokens[tokenIndex] &&
-          isEnabledSwitch(token, 'recurse')
-      )) {
-        recurseSegments.add(index);
-      }
-    }
-
-    const hasUpstreamRecurse = [...recurseSegments].some(index => !deleteSegments.has(index));
-    if (statement.length > 1 && deleteSegments.size > 0 && hasUpstreamRecurse) {
-      findings.add(RULE_IDS.PIPELINE_RECURSE);
-    }
+    scanStatement(statement, scan);
   }
-
 }
 
 function resolveDeferredFunctions(findings, analysis, state) {

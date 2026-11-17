@@ -121,12 +121,16 @@ function buildRecordedManifestRequest(record) {
     excludeComponentIds: Array.isArray(request.excludeComponents) ? [...request.excludeComponents] : [],
     legacyLanguages: Array.isArray(request.legacyLanguages) ? [...request.legacyLanguages] : [],
     hookConsent: getRecordedHookConsent(state),
+    trust: request.trust === true,
+    consentMcp: Array.isArray(request.consentMcp) ? [...request.consentMcp] : [],
   };
 }
 
 function resolveRecordedManifestPlan(record, context, options = {}) {
   return createInstallPlanFromRequest(buildRecordedManifestRequest(record), {
     sourceRoot: context.repoRoot,
+    sourceUrl: record.state.source.repoUrl || undefined,
+    sourceSha: record.state.source.repoCommit || undefined,
     projectRoot: context.projectRoot,
     homeDir: context.homeDir,
     env: context.env,
@@ -312,330 +316,418 @@ function shouldRepairFromRecordedOperations(state) {
   return getManagedOperations(state).some(operation => operation.kind !== 'copy-file');
 }
 
-function executeRepairOperation(
-  repoRoot,
-  operation,
-  trustedRoot,
-  linkIndex = null,
-  target = null,
-  settingsLockHeld = false,
-  writeOptions = {}
-) {
+function repairCopyFile(repoRoot, operation, trustedRoot, options) {
+  const sourcePath = resolveOperationSourcePath(repoRoot, operation);
+  if (!sourcePath || !fs.existsSync(sourcePath)) {
+    throw new Error(`Missing source file for repair: ${sourcePath || operation.sourceRelativePath}`);
+  }
+
+  if (operation.contentTransform || isMarkdownPath(operation.destinationPath)) {
+    const source = readFileWithMetadataNoFollow(sourcePath, 'utf8');
+    writeContainedFile(
+      operation.destinationPath,
+      getExpectedCopyFileContent(operation, source.content, options.linkIndex),
+      trustedRoot,
+      'repair',
+      source.mode & 0o777,
+      options.writeOptions
+    );
+  } else {
+    copyContainedFile(sourcePath, operation.destinationPath, trustedRoot, 'repair');
+  }
+  return operation.destinationPath;
+}
+
+function repairRenderTemplate(operation, trustedRoot) {
+  const renderedContent = getOperationTextContent(operation);
+  if (renderedContent === null) {
+    throw new Error(`Missing rendered content for repair: ${operation.destinationPath}`);
+  }
+
+  writeContainedFile(operation.destinationPath, renderedContent, trustedRoot, 'repair');
+  return operation.destinationPath;
+}
+
+function repairMergeJson(operation, trustedRoot) {
+  const payload = getOperationJsonPayload(operation);
+  if (payload === undefined) {
+    throw new Error(`Missing merge payload for repair: ${operation.destinationPath}`);
+  }
+
+  const existingDestination = getContainedExistingPath(operation.destinationPath, trustedRoot, 'repair');
+  const currentValue = existingDestination
+    ? readJsonNoFollow(
+      getManagedDestination(existingDestination, trustedRoot, 'repair').managedPath
+    )
+    : {};
+  const mergedValue = deepMergeJson(currentValue, payload);
+
+  writeContainedFile(operation.destinationPath, formatJson(mergedValue), trustedRoot, 'repair');
+  return operation.destinationPath;
+}
+
+function repairClaudeSettings(operation, trustedRoot, options) {
+  assertClaudeSettingsDestination(operation, trustedRoot, options.target);
+  const managedHooks = validateManagedHooks(operation.managedHooks);
+  const previousManagedHooks = operation.previousManagedHooks
+    ? validateManagedHooks(operation.previousManagedHooks, 'previous managed hooks')
+    : null;
+  const existingDestination = getContainedExistingPath(
+    operation.destinationPath,
+    trustedRoot,
+    'repair'
+  );
+  const settingsPath = existingDestination
+    ? getManagedDestination(existingDestination, trustedRoot, 'repair').managedPath
+    : prepareContainedWriteDestination(operation.destinationPath, trustedRoot, 'repair');
+  updateSettingsAtomic(
+    settingsPath,
+    currentSettings => repairManagedHooks(currentSettings, managedHooks, {
+      previousManagedHooks,
+    }),
+    {
+      lockHeld: options.settingsLockHeld,
+      beforeCommit() {
+        getManagedDestination(settingsPath, trustedRoot, 'repair');
+      },
+    }
+  );
+  return operation.destinationPath;
+}
+
+function repairRemove(operation, trustedRoot) {
+  const removedPath = removeContainedPath(
+    operation.destinationPath,
+    trustedRoot,
+    'repair',
+    { recursive: true, force: true }
+  );
+  return removedPath ? operation.destinationPath : null;
+}
+
+/**
+ * Apply one recorded operation to the install root. `options` carries
+ * `linkIndex`, `target`, `settingsLockHeld`, and `writeOptions`.
+ */
+function executeRepairOperation(repoRoot, operation, trustedRoot, options = {}) {
   // Install-state is attacker-controllable; never write/delete outside the
   // adapter-derived trusted root, regardless of what the state file claims
   // (GHSA-hfpv-w6mp-5g95).
-  if (operation.kind === 'copy-file') {
-    const sourcePath = resolveOperationSourcePath(repoRoot, operation);
-    if (!sourcePath || !fs.existsSync(sourcePath)) {
-      throw new Error(`Missing source file for repair: ${sourcePath || operation.sourceRelativePath}`);
-    }
+  const {
+    linkIndex = null,
+    target = null,
+    settingsLockHeld = false,
+    writeOptions = {},
+  } = options;
+  const resolved = { linkIndex, target, settingsLockHeld, writeOptions };
 
-    if (operation.contentTransform || isMarkdownPath(operation.destinationPath)) {
-      const source = readFileWithMetadataNoFollow(sourcePath, 'utf8');
-      writeContainedFile(
-        operation.destinationPath,
-        getExpectedCopyFileContent(operation, source.content, linkIndex),
-        trustedRoot,
-        'repair',
-        source.mode & 0o777,
-        writeOptions
-      );
-    } else {
-      copyContainedFile(sourcePath, operation.destinationPath, trustedRoot, 'repair');
-    }
-    return operation.destinationPath;
+  switch (operation.kind) {
+    case 'copy-file':
+      return repairCopyFile(repoRoot, operation, trustedRoot, resolved);
+    case 'render-template':
+      return repairRenderTemplate(operation, trustedRoot);
+    case 'merge-json':
+      return repairMergeJson(operation, trustedRoot);
+    case 'update-claude-settings':
+      return repairClaudeSettings(operation, trustedRoot, resolved);
+    case 'remove':
+      return repairRemove(operation, trustedRoot);
+    default:
+      throw new Error(`Unsupported repair operation kind: ${operation.kind}`);
+  }
+}
+
+function uninstallNoop() {
+  return {
+    removedPaths: [],
+    cleanupTargets: []
+  };
+}
+
+function uninstallRetained(operation) {
+  return {
+    removedPaths: [],
+    cleanupTargets: [],
+    retainedPaths: [operation.destinationPath]
+  };
+}
+
+// Delete the managed destination and report it, or report nothing when it
+// was already gone.
+function uninstallRemovePath(operation, trustedRoot) {
+  const removedPath = removeContainedPath(
+    operation.destinationPath,
+    trustedRoot,
+    'uninstall',
+    { force: true }
+  );
+  if (!removedPath) return uninstallNoop();
+
+  return {
+    removedPaths: [operation.destinationPath],
+    cleanupTargets: [removedPath]
+  };
+}
+
+// Restore the pre-install content when the operation recorded it. Returns
+// null when nothing was recorded so the caller can fall through.
+function restorePreviousContent(operation, trustedRoot) {
+  const previousContent = getOperationPreviousContent(operation);
+  if (previousContent !== null) {
+    writeContainedFile(operation.destinationPath, previousContent, trustedRoot, 'uninstall');
+    return uninstallNoop();
   }
 
-  if (operation.kind === 'render-template') {
-    const renderedContent = getOperationTextContent(operation);
-    if (renderedContent === null) {
-      throw new Error(`Missing rendered content for repair: ${operation.destinationPath}`);
-    }
-
-    writeContainedFile(operation.destinationPath, renderedContent, trustedRoot, 'repair');
-    return operation.destinationPath;
+  const previousJson = getOperationPreviousJson(operation);
+  if (previousJson !== undefined) {
+    writeContainedFile(operation.destinationPath, formatJson(previousJson), trustedRoot, 'uninstall');
+    return uninstallNoop();
   }
 
-  if (operation.kind === 'merge-json') {
-    const payload = getOperationJsonPayload(operation);
-    if (payload === undefined) {
-      throw new Error(`Missing merge payload for repair: ${operation.destinationPath}`);
-    }
+  return null;
+}
 
-    const existingDestination = getContainedExistingPath(operation.destinationPath, trustedRoot, 'repair');
-    const currentValue = existingDestination
-      ? readJsonNoFollow(
-        getManagedDestination(existingDestination, trustedRoot, 'repair').managedPath
-      )
-      : {};
-    const mergedValue = deepMergeJson(currentValue, payload);
+// Whether a drifted or symlinked copy must stay in place. Returns the
+// uninstall result to report, or null when the copy may be removed.
+function retainDriftedCopy(operation, trustedRoot) {
+  const existingDestination = getContainedExistingPath(
+    operation.destinationPath,
+    trustedRoot,
+    'uninstall',
+    { allowFinalSymlink: true }
+  );
+  if (!existingDestination) return uninstallNoop();
+  if (fs.lstatSync(existingDestination).isSymbolicLink()) return uninstallRetained(operation);
 
-    writeContainedFile(operation.destinationPath, formatJson(mergedValue), trustedRoot, 'repair');
-    return operation.destinationPath;
+  const recordedDigest = operation.contentSha256;
+  const currentDigest = /^[a-f0-9]{64}$/i.test(recordedDigest || '')
+    ? crypto.createHash('sha256')
+      .update(readFileNoFollow(existingDestination))
+      .digest('hex')
+    : null;
+  if (!currentDigest || currentDigest !== recordedDigest.toLowerCase()) {
+    return uninstallRetained(operation);
+  }
+  return null;
+}
+
+function uninstallCopyFile(operation, trustedRoot, options) {
+  if (options.preserveDriftedCopies) {
+    const retained = retainDriftedCopy(operation, trustedRoot);
+    if (retained) return retained;
+  }
+  return uninstallRemovePath(operation, trustedRoot);
+}
+
+function uninstallRenderTemplate(operation, trustedRoot) {
+  return restorePreviousContent(operation, trustedRoot) || uninstallRemovePath(operation, trustedRoot);
+}
+
+function uninstallMergeJson(operation, trustedRoot) {
+  const restored = restorePreviousContent(operation, trustedRoot);
+  if (restored) return restored;
+
+  const existingDestination = getContainedExistingPath(
+    operation.destinationPath,
+    trustedRoot,
+    'uninstall'
+  );
+  if (!existingDestination) return uninstallNoop();
+
+  const payload = getOperationJsonPayload(operation);
+  if (payload === undefined) {
+    throw new Error(`Missing merge payload for uninstall: ${operation.destinationPath}`);
   }
 
-  if (operation.kind === 'update-claude-settings') {
-    assertClaudeSettingsDestination(operation, trustedRoot, target);
-    const managedHooks = validateManagedHooks(operation.managedHooks);
-    const previousManagedHooks = operation.previousManagedHooks
-      ? validateManagedHooks(operation.previousManagedHooks, 'previous managed hooks')
-      : null;
-    const existingDestination = getContainedExistingPath(
-      operation.destinationPath,
-      trustedRoot,
-      'repair'
-    );
-    const settingsPath = existingDestination
-      ? getManagedDestination(existingDestination, trustedRoot, 'repair').managedPath
-      : prepareContainedWriteDestination(operation.destinationPath, trustedRoot, 'repair');
-    updateSettingsAtomic(
-      settingsPath,
-      currentSettings => repairManagedHooks(currentSettings, managedHooks, {
-        previousManagedHooks,
-      }),
-      {
-        lockHeld: settingsLockHeld,
-        beforeCommit() {
-          getManagedDestination(settingsPath, trustedRoot, 'repair');
-        },
-      }
-    );
-    return operation.destinationPath;
-  }
-
-  if (operation.kind === 'remove') {
+  const currentValue = readJsonNoFollow(
+    getManagedDestination(existingDestination, trustedRoot, 'uninstall').managedPath
+  );
+  const nextValue = deepRemoveJsonSubset(currentValue, payload);
+  if (nextValue === JSON_REMOVE_SENTINEL) {
     const removedPath = removeContainedPath(
       operation.destinationPath,
       trustedRoot,
-      'repair',
-      { recursive: true, force: true }
+      'uninstall',
+      { force: true }
     );
-    return removedPath ? operation.destinationPath : null;
+    return {
+      removedPaths: removedPath ? [operation.destinationPath] : [],
+      cleanupTargets: removedPath ? [removedPath] : []
+    };
   }
 
-  throw new Error(`Unsupported repair operation kind: ${operation.kind}`);
+  writeContainedFile(operation.destinationPath, formatJson(nextValue), trustedRoot, 'uninstall');
+  return uninstallNoop();
+}
+
+function uninstallClaudeSettings(operation, trustedRoot, options) {
+  assertClaudeSettingsDestination(operation, trustedRoot, options.target);
+  const existingDestination = getContainedExistingPath(
+    operation.destinationPath,
+    trustedRoot,
+    'uninstall'
+  );
+  if (!existingDestination) return uninstallNoop();
+
+  const settingsPath = getManagedDestination(
+    existingDestination,
+    trustedRoot,
+    'uninstall'
+  ).managedPath;
+  const uninstalled = updateSettingsAtomic(
+    settingsPath,
+    currentSettings => uninstallManagedHooks(currentSettings, operation.managedHooks),
+    {
+      lockHeld: Boolean(options.settingsLockHeld),
+      beforeCommit() {
+        getManagedDestination(settingsPath, trustedRoot, 'uninstall');
+      },
+    }
+  );
+
+  return {
+    removedPaths: [],
+    cleanupTargets: [],
+    retainedPaths: uninstalled.retained.length > 0
+      ? [operation.destinationPath]
+      : []
+  };
+}
+
+function uninstallRemoveOperation(operation, trustedRoot) {
+  return restorePreviousContent(operation, trustedRoot) || uninstallNoop();
 }
 
 function executeUninstallOperation(operation, trustedRoot, options = {}) {
   // Confine deletes to the trusted install root (GHSA-hfpv-w6mp-5g95).
-  if (operation.kind === 'copy-file') {
-    if (options.preserveDriftedCopies) {
-      const existingDestination = getContainedExistingPath(
-        operation.destinationPath,
-        trustedRoot,
-        'uninstall',
-        { allowFinalSymlink: true }
-      );
-      if (!existingDestination) {
-        return {
-          removedPaths: [],
-          cleanupTargets: []
-        };
-      }
-      if (fs.lstatSync(existingDestination).isSymbolicLink()) {
-        return {
-          removedPaths: [],
-          cleanupTargets: [],
-          retainedPaths: [operation.destinationPath]
-        };
-      }
-      const recordedDigest = operation.contentSha256;
-      const currentDigest = /^[a-f0-9]{64}$/i.test(recordedDigest || '')
-        ? crypto.createHash('sha256')
-          .update(readFileNoFollow(existingDestination))
-          .digest('hex')
-        : null;
-      if (!currentDigest || currentDigest !== recordedDigest.toLowerCase()) {
-        return {
-          removedPaths: [],
-          cleanupTargets: [],
-          retainedPaths: [operation.destinationPath]
-        };
-      }
-    }
+  switch (operation.kind) {
+    case 'copy-file':
+      return uninstallCopyFile(operation, trustedRoot, options);
+    case 'render-template':
+      return uninstallRenderTemplate(operation, trustedRoot);
+    case 'merge-json':
+      return uninstallMergeJson(operation, trustedRoot);
+    case 'update-claude-settings':
+      return uninstallClaudeSettings(operation, trustedRoot, options);
+    case 'remove':
+      return uninstallRemoveOperation(operation, trustedRoot);
+    default:
+      throw new Error(`Unsupported uninstall operation kind: ${operation.kind}`);
+  }
+}
 
-    const removedPath = removeContainedPath(
-      operation.destinationPath,
-      trustedRoot,
-      'uninstall',
-      { force: true }
+function inspectionResult(status, operation, destinationPath, extra = {}) {
+  return {
+    status,
+    operation,
+    destinationPath,
+    ...extra
+  };
+}
+
+// Compare installed bytes with what the recorded copy operation should have
+// written. Throws when either side cannot be read.
+function copyFileContentMatches(operation, inspectedPath, copySourcePath, linkIndex) {
+  // A deactivation transform changes the desired bytes. A historical
+  // active-file digest proves ownership, not completion of that transition.
+  const deactivatesOpenCode = operation.contentTransform === 'opencode-disable-ecc-hooks'
+    || operation.contentTransform === 'opencode-disable-plugin-entrypoint';
+  if (hasRecordedContentDigest(operation) && !deactivatesOpenCode) {
+    return fileMatchesRecordedContent(inspectedPath, operation);
+  }
+  if (operation.contentTransform || isMarkdownPath(operation.destinationPath)) {
+    return readFileNoFollow(inspectedPath, 'utf8') === getExpectedCopyFileContent(
+      operation,
+      readFileNoFollow(copySourcePath, 'utf8'),
+      linkIndex
     );
-    if (!removedPath) {
-      return {
-        removedPaths: [],
-        cleanupTargets: []
-      };
-    }
+  }
+  return areFilesEqual(copySourcePath, inspectedPath);
+}
 
-    return {
-      removedPaths: [operation.destinationPath],
-      cleanupTargets: [removedPath]
-    };
+function inspectCopyFileOperation(operation, inspectedPath, copySourcePath, linkIndex) {
+  const { destinationPath } = operation;
+  const sourcePath = copySourcePath;
+  if (!copySourcePath || !fs.existsSync(copySourcePath)) {
+    return inspectionResult('missing-source', operation, destinationPath, { sourcePath });
   }
 
-  if (operation.kind === 'render-template') {
-    const previousContent = getOperationPreviousContent(operation);
-    if (previousContent !== null) {
-      writeContainedFile(operation.destinationPath, previousContent, trustedRoot, 'uninstall');
-      return {
-        removedPaths: [],
-        cleanupTargets: []
-      };
-    }
-
-    const previousJson = getOperationPreviousJson(operation);
-    if (previousJson !== undefined) {
-      writeContainedFile(operation.destinationPath, formatJson(previousJson), trustedRoot, 'uninstall');
-      return {
-        removedPaths: [],
-        cleanupTargets: []
-      };
-    }
-
-    const removedPath = removeContainedPath(
-      operation.destinationPath,
-      trustedRoot,
-      'uninstall',
-      { force: true }
-    );
-    if (!removedPath) {
-      return {
-        removedPaths: [],
-        cleanupTargets: []
-      };
-    }
-
-    return {
-      removedPaths: [operation.destinationPath],
-      cleanupTargets: [removedPath]
-    };
+  let contentMatches;
+  try {
+    contentMatches = copyFileContentMatches(operation, inspectedPath, copySourcePath, linkIndex);
+  } catch (_error) {
+    return inspectionResult('unverified', operation, destinationPath, { sourcePath });
   }
 
-  if (operation.kind === 'merge-json') {
-    const previousContent = getOperationPreviousContent(operation);
-    if (previousContent !== null) {
-      writeContainedFile(operation.destinationPath, previousContent, trustedRoot, 'uninstall');
-      return {
-        removedPaths: [],
-        cleanupTargets: []
-      };
-    }
+  return inspectionResult(contentMatches ? 'ok' : 'drifted', operation, destinationPath, { sourcePath });
+}
 
-    const previousJson = getOperationPreviousJson(operation);
-    if (previousJson !== undefined) {
-      writeContainedFile(operation.destinationPath, formatJson(previousJson), trustedRoot, 'uninstall');
-      return {
-        removedPaths: [],
-        cleanupTargets: []
-      };
-    }
-
-    const existingDestination = getContainedExistingPath(
-      operation.destinationPath,
-      trustedRoot,
-      'uninstall'
-    );
-    if (!existingDestination) {
-      return {
-        removedPaths: [],
-        cleanupTargets: []
-      };
-    }
-
-    const payload = getOperationJsonPayload(operation);
-    if (payload === undefined) {
-      throw new Error(`Missing merge payload for uninstall: ${operation.destinationPath}`);
-    }
-
-    const currentValue = readJsonNoFollow(
-      getManagedDestination(existingDestination, trustedRoot, 'uninstall').managedPath
-    );
-    const nextValue = deepRemoveJsonSubset(currentValue, payload);
-    if (nextValue === JSON_REMOVE_SENTINEL) {
-      const removedPath = removeContainedPath(
-        operation.destinationPath,
-        trustedRoot,
-        'uninstall',
-        { force: true }
-      );
-      return {
-        removedPaths: removedPath ? [operation.destinationPath] : [],
-        cleanupTargets: removedPath ? [removedPath] : []
-      };
-    }
-
-    writeContainedFile(operation.destinationPath, formatJson(nextValue), trustedRoot, 'uninstall');
-    return {
-      removedPaths: [],
-      cleanupTargets: []
-    };
+function inspectRenderTemplateOperation(operation, inspectedPath) {
+  const { destinationPath } = operation;
+  const renderedContent = getOperationTextContent(operation);
+  if (renderedContent === null) {
+    return inspectionResult('unverified', operation, destinationPath);
   }
 
-  if (operation.kind === 'update-claude-settings') {
-    assertClaudeSettingsDestination(operation, trustedRoot, options.target);
-    const existingDestination = getContainedExistingPath(
-      operation.destinationPath,
-      trustedRoot,
-      'uninstall'
-    );
-    if (!existingDestination) {
-      return {
-        removedPaths: [],
-        cleanupTargets: []
-      };
+  try {
+    if (readFileNoFollow(inspectedPath, 'utf8') !== renderedContent) {
+      return inspectionResult('drifted', operation, destinationPath);
     }
-
-    const settingsPath = getManagedDestination(
-      existingDestination,
-      trustedRoot,
-      'uninstall'
-    ).managedPath;
-    const uninstalled = updateSettingsAtomic(
-      settingsPath,
-      currentSettings => uninstallManagedHooks(currentSettings, operation.managedHooks),
-      {
-        lockHeld: Boolean(options.settingsLockHeld),
-        beforeCommit() {
-          getManagedDestination(settingsPath, trustedRoot, 'uninstall');
-        },
-      }
-    );
-
-    return {
-      removedPaths: [],
-      cleanupTargets: [],
-      retainedPaths: uninstalled.retained.length > 0
-        ? [operation.destinationPath]
-        : []
-    };
+  } catch {
+    return inspectionResult('drifted', operation, destinationPath);
   }
 
-  if (operation.kind === 'remove') {
-    const previousContent = getOperationPreviousContent(operation);
-    if (previousContent !== null) {
-      writeContainedFile(operation.destinationPath, previousContent, trustedRoot, 'uninstall');
-      return {
-        removedPaths: [],
-        cleanupTargets: []
-      };
-    }
+  return inspectionResult('ok', operation, destinationPath);
+}
 
-    const previousJson = getOperationPreviousJson(operation);
-    if (previousJson !== undefined) {
-      writeContainedFile(operation.destinationPath, formatJson(previousJson), trustedRoot, 'uninstall');
-      return {
-        removedPaths: [],
-        cleanupTargets: []
-      };
-    }
-
-    return {
-      removedPaths: [],
-      cleanupTargets: []
-    };
+function inspectMergeJsonOperation(operation, inspectedPath) {
+  const { destinationPath } = operation;
+  const payload = getOperationJsonPayload(operation);
+  if (payload === undefined) {
+    return inspectionResult('unverified', operation, destinationPath);
   }
 
-  throw new Error(`Unsupported uninstall operation kind: ${operation.kind}`);
+  try {
+    const currentValue = readJsonNoFollow(inspectedPath);
+    if (!jsonContainsSubset(currentValue, payload)) {
+      return inspectionResult('drifted', operation, destinationPath);
+    }
+  } catch (_error) {
+    return inspectionResult('drifted', operation, destinationPath);
+  }
+
+  return inspectionResult('ok', operation, destinationPath);
+}
+
+function inspectClaudeSettingsOperation(operation, inspectedPath, trustedRoot, target) {
+  const { destinationPath } = operation;
+  try {
+    assertClaudeSettingsDestination(operation, trustedRoot, target);
+  } catch (_error) {
+    return inspectionResult('unsafe-destination', operation, destinationPath, {
+      reason: 'non-canonical-claude-settings'
+    });
+  }
+  let managedHooks;
+  try {
+    managedHooks = validateManagedHooks(operation.managedHooks);
+  } catch (_error) {
+    return inspectionResult('unverified', operation, destinationPath);
+  }
+
+  try {
+    const inspection = inspectManagedHooks(
+      readJsonNoFollow(inspectedPath),
+      managedHooks
+    );
+    return inspectionResult(inspection.status, operation, destinationPath, {
+      managedHookInspection: inspection
+    });
+  } catch (error) {
+    return inspectionResult('invalid-settings', operation, destinationPath, {
+      error: `Failed to inspect Claude settings at ${destinationPath}: ${error.message}`
+    });
+  }
 }
 
 function inspectManagedOperation(repoRoot, trustedRoot, operation, linkIndex = null, target = null) {
@@ -656,32 +748,17 @@ function inspectManagedOperation(repoRoot, trustedRoot, operation, linkIndex = n
       { allowFinalSymlink: operation.kind === 'remove' }
     );
   } catch (error) {
-    return {
-      status: 'unsafe-destination',
-      operation,
-      destinationPath,
+    return inspectionResult('unsafe-destination', operation, destinationPath, {
       reason: error && error.code === 'ECC_FINAL_DESTINATION_SYMLINK'
         ? 'final-symlink'
         : 'outside-root'
-    };
+    });
   }
 
   const inspectedPath = managedDestination.managedPath;
 
   if (operation.kind === 'remove') {
-    if (managedDestination.exists) {
-      return {
-        status: 'drifted',
-        operation,
-        destinationPath
-      };
-    }
-
-    return {
-      status: 'ok',
-      operation,
-      destinationPath
-    };
+    return inspectionResult(managedDestination.exists ? 'drifted' : 'ok', operation, destinationPath);
   }
 
   let copySourcePath = null;
@@ -689,188 +766,26 @@ function inspectManagedOperation(repoRoot, trustedRoot, operation, linkIndex = n
     try {
       copySourcePath = resolveOperationSourcePath(repoRoot, operation);
     } catch {
-      return {
-        status: 'unsafe-source',
-        operation,
-        destinationPath
-      };
+      return inspectionResult('unsafe-source', operation, destinationPath);
     }
   }
 
   if (!managedDestination.exists) {
-    return {
-      status: 'missing',
-      operation,
-      destinationPath
-    };
+    return inspectionResult('missing', operation, destinationPath);
   }
 
-  if (operation.kind === 'copy-file') {
-    if (!copySourcePath || !fs.existsSync(copySourcePath)) {
-      return {
-        status: 'missing-source',
-        operation,
-        destinationPath,
-        sourcePath: copySourcePath
-      };
-    }
-
-    let contentMatches;
-    try {
-      // A deactivation transform changes the desired bytes. A historical
-      // active-file digest proves ownership, not completion of that transition.
-      const deactivatesOpenCode = operation.contentTransform === 'opencode-disable-ecc-hooks'
-        || operation.contentTransform === 'opencode-disable-plugin-entrypoint';
-      contentMatches = hasRecordedContentDigest(operation) && !deactivatesOpenCode
-        ? fileMatchesRecordedContent(inspectedPath, operation)
-        : operation.contentTransform || isMarkdownPath(operation.destinationPath)
-          ? readFileNoFollow(inspectedPath, 'utf8') === getExpectedCopyFileContent(
-            operation,
-            readFileNoFollow(copySourcePath, 'utf8'),
-            linkIndex
-          )
-          : areFilesEqual(copySourcePath, inspectedPath);
-    } catch (_error) {
-      return {
-        status: 'unverified',
-        operation,
-        destinationPath,
-        sourcePath: copySourcePath
-      };
-    }
-
-    if (!contentMatches) {
-      return {
-        status: 'drifted',
-        operation,
-        destinationPath,
-        sourcePath: copySourcePath
-      };
-    }
-
-    return {
-      status: 'ok',
-      operation,
-      destinationPath,
-      sourcePath: copySourcePath
-    };
+  switch (operation.kind) {
+    case 'copy-file':
+      return inspectCopyFileOperation(operation, inspectedPath, copySourcePath, linkIndex);
+    case 'render-template':
+      return inspectRenderTemplateOperation(operation, inspectedPath);
+    case 'merge-json':
+      return inspectMergeJsonOperation(operation, inspectedPath);
+    case 'update-claude-settings':
+      return inspectClaudeSettingsOperation(operation, inspectedPath, trustedRoot, target);
+    default:
+      return inspectionResult('unverified', operation, destinationPath);
   }
-
-  if (operation.kind === 'render-template') {
-    const renderedContent = getOperationTextContent(operation);
-    if (renderedContent === null) {
-      return {
-        status: 'unverified',
-        operation,
-        destinationPath
-      };
-    }
-
-    try {
-      if (readFileNoFollow(inspectedPath, 'utf8') !== renderedContent) {
-        return {
-          status: 'drifted',
-          operation,
-          destinationPath
-        };
-      }
-    } catch {
-      return {
-        status: 'drifted',
-        operation,
-        destinationPath
-      };
-    }
-
-    return {
-      status: 'ok',
-      operation,
-      destinationPath
-    };
-  }
-
-  if (operation.kind === 'merge-json') {
-    const payload = getOperationJsonPayload(operation);
-    if (payload === undefined) {
-      return {
-        status: 'unverified',
-        operation,
-        destinationPath
-      };
-    }
-
-    try {
-      const currentValue = readJsonNoFollow(inspectedPath);
-      if (!jsonContainsSubset(currentValue, payload)) {
-        return {
-          status: 'drifted',
-          operation,
-          destinationPath
-        };
-      }
-    } catch (_error) {
-      return {
-        status: 'drifted',
-        operation,
-        destinationPath
-      };
-    }
-
-    return {
-      status: 'ok',
-      operation,
-      destinationPath
-    };
-  }
-
-  if (operation.kind === 'update-claude-settings') {
-    try {
-      assertClaudeSettingsDestination(operation, trustedRoot, target);
-    } catch (_error) {
-      return {
-        status: 'unsafe-destination',
-        operation,
-        destinationPath,
-        reason: 'non-canonical-claude-settings'
-      };
-    }
-    let managedHooks;
-    try {
-      managedHooks = validateManagedHooks(operation.managedHooks);
-    } catch (_error) {
-      return {
-        status: 'unverified',
-        operation,
-        destinationPath
-      };
-    }
-
-    try {
-      const inspection = inspectManagedHooks(
-        readJsonNoFollow(inspectedPath),
-        managedHooks
-      );
-      return {
-        status: inspection.status,
-        operation,
-        destinationPath,
-        managedHookInspection: inspection
-      };
-    } catch (error) {
-      return {
-        status: 'invalid-settings',
-        operation,
-        destinationPath,
-        error: `Failed to inspect Claude settings at ${destinationPath}: ${error.message}`
-      };
-    }
-  }
-
-  return {
-    status: 'unverified',
-    operation,
-    destinationPath
-  };
 }
 
 function summarizeManagedOperationHealth(repoRoot, trustedRoot, operations, target = null) {
@@ -1134,61 +1049,43 @@ function determineStatus(issues) {
   return 'ok';
 }
 
-function analyzeRecord(record, context) {
-  const issues = [];
-
-  if (record.legacyLayout === 'antigravity') {
-    issues.push(buildIssue(
-      'warning',
-      'legacy-antigravity-layout',
-      'Legacy Antigravity install-state remains under .agent. Review and move any preserved modified or unmanaged files out of .agent, then rerun the Antigravity install to finish migration.'
-    ));
+const LEGACY_LAYOUT_ISSUES = Object.freeze({
+  antigravity: {
+    code: 'legacy-antigravity-layout',
+    message: 'Legacy Antigravity install-state remains under .agent. Review and move any preserved modified or unmanaged files out of .agent, then rerun the Antigravity install to finish migration.'
+  },
+  opencode: {
+    code: 'legacy-opencode-layout',
+    message: 'Legacy OpenCode install-state remains under ~/.opencode. Rerun the OpenCode install or repair command to migrate unchanged ECC-managed files to ~/.config/opencode; modified files are preserved for review.'
   }
+});
 
-  if (record.legacyLayout === 'opencode') {
-    issues.push(buildIssue(
-      'warning',
-      'legacy-opencode-layout',
-      'Legacy OpenCode install-state remains under ~/.opencode. Rerun the OpenCode install or repair command to migrate unchanged ECC-managed files to ~/.config/opencode; modified files are preserved for review.'
-    ));
+function collectLegacyLayoutIssues(record, issues) {
+  if (!Object.hasOwn(LEGACY_LAYOUT_ISSUES, record.legacyLayout)) return;
+  const legacyIssue = LEGACY_LAYOUT_ISSUES[record.legacyLayout];
+  issues.push(buildIssue('warning', legacyIssue.code, legacyIssue.message));
+}
+
+// Returns true when hook-deactivation planning itself failed, so the later
+// resolution-drift check does not report the same failure twice.
+function collectOpenCodeHookIssues(record, context, issues) {
+  if (record.adapter.target !== 'opencode') return false;
+  let checks;
+  try {
+    checks = prepareOpenCodeHookDeactivationChecks(record, context, { requireInactive: true });
+  } catch (error) {
+    issues.push(buildIssue('error', 'resolution-unavailable', error.message));
+    return true;
   }
-
-  if (record.error) {
-    issues.push(buildIssue('error', 'invalid-install-state', record.error));
-    return {
-      ...record,
-      status: determineStatus(issues),
-      issues
-    };
+  try {
+    for (const check of checks) assertOpenCodeRepairHookDeactivation(check.plan, check.options);
+  } catch (error) {
+    issues.push(buildIssue('error', 'opencode-hook-consent-violation', error.message));
   }
+  return false;
+}
 
-  const state = record.state;
-  if (!state) {
-    return {
-      ...record,
-      status: 'missing',
-      issues
-    };
-  }
-
-  let planningFailureReported = false;
-  if (record.adapter.target === 'opencode') {
-    let checks;
-    try {
-      checks = prepareOpenCodeHookDeactivationChecks(record, context, { requireInactive: true });
-    } catch (error) {
-      planningFailureReported = true;
-      issues.push(buildIssue('error', 'resolution-unavailable', error.message));
-    }
-    if (checks) {
-      try {
-        for (const check of checks) assertOpenCodeRepairHookDeactivation(check.plan, check.options);
-      } catch (error) {
-        issues.push(buildIssue('error', 'opencode-hook-consent-violation', error.message));
-      }
-    }
-  }
-
+function collectTargetPathIssues(record, state, issues) {
   if (!fs.existsSync(state.target.root)) {
     issues.push(buildIssue('error', 'missing-target-root', `Target root does not exist: ${state.target.root}`));
   }
@@ -1210,15 +1107,16 @@ function analyzeRecord(record, context) {
       })
     );
   }
+}
 
-  const managedOperations = getManagedOperations(state);
+function collectOperationHealthIssues(record, context, state, issues) {
   const operationHealth = summarizeManagedOperationHealth(
     context.repoRoot,
     record.targetRoot,
-    managedOperations,
+    getManagedOperations(state),
     record.adapter.target
   );
-  const missingManagedOperations = operationHealth.missing;
+  const destinationPaths = entries => entries.map(entry => entry.destinationPath);
 
   if (operationHealth.unsafeDestination.length > 0) {
     issues.push(
@@ -1246,15 +1144,15 @@ function analyzeRecord(record, context) {
         'error',
         'invalid-claude-settings',
         operationHealth.invalidSettings[0].error,
-        { paths: operationHealth.invalidSettings.map(entry => entry.destinationPath) }
+        { paths: destinationPaths(operationHealth.invalidSettings) }
       )
     );
   }
 
-  if (missingManagedOperations.length > 0) {
+  if (operationHealth.missing.length > 0) {
     issues.push(
-      buildIssue('error', 'missing-managed-files', `${missingManagedOperations.length} managed file(s) are missing`, {
-        paths: missingManagedOperations.map(entry => entry.destinationPath)
+      buildIssue('error', 'missing-managed-files', `${operationHealth.missing.length} managed file(s) are missing`, {
+        paths: destinationPaths(operationHealth.missing)
       })
     );
   }
@@ -1262,7 +1160,7 @@ function analyzeRecord(record, context) {
   if (operationHealth.drifted.length > 0) {
     issues.push(
       buildIssue('warning', 'drifted-managed-files', `${operationHealth.drifted.length} managed file(s) differ from the source repo`, {
-        paths: operationHealth.drifted.map(entry => entry.destinationPath)
+        paths: destinationPaths(operationHealth.drifted)
       })
     );
   }
@@ -1278,11 +1176,13 @@ function analyzeRecord(record, context) {
   if (operationHealth.unverified.length > 0) {
     issues.push(
       buildIssue('warning', 'unverified-managed-operations', `${operationHealth.unverified.length} managed operation(s) could not be content-verified`, {
-        paths: operationHealth.unverified.map(entry => entry.destinationPath).filter(Boolean)
+        paths: destinationPaths(operationHealth.unverified).filter(Boolean)
       })
     );
   }
+}
 
+function collectVersionIssues(context, state, issues) {
   if (state.source.manifestVersion !== context.manifestVersion) {
     issues.push(buildIssue('warning', 'manifest-version-mismatch', `Recorded manifest version ${state.source.manifestVersion} differs from current manifest version ${context.manifestVersion}`));
   }
@@ -1290,24 +1190,55 @@ function analyzeRecord(record, context) {
   if (context.packageVersion && state.source.repoVersion && state.source.repoVersion !== context.packageVersion) {
     issues.push(buildIssue('warning', 'repo-version-mismatch', `Recorded repo version ${state.source.repoVersion} differs from current repo version ${context.packageVersion}`));
   }
+}
 
-  if (!state.request.legacyMode && !planningFailureReported) {
-    try {
-      const desiredPlan = resolveRecordedManifestPlan(record, context);
+function collectResolutionDriftIssues(record, context, state, issues) {
+  try {
+    const desiredPlan = resolveRecordedManifestPlan(record, context);
 
-      if (!compareStringArrays(desiredPlan.selectedModuleIds, state.resolution.selectedModules) || !compareStringArrays(desiredPlan.skippedModuleIds, state.resolution.skippedModules)) {
-        issues.push(
-          buildIssue('warning', 'resolution-drift', 'Current manifest resolution differs from recorded install-state', {
-            expectedSelectedModules: desiredPlan.selectedModuleIds,
-            recordedSelectedModules: state.resolution.selectedModules,
-            expectedSkippedModules: desiredPlan.skippedModuleIds,
-            recordedSkippedModules: state.resolution.skippedModules
-          })
-        );
-      }
-    } catch (error) {
-      issues.push(buildIssue('error', 'resolution-unavailable', error.message));
+    if (!compareStringArrays(desiredPlan.selectedModuleIds, state.resolution.selectedModules) || !compareStringArrays(desiredPlan.skippedModuleIds, state.resolution.skippedModules)) {
+      issues.push(
+        buildIssue('warning', 'resolution-drift', 'Current manifest resolution differs from recorded install-state', {
+          expectedSelectedModules: desiredPlan.selectedModuleIds,
+          recordedSelectedModules: state.resolution.selectedModules,
+          expectedSkippedModules: desiredPlan.skippedModuleIds,
+          recordedSkippedModules: state.resolution.skippedModules
+        })
+      );
     }
+  } catch (error) {
+    issues.push(buildIssue('error', 'resolution-unavailable', error.message));
+  }
+}
+
+function analyzeRecord(record, context) {
+  const issues = [];
+  collectLegacyLayoutIssues(record, issues);
+
+  if (record.error) {
+    issues.push(buildIssue('error', 'invalid-install-state', record.error));
+    return {
+      ...record,
+      status: determineStatus(issues),
+      issues
+    };
+  }
+
+  const state = record.state;
+  if (!state) {
+    return {
+      ...record,
+      status: 'missing',
+      issues
+    };
+  }
+
+  const planningFailureReported = collectOpenCodeHookIssues(record, context, issues);
+  collectTargetPathIssues(record, state, issues);
+  collectOperationHealthIssues(record, context, state, issues);
+  collectVersionIssues(context, state, issues);
+  if (!state.request.legacyMode && !planningFailureReported) {
+    collectResolutionDriftIssues(record, context, state, issues);
   }
 
   return {
@@ -1564,6 +1495,332 @@ function preflightOpenCodeHookDeactivation(record, context, options = {}) {
   }
 }
 
+function repairErrorResult(record, error) {
+  return {
+    adapter: record.adapter,
+    status: 'error',
+    installStatePath: record.installStatePath,
+    repairedPaths: [],
+    plannedRepairs: [],
+    error
+  };
+}
+
+function acquireRepairSettingsLock(record, options) {
+  const settingsPathToLock = !options.dryRun
+    && getManagedOperations(record.state || {}).some(
+      operation => operation.kind === 'update-claude-settings'
+    )
+    ? getClaudeSettingsPath(record.targetRoot)
+    : null;
+  return settingsPathToLock ? acquireSettingsLock(settingsPathToLock) : null;
+}
+
+// Returns an error result when the OpenCode build fails, otherwise null.
+function runOpencodeBuild(repair) {
+  try {
+    repair.buildOpencodeRunner(repair.context.repoRoot);
+    return null;
+  } catch (error) {
+    return repairErrorResult(repair.record, formatBuildErrorMessage(error));
+  }
+}
+
+// Legacy ~/.opencode layouts are migrated by applying the canonical plan
+// rather than repairing files in place.
+function repairLegacyOpencodeLayout(repair, build) {
+  const { record, context, options, opencodeLease } = repair;
+  const { needsOpencodeBuild, opencodeBuildRepairPath } = build;
+  if (needsOpencodeBuild && !options.dryRun) {
+    const buildFailure = runOpencodeBuild(repair);
+    if (buildFailure) return buildFailure;
+  }
+
+  const canonicalPlan = createRepairPlanFromRecord(record, context, {
+    exemptValidationCodes: options.dryRun && needsOpencodeBuild
+      ? [OPENCODE_PLUGIN_NOT_BUILT_CODE]
+      : [],
+  });
+  assertOpenCodeRepairHookDeactivation(canonicalPlan);
+  const buildPaths = needsOpencodeBuild ? [opencodeBuildRepairPath] : [];
+  const planPaths = canonicalPlan.operations.map(operation => operation.destinationPath);
+  const plannedRepairs = [...new Set([
+    ...buildPaths,
+    ...planPaths,
+    ...getManagedOperations(record.state).map(operation => operation.destinationPath),
+    record.installStatePath,
+  ])];
+
+  if (options.dryRun) {
+    return {
+      adapter: record.adapter,
+      status: 'planned',
+      installStatePath: canonicalPlan.installStatePath,
+      repairedPaths: [],
+      plannedRepairs,
+      stateRefreshed: false,
+      warnings: canonicalPlan.warnings,
+      error: null,
+    };
+  }
+
+  // Load lazily to avoid a module cycle during install-lifecycle startup.
+  const { applyInstallPlan } = require('./install/apply');
+  const appliedPlan = applyInstallPlan(canonicalPlan, {
+    opencodeLease,
+    requireCompleteLegacyCleanup: true,
+  });
+  return {
+    adapter: record.adapter,
+    status: 'repaired',
+    installStatePath: canonicalPlan.installStatePath,
+    repairedPaths: [...buildPaths, ...planPaths],
+    plannedRepairs: [],
+    stateRefreshed: true,
+    warnings: appliedPlan.warnings,
+    error: null,
+  };
+}
+
+// Dry run while the OpenCode plugin is not built: plan around the missing
+// artifact instead of failing validation.
+function planOpencodeBuildRepair(repair, build) {
+  const { record, context } = repair;
+  const rawPlan = createRepairPlanFromRecord(record, context, {
+    exemptValidationCodes: [OPENCODE_PLUGIN_NOT_BUILT_CODE],
+  });
+  const { plan: desiredPlan } = prepareRepairMigration(rawPlan, record);
+  const operationHealth = summarizeManagedOperationHealth(
+    desiredPlan.sourceRoot || context.repoRoot,
+    record.targetRoot,
+    desiredPlan.operations,
+    record.adapter.target
+  );
+  const unsafeOperationResult = getUnsafeOperationResult(record, operationHealth);
+  if (unsafeOperationResult) return unsafeOperationResult;
+
+  const repairOperations = [
+    ...operationHealth.missing.map(entry => ({ ...entry.operation })),
+    ...operationHealth.drifted.map(entry => ({ ...entry.operation })),
+  ];
+  const plannedRepairs = [
+    build.opencodeBuildRepairPath,
+    ...repairOperations.map(operation => operation.destinationPath),
+  ];
+
+  return {
+    adapter: record.adapter,
+    status: 'planned',
+    installStatePath: record.installStatePath,
+    repairedPaths: [],
+    plannedRepairs,
+    stateRefreshed: false,
+    warnings: desiredPlan.warnings,
+    error: null
+  };
+}
+
+// Missing and drifted managed files, plus settings operations whose managed
+// hooks changed since the previous install. Deduplicated by kind and path.
+function collectRepairOperations(operationHealth, desiredPlan) {
+  return [
+    ...operationHealth.missing.map(entry => ({ ...entry.operation })),
+    ...operationHealth.drifted.map(entry => ({ ...entry.operation })),
+    ...desiredPlan.operations
+      .filter(operation => (
+        operation.kind === 'update-claude-settings'
+        && operation.previousManagedHooks
+        && !isDeepStrictEqual(operation.previousManagedHooks, operation.managedHooks)
+      ))
+      .map(operation => ({ ...operation })),
+  ].filter((operation, index, items) => items.findIndex(candidate => {
+    if (candidate.kind !== operation.kind) return false;
+    if (candidate.destinationPath !== operation.destinationPath) return false;
+    // One settings file holds hooks shipped by several modules; each module's
+    // record must survive the dedupe so repair rewrites every contribution.
+    if (operation.kind !== 'update-claude-settings') return true;
+    return (candidate.sourceRelativePath || '') === (operation.sourceRelativePath || '');
+  }) === index);
+}
+
+function executeGuardedRepairOperation(repair, plan, operation, repairedPaths) {
+  const { record, context, settingsLockHeld } = repair;
+  const { desiredPlan, migration, activationSnapshot, repairLinkIndex } = plan;
+  const apply = require('./install/apply');
+  if (operation.sourceRelativePath === 'manifests/install-assets/commonjs-scripts-package.json') {
+    apply.assertOpenCodeScriptBoundary(desiredPlan, new Set(repairedPaths));
+  }
+  if (desiredPlan.target === 'opencode') {
+    apply.assertOpenCodeActivationUnchanged(desiredPlan, operation, activationSnapshot);
+  }
+  assertNoNewUserOwnedFile(migration, operation, desiredPlan);
+  const repairedPath = executeRepairOperation(
+    desiredPlan.sourceRoot || context.repoRoot,
+    operation,
+    record.targetRoot,
+    {
+    linkIndex: repairLinkIndex,
+    target: record.adapter.target,
+    settingsLockHeld,
+    writeOptions: apply.getOpenCodeActivationWriteOptions(operation, activationSnapshot),
+    }
+  );
+  if (repairedPath) {
+    repairedPaths.push(repairedPath);
+  }
+}
+
+function removeLegacyMigrationPaths(record, migration, repairedPaths) {
+  for (const operation of migration.legacyOperationsToRemove) {
+    const removedPath = removeContainedPath(
+      operation.destinationPath,
+      record.targetRoot,
+      'migrate managed Claude skill',
+      { force: true }
+    );
+    if (removedPath) {
+      repairedPaths.push(removedPath);
+    }
+  }
+}
+
+function applyRecordRepairs(repair, build, plan) {
+  const { record } = repair;
+  const { needsOpencodeBuild, opencodeBuildRepairPath } = build;
+  const { desiredPlan, migration, activationSnapshot, repairOperations } = plan;
+  const hasLegacyMigration = migration.legacyOperationsToRemove.length > 0;
+  const repairedPaths = needsOpencodeBuild ? [opencodeBuildRepairPath] : [];
+  if (desiredPlan.target === 'opencode') {
+    const { assertOpenCodeActivationUnchanged } = require('./install/apply');
+    // Health inspection must not let a changed activation become owned by
+    // a bridge checkpoint before the per-write check can reject it.
+    for (const destinationPath of activationSnapshot.keys()) {
+      assertOpenCodeActivationUnchanged(desiredPlan, { destinationPath }, activationSnapshot);
+    }
+  }
+  if (migration.requiresBridgeState && (repairOperations.length > 0 || hasLegacyMigration)) {
+    writeRefreshedInstallState(record, migration.bridgeState);
+  }
+
+  for (const operation of repairOperations) {
+    executeGuardedRepairOperation(repair, plan, operation, repairedPaths);
+  }
+  if (hasLegacyMigration) {
+    removeLegacyMigrationPaths(record, migration, repairedPaths);
+  }
+
+  const changedInstalledBytes = repairOperations.length > 0
+    || needsOpencodeBuild
+    || hasLegacyMigration;
+  const statePreviewToWrite = changedInstalledBytes
+    ? desiredPlan.statePreview
+    : {
+        ...desiredPlan.statePreview,
+        installedAt: record.state.installedAt,
+        source: { ...record.state.source },
+      };
+  assertOpenCodeRepairHookDeactivation(desiredPlan, { requireInactive: true });
+  writeRefreshedInstallState(record, statePreviewToWrite, repairedPaths);
+
+  return {
+    adapter: record.adapter,
+    status: changedInstalledBytes ? 'repaired' : 'ok',
+    installStatePath: record.installStatePath,
+    repairedPaths,
+    plannedRepairs: [],
+    stateRefreshed: true,
+    warnings: desiredPlan.warnings,
+    error: null
+  };
+}
+
+function repairManagedRecord(repair, build) {
+  const { record, context, options } = repair;
+  const { needsOpencodeBuild, opencodeBuildRepairPath } = build;
+  const rawPlan = createRepairPlanFromRecord(record, context);
+  require('./install/apply').assertOpenCodeScriptBoundary(rawPlan);
+  const {
+    migration,
+    plan: desiredPlan,
+  } = prepareRepairMigration(rawPlan, record);
+  const activationSnapshot = assertOpenCodeRepairHookDeactivation(desiredPlan);
+  const repairSourceRoot = desiredPlan.sourceRoot || context.repoRoot;
+  const operationHealth = summarizeManagedOperationHealth(
+    repairSourceRoot,
+    record.targetRoot,
+    desiredPlan.operations,
+    record.adapter.target
+  );
+
+  const unsafeOperationResult = getUnsafeOperationResult(record, operationHealth);
+  if (unsafeOperationResult) return unsafeOperationResult;
+
+  if (operationHealth.missingSource.length > 0) {
+    return {
+      adapter: record.adapter,
+      status: 'error',
+      installStatePath: record.installStatePath,
+      repairedPaths: [],
+      plannedRepairs: [],
+      warnings: desiredPlan.warnings,
+      error: `Missing source file(s): ${operationHealth.missingSource.map(entry => entry.sourcePath).join(', ')}`
+    };
+  }
+
+  const repairOperations = collectRepairOperations(operationHealth, desiredPlan);
+  const repairLinkIndex = buildLinkIndexForOperations(desiredPlan.operations, record.targetRoot);
+  const legacyMigrationPaths = migration.legacyOperationsToRemove.map(
+    operation => operation.destinationPath
+  );
+  const plannedRepairs = [...new Set([
+    ...(needsOpencodeBuild ? [opencodeBuildRepairPath] : []),
+    ...repairOperations.map(operation => operation.destinationPath),
+    ...legacyMigrationPaths,
+  ])];
+
+  if (options.dryRun) {
+    return {
+      adapter: record.adapter,
+      status: plannedRepairs.length > 0 ? 'planned' : 'ok',
+      installStatePath: record.installStatePath,
+      repairedPaths: [],
+      plannedRepairs,
+      stateRefreshed: plannedRepairs.length === 0,
+      warnings: desiredPlan.warnings,
+      error: null
+    };
+  }
+
+  return applyRecordRepairs(repair, build, {
+    desiredPlan,
+    migration,
+    activationSnapshot,
+    repairOperations,
+    repairLinkIndex,
+  });
+}
+
+// Repair one discovered record. `repair` carries the record, lifecycle
+// context, caller options, the OpenCode build runner, an optional OpenCode
+// lease, and whether the Claude settings lock is already held.
+function runRecordRepair(repair) {
+  const { record, context, options } = repair;
+  const needsOpencodeBuild = record.adapter.target === 'opencode'
+    && hasOpencodeBuildError(getOpencodeBuildValidationIssues(context));
+  const build = {
+    needsOpencodeBuild,
+    opencodeBuildRepairPath: path.join(context.repoRoot, OPENCODE_BUILD_ARTIFACT),
+  };
+
+  if (record.legacyLayout === 'opencode') return repairLegacyOpencodeLayout(repair, build);
+  if (needsOpencodeBuild && options.dryRun) return planOpencodeBuildRepair(repair, build);
+  if (needsOpencodeBuild) {
+    const buildFailure = runOpencodeBuild(repair);
+    if (buildFailure) return buildFailure;
+  }
+  return repairManagedRecord(repair, build);
+}
+
 function repairInstalledStates(options = {}) {
   const repoRoot = options.repoRoot ? path.resolve(options.repoRoot) : DEFAULT_REPO_ROOT;
   const manifests = loadInstallManifests({ repoRoot });
@@ -1591,295 +1848,22 @@ function repairInstalledStates(options = {}) {
   const results = records.map(initialRecord => {
     let record = initialRecord;
     const performRepair = (opencodeLease) => {
-      if (record.error) {
-        return {
-          adapter: record.adapter,
-          status: 'error',
-          installStatePath: record.installStatePath,
-          repairedPaths: [],
-          plannedRepairs: [],
-          error: record.error
-        };
-      }
+      if (record.error) return repairErrorResult(record, record.error);
 
       let releaseSettingsLock = null;
       try {
         preflightOpenCodeHookDeactivation(record, context);
-        const settingsPathToLock = !options.dryRun
-          && getManagedOperations(record.state || {}).some(
-            operation => operation.kind === 'update-claude-settings'
-          )
-          ? getClaudeSettingsPath(record.targetRoot)
-          : null;
-        if (settingsPathToLock) {
-          releaseSettingsLock = acquireSettingsLock(settingsPathToLock);
-        }
-        const needsOpencodeBuild = record.adapter.target === 'opencode'
-          && hasOpencodeBuildError(getOpencodeBuildValidationIssues(context));
-        const opencodeBuildRepairPath = path.join(context.repoRoot, OPENCODE_BUILD_ARTIFACT);
-
-        if (record.legacyLayout === 'opencode') {
-          if (needsOpencodeBuild && !options.dryRun) {
-            try {
-              buildOpencodeRunner(context.repoRoot);
-            } catch (error) {
-              return {
-                adapter: record.adapter,
-                status: 'error',
-                installStatePath: record.installStatePath,
-                repairedPaths: [],
-                plannedRepairs: [],
-                error: formatBuildErrorMessage(error),
-              };
-            }
-          }
-
-          const canonicalPlan = createRepairPlanFromRecord(record, context, {
-            exemptValidationCodes: options.dryRun && needsOpencodeBuild
-              ? [OPENCODE_PLUGIN_NOT_BUILT_CODE]
-              : [],
-          });
-          assertOpenCodeRepairHookDeactivation(canonicalPlan);
-          const plannedRepairs = [...new Set([
-            ...(needsOpencodeBuild ? [opencodeBuildRepairPath] : []),
-            ...canonicalPlan.operations.map(operation => operation.destinationPath),
-            ...getManagedOperations(record.state).map(operation => operation.destinationPath),
-            record.installStatePath,
-          ])];
-
-          if (options.dryRun) {
-            return {
-              adapter: record.adapter,
-              status: 'planned',
-              installStatePath: canonicalPlan.installStatePath,
-              repairedPaths: [],
-              plannedRepairs,
-              stateRefreshed: false,
-              warnings: canonicalPlan.warnings,
-              error: null,
-            };
-          }
-
-          // Load lazily to avoid a module cycle during install-lifecycle startup.
-          const { applyInstallPlan } = require('./install/apply');
-          const appliedPlan = applyInstallPlan(canonicalPlan, { opencodeLease });
-          return {
-            adapter: record.adapter,
-            status: 'repaired',
-            installStatePath: canonicalPlan.installStatePath,
-            repairedPaths: [
-              ...(needsOpencodeBuild ? [opencodeBuildRepairPath] : []),
-              ...canonicalPlan.operations.map(operation => operation.destinationPath),
-            ],
-            plannedRepairs: [],
-            stateRefreshed: true,
-            warnings: appliedPlan.warnings,
-            error: null,
-          };
-        }
-
-        if (needsOpencodeBuild && options.dryRun) {
-          const rawPlan = createRepairPlanFromRecord(record, context, {
-            exemptValidationCodes: [OPENCODE_PLUGIN_NOT_BUILT_CODE],
-          });
-          const { plan: desiredPlan } = prepareRepairMigration(rawPlan, record);
-          const operationHealth = summarizeManagedOperationHealth(
-            context.repoRoot,
-            record.targetRoot,
-            desiredPlan.operations,
-            record.adapter.target
-          );
-          const unsafeOperationResult = getUnsafeOperationResult(
-            record,
-            operationHealth
-          );
-          if (unsafeOperationResult) {
-            return unsafeOperationResult;
-          }
-          const repairOperations = [...operationHealth.missing.map(entry => ({ ...entry.operation })), ...operationHealth.drifted.map(entry => ({ ...entry.operation }))];
-          const plannedRepairs = [opencodeBuildRepairPath, ...repairOperations.map(operation => operation.destinationPath)];
-
-          return {
-            adapter: record.adapter,
-            status: 'planned',
-            installStatePath: record.installStatePath,
-            repairedPaths: [],
-            plannedRepairs,
-            stateRefreshed: false,
-            warnings: desiredPlan.warnings,
-            error: null
-          };
-        }
-
-        if (needsOpencodeBuild) {
-          try {
-            buildOpencodeRunner(context.repoRoot);
-          } catch (error) {
-            return {
-              adapter: record.adapter,
-              status: 'error',
-              installStatePath: record.installStatePath,
-              repairedPaths: [],
-              plannedRepairs: [],
-              error: formatBuildErrorMessage(error)
-            };
-          }
-        }
-
-        const rawPlan = createRepairPlanFromRecord(record, context);
-        require('./install/apply').assertOpenCodeScriptBoundary(rawPlan);
-        const {
-          migration,
-          plan: desiredPlan,
-        } = prepareRepairMigration(rawPlan, record);
-        const activationSnapshot = assertOpenCodeRepairHookDeactivation(desiredPlan);
-        const operationHealth = summarizeManagedOperationHealth(
-          context.repoRoot,
-          record.targetRoot,
-          desiredPlan.operations,
-          record.adapter.target
-        );
-
-        const unsafeOperationResult = getUnsafeOperationResult(
+        releaseSettingsLock = acquireRepairSettingsLock(record, options);
+        return runRecordRepair({
           record,
-          operationHealth
-        );
-        if (unsafeOperationResult) {
-          return unsafeOperationResult;
-        }
-
-        if (operationHealth.missingSource.length > 0) {
-          return {
-            adapter: record.adapter,
-            status: 'error',
-            installStatePath: record.installStatePath,
-            repairedPaths: [],
-            plannedRepairs: [],
-            warnings: desiredPlan.warnings,
-            error: `Missing source file(s): ${operationHealth.missingSource.map(entry => entry.sourcePath).join(', ')}`
-          };
-        }
-
-        const repairOperations = [
-          ...operationHealth.missing.map(entry => ({ ...entry.operation })),
-          ...operationHealth.drifted.map(entry => ({ ...entry.operation })),
-          ...desiredPlan.operations
-            .filter(operation => (
-              operation.kind === 'update-claude-settings'
-              && operation.previousManagedHooks
-              && !isDeepStrictEqual(operation.previousManagedHooks, operation.managedHooks)
-            ))
-            .map(operation => ({ ...operation })),
-        ].filter((operation, index, items) => items.findIndex(candidate => (
-          candidate.kind === operation.kind
-          && candidate.destinationPath === operation.destinationPath
-        )) === index);
-        const repairLinkIndex = buildLinkIndexForOperations(desiredPlan.operations, record.targetRoot);
-        const legacyMigrationPaths = migration.legacyOperationsToRemove.map(
-          operation => operation.destinationPath
-        );
-        const plannedRepairs = [...new Set([
-          ...(needsOpencodeBuild ? [opencodeBuildRepairPath] : []),
-          ...repairOperations.map(operation => operation.destinationPath),
-          ...legacyMigrationPaths,
-        ])];
-
-        if (options.dryRun) {
-          return {
-            adapter: record.adapter,
-            status: plannedRepairs.length > 0 ? 'planned' : 'ok',
-            installStatePath: record.installStatePath,
-            repairedPaths: [],
-            plannedRepairs,
-            stateRefreshed: plannedRepairs.length === 0,
-            warnings: desiredPlan.warnings,
-            error: null
-          };
-        }
-
-        const hasLegacyMigration = migration.legacyOperationsToRemove.length > 0;
-        const repairedPaths = needsOpencodeBuild ? [opencodeBuildRepairPath] : [];
-        if (desiredPlan.target === 'opencode') {
-          const { assertOpenCodeActivationUnchanged } = require('./install/apply');
-          // Health inspection must not let a changed activation become owned by
-          // a bridge checkpoint before the per-write check can reject it.
-          for (const destinationPath of activationSnapshot.keys()) {
-            assertOpenCodeActivationUnchanged(desiredPlan, { destinationPath }, activationSnapshot);
-          }
-        }
-        if (migration.requiresBridgeState && (repairOperations.length > 0 || hasLegacyMigration)) {
-          writeRefreshedInstallState(record, migration.bridgeState);
-        }
-
-        for (const operation of repairOperations) {
-          if (operation.sourceRelativePath === 'manifests/install-assets/commonjs-scripts-package.json') {
-            require('./install/apply').assertOpenCodeScriptBoundary(desiredPlan, new Set(repairedPaths));
-          }
-          if (desiredPlan.target === 'opencode') {
-            const { assertOpenCodeActivationUnchanged } = require('./install/apply');
-            assertOpenCodeActivationUnchanged(desiredPlan, operation, activationSnapshot);
-          }
-          assertNoNewUserOwnedFile(migration, operation, desiredPlan);
-          const repairedPath = executeRepairOperation(
-            context.repoRoot,
-            operation,
-            record.targetRoot,
-            repairLinkIndex,
-            record.adapter.target,
-            Boolean(releaseSettingsLock),
-            require('./install/apply').getOpenCodeActivationWriteOptions(operation, activationSnapshot)
-          );
-          if (repairedPath) {
-            repairedPaths.push(repairedPath);
-          }
-        }
-        if (hasLegacyMigration) {
-          for (const operation of migration.legacyOperationsToRemove) {
-            const removedPath = removeContainedPath(
-              operation.destinationPath,
-              record.targetRoot,
-              'migrate managed Claude skill',
-              { force: true }
-            );
-            if (removedPath) {
-              repairedPaths.push(removedPath);
-            }
-          }
-        }
-        const changedInstalledBytes = repairOperations.length > 0
-          || needsOpencodeBuild
-          || hasLegacyMigration;
-        const statePreviewToWrite = changedInstalledBytes
-          ? desiredPlan.statePreview
-          : {
-              ...desiredPlan.statePreview,
-              installedAt: record.state.installedAt,
-              source: { ...record.state.source },
-            };
-        assertOpenCodeRepairHookDeactivation(desiredPlan, { requireInactive: true });
-        writeRefreshedInstallState(record, statePreviewToWrite, repairedPaths);
-
-        return {
-          adapter: record.adapter,
-          status: (repairOperations.length > 0 || needsOpencodeBuild || hasLegacyMigration)
-            ? 'repaired'
-            : 'ok',
-          installStatePath: record.installStatePath,
-          repairedPaths,
-          plannedRepairs: [],
-          stateRefreshed: true,
-          warnings: desiredPlan.warnings,
-          error: null
-        };
+          context,
+          options,
+          buildOpencodeRunner,
+          opencodeLease,
+          settingsLockHeld: Boolean(releaseSettingsLock),
+        });
       } catch (error) {
-        return {
-          adapter: record.adapter,
-          status: 'error',
-          installStatePath: record.installStatePath,
-          repairedPaths: [],
-          plannedRepairs: [],
-          error: error.message
-        };
+        return repairErrorResult(record, error.message);
       } finally {
         if (releaseSettingsLock) releaseSettingsLock();
       }

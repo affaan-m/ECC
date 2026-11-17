@@ -110,141 +110,170 @@ function stringSpecials(quote) {
   return pattern;
 }
 
+// --- lexCodeLines state ---
+// lx carries the text, spec and partial line. Each step reads from index i and
+// returns the index of the last consumed character, or null when the text is
+// not lexable and the edit cannot be trivial.
+
+function appendCode(lx, piece) {
+  lx.code += piece;
+  lx.tail = (lx.tail + piece).slice(-2);
+}
+
+function endComment(lx, end) {
+  const marker = directiveMarker(lx.text.slice(lx.commentStart, end), lx.spec);
+  if (marker) appendCode(lx, marker);
+}
+
+function endLine(lx) {
+  if (endsWithContinuation(lx.code)) return false;
+  lx.lines.push(lx.code);
+  lx.code = '';
+  lx.tail = '';
+  return true;
+}
+
+function lexNewline(lx, i) {
+  const { text } = lx;
+  if (lx.state === 'string') return null;
+  if (lx.state === 'line') {
+    if (text.slice(lx.commentStart, i).trimEnd().endsWith('\\')) return null;
+    endComment(lx, i);
+    lx.state = 'code';
+  }
+  if (lx.state === 'block') {
+    lx.lines.push(lx.code);
+    lx.code = '';
+    lx.tail = '';
+  } else if (!endLine(lx)) {
+    return null;
+  }
+  return text[i] === '\r' && text[i + 1] === '\n' ? i + 1 : i;
+}
+
+function lexLineComment(lx, i) {
+  return nextSpecial(LINE_BREAK, lx.text, i) - 1;
+}
+
+function lexBlockComment(lx, i) {
+  const { text } = lx;
+  const ch = text[i];
+  if (ch !== '*' && ch !== '/') return nextSpecial(BLOCK_SPECIALS, text, i + 1) - 1;
+  if (ch === '*' && text[i + 1] === '/') {
+    endComment(lx, i);
+    lx.state = 'code';
+    appendCode(lx, ' ');
+    return i + 1;
+  }
+  if (ch === '/' && text[i + 1] === '*') return null;
+  return i;
+}
+
+function lexString(lx, i) {
+  const { text, quote } = lx;
+  const ch = text[i];
+  if (ch !== '\\' && ch !== quote) {
+    const end = nextSpecial(stringSpecials(quote), text, i + 1);
+    const run = text.slice(i, end);
+    appendCode(lx, run);
+    lx.stringBody += run;
+    return end - 1;
+  }
+  appendCode(lx, ch);
+  if (ch === '\\') {
+    const next = text[i + 1];
+    if (next === undefined || next === '\n' || next === '\r') return null;
+    appendCode(lx, next);
+    return i + 1;
+  }
+  if (lx.spec.noDollarInStrings && lx.stringBody.includes('$')) return null;
+  lx.state = 'code';
+  return i;
+}
+
+function lexCommentStart(lx, i) {
+  const { text, spec } = lx;
+  const ch = text[i];
+  if (spec.lineComment === '//' && ch === '/' && text[i + 1] === '/') {
+    lx.state = 'line';
+    lx.commentStart = i + 2;
+    return i + 1;
+  }
+  if (spec.lineComment === '#' && ch === '#') {
+    lx.state = 'line';
+    lx.commentStart = i + 1;
+    return i;
+  }
+  if (spec.blockComment && ch === '/' && text[i + 1] === '*') {
+    lx.state = 'block';
+    lx.commentStart = i + 2;
+    return i + 1;
+  }
+  return undefined;
+}
+
+function startsJsx(spec, text, i) {
+  const ch = text[i];
+  const next = text[i + 1];
+  if (spec.jsx && ch === '<') return isLetter(next) || next === '/' || next === '>' || next === '!';
+  return spec.jsx !== undefined && ch === '-' && next === '-' && text[i + 2] === '>';
+}
+
+function lexStringStart(lx, i) {
+  const { text, spec } = lx;
+  const ch = text[i];
+  if (spec.tripleQuotes && text[i + 1] === ch && text[i + 2] === ch) return null;
+  if (stringPrefixIsUnsafe(lx.tail, spec)) return null;
+  lx.state = 'string';
+  lx.quote = ch;
+  lx.stringBody = '';
+  appendCode(lx, ch);
+  return i;
+}
+
+function lexCode(lx, i) {
+  const { text, spec } = lx;
+  const ch = text[i];
+  if (!lx.specials.chars.has(ch)) {
+    const end = nextSpecial(lx.specials.pattern, text, i + 1);
+    appendCode(lx, text.slice(i, end));
+    return end - 1;
+  }
+  const comment = lexCommentStart(lx, i);
+  if (comment !== undefined) return comment;
+  if (spec.forbiddenCode && spec.forbiddenCode.includes(ch)) return null;
+  if (startsJsx(spec, text, i)) return null;
+  if (ch === "'" && spec.rustChars) {
+    const end = rustCharEnd(text, i);
+    appendCode(lx, end === -1 ? ch : text.slice(i, end + 1));
+    return end === -1 ? i : end;
+  }
+  if (spec.quotes.includes(ch)) return lexStringStart(lx, i);
+  appendCode(lx, ch);
+  return i;
+}
+
+const LEX_STEPS = { code: lexCode, line: lexLineComment, block: lexBlockComment, string: lexString };
+
+function finishLex(lx) {
+  if (lx.state === 'string' || lx.state === 'block') return null;
+  if (lx.state === 'line') {
+    if (lx.text.slice(lx.commentStart).trimEnd().endsWith('\\')) return null;
+    endComment(lx, lx.text.length);
+  }
+  return endLine(lx) ? lx.lines : null;
+}
+
 function lexCodeLines(text, spec) {
-  const specials = codeSpecials(spec);
-  const lines = [];
-  let code = '';
-  let state = 'code';
-  let quote = '';
-  let stringBody = '';
-  let commentStart = 0;
-  let tail = '';
-  const append = piece => {
-    code += piece;
-    tail = (tail + piece).slice(-2);
-  };
-  const endComment = end => {
-    const marker = directiveMarker(text.slice(commentStart, end), spec);
-    if (marker) append(marker);
-  };
-  const endLine = () => {
-    if (endsWithContinuation(code)) return false;
-    lines.push(code);
-    code = '';
-    tail = '';
-    return true;
-  };
-  if (spec.jsx !== undefined && text.startsWith('#!')) state = 'line';
+  const lx = { text, spec, specials: codeSpecials(spec), lines: [], code: '', state: 'code', quote: '', stringBody: '', commentStart: 0, tail: '' };
+  if (spec.jsx !== undefined && text.startsWith('#!')) lx.state = 'line';
   for (let i = 0; i < text.length; i++) {
     const ch = text[i];
-    if (ch === '\n' || ch === '\r') {
-      if (state === 'string') return null;
-      if (state === 'line') {
-        if (text.slice(commentStart, i).trimEnd().endsWith('\\')) return null;
-        endComment(i);
-        state = 'code';
-      }
-      if (state === 'block') {
-        lines.push(code);
-        code = '';
-        tail = '';
-      } else if (!endLine()) {
-        return null;
-      }
-      if (ch === '\r' && text[i + 1] === '\n') i++;
-      continue;
-    }
-    if (state === 'line') {
-      i = nextSpecial(LINE_BREAK, text, i) - 1;
-      continue;
-    }
-    if (state === 'block') {
-      if (ch !== '*' && ch !== '/') {
-        i = nextSpecial(BLOCK_SPECIALS, text, i + 1) - 1;
-        continue;
-      }
-      if (ch === '*' && text[i + 1] === '/') {
-        endComment(i);
-        state = 'code';
-        append(' ');
-        i++;
-      } else if (ch === '/' && text[i + 1] === '*') {
-        return null;
-      }
-      continue;
-    }
-    if (state === 'string') {
-      if (ch !== '\\' && ch !== quote) {
-        const end = nextSpecial(stringSpecials(quote), text, i + 1);
-        const run = text.slice(i, end);
-        append(run);
-        stringBody += run;
-        i = end - 1;
-        continue;
-      }
-      append(ch);
-      if (ch === '\\') {
-        const next = text[i + 1];
-        if (next === undefined || next === '\n' || next === '\r') return null;
-        append(next);
-        i++;
-      } else if (ch === quote) {
-        if (spec.noDollarInStrings && stringBody.includes('$')) return null;
-        state = 'code';
-      } else {
-        stringBody += ch;
-      }
-      continue;
-    }
-    if (!specials.chars.has(ch)) {
-      const end = nextSpecial(specials.pattern, text, i + 1);
-      append(text.slice(i, end));
-      i = end - 1;
-      continue;
-    }
-    if (spec.lineComment === '//' && ch === '/' && text[i + 1] === '/') {
-      state = 'line';
-      commentStart = i + 2;
-      i++;
-      continue;
-    }
-    if (spec.lineComment === '#' && ch === '#') {
-      state = 'line';
-      commentStart = i + 1;
-      continue;
-    }
-    if (spec.blockComment && ch === '/' && text[i + 1] === '*') {
-      state = 'block';
-      commentStart = i + 2;
-      i++;
-      continue;
-    }
-    if (spec.forbiddenCode && spec.forbiddenCode.includes(ch)) return null;
-    if (spec.jsx && ch === '<' && (isLetter(text[i + 1]) || text[i + 1] === '/' || text[i + 1] === '>' || text[i + 1] === '!')) return null;
-    if (spec.jsx !== undefined && ch === '-' && text[i + 1] === '-' && text[i + 2] === '>') return null;
-    if (ch === "'" && spec.rustChars) {
-      const end = rustCharEnd(text, i);
-      append(end === -1 ? ch : text.slice(i, end + 1));
-      if (end !== -1) i = end;
-      continue;
-    }
-    if (spec.quotes.includes(ch)) {
-      if (spec.tripleQuotes && text[i + 1] === ch && text[i + 2] === ch) return null;
-      if (stringPrefixIsUnsafe(tail, spec)) return null;
-      state = 'string';
-      quote = ch;
-      stringBody = '';
-      append(ch);
-      continue;
-    }
-    append(ch);
+    const next = ch === '\n' || ch === '\r' ? lexNewline(lx, i) : LEX_STEPS[lx.state](lx, i);
+    if (next === null) return null;
+    i = next;
   }
-  if (state === 'string' || state === 'block') return null;
-  if (state === 'line') {
-    if (text.slice(commentStart).trimEnd().endsWith('\\')) return null;
-    endComment(text.length);
-  }
-  return endLine() ? lines : null;
+  return finishLex(lx);
 }
 
 function normalizeCodeLine(line, spec) {
@@ -364,56 +393,86 @@ function isBlank(ch) {
   return ch === ' ' || ch === '\t';
 }
 
+// --- Shell and PowerShell readers ---
+// Each reader appends what it consumed to lx.code and returns the index of the
+// last consumed character, or -1 when the text is not lexable.
+
+function pushShellLine(lx, i) {
+  lx.lines.push(lx.code);
+  lx.code = '';
+  return lx.text[i] === '\r' && lx.text[i + 1] === '\n' ? i + 1 : i;
+}
+
+function readEscapedPair(lx, i) {
+  const next = lx.text[i + 1];
+  if (next === undefined || next === '\n' || next === '\r') return -1;
+  lx.code += lx.text[i] + next;
+  return i + 1;
+}
+
+function readQuotedSpan(lx, i, end) {
+  if (end === -1) return -1;
+  lx.code += lx.text.slice(i, end + 1);
+  return end;
+}
+
+function lineCommentEnd(text, i) {
+  while (i + 1 < text.length && text[i + 1] !== '\n' && text[i + 1] !== '\r') i++;
+  return i;
+}
+
+function readLineComment(lx, i) {
+  const end = lineCommentEnd(lx.text, i);
+  lx.code += directiveMarker(lx.text.slice(i + 1, end + 1), SHELL_SPEC);
+  return end;
+}
+
+function shSingleQuoted(lx, i) {
+  const { text } = lx;
+  if (text[i - 1] === '$') return -1;
+  const end = text.indexOf("'", i + 1);
+  if (end === -1) return -1;
+  const body = text.slice(i, end + 1);
+  if (body.includes('\n') || body.includes('\r')) return -1;
+  lx.code += body;
+  return end;
+}
+
+function shDoubleQuoted(lx, i) {
+  return readQuotedSpan(lx, i, shDoubleQuoteEnd(lx.text, i));
+}
+
+function shHash(lx, i) {
+  const starts = hashStartsComment(lx.text, i);
+  if (starts === null) return -1;
+  if (!starts) {
+    lx.code += '#';
+    return i;
+  }
+  return readLineComment(lx, i);
+}
+
+const SH_READERS = new Map([['\\', readEscapedPair], ["'", shSingleQuoted], ['"', shDoubleQuoted], ['#', shHash]]);
+
 function shCodeLines(text) {
   if (text.includes('<<') || text.includes('`') || hasLoneCarriageReturn(text)) return null;
-  const lines = [];
-  let code = '';
+  const lx = { text, code: '', lines: [] };
   for (let i = 0; i < text.length; i++) {
     const ch = text[i];
     if (ch === '\n' || ch === '\r') {
-      lines.push(code);
-      code = '';
-      if (ch === '\r' && text[i + 1] === '\n') i++;
+      i = pushShellLine(lx, i);
       continue;
     }
-    if (ch === '\\') {
-      const next = text[i + 1];
-      if (next === undefined || next === '\n' || next === '\r') return null;
-      code += ch + next;
-      i++;
+    const reader = SH_READERS.get(ch);
+    if (!reader) {
+      lx.code += ch;
       continue;
     }
-    if (ch === "'") {
-      if (text[i - 1] === '$') return null;
-      const end = text.indexOf("'", i + 1);
-      if (end === -1) return null;
-      const body = text.slice(i, end + 1);
-      if (body.includes('\n') || body.includes('\r')) return null;
-      code += body;
-      i = end;
-      continue;
-    }
-    if (ch === '"') {
-      const end = shDoubleQuoteEnd(text, i);
-      if (end === -1) return null;
-      code += text.slice(i, end + 1);
-      i = end;
-      continue;
-    }
-    if (ch === '#') {
-      const starts = hashStartsComment(text, i);
-      if (starts === null) return null;
-      if (starts) {
-        const start = i + 1;
-        while (i + 1 < text.length && text[i + 1] !== '\n' && text[i + 1] !== '\r') i++;
-        code += directiveMarker(text.slice(start, i + 1), SHELL_SPEC);
-        continue;
-      }
-    }
-    code += ch;
+    i = reader(lx, i);
+    if (i === -1) return null;
   }
-  lines.push(code);
-  return lines;
+  lx.lines.push(lx.code);
+  return lx.lines;
 }
 
 const PS_SMART_QUOTES = /[\u2018\u2019\u201a\u201b\u201c\u201d\u201e]/;
@@ -442,62 +501,58 @@ function psQuoteEnd(text, i) {
   return -1;
 }
 
+function psQuoted(lx, i) {
+  return readQuotedSpan(lx, i, psQuoteEnd(lx.text, i));
+}
+
+function psBlockStart(lx, i) {
+  if (!psHashStartsComment(lx.text, i)) return -1;
+  lx.block = true;
+  lx.blockStart = i + 2;
+  return i + 1;
+}
+
+function psHash(lx, i) {
+  if (!psHashStartsComment(lx.text, i)) return -1;
+  return readLineComment(lx, i);
+}
+
+function psBlockComment(lx, i) {
+  const { text } = lx;
+  if (text[i] === '<' && text[i + 1] === '#') return -1;
+  if (text[i] === '#' && text[i + 1] === '>') {
+    lx.block = false;
+    lx.code += directiveMarker(text.slice(lx.blockStart, i), SHELL_SPEC) || ' ';
+    return i + 1;
+  }
+  return i;
+}
+
+function psToken(lx, i) {
+  const ch = lx.text[i];
+  if (ch === '`') return readEscapedPair(lx, i);
+  if (ch === "'" || ch === '"') return psQuoted(lx, i);
+  if (ch === '<' && lx.text[i + 1] === '#') return psBlockStart(lx, i);
+  if (ch === '#') return psHash(lx, i);
+  lx.code += ch;
+  return i;
+}
+
 function psCodeLines(text) {
   if (text.includes('@"') || text.includes("@'") || PS_SMART_QUOTES.test(text)) return null;
-  const lines = [];
-  let code = '';
-  let block = false;
-  let blockStart = 0;
+  const lx = { text, code: '', lines: [], block: false, blockStart: 0 };
   for (let i = 0; i < text.length; i++) {
     const ch = text[i];
     if (ch === '\n' || ch === '\r') {
-      lines.push(code);
-      code = '';
-      if (ch === '\r' && text[i + 1] === '\n') i++;
+      i = pushShellLine(lx, i);
       continue;
     }
-    if (block) {
-      if (ch === '<' && text[i + 1] === '#') return null;
-      if (ch === '#' && text[i + 1] === '>') {
-        block = false;
-        code += directiveMarker(text.slice(blockStart, i), SHELL_SPEC) || ' ';
-        i++;
-      }
-      continue;
-    }
-    if (ch === '`') {
-      const next = text[i + 1];
-      if (next === undefined || next === '\n' || next === '\r') return null;
-      code += ch + next;
-      i++;
-      continue;
-    }
-    if (ch === "'" || ch === '"') {
-      const end = psQuoteEnd(text, i);
-      if (end === -1) return null;
-      code += text.slice(i, end + 1);
-      i = end;
-      continue;
-    }
-    if (ch === '<' && text[i + 1] === '#') {
-      if (!psHashStartsComment(text, i)) return null;
-      block = true;
-      blockStart = i + 2;
-      i++;
-      continue;
-    }
-    if (ch === '#') {
-      if (!psHashStartsComment(text, i)) return null;
-      const start = i + 1;
-      while (i + 1 < text.length && text[i + 1] !== '\n' && text[i + 1] !== '\r') i++;
-      code += directiveMarker(text.slice(start, i + 1), SHELL_SPEC);
-      continue;
-    }
-    code += ch;
+    i = lx.block ? psBlockComment(lx, i) : psToken(lx, i);
+    if (i === -1) return null;
   }
-  if (block) return null;
-  lines.push(code);
-  return lines;
+  if (lx.block) return null;
+  lx.lines.push(lx.code);
+  return lx.lines;
 }
 
 function batchCodeLines(text) {

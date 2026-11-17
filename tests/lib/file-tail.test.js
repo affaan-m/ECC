@@ -54,6 +54,21 @@ test('a missing file gives null', () => {
   assert.strictEqual(readFileTail(path.join(dir, 'missing.txt'), 10), null);
 });
 
+test('reports raw bytes separately from decoded UTF-8 text when requested', () => {
+  const incomplete = path.join(dir, 'incomplete.txt');
+  fs.writeFileSync(incomplete, Buffer.from([0xe4, 0xb8]));
+  assert.deepStrictEqual(readFileTail(incomplete, 10, { includeByteLength: true }), {
+    text: '\ufffd', truncated: false, byteLength: 2
+  });
+});
+
+test('reports zero raw bytes for an empty file when requested', () => {
+  const empty = path.join(dir, 'empty.txt');
+  assert.deepStrictEqual(readFileTail(empty, 10, { includeByteLength: true }), {
+    text: '', truncated: false, byteLength: 0
+  });
+});
+
 test('transcript-context still exports the same reader', () => {
   const context = require(path.join(__dirname, '..', '..', 'scripts', 'lib', 'transcript-context.js'));
   assert.strictEqual(context.readFileTail, readFileTail);

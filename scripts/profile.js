@@ -27,8 +27,11 @@ Token estimates cover skill metadata only; actual host context remains unobserve
 The existing install --profile and hook profile flags keep their own meanings.
 
 Experimental managed profiles and bounded task context:
-  ecc profile resolve [lean|full] --task-input task.json|- [--load] [--previous receipt.json] [--json]
-  ecc profile run --task-input task.json|- [--state-root <directory>] [--target codex|claude] [--dry-run] [--json]
+  ecc profile resolve [lean|full] --task-input task.json|- [--load] [--previous receipt.json]
+      [--neighbors neighbors.json] [--json]
+  ecc profile run --task-input task.json|- [--state-root <directory>] [--target codex|claude]
+      [--neighbors neighbors.json] [--dry-run] [--json]
+  ecc profile neighbors [--target codex|claude] [--project <directory>] [--json]
   ecc profile set lean|full --state-root <dedicated-directory> [--selection auto|manual|suggest]
       [--target codex|claude] [--include skill:<id>] [--exclude skill:<id>] [--dry-run] [--json]
   ecc profile status --state-root <directory> [--json]
@@ -49,6 +52,9 @@ Set stages owned generations; provider discovery is verified separately.
 Resolve returns context only with --load; suggest and --dry-run never return skill bodies.
 Use resolve --state-root <directory> to honor the saved base, mode and exclusions.
 Routing-index writes the metadata index read by the opt-in prompt suggestion hook; rebuild it after set, mode or rollback.
+Neighbors lists the provider home's other installed skills (names and descriptions; ECC's own copies excluded) as a
+snapshot. For claude it also reads the project's .claude/skills (the current directory, or --project). Pass it with --neighbors (or ECC_CONTEXT_NEIGHBORS for the suggestion hook) to list the ones that also match
+the task as companions next to ECC's own selection, which stays unchanged. It is not available with --native-root.
 Run with --native-root to use a verified isolated Codex or Claude generation. Existing sessions are unchanged.
 `;
 }

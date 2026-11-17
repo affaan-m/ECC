@@ -29,17 +29,52 @@ const FILE_PATH_KEYS = new Set([
   'new_file_path',
 ]);
 
+// A name that carries a credential word anywhere (`AWS_SECRET_ACCESS_KEY`,
+// `DOCKER_AUTH_CONFIG`, Docker's `"auth":`), but not `max_tokens`, `tokenizer`
+// or `author`.
+const CREDENTIAL_WORD = /secret|token(?!s|iz)|passw(?:or)?d|api[_-]?key|access[_-]?key|private[_-]?key|credential|auth\b|auth[_-]?config/i;
+// A whole name and its separator. A name starts only where a run of name
+// characters starts, so each run is scanned once and long output stays linear
+// however long the name is.
+const ASSIGNMENT = /(?<![\w.-])([\w.-]+)(["']?)\s*([:=])\s*/g;
+// A quoted value may hold escaped quotes, and one that opens with { or [ is JSON
+// that can hold spaces, so it is redacted to the end. A bare value after a quoted
+// JSON key ends at the next field; any other (`NAME=a,b`, `secret: a,b`) runs to
+// the next space.
+const JSON_FIELD_VALUE = /"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|[{[].*|[^\s,;}\]"']+/y;
+const TEXT_VALUE = /"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|[{[].*|\S+/y;
+
+function redactCredentialValues(text) {
+  let redacted = '';
+  let copied = 0;
+  ASSIGNMENT.lastIndex = 0;
+  for (let match = ASSIGNMENT.exec(text); match; match = ASSIGNMENT.exec(text)) {
+    if (!CREDENTIAL_WORD.test(match[1])) continue;
+    const valueStart = match.index + match[0].length;
+    const valuePattern = match[2] && match[3] === ':' ? JSON_FIELD_VALUE : TEXT_VALUE;
+    valuePattern.lastIndex = valueStart;
+    const value = valuePattern.exec(text);
+    if (!value) continue;
+    redacted += `${text.slice(copied, valueStart)}<REDACTED>`;
+    copied = valueStart + value[0].length;
+    ASSIGNMENT.lastIndex = copied;
+  }
+  return redacted + text.slice(copied);
+}
+
 function redactSecrets(value) {
-  return String(value || '')
+  // The credential values cover what governance-capture detects, since tool
+  // output such as `cat .env` lands in these summaries too.
+  return redactCredentialValues(String(value || '')
     .replace(/\n/g, ' ')
     .replace(/--token[= ][^ ]*/g, '--token=<REDACTED>')
     .replace(/Authorization:[: ]*[^ ]*[: ]*[^ ]*/gi, 'Authorization:<REDACTED>')
     .replace(/\bAKIA[A-Z0-9]{16}\b/g, '<REDACTED>')
     .replace(/\bASIA[A-Z0-9]{16}\b/g, '<REDACTED>')
-    .replace(/password[= ][^ ]*/gi, 'password=<REDACTED>')
-    .replace(/\bghp_[A-Za-z0-9_]+\b/g, '<REDACTED>')
-    .replace(/\bgho_[A-Za-z0-9_]+\b/g, '<REDACTED>')
-    .replace(/\bghs_[A-Za-z0-9_]+\b/g, '<REDACTED>')
+    .replace(/password[= ][^ ]*/gi, 'password=<REDACTED>'))
+    .replace(/\beyJ[A-Za-z0-9_-]{10,}\.eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}/g, '<REDACTED>')
+    .replace(/-----BEGIN [A-Z ]*PRIVATE KEY-----.*/g, '<REDACTED>')
+    .replace(/\bgh[pousr]_[A-Za-z0-9_]+\b/g, '<REDACTED>')
     .replace(/\bgithub_pat_[A-Za-z0-9_]+\b/g, '<REDACTED>');
 }
 
@@ -545,26 +580,39 @@ function summarizeInput(toolName, toolInput, filePaths) {
   return truncateSummary(toolName);
 }
 
+// Activity history keeps tool output text only from the adapter's `tool_output`, a
+// string, number, boolean or `{ output }`, and redacts it. A structured result is never
+// serialized, since an encoding nested in it escapes the redaction patterns.
 function summarizeOutput(toolOutput) {
-  if (toolOutput === null || toolOutput === undefined) {
-    return '';
+  if (['string', 'number', 'boolean'].includes(typeof toolOutput)) {
+    return truncateSummary(String(toolOutput));
   }
 
-  if (typeof toolOutput === 'string') {
-    return truncateSummary(toolOutput);
-  }
-
-  if (typeof toolOutput === 'object' && typeof toolOutput.output === 'string') {
+  if (toolOutput && typeof toolOutput === 'object' && typeof toolOutput.output === 'string') {
     return truncateSummary(toolOutput.output);
   }
 
-  return truncateSummary(JSON.stringify(toolOutput));
+  return '';
+}
+
+// Of Claude Code's `tool_response`, only the sizes and flags of a Bash result
+// ({ stdout, stderr, interrupted, isImage }) are kept. None of them holds output.
+function summarizeToolResponse(response) {
+  if (!response || typeof response !== 'object') {
+    return '';
+  }
+
+  const parts = ['stdout', 'stderr']
+    .filter(field => typeof response[field] === 'string')
+    .map(field => `${field}: ${response[field].length} chars`);
+  if (response.interrupted === true) parts.push('interrupted');
+  if (response.isImage === true) parts.push('image');
+  return parts.join(', ');
 }
 
 function buildActivityRow(input, env = process.env) {
-  // Same env-var-reliance bug as the session id below: Claude Code doesn't
-  // set CLAUDE_HOOK_EVENT_NAME for hook subprocesses either. Real hook stdin
-  // payloads carry hook_event_name as a JSON field -- prefer that.
+  // Claude Code does not set CLAUDE_HOOK_EVENT_NAME for hook subprocesses.
+  // Real hook stdin payloads carry hook_event_name as a JSON field.
   const hookEvent = String(
     input?.hook_event_name || env.CLAUDE_HOOK_EVENT_NAME || ''
   ).trim();
@@ -573,12 +621,11 @@ function buildActivityRow(input, env = process.env) {
   }
 
   const toolName = String(input?.tool_name || '').trim();
-  // Claude Code does not set CLAUDE_SESSION_ID as an environment variable for
-  // hook subprocesses -- the session id is only available in the hook's own
-  // stdin JSON payload. Prefer that; keep the env vars as a fallback for any
-  // caller that does set them. Sanitized the same way as the sibling hooks
-  // (cost-tracker.js, ecc-context-monitor.js, ecc-metrics-bridge.js,
-  // gateguard-fact-force.js) that already use this exact fallback order.
+  // The payload identifies the actual harness conversation. Preserve it ahead
+  // of inherited environment IDs, which may belong to a parent or concurrent
+  // session. Correlating that conversation with a native ECC session requires
+  // an explicit binding, not an ownership guess from the environment.
+  // Sanitize candidates separately so invalid values retain safe fallbacks.
   const sessionId =
     sanitizeSessionId(input?.session_id) ||
     sanitizeSessionId(env.ECC_SESSION_ID) ||
@@ -603,7 +650,9 @@ function buildActivityRow(input, env = process.env) {
     tool_name: toolName,
     input_summary: summarizeInput(toolName, toolInput, filePaths),
     input_params_json: sanitizeInputParams(toolInput),
-    output_summary: summarizeOutput(input?.tool_output),
+    output_summary: input?.tool_response === undefined
+      ? summarizeOutput(input?.tool_output)
+      : summarizeToolResponse(input.tool_response),
     duration_ms: 0,
     file_paths: filePaths,
     file_events: fileEvents,

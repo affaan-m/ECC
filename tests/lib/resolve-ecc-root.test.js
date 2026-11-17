@@ -246,6 +246,17 @@ function runTests() {
     }
   })) passed++; else failed++;
 
+  if (test('continues to the legacy cache when the current cache slug is absent', () => {
+    const homeDir = createTempDir();
+    try {
+      const expected = setupPluginCache(homeDir, 'everything-claude-code', 'legacy-org', '1.7.0');
+      const result = resolveEccRoot({ envRoot: '', homeDir });
+      assert.strictEqual(result, expected);
+    } finally {
+      fs.rmSync(homeDir, { recursive: true, force: true });
+    }
+  })) passed++; else failed++;
+
   // ─── Fallback ───
 
   if (test('falls back to ~/.claude/ when nothing is found', () => {
@@ -531,6 +542,52 @@ module.exports = { resolveEccRoot() { assert.strictEqual(process.env.HOME, ${JSO
       assert.strictEqual(result, path.join(homeDir, '.claude'));
     } finally {
       fs.rmSync(homeDir, { recursive: true, force: true });
+    }
+  })) passed++; else failed++;
+
+  // ─── WSL Path Conversion ───
+
+  if (test('resolveEccRoot converts Windows CLAUDE_CONFIG_DIR to WSL path on WSL', () => {
+    const { setWSLForTesting, resetWSLDetection } = require('../../scripts/lib/install-targets/helpers');
+    setWSLForTesting(true);
+    try {
+      const homeDir = createTempDir();
+      try {
+        const result = resolveEccRoot({
+          homeDir,
+          envRoot: '',
+          configDir: 'C:\\Users\\test\\.claude'
+        });
+        // On WSL, 'C:\\Users\\test\\.claude' is converted to '/mnt/c/Users/test/.claude'.
+        // No install exists at the converted path, so resolveEccRoot falls back to it.
+        assert.strictEqual(result, path.resolve('/mnt/c/Users/test/.claude'));
+      } finally {
+        fs.rmSync(homeDir, { recursive: true, force: true });
+      }
+    } finally {
+      resetWSLDetection();
+    }
+  })) passed++; else failed++;
+
+  if (test('resolveEccRoot returns original path when not on WSL', () => {
+    const { setWSLForTesting, resetWSLDetection } = require('../../scripts/lib/install-targets/helpers');
+    setWSLForTesting(false);
+    try {
+      const homeDir = createTempDir();
+      try {
+        const result = resolveEccRoot({
+          homeDir,
+          envRoot: '',
+          configDir: 'C:\\Users\\test\\.claude'
+        });
+        // Not on WSL: Windows path is not converted. On Linux, path.resolve treats
+        // it as a relative path, resolving against the current working directory.
+        assert.strictEqual(result, path.resolve('C:\\Users\\test\\.claude'));
+      } finally {
+        fs.rmSync(homeDir, { recursive: true, force: true });
+      }
+    } finally {
+      resetWSLDetection();
     }
   })) passed++; else failed++;
 

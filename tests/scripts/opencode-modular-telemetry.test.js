@@ -40,7 +40,8 @@ try {
     const loaded = [];
     for (const name of fs.readdirSync(path.join(root, 'plugins')).filter(name => /\\.ts$/.test(name))) {
       const mod = await import(pathToFileURL(path.join(root, 'plugins', name)).href);
-      for (const entry of new Set(Object.values(mod))) loaded.push(await entry(context));
+      // The inert stub is a V2 definition object, not a factory: it registers no hooks.
+      for (const entry of new Set(Object.values(mod))) loaded.push(typeof entry === 'function' ? await entry(context) : {});
     }
     const live = loaded.filter(hooks => typeof hooks['tool.execute.after'] === 'function');
     assert.equal(live.length, 1, 'Local discovery must register exactly one live ECC plugin');

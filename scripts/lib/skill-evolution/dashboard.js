@@ -69,7 +69,7 @@ function bucketByDay(records, nowMs, days) {
     }
 
     for (const bucket of buckets) {
-      if (recordMs > bucket.start && recordMs <= bucket.end) {
+      if (recordMs >= bucket.start && recordMs <= bucket.end) {
         bucket.records.push(record);
         break;
       }

@@ -141,6 +141,19 @@ function runTests() {
     assert.ok(result.error.includes('empty'));
   })) passed++; else failed++;
 
+  if (test('rejects invalid titles without corrupting an existing alias', () => {
+    resetAliases();
+    aliases.setAlias('keep', '/path/to/session', 'Original title');
+    const before = fs.readFileSync(aliases.getAliasesPath(), 'utf8');
+    for (const title of [42, 0, false, {}, []]) {
+      const result = aliases.setAlias('keep', '/different/path', title);
+      assert.strictEqual(result.success, false);
+      assert.strictEqual(result.error, 'Title must be a string or null');
+      assert.strictEqual(fs.readFileSync(aliases.getAliasesPath(), 'utf8'), before);
+    }
+    assert.deepStrictEqual(aliases.listAliases({ search: 'zzz' }), []);
+  })) passed++; else failed++;
+
   if (test('accepts underscores and dashes in alias', () => {
     resetAliases();
     const result = aliases.setAlias('my_session-v2', '/path');
@@ -1287,32 +1300,18 @@ function runTests() {
       'Alias should no longer exist after removal');
   })) passed++; else failed++;
 
-  // ── Round 102: setAlias with title=0 (falsy number coercion) ──
-  console.log('\nRound 102: setAlias (title=0 — falsy coercion silently converts to null):');
-  if (test('setAlias with title=0 stores null (0 || null === null due to JavaScript falsy coercion)', () => {
-    // session-aliases.js line 221: `title: title || null` — the value 0 is falsy
-    // in JavaScript, so `0 || null` evaluates to `null`.  This means numeric
-    // titles like 0 are silently discarded.
+  // ── Round 102: setAlias with title=0 (invalid title type) ──
+  console.log('\nRound 102: setAlias (title=0 is rejected):');
+  if (test('setAlias rejects a zero numeric title instead of silently storing null', () => {
     resetAliases();
     const result = aliases.setAlias('zero-title', '/sessions/test', 0);
-    assert.strictEqual(result.success, true,
-      'setAlias should succeed (0 is valid as a truthy check bypass)');
-    assert.strictEqual(result.title, null,
-      'Title should be null because 0 || null === null (falsy coercion)');
-    const resolved = aliases.resolveAlias('zero-title');
-    assert.strictEqual(resolved.title, null,
-      'Persisted title should be null after round-trip through saveAliases/loadAliases');
+    assert.strictEqual(result.success, false);
+    assert.strictEqual(result.error, 'Title must be a string or null');
+    assert.strictEqual(aliases.resolveAlias('zero-title'), null);
   })) passed++; else failed++;
 
-  // ── Round 103: loadAliases with array aliases in JSON (typeof [] === 'object' bypass) ──
-  console.log('\nRound 103: loadAliases (array aliases — typeof bypass):');
-  if (test('loadAliases accepts array aliases because typeof [] === "object" passes validation', () => {
-    // session-aliases.js line 58: `typeof data.aliases !== 'object'` is the guard.
-    // Arrays are typeof 'object' in JavaScript, so {"aliases": [1,2,3]} passes
-    // validation.  The returned data.aliases is an array, not a plain object.
-    // Downstream code (Object.keys, Object.entries, bracket access) behaves
-    // differently on arrays vs objects but doesn't crash — it just produces
-    // unexpected results like numeric string keys "0", "1", "2".
+  console.log('\nArray alias maps:');
+  if (test('recovers an invalid array map without losing newly saved aliases', () => {
     resetAliases();
     const aliasesPath = aliases.getAliasesPath();
     fs.writeFileSync(aliasesPath, JSON.stringify({
@@ -1321,15 +1320,11 @@ function runTests() {
       metadata: { totalCount: 3, lastUpdated: new Date().toISOString() }
     }));
     const data = aliases.loadAliases();
-    // The array passes the typeof 'object' check and is returned as-is
-    assert.ok(Array.isArray(data.aliases),
-      'data.aliases should be an array (typeof [] === "object" bypasses guard)');
-    assert.strictEqual(data.aliases.length, 3,
-      'Array should have 3 elements');
-    // Object.keys on an array returns ["0", "1", "2"] — numeric index strings
-    const keys = Object.keys(data.aliases);
-    assert.deepStrictEqual(keys, ['0', '1', '2'],
-      'Object.keys of array returns numeric string indices, not named alias keys');
+    assert.deepStrictEqual(data.aliases, {});
+    assert.deepStrictEqual(aliases.listAliases(), []);
+    assert.strictEqual(aliases.setAlias('recovered', '/session/recovered').success, true);
+    assert.strictEqual(aliases.resolveAlias('recovered').sessionPath, '/session/recovered');
+    assert.strictEqual(aliases.loadAliases().metadata.totalCount, 1);
   })) passed++; else failed++;
 
   // ── Round 104: resolveSessionAlias with path-traversal input (passthrough without validation) ──

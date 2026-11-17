@@ -59,6 +59,57 @@ function sessionFileFor(home, uuid, date = getDateString()) {
   return path.join(home, '.claude', 'session-data', `${date}-${shortId}-session.tmp`);
 }
 
+// Regression (#3867): the harness notice after a safety-classifier stop is
+// recorded as a user entry; it must not become a task in the summary.
+const CLASSIFIER_NOTICE_TEXT = 'Your response above was stopped by a safety classifier — this is not a tool or API error.';
+
+function withTranscript(uuid, lines, fn) {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-session-end-'));
+  try {
+    const transcript = path.join(home, `${uuid}.jsonl`);
+    fs.writeFileSync(transcript, lines.join('\n') + '\n');
+    const res = runHook(home, transcript, { ECC_SKIP_LLM_SUMMARY: '1' });
+    assert.strictEqual(res.status || 0, 0, `hook exited ${res.status}: ${res.stderr}`);
+    fn(fs.readFileSync(sessionFileFor(home, uuid), 'utf8'));
+  } finally {
+    fs.rmSync(home, { recursive: true, force: true });
+  }
+}
+
+function testDropsClassifierNotice() {
+  withTranscript('3867aaaa-bbbb-4ccc-8ddd-eeeeeeee3867', [
+    JSON.stringify({ type: 'user', message: { role: 'user', content: 'Refactor the config loader' } }),
+    JSON.stringify({ type: 'user', message: { role: 'user', content: [{ type: 'text', text: CLASSIFIER_NOTICE_TEXT }] } }),
+  ], out => {
+    assert.ok(out.includes('- Refactor the config loader'), `expected the real user task in:\n${out}`);
+    assert.ok(!out.includes('safety classifier'), `classifier notice must not be summarized:\n${out}`);
+  });
+}
+
+function testNoticeOnlyTranscript() {
+  withTranscript('3867bbbb-cccc-4ddd-8eee-ffffffff3867', [JSON.stringify({ type: 'user', content: CLASSIFIER_NOTICE_TEXT })], out => {
+    assert.ok(!out.includes(START), `a notice-only transcript must not produce a summary block:\n${out}`);
+    assert.ok(!out.includes('safety classifier'), `classifier notice must not be persisted:\n${out}`);
+  });
+}
+
+function testKeepsMessageQuotingNotice() {
+  const userText = 'Why did I see "Your response above was stopped by a safety classifier" earlier?';
+  withTranscript('3867cccc-dddd-4eee-8fff-aaaaaaaa3867', [JSON.stringify({ type: 'user', content: userText })], out => {
+    assert.ok(out.includes(userText), `a real question about the notice must be kept:\n${out}`);
+  });
+}
+
+function runClassifierNoticeTests() {
+  const results = [
+    test('drops safety-classifier notices from summary tasks', testDropsClassifierNotice),
+    test('writes no summary for a transcript holding only a classifier notice', testNoticeOnlyTranscript),
+    test('keeps a user message that only mentions the classifier notice', testKeepsMessageQuotingNotice),
+  ];
+  const passed = results.filter(Boolean).length;
+  return { passed, failed: results.length - passed };
+}
+
 function runTests() {
   console.log('\n=== Testing session-end.js ===\n');
 
@@ -146,6 +197,10 @@ function runTests() {
       fs.rmSync(home, { recursive: true, force: true });
     }
   }) ? passed++ : failed++);
+
+  const noticeResults = runClassifierNoticeTests();
+  passed += noticeResults.passed;
+  failed += noticeResults.failed;
 
   (test('writes a session for one user message with tool activity', () => {
     const home = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-session-end-'));
@@ -265,6 +320,55 @@ function runTests() {
       fs.rmSync(home, { recursive: true, force: true });
     }
   }) ? passed++ : failed++);
+
+  for (const model of ['unknown-model', 'claude-opus-4-5[1m]']) {
+  (test(`native compact budget triggers a timely summary for ${model}`, () => {
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-session-context-budget-'));
+    try {
+      const uuid = '12345678-1234-4234-8234-123456789abc';
+      const transcript = path.join(home, `${uuid}.jsonl`);
+      fs.writeFileSync(transcript, [
+        JSON.stringify({ type: 'user', content: 'Preserve this task before native compaction' }),
+        JSON.stringify({ type: 'assistant', message: { model, content: [], usage: { input_tokens: 330000 } } })
+      ].join('\n') + '\n');
+      const res = runHook(home, transcript, {
+        ECC_CONTEXT_WINDOW_TOKENS: '', CLAUDE_CODE_AUTO_COMPACT_WINDOW: '400000',
+        ECC_LLM_SUMMARY_INTERVAL: '50', ECC_LLM_SUMMARY_CONTEXT_THRESHOLD: '20',
+        ECC_HOOK_DEADLINE_MS: '1', ECC_SKIP_LLM_SUMMARY: '', ECC_LLM_SUMMARY_SUBPROCESS: ''
+      });
+      assert.strictEqual(res.status, 0, res.stderr);
+      assert.match(res.stderr, /LLM summary triggered.*summary budget: 18%/);
+      assert.match(res.stderr, /LLM summary skipped.*insufficient lifecycle time budget/);
+      assert.match(fs.readFileSync(sessionFileFor(home, uuid), 'utf8'), /Preserve this task before native compaction/);
+    } finally {
+      fs.rmSync(home, { recursive: true, force: true });
+    }
+  }) ? passed++ : failed++);
+  }
+
+  for (const nativeBudget of ['200000tokens', '200000.5', '9007199254740992']) {
+    (test(`invalid native budget ${nativeBudget} does not trigger a summary from inferred capacity`, () => {
+      const home = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-session-invalid-budget-'));
+      try {
+        const uuid = '12345678-1234-4234-8234-123456789abc';
+        const transcript = path.join(home, `${uuid}.jsonl`);
+        fs.writeFileSync(transcript, [
+          JSON.stringify({ type: 'user', content: 'Retain mechanical resume state with an invalid budget' }),
+          JSON.stringify({ type: 'assistant', message: { model: 'unknown-model', content: [], usage: { input_tokens: 180000 } } }),
+        ].join('\n') + '\n');
+        const res = runHook(home, transcript, {
+          ECC_CONTEXT_WINDOW_TOKENS: '', CLAUDE_CODE_AUTO_COMPACT_WINDOW: nativeBudget,
+          ECC_LLM_SUMMARY_INTERVAL: '50', ECC_LLM_SUMMARY_CONTEXT_THRESHOLD: '20',
+          ECC_HOOK_DEADLINE_MS: '1', ECC_SKIP_LLM_SUMMARY: '', ECC_LLM_SUMMARY_SUBPROCESS: '',
+        });
+        assert.strictEqual(res.status, 0, res.stderr);
+        assert.doesNotMatch(res.stderr, /LLM summary triggered/);
+        assert.match(fs.readFileSync(sessionFileFor(home, uuid), 'utf8'), /Retain mechanical resume state with an invalid budget/);
+      } finally {
+        fs.rmSync(home, { recursive: true, force: true });
+      }
+    }) ? passed++ : failed++);
+  }
 
   (test('logs an explicit LLM disable as skipped and persists mechanical resume state', () => {
     const home = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-session-skip-'));

@@ -1,17 +1,31 @@
 #!/usr/bin/env node
 
-const { spawnSync } = require('child_process');
+const { spawn, spawnSync } = require('child_process');
 const path = require('path');
 const fs = require('fs');
+const { performance } = require('perf_hooks');
 
 const testsDir = __dirname;
 const repoRoot = path.resolve(testsDir, '..');
 const TEST_GLOB = 'tests/**/*.test.js';
 const filter = (((process.argv || [])[2]) || '').split(path.sep).join('/');
-const skipPatterns = (process.env.ECC_TEST_SKIP || '')
+const splitPatterns = value => (value || '')
   .split(',')
   .map(s => s.trim())
   .filter(Boolean);
+// ECC_TEST_SKIP drops files whose path contains any pattern; ECC_TEST_ONLY keeps
+// just the files whose path contains one. CI's package-manager lanes use ONLY to
+// run the handful of suites that read CLAUDE_CODE_PACKAGE_MANAGER.
+const skipPatterns = splitPatterns(process.env.ECC_TEST_SKIP);
+const onlyPatterns = splitPatterns(process.env.ECC_TEST_ONLY);
+// ECC_TEST_SERIAL names suites that mutate the shared checkout (for example
+// the opencode dist build and the installers that copy from it). The pool
+// holds them back and runs them one at a time after every other file.
+const serialPatterns = splitPatterns(process.env.ECC_TEST_SERIAL);
+// ECC_TEST_JOBS above 1 runs files through a worker pool of that many
+// processes. The default is 1: the original synchronous loop, unchanged.
+// Output stays grouped per file whatever the pool size.
+const jobs = Math.max(1, Math.floor(Number(process.env.ECC_TEST_JOBS)) || 1);
 
 function matchesTestGlob(relativePath) {
   const normalized = relativePath.split(path.sep).join('/');
@@ -19,6 +33,9 @@ function matchesTestGlob(relativePath) {
     return false;
   }
   if (skipPatterns.some(pattern => normalized.includes(pattern))) {
+    return false;
+  }
+  if (onlyPatterns.length > 0 && !onlyPatterns.some(pattern => normalized.includes(pattern))) {
     return false;
   }
   if (typeof path.matchesGlob === 'function') {
@@ -100,7 +117,14 @@ function parseCounts(combined) {
   return { passed: 0, failed: 0, definite: false };
 }
 
-const testFiles = discoverTestFiles();
+const testFiles = Object.freeze(discoverTestFiles());
+const plannedFiles = Object.freeze(testFiles.map(file => file.split(path.sep).join('/')));
+const plannedSet = new Set(plannedFiles);
+const attempts = new Map();
+const records = new Map();
+const integrityErrors = [];
+if (plannedSet.size !== plannedFiles.length) integrityErrors.push('Duplicate files in execution plan');
+console.log(`ECC_TEST_PLAN ${JSON.stringify({ jobs, files: plannedFiles })}`);
 
 const BOX_W = 58;
 const boxLine = s => `║${s.padEnd(BOX_W)}║`;
@@ -112,6 +136,14 @@ console.log();
 
 if (skipPatterns.length > 0) {
   console.log(`Skipped patterns: ${skipPatterns.join(', ')}`);
+  console.log();
+}
+if (onlyPatterns.length > 0) {
+  console.log(`Only patterns: ${onlyPatterns.join(', ')}`);
+  console.log();
+}
+if (jobs > 1) {
+  console.log(`Running ${testFiles.length} files with ${jobs} parallel jobs${serialPatterns.length ? `, serial after the pool: ${serialPatterns.join(', ')}` : ''}`);
   console.log();
 }
 
@@ -126,31 +158,54 @@ let filesPassed = 0;
 let filesFailed = 0;
 const failedFiles = [];
 
-for (const testFile of testFiles) {
-  const testPath = path.join(testsDir, testFile);
-  const displayPath = testFile.split(path.sep).join('/');
-
-  if (!fs.existsSync(testPath)) {
-    console.log(`WARNING Skipping ${displayPath} (file not found)`);
-    continue;
-  }
-
-  console.log(`\n━━━ Running ${displayPath} ━━━`);
-
+function childEnvFor() {
   const childEnv = { ...process.env };
-  for (const key of ['GIT_DIR', 'GIT_WORK_TREE', 'GIT_INDEX_FILE', 'GIT_COMMON_DIR', 'GIT_PREFIX']) {
+  // Git context would leak into fixtures; ONLY and JOBS are runner controls and
+  // must not reach suites that spawn the runner themselves.
+  for (const key of ['GIT_DIR', 'GIT_WORK_TREE', 'GIT_INDEX_FILE', 'GIT_COMMON_DIR', 'GIT_PREFIX', 'ECC_TEST_ONLY', 'ECC_TEST_JOBS', 'ECC_TEST_SERIAL', 'ECC_TEST_REPORT']) {
     delete childEnv[key];
   }
+  return childEnv;
+}
 
-  const result = spawnSync('node', [testPath], {
+function runTestFileSync(testFile) {
+  return spawnSync('node', [path.join(testsDir, testFile)], {
     encoding: 'utf8',
     stdio: ['pipe', 'pipe', 'pipe'],
-    env: childEnv
+    env: childEnvFor()
   });
+}
 
+function runTestFile(testFile) {
+  const testPath = path.join(testsDir, testFile);
+  const childEnv = childEnvFor();
+  return new Promise(resolve => {
+    let stdout = '';
+    let stderr = '';
+    let child;
+    try {
+      child = spawn('node', [testPath], { stdio: ['pipe', 'pipe', 'pipe'], env: childEnv });
+    } catch (error) {
+      resolve({ error, status: null, signal: null, stdout, stderr });
+      return;
+    }
+    // spawnSync with piped stdio and no input hands the child a closed stdin;
+    // spawn leaves it open, and a suite that reads stdin would wait forever.
+    child.stdin.end();
+    child.stdout.setEncoding('utf8');
+    child.stderr.setEncoding('utf8');
+    child.stdout.on('data', chunk => { stdout += chunk; });
+    child.stderr.on('data', chunk => { stderr += chunk; });
+    child.on('error', error => resolve({ error, status: null, signal: null, stdout, stderr }));
+    child.on('close', (status, signal) => resolve({ error: null, status, signal, stdout, stderr }));
+  });
+}
+
+function reportTestFile(displayPath, result) {
   const stdout = result.stdout || '';
   const stderr = result.stderr || '';
 
+  console.log(`\n━━━ Running ${displayPath} ━━━`);
   if (stdout) console.log(stdout);
   if (stderr) console.log(stderr);
 
@@ -186,27 +241,133 @@ for (const testFile of testFiles) {
       totalFailed += counts.failed;
     }
   }
+  return failureReason || null;
 }
 
-const totalTests = totalPassed + totalFailed;
+function beginTestFile(testFile, phase) {
+  const file = testFile.split(path.sep).join('/');
+  if (!plannedSet.has(file) || attempts.has(file)) {
+    throw new Error(`Unplanned or duplicate test attempt: ${file}`);
+  }
+  const attempt = { file, phase, attemptedAt: new Date().toISOString(), clock: performance.now() };
+  attempts.set(file, attempt);
+  return attempt;
+}
 
-console.log('\n╔' + '═'.repeat(BOX_W) + '╗');
-console.log(boxLine('                     Final Results'));
-console.log('╠' + '═'.repeat(BOX_W) + '╣');
-console.log(boxLine(`  Total Tests: ${String(totalTests).padStart(4)}`));
-console.log(boxLine(`  Passed:      ${String(totalPassed).padStart(4)}  ✓`));
-console.log(boxLine(`  Failed:      ${String(totalFailed).padStart(4)}  ${totalFailed > 0 ? '✗' : ' '}`));
-console.log(boxLine(`  Files: ${filesPassed} passed, ${filesFailed} failed`));
-if (failedFiles.length > 0) {
+function completeTestFile(attempt, result) {
+  if (attempts.get(attempt.file) !== attempt || records.has(attempt.file)) {
+    throw new Error(`Unplanned or duplicate test completion: ${attempt.file}`);
+  }
+  const completedAt = new Date().toISOString();
+  const durationMs = performance.now() - attempt.clock;
+  const failureReason = reportTestFile(attempt.file, result);
+  const record = {
+    file: attempt.file, phase: attempt.phase, attemptedAt: attempt.attemptedAt,
+    completedAt, durationMs, exitCode: result.status ?? null, signal: result.signal || null,
+    error: result.error ? result.error.message : failureReason,
+    outcome: failureReason ? 'failed' : 'passed'
+  };
+  records.set(attempt.file, record);
+  console.log(`ECC_TEST_FILE ${JSON.stringify(record)}`);
+}
+
+function runAllSync() {
+  // Never drop a discovered file: a file removed by another suite must fail.
+  for (const testFile of testFiles) {
+    const attempt = beginTestFile(testFile, 'serial');
+    completeTestFile(attempt, runTestFileSync(testFile));
+  }
+}
+
+function isSerial(testFile) {
+  const normalized = testFile.split(path.sep).join('/');
+  return serialPatterns.some(pattern => normalized.includes(pattern));
+}
+
+async function runAllParallel() {
+  const queue = testFiles.filter(testFile => !isSerial(testFile));
+  const serial = testFiles.filter(isSerial);
+  const worker = async () => {
+    while (queue.length > 0) {
+      const testFile = queue.shift();
+      const attempt = beginTestFile(testFile, 'pool');
+      const result = await runTestFile(testFile);
+      completeTestFile(attempt, result);
+    }
+  };
+  const workers = await Promise.allSettled(Array.from({ length: Math.min(jobs, queue.length) }, worker));
+  for (const result of workers) {
+    if (result.status === 'rejected') integrityErrors.push(result.reason.message || String(result.reason));
+  }
+  if (serial.length > 0) console.log(`\nRunning ${serial.length} serial files after the pool`);
+  for (const testFile of serial) {
+    const attempt = beginTestFile(testFile, 'serial');
+    completeTestFile(attempt, await runTestFile(testFile));
+  }
+}
+
+function finish() {
+  for (const file of plannedFiles) {
+    if (!attempts.has(file) || !records.has(file)) integrityErrors.push(`Incomplete planned file: ${file}`);
+  }
+  if (records.size !== plannedFiles.length || filesPassed + filesFailed !== plannedFiles.length) {
+    integrityErrors.push('Execution counts do not match the plan');
+  }
+  const report = {
+    version: 1, jobs, plannedFiles,
+    records: plannedFiles.filter(file => records.has(file)).map(file => records.get(file)),
+    integrity: { ok: integrityErrors.length === 0, errors: integrityErrors },
+    counts: {
+      planned: plannedFiles.length, attempted: attempts.size, completed: records.size,
+      passed: filesPassed, failed: filesFailed
+    }
+  };
+  if (process.env.ECC_TEST_REPORT) {
+    try {
+      fs.mkdirSync(path.dirname(process.env.ECC_TEST_REPORT), { recursive: true });
+      fs.writeFileSync(process.env.ECC_TEST_REPORT, `${JSON.stringify(report, null, 2)}\n`);
+    } catch (error) {
+      integrityErrors.push(`Cannot write execution report: ${error.message}`);
+    }
+  }
+  console.log(`ECC_TEST_COMPLETE ${JSON.stringify({ counts: report.counts, integrity: { ok: integrityErrors.length === 0, errors: integrityErrors } })}`);
+  for (const error of integrityErrors) console.log(`Execution integrity error: ${error}`);
+  const totalTests = totalPassed + totalFailed;
+
+  console.log('\n╔' + '═'.repeat(BOX_W) + '╗');
+  console.log(boxLine('                     Final Results'));
   console.log('╠' + '═'.repeat(BOX_W) + '╣');
-  for (const name of failedFiles.slice(0, 10)) {
-    console.log(boxLine(`  ✗ ${name}`.slice(0, BOX_W)));
+  console.log(boxLine(`  Total Tests: ${String(totalTests).padStart(4)}`));
+  console.log(boxLine(`  Passed:      ${String(totalPassed).padStart(4)}  ✓`));
+  console.log(boxLine(`  Failed:      ${String(totalFailed).padStart(4)}  ${totalFailed > 0 ? '✗' : ' '}`));
+  console.log(boxLine(`  Files: ${filesPassed} passed, ${filesFailed} failed`));
+  if (failedFiles.length > 0) {
+    console.log('╠' + '═'.repeat(BOX_W) + '╣');
+    for (const name of failedFiles.slice(0, 10)) {
+      console.log(boxLine(`  ✗ ${name}`.slice(0, BOX_W)));
+    }
+    if (failedFiles.length > 10) {
+      console.log(boxLine(`  ... and ${failedFiles.length - 10} more`));
+    }
   }
-  if (failedFiles.length > 10) {
-    console.log(boxLine(`  ... and ${failedFiles.length - 10} more`));
+  console.log('╚' + '═'.repeat(BOX_W) + '╝');
+  console.log(`\nPassed: ${totalPassed}, Failed: ${totalFailed}`);
+
+  process.exitCode = totalFailed > 0 || integrityErrors.length > 0 ? 1 : 0;
+}
+
+function failRun(error) {
+  integrityErrors.push(error.message || String(error));
+  finish();
+}
+
+if (jobs > 1) {
+  runAllParallel().then(finish, failRun);
+} else {
+  try {
+    runAllSync();
+    finish();
+  } catch (error) {
+    failRun(error);
   }
 }
-console.log('╚' + '═'.repeat(BOX_W) + '╝');
-console.log(`\nPassed: ${totalPassed}, Failed: ${totalFailed}`);
-
-process.exitCode = totalFailed > 0 ? 1 : 0;

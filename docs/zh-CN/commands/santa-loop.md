@@ -93,8 +93,10 @@ EOF
 
 **Codex CLI**（如果已安装）
 
+Codex 使用已配置的模型或 CLI 默认值。在 Codex 配置中设置 `model`，即可选择账号支持的评审模型。
+
 ```bash
-codex exec --sandbox read-only -m gpt-5.4 -C "$(pwd)" - < "$PROMPT_FILE"
+codex exec --sandbox read-only -C "$(pwd)" - < "$PROMPT_FILE"
 rm -f "$PROMPT_FILE"
 ```
 
@@ -171,8 +173,8 @@ Result:     [PUSHED / ESCALATED TO USER]
 ## 备注
 
 * 评审者 A（Claude Opus）始终运行——无论工具如何，保证至少有一个强大的评审者。
-* 模型多样性是评审者 B 的目标。GPT-5.4 或 Gemini 2.5 Pro 提供真正的独立性——不同的训练数据、不同的偏见、不同的盲点。仅 Claude 的回退通过上下文隔离仍然提供价值，但失去了模型多样性。
-* 使用最强可用模型：Opus 用于评审者 A，GPT-5.4 或 Gemini 2.5 Pro 用于评审者 B。
+* 模型多样性是评审者 B 的目标。记录所选 backend 报告的实际模型和 provider。仅 Claude 的回退仍提供上下文隔离，但失去了模型多样性。
+* 评审者 A 使用 Opus；评审者 B 的 Codex 使用已配置的模型或 CLI 默认值。
 * 外部评审者使用 `--sandbox read-only`（Codex）运行，以防止审查期间仓库发生变异。
 * 每轮使用全新的评审者可以防止先前发现导致的锚定偏差。
 * 评分标准是最重要的输入。如果评审者盖章通过或标记主观风格问题，请收紧评分标准。

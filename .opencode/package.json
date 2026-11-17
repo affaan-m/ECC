@@ -11,8 +11,8 @@
       "import": "./dist/index.js"
     },
     "./plugins": {
-      "types": "./dist/plugins/index.d.ts",
-      "import": "./dist/plugins/index.js"
+      "types": "./dist/plugins/ecc-hooks.d.ts",
+      "import": "./dist/plugins/ecc-hooks.js"
     },
     "./tools": {
       "types": "./dist/tools/index.d.ts",
@@ -56,6 +56,9 @@
   "publishConfig": {
     "access": "public"
   },
+  "dependencies": {
+    "zod": "4.6.7"
+  },
   "peerDependencies": {
     "@opencode-ai/plugin": ">=1.0.0"
   },
@@ -66,5 +69,8 @@
   },
   "engines": {
     "node": ">=18.0.0"
+  },
+  "overrides": {
+    "zod": "4.6.7"
   }
 }

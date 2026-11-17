@@ -51,7 +51,30 @@ verification step. Resolve the selected skill directory first, then invoke:
 python3 <docs-governance-skill>/scripts/audit-docs.py --root <repository> --scope full
 ```
 
-Available scopes are `spine`, `context`, `adr`, `artifacts`, and `full`.
+Available scopes are `spine`, `context`, `adr`, `artifacts`, `modules`, and `full`.
+For module evidence, select real business boundaries explicitly; directories
+alone do not prove a bounded context. Repeat `--module` for several boundaries:
+
+```bash
+python3 <docs-governance-skill>/scripts/audit-docs.py --root <repository> --scope modules --module src/inventory --module src/billing
+```
+
+`modules` requires a selected directory. `full` also accepts `--module`; other
+scopes reject it rather than silently skipping the requested checks. The module
+check finds local `AGENTS.md` and `CONTEXT.md`, or reports the nearest ancestor
+and mapped project sources as shared candidates. Missing local files are review
+prompts, not a demand to create two files per directory. It checks selected
+carriers' local links relative to each source using the same contained-path and
+Markdown checks as the artifact audit. It never infers harness loading from
+file presence.
+
+After mechanical checks, inspect the actual module code, callers, contracts and
+tests: compare responsibilities and import/call boundaries with documented
+rules, and terminology with the canonical context source. Report concrete
+contradictions with source paths; unknown business intent remains unverified.
+Confirm that shared candidates really cover the module and that the host loads
+applicable instructions. Reuse existing contract and ADR owners rather than
+copying them into `AGENTS.md`. Passing links is not passing this semantic review.
 
 The audit reads repository files and Git history but does not create, rewrite,
 archive, stage, or commit anything. It reports:

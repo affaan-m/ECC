@@ -4,6 +4,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const { isWithinRoot, realpathNearestExisting } = require('../path-safety');
+const { convertWindowsPathToWSL } = require('../install-targets/helpers');
 
 const CURRENT_PLUGIN_ID = 'ecc@ecc';
 // Legacy plugin ids, kept so existing installs are still recognized.
@@ -12,19 +13,44 @@ const LEGACY_PLUGIN_IDS = new Set([
   'everything-claude-code@ecc',
 ]);
 
+function expandTilde(inputPath, homeDir) {
+  if (typeof inputPath !== 'string') return inputPath;
+  const trimmed = inputPath.trim();
+  if (trimmed === '~') return homeDir;
+  if (trimmed.startsWith('~/') || trimmed.startsWith('~\\')) {
+    return path.join(homeDir, trimmed.slice(2));
+  }
+  return trimmed;
+}
+
 function resolveClaudePaths(options = {}) {
-  const homeDir = options.homeDir
-    || process.env.HOME
-    || process.env.USERPROFILE
-    || os.homedir();
-  const configDir = options.configDir
-    || process.env.CLAUDE_CONFIG_DIR
-    || path.join(homeDir, '.claude');
+  const homeDir = path.resolve(
+    options.homeDir
+      || process.env.HOME
+      || process.env.USERPROFILE
+      || os.homedir()
+  );
+  const configured = options.configDir !== undefined
+    ? options.configDir
+    : process.env.CLAUDE_CONFIG_DIR;
+  let resolvedConfigDir;
+  if (typeof configured === 'string' && configured.trim() !== '') {
+    const normalized = configured.trim();
+    const converted = convertWindowsPathToWSL(normalized);
+    const expanded = expandTilde(converted, homeDir);
+    if (typeof expanded === 'string' && expanded.trim() !== '') {
+      resolvedConfigDir = path.resolve(expanded.trim());
+    } else {
+      resolvedConfigDir = path.join(homeDir, '.claude');
+    }
+  } else {
+    resolvedConfigDir = path.join(homeDir, '.claude');
+  }
   const projectRoot = options.projectRoot || process.cwd();
 
   return {
-    homeDir: path.resolve(homeDir),
-    configDir: path.resolve(configDir),
+    homeDir,
+    configDir: resolvedConfigDir,
     projectRoot: path.resolve(projectRoot),
   };
 }

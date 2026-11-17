@@ -35,8 +35,8 @@ function toNullableNumber(value, fieldName) {
   }
 
   const numericValue = Number(value);
-  if (!Number.isFinite(numericValue)) {
-    throw new Error(`${fieldName} must be a number`);
+  if (!Number.isFinite(numericValue) || numericValue < 0) {
+    throw new Error(`${fieldName} must be a number greater than or equal to zero`);
   }
 
   return numericValue;
@@ -79,7 +79,7 @@ function normalizeExecutionRecord(input, options = {}) {
     throw new Error('failure_reason must be a string or null');
   }
 
-  if (Number.isNaN(Date.parse(recordedAt))) {
+  if (typeof recordedAt !== 'string' || Number.isNaN(Date.parse(recordedAt))) {
     throw new Error('recorded_at must be an ISO timestamp');
   }
 

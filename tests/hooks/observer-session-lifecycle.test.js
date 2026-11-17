@@ -172,6 +172,56 @@ test('in-process SessionEnd stops the observer only after the final payload leas
   }));
 });
 
+test('in-process SessionEnd releases a lease left under the root\'s older id after a remote was added mid-session', () => {
+  withFixture(fixture => withEnv(fixture.overrides, () => {
+    const store = fixture.overrides.CLV2_HOMUNCULUS_DIR;
+    fs.writeFileSync(path.join(store, 'projects.json'), JSON.stringify({
+      'fixture-project': { id: 'fixture-project', root: fixture.project, last_seen: '2026-10-19T00:00:00Z' },
+      'remote-project': { id: 'remote-project', root: fixture.project, last_seen: '2026-10-20T00:00:00Z' }
+    }));
+    seedLease(fixture, 'started-before-remote');
+    const stops = [];
+    const { run } = loadEndMarkerWithStubbedStop(stops);
+    const input = '{"session_id":"started-before-remote"}\n';
+    const originalWrite = process.stderr.write;
+    process.stderr.write = () => true;
+    try {
+      assert.strictEqual(run(input), input);
+    } finally {
+      process.stderr.write = originalWrite;
+    }
+    assert.ok(!fs.existsSync(leaseFile(fixture, 'started-before-remote')));
+    assert.deepStrictEqual(stops, ['remote-project', 'fixture-project']);
+  }));
+});
+
+test('in-process SessionEnd keeps observers running while another session still holds a lease under an older id', () => {
+  withFixture(fixture => withEnv(fixture.overrides, () => {
+    const store = fixture.overrides.CLV2_HOMUNCULUS_DIR;
+    fs.writeFileSync(path.join(store, 'projects.json'), JSON.stringify({
+      'fixture-project': { id: 'fixture-project', root: fixture.project, last_seen: '2026-10-19T00:00:00Z' },
+      'remote-project': { id: 'remote-project', root: fixture.project, last_seen: '2026-10-20T00:00:00Z' }
+    }));
+    seedLease(fixture, 'older-one');
+    seedLease(fixture, 'older-two');
+    const stops = [];
+    const { run } = loadEndMarkerWithStubbedStop(stops);
+    const originalWrite = process.stderr.write;
+    process.stderr.write = () => true;
+    try {
+      run('{"session_id":"older-one"}\n');
+      assert.ok(!fs.existsSync(leaseFile(fixture, 'older-one')));
+      assert.ok(fs.existsSync(leaseFile(fixture, 'older-two')));
+      assert.deepStrictEqual(stops, []);
+      run('{"session_id":"older-two"}\n');
+    } finally {
+      process.stderr.write = originalWrite;
+    }
+    assert.ok(!fs.existsSync(leaseFile(fixture, 'older-two')));
+    assert.deepStrictEqual(stops, ['remote-project', 'fixture-project']);
+  }));
+});
+
 for (const envKey of ['ECC_SESSION_ID', 'CLAUDE_SESSION_ID']) {
   test(`both lifecycle hooks retain ${envKey} fallback for malformed stdin`, () => {
     withFixture(fixture => {

@@ -7,6 +7,10 @@ const fs = require('fs');
 const path = require('path');
 const { spawnSync } = require('child_process');
 
+// These assertions cover the opt-in human-operator hint text (#3844): the
+// default denial no longer names the env vars that disable the guard.
+process.env.ECC_SHOW_RECOVERY_HINTS = '1';
+
 const runner = path.join(__dirname, '..', '..', 'scripts', 'hooks', 'run-with-flags.js');
 const hookScript = path.join(__dirname, '..', '..', 'scripts', 'hooks', 'gateguard-fact-force.js');
 const externalStateDir = process.env.GATEGUARD_STATE_DIR;
@@ -328,7 +332,6 @@ function runDdRegressionTests() {
     'sudo -D /tmp dd if=input',
     'sudo -- dd if=input',
     'doas -u root dd if=input',
-    'doas -C /tmp/doas.conf dd if=input',
     'env -u FOO dd if=input',
     'env -uFOO dd if=input',
     'env -C /tmp dd if=input',
@@ -547,6 +550,8 @@ function runDdRegressionTests() {
     'env command dd if=input',
     'exec command dd if=input',
     'grep dd if=/dev/zero file',
+    // doas -C checks the config (and command matching) without running it.
+    'doas -C /tmp/doas.conf dd if=input',
     "printf '%s' 'dd if=input'",
     'echo add if=1',
     'echo truncated',
@@ -669,6 +674,61 @@ function runDdRegressionTests() {
       check(`dd/preservation passive: ${JSON.stringify(command)}`, () => {
         assert.deepStrictEqual(hook.classifyDestructiveCommand('Bash', command), []);
       });
+    }
+    // #2832: rm/Git behind a command wrapper read as a call to the wrapper.
+    const wrappedRmGitDestructive = [
+      'sudo rm -rf build',
+      'sudo -u root rm -rf build',
+      'doas rm -rf build',
+      'command rm -rf build',
+      'env git reset --hard',
+      'env FOO=1 git reset --hard',
+      'sudo git push --force origin main',
+      'cd repo && sudo rm -rf build',
+      "sudo 'rm' -rf build",
+      'nohup rm -rf build',
+      'exec git reset --hard',
+      'sudo -ul rm -rf build',
+      'sudo -k rm -rf build',
+      'sudo -R/live rm -rf build',
+      'sudo -R /live rm -rf build',
+      'sudo --chroot=/live git reset --hard',
+      'sudo -c login rm -rf build',
+      'sudo FOO=1 -u root rm -rf build',
+      'sudo -E FOO=1 BAR=2 -u root git reset --hard',
+      'sudo -Rl rm -rf build',
+      'sudo --use root rm -rf build',
+      'sudo --chro /live rm -rf build',
+      'sudo --chro=/live git reset --hard',
+      'sudo --login-c staff rm -rf build'
+    ];
+    const wrappedRmGitPassive = [
+      'sudo rm build',
+      'env git status',
+      'command -v rm',
+      'echo sudo rm -rf build',
+      'sudo -u rm echo -rf build',
+      "printf '%s' 'env git reset --hard'",
+      'sudo -l rm -rf build',
+      'sudo --list rm -rf build',
+      'sudo -u root -l git reset --hard',
+      'sudo -lU root rm -rf build',
+      'sudo -e rm -rf build',
+      'doas -L rm -rf build',
+      'doas -C /tmp/doas.conf rm -rf build',
+      'sudo FOO=1 -l rm -rf build',
+      'sudo --lis rm -rf build',
+      'sudo --vali rm -rf build'
+    ];
+    for (const [commands, expected] of [
+      [wrappedRmGitDestructive, ['gateguard.bash-compatible-destructive']],
+      [wrappedRmGitPassive, []]
+    ]) {
+      for (const command of commands) {
+        check(`wrapped rm/git classification: ${JSON.stringify(command)}`, () => {
+          assert.deepStrictEqual(hook.classifyDestructiveCommand('Bash', command), expected);
+        });
+      }
     }
     for (const [command, denied] of [
       ['sudo -u root dd if=input', true],
@@ -1457,22 +1517,20 @@ function runTests() {
     passed++;
   else failed++;
 
-  // --- Test 16: allows Claude settings edits so the hook can be disabled safely ---
+  // --- Test 16: .claude/settings*.json is gated like any other first touch (#3845) ---
   clearState();
   if (
-    test('allows edits to .claude/settings.json without gating', () => {
+    test('gates first-touch edits to .claude/settings.json', () => {
       const input = {
         tool_name: 'Edit',
         tool_input: { file_path: '/workspace/app/.claude/settings.json', old_string: '{}', new_string: '{"hooks":[]}' }
       };
-      const result = runHook(input);
+      const result = runHook(input, { GATEGUARD_EXEMPT_GLOBS: '' });
       const output = parseOutput(result.stdout);
       assert.ok(output, 'should produce valid JSON output');
-      if (output.hookSpecificOutput) {
-        assert.notStrictEqual(output.hookSpecificOutput.permissionDecision, 'deny', 'settings edits must not be blocked by gateguard');
-      } else {
-        assert.strictEqual(output.tool_name, 'Edit');
-      }
+      assert.ok(output.hookSpecificOutput, 'the settings file must not bypass the gate');
+      assert.strictEqual(output.hookSpecificOutput.permissionDecision, 'deny');
+      assert.ok(output.hookSpecificOutput.permissionDecisionReason.includes('Fact-Forcing Gate'));
     })
   )
     passed++;
@@ -1969,6 +2027,36 @@ function runTests() {
     passed++;
   else failed++;
 
+  // --- Test 33a: settings files stay gated on subagent Edit/Write/MultiEdit (#3862) ---
+  clearState();
+  if (
+    test('subagent settings edits stay gated on every edit tool', () => {
+      const env = { CLAUDE_SESSION_ID: '', ECC_SESSION_ID: '', GATEGUARD_EXEMPT_GLOBS: '' };
+      const settingsPaths = ['/workspace/app/.claude/settings.json', '/workspace/app/.claude/settings.local.json'];
+
+      for (const filePath of settingsPaths) {
+        const edits = [{ file_path: filePath, old_string: '{}', new_string: '{"hooks":[]}' }];
+        const cases = [
+          { tool_name: 'MultiEdit', tool_input: { edits } },
+          { tool_name: 'Edit', tool_input: { ...edits[0] } },
+          { tool_name: 'Write', tool_input: { file_path: filePath, content: '{"hooks":[]}' } }
+        ];
+        for (const toolInput of cases) {
+          clearState();
+          const result = runHook(
+            { ...toolInput, session_id: 'subagent-fresh-session', agent_id: 'agent-abc-123' },
+            env
+          );
+          const output = parseOutput(result.stdout);
+          assert.ok(output && output.hookSpecificOutput, `${toolInput.tool_name} ${filePath} must be denied`);
+          assert.strictEqual(output.hookSpecificOutput.permissionDecision, 'deny');
+        }
+      }
+    })
+  )
+    passed++;
+  else failed++;
+
   // --- Test 33: Bash stays gated inside subagents ---
   clearState();
   if (
@@ -2187,6 +2275,41 @@ function runTests() {
       expectDestructiveDeny("psql -c 'truncate audit_log'", 'psql quoted truncate');
       expectDestructiveDeny('mysql -e "delete from sessions"', 'mysql quoted delete');
       expectDestructiveDeny('sqlite3 app.db "DROP TABLE users"', 'sqlite3 quoted drop');
+    })
+  )
+    passed++;
+  else failed++;
+
+  if (
+    test('denies DROP DATABASE, DROP SCHEMA and ALTER TABLE ... DROP COLUMN passed to SQL clients', () => {
+      // Each of these destroys at least as much data as DROP TABLE.
+      expectDestructiveDeny('psql -c "DROP DATABASE prod"', 'psql drop database');
+      expectDestructiveDeny('psql -c "drop database if exists app_dev"', 'psql drop database if exists');
+      expectDestructiveDeny('mysql -e "DROP DATABASE app"', 'mysql drop database');
+      expectDestructiveDeny('psql -c "DROP SCHEMA public CASCADE"', 'psql drop schema cascade');
+      expectDestructiveDeny('mysql -e "DROP SCHEMA app"', 'mysql drop schema');
+      expectDestructiveDeny('psql -c "ALTER TABLE users DROP COLUMN email"', 'psql alter table drop column');
+      expectDestructiveDeny(
+        'psql -c "ALTER TABLE IF EXISTS ONLY public.users DROP COLUMN IF EXISTS email CASCADE"',
+        'psql alter table if exists only drop column'
+      );
+      expectDestructiveDeny('sqlite3 app.db "ALTER TABLE users DROP COLUMN email"', 'sqlite3 drop column');
+      expectDestructiveDeny('sudo -u postgres psql -c "drop database prod"', 'sudo psql drop database');
+      expectDestructiveDeny('psql -c "drop database prod"; echo done', 'drop database before a separator');
+    })
+  )
+    passed++;
+  else failed++;
+
+  if (
+    test('allows non-destructive ALTER TABLE forms and quoted DROP DATABASE mentions', () => {
+      expectAllow('psql -c "ALTER TABLE users ALTER COLUMN email DROP DEFAULT"', 'alter column drop default');
+      expectAllow('psql -c "ALTER TABLE users ALTER COLUMN email DROP NOT NULL"', 'alter column drop not null');
+      expectAllow('psql -c "ALTER TABLE users ADD COLUMN note text"', 'alter table add column');
+      expectAllow('psql -c "ALTER TABLE users ADD COLUMN note text; SELECT \'drop column\'"', 'drop column in a literal');
+      expectAllow('psql -c "SELECT \'drop database\' AS label"', 'drop database in a literal');
+      expectAllow('git commit -m "docs: explain drop database recovery"', 'drop database in -m');
+      expectAllow('echo "drop schema public cascade"', 'echo drop schema mention');
     })
   )
     passed++;
@@ -2958,6 +3081,14 @@ function runTests() {
   if (
     test('denies rm -rf nested across $() and () (cross-syntax)', () => {
       expectDestructiveDeny('$(echo y; (rm -rf /tmp/junk))', '$() containing () cross-syntax');
+    })
+  )
+    passed++;
+  else failed++;
+
+  if (
+    test("denies rm -rf in a (...) group after an escaped apostrophe in $'...'", () => {
+      expectDestructiveDeny("echo $'it\\'s'; (rm -rf /tmp/junk)", 'ANSI-C string before subshell');
     })
   )
     passed++;
@@ -3945,6 +4076,87 @@ function runTests() {
     assert.ok(output.hookSpecificOutput.permissionDecisionReason.includes('/other/docs/b.md'));
   })) passed++;
   else failed++;
+
+  // --- Exempt globs judge the real location too: a symlink cannot carry the exemption out ---
+  // <base>/real/proj holds README.md, src/app.js and scratch/; <base>/alias -> <base>/real.
+  const exemptLinkBase = fs.realpathSync(fs.mkdtempSync(path.join(tmpRoot, 'gateguard-exempt-link-')));
+  const exemptLinkRoot = path.join(exemptLinkBase, 'real', 'proj');
+  const exemptLinksReady = (() => {
+    fs.mkdirSync(path.join(exemptLinkRoot, 'scratch'), { recursive: true });
+    fs.mkdirSync(path.join(exemptLinkRoot, 'src'), { recursive: true });
+    fs.writeFileSync(path.join(exemptLinkRoot, 'README.md'), 'x');
+    fs.writeFileSync(path.join(exemptLinkRoot, 'src', 'app.js'), 'x');
+    fs.writeFileSync(path.join(exemptLinkRoot, 'scratch', 'notes.md'), 'x');
+    try {
+      fs.symlinkSync(path.join(exemptLinkRoot, 'README.md'), path.join(exemptLinkRoot, 'scratch', 'link.md'));
+      fs.symlinkSync(path.join(exemptLinkRoot, 'scratch', 'notes.md'), path.join(exemptLinkRoot, 'scratch', 'notes-link.md'));
+      fs.symlinkSync(path.join(exemptLinkRoot, 'src'), path.join(exemptLinkRoot, 'scratch', 'src-alias'), 'dir');
+      fs.symlinkSync(path.join(exemptLinkBase, 'real'), path.join(exemptLinkBase, 'alias'), 'dir');
+      return true;
+    } catch (e) {
+      if (process.platform === 'win32' && e.code === 'EPERM') return false; // no symlink privilege
+      throw e;
+    }
+  })();
+  const exemptLinkRun = (tool, toolInput, glob, root = exemptLinkRoot) => {
+    clearState();
+    const result = runHook(
+      { cwd: root, tool_name: tool, tool_input: toolInput },
+      { GATEGUARD_EXEMPT_GLOBS: glob, CLAUDE_PROJECT_DIR: root }
+    );
+    assert.strictEqual(result.code, 0, result.stderr);
+    const output = parseOutput(result.stdout);
+    assert.ok(output && typeof output === 'object', `hook output must be JSON: ${result.stdout}`);
+    if (!output.hookSpecificOutput) {
+      assert.strictEqual(output.tool_name, tool, 'a pass-through must echo the tool input');
+      return undefined;
+    }
+    return output.hookSpecificOutput.permissionDecision;
+  };
+  const exemptLinkCase = (name, fn) => {
+    if (test(name, () => {
+      if (exemptLinksReady) fn();
+    })) passed++;
+    else failed++;
+  };
+
+  [
+    { kind: 'relative', glob: 'scratch/**' },
+    { kind: 'absolute', glob: `${exemptLinkRoot.replace(/\\/g, '/')}/scratch/**` }
+  ].forEach(({ kind, glob }) => {
+    exemptLinkCase(`a symlink in an exempt dir does not exempt its target outside the glob (${kind} glob)`, () => {
+      const linked = path.join(exemptLinkRoot, 'scratch', 'link.md');
+      assert.strictEqual(exemptLinkRun('Edit', { file_path: linked, old_string: 'a', new_string: 'b' }, glob), 'deny');
+      assert.strictEqual(exemptLinkRun('Edit', { file_path: path.join(exemptLinkRoot, 'scratch', 'notes.md'), old_string: 'a', new_string: 'b' }, glob), undefined, 'control: a plain exempt file still passes');
+    });
+  });
+
+  exemptLinkCase('a symlink that stays inside the exempt dir keeps the exemption', () => {
+    const linked = path.join(exemptLinkRoot, 'scratch', 'notes-link.md');
+    assert.strictEqual(exemptLinkRun('Edit', { file_path: linked, old_string: 'a', new_string: 'b' }, 'scratch/**'), undefined);
+  });
+
+  exemptLinkCase('a new file through a symlinked directory in an exempt dir is not exempt', () => {
+    const created = path.join(exemptLinkRoot, 'scratch', 'src-alias', 'new_module.js');
+    assert.strictEqual(exemptLinkRun('Write', { file_path: created, content: 'x' }, 'scratch/**'), 'deny');
+  });
+
+  exemptLinkCase('MultiEdit gates a symlinked entry even when its path matches an exempt glob', () => {
+    const decision = exemptLinkRun('MultiEdit', {
+      edits: [{ file_path: path.join(exemptLinkRoot, 'scratch', 'notes.md') }, { file_path: path.join(exemptLinkRoot, 'scratch', 'link.md') }]
+    }, 'scratch/**');
+    assert.strictEqual(decision, 'deny');
+  });
+
+  exemptLinkCase('a project reached through a symlinked parent keeps relative and absolute exemptions', () => {
+    const aliasRoot = path.join(exemptLinkBase, 'alias', 'proj');
+    const plain = path.join(aliasRoot, 'scratch', 'notes.md');
+    for (const glob of ['scratch/**', `${aliasRoot.replace(/\\/g, '/')}/scratch/**`, `${exemptLinkBase.replace(/\\/g, '/')}/alias/*/scratch/**`, `${exemptLinkBase.replace(/\\/g, '/')}/alias/*/SCRATCH/**`]) {
+      assert.strictEqual(exemptLinkRun('Edit', { file_path: plain, old_string: 'a', new_string: 'b' }, glob, aliasRoot), undefined, glob);
+      assert.strictEqual(exemptLinkRun('Edit', { file_path: path.join(aliasRoot, 'scratch', 'link.md'), old_string: 'a', new_string: 'b' }, glob, aliasRoot), 'deny', glob);
+    }
+  });
+  fs.rmSync(exemptLinkBase, { recursive: true, force: true });
 
   // --- PowerShell tool consumer contract ---
   if (
@@ -7544,6 +7756,63 @@ function runTests() {
     if (test(`lazy loading: ${label}`, () => assert.deepStrictEqual(loadedLibs(payload, setup), expected))) passed++;
     else failed++;
   }
+
+  // --- Test N: the default denial never names the controls that disable the hook (#3844) ---
+  clearState();
+  if (
+    test('default denial does not name recovery bypass controls', () => {
+      const input = {
+        session_id: TEST_SESSION_ID,
+        tool_name: 'Edit',
+        tool_input: { file_path: '/workspace/app/src/recovery-hint.js', old_string: 'a', new_string: 'b' }
+      };
+      const result = runHook(input, { ECC_SHOW_RECOVERY_HINTS: '' });
+      const output = parseOutput(result.stdout);
+      assert.ok(output && output.hookSpecificOutput, 'expected a denial');
+      assert.strictEqual(output.hookSpecificOutput.permissionDecision, 'deny');
+      const reason = output.hookSpecificOutput.permissionDecisionReason;
+      for (const leaked of [
+        'ECC_GATEGUARD=off',
+        'ECC_DISABLED_HOOKS',
+        'GATEGUARD_EXEMPT_GLOBS',
+        'GATEGUARD_BASH_ROUTINE_DISABLED'
+      ]) {
+        assert.ok(!reason.includes(leaked), `default denial must not name ${leaked}`);
+      }
+    })
+  )
+    passed++;
+  else failed++;
+
+  clearState();
+  writeState({ checked: [], last_active: Date.now(), fact_force_denials: 3 });
+  if (
+    test('condensed default denial omits recovery markers and bypass controls', () => {
+      const input = {
+        session_id: TEST_SESSION_ID,
+        tool_name: 'Edit',
+        tool_input: { file_path: '/workspace/app/src/recovery-condensed.js', old_string: 'a', new_string: 'b' }
+      };
+      const result = runHook(input, { ECC_SHOW_RECOVERY_HINTS: '' });
+      const output = parseOutput(result.stdout);
+      assert.ok(output && output.hookSpecificOutput, 'expected the condensed denial');
+      assert.strictEqual(output.hookSpecificOutput.permissionDecision, 'deny');
+      const reason = output.hookSpecificOutput.permissionDecisionReason;
+      assert.ok(reason.includes('denial #4'), 'expected the condensed denial ordinal');
+      for (const leaked of [
+        'Narrow recovery:',
+        'Recovery:',
+        'ECC_GATEGUARD=off',
+        'ECC_DISABLED_HOOKS',
+        'GATEGUARD_EXEMPT_GLOBS',
+        'GATEGUARD_BASH_ROUTINE_DISABLED'
+      ]) {
+        assert.ok(!reason.includes(leaked), `condensed default denial must not contain ${leaked}`);
+      }
+    })
+  )
+    passed++;
+  else failed++;
 
   const ddResults = runDdRegressionTests();
   passed += ddResults.passed;

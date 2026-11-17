@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, cast
 
 from llm.core.types import Message, Role, ToolCall
 
@@ -40,6 +40,8 @@ def _to_openai_tool_call_param(
 def to_openai_message_param(message: Message) -> ChatCompletionMessageParam:
     """Convert a domain message to the OpenAI chat-completions schema."""
     if message.role == Role.SYSTEM:
+        if not isinstance(message.content, str):
+            raise TypeError("OpenAI system messages must contain text")
         system_message: ChatCompletionSystemMessageParam = {
             "role": "system",
             "content": message.content,
@@ -51,7 +53,7 @@ def to_openai_message_param(message: Message) -> ChatCompletionMessageParam:
     if message.role == Role.USER:
         user_message: ChatCompletionUserMessageParam = {
             "role": "user",
-            "content": message.content,
+            "content": cast(Any, message.content),
         }
         if message.name:
             user_message["name"] = message.name
@@ -60,7 +62,7 @@ def to_openai_message_param(message: Message) -> ChatCompletionMessageParam:
     if message.role == Role.ASSISTANT:
         assistant_message: ChatCompletionAssistantMessageParam = {
             "role": "assistant",
-            "content": message.content,
+            "content": cast(Any, message.content),
         }
         if message.name:
             assistant_message["name"] = message.name
@@ -74,6 +76,8 @@ def to_openai_message_param(message: Message) -> ChatCompletionMessageParam:
     if message.role == Role.TOOL:
         if not message.tool_call_id:
             raise ValueError("OpenAI tool messages require a tool_call_id")
+        if not isinstance(message.content, str):
+            raise TypeError("OpenAI tool messages must contain text")
         tool_message: ChatCompletionToolMessageParam = {
             "role": "tool",
             "content": message.content,

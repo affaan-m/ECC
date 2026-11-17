@@ -445,6 +445,12 @@ function runTests() {
         [{ ...valid, recorded_at: 'not-a-date' }, /recorded_at must be/],
         [{ ...valid, tokens_used: 'lots' }, /tokens_used must be a number/],
         [{ ...valid, duration_ms: Number.POSITIVE_INFINITY }, /duration_ms must be a number/],
+        ...[-1, '-1'].flatMap(value => [
+          [{ ...valid, tokens_used: value }, /tokens_used must be a number/],
+          [{ ...valid, tokensUsed: value }, /tokens_used must be a number/],
+          [{ ...valid, duration_ms: value }, /duration_ms must be a number/],
+          [{ ...valid, durationMs: value }, /duration_ms must be a number/],
+        ]),
         ...[42, 0, false, {}, []].flatMap(value => [
           [{ ...valid, failure_reason: value }, /failure_reason must be a string or null/],
           [{ ...valid, failureReason: value }, /failure_reason must be a string or null/],
@@ -480,6 +486,13 @@ function runTests() {
         /failure_reason must be a string or null/
       );
       assert.ok(!fs.existsSync(invalidRunsFile), 'invalid reasons must be rejected before writing a run');
+      for (const invalidFields of [{ tokens_used: -1 }, { duration_ms: -1 }]) {
+        assert.throws(() => tracker.recordSkillExecution({ ...valid, ...invalidFields }, { runsFilePath: invalidRunsFile }));
+        assert.ok(!fs.existsSync(invalidRunsFile), 'invalid telemetry must be rejected before writing a run');
+      }
+      const zeroStrings = tracker.normalizeExecutionRecord({ ...valid, tokens_used: '0', duration_ms: '0' });
+      assert.strictEqual(zeroStrings.tokens_used, 0);
+      assert.strictEqual(zeroStrings.duration_ms, 0);
     })) passed++; else failed++;
 
     if (test('uses state-store adapters for recording and reading when available', () => {

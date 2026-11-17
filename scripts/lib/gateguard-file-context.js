@@ -169,26 +169,32 @@ function wordStart(text, i) {
   return start;
 }
 
+function cFamilyBacktickEnd(text, i, flavor) {
+  if (flavor === 'kotlin') return quotedEnd(text, i, '`', false);
+  if (flavor !== 'go') return -1;
+  const end = text.indexOf('`', i + 1);
+  return end === -1 ? -1 : end + 1;
+}
+
+// Single quotes: a Rust char or lifetime, a C digit separator inside a
+// numeric literal, or an ordinary char literal.
+function cFamilySingleQuoteEnd(text, i, flavor) {
+  if (flavor === 'rust') {
+    const end = rustCharEnd(text, i);
+    return end === -1 ? null : end + 1;
+  }
+  if (flavor === 'c' && isIdentChar(text[i - 1]) && isIdentChar(text[i + 1])) {
+    const first = text[wordStart(text, i)];
+    if (first >= '0' && first <= '9') return null;
+  }
+  return quotedEnd(text, i, "'", false);
+}
+
 function cFamilyStringEnd(text, i, spec) {
   const ch = text[i];
   const flavor = spec.flavor;
-  if (ch === '`') {
-    if (flavor === 'kotlin') return quotedEnd(text, i, '`', false);
-    if (flavor !== 'go') return -1;
-    const end = text.indexOf('`', i + 1);
-    return end === -1 ? -1 : end + 1;
-  }
-  if (ch === "'") {
-    if (flavor === 'rust') {
-      const end = rustCharEnd(text, i);
-      return end === -1 ? null : end + 1;
-    }
-    if (flavor === 'c' && isIdentChar(text[i - 1]) && isIdentChar(text[i + 1])) {
-      const first = text[wordStart(text, i)];
-      if (first >= '0' && first <= '9') return null;
-    }
-    return quotedEnd(text, i, "'", false);
-  }
+  if (ch === '`') return cFamilyBacktickEnd(text, i, flavor);
+  if (ch === "'") return cFamilySingleQuoteEnd(text, i, flavor);
   if (flavor === 'c') {
     const start = wordStart(text, i);
     const prefix = text.slice(start, i);
@@ -201,166 +207,253 @@ function cFamilyStringEnd(text, i, spec) {
   return quotedEnd(text, i, '"', flavor === 'rust');
 }
 
-function cFamilyStartsFresh(text, spec) {
+// Scanner state for cFamilyStartsFresh. `frames` tracks template-literal
+// nesting, `parens` whether each open paren started a control header,
+// `lastSig` what the previous significant token was (op, value, close).
+function createCFamilyScan(text, spec) {
   const js = spec.flavor === 'js';
-  const frames = [{ template: false, depth: 0 }];
-  const parens = [];
-  let lastWord = '';
-  let lastSig = 'op';
-  let lineEnd = '';
-  let continued = false;
-  let i = js && text.startsWith('#!') ? lineEndAt(text, 0) : 0;
-  while (i < text.length) {
-    const frame = frames[frames.length - 1];
-    const ch = text[i];
-    const next = text[i + 1];
-    if (frame.template) {
-      if (ch === '\\') {
-        i += 2;
-      } else if (ch === '`') {
-        frames.pop();
-        lastSig = 'value';
-        i++;
-      } else if (ch === '$' && next === '{') {
-        frames.push({ template: false, depth: 0 });
-        lastSig = 'op';
-        i += 2;
-      } else {
-        i++;
-      }
+  return {
+    text,
+    spec,
+    js,
+    frames: [{ template: false, depth: 0 }],
+    parens: [],
+    lastWord: '',
+    lastSig: 'op',
+    lineEnd: '',
+    continued: false,
+    i: js && text.startsWith('#!') ? lineEndAt(text, 0) : 0,
+  };
+}
+
+// Each step* helper below returns true after consuming input, false when the
+// prefix cannot end fresh, and null when the character was not its concern.
+
+function stepTemplate(s) {
+  const { text, frames } = s;
+  const ch = text[s.i];
+  if (ch === '\\') {
+    s.i += 2;
+  } else if (ch === '`') {
+    frames.pop();
+    s.lastSig = 'value';
+    s.i++;
+  } else if (ch === '$' && text[s.i + 1] === '{') {
+    frames.push({ template: false, depth: 0 });
+    s.lastSig = 'op';
+    s.i += 2;
+  } else {
+    s.i++;
+  }
+}
+
+function stepComment(s) {
+  const { text, spec } = s;
+  if (text[s.i] !== '/') return null;
+  const next = text[s.i + 1];
+  if (next === '/') {
+    const end = lineEndAt(text, s.i);
+    if (text.slice(s.i, end).trimEnd().endsWith('\\')) return false;
+    s.i = end;
+    return true;
+  }
+  if (next === '*') {
+    const end = spec.rustDocs ? nestedBlockEnd(text, s.i) : text.indexOf('*/', s.i + 2);
+    if (end === -1) return false;
+    s.i = spec.rustDocs ? end : end + 2;
+    s.lineEnd = '';
+    return true;
+  }
+  return null;
+}
+
+// A `/` that is not a comment: a regex literal after an operator, or
+// division. A regex right after `}` is ambiguous and never fresh.
+function stepJsSlash(s) {
+  const { text } = s;
+  if (s.lastSig === 'op') {
+    const end = regexEnd(text, s.i);
+    if (end === -1) return false;
+    s.lineEnd = text[end - 1];
+    s.lastSig = 'value';
+    s.i = end;
+    return true;
+  }
+  if (s.lastSig === 'close' && /[/'"`]/.test(text.slice(s.i + 1, lineEndAt(text, s.i)))) return false;
+  s.lastSig = 'op';
+  s.i++;
+  return true;
+}
+
+function stepJs(s) {
+  if (!s.js) return null;
+  const { text, spec, frames } = s;
+  const ch = text[s.i];
+  const next = text[s.i + 1];
+  if (ch === '`') {
+    frames.push({ template: true, depth: 0 });
+    s.i++;
+    return true;
+  }
+  if (ch === '/') return stepJsSlash(s);
+  if (ch === '<' && (next === '!' || (spec.jsx && (isLetter(next) || next === '/' || next === '>')))) return false;
+  if (ch === '-' && next === '-' && text[s.i + 2] === '>') return false;
+  const frame = frames[frames.length - 1];
+  if (frames.length > 1 && ch === '{') frame.depth++;
+  if (frames.length > 1 && ch === '}') {
+    if (frame.depth === 0) {
+      frames.pop();
+      s.i++;
+      return true;
+    }
+    frame.depth--;
+  }
+  return null;
+}
+
+function stepCSharpString(s) {
+  const { text, spec } = s;
+  const ch = text[s.i];
+  if (spec.flavor !== 'csharp' || (ch !== '@' && ch !== '$')) return null;
+  if (!/^[@$]{1,3}"/.test(text.slice(s.i, s.i + 4))) return null;
+  const end = csharpStringEnd(text, s.i);
+  if (end === -1) return false;
+  s.lineEnd = '"';
+  s.i = end;
+  return true;
+}
+
+function stepRustRaw(s) {
+  const { text, spec } = s;
+  const ch = text[s.i];
+  const next = text[s.i + 1];
+  if (spec.flavor !== 'rust' || isIdentChar(text[s.i - 1])) return null;
+  if (ch !== 'r' && !((ch === 'b' || ch === 'c') && next === 'r')) return null;
+  const end = rustRawEnd(text, s.i);
+  if (end === -1) return false;
+  if (end === null) return null;
+  s.lineEnd = text[end - 1];
+  s.lastSig = 'value';
+  s.i = end;
+  return true;
+}
+
+function stepString(s) {
+  const { text, spec } = s;
+  const ch = text[s.i];
+  if (ch !== '"' && ch !== "'" && ch !== '`') return null;
+  const end = cFamilyStringEnd(text, s.i, spec);
+  if (end === -1) return false;
+  if (end === null) {
+    s.i++;
+    return true;
+  }
+  s.lineEnd = text[end - 1];
+  s.lastSig = 'value';
+  s.i = end;
+  return true;
+}
+
+function stepWord(s) {
+  const { text, js } = s;
+  if (!isIdentChar(text[s.i])) return null;
+  let end = s.i;
+  while (end < text.length && isIdentChar(text[end])) end++;
+  s.lastWord = text.slice(s.i, end);
+  s.lastSig = js && JS_REGEX_KEYWORDS.has(s.lastWord) ? 'op' : 'value';
+  s.lineEnd = text[end - 1];
+  s.i = end;
+  return true;
+}
+
+function stepPunctuation(s) {
+  const ch = s.text[s.i];
+  if (ch === '(') {
+    s.parens.push(s.lastSig === 'value' && JS_CONTROL_HEADERS.has(s.lastWord));
+    s.lastSig = 'op';
+  } else if (ch === ')') {
+    s.lastSig = s.parens.pop() ? 'op' : 'value';
+  } else {
+    s.lastSig = ch === '}' ? 'close' : ch === ']' ? 'value' : 'op';
+  }
+  s.lastWord = '';
+  s.i++;
+}
+
+const C_FAMILY_TOKEN_STEPS = [stepJs, stepCSharpString, stepRustRaw, stepString, stepWord];
+
+function stepToken(s) {
+  for (const step of C_FAMILY_TOKEN_STEPS) {
+    const result = step(s);
+    if (result !== null) return result;
+  }
+  return null;
+}
+
+function cFamilyStartsFresh(text, spec) {
+  const s = createCFamilyScan(text, spec);
+  while (s.i < text.length) {
+    const ch = text[s.i];
+    if (s.frames[s.frames.length - 1].template) {
+      stepTemplate(s);
       continue;
     }
     if (isNewline(ch)) {
-      continued = lineEnd === '\\';
-      lineEnd = '';
-      i++;
+      s.continued = s.lineEnd === '\\';
+      s.lineEnd = '';
+      s.i++;
       continue;
     }
     if (isSpace(ch)) {
-      i++;
+      s.i++;
       continue;
     }
-    if (ch === '/' && next === '/') {
-      const end = lineEndAt(text, i);
-      if (text.slice(i, end).trimEnd().endsWith('\\')) return false;
-      i = end;
+    const comment = stepComment(s);
+    if (comment !== null) {
+      if (!comment) return false;
       continue;
     }
-    if (ch === '/' && next === '*') {
-      const end = spec.rustDocs ? nestedBlockEnd(text, i) : text.indexOf('*/', i + 2);
-      if (end === -1) return false;
-      i = spec.rustDocs ? end : end + 2;
-      lineEnd = '';
-      continue;
-    }
-    lineEnd = ch;
-    if (js) {
-      if (ch === '`') {
-        frames.push({ template: true, depth: 0 });
-        i++;
-        continue;
-      }
-      if (ch === '/') {
-        if (lastSig === 'op') {
-          const end = regexEnd(text, i);
-          if (end === -1) return false;
-          lineEnd = text[end - 1];
-          lastSig = 'value';
-          i = end;
-          continue;
-        }
-        if (lastSig === 'close' && /[/'"`]/.test(text.slice(i + 1, lineEndAt(text, i)))) return false;
-        lastSig = 'op';
-        i++;
-        continue;
-      }
-      if (ch === '<' && (next === '!' || (spec.jsx && (isLetter(next) || next === '/' || next === '>')))) return false;
-      if (ch === '-' && next === '-' && text[i + 2] === '>') return false;
-      if (frames.length > 1 && ch === '{') frame.depth++;
-      if (frames.length > 1 && ch === '}') {
-        if (frame.depth === 0) {
-          frames.pop();
-          i++;
-          continue;
-        }
-        frame.depth--;
-      }
-    }
-    if (spec.flavor === 'csharp' && (ch === '@' || ch === '$') && /^[@$]{1,3}"/.test(text.slice(i, i + 4))) {
-      const end = csharpStringEnd(text, i);
-      if (end === -1) return false;
-      lineEnd = '"';
-      i = end;
-      continue;
-    }
-    if (spec.flavor === 'rust' && (ch === 'r' || ((ch === 'b' || ch === 'c') && next === 'r')) && !isIdentChar(text[i - 1])) {
-      const end = rustRawEnd(text, i);
-      if (end === -1) return false;
-      if (end !== null) {
-        lineEnd = text[end - 1];
-        lastSig = 'value';
-        i = end;
-        continue;
-      }
-    }
-    if (ch === '"' || ch === "'" || ch === '`') {
-      const end = cFamilyStringEnd(text, i, spec);
-      if (end === -1) return false;
-      if (end !== null) {
-        lineEnd = text[end - 1];
-        lastSig = 'value';
-        i = end;
-        continue;
-      }
-      i++;
-      continue;
-    }
-    if (isIdentChar(ch)) {
-      let end = i;
-      while (end < text.length && isIdentChar(text[end])) end++;
-      lastWord = text.slice(i, end);
-      lastSig = js && JS_REGEX_KEYWORDS.has(lastWord) ? 'op' : 'value';
-      lineEnd = text[end - 1];
-      i = end;
-      continue;
-    }
-    if (ch === '(') {
-      parens.push(lastSig === 'value' && JS_CONTROL_HEADERS.has(lastWord));
-      lastSig = 'op';
-    } else if (ch === ')') {
-      lastSig = parens.pop() ? 'op' : 'value';
-    } else {
-      lastSig = ch === '}' ? 'close' : ch === ']' ? 'value' : 'op';
-    }
-    lastWord = '';
-    i++;
+    s.lineEnd = ch;
+    const token = stepToken(s);
+    if (token === false) return false;
+    if (token === null) stepPunctuation(s);
   }
-  return frames.length === 1 && !continued;
+  return s.frames.length === 1 && !s.continued;
+}
+
+// One character inside an f-string replacement field. Returns the last index
+// consumed, or -1 when the field cannot be read. Updates `field.depth`.
+function pythonFieldStep(text, j, quote, field) {
+  const ch = text[j];
+  if (ch === '{') {
+    field.depth++;
+  } else if (ch === '}') {
+    field.depth--;
+  } else if ((ch === '"' || ch === "'") && ch !== quote) {
+    let k = j + 1;
+    while (k < text.length && text[k] !== ch) {
+      if (text[k] === quote || text[k] === '\\' || isNewline(text[k])) return -1;
+      k++;
+    }
+    if (k >= text.length) return -1;
+    return k;
+  } else if (ch === quote || ch === '#' || ch === '\\' || isNewline(ch)) {
+    return -1;
+  }
+  return j;
 }
 
 function pythonStringEnd(text, i, prefix) {
   const quote = text[i];
   const triple = text[i + 1] === quote && text[i + 2] === quote;
+  const quoteLength = triple ? 3 : 1;
   const fString = prefix.toLowerCase().includes('f');
-  let depth = 0;
-  for (let j = i + (triple ? 3 : 1); j < text.length; j++) {
+  const field = { depth: 0 };
+  for (let j = i + quoteLength; j < text.length; j++) {
     const ch = text[j];
-    if (fString && depth > 0) {
-      if (ch === '{') {
-        depth++;
-      } else if (ch === '}') {
-        depth--;
-      } else if ((ch === '"' || ch === "'") && ch !== quote) {
-        let k = j + 1;
-        while (k < text.length && text[k] !== ch) {
-          if (text[k] === quote || text[k] === '\\' || isNewline(text[k])) return -1;
-          k++;
-        }
-        if (k >= text.length) return -1;
-        j = k;
-      } else if (ch === quote || ch === '#' || ch === '\\' || isNewline(ch)) {
-        return -1;
-      }
+    if (fString && field.depth > 0) {
+      j = pythonFieldStep(text, j, quote, field);
+      if (j === -1) return -1;
       continue;
     }
     if (ch === '\\') {
@@ -368,11 +461,11 @@ function pythonStringEnd(text, i, prefix) {
       if (text[j] === '\r' && text[j + 1] === '\n') j++;
     } else if (fString && ch === '{') {
       if (text[j + 1] === '{') j++;
-      else depth = 1;
+      else field.depth = 1;
     } else if (isNewline(ch) && !triple) {
       return -1;
     } else if (ch === quote && (!triple || (text[j + 1] === quote && text[j + 2] === quote))) {
-      return j + (triple ? 3 : 1);
+      return j + quoteLength;
     }
   }
   return -1;
@@ -489,63 +582,89 @@ function shDoubleQuoteScan(text, i, level) {
   return -1;
 }
 
+// Move a line scanner to `end`, or report that the token never closed.
+function advanceTo(s, end) {
+  if (end === -1) return false;
+  s.i = end;
+  return true;
+}
+
+// A newline ends any pending heredoc bodies before scanning resumes.
+function shNewline(s) {
+  const { text } = s;
+  s.continued = s.lineEnd === '\\';
+  s.lineEnd = '';
+  s.i += text[s.i] === '\r' && text[s.i + 1] === '\n' ? 2 : 1;
+  if (s.pending.length > 0) {
+    s.i = skipHeredocs(text, s.i, s.pending);
+    if (s.i === -1) return false;
+    s.pending.length = 0;
+  }
+  return true;
+}
+
+function shQuotedToken(s) {
+  const { text } = s;
+  const ch = text[s.i];
+  if (ch === "'") return advanceTo(s, shSingleQuoteEnd(text, s.i));
+  if (ch === '"') return advanceTo(s, shDoubleQuoteScan(text, s.i, 0));
+  const end = text.indexOf('`', s.i + 1);
+  if (end === -1 || /['"\\#\n\r]/.test(text.slice(s.i + 1, end))) return false;
+  s.i = end + 1;
+  return true;
+}
+
+function shHashToken(s) {
+  const { text } = s;
+  const starts = hashStartsComment(text, s.i);
+  if (starts === null) return false;
+  s.i = starts ? lineEndAt(text, s.i) : s.i + 1;
+  if (starts) s.lineEnd = '';
+  return true;
+}
+
+function shHeredocToken(s) {
+  const { text } = s;
+  if (text[s.i + 2] === '<') {
+    s.i += 3;
+    return true;
+  }
+  const doc = heredocDelimiter(text, s.i);
+  if (!doc) return false;
+  s.pending.push(doc);
+  s.i = doc.end;
+  return true;
+}
+
 function shStartsFresh(text) {
   if (hasLoneCarriageReturn(text)) return false;
-  const pending = [];
-  let lineEnd = '';
-  let continued = false;
-  let i = 0;
-  while (i < text.length) {
-    const ch = text[i];
+  const s = { text, pending: [], lineEnd: '', continued: false, i: 0 };
+  while (s.i < text.length) {
+    const ch = text[s.i];
     if (isNewline(ch)) {
-      continued = lineEnd === '\\';
-      lineEnd = '';
-      i += ch === '\r' && text[i + 1] === '\n' ? 2 : 1;
-      if (pending.length > 0) {
-        i = skipHeredocs(text, i, pending);
-        if (i === -1) return false;
-        pending.length = 0;
-      }
+      if (!shNewline(s)) return false;
       continue;
     }
     if (isBlank(ch)) {
-      i++;
+      s.i++;
       continue;
     }
-    lineEnd = ch;
+    s.lineEnd = ch;
+    let ok = true;
     if (ch === '\\') {
-      i += isNewline(text[i + 1]) ? 1 : 2;
-    } else if (ch === "'") {
-      const end = shSingleQuoteEnd(text, i);
-      if (end === -1) return false;
-      i = end;
-    } else if (ch === '"') {
-      const end = shDoubleQuoteScan(text, i, 0);
-      if (end === -1) return false;
-      i = end;
-    } else if (ch === '`') {
-      const end = text.indexOf('`', i + 1);
-      if (end === -1 || /['"\\#\n\r]/.test(text.slice(i + 1, end))) return false;
-      i = end + 1;
+      s.i += isNewline(text[s.i + 1]) ? 1 : 2;
+    } else if (ch === "'" || ch === '"' || ch === '`') {
+      ok = shQuotedToken(s);
     } else if (ch === '#') {
-      const starts = hashStartsComment(text, i);
-      if (starts === null) return false;
-      i = starts ? lineEndAt(text, i) : i + 1;
-      if (starts) lineEnd = '';
-    } else if (ch === '<' && text[i + 1] === '<') {
-      if (text[i + 2] === '<') {
-        i += 3;
-        continue;
-      }
-      const doc = heredocDelimiter(text, i);
-      if (!doc) return false;
-      pending.push(doc);
-      i = doc.end;
+      ok = shHashToken(s);
+    } else if (ch === '<' && text[s.i + 1] === '<') {
+      ok = shHeredocToken(s);
     } else {
-      i++;
+      s.i++;
     }
+    if (!ok) return false;
   }
-  return !continued && pending.length === 0;
+  return !s.continued && s.pending.length === 0;
 }
 
 function psSingleQuoteEnd(text, i) {
@@ -597,66 +716,78 @@ function psDoubleQuoteScan(text, i, level) {
   return -1;
 }
 
+// End of a PowerShell here-string opened at `i`: the closer must start its
+// own line, and nothing may follow the opener on its line.
+function psHereStringEnd(text, i, quote) {
+  const open = lineEndAt(text, i);
+  if (text.slice(i + 2, open).trim() !== '') return -1;
+  let at = open;
+  while (at < text.length) {
+    at += text[at] === '\r' && text[at + 1] === '\n' ? 2 : 1;
+    if (text.startsWith(`${quote}@`, at)) return at + 2;
+    at = lineEndAt(text, at);
+  }
+  return -1;
+}
+
+function psBlockCommentToken(s) {
+  const { text } = s;
+  if (!psHashStartsComment(text, s.i)) return false;
+  const end = text.indexOf('#>', s.i + 2);
+  if (end === -1) return false;
+  s.i = end + 2;
+  s.lineEnd = '';
+  return true;
+}
+
+function psHashToken(s) {
+  const { text } = s;
+  if (psHashStartsComment(text, s.i)) {
+    s.i = lineEndAt(text, s.i);
+    s.lineEnd = '';
+    return true;
+  }
+  if (isIdentChar(text[s.i - 1]) || '-.:'.includes(text[s.i - 1])) {
+    s.i++;
+    return true;
+  }
+  return false;
+}
+
 function psStartsFresh(text) {
   if (PS_SMART_QUOTES.test(text)) return false;
-  let lineEnd = '';
-  let continued = false;
-  let i = 0;
-  while (i < text.length) {
-    const ch = text[i];
-    const next = text[i + 1];
+  const s = { text, lineEnd: '', continued: false, i: 0 };
+  while (s.i < text.length) {
+    const ch = text[s.i];
+    const next = text[s.i + 1];
     if (isNewline(ch)) {
-      continued = lineEnd === '`';
-      lineEnd = '';
-      i++;
+      s.continued = s.lineEnd === '`';
+      s.lineEnd = '';
+      s.i++;
       continue;
     }
     if (isBlank(ch)) {
-      i++;
+      s.i++;
       continue;
     }
-    lineEnd = ch;
+    s.lineEnd = ch;
+    let ok = true;
     if (ch === '`') {
-      i += isNewline(next) ? 1 : 2;
+      s.i += isNewline(next) ? 1 : 2;
     } else if (ch === '@' && (next === '"' || next === "'")) {
-      const open = lineEndAt(text, i);
-      if (text.slice(i + 2, open).trim() !== '') return false;
-      let at = open;
-      let found = -1;
-      while (at < text.length) {
-        at += text[at] === '\r' && text[at + 1] === '\n' ? 2 : 1;
-        if (text.startsWith(`${next}@`, at)) {
-          found = at + 2;
-          break;
-        }
-        at = lineEndAt(text, at);
-      }
-      if (found === -1) return false;
-      i = found;
+      ok = advanceTo(s, psHereStringEnd(text, s.i, next));
     } else if (ch === "'" || ch === '"') {
-      const end = ch === "'" ? psSingleQuoteEnd(text, i) : psDoubleQuoteScan(text, i, 0);
-      if (end === -1) return false;
-      i = end;
+      ok = advanceTo(s, ch === "'" ? psSingleQuoteEnd(text, s.i) : psDoubleQuoteScan(text, s.i, 0));
     } else if (ch === '<' && next === '#') {
-      if (!psHashStartsComment(text, i)) return false;
-      const end = text.indexOf('#>', i + 2);
-      if (end === -1) return false;
-      i = end + 2;
-      lineEnd = '';
+      ok = psBlockCommentToken(s);
     } else if (ch === '#') {
-      if (psHashStartsComment(text, i)) {
-        i = lineEndAt(text, i);
-        lineEnd = '';
-      } else if (isIdentChar(text[i - 1]) || '-.:'.includes(text[i - 1])) {
-        i++;
-      } else {
-        return false;
-      }
+      ok = psHashToken(s);
     } else {
-      i++;
+      s.i++;
     }
+    if (!ok) return false;
   }
-  return !continued;
+  return !s.continued;
 }
 
 function batchStartsFresh(text) {

@@ -2236,7 +2236,7 @@ impl Dashboard {
                     ))
                     .unwrap_or_default()
             );
-            if let Err(error) = comms::send(
+            if let Err(error) = comms::send_native_assignment(
                 &self.db,
                 &source_session.id,
                 &session_id,
@@ -3719,7 +3719,7 @@ impl Dashboard {
                         source_task.as_ref(),
                         handoff_context.as_ref(),
                     ) {
-                        if let Err(error) = comms::send(
+                        if let Err(error) = comms::send_native_assignment(
                             &self.db,
                             source_id,
                             &session_id,
@@ -4128,7 +4128,6 @@ impl Dashboard {
         self.ensure_selected_pane_visible();
         self.sync_selected_output();
         self.sync_selected_diff();
-        self.sync_selected_git_status();
         self.sync_selected_messages();
         self.sync_selected_lineage();
         self.refresh_logs();
@@ -9927,6 +9926,45 @@ mod tests {
     }
 
     #[test]
+    fn refresh_reads_selected_git_status_once() -> Result<()> {
+        let root = std::env::temp_dir().join(format!("ecc2-git-status-refresh-{}", Uuid::new_v4()));
+        init_git_repo(&root)?;
+        fs::write(root.join("README.md"), "changed during dashboard refresh\n")?;
+
+        let mut session = sample_session(
+            "focus-12345678",
+            "planner",
+            SessionState::Running,
+            Some("ecc/focus"),
+            512,
+            42,
+        );
+        session.working_dir = root.clone();
+        session.worktree = Some(WorktreeInfo {
+            path: root.clone(),
+            branch: "main".to_string(),
+            base_branch: "main".to_string(),
+        });
+        let mut dashboard = test_dashboard(vec![session.clone()], 0);
+        dashboard.db.insert_session(&session)?;
+
+        worktree::reset_git_status_entries_call_count();
+        dashboard.refresh();
+
+        assert_eq!(
+            worktree::git_status_entries_call_count(),
+            1,
+            "one dashboard refresh should load the selected worktree status once"
+        );
+        assert_eq!(dashboard.selected_git_status_entries.len(), 1);
+        assert_eq!(dashboard.selected_git_status_entries[0].path, "README.md");
+        assert!(dashboard.selected_git_status_entries[0].unstaged);
+
+        let _ = fs::remove_dir_all(root);
+        Ok(())
+    }
+
+    #[test]
     fn toggle_output_mode_from_git_status_opens_selected_file_patch() -> Result<()> {
         let root = std::env::temp_dir().join(format!("ecc2-git-patch-view-{}", Uuid::new_v4()));
         init_git_repo(&root)?;
@@ -13057,7 +13095,9 @@ diff --git a/src/lib.rs b/src/lib.rs
 
     #[test]
     fn refresh_preserves_selected_session_by_id() -> Result<()> {
-        let db_path = std::env::temp_dir().join(format!("ecc2-dashboard-{}.db", Uuid::new_v4()));
+        let root = std::env::temp_dir().join(format!("ecc2-dashboard-{}", Uuid::new_v4()));
+        fs::create_dir(&root)?;
+        let db_path = root.join("state.db");
         let db = StateStore::open(&db_path)?;
         let now = Utc::now();
 
@@ -13093,13 +13133,18 @@ diff --git a/src/lib.rs b/src/lib.rs
             metrics: SessionMetrics::default(),
         })?;
 
-        let mut dashboard = Dashboard::new(db, Config::default());
+        let cfg = Config {
+            db_path: db_path.clone(),
+            ..Config::default()
+        };
+        let mut dashboard = Dashboard::new(db, cfg);
         dashboard.selected_session = 1;
         dashboard.sync_selection();
         dashboard.refresh();
 
         assert_eq!(dashboard.selected_session_id(), Some("older"));
-        let _ = std::fs::remove_file(db_path);
+        drop(dashboard);
+        fs::remove_dir_all(root)?;
         Ok(())
     }
 

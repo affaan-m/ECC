@@ -1039,6 +1039,21 @@ function runTests() {
     cleanupTestDir(testDir);
   })) passed++; else failed++;
 
+  if (test('unescapes inline JS in one pass so an escaped backslash before n stays literal', () => {
+    const testDir = createTestDir();
+    const hooksFile = path.join(testDir, 'hooks.json');
+    // Shell body `console.log('\\n')` is a valid program; a sequential unescape turned it into a raw newline.
+    fs.writeFileSync(hooksFile, JSON.stringify({
+      hooks: {
+        PreToolUse: [{ id: 'test:escaped-backslash-inline-js', matcher: 'test', hooks: [{ type: 'command', command: 'node -e "console.log(\'\\\\n\')"' }] }]
+      }
+    }));
+
+    const result = runValidatorWithDir('validate-hooks', 'HOOKS_FILE', hooksFile);
+    assert.strictEqual(result.code, 0, `Should pass escaped-backslash inline JS, stderr: ${result.stderr}`);
+    cleanupTestDir(testDir);
+  })) passed++; else failed++;
+
   if (test('validates array command format', () => {
     const testDir = createTestDir();
     const hooksFile = path.join(testDir, 'hooks.json');
@@ -1182,6 +1197,20 @@ function runTests() {
     assert.strictEqual(result.code, 1, '--strict must fail CI on missing name');
     assert.ok(result.stderr.includes('missing required field: name'),
       'Should report missing name');
+    cleanupTestDir(testDir);
+  })) passed++; else failed++;
+
+  if (test('errors when a skill name contains a reserved word (strict mode)', () => {
+    const testDir = createTestDir();
+    const skillDir = path.join(testDir, 'claude-devfleet');
+    fs.mkdirSync(skillDir);
+    fs.writeFileSync(path.join(skillDir, 'SKILL.md'),
+      '---\nname: claude-devfleet\ndescription: "Multi-agent orchestration."\n---\n# Skill');
+
+    const result = runSkillsValidator(testDir, ['--strict']);
+    assert.strictEqual(result.code, 1, '--strict must reject reserved skill names');
+    assert.ok(result.stderr.includes("frontmatter 'name' contains reserved word"),
+      `Should report the reserved skill name; got stderr: ${result.stderr}`);
     cleanupTestDir(testDir);
   })) passed++; else failed++;
 
