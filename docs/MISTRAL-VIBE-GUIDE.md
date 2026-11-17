@@ -1,7 +1,8 @@
 # Mistral Vibe integration
 
 ECC provides a project-local, skills-first integration for Mistral Vibe. The
-contract in this guide is verified against **Mistral Vibe v2.25.3**.
+contract in this guide is verified against **Mistral Vibe v2.25.3** and
+**Mistral Vibe v3.1.2**.
 
 ## Install a skill
 
