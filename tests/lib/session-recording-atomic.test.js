@@ -61,7 +61,7 @@ const backends = [
 
 for (const [backend, loadStateStoreImpl] of backends) {
   test(`failed replacement preserves prior snapshot and history: ${backend}`, () => {
-    const recordingDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-recording-replace-'));
+    const recordingDir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-recording-replace-')));
     try {
       const options = { recordingDir, loadStateStoreImpl };
       const first = snapshot('Existing session');
@@ -90,7 +90,7 @@ for (const [backend, loadStateStoreImpl] of backends) {
   });
 
   test(`failed first write does not publish an invalid recording: ${backend}`, () => {
-    const recordingDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-recording-initial-'));
+    const recordingDir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-recording-initial-')));
     try {
       const options = { recordingDir, loadStateStoreImpl };
       const first = snapshot('First session');
@@ -115,18 +115,30 @@ for (const [backend, loadStateStoreImpl] of backends) {
   });
 }
 
+/** Inspect or adjust the published recording through one opened handle. */
+function withSavedRecording(filePath, inspect) {
+  const fd = fs.openSync(filePath, 'r');
+  try {
+    return inspect(fd);
+  } finally {
+    fs.closeSync(fd);
+  }
+}
+
 if (process.platform !== 'win32') {
   test('recording publication preserves creation umask and existing POSIX permissions', () => {
-    const recordingDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-recording-mode-'));
+    const recordingDir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-recording-mode-')));
     try {
       const options = { recordingDir, loadStateStoreImpl: () => null };
       const first = snapshot('Initial permissions');
       const filePath = getFallbackSessionRecordingPath(first, options);
       persistCanonicalSnapshot(first, options);
-      assert.strictEqual(fs.statSync(filePath).mode & 0o777, 0o666 & ~process.umask());
+      withSavedRecording(filePath, fd => {
+        assert.strictEqual(fs.fstatSync(fd).mode & 0o777, 0o666 & ~process.umask());
+      });
 
       for (const mode of [0o600, 0o640, 0o660]) {
-        fs.chmodSync(filePath, mode);
+        withSavedRecording(filePath, fd => fs.fchmodSync(fd, mode));
         const next = snapshot(`Permissions ${mode.toString(8)}`);
         const originalWrite = fs.writeFileSync;
         const observedModes = [];
@@ -146,13 +158,10 @@ if (process.platform !== 'win32') {
         for (const observed of observedModes) {
           assert.strictEqual(observed & ~mode, 0, 'staging must not grant permissions absent from the saved recording');
         }
-        const savedFd = fs.openSync(filePath, 'r');
-        try {
-          assert.strictEqual(fs.fstatSync(savedFd).mode & 0o777, mode);
-          assert.deepStrictEqual(JSON.parse(fs.readFileSync(savedFd, 'utf8')).latest, next);
-        } finally {
-          fs.closeSync(savedFd);
-        }
+        withSavedRecording(filePath, fd => {
+          assert.strictEqual(fs.fstatSync(fd).mode & 0o777, mode);
+          assert.deepStrictEqual(JSON.parse(fs.readFileSync(fd, 'utf8')).latest, next);
+        });
       }
     } finally {
       fs.rmSync(recordingDir, { recursive: true, force: true });
