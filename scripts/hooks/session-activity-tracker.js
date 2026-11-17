@@ -86,6 +86,10 @@ function truncateSummary(value, maxLength = 220) {
   return `${normalized.slice(0, maxLength - 3)}...`;
 }
 
+function isCredentialKey(key) {
+  return CREDENTIAL_WORD.test(key) || /^(?:proxy-)?authorization$/i.test(key);
+}
+
 function sanitizeParamValue(value, depth = 0) {
   if (depth >= 4) {
     return '[Truncated]';
@@ -110,7 +114,7 @@ function sanitizeParamValue(value, depth = 0) {
   if (typeof value === 'object') {
     const output = {};
     for (const [key, nested] of Object.entries(value).slice(0, 20)) {
-      output[key] = sanitizeParamValue(nested, depth + 1);
+      output[key] = isCredentialKey(key) ? '<REDACTED>' : sanitizeParamValue(nested, depth + 1);
     }
     return output;
   }
@@ -321,6 +325,7 @@ function collectFilePaths(value, paths) {
   }
 
   for (const [key, nested] of Object.entries(value)) {
+    if (isCredentialKey(key)) continue;
     if (FILE_PATH_KEYS.has(key)) {
       collectFilePaths(nested, paths);
       continue;
@@ -534,6 +539,7 @@ function collectFileEvents(toolName, value, events, key = null, parentValue = nu
   }
 
   for (const [nestedKey, nested] of Object.entries(value)) {
+    if (isCredentialKey(nestedKey)) continue;
     if (FILE_PATH_KEYS.has(nestedKey)) {
       collectFileEvents(toolName, nested, events, nestedKey, value);
       continue;
@@ -570,7 +576,7 @@ function summarizeInput(toolName, toolInput, filePaths) {
         continue;
       }
       if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
-        shallow[key] = value;
+        shallow[key] = isCredentialKey(key) ? '<REDACTED>' : value;
       }
     }
     const serialized = Object.keys(shallow).length > 0 ? JSON.stringify(shallow) : toolName;
