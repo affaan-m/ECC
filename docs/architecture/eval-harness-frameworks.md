@@ -175,10 +175,21 @@ not proof of rollback: inspect disk before retrying, or a logical event could be
 recorded twice. No transaction, exactly-once retry, parent-directory fsync, or
 power-loss durability guarantee is added here.
 
-Create, read/verify, projection, receipt production and export are not serialized
-by the append lock. Use quiescent capsules for consistent receipts/exports; there
-is no concurrent export guarantee or hostile-filesystem containment. The append
-repair does not change the disabled candidate execution boundary.
+Export acquires the same append lock before reading the source and holds it until
+the bundle is complete. A cooperating append or export that overlaps it fails
+immediately with `capsule.busy` and can be retried after the owner finishes. Export
+refreshes the source projection, copies metadata and journal, then verifies the
+copied state and generates the bundle projection from that state. An independent
+writer replacing the source projection cannot make the returned bundle's
+projection disagree with its journal. Quiescent exports retain the same three
+files and bytes; workspace contents and the lock file are never exported.
+
+Create, read/verify, standalone projection and receipt production are not
+serialized by the append lock. Use quiescent capsules for consistent receipts
+and only one writer per export destination. Export errors may leave partial
+output; the lock provides no rollback, hostile-filesystem containment, or
+coordination with writers that bypass it. The disabled candidate execution
+boundary is unchanged.
 
 What the chain does not claim: it does not stop an operator from replacing the
 whole log. That is the job of a witnessed transparency log, which is a later,

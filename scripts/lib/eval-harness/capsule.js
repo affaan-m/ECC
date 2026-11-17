@@ -102,7 +102,7 @@ function releaseOwnedLock(lockPath, fd, identity) {
   }
 }
 
-/** Exclusive cooperative append lock. Never waits or infers stale ownership. */
+/** Exclusive cooperative append/export lock. Never waits or infers stale ownership. */
 function withAppendLock(dir, operation) {
   const lockPath = path.join(dir, APPEND_LOCK_FILE);
   let fd;
@@ -382,17 +382,23 @@ function writeProjection(dir) {
 
 /**
  * Export a minimal bundle: capsule.json, journal.ndjson, projection.json.
- * Workspace contents are never copied.
+ * Serialize against cooperating appenders and derive the exported projection
+ * from the copied journal. Workspace contents are never copied.
  */
 function exportBundle(dir, outDir) {
   const resolved = path.resolve(dir);
   const target = path.resolve(outDir);
-  fs.mkdirSync(target, { recursive: true });
-  writeProjection(resolved);
-  for (const name of [META_FILE, JOURNAL_FILE, PROJECTION_FILE]) {
-    fs.copyFileSync(path.join(resolved, name), path.join(target, name));
-  }
-  return { dir: target, files: [META_FILE, JOURNAL_FILE, PROJECTION_FILE] };
+  return withAppendLock(resolved, () => {
+    fs.mkdirSync(target, { recursive: true });
+    writeProjection(resolved);
+    for (const name of [META_FILE, JOURNAL_FILE]) {
+      fs.copyFileSync(path.join(resolved, name), path.join(target, name));
+    }
+    // Independent projection writers need not hold the append lock, so never
+    // trust a source projection that may have been replaced after validation.
+    writeProjection(target);
+    return { dir: target, files: [META_FILE, JOURNAL_FILE, PROJECTION_FILE] };
+  });
 }
 
 module.exports = {
