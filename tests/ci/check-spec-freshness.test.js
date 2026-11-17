@@ -170,7 +170,7 @@ describe('check-spec-freshness (v1, file-level)', () => {
         const result = runChecker(link);
         assert.strictEqual(result.exitCode, 2, result.stderr);
       } finally {
-        fs.rmSync(link, { force: true });
+        fs.unlinkSync(link);
       }
     });
 
