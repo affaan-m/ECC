@@ -218,6 +218,45 @@ function graphDistance(graph, from, to, cap = 6) {
   return Infinity;
 }
 
+/** Find directed distances to one working set with a single capped BFS. */
+function distancesToTargets(graph, start, targets) {
+  const adj = graph && graph.adjacency ? graph.adjacency : graph || {};
+  const pending = new Set(targets);
+  pending.delete(start);
+  const distances = new Map();
+  const seen = new Set([start]);
+  let frontier = [start];
+  for (let depth = 1; depth <= 6 && pending.size > 0 && frontier.length > 0; depth += 1) {
+    const next = [];
+    for (const node of frontier) {
+      for (const neighbour of adj[node] || []) {
+        const normalized = normalizePath(neighbour);
+        if (seen.has(normalized)) continue;
+        seen.add(normalized);
+        next.push(normalized);
+        if (pending.delete(normalized)) distances.set(normalized, depth);
+      }
+    }
+    frontier = next;
+  }
+  return distances;
+}
+
+/** Reuse source traversals only within this dependency-risk calculation. */
+function createDistanceLookup(graph, files) {
+  const targets = new Set(files.map(file => normalizePath(file.path)));
+  // Keep the early-return search for a single destination.
+  if (targets.size <= 1) return (from, to) => graphDistance(graph, from, to);
+  const cache = new Map();
+  return (from, to) => {
+    const start = normalizePath(from);
+    const goal = normalizePath(to);
+    if (start === goal) return 0;
+    if (!cache.has(start)) cache.set(start, distancesToTargets(graph, start, targets));
+    return cache.get(start).get(goal) ?? Infinity;
+  };
+}
+
 /**
  * Channel 2 — dependency coupling, eqs. (4)-(5).
  */
@@ -225,12 +264,14 @@ function dependencyRisk(a, b, graph, opts = {}) {
   const decay = opts.depDecay ?? DEFAULTS.depDecay;
   const filesA = a.files || [];
   const filesB = b.files || [];
+  const distanceFromA = createDistanceLookup(graph, filesB);
+  const distanceFromB = createDistanceLookup(graph, filesA);
   let r = 0;
   for (const fa of filesA) {
     for (const fb of filesB) {
       // A depends-on edge couples both endpoints, so use the smaller of the two
       // directed distances (importer→imported or imported→importer).
-      const d = Math.min(graphDistance(graph, fa.path, fb.path), graphDistance(graph, fb.path, fa.path));
+      const d = Math.min(distanceFromA(fa.path, fb.path), distanceFromB(fb.path, fa.path));
       if (d === Infinity || d === 0) continue;
       const coupling = Math.pow(decay, d - 1); // γ^{d-1}
       const w = (fa.weight ?? 1) * (fb.weight ?? 1);
