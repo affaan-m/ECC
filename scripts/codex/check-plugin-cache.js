@@ -148,6 +148,9 @@ function collectManifestRefs(manifest) {
   if (typeof manifest.mcpServers === 'string') {
     refs.push({ label: 'mcpServers', ref: manifest.mcpServers, kind: 'file' });
   }
+  if (typeof manifest.hooks === 'string') {
+    refs.push({ label: 'hooks', ref: manifest.hooks, kind: 'file' });
+  }
   if (manifest.interface && typeof manifest.interface.composerIcon === 'string') {
     refs.push({
       label: 'interface.composerIcon',
@@ -224,13 +227,15 @@ function checkCache(options) {
   if (failures > 0) {
     log(`${failures} cached manifest reference(s) do not resolve.`);
     log('codex plugin list only confirms marketplace registration; it is not proof of runtime skill loading.');
-    const syncScript = path.join(REPO_ROOT, 'scripts', 'sync-ecc-to-codex.sh');
-    if (fs.existsSync(syncScript)) {
-      log('Use the supported sync path until the cache contains the referenced files:');
-      log('npm install && bash scripts/sync-ecc-to-codex.sh');
+    log('Refresh the native marketplace and re-add the plugin using the same CODEX_HOME as the affected session:');
+    if (options.marketplace === 'ecc' && options.plugin === 'ecc') {
+      log('codex plugin marketplace upgrade ecc');
+      log('codex plugin add ecc@ecc');
     } else {
-      log('Use the supported manual sync workflow from your ECC installation.');
+      log('Follow the requested plugin marketplace instructions to refresh and re-add that native plugin.');
     }
+    log('Restart Codex, confirm the active plugin root with codex plugin list --json, and re-run this checker with --plugin-dir ACTIVE_ROOT (or --version ACTIVE_VERSION).');
+    log('See .codex-plugin/README.md for native cache recovery and runtime dependency instructions.');
     return 1;
   }
 

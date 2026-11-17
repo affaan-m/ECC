@@ -29,7 +29,7 @@ $ARGUMENTS
 ```
 # Resume session call (recommended) - Implementation Prototype
 Bash({
-  command: "~/.claude/bin/codeagent-wrapper {{LITE_MODE_FLAG}}--backend <codex|antigravity> resume <SESSION_ID> - \"$PWD\" <<'EOF'
+  command: "~/.claude/bin/codeagent-wrapper --backend <codex|antigravity> resume <SESSION_ID> - \"$PWD\" <<'EOF'
 ROLE_FILE: <role prompt path>
 <TASK>
 Requirement: <task description>
@@ -44,7 +44,7 @@ EOF",
 
 # New session call - Implementation Prototype
 Bash({
-  command: "~/.claude/bin/codeagent-wrapper {{LITE_MODE_FLAG}}--backend <codex|antigravity> - \"$PWD\" <<'EOF'
+  command: "~/.claude/bin/codeagent-wrapper --backend <codex|antigravity> - \"$PWD\" <<'EOF'
 ROLE_FILE: <role prompt path>
 <TASK>
 Requirement: <task description>
@@ -62,7 +62,7 @@ EOF",
 
 ```
 Bash({
-  command: "~/.claude/bin/codeagent-wrapper {{LITE_MODE_FLAG}}--backend <codex|antigravity> resume <SESSION_ID> - \"$PWD\" <<'EOF'
+  command: "~/.claude/bin/codeagent-wrapper --backend <codex|antigravity> resume <SESSION_ID> - \"$PWD\" <<'EOF'
 ROLE_FILE: <role prompt path>
 <TASK>
 Scope: Audit the final code changes.

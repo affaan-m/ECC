@@ -59,6 +59,9 @@ Adapters should stay thin. The shared behavior belongs in `skills/`, `rules/`, `
 
 ## Shared Memory Contract
 
+The session snapshot side of this contract (`ecc.session.v1`) is specified in
+[session-adapter-contract.md](session-adapter-contract.md).
+
 ECC Memory Vault is the common knowledge-transfer surface for Claude, Codex,
 Hermes, Cursor, OpenCode, and other agents. It stores portable
 `ecc.memory.v1` Markdown documents in three scopes:

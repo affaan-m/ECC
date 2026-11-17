@@ -101,6 +101,7 @@ function withEnv(overrides, fn) {
 
 let passed = 0;
 let failed = 0;
+let skipped = 0;
 
 console.log('\nPre-Bash Commit Quality Hook Tests');
 console.log('==================================\n');
@@ -208,6 +209,13 @@ if (test('reports invalid and long commit messages without blocking when files a
   });
 })) passed++; else failed++;
 
+if (test('accepts the ! breaking-change marker with and without a scope', () => {
+  for (const subject of ['feat!: drop node 18 support', 'feat(api)!: remove legacy endpoint']) {
+    const res = hook.validateCommitMessage(`git commit -m "${subject}"`);
+    assert.deepStrictEqual(res.issues, [], `${subject} should be conventional`);
+  }
+})) passed++; else failed++;
+
 if (test('blocks commits with staged secret patterns across checkable files', () => {
   inTempRepo(repoDir => {
     writeAndStage(repoDir, 'index.js', [
@@ -266,6 +274,154 @@ if (test('does not flag ordinary unquoted apiKey code references', () => {
     assert.strictEqual(result.output, input);
     assert.strictEqual(result.exitCode, 0, `expected exit 0 (no secrets), got ${result.exitCode}: ${stderr}`);
     assert.ok(!stderr.includes('Potential API key'), `should not flag ordinary code as a secret, got: ${stderr}`);
+  });
+})) passed++; else failed++;
+
+if (test('runs Windows batch linters through cmd with quoted command and arguments', () => {
+  const command = 'C:\\Users\\Jane %team%!\\project\\node_modules\\.bin\\eslint.cmd';
+  const args = [
+    'index.js',
+    '100%.js',
+    '!important!.js',
+    '%PATH%.js',
+    '!PATH!.js',
+    '%1.js',
+    'mixed %!^&() name.js'
+  ];
+  const invocation = hook.getLinterInvocation(command, args, 'win32');
+
+  assert.ok(/cmd\.exe$/i.test(invocation.command));
+  assert.deepStrictEqual(invocation.args, [
+    '/d',
+    '/v:off',
+    '/s',
+    '/c',
+    '""%ECC_LINTER_TOKEN_0%" "%ECC_LINTER_TOKEN_1%" "%ECC_LINTER_TOKEN_2%" "%ECC_LINTER_TOKEN_3%" "%ECC_LINTER_TOKEN_4%" "%ECC_LINTER_TOKEN_5%" "%ECC_LINTER_TOKEN_6%" "%ECC_LINTER_TOKEN_7%""'
+  ]);
+  assert.deepStrictEqual(
+    Object.fromEntries(Object.entries(invocation.options.env).filter(([key]) => key.startsWith('ECC_LINTER_TOKEN_'))),
+    Object.fromEntries([command, ...args].map((value, index) => [`ECC_LINTER_TOKEN_${index}`, value]))
+  );
+  assert.ok(!invocation.args[4].includes(command), 'untrusted command must not be embedded in cmd source');
+  assert.ok(!invocation.args[4].includes(args[1]), 'untrusted argument must not be embedded in cmd source');
+  assert.strictEqual(invocation.options.shell, false);
+  assert.strictEqual(invocation.options.windowsVerbatimArguments, true);
+
+  const plainCmd = hook.getLinterInvocation('C:\\tools\\eslint.cmd', [], 'win32');
+  assert.ok(/cmd\.exe$/i.test(plainCmd.command));
+  assert.deepStrictEqual(plainCmd.args, ['/d', '/v:off', '/s', '/c', '""%ECC_LINTER_TOKEN_0%""']);
+  assert.strictEqual(plainCmd.options.shell, false);
+
+  const batch = hook.getLinterInvocation('C:\\tools\\lint.BAT', [], 'win32');
+  assert.ok(/cmd\.exe$/i.test(batch.command));
+  assert.strictEqual(batch.options.shell, false);
+
+  const executable = hook.getLinterInvocation('C:\\Program Files\\eslint.exe', [], 'win32');
+  assert.strictEqual(executable.command, 'C:\\Program Files\\eslint.exe');
+  assert.strictEqual(executable.options.shell, false);
+
+  const posix = hook.getLinterInvocation('/tmp/project with spaces/eslint', [], 'darwin');
+  assert.strictEqual(posix.command, '/tmp/project with spaces/eslint');
+  assert.strictEqual(posix.options.shell, false);
+})) passed++; else failed++;
+
+if (test('isolates Windows cmd token variables without mutating the parent environment', () => {
+  const original = process.env.ECC_LINTER_TOKEN_0;
+  process.env.ECC_LINTER_TOKEN_0 = 'parent value';
+
+  try {
+    const invocation = hook.getLinterInvocation('C:\\tools\\eslint.cmd', ['100%.js'], 'win32');
+    assert.strictEqual(invocation.options.env.ECC_LINTER_TOKEN_0, 'C:\\tools\\eslint.cmd');
+    assert.strictEqual(invocation.options.env.ECC_LINTER_TOKEN_1, '100%.js');
+    assert.strictEqual(process.env.ECC_LINTER_TOKEN_0, 'parent value');
+  } finally {
+    if (original === undefined) delete process.env.ECC_LINTER_TOKEN_0;
+    else process.env.ECC_LINTER_TOKEN_0 = original;
+  }
+})) passed++; else failed++;
+
+if (process.platform === 'win32') {
+  if (test('passes percent and exclamation filenames literally to a Windows batch linter', () => {
+    const repoDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc cmd literal '));
+    try {
+      // Keep cmd source and transported values constant; only cwd selects
+      // the private fixture directory. Capture stdout without another shell path.
+      const command = '.\\lint %!.cmd';
+      fs.writeFileSync(path.join(repoDir, 'lint %!.cmd'), [
+        '@echo off',
+        'setlocal DisableDelayedExpansion',
+        'echo(%~1',
+        'echo(%~2',
+        ''
+      ].join('\r\n'), 'utf8');
+
+      const invocation = hook.getLinterInvocation(command, ['100% ready.js', '!important!.js'], 'win32');
+      // The fixture runs only cmd built-ins. Do not inherit unrelated launcher
+      // variables or helper environments from other cases into this process.
+      const tokens = {
+        ECC_LINTER_TOKEN_0: command,
+        ECC_LINTER_TOKEN_1: '100% ready.js',
+        ECC_LINTER_TOKEN_2: '!important!.js'
+      };
+      for (const [name, value] of Object.entries(tokens)) {
+        assert.strictEqual(invocation.options.env[name], value);
+      }
+      const result = spawnSync('cmd.exe', invocation.args, {
+        encoding: 'utf8',
+        stdio: ['pipe', 'pipe', 'pipe'],
+        shell: false,
+        windowsVerbatimArguments: true,
+        timeout: 15000,
+        cwd: repoDir,
+        env: tokens
+      });
+
+      assert.strictEqual(result.status, 0, result.stderr || result.error?.message);
+      assert.deepStrictEqual(
+        result.stdout.split(/\r?\n/).filter(Boolean),
+        ['100% ready.js', '!important!.js']
+      );
+    } finally {
+      fs.rmSync(repoDir, { recursive: true, force: true });
+    }
+  })) passed++; else failed++;
+} else {
+  console.log('  - passes percent and exclamation filenames literally to a Windows batch linter (skipped: Windows only)');
+  skipped++;
+}
+
+if (test('rejects characters that can break Windows cmd token boundaries', () => {
+  assert.throws(
+    () => hook.getLinterInvocation('C:\\tools\\eslint.cmd', ['bad"name.js'], 'win32'),
+    /Unsafe character/
+  );
+  assert.throws(
+    () => hook.getLinterInvocation('C:\\tools\\eslint.cmd', ['bad\r\nname.js'], 'win32'),
+    /Unsafe character/
+  );
+})) passed++; else failed++;
+
+if (test('treats rejected or failed golint invocations as failures', () => {
+  assert.strictEqual(hook.golintSucceeded({ status: 0, stdout: '', error: null }), true);
+  assert.strictEqual(hook.golintSucceeded({ status: 0, stdout: 'issue.go:1: warning', error: null }), false);
+  assert.strictEqual(hook.golintSucceeded({ status: null, stdout: '', error: new Error('unsafe argument') }), false);
+})) passed++; else failed++;
+
+if (test('uses ESLint bundled formatter without the removed compact formatter', () => {
+  inTempRepo(repoDir => {
+    const eslintPath = path.join(repoDir, 'node_modules', '.bin', executableName('eslint'));
+    fs.mkdirSync(path.dirname(eslintPath), { recursive: true });
+    const source = process.platform === 'win32'
+      ? '@echo off\r\necho %* | findstr /C:"--format compact" >nul && exit /b 9\r\nexit /b 0\r\n'
+      : '#!/bin/sh\ncase " $* " in *" --format compact "*) exit 9 ;; esac\nexit 0\n';
+    fs.writeFileSync(eslintPath, source, 'utf8');
+    fs.chmodSync(eslintPath, 0o755);
+
+    process.chdir(repoDir);
+    const result = hook.runLinter(['index.js']);
+
+    assert.ok(result.eslint, 'expected ESLint to run');
+    assert.strictEqual(result.eslint.success, true, result.eslint.output);
   });
 })) passed++; else failed++;
 
@@ -362,7 +518,7 @@ if (test('captures full single-quoted -m message containing a double quote', () 
 if (test('captures full double-quoted -m message with escaped inner quotes (not truncated)', () => {
   const res = hook.validateCommitMessage('git commit -m "fix: say \\"hello\\" to the user"');
   assert.ok(res, 'expected a validation result');
-  assert.strictEqual(res.message, 'fix: say \\"hello\\" to the user');
+  assert.strictEqual(res.message, 'fix: say "hello" to the user');
 })) passed++; else failed++;
 
 if (test('measures length of the full message past an apostrophe (not the truncated prefix)', () => {
@@ -371,6 +527,210 @@ if (test('measures length of the full message past an apostrophe (not the trunca
   assert.strictEqual(res.message, subject);
   assert.ok(res.issues.some(i => i.type === 'length'), 'full (>72) message should trigger a length issue');
 })) passed++; else failed++;
+// --- Subject line and here-document messages ---
 
-console.log(`\nResults: Passed: ${passed}, Failed: ${failed}`);
+if (test('checks only the subject line of a multi-line message', () => {
+  const res = hook.validateCommitMessage(
+    'git commit -m "fix: handle empty input\n\nThe parser crashed on an empty string. It now returns an empty list."'
+  );
+  assert.deepStrictEqual(res.issues, []);
+})) passed++; else failed++;
+
+if (test('reads the here-document message that Claude Code writes', () => {
+  const body = 'feat(hooks): add a check\n\nA body line that says why, and quotes "the case" it covers.';
+  const res = hook.validateCommitMessage(`git commit -m "$(cat <<'EOF'\n${body}\nEOF\n)"`);
+  assert.strictEqual(res.message, body);
+  assert.deepStrictEqual(res.issues, []);
+})) passed++; else failed++;
+
+if (test('still reports a bad subject inside a here-document', () => {
+  const res = hook.validateCommitMessage('git commit -m "$(cat <<EOF\nUpdate stuff.\n\nbody\nEOF\n)"');
+  assert.deepStrictEqual(res.issues.map(i => i.type), ['format', 'punctuation']);
+})) passed++; else failed++;
+
+if (test('warns when an unquoted here-document can expand the commit message', () => {
+  const command = 'git commit -m "$(cat <<EOF\nfix: ${EMPTY}\nEOF\n)"';
+  const res = hook.validateCommitMessage(command);
+  assert.strictEqual(res.message, null);
+  assert.deepStrictEqual(res.issues.map(i => i.type), ['unverifiable']);
+  assert.deepStrictEqual(
+    hook.validateCommitMessage('git commit -m "$(cat <<\'EOF\'\nfix: ${EMPTY}\nEOF\n)"').issues,
+    []
+  );
+  assert.deepStrictEqual(
+    hook.validateCommitMessage('git commit -m "$(cat <<EOF\nfix: \\${EMPTY}\nEOF\n)"').issues,
+    []
+  );
+})) passed++; else failed++;
+
+if (test('treats a backslash as literal inside a single-quoted commit message', () => {
+  const res = hook.validateCommitMessage(String.raw`git commit -m 'Update path\'`);
+  assert.ok(res, 'expected a validation result for valid Bash quoting');
+  assert.strictEqual(res.message, 'Update path' + String.fromCharCode(92));
+  assert.ok(res.issues.some(issue => issue.type === 'format'));
+})) passed++; else failed++;
+
+if (test('joins a continued line of an unquoted here-document, as Bash does', () => {
+  const res = hook.validateCommitMessage('git commit -m "$(cat <<EOF\nfix: \\\nUpdate input.\nEOF\n)"');
+  assert.strictEqual(res.message, 'fix: Update input.');
+  assert.deepStrictEqual(res.issues.map(i => i.type), ['capitalization', 'punctuation']);
+  // A delimiter line right after a continued line belongs to the body
+  assert.strictEqual(
+    hook.validateCommitMessage('git commit -m "$(cat <<EOF\nfix: a \\\nEOF\nb\nEOF\n)"').message,
+    'fix: a EOF\nb'
+  );
+  // An escaped backslash does not continue the line, and the escaping backslash is dropped
+  assert.strictEqual(
+    hook.validateCommitMessage('git commit -m "$(cat <<EOF\nfix: a \\\\\nb \\` c\nEOF\n)"').message,
+    'fix: a \\\nb ` c'
+  );
+})) passed++; else failed++;
+
+if (test('keeps a quoted here-document literal and notes that Bash 3.2 joins it', () => {
+  const res = hook.validateCommitMessage('git commit -m "$(cat <<\'EOF\'\nfix: \\\nUpdate input.\nEOF\n)"');
+  assert.strictEqual(res.message, 'fix: \\\nUpdate input.');
+  assert.deepStrictEqual(res.issues.map(i => i.type), ['shell-dependent']);
+  assert.deepStrictEqual(
+    hook.validateCommitMessage('git commit -m "$(cat <<\'EOF\'\nfix: add a check\n\nA body line \\\nEOF\n)"').issues,
+    []
+  );
+})) passed++; else failed++;
+
+if (test('reads text after the substitution as part of the message', () => {
+  const res = hook.validateCommitMessage('git commit -m "$(cat <<\'EOF\'\nfix: update input\nEOF\n)."');
+  assert.strictEqual(res.message, 'fix: update input.');
+  assert.deepStrictEqual(res.issues.map(i => i.type), ['punctuation']);
+  assert.strictEqual(
+    hook.validateCommitMessage('git commit -m "$(cat <<\'EOF\'\nfix: a\nEOF\n)\\$HOME"').message,
+    'fix: a$HOME'
+  );
+  // An expansion after the substitution is not literal text.
+  assert.deepStrictEqual(
+    hook.validateCommitMessage('git commit -m "$(cat <<\'EOF\'\nfix: a\nEOF\n)$HOME"').issues.map(i => i.type),
+    ['unverifiable']
+  );
+  // A line continuation inside it is dropped first: `$\<newline>HOME` is `$HOME`, `\$\<newline>HOME` is not.
+  assert.deepStrictEqual(
+    hook.validateCommitMessage('git commit -m "$(cat <<\'EOF\'\nfix: a\nEOF\n)$\\\nHOME"').issues.map(i => i.type),
+    ['unverifiable']
+  );
+  assert.strictEqual(
+    hook.validateCommitMessage('git commit -m "$(cat <<\'EOF\'\nfix: a\nEOF\n)\\$\\\nHOME"').message,
+    'fix: a$HOME'
+  );
+})) passed++; else failed++;
+
+if (process.platform !== 'win32') {
+  if (test('reads the message that Bash and Git record for a here-document', () => {
+    const bashMajor = Number(spawnSync('/bin/bash', ['-c', 'echo "${BASH_VERSINFO[0]}"'], { encoding: 'utf8' }).stdout);
+    const forms = [
+      ['EOF', 'fix: \\\nUpdate input.'],
+      ['EOF', 'fix: a \\\nEOF\nb'],
+      ['EOF', 'fix: a \\\\\nb \\` c'],
+      ['-EOF', '\tfix: \\\n\tUpdate input.'],
+      ['-EOF', '\tfix: a\n\t\\\n\tb'],
+      ["'EOF'", 'fix: \\\nUpdate input.'],
+      ['"EOF"', 'fix: keep \\\\ and \\$HOME'],
+      ["'EOF'", 'fix: update input', '.'],
+      ["'EOF'", 'fix: update input\n\nbody line', ' and more'],
+      ["'EOF'", 'fix: a', '\\$\\\nHOME'],
+    ];
+    inTempRepo(repoDir => {
+      for (const [delimiter, body, suffix = ''] of forms) {
+        const command = `git commit -q --allow-empty -m "$(cat <<${delimiter}\n${body}\nEOF\n)${suffix}"`;
+        const run = spawnSync('/bin/bash', ['-c', command], { cwd: repoDir, encoding: 'utf8' });
+        assert.strictEqual(run.status, 0, run.stderr);
+        const recorded = spawnSync('git', ['log', '-1', '--format=%B'], { cwd: repoDir, encoding: 'utf8' }).stdout.trimEnd();
+        const res = hook.validateCommitMessage(command);
+        if (bashMajor < 4 && res.issues.some(i => i.type === 'shell-dependent')) {
+          assert.notStrictEqual(recorded, res.message, `Bash 3.2 joins the quoted body of ${JSON.stringify(command)}`);
+        } else {
+          assert.strictEqual(res.message, recorded, `message of ${JSON.stringify(command)}`);
+        }
+      }
+    });
+  })) passed++; else failed++;
+}
+
+if (test('drops a line continuation from a double-quoted message, as Bash does', () => {
+  const res = hook.validateCommitMessage('git commit -m "\\\nfix: handle empty input"');
+  assert.strictEqual(res.message, 'fix: handle empty input');
+  assert.deepStrictEqual(res.issues, []);
+  // An escaped backslash before a newline is one backslash, and the newline stays
+  assert.strictEqual(hook.validateCommitMessage('git commit -m "fix: path C:\\\\\nbody"').message, 'fix: path C:\\\nbody');
+  // Bash removes the backslash only before $ ` " \ and a newline; before a CR it stays
+  assert.strictEqual(hook.validateCommitMessage('git commit -m "fix: keep path\\\r\nbody."').message, 'fix: keep path\\\r\nbody.');
+  assert.deepStrictEqual(hook.validateCommitMessage('git commit -m "fix: keep path\\\r\nbody."').issues, []);
+  assert.strictEqual(hook.validateCommitMessage('git commit -m "fix: cost \\$5 in \\d+ steps"').message, 'fix: cost $5 in \\d+ steps');
+})) passed++; else failed++;
+
+if (test('reads a here-document whose body has a backslash at the end of a line', () => {
+  const res = hook.validateCommitMessage('git commit -m "$(cat <<\'EOF\'\nUpdate stuff.\n\nC:\\build\\\nEOF\n)"');
+  assert.ok(res, 'expected a validation result');
+  assert.strictEqual(res.message, 'Update stuff.\n\nC:\\build\\');
+  assert.deepStrictEqual(res.issues.map(i => i.type), ['format', 'punctuation']);
+})) passed++; else failed++;
+
+if (test('ends a here-document only at a line that holds just the delimiter', () => {
+  const res = hook.validateCommitMessage(
+    'git commit -m "$(cat <<\'EOF\'\nfix: keep reading\n\n  EOF\nEOF \nmore body\nEOF\n)"'
+  );
+  assert.strictEqual(res.message, 'fix: keep reading\n\n  EOF\nEOF \nmore body');
+})) passed++; else failed++;
+
+if (test('reads a <<- here-document without its leading tabs', () => {
+  const res = hook.validateCommitMessage('git commit -m "$(cat <<-"END"\n\tfix: tabbed subject\n\tEND\n)"');
+  assert.strictEqual(res.message, 'fix: tabbed subject');
+  assert.deepStrictEqual(res.issues, []);
+})) passed++; else failed++;
+
+if (test('needs the description on the subject line itself', () => {
+  const res = hook.validateCommitMessage('git commit -m "feat:\nadd a check"');
+  assert.ok(res.issues.some(i => i.type === 'format'), 'a subject with nothing after the colon is not conventional');
+})) passed++; else failed++;
+
+if (test('passes a valid here-document commit message end to end', () => {
+  inTempRepo(repoDir => {
+    writeAndStage(repoDir, 'index.js', 'const clean = true;\n');
+    const input = JSON.stringify({
+      tool_input: {
+        command: `git commit -m "$(cat <<'EOF'\nfix(hooks): read the message body\n\nA longer explanation that runs well past seventy-two characters in total.\nEOF\n)"`
+      }
+    });
+    const { result, stderr } = captureConsoleError(() => hook.evaluate(input));
+
+    assert.strictEqual(result.exitCode, 0);
+    assert.ok(!stderr.includes('Commit Message Issues'), `expected no message warnings, got: ${stderr}`);
+    assert.ok(stderr.includes('All checks passed'), `expected a pass, got: ${stderr}`);
+  });
+})) passed++; else failed++;
+
+if (test('handles hash-prefixed python comments and string false-positives', () => {
+  inTempRepo(repoDir => {
+    writeAndStage(repoDir, 'script.py', [
+      '# console.log("commented out");',
+      '# debugger',
+      '# TODO: python unreferenced',
+      '# TODO: python issue #456',
+      'const str = "# TODO: string false positive";', // Greptile string limitation
+      ''
+    ].join('\n'));
+    
+    const input = JSON.stringify({ tool_input: { command: 'git commit -m "fix(hooks): python hash comments"' } });
+    
+    const origConsoleError = console.error;
+    let stderr = '';
+    console.error = msg => { stderr += msg + '\n'; };
+    
+    const result = hook.evaluate(input);
+    console.error = origConsoleError;
+    
+    assert.strictEqual(result.exitCode, 0, 'warning-only issues should not block');
+    assert.ok(stderr.includes('INFO Line 3:'), `expected python TODO warning`);
+    assert.ok(!stderr.includes('INFO Line 4'), 'referenced python TODO should not warn');
+    assert.ok(!stderr.includes('ERROR Line 2'), 'commented debugger should not error');
+    assert.ok(stderr.includes('INFO Line 5:'), `expected string limitation warning`);
+  });
+})) passed++; else failed++;
+console.log(`\nResults: Passed: ${passed}, Failed: ${failed}, Skipped: ${skipped}`);
 process.exit(failed > 0 ? 1 : 0);

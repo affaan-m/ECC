@@ -68,7 +68,10 @@ class PromptBuilder:
             system_parts.append(f"\n\n## Available Tools\n{tools_desc}")
 
         if messages[0].role == Role.SYSTEM:
-            system_parts.insert(0, messages[0].content)
+            system_content = messages[0].content
+            if not isinstance(system_content, str):
+                raise TypeError("PromptBuilder system messages must contain text")
+            system_parts.insert(0, system_content)
             result.insert(0, Message(role=Role.SYSTEM, content="\n\n".join(system_parts)))
             result.extend(messages[1:])
         else:
@@ -118,7 +121,7 @@ _PROVIDER_TEMPLATE_MAP: dict[str, dict[str, Any]] = {
 
 
 def get_provider_builder(provider_name: str) -> PromptBuilder:
-    config_dict = _PROVIDER_TEMPLATE_MAP.get(provider_name.lower(), {})
+    config_dict = _PROVIDER_TEMPLATE_MAP.get(provider_name.strip().lower(), {})
     config = PromptConfig(**config_dict)
     return PromptBuilder(config)
 

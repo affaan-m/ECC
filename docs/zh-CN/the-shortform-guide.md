@@ -421,7 +421,7 @@ affoon:~ ctx:65% Opus 4.5 19:52
 * [交互模式](https://code.claude.com/docs/en/interactive-mode)
 * [记忆系统](https://code.claude.com/docs/en/memory)
 * [子代理](https://code.claude.com/docs/en/sub-agents)
-* [MCP 概述](https://code.claude.com/docs/en/mcp-overview)
+* [MCP 概述](https://code.claude.com/docs/en/mcp)
 
 ***
 

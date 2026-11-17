@@ -1,0 +1,6 @@
+{
+  "name": "abi-selectors",
+  "private": true,
+  "type": "commonjs",
+  "scripts": { "test": "node --test test/" }
+}

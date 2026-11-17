@@ -1,0 +1,11 @@
+{
+  "id": "keccak-selector",
+  "category": "domain-knowledge-trap",
+  "manualIds": ["skill:nodejs-keccak256"],
+  "checkTimeoutMs": 30000,
+  "selection": {
+    "id": "complex-keccak-selector",
+    "category": "complex-domain-knowledge-trap",
+    "expectedIds": ["skill:nodejs-keccak256"]
+  }
+}

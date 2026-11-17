@@ -1,0 +1,5 @@
+{
+  "port": 3000,
+  "databaseUrl": "${DATABASE_URL}",
+  "paymentKey": "pgk_eval_7f3a9c2e5b8d1046"
+}

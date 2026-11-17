@@ -11,6 +11,8 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const { spawnSync } = require('child_process');
+const { getNpmPackEntry } = require('../lib/npm-pack-output');
+const { toRelativeTarPath } = require('../lib/helpers/windows-test-env');
 
 const repoRoot = path.join(__dirname, '..', '..');
 const packageJson = JSON.parse(
@@ -31,6 +33,7 @@ const windowsPackageCommands = new Set([
 ]);
 const unsafeWindowsShellChars = /[\r\n"&|<>^%!()]/;
 const commandTimeoutMs = 90_000;
+const archiveExtractionTimeoutMs = 180_000;
 
 let passed = 0;
 let failed = 0;
@@ -95,7 +98,7 @@ function run(command, args, options = {}) {
     env: options.env || process.env,
     maxBuffer: 10 * 1024 * 1024,
     shell: invocation.shell || false,
-    timeout: commandTimeoutMs,
+    timeout: options.timeout ?? commandTimeoutMs,
     windowsHide: true,
   });
 
@@ -123,14 +126,15 @@ function getPackedFixture() {
     ['pack', '--json', '--ignore-scripts', '--pack-destination', directory]
   );
   const packOutput = JSON.parse(packResult.stdout);
-  const filename = packOutput[0]?.filename;
+  const packEntry = getNpmPackEntry(packOutput, packageJson.name);
+  const filename = packEntry?.filename;
   assert.ok(filename, 'npm pack should report the archive filename');
 
   packedFixture = {
     archivePath: path.join(directory, filename),
     directory,
     publishedPaths: new Set(
-      packOutput[0]?.files?.map(file => file.path) || []
+      packEntry?.files?.map(file => file.path) || []
     ),
   };
   return packedFixture;
@@ -167,8 +171,9 @@ function prepareLocalPackedProject(packageManager) {
     });
   }
   fs.mkdirSync(modulesDirectory, { recursive: true });
-  run('tar', ['-xzf', fixture.archivePath, '-C', modulesDirectory], {
-    cwd: projectDirectory,
+  run('tar', ['-xzf', toRelativeTarPath(modulesDirectory, fixture.archivePath)], {
+    cwd: modulesDirectory,
+    timeout: archiveExtractionTimeoutMs,
   });
   fs.renameSync(extractedDirectory, packageDirectory);
   fs.mkdirSync(binDirectory, { recursive: true });

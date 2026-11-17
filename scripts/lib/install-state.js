@@ -1,5 +1,17 @@
-const fs = require('fs');
 const path = require('path');
+const {
+  CLAUDE_HOOKS_CONFIG_PATH,
+  getClaudeSettingsPath,
+  validateRecordedManagedHooks,
+} = require('./install/claude-settings');
+
+// A module may only own the settings merge for the hook config it ships. The
+// install state is the record of what the installer did, so this map is what
+// keeps one module from claiming another module's hook source.
+const CLAUDE_HOOKS_CONFIG_OWNERS = Object.freeze({
+  'hooks-runtime': CLAUDE_HOOKS_CONFIG_PATH,
+  'config-health': 'manifests/install-assets/config-health-hooks.json',
+});
 
 // Dependency-free, self-contained validation. The installer closure must not
 // require any non-builtin package (enterprise supply-chain vetting: the vetted
@@ -19,7 +31,8 @@ function cloneJsonValue(value) {
 
 function readJson(filePath, label) {
   try {
-    return JSON.parse(fs.readFileSync(filePath, 'utf8'));
+    const { readFileWithSharingRetry } = require('./atomic-write');
+    return JSON.parse(readFileWithSharingRetry(filePath, 'utf8'));
   } catch (error) {
     throw new Error(`Failed to read ${label}: ${error.message}`);
   }
@@ -127,7 +140,7 @@ function createFallbackValidator() {
       validateNoAdditionalProperties(
         request,
         '/request',
-        ['profile', 'modules', 'includeComponents', 'excludeComponents', 'legacyLanguages', 'legacyMode']
+        ['profile', 'modules', 'includeComponents', 'excludeComponents', 'legacyLanguages', 'legacyMode', 'hookConsent', 'trust', 'consentMcp']
       );
       if (!(Object.prototype.hasOwnProperty.call(request, 'profile') && (request.profile === null || typeof request.profile === 'string'))) {
         pushError('/request/profile', 'must be string or null');
@@ -138,6 +151,20 @@ function createFallbackValidator() {
       validateStringArray(request.legacyLanguages, '/request/legacyLanguages');
       if (typeof request.legacyMode !== 'boolean') {
         pushError('/request/legacyMode', 'must be boolean');
+      }
+      if (
+        request.hookConsent !== undefined
+        && request.hookConsent !== null
+        && request.hookConsent !== 'enabled'
+        && request.hookConsent !== 'declined'
+      ) {
+        pushError('/request/hookConsent', 'must be enabled, declined, or null');
+      }
+      if (request.trust !== undefined && typeof request.trust !== 'boolean') {
+        pushError('/request/trust', 'must be boolean');
+      }
+      if (request.consentMcp !== undefined) {
+        validateStringArray(request.consentMcp, '/request/consentMcp');
       }
     }
 
@@ -154,8 +181,9 @@ function createFallbackValidator() {
     if (!source || typeof source !== 'object' || Array.isArray(source)) {
       pushError('/source', 'must be object');
     } else {
-      validateNoAdditionalProperties(source, '/source', ['repoVersion', 'repoCommit', 'manifestVersion']);
+      validateNoAdditionalProperties(source, '/source', ['repoVersion', 'repoUrl', 'repoCommit', 'manifestVersion']);
       validateOptionalString(source.repoVersion, '/source/repoVersion');
+      validateOptionalString(source.repoUrl, '/source/repoUrl');
       validateOptionalString(source.repoCommit, '/source/repoCommit');
       if (!Number.isInteger(source.manifestVersion) || source.manifestVersion < 1) {
         pushError('/source/manifestVersion', 'must be integer >= 1');
@@ -200,6 +228,46 @@ function createFallbackValidator() {
           && !/^[a-f0-9]{64}$/i.test(operation.contentSha256)
         ) {
           pushError(`${instancePath}/contentSha256`, 'must be a SHA-256 hex digest');
+        }
+        if (operation.kind === 'update-claude-settings') {
+          if (!['claude', 'claude-project'].includes(state.target && state.target.target)) {
+            pushError(`${instancePath}/kind`, 'is only valid for Claude targets');
+          }
+          const expectedSource = CLAUDE_HOOKS_CONFIG_OWNERS[operation.moduleId];
+          if (!expectedSource) {
+            pushError(
+              `${instancePath}/moduleId`,
+              `must be a module that ships its own hooks (${Object.keys(CLAUDE_HOOKS_CONFIG_OWNERS).join(', ')})`
+            );
+          } else if (
+            String(operation.sourceRelativePath).replace(/\\/g, '/') !== expectedSource
+          ) {
+            pushError(
+              `${instancePath}/sourceRelativePath`,
+              `must equal ${expectedSource} for module "${operation.moduleId}"`
+            );
+          }
+          if (
+            isNonEmptyString(state.target && state.target.root)
+            && isNonEmptyString(operation.destinationPath)
+          ) {
+            const expectedDestination = path.resolve(getClaudeSettingsPath(state.target.root));
+            const actualDestination = path.resolve(operation.destinationPath);
+            const pathsMatch = process.platform === 'win32'
+              ? expectedDestination.toLowerCase() === actualDestination.toLowerCase()
+              : expectedDestination === actualDestination;
+            if (!pathsMatch) {
+              pushError(
+                `${instancePath}/destinationPath`,
+                'must equal the canonical Claude settings path'
+              );
+            }
+          }
+          try {
+            validateRecordedManagedHooks(operation.managedHooks);
+          } catch (error) {
+            pushError(`${instancePath}/managedHooks`, error.message);
+          }
         }
       }
     }
@@ -258,6 +326,13 @@ function createInstallState(options) {
         ? [...options.request.legacyLanguages]
         : [],
       legacyMode: Boolean(options.request.legacyMode),
+      hookConsent: Object.prototype.hasOwnProperty.call(options.request, 'hookConsent')
+        ? options.request.hookConsent
+        : null,
+      trust: options.request.trust === true,
+      consentMcp: Array.isArray(options.request.consentMcp)
+        ? [...options.request.consentMcp]
+        : [],
     },
     resolution: {
       selectedModules: Array.isArray(options.resolution.selectedModules)
@@ -269,6 +344,7 @@ function createInstallState(options) {
     },
     source: {
       repoVersion: options.source.repoVersion || null,
+      repoUrl: options.source.repoUrl || null,
       repoCommit: options.source.repoCommit || null,
       manifestVersion: options.source.manifestVersion,
     },
@@ -293,8 +369,8 @@ function readInstallState(filePath) {
 
 function writeInstallState(filePath, state) {
   assertValidInstallState(state, filePath);
-  fs.mkdirSync(path.dirname(filePath), { recursive: true });
-  fs.writeFileSync(filePath, `${JSON.stringify(state, null, 2)}\n`);
+  const { writeFileAtomic } = require('./atomic-write');
+  writeFileAtomic(filePath, `${JSON.stringify(state, null, 2)}\n`);
   return state;
 }
 

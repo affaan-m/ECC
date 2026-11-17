@@ -51,6 +51,7 @@ async function reconcileCanonicalInstallStates(options = {}) {
     homeDir: options.homeDir,
     projectRoot: options.projectRoot,
     targets: options.targets,
+    env: options.env,
     discoverInstalledStates: options.discoverInstalledStates,
   }));
 }

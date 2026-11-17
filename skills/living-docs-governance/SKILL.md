@@ -97,6 +97,16 @@ History is append-oriented for traceability, but not immutable at the expense of
 - preserve a short sanitized note explaining the correction when safe;
 - do not silently rewrite a decision to make the past look cleaner.
 
+### Module-local maintenance
+
+For an authorized new business module or a confirmed responsibility change,
+use optional `module-governance`, when installed, to connect local harness instructions to the existing
+context, contract, and decision owners. Keep global rules at project scope;
+update only affected navigation and lifecycle records here. Ordinary fixes
+with unchanged boundaries do not require a new local AGENTS/CONTEXT pair.
+If unavailable, report the optional capability rather than installing it or
+copying its workflow into project instructions.
+
 ## Lightweight Adoption Template
 
 Start with a role map, not four new files:

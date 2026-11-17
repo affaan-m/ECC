@@ -312,6 +312,56 @@ async function main() {
     ])
   }
 
+  for (const [lockFile, packageManager, prefix] of [
+    ["package-lock.json", "npm", "npm run test --"],
+    ["pnpm-lock.yaml", "pnpm", "pnpm test"],
+    ["yarn.lock", "yarn", "yarn test"],
+    ["bun.lockb", "bun", "bun test"],
+  ]) {
+    tests.push([
+      `run-tests: ${packageManager} forwards Vitest file filters without Jest options`,
+      async () => withTempProject([lockFile], async (projectDir) => {
+        fs.writeFileSync(path.join(projectDir, "package.json"), JSON.stringify({
+          scripts: { test: "vitest run" }, devDependencies: { vitest: "^3.0.0" },
+        }))
+        const result = JSON.parse(await tools.runtests.execute(
+          { pattern: "src/math.test.ts", coverage: true, updateSnapshots: true },
+          createMockContext(projectDir)
+        ))
+        assert.strictEqual(result.testFramework, "vitest")
+        assert.strictEqual(result.packageManager, packageManager)
+        assert.strictEqual(result.command, `${prefix} --coverage -u src/math.test.ts`)
+      }),
+    ])
+  }
+
+  tests.push([
+    "run-tests: retains Jest filtering and unfiltered Vitest commands",
+    async () => withTempProject(["package-lock.json"], async (projectDir) => {
+      const packagePath = path.join(projectDir, "package.json")
+      fs.writeFileSync(packagePath, JSON.stringify({ devDependencies: { jest: "^29.0.0" } }))
+      const jest = JSON.parse(await tools.runtests.execute(
+        { pattern: "math.test.ts" }, createMockContext(projectDir)
+      ))
+      assert.strictEqual(jest.command, "npm run test -- --testPathPattern math.test.ts")
+      fs.writeFileSync(packagePath, JSON.stringify({ devDependencies: { vitest: "^3.0.0" } }))
+      const vitest = JSON.parse(await tools.runtests.execute({}, createMockContext(projectDir)))
+      assert.strictEqual(vitest.command, "npm run test")
+    }),
+  ])
+
+  tests.push([
+    "run-tests: unknown frameworks keep positional patterns and watch mode",
+    async () => withTempProject([], async (projectDir) => {
+      const result = JSON.parse(await tools.runtests.execute(
+        { pattern: "spec/example.test.js", watch: true }, createMockContext(projectDir)
+      ))
+      assert.strictEqual(result.packageManager, "npm")
+      assert.strictEqual(result.testFramework, "unknown")
+      assert.strictEqual(result.command, "npm run test -- --watch spec/example.test.js")
+    }),
+  ])
+
   // Run all tests
   let passed = 0
   let failed = 0

@@ -12,6 +12,7 @@ const path = require('path');
 const fs = require('fs');
 const os = require('os');
 const { spawn } = require('child_process');
+const { readHooksConfig } = require('../../scripts/lib/hooks-config');
 const REPO_ROOT = path.join(__dirname, '..', '..');
 
 // Test helper
@@ -40,6 +41,13 @@ async function asyncTest(name, fn) {
   }
 }
 
+// Hook scripts write session data, learned skills and homunculus observations
+// under the home directory, so runs get an empty home instead of the developer's
+// real one unless a test passes its own HOME.
+const ISOLATED_HOME = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-integration-home-'));
+const ISOLATED_HOME_ENV = { HOME: ISOLATED_HOME, USERPROFILE: ISOLATED_HOME };
+process.on('exit', () => fs.rmSync(ISOLATED_HOME, { recursive: true, force: true }));
+
 /**
  * Run a hook script with simulated Claude Code input
  * @param {string} scriptPath - Path to the hook script
@@ -50,7 +58,7 @@ async function asyncTest(name, fn) {
 function runHookWithInput(scriptPath, input = {}, env = {}, timeoutMs = 10000) {
   return new Promise((resolve, reject) => {
     const proc = spawn('node', [scriptPath], {
-      env: { ...process.env, ...env },
+      env: { ...process.env, ...ISOLATED_HOME_ENV, ...env },
       stdio: ['pipe', 'pipe', 'pipe']
     });
 
@@ -109,7 +117,7 @@ function getSessionStartPayload(stdout) {
 function runHookCommand(command, input = {}, env = {}, timeoutMs = 10000) {
   return new Promise((resolve, reject) => {
     const isWindows = process.platform === 'win32';
-    const mergedEnv = { ...process.env, CLAUDE_PLUGIN_ROOT: REPO_ROOT, ...env };
+    const mergedEnv = { ...process.env, ...ISOLATED_HOME_ENV, CLAUDE_PLUGIN_ROOT: REPO_ROOT, ...env };
     if (Array.isArray(command)) {
       const [program, ...args] = command;
       const proc = spawn(program, args, { env: mergedEnv, stdio: ['pipe', 'pipe', 'pipe'] });
@@ -282,7 +290,7 @@ async function runTests() {
 
   const scriptsDir = path.join(__dirname, '..', '..', 'scripts', 'hooks');
   const hooksJsonPath = path.join(__dirname, '..', '..', 'hooks', 'hooks.json');
-  const hooks = JSON.parse(fs.readFileSync(hooksJsonPath, 'utf8'));
+  const hooks = readHooksConfig(hooksJsonPath);
 
   // ==========================================
   // Input Format Tests
@@ -296,6 +304,7 @@ async function runTests() {
 
   if (await asyncTest('hooks handle malformed JSON input', async () => {
     const proc = spawn('node', [path.join(scriptsDir, 'session-start.js')], {
+      env: { ...process.env, ...ISOLATED_HOME_ENV },
       stdio: ['pipe', 'pipe', 'pipe']
     });
 
@@ -854,8 +863,8 @@ async function runTests() {
   })) passed++; else failed++;
 
   if (await asyncTest('hooks survive stdin exceeding 1MB limit', async () => {
-    // The post-edit-console-warn hook reads stdin up to 1MB then passes through
-    // Send > 1MB to verify truncation doesn't crash the hook
+    // Direct invocation preserves the complete payload. Send >1MB to verify
+    // the pass-through path remains stable under backpressure.
     const oversizedInput = JSON.stringify({
       tool_input: { file_path: '/test.js' },
       tool_output: { output: 'x'.repeat(1200000) } // ~1.2MB
@@ -886,6 +895,7 @@ async function runTests() {
     // session-end parses stdin JSON. If input is > 1MB and truncated mid-JSON,
     // JSON.parse should fail and fall back to env var
     const proc = spawn('node', [path.join(scriptsDir, 'session-end.js')], {
+      env: { ...process.env, ...ISOLATED_HOME_ENV },
       stdio: ['pipe', 'pipe', 'pipe']
     });
 

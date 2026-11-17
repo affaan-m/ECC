@@ -1,0 +1,11 @@
+{
+  "id": "production-ready",
+  "category": "vague-hardening",
+  "manualIds": ["skill:backend-patterns"],
+  "checkTimeoutMs": 60000,
+  "selection": {
+    "id": "complex-production-ready",
+    "category": "complex-vague-hardening",
+    "expectedIds": ["skill:backend-patterns"]
+  }
+}

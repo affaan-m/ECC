@@ -40,6 +40,12 @@ function parseArgs(argv) {
     }
   }
 
+  const dryRunEnv = process.env.ECC_DRY_RUN;
+  if (dryRunEnv !== undefined && dryRunEnv !== '0' && dryRunEnv !== '1') {
+    throw new Error('ECC_DRY_RUN must be "1" or "0" when set');
+  }
+  parsed.dryRun = parsed.dryRun || dryRunEnv === '1';
+
   return parsed;
 }
 
@@ -81,6 +87,7 @@ async function main() {
     const result = repairInstalledStates({
       repoRoot: require('path').join(__dirname, '..'),
       homeDir: process.env.HOME || os.homedir(),
+      env: process.env,
       projectRoot: process.cwd(),
       targets: options.targets,
       dryRun: options.dryRun,
@@ -89,6 +96,7 @@ async function main() {
       const { reconcileCanonicalInstallStates } = require('./lib/install-state-store-sync');
       result.installStateProjection = await reconcileCanonicalInstallStates({
         homeDir: process.env.HOME || os.homedir(),
+        env: process.env,
         projectRoot: process.cwd(),
         targets: options.targets,
       });

@@ -6,8 +6,9 @@
  */
 
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'fs';
-import { resolve } from 'path';
+import { resolve, dirname } from 'path';
 import { homedir } from 'os';
+import { fileURLToPath } from 'url';
 import { spawnSync } from 'child_process';
 import { randomBytes } from 'crypto';
 
@@ -17,7 +18,7 @@ export const CK_HOME          = resolve(homedir(), '.claude', 'ck');
 export const CONTEXTS_DIR     = resolve(CK_HOME, 'contexts');
 export const PROJECTS_FILE    = resolve(CK_HOME, 'projects.json');
 export const CURRENT_SESSION  = resolve(CK_HOME, 'current-session.json');
-export const SKILL_FILE       = resolve(homedir(), '.claude', 'skills', 'ck', 'SKILL.md');
+export const SKILL_FILE       = resolve(dirname(fileURLToPath(import.meta.url)), '..', 'SKILL.md');
 
 // ─── JSON I/O ─────────────────────────────────────────────────────────────────
 
@@ -42,6 +43,18 @@ export function readProjects() {
 
 export function writeProjects(projects) {
   writeJson(PROJECTS_FILE, projects);
+}
+
+export function samePath(a, b) {
+  const key = p => (process.platform === 'win32' ? resolve(p).toLowerCase() : resolve(p));
+  return key(a) === key(b);
+}
+
+export function findProject(projects, projectPath) {
+  const key = Object.hasOwn(projects, projectPath)
+    ? projectPath
+    : Object.keys(projects).find(p => samePath(p, projectPath));
+  return key === undefined ? null : { path: key, ...projects[key] };
 }
 
 // ─── Context I/O ──────────────────────────────────────────────────────────────
@@ -77,11 +90,11 @@ export function resolveContext(arg, cwd) {
 
   if (!arg) {
     // Match by cwd
-    const entry = projects[cwd];
+    const entry = findProject(projects, cwd);
     if (!entry) return null;
     const context = loadContext(entry.contextDir);
     if (!context) return null;
-    return { name: entry.name, contextDir: entry.contextDir, projectPath: cwd, context };
+    return { name: entry.name, contextDir: entry.contextDir, projectPath: entry.path, context };
   }
 
   // Collect all contexts sorted alphabetically by contextDir
@@ -183,8 +196,9 @@ export function gitSummary(projectPath, sinceDate) {
 // ─── Native memory path encoding ──────────────────────────────────────────────
 
 export function encodeProjectPath(absolutePath) {
-  // "/Users/sree/dev/app" -> "-Users-sree-dev-app"
-  return absolutePath.replace(/\//g, '-');
+  // Same rule as Claude Code: every non-alphanumeric character becomes '-'.
+  // "/Users/sree/dev/my app" -> "-Users-sree-dev-my-app"
+  return absolutePath.replace(/[^A-Za-z0-9]/g, '-');
 }
 
 export function nativeMemoryDir(absolutePath) {
