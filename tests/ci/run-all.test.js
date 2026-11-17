@@ -41,7 +41,7 @@ function run(result, filename = 'sample.test.js', actions = true, fileExists = t
         };
         throw new Error(`Unexpected dependency: ${name}`);
       },
-    });
+    }, { filename: path.join(__dirname, '..', 'run-all.js') });
   } catch (error) {
     if (error !== exit) throw error;
   }
@@ -236,6 +236,46 @@ const tests = [
     const result = run({ status: 0, stdout: 'eval-harness package: Results: Passed: 4, Failed: 0' });
     assert.strictEqual(result.status, 0);
     assert.ok(result.logs.some(line => /Passed:\s+4\s/.test(line)));
+  }],
+  ['number-first summaries retain totals from existing library suites', () => {
+    const result = run({ status: 0, stdout: '=== Results: 43 passed, 0 failed ===\n' });
+    assert.strictEqual(result.status, 0);
+    assert.ok(result.logs.includes('\nPassed: 43, Failed: 0'));
+  }],
+  ['number-first failure summaries cannot pass with a successful exit', () => {
+    const result = run({ status: 0, stdout: '=== Results: 3 passed, 1 failed ===\n' });
+    assert.strictEqual(result.status, 1);
+    assert.match(result.annotations[0], /reported 1 failed/);
+  }],
+  ['last summary wins across both supported summary formats', () => {
+    for (const stdout of [
+      'Passed: 0, Failed: 1\n=== Results: 4 passed, 0 failed ===',
+      '=== Results: 0 passed, 1 failed ===\nPassed: 4, Failed: 0',
+      '=== Results: 99 passed, 0 failed ===\n=== Results: 4 passed, 0 failed ===',
+    ]) {
+      const result = run({ status: 0, stdout });
+      assert.strictEqual(result.status, 0);
+      assert.ok(result.logs.includes('\nPassed: 4, Failed: 0'));
+    }
+  }],
+  ['number-first summaries accept CRLF and reject quoted diagnostic mentions', () => {
+    const result = run({ status: 0,
+      stdout: 'Assertion expected: === Results: 99 passed, 7 failed ===\r\n  === Results: 4 passed, 0 failed ===\r\n',
+      stderr: 'Error fixture: === Results: 0 passed, 1 failed ===',
+    });
+    assert.strictEqual(result.status, 0);
+    assert.ok(result.logs.includes('\nPassed: 4, Failed: 0'));
+  }],
+  ['serial and parallel children propagate number-first failures and totals', () => {
+    for (const jobs of [1, 2]) {
+      const result = fixtureRun({
+        'passing.test.js': "console.log('=== Results: 2 passed, 0 failed ===');",
+        'failing.test.js': "console.log('=== Results: 1 passed, 1 failed ===');",
+      }, { jobs });
+      assert.strictEqual(result.status, 1, result.stdout + result.stderr);
+      assertCompleteReport(result, ['passing.test.js', 'failing.test.js'], 1);
+      assert.match(result.stdout, /\nPassed: 3, Failed: 1\s*$/);
+    }
   }],
   ['named suite failure summaries cannot be lost with a successful exit', () => {
     const result = run({ status: 0, stdout: 'capsule: Results: Passed: 3, Failed: 1' });
