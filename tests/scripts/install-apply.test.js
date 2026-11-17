@@ -1322,6 +1322,10 @@ function runTests() {
         settings.hooks.UserPromptSubmit.some(entry => entry.id === 'prompt:hookify-runtime'),
         'managed Hookify prompt runtime should be registered alongside user hooks'
       );
+      assert.ok(
+        settings.hooks.UserPromptSubmit.some(entry => entry.id === 'user-prompt:context-gate'),
+        'managed context gate should be registered alongside user hooks'
+      );
       assert.deepStrictEqual(
         settings.hooks.PreToolUse[0],
         { matcher: 'Write', hooks: [{ type: 'command', command: 'echo custom-pretool' }] },

@@ -137,14 +137,20 @@ function readLatestContextTokens(transcriptPath, options = {}) {
  * unmarked intermediate size such as 400k. Callers must not present inferred
  * windows as fact.
  *
+ * @param {number} tokens
+ * @param {string} [model]
+ * @param {object} [env] - Environment to read overrides from; defaults to
+ *   process.env. Callers supporting injected environments (hook run()
+ *   options.env) must pass theirs through so window overrides are honored
+ *   consistently with the threshold controls.
  * @returns {{ windowTokens: number, inferred: boolean }}
  */
-function resolveContextWindow(tokens, model) {
-  const env = (typeof process !== 'undefined' && process.env) || {};
-
+function resolveContextWindow(tokens, model, env) {
   // Explicit window override wins: 400k models (e.g. Opus 4.x) match neither the
   // 200k default nor the 1M marker and would otherwise report ~double usage (#2290).
-  const explicitWindow = Number(env.ECC_CONTEXT_WINDOW_TOKENS || '');
+  // ECC's explicit window size takes precedence over model evidence.
+  const environment = env || (typeof process !== 'undefined' && process.env) || {};
+  const explicitWindow = Number(environment.ECC_CONTEXT_WINDOW_TOKENS || '');
   if (Number.isSafeInteger(explicitWindow) && explicitWindow > 0) {
     return { windowTokens: explicitWindow, inferred: false };
   }
@@ -170,7 +176,7 @@ function resolveContextWindow(tokens, model) {
   // trigger point (e.g. 786432 on a 1M-window model), not the context window
   // size. Honor it only as a last-resort fallback so it cannot mask the [1m]
   // marker, known large-window families, or >200k observed tokens above.
-  const autoCompactWindow = Number(env.CLAUDE_CODE_AUTO_COMPACT_WINDOW || '');
+  const autoCompactWindow = Number(environment.CLAUDE_CODE_AUTO_COMPACT_WINDOW || '');
   if (Number.isSafeInteger(autoCompactWindow) && autoCompactWindow > 0) {
     return { windowTokens: autoCompactWindow, inferred: false };
   }
