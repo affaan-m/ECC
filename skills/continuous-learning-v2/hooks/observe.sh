@@ -66,6 +66,40 @@ _is_windows_app_installer_stub() {
   return 1
 }
 
+_python_install_manager_launcher() {
+  # With the Python Install Manager, python3/python in
+  #   %LOCALAPPDATA%\Microsoft\WindowsApps
+  # are App Execution Aliases. Every start of one makes Windows run an App
+  # Installer update check (AppXDeploymentServer event 603), and this hook
+  # starts Python several times per tool call. The Install Manager's global
+  # shortcuts in %LOCALAPPDATA%\Python\bin start the same runtime without that
+  # check, so print the shortcut for $1 when it is an alias and one exists.
+  # Microsoft Store Python has no such shortcut and keeps its alias. Only the
+  # current user's WindowsApps counts: an alias from anywhere else is left alone.
+  # The alias is also kept when it may not be the Install Manager's (Store
+  # Python provides the same name, and either package can own it) and when
+  # PYTHON_MANAGER_DEFAULT picks the runtime, which the alias honours and the
+  # shortcut, generated for one runtime, does not.
+  local _candidate="$1" _resolved _local _store
+  [ -n "${LOCALAPPDATA:-}" ] || return 1
+  [ -z "${PYTHON_MANAGER_DEFAULT:-}" ] || return 1
+  _resolved="$(command -v "$_candidate" 2>/dev/null || true)"
+  case "$_resolved" in */*) ;; *) return 1 ;; esac
+  # Git Bash accepts C:/... paths, so swapping separators avoids a cygpath start.
+  _local="${LOCALAPPDATA//\\//}"
+  _local="${_local%/}"
+  # command -v prints /c/... (or a mount such as /tmp/...) while LOCALAPPDATA
+  # is C:\..., so ask whether the two name the same directory instead of
+  # comparing strings.
+  [ "${_resolved%/*}" -ef "$_local/Microsoft/WindowsApps" ] || return 1
+  # A glob, not a command, so this check starts no process.
+  for _store in "$_local"/Microsoft/WindowsApps/PythonSoftwareFoundation.Python.3*/"${_candidate}.exe"; do
+    [ -e "$_store" ] && return 1
+  done
+  [ -f "$_local/Python/bin/${_candidate}.exe" ] && [ -x "$_local/Python/bin/${_candidate}.exe" ] || return 1
+  printf '%s\n' "$_local/Python/bin/${_candidate}.exe"
+}
+
 resolve_python_cmd() {
   if [ -n "${CLV2_PYTHON_CMD:-}" ] && command -v "$CLV2_PYTHON_CMD" >/dev/null 2>&1; then
     printf '%s\n' "$CLV2_PYTHON_CMD"
@@ -73,12 +107,12 @@ resolve_python_cmd() {
   fi
 
   if command -v python3 >/dev/null 2>&1 && ! _is_windows_app_installer_stub python3; then
-    printf '%s\n' python3
+    _python_install_manager_launcher python3 || printf '%s\n' python3
     return 0
   fi
 
   if command -v python >/dev/null 2>&1 && ! _is_windows_app_installer_stub python; then
-    printf '%s\n' python
+    _python_install_manager_launcher python || printf '%s\n' python
     return 0
   fi
 
@@ -104,16 +138,23 @@ export CLV2_PYTHON_CMD="${CLV2_PYTHON_CMD:-$PYTHON_CMD}"
 # If cwd is a subdirectory inside a git repo, resolve it to the repo root so
 # observations attach to the project instead of a nested path.
 STDIN_CWD=$(echo "$INPUT_JSON" | "$PYTHON_CMD" -c '
-import json, sys
+import json, os, sys
 try:
     data = json.load(sys.stdin)
     cwd = data.get("cwd", "")
-    print(cwd)
-except(KeyError, TypeError, ValueError):
+    cwd = cwd[:4096] if isinstance(cwd, str) else ""
+    if isinstance(cwd, str) and os.path.isabs(cwd) and os.path.isdir(cwd):
+        print(os.path.realpath(cwd))
+    else:
+        print("")
+except (KeyError, OSError, TypeError, ValueError):
     print("")
 ' 2>/dev/null || echo "")
 
-# If cwd was provided in stdin, use it for project detection
+# Only a validated, absolute payload cwd may select a project. Missing,
+# relative, or non-existent paths must not fall through to detect-project.sh's
+# inherited-process-cwd discovery, which can attach an observation to an
+# unrelated repository that happened to launch the hook.
 if [ -n "$STDIN_CWD" ] && [ -d "$STDIN_CWD" ]; then
   _GIT_ROOT=$(git -C "$STDIN_CWD" rev-parse --show-toplevel 2>/dev/null || true)
   if [ -n "$_GIT_ROOT" ]; then
@@ -123,6 +164,9 @@ if [ -n "$STDIN_CWD" ] && [ -d "$STDIN_CWD" ]; then
     unset CLAUDE_PROJECT_DIR
     export CLV2_NO_PROJECT=1
   fi
+else
+  unset CLAUDE_PROJECT_DIR
+  export CLV2_NO_PROJECT=1
 fi
 
 # ─────────────────────────────────────────────
@@ -155,7 +199,7 @@ fi
 # Non-interactive SDK automation is still filtered by Layers 2-5 below
 # (ECC_HOOK_PROFILE=minimal, ECC_SKIP_OBSERVE=1, agent_id, path exclusions).
 case "${CLAUDE_CODE_ENTRYPOINT:-cli}" in
-  cli|sdk-ts|claude-desktop|claude-vscode) ;;
+  cli|sdk-ts|sdk-cli|claude-desktop|claude-vscode) ;;
   *) exit 0 ;;
 esac
 
@@ -232,6 +276,7 @@ try:
     session_id = data.get("session_id", "unknown")
     tool_use_id = data.get("tool_use_id", "")
     cwd = data.get("cwd", "")
+    cwd = cwd[:4096] if isinstance(cwd, str) else ""
 
     # Truncate large inputs/outputs
     if isinstance(tool_input, dict):
@@ -271,11 +316,38 @@ import json, sys, os, re
 # Linear-time secret matcher. Bounded quantifiers and a fixed set of auth
 # schemes (instead of a generic [A-Za-z]+\s+ that overlapped the value class)
 # prevent the catastrophic backtracking that pegged python at 100% CPU (#2278).
+# The value class is disjoint from the separators, so it runs to the end of the
+# token: a long labeled key is redacted whole instead of leaving its tail.
 _SECRET_RE = re.compile(
-    r"(?i)(api[_-]?key|token|secret|password|authorization|credentials?|auth)"
-    r"""(["'"'"'\s:=]{1,8})"""
+    r"(?i)((?:api[_-]?key|token|secret|password|authorization|credentials?|auth)(?:_access_key|_key)?)"
+    r"""(["'"'"'\s:=\\]{1,8})"""
     r"((?:bearer|basic|token|bot)\s+)?"
-    r"([A-Za-z0-9_\-/.+=]{8,256})"
+    r"([A-Za-z0-9_\-/.+=]{8,})"
+)
+# Value-shaped secrets that carry no keyword: PEM private key blocks (to END or
+# end of the truncated text), GitHub tokens, AWS key IDs, Anthropic and OpenAI
+# style sk- keys, JWTs (eyJ header, payload, optional signature) and DSN
+# passwords (scheme://user:PASSWORD@host keeps scheme and user). Each branch is
+# anchored on a literal prefix and uses bounded or non-overlapping classes (#2278);
+# the sk- and JWT classes run to the end of the token so a long value is never
+# half redacted.
+# Tokens may follow a JSON escape (\n, \t, \uXXXX) since dict I/O is encoded
+# before scrubbing; a DSN cut by truncation before its "@" ends at \Z,
+# except a bare trailing host:port after http(s):// such as http://localhost:3000;
+# any other scheme (postgres://app:1234) is redacted even when the password is numeric (#3568).
+# PEM blocks run first: a label such as secret= in front of the BEGIN marker
+# would otherwise let _SECRET_RE eat "-----BEGIN" and hide the block from this match.
+_PEM_RE = re.compile(r"-----BEGIN[A-Z ]{0,40}PRIVATE KEY-----[\s\S]*?(?:-----END[A-Z ]{0,40}PRIVATE KEY-----|\Z)")
+_SECRET_VALUE_RE = re.compile(
+    r"(?:(?<![A-Za-z0-9_])|(?<=\\[bfnrt])|(?<=\\u[0-9a-fA-F]{4}))(?:gh[pousr]_[A-Za-z0-9]{20,255}|github_pat_[A-Za-z0-9_]{20,255}|(?:AKIA|ASIA)[A-Z0-9]{16})\b"
+    r"|(?:(?<![A-Za-z0-9_-])|(?<=\\[bfnrt])|(?<=\\u[0-9a-fA-F]{4}))(?:sk-(?:ant|proj|svcacct|admin|or)-[A-Za-z0-9_-]{20,}|sk-[A-Za-z0-9]{20,}[A-Za-z0-9_-]*|eyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]*)"
+    r"""|(?<=://)(?:(?<=https://)|(?<=http://)|(?<!https://)(?<!http://)())([^\s:/@"\\]{1,256}:)(?(1)|(?!\d{1,5}\Z))[^\s@/"\\]{1,256}(?=@|\Z)"""
+)
+# A capture cut at its length limit can end inside an sk- key or JWT that the
+# full patterns no longer match. Only applied when the text was actually cut,
+# so a short output that happens to end in "sk-learn" stays readable.
+_CUT_TAIL_RE = re.compile(
+    r"(?:(?<![A-Za-z0-9_-])|(?<=\\[bfnrt])|(?<=\\u[0-9a-fA-F]{4}))(?:sk-[A-Za-z0-9_-]*|eyJ[A-Za-z0-9_-]*(?:\.[A-Za-z0-9_-]*)?)\Z"
 )
 
 import signal
@@ -288,8 +360,13 @@ try:
 except Exception:
     pass
 
-raw = sys.stdin.read()[:2000]
+raw_full = sys.stdin.read()
+raw = raw_full[:2000]
+raw = _PEM_RE.sub("[REDACTED]", raw)
 raw = _SECRET_RE.sub(lambda m: m.group(1) + m.group(2) + (m.group(3) or "") + "[REDACTED]", raw)
+raw = _SECRET_VALUE_RE.sub(lambda m: (m.group(2) or "") + "[REDACTED]", raw)
+if len(raw_full) > 2000:
+    raw = _CUT_TAIL_RE.sub("[REDACTED]", raw)
 print(json.dumps({"timestamp": os.environ["TIMESTAMP"], "event": "parse_error", "raw": raw}))
 ' >> "$OBSERVATIONS_FILE"
   exit 0
@@ -311,6 +388,7 @@ timestamp=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
 
 export PROJECT_ID_ENV="$PROJECT_ID"
 export PROJECT_NAME_ENV="$PROJECT_NAME"
+export OBSERVATION_CWD_ENV="$STDIN_CWD"
 export TIMESTAMP="$timestamp"
 
 echo "$PARSED" | "$PYTHON_CMD" -c '
@@ -336,22 +414,64 @@ observation = {
     "project_name": os.environ.get("PROJECT_NAME_ENV", "global")
 }
 
-# Scrub secrets: match common key=value, key: value, and key"value patterns
+# Scrub secrets, including JSON-escaped quotes/backslashes in serialized tool I/O.
+# This is defense in depth; arbitrary content still requires a metadata-only capture boundary.
 # Includes optional auth scheme (e.g., "Bearer", "Basic") before token
 # Linear-time secret matcher. Bounded quantifiers and a fixed set of auth
 # schemes (instead of a generic [A-Za-z]+\s+ that overlapped the value class)
 # prevent the catastrophic backtracking that pegged python at 100% CPU (#2278).
+# The value class is disjoint from the separators, so it runs to the end of the
+# token: a long labeled key is redacted whole instead of leaving its tail.
 _SECRET_RE = re.compile(
-    r"(?i)(api[_-]?key|token|secret|password|authorization|credentials?|auth)"
-    r"""(["'"'"'\s:=]{1,8})"""
+    r"(?i)((?:api[_-]?key|token|secret|password|authorization|credentials?|auth)(?:_access_key|_key)?)"
+    r"""(["'"'"'\s:=\\]{1,8})"""
     r"((?:bearer|basic|token|bot)\s+)?"
-    r"([A-Za-z0-9_\-/.+=]{8,256})"
+    r"([A-Za-z0-9_\-/.+=]{8,})"
+)
+# Value-shaped secrets that carry no keyword: PEM private key blocks (to END or
+# end of the truncated text), GitHub tokens, AWS key IDs, Anthropic and OpenAI
+# style sk- keys, JWTs (eyJ header, payload, optional signature) and DSN
+# passwords (scheme://user:PASSWORD@host keeps scheme and user). Each branch is
+# anchored on a literal prefix and uses bounded or non-overlapping classes (#2278);
+# the sk- and JWT classes run to the end of the token so a long value is never
+# half redacted.
+# Tokens may follow a JSON escape (\n, \t, \uXXXX) since dict I/O is encoded
+# before scrubbing; a DSN cut by truncation before its "@" ends at \Z,
+# except a bare trailing host:port after http(s):// such as http://localhost:3000;
+# any other scheme (postgres://app:1234) is redacted even when the password is numeric (#3568).
+# PEM blocks run first: a label such as secret= in front of the BEGIN marker
+# would otherwise let _SECRET_RE eat "-----BEGIN" and hide the block from this match.
+_PEM_RE = re.compile(r"-----BEGIN[A-Z ]{0,40}PRIVATE KEY-----[\s\S]*?(?:-----END[A-Z ]{0,40}PRIVATE KEY-----|\Z)")
+_SECRET_VALUE_RE = re.compile(
+    r"(?:(?<![A-Za-z0-9_])|(?<=\\[bfnrt])|(?<=\\u[0-9a-fA-F]{4}))(?:gh[pousr]_[A-Za-z0-9]{20,255}|github_pat_[A-Za-z0-9_]{20,255}|(?:AKIA|ASIA)[A-Z0-9]{16})\b"
+    r"|(?:(?<![A-Za-z0-9_-])|(?<=\\[bfnrt])|(?<=\\u[0-9a-fA-F]{4}))(?:sk-(?:ant|proj|svcacct|admin|or)-[A-Za-z0-9_-]{20,}|sk-[A-Za-z0-9]{20,}[A-Za-z0-9_-]*|eyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]*)"
+    r"""|(?<=://)(?:(?<=https://)|(?<=http://)|(?<!https://)(?<!http://)())([^\s:/@"\\]{1,256}:)(?(1)|(?!\d{1,5}\Z))[^\s@/"\\]{1,256}(?=@|\Z)"""
+)
+# A capture cut at its length limit can end inside an sk- key or JWT that the
+# full patterns no longer match. Only applied when the text was actually cut,
+# so a short output that happens to end in "sk-learn" stays readable.
+_CUT_TAIL_RE = re.compile(
+    r"(?:(?<![A-Za-z0-9_-])|(?<=\\[bfnrt])|(?<=\\u[0-9a-fA-F]{4}))(?:sk-[A-Za-z0-9_-]*|eyJ[A-Za-z0-9_-]*(?:\.[A-Za-z0-9_-]*)?)\Z"
 )
 
 def scrub(val):
     if val is None:
         return None
-    return _SECRET_RE.sub(lambda m: m.group(1) + m.group(2) + (m.group(3) or "") + "[REDACTED]", str(val))
+    val = str(val)
+    # Tool I/O is cut to 5000 chars before it reaches this process.
+    cut = len(val) >= 5000
+    val = _PEM_RE.sub("[REDACTED]", val)
+    val = _SECRET_RE.sub(lambda m: m.group(1) + m.group(2) + (m.group(3) or "") + "[REDACTED]", val)
+    val = _SECRET_VALUE_RE.sub(lambda m: (m.group(2) or "") + "[REDACTED]", val)
+    return _CUT_TAIL_RE.sub("[REDACTED]", val) if cut else val
+
+# Prefer the canonical cwd that passed the project-selection boundary. Retain a
+# bounded rejected string as diagnostic metadata without ever using it to select
+# a project. Apply the same secret scrubber as tool I/O because path components
+# can still contain credentials or tokens (for example, generated checkout names).
+cwd = os.environ.get("OBSERVATION_CWD_ENV", "") or parsed.get("cwd", "")
+if cwd:
+    observation["cwd"] = scrub(cwd)
 
 if parsed["input"]:
     observation["input"] = scrub(parsed["input"])
@@ -375,6 +495,14 @@ _REMOVE_FILE_IF_PRESENT() {
 _START_OBSERVER_LOGGED() {
   local bootstrap_log="${PROJECT_DIR}/observer-start.log"
   mkdir -p "$PROJECT_DIR"
+  # Every call site below sits inside the lazy-start lock (flock / lockfile /
+  # mkdir), so the streak read-modify-write in _NOTE_OBSERVER_NOSURVIVE is
+  # serialized here without a second lock -- concurrent hook invocations cannot
+  # lose an increment or double-log the warning. Counting at the restart (rather
+  # than at detection) also means N racing hooks record one death, not N.
+  if [ "${OBSERVER_DIED:-false}" = "true" ]; then
+    _NOTE_OBSERVER_NOSURVIVE
+  fi
   "${SKILL_ROOT}/agents/start-observer.sh" start >> "$bootstrap_log" 2>&1 || true
 }
 
@@ -393,10 +521,80 @@ _CHECK_OBSERVER_RUNNING() {
     if kill -0 "$pid" 2>/dev/null; then
       return 0  # Process is alive
     fi
-    # Stale PID file - remove it
+    # Stale PID file - remove it. A well-formed PID that is no longer alive
+    # means an observer we launched has since died, which is the only evidence
+    # of non-survival any process ever sees (#2489). Record it; the caller
+    # decides whether the streak is long enough to warn about.
+    OBSERVER_DIED=true
     _REMOVE_FILE_IF_PRESENT "$pid_file"
   fi
   return 1  # No PID file or process dead
+}
+
+# The observer is lazy-started from a hook process that exits immediately after.
+# start-observer.sh's own liveness check runs inside that still-living process
+# tree, so it always sees a healthy observer and reports success -- on native
+# Windows the reap happens later, when the hook's Job Object closes. The next
+# hook invocation is therefore the only place the death is observable, and
+# before #2489 it silently deleted the stale PID and restarted, once per tool
+# call, forever. Warn once per streak so this is signal rather than noise.
+_NOTE_OBSERVER_NOSURVIVE() {
+  local streak_file="${PROJECT_DIR}/.observer-nosurvive-count"
+  local log_file="${PROJECT_DIR}/observer-start.log"
+  local warn_after="${ECC_OBSERVER_NOSURVIVE_WARN_AFTER:-3}"
+  local streak
+  streak=$(cat "$streak_file" 2>/dev/null || echo 0)
+  # Force base 10 after the digit check: a stray leading zero would otherwise
+  # make bash read the value as octal, and `08` is an arithmetic error that
+  # would abort the whole hook under `set -e`.
+  case "$streak" in ''|*[!0-9]*) streak=0 ;; *) streak=$((10#$streak)) ;; esac
+  # Reject every all-zero spelling, not just the literal `0`: `00` passes a
+  # digits-only check but compares as zero, and since the streak only grows the
+  # threshold could never be reached -- silently disabling the diagnostic.
+  case "$warn_after" in ''|*[!0-9]*) warn_after=3 ;; *) warn_after=$((10#$warn_after)) ;; esac
+  if [ "$warn_after" -lt 1 ]; then warn_after=3; fi
+  streak=$((streak + 1))
+
+  # Warn only on a persisted increment, and only on equality. Both conditions
+  # are what keep this to one warning per streak:
+  #   - `-eq` rather than `-ge` stops it repeating once the threshold is passed.
+  #   - Requiring the write to succeed stops it repeating when the write fails:
+  #     a stuck counter file would otherwise be reread at `warn_after - 1` on
+  #     every tool call, re-incremented in memory, and warn every time.
+  # A failed write is still never fatal -- observe.sh runs on every tool call
+  # and the repo rule is that hooks exit 0 on non-critical errors, so a full
+  # disk must not break tool execution. The `if` context keeps `set -e` happy.
+  if printf '%s\n' "$streak" > "$streak_file" 2>/dev/null &&
+     [ "$streak" -eq "$warn_after" ]; then
+    local platform_hint
+    local uname_lower
+    uname_lower=$(uname -s 2>/dev/null | tr '[:upper:]' '[:lower:]')
+    case "$uname_lower" in
+      *mingw*|*msys*|*cygwin*)
+        platform_hint='[observe] On native Windows (Git Bash/MSYS2) this is expected: the background launch does not detach the observer from the hook process Job Object, so it is killed when the hook exits. Run under WSL2, Linux or macOS. See issue #2489.'
+        ;;
+      *)
+        platform_hint="[observe] Check ${PROJECT_DIR}/observer.log for the reason the observer exited."
+        ;;
+    esac
+
+    local message
+    printf -v message '%s\n%s\n%s\n%s' \
+      "[observe] Observer did not survive to the next hook invocation ${streak} times in a row." \
+      "[observe] Startup reports success, but the process is gone by the following tool call, so no analysis ever runs." \
+      "$platform_hint" \
+      "[observe] Set ECC_OBSERVER_NOSURVIVE_WARN_AFTER to change this threshold (currently ${warn_after})."
+    # An unwritable log must not silently swallow the diagnostic, so fall back
+    # to stderr. Safe from spam: this block runs once per streak, not per call.
+    if ! printf '%s\n' "$message" >> "$log_file" 2>/dev/null; then
+      printf '%s\n' "$message" >&2 2>/dev/null || true
+    fi
+  fi
+  return 0
+}
+
+_RESET_OBSERVER_NOSURVIVE_STREAK() {
+  _REMOVE_FILE_IF_PRESENT "${PROJECT_DIR}/.observer-nosurvive-count"
 }
 
 if [ -f "${CONFIG_DIR}/disabled" ]; then
@@ -425,22 +623,35 @@ print(str(cfg.get('observer', {}).get('enabled', False)).lower())
   fi
 fi
 
-# Check both project-scoped AND global PID files (with stale PID recovery)
+# Observers are deliberately scope-pinned: each project (and the global scope)
+# owns a distinct PROJECT_DIR, PID file, observation stream, and lazy-start lock.
+# An observer from another scope cannot consume this observation stream and must
+# not suppress startup or receive signals for the current scope.
 if [ "$OBSERVER_ENABLED" = "true" ]; then
-  # Clean up stale PID files first
-  _CHECK_OBSERVER_RUNNING "${PROJECT_DIR}/.observer.pid" || true
-  _CHECK_OBSERVER_RUNNING "${CONFIG_DIR}/.observer.pid" || true
+  # Clean up stale PID files first.
+  # `if` context (not `|| true`) so `set -e` stays satisfied while we still
+  # capture whether this scope's PID file pointed at a live observer.
+  OBSERVER_ALIVE=false
+  OBSERVER_DIED=false
+  if _CHECK_OBSERVER_RUNNING "${PROJECT_DIR}/.observer.pid"; then OBSERVER_ALIVE=true; fi
+
+  # A live observer clears the streak so a later one-off crash does not inherit
+  # an old count. This is an idempotent unlink, not a read-modify-write, so it
+  # needs no lock. The matching increment runs inside the lazy-start lock, in
+  # _START_OBSERVER_LOGGED.
+  if [ "$OBSERVER_ALIVE" = "true" ]; then
+    _RESET_OBSERVER_NOSURVIVE_STREAK
+  fi
 
   # Check if observer is now running after cleanup
-  if [ ! -f "${PROJECT_DIR}/.observer.pid" ] && [ ! -f "${CONFIG_DIR}/.observer.pid" ]; then
+  if [ ! -f "${PROJECT_DIR}/.observer.pid" ]; then
     # Use flock if available (Linux), fallback for macOS
     if command -v flock >/dev/null 2>&1; then
       (
         flock -n 9 || exit 0
-        # Double-check PID files after acquiring lock
+        # Double-check this scope's PID file after acquiring the lock.
         _CHECK_OBSERVER_RUNNING "${PROJECT_DIR}/.observer.pid" || true
-        _CHECK_OBSERVER_RUNNING "${CONFIG_DIR}/.observer.pid" || true
-        if [ ! -f "${PROJECT_DIR}/.observer.pid" ] && [ ! -f "${CONFIG_DIR}/.observer.pid" ]; then
+        if [ ! -f "${PROJECT_DIR}/.observer.pid" ]; then
           _START_OBSERVER_LOGGED
         fi
       ) 9>"$LAZY_START_LOCK"
@@ -452,8 +663,7 @@ if [ "$OBSERVER_ENABLED" = "true" ]; then
           trap '_REMOVE_FILE_IF_PRESENT "$LAZY_START_LOCK"' EXIT
           lockfile -r 1 -l 30 "$LAZY_START_LOCK" 2>/dev/null || exit 0
           _CHECK_OBSERVER_RUNNING "${PROJECT_DIR}/.observer.pid" || true
-          _CHECK_OBSERVER_RUNNING "${CONFIG_DIR}/.observer.pid" || true
-          if [ ! -f "${PROJECT_DIR}/.observer.pid" ] && [ ! -f "${CONFIG_DIR}/.observer.pid" ]; then
+          if [ ! -f "${PROJECT_DIR}/.observer.pid" ]; then
             _START_OBSERVER_LOGGED
           fi
           _REMOVE_FILE_IF_PRESENT "$LAZY_START_LOCK"
@@ -464,8 +674,7 @@ if [ "$OBSERVER_ENABLED" = "true" ]; then
           trap 'rmdir "${LAZY_START_LOCK}.d" 2>/dev/null || true' EXIT
           mkdir "${LAZY_START_LOCK}.d" 2>/dev/null || exit 0
           _CHECK_OBSERVER_RUNNING "${PROJECT_DIR}/.observer.pid" || true
-          _CHECK_OBSERVER_RUNNING "${CONFIG_DIR}/.observer.pid" || true
-          if [ ! -f "${PROJECT_DIR}/.observer.pid" ] && [ ! -f "${CONFIG_DIR}/.observer.pid" ]; then
+          if [ ! -f "${PROJECT_DIR}/.observer.pid" ]; then
             _START_OBSERVER_LOGGED
           fi
         )
@@ -479,7 +688,10 @@ fi
 # which caused runaway parallel Claude analysis processes.
 SIGNAL_EVERY_N="${ECC_OBSERVER_SIGNAL_EVERY_N:-20}"
 SIGNAL_COUNTER_FILE="${PROJECT_DIR}/.observer-signal-counter"
-SIGNAL_COUNTER_LOCK="${SIGNAL_COUNTER_FILE}.lock"
+# Use a regular-file OS lock. Keep legacy mkdir locks untouched: a killed
+# Windows process cannot run shell traps, and reclaiming those directories can
+# race a live owner. The versioned file makes a stranded directory irrelevant.
+SIGNAL_COUNTER_LOCK="${SIGNAL_COUNTER_FILE}.lock.v2"
 ACTIVITY_FILE="${PROJECT_DIR}/.observer-last-activity"
 
 touch "$ACTIVITY_FILE" 2>/dev/null || true
@@ -488,28 +700,25 @@ touch "$ACTIVITY_FILE" 2>/dev/null || true
 # tool call (which can fire every second), so concurrent invocations previously
 # raced on this counter: both read the same value, both incremented, and one
 # write was lost, signaling the observer at unpredictable intervals (#2296).
-# Prefer flock (a kernel advisory lock the OS releases automatically if the hook
-# is killed); fall back to the atomic mkdir lock this script already uses for
-# the lazy-start path above. Both wrap the same read-modify-write below.
+# Prefer flock; Python supplies the same OS-released lock on macOS and Windows.
 should_signal=0
 
 _clv2_bump_signal_counter() {
+  counter=0
   if [ -f "$SIGNAL_COUNTER_FILE" ]; then
-    counter=$(cat "$SIGNAL_COUNTER_FILE" 2>/dev/null || echo 0)
-    # Guard against a corrupt counter file: a non-integer value would abort the
-    # hook under `set -e` at the arithmetic below.
-    case "$counter" in
-      ''|*[!0-9]*) counter=0 ;;
-    esac
-    counter=$((counter + 1))
-    if [ "$counter" -ge "$SIGNAL_EVERY_N" ]; then
-      should_signal=1
-      counter=0
-    fi
-    echo "$counter" > "$SIGNAL_COUNTER_FILE"
-  else
-    echo "1" > "$SIGNAL_COUNTER_FILE"
+    counter=$(head -c 20 "$SIGNAL_COUNTER_FILE" 2>/dev/null || echo 0)
   fi
+  # Bound parsing and avoid shell arithmetic overflow on corrupt local state.
+  case "$counter" in
+    ''|*[!0-9]*) counter=0 ;;
+  esac
+  if [ "${#counter}" -gt 18 ]; then counter=0; fi
+  counter=$((10#$counter + 1))
+  if [ "$counter" -ge "$SIGNAL_EVERY_N" ]; then
+    should_signal=1
+    counter=0
+  fi
+  echo "$counter" > "$SIGNAL_COUNTER_FILE"
 }
 
 if command -v flock >/dev/null 2>&1 && exec 8>"$SIGNAL_COUNTER_LOCK" 2>/dev/null; then
@@ -523,63 +732,79 @@ if command -v flock >/dev/null 2>&1 && exec 8>"$SIGNAL_COUNTER_LOCK" 2>/dev/null
   fi
   exec 8>&- 2>/dev/null || true
 else
-  # No flock (e.g. macOS): atomic mkdir lock with a bounded spin so the hook
-  # never blocks indefinitely. A trap releases the lock on every exit path --
-  # including the async-timeout SIGTERM -- so a killed hook does not strand the
-  # directory. We deliberately do NOT hand-roll PID-based stale reclaim:
-  # re-verifying then removing another process's lock is racy and can delete a
-  # live re-acquirer's directory, reintroducing the very race this fixes.
-  _signal_lock_held=0
-  _signal_lock_spins=0
-  while [ "$_signal_lock_spins" -lt 100 ]; do
-    if mkdir "$SIGNAL_COUNTER_LOCK" 2>/dev/null; then
-      # EXIT cleans up on normal completion. INT/TERM must release AND exit:
-      # a signal trap that only released the lock would otherwise fall through
-      # and continue the read-modify-write without ownership.
-      trap 'rmdir "$SIGNAL_COUNTER_LOCK" 2>/dev/null || true' EXIT
-      trap 'rmdir "$SIGNAL_COUNTER_LOCK" 2>/dev/null || true; exit 130' INT
-      trap 'rmdir "$SIGNAL_COUNTER_LOCK" 2>/dev/null || true; exit 143' TERM
-      _signal_lock_held=1
-      break
-    fi
-    _signal_lock_spins=$((_signal_lock_spins + 1))
-    sleep 0.02
-  done
-  if [ "$_signal_lock_held" -eq 1 ]; then
-    # Bump only under the held lock -- never an unlocked read-modify-write.
-    _clv2_bump_signal_counter
-    rmdir "$SIGNAL_COUNTER_LOCK" 2>/dev/null || true
-    trap - EXIT INT TERM
-  fi
-  # If the lock could not be acquired within the spin budget we skip this tick
-  # rather than racing on an unlocked counter. Dropping one throttle tick under
-  # extreme contention only delays the next observer signal slightly; it never
-  # corrupts the counter or signals spuriously.
+  # One interpreter, monotonic elapsed-time wait, no MSYS2 sleep subprocesses.
+  # Both fcntl and msvcrt release ownership even on SIGKILL/TerminateProcess.
+  # If locking is unavailable or busy, skip the optional tick without an
+  # unlocked update. Observation capture above has already completed.
+  should_signal=$("$PYTHON_CMD" - "$SIGNAL_COUNTER_LOCK" "$SIGNAL_COUNTER_FILE" "$SIGNAL_EVERY_N" <<'PY'
+import os
+import re
+import sys
+import time
+
+try:
+    if os.name == "nt":
+        import msvcrt
+        # Git Bash passes /c/... paths to native Windows Python unchanged.
+        for index in (1, 2):
+            sys.argv[index] = re.sub(r"^/([A-Za-z])/", r"\1:/", sys.argv[index])
+        def acquire(handle):
+            handle.seek(0)
+            msvcrt.locking(handle.fileno(), msvcrt.LK_NBLCK, 1)
+    else:
+        import fcntl
+        def acquire(handle):
+            fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+
+    with open(sys.argv[1], "a+b") as guard:
+        if os.name == "nt" and os.fstat(guard.fileno()).st_size == 0:
+            guard.write(b"0")
+            guard.flush()
+        deadline = time.monotonic() + 2.0
+        while True:
+            try:
+                acquire(guard)
+                break
+            except OSError:
+                if time.monotonic() >= deadline:
+                    print(0)
+                    sys.exit(0)
+                time.sleep(0.02)
+        try:
+            with open(sys.argv[2], encoding="ascii") as source:
+                value = source.read(20).strip()
+        except FileNotFoundError:
+            value = ""
+        counter = int(value) if 0 < len(value) <= 18 and value.isascii() and value.isdigit() else 0
+        counter += 1
+        signal = int(counter >= int(sys.argv[3]))
+        if signal:
+            counter = 0
+        with open(sys.argv[2], "w", encoding="ascii") as target:
+            target.write(str(counter) + "\n")
+        print(signal)
+except (ImportError, OSError, ValueError):
+    print(0)
+PY
+  ) || should_signal=0
 fi
 
-# Signal observer if running and throttle allows (check both project-scoped and global observer, deduplicate)
+# Signal only the observer that owns the current observation stream.
 if [ "$should_signal" -eq 1 ]; then
-  signaled_pids=" "
-  for pid_file in "${PROJECT_DIR}/.observer.pid" "${CONFIG_DIR}/.observer.pid"; do
-    if [ -f "$pid_file" ]; then
-      observer_pid=$(cat "$pid_file" 2>/dev/null || true)
-      # Validate PID is a positive integer (>1)
-      case "$observer_pid" in
-        ''|*[!0-9]*|0|1)
-          _REMOVE_FILE_IF_PRESENT "$pid_file"
-          continue
-          ;;
-      esac
-      # Deduplicate: skip if already signaled this pass
-      case "$signaled_pids" in
-        *" $observer_pid "*) continue ;;
-      esac
-      if kill -0 "$observer_pid" 2>/dev/null; then
-        kill -USR1 "$observer_pid" 2>/dev/null || true
-        signaled_pids="${signaled_pids}${observer_pid} "
-      fi
+  pid_file="${PROJECT_DIR}/.observer.pid"
+  if [ -f "$pid_file" ]; then
+    observer_pid=$(cat "$pid_file" 2>/dev/null || true)
+    # Validate PID is a positive integer (>1)
+    case "$observer_pid" in
+      ''|*[!0-9]*|0|1)
+        _REMOVE_FILE_IF_PRESENT "$pid_file"
+        observer_pid=""
+        ;;
+    esac
+    if [ -n "$observer_pid" ] && kill -0 "$observer_pid" 2>/dev/null; then
+      kill -USR1 "$observer_pid" 2>/dev/null || true
     fi
-  done
+  fi
 fi
 
 exit 0

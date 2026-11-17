@@ -1,5 +1,6 @@
 'use strict';
 
+const fs = require('fs');
 const path = require('path');
 
 const {
@@ -10,12 +11,15 @@ const {
   VALID_SCOPES,
   assertNoConflictingEccPlugins,
   assertSafeLocalInventory,
+  assertGitAvailable,
   currentEccPlugins,
+  createDryRunClaudeRunner,
   deriveHookMode,
   ensureOfficialMarketplace,
   ensurePluginAtScope,
   hookOptions,
   isOfficialMarketplace,
+  needsClaudeCommitAttributionPreferenceWrite,
   parseMarketplaceList,
   parsePluginList,
   readSettings,
@@ -40,6 +44,75 @@ function recoveryCommands(sourceScope, destinationScope) {
     `ecc setup --mode claude-plugin --scope ${destinationScope} --move-scope --yes`
   );
   return commands;
+}
+
+function enableRecoveryCommands(destinationScope, enableScope = destinationScope) {
+  return [
+    `claude plugin enable ${CURRENT_PLUGIN_ID} --scope ${enableScope}`,
+    ...recoveryCommands(null, destinationScope),
+  ];
+}
+
+function destinationSettingsPaths(paths) {
+  const projectSettingsDir = path.join(paths.projectRoot, '.claude');
+  return [
+    { scope: 'local', settingsPath: path.join(projectSettingsDir, 'settings.local.json') },
+    { scope: 'project', settingsPath: path.join(projectSettingsDir, 'settings.json') },
+    { scope: 'user', settingsPath: path.join(paths.configDir, 'settings.json') },
+  ];
+}
+
+function readPluginEnabledSetting(settingsPath) {
+  try {
+    const settings = JSON.parse(fs.readFileSync(settingsPath, 'utf8'));
+    const enabled = settings?.enabledPlugins?.[CURRENT_PLUGIN_ID];
+    return typeof enabled === 'boolean' ? enabled : null;
+  } catch {
+    // Missing or unreadable settings are not an explicit user choice.
+    return null;
+  }
+}
+
+function effectiveDestinationSetting(paths) {
+  for (const setting of destinationSettingsPaths(paths)) {
+    const enabled = readPluginEnabledSetting(setting.settingsPath);
+    if (enabled !== null) return { ...setting, enabled };
+  }
+  return null;
+}
+
+function destinationEnableRecoveryCommands(paths, destinationScope, setting = effectiveDestinationSetting(paths)) {
+  const scopes = ['user', 'project', 'local'];
+  const enableScope = setting?.enabled === false
+    && scopes.indexOf(setting.scope) > scopes.indexOf(destinationScope)
+    ? setting.scope : destinationScope;
+  return enableRecoveryCommands(destinationScope, enableScope);
+}
+
+function destinationExplicitlyDisabledError(paths, plugins, destinationScope) {
+  const installed = currentEccPlugins(plugins);
+  const destination = installed.find(plugin => plugin.scope === destinationScope);
+  if (!destination || destination.enabled === true) {
+    return null;
+  }
+  const effectiveSetting = effectiveDestinationSetting(paths);
+  if (!effectiveSetting || effectiveSetting.enabled !== false) {
+    return null;
+  }
+  const disabledSettingsPaths = [effectiveSetting.settingsPath];
+  return migrationError(
+    'DESTINATION_EXPLICITLY_DISABLED',
+    `${CURRENT_PLUGIN_ID} is installed at ${destinationScope} scope but explicitly `
+    + `disabled by enabledPlugins["${CURRENT_PLUGIN_ID}"]: false in `
+    + `${disabledSettingsPaths.join(', ')}. ECC keeps that choice and will not `
+    + `rewrite the setting; enable the plugin to continue the migration.`,
+    {
+      phase: 'destination-verification',
+      observedScopes: installed.map(plugin => plugin.scope),
+      settingsPaths: disabledSettingsPaths,
+      recovery: destinationEnableRecoveryCommands(paths, destinationScope, effectiveSetting),
+    }
+  );
 }
 
 function readPluginInventory(run, projectRoot, phase) {
@@ -92,7 +165,7 @@ function assertMigrationInventory(plugins, destinationScope) {
         {
           phase: 'destination-verification',
           observedScopes,
-          recovery: recoveryCommands(null, destinationScope),
+          recovery: enableRecoveryCommands(destinationScope),
         }
       );
     }
@@ -146,15 +219,13 @@ function validateExpectedScopes(plugins, expectedScopes, options = {}) {
   return installed;
 }
 
-function plannedActions(migration, destinationScope, marketplaceAction, hookConfiguration) {
+function plannedActions(migration, destinationScope, marketplaceAction) {
   const actions = [];
   if (migration.mode === 'migrate') {
     actions.push(marketplaceAction);
     actions.push([
       'plugin', 'install', CURRENT_PLUGIN_ID,
       '--scope', destinationScope,
-      '--config', `hooks_enabled=${hookConfiguration.hooks_enabled}`,
-      '--config', `hook_profile=${hookConfiguration.hook_profile}`,
     ]);
   }
   actions.push(['plugin', 'list', '--json']);
@@ -170,8 +241,10 @@ function plannedActions(migration, destinationScope, marketplaceAction, hookConf
 
 function verifySourceAndDestination(run, paths, migration, destinationScope, phase) {
   const expectedScopes = [migration.sourceScope, destinationScope];
+  const plugins = readPluginInventory(run, paths.projectRoot, phase);
+  const destination = currentEccPlugins(plugins).find(plugin => plugin.scope === destinationScope);
   return validateExpectedScopes(
-    readPluginInventory(run, paths.projectRoot, phase),
+    plugins,
     expectedScopes,
     {
       code: phase === 'concurrency-check'
@@ -182,7 +255,9 @@ function verifySourceAndDestination(run, paths, migration, destinationScope, pha
         ? 'Claude plugin scopes changed during migration; the source was not removed.'
         : `Could not verify ${CURRENT_PLUGIN_ID} at the destination before source cleanup.`,
       phase,
-      recovery: recoveryCommands(null, destinationScope),
+      recovery: destination && destination.enabled !== true
+        ? destinationEnableRecoveryCommands(paths, destinationScope)
+        : recoveryCommands(null, destinationScope),
     }
   );
 }
@@ -207,23 +282,32 @@ function uninstallSource(run, paths, migration, destinationScope) {
       assertNoConflictingEccPlugins(plugins);
       const installed = currentEccPlugins(plugins);
       observedScopes = installed.map(plugin => plugin.scope);
+      const destination = installed.find(
+        plugin => plugin.scope === destinationScope
+      );
       if (
-        installed.length === 1
-        && installed[0].scope === destinationScope
-        && installed[0].enabled === true
+        destination
+        && destination.enabled !== false
+        && !installed.some(plugin => plugin.scope === migration.sourceScope)
       ) {
         return ['Claude reported an uninstall error, but destination-only state was verified.'];
       }
     } catch {
       // Preserve the safest known two-scope state in the structured recovery.
     }
+    const sourcePresent = observedScopes.includes(migration.sourceScope);
     throw migrationError(
       'SOURCE_UNINSTALL_FAILED',
       `The destination is installed, but Claude could not remove the ${migration.sourceScope} source scope.`,
       {
         phase: 'source-uninstall',
         observedScopes,
-        recovery: recoveryCommands(migration.sourceScope, destinationScope),
+        recovery: [
+          'claude plugin list --json',
+          ...(observedScopes.length === 0
+            ? [`ecc setup --mode claude-plugin --scope ${destinationScope} --yes`]
+            : recoveryCommands(sourcePresent ? migration.sourceScope : null, destinationScope)),
+        ],
       }
     );
   }
@@ -255,8 +339,23 @@ function migrateClaudePluginScope(options = {}, dependencies = {}) {
   const settingsPath = path.join(paths.configDir, 'settings.json');
   const settings = readSettings(settingsPath);
   assertSafeLocalInventory(paths);
-  const run = dependencies.runClaude || runClaude;
+  assertGitAvailable(
+    { cwd: paths.projectRoot },
+    { spawnSync: dependencies.spawnSync }
+  );
+  const providerRun = dependencies.runClaude || runClaude;
+  const run = options.dryRun
+    ? createDryRunClaudeRunner(providerRun, paths, options)
+    : providerRun;
   const plugins = readPluginInventory(run, paths.projectRoot, 'inventory');
+  const disabledDestinationError = destinationExplicitlyDisabledError(
+    paths,
+    plugins,
+    options.scope
+  );
+  if (disabledDestinationError) {
+    throw disabledDestinationError;
+  }
   const migration = assertMigrationInventory(plugins, options.scope);
   const hooks = options.hooks === undefined
     ? deriveHookMode(settings)
@@ -264,6 +363,7 @@ function migrateClaudePluginScope(options = {}, dependencies = {}) {
   const hookConfiguration = options.hooks === undefined
     ? readStoredHookOptions(settings)
     : hookOptions(options.hooks);
+  const needsCommitAttributionPreference = needsClaudeCommitAttributionPreferenceWrite(settings);
 
   const marketplaces = parseMarketplaceList(
     run(
@@ -296,14 +396,23 @@ function migrateClaudePluginScope(options = {}, dependencies = {}) {
         ...result,
         dryRun: true,
         preferencesUpdated: false,
-        plannedActions: options.hooks === undefined ? [] : [{
-          action: 'write-hook-preferences',
-          ...hookConfiguration,
-        }],
+        plannedActions: [
+          ...(options.hooks === undefined ? [] : [{
+            action: 'write-hook-preferences',
+            ...hookConfiguration,
+          }]),
+          ...(needsCommitAttributionPreference ? [{
+            action: 'write-commit-attribution-preference',
+            includeCoAuthoredBy: false,
+          }] : []),
+        ],
       };
     }
-    if (options.hooks !== undefined) {
-      writeClaudePluginOptions(settingsPath, options.hooks);
+    if (options.hooks !== undefined || needsCommitAttributionPreference) {
+      writeClaudePluginOptions(
+        settingsPath,
+        options.hooks !== undefined ? options.hooks : undefined
+      );
       return { ...result, preferencesUpdated: true };
     }
     return result;
@@ -328,8 +437,7 @@ function migrateClaudePluginScope(options = {}, dependencies = {}) {
       plannedActions: plannedActions(
         migration,
         options.scope,
-        marketplaceAction,
-        hookConfiguration
+        marketplaceAction
       ),
       pluginId: CURRENT_PLUGIN_ID,
       sourceScope: migration.sourceScope,
@@ -343,6 +451,7 @@ function migrateClaudePluginScope(options = {}, dependencies = {}) {
       projectRoot: paths.projectRoot,
       run,
       scope: options.scope,
+      spawnSync: dependencies.spawnSync,
     });
     ensurePluginAtScope({
       hookConfiguration,
@@ -371,8 +480,11 @@ function migrateClaudePluginScope(options = {}, dependencies = {}) {
   const warnings = uninstallSource(run, paths, migration, options.scope);
   verifyFinalState(run, paths, options.scope);
 
-  if (options.hooks !== undefined) {
-    writeClaudePluginOptions(settingsPath, options.hooks);
+  if (options.hooks !== undefined || needsCommitAttributionPreference) {
+    writeClaudePluginOptions(
+      settingsPath,
+      options.hooks !== undefined ? options.hooks : undefined
+    );
   }
 
   const result = {

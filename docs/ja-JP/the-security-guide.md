@@ -1,6 +1,6 @@
 # エージェンティックセキュリティのすべて 簡潔ガイド
 
-_everything claude code / research / security_
+_ecc / research / security_
 
 ---
 
@@ -18,7 +18,7 @@ _everything claude code / research / security_
 
 ### 攻撃チェーンと関与するノード / コンポーネント
 
-![Attack Chain Diagram](./assets/images/security/attack-chain.png)
+![Attack Chain Diagram](https://raw.githubusercontent.com/affaan-m/ECC/main/assets/images/security/attack-chain.png)
 
 例えば、あなたのエージェントがゲートウェイレイヤーを介してWhatsAppに接続されているとします。攻撃者があなたのWhatsApp番号を知っています。既存のジェイルブレイクを使ってプロンプトインジェクションを試みます。チャットにジェイルブレイクをスパムします。エージェントがメッセージを読み、指示として受け取ります。プライベート情報を明かすレスポンスを実行します。エージェントがroot権限、広範なファイルシステムアクセス、または有用な認証情報を持っている場合、あなたは侵害されています。
 
@@ -248,10 +248,10 @@ rg -n '<!--|<script|data:text/html|base64,'
 
 まだ前のガイドを読んでいない方は、ここから始めてください：
 
-> [Everything Claude Code 簡潔ガイド](https://x.com/affaanmustafa/status/2012378465664745795)
+> [ECC 簡潔ガイド](https://x.com/affaanmustafa/status/2012378465664745795)
 >
-> [Everything Claude Code 長文ガイド](https://x.com/affaanmustafa/status/2014040193557471352)
+> [ECC 長文ガイド](https://x.com/affaanmustafa/status/2014040193557471352)
 
 以下のリポジトリも保存してください：
-- [github.com/affaan-m/everything-claude-code](https://github.com/affaan-m/everything-claude-code)
+- [github.com/affaan-m/ECC](https://github.com/affaan-m/ECC)
 - [github.com/affaan-m/agentshield](https://github.com/affaan-m/agentshield)

@@ -36,12 +36,10 @@ SECURE_HSTS_SECONDS = 31536000  # 1 year
 SECURE_HSTS_INCLUDE_SUBDOMAINS = True
 SECURE_HSTS_PRELOAD = True
 SECURE_CONTENT_TYPE_NOSNIFF = True
-SECURE_BROWSER_XSS_FILTER = True
 X_FRAME_OPTIONS = 'DENY'
 
 # HTTPS and Cookies
 SESSION_COOKIE_HTTPONLY = True
-CSRF_COOKIE_HTTPONLY = True
 SESSION_COOKIE_SAMESITE = 'Lax'
 CSRF_COOKIE_SAMESITE = 'Lax'
 
@@ -311,7 +309,6 @@ def greet_user(username):
 ```python
 # settings.py
 SECURE_CONTENT_TYPE_NOSNIFF = True  # Prevent MIME sniffing
-SECURE_BROWSER_XSS_FILTER = True  # Enable XSS filter
 X_FRAME_OPTIONS = 'DENY'  # Prevent clickjacking
 
 # Custom middleware

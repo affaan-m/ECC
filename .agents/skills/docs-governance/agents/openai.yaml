@@ -1,0 +1,7 @@
+interface:
+  display_name: "Docs Governance"
+  short_description: "Route and audit governed project documentation"
+  brand_color: "#0EA5E9"
+  default_prompt: "Use $docs-governance to route documentation work or run the opt-in read-only audit."
+policy:
+  allow_implicit_invocation: true

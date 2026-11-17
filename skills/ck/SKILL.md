@@ -1,9 +1,9 @@
 ---
 name: ck
-description: Persistent per-project memory for Claude Code. Auto-loads project context on session start, tracks sessions with git activity, and writes to native memory. Commands run deterministic Node.js scripts — behavior is consistent across model versions.
+description: "Persistent per-project memory for Claude Code (Context Keeper) driven by deterministic Node.js /ck commands: init, save, resume, info, list, forget, and v1-to-v2 migrate, plus a SessionStart hook that injects a compact project brief. Use when context must survive across sessions, saving session state with next steps and decisions, resuming where a previous session left off, or picking up a project without re-explaining it."
 metadata:
+  version: 2.0.0
   origin: community
-version: 2.0.0
 author: sreedhargs89
 repo: https://github.com/sreedhargs89/context-keeper
 ---
@@ -12,7 +12,13 @@ repo: https://github.com/sreedhargs89/context-keeper
 
 You are the **Context Keeper** assistant. When the user invokes any `/ck:*` command,
 run the corresponding Node.js script and present its stdout to the user verbatim.
-Scripts live at: `~/.claude/skills/ck/commands/` (expand `~` with `$HOME`).
+Scripts live in the `commands/` directory next to this SKILL.md (for example
+`~/.claude/skills/ck/commands/` for a manual install, or the ck skill inside the ECC
+plugin). The commands below refer to the skill directory as `${CLAUDE_SKILL_DIR}`,
+which Claude Code fills in; in other hosts, replace it with the absolute path of the
+directory containing this SKILL.md. Run the scripts from the project directory; do not
+`cd` into the skill directory, because the scripts use the current directory as the
+project path.
 
 ---
 
@@ -32,7 +38,7 @@ Scripts live at: `~/.claude/skills/ck/commands/` (expand `~` with `$HOME`).
 
 ### `/ck:init` — Register a Project
 ```bash
-node "$HOME/.claude/skills/ck/commands/init.mjs"
+node "${CLAUDE_SKILL_DIR}/commands/init.mjs"
 ```
 The script outputs JSON with auto-detected info. Present it as a confirmation draft:
 ```
@@ -44,9 +50,13 @@ Goal:        <goal>
 Do-nots:     <constraints or "None">
 Repo:        <repo or "none">
 ```
-Wait for user approval. Apply any edits. Then pipe confirmed JSON to save.mjs --init:
+Wait for user approval. Apply any edits. Then pass the confirmed JSON to save.mjs --init
+through a quoted heredoc (never `echo '...'`: an apostrophe in any field would end the
+quoted string and hand the rest to the shell):
 ```bash
-echo '<confirmed-json>' | node "$HOME/.claude/skills/ck/commands/save.mjs" --init
+node "${CLAUDE_SKILL_DIR}/commands/save.mjs" --init <<'CK_JSON'
+<confirmed-json>
+CK_JSON
 ```
 Confirmed JSON schema: `{"name":"...","path":"...","description":"...","stack":["..."],"goal":"...","constraints":["..."],"repo":"..." }`
 
@@ -62,9 +72,11 @@ Confirmed JSON schema: `{"name":"...","path":"...","description":"...","stack":[
 - `goal`: updated goal string **only if it changed this session**, else omit
 
 Show a draft summary to the user: `"Session: '<summary>' — save this? (yes / edit)"`
-Wait for confirmation. Then pipe to save.mjs:
+Wait for confirmation. Then pass the JSON to save.mjs through a quoted heredoc:
 ```bash
-echo '<json>' | node "$HOME/.claude/skills/ck/commands/save.mjs"
+node "${CLAUDE_SKILL_DIR}/commands/save.mjs" <<'CK_JSON'
+<json>
+CK_JSON
 ```
 JSON schema (exact): `{"summary":"...","leftOff":"...","nextSteps":["..."],"decisions":[{"what":"...","why":"..."}],"blockers":["..."]}`
 Display the script's stdout confirmation verbatim.
@@ -73,7 +85,7 @@ Display the script's stdout confirmation verbatim.
 
 ### `/ck:resume [name|number]` — Full Briefing
 ```bash
-node "$HOME/.claude/skills/ck/commands/resume.mjs" [arg]
+node "${CLAUDE_SKILL_DIR}/commands/resume.mjs" [arg]
 ```
 Display output verbatim. Then ask: "Continue from here? Or has anything changed?"
 If user reports changes → run `/ck:save` immediately.
@@ -82,7 +94,7 @@ If user reports changes → run `/ck:save` immediately.
 
 ### `/ck:info [name|number]` — Quick Snapshot
 ```bash
-node "$HOME/.claude/skills/ck/commands/info.mjs" [arg]
+node "${CLAUDE_SKILL_DIR}/commands/info.mjs" [arg]
 ```
 Display output verbatim. No follow-up question.
 
@@ -90,7 +102,7 @@ Display output verbatim. No follow-up question.
 
 ### `/ck:list` — Portfolio View
 ```bash
-node "$HOME/.claude/skills/ck/commands/list.mjs"
+node "${CLAUDE_SKILL_DIR}/commands/list.mjs"
 ```
 Display output verbatim. If user replies with a number or name → run `/ck:resume`.
 
@@ -101,7 +113,7 @@ First resolve the project name (run `/ck:list` if needed).
 Ask: `"This will permanently delete context for '<name>'. Are you sure? (yes/no)"`
 If yes:
 ```bash
-node "$HOME/.claude/skills/ck/commands/forget.mjs" [name]
+node "${CLAUDE_SKILL_DIR}/commands/forget.mjs" [name]
 ```
 Display confirmation verbatim.
 
@@ -109,11 +121,11 @@ Display confirmation verbatim.
 
 ### `/ck:migrate` — Convert v1 Data to v2
 ```bash
-node "$HOME/.claude/skills/ck/commands/migrate.mjs"
+node "${CLAUDE_SKILL_DIR}/commands/migrate.mjs"
 ```
 For a dry run first:
 ```bash
-node "$HOME/.claude/skills/ck/commands/migrate.mjs" --dry-run
+node "${CLAUDE_SKILL_DIR}/commands/migrate.mjs" --dry-run
 ```
 Display output verbatim. Migrates all v1 CONTEXT.md + meta.json files to v2 context.json.
 Originals are backed up as `meta.json.v1-backup` — nothing is deleted.
@@ -122,18 +134,23 @@ Originals are backed up as `meta.json.v1-backup` — nothing is deleted.
 
 ## SessionStart Hook
 
-The hook at `~/.claude/skills/ck/hooks/session-start.mjs` must be registered in
-`~/.claude/settings.json` to auto-load project context on session start:
+The hook at `hooks/session-start.mjs` in this skill's directory must be registered in
+`~/.claude/settings.json` to auto-load project context on session start. For a manual
+install in `~/.claude/skills/ck`:
 
 ```json
 {
   "hooks": {
     "SessionStart": [
-      { "hooks": [{ "type": "command", "command": "node \"~/.claude/skills/ck/hooks/session-start.mjs\"" }] }
+      { "hooks": [{ "type": "command", "command": "node \"$HOME/.claude/skills/ck/hooks/session-start.mjs\"" }] }
     ]
   }
 }
 ```
+
+Use `$HOME`, not `~`: the shell does not expand `~` inside double quotes. If ck lives
+elsewhere (for example inside the ECC plugin), use the absolute path of its
+`hooks/session-start.mjs` instead.
 
 The hook injects ~100 tokens per session (compact 5-line summary). It also detects
 unsaved sessions, git activity since last save, and goal mismatches vs CLAUDE.md.

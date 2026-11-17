@@ -1,6 +1,6 @@
 ---
 name: golang-patterns
-description: Idiomatic Go patterns, best practices, and conventions for building robust, efficient, and maintainable Go applications.
+description: Idiomatic Go patterns, best practices, and conventions for building robust, efficient, and maintainable Go applications. Use when writing or reviewing Go code and idiomatic structure or conventions are in question.
 metadata:
   origin: ECC
 ---
@@ -534,9 +534,14 @@ func ProcessRequest(data []byte) []byte {
 
     buf.Write(data)
     // Process...
-    return buf.Bytes()
+
+    // buf.Bytes() aliases the pooled buffer, which the deferred Put hands
+    // to the next Get. Copy before returning, or callers race with reuse.
+    return bytes.Clone(buf.Bytes()) // Go 1.20+; else append([]byte(nil), buf.Bytes()...)
 }
 ```
+
+Never return or retain `buf.Bytes()` from a pooled buffer past `Put`: copy it, or let the caller pass in an `io.Writer` so no copy is needed.
 
 ### Avoid String Concatenation in Loops
 

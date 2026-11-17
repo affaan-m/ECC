@@ -1,4 +1,4 @@
-# Contribuir a Everything Claude Code
+# Contribuir a ECC
 
 ¡Gracias por querer contribuir! Este repositorio es un recurso comunitario para usuarios de Claude Code.
 
@@ -52,8 +52,8 @@ Comandos slash que invocan flujos de trabajo útiles:
 
 ```bash
 # 1. Hacer fork y clonar
-gh repo fork affaan-m/everything-claude-code --clone
-cd everything-claude-code
+gh repo fork affaan-m/ECC --clone
+cd ECC
 
 # 2. Crear una rama
 git checkout -b feat/mi-contribucion
@@ -465,7 +465,7 @@ Cómo lo probaste.
 
 ## ¿Preguntas?
 
-- **Issues:** [github.com/affaan-m/everything-claude-code/issues](https://github.com/affaan-m/everything-claude-code/issues)
+- **Issues:** [github.com/affaan-m/ECC/issues](https://github.com/affaan-m/ECC/issues)
 - **X/Twitter:** [@affaanmustafa](https://x.com/affaanmustafa)
 
 ---

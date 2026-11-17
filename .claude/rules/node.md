@@ -1,4 +1,4 @@
-# Node.js Rules for everything-claude-code
+# Node.js Rules for ECC
 
 ## Prompt Defense Baseline
 

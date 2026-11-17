@@ -1,6 +1,6 @@
 ---
-name: literature-review
-description: Systematic literature-review workflow for academic, biomedical, technical, and scientific topics, including search planning, source screening, synthesis, citation checks, and evidence logging.
+name: scientific-thinking-literature-review
+description: Systematic literature-review workflow for academic, biomedical, technical, and scientific topics, including search planning, source screening, synthesis, citation checks, and evidence logging. Use when the task is to find, screen, synthesize, and cite a body of academic or technical literature.
 metadata:
   origin: community
 ---
@@ -67,7 +67,8 @@ Minimum useful database set:
 
 - PubMed for biomedical and life-sciences literature.
 - arXiv for CS, math, physics, quantitative biology, and preprints.
-- Semantic Scholar or Crossref for broad academic discovery.
+- OpenAlex, Semantic Scholar or Crossref for broad academic discovery across
+  fields.
 - Domain-specific sources when relevant, such as clinical-trial registries,
   patent databases, standards bodies, or official technical docs.
 

@@ -16,6 +16,8 @@ from llm.core.interface import (
 )
 from llm.core.types import LLMInput, LLMOutput, ModelInfo, ProviderType, ToolCall
 from llm.providers.constants import EMPTY_FILTERED_RESPONSE_ERROR
+from llm.providers.model_config import read_model_env
+from llm.providers.openai_compat import to_openai_message_param
 
 ATLAS_BASE_URL = "https://api.atlascloud.ai/v1"
 DEFAULT_ATLAS_MODEL = "deepseek-ai/deepseek-v4-pro"
@@ -67,7 +69,7 @@ class AtlasProvider(LLMProvider):
             or ""
         )
         self.base_url = base_url or os.environ.get(self.base_url_env, self.default_base_url)
-        env_model = os.environ.get(self.model_env)
+        env_model = read_model_env(self.model_env)
         self.default_model = default_model or env_model or DEFAULT_ATLAS_MODEL
         self.client = OpenAI(api_key=self.api_key, base_url=self.base_url, _enforce_credentials=False)
         self._models = [
@@ -83,7 +85,7 @@ class AtlasProvider(LLMProvider):
         try:
             params: dict[str, Any] = {
                 "model": llm_input.model or self.default_model,
-                "messages": [msg.to_dict() for msg in llm_input.messages],
+                "messages": [to_openai_message_param(msg) for msg in llm_input.messages],
             }
             if llm_input.temperature != 1.0:
                 params["temperature"] = llm_input.temperature
@@ -129,9 +131,10 @@ class AtlasProvider(LLMProvider):
             )
         except Exception as e:
             msg = str(e)
-            if "401" in msg or "authentication" in msg.lower():
+            status_code = getattr(e, "status_code", None)
+            if status_code == 401:
                 raise AuthenticationError(msg, provider=self.provider_type) from e
-            if "429" in msg or "rate_limit" in msg.lower():
+            if status_code == 429:
                 raise RateLimitError(msg, provider=self.provider_type) from e
             if "context" in msg.lower() and "length" in msg.lower():
                 raise ContextLengthError(msg, provider=self.provider_type) from e

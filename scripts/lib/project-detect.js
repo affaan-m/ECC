@@ -4,7 +4,7 @@
  * Cross-platform (Windows, macOS, Linux) project type detection
  * by inspecting files in the working directory.
  *
- * Resolves: https://github.com/affaan-m/everything-claude-code/issues/293
+ * Resolves: https://github.com/affaan-m/ECC/issues/293
  */
 
 const fs = require('fs');
@@ -84,6 +84,11 @@ const LANGUAGE_RULES = [
     type: 'php',
     markers: ['composer.json', 'composer.lock'],
     extensions: ['.php']
+  },
+  {
+    type: 'dart',
+    markers: ['pubspec.yaml', 'pubspec.lock'],
+    extensions: ['.dart']
   }
 ];
 
@@ -129,7 +134,10 @@ const FRAMEWORK_RULES = [
   { framework: 'symfony', language: 'php', markers: ['symfony.lock'], packageKeys: ['symfony/framework-bundle'] },
 
   // Elixir frameworks
-  { framework: 'phoenix', language: 'elixir', markers: [], packageKeys: ['phoenix'] }
+  { framework: 'phoenix', language: 'elixir', markers: [], packageKeys: ['phoenix'] },
+
+  // Dart frameworks
+  { framework: 'flutter', language: 'dart', markers: [], packageKeys: [], customCheck: hasFlutterSdkDependency }
 ];
 
 /**
@@ -238,6 +246,38 @@ function getPythonDeps(projectDir) {
 }
 
 /**
+ * Decode the contents of a Go-quoted module path, rejecting malformed escapes.
+ * @param {string} value - Quoted token contents without the surrounding quotes
+ * @returns {string|null} Decoded UTF-8 path, or null for an invalid token
+ */
+function decodeGoQuotedPath(value) {
+  if (!/^(?:[^"\\\r\n]|\\(?:[abfnrtv\\"]|[0-7]{3}|x[\da-fA-F]{2}|u[\da-fA-F]{4}|U[\da-fA-F]{8}))*$/.test(value)) return null;
+  const escaped = { a: '\x07', b: '\b', f: '\f', n: '\n', r: '\r', t: '\t', v: '\v', '\\': '\\', '"': '"' };
+  const chunks = [];
+  for (const token of value.match(/[^\\]+|\\(?:[abfnrtv\\"]|[0-7]{3}|x[\da-fA-F]{2}|u[\da-fA-F]{4}|U[\da-fA-F]{8})/g) || []) {
+    if (!token.startsWith('\\')) {
+      chunks.push(Buffer.from(token));
+      continue;
+    }
+    const escape = token.slice(1);
+    if (Object.hasOwn(escaped, escape)) {
+      chunks.push(Buffer.from(escaped[escape]));
+      continue;
+    }
+    const octal = /^[0-7]/.test(escape);
+    const codePoint = Number.parseInt(octal ? escape : escape.slice(1), octal ? 8 : 16);
+    const byte = octal || escape.startsWith('x');
+    if (byte ? codePoint > 255 : codePoint > 0x10ffff || (codePoint >= 0xd800 && codePoint <= 0xdfff)) return null;
+    chunks.push(byte ? Buffer.from([codePoint]) : Buffer.from(String.fromCodePoint(codePoint)));
+  }
+  try {
+    return new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }).decode(Buffer.concat(chunks));
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Read go.mod for Go module dependencies
  * @param {string} projectDir - Project root directory
  * @returns {string[]} Array of module paths
@@ -248,15 +288,27 @@ function getGoDeps(projectDir) {
     if (!fs.existsSync(modPath)) return [];
     const content = fs.readFileSync(modPath, 'utf8');
     const deps = [];
-    const requireBlock = content.match(/require\s*\(([\s\S]*?)\)/);
-    if (requireBlock) {
-      requireBlock[1].split('\n').forEach(line => {
-        const trimmed = line.trim();
-        if (trimmed && !trimmed.startsWith('//')) {
-          const parts = trimmed.split(/\s+/);
-          if (parts[0]) deps.push(parts[0]);
-        }
-      });
+    let inRequireBlock = false;
+    for (const rawLine of content.split(/\r?\n/)) {
+      const line = rawLine.split('//')[0].trim();
+      if (!line) continue;
+      if (line === ')' && inRequireBlock) {
+        inRequireBlock = false;
+        continue;
+      }
+      const directive = line.match(/^require(?:\s+|(?=\())(.+)$/);
+      if (directive?.[1] === '(') {
+        inRequireBlock = true;
+        continue;
+      }
+      if (!directive && !inRequireBlock) continue;
+      const requirement = (directive ? directive[1] : line)
+        .match(/^(?:"((?:[^"\\]|\\.)+)"[ \t]*|([^"'`\s]+)[ \t]+)\S+/);
+      if (!requirement) continue;
+      const modulePath = requirement[1] === undefined
+        ? requirement[2]
+        : decodeGoQuotedPath(requirement[1]);
+      if (modulePath) deps.push(modulePath);
     }
     return deps;
   } catch {
@@ -327,6 +379,31 @@ function getElixirDeps(projectDir) {
     return deps;
   } catch {
     return [];
+  }
+}
+
+/**
+ * Check whether pubspec.yaml declares the Flutter SDK as a dependency,
+ * which distinguishes a Flutter app from a plain Dart package.
+ * @param {string} projectDir - Project root directory
+ * @returns {boolean}
+ */
+function hasFlutterSdkDependency(projectDir) {
+  try {
+    const pubspecPath = path.join(projectDir, 'pubspec.yaml');
+    if (!fs.existsSync(pubspecPath)) return false;
+    const content = fs.readFileSync(pubspecPath, 'utf8');
+    // Loaded here, not at the top: the SessionStart hook requires this module
+    // from plugin installs that have no node_modules (#2822). Without js-yaml
+    // the catch below costs only the Flutter check, not the whole hook.
+    const yaml = require('js-yaml');
+    const pubspec = yaml.load(content, { schema: yaml.JSON_SCHEMA });
+    // Only a declared Flutter SDK dependency identifies the framework.
+    // Unrelated configuration, comments, and strings must not count.
+    return pubspec?.dependencies?.flutter?.sdk === 'flutter'
+      || pubspec?.dev_dependencies?.flutter?.sdk === 'flutter';
+  } catch {
+    return false;
   }
 }
 
@@ -409,7 +486,9 @@ function detectProjectType(projectDir) {
       });
     }
 
-    if (hasMarker || hasDep) {
+    const hasCustom = typeof rule.customCheck === 'function' ? rule.customCheck(projectDir) : false;
+
+    if (hasMarker || hasDep || hasCustom) {
       frameworks.push(rule.framework);
     }
   }

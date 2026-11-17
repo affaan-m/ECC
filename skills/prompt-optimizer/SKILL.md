@@ -1,17 +1,6 @@
 ---
 name: prompt-optimizer
-description: >-
-  Analyze raw prompts, identify intent and gaps, match ECC components
-  (skills/commands/agents/hooks), and output a ready-to-paste optimized
-  prompt. Advisory role only — never executes the task itself.
-  TRIGGER when: user says "optimize prompt", "improve my prompt",
-  "how to write a prompt for", "help me prompt", "rewrite this prompt",
-  or explicitly asks to enhance prompt quality. Also triggers on Chinese
-  equivalents: "优化prompt", "改进prompt", "怎么写prompt", "帮我优化这个指令".
-  DO NOT TRIGGER when: user wants the task executed directly, or says
-  "just do it" / "直接做". DO NOT TRIGGER when user says "优化代码",
-  "优化性能", "optimize performance", "optimize this code" — those are
-  refactoring/performance tasks, not prompt optimization.
+description: Analyze draft prompts, detect intent and missing context, match ECC commands, skills, and agents, and output a ready-to-paste optimized prompt with diagnosis and rationale — advisory only, never executes the task. Use when the user says 'optimize prompt', 'improve my prompt', 'rewrite this prompt', 'help me prompt', 优化prompt, 改进prompt, 怎么写prompt, or 帮我优化这个指令; not for requests to optimize code or performance.
 metadata:
   origin: community
   author: YannJY02
@@ -179,10 +168,10 @@ For MEDIUM+ tasks, always start with /plan. For EPIC tasks, use blueprint skill.
 
 | Scope | Recommended Model | Rationale |
 |-------|------------------|-----------|
-| TRIVIAL-LOW | Sonnet 4.6 | Fast, cost-efficient for simple tasks |
-| MEDIUM | Sonnet 4.6 | Best coding model for standard work |
-| HIGH | Sonnet 4.6 (main) + Opus 4.6 (planning) | Opus for architecture, Sonnet for implementation |
-| EPIC | Opus 4.6 (blueprint) + Sonnet 4.6 (execution) | Deep reasoning for multi-session planning |
+| TRIVIAL-LOW | Sonnet 5 | Fast, cost-efficient for simple tasks |
+| MEDIUM | Sonnet 5 | Best coding model for standard work |
+| HIGH | Sonnet 5 (main) + Opus 5 (planning) | Opus for architecture, Sonnet for implementation |
+| EPIC | Opus 5 (blueprint) + Sonnet 5 (execution) | Deep reasoning for multi-session planning |
 
 **Multi-prompt splitting** (for HIGH/EPIC scope):
 
@@ -219,7 +208,7 @@ If Phase 0 auto-detected the answer, state it instead of asking.
 | Command | /plan | Plan architecture before coding |
 | Skill | tdd-workflow | TDD methodology guidance |
 | Agent | code-reviewer | Post-implementation review |
-| Model | Sonnet 4.6 | Recommended for this scope |
+| Model | Sonnet 5 | Recommended for this scope |
 
 ### Section 3: Optimized Prompt — Full Version
 
@@ -381,7 +370,7 @@ Each phase = 1 PR, with /verify gates between phases.
 Use /save-session between phases. Use /resume-session to continue.
 Use git worktrees for parallel service extraction when dependencies allow.
 
-Recommended: Opus 4.6 for blueprint planning, Sonnet 4.6 for phase execution.
+Recommended: Opus 5 for blueprint planning, Sonnet 5 for phase execution.
 ```
 
 ---

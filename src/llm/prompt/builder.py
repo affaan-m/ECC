@@ -5,10 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-from llm.core.types import LLMInput, Message, Role, ToolDefinition
-from llm.providers.claude import ClaudeProvider
-from llm.providers.openai import OpenAIProvider
-from llm.providers.ollama import OllamaProvider
+from llm.core.types import Message, Role, ToolDefinition
 
 
 @dataclass
@@ -36,13 +33,23 @@ class PromptBuilder:
             raise ValueError("Pass either config or PromptBuilder keyword options, not both")
 
         if config is None:
-            overrides = {
-                "system_template": system_template,
-                "user_template": user_template,
-                "include_tools_in_system": include_tools_in_system,
-                "tool_format": tool_format,
-            }
-            config = PromptConfig(**{key: value for key, value in overrides.items() if value is not None})
+            defaults = PromptConfig()
+            config = PromptConfig(
+                system_template=(
+                    system_template if system_template is not None else defaults.system_template
+                ),
+                user_template=(
+                    user_template if user_template is not None else defaults.user_template
+                ),
+                include_tools_in_system=(
+                    include_tools_in_system
+                    if include_tools_in_system is not None
+                    else defaults.include_tools_in_system
+                ),
+                tool_format=(
+                    tool_format if tool_format is not None else defaults.tool_format
+                ),
+            )
 
         self.config = config
 
@@ -61,7 +68,10 @@ class PromptBuilder:
             system_parts.append(f"\n\n## Available Tools\n{tools_desc}")
 
         if messages[0].role == Role.SYSTEM:
-            system_parts.insert(0, messages[0].content)
+            system_content = messages[0].content
+            if not isinstance(system_content, str):
+                raise TypeError("PromptBuilder system messages must contain text")
+            system_parts.insert(0, system_content)
             result.insert(0, Message(role=Role.SYSTEM, content="\n\n".join(system_parts)))
             result.extend(messages[1:])
         else:
@@ -111,7 +121,7 @@ _PROVIDER_TEMPLATE_MAP: dict[str, dict[str, Any]] = {
 
 
 def get_provider_builder(provider_name: str) -> PromptBuilder:
-    config_dict = _PROVIDER_TEMPLATE_MAP.get(provider_name.lower(), {})
+    config_dict = _PROVIDER_TEMPLATE_MAP.get(provider_name.strip().lower(), {})
     config = PromptConfig(**config_dict)
     return PromptBuilder(config)
 

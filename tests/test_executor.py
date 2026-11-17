@@ -1,6 +1,7 @@
 import pytest
-from llm.core.types import ToolCall, ToolDefinition, ToolResult
-from llm.tools import ToolExecutor, ToolRegistry
+
+from llm.core.types import LLMInput, LLMOutput, Message, Role, ToolCall, ToolDefinition
+from llm.tools import ReActAgent, ToolExecutor, ToolRegistry
 
 
 class TestToolRegistry:
@@ -84,3 +85,101 @@ class TestToolExecutor:
         assert len(results) == 2
         assert results[0].content == "result1"
         assert results[1].content == "result2"
+
+
+@pytest.mark.asyncio
+async def test_react_agent_preserves_request_and_response_metadata() -> None:
+    class MetadataProvider:
+        def __init__(self) -> None:
+            self.inputs: list[LLMInput] = []
+
+        def generate(self, llm_input: LLMInput) -> LLMOutput:
+            self.inputs.append(llm_input)
+            if len(self.inputs) == 1:
+                return LLMOutput(
+                    content="",
+                    tool_calls=[ToolCall(id="tool_1", name="search", arguments={})],
+                    metadata={"anthropic_content": [{"type": "thinking"}]},
+                )
+            return LLMOutput(content="done")
+
+    registry = ToolRegistry()
+    registry.register(
+        ToolDefinition(name="search", description="Search", parameters={}),
+        lambda: "found",
+    )
+    provider = MetadataProvider()
+    agent = ReActAgent(provider, ToolExecutor(registry), max_iterations=2)
+    initial_message = Message(role=Role.USER, content="Search.")
+    request_metadata = {"thinking": {"type": "adaptive"}}
+
+    output = await agent.run(
+        LLMInput(
+            messages=[initial_message],
+            tools=[ToolDefinition(name="search", description="Search", parameters={})],
+            metadata=request_metadata,
+        )
+    )
+
+    assert output.content == "done"
+    assert provider.inputs[0].messages == [initial_message]
+    assert provider.inputs[0].messages is not provider.inputs[1].messages
+    assert provider.inputs[0].metadata == {"thinking": {"type": "adaptive"}}
+    assert provider.inputs[1].metadata == {"thinking": {"type": "adaptive"}}
+    assert provider.inputs[0].metadata is not provider.inputs[1].metadata
+    assert provider.inputs[0].metadata["thinking"] is not request_metadata["thinking"]
+    assert provider.inputs[1].messages[1].metadata == {
+        "anthropic_content": [{"type": "thinking"}]
+    }
+
+
+class TestAsyncTools:
+    def test_execute_async_awaits_coroutine(self):
+        import asyncio
+
+        registry = ToolRegistry()
+
+        async def fetch(url: str = "") -> str:
+            return f"fetched:{url}"
+
+        registry.register(ToolDefinition(name="fetch", description="", parameters={}), fetch)
+
+        executor = ToolExecutor(registry)
+        result = asyncio.run(
+            executor.execute_async(ToolCall(id="1", name="fetch", arguments={"url": "x"}))
+        )
+
+        assert result.tool_call_id == "1"
+        assert result.content == "fetched:x"
+        assert result.is_error is False
+
+    def test_react_agent_runs_awaitable_tool(self):
+        import asyncio
+
+        async def lookup(key: str = "") -> str:
+            return f"value:{key}"
+
+        registry = ToolRegistry()
+        registry.register(ToolDefinition(name="lookup", description="", parameters={}), lookup)
+
+        seen = {}
+
+        class FakeProvider:
+            def generate(self, agent_input):
+                if "done" not in seen:
+                    seen["done"] = True
+                    return LLMOutput(
+                        content="",
+                        tool_calls=[ToolCall(id="1", name="lookup", arguments={"key": "k"})],
+                    )
+                tool_messages = [m for m in agent_input.messages if m.role == Role.TOOL]
+                assert len(tool_messages) == 1
+                assert tool_messages[0].content == "value:k"
+                return LLMOutput(content="done")
+
+        agent = ReActAgent(provider=FakeProvider(), executor=ToolExecutor(registry))
+        output = asyncio.run(
+            agent.run(LLMInput(messages=[Message(role=Role.USER, content="hi")]))
+        )
+
+        assert output.content == "done"

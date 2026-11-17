@@ -1,6 +1,6 @@
 ---
 name: videodb
-description: See, Understand, Act on video and audio. See- ingest from local files, URLs, RTSP/live feeds, or live record desktop; return realtime context and playable stream links. Understand- extract frames, build visual/semantic/temporal indexes, and search moments with timestamps and auto-clips. Act- transcode and normalize (codec, fps, resolution, aspect ratio), perform timeline edits (subtitles, text/image overlays, branding, audio overlays, dubbing, translation), generate media assets (image, audio, video), and create real time alerts for events from live streams or desktop capture.
+description: Ingest, index, search, edit, and monitor video and audio with the VideoDB Python SDK — upload from files, URLs, or RTSP feeds, build spoken and scene indexes with timestamped search and playable clips, transcode and reframe, do timeline edits (subtitles, overlays, dubbing), and run real-time alerts on live streams or desktop capture. Use when working with video search, transcription, clipping, transcoding, streaming, or live video alerts.
 metadata:
   origin: ECC
 allowed-tools: Read Grep Glob Bash(python:*)
@@ -305,10 +305,13 @@ Use `ws_listener.py` to capture WebSocket events during recording sessions. Desk
 #### Quick Start
 
 1. **Choose state dir**: `STATE_DIR="${VIDEODB_EVENTS_DIR:-$HOME/.local/state/videodb}"`
-2. **Start listener**: `VIDEODB_EVENTS_DIR="$STATE_DIR" python scripts/ws_listener.py --clear "$STATE_DIR" &`
+2. **Start listener** from the project directory, so it reads the project's `.env`: `VIDEODB_EVENTS_DIR="$STATE_DIR" python "${CLAUDE_SKILL_DIR}/scripts/ws_listener.py" --clear "$STATE_DIR" &`
 3. **Get WebSocket ID**: `cat "$STATE_DIR/videodb_ws_id"`
 4. **Run capture code** (see reference/capture.md for the full workflow)
 5. **Events written to**: `$STATE_DIR/videodb_events.jsonl`
+
+`scripts/ws_listener.py` in the reference files is relative to this skill's directory (`${CLAUDE_SKILL_DIR}`), not to the project.
+Claude Code fills in `${CLAUDE_SKILL_DIR}`. Other hosts leave it empty, so replace it with the directory this skill is installed in (for Codex, `$HOME/.codex/skills/videodb`; `~` does not expand inside the quotes).
 
 Use `--clear` whenever you start a fresh capture run so stale transcript and visual events do not leak into the new session.
 

@@ -38,7 +38,7 @@ You are the **Backend Orchestrator**, coordinating multi-model collaboration for
 ```
 # New session call
 Bash({
-  command: "~/.claude/bin/codeagent-wrapper {{LITE_MODE_FLAG}}--backend codex - \"$PWD\" <<'EOF'
+  command: "~/.claude/bin/codeagent-wrapper --backend codex - \"$PWD\" <<'EOF'
 ROLE_FILE: <role prompt path>
 <TASK>
 Requirement: <enhanced requirement (or $ARGUMENTS if not enhanced)>
@@ -53,7 +53,7 @@ EOF",
 
 # Resume session call
 Bash({
-  command: "~/.claude/bin/codeagent-wrapper {{LITE_MODE_FLAG}}--backend codex resume <SESSION_ID> - \"$PWD\" <<'EOF'
+  command: "~/.claude/bin/codeagent-wrapper --backend codex resume <SESSION_ID> - \"$PWD\" <<'EOF'
 ROLE_FILE: <role prompt path>
 <TASK>
 Requirement: <enhanced requirement (or $ARGUMENTS if not enhanced)>

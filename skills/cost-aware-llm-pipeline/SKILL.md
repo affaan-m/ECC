@@ -1,6 +1,6 @@
 ---
 name: cost-aware-llm-pipeline
-description: Cost optimization patterns for LLM API usage — model routing by task complexity, budget tracking, retry logic, and prompt caching.
+description: Cost optimization patterns for LLM API usage — model routing by task complexity, budget tracking, retry logic, and prompt caching. Use when LLM spend needs to come down, or when routing tasks across model tiers and budgets.
 metadata:
   origin: ECC
 ---
@@ -23,7 +23,7 @@ Patterns for controlling LLM API costs while maintaining quality. Combines model
 Automatically select cheaper models for simple tasks, reserving expensive models for complex ones.
 
 ```python
-MODEL_SONNET = "claude-sonnet-4-6"
+MODEL_SONNET = "claude-sonnet-5"
 MODEL_HAIKU = "claude-haiku-4-5-20251001"
 
 _SONNET_TEXT_THRESHOLD = 10_000  # chars
@@ -152,13 +152,17 @@ def process(text: str, config: Config, tracker: CostTracker) -> tuple[Result, Co
     return parse_result(response), tracker
 ```
 
-## Pricing Reference (2025-2026)
+## Pricing Reference (2026)
 
 | Model | Input ($/1M tokens) | Output ($/1M tokens) | Relative Cost |
 |-------|---------------------|----------------------|---------------|
-| Haiku 4.5 | $0.80 | $4.00 | 1x |
-| Sonnet 4.6 | $3.00 | $15.00 | ~4x |
-| Opus 4.5 | $15.00 | $75.00 | ~19x |
+| Haiku 3.5 (legacy) | $0.80 | $4.00 | 0.8x |
+| Haiku 4.5 | $1.00 | $5.00 | 1x |
+| Sonnet 5 | $2.00 | $10.00 | 2x |
+| Sonnet 4.6 | $3.00 | $15.00 | 3x |
+| Opus 4.8 | $5.00 | $25.00 | 5x |
+| Fable 5 / Mythos 5 | $10.00 | $50.00 | 10x |
+| Opus 4.0 / 4.1 (legacy) | $15.00 | $75.00 | 15x |
 
 ## Best Practices
 

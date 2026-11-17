@@ -5,6 +5,10 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const { createStateStore } = require('./lib/state-store');
+const {
+  reconcileCurrentInstallState,
+  summarizeProjectedInstallHealth,
+} = require('./lib/state-store/install-state-projection');
 
 function showHelp(exitCode = 0) {
   console.log(`
@@ -112,11 +116,17 @@ function printSkillRuns(section) {
   }
 }
 
-function printInstallHealth(section) {
+function printInstallHealth(section, projection) {
   console.log(`Install health: ${section.status}`);
   console.log(`  Targets recorded: ${section.totalCount}`);
   console.log(`  Healthy: ${section.healthyCount}`);
   console.log(`  Warning: ${section.warningCount}`);
+  if (projection) {
+    console.log(`  Projection: ${projection.status}`);
+    for (const warning of projection.warnings) {
+      console.log(`  - [warning] ${warning.code}: ${warning.message}`);
+    }
+  }
 
   if (section.installations.length === 0) {
     console.log('  Installations: none');
@@ -130,6 +140,9 @@ function printInstallHealth(section) {
     console.log(`    Profile: ${installation.profile || '(custom)'}`);
     console.log(`    Modules: ${installation.moduleCount}`);
     console.log(`    Source version: ${installation.sourceVersion || '(unknown)'}`);
+    for (const issue of installation.issues || []) {
+      console.log(`    - [${issue.severity}] ${issue.code}: ${issue.message}`);
+    }
   }
 }
 
@@ -252,7 +265,7 @@ function printHuman(payload) {
   console.log();
   printSkillRuns(payload.skillRuns);
   console.log();
-  printInstallHealth(payload.installHealth);
+  printInstallHealth(payload.installHealth, payload.installStateProjection);
   console.log();
   printGovernance(payload.governance);
   console.log();
@@ -336,6 +349,13 @@ function renderMarkdown(payload) {
     `Warning: ${payload.installHealth.warningCount}`
   );
 
+  if (payload.installStateProjection) {
+    lines.push(`Projection: ${payload.installStateProjection.status}`);
+    for (const warning of payload.installStateProjection.warnings) {
+      lines.push(`- [warning] ${warning.code}: ${warning.message}`);
+    }
+  }
+
   if (payload.installHealth.installations.length === 0) {
     lines.push('', 'Installations: none');
   } else {
@@ -346,6 +366,9 @@ function renderMarkdown(payload) {
       lines.push(`  - Profile: ${installation.profile || '(custom)'}`);
       lines.push(`  - Modules: ${installation.moduleCount}`);
       lines.push(`  - Source version: ${installation.sourceVersion || '(unknown)'}`);
+      for (const issue of installation.issues || []) {
+        lines.push(`  - [${issue.severity}] ${issue.code}: ${issue.message}`);
+      }
     }
   }
 
@@ -442,14 +465,49 @@ async function main() {
       homeDir: process.env.HOME || os.homedir(),
     });
 
+    const installStateProjection = reconcileCurrentInstallState(store, {
+      homeDir: process.env.HOME || os.homedir(),
+      env: process.env,
+      projectRoot: process.cwd(),
+    });
+    const storedStatus = store.getStatus({
+      activeLimit: options.limit,
+      recentSkillRunLimit: 20,
+      pendingLimit: options.limit,
+      workItemLimit: options.limit,
+    });
+    const installHealth = summarizeProjectedInstallHealth(
+      storedStatus.installHealth,
+      installStateProjection
+    );
+    const installWarningDelta = installHealth.warningCount
+      - storedStatus.installHealth.warningCount;
+    const status = {
+      ...storedStatus,
+      installHealth,
+      readiness: installWarningDelta === 0
+        ? storedStatus.readiness
+        : {
+          ...storedStatus.readiness,
+          status: 'attention',
+          attentionCount: storedStatus.readiness.attentionCount + installWarningDelta,
+          warningInstallations: installHealth.warningCount,
+        },
+    };
+    const projectionWarningCount = installStateProjection.warningCount;
+
     const payload = {
       dbPath: store.dbPath,
-      ...store.getStatus({
-        activeLimit: options.limit,
-        recentSkillRunLimit: 20,
-        pendingLimit: options.limit,
-        workItemLimit: options.limit,
-      }),
+      ...status,
+      readiness: projectionWarningCount === 0
+        ? status.readiness
+        : {
+          ...status.readiness,
+          status: 'attention',
+          attentionCount: status.readiness.attentionCount + projectionWarningCount,
+          installProjectionWarnings: projectionWarningCount,
+        },
+      installStateProjection,
     };
     payload.githubCoordination = summarizeGithubCoordination(payload.workItems);
 

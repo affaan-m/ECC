@@ -35,46 +35,7 @@
  */
 
 // Export the main plugin
-export { ECCHooksPlugin, default } from "./plugins/index.js"
-
-// Export individual components for selective use
-export * from "./plugins/index.js"
-
-// Version export
-export const VERSION = "1.6.0"
-
-// Plugin metadata
-export const metadata = {
-  name: "ecc-universal",
-  version: VERSION,
-  description: "ECC plugin for OpenCode",
-  author: "affaan-m",
-  features: {
-    agents: 13,
-    commands: 31,
-    skills: 37,
-    configAssets: true,
-    hookEvents: [
-      "file.edited",
-      "tool.execute.before",
-      "tool.execute.after",
-      "session.created",
-      "session.idle",
-      "session.deleted",
-      "file.watcher.updated",
-      "permission.ask",
-      "todo.updated",
-      "shell.env",
-      "experimental.session.compacting",
-    ],
-    customTools: [
-      "run-tests",
-      "check-coverage",
-      "security-audit",
-      "format-code",
-      "lint-check",
-      "git-summary",
-      "changed-files",
-    ],
-  },
-}
+// The default package export targets OpenCode 2.x's definition loader.
+// OpenCode 1.x's function-only loader cannot load this package entry. The
+// named V1 factory in plugins/ecc-hooks.ts is retained for migration only.
+export { default } from "./plugins/ecc-hooks.ts"

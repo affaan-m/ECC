@@ -10,7 +10,7 @@
 
 類型：feat、fix、refactor、docs、test、chore、perf、ci
 
-注意：若要停用共同作者歸屬，請在 `~/.claude/settings.json` 中設定 `"includeCoAuthoredBy": false`；Claude Code 預設會附加 `Co-Authored-By`，而 ECC 不會隨附這個設定。
+注意：ECC 管理的安裝會在 `~/.claude/settings.json` 中設定 `"includeCoAuthoredBy": false`，因此提交預設不會附帶 `Co-Authored-By`。若要保留 Claude 的歸屬，請設定 `"includeCoAuthoredBy": true` 或設定 `attribution`；ECC 不會覆寫使用者的明確選擇。
 
 ## Pull Request 工作流程
 

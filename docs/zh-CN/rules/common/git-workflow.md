@@ -10,7 +10,7 @@
 
 类型：feat, fix, refactor, docs, test, chore, perf, ci
 
-注意：若要禁用共同作者归因，请在 `~/.claude/settings.json` 中设置 `"includeCoAuthoredBy": false`；Claude Code 默认会附加 `Co-Authored-By`，而 ECC 不会附带此设置。
+注意：ECC 管理的安装会在 `~/.claude/settings.json` 中设置 `"includeCoAuthoredBy": false`，因此提交默认不带 `Co-Authored-By`。若要保留 Claude 的归因，请设置 `"includeCoAuthoredBy": true` 或配置 `attribution`；ECC 不会覆盖用户的显式选择。
 
 ## 拉取请求工作流程
 

@@ -1,6 +1,6 @@
 ---
 name: fastapi-patterns
-description: FastAPI best practices covering project structure, Pydantic v2 schemas, dependency injection, async handlers, authentication, authorization, transactional service layers, and testing with httpx and pytest.
+description: FastAPI best practices covering project structure, Pydantic v2 schemas, dependency injection, async handlers, authentication, authorization, transactional service layers, and testing with httpx and pytest. Use when building or reviewing FastAPI apps — Pydantic schemas, dependencies, async handlers, auth, or tests.
 metadata:
   origin: ECC
 ---
@@ -229,7 +229,7 @@ ActiveUserDep = Annotated[User, Depends(get_current_active_user)]
 ```python
 # app/routers/users.py
 from typing import Annotated
-from fastapi import APIRouter, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.security import OAuth2PasswordRequestForm
 
 from app.dependencies import ActiveUserDep, DbDep

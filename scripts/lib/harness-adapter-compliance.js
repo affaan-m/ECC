@@ -98,6 +98,45 @@ const ADAPTER_RECORDS = Object.freeze([
     ],
   },
   {
+    id: 'grok-build',
+    harness: 'Grok Build',
+    state: 'Adapter-backed',
+    supported_assets: [
+      'Grok plugin and marketplace manifests',
+      'shared skills',
+      'commands',
+      'hooks only after adapter hook consent',
+      'MCP opted out on the native plugin surface (`mcpServers: ""` and `hooks: ""`)',
+    ],
+    unsupported_surfaces: [
+      'Claude userConfig hook profiles are ignored; use ECC_HOOK_PROFILE',
+      'ECC agent tool allowlists use Claude names and are not mapped in Grok agent frontmatter',
+      'No plugin rules/ surface',
+    ],
+    install_or_onramp: [
+      '`node scripts/grok-install.js --dry-run` / `node scripts/grok-install.js` (canonical `grok` install-state under ~/.grok/ecc/)',
+      '`grok plugin marketplace add affaan-m/ECC && grok plugin install ecc && grok plugin enable ecc` (discovery only; not ECC consent)',
+    ],
+    verification_commands: [
+      '`grok plugin validate .`',
+      '`node tests/lib/grok-harness-adapter.test.js`',
+      '`node tests/plugin-manifest.test.js`',
+    ],
+    risk_notes: [
+      'Grok rejects Claude marketplace source "./"; pin a url+sha catalog in .grok-plugin/marketplace.json to a commit that contains the Grok adapter',
+      'ECC consent is the canonical install-apply receipt path; native Grok CLI discovery opts hooks and MCP out via empty plugin.json fields; the full skill catalog is large',
+    ],
+    last_verified_at: '2026-09-03',
+    owner: 'ECC maintainers',
+    source_docs: [
+      '.grok-plugin/plugin.json',
+      '.grok-plugin/marketplace.json',
+      '.grok-plugin/README.md',
+      'scripts/lib/grok-harness-adapter.js',
+      'scripts/lib/install-targets/grok-home.js',
+    ],
+  },
+  {
     id: 'opencode',
     harness: 'OpenCode',
     state: 'Adapter-backed',
@@ -120,6 +159,44 @@ const ADAPTER_RECORDS = Object.freeze([
       '.opencode/package.json',
       '.opencode/plugins/ecc-hooks.ts',
       'scripts/build-opencode.js',
+    ],
+  },
+  {
+    id: 'pi',
+    harness: 'Pi',
+    state: 'Adapter-backed',
+    supported_assets: [
+      'Pi package manifest',
+      'canonical ECC skills (skills/)',
+      'canonical ECC commands as prompt templates (commands/)',
+      'canonical ECC engineering rules (rules/common/) injected into the system prompt',
+      'session lifecycle hook adapter',
+      '/ecc-doctor diagnostics command',
+      'canonical ECC agents (agents/) portable via scripts/agent-convert.js (claude -> pi)',
+    ],
+    unsupported_surfaces: [
+      'Agent chains, approval prompts, and persistent todos require companion Pi packages and are not part of this adapter (individual agent definitions are portable via scripts/agent-convert.js)',
+      'Pi core has no MCP surface, though ECC MCP configs load verbatim through the community pi-mcp-adapter package, which ECC neither installs nor depends on',
+    ],
+    install_or_onramp: ['`pi install git:github.com/affaan-m/ECC`', '`pi install /path/to/ECC` from a local checkout'],
+    verification_commands: [
+      '`node tests/pi/pi-package-manifest.test.js`',
+      '`node tests/pi/pi-extension-adapter.test.js`',
+      '`node tests/pi/agent-convert.test.js`',
+      '`npm run harness:adapters -- --check`',
+    ],
+    risk_notes: [
+      'Pi extensions execute with full user permissions, and hooks run without a shell and resolve from the installed package rather than the user project',
+      'Keep canonical skills and commands as the single source of truth, and never generate copies under .pi/',
+    ],
+    last_verified_at: '2026-09-08',
+    owner: 'ECC maintainers',
+    source_docs: [
+      '.pi/extensions/index.ts',
+      '.pi/README.md',
+      'package.json',
+      'schemas/agent.schema.json',
+      'scripts/agent-convert.js',
     ],
   },
   {
@@ -218,6 +295,179 @@ const ADAPTER_RECORDS = Object.freeze([
       'scripts/lib/session-adapters/dmux-tmux.js',
       'scripts/orchestration-status.js',
       'tests/lib/session-adapters.test.js',
+    ],
+  },
+  {
+    id: 'deepseek-harness',
+    harness: 'DeepSeek Harness',
+    state: 'Adapter-backed',
+    supported_assets: [
+      'canonical ECC skills (skills/) via native DSH skill roots',
+      'command hooks through the first-party @deepseek-ai/dsh-hooks-claude-code bridge (23 commands on 5 of 7 bridged events)',
+      'hooks config generator (scripts/dsh/generate-hooks-config.js)',
+      'profile patch mounting with compose-time validation',
+    ],
+    unsupported_surfaces: [
+      'Claude slash commands and ECC subagent surfaces have no DSH equivalent; workflows are covered by skills',
+      'PreCompact, PostToolUseFailure, and SessionEnd hook events have no bridge counterpart',
+      'no dedicated installer target; setup is documented manual configuration',
+    ],
+    install_or_onramp: [
+      'link the curated catalog: ln -s /path/to/ECC/skills/<skill> ~/.dsh/skills/<skill>',
+      'generate the hooks config: node scripts/dsh/generate-hooks-config.js --ecc-root /path/to/ECC --out ~/.dsh/ecc/hooks-dsh.json',
+      'mount a bare - insert: entry for @deepseek-ai/dsh-hooks-claude-code in ~/.dsh/profiles/<profile>/cordis.patch.yml',
+    ],
+    verification_commands: [
+      '`node tests/scripts/dsh-generate-hooks-config.test.js`',
+      '`node scripts/ci/validate-skills.js`',
+      '`dsh --profile <profile> --dump-config` (compose-time validation)',
+    ],
+    risk_notes: [
+      'Hook commands embed the ECC checkout path; regenerate the hooks config after moving the repo',
+      'Keep the tool-name matcher mapping (Bash to bash, Edit/MultiEdit to edit) in sync with DSH tool names',
+      'A plain top-level patch entry is silently dropped; additions require a bare insert entry',
+    ],
+    last_verified_at: '2026-10-01',
+    owner: 'ECC maintainers',
+    source_docs: [
+      'docs/DEEPSEEK-HARNESS-GUIDE.md',
+      'skills/deepseek-harness-setup/SKILL.md',
+      'scripts/dsh/generate-hooks-config.js',
+      'tests/scripts/dsh-generate-hooks-config.test.js',
+    ],
+  },
+  {
+    id: 'antigravity',
+    harness: 'Antigravity',
+    state: 'Adapter-backed',
+    supported_assets: [
+      'flattened workspace rules (.agents/rules/) with always_on and glob activation frontmatter',
+      'slash workflows (.agents/workflows/) projected from commands/',
+      'canonical ECC skills (.agents/skills/<name>/SKILL.md)',
+      'custom agents (.agents/agents/) with adapted flash/pro models and tool allowlists',
+    ],
+    unsupported_surfaces: [
+      'Claude runtime hooks and MCP configs are not installed by the Antigravity project target',
+      'Unsupported Claude tool names are omitted from custom agents because unmapped tool identifiers can stall execution',
+    ],
+    install_or_onramp: [
+      '`./install.sh --profile minimal --target antigravity`',
+      '`npx ecc-universal install --profile minimal --target antigravity`',
+    ],
+    verification_commands: [
+      '`node tests/lib/antigravity-install-target.test.js`',
+      '`node tests/lib/antigravity-rule.test.js`',
+      '`node scripts/doctor.js --target antigravity`',
+    ],
+    risk_notes: [
+      'Do not copy the repository .agents/ Codex packaging tree wholesale or rename legacy .agent/ directories manually because ecc-install-state.json records absolute managed paths.',
+    ],
+    last_verified_at: '2026-10-30',
+    owner: 'ECC maintainers',
+    source_docs: [
+      'docs/ANTIGRAVITY-GUIDE.md',
+      'scripts/lib/install-targets/antigravity-project.js',
+      'scripts/lib/install/antigravity-agent.js',
+      'scripts/lib/install/antigravity-rule.js',
+      'tests/lib/antigravity-install-target.test.js',
+    ],
+  },
+  {
+    id: 'qwen',
+    harness: 'Qwen Code',
+    state: 'Adapter-backed',
+    supported_assets: [
+      'Qwen home instructions (~/.qwen/QWEN.md)',
+      'canonical ECC skills, commands, rules, and MCP configs under ~/.qwen/',
+      'managed custom agents (~/.qwen/agents/) with Qwen tool IDs, palette colors, and model: inherit',
+    ],
+    unsupported_surfaces: [
+      'Claude hook runtime parity is not claimed or installed',
+      'Empty or null agent tools lists are rejected because Qwen Code treats an empty list in named-agent files as inheriting all parent tools rather than deny-all',
+    ],
+    install_or_onramp: [
+      '`./install.sh --target qwen --profile minimal`',
+      '`qwen extensions install https://github.com/affaan-m/ECC:ecc` (extension path; conditional rules only)',
+    ],
+    verification_commands: [
+      '`node tests/scripts/qwen-adapt-agents.test.js`',
+      '`node tests/lib/install-targets.test.js`',
+    ],
+    risk_notes: [
+      'Do not layer a full managed ~/.qwen install over an active Qwen extension install unintentionally, and do not add artificial paths: ["**/*"] globs to common rules.',
+    ],
+    last_verified_at: '2026-10-30',
+    owner: 'ECC maintainers',
+    source_docs: [
+      'docs/QWEN-GUIDE.md',
+      'scripts/lib/install-targets/qwen-home.js',
+      'scripts/qwen-adapt-agents.js',
+      'tests/scripts/qwen-adapt-agents.test.js',
+    ],
+  },
+  {
+    id: 'copilot',
+    harness: 'GitHub Copilot',
+    state: 'Adapter-backed',
+    supported_assets: [
+      'project-local skills (.github/skills/) with projected helper paths',
+      'custom agents (.github/agents/) restricted to name and description frontmatter',
+      'path-scoped instructions (.github/instructions/ecc/**/*.instructions.md) with applyTo glob mapping',
+      'managed package-manager detection helpers under .github/ecc/scripts/',
+    ],
+    unsupported_surfaces: [
+      'Claude runtime hooks and slash commands are not installed because Copilot CLI governs tool permissions at the session level and lacks slash-command argument substitution',
+      'Agent model, tools, and color fields are omitted from Copilot custom agent frontmatter',
+    ],
+    install_or_onramp: [
+      '`./install.sh --profile minimal --target copilot`',
+    ],
+    verification_commands: [
+      '`node tests/lib/copilot-install-target.test.js`',
+      '`node tests/lib/install-targets.test.js`',
+    ],
+    risk_notes: [
+      'Copilot CLI governs tool permissions via session --allow-tool and --deny-tool flags rather than per-agent frontmatter allowlists.',
+    ],
+    last_verified_at: '2026-10-30',
+    owner: 'ECC maintainers',
+    source_docs: [
+      'scripts/lib/install-targets/copilot-project.js',
+      'scripts/lib/install/copilot-agent.js',
+      'scripts/lib/install/copilot-rule.js',
+      'tests/lib/copilot-install-target.test.js',
+    ],
+  },
+  {
+    id: 'hermes',
+    harness: 'Hermes',
+    state: 'Adapter-backed',
+    supported_assets: [
+      'managed home rules, skills, commands, and MCP configs under ~/.hermes/',
+      'opt-in self-contained Python hooks (config-protection.py and check-console-log.py) via --modules hermes-hooks --enable-hooks',
+    ],
+    unsupported_surfaces: [
+      'Full 24-command Claude hook runtime is not installed; Hermes uses its own ~/.hermes/config.yaml event mapping and consent allowlist',
+      'Installer never mutates ~/.hermes/config.yaml automatically',
+    ],
+    install_or_onramp: [
+      '`./install.sh --profile minimal --target hermes`',
+      '`./install.sh --target hermes --modules hermes-hooks --enable-hooks`',
+    ],
+    verification_commands: [
+      '`node tests/hermes-hooks.test.js`',
+      '`node tests/lib/install-targets.test.js`',
+    ],
+    risk_notes: [
+      'Register hooks manually in ~/.hermes/config.yaml using expanded paths because Hermes resolves hook commands verbatim without ~ expansion, and never commit raw ~/.hermes exports.',
+    ],
+    last_verified_at: '2026-10-30',
+    owner: 'ECC maintainers',
+    source_docs: [
+      'docs/HERMES-HOOKS.md',
+      'docs/architecture/cross-harness.md',
+      'scripts/lib/install-targets/hermes-home.js',
+      'tests/hermes-hooks.test.js',
     ],
   },
   {
@@ -422,18 +672,99 @@ function extractMatrixBlock(markdown) {
   return normalized.slice(start + MATRIX_BLOCK_START.length, end).trim();
 }
 
+function isWithinRootPath(rootPath, candidatePath) {
+  const relative = path.relative(rootPath, candidatePath);
+  return Boolean(relative)
+    && relative !== '..'
+    && !relative.startsWith(`..${path.sep}`)
+    && !path.isAbsolute(relative);
+}
+
+function isSafeRelativeSourceDocPath(trimmedEntry, normalizedEntry) {
+  const segments = normalizedEntry.split('/');
+  return !path.isAbsolute(trimmedEntry)
+    && !/^[A-Za-z]:/.test(normalizedEntry)
+    && !segments.includes('..')
+    && !segments.includes('.');
+}
+
+// Canonicalize both sides of the containment check the same way. The native
+// realpath also expands Windows 8.3 short names (e.g. RUNNER~1), which the JS
+// realpath leaves as-is.
+function nativeRealpath(value) {
+  return (fs.realpathSync.native || fs.realpathSync)(value);
+}
+
+function validateSingleSourceDoc(label, docEntry, repoRoot, canonicalRepoRoot) {
+  if (typeof docEntry !== 'string' || !docEntry.trim()) {
+    return null;
+  }
+
+  const trimmedEntry = docEntry.trim();
+  const normalizedEntry = trimmedEntry.replace(/\\/g, '/');
+  if (!isSafeRelativeSourceDocPath(trimmedEntry, normalizedEntry)) {
+    return `${label}: source_doc ${trimmedEntry} must be a repo-relative path without '..'`;
+  }
+
+  const resolved = path.resolve(repoRoot, normalizedEntry);
+  if (!isWithinRootPath(repoRoot, resolved)) {
+    return `${label}: source_doc ${trimmedEntry} resolves outside repository root`;
+  }
+
+  let canonicalResolved;
+  try {
+    canonicalResolved = nativeRealpath(resolved);
+  } catch (_error) {
+    return `${label}: missing source_doc ${trimmedEntry}`;
+  }
+
+  if (!isWithinRootPath(canonicalRepoRoot, canonicalResolved)) {
+    return `${label}: source_doc ${trimmedEntry} resolves outside repository root`;
+  }
+
+  return null;
+}
+
+function validateSourceDocs(records = ADAPTER_RECORDS, options = {}) {
+  const repoRoot = path.resolve(options.repoRoot || path.resolve(__dirname, '..', '..'));
+  const canonicalRepoRoot = fs.existsSync(repoRoot) ? nativeRealpath(repoRoot) : repoRoot;
+  const errors = [];
+
+  for (const record of records) {
+    const label = record?.id || 'unknown';
+    const sourceDocs = Array.isArray(record?.source_docs) ? record.source_docs : [];
+
+    for (const docEntry of sourceDocs) {
+      const error = validateSingleSourceDoc(label, docEntry, repoRoot, canonicalRepoRoot);
+      if (error) {
+        errors.push(error);
+      }
+    }
+  }
+
+  return errors;
+}
+
 function validateDocumentation(options = {}) {
-  const repoRoot = options.repoRoot || path.resolve(__dirname, '..', '..');
+  const repoRoot = path.resolve(options.repoRoot || path.resolve(__dirname, '..', '..'));
   const docPath = options.docPath || path.join(repoRoot, 'docs', 'architecture', 'harness-adapter-compliance.md');
+  const records = options.records || ADAPTER_RECORDS;
+  const checkSourceDocs = options.checkSourceDocs !== undefined
+    ? Boolean(options.checkSourceDocs)
+    : !options.docPath;
   const errors = [];
   const source = fs.readFileSync(docPath, 'utf8');
   const actual = extractMatrixBlock(source);
-  const expected = renderMarkdownTable();
+  const expected = renderMarkdownTable(records);
 
   if (actual === null) {
     errors.push(`missing matrix block markers in ${path.relative(repoRoot, docPath)}`);
   } else if (actual !== expected) {
     errors.push(`matrix block in ${path.relative(repoRoot, docPath)} is not generated from adapter records`);
+  }
+
+  if (checkSourceDocs) {
+    errors.push(...validateSourceDocs(records, { repoRoot }));
   }
 
   return errors;
@@ -450,4 +781,5 @@ module.exports = {
   renderStateTable,
   validateAdapterRecords,
   validateDocumentation,
+  validateSourceDocs,
 };
