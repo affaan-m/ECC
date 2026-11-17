@@ -4,8 +4,13 @@ const { spawnSync } = require('child_process');
 
 const DEFAULT_DISCUSSION_FIRST = 100;
 const MAINTAINER_ASSOCIATIONS = new Set(['OWNER', 'MEMBER', 'COLLABORATOR']);
+const MAX_COMMENT_PAGES = 100;
+const PAGE_INFO_FIELDS = 'pageInfo { hasNextPage endCursor }';
+const REPLY_FIELDS = `nodes { authorAssociation } ${PAGE_INFO_FIELDS}`;
+const COMMENT_FIELDS = `nodes { id authorAssociation replies(first: 20) { ${REPLY_FIELDS} } } ${PAGE_INFO_FIELDS}`;
 const DISCUSSION_ENABLED_QUERY = 'query($owner: String!, $name: String!) { repository(owner: $owner, name: $name) { hasDiscussionsEnabled } }';
-const DISCUSSION_QUERY = 'query($owner: String!, $name: String!, $first: Int!) { repository(owner: $owner, name: $name) { hasDiscussionsEnabled discussions(first: $first, orderBy: {field: UPDATED_AT, direction: DESC}) { totalCount nodes { number title url updatedAt authorAssociation category { name isAnswerable } answer { url authorAssociation } comments(first: 20) { nodes { authorAssociation } } } } } }';
+const DISCUSSION_QUERY = `query($owner: String!, $name: String!, $first: Int!) { repository(owner: $owner, name: $name) { hasDiscussionsEnabled discussions(first: $first, orderBy: {field: UPDATED_AT, direction: DESC}) { totalCount nodes { id number title url updatedAt authorAssociation category { name isAnswerable } answer { url authorAssociation } comments(first: 20) { ${COMMENT_FIELDS} } } } } }`;
+const COMMENT_PAGE_QUERY = `query($id: ID!, $after: String!) { node(id: $id) { ... on Discussion { comments(first: 100, after: $after) { ${COMMENT_FIELDS} } } ... on DiscussionComment { replies(first: 100, after: $after) { ${REPLY_FIELDS} } } }`;
 
 function splitRepo(repo) {
   const [owner, name] = String(repo || '').split('/');
@@ -64,10 +69,50 @@ function discussionNeedsMaintainerTouch(discussion) {
     return false;
   }
 
-  const comments = discussion.comments && Array.isArray(discussion.comments.nodes)
-    ? discussion.comments.nodes
-    : [];
-  return !comments.some(comment => MAINTAINER_ASSOCIATIONS.has(comment.authorAssociation));
+  return !connectionHasMaintainer(discussion.comments);
+}
+
+function connectionHasMaintainer(connection) {
+  const nodes = Array.isArray(connection?.nodes) ? connection.nodes : [];
+  return nodes.some(comment => MAINTAINER_ASSOCIATIONS.has(comment?.authorAssociation)
+    || connectionHasMaintainer(comment?.replies));
+}
+
+function readCommentPage(nodeId, cursor, field, options, budget) {
+  if (budget.remaining === 0) {
+    throw new Error(`Discussion comment pagination exceeded ${MAX_COMMENT_PAGES} additional pages`);
+  }
+  budget.remaining -= 1;
+  const payload = runGhJson([
+    'api', 'graphql', '-f', `id=${nodeId}`, '-f', `after=${cursor}`, '-f', `query=${COMMENT_PAGE_QUERY}`,
+  ], options);
+  const connection = payload?.data?.node?.[field];
+  if (payload?.errors?.length || !Array.isArray(connection?.nodes)
+    || typeof connection.pageInfo?.hasNextPage !== 'boolean') {
+    throw new Error('GitHub discussion comment page is incomplete');
+  }
+  return connection;
+}
+
+function connectionHasMaintainerWithPages(connection, nodeId, field, options, budget) {
+  let page = connection;
+  const cursors = new Set();
+  while (page) {
+    // Check everything already visible before requesting any additional page.
+    if (connectionHasMaintainer(page)) return true;
+    for (const comment of page.nodes || []) {
+      if (comment?.replies?.pageInfo?.hasNextPage
+        && connectionHasMaintainerWithPages(comment.replies, comment.id, 'replies', options, budget)) return true;
+    }
+    if (!page.pageInfo?.hasNextPage) return false;
+    const cursor = page.pageInfo.endCursor;
+    if (typeof nodeId !== 'string' || !nodeId || typeof cursor !== 'string' || !cursor || cursors.has(cursor)) {
+      throw new Error('GitHub discussion comment pagination is incomplete or repeated');
+    }
+    cursors.add(cursor);
+    page = readCommentPage(nodeId, cursor, field, options, budget);
+  }
+  return false;
 }
 
 function discussionNeedsAcceptedAnswer(discussion) {
@@ -123,7 +168,9 @@ function fetchDiscussionSummary(repo, options = {}) {
   const repository = payload && payload.data && payload.data.repository;
   const discussions = repository && repository.discussions;
   const nodes = discussions && Array.isArray(discussions.nodes) ? discussions.nodes : [];
-  const needingTouch = nodes.filter(discussionNeedsMaintainerTouch);
+  const budget = { remaining: MAX_COMMENT_PAGES };
+  const needingTouch = nodes.filter(discussion => discussionNeedsMaintainerTouch(discussion)
+    && !connectionHasMaintainerWithPages(discussion.comments, discussion.id, 'comments', options, budget));
   const missingAcceptedAnswer = nodes.filter(discussionNeedsAcceptedAnswer);
 
   return {
