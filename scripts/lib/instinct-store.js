@@ -29,6 +29,9 @@ const NEVER_TOKEN_STOPWORDS = new Set([
   'a', 'an', 'any', 'be', 'call', 'do', 'ever', 'get', 'have', 'include',
   'let', 'make', 'put', 'set', 'use', 'write',
 ]);
+// Words that open an introductory context before a prohibition: in "When
+// editing `helpers.js` never use `fooWidget`" only `fooWidget` is forbidden.
+const CONTEXT_OPENER_RE = /^\s*(?:when|whenever|if|while|before|after|during|unless|once)\b/i;
 // Words that end the prohibited part of a sentence: in "Never use `foo`,
 // always prefer `bar`" only `foo` is forbidden.
 const AFFIRMATIVE_MARKER_RE = /\b(?:always|prefer|preferring|instead|rather|but)\b/i;
@@ -284,11 +287,22 @@ function maskQuotedSpans(text) {
   return text.replace(QUOTED_IDENTIFIER_RE, match => ' '.repeat(match.length));
 }
 
-// The forbidden part of a clause runs from the prohibition marker and stops
-// at the first affirmative marker after it, so context before the marker
-// ("When editing `helpers.js`, never use `fooWidget`") is not forbidden. A
-// later prohibition opens another forbidden part, so "never a, prefer b and
-// never c" forbids both a and c.
+// Text before the first prohibition marker is either the subject of the
+// prohibition ("`config.prod.json` must never be edited"), which stays
+// forbidden, or an introductory context ("When editing `helpers.js`, never use
+// `fooWidget`"), which does not. Context is the part up to the last comma
+// before the marker, or all of it when it opens with a condition word.
+function forbiddenStart(masked, markerIndex) {
+  const before = masked.slice(0, markerIndex);
+  const comma = before.lastIndexOf(',');
+  if (comma !== -1) return comma + 1;
+  return CONTEXT_OPENER_RE.test(before) ? markerIndex : 0;
+}
+
+// The forbidden part of a clause runs from forbiddenStart through the
+// prohibition and stops at the first affirmative marker after it. A later
+// prohibition opens another forbidden part, so "never a, prefer b and never c"
+// forbids both a and c.
 function prohibitedPart(clause) {
   const masked = maskQuotedSpans(clause);
   const parts = [];
@@ -299,7 +313,8 @@ function prohibitedPart(clause) {
     const afterMarker = start + marker.index + marker[0].length;
     const affirmative = AFFIRMATIVE_MARKER_RE.exec(masked.slice(afterMarker));
     const end = affirmative ? afterMarker + affirmative.index : clause.length;
-    parts.push(clause.slice(start + marker.index, end));
+    const from = parts.length === 0 ? forbiddenStart(masked, marker.index) : start + marker.index;
+    parts.push(clause.slice(from, end));
     if (!affirmative) break;
     start = end + affirmative[0].length;
   }

@@ -298,6 +298,38 @@ function runTests() {
     }), 'prohibition');
   })) passed++; else failed++;
 
+  if (test('instinctMatchKind forbids the quoted subject of a prohibition', () => {
+    const { instinctMatchKind } = loadStore();
+    const instinct = {
+      id: 'no-prod-config-edits',
+      confidence: 0.91,
+      trigger: 'when changing config',
+      content: '`config.prod.json` must never be edited',
+    };
+    assert.strictEqual(instinctMatchKind(instinct, {
+      file_path: '/app/config.prod.json',
+      contents: '{}',
+    }), 'prohibition');
+  })) passed++; else failed++;
+
+  if (test('instinctMatchKind does not forbid a context opened without a comma', () => {
+    const { instinctMatchKind } = loadStore();
+    const instinct = {
+      id: 'no-foowidget-in-helpers',
+      confidence: 0.91,
+      trigger: 'when editing helpers',
+      content: 'When editing `helpers.js` never use `fooWidget`',
+    };
+    assert.strictEqual(instinctMatchKind(instinct, {
+      file_path: '/src/helpers.js',
+      new_string: 'barWidget()',
+    }), 'guidance');
+    assert.strictEqual(instinctMatchKind(instinct, {
+      file_path: '/src/helpers.js',
+      new_string: 'fooWidget()',
+    }), 'prohibition');
+  })) passed++; else failed++;
+
   if (test('instinctMatchKind keeps punctuation inside a quoted command in one clause', () => {
     const { instinctMatchKind } = loadStore();
     const instinct = {
