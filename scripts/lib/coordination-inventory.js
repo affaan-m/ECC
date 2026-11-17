@@ -198,6 +198,14 @@ function buildInventory(input, options = {}) {
   };
 }
 
+function isEmptyProcessExit(error) {
+  // Both procps and BSD ps exit 1 without diagnostics when no PID matches.
+  return error?.status === 1
+    && (error.signal === null || error.signal === undefined)
+    && (error.code === null || error.code === undefined)
+    && error.stdout === '' && error.stderr === '';
+}
+
 function collectResources(tasks, deps = {}) {
   const memory = { totalBytes: (deps.totalmem || os.totalmem)(), freeBytes: (deps.freemem || os.freemem)(),
     source: 'os', note: 'OS free memory is not application headroom or macOS memory pressure.' };
@@ -215,7 +223,9 @@ function collectResources(tasks, deps = {}) {
       return { pid: values[0], parentPid: values[1], rssBytes: values[2] * 1024, elapsed: match[4], flags: match[5] };
     });
     return { memory, processStatus: 'ok', processes };
-  } catch { return { memory, processStatus: 'unavailable', processes: [] }; }
+  } catch (error) {
+    return { memory, processStatus: isEmptyProcessExit(error) ? 'ok' : 'unavailable', processes: [] };
+  }
 }
 
 function readBounded(file, limit = MAX_BYTES) {
