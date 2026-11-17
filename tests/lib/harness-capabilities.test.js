@@ -33,12 +33,12 @@ function runTests() {
   let passed = 0;
   let failed = 0;
 
-  if (test('represents all 17 registered targets exactly once across 16 harnesses', () => {
+  if (test('represents all 18 registered targets exactly once across 16 harnesses', () => {
     const catalogTargetIds = HARNESS_CAPABILITIES.flatMap(harness => harness.targetIds);
     const adapterTargetIds = listInstallTargetAdapters().map(adapter => adapter.target);
 
     assert.strictEqual(HARNESS_CAPABILITIES.length, 16);
-    assert.strictEqual(new Set(catalogTargetIds).size, 17);
+    assert.strictEqual(new Set(catalogTargetIds).size, 18);
     assert.deepStrictEqual([...catalogTargetIds].sort(), [...SUPPORTED_INSTALL_TARGETS].sort());
     assert.deepStrictEqual([...catalogTargetIds].sort(), [...adapterTargetIds].sort());
   })) passed++; else failed++;
@@ -84,6 +84,16 @@ function runTests() {
       { id: 'project', targetId: 'kimi', root: './.kimi-code' },
     ]);
 
+    const antigravity = getHarnessCapability('antigravity');
+    assert.deepStrictEqual(antigravity.targetIds, ['antigravity-home', 'antigravity']);
+    assert.strictEqual(antigravity.channel, 'native-plugin');
+    assert.strictEqual(antigravity.installMode, 'native-plugin');
+    assert.match(antigravity.destination, /selected Antigravity scope/i);
+    assert.deepStrictEqual(antigravity.scopes, [
+      { id: 'user', targetId: 'antigravity-home', root: '~/.gemini/config/plugins/ecc' },
+      { id: 'project', targetId: 'antigravity', root: './.agents' },
+    ]);
+
     const opencode = getHarnessCapability('opencode');
     assert.match(opencode.destinationResolution, /OPENCODE_CONFIG_DIR/);
     assert.match(opencode.destinationResolution, /XDG_CONFIG_HOME/);
@@ -93,7 +103,6 @@ function runTests() {
   if (test('keeps every advanced target attached to its registered root and scope', () => {
     const expected = {
       cursor: ['project', './.cursor'],
-      antigravity: ['project', './.agents'],
       gemini: ['project', './.gemini'],
       opencode: ['home', '~/.config/opencode'],
       codebuddy: ['project', './.codebuddy'],

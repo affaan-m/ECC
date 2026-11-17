@@ -9,6 +9,7 @@ const { getInstallTargetAdapter } = require('../install-targets/registry');
 const { resolveInvocationEnvironment } = require('../invocation-environment');
 const { disableUnselectedOpenCodeHooks } = require('./hook-consent');
 const { readHooksConfig } = require('../hooks-config');
+const { isPackageSourcePath, resolvePackageSourcePath } = require('./package-source');
 const {
   materializeManagedHooks,
 } = require('./claude-settings');
@@ -176,14 +177,18 @@ function materializeScaffoldOperation(sourceRoot, operation) {
         destinationPath: operation.destinationPath,
         strategy: operation.strategy || 'merge-json',
         ownership: operation.ownership || 'managed',
-        scaffoldOnly: Object.hasOwn(operation, 'scaffoldOnly') ? operation.scaffoldOnly : false,
-        mergePayload: readJsonObject(path.join(sourceRoot, operation.sourceRelativePath), operation.sourceRelativePath)
+        scaffoldOnly: typeof operation.scaffoldOnly === 'boolean' ? operation.scaffoldOnly : false,
+        mergePayload: operation.mergePayload !== undefined
+          ? JSON.parse(JSON.stringify(operation.mergePayload))
+          : readJsonObject(path.join(sourceRoot, operation.sourceRelativePath), operation.sourceRelativePath)
       }
     ];
   }
 
-  const sourcePath = path.join(sourceRoot, operation.sourceRelativePath);
-  if (!fs.existsSync(sourcePath)) {
+  const sourcePath = isPackageSourcePath(operation.sourceRelativePath)
+    ? resolvePackageSourcePath(sourceRoot, operation.sourceRelativePath)
+    : path.join(sourceRoot, operation.sourceRelativePath);
+  if (!sourcePath || !fs.existsSync(sourcePath)) {
     return [];
   }
 
@@ -363,6 +368,7 @@ function createManifestInstallPlan(options = {}) {
     },
     homeDir: plan.homeDir,
     targetRoot: plan.targetRoot,
+    trustedRoots: plan.trustedRoots || (plan.targetRoot ? [plan.targetRoot] : []),
     installRoot: plan.targetRoot,
     installStatePath: plan.installStatePath,
     warnings: Array.isArray(options.warnings) ? [...options.warnings] : [],

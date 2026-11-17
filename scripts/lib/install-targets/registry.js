@@ -1,4 +1,5 @@
 const adalProject = require('./adal-project');
+const antigravityHome = require('./antigravity-home');
 const antigravityProject = require('./antigravity-project');
 const claudeHome = require('./claude-home');
 const claudeProject = require('./claude-project');
@@ -21,6 +22,7 @@ const ADAPTERS = Object.freeze([
   claudeHome,
   claudeProject,
   cursorProject,
+  antigravityHome,
   antigravityProject,
   codexHome,
   copilotProject,
@@ -73,6 +75,9 @@ function planInstallTargetScaffold(options = {}) {
   }
   const targetRoot = adapter.resolveRoot(planningInput);
   const installStatePath = adapter.getInstallStatePath(planningInput);
+  const trustedRoots = typeof adapter.resolveTrustedRoots === 'function'
+    ? adapter.resolveTrustedRoots(planningInput)
+    : [targetRoot];
   const operations = adapter.planOperations({
     ...planningInput,
     modules,
@@ -85,6 +90,7 @@ function planInstallTargetScaffold(options = {}) {
       kind: adapter.kind,
     },
     targetRoot,
+    trustedRoots,
     installStatePath,
     validationIssues,
     operations,
