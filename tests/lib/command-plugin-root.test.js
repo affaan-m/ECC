@@ -60,6 +60,10 @@ test('instinct-enforce command uses shared inline resolver (#2037)', () => {
     /scripts\/hooks\/instinct-enforce\.js" --check /.test(instinctEnforceDoc),
     'instinct-enforce should invoke the PreToolUse hook in --check mode'
   );
+  assert.ok(
+    instinctEnforceDoc.includes(INLINE_RESOLVE),
+    'instinct-enforce should embed the shared INLINE_RESOLVE so CLAUDE_CONFIG_DIR is honored'
+  );
 });
 
 test('auto-update command probes for the script it runs, not just scripts/lib', () => {
