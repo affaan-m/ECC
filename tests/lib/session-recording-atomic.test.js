@@ -1,0 +1,158 @@
+'use strict';
+
+const assert = require('assert');
+const fs = require('fs');
+const os = require('os');
+const path = require('path');
+
+const {
+  getFallbackSessionRecordingPath,
+  normalizeClaudeHistorySession,
+  persistCanonicalSnapshot
+} = require('../../scripts/lib/session-adapters/canonical-session');
+
+let passed = 0;
+let failed = 0;
+
+function test(name, fn) {
+  try {
+    fn();
+    console.log(`  PASS ${name}`);
+    passed += 1;
+  } catch (error) {
+    console.log(`  FAIL ${name}: ${error.message}`);
+    failed += 1;
+  }
+}
+
+function snapshot(title) {
+  return normalizeClaudeHistorySession({
+    shortId: 'recording-session',
+    sessionPath: '/fixture/session.tmp',
+    metadata: { title }
+  }, { type: 'claude-history', value: 'recording-session' });
+}
+
+function failAfterPartialWrite(callback, observe) {
+  const originalWrite = fs.writeFileSync;
+  const error = Object.assign(new Error('Simulated disk full after partial write'), { code: 'ENOSPC' });
+  let calls = 0;
+  fs.writeFileSync = (destination, _contents, options) => {
+    calls += 1;
+    originalWrite(destination, '{"incomplete":', options);
+    observe();
+    throw error;
+  };
+  try {
+    assert.throws(callback, caught => caught === error);
+    assert.strictEqual(calls, 1, 'the failure must occur during an actual write');
+  } finally {
+    fs.writeFileSync = originalWrite;
+  }
+}
+
+const backends = [
+  ['missing state store', () => null],
+  ['factory state store', () => ({ createStateStore() {} })]
+];
+
+for (const [backend, loadStateStoreImpl] of backends) {
+  test(`failed replacement preserves prior snapshot and history: ${backend}`, () => {
+    const recordingDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-recording-replace-'));
+    try {
+      const options = { recordingDir, loadStateStoreImpl };
+      const first = snapshot('Existing session');
+      const next = snapshot('Next session state — 已完成');
+      persistCanonicalSnapshot(first, options);
+      const filePath = getFallbackSessionRecordingPath(first, options);
+      const before = fs.readFileSync(filePath, 'utf8');
+      let observed;
+
+      failAfterPartialWrite(() => persistCanonicalSnapshot(next, options), () => {
+        observed = fs.readFileSync(filePath, 'utf8');
+      });
+
+      assert.strictEqual(observed, before, 'readers must retain the prior complete recording during a write');
+      assert.strictEqual(fs.readFileSync(filePath, 'utf8'), before, 'a failed write must not truncate saved history');
+      assert.deepStrictEqual(fs.readdirSync(path.dirname(filePath)), [path.basename(filePath)]);
+
+      persistCanonicalSnapshot(next, options);
+      const recovered = JSON.parse(fs.readFileSync(filePath, 'utf8'));
+      assert.strictEqual(recovered.createdAt, JSON.parse(before).createdAt);
+      assert.deepStrictEqual(recovered.latest, next);
+      assert.deepStrictEqual(recovered.history.map(entry => entry.snapshot), [first, next]);
+    } finally {
+      fs.rmSync(recordingDir, { recursive: true, force: true });
+    }
+  });
+
+  test(`failed first write does not publish an invalid recording: ${backend}`, () => {
+    const recordingDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-recording-initial-'));
+    try {
+      const options = { recordingDir, loadStateStoreImpl };
+      const first = snapshot('First session');
+      const filePath = getFallbackSessionRecordingPath(first, options);
+      let visibleDuringWrite;
+
+      failAfterPartialWrite(() => persistCanonicalSnapshot(first, options), () => {
+        visibleDuringWrite = fs.existsSync(filePath);
+      });
+
+      assert.strictEqual(visibleDuringWrite, false, 'the first recording must only become visible when complete');
+      assert.strictEqual(fs.existsSync(filePath), false);
+      assert.deepStrictEqual(fs.readdirSync(path.dirname(filePath)), []);
+
+      persistCanonicalSnapshot(first, options);
+      const recovered = JSON.parse(fs.readFileSync(filePath, 'utf8'));
+      assert.deepStrictEqual(recovered.latest, first);
+      assert.strictEqual(recovered.history.length, 1);
+    } finally {
+      fs.rmSync(recordingDir, { recursive: true, force: true });
+    }
+  });
+}
+
+if (process.platform !== 'win32') {
+  test('recording publication preserves creation umask and existing POSIX permissions', () => {
+    const recordingDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-recording-mode-'));
+    try {
+      const options = { recordingDir, loadStateStoreImpl: () => null };
+      const first = snapshot('Initial permissions');
+      const filePath = getFallbackSessionRecordingPath(first, options);
+      persistCanonicalSnapshot(first, options);
+      assert.strictEqual(fs.statSync(filePath).mode & 0o777, 0o666 & ~process.umask());
+
+      for (const mode of [0o600, 0o640, 0o660]) {
+        fs.chmodSync(filePath, mode);
+        const next = snapshot(`Permissions ${mode.toString(8)}`);
+        const originalWrite = fs.writeFileSync;
+        const observedModes = [];
+        fs.writeFileSync = (destination, contents, writeOptions) => {
+          const readMode = () => (typeof destination === 'number'
+            ? fs.fstatSync(destination)
+            : fs.statSync(destination)).mode & 0o777;
+          observedModes.push(readMode());
+          const result = originalWrite(destination, contents, writeOptions);
+          observedModes.push(readMode());
+          return result;
+        };
+        try {
+          persistCanonicalSnapshot(next, options);
+        } finally {
+          fs.writeFileSync = originalWrite;
+        }
+        assert.strictEqual(observedModes.length, 2);
+        for (const observed of observedModes) {
+          assert.strictEqual(observed & ~mode, 0, 'staging must not grant permissions absent from the saved recording');
+        }
+        assert.strictEqual(fs.statSync(filePath).mode & 0o777, mode);
+        assert.deepStrictEqual(JSON.parse(fs.readFileSync(filePath, 'utf8')).latest, next);
+      }
+    } finally {
+      fs.rmSync(recordingDir, { recursive: true, force: true });
+    }
+  });
+}
+
+console.log(`\nPassed: ${passed}, Failed: ${failed}`);
+if (failed > 0) process.exit(1);
