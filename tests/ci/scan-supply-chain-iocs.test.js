@@ -466,6 +466,45 @@ function run() {
     });
   })) passed++; else failed++;
 
+  if (test('rejects installed payload filenames in a pnpm node_modules layout', () => {
+    // pnpm keeps real package directories in node_modules/.pnpm/<id>/node_modules/<name>
+    // and links the top-level node_modules/<name> entries to them.
+    const storeDir = 'node_modules/.pnpm/@tanstack+react-router@1.169.5/node_modules/@tanstack/react-router';
+    withFixture({
+      [`${storeDir}/package.json`]: JSON.stringify({ name: '@tanstack/react-router', version: '1.169.5' }),
+      [`${storeDir}/router_init.js`]: '/* payload */',
+    }, rootDir => {
+      fs.mkdirSync(path.join(rootDir, 'node_modules', '@tanstack'), { recursive: true });
+      try {
+        fs.symlinkSync(
+          path.join(rootDir, storeDir),
+          path.join(rootDir, 'node_modules', '@tanstack', 'react-router'),
+          'junction',
+        );
+      } catch {
+        // The virtual store alone must still be scanned where links are unavailable.
+      }
+      const result = scanSupplyChainIocs({ rootDir });
+      assert.ok(
+        result.findings.some(finding => finding.indicator === 'router_init.js'),
+        `Expected router_init.js finding, got ${JSON.stringify(result.findings)}`,
+      );
+    });
+  })) passed++; else failed++;
+
+  if (test('rejects installed payload filenames in nested node_modules', () => {
+    withFixture({
+      'node_modules/some-app/package.json': JSON.stringify({ name: 'some-app', version: '1.0.0' }),
+      'node_modules/some-app/node_modules/@tanstack/react-router/router_init.js': '/* payload */',
+    }, rootDir => {
+      const result = scanSupplyChainIocs({ rootDir });
+      assert.ok(
+        result.findings.some(finding => finding.indicator === 'router_init.js'),
+        `Expected router_init.js finding, got ${JSON.stringify(result.findings)}`,
+      );
+    });
+  })) passed++; else failed++;
+
   if (test('supports CLI JSON output and non-zero exit on findings', () => {
     withFixture({
       'package.json': JSON.stringify({ dependencies: { '@opensearch-project/opensearch': '3.8.0' } }, null, 2),
