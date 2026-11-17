@@ -1,6 +1,7 @@
 'use strict';
 
 const assert = require('node:assert/strict');
+const { createHash } = require('node:crypto');
 const { spawnSync } = require('node:child_process');
 const fs = require('node:fs');
 const os = require('node:os');
@@ -44,7 +45,7 @@ function packageRevision(revision, directory, env) {
   return path.join(directory, 'package');
 }
 
-function exercise(baseline, candidate, project, env) {
+function exercise(baseline, candidate, project, env, expected) {
   fs.mkdirSync(project);
   const projectPackage = '{"type":"module"}\n';
   const packageFile = path.join(project, 'package.json');
@@ -67,7 +68,7 @@ function exercise(baseline, candidate, project, env) {
     assert.ok(fs.existsSync(state));
     assert.equal(fs.readFileSync(userAgent, 'utf8'), 'User-owned agent\n');
     assert.equal(fs.existsSync(hook), false);
-    assert.match(detect(), /pnpm/);
+    assert.match(detect(), /^\s*Package Manager: pnpm\r?$/m);
     assert.match(fs.readFileSync(skill, 'utf8'), /node \.github\/ecc\/scripts\/setup-package-manager\.js --detect/);
     assert.match(fs.readFileSync(agent, 'utf8'), /^---\nname: planner\r?\n/);
     assert.doesNotMatch(fs.readFileSync(agent, 'utf8').split(/^---\r?$/m)[1], /^(?:model|tools|color):/m);
@@ -75,18 +76,27 @@ function exercise(baseline, candidate, project, env) {
 
   if (baseline) install(baseline);
   install(candidate);
+  const managed = JSON.parse(fs.readFileSync(state, 'utf8')).operations
+    .filter(operation => operation.kind === 'copy-file').map(operation => operation.destinationPath);
+  assert.ok(managed.includes(skill) && managed.includes(agent) && managed.includes(detector));
+  const installed = Object.fromEntries(managed.map(file => [
+    path.relative(project, file), createHash('sha256').update(fs.readFileSync(file)).digest('hex'),
+  ]));
+  if (expected) assert.deepEqual(installed, expected, 'Upgraded files must match a clean candidate install');
+
   const original = fs.readFileSync(agent);
   fs.unlinkSync(agent);
   fs.unlinkSync(detector);
   assert.equal(cli(candidate, 'repair').summary.errorCount, 0);
   assert.deepEqual(fs.readFileSync(agent), original);
-  assert.match(detect(), /pnpm/);
+  assert.match(detect(), /^\s*Package Manager: pnpm\r?$/m);
   assert.equal(fs.readFileSync(userAgent, 'utf8'), 'User-owned agent\n');
 
   assert.equal(cli(candidate, 'uninstall').summary.errorCount, 0);
-  for (const managed of [state, skill, agent, detector]) assert.equal(fs.existsSync(managed), false, managed);
+  for (const file of [state, ...managed]) assert.equal(fs.existsSync(file), false, file);
   assert.equal(fs.readFileSync(userAgent, 'utf8'), 'User-owned agent\n');
   assert.equal(fs.readFileSync(packageFile, 'utf8'), projectPackage);
+  return installed;
 }
 
 function main() {
@@ -103,8 +113,8 @@ function main() {
     const candidateRef = process.env.ECC_COPILOT_FIXTURE_REF || run('git', ['rev-parse', 'HEAD'], root, env).trim();
     const baseline = packageRevision(baselineRef, path.join(temporary, 'baseline'), env);
     const candidate = packageRevision(candidateRef, path.join(temporary, 'candidate'), env);
-    exercise(null, candidate, path.join(temporary, 'clean project'), env);
-    exercise(baseline, candidate, path.join(temporary, 'upgrade project with spaces'), env);
+    const installed = exercise(null, candidate, path.join(temporary, 'clean project'), env);
+    exercise(baseline, candidate, path.join(temporary, 'upgrade project with spaces'), env, installed);
     console.log(JSON.stringify({
       revision: candidateRef,
       baseline: baselineRef,
