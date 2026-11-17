@@ -13,7 +13,8 @@ function rankCounts(values) {
 }
 
 function summarizeVariantRuns(records) {
-  return records.reduce((accumulator, record) => {
+  // Variant names are data, including names inherited by ordinary objects.
+  return { ...records.reduce((accumulator, record) => {
     const key = record.run && record.run.variant ? record.run.variant : 'baseline';
     if (!accumulator[key]) {
       accumulator[key] = { runs: 0, successes: 0, failures: 0 };
@@ -27,7 +28,7 @@ function summarizeVariantRuns(records) {
     }
 
     return accumulator;
-  }, {});
+  }, Object.create(null)) };
 }
 
 function deriveSkillStatus(skillSummary, options = {}) {
