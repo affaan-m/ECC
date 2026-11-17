@@ -293,6 +293,7 @@ function checkHookDuplicates(source, eventMap) {
   const events = new Map();
   const ids = new Map();
   const rootProperties = [];
+  const unwrappedIds = [];
   let eventMapLine = null;
 
   function checkEvent(key, line) {
@@ -300,6 +301,13 @@ function checkHookDuplicates(source, eventMap) {
       throw new Error(`line ${line + 1}: duplicate event key '${key}' (first on line ${events.get(key)})`);
     }
     events.set(key, line + 1);
+  }
+
+  function checkId(id, matcher, line) {
+    if (ids.has(id)) {
+      throw new Error(`line ${line + 1}: ${matcher} has duplicate id '${id}' (already used by ${ids.get(id)})`);
+    }
+    ids.set(id, `${matcher} on line ${line + 1}`);
   }
 
   visit(source, {
@@ -317,16 +325,17 @@ function checkHookDuplicates(source, eventMap) {
       }
     },
     onLiteralValue(value, _offset, _length, line, _column, getPath) {
+      if (!isNonEmptyString(value)) return;
       const location = getPath();
-      const [container, event, index, field] = location;
-      if (location.length !== 4 || container !== eventMap || field !== 'id') return;
-      if (typeof event !== 'string' || typeof index !== 'number' || !isNonEmptyString(value)) return;
+      const [event, index, field] = location.slice(-3);
+      if (field !== 'id' || typeof event !== 'string' || typeof index !== 'number') return;
 
       const matcher = `${event}[${index}]`;
-      if (ids.has(value)) {
-        throw new Error(`line ${line + 1}: ${matcher} has duplicate id '${value}' (already used by ${ids.get(value)})`);
+      if (location.length === 4 && location[0] === eventMap) {
+        checkId(value, matcher, line);
+      } else if (location.length === 3 && eventMap === 'hooks' && eventMapLine === null) {
+        unwrappedIds.push({ id: value, matcher, line });
       }
-      ids.set(value, `${matcher} on line ${line + 1}`);
     },
   });
 
@@ -334,6 +343,7 @@ function checkHookDuplicates(source, eventMap) {
   // manifest uses those root properties as its event map.
   if (eventMapLine === null) {
     for (const { key, line } of rootProperties) checkEvent(key, line);
+    for (const { id, matcher, line } of unwrappedIds) checkId(id, matcher, line);
   }
 }
 

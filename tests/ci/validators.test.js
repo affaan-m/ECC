@@ -3084,11 +3084,43 @@ function runTests() {
     }
   })) passed++; else failed++;
 
+  if (test('checks explicit matcher ids in a schema-free unwrapped hook map', () => {
+    const testDir = createTestDir();
+    try {
+      const hooksFile = path.join(testDir, 'hooks.json');
+      const overrides = {
+        HOOKS_FILE: hooksFile,
+        HOOKS_SCHEMA_PATH: path.join(testDir, 'missing-schema.json'),
+      };
+      const entry = { hooks: [{ type: 'command', command: 'echo ok' }] };
+      writeJson(hooksFile, { Stop: [entry], UserPromptSubmit: [entry] });
+      const withoutIds = runValidatorWithDirs('validate-hooks', overrides);
+      assert.strictEqual(withoutIds.code, 0, withoutIds.stderr);
+
+      const shared = JSON.stringify({ ...entry, id: 'shared' });
+      fs.writeFileSync(hooksFile, `{
+  "Stop": [${shared}],
+  "UserPromptSubmit": [${shared}]
+}`);
+      const result = runValidatorWithDirs('validate-hooks', overrides);
+      assert.strictEqual(result.code, 1, result.stdout);
+      assert.ok(result.stderr.includes(
+        "hooks.json: line 3: UserPromptSubmit[0] has duplicate id 'shared' (already used by Stop[0] on line 2)"
+      ), result.stderr);
+    } finally {
+      cleanupTestDir(testDir);
+    }
+  })) passed++; else failed++;
+
   if (test('checks only the active event map when hooks is wrapped', () => {
     const testDir = createTestDir();
     try {
       const hooksFile = path.join(testDir, 'hooks.json');
-      fs.writeFileSync(hooksFile, '{"Stop":[],"Stop":[],"hooks":{"Stop":[]}}');
+      fs.writeFileSync(hooksFile, `{
+  "Stop": [{"id": "ignored"}],
+  "Stop": [{"id": "ignored"}],
+  "hooks": {"Stop": []}
+}`);
       const result = runValidatorWithDir('validate-hooks', 'HOOKS_FILE', hooksFile);
       assert.strictEqual(result.code, 0, result.stderr);
     } finally {
