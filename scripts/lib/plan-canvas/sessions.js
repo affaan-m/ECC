@@ -117,14 +117,25 @@ function createSessionStore({ stateDir = resolveStateDir() } = {}) {
     }
   }
 
-  function persist() {
+  function persist(nextState) {
     fs.mkdirSync(stateDir, { recursive: true });
     const tmpFile = `${stateFile}.tmp`;
-    fs.writeFileSync(tmpFile, JSON.stringify(state, null, 2));
+    fs.writeFileSync(tmpFile, JSON.stringify(nextState, null, 2));
     fs.renameSync(tmpFile, stateFile);
   }
 
   load();
+
+  // Publish a session only after its replacement is saved to the state file.
+  // A failed write or rename leaves the live queue available for a retry.
+  function commitSession(key, session, feedbackCounter = state.feedbackCounter) {
+    const nextState = {
+      sessions: { ...state.sessions, [key]: session },
+      feedbackCounter
+    };
+    persist(nextState);
+    state = nextState;
+  }
 
   function get(key) {
     return state.sessions[key] || null;
@@ -145,7 +156,7 @@ function createSessionStore({ stateDir = resolveStateDir() } = {}) {
     if (existing && existing.status === 'ended' && existing.endedBy === 'user' && !reopen) {
       return { session: existing, refused: true };
     }
-    const session = existing || {
+    const session = existing ? { ...existing } : {
       key,
       file: canonical,
       chat: [],
@@ -155,8 +166,7 @@ function createSessionStore({ stateDir = resolveStateDir() } = {}) {
     session.status = 'open';
     delete session.endedBy;
     session.updatedAt = nowIso();
-    state.sessions[key] = session;
-    persist();
+    commitSession(key, session);
     return { session, refused: false };
   }
 
@@ -164,18 +174,20 @@ function createSessionStore({ stateDir = resolveStateDir() } = {}) {
   // session transcript immediately so the conversation panel stays coherent
   // across reloads.
   function queueFeedback(key, rawItems, { endSession = false } = {}) {
-    const session = get(key);
-    if (!session || session.status === 'ended') return null;
+    const current = get(key);
+    if (!current || current.status === 'ended') return null;
     const accepted = [];
+    let feedbackCounter = state.feedbackCounter;
     for (const raw of Array.isArray(rawItems) ? rawItems : []) {
-      state.feedbackCounter += 1;
-      const item = normalizeFeedbackItem(raw, state.feedbackCounter);
+      feedbackCounter += 1;
+      const item = normalizeFeedbackItem(raw, feedbackCounter);
       if (item) accepted.push(item);
     }
-    session.pendingFeedback.push(...accepted);
-    for (const item of accepted) {
-      session.chat.push({ role: 'user', kind: item.kind, text: chatLineFor(item), at: item.at });
-    }
+    const session = {
+      ...current,
+      pendingFeedback: current.pendingFeedback.concat(accepted),
+      chat: current.chat.concat(accepted.map(item => ({ role: 'user', kind: item.kind, text: chatLineFor(item), at: item.at })))
+    };
     if (endSession) {
       session.status = 'ended';
       session.endedBy = 'user';
@@ -183,7 +195,7 @@ function createSessionStore({ stateDir = resolveStateDir() } = {}) {
       session.status = 'feedback';
     }
     session.updatedAt = nowIso();
-    persist();
+    commitSession(key, session, feedbackCounter);
     return { accepted, pending: session.pendingFeedback.length, session };
   }
 
@@ -195,16 +207,16 @@ function createSessionStore({ stateDir = resolveStateDir() } = {}) {
     if (!session) return { status: 'missing' };
     if (session.pendingFeedback.length > 0) {
       const items = session.pendingFeedback;
-      session.pendingFeedback = [];
+      const updated = { ...session, pendingFeedback: [] };
       const result = { status: 'feedback', items };
       if (session.status === 'ended') {
         result.sessionEnded = true;
         result.endedBy = session.endedBy;
       } else {
-        session.status = 'open';
+        updated.status = 'open';
       }
-      session.updatedAt = nowIso();
-      persist();
+      updated.updatedAt = nowIso();
+      commitSession(key, updated);
       return result;
     }
     if (session.status === 'ended') {
@@ -217,19 +229,20 @@ function createSessionStore({ stateDir = resolveStateDir() } = {}) {
     const session = get(key);
     if (!session) return null;
     const entry = { role: 'agent', kind: 'chat', text: sanitizeText(text), at: nowIso() };
-    session.chat.push(entry);
-    session.updatedAt = nowIso();
-    persist();
+    commitSession(key, { ...session, chat: session.chat.concat(entry), updatedAt: nowIso() });
     return entry;
   }
 
   function end(key, endedBy) {
-    const session = get(key);
-    if (!session) return null;
-    session.status = 'ended';
-    session.endedBy = endedBy === 'user' ? 'user' : 'agent';
-    session.updatedAt = nowIso();
-    persist();
+    const current = get(key);
+    if (!current) return null;
+    const session = {
+      ...current,
+      status: 'ended',
+      endedBy: endedBy === 'user' ? 'user' : 'agent',
+      updatedAt: nowIso()
+    };
+    commitSession(key, session);
     return session;
   }
 
