@@ -2,10 +2,15 @@
 'use strict';
 
 const path = require('path');
+const { StringDecoder } = require('string_decoder');
 const { spawnSync } = require('child_process');
 const { ensureAgentDataHomeEnv } = require('../lib/agent-data-home');
 const { normalizePluginRootForPlatform } = require('../lib/resolve-ecc-root');
+const { resolveWindowsBashCandidates } = require('../lib/windows-bash');
 const { readStdinRaw: readBoundedStdin, resolveMaxStdin } = require('./hook-input');
+
+const { createHookContextScanner } = require('./hook-input-limits');
+const { installHookWatchdog } = require('./hook-watchdog');
 
 const SHELL_PROBE_TIMEOUT_MS = 2000;
 
@@ -108,7 +113,8 @@ function findShellBinary() {
     // bash.exe / conhost.exe processes the way MSYS2/Git Bash does.
     // Note: PowerShell is only suitable for .ps1 scripts; callers that need
     // to run .sh scripts (e.g. observe-runner.js) must not use this function.
-    candidates.push('pwsh.exe', 'powershell.exe', 'bash.exe', 'bash');
+    // Bash is named by absolute path so a WSL launcher earlier on PATH is skipped.
+    candidates.push('pwsh.exe', 'powershell.exe', ...resolveWindowsBashCandidates(['bash.exe', 'bash']));
   } else {
     candidates.push('bash', 'sh');
   }
@@ -142,7 +148,9 @@ function findBashBinary() {
   if (process.env.BASH && process.env.BASH.trim() && !isPowerShellBin(process.env.BASH.trim())) {
     candidates.push(process.env.BASH.trim());
   }
-  candidates.push('bash.exe', 'bash');
+  // On Windows these resolve to absolute paths that exclude WSL launchers;
+  // elsewhere they stay bare names.
+  candidates.push(...resolveWindowsBashCandidates(['bash.exe', 'bash']));
 
   for (const candidate of candidates) {
     const probe = spawnSync(candidate, ['-c', ':'], {
@@ -170,6 +178,7 @@ function spawnNode(rootDir, relPath, raw, args, options = {}) {
     ECC_PLUGIN_ROOT: rootDir,
     ECC_HOOK_INPUT_MAX_BYTES: String(options.maxStdin),
     ECC_HOOK_INPUT_TRUNCATED_UPSTREAM: options.truncated ? '1' : '0',
+    ECC_HOOK_CONTEXT_JSON: JSON.stringify(options.hookContext || {}),
   };
   const result = spawnSync(process.execPath, [resolveTarget(rootDir, relPath), ...args], {
     input: raw,
@@ -179,6 +188,24 @@ function spawnNode(rootDir, relPath, raw, args, options = {}) {
     windowsHide: true,
   });
   return withComparisonInput(result, Buffer.from(raw, 'utf8'));
+}
+
+// Almost every plugin hook targets run-with-flags.js, which only reads stdin
+// and dispatches. Call it in-process instead of paying a second Node startup
+// (~50-100 ms) on every hook. Same env and inputs the child would have seen.
+async function runWithFlagsInProcess(rootDir, target, raw, args, options) {
+  ensureAgentDataHomeEnv();
+  process.env.CLAUDE_PLUGIN_ROOT = rootDir;
+  process.env.ECC_PLUGIN_ROOT = rootDir;
+  process.env.ECC_HOOK_INPUT_MAX_BYTES = String(options.maxStdin);
+  const [hookId, relScriptPath, profilesCsv] = args;
+  const { runHook } = require(target);
+  const { stdout, exitCode } = await runHook(hookId, relScriptPath, profilesCsv, {
+    raw,
+    truncated: options.truncated,
+    hookContext: options.hookContext || {},
+  });
+  return withComparisonInput({ status: exitCode, stdout }, Buffer.from(raw, 'utf8'));
 }
 
 // spawnShell is not used by any hook in the shipped hooks.json configuration
@@ -202,6 +229,7 @@ function spawnShell(rootDir, relPath, raw, args, options = {}) {
     ECC_PLUGIN_ROOT: rootDir,
     ECC_HOOK_INPUT_MAX_BYTES: String(options.maxStdin),
     ECC_HOOK_INPUT_TRUNCATED_UPSTREAM: options.truncated ? '1' : '0',
+    ECC_HOOK_CONTEXT_JSON: JSON.stringify(options.hookContext || {}),
   };
   const scriptPath = resolveTarget(rootDir, relPath);
   const isPs = isPowerShellBin(shell);
@@ -248,9 +276,18 @@ async function main() {
   const maxStdin = resolveMaxStdin(process.env.ECC_HOOK_INPUT_MAX_BYTES, {
     writeDiagnostic: message => process.stderr.write(message)
   });
-  const { raw, truncated } = await readBoundedStdin(process.stdin, { maxStdin });
+  const contextDecoder = new StringDecoder('utf8');
+  const contextScanner = createHookContextScanner();
+  const { raw, truncated } = await readBoundedStdin(process.stdin, {
+    maxStdin,
+    onChunk: buffer => contextScanner.push(contextDecoder.write(buffer)),
+  });
+  contextScanner.push(contextDecoder.end());
+  const hookContext = contextScanner.context;
   const rootDir = normalizePluginRootForPlatform(
-    process.env.CLAUDE_PLUGIN_ROOT || process.env.ECC_PLUGIN_ROOT
+    [process.env.QODER_PLUGIN_ROOT, process.env.CLAUDE_PLUGIN_ROOT, process.env.ECC_PLUGIN_ROOT]
+      .map(value => typeof value === 'string' ? value.trim() : '')
+      .find(Boolean) || ''
   );
 
   if (!mode || !relPath || !rootDir) {
@@ -267,10 +304,13 @@ async function main() {
 
   let result;
   try {
-    if (mode === 'node') {
-      result = spawnNode(rootDir, relPath, raw, args, { maxStdin, truncated });
+    if (mode === 'node' && path.basename(relPath) === 'run-with-flags.js') {
+      const target = resolveTarget(rootDir, relPath);
+      result = await runWithFlagsInProcess(rootDir, target, raw, args, { maxStdin, truncated, hookContext });
+    } else if (mode === 'node') {
+      result = spawnNode(rootDir, relPath, raw, args, { maxStdin, truncated, hookContext });
     } else if (mode === 'shell') {
-      result = spawnShell(rootDir, relPath, raw, args, { maxStdin, truncated });
+      result = spawnShell(rootDir, relPath, raw, args, { maxStdin, truncated, hookContext });
     } else {
       writeStderr(`[Hook] unknown bootstrap mode: ${mode}; emitting empty stdout\n`);
       process.exitCode = 0;
@@ -307,6 +347,7 @@ async function main() {
 // exports (tests), require.main is a real, different module, so main() stays
 // dormant.
 if (require.main === module || require.main === undefined) {
+  installHookWatchdog({ label: 'plugin hook bootstrap' });
   main().catch(error => {
     writeStderr(`[Hook] bootstrap failed: ${error.message}\n`);
     process.exitCode = 0;

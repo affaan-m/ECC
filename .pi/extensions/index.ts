@@ -24,11 +24,12 @@
  *     degrades to a warning and never terminates the Pi session.
  */
 
-import { execFile } from "node:child_process"
+import { execFile, execFileSync } from "node:child_process"
 import * as fs from "node:fs"
 import * as os from "node:os"
 import * as path from "node:path"
 import { resolveHookRuntime } from "./hook-runtime.js"
+import { createCommandBodyReader, handlePiInputEvent } from "./input-args.js"
 
 /**
  * Minimal structural types mirroring `@earendil-works/pi-coding-agent`.
@@ -70,7 +71,18 @@ interface BeforeAgentStartResult {
   systemPrompt?: string
 }
 
+interface PiSlashCommandInfo { name: string; source: "extension" | "prompt" | "skill"; sourceInfo: { path: string } }
+
+interface InputEvent { text: string; source: "interactive" | "rpc" | "extension"; streamingBehavior?: "steer" | "followUp" }
+
+type InputEventResult = { action: "continue" } | { action: "transform"; text: string }
+
 interface ExtensionAPI {
+  getCommands(): PiSlashCommandInfo[]
+  on(
+    event: "input",
+    handler: (event: InputEvent, ctx: ExtensionContext) => Promise<InputEventResult> | InputEventResult
+  ): void
   on(
     event: "session_start",
     handler: (event: SessionStartEvent, ctx: ExtensionContext) => Promise<void> | void
@@ -556,11 +568,74 @@ function describeRulesStatus(): string {
   return `${cachedRuleFileCount}/${PORTABLE_RULE_FILES.length} rule file(s), ${rules.length} chars, from rules/common/${shortfall}`
 }
 
+const AGENT_CHECK_TIMEOUT_MS = 5_000
+
+type AgentPortability =
+  | { status: "validated"; count: number }
+  | { status: "failed"; reason: string }
+  | { status: "unvalidated"; reason: string }
+
+/**
+ * Verify agent portability by actually running `agent-convert.js --check` rather
+ * than trusting file existence. A converter that exists but fails (schema drift,
+ * a frontmatter variant that fails ajv) must not report a green doctor line.
+ */
+function validateAgentPortability(converterScript: string): AgentPortability {
+  if (!fs.existsSync(converterScript)) {
+    return { status: "unvalidated", reason: "converter script not found" }
+  }
+
+  let nodeExec: string
+  try {
+    nodeExec = resolveHookRuntime()
+  } catch (err) {
+    return { status: "unvalidated", reason: `no node runtime: ${messageOf(err)}` }
+  }
+
+  try {
+    const stdout = execFileSync(nodeExec, [converterScript, "--check"], {
+      timeout: AGENT_CHECK_TIMEOUT_MS,
+      encoding: "utf8",
+    })
+    const match = stdout.match(/OK: (\d+) agents parsed and validated/)
+    if (match) {
+      return { status: "validated", count: parseInt(match[1], 10) }
+    }
+    return { status: "failed", reason: `unexpected output: ${stdout.slice(0, 200).trim()}` }
+  } catch (err) {
+    return { status: "failed", reason: messageOf(err) }
+  }
+}
+
+function messageOf(err: unknown): string {
+  if (err && typeof err === "object" && "message" in err) {
+    return String((err as { message: unknown }).message)
+  }
+  return "unknown error"
+}
+
+function describeAgentPortability(agentCount: number, portability: AgentPortability): string {
+  if (agentCount === 0) {
+    return "NOT FOUND"
+  }
+  if (portability.status === "validated") {
+    return `${portability.count} agent(s) source schema validated; Pi conversion available via scripts/agent-convert.js`
+  }
+  if (portability.status === "failed") {
+    return `${agentCount} agent(s) present but validation FAILED: ${portability.reason}`
+  }
+  return `${agentCount} agent(s) present (unvalidated — ${portability.reason})`
+}
+
 function buildDoctorReport(ctx: ExtensionContext): string {
   const skillsDir = path.join(ECC_ROOT, "skills")
   const commandsDir = path.join(ECC_ROOT, "commands")
   const skillCount = countDirectories(skillsDir)
   const commandCount = countMarkdownFiles(commandsDir)
+  const agentsDir = path.join(ECC_ROOT, "agents")
+  const agentCount = countMarkdownFiles(agentsDir)
+  const converterScript = path.join(ECC_ROOT, "scripts", "agent-convert.js")
+  const agentLine = describeAgentPortability(agentCount, validateAgentPortability(converterScript))
 
   const lines = [
     "ECC adapter for Pi",
@@ -572,6 +647,7 @@ function buildDoctorReport(ctx: ExtensionContext): string {
     "Canonical resources",
     `  skills/        ${skillCount > 0 ? `${skillCount} skill(s)` : "NOT FOUND"} (${skillsDir})`,
     `  commands/      ${commandCount > 0 ? `${commandCount} command(s)` : "NOT FOUND"} (${commandsDir})`,
+    `  agents/        ${agentLine} (${agentsDir})`,
     "",
     "Engineering rules (injected into the system prompt)",
     `  ${describeRulesStatus()}`,
@@ -606,7 +682,17 @@ function buildDoctorReport(ctx: ExtensionContext): string {
   return lines.join("\n")
 }
 
+const getCommandBody = createCommandBodyReader(ECC_ROOT)
+
 export default function (pi: ExtensionAPI): void {
+  pi.on("input", event =>
+    handlePiInputEvent(event, pi, {
+      eccRoot: ECC_ROOT,
+      env: process.env,
+      getBody: getCommandBody,
+    })
+  )
+
   /**
    * ECC's SessionStart hook returns context for the model, but Pi has no
    * equivalent of Claude Code's `additionalContext` field. It is held here and
@@ -689,13 +775,16 @@ export default function (pi: ExtensionAPI): void {
   pi.registerCommand("ecc-doctor", {
     description: "Report ECC adapter status: package root, canonical resources, hooks, companions",
     handler: async (_args, ctx) => {
+// No deliverAs: "nextTurn" here. In Pi 1.x that queues the message until
+      // the user's next prompt, so the report never appears when the command runs.
+      // Explicitly suppress a model turn while displaying the report now.
       pi.sendMessage(
         {
           customType: "ecc-doctor",
           content: buildDoctorReport(ctx),
           display: true,
         },
-        { deliverAs: "nextTurn" }
+        { triggerTurn: false }
       )
     },
   })

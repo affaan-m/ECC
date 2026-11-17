@@ -88,4 +88,67 @@ Current combined verification after recovery:
 - The default sandbox checkout's 5,000-path capture limit truncated a real Tier 1 install diff and failed closed. The reviewed ECC-029 sandbox implementation raises the bounded cap to 50,000, passes its 26-case boundary suite, and produced both final reports. The driver receipt binds its 51-file implementation digest `a84e09ab848b8cd05f33792c13734f7aabe16bfe16d50d8f8292eb5261a93c3a`.
 - No real AI outcome call ran because `CODEX_API_KEY` was absent. Host ChatGPT authentication was neither copied nor exposed to the disposable evaluator.
 
-These boundaries keep the shipped behavior distinct from the M1 release gate. Authenticated outcome observations, a complete Tier 2 disk diff, live-install migration, other-provider activation, whole-context token truth and release defaults remain unverified until their explicit prerequisites are available.
+## Auto-admission anchor (routing policy v5)
+
+The 77-prompt routing corpus from #2945 (52 direct, 25 paraphrased) found one wrong implicit load. "two services both think they own the same record" admitted `skill:santa-method` on four description-only words (`two`, `both`, `they`, `same`) with BM25 24.3 and a 1.94 margin, clearing every v4 bar.
+
+- RED: the prompt and the corpus check fail against v4 (`skill:santa-method` loaded).
+- GREEN: auto admission and the tier-2 fallback also require one matched term in the skill name or curated triggers. Exact directive citations are unchanged.
+- Corpus result: zero loads outside the expected set; 19 implicit admissions become 17. The other dropped admission, `skill:cost-tracking`, now defers to the bounded proposal instead of loading.
+- The existing nine-query auto/agent corpus, fallback, launch, evaluation and retrieval suites pass unchanged.
+
+## Isolated Claude native generations
+
+Session-only Claude discovery adapts the ownership and receipt intent of #2788 to the existing native store; it never writes a marketplace or user settings.
+
+- RED: 22 cases fail before the provider adapter (preview, prepare, version gate, nine discovery corruptions, details mismatch, static integrity, runtime-state tolerance, provider-home roots, Codex-to-Claude staleness, task launch and interactive start).
+- GREEN: all 22 pass. Codex native (39), interactive (8), launch (12), auto launch (5), evaluation (31), store (31) and profile CLI suites pass unchanged; Codex receipts keep their shape, and evaluator Claude launches without a plugin directory keep their arguments and environment.
+- Credential-free real run on Linux x64 with Claude Code 2.1.292 and the actual registry: Lean prepared ready with three skills and a 398-token always-on projection; Full prepared ready with 293 skills and 35,658 tokens; Full excluding `skill:python-patterns` verified 292 skills without it at 35,561 tokens. Switching profiles reported `stale`, and native rollback restored the Lean generation. `run --dry-run` resolved the pinned binary with `--plugin-dir`; `start --dry-run` proposed the Claude generation.
+- Claude Code auto-updated to 2.1.293 during review, and the exact 2.1.292 pin rejected it. RED: tests for later 2.1 patches fail. GREEN admits 2.1.292 and later 2.1 patches while rejecting 2.1.291, 2.2.0, prereleases and malformed output. A real 2.1.293 run prepared Lean ready at the same 398-token projection; preparation took 2.4 s (provider calls 1.2 s), an unchanged re-preparation 0.9 s and status 11 ms.
+- No authenticated model call, interactive turn or native skill invocation ran. The projection is the host's estimate for the plugin listing, not whole-context truth.
+- Maintainer credential-free macOS arm64 check, October 10: Claude Code 2.1.296 prepared Lean with three skills (~289 listing tokens), Full with the then-current 302 skills (~25,982 listing tokens), reported stale after each managed profile switch, and restored Lean through managed and native rollback. These are observed plugin-listing projections for that snapshot, not whole-context measurements.
+
+## Prompt suggestions
+
+The suggest-only prompt hook from #2945 now reads a generation-bound metadata index instead of its own catalog cache.
+
+- RED: routing-index and hook cases fail before the modules exist. GREEN adds a stored-vector key to the entry shape, a stale-source refusal and the session-start builder; all 16 cases pass, with a retrieval case proving stored vectors rank identically to computed ones.
+- The resolver path took 300 to 500 ms per prompt from a source checkout, almost all in rehashing 293 skills and 584 files. Loading Ajv lazily and storing vectors moved the hook's own work to about 95 to 110 ms on a Full Claude index (276 entries, 1.8 MB); wrapper invocations measured 140 to 180 ms against a 71 ms disabled baseline on Linux x64.
+- RED: on the full registry the function-word prompt still produced three unanchored suggestions. GREEN applies the routing policy v5 anchor to suggestions; the prompt now yields none and a React keyboard-focus prompt still leads with `skill:frontend-a11y`.
+- Stored vectors moved from JSON pairs to little-endian base64 (RED: format test fails; GREEN: exact decode). The Full index shrank from 1.8 MB to 0.97 MB, its parse from 26 ms to 6 ms, and hook work to about 89 to 98 ms; wrapper invocations measured 149 to 190 ms against a 61 ms disabled baseline. The resolver's two registry reads are left intact as its source-consistency check.
+- Selection, retrieval, profile CLI and hook-wrapper suites pass unchanged.
+- No interactive Claude or Codex session loaded the hook; suggestion quality is bounded by the resolver ranking measured above.
+
+Review follow-up, October 8:
+
+- RED (15 index, hook and selection cases fail): a rollback to an indexed generation threw instead of reporting the index missing; digest-consistent entries with a non-string ID, name, description, owner or trigger, or a non-skill ID, were accepted; an oversized index was read in full; an anchored skill ranked fourth was hidden behind three unanchored matches; a skill edited mid-build was published under the stored generation; manual mode read the index before going silent; suggest mode advertised `resolve --load`, which returns no bodies there; admission denials were matched by message text, so a non-UTF-8 skill silently left the index.
+- GREEN: a valid pointer for an earlier receipt is retired (`missing`) and the SessionStart builder rebuilds it; entries are validated against a closed key set before decoding and returned as new objects; pointer and index reads are bounded at 4 KiB, 4 MiB and 2,048 entries; suggestions filter for anchors before trimming to three; a build refuses plan or registry digests that differ from the checked carrier; the hook reads only the state binding before its manual-mode exit; suggest mode prints `ecc profile mode auto` with the current revision; denials carry `ECC_CONTEXT_*` codes and everything else propagates.
+- Budget: a worker thread would make the 150 ms budget a hard bound but measured 135 to 150 ms for the same work (about 85 ms in process), so it would suppress most suggestions. The hook keeps in-process checks between steps, the read bounds cap the work at a real registry's size, and the documented snippet sets Claude Code's `timeout` as the outer bound.
+- Full Claude index, auto mode, Linux x64 Node 22.22.0: wrapper invocations 108 to 122 ms against 29 to 45 ms with the hook disabled.
+
+Review follow-up, October 9:
+
+- RED (1 case fails): a build interrupted while writing the entries file left partial bytes under its digest name, and every later build refused them, so the index could not be restored. GREEN writes the file through the store's temporary-file-and-rename path and replaces a digest-named file whose bytes do not hash to its name.
+- Sources edited after the entries are read: a new case pins that the published index still matches the stored generation and that the next build reports the generation stale. A final source recheck before the pointer would only discard a correct index. The triggers manifest, though, is not bound to the generation: an edit to it after `ecc profile set` reaches the next index unnoticed. Binding it is a store change, left open.
+- Schema validation stays manual on the read path. On Windows x64, Node 24, loading Ajv took about 44 ms and compiling an index schema about 20 ms in a fresh process, against 22 ms for loading the whole routing module. That would cost the prompt-time read about 64 ms of its 150 ms budget, so Ajv stays off the prompt path, as `validateSchema` already documents.
+- Budget: the October 8 decision stands. On the same Windows machine a prototype worker measured 64 to 77 ms against about 55 ms in process, and stopped a simulated 600 ms read at 152 ms. That gap is smaller than the Linux measurement above, so the trade-off may be worth revisiting with numbers from both platforms.
+
+These boundaries keep the shipped behavior distinct from the M1 release gate. Authenticated outcome observations, a complete Tier 2 disk diff, live-install migration, additional-provider activation, whole-context token truth and release defaults remain unverified until their explicit prerequisites are available.
+
+## October 10 carrier closure parser follow-up
+
+Independent review reproduced literal loads hidden after object-literal division and postfix increment, native `module.require` calls being skipped, and malformed source yielding a successful empty scan. The original hand-written lexer returned no dependencies for all four RED fixtures.
+
+The maintained parser in the existing pinned TypeScript development dependency now reads source without evaluating it. The gate traverses literal `require`, native `module.require`, dynamic `import`, static imports/re-exports, and literal `path.join(__dirname, ...)` calls. Existing regex, template, escape and nested-dynamic cases remain covered. Parse diagnostics fail the projection closed. ESM URL queries and fragments identify the same planned file; encoded separators and malformed escapes fail rather than normalize into a safe path.
+
+Focused validation passes 67 cases under Node 24.9.0 and Node 18.20.8. The actual CLI projects the current 304-skill registry into 10 profile/layout combinations, with 3,016 planned files, 65 JavaScript scripts and 35/35 literal relative specifiers resolved, zero escapes and zero warnings. Script execution remains deferred. Dynamic expressions are reported as warnings; arbitrary loader aliases, shadowed bindings and provider-native runtime behavior remain outside this literal-dependency gate.
+
+## Routing-quality gate
+
+The 77-prompt routing corpus from #2945 now gates ranking quality as well as wrong loads. Before this, the corpus test asserted only wrong loads, the other real-registry checks pinned individual prompts, and the evaluation pilot needs an opt-in model provider (in CI it runs on a synthetic fixture and reports `insufficient-sample`). Nothing scored top-1 or top-3 across the corpus, so a ranking regression there passed unnoticed.
+
+- RED: 13 cases fail before the evaluator and its npm script exist, the 12 scorer and CLI cases plus the replaced corpus test. GREEN: the 12 cases take milliseconds each against planted rows; a planted ten-prompt ranking regression breaches both direct thresholds, one wrong load fails on its own, and paraphrased ranking never gates while paraphrased wrong loads do. Thresholds compare unrounded ratios, so exactly 0.88 and 0.80 pass and 1,999/2,500 does not; a hit at the fourth rank is not a top-3 hit; a missing or malformed `--baseline` fails before the corpus run.
+- Review follow-up. RED (2 of 14 cases fail): a `--baseline` that parsed as JSON but was not a receipt (`{}`, an array, another schema, no `sets`) ran the corpus and exited 0, and a missing corpus set failed on a bare `TypeError`. Scored directly, 52 healthy direct rows with no paraphrased rows also passed, because that set is reported rather than gated. GREEN: the baseline must be an `ecc.routing-quality.v1` receipt with both sets, and each corpus set must be a non-empty array of prompts with a string `query` and a non-empty `expected` list; both checks fail before any prompt is resolved.
+- Baseline on Node 24.13.0, Windows x64, registry digest `6f213dc84593...` (314 skills, routing policy v5): direct top-1 44/52 (0.846), top-3 48/52 (0.923), 17 implicit loads all correct; paraphrased top-1 2/25, top-3 3/25, no implicit loads. The first build (Node 22.22.0, 293 skills, before the v5 anchor) measured the same direct counts, 19 implicit loads and paraphrased top-3 4/25.
+- Thresholds: direct top-3 at least 0.88 (46/52) and top-1 at least 0.80 (42/52), two prompts of slack each; zero wrong loads in both sets. Twenty-one skills and a trigger manifest update landed between the two builds without moving any direct count, so routine skill additions are not expected to trip the gate.
+- One resolver pass replaces the earlier wrong-load test instead of adding a second. Instrumented runs of the old and new corpus tests each make 77 `resolveTaskContext` calls and 77 registry loads; the registry digest is read from the resolver's receipt, not a separate load. The first build, on Node 22.22.0, measured the test file at 19.0 s against 17.6 s (about 230 ms per resolve). Each push runs this file six times (five full test cells and the coverage job), so a separate pass would have added about two CPU-minutes per push. `npm run routing:check` runs the gate locally and stays out of the default `npm test` chain for the same reason. It accepts `--json` and `--baseline <receipt>`; with `--json`, the baseline delta goes to stderr so stdout stays one JSON document.

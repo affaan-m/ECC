@@ -305,10 +305,13 @@ Use `ws_listener.py` to capture WebSocket events during recording sessions. Desk
 #### Quick Start
 
 1. **Choose state dir**: `STATE_DIR="${VIDEODB_EVENTS_DIR:-$HOME/.local/state/videodb}"`
-2. **Start listener**: `VIDEODB_EVENTS_DIR="$STATE_DIR" python scripts/ws_listener.py --clear "$STATE_DIR" &`
+2. **Start listener** from the project directory, so it reads the project's `.env`: `VIDEODB_EVENTS_DIR="$STATE_DIR" python "${CLAUDE_SKILL_DIR}/scripts/ws_listener.py" --clear "$STATE_DIR" &`
 3. **Get WebSocket ID**: `cat "$STATE_DIR/videodb_ws_id"`
 4. **Run capture code** (see reference/capture.md for the full workflow)
 5. **Events written to**: `$STATE_DIR/videodb_events.jsonl`
+
+`scripts/ws_listener.py` in the reference files is relative to this skill's directory (`${CLAUDE_SKILL_DIR}`), not to the project.
+Claude Code fills in `${CLAUDE_SKILL_DIR}`. Other hosts leave it empty, so replace it with the directory this skill is installed in (for Codex, `$HOME/.codex/skills/videodb`; `~` does not expand inside the quotes).
 
 Use `--clear` whenever you start a fresh capture run so stale transcript and visual events do not leak into the new session.
 

@@ -39,6 +39,7 @@ Targets:
   cursor       - Install rules, hooks, and bundled Cursor configs to ./.cursor/
   antigravity  - Install rules, workflows, skills, and agents to ./.agents/
   codex        - Install shared agents/config into ~/.codex/
+  copilot      - Install skills and agents into ./.github/ for GitHub Copilot CLI (ECC hooks not configured)
   gemini       - Install project-local Gemini config into ./.gemini/
   opencode     - Install into OPENCODE_CONFIG_DIR, XDG_CONFIG_HOME/opencode, or ~/.config/opencode/
   codebuddy    - Install commands, agents, skills, and flattened rules into ./.codebuddy/
@@ -47,6 +48,7 @@ Targets:
   zed          - Install project settings, commands, agents, skills, and flattened rules into ./.zed/
   hermes       - Install shared rules/skills/commands into ~/.hermes/
   kimi         - Install Kimi Code project instructions, skills, and MCP config into ./.kimi-code/ (ECC hooks not configured)
+  grok         - Install through the canonical plan/apply/receipt lifecycle into ~/.grok/plugins/ecc/
   openclaw     - Install shared rules/skills/commands into ~/.openclaw/
   adal         - Install shared rules/skills/commands into ./.adal/
   mistral-vibe - Install selected skills into ./.vibe/skills/ (Vibe hooks and agents not configured)
@@ -64,6 +66,10 @@ Options:
   --enable-hooks      Confirm installing the automatic hook runtime (required
                       when the selected profile/modules materialize hooks)
   --no-hooks          Install everything except the automatic hook runtime
+  --trust             Trust executable Grok capabilities (still requires each consent flag)
+  --consent-hooks     Allow Grok hooks for this install
+  --consent-mcp <ids> Allow named Grok MCP servers, comma-separated
+  --source-sha <sha>   Install or roll back Grok to an exact 40-character Git commit
   --dry-run    Show the install plan without copying files
   --json       Emit machine-readable plan/result JSON
   --help       Show this help text
@@ -140,6 +146,13 @@ function printHumanPlan(plan, dryRun) {
     }
   }
 
+  if (Array.isArray(plan.reconciledStalePaths) && plan.reconciledStalePaths.length > 0) {
+    console.log('\nRemoved files no longer in the install plan:');
+    for (const removedPath of plan.reconciledStalePaths) {
+      console.log(`- removed ${removedPath}`);
+    }
+  }
+
   if (!dryRun) {
     console.log(`\nDone. Install-state written to ${plan.installStatePath}`);
   }
@@ -148,6 +161,7 @@ function printHumanPlan(plan, dryRun) {
 }
 
 async function main() {
+  let rawPlan = null;
   try {
     const options = parseInstallArgs(process.argv);
 
@@ -174,7 +188,8 @@ async function main() {
       ...options,
       config,
     });
-    const rawPlan = createInstallPlanFromRequest(request, {
+
+    rawPlan = createInstallPlanFromRequest(request, {
       projectRoot: process.cwd(),
       homeDir: process.env.HOME || os.homedir(),
       env: process.env,
@@ -215,7 +230,11 @@ async function main() {
         ? `Error: ${missingDependencyMessage}\n`
         : `Error: ${error.message}${getHelpText()}`
     );
-    process.exit(1);
+    process.exitCode = 1;
+  } finally {
+    if (rawPlan && typeof rawPlan.dispose === 'function') {
+      rawPlan.dispose();
+    }
   }
 }
 

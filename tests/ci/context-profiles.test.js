@@ -9,7 +9,7 @@ const SCRIPT = path.join(ROOT, 'scripts/ci/validate-context-profiles.js');
 const tests = [
   ['validates every profile against every declared target in read-only mode', () => {
     const result = spawnSync(process.execPath, [SCRIPT, '--json'], {
-      cwd: ROOT, encoding: 'utf8', timeout: 30_000,
+      cwd: ROOT, encoding: 'utf8', timeout: 60_000,
     });
     assert.strictEqual(result.status, 0, result.stderr);
     const output = JSON.parse(result.stdout);

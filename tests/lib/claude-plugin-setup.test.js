@@ -4,6 +4,7 @@ const assert = require('assert');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
+const { withoutShadowingClaude } = require('./helpers/windows-test-env');
 
 const repoRoot = path.join(__dirname, '..', '..');
 const fakeClaudeScript = path.join(repoRoot, 'tests', 'fixtures', 'fake-claude-plugin.js');
@@ -87,7 +88,7 @@ function withFixture(initialState, fn) {
     process.chdir(fixture.projectRoot);
     process.env.HOME = fixture.homeDir;
     process.env.USERPROFILE = fixture.homeDir;
-    process.env.PATH = `${fixture.binDir}${path.delimiter}${previous.PATH || ''}`;
+    process.env.PATH = `${fixture.binDir}${path.delimiter}${withoutShadowingClaude(previous.PATH)}`;
     process.env.CLAUDE_CONFIG_DIR = fixture.configDir;
     process.env.ECC_TEST_CLAUDE_STATE = fixture.statePath;
     process.env.ECC_TEST_CLAUDE_CALLS = fixture.callsPath;
@@ -647,29 +648,38 @@ test('dry-run snapshots local-scope inventory into isolated Claude and project r
         '.claude',
         'settings.local.json'
       );
-      assert.strictEqual(fs.lstatSync(shadowSettingsPath).isFile(), true);
-      const shadowInstalled = JSON.parse(fs.readFileSync(
-        path.join(runOptions.env.CLAUDE_CONFIG_DIR, 'plugins', 'installed_plugins.json'),
-        'utf8'
-      ));
-      assert.strictEqual(
-        shadowInstalled.plugins['ecc@ecc'][0].projectPath,
-        runOptions.cwd
+      const shadowSettingsFd = fs.openSync(
+        shadowSettingsPath,
+        fs.constants.O_RDWR | (fs.constants.O_NOFOLLOW || 0)
       );
-      assert.ok(
-        shadowInstalled.plugins['ecc@ecc'][0].installPath
-          .startsWith(runOptions.env.CLAUDE_CONFIG_DIR)
-      );
-      fs.writeFileSync(shadowSettingsPath, '{"providerRead":true}\n');
-      fs.mkdirSync(runOptions.env.XDG_DATA_HOME, { recursive: true });
-      fs.writeFileSync(
-        path.join(runOptions.env.XDG_DATA_HOME, 'claude-provider-read.json'),
-        '{"providerRead":true}\n'
-      );
-      if (args.join(' ') === 'plugin list --json') {
-        return { stdout: JSON.stringify([installedPlugin('local')]) };
+      try {
+        assert.strictEqual(fs.fstatSync(shadowSettingsFd).isFile(), true);
+        const shadowInstalled = JSON.parse(fs.readFileSync(
+          path.join(runOptions.env.CLAUDE_CONFIG_DIR, 'plugins', 'installed_plugins.json'),
+          'utf8'
+        ));
+        assert.strictEqual(
+          shadowInstalled.plugins['ecc@ecc'][0].projectPath,
+          runOptions.cwd
+        );
+        assert.ok(
+          shadowInstalled.plugins['ecc@ecc'][0].installPath
+            .startsWith(runOptions.env.CLAUDE_CONFIG_DIR)
+        );
+        fs.ftruncateSync(shadowSettingsFd, 0);
+        fs.writeFileSync(shadowSettingsFd, '{"providerRead":true}\n');
+        fs.mkdirSync(runOptions.env.XDG_DATA_HOME, { recursive: true });
+        fs.writeFileSync(
+          path.join(runOptions.env.XDG_DATA_HOME, 'claude-provider-read.json'),
+          '{"providerRead":true}\n'
+        );
+        if (args.join(' ') === 'plugin list --json') {
+          return { stdout: JSON.stringify([installedPlugin('local')]) };
+        }
+        return { stdout: JSON.stringify([officialMarketplace('local')]) };
+      } finally {
+        fs.closeSync(shadowSettingsFd);
       }
-      return { stdout: JSON.stringify([officialMarketplace('local')]) };
     };
 
     const result = setupClaudePlugin(

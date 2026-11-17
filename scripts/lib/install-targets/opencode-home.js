@@ -5,6 +5,8 @@ const path = require('path');
 const {
   buildValidationIssue,
   createInstallTargetAdapter,
+  createManagedOperation,
+  isForeignPlatformPath,
 } = require('./helpers');
 const { resolveOpencodeConfigRoot } = require('../opencode-paths');
 
@@ -88,5 +90,39 @@ module.exports = createInstallTargetAdapter({
   resolveRoot: resolveOpencodeConfigRoot,
   installStatePathSegments: ['ecc-install-state.json'],
   nativeRootRelativePath: '.opencode',
+  planOperations(input, adapter) {
+    const modules = Array.isArray(input.modules)
+      ? input.modules
+      : (input.module ? [input.module] : []);
+    const operations = modules.flatMap(module => (Array.isArray(module.paths) ? module.paths : [])
+      .filter(sourcePath => !isForeignPlatformPath(sourcePath, adapter.target))
+      .flatMap(sourcePath => {
+        const operation = adapter.createScaffoldOperation(module.id, sourcePath, input);
+        if (operation.sourceRelativePath !== '.opencode') {
+          return [operation];
+        }
+        // Keep the repository template's sibling skills path for direct use,
+        // but point home installs at the skills copied inside the config root.
+        return [operation, createManagedOperation({
+          moduleId: module.id,
+          sourceRelativePath: '.opencode/opencode.json',
+          destinationPath: path.join(operation.destinationPath, 'opencode.json'),
+          strategy: operation.strategy,
+          contentTransform: 'opencode-home-skills-path',
+        })];
+      }));
+    const scriptOperation = operations.find(operation => (
+      String(operation.sourceRelativePath).replace(/\\/g, '/').startsWith('scripts/')
+    ));
+    if (!scriptOperation) return operations;
+    // OpenCode's root is ESM, while ECC runtime scripts remain CommonJS.
+    // Record this boundary so install, repair and uninstall share ownership.
+    return [...operations, createManagedOperation({
+      moduleId: scriptOperation.moduleId,
+      sourceRelativePath: 'manifests/install-assets/commonjs-scripts-package.json',
+      destinationPath: path.join(adapter.resolveRoot(input), 'scripts', 'package.json'),
+      strategy: 'preserve-relative-path',
+    })];
+  },
   validate: defaultValidateOpencodeHome,
 });

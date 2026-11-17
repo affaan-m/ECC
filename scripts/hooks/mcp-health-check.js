@@ -13,6 +13,7 @@
  */
 
 const fs = require('fs');
+const crypto = require('crypto');
 const os = require('os');
 const path = require('path');
 const http = require('http');
@@ -47,11 +48,29 @@ function envNumber(name, fallback) {
   return Number.isFinite(value) && value >= 0 ? value : fallback;
 }
 
+// Resolve the Claude profile directory the same way everywhere.
+//
+// Duplicated rather than imported on purpose: hooks ship in managed installs
+// that carry top-level `scripts/` without `scripts/lib/` (see #3259), so a
+// require into lib/ would make the hook unloadable there. `~` is expanded the
+// way `scripts/lib/agent-data-home.js` expands it, so a profile written as
+// `~/.claude-work` resolves to one place rather than two.
+function claudeConfigDir() {
+  const configured = process.env.CLAUDE_CONFIG_DIR;
+  const trimmed = configured ? String(configured).trim() : '';
+  if (!trimmed) return path.join(os.homedir(), '.claude');
+  if (trimmed.startsWith('~')) {
+    const remainder = trimmed.slice(1).replace(/^[/\\]+/, '');
+    return remainder ? path.join(os.homedir(), remainder) : os.homedir();
+  }
+  return path.resolve(trimmed);
+}
+
 function stateFilePath() {
   if (process.env.ECC_MCP_HEALTH_STATE_PATH) {
     return path.resolve(process.env.ECC_MCP_HEALTH_STATE_PATH);
   }
-  return path.join(os.homedir(), '.claude', 'mcp-health-cache.json');
+  return path.join(claudeConfigDir(), 'mcp-health-cache.json');
 }
 
 function configPaths() {
@@ -205,6 +224,22 @@ function resolveServerConfig(serverName) {
   return null;
 }
 
+// Aliases are local names: two projects can both call different servers "db".
+// Hash configuration values (which can contain credentials) rather than storing
+// another copy in the cache. Cwd matters for relative commands and arguments.
+function serverCacheIdentity(resolvedConfig) {
+  return crypto.createHash('sha256').update(JSON.stringify([
+    process.cwd(),
+    resolvedConfig?.source || null,
+    resolvedConfig?.config || null
+  ])).digest('hex');
+}
+
+function matchingServerState(state, serverName, cacheIdentity) {
+  const previous = state.servers[serverName];
+  return previous?.cacheIdentity === cacheIdentity ? previous : {};
+}
+
 function markHealthy(state, serverName, now, details = {}) {
   state.servers[serverName] = {
     status: 'healthy',
@@ -219,14 +254,15 @@ function markHealthy(state, serverName, now, details = {}) {
   };
 }
 
-function markUnhealthy(state, serverName, now, failureCode, errorMessage) {
-  const previous = state.servers[serverName] || {};
+function markUnhealthy(state, serverName, now, failureCode, errorMessage, cacheIdentity) {
+  const previous = matchingServerState(state, serverName, cacheIdentity);
   const failureCount = Number(previous.failureCount || 0) + 1;
   const backoffBase = envNumber('ECC_MCP_HEALTH_BACKOFF_MS', DEFAULT_BACKOFF_MS);
   const nextRetryDelay = Math.min(backoffBase * (2 ** Math.max(failureCount - 1, 0)), MAX_BACKOFF_MS);
 
   state.servers[serverName] = {
     status: 'unhealthy',
+    cacheIdentity,
     checkedAt: now,
     expiresAt: now,
     failureCount,
@@ -710,7 +746,9 @@ function emitLogs(logs) {
 async function handlePreToolUse(rawInput, input, target, statePathValue, now) {
   const logs = [];
   const state = loadState(statePathValue);
-  const previous = state.servers[target.server] || {};
+  const resolvedConfig = resolveServerConfig(target.server);
+  const cacheIdentity = serverCacheIdentity(resolvedConfig);
+  const previous = matchingServerState(state, target.server, cacheIdentity);
 
   if (previous.status === 'healthy' && Number(previous.expiresAt || 0) > now) {
     return { rawInput, exitCode: 0, logs };
@@ -723,7 +761,6 @@ async function handlePreToolUse(rawInput, input, target, statePathValue, now) {
     return { rawInput, exitCode: shouldFailOpen() ? 0 : 2, logs };
   }
 
-  const resolvedConfig = resolveServerConfig(target.server);
   if (!resolvedConfig) {
     logs.push(`[MCPHealthCheck] No MCP config found for ${target.server}; skipping preflight probe`);
     return { rawInput, exitCode: 0, logs };
@@ -731,7 +768,7 @@ async function handlePreToolUse(rawInput, input, target, statePathValue, now) {
 
   const probe = await probeServer(target.server, resolvedConfig);
   if (probe.ok) {
-    markHealthy(state, target.server, now, { source: resolvedConfig.source });
+    markHealthy(state, target.server, now, { source: resolvedConfig.source, cacheIdentity });
     saveState(statePathValue, state);
 
     if (previous.status === 'unhealthy') {
@@ -749,6 +786,7 @@ async function handlePreToolUse(rawInput, input, target, statePathValue, now) {
       if (reprobe.ok) {
         markHealthy(state, target.server, now, {
           source: resolvedConfig.source,
+          cacheIdentity,
           restoredBy: 'reconnect-command'
         });
         saveState(statePathValue, state);
@@ -759,7 +797,7 @@ async function handlePreToolUse(rawInput, input, target, statePathValue, now) {
     }
   }
 
-  markUnhealthy(state, target.server, now, probe.failureCode, probe.reason);
+  markUnhealthy(state, target.server, now, probe.failureCode, probe.reason, cacheIdentity);
   saveState(statePathValue, state);
 
   const reconnectSuffix = reconnect.attempted
@@ -782,7 +820,8 @@ async function handlePostToolUseFailure(rawInput, input, target, statePathValue,
   }
 
   const state = loadState(statePathValue);
-  markUnhealthy(state, target.server, now, failureCode, summary.slice(0, 500));
+  const cacheIdentity = serverCacheIdentity(resolveServerConfig(target.server));
+  markUnhealthy(state, target.server, now, failureCode, summary.slice(0, 500), cacheIdentity);
   saveState(statePathValue, state);
 
   logs.push(`[MCPHealthCheck] ${target.server} reported ${failureCode}; marking server unhealthy and attempting reconnect`);
@@ -813,6 +852,7 @@ async function handlePostToolUseFailure(rawInput, input, target, statePathValue,
   const refreshed = loadState(statePathValue);
   markHealthy(refreshed, target.server, now, {
     source: resolvedConfig.source,
+    cacheIdentity: serverCacheIdentity(resolvedConfig),
     restoredBy: 'post-failure-reconnect'
   });
   saveState(statePathValue, refreshed);

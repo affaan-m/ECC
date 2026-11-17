@@ -15,9 +15,22 @@ test('independent packed oracle separates canonical IDs from native metadata nam
   const skills = discoverPublishedSkills(require('node:path').resolve(__dirname, '../..'));
   const pubmed = skills.find(skill => skill.id === 'skill:scientific-db-pubmed-database');
   assert.deepEqual(pubmed, { id: 'skill:scientific-db-pubmed-database',
-    sourceName: 'scientific-db-pubmed-database', nativeName: 'pubmed-database' });
+    sourceName: 'scientific-db-pubmed-database', nativeName: 'scientific-db-pubmed-database' });
   assert.equal(new Set(skills.map(skill => skill.id)).size, skills.length);
   assert.equal(new Set(skills.map(skill => skill.nativeName)).size, skills.length);
+});
+
+test('packed oracle preserves a native name that differs from its canonical directory', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-packed-names-'));
+  try {
+    const skillRoot = path.join(root, 'skills', 'canonical-fixture');
+    fs.mkdirSync(skillRoot, { recursive: true });
+    fs.writeFileSync(path.join(skillRoot, 'SKILL.md'),
+      '---\nname: native-fixture\ndescription: Inert discovery fixture.\n---\n');
+    assert.deepEqual(discoverPublishedSkills(root), [{
+      id: 'skill:canonical-fixture', sourceName: 'canonical-fixture', nativeName: 'native-fixture',
+    }]);
+  } finally { fs.rmSync(root, { recursive: true, force: true }); }
 });
 
 test('tier claims and transferred artifact verification remain explicit', () => {

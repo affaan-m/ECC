@@ -698,6 +698,12 @@ async function runTests() {
           assert.strictEqual(claim.item.status, 'running');
           assert.strictEqual(claim.item.metadata.assigneeKind, 'human');
 
+          const repeated = await post(app, 'wi-1/claim', { owner: 'alice', as: 'agent' }).then(r => r.json());
+          assert.deepStrictEqual(repeated.item, claim.item, 'same-owner retries must preserve the original claim');
+          const takeover = await post(app, 'wi-1/claim', { owner: 'bob' });
+          assert.strictEqual(takeover.status, 400, 'another owner must be rejected');
+          assert.match(JSON.stringify(await takeover.json()), /already owned/i);
+
           const move = await post(app, 'wi-2/move', { lane: 'blocked' }).then(r => r.json());
           assert.strictEqual(move.ok, true);
           assert.strictEqual(move.item.status, 'blocked');

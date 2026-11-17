@@ -84,25 +84,48 @@ function fieldTokens(entry, field) {
   return tokenize(`${entry.ownerModuleId || ''} ${entry.packId || ''}`);
 }
 
+// A precomputed dense leg as sorted [dimension, weight] pairs. JSON preserves
+// the doubles exactly, so a stored vector ranks identically to a computed one.
+function sparseDense(entry) {
+  const vector = denseVector([fieldTokens(entry, 'name'), fieldTokens(entry, 'description')]);
+  return vector.flatMap((value, dimension) => value === 0 ? [] : [[dimension, value]]);
+}
+
+function expandDense(pairs) {
+  const vector = new Array(DENSE_DIM).fill(0);
+  for (const pair of pairs) {
+    if (!Array.isArray(pair) || pair.length !== 2 || !Number.isInteger(pair[0]) || pair[0] < 0 || pair[0] >= DENSE_DIM
+      || !Number.isFinite(pair[1])) throw new Error('Invalid precomputed dense vector');
+    vector[pair[0]] = pair[1];
+  }
+  return vector;
+}
+
 /** Build a reusable retrieval index over registry-shaped entries. Entries may
  * carry a `triggers` array (from the checked-in skill-triggers manifest) that
- * is weighted between name and description. */
+ * is weighted between name and description, and a `dense` array from
+ * sparseDense to skip recomputing the n-gram leg. */
+function weightedDocument(entry) {
+  const fields = {};
+  let docLength = 0;
+  const weighted = new Map();
+  for (const field of Object.keys(FIELD_WEIGHTS)) {
+    const tokens = fieldTokens(entry, field);
+    fields[field] = tokens;
+    for (const token of tokens) {
+      const contribution = FIELD_WEIGHTS[field];
+      weighted.set(token, (weighted.get(token) || 0) + contribution);
+      docLength += contribution;
+    }
+  }
+  return { fields, weighted, docLength };
+}
+
 function buildRetrievalIndex(entries) {
   const documents = entries.map(entry => {
-    const fields = {};
-    let docLength = 0;
-    const weighted = new Map();
-    for (const field of Object.keys(FIELD_WEIGHTS)) {
-      const tokens = fieldTokens(entry, field);
-      fields[field] = tokens;
-      for (const token of tokens) {
-        const contribution = FIELD_WEIGHTS[field];
-        weighted.set(token, (weighted.get(token) || 0) + contribution);
-        docLength += contribution;
-      }
-    }
+    const { fields, weighted, docLength } = weightedDocument(entry);
     return { entry, fields, weighted, docLength,
-      dense: denseVector([fields.name, fields.description]),
+      dense: entry.dense ? expandDense(entry.dense) : denseVector([fields.name, fields.description]),
       aliases: [...new Set([entry.id.slice('skill:'.length), entry.name].filter(Boolean).map(normalizedName))] };
   });
   const documentFrequency = new Map();
@@ -171,16 +194,45 @@ function searchRetrieval(index, query, { limit = 5 } = {}) {
     .slice(0, limit)
     .map(([document, score]) => {
       const matched = [...new Set(queryTokens)].filter(term => document.weighted.has(term));
+      const anchorTerms = matched.filter(term => document.fields.name.includes(term) || document.fields.triggers.includes(term));
       const exact = anchored.has(document);
       return { id: document.entry.id, score: Math.round(score * 10000) / 10000, exact,
         exactAlias: exact ? anchored.get(document) : undefined,
         dense: Math.round((dense.get(document) || 0) * 10000) / 10000,
         bm25: Math.round((bm25.get(document) || 0) * 10000) / 10000,
         matchedTerms: matched,
+        anchorTerms,
         description: document.entry.description.slice(0, 2048),
         descriptionTruncated: document.entry.description.length > 2048 };
     });
 }
 
-module.exports = { buildRetrievalIndex, searchRetrieval, tokenize,
+/** Score registry-shaped entries that are NOT in the index, using the index's
+ * own corpus statistics (IDF, average length), field weights and query-coverage
+ * floor. Indexed scores are untouched, so each result's bm25 compares directly
+ * with an indexed candidate's bm25. Returns eligible entries, strongest first. */
+function scoreExternal(index, query, entries) {
+  const uniqueTerms = new Set(tokenize(query || ''));
+  if (!uniqueTerms.size) return [];
+  const minimumCoverage = Math.min(2, uniqueTerms.size);
+  const scored = [];
+  for (const entry of entries) {
+    const { weighted, docLength } = weightedDocument(entry);
+    const matched = [...uniqueTerms].filter(term => weighted.has(term));
+    if (!(matched.length >= minimumCoverage || (matched.length >= 1 && uniqueTerms.size >= 4))) continue;
+    let score = 0;
+    for (const term of uniqueTerms) {
+      const tf = weighted.get(term);
+      if (!tf) continue;
+      const frequency = index.documentFrequency.get(term) || 0;
+      const idf = Math.log(1 + (index.entryCount - frequency + 0.5) / (frequency + 0.5));
+      const denominator = tf + K1 * (1 - B + B * docLength / index.averageLength);
+      score += idf * (tf * (K1 + 1)) / denominator;
+    }
+    scored.push({ entry, id: entry.id, bm25: Math.round(score * 10000) / 10000, matchedTerms: matched });
+  }
+  return scored.sort((a, b) => b.bm25 - a.bm25 || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+}
+
+module.exports = { buildRetrievalIndex, scoreExternal, searchRetrieval, sparseDense, tokenize,
   internals: { denseVector, dot, DENSE_ADMIT_COSINE, DENSE_DIM } };

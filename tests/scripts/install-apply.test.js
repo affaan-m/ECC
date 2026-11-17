@@ -10,6 +10,7 @@ const { execFileSync, spawnSync } = require('child_process');
 const crypto = require('crypto');
 const yaml = require('js-yaml');
 const { applyInstallPlan } = require('../../scripts/lib/install/apply');
+const { canonicalArgs } = require('../../scripts/grok-install');
 
 const SCRIPT = path.join(__dirname, '..', '..', 'scripts', 'install-apply.js');
 const DEFAULT_INSTALL_APPLY_TIMEOUT_MS = process.platform === 'win32' ? 30000 : 10000;
@@ -66,15 +67,16 @@ function runWithGuidedDispatcherFailure(failureMode) {
   const root = createTempDir('install-apply-guided-failure-');
   const preloadPath = path.join(root, 'preload.js');
   const failureMessage = 'guided dispatcher failed\u001b[31m';
-  const replacement = failureMode === 'load'
-    ? `throw new Error(${JSON.stringify(failureMessage)});`
-    : `return { main: () => Promise.reject(new Error(${JSON.stringify(failureMessage)})) };`;
   fs.writeFileSync(preloadPath, `
     const Module = require('module');
     const originalLoad = Module._load;
     Module._load = function(request, parent, isMain) {
       if (request === './install-guided' && /install-apply\\.js$/.test(parent?.filename || '')) {
-        ${replacement}
+        const failureMessage = process.env.ECC_GUIDED_FAILURE_MESSAGE;
+        if (process.env.ECC_GUIDED_FAILURE_MODE === 'load') {
+          throw new Error(failureMessage);
+        }
+        return { main: () => Promise.reject(new Error(failureMessage)) };
       }
       return originalLoad.call(this, request, parent, isMain);
     };
@@ -83,6 +85,7 @@ function runWithGuidedDispatcherFailure(failureMode) {
     return spawnSync(process.execPath, ['--require', preloadPath, SCRIPT, '--guided'], {
       cwd: path.dirname(SCRIPT),
       encoding: 'utf8',
+      env: { ...process.env, ECC_GUIDED_FAILURE_MODE: failureMode, ECC_GUIDED_FAILURE_MESSAGE: failureMessage },
     });
   } finally {
     cleanup(root);
@@ -185,6 +188,61 @@ function runTests() {
     assert.ok(result.stderr.includes('cannot be combined'));
   })) passed++; else failed++;
 
+  if (test('Grok alias does not add the default profile to positional language selections', () => {
+    assert.deepStrictEqual(canonicalArgs(['typescript']), ['--target', 'grok', 'typescript']);
+    assert.deepStrictEqual(
+      canonicalArgs(['--dry-run']),
+      ['--target', 'grok', '--profile', 'full', '--dry-run']
+    );
+  })) passed++; else failed++;
+
+  if (test('Grok alias rejects option-prefixed values for value flags', () => {
+    assert.throws(() => canonicalArgs(['--target', '--dry-run']), /Missing value for --target/);
+    assert.throws(() => canonicalArgs(['--consent-mcp', '--dry-run']), /Missing value for --consent-mcp/);
+    assert.throws(() => canonicalArgs(['--target', 'claude']), /Invalid value for --target: claude/);
+  })) passed++; else failed++;
+
+  if (test('plans Grok through the canonical request with a local pinned fixture', () => {
+    const homeDir = createTempDir('install-apply-grok-home-');
+    const fixtureRoot = createTempDir('install-apply-grok-source-');
+    const sourceRoot = path.join(fixtureRoot, 'source');
+    try {
+      execFileSync('git', ['clone', '--quiet', '--no-local', path.dirname(path.dirname(SCRIPT)), sourceRoot]);
+      const sourceSha = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: sourceRoot, encoding: 'utf8' }).trim();
+      const marketplacePath = path.join(sourceRoot, '.grok-plugin', 'marketplace.json');
+      const marketplace = readJson(marketplacePath);
+      const updatedMarketplace = {
+        ...marketplace,
+        plugins: [
+          {
+            ...marketplace.plugins[0],
+            source: { source: 'url', url: sourceRoot, sha: sourceSha },
+          },
+          ...marketplace.plugins.slice(1),
+        ],
+      };
+      fs.writeFileSync(marketplacePath, `${JSON.stringify(updatedMarketplace, null, 2)}\n`);
+
+      const result = run(
+        ['--target', 'grok', '--profile', 'minimal', '--dry-run', '--json'],
+        { cwd: sourceRoot, homeDir }
+      );
+      assert.strictEqual(result.code, 0, result.stderr);
+      const payload = JSON.parse(result.stdout);
+      assert.strictEqual(payload.dryRun, true);
+      assert.strictEqual(payload.grok, undefined);
+      assert.strictEqual(payload.plan.target, 'grok');
+      assert.strictEqual(payload.plan.adapter.id, 'grok-home');
+      assert.ok(payload.plan.operations.length > 0);
+      assert.ok(payload.plan.operations.every((operation) => (
+        ['copy-file', 'render-template', 'merge-json', 'remove'].includes(operation.kind)
+      )));
+    } finally {
+      cleanup(homeDir);
+      cleanup(fixtureRoot);
+    }
+  })) passed++; else failed++;
+
   if (test('installs Claude rules and writes install-state', () => {
     const homeDir = createTempDir('install-apply-home-');
     const projectDir = createTempDir('install-apply-project-');
@@ -198,6 +256,7 @@ function runTests() {
       assert.ok(fs.existsSync(path.join(claudeRoot, 'rules', 'ecc', 'typescript', 'testing.md')));
       assert.ok(fs.existsSync(path.join(claudeRoot, 'commands', 'plan.md')));
       assert.ok(fs.existsSync(path.join(claudeRoot, 'scripts', 'hooks', 'session-end.js')));
+      assert.ok(fs.existsSync(path.join(claudeRoot, 'scripts', 'hooks', 'hookify-runtime.js')));
       assert.ok(fs.existsSync(path.join(claudeRoot, 'scripts', 'lib', 'utils.js')));
       assert.ok(fs.existsSync(path.join(claudeRoot, 'skills', 'tdd-workflow', 'SKILL.md')));
       assert.ok(fs.existsSync(path.join(claudeRoot, 'skills', 'coding-standards', 'SKILL.md')));
@@ -284,6 +343,38 @@ function runTests() {
       const mcpConfig = readJson(path.join(projectDir, '.cursor', 'mcp.json'));
       assert.strictEqual(hooksConfig.version, 1);
       assert.ok(hooksConfig.hooks.sessionStart, 'Should keep Cursor sessionStart hooks');
+      assert.strictEqual(
+        hooksConfig.hooks.sessionStart[0].command,
+        'node .cursor/hooks/session-start.js',
+        'Cursor sessionStart should use the event-level dispatcher'
+      );
+      for (const [eventName, entries] of Object.entries(hooksConfig.hooks)) {
+        assert.strictEqual(
+          entries.length,
+          1,
+          `Installed Cursor event ${eventName} should use one dispatcher`
+        );
+      }
+
+      const installedShellDispatcher = path.join(
+        projectDir,
+        '.cursor',
+        'hooks',
+        'before-shell-execution.js'
+      );
+      const blocked = spawnSync(process.execPath, [installedShellDispatcher], {
+        cwd: projectDir,
+        env: { ...process.env, HOME: homeDir, USERPROFILE: homeDir },
+        input: JSON.stringify({ command: 'git commit --no-verify -m test' }),
+        encoding: 'utf8',
+        timeout: DEFAULT_INSTALL_APPLY_TIMEOUT_MS,
+      });
+      assert.strictEqual(
+        blocked.status,
+        2,
+        `Installed Cursor dispatcher should preserve blocking exit codes: ${blocked.stderr}`
+      );
+      assert.match(blocked.stderr, /BLOCKED/);
       assert.ok(mcpConfig.mcpServers['chrome-devtools'], 'Should install shared MCP servers into Cursor');
 
       const statePath = path.join(projectDir, '.cursor', 'ecc-install-state.json');
@@ -379,6 +470,7 @@ function runTests() {
           'platform-configs',
           'skill-unified-memory',
           'workflow-quality',
+          'shared-script-utils',
         ]
       );
       assert.ok(
@@ -545,12 +637,22 @@ function runTests() {
       const settingsOperations = parsed.plan.operations.filter(operation => (
         operation.kind === 'update-claude-settings'
       ));
-      assert.strictEqual(settingsOperations.length, 1);
-      assert.strictEqual(
-        settingsOperations[0].destinationPath,
-        path.join(homeDir, '.claude', 'settings.json')
+      // Two modules ship hooks: the runtime, and config-health's own
+      // SessionStart registration. Both merge into the same settings file.
+      assert.strictEqual(settingsOperations.length, 2);
+      for (const operation of settingsOperations) {
+        assert.strictEqual(
+          operation.destinationPath,
+          path.join(homeDir, '.claude', 'settings.json')
+        );
+        assert.ok(operation.managedHooks.SessionStart);
+      }
+      assert.deepStrictEqual(
+        settingsOperations
+          .map(operation => String(operation.sourceRelativePath).replace(/\\/g, '/'))
+          .sort(),
+        ['hooks/hooks.json', 'manifests/install-assets/config-health-hooks.json']
       );
-      assert.ok(settingsOperations[0].managedHooks.SessionStart);
       assert.ok(!parsed.plan.operations.some(operation => (
         operation.kind === 'copy-file'
         && String(operation.sourceRelativePath || '').replace(/\\/g, '/') === 'hooks/hooks.json'
@@ -799,6 +901,31 @@ function runTests() {
     }
   })) passed++; else failed++;
 
+  if (test('commands-only install can execute skill health without hook automation', () => {
+    const homeDir = createTempDir('install-health-home-');
+    const projectDir = createTempDir('install-health-project-');
+    try {
+      const env = { CLAUDE_CONFIG_DIR: path.join(homeDir, '.claude') };
+      const installed = run(['--target', 'claude', '--modules', 'commands-core', '--no-hooks', '--json'], {
+        cwd: projectDir, homeDir, env,
+      });
+      assert.strictEqual(installed.code, 0, installed.stderr);
+      const health = spawnSync(process.execPath, [
+        path.join(homeDir, '.claude', 'scripts', 'skills-health.js'), '--json',
+        '--home', homeDir, '--skills-root', path.join(homeDir, 'empty-curated'),
+        '--learned-root', path.join(homeDir, 'empty-learned'),
+        '--imported-root', path.join(homeDir, 'empty-imported'),
+      ], { cwd: projectDir, env: { ...process.env, HOME: homeDir, USERPROFILE: homeDir, ...env }, encoding: 'utf8' });
+      assert.strictEqual(health.status, 0, health.stderr);
+      assert.deepStrictEqual(JSON.parse(health.stdout).skills, []);
+      const state = readJson(path.join(homeDir, '.claude', 'ecc', 'install-state.json'));
+      assert.ok(!state.operations.some(operation => operation.sourceRelativePath.startsWith('scripts/hooks/')));
+    } finally {
+      cleanup(homeDir);
+      cleanup(projectDir);
+    }
+  })) passed++; else failed++;
+
   if (test('preserves existing top-level Claude rules and skills during managed install', () => {
     const homeDir = createTempDir('install-apply-home-');
     const projectDir = createTempDir('install-apply-project-');
@@ -943,7 +1070,8 @@ function runTests() {
           'commands-core',
           'platform-configs',
           'skill-unified-memory',
-          'workflow-quality'
+          'workflow-quality',
+          'shared-script-utils'
         ]
       );
       assert.ok(state.resolution.skippedModules.includes('hooks-runtime'));
@@ -960,12 +1088,12 @@ function runTests() {
     const projectDir = createTempDir('install-apply-project-');
 
     try {
-      const result = run(['--target', 'cursor', '--modules', 'platform-configs', '--enable-hooks'], {
+      const result = run(['--target', 'cursor', '--modules', 'platform-configs'], {
         cwd: projectDir,
         homeDir,
       });
       assert.strictEqual(result.code, 0, result.stderr);
-      assert.ok(fs.existsSync(path.join(projectDir, '.cursor', 'hooks.json')));
+      assert.ok(!fs.existsSync(path.join(projectDir, '.cursor', 'hooks.json')));
       assert.ok(fs.existsSync(path.join(projectDir, '.cursor', 'rules', 'common-agents.mdc')));
       assert.ok(!fs.existsSync(path.join(projectDir, '.cursor', 'rules', 'common-agents.md')));
 
@@ -976,6 +1104,7 @@ function runTests() {
       assert.deepStrictEqual(state.request.excludeComponents, []);
       assert.strictEqual(state.request.legacyMode, false);
       assert.ok(state.resolution.selectedModules.includes('platform-configs'));
+      assert.ok(!fs.existsSync(path.join(projectDir, '.cursor', 'hooks')));
       assert.ok(
         !state.operations.some(operation => operation.destinationPath.endsWith('ecc-install-state.json')),
         'Manifest copy operations should not include generated install-state files'
@@ -1009,6 +1138,9 @@ function runTests() {
       const settings = readJson(path.join(claudeRoot, 'settings.json'));
       assert.strictEqual(settings.includeCoAuthoredBy, false);
       assert.ok(settings.hooks.SessionStart.some(entry => entry.id === 'session:start'));
+      assert.ok(settings.hooks.PreToolUse.some(entry => entry.id === 'pre:hookify-runtime'));
+      assert.ok(settings.hooks.UserPromptSubmit.some(entry => entry.id === 'prompt:hookify-runtime'));
+      assert.ok(settings.hooks.Stop.some(entry => entry.id === 'stop:hookify-runtime'));
 
       const state = readJson(path.join(claudeRoot, 'ecc', 'install-state.json'));
       const settingsOperation = state.operations.find(operation => (
@@ -1103,7 +1235,7 @@ function runTests() {
       fs.writeFileSync(scriptsPackagePath, userScriptsPackage);
 
       const firstInstall = run(
-        ['--target', 'claude-project', '--profile', 'core', '--enable-hooks'],
+        ['--target', 'claude-project', '--modules', 'hooks-runtime', '--enable-hooks'],
         { cwd: projectDir, homeDir }
       );
       assert.strictEqual(firstInstall.code, 0, firstInstall.stderr);
@@ -1125,7 +1257,7 @@ function runTests() {
       assert.match(hookResult.stderr, /no-verify/i);
 
       const secondInstall = run(
-        ['--target', 'claude-project', '--profile', 'core', '--enable-hooks'],
+        ['--target', 'claude-project', '--modules', 'hooks-runtime', '--enable-hooks'],
         { cwd: projectDir, homeDir }
       );
       assert.strictEqual(secondInstall.code, 0, secondInstall.stderr);
@@ -1180,9 +1312,13 @@ function runTests() {
       assert.strictEqual(settings.includeCoAuthoredBy, false, 'Claude co-author attribution should be disabled by default');
       assert.deepStrictEqual(settings.env, { MY_VAR: '1' }, 'existing env should be preserved');
       assert.deepStrictEqual(
-        settings.hooks.UserPromptSubmit,
-        [{ matcher: '*', hooks: [{ type: 'command', command: 'echo custom-submit' }] }],
+        settings.hooks.UserPromptSubmit[0],
+        { matcher: '*', hooks: [{ type: 'command', command: 'echo custom-submit' }] },
         'unrelated existing hooks should be preserved'
+      );
+      assert.ok(
+        settings.hooks.UserPromptSubmit.some(entry => entry.id === 'prompt:hookify-runtime'),
+        'managed Hookify prompt runtime should be registered alongside user hooks'
       );
       assert.deepStrictEqual(
         settings.hooks.PreToolUse[0],
@@ -1517,6 +1653,29 @@ function runTests() {
     }
   })) passed++; else failed++;
 
+  for (const explicitConfig of [true, false]) {
+    if (test(`installs from a UTF-8 BOM config (${explicitConfig ? '--config' : 'auto-detected'})`, () => {
+      const homeDir = createTempDir('install-apply-bom-home-');
+      const projectDir = createTempDir('install-apply-bom-project-');
+      const configPath = path.join(projectDir, 'ecc-install.json');
+      const content = '\uFEFF{\r\n  "version": 1,\r\n  "target": "cursor",\r\n  "modules": ["rules-core"]\r\n}\r\n';
+
+      try {
+        fs.writeFileSync(configPath, content, 'utf8');
+        const args = explicitConfig ? ['--config', configPath] : [];
+        const result = run(args, { cwd: projectDir, homeDir });
+        assert.strictEqual(result.code, 0, result.stderr);
+        assert.ok(fs.existsSync(path.join(projectDir, '.cursor', 'rules', 'common-coding-style.mdc')));
+        const state = readJson(path.join(projectDir, '.cursor', 'ecc-install-state.json'));
+        assert.deepStrictEqual(state.request.modules, ['rules-core']);
+        assert.strictEqual(fs.readFileSync(configPath, 'utf8'), content);
+      } finally {
+        cleanup(homeDir);
+        cleanup(projectDir);
+      }
+    })) passed++; else failed++;
+  }
+
   if (test('preserves legacy language installs when a project config is present', () => {
     const homeDir = createTempDir('install-apply-home-');
     const projectDir = createTempDir('install-apply-project-');
@@ -1625,6 +1784,51 @@ function runTests() {
       const result = run(['--profile', 'core', '--dry-run'], { cwd: projectDir, homeDir });
       assert.strictEqual(result.code, 0, result.stderr);
       assert.ok(result.stdout.includes('explicit hook decision'));
+    } finally {
+      cleanup(homeDir);
+      cleanup(projectDir);
+    }
+  })) passed++; else failed++;
+  if (test('legacy install respects CLAUDE_CONFIG_DIR environment variable', () => {
+    const homeDir = createTempDir('install-apply-legacy-claude-config-');
+    const projectDir = createTempDir('install-apply-legacy-claude-config-project-');
+    const customClaudeDir = path.join(homeDir, 'custom-claude-config');
+
+    try {
+      const env = { CLAUDE_CONFIG_DIR: customClaudeDir };
+      // Use legacy mode (--target claude without --profile), provide a language
+      const result = run(['--target', 'claude', 'typescript', '--no-hooks'], { cwd: projectDir, homeDir, env });
+      assert.strictEqual(result.code, 0, result.stderr);
+
+      // Verify install landed in CLAUDE_CONFIG_DIR, not ~/.claude
+      assert.ok(fs.existsSync(path.join(customClaudeDir, 'rules', 'ecc', 'common', 'coding-style.md')),
+        'Expected rules in CLAUDE_CONFIG_DIR');
+      assert.ok(fs.existsSync(path.join(customClaudeDir, 'ecc', 'install-state.json')),
+        'Expected install-state in CLAUDE_CONFIG_DIR');
+      assert.ok(!fs.existsSync(path.join(homeDir, '.claude', 'rules', 'ecc')),
+        'Should not install to default ~/.claude when CLAUDE_CONFIG_DIR is set');
+
+      const state = readJson(path.join(customClaudeDir, 'ecc', 'install-state.json'));
+      assert.strictEqual(fs.realpathSync(state.target.root), fs.realpathSync(customClaudeDir));
+    } finally {
+      cleanup(homeDir);
+      cleanup(projectDir);
+    }
+  })) passed++; else failed++;
+
+  if (test('legacy install passes CLAUDE_CONFIG_DIR through to adapter', () => {
+    const homeDir = createTempDir('install-apply-legacy-env-');
+    const projectDir = createTempDir('install-apply-legacy-env-project-');
+    const customClaudeDir = path.join(homeDir, 'custom-claude-config-env');
+
+    try {
+      const env = { CLAUDE_CONFIG_DIR: customClaudeDir };
+      const result = run(['--target', 'claude', 'typescript', '--no-hooks'], { cwd: projectDir, homeDir, env });
+      assert.strictEqual(result.code, 0, result.stderr);
+
+      // Verify install landed in CLAUDE_CONFIG_DIR
+      const state = readJson(path.join(customClaudeDir, 'ecc', 'install-state.json'));
+      assert.strictEqual(fs.realpathSync(state.target.root), fs.realpathSync(customClaudeDir));
     } finally {
       cleanup(homeDir);
       cleanup(projectDir);

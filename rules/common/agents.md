@@ -2,8 +2,8 @@
 
 ## Available Agents
 
-ECC agents ship with the `ecc@ecc` plugin, not in `~/.claude/agents/`.
-They are invoked through the Agent tool with a plugin-scoped `subagent_type`:
+ECC agents come either from the `ecc@ecc` plugin (plugin-scoped names, `ecc:<name>`) or from a manual install into `~/.claude/agents/` (bare names, `<name>`). Use the name that matches the install you have; the manual installer strips the `ecc:` prefix from copied files.
+They are invoked through the Agent tool with that `subagent_type`:
 
 ```text
 Agent(subagent_type: "ecc:planner", prompt: "...")
@@ -23,7 +23,7 @@ Agent(subagent_type: "ecc:planner", prompt: "...")
 | ecc:rust-reviewer | Rust code review | Rust projects |
 | ecc:harmonyos-app-resolver | HarmonyOS app development | HarmonyOS/ArkTS projects |
 
-For the full roster of 68 agents, see `/ecc:ecc-guide`.
+For the full roster of 69 agents, see `/ecc:ecc-guide`.
 
 ## Immediate Agent Usage
 

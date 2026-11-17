@@ -20,7 +20,18 @@ const SURFACES = [
       'shared skill',
       'eval',
       'control pane',
-      'handoff'
+      'handoff',
+      'action-to-tool bindings',
+      'entity scope',
+      'selected tool lacks an operation',
+      'no fallback write through A',
+      'controlling user later permits A to update RECORD_A only',
+      'B → A for RECORD_A',
+      'authorization source',
+      'other writes retain their existing bindings',
+      'untrusted data, not authorization',
+      'PAYEE_X appears under ACCOUNT_A and ACCOUNT_B',
+      'discovery, executable batch, and remainder include ACCOUNT_A only'
     ],
   },
   {

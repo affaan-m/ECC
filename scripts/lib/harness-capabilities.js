@@ -115,6 +115,23 @@ const HARNESS_CAPABILITIES = deepFreeze([
     aliases: ['google-antigravity'],
   },
   {
+    id: 'copilot',
+    label: 'GitHub Copilot',
+    targetIds: ['copilot'],
+    channel: 'managed-project',
+    installMode: 'managed-project',
+    guidedReady: false,
+    availability: 'advanced',
+    destination: './.github',
+    scopes: [scope('project', 'copilot', './.github')],
+    hooks: hooks(
+      'not-configured',
+      false,
+      'ECC hooks target Claude Code events and are not installed for Copilot.'
+    ),
+    aliases: ['github-copilot', 'copilot-cli'],
+  },
+  {
     id: 'gemini',
     label: 'Gemini CLI',
     targetIds: ['gemini'],
@@ -256,6 +273,23 @@ const HARNESS_CAPABILITIES = deepFreeze([
     scopes: [scope('home', 'openclaw', '~/.openclaw')],
     hooks: hooks('not-configured', false, 'ECC hooks are not configured by this adapter.'),
     aliases: ['open-claw'],
+  },
+  {
+    id: 'grok',
+    label: 'Grok Build',
+    targetIds: ['grok'],
+    channel: 'native-plugin',
+    installMode: 'native-plugin',
+    guidedReady: false,
+    availability: 'advanced',
+    destination: '~/.grok',
+    scopes: [scope('native', 'grok', '~/.grok')],
+    hooks: hooks(
+      'native-trust',
+      true,
+      'ECC Grok installs use the canonical plan/apply receipt with per-capability consent. Native Grok CLI --trust opts MCP out via empty mcpServers in .grok-plugin/plugin.json.'
+    ),
+    aliases: ['grok-build'],
   },
 ]);
 

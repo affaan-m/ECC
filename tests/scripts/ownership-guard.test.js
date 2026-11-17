@@ -39,7 +39,9 @@ for (const adapter of listInstallTargetAdapters()) {
     const nativeTarget = ['codex', 'gemini', 'opencode'].includes(adapter.target);
     const moduleId = adapter.target === 'mistral-vibe'
       ? 'skill-tdd-workflow'
-      : (nativeTarget ? 'platform-configs' : 'rules-core');
+      : adapter.target === 'copilot'
+        ? 'agents-core'
+        : (nativeTarget ? 'platform-configs' : 'rules-core');
     const resolved = createManifestInstallPlan({
       ...context, target: adapter.target,
       moduleIds: [moduleId],

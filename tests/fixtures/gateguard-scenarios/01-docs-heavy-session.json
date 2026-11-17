@@ -1,0 +1,1260 @@
+{
+  "name": "docs-heavy-session",
+  "description": "Documentation task: two scoped searches, a read-only first shell command, four new guide pages, four edits of existing Markdown files, two new helper tools, a first mutating command and a first code edit.",
+  "files": {
+    "README.md": "# Exporter\n\nSee docs/install.md.\n",
+    "CHANGELOG.md": "# Changelog\n\n## Unreleased\n",
+    "docs/hooks.md": "# Hooks\n\nExport hooks run after each export.\n",
+    "docs/install.md": "# Install\n\nRun the installer, then export a sample.\n",
+    "docs/guides/overview.md": "# Guides\n",
+    "scripts/tools/lint-docs.js": "'use strict';\n\nmodule.exports = { lintDocs: files => files.length };\n",
+    "scripts/lib/report.js": "'use strict';\n\nfunction formatRow(cells) {\n  return cells.join(' | ');\n}\n\nfunction renderReport(rows) {\n  return rows.map(formatRow).join('\\n');\n}\n\nmodule.exports = { renderReport };\n"
+  },
+  "steps": [
+    {
+      "id": "ls-docs",
+      "note": "Read-only first shell command.",
+      "transcript": [
+        {
+          "type": "user",
+          "uuid": "docs-heavy-session-001",
+          "sessionId": "sess-docs-heavy",
+          "isSidechain": false,
+          "promptId": "prompt-docs-1",
+          "message": {
+            "role": "user",
+            "content": "Document the new export command: add guide pages under docs/guides, update the docs that mention exporting, add two helper tools under scripts/tools, and make formatRow in scripts/lib/report.js trim its cells."
+          }
+        },
+        {
+          "type": "assistant",
+          "uuid": "docs-heavy-session-002",
+          "sessionId": "sess-docs-heavy",
+          "isSidechain": false,
+          "message": {
+            "id": "msg_docsheavysession_01",
+            "type": "message",
+            "role": "assistant",
+            "model": "claude-sonnet-4-5",
+            "content": [
+              {
+                "type": "tool_use",
+                "id": "toolu_docsheavysession_001",
+                "name": "Glob",
+                "input": {
+                  "pattern": "docs/**/*.md"
+                }
+              }
+            ]
+          }
+        },
+        {
+          "type": "user",
+          "uuid": "docs-heavy-session-003",
+          "sessionId": "sess-docs-heavy",
+          "isSidechain": false,
+          "promptId": "prompt-docs-1",
+          "message": {
+            "role": "user",
+            "content": [
+              {
+                "type": "tool_result",
+                "tool_use_id": "toolu_docsheavysession_001",
+                "content": "ok"
+              }
+            ]
+          }
+        },
+        {
+          "type": "assistant",
+          "uuid": "docs-heavy-session-004",
+          "sessionId": "sess-docs-heavy",
+          "isSidechain": false,
+          "message": {
+            "id": "msg_docsheavysession_02",
+            "type": "message",
+            "role": "assistant",
+            "model": "claude-sonnet-4-5",
+            "content": [
+              {
+                "type": "tool_use",
+                "id": "toolu_docsheavysession_002",
+                "name": "Grep",
+                "input": {
+                  "pattern": "export",
+                  "path": "{{root}}/docs",
+                  "output_mode": "files_with_matches"
+                }
+              }
+            ]
+          }
+        },
+        {
+          "type": "user",
+          "uuid": "docs-heavy-session-005",
+          "sessionId": "sess-docs-heavy",
+          "isSidechain": false,
+          "promptId": "prompt-docs-1",
+          "message": {
+            "role": "user",
+            "content": [
+              {
+                "type": "tool_result",
+                "tool_use_id": "toolu_docsheavysession_002",
+                "content": "ok"
+              }
+            ]
+          }
+        },
+        {
+          "type": "assistant",
+          "uuid": "docs-heavy-session-006",
+          "sessionId": "sess-docs-heavy",
+          "isSidechain": false,
+          "message": {
+            "id": "msg_docsheavysession_03",
+            "type": "message",
+            "role": "assistant",
+            "model": "claude-sonnet-4-5",
+            "content": [
+              {
+                "type": "tool_use",
+                "id": "toolu_docsheavysession_003",
+                "name": "Bash",
+                "input": {
+                  "command": "ls docs",
+                  "description": "List docs"
+                }
+              }
+            ]
+          }
+        }
+      ],
+      "payload": {
+        "session_id": "sess-docs-heavy",
+        "transcript_path": "{{transcript}}",
+        "cwd": "{{root}}",
+        "permission_mode": "default",
+        "hook_event_name": "PreToolUse",
+        "tool_name": "Bash",
+        "tool_input": {
+          "command": "ls docs",
+          "description": "List docs"
+        },
+        "tool_use_id": "toolu_docsheavysession_003"
+      },
+      "expect": "allow",
+      "mustDeny": false,
+      "redundant": true
+    },
+    {
+      "id": "write-export-guide",
+      "note": "The docs-wide search for \"export\" already covered what this page could duplicate.",
+      "transcript": [
+        {
+          "type": "user",
+          "uuid": "docs-heavy-session-007",
+          "sessionId": "sess-docs-heavy",
+          "isSidechain": false,
+          "promptId": "prompt-docs-1",
+          "message": {
+            "role": "user",
+            "content": [
+              {
+                "type": "tool_result",
+                "tool_use_id": "toolu_docsheavysession_003",
+                "content": "ok"
+              }
+            ]
+          }
+        },
+        {
+          "type": "assistant",
+          "uuid": "docs-heavy-session-008",
+          "sessionId": "sess-docs-heavy",
+          "isSidechain": false,
+          "message": {
+            "id": "msg_docsheavysession_04",
+            "type": "message",
+            "role": "assistant",
+            "model": "claude-sonnet-4-5",
+            "content": [
+              {
+                "type": "tool_use",
+                "id": "toolu_docsheavysession_004",
+                "name": "Read",
+                "input": {
+                  "file_path": "{{root}}/docs/guides/overview.md"
+                }
+              }
+            ]
+          }
+        },
+        {
+          "type": "user",
+          "uuid": "docs-heavy-session-009",
+          "sessionId": "sess-docs-heavy",
+          "isSidechain": false,
+          "promptId": "prompt-docs-1",
+          "message": {
+            "role": "user",
+            "content": [
+              {
+                "type": "tool_result",
+                "tool_use_id": "toolu_docsheavysession_004",
+                "content": "ok"
+              }
+            ]
+          }
+        },
+        {
+          "type": "assistant",
+          "uuid": "docs-heavy-session-010",
+          "sessionId": "sess-docs-heavy",
+          "isSidechain": false,
+          "message": {
+            "id": "msg_docsheavysession_05",
+            "type": "message",
+            "role": "assistant",
+            "model": "claude-sonnet-4-5",
+            "content": [
+              {
+                "type": "tool_use",
+                "id": "toolu_docsheavysession_005",
+                "name": "Write",
+                "input": {
+                  "file_path": "{{root}}/docs/guides/export.md",
+                  "content": "# Export\n\nUse `exporter run` to export.\n"
+                }
+              }
+            ]
+          }
+        }
+      ],
+      "payload": {
+        "session_id": "sess-docs-heavy",
+        "transcript_path": "{{transcript}}",
+        "cwd": "{{root}}",
+        "permission_mode": "default",
+        "hook_event_name": "PreToolUse",
+        "tool_name": "Write",
+        "tool_input": {
+          "file_path": "{{root}}/docs/guides/export.md",
+          "content": "# Export\n\nUse `exporter run` to export.\n"
+        },
+        "tool_use_id": "toolu_docsheavysession_005"
+      },
+      "expect": "allow",
+      "mustDeny": false,
+      "redundant": true
+    },
+    {
+      "id": "write-export-formats",
+      "note": "First new guide page the searches did not name.",
+      "transcript": [
+        {
+          "type": "user",
+          "uuid": "docs-heavy-session-011",
+          "sessionId": "sess-docs-heavy",
+          "isSidechain": false,
+          "promptId": "prompt-docs-1",
+          "message": {
+            "role": "user",
+            "content": [
+              {
+                "type": "tool_result",
+                "tool_use_id": "toolu_docsheavysession_005",
+                "content": "ok"
+              }
+            ]
+          }
+        },
+        {
+          "type": "assistant",
+          "uuid": "docs-heavy-session-012",
+          "sessionId": "sess-docs-heavy",
+          "isSidechain": false,
+          "message": {
+            "id": "msg_docsheavysession_06",
+            "type": "message",
+            "role": "assistant",
+            "model": "claude-sonnet-4-5",
+            "content": [
+              {
+                "type": "tool_use",
+                "id": "toolu_docsheavysession_006",
+                "name": "Write",
+                "input": {
+                  "file_path": "{{root}}/docs/guides/export-formats.md",
+                  "content": "# Export formats\n\nCSV and JSON.\n"
+                }
+              }
+            ]
+          }
+        }
+      ],
+      "payload": {
+        "session_id": "sess-docs-heavy",
+        "transcript_path": "{{transcript}}",
+        "cwd": "{{root}}",
+        "permission_mode": "default",
+        "hook_event_name": "PreToolUse",
+        "tool_name": "Write",
+        "tool_input": {
+          "file_path": "{{root}}/docs/guides/export-formats.md",
+          "content": "# Export formats\n\nCSV and JSON.\n"
+        },
+        "tool_use_id": "toolu_docsheavysession_006"
+      },
+      "expect": "deny",
+      "mustDeny": false,
+      "redundant": false
+    },
+    {
+      "id": "write-export-recipes",
+      "note": "Same-turn sibling of the gated guide page.",
+      "transcript": [
+        {
+          "type": "user",
+          "uuid": "docs-heavy-session-013",
+          "sessionId": "sess-docs-heavy",
+          "isSidechain": false,
+          "promptId": "prompt-docs-1",
+          "message": {
+            "role": "user",
+            "content": [
+              {
+                "type": "tool_result",
+                "tool_use_id": "toolu_docsheavysession_006",
+                "content": "ok"
+              }
+            ]
+          }
+        },
+        {
+          "type": "assistant",
+          "uuid": "docs-heavy-session-014",
+          "sessionId": "sess-docs-heavy",
+          "isSidechain": false,
+          "message": {
+            "id": "msg_docsheavysession_07",
+            "type": "message",
+            "role": "assistant",
+            "model": "claude-sonnet-4-5",
+            "content": [
+              {
+                "type": "tool_use",
+                "id": "toolu_docsheavysession_007",
+                "name": "Write",
+                "input": {
+                  "file_path": "{{root}}/docs/guides/export-recipes.md",
+                  "content": "# Export recipes\n"
+                }
+              }
+            ]
+          }
+        }
+      ],
+      "payload": {
+        "session_id": "sess-docs-heavy",
+        "transcript_path": "{{transcript}}",
+        "cwd": "{{root}}",
+        "permission_mode": "default",
+        "hook_event_name": "PreToolUse",
+        "tool_name": "Write",
+        "tool_input": {
+          "file_path": "{{root}}/docs/guides/export-recipes.md",
+          "content": "# Export recipes\n"
+        },
+        "tool_use_id": "toolu_docsheavysession_007"
+      },
+      "expect": "allow",
+      "mustDeny": false,
+      "redundant": true
+    },
+    {
+      "id": "write-export-faq",
+      "note": "Same-turn sibling of the gated guide page.",
+      "transcript": [
+        {
+          "type": "user",
+          "uuid": "docs-heavy-session-015",
+          "sessionId": "sess-docs-heavy",
+          "isSidechain": false,
+          "promptId": "prompt-docs-1",
+          "message": {
+            "role": "user",
+            "content": [
+              {
+                "type": "tool_result",
+                "tool_use_id": "toolu_docsheavysession_007",
+                "content": "ok"
+              }
+            ]
+          }
+        },
+        {
+          "type": "assistant",
+          "uuid": "docs-heavy-session-016",
+          "sessionId": "sess-docs-heavy",
+          "isSidechain": false,
+          "message": {
+            "id": "msg_docsheavysession_08",
+            "type": "message",
+            "role": "assistant",
+            "model": "claude-sonnet-4-5",
+            "content": [
+              {
+                "type": "tool_use",
+                "id": "toolu_docsheavysession_008",
+                "name": "Write",
+                "input": {
+                  "file_path": "{{root}}/docs/guides/export-faq.md",
+                  "content": "# Export FAQ\n"
+                }
+              }
+            ]
+          }
+        }
+      ],
+      "payload": {
+        "session_id": "sess-docs-heavy",
+        "transcript_path": "{{transcript}}",
+        "cwd": "{{root}}",
+        "permission_mode": "default",
+        "hook_event_name": "PreToolUse",
+        "tool_name": "Write",
+        "tool_input": {
+          "file_path": "{{root}}/docs/guides/export-faq.md",
+          "content": "# Export FAQ\n"
+        },
+        "tool_use_id": "toolu_docsheavysession_008"
+      },
+      "expect": "allow",
+      "mustDeny": false,
+      "redundant": true
+    },
+    {
+      "id": "edit-hooks-doc",
+      "note": "References to this page were searched for.",
+      "transcript": [
+        {
+          "type": "user",
+          "uuid": "docs-heavy-session-017",
+          "sessionId": "sess-docs-heavy",
+          "isSidechain": false,
+          "promptId": "prompt-docs-1",
+          "message": {
+            "role": "user",
+            "content": [
+              {
+                "type": "tool_result",
+                "tool_use_id": "toolu_docsheavysession_008",
+                "content": "ok"
+              }
+            ]
+          }
+        },
+        {
+          "type": "assistant",
+          "uuid": "docs-heavy-session-018",
+          "sessionId": "sess-docs-heavy",
+          "isSidechain": false,
+          "message": {
+            "id": "msg_docsheavysession_09",
+            "type": "message",
+            "role": "assistant",
+            "model": "claude-sonnet-4-5",
+            "content": [
+              {
+                "type": "tool_use",
+                "id": "toolu_docsheavysession_009",
+                "name": "Grep",
+                "input": {
+                  "pattern": "hooks.md|install.md",
+                  "path": "{{root}}",
+                  "output_mode": "content"
+                }
+              }
+            ]
+          }
+        },
+        {
+          "type": "user",
+          "uuid": "docs-heavy-session-019",
+          "sessionId": "sess-docs-heavy",
+          "isSidechain": false,
+          "promptId": "prompt-docs-1",
+          "message": {
+            "role": "user",
+            "content": [
+              {
+                "type": "tool_result",
+                "tool_use_id": "toolu_docsheavysession_009",
+                "content": "ok"
+              }
+            ]
+          }
+        },
+        {
+          "type": "assistant",
+          "uuid": "docs-heavy-session-020",
+          "sessionId": "sess-docs-heavy",
+          "isSidechain": false,
+          "message": {
+            "id": "msg_docsheavysession_10",
+            "type": "message",
+            "role": "assistant",
+            "model": "claude-sonnet-4-5",
+            "content": [
+              {
+                "type": "tool_use",
+                "id": "toolu_docsheavysession_010",
+                "name": "Read",
+                "input": {
+                  "file_path": "{{root}}/docs/hooks.md"
+                }
+              }
+            ]
+          }
+        },
+        {
+          "type": "user",
+          "uuid": "docs-heavy-session-021",
+          "sessionId": "sess-docs-heavy",
+          "isSidechain": false,
+          "promptId": "prompt-docs-1",
+          "message": {
+            "role": "user",
+            "content": [
+              {
+                "type": "tool_result",
+                "tool_use_id": "toolu_docsheavysession_010",
+                "content": "ok"
+              }
+            ]
+          }
+        },
+        {
+          "type": "assistant",
+          "uuid": "docs-heavy-session-022",
+          "sessionId": "sess-docs-heavy",
+          "isSidechain": false,
+          "message": {
+            "id": "msg_docsheavysession_11",
+            "type": "message",
+            "role": "assistant",
+            "model": "claude-sonnet-4-5",
+            "content": [
+              {
+                "type": "tool_use",
+                "id": "toolu_docsheavysession_011",
+                "name": "Edit",
+                "input": {
+                  "file_path": "{{root}}/docs/hooks.md",
+                  "old_string": "Export hooks run after each export.",
+                  "new_string": "Export hooks run after each export. See the export guide."
+                }
+              }
+            ]
+          }
+        }
+      ],
+      "payload": {
+        "session_id": "sess-docs-heavy",
+        "transcript_path": "{{transcript}}",
+        "cwd": "{{root}}",
+        "permission_mode": "default",
+        "hook_event_name": "PreToolUse",
+        "tool_name": "Edit",
+        "tool_input": {
+          "file_path": "{{root}}/docs/hooks.md",
+          "old_string": "Export hooks run after each export.",
+          "new_string": "Export hooks run after each export. See the export guide."
+        },
+        "tool_use_id": "toolu_docsheavysession_011"
+      },
+      "expect": "allow",
+      "mustDeny": false,
+      "redundant": true
+    },
+    {
+      "id": "edit-install-doc",
+      "note": "References to this page were searched for.",
+      "transcript": [
+        {
+          "type": "user",
+          "uuid": "docs-heavy-session-023",
+          "sessionId": "sess-docs-heavy",
+          "isSidechain": false,
+          "promptId": "prompt-docs-1",
+          "message": {
+            "role": "user",
+            "content": [
+              {
+                "type": "tool_result",
+                "tool_use_id": "toolu_docsheavysession_011",
+                "content": "ok"
+              }
+            ]
+          }
+        },
+        {
+          "type": "assistant",
+          "uuid": "docs-heavy-session-024",
+          "sessionId": "sess-docs-heavy",
+          "isSidechain": false,
+          "message": {
+            "id": "msg_docsheavysession_12",
+            "type": "message",
+            "role": "assistant",
+            "model": "claude-sonnet-4-5",
+            "content": [
+              {
+                "type": "tool_use",
+                "id": "toolu_docsheavysession_012",
+                "name": "Read",
+                "input": {
+                  "file_path": "{{root}}/docs/install.md"
+                }
+              }
+            ]
+          }
+        },
+        {
+          "type": "user",
+          "uuid": "docs-heavy-session-025",
+          "sessionId": "sess-docs-heavy",
+          "isSidechain": false,
+          "promptId": "prompt-docs-1",
+          "message": {
+            "role": "user",
+            "content": [
+              {
+                "type": "tool_result",
+                "tool_use_id": "toolu_docsheavysession_012",
+                "content": "ok"
+              }
+            ]
+          }
+        },
+        {
+          "type": "assistant",
+          "uuid": "docs-heavy-session-026",
+          "sessionId": "sess-docs-heavy",
+          "isSidechain": false,
+          "message": {
+            "id": "msg_docsheavysession_13",
+            "type": "message",
+            "role": "assistant",
+            "model": "claude-sonnet-4-5",
+            "content": [
+              {
+                "type": "tool_use",
+                "id": "toolu_docsheavysession_013",
+                "name": "Edit",
+                "input": {
+                  "file_path": "{{root}}/docs/install.md",
+                  "old_string": "then export a sample.",
+                  "new_string": "then export a sample with `exporter run`."
+                }
+              }
+            ]
+          }
+        }
+      ],
+      "payload": {
+        "session_id": "sess-docs-heavy",
+        "transcript_path": "{{transcript}}",
+        "cwd": "{{root}}",
+        "permission_mode": "default",
+        "hook_event_name": "PreToolUse",
+        "tool_name": "Edit",
+        "tool_input": {
+          "file_path": "{{root}}/docs/install.md",
+          "old_string": "then export a sample.",
+          "new_string": "then export a sample with `exporter run`."
+        },
+        "tool_use_id": "toolu_docsheavysession_013"
+      },
+      "expect": "allow",
+      "mustDeny": false,
+      "redundant": true
+    },
+    {
+      "id": "edit-readme",
+      "note": "README is a generic name; nothing searched for its references.",
+      "transcript": [
+        {
+          "type": "user",
+          "uuid": "docs-heavy-session-027",
+          "sessionId": "sess-docs-heavy",
+          "isSidechain": false,
+          "promptId": "prompt-docs-1",
+          "message": {
+            "role": "user",
+            "content": [
+              {
+                "type": "tool_result",
+                "tool_use_id": "toolu_docsheavysession_013",
+                "content": "ok"
+              }
+            ]
+          }
+        },
+        {
+          "type": "assistant",
+          "uuid": "docs-heavy-session-028",
+          "sessionId": "sess-docs-heavy",
+          "isSidechain": false,
+          "message": {
+            "id": "msg_docsheavysession_14",
+            "type": "message",
+            "role": "assistant",
+            "model": "claude-sonnet-4-5",
+            "content": [
+              {
+                "type": "tool_use",
+                "id": "toolu_docsheavysession_014",
+                "name": "Read",
+                "input": {
+                  "file_path": "{{root}}/README.md"
+                }
+              }
+            ]
+          }
+        },
+        {
+          "type": "user",
+          "uuid": "docs-heavy-session-029",
+          "sessionId": "sess-docs-heavy",
+          "isSidechain": false,
+          "promptId": "prompt-docs-1",
+          "message": {
+            "role": "user",
+            "content": [
+              {
+                "type": "tool_result",
+                "tool_use_id": "toolu_docsheavysession_014",
+                "content": "ok"
+              }
+            ]
+          }
+        },
+        {
+          "type": "assistant",
+          "uuid": "docs-heavy-session-030",
+          "sessionId": "sess-docs-heavy",
+          "isSidechain": false,
+          "message": {
+            "id": "msg_docsheavysession_15",
+            "type": "message",
+            "role": "assistant",
+            "model": "claude-sonnet-4-5",
+            "content": [
+              {
+                "type": "tool_use",
+                "id": "toolu_docsheavysession_015",
+                "name": "Edit",
+                "input": {
+                  "file_path": "{{root}}/README.md",
+                  "old_string": "See docs/install.md.",
+                  "new_string": "See docs/install.md and docs/guides/export.md."
+                }
+              }
+            ]
+          }
+        }
+      ],
+      "payload": {
+        "session_id": "sess-docs-heavy",
+        "transcript_path": "{{transcript}}",
+        "cwd": "{{root}}",
+        "permission_mode": "default",
+        "hook_event_name": "PreToolUse",
+        "tool_name": "Edit",
+        "tool_input": {
+          "file_path": "{{root}}/README.md",
+          "old_string": "See docs/install.md.",
+          "new_string": "See docs/install.md and docs/guides/export.md."
+        },
+        "tool_use_id": "toolu_docsheavysession_015"
+      },
+      "expect": "deny",
+      "mustDeny": false,
+      "redundant": false
+    },
+    {
+      "id": "edit-changelog",
+      "transcript": [
+        {
+          "type": "user",
+          "uuid": "docs-heavy-session-031",
+          "sessionId": "sess-docs-heavy",
+          "isSidechain": false,
+          "promptId": "prompt-docs-1",
+          "message": {
+            "role": "user",
+            "content": [
+              {
+                "type": "tool_result",
+                "tool_use_id": "toolu_docsheavysession_015",
+                "content": "ok"
+              }
+            ]
+          }
+        },
+        {
+          "type": "assistant",
+          "uuid": "docs-heavy-session-032",
+          "sessionId": "sess-docs-heavy",
+          "isSidechain": false,
+          "message": {
+            "id": "msg_docsheavysession_16",
+            "type": "message",
+            "role": "assistant",
+            "model": "claude-sonnet-4-5",
+            "content": [
+              {
+                "type": "tool_use",
+                "id": "toolu_docsheavysession_016",
+                "name": "Edit",
+                "input": {
+                  "file_path": "{{root}}/CHANGELOG.md",
+                  "old_string": "## Unreleased\n",
+                  "new_string": "## Unreleased\n\n- Document the export command.\n"
+                }
+              }
+            ]
+          }
+        }
+      ],
+      "payload": {
+        "session_id": "sess-docs-heavy",
+        "transcript_path": "{{transcript}}",
+        "cwd": "{{root}}",
+        "permission_mode": "default",
+        "hook_event_name": "PreToolUse",
+        "tool_name": "Edit",
+        "tool_input": {
+          "file_path": "{{root}}/CHANGELOG.md",
+          "old_string": "## Unreleased\n",
+          "new_string": "## Unreleased\n\n- Document the export command.\n"
+        },
+        "tool_use_id": "toolu_docsheavysession_016"
+      },
+      "expect": "deny",
+      "mustDeny": false,
+      "redundant": false
+    },
+    {
+      "id": "write-export-csv-tool",
+      "note": "New tool that reads JSON and writes CSV.",
+      "transcript": [
+        {
+          "type": "user",
+          "uuid": "docs-heavy-session-033",
+          "sessionId": "sess-docs-heavy",
+          "isSidechain": false,
+          "promptId": "prompt-docs-1",
+          "message": {
+            "role": "user",
+            "content": [
+              {
+                "type": "tool_result",
+                "tool_use_id": "toolu_docsheavysession_016",
+                "content": "ok"
+              }
+            ]
+          }
+        },
+        {
+          "type": "assistant",
+          "uuid": "docs-heavy-session-034",
+          "sessionId": "sess-docs-heavy",
+          "isSidechain": false,
+          "message": {
+            "id": "msg_docsheavysession_17",
+            "type": "message",
+            "role": "assistant",
+            "model": "claude-sonnet-4-5",
+            "content": [
+              {
+                "type": "tool_use",
+                "id": "toolu_docsheavysession_017",
+                "name": "Read",
+                "input": {
+                  "file_path": "{{root}}/scripts/tools/lint-docs.js"
+                }
+              }
+            ]
+          }
+        },
+        {
+          "type": "user",
+          "uuid": "docs-heavy-session-035",
+          "sessionId": "sess-docs-heavy",
+          "isSidechain": false,
+          "promptId": "prompt-docs-1",
+          "message": {
+            "role": "user",
+            "content": [
+              {
+                "type": "tool_result",
+                "tool_use_id": "toolu_docsheavysession_017",
+                "content": "ok"
+              }
+            ]
+          }
+        },
+        {
+          "type": "assistant",
+          "uuid": "docs-heavy-session-036",
+          "sessionId": "sess-docs-heavy",
+          "isSidechain": false,
+          "message": {
+            "id": "msg_docsheavysession_18",
+            "type": "message",
+            "role": "assistant",
+            "model": "claude-sonnet-4-5",
+            "content": [
+              {
+                "type": "tool_use",
+                "id": "toolu_docsheavysession_018",
+                "name": "Write",
+                "input": {
+                  "file_path": "{{root}}/scripts/tools/export-csv.js",
+                  "content": "'use strict';\n\nconst fs = require('fs');\n\nfunction toCsv(rows) {\n  return rows.map(row => row.join(',')).join('\\n');\n}\n\nmodule.exports = { toCsv, exportCsv: file => toCsv(JSON.parse(fs.readFileSync(file, 'utf8'))) };\n"
+                }
+              }
+            ]
+          }
+        }
+      ],
+      "payload": {
+        "session_id": "sess-docs-heavy",
+        "transcript_path": "{{transcript}}",
+        "cwd": "{{root}}",
+        "permission_mode": "default",
+        "hook_event_name": "PreToolUse",
+        "tool_name": "Write",
+        "tool_input": {
+          "file_path": "{{root}}/scripts/tools/export-csv.js",
+          "content": "'use strict';\n\nconst fs = require('fs');\n\nfunction toCsv(rows) {\n  return rows.map(row => row.join(',')).join('\\n');\n}\n\nmodule.exports = { toCsv, exportCsv: file => toCsv(JSON.parse(fs.readFileSync(file, 'utf8'))) };\n"
+        },
+        "tool_use_id": "toolu_docsheavysession_018"
+      },
+      "expect": "deny",
+      "mustDeny": false,
+      "redundant": false,
+      "relevantQuestions": [
+        "callers",
+        "no-duplicate",
+        "data-schema",
+        "external-contract",
+        "quote-instruction"
+      ]
+    },
+    {
+      "id": "write-export-json-tool",
+      "note": "Same-turn sibling of the gated tool.",
+      "transcript": [
+        {
+          "type": "user",
+          "uuid": "docs-heavy-session-037",
+          "sessionId": "sess-docs-heavy",
+          "isSidechain": false,
+          "promptId": "prompt-docs-1",
+          "message": {
+            "role": "user",
+            "content": [
+              {
+                "type": "tool_result",
+                "tool_use_id": "toolu_docsheavysession_018",
+                "content": "ok"
+              }
+            ]
+          }
+        },
+        {
+          "type": "assistant",
+          "uuid": "docs-heavy-session-038",
+          "sessionId": "sess-docs-heavy",
+          "isSidechain": false,
+          "message": {
+            "id": "msg_docsheavysession_19",
+            "type": "message",
+            "role": "assistant",
+            "model": "claude-sonnet-4-5",
+            "content": [
+              {
+                "type": "tool_use",
+                "id": "toolu_docsheavysession_019",
+                "name": "Write",
+                "input": {
+                  "file_path": "{{root}}/scripts/tools/export-json.js",
+                  "content": "'use strict';\n\nconst fs = require('fs');\n\nmodule.exports = { exportJson: (file, rows) => fs.writeFileSync(file, JSON.stringify(rows)) };\n"
+                }
+              }
+            ]
+          }
+        }
+      ],
+      "payload": {
+        "session_id": "sess-docs-heavy",
+        "transcript_path": "{{transcript}}",
+        "cwd": "{{root}}",
+        "permission_mode": "default",
+        "hook_event_name": "PreToolUse",
+        "tool_name": "Write",
+        "tool_input": {
+          "file_path": "{{root}}/scripts/tools/export-json.js",
+          "content": "'use strict';\n\nconst fs = require('fs');\n\nmodule.exports = { exportJson: (file, rows) => fs.writeFileSync(file, JSON.stringify(rows)) };\n"
+        },
+        "tool_use_id": "toolu_docsheavysession_019"
+      },
+      "expect": "allow",
+      "mustDeny": false,
+      "redundant": true,
+      "relevantQuestions": [
+        "callers",
+        "no-duplicate",
+        "data-schema",
+        "external-contract",
+        "quote-instruction"
+      ]
+    },
+    {
+      "id": "run-tool-check",
+      "note": "First command that is not read-only.",
+      "transcript": [
+        {
+          "type": "user",
+          "uuid": "docs-heavy-session-039",
+          "sessionId": "sess-docs-heavy",
+          "isSidechain": false,
+          "promptId": "prompt-docs-1",
+          "message": {
+            "role": "user",
+            "content": [
+              {
+                "type": "tool_result",
+                "tool_use_id": "toolu_docsheavysession_019",
+                "content": "ok"
+              }
+            ]
+          }
+        },
+        {
+          "type": "assistant",
+          "uuid": "docs-heavy-session-040",
+          "sessionId": "sess-docs-heavy",
+          "isSidechain": false,
+          "message": {
+            "id": "msg_docsheavysession_20",
+            "type": "message",
+            "role": "assistant",
+            "model": "claude-sonnet-4-5",
+            "content": [
+              {
+                "type": "tool_use",
+                "id": "toolu_docsheavysession_020",
+                "name": "Bash",
+                "input": {
+                  "command": "node scripts/tools/export-csv.js --check docs",
+                  "description": "Run the new tool"
+                }
+              }
+            ]
+          }
+        }
+      ],
+      "payload": {
+        "session_id": "sess-docs-heavy",
+        "transcript_path": "{{transcript}}",
+        "cwd": "{{root}}",
+        "permission_mode": "default",
+        "hook_event_name": "PreToolUse",
+        "tool_name": "Bash",
+        "tool_input": {
+          "command": "node scripts/tools/export-csv.js --check docs",
+          "description": "Run the new tool"
+        },
+        "tool_use_id": "toolu_docsheavysession_020"
+      },
+      "expect": "deny",
+      "mustDeny": false,
+      "redundant": false
+    },
+    {
+      "id": "edit-report-internal",
+      "note": "Body of an unexported helper.",
+      "transcript": [
+        {
+          "type": "user",
+          "uuid": "docs-heavy-session-041",
+          "sessionId": "sess-docs-heavy",
+          "isSidechain": false,
+          "promptId": "prompt-docs-1",
+          "message": {
+            "role": "user",
+            "content": [
+              {
+                "type": "tool_result",
+                "tool_use_id": "toolu_docsheavysession_020",
+                "content": "ok"
+              }
+            ]
+          }
+        },
+        {
+          "type": "assistant",
+          "uuid": "docs-heavy-session-042",
+          "sessionId": "sess-docs-heavy",
+          "isSidechain": false,
+          "message": {
+            "id": "msg_docsheavysession_21",
+            "type": "message",
+            "role": "assistant",
+            "model": "claude-sonnet-4-5",
+            "content": [
+              {
+                "type": "tool_use",
+                "id": "toolu_docsheavysession_021",
+                "name": "Read",
+                "input": {
+                  "file_path": "{{root}}/scripts/lib/report.js"
+                }
+              }
+            ]
+          }
+        },
+        {
+          "type": "user",
+          "uuid": "docs-heavy-session-043",
+          "sessionId": "sess-docs-heavy",
+          "isSidechain": false,
+          "promptId": "prompt-docs-1",
+          "message": {
+            "role": "user",
+            "content": [
+              {
+                "type": "tool_result",
+                "tool_use_id": "toolu_docsheavysession_021",
+                "content": "ok"
+              }
+            ]
+          }
+        },
+        {
+          "type": "assistant",
+          "uuid": "docs-heavy-session-044",
+          "sessionId": "sess-docs-heavy",
+          "isSidechain": false,
+          "message": {
+            "id": "msg_docsheavysession_22",
+            "type": "message",
+            "role": "assistant",
+            "model": "claude-sonnet-4-5",
+            "content": [
+              {
+                "type": "tool_use",
+                "id": "toolu_docsheavysession_022",
+                "name": "Edit",
+                "input": {
+                  "file_path": "{{root}}/scripts/lib/report.js",
+                  "old_string": "  return cells.join(' | ');",
+                  "new_string": "  return cells.map(cell => cell.trim()).join(' | ');"
+                }
+              }
+            ]
+          }
+        }
+      ],
+      "payload": {
+        "session_id": "sess-docs-heavy",
+        "transcript_path": "{{transcript}}",
+        "cwd": "{{root}}",
+        "permission_mode": "default",
+        "hook_event_name": "PreToolUse",
+        "tool_name": "Edit",
+        "tool_input": {
+          "file_path": "{{root}}/scripts/lib/report.js",
+          "old_string": "  return cells.join(' | ');",
+          "new_string": "  return cells.map(cell => cell.trim()).join(' | ');"
+        },
+        "tool_use_id": "toolu_docsheavysession_022"
+      },
+      "expect": "deny",
+      "mustDeny": false,
+      "redundant": false,
+      "relevantQuestions": [
+        "local-callers",
+        "quote-instruction"
+      ]
+    },
+    {
+      "id": "edit-report-again",
+      "transcript": [
+        {
+          "type": "user",
+          "uuid": "docs-heavy-session-045",
+          "sessionId": "sess-docs-heavy",
+          "isSidechain": false,
+          "promptId": "prompt-docs-1",
+          "message": {
+            "role": "user",
+            "content": [
+              {
+                "type": "tool_result",
+                "tool_use_id": "toolu_docsheavysession_022",
+                "content": "ok"
+              }
+            ]
+          }
+        },
+        {
+          "type": "assistant",
+          "uuid": "docs-heavy-session-046",
+          "sessionId": "sess-docs-heavy",
+          "isSidechain": false,
+          "message": {
+            "id": "msg_docsheavysession_23",
+            "type": "message",
+            "role": "assistant",
+            "model": "claude-sonnet-4-5",
+            "content": [
+              {
+                "type": "tool_use",
+                "id": "toolu_docsheavysession_023",
+                "name": "Edit",
+                "input": {
+                  "file_path": "{{root}}/scripts/lib/report.js",
+                  "old_string": "function formatRow(cells) {",
+                  "new_string": "function formatRow(cells = []) {"
+                }
+              }
+            ]
+          }
+        }
+      ],
+      "payload": {
+        "session_id": "sess-docs-heavy",
+        "transcript_path": "{{transcript}}",
+        "cwd": "{{root}}",
+        "permission_mode": "default",
+        "hook_event_name": "PreToolUse",
+        "tool_name": "Edit",
+        "tool_input": {
+          "file_path": "{{root}}/scripts/lib/report.js",
+          "old_string": "function formatRow(cells) {",
+          "new_string": "function formatRow(cells = []) {"
+        },
+        "tool_use_id": "toolu_docsheavysession_023"
+      },
+      "expect": "allow",
+      "mustDeny": false,
+      "redundant": false
+    }
+  ]
+}

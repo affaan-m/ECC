@@ -1,0 +1,17 @@
+{"v":1,"ts":"2026-09-01T10:02:00.000Z","session":"aaaaaaaaaaaa","tool":"Edit","class":"code","decision":"deny","reason":"near-miss:out-of-scope","questions":["local-callers","quote-instruction"],"sensitive":false,"profile":{"known":true,"language":"js","touchesPublicSurface":false,"touchesData":false,"trivial":false}}
+not json
+{"v":1,"ts":"2026-09-01T10:03:00.000Z","session":"aaaaaaaaaaaa","tool":"Edit","class":"code","decision":"credit","reason":"prior-search","questions":null,"sensitive":false,"profile":null}
+{"v":2,"ts":"2026-09-01T10:03:30.000Z","session":"aaaaaaaaaaaa","tool":"Edit","class":"code","decision":"deny","reason":"first-touch","questions":[],"sensitive":false,"profile":null}
+{"v":1,"ts":"2026-09-01T10:04:00.000Z","session":"aaaaaaaaaaaa","tool":"Edit","class":"code","decision":"trivial","reason":"comment-whitespace","questions":null,"sensitive":false,"profile":{"known":true,"language":"js","touchesPublicSurface":false,"touchesData":false,"trivial":true}}
+{"v":1,"ts":"2026-09-01T10:05:00.000Z","session":"aaaaaaaaaaaa","tool":"Bash","class":null,"decision":"routine-deny","reason":"first-command","questions":null,"sensitive":false,"profile":null}
+{"v":1,"ts":"2026-09-01T11:00:00.000Z","session":"NOT-A-HASH","tool":"Edit","class":"code","decision":"deny","reason":"first-touch","questions":[],"sensitive":false,"profile":null}
+
+{"v":1,"ts":"2026-09-01T11:00:30.000Z","session":"bbbbbbbbbbbb","tool":"Edit","class":"code","decision":"allow","reason":"first-touch","questions":null,"sensitive":false,"profile":null}
+[]
+{"v":1,"ts":"2026-09-01T11:00:40.000Z","session":"bbbbbbbbbbbb","tool":"Edit","class":"code","decision":"deny","reason":"/home/user/secret.js","questions":null,"sensitive":false,"profile":null}
+{"v":1,"ts":"2026-09-01T11:01:00.000Z","session":"bbbbbbbbbbbb","tool":"Write","class":"code","decision":"deny","reason":"first-touch","questions":["callers","no-duplicate","quote-instruction"],"sensitive":false,"profile":{"known":true,"language":"py","touchesPublicSurface":true,"touchesData":false,"trivial":false}}
+{"v":1,"ts":"2026-09-01T11:02:00.000Z","session":"bbbbbbbbbbbb","tool":"Write","class":"code","decision":"sibling","reason":"same-turn-dir","questions":null,"sensitive":false,"profile":null}
+{"v":1,"ts":"2026-09-01T11:03:00.000Z","session":"bbbbbbbbbbbb","tool":"Edit","class":"config","decision":"deny","reason":"sensitive","questions":["config-reader","config-effect","no-plaintext-secrets","quote-instruction"],"sensitive":true,"profile":null}
+{"v":1,"ts":"2026-09-01T11:04:00.000Z","session":"bbbbbbbbbbbb","tool":"Edit","class":"code","decision":"cap","reason":"max-denials","questions":null,"sensitive":false,"profile":null}
+{"v":1,"ts":"2026-09-01T11:05:00.000Z","session":"bbbbbbbbbbbb","tool":"PowerShell","class":null,"decision":"destructive-deny","reason":"destructive","questions":null,"sensitive":false,"profile":null}
+{"v":1,"ts":"2026-09-01T11:06:00.000Z","session":"bbbbbbbbbbbb","tool":"Edit","class":"code","decision":"pass-checked","reason":"checked","questions":null,"sensitive":false,"profile":null}

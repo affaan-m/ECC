@@ -5,6 +5,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const { spawnSync } = require('child_process');
+const { withoutShadowingClaude } = require('../lib/helpers/windows-test-env');
 const repoRoot = path.join(__dirname, '..', '..');
 const setupScript = path.join(repoRoot, 'scripts', 'setup.js');
 const eccScript = path.join(repoRoot, 'scripts', 'ecc.js');
@@ -62,7 +63,7 @@ function runSetup(fixture, args, options = {}) {
     HOME: fixture.homeDir,
     USERPROFILE: fixture.homeDir,
     CLAUDE_CONFIG_DIR: fixture.configDir,
-    PATH: options.path || `${fixture.binDir}${path.delimiter}${process.env.PATH || ''}`,
+    PATH: options.path || `${fixture.binDir}${path.delimiter}${withoutShadowingClaude(process.env.PATH)}`,
     ECC_TEST_CLAUDE_STATE: fixture.statePath,
     ECC_TEST_CLAUDE_CALLS: fixture.callsPath,
     ...options.env,
@@ -147,7 +148,7 @@ function runInteractiveEccSetup(fixture, options = {}) {
       HOME: fixture.homeDir,
       USERPROFILE: fixture.homeDir,
       CLAUDE_CONFIG_DIR: fixture.configDir,
-      PATH: `${fixture.binDir}${path.delimiter}${process.env.PATH || ''}`,
+      PATH: `${fixture.binDir}${path.delimiter}${withoutShadowingClaude(process.env.PATH)}`,
       ECC_TEST_CLAUDE_STATE: fixture.statePath,
       ECC_TEST_CLAUDE_CALLS: fixture.callsPath,
     },
@@ -645,6 +646,7 @@ test('migration JSON failures retain phase, scopes, and exact recovery', () => {
     assert.strictEqual(payload.error.phase, 'source-uninstall');
     assert.deepStrictEqual([...payload.error.observedScopes].sort(), ['project', 'user']);
     assert.deepStrictEqual(payload.error.recovery, [
+      'claude plugin list --json',
       'claude plugin uninstall ecc@ecc --scope user --keep-data',
       'ecc setup --mode claude-plugin --scope project --move-scope --yes',
     ]);

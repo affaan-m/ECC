@@ -88,47 +88,68 @@ function readTarOctal(block, offset, length) {
   return size;
 }
 
-function extractQualifiedTarGzip(archiveBytes, expectedName) {
-  let tar;
-  try { tar = zlib.gunzipSync(archiveBytes, { maxOutputLength: MAX_BINARY_BYTES + 2048 }); }
+function gunzipArchive(archiveBytes) {
+  try { return zlib.gunzipSync(archiveBytes, { maxOutputLength: MAX_BINARY_BYTES + 2048 }); }
   catch (_error) { throw new Error('Nasiko archive is invalid or exceeds the decompressed size limit.'); }
+}
+
+function isZeroBlock(bytes) {
+  return bytes.every(byte => byte === 0);
+}
+
+function assertTarTerminator(tar, offset) {
+  const terminatorEnd = offset + 1024;
+  if (terminatorEnd > tar.length || !isZeroBlock(tar.subarray(offset + 512, terminatorEnd)) || !isZeroBlock(tar.subarray(terminatorEnd))) {
+    throw new Error('Unsafe Nasiko archive: incomplete terminator or nonzero trailing data.');
+  }
+}
+
+function readTarEntry(tar, offset) {
+  const header = tar.subarray(offset, offset + 512);
+  const name = readTarString(header, 0, 100);
+  const prefix = readTarString(header, 345, 155);
+  const type = String.fromCharCode(header[156] || 48);
+  const size = readTarOctal(header, 124, 12);
+  const start = offset + 512;
+  const end = start + size;
+  const paddedEnd = start + Math.ceil(size / 512) * 512;
+  if (!Number.isSafeInteger(end) || paddedEnd > tar.length) throw new Error('Nasiko archive is truncated.');
+  const payload = tar.subarray(start, end);
+  if (!isZeroBlock(tar.subarray(end, paddedEnd))) throw new Error('Unsafe Nasiko archive: nonzero tar padding.');
+  return { name, prefix, type, size, payload, paddedEnd };
+}
+
+function isBinaryEntry(entry, expectedName) {
+  return !entry.prefix && entry.name === expectedName && (entry.type === '0' || entry.type === '\0');
+}
+
+// macOS tar may add an AppleDouble fork and a pax header beside the binary.
+// Both are tolerated only when small and when the pax header renames nothing.
+function isSidecarEntry(entry, expectedName) {
+  if (entry.prefix) return false;
+  if (entry.name === `._${expectedName}`) return entry.type === '0' && entry.size <= 1024 * 1024;
+  if (entry.name === `PaxHeader/${expectedName}`) {
+    return entry.type === 'x' && entry.size <= 64 * 1024 && !/(?:^|\n)(?:path|linkpath)=/i.test(entry.payload.toString('utf8'));
+  }
+  return false;
+}
+
+function extractQualifiedTarGzip(archiveBytes, expectedName) {
+  const tar = gunzipArchive(archiveBytes);
   let offset = 0;
   let binary = null;
   let terminated = false;
   while (offset < tar.length) {
     if (offset + 512 > tar.length) throw new Error('Unsafe Nasiko archive: truncated tar header.');
-    const header = tar.subarray(offset, offset + 512);
-    if (header.every(byte => byte === 0)) {
-      const terminatorEnd = offset + 1024;
-      if (
-        terminatorEnd > tar.length
-        || !tar.subarray(offset + 512, terminatorEnd).every(byte => byte === 0)
-        || !tar.subarray(terminatorEnd).every(byte => byte === 0)
-      ) {
-        throw new Error('Unsafe Nasiko archive: incomplete terminator or nonzero trailing data.');
-      }
+    if (isZeroBlock(tar.subarray(offset, offset + 512))) {
+      assertTarTerminator(tar, offset);
       terminated = true;
       break;
     }
-    const name = readTarString(header, 0, 100);
-    const prefix = readTarString(header, 345, 155);
-    const type = String.fromCharCode(header[156] || 48);
-    const size = readTarOctal(header, 124, 12);
-    const start = offset + 512;
-    const end = start + size;
-    const paddedEnd = start + Math.ceil(size / 512) * 512;
-    if (!Number.isSafeInteger(end) || paddedEnd > tar.length) throw new Error('Nasiko archive is truncated.');
-    const payload = tar.subarray(start, end);
-    if (!tar.subarray(end, paddedEnd).every(byte => byte === 0)) {
-      throw new Error('Unsafe Nasiko archive: nonzero tar padding.');
-    }
-    const isBinary = !prefix && name === expectedName && (type === '0' || type === '\0');
-    const isAppleDouble = !prefix && name === `._${expectedName}` && type === '0' && size <= 1024 * 1024;
-    const isPaxMetadata = !prefix && name === `PaxHeader/${expectedName}` && type === 'x' && size <= 64 * 1024
-      && !/(?:^|\n)(?:path|linkpath)=/i.test(payload.toString('utf8'));
-    if (isBinary && !binary && size > 0 && size <= MAX_BINARY_BYTES) binary = Buffer.from(payload);
-    else if (!isAppleDouble && !isPaxMetadata) throw new Error('Unsafe Nasiko archive: expected exactly one bounded regular binary file.');
-    offset = paddedEnd;
+    const entry = readTarEntry(tar, offset);
+    if (isBinaryEntry(entry, expectedName) && !binary && entry.size > 0 && entry.size <= MAX_BINARY_BYTES) binary = Buffer.from(entry.payload);
+    else if (!isSidecarEntry(entry, expectedName)) throw new Error('Unsafe Nasiko archive: expected exactly one bounded regular binary file.');
+    offset = entry.paddedEnd;
   }
   if (!terminated) throw new Error('Unsafe Nasiko archive: missing complete tar terminator.');
   if (!binary) throw new Error('Unsafe Nasiko archive: expected exactly one bounded regular binary file.');
@@ -376,45 +397,48 @@ function acquireLifecycleLock(installDirectory, fileSystem = fs, options = {}) {
   }
 }
 
-async function installNasiko(options = {}, dependencies = {}) {
-  const version = options.version || 'v0.1.0';
-  const base = getQualifiedRelease(version, dependencies.platform || process.platform, dependencies.arch || process.arch);
-  const release = dependencies.releaseOverride ? { ...base, ...dependencies.releaseOverride } : base;
+function qualifiedReleaseFor(options, dependencies) {
+  return getQualifiedRelease(options.version || 'v0.1.0', dependencies.platform || process.platform, dependencies.arch || process.arch);
+}
+
+function installPathsFor(options, dependencies, release) {
   const installDirectory = validateInstallDirectory(options.installDir || defaultInstallDirectory(release, dependencies.environment || process.env, dependencies.homeDirectory || os.homedir()));
-  const destination = path.join(installDirectory, release.binaryName);
-  const plan = { dryRun: Boolean(options.dryRun), version, platform: release.os, architecture: release.arch, manifestDigest: release.manifestDigest, binaryDigest: release.binaryDigest, registryOrigin: REGISTRY_ORIGIN, destination, license: release.license, sourceUrl: release.sourceUrl };
-  if (options.dryRun) return plan;
-  if (!options.yes) throw new Error('Nasiko installation requires explicit --yes consent.');
-  fs.mkdirSync(installDirectory, { recursive: true, mode: 0o755 });
-  assertPrivateInstallDirectory(installDirectory);
-  const releaseLock = acquireLifecycleLock(installDirectory);
+  return { installDirectory, destination: path.join(installDirectory, release.binaryName) };
+}
+
+async function fetchVerifiedBinary(release, dependencies) {
+  const retrieve = dependencies.fetchBytes || fetchBytes;
+  const manifestBytes = await retrieve(`${REGISTRY_ORIGIN}/v2/${REPOSITORY}/manifests/${release.manifestDigest}`, { accept: 'application/vnd.oci.image.manifest.v1+json', maxBytes: MAX_MANIFEST_BYTES });
+  assertDigest(manifestBytes, release.manifestDigest, 'Nasiko manifest');
+  const layer = validateManifest(manifestBytes);
+  const archiveBytes = await retrieve(`${REGISTRY_ORIGIN}/v2/${REPOSITORY}/blobs/${layer.digest}`, { maxBytes: MAX_ARCHIVE_BYTES });
+  if (archiveBytes.length !== layer.size) throw new Error('Nasiko archive size mismatch.');
+  assertDigest(archiveBytes, layer.digest, 'Nasiko archive');
+  const binary = (dependencies.extractBinary || extractQualifiedTarGzip)(archiveBytes, release.binaryName);
+  assertDigest(binary, release.binaryDigest, 'Nasiko binary');
+  return { binary, layer };
+}
+
+function writeBinary(descriptor, binary) {
+  try {
+    fs.writeFileSync(descriptor, binary);
+    fs.fsyncSync(descriptor);
+    if (fs.fstatSync(descriptor).size !== binary.length) throw new Error('Published Nasiko binary size mismatch.');
+  } finally { fs.closeSync(descriptor); }
+}
+
+// Publish the binary and its receipt exclusively; a failure after either file
+// is created removes what this call owns and nothing else.
+function publishBinary(plan, release, layer, binary, dependencies) {
+  const { destination } = plan;
   const metadataPath = metadataPathFor(destination);
   let destinationOwned = false;
   let metadataOwned = false;
   try {
-    const existing = inspectInstalledNasiko(destination);
-    if (existing.installed) {
-      if (existing.qualified && existing.version === version) return { ...plan, dryRun: false, installed: true, reused: true };
-      throw new Error('An unqualified or incompatible Nasiko executable or receipt already exists at the destination.');
-    }
-    const retrieve = dependencies.fetchBytes || fetchBytes;
-    const manifestBytes = await retrieve(`${REGISTRY_ORIGIN}/v2/${REPOSITORY}/manifests/${release.manifestDigest}`, { accept: 'application/vnd.oci.image.manifest.v1+json', maxBytes: MAX_MANIFEST_BYTES });
-    assertDigest(manifestBytes, release.manifestDigest, 'Nasiko manifest');
-    const layer = validateManifest(manifestBytes);
-    const archiveBytes = await retrieve(`${REGISTRY_ORIGIN}/v2/${REPOSITORY}/blobs/${layer.digest}`, { maxBytes: MAX_ARCHIVE_BYTES });
-    if (archiveBytes.length !== layer.size) throw new Error('Nasiko archive size mismatch.');
-    assertDigest(archiveBytes, layer.digest, 'Nasiko archive');
-    const binary = (dependencies.extractBinary || extractQualifiedTarGzip)(archiveBytes, release.binaryName);
-    assertDigest(binary, release.binaryDigest, 'Nasiko binary');
-    if (dependencies.beforePublish) dependencies.beforePublish(destination);
     const descriptor = fs.openSync(destination, 'wx', 0o700);
     destinationOwned = true;
-    try {
-      fs.writeFileSync(descriptor, binary);
-      fs.fsyncSync(descriptor);
-      if (fs.fstatSync(descriptor).size !== binary.length) throw new Error('Published Nasiko binary size mismatch.');
-    } finally { fs.closeSync(descriptor); }
-    const metadata = { version, platform: release.os, architecture: release.arch, manifestDigest: release.manifestDigest, artifactDigest: layer.digest, binaryDigest: release.binaryDigest, installedPath: destination, license: release.license, sourceUrl: release.sourceUrl };
+    writeBinary(descriptor, binary);
+    const metadata = { version: plan.version, platform: release.os, architecture: release.arch, manifestDigest: release.manifestDigest, artifactDigest: layer.digest, binaryDigest: release.binaryDigest, installedPath: destination, license: release.license, sourceUrl: release.sourceUrl };
     (dependencies.writeMetadata || writeMetadataExclusive)(metadataPath, metadata);
     metadataOwned = true;
     return { ...plan, dryRun: false, installed: true, reused: false, artifactDigest: layer.digest };
@@ -422,51 +446,83 @@ async function installNasiko(options = {}, dependencies = {}) {
     if (metadataOwned) fs.rmSync(metadataPath, { force: true });
     if (destinationOwned) fs.rmSync(destination, { force: true });
     throw error;
+  }
+}
+
+async function installNasiko(options = {}, dependencies = {}) {
+  const base = qualifiedReleaseFor(options, dependencies);
+  const release = dependencies.releaseOverride ? { ...base, ...dependencies.releaseOverride } : base;
+  const { installDirectory, destination } = installPathsFor(options, dependencies, release);
+  const plan = { dryRun: Boolean(options.dryRun), version: base.version, platform: release.os, architecture: release.arch, manifestDigest: release.manifestDigest, binaryDigest: release.binaryDigest, registryOrigin: REGISTRY_ORIGIN, destination, license: release.license, sourceUrl: release.sourceUrl };
+  if (options.dryRun) return plan;
+  if (!options.yes) throw new Error('Nasiko installation requires explicit --yes consent.');
+  fs.mkdirSync(installDirectory, { recursive: true, mode: 0o755 });
+  assertPrivateInstallDirectory(installDirectory);
+  const releaseLock = acquireLifecycleLock(installDirectory);
+  try {
+    const existing = inspectInstalledNasiko(destination);
+    if (existing.installed) {
+      if (existing.qualified && existing.version === plan.version) return { ...plan, dryRun: false, installed: true, reused: true };
+      throw new Error('An unqualified or incompatible Nasiko executable or receipt already exists at the destination.');
+    }
+    const { binary, layer } = await fetchVerifiedBinary(release, dependencies);
+    if (dependencies.beforePublish) dependencies.beforePublish(destination);
+    return publishBinary(plan, release, layer, binary, dependencies);
   } finally { releaseLock(); }
 }
 
-function uninstallNasiko(options = {}, dependencies = {}) {
-  const version = options.version || 'v0.1.0';
-  const release = getQualifiedRelease(version, dependencies.platform || process.platform, dependencies.arch || process.arch);
-  const installDirectory = validateInstallDirectory(options.installDir || defaultInstallDirectory(release, dependencies.environment || process.env, dependencies.homeDirectory || os.homedir()));
-  const destination = path.join(installDirectory, release.binaryName);
-  const plan = { dryRun: Boolean(options.dryRun), version, destination };
-  if (options.dryRun) return plan;
-  if (!options.yes) throw new Error('Nasiko uninstall requires explicit --yes consent.');
-  if (!fs.existsSync(installDirectory)) return { ...plan, dryRun: false, removed: false };
-  assertPrivateInstallDirectory(installDirectory);
-  const releaseLock = acquireLifecycleLock(installDirectory);
+function removeOrRetain(remove, target, retained) {
+  try { remove(target); } catch (_error) { retained.push(target); }
+}
+
+// Rename both files aside before deleting them so a failed rename restores
+// the install, while a failed delete leaves a named tombstone for the operator.
+function removeInstalledFiles(destination, dependencies) {
   const metadataPath = metadataPathFor(destination);
   const suffix = `${process.pid}-${crypto.randomBytes(6).toString('hex')}`;
   const binaryTombstone = `${destination}.remove-${suffix}`;
   const metadataTombstone = `${metadataPath}.remove-${suffix}`;
-  let binaryStaged = false;
-  let metadataStaged = false;
   const rename = dependencies.rename || fs.renameSync;
   const remove = dependencies.remove || (target => fs.rmSync(target));
+  let binaryStaged = false;
+  let metadataStaged = false;
   try {
-    const status = (dependencies.inspectInstalled || inspectInstalledNasiko)(destination);
-    if (!status.installed) return { ...plan, dryRun: false, removed: false };
-    if (!status.qualified || status.version !== version) throw new Error('Refusing to remove an unqualified or modified Nasiko executable.');
     rename(destination, binaryTombstone);
     binaryStaged = true;
     rename(metadataPath, metadataTombstone);
     metadataStaged = true;
     const cleanupPending = [];
-    try { remove(metadataTombstone); } catch (_error) { cleanupPending.push(metadataTombstone); }
+    removeOrRetain(remove, metadataTombstone, cleanupPending);
     metadataStaged = false;
-    try { remove(binaryTombstone); } catch (_error) { cleanupPending.push(binaryTombstone); }
+    removeOrRetain(remove, binaryTombstone, cleanupPending);
     binaryStaged = false;
     if (cleanupPending.length > 0) {
       const cleanupError = new Error(`Nasiko uninstall is incomplete; retained staged file(s): ${cleanupPending.join(', ')}. Remove these files before reinstalling.`);
       cleanupError.cleanupPending = cleanupPending;
       throw cleanupError;
     }
-    return { ...plan, dryRun: false, removed: true, cleanupPending: [] };
   } catch (error) {
     if (metadataStaged && !fs.existsSync(metadataPath)) rename(metadataTombstone, metadataPath);
     if (binaryStaged && !fs.existsSync(destination)) rename(binaryTombstone, destination);
     throw error;
+  }
+}
+
+function uninstallNasiko(options = {}, dependencies = {}) {
+  const release = qualifiedReleaseFor(options, dependencies);
+  const { installDirectory, destination } = installPathsFor(options, dependencies, release);
+  const plan = { dryRun: Boolean(options.dryRun), version: release.version, destination };
+  if (options.dryRun) return plan;
+  if (!options.yes) throw new Error('Nasiko uninstall requires explicit --yes consent.');
+  if (!fs.existsSync(installDirectory)) return { ...plan, dryRun: false, removed: false };
+  assertPrivateInstallDirectory(installDirectory);
+  const releaseLock = acquireLifecycleLock(installDirectory);
+  try {
+    const status = (dependencies.inspectInstalled || inspectInstalledNasiko)(destination);
+    if (!status.installed) return { ...plan, dryRun: false, removed: false };
+    if (!status.qualified || status.version !== release.version) throw new Error('Refusing to remove an unqualified or modified Nasiko executable.');
+    removeInstalledFiles(destination, dependencies);
+    return { ...plan, dryRun: false, removed: true, cleanupPending: [] };
   } finally { releaseLock(); }
 }
 

@@ -27,14 +27,18 @@ Token estimates cover skill metadata only; actual host context remains unobserve
 The existing install --profile and hook profile flags keep their own meanings.
 
 Experimental managed profiles and bounded task context:
-  ecc profile resolve [lean|full] --task-input task.json|- [--load] [--previous receipt.json] [--json]
-  ecc profile run --task-input task.json|- [--state-root <directory>] [--target codex|claude] [--dry-run] [--json]
+  ecc profile resolve [lean|full] --task-input task.json|- [--load] [--previous receipt.json]
+      [--neighbors neighbors.json] [--json]
+  ecc profile run --task-input task.json|- [--state-root <directory>] [--target codex|claude]
+      [--neighbors neighbors.json] [--dry-run] [--json]
+  ecc profile neighbors [--target codex|claude] [--project <directory>] [--json]
   ecc profile set lean|full --state-root <dedicated-directory> [--selection auto|manual|suggest]
-      [--target codex] [--include skill:<id>] [--exclude skill:<id>] [--dry-run] [--json]
+      [--target codex|claude] [--include skill:<id>] [--exclude skill:<id>] [--dry-run] [--json]
   ecc profile status --state-root <directory> [--json]
   ecc profile mode auto|manual|suggest --state-root <directory> [--dry-run] [--json]
   ecc profile rollback --state-root <directory> [--expected-revision N] [--json]
   ecc profile recover --state-root <directory> [--json]
+  ecc profile routing-index --state-root <directory> [--dry-run] [--json]
   ecc profile start --state-root <directory> --native-root <directory> [--dry-run]
   ecc profile prepare-native --state-root <directory> --native-root <dedicated-directory> [--dry-run] [--json]
   ecc profile native-status --state-root <directory> --native-root <directory> [--json]
@@ -42,11 +46,16 @@ Experimental managed profiles and bounded task context:
   ecc profile native-recover --state-root <directory> --native-root <directory> [--json]
 Task input may be one bounded UTF-8 JSON object on stdin with --task-input - (65536 bytes maximum).
 Start requires prepare-native, launches the pinned native TUI with inherited stdio and provider permissions,
-and reads a receipt-bound isolated AGENTS bootstrap. Authenticate separately in the isolated home; credentials are never copied.
+and reads a receipt-bound isolated bootstrap (Codex AGENTS.md, Claude CLAUDE.md). Claude loads the carrier with --plugin-dir;
+nothing is installed. Authenticate separately in the isolated home; credentials are never copied.
 Set stages owned generations; provider discovery is verified separately.
 Resolve returns context only with --load; suggest and --dry-run never return skill bodies.
 Use resolve --state-root <directory> to honor the saved base, mode and exclusions.
-Run with --native-root to use a verified isolated Codex generation. Existing sessions are unchanged.
+Routing-index writes the metadata index read by the opt-in prompt suggestion hook; rebuild it after set, mode or rollback.
+Neighbors lists the provider home's other installed skills (names and descriptions; ECC's own copies excluded) as a
+snapshot. For claude it also reads the project's .claude/skills (the current directory, or --project). Pass it with --neighbors (or ECC_CONTEXT_NEIGHBORS for the suggestion hook) to list the ones that also match
+the task as companions next to ECC's own selection, which stays unchanged. It is not available with --native-root.
+Run with --native-root to use a verified isolated Codex or Claude generation. Existing sessions are unchanged.
 `;
 }
 

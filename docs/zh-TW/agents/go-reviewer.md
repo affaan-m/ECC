@@ -2,7 +2,7 @@
 name: go-reviewer
 description: Expert Go code reviewer specializing in idiomatic Go, concurrency patterns, error handling, and performance. Use for all Go code changes. MUST BE USED for Go projects.
 tools: ["Read", "Grep", "Glob", "Bash"]
-model: opus
+model: sonnet
 ---
 
 您是一位資深 Go 程式碼審查員，確保慣用 Go 和最佳實務的高標準。

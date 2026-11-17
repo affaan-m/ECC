@@ -13,8 +13,14 @@ const {
 } = require('../../scripts/lib/install-lifecycle');
 const { readInstallState, writeInstallState } = require('../../scripts/lib/install-state');
 
-const SHARED_FILES = ['config.toml', 'AGENTS.md'];
+const codexAdapter = require('../../scripts/lib/install-targets/codex-home');
+
+const USER_REFERENCE = 'user-config.example.toml';
+const PROJECT_CONFIG = '# Project-only configuration\n[features]\nmulti_agent = true\n';
+const SHARED_FILES = ['config.toml', 'AGENTS.md', 'strict.config.toml', 'yolo.config.toml'];
 const TEMPLATES = {
+  'strict.config.toml': 'sandbox_mode = "read-only"\n',
+  'yolo.config.toml': 'sandbox_mode = "workspace-write"\n',
   'config.toml': '# ECC defaults\nmodel = "example-model"\n',
   'AGENTS.md': '# ECC instructions\n\nFollow the project conventions.\n',
 };
@@ -50,6 +56,8 @@ function createFixture(t) {
     version: 1, profiles: { minimal: { description: 'Fixture', modules: ['platform-configs'] } },
   });
   for (const name of SHARED_FILES) writeFile(path.join(sourceRoot, '.codex', name), TEMPLATES[name]);
+  writeFile(path.join(sourceRoot, '.codex', USER_REFERENCE), TEMPLATES['config.toml']);
+  writeFile(path.join(sourceRoot, '.codex', 'config.toml'), PROJECT_CONFIG);
   writeFile(path.join(sourceRoot, 'scripts', 'independent-helper.js'), 'module.exports = "helper";\n');
   fs.mkdirSync(homeDir, { recursive: true });
   fs.mkdirSync(projectRoot, { recursive: true });
@@ -61,6 +69,7 @@ function createFixture(t) {
   }, options);
   return {
     sourceRoot,
+    template: name => path.join(sourceRoot, '.codex', name === 'config.toml' ? USER_REFERENCE : name),
     destination: name => path.join(homeDir, '.codex', name),
     statePath: path.join(homeDir, '.codex', 'ecc-install-state.json'),
     plan,
@@ -91,6 +100,58 @@ function assertWarning(result, name) {
   assert.ok((result.warnings || []).some(warning => (
     warning.includes(name) && /skip|preserv|user-owned|modif/i.test(warning)
   )), `Expected an explicit preservation warning for ${name}`);
+}
+
+function deriveStats(stats, overrides) {
+  return Object.assign(Object.create(Object.getPrototypeOf(stats)), stats, overrides);
+}
+
+function withWindowsConfigStats(fixture, name, identities, action) {
+  const destination = fixture.destination(name);
+  const originalOpenSync = fs.openSync;
+  const originalCloseSync = fs.closeSync;
+  const originalFstatSync = fs.fstatSync;
+  const originalLstatSync = fs.lstatSync;
+  const originalPlatform = process.platform;
+  const descriptors = new Set();
+  try {
+    Object.defineProperty(process, 'platform', { value: 'win32', configurable: true });
+    fs.openSync = function (filePath, ...args) {
+      const descriptor = originalOpenSync.call(fs, filePath, ...args);
+      if (typeof filePath === 'string'
+        && path.resolve(filePath) === path.resolve(destination)) {
+        descriptors.add(descriptor);
+      }
+      return descriptor;
+    };
+    fs.closeSync = function (descriptor) {
+      descriptors.delete(descriptor);
+      return originalCloseSync.call(fs, descriptor);
+    };
+    fs.fstatSync = function (descriptor, options) {
+      const stats = originalFstatSync.call(fs, descriptor, options);
+      return descriptors.has(descriptor) && options && options.bigint
+        ? deriveStats(stats, identities.opened)
+        : stats;
+    };
+    fs.lstatSync = function (filePath, ...args) {
+      const stats = originalLstatSync.call(fs, filePath, ...args);
+      return path.resolve(filePath) === path.resolve(destination)
+        && args[0] && args[0].bigint
+        ? deriveStats(stats, identities.current)
+        : stats;
+    };
+    return action();
+  } finally {
+    fs.openSync = originalOpenSync;
+    fs.closeSync = originalCloseSync;
+    fs.fstatSync = originalFstatSync;
+    fs.lstatSync = originalLstatSync;
+    Object.defineProperty(process, 'platform', {
+      value: originalPlatform,
+      configurable: true,
+    });
+  }
 }
 
 function editAfterRepairInspection(fixture, name, content, action) {
@@ -126,6 +187,96 @@ function editAfterRepairInspection(fixture, name, content, action) {
 }
 
 for (const name of SHARED_FILES) {
+  test(`reinstall accepts unchanged Codex ${name} when Windows lstat omits the device id`, t => {
+    const fixture = createFixture(t);
+    fixture.install();
+    const updated = `${TEMPLATES[name]}\n# New upstream default\n`;
+    writeFile(fixture.template(name), updated);
+
+    withWindowsConfigStats(
+      fixture,
+      name,
+      {
+        opened: { dev: 1644385068n, ino: 21110623254304612n },
+        current: { dev: 0n, ino: 21110623254304612n },
+      },
+      () => fixture.install()
+    );
+
+    assertPreserved(fixture, name, updated);
+    assert.ok(readInstallState(fixture.statePath).operations.some(operation => (
+      operation.destinationPath === fixture.destination(name) && operation.ownership === 'managed'
+    )));
+    lifecycleResult(fixture.uninstall());
+    assert.ok(!fs.existsSync(fixture.destination(name)));
+  });
+
+  for (const mismatch of ['inode', 'device']) {
+    test(`reinstall rejects a changed Codex ${name} Windows ${mismatch} identity`, t => {
+      const fixture = createFixture(t);
+      fixture.install();
+      const destination = fixture.destination(name);
+      const previousOperation = readInstallState(fixture.statePath).operations.find(operation => (
+        operation.destinationPath === destination
+      ));
+      writeFile(fixture.template(name), `${TEMPLATES[name]}# update\n`);
+
+      const opened = { dev: 1644385068n, ino: 21110623254304612n };
+      const current = mismatch === 'inode'
+        ? { dev: 0n, ino: 21110623254304613n }
+        : { dev: 3054669153n, ino: 21110623254304612n };
+      assert.throws(() => withWindowsConfigStats(
+        fixture,
+        name,
+        { opened, current },
+        () => fixture.install()
+      ), /Refusing to inspect changed Codex configuration/);
+
+      assertPreserved(fixture, name, TEMPLATES[name]);
+      const retainedOperation = readInstallState(fixture.statePath).operations.find(operation => (
+        operation.destinationPath === destination && operation.ownership === 'managed'
+      ));
+      assert.equal(retainedOperation.contentSha256, previousOperation.contentSha256);
+      lifecycleResult(fixture.uninstall());
+      assert.ok(!fs.existsSync(destination));
+    });
+  }
+
+  test(`reinstall rejects a symlink replacing managed Codex ${name}`, t => {
+    const fixture = createFixture(t);
+    fixture.install();
+    const destination = fixture.destination(name);
+    const linkedFile = fixture.destination(`${name}.user`);
+    const previousOperation = readInstallState(fixture.statePath).operations.find(operation => (
+      operation.destinationPath === destination
+    ));
+    writeFile(linkedFile, '# User-owned linked configuration\n');
+    const replacementLink = fixture.destination(`${name}.replacement-link`);
+    try {
+      fs.symlinkSync(linkedFile, replacementLink, 'file');
+    } catch (error) {
+      if (process.platform === 'win32'
+        && ['EPERM', 'EACCES', 'ENOTSUP'].includes(error.code)) {
+        t.skip('Windows file-symlink privilege or filesystem support unavailable');
+        return;
+      }
+      throw error;
+    }
+    fs.unlinkSync(destination);
+    fs.renameSync(replacementLink, destination);
+
+    assert.throws(() => fixture.install(), error => (
+      error.code === 'ELOOP' || /Refusing to inspect changed Codex configuration/.test(error.message)
+    ));
+
+    assert.equal(fs.readlinkSync(destination), linkedFile, 'reinstall must retain the original symlink');
+    assert.equal(fs.readFileSync(linkedFile, 'utf8'), '# User-owned linked configuration\n');
+    const retainedOperation = readInstallState(fixture.statePath).operations.find(operation => (
+      operation.destinationPath === destination && operation.ownership === 'managed'
+    ));
+    assert.equal(retainedOperation.contentSha256, previousOperation.contentSha256);
+  });
+
   for (const stage of ['bridge', 'no-op refresh']) {
     test(`repair ${stage} does not claim a concurrent edit to Codex ${name}`, t => {
       const fixture = createFixture(t);
@@ -134,7 +285,7 @@ for (const name of SHARED_FILES) {
         operation.destinationPath === fixture.destination(name)
       ));
       if (stage === 'bridge') {
-        writeFile(path.join(fixture.sourceRoot, '.codex', name),
+        writeFile(fixture.template(name),
           `${TEMPLATES[name]}\n# Updated upstream template\n`);
       }
       const content = `${TEMPLATES[name]}\r\n# Saved after repair inspected the file\r\n`;
@@ -345,7 +496,7 @@ for (const name of SHARED_FILES) {
       const fixture = createFixture(t);
       fixture.install();
       const updated = `${TEMPLATES[name]}\n# New upstream default\n`;
-      writeFile(path.join(fixture.sourceRoot, '.codex', name), updated);
+      writeFile(fixture.template(name), updated);
 
       if (action === 'reinstall') fixture.install();
       else lifecycleResult(fixture.repair());
@@ -370,3 +521,131 @@ for (const name of SHARED_FILES) {
     assertPreserved(fixture, name, installedContent);
   });
 }
+
+function installOldConfigLedger(fixture) {
+  const projectPath = path.join(fixture.sourceRoot, '.codex', 'config.toml');
+  writeFile(projectPath, TEMPLATES['config.toml']);
+  try {
+    const plan = fixture.plan();
+    const oldOperation = plan.operations.find(operation => (
+      operation.destinationPath === fixture.destination('config.toml')
+    ));
+    assert.ok(oldOperation);
+    const useOldSource = operation => (
+      operation.destinationPath === oldOperation.destinationPath ? {
+        ...operation, sourceRelativePath: '.codex/config.toml', sourcePath: projectPath,
+      } : operation
+    );
+    // Both executable operations and the planned ledger describe the old source.
+    applyInstallPlan({
+      ...plan,
+      operations: plan.operations.map(useOldSource),
+      statePreview: { ...plan.statePreview, operations: plan.statePreview.operations.map(useOldSource) },
+    });
+    assert.equal(readInstallState(fixture.statePath).operations.find(operation => (
+      operation.destinationPath === fixture.destination('config.toml')
+    )).sourceRelativePath, '.codex/config.toml');
+  } finally {
+    writeFile(projectPath, PROJECT_CONFIG);
+  }
+}
+
+test('Codex native install uses one user-reference operation before preview, apply and state', t => {
+  const fixture = createFixture(t);
+  const plan = fixture.plan();
+  const selected = plan.operations.filter(operation => (
+    operation.destinationPath === fixture.destination('config.toml')
+  ));
+  assert.equal(selected.length, 1);
+  assert.equal(selected[0].sourceRelativePath, '.codex/user-config.example.toml');
+  assert.equal(previewInstallPlan(plan).operations.filter(operation => (
+    operation.destinationPath === fixture.destination('config.toml')
+  )).length, 1);
+  applyInstallPlan(plan);
+  assertPreserved(fixture, 'config.toml', TEMPLATES['config.toml']);
+  assertPreserved(fixture, 'AGENTS.md', TEMPLATES['AGENTS.md']);
+  assertPreserved(fixture, USER_REFERENCE, TEMPLATES['config.toml']);
+  const recorded = readInstallState(fixture.statePath).operations.filter(operation => (
+    operation.destinationPath === fixture.destination('config.toml')
+  ));
+  assert.equal(recorded.length, 1);
+  assert.equal(recorded[0].sourceRelativePath, '.codex/user-config.example.toml');
+});
+
+for (const invalid of ['missing', 'directory']) {
+  test(`selected Codex native install rejects ${invalid} user reference before writes`, t => {
+    const fixture = createFixture(t);
+    fs.unlinkSync(fixture.template('config.toml'));
+    if (invalid === 'directory') fs.mkdirSync(fixture.template('config.toml'));
+    assert.throws(() => fixture.install(), /Codex user reference.*regular file/);
+    assert.ok(!fs.existsSync(fixture.statePath));
+    assert.ok(!fs.existsSync(fixture.destination('config.toml')));
+    assert.ok(!fs.existsSync(fixture.destination('AGENTS.md')));
+    // Unselected native configuration must not block independent modules.
+    fixture.install(['helper-scripts']);
+    assert.ok(!fs.existsSync(fixture.destination('config.toml')));
+  });
+}
+
+test('Codex adapter preserves metadata-only planning and foreign/excluded filters', () => {
+  const operations = codexAdapter.planOperations({
+    homeDir: '/example',
+    modules: [{ id: 'platform-configs', paths: ['.codex', '.cursor', '.agents', 'scripts'] }],
+  });
+  assert.deepEqual(operations.map(operation => operation.sourceRelativePath),
+    ['.codex', '.codex/user-config.example.toml', 'scripts']);
+  assert.equal(operations[1].destinationPath, path.join('/example', '.codex', 'config.toml'));
+});
+
+for (const action of ['reinstall', 'repair']) {
+  for (const edited of [false, true]) {
+    test(`${action} preserves ownership through old config source migration (edited=${edited})`, t => {
+      const fixture = createFixture(t);
+      installOldConfigLedger(fixture);
+      const updated = `${TEMPLATES['config.toml']}# New explicit user reference\n`;
+      writeFile(fixture.template('config.toml'), updated);
+      const personal = `${TEMPLATES['config.toml']}# Personal change\n`;
+      if (edited) writeFile(fixture.destination('config.toml'), personal);
+      const result = action === 'reinstall' ? fixture.install() : lifecycleResult(fixture.repair());
+      assertPreserved(fixture, 'config.toml', edited ? personal : updated);
+      if (edited) {
+        assertWarning(result, 'config.toml');
+        assertUnmanaged(fixture, 'config.toml');
+      } else {
+        const operations = readInstallState(fixture.statePath).operations.filter(operation => (
+          operation.destinationPath === fixture.destination('config.toml')
+        ));
+        assert.equal(operations.length, 1);
+        assert.equal(operations[0].sourceRelativePath, '.codex/user-config.example.toml');
+        assert.equal(operations[0].ownership, 'managed');
+      }
+      lifecycleResult(fixture.doctor());
+      lifecycleResult(fixture.uninstall());
+      if (edited) assertPreserved(fixture, 'config.toml', personal);
+      else assert.ok(!fs.existsSync(fixture.destination('config.toml')));
+    });
+  }
+}
+
+test('old config source migration retains its digest after a raced user edit', t => {
+  const fixture = createFixture(t);
+  installOldConfigLedger(fixture);
+  const previous = readInstallState(fixture.statePath).operations.find(operation => (
+    operation.destinationPath === fixture.destination('config.toml')
+  ));
+  writeFile(fixture.template('config.toml'), `${TEMPLATES['config.toml']}# Upstream update\n`);
+  const personal = '# User saved during migration\n';
+  const { result, injected } = editAfterRepairInspection(
+    fixture, 'config.toml', personal, () => fixture.repair()
+  );
+  assert.ok(injected);
+  assert.equal(result.results[0].status, 'error');
+  assert.match(result.results[0].error, /Refusing.*user configuration.*changed after planning/);
+  assertPreserved(fixture, 'config.toml', personal);
+  const current = readInstallState(fixture.statePath).operations.find(operation => (
+    operation.destinationPath === fixture.destination('config.toml')
+  ));
+  assert.equal(current.contentSha256, previous.contentSha256);
+  lifecycleResult(fixture.uninstall());
+  assertPreserved(fixture, 'config.toml', personal);
+});

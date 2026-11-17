@@ -7,6 +7,7 @@ const { execFileSync } = require('child_process');
 const { resolveInstallPlan } = require('../install-manifests');
 const { getInstallTargetAdapter } = require('../install-targets/registry');
 const { resolveInvocationEnvironment } = require('../invocation-environment');
+const { disableUnselectedOpenCodeHooks } = require('./hook-consent');
 const { readHooksConfig } = require('../hooks-config');
 const {
   materializeManagedHooks,
@@ -103,6 +104,14 @@ function buildCopyFileOperation({
   strategy,
   contentTransform,
 }) {
+  // Agent frontmatter and workflow transforms are textual Markdown projections.
+  // Their directories may also contain binary assets and executable helpers,
+  // which must keep their bytes intact.
+  const applicableTransform = (contentTransform === 'copilot-workflow-paths'
+    || contentTransform === 'copilot-agent-frontmatter'
+    || contentTransform === 'antigravity-agent-frontmatter'
+    || contentTransform === 'qwen-agent-frontmatter')
+    && !/\.md$/i.test(sourceRelativePath) ? undefined : contentTransform;
   return {
     kind: 'copy-file',
     moduleId,
@@ -112,7 +121,7 @@ function buildCopyFileOperation({
     strategy,
     ownership: 'managed',
     scaffoldOnly: false,
-    ...(contentTransform ? { contentTransform } : {}),
+    ...(applicableTransform ? { contentTransform: applicableTransform } : {}),
   };
 }
 
@@ -250,9 +259,20 @@ function dedupeCopyFileOperations(operations) {
 }
 
 function createManifestInstallPlan(options = {}) {
-  const sourceRoot = options.sourceRoot || getSourceRoot();
+  const requestedSourceRoot = options.sourceRoot || getSourceRoot();
   const projectRoot = options.projectRoot || process.cwd();
   const target = options.target || 'claude';
+  const adapter = getInstallTargetAdapter(target);
+  const preparedSource = adapter.prepareSource({
+    sourceRoot: requestedSourceRoot,
+    repoRoot: requestedSourceRoot,
+    projectRoot,
+    homeDir: options.homeDir,
+    env: resolveInvocationEnvironment(options),
+    sourceUrl: options.sourceUrl || null,
+    sourceSha: options.sourceSha || null,
+  });
+  const sourceRoot = preparedSource.sourceRoot || requestedSourceRoot;
   const legacyLanguages = Array.isArray(options.legacyLanguages) ? [...options.legacyLanguages] : [];
   const requestProfileId = Object.hasOwn(options, 'requestProfileId') ? options.requestProfileId : options.profileId || null;
   const requestModuleIds = Object.hasOwn(options, 'requestModuleIds') ? [...options.requestModuleIds] : Array.isArray(options.moduleIds) ? [...options.moduleIds] : [];
@@ -277,11 +297,23 @@ function createManifestInstallPlan(options = {}) {
     excludeComponentIds: options.excludeComponentIds || [],
     target,
     exemptValidationCodes: options.exemptValidationCodes || [],
+    trust: options.trust === true,
+    consent: options.consent || {},
+    sourceSha: options.sourceSha || null,
   });
-  const adapter = getInstallTargetAdapter(target);
   const materializedOperations = plan.operations.flatMap(operation => (
     materializeScaffoldOperation(sourceRoot, operation)
-  ));
+  )).map(operation => {
+    // Persist this projection so install, doctor and repair compare the same
+    // native component names rather than restoring plugin-only references.
+    if (['claude', 'claude-project'].includes(target)
+      && operation.kind === 'copy-file'
+      && /\.(md|mdx|markdown)$/i.test(operation.destinationPath)
+      && !operation.contentTransform) {
+      return { ...operation, contentTransform: 'claude-manual-plugin-namespace' };
+    }
+    return operation;
+  });
   const ruleLanguages = Array.isArray(options.ruleLanguages) ? [...options.ruleLanguages] : [];
   const operations = dedupeCopyFileOperations(
     options.legacyMode && target === 'antigravity'
@@ -291,8 +323,9 @@ function createManifestInstallPlan(options = {}) {
       : materializedOperations
   );
   const source = {
-    repoVersion: getPackageVersion(sourceRoot),
-    repoCommit: getRepoCommit(sourceRoot),
+    repoVersion: preparedSource.sourceVersion || getPackageVersion(sourceRoot),
+    repoUrl: preparedSource.sourceUrl || null,
+    repoCommit: preparedSource.sourceSha || getRepoCommit(sourceRoot),
     manifestVersion: getManifestVersion(sourceRoot)
   };
   const statePreview = createStatePreview({
@@ -305,7 +338,11 @@ function createManifestInstallPlan(options = {}) {
       includeComponents: requestIncludeComponentIds,
       excludeComponents: requestExcludeComponentIds,
       legacyLanguages,
-      legacyMode: Boolean(options.legacyMode)
+      legacyMode: Boolean(options.legacyMode),
+      trust: options.trust === true,
+      consentMcp: Object.entries(options.consent && options.consent.mcp || {})
+        .filter(([, allowed]) => allowed === true)
+        .map(([id]) => id),
     },
     resolution: {
       selectedModules: plan.selectedModuleIds,
@@ -315,7 +352,7 @@ function createManifestInstallPlan(options = {}) {
     source
   });
 
-  return {
+  const installPlan = disableUnselectedOpenCodeHooks({
     mode: options.mode || 'manifest',
     sourceRoot,
     target,
@@ -341,7 +378,15 @@ function createManifestInstallPlan(options = {}) {
     excludedModuleIds: plan.excludedModuleIds,
     operations,
     statePreview
-  };
+  });
+  if (typeof preparedSource.cleanup === 'function') {
+    Object.defineProperty(installPlan, 'dispose', {
+      configurable: false,
+      enumerable: false,
+      value: preparedSource.cleanup,
+    });
+  }
+  return installPlan;
 }
 
 module.exports = {

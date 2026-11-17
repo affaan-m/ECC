@@ -2,10 +2,13 @@
 'use strict';
 
 const path = require('path');
+const { StringDecoder } = require('string_decoder');
 const fs = require('fs');
 const { spawnSync } = require('child_process');
 const { normalizePluginRootForPlatform } = require('../lib/resolve-ecc-root');
 const { readStdinRaw, resolveMaxStdin } = require('./hook-input');
+const { installHookWatchdog } = require('./hook-watchdog');
+const { createHookContextScanner } = require('./hook-input-limits');
 
 const DEFAULT_TIMEOUT_MS = 30000;
 const MAX_TIMEOUT_MS = 300000;
@@ -40,7 +43,17 @@ async function main() {
   const maxStdin = resolveMaxStdin(process.env.ECC_HOOK_INPUT_MAX_BYTES, {
     writeDiagnostic: message => process.stderr.write(message)
   });
-  const { raw, truncated } = await readStdinRaw(process.stdin, { maxStdin });
+  const contextDecoder = new StringDecoder('utf8');
+  const contextScanner = createHookContextScanner();
+  const { raw, truncated } = await readStdinRaw(process.stdin, {
+    maxStdin,
+    truncated: /^(1|true|yes)$/i.test(
+      String(process.env.ECC_HOOK_INPUT_TRUNCATED_UPSTREAM || '')
+    ),
+    onChunk: buffer => contextScanner.push(contextDecoder.write(buffer))
+  });
+  contextScanner.push(contextDecoder.end());
+  const hookContext = contextScanner.context;
 
   if (!hookId || !relScriptPath) {
     writeStderr('[Hook] lifecycle bootstrap missing hook ID or script path; skipping hook');
@@ -68,6 +81,7 @@ async function main() {
     writeStderr(`[Hook] lifecycle stdin exceeded ${maxStdin} bytes; forwarded a bounded prefix`);
   }
 
+  const timeout = resolveTimeout(timeoutValue);
   const result = spawnSync(
     process.execPath,
     [runner, hookId, relScriptPath, profilesCsv || 'minimal,standard,strict'],
@@ -79,10 +93,12 @@ async function main() {
         CLAUDE_PLUGIN_ROOT: resolvedRoot,
         ECC_PLUGIN_ROOT: resolvedRoot,
         ECC_HOOK_INPUT_MAX_BYTES: String(maxStdin),
-        ECC_HOOK_INPUT_TRUNCATED_UPSTREAM: truncated ? '1' : '0'
+        ECC_HOOK_INPUT_TRUNCATED_UPSTREAM: truncated ? '1' : '0',
+        ECC_HOOK_CONTEXT_JSON: JSON.stringify(hookContext),
+        ECC_HOOK_DEADLINE_MS: String(Date.now() + timeout)
       },
       cwd: process.cwd(),
-      timeout: resolveTimeout(timeoutValue),
+      timeout,
       maxBuffer: 16 * 1024 * 1024,
       windowsHide: true
     }
@@ -109,6 +125,7 @@ async function main() {
 }
 
 function cli() {
+  installHookWatchdog({ label: 'lifecycle hook bootstrap' });
   main().catch(error => {
     writeStderr(`[Hook] lifecycle bootstrap failed: ${error.message}`);
     process.exitCode = 0;

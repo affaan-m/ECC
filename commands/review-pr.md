@@ -1,5 +1,5 @@
 ---
-description: Comprehensive PR review using specialized agents
+description: Comprehensive PR review using specialized agents (code-reviewer, comment-analyzer, pr-test-analyzer, silent-failure-hunter, type-design-analyzer, code-simplifier). Use for a multi-agent PR review pass; for the adversarially-verified Workflow pass use /orch-review, and for the standalone step-by-step checklist review use /code-review.
 ---
 
 Run a comprehensive multi-perspective review of a pull request.

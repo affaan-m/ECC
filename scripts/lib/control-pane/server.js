@@ -6,25 +6,13 @@ const path = require('path');
 const { spawn } = require('child_process');
 
 const { buildControlPaneAction } = require('./actions');
+const { captureActionOutput } = require('./action-output');
 const { buildControlPaneSnapshot, resolveControlPaneConfig } = require('./state');
 const { renderControlPaneHtml } = require('./ui');
 const { renderProximityVizHtml } = require('./proximity-viz');
 const { renderControlPlaneViewHtml } = require('./control-plane-view-ui');
 const { createControlPlaneViewSource } = require('./control-plane-view');
-const { claimWorkItem, moveWorkItem } = require('./work-item-mutations');
-
-// Run a single write against the local work-item store, then close it. Kept
-// thin so the loopback-only server can mutate the JIT board without holding a
-// long-lived handle.
-async function withStateStore(stateDbPath, fn) {
-  const { createStateStore } = require('../state-store');
-  const store = await createStateStore({ dbPath: stateDbPath });
-  try {
-    return await fn(store);
-  } finally {
-    store.close();
-  }
-}
+const { runWorkItemMutation } = require('./work-item-runner');
 
 // Host/Origin gating lives in scripts/lib/loopback-guard.js so every ECC
 // loopback server shares one hardened implementation; re-exported below to
@@ -111,12 +99,6 @@ async function readRequestJson(req) {
   return JSON.parse(raw);
 }
 
-function boundedOutput(value, limit = 20000) {
-  const text = String(value || '');
-  if (text.length <= limit) return text;
-  return `${text.slice(0, limit)}\n[truncated ${text.length - limit} chars]`;
-}
-
 function runAction(action, options = {}) {
   const timeoutMs = options.timeoutMs || 120000;
   return new Promise(resolve => {
@@ -126,8 +108,8 @@ function runAction(action, options = {}) {
       env: process.env,
       stdio: ['ignore', 'pipe', 'pipe']
     });
-    let stdout = '';
-    let stderr = '';
+    const readStdout = captureActionOutput(child.stdout);
+    const readStderr = captureActionOutput(child.stderr);
     let settled = false;
     const timeout = setTimeout(() => {
       if (!settled) {
@@ -135,12 +117,6 @@ function runAction(action, options = {}) {
       }
     }, timeoutMs);
 
-    child.stdout.on('data', chunk => {
-      stdout += chunk.toString('utf8');
-    });
-    child.stderr.on('data', chunk => {
-      stderr += chunk.toString('utf8');
-    });
     child.on('error', error => {
       settled = true;
       clearTimeout(timeout);
@@ -151,8 +127,8 @@ function runAction(action, options = {}) {
         finishedAt: new Date().toISOString(),
         code: null,
         error: error.message,
-        stdout: boundedOutput(stdout),
-        stderr: boundedOutput(stderr)
+        stdout: readStdout(),
+        stderr: readStderr()
       });
     });
     child.on('close', (code, signal) => {
@@ -165,8 +141,8 @@ function runAction(action, options = {}) {
         finishedAt: new Date().toISOString(),
         code,
         signal,
-        stdout: boundedOutput(stdout),
-        stderr: boundedOutput(stderr)
+        stdout: readStdout(),
+        stderr: readStderr()
       });
     });
   });
@@ -349,19 +325,25 @@ function createControlPaneServer(options = {}) {
         const id = decodeURIComponent((claimMatch || moveMatch)[1]);
         const body = await readRequestJson(req);
         try {
-          const result = await withStateStore(resolvedConfig.stateDbPath, store =>
+          const result = await runWorkItemMutation(resolvedConfig.stateDbPath,
+            claimMatch ? 'claim' : 'move',
             claimMatch
-              ? claimWorkItem(store, {
+              ? {
                   id,
                   owner: body.owner,
                   assigneeKind: body.as || body.assigneeKind,
                   sessionId: body.sessionId
-                })
-              : moveWorkItem(store, { id, lane: body.lane })
+                }
+              : { id, lane: body.lane }
           );
           sendJson(res, 200, { ok: true, ...result });
         } catch (mutationError) {
-          sendJson(res, 400, { ok: false, error: mutationError.message });
+          if (mutationError.code === 'STATE_STORE_BUSY') {
+            res.setHeader('Retry-After', '1');
+            sendJson(res, 503, { ok: false, code: mutationError.code, error: mutationError.message });
+          } else {
+            sendJson(res, 400, { ok: false, error: mutationError.message });
+          }
         }
         return;
       }

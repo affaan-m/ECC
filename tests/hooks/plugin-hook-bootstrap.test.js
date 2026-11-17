@@ -14,6 +14,7 @@ const SCRIPT = path.join(__dirname, '..', '..', 'scripts', 'hooks', 'plugin-hook
 const LIFECYCLE_SCRIPT = path.join(__dirname, '..', '..', 'scripts', 'hooks', 'lifecycle-hook-bootstrap.js');
 const { normalizePluginRootForPlatform, withComparisonInput } = require(SCRIPT);
 const { resolveTimeout } = require(LIFECYCLE_SCRIPT);
+const { resolveWindowsBashCandidates } = require('../../scripts/lib/windows-bash');
 
 function createTempDir() {
   return fs.mkdtempSync(path.join(os.tmpdir(), 'plugin-hook-bootstrap-'));
@@ -163,6 +164,33 @@ process.stdout.write(JSON.stringify({
       assert.deepStrictEqual(parsed.args, ['one', 'two']);
       assert.strictEqual(parsed.claudeRoot, root);
       assert.strictEqual(parsed.eccRoot, root);
+    } finally {
+      cleanup(root);
+    }
+  })) passed++; else failed++;
+
+  if (test('node mode runs run-with-flags.js in-process instead of spawning a second node', () => {
+    const root = createTempDir();
+    try {
+      writeFile(root, path.join('scripts', 'hooks', 'run-with-flags.js'), `
+module.exports.runHook = async (hookId, relScriptPath, profilesCsv, input) => ({
+  stdout: JSON.stringify({ pid: process.pid, hookId, relScriptPath, profilesCsv, raw: input.raw }),
+  exitCode: 2,
+});
+`);
+
+      const result = run(
+        ['node', path.join('scripts', 'hooks', 'run-with-flags.js'), 'pre:test', 'scripts/hooks/x.js', 'standard'],
+        { root, input: 'payload' }
+      );
+      const parsed = JSON.parse(result.stdout);
+
+      assert.strictEqual(result.status, 2, result.stderr);
+      assert.strictEqual(parsed.pid, result.pid);
+      assert.deepStrictEqual(
+        [parsed.hookId, parsed.relScriptPath, parsed.profilesCsv, parsed.raw],
+        ['pre:test', 'scripts/hooks/x.js', 'standard', 'payload']
+      );
     } finally {
       cleanup(root);
     }
@@ -464,6 +492,43 @@ process.exit(7);
         cleanup(root);
       }
       })) passed++; else failed++;
+
+      const [nativeBash] = resolveWindowsBashCandidates(['bash.exe']);
+      if (nativeBash && process.env.SystemRoot) {
+        if (test('shell mode runs .sh with native bash when the System32 WSL launcher is earlier on PATH', () => {
+        const root = createTempDir();
+        try {
+          writeFile(root, path.join('scripts', 'hook.sh'), [
+            'input=$(cat)',
+            'printf "sh:%s:%s" "$1" "$input"',
+            '',
+          ].join('\n'));
+
+          // A bare `bash.exe` resolves to System32\bash.exe here, which starts
+          // WSL and cannot open the Windows script path (exit 127).
+          const result = run(['shell', path.join('scripts', 'hook.sh'), 'arg'], {
+            root,
+            input: 'payload',
+            env: {
+              BASH: '',
+              PATH: [
+                `${process.env.SystemRoot}\\System32\\WindowsPowerShell\\v1.0`,
+                `${process.env.SystemRoot}\\System32`,
+                path.dirname(nativeBash),
+              ].join(';'),
+            },
+          });
+
+          assert.strictEqual(result.status, 0, result.stderr);
+          assert.strictEqual(result.stdout, 'sh:arg:payload');
+        } finally {
+          cleanup(root);
+        }
+        })) passed++; else failed++;
+      } else {
+        skipped += 1;
+        console.log('  SKIP 1 Windows WSL-launcher test: no native bash.exe on PATH');
+      }
     }
   }
 

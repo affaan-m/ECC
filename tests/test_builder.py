@@ -25,6 +25,15 @@ class TestPromptBuilder:
         assert len(result) == 2
         assert result[0].role == Role.SYSTEM
 
+    def test_build_rejects_structured_system_content(self):
+        messages = [
+            Message(role=Role.SYSTEM, content=[{"type": "text", "text": "Rules"}]),
+            Message(role=Role.USER, content="Hello"),
+        ]
+
+        with pytest.raises(TypeError, match="system messages must contain text"):
+            PromptBuilder().build(messages)
+
     def test_build_adds_system_from_keyword_options(self):
         messages = [Message(role=Role.USER, content="Hello")]
         builder = PromptBuilder(system_template="You are a pirate.")

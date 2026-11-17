@@ -3,7 +3,6 @@
 const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
-const Ajv = require('ajv');
 const { SUPPORTED_INSTALL_TARGETS } = require('./install-manifests');
 
 const DEFAULT_REPO_ROOT = path.resolve(__dirname, '../..');
@@ -187,6 +186,8 @@ const schemaValidators = new Map();
 function validateSchema(value, schemaName) {
   if (!schemaValidators.has(schemaName)) {
     const schema = JSON.parse(fs.readFileSync(path.join(DEFAULT_REPO_ROOT, 'schemas', schemaName), 'utf8'));
+    // Loaded on first validation: prompt-time readers never validate schemas.
+    const Ajv = require('ajv');
     schemaValidators.set(schemaName, new Ajv({ allErrors: true, strict: true }).compile(schema));
   }
   const validate = schemaValidators.get(schemaName);

@@ -75,16 +75,23 @@ function readHarnessCost(sessionId, maxAgeSeconds) {
 }
 
 // Approximate per-1M-token billing rates (USD).
-// Cache creation: 1.25x input rate. Cache read: 0.1x input rate.
+// Five-minute cache creation: 1.25x input rate. Cache read: usually 0.1x;
+// Opus/Sonnet 5.5 use 0.05x. The harness cost remains authoritative for 1h writes.
 // Source: https://platform.claude.com/docs/en/about-claude/pricing
 // Current-generation list prices: Fable/Mythos 5 $10/$50, Opus 5 and
 // Opus 4.5-4.8 $5/$25, Sonnet 5 $2/$10, Sonnet 4.6 $3/$15, and Haiku 4.5
 // $1/$5. Opus 4.0/4.1 and Opus 3 stay on the legacy $15/$75 tier.
+// Opus 5.5 is $4/$20; Haiku 5.5 is $0.10/$0.50 at <=100K prompt tokens
+// and $0.50/$2.50 above 100K. Sonnet 5.5 retains $2/$10 with $0.10 cache reads.
 const RATE_TABLE = {
   haiku:      { in: 1.00,  out: 5.0,  cacheWrite: 1.25,  cacheRead: 0.10 },
+  haiku55:    { in: 0.10,  out: 0.5,  cacheWrite: 0.125, cacheRead: 0.01 },
+  haiku55Long: { in: 0.50, out: 2.5,  cacheWrite: 0.625, cacheRead: 0.05 },
   sonnet:     { in: 3.00,  out: 15.0, cacheWrite: 3.75,  cacheRead: 0.30 },
   sonnet5:    { in: 2.00,  out: 10.0, cacheWrite: 2.50,  cacheRead: 0.20 },
+  sonnet55:   { in: 2.00,  out: 10.0, cacheWrite: 2.50,  cacheRead: 0.10 },
   opus:       { in: 5.00,  out: 25.0, cacheWrite: 6.25,  cacheRead: 0.50 },
+  opus55:     { in: 4.00,  out: 20.0, cacheWrite: 5.00, cacheRead: 0.20 },
   opusLegacy: { in: 15.00, out: 75.0, cacheWrite: 18.75, cacheRead: 1.50 },
   fable:      { in: 10.00, out: 50.0, cacheWrite: 12.50, cacheRead: 1.00 }
 };
@@ -93,12 +100,19 @@ const RATE_TABLE = {
 // substring check alone misses `claude-opus-4-20250514`.
 const LEGACY_OPUS_RE = /3-opus|opus-4-0(?!\d)|opus-4-1(?!\d)|opus-4[-@]\d{8}/;
 
-function getRates(model) {
+function getRates(model, usage = {}) {
   const m = String(model || '').toLowerCase();
   if (m.includes('fable') || m.includes('mythos')) return RATE_TABLE.fable;
+  if (/(?:^|[^a-z0-9])haiku-5-5(?:[^a-z0-9]|$)/.test(m)) {
+    const promptTokens = toNumber(usage.input_tokens) +
+      toNumber(usage.cache_creation_input_tokens) + toNumber(usage.cache_read_input_tokens);
+    return promptTokens > 100000 ? RATE_TABLE.haiku55Long : RATE_TABLE.haiku55;
+  }
   if (m.includes('haiku')) return RATE_TABLE.haiku;
+  if (/(?:^|[^a-z0-9])sonnet-5-5(?:[^a-z0-9]|$)/.test(m)) return RATE_TABLE.sonnet55;
   if (isSonnet5(m)) return RATE_TABLE.sonnet5;
   if (LEGACY_OPUS_RE.test(m)) return RATE_TABLE.opusLegacy;
+  if (/(?:^|[^a-z0-9])opus-5-5(?:[^a-z0-9]|$)/.test(m)) return RATE_TABLE.opus55;
   if (m.includes('opus'))  return RATE_TABLE.opus;
   return RATE_TABLE.sonnet;
 }
@@ -160,7 +174,11 @@ function sumUsageFromTranscript(transcriptPath) {
     const key = (typeof msg.id === 'string' && msg.id)
       ? msg.id
       : `__line_${++syntheticKey}`;
-    usageById.set(key, msg.usage);
+    const previous = usageById.get(key);
+    const requestModel = msg.model && msg.model !== 'unknown'
+      ? msg.model
+      : previous && previous.model;
+    usageById.set(key, { usage: msg.usage, model: requestModel });
 
     if (msg.model && msg.model !== 'unknown') model = msg.model;
   }
@@ -169,17 +187,25 @@ function sumUsageFromTranscript(transcriptPath) {
   let outputTokens = 0;
   let cacheWriteTokens = 0;
   let cacheReadTokens = 0;
+  let costUsd = 0;
 
-  for (const u of usageById.values()) {
+  for (const entry of usageById.values()) {
+    const u = entry.usage;
+    const rates = getRates(entry.model && entry.model !== 'unknown' ? entry.model : model, u);
     inputTokens      += toNumber(u.input_tokens);
     outputTokens     += toNumber(u.output_tokens);
     cacheWriteTokens += toNumber(u.cache_creation_input_tokens);
     cacheReadTokens  += toNumber(u.cache_read_input_tokens);
+    // Long-prompt pricing applies per API request, not to session totals.
+    costUsd += (toNumber(u.input_tokens) * rates.in + toNumber(u.output_tokens) * rates.out +
+      toNumber(u.cache_creation_input_tokens) * rates.cacheWrite +
+      toNumber(u.cache_read_input_tokens) * rates.cacheRead) / 1e6;
   }
 
-  return normalizeUsageTotals({
-    inputTokens, outputTokens, cacheWriteTokens, cacheReadTokens, model
-  });
+  return {
+    ...normalizeUsageTotals({ inputTokens, outputTokens, cacheWriteTokens, cacheReadTokens, model }),
+    costUsd: toNumber(costUsd)
+  };
 }
 
 // 1MB, matching the other Stop hooks. The Stop payload carries
@@ -227,13 +253,7 @@ process.stdin.on('end', () => {
       model = 'unknown'
     } = usageTotals || {};
 
-    const rates = getRates(model);
-    const transcriptCostUsd = Math.round((
-      (inputTokens      / 1e6) * rates.in +
-      (outputTokens     / 1e6) * rates.out +
-      (cacheWriteTokens / 1e6) * rates.cacheWrite +
-      (cacheReadTokens  / 1e6) * rates.cacheRead
-    ) * 1e6) / 1e6;
+    const transcriptCostUsd = Math.round((usageTotals ? usageTotals.costUsd : 0) * 1e6) / 1e6;
 
     // Prefer the harness's authoritative `cost.total_cost_usd` when the
     // statusline has written it to the per-session cache (see contract in

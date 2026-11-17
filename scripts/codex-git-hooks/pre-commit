@@ -36,10 +36,21 @@ scan_added_lines() {
     return 0
   fi
 
-  if hits="$(printf '%s\n' "$added_lines" | rg -n --pcre2 "$regex" 2>/dev/null)"; then
+  if ! command -v rg >/dev/null 2>&1; then
+    printf '[ECC pre-commit] ripgrep (rg) is required for secret scanning; install it and ensure it is on PATH when Git runs the hook.\n' >&2
+    exit 1
+  fi
+
+  if hits="$(printf '%s\n' "$added_lines" | rg -n --pcre2 -- "$regex" 2>/dev/null)"; then
     printf '\n[ECC pre-commit] Potential secret detected (%s) in %s\n' "$name" "$file" >&2
     printf '%s\n' "$hits" | head -n 3 >&2
     has_findings=1
+  else
+    local scan_status=$?
+    if [[ "$scan_status" -ne 1 ]]; then
+      printf '[ECC pre-commit] Secret scanner failed (rg exit %s) for %s; commit blocked because scanning could not complete.\n' "$scan_status" "$file" >&2
+      exit 1
+    fi
   fi
 }
 
@@ -56,7 +67,7 @@ while IFS= read -r file; do
   scan_added_lines "$file" "GitHub classic token" 'ghp_[A-Za-z0-9]{36}'
   scan_added_lines "$file" "GitHub fine-grained token" 'github_pat_[A-Za-z0-9_]{20,}'
   scan_added_lines "$file" "AWS access key" 'AKIA[0-9A-Z]{16}'
-  scan_added_lines "$file" "private key block" '-----BEGIN (RSA|EC|OPENSSH|DSA|PRIVATE) KEY-----'
+  scan_added_lines "$file" "private key block" '-----BEGIN (RSA |EC |OPENSSH |DSA |ENCRYPTED )?PRIVATE KEY-----'
   scan_added_lines "$file" "generic credential assignment" "(?i)\\b(api[_-]?key|secret|password|token)\\b\\s*[:=]\\s*['\\\"][^'\\\"]{12,}['\\\"]"
 done <<< "$staged_files"
 

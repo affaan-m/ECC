@@ -20,6 +20,7 @@
 
 const crypto = require('crypto');
 const { isElevatedPowerShellCommand } = require('../lib/powershell-destructive-command');
+const { getToolResultText } = require('./hook-input');
 
 const MAX_STDIN = 1024 * 1024;
 let destructiveCommandClassifier = null;
@@ -165,7 +166,7 @@ function emitGovernanceEvent(event) {
 /**
  * Analyze a hook input payload and return governance events to capture.
  *
- * @param {Object} input - Parsed hook input (tool_name, tool_input, tool_output)
+ * @param {Object} input - Parsed hook input (tool_name, tool_input, tool_response)
  * @param {Object} [context] - Additional context (sessionId, hookPhase)
  * @returns {Array<Object>} Array of governance event objects
  */
@@ -177,7 +178,7 @@ function analyzeForGovernanceEvents(input, context = {}) {
     ? 'PowerShell'
     : normalizedToolName === 'bash' ? 'Bash' : rawToolName;
   const toolInput = input.tool_input || {};
-  const toolOutput = typeof input.tool_output === 'string' ? input.tool_output : '';
+  const toolOutput = getToolResultText(input);
   const sessionId = context.sessionId || null;
   const hookPhase = context.hookPhase || 'unknown';
 

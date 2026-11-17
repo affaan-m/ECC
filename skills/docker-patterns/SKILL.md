@@ -409,12 +409,51 @@ docker compose -p ecc-plugin-session \
 Host credentials are absent by default and credential directories are never
 mounted. The default service also has no network access. When an authenticated
 provider session genuinely needs a network, build `real-cli` first and then opt
-in visibly with `docker compose --profile networked run real-cli-networked
-shell`. Prefer authenticating inside that disposable session. If a CI run must
+in visibly with `docker compose -f docker/plugin-setup/compose.yaml
+--profile networked run --service-ports real-cli-networked shell`. The
+`--service-ports` flag publishes the service's loopback callback mapping.
+Prefer authenticating inside that disposable session. If a CI run must
 inherit a host environment credential, make that opt-in at invocation with an
 explicit Compose `--env NAME` flag, understand that the value is inspectable
 and can be exfiltrated for the container lifetime, and remove the exact named
 container immediately after.
+
+### Authenticate Codex Inside the Networked Session
+
+`codex login` binds its OAuth callback server to `127.0.0.1:1455` inside the
+container. A Docker port publish forwards to the container interface, not
+loopback, so the host browser's redirect to `http://localhost:1455` is refused
+without a bridge. The `real-cli-networked` service publishes host
+`127.0.0.1:1455` to container port `1456`; bridge that port to loopback before
+logging in:
+
+```bash
+(
+  set -e
+  npm install --global @openai/codex@0.162.0   # the harness image does not ship codex
+  node /ecc/docker/plugin-setup/codex-auth-relay.js &
+  relay_pid=$!
+  trap 'kill "$relay_pid" 2>/dev/null || true; wait "$relay_pid" 2>/dev/null || true' EXIT
+  codex login
+)
+```
+
+The networked service sets `NPM_CONFIG_PREFIX=/tmp/ecc-npm` and adds its `bin`
+directory to `PATH`. This keeps the pinned installation writable for UID 1000
+on the executable `/tmp` mount while the root filesystem remains read-only.
+
+Complete the sign-in in the host browser. Each attempt mints a fresh
+`state`/`code`, so always follow the newest printed link. The token stays in
+the disposable container's `~/.codex/auth.json`; removing the named container
+deletes that credential copy. The login block stops the relay on success or failure.
+Only one container can hold host port 1455 at a time
+because the OAuth redirect targets a fixed port.
+
+The host publish is restricted to loopback. Inside the container, the relay
+listens on all interfaces so Docker can forward to it; other containers on the
+same bridge network can reach it while it runs. Use a dedicated network without
+untrusted peers for this login, and remove the exact named container after use.
+Idle callback connections close after 30 seconds.
 
 Run the same focused suite natively on the host:
 

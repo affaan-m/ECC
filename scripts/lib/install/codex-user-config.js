@@ -4,14 +4,16 @@ const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
 const { assertWithinTrustedRoot } = require('../path-safety');
+const { sameFileIdentity } = require('./claude-settings-lock');
 
 function isCodexUserConfig(plan, operation) {
-  if (plan.adapter.id !== 'codex-home' || operation.kind !== 'copy-file') {
+  if (!plan.adapter || plan.adapter.id !== 'codex-home' || operation.kind !== 'copy-file') {
     return false;
   }
   const relativePath = path.relative(plan.targetRoot, operation.destinationPath);
   const name = process.platform === 'win32' ? relativePath.toLowerCase() : relativePath;
-  return name === 'config.toml' || name === (process.platform === 'win32' ? 'agents.md' : 'AGENTS.md');
+  return name === 'config.toml' || name === 'strict.config.toml' || name === 'yolo.config.toml'
+    || name === (process.platform === 'win32' ? 'agents.md' : 'AGENTS.md');
 }
 
 function readConfigDigest(plan, destinationPath) {
@@ -22,7 +24,7 @@ function readConfigDigest(plan, destinationPath) {
     const opened = fs.fstatSync(descriptor, { bigint: true });
     const current = fs.lstatSync(destinationPath, { bigint: true });
     if (!opened.isFile() || !current.isFile() || current.isSymbolicLink()
-      || opened.ino !== current.ino || opened.dev !== current.dev) {
+      || !sameFileIdentity(opened, current)) {
       throw new Error(`Refusing to inspect changed Codex configuration: ${destinationPath}`);
     }
     assertWithinTrustedRoot(destinationPath, plan.targetRoot, 'inspect Codex user configuration');

@@ -171,4 +171,4 @@ src/
 
 ---
 
-*[Everything Claude Code](https://github.com/affaan-m/everything-claude-code)の一部*
+*[ECC](https://github.com/affaan-m/ECC)の一部*
