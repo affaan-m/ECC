@@ -136,8 +136,16 @@ function createGitRunner(repoRoot, runImpl = defaultRunImpl) {
         return { conflicted: true, files, method: 'merge-tree' };
       }
 
-      // Fallback to the legacy form (older Git): conflict markers in output.
-      const legacy = run(['merge-tree', baseBranch, baseBranch, branch]);
+      // The legacy form needs the common ancestor, not the current base tip.
+      // Using baseBranch twice makes its edits disappear from the comparison.
+      const ancestor = run(['merge-base', baseBranch, branch]);
+      if (ancestor.status !== 0 || !(ancestor.stdout || '').trim()) {
+        throw new Error(`Unable to determine merge base: ${(ancestor.stderr || '').trim() || 'no common ancestor'}`);
+      }
+      const legacy = run(['merge-tree', ancestor.stdout.trim(), baseBranch, branch]);
+      if (legacy.status !== 0) {
+        throw new Error(`Unable to predict legacy merge conflicts: ${(legacy.stderr || '').trim() || `git exited with status ${legacy.status}`}`);
+      }
       const hasMarkers = /^<{7}|^={7}|^>{7}/m.test(legacy.stdout || '')
         || /\+<{7}|changed in both/m.test(legacy.stdout || '');
       return { conflicted: hasMarkers, files: [], method: 'merge-tree-legacy' };
