@@ -59,19 +59,16 @@ const SECRET_PATTERNS = Object.freeze([
   { label: 'private key', pattern: /-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----/ },
 ]);
 
+// All forbidden code points are in the BMP. Test them directly without
+// allocating a character array for every memory body read during recall.
+// eslint-disable-next-line no-control-regex
+const UNSAFE_CONTROLS = /[\x00-\x1f\x7f-\x9f\u202a-\u202e\u2066-\u2069]/u;
+// Bodies additionally permit tab, LF, and CR; metadata and queries do not.
+// eslint-disable-next-line no-control-regex
+const UNSAFE_BODY_CONTROLS = /[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f\u202a-\u202e\u2066-\u2069]/u;
+
 function hasUnsafeControlCharacters(value, allowBodyWhitespace = false) {
-  return Array.from(value).some(character => {
-    const codePoint = character.codePointAt(0);
-    const allowedWhitespace = allowBodyWhitespace
-      && (codePoint === 0x09 || codePoint === 0x0a || codePoint === 0x0d);
-    const isControl = (codePoint <= 0x1f && !allowedWhitespace)
-      || (codePoint >= 0x7f && codePoint <= 0x9f);
-    const isBidirectionalFormatting = (
-      (codePoint >= 0x202a && codePoint <= 0x202e)
-      || (codePoint >= 0x2066 && codePoint <= 0x2069)
-    );
-    return isControl || isBidirectionalFormatting;
-  });
+  return (allowBodyWhitespace ? UNSAFE_BODY_CONTROLS : UNSAFE_CONTROLS).test(value);
 }
 
 function asNonEmptyString(value, label, maxChars = 10_000) {
