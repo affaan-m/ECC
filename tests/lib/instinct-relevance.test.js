@@ -47,6 +47,45 @@ function writeFile(dir, name, content) {
   fs.writeFileSync(path.join(dir, name), content);
 }
 
+function runAliasTests() {
+  let passed = 0;
+  let failed = 0;
+
+  if (test('detected stacks match the language and framework names used in instincts', () => {
+    const cases = [
+      ['go.mod', 'module example.com/app', { trigger: 'when writing Go tests' }],
+      ['next.config.ts', 'export default {};', { trigger: 'when editing Next.js routes' }],
+      ['nest-cli.json', '{}', { stack: 'Nest.js' }],
+      ['app.csproj', '<Project />', { domain: 'C#' }],
+      ['app.fsproj', '<Project />', { trigger: 'when refactoring F# functions' }],
+    ];
+    for (const [name, content, instinct] of cases) {
+      const dir = createTempDir();
+      try {
+        writeFile(dir, name, content);
+        const keywords = detectStackKeywords(dir);
+        assert.strictEqual(instinctMatchesStack(instinct, keywords), true, name);
+        const relevant = 0.75 + computeRelevanceBoost(instinct, keywords);
+        const unrelated = 0.9 + computeRelevanceBoost({ domain: 'terraform' }, keywords);
+        assert.ok(relevant > unrelated, `${name} should retain the relevant instinct`);
+      } finally {
+        cleanupDir(dir);
+      }
+    }
+  })) passed++; else failed++;
+
+  if (test('punctuated language aliases do not collapse into C or partial framework names', () => {
+    assert.strictEqual(instinctMatchesStack({ domain: 'C#' }, new Set(['c'])), false);
+    assert.strictEqual(instinctMatchesStack({ domain: 'F#' }, new Set(['csharp'])), false);
+    assert.strictEqual(instinctMatchesStack({ domain: 'C' }, new Set(['csharp'])), false);
+    assert.strictEqual(instinctMatchesStack({ trigger: 'edit next.json' }, new Set(['nextjs'])), false);
+    assert.strictEqual(instinctMatchesStack({ trigger: 'nest.json settings' }, new Set(['nestjs'])), false);
+    assert.strictEqual(instinctMatchesStack({ trigger: 'good practices' }, new Set(['golang'])), false);
+  })) passed++; else failed++;
+
+  return { passed, failed };
+}
+
 function runTests() {
   let passed = 0;
   let failed = 0;
@@ -144,6 +183,10 @@ function runTests() {
     const kw = new Set(['go']);
     assert.strictEqual(instinctMatchesStack({ domain: 'good practices' }, kw), false);
   })) passed++; else failed++;
+
+  const aliasResults = runAliasTests();
+  passed += aliasResults.passed;
+  failed += aliasResults.failed;
 
   if (test('instinctMatchesStack is false with empty keyword set or fields', () => {
     assert.strictEqual(instinctMatchesStack({ domain: 'terraform' }, new Set()), false);
