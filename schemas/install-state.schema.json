@@ -114,6 +114,16 @@
             "declined",
             null
           ]
+        },
+        "trust": {
+          "type": "boolean"
+        },
+        "consentMcp": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
         }
       }
     },
@@ -151,6 +161,12 @@
       ],
       "properties": {
         "repoVersion": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "repoUrl": {
           "type": [
             "string",
             "null"
@@ -213,9 +229,86 @@
           "contentSha256": {
             "type": "string",
             "pattern": "^[a-fA-F0-9]{64}$"
+          },
+          "managedHooks": {
+            "type": "object",
+            "minProperties": 1,
+            "propertyNames": {
+              "type": "string",
+              "pattern": "\\S"
+            },
+            "additionalProperties": {
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "type": "object",
+                "required": ["id", "hooks"],
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "pattern": "\\S"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "allOf": [
+          {
+            "if": {
+              "properties": {
+                "kind": { "const": "update-claude-settings" }
+              }
+            },
+            "then": {
+              "required": ["managedHooks"],
+              "anyOf": [
+                {
+                  "properties": {
+                    "moduleId": { "const": "hooks-runtime" },
+                    "sourceRelativePath": { "const": "hooks/hooks.json" }
+                  }
+                },
+                {
+                  "properties": {
+                    "moduleId": { "const": "config-health" },
+                    "sourceRelativePath": {
+                      "const": "manifests/install-assets/config-health-hooks.json"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        ]
+      }
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "operations": {
+            "contains": {
+              "type": "object",
+              "properties": {
+                "kind": { "const": "update-claude-settings" }
+              },
+              "required": ["kind"]
+            }
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "target": {
+            "properties": {
+              "target": { "enum": ["claude", "claude-project"] }
+            },
+            "required": ["target"]
           }
         }
       }
     }
-  }
+  ]
 }

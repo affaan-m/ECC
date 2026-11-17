@@ -1,0 +1,6 @@
+# Dependencies for uploads.rb, which exercises the skills/rails-security upload verifier
+# against a real Active Storage lifecycle. 7.1 is the Rails floor the skill advertises.
+source "https://rubygems.org"
+
+gem "rails", ">= 7.1", "< 9.0"
+gem "sqlite3"

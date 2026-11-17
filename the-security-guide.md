@@ -1,6 +1,6 @@
 # The Shorthand Guide to Everything Agentic Security
 
-_everything claude code / research / security_
+_ecc / research / security_
 
 ---
 
@@ -454,10 +454,10 @@ Scan your setup: [github.com/affaan-m/agentshield](https://github.com/affaan-m/a
 
 If you haven't read the previous guides, start here:
 
-> [The Shorthand Guide to Everything Claude Code](https://x.com/affaanmustafa/status/2012378465664745795)
+> [The Shorthand Guide to ECC](https://x.com/affaanmustafa/status/2012378465664745795)
 >
-> [The Longform Guide to Everything Claude Code](https://x.com/affaanmustafa/status/2014040193557471352)
+> [The Longform Guide to ECC](https://x.com/affaanmustafa/status/2014040193557471352)
 
 go do that and also save these repos:
-- [github.com/affaan-m/everything-claude-code](https://github.com/affaan-m/everything-claude-code)
+- [github.com/affaan-m/ECC](https://github.com/affaan-m/ECC)
 - [github.com/affaan-m/agentshield](https://github.com/affaan-m/agentshield)

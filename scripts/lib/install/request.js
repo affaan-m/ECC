@@ -4,6 +4,7 @@ const { validateInstallModuleIds, LOCALE_ALIAS_TO_COMPONENT_ID, listSupportedLoc
 const { resolveHookConsentFlags } = require('./hook-consent');
 
 const LEGACY_INSTALL_TARGETS = ['claude', 'claude-project', 'cursor', 'antigravity'];
+const LOCALE_COMPONENT_IDS = new Set(Object.values(LOCALE_ALIAS_TO_COMPONENT_ID));
 
 function dedupeStrings(values) {
   return [...new Set((Array.isArray(values) ? values : []).map(value => String(value).trim()).filter(Boolean))];
@@ -31,6 +32,10 @@ function parseInstallArgs(argv) {
     locale: null,
     enableHooks: false,
     noHooks: false,
+    trust: false,
+    consentHooks: false,
+    consentMcp: [],
+    sourceSha: null,
   };
 
   for (let index = 0; index < args.length; index += 1) {
@@ -75,6 +80,20 @@ function parseInstallArgs(argv) {
       parsed.enableHooks = true;
     } else if (arg === '--no-hooks') {
       parsed.noHooks = true;
+    } else if (arg === '--trust') {
+      parsed.trust = true;
+    } else if (arg === '--consent-hooks') {
+      parsed.consentHooks = true;
+    } else if (arg === '--consent-mcp') {
+      parsed.consentMcp = dedupeStrings((args[index + 1] || '').split(','));
+      index += 1;
+    } else if (arg === '--source-sha') {
+      const sourceSha = args[index + 1] || '';
+      if (!sourceSha || sourceSha.startsWith('-')) {
+        throw new Error('Missing value for --source-sha');
+      }
+      parsed.sourceSha = sourceSha;
+      index += 1;
     } else if (arg === '--dry-run') {
       parsed.dryRun = true;
     } else if (arg === '--json') {
@@ -88,6 +107,12 @@ function parseInstallArgs(argv) {
     }
   }
 
+  const dryRunEnv = process.env.ECC_DRY_RUN;
+  if (dryRunEnv !== undefined && dryRunEnv !== '0' && dryRunEnv !== '1') {
+    throw new Error('ECC_DRY_RUN must be "1" or "0" when set');
+  }
+  parsed.dryRun = parsed.dryRun || dryRunEnv === '1';
+
   return parsed;
 }
 
@@ -97,6 +122,7 @@ function normalizeInstallRequest(options = {}) {
     : null;
   const profileId = options.profileId || config?.profileId || null;
   const target = options.target || config?.target || 'claude';
+  const supportsLocale = target === 'claude' || target === 'claude-project';
   const moduleIds = validateInstallModuleIds(
     dedupeStrings([...(config?.moduleIds || []), ...(options.moduleIds || [])])
   );
@@ -107,7 +133,7 @@ function normalizeInstallRequest(options = {}) {
       `Unsupported locale: "${locale}". Supported locales: ${listSupportedLocales().join(', ')}`
     );
   }
-  if (locale && target !== 'claude' && target !== 'claude-project') {
+  if (locale && !supportsLocale) {
     throw new Error('--locale can only be used with --target claude or --target claude-project');
   }
   const requestedIncludeComponentIds = dedupeStrings([
@@ -126,14 +152,24 @@ function normalizeInstallRequest(options = {}) {
     ...(Array.isArray(options.legacyLanguages) ? options.legacyLanguages : []),
     ...(Array.isArray(options.languages) ? options.languages : []),
   ]).map(language => language.toLowerCase()));
-  const hookConsent = resolveHookConsentFlags(options);
+  const hookConsent = resolveHookConsentFlags({
+    ...options,
+    enableHooks: options.enableHooks === true || options.consentHooks === true,
+  });
+  const trust = options.trust === true;
+  const consentMcp = dedupeStrings(options.consentMcp || []);
+  const sourceSha = options.sourceSha || null;
+  if (sourceSha && (target !== 'grok' || !/^[0-9a-f]{40}$/.test(sourceSha))) {
+    throw new Error('--source-sha requires --target grok and a 40-character lowercase commit SHA');
+  }
   if (hookConsent === 'declined' && moduleIds.includes('hooks-runtime')) {
     throw new Error('--no-hooks cannot be combined with an explicit hooks-runtime module selection');
   }
   const hasManifestBaseSelection = Boolean(profileId) || moduleIds.length > 0 || includeComponentIds.length > 0;
   const hasNonLocaleManifestSelection = Boolean(profileId)
     || moduleIds.length > 0
-    || requestedIncludeComponentIds.length > 0
+    // Install-state persists --locale as a component; auto-update replays it via --with.
+    || requestedIncludeComponentIds.some(id => !supportsLocale || !LOCALE_COMPONENT_IDS.has(id))
     || excludeComponentIds.length > 0;
   const usingManifestMode = hasManifestBaseSelection || excludeComponentIds.length > 0;
 
@@ -158,6 +194,9 @@ function normalizeInstallRequest(options = {}) {
     excludeComponentIds,
     legacyLanguages,
     hookConsent,
+    trust,
+    consentMcp,
+    sourceSha,
     configPath: config?.path || options.configPath || null,
   };
 }

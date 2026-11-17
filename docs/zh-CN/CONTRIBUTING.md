@@ -1,4 +1,4 @@
-# 为 Everything Claude Code 做贡献
+# 为 ECC 做贡献
 
 感谢您想要贡献！这个仓库是 Claude Code 用户的社区资源。
 
@@ -59,8 +59,8 @@
 
 ```bash
 # 1. Fork and clone
-gh repo fork affaan-m/everything-claude-code --clone
-cd everything-claude-code
+gh repo fork affaan-m/ECC --clone
+cd ECC
 
 # 2. Create a branch
 git checkout -b feat/my-contribution
@@ -309,7 +309,7 @@ commands/your-command.md
 
 ### 命令模板
 
-```markdown
+````markdown
 ---
 description: 在 /help 中显示的简要描述
 ---
@@ -338,7 +338,7 @@ description: 在 /help 中显示的简要描述
 
 用户将收到的内容。
 
-```
+````
 
 ### 命令示例
 
@@ -457,7 +457,7 @@ docs: 完善贡献指南
 
 ## 有问题吗？
 
-* **问题：** [github.com/affaan-m/everything-claude-code/issues](https://github.com/affaan-m/everything-claude-code/issues)
+* **问题：** [github.com/affaan-m/ECC/issues](https://github.com/affaan-m/ECC/issues)
 * **X/Twitter：** [@affaanmustafa](https://x.com/affaanmustafa)
 
 ***

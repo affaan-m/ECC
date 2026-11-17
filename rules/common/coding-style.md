@@ -31,6 +31,11 @@ Rationale: Immutable data prevents hidden side effects, makes debugging easier, 
 - Do not build features or abstractions before they are needed
 - Avoid speculative generality
 - Start simple, then refactor when the pressure is real
+- No speculative abstraction before the second caller: no interface extracted
+  from a single implementation, no factory for one product, no config option
+  for a value that never varies. A deliberate boundary is not speculative: a
+  repository interface that isolates business logic from storage (see
+  `patterns.md`) earns its place at the first implementation
 
 ## File Organization
 
@@ -59,11 +64,17 @@ ALWAYS validate at system boundaries:
 
 ## Naming Conventions
 
-- Variables and functions: `camelCase` with descriptive names
-- Booleans: prefer `is`, `has`, `should`, or `can` prefixes
-- Interfaces, types, and components: `PascalCase`
-- Constants: `UPPER_SNAKE_CASE`
-- Custom hooks: `camelCase` with a `use` prefix
+> **Language note**: This rule may be overridden by language-specific rules for
+> languages where a pattern is not idiomatic. Casing and framework-specific
+> prefixes belong to the applicable language or package rule.
+
+Language-independent:
+
+- Descriptive names: the name says what the thing holds or does, without a comment.
+- Boolean names read clearly as claims under the applicable language or package
+  convention.
+- Where the language draws the distinction, constants and types are visually
+  distinct from ordinary values in the form its language or package rule defines.
 
 ## Code Smells to Avoid
 

@@ -49,6 +49,17 @@ function resolvePowerShellCommand() {
     });
 
     if (!result.error && result.status === 0) {
+      try {
+        const whereCmd = process.platform === 'win32' ? 'where.exe' : 'which';
+        const resolved = execFileSync(whereCmd, [candidate], { encoding: 'utf8', stdio: ['pipe', 'pipe', 'ignore'] })
+          .trim()
+          .split(/\r?\n/)[0];
+        if (resolved && fs.existsSync(resolved)) {
+          return fs.realpathSync.native ? fs.realpathSync.native(resolved) : fs.realpathSync(resolved);
+        }
+      } catch {
+        // fallback to candidate name if resolving full path fails
+      }
       return candidate;
     }
   }
@@ -57,14 +68,25 @@ function resolvePowerShellCommand() {
 }
 
 function run(powerShellCommand, args = [], options = {}) {
-  const env = {
+  const baseEnv = {
     ...process.env,
     HOME: options.homeDir || process.env.HOME,
     USERPROFILE: options.homeDir || process.env.USERPROFILE,
   };
 
+  const env = options.env
+    ? Object.fromEntries([
+        ...Object.entries(baseEnv).filter(([k]) => {
+          const lowerKey = k.toLowerCase();
+          return !Object.keys(options.env).some((overrideKey) => overrideKey.toLowerCase() === lowerKey);
+        }),
+        ...Object.entries(options.env),
+      ])
+    : baseEnv;
+
   try {
-    const stdout = execFileSync(powerShellCommand, ['-NoLogo', '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', SCRIPT, ...args], {
+    const scriptToRun = options.script || SCRIPT;
+    const stdout = execFileSync(powerShellCommand, ['-NoLogo', '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', scriptToRun, ...args], {
       cwd: options.cwd,
       env,
       encoding: 'utf8',
@@ -158,6 +180,207 @@ function runTests() {
       result.stdout.includes('claude       (default) - Install ECC into ~/.claude/'),
       'help text should describe the Claude target as a full ~/.claude install surface'
     );
+  })) passed++; else failed++;
+
+  if (!powerShellCommand) {
+    console.log('  - skipped missing Node.js preflight test; PowerShell is not available in PATH');
+  } else if (test('rejects execution when Node.js is missing from PATH with actionable message', () => {
+    const isolatedDir = createTempDir('install-ps1-no-node-');
+    try {
+      const pPath = [
+        isolatedDir,
+        process.env.SystemRoot ? path.join(process.env.SystemRoot, 'System32') : '',
+      ].filter(Boolean).join(path.delimiter);
+
+      const result = run(powerShellCommand, ['--help'], {
+        env: {
+          PATH: pPath,
+          SystemRoot: process.env.SystemRoot || 'C:\\Windows',
+        },
+      });
+
+      assert.notStrictEqual(result.code, 0, 'installer should fail when node is absent');
+      const combinedOutput = `${result.stdout}\n${result.stderr}`;
+      assert.ok(
+        combinedOutput.includes('[ECC] Node.js is required but was not found in PATH'),
+        `error output should explain missing Node.js requirement:\n${combinedOutput}`
+      );
+    } finally {
+      cleanup(isolatedDir);
+    }
+  })) passed++; else failed++;
+
+  if (!powerShellCommand) {
+    console.log('  - skipped outdated Node.js preflight test; PowerShell is not available in PATH');
+  } else if (test('rejects execution when Node.js version is older than 18', () => {
+    const UNSUPPORTED_NODE_VERSION = 'v16.20.0';
+    const mockBinDir = createTempDir('install-ps1-mock-node-');
+    try {
+      if (process.platform === 'win32') {
+        fs.writeFileSync(path.join(mockBinDir, 'node.cmd'), `@echo ${UNSUPPORTED_NODE_VERSION}\r\n`);
+      } else {
+        const mockNode = path.join(mockBinDir, 'node');
+        fs.writeFileSync(mockNode, `#!/bin/sh\necho ${UNSUPPORTED_NODE_VERSION}\n`);
+        fs.chmodSync(mockNode, 0o755);
+      }
+
+      const pPath = [
+        mockBinDir,
+        process.env.SystemRoot ? path.join(process.env.SystemRoot, 'System32') : '',
+      ].filter(Boolean).join(path.delimiter);
+
+      const result = run(powerShellCommand, ['--help'], {
+        env: {
+          PATH: pPath,
+          PATHEXT: process.env.PATHEXT || '.COM;.EXE;.BAT;.CMD',
+          SystemRoot: process.env.SystemRoot || 'C:\\Windows',
+        },
+      });
+
+      assert.notStrictEqual(result.code, 0, 'installer should fail when node version is < 18');
+      const combinedOutput = `${result.stdout}\n${result.stderr}`;
+      assert.ok(
+        combinedOutput.includes(`[ECC] Node.js 18 or newer is required (found ${UNSUPPORTED_NODE_VERSION})`),
+        `error output should explain Node.js version requirement:\n${combinedOutput}`
+      );
+    } finally {
+      cleanup(mockBinDir);
+    }
+  })) passed++; else failed++;
+
+  if (!powerShellCommand) {
+    console.log('  - skipped unparseable Node.js preflight test; PowerShell is not available in PATH');
+  } else if (test('rejects execution when Node.js version is unparseable', () => {
+    const INVALID_NODE_VERSION_OUTPUT = 'unexpected-node-output';
+    const mockBinDir = createTempDir('install-ps1-invalid-node-');
+    try {
+      if (process.platform === 'win32') {
+        fs.writeFileSync(path.join(mockBinDir, 'node.cmd'), `@echo ${INVALID_NODE_VERSION_OUTPUT}\r\n`);
+      } else {
+        const mockNode = path.join(mockBinDir, 'node');
+        fs.writeFileSync(mockNode, `#!/bin/sh\necho ${INVALID_NODE_VERSION_OUTPUT}\n`);
+        fs.chmodSync(mockNode, 0o755);
+      }
+
+      const pPath = [
+        mockBinDir,
+        path.dirname(powerShellCommand),
+        process.env.SystemRoot ? path.join(process.env.SystemRoot, 'System32') : '',
+      ].filter(Boolean).join(path.delimiter);
+
+      const result = run(powerShellCommand, ['--help'], {
+        env: {
+          PATH: pPath,
+          PATHEXT: process.env.PATHEXT || '.COM;.EXE;.BAT;.CMD',
+          SystemRoot: process.env.SystemRoot || 'C:\\Windows',
+        },
+      });
+
+      assert.notStrictEqual(result.code, 0, 'installer should fail when node version is unparseable');
+      const combinedOutput = `${result.stdout}\n${result.stderr}`;
+      assert.ok(
+        combinedOutput.includes(`Failed to determine Node.js version (found '${INVALID_NODE_VERSION_OUTPUT}')`),
+        `error output should explain unparseable Node.js version:\n${combinedOutput}`
+      );
+    } finally {
+      cleanup(mockBinDir);
+    }
+  })) passed++; else failed++;
+
+  if (!powerShellCommand) {
+    console.log('  - skipped missing npm preflight test; PowerShell is not available in PATH');
+  } else if (test('rejects execution when node_modules is missing and npm is absent from PATH', () => {
+    const isolatedDir = createTempDir('install-ps1-no-npm-');
+    const mockBinDir = createTempDir('install-ps1-mock-node-');
+    try {
+      const tempScript = path.join(isolatedDir, 'install.ps1');
+      fs.copyFileSync(SCRIPT, tempScript);
+
+      const VALID_NODE_VERSION = 'v18.0.0';
+      if (process.platform === 'win32') {
+        fs.writeFileSync(path.join(mockBinDir, 'node.cmd'), `@echo ${VALID_NODE_VERSION}\r\n`);
+      } else {
+        const mockNode = path.join(mockBinDir, 'node');
+        fs.writeFileSync(mockNode, `#!/bin/sh\necho ${VALID_NODE_VERSION}\n`);
+        fs.chmodSync(mockNode, 0o755);
+      }
+
+      const pPath = [
+        mockBinDir,
+        path.dirname(powerShellCommand),
+        process.env.SystemRoot ? path.join(process.env.SystemRoot, 'System32') : '',
+      ].filter(Boolean).join(path.delimiter);
+
+      const result = run(powerShellCommand, ['--help'], {
+        script: tempScript,
+        env: {
+          PATH: pPath,
+          PATHEXT: process.env.PATHEXT || '.COM;.EXE;.BAT;.CMD',
+          SystemRoot: process.env.SystemRoot || 'C:\\Windows',
+        },
+      });
+
+      assert.notStrictEqual(result.code, 0, 'installer should fail when node_modules is absent and npm is missing');
+      const combinedOutput = `${result.stdout}\n${result.stderr}`;
+      assert.ok(
+        combinedOutput.includes('[ECC] npm is required to install dependencies but was not found in PATH'),
+        `error output should explain missing npm requirement:\n${combinedOutput}`
+      );
+    } finally {
+      cleanup(mockBinDir);
+      cleanup(isolatedDir);
+    }
+  })) passed++; else failed++;
+
+  if (!powerShellCommand) {
+    console.log('  - skipped npm install failure test; PowerShell is not available in PATH');
+  } else if (test('propagates exit code and error when npm install fails', () => {
+    const isolatedDir = createTempDir('install-ps1-npm-fail-');
+    const mockBinDir = createTempDir('install-ps1-mock-bin-');
+    try {
+      const tempScript = path.join(isolatedDir, 'install.ps1');
+      fs.copyFileSync(SCRIPT, tempScript);
+
+      const VALID_NODE_VERSION = 'v18.0.0';
+      const NPM_FAILURE_CODE = 42;
+      if (process.platform === 'win32') {
+        fs.writeFileSync(path.join(mockBinDir, 'node.cmd'), `@echo ${VALID_NODE_VERSION}\r\n`);
+        fs.writeFileSync(path.join(mockBinDir, 'npm.cmd'), `@exit /b ${NPM_FAILURE_CODE}\r\n`);
+      } else {
+        const mockNode = path.join(mockBinDir, 'node');
+        fs.writeFileSync(mockNode, `#!/bin/sh\necho ${VALID_NODE_VERSION}\n`);
+        fs.chmodSync(mockNode, 0o755);
+
+        const mockNpm = path.join(mockBinDir, 'npm');
+        fs.writeFileSync(mockNpm, `#!/bin/sh\nexit ${NPM_FAILURE_CODE}\n`);
+        fs.chmodSync(mockNpm, 0o755);
+      }
+
+      const pPath = [
+        mockBinDir,
+        path.dirname(powerShellCommand),
+        process.env.SystemRoot ? path.join(process.env.SystemRoot, 'System32') : '',
+      ].filter(Boolean).join(path.delimiter);
+
+      const result = run(powerShellCommand, ['--help'], {
+        script: tempScript,
+        env: {
+          PATH: pPath,
+          PATHEXT: process.env.PATHEXT || '.COM;.EXE;.BAT;.CMD',
+          SystemRoot: process.env.SystemRoot || 'C:\\Windows',
+        },
+      });
+
+      assert.strictEqual(result.code, NPM_FAILURE_CODE, 'installer should propagate npm install exit code');
+      const combinedOutput = `${result.stdout}\n${result.stderr}`;
+      assert.ok(
+        combinedOutput.includes(`npm install failed with exit code ${NPM_FAILURE_CODE}`),
+        `error output should report npm install failure:\n${combinedOutput}`
+      );
+    } finally {
+      cleanup(mockBinDir);
+      cleanup(isolatedDir);
+    }
   })) passed++; else failed++;
 
   console.log(`\nResults: Passed: ${passed}, Failed: ${failed}`);

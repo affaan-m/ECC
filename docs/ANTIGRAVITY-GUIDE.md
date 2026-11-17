@@ -10,12 +10,12 @@ below.
 
 ## Quick start
 
-Verify that 2.2.0 is readable from the registry, then run the pinned package
+Verify that 2.2.3 is readable from the registry, then run the pinned package
 from the project you want to configure:
 
 ```bash
-npm view ecc-universal version
-npx ecc-universal@2.2.0 install --profile minimal --target antigravity
+npm view ecc-universal@2.2.3 version
+npx ecc-universal@2.2.3 install --profile minimal --target antigravity
 ```
 
 ### Source checkout alternative
@@ -61,6 +61,11 @@ Installed custom agent definitions are adapted to Antigravity's frontmatter:
 Claude model tiers become `flash` or `pro`, and Claude tool names become their
 Antigravity equivalents. Unsupported tool identifiers are never emitted because
 Antigravity warns that invalid tool names can hang custom-agent execution.
+
+Installed rules receive the activation frontmatter Antigravity needs to attach
+them: common rules use `trigger: always_on`, and language rules map their
+Claude `paths:` scope to `trigger: glob` with matching `globs:`. Rules without
+a trigger are present on disk but never loaded.
 
 ## Expected project tree
 

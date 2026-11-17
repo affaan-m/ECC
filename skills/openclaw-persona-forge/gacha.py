@@ -221,4 +221,7 @@ def main():
 
 
 if __name__ == "__main__":
+    # Windows 管道输出默认 cp1252，打印中文和框线字符会抛 UnicodeEncodeError
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8")
     main()

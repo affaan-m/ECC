@@ -131,8 +131,15 @@ function removeOpenedRegularFile(filePath, opened) {
 function atomicWriteJson(filePath, value) {
   fs.mkdirSync(path.dirname(filePath), { recursive: true, mode: 0o700 });
   const tempPath = `${filePath}.tmp-${process.pid}-${Date.now()}`;
-  fs.writeFileSync(tempPath, `${JSON.stringify(value, null, 2)}\n`, { mode: 0o600 });
-  fs.renameSync(tempPath, filePath);
+  try {
+    fs.writeFileSync(tempPath, `${JSON.stringify(value, null, 2)}\n`, { mode: 0o600 });
+    fs.renameSync(tempPath, filePath);
+  } catch (error) {
+    // A failed write/rename must not leave a .tmp-<pid>-<timestamp> file
+    // beside the canonical state file; repeated failures would accumulate them.
+    fs.rmSync(tempPath, { force: true });
+    throw error;
+  }
 }
 
 function readState(statePath) {

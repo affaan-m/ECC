@@ -1,6 +1,6 @@
 spec_version: "0.1.0"
 name: ecc
-version: 2.2.1
+version: 2.2.3
 description: "Initial gitagent export surface for ECC's shared skill catalog, governance, and identity. Native agents, commands, and hooks remain authoritative in the repository while manifest coverage expands."
 author: affaan-m
 license: MIT
@@ -13,6 +13,7 @@ skills:
   - agent-eval
   - agent-harness-construction
   - agent-payment-x402
+  - agent-runtime-gateway-smoke-test
   - agentic-engineering
   - agentic-os
   - ai-first-engineering
@@ -24,20 +25,25 @@ skills:
   - autonomous-loops
   - backend-patterns
   - benchmark
+  - bengali-nlp
   - blueprint
   - browser-qa
   - bun-runtime
   - canary-watch
   - carrier-relationship-management
+  - change-impact
   - ck
-  - claude-devfleet
+  - devfleet
   - click-path-audit
   - clickhouse-io
+  - brownfield-retrospective
   - codebase-onboarding
   - coding-standards
   - compose-multiplatform-patterns
+  - config-health
   - configure-ecc
   - contract-first
+  - context-and-decisions
   - content-engine
   - content-hash-cache-pattern
   - context-budget
@@ -61,7 +67,9 @@ skills:
   - dmux-workflows
   - docker-patterns
   - documentation-lookup
+  - docs-governance
   - e2e-testing
+  - ecc-contribution-review
   - energy-procurement
   - enterprise-agent-ops
   - error-handling
@@ -74,6 +82,8 @@ skills:
   - frontend-slides
   - fsharp-testing
   - git-workflow
+  - godot-patterns
+  - godot-testing
   - golang-patterns
   - golang-testing
   - healthcare-cdss-patterns
@@ -83,6 +93,7 @@ skills:
   - inventory-demand-planning
   - investor-materials
   - investor-outreach
+  - issue-review
   - iterative-retrieval
   - java-coding-standards
   - jpa-patterns
@@ -96,19 +107,28 @@ skills:
   - laravel-security
   - laravel-tdd
   - laravel-verification
+  - leanrea
   - liquid-glass-design
   - logistics-exception-management
   - market-research
+  - mcp-dependency-review
   - mcp-server-patterns
-  - motion-ui
+  - module-governance
+  - module-regression
+  - mybatis-patterns
+  - motion-advanced
+  - motion-foundations
+  - motion-patterns
   - nanoclaw-repl
   - nextjs-turbopack
   - nutrient-document-processing
   - nuxt4-patterns
+  - osint-investigation
   - perl-patterns
   - perl-security
   - perl-testing
   - plankton-code-quality
+  - platform-factory
   - plan-canvas
   - plan-orchestrate
   - postgres-patterns
@@ -123,6 +143,8 @@ skills:
   - quarkus-security
   - quarkus-tdd
   - quarkus-verification
+  - rails-patterns
+  - rails-security
   - ralphinho-rfc-pipeline
   - react-patterns
   - react-performance
@@ -139,6 +161,7 @@ skills:
   - security-review
   - security-scan
   - skill-comply
+  - skill-host-compat
   - skill-stocktake
   - springboot-patterns
   - springboot-security
@@ -149,17 +172,26 @@ skills:
   - swift-concurrency-6-2
   - swift-protocol-di-testing
   - swiftui-patterns
+  - taste-application
+  - taste-distillation
+  - tasteforge-video
   - tdd-workflow
   - team-builder
+  - terraform-patterns
+  - test-collaboration
   - token-budget-advisor
+  - token-card
+  - typescript-patterns
   - unified-memory
   - verification-loop
   - video-editing
   - videodb
   - visa-doc-translate
   - x-api
+  - yoruba-localization-testing
 commands:
   - aside
+  - astra-review
   - auto-update
   - build-fix
   - checkpoint
@@ -196,6 +228,7 @@ commands:
   - instinct-export
   - instinct-import
   - instinct-status
+  - issue-review
   - jira
   - kotlin-build
   - kotlin-review
@@ -249,7 +282,9 @@ commands:
   - setup-pm
   - skill-create
   - skill-health
+  - skill-host-compat
   - test-coverage
+  - token-card
   - update-codemaps
   - update-docs
   - vue-review

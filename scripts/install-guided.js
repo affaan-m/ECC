@@ -106,7 +106,11 @@ function parseArgs(argv) {
   if (options.allHarnesses && options.harnesses.length > 0) {
     throw new Error('--all-harnesses and --harness are mutually exclusive.');
   }
-  return options;
+  const dryRunEnv = process.env.ECC_DRY_RUN;
+  if (dryRunEnv !== undefined && dryRunEnv !== '0' && dryRunEnv !== '1') {
+    throw new Error('ECC_DRY_RUN must be "1" or "0" when set');
+  }
+  return { ...options, dryRun: options.dryRun || dryRunEnv === '1' };
 }
 
 function choicesText(values) {

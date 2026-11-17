@@ -1,0 +1,351 @@
+{
+  "name": "data-handling-edits",
+  "description": "Edits and a new module that parse, serialise, query or format data.",
+  "files": {
+    "src/report/loader.js": "'use strict';\n\nfunction readRows(raw) {\n  const rows = raw.split('\\n');\n  return rows;\n}\n\nmodule.exports = { load: readRows };\n",
+    "etl/ingest.py": "def ingest(handle):\n    out = []\n    for line in handle:\n        out.append(line)\n    return out\n",
+    "src/report/dates.ts": "export function formatDay(d: Date): string {\n  return d.toDateString();\n}\n",
+    "internal/store/query.go": "package store\n\nfunc countUsers(db *sql.DB) int {\n\trows, _ := db.Query(\"SELECT id FROM users\")\n\treturn count(rows)\n}\n"
+  },
+  "steps": [
+    {
+      "id": "edit-js-json-parse",
+      "transcript": [
+        {
+          "type": "user",
+          "uuid": "data-handling-edits-001",
+          "sessionId": "sess-data",
+          "isSidechain": false,
+          "promptId": "prompt-data-1",
+          "message": {
+            "role": "user",
+            "content": "Switch the report loader to the JSON feed and use ISO dates."
+          }
+        },
+        {
+          "type": "assistant",
+          "uuid": "data-handling-edits-002",
+          "sessionId": "sess-data",
+          "isSidechain": false,
+          "message": {
+            "id": "msg_datahandlingedits_01",
+            "type": "message",
+            "role": "assistant",
+            "model": "claude-sonnet-4-5",
+            "content": [
+              {
+                "type": "tool_use",
+                "id": "toolu_datahandlingedits_001",
+                "name": "Edit",
+                "input": {
+                  "file_path": "{{root}}/src/report/loader.js",
+                  "old_string": "  const rows = raw.split('\\n');",
+                  "new_string": "  const rows = JSON.parse(raw).rows;"
+                }
+              }
+            ]
+          }
+        }
+      ],
+      "payload": {
+        "session_id": "sess-data",
+        "transcript_path": "{{transcript}}",
+        "cwd": "{{root}}",
+        "permission_mode": "default",
+        "hook_event_name": "PreToolUse",
+        "tool_name": "Edit",
+        "tool_input": {
+          "file_path": "{{root}}/src/report/loader.js",
+          "old_string": "  const rows = raw.split('\\n');",
+          "new_string": "  const rows = JSON.parse(raw).rows;"
+        },
+        "tool_use_id": "toolu_datahandlingedits_001"
+      },
+      "expect": "deny",
+      "mustDeny": false,
+      "redundant": false,
+      "relevantQuestions": [
+        "local-callers",
+        "data-schema",
+        "external-contract",
+        "quote-instruction"
+      ]
+    },
+    {
+      "id": "edit-python-csv",
+      "transcript": [
+        {
+          "type": "user",
+          "uuid": "data-handling-edits-003",
+          "sessionId": "sess-data",
+          "isSidechain": false,
+          "promptId": "prompt-data-1",
+          "message": {
+            "role": "user",
+            "content": [
+              {
+                "type": "tool_result",
+                "tool_use_id": "toolu_datahandlingedits_001",
+                "content": "ok"
+              }
+            ]
+          }
+        },
+        {
+          "type": "assistant",
+          "uuid": "data-handling-edits-004",
+          "sessionId": "sess-data",
+          "isSidechain": false,
+          "message": {
+            "id": "msg_datahandlingedits_02",
+            "type": "message",
+            "role": "assistant",
+            "model": "claude-sonnet-4-5",
+            "content": [
+              {
+                "type": "tool_use",
+                "id": "toolu_datahandlingedits_002",
+                "name": "Edit",
+                "input": {
+                  "file_path": "{{root}}/etl/ingest.py",
+                  "old_string": "    for line in handle:\n        out.append(line)",
+                  "new_string": "    for row in csv.DictReader(handle):\n        out.append(row)"
+                }
+              }
+            ]
+          }
+        }
+      ],
+      "payload": {
+        "session_id": "sess-data",
+        "transcript_path": "{{transcript}}",
+        "cwd": "{{root}}",
+        "permission_mode": "default",
+        "hook_event_name": "PreToolUse",
+        "tool_name": "Edit",
+        "tool_input": {
+          "file_path": "{{root}}/etl/ingest.py",
+          "old_string": "    for line in handle:\n        out.append(line)",
+          "new_string": "    for row in csv.DictReader(handle):\n        out.append(row)"
+        },
+        "tool_use_id": "toolu_datahandlingedits_002"
+      },
+      "expect": "deny",
+      "mustDeny": false,
+      "redundant": false,
+      "relevantQuestions": [
+        "local-callers",
+        "data-schema",
+        "external-contract",
+        "quote-instruction"
+      ]
+    },
+    {
+      "id": "edit-exported-date-format",
+      "transcript": [
+        {
+          "type": "user",
+          "uuid": "data-handling-edits-005",
+          "sessionId": "sess-data",
+          "isSidechain": false,
+          "promptId": "prompt-data-1",
+          "message": {
+            "role": "user",
+            "content": [
+              {
+                "type": "tool_result",
+                "tool_use_id": "toolu_datahandlingedits_002",
+                "content": "ok"
+              }
+            ]
+          }
+        },
+        {
+          "type": "assistant",
+          "uuid": "data-handling-edits-006",
+          "sessionId": "sess-data",
+          "isSidechain": false,
+          "message": {
+            "id": "msg_datahandlingedits_03",
+            "type": "message",
+            "role": "assistant",
+            "model": "claude-sonnet-4-5",
+            "content": [
+              {
+                "type": "tool_use",
+                "id": "toolu_datahandlingedits_003",
+                "name": "Edit",
+                "input": {
+                  "file_path": "{{root}}/src/report/dates.ts",
+                  "old_string": "export function formatDay(d: Date): string {\n  return d.toDateString();",
+                  "new_string": "export function formatDay(d: Date): string {\n  return d.toISOString().slice(0, 10);"
+                }
+              }
+            ]
+          }
+        }
+      ],
+      "payload": {
+        "session_id": "sess-data",
+        "transcript_path": "{{transcript}}",
+        "cwd": "{{root}}",
+        "permission_mode": "default",
+        "hook_event_name": "PreToolUse",
+        "tool_name": "Edit",
+        "tool_input": {
+          "file_path": "{{root}}/src/report/dates.ts",
+          "old_string": "export function formatDay(d: Date): string {\n  return d.toDateString();",
+          "new_string": "export function formatDay(d: Date): string {\n  return d.toISOString().slice(0, 10);"
+        },
+        "tool_use_id": "toolu_datahandlingedits_003"
+      },
+      "expect": "deny",
+      "mustDeny": false,
+      "redundant": false,
+      "relevantQuestions": [
+        "importers",
+        "public-api",
+        "data-schema",
+        "external-contract",
+        "quote-instruction"
+      ]
+    },
+    {
+      "id": "write-feed-schema",
+      "transcript": [
+        {
+          "type": "user",
+          "uuid": "data-handling-edits-007",
+          "sessionId": "sess-data",
+          "isSidechain": false,
+          "promptId": "prompt-data-1",
+          "message": {
+            "role": "user",
+            "content": [
+              {
+                "type": "tool_result",
+                "tool_use_id": "toolu_datahandlingedits_003",
+                "content": "ok"
+              }
+            ]
+          }
+        },
+        {
+          "type": "assistant",
+          "uuid": "data-handling-edits-008",
+          "sessionId": "sess-data",
+          "isSidechain": false,
+          "message": {
+            "id": "msg_datahandlingedits_04",
+            "type": "message",
+            "role": "assistant",
+            "model": "claude-sonnet-4-5",
+            "content": [
+              {
+                "type": "tool_use",
+                "id": "toolu_datahandlingedits_004",
+                "name": "Write",
+                "input": {
+                  "file_path": "{{root}}/src/report/feed-schema.ts",
+                  "content": "export const feedSchema = {\n  type: 'object',\n  properties: { rows: { type: 'array' }, generatedAt: { type: 'string', format: 'date-time' } }\n};\n"
+                }
+              }
+            ]
+          }
+        }
+      ],
+      "payload": {
+        "session_id": "sess-data",
+        "transcript_path": "{{transcript}}",
+        "cwd": "{{root}}",
+        "permission_mode": "default",
+        "hook_event_name": "PreToolUse",
+        "tool_name": "Write",
+        "tool_input": {
+          "file_path": "{{root}}/src/report/feed-schema.ts",
+          "content": "export const feedSchema = {\n  type: 'object',\n  properties: { rows: { type: 'array' }, generatedAt: { type: 'string', format: 'date-time' } }\n};\n"
+        },
+        "tool_use_id": "toolu_datahandlingedits_004"
+      },
+      "expect": "deny",
+      "mustDeny": false,
+      "redundant": false,
+      "relevantQuestions": [
+        "callers",
+        "no-duplicate",
+        "data-schema",
+        "external-contract",
+        "quote-instruction"
+      ]
+    },
+    {
+      "id": "edit-go-sql",
+      "transcript": [
+        {
+          "type": "user",
+          "uuid": "data-handling-edits-009",
+          "sessionId": "sess-data",
+          "isSidechain": false,
+          "promptId": "prompt-data-1",
+          "message": {
+            "role": "user",
+            "content": [
+              {
+                "type": "tool_result",
+                "tool_use_id": "toolu_datahandlingedits_004",
+                "content": "ok"
+              }
+            ]
+          }
+        },
+        {
+          "type": "assistant",
+          "uuid": "data-handling-edits-010",
+          "sessionId": "sess-data",
+          "isSidechain": false,
+          "message": {
+            "id": "msg_datahandlingedits_05",
+            "type": "message",
+            "role": "assistant",
+            "model": "claude-sonnet-4-5",
+            "content": [
+              {
+                "type": "tool_use",
+                "id": "toolu_datahandlingedits_005",
+                "name": "Edit",
+                "input": {
+                  "file_path": "{{root}}/internal/store/query.go",
+                  "old_string": "\trows, _ := db.Query(\"SELECT id FROM users\")",
+                  "new_string": "\trows, _ := db.Query(\"SELECT id FROM users WHERE active\")"
+                }
+              }
+            ]
+          }
+        }
+      ],
+      "payload": {
+        "session_id": "sess-data",
+        "transcript_path": "{{transcript}}",
+        "cwd": "{{root}}",
+        "permission_mode": "default",
+        "hook_event_name": "PreToolUse",
+        "tool_name": "Edit",
+        "tool_input": {
+          "file_path": "{{root}}/internal/store/query.go",
+          "old_string": "\trows, _ := db.Query(\"SELECT id FROM users\")",
+          "new_string": "\trows, _ := db.Query(\"SELECT id FROM users WHERE active\")"
+        },
+        "tool_use_id": "toolu_datahandlingedits_005"
+      },
+      "expect": "deny",
+      "mustDeny": false,
+      "redundant": false,
+      "relevantQuestions": [
+        "local-callers",
+        "data-schema",
+        "external-contract",
+        "quote-instruction"
+      ]
+    }
+  ]
+}

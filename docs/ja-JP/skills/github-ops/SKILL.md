@@ -126,11 +126,11 @@ gh api repos/{owner}/{repo}/dependabot/alerts --jq '.[].security_advisory.summar
 # Check secret scanning alerts
 gh api repos/{owner}/{repo}/secret-scanning/alerts --jq '.[].state'
 
-# Review and auto-merge safe dependency bumps
+# Review dependency bumps — merging is a user-authorized action (propose, never auto-merge)
 gh pr list --label "dependencies" --json number,title
 ```
 
-- Review and auto-merge safe dependency bumps
+- Review safe dependency bumps and propose merges for user approval — never auto-merge
 - Flag any critical/high severity alerts immediately
 - Check for new Dependabot alerts weekly at minimum
 

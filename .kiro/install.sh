@@ -1,7 +1,7 @@
 #!/bin/bash
 #
 # ECC Kiro Installer
-# Installs Everything Claude Code workflows into a Kiro project.
+# Installs ECC workflows into a Kiro project.
 #
 # Usage:
 #   ./install.sh              # Install to current directory
@@ -138,6 +138,6 @@ echo "Next steps:"
 echo "  1. Open your project in Kiro"
 echo "  2. Agents: Automatic in IDE, /agent swap in CLI"
 echo "  3. Skills: Available via / menu in chat"
-echo "  4. Steering files with 'auto' inclusion load automatically"
+echo "  4. Steering files with 'always' inclusion load automatically"
 echo "  5. Toggle hooks in the Agent Hooks panel"
 echo "  6. Copy desired MCP servers from .kiro/settings/mcp.json.example to .kiro/settings/mcp.json"

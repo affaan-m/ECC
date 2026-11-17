@@ -6,6 +6,7 @@ description: >-
   visual craft, offer packaging, evidence, enterprise-readiness, thought
   leadership, pricing, client's strategic tension) with explicit 1–5 rubrics
   and a tension-plot. Precedes competitive-report-structure.
+license: MIT
 ---
 
 # Benchmark Methodology

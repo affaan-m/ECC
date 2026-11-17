@@ -1,8 +1,27 @@
 #!/usr/bin/env node
 'use strict';
 
-const { collectSkillHealth, formatHealthReport } = require('./lib/skill-evolution/health');
-const { renderDashboard } = require('./lib/skill-evolution/dashboard');
+let collectSkillHealth;
+let formatHealthReport;
+let renderDashboard;
+try {
+  ({ collectSkillHealth, formatHealthReport } = require('./lib/skill-evolution/health'));
+  ({ renderDashboard } = require('./lib/skill-evolution/dashboard'));
+} catch (error) {
+  // The Claude Code plugin marketplace clones the repo but does not run
+  // npm/install-apply, so scripts/lib can be missing from a managed install.
+  // Fail with the remedy instead of a bare module-resolution stack (#3259).
+  const missing = (String(error && error.message).match(/Cannot find module '([^']+)'/) || [])[1];
+  if (error && error.code === 'MODULE_NOT_FOUND' && missing && /skill-evolution/.test(error.message)) {
+    console.error(
+      `skills-health could not load ${missing}; this installation is missing part of scripts/lib/skill-evolution.\n` +
+      'For a one-off report, run from a full ECC checkout: node scripts/skills-health.js --dashboard. ' +
+      'For a non-marketplace install, select commands-core: node scripts/install-apply.js --target <host> --modules commands-core.'
+    );
+    process.exit(1);
+  }
+  throw error;
+}
 
 function showHelp() {
   console.log(`

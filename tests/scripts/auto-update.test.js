@@ -6,6 +6,9 @@ const assert = require('assert');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
+const { execFileSync } = require('child_process');
+const { LOCALE_ALIAS_TO_COMPONENT_ID } = require('../../scripts/lib/install-manifests');
+const { normalizeInstallRequest, parseInstallArgs } = require('../../scripts/lib/install/request');
 
 const {
   parseArgs,
@@ -156,6 +159,76 @@ function runTests() {
       'python',
     ]);
   })) passed += 1; else failed += 1;
+
+  if (test('replays every locale alias with legacy languages and hook consent', () => {
+    for (const target of ['claude', 'claude-project']) {
+      for (const [alias, componentId] of Object.entries(LOCALE_ALIAS_TO_COMPONENT_ID)) {
+        const original = normalizeInstallRequest(parseInstallArgs([
+          'node', 'install-apply.js', '--target', target,
+          '--locale', alias, 'typescript', 'python', '--no-hooks',
+        ]));
+        const record = makeRecord({
+          repoRoot: '/tmp/ecc', homeDir: '/tmp/home', projectRoot: '/tmp/project',
+          adapter: { id: target, target, kind: target === 'claude' ? 'home' : 'project' },
+          request: {
+            profile: original.profileId, modules: original.moduleIds,
+            includeComponents: original.includeComponentIds,
+            excludeComponents: original.excludeComponentIds,
+            legacyLanguages: original.legacyLanguages,
+            legacyMode: true, hookConsent: original.hookConsent,
+          },
+          resolution: { selectedModules: [], skippedModules: [] }, operations: [],
+        });
+        const replay = normalizeInstallRequest(parseInstallArgs([
+          'node', 'install-apply.js', ...buildInstallApplyArgs(record),
+        ]));
+        assert.deepStrictEqual(replay, original, `${target}: ${alias} -> ${componentId}`);
+      }
+    }
+  })) passed += 1; else failed += 1;
+
+  for (const target of ['claude', 'claude-project']) {
+    if (test(`end-to-end: auto-update plans a recorded ${target} locale and language install`, () => {
+      const fixture = createTempDir('auto-update-locale-');
+      const homeDir = path.join(fixture, 'home');
+      const projectRoot = path.join(fixture, 'project');
+      const repoRoot = path.resolve(__dirname, '..', '..');
+      const env = { ...process.env, HOME: homeDir, USERPROFILE: homeDir, ECC_DRY_RUN: '0' };
+      fs.mkdirSync(homeDir);
+      fs.mkdirSync(projectRoot);
+      try {
+        const installed = JSON.parse(execFileSync(process.execPath, [
+          path.join(repoRoot, 'scripts', 'install-apply.js'),
+          '--target', target, '--locale', 'zh', 'typescript', '--no-hooks', '--json',
+        ], { cwd: projectRoot, env, encoding: 'utf8', maxBuffer: 16 * 1024 * 1024 }));
+        assert.strictEqual(installed.result.applied, true);
+        const statePath = installed.result.installStatePath;
+        const stateBefore = fs.readFileSync(statePath, 'utf8');
+        const state = JSON.parse(stateBefore);
+        assert.deepStrictEqual(state.request.includeComponents, ['locale:zh-cn']);
+        assert.deepStrictEqual(state.request.legacyLanguages, ['typescript']);
+
+        const updated = JSON.parse(execFileSync(process.execPath, [
+          path.join(repoRoot, 'scripts', 'auto-update.js'), '--target', target,
+          '--repo-root', repoRoot, '--dry-run', '--json',
+        ], { cwd: projectRoot, env, encoding: 'utf8', maxBuffer: 16 * 1024 * 1024 }));
+        assert.strictEqual(updated.summary.errorCount, 0);
+        assert.strictEqual(updated.summary.checkedCount, 1);
+        assert.strictEqual(updated.results[0].status, 'planned');
+        const plan = updated.results[0].payload.plan;
+        assert.strictEqual(plan.mode, 'legacy-compat');
+        assert.deepStrictEqual(plan.legacyLanguages, ['typescript']);
+        assert.deepStrictEqual(plan.includedComponentIds, ['locale:zh-cn']);
+        assert.ok(plan.selectedModuleIds.includes('docs-zh-cn'));
+        assert.ok(plan.selectedModuleIds.includes('framework-language'));
+        assert.ok(!plan.selectedModuleIds.includes('hooks-runtime'));
+        assert.strictEqual(plan.statePreview.request.hookConsent, 'declined');
+        assert.strictEqual(fs.readFileSync(statePath, 'utf8'), stateBefore);
+      } finally {
+        cleanup(fixture);
+      }
+    })) passed += 1; else failed += 1;
+  }
 
   if (test('buildInstallApplyArgs reconstructs manifest installs', () => {
     const record = {
