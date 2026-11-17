@@ -21,7 +21,10 @@
  * Hook Event Mapping (V1 key -> V2 registration):
  * - tool.execute.before        -> ctx.tool.hook("execute.before")
  * - tool.execute.after         -> ctx.tool.hook("execute.after")
- * - file.edited / file.watcher / session.* / todo.updated
+ *   (V2 tool id `shell` is matched as V1 `bash`)
+ * - file.edited                -> completed write/edit in execute.after
+ *                                 (V2 publishes no file.edited event)
+ * - file.watcher / session.* / todo.updated
  *                              -> ctx.event.subscribe() filtered by type
  * - shell.env                  -> ctx.shell.hook("create.before")
  * - experimental.session.compacting -> ctx.session.hook("compaction")
@@ -111,12 +114,31 @@ export const ECCHooksPluginDefinition = {
     const { hooks, worktreePath } = runtime
 
     // Normalize a V2 tool-hook event into the V1 ToolInput shape so both
-    // surfaces share one implementation.
-    const toToolInput = (event: LooseRecord): ToolInput => ({
-      tool: String(event.tool ?? event.name ?? ""),
-      callID: event.callID ?? event.id,
-      args: (event.input ?? event.args) as ToolArgs | undefined,
-    })
+    // surfaces share one implementation. OpenCode 2 renamed the V1 `bash`
+    // tool to `shell` and passes `{ path }` to `write`/`edit`, so map both
+    // back to the V1 names the shared runtime matches on.
+    const toToolInput = (event: LooseRecord): ToolInput => {
+      const rawTool = String(event.tool ?? event.name ?? "")
+      const tool = rawTool === "shell" ? "bash" : rawTool
+      let args = (event.input ?? event.args) as ToolArgs | undefined
+      if (
+        (tool === "write" || tool === "edit") &&
+        args && typeof args === "object" &&
+        typeof args.filePath !== "string" && typeof args.path === "string"
+      ) {
+        args = { ...args, filePath: args.path }
+      }
+      return { tool, callID: event.callID ?? event.id, args }
+    }
+
+    // OpenCode 2's public event stream has no `file.edited`, so V1's
+    // post-edit hook (formatter, console.log warning, idle audit input) is
+    // driven from the completed write/edit tool call instead.
+    const editedPath = (input: ToolInput): string | null => {
+      if (input.tool !== "write" && input.tool !== "edit") return null
+      const p = input.args?.filePath ?? input.args?.path
+      return typeof p === "string" && p.trim() ? p : null
+    }
 
     logStartup(directory)
 
@@ -147,15 +169,18 @@ export const ECCHooksPluginDefinition = {
     if (typeof ctx?.tool?.hook === "function") {
       registrations.push(await ctx.tool.hook("execute.before", safe("execute.before", (event: LooseRecord) => hooks["tool.execute.before"](toToolInput(event), {}))))
       registrations.push(
-        await ctx.tool.hook("execute.after", safe("execute.after", (event: LooseRecord) =>
+        await ctx.tool.hook("execute.after", safe("execute.after", async (event: LooseRecord) => {
+          const input = toToolInput(event)
           // R2-1: hand the shared handler the tool output object directly. The
           // skill tracker reads error fields (isError/is_error/status/error) off
           // `tool_response` itself; a `{ result: … }` wrapper made failed skill
           // runs look like successes.
-          hooks["tool.execute.after"](toToolInput(event), event.status === "error"
+          await hooks["tool.execute.after"](input, event.status === "error"
             ? { is_error: true }
-            : event.result ?? event.output),
-        )),
+            : event.result ?? event.output)
+          const edited = event.status === "error" ? null : editedPath(input)
+          if (edited) await hooks["file.edited"]({ path: edited })
+        })),
       )
     }
 
