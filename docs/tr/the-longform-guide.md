@@ -56,7 +56,7 @@ Planınız hazır ve context temizlendiğinde (artık Claude Code'da plan modund
 Aldığım bir desen: her oturumu yükleyen CLAUDE.md'ye (kullanıcı kapsamı) veya `.claude/rules/`'a (proje kapsamı) her şeyi sadece koymak yerine, context'i dinamik olarak enjekte etmek için CLI flag'lerini kullanın.
 
 ```bash
-claude --system-prompt "$(cat memory.md)"
+claude --append-system-prompt-file memory.md
 ```
 
 Bu, ne zaman hangi context'in yüklendiği konusunda daha hassas olmanızı sağlar. System prompt içeriği, kullanıcı mesajlarından daha yüksek yetkiye sahiptir, kullanıcı mesajları da araç sonuçlarından daha yüksek yetkiye sahiptir.
@@ -65,13 +65,13 @@ Bu, ne zaman hangi context'in yüklendiği konusunda daha hassas olmanızı sağ
 
 ```bash
 # Günlük geliştirme
-alias claude-dev='claude --system-prompt "$(cat ~/.claude/contexts/dev.md)"'
+alias claude-dev='claude --append-system-prompt-file ~/.claude/contexts/dev.md'
 
 # PR inceleme modu
-alias claude-review='claude --system-prompt "$(cat ~/.claude/contexts/review.md)"'
+alias claude-review='claude --append-system-prompt-file ~/.claude/contexts/review.md'
 
 # Araştırma/keşif modu
-alias claude-research='claude --system-prompt "$(cat ~/.claude/contexts/research.md)"'
+alias claude-research='claude --append-system-prompt-file ~/.claude/contexts/research.md'
 ```
 
 **Gelişmiş: Memory Persistence Hook'ları**
